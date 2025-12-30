@@ -45,7 +45,7 @@ class UserSpec extends Specification {
     }
 
     "parse wiki accounts" in {
-      val accounts = Seq("Ilya", "Antanana", "Ahonc", "Base")
+      val accounts = Seq("Example", "Antanana", "Ahonc", "Base")
 
       User.parseList(accounts.mkString("\n")) === accounts.map { account =>
         User(id = None, contestId = None, fullname = "", email = "", wikiAccount = Some(account))
@@ -53,7 +53,7 @@ class UserSpec extends Specification {
     }
 
     "parse prefixed accounts" in {
-      val withoutUser = Seq("Ilya", "Antanana", "Ahonc", "Base")
+      val withoutUser = Seq("Example", "Antanana", "Ahonc", "Base")
       val withUser = withoutUser.map("User:" + _)
 
       User.parseList(withUser.mkString("\n")) === withoutUser.map { account =>
