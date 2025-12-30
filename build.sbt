@@ -1,6 +1,6 @@
 import sbt.Keys._
 
-lazy val root =
+lazy val root = identity(
   (project in file("."))
     .enablePlugins(
       PlayScala,
@@ -9,7 +9,8 @@ lazy val root =
       SystemdPlugin,
       JavaServerAppPackaging
     )
-    .disablePlugins(PlayPekkoHttpServer)
+)
+  .disablePlugins(PlayPekkoHttpServer)
 
 name := "wlxjury"
 
@@ -49,6 +50,7 @@ libraryDependencies ++= Seq(
   "com.adrianhurt" %% "play-bootstrap" % "1.6.1-P28-B3",
   "org.webjars" % "bootstrap" % "3.3.7-1" exclude ("org.webjars", "jquery"),
   "org.webjars" % "jquery" % "3.2.1",
+
   "org.scalikejdbc" %% "scalikejdbc" % ScalikejdbcVersion,
   "org.scalikejdbc" %% "scalikejdbc-config" % ScalikejdbcVersion,
   "org.scalikejdbc" %% "scalikejdbc-orm" % ScalikejdbcVersion,
@@ -60,6 +62,7 @@ libraryDependencies ++= Seq(
   "org.mariadb.jdbc" % "mariadb-java-client" % "3.5.3",
   "org.scalawiki" %% "scalawiki-core" % ScalawikiVersion,
   "org.scalawiki" %% "scalawiki-wlx" % ScalawikiVersion,
+
   "org.apache.pekko" %% "pekko-stream" % PekkoVersion,
   "org.apache.pekko" %% "pekko-http" % PekkoHttpVersion,
   "org.pac4j" %% "play-pac4j" % PlayPac4jVersion,
@@ -69,7 +72,7 @@ libraryDependencies ++= Seq(
   "uk.org.lidalia" % "sysout-over-slf4j" % "1.0.2",
   "javax.xml.bind" % "jaxb-api" % "2.3.1",
   "com.softwaremill.sttp.tapir" %% "tapir-core" % TapirVersion,
-  "com.softwaremill.sttp.tapir" %% "tapir-pekko-http-server" % TapirVersion excludeAll (
+  "com.softwaremill.sttp.tapir" %% "tapir-pekko-http-server" % TapirVersion excludeAll(
     ExclusionRule("org.apache.pekko", "pekko-stream_2.13"),
     ExclusionRule("org.apache.pekko", "pekko-slf4j_2.13"),
     ExclusionRule("org.apache.pekko", "pekko-http_2.13"),
@@ -82,10 +85,11 @@ libraryDependencies ++= Seq(
   filters,
   specs2 % Test,
   jdbc % Test,
+  "ch.vorburger.mariaDB4j" % "mariaDB4j" % "3.1.0" % Test,
   "org.scalatest" %% "scalatest" % ScalaTestVersion % Test,
   "com.dimafeng" %% "testcontainers-scala-scalatest" % TestcontainersScalaVersion % Test,
-  "com.dimafeng" %% "testcontainers-scala-mariadb" % TestcontainersScalaVersion % Test,
-  "com.dimafeng" %% "testcontainers-scala-mysql" % TestcontainersScalaVersion % Test,
+  "com.dimafeng" %% "testcontainers-scala-mariadb" % "0.41.0" % Test,
+  "com.dimafeng" %% "testcontainers-scala-mysql" % "0.41.0" % Test,
   "io.chrisdavenport" %% "testcontainers-specs2" % "0.2.0-M5" % Test,
   "org.mock-server" % "mockserver-netty" % MockServerVersion % Test,
   "net.java.dev.jna" % "jna" % "4.5.0" % Test,
@@ -243,32 +247,4 @@ internalPackageRpmSystemd := {
   val rpmFile = (Rpm / packageBin).value
   IO.move(rpmFile, output)
   output
-}
-
-// Extract dependency source jars to target/dep-sources/ as plain .scala/.java files.
-// Run `sbt extractDepSources` once (or after adding new dependencies).
-// Claude Code can then Grep/Read directly inside target/dep-sources/ instead of
-// searching the web for library API signatures.
-lazy val extractDepSources = taskKey[File]("Extract dependency source jars to target/dep-sources")
-
-extractDepSources := {
-  val report = (Test / updateClassifiers).value
-  val outDir = target.value / "dep-sources"
-  val log = streams.value.log
-  IO.createDirectory(outDir)
-  for {
-    config <- report.configurations
-    module <- config.modules
-    (art, file) <- module.artifacts
-    if art.classifier.contains("sources") && file.exists()
-  } {
-    val m = module.module
-    val dest = outDir / m.organization / s"${m.name}-${m.revision}"
-    if (!dest.exists()) {
-      IO.createDirectory(dest)
-      IO.unzip(file, dest)
-      log.info(s"Extracted ${m.name} ${m.revision}")
-    }
-  }
-  outDir
 }
