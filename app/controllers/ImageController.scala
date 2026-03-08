@@ -8,7 +8,8 @@ import play.api.data.Form
 import play.api.data.Forms._
 import play.api.i18n.I18nSupport
 import play.api.mvc.{ControllerComponents, EssentialAction}
-import services.ImageService
+import play.api.libs.json.Json
+import services.{ImageService, LocalImageCacheService}
 import spray.util.pimpFuture
 
 import javax.inject.Inject
@@ -17,7 +18,8 @@ import scala.concurrent.ExecutionContext
 class ImageController @Inject() (
     val commons: MwBot,
     cc: ControllerComponents,
-    imageService: ImageService
+    imageService: ImageService,
+    localImageCacheService: LocalImageCacheService
 )(implicit ec: ExecutionContext)
     extends Secured(cc)
     with I18nSupport {
@@ -70,6 +72,28 @@ class ImageController @Inject() (
             Redirect(routes.ImageController.images(contestId))
           }
         )
+    }
+
+  def startImageCache(contestId: Long): EssentialAction =
+    withAuth(contestPermission(User.ADMIN_ROLES, Some(contestId))) { _ => implicit request =>
+      localImageCacheService.startDownload(contestId)
+      Redirect(routes.ImageController.images(contestId))
+    }
+
+  def imageCacheStatus(contestId: Long): EssentialAction =
+    withAuth(contestPermission(User.ADMIN_ROLES, Some(contestId))) { _ => _ =>
+      Ok(Json.toJson(localImageCacheService.progress(contestId)))
+    }
+
+  def startRoundImageCache(id: Long, rid: Long): EssentialAction =
+    withAuth(contestPermission(User.ADMIN_ROLES, Some(id))) { _ => implicit request =>
+      localImageCacheService.startDownloadForRound(id, rid)
+      Redirect(routes.RoundController.editRound(Some(rid), id, None))
+    }
+
+  def roundImageCacheStatus(id: Long, rid: Long): EssentialAction =
+    withAuth(contestPermission(User.ADMIN_ROLES, Some(id))) { _ => _ =>
+      Ok(Json.toJson(localImageCacheService.progressForRound(rid)))
     }
 
   val importImagesForm = Form(

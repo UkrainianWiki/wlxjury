@@ -85,6 +85,10 @@ POST        /contests/save                                                      
 POST        /contests/import                                                        @controllers.ContestController.importContests()
 GET         /contest/:id/images                                                     @controllers.ImageController.images(id: Long)
 POST        /contest/:id/importimages                                               @controllers.ImageController.importImages(id: Long)
+POST        /contest/:id/images/cache/start                                         @controllers.ImageController.startImageCache(id: Long)
+GET         /contest/:id/images/cache/status                                        @controllers.ImageController.imageCacheStatus(id: Long)
+POST        /contest/:id/round/:rid/images/cache/start                              @controllers.ImageController.startRoundImageCache(id: Long, rid: Long)
+GET         /contest/:id/round/:rid/images/cache/status                             @controllers.ImageController.roundImageCacheStatus(id: Long, rid: Long)
 
 GET         /thumb_urls/:contestId                                                  controllers.GalleryController.thumbnailUrls(contestId: Long, roundId: Option[Long] ?= None)
 
