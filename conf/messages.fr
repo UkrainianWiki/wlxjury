@@ -203,6 +203,8 @@ files.on.commons = Images sur Commons
 files.in.database = Images dans la base de données
 import.files = Importer les images
 thumbnail.urls = urls des vignettes
+local.image.cache = Cache d'images local
+download.images.locally = Télécharger les images localement
 contest = Concours
 
 mass.import = Importer massivement

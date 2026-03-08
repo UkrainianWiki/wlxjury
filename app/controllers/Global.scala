@@ -80,9 +80,7 @@ object Global {
       url.substring(lastSlash + 1)
     }
 
-    val imageHost =
-      if (resizeToHeight <= gallerySizeY * 2) thumbsHost
-      else "upload.wikimedia.org"
+    val imageHost = thumbsHost
 
     url.replace(
       "//upload.wikimedia.org/wikipedia/commons/",

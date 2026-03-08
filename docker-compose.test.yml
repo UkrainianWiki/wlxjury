@@ -1,0 +1,22 @@
+services:
+  apache:
+    build:
+      context: .
+      dockerfile: conf/apache/Dockerfile
+    volumes:
+      - ./conf/apache/jury-images.conf:/usr/local/apache2/conf/extra/jury-images.conf:ro
+      - /tmp/wlxjury-jury-images:/var/www/jury-images
+    ports:
+      - "80"
+
+  mariadb:
+    image: mariadb:10.6
+    environment:
+      MARIADB_DATABASE: wlxjury_test
+      MARIADB_USER: wlxjury_user
+      MARIADB_PASSWORD: wlxjury_password
+      MARIADB_RANDOM_ROOT_PASSWORD: "yes"
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      timeout: 20s
+      retries: 10

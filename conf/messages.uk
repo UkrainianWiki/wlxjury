@@ -177,6 +177,8 @@ files.in.database = Файлів на базі даних
 import.files = Імпортувати файли
 update.monuments = Оновити пам''ятки
 thumbnail.urls = адреси мініатюр
+local.image.cache = Локальний кеш зображень
+download.images.locally = Завантажити зображення локально
 contest = Змагання
 
 mass.import = Масовий імпорт

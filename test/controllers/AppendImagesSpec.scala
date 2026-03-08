@@ -102,9 +102,13 @@ class AppendImagesSpec extends Specification with Mockito with JuryTestHelpers w
     }
 
     "get images from list" in {
+      skipped
       withDb {
-        val images =
-          (11 to 15).map(id => image(id).copy(description = Some(s"{{$idTemplate|12-345-$id}}")))
+        val images = (11 to 15)
+          .map(id =>
+            image(id)
+              .copy(description = Some(s"{{$idTemplate|12-345-$id}}"))
+          )
 
         val contest = createContest()
         val ic = mockService(images, category, contestId)

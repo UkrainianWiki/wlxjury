@@ -139,3 +139,5 @@ select.image = Выбрать изображение
 reject.image = Отбросить изображение
 up.key = Вверх
 down.key = Вниз
+local.image.cache = Локальный кеш изображений
+download.images.locally = Скачать изображения локально

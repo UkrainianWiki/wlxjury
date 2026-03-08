@@ -211,6 +211,8 @@ files.in.database = Files in database
 import.files = Import files
 update.monuments = Update monuments
 thumbnail.urls = thumbnail urls
+local.image.cache = Local image cache
+download.images.locally = Download images locally
 contest = Contest
 
 mass.import = Mass import
