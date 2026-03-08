@@ -132,6 +132,9 @@ object ImageJdbc extends CRUDMapper[Image]
 
   def deleteImage(pageId: Long): Unit = deleteById(pageId)
 
+  def findByFilename(filename: String): Option[Image] =
+    findBy(sqls.eq(column.title, s"File:$filename"))
+
   def findByContestId(contestId: Long): List[Image] =
     ContestJuryJdbc.findById(contestId).map(findByContest).getOrElse(Nil)
 

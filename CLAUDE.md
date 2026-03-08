@@ -18,6 +18,7 @@ Requires environment variables: `WLXJURY_DB_HOST`, `WLXJURY_DB`, `WLXJURY_DB_USE
 
 ### Testing
 ```bash
+sbt test:compile                                      # Compile all tests
 sbt test                                              # Run all tests
 sbt "testOnly db.scalikejdbc.RoundSpec"               # Run a single test class
 sbt "testOnly db.scalikejdbc.*"                       # Run all DB tests
