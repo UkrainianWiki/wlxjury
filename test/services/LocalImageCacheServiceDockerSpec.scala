@@ -76,7 +76,6 @@ class LocalImageCacheServiceDockerSpec extends Specification with CommonsImageFe
           "&useSSL=false&allowPublicKeyRetrieval=true"),
         "db.default.username"            -> "wlxjury_user",
         "db.default.password"            -> "wlxjury_password",
-        "wlxjury.thumbs.host"            -> s"$apacheHost:$apachePort",
         "wlxjury.thumbs.local-path"      -> imagesDir.getAbsolutePath,
         "wlxjury.thumbs.parallelism"     -> "1",
         "wlxjury.thumbs.rate-per-second" -> "5",

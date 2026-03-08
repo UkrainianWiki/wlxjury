@@ -3,14 +3,15 @@ package services
 import com.typesafe.config.ConfigFactory
 import org.apache.pekko.actor.ActorSystem
 import org.apache.pekko.http.scaladsl.Http
-import org.apache.pekko.http.scaladsl.model._
+import org.apache.pekko.http.scaladsl.model.{ContentTypes, HttpEntity, HttpResponse, _}
 import org.apache.pekko.http.scaladsl.model.headers.RawHeader
+import org.apache.pekko.util.ByteString
 import org.intracer.wmua.{Image, ImageUtil}
 import org.specs2.mutable.Specification
 import play.api.Configuration
 
 import java.awt.image.BufferedImage
-import java.io.{ByteArrayOutputStream, File}
+import java.io.{ByteArrayInputStream, ByteArrayOutputStream, File}
 import java.nio.file.Files
 import javax.imageio.ImageIO
 import scala.concurrent.duration._
@@ -28,13 +29,15 @@ class LocalImageCacheServiceSpec extends Specification {
 
   // ── helpers ──────────────────────────────────────────────────────────────
 
-  def mkService(dir: File, maxAttempts: Int = 3): LocalImageCacheService = {
+  def mkService(dir: File, maxAttempts: Int = 3, serverPort: Option[Int] = None): LocalImageCacheService = {
+    val wikiBase = serverPort.map(p => s"http://localhost:$p").getOrElse("https://upload.wikimedia.org")
     val config = Configuration(
       ConfigFactory.parseString(
         s"""wlxjury.thumbs.local-path = "${dir.getAbsolutePath}"
            |wlxjury.thumbs.parallelism = 2
            |wlxjury.thumbs.rate-per-second = 10
            |wlxjury.thumbs.max-attempts = $maxAttempts
+           |wlxjury.thumbs.wiki-base-url = "$wikiBase"
            |""".stripMargin
       )
     )
@@ -188,6 +191,7 @@ class LocalImageCacheServiceSpec extends Specification {
         f.getParentFile.mkdirs()
         f.createNewFile()
       }
+      Await.result(svc.initRegistry(), 10.seconds)
       svc.allSizesCached(img) must beTrue
     }
 
@@ -201,6 +205,7 @@ class LocalImageCacheServiceSpec extends Specification {
         f.getParentFile.mkdirs()
         f.createNewFile()
       }
+      Await.result(svc.initRegistry(), 10.seconds)
       svc.allSizesCached(img) must beFalse
     }
 
@@ -215,6 +220,7 @@ class LocalImageCacheServiceSpec extends Specification {
         f.getParentFile.mkdirs()
         f.createNewFile()
       }
+      Await.result(svc.initRegistry(), 10.seconds)
       // No files for px=400 (heights 375+) – allSizesCached must still be true
       svc.localFile(img, 400).exists() must beFalse
       svc.allSizesCached(img) must beTrue
@@ -474,6 +480,168 @@ class LocalImageCacheServiceSpec extends Specification {
       svc.startDownloadForRound(contestId = 1L, roundId = 8L)
       svc.startDownloadForRound(contestId = 1L, roundId = 8L) // should be no-op
 
+      ok
+    }
+  }
+
+  // ── registry ─────────────────────────────────────────────────────────────
+
+  "registry" should {
+
+    val SW = 4000; val SH = 3000
+    val targetHeights = Seq(120, 180, 240, 250, 375, 500, 1100, 1650)
+    val neededWidths  = targetHeights.map(h => ImageUtil.resizeTo(SW, SH, h)).filter(_ < SW)
+
+    "be empty before any files are saved" in {
+      val tmpDir = Files.createTempDirectory("registry-test").toFile
+      val svc = mkService(tmpDir)
+      Await.result(svc.initRegistry(), 10.seconds)
+      svc.registrySize mustEqual 0
+      tmpDir.delete()
+      ok
+    }
+
+    "contain a file after saveResized writes it" in {
+      val tmpDir = Files.createTempDirectory("registry-save").toFile
+      val svc    = mkService(tmpDir)
+      val img    = mkImage()
+      val src    = ImageIO.read(new ByteArrayInputStream(jpegBytes(800, 600)))
+
+      svc.saveResized(img, src, 800)
+
+      val expectedFile = svc.localFile(img, neededWidths.head)
+      svc.registryContains(expectedFile) must beTrue
+      tmpDir.delete()
+      ok
+    }
+
+    "be populated by initRegistry from existing files on disk" in {
+      val tmpDir = Files.createTempDirectory("registry-init").toFile
+      val svc1   = mkService(tmpDir)
+      val img    = mkImage()
+      val src    = ImageIO.read(new ByteArrayInputStream(jpegBytes(800, 600)))
+      svc1.saveResized(img, src, 800)
+
+      val svc2 = mkService(tmpDir)
+      Await.result(svc2.initRegistry(), 10.seconds)
+
+      val expectedFile = svc2.localFile(img, neededWidths.head)
+      svc2.registryContains(expectedFile) must beTrue
+      tmpDir.delete()
+      ok
+    }
+  }
+
+  // ── fetchAndCacheAll / fileIfCached ──────────────────────────────────────
+
+  "fetchAndCacheAll" should {
+
+    val SW = 4000; val SH = 3000
+    val targetHeights = Seq(120, 180, 240, 250, 375, 500, 1100, 1650)
+    val neededWidths  = targetHeights.map(h => ImageUtil.resizeTo(SW, SH, h)).filter(_ < SW)
+
+    "return JPEG bytes for the requested px" in {
+      val tmpDir = Files.createTempDirectory("fetch-bytes").toFile
+      val img    = mkImage()
+
+      withServer(_ => HttpResponse(entity = HttpEntity(
+        ContentTypes.`application/octet-stream`, ByteString(jpegBytes(800, 600))
+      ))) { port =>
+        val svc   = mkService(tmpDir, serverPort = Some(port))
+        val px    = neededWidths.head
+        val bytes = Await.result(svc.fetchAndCacheAll(img, px), 30.seconds)
+
+        bytes must not be empty
+        ImageIO.read(new ByteArrayInputStream(bytes)) must not(beNull)
+      }
+
+      tmpDir.delete()
+      ok
+    }
+
+    "add all target sizes to the registry after fetching" in {
+      val tmpDir = Files.createTempDirectory("fetch-registry").toFile
+      val img    = mkImage()
+
+      withServer(_ => HttpResponse(entity = HttpEntity(
+        ContentTypes.`application/octet-stream`, ByteString(jpegBytes(800, 600))
+      ))) { port =>
+        val svc = mkService(tmpDir, serverPort = Some(port))
+        val px  = neededWidths.head
+        Await.result(svc.fetchAndCacheAll(img, px), 30.seconds)
+        Thread.sleep(500) // let background save complete
+        neededWidths.foreach { w =>
+          svc.registryContains(svc.localFile(img, w)) must beTrue
+        }
+      }
+
+      tmpDir.delete()
+      ok
+    }
+
+    "skip saving sizes already in registry" in {
+      val tmpDir = Files.createTempDirectory("fetch-skip").toFile
+      val img    = mkImage()
+      val src    = ImageIO.read(new ByteArrayInputStream(jpegBytes(800, 600)))
+
+      withServer(_ => HttpResponse(entity = HttpEntity(
+        ContentTypes.`application/octet-stream`, ByteString(jpegBytes(800, 600))
+      ))) { port =>
+        val svc = mkService(tmpDir, serverPort = Some(port))
+        svc.saveResized(img, src, 800) // pre-cache all sizes into registry
+
+        val bytes = Await.result(svc.fetchAndCacheAll(img, neededWidths.head), 30.seconds)
+        bytes must not be empty
+      }
+
+      tmpDir.delete()
+      ok
+    }
+
+    "return JPEG bytes for fileIfCached when file is in registry" in {
+      val tmpDir = Files.createTempDirectory("file-if-cached").toFile
+      val svc    = mkService(tmpDir)
+      val img    = mkImage()
+      val src    = ImageIO.read(new ByteArrayInputStream(jpegBytes(800, 600)))
+      svc.saveResized(img, src, 800)
+
+      val px   = neededWidths.head
+      val file = svc.fileIfCached(img, px)
+      file must beSome
+      file.get.exists() must beTrue
+
+      tmpDir.delete()
+      ok
+    }
+
+    "return None from fileIfCached when file is not cached" in {
+      val tmpDir = Files.createTempDirectory("file-not-cached").toFile
+      val svc    = mkService(tmpDir)
+      val img    = mkImage()
+
+      svc.fileIfCached(img, neededWidths.head) must beNone
+
+      tmpDir.delete()
+      ok
+    }
+
+    "use the full-image URL when sourcePx >= image.width (small image)" in {
+      // A 100×75 image: resizeTo(100, 75, 1650) = 2200, which exceeds all wikiThumbnailSteps
+      // up to 1920; the next step 3840 >= 100 (image.width), so the full-image URL branch fires.
+      val tmpDir = Files.createTempDirectory("fetch-full-url").toFile
+      val img    = mkImage(w = 100, h = 75)
+
+      withServer(_ => HttpResponse(entity = HttpEntity(
+        ContentTypes.`application/octet-stream`, ByteString(jpegBytes(100, 75))
+      ))) { port =>
+        val svc   = mkService(tmpDir, serverPort = Some(port))
+        val bytes = Await.result(svc.fetchAndCacheAll(img, 100), 30.seconds)
+
+        bytes must not be empty
+        ImageIO.read(new ByteArrayInputStream(bytes)) must not(beNull)
+      }
+
+      tmpDir.delete()
       ok
     }
   }
