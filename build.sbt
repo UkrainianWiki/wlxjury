@@ -19,7 +19,13 @@ lazy val root = identity(
       PlayNettyServer,
       DebianPlugin,
       SystemdPlugin,
-      JavaServerAppPackaging
+      JavaServerAppPackaging,
+      JmhPlugin
+    )
+    .settings(
+      Jmh / sourceDirectory     := (Test / sourceDirectory).value,
+      Jmh / classDirectory      := (Test / classDirectory).value,
+      Jmh / dependencyClasspath := (Test / dependencyClasspath).value
     )
 )
   .disablePlugins(PlayPekkoHttpServer)

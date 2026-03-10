@@ -15,3 +15,5 @@ addSbtPlugin("org.scoverage" % "sbt-scoverage" % "2.1.0")
 addSbtPlugin("org.scoverage" % "sbt-coveralls" % "1.3.11")
 
 addDependencyTreePlugin
+
+addSbtPlugin("pl.project13.scala" % "sbt-jmh" % "0.4.7")
