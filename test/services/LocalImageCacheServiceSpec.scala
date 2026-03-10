@@ -251,6 +251,40 @@ class LocalImageCacheServiceSpec extends Specification {
     }
   }
 
+  // ── cascadeScale ──────────────────────────────────────────────────────────
+
+  "cascadeScale" should {
+
+    val svc = mkService(mkTempDir())
+
+    "produce outputs with the requested widths in order" in {
+      val src = new BufferedImage(2200, 1650, BufferedImage.TYPE_INT_RGB)
+      val widths = Seq(1466, 666, 333)  // already sorted descending
+      val results = svc.cascadeScale(src, widths)
+      results.map(_._1) === widths
+    }
+
+    "produce correct pixel widths" in {
+      val src = new BufferedImage(2200, 1650, BufferedImage.TYPE_INT_RGB)
+      val widths = Seq(1466, 666, 333)
+      val results = svc.cascadeScale(src, widths)
+      results.forall { case (w, img) => img.getWidth == w } must beTrue
+    }
+
+    "never produce an image wider than the previous step" in {
+      val src = new BufferedImage(2200, 1650, BufferedImage.TYPE_INT_RGB)
+      val widths = Seq(1466, 666, 333)
+      val results = svc.cascadeScale(src, widths)
+      val allWidths = src.getWidth +: results.map(_._1)
+      allWidths.zip(allWidths.tail).forall { case (a, b) => b <= a } must beTrue
+    }
+
+    "return empty for empty input" in {
+      val src = new BufferedImage(100, 75, BufferedImage.TYPE_INT_RGB)
+      svc.cascadeScale(src, Seq.empty) must beEmpty
+    }
+  }
+
   // ── saveResized ───────────────────────────────────────────────────────────
 
   "saveResized" should {
@@ -269,6 +303,7 @@ class LocalImageCacheServiceSpec extends Specification {
       val svc = mkService(dir)
       val img = largeImg
       svc.saveResized(img, sourceImg, sourcePx = 2200)
+      Thread.sleep(500)
       val missing = allWidths.filterNot(px => svc.localFile(img, px).exists())
       missing must beEmpty
     }
@@ -278,6 +313,7 @@ class LocalImageCacheServiceSpec extends Specification {
       val svc = mkService(dir)
       val img = largeImg
       svc.saveResized(img, sourceImg, sourcePx = 2200)
+      Thread.sleep(500)
 
       // Use height=250 as a stable test case; compute expected width exactly as the service does
       val px250 = ImageUtil.resizeTo(W, H, 250)
@@ -293,11 +329,13 @@ class LocalImageCacheServiceSpec extends Specification {
       val svc = mkService(dir)
       val img = largeImg
       svc.saveResized(img, sourceImg, sourcePx = 2200)
+      Thread.sleep(500)   // let async write complete before reading lastModified
 
       val file        = svc.localFile(img, 333)
       val modifiedAt  = file.lastModified()
       Thread.sleep(50)
       svc.saveResized(img, sourceImg, sourcePx = 2200)
+      Thread.sleep(200)   // second call skips write (registry claimed); confirm no race
 
       file.lastModified() === modifiedAt
     }
@@ -308,6 +346,7 @@ class LocalImageCacheServiceSpec extends Specification {
       val img = mkImage(filename = "Photo.jpg", w = 400, h = 300) // small image
 
       svc.saveResized(img, new BufferedImage(400, 300, BufferedImage.TYPE_INT_RGB), sourcePx = 400)
+      Thread.sleep(500)
 
       // For 400×300, heights 375+ all produce px=400=image.width → no file
       svc.localFile(img, 400).exists() must beFalse
@@ -322,6 +361,7 @@ class LocalImageCacheServiceSpec extends Specification {
 
       // Download only a 500px source (covers heights 120–375 but not 500 and above)
       svc.saveResized(img, new BufferedImage(500, 375, BufferedImage.TYPE_INT_RGB), sourcePx = 500)
+      Thread.sleep(500)
 
       // 666px > sourcePx=500 → no file
       svc.localFile(img, 666).exists()  must beFalse
@@ -331,6 +371,31 @@ class LocalImageCacheServiceSpec extends Specification {
       svc.localFile(img, 500).exists()  must beTrue
       // 333px < sourcePx → file IS created
       svc.localFile(img, 333).exists()  must beTrue
+    }
+
+    "return Some(img) for the requested px when it is generated" in {
+      val dir = mkTempDir()
+      val svc = mkService(dir)
+      val img = largeImg
+      val result = svc.saveResized(img, sourceImg, sourcePx = 2200, requestedPx = Some(333))
+      // result is synchronous (cascade CPU); no sleep needed
+      result must beSome
+      result.get.getWidth === 333
+    }
+
+    "return None when requestedPx exceeds sourcePx" in {
+      val dir = mkTempDir()
+      val svc = mkService(dir)
+      val img = largeImg
+      val result = svc.saveResized(img, sourceImg, sourcePx = 500, requestedPx = Some(1466))
+      result must beNone
+    }
+
+    "return None when requestedPx is absent (default)" in {
+      val dir = mkTempDir()
+      val svc = mkService(dir)
+      val img = largeImg
+      svc.saveResized(img, sourceImg, sourcePx = 2200) must beNone
     }
   }
 
@@ -394,6 +459,19 @@ class LocalImageCacheServiceSpec extends Specification {
         result must beNone
         requestsSeen.get() === 1
       }
+    }
+
+    "download a response larger than the default 16 MB Pekko HTTP limit" in {
+      // Pekko HTTP's parser wraps the response entity with withSizeLimit(max-content-length).
+      // Simulate that: create a 16 MB + 1 byte entity pre-limited to 16 MB.
+      val largeBytes = Array.fill(16 * 1024 * 1024 + 1)(42.toByte)
+      val limitedEntity = HttpEntity(ContentTypes.`application/octet-stream`, ByteString(largeBytes))
+
+      val result = Await.result(
+        limitedEntity.withSizeLimit(Long.MaxValue).toStrict(10.seconds),
+        15.seconds
+      )
+      result.data.length === largeBytes.length
     }
 
     "propagate a connection-refused failure as a failed Future" in {
@@ -521,6 +599,7 @@ class LocalImageCacheServiceSpec extends Specification {
       val img    = mkImage()
       val src    = ImageIO.read(new ByteArrayInputStream(jpegBytes(800, 600)))
       svc1.saveResized(img, src, 800)
+      Thread.sleep(500)   // let async write land before initRegistry scans disk
 
       val svc2 = mkService(tmpDir)
       Await.result(svc2.initRegistry(), 10.seconds)
@@ -604,6 +683,7 @@ class LocalImageCacheServiceSpec extends Specification {
       val img    = mkImage()
       val src    = ImageIO.read(new ByteArrayInputStream(jpegBytes(800, 600)))
       svc.saveResized(img, src, 800)
+      Thread.sleep(500)   // let async write land before checking file.exists()
 
       val px   = neededWidths.head
       val file = svc.fileIfCached(img, px)
