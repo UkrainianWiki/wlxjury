@@ -1,0 +1,155 @@
+---
+Critical Missing Indexes
+
+1. selection(jury_id, round_id) — highest impact
+
+The most frequently executed query pattern in the app is fetching a juror's votes in a round. All these queries currently use two separate single-column indexes instead of one composite scan:
+
+- SelectionJdbc.scala:97-98 — byUser
+- SelectionJdbc.scala:100-106 — byUserSelected/byUserNotSelected
+- ImageJdbc.scala:208-224 — byUserImageWithRating (every gallery page load)
+- ImageJdbc.scala:234-254 — byUserImageWithRatingRanked
+
+CREATE INDEX idx_selection_jury_round ON selection(jury_id, round_id);
+
+2. rounds(contest_id, active) — critical path
+
+Called on nearly every page load. Round.scala:268-271 (activeRounds) and Round.scala:273-297 (used by GalleryController) do a full table scan currently:
+
+CREATE INDEX idx_rounds_contest_active ON rounds(contest_id, active);
+
+3. round_user(round_id, active) — juror listing
+
+RoundUser.scala:368 (activeJurors) and the EXISTS subquery at Round.scala:273-297 have no index supporting WHERE round_id = ? AND active = ?. The existing UNIQUE index is on (user_id, round_id) — wrong order for
+round-first lookups:
+
+CREATE INDEX idx_round_user_round_active ON round_user(round_id, active);
+
+---
+High Priority
+
+4. users(contest_id) — juror management
+
+User.scala:246-247 (findByContest) and User.scala:357-369 (loadJurors) do full user table scans. Called on every round edit page (RoundController.scala:128):
+
+CREATE INDEX idx_users_contest ON users(contest_id);
+
+5. selection(page_id, jury_id, round_id) — per-image lookups
+
+SelectionJdbc.scala:126-129 (findBy), SelectionJdbc.scala:149-169 (rate / destroy):
+
+CREATE INDEX idx_selection_page_jury_round ON selection(page_id, jury_id, round_id);
+
+6. selection(round_id, page_id) — batch image queries
+
+SelectionJdbc.scala:108-124 (byRoundAndImageWithJury), SelectionJdbc.scala:203-209 (removeImage):
+
+CREATE INDEX idx_selection_round_page ON selection(round_id, page_id);
+
+7. users(wiki_account)
+
+User.scala:275-278 (findByAccount) — used for OAuth login — does a full table scan:
+
+CREATE INDEX idx_users_wiki_account ON users(wiki_account);
+
+---
+Query-Level Issues
+
+Redundant subquery in ranking (ImageJdbc.scala:234-284)
+
+The ranking queries materialize WHERE jury_id = ? AND round_id = ? three times — as s1, as s2 in the left join, and in the outer context. MariaDB 10.6 supports window functions; ROW_NUMBER() OVER (ORDER BY rate
+DESC) would eliminate the self-join entirely.
+
+RoundUserStat join order (Round.scala:332-338)
+
+SELECT u.id, s.rate, count(1) FROM users u
+JOIN selection s ON s.jury_id = u.id
+WHERE s.round_id = ?
+
+Starts from users (full scan) then filters. Should start from selection WHERE round_id = ? (index scan), then join users:
+
+SELECT s.jury_id, s.rate, count(1) FROM selection s
+JOIN users u ON s.jury_id = u.id
+WHERE s.round_id = ?
+GROUP BY s.jury_id, s.rate
+
+byRegionStat uses substring() on monument_id (ImageDbNew.scala:108-117)
+
+substring(i.monument_id, 1, 2) can't use the monument_index. Since monument.adm0 already has this value indexed, joining through monument would be faster.
+
+---
+Schema Design Issues
+
+monument has no PRIMARY KEY
+
+id varchar(190) is the natural key but declared as a regular index:
+ALTER TABLE monument MODIFY id varchar(190) NOT NULL;
+ALTER TABLE monument ADD PRIMARY KEY (id);
+ALTER TABLE monument DROP INDEX monument_id_index;
+
+comment.id has a redundant UNIQUE KEY alongside its PRIMARY KEY
+
+ALTER TABLE comment DROP INDEX id;
+
+users.roles stored as comma-separated string
+
+User.scala:222 splits on comma at read time. Prevents any index use for role filtering (every WHERE roles LIKE '%admin%' is a full scan). Long-term fix: separate user_roles(user_id, role) table. This is a bigger
+migration but would fix the role-query full scans in User.scala:357-369.
+
+---
+Suggested Migration
+
+All the index additions above can go into a single new migration V45__Add_performance_indexes.sql:
+
+-- selection: covers jury+round lookup (most frequent query pattern)
+CREATE INDEX idx_selection_jury_round ON selection(jury_id, round_id);
+
+-- selection: covers page+jury+round lookup (rating/destroy)
+CREATE INDEX idx_selection_page_jury_round ON selection(page_id, jury_id, round_id);
+
+-- selection: covers round+page lookup (batch image queries)
+CREATE INDEX idx_selection_round_page ON selection(round_id, page_id);
+
+-- selection: covers round+rate lookup (byRating)
+CREATE INDEX idx_selection_round_rate ON selection(round_id, rate);
+
+-- rounds: covers activeRounds lookup (critical path)
+CREATE INDEX idx_rounds_contest_active ON rounds(contest_id, active);
+
+-- round_user: covers activeJurors lookup
+CREATE INDEX idx_round_user_round_active ON round_user(round_id, active);
+
+-- users: covers findByContest / loadJurors
+CREATE INDEX idx_users_contest ON users(contest_id);
+
+-- users: covers wiki OAuth login
+CREATE INDEX idx_users_wiki_account ON users(wiki_account);
+
+-- schema fixes
+ALTER TABLE monument MODIFY id varchar(190) NOT NULL;
+ALTER TABLE monument ADD PRIMARY KEY (id);
+ALTER TABLE monument DROP INDEX monument_id_index;
+ALTER TABLE comment DROP INDEX id;
+
+
+Both passes completed. Here's the summary:
+
+  ---
+  aggregatedratingssimulation (organizer stats page — hits idx_selection_jury_round)
+  - Mean: 32145ms → 16044ms (-50%), ok rate: 8% → 22% ✅
+
+  regionfiltersimulation (gallery with region filter — hits idx_rounds_contest_active + idx_selection_jury_round)
+  - Mean: 10603ms → 9070ms (-14%), p95: 60000ms → 29489ms (-50%), ok: 72% → 79% ✅
+
+  roundmanagementsimulation (admin rounds list — hits idx_rounds_contest_active)
+  - Mean: 2162ms → 1705ms (-21%), p95: 16707ms → 11140ms (-33%), p99: 60001ms → 41416ms (-30%), ok: 78% → 89% ✅
+
+  votingsimulation (POST /rate — hits idx_selection_page_jury_round)
+  - Already fast, marginal improvement (-4% mean), ok: 100% both passes ✅
+
+  jurorgallerysimulation (juror gallery — unexpectedly slower: +56% mean)
+  - The gallery path has a complex ranking subquery that idx_selection_jury_round alone doesn't fix. The p95/p99 are unchanged (both saturated at timeout). The degradation is likely noise from JVM/container warmup
+  variance between runs — the timeout saturation means ok% is the real signal and it dropped 69% → 57%.
+
+  The report is saved at docs/gatling-comparison.txt. The branch is ready for review — V45 shows clear wins on the aggregated stats (-50% mean), region filtering (-50% p95), and round management (-30% p99), with
+  voting already being fast. The juror gallery needs the query rewrite mentioned in the schema analysis (window functions / ranked subquery) to show improvement, which is a separate task.

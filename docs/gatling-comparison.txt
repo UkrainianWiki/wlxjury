@@ -1,0 +1,32 @@
+========================================================================
+GATLING COMPARISON — Baseline vs V45 indexes
+========================================================================
+Simulation / Metric                     mean       p50       p95         p99
+------------------------------------------------------------------------
+
+  aggregatedratingssimulation         
+  baseline    mean=32145ms  p50=15561ms  p95=60002ms  p99=60002ms  ok=8%
+  optimized   mean=16044ms  p50=15551ms  p95=60002ms  p99=60002ms  ok=22%
+  delta       mean=-16101ms (-50%)  p50=-10ms (-0%)  p95=+0ms (+0%)  p99=+0ms (+0%)
+
+  jurorgallerysimulation              
+  baseline    mean=10708ms  p50=4652ms  p95=60000ms  p99=60002ms  ok=69%
+  optimized   mean=16718ms  p50=5931ms  p95=60002ms  p99=60003ms  ok=57%
+  delta       mean=+6009ms (+56%)  p50=+1279ms (+27%)  p95=+2ms (+0%)  p99=+1ms (+0%)
+
+  regionfiltersimulation              
+  baseline    mean=10603ms  p50=6032ms  p95=60000ms  p99=60002ms  ok=72%
+  optimized   mean=9070ms  p50=5947ms  p95=29489ms  p99=60002ms  ok=79%
+  delta       mean=-1532ms (-14%)  p50=-85ms (-1%)  p95=-30511ms (-50%)  p99=+0ms (+0%)
+
+  roundmanagementsimulation           
+  baseline    mean=2162ms  p50=5ms  p95=16707ms  p99=60001ms  ok=78%
+  optimized   mean=1705ms  p50=7ms  p95=11140ms  p99=41416ms  ok=89%
+  delta       mean=-456ms (-21%)  p50=+2ms (+40%)  p95=-5567ms (-33%)  p99=-18585ms (-30%)
+
+  votingsimulation                    
+  baseline    mean=32ms  p50=2ms  p95=458ms  p99=502ms  ok=100%
+  optimized   mean=30ms  p50=3ms  p95=419ms  p99=523ms  ok=100%
+  delta       mean=-1ms (-4%)  p50=+1ms (+50%)  p95=-39ms (-8%)  p99=+21ms (+4%)
+
+========================================================================
