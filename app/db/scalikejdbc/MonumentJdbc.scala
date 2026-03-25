@@ -3,7 +3,7 @@ package db.scalikejdbc
 import org.scalawiki.wlx.dto.Monument
 import scalikejdbc._
 
-object MonumentJdbc extends SQLSyntaxSupport[Monument]{
+object MonumentJdbc extends SQLSyntaxSupport[Monument] {
 
   override val tableName = "monument"
 
@@ -28,7 +28,7 @@ object MonumentJdbc extends SQLSyntaxSupport[Monument]{
     photo = rs.stringOpt(c.photo),
     gallery = rs.stringOpt(c.gallery),
     resolution = rs.stringOpt(c.resolution),
-    page =  rs.string(c.page),
+    page = rs.string(c.page),
     contest = rs.longOpt(c.contest)
   )
 
@@ -40,44 +40,51 @@ object MonumentJdbc extends SQLSyntaxSupport[Monument]{
   def batchInsert(monuments: Seq[Monument]): Unit = {
     val column = MonumentJdbc.column
     DB localTx { implicit session =>
-      val batchParams: Seq[Seq[Any]] = monuments.map(m => Seq(
-        m.id,
-        m.name,
-        m.description,
+      val batchParams: Seq[Seq[Any]] = monuments.map(m =>
+        Seq(
+          m.id,
+          m.name.take(512),
+          m.description,
 //        i.article,
-        m.year,
-        m.city,
-        m.place,
-      m.typ,
-      m.subType,
-        m.photo,
-        m.gallery,
-        m.page,
-        m.contest,
-        m.id.split("-").headOption.map(_.take(3))
-      ))
-      withSQL {
-        replace.into(MonumentJdbc).namedValues(
-          column.id -> sqls.?,
-          column.name -> sqls.?,
-          column.description -> sqls.?,
-          column.year -> sqls.?,
-          column.city -> sqls.?,
-          column.place -> sqls.?,
-          column.typ -> sqls.?,
-          column.subType -> sqls.?,
-          column.photo -> sqls.?,
-          column.gallery -> sqls.?,
-          column.page -> sqls.?,
-          column.contest ->  sqls.?,
-          sqls"adm0" -> sqls.?
+          m.year.map(_.take(255)),
+          m.city.map(_.take(255)),
+          m.place,
+          m.typ,
+          m.subType,
+          m.photo,
+          m.gallery,
+          m.page,
+          m.contest,
+          m.id.split("-").headOption.map(_.take(3))
         )
+      )
+      withSQL {
+        replace
+          .into(MonumentJdbc)
+          .namedValues(
+            column.id -> sqls.?,
+            column.name -> sqls.?,
+            column.description -> sqls.?,
+            column.year -> sqls.?,
+            column.city -> sqls.?,
+            column.place -> sqls.?,
+            column.typ -> sqls.?,
+            column.subType -> sqls.?,
+            column.photo -> sqls.?,
+            column.gallery -> sqls.?,
+            column.page -> sqls.?,
+            column.contest -> sqls.?,
+            sqls"adm0" -> sqls.?
+          )
       }.batch(batchParams: _*).apply()
     }
   }
 
-  def findAll(limit: Option[Int] = None)(implicit session: DBSession = autoSession): List[Monument] = withSQL {
-    val q: PagingSQLBuilder[List[Monument]] = select.from(MonumentJdbc as c)
+  def findAll(
+      limit: Option[Int] = None
+  )(implicit session: DBSession = autoSession): List[Monument] = withSQL {
+    val q: PagingSQLBuilder[List[Monument]] = select
+      .from(MonumentJdbc as c)
       //      .where.append(isNotDeleted)
       .orderBy(c.id)
 
@@ -85,7 +92,7 @@ object MonumentJdbc extends SQLSyntaxSupport[Monument]{
   }.map(MonumentJdbc(c)).list()
 
   def find(id: String)(implicit session: DBSession = autoSession): Option[Monument] = withSQL {
-    select.from(MonumentJdbc as c).where.eq(c.id, id) //.and.append(isNotDeleted)
+    select.from(MonumentJdbc as c).where.eq(c.id, id) // .and.append(isNotDeleted)
   }.map(MonumentJdbc(c)).single()
 
 }
