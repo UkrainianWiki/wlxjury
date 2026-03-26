@@ -234,14 +234,18 @@ object ImageJdbc extends CRUDMapper[Image]
       roundId: Long,
       pageSize: Int = Int.MaxValue,
       offset: Int = 0
-  ): Seq[ImageWithRating] =
-    sql"""SELECT count(s2.page_id) + 1 AS rank, ${i.result.*}, ${s1.result.*}
+  )(implicit session: DBSession = AutoSession): Seq[ImageWithRating] =
+    sql"""SELECT ranked.rn AS rank, ${i.result.*}, ${s1.result.*}
     FROM images i
-    JOIN (SELECT * FROM selection s WHERE s.jury_id = $userId  AND s.round_id = $roundId) AS s1
-    ON i.page_id = s1.page_id
-    LEFT JOIN (SELECT * FROM selection s WHERE s.jury_id = $userId AND s.round_id = $roundId) AS s2
-    ON s1.rate < s2.rate
-    GROUP BY s1.page_id
+    JOIN (
+      SELECT s.*,
+             ROW_NUMBER() OVER (ORDER BY s.rate DESC) AS rn
+      FROM selection s
+      WHERE s.jury_id = $userId AND s.round_id = $roundId
+    ) AS ranked ON i.page_id = ranked.page_id
+    JOIN selection AS s1 ON s1.page_id = ranked.page_id
+                        AND s1.jury_id = $userId
+                        AND s1.round_id = $roundId
     ORDER BY rank ASC
     LIMIT $pageSize
     OFFSET $offset"""
@@ -256,23 +260,21 @@ object ImageJdbc extends CRUDMapper[Image]
       roundId: Long,
       pageSize: Int = Int.MaxValue,
       offset: Int = 0
-  ): Seq[ImageWithRating] =
-    sql"""SELECT s1.rank1, s2.rank2, ${i.result.*}, ${s1.result.*}
-          FROM images i JOIN
-            (SELECT t1.*, count(t2.page_id) + 1 AS rank1
-            FROM (SELECT * FROM selection s WHERE  s.jury_id = $userId AND s.round_id = $roundId) AS t1
-            LEFT JOIN (SELECT * FROM selection s WHERE s.jury_id = $userId AND s.round_id = $roundId) AS t2
-              ON  t1.rate < t2.rate
-          GROUP BY t1.page_id) s1
-              ON  i.page_id = s1.page_id
-          JOIN
-              (SELECT t1.page_id, count(t2.page_id) AS rank2
-                 FROM (SELECT * FROM selection s WHERE  s.jury_id = $userId AND s.round_id = $roundId) AS t1
-                 JOIN (SELECT * FROM selection s WHERE s.jury_id = $userId AND s.round_id = $roundId) AS t2
-                   ON  t1.rate <= t2.rate
-               GROUP BY t1.page_id) s2
-            ON s1.page_id = s2.page_id
-            ORDER BY rank1 ASC
+  )(implicit session: DBSession = AutoSession): Seq[ImageWithRating] =
+    sql"""WITH ranked AS (
+            SELECT s.*,
+                   ROW_NUMBER() OVER (ORDER BY s.rate DESC) AS rank1,
+                   ROW_NUMBER() OVER (ORDER BY s.rate DESC) AS rank2
+            FROM selection s
+            WHERE s.jury_id = $userId AND s.round_id = $roundId
+          )
+          SELECT ranked.rank1, ranked.rank2, ${i.result.*}, ${s1.result.*}
+          FROM images i
+          JOIN ranked ON i.page_id = ranked.page_id
+          JOIN selection AS s1 ON s1.page_id = ranked.page_id
+                              AND s1.jury_id = $userId
+                              AND s1.round_id = $roundId
+          ORDER BY rank1 ASC
           LIMIT $pageSize
           OFFSET $offset"""
       .map(rs => (rs.int(1), rs.int(2), ImageJdbc(i)(rs), SelectionJdbc(s1)(rs)))
