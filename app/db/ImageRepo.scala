@@ -1,10 +1,11 @@
 package db
 
 import org.intracer.wmua.{ContestJury, Image, ImageWithRating}
+import _root_.scalikejdbc.{AutoSession, DBSession}
 
 trait ImageRepo {
 
-  def findByContestId(contestId: Long): List[Image]
+  def findByContestId(contestId: Long)(implicit session: DBSession = AutoSession): List[Image]
 
   def byRoundMerged(
       roundId: Long,

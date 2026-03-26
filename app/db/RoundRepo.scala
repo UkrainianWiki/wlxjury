@@ -1,6 +1,6 @@
 package db
 
-import _root_.scalikejdbc.DBSession
+import _root_.scalikejdbc.{AutoSession, DBSession}
 import db.scalikejdbc.Round
 import db.scalikejdbc.Round.RoundStatRow
 import db.scalikejdbc.User.autoSession
@@ -9,7 +9,7 @@ trait RoundRepo {
 
   def countByContest(contestId: Long): Long
 
-  def create(round: Round): Round
+  def create(round: Round)(implicit session: DBSession = AutoSession): Round
 
   def findByContest(contest: Long): Seq[Round]
 

@@ -1,12 +1,12 @@
 package controllers
 
-import db.scalikejdbc.{TestDb, User}
+import db.scalikejdbc.{PlayTestDb, User}
 import org.intracer.wmua.ContestJury
 import org.specs2.mock.Mockito
 import org.specs2.mutable.Specification
 import services.{SMTPOrWikiMail, UserService}
 
-class UserControllerSpec extends Specification with TestDb with Mockito {
+class UserControllerSpec extends Specification with PlayTestDb with Mockito {
 
   val sender = User("Admin User", "email@server.com", None, contestId = None)
 
