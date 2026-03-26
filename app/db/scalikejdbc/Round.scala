@@ -330,10 +330,10 @@ object Round extends RoundRepo with CRUDMapper[Round] {
   case class RoundStatRow(juror: Long, rate: Int, count: Int)
 
   def roundUserStat(roundId: Long): Seq[RoundStatRow] =
-    sql"""SELECT u.id, s.rate, count(1) FROM users u
-      JOIN selection s ON s.jury_id = u.id
+    sql"""SELECT s.jury_id, s.rate, count(1) FROM selection s
+      JOIN users u ON u.id = s.jury_id
     WHERE s.round_id = $roundId
-    GROUP BY u.id, s.rate"""
+    GROUP BY s.jury_id, s.rate"""
       .map(rs => RoundStatRow(rs.int(1), rs.int(2), rs.int(3)))
       .list()
 

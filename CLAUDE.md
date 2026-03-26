@@ -72,7 +72,27 @@ Session-based auth via Play session cookie (username stored as `"username"` key)
 
 ### Database Tests
 
-DB integration tests in `test/db/scalikejdbc/` extend the `TestDb` trait, which spins up a temporary containerized MariaDB via Testcontainers. Tests call `withDb { ... }` or `testDbApp { app => ... }`. DAOs are available as `contestDao`, `imageDao`, `roundDao`, `selectionDao`, `userDao`.
+One MariaDB Testcontainer per JVM, shared across all specs via `SharedTestDb` (lazy singleton). One Play app per JVM via `SharedPlayApp` (reuses the same container). DAOs available as `contestDao`, `imageDao`, `roundDao`, `selectionDao`, `userDao`.
+
+**Isolation strategy — choose based on whether service code uses `autoSession`:**
+
+| Scenario | Approach |
+|---|---|
+| Pure DAO tests (session explicitly threaded) | `new AutoRollbackDb { }` (specs2) or `dbTest { session => }` (`AutoRollbackMunitDb`) |
+| Service/controller tests (`autoSession` internally) | `BeforeAll` + `BeforeEach(SharedTestDb.truncateAll())` |
+| Tests needing a running Play app | extend `PlayTestDb`, call `testDbApp { implicit app => }` |
+| Tests needing custom Play config | add `implicit val cfg: Map[String, String] = Map(...)` before `testDbApp` call — starts a fresh per-test app |
+
+`autoSession` bypasses any outer AutoRollback transaction and reads only committed data — this is why service-layer tests (`Secured.userFromRequest`, `GalleryService`, `Round.addUsers`) must use truncation not AutoRollback.
+
+**Pool lifecycle:** `running(app)` (Play test helper) stops Play and calls `ConnectionPool.closeAll()`. Any spec that uses `running(app)` must call `SharedTestDb.reregisterDefault()` in a `finally` block afterward.
+
+### ScalikeJDBC Patterns
+
+- **`CRUDMapper`**: DAO classes extend `CRUDMapper[Entity]` and `SQLSyntaxSupport[Entity]`. `create(entity)`, `findById(id)`, `findAll()`, `save(entity)`, `destroy(entity)`.
+- **`autoSession`**: Many DAO methods default to `autoSession` — each call opens+closes its own connection. Service-layer code calling these cannot participate in an outer test transaction.
+- **`hasManyThrough`**: Lazy val on the companion object (e.g., `Round.usersRef`) — must be accessed once before `round.users` is populated. `SharedTestDb.initialized` does this automatically.
+- **Source:** GitHub: https://github.com/scalikejdbc/scalikejdbc — local jars: `~/.ivy2/cache/org.scalikejdbc/scalikejdbc_2.13/srcs/`
 
 ### REST API
 

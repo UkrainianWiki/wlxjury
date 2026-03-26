@@ -17,6 +17,7 @@ trait TestDb {
 
   val contestDao: ContestJuryJdbc.type = ContestJuryJdbc
   val imageDao: ImageJdbc.type         = ImageJdbc
+  val monumentDao: MonumentJdbc.type   = MonumentJdbc
   val roundDao: Round.type             = Round
   val selectionDao: SelectionJdbc.type = SelectionJdbc
   val userDao: User.type               = User

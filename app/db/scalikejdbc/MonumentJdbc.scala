@@ -37,47 +37,45 @@ object MonumentJdbc extends SQLSyntaxSupport[Monument] {
       InsertSQLBuilder(sqls"replace into ${support.table}")
   }
 
-  def batchInsert(monuments: Seq[Monument]): Unit = {
+  def batchInsert(monuments: Seq[Monument])(implicit session: DBSession = AutoSession): Unit = {
     val column = MonumentJdbc.column
-    DB localTx { implicit session =>
-      val batchParams: Seq[Seq[Any]] = monuments.map(m =>
-        Seq(
-          m.id,
-          m.name.take(512),
-          m.description,
-//        i.article,
-          m.year.map(_.take(255)),
-          m.city.map(_.take(255)),
-          m.place,
-          m.typ,
-          m.subType,
-          m.photo,
-          m.gallery,
-          m.page,
-          m.contest,
-          m.id.split("-").headOption.map(_.take(3))
-        )
+    val batchParams: Seq[Seq[Any]] = monuments.map(m =>
+      Seq(
+        m.id,
+        m.name.take(512),
+        m.description,
+//      i.article,
+        m.year.map(_.take(255)),
+        m.city.map(_.take(255)),
+        m.place,
+        m.typ,
+        m.subType,
+        m.photo,
+        m.gallery,
+        m.page,
+        m.contest,
+        m.id.split("-").headOption.map(_.take(3))
       )
-      withSQL {
-        replace
-          .into(MonumentJdbc)
-          .namedValues(
-            column.id -> sqls.?,
-            column.name -> sqls.?,
-            column.description -> sqls.?,
-            column.year -> sqls.?,
-            column.city -> sqls.?,
-            column.place -> sqls.?,
-            column.typ -> sqls.?,
-            column.subType -> sqls.?,
-            column.photo -> sqls.?,
-            column.gallery -> sqls.?,
-            column.page -> sqls.?,
-            column.contest -> sqls.?,
-            sqls"adm0" -> sqls.?
-          )
-      }.batch(batchParams: _*).apply()
-    }
+    )
+    withSQL {
+      replace
+        .into(MonumentJdbc)
+        .namedValues(
+          column.id -> sqls.?,
+          column.name -> sqls.?,
+          column.description -> sqls.?,
+          column.year -> sqls.?,
+          column.city -> sqls.?,
+          column.place -> sqls.?,
+          column.typ -> sqls.?,
+          column.subType -> sqls.?,
+          column.photo -> sqls.?,
+          column.gallery -> sqls.?,
+          column.page -> sqls.?,
+          column.contest -> sqls.?,
+          sqls"adm0" -> sqls.?
+        )
+    }.batch(batchParams: _*).apply()
   }
 
   def findAll(
