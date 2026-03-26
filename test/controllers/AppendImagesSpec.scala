@@ -1,20 +1,25 @@
 package controllers
 
-import db.scalikejdbc.TestDb
+import db.scalikejdbc.{SharedTestDb, TestDb}
 import org.intracer.wmua.{Image, JuryTestHelpers}
 import org.scalawiki.MwBot
 import org.scalawiki.dto.{Namespace, Page, Revision}
 import org.scalawiki.query.SinglePageQuery
 import org.specs2.mock.Mockito
 import org.specs2.mutable.Specification
+import org.specs2.specification.{BeforeAll, BeforeEach}
 import services.{ImageService, MonumentService}
 
 import scala.concurrent.{ExecutionContext, Future}
 
-class AppendImagesSpec extends Specification with Mockito with JuryTestHelpers with TestDb {
+class AppendImagesSpec extends Specification with Mockito with JuryTestHelpers with TestDb
+    with BeforeAll with BeforeEach {
 
   sequential
   stopOnFail
+
+  override def beforeAll(): Unit = SharedTestDb.init()
+  override protected def before: Any = SharedTestDb.truncateAll()
 
   implicit val ec: ExecutionContext = ExecutionContext.global
 
@@ -41,165 +46,149 @@ class AppendImagesSpec extends Specification with Mockito with JuryTestHelpers w
     }
 
     "get images empty" in {
-      withDb {
-        val images = Nil
-        val ic = mockService(images, category, contestId)
-        val contest = createContest()
+      val images = Nil
+      val ic = mockService(images, category, contestId)
+      val contest = createContest()
 
-        ic.appendImages(category, "", contest)
+      ic.appendImages(category, "", contest)
 
-        imageDao.findByContest(contest) === images
-      }
+      imageDao.findByContest(contest) === images
     }
 
     "get one image with text" in {
-      withDb {
-        val images = Seq(image(id = 11).copy(description = Some("descr"), monumentId = None))
-        val contest = createContest(Some("NaturalMonument"))
+      val images = Seq(image(id = 11).copy(description = Some("descr"), monumentId = None))
+      val contest = createContest(Some("NaturalMonument"))
 
-        val ic = mockService(images, category, contestId)
-        ic.appendImages(category, "", contest)
+      val ic = mockService(images, category, contestId)
+      ic.appendImages(category, "", contest)
 
-        val contestWithCategory = contestDao.findById(contest.getId).get
-        eventually {
-          imageDao.findByContest(contestWithCategory) === images
-        }
+      val contestWithCategory = contestDao.findById(contest.getId).get
+      eventually {
+        imageDao.findByContest(contestWithCategory) === images
       }
     }
 
     "get one image with descr and monumentId" in {
-      withDb {
-        val imageId = 11
-        val descr = s"descr. {{$idTemplate|12-345-$imageId}}"
-        val images = Seq(image(id = 11).copy(description = Some(descr)))
+      val imageId = 11
+      val descr = s"descr. {{$idTemplate|12-345-$imageId}}"
+      val images = Seq(image(id = 11).copy(description = Some(descr)))
 
-        val contest = createContest(Some(idTemplate))
+      val contest = createContest(Some(idTemplate))
 
-        val ic = mockService(images, category, contestId)
-        ic.appendImages(category, "", contest)
+      val ic = mockService(images, category, contestId)
+      ic.appendImages(category, "", contest)
 
-        val contestWithCategory = contestDao.findById(contest.getId).get
-        eventually {
-          imageDao.findByContest(contestWithCategory) === images
-        }
+      val contestWithCategory = contestDao.findById(contest.getId).get
+      eventually {
+        imageDao.findByContest(contestWithCategory) === images
       }
     }
 
     "get several images image with descr and monumentId" in {
-      withDb {
-        val images =
-          (11 to 15).map(id => image(id).copy(description = Some(s"{{$idTemplate|12-345-$id}}")))
-        val contest = createContest(Some(idTemplate))
+      val images =
+        (11 to 15).map(id => image(id).copy(description = Some(s"{{$idTemplate|12-345-$id}}")))
+      val contest = createContest(Some(idTemplate))
 
-        val ic = mockService(images, category, contestId)
-        ic.appendImages(category, "", contest)
+      val ic = mockService(images, category, contestId)
+      ic.appendImages(category, "", contest)
 
-        val contestWithCategory = contestDao.findById(contest.getId).get
-        eventually {
-          imageDao.findByContest(contestWithCategory) === images
-        }
+      val contestWithCategory = contestDao.findById(contest.getId).get
+      eventually {
+        imageDao.findByContest(contestWithCategory) === images
       }
     }
 
     "get images from list" in {
       skipped
-      withDb {
-        val images = (11 to 15)
-          .map(id =>
-            image(id)
-              .copy(description = Some(s"{{$idTemplate|12-345-$id}}"))
-          )
+      val images = (11 to 15)
+        .map(id =>
+          image(id)
+            .copy(description = Some(s"{{$idTemplate|12-345-$id}}"))
+        )
 
-        val contest = createContest()
-        val ic = mockService(images, category, contestId)
-        val imageList = images.map(_.title).mkString(System.lineSeparator)
-        ic.appendImages("", imageList, contest)
+      val contest = createContest()
+      val ic = mockService(images, category, contestId)
+      val imageList = images.map(_.title).mkString(System.lineSeparator)
+      ic.appendImages("", imageList, contest)
 
-        val contestWithCategory = contestDao.findById(contest.getId).get
-        eventually {
-          imageDao.findByContest(contestWithCategory) === images
-        }
+      val contestWithCategory = contestDao.findById(contest.getId).get
+      eventually {
+        imageDao.findByContest(contestWithCategory) === images
       }
     }
 
     "update images" in {
-      withDb {
-        val images1 = (11 to 15).map(id =>
-          image(id).copy(
-            description = Some(s"{{$idTemplate|12-345-$id}}"),
-            monumentId = Some(s"12-345-$id")
-          )
+      val images1 = (11 to 15).map(id =>
+        image(id).copy(
+          description = Some(s"{{$idTemplate|12-345-$id}}"),
+          monumentId = Some(s"12-345-$id")
         )
-        val images2 = (11 to 15).map(id =>
-          image(id).copy(
-            description = Some(s"{{$idTemplate|22-345-$id}}"),
-            monumentId = Some(s"22-345-$id")
-          )
+      )
+      val images2 = (11 to 15).map(id =>
+        image(id).copy(
+          description = Some(s"{{$idTemplate|22-345-$id}}"),
+          monumentId = Some(s"22-345-$id")
         )
+      )
 
-        val contest = createContest(Some(idTemplate))
+      val contest = createContest(Some(idTemplate))
 
-        val ic = mockService(images1, category, contestId)
-        ic.appendImages(category, "", contest)
+      val ic = mockService(images1, category, contestId)
+      ic.appendImages(category, "", contest)
 
-        val contestWithCategory = contestDao.findById(contest.getId).get
-        eventually {
-          imageDao.findByContest(contestWithCategory) === images1
-        }
+      val contestWithCategory = contestDao.findById(contest.getId).get
+      eventually {
+        imageDao.findByContest(contestWithCategory) === images1
+      }
 
-        val ic2 = mockService(images2, category, contestId)
-        ic2.appendImages(category, "", contestWithCategory)
-        eventually {
-          imageDao.findByContest(contestWithCategory) === images2
-        }
+      val ic2 = mockService(images2, category, contestId)
+      ic2.appendImages(category, "", contestWithCategory)
+      eventually {
+        imageDao.findByContest(contestWithCategory) === images2
       }
     }
 
     "shared images different categories" in {
-      withDb {
-        val images =
-          (11 to 15).map(id => image(id).copy(description = Some(s"{{$idTemplate|12-345-$id}}")))
+      val images =
+        (11 to 15).map(id => image(id).copy(description = Some(s"{{$idTemplate|12-345-$id}}")))
 
-        val contest1 = createContest(
-          id = Some(contestId + 1),
-          images = Some(category + 1),
-          monumentIdTemplate = Some(idTemplate)
-        )
-        val contest2 = createContest(
-          id = Some(contestId + 2),
-          images = Some(category + 2),
-          monumentIdTemplate = Some(idTemplate)
-        )
+      val contest1 = createContest(
+        id = Some(contestId + 1),
+        images = Some(category + 1),
+        monumentIdTemplate = Some(idTemplate)
+      )
+      val contest2 = createContest(
+        id = Some(contestId + 2),
+        images = Some(category + 2),
+        monumentIdTemplate = Some(idTemplate)
+      )
 
-        val ic = mockService(images, category + 1, contestId + 1)
-        ic.appendImages(category + 1, "", contest1)
+      val ic = mockService(images, category + 1, contestId + 1)
+      ic.appendImages(category + 1, "", contest1)
 
-        val contest1WithCategory = contestDao.findById(contest1.getId).get
-        eventually {
-          imageDao.findByContest(contest1WithCategory) === images
-        }
+      val contest1WithCategory = contestDao.findById(contest1.getId).get
+      eventually {
+        imageDao.findByContest(contest1WithCategory) === images
+      }
 
-        val ic2 = mockService(images, category + 2, contestId + 2)
-        ic2.appendImages(category + 2, "", contest2)
+      val ic2 = mockService(images, category + 2, contestId + 2)
+      ic2.appendImages(category + 2, "", contest2)
 
-        val contest2WithCategory = contestDao.findById(contest2.getId).get
-        eventually {
-          imageDao.findByContest(contest2WithCategory) === images
-        }
+      val contest2WithCategory = contestDao.findById(contest2.getId).get
+      eventually {
+        imageDao.findByContest(contest2WithCategory) === images
       }
     }
 
     "get international images" in {
-      withDb {
-        val page = "Commons:Wiki Loves Earth 2019/Winners"
-        val is = new ImageService(Global.commons, mock[MonumentService])
-        val contest = createContest()
-        is.appendImages(page, "", contest)
-        val contestWithCategory = contestDao.findById(contest.getId).get
+      val page = "Commons:Wiki Loves Earth 2019/Winners"
+      val is = new ImageService(Global.commons, mock[MonumentService])
+      val contest = createContest()
+      is.appendImages(page, "", contest)
+      val contestWithCategory = contestDao.findById(contest.getId).get
 
-        eventually {
-          imageDao.findByContest(contestWithCategory).size must be_>=(350)
-        }
+      eventually {
+        imageDao.findByContest(contestWithCategory).size must be_>=(350)
       }
     }
   }

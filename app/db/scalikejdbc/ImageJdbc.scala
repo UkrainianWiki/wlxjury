@@ -69,42 +69,40 @@ object ImageJdbc extends CRUDMapper[Image]
 
   def apply(c: ResultName[Image])(rs: WrappedResultSet): Image = extract(rs, c)
 
-  def batchInsert(images: Seq[Image]): Unit = {
+  def batchInsert(images: Seq[Image])(implicit session: DBSession = AutoSession): Unit = {
     val column = ImageJdbc.column
-    DB localTx { implicit session =>
-      val batchParams: Seq[Seq[Any]] = images.map(i =>
-        Seq(
-          i.pageId,
-          i.title,
-          i.url,
-          i.pageUrl,
-          i.width,
-          i.height,
-          i.monumentId,
-          i.description,
-          i.size,
-          i.author,
-          i.mime
-        )
+    val batchParams: Seq[Seq[Any]] = images.map(i =>
+      Seq(
+        i.pageId,
+        i.title,
+        i.url,
+        i.pageUrl,
+        i.width,
+        i.height,
+        i.monumentId,
+        i.description,
+        i.size,
+        i.author,
+        i.mime
       )
-      withSQL {
-        insert
-          .into(ImageJdbc)
-          .namedValues(
-            column.pageId -> sqls.?,
-            column.title -> sqls.?,
-            column.url -> sqls.?,
-            column.pageUrl -> sqls.?,
-            column.width -> sqls.?,
-            column.height -> sqls.?,
-            column.monumentId -> sqls.?,
-            column.description -> sqls.?,
-            column.size -> sqls.?,
-            column.author -> sqls.?,
-            column.mime -> sqls.?
-          )
-      }.batch(batchParams: _*).apply()
-    }
+    )
+    withSQL {
+      insert
+        .into(ImageJdbc)
+        .namedValues(
+          column.pageId -> sqls.?,
+          column.title -> sqls.?,
+          column.url -> sqls.?,
+          column.pageUrl -> sqls.?,
+          column.width -> sqls.?,
+          column.height -> sqls.?,
+          column.monumentId -> sqls.?,
+          column.description -> sqls.?,
+          column.size -> sqls.?,
+          column.author -> sqls.?,
+          column.mime -> sqls.?
+        )
+    }.batch(batchParams: _*).apply()
   }
 
   def update(image: Image): Unit =
@@ -132,20 +130,20 @@ object ImageJdbc extends CRUDMapper[Image]
 
   def deleteImage(pageId: Long): Unit = deleteById(pageId)
 
-  def findByFilename(filename: String): Option[Image] =
+  def findByFilename(filename: String)(implicit session: DBSession = AutoSession): Option[Image] =
     findBy(sqls.eq(column.title, s"File:$filename"))
 
-  def findByContestId(contestId: Long): List[Image] =
+  def findByContestId(contestId: Long)(implicit session: DBSession = AutoSession): List[Image] =
     ContestJuryJdbc.findById(contestId).map(findByContest).getOrElse(Nil)
 
-  def findByContest(contest: ContestJury): List[Image] = {
+  def findByContest(contest: ContestJury)(implicit session: DBSession = AutoSession): List[Image] = {
     contest.categoryId.map(findByCategory).getOrElse(Nil)
   }
 
   def countByContest(contest: ContestJury): Long =
     contest.categoryId.map(ImageJdbc.countByCategory).getOrElse(0L)
 
-  def findByCategory(categoryId: Long): List[Image] =
+  def findByCategory(categoryId: Long)(implicit session: DBSession = AutoSession): List[Image] =
     withSQL {
       select
         .from[Image](ImageJdbc as i)

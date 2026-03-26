@@ -88,6 +88,7 @@ libraryDependencies ++= Seq(
   "org.scalikejdbc" %% "scalikejdbc-play-initializer" % ScalikejdbcPlayVersion,
   "org.scalikejdbc" %% "scalikejdbc-play-dbapi-adapter" % ScalikejdbcPlayVersion,
   "org.scalikejdbc" %% "scalikejdbc-play-fixture" % ScalikejdbcPlayVersion,
+  "org.scalikejdbc" %% "scalikejdbc-test" % ScalikejdbcVersion % Test,
   "org.flywaydb" %% "flyway-play" % "8.0.1",
   "org.flywaydb" % "flyway-mysql" % "9.16.3",
   "org.mariadb.jdbc" % "mariadb-java-client" % "3.5.3",

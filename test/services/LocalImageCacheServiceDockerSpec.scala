@@ -1,7 +1,7 @@
 package services
 
 import com.dimafeng.testcontainers.{DockerComposeContainer, ExposedService}
-import db.scalikejdbc.{CategoryLinkJdbc, ContestJuryJdbc, ImageJdbc, User}
+import db.scalikejdbc.{CategoryLinkJdbc, ContestJuryJdbc, ImageJdbc, SharedTestDb, User}
 import org.specs2.mutable.Specification
 import play.api.inject.guice.GuiceApplicationBuilder
 import play.api.libs.json.Json
@@ -154,13 +154,13 @@ class LocalImageCacheServiceDockerSpec extends Specification with CommonsImageFe
       images must not(beEmpty)
 
       val app = buildApp()
-      running(app) {
+      try running(app) {
         val contestId  = 43L
         val adminEmail = "e2e-admin@test.com"
 
         // Create admin user
         User.create(User("E2E Admin", adminEmail,
-          password = Some(User.sha1("pass")), roles = Set(User.ROOT_ROLE)))
+          password = Some(User.sha1("pass")), roles = Set(User.ROOT_ROLE)))(User.session)
 
         // Create contest + link images so startDownload finds them
         ContestJuryJdbc.create(Some(contestId), "WLE E2E", 2025, "Bolivia")
@@ -220,6 +220,10 @@ class LocalImageCacheServiceDockerSpec extends Specification with CommonsImageFe
             }
           }
         }
+      } finally {
+        // running(app) stops Play which closes ALL ScalikeJDBC pools.
+        // Restore the shared pool so subsequent test specs can still connect.
+        if (SharedTestDb.initialized) SharedTestDb.reregisterDefault()
       }
     }
   }

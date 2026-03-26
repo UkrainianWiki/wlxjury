@@ -46,7 +46,7 @@ object SelectionJdbc extends CRUDMapper[Selection] {
       juryId: Long,
       roundId: Long,
       createdAt: Option[ZonedDateTime] = None
-  ): Selection = {
+  )(implicit session: DBSession = AutoSession): Selection = {
     val id = withSQL {
       insert
         .into(SelectionJdbc)
@@ -68,22 +68,20 @@ object SelectionJdbc extends CRUDMapper[Selection] {
     )
   }
 
-  def batchInsert(selections: Iterable[Selection]): Unit = {
+  def batchInsert(selections: Iterable[Selection])(implicit session: DBSession = AutoSession): Unit = {
     val column = SelectionJdbc.column
-    DB localTx { implicit session =>
-      val batchParams: Seq[Seq[Any]] =
-        selections.map(i => Seq(i.pageId, i.rate, i.juryId, i.roundId)).toSeq
-      withSQL {
-        insert
-          .into(SelectionJdbc)
-          .namedValues(
-            column.pageId -> sqls.?,
-            column.rate -> sqls.?,
-            column.juryId -> sqls.?,
-            column.roundId -> sqls.?
-          )
-      }.batch(batchParams: _*).apply()
-    }
+    val batchParams: Seq[Seq[Any]] =
+      selections.map(i => Seq(i.pageId, i.rate, i.juryId, i.roundId)).toSeq
+    withSQL {
+      insert
+        .into(SelectionJdbc)
+        .namedValues(
+          column.pageId -> sqls.?,
+          column.rate -> sqls.?,
+          column.juryId -> sqls.?,
+          column.roundId -> sqls.?
+        )
+    }.batch(batchParams: _*).apply()
   }
 
   def byRound(roundId: Long): Seq[Selection] =
@@ -156,7 +154,7 @@ object SelectionJdbc extends CRUDMapper[Selection] {
         .eq(s.roundId, roundId)
     ).withAttributes("rate" -> -1)
 
-  def rate(pageId: Long, juryId: Long, roundId: Long, rate: Int = 1): Unit =
+  def rate(pageId: Long, juryId: Long, roundId: Long, rate: Int = 1)(implicit session: DBSession = AutoSession): Unit =
     withSQL {
       update(SelectionJdbc)
         .set(column.rate -> rate)

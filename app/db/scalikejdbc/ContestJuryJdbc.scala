@@ -32,7 +32,7 @@ object ContestJuryJdbc extends CRUDMapper[ContestJury] {
     campaign = rs.stringOpt(c.campaign)
   )
 
-  def setImagesSource(id: Long, images: Option[String]): Int = {
+  def setImagesSource(id: Long, images: Option[String])(implicit session: DBSession = AutoSession): Int = {
     val categoryId = images.map(CategoryJdbc.findOrInsert)
 
     updateById(id)
@@ -60,7 +60,7 @@ object ContestJuryJdbc extends CRUDMapper[ContestJury] {
       currentRound: Option[Long] = None,
       monumentIdTemplate: Option[String] = None,
       campaign: Option[String] = None
-  ): ContestJury = {
+  )(implicit session: DBSession = AutoSession): ContestJury = {
     val dbId = withSQL {
       insert
         .into(ContestJuryJdbc)
@@ -91,35 +91,33 @@ object ContestJuryJdbc extends CRUDMapper[ContestJury] {
     )
   }
 
-  def batchInsert(contests: Seq[ContestJury]): Seq[Int] = {
+  def batchInsert(contests: Seq[ContestJury])(implicit session: DBSession = AutoSession): Seq[Int] = {
     val column = ContestJuryJdbc.column
-    DB localTx { implicit session =>
-      val batchParams: Seq[Seq[Any]] = contests.map(c =>
-        Seq(
-          c.id,
-          c.name,
-          c.year,
-          c.country,
-          c.images,
-          c.currentRound,
-          c.monumentIdTemplate,
-          c.campaign
-        )
+    val batchParams: Seq[Seq[Any]] = contests.map(c =>
+      Seq(
+        c.id,
+        c.name,
+        c.year,
+        c.country,
+        c.images,
+        c.currentRound,
+        c.monumentIdTemplate,
+        c.campaign
       )
-      withSQL {
-        insert
-          .into(ContestJuryJdbc)
-          .namedValues(
-            column.id -> sqls.?,
-            column.name -> sqls.?,
-            column.year -> sqls.?,
-            column.country -> sqls.?,
-            column.images -> sqls.?,
-            column.currentRound -> sqls.?,
-            column.monumentIdTemplate -> sqls.?,
-            column.campaign -> sqls.?
-          )
-      }.batch(batchParams: _*).apply()
-    }
+    )
+    withSQL {
+      insert
+        .into(ContestJuryJdbc)
+        .namedValues(
+          column.id -> sqls.?,
+          column.name -> sqls.?,
+          column.year -> sqls.?,
+          column.country -> sqls.?,
+          column.images -> sqls.?,
+          column.currentRound -> sqls.?,
+          column.monumentIdTemplate -> sqls.?,
+          column.campaign -> sqls.?
+        )
+    }.batch(batchParams: _*).apply()
   }
 }

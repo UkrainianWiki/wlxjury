@@ -3,7 +3,7 @@ package db.scalikejdbc
 import db.scalikejdbc.rewrite.ImageDbNew.SelectionQuery
 import munit.FunSuite
 
-class ImagesSqlSpec extends FunSuite with TestDb {
+class ImagesSqlSpec extends FunSuite {
 
   private val imageFields =
     "i.page_id as pi_on_i, i.contest as c_on_i, i.title as t_on_i, i.url as u_on_i, i.page_url as pu_on_i, " +
@@ -18,15 +18,12 @@ class ImagesSqlSpec extends FunSuite with TestDb {
 
   private def foldSpace(s: String) = s.replaceAll("\\s+", " ").trim
 
-  // TODO start mysql once per spec
   private def check(
       q: SelectionQuery,
       expected: String,
       f: SelectionQuery => String = _.query()
   ): Unit = {
-    withDb {
-      assertEquals(foldSpace(f(q)), foldSpace(expected))
-    }
+    assertEquals(foldSpace(f(q)), foldSpace(expected))
   }
 
   test("list - all") {

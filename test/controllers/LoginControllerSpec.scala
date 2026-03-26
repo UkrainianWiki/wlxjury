@@ -1,6 +1,6 @@
 package controllers
 
-import db.scalikejdbc.{TestDb, User}
+import db.scalikejdbc.{PlayTestDb, User}
 import org.apache.pekko.stream.Materializer
 import org.specs2.mock.Mockito
 import play.api.Application
@@ -9,7 +9,7 @@ import play.api.test.CSRFTokenHelper._
 import play.api.test._
 import services.{SMTPOrWikiMail, UserService}
 
-class LoginControllerSpec extends PlaySpecification with Results with TestDb with Mockito {
+class LoginControllerSpec extends PlaySpecification with Results with PlayTestDb with Mockito {
 
   sequential
 
