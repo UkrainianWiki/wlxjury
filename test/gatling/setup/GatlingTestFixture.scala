@@ -26,7 +26,10 @@ object GatlingTestFixture {
         "db.default.driver"   -> container.driverClassName,
         "db.default.username" -> container.username,
         "db.default.password" -> container.password,
-        "db.default.url"      -> container.jdbcUrl
+        "db.default.url"      -> container.jdbcUrl,
+        "play.filters.disabled"              -> Seq.empty[String],
+        "play.filters.csrf.method.whiteList" -> Seq("GET", "HEAD", "OPTIONS", "POST"),
+        "play.http.session.secure"           -> false
       ))
       .build()
     val server = TestServer(port, app)
@@ -36,7 +39,16 @@ object GatlingTestFixture {
       try server.stop() finally container.stop()
     }))
 
-    GatlingDbSetup.load(port, GatlingConfig)
+    val cacheKey = GatlingDbCache.cacheKey(GatlingConfig)
+
+    if (GatlingDbCache.exists(cacheKey)) {
+      GatlingDbCache.restore(container, cacheKey)
+      GatlingDbSetup.loadFromDb(port)
+    } else {
+      val data = GatlingDbSetup.load(port, GatlingConfig)
+      GatlingDbCache.save(container, cacheKey)
+      data
+    }
   }
 
   private def freePort(): Int = {

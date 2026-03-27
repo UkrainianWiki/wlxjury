@@ -1,19 +1,21 @@
 package gatling.setup
 
 import java.io.File
-import java.nio.file.{Files, Paths, StandardCopyOption}
 import scala.io.Source
 import scala.sys.process._
 import scala.util.Try
 
-/** Two-pass Gatling performance comparison.
+/** Cumulative per-index Gatling performance comparison.
  *
- *  Pass 1 — baseline: temporarily stashes V45 migration so MariaDB starts
- *            without the performance indexes, then runs `sbt Gatling/test`.
- *  Pass 2 — optimized: restores V45 and runs `sbt Gatling/test` again.
+ *  Pass 0 — baseline: stashes ALL V45a–V45g migrations so MariaDB starts
+ *            without any performance indexes, then runs `sbt Gatling/test`.
+ *  Pass 1 — restore V45a, run simulations → record delta vs pass 0
+ *  Pass 2 — restore V45b (on top of V45a), run simulations → record delta vs pass 1
+ *  ...
+ *  Pass 7 — all indexes applied → record delta vs pass 6
  *
- *  After both passes, parses every simulation.log produced by each run and
- *  prints a side-by-side latency comparison to stdout, then writes it to
+ *  After all passes, prints an attribution table showing which index contributed
+ *  what marginal latency change to each simulation, then writes to
  *  docs/gatling-comparison.txt.
  *
  *  Usage:
@@ -126,12 +128,135 @@ for (sim <- sims) {
     f"${sign}${math.abs(delta).toLong}ms (${sign}${pct.toInt}%%)"
   }
 
+  // ── Attribution reporting ─────────────────────────────────────────────
+
+  /** Column headers for the attribution table (short sim names). */
+  private val simColumns: Seq[(String, String)] = Seq(
+    "jurorGallery"  -> "jurorGallerySimulation",
+    "regionFilter"  -> "regionFilterSimulation",
+    "aggRatings"    -> "aggregatedRatingsSimulation",
+    "roundMgmt"     -> "roundManagementSimulation",
+    "voting"        -> "votingSimulation",
+  )
+
+  /** Format percent delta between before and after stat maps for one metric.
+   *  Returns "n/a" for < 1% absolute change (noise). */
+  private def attrCell(
+    prev: Map[String, SimStats],
+    curr: Map[String, SimStats],
+    simKey: String,
+    metric: SimStats => Double,
+  ): String = {
+    for {
+      p <- prev.get(simKey)
+      c <- curr.get(simKey)
+      bv = metric(p)
+      cv = metric(c)
+      if bv != 0
+      pct = (cv - bv) * 100.0 / bv
+      if math.abs(pct) >= 1.0
+    } yield {
+      val sign = if (pct < 0) "-" else "+"
+      f"${sign}${math.abs(pct).toInt}%%"
+    }
+  }.getOrElse("n/a")
+
+  private def formatAttributionTable(
+    baseline: Map[String, SimStats],
+    passes: Seq[(String, Map[String, SimStats])],
+  ): String = {
+    val sb = new StringBuilder
+    val w  = 72
+
+    // Column widths
+    val idxW  = 34
+    val colW  = 14  // "mean  p95" per sim (2 metrics)
+    val votW  = 7   // voting only has mean
+
+    // Build header
+    sb.append("=" * (idxW + simColumns.size * colW + 2)).append("\n")
+    sb.append("INDEX ATTRIBUTION TABLE\n")
+    sb.append("=" * (idxW + simColumns.size * colW + 2)).append("\n")
+
+    // Sim name row
+    val simLine = new StringBuilder(" " * idxW + " | ")
+    for ((short, _) <- simColumns) {
+      simLine.append(f"$short%-14s")
+    }
+    sb.append(simLine.toString().stripTrailing()).append("\n")
+
+    // Metrics row
+    val metricLine = new StringBuilder(" " * idxW + " | ")
+    for ((_, _) <- simColumns.init) {
+      metricLine.append(f"${"mean p95"}%-14s")
+    }
+    metricLine.append(f"${"mean"}%-7s")
+    sb.append(metricLine.toString().stripTrailing()).append("\n")
+
+    // Separator
+    sb.append("-" * idxW + "-|-" + simColumns.init.map(_ => "-" * 14).mkString("") + "-" * 7).append("\n")
+
+    // One row per index pass
+    val allPasses = ("baseline" -> baseline) +: passes
+    for (i <- passes.indices) {
+      val (label, curr) = passes(i)
+      val prev          = allPasses(i)._2  // previous stats map
+
+      val row = new StringBuilder(("%-" + idxW + "s | ").format(label))
+      for ((_, simKey) <- simColumns.init) {
+        val meanCell = attrCell(prev, curr, simKey, _.mean)
+        val p95Cell  = attrCell(prev, curr, simKey, _.p95.toDouble)
+        val cell     = f"$meanCell%-6s $p95Cell%-6s".stripTrailing()
+        row.append(f"$cell%-14s")
+      }
+      // voting: mean only
+      val (_, votSimKey) = simColumns.last
+      val votCell = attrCell(prev, curr, votSimKey, _.mean)
+      row.append(votCell)
+
+      sb.append(row.toString().stripTrailing()).append("\n")
+    }
+
+    sb.append("=" * (idxW + simColumns.size * colW + 2)).append("\n")
+    sb.toString()
+  }
+
+  // ── Index migration management ────────────────────────────────────────
+
+  private val migrationsDir: File = new File("conf/db/migration/default")
+
+  // Ordered list: (filename, human label)
+  private val indexMigrations: Seq[(String, String)] = Seq(
+    "V45a__idx_selection_jury_round.sql"      -> "idx_selection_jury_round",
+    "V45b__idx_rounds_contest_active.sql"     -> "idx_rounds_contest_active",
+    "V45c__idx_round_user_round_active.sql"   -> "idx_round_user_round_active",
+    "V45d__idx_users_contest.sql"             -> "idx_users_contest",
+    "V45e__idx_selection_page_jury_round.sql" -> "idx_selection_page_jury_round",
+    "V45f__idx_selection_round_page.sql"      -> "idx_selection_round_page",
+    "V45g__idx_users_wiki_account.sql"        -> "idx_users_wiki_account",
+  )
+
+  /** Stash V45x files not yet applied (rename to .bak). */
+  private def stashFrom(fromIdx: Int): Unit =
+    indexMigrations.drop(fromIdx).foreach { case (file, _) =>
+      val f = new File(migrationsDir, file)
+      if (f.exists()) f.renameTo(new File(migrationsDir, file + ".bak"))
+    }
+
+  /** Restore V45a..V45(upToIdx) from .bak (keep rest as .bak). */
+  private def restoreUpTo(upToIdx: Int): Unit =
+    indexMigrations.take(upToIdx).foreach { case (file, _) =>
+      val bak = new File(migrationsDir, file + ".bak")
+      if (bak.exists()) bak.renameTo(new File(migrationsDir, file))
+    }
+
+  /** Ensure all V45x files are restored to clean state. */
+  private def restoreAll(): Unit = restoreUpTo(indexMigrations.size)
+
   // ── Orchestration ────────────────────────────────────────────────────────
 
   def main(args: Array[String]): Unit = {
-    val root      = Paths.get(System.getProperty("user.dir")).toFile
-    val migration = new File(root, "conf/db/migration/default/V45__Add_performance_indexes.sql")
-    val stash     = new File(root, "conf/db/migration/default/V45__Add_performance_indexes.sql.bak")
+    val root       = new File(System.getProperty("user.dir"))
     val gatlingDir = new File(root, "target/gatling")
     val reportOut  = new File(root, "docs/gatling-comparison.txt")
 
@@ -147,32 +272,38 @@ for (sim <- sims) {
       }
     }
 
-    // ── Pass 1: baseline ──
-    if (migration.exists()) {
-      Files.move(migration.toPath, stash.toPath, StandardCopyOption.REPLACE_EXISTING)
-      println(s"[setup] V45 stashed (baseline will run without performance indexes)")
-    } else {
-      println("[setup] V45 not found — running baseline as-is (indexes already absent)")
+    // ── Pass 0: baseline (all indexes stashed) ──
+    stashFrom(0)
+    println("[setup] All V45a–V45g stashed — baseline will run without performance indexes")
+
+    val baselineStats = runPass("baseline")
+
+    // ── Passes 1–N: cumulative index restoration ──
+    val indexPasses = scala.collection.mutable.ArrayBuffer.empty[(String, Map[String, SimStats])]
+
+    for (i <- indexMigrations.indices) {
+      val (_, label) = indexMigrations(i)
+      restoreUpTo(i + 1)
+      println(s"[setup] Restored indexes 0..$i (cumulative)")
+      val stats = runPass(s"+ $label")
+      indexPasses += (label -> stats)
     }
 
-    val baselineStats = try runPass("baseline") finally {
-      // always restore V45, even if baseline run fails
-      if (stash.exists()) {
-        Files.move(stash.toPath, migration.toPath, StandardCopyOption.REPLACE_EXISTING)
-        println(s"[setup] V45 restored for optimized pass")
-      }
-    }
+    // ── Restore everything to clean state ──
+    restoreAll()
+    println("[setup] All V45a–V45g restored")
 
-    // ── Pass 2: optimized ──
-    val optimizedStats = runPass("optimized")
+    // ── Reports ──
+    val optimizedStats = indexPasses.lastOption.map(_._2).getOrElse(Map.empty)
+    val comparisonReport = formatReport(baselineStats, optimizedStats)
+    val attributionReport = formatAttributionTable(baselineStats, indexPasses.toSeq)
 
-    // ── Report ──
-    val report = formatReport(baselineStats, optimizedStats)
-    println(report)
+    val fullReport = comparisonReport + "\n" + attributionReport
+    println(fullReport)
 
     reportOut.getParentFile.mkdirs()
     val pw = new java.io.PrintWriter(reportOut)
-    try pw.print(report) finally pw.close()
+    try pw.print(fullReport) finally pw.close()
     println(s"Report written to ${reportOut.getPath}")
   }
 }

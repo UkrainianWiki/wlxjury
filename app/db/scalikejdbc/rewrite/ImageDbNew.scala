@@ -80,7 +80,14 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
         (if (!(count || byRegion)) orderBy() else "")
 
       val result =
-        if (count)
+        if (count && regions.isEmpty && !byRegion) {
+          // Optimised path: skip the images join entirely.
+          // The images table carries no information needed for a pure count, and
+          // having it as the outer/driving table forces a full 38k-row scan even
+          // when idx_selection_jury_round can satisfy the predicate in < 1 ms.
+          val countExpr = "COUNT(DISTINCT s.page_id)"
+          "select " + countExpr + " from selection s" + where()
+        } else if (count)
           "select count(t.pi_on_i) from (" + sql + ") t"
         else
           sql + (if (noLimit || byRegion) "" else limitSql())

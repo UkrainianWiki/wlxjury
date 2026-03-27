@@ -32,9 +32,9 @@ object MonumentJdbc extends SQLSyntaxSupport[Monument] {
     contest = rs.longOpt(c.contest)
   )
 
-  object replace {
+  private object insertIgnore {
     def into(support: SQLSyntaxSupport[?]): InsertSQLBuilder =
-      InsertSQLBuilder(sqls"replace into ${support.table}")
+      InsertSQLBuilder(sqls"insert ignore into ${support.table}")
   }
 
   def batchInsert(monuments: Seq[Monument])(implicit session: DBSession = AutoSession): Unit = {
@@ -58,7 +58,7 @@ object MonumentJdbc extends SQLSyntaxSupport[Monument] {
       )
     )
     withSQL {
-      replace
+      insertIgnore
         .into(MonumentJdbc)
         .namedValues(
           column.id -> sqls.?,
