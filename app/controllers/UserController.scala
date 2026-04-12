@@ -1,6 +1,6 @@
 package controllers
 
-import db.scalikejdbc.{ContestJuryJdbc, User}
+import db.scalikejdbc.{ContestJuryJdbc, User, UserContestJdbc}
 import org.intracer.wmua._
 import org.scalawiki.dto.cmd.query.Query
 import org.scalawiki.dto.cmd.query.list._
@@ -186,6 +186,11 @@ class UserController @Inject()(cc: ControllerComponents,
                                 newRoles,
                                 formUser.lang,
                                 formUser.sort)
+
+                for {
+                  cid  <- formUser.contestId.orElse(user.contestId)
+                  role <- newRoles.find(r => r != User.ROOT_ROLE && !r.startsWith("USER_ID_"))
+                } UserContestJdbc.updateRole(userId, cid, role)
 
                 for (password <- formUser.password) {
                   val hash = User.hash(formUser, password)

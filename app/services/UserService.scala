@@ -1,7 +1,7 @@
 package services
 
 import controllers.Greeting
-import db.scalikejdbc.{ContestJuryJdbc, User}
+import db.scalikejdbc.{ContestJuryJdbc, User, UserContestJdbc}
 import org.intracer.wmua.ContestJury
 import play.api.Configuration
 import play.api.i18n.Messages
@@ -27,12 +27,18 @@ class UserService @Inject()(val sendMail: SMTPOrWikiMail,
     val hash = User.hash(formUser, password)
 
     val toCreate = formUser.copy(
-      password = Some(hash),
+      password  = Some(hash),
       contestId = contestOpt.flatMap(_.id).orElse(creator.contestId))
 
     val createdUser = User.create(toCreate)
 
     contestOpt.foreach { contest =>
+      contest.id.foreach { cid =>
+        val role = toCreate.roles
+          .find(r => r != db.scalikejdbc.User.ROOT_ROLE && !r.startsWith("USER_ID_"))
+          .getOrElse("jury")
+        db.scalikejdbc.UserContestJdbc.createMembership(createdUser.getId, cid, role)
+      }
       if (contest.greeting.use) {
         sendMail(creator, createdUser, contest, password)
       }
