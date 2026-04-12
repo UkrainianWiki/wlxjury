@@ -12,34 +12,37 @@ class UserDbSpec extends Specification with BeforeAll {
 
   "fresh database" should {
     "be empty" in new AutoRollbackDb {
-      val users = userDao.findAll()
-      users.size === 0
+      userDao.findAll() must beEmpty
     }
 
-    "insert user" in new AutoRollbackDb {
+    "create and reload user without contest" in new AutoRollbackDb {
       val user = User(
-        fullname = "fullname",
-        email = "email",
-        id = None,
-        roles = Set("jury"),
-        password = Some("password hash"),
-        contestId = Some(10),
-        lang = Some("en"),
+        fullname  = "fullname",
+        email     = "email",
+        roles     = Set.empty,
+        password  = Some("password hash"),
+        lang      = Some("en"),
         createdAt = Some(now)
       )
-
       val created = userDao.create(user)
+      val id = created.id.get
 
-      val id = created.id
+      val found = userDao.findById(id)
+      found.map(_.fullname)  === Some("fullname")
+      found.map(_.email)     === Some("email")
+      found.map(_.isRoot)    === Some(false)
+      // roles from DB only contains USER_ID_xxx (contest role added by userFromRequest)
+      found.map(_.roles)     === Some(Set("USER_ID_" + id))
+      found.map(_.contestId) === Some(None)
+    }
 
-      val expected = user.copy(id = id, roles = user.roles ++ Set("USER_ID_" + id.get))
-      created === expected
-
-      val found = userDao.findById(id.get)
-      found === Some(created)
-
-      val all = userDao.findAll()
-      all === Seq(created)
+    "mark root user" in new AutoRollbackDb {
+      val root = userDao.create(
+        User("root", "root@example.com", isRoot = true, password = Some("hash"))
+      )
+      val found = userDao.findById(root.getId)
+      found.map(_.isRoot) === Some(true)
+      found.map(_.roles)  === Some(Set(User.ROOT_ROLE, "USER_ID_" + root.getId))
     }
   }
 }

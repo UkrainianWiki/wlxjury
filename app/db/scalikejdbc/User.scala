@@ -26,7 +26,9 @@ case class User(
     hasWikiEmail: Boolean = false,
     accountValid: Boolean = true,
     sort: Option[Int] = None,
-    active: Option[Boolean] = Some(true)
+    active: Option[Boolean] = Some(true),
+    isRoot: Boolean = false,
+    userContests: Seq[UserContest] = Nil
 ) extends HasId
     with Ordered[User] {
 
@@ -215,33 +217,43 @@ object User extends CRUDMapper[User] {
 
   override lazy val defaultAlias = createAlias("u")
 
-  override def extract(rs: WrappedResultSet, c: scalikejdbc.ResultName[User]): User = User(
-    id = Some(rs.int(c.id)),
-    fullname = rs.string(c.fullname),
-    email = rs.string(c.email),
-    roles = rs.string(c.roles).split(",").map(_.trim).toSet ++ Set("USER_ID_" + rs.int(c.id)),
-    contestId = rs.longOpt(c.contestId),
-    password = Some(rs.string(c.password)),
-    lang = rs.stringOpt(c.lang),
-    wikiAccount = rs.stringOpt(c.wikiAccount),
-    sort = rs.intOpt(c.sort),
-    createdAt = rs.timestampOpt(c.createdAt).map(_.toZonedDateTime),
-    deletedAt = rs.timestampOpt(c.deletedAt).map(_.toZonedDateTime)
-  )
+  override def extract(rs: WrappedResultSet, c: scalikejdbc.ResultName[User]): User = {
+    val id   = rs.int(c.id)
+    val root = rs.booleanOpt(c.isRoot).getOrElse(false)
+    User(
+      id          = Some(id),
+      fullname    = rs.string(c.fullname),
+      email       = rs.string(c.email),
+      roles       = Set("USER_ID_" + id) ++ (if (root) Set(User.ROOT_ROLE) else Set.empty),
+      isRoot      = root,
+      contestId   = None,
+      password    = Some(rs.string(c.password)),
+      lang        = rs.stringOpt(c.lang),
+      wikiAccount = rs.stringOpt(c.wikiAccount),
+      sort        = rs.intOpt(c.sort),
+      createdAt   = rs.timestampOpt(c.createdAt).map(_.toZonedDateTime),
+      deletedAt   = rs.timestampOpt(c.deletedAt).map(_.toZonedDateTime)
+    )
+  }
 
-  def apply(c: ResultName[User])(rs: WrappedResultSet): User = new User(
-    id = Some(rs.int(c.id)),
-    fullname = rs.string(c.fullname),
-    email = rs.string(c.email),
-    roles = rs.string(c.roles).split(",").map(_.trim).toSet ++ Set("USER_ID_" + rs.int(c.id)),
-    contestId = rs.longOpt(c.contestId),
-    password = Some(rs.string(c.password)),
-    lang = rs.stringOpt(c.lang),
-    wikiAccount = rs.stringOpt(c.wikiAccount),
-    sort = rs.intOpt(c.sort),
-    createdAt = rs.timestampOpt(c.createdAt).map(_.toZonedDateTime),
-    deletedAt = rs.timestampOpt(c.deletedAt).map(_.toZonedDateTime)
-  )
+  def apply(c: ResultName[User])(rs: WrappedResultSet): User = {
+    val id   = rs.int(c.id)
+    val root = rs.booleanOpt(c.isRoot).getOrElse(false)
+    new User(
+      id          = Some(id),
+      fullname    = rs.string(c.fullname),
+      email       = rs.string(c.email),
+      roles       = Set("USER_ID_" + id) ++ (if (root) Set(User.ROOT_ROLE) else Set.empty),
+      isRoot      = root,
+      contestId   = None,
+      password    = Some(rs.string(c.password)),
+      lang        = rs.stringOpt(c.lang),
+      wikiAccount = rs.stringOpt(c.wikiAccount),
+      sort        = rs.intOpt(c.sort),
+      createdAt   = rs.timestampOpt(c.createdAt).map(_.toZonedDateTime),
+      deletedAt   = rs.timestampOpt(c.deletedAt).map(_.toZonedDateTime)
+    )
+  }
 
   def findByContest(contest: Long): Seq[User] =
     where("contestId" -> contest).orderBy(u.id).apply()
@@ -333,22 +345,21 @@ object User extends CRUDMapper[User] {
       insert
         .into(User)
         .namedValues(
-          column.fullname -> fullname,
-          column.email -> email.trim.toLowerCase,
-          column.password -> password,
-          column.roles -> roles.headOption.getOrElse("jury"),
-          column.contestId -> contestId,
-          column.lang -> lang,
+          column.fullname  -> fullname,
+          column.email     -> email.trim.toLowerCase,
+          column.password  -> password,
+          column.isRoot    -> false,
+          column.lang      -> lang,
           column.createdAt -> createdAt
         )
     }.updateAndReturnGeneratedKey()
 
     User(
-      id = Some(id),
-      fullname = fullname,
-      email = email,
-      password = Some(password),
-      roles = roles ++ Set("USER_ID_" + id),
+      id        = Some(id),
+      fullname  = fullname,
+      email     = email,
+      password  = Some(password),
+      roles     = roles ++ Set("USER_ID_" + id),
       contestId = contestId,
       createdAt = createdAt
     )
@@ -359,15 +370,14 @@ object User extends CRUDMapper[User] {
       insert
         .into(User)
         .namedValues(
-          column.fullname -> user.fullname,
-          column.email -> user.email.trim.toLowerCase,
+          column.fullname    -> user.fullname,
+          column.email       -> user.email.trim.toLowerCase,
           column.wikiAccount -> user.wikiAccount,
-          column.password -> user.password,
-          column.roles -> user.roles.headOption.getOrElse(""),
-          column.contestId -> user.contestId,
-          column.lang -> user.lang,
-          column.sort -> user.sort,
-          column.createdAt -> user.createdAt
+          column.password    -> user.password,
+          column.isRoot      -> user.isRoot,
+          column.lang        -> user.lang,
+          column.sort        -> user.sort,
+          column.createdAt   -> user.createdAt
         )
     }.updateAndReturnGeneratedKey()
 
@@ -385,31 +395,21 @@ object User extends CRUDMapper[User] {
   ): Unit =
     updateById(id)
       .withAttributes(
-        "fullname" -> fullname,
-        "email" -> email,
+        "fullname"    -> fullname,
+        "email"       -> email,
         "wikiAccount" -> wikiAccount,
-        "roles" -> roles.head,
-        "lang" -> lang,
-        "sort" -> sort
+        "lang"        -> lang,
+        "sort"        -> sort
       )
 
   def updateHash(id: Long, hash: String): Unit =
     updateById(id)
       .withAttributes("password" -> hash)
 
-  def loadJurors(contestId: Long): Seq[User] = {
-    findAllBy(sqls.in(User.u.roles, Seq("jury")).and.eq(User.u.contestId, contestId))
-  }
+  // TODO Task 5: rewrite to join user_contest table (roles/contestId columns dropped from users)
+  def loadJurors(contestId: Long): Seq[User] = Nil
 
-  def loadJurors(contestId: Long, jurorIds: Seq[Long]): Seq[User] = {
-    findAllBy(
-      sqls
-        .in(User.u.id, jurorIds)
-        .and
-        .in(User.u.roles, Seq("jury"))
-        .and
-        .eq(User.u.contestId, contestId)
-    )
-  }
+  // TODO Task 5: rewrite to join user_contest table (roles/contestId columns dropped from users)
+  def loadJurors(contestId: Long, jurorIds: Seq[Long]): Seq[User] = Nil
 
 }
