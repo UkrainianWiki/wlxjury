@@ -445,13 +445,21 @@ object User extends CRUDMapper[User] {
                            (implicit session: DBSession = autoSession): Seq[User] = {
     val uc = UserContestJdbc.syntax("uc")
     withSQL {
-      select(u.result.*)
+      select(u.result.*, uc.role, uc.contestId)
         .from(User as u)
         .join(UserContestJdbc as uc).on(u.id, uc.userId)
         .where.eq(uc.contestId, contestId)
         .and.in(uc.role, roles)
         .orderBy(u.id)
-    }.map(User(u)).list()
+    }.map { rs =>
+      val user = User(u)(rs)
+      val role = rs.string(uc.role)
+      val ucContestId = rs.long(uc.contestId)
+      user.copy(
+        roles = user.roles + role,
+        contestId = Some(ucContestId)
+      )
+    }.list()
   }
 
 }
