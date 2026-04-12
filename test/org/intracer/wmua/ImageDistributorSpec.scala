@@ -101,7 +101,7 @@ class ImageDistributorSpec extends Specification with TestDb with Mockito
         selection1.map(_.juryId).toSet === juryIds.toSet
 
         val roundWithJurors = roundDao.findById(dbRound.getId).get
-        roundWithJurors.users === oneJuror
+        roundWithJurors.users.map(_.id) === oneJuror.map(_.id)
       }
     }
 

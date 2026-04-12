@@ -18,14 +18,10 @@ case class GatlingFixtureData(
     organizer: (Long, String, String),        // (id, email, plainPassword)
     imagePageIds: Seq[Long],
     regions: Seq[String],
-    votingPairs: Seq[(Long, Long, Long, Int)], // (juryId, pageId, roundId, rate)
-    extraOrganizers: Seq[(Long, String, String)] = Nil // external target: the contest's other organizers
+    votingPairs: Seq[(Long, Long, Long, Int)] // (juryId, pageId, roundId, rate)
 )
 
 object GatlingDbSetup {
-
-  /** The fixture contest's image category; every fixture image is in it. */
-  val ImageCategory = "Category:Images from Wiki Loves Monuments 2025 in Ukraine"
 
   /** Reconstruct GatlingFixtureData from a restored DB without re-running the CSV load. */
   def loadFromDb(port: Int): GatlingFixtureData = {
@@ -46,10 +42,7 @@ object GatlingDbSetup {
     val ratingRound = rounds.find(_.name.exists(_.contains("Rating")))
       .getOrElse(throw new RuntimeException("Rating round not found"))
 
-    val allUsers = User.findAllBy(sqls.eq(User.defaultAlias.contestId, contestId))
-
-    val jurors = allUsers
-      .filter(_.roles.contains("jury"))
+    val jurors = User.findByContestAndRoles(contestId, Seq("jury"))
       .sortBy(_.email)
       .map { u =>
         val email = u.email
@@ -57,7 +50,8 @@ object GatlingDbSetup {
         (u.id.get, email, s"pass$idx")
       }
 
-    val orgUser = allUsers.find(_.roles.contains("admin"))
+    val orgUser = User.findByContestAndRoles(contestId, Seq("admin"))
+      .headOption
       .getOrElse(throw new RuntimeException("Organizer not found"))
     val organizer = (orgUser.id.get, orgUser.email, "orgpass")
 
@@ -83,20 +77,6 @@ object GatlingDbSetup {
       jurors = jurors, organizer = organizer,
       imagePageIds = imagePageIds, regions = regions, votingPairs = votingPairs)
   }
-
-  /** Organizer accounts organizer2..organizer(n+1) for the organizer flows' concurrent
-    * sessions. Created after the dump is restored or saved, so they are neither part of
-    * the dump nor of its cache key, and `loadFromDb` still finds the original organizer.
-    */
-  def ensureExtraOrganizers(contestId: Long, n: Int): Seq[(Long, String, String)] =
-    (2 to n + 1).map { i =>
-      val email = s"organizer$i@gatling.test"
-      val pass  = s"orgpass$i"
-      val user = User.findByEmail(email).headOption.getOrElse(
-        User.create(fullname = s"Organizer $i", email = email, password = User.sha1(pass),
-                    roles = Set("admin"), contestId = Some(contestId)))
-      (user.id.get, email, pass)
-    }
 
   def load(port: Int, cfg: GatlingConfig.type): GatlingFixtureData = {
     val numUsers = cfg.users
@@ -133,22 +113,15 @@ object GatlingDbSetup {
             monumentId = row.get("monument_id").filter(_.nonEmpty),
             author     = row.get("author").filter(_.nonEmpty),
             size       = row.get("size_bytes").flatMap(s => scala.util.Try(s.toInt).toOption),
-            mime       = row.get("mime").filter(_.nonEmpty),
-            mediaType  = row.get("media_type").filter(_.nonEmpty)
+            mime       = row.get("mime").filter(_.nonEmpty)
           )
         }
       }
     }
     val imagePageIds = images.map(_.pageId)
-    val imageMonumentMap: Map[Long, Option[String]] = images.map(img => img.pageId -> img.monumentId).toMap
 
     // ── Entity creation (auto-commits individually; small row counts) ─────────
-    // The contest's images come from its category, as in production: a first round
-    // (no previous rounds) and the edit page's "new files" count load them from there.
-    val categoryId = CategoryJdbc.findOrInsert(ImageCategory)
-    val contest   = ContestJuryJdbc.create(id = None, name = "Gatling Perf Test Contest", year = 2024, country = "ua",
-                                           categoryId = Some(categoryId),
-                                           monumentIdTemplate = Some("{{UkrainianMonument}}"))
+    val contest   = ContestJuryJdbc.create(id = None, name = "Gatling Perf Test Contest", year = 2024, country = "ua")
     val contestId = contest.id.get
 
     val jurors = (1 to numUsers).map { i =>
@@ -159,12 +132,16 @@ object GatlingDbSetup {
                                  contestId = Some(contestId))
       (user.id.get, email, password)
     }
+    jurors.foreach { case (userId, _, _) =>
+      UserContestJdbc.createMembership(userId, contestId, "jury")
+    }
 
     val orgEmail    = "organizer@gatling.test"
     val orgPassword = "orgpass"
     val orgUser     = User.create(fullname = "Organizer", email = orgEmail,
                                   password = User.sha1(orgPassword), roles = Set("admin"),
                                   contestId = Some(contestId))
+    UserContestJdbc.createMembership(orgUser.id.get, contestId, "admin")
     val organizer   = (orgUser.id.get, orgEmail, orgPassword)
 
     val binaryRound = Round.create(Round(id = None, number = 1, name = Some("Binary Round"),
@@ -190,16 +167,14 @@ object GatlingDbSetup {
       chosen  = rng.shuffle(jurorIds.toVector).take(math.round(numJurors * fraction).toInt)
       juryId <- chosen
     } yield Selection(pageId = pageId, juryId = juryId, roundId = binaryRound.id.get,
-                      rate = if (rng.nextBoolean()) 1 else -1,
-                      monumentId = imageMonumentMap.getOrElse(pageId, None))
+                      rate = if (rng.nextBoolean()) 1 else -1)
 
     val ratingSelections = for {
       pageId <- imagePageIds
       chosen  = rng.shuffle(jurorIds.toVector).take(math.round(numJurors * fraction).toInt)
       juryId <- chosen
     } yield Selection(pageId = pageId, juryId = juryId, roundId = ratingRound.id.get,
-                      rate = rng.nextInt(maxRate) + 1,
-                      monumentId = imageMonumentMap.getOrElse(pageId, None))
+                      rate = rng.nextInt(maxRate) + 1)
 
     DB.localTx { implicit session =>
       SQL("SET foreign_key_checks = 0").execute.apply()
@@ -207,7 +182,6 @@ object GatlingDbSetup {
 
       monuments.grouped(1000).foreach(batch => MonumentJdbc.batchInsertFresh(batch.toSeq))
       images.grouped(1000).foreach(batch => ImageJdbc.batchInsert(batch.toSeq))
-      images.grouped(5000).foreach(batch => CategoryLinkJdbc.addToCategory(categoryId, batch.toSeq))
       (binarySelections ++ ratingSelections).grouped(5000).foreach(batch => SelectionJdbc.batchInsert(batch.toSeq))
 
       SQL("SET foreign_key_checks = 1").execute.apply()
