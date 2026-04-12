@@ -348,6 +348,16 @@ class UserController @Inject()(cc: ControllerComponents,
     )(Greeting.apply)(Greeting.unapply)
   )
 
+  def switchContest(contestId: Long): EssentialAction = withAuth() { user => request =>
+    val memberships = UserContestJdbc.findByUser(user.getId)
+    if (memberships.exists(_.contestId == contestId)) {
+      val newSession = request.session + (Secured.CurrentContestId -> contestId.toString)
+      Redirect(routes.LoginController.index).withSession(newSession)
+    } else {
+      onUnAuthorized(user)
+    }
+  }
+
   def resetPassword(id: Long): EssentialAction =
     withAuth(rolePermission(Set(User.ROOT_ROLE))) { user => implicit request =>
       val editedUser = User.findById(id).get

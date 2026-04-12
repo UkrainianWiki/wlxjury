@@ -1,7 +1,33 @@
+@import db.scalikejdbc.{User, UserContest}
+@import db.scalikejdbc.ContestJuryJdbc
 @(user: db.scalikejdbc.User)(implicit messages: Messages)
 
 @if(user != null) {
     <ul class="nav navbar-nav navbar-right" >
+        @if(user.userContests.size > 1) {
+        <li class="dropdown">
+            <a href="#" class="dropdown-toggle" data-toggle="dropdown" role="button" aria-expanded="false">
+                <span class="glyphicon glyphicon-random"></span>
+                @ContestJuryJdbc.findById(user.contestId.getOrElse(0L)).map(_.name).getOrElse("Switch contest")
+                <span class="caret"></span>
+            </a>
+            <ul class="dropdown-menu">
+                @for(uc <- user.userContests) {
+                    @defining(ContestJuryJdbc.findById(uc.contestId)) { contestOpt =>
+                        @for(contest <- contestOpt) {
+                            <li class="@if(user.contestId.contains(uc.contestId)){active}">
+                                <form method="POST" action="@routes.UserController.switchContest(uc.contestId)" style="display:inline">
+                                    <button type="submit" class="btn btn-link" style="padding:3px 20px">
+                                        @contest.name (@uc.role)
+                                    </button>
+                                </form>
+                            </li>
+                        }
+                    }
+                }
+            </ul>
+        </li>
+        }
         <li class="dropdown">
             <a href="#" class="dropdown-toggle" data-toggle="dropdown" role="button" aria-expanded="false">
                 <span class="glyphicon glyphicon-user"></span> <span class="caret"></span>

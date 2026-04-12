@@ -66,6 +66,8 @@ POST        /admin/greeting                                                     
 GET         /users/edit/:id                                                         @controllers.UserController.editUser(id: Long)
 POST        /users/save                                                             @controllers.UserController.saveUser()
 POST        /users/resetpasswd/:id                                                  @controllers.UserController.resetPassword(id: Long)
++ nocsrf
+POST        /switch-contest                                                          @controllers.UserController.switchContest(contestId: Long)
 
 GET         /admin/rounds                                                           @controllers.RoundController.rounds(contestId: Option[Long] ?= None)
 GET         /admin/rounds/edit                                                      @controllers.RoundController.editRound(id: Option[Long] ?= None, contestId: Long, topImages: Option[Int] ?= None)
