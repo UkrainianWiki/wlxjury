@@ -8,7 +8,6 @@ case class UserContest(userId: Long, contestId: Long, role: String)
 object UserContestJdbc extends JoinTable[UserContest] {
   override val tableName = "user_contest"
   override lazy val defaultAlias = createAlias("uc")
-  val uc = UserContestJdbc.syntax("uc")
 
   override def extract(rs: WrappedResultSet, n: ResultName[UserContest]): UserContest =
     UserContest(
