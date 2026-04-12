@@ -255,8 +255,16 @@ object User extends CRUDMapper[User] {
     )
   }
 
-  def findByContest(contest: Long): Seq[User] =
-    where("contestId" -> contest).orderBy(u.id).apply()
+  def findByContest(contestId: Long)(implicit session: DBSession = autoSession): Seq[User] = {
+    val uc = UserContestJdbc.syntax("uc")
+    withSQL {
+      select(u.result.*)
+        .from(User as u)
+        .join(UserContestJdbc as uc).on(u.id, uc.userId)
+        .where.eq(uc.contestId, contestId)
+        .orderBy(u.id)
+    }.map(User(u)).list()
+  }
 
   /** The users with selection rows in the round (its jurors), ordered by id.
     *
@@ -406,10 +414,44 @@ object User extends CRUDMapper[User] {
     updateById(id)
       .withAttributes("password" -> hash)
 
-  // TODO Task 5: rewrite to join user_contest table (roles/contestId columns dropped from users)
-  def loadJurors(contestId: Long): Seq[User] = Nil
+  def loadJurors(contestId: Long)(implicit session: DBSession = autoSession): Seq[User] = {
+    val uc = UserContestJdbc.syntax("uc")
+    withSQL {
+      select(u.result.*)
+        .from(User as u)
+        .join(UserContestJdbc as uc).on(u.id, uc.userId)
+        .where.eq(uc.contestId, contestId)
+        .and.eq(uc.role, "jury")
+        .orderBy(u.id)
+    }.map(User(u)).list()
+  }
 
-  // TODO Task 5: rewrite to join user_contest table (roles/contestId columns dropped from users)
-  def loadJurors(contestId: Long, jurorIds: Seq[Long]): Seq[User] = Nil
+  def loadJurors(contestId: Long, jurorIds: Seq[Long]): Seq[User] = {
+    if (jurorIds.isEmpty) return Nil
+    implicit val session: DBSession = autoSession
+    val uc = UserContestJdbc.syntax("uc")
+    withSQL {
+      select(u.result.*)
+        .from(User as u)
+        .join(UserContestJdbc as uc).on(u.id, uc.userId)
+        .where.in(u.id, jurorIds)
+        .and.eq(uc.contestId, contestId)
+        .and.eq(uc.role, "jury")
+        .orderBy(u.id)
+    }.map(User(u)).list()
+  }
+
+  def findByContestAndRoles(contestId: Long, roles: Seq[String])
+                           (implicit session: DBSession = autoSession): Seq[User] = {
+    val uc = UserContestJdbc.syntax("uc")
+    withSQL {
+      select(u.result.*)
+        .from(User as u)
+        .join(UserContestJdbc as uc).on(u.id, uc.userId)
+        .where.eq(uc.contestId, contestId)
+        .and.in(uc.role, roles)
+        .orderBy(u.id)
+    }.map(User(u)).list()
+  }
 
 }
