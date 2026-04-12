@@ -31,6 +31,7 @@ class LargeImageSpec extends PlaySpecification with PlayTestDb {
     user = userDao.create(
       User("fullname", email, None, Set("jury"), contestId = contest.id)
     )
+    UserContestJdbc.createMembership(user.getId, contest.getId, "jury")
   }
 
   private def createImages(number: Long, startId: Long = 0): Seq[Image] = {
@@ -52,7 +53,7 @@ class LargeImageSpec extends PlaySpecification with PlayTestDb {
 
   private def request(url: String): RequestHeader = {
     FakeRequest(GET, url)
-      .withSession(Secured.UserName -> email)
+      .withSession(Secured.UserName -> email, Secured.CurrentContestId -> contest.getId.toString)
       .withHeaders("Accept" -> "application/json")
       .withCSRFToken
   }

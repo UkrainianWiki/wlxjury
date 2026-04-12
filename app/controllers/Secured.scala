@@ -1,7 +1,7 @@
 package controllers
 
-import controllers.Secured.UserName
-import db.scalikejdbc.{Round, User}
+import controllers.Secured.{CurrentContestId, UserName}
+import db.scalikejdbc.{Round, User, UserContestJdbc}
 import play.api.mvc._
 
 import scala.concurrent.{ExecutionContext, Future}
@@ -12,16 +12,35 @@ abstract class Secured(cc: ControllerComponents) extends AbstractController(cc) 
 
   type Permission = User => Boolean
 
-  /** @param request
-    *   HTTP request with username set in session
-    * @return
-    *   optional user from database
-    */
   def userFromRequest(request: RequestHeader): Option[User] = {
     request.session
       .get(UserName)
       .map(_.trim.toLowerCase)
       .flatMap(User.byUserName)
+      .map { user =>
+        if (user.isRoot) {
+          user.copy(userContests = Nil)
+        } else {
+          val memberships = UserContestJdbc.findByUser(user.getId)
+          val currentContestId: Option[Long] =
+            Option(request.session.get(CurrentContestId)).flatten
+              .flatMap(s => scala.util.Try(s.toLong).toOption)
+              .filter(cid => memberships.exists(_.contestId == cid))
+              .orElse(memberships.headOption.map(_.contestId))
+
+          currentContestId match {
+            case Some(cid) =>
+              val contestRole = memberships.find(_.contestId == cid).map(_.role).getOrElse("jury")
+              user.copy(
+                contestId    = Some(cid),
+                roles        = user.roles ++ Set(contestRole),
+                userContests = memberships
+              )
+            case None =>
+              user.copy(userContests = memberships)
+          }
+        }
+      }
   }
 
   def onUnAuthenticated(request: RequestHeader): Result =
@@ -76,5 +95,6 @@ abstract class Secured(cc: ControllerComponents) extends AbstractController(cc) 
 }
 
 object Secured {
-  val UserName = "username"
+  val UserName         = "username"
+  val CurrentContestId = "current_contest_id"
 }

@@ -66,7 +66,10 @@ class LoginController @Inject() (
           User
             .login(login, password)
             .map { user =>
-              val result = indexRedirect(user).withSession(Secured.UserName -> login)
+              val memberships = db.scalikejdbc.UserContestJdbc.findByUser(user.getId)
+              val sessionData = Seq(Secured.UserName -> login) ++
+                memberships.headOption.map(uc => Secured.CurrentContestId -> uc.contestId.toString)
+              val result = indexRedirect(user).withSession(sessionData: _*)
               user.lang.fold(result)(l => result.withLang(Lang(l)))
             }
             .getOrElse(

@@ -91,7 +91,7 @@ class LoginControllerSpec extends PlaySpecification with Results with PlayTestDb
           User("name",
                "qwerty@dot.com",
                password = Some(User.sha1("strong")),
-               roles = Set(User.ROOT_ROLE))
+               isRoot = true)
         )
         val result = login
           .auth()
