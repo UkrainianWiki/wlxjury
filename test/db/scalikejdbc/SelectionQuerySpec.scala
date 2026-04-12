@@ -129,6 +129,48 @@ class SelectionQuerySpec extends Specification {
         s" i.monument_id like '$regionId%'"
     }
   }
+
+  "join" should {
+
+    "use selection as the outer (driving) table" in {
+      val j = SelectionQuery(userId = Some(userId), roundId = Some(roundId)).join(monuments = false)
+      j.indexOf("selection s") must beLessThan(j.indexOf("images i"))
+    }
+
+    "emit STRAIGHT_JOIN" in {
+      val j = SelectionQuery(userId = Some(userId), roundId = Some(roundId)).join(monuments = false)
+      j must contain("STRAIGHT_JOIN")
+    }
+
+    "not include monument join when monuments = false" in {
+      val j = SelectionQuery(userId = Some(userId), roundId = Some(roundId)).join(monuments = false)
+      j must not(contain("monument"))
+    }
+
+    "append monument join when monuments = true" in {
+      val j = SelectionQuery(userId = Some(userId), roundId = Some(roundId)).join(monuments = true)
+      j must contain("join monument m on i.monument_id = m.id")
+    }
+  }
+
+  "orderBy" should {
+
+    "include monument_id asc when specified" in {
+      SelectionQuery(userId = Some(userId), roundId = Some(roundId))
+        .orderBy(Map("s.monument_id" -> 1)) must contain("s.monument_id asc")
+    }
+
+    "include rate desc when specified" in {
+      SelectionQuery(userId = Some(userId), roundId = Some(roundId))
+        .orderBy(Map("rate" -> -1)) must contain("rate desc")
+    }
+
+    "produce empty string when order map is empty" in {
+      SelectionQuery(userId = Some(userId), roundId = Some(roundId))
+        .orderBy(Map.empty) === ""
+    }
+  }
+
 }
 
 object SelectionQuerySpec {

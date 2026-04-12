@@ -178,7 +178,7 @@ object GatlingDbSetup {
       SQL("SET foreign_key_checks = 0").execute.apply()
       SQL("SET unique_checks = 0").execute.apply()
 
-      monuments.grouped(1000).foreach(batch => MonumentJdbc.batchInsert(batch.toSeq))
+      monuments.grouped(1000).foreach(batch => MonumentJdbc.batchInsertFresh(batch.toSeq))
       images.grouped(1000).foreach(batch => ImageJdbc.batchInsert(batch.toSeq))
       (binarySelections ++ ratingSelections).grouped(5000).foreach(batch => SelectionJdbc.batchInsert(batch.toSeq))
 

@@ -158,8 +158,8 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
     }
 
     private val imagesJoinSelection =
-      """ from images i
-        |join selection s
+      """ from selection s
+        |STRAIGHT_JOIN images i
         |on i.page_id = s.page_id""".stripMargin
 
     def join(monuments: Boolean): String = {

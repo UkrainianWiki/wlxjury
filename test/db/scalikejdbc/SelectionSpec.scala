@@ -67,5 +67,35 @@ class SelectionSpec extends Specification with BeforeAll {
       selectionDao.rate(pageId = 1, juryId = 10, roundId = 20, rate = 0)
       noIds(sameTime(selectionDao.findAll())) === s
     }
+
+    "persist and read back monumentId via create" in new AutoRollbackDb {
+      val created = selectionDao.create(
+        pageId = -10L, rate = 1, juryId = 20L, roundId = 0L,
+        monumentId = Some("13-220")
+      )
+      val id = created.getId
+      created.monumentId === Some("13-220")
+      selectionDao.findById(id).map(_.monumentId) === Some(Some("13-220"))
+    }
+
+    "persist None monumentId via create" in new AutoRollbackDb {
+      val created = selectionDao.create(
+        pageId = -11L, rate = 0, juryId = 20L, roundId = 0L
+      )
+      val id = created.getId
+      created.monumentId === None
+      selectionDao.findById(id).map(_.monumentId) === Some(None)
+    }
+
+    "batchInsert preserves monumentId per row" in new AutoRollbackDb {
+      val selections = Seq(
+        Selection(pageId = 1L, juryId = 1L, roundId = 1L, rate = 1, monumentId = Some("13-001")),
+        Selection(pageId = 2L, juryId = 1L, roundId = 1L, rate = 0, monumentId = Some("07-101")),
+        Selection(pageId = 3L, juryId = 1L, roundId = 1L, rate = 1, monumentId = None)
+      )
+      selectionDao.batchInsert(selections)
+      val all = selectionDao.findAll().sortBy(_.pageId)
+      all.map(_.monumentId) === Seq(Some("13-001"), Some("07-101"), None)
+    }
   }
 }

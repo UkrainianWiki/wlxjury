@@ -17,10 +17,10 @@ import java.net.{CookieManager, CookiePolicy, URI}
  *  NOTE: First run triggers GatlingTestFixture initialisation (Docker + data load),
  *  which takes several minutes. Subsequent runs in the same JVM are instant.
  */
-class GatlinSmokeSpec extends Specification {
+class GatlingSmokeSpec extends Specification {
   sequential
 
-  private val MaxMs     = 1500L
+  private val MaxMs     = 1000L
   private lazy val base = s"http://localhost:${GatlingTestFixture.port}"
   private val f         = GatlingTestFixture
 
