@@ -39,35 +39,33 @@ class ImageProxyController @Inject() (
       case Some((filename, px)) =>
         // Fix 1: wrap blocking JDBC call so it doesn't starve the Play dispatcher
         Future(scala.concurrent.blocking(Try(ImageJdbc.findByFilename(filename)).getOrElse(None)))
-          .flatMap { imageOpt =>
-            imageOpt match {
-              case None =>
-                // Not in DB: redirect to Wikimedia; browser follows transparently for <img>
-                Future.successful(
-                  Redirect(s"https://upload.wikimedia.org/wikipedia/commons/thumb/$path", SEE_OTHER)
-                )
+          .flatMap {
+            case None =>
+              // Not in DB: redirect to Wikimedia; browser follows transparently for <img>
+              Future.successful(
+                Redirect(s"https://upload.wikimedia.org/wikipedia/commons/thumb/$path", SEE_OTHER)
+              )
 
-              case Some(image) =>
-                // Fix 3: guard against stale registry entries where the file was deleted on disk
-                cache.fileIfCached(image, px) match {
-                  case Some(file) if file.exists() =>
-                    Future.successful(Ok.sendFile(file, inline = true)
-                      .as("image/jpeg")
-                      .withHeaders("Cache-Control" -> "public, max-age=2592000"))
+            case Some(image) =>
+              // Fix 3: guard against stale registry entries where the file was deleted on disk
+              cache.fileIfCached(image, px) match {
+                case Some(file) if file.exists() =>
+                  Future.successful(Ok.sendFile(file, inline = true)
+                    .as("image/jpeg")
+                    .withHeaders("Cache-Control" -> "public, max-age=2592000"))
 
-                  case Some(_) | None =>
-                    // File missing from disk or not cached — fetch from Wikimedia
-                    cache.fetchAndCacheAll(image, px)
-                      .map { bytes =>
-                        Ok(bytes).as("image/jpeg")
-                          .withHeaders("Cache-Control" -> "public, max-age=2592000")
-                      }
-                      .recover { case ex =>
-                        logger.warn(s"Failed to fetch $path: ${ex.getMessage}")
-                        Redirect(s"https://upload.wikimedia.org/wikipedia/commons/thumb/$path", SEE_OTHER)
-                      }
-                }
-            }
+                case Some(_) | None =>
+                  // File missing from disk or not cached — fetch from Wikimedia
+                  cache.fetchAndCacheAll(image, px)
+                    .map { bytes =>
+                      Ok(bytes).as("image/jpeg")
+                        .withHeaders("Cache-Control" -> "public, max-age=2592000")
+                    }
+                    .recover { case ex =>
+                      logger.warn(s"Failed to fetch $path: ${ex.getMessage}")
+                      Redirect(s"https://upload.wikimedia.org/wikipedia/commons/thumb/$path", SEE_OTHER)
+                    }
+              }
           }
     }
   }

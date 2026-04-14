@@ -180,8 +180,7 @@ object ImageJdbc extends CRUDMapper[Image]
 
   def rateDistribution(userId: Long, roundId: Long): Map[Int, Int] =
     sql"""SELECT s.rate, count(1)
-  FROM images i
-  JOIN selection s ON i.page_id = s.page_id
+  FROM selection s
   WHERE
   s.jury_id = $userId
   AND s.round_id = $roundId

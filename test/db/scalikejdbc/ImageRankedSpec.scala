@@ -2,11 +2,14 @@ package db.scalikejdbc
 
 import org.intracer.wmua.{Image, Selection}
 import org.specs2.mutable.Specification
-import org.specs2.specification.BeforeAll
+import org.specs2.specification.{BeforeAll, BeforeEach}
 
-class ImageRankedSpec extends Specification with BeforeAll {
+class ImageRankedSpec extends Specification with TestDb with BeforeAll with BeforeEach {
+
+  sequential
 
   override def beforeAll(): Unit = SharedTestDb.init()
+  override protected def before: Any = SharedTestDb.truncateAll()
 
   // helpers
   private def img(pageId: Long): Image =
@@ -21,12 +24,12 @@ class ImageRankedSpec extends Specification with BeforeAll {
 
   "byUserImageWithRatingRanked" should {
 
-    "return empty for no selections" in new AutoRollbackDb {
+    "return empty for no selections" in {
       val result = imageDao.byUserImageWithRatingRanked(userId = 1L, roundId = 1L)
       result must beEmpty
     }
 
-    "rank a single image as rank=1" in new AutoRollbackDb {
+    "rank a single image as rank=1" in {
       imageDao.batchInsert(Seq(img(101L)))
       selectionDao.batchInsert(Seq(sel(101L, juryId = 1L, roundId = 1L, rate = 3)))
 
@@ -36,7 +39,7 @@ class ImageRankedSpec extends Specification with BeforeAll {
       result.head.pageId must_== 101L
     }
 
-    "order two images: higher rate gets rank=1" in new AutoRollbackDb {
+    "order two images: higher rate gets rank=1" in {
       imageDao.batchInsert(Seq(img(201L), img(202L)))
       selectionDao.batchInsert(Seq(
         sel(201L, juryId = 1L, roundId = 1L, rate = 5),
@@ -51,7 +54,7 @@ class ImageRankedSpec extends Specification with BeforeAll {
       result(1).rank must_== Some(2)
     }
 
-    "rank three images with distinct rates correctly" in new AutoRollbackDb {
+    "rank three images with distinct rates correctly" in {
       imageDao.batchInsert(Seq(img(301L), img(302L), img(303L)))
       // insert in mixed order to ensure ordering is by rank, not insertion order
       selectionDao.batchInsert(Seq(
@@ -70,7 +73,7 @@ class ImageRankedSpec extends Specification with BeforeAll {
       result(2).rank must_== Some(3)
     }
 
-    "isolate by juryId — other juror's selections not included" in new AutoRollbackDb {
+    "isolate by juryId — other juror's selections not included" in {
       imageDao.batchInsert(Seq(img(401L), img(402L)))
       selectionDao.batchInsert(Seq(
         sel(401L, juryId = 1L, roundId = 1L, rate = 4),
@@ -82,7 +85,7 @@ class ImageRankedSpec extends Specification with BeforeAll {
       result.head.pageId must_== 401L
     }
 
-    "isolate by roundId — other round's selections not included" in new AutoRollbackDb {
+    "isolate by roundId — other round's selections not included" in {
       imageDao.batchInsert(Seq(img(501L), img(502L)))
       selectionDao.batchInsert(Seq(
         sel(501L, juryId = 1L, roundId = 1L, rate = 4),
@@ -94,7 +97,7 @@ class ImageRankedSpec extends Specification with BeforeAll {
       result.head.pageId must_== 501L
     }
 
-    "respects pageSize and offset" in new AutoRollbackDb {
+    "respects pageSize and offset" in {
       val pageIds = 601L to 605L
       imageDao.batchInsert(pageIds.map(img))
       // rates 5,4,3,2,1 — page 601 gets rank 1, page 605 gets rank 5
@@ -120,12 +123,12 @@ class ImageRankedSpec extends Specification with BeforeAll {
 
   "byUserImageRangeRanked" should {
 
-    "return empty for no selections" in new AutoRollbackDb {
+    "return empty for no selections" in {
       val result = imageDao.byUserImageRangeRanked(userId = 1L, roundId = 1L)
       result must beEmpty
     }
 
-    "rank a single image as rank=1, rank2=1" in new AutoRollbackDb {
+    "rank a single image as rank=1, rank2=1" in {
       imageDao.batchInsert(Seq(img(701L)))
       selectionDao.batchInsert(Seq(sel(701L, juryId = 1L, roundId = 1L, rate = 3)))
 
@@ -136,7 +139,7 @@ class ImageRankedSpec extends Specification with BeforeAll {
       result.head.pageId must_== 701L
     }
 
-    "compute rank1 (DESC) and rank2 (ASC) correctly for two images" in new AutoRollbackDb {
+    "compute rank1 (DESC) and rank2 (ASC) correctly for two images" in {
       imageDao.batchInsert(Seq(img(801L), img(802L)))
       selectionDao.batchInsert(Seq(
         sel(801L, juryId = 1L, roundId = 1L, rate = 5),
@@ -157,7 +160,7 @@ class ImageRankedSpec extends Specification with BeforeAll {
       worst.rank2 must_== Some(2)
     }
 
-    "orders results by rank1 ascending" in new AutoRollbackDb {
+    "orders results by rank1 ascending" in {
       imageDao.batchInsert(Seq(img(901L), img(902L), img(903L)))
       selectionDao.batchInsert(Seq(
         sel(903L, juryId = 1L, roundId = 1L, rate = 1),
@@ -173,7 +176,7 @@ class ImageRankedSpec extends Specification with BeforeAll {
       result(2).pageId must_== 903L
     }
 
-    "respects pageSize and offset" in new AutoRollbackDb {
+    "respects pageSize and offset" in {
       val pageIds = 1001L to 1004L
       imageDao.batchInsert(pageIds.map(img))
       // rates 4,3,2,1 → ranks 1,2,3,4

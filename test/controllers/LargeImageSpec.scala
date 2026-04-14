@@ -59,7 +59,7 @@ class LargeImageSpec extends PlaySpecification with PlayTestDb {
 
   private def imageJson(id: Int, rate: Int = 0) = {
     s"""{"image":{"pageId":$id,"title":"File:Image$id.jpg","width":640,"height":480,"monumentId":"12-345-$id"},
-       |"selection":[{"pageId":$id,"juryId":1,"roundId":1,"rate":$rate,"id":${id + 1}}],
+       |"selection":[{"pageId":$id,"juryId":1,"roundId":1,"rate":$rate,"id":${id + 1},"monumentId":"12-345-$id"}],
        |"countFromDb":0}""".stripMargin
   }
 

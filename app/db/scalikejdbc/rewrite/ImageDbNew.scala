@@ -80,7 +80,14 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
         (if (!(count || byRegion)) orderBy() else "")
 
       val result =
-        if (count)
+        if (count && regions.isEmpty && !byRegion) {
+          // Optimised path: skip the images join entirely.
+          // The images table carries no information needed for a pure count, and
+          // having it as the outer/driving table forces a full 38k-row scan even
+          // when idx_selection_jury_round can satisfy the predicate in < 1 ms.
+          val countExpr = "COUNT(DISTINCT s.page_id)"
+          "select " + countExpr + " from selection s" + where()
+        } else if (count)
           "select count(t.pi_on_i) from (" + sql + ") t"
         else
           sql + (if (noLimit || byRegion) "" else limitSql())
@@ -106,11 +113,10 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
     }
 
     def byRegionStat()(implicit messages: Messages, session: DBSession = autoSession): Seq[Region] = {
-      val map = SQL(s"""SELECT DISTINCT m.adm0
+      val map = SQL(s"""SELECT DISTINCT m.$regionColumn
                        |FROM selection s
-                       |JOIN images i ON i.page_id = s.page_id
-                       |JOIN monument m ON m.id = i.monument_id
-                       |WHERE m.adm0 IS NOT NULL
+                       |JOIN monument m ON m.id = s.monument_id
+                       |WHERE m.$regionColumn IS NOT NULL
                        |  ${userId.fold("") { id => s"AND s.jury_id = $id" }}
                        |  AND s.round_id = ${roundId.get}""".stripMargin)
         .map(rs => rs.string(1) -> None)
@@ -151,8 +157,8 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
     }
 
     private val imagesJoinSelection =
-      """ from images i
-        |join selection s
+      """ from selection s
+        |STRAIGHT_JOIN images i
         |on i.page_id = s.page_id""".stripMargin
 
     def join(monuments: Boolean): String = {

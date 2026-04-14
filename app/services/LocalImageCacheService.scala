@@ -17,7 +17,7 @@ import java.io.{ByteArrayInputStream, File}
 import java.nio.file.Files
 import scala.jdk.CollectionConverters._
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.{AtomicBoolean, AtomicInteger}
 import javax.imageio.ImageIO
 import javax.inject.{Inject, Singleton}
 import scala.concurrent.duration._
@@ -82,7 +82,8 @@ class LocalImageCacheService @Inject() (
   private val progressMap = new ConcurrentHashMap[Long, CacheProgress]()
   private val roundProgressMap = new ConcurrentHashMap[Long, CacheProgress]()
 
-  private val registry = new ConcurrentHashMap[String, Unit]()
+  private val registry  = new ConcurrentHashMap[String, Unit]()
+  private val inFlight  = new ConcurrentHashMap[String, Future[Array[Byte]]]()
 
   private[services] def registrySize: Int = registry.size()
   private[services] def registryContains(file: File): Boolean =
@@ -106,30 +107,31 @@ class LocalImageCacheService @Inject() (
       case None =>
         Future.failed(new Exception(s"No cacheable URL for ${image.title}"))
       case Some(url) =>
-        downloadWithRetry(url, attempt = 1).flatMap {
-          case None =>
-            Future.failed(new Exception(s"Failed to download $url"))
-          case Some(bytes) =>
-            val sourceImg = ImageIO.read(new ByteArrayInputStream(bytes))
-            if (sourceImg == null)
-              Future.failed(new Exception(s"Could not decode image from $url"))
-            else {
-              // Run cascade synchronously: saves fire async inside saveResized, cascade CPU returns
-              // the requested image immediately. A try/catch preserves the current behavior where
-              // scaling errors (e.g. OOM) are logged and fall back to a direct scale rather than
-              // propagating a failed Future to the caller.
-              val imgOpt = try {
-                saveResized(image, sourceImg, sourcePx, Some(requestedPx))
-              } catch {
-                case ex: Exception =>
-                  logger.warn(s"Cascade failed for ${image.title}: ${ex.getMessage}")
-                  None
+        // Deduplicate concurrent downloads of the same URL: only one HTTP request fires;
+        // all concurrent callers share the resulting Future.
+        val download: Future[Array[Byte]] =
+          inFlight.computeIfAbsent(url, (_: String) =>
+            downloadWithRetry(url, attempt = 1)
+              .flatMap {
+                case None    => Future.failed(new Exception(s"Failed to download $url"))
+                case Some(b) => Future.successful(b)
               }
-              val requestedImg = imgOpt.getOrElse(scale(sourceImg, requestedPx))
-              val baos = new java.io.ByteArrayOutputStream()
-              ImageIO.write(requestedImg, "JPEG", baos)
-              Future.successful(baos.toByteArray)
-            }
+              .andThen { case _ => inFlight.remove(url) }
+          )
+        download.flatMap { bytes =>
+          val sourceImg = ImageIO.read(new ByteArrayInputStream(bytes))
+          if (sourceImg == null)
+            Future.failed(new Exception(s"Could not decode image from $url"))
+          else {
+            // Save all target sizes in background (saveResized skips those already in registry)
+            Future(saveResized(image, sourceImg, sourcePx))
+              .recover { case ex => logger.warn(s"Background save failed for ${image.title}: ${ex.getMessage}") }
+            // Resize the requested size and return immediately
+            val requestedImg = scale(sourceImg, requestedPx)
+            val baos = new java.io.ByteArrayOutputStream()
+            ImageIO.write(requestedImg, "JPEG", baos)
+            Future.successful(baos.toByteArray)
+          }
         }
     }
   }
@@ -153,7 +155,13 @@ class LocalImageCacheService @Inject() (
     Option(roundProgressMap.get(roundId)).getOrElse(CacheProgress(0, 0, 0, running = false))
 
   def startDownload(contestId: Long): Unit = {
-    if (progress(contestId).running) return
+    val alreadyRunning = new AtomicBoolean(false)
+    progressMap.compute(contestId, (_, existing) => {
+      val current = Option(existing).getOrElse(CacheProgress(0, 0, 0, running = false))
+      if (current.running) { alreadyRunning.set(true); current }
+      else current.copy(running = true)
+    })
+    if (alreadyRunning.get()) return
     val images = ImageJdbc
       .findByContestId(contestId)
       .filter(img => img.isImage && img.url.isDefined && img.width > 0 && img.height > 0)
@@ -161,7 +169,13 @@ class LocalImageCacheService @Inject() (
   }
 
   def startDownloadForRound(contestId: Long, roundId: Long): Unit = {
-    if (progressForRound(roundId).running) return
+    val alreadyRunning = new AtomicBoolean(false)
+    roundProgressMap.compute(roundId, (_, existing) => {
+      val current = Option(existing).getOrElse(CacheProgress(0, 0, 0, running = false))
+      if (current.running) { alreadyRunning.set(true); current }
+      else current.copy(running = true)
+    })
+    if (alreadyRunning.get()) return
     val images = scala.util.Try(ImageJdbc.byRound(roundId)) match {
       case scala.util.Success(imgs) => imgs
       case scala.util.Failure(ex) =>
@@ -169,7 +183,13 @@ class LocalImageCacheService @Inject() (
         Seq.empty
     }
     val filtered = images.filter(img => img.isImage && img.url.isDefined && img.width > 0 && img.height > 0)
-    if (filtered.isEmpty) return  // nothing to do, progress stays at default (running=false)
+    if (filtered.isEmpty) {
+      // Reset the running flag we claimed above; nothing will be downloaded
+      roundProgressMap.compute(roundId, (_, existing) =>
+        Option(existing).getOrElse(CacheProgress(0, 0, 0, running = false)).copy(running = false)
+      )
+      return
+    }
     runDownloadForRound(contestId, roundId, filtered)
   }
 
@@ -281,7 +301,7 @@ class LocalImageCacheService @Inject() (
         downloadWithRetry(url, attempt = 1).map {
           case Some(bytes) =>
             val sourceImg = ImageIO.read(new ByteArrayInputStream(bytes))
-            if (sourceImg != null) { saveResized(image, sourceImg, sourcePx); () }
+            if (sourceImg != null) saveResized(image, sourceImg, sourcePx)
           case None => ()
         }
     }
@@ -332,41 +352,19 @@ class LocalImageCacheService @Inject() (
     (baseSeconds + jitter).seconds
   }
 
-  /** Generates all target sizes via cascaded downscaling and saves them asynchronously.
-    *
-    * @param requestedPx if Some(px), returns the BufferedImage for that width if generated
-    * @return Some(img) for the requested width if it was generated; None otherwise
-    */
-  private[services] def saveResized(
-    image: Image,
-    sourceImg: BufferedImage,
-    sourcePx: Int,
-    requestedPx: Option[Int] = None
-  ): Option[BufferedImage] = {
-    val toGenerate = targetHeights
-      .map(h => ImageUtil.resizeTo(image.width, image.height, h))
-      .filter(px => px > 0 && px < image.width && px <= sourcePx)
-      .distinct
-      .sorted(Ordering[Int].reverse)  // largest first for cascade
-
-    val results = cascadeScale(sourceImg, toGenerate)
-
-    results.foreach { case (px, img) =>
-      val file = localFile(image, px)
-      if (!registry.containsKey(file.getAbsolutePath)) {
-        registry.put(file.getAbsolutePath, ())   // claim before async write
-        file.getParentFile.mkdirs()
-        Future {
-          ImageIO.write(img, "JPEG", file)
-        }.recover { case ex =>
-          logger.warn(s"Failed to write ${file.getName}: ${ex.getMessage}")
-          registry.remove(file.getAbsolutePath)  // release claim on failure
+  private[services] def saveResized(image: Image, sourceImg: BufferedImage, sourcePx: Int): Unit =
+    targetHeights.foreach { h =>
+      val px = ImageUtil.resizeTo(image.width, image.height, h)
+      if (px > 0 && px < image.width && px <= sourcePx) {
+        val file = localFile(image, px)
+        // putIfAbsent atomically claims the slot; only the thread that gets null back writes the file.
+        if (registry.putIfAbsent(file.getAbsolutePath, ()) == null) {
+          file.getParentFile.mkdirs()
+          val resized = scale(sourceImg, px)
+          ImageIO.write(resized, "JPEG", file)
         }
       }
     }
-
-    requestedPx.flatMap(rpx => results.find(_._1 == rpx).map(_._2))
-  }
 
   private[services] def scale(src: BufferedImage, targetWidth: Int): BufferedImage = {
     val targetHeight = (src.getHeight.toDouble * targetWidth / src.getWidth).toInt

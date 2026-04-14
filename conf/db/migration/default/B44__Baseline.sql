@@ -155,7 +155,7 @@ CREATE TABLE `images` (
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!40101 SET character_set_client = utf8mb4 */;
 CREATE TABLE `monument` (
-  `id` varchar(190) DEFAULT NULL,
+  `id` varchar(190) NOT NULL,
   `name` varchar(512) NOT NULL,
   `description` varchar(4000) DEFAULT NULL,
   `place` text DEFAULT NULL,
@@ -174,7 +174,7 @@ CREATE TABLE `monument` (
   `contest` bigint(20) DEFAULT NULL,
   `adm0` varchar(3) DEFAULT NULL,
   `adm1` varchar(6) DEFAULT NULL,
-  KEY `monument_id_index` (`id`),
+  PRIMARY KEY (`id`),
   KEY `adm0_index` (`adm0`),
   KEY `adm1_index` (`adm1`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;

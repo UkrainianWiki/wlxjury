@@ -16,9 +16,10 @@ class RoundManagementSimulation extends Simulation {
   private val scn = scenario("Round Management")
     .exec(http("login organizer")
       .post("/auth")
+      .disableFollowRedirect
       .formParam("login", orgEmail)
       .formParam("password", orgPassword)
-      .check(status.in(200, 303)))
+      .check(status.is(303)))
     .repeat(20) {
       exec(http("rounds list")
         .get(s"/admin/rounds?contestId=${GatlingTestFixture.contestId}")
