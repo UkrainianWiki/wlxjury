@@ -113,11 +113,10 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
     }
 
     def byRegionStat()(implicit messages: Messages, session: DBSession = autoSession): Seq[Region] = {
-      val map = SQL(s"""SELECT DISTINCT m.adm0
+      val map = SQL(s"""SELECT DISTINCT m.$regionColumn
                        |FROM selection s
-                       |JOIN images i ON i.page_id = s.page_id
-                       |JOIN monument m ON m.id = i.monument_id
-                       |WHERE m.adm0 IS NOT NULL
+                       |JOIN monument m ON m.id = s.monument_id
+                       |WHERE m.$regionColumn IS NOT NULL
                        |  ${userId.fold("") { id => s"AND s.jury_id = $id" }}
                        |  AND s.round_id = ${roundId.get}""".stripMargin)
         .map(rs => rs.string(1) -> None)

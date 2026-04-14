@@ -121,9 +121,11 @@ object GatlingDbSetup {
       }
     }
     val imagePageIds = images.map(_.pageId)
+    val imageMonumentMap: Map[Long, Option[String]] = images.map(img => img.pageId -> img.monumentId).toMap
 
     // ── Entity creation (auto-commits individually; small row counts) ─────────
-    val contest   = ContestJuryJdbc.create(id = None, name = "Gatling Perf Test Contest", year = 2024, country = "ua")
+    val contest   = ContestJuryJdbc.create(id = None, name = "Gatling Perf Test Contest", year = 2024, country = "ua",
+                                           monumentIdTemplate = Some("{{UkrainianMonument}}"))
     val contestId = contest.id.get
 
     val jurors = (1 to numUsers).map { i =>
@@ -165,14 +167,16 @@ object GatlingDbSetup {
       chosen  = rng.shuffle(jurorIds.toVector).take(math.round(numJurors * fraction).toInt)
       juryId <- chosen
     } yield Selection(pageId = pageId, juryId = juryId, roundId = binaryRound.id.get,
-                      rate = if (rng.nextBoolean()) 1 else -1)
+                      rate = if (rng.nextBoolean()) 1 else -1,
+                      monumentId = imageMonumentMap.getOrElse(pageId, None))
 
     val ratingSelections = for {
       pageId <- imagePageIds
       chosen  = rng.shuffle(jurorIds.toVector).take(math.round(numJurors * fraction).toInt)
       juryId <- chosen
     } yield Selection(pageId = pageId, juryId = juryId, roundId = ratingRound.id.get,
-                      rate = rng.nextInt(maxRate) + 1)
+                      rate = rng.nextInt(maxRate) + 1,
+                      monumentId = imageMonumentMap.getOrElse(pageId, None))
 
     DB.localTx { implicit session =>
       SQL("SET foreign_key_checks = 0").execute.apply()

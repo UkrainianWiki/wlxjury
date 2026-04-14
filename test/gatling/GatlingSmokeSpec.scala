@@ -92,6 +92,22 @@ class GatlingSmokeSpec extends Specification {
     r.ms must be_<=(MaxMs)
   }
 
+  "RegionStat smoke" in {
+    // byRegionStat is called during gallery page render when contest.monumentIdTemplate.isDefined
+    // (set in GatlingDbSetup.load). This test verifies both that the query stays < 1s and that
+    // it actually returns region data (body contains a known region code).
+    val (cl, jurorId) = jurorClient()
+    val t0  = System.currentTimeMillis()
+    val req = HttpRequest.newBuilder()
+      .uri(URI.create(s"$base/gallery/round/${f.roundBinaryId}/user/$jurorId/page/1"))
+      .GET().build()
+    val resp = cl.send(req, BodyHandlers.ofString())
+    val ms   = System.currentTimeMillis() - t0
+    resp.statusCode() must_== 200
+    ms must be_<=(MaxMs)
+    resp.body() must contain(f.regions.head)
+  }
+
   "AggregatedRatings smoke" in {
     val cl = organizerClient()
     val r  = doGet(cl, s"/roundstat/${f.roundRatingId}")
