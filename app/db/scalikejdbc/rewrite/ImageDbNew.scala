@@ -48,68 +48,67 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
         noLimit: Boolean = false,
         byRegion: Boolean = false,
         ranked: Boolean = false
-    ): String = {
+    ): SQLSyntax = {
 
-      val columns: String = "select  " +
-        (if (count || idOnly) {
-           "i.page_id as pi_on_i" +
-             (if (ranked)
-                s", ROW_NUMBER() over (${orderBy()}) ranked"
-              else "") +
-             (if (grouped)
-                ", sum(s.rate) as rate, count(s.rate) as rate_count"
-              else "")
-         } else {
-           if (byRegion)
-             s"m.$regionColumn, count(DISTINCT i.page_id)"
-           else if (!grouped)
-             sqls"""${i.result.*}, ${s.result.*} """.value
-           else
-             sqls"""sum(s.rate) as rate, count(s.rate) as rate_count, ${i.result.*} """.value
-         })
+      val columnsStr: String =
+        "select  " +
+          (if (count || idOnly) {
+             "i.page_id as pi_on_i" +
+               (if (ranked)
+                  s", ROW_NUMBER() over (${orderBy()}) ranked"
+                else "") +
+               (if (grouped)
+                  ", sum(s.rate) as rate, count(s.rate) as rate_count"
+                else "")
+           } else {
+             if (byRegion)
+               s"m.$regionColumn, count(DISTINCT i.page_id)"
+             else if (!grouped)
+               sqls"""${i.result.*}, ${s.result.*} """.value
+             else
+               sqls"""sum(s.rate) as rate, count(s.rate) as rate_count, ${i.result.*} """.value
+           })
 
-      val groupBy = if (byRegion) {
+      val groupByStr = if (byRegion) {
         s" group by m.$regionColumn"
       } else if (grouped) {
         " group by s.page_id"
       } else ""
 
-      val sql = columns + join(monuments = regions.size > 1 || byRegion) +
-        where(count) +
-        groupBy +
-        (if (!(count || byRegion)) orderBy() else "")
+      // SQL clause order: FROM/JOIN → WHERE → GROUP BY → ORDER BY
+      // Monument join needed when: multiple regions (IN clause on m.adm0),
+      // byRegion stats, or a single full-region-code (length > 2) that references m.adm0/m.adm1
+      val needsMonumentJoin = regions.size > 1 || byRegion || regions.headOption.exists(_.length > 2)
+      val structureStr =
+        columnsStr +
+          join(monuments = needsMonumentJoin)
 
-      val result =
-        if (count && regions.isEmpty && !byRegion) {
-          // Optimised path: skip the images join entirely.
-          // The images table carries no information needed for a pure count, and
-          // having it as the outer/driving table forces a full 38k-row scan even
-          // when idx_selection_jury_round can satisfy the predicate in < 1 ms.
-          val countExpr = "COUNT(DISTINCT s.page_id)"
-          "select " + countExpr + " from selection s" + where()
-        } else if (count)
-          "select count(t.pi_on_i) from (" + sql + ") t"
-        else
-          sql + (if (noLimit || byRegion) "" else limitSql())
+      val mainSql =
+        sqls"${SQLSyntax.createUnsafely(structureStr)} ${where(count)} ${SQLSyntax.createUnsafely(groupByStr + (if (!(count || byRegion)) orderBy() else ""))}"
 
-      result
+      if (count && regions.isEmpty && !byRegion) {
+        val countExpr = SQLSyntax.createUnsafely("COUNT(DISTINCT s.page_id)")
+        sqls"select $countExpr from selection s ${where()}"
+      } else if (count) {
+        sqls"select count(t.pi_on_i) from ($mainSql) t"
+      } else if (noLimit || byRegion) {
+        mainSql
+      } else {
+        sqls"$mainSql ${SQLSyntax.createUnsafely(limitSql())}"
+      }
     }
 
     def list()(implicit session: DBSession = autoSession): Seq[ImageWithRating] = {
-      postProcessor(SQL(query()).map(reader).list())
+      postProcessor(sql"${query()}".map(reader).list())
     }
 
     def count()(implicit session: DBSession = autoSession): Int = {
-      single(query(count = true))
+      sql"${query(count = true)}".map(_.int(1)).single().getOrElse(0)
     }
 
     def imageRank(pageId: Long)(implicit session: DBSession = autoSession): Int = {
-      single(
-        imageRankSql(
-          pageId,
-          query(ranked = true, idOnly = true, noLimit = true)
-        )
-      )
+      val inner = query(ranked = true, idOnly = true, noLimit = true)
+      sql"${imageRankSql(pageId, inner)}".map(_.int(1)).single().getOrElse(0)
     }
 
     def byRegionStat()(implicit messages: Messages, session: DBSession = autoSession): Seq[Region] = {
@@ -152,10 +151,6 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
       }
     }
 
-    def single(sql: String)(implicit session: DBSession = autoSession): Int = {
-      SQL(sql).map(_.int(1)).single().getOrElse(0)
-    }
-
     private val imagesJoinSelection =
       """ from selection s
         |STRAIGHT_JOIN images i
@@ -167,35 +162,33 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
                              else "")
     }
 
-    def where(count: Boolean = false): String = {
-      val conditions =
-        Seq(
-          userId.map(id => "s.jury_id = " + id),
-          roundId.map(id => "s.round_id = " + id),
-          rate.map(r => "s.rate = " + r),
-          rated.map { r =>
-            val rated = if (r) "s.rate > 0" else "s.rate = 0"
-            withPageId.fold(rated) { pageId =>
-              s"($rated or s.page_id = $pageId)"
-            }
-          },
-          regions.headOption.map { _ =>
-            if (regions.headOption.exists(_.length > 2)) {
-              s"m.$regionColumn in (" + regions
-                .map(r => s"'$r'")
-                .mkString(", ") + ")"
-            } else {
-              if (regions.size > 1) {
-                s"m.adm0 in (" + regions.map(r => s"'$r'").mkString(", ") + ")"
-              } else {
-                s"i.monument_id like '${regions.head}%'"
-              }
-            }
-          }
-        ).flatten
+    def where(count: Boolean = false): SQLSyntax = {
+      val col = SQLSyntax.createUnsafely(s"m.$regionColumn")
 
-      conditions.headOption.fold("") { _ =>
-        " where " + conditions.mkString(" and ")
+      val conditions: Seq[SQLSyntax] = Seq(
+        userId.map(id => sqls"s.jury_id = $id"),
+        roundId.map(id => sqls"s.round_id = $id"),
+        rate.map(r => sqls"s.rate = $r"),
+        rated.map { r =>
+          val ratedCond: SQLSyntax = if (r) sqls"s.rate > 0" else sqls"s.rate = 0"
+          withPageId.fold(ratedCond) { pageId =>
+            sqls"($ratedCond or s.page_id = $pageId)"
+          }
+        },
+        regions.headOption.map { _ =>
+          if (regions.headOption.exists(_.length > 2)) {
+            sqls.in(col, regions.toSeq)
+          } else if (regions.size > 1) {
+            sqls.in(SQLSyntax.createUnsafely("m.adm0"), regions.toSeq)
+          } else {
+            val likeParam = regions.head + "%"
+            sqls"i.monument_id like $likeParam"
+          }
+        }
+      ).flatten
+
+      conditions.headOption.fold(sqls"") { _ =>
+        sqls" where ${SQLSyntax.join(conditions, sqls"and")}"
       }
     }
 
@@ -222,7 +215,7 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
     val postProcessor: Seq[ImageWithRating] => Seq[ImageWithRating] =
       if (groupWithDetails) groupedWithDetails else identity
 
-    def groupedWithDetails(images: Seq[ImageWithRating]): Seq[ImageWithRating] =
+    private def groupedWithDetails(images: Seq[ImageWithRating]): Seq[ImageWithRating] =
       images
         .groupBy(_.image.pageId)
         .map { case (id, imagesWithId) =>
@@ -234,60 +227,12 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
         .toSeq
         .sortBy(-_.selection.map(_.rate).filter(_ > 0).sum)
 
-    def imageRankSql(pageId: Long, sql: String): String = {
-      val result = if (driver == "mysql") {
-        s"""SELECT ranked, pi_on_i
-            FROM ($sql) t
-            WHERE pi_on_i = $pageId;"""
+    def imageRankSql(pageId: Long, innerSql: SQLSyntax): SQLSyntax = {
+      if (driver == "mysql") {
+        sqls"SELECT ranked, pi_on_i FROM ($innerSql) t WHERE pi_on_i = $pageId"
       } else {
-        s"""SELECT rank FROM
-            (SELECT rownum as rank, t.pi_on_i as page_id
-            FROM  ($sql) t) t2
-        WHERE page_id = $pageId;"""
+        sqls"SELECT rank FROM (SELECT rownum as rank, t.pi_on_i as page_id FROM ($innerSql) t) t2 WHERE page_id = $pageId"
       }
-      result
-    }
-
-    def rankedList(where: String): Seq[ImageWithRating] = {
-      SQL(
-        s"""SELECT count(s2.page_id) + 1 AS rank, ${i.result.*}, ${s1.result.*}
-    FROM images i
-    JOIN (SELECT * FROM selection s WHERE $where) AS s1
-    ON i.page_id = s1.page_id
-    LEFT JOIN (SELECT * FROM selection s WHERE s.jury_id = $userId AND s.round_id = $roundId) AS s2
-    ON s1.rate < s2.rate
-    GROUP BY s1.page_id
-    ORDER BY rank ASC
-    $limit"""
-      ).map(rs => (rs.int(1), ImageJdbc(i)(rs), SelectionJdbc(s1)(rs)))
-        .list()
-        .map { case (rank, img, sel) =>
-          ImageWithRating(img, Seq(sel), rank = Some(rank))
-        }
-    }
-
-    def rangeRankedList(where: String): Seq[ImageWithRating] = {
-      SQL(s"""SELECT s1.rank1, s2.rank2, ${i.result.*}, ${s1.result.*}
-          FROM images i JOIN
-            (SELECT t1.*, count(t2.page_id) + 1 AS rank1
-            FROM (SELECT * FROM selection s WHERE  $where) AS t1
-            LEFT JOIN (SELECT * FROM selection s WHERE $where) AS t2
-              ON  t1.rate < t2.rate
-          GROUP BY t1.page_id) s1
-              ON  i.page_id = s1.page_id
-          JOIN
-              (SELECT t1.page_id, count(t2.page_id) AS rank2
-                 FROM (SELECT * FROM selection s WHERE $where) AS t1
-                 JOIN (SELECT * FROM selection s WHERE $where) AS t2
-                   ON  t1.rate <= t2.rate
-               GROUP BY t1.page_id) s2
-            ON s1.page_id = s2.page_id
-            ORDER BY rank1 ASC $limit()""")
-        .map(rs => (rs.int(1), rs.int(2), ImageJdbc(i)(rs), SelectionJdbc(s1)(rs)))
-        .list()
-        .map { case (rank1, rank2, i, s) =>
-          ImageWithRating(i, Seq(s), rank = Some(rank1), rank2 = Some(rank2))
-        }
     }
 
     object Readers {
@@ -309,9 +254,6 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
         )
       }
 
-      def regionStatReader(rs: WrappedResultSet): (String, Int) = {
-        rs.string(1) -> rs.int(2)
-      }
     }
 
   }
