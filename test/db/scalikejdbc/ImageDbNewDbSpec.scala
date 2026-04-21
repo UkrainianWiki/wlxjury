@@ -108,4 +108,53 @@ class ImageDbNewDbSpec extends Specification with BeforeAll with TestDb {
       SelectionQuery(userId = Some(userId), roundId = Some(99998L)).count() === 0
     }
   }
+
+  "SelectionQuery.list with region filter" should {
+
+    // Single short region → LIKE branch: i.monument_id like '07%'
+    "return only images whose monument_id starts with the given region prefix" in new AutoRollbackDb {
+      imageDao.batchInsert(Seq(img(200L, "07-001"), img(201L, "07-002"), img(202L, "08-001")))
+      selectionDao.batchInsert(Seq(sel(200L, 1, "07-001"), sel(201L, 1, "07-002"), sel(202L, 1, "08-001")))
+
+      val result = SelectionQuery(
+        userId = Some(userId), roundId = Some(roundId),
+        regions = Set("07"),
+        order = Map("s.page_id" -> 1)
+      ).list()
+
+      result.map(_.image.pageId) === Seq(200L, 201L)
+    }
+
+    "return no images when region matches nothing" in new AutoRollbackDb {
+      imageDao.batchInsert(Seq(img(210L, "07-001")))
+      selectionDao.batchInsert(Seq(sel(210L, 1, "07-001")))
+
+      SelectionQuery(
+        userId = Some(userId), roundId = Some(roundId),
+        regions = Set("99")
+      ).list() === Nil
+    }
+  }
+
+  "SQL injection via regions parameter" should {
+
+    "treat injection payload as literal data, return empty result (not an exception)" in new AutoRollbackDb {
+      // Before fix: WHERE i.monument_id like 'uk'%' → SQL syntax error (exception)
+      // After fix:  WHERE i.monument_id like ?      bind: ["uk'%"] → 0 results, no error
+      SelectionQuery(
+        userId  = Some(userId),
+        roundId = Some(roundId),
+        regions = Set("uk'")
+      ).list() === Nil
+    }
+
+    "multi-region injection payload is treated as data, not executed SQL" in new AutoRollbackDb {
+      val payload = "uk' UNION SELECT 1,2,3,4,5,6,7,8,9,10,11,12,13,14--"
+      SelectionQuery(
+        userId  = Some(userId),
+        roundId = Some(roundId),
+        regions = Set(payload, "de")
+      ).list() === Nil
+    }
+  }
 }
