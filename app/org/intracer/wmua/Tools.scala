@@ -151,7 +151,7 @@ object Tools {
     }
   }
 
-  private def addCriteria() = {
+  private def addCriteria(): Unit = {
     val roundId = 1505
     val round = Round.findById(roundId).get
     val selection = SelectionJdbc.byRound(roundId)
