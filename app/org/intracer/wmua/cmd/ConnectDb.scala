@@ -7,8 +7,8 @@ case class ConnectDb(host: String = "jury.wikilovesearth.org.ua",
                      configuration: Configuration)
     extends (() => Unit) {
 
-  def apply() = {
-    Class.forName("com.mysql.jdbc.Driver")
+  def apply(): Unit = {
+    Class.forName("org.mariadb.jdbc.Driver")
 
     val url = s"jdbc:mysql://$host/wlxjury"
 
