@@ -248,3 +248,31 @@ internalPackageRpmSystemd := {
   IO.move(rpmFile, output)
   output
 }
+
+// Extract dependency source jars to target/dep-sources/ as plain .scala/.java files.
+// Run `sbt extractDepSources` once (or after adding new dependencies).
+// Claude Code can then Grep/Read directly inside target/dep-sources/ instead of
+// searching the web for library API signatures.
+lazy val extractDepSources = taskKey[File]("Extract dependency source jars to target/dep-sources")
+
+extractDepSources := {
+  val report = (Test / updateClassifiers).value
+  val outDir = target.value / "dep-sources"
+  val log    = streams.value.log
+  IO.createDirectory(outDir)
+  for {
+    config      <- report.configurations
+    module      <- config.modules
+    (art, file) <- module.artifacts
+    if art.classifier.contains("sources") && file.exists()
+  } {
+    val m    = module.module
+    val dest = outDir / m.organization / s"${m.name}-${m.revision}"
+    if (!dest.exists()) {
+      IO.createDirectory(dest)
+      IO.unzip(file, dest)
+      log.info(s"Extracted ${m.name} ${m.revision}")
+    }
+  }
+  outDir
+}

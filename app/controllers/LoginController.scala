@@ -47,18 +47,21 @@ class LoginController @Inject() (
     }
   }
 
+  private def noStore(result: Result): Result =
+    result.withHeaders("Cache-Control" -> "no-store")
+
   def login: Action[AnyContent] = Action { implicit request =>
     val result =
       if (User.count() > 0) Ok(views.html.index(loginForm))
       else Ok(views.html.signUp(signUpForm))
-    result.withHeaders("Cache-Control" -> "no-store")
+    noStore(result)
   }
 
   def auth(): Action[AnyContent] = Action { implicit request =>
     loginForm
       .bindFromRequest()
       .fold(
-        formWithErrors => BadRequest(views.html.index(formWithErrors)),
+        formWithErrors => noStore(BadRequest(views.html.index(formWithErrors))),
         { case (login, password) =>
           User
             .login(login, password)
@@ -67,21 +70,21 @@ class LoginController @Inject() (
               user.lang.fold(result)(l => result.withLang(Lang(l)))
             }
             .getOrElse(
-              BadRequest(views.html.index(loginForm.withGlobalError("invalid.user.or.password")))
+              noStore(BadRequest(views.html.index(loginForm.withGlobalError("invalid.user.or.password"))))
             )
         }
       )
   }
 
   def signUpView(): Action[AnyContent] = Action { implicit request =>
-    Ok(views.html.signUp(signUpForm))
+    noStore(Ok(views.html.signUp(signUpForm)))
   }
 
   def signUp(): Action[AnyContent] = Action { implicit request =>
     signUpForm
       .bindFromRequest()
       .fold(
-        formWithErrors => BadRequest(views.html.signUp(formWithErrors)),
+        formWithErrors => noStore(BadRequest(views.html.signUp(formWithErrors))),
         { case (login, password, _) =>
           val roles = if (User.count() > 0) Set.empty[String] else Set(User.ROOT_ROLE)
           val newUser =
