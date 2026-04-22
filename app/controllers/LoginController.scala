@@ -48,8 +48,10 @@ class LoginController @Inject() (
   }
 
   def login: Action[AnyContent] = Action { implicit request =>
-    if (User.count() > 0) Ok(views.html.index(loginForm))
-    else Ok(views.html.signUp(signUpForm))
+    val result =
+      if (User.count() > 0) Ok(views.html.index(loginForm))
+      else Ok(views.html.signUp(signUpForm))
+    result.withHeaders("Cache-Control" -> "no-store")
   }
 
   def auth(): Action[AnyContent] = Action { implicit request =>

@@ -190,7 +190,7 @@ class GalleryServiceSpec extends Specification with TestDb {
           Selection(images(imageIndex), jurors(jurorIndex), round, rate)
 
         def rateN(imageIndex: Int, rates: Seq[Int]) =
-          (0 to jurors.size)
+          jurors.indices
             .zip(rates)
             .map { case (j, r) =>
               rate(imageIndex, j, r)
