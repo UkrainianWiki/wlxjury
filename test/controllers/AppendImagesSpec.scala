@@ -3,6 +3,7 @@ package controllers
 import db.scalikejdbc.TestDb
 import org.intracer.wmua.{Image, JuryTestHelpers}
 import org.scalawiki.MwBot
+import org.scalawiki.dto.cmd.Action
 import org.scalawiki.dto.{Namespace, Page, Revision}
 import org.scalawiki.query.SinglePageQuery
 import org.specs2.mock.Mockito
@@ -102,13 +103,8 @@ class AppendImagesSpec extends Specification with Mockito with JuryTestHelpers w
     }
 
     "get images from list" in {
-      skipped
       withDb {
-        val images = (11 to 15)
-          .map(id =>
-            image(id)
-              .copy(description = Some(s"{{$idTemplate|12-345-$id}}"))
-          )
+        val images = (11 to 15).map(id => image(id).copy(monumentId = None))
 
         val contest = createContest()
         val ic = mockService(images, category, contestId)
@@ -261,6 +257,7 @@ class AppendImagesSpec extends Specification with Mockito with JuryTestHelpers w
 
     val commons = mockBot()
     commons.page(category) returns query
+    commons.run(any[Action](), any[Map[String, String]](), any[Option[Long]]()) returns Future.successful(imageInfos: Iterable[Page])
     commons
   }
 
