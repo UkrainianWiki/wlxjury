@@ -21,8 +21,8 @@ object Tools {
 
   def main(args: Array[String]): Unit = {
     Class.forName("org.mariadb.jdbc.Driver")
-    val url: String = //"jdbc:mysql://localhost/wlxjury?autoReconnect=true&autoReconnectForPools=true&useUnicode=true&characterEncoding=UTF-8"
-    "jdbc:mysql://jury.wikilovesearth.org.ua/wlxjury"
+    val url: String = //"jdbc:mariadb://localhost/wlxjury?autoReconnect=true&autoReconnectForPools=true&useUnicode=true&characterEncoding=UTF-8"
+    "jdbc:mariadb://jury.wikilovesearth.org.ua/wlxjury"
     println(s"URL:" + url)
 
     val config = ConfigFactory.load()
