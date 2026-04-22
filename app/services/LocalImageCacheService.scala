@@ -80,7 +80,7 @@ class LocalImageCacheService @Inject() (
       .getOrElse("https://upload.wikimedia.org")
 
   private val progressMap = new ConcurrentHashMap[Long, CacheProgress]()
-  private val roundProgressMap = new ConcurrentHashMap[Long, CacheProgress]()
+  private[services] val roundProgressMap = new ConcurrentHashMap[Long, CacheProgress]()
 
   private val registry = new ConcurrentHashMap[String, Unit]()
 
@@ -153,7 +153,12 @@ class LocalImageCacheService @Inject() (
     Option(roundProgressMap.get(roundId)).getOrElse(CacheProgress(0, 0, 0, running = false))
 
   def startDownload(contestId: Long): Unit = {
-    if (progress(contestId).running) return
+    val shouldStart = new java.util.concurrent.atomic.AtomicBoolean(false)
+    progressMap.compute(contestId, (_, prev) => {
+      val cur = Option(prev).getOrElse(CacheProgress(0, 0, 0, running = false))
+      if (cur.running) cur else { shouldStart.set(true); cur.copy(running = true) }
+    })
+    if (!shouldStart.get()) return
     val images = ImageJdbc
       .findByContestId(contestId)
       .filter(img => img.isImage && img.url.isDefined && img.width > 0 && img.height > 0)
@@ -161,7 +166,12 @@ class LocalImageCacheService @Inject() (
   }
 
   def startDownloadForRound(contestId: Long, roundId: Long): Unit = {
-    if (progressForRound(roundId).running) return
+    val shouldStart = new java.util.concurrent.atomic.AtomicBoolean(false)
+    roundProgressMap.compute(roundId, (_, prev) => {
+      val cur = Option(prev).getOrElse(CacheProgress(0, 0, 0, running = false))
+      if (cur.running) cur else { shouldStart.set(true); cur.copy(running = true) }
+    })
+    if (!shouldStart.get()) return
     val images = scala.util.Try(ImageJdbc.byRound(roundId)) match {
       case scala.util.Success(imgs) => imgs
       case scala.util.Failure(ex) =>
@@ -169,7 +179,10 @@ class LocalImageCacheService @Inject() (
         Seq.empty
     }
     val filtered = images.filter(img => img.isImage && img.url.isDefined && img.width > 0 && img.height > 0)
-    if (filtered.isEmpty) return  // nothing to do, progress stays at default (running=false)
+    if (filtered.isEmpty) {
+      roundProgressMap.put(roundId, CacheProgress(0, 0, 0, running = false))
+      return
+    }
     runDownloadForRound(contestId, roundId, filtered)
   }
 
@@ -259,7 +272,9 @@ class LocalImageCacheService @Inject() (
     val path = wikiThumbUrl(image, px)
       .getOrElse("")
       .replaceFirst("https?://[^/]+", "")
-    val decoded = java.net.URLDecoder.decode(path, "UTF-8")
+    // Use replace("+", "%2B") before URLDecoder so literal '+' in path segments is not
+    // mistakenly decoded as a space (URLDecoder follows query-param rules, not path rules).
+    val decoded = java.net.URLDecoder.decode(path.replace("+", "%2B"), "UTF-8")
     new File(localPath + decoded)
   }
 
@@ -276,13 +291,19 @@ class LocalImageCacheService @Inject() (
     urlOpt match {
       case None =>
         logger.warn(s"No cacheable URL for ${image.title} (url=${image.url})")
-        Future.successful(())
+        Future.failed(new Exception(s"No cacheable URL for ${image.title}"))
       case Some(url) =>
-        downloadWithRetry(url, attempt = 1).map {
+        downloadWithRetry(url, attempt = 1).flatMap {
+          case None =>
+            Future.failed(new Exception(s"Download failed for $url"))
           case Some(bytes) =>
             val sourceImg = ImageIO.read(new ByteArrayInputStream(bytes))
-            if (sourceImg != null) { saveResized(image, sourceImg, sourcePx); () }
-          case None => ()
+            if (sourceImg != null) {
+              saveResized(image, sourceImg, sourcePx)
+              Future.successful(())
+            } else {
+              Future.failed(new Exception(s"Could not decode image from $url"))
+            }
         }
     }
   }
@@ -352,15 +373,17 @@ class LocalImageCacheService @Inject() (
     val results = cascadeScale(sourceImg, toGenerate)
 
     results.foreach { case (px, img) =>
-      val file = localFile(image, px)
-      if (!registry.containsKey(file.getAbsolutePath)) {
-        registry.put(file.getAbsolutePath, ())   // claim before async write
+      val file     = localFile(image, px)
+      val filePath = file.getAbsolutePath
+      // Re-write if not in registry OR if registry claims it but file was deleted from disk.
+      if (!registry.containsKey(filePath) || !file.exists()) {
+        registry.put(filePath, ())   // claim before async write
         file.getParentFile.mkdirs()
         Future {
           ImageIO.write(img, "JPEG", file)
         }.recover { case ex =>
           logger.warn(s"Failed to write ${file.getName}: ${ex.getMessage}")
-          registry.remove(file.getAbsolutePath)  // release claim on failure
+          registry.remove(filePath)  // release claim on failure
         }
       }
     }

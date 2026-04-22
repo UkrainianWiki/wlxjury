@@ -114,5 +114,35 @@ class ImageProxyControllerSpec extends Specification with TestDb {
           beEqualTo("https://upload.wikimedia.org/wikipedia/commons/thumb/x/xx/Missing.jpg/120px-Missing.jpg"))
       }
     }
+
+    "parse px from a PDF thumbnail (page1-250px- prefix) and redirect to Wikimedia" in {
+      testDbApp { implicit app =>
+        val result = route(app,
+          FakeRequest("GET",
+            "/wikipedia/commons/thumb/a/ab/Report.pdf/page1-250px-Report.pdf.jpg")).get
+        // No matching image in DB → redirect to Wikimedia
+        status(result) mustEqual SEE_OTHER
+        header("Location", result) must beSome(contain("upload.wikimedia.org"))
+      }
+    }
+
+    "parse px from a TIFF thumbnail (lossy-page1-250px- prefix) and redirect to Wikimedia" in {
+      testDbApp { implicit app =>
+        val result = route(app,
+          FakeRequest("GET",
+            "/wikipedia/commons/thumb/a/ab/Scan.tif/lossy-page1-250px-Scan.tif.jpg")).get
+        status(result) mustEqual SEE_OTHER
+        header("Location", result) must beSome(contain("upload.wikimedia.org"))
+      }
+    }
+
+    "return 404 for px values exceeding the maximum allowed width" in {
+      testDbApp { implicit app =>
+        val result = route(app,
+          FakeRequest("GET",
+            "/wikipedia/commons/thumb/x/xx/Photo.jpg/99999px-Photo.jpg")).get
+        status(result) mustEqual NOT_FOUND
+      }
+    }
   }
 }

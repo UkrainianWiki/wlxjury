@@ -50,6 +50,16 @@ class LocalImageCacheServiceSpec extends Specification {
     d
   }
 
+  /** Polls until all given files exist, or throws after the timeout. */
+  def awaitFiles(files: File*): Unit = {
+    val deadline = System.currentTimeMillis() + 5000L
+    while (files.exists(!_.exists()) && System.currentTimeMillis() < deadline)
+      Thread.sleep(20)
+    files.filter(!_.exists()).foreach(f =>
+      throw new AssertionError(s"File never appeared: ${f.getAbsolutePath}")
+    )
+  }
+
   /** Minimal valid JPEG bytes for a synthetic image of given dimensions. */
   def jpegBytes(w: Int = 800, h: Int = 600): Array[Byte] = {
     val img  = new BufferedImage(w, h, BufferedImage.TYPE_INT_RGB)
@@ -303,7 +313,7 @@ class LocalImageCacheServiceSpec extends Specification {
       val svc = mkService(dir)
       val img = largeImg
       svc.saveResized(img, sourceImg, sourcePx = 2200)
-      Thread.sleep(500)
+      awaitFiles(allWidths.map(px => svc.localFile(img, px)): _*)
       val missing = allWidths.filterNot(px => svc.localFile(img, px).exists())
       missing must beEmpty
     }
@@ -313,12 +323,12 @@ class LocalImageCacheServiceSpec extends Specification {
       val svc = mkService(dir)
       val img = largeImg
       svc.saveResized(img, sourceImg, sourcePx = 2200)
-      Thread.sleep(500)
 
       // Use height=250 as a stable test case; compute expected width exactly as the service does
       val px250 = ImageUtil.resizeTo(W, H, 250)
-      val expectedHeight = (1650.0 * px250 / 2200).toInt
       val file = svc.localFile(img, px250)
+      awaitFiles(file)
+      val expectedHeight = (1650.0 * px250 / 2200).toInt
       val read = ImageIO.read(file)
       read.getWidth  === px250
       read.getHeight === expectedHeight
@@ -329,13 +339,13 @@ class LocalImageCacheServiceSpec extends Specification {
       val svc = mkService(dir)
       val img = largeImg
       svc.saveResized(img, sourceImg, sourcePx = 2200)
-      Thread.sleep(500)   // let async write complete before reading lastModified
+      val file = svc.localFile(img, 333)
+      awaitFiles(file)
 
-      val file        = svc.localFile(img, 333)
-      val modifiedAt  = file.lastModified()
-      Thread.sleep(50)
+      val modifiedAt = file.lastModified()
       svc.saveResized(img, sourceImg, sourcePx = 2200)
-      Thread.sleep(200)   // second call skips write (registry claimed); confirm no race
+      // Registry prevents re-write; wait briefly then confirm mtime unchanged.
+      Thread.sleep(200)
 
       file.lastModified() === modifiedAt
     }
@@ -346,7 +356,8 @@ class LocalImageCacheServiceSpec extends Specification {
       val img = mkImage(filename = "Photo.jpg", w = 400, h = 300) // small image
 
       svc.saveResized(img, new BufferedImage(400, 300, BufferedImage.TYPE_INT_RGB), sourcePx = 400)
-      Thread.sleep(500)
+      // Wait for the smallest expected file to appear before asserting the rest.
+      awaitFiles(svc.localFile(img, 160))
 
       // For 400×300, heights 375+ all produce px=400=image.width → no file
       svc.localFile(img, 400).exists() must beFalse
@@ -361,7 +372,8 @@ class LocalImageCacheServiceSpec extends Specification {
 
       // Download only a 500px source (covers heights 120–375 but not 500 and above)
       svc.saveResized(img, new BufferedImage(500, 375, BufferedImage.TYPE_INT_RGB), sourcePx = 500)
-      Thread.sleep(500)
+      // Wait for the smallest expected file (333px) to confirm writes landed.
+      awaitFiles(svc.localFile(img, 333))
 
       // 666px > sourcePx=500 → no file
       svc.localFile(img, 666).exists()  must beFalse
@@ -551,13 +563,16 @@ class LocalImageCacheServiceSpec extends Specification {
       val tmpDir = Files.createTempDirectory("round-cache-guard").toFile
       val svc = mkService(tmpDir)
 
-      // prime the round progress as running
-      svc.progressForRound(8L) // ensure key exists (returns default)
-      // can't easily assert "second call is no-op" without mocking images,
-      // so just verify it doesn't throw
-      svc.startDownloadForRound(contestId = 1L, roundId = 8L)
-      svc.startDownloadForRound(contestId = 1L, roundId = 8L) // should be no-op
+      // Simulate an in-progress download by directly marking the round as running.
+      svc.roundProgressMap.put(8L, CacheProgress(0, 42, 0, running = true))
 
+      // Second call must detect running=true and be a no-op (no reset to total=0).
+      svc.startDownloadForRound(contestId = 1L, roundId = 8L)
+
+      svc.progressForRound(8L).total mustEqual 42
+      svc.progressForRound(8L).running must beTrue
+
+      tmpDir.delete()
       ok
     }
   }
@@ -599,7 +614,7 @@ class LocalImageCacheServiceSpec extends Specification {
       val img    = mkImage()
       val src    = ImageIO.read(new ByteArrayInputStream(jpegBytes(800, 600)))
       svc1.saveResized(img, src, 800)
-      Thread.sleep(500)   // let async write land before initRegistry scans disk
+      awaitFiles(svc1.localFile(img, neededWidths.head))
 
       val svc2 = mkService(tmpDir)
       Await.result(svc2.initRegistry(), 10.seconds)
@@ -648,7 +663,7 @@ class LocalImageCacheServiceSpec extends Specification {
         val svc = mkService(tmpDir, serverPort = Some(port))
         val px  = neededWidths.head
         Await.result(svc.fetchAndCacheAll(img, px), 30.seconds)
-        Thread.sleep(500) // let background save complete
+        awaitFiles(neededWidths.map(w => svc.localFile(img, w)): _*)
         neededWidths.foreach { w =>
           svc.registryContains(svc.localFile(img, w)) must beTrue
         }
@@ -683,9 +698,8 @@ class LocalImageCacheServiceSpec extends Specification {
       val img    = mkImage()
       val src    = ImageIO.read(new ByteArrayInputStream(jpegBytes(800, 600)))
       svc.saveResized(img, src, 800)
-      Thread.sleep(500)   // let async write land before checking file.exists()
-
-      val px   = neededWidths.head
+      val px = neededWidths.head
+      awaitFiles(svc.localFile(img, px))
       val file = svc.fileIfCached(img, px)
       file must beSome
       file.get.exists() must beTrue
@@ -700,6 +714,34 @@ class LocalImageCacheServiceSpec extends Specification {
       val img    = mkImage()
 
       svc.fileIfCached(img, neededWidths.head) must beNone
+
+      tmpDir.delete()
+      ok
+    }
+
+    "re-cache a file that is in the registry but deleted from disk" in {
+      val tmpDir = Files.createTempDirectory("stale-registry").toFile
+      val img    = mkImage()
+
+      withServer(_ => HttpResponse(entity = HttpEntity(
+        ContentTypes.`application/octet-stream`, ByteString(jpegBytes(800, 600))
+      ))) { port =>
+        val svc = mkService(tmpDir, serverPort = Some(port))
+        val px  = neededWidths.head
+        Await.result(svc.fetchAndCacheAll(img, px), 30.seconds)
+        awaitFiles(svc.localFile(img, px))
+
+        // Delete the file from disk while leaving the registry entry intact.
+        svc.localFile(img, px).delete()
+        svc.localFile(img, px).exists() must beFalse
+        svc.fileIfCached(img, px) must beSome  // still in registry
+
+        // fetchAndCacheAll must heal the cache; saveResized re-writes the missing file.
+        Await.result(svc.fetchAndCacheAll(img, px), 30.seconds)
+        awaitFiles(svc.localFile(img, px))
+
+        svc.localFile(img, px).exists() must beTrue
+      }
 
       tmpDir.delete()
       ok

@@ -10,7 +10,7 @@ frontend JS is updated to display them. Integration tests live in the `services`
 `private[services]` methods directly), are gated by `-Dintegration=true`, and use scalawiki's
 `MwBot` to fetch real image metadata from a known Commons category.
 
-**Tech Stack:** Scala 3, Play Framework, Apache Pekko Streams, scalawiki `MwBot`, specs2 mutable
+**Tech Stack:** Scala 2.13, Play Framework, Apache Pekko Streams, scalawiki `MwBot`, specs2 mutable
 
 ---
 
