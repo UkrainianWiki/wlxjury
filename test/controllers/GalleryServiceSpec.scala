@@ -32,10 +32,12 @@ class GalleryServiceSpec extends Specification with TestDb {
     images
   }
 
-  private def createSelection(images: Seq[Image],
-                      rate: Int = 0,
-                      user: User = user,
-                      round: Round = round): Seq[Selection] = {
+  private def createSelection(
+      images: Seq[Image],
+      rate: Int = 0,
+      user: User = user,
+      round: Round = round
+  ): Seq[Selection] = {
     val selections = images.zipWithIndex.map { case (image, _) =>
       Selection(image, user, round, rate)
     }
@@ -78,7 +80,8 @@ class GalleryServiceSpec extends Specification with TestDb {
 
         for (rate <- -1 to 1) yield {
           /// test
-          val result = new GalleryService().getSortedImages(user.getId, Some(rate), round.id, "gallery")
+          val result =
+            new GalleryService().getSortedImages(user.getId, Some(rate), round.id, "gallery")
 
           /// check
           result.size === 2
@@ -119,7 +122,6 @@ class GalleryServiceSpec extends Specification with TestDb {
         /// prepare
         setUp(rates = Round.ratesById(10))
         val images = createImages(6)
-
 
         val selections = images.zipWithIndex.map { case (image, rate) =>
           Selection(image, user, round, rate)
@@ -188,10 +190,11 @@ class GalleryServiceSpec extends Specification with TestDb {
           Selection(images(imageIndex), jurors(jurorIndex), round, rate)
 
         def rateN(imageIndex: Int, rates: Seq[Int]) =
-          (0 to jurors.size)
-            .zip(rates).map {
-            case (j, r) => rate(imageIndex, j, r)
-          }
+          jurors.indices
+            .zip(rates)
+            .map { case (j, r) =>
+              rate(imageIndex, j, r)
+            }
 
         val selections =
           rateN(0, Seq(1, -1, -1)) ++

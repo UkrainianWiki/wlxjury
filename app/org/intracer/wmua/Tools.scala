@@ -13,16 +13,16 @@ import org.scalawiki.wlx.{ImageDB, ImageFiller, MonumentDB}
 import play.api.{Logger, Play}
 import scalikejdbc.{ConnectionPool, GlobalSettings, LoggingSQLAndTimeSettings}
 
-import scala.concurrent.Await
+import scala.concurrent.{Await, Future}
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.io.Source
 
 object Tools {
 
   def main(args: Array[String]): Unit = {
-    Class.forName("com.mysql.jdbc.Driver")
-    val url: String = //"jdbc:mysql://localhost/wlxjury?autoReconnect=true&autoReconnectForPools=true&useUnicode=true&characterEncoding=UTF-8"
-    "jdbc:mysql://jury.wikilovesearth.org.ua/wlxjury"
+    Class.forName("org.mariadb.jdbc.Driver")
+    val url: String = //"jdbc:mariadb://localhost/wlxjury?autoReconnect=true&autoReconnectForPools=true&useUnicode=true&characterEncoding=UTF-8"
+    "jdbc:mariadb://jury.wikilovesearth.org.ua/wlxjury"
     println(s"URL:" + url)
 
     val config = ConfigFactory.load()
@@ -79,8 +79,8 @@ object Tools {
 //    }
 //  }
 
-  def addUsers(contest: ContestJury, number: Int) = {
-    val country = contest.country.replaceAll("[ \\-\\&]", "")
+  def addUsers(contest: ContestJury, number: Int): Unit = {
+    val country = contest.country.replaceAll("[ \\-&]", "")
     val jurors = (1 to number).map(i => country + "ESPCJuror" + i)
 
     val orgCom = (1 to 1).map(i => country + "ESPCOrgCom")
@@ -119,7 +119,7 @@ object Tools {
     absent.foreach(println)
   }
 
-  def removeIneligible() = {
+  def removeIneligible(): Future[Unit] = {
     val category = "Category:Obviously ineligible submissions for ESPC 2015 in Ukraine"
     val query = commons.page(category)
 
@@ -133,7 +133,7 @@ object Tools {
     }
   }
 
-  def fixRound() = {
+  def fixRound(): Future[Unit] = {
     val category = "Category:Non-photographic media from European Science Photo Competition 2015"
     val query = commons.page(category)
 
@@ -151,7 +151,7 @@ object Tools {
     }
   }
 
-  def addCriteria() = {
+  private def addCriteria(): Unit = {
     val roundId = 1505
     val round = Round.findById(roundId).get
     val selection = SelectionJdbc.byRound(roundId)
@@ -159,7 +159,7 @@ object Tools {
     new DistributeImages(ImageJdbc).addCriteriaRates(selection)
   }
 
-  def convertImages(images: Seq[Image]) = {
+  private def convertImages(images: Seq[Image]) = {
     images.map { i =>
       new org.scalawiki.dto.Image(
         title = i.title,
@@ -178,7 +178,7 @@ object Tools {
     }
   }
 
-  def newlyPictured() = {
+  def newlyPictured(): Future[Any] = {
     val contestJury2017 = ContestJuryJdbc.findById(64).get
     val contestJuryAll = ContestJuryJdbc.findById(66).get
 
@@ -221,7 +221,7 @@ object Tools {
   }
 
 
-  def fillLists() = {
+  def fillLists(): Future[Unit] = {
 
     val contestJury = ContestJuryJdbc.findById(67).get
 
@@ -236,7 +236,7 @@ object Tools {
     ImageFiller.fillLists(mdb, idb)
   }
 
-  def byCity() = {
+  def byCity(): Unit = {
 
     val contest = ContestJuryJdbc.findById(67).get
 
@@ -495,7 +495,7 @@ object Tools {
   }
 
 
-  def regionGallery(allMonuments: Seq[Monument], imageDb: Map[String, Seq[Image]], regionCode: String, regionName: String, cities: Seq[String]) = {
+  private def regionGallery(allMonuments: Seq[Monument], imageDb: Map[String, Seq[Image]], regionCode: String, regionName: String, cities: Seq[String]) = {
     val ukWiki = MwBot.fromHost(MwBot.ukWiki)
 
     def cityShort(city: String): String = cities.find(city.contains).getOrElse("").split(" ")(0)
@@ -506,7 +506,7 @@ object Tools {
     println(s"Cities: $cities")
 
     val regionMonuments = allMonuments.filter { m =>
-      val city = m.city.getOrElse("").replaceAll("\\[", " ").replaceAll("\\]", " ")
+      val city = m.city.getOrElse("").replaceAll("\\[", " ").replaceAll("]", " ")
       (m.photo.isDefined || imageDb.contains(m.id)) && cities.map(_ + " ").exists(city.contains) && !city.contains("район") && Set(regionCode).contains(m.regionId)
     }
 

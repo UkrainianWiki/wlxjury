@@ -4,9 +4,9 @@ import _root_.play.api.i18n.Messages
 import controllers.Greeting
 import org.intracer.wmua.ContestJury
 import scalikejdbc._
-import skinny.orm.{Alias, SkinnyCRUDMapper}
+import scalikejdbc.orm.{Alias, CRUDMapper}
 
-object ContestJuryJdbc extends SkinnyCRUDMapper[ContestJury] {
+object ContestJuryJdbc extends CRUDMapper[ContestJury] {
 
   var messages: Messages = _
 

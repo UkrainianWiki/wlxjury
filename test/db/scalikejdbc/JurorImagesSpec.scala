@@ -26,16 +26,23 @@ class JurorImagesSpec extends Specification with TestDb {
     )
   }
 
-  private def createImages(number: Int, contestId: Long = contest.getId, startId: Int = 0) = {
-    val images = (startId until number + startId).map(id => contestImage(id, contestId))
+  private def createImages(
+      number: Int,
+      contestId: Long = contest.getId,
+      startId: Int = 0
+  ) = {
+    val images =
+      (startId until number + startId).map(id => contestImage(id, contestId))
     imageDao.batchInsert(images)
     images
   }
 
-  private def createSelection(images: Seq[Image],
-                              rate: Int = 0,
-                              user: User = user,
-                              round: Round = round) = {
+  private def createSelection(
+      images: Seq[Image],
+      rate: Int = 0,
+      user: User = user,
+      round: Round = round
+  ) = {
     val selections = images.zipWithIndex.map { case (image, i) =>
       Selection(image, user, round, rate)
     }
@@ -94,7 +101,8 @@ class JurorImagesSpec extends Specification with TestDb {
         val slice = images.slice(0, 3)
         createSelection(slice, rate = 0)
 
-        val query = ImageDbNew.SelectionQuery(userId = user.id, roundId = round.id)
+        val query =
+          ImageDbNew.SelectionQuery(userId = user.id, roundId = round.id)
         /// test
         val result = query.list()
 
@@ -125,7 +133,11 @@ class JurorImagesSpec extends Specification with TestDb {
         }
 
         for (rate <- -1 to 1) yield {
-          val query = ImageDbNew.SelectionQuery(userId = user.id, roundId = round.id, rate = Some(rate))
+          val query = ImageDbNew.SelectionQuery(
+            userId = user.id,
+            roundId = round.id,
+            rate = Some(rate)
+          )
           /// test
           val result = query.list()
 
@@ -137,9 +149,15 @@ class JurorImagesSpec extends Specification with TestDb {
 
         }
 
-        for (rate <- -1 to 1;
-             (image, index) <- slice(rate).zipWithIndex) yield {
-          val query = ImageDbNew.SelectionQuery(userId = user.id, roundId = round.id, rate = Some(rate))
+        for (
+          rate <- -1 to 1;
+          (image, index) <- slice(rate).zipWithIndex
+        ) yield {
+          val query = ImageDbNew.SelectionQuery(
+            userId = user.id,
+            roundId = round.id,
+            rate = Some(rate)
+          )
           query.imageRank(image.pageId) === index + 1
         }
 
@@ -186,7 +204,6 @@ class JurorImagesSpec extends Specification with TestDb {
         setUp(rates = Round.ratesById(10))
         val images = createImages(6)
 
-
         val selections = images.zipWithIndex.map { case (image, rate) =>
           Selection(image, user, round, rate)
         }
@@ -220,9 +237,14 @@ class JurorImagesSpec extends Specification with TestDb {
         setUp(rates = Round.binaryRound)
         val images = createImages(10)
 
-        val jurors = Seq(user) ++ (1 to 3).map(contestUser(_)).map(userDao.create)
+        val jurors =
+          Seq(user) ++ (1 to 3).map(contestUser(_)).map(userDao.create)
 
-        def selectedBy(n: Int, image: Image, otherRate: Int = 0): Seq[Selection] = {
+        def selectedBy(
+            n: Int,
+            image: Image,
+            otherRate: Int = 0
+        ): Seq[Selection] = {
           jurors.slice(0, n).map { juror =>
             Selection(image, juror, round, 1)
           } ++
@@ -235,7 +257,11 @@ class JurorImagesSpec extends Specification with TestDb {
 
         selectionDao.batchInsert(selectedByX)
 
-        val query = ImageDbNew.SelectionQuery(roundId = round.id, grouped = true, order = Map("rate" -> -1))
+        val query = ImageDbNew.SelectionQuery(
+          roundId = round.id,
+          grouped = true,
+          order = Map("rate" -> -1)
+        )
         /// test
         val result = query.list()
 
@@ -271,9 +297,10 @@ class JurorImagesSpec extends Specification with TestDb {
 
         def rateN(imageIndex: Int, rates: Seq[Int]) =
           (0 to jurors.size)
-            .zip(rates).map {
-            case (j, r) => rate(imageIndex, j, r)
-          }
+            .zip(rates)
+            .map { case (j, r) =>
+              rate(imageIndex, j, r)
+            }
 
         val selections =
           rateN(0, Seq(1, -1, -1)) ++
@@ -281,7 +308,8 @@ class JurorImagesSpec extends Specification with TestDb {
 
         selectionDao.batchInsert(selections)
 
-        val query = ImageDbNew.SelectionQuery(roundId = round.id, groupWithDetails = true)
+        val query =
+          ImageDbNew.SelectionQuery(roundId = round.id, groupWithDetails = true)
         /// test
         val result = query.list()
 
@@ -300,9 +328,14 @@ class JurorImagesSpec extends Specification with TestDb {
         setUp(rates = Round.binaryRound)
         val images = createImages(10)
 
-        val jurors = Seq(user) ++ (1 to 3).map(contestUser(_)).map(userDao.create)
+        val jurors =
+          Seq(user) ++ (1 to 3).map(contestUser(_)).map(userDao.create)
 
-        def selectedBy(n: Int, image: Image, otherRate: Int = 0): Seq[Selection] = {
+        def selectedBy(
+            n: Int,
+            image: Image,
+            otherRate: Int = 0
+        ): Seq[Selection] = {
           jurors.slice(0, n).map { juror =>
             Selection(image, juror, round, 1)
           } ++
@@ -315,7 +348,8 @@ class JurorImagesSpec extends Specification with TestDb {
 
         selectionDao.batchInsert(selectedByX)
 
-        val query = ImageDbNew.SelectionQuery(roundId = round.id, groupWithDetails = true)
+        val query =
+          ImageDbNew.SelectionQuery(roundId = round.id, groupWithDetails = true)
         /// test
         val result = query.list()
 

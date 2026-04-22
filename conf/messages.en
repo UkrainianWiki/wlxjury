@@ -272,6 +272,8 @@ select.all=Select all
 1-x.rating=1-{0} rating
 active=Active
 start.stop=Start/Stop
+no.filter=No filtering
+special.nomination=Special nomination
 
 mails.to.import=Mails to import
 examples=Examples:

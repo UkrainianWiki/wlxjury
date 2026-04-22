@@ -1,12 +1,14 @@
 @import db.scalikejdbc.Round
 @import db.scalikejdbc.User
 @import db.scalikejdbc.MediaType
+@import org.scalawiki.wlx.dto.SpecialNomination
 @(
         editRoundForm: Form[controllers.EditRound],
         rounds: Seq[Round],
         regions: Map[String, String] = Map.empty,
         user: User,
-        noEdit: Boolean
+        noEdit: Boolean,
+        specialNominations: Seq[SpecialNomination] = Nil
 )(implicit messages: Messages)
 @implicitFieldConstructor = @{
     b3.horizontal.fieldConstructor("col-md-4", "col-md-8")
@@ -58,7 +60,7 @@
         Symbol("readonly") -> noEdit
     )
 
-    <div id="categoryDiv">
+    <div id="includeCategoryDiv">
     @b3.text(
         editRoundForm("source"),
         Symbol("_label") -> Messages("files.should.be.IN.the.category"),
@@ -66,7 +68,7 @@
     )
     </div>
 
-    <div id="categoryDiv">
+    <div id="excludeCategoryDiv">
     @b3.text(
         editRoundForm("excludeCategory"),
         Symbol("_label") -> Messages("files.should.be.NOT.IN.the.category"),
@@ -104,10 +106,12 @@
         Symbol("readonly") -> noEdit
     )
 
-    @if(user.hasRole(User.ROOT_ROLE)) {
-        @b3.text(
+    @if(specialNominations.nonEmpty) {
+        @b3.select(
             editRoundForm("specialNomination"),
-            Symbol("_label") -> Messages("specialNomination")
+            Seq(("no.filter", Messages("no.filter"))) ++ specialNominations.map(sn => (sn.name, Messages(sn.name))),
+            Symbol("_label") -> Messages("special.nomination"),
+            Symbol("readonly") -> noEdit
         )
     }
 }

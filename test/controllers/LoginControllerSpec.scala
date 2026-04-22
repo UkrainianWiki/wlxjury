@@ -9,11 +9,7 @@ import play.api.test.CSRFTokenHelper._
 import play.api.test._
 import services.{SMTPOrWikiMail, UserService}
 
-class LoginControllerSpec
-    extends PlaySpecification
-    with Results
-    with TestDb
-    with Mockito {
+class LoginControllerSpec extends PlaySpecification with Results with TestDb with Mockito {
 
   sequential
 
@@ -25,7 +21,7 @@ class LoginControllerSpec
   "auth" should {
     "fail empty request" in {
       testDbApp { implicit app =>
-        implicit val materializer: Materializer = app.materializer
+        implicit val mat: Materializer = app.materializer
         val result = login.auth().apply(FakeRequest().withCSRFToken)
         status(result) === BAD_REQUEST
       }
@@ -33,7 +29,7 @@ class LoginControllerSpec
 
     "fail when no users" in {
       testDbApp { implicit app =>
-        implicit val materializer: Materializer = app.materializer
+        implicit val mat: Materializer = app.materializer
         val result = login
           .auth()
           .apply(
@@ -50,7 +46,7 @@ class LoginControllerSpec
 
     "fail when wrong password" in {
       testDbApp { implicit app =>
-        implicit val materializer: Materializer = app.materializer
+        implicit val mat: Materializer = app.materializer
         User.create(User("name", "qwerty@dot.com"))
 
         val result = login
@@ -69,7 +65,7 @@ class LoginControllerSpec
 
     "no rights" in {
       testDbApp { implicit app =>
-        implicit val materializer: Materializer = app.materializer
+        implicit val mat: Materializer = app.materializer
         User.create(
           User("name", "qwerty@dot.com", password = Some(User.sha1("strong"))))
         val result = login
@@ -85,15 +81,12 @@ class LoginControllerSpec
         status(result) === SEE_OTHER
         header(LOCATION, result) === Some(
           "/error?message=You+don%27t+have+permission+to+access+this+page")
-//        val cookie = header(SET_COOKIE, result).get
-//        cookie must contain("PLAY_SESSION=")
-//        cookie must contain("-username=qwerty%40dot.com;")
       }
     }
 
     "root rights" in {
       testDbApp { implicit app =>
-        implicit val materializer: Materializer = app.materializer
+        implicit val mat: Materializer = app.materializer
         User.create(
           User("name",
                "qwerty@dot.com",
@@ -112,9 +105,6 @@ class LoginControllerSpec
 
         status(result) === SEE_OTHER
         header(LOCATION, result) === Some("/contests")
-//        val cookie = header(SET_COOKIE, result).get
-//        cookie must contain("PLAY_SESSION=")
-//        cookie must contain("-username=qwerty%40dot.com;")
       }
     }
 

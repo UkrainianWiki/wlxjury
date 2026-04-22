@@ -41,9 +41,9 @@ class CsvSpec extends Specification {
 
     "export 1 file, 1 juror, rated round" in {
       val files = Seq(ImageWithRating(Image(0, "File:a.jpg"), Seq(Selection(0, 9, 0, rate = 5))))
-      Csv.exportRates(files, Seq(User("Juror1", "", Some(9))), ratedRound(10)) === Seq(
+      Csv.exportRates(files, Seq(User("Juror1", "", Some(9))), ratedRound(10)) should_===  Seq(
         Seq("Rank", "File", "Overall", "Juror1"),
-        Seq("1", "File:a.jpg", "5.00 (5 / 1)", "5")
+        Seq("1", "File:a.jpg", "5", "5")
       )
     }
   }

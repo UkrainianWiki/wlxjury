@@ -1,7 +1,7 @@
 package controllers
 
-import akka.stream.Materializer
 import db.scalikejdbc._
+import org.apache.pekko.stream.Materializer
 import org.intracer.wmua._
 import play.api.libs.json.Json
 import play.api.mvc.RequestHeader

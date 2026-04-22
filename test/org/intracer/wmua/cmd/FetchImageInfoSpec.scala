@@ -10,20 +10,19 @@ import play.api.test.PlaySpecification
 
 import scala.concurrent.Future
 
-class FetchImageInfoSpec
-    extends PlaySpecification
-    with Mockito
-    with JuryTestHelpers {
+class FetchImageInfoSpec extends PlaySpecification with Mockito with JuryTestHelpers {
 
   private def contestImage(id: Long) =
-    Image(id,
-          s"File:Image$id.jpg",
-          Some(s"url$id"),
-          Some(s"pageUrl$id"),
-          640,
-          480,
-          None,
-          size = Some(1234))
+    Image(
+      pageId = id,
+      title = s"File:Image$id.jpg",
+      url = Some(s"url$id"),
+      pageUrl = Some(s"pageUrl$id"),
+      width = 640,
+      height = 480,
+      monumentId = None,
+      size = Some(1234)
+    )
 
   def imageInfo(id: Long) =
     new Page(
@@ -31,12 +30,14 @@ class FetchImageInfoSpec
       Some(Namespace.FILE),
       s"File:Image$id.jpg",
       images = Seq(
-        new org.scalawiki.dto.Image(s"File:Image$id.jpg",
-                                    Some(s"url$id"),
-                                    Some(s"pageUrl$id"),
-                                    Some(1234),
-                                    Some(640),
-                                    Some(480))
+        new org.scalawiki.dto.Image(
+          title = s"File:Image$id.jpg",
+          url = Some(s"url$id"),
+          pageUrl = Some(s"pageUrl$id"),
+          size = Some(1234),
+          width = Some(640),
+          height = Some(480)
+        )
       )
     )
 
@@ -53,26 +54,30 @@ class FetchImageInfoSpec
 
       query.withContext(Map("contestId" -> contestId.toString, "max" -> "0")) returns query
       query.imageInfoByGenerator(
-        "categorymembers",
-        "cm",
+        generator = "categorymembers",
+        generatorPrefix = "cm",
         namespaces = Set(Namespace.FILE),
-        props = Set("timestamp", "user", "size", "url"),
+        props = Set("timestamp", "user", "size", "url", "mime"),
         titlePrefix = None
       ) returns Future.successful(imageInfos)
 
       val commons = mockBot()
       commons.page(category) returns query
 
-      val contest = ContestJury(Some(contestId),
-                                "WLE",
-                                2015,
-                                "Ukraine",
-                                Some(category),
-                                None,
-                                None)
+      val contest = ContestJury(
+        id = Some(contestId),
+        name = "WLE",
+        year = 2015,
+        country = "Ukraine",
+        images = Some(category),
+        categoryId = None,
+        currentRound = None
+      )
 
-      await(FetchImageInfo(category, Seq.empty, contest, commons).apply()) must be_==(
-        images)
+      await(
+        FetchImageInfo(source = category, titles = Seq.empty, contest = contest, commons = commons)
+          .apply()
+      ) must be_==(images)
     }
 
     "get images one image" in {
@@ -85,10 +90,10 @@ class FetchImageInfoSpec
       val query = mock[SinglePageQuery]
       query.withContext(Map("contestId" -> contestId.toString, "max" -> "0")) returns query
       query.imageInfoByGenerator(
-        "categorymembers",
-        "cm",
+        generator = "categorymembers",
+        generatorPrefix = "cm",
         namespaces = Set(Namespace.FILE),
-        props = Set("timestamp", "user", "size", "url"),
+        props = Set("timestamp", "user", "size", "url", "mime"),
         titlePrefix = None
       ) returns Future.successful(imageInfos)
 
@@ -96,10 +101,18 @@ class FetchImageInfoSpec
       commons.page(category) returns query
 
       val contest =
-        ContestJury(Some(contestId), "WLE", 2015, "Ukraine", Some(category))
+        ContestJury(
+          id = Some(contestId),
+          name = "WLE",
+          year = 2015,
+          country = "Ukraine",
+          images = Some(category)
+        )
 
-      await(FetchImageInfo(category, Seq.empty, contest, commons).apply()) must be_==(
-        images)
+      await(
+        FetchImageInfo(source = category, titles = Seq.empty, contest = contest, commons = commons)
+          .apply()
+      ) must be_==(images)
     }
   }
 

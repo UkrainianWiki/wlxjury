@@ -6,12 +6,12 @@ import org.intracer.wmua._
 import org.scalawiki.dto.Page
 import scalikejdbc._
 import scalikejdbc.interpolation.SQLSyntax.distinct
-import skinny.logging.Logging
-import skinny.orm.SkinnyCRUDMapper
+import scalikejdbc.orm.CRUDMapper
+import scalikejdbc.orm.logging.LoggerProvider
 
-object ImageJdbc extends SkinnyCRUDMapper[Image]
+object ImageJdbc extends CRUDMapper[Image]
   with ImageRepo
-  with Logging {
+  with LoggerProvider {
 
   implicit def session: DBSession = autoSession
 

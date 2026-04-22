@@ -237,6 +237,8 @@ all.selected=Вибрано все
 select.all=Вибрати все
 1-x.rating=Оцінка: 1-{0}
 active=Активний
+no.filter=Без фільтра
+special.nomination=Спеціальна номінація
 
 mails.to.import=Е-пошти для імпорту
 examples=Приклади:

@@ -1,12 +1,11 @@
 package db.scalikejdbc
 
 import java.time.ZonedDateTime
-
 import org.intracer.wmua.{CriteriaRate, Selection}
 import scalikejdbc._
-import skinny.orm.SkinnyCRUDMapper
+import scalikejdbc.orm.CRUDMapper
 
-object SelectionJdbc extends SkinnyCRUDMapper[Selection] {
+object SelectionJdbc extends CRUDMapper[Selection] {
 
   implicit def session: DBSession = autoSession
 
@@ -46,7 +45,7 @@ object SelectionJdbc extends SkinnyCRUDMapper[Selection] {
       rate: Int,
       juryId: Long,
       roundId: Long,
-      createdAt: Option[ZonedDateTime] = Some(ZonedDateTime.now)
+      createdAt: Option[ZonedDateTime] = None
   ): Selection = {
     val id = withSQL {
       insert

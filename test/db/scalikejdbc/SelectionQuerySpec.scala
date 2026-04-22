@@ -39,7 +39,7 @@ class SelectionQuerySpec extends Specification {
 
     "region" in {
       SelectionQuery(regions = Set(regionId))
-        .where() === s" where m.adm0 in ('$regionId')"
+        .where() === s" where i.monument_id like '$regionId%'"
     }
 
     "withPageId" in {
@@ -113,7 +113,7 @@ class SelectionQuerySpec extends Specification {
         s" s.jury_id = $userId and" +
         s" s.round_id = $roundId and" +
         s" s.rate > 0 and" +
-        s" m.adm0 in ('$regionId')"
+        s" i.monument_id like '$regionId%'"
     }
 
     "userId and roundId and not rated and region" in {
@@ -126,7 +126,7 @@ class SelectionQuerySpec extends Specification {
         s" s.jury_id = $userId and" +
         s" s.round_id = $roundId and" +
         s" s.rate = 0 and" +
-        s" m.adm0 in ('$regionId')"
+        s" i.monument_id like '$regionId%'"
     }
   }
 }

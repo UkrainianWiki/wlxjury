@@ -3,11 +3,13 @@ package db.scalikejdbc
 import org.intracer.wmua.Selection
 import org.specs2.mutable.Specification
 
+import java.time.ZonedDateTime
+
 class SelectionSpec extends Specification with TestDb {
 
   sequential
 
-  val time = now
+  private val time: ZonedDateTime = now
 
   private def sameTime(s: Seq[Selection]): Seq[Selection] = s.map(_.copy(createdAt = Some(time)))
   private def noIds(s: Seq[Selection]): Seq[Selection] = s.map(_.copy(id = None))
@@ -24,9 +26,9 @@ class SelectionSpec extends Specification with TestDb {
     "insert selection" in {
       withDb {
 
-        val s = Selection(-1, 20, 0, 30, Some(40), Some(now))
+        val s = Selection(pageId = -1, juryId = 20, roundId = 0, rate = 30, id = Some(40))
 
-        val created = selectionDao.create(s.pageId, s.rate, s.juryId, s.roundId, s.createdAt)
+        val created = selectionDao.create(s.pageId, s.rate, s.juryId, s.roundId)
         val id = created.getId
         created === s.copy(id = Some(id))
         selectionDao.findById(id) === Some(created)
@@ -37,9 +39,9 @@ class SelectionSpec extends Specification with TestDb {
     "batch insert selections" in {
       withDb {
         val s = sameTime(Seq(
-          Selection(20, 1, 0, 10),
-          Selection(21, 2, 1, 11),
-          Selection(22, 3, -1, 12)
+          Selection(pageId = 20, juryId = 1, roundId = 0, rate = 10),
+          Selection(pageId = 21, juryId = 2, roundId = 1, rate = 11),
+          Selection(pageId = 22, juryId = 3, roundId = -1, rate = 12)
         ))
 
         selectionDao.batchInsert(s)
@@ -63,14 +65,14 @@ class SelectionSpec extends Specification with TestDb {
 
         selectionDao.batchInsert(s)
 
-        selectionDao.rate(1, 10, 20, 1)
+        selectionDao.rate(pageId = 1, juryId = 10, roundId = 20, rate = 1)
 
         noIds(findAll()) === s.head.copy(rate = 1) +: s.tail
 
-        selectionDao.rate(1, 10, 20, -1)
+        selectionDao.rate(pageId = 1, juryId = 10, roundId = 20, rate = -1)
         noIds(findAll()) === s.head.copy(rate = -1) +: s.tail
 
-        selectionDao.rate(1, 10, 20, 0)
+        selectionDao.rate(pageId = 1, juryId = 10, roundId = 20, rate = 0)
         noIds(findAll()) === s
       }
     }

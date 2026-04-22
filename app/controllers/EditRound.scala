@@ -1,6 +1,7 @@
 package controllers
 
-import db.scalikejdbc.{MediaType, Round, RoundLimits}
+import db.scalikejdbc.{ContestJuryJdbc, MediaType, Round, RoundLimits}
+import org.scalawiki.wlx.dto.SpecialNomination
 import play.api.data.{Form, Mapping}
 import play.api.data.Forms._
 import play.api.data.validation._
@@ -93,7 +94,12 @@ object EditRound {
       minImageSize = Try(minImageSize.toInt).toOption,
       monuments = monumentIds,
       topImages = topImages,
-      specialNomination = specialNomination,
+      specialNomination = specialNomination.filter { name =>
+        ContestJuryJdbc.findById(contest).exists { c =>
+          c.name == "Wiki Loves Monuments" && c.country == "Ukraine" &&
+            SpecialNomination.nominations.filter(_.years.contains(c.year)).exists(_.name == name)
+        }
+      },
       mediaType = Option(mediaType).filterNot(_ == MediaType.All)
     ).withFixedCategories
     EditRound(round, jurors.flatMap(s => Try(s.toLong).toOption), returnTo, newImages)

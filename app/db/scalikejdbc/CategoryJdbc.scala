@@ -2,9 +2,9 @@ package db.scalikejdbc
 
 import scalikejdbc._
 import org.intracer.wmua.{Category, CategoryLink, Image}
-import skinny.orm.SkinnyCRUDMapper
+import scalikejdbc.orm.CRUDMapper
 
-object CategoryJdbc extends SkinnyCRUDMapper[Category] {
+object CategoryJdbc extends CRUDMapper[Category] {
 
   implicit def session: DBSession = autoSession
 

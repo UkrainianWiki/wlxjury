@@ -3,6 +3,7 @@ package controllers
 import controllers.EditRound.{editRoundForm, jurorsMapping}
 import db.scalikejdbc._
 import org.intracer.wmua.cmd.DistributeImages
+import org.scalawiki.wlx.dto.SpecialNomination
 import play.api.Logging
 import play.api.data.Form
 import play.api.data.Forms._
@@ -90,10 +91,25 @@ class RoundController @Inject() (
           jurorsMapping,
           regions,
           stat,
-          images
+          images,
+          contestSpecialNominations(contestId)
         )
       )
     }
+
+  def contestSpecialNominations(contestId: Long): Seq[SpecialNomination] = {
+    ContestJuryJdbc
+      .findById(contestId)
+      .map { contest =>
+        if (contest.name == "Wiki Loves Monuments" && contest.country == "Ukraine")
+          SpecialNomination.nominations
+            .filter(_.years.contains(contest.year))
+            .sortBy(_.name)
+        else Nil
+      }
+      .getOrElse(Nil)
+
+  }
 
   def saveRound(): EssentialAction =
     withAuth(rolePermission(User.ADMIN_ROLES)) { user => implicit request =>

@@ -3,7 +3,7 @@ package db.scalikejdbc
 import db.RoundRepo
 import org.intracer.wmua.{HasId, ImageWithRating}
 import scalikejdbc._
-import skinny.orm.{SkinnyCRUDMapper, SkinnyJoinTable}
+import scalikejdbc.orm.{CRUDMapper, JoinTable}
 
 import java.time.ZonedDateTime
 
@@ -153,7 +153,7 @@ object Rates {
 
 }
 
-object Round extends RoundRepo with SkinnyCRUDMapper[Round] {
+object Round extends RoundRepo with CRUDMapper[Round] {
 
   implicit def session: DBSession = autoSession
 
@@ -346,7 +346,7 @@ object Round extends RoundRepo with SkinnyCRUDMapper[Round] {
 
 }
 
-object RoundUser extends SkinnyJoinTable[RoundUser] {
+object RoundUser extends JoinTable[RoundUser] {
   override def defaultAlias = createAlias("round_user")
   lazy val ru = RoundUser.syntax("round_user")
 

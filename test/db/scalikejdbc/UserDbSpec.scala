@@ -17,8 +17,16 @@ class UserDbSpec extends Specification with TestDb {
     "insert user" in {
       withDb {
 
-        val user = User("fullname", "email", None, Set("jury"), Some("password hash"), Some(10),
-          Some("en"), createdAt = Some(now))
+        val user = User(
+          fullname = "fullname",
+          email = "email",
+          id = None,
+          roles = Set("jury"),
+          password = Some("password hash"),
+          contestId = Some(10),
+          lang = Some("en"),
+          createdAt = Some(now)
+        )
 
         val created = userDao.create(user)
 

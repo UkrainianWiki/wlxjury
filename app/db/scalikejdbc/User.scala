@@ -3,12 +3,12 @@ package db.scalikejdbc
 import javax.mail.internet.InternetAddress
 import org.intracer.wmua.HasId
 import scalikejdbc.{DBSession, ResultName, WrappedResultSet, insert, select, sqls}
-import java.time.ZonedDateTime
 
+import java.time.ZonedDateTime
 import play.api.data.validation.{Constraints, Invalid, Valid}
 import play.api.libs.Codecs
 import scalikejdbc._
-import skinny.orm.SkinnyCRUDMapper
+import scalikejdbc.orm.CRUDMapper
 
 import scala.util.Try
 
@@ -71,7 +71,7 @@ case class User(
   override def compare(that: User): Int = sortOrBiasedId.compareTo(that.sortOrBiasedId)
 }
 
-object User extends SkinnyCRUDMapper[User] {
+object User extends CRUDMapper[User] {
   val JURY_ROLE = "jury"
   val JURY_ROLES = Set(JURY_ROLE)
   val ORG_COM_ROLES = Set("organizer")
@@ -215,7 +215,7 @@ object User extends SkinnyCRUDMapper[User] {
 
   override lazy val defaultAlias = createAlias("u")
 
-  override def extract(rs: WrappedResultSet, c: ResultName[User]): User = User(
+  override def extract(rs: WrappedResultSet, c: scalikejdbc.ResultName[User]): User = User(
     id = Some(rs.int(c.id)),
     fullname = rs.string(c.fullname),
     email = rs.string(c.email),
@@ -368,4 +368,5 @@ object User extends SkinnyCRUDMapper[User] {
         .eq(User.u.contestId, contestId)
     )
   }
+
 }

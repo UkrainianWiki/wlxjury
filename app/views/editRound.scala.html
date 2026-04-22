@@ -1,6 +1,7 @@
 @import db.scalikejdbc.User
 @import org.intracer.wmua.Image
 @import db.scalikejdbc.Round
+@import org.scalawiki.wlx.dto.SpecialNomination
 @(
         user: User,
         editRoundForm: Form[controllers.EditRound],
@@ -11,7 +12,8 @@
         jurorsMapping: Mapping[Seq[String]],
         regions: Map[String, String] = Map.empty,
         statOpt: Option[RoundStat] = None,
-        newImages: Seq[Image] = Seq.empty
+        newImages: Seq[Image] = Nil,
+        specialNominations: Seq[SpecialNomination] = Nil
 )(implicit flash: Flash, messages: Messages, req: RequestHeader)
 
 @implicitFieldConstructor = @{
@@ -44,7 +46,7 @@
                     @b3.text(editRoundForm("name"), Symbol("_label") -> Messages("round.name.optional"))
 
                     @defining(!newRound) { noEdit =>
-                        @round.edit.imageFiltering(editRoundForm, rounds, regions, user, noEdit)
+                        @round.edit.imageFiltering(editRoundForm, rounds, regions, user, noEdit, specialNominations)
 
                         <div @if(noEdit) {style="display: none"}>
                             @b3.select(

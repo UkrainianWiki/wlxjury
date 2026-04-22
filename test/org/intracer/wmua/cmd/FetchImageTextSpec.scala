@@ -10,21 +10,28 @@ import play.api.test.PlaySpecification
 
 import scala.concurrent.Future
 
-class FetchImageTextSpec
-    extends PlaySpecification
-    with Mockito
-    with JuryTestHelpers {
+class FetchImageTextSpec extends PlaySpecification with Mockito with JuryTestHelpers {
 
   private def contestImage(id: Long) =
-    Image(id, s"File:Image$id.jpg", None, None, 0, 0, Some(s"12-345-$id"))
+    Image(
+      pageId = id,
+      title = s"File:Image$id.jpg",
+      url = None,
+      pageUrl = None,
+      width = 0,
+      height = 0,
+      monumentId = Some(s"12-345-$id")
+    )
 
   def revision(id: Long, text: String) =
-    new Page(Some(id),
-             Some(Namespace.FILE),
-             s"File:Image$id.jpg",
-             revisions = Seq(
-               new Revision(Some(id + 100), Some(id), content = Some(text))
-             ))
+    new Page(
+      id = Some(id),
+      ns = Some(Namespace.FILE),
+      title = s"File:Image$id.jpg",
+      revisions = Seq(
+        new Revision(Some(id + 100), Some(id), content = Some(text))
+      )
+    )
 
   "appendImages" should {
     "get images empty" in {
@@ -36,12 +43,13 @@ class FetchImageTextSpec
       val query = mock[SinglePageQuery]
       query.withContext(Map("contestId" -> contestId.toString, "max" -> "0")) returns query
       query.revisionsByGenerator(
-        "categorymembers",
-        "cm",
-        Set(Namespace.FILE),
-        Set("content", "timestamp", "user", "comment"),
+        generator = "categorymembers",
+        generatorPrefix = "cm",
+        namespaces = Set(Namespace.FILE),
+        props = Set("content", "timestamp", "user", "comment"),
         limit = "50",
-        titlePrefix = None) returns Future.successful(revisions)
+        titlePrefix = None
+      ) returns Future.successful(revisions)
 
       val commons = mockBot()
       commons.page(category) returns query
@@ -49,8 +57,7 @@ class FetchImageTextSpec
       val contest =
         ContestJury(Some(contestId), "WLE", 2015, "Ukraine", Some(category))
 
-      await(FetchImageText(category, contest, None, commons).apply()) must be_==(
-        images)
+      await(FetchImageText(category, contest, None, commons).apply()) === images
     }
 
     "get images one image with text" in {
@@ -58,11 +65,10 @@ class FetchImageTextSpec
       val contestId = 13
       val imageId = 11
       val images = Seq(
-        contestImage(imageId).copy(description = Some("descr"),
-                                   monumentId = Some(""),
-                                   author = Some("Author")))
-      val revisions = Seq(
-        revision(imageId, "{{Information|description=descr|author=Author}}"))
+        contestImage(imageId)
+          .copy(description = Some("descr"), monumentId = None, author = Some("Author"))
+      )
+      val revisions = Seq(revision(imageId, "{{Information|description=descr|author=Author}}"))
 
       val query = mock[SinglePageQuery]
       query.withContext(Map("contestId" -> contestId.toString, "max" -> "0")) returns query
@@ -72,21 +78,16 @@ class FetchImageTextSpec
         Set(Namespace.FILE),
         Set("content", "timestamp", "user", "comment"),
         limit = "50",
-        titlePrefix = None) returns Future.successful(revisions)
+        titlePrefix = None
+      ) returns Future.successful(revisions)
 
       val commons = mockBot()
       commons.page(category) returns query
 
-      val contest = ContestJury(Some(contestId),
-                                "WLE",
-                                2015,
-                                "Ukraine",
-                                Some(category),
-                                Some(0),
-                                None)
+      val contest =
+        ContestJury(Some(contestId), "WLE", 2015, "Ukraine", Some(category), Some(0), None)
 
-      await(FetchImageText(category, contest, None, commons).apply()) must be_==(
-        images)
+      await(FetchImageText(category, contest, None, commons).apply()) should_=== images
     }
 
     "get images one image with descr and monumentId" in {
@@ -95,36 +96,39 @@ class FetchImageTextSpec
       val contestId = 13
       val imageId = 11
       val descr = s"descr. {{$idTemplate|12-345-$imageId}}"
-      val images = Seq(
-        contestImage(imageId).copy(description = Some(descr),
-                                   author = Some("Author")))
-      val revisions = Seq(
-        revision(imageId, s"{{Information|description=$descr|author=Author}}"))
+      val images =
+        Seq(contestImage(imageId).copy(description = Some(descr), author = Some("Author")))
+      val revisions = Seq(revision(imageId, s"{{Information|description=$descr|author=Author}}"))
 
       val query = mock[SinglePageQuery]
       query.withContext(Map("contestId" -> contestId.toString, "max" -> "0")) returns query
       query.revisionsByGenerator(
-        "categorymembers",
-        "cm",
-        Set(Namespace.FILE),
-        Set("content", "timestamp", "user", "comment"),
+        generator = "categorymembers",
+        generatorPrefix = "cm",
+        namespaces = Set(Namespace.FILE),
+        props = Set("content", "timestamp", "user", "comment"),
         limit = "50",
-        titlePrefix = None) returns Future.successful(revisions)
+        titlePrefix = None
+      ) returns Future.successful(revisions)
 
       val commons = mockBot()
       commons.page(category) returns query
 
-      val contest = ContestJury(Some(contestId),
-                                "WLE",
-                                2015,
-                                "Ukraine",
-                                Some(category),
-                                Some(0),
-                                None)
+      val contest =
+        ContestJury(
+          id = Some(contestId),
+          name = "WLE",
+          year = 2015,
+          country = "Ukraine",
+          images = Some(category),
+          categoryId = Some(0),
+          currentRound = None
+        )
 
       await(
         FetchImageText(category, contest, Some(idTemplate), commons)
-          .apply()) must be_==(images)
+          .apply()
+      ) should_=== images
     }
 
     "one image from page" in {
@@ -133,36 +137,39 @@ class FetchImageTextSpec
       val contestId = 13
       val imageId = 11
       val descr = s"descr. {{$idTemplate|12-345-$imageId}}"
-      val images = Seq(
-        contestImage(imageId).copy(description = Some(descr),
-                                   author = Some("")))
+      val images = Seq(contestImage(imageId).copy(description = Some(descr), author = None))
       val revisions =
         Seq(revision(imageId, s"{{Information|description=$descr}}"))
 
       val query = mock[SinglePageQuery]
       query.withContext(Map("contestId" -> contestId.toString, "max" -> "0")) returns query
       query.revisionsByGenerator(
-        "images",
-        "im",
-        Set(Namespace.FILE),
-        Set("content", "timestamp", "user", "comment"),
+        generator = "images",
+        generatorPrefix = "im",
+        namespaces = Set(Namespace.FILE),
+        props = Set("content", "timestamp", "user", "comment"),
         limit = "50",
-        titlePrefix = None) returns Future.successful(revisions)
+        titlePrefix = None
+      ) returns Future.successful(revisions)
 
       val commons = mockBot()
       commons.page(page) returns query
 
-      val contest = ContestJury(Some(contestId),
-                                "WLE",
-                                2019,
-                                "International",
-                                Some(page),
-                                Some(0),
-                                None)
+      val contest =
+        ContestJury(
+          id = Some(contestId),
+          name = "WLE",
+          year = 2019,
+          country = "International",
+          images = Some(page),
+          categoryId = Some(0),
+          currentRound = None
+        )
 
       await(
         FetchImageText(page, contest, Some(idTemplate), commons)
-          .apply()) must be_==(images)
+          .apply()
+      ) should_=== images
     }
   }
 }
