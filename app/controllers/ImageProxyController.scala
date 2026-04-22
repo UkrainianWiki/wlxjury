@@ -44,7 +44,14 @@ class ImageProxyController @Inject() (
         Future.successful(NotFound)
 
       case Some((filename, px)) =>
-        Future(scala.concurrent.blocking(Try(ImageJdbc.findByFilename(filename)).getOrElse(None)))
+        Future(scala.concurrent.blocking(
+          Try(ImageJdbc.findByFilename(filename))
+            .recover { case ex =>
+              logger.error(s"DB error while looking up filename '$filename': ${ex.getMessage}", ex)
+              None
+            }
+            .getOrElse(None)
+        ))
           .flatMap {
             case None =>
               // Not in DB: redirect to Wikimedia; browser follows transparently for <img>

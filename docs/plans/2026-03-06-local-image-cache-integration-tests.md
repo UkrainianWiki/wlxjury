@@ -14,7 +14,7 @@ frontend JS is updated to display them. Integration tests live in the `services`
 
 ---
 
-### Task 1: Update `CacheProgress` with time-tracking fields
+## Task 1: Update `CacheProgress` with time-tracking fields
 
 **Files:**
 - Modify: `app/services/LocalImageCacheService.scala:25-29` (CacheProgress + companion)
@@ -119,7 +119,7 @@ git commit -m "feat: add time tracking (rate, ETA, elapsed) to CacheProgress"
 
 ---
 
-### Task 2: Update frontend to display rate and ETA
+## Task 2: Update frontend to display rate and ETA
 
 **Files:**
 - Modify: `app/views/contest_images.scala.html:58-67` (the `.then(function(p) {...})` block)
@@ -166,7 +166,7 @@ git commit -m "feat: show download rate and ETA in image cache status UI"
 
 ---
 
-### Task 3: Write the integration test spec
+## Task 3: Write the integration test spec
 
 **Files:**
 - Create: `test/services/LocalImageCacheServiceIntegrationSpec.scala`
@@ -352,7 +352,7 @@ git commit -m "test: integration tests for LocalImageCacheService against real W
 
 ---
 
-### Task 4: Run full test suite to confirm nothing regressed
+## Task 4: Run full test suite to confirm nothing regressed
 
 **Step 1:**
 
