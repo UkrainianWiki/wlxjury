@@ -221,7 +221,7 @@ object Tools {
   }
 
 
-  def fillLists(): Future[Unit] = {
+  def fillLists(): Unit = {
 
     val contestJury = ContestJuryJdbc.findById(67).get
 
