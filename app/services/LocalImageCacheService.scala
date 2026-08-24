@@ -247,10 +247,13 @@ class LocalImageCacheService @Inject() (
 
   // Mirrors the URL construction in Global.legacyThumbUlr, using wikiBaseUrl as host
   private[services] def wikiThumbUrl(image: Image, px: Int): Option[String] =
-    image.url.filter(_.contains("//upload.wikimedia.org/wikipedia/commons/")).map { url =>
+    image.url.filter(_.contains("//upload.wikimedia.org/wikipedia/commons/")).map { rawUrl =>
       val lower     = image.title.toLowerCase
       val isPdf     = lower.endsWith(".pdf")
       val isTif     = lower.endsWith(".tif") || lower.endsWith(".tiff")
+      // Commons imageinfo API appends UTM tracking params to `url` (e.g. "?utm_source=..."),
+      // which must be stripped before treating the trailing segment as a filename.
+      val url       = rawUrl.takeWhile(_ != '?')
       val lastSlash = url.lastIndexOf("/")
       val utf8Size  = image.title.getBytes("UTF-8").length
       val thumbStr  = if (utf8Size > 165) "thumbnail.jpg" else url.substring(lastSlash + 1)

@@ -33,7 +33,7 @@ class LocalImageCacheServiceSpec extends Specification {
     val wikiBase = serverPort.map(p => s"http://localhost:$p").getOrElse("https://upload.wikimedia.org")
     val config = Configuration(
       ConfigFactory.parseString(
-        s"""wlxjury.thumbs.local-path = "${dir.getAbsolutePath}"
+        s"""wlxjury.thumbs.local-path = "${dir.getAbsolutePath.replace("\\", "/")}"
            |wlxjury.thumbs.parallelism = 2
            |wlxjury.thumbs.rate-per-second = 10
            |wlxjury.thumbs.max-attempts = $maxAttempts

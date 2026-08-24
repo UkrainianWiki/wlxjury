@@ -70,7 +70,9 @@ object Global {
     val isPdf = lowerCaseTitle.endsWith(".pdf")
     val isTif = List(".tif", ".tiff").exists(lowerCaseTitle.endsWith)
 
-    val url = info.url.getOrElse("")
+    // Commons imageinfo API appends UTM tracking params to `url` (e.g. "?utm_source=..."),
+    // which must be stripped before treating the trailing segment as a filename.
+    val url = info.url.getOrElse("").takeWhile(_ != '?')
     val lastSlash = url.lastIndexOf("/")
     val utf8Size = info.title.getBytes("UTF8").length
     val thumbStr = if (utf8Size > 165) "thumbnail.jpg" else url.substring(lastSlash + 1)
