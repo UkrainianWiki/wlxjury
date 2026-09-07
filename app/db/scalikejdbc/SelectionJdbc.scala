@@ -216,15 +216,27 @@ object SelectionJdbc extends CRUDMapper[Selection] {
         .eq(column.roundId, roundId)
     )
 
-  def mergeRounds(
-      targetRoundId: Long,
-      sourceRoundId: Long,
-      pageIds: Set[Long] = Set.empty
-  ): Unit = {
-    val where =
-      if (pageIds.isEmpty) sqls.eq(s.roundId, sourceRoundId)
-      else sqls.eq(s.roundId, sourceRoundId).and.in(s.pageId, pageIds.toSeq)
-    updateBy(where).withNamedValues(s.roundId -> targetRoundId)
-  }
+  /** Re-parents every selection of `sourceRoundId` to `targetRoundId`.
+    *
+    * A juror may have rated the same image in both rounds; that source row is dropped
+    * (the target round's selection wins) so the merge can't violate the
+    * `(page_id, jury_id, round_id)` unique index.
+    */
+  def mergeRounds(targetRoundId: Long, sourceRoundId: Long): Unit =
+    DB localTx { implicit session =>
+      sql"""DELETE src FROM selection src
+            JOIN selection tgt
+              ON tgt.round_id = $targetRoundId
+             AND tgt.page_id = src.page_id
+             AND tgt.jury_id = src.jury_id
+            WHERE src.round_id = $sourceRoundId""".update()
+
+      withSQL {
+        update(SelectionJdbc)
+          .set(column.roundId -> targetRoundId)
+          .where
+          .eq(column.roundId, sourceRoundId)
+      }.update()
+    }
 
 }

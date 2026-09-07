@@ -67,21 +67,9 @@ class RoundService @Inject() (distributeImages: DistributeImages, dao: RoundRepo
     val rounds = dao.findByIds(contestId, Seq(targetRoundId, sourceRoundId))
     assert(rounds.size == 2)
     for {
-      targetRound <- rounds.find(_.id.contains(targetRoundId))
-      sourceRound <- rounds.find(_.id.contains(sourceRoundId))
-      targetId <- targetRound.id
-      sourceId <- sourceRound.id
-    } {
-      // Re-parent only the selections whose image passes the target round's filtering
-      // conditions (same conditions used when distributing images into a new round).
-      val allowedPageIds =
-        distributeImages.imagesByRound(targetRound, Seq(sourceRound)).map(_.pageId).toSet
-      SelectionJdbc.mergeRounds(
-        targetRoundId = targetId,
-        sourceRoundId = sourceId,
-        pageIds = allowedPageIds
-      )
-    }
+      targetId <- rounds.find(_.id.contains(targetRoundId)).flatMap(_.id)
+      sourceId <- rounds.find(_.id.contains(sourceRoundId)).flatMap(_.id)
+    } SelectionJdbc.mergeRounds(targetRoundId = targetId, sourceRoundId = sourceId)
   }
 
   def setCurrentRound(prevRoundIds: Seq[Long], round: Round): Unit = {

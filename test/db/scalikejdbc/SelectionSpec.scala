@@ -52,6 +52,13 @@ class SelectionSpec extends Specification with TestDb {
       }
     }
 
+    "reject a duplicate selection for the same image, juror and round" in {
+      withDb {
+        selectionDao.create(pageId = 1, rate = 0, juryId = 10, roundId = 1)
+        selectionDao.create(pageId = 1, rate = 1, juryId = 10, roundId = 1) must throwA[Exception]
+      }
+    }
+
     "rate selections" in {
 
       withDb {
@@ -77,5 +84,42 @@ class SelectionSpec extends Specification with TestDb {
       }
     }
 
+  }
+
+  "mergeRounds" should {
+    "re-parent all source round selections to the target round" in {
+      withDb {
+        selectionDao.batchInsert(Seq(
+          Selection(pageId = 1, juryId = 10, roundId = 1, rate = 1),
+          Selection(pageId = 2, juryId = 10, roundId = 1, rate = 0),
+          Selection(pageId = 1, juryId = 11, roundId = 1, rate = -1),
+          Selection(pageId = 3, juryId = 10, roundId = 2, rate = 1)
+        ))
+
+        selectionDao.mergeRounds(targetRoundId = 2, sourceRoundId = 1)
+
+        selectionDao.findAll().count(_.roundId == 1) === 0
+        selectionDao.findAll().count(_.roundId == 2) === 4
+      }
+    }
+
+    "drop a source selection that collides with an existing target selection" in {
+      withDb {
+        selectionDao.batchInsert(Seq(
+          Selection(pageId = 1, juryId = 10, roundId = 1, rate = 1),
+          Selection(pageId = 2, juryId = 10, roundId = 1, rate = 1),
+          Selection(pageId = 1, juryId = 10, roundId = 2, rate = -1)
+        ))
+
+        selectionDao.mergeRounds(targetRoundId = 2, sourceRoundId = 1)
+
+        selectionDao.findAll().count(_.roundId == 1) === 0
+        selectionDao
+          .findAll()
+          .filter(_.roundId == 2)
+          .map(s => (s.pageId, s.juryId, s.rate))
+          .toSet === Set((1L, 10L, -1), (2L, 10L, 1))
+      }
+    }
   }
 }
