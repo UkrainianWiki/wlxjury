@@ -29,3 +29,7 @@ JOIN selection keep
                 OR ((keep.rate <> 0) = (dup.rate <> 0) AND keep.id < dup.id))));
 
 CREATE UNIQUE INDEX selection_page_jury_round_uidx ON selection (page_id, jury_id, round_id);
+
+-- V45e added a non-unique index on the same three columns purely for lookup speed;
+-- the unique index above now serves that access path, so drop the redundant one.
+DROP INDEX IF EXISTS idx_selection_page_jury_round ON selection;
