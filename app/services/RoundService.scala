@@ -13,10 +13,15 @@ import javax.inject.Inject
 class RoundService @Inject() (distributeImages: DistributeImages, dao: RoundRepo) extends Logging {
 
   def createNewRound(round: Round, jurorIds: Seq[Long]): Round = {
+    val prevRounds = round.previousIds.flatMap(dao.findById)
+    require(
+      Round.sameRateType(prevRounds),
+      s"previous rounds [${prevRounds.flatMap(_.id).mkString(", ")}] must all be of the same rate type"
+    )
+
     val numberOfRounds = dao.countByContest(round.contestId)
     val created = dao.create(round.copy(number = numberOfRounds + 1))
 
-    val prevRounds = created.previousIds.flatMap(dao.findById)
     val jurors = User.loadJurors(round.contestId, jurorIds)
 
     created.addUsers(

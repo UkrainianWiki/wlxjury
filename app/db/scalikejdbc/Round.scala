@@ -316,6 +316,13 @@ object Round extends RoundRepo with CRUDMapper[Round] {
       .apply()
   }
 
+  /** A round may draw its images from several previous rounds, but they must all share
+    * one rate type (all binary or all rated) — the filtering / rate-scaling code treats
+    * them as one context. An empty or single-element seq trivially satisfies this.
+    */
+  def sameRateType(rounds: Seq[Round]): Boolean =
+    rounds.map(_.isBinary).distinct.sizeIs <= 1
+
   def setActive(id: Long, active: Boolean): Unit =
     updateById(id)
       .withAttributes("active" -> active)

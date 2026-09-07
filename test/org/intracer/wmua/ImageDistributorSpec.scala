@@ -435,5 +435,96 @@ class ImageDistributorSpec extends Specification with TestDb with Mockito {
         round3PageIds === Set(images(0).pageId, images(2).pageId)
       }
     }
+
+    "count selections across previous rounds cumulatively and not duplicate the image" in {
+      withDb {
+        val numImages = 4
+        val numJurors = 2
+        implicit val contest = createContests(contest1, contest2).head
+        val images = createImages(numImages, contest1, contest2)
+
+        def binaryRound(number: Long) =
+          roundDao.create(
+            Round(
+              None,
+              number,
+              Some(s"Round $number"),
+              contest1,
+              Set("jury"),
+              0,
+              Round.binaryRound,
+              active = true
+            )
+          )
+
+        val dbRoundA = binaryRound(1)
+        val dbRoundB = binaryRound(2)
+
+        val dbJurors = createJurors(numJurors)
+        val juryIds = dbJurors.map(_.getId)
+
+        di.distributeImages(dbRoundA, dbJurors, Nil)
+        di.distributeImages(dbRoundB, dbJurors, Nil)
+
+        // image 0: selected by one juror in round A and by another juror in round B
+        SelectionJdbc.rate(images(0).pageId, juryIds(0), dbRoundA.getId, 1)
+        SelectionJdbc.rate(images(0).pageId, juryIds(1), dbRoundB.getId, 1)
+        // image 1: selected once, only in round A
+        SelectionJdbc.rate(images(1).pageId, juryIds(0), dbRoundA.getId, 1)
+
+        val dbRound3 = roundDao.create(
+          Round(
+            None,
+            3,
+            Some("Round 3"),
+            contest1,
+            Set("jury"),
+            0,
+            Round.ratesById(10),
+            active = true,
+            previous = Some(s"${dbRoundA.getId},${dbRoundB.getId}"),
+            prevSelectedBy = Some(2)
+          )
+        )
+
+        di.distributeImages(dbRound3, dbJurors, Seq(dbRoundA, dbRoundB))
+
+        val round3 = selectionDao.findAll().filter(_.roundId == dbRound3.getId)
+
+        // image 0 reaches the threshold of 2 only by combining both rounds; image 1 doesn't
+        round3.map(_.pageId).toSet === Set(images(0).pageId)
+        // distributed once per juror, not once per previous round the image came from
+        round3.count(_.pageId == images(0).pageId) === numJurors
+      }
+    }
+
+    "reject previous rounds of mixed rate type" in {
+      withDb {
+        implicit val contest = createContests(contest1, contest2).head
+        createImages(4, contest1, contest2)
+
+        val binary = roundDao.create(
+          Round(None, 1, Some("bin"), contest1, Set("jury"), 0, Round.binaryRound, active = true)
+        )
+        val rated = roundDao.create(
+          Round(None, 2, Some("rated"), contest1, Set("jury"), 0, Round.ratesById(10), active = true)
+        )
+        val next = roundDao.create(
+          Round(
+            None,
+            3,
+            Some("next"),
+            contest1,
+            Set("jury"),
+            0,
+            Round.ratesById(10),
+            active = true,
+            previous = Some(s"${binary.getId},${rated.getId}")
+          )
+        )
+
+        di.imagesByRound(next, Seq(binary, rated)) must throwA[IllegalArgumentException]
+      }
+    }
   }
 }

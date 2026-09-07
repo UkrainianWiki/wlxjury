@@ -53,10 +53,8 @@ object EditRound {
         "error.previous.rounds.mixed.type",
         editRound => {
           val ids = editRound.round.previousIds
-          ids.size < 2 || {
-            val prevRounds = Round.findByIds(editRound.round.contestId, ids)
-            prevRounds.map(_.isBinary).distinct.size <= 1
-          }
+          ids.sizeIs < 2 ||
+            Round.sameRateType(Round.findByIds(editRound.round.contestId, ids))
         }
       )
   )

@@ -111,6 +111,12 @@ class DistributeImages @Inject()(imageRepo: ImageRepo) extends Logging {
       excludeCategory: Option[String] = None
   ): Seq[Image] = {
 
+    require(
+      Round.sameRateType(prevRounds),
+      s"Round ${round.id.orNull}: previous rounds [${prevRounds.flatMap(_.id).mkString(", ")}] " +
+        "must all be of the same rate type (all binary or all rated)"
+    )
+
     val includeFromCats = categoryFileIds(includeCategory)
     val excludeFromCats = categoryFileIds(excludeCategory)
 
@@ -133,8 +139,10 @@ class DistributeImages @Inject()(imageRepo: ImageRepo) extends Logging {
           .findByContestId(round.contestId)
           .map(i => new ImageWithRating(i, Seq.empty))
       else
-        prevRounds.flatMap(r =>
-          imageRepo.byRoundMerged(r.getId, rated = selectedAtLeast.map(_ > 0))
+        mergeByPageId(
+          prevRounds.flatMap(r =>
+            imageRepo.byRoundMerged(r.getId, rated = selectedAtLeast.map(_ > 0))
+          )
         )
     logger.debug("Total images: " + imagesAll.size)
 
@@ -161,14 +169,33 @@ class DistributeImages @Inject()(imageRepo: ImageRepo) extends Logging {
 
     val filterChain = ImageWithRatingSeqFilter.makeFunChain(funGens)
 
-    val filtered = filterChain(imagesAll).map(_.image)
-    // An image present in more than one previous round yields one ImageWithRating per
-    // round; the chain filters each independently, so the image advances if it passed
-    // in any of them. Dedupe by page id when drawing from multiple previous rounds.
-    val images = if (prevRounds.size > 1) filtered.distinctBy(_.pageId) else filtered
+    val images = filterChain(imagesAll).map(_.image)
     logger.debug("Images after filtering: " + images.size)
 
     images
+  }
+
+  /** Collapses the per-previous-round [[ImageWithRating]] rows for the same image into a
+    * single row, unioning their selections and juror counts. An image that advanced in
+    * several previous rounds is then one row rather than one-per-round, so the rating
+    * filters (top-N, min average, selected-at-least) see a single combined rating
+    * instead of duplicates competing for the same slots. First-seen order is kept.
+    */
+  private def mergeByPageId(images: Seq[ImageWithRating]): Seq[ImageWithRating] = {
+    val merged = scala.collection.mutable.LinkedHashMap.empty[Long, ImageWithRating]
+    images.foreach { iwr =>
+      merged.updateWith(iwr.pageId) {
+        case Some(acc) =>
+          Some(
+            acc.copy(
+              selection = acc.selection ++ iwr.selection,
+              countFromDb = acc.countFromDb + iwr.countFromDb
+            )
+          )
+        case None => Some(iwr)
+      }
+    }
+    merged.values.toSeq
   }
 
   def rebalanceImages(
