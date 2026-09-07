@@ -76,9 +76,9 @@ class RoundController @Inject() (
       val editRound = EditRound(withTopImages, jurors.flatMap(_.id), None)
       val filledRound = editRoundForm.fill(editRound)
       val stat = round.id.map(id => roundsService.getRoundStat(id, round))
-      val prevRound = round.previous.flatMap(Round.findById)
+      val prevRounds = round.previousIds.flatMap(Round.findById)
       val images = round.id
-        .map(_ => distributeImages.imagesByRound(round, prevRound))
+        .map(_ => distributeImages.imagesByRound(round, prevRounds))
         .getOrElse(Nil)
       Ok(
         views.html.editRound(
@@ -142,9 +142,9 @@ class RoundController @Inject() (
               } yield {
                 Round.updateRound(roundId, round)
                 if (editForm.newImages) {
-                  val prevRound = round.previous.flatMap(Round.findById)
+                  val prevRounds = round.previousIds.flatMap(Round.findById)
                   val jurors = User.findByRoundSelection(roundId)
-                  distributeImages.distributeImages(currentRound, jurors, prevRound)
+                  distributeImages.distributeImages(currentRound, jurors, prevRounds)
                 }
               }
             }
@@ -160,7 +160,7 @@ class RoundController @Inject() (
       val id = selectRound.roundId.toLong
       val round = Round.findById(id)
       round.foreach { r =>
-        roundsService.setCurrentRound(None, r.copy(active = selectRound.active))
+        roundsService.setCurrentRound(Nil, r.copy(active = selectRound.active))
       }
 
       Redirect(routes.RoundController.rounds(round.map(_.contestId)))

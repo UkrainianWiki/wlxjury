@@ -16,16 +16,16 @@ class RoundService @Inject() (distributeImages: DistributeImages, dao: RoundRepo
     val numberOfRounds = dao.countByContest(round.contestId)
     val created = dao.create(round.copy(number = numberOfRounds + 1))
 
-    val prevRound = created.previous.flatMap(dao.findById)
+    val prevRounds = created.previousIds.flatMap(dao.findById)
     val jurors = User.loadJurors(round.contestId, jurorIds)
 
     created.addUsers(
       jurors.map(u => RoundUser(created.getId, u.getId, u.roles.head, active = true))
     )
 
-    distributeImages.distributeImages(created, jurors, prevRound)
+    distributeImages.distributeImages(created, jurors, prevRounds)
 
-    setCurrentRound(created.previous, created)
+    setCurrentRound(created.previousIds, created)
 
     created
   }
@@ -67,18 +67,29 @@ class RoundService @Inject() (distributeImages: DistributeImages, dao: RoundRepo
     val rounds = dao.findByIds(contestId, Seq(targetRoundId, sourceRoundId))
     assert(rounds.size == 2)
     for {
-      targetId <- rounds.find(_.id.contains(targetRoundId)).flatMap(_.id)
-      sourceId <- rounds.find(_.id.contains(sourceRoundId)).flatMap(_.id)
+      targetRound <- rounds.find(_.id.contains(targetRoundId))
+      sourceRound <- rounds.find(_.id.contains(sourceRoundId))
+      targetId <- targetRound.id
+      sourceId <- sourceRound.id
+    } {
+      // Re-parent only the selections whose image passes the target round's filtering
+      // conditions (same conditions used when distributing images into a new round).
+      val allowedPageIds =
+        distributeImages.imagesByRound(targetRound, Seq(sourceRound)).map(_.pageId).toSet
+      SelectionJdbc.mergeRounds(
+        targetRoundId = targetId,
+        sourceRoundId = sourceId,
+        pageIds = allowedPageIds
+      )
     }
-    SelectionJdbc.mergeRounds(targetRoundId = targetId, sourceRoundId = sourceId)
   }
 
-  def setCurrentRound(prevRoundId: Option[Long], round: Round): Unit = {
+  def setCurrentRound(prevRoundIds: Seq[Long], round: Round): Unit = {
     logger.info(
-      s"Setting current round ${prevRoundId.fold("")(rId => s"from $rId")} to ${round.getId}"
+      s"Setting current round ${if (prevRoundIds.nonEmpty) s"from ${prevRoundIds.mkString(", ")}" else ""} to ${round.getId}"
     )
 
-    prevRoundId.foreach(rId => Round.setActive(rId, active = false))
+    prevRoundIds.foreach(rId => Round.setActive(rId, active = false))
     Round.setActive(round.getId, active = round.active)
   }
 

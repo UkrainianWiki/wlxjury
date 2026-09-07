@@ -14,6 +14,8 @@ password=Пароль
 
 users = Пользователи
 rounds = Раунды
+previous.round = Предыдущие раунды
+error.previous.rounds.mixed.type = Все предыдущие раунды должны быть одного типа оценивания
 
 unrated = Без оценки
 selected = Выбранные

@@ -123,7 +123,7 @@ class ImageDistributorSpec extends Specification with TestDb with Mockito {
         dbJurors.size === 3
         val juryIds = dbJurors.map(_.getId)
 
-        di.distributeImages(dbRound, dbJurors, None)
+        di.distributeImages(dbRound, dbJurors, Nil)
 
         val selection = selectionDao.findAll()
 
@@ -156,7 +156,7 @@ class ImageDistributorSpec extends Specification with TestDb with Mockito {
         val dbRound = roundDao.create(round)
 
         val firstJuror = createJurors(1)
-        di.distributeImages(dbRound, firstJuror, None)
+        di.distributeImages(dbRound, firstJuror, Nil)
 
         val selection1 = selectionDao.findAll()
         selection1.size === 9
@@ -165,7 +165,7 @@ class ImageDistributorSpec extends Specification with TestDb with Mockito {
         val allJurors = firstJuror ++ moreJurors
         val allJuryIds = allJurors.map(_.getId)
 
-        di.distributeImages(dbRound, allJurors, None, removeUnrated = true)
+        di.distributeImages(dbRound, allJurors, Nil, removeUnrated = true)
 
         val selection2 = selectionDao.findAll()
         selection2.size === 9
@@ -199,7 +199,7 @@ class ImageDistributorSpec extends Specification with TestDb with Mockito {
         val firstJuror = createJurors(1)
         val juryIds1 = firstJuror.map(_.getId)
 
-        di.distributeImages(dbRound, firstJuror, None)
+        di.distributeImages(dbRound, firstJuror, Nil)
 
         SelectionJdbc.rate(images(0).pageId, juryIds1(0), dbRound.getId, 1)
         SelectionJdbc.rate(images(1).pageId, juryIds1(0), dbRound.getId, -1)
@@ -209,7 +209,7 @@ class ImageDistributorSpec extends Specification with TestDb with Mockito {
         val allJurors = firstJuror ++ moreJurors
         val allJuryIds = allJurors.map(_.getId)
 
-        di.distributeImages(dbRound, allJurors, None)
+        di.distributeImages(dbRound, allJurors, Nil)
 
         val selection2 = selectionDao.findAll()
 
@@ -245,7 +245,7 @@ class ImageDistributorSpec extends Specification with TestDb with Mockito {
 
         val dbJurors = createJurors(numJurors)
 
-        di.distributeImages(dbRound, dbJurors, None)
+        di.distributeImages(dbRound, dbJurors, Nil)
 
         val selection = selectionDao.findAll()
 
@@ -286,7 +286,7 @@ class ImageDistributorSpec extends Specification with TestDb with Mockito {
         val dbJurors = createJurors(3)
         val juryIds = dbJurors.map(_.getId)
 
-        di.distributeImages(dbRound, dbJurors, None)
+        di.distributeImages(dbRound, dbJurors, Nil)
 
         val selection = selectionDao.findAll()
         val byJuror = selection.groupBy(_.juryId)
@@ -313,7 +313,7 @@ class ImageDistributorSpec extends Specification with TestDb with Mockito {
         )
         val dbRound2 = roundDao.create(round2)
 
-        di.distributeImages(dbRound2, dbJurors, Some(dbRound))
+        di.distributeImages(dbRound2, dbJurors, Seq(dbRound))
 
         val secondRoundPageIds = selectionDao
           .findAll()
@@ -349,7 +349,7 @@ class ImageDistributorSpec extends Specification with TestDb with Mockito {
         val dbJurors = createJurors(numJurors)
         val juryIds = dbJurors.map(_.getId)
 
-        di.distributeImages(dbRound, dbJurors, None)
+        di.distributeImages(dbRound, dbJurors, Nil)
 
         SelectionJdbc.rate(images(0).pageId, juryIds(0), dbRound.getId, 1)
         SelectionJdbc.rate(images(0).pageId, juryIds(1), dbRound.getId, -1)
@@ -370,11 +370,69 @@ class ImageDistributorSpec extends Specification with TestDb with Mockito {
         )
         val dbRound2 = roundDao.create(round2)
 
-        di.distributeImages(dbRound2, dbJurors, Some(dbRound))
+        di.distributeImages(dbRound2, dbJurors, Seq(dbRound))
 
         val selection2 = selectionDao.findAll().filter(_.roundId == dbRound2.getId)
 
         selection2.map(_.pageId).toSet === Set(images(0).pageId)
+      }
+    }
+
+    "create a round from two previous rounds using the union of their selected images" in {
+      withDb {
+        val numImages = 4
+        val numJurors = 2
+        implicit val contest = createContests(contest1, contest2).head
+        val images = createImages(numImages, contest1, contest2)
+
+        def binaryRound(number: Long) =
+          roundDao.create(
+            Round(
+              None,
+              number,
+              Some(s"Round $number"),
+              contest1,
+              Set("jury"),
+              0,
+              Round.binaryRound,
+              active = true
+            )
+          )
+
+        val dbRoundA = binaryRound(1)
+        val dbRoundB = binaryRound(2)
+
+        val dbJurors = createJurors(numJurors)
+        val juryIds = dbJurors.map(_.getId)
+
+        di.distributeImages(dbRoundA, dbJurors, Nil)
+        di.distributeImages(dbRoundB, dbJurors, Nil)
+
+        // image 0 is selected only in round A, image 2 only in round B
+        SelectionJdbc.rate(images(0).pageId, juryIds(0), dbRoundA.getId, 1)
+        SelectionJdbc.rate(images(2).pageId, juryIds(0), dbRoundB.getId, 1)
+
+        val dbRound3 = roundDao.create(
+          Round(
+            None,
+            3,
+            Some("Round 3"),
+            contest1,
+            Set("jury"),
+            0,
+            Round.ratesById(10),
+            active = true,
+            previous = Some(s"${dbRoundA.getId},${dbRoundB.getId}"),
+            prevSelectedBy = Some(1)
+          )
+        )
+
+        di.distributeImages(dbRound3, dbJurors, Seq(dbRoundA, dbRoundB))
+
+        val round3PageIds =
+          selectionDao.findAll().filter(_.roundId == dbRound3.getId).map(_.pageId).toSet
+
+        round3PageIds === Set(images(0).pageId, images(2).pageId)
       }
     }
   }

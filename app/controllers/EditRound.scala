@@ -35,7 +35,7 @@ object EditRound {
       "rates" -> number,
       "returnTo" -> optional(text),
       "minMpx" -> text,
-      "previousRound" -> optional(longNumber),
+      "previousRound" -> seq(text),
       "minJurors" -> optional(text),
       "minAvgRate" -> optional(text),
       "source" -> optional(text),
@@ -49,6 +49,16 @@ object EditRound {
       "specialNomination" -> optional(text),
       "mediaType" -> text
     )(applyEdit)(unapplyEdit)
+      .verifying(
+        "error.previous.rounds.mixed.type",
+        editRound => {
+          val ids = editRound.round.previousIds
+          ids.size < 2 || {
+            val prevRounds = Round.findByIds(editRound.round.contestId, ids)
+            prevRounds.map(_.isBinary).distinct.size <= 1
+          }
+        }
+      )
   )
 
   def applyEdit(
@@ -61,7 +71,7 @@ object EditRound {
       rates: Int,
       returnTo: Option[String],
       minMpx: String,
-      previousRound: Option[Long],
+      previousRounds: Seq[String],
       prevSelectedBy: Option[String],
       prevMinAvgRate: Option[String],
       category: Option[String],
@@ -75,6 +85,7 @@ object EditRound {
       specialNomination: Option[String],
       mediaType: String
   ): EditRound = {
+    val previousRoundIds = previousRounds.flatMap(s => Try(s.trim.toLong).toOption)
     val round = new Round(
       id,
       num,
@@ -85,7 +96,7 @@ object EditRound {
       Round.ratesById(rates),
       limits = RoundLimits(),
       minMpx = Try(minMpx.toInt).toOption,
-      previous = previousRound,
+      previous = Option.when(previousRoundIds.nonEmpty)(previousRoundIds.mkString(",")),
       prevSelectedBy = prevSelectedBy.flatMap(s => Try(s.toInt).toOption),
       prevMinAvgRate = prevMinAvgRate.flatMap(s => Try(BigDecimal(s)).toOption),
       category = category,
@@ -116,7 +127,7 @@ object EditRound {
         Int,
         Option[String],
         String,
-        Option[Long],
+        Seq[String],
         Option[String],
         Option[String],
         Option[String],
@@ -143,7 +154,7 @@ object EditRound {
         round.rates.id,
         editRound.returnTo,
         round.minMpx.fold("No")(_.toString),
-        round.previous,
+        round.previousIds.map(_.toString),
         round.prevSelectedBy.map(_.toString),
         round.prevMinAvgRate.map(_.toString),
         round.category,

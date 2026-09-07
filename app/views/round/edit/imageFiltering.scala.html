@@ -17,14 +17,15 @@
     @if(rounds.nonEmpty) {
         @b3.select(
             editRoundForm("previousRound"),
-            ("" -> Messages("no")) +: rounds.map(r => (r.id.map(_.toString).get, r.description)),
+            rounds.map(r => (r.id.map(_.toString).get, r.description)),
             Symbol("_label") -> Messages("previous.round"),
             Symbol("_help") -> "",
             Symbol("class") -> "form-control",
+            Symbol("multiple") -> true,
             Symbol("readonly") -> noEdit
         )
 
-        <div id="prevRoundFilters" @if(editRoundForm("previousRound").value.isEmpty) {style="display: none"}>
+        <div id="prevRoundFilters" @if(editRoundForm("previousRound").indexes.isEmpty) {style="display: none"}>
             <div id="selectFilters"
             class="@rounds.filter(_.isBinary).map(r => "round" + r.getId).mkString(" ")">
             @b3.select(

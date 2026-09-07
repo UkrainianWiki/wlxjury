@@ -35,7 +35,7 @@ case class Round(
     optionalRate: Boolean = false,
     juryOrgView: Boolean = false,
     minMpx: Option[Int] = None,
-    previous: Option[Long] = None,
+    previous: Option[String] = None,
     prevSelectedBy: Option[Int] = None,
     prevMinAvgRate: Option[BigDecimal] = None,
     category: Option[String] = None,
@@ -79,6 +79,14 @@ case class Round(
      else rates.id / 2) * (if (hasCriteria) (if (!id.contains(1327)) 4 else 2) else 1)
 
   def regionIds: Seq[String] = regions.map(_.split(",").toSeq).getOrElse(Nil)
+
+  /** Ids of the previous rounds this round draws its images from.
+    * Stored as a comma-separated string in the `previous` column (like `regions`).
+    */
+  def previousIds: Seq[Long] =
+    previous
+      .map(_.split(",").toSeq.flatMap(s => scala.util.Try(s.trim.toLong).toOption))
+      .getOrElse(Nil)
 
   def monumentIds: Seq[String] =
     monuments.map(_.split(",").toSeq).getOrElse(Nil)
@@ -207,7 +215,7 @@ object Round extends RoundRepo with CRUDMapper[Round] {
       optionalRate = rs.booleanOpt(c.optionalRate).getOrElse(false),
       juryOrgView = rs.booleanOpt(c.juryOrgView).getOrElse(false),
       minMpx = rs.intOpt(c.minMpx),
-      previous = rs.longOpt(c.previous),
+      previous = rs.stringOpt(c.previous),
       prevSelectedBy = rs.intOpt(c.prevSelectedBy),
       prevMinAvgRate = rs.bigDecimalOpt(c.prevMinAvgRate).map(BigDecimal.apply),
       category = rs.stringOpt(c.category),

@@ -216,8 +216,15 @@ object SelectionJdbc extends CRUDMapper[Selection] {
         .eq(column.roundId, roundId)
     )
 
-  def mergeRounds(targetRoundId: Long, sourceRoundId: Long): Unit =
-    updateBy(sqls.eq(s.roundId, sourceRoundId))
-      .withNamedValues(s.roundId -> targetRoundId)
+  def mergeRounds(
+      targetRoundId: Long,
+      sourceRoundId: Long,
+      pageIds: Set[Long] = Set.empty
+  ): Unit = {
+    val where =
+      if (pageIds.isEmpty) sqls.eq(s.roundId, sourceRoundId)
+      else sqls.eq(s.roundId, sourceRoundId).and.in(s.pageId, pageIds.toSeq)
+    updateBy(where).withNamedValues(s.roundId -> targetRoundId)
+  }
 
 }
