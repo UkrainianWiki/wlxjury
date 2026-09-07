@@ -65,7 +65,14 @@ lazy val root =
       // Forward -Dgatling.* overrides to Gatling JVM
       Gatling / javaOptions     ++= sys.props.toSeq.collect {
         case (k, v) if k.startsWith("gatling.") => s"-D$k=$v"
-      }
+      },
+      // gatling-sbt wires GatlingIt/enterprisePackage into the project's
+      // packagedArtifacts (gated on `<config> / publishArtifact`), so `sbt dist`
+      // pulls it in and fails with "Couldn't locate Gatling libraries in the
+      // classpath" (GatlingIt has no gatling deps; they're `% Test`). We don't
+      // publish Gatling bundles, so opt both configs out.
+      Gatling / publishArtifact   := false,
+      GatlingIt / publishArtifact := false
     )
     .disablePlugins(PlayPekkoHttpServer)
 
