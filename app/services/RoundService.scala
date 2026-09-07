@@ -13,19 +13,24 @@ import javax.inject.Inject
 class RoundService @Inject() (distributeImages: DistributeImages, dao: RoundRepo) extends Logging {
 
   def createNewRound(round: Round, jurorIds: Seq[Long]): Round = {
+    val prevRounds = round.previousIds.flatMap(dao.findById)
+    require(
+      Round.sameRateType(prevRounds),
+      s"previous rounds [${prevRounds.flatMap(_.id).mkString(", ")}] must all be of the same rate type"
+    )
+
     val numberOfRounds = dao.countByContest(round.contestId)
     val created = dao.create(round.copy(number = numberOfRounds + 1))
 
-    val prevRound = created.previous.flatMap(dao.findById)
     val jurors = User.loadJurors(round.contestId, jurorIds)
 
     created.addUsers(
       jurors.map(u => RoundUser(created.getId, u.getId, u.roles.head, active = true))
     )
 
-    distributeImages.distributeImages(created, jurors, prevRound)
+    distributeImages.distributeImages(created, jurors, prevRounds)
 
-    setCurrentRound(created.previous, created)
+    setCurrentRound(created.previousIds, created)
 
     created
   }
@@ -69,16 +74,15 @@ class RoundService @Inject() (distributeImages: DistributeImages, dao: RoundRepo
     for {
       targetId <- rounds.find(_.id.contains(targetRoundId)).flatMap(_.id)
       sourceId <- rounds.find(_.id.contains(sourceRoundId)).flatMap(_.id)
-    }
-    SelectionJdbc.mergeRounds(targetRoundId = targetId, sourceRoundId = sourceId)
+    } SelectionJdbc.mergeRounds(targetRoundId = targetId, sourceRoundId = sourceId)
   }
 
-  def setCurrentRound(prevRoundId: Option[Long], round: Round): Unit = {
+  def setCurrentRound(prevRoundIds: Seq[Long], round: Round): Unit = {
     logger.info(
-      s"Setting current round ${prevRoundId.fold("")(rId => s"from $rId")} to ${round.getId}"
+      s"Setting current round ${if (prevRoundIds.nonEmpty) s"from ${prevRoundIds.mkString(", ")}" else ""} to ${round.getId}"
     )
 
-    prevRoundId.foreach(rId => Round.setActive(rId, active = false))
+    prevRoundIds.foreach(rId => Round.setActive(rId, active = false))
     Round.setActive(round.getId, active = round.active)
   }
 

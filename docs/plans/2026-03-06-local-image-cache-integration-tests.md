@@ -10,11 +10,11 @@ frontend JS is updated to display them. Integration tests live in the `services`
 `private[services]` methods directly), are gated by `-Dintegration=true`, and use scalawiki's
 `MwBot` to fetch real image metadata from a known Commons category.
 
-**Tech Stack:** Scala 3, Play Framework, Apache Pekko Streams, scalawiki `MwBot`, specs2 mutable
+**Tech Stack:** Scala 2.13, Play Framework, Apache Pekko Streams, scalawiki `MwBot`, specs2 mutable
 
 ---
 
-### Task 1: Update `CacheProgress` with time-tracking fields
+## Task 1: Update `CacheProgress` with time-tracking fields
 
 **Files:**
 - Modify: `app/services/LocalImageCacheService.scala:25-29` (CacheProgress + companion)
@@ -119,7 +119,7 @@ git commit -m "feat: add time tracking (rate, ETA, elapsed) to CacheProgress"
 
 ---
 
-### Task 2: Update frontend to display rate and ETA
+## Task 2: Update frontend to display rate and ETA
 
 **Files:**
 - Modify: `app/views/contest_images.scala.html:58-67` (the `.then(function(p) {...})` block)
@@ -166,7 +166,7 @@ git commit -m "feat: show download rate and ETA in image cache status UI"
 
 ---
 
-### Task 3: Write the integration test spec
+## Task 3: Write the integration test spec
 
 **Files:**
 - Create: `test/services/LocalImageCacheServiceIntegrationSpec.scala`
@@ -352,7 +352,7 @@ git commit -m "test: integration tests for LocalImageCacheService against real W
 
 ---
 
-### Task 4: Run full test suite to confirm nothing regressed
+## Task 4: Run full test suite to confirm nothing regressed
 
 **Step 1:**
 

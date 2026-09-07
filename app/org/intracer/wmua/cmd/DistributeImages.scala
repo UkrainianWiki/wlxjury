@@ -53,22 +53,22 @@ class DistributeImages @Inject()(imageRepo: ImageRepo) extends Logging {
   def distributeImages(
       round: Round,
       jurors: Seq[User],
-      prevRound: Option[Round],
+      prevRounds: Seq[Round],
       removeUnrated: Boolean = false
   ): Unit = {
     if (removeUnrated) {
       SelectionJdbc.removeUnrated(round.getId)
     }
 
-    val images = imagesByRound(round, prevRound)
+    val images = imagesByRound(round, prevRounds)
 
     distributeImages(round, images, jurors)
   }
 
-  def imagesByRound(round: Round, prevRound: Option[Round] = None): Seq[Image] = {
+  def imagesByRound(round: Round, prevRounds: Seq[Round] = Nil): Seq[Image] = {
     getFilteredImages(
       round,
-      prevRound,
+      prevRounds,
       selectedAtLeast = round.prevSelectedBy,
       selectMinAvgRating = round.prevMinAvgRate,
       selectTopByRating = round.topImages,
@@ -94,7 +94,7 @@ class DistributeImages @Inject()(imageRepo: ImageRepo) extends Logging {
 
   private def getFilteredImages(
       round: Round,
-      prevRound: Option[Round],
+      prevRounds: Seq[Round],
       includeRegionIds: Set[String] = Set.empty,
       excludeRegionIds: Set[String] = Set.empty,
       includeMonumentIds: Set[String] = Set.empty,
@@ -111,6 +111,12 @@ class DistributeImages @Inject()(imageRepo: ImageRepo) extends Logging {
       excludeCategory: Option[String] = None
   ): Seq[Image] = {
 
+    require(
+      Round.sameRateType(prevRounds),
+      s"Round ${round.id.orNull}: previous rounds [${prevRounds.flatMap(_.id).mkString(", ")}] " +
+        "must all be of the same rate type (all binary or all rated)"
+    )
+
     val includeFromCats = categoryFileIds(includeCategory)
     val excludeFromCats = categoryFileIds(excludeCategory)
 
@@ -123,11 +129,21 @@ class DistributeImages @Inject()(imageRepo: ImageRepo) extends Logging {
     val mpxAtLeast = round.minMpx
     val sizeAtLeast = round.minImageSize.map(_ * 1024 * 1024)
 
-    val imagesAll = prevRound.fold[Seq[ImageWithRating]](
-      imageRepo
-        .findByContestId(round.contestId)
-        .map(i => new ImageWithRating(i, Seq.empty))
-    )(r => imageRepo.byRoundMerged(r.getId, rated = selectedAtLeast.map(_ > 0)))
+    // All selected previous rounds share the same rate type and the same filtering
+    // conditions, so any one of them is a valid context for rate scaling / gating.
+    val prevRound = prevRounds.headOption
+
+    val imagesAll: Seq[ImageWithRating] =
+      if (prevRounds.isEmpty)
+        imageRepo
+          .findByContestId(round.contestId)
+          .map(i => new ImageWithRating(i, Seq.empty))
+      else
+        mergeByPageId(
+          prevRounds.flatMap(r =>
+            imageRepo.byRoundMerged(r.getId, rated = selectedAtLeast.map(_ > 0))
+          )
+        )
     logger.debug("Total images: " + imagesAll.size)
 
     val funGens = ImageWithRatingSeqFilter.funGenerators(
@@ -157,6 +173,29 @@ class DistributeImages @Inject()(imageRepo: ImageRepo) extends Logging {
     logger.debug("Images after filtering: " + images.size)
 
     images
+  }
+
+  /** Collapses the per-previous-round [[ImageWithRating]] rows for the same image into a
+    * single row, unioning their selections and juror counts. An image that advanced in
+    * several previous rounds is then one row rather than one-per-round, so the rating
+    * filters (top-N, min average, selected-at-least) see a single combined rating
+    * instead of duplicates competing for the same slots. First-seen order is kept.
+    */
+  private def mergeByPageId(images: Seq[ImageWithRating]): Seq[ImageWithRating] = {
+    val merged = scala.collection.mutable.LinkedHashMap.empty[Long, ImageWithRating]
+    images.foreach { iwr =>
+      merged.updateWith(iwr.pageId) {
+        case Some(acc) =>
+          Some(
+            acc.copy(
+              selection = acc.selection ++ iwr.selection,
+              countFromDb = acc.countFromDb + iwr.countFromDb
+            )
+          )
+        case None => Some(iwr)
+      }
+    }
+    merged.values.toSeq
   }
 
   def rebalanceImages(
