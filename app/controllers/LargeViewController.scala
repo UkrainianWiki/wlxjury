@@ -50,7 +50,13 @@ class LargeViewController @Inject() (
       rate: Option[Int] = None,
       module: String,
       criteria: Option[Int] = None
-  ): EssentialAction = withAuth() { user => implicit request =>
+  ): EssentialAction =
+    withAuth(
+      roundPermission(
+        User.ADMIN_ROLES ++ User.JURY_ROLES ++ User.ORG_COM_ROLES,
+        roundId
+      )
+    ) { user => implicit request =>
     val roundOption = Round.findById(roundId).filter(_.active)
 
     roundOption.fold(

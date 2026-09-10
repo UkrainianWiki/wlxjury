@@ -24,8 +24,8 @@ object GreeceESPC {
     val round = AddRound(contestId, 1, 0, 1).apply()
 
     val di = new DistributeImages(ImageJdbc)
-    di.distributeImages(round, round.availableJurors, None)
+    di.distributeImages(round, round.availableJurors, Nil)
 
-    new RoundService(di, Round).setCurrentRound(None, round)
+    new RoundService(di, Round).setCurrentRound(Nil, round)
   }
 }

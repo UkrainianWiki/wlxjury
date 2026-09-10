@@ -1,7 +1,7 @@
 @(form: Form[_])(implicit messages: Messages)
 
-@if(form.hasGlobalErrors) {
-    <p class="error">
-        <span class="label important">@Messages(form.errors.head.message)</span>
-    </p>
+@form.globalErrors.headOption.map { error =>
+    <div class="alert alert-danger" style="color:#a94442;background:#f2dede;border:1px solid #ebccd1;padding:10px;border-radius:4px;margin-bottom:10px">
+        @Messages(error.message, error.args: _*)
+    </div>
 }

@@ -17,7 +17,7 @@ import java.io.{ByteArrayInputStream, File}
 import java.nio.file.{Files, StandardCopyOption}
 import scala.jdk.CollectionConverters._
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.atomic.{AtomicBoolean, AtomicInteger}
+import java.util.concurrent.atomic.AtomicInteger
 import javax.imageio.ImageIO
 import javax.inject.{Inject, Singleton}
 import scala.concurrent.duration._
@@ -80,10 +80,10 @@ class LocalImageCacheService @Inject() (
       .getOrElse("https://upload.wikimedia.org")
 
   private val progressMap = new ConcurrentHashMap[Long, CacheProgress]()
-  private val roundProgressMap = new ConcurrentHashMap[Long, CacheProgress]()
+  private[services] val roundProgressMap = new ConcurrentHashMap[Long, CacheProgress]()
 
-  private val registry  = new ConcurrentHashMap[String, Unit]()
-  private val inFlight  = new ConcurrentHashMap[String, Future[Array[Byte]]]()
+  private val registry = new ConcurrentHashMap[String, Unit]()
+  private val inFlight = new ConcurrentHashMap[String, Future[Array[Byte]]]()
 
   private[services] def registrySize: Int = registry.size()
   private[services] def registryContains(file: File): Boolean =
@@ -123,11 +123,18 @@ class LocalImageCacheService @Inject() (
           if (sourceImg == null)
             Future.failed(new Exception(s"Could not decode image from $url"))
           else {
-            // Save all target sizes in background (saveResized skips those already in registry)
-            Future(saveResized(image, sourceImg, sourcePx))
-              .recover { case ex => logger.warn(s"Background save failed for ${image.title}: ${ex.getMessage}") }
-            // Resize the requested size and return immediately
-            val requestedImg = scale(sourceImg, requestedPx)
+            // Run cascade synchronously: saves fire async inside saveResized, cascade CPU returns
+            // the requested image immediately. A try/catch preserves the current behavior where
+            // scaling errors (e.g. OOM) are logged and fall back to a direct scale rather than
+            // propagating a failed Future to the caller.
+            val imgOpt = try {
+              saveResized(image, sourceImg, sourcePx, Some(requestedPx))
+            } catch {
+              case ex: Exception =>
+                logger.warn(s"Cascade failed for ${image.title}: ${ex.getMessage}")
+                None
+            }
+            val requestedImg = imgOpt.getOrElse(scale(sourceImg, requestedPx))
             val baos = new java.io.ByteArrayOutputStream()
             ImageIO.write(requestedImg, "JPEG", baos)
             Future.successful(baos.toByteArray)
@@ -144,7 +151,7 @@ class LocalImageCacheService @Inject() (
             .filter(p => Files.isRegularFile(p))
             .foreach { p =>
               if (p.getFileName.toString.startsWith(".tmp-"))
-                Files.deleteIfExists(p)  // stale temp file from a prior crash
+                Files.deleteIfExists(p) // stale temp file from a prior crash
               else
                 registry.put(p.toAbsolutePath.toString, ())
             }
@@ -160,13 +167,12 @@ class LocalImageCacheService @Inject() (
     Option(roundProgressMap.get(roundId)).getOrElse(CacheProgress(0, 0, 0, running = false))
 
   def startDownload(contestId: Long): Unit = {
-    val alreadyRunning = new AtomicBoolean(false)
-    progressMap.compute(contestId, (_, existing) => {
-      val current = Option(existing).getOrElse(CacheProgress(0, 0, 0, running = false))
-      if (current.running) { alreadyRunning.set(true); current }
-      else current.copy(running = true)
+    val shouldStart = new java.util.concurrent.atomic.AtomicBoolean(false)
+    progressMap.compute(contestId, (_, prev) => {
+      val cur = Option(prev).getOrElse(CacheProgress(0, 0, 0, running = false))
+      if (cur.running) cur else { shouldStart.set(true); cur.copy(running = true) }
     })
-    if (alreadyRunning.get()) return
+    if (!shouldStart.get()) return
     val images = ImageJdbc
       .findByContestId(contestId)
       .filter(img => img.isImage && img.url.isDefined && img.width > 0 && img.height > 0)
@@ -174,13 +180,12 @@ class LocalImageCacheService @Inject() (
   }
 
   def startDownloadForRound(contestId: Long, roundId: Long): Unit = {
-    val alreadyRunning = new AtomicBoolean(false)
-    roundProgressMap.compute(roundId, (_, existing) => {
-      val current = Option(existing).getOrElse(CacheProgress(0, 0, 0, running = false))
-      if (current.running) { alreadyRunning.set(true); current }
-      else current.copy(running = true)
+    val shouldStart = new java.util.concurrent.atomic.AtomicBoolean(false)
+    roundProgressMap.compute(roundId, (_, prev) => {
+      val cur = Option(prev).getOrElse(CacheProgress(0, 0, 0, running = false))
+      if (cur.running) cur else { shouldStart.set(true); cur.copy(running = true) }
     })
-    if (alreadyRunning.get()) return
+    if (!shouldStart.get()) return
     val images = scala.util.Try(ImageJdbc.byRound(roundId)) match {
       case scala.util.Success(imgs) => imgs
       case scala.util.Failure(ex) =>
@@ -189,10 +194,7 @@ class LocalImageCacheService @Inject() (
     }
     val filtered = images.filter(img => img.isImage && img.url.isDefined && img.width > 0 && img.height > 0)
     if (filtered.isEmpty) {
-      // Reset the running flag we claimed above; nothing will be downloaded
-      roundProgressMap.compute(roundId, (_, existing) =>
-        Option(existing).getOrElse(CacheProgress(0, 0, 0, running = false)).copy(running = false)
-      )
+      roundProgressMap.put(roundId, CacheProgress(0, 0, 0, running = false))
       return
     }
     runDownloadForRound(contestId, roundId, filtered)
@@ -259,10 +261,13 @@ class LocalImageCacheService @Inject() (
 
   // Mirrors the URL construction in Global.legacyThumbUlr, using wikiBaseUrl as host
   private[services] def wikiThumbUrl(image: Image, px: Int): Option[String] =
-    image.url.filter(_.contains("//upload.wikimedia.org/wikipedia/commons/")).map { url =>
+    image.url.filter(_.contains("//upload.wikimedia.org/wikipedia/commons/")).map { rawUrl =>
       val lower     = image.title.toLowerCase
       val isPdf     = lower.endsWith(".pdf")
       val isTif     = lower.endsWith(".tif") || lower.endsWith(".tiff")
+      // Commons imageinfo API appends UTM tracking params to `url` (e.g. "?utm_source=..."),
+      // which must be stripped before treating the trailing segment as a filename.
+      val url       = rawUrl.takeWhile(_ != '?')
       val lastSlash = url.lastIndexOf("/")
       val utf8Size  = image.title.getBytes("UTF-8").length
       val thumbStr  = if (utf8Size > 165) "thumbnail.jpg" else url.substring(lastSlash + 1)
@@ -284,7 +289,9 @@ class LocalImageCacheService @Inject() (
     val path = wikiThumbUrl(image, px)
       .getOrElse("")
       .replaceFirst("https?://[^/]+", "")
-    val decoded = java.net.URLDecoder.decode(path, "UTF-8")
+    // Use replace("+", "%2B") before URLDecoder so literal '+' in path segments is not
+    // mistakenly decoded as a space (URLDecoder follows query-param rules, not path rules).
+    val decoded = java.net.URLDecoder.decode(path.replace("+", "%2B"), "UTF-8")
     new File(localPath + decoded)
   }
 
@@ -301,13 +308,19 @@ class LocalImageCacheService @Inject() (
     urlOpt match {
       case None =>
         logger.warn(s"No cacheable URL for ${image.title} (url=${image.url})")
-        Future.successful(())
+        Future.failed(new Exception(s"No cacheable URL for ${image.title}"))
       case Some(url) =>
-        downloadWithRetry(url, attempt = 1).map {
+        downloadWithRetry(url, attempt = 1).flatMap {
+          case None =>
+            Future.failed(new Exception(s"Download failed for $url"))
           case Some(bytes) =>
             val sourceImg = ImageIO.read(new ByteArrayInputStream(bytes))
-            if (sourceImg != null) saveResized(image, sourceImg, sourcePx)
-          case None => ()
+            if (sourceImg != null) {
+              saveResized(image, sourceImg, sourcePx)
+              Future.successful(())
+            } else {
+              Future.failed(new Exception(s"Could not decode image from $url"))
+            }
         }
     }
   }
@@ -357,31 +370,55 @@ class LocalImageCacheService @Inject() (
     (baseSeconds + jitter).seconds
   }
 
-  private[services] def saveResized(image: Image, sourceImg: BufferedImage, sourcePx: Int): Unit =
-    targetHeights.foreach { h =>
-      val px = ImageUtil.resizeTo(image.width, image.height, h)
-      if (px > 0 && px < image.width && px <= sourcePx) {
-        val file = localFile(image, px)
-        // putIfAbsent atomically claims the slot within this JVM; only the thread
-        // that gets null back proceeds to write. Across JVMs, two instances may
-        // both proceed — the atomic rename below ensures the file is never corrupt.
-        if (registry.putIfAbsent(file.getAbsolutePath, ()) == null) {
-          file.getParentFile.mkdirs()
-          val resized = scale(sourceImg, px)
+  /** Generates all target sizes via cascaded downscaling and saves them asynchronously.
+    *
+    * @param requestedPx if Some(px), returns the BufferedImage for that width if generated
+    * @return Some(img) for the requested width if it was generated; None otherwise
+    */
+  private[services] def saveResized(
+    image: Image,
+    sourceImg: BufferedImage,
+    sourcePx: Int,
+    requestedPx: Option[Int] = None
+  ): Option[BufferedImage] = {
+    val toGenerate = targetHeights
+      .map(h => ImageUtil.resizeTo(image.width, image.height, h))
+      .filter(px => px > 0 && px < image.width && px <= sourcePx)
+      .distinct
+      .sorted(Ordering[Int].reverse)  // largest first for cascade
+
+    val results = cascadeScale(sourceImg, toGenerate)
+
+    results.foreach { case (px, img) =>
+      val file     = localFile(image, px)
+      val filePath = file.getAbsolutePath
+      // Re-write if not in registry OR if registry claims it but file was deleted from disk.
+      if (!registry.containsKey(filePath) || !file.exists()) {
+        registry.put(filePath, ())   // claim before async write
+        file.getParentFile.mkdirs()
+        Future {
+          // Write to a temp file then atomically rename, so a reader (Apache or the
+          // sibling blue/green instance sharing this directory) never sees a partial JPEG.
           val tmp = File.createTempFile(".tmp-", ".jpg", file.getParentFile)
           try {
-            ImageIO.write(resized, "JPEG", tmp)
+            ImageIO.write(img, "JPEG", tmp)
             Files.move(tmp.toPath, file.toPath,
               StandardCopyOption.ATOMIC_MOVE,
               StandardCopyOption.REPLACE_EXISTING)
           } catch {
-            case ex: Exception =>
+            case ex: Throwable =>
               tmp.delete()
               throw ex
           }
+        }.recover { case ex =>
+          logger.warn(s"Failed to write ${file.getName}: ${ex.getMessage}")
+          registry.remove(filePath)  // release claim on failure
         }
       }
     }
+
+    requestedPx.flatMap(rpx => results.find(_._1 == rpx).map(_._2))
+  }
 
   private[services] def scale(src: BufferedImage, targetWidth: Int): BufferedImage = {
     val targetHeight = (src.getHeight.toDouble * targetWidth / src.getWidth).toInt

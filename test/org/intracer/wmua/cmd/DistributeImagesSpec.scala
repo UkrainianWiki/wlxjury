@@ -1,9 +1,9 @@
 package org.intracer.wmua.cmd
 
 import db.ImageRepo
-import db.scalikejdbc.Round
+import db.scalikejdbc.{Round, User}
 import org.intracer.wmua.Image
-import org.intracer.wmua.cmd.DistributeImagesSpec.{di, files, image, round, video}
+import org.intracer.wmua.cmd.DistributeImagesSpec.{di, files, image, juror, round, video}
 import org.specs2.mock.Mockito
 import org.specs2.mock.Mockito.{mock, theStubbed}
 import org.specs2.mutable.Specification
@@ -28,6 +28,18 @@ class DistributeImagesSpec extends Specification with Mockito {
     }
   }
 
+  "distributeImages" should {
+    "refuse to distribute with no jurors" in {
+      di(files).distributeImages(round, files, Nil) must
+        throwAn[IllegalArgumentException](message = "empty jury")
+    }
+
+    "refuse to distribute when a juror is listed twice (would duplicate rows)" in {
+      di(files).distributeImages(round.copy(distribution = 2), List(image), List(juror, juror)) must
+        throwAn[IllegalArgumentException](message = "duplicate")
+    }
+  }
+
 }
 
 object DistributeImagesSpec {
@@ -37,6 +49,7 @@ object DistributeImagesSpec {
   private val image = Image(1L, "File:1.jpg", mime = Some("image/jpeg"))
   private val video = Image(1L, "File:1.jpg", mime = Some("video/mpeg"))
   private val files = List(image, video)
+  private val juror = User("Juror", "juror@example.com", id = Some(10L), roles = Set("jury"))
 
   def di(images: List[Image]) = new DistributeImages(mockRepo(images))
 

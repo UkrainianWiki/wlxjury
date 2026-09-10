@@ -7,6 +7,7 @@ import org.intracer.wmua._
 import org.intracer.wmua.cmd.DistributeImages.Rebalance
 import org.scalawiki.dto.Namespace
 import play.api.Logging
+import scalikejdbc.DB
 import spray.util.pimpFuture
 
 import javax.inject.Inject
@@ -14,16 +15,44 @@ import scala.concurrent.duration._
 
 class DistributeImages @Inject()(imageRepo: ImageRepo) extends Logging {
 
-  def distributeImages(round: Round, images: Seq[Image], jurors: Seq[User]): Unit = {
+  /** Builds and persists the selection rows for `images` in `round`.
+    *
+    * The insert (plus criteria rates, if any) runs in a single transaction so a
+    * failure part-way through — a deadlock, a lock-wait timeout, an oversized batch,
+    * a unique-index violation — rolls back cleanly instead of leaving the round with
+    * only some of its images. The caller is expected to verify the resulting image
+    * count (see [[services.RoundService.createNewRound]]).
+    *
+    * @return the number of selection rows written
+    */
+  def distributeImages(round: Round, images: Seq[Image], jurors: Seq[User]): Int = {
+    require(
+      jurors.nonEmpty,
+      s"Round ${round.id.orNull}: cannot distribute ${images.size} images to an empty jury"
+    )
+
     val selection: Seq[Selection] = newSelection(round, images, jurors)
 
-    logger.debug("saving selection: " + selection.size)
-    SelectionJdbc.batchInsert(selection)
-    logger.debug(s"saved selection")
+    // Duplicate (page_id, jury_id, round_id) tuples would be rejected mid-batch by the
+    // unique index and leave the round half-populated; fail early with a clear reason
+    // (most often a juror listed twice in the round).
+    val distinctAssignments =
+      selection.iterator.map(s => (s.pageId, s.juryId, s.roundId)).toSet.size
+    require(
+      distinctAssignments == selection.size,
+      s"Round ${round.id.orNull}: ${selection.size - distinctAssignments} duplicate " +
+        s"juror/image assignments among ${jurors.size} jurors; check for duplicate jurors"
+    )
 
-    if (round.hasCriteria) {
-      addCriteriaRates(selection)
+    logger.debug("saving selection: " + selection.size)
+    DB.localTx { implicit session =>
+      SelectionJdbc.batchInsert(selection)
+      if (round.hasCriteria) {
+        addCriteriaRates(selection)
+      }
     }
+    logger.debug("saved selection")
+    selection.size
   }
 
   def newSelection(round: Round, images: Seq[Image], jurors: Seq[User]): Seq[Selection] = {
@@ -53,22 +82,22 @@ class DistributeImages @Inject()(imageRepo: ImageRepo) extends Logging {
   def distributeImages(
       round: Round,
       jurors: Seq[User],
-      prevRound: Option[Round],
+      prevRounds: Seq[Round],
       removeUnrated: Boolean = false
-  ): Unit = {
+  ): Int = {
     if (removeUnrated) {
       SelectionJdbc.removeUnrated(round.getId)
     }
 
-    val images = imagesByRound(round, prevRound)
+    val images = imagesByRound(round, prevRounds)
 
     distributeImages(round, images, jurors)
   }
 
-  def imagesByRound(round: Round, prevRound: Option[Round] = None): Seq[Image] = {
+  def imagesByRound(round: Round, prevRounds: Seq[Round] = Nil): Seq[Image] = {
     getFilteredImages(
       round,
-      prevRound,
+      prevRounds,
       selectedAtLeast = round.prevSelectedBy,
       selectMinAvgRating = round.prevMinAvgRate,
       selectTopByRating = round.topImages,
@@ -94,7 +123,7 @@ class DistributeImages @Inject()(imageRepo: ImageRepo) extends Logging {
 
   private def getFilteredImages(
       round: Round,
-      prevRound: Option[Round],
+      prevRounds: Seq[Round],
       includeRegionIds: Set[String] = Set.empty,
       excludeRegionIds: Set[String] = Set.empty,
       includeMonumentIds: Set[String] = Set.empty,
@@ -111,6 +140,12 @@ class DistributeImages @Inject()(imageRepo: ImageRepo) extends Logging {
       excludeCategory: Option[String] = None
   ): Seq[Image] = {
 
+    require(
+      Round.sameRateType(prevRounds),
+      s"Round ${round.id.orNull}: previous rounds [${prevRounds.flatMap(_.id).mkString(", ")}] " +
+        "must all be of the same rate type (all binary or all rated)"
+    )
+
     val includeFromCats = categoryFileIds(includeCategory)
     val excludeFromCats = categoryFileIds(excludeCategory)
 
@@ -123,11 +158,21 @@ class DistributeImages @Inject()(imageRepo: ImageRepo) extends Logging {
     val mpxAtLeast = round.minMpx
     val sizeAtLeast = round.minImageSize.map(_ * 1024 * 1024)
 
-    val imagesAll = prevRound.fold[Seq[ImageWithRating]](
-      imageRepo
-        .findByContestId(round.contestId)
-        .map(i => new ImageWithRating(i, Seq.empty))
-    )(r => imageRepo.byRoundMerged(r.getId, rated = selectedAtLeast.map(_ > 0)))
+    // All selected previous rounds share the same rate type and the same filtering
+    // conditions, so any one of them is a valid context for rate scaling / gating.
+    val prevRound = prevRounds.headOption
+
+    val imagesAll: Seq[ImageWithRating] =
+      if (prevRounds.isEmpty)
+        imageRepo
+          .findByContestId(round.contestId)
+          .map(i => new ImageWithRating(i, Seq.empty))
+      else
+        mergeByPageId(
+          prevRounds.flatMap(r =>
+            imageRepo.byRoundMerged(r.getId, rated = selectedAtLeast.map(_ > 0))
+          )
+        )
     logger.debug("Total images: " + imagesAll.size)
 
     val funGens = ImageWithRatingSeqFilter.funGenerators(
@@ -157,6 +202,29 @@ class DistributeImages @Inject()(imageRepo: ImageRepo) extends Logging {
     logger.debug("Images after filtering: " + images.size)
 
     images
+  }
+
+  /** Collapses the per-previous-round [[ImageWithRating]] rows for the same image into a
+    * single row, unioning their selections and juror counts. An image that advanced in
+    * several previous rounds is then one row rather than one-per-round, so the rating
+    * filters (top-N, min average, selected-at-least) see a single combined rating
+    * instead of duplicates competing for the same slots. First-seen order is kept.
+    */
+  private def mergeByPageId(images: Seq[ImageWithRating]): Seq[ImageWithRating] = {
+    val merged = scala.collection.mutable.LinkedHashMap.empty[Long, ImageWithRating]
+    images.foreach { iwr =>
+      merged.updateWith(iwr.pageId) {
+        case Some(acc) =>
+          Some(
+            acc.copy(
+              selection = acc.selection ++ iwr.selection,
+              countFromDb = acc.countFromDb + iwr.countFromDb
+            )
+          )
+        case None => Some(iwr)
+      }
+    }
+    merged.values.toSeq
   }
 
   def rebalanceImages(

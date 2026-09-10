@@ -15,16 +15,22 @@
 }
 @snippets.collapsible("media.filtering", "headingImageFiltering", "collapseImageFiltering") {
     @if(rounds.nonEmpty) {
+        @* Use `disabled` rather than `readonly` for the multi-selects: play-bootstrap's
+           readonly wrapper adds a live hidden <input name="previousRound[]"> that, for a
+           repeated field with no scalar value, falls back to the FIRST option — which on
+           the edit page submitted a wrong previous-round id and pulled images from it.
+           A disabled select simply doesn't submit; the real value is read from the DB. *@
         @b3.select(
             editRoundForm("previousRound"),
-            ("" -> Messages("no")) +: rounds.map(r => (r.id.map(_.toString).get, r.description)),
+            rounds.map(r => (r.id.map(_.toString).get, r.description)),
             Symbol("_label") -> Messages("previous.round"),
             Symbol("_help") -> "",
             Symbol("class") -> "form-control",
-            Symbol("readonly") -> noEdit
+            Symbol("multiple") -> true,
+            Symbol("disabled") -> noEdit
         )
 
-        <div id="prevRoundFilters" @if(editRoundForm("previousRound").value.isEmpty) {style="display: none"}>
+        <div id="prevRoundFilters" @if(editRoundForm("previousRound").indexes.isEmpty) {style="display: none"}>
             <div id="selectFilters"
             class="@rounds.filter(_.isBinary).map(r => "round" + r.getId).mkString(" ")">
             @b3.select(
@@ -82,7 +88,7 @@
             regions.map { case (k, v) => (k, Messages(k)) }.toSeq.sortBy(_._1),
             Symbol("_label") -> Messages("regions"),
             Symbol("multiple") -> true,
-            Symbol("readonly") -> noEdit
+            Symbol("disabled") -> noEdit
         )
 
         @b3.text(

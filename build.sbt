@@ -40,7 +40,7 @@ jsTest := {
 // Wire jsTest into the normal `sbt test` run.
 Test / test := (Test / test).dependsOn(jsTest).value
 
-lazy val root = identity(
+lazy val root =
   (project in file("."))
     .enablePlugins(
       PlayScala,
@@ -65,10 +65,16 @@ lazy val root = identity(
       // Forward -Dgatling.* overrides to Gatling JVM
       Gatling / javaOptions     ++= sys.props.toSeq.collect {
         case (k, v) if k.startsWith("gatling.") => s"-D$k=$v"
-      }
+      },
+      // gatling-sbt wires GatlingIt/enterprisePackage into the project's
+      // packagedArtifacts (gated on `<config> / publishArtifact`), so `sbt dist`
+      // pulls it in and fails with "Couldn't locate Gatling libraries in the
+      // classpath" (GatlingIt has no gatling deps; they're `% Test`). We don't
+      // publish Gatling bundles, so opt both configs out.
+      Gatling / publishArtifact   := false,
+      GatlingIt / publishArtifact := false
     )
-)
-  .disablePlugins(PlayPekkoHttpServer)
+    .disablePlugins(PlayPekkoHttpServer)
 
 name := "wlxjury"
 
@@ -109,7 +115,6 @@ libraryDependencies ++= Seq(
   "com.adrianhurt" %% "play-bootstrap" % "1.6.1-P28-B3",
   "org.webjars" % "bootstrap" % "3.3.7-1" exclude ("org.webjars", "jquery"),
   "org.webjars" % "jquery" % "3.2.1",
-
   "org.scalikejdbc" %% "scalikejdbc" % ScalikejdbcVersion,
   "org.scalikejdbc" %% "scalikejdbc-config" % ScalikejdbcVersion,
   "org.scalikejdbc" %% "scalikejdbc-orm" % ScalikejdbcVersion,
@@ -122,7 +127,6 @@ libraryDependencies ++= Seq(
   "org.mariadb.jdbc" % "mariadb-java-client" % "3.5.3",
   "org.scalawiki" %% "scalawiki-core" % ScalawikiVersion,
   "org.scalawiki" %% "scalawiki-wlx" % ScalawikiVersion,
-
   "org.apache.pekko" %% "pekko-stream" % PekkoVersion,
   "org.apache.pekko" %% "pekko-http" % PekkoHttpVersion,
   "org.pac4j" %% "play-pac4j" % PlayPac4jVersion,
@@ -132,7 +136,7 @@ libraryDependencies ++= Seq(
   "uk.org.lidalia" % "sysout-over-slf4j" % "1.0.2",
   "javax.xml.bind" % "jaxb-api" % "2.3.1",
   "com.softwaremill.sttp.tapir" %% "tapir-core" % TapirVersion,
-  "com.softwaremill.sttp.tapir" %% "tapir-pekko-http-server" % TapirVersion excludeAll(
+  "com.softwaremill.sttp.tapir" %% "tapir-pekko-http-server" % TapirVersion excludeAll (
     ExclusionRule("org.apache.pekko", "pekko-stream_2.13"),
     ExclusionRule("org.apache.pekko", "pekko-slf4j_2.13"),
     ExclusionRule("org.apache.pekko", "pekko-http_2.13"),
@@ -145,11 +149,10 @@ libraryDependencies ++= Seq(
   filters,
   specs2 % Test,
   jdbc % Test,
-  "ch.vorburger.mariaDB4j" % "mariaDB4j" % "3.1.0" % Test,
   "org.scalatest" %% "scalatest" % ScalaTestVersion % Test,
   "com.dimafeng" %% "testcontainers-scala-scalatest" % TestcontainersScalaVersion % Test,
-  "com.dimafeng" %% "testcontainers-scala-mariadb" % "0.41.0" % Test,
-  "com.dimafeng" %% "testcontainers-scala-mysql" % "0.41.0" % Test,
+  "com.dimafeng" %% "testcontainers-scala-mariadb" % TestcontainersScalaVersion % Test,
+  "com.dimafeng" %% "testcontainers-scala-mysql" % TestcontainersScalaVersion % Test,
   "io.chrisdavenport" %% "testcontainers-specs2" % "0.2.0-M5" % Test,
   "org.mock-server" % "mockserver-netty" % MockServerVersion % Test,
   "net.java.dev.jna" % "jna" % "4.5.0" % Test,

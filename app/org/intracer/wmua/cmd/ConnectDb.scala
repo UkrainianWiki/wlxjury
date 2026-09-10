@@ -7,13 +7,13 @@ case class ConnectDb(host: String = "jury.wikilovesearth.org.ua",
                      configuration: Configuration)
     extends (() => Unit) {
 
-  def apply() = {
-    Class.forName("com.mysql.jdbc.Driver")
+  def apply(): Unit = {
+    Class.forName("org.mariadb.jdbc.Driver")
 
-    val url = s"jdbc:mysql://$host/wlxjury"
+    val url = s"jdbc:mariadb://$host/wlxjury"
 
     val user = configuration.get[String]("db.default.user")
-    val password = configuration.get[String]("db.default.user")
+    val password = configuration.get[String]("db.default.pasword")
 
     ConnectionPool.singleton(url, user, password)
 

@@ -27,7 +27,7 @@ class RoundControllerSpec extends PlaySpecification {
         optionalRate = true,
         juryOrgView = false,
         minMpx = Some(4),
-        previous = Some(20),
+        previous = Some("20"),
         prevSelectedBy = None,
         prevMinAvgRate = None,
         category = Some("Category:include"),

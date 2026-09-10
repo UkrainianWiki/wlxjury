@@ -43,17 +43,29 @@
 
         <script type="text/javascript">
                 $(function () {
-                    $('#previousRound').change(function () {
+                    $('#previousRound').multiselect({
+                        includeSelectAllOption: true,
+                        maxHeight: 400,
+                        selectAllText: '@Messages("select.all")',
+                        nonSelectedText: '@Messages("none.selected")',
+                        nSelectedText: '@Messages("selected")',
+                        allSelectedText: '@Messages("all.selected")'
+                    });
 
-                        if ($(this).val()) {
-                            $('#selectFilters').hide();
-                            $('#rateFilters').hide();
+                    $('#previousRound').change(function () {
+                        var vals = $(this).val() || [];
+
+                        $('#selectFilters, #rateFilters').hide();
+
+                        if (vals.length) {
                             $('#prevRoundFilters').show();
-                            $('.round' + $(this).val()).show()
+                            var anyBinary = vals.some(function (v) {
+                                return $('#selectFilters').hasClass('round' + v);
+                            });
+                            (anyBinary ? $('#selectFilters') : $('#rateFilters')).show();
                         } else {
                             $('#prevRoundFilters').hide();
                         }
-
                     });
 
                     $('#regions').multiselect({

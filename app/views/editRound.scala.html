@@ -32,6 +32,10 @@
                 <h3>@Messages("edit.round")</h3>
             }
 
+            @flash.get("error").map { err =>
+                <div class="alert alert-danger" style="color:#a94442;background:#f2dede;border:1px solid #ebccd1;padding:10px;border-radius:4px;margin-bottom:10px">@err</div>
+            }
+
             @b3.form(routes.RoundController.saveRound()) {
                 @helper.CSRF.formField
 

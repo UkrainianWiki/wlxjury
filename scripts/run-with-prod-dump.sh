@@ -169,6 +169,14 @@ else
     docker rm -f "$CONTAINER_NAME"
   fi
 
+  # Server tuning args (passed through to mariadbd):
+  #  * --innodb-use-native-aio=0 : on hosts where io_uring is blocked
+  #    (Docker Desktop / WSL2 set kernel.io_uring_disabled=2), mariadbd 10.6
+  #    logs "io_uring_queue_init() failed with EPERM" and then a tpool I/O
+  #    thread busy-loops at ~100% CPU (see MDEV-31122). Disabling native AIO
+  #    up front skips that code path entirely.
+  #  * The remaining flags just make the multi-GB dump restore faster; this
+  #    is a throwaway dev container, so durability settings are safe to relax.
   docker run -d \
     --name "$CONTAINER_NAME" \
     -e MARIADB_DATABASE="$LOCAL_DB" \
@@ -176,7 +184,13 @@ else
     -e MARIADB_PASSWORD="$LOCAL_PASSWORD" \
     -e MARIADB_ROOT_PASSWORD="$LOCAL_ROOT_PASSWORD" \
     -p "${LOCAL_PORT}:3306" \
-    mariadb:10.6
+    mariadb:10.6 \
+    --innodb-use-native-aio=0 \
+    --innodb-buffer-pool-size=1G \
+    --innodb-flush-log-at-trx-commit=0 \
+    --skip-innodb-doublewrite \
+    --skip-innodb-buffer-pool-dump-at-shutdown \
+    --skip-innodb-buffer-pool-load-at-startup
   CONTAINER_STARTED=true
 
   echo -n "    Waiting for MariaDB to accept connections"
@@ -202,7 +216,9 @@ else
     | docker exec -i \
         -e MYSQL_PWD="$LOCAL_ROOT_PASSWORD" \
         "$CONTAINER_NAME" \
-        mysql -u root "$LOCAL_DB"
+        mysql -u root \
+          --init-command="SET SESSION unique_checks=0, foreign_key_checks=0" \
+          "$LOCAL_DB"
   restore_elapsed=$((SECONDS - restore_start))
   db_size=$(docker exec \
     -e MYSQL_PWD="$LOCAL_ROOT_PASSWORD" \
