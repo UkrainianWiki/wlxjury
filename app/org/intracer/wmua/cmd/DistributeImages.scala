@@ -7,6 +7,7 @@ import org.intracer.wmua._
 import org.intracer.wmua.cmd.DistributeImages.Rebalance
 import org.scalawiki.dto.Namespace
 import play.api.Logging
+import scalikejdbc.DB
 import spray.util.pimpFuture
 
 import javax.inject.Inject
@@ -14,16 +15,44 @@ import scala.concurrent.duration._
 
 class DistributeImages @Inject()(imageRepo: ImageRepo) extends Logging {
 
-  def distributeImages(round: Round, images: Seq[Image], jurors: Seq[User]): Unit = {
+  /** Builds and persists the selection rows for `images` in `round`.
+    *
+    * The insert (plus criteria rates, if any) runs in a single transaction so a
+    * failure part-way through — a deadlock, a lock-wait timeout, an oversized batch,
+    * a unique-index violation — rolls back cleanly instead of leaving the round with
+    * only some of its images. The caller is expected to verify the resulting image
+    * count (see [[services.RoundService.createNewRound]]).
+    *
+    * @return the number of selection rows written
+    */
+  def distributeImages(round: Round, images: Seq[Image], jurors: Seq[User]): Int = {
+    require(
+      jurors.nonEmpty,
+      s"Round ${round.id.orNull}: cannot distribute ${images.size} images to an empty jury"
+    )
+
     val selection: Seq[Selection] = newSelection(round, images, jurors)
 
-    logger.debug("saving selection: " + selection.size)
-    SelectionJdbc.batchInsert(selection)
-    logger.debug(s"saved selection")
+    // Duplicate (page_id, jury_id, round_id) tuples would be rejected mid-batch by the
+    // unique index and leave the round half-populated; fail early with a clear reason
+    // (most often a juror listed twice in the round).
+    val distinctAssignments =
+      selection.iterator.map(s => (s.pageId, s.juryId, s.roundId)).toSet.size
+    require(
+      distinctAssignments == selection.size,
+      s"Round ${round.id.orNull}: ${selection.size - distinctAssignments} duplicate " +
+        s"juror/image assignments among ${jurors.size} jurors; check for duplicate jurors"
+    )
 
-    if (round.hasCriteria) {
-      addCriteriaRates(selection)
+    logger.debug("saving selection: " + selection.size)
+    DB.localTx { implicit session =>
+      SelectionJdbc.batchInsert(selection)
+      if (round.hasCriteria) {
+        addCriteriaRates(selection)
+      }
     }
+    logger.debug("saved selection")
+    selection.size
   }
 
   def newSelection(round: Round, images: Seq[Image], jurors: Seq[User]): Seq[Selection] = {
@@ -55,7 +84,7 @@ class DistributeImages @Inject()(imageRepo: ImageRepo) extends Logging {
       jurors: Seq[User],
       prevRounds: Seq[Round],
       removeUnrated: Boolean = false
-  ): Unit = {
+  ): Int = {
     if (removeUnrated) {
       SelectionJdbc.removeUnrated(round.getId)
     }

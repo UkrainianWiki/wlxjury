@@ -8,10 +8,12 @@ import play.api.Logging
 import play.api.data.Form
 import play.api.data.Forms._
 import play.api.i18n.I18nSupport
-import play.api.mvc.{ControllerComponents, EssentialAction}
+import play.api.mvc.{ControllerComponents, EssentialAction, RequestHeader, Result}
+import play.twirl.api.Html
 import services.RoundService
 
 import javax.inject.Inject
+import scala.util.control.NonFatal
 
 /** Controller for displaying pages related to contest rounds
   * @param contestsController
@@ -71,31 +73,35 @@ class RoundController @Inject() (
 
       val withTopImages = topImages.map(n => round.copy(topImages = Some(n))).getOrElse(round)
 
-      val regions = contestsController.regions(contestId)
-      val jurors = round.id.fold(User.loadJurors(contestId))(User.findByRoundSelection).sorted
-      val editRound = EditRound(withTopImages, jurors.flatMap(_.id), None)
-      val filledRound = editRoundForm.fill(editRound)
-      val stat = round.id.map(id => roundsService.getRoundStat(id, round))
-      val prevRounds = round.previousIds.flatMap(Round.findById)
-      val images = round.id
-        .map(_ => distributeImages.imagesByRound(round, prevRounds))
-        .getOrElse(Nil)
-      Ok(
-        views.html.editRound(
-          user,
-          filledRound,
-          round.id.isEmpty,
-          rounds,
-          Some(round.contestId),
-          jurors,
-          jurorsMapping,
-          regions,
-          stat,
-          images,
-          contestSpecialNominations(contestId)
-        )
-      )
+      val jurors = withTopImages.id.fold(User.loadJurors(contestId))(User.findByRoundSelection).sorted
+      val filledRound = editRoundForm.fill(EditRound(withTopImages, jurors.flatMap(_.id), None))
+      Ok(roundFormView(user, withTopImages, filledRound))
     }
+
+  /** Renders the create/edit round page for `round` with the given (possibly
+    * error-carrying) form. Shared by the GET handler and the failure paths of
+    * [[saveRound]] so a failed create/redistribute comes back as the same form with
+    * the entered values intact, not a redirect that drops them.
+    */
+  private def roundFormView(user: User, round: Round, form: Form[EditRound])(
+      implicit request: RequestHeader
+  ): Html = {
+    val contestId = round.contestId
+    val prevRounds = round.previousIds.flatMap(Round.findById)
+    views.html.editRound(
+      user,
+      form,
+      round.id.isEmpty,
+      Round.findByContest(contestId),
+      Some(contestId),
+      round.id.fold(User.loadJurors(contestId))(User.findByRoundSelection).sorted,
+      jurorsMapping,
+      contestsController.regions(contestId),
+      round.id.map(id => roundsService.getRoundStat(id, round)),
+      round.id.map(_ => distributeImages.imagesByRound(round, prevRounds)).getOrElse(Nil),
+      contestSpecialNominations(contestId)
+    )
+  }
 
   def contestSpecialNominations(contestId: Long): Seq[SpecialNomination] = {
     ContestJuryJdbc
@@ -132,23 +138,74 @@ class RoundController @Inject() (
           },
           editForm => {
             val round = editForm.round.copy(active = true)
+            val contestId = round.contestId
+            val toRoundsList = Redirect(routes.RoundController.rounds(Some(contestId)))
 
-            if (round.id.isEmpty) {
-              roundsService.createNewRound(round, editForm.jurors)
-            } else {
-              for {
-                roundId <- round.id
-                currentRound <- Round.findById(roundId)
-              } yield {
-                Round.updateRound(roundId, round)
-                if (editForm.newImages) {
-                  val prevRounds = round.previousIds.flatMap(Round.findById)
-                  val jurors = User.findByRoundSelection(roundId)
-                  distributeImages.distributeImages(currentRound, jurors, prevRounds)
+            // Re-render the same create/edit form with the entered values kept and the
+            // failure shown as a global form error, so the admin can fix and resubmit
+            // instead of losing the page.
+            def reRender(r: Round, message: String, args: Any*): Result =
+              BadRequest(
+                roundFormView(
+                  user,
+                  r,
+                  editRoundForm
+                    .fill(EditRound(r, editForm.jurors, editForm.returnTo, editForm.newImages))
+                    .withGlobalError(message, args: _*)
+                )
+              )
+
+            def detail(e: Throwable): String =
+              Option(e.getMessage)
+                .filter(_.nonEmpty)
+                .getOrElse(e.toString)
+                // keep MessageFormat (used by Messages(key, args)) from choking on the text
+                .replace("'", "''")
+                .replace("{", "(")
+                .replace("}", ")")
+                .take(500)
+
+            round.id match {
+              case None =>
+                try {
+                  roundsService.createNewRound(round, editForm.jurors)
+                  toRoundsList
+                } catch {
+                  // Round row exists but its images are incomplete / failed: send the
+                  // admin to its edit page, where "Distribute new files" can retry.
+                  case e: RoundService.RoundNotFullyDistributed =>
+                    logger.error(e.getMessage)
+                    Redirect(routes.RoundController.editRound(Some(e.roundId), contestId, None))
+                      .flashing("error" -> e.getMessage)
+                  case e: RoundService.RoundDistributionFailed =>
+                    Redirect(routes.RoundController.editRound(Some(e.roundId), contestId, None))
+                      .flashing("error" -> e.getMessage)
+                  // Rejected before anything was created (bad input): keep the form.
+                  case NonFatal(e) =>
+                    logger.warn(s"Rejected round creation for contest $contestId: ${detail(e)}")
+                    reRender(round, "round.creation.failed", detail(e))
                 }
-              }
+
+              case Some(roundId) =>
+                Round.updateRound(roundId, round)
+                if (!editForm.newImages) toRoundsList
+                else
+                  try {
+                    roundsService.distributeNewImages(roundId)
+                    toRoundsList
+                  } catch {
+                    case e: RoundService.RoundNotFullyDistributed =>
+                      logger.error(e.getMessage)
+                      reRender(Round.findById(roundId).getOrElse(round), e.getMessage)
+                    case NonFatal(e) =>
+                      logger.error(s"Failed to distribute new files for round $roundId", e)
+                      reRender(
+                        Round.findById(roundId).getOrElse(round),
+                        "round.distribute.failed",
+                        detail(e)
+                      )
+                  }
             }
-            Redirect(routes.RoundController.rounds(Some(round.contestId)))
           }
         )
     }

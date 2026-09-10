@@ -330,6 +330,93 @@ class ImageDistributorSpec extends Specification with TestDb with Mockito
       }
     }
 
+    "createNewRound copies every selected image from all previous rounds and freezes them" in {
+      locally {
+        val numImages = 12
+        implicit val contest = createContests(contest1, contest2).head
+        val images = createImages(numImages, contest1, contest2)
+
+        val dbJurors = createJurors(3)
+        val juryIds = dbJurors.map(_.getId)
+
+        val r1 = roundDao.create(
+          Round(None, 1, Some("R1"), contest1, Set("jury"), 0, Round.binaryRound, active = true)
+        )
+        val r2 = roundDao.create(
+          Round(None, 2, Some("R2"), contest1, Set("jury"), 0, Round.binaryRound, active = true)
+        )
+        di.distributeImages(r1, dbJurors, Nil)
+        di.distributeImages(r2, dbJurors, Nil)
+
+        // r1 selects images 0..3, r2 selects images 3..7 (image 3 advances from both)
+        (0 to 3).foreach(i => SelectionJdbc.rate(images(i).pageId, juryIds.head, r1.getId, 1))
+        (3 to 7).foreach(i => SelectionJdbc.rate(images(i).pageId, juryIds.head, r2.getId, 1))
+        val expected = (0 to 7).map(images(_).pageId).toSet
+
+        val created = roundService.createNewRound(
+          Round(
+            None, 3, Some("R3"), contest1, Set("jury"), 1, Round.ratesById(10),
+            active = true, previous = Some(s"${r1.getId},${r2.getId}"), prevSelectedBy = Some(1)
+          ),
+          juryIds
+        )
+
+        val gotPageIds =
+          selectionDao.findAll().filter(_.roundId == created.getId).map(_.pageId).toSet
+        gotPageIds === expected
+        SelectionJdbc.imageCountByRound(created.getId) === expected.size.toLong
+
+        roundDao.findById(r1.getId).get.active === false
+        roundDao.findById(r2.getId).get.active === false
+        roundDao.findById(created.getId).get.active === true
+      }
+    }
+
+    "distributeNewImages adds only images that appeared in previous rounds after creation" in {
+      locally {
+        val numImages = 12
+        implicit val contest = createContests(contest1, contest2).head
+        val images = createImages(numImages, contest1, contest2)
+
+        val dbJurors = createJurors(3)
+        val juryIds = dbJurors.map(_.getId)
+
+        val r1 = roundDao.create(
+          Round(None, 1, Some("R1"), contest1, Set("jury"), 0, Round.binaryRound, active = true)
+        )
+        di.distributeImages(r1, dbJurors, Nil)
+        (0 to 3).foreach(i => SelectionJdbc.rate(images(i).pageId, juryIds.head, r1.getId, 1))
+
+        val created = roundService.createNewRound(
+          Round(
+            None, 2, Some("R2"), contest1, Set("jury"), 1, Round.ratesById(10),
+            active = true, previous = Some(s"${r1.getId}"), prevSelectedBy = Some(1)
+          ),
+          juryIds
+        )
+        SelectionJdbc.imageCountByRound(created.getId) === 4L
+        roundService.distributeNewImages(created.getId) === 0
+
+        // a straggler is selected in the (now inactive) previous round
+        SelectionJdbc.rate(images(4).pageId, juryIds.head, r1.getId, 1)
+
+        roundService.distributeNewImages(created.getId) === 1
+        SelectionJdbc.imageCountByRound(created.getId) === 5L
+        roundService.distributeNewImages(created.getId) === 0
+      }
+    }
+
+    "createNewRound rejects an empty jury instead of creating a broken round" in {
+      locally {
+        implicit val contest = createContests(contest1, contest2).head
+        createImages(3, contest1, contest2)
+        roundService.createNewRound(
+          Round(None, 1, Some("R1"), contest1, Set("jury"), 0, Round.binaryRound, active = true),
+          Nil
+        ) must throwAn[IllegalArgumentException]
+      }
+    }
+
     "create second round 2 jurors to image in the first" in {
       locally {
 
