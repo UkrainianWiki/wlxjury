@@ -1,3 +1,6 @@
+# httpd:2.4 runs the master process as root to bind port 80; worker processes drop to www-data.
+# Non-root hardening requires NET_BIND_SERVICE capability, PID file relocation, and port remapping —
+# out of scope for this image; the trade-off is intentional.
 FROM httpd:2.4
 
 RUN sed -i \
