@@ -26,6 +26,11 @@ class DistributeImagesSpec extends Specification with Mockito {
     "filter by video media type" in {
       di(files).imagesByRound(round.copy(mediaType = Some("video"))) === List(video)
     }
+
+    "count a video with no media type yet by its extension" in {
+      val legacyVideo = Image(2L, "File:2.webm", mime = Some("video/webm"))
+      di(List(image, legacyVideo)).imagesByRound(round.copy(mediaType = Some("video"))) === List(legacyVideo)
+    }
   }
 
   "distributeImages" should {
@@ -47,7 +52,7 @@ object DistributeImagesSpec {
   private val contestId = 2L
   private val round = new Round(Some(roundId), 1, contestId = contestId)
   private val image = Image(1L, "File:1.jpg", mime = Some("image/jpeg"))
-  private val video = Image(1L, "File:1.jpg", mime = Some("video/mpeg"))
+  private val video = Image(1L, "File:1.ogv", mime = Some("application/ogg"), mediaType = Some("VIDEO"))
   private val files = List(image, video)
   private val juror = User("Juror", "juror@example.com", id = Some(10L), roles = Set("jury"))
 

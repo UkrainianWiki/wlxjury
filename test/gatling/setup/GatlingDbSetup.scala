@@ -115,7 +115,8 @@ object GatlingDbSetup {
             monumentId = row.get("monument_id").filter(_.nonEmpty),
             author     = row.get("author").filter(_.nonEmpty),
             size       = row.get("size_bytes").flatMap(s => scala.util.Try(s.toInt).toOption),
-            mime       = row.get("mime").filter(_.nonEmpty)
+            mime       = row.get("mime").filter(_.nonEmpty),
+            mediaType  = row.get("media_type").filter(_.nonEmpty)
           )
         }
       }

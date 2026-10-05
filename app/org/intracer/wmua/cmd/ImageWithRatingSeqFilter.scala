@@ -1,6 +1,6 @@
 package org.intracer.wmua.cmd
 
-import db.scalikejdbc.Round
+import db.scalikejdbc.{MediaType, Round}
 import org.intracer.wmua.cmd.ImageWithRatingSeqFilter.ImageFilter
 import org.intracer.wmua.{Image, ImageWithRating}
 import org.scalawiki.wlx.{ImageDB, MonumentDB}
@@ -100,7 +100,13 @@ case class SizeAtLeast(size: Int) extends ImageFilterGen {
 }
 
 case class MediaTypeIs(mediaType: String) extends ImageFilterGen {
-  def apply(): ImageFilter = imageFilter(_.majorMime.contains(mediaType))
+  def apply(): ImageFilter = imageFilter { image =>
+    mediaType match {
+      case MediaType.Video => image.isVideo
+      case MediaType.Image => image.isImage
+      case _               => true
+    }
+  }
 }
 
 case class SpecialNominationFilter(specialNominationName: String) extends ImageFilterGen {

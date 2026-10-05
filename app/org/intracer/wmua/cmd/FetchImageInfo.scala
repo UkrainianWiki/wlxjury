@@ -22,7 +22,7 @@ case class FetchImageInfo(
     max: Long = 0L
 ) {
 
-  private val imageInfoProps = Set("timestamp", "user", "size", "url", "mime")
+  private val imageInfoProps = Set("timestamp", "user", "size", "url", "mime", "mediatype")
 
   private var missingImages: Set[String] = Set.empty
 

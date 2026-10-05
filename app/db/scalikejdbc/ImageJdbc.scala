@@ -39,7 +39,8 @@ object ImageJdbc extends CRUDMapper[Image]
           imageInfo.height.get,
           None,
           size = imageInfo.size.map(_.toInt),
-          mime = imageInfo.mime
+          mime = imageInfo.mime,
+          mediaType = imageInfo.mediaType
         )
     } catch {
       case e: Throwable =>
@@ -64,7 +65,8 @@ object ImageJdbc extends CRUDMapper[Image]
     description = rs.stringOpt(c.description),
     size = rs.intOpt(c.size),
     author = rs.stringOpt(c.author),
-    mime = rs.stringOpt(c.mime)
+    mime = rs.stringOpt(c.mime),
+    mediaType = rs.stringOpt(c.mediaType)
   )
 
   def apply(c: ResultName[Image])(rs: WrappedResultSet): Image = extract(rs, c)
@@ -83,7 +85,8 @@ object ImageJdbc extends CRUDMapper[Image]
         i.description,
         i.size,
         i.author,
-        i.mime
+        i.mime,
+        i.mediaType
       )
     )
     withSQL {
@@ -100,7 +103,8 @@ object ImageJdbc extends CRUDMapper[Image]
           column.description -> sqls.?,
           column.size -> sqls.?,
           column.author -> sqls.?,
-          column.mime -> sqls.?
+          column.mime -> sqls.?,
+          column.mediaType -> sqls.?
         )
     }.batch(batchParams: _*).apply()
   }
@@ -115,7 +119,8 @@ object ImageJdbc extends CRUDMapper[Image]
       "monumentId" -> image.monumentId,
       "description" -> image.description,
       "size" -> image.size,
-      "mime" -> image.mime
+      "mime" -> image.mime,
+      "mediaType" -> image.mediaType
     )
 
   /** @param pageId
