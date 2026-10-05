@@ -1,6 +1,7 @@
 package controllers
 
 import db.scalikejdbc.{Round, RoundLimits}
+import modules.BlockingExecutionContext
 import org.intracer.wmua.cmd.DistributeImages
 import org.specs2.mock.Mockito.mock
 import play.api.test.{Helpers, PlaySpecification}
@@ -46,7 +47,8 @@ class RoundControllerSpec extends PlaySpecification {
         Helpers.stubControllerComponents(),
         mock[ContestController],
         mock[RoundService],
-        mock[DistributeImages]
+        mock[DistributeImages],
+        mock[BlockingExecutionContext]
       )
 
       val editRound = EditRound(round, Nil, None, newImages = true)
