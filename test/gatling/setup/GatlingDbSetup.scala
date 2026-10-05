@@ -80,6 +80,20 @@ object GatlingDbSetup {
       imagePageIds = imagePageIds, regions = regions, votingPairs = votingPairs)
   }
 
+  /** Organizer accounts organizer2..organizer(n+1) for the organizer flows' concurrent
+    * sessions. Created after the dump is restored or saved, so they are neither part of
+    * the dump nor of its cache key, and `loadFromDb` still finds the original organizer.
+    */
+  def ensureExtraOrganizers(contestId: Long, n: Int): Seq[(Long, String, String)] =
+    (2 to n + 1).map { i =>
+      val email = s"organizer$i@gatling.test"
+      val pass  = s"orgpass$i"
+      val user = User.findByEmail(email).headOption.getOrElse(
+        User.create(fullname = s"Organizer $i", email = email, password = User.sha1(pass),
+                    roles = Set("admin"), contestId = Some(contestId)))
+      (user.id.get, email, pass)
+    }
+
   def load(port: Int, cfg: GatlingConfig.type): GatlingFixtureData = {
     val numUsers = cfg.users
     val fraction = cfg.jurorFraction

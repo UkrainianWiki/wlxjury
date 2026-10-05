@@ -74,4 +74,8 @@ object GatlingTestFixture {
   val imagePageIds: Seq[Long]                   = data.imagePageIds
   val regions: Seq[String]                      = data.regions
   val votingPairs: Seq[(Long, Long, Long, Int)] = data.votingPairs
+
+  /** The fixture organizer first, then extra organizer accounts for concurrent sessions. */
+  val organizers: Seq[(Long, String, String)] =
+    organizer +: GatlingDbSetup.ensureExtraOrganizers(contestId, GatlingConfig.organizerAccounts - 1)
 }

@@ -26,7 +26,8 @@ class RegionFilterSimulation extends Simulation {
       .post("/auth")
       .formParam("login", "#{email}")
       .formParam("password", "#{password}")
-      .check(status.in(200, 303)))
+      .check(status.is(303)))
+    .exitHereIfFailed // no unauthenticated requests "succeeding" on the login page
     .repeat(10) {
       exec { session =>
         val round  = rounds(Random.nextInt(rounds.length))
@@ -47,5 +48,5 @@ class RegionFilterSimulation extends Simulation {
       rampUsers(cfg.users).during(cfg.rampUpSeconds.seconds),
       constantUsersPerSec(cfg.users.toDouble / 10).during(cfg.durationSeconds.seconds)
     )
-  ).protocols(http.baseUrl(baseUrl))
+  ).protocols(http.baseUrl(baseUrl).disableFollowRedirect)
 }
