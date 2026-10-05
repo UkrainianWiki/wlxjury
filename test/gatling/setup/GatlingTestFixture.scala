@@ -18,6 +18,15 @@ object GatlingTestFixture {
       dbUsername      = "WLXJURY_DB_USER",
       dbPassword      = "WLXJURY_DB_PASSWORD"
     )
+    // The fixture's selection table and indexes (~370 MB) don't fit the default
+    // 128 MB buffer pool, so the smoke queries would read them from disk on every
+    // request. Server options rather than a my.cnf override: MariaDB ignores a
+    // world-writable config file, as a file bind-mounted from Windows is.
+    container.container.withCommand(
+      "--innodb-buffer-pool-size=512M",
+      "--innodb-log-file-size=128M",
+      "--skip-name-resolve"
+    )
     container.start()
 
     val port = freePort()
