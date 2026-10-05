@@ -33,7 +33,14 @@ lazy val jsTest = taskKey[Unit]("Run Jest tests in javascript-test/")
 
 jsTest := {
   val jsDir = baseDirectory.value / "javascript-test"
-  val result = scala.sys.process.Process(Seq("npm", "test", "--", "--no-coverage"), jsDir).!
+  // Windows can only start npm through its npm.cmd wrapper
+  val npm = if (scala.util.Properties.isWin) "npm.cmd" else "npm"
+  // node_modules is git-ignored: install Jest from package-lock.json on a fresh checkout
+  if (!(jsDir / "node_modules").exists()) {
+    val installed = scala.sys.process.Process(Seq(npm, "ci"), jsDir).!
+    if (installed != 0) throw new MessageOnlyException("npm ci failed")
+  }
+  val result = scala.sys.process.Process(Seq(npm, "test", "--", "--no-coverage"), jsDir).!
   if (result != 0) throw new MessageOnlyException("Jest tests failed")
 }
 
@@ -96,6 +103,9 @@ val PekkoVersion = "1.0.3"
 val PekkoHttpVersion = "1.0.1"
 val ScalaTestVersion = "3.2.9"
 val TestcontainersScalaVersion = "0.41.0"
+// testcontainers-scala 0.41 brings testcontainers-java 1.19, which Docker Engine 29+
+// rejects (it no longer serves the old default API version); 1.21.4 speaks 1.44.
+val TestcontainersJavaVersion = "1.21.4"
 val TapirVersion = "1.11.15"
 val MunitVersion = "0.7.29"
 val GatlingVersion = "3.8.4"
@@ -167,7 +177,9 @@ libraryDependencies ++= Seq(
 
 dependencyOverrides ++= Seq(
   "commons-io" % "commons-io" % "2.16.1"
-)
+) ++ Seq("testcontainers", "jdbc", "database-commons", "mariadb", "mysql").map { module =>
+  "org.testcontainers" % module % TestcontainersJavaVersion
+}
 
 routesGenerator := InjectedRoutesGenerator
 
