@@ -48,6 +48,14 @@ class GatlingSmokeSpec extends Specification {
     Resp(r.statusCode(), System.currentTimeMillis() - t0)
   }
 
+  /** Times a GET of `path` after one untimed GET of it: the first request to a route
+   *  pays one-off costs (class loading, template and JIT warm-up) that say nothing
+   *  about the endpoint's latency on the fixture. */
+  private def warmGet(cl: HttpClient, path: String): Resp = {
+    doGet(cl, path)
+    doGet(cl, path)
+  }
+
   private def doPost(cl: HttpClient, path: String, body: String): Resp = {
     val t0 = System.currentTimeMillis()
     val r  = cl.send(
@@ -79,7 +87,7 @@ class GatlingSmokeSpec extends Specification {
 
   "JurorGallery smoke" in {
     val (cl, jurorId) = jurorClient()
-    val r = doGet(cl, s"/gallery/round/${f.roundBinaryId}/user/$jurorId/page/1")
+    val r = warmGet(cl, s"/gallery/round/${f.roundBinaryId}/user/$jurorId/page/1")
     r.status must_== 200
     r.ms must be_<=(MaxMs)
   }
@@ -87,7 +95,7 @@ class GatlingSmokeSpec extends Specification {
   "RegionFilter smoke" in {
     val (cl, jurorId) = jurorClient()
     val region = f.regions.head
-    val r = doGet(cl, s"/gallery/round/${f.roundBinaryId}/user/$jurorId/region/$region/page/1")
+    val r = warmGet(cl, s"/gallery/round/${f.roundBinaryId}/user/$jurorId/region/$region/page/1")
     r.status must_== 200
     r.ms must be_<=(MaxMs)
   }
@@ -97,6 +105,7 @@ class GatlingSmokeSpec extends Specification {
     // (set in GatlingDbSetup.load). This test verifies both that the query stays < 1s and that
     // it actually returns region data (body contains a known region code).
     val (cl, jurorId) = jurorClient()
+    doGet(cl, s"/gallery/round/${f.roundBinaryId}/user/$jurorId/page/1") // warm-up, see warmGet
     val t0  = System.currentTimeMillis()
     val req = HttpRequest.newBuilder()
       .uri(URI.create(s"$base/gallery/round/${f.roundBinaryId}/user/$jurorId/page/1"))
@@ -110,14 +119,14 @@ class GatlingSmokeSpec extends Specification {
 
   "AggregatedRatings smoke" in {
     val cl = organizerClient()
-    val r  = doGet(cl, s"/roundstat/${f.roundRatingId}")
+    val r  = warmGet(cl, s"/roundstat/${f.roundRatingId}")
     r.status must_== 200
     r.ms must be_<=(MaxMs)
   }
 
   "RoundManagement smoke" in {
     val cl = organizerClient()
-    val r  = doGet(cl, s"/admin/rounds?contestId=${f.contestId}")
+    val r  = warmGet(cl, s"/admin/rounds?contestId=${f.contestId}")
     r.status must_== 200
     r.ms must be_<=(MaxMs)
   }

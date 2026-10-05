@@ -32,12 +32,13 @@ class VotingSimulation extends Simulation {
       .post("/auth")
       .formParam("login", "#{email}")
       .formParam("password", "#{password}")
-      .check(status.in(200, 303)))
+      .check(status.is(303)))
+    .exitHereIfFailed // no unauthenticated requests "succeeding" on the login page
     .repeat(15) {
       feed(voteFeeder)
         .exec(http("cast vote")
           .post("/rate/round/#{roundId}/pageid/#{pageId}/select/#{rate}")
-          .check(status.in(200, 303)))
+          .check(status.is(200), bodyString.is("success")))
     }
 
   setUp(
@@ -45,5 +46,5 @@ class VotingSimulation extends Simulation {
       rampUsers(cfg.users).during(cfg.rampUpSeconds.seconds),
       constantUsersPerSec(cfg.users.toDouble / 10).during(cfg.durationSeconds.seconds)
     )
-  ).protocols(http.baseUrl(baseUrl))
+  ).protocols(http.baseUrl(baseUrl).disableFollowRedirect)
 }

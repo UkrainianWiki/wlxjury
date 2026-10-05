@@ -13,6 +13,7 @@ import play.twirl.api.Html
 import services.RoundService
 
 import javax.inject.Inject
+import modules.BlockingExecutionContext
 import scala.util.control.NonFatal
 
 /** Controller for displaying pages related to contest rounds
@@ -22,7 +23,8 @@ class RoundController @Inject() (
     cc: ControllerComponents,
     val contestsController: ContestController,
     roundsService: RoundService,
-    distributeImages: DistributeImages
+    distributeImages: DistributeImages,
+    blocking: BlockingExecutionContext
 ) extends Secured(cc)
     with I18nSupport
     with Logging {
@@ -32,7 +34,7 @@ class RoundController @Inject() (
     * @return
     */
   def rounds(contestIdParam: Option[Long] = None): EssentialAction =
-    withAuth(contestPermission(User.ADMIN_ROLES, contestIdParam)) { user => implicit request =>
+    withAuthOn(blocking)(contestPermission(User.ADMIN_ROLES, contestIdParam)) { user => implicit request =>
       val roundsView =
         for (
           contestId <- contestIdParam.orElse(user.currentContest);
@@ -62,7 +64,7 @@ class RoundController @Inject() (
     * @return
     */
   def editRound(roundId: Option[Long], contestId: Long, topImages: Option[Int]): EssentialAction =
-    withAuth(contestPermission(User.ADMIN_ROLES, Some(contestId))) { user => implicit request =>
+    withAuthOn(blocking)(contestPermission(User.ADMIN_ROLES, Some(contestId))) { user => implicit request =>
       val rounds = Round.findByContest(contestId)
 
       val round: Round = roundId
@@ -118,7 +120,7 @@ class RoundController @Inject() (
   }
 
   def saveRound(): EssentialAction =
-    withAuth(rolePermission(User.ADMIN_ROLES)) { user => implicit request =>
+    withAuthOn(blocking)(rolePermission(User.ADMIN_ROLES)) { user => implicit request =>
       editRoundForm
         .bindFromRequest()
         .fold(
@@ -287,7 +289,7 @@ class RoundController @Inject() (
     }
 
   def roundStat(roundId: Long): EssentialAction =
-    withAuth(rolePermission(Set(User.ADMIN_ROLE, "jury", "root") ++ User.ORG_COM_ROLES)) {
+    withAuthOn(blocking)(rolePermission(Set(User.ADMIN_ROLE, "jury", "root") ++ User.ORG_COM_ROLES)) {
       user => implicit request =>
         Round
           .findById(roundId)

@@ -1,5 +1,6 @@
 package db.scalikejdbc
 
+import scalikejdbc.DB
 import scalikejdbc.specs2.mutable.{AutoRollback => SJAutoRollback}
 
 /** Use as a per-test anonymous instance inside specs2 test blocks:
@@ -16,8 +17,17 @@ import scalikejdbc.specs2.mutable.{AutoRollback => SJAutoRollback}
  *    }
  *  }}}
  *
- *  Each `new AutoRollbackDb` opens a transaction and rolls it back after the test.
- *  The spec class must call SharedTestDb.init() in beforeAll to ensure the
- *  ScalikeJDBC ConnectionPool is ready.
+ *  Each `new AutoRollbackDb` empties the database, then opens a transaction and
+ *  rolls it back after the test - like [[AutoRollbackMunitDb]]. Specs that commit
+ *  data (truncating only before their own tests, the Gatling setup) leave rows in
+ *  the shared container that would otherwise collide with these tests' inserts.
  */
-trait AutoRollbackDb extends SJAutoRollback with TestDb
+trait AutoRollbackDb extends SJAutoRollback with TestDb {
+
+  // called by AutoRollbackLike before it opens the test's transaction
+  override def db(): DB = {
+    SharedTestDb.init()
+    SharedTestDb.truncateAll()
+    super.db()
+  }
+}
