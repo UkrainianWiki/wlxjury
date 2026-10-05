@@ -21,4 +21,6 @@ trait RoundRepo {
 
   def roundRateStat(roundId: Long): Seq[(Int, Int)]
 
+  def selectedImageCount(roundId: Long): Int
+
 }

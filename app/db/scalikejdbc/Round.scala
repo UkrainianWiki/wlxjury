@@ -351,11 +351,24 @@ object Round extends RoundRepo with CRUDMapper[Round] {
       .map(rs => RoundStatRow(rs.int(1), rs.int(2), rs.int(3)))
       .list()
 
+  /** Distinct images of a round per rate. COUNT(DISTINCT page_id) per rate equals the
+    * old count of distinct (page_id, rate) pairs per rate, without the temporary table.
+    */
   def roundRateStat(roundId: Long): Seq[(Int, Int)] =
-    sql"""SELECT rate, count(1) FROM
-(SELECT DISTINCT s.page_id, s.rate FROM selection s
-  WHERE s.round_id = $roundId) t
-  GROUP BY rate""".map(rs => (rs.int(1), rs.int(2))).list()
+    sql"""SELECT s.rate, COUNT(DISTINCT s.page_id) FROM selection s
+          WHERE s.round_id = $roundId GROUP BY s.rate"""
+      .map(rs => (rs.int(1), rs.int(2)))
+      .list()
+
+  /** Distinct images selected (rate 1) in a binary round: a range scan of
+    * idx_selection_round_rate_page.
+    */
+  def selectedImageCount(roundId: Long): Int =
+    sql"""SELECT COUNT(DISTINCT s.page_id) FROM selection s
+          WHERE s.round_id = $roundId AND s.rate = 1"""
+      .map(_.int(1))
+      .single()
+      .getOrElse(0)
 
 }
 

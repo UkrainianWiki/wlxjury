@@ -145,7 +145,10 @@ class RoundService @Inject() (distributeImages: DistributeImages, dao: RoundRepo
         .toMap
     }.toMap
 
-    val totalByRate = if (round.isBinary) dao.roundRateStat(roundId).toMap else Map.empty[Int, Int]
+    // The stat table reads only the selected count (rate 1) of a binary round;
+    // "unrated" is total - selected.
+    val totalByRate =
+      if (round.isBinary) Map(1 -> dao.selectedImageCount(roundId)) else Map.empty[Int, Int]
     val total = SelectionQuery(roundId = Some(roundId), grouped = true).count()
 
     val roundUsers = RoundUser.byRoundId(roundId).groupBy(_.userId)
