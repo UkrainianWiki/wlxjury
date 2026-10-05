@@ -8,6 +8,7 @@ import play.api.Logging
 import play.api.data.Form
 import play.api.data.Forms._
 import play.api.i18n.I18nSupport
+import play.api.libs.json.Json
 import play.api.mvc.{ControllerComponents, EssentialAction, RequestHeader, Result}
 import play.twirl.api.Html
 import services.RoundService
@@ -67,8 +68,10 @@ class RoundController @Inject() (
     withAuthOn(blocking)(contestPermission(User.ADMIN_ROLES, Some(contestId))) { user => implicit request =>
       val rounds = Round.findByContest(contestId)
 
+      // From the permission-checked contest's rounds: a round of another contest gets
+      // the new-round form, not its settings.
       val round: Round = roundId
-        .flatMap(Round.findById)
+        .flatMap(id => rounds.find(_.id.contains(id)))
         .getOrElse(
           new Round(id = None, contestId = contestId, number = rounds.size + 1)
         )
@@ -77,33 +80,63 @@ class RoundController @Inject() (
 
       val jurors = withTopImages.id.fold(User.loadJurors(contestId))(User.findByRoundSelection).sorted
       val filledRound = editRoundForm.fill(EditRound(withTopImages, jurors.flatMap(_.id), None))
-      Ok(roundFormView(user, withTopImages, filledRound))
+      Ok(roundFormView(user, withTopImages, filledRound, Some(rounds), Some(jurors)))
     }
 
   /** Renders the create/edit round page for `round` with the given (possibly
     * error-carrying) form. Shared by the GET handler and the failure paths of
     * [[saveRound]] so a failed create/redistribute comes back as the same form with
     * the entered values intact, not a redirect that drops them.
+    *
+    * The page does no expensive work: the jurors' stat table and the number of new
+    * files are loaded on demand ([[roundStatTable]], [[newFilesCount]]).
     */
-  private def roundFormView(user: User, round: Round, form: Form[EditRound])(
-      implicit request: RequestHeader
-  ): Html = {
+  private def roundFormView(
+      user: User,
+      round: Round,
+      form: Form[EditRound],
+      knownRounds: Option[Seq[Round]] = None,
+      knownJurors: Option[Seq[User]] = None
+  )(implicit request: RequestHeader): Html = {
     val contestId = round.contestId
-    val prevRounds = round.previousIds.flatMap(Round.findById)
     views.html.editRound(
       user,
       form,
       round.id.isEmpty,
-      Round.findByContest(contestId),
+      knownRounds.getOrElse(Round.findByContest(contestId)),
       Some(contestId),
-      round.id.fold(User.loadJurors(contestId))(User.findByRoundSelection).sorted,
+      knownJurors.getOrElse(round.id.fold(User.loadJurors(contestId))(User.findByRoundSelection).sorted),
       jurorsMapping,
       contestsController.regions(contestId),
-      round.id.map(id => roundsService.getRoundStat(id, round)),
-      round.id.map(_ => distributeImages.imagesByRound(round, prevRounds)).getOrElse(Nil),
       contestSpecialNominations(contestId)
     )
   }
+
+  /** The number of files "Distribute new files" would add to the round, as JSON
+    * `{"count": n}`: the full image filtering (which may query Commons), so it runs
+    * only when the organizer asks for it, not on every view of the edit page.
+    */
+  def newFilesCount(id: Long): EssentialAction =
+    withAuthOn(blocking)(roundPermission(User.ADMIN_ROLES, id)) { _ => _ =>
+      Round
+        .findById(id)
+        .fold(NotFound(Json.obj("error" -> "round not found"))) { round =>
+          val prevRounds = round.previousIds.flatMap(Round.findById)
+          Ok(Json.obj("count" -> distributeImages.imagesByRound(round, prevRounds).size))
+        }
+    }
+
+  /** The jurors' stat table of a round, as an HTML fragment for the edit page's
+    * "jurors" panel, loaded when the panel is opened.
+    */
+  def roundStatTable(roundId: Long): EssentialAction =
+    withAuthOn(blocking)(roundPermission(User.ADMIN_ROLES, roundId)) { user => implicit request =>
+      Round
+        .findById(roundId)
+        .fold(NotFound("")) { round =>
+          Ok(views.html.roundStatTable(user, round, roundsService.getRoundStat(roundId, round)))
+        }
+    }
 
   def contestSpecialNominations(contestId: Long): Seq[SpecialNomination] = {
     ContestJuryJdbc

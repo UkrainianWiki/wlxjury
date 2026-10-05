@@ -259,6 +259,7 @@ monument.ids.comma.separated=Identifiants des monuments (séparés par une virgu
 minimum.megapixels=Mégapixels minimum
 minimum.megabytes=Mégabytes minimum
 distribute.x.new.files=Distribuer {0} nouvelles images
+count.new.files=Compter
 none.selected=Aucune sélection
 all.selected=Toutes sélectionnées
 select.all=Tout sélectionner

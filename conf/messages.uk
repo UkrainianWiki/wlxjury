@@ -235,6 +235,7 @@ monument.ids.comma.separated=Ідентифікатори пам''яток (ро
 minimum.megapixels=Мінімум мегапікселів
 minimum.megabytes=Мінімум мегабайт
 distribute.x.new.files=Розподілити {0} нових файлів
+count.new.files=Порахувати
 round.creation.failed=Не вдалося створити раунд: {0}
 round.distribute.failed=Не вдалося розподілити нові файли: {0}
 none.selected=Не вибрано
