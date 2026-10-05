@@ -192,7 +192,7 @@ object ImageJdbc extends CRUDMapper[Image]
   GROUP BY rate""".map(rs => rs.int(1) -> rs.int(2)).list().toMap
 
   /** Distinct images per round, for the given rounds (rounds without images are left
-    * out). A loose scan of idx_selection_round_page: no join through rounds, which
+    * out). A loose scan of idx_selection_round_page_rate: no join through rounds, which
     * prevented it. Callers go through [[RoundImageCounts]].
     */
   def imageCountByRounds(roundIds: Seq[Long]): Map[Long, Int] =

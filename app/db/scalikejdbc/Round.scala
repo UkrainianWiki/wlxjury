@@ -362,8 +362,8 @@ object Round extends RoundRepo with CRUDMapper[Round] {
       .map(rs => (rs.int(1), rs.int(2)))
       .list()
 
-  /** Distinct images selected (rate 1) in a binary round: a range scan of
-    * idx_selection_round_rate_page.
+  /** Distinct images selected (rate 1) in a binary round: a scan of the round's
+    * entries in idx_selection_round_page_rate, without reading the rows.
     */
   def selectedImageCount(roundId: Long): Int =
     sql"""SELECT COUNT(DISTINCT s.page_id) FROM selection s
