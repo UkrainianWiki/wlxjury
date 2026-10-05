@@ -3,8 +3,7 @@ package services
 import controllers.RoundStat
 import db.RoundRepo
 import db.scalikejdbc.Round.RoundStatRow
-import db.scalikejdbc.rewrite.ImageDbNew.SelectionQuery
-import db.scalikejdbc.{Round, RoundUser, SelectionJdbc, User}
+import db.scalikejdbc.{ImageJdbc, Round, RoundImageCounts, RoundUser, SelectionJdbc, User}
 import org.intracer.wmua.cmd.DistributeImages
 import play.api.Logging
 import scalikejdbc.DB
@@ -105,9 +104,11 @@ class RoundService @Inject() (distributeImages: DistributeImages, dao: RoundRepo
     val toAdd = distributeImages.imagesByRound(round, prevRounds)
     if (toAdd.isEmpty) return 0
 
+    // the verification counts uncached; the "after" count also refreshes the cache
     val before = SelectionJdbc.imageCountByRound(round.getId)
     distributeImages.distributeImages(round, toAdd, jurors)
-    val actuallyAdded = (SelectionJdbc.imageCountByRound(round.getId) - before).toInt
+    val after = RoundImageCounts.refresh(round.getId)(SelectionJdbc.imageCountByRound(round.getId).toInt)
+    val actuallyAdded = (after - before).toInt
 
     if (actuallyAdded != toAdd.size) {
       logger.error(
@@ -149,7 +150,9 @@ class RoundService @Inject() (distributeImages: DistributeImages, dao: RoundRepo
     // "unrated" is total - selected.
     val totalByRate =
       if (round.isBinary) Map(1 -> dao.selectedImageCount(roundId)) else Map.empty[Int, Int]
-    val total = SelectionQuery(roundId = Some(roundId), grouped = true).count()
+    val total = RoundImageCounts
+      .get(Seq(roundId))(ImageJdbc.imageCountByRounds)
+      .getOrElse(roundId, 0)
 
     val roundUsers = RoundUser.byRoundId(roundId).groupBy(_.userId)
     val jurors = User
@@ -166,8 +169,11 @@ class RoundService @Inject() (distributeImages: DistributeImages, dao: RoundRepo
     for {
       targetId <- rounds.find(_.id.contains(targetRoundId)).flatMap(_.id)
       sourceId <- rounds.find(_.id.contains(sourceRoundId)).flatMap(_.id)
-    } DB.localTx { implicit session =>
-      SelectionJdbc.mergeRounds(targetRoundId = targetId, sourceRoundId = sourceId)
+    } {
+      DB.localTx { implicit session =>
+        SelectionJdbc.mergeRounds(targetRoundId = targetId, sourceRoundId = sourceId)
+      }
+      RoundImageCounts.invalidate(targetId, sourceId)
     }
   }
 

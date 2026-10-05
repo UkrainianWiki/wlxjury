@@ -130,6 +130,7 @@ class GlobalRefactor(val commons: MwBot) {
             val selection =
               filesInCategory.map(img => Selection(img, juror, round))
             SelectionJdbc.batchInsert(selection)
+            round.id.foreach(RoundImageCounts.invalidate(_))
           }
       }
     }

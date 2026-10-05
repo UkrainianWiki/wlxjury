@@ -339,7 +339,9 @@ object Round extends RoundRepo with CRUDMapper[Round] {
     countBy(sqls.eq(r.contestId, contestId))
 
   def delete(roundIds: Seq[Long]): Int = {
-    deleteBy(sqls.in(r.id, roundIds))
+    val deleted = deleteBy(sqls.in(r.id, roundIds))
+    RoundImageCounts.invalidate(roundIds: _*)
+    deleted
   }
 
   case class RoundStatRow(juror: Long, rate: Int, count: Int)

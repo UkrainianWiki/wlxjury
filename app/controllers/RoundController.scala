@@ -45,7 +45,7 @@ class RoundController @Inject() (
             views.html.rounds(
               user,
               rounds,
-              ImageJdbc.roundsStat(contestId, rounds.size).toMap,
+              RoundImageCounts.get(rounds.flatMap(_.id))(ImageJdbc.imageCountByRounds),
               editRoundForm,
               imagesForm.fill(contest.images),
               selectRoundForm,

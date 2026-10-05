@@ -51,6 +51,7 @@ class DistributeImages @Inject()(imageRepo: ImageRepo) extends Logging {
         addCriteriaRates(selection)
       }
     }
+    round.id.foreach(RoundImageCounts.invalidate(_)) // after the commit
     logger.debug("saved selection")
     selection.size
   }

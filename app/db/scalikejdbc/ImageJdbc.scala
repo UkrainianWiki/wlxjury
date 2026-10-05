@@ -191,14 +191,18 @@ object ImageJdbc extends CRUDMapper[Image]
   AND s.round_id = $roundId
   GROUP BY rate""".map(rs => rs.int(1) -> rs.int(2)).list().toMap
 
-  def roundsStat(contestId: Long, limit: Int): Seq[(Long, Int)] =
-    sql"""SELECT r.id, count(DISTINCT(s.page_id))
-          FROM rounds r
-  JOIN selection s ON r.id = s.round_id
-  WHERE
-  r.contest_id = $contestId
-  GROUP BY r.id LIMIT $limit
-      """.map(rs => (rs.long(1), rs.int(2))).list()
+  /** Distinct images per round, for the given rounds (rounds without images are left
+    * out). A loose scan of idx_selection_round_page: no join through rounds, which
+    * prevented it. Callers go through [[RoundImageCounts]].
+    */
+  def imageCountByRounds(roundIds: Seq[Long]): Map[Long, Int] =
+    if (roundIds.isEmpty) Map.empty
+    else
+      sql"""SELECT s.round_id, COUNT(DISTINCT s.page_id) FROM selection s
+            WHERE s.round_id IN ($roundIds) GROUP BY s.round_id"""
+        .map(rs => rs.long(1) -> rs.int(2))
+        .list()
+        .toMap
 
   def byRound(roundId: Long): List[Image] = withSQL {
     select(distinct(i.result.*))
