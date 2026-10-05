@@ -232,22 +232,24 @@ object SelectionJdbc extends CRUDMapper[Selection] {
     * A juror may have rated the same image in both rounds; that source row is dropped
     * (the target round's selection wins) so the merge can't violate the
     * `(page_id, jury_id, round_id)` unique index.
+    *
+    * Runs in the caller's session: wrap it in a transaction (as
+    * `RoundService.mergeRounds` does) so the delete and the update apply together.
     */
-  def mergeRounds(targetRoundId: Long, sourceRoundId: Long): Unit =
-    DB localTx { implicit session =>
-      sql"""DELETE src FROM selection src
-            JOIN selection tgt
-              ON tgt.round_id = $targetRoundId
-             AND tgt.page_id = src.page_id
-             AND tgt.jury_id = src.jury_id
-            WHERE src.round_id = $sourceRoundId""".update()
+  def mergeRounds(targetRoundId: Long, sourceRoundId: Long)(implicit session: DBSession = AutoSession): Unit = {
+    sql"""DELETE src FROM selection src
+          JOIN selection tgt
+            ON tgt.round_id = $targetRoundId
+           AND tgt.page_id = src.page_id
+           AND tgt.jury_id = src.jury_id
+          WHERE src.round_id = $sourceRoundId""".update()
 
-      withSQL {
-        update(SelectionJdbc)
-          .set(column.roundId -> targetRoundId)
-          .where
-          .eq(column.roundId, sourceRoundId)
-      }.update()
-    }
+    withSQL {
+      update(SelectionJdbc)
+        .set(column.roundId -> targetRoundId)
+        .where
+        .eq(column.roundId, sourceRoundId)
+    }.update()
+  }
 
 }

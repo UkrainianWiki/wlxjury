@@ -7,6 +7,7 @@ import db.scalikejdbc.rewrite.ImageDbNew.SelectionQuery
 import db.scalikejdbc.{Round, RoundUser, SelectionJdbc, User}
 import org.intracer.wmua.cmd.DistributeImages
 import play.api.Logging
+import scalikejdbc.DB
 
 import javax.inject.Inject
 import scala.util.control.NonFatal
@@ -162,7 +163,9 @@ class RoundService @Inject() (distributeImages: DistributeImages, dao: RoundRepo
     for {
       targetId <- rounds.find(_.id.contains(targetRoundId)).flatMap(_.id)
       sourceId <- rounds.find(_.id.contains(sourceRoundId)).flatMap(_.id)
-    } SelectionJdbc.mergeRounds(targetRoundId = targetId, sourceRoundId = sourceId)
+    } DB.localTx { implicit session =>
+      SelectionJdbc.mergeRounds(targetRoundId = targetId, sourceRoundId = sourceId)
+    }
   }
 
   def setCurrentRound(prevRoundIds: Seq[Long], round: Round): Unit = {

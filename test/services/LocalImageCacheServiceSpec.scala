@@ -166,7 +166,8 @@ class LocalImageCacheServiceSpec extends Specification {
       val svc = mkService(dir)
       val img = mkImage(filename = "Photo.jpg")
       val thumbUrl  = svc.wikiThumbUrl(img, 333).get
-      val localPath = svc.localFile(img, 333).getAbsolutePath
+      // '/'-separated on every OS, to compare with the URL path
+      val localPath = svc.localFile(img, 333).getAbsolutePath.replace(File.separatorChar, '/')
       // local path is localDir + path portion of the thumb URL
       localPath must endWith(thumbUrl.replaceFirst("https://upload.wikimedia.org", ""))
     }

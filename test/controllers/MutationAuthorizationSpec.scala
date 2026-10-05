@@ -1,7 +1,9 @@
 package controllers
 
 import db.scalikejdbc.{PlayTestDb, Round, SelectionJdbc, User}
+import modules.BlockingExecutionContext
 import org.apache.pekko.stream.Materializer
+import play.api.Application
 import org.intracer.wmua.{CommentJdbc, Image}
 import play.api.test.CSRFTokenHelper._
 import play.api.test.{FakeRequest, Helpers, PlaySpecification}
@@ -13,8 +15,9 @@ class MutationAuthorizationSpec extends PlaySpecification with PlayTestDb {
 
   private val galleryService = new GalleryService
 
-  private def galleryController =
-    new GalleryController(galleryService, Helpers.stubControllerComponents())
+  private def galleryController(app: Application) =
+    new GalleryController(galleryService, Helpers.stubControllerComponents(),
+      new BlockingExecutionContext(app.actorSystem))
 
   private def largeViewController =
     new LargeViewController(Helpers.stubControllerComponents(), galleryService)
@@ -49,7 +52,7 @@ class MutationAuthorizationSpec extends PlaySpecification with PlayTestDb {
         )
         imageDao.batchInsert(Seq(image(1001L, "PL-1001")))
 
-        val result = galleryController
+        val result = galleryController(app)
           .selectWS(foreignRound.getId, 1001L, select = 1, module = "gallery", rate = Some(0), criteria = None)
           .apply(sessionRequest(POST, s"/rate/round/${foreignRound.getId}/pageid/1001/select/1?rate=0", juror.email))
           .run()

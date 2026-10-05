@@ -57,7 +57,7 @@ class FetchImageInfoSpec extends PlaySpecification with Mockito with JuryTestHel
         generator = "categorymembers",
         generatorPrefix = "cm",
         namespaces = Set(Namespace.FILE),
-        props = Set("timestamp", "user", "size", "url", "mime"),
+        props = Set("timestamp", "user", "size", "url", "mime", "mediatype"),
         titlePrefix = None
       ) returns Future.successful(imageInfos)
 
@@ -93,7 +93,7 @@ class FetchImageInfoSpec extends PlaySpecification with Mockito with JuryTestHel
         generator = "categorymembers",
         generatorPrefix = "cm",
         namespaces = Set(Namespace.FILE),
-        props = Set("timestamp", "user", "size", "url", "mime"),
+        props = Set("timestamp", "user", "size", "url", "mime", "mediatype"),
         titlePrefix = None
       ) returns Future.successful(imageInfos)
 
