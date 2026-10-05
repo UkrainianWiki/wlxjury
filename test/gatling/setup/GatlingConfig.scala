@@ -38,4 +38,14 @@ object GatlingConfig {
 
   /** Organizer accounts the fixture provides: the most sessions any organizer flow uses. */
   def organizerAccounts: Int = math.max(RoundMgmt.organizers, AggRatings.organizers)
+
+  object Distribution {
+    private val c = cfg.getConfig("gatling.distribution")
+    val jurorsPerImage: Int = c.getInt("jurorsPerImage")
+    val fromRated: Boolean  = c.getBoolean("fromRated")
+    val topImages: Int      = c.getInt("topImages")
+    val topUp: Boolean      = c.getBoolean("topUp")
+    val iterations: Int     = c.getInt("iterations")
+    val timeoutMinutes: Int = c.getInt("timeoutMinutes")
+  }
 }

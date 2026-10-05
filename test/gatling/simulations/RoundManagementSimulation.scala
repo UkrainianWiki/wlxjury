@@ -75,7 +75,7 @@ class RoundManagementSimulation extends Simulation {
     .formParam("distribution", "1").formParam("rates", "1")
     .formParam("minMpx", "").formParam("minSize", "").formParam("mediaType", "all")
     .formParamSeq(jurorIds.zipWithIndex.map { case (id, i) => s"jurors[$i]" -> id.toString })
-    .requestTimeout(15.minutes) // a distribution can take minutes
+    .requestTimeout(GatlingConfig.Distribution.timeoutMinutes.minutes)
     .check(status.is(303))
 
   private val organizerScn = scenario("Round Management")

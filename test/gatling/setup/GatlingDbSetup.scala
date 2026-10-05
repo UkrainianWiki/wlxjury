@@ -23,6 +23,9 @@ case class GatlingFixtureData(
 
 object GatlingDbSetup {
 
+  /** The fixture contest's image category; every fixture image is in it. */
+  val ImageCategory = "Category:Images from Wiki Loves Monuments 2025 in Ukraine"
+
   /** Reconstruct GatlingFixtureData from a restored DB without re-running the CSV load. */
   def loadFromDb(port: Int): GatlingFixtureData = {
     import scalikejdbc.AutoSession
@@ -139,7 +142,11 @@ object GatlingDbSetup {
     val imageMonumentMap: Map[Long, Option[String]] = images.map(img => img.pageId -> img.monumentId).toMap
 
     // ── Entity creation (auto-commits individually; small row counts) ─────────
+    // The contest's images come from its category, as in production: a first round
+    // (no previous rounds) and the edit page's "new files" count load them from there.
+    val categoryId = CategoryJdbc.findOrInsert(ImageCategory)
     val contest   = ContestJuryJdbc.create(id = None, name = "Gatling Perf Test Contest", year = 2024, country = "ua",
+                                           categoryId = Some(categoryId),
                                            monumentIdTemplate = Some("{{UkrainianMonument}}"))
     val contestId = contest.id.get
 
@@ -199,6 +206,7 @@ object GatlingDbSetup {
 
       monuments.grouped(1000).foreach(batch => MonumentJdbc.batchInsertFresh(batch.toSeq))
       images.grouped(1000).foreach(batch => ImageJdbc.batchInsert(batch.toSeq))
+      images.grouped(5000).foreach(batch => CategoryLinkJdbc.addToCategory(categoryId, batch.toSeq))
       (binarySelections ++ ratingSelections).grouped(5000).foreach(batch => SelectionJdbc.batchInsert(batch.toSeq))
 
       SQL("SET foreign_key_checks = 1").execute.apply()

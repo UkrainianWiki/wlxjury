@@ -10,7 +10,8 @@ import java.security.MessageDigest
 /** Caches the fully-loaded Gatling fixture DB as a gzipped mysqldump.
  *
  *  Cache file: data/cache/gatling-{key}.sql.gz
- *  Cache key : SHA-256 of migration SQL content + CSV file sizes + user count (first 16 hex chars).
+ *  Cache key : SHA-256 of migration SQL content + CSV file sizes + fixture parameters +
+ *              FixtureVersion (first 16 hex chars).
  *
  *  Usage in GatlingTestFixture.init():
  *    val key = GatlingDbCache.cacheKey(GatlingConfig)
@@ -20,6 +21,9 @@ import java.security.MessageDigest
 object GatlingDbCache {
 
   private val cacheDir = new File("data/cache")
+
+  /** v2: the contest has an image category holding every fixture image. */
+  val FixtureVersion = "fixture-v2"
 
   // ── Cache key ──────────────────────────────────────────────────────────────
 
@@ -41,6 +45,10 @@ object GatlingDbCache {
 
     // Hash fixture parameters (user count, fraction, max rate).
     md.update(s"${cfg.users}:${cfg.jurorFraction}:${cfg.maxRate}".getBytes("UTF-8"))
+
+    // The fixture code itself isn't hashed: bump FixtureVersion whenever
+    // GatlingDbSetup.load changes what it writes.
+    md.update(FixtureVersion.getBytes("UTF-8"))
 
     md.digest().map("%02x".format(_)).mkString.take(16)
   }
