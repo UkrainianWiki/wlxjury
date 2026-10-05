@@ -9,6 +9,8 @@ import org.scalawiki.wlx.query.MonumentQuery
 import org.scalawiki.wlx.stat.ContestStat
 import play.api.Logging
 
+import scala.concurrent.Await
+import scala.concurrent.duration.DurationInt
 import scala.runtime.ScalaRunTime
 
 trait ImageFilterGen extends (() => ImageFilter) with Product with Logging {
@@ -108,11 +110,12 @@ case class SpecialNominationFilter(specialNominationName: String) extends ImageF
       val contest = Contest.WLMUkraine(2020)
       val stat = if (nomination.cities.nonEmpty) {
         ContestStat(contest, 2012, currentYearImageDb = new ImageDB(contest, Nil), totalImageDb = new ImageDB(contest, Nil))
-          .copy(monumentDb = Some(MonumentDB.getMonumentDb(contest, MonumentQuery.create(contest))))
+          .copy(monumentDb =
+            Some(Await.result(MonumentDB.getMonumentDb(contest, MonumentQuery.create(contest)), 30.minutes)))
       } else {
         ContestStat(contest, 2012, currentYearImageDb = new ImageDB(contest, Nil), totalImageDb = new ImageDB(contest, Nil))
       }
-      val map = SpecialNomination.getMonumentsMap(Seq(nomination), stat)
+      val map = Await.result(SpecialNomination.getMonumentsMap(Seq(nomination), stat), 30.minutes)
       map.values.flatten.map(_.id).toSet
     }
     .getOrElse(Set.empty)

@@ -7,11 +7,14 @@ import org.scalawiki.wlx.query.MonumentQuery
 import org.scalawiki.wlx.stat.ContestStat
 import play.api.Logging
 
+import scala.concurrent.Await
+import scala.concurrent.duration.DurationInt
+
 class MonumentService extends Logging {
 
   def updateLists(contest: Contest): Unit = {
     val monumentQuery = MonumentQuery.create(contest)
-    val monuments = monumentQuery.byMonumentTemplate()
+    val monuments = Await.result(monumentQuery.byMonumentTemplate(), 30.minutes)
     val monumentIds = monuments.map(_.id).toSet
 
     val stat =
@@ -24,8 +27,8 @@ class MonumentService extends Logging {
       )
     val specialNominationMonuments =
       if (contest.contestType == ContestType.WLM) {
-        SpecialNomination
-          .getMonumentsMap(SpecialNomination.nominations, stat)
+        Await
+          .result(SpecialNomination.getMonumentsMap(SpecialNomination.nominations, stat), 30.minutes)
           .values
           .flatten
           .filterNot(m => monumentIds.contains(m.id))
