@@ -109,7 +109,8 @@ object ImageJdbc extends CRUDMapper[Image]
     }.batch(batchParams: _*).apply()
   }
 
-  def update(image: Image): Unit =
+  /** Updates the image, and its selection rows' copy of its monument id. */
+  def update(image: Image): Unit = DB.localTx { implicit session =>
     updateById(image.pageId).withAttributes(
       "title" -> image.title,
       "url" -> image.url,
@@ -122,6 +123,8 @@ object ImageJdbc extends CRUDMapper[Image]
       "mime" -> image.mime,
       "mediaType" -> image.mediaType
     )
+    syncSelectionMonumentId(image.pageId, image.monumentId)
+  }
 
   /** @param pageId
     * @param width
@@ -130,8 +133,21 @@ object ImageJdbc extends CRUDMapper[Image]
   def updateResolution(pageId: Long, width: Int, height: Int): Unit =
     updateById(pageId).withAttributes("width" -> width, "height" -> height)
 
-  def updateMonumentId(pageId: Long, monumentId: String): Unit =
+  /** Sets the image's monument id, and its selection rows' copy of it. */
+  def updateMonumentId(pageId: Long, monumentId: String): Unit = DB.localTx { implicit session =>
     updateById(pageId).withAttributes("monumentId" -> monumentId)
+    syncSelectionMonumentId(pageId, Some(monumentId))
+  }
+
+  /** selection.monument_id (V48) is a copy of images.monument_id that the galleries
+    * sort and filter by regions on; it must follow the image. A page_id lookup on the
+    * unique (page_id, jury_id, round_id) index; rows already right aren't rewritten.
+    */
+  private def syncSelectionMonumentId(pageId: Long, monumentId: Option[String])(implicit
+      session: DBSession
+  ): Unit =
+    sql"""UPDATE selection SET monument_id = $monumentId
+          WHERE page_id = $pageId AND NOT (monument_id <=> $monumentId)""".update()
 
   def deleteImage(pageId: Long): Unit = deleteById(pageId)
 
