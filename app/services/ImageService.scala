@@ -128,12 +128,7 @@ class ImageService @Inject() (
       saveNewImages(notInOtherContests)
       CategoryLinkJdbc.addToCategory(categoryId, newImages)
 
-      val updatedImages = images.filter(image =>
-        existingByPageId.contains(image.pageId) && existingByPageId(
-          image.pageId
-        ) != image
-      )
-      updatedImages.foreach(ImageJdbc.update)
+      ImageService.changedImages(images, existing).foreach(ImageJdbc.update)
     }
 
     Await.result(result, 500.minutes)
@@ -158,4 +153,18 @@ class ImageService @Inject() (
     logger.info("saved images")
   }
 
+}
+
+object ImageService {
+
+  /** The fetched images that are stored already but changed: those [[ImageJdbc.update]]
+    * has something to write for. Compared on the fields it writes, except pageUrl,
+    * which reading an image back doesn't return.
+    */
+  def changedImages(fetched: Seq[Image], existing: Seq[Image]): Seq[Image] = {
+    def stored(i: Image) =
+      (i.title, i.url, i.width, i.height, i.monumentId, i.description, i.size, i.mime, i.mediaType)
+    val existingById = existing.map(i => i.pageId -> stored(i)).toMap
+    fetched.filter(i => existingById.get(i.pageId).exists(_ != stored(i)))
+  }
 }
