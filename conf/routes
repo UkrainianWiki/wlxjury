@@ -69,12 +69,14 @@ POST        /users/resetpasswd/:id                                              
 GET         /admin/rounds                                                           @controllers.RoundController.rounds(contestId: Option[Long] ?= None)
 GET         /admin/rounds/edit                                                      @controllers.RoundController.editRound(id: Option[Long] ?= None, contestId: Long, topImages: Option[Int] ?= None)
 POST        /admin/rounds/save                                                      @controllers.RoundController.saveRound()
+GET         /admin/rounds/newfiles                                                  @controllers.RoundController.newFilesCount(id: Long)
 POST        /admin/setimages                                                        @controllers.RoundController.setImages()
 POST        /admin/setround                                                         @controllers.RoundController.setRound()
 POST        /round/setrounduser                                                     @controllers.RoundController.setRoundUser()
 
 GET         /roundstat                                                              @controllers.RoundController.currentRoundStat(contestId: Option[Long] ?= None)
 GET         /roundstat/:round                                                       @controllers.RoundController.roundStat(round: Long)
+GET         /roundstat/:round/table                                                 @controllers.RoundController.roundStatTable(round: Long)
 
 GET         /monuments                                                              controllers.MonumentController.list()
 GET         /monuments/id/:id                                                       controllers.MonumentController.byId(id)

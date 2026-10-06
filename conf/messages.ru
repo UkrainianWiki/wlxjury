@@ -143,3 +143,4 @@ up.key = Вверх
 down.key = Вниз
 local.image.cache = Локальный кеш изображений
 download.images.locally = Скачать изображения локально
+count.new.files=Подсчитать

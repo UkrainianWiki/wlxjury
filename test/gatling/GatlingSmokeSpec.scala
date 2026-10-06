@@ -131,6 +131,13 @@ class GatlingSmokeSpec extends Specification {
     r.ms must be_<=(MaxMs)
   }
 
+  "Round edit page smoke" in {
+    val cl = organizerClient()
+    val r  = warmGet(cl, s"/admin/rounds/edit?id=${f.roundBinaryId}&contestId=${f.contestId}")
+    r.status must_== 200
+    r.ms must be_<=(MaxMs)
+  }
+
   "Voting smoke" in {
     val (cl, _) = jurorClient()
     val (_, pageId, roundId, rate) = f.votingPairs.head

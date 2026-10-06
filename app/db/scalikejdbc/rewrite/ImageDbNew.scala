@@ -86,16 +86,52 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
       val mainSql =
         sqls"${SQLSyntax.createUnsafely(structureStr)} ${where(count)} ${SQLSyntax.createUnsafely(groupByStr + (if (!(count || byRegion)) orderBy() else ""))}"
 
-      if (count && regions.isEmpty && !byRegion) {
-        val countExpr = SQLSyntax.createUnsafely("COUNT(DISTINCT s.page_id)")
+      // A juror has at most one row per image in a round (unique page_id, jury_id,
+      // round_id): with both fixed, the rows are the images.
+      val oneRowPerImage = userId.isDefined && roundId.isDefined
+
+      // Without a monument join every condition is on selection's own columns, so the
+      // count needs no join to images. A region filter alone keeps the old row count
+      // unless the rows are one per image anyway (a juror's in a round, or grouped).
+      val countOnSelection =
+        count && !byRegion && !needsMonumentJoin && (regions.isEmpty || oneRowPerImage || grouped)
+
+      if (countOnSelection) {
+        val countExpr = SQLSyntax.createUnsafely(
+          if (oneRowPerImage) "COUNT(*)" else "COUNT(DISTINCT s.page_id)"
+        )
         sqls"select $countExpr from selection s ${where()}"
       } else if (count) {
         sqls"select count(t.pi_on_i) from ($mainSql) t"
       } else if (noLimit || byRegion) {
         mainSql
+      } else if (!idOnly && !grouped && limit.isDefined && !needsMonumentJoin) {
+        deferredJoinPage(columnsStr)
       } else {
         sqls"$mainSql ${SQLSyntax.createUnsafely(limitSql())}"
       }
+    }
+
+    /** One page of per-selection rows (a juror's gallery) as a deferred join: the inner
+      * query sorts and pages selection ids alone, which an index on (jury_id, round_id,
+      * ...) covers, since every secondary index includes the primary key; only the page's
+      * rows are then read in full. Sorting the whole juror's rows with every column, as
+      * the plain query does, costs a filesort of full rows: on MariaDB 10.6 the
+      * mixed-direction ORDER BY (rate DESC, monument_id ASC, ...) can't be read from the
+      * ascending index.
+      *
+      * The inner query joins images too (a primary key lookup, from the index alone), so
+      * it pages only the rows that have an image, as the plain query and [[imageRank]]
+      * do: a selection row whose image was deleted would otherwise shift the offsets.
+      */
+    private def deferredJoinPage(columnsStr: String): SQLSyntax = {
+      val order = SQLSyntax.createUnsafely(orderBy())
+      val page = SQLSyntax.createUnsafely(limitSql())
+      val columns = SQLSyntax.createUnsafely(columnsStr)
+      sqls"$columns from (select s.id from selection s" +
+        sqls" STRAIGHT_JOIN images i on i.page_id = s.page_id ${where()} $order $page) k" +
+        sqls" STRAIGHT_JOIN selection s on s.id = k.id" +
+        sqls" STRAIGHT_JOIN images i on i.page_id = s.page_id $order"
     }
 
     def list()(implicit session: DBSession = autoSession): Seq[ImageWithRating] = {
@@ -181,8 +217,10 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
           } else if (regions.size > 1) {
             sqls.in(SQLSyntax.createUnsafely("m.adm0"), regions.toSeq)
           } else {
+            // selection's denormalized copy of images.monument_id (V48), so a juror's
+            // region gallery filters on the selection rows alone
             val likeParam = regions.head + "%"
-            sqls"i.monument_id like $likeParam"
+            sqls"s.monument_id like $likeParam"
           }
         }
       ).flatten
