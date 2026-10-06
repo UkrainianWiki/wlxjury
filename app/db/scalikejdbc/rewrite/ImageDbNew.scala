@@ -120,16 +120,15 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
       * mixed-direction ORDER BY (rate DESC, monument_id ASC, ...) can't be read from the
       * ascending index.
       *
-      * The inner query joins images too (a primary key lookup, from the index alone), so
-      * it pages only the rows that have an image, as the plain query and [[imageRank]]
-      * do: a selection row whose image was deleted would otherwise shift the offsets.
+      * The inner query reads selection alone: every selection row has its image (foreign
+      * key FK_selection_page_id, V58), so it pages the same rows the plain query and
+      * [[imageRank]] see when joining images.
       */
     private def deferredJoinPage(columnsStr: String): SQLSyntax = {
       val order = SQLSyntax.createUnsafely(orderBy())
       val page = SQLSyntax.createUnsafely(limitSql())
       val columns = SQLSyntax.createUnsafely(columnsStr)
-      sqls"$columns from (select s.id from selection s" +
-        sqls" STRAIGHT_JOIN images i on i.page_id = s.page_id ${where()} $order $page) k" +
+      sqls"$columns from (select s.id from selection s ${where()} $order $page) k" +
         sqls" STRAIGHT_JOIN selection s on s.id = k.id" +
         sqls" STRAIGHT_JOIN images i on i.page_id = s.page_id $order"
     }

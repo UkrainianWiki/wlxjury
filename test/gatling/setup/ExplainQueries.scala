@@ -24,6 +24,9 @@ object ExplainQueries {
     val region = "07"
 
     val indexes = sql"SHOW INDEX FROM selection".map(rs => rs.string("Key_name")).list().distinct
+    val orphans = sql"""SELECT COUNT(*) FROM selection s LEFT JOIN images i ON i.page_id = s.page_id
+                        WHERE s.page_id IS NOT NULL AND i.page_id IS NULL""".map(_.long(1)).single().getOrElse(0L)
+    println(s"[explain] selection rows without an image: $orphans")
     println(s"[explain] selection indexes: ${indexes.mkString(", ")}")
     println(s"[explain] binary round $binary, rated round $rated, juror $juror, region $region")
 
@@ -57,7 +60,7 @@ object ExplainQueries {
             WHERE s.jury_id = $juror AND s.round_id = $rated $galleryOrder LIMIT 15 OFFSET 60""", true),
       ("T9 new gallery page (deferred join)",
         s"""SELECT i.*, s.* FROM (SELECT s.id FROM selection s
-            STRAIGHT_JOIN images i ON i.page_id = s.page_id WHERE s.jury_id = $juror AND s.round_id = $rated $galleryOrder LIMIT 15 OFFSET 60) k
+            WHERE s.jury_id = $juror AND s.round_id = $rated $galleryOrder LIMIT 15 OFFSET 60) k
             STRAIGHT_JOIN selection s ON s.id = k.id
             STRAIGHT_JOIN images i ON i.page_id = s.page_id $galleryOrder""", true),
       ("T9 old region gallery page",
@@ -66,7 +69,7 @@ object ExplainQueries {
             $galleryOrder LIMIT 15 OFFSET 0""", true),
       ("T9 new region gallery page (deferred join)",
         s"""SELECT i.*, s.* FROM (SELECT s.id FROM selection s
-            STRAIGHT_JOIN images i ON i.page_id = s.page_id WHERE s.jury_id = $juror AND s.round_id = $rated AND s.monument_id LIKE '$region%'
+            WHERE s.jury_id = $juror AND s.round_id = $rated AND s.monument_id LIKE '$region%'
             $galleryOrder LIMIT 15 OFFSET 0) k
             STRAIGHT_JOIN selection s ON s.id = k.id
             STRAIGHT_JOIN images i ON i.page_id = s.page_id $galleryOrder""", true),
