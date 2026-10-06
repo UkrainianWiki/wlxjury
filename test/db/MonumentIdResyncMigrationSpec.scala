@@ -32,11 +32,10 @@ class MonumentIdResyncMigrationSpec extends Specification with TestDb with Befor
       selectionDao.create(1L, 0, juror.getId, 1L, monumentId = Some("07-101-0001")) // drifted
       selectionDao.create(2L, 0, juror.getId, 1L, monumentId = Some("07-101-0002")) // in step
       selectionDao.create(3L, 0, juror.getId, 1L, monumentId = Some("07-101-0003")) // image lost its id
-      selectionDao.create(4L, 0, juror.getId, 1L, monumentId = Some("07-101-0004")) // no image: kept
 
       DB.autoCommit(implicit s => SQL(statement).update.apply()) === 2
       selectionDao.findAll().sortBy(_.pageId).map(_.monumentId) ===
-        Seq(Some("14-101-0001"), Some("07-101-0002"), None, Some("07-101-0004"))
+        Seq(Some("14-101-0001"), Some("07-101-0002"), None)
       DB.autoCommit(implicit s => SQL(statement).update.apply()) === 0
     }
   }

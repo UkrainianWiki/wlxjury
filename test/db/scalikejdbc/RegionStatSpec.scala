@@ -76,7 +76,8 @@ class RegionStatSpec extends Specification with BeforeAll with TestDb {
         image(251L, "07-123-0001"),
         image(252L, "14-456-0002")
       )
-      insertImages(imgs)
+      // and an image without a monument id (a selection row needs its image)
+      insertImages(imgs :+ image(253L, "").copy(monumentId = None))
       insertSelections(imgs.map(i => selection(i.pageId, userId, roundId, i.monumentId)) :+
         selection(253L, userId, roundId, None))
 

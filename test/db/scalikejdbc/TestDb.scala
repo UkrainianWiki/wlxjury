@@ -1,7 +1,7 @@
 package db.scalikejdbc
 
-import org.intracer.wmua.ContestJury
-import scalikejdbc.{AutoSession, DBSession}
+import org.intracer.wmua.{ContestJury, Image}
+import scalikejdbc.{AutoSession, DBSession, scalikejdbcSQLInterpolationImplicitDef}
 
 import java.time.ZonedDateTime
 
@@ -23,6 +23,20 @@ trait TestDb {
   val userDao: User.type               = User
 
   def now: ZonedDateTime = TestDb.now
+
+  /** Inserts a minimal image for each page id that has none yet: a selection row needs
+    * its image (foreign key FK_selection_page_id), so a test inserting selection rows of
+    * its own inserts their images first.
+    */
+  def insertImagesFor(pageIds: Long*)(implicit session: DBSession = AutoSession): Unit = {
+    val ids = pageIds.distinct
+    val existing =
+      if (ids.isEmpty) Set.empty[Long]
+      else sql"SELECT page_id FROM images WHERE page_id IN ($ids)".map(_.long(1)).list().toSet
+    val missing = ids.filterNot(existing.contains)
+    if (missing.nonEmpty)
+      imageDao.batchInsert(missing.map(id => Image(id, s"File:Image$id.jpg", None, None, 640, 480, None)))
+  }
 
   def createContests(contestIds: Long*)(implicit session: DBSession = AutoSession): Seq[ContestJury] =
     contestIds.map { id =>
