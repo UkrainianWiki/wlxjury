@@ -69,6 +69,21 @@ class RegionStatSpec extends Specification with BeforeAll with TestDb {
       result.map(_.id).sorted must_== Seq("07", "14")
     }
 
+    "return the regions when the monument list was never loaded" in new AutoRollbackDb {
+      val roundId = 25L
+      val userId  = 2L
+      val imgs = Seq(
+        image(251L, "07-123-0001"),
+        image(252L, "14-456-0002")
+      )
+      insertImages(imgs)
+      insertSelections(imgs.map(i => selection(i.pageId, userId, roundId, i.monumentId)) :+
+        selection(253L, userId, roundId, None))
+
+      val result = SelectionQuery(roundId = Some(roundId)).byRegionStat()
+      result.map(_.id).sorted must_== Seq("07", "14")
+    }
+
     "filter by userId — juror sees only their own regions" in new AutoRollbackDb {
       val roundId  = 30L
       val userId3  = 3L
