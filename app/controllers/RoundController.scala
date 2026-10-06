@@ -206,6 +206,11 @@ class RoundController @Inject() (
                   roundsService.createNewRound(round, editForm.jurors)
                   toRoundsList
                 } catch {
+                  // The same creation submitted again (the first one outlasted the
+                  // browser's or the proxy's wait): show the rounds list, which has it.
+                  case e: RoundService.DuplicateRound =>
+                    logger.warn(s"Contest $contestId: ${e.getMessage}")
+                    toRoundsList.flashing("error" -> e.getMessage)
                   // Round row exists but its images are incomplete / failed: send the
                   // admin to its edit page, where "Distribute new files" can retry.
                   case e: RoundService.RoundNotFullyDistributed =>

@@ -8,12 +8,31 @@ import org.intracer.wmua.cmd.DistributeImages
 import play.api.Logging
 import scalikejdbc.DB
 
+import java.time.{Duration, ZonedDateTime}
 import javax.inject.Inject
+import scala.collection.concurrent.TrieMap
 import scala.util.control.NonFatal
 
 class RoundService @Inject() (distributeImages: DistributeImages, dao: RoundRepo) extends Logging {
 
-  def createNewRound(round: Round, jurorIds: Seq[Long]): Round = {
+  /** Creates the round and distributes its images.
+    *
+    * One creation per contest at a time, and a submission repeating a round created in
+    * the last [[RoundService.DuplicateWindow]] is refused ([[RoundService.DuplicateRound]]):
+    * a distribution can outlast the browser's or the proxy's wait, and the organizer's
+    * resubmit would otherwise create a second copy of the round.
+    */
+  def createNewRound(round: Round, jurorIds: Seq[Long]): Round =
+    RoundService.lock("contest", round.contestId).synchronized {
+      val since = ZonedDateTime.now.minus(RoundService.DuplicateWindow)
+      dao
+        .findByContest(round.contestId)
+        .find(r => !r.createdAt.isBefore(since) && RoundService.sameSettings(r, round))
+        .foreach(r => throw RoundService.DuplicateRound(r))
+      create(round, jurorIds)
+    }
+
+  private def create(round: Round, jurorIds: Seq[Long]): Round = {
     val prevRounds = round.previousIds.flatMap(dao.findById)
     require(
       Round.sameRateType(prevRounds),
@@ -74,7 +93,11 @@ class RoundService @Inject() (distributeImages: DistributeImages, dao: RoundRepo
     *
     * @return the number of images added
     */
-  def distributeNewImages(roundId: Long): Int = {
+  def distributeNewImages(roundId: Long): Int =
+    // one at a time per round: a resubmit waits, then finds nothing new to add
+    RoundService.lock("round", roundId).synchronized(distributeNew(roundId))
+
+  private def distributeNew(roundId: Long): Int = {
     val round = dao.findById(roundId).getOrElse(
       throw new NoSuchElementException(s"Round $roundId not found")
     )
@@ -188,6 +211,36 @@ class RoundService @Inject() (distributeImages: DistributeImages, dao: RoundRepo
 }
 
 object RoundService {
+
+  /** How long an identical round submission is taken for a resubmit of the same one. */
+  val DuplicateWindow: Duration = Duration.ofMinutes(30)
+
+  private val locks = TrieMap.empty[(String, Long), AnyRef]
+
+  /** In-JVM lock per contest / round: the app runs as a single instance. */
+  private def lock(kind: String, id: Long): AnyRef = locks.getOrElseUpdate((kind, id), new AnyRef)
+
+  /** The settings a round is created with (everything the round form submits but its
+    * jurors), to recognize a resubmitted creation.
+    */
+  def sameSettings(a: Round, b: Round): Boolean = {
+    def settings(r: Round) = (
+      r.name.map(_.trim).filter(_.nonEmpty), r.roles, r.distribution, r.rates.id, r.minMpx,
+      r.previousIds.toSet, r.prevSelectedBy, r.prevMinAvgRate, r.category, r.excludeCategory,
+      r.regionIds.toSet, r.minImageSize, r.monuments, r.topImages, r.specialNomination, r.mediaType
+    )
+    a.contestId == b.contestId && settings(a) == settings(b)
+  }
+
+  /** A round with the same settings was created moments ago: most likely this is the
+    * same submission again (the first one outlasted the browser's wait).
+    */
+  final case class DuplicateRound(existing: Round)
+      extends RuntimeException(
+        s"Round ${existing.number} (${existing.description}) with the same settings was created at " +
+          s"${existing.createdAt.toLocalTime.withNano(0)}; not creating it a second time. " +
+          "Give the new round a different name to create another one."
+      )
 
   private def describe(e: Throwable): String =
     Option(e.getMessage).filter(_.nonEmpty).getOrElse(e.getClass.getSimpleName)
