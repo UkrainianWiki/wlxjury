@@ -2,6 +2,9 @@ package services
 
 import db.scalikejdbc._
 import org.intracer.wmua.cmd.DistributeImages
+import scalikejdbc.DBSession
+import services.distribution.RoundDistributionHandler
+import services.jobs.JobStatus
 import org.intracer.wmua.{ContestJury, Image}
 import org.specs2.mutable.Specification
 import org.specs2.specification.{BeforeAll, BeforeEach}
@@ -23,24 +26,28 @@ class RoundCreationResubmitSpec extends Specification with TestDb with BeforeAll
   override def beforeAll(): Unit = SharedTestDb.init()
   override protected def before: Any = SharedTestDb.truncateAll()
 
-  /** Fails its first `failures` distributions, and records whether the watched
-    * (previous) rounds were active when a distribution started.
+  /** Fails the first `failures` chunks it inserts, and records whether the watched
+    * (previous) rounds were active when a chunk was inserted.
     */
-  private class FlakyDistributor(failures: Int, watch: => Seq[Long] = Nil) extends DistributeImages(ImageJdbc) {
+  private class FlakyHandler(failures: Int, watch: => Seq[Long] = Nil)
+      extends RoundDistributionHandler(new DistributeImages(ImageJdbc), TestRoundServices.config(15000)) {
     @volatile private var remaining = failures
     val previousActive: mutable.Buffer[Boolean] = mutable.Buffer.empty
 
-    override def distributeImages(round: Round, images: Seq[Image], jurors: Seq[User]): Int = {
+    override protected def beforeInsert(round: Round, images: Seq[Image])(implicit session: DBSession): Unit = {
       previousActive ++= watch.flatMap(id => Round.findById(id).map(_.active))
       if (remaining > 0) {
         remaining -= 1
         throw new RuntimeException("simulated distribution failure")
       }
-      super.distributeImages(round, images, jurors)
     }
   }
 
-  private lazy val service = new RoundService(new DistributeImages(ImageJdbc), Round)
+  private def flakyService(flaky: FlakyHandler) = TestRoundServices.roundService(flaky)
+
+  private lazy val service = TestRoundServices.roundService()
+
+  private def failedStatus(s: RoundService.Submitted) = s.job.map(_.status) === Some(JobStatus.Failed)
 
   private def setUp(): (ContestJury, Seq[Long]) = {
     implicit val contest: ContestJury = createContests(10).head
@@ -95,17 +102,18 @@ class RoundCreationResubmitSpec extends Specification with TestDb with BeforeAll
       val (contest, jurors) = setUp()
       val previous = service.createNewRound(newRound(contest, "Round 1"), jurors)
       Round.setActive(previous.getId, active = true)
-      val flaky = new FlakyDistributor(failures = 1, watch = Seq(previous.getId))
-      val flakyService = new RoundService(flaky, Round)
+      val flaky = new FlakyHandler(failures = 1, watch = Seq(previous.getId))
       val form = token()
       val next = newRound(contest, "Round 2").copy(previous = Some(previous.getId.toString))
 
-      flakyService.submit(next, jurors, form) must throwA[RoundService.RoundDistributionFailed]
+      failedStatus(flakyService(flaky).submit(next, jurors, form))
       val failed = rounds(contest).find(_.name.contains("Round 2")).get
       selectionRows(failed.getId) must beEmpty
+      failed.distributing must beTrue // still hidden from its jurors
+      failed.active must beFalse
       roundDao.findById(previous.getId).map(_.active) === Some(true) // restored after the failure
 
-      flakyService.submit(next, jurors, form) must beLike {
+      flakyService(flaky).submit(next, jurors, form) must beLike {
         case r: RoundService.Resubmitted => (r.round.id === failed.id) and (r.imagesAdded === 20)
       }
       rounds(contest).size === 2 // the previous round and the resumed one: no stray round
@@ -116,14 +124,13 @@ class RoundCreationResubmitSpec extends Specification with TestDb with BeforeAll
 
     "give no images to a juror stopped on the round before the retry" in {
       val (contest, jurors) = setUp()
-      val flakyService = new RoundService(new FlakyDistributor(failures = 1), Round)
+      val flaky = flakyService(new FlakyHandler(failures = 1))
       val form = token()
-      flakyService.submit(newRound(contest, "Round 1"), jurors, form) must
-        throwA[RoundService.RoundDistributionFailed]
+      failedStatus(flaky.submit(newRound(contest, "Round 1"), jurors, form))
       val failed = rounds(contest).head
       RoundUser.setActive(failed.getId, jurors.last, active = false)
 
-      flakyService.submit(newRound(contest, "Round 1"), jurors, form).imagesAdded === 20
+      flaky.submit(newRound(contest, "Round 1"), jurors, form).imagesAdded === 20
       selectionRows(failed.getId).map(_.juryId).toSet === jurors.init.toSet
     }
 
@@ -144,8 +151,7 @@ class RoundCreationResubmitSpec extends Specification with TestDb with BeforeAll
     "fill a round once from a concurrent resubmit and \"Distribute new files\"" in {
       val (contest, jurors) = setUp()
       val form = token()
-      new RoundService(new FlakyDistributor(failures = 1), Round)
-        .submit(newRound(contest, "Round 1"), jurors, form) must throwA[RoundService.RoundDistributionFailed]
+      failedStatus(flakyService(new FlakyHandler(failures = 1)).submit(newRound(contest, "Round 1"), jurors, form))
       val failed = rounds(contest).head
 
       implicit val ec: ExecutionContext = ExecutionContext.global

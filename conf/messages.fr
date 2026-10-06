@@ -287,3 +287,6 @@ value=Valeur
 greeting.template=Modèle de message d'accueil
 send.greeting.to.new.users=Envoyer un message d'accueil aux nouveaux utilisateurs
 check=Vérifier
+job.retry=Réessayer
+job.cancel=Annuler
+job.status=Distribution

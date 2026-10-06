@@ -6,51 +6,74 @@ import db.scalikejdbc.Round.RoundStatRow
 import db.scalikejdbc.{ImageJdbc, Round, RoundImageCounts, RoundUser, SelectionJdbc, User}
 import org.intracer.wmua.cmd.DistributeImages
 import play.api.Logging
-import scalikejdbc.DB
+import play.api.libs.json.Json
+import scalikejdbc.{DB, DBSession}
+import services.distribution.RoundDistributionHandler
+import services.jobs.{Job, JobJdbc, JobScheduler, NewJob, Progress}
 
 import javax.inject.Inject
-import scala.util.control.NonFatal
 
-class RoundService @Inject() (distributeImages: DistributeImages, dao: RoundRepo) extends Logging {
+class RoundService @Inject() (
+    dao: RoundRepo,
+    jobs: JobScheduler,
+    distribution: RoundDistributionHandler
+) extends Logging {
 
-  /** Creates the round and distributes its images: [[submit]], returning the round. */
-  def createNewRound(round: Round, jurorIds: Seq[Long], submitToken: Option[String] = None): Round =
-    submit(round, jurorIds, submitToken).round
+  import RoundService._
 
-  /** Creates a round from the new-round form and distributes its images.
+  /** Creates the round and distributes its images, waiting for the distribution (scripts,
+    * the API, tests): [[submit]], then the job's end.
+    *
+    * @throws RoundService.RoundDistributionFailed if the round was created but its
+    *                                              distribution failed
+    */
+  def createNewRound(round: Round, jurorIds: Seq[Long], submitToken: Option[String] = None): Round = {
+    val submitted = submit(round, jurorIds, submitToken)
+    submitted.job.foreach(j => checkFinished(submitted.round.getId, jobs.await(j.id)))
+    dao.findById(submitted.round.getId).getOrElse(submitted.round)
+  }
+
+  /** Creates a round from the new-round form and starts distributing its images as a
+    * background job ([[RoundDistributionHandler]]); returns at once.
+    *
+    * The round is created hidden from its jurors (`distributing`, inactive) with its
+    * jurors and its job, and its previous rounds frozen, in one transaction. The job
+    * shows the round to its jurors once its images have passed the count check.
     *
     * With a submission token (the form's hidden field, see V59), one submission creates
-    * one round: the token is stored with the round, under a unique index, in the
-    * transaction that creates it. A resubmit of the same form (a double click, a browser
-    * retry after a timeout, Back and Submit) finds that round instead of creating
-    * another one, and finishes its distribution if it failed or stopped short
-    * ([[fillRound]]). Two identical submits at once are decided by the unique index: the
-    * one whose insert fails becomes the resubmit. Without a token (scripts, the API)
-    * every call creates a round.
+    * one round: a resubmit of the same form (a double click, a browser retry, Back and
+    * Submit) finds that round instead, and resumes its distribution if it failed. Two
+    * identical submits at once are decided by the token's unique index. Without a token
+    * (scripts, the API) every call creates a round.
     *
-    * Failures past the round's creation are reported against it
-    * ([[RoundService.RoundDistributionFailed]], [[RoundService.RoundNotFullyDistributed]]),
-    * so the organizer can finish it by submitting the form again, or with "Distribute
-    * new files".
+    * Invalid settings (no jurors, previous rounds of another contest or of mixed rate
+    * types, more jurors per image than jurors) are refused before anything is created.
     */
-  def submit(round: Round, jurorIds: Seq[Long], submitToken: Option[String] = None): RoundService.Submitted =
+  def submit(
+      round: Round,
+      jurorIds: Seq[Long],
+      submitToken: Option[String] = None,
+      createdBy: Option[Long] = None
+  ): Submitted =
     submitToken.flatMap(submitted(_, round.contestId)) match {
-      case Some(existing) => resume(existing)
+      case Some(existing) => resubmitted(existing)
       case None =>
-        val prevRounds = validPreviousRounds(round)
+        RoundDistributionHandler.previousRounds(round)
         val jurors = User.loadJurors(round.contestId, jurorIds).distinct
         require(jurors.nonEmpty, "no jurors selected for the round; nothing to distribute")
-        insert(round, jurors, submitToken) match {
-          case Left(existing) => resume(existing)
-          case Right(created) =>
-            val added = fillOrReport(created.getId, completingCreation = true)
+        require(
+          round.distribution <= jurors.size,
+          s"${round.distribution} jurors per image, but only ${jurors.size} jurors selected"
+        )
+        insert(round, jurors, submitToken, createdBy) match {
+          case Left(existing) => resubmitted(existing)
+          case Right((created, job)) =>
             logger.info(
-              s"Round ${created.getId} created for contest ${created.contestId}: " +
-                s"$added images, ${jurors.size} jurors" +
-                (if (prevRounds.nonEmpty) s", from previous rounds [${prevRounds.flatMap(_.id).mkString(", ")}]"
-                 else "")
+              s"Round ${created.getId} created for contest ${created.contestId} with ${jurors.size} jurors; " +
+                s"distributing its images (job ${job.id})"
             )
-            RoundService.Created(created, added)
+            jobs.started(job.id)
+            Created(created, JobJdbc.findById(job.id).getOrElse(job))
         }
     }
 
@@ -61,23 +84,40 @@ class RoundService @Inject() (distributeImages: DistributeImages, dao: RoundRepo
       round
     }
 
-  /** A known submission again: no new round; finish the existing one's distribution. */
-  private def resume(existing: Round): RoundService.Submitted = {
-    val added = fillOrReport(existing.getId, completingCreation = true)
-    logger.info(s"Round ${existing.getId}: its form was submitted again; $added more images distributed")
-    RoundService.Resubmitted(existing, added)
-  }
+  /** A known submission again: no new round. A failed distribution is resumed; a running
+    * one goes on.
+    */
+  private def resubmitted(existing: Round): Submitted =
+    distributionJob(existing.getId) match {
+      case Some(j) if j.isFailed =>
+        jobs.retry(j.id) match {
+          case Right(job) =>
+            logger.info(s"Round ${existing.getId}: its form was submitted again; its distribution resumed")
+            Resubmitted(existing, Some(job), resumed = true)
+          case Left(_) => Resubmitted(existing, distributionJob(existing.getId), resumed = false)
+        }
+      case other => Resubmitted(existing, other, resumed = false)
+    }
 
-  /** Inserts the round, its submission token and its jurors in one transaction, or
+  /** Inserts the round (hidden until distributed), its submission token, its jurors and
+    * its distribution job, and freezes its previous rounds, in one transaction; or
     * returns the round of the token if another submission of the same form won.
     */
-  private def insert(round: Round, jurors: Seq[User], submitToken: Option[String]): Either[Round, Round] = {
+  private def insert(
+      round: Round,
+      jurors: Seq[User],
+      submitToken: Option[String],
+      createdBy: Option[Long]
+  ): Either[Round, (Round, Job)] = {
     val number = dao.countByContest(round.contestId) + 1
     try
       Right(DB.localTx { implicit session =>
-        val created = dao.create(round.copy(number = number, submitToken = submitToken))
+        val created = dao.create(
+          round.copy(number = number, submitToken = submitToken, active = false, distributing = true)
+        )
         created.addUsersIn(jurors.map(u => RoundUser(created.getId, u.getId, u.roles.head, active = true)))
-        created
+        val job = enqueueOrFail(created, completingCreation = true, imagesBefore = 0L, createdBy)
+        (created, job)
       })
     catch {
       case e: java.sql.SQLIntegrityConstraintViolationException
@@ -86,17 +126,114 @@ class RoundService @Inject() (distributeImages: DistributeImages, dao: RoundRepo
     }
   }
 
-  /** [[fillRound]] for a round being created or resumed: a failure is reported against
-    * the round, which stays for a resubmit or "Distribute new files" to finish.
+  /** Creates the round's distribution job in the caller's transaction, freezing its
+    * previous rounds; throws [[AlreadyDistributing]] (rolling the transaction back, the
+    * freeze included) if the round already has an active one.
     */
-  private def fillOrReport(roundId: Long, completingCreation: Boolean): Int =
-    try fillRound(roundId, completingCreation)
-    catch {
-      case e: RoundService.RoundNotFullyDistributed => throw e
-      case NonFatal(e) =>
-        logger.error(s"Round $roundId: distributing its images failed", e)
-        throw RoundService.RoundDistributionFailed(roundId, RoundService.describe(e))
+  private def enqueueOrFail(
+      round: Round,
+      completingCreation: Boolean,
+      imagesBefore: Long,
+      createdBy: Option[Long]
+  )(implicit session: DBSession): Job = {
+    val state = distribution.initialState(round, imagesBefore)
+    jobs.enqueue(
+      NewJob(
+        kind = RoundDistributionHandler.Kind,
+        contestId = Some(round.contestId),
+        subjectType = Some(RoundDistributionHandler.SubjectType),
+        subjectId = round.id,
+        dedupeKey = Some(RoundDistributionHandler.dedupeKey(round.getId)),
+        params = Json.obj(
+          "roundId" -> round.getId,
+          "completingCreation" -> completingCreation,
+          // for the record: the job reads the round, whose settings don't change once created
+          "settings" -> Json.obj(
+            "previous" -> round.previous,
+            "distribution" -> round.distribution,
+            "prevSelectedBy" -> round.prevSelectedBy,
+            "prevMinAvgRate" -> round.prevMinAvgRate,
+            "topImages" -> round.topImages,
+            "regions" -> round.regions,
+            "monuments" -> round.monuments,
+            "category" -> round.category,
+            "excludeCategory" -> round.excludeCategory,
+            "minMpx" -> round.minMpx,
+            "minImageSize" -> round.minImageSize,
+            "mediaType" -> round.mediaType,
+            "specialNomination" -> round.specialNomination
+          )
+        ),
+        state = state,
+        progress = Progress(unit = Some("images")),
+        createdBy = createdBy
+      )
+    ) match {
+      case Right(job)   => job
+      case Left(active) => throw AlreadyDistributing(active)
     }
+  }
+
+  /** The round's latest distribution job, if it ever had one. */
+  def distributionJob(roundId: Long): Option[Job] =
+    JobJdbc
+      .latestBySubjects(RoundDistributionHandler.Kind, RoundDistributionHandler.SubjectType, Seq(roundId))
+      .get(roundId)
+
+  /** "Distribute new files": distributes to the round, in the background, the images that
+    * qualify for it but aren't in it yet. A failed distribution of the round is resumed
+    * instead; a running one goes on.
+    */
+  def distributeNewFiles(roundId: Long, createdBy: Option[Long] = None): DistributionStart = {
+    val round = dao.findById(roundId).getOrElse(throw new NoSuchElementException(s"Round $roundId not found"))
+    distributionJob(roundId) match {
+      case Some(j) if j.isActive => AlreadyRunning(j)
+      case Some(j) if j.isFailed =>
+        jobs.retry(j.id) match {
+          case Right(job) => Resumed(job)
+          case Left(_)    => AlreadyRunning(distributionJob(roundId).getOrElse(j))
+        }
+      case _ =>
+        RoundDistributionHandler.previousRounds(round)
+        DistributeImages.checkJury(round, User.distributionJurors(roundId))
+        try {
+          val job = DB.localTx { implicit session =>
+            enqueueOrFail(
+              round,
+              completingCreation = round.distributing,
+              imagesBefore = SelectionJdbc.imageCountByRound(roundId),
+              createdBy
+            )
+          }
+          jobs.started(job.id)
+          Started(JobJdbc.findById(job.id).getOrElse(job))
+        } catch {
+          case AlreadyDistributing(active) => AlreadyRunning(active)
+        }
+    }
+  }
+
+  /** [[distributeNewFiles]], waiting for it (scripts, tests).
+    *
+    * @return the number of images this call distributed (0 if it found a distribution
+    *         already running, which it waited for)
+    */
+  def distributeNewImages(roundId: Long): Int = {
+    val start = distributeNewFiles(roundId)
+    val done = jobs.await(start.job.id)
+    checkFinished(roundId, done)
+    start match {
+      case _: AlreadyRunning => 0
+      case _                 => RoundDistributionHandler.imagesAdded(done).toInt
+    }
+  }
+
+  private def checkFinished(roundId: Long, job: Job): Unit =
+    if (!job.isDone)
+      throw RoundDistributionFailed(roundId, job.error.getOrElse(s"the distribution is ${job.status}"))
+
+  /** "Count new files": the number of images [[distributeNewFiles]] would add now. */
+  def newFilesCount(roundId: Long): Long = distribution.countNew(roundId)
 
   /** The round's previous rounds, in its order, looked up in the round's own contest
     * only: another contest's rounds would be frozen and their images copied. An id not
@@ -108,102 +245,6 @@ class RoundService @Inject() (distributeImages: DistributeImages, dao: RoundRepo
       val found = dao.findByIds(round.contestId, round.previousIds)
       round.previousIds.flatMap(id => found.find(_.id.contains(id)))
     }
-
-  private def validPreviousRounds(round: Round): Seq[Round] = {
-    val prevRounds = previousRounds(round)
-    require(
-      Round.sameRateType(prevRounds),
-      s"previous rounds [${prevRounds.flatMap(_.id).mkString(", ")}] must all be of the same rate type"
-    )
-    require(
-      round.previousIds.size == prevRounds.size,
-      s"previous rounds [${round.previousIds.mkString(", ")}] not all found: " +
-        s"got [${prevRounds.flatMap(_.id).mkString(", ")}]"
-    )
-    prevRounds
-  }
-
-  /** Distributes the images that currently qualify for `round` but are not in it yet
-    * (the "Distribute new files" action on an existing round) and verifies the result.
-    *
-    * @return the number of images added
-    */
-  def distributeNewImages(roundId: Long): Int = {
-    val added = fillRound(roundId, completingCreation = false)
-    logger.info(s"Round $roundId: distributed $added new images")
-    added
-  }
-
-  /** Distributes to the round every image that qualifies for it but isn't in it yet: the
-    * one path for a new round, a resubmitted or retried creation and "Distribute new
-    * files". It needs only the round's id, not the request, so it can also run as a
-    * background job.
-    *
-    *  - One fill per round at a time (a per-round lock): a resubmit and "Distribute new
-    *    files" on the same round don't fill it twice; the second finds nothing new.
-    *  - The images go to the round's active jurors ([[User.distributionJurors]]).
-    *  - The previous rounds are frozen (inactive) while their images are copied, so votes
-    *    can't change what qualifies mid-copy. A creation leaves them frozen, as creating
-    *    the next round always has; "Distribute new files" and any failure restore their
-    *    earlier state.
-    *
-    * @return the number of images added
-    */
-  def fillRound(roundId: Long, completingCreation: Boolean): Int =
-    RoundService.roundLock(roundId).synchronized {
-      val round = dao.findById(roundId).getOrElse(throw new NoSuchElementException(s"Round $roundId not found"))
-      val prevRounds = validPreviousRounds(round)
-      val jurors = User.distributionJurors(roundId)
-
-      def restorePrevious(): Unit = prevRounds.foreach(r => Round.setActive(r.getId, active = r.active))
-
-      prevRounds.foreach(r => Round.setActive(r.getId, active = false))
-      val added =
-        try distributeAndVerify(round, prevRounds, jurors)
-        catch {
-          case NonFatal(e) =>
-            restorePrevious()
-            throw e
-        }
-      if (!completingCreation) restorePrevious()
-      added
-    }
-
-  /** Distributes every image that qualifies for `round` but is not in it yet, then
-    * checks that the round's distinct-image count grew by exactly that many. A
-    * shortfall is logged and raised as [[RoundService.RoundNotFullyDistributed]] so
-    * the caller can report it; the round is left in place for a follow-up top-up.
-    *
-    * @return the number of images added
-    */
-  private def distributeAndVerify(
-      round: Round,
-      prevRounds: Seq[Round],
-      jurors: Seq[User]
-  ): Int = {
-    val toAdd = distributeImages.imagesByRound(round, prevRounds)
-    if (toAdd.isEmpty) return 0
-
-    // the verification counts uncached; the "after" count also refreshes the cache
-    val before = SelectionJdbc.imageCountByRound(round.getId)
-    distributeImages.distributeImages(round, toAdd, jurors)
-    val after = RoundImageCounts.refresh(round.getId)(SelectionJdbc.imageCountByRound(round.getId).toInt)
-    val actuallyAdded = (after - before).toInt
-
-    if (actuallyAdded != toAdd.size) {
-      logger.error(
-        s"Round ${round.getId}: tried to distribute ${toAdd.size} images " +
-          s"(from previous rounds [${prevRounds.flatMap(_.id).mkString(", ")}]) " +
-          s"but only $actuallyAdded landed. Retry 'Distribute new files' on the round."
-      )
-      throw RoundService.RoundNotFullyDistributed(
-        round.getId,
-        expected = before.toInt + toAdd.size,
-        actual = before.toInt + actuallyAdded
-      )
-    }
-    actuallyAdded
-  }
 
   def getRoundStat(roundId: Long, round: Round): RoundStat = {
     val rounds = dao.findByContest(round.contestId)
@@ -257,13 +298,18 @@ class RoundService @Inject() (distributeImages: DistributeImages, dao: RoundRepo
     }
   }
 
-  def setCurrentRound(prevRoundIds: Seq[Long], round: Round): Unit = {
+  /** Starts or stops a round (and stops `prevRoundIds`). A frozen round takes the change
+    * when its distribution ends; a round still being created can't be started.
+    *
+    * @return false if the round can't be started: it is still being distributed
+    */
+  def setCurrentRound(prevRoundIds: Seq[Long], round: Round): Boolean = {
     logger.info(
       s"Setting current round ${if (prevRoundIds.nonEmpty) s"from ${prevRoundIds.mkString(", ")}" else ""} to ${round.getId}"
     )
 
-    prevRoundIds.foreach(rId => Round.setActive(rId, active = false))
-    Round.setActive(round.getId, active = round.active)
+    prevRoundIds.foreach(rId => Round.setActiveGuarded(rId, active = false))
+    Round.setActiveGuarded(round.getId, active = round.active)
   }
 }
 
@@ -273,52 +319,46 @@ object RoundService {
   sealed trait Submitted {
     def round: Round
 
-    /** Images distributed by this submission. */
+    /** The round's distribution job, if it has one. */
+    def job: Option[Job]
+
+    /** Images distributed so far by the job this submission started or resumed. */
     def imagesAdded: Int
   }
 
-  /** A new round, created and distributed. */
-  final case class Created(round: Round, imagesAdded: Int) extends Submitted
+  /** A new round, created; its distribution started. */
+  final case class Created(round: Round, createdJob: Job) extends Submitted {
+    def job: Option[Job] = Some(createdJob)
+    def imagesAdded: Int = RoundDistributionHandler.imagesAdded(createdJob).toInt
+  }
 
-  /** The form was submitted before: no new round; the existing round's distribution
-    * finished, if it hadn't.
-    */
-  final case class Resubmitted(round: Round, imagesAdded: Int) extends Submitted {
+  /** The form was submitted before: no new round. A failed distribution was resumed. */
+  final case class Resubmitted(round: Round, job: Option[Job], resumed: Boolean) extends Submitted {
+    def imagesAdded: Int = if (resumed) job.fold(0)(RoundDistributionHandler.imagesAdded(_).toInt) else 0
+
     def message: String =
       s"Round ${round.number} (${round.description}) was already created from this form; " +
         "not creating it a second time" +
-        (if (imagesAdded > 0) s". Distributed its remaining $imagesAdded images." else ".")
+        (if (resumed) ". Its distribution was resumed."
+         else if (job.exists(_.isActive)) ". Its images are still being distributed."
+         else ".")
   }
 
-  /** One lock per round for [[RoundService.fillRound]], striped over a fixed array: no map
-    * that grows with every round. Rounds sharing a stripe only wait for each other.
-    * In-JVM, matching the single app instance.
-    */
-  private val roundLocks = Array.fill(64)(new AnyRef)
+  /** What "Distribute new files" did. */
+  sealed trait DistributionStart { def job: Job }
+  final case class Started(job: Job) extends DistributionStart
+  final case class Resumed(job: Job) extends DistributionStart
+  final case class AlreadyRunning(job: Job) extends DistributionStart
 
-  private def roundLock(roundId: Long): AnyRef =
-    roundLocks(java.lang.Math.floorMod(roundId, roundLocks.length.toLong).toInt)
+  private final case class AlreadyDistributing(active: Job) extends RuntimeException(s"job ${active.id} is active")
 
-  private def describe(e: Throwable): String =
-    Option(e.getMessage).filter(_.nonEmpty).getOrElse(e.getClass.getSimpleName)
-
-  /** Round exists but received fewer images than it should have. Recoverable by the
-    * admin with the "Distribute new files" action; carries the numbers for the UI.
-    */
-  final case class RoundNotFullyDistributed(roundId: Long, expected: Int, actual: Int)
-      extends RuntimeException(
-        s"Round $roundId has $actual of $expected images after distribution. " +
-          "Tick the \"Distribute new files\" box below to add the missing ones."
-      )
-
-  /** The round row was created but image distribution failed outright. The round is
-    * left in place (empty or partial) so the admin can finish it, by submitting the form
-    * again or with "Distribute new files", or delete it, rather than it being silently
-    * orphaned.
+  /** The round row was created but distributing its images failed (or was cancelled).
+    * The round stays, hidden if it was being created, for a Retry or "Distribute new
+    * files" to finish.
     */
   final case class RoundDistributionFailed(roundId: Long, reason: String)
       extends RuntimeException(
         s"Round $roundId was created but distributing its images failed: $reason. " +
-          "Retry with the \"Distribute new files\" box below, or delete the round."
+          "Retry it on the rounds page, or with \"Distribute new files\"."
       )
 }

@@ -269,3 +269,6 @@ value=Значення
 greeting.template=Шаблон привітання
 send.greeting.to.new.users=Надсилати привітання новим користувачам
 check=Перевірити
+job.retry=Повторити
+job.cancel=Скасувати
+job.status=Розподіл

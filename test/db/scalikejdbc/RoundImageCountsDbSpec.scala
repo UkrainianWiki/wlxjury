@@ -18,7 +18,7 @@ class RoundImageCountsDbSpec extends Specification with TestDb with BeforeAll wi
   override protected def before: Any = SharedTestDb.truncateAll()
 
   private lazy val distributor = new DistributeImages(ImageJdbc)
-  private lazy val roundService = new RoundService(distributor, Round)
+  private lazy val roundService = services.TestRoundServices.roundService()
 
   private def count(roundId: Long): Int =
     RoundImageCounts.get(Seq(roundId))(ImageJdbc.imageCountByRounds)(roundId)

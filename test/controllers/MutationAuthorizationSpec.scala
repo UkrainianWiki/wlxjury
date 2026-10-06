@@ -33,8 +33,7 @@ class MutationAuthorizationSpec extends PlaySpecification with PlayTestDb {
     new RoundController(
       app.injector.instanceOf[ControllerComponents],
       mock[ContestController],
-      new RoundService(new DistributeImages(ImageJdbc), Round),
-      new DistributeImages(ImageJdbc),
+      services.TestRoundServices.roundService(),
       new BlockingExecutionContext(app.actorSystem)
     )
 

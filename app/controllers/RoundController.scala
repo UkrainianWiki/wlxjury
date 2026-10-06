@@ -2,7 +2,6 @@ package controllers
 
 import controllers.EditRound.{editRoundForm, jurorsMapping}
 import db.scalikejdbc._
-import org.intracer.wmua.cmd.DistributeImages
 import org.scalawiki.wlx.dto.SpecialNomination
 import play.api.Logging
 import play.api.data.Form
@@ -12,9 +11,12 @@ import play.api.libs.json.Json
 import play.api.mvc.{AnyContent, ControllerComponents, EssentialAction, Request, RequestHeader, Result}
 import play.twirl.api.Html
 import services.RoundService
+import services.distribution.RoundDistributionHandler
+import services.jobs.JobJdbc
 
 import javax.inject.Inject
 import modules.BlockingExecutionContext
+import scala.concurrent.{ExecutionContext, Future}
 import scala.util.control.NonFatal
 
 /** Controller for displaying pages related to contest rounds
@@ -24,7 +26,6 @@ class RoundController @Inject() (
     cc: ControllerComponents,
     val contestsController: ContestController,
     roundsService: RoundService,
-    distributeImages: DistributeImages,
     blocking: BlockingExecutionContext
 ) extends Secured(cc)
     with I18nSupport
@@ -47,6 +48,8 @@ class RoundController @Inject() (
               user,
               rounds,
               RoundImageCounts.get(rounds.flatMap(_.id))(ImageJdbc.imageCountByRounds),
+              JobJdbc.latestBySubjects(RoundDistributionHandler.Kind, RoundDistributionHandler.SubjectType,
+                rounds.flatMap(_.id)),
               editRoundForm,
               imagesForm.fill(contest.images),
               selectRoundForm,
@@ -113,19 +116,31 @@ class RoundController @Inject() (
       jurorsMapping,
       contestsController.regions(contestId),
       contestSpecialNominations(contestId),
-      submitToken
+      submitToken,
+      round.id.flatMap(roundsService.distributionJob)
     )
   }
 
   /** The number of files "Distribute new files" would add to the round, as JSON
-    * `{"count": n}`: the full image filtering (which may query Commons), so it runs
-    * only when the organizer asks for it, not on every view of the edit page.
+    * `{"count": n}`: the distribution's own windows and filters, read only (which may
+    * query Commons), so it runs only when the organizer asks for it. Off the request
+    * threads: on one thread of its own ([[RoundController.countContext]]), so a few
+    * counts at once queue there instead of holding the blocking dispatcher.
     */
   def newFilesCount(id: Long): EssentialAction =
-    withAuthOn(blocking)(rolePermission(User.ADMIN_ROLES)) { user => _ =>
-      withAdminRound(user, id, NotFound(Json.obj("error" -> "round not found"))) { round =>
-        val prevRounds = roundsService.previousRounds(round)
-        Ok(Json.obj("count" -> distributeImages.imagesByRound(round, prevRounds).size))
+    Action.async { request =>
+      implicit val ec: ExecutionContext = blocking
+      Future(userFromRequest(request)).flatMap {
+        case None => Future.successful(onUnAuthenticated(request))
+        case Some(user) if !rolePermission(User.ADMIN_ROLES)(user) => Future.successful(onUnAuthorized(user))
+        case Some(user) =>
+          Future(Round.findById(id)).flatMap {
+            case None => Future.successful(NotFound(Json.obj("error" -> "round not found")))
+            case Some(round) if !contestPermission(User.ADMIN_ROLES, Some(round.contestId))(user) =>
+              Future.successful(onUnAuthorized(user))
+            case Some(round) =>
+              Future(Ok(Json.obj("count" -> roundsService.newFilesCount(round.getId))))(RoundController.countContext)
+          }
       }
     }
 
@@ -224,25 +239,16 @@ class RoundController @Inject() (
             else round.id match {
               case None =>
                 try {
-                  roundsService.submit(round, editForm.jurors, RoundController.submitToken(request)) match {
+                  roundsService.submit(round, editForm.jurors, RoundController.submitToken(request), user.id) match {
+                    // the distribution runs in the background: the rounds list shows its progress
                     case _: RoundService.Created => toRoundsList
-                    // The same form submitted again (a double click, or the first one
-                    // outlasted the browser's or the proxy's wait): no second round; the
-                    // first one's distribution was finished if it hadn't.
+                    // The same form submitted again (a double click, or Back and Submit):
+                    // no second round; a failed distribution of the first was resumed.
                     case resubmitted: RoundService.Resubmitted =>
                       logger.warn(s"Contest $contestId: ${resubmitted.message}")
                       toRoundsList.flashing("error" -> resubmitted.message)
                   }
                 } catch {
-                  // Round row exists but its images are incomplete / failed: send the
-                  // admin to its edit page, where "Distribute new files" can retry.
-                  case e: RoundService.RoundNotFullyDistributed =>
-                    logger.error(e.getMessage)
-                    Redirect(routes.RoundController.editRound(Some(e.roundId), contestId, None))
-                      .flashing("error" -> e.getMessage)
-                  case e: RoundService.RoundDistributionFailed =>
-                    Redirect(routes.RoundController.editRound(Some(e.roundId), contestId, None))
-                      .flashing("error" -> e.getMessage)
                   // Rejected before anything was created (bad input): keep the form.
                   case NonFatal(e) =>
                     logger.warn(s"Rejected round creation for contest $contestId: ${detail(e)}")
@@ -252,24 +258,23 @@ class RoundController @Inject() (
               case Some(roundId) =>
                 withAdminRound(user, roundId, NotFound(s"Round $roundId not found")) {
                   case stored if stored.contestId != contestId => onUnAuthorized(user)
-                  case _ =>
-                    Round.updateRound(roundId, round)
-                    if (!editForm.newImages) toRoundsList
+                  case stored =>
+                    val notStarted =
+                      if (Round.updateRound(roundId, round)) Nil
+                      else Seq("error" -> RoundController.stillDistributing(stored))
+                    if (!editForm.newImages) toRoundsList.flashing(notStarted: _*)
                     else
                       try {
-                        roundsService.distributeNewImages(roundId)
-                        toRoundsList
+                        roundsService.distributeNewFiles(roundId, user.id) match {
+                          case RoundService.AlreadyRunning(_) =>
+                            toRoundsList.flashing(
+                              "error" -> s"Round ${stored.number}: its images are already being distributed.")
+                          case _ => toRoundsList.flashing(notStarted: _*)
+                        }
                       } catch {
-                        case e: RoundService.RoundNotFullyDistributed =>
-                          logger.error(e.getMessage)
-                          reRender(Round.findById(roundId).getOrElse(round), e.getMessage)
                         case NonFatal(e) =>
-                          logger.error(s"Failed to distribute new files for round $roundId", e)
-                          reRender(
-                            Round.findById(roundId).getOrElse(round),
-                            "round.distribute.failed",
-                            detail(e)
-                          )
+                          logger.warn(s"Round $roundId: could not start distributing new files: ${detail(e)}")
+                          reRender(Round.findById(roundId).getOrElse(round), "round.distribute.failed", detail(e))
                       }
                 }
             }
@@ -287,8 +292,9 @@ class RoundController @Inject() (
           selectRound =>
             selectRound.roundId.toLongOption.fold[Result](BadRequest) { id =>
               withAdminRound(user, id, NotFound(s"Round $id not found")) { round =>
-                roundsService.setCurrentRound(Nil, round.copy(active = selectRound.active))
-                Redirect(routes.RoundController.rounds(Some(round.contestId)))
+                val toList = Redirect(routes.RoundController.rounds(Some(round.contestId)))
+                if (roundsService.setCurrentRound(Nil, round.copy(active = selectRound.active))) toList
+                else toList.flashing("error" -> RoundController.stillDistributing(round))
               }
             }
         )
@@ -444,6 +450,18 @@ class RoundController @Inject() (
 }
 
 object RoundController {
+
+  /** "Count new files" runs here, one at a time: a full read of the round's candidates. */
+  private[controllers] lazy val countContext: ExecutionContext =
+    ExecutionContext.fromExecutor(java.util.concurrent.Executors.newSingleThreadExecutor { (r: Runnable) =>
+      val t = new Thread(r, "count-new-files")
+      t.setDaemon(true)
+      t
+    })
+
+  def stillDistributing(round: Round): String =
+    s"Round ${round.number} (${round.description}) can't be started yet: its images are still being " +
+      "distributed. It starts by itself once its distribution has finished."
 
   private val TokenPattern = "[0-9a-fA-F-]{36}".r
 
