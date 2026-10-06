@@ -63,4 +63,30 @@ class FindByRoundSelectionSpec extends Specification with BeforeAll with TestDb 
       }
     }
   }
+
+  "findRoundJurors" should {
+
+    "return the jurors with selections, not round_user, when there are selections" in {
+      withCleanDb { implicit session =>
+        implicit val contest: ContestJury = ContestJuryJdbc.create(Some(40), "contest40", 2040, "country40")
+        val round  = roundDao.create(mkRound(contest.getId))
+        val jurors = createUsers("jury", 1, 2)
+        selectionDao.create(pageId = 30L, rate = 0, juryId = jurors(1).getId, roundId = round.getId)
+        round.addUsers(jurors.map(u => RoundUser(round.getId, u.getId, "jury", active = true)))
+
+        User.findRoundJurors(round.getId).map(_.id) must_== Seq(jurors(1).id)
+      }
+    }
+
+    "fall back to round_user for a round without selections" in {
+      withCleanDb { implicit session =>
+        implicit val contest: ContestJury = ContestJuryJdbc.create(Some(50), "contest50", 2050, "country50")
+        val round  = roundDao.create(mkRound(contest.getId))
+        val jurors = createUsers("jury", 1, 2, 3)
+        round.addUsers(Seq(jurors(2), jurors(0)).map(u => RoundUser(round.getId, u.getId, "jury", active = true)))
+
+        User.findRoundJurors(round.getId).map(_.id) must_== Seq(jurors(0).id, jurors(2).id)
+      }
+    }
+  }
 }

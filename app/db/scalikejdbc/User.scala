@@ -261,6 +261,18 @@ object User extends CRUDMapper[User] {
     if (ids.isEmpty) Nil else findAllBy(sqls.in(u.id, ids)).sortBy(_.id)
   }
 
+  /** The round's jurors, ordered by id: [[findByRoundSelection]], or, for a round
+    * without selection rows (its first distribution failed and was rolled back), the
+    * users assigned to it in round_user, so that "Distribute new files" can still fill it.
+    */
+  def findRoundJurors(roundId: Long): Seq[User] =
+    findByRoundSelection(roundId) match {
+      case Nil =>
+        val ids = RoundUser.byRoundId(roundId).map(_.userId).distinct
+        if (ids.isEmpty) Nil else findAllBy(sqls.in(u.id, ids)).sortBy(_.id)
+      case jurors => jurors
+    }
+
   def countByEmail(id: Long, email: String): Long =
     countBy(
       sqls

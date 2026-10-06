@@ -20,14 +20,19 @@ class RoundService @Inject() (distributeImages: DistributeImages, dao: RoundRepo
     * One creation per contest at a time, and a submission repeating a round created in
     * the last [[RoundService.DuplicateWindow]] is refused ([[RoundService.DuplicateRound]]):
     * a distribution can outlast the browser's or the proxy's wait, and the organizer's
-    * resubmit would otherwise create a second copy of the round.
+    * resubmit would otherwise create a second copy of the round. A round without images
+    * doesn't count: its distribution failed and was rolled back, so submitting it again
+    * is a retry.
     */
   def createNewRound(round: Round, jurorIds: Seq[Long]): Round =
     RoundService.lock("contest", round.contestId).synchronized {
       val since = ZonedDateTime.now.minus(RoundService.DuplicateWindow)
       dao
         .findByContest(round.contestId)
-        .find(r => !r.createdAt.isBefore(since) && RoundService.sameSettings(r, round))
+        .find(r =>
+          !r.createdAt.isBefore(since) && RoundService.sameSettings(r, round) &&
+            SelectionJdbc.imageCountByRound(r.getId) > 0
+        )
         .foreach(r => throw RoundService.DuplicateRound(r))
       create(round, jurorIds)
     }
@@ -106,7 +111,7 @@ class RoundService @Inject() (distributeImages: DistributeImages, dao: RoundRepo
       round.previousIds.size == prevRounds.size,
       s"previous rounds [${round.previousIds.mkString(", ")}] not all found"
     )
-    val jurors = User.findByRoundSelection(roundId).distinct
+    val jurors = User.findRoundJurors(roundId).distinct
     val added = distributeAndVerify(round, prevRounds, jurors)
     logger.info(s"Round $roundId: distributed $added new images")
     added

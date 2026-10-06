@@ -61,5 +61,32 @@ class RoundCreationResubmitSpec extends Specification with TestDb with BeforeAll
       roundDao.findByContest(contest.getId).size === 1
       SelectionJdbc.imageCountByRound(roundDao.findByContest(contest.getId).head.getId) === 20
     }
+
+    "create the round again when the first creation's distribution failed" in {
+      val (contest, jurors) = setUp()
+      val failed = failedRound(contest, "Round 1", jurors)
+      val created = service.createNewRound(newRound(contest, "Round 1"), jurors)
+      created.id !== failed.id
+      SelectionJdbc.imageCountByRound(created.getId) === 20
+    }
+  }
+
+  "distributeNewImages" should {
+
+    "fill a round whose first distribution failed" in {
+      val (contest, jurors) = setUp()
+      val failed = failedRound(contest, "Round 1", jurors)
+      service.distributeNewImages(failed.getId) === 20
+      SelectionJdbc.imageCountByRound(failed.getId) === 20
+    }
+  }
+
+  /** What a failed creation leaves behind: the round row and its round_user rows, but
+    * no selection rows (the distribution's transaction rolled back).
+    */
+  private def failedRound(contest: ContestJury, name: String, jurors: Seq[Long]): Round = {
+    val round = roundDao.create(newRound(contest, name).copy(number = 1))
+    round.addUsers(jurors.map(id => RoundUser(round.getId, id, "jury", active = true)))
+    round
   }
 }

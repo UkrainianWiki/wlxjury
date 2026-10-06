@@ -78,7 +78,7 @@ class RoundController @Inject() (
 
       val withTopImages = topImages.map(n => round.copy(topImages = Some(n))).getOrElse(round)
 
-      val jurors = withTopImages.id.fold(User.loadJurors(contestId))(User.findByRoundSelection).sorted
+      val jurors = withTopImages.id.fold(User.loadJurors(contestId))(User.findRoundJurors).sorted
       val filledRound = editRoundForm.fill(EditRound(withTopImages, jurors.flatMap(_.id), None))
       Ok(roundFormView(user, withTopImages, filledRound, Some(rounds), Some(jurors)))
     }
@@ -105,7 +105,7 @@ class RoundController @Inject() (
       round.id.isEmpty,
       knownRounds.getOrElse(Round.findByContest(contestId)),
       Some(contestId),
-      knownJurors.getOrElse(round.id.fold(User.loadJurors(contestId))(User.findByRoundSelection).sorted),
+      knownJurors.getOrElse(round.id.fold(User.loadJurors(contestId))(User.findRoundJurors).sorted),
       jurorsMapping,
       contestsController.regions(contestId),
       contestSpecialNominations(contestId)
