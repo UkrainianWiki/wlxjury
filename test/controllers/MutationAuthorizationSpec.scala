@@ -1,13 +1,16 @@
 package controllers
 
-import db.scalikejdbc.{PlayTestDb, Round, SelectionJdbc, User}
+import db.scalikejdbc.{ImageJdbc, PlayTestDb, Round, SelectionJdbc, User}
 import modules.BlockingExecutionContext
 import org.apache.pekko.stream.Materializer
 import play.api.Application
+import play.api.mvc.ControllerComponents
+import org.intracer.wmua.cmd.DistributeImages
 import org.intracer.wmua.{CommentJdbc, Image}
+import org.specs2.mock.Mockito.mock
 import play.api.test.CSRFTokenHelper._
 import play.api.test.{FakeRequest, Helpers, PlaySpecification}
-import services.GalleryService
+import services.{GalleryService, RoundService}
 
 class MutationAuthorizationSpec extends PlaySpecification with PlayTestDb {
 
@@ -24,6 +27,29 @@ class MutationAuthorizationSpec extends PlaySpecification with PlayTestDb {
 
   private def imageDiscussionController =
     new ImageDiscussionController(Helpers.stubControllerComponents())
+
+  // the app's components: stubControllerComponents' body parser drops the form
+  private def roundController(app: Application) =
+    new RoundController(
+      app.injector.instanceOf[ControllerComponents],
+      mock[ContestController],
+      new RoundService(new DistributeImages(ImageJdbc), Round),
+      new DistributeImages(ImageJdbc),
+      new BlockingExecutionContext(app.actorSystem)
+    )
+
+  /** The round form as the edit page posts it. */
+  private def saveRoundRequest(email: String, contestId: Long, roundId: Option[Long], name: String) =
+    FakeRequest(POST, "/admin/rounds/save")
+      .withFormUrlEncodedBody(
+        Seq(
+          "number" -> "1", "name" -> name, "contest" -> contestId.toString, "roles" -> "jury",
+          "distribution" -> "0", "rates" -> "1", "minMpx" -> "", "minSize" -> "",
+          "mediaType" -> "all", "jurors[0]" -> "1"
+        ) ++ roundId.map(id => "id" -> id.toString): _*
+      )
+      .withSession(Secured.UserName -> email)
+      .withCSRFToken
 
   private def image(id: Long, monumentId: String): Image =
     Image(id, s"File:Image$id.jpg", None, None, 640, 480, Some(monumentId))
@@ -84,6 +110,69 @@ class MutationAuthorizationSpec extends PlaySpecification with PlayTestDb {
 
         expectUnauthorized(result)
         SelectionJdbc.findAll() must beEmpty
+      }
+    }
+  }
+
+  "RoundController.saveRound" should {
+    "save a round of the admin's own contest" in {
+      testDbApp { app =>
+        implicit val materializer: Materializer = app.materializer
+        val homeContest = contestDao.create(None, "WLE", 2024, "Ukraine")
+        val homeRound = roundDao.create(Round(None, 1, Some("Home"), contestId = homeContest.getId, active = true))
+        val admin = userDao.create(
+          User("Admin", "admin@example.com", None, Set(User.ADMIN_ROLE), contestId = homeContest.id)
+        )
+
+        val result = call(
+          roundController(app).saveRound(),
+          saveRoundRequest(admin.email, homeContest.getId, homeRound.id, "Renamed")
+        )
+
+        status(result) mustEqual SEE_OTHER
+        redirectLocation(result) must beSome.which(_.startsWith("/admin/rounds"))
+        roundDao.findById(homeRound.getId).flatMap(_.name) must beSome("Renamed")
+      }
+    }
+
+    "reject creating a round in another contest" in {
+      testDbApp { app =>
+        implicit val materializer: Materializer = app.materializer
+        val homeContest = contestDao.create(None, "WLE", 2024, "Ukraine")
+        val foreignContest = contestDao.create(None, "WLM", 2024, "Poland")
+        val admin = userDao.create(
+          User("Admin", "admin@example.com", None, Set(User.ADMIN_ROLE), contestId = homeContest.id)
+        )
+
+        val result = call(
+          roundController(app).saveRound(),
+          saveRoundRequest(admin.email, foreignContest.getId, None, "Intruder")
+        )
+
+        expectUnauthorized(result)
+        roundDao.findByContest(foreignContest.getId) must beEmpty
+      }
+    }
+
+    "reject editing another contest's round" in {
+      testDbApp { app =>
+        implicit val materializer: Materializer = app.materializer
+        val homeContest = contestDao.create(None, "WLE", 2024, "Ukraine")
+        val foreignContest = contestDao.create(None, "WLM", 2024, "Poland")
+        val foreignRound =
+          roundDao.create(Round(None, 1, Some("Foreign"), contestId = foreignContest.getId, active = true))
+        val admin = userDao.create(
+          User("Admin", "admin@example.com", None, Set(User.ADMIN_ROLE), contestId = homeContest.id)
+        )
+
+        // the admin's own contest in the form, another contest's round id
+        val result = call(
+          roundController(app).saveRound(),
+          saveRoundRequest(admin.email, homeContest.getId, foreignRound.id, "Renamed")
+        )
+
+        expectUnauthorized(result)
+        roundDao.findById(foreignRound.getId).flatMap(_.name) must beSome("Foreign")
       }
     }
   }

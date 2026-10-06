@@ -119,7 +119,7 @@ class RoundController @Inject() (
   def newFilesCount(id: Long): EssentialAction =
     withAuthOn(blocking)(rolePermission(User.ADMIN_ROLES)) { user => _ =>
       withAdminRound(user, id, NotFound(Json.obj("error" -> "round not found"))) { round =>
-        val prevRounds = round.previousIds.flatMap(Round.findById)
+        val prevRounds = roundsService.previousRounds(round)
         Ok(Json.obj("count" -> distributeImages.imagesByRound(round, prevRounds).size))
       }
     }
@@ -164,18 +164,21 @@ class RoundController @Inject() (
         .bindFromRequest()
         .fold(
           formWithErrors => {
-            val contestId: Option[Long] = formWithErrors.data.get("contest").map(_.toLong)
-            BadRequest(
-              views.html.editRound(
-                user,
-                formWithErrors,
-                newRound = !formWithErrors.data.get("id").exists(_.nonEmpty),
-                rounds = contestId.map(Round.findByContest).getOrElse(Nil),
-                contestId = contestId,
-                jurors = User.loadJurors(contestId.get),
-                jurorsMapping = jurorsMapping
+            val contestId: Option[Long] = formWithErrors.data.get("contest").flatMap(_.toLongOption)
+            // the form lists the contest's rounds and jurors: only for its own admins
+            if (!contestPermission(User.ADMIN_ROLES, contestId)(user)) onUnAuthorized(user)
+            else
+              BadRequest(
+                views.html.editRound(
+                  user,
+                  formWithErrors,
+                  newRound = !formWithErrors.data.get("id").exists(_.nonEmpty),
+                  rounds = contestId.map(Round.findByContest).getOrElse(Nil),
+                  contestId = contestId,
+                  jurors = contestId.map(User.loadJurors).getOrElse(Nil),
+                  jurorsMapping = jurorsMapping
+                )
               )
-            )
           },
           editForm => {
             val round = editForm.round.copy(active = true)
@@ -206,7 +209,10 @@ class RoundController @Inject() (
                 .replace("}", ")")
                 .take(500)
 
-            round.id match {
+            // the submitted contest must be one the user administers; an edited round
+            // must belong to it (checked below)
+            if (!contestPermission(User.ADMIN_ROLES, Some(contestId))(user)) onUnAuthorized(user)
+            else round.id match {
               case None =>
                 try {
                   roundsService.createNewRound(round, editForm.jurors)
@@ -233,24 +239,28 @@ class RoundController @Inject() (
                 }
 
               case Some(roundId) =>
-                Round.updateRound(roundId, round)
-                if (!editForm.newImages) toRoundsList
-                else
-                  try {
-                    roundsService.distributeNewImages(roundId)
-                    toRoundsList
-                  } catch {
-                    case e: RoundService.RoundNotFullyDistributed =>
-                      logger.error(e.getMessage)
-                      reRender(Round.findById(roundId).getOrElse(round), e.getMessage)
-                    case NonFatal(e) =>
-                      logger.error(s"Failed to distribute new files for round $roundId", e)
-                      reRender(
-                        Round.findById(roundId).getOrElse(round),
-                        "round.distribute.failed",
-                        detail(e)
-                      )
-                  }
+                withAdminRound(user, roundId, NotFound(s"Round $roundId not found")) {
+                  case stored if stored.contestId != contestId => onUnAuthorized(user)
+                  case _ =>
+                    Round.updateRound(roundId, round)
+                    if (!editForm.newImages) toRoundsList
+                    else
+                      try {
+                        roundsService.distributeNewImages(roundId)
+                        toRoundsList
+                      } catch {
+                        case e: RoundService.RoundNotFullyDistributed =>
+                          logger.error(e.getMessage)
+                          reRender(Round.findById(roundId).getOrElse(round), e.getMessage)
+                        case NonFatal(e) =>
+                          logger.error(s"Failed to distribute new files for round $roundId", e)
+                          reRender(
+                            Round.findById(roundId).getOrElse(round),
+                            "round.distribute.failed",
+                            detail(e)
+                          )
+                      }
+                }
             }
           }
         )

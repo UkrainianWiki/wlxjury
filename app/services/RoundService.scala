@@ -37,8 +37,19 @@ class RoundService @Inject() (distributeImages: DistributeImages, dao: RoundRepo
       create(round, jurorIds)
     }
 
+  /** The round's previous rounds, in its order, looked up in the round's own contest
+    * only: another contest's rounds would be frozen and their images copied. An id not
+    * found there is left out, which the callers' "not all found" check rejects.
+    */
+  def previousRounds(round: Round): Seq[Round] =
+    if (round.previousIds.isEmpty) Nil
+    else {
+      val found = dao.findByIds(round.contestId, round.previousIds)
+      round.previousIds.flatMap(id => found.find(_.id.contains(id)))
+    }
+
   private def create(round: Round, jurorIds: Seq[Long]): Round = {
-    val prevRounds = round.previousIds.flatMap(dao.findById)
+    val prevRounds = previousRounds(round)
     require(
       Round.sameRateType(prevRounds),
       s"previous rounds [${prevRounds.flatMap(_.id).mkString(", ")}] must all be of the same rate type"
@@ -106,7 +117,7 @@ class RoundService @Inject() (distributeImages: DistributeImages, dao: RoundRepo
     val round = dao.findById(roundId).getOrElse(
       throw new NoSuchElementException(s"Round $roundId not found")
     )
-    val prevRounds = round.previousIds.flatMap(dao.findById)
+    val prevRounds = previousRounds(round)
     require(
       round.previousIds.size == prevRounds.size,
       s"previous rounds [${round.previousIds.mkString(", ")}] not all found"

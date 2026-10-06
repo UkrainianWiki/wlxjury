@@ -69,6 +69,18 @@ class RoundCreationResubmitSpec extends Specification with TestDb with BeforeAll
       created.id !== failed.id
       SelectionJdbc.imageCountByRound(created.getId) === 20
     }
+
+    "not take another contest's round as a previous round" in {
+      val (contest, jurors) = setUp()
+      val other = createContests(11).head
+      val foreign = roundDao.create(Round(None, 1, Some("Foreign"), other.getId, active = true))
+      service.createNewRound(
+        newRound(contest, "Round 2").copy(previous = Some(foreign.getId.toString)),
+        jurors
+      ) must throwA[IllegalArgumentException]
+      roundDao.findById(foreign.getId).map(_.active) === Some(true)
+      roundDao.findByContest(contest.getId) must beEmpty
+    }
   }
 
   "distributeNewImages" should {
