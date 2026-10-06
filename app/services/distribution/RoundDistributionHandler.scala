@@ -96,8 +96,9 @@ class RoundDistributionHandler @Inject() (distributeImages: DistributeImages, co
 
   override def forget(jobId: Long): Unit = contexts.remove(jobId)
 
-  /** Hook for tests: runs in a chunk's transaction just before its rows are inserted. */
+  /** Hooks for tests: run in a chunk's transaction before and after its rows are inserted. */
   protected def beforeInsert(round: Round, images: Seq[Image])(implicit session: DBSession): Unit = ()
+  protected def afterInsert(round: Round, rows: Seq[Selection])(implicit session: DBSession): Unit = ()
 
   private def context(roundId: Long): Context = {
     val round = Round.findById(roundId).getOrElse(throw new NoSuchElementException(s"Round $roundId not found"))
@@ -195,6 +196,7 @@ class RoundDistributionHandler @Inject() (distributeImages: DistributeImages, co
           val rows = DistributeImages.assign(c.round, passed, c.jurors, st1.position)
           beforeInsert(c.round, passed)
           DistributeImages.insertRows(c.round, rows)
+          afterInsert(c.round, rows)
           if (rows.nonEmpty) ctx.afterCommit(RoundImageCounts.invalidate(roundId))
           continue(
             st1.copy(

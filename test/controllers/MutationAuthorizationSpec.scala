@@ -88,6 +88,64 @@ class MutationAuthorizationSpec extends PlaySpecification with PlayTestDb {
     }
   }
 
+  "GalleryController.selectWS on the juror's own round" should {
+    "take votes only while the round is open to its jurors" in {
+      testDbApp { app =>
+        implicit val materializer: Materializer = app.materializer
+        val contest = contestDao.create(None, "WLE", 2024, "Ukraine")
+        val juror = userDao.create(User("Juror", "juror@example.com", None, Set("jury"), contestId = contest.id))
+        imageDao.batchInsert(Seq(image(1004L, "UA-1004")))
+
+        def vote(round: Round) = {
+          SelectionJdbc.create(1004L, 0, juror.getId, round.getId)
+          val result = galleryController(app)
+            .selectWS(round.getId, 1004L, select = 1, module = "gallery", rate = Some(0), criteria = None)
+            .apply(sessionRequest(POST, s"/rate/round/${round.getId}/pageid/1004/select/1?rate=0", juror.email))
+            .run()
+          (status(result), SelectionJdbc.findBy(1004L, juror.getId, round.getId).map(_.rate))
+        }
+
+        val open = roundDao.create(Round(None, 1, contestId = contest.getId, active = true))
+        val stopped = roundDao.create(Round(None, 2, contestId = contest.getId, active = false))
+        val distributing = roundDao.create(Round(None, 3, contestId = contest.getId, active = true, distributing = true))
+
+        vote(open) === ((OK, Some(1)))
+        vote(stopped) === ((CONFLICT, Some(0))) // e.g. a previous round frozen during a distribution
+        vote(distributing) === ((CONFLICT, Some(0)))
+      }
+    }
+  }
+
+  "JobController" should {
+    "let only the admins of the job's contest see, cancel or retry it" in {
+      testDbApp { app =>
+        implicit val materializer: Materializer = app.materializer
+        val home = contestDao.create(None, "WLE", 2024, "Ukraine")
+        val foreign = contestDao.create(None, "WLM", 2024, "Poland")
+        val admin = userDao.create(User("Admin", "admin@example.com", None, Set("admin"), contestId = home.id))
+        val scheduler = services.TestRoundServices.inlineScheduler(services.TestRoundServices.handler())
+        val job = scalikejdbc.DB.localTx { implicit s =>
+          scheduler.enqueue(services.jobs.NewJob(
+            services.distribution.RoundDistributionHandler.Kind, contestId = foreign.id,
+            subjectType = Some("round"), subjectId = Some(1L))).toOption.get
+        }
+        val controller = new JobController(
+          app.injector.instanceOf[ControllerComponents], scheduler, new BlockingExecutionContext(app.actorSystem))
+
+        expectUnauthorized(controller.status(job.id)
+          .apply(sessionRequest(GET, s"/admin/jobs/${job.id}", admin.email)).run())
+        expectUnauthorized(controller.cancel(job.id)
+          .apply(sessionRequest(POST, s"/admin/jobs/${job.id}/cancel", admin.email)).run())
+        services.jobs.JobJdbc.findById(job.id).map(_.status) === Some(services.jobs.JobStatus.Running)
+
+        val own = userDao.create(User("Own", "own@example.com", None, Set("admin"), contestId = foreign.id))
+        val ok = controller.status(job.id).apply(sessionRequest(GET, s"/admin/jobs/${job.id}", own.email)).run()
+        status(ok) === OK
+        (contentAsJson(ok) \ "status").as[String] === "running"
+      }
+    }
+  }
+
   "LargeViewController.rateByPageId" should {
     "reject cross-contest rating mutations" in {
       testDbApp { app =>

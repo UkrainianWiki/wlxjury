@@ -260,6 +260,7 @@ object Round extends RoundRepo with CRUDMapper[Round] {
           column.active -> round.active,
           column.optionalRate -> round.optionalRate,
           column.juryOrgView -> round.juryOrgView,
+          column.minMpx -> round.minMpx,
           column.previous -> round.previous,
           column.prevSelectedBy -> round.prevSelectedBy,
           column.prevMinAvgRate -> round.prevMinAvgRate,
