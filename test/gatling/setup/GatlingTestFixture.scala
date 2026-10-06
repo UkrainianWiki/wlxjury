@@ -43,7 +43,13 @@ object GatlingTestFixture {
         "db.default.url"      -> container.jdbcUrl,
         "play.filters.disabled"              -> Seq.empty[String],
         "play.filters.csrf.method.whiteList" -> Seq("GET", "HEAD", "OPTIONS", "POST"),
-        "play.http.session.secure"           -> false
+        "play.http.session.secure"           -> false,
+        // the test config runs jobs inline; the benchmark runs them as production does
+        "jobs.mode"                              -> "background",
+        "jobs.workers"                           -> GatlingConfig.Jobs.workers,
+        "jobs.concurrency.round_distribution"    -> GatlingConfig.Jobs.distributionConcurrency,
+        "jobs.roundDistribution.chunkRows"       -> GatlingConfig.Jobs.chunkRows,
+        "jobs.pollInterval"                      -> "2 seconds"
       ))
       .build()
     val server = TestServer(port, app)

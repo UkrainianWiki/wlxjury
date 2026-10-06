@@ -12,9 +12,11 @@ import scala.concurrent.duration._
   *
   * One organizer, sequential steps, no concurrency: distribution is a rare, one at a time
   * admin action, so what matters is its latency and memory, not throughput. Each step is
-  * a real POST /admin/rounds/save as the round form submits it, followed by a check of
-  * the new round's selection rows (read from the DB: the simulation runs in the app's
-  * JVM) and a GET of its /roundstat page.
+  * a real POST /admin/rounds/save as the round form submits it, which starts the round's
+  * distribution as a background job and returns at once; the step then polls the job's
+  * status until it ends, checks the new round's selection rows (read from the DB: the
+  * simulation runs in the app's JVM) and GETs its /roundstat page. A step's time is from
+  * the submit to the job's end.
   *
   *  1. A first round from the contest category: every fixture image, `jurorsPerImage`
   *     jurors per image.
@@ -81,7 +83,15 @@ class RoundDistributionSimulation extends Simulation {
       .check(status.is(303)))
       .exitHereIfFailed
 
-  /** One distribution step: POST the form, then check the round's selection rows.
+  private def latestJobId(roundId: Long): Option[Long] =
+    sql"""SELECT MAX(id) FROM job WHERE kind = 'round_distribution' AND subject_type = 'round'
+          AND subject_id = $roundId""".map(_.longOpt(1)).single().flatten
+
+  private val activeStatuses = Set("queued", "running")
+
+  /** One distribution step: POST the form (it returns at once: the distribution is a
+    * background job), poll the job's status (GET /admin/jobs/:id) until it ends, then
+    * check the round's selection rows. The step's time is from the submit to the job's end.
     *
     * @param roundName  the name of the round the step creates or saves
     * @param expected   (images, rows) the round should have afterwards
@@ -90,31 +100,41 @@ class RoundDistributionSimulation extends Simulation {
       expected: => (Int, Int)) =
     exec { s =>
       HeapWatcher.start(title)
-      s.remove("roundId")
+      s.remove("roundId").remove("jobId").set("t0", System.currentTimeMillis()).set("jobStatus", "queued")
     }
       .exec(http(title).post("/admin/rounds/save")
         .formParamSeq(form)
-        .requestTimeout(timeout)
         .check(status.is(303), header("Location").saveAs("location")))
       .exec { s =>
-        val mem      = HeapWatcher.end()
-        val location = s("location").asOption[String].getOrElse("")
-        val roundId  = roundIdByName(roundName)
+        val roundId = roundIdByName(roundName)
+        val jobId   = roundId.flatMap(latestJobId)
+        val withIds = roundId.fold(s)(id => s.set("roundId", id))
+        jobId.fold(withIds.markAsFailed)(id => withIds.set("jobId", id))
+      }
+      .exitHereIfFailed
+      .asLongAs(s => activeStatuses.contains(s("jobStatus").as[String]) &&
+          System.currentTimeMillis() - s("t0").as[Long] < timeout.toMillis) {
+        pause(cfg.pollMillis.millis)
+          .exec(http("job status").get("/admin/jobs/#{jobId}")
+            .check(status.is(200), jsonPath("$.status").saveAs("jobStatus")))
+      }
+      .exec { s =>
+        val mem       = HeapWatcher.end()
+        val millis    = System.currentTimeMillis() - s("t0").as[Long]
+        val roundId   = s("roundId").as[Long]
+        val jobStatus = s("jobStatus").as[String]
         val (expImages, expRows) = expected
-        val images   = roundId.fold(0)(imageCount)
-        val rows     = roundId.fold(0)(rowCount)
-        // a failed or short distribution redirects to the round's edit page instead of the list
-        val ok = roundId.isDefined && !location.contains("/admin/rounds/edit") &&
-          images == expImages && rows == expRows
+        val images    = imageCount(roundId)
+        val rows      = rowCount(roundId)
+        val ok = jobStatus == "done" && images == expImages && rows == expRows
         HeapWatcher.report(
-          s"step='$title' round=${roundId.getOrElse("?")} ok=$ok " +
-            s"images=$images (expected $expImages) rows=$rows (expected $expRows) " +
+          s"step='$title' round=$roundId job=${s("jobId").as[Long]} status=$jobStatus ok=$ok " +
+            s"submitToDone=${millis}ms images=$images (expected $expImages) rows=$rows (expected $expRows) " +
             mem.fold("") { m =>
-              s"time=${m.millis}ms gcs=${m.gcs} fullGcs=${m.fullGcs} " +
+              s"gcs=${m.gcs} fullGcs=${m.fullGcs} " +
                 s"maxHeapAfterGc=${m.maxAfterGcMb.fold("n/a")(mb => s"${mb}MB")} usedAtEnd=${m.usedAtEndMb}MB"
             })
-        val withRound = roundId.fold(s)(id => s.set("roundId", id))
-        if (ok) withRound else withRound.markAsFailed
+        if (ok) s else s.markAsFailed
       }
       .exitHereIfFailed
       .exec(http(s"$title: round stats")

@@ -78,10 +78,10 @@ object HeapWatcher {
   }
 
   /** Appends one line per step to target/gatling/distribution-memory.txt (and stdout). */
-  def report(line: String): Unit = {
+  def report(line: String, file: String = "distribution-memory.txt"): Unit = {
     val text = s"${Instant.now()} pid=${ProcessHandle.current().pid()} maxHeap=${maxHeapMb}MB $line"
     println(s"[distribution] $text")
-    val f = new File("target/gatling/distribution-memory.txt")
+    val f = new File(s"target/gatling/$file")
     f.getParentFile.mkdirs()
     val w = new PrintWriter(new FileWriter(f, true))
     try w.println(text) finally w.close()

@@ -39,7 +39,28 @@ object GatlingConfig {
   }
 
   /** Organizer accounts the fixture provides: the most sessions any organizer flow uses. */
-  def organizerAccounts: Int = math.max(RoundMgmt.organizers, AggRatings.organizers)
+  def organizerAccounts: Int = Seq(RoundMgmt.organizers, AggRatings.organizers, Concurrent.admins).max
+
+  /** The app's background job scheduler (jobs.* in application.conf). */
+  object Jobs {
+    private val c = cfg.getConfig("gatling.jobs")
+    val workers: Int                 = c.getInt("workers")
+    val distributionConcurrency: Int = c.getInt("distributionConcurrency")
+    val chunkRows: Int               = c.getInt("chunkRows")
+  }
+
+  /** Many admins creating rounds at once (ConcurrentRoundCreationSimulation). */
+  object Concurrent {
+    private val c = cfg.getConfig("gatling.concurrent")
+    val admins: Int            = c.getInt("admins")
+    val jurorsPerImage: Int    = c.getInt("jurorsPerImage")
+    val soloFirst: Boolean     = c.getBoolean("soloFirst")
+    val withVoting: Boolean    = c.getBoolean("withVoting")
+    val voterUsers: Int        = c.getInt("voterUsers")
+    val durationSeconds: Int   = c.getInt("durationSeconds")
+    val pollMillis: Int        = c.getInt("pollMillis")
+    val timeoutMinutes: Int    = c.getInt("timeoutMinutes")
+  }
 
   object Distribution {
     private val c = cfg.getConfig("gatling.distribution")
@@ -49,5 +70,6 @@ object GatlingConfig {
     val topUp: Boolean      = c.getBoolean("topUp")
     val iterations: Int     = c.getInt("iterations")
     val timeoutMinutes: Int = c.getInt("timeoutMinutes")
+    val pollMillis: Int     = c.getInt("pollMillis")
   }
 }
