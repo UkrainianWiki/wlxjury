@@ -88,6 +88,14 @@ class RoundEditPageSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
+    "be 404 for a round that doesn't exist" in {
+      testDbApp { implicit app =>
+        val (_, admin, round) = fixture()
+        status(route(app, get(s"/admin/rounds/newfiles?id=${round.getId + 100}", admin)).get) must_== NOT_FOUND
+        status(route(app, get(s"/roundstat/${round.getId + 100}/table", admin)).get) must_== NOT_FOUND
+      }
+    }
+
     "refuse an admin of another contest" in {
       testDbApp { implicit app =>
         val (_, _, round) = fixture()
@@ -97,6 +105,8 @@ class RoundEditPageSpec extends PlaySpecification with PlayTestDb {
         val count = route(app, get(s"/admin/rounds/newfiles?id=${round.getId}", otherAdmin)).get
         status(count) must_== SEE_OTHER
         redirectLocation(count) must beSome.which(_.startsWith("/error"))
+        val table = route(app, get(s"/roundstat/${round.getId}/table", otherAdmin)).get
+        redirectLocation(table) must beSome.which(_.startsWith("/error"))
       }
     }
   }

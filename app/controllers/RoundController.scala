@@ -117,25 +117,31 @@ class RoundController @Inject() (
     * only when the organizer asks for it, not on every view of the edit page.
     */
   def newFilesCount(id: Long): EssentialAction =
-    withAuthOn(blocking)(roundPermission(User.ADMIN_ROLES, id)) { _ => _ =>
-      Round
-        .findById(id)
-        .fold(NotFound(Json.obj("error" -> "round not found"))) { round =>
-          val prevRounds = round.previousIds.flatMap(Round.findById)
-          Ok(Json.obj("count" -> distributeImages.imagesByRound(round, prevRounds).size))
-        }
+    withAuthOn(blocking)(rolePermission(User.ADMIN_ROLES)) { user => _ =>
+      withAdminRound(user, id, NotFound(Json.obj("error" -> "round not found"))) { round =>
+        val prevRounds = round.previousIds.flatMap(Round.findById)
+        Ok(Json.obj("count" -> distributeImages.imagesByRound(round, prevRounds).size))
+      }
     }
 
   /** The jurors' stat table of a round, as an HTML fragment for the edit page's
     * "jurors" panel, loaded when the panel is opened.
     */
   def roundStatTable(roundId: Long): EssentialAction =
-    withAuthOn(blocking)(roundPermission(User.ADMIN_ROLES, roundId)) { user => implicit request =>
-      Round
-        .findById(roundId)
-        .fold(NotFound("")) { round =>
-          Ok(views.html.roundStatTable(user, round, roundsService.getRoundStat(roundId, round)))
-        }
+    withAuthOn(blocking)(rolePermission(User.ADMIN_ROLES)) { user => implicit request =>
+      withAdminRound(user, roundId, NotFound("")) { round =>
+        Ok(views.html.roundStatTable(user, round, roundsService.getRoundStat(roundId, round)))
+      }
+    }
+
+  /** Runs `f` with the round if `user` administers its contest: the round is loaded
+    * once, for the permission check and the action.
+    */
+  private def withAdminRound(user: User, roundId: Long, notFound: => Result)(f: Round => Result): Result =
+    Round.findById(roundId) match {
+      case None                                                                         => notFound
+      case Some(round) if contestPermission(User.ADMIN_ROLES, Some(round.contestId))(user) => f(round)
+      case Some(_)                                                                      => onUnAuthorized(user)
     }
 
   def contestSpecialNominations(contestId: Long): Seq[SpecialNomination] = {
