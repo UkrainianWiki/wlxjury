@@ -261,17 +261,29 @@ object User extends CRUDMapper[User] {
     if (ids.isEmpty) Nil else findAllBy(sqls.in(u.id, ids)).sortBy(_.id)
   }
 
-  /** The round's jurors, ordered by id: [[findByRoundSelection]], or, for a round
-    * without selection rows (its first distribution failed and was rolled back), the
-    * users assigned to it in round_user, so that "Distribute new files" can still fill it.
+  /** The round's jurors, ordered by id, for its edit page: [[findByRoundSelection]],
+    * or, for a round without selection rows (its first distribution failed and was
+    * rolled back), its active jurors in round_user.
     */
   def findRoundJurors(roundId: Long): Seq[User] =
     findByRoundSelection(roundId) match {
-      case Nil =>
-        val ids = RoundUser.byRoundId(roundId).map(_.userId).distinct
-        if (ids.isEmpty) Nil else findAllBy(sqls.in(u.id, ids)).sortBy(_.id)
-      case jurors => jurors
+      case Nil   => activeRoundJurors(roundId)
+      case found => found
     }
+
+  /** The jurors a distribution to the round gives images to, ordered by id: its active
+    * jurors in round_user, so a juror stopped on the round gets no new images. Rounds
+    * without round_user rows (created before round_user was filled) fall back to the
+    * jurors with selection rows in the round.
+    */
+  def distributionJurors(roundId: Long): Seq[User] =
+    if (RoundUser.byRoundId(roundId).isEmpty) findByRoundSelection(roundId)
+    else activeRoundJurors(roundId)
+
+  private def activeRoundJurors(roundId: Long): Seq[User] = {
+    val ids = RoundUser.activeJurors(roundId).map(_.userId).distinct
+    if (ids.isEmpty) Nil else findAllBy(sqls.in(u.id, ids)).sortBy(_.id)
+  }
 
   def countByEmail(id: Long, email: String): Long =
     countBy(
