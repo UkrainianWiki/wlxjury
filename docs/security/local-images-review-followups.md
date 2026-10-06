@@ -31,6 +31,8 @@ merged code before fixing it.
 
 `saveRound` requires admin rights in the submitted contest, also on the form-error path, and an edited round must belong to that contest. `RoundService.previousRounds` looks previous rounds up in the round's own contest for creation, "Distribute new files" and `newFilesCount`. Tests are in `MutationAuthorizationSpec` and `RoundCreationResubmitSpec`.
 
+`setRound` (start/stop a round) and `setRoundUser` (activate/deactivate a juror in a round) had the same gap: they checked only for the admin role. They now require admin rights in the round's contest (`withAdminRound`), and a malformed form returns 400 instead of throwing.
+
 - **Where:** `RoundController.saveRound`; `RoundService.createNewRound` (around `RoundService.scala:49`
   here, `create` on `performance-memory`).
 - **Problem:** `saveRound` checks only `rolePermission(ADMIN_ROLES)`, never that the user may administer

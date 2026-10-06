@@ -266,28 +266,42 @@ class RoundController @Inject() (
         )
     }
 
+  /** Starts or stops a round of a contest the user administers. */
   def setRound(): EssentialAction = withAuth(rolePermission(User.ADMIN_ROLES)) {
     user => implicit request =>
-      val selectRound = selectRoundForm.bindFromRequest().get
-
-      val id = selectRound.roundId.toLong
-      val round = Round.findById(id)
-      round.foreach { r =>
-        roundsService.setCurrentRound(Nil, r.copy(active = selectRound.active))
-      }
-
-      Redirect(routes.RoundController.rounds(round.map(_.contestId)))
+      selectRoundForm
+        .bindFromRequest()
+        .fold(
+          _ => BadRequest,
+          selectRound =>
+            selectRound.roundId.toLongOption.fold[Result](BadRequest) { id =>
+              withAdminRound(user, id, NotFound(s"Round $id not found")) { round =>
+                roundsService.setCurrentRound(Nil, round.copy(active = selectRound.active))
+                Redirect(routes.RoundController.rounds(Some(round.contestId)))
+              }
+            }
+        )
   }
 
+  /** Activates or deactivates a juror in a round of a contest the user administers.
+    * Only that round's round_user row changes.
+    */
   def setRoundUser(): EssentialAction =
     withAuth(rolePermission(User.ADMIN_ROLES)) { user => implicit request =>
-      val setRoundUser = setRoundUserForm.bindFromRequest().get
-      RoundUser.setActive(
-        setRoundUser.roundId.toLong,
-        setRoundUser.userId.toLong,
-        setRoundUser.active
-      )
-      Redirect(routes.RoundController.roundStat(setRoundUser.roundId.toLong))
+      setRoundUserForm
+        .bindFromRequest()
+        .fold(
+          _ => BadRequest,
+          setRoundUser =>
+            (setRoundUser.roundId.toLongOption, setRoundUser.userId.toLongOption) match {
+              case (Some(roundId), Some(userId)) =>
+                withAdminRound(user, roundId, NotFound(s"Round $roundId not found")) { _ =>
+                  RoundUser.setActive(roundId, userId, setRoundUser.active)
+                  Redirect(routes.RoundController.roundStat(roundId))
+                }
+              case _ => BadRequest
+            }
+        )
     }
 
   def setImages(): EssentialAction =

@@ -1,6 +1,6 @@
 package controllers
 
-import db.scalikejdbc.{ImageJdbc, PlayTestDb, Round, SelectionJdbc, User}
+import db.scalikejdbc.{ImageJdbc, PlayTestDb, Round, RoundUser, SelectionJdbc, User}
 import modules.BlockingExecutionContext
 import org.apache.pekko.stream.Materializer
 import play.api.Application
@@ -173,6 +173,100 @@ class MutationAuthorizationSpec extends PlaySpecification with PlayTestDb {
 
         expectUnauthorized(result)
         roundDao.findById(foreignRound.getId).flatMap(_.name) must beSome("Foreign")
+      }
+    }
+  }
+
+  /** A POST of `form` to `url` with the user's session, as the round pages submit it. */
+  private def adminPost(url: String, email: String, form: (String, String)*) =
+    FakeRequest(POST, url)
+      .withFormUrlEncodedBody(form: _*)
+      .withSession(Secured.UserName -> email)
+      .withCSRFToken
+
+  /** An admin of a home contest, and a round of their own and of a foreign contest,
+    * both active, each with the admin's juror active in it.
+    */
+  private def roundsOfTwoContests() = {
+    val homeContest = contestDao.create(None, "WLE", 2024, "Ukraine")
+    val foreignContest = contestDao.create(None, "WLM", 2024, "Poland")
+    val homeRound = roundDao.create(Round(None, 1, Some("Home"), contestId = homeContest.getId, active = true))
+    val foreignRound =
+      roundDao.create(Round(None, 1, Some("Foreign"), contestId = foreignContest.getId, active = true))
+    val admin = userDao.create(
+      User("Admin", "admin@example.com", None, Set(User.ADMIN_ROLE), contestId = homeContest.id)
+    )
+    val juror = userDao.create(User("Juror", "juror@example.com", None, Set("jury"), contestId = homeContest.id))
+    Seq(homeRound, foreignRound).foreach(r => r.addUsers(Seq(RoundUser(r.getId, juror.getId, "jury", active = true))))
+    (admin, juror, homeRound, foreignRound)
+  }
+
+  private def roundUserActive(roundId: Long, userId: Long): Option[Boolean] =
+    RoundUser.byRoundId(roundId).find(_.userId == userId).map(_.active)
+
+  "RoundController.setRound" should {
+    "stop a round of the admin's own contest" in {
+      testDbApp { app =>
+        implicit val materializer: Materializer = app.materializer
+        val (admin, _, homeRound, _) = roundsOfTwoContests()
+
+        val result = call(
+          roundController(app).setRound(),
+          adminPost("/admin/setround", admin.email, "currentId" -> homeRound.getId.toString, "setActive" -> "false")
+        )
+
+        status(result) mustEqual SEE_OTHER
+        redirectLocation(result) must beSome.which(_.startsWith("/admin/rounds"))
+        roundDao.findById(homeRound.getId).map(_.active) must beSome(false)
+      }
+    }
+
+    "reject stopping another contest's round" in {
+      testDbApp { app =>
+        implicit val materializer: Materializer = app.materializer
+        val (admin, _, _, foreignRound) = roundsOfTwoContests()
+
+        val result = call(
+          roundController(app).setRound(),
+          adminPost("/admin/setround", admin.email, "currentId" -> foreignRound.getId.toString, "setActive" -> "false")
+        )
+
+        expectUnauthorized(result)
+        roundDao.findById(foreignRound.getId).map(_.active) must beSome(true)
+      }
+    }
+  }
+
+  "RoundController.setRoundUser" should {
+    "deactivate a juror in a round of the admin's own contest" in {
+      testDbApp { app =>
+        implicit val materializer: Materializer = app.materializer
+        val (admin, juror, homeRound, _) = roundsOfTwoContests()
+
+        val result = call(
+          roundController(app).setRoundUser(),
+          adminPost("/round/setrounduser", admin.email,
+            "parentId" -> homeRound.getId.toString, "currentId" -> juror.getId.toString, "setActive" -> "false")
+        )
+
+        status(result) mustEqual SEE_OTHER
+        roundUserActive(homeRound.getId, juror.getId) must beSome(false)
+      }
+    }
+
+    "reject deactivating a juror in another contest's round" in {
+      testDbApp { app =>
+        implicit val materializer: Materializer = app.materializer
+        val (admin, juror, _, foreignRound) = roundsOfTwoContests()
+
+        val result = call(
+          roundController(app).setRoundUser(),
+          adminPost("/round/setrounduser", admin.email,
+            "parentId" -> foreignRound.getId.toString, "currentId" -> juror.getId.toString, "setActive" -> "false")
+        )
+
+        expectUnauthorized(result)
+        roundUserActive(foreignRound.getId, juror.getId) must beSome(true)
       }
     }
   }
