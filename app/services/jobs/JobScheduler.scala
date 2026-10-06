@@ -1,0 +1,406 @@
+package services.jobs
+
+import play.api.{Configuration, Logging}
+import scalikejdbc.DB
+
+import java.util.concurrent._
+import java.util.concurrent.atomic.AtomicInteger
+import scala.collection.mutable
+import scala.concurrent.duration._
+import scala.util.control.NonFatal
+
+/** Runs [[Job]]s in the background: one step at a time, taking turns, on a small pool of
+  * its own threads, separate from Play's dispatchers, so jobs never hold a request thread.
+  *
+  *  - '''Claiming and the lease.''' Every `pollInterval` the scheduler claims queued jobs of
+  *    the kinds it has handlers for, and running jobs whose heartbeat is older than the
+  *    `lease` (their instance died). It renews the heartbeat of the jobs it holds every
+  *    `heartbeatInterval`; each step renews it too. On a graceful stop it hands its running
+  *    jobs back to the queue, so the next instance takes them at once; after a crash they
+  *    are taken over when the lease expires. Each step checks, under the job's row lock,
+  *    that this instance still owns the job, so two instances never run the same job.
+  *  - '''Turns.''' A worker runs one step (one chunk) of one job, then the job goes back in
+  *    line. The next step goes to the contest served longest ago, and within it to the
+  *    job served longest ago: a small job finishes in a few turns while a big one runs,
+  *    and one contest's many jobs don't starve another contest's.
+  *  - '''Limits.''' At most `workers` steps run at once overall, and at most the kind's
+  *    concurrency limit of one kind (e.g. 2 distributions; Commons imports would get 1-2
+  *    for the API's rate limits).
+  *  - '''Cancel and retry''' go through the job's row lock: a cancel waits for the
+  *    running step (a chunk, short) to commit, then the job stops.
+  *
+  * In `inline` mode (tests, scripts) there are no threads: a job is claimed when it is
+  * created and run to its end by the thread that calls [[started]].
+  */
+class JobScheduler(handlerList: Seq[JobHandler], val settings: JobScheduler.Settings) extends Logging {
+
+  import JobScheduler._
+
+  /** This app instance, as the owner of the jobs it runs. */
+  val instanceId: String = {
+    val host = scala.util.Try(java.net.InetAddress.getLocalHost.getHostName).getOrElse("host")
+    s"$host-${ProcessHandle.current().pid()}-${java.util.UUID.randomUUID().toString.take(8)}".take(64)
+  }
+
+  private val handlers: Map[String, JobHandler] = handlerList.map(h => h.kind -> h).toMap
+
+  def handler(kind: String): Option[JobHandler] = handlers.get(kind)
+
+  private def inline: Boolean = settings.mode == Mode.Inline
+
+  // ── background machinery ───────────────────────────────────────────────────
+
+  private final class Held(val id: Long, val kind: String, val contestId: Option[Long]) {
+    var inFlight = false
+    var lastServed = 0L
+  }
+
+  private val lock = new Object
+  private val held = mutable.LinkedHashMap.empty[Long, Held]
+  private val contestServed = mutable.Map.empty[Option[Long], Long]
+  private val inFlightByKind = mutable.Map.empty[String, Int].withDefaultValue(0)
+  private var inFlightTotal = 0
+  private var served = 0L
+  @volatile private var stopping = false
+
+  private var workers: ExecutorService = _
+  private var timer: ScheduledExecutorService = _
+
+  def start(): Unit =
+    if (!inline && timer == null) {
+      workers = Executors.newFixedThreadPool(settings.workers, threadFactory("job-worker"))
+      timer = Executors.newSingleThreadScheduledExecutor(threadFactory("job-scheduler"))
+      val poll = settings.pollInterval.toMillis
+      timer.scheduleWithFixedDelay(() => this.poll(), poll, poll, TimeUnit.MILLISECONDS)
+      val hb = settings.heartbeatInterval.toMillis
+      timer.scheduleWithFixedDelay(() => heartbeat(), hb, hb, TimeUnit.MILLISECONDS)
+      logger.info(
+        s"Job scheduler $instanceId: ${settings.workers} workers, limits ${settings.kindLimits}, " +
+          s"kinds ${handlers.keys.mkString(", ")}"
+      )
+    }
+
+  /** Stops taking steps, lets the running ones finish, and hands this instance's running
+    * jobs back to the queue.
+    */
+  def stop(): Unit =
+    if (timer != null) {
+      stopping = true
+      timer.shutdownNow()
+      workers.shutdown()
+      if (!workers.awaitTermination(settings.lease.toSeconds / 2 max 1, TimeUnit.SECONDS))
+        logger.warn(s"Job scheduler $instanceId: steps still running at shutdown")
+      try {
+        val n = JobJdbc.requeueOwned(instanceId)
+        if (n > 0) logger.info(s"Job scheduler $instanceId: $n running jobs handed back to the queue")
+      } catch { case NonFatal(e) => logger.warn(s"Job scheduler $instanceId: could not requeue its jobs", e) }
+      timer = null
+    }
+
+  /** Claims what is claimable now instead of at the next poll (a job was just created). */
+  def wake(): Unit = if (!inline && timer != null && !stopping) timer.execute(() => poll())
+
+  private[jobs] def poll(): Unit =
+    if (!stopping)
+      try {
+        val ids = JobJdbc.claimable(handlers.keys.toSeq, settings.lease.toSeconds, limit = 200)
+        val known = lock.synchronized(held.keySet.toSet)
+        ids.filterNot(known.contains).foreach { id =>
+          if (JobJdbc.claim(id, instanceId, settings.lease.toSeconds))
+            JobJdbc.findById(id).foreach { j =>
+              lock.synchronized(held.put(id, new Held(id, j.kind, j.contestId)))
+            }
+        }
+        dispatch()
+      } catch { case NonFatal(e) => logger.warn(s"Job scheduler $instanceId: poll failed", e) }
+
+  private def heartbeat(): Unit =
+    try JobJdbc.heartbeat(instanceId)
+    catch { case NonFatal(e) => logger.warn(s"Job scheduler $instanceId: heartbeat failed", e) }
+
+  private def limit(kind: String): Int = settings.kindLimits.getOrElse(kind, settings.defaultKindLimit)
+
+  private def dispatch(): Unit = lock.synchronized {
+    var more = true
+    while (more && !stopping && inFlightTotal < settings.workers) {
+      val ready = held.values.filter(h => !h.inFlight && inFlightByKind(h.kind) < limit(h.kind))
+      if (ready.isEmpty) more = false
+      else {
+        val h = ready.minBy(h => (contestServed.getOrElse(h.contestId, 0L), h.lastServed, h.id))
+        served += 1
+        contestServed(h.contestId) = served
+        h.lastServed = served
+        h.inFlight = true
+        inFlightByKind(h.kind) += 1
+        inFlightTotal += 1
+        try workers.execute(() => work(h))
+        catch {
+          case _: RejectedExecutionException =>
+            h.inFlight = false; inFlightByKind(h.kind) -= 1; inFlightTotal -= 1; more = false
+        }
+      }
+    }
+  }
+
+  private def work(h: Held): Unit = {
+    val again =
+      try runStep(h.id)
+      catch { case NonFatal(e) => logger.error(s"Job ${h.id}: step crashed", e); false }
+    lock.synchronized {
+      h.inFlight = false
+      inFlightByKind(h.kind) -= 1
+      inFlightTotal -= 1
+      if (!again) held.remove(h.id)
+    }
+    if (!stopping) dispatch()
+  }
+
+  /** The jobs this instance holds (claimed and not finished): for tests and diagnostics. */
+  def heldJobs: Set[Long] = lock.synchronized(held.keySet.toSet)
+
+  // ── the generic job API ────────────────────────────────────────────────────
+
+  /** Creates a job in the caller's transaction, or returns its subject's active job
+    * (Left) if it has one: the unique active dedupe key decides, also between instances.
+    * Call [[started]] once the transaction has committed.
+    */
+  def enqueue(job: NewJob)(implicit session: scalikejdbc.DBSession): Either[Job, Job] = {
+    require(handlers.contains(job.kind), s"no handler for job kind ${job.kind}")
+    try {
+      val id = JobJdbc.insert(job, owner = Option.when(inline)(instanceId))
+      Right(JobJdbc.findById(id).get)
+    } catch {
+      case e: Throwable if JobJdbc.isDuplicateActive(e) =>
+        Left(job.dedupeKey.flatMap(JobJdbc.activeByDedupeKey(_)).getOrElse(throw e))
+    }
+  }
+
+  /** A job was created or queued again and its transaction committed: in the background
+    * the scheduler takes it at once; inline it runs to its end now.
+    */
+  def started(jobId: Long): Unit = if (inline) runInline(jobId) else wake()
+
+  /** Cancels a queued, running or failed job; waits for a running step to commit first.
+    * @return the job afterwards, None if it doesn't exist
+    */
+  def cancel(jobId: Long): Option[Job] = {
+    val ctx = DB.localTx { implicit s =>
+      JobJdbc.lock(jobId).filter(j => j.isActive || j.isFailed).map { j =>
+        val ctx = new StepContext(s)
+        val state = handlers.get(j.kind).fold(j.state)(_.onCancelled(j, ctx))
+        JobJdbc.update(jobId, JobStatus.Cancelled, state, progressOf(j), j.error)
+        ctx
+      }
+    }
+    ctx.foreach(runAfterCommit)
+    handlers.values.foreach(_.forget(jobId))
+    JobJdbc.findById(jobId)
+  }
+
+  /** Queues a failed job again; it resumes from its state.
+    * @return the job, or why it can't be retried
+    */
+  def retry(jobId: Long): Either[String, Job] = {
+    val result =
+      try
+        DB.localTx { implicit s =>
+          JobJdbc.lock(jobId) match {
+            case None                    => Left("no such job")
+            case Some(j) if !j.isFailed  => Left(s"the job is ${j.status}, not failed")
+            case Some(j) =>
+              handlers.get(j.kind) match {
+                case None => Left(s"no handler for job kind ${j.kind}")
+                case Some(h) =>
+                  val ctx = new StepContext(s)
+                  JobJdbc.requeue(jobId, h.onRetry(j, ctx), Option.when(inline)(instanceId))
+                  Right(ctx)
+              }
+          }
+        }
+      catch {
+        case e: Throwable if JobJdbc.isDuplicateActive(e) =>
+          Left("another job for the same subject is running")
+      }
+    result.map { ctx =>
+      runAfterCommit(ctx)
+      started(jobId)
+      JobJdbc.findById(jobId).get
+    }
+  }
+
+  /** Waits until the job is no longer queued or running (scripts and tests). */
+  def await(jobId: Long, timeout: FiniteDuration = 30.minutes): Job = {
+    val deadline = timeout.fromNow
+    var job = JobJdbc.findById(jobId).getOrElse(throw new NoSuchElementException(s"Job $jobId not found"))
+    while (job.isActive && deadline.hasTimeLeft()) {
+      Thread.sleep(50)
+      job = JobJdbc.findById(jobId).get
+    }
+    job
+  }
+
+  // ── running steps ──────────────────────────────────────────────────────────
+
+  private def runInline(jobId: Long): Unit = {
+    var again = true
+    while (again) again = runStep(jobId)
+  }
+
+  /** Runs one step of a job this instance owns.
+    * @return true if the job has more steps
+    */
+  private[jobs] def runStep(jobId: Long): Boolean = {
+    val job = JobJdbc.findById(jobId) match {
+      case Some(j) if j.status == JobStatus.Running && j.owner.contains(instanceId) => j
+      case _ => handlers.values.foreach(_.forget(jobId)); return false
+    }
+    val h = handlers.get(job.kind) match {
+      case Some(handler) => handler
+      case None          => return false
+    }
+    try h.prepare(job)
+    catch {
+      case NonFatal(e) =>
+        logger.error(s"Job $jobId (${job.kind}): preparing failed", e)
+        fail(jobId, describe(e))
+        return false
+    }
+
+    var attempt = 0
+    while (true) {
+      try {
+        val outcome = DB.localTx { implicit s =>
+          JobJdbc.lock(jobId).filter(j => j.status == JobStatus.Running && j.owner.contains(instanceId)).map { j =>
+            val ctx = new StepContext(s)
+            val result = h.step(j, ctx)
+            result match {
+              case StepResult.Continue(state, p) => JobJdbc.update(jobId, JobStatus.Running, state, p, None)
+              case StepResult.Done(state, p)     => JobJdbc.update(jobId, JobStatus.Done, state, p, None)
+              case StepResult.Failed(error, state, p) =>
+                val after = h.onFailed(j.copy(state = state), ctx)
+                JobJdbc.update(jobId, JobStatus.Failed, after, p, Some(error))
+            }
+            (result, ctx)
+          }
+        }
+        outcome match {
+          case None =>
+            h.forget(jobId)
+            return false
+          case Some((result, ctx)) =>
+            runAfterCommit(ctx)
+            result match {
+              case _: StepResult.Continue => return true
+              case f: StepResult.Failed =>
+                logger.warn(s"Job $jobId (${job.kind}) failed: ${f.error}")
+                h.forget(jobId)
+                return false
+              case _ =>
+                h.forget(jobId)
+                return false
+            }
+        }
+      } catch {
+        case NonFatal(e) if isTransient(e) && attempt < settings.transientRetries =>
+          attempt += 1
+          logger.warn(s"Job $jobId (${job.kind}): transient error, retrying the step ($attempt): ${e.getMessage}")
+          Thread.sleep(100L * attempt)
+        case NonFatal(e) =>
+          logger.error(s"Job $jobId (${job.kind}): step failed", e)
+          fail(jobId, describe(e))
+          h.forget(jobId)
+          return false
+      }
+    }
+    false
+  }
+
+  /** Marks a job this instance runs as failed, with its handler's cleanup. */
+  private def fail(jobId: Long, error: String): Unit =
+    try {
+      val ctx = DB.localTx { implicit s =>
+        JobJdbc.lock(jobId).filter(j => j.status == JobStatus.Running && j.owner.contains(instanceId)).map { j =>
+          val ctx = new StepContext(s)
+          val state = handlers.get(j.kind).fold(j.state)(_.onFailed(j, ctx))
+          JobJdbc.update(jobId, JobStatus.Failed, state, progressOf(j), Some(error.take(2000)))
+          ctx
+        }
+      }
+      ctx.foreach(runAfterCommit)
+    } catch {
+      case NonFatal(e) => logger.error(s"Job $jobId: could not record its failure ($error)", e)
+    }
+
+  private def runAfterCommit(ctx: StepContext): Unit =
+    ctx.afterCommitActions.foreach { f =>
+      try f()
+      catch { case NonFatal(e) => logger.warn("Job: an after-commit action failed", e) }
+    }
+}
+
+object JobScheduler {
+
+  sealed trait Mode
+  object Mode {
+    case object Background extends Mode
+    case object Inline extends Mode
+  }
+
+  final case class Settings(
+      mode: Mode = Mode.Background,
+      workers: Int = 3,
+      kindLimits: Map[String, Int] = Map.empty,
+      defaultKindLimit: Int = 1,
+      pollInterval: FiniteDuration = 2.seconds,
+      heartbeatInterval: FiniteDuration = 10.seconds,
+      lease: FiniteDuration = 60.seconds,
+      transientRetries: Int = 3
+  )
+
+  object Settings {
+
+    /** `jobs.*` in application.conf. */
+    def from(config: Configuration): Settings = {
+      val c = config.getOptional[Configuration]("jobs").getOrElse(Configuration.empty)
+      def dur(key: String, default: FiniteDuration) = c.getOptional[FiniteDuration](key).getOrElse(default)
+      val d = Settings()
+      Settings(
+        mode = c.getOptional[String]("mode") match {
+          case Some("inline") => Mode.Inline
+          case _              => Mode.Background
+        },
+        workers = c.getOptional[Int]("workers").getOrElse(d.workers),
+        kindLimits = c
+          .getOptional[Configuration]("concurrency")
+          .map(cc => cc.subKeys.map(k => k -> cc.get[Int](k)).toMap)
+          .getOrElse(Map.empty),
+        defaultKindLimit = c.getOptional[Int]("defaultConcurrency").getOrElse(d.defaultKindLimit),
+        pollInterval = dur("pollInterval", d.pollInterval),
+        heartbeatInterval = dur("heartbeatInterval", d.heartbeatInterval),
+        lease = dur("lease", d.lease)
+      )
+    }
+  }
+
+  def progressOf(j: Job): Progress = Progress(j.progressDone, j.progressTotal, j.progressUnit)
+
+  def describe(e: Throwable): String =
+    Option(e.getMessage).filter(_.nonEmpty).getOrElse(e.getClass.getSimpleName)
+
+  /** A database error worth retrying the step for: a deadlock or a lock wait timeout. */
+  def isTransient(e: Throwable): Boolean =
+    Iterator.iterate(e)(_.getCause).takeWhile(_ != null).take(10).exists {
+      case _: java.sql.SQLTransactionRollbackException => true
+      case t =>
+        Option(t.getMessage).exists(m => m.contains("Deadlock found") || m.contains("Lock wait timeout"))
+    }
+
+  private def threadFactory(prefix: String): ThreadFactory = {
+    val n = new AtomicInteger()
+    (r: Runnable) => {
+      val t = new Thread(r, s"$prefix-${n.incrementAndGet()}")
+      t.setDaemon(true)
+      t
+    }
+  }
+}
