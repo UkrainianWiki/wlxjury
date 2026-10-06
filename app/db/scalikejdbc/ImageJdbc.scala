@@ -109,7 +109,8 @@ object ImageJdbc extends CRUDMapper[Image]
     }.batch(batchParams: _*).apply()
   }
 
-  def update(image: Image): Unit =
+  /** Updates the image, and its selection rows' copy of its monument id. */
+  def update(image: Image): Unit = DB.localTx { implicit session =>
     updateById(image.pageId).withAttributes(
       "title" -> image.title,
       "url" -> image.url,
@@ -122,6 +123,8 @@ object ImageJdbc extends CRUDMapper[Image]
       "mime" -> image.mime,
       "mediaType" -> image.mediaType
     )
+    syncSelectionMonumentId(image.pageId, image.monumentId)
+  }
 
   /** @param pageId
     * @param width
@@ -130,10 +133,21 @@ object ImageJdbc extends CRUDMapper[Image]
   def updateResolution(pageId: Long, width: Int, height: Int): Unit =
     updateById(pageId).withAttributes("width" -> width, "height" -> height)
 
-  def updateMonumentId(pageId: Long, monumentId: String): Unit =
+  /** Sets the image's monument id, and its selection rows' copy of it. */
+  def updateMonumentId(pageId: Long, monumentId: String): Unit = DB.localTx { implicit session =>
     updateById(pageId).withAttributes("monumentId" -> monumentId)
+    syncSelectionMonumentId(pageId, Some(monumentId))
+  }
 
-  def deleteImage(pageId: Long): Unit = deleteById(pageId)
+  /** selection.monument_id (V48) is a copy of images.monument_id that the galleries
+    * sort and filter by regions on; it must follow the image. A page_id lookup on the
+    * unique (page_id, jury_id, round_id) index; rows already right aren't rewritten.
+    */
+  private def syncSelectionMonumentId(pageId: Long, monumentId: Option[String])(implicit
+      session: DBSession
+  ): Unit =
+    sql"""UPDATE selection SET monument_id = $monumentId
+          WHERE page_id = $pageId AND NOT (monument_id <=> $monumentId)""".update()
 
   def findByFilename(filename: String)(implicit session: DBSession = AutoSession): Option[Image] =
     findBy(sqls.eq(column.title, s"File:$filename"))
@@ -191,14 +205,18 @@ object ImageJdbc extends CRUDMapper[Image]
   AND s.round_id = $roundId
   GROUP BY rate""".map(rs => rs.int(1) -> rs.int(2)).list().toMap
 
-  def roundsStat(contestId: Long, limit: Int): Seq[(Long, Int)] =
-    sql"""SELECT r.id, count(DISTINCT(s.page_id))
-          FROM rounds r
-  JOIN selection s ON r.id = s.round_id
-  WHERE
-  r.contest_id = $contestId
-  GROUP BY r.id LIMIT $limit
-      """.map(rs => (rs.long(1), rs.int(2))).list()
+  /** Distinct images per round, for the given rounds (rounds without images are left
+    * out). A loose scan of idx_selection_round_page_rate: no join through rounds, which
+    * prevented it. Callers go through [[RoundImageCounts]].
+    */
+  def imageCountByRounds(roundIds: Seq[Long]): Map[Long, Int] =
+    if (roundIds.isEmpty) Map.empty
+    else
+      sql"""SELECT s.round_id, COUNT(DISTINCT s.page_id) FROM selection s
+            WHERE s.round_id IN ($roundIds) GROUP BY s.round_id"""
+        .map(rs => rs.long(1) -> rs.int(2))
+        .list()
+        .toMap
 
   def byRound(roundId: Long): List[Image] = withSQL {
     select(distinct(i.result.*))

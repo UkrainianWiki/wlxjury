@@ -47,6 +47,20 @@ sbt "testOnly db.scalikejdbc.*"                       # Run all DB tests
 
 Tests use Testcontainers (Docker) to spin up a MariaDB 10.6 instance automatically. No manual DB setup needed for tests. Test configuration is at `test/resources/application.conf`.
 
+### Performance tests (Gatling)
+```bash
+sbt gatlingAll                                                  # All simulations, RoundDistribution first
+sbt "Gatling/testOnly gatling.simulations.VotingSimulation"     # One simulation
+sbt -Dgatling.roundMgmt.stress=true "Gatling/testOnly gatling.simulations.RoundManagementSimulation"
+```
+
+- Simulations live in `test/gatling/simulations/`, settings in `test/resources/gatling-perf.conf` (override any key with `-Dgatling.<key>=...`). Each simulation forks a JVM that runs the app (`TestServer`) and restores the fixture DB: `data/wlm-UA-images-2025.csv` (~38k images, all in the contest's category), 20 jurors, a binary and a rated round.
+- The fixture DB is cached as a dump in `data/cache/`, keyed by `GatlingDbCache.cacheKey` (migrations, CSV sizes, fixture parameters, `FixtureVersion`). Bump `FixtureVersion` whenever `GatlingDbSetup.load` changes what it writes.
+- Organizer flows (RoundManagement, AggregatedRatings) model a few organizers with think time by default; `gatling.roundMgmt.stress` / `gatling.aggRatings.stress` run the old many-sessions worst case.
+- `RoundDistributionSimulation` creates rounds through the round form and logs each step's time, selection rows and heap after GC to `target/gatling/distribution-memory.txt`.
+- To measure with production-like JVM settings, prefix e.g. `"set Gatling / javaOptions ++= Seq(\"-Xmx512m\", \"-Xlog:gc*:file=target/gatling/gc-%p.log:time,uptime,level,tags\")"`; `%p` keeps one GC log per forked JVM.
+- Results: `target/gatling/<simulation>-<timestamp>/` (`js/stats.json` has per-request statistics).
+
 ### Building packages
 ```bash
 sbt packageDebSystemd    # Debian package with systemd

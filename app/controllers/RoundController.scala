@@ -8,11 +8,13 @@ import play.api.Logging
 import play.api.data.Form
 import play.api.data.Forms._
 import play.api.i18n.I18nSupport
-import play.api.mvc.{ControllerComponents, EssentialAction, RequestHeader, Result}
+import play.api.libs.json.Json
+import play.api.mvc.{AnyContent, ControllerComponents, EssentialAction, Request, RequestHeader, Result}
 import play.twirl.api.Html
 import services.RoundService
 
 import javax.inject.Inject
+import modules.BlockingExecutionContext
 import scala.util.control.NonFatal
 
 /** Controller for displaying pages related to contest rounds
@@ -22,7 +24,8 @@ class RoundController @Inject() (
     cc: ControllerComponents,
     val contestsController: ContestController,
     roundsService: RoundService,
-    distributeImages: DistributeImages
+    distributeImages: DistributeImages,
+    blocking: BlockingExecutionContext
 ) extends Secured(cc)
     with I18nSupport
     with Logging {
@@ -32,7 +35,7 @@ class RoundController @Inject() (
     * @return
     */
   def rounds(contestIdParam: Option[Long] = None): EssentialAction =
-    withAuth(contestPermission(User.ADMIN_ROLES, contestIdParam)) { user => implicit request =>
+    withAuthOn(blocking)(contestPermission(User.ADMIN_ROLES, contestIdParam)) { user => implicit request =>
       val roundsView =
         for (
           contestId <- contestIdParam.orElse(user.currentContest);
@@ -43,7 +46,7 @@ class RoundController @Inject() (
             views.html.rounds(
               user,
               rounds,
-              ImageJdbc.roundsStat(contestId, rounds.size).toMap,
+              RoundImageCounts.get(rounds.flatMap(_.id))(ImageJdbc.imageCountByRounds),
               editRoundForm,
               imagesForm.fill(contest.images),
               selectRoundForm,
@@ -62,46 +65,89 @@ class RoundController @Inject() (
     * @return
     */
   def editRound(roundId: Option[Long], contestId: Long, topImages: Option[Int]): EssentialAction =
-    withAuth(contestPermission(User.ADMIN_ROLES, Some(contestId))) { user => implicit request =>
+    withAuthOn(blocking)(contestPermission(User.ADMIN_ROLES, Some(contestId))) { user => implicit request =>
       val rounds = Round.findByContest(contestId)
 
+      // From the permission-checked contest's rounds: a round of another contest gets
+      // the new-round form, not its settings.
       val round: Round = roundId
-        .flatMap(Round.findById)
+        .flatMap(id => rounds.find(_.id.contains(id)))
         .getOrElse(
           new Round(id = None, contestId = contestId, number = rounds.size + 1)
         )
 
       val withTopImages = topImages.map(n => round.copy(topImages = Some(n))).getOrElse(round)
 
-      val jurors = withTopImages.id.fold(User.loadJurors(contestId))(User.findByRoundSelection).sorted
+      val jurors = withTopImages.id.fold(User.loadJurors(contestId))(User.findRoundJurors).sorted
       val filledRound = editRoundForm.fill(EditRound(withTopImages, jurors.flatMap(_.id), None))
-      Ok(roundFormView(user, withTopImages, filledRound))
+      Ok(
+        roundFormView(user, withTopImages, filledRound, Some(rounds), Some(jurors),
+          submitToken = Option.when(withTopImages.id.isEmpty)(RoundController.newSubmitToken()))
+      )
     }
 
   /** Renders the create/edit round page for `round` with the given (possibly
     * error-carrying) form. Shared by the GET handler and the failure paths of
     * [[saveRound]] so a failed create/redistribute comes back as the same form with
     * the entered values intact, not a redirect that drops them.
+    *
+    * The page does no expensive work: the jurors' stat table and the number of new
+    * files are loaded on demand ([[roundStatTable]], [[newFilesCount]]).
     */
-  private def roundFormView(user: User, round: Round, form: Form[EditRound])(
-      implicit request: RequestHeader
-  ): Html = {
+  private def roundFormView(
+      user: User,
+      round: Round,
+      form: Form[EditRound],
+      knownRounds: Option[Seq[Round]] = None,
+      knownJurors: Option[Seq[User]] = None,
+      submitToken: Option[String] = None
+  )(implicit request: RequestHeader): Html = {
     val contestId = round.contestId
-    val prevRounds = round.previousIds.flatMap(Round.findById)
     views.html.editRound(
       user,
       form,
       round.id.isEmpty,
-      Round.findByContest(contestId),
+      knownRounds.getOrElse(Round.findByContest(contestId)),
       Some(contestId),
-      round.id.fold(User.loadJurors(contestId))(User.findByRoundSelection).sorted,
+      knownJurors.getOrElse(round.id.fold(User.loadJurors(contestId))(User.findRoundJurors).sorted),
       jurorsMapping,
       contestsController.regions(contestId),
-      round.id.map(id => roundsService.getRoundStat(id, round)),
-      round.id.map(_ => distributeImages.imagesByRound(round, prevRounds)).getOrElse(Nil),
-      contestSpecialNominations(contestId)
+      contestSpecialNominations(contestId),
+      submitToken
     )
   }
+
+  /** The number of files "Distribute new files" would add to the round, as JSON
+    * `{"count": n}`: the full image filtering (which may query Commons), so it runs
+    * only when the organizer asks for it, not on every view of the edit page.
+    */
+  def newFilesCount(id: Long): EssentialAction =
+    withAuthOn(blocking)(rolePermission(User.ADMIN_ROLES)) { user => _ =>
+      withAdminRound(user, id, NotFound(Json.obj("error" -> "round not found"))) { round =>
+        val prevRounds = roundsService.previousRounds(round)
+        Ok(Json.obj("count" -> distributeImages.imagesByRound(round, prevRounds).size))
+      }
+    }
+
+  /** The jurors' stat table of a round, as an HTML fragment for the edit page's
+    * "jurors" panel, loaded when the panel is opened.
+    */
+  def roundStatTable(roundId: Long): EssentialAction =
+    withAuthOn(blocking)(rolePermission(User.ADMIN_ROLES)) { user => implicit request =>
+      withAdminRound(user, roundId, NotFound("")) { round =>
+        Ok(views.html.roundStatTable(user, round, roundsService.getRoundStat(roundId, round)))
+      }
+    }
+
+  /** Runs `f` with the round if `user` administers its contest: the round is loaded
+    * once, for the permission check and the action.
+    */
+  private def withAdminRound(user: User, roundId: Long, notFound: => Result)(f: Round => Result): Result =
+    Round.findById(roundId) match {
+      case None                                                                         => notFound
+      case Some(round) if contestPermission(User.ADMIN_ROLES, Some(round.contestId))(user) => f(round)
+      case Some(_)                                                                      => onUnAuthorized(user)
+    }
 
   def contestSpecialNominations(contestId: Long): Seq[SpecialNomination] = {
     ContestJuryJdbc
@@ -118,23 +164,28 @@ class RoundController @Inject() (
   }
 
   def saveRound(): EssentialAction =
-    withAuth(rolePermission(User.ADMIN_ROLES)) { user => implicit request =>
+    withAuthOn(blocking)(rolePermission(User.ADMIN_ROLES)) { user => implicit request =>
       editRoundForm
         .bindFromRequest()
         .fold(
           formWithErrors => {
-            val contestId: Option[Long] = formWithErrors.data.get("contest").map(_.toLong)
-            BadRequest(
-              views.html.editRound(
-                user,
-                formWithErrors,
-                newRound = !formWithErrors.data.get("id").exists(_.nonEmpty),
-                rounds = contestId.map(Round.findByContest).getOrElse(Nil),
-                contestId = contestId,
-                jurors = User.loadJurors(contestId.get),
-                jurorsMapping = jurorsMapping
+            val contestId: Option[Long] = formWithErrors.data.get("contest").flatMap(_.toLongOption)
+            // the form lists the contest's rounds and jurors: only for its own admins
+            if (!contestPermission(User.ADMIN_ROLES, contestId)(user)) onUnAuthorized(user)
+            else
+              BadRequest(
+                views.html.editRound(
+                  user,
+                  formWithErrors,
+                  newRound = !formWithErrors.data.get("id").exists(_.nonEmpty),
+                  rounds = contestId.map(Round.findByContest).getOrElse(Nil),
+                  contestId = contestId,
+                  jurors = contestId.map(User.loadJurors).getOrElse(Nil),
+                  jurorsMapping = jurorsMapping,
+                  // keep the form's token: nothing was created from this submission
+                  submitToken = RoundController.submitToken(request)
+                )
               )
-            )
           },
           editForm => {
             val round = editForm.round.copy(active = true)
@@ -151,7 +202,9 @@ class RoundController @Inject() (
                   r,
                   editRoundForm
                     .fill(EditRound(r, editForm.jurors, editForm.returnTo, editForm.newImages))
-                    .withGlobalError(message, args: _*)
+                    .withGlobalError(message, args: _*),
+                  // a creation rejected before anything was created keeps the form's token
+                  submitToken = RoundController.submitToken(request).filter(_ => r.id.isEmpty)
                 )
               )
 
@@ -165,11 +218,21 @@ class RoundController @Inject() (
                 .replace("}", ")")
                 .take(500)
 
-            round.id match {
+            // the submitted contest must be one the user administers; an edited round
+            // must belong to it (checked below)
+            if (!contestPermission(User.ADMIN_ROLES, Some(contestId))(user)) onUnAuthorized(user)
+            else round.id match {
               case None =>
                 try {
-                  roundsService.createNewRound(round, editForm.jurors)
-                  toRoundsList
+                  roundsService.submit(round, editForm.jurors, RoundController.submitToken(request)) match {
+                    case _: RoundService.Created => toRoundsList
+                    // The same form submitted again (a double click, or the first one
+                    // outlasted the browser's or the proxy's wait): no second round; the
+                    // first one's distribution was finished if it hadn't.
+                    case resubmitted: RoundService.Resubmitted =>
+                      logger.warn(s"Contest $contestId: ${resubmitted.message}")
+                      toRoundsList.flashing("error" -> resubmitted.message)
+                  }
                 } catch {
                   // Round row exists but its images are incomplete / failed: send the
                   // admin to its edit page, where "Distribute new files" can retry.
@@ -187,51 +250,69 @@ class RoundController @Inject() (
                 }
 
               case Some(roundId) =>
-                Round.updateRound(roundId, round)
-                if (!editForm.newImages) toRoundsList
-                else
-                  try {
-                    roundsService.distributeNewImages(roundId)
-                    toRoundsList
-                  } catch {
-                    case e: RoundService.RoundNotFullyDistributed =>
-                      logger.error(e.getMessage)
-                      reRender(Round.findById(roundId).getOrElse(round), e.getMessage)
-                    case NonFatal(e) =>
-                      logger.error(s"Failed to distribute new files for round $roundId", e)
-                      reRender(
-                        Round.findById(roundId).getOrElse(round),
-                        "round.distribute.failed",
-                        detail(e)
-                      )
-                  }
+                withAdminRound(user, roundId, NotFound(s"Round $roundId not found")) {
+                  case stored if stored.contestId != contestId => onUnAuthorized(user)
+                  case _ =>
+                    Round.updateRound(roundId, round)
+                    if (!editForm.newImages) toRoundsList
+                    else
+                      try {
+                        roundsService.distributeNewImages(roundId)
+                        toRoundsList
+                      } catch {
+                        case e: RoundService.RoundNotFullyDistributed =>
+                          logger.error(e.getMessage)
+                          reRender(Round.findById(roundId).getOrElse(round), e.getMessage)
+                        case NonFatal(e) =>
+                          logger.error(s"Failed to distribute new files for round $roundId", e)
+                          reRender(
+                            Round.findById(roundId).getOrElse(round),
+                            "round.distribute.failed",
+                            detail(e)
+                          )
+                      }
+                }
             }
           }
         )
     }
 
+  /** Starts or stops a round of a contest the user administers. */
   def setRound(): EssentialAction = withAuth(rolePermission(User.ADMIN_ROLES)) {
     user => implicit request =>
-      val selectRound = selectRoundForm.bindFromRequest().get
-
-      val id = selectRound.roundId.toLong
-      val round = Round.findById(id)
-      round.foreach { r =>
-        roundsService.setCurrentRound(Nil, r.copy(active = selectRound.active))
-      }
-
-      Redirect(routes.RoundController.rounds(round.map(_.contestId)))
+      selectRoundForm
+        .bindFromRequest()
+        .fold(
+          _ => BadRequest,
+          selectRound =>
+            selectRound.roundId.toLongOption.fold[Result](BadRequest) { id =>
+              withAdminRound(user, id, NotFound(s"Round $id not found")) { round =>
+                roundsService.setCurrentRound(Nil, round.copy(active = selectRound.active))
+                Redirect(routes.RoundController.rounds(Some(round.contestId)))
+              }
+            }
+        )
   }
 
+  /** Activates or deactivates a juror in a round of a contest the user administers.
+    * Only that round's round_user row changes.
+    */
   def setRoundUser(): EssentialAction =
     withAuth(rolePermission(User.ADMIN_ROLES)) { user => implicit request =>
-      val setRoundUser = setRoundUserForm.bindFromRequest().get
-      RoundUser.setActive(
-        setRoundUser.roundId.toLong,
-        setRoundUser.userId.toLong,
-        setRoundUser.active
-      )
-      Redirect(routes.RoundController.roundStat(setRoundUser.roundId.toLong))
+      setRoundUserForm
+        .bindFromRequest()
+        .fold(
+          _ => BadRequest,
+          setRoundUser =>
+            (setRoundUser.roundId.toLongOption, setRoundUser.userId.toLongOption) match {
+              case (Some(roundId), Some(userId)) =>
+                withAdminRound(user, roundId, NotFound(s"Round $roundId not found")) { _ =>
+                  RoundUser.setActive(roundId, userId, setRoundUser.active)
+                  Redirect(routes.RoundController.roundStat(roundId))
+                }
+              case _ => BadRequest
+            }
+        )
     }
 
   def setImages(): EssentialAction =
@@ -287,7 +368,7 @@ class RoundController @Inject() (
     }
 
   def roundStat(roundId: Long): EssentialAction =
-    withAuth(rolePermission(Set(User.ADMIN_ROLE, "jury", "root") ++ User.ORG_COM_ROLES)) {
+    withAuthOn(blocking)(rolePermission(Set(User.ADMIN_ROLE, "jury", "root") ++ User.ORG_COM_ROLES)) {
       user => implicit request =>
         Round
           .findById(roundId)
@@ -360,6 +441,22 @@ class RoundController @Inject() (
   )
   case class MergeRoundsForm(targetRoundId: Long, sourceRoundId: Long)
 
+}
+
+object RoundController {
+
+  private val TokenPattern = "[0-9a-fA-F-]{36}".r
+
+  /** A one-time token for a new-round form (see RoundService.submit). */
+  def newSubmitToken(): String = java.util.UUID.randomUUID().toString
+
+  /** The submission token the new-round form sent, if it is one. */
+  def submitToken(request: Request[AnyContent]): Option[String] =
+    request.body.asFormUrlEncoded
+      .flatMap(_.get("submitToken"))
+      .flatMap(_.headOption)
+      .map(_.trim)
+      .filter(TokenPattern.matches)
 }
 
 case class SelectRound(roundId: String, active: Boolean)

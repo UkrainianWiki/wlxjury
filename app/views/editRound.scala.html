@@ -1,5 +1,4 @@
 @import db.scalikejdbc.User
-@import org.intracer.wmua.Image
 @import db.scalikejdbc.Round
 @import org.scalawiki.wlx.dto.SpecialNomination
 @(
@@ -11,9 +10,8 @@
         jurors: Seq[User],
         jurorsMapping: Mapping[Seq[String]],
         regions: Map[String, String] = Map.empty,
-        statOpt: Option[RoundStat] = None,
-        newImages: Seq[Image] = Nil,
-        specialNominations: Seq[SpecialNomination] = Nil
+        specialNominations: Seq[SpecialNomination] = Nil,
+        submitToken: Option[String] = None
 )(implicit flash: Flash, messages: Messages, req: RequestHeader)
 
 @implicitFieldConstructor = @{
@@ -46,6 +44,10 @@
                     <input type="hidden" name="contest" id="contest" value='@editRoundForm("contest").value' />
                     <input type="hidden" name="number" id="number" value='@editRoundForm("number").value' />
                     <input type="hidden" name="roles" id="roles" value='jury' />
+                    @* one submission of the new-round form creates one round: a resubmit finds it *@
+                    @for(token <- submitToken if newRound) {
+                        <input type="hidden" name="submitToken" value="@token" />
+                    }
 
                     @b3.text(editRoundForm("name"), Symbol("_label") -> Messages("round.name.optional"))
 
@@ -61,8 +63,9 @@
 
                         @if(!newRound) {
                             @snippets.collapsible("jurors", "headingJurors", "collapseJurors") {
-                                @statOpt.map { stat =>
-                                    @roundStatTable(user, stat.round, stat)
+                                @* loaded when the panel is opened: see the script below *@
+                                @for(rid <- editRoundForm("id").value.flatMap(v => scala.util.Try(v.toLong).toOption)) {
+                                    <div id="round-stat-table" data-src="@routes.RoundController.roundStatTable(rid)">…</div>
                                 }
                             }
                         }
@@ -81,8 +84,15 @@
 
                         @if(!newRound) {
                             @b3.checkbox(field = editRoundForm("newImages"),
-                                Symbol("_label") -> Messages("distribute.x.new.files", newImages.size),
-                                Symbol("readonly") -> (numJurors == 0 || newImages.isEmpty))
+                                Symbol("_label") -> Messages("distribute.x.new.files", "?"),
+                                Symbol("readonly") -> (numJurors == 0))
+                            @for(rid <- editRoundForm("id").value.flatMap(v => scala.util.Try(v.toLong).toOption)) {
+                                <div class="col-md-offset-4 col-md-8" style="margin-bottom: 10px">
+                                    <button type="button" class="btn btn-default btn-xs" id="count-new-files"
+                                        data-src="@routes.RoundController.newFilesCount(rid)">@Messages("count.new.files")</button>
+                                    <span id="new-files-count"></span>
+                                </div>
+                            }
                         }
                     }
                     }
@@ -96,6 +106,25 @@
 
     </div>
 }
+
+            <script>
+              // The edit page leaves out its two expensive parts: the jurors' stat table
+              // is loaded when its panel is opened, the number of new files on request.
+              $(function () {
+                $('#collapseJurors').one('show.bs.collapse', function () {
+                  var el = $('#round-stat-table');
+                  if (el.length) el.load(el.data('src'));
+                });
+                $('#count-new-files').on('click', function () {
+                  var b = $(this).prop('disabled', true);
+                  $('#new-files-count').text('…');
+                  $.getJSON(b.data('src'))
+                    .done(function (r) { $('#new-files-count').text(r.count); })
+                    .fail(function () { $('#new-files-count').text('?'); })
+                    .always(function () { b.prop('disabled', false); });
+                });
+              });
+            </script>
 
             @for(
               cid    <- contestId;

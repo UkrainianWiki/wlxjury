@@ -22,9 +22,14 @@ object GatlingTestFixture {
     // 128 MB buffer pool, so the smoke queries would read them from disk on every
     // request. Server options rather than a my.cnf override: MariaDB ignores a
     // world-writable config file, as a file bind-mounted from Windows is.
+    // max_allowed_packet: MariaDB's own default (16M), as on a production server;
+    // testcontainers' config lowers it to 1M, and the driver doesn't split a batch
+    // insert to fit it, so distributing a round of more than ~25k selection rows
+    // (RoundDistributionSimulation) fails with a "Socket error".
     container.container.withCommand(
       "--innodb-buffer-pool-size=512M",
       "--innodb-log-file-size=128M",
+      "--max-allowed-packet=16M",
       "--skip-name-resolve"
     )
     container.start()
@@ -74,4 +79,8 @@ object GatlingTestFixture {
   val imagePageIds: Seq[Long]                   = data.imagePageIds
   val regions: Seq[String]                      = data.regions
   val votingPairs: Seq[(Long, Long, Long, Int)] = data.votingPairs
+
+  /** The fixture organizer first, then extra organizer accounts for concurrent sessions. */
+  val organizers: Seq[(Long, String, String)] =
+    organizer +: GatlingDbSetup.ensureExtraOrganizers(contestId, GatlingConfig.organizerAccounts - 1)
 }
