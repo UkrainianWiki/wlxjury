@@ -17,7 +17,7 @@ class DistributeImages @Inject()(imageRepo: ImageRepo) extends Logging {
 
   /** Builds and persists the selection rows for `images` in `round`.
     *
-    * The insert (plus criteria rates, if any) runs in a single transaction so a
+    * The insert (in chunks, plus criteria rates, if any) runs in a single transaction so a
     * failure part-way through — a deadlock, a lock-wait timeout, an oversized batch,
     * a unique-index violation — rolls back cleanly instead of leaving the round with
     * only some of its images. The caller is expected to verify the resulting image
@@ -46,7 +46,11 @@ class DistributeImages @Inject()(imageRepo: ImageRepo) extends Logging {
 
     logger.debug("saving selection: " + selection.size)
     DB.localTx { implicit session =>
-      SelectionJdbc.batchInsert(selection)
+      // In chunks: the driver sends one batch without splitting it to fit the
+      // server's max_allowed_packet, so a batch of the whole distribution (images x
+      // jurors rows, ~40 bytes each) fails with "Socket error" once it outgrows it
+      // (16M by default: ~400k rows). One transaction still: all chunks or none.
+      selection.grouped(DistributeImages.InsertChunk).foreach(SelectionJdbc.batchInsert(_))
       if (round.hasCriteria) {
         addCriteriaRates(selection)
       }
@@ -245,6 +249,9 @@ class DistributeImages @Inject()(imageRepo: ImageRepo) extends Logging {
 }
 
 object DistributeImages {
+
+  /** Selection rows per insert batch: ~200 KB, well below any max_allowed_packet. */
+  val InsertChunk = 5000
 
   case class Rebalance(newSelections: Seq[Selection], removedSelections: Seq[Selection])
 
