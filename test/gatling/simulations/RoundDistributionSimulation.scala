@@ -70,7 +70,9 @@ class RoundDistributionSimulation extends Simulation {
     Seq[(String, Any)](
       "number" -> "0", "name" -> name, "contest" -> contestId.toString, "roles" -> "jury",
       "distribution" -> cfg.jurorsPerImage.toString, "rates" -> "1",
-      "minMpx" -> "", "minSize" -> "", "mediaType" -> "all"
+      "minMpx" -> "", "minSize" -> "", "mediaType" -> "all",
+      // the new-round form's one-time token (ignored when saving an existing round)
+      "submitToken" -> java.util.UUID.randomUUID().toString
     ) ++ extra ++ jurorParams
 
   private val login =

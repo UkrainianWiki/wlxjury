@@ -35,6 +35,50 @@ class RoundEditPageSpec extends PlaySpecification with PlayTestDb {
   private def get(url: String, user: User) =
     FakeRequest(GET, url).withSession(Secured.UserName -> user.email).withCSRFToken
 
+  /** The new-round form as the browser submits it, with its submission token. */
+  private def saveNewRound(contestId: Long, jurors: Seq[Long], token: String, user: User) =
+    FakeRequest(POST, "/admin/rounds/save")
+      .withSession(Secured.UserName -> user.email)
+      .withFormUrlEncodedBody(
+        Seq("number" -> "0", "name" -> "Round 2", "contest" -> contestId.toString, "roles" -> "jury",
+          "distribution" -> "1", "rates" -> "1", "minMpx" -> "", "minSize" -> "", "mediaType" -> "all",
+          "submitToken" -> token) ++
+          jurors.zipWithIndex.map { case (id, i) => s"jurors[$i]" -> id.toString }: _*)
+      .withCSRFToken
+
+  "the new-round form" should {
+
+    "carry a fresh submission token" in {
+      testDbApp { implicit app =>
+        val (contest, admin, _) = fixture()
+        def token() = """name="submitToken" value="([0-9a-f-]{36})"""".r
+          .findFirstMatchIn(contentAsString(route(app, get(s"/admin/rounds/edit?contestId=${contest.getId}", admin)).get))
+          .map(_.group(1))
+        val (first, second) = (token(), token())
+        first must beSome
+        first !== second
+      }
+    }
+
+    "create one round when saved twice" in {
+      testDbApp { implicit app =>
+        val (contest, admin, round) = fixture()
+        val jurors = User.findRoundJurors(round.getId).map(_.getId)
+        val token = java.util.UUID.randomUUID().toString
+
+        val first = route(app, saveNewRound(contest.getId, jurors, token, admin)).get
+        status(first) must_== SEE_OTHER
+        flash(first).get("error") must beNone
+
+        val second = route(app, saveNewRound(contest.getId, jurors, token, admin)).get
+        status(second) must_== SEE_OTHER
+        flash(second).get("error") must beSome.which(_.contains("already created from this form"))
+
+        roundDao.findByContest(contest.getId).count(_.name.contains("Round 2")) === 1
+      }
+    }
+  }
+
   "the round edit page" should {
 
     "show the round without its stat table or new files count" in {

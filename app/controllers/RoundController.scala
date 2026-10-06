@@ -9,7 +9,7 @@ import play.api.data.Form
 import play.api.data.Forms._
 import play.api.i18n.I18nSupport
 import play.api.libs.json.Json
-import play.api.mvc.{ControllerComponents, EssentialAction, RequestHeader, Result}
+import play.api.mvc.{AnyContent, ControllerComponents, EssentialAction, Request, RequestHeader, Result}
 import play.twirl.api.Html
 import services.RoundService
 
@@ -80,7 +80,10 @@ class RoundController @Inject() (
 
       val jurors = withTopImages.id.fold(User.loadJurors(contestId))(User.findRoundJurors).sorted
       val filledRound = editRoundForm.fill(EditRound(withTopImages, jurors.flatMap(_.id), None))
-      Ok(roundFormView(user, withTopImages, filledRound, Some(rounds), Some(jurors)))
+      Ok(
+        roundFormView(user, withTopImages, filledRound, Some(rounds), Some(jurors),
+          submitToken = Option.when(withTopImages.id.isEmpty)(RoundController.newSubmitToken()))
+      )
     }
 
   /** Renders the create/edit round page for `round` with the given (possibly
@@ -96,7 +99,8 @@ class RoundController @Inject() (
       round: Round,
       form: Form[EditRound],
       knownRounds: Option[Seq[Round]] = None,
-      knownJurors: Option[Seq[User]] = None
+      knownJurors: Option[Seq[User]] = None,
+      submitToken: Option[String] = None
   )(implicit request: RequestHeader): Html = {
     val contestId = round.contestId
     views.html.editRound(
@@ -108,7 +112,8 @@ class RoundController @Inject() (
       knownJurors.getOrElse(round.id.fold(User.loadJurors(contestId))(User.findRoundJurors).sorted),
       jurorsMapping,
       contestsController.regions(contestId),
-      contestSpecialNominations(contestId)
+      contestSpecialNominations(contestId),
+      submitToken
     )
   }
 
@@ -176,7 +181,9 @@ class RoundController @Inject() (
                   rounds = contestId.map(Round.findByContest).getOrElse(Nil),
                   contestId = contestId,
                   jurors = contestId.map(User.loadJurors).getOrElse(Nil),
-                  jurorsMapping = jurorsMapping
+                  jurorsMapping = jurorsMapping,
+                  // keep the form's token: nothing was created from this submission
+                  submitToken = RoundController.submitToken(request)
                 )
               )
           },
@@ -195,7 +202,9 @@ class RoundController @Inject() (
                   r,
                   editRoundForm
                     .fill(EditRound(r, editForm.jurors, editForm.returnTo, editForm.newImages))
-                    .withGlobalError(message, args: _*)
+                    .withGlobalError(message, args: _*),
+                  // a creation rejected before anything was created keeps the form's token
+                  submitToken = RoundController.submitToken(request).filter(_ => r.id.isEmpty)
                 )
               )
 
@@ -215,14 +224,16 @@ class RoundController @Inject() (
             else round.id match {
               case None =>
                 try {
-                  roundsService.createNewRound(round, editForm.jurors)
-                  toRoundsList
+                  roundsService.submit(round, editForm.jurors, RoundController.submitToken(request)) match {
+                    case _: RoundService.Created => toRoundsList
+                    // The same form submitted again (a double click, or the first one
+                    // outlasted the browser's or the proxy's wait): no second round; the
+                    // first one's distribution was finished if it hadn't.
+                    case resubmitted: RoundService.Resubmitted =>
+                      logger.warn(s"Contest $contestId: ${resubmitted.message}")
+                      toRoundsList.flashing("error" -> resubmitted.message)
+                  }
                 } catch {
-                  // The same creation submitted again (the first one outlasted the
-                  // browser's or the proxy's wait): show the rounds list, which has it.
-                  case e: RoundService.DuplicateRound =>
-                    logger.warn(s"Contest $contestId: ${e.getMessage}")
-                    toRoundsList.flashing("error" -> e.getMessage)
                   // Round row exists but its images are incomplete / failed: send the
                   // admin to its edit page, where "Distribute new files" can retry.
                   case e: RoundService.RoundNotFullyDistributed =>
@@ -430,6 +441,22 @@ class RoundController @Inject() (
   )
   case class MergeRoundsForm(targetRoundId: Long, sourceRoundId: Long)
 
+}
+
+object RoundController {
+
+  private val TokenPattern = "[0-9a-fA-F-]{36}".r
+
+  /** A one-time token for a new-round form (see RoundService.submit). */
+  def newSubmitToken(): String = java.util.UUID.randomUUID().toString
+
+  /** The submission token the new-round form sent, if it is one. */
+  def submitToken(request: Request[AnyContent]): Option[String] =
+    request.body.asFormUrlEncoded
+      .flatMap(_.get("submitToken"))
+      .flatMap(_.headOption)
+      .map(_.trim)
+      .filter(TokenPattern.matches)
 }
 
 case class SelectRound(roundId: String, active: Boolean)

@@ -50,7 +50,8 @@ case class Round(
     specialNomination: Option[String] = None,
     users: Seq[User] = Nil,
     criteriaNames: Seq[String] = Nil,
-    mediaType: Option[String] = None
+    mediaType: Option[String] = None,
+    submitToken: Option[String] = None
 ) extends HasId {
 
   def availableJurors(implicit session: DBSession = AutoSession): Seq[User] =
@@ -119,22 +120,23 @@ case class Round(
     }
   }
 
-  def addUsers(users: Seq[RoundUser]): Unit = {
-    DB localTx { implicit session =>
-      withSQL {
-        val c = RoundUser.column
-        insert
-          .into(RoundUser)
-          .namedValues(
-            c.roundId -> sqls.?,
-            c.userId -> sqls.?,
-            c.role -> sqls.?,
-            c.active -> sqls.?
-          )
-      }.batch(users.map(ru => Seq(id, ru.userId, ru.role, ru.active)): _*)
-        .apply()
-    }
-  }
+  def addUsers(users: Seq[RoundUser]): Unit =
+    DB localTx { implicit session => addUsersIn(users) }
+
+  /** [[addUsers]] in the caller's session (transaction). */
+  def addUsersIn(users: Seq[RoundUser])(implicit session: DBSession): Unit =
+    withSQL {
+      val c = RoundUser.column
+      insert
+        .into(RoundUser)
+        .namedValues(
+          c.roundId -> sqls.?,
+          c.userId -> sqls.?,
+          c.role -> sqls.?,
+          c.active -> sqls.?
+        )
+    }.batch(users.map(ru => Seq(id, ru.userId, ru.role, ru.active)): _*)
+      .apply()
 
   def deleteUser(
       user: User
@@ -227,7 +229,8 @@ object Round extends RoundRepo with CRUDMapper[Round] {
       monuments = rs.stringOpt(c.monuments),
       topImages = rs.intOpt(c.topImages),
       specialNomination = rs.stringOpt(c.specialNomination),
-      mediaType = rs.stringOpt(c.mediaType)
+      mediaType = rs.stringOpt(c.mediaType),
+      submitToken = rs.stringOpt(c.submitToken)
     ).withFixedCategories
 
   def create(round: Round)(implicit session: DBSession = AutoSession): Round = {
@@ -259,7 +262,8 @@ object Round extends RoundRepo with CRUDMapper[Round] {
           column.monuments -> round.monuments,
           column.topImages -> round.topImages,
           column.specialNomination -> round.specialNomination,
-          column.mediaType -> round.mediaType
+          column.mediaType -> round.mediaType,
+          column.submitToken -> round.submitToken
         )
     }.updateAndReturnGeneratedKey()
 
@@ -334,6 +338,10 @@ object Round extends RoundRepo with CRUDMapper[Round] {
         .where
         .eq(column.contestId, contestId)
     }.update()
+
+  /** The round created by the submission with this token (see V59), if any. */
+  def findBySubmitToken(token: String)(implicit session: DBSession = AutoSession): Option[Round] =
+    where(sqls.eq(r.submitToken, token)).apply().headOption
 
   def countByContest(contestId: Long): Long =
     countBy(sqls.eq(r.contestId, contestId))
