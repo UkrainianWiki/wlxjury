@@ -36,16 +36,30 @@ Read those first.
 
 ---
 
-## Task 13.1: Distribution job model and status (migration + DAO)
+## Task 13.1: Job model and status: a generic `job` table (migration + DAO)
 
-- **Where job state is stored:**
-  - **Option 1:** a `distribution_job` table, with one row per job: round id, kind (create / new files / resume), status (`queued`, `running`, `failed`, `done`, `cancelled`), totals and progress (`candidates_seen`, `images_added`, `rows_added`), the keyset cursor (last `page_id`), the juror round-robin position, the error message, who started it, and timestamps.
-  - **Option 2:** status columns on `rounds`.
+> **Design change (maintainer, 2026-10-07):** other features will need background jobs too (fetching images from Commons, fetching monuments from the monument lists), so job state lives in a **generic `job` table** with generic scheduler code, not a distribution-specific table. Only the `round_distribution` kind is implemented now.
 
-  Prefer the table: it keeps history, and a round can have several jobs over time (create, then "new files"). Enforce **at most one active job per round** in the database, e.g. a unique key on `(round_id, active_flag)` where only active jobs set the flag, or an equivalent. Justify the choice.
-- **Round visibility:** a round with an active create/resume job is inactive and hidden from jurors (gallery, voting, round switcher). Decide the round state explicitly, e.g. the existing `active=false` plus "has an active job", or a new `rounds.state`. Make sure every juror-facing query respects it.
-  - **Check:** `selectWS` (POST /rate) currently accepts votes on inactive rounds (a side issue). Votes must not land on a round that is still distributing.
-- **The submission token (Task 12)** maps a resubmit to the round, and so to its job: a resubmit of a running job shows its progress; of a failed job, it resumes the job.
+- **`job` table** (`V60__Background_jobs.sql`), one row per job, kept as history:
+  - `id`, `kind` (`round_distribution` now; later `commons_image_import`, `monument_list_import`, …);
+  - `contest_id` (nullable): listing, permissions, and fairness between contests;
+  - `subject_type` + `subject_id`: what it works on (round 42, contest 7);
+  - `status`: `queued` / `running` / `failed` / `done` / `cancelled`;
+  - `params` (JSON): kind-specific inputs, fixed at creation. A distribution stores the round id, `completingCreation` and a snapshot of the round's settings, for the record: the job reads the round itself, whose settings don't change after creation;
+  - `state` (JSON): the kind-specific resume cursor, written in the same transaction as each step's work. A distribution stores its phase, the keyset cursor (last `page_id`), the juror position, counters, the count before the job, the ranked top-N ids and the previous rounds it holds frozen;
+  - `progress_done`, `progress_total` (nullable: unknown for some kinds), `progress_unit`;
+  - `error`, `attempts`, `created_by`, `created_at` / `started_at` / `updated_at` / `finished_at`;
+  - `owner` + `heartbeat_at`: a lease (13.4).
+- **One active job per subject, in the database:** a `dedupe_key` (e.g. `round_distribution:round:42`) and a STORED generated column `active_dedupe_key = IF(status IN ('queued','running'), dedupe_key, NULL)` with a UNIQUE index (MariaDB 10.6 supports it; verified by `JobSchedulerSpec` on the 10.6 test container). A second request for the subject fails its insert and attaches to the active job. A **failed** job is not active: it doesn't block the subject, and the round service resumes it (Retry) instead of creating another.
+- **Indexes:** `(status, kind)`, `(contest_id, created_at)`, `(subject_type, subject_id)`, the unique `active_dedupe_key`.
+- **Round visibility stays on the round** (decision): `rounds.distributing` (V60). A round being created is inserted with `distributing = 1` and `active = 0`, and the job's final step, after the count check, sets `distributing = 0, active = 1`. While `distributing`:
+  - juror-facing queries hide it: `Round.activeRounds` (round switcher, `/roundstat` redirect) requires `active AND NOT distributing`; the gallery refuses it to non-organizers even with `juryOrgView`;
+  - it can't be started: `Round.setActiveGuarded` (the start/stop button and the edit form's save, which sets `active = true`) refuses;
+  - votes are refused: `selectWS` (POST /rate) now requires `round.openToJurors` (`active && !distributing`), as the large view already required `active`. **Behaviour change:** votes on a stopped round, and on a previous round frozen during a distribution, are refused too (409). The freeze never stopped votes through `/rate` before.
+  - It **stays set when the creation fails or is cancelled**, so a partial round is never shown; finishing it (Retry, or "Distribute new files", whose job completes the creation because the round is still `distributing`) clears it.
+  - Why a column and not "has an active job": a failed or cancelled creation has no active job, yet its round must stay hidden; and the round row is what every juror-facing check already loads.
+- **Freezing is counted per round** (`rounds.freeze_count`, `active_before_freeze`): see 13.3.
+- **The submission token (Task 12)** maps a resubmit to the round, and so to its latest job: a resubmit of a running job shows its progress, of a failed job resumes it.
 
 ## Task 13.2: Streamed candidates (no full-set load)
 
@@ -84,25 +98,28 @@ Read those first.
   - then activate the round, invalidate `RoundImageCounts`, and mark the job `done`.
   - A count mismatch marks the job `failed`; a retry resumes it.
 
-## Task 13.4: Scheduler and workers
+## Task 13.4: Generic scheduler and workers (`services.jobs`)
 
-- **A small worker pool runs chunk tasks,** taking turns between active jobs (round-robin, one chunk each). That gives fairness across admins and contests and lets small jobs finish fast.
-  - Workers: configurable, default about 2–3 (CPU-bound on a 2-CPU server shared with MariaDB).
-  - Chunk size: configurable, default 5000 images, or rows: pick and justify.
-- **The pool is separate** from Play's default dispatcher and from `blocking-dispatcher`, so distribution can never starve request handling.
-- **Top-N jobs run their ranking query as their first task.**
-- **Cancellation** between chunks: the job becomes `cancelled`, the rows inserted so far are removed or kept for resume (decide and document), and the previous rounds are restored.
-- **Restart recovery:** on application start, jobs left `running` or `queued` (after a crash or deploy) are re-queued and resume from their cursor, idempotently thanks to the anti-join.
-- **Single instance:** jobs live in one app instance, as today. The database's one-active-job-per-round rule keeps two instances, e.g. during a blue-green switch, from running the same round twice.
+- **`JobHandler` per kind:** `step(job, ctx)` does one step (one chunk) in the transaction of `ctx`, with the job's row locked (`SELECT … FOR UPDATE`), and returns `Continue(state, progress)`, `Done(…)` or `Failed(error, …)`; the scheduler writes the state, progress and status in that same transaction. Hooks, each in the transaction of its status change: `onFailed`, `onCancelled`, `onRetry`. `prepare(job)` runs before each step **outside any transaction** (the place for external calls whose result isn't in the state, e.g. a Commons category's file ids), `forget` drops its cache. `details(job)` adds kind-specific figures to the status JSON. A step that throws rolls back and fails the job; deadlocks and lock-wait timeouts are retried (3 times) first.
+- **`JobScheduler`:**
+  - its own small thread pool (`jobs.workers`), separate from Play's dispatchers and from `blocking-dispatcher`;
+  - **turns:** a worker runs one step of one job, then the job goes back in line. The next step goes to the **contest served longest ago**, and within it to the job served longest ago: a small job finishes in a few turns while a big one runs, and one contest's many jobs can't starve another contest's;
+  - **per-kind concurrency limits** (`jobs.concurrency.<kind>`, e.g. distribution 2; Commons imports would get 1–2 for the API's rate limits), under the global `workers`;
+  - **lease, heartbeat, restart recovery:** every `pollInterval` (2 s) the scheduler claims queued jobs of its kinds, and running jobs whose `heartbeat_at` is older than the `lease` (60 s: their instance died). It renews the heartbeat of the jobs it holds every `heartbeatInterval` (10 s), and each step renews it too. A graceful stop finishes the running steps and hands its running jobs back to `queued`, so the next instance takes them at once; after a crash they are taken over when the lease expires. Each step checks under the row lock that this instance still owns the job, so two instances (a blue-green switch) never run one job;
+  - **cancel** (`queued`, `running` or `failed` → `cancelled`) takes the job's row lock, so it waits for the running step to commit (a chunk: well under a second) and the job then stops;
+  - **retry** (`failed` → `queued`) runs the handler's `onRetry` and resumes from the committed state; refused if another job of the subject is active;
+  - **inline mode** (`jobs.mode = inline`: tests, scripts): no threads; a job is claimed when created and run to its end by the call that starts it.
+- **Chunk size and workers:** see the 13.7 measurements; the defaults are `jobs.workers = 2`, `jobs.concurrency.round_distribution = 2`, `jobs.roundDistribution.chunkRows = 15000` (selection rows per step; the window holds rows / jurors-per-image candidate images, at most 20,000).
+- **Top-N jobs rank in their first step** (phase `rank`), storing the chosen ids in the state.
+- **Cancel keeps the rows** (decision): deleting them would be another long write as big as the insert, needing its own chunked job, and they are harmless: the round stays hidden (`distributing`) and a later "Distribute new files" continues from them (the anti-join skips them) and completes the creation. The previous rounds are restored.
+- **Generic endpoints:** `GET /admin/jobs/:id` (status JSON), `POST /admin/jobs/:id/cancel`, `POST /admin/jobs/:id/retry`, for the admins of the job's contest (root for a job without one).
 
 ## Task 13.5: Requests and UI
 
-- **`POST /admin/rounds/save`** (create, and "distribute new files" on an existing round) **creates or resumes the job and returns 303 immediately** to the round's page, or the rounds list. Nothing long runs on a request thread any more, including the "Count new files" Commons calls; consider making that a job too, or at least moving it off `blocking-dispatcher`.
-- **Rounds list and round edit page:**
-  - show the job status: queued (with its position), distributing (with progress such as "40,000 / 115,101 images"), failed (with the error and a **Retry** button that resumes), done;
-  - add a **Cancel** button for queued and running jobs;
-  - refresh progress with a light JSON endpoint (`GET /admin/rounds/:id/distribution`) polled every few seconds while a job is active. Follow the existing JS and CSP conventions.
-- **Permissions:** the same contest checks as `saveRound`, including Task 12's and the user's contest checks.
+- **`POST /admin/rounds/save`** creates the round (hidden), its jurors and its job, and freezes its previous rounds, in one transaction, and **returns 303 to the rounds list at once**; "Distribute new files" on an existing round creates (or resumes a failed) job the same way. A resubmit of a failed creation resumes its job; of a running one, shows it (flash message). Bad input is still rejected before anything is created, re-rendering the form.
+- **"Count new files"** runs the job's own windows and filters read-only, on a single thread of its own (`count-new-files`), off `blocking-dispatcher`; concurrent counts queue there. It is still an HTTP request that waits for the count (seconds on a big contest); making it a job kind is possible later.
+- **Rounds list and edit page:** a reusable status component (`app/views/snippets/jobStatus.scala.html` + `public/javascripts/job-status.js`, same conventions as `cache-status.js`, Jest-tested) shows queued (with the number of queued jobs ahead), running ("Distributing images to round 7: 40,000 / 115,101 images (34%), 12,345 added…"), failed (with the error and **Retry**), cancelled, done; **Cancel** for queued, running and failed jobs. It polls `GET /admin/jobs/:id` every 3 s while the job is active, and reloads the page when it finishes so the counts and the round's state show.
+- **Permissions:** the round form's contest checks as before; the job endpoints check the job's contest.
 
 ## Task 13.6: Tests
 
@@ -134,6 +151,24 @@ Read those first.
   - heap after GC, with the production JVM settings (`-Xmx1g`, plus a run at `-Xmx512m`), one GC log per JVM (`gc-%p.log`).
 - **Choose** the worker count and chunk size from these runs, and record them in this plan.
 - **Also re-run the RoundDistribution simulation** (all four steps), to compare single-job time with the old in-request path.
+
+## Future job kinds (not implemented)
+
+How the next kinds would map onto the generic model:
+
+- **`commons_image_import`** (fetch a contest's images from a Commons category):
+  - subject: the contest (`subject_type = contest`), `dedupe_key = commons_image_import:contest:7`; concurrency 1–2 for the API's rate limits;
+  - `params`: the category, the contest id, options (e.g. whether to refresh existing images);
+  - `state`: the API's `continue` token (`gcmcontinue` and friends) and counters (pages fetched, images inserted, updated);
+  - a step: one API page. The external call can't run inside the database transaction (a slow API would hold the job's row lock and a connection), so the step fetches the page with the token from the state **before** opening its transaction (the handler's `prepare`, or a two-part step), then upserts the page's images and stores the next token in one transaction. A crash between the fetch and the commit refetches that page: the upsert is idempotent;
+  - progress: pages or images so far; the total is often unknown (`progress_total` NULL), or the category's size from one cheap `categoryinfo` call.
+- **`monument_list_import`** (fetch monuments from the monument list pages):
+  - subject: the contest (or the monument list), `dedupe_key = monument_list_import:contest:7`;
+  - `params`: the list's root page or template, the region filter;
+  - `state`: the index of the next list page (and the list of pages, fetched by the first step), counters;
+  - a step: one list page, fetched outside the transaction, its monuments upserted with the next index in one transaction;
+  - progress: list pages done / total.
+- Both get a handler class and one line in `JobSchedulerProvider`; the table, scheduler, endpoints and status component are reused unchanged.
 
 ---
 
