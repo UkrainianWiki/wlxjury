@@ -1037,6 +1037,72 @@ The full set at the branch head, Task 1 JVM flags, 0 KO everywhere:
 
 ---
 
+## Task 12: Detect duplicate round submissions with a submission token, and fix the retry flow
+
+**Background:** two code reviews of this branch found problems in how round creation handles resubmits and retries (2026-10-06, unverified review findings, confirmed against the code where noted):
+
+- **The duplicate check compares round settings.** `RoundService.createNewRound` (`3e32a1f`) refuses a new round whose settings match a round of the same contest created in the last 30 minutes. It leaves out the jurors on purpose ("a resubmit never changes them"). That causes two problems:
+  - **A split jury is refused.** Two deliberately separate rounds with the same filters and different jurors, created within 30 minutes, look like a duplicate.
+  - **The empty-round exemption** (`62b644e`, to let a failed creation be retried) also covers rounds that were legitimately empty, so their double submit is duplicated.
+- **A failed creation leaves its round behind.** After `RoundDistributionFailed` the created round stays active, with `round_user` rows and no images. A resubmit creates a **second** round; the spec asserts `created.id !== failed.id`.
+- **Two locks, so concurrent fills are possible.** Creation locks per contest (`RoundService.lock`), "Distribute new files" locks per round. A resubmit and a "Distribute new files" on the same failed round can both fill a round at the same time.
+- **Retry fixes needed regardless of the duplicate check:**
+  1. **Deactivated jurors get images on a retry.** `User.findRoundJurors` falls back to `RoundUser.byRoundId`, which ignores `active`. Use `RoundUser.activeJurors`.
+  2. **Previous rounds aren't frozen during a retried distribution.** Creation deactivates them while copying; the retry path does not. After a failure, `create()`'s catch re-activates them, so jurors can vote mid-copy and selected images are missed (they turn up later as "new files").
+- **Minor: the lock map grows forever.** `RoundService`'s lock `TrieMap` gains one entry per contest and round and never shrinks.
+
+**Design: a one-time submission token (idempotency key) instead of comparing settings.**
+
+- **Form:** when the new-round form is rendered, `editRound` puts a fresh random token (UUID) in a hidden field. This is only for creating a round; editing an existing round doesn't need it.
+- **Storage:** store the token with the round in the same transaction that creates it, under a DB unique constraint. Either:
+  - a nullable `rounds.submit_token VARCHAR(36) UNIQUE` (next free migration), or
+  - a `round_submissions(token PRIMARY KEY, round_id, created_at)` table.
+
+  Pick one and justify it. NULL for existing rounds and for API-created rounds without a token.
+- **Save** (`saveRound` → `createNewRound`):
+  - **New token:** create the round as now.
+  - **Known token** (a resubmit: double click, browser retry after a timeout, Back+Submit):
+    - Do **not** create anything. Look up the round for that token.
+    - If its distribution failed or is incomplete, **resume it** (see below). Otherwise redirect to it, with the same flash as today.
+  - **Concurrent identical submits:** the unique constraint decides. Catch the duplicate-key error and treat the loser as a resubmit. This works across app instances, unlike the in-JVM lock.
+- **Remove** `sameSettings`, the 30-minute window, the empty-round exemption, the per-contest creation lock and its `TrieMap`. Keep per-round mutual exclusion for distribution (next point).
+- **Resume = continue the same round.**
+  - A resubmit of a failed creation and "Distribute new files" go through **one** code path, under **one** per-round lock. That can be a lock striped by round id (fixed array, no unbounded map) or a DB row lock (`SELECT … FOR UPDATE` on the round), which also works across instances.
+  - That path:
+    - freezes the previous rounds while copying, as creation does, and restores their state afterwards;
+    - uses only **active** jurors (`RoundUser.activeJurors`);
+    - keeps `distributeAndVerify`'s exactness and chunked inserts.
+- **Make background distribution easy to add later** (not part of this task): keep the "distribute or resume a round" entry point independent of the HTTP request, so a later task can run it as a background job with a stored status.
+
+**Not in this task:** moving distribution off the request thread (see "Open: long round creations on the blocking dispatcher" below), and the other review findings listed at the end.
+
+**Tests:**
+- **A resubmit with the same token:** no second round; it redirects to the first one.
+- **A split jury:** two forms with the same settings and different jurors create two rounds.
+- **A legitimately empty round resubmitted:** not duplicated.
+- **A failed creation, then a resubmit:** the same round is resumed and filled. No stray round, and the previous rounds are frozen during the copy.
+- **A retry with a deactivated juror:** that juror gets no images.
+- **Concurrent identical submits:** exactly one round, fully distributed.
+- **Concurrent resume and "Distribute new files" on one round:** filled once.
+- **Spec updates:** `RoundCreationResubmitSpec` and the `62b644e` specs, including the `created.id !== failed.id` assertion.
+
+**Verify:**
+- The full `sbt test` passes.
+- RoundDistribution (all four steps) and the RoundManagement default flow still pass with the Task 1 JVM flags, with no regressions against the Task 11 numbers.
+
+### Open: long round creations on the blocking dispatcher (decision pending, not part of Task 12)
+
+**The problem:** the blocking dispatcher has 8 threads (`b46fafd`). Creating a round runs the whole distribution inside the request, about a minute for a large contest. A few of those, plus "Count new files" (which calls Commons) or an image import, can occupy all 8 threads, and galleries and `/roundstat` then stall. Task 12's token removes the resubmits that wait on a lock, but not the long request itself.
+
+**Proposed:**
+- Run distribution as a **background job on its own small pool** (1–2 threads).
+- Store a status on the round: distributing / failed / done.
+- Have the save return a 303 to the round page immediately; "retry" resumes the job.
+- This also removes the dependency on Play's idle timeout and Apache's `ProxyTimeout` for long creations.
+- It changes the organizer's experience (a status instead of a long page load), so it needs the maintainer's decision first.
+
+---
+
 ## Side issues found (not performance; triage separately)
 
 All inferred from reading the code:
