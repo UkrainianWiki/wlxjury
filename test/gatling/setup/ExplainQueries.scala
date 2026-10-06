@@ -36,8 +36,6 @@ object ExplainQueries {
             WHERE s.round_id = $binary) t GROUP BY rate""", true),
       ("T4 new selectedImageCount",
         s"SELECT COUNT(DISTINCT s.page_id) FROM selection s WHERE s.round_id = $binary AND s.rate = 1", true),
-      ("T4 new roundRateStat",
-        s"SELECT s.rate, COUNT(DISTINCT s.page_id) FROM selection s WHERE s.round_id = $binary GROUP BY s.rate", true),
       ("T4 total (COUNT DISTINCT of a round)",
         s"SELECT COUNT(DISTINCT s.page_id) FROM selection s WHERE s.round_id = $binary", true),
       ("T5 old roundsStat",
