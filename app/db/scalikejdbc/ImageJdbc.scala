@@ -149,8 +149,6 @@ object ImageJdbc extends CRUDMapper[Image]
     sql"""UPDATE selection SET monument_id = $monumentId
           WHERE page_id = $pageId AND NOT (monument_id <=> $monumentId)""".update()
 
-  def deleteImage(pageId: Long): Unit = deleteById(pageId)
-
   def findByFilename(filename: String)(implicit session: DBSession = AutoSession): Option[Image] =
     findBy(sqls.eq(column.title, s"File:$filename"))
 

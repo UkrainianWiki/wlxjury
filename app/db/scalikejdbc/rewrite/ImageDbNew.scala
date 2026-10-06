@@ -120,16 +120,15 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
       * mixed-direction ORDER BY (rate DESC, monument_id ASC, ...) can't be read from the
       * ascending index.
       *
-      * The inner query joins images too (a primary key lookup, from the index alone), so
-      * it pages only the rows that have an image, as the plain query and [[imageRank]]
-      * do: a selection row whose image was deleted would otherwise shift the offsets.
+      * The inner query reads selection alone: every selection row has its image (foreign
+      * key FK_selection_page_id, V58), so it pages the same rows the plain query and
+      * [[imageRank]] see when joining images.
       */
     private def deferredJoinPage(columnsStr: String): SQLSyntax = {
       val order = SQLSyntax.createUnsafely(orderBy())
       val page = SQLSyntax.createUnsafely(limitSql())
       val columns = SQLSyntax.createUnsafely(columnsStr)
-      sqls"$columns from (select s.id from selection s" +
-        sqls" STRAIGHT_JOIN images i on i.page_id = s.page_id ${where()} $order $page) k" +
+      sqls"$columns from (select s.id from selection s ${where()} $order $page) k" +
         sqls" STRAIGHT_JOIN selection s on s.id = k.id" +
         sqls" STRAIGHT_JOIN images i on i.page_id = s.page_id $order"
     }
@@ -147,11 +146,20 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
       sql"${imageRankSql(pageId, inner)}".map(_.int(1)).single().getOrElse(0)
     }
 
+    /** The regions of the round's (or the juror's) images. A top-level region is the
+      * monument id's prefix, as monument.adm0 is (MonumentJdbc) and as the single-region
+      * filter matches it (`s.monument_id like 'XX%'`): read from the selection rows
+      * alone, so the regions show even when the monument list was never loaded. Only
+      * sub-regions (adm1) need the monument table.
+      */
     def byRegionStat()(implicit messages: Messages, session: DBSession = autoSession): Seq[Region] = {
-      val map = SQL(s"""SELECT DISTINCT m.$regionColumn
+      val (region, monumentJoin) =
+        if (subRegions) (s"m.$regionColumn", "JOIN monument m ON m.id = s.monument_id")
+        else ("NULLIF(LEFT(SUBSTRING_INDEX(s.monument_id, '-', 1), 3), '')", "")
+      val map = SQL(s"""SELECT DISTINCT $region
                        |FROM selection s
-                       |JOIN monument m ON m.id = s.monument_id
-                       |WHERE m.$regionColumn IS NOT NULL
+                       |$monumentJoin
+                       |WHERE $region IS NOT NULL
                        |  ${userId.fold("") { id => s"AND s.jury_id = $id" }}
                        |  AND s.round_id = ${roundId.get}""".stripMargin)
         .map(rs => rs.string(1) -> None)

@@ -10,7 +10,8 @@
         jurors: Seq[User],
         jurorsMapping: Mapping[Seq[String]],
         regions: Map[String, String] = Map.empty,
-        specialNominations: Seq[SpecialNomination] = Nil
+        specialNominations: Seq[SpecialNomination] = Nil,
+        submitToken: Option[String] = None
 )(implicit flash: Flash, messages: Messages, req: RequestHeader)
 
 @implicitFieldConstructor = @{
@@ -43,6 +44,10 @@
                     <input type="hidden" name="contest" id="contest" value='@editRoundForm("contest").value' />
                     <input type="hidden" name="number" id="number" value='@editRoundForm("number").value' />
                     <input type="hidden" name="roles" id="roles" value='jury' />
+                    @* one submission of the new-round form creates one round: a resubmit finds it *@
+                    @for(token <- submitToken if newRound) {
+                        <input type="hidden" name="submitToken" value="@token" />
+                    }
 
                     @b3.text(editRoundForm("name"), Symbol("_label") -> Messages("round.name.optional"))
 

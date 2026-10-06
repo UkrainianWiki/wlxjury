@@ -205,16 +205,18 @@ class ImageDbNewDbSpec extends Specification with BeforeAll with TestDb {
       page(2, 0, Set("13")).count() === 3
     }
 
-    "skip a selection row whose image is gone, like the image rank does" in new AutoRollbackDb {
+    "agree with the count and the image rank" in new AutoRollbackDb {
       insertRows()
-      // an orphan row that would sort first: rate 1, the lowest monument id
-      selectionDao.batchInsert(Seq(sel(399L, 1, "00-001")))
       val pages = (0 until 3).map(n => page(3, n * 3).list().map(_.image.pageId))
       pages.flatten === expectedOrder
-      pages.map(_.size) === Seq(3, 3, 2)
+      page(3, 0).count() === expectedOrder.size
       // imageRank (the large view's navigation) agrees with the pages' positions
-      expectedOrder.zipWithIndex.map { case (p, i) => page(3, 0).imageRank(p) -> (i + 1) }
-        .forall { case (rank, pos) => rank == pos } must beTrue
+      expectedOrder.zipWithIndex.forall { case (p, i) => page(3, 0).imageRank(p) == i + 1 } must beTrue
+    }
+
+    "page selection ids without reading images" in {
+      val inner = page(3, 0).query().value.split(" k ").head
+      inner must not(contain("images"))
     }
 
     "not apply to the organizer's grouped view" in {

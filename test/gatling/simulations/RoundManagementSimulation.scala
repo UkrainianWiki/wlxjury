@@ -74,6 +74,7 @@ class RoundManagementSimulation extends Simulation {
     .formParam("contest", contestId.toString).formParam("roles", "jury")
     .formParam("distribution", "1").formParam("rates", "1")
     .formParam("minMpx", "").formParam("minSize", "").formParam("mediaType", "all")
+    .formParam("submitToken", _ => java.util.UUID.randomUUID().toString)
     .formParamSeq(jurorIds.zipWithIndex.map { case (id, i) => s"jurors[$i]" -> id.toString })
     .requestTimeout(GatlingConfig.Distribution.timeoutMinutes.minutes)
     .check(status.is(303))

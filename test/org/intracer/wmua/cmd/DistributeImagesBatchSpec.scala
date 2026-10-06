@@ -43,6 +43,7 @@ class DistributeImagesBatchSpec extends Specification with TestDb with BeforeAll
       val round = roundDao.create(Round(None, 1, None, contest.getId, distribution = 0, createdAt = now))
       val jurors = createUsers("jury", (1 to 2): _*)
       val images = (1 to 6000).map(i => Image(i.toLong, s"File:Image$i.jpg", None, None, 640, 480, None))
+      imageDao.batchInsert(images)
       // a row already there makes the last chunk violate the unique index
       selectionDao.create(images.last.pageId, rate = 0, juryId = jurors.sorted.last.getId, roundId = round.getId)
 

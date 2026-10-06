@@ -34,7 +34,9 @@ object GatlingConfig {
     val createRound: Boolean = cfg.getBoolean("gatling.roundMgmt.createRound")
   }
 
-  object AggRatings extends OrganizerFlow("gatling.aggRatings")
+  object AggRatings extends OrganizerFlow("gatling.aggRatings") {
+    val withVoting: Boolean = cfg.getBoolean("gatling.aggRatings.withVoting")
+  }
 
   /** Organizer accounts the fixture provides: the most sessions any organizer flow uses. */
   def organizerAccounts: Int = math.max(RoundMgmt.organizers, AggRatings.organizers)

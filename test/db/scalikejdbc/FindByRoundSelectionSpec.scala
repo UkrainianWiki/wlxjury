@@ -16,7 +16,10 @@ class FindByRoundSelectionSpec extends Specification with BeforeAll with TestDb 
 
   private def withCleanDb[A](body: DBSession => A): A = {
     SharedTestDb.truncateAll()
-    DB.autoCommit { implicit session => body(session) }
+    DB.autoCommit { implicit session =>
+      insertImagesFor(1L to 99L: _*) // the images of the tests' selection rows (page ids < 100)
+      body(session)
+    }
   }
 
   private def mkRound(contestId: Long, number: Int = 1): Round =
@@ -60,6 +63,74 @@ class FindByRoundSelectionSpec extends Specification with BeforeAll with TestDb 
         userDao.updateById(juror.getId).withAttributes("contestId" -> later.getId)
 
         User.findByRoundSelection(round.getId).map(_.id) must_== Seq(juror.id)
+      }
+    }
+  }
+
+  "findRoundJurors" should {
+
+    "return the jurors with selections, not round_user, when there are selections" in {
+      withCleanDb { implicit session =>
+        implicit val contest: ContestJury = ContestJuryJdbc.create(Some(40), "contest40", 2040, "country40")
+        val round  = roundDao.create(mkRound(contest.getId))
+        val jurors = createUsers("jury", 1, 2)
+        selectionDao.create(pageId = 30L, rate = 0, juryId = jurors(1).getId, roundId = round.getId)
+        round.addUsers(jurors.map(u => RoundUser(round.getId, u.getId, "jury", active = true)))
+
+        User.findRoundJurors(round.getId).map(_.id) must_== Seq(jurors(1).id)
+      }
+    }
+
+    "fall back to round_user for a round without selections" in {
+      withCleanDb { implicit session =>
+        implicit val contest: ContestJury = ContestJuryJdbc.create(Some(50), "contest50", 2050, "country50")
+        val round  = roundDao.create(mkRound(contest.getId))
+        val jurors = createUsers("jury", 1, 2, 3)
+        round.addUsers(Seq(jurors(2), jurors(0)).map(u => RoundUser(round.getId, u.getId, "jury", active = true)))
+
+        User.findRoundJurors(round.getId).map(_.id) must_== Seq(jurors(0).id, jurors(2).id)
+      }
+    }
+  }
+
+  "distributionJurors" should {
+
+    "be the round's active jurors in round_user, also when it has selections" in {
+      withCleanDb { implicit session =>
+        implicit val contest: ContestJury = ContestJuryJdbc.create(Some(60), "contest60", 2060, "country60")
+        val round  = roundDao.create(mkRound(contest.getId))
+        val jurors = createUsers("jury", 1, 2, 3)
+        round.addUsers(jurors.map(u => RoundUser(round.getId, u.getId, "jury", active = true)))
+        selectionDao.create(pageId = 40L, rate = 0, juryId = jurors(1).getId, roundId = round.getId)
+        RoundUser.setActive(round.getId, jurors(1).getId, active = false)
+
+        User.distributionJurors(round.getId).map(_.id) must_== Seq(jurors(0).id, jurors(2).id)
+        User.findRoundJurors(round.getId).map(_.id) must_== Seq(jurors(1).id) // the edit page: by selection
+      }
+    }
+
+    "fall back to the jurors with selections for a round without round_user rows" in {
+      withCleanDb { implicit session =>
+        implicit val contest: ContestJury = ContestJuryJdbc.create(Some(70), "contest70", 2070, "country70")
+        val round  = roundDao.create(mkRound(contest.getId))
+        val jurors = createUsers("jury", 1, 2)
+        selectionDao.create(pageId = 41L, rate = 0, juryId = jurors(1).getId, roundId = round.getId)
+
+        User.distributionJurors(round.getId).map(_.id) must_== Seq(jurors(1).id)
+      }
+    }
+  }
+
+  "findRoundJurors, for a round without selections," should {
+    "leave out a stopped juror of a round without selections" in {
+      withCleanDb { implicit session =>
+        implicit val contest: ContestJury = ContestJuryJdbc.create(Some(80), "contest80", 2080, "country80")
+        val round  = roundDao.create(mkRound(contest.getId))
+        val jurors = createUsers("jury", 1, 2)
+        round.addUsers(jurors.map(u => RoundUser(round.getId, u.getId, "jury", active = true)))
+        RoundUser.setActive(round.getId, jurors(0).getId, active = false)
+
+        User.findRoundJurors(round.getId).map(_.id) must_== Seq(jurors(1).id)
       }
     }
   }
