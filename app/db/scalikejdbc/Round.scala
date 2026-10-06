@@ -51,8 +51,15 @@ case class Round(
     users: Seq[User] = Nil,
     criteriaNames: Seq[String] = Nil,
     mediaType: Option[String] = None,
-    submitToken: Option[String] = None
+    submitToken: Option[String] = None,
+    distributing: Boolean = false,
+    freezeCount: Int = 0
 ) extends HasId {
+
+  /** Jurors may see and vote in the round: it is active, and not still being created
+    * (see V60: a round being distributed stays hidden until its count check passes).
+    */
+  def openToJurors: Boolean = active && !distributing
 
   def availableJurors(implicit session: DBSession = AutoSession): Seq[User] =
     User.findAllBy(
@@ -230,7 +237,9 @@ object Round extends RoundRepo with CRUDMapper[Round] {
       topImages = rs.intOpt(c.topImages),
       specialNomination = rs.stringOpt(c.specialNomination),
       mediaType = rs.stringOpt(c.mediaType),
-      submitToken = rs.stringOpt(c.submitToken)
+      submitToken = rs.stringOpt(c.submitToken),
+      distributing = rs.booleanOpt(c.distributing).getOrElse(false),
+      freezeCount = rs.intOpt(c.freezeCount).getOrElse(0)
     ).withFixedCategories
 
   def create(round: Round)(implicit session: DBSession = AutoSession): Round = {
@@ -263,22 +272,24 @@ object Round extends RoundRepo with CRUDMapper[Round] {
           column.topImages -> round.topImages,
           column.specialNomination -> round.specialNomination,
           column.mediaType -> round.mediaType,
-          column.submitToken -> round.submitToken
+          column.submitToken -> round.submitToken,
+          column.distributing -> round.distributing
         )
     }.updateAndReturnGeneratedKey()
 
     round.copy(id = Some(id))
   }
 
-  def updateRound(id: Long, round: Round): Int =
-    updateById(id)
-      .withAttributes(
-        "name" -> round.name,
-        "active" -> round.active
-      )
+  /** Saves the round form of an existing round: its name, and its active flag through
+    * [[setActiveGuarded]].
+    */
+  def updateRound(id: Long, round: Round): Boolean = {
+    updateById(id).withAttributes("name" -> round.name)
+    setActiveGuarded(id, round.active)
+  }
 
   def activeRounds(contestId: Long)(implicit session: DBSession = AutoSession): Seq[Round] =
-    where("contestId" -> contestId, "active" -> true)
+    where(sqls.eq(r.contestId, contestId).and.eq(r.active, true).and.eq(r.distributing, false))
       .orderBy(r.id)
       .apply()
 
@@ -290,6 +301,8 @@ object Round extends RoundRepo with CRUDMapper[Round] {
             .eq(r.contestId, contestId)
             .and
             .eq(r.active, true)
+            .and
+            .eq(r.distributing, false)
             .and
             .exists(
               select
@@ -330,6 +343,56 @@ object Round extends RoundRepo with CRUDMapper[Round] {
   def setActive(id: Long, active: Boolean): Unit =
     updateById(id)
       .withAttributes("active" -> active)
+
+  /** An organizer starting or stopping a round. A round still being created
+    * (`distributing`) can't be started. A frozen round (a previous round of a running
+    * distribution, see [[freeze]]) stays inactive until the distribution ends; the
+    * change applies then.
+    *
+    * @return false if the round can't be started now (it is still being distributed)
+    */
+  def setActiveGuarded(id: Long, active: Boolean): Boolean = {
+    val refused =
+      sql"SELECT distributing FROM rounds WHERE id = $id".map(_.boolean(1)).single().getOrElse(false) && active
+    sql"""UPDATE rounds
+          SET active_before_freeze = IF(freeze_count > 0, $active AND NOT distributing, active_before_freeze),
+              active = IF(freeze_count > 0, active, $active AND NOT distributing)
+          WHERE id = $id""".update()
+    !refused
+  }
+
+  /** Freezes previous rounds for a distribution that reads their votes: they become
+    * inactive (no votes) until [[release]]. The first freeze of a round saves its active
+    * flag; nested freezes (several distributions from one round) only count. MariaDB
+    * applies the assignments left to right, each seeing the ones before.
+    */
+  def freeze(roundIds: Seq[Long])(implicit session: DBSession): Unit =
+    roundIds.distinct.sorted.foreach { id =>
+      sql"""UPDATE rounds
+            SET active_before_freeze = IF(freeze_count = 0, COALESCE(active, 0), active_before_freeze),
+                active = 0,
+                freeze_count = freeze_count + 1
+            WHERE id = $id""".update()
+    }
+
+  /** Ends a [[freeze]]. The last release restores the round's saved active flag, or
+    * leaves it inactive when `close`: a completed round creation closes its previous
+    * rounds, as creating the next round always has, also if another distribution
+    * still reads them.
+    */
+  def release(roundIds: Seq[Long], close: Boolean)(implicit session: DBSession): Unit =
+    roundIds.distinct.sorted.foreach { id =>
+      sql"""UPDATE rounds
+            SET active_before_freeze = IF($close, 0, active_before_freeze),
+                freeze_count = GREATEST(freeze_count - 1, 0),
+                active = IF(freeze_count = 0, COALESCE(active_before_freeze, active), active),
+                active_before_freeze = IF(freeze_count = 0, NULL, active_before_freeze)
+            WHERE id = $id""".update()
+    }
+
+  /** A round's creation has passed its count check: it is shown to its jurors. */
+  def completeCreation(id: Long)(implicit session: DBSession): Unit =
+    sql"UPDATE rounds SET distributing = 0, active = 1 WHERE id = $id".update()
 
   def setInactiveAllInContest(contestId: Long): Unit =
     withSQL {

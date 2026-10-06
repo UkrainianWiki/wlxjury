@@ -57,7 +57,7 @@ class LargeViewController @Inject() (
         roundId
       )
     ) { user => implicit request =>
-    val roundOption = Round.findById(roundId).filter(_.active)
+    val roundOption = Round.findById(roundId).filter(_.openToJurors)
 
     roundOption.fold(
       Redirect(
