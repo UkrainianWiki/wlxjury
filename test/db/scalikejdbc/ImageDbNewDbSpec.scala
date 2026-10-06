@@ -205,6 +205,18 @@ class ImageDbNewDbSpec extends Specification with BeforeAll with TestDb {
       page(2, 0, Set("13")).count() === 3
     }
 
+    "skip a selection row whose image is gone, like the image rank does" in new AutoRollbackDb {
+      insertRows()
+      // an orphan row that would sort first: rate 1, the lowest monument id
+      selectionDao.batchInsert(Seq(sel(399L, 1, "00-001")))
+      val pages = (0 until 3).map(n => page(3, n * 3).list().map(_.image.pageId))
+      pages.flatten === expectedOrder
+      pages.map(_.size) === Seq(3, 3, 2)
+      // imageRank (the large view's navigation) agrees with the pages' positions
+      expectedOrder.zipWithIndex.map { case (p, i) => page(3, 0).imageRank(p) -> (i + 1) }
+        .forall { case (rank, pos) => rank == pos } must beTrue
+    }
+
     "not apply to the organizer's grouped view" in {
       val sql = SelectionQuery(roundId = Some(roundId), grouped = true, order = galleryOrder,
         limit = Some(Limit(pageSize = Some(3), offset = Some(0)))).query().value
@@ -219,6 +231,17 @@ class ImageDbNewDbSpec extends Specification with BeforeAll with TestDb {
         contain("COUNT(*)")
       SelectionQuery(roundId = Some(roundId)).query(count = true).value must
         contain("COUNT(DISTINCT s.page_id)")
+    }
+
+    "count distinct images when the round isn't fixed" in new AutoRollbackDb {
+      imageDao.batchInsert(Seq(img(410L, "07-001"), img(411L, "07-002")))
+      // the juror has image 410 in two rounds
+      selectionDao.batchInsert(Seq(sel(410L, 1, "07-001"), sel(411L, 0, "07-002"),
+        sel(410L, 0, "07-001").copy(roundId = roundId + 1)))
+      val q = SelectionQuery(userId = Some(userId))
+      q.query(count = true).value must contain("COUNT(DISTINCT s.page_id)")
+      q.count() === 2
+      SelectionQuery(userId = Some(userId), regions = Set("07")).count() === 3 // row count, as before
     }
 
     "count a region on selection alone, matching the list" in new AutoRollbackDb {

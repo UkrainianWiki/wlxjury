@@ -190,6 +190,7 @@ class ImagesSqlSpec extends FunSuite with AutoRollbackMunitDb {
         limit = Some(Limit(pageSize = Some(5), offset = Some(10)))
       ),
       s"""select  $allFields from (select s.id from selection s
+          STRAIGHT_JOIN images i on i.page_id = s.page_id
           where s.round_id = ? LIMIT 5 OFFSET 10) k
           STRAIGHT_JOIN selection s on s.id = k.id
           STRAIGHT_JOIN images i on i.page_id = s.page_id""",

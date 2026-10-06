@@ -59,7 +59,7 @@ object ExplainQueries {
             WHERE s.jury_id = $juror AND s.round_id = $rated $galleryOrder LIMIT 15 OFFSET 60""", true),
       ("T9 new gallery page (deferred join)",
         s"""SELECT i.*, s.* FROM (SELECT s.id FROM selection s
-            WHERE s.jury_id = $juror AND s.round_id = $rated $galleryOrder LIMIT 15 OFFSET 60) k
+            STRAIGHT_JOIN images i ON i.page_id = s.page_id WHERE s.jury_id = $juror AND s.round_id = $rated $galleryOrder LIMIT 15 OFFSET 60) k
             STRAIGHT_JOIN selection s ON s.id = k.id
             STRAIGHT_JOIN images i ON i.page_id = s.page_id $galleryOrder""", true),
       ("T9 old region gallery page",
@@ -68,7 +68,7 @@ object ExplainQueries {
             $galleryOrder LIMIT 15 OFFSET 0""", true),
       ("T9 new region gallery page (deferred join)",
         s"""SELECT i.*, s.* FROM (SELECT s.id FROM selection s
-            WHERE s.jury_id = $juror AND s.round_id = $rated AND s.monument_id LIKE '$region%'
+            STRAIGHT_JOIN images i ON i.page_id = s.page_id WHERE s.jury_id = $juror AND s.round_id = $rated AND s.monument_id LIKE '$region%'
             $galleryOrder LIMIT 15 OFFSET 0) k
             STRAIGHT_JOIN selection s ON s.id = k.id
             STRAIGHT_JOIN images i ON i.page_id = s.page_id $galleryOrder""", true),
