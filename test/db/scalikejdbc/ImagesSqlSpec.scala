@@ -106,7 +106,7 @@ class ImagesSqlSpec extends FunSuite with AutoRollbackMunitDb {
       s"""select $allFields from selection s
           STRAIGHT_JOIN images i
           on i.page_id = s.page_id
-          where i.monument_id like ?""",
+          where s.monument_id like ?""",
       expectedParams = Seq("12%")
     )
   }
@@ -168,22 +168,47 @@ class ImagesSqlSpec extends FunSuite with AutoRollbackMunitDb {
       s"""select count(t.pi_on_i) from (select  i.page_id as pi_on_i from selection s
           STRAIGHT_JOIN images i
           on i.page_id = s.page_id
-          where s.round_id = ? and i.monument_id like ? ) t""",
+          where s.round_id = ? and s.monument_id like ? ) t""",
       expectedParams = Seq(5L, "12%"),
       f = _.query(count = true)
     )
   }
 
-  dbTest("limit appends LIMIT N OFFSET M to query") { implicit session =>
+  dbTest("count - a juror's region on selection alone, without DISTINCT") { implicit session =>
+    check(
+      SelectionQuery(userId = Some(4L), roundId = Some(5L), regions = Set("12")),
+      "select COUNT(*) from selection s where s.jury_id = ? and s.round_id = ? and s.monument_id like ?",
+      expectedParams = Seq(4L, 5L, "12%"),
+      f = _.query(count = true)
+    )
+  }
+
+  dbTest("limit pages the selection ids, then joins the page's rows (deferred join)") { implicit session =>
     check(
       SelectionQuery(
         roundId = Some(3L),
         limit = Some(Limit(pageSize = Some(5), offset = Some(10)))
       ),
-      s"""select  $allFields from selection s
+      s"""select  $allFields from (select s.id from selection s
+          where s.round_id = ? LIMIT 5 OFFSET 10) k
+          STRAIGHT_JOIN selection s on s.id = k.id
+          STRAIGHT_JOIN images i on i.page_id = s.page_id""",
+      expectedParams = Seq(3L)
+    )
+  }
+
+  dbTest("limit appends LIMIT N OFFSET M to a grouped query") { implicit session =>
+    check(
+      SelectionQuery(
+        roundId = Some(3L),
+        grouped = true,
+        limit = Some(Limit(pageSize = Some(5), offset = Some(10)))
+      ),
+      s"""select sum(s.rate) as rate, count(s.rate) as rate_count, $imageFields from selection s
           STRAIGHT_JOIN images i
           on i.page_id = s.page_id
-          where s.round_id = ? LIMIT 5 OFFSET 10""",
+          where s.round_id = ?
+        group by s.page_id LIMIT 5 OFFSET 10""",
       expectedParams = Seq(3L)
     )
   }
@@ -195,7 +220,7 @@ class ImagesSqlSpec extends FunSuite with AutoRollbackMunitDb {
     )
     val withLimit    = foldSpace(q.query().value)
     val withoutLimit = foldSpace(q.query(noLimit = true).value)
-    assert(withLimit.endsWith("LIMIT 5 OFFSET 10"), s"expected LIMIT suffix, got: $withLimit")
+    assert(withLimit.contains("LIMIT 5 OFFSET 10"), s"expected LIMIT, got: $withLimit")
     assert(!withoutLimit.contains("LIMIT"),          s"expected no LIMIT, got: $withoutLimit")
   }
 

@@ -4,7 +4,6 @@ import db.scalikejdbc.{ImageJdbc, Round}
 import org.intracer.wmua.Tools
 import org.intracer.wmua.cmd._
 import play.api.Configuration
-import services.RoundService
 
 object GreeceESPC {
 
@@ -26,6 +25,6 @@ object GreeceESPC {
     val di = new DistributeImages(ImageJdbc)
     di.distributeImages(round, round.availableJurors, Nil)
 
-    new RoundService(di, Round).setCurrentRound(Nil, round)
+    Round.setActiveGuarded(round.getId, round.active)
   }
 }

@@ -30,7 +30,10 @@ class GalleryService {
       rounds: Seq[Round]
   ): Boolean = {
     val userContest = user.currentContest.getOrElse(0L)
+    val isOrganizer = user.roles.intersect(Set("admin", "organizer", "root")).nonEmpty
     val notAuthorized = maybeRound.isEmpty ||
+      // a round being created is hidden from its jurors until its distribution is complete
+      (!isOrganizer && maybeRound.exists(_.distributing)) ||
       (!user.hasRole("root") && userContest != roundContest) ||
       (user.roles.intersect(Set("admin", "organizer", "root")).isEmpty
         && !rounds.exists(_.id == maybeRound.flatMap(_.id))

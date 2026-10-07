@@ -246,18 +246,44 @@ object User extends CRUDMapper[User] {
   def findByContest(contest: Long): Seq[User] =
     where("contestId" -> contest).orderBy(u.id).apply()
 
-  def findByRoundSelection(roundId: Long): Seq[User] = withSQL {
-    import SelectionJdbc.s
+  /** The users with selection rows in the round (its jurors), ordered by id.
+    *
+    * DISTINCT jury_id over idx_selection_round_jury_rate is a loose index scan, one
+    * index dive per juror, instead of joining every selection row of the round (a few
+    * hundred thousand in a large contest) to users. Not filtered by users.contest_id: a
+    * user's contest can move on to a later contest. Not round_user either: for legacy
+    * rounds it doesn't always match the selection rows.
+    */
+  def findByRoundSelection(roundId: Long): Seq[User] = {
+    val ids = sql"SELECT DISTINCT jury_id FROM selection WHERE round_id = $roundId"
+      .map(_.long(1))
+      .list()
+    if (ids.isEmpty) Nil else findAllBy(sqls.in(u.id, ids)).sortBy(_.id)
+  }
 
-    select(u.result.*)
-      .from(User as u)
-      .join(SelectionJdbc as s)
-      .on(u.id, s.juryId)
-      .where
-      .eq(s.roundId, roundId)
-      .groupBy(u.id)
-      .orderBy(u.id)
-  }.map(User(u)).list()
+  /** The round's jurors, ordered by id, for its edit page: [[findByRoundSelection]],
+    * or, for a round without selection rows (its first distribution failed and was
+    * rolled back), its active jurors in round_user.
+    */
+  def findRoundJurors(roundId: Long): Seq[User] =
+    findByRoundSelection(roundId) match {
+      case Nil   => activeRoundJurors(roundId)
+      case found => found
+    }
+
+  /** The jurors a distribution to the round gives images to, ordered by id: its active
+    * jurors in round_user, so a juror stopped on the round gets no new images. Rounds
+    * without round_user rows (created before round_user was filled) fall back to the
+    * jurors with selection rows in the round.
+    */
+  def distributionJurors(roundId: Long): Seq[User] =
+    if (RoundUser.byRoundId(roundId).isEmpty) findByRoundSelection(roundId)
+    else activeRoundJurors(roundId)
+
+  private def activeRoundJurors(roundId: Long): Seq[User] = {
+    val ids = RoundUser.activeJurors(roundId).map(_.userId).distinct
+    if (ids.isEmpty) Nil else findAllBy(sqls.in(u.id, ids)).sortBy(_.id)
+  }
 
   def countByEmail(id: Long, email: String): Long =
     countBy(

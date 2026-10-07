@@ -6,6 +6,7 @@ import db.{ImageRepo, RoundRepo}
 import db.scalikejdbc.{ImageJdbc, Round}
 import org.scalawiki.MwBot
 import play.api.{Configuration, Environment, Logging}
+import services.jobs.JobScheduler
 
 class AppModule(environment: Environment, configuration: Configuration)
     extends AbstractModule
@@ -16,6 +17,8 @@ class AppModule(environment: Environment, configuration: Configuration)
 
     bind(classOf[RoundRepo]).toInstance(Round)
     bind(classOf[ImageRepo]).toInstance(ImageJdbc)
+    // eager: started with the app, it takes over the jobs a previous run left
+    bind(classOf[JobScheduler]).toProvider(classOf[JobSchedulerProvider]).asEagerSingleton()
 
     KOATUU.load()
   }

@@ -148,7 +148,7 @@ object Tools {
     val round = Round.findById(roundId).get
     val selection = SelectionJdbc.byRound(roundId)
 
-    new DistributeImages(ImageJdbc).addCriteriaRates(selection)
+    scalikejdbc.DB.localTx { implicit s => DistributeImages.addCriteriaRates(round.getId, selection.map(_.pageId).distinct) }
   }
 
   private def convertImages(images: Seq[Image]) = {

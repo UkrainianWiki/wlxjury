@@ -228,6 +228,7 @@ Debian / debianPackageRecommends ++= Seq("virtual-mysql-server")
 addCommandAlias(
   "gatlingAll",
   ";Gatling/testOnly gatling.simulations.RoundDistributionSimulation" +
+    ";Gatling/testOnly gatling.simulations.ConcurrentRoundCreationSimulation" +
     ";Gatling/testOnly gatling.simulations.VotingSimulation" +
     ";Gatling/testOnly gatling.simulations.JurorGallerySimulation" +
     ";Gatling/testOnly gatling.simulations.RegionFilterSimulation" +

@@ -8,22 +8,18 @@ import scala.concurrent.duration._
 
 class VotingSimulation extends Simulation {
 
-  private val baseUrl = s"http://localhost:${GatlingTestFixture.port}"
+  private val baseUrl = GatlingTestFixture.baseUrl
   private val cfg     = gatling.setup.GatlingConfig
 
-  private val voteFeeder = Iterator.continually(GatlingTestFixture.votingPairs).flatten.map {
-    case (juryId, pageId, roundId, rate) =>
-      Map(
-        "juryId"  -> juryId.toString,
-        "pageId"  -> pageId.toString,
-        "roundId" -> roundId.toString,
-        "rate"    -> rate.toString
-      )
-  }
-
-  private val jurorFeeder = Iterator.continually(GatlingTestFixture.jurors).flatten.map {
+  private val jurorFeeder = Iterator.continually(GatlingTestFixture.jurorsIn(None)).flatten.map {
     case (id, email, pass) =>
       Map("userId" -> id.toString, "email" -> email, "password" -> pass)
+  }
+
+  // A vote on one of the juror's own images, in one of the juror's rounds
+  private val nextVote = exec { session =>
+    val (pageId, roundId, rate) = GatlingTestFixture.nextVote(session("userId").as[String].toLong)
+    session.set("pageId", pageId).set("roundId", roundId).set("rate", rate)
   }
 
   private val scn = scenario("Voting")
@@ -35,7 +31,7 @@ class VotingSimulation extends Simulation {
       .check(status.is(303)))
     .exitHereIfFailed // no unauthenticated requests "succeeding" on the login page
     .repeat(15) {
-      feed(voteFeeder)
+      exec(nextVote)
         .exec(http("cast vote")
           .post("/rate/round/#{roundId}/pageid/#{pageId}/select/#{rate}")
           .check(status.is(200), bodyString.is("success")))

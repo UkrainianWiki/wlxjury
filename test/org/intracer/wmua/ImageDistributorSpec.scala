@@ -18,7 +18,7 @@ class ImageDistributorSpec extends Specification with TestDb with Mockito
   val (contest1, contest2) = (10, 20)
 
   lazy val di = new DistributeImages(ImageJdbc)
-  lazy val roundService = new RoundService(di, Round)
+  lazy val roundService = services.TestRoundServices.roundService()
 
   private def image(id: Long) =
     Image(id, s"File:Image$id.jpg", None, None, 640, 480, Some(s"12-345-$id"))

@@ -5,7 +5,7 @@ import org.specs2.mutable.Specification
 import org.specs2.specification.BeforeAll
 import scalikejdbc.{AutoSession, DB, DBSession}
 
-/** Tests for Round.roundUserStat and Round.roundRateStat.
+/** Tests for Round.roundUserStat and Round.selectedImageCount.
  *
  *  Both methods use autoSession (no implicit DBSession parameter), so they
  *  can only see *committed* data.  Each test therefore:
@@ -25,7 +25,10 @@ class RoundUserStatSpec extends Specification with BeforeAll with TestDb {
 
   private def withCleanDb[A](body: DBSession => A): A = {
     SharedTestDb.truncateAll()
-    DB.autoCommit { implicit session => body(session) }
+    DB.autoCommit { implicit session =>
+      insertImagesFor(1L to 99L: _*) // the images of the tests' selection rows (page ids < 100)
+      body(session)
+    }
   }
 
   private def mkRound(contestId: Long): Round =
@@ -106,37 +109,34 @@ class RoundUserStatSpec extends Specification with BeforeAll with TestDb {
     }
   }
 
-  // ─── roundRateStat ────────────────────────────────────────────────────────
+  // ─── selectedImageCount ───────────────────────────────────────────────────
 
-  "roundRateStat" should {
+  "selectedImageCount" should {
 
-    "return empty for a round with no selections" in {
+    "be 0 for a round with no selections" in {
       withCleanDb { implicit session =>
-        val contest = mkContest(50)
+        val contest = mkContest(80)
         val round   = roundDao.create(mkRound(contest.getId))
-        Round.roundRateStat(round.getId) must_== Seq.empty
+        Round.selectedImageCount(round.getId) must_== 0
       }
     }
 
-    "count DISTINCT images per rate value" in {
+    "count distinct images selected by at least one juror, in this round only" in {
       withCleanDb { implicit session =>
-        implicit val contest: ContestJury = mkContest(60)
+        implicit val contest: ContestJury = mkContest(90)
         val round  = roundDao.create(mkRound(contest.getId))
+        val other  = roundDao.create(mkRound(contest.getId).copy(number = 2))
         val jurors = createUsers("jury", 1, 2)
-        val juror1 = jurors(0)
-        val juror2 = jurors(1)
 
-        // Both jurors vote rate=1 on the SAME image → 1 distinct image at rate=1
-        selectionDao.create(pageId = 40L, rate =  1, juryId = juror1.getId, roundId = round.getId)
-        selectionDao.create(pageId = 40L, rate =  1, juryId = juror2.getId, roundId = round.getId)
-        // One more distinct image at rate=1
-        selectionDao.create(pageId = 41L, rate =  1, juryId = juror1.getId, roundId = round.getId)
-        // One image at rate=-1
-        selectionDao.create(pageId = 42L, rate = -1, juryId = juror1.getId, roundId = round.getId)
+        selectionDao.create(pageId = 60L, rate =  1, juryId = jurors(0).getId, roundId = round.getId)
+        selectionDao.create(pageId = 60L, rate =  1, juryId = jurors(1).getId, roundId = round.getId)
+        selectionDao.create(pageId = 61L, rate =  1, juryId = jurors(0).getId, roundId = round.getId)
+        selectionDao.create(pageId = 61L, rate = -1, juryId = jurors(1).getId, roundId = round.getId)
+        selectionDao.create(pageId = 62L, rate = -1, juryId = jurors(0).getId, roundId = round.getId)
+        selectionDao.create(pageId = 63L, rate =  0, juryId = jurors(1).getId, roundId = round.getId)
+        selectionDao.create(pageId = 64L, rate =  1, juryId = jurors(0).getId, roundId = other.getId)
 
-        val stat = Round.roundRateStat(round.getId).sortBy(_._1)
-        // rate -1 → 1 distinct image, rate 1 → 2 distinct images
-        stat must_== Seq((-1, 1), (1, 2))
+        Round.selectedImageCount(round.getId) must_== 2
       }
     }
   }

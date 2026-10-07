@@ -9,13 +9,12 @@ import scala.util.Random
 
 class RegionFilterSimulation extends Simulation {
 
-  private val baseUrl = s"http://localhost:${GatlingTestFixture.port}"
+  private val baseUrl = GatlingTestFixture.baseUrl
   private val cfg     = gatling.setup.GatlingConfig
 
-  private val rounds  = Seq(GatlingTestFixture.roundBinaryId, GatlingTestFixture.roundRatingId)
   private val regions = GatlingTestFixture.regions
 
-  private val jurorFeeder = Iterator.continually(GatlingTestFixture.jurors).flatten.map {
+  private val jurorFeeder = Iterator.continually(GatlingTestFixture.jurorsIn(None)).flatten.map {
     case (id, email, pass) =>
       Map("userId" -> id.toString, "email" -> email, "password" -> pass)
   }
@@ -30,7 +29,8 @@ class RegionFilterSimulation extends Simulation {
     .exitHereIfFailed // no unauthenticated requests "succeeding" on the login page
     .repeat(10) {
       exec { session =>
-        val round  = rounds(Random.nextInt(rounds.length))
+        val own    = GatlingTestFixture.roundsOf(session("userId").as[String].toLong)
+        val round  = own(Random.nextInt(own.length))
         val region = regions(Random.nextInt(regions.length))
         val page   = Random.nextInt(3) + 1
         session

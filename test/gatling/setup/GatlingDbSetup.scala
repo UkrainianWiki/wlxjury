@@ -18,7 +18,8 @@ case class GatlingFixtureData(
     organizer: (Long, String, String),        // (id, email, plainPassword)
     imagePageIds: Seq[Long],
     regions: Seq[String],
-    votingPairs: Seq[(Long, Long, Long, Int)] // (juryId, pageId, roundId, rate)
+    votingPairs: Seq[(Long, Long, Long, Int)], // (juryId, pageId, roundId, rate)
+    extraOrganizers: Seq[(Long, String, String)] = Nil // external target: the contest's other organizers
 )
 
 object GatlingDbSetup {
