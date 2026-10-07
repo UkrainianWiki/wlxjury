@@ -143,3 +143,37 @@ Expose 9000 (the app) and 3306 (data loading and checks from the host). Note wha
   - the recommended MariaDB configuration;
   - the archiving recommendation;
   - the deployment order for PR #182 → #183 (+ V55.1) → background distribution, and the production steps (backup, conversion, config change, restart).
+
+---
+
+## Results so far (2026-10-07; Phases 1-2 done, Phase 3 partly)
+
+### Phase 1: the environment
+- `bench/server` (Ubuntu 22.04, MariaDB **10.6.22-0ubuntu0.22.04.1**, production's build, from Launchpad; OpenJDK 17.0.20), production's `/etc/mysql` files, `/etc/default/wlxjury` (JAVA_OPTS, `MALLOC_ARENA_MAX=2`, checked in `/proc/<pid>/environ`); `bench/scripts/bench.sh` / `run.sh` / `summarize.js`; Gatling `-Dgatling.target=external` (`GatlingExternalTarget`).
+- Run with `--cpuset-cpus=0,1 --memory=4900m --memory-swap=6900m`, no CPU quota, no I/O limits.
+- Effective MariaDB values (SHOW VARIABLES): `innodb_buffer_pool_size` 128M, `key_buffer_size` 128M, `query_cache_type` OFF (size 1M), `max_connections` 151, `max_allowed_packet` 16M (the server default; production sets it only for mysqldump), `table_open_cache` 2000, `open_files_limit` 32184, `tmp_table_size` = `max_heap_table_size` 16M, `innodb_log_file_size` 96M, `innodb_flush_log_at_trx_commit` 1, `innodb_flush_method` O_DIRECT, `innodb_io_capacity` 200, slow log on (1 s, FILE,TABLE).
+- Data: the 31 Jan 2026 dump restores in 2 min, is anonymised at once (`anonymise.sql`), and is at **V43**: production applied V44-V53 after January. The production code (705689c) migrates it to V53 on MyISAM in 7 min (V53 161 s, V48 84 s, V44 80 s).
+- Contest: WLM 2025 Ukraine (603), the largest: 38,392 category images, 103 jurors, 4 organizers. Binary round 1721 (26,382 images, 17 jurors, ~1,550 per juror), rated round 1775 (872 images, 13 jurors). Real rounds are 15-25x smaller per juror than the Gatling fixture's.
+- Not modelled: Apache/WordPress and the nightly stats job (CPU, memory, the shared buffer pool), QEMU vCPU speed and the virtual disk (the laptop's SSD is faster), the thumbnail cache directory (LocalImageCacheService's registry on the heap), real network latency.
+
+### Phase 2: production's code (705689c = deployed 8fdaa7d + the scalawiki API adaptation, migrations up to V53) on MyISAM, production's config
+mean / p95 ms, one run:
+
+| request | alone | 10 admins creating rounds + jurors voting and browsing |
+|---|---|---|
+| cast vote | 5 / 9 | 1,419 / 4,523 |
+| gallery page | 62 / 135 | 1,770 / 5,203 |
+| juror login | 12 / 19 | 6,295 / 18,956 |
+| region gallery page | 78 / 165 | |
+| rounds list / edit round / round stats | 487 / 608, 1,004 / 1,692, 161 / 325 | |
+| first round from the category (76,784 rows) | 9.4 s | large rounds 16.5 / 25.0 s, small 0.6-7.6 s |
+
+- `Table_locks_waited`: 0 alone, **11,409** during the concurrent creations: MyISAM's table locks, as expected.
+- Max heap after GC 521 MB (1g heap), no full GC.
+- **Finding:** round 1721 filters by a Commons category. On production's code every view of its edit page lists that category through the Commons API: more than 75 s, so Play's default idle timeout (75 s) cuts the page off (7 of 13 edit views timed out at 60 s in Gatling), and "Distribute new files" to it is cut off the same way ("Premature close"). The benchmark copy drops that filter, and the server maps the Wikimedia hosts to 127.0.0.1.
+
+### Phase 3 so far
+- **On MyISAM, V56 fails** (`ALGORITHM=INPLACE is not supported for this operation. Try ALGORITHM=COPY`): PR #183's deploy stops at startup after V54 and V55 (59 s) have run, leaving a failed V56 row in `flyway_schema_history` (MariaDB DDL isn't transactional). Run by hand, V58 fails the same way after archiving and deleting its 15 orphans; V57, V59, V60 succeed (V60's `job` table is created InnoDB explicitly).
+- **V55.1** (`32a1253`): measured per table, by hand, production config: selection 77 s, images 51 s, category_members 6.3 s, monument 3.2 s, the rest < 1 s; ANALYZE 1.1 s; **145 s in all**. Datadir 1.35 GB -> 2.62 GB, **peak 3.17 GB** (+1.83 GB) while selection is copied. mariadbd RSS peak 223 MB.
+- **Through Flyway from MyISAM at V53**: PR #183 + V55.1 and background distribution + V55.1 both start; V54 15 s, V55 44 s, V55.1 160 s, V56 10 s, V57 28 s, V58 61 s, V59/V60 < 1 s: **5.5 min of downtime**. All live tables InnoDB, FK_selection_page_id present.
+- The InnoDB runs (production's code, #183, background distribution) are not done yet.
