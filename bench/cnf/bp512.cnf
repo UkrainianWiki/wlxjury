@@ -1,0 +1,3 @@
+# Phase 4: InnoDB buffer pool 512M (production's default is 128M); everything else as production.
+[mariadb]
+innodb_buffer_pool_size = 512M

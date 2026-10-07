@@ -50,6 +50,9 @@ docker exec wlxjury-bench mariadb -N -e "SHOW GLOBAL VARIABLES" > "$out/variable
 docker exec wlxjury-bench mariadb -N -e \
   "SELECT version, description, execution_time FROM wlxjury.flyway_schema_history WHERE installed_rank > 52" \
   > "$out/flyway.txt" || true
+# the slow log covers this run only (the snapshot may carry entries from migrations)
+docker exec wlxjury-bench bash -c ": > /var/lib/mysql/mariadb-slow.log" || true
+docker exec wlxjury-bench mariadb -e "SET GLOBAL slow_query_log = OFF; TRUNCATE mysql.slow_log; SET GLOBAL slow_query_log = ON; FLUSH SLOW LOGS" || true
 
 sbt_run() { # <simulation> <-D options...>
   local sim=$1; shift
