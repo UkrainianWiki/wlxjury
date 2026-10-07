@@ -42,7 +42,7 @@ class ConcurrentRoundCreationSimulation extends Simulation {
   private val binaryId  = GatlingTestFixture.roundBinaryId
   private val ratedId   = GatlingTestFixture.roundRatingId
   private val jurorIds  = GatlingTestFixture.jurors.map(_._1)
-  private val admins    = GatlingTestFixture.organizers.take(cfg.admins)
+  private val admins    = GatlingTestFixture.organizers.take(math.max(cfg.admins, 1))
   private val timeout   = cfg.timeoutMinutes.minutes
   private val reportFile = "concurrent-distribution.txt"
 
@@ -91,9 +91,14 @@ class ConcurrentRoundCreationSimulation extends Simulation {
   private def roundIdByName(name: String): Option[Long] =
     sql"SELECT MAX(id) FROM rounds WHERE contest_id = $contestId AND name = $name".map(_.longOpt(1)).single().flatten
 
+  /** None on the code before background jobs (no job table): the submit itself distributed. */
   private def latestJobId(roundId: Long): Option[Long] =
-    sql"""SELECT MAX(id) FROM job WHERE kind = 'round_distribution' AND subject_type = 'round'
-          AND subject_id = $roundId""".map(_.longOpt(1)).single().flatten
+    scala.util.Try(sql"""SELECT MAX(id) FROM job WHERE kind = 'round_distribution' AND subject_type = 'round'
+          AND subject_id = $roundId""".map(_.longOpt(1)).single().flatten).toOption.flatten
+
+  private def roundFigures(roundId: Long): String =
+    sql"""SELECT COUNT(DISTINCT page_id), COUNT(*) FROM selection WHERE round_id = $roundId"""
+      .map(rs => s"in-request images=${rs.long(1)} rows=${rs.long(2)}").single().getOrElse("")
 
   private def jobFigures(jobId: Long): String =
     sql"""SELECT status, progress_done, progress_total, JSON_VALUE(state, '$$.imagesAdded'),
@@ -122,10 +127,16 @@ class ConcurrentRoundCreationSimulation extends Simulation {
     exec(_.set("t0", System.currentTimeMillis()).set("jobStatus", "queued"))
       .exec(http(s"$phase: submit round form").post("/admin/rounds/save")
         .formParamSeq(job.form)
+        .requestTimeout(timeout)
         .check(status.is(303)))
       .exec { s =>
         val roundId = job.existingRound.orElse(roundIdByName(job.name))
-        roundId.flatMap(latestJobId).fold(s.markAsFailed)(id => s.set("jobId", id))
+        roundId.fold(s.markAsFailed) { rid =>
+          latestJobId(rid) match {
+            case Some(id) => s.set("jobId", id).set("roundId", rid)
+            case None     => s.set("jobStatus", "done").set("roundId", rid) // distributed in the request
+          }
+        }
       }
       .exitHereIfFailed
       .asLongAs(s => Set("queued", "running").contains(s("jobStatus").as[String]) &&
@@ -139,7 +150,7 @@ class ConcurrentRoundCreationSimulation extends Simulation {
         results.put(s"$phase/${job.name}", millis)
         HeapWatcher.report(
           s"phase=$phase admin-job='${job.name}' small=${job.small} submitToDone=${millis}ms " +
-            jobFigures(s("jobId").as[Long]), reportFile)
+            s("jobId").asOption[Long].fold(roundFigures(s("roundId").as[Long]))(jobFigures), reportFile)
         if (s("jobStatus").as[String] == "done") s else s.markAsFailed
       }
 
@@ -148,10 +159,10 @@ class ConcurrentRoundCreationSimulation extends Simulation {
     .exec(login(admins.head._2, admins.head._3))
     .exec(jobs(" (solo)").filter(_.small).map(j => runJob(j, "solo")))
 
-  private val concurrentJobs = jobs("").take(admins.size)
+  private val concurrentJobs = jobs("").take(cfg.admins) // admins = 0: the jurors alone, the reference
 
   /** Every admin at once, one job each. */
-  private val adminsScn = scenario("Admins at once")
+  private lazy val adminsScn = scenario("Admins at once")
     .exec { s =>
       val i = adminCount.getAndIncrement() % concurrentJobs.size
       if (concurrentStarted.compareAndSet(false, true)) {
@@ -230,7 +241,7 @@ class ConcurrentRoundCreationSimulation extends Simulation {
     )
 
   private val concurrentPhase =
-    Seq(adminsScn.inject(atOnceUsers(concurrentJobs.size))) ++
+    (if (concurrentJobs.nonEmpty) Seq(adminsScn.inject(atOnceUsers(concurrentJobs.size))) else Nil) ++
       (if (cfg.withVoting) Seq(meanwhile(votersScn), meanwhile(galleryScn)) else Nil)
 
   HeapWatcher.report(
