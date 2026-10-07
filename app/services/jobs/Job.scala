@@ -129,6 +129,10 @@ object JobJdbc {
     e.isInstanceOf[java.sql.SQLIntegrityConstraintViolationException] &&
       Option(e.getMessage).exists(_.contains("job_active_dedupe_uidx"))
 
+  def tableExists()(implicit session: DBSession = AutoSession): Boolean =
+    sql"""SELECT COUNT(*) FROM information_schema.tables
+          WHERE table_schema = DATABASE() AND table_name = 'job'""".map(_.int(1)).single().contains(1)
+
   def findById(id: Long)(implicit session: DBSession = AutoSession): Option[Job] =
     sql"SELECT $columns FROM job WHERE id = $id".map(extract).single()
 

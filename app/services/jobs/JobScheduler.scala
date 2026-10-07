@@ -20,9 +20,12 @@ import scala.util.control.NonFatal
   *    are taken over when the lease expires. Each step checks, under the job's row lock,
   *    that this instance still owns the job, so two instances never run the same job.
   *  - '''Turns.''' A worker runs one step (one chunk) of one job, then the job goes back in
-  *    line. The next step goes to the contest served longest ago, and within it to the
-  *    job served longest ago: a small job finishes in a few turns while a big one runs,
-  *    and one contest's many jobs don't starve another contest's.
+  *    line. The next step goes to the contest that has had the least step time, and
+  *    within it to the job that has had the least ("virtual time", as in a fair-share
+  *    scheduler): a job whose steps are cheap gets more of them, so a small job finishes
+  *    in seconds while a big one runs, and one contest's many jobs don't starve another
+  *    contest's. A job or contest that arrives starts level with the least served one
+  *    present, so it neither waits behind the others nor monopolizes the workers.
   *  - '''Limits.''' At most `workers` steps run at once overall, and at most the kind's
   *    concurrency limit of one kind (e.g. 2 distributions; Commons imports would get 1-2
   *    for the API's rate limits).
@@ -50,18 +53,33 @@ class JobScheduler(handlerList: Seq[JobHandler], val settings: JobScheduler.Sett
 
   // ── background machinery ───────────────────────────────────────────────────
 
-  private final class Held(val id: Long, val kind: String, val contestId: Option[Long]) {
+  private final class Held(val id: Long, val kind: String, val contestId: Option[Long], var vtime: Long) {
     var inFlight = false
-    var lastServed = 0L
   }
 
   private val lock = new Object
   private val held = mutable.LinkedHashMap.empty[Long, Held]
-  private val contestServed = mutable.Map.empty[Option[Long], Long]
+  /** Step time (ns) per contest with held jobs: the contests' virtual time. */
+  private val contestTime = mutable.Map.empty[Option[Long], Long]
   private val inFlightByKind = mutable.Map.empty[String, Int].withDefaultValue(0)
   private var inFlightTotal = 0
-  private var served = 0L
+
+  /** Adds a claimed job, level with the least served job, and its contest level with the
+    * least served contest (caller holds `lock`).
+    */
+  private def hold(id: Long, kind: String, contestId: Option[Long]): Unit = {
+    val start = if (held.isEmpty) 0L else held.values.map(_.vtime).min
+    if (!contestTime.contains(contestId))
+      contestTime(contestId) = if (contestTime.isEmpty) 0L else contestTime.values.min
+    held.put(id, new Held(id, kind, contestId, start))
+  }
+
+  private def release(h: Held): Unit = {
+    held.remove(h.id)
+    if (!held.values.exists(_.contestId == h.contestId)) contestTime.remove(h.contestId)
+  }
   @volatile private var stopping = false
+  @volatile private var lastPollWarning = 0L
 
   private var workers: ExecutorService = _
   private var timer: ScheduledExecutorService = _
@@ -101,18 +119,39 @@ class JobScheduler(handlerList: Seq[JobHandler], val settings: JobScheduler.Sett
   def wake(): Unit = if (!inline && timer != null && !stopping) timer.execute(() => poll())
 
   private[jobs] def poll(): Unit =
-    if (!stopping)
+    if (!stopping && tableReady())
       try {
         val ids = JobJdbc.claimable(handlers.keys.toSeq, settings.lease.toSeconds, limit = 200)
         val known = lock.synchronized(held.keySet.toSet)
         ids.filterNot(known.contains).foreach { id =>
           if (JobJdbc.claim(id, instanceId, settings.lease.toSeconds))
             JobJdbc.findById(id).foreach { j =>
-              lock.synchronized(held.put(id, new Held(id, j.kind, j.contestId)))
+              lock.synchronized(hold(id, j.kind, j.contestId))
             }
         }
         dispatch()
-      } catch { case NonFatal(e) => logger.warn(s"Job scheduler $instanceId: poll failed", e) }
+      } catch {
+        // e.g. the job table not migrated yet (Flyway's apply page): once a minute, not every poll
+        case NonFatal(e) =>
+          val now = System.currentTimeMillis()
+          if (now - lastPollWarning > 60000) {
+            lastPollWarning = now
+            logger.warn(s"Job scheduler $instanceId: poll failed: ${describe(e)}")
+          }
+      }
+
+  @volatile private var tableExists = false
+
+  /** The job table exists: until its migration has run (Flyway's apply page), the
+    * scheduler waits instead of failing a query every poll.
+    */
+  private def tableReady(): Boolean =
+    tableExists || {
+      tableExists =
+        try JobJdbc.tableExists()
+        catch { case NonFatal(_) => false }
+      tableExists
+    }
 
   private def heartbeat(): Unit =
     try JobJdbc.heartbeat(instanceId)
@@ -126,10 +165,7 @@ class JobScheduler(handlerList: Seq[JobHandler], val settings: JobScheduler.Sett
       val ready = held.values.filter(h => !h.inFlight && inFlightByKind(h.kind) < limit(h.kind))
       if (ready.isEmpty) more = false
       else {
-        val h = ready.minBy(h => (contestServed.getOrElse(h.contestId, 0L), h.lastServed, h.id))
-        served += 1
-        contestServed(h.contestId) = served
-        h.lastServed = served
+        val h = ready.minBy(h => (contestTime.getOrElse(h.contestId, 0L), h.vtime, h.id))
         h.inFlight = true
         inFlightByKind(h.kind) += 1
         inFlightTotal += 1
@@ -143,14 +179,18 @@ class JobScheduler(handlerList: Seq[JobHandler], val settings: JobScheduler.Sett
   }
 
   private def work(h: Held): Unit = {
+    val started = System.nanoTime()
     val again =
       try runStep(h.id)
       catch { case NonFatal(e) => logger.error(s"Job ${h.id}: step crashed", e); false }
+    val took = System.nanoTime() - started
     lock.synchronized {
       h.inFlight = false
+      h.vtime += took
+      contestTime(h.contestId) = contestTime.getOrElse(h.contestId, 0L) + took
       inFlightByKind(h.kind) -= 1
       inFlightTotal -= 1
-      if (!again) held.remove(h.id)
+      if (!again) release(h)
     }
     if (!stopping) dispatch()
   }
