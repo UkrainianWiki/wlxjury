@@ -11,7 +11,8 @@
         jurorsMapping: Mapping[Seq[String]],
         regions: Map[String, String] = Map.empty,
         specialNominations: Seq[SpecialNomination] = Nil,
-        submitToken: Option[String] = None
+        submitToken: Option[String] = None,
+        distributionJob: Option[services.jobs.Job] = None
 )(implicit flash: Flash, messages: Messages, req: RequestHeader)
 
 @implicitFieldConstructor = @{
@@ -32,6 +33,13 @@
 
             @flash.get("error").map { err =>
                 <div class="alert alert-danger" style="color:#a94442;background:#f2dede;border:1px solid #ebccd1;padding:10px;border-radius:4px;margin-bottom:10px">@err</div>
+            }
+
+            @for(job <- distributionJob if !job.isDone) {
+                <div class="well well-sm">
+                    @Messages("job.status"): @snippets.jobStatus(job, req.uri)
+                </div>
+                <script src="@routes.Assets.at("javascripts/job-status.js")"></script>
             }
 
             @b3.form(routes.RoundController.saveRound()) {

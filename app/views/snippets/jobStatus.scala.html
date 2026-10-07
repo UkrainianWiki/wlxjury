@@ -1,0 +1,20 @@
+@import services.jobs.Job
+@(job: Job, returnTo: String, reloadOnDone: Boolean = true)(implicit messages: Messages, req: RequestHeader)
+@* A background job's status with its Retry / Cancel buttons, refreshed by
+   public/javascripts/job-status.js while the job is queued or running. *@
+<div class="job-status" data-src="@routes.JobController.status(job.id)" data-status="@job.status"
+     @if(reloadOnDone) {data-reload-on-done="true"}>
+    <span class="job-status-text">@job.status@for(done <- job.progressDone; total <- job.progressTotal) { (@done / @total @job.progressUnit.getOrElse(""))}@for(e <- job.error) {: @e}</span>
+    <form method="post" action="@routes.JobController.retry(job.id)" class="job-retry"
+          style="display: @if(job.isFailed) {inline} else {none}">
+        @helper.CSRF.formField
+        <input type="hidden" name="returnTo" value="@returnTo" />
+        <button type="submit" class="btn btn-default btn-xs">@Messages("job.retry")</button>
+    </form>
+    <form method="post" action="@routes.JobController.cancel(job.id)" class="job-cancel"
+          style="display: @if(job.isActive || job.isFailed) {inline} else {none}">
+        @helper.CSRF.formField
+        <input type="hidden" name="returnTo" value="@returnTo" />
+        <button type="submit" class="btn btn-default btn-xs">@Messages("job.cancel")</button>
+    </form>
+</div>

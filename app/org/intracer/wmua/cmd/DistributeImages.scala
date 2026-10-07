@@ -7,7 +7,7 @@ import org.intracer.wmua._
 import org.intracer.wmua.cmd.DistributeImages.Rebalance
 import org.scalawiki.dto.Namespace
 import play.api.Logging
-import scalikejdbc.DB
+import scalikejdbc._
 import spray.util.pimpFuture
 
 import javax.inject.Inject
@@ -15,74 +15,28 @@ import scala.concurrent.duration._
 
 class DistributeImages @Inject()(imageRepo: ImageRepo) extends Logging {
 
-  /** Builds and persists the selection rows for `images` in `round`.
-    *
-    * The insert (in chunks, plus criteria rates, if any) runs in a single transaction so a
-    * failure part-way through — a deadlock, a lock-wait timeout, an oversized batch,
-    * a unique-index violation — rolls back cleanly instead of leaving the round with
-    * only some of its images. The caller is expected to verify the resulting image
-    * count (see [[services.RoundService.createNewRound]]).
+  /** Builds and persists the selection rows for `images` in `round`, in one transaction
+    * (all chunks or none): the old in-memory path, kept for scripts, tests and as the
+    * reference the streamed background distribution
+    * ([[services.distribution.RoundDistributionHandler]]) is checked against.
     *
     * @return the number of selection rows written
     */
   def distributeImages(round: Round, images: Seq[Image], jurors: Seq[User]): Int = {
-    require(
-      jurors.nonEmpty,
-      s"Round ${round.id.orNull}: cannot distribute ${images.size} images to an empty jury"
-    )
-
+    DistributeImages.checkJury(round, jurors)
     val selection: Seq[Selection] = newSelection(round, images, jurors)
-
-    // Duplicate (page_id, jury_id, round_id) tuples would be rejected mid-batch by the
-    // unique index and leave the round half-populated; fail early with a clear reason
-    // (most often a juror listed twice in the round).
-    val distinctAssignments =
-      selection.iterator.map(s => (s.pageId, s.juryId, s.roundId)).toSet.size
-    require(
-      distinctAssignments == selection.size,
-      s"Round ${round.id.orNull}: ${selection.size - distinctAssignments} duplicate " +
-        s"juror/image assignments among ${jurors.size} jurors; check for duplicate jurors"
-    )
-
     logger.debug("saving selection: " + selection.size)
     DB.localTx { implicit session =>
-      // In chunks: the driver sends one batch without splitting it to fit the
-      // server's max_allowed_packet, so a batch of the whole distribution (images x
-      // jurors rows, ~40 bytes each) fails with "Socket error" once it outgrows it
-      // (16M by default: ~400k rows). One transaction still: all chunks or none.
-      selection.grouped(DistributeImages.InsertChunk).foreach(SelectionJdbc.batchInsert(_))
-      if (round.hasCriteria) {
-        addCriteriaRates(selection)
-      }
+      // in batches, with the criteria rates: see DistributeImages.insertRows
+      DistributeImages.insertRows(round, selection)
     }
     round.id.foreach(RoundImageCounts.invalidate(_)) // after the commit
     logger.debug("saved selection")
     selection.size
   }
 
-  def newSelection(round: Round, images: Seq[Image], jurors: Seq[User]): Seq[Selection] = {
-    val sortedJurors = jurors.sorted
-    val selection: Seq[Selection] = round.distribution match {
-      case 0 =>
-        sortedJurors.flatMap { juror =>
-          images.map(img => Selection(img, juror, round))
-        }
-      case x if x > 0 =>
-        images.zipWithIndex.flatMap { case (img, i) =>
-          (0 until x).map(j => Selection(img, sortedJurors((i + j) % sortedJurors.size), round))
-        }
-    }
-    selection
-  }
-
-  def addCriteriaRates(selection: Seq[Selection]): Unit = {
-    val criteriaIds = Seq(6, 7, 8, 9) // TODO load form DB
-    val rates = selection.flatMap { s =>
-      criteriaIds.map(id => new CriteriaRate(0, s.getId, id, 0))
-    }
-
-    CriteriaRate.batchInsert(rates)
-  }
+  def newSelection(round: Round, images: Seq[Image], jurors: Seq[User]): Seq[Selection] =
+    DistributeImages.assign(round, images, jurors.sorted.toIndexedSeq, startPosition = 0L)
 
   def distributeImages(
       round: Round,
@@ -124,6 +78,38 @@ class DistributeImages @Inject()(imageRepo: ImageRepo) extends Logging {
           .flatMap(_.id)
       }
       .getOrElse(Nil)
+  }
+
+  /** The round's per-image filters: every filter of [[imagesByRound]] except top-N by
+    * rating (a global ranking) and the exclusion of the images already in the round. Each
+    * decides per image, so applying them to any slice of the candidates (a chunk) selects
+    * exactly the images the whole list would. `includeFromCats` / `excludeFromCats` are
+    * the page ids of the round's Commons category filters ([[categoryFileIds]]).
+    */
+  def perImageFilters(
+      round: Round,
+      prevRounds: Seq[Round],
+      includeFromCats: Iterable[Long],
+      excludeFromCats: Iterable[Long]
+  ): Seq[ImageWithRating] => Seq[ImageWithRating] = {
+    val prevRound = prevRounds.headOption
+    ImageWithRatingSeqFilter.makeFunChain(
+      ImageWithRatingSeqFilter.funGenerators(
+        prevRound,
+        includeRegionIds = round.regionIds.toSet,
+        includeMonumentIds = round.monumentIds.toSet,
+        includePageIds = includeFromCats.toSet,
+        excludePageIds = excludeFromCats.toSet,
+        selectMinAvgRating =
+          prevRound.flatMap(_ => round.prevMinAvgRate.filter(_ => !prevRound.exists(_.isBinary))),
+        selectTopByRating = None,
+        selectedAtLeast = prevRound.flatMap(_ => round.prevSelectedBy),
+        mpxAtLeast = round.minMpx,
+        sizeAtLeast = round.minImageSize.map(_ * 1024 * 1024),
+        specialNomination = round.specialNomination,
+        mediaType = round.mediaType
+      )
+    )
   }
 
   private def getFilteredImages(
@@ -252,6 +238,75 @@ object DistributeImages {
 
   /** Selection rows per insert batch: ~200 KB, well below any max_allowed_packet. */
   val InsertChunk = 5000
+
+  /** The criteria of a criteria round (legacy rounds only: the round form can't create
+    * one): every selection row gets a criteria_rate row per criterion.
+    */
+  val CriteriaIds: Seq[Int] = Seq(6, 7, 8, 9) // TODO load from DB
+
+  /** A distribution needs jurors, each once: a juror listed twice would get duplicate
+    * (page_id, jury_id, round_id) rows, which the unique index rejects mid-insert; and
+    * no more jurors per image than there are jurors.
+    */
+  def checkJury(round: Round, jurors: Seq[User]): Unit = {
+    require(jurors.nonEmpty, s"Round ${round.id.orNull}: cannot distribute images to an empty jury")
+    val distinct = jurors.flatMap(_.id).distinct.size
+    require(
+      distinct == jurors.size,
+      s"Round ${round.id.orNull}: ${jurors.size - distinct} duplicate jurors; check for duplicate jurors"
+    )
+    require(
+      round.distribution <= jurors.size,
+      s"Round ${round.id.orNull}: ${round.distribution} jurors per image, but only ${jurors.size} jurors"
+    )
+  }
+
+  /** The selection rows for `images`, the first of them being the `startPosition`-th
+    * image the distribution assigns: with `distribution = x`, image i gets the jurors
+    * (i + j) % n, j < x, of the jurors in their order (by id); with 0, every juror gets
+    * every image. Carrying the position over chunks continues the rotation.
+    */
+  def assign(round: Round, images: Seq[Image], jurors: IndexedSeq[User], startPosition: Long): Seq[Selection] =
+    round.distribution match {
+      case 0 =>
+        jurors.flatMap(juror => images.map(img => Selection(img, juror, round)))
+      case x =>
+        val n = jurors.size
+        images.zipWithIndex.flatMap { case (img, k) =>
+          val i = startPosition + k
+          (0 until x).map(j => Selection(img, jurors(((i + j) % n).toInt), round))
+        }
+    }
+
+  /** Inserts selection rows, and their criteria rates in a criteria round, in the caller's
+    * transaction, in batches: the driver sends one batch without splitting it to fit
+    * the server's max_allowed_packet, so a batch of a whole distribution (images x jurors
+    * rows, ~40 bytes each) fails with "Socket error" once it outgrows it (16M by default).
+    *
+    * The rows' images must be new to the round (the distribution excludes the round's
+    * images): the criteria rates are added for every row of those images.
+    */
+  def insertRows(round: Round, rows: Seq[Selection])(implicit session: DBSession): Unit =
+    if (rows.nonEmpty) {
+      rows.grouped(InsertChunk).foreach(SelectionJdbc.batchInsert(_))
+      if (round.hasCriteria) addCriteriaRates(round.getId, rows.map(_.pageId).distinct)
+    }
+
+  /** criteria_rate.id is unique but not auto-increment: the new ids continue from the
+    * largest, read with a lock on the end of its index so two transactions can't take
+    * the same ones.
+    */
+  def addCriteriaRates(roundId: Long, pageIds: Seq[Long])(implicit session: DBSession): Unit = {
+    val base = sql"SELECT COALESCE(MAX(id), 0) FROM criteria_rate FOR UPDATE".map(_.long(1)).single().getOrElse(0L)
+    val criteria = SQLSyntax.createUnsafely(CriteriaIds.map(id => s"SELECT $id AS cid").mkString(" UNION ALL "))
+    pageIds.grouped(InsertChunk).foldLeft(base) { (from, ids) =>
+      val added = sql"""INSERT INTO criteria_rate (id, selection, criteria, rate)
+            SELECT $from + ROW_NUMBER() OVER (ORDER BY s.id, c.cid), s.id, c.cid, 0
+            FROM selection s JOIN ($criteria) c
+            WHERE s.round_id = $roundId AND s.page_id IN ($ids)""".update()
+      from + added
+    }
+  }
 
   case class Rebalance(newSelections: Seq[Selection], removedSelections: Seq[Selection])
 

@@ -47,7 +47,6 @@ class RoundControllerSpec extends PlaySpecification {
         Helpers.stubControllerComponents(),
         mock[ContestController],
         mock[RoundService],
-        mock[DistributeImages],
         mock[BlockingExecutionContext]
       )
 
