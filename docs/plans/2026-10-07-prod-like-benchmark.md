@@ -1,6 +1,8 @@
 # Production-like Benchmark, Storage Engine and MariaDB Configuration Plan (October 2026)
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan phase by phase.
+>
+> **To run or resume the benchmark, follow the runbook [`bench/README.md`](../../bench/README.md).** It has the prerequisites, the existing images, snapshots and results, the rebuild steps, the exact commands for the remaining phases, the validity rules and troubleshooting. Raw results and the dump live outside the repository in `C:\scala\wlxjury-bench-work\`.
 
 **Goal:** Measure the jury tool the way it runs in production, and use those measurements to decide:
 1. converting MyISAM to InnoDB (and how to deploy it);
