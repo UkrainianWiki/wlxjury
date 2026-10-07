@@ -36,12 +36,12 @@ import scala.jdk.CollectionConverters._
   */
 class ConcurrentRoundCreationSimulation extends Simulation {
 
-  private val baseUrl   = s"http://localhost:${GatlingTestFixture.port}"
+  private val baseUrl   = GatlingTestFixture.baseUrl
   private val cfg       = GatlingConfig.Concurrent
   private val contestId = GatlingTestFixture.contestId
   private val binaryId  = GatlingTestFixture.roundBinaryId
   private val ratedId   = GatlingTestFixture.roundRatingId
-  private val jurorIds  = GatlingTestFixture.jurors.map(_._1)
+  private val jurorIds  = GatlingTestFixture.jurorsIn(Some(binaryId)).map(_._1)
   private val admins    = GatlingTestFixture.organizers.take(math.max(cfg.admins, 1))
   private val timeout   = cfg.timeoutMinutes.minutes
   private val reportFile = "concurrent-distribution.txt"
@@ -52,8 +52,10 @@ class ConcurrentRoundCreationSimulation extends Simulation {
 
   /** Mid-sized regions: like special nominations, a few hundred images each. */
   private val regions: Seq[(String, Int)] =
-    sql"""SELECT SUBSTRING_INDEX(monument_id, '-', 1) r, COUNT(*) n FROM images
-          WHERE monument_id IS NOT NULL GROUP BY r ORDER BY n DESC"""
+    sql"""SELECT SUBSTRING_INDEX(i.monument_id, '-', 1) r, COUNT(*) n FROM images i
+          JOIN category_members cm ON cm.page_id = i.page_id
+          JOIN contest_jury c ON c.category_id = cm.category_id AND c.id = $contestId
+          WHERE i.monument_id IS NOT NULL GROUP BY r ORDER BY n DESC"""
       .map(rs => rs.string(1) -> rs.int(2)).list().slice(6, 10)
 
   private final case class AdminJob(name: String, small: Boolean, form: Seq[(String, Any)], existingRound: Option[Long] = None)
@@ -83,7 +85,7 @@ class ConcurrentRoundCreationSimulation extends Simulation {
       AdminJob(s"Rated avg 7$suffix", small = true,
         newRoundForm(s"Rated avg 7$suffix", "previousRound[0]" -> ratedId.toString, "minAvgRate" -> "7")),
       AdminJob(s"New files$suffix", small = true,
-        newRoundForm("Binary Round", "id" -> binaryId.toString, "newImages" -> "true"), existingRound = Some(binaryId))
+        newRoundForm(GatlingTestFixture.managedRounds.head._3, "id" -> binaryId.toString, "newImages" -> "true"), existingRound = Some(binaryId))
     )
 
   // ── DB lookups (the simulation runs in the app's JVM) ──────────────────────
@@ -198,13 +200,13 @@ class ConcurrentRoundCreationSimulation extends Simulation {
 
   // ── jurors in the binary round meanwhile ───────────────────────────────────
 
-  private val binaryVotes = GatlingTestFixture.votingPairs.filter(_._3 == binaryId)
-
-  private val voteFeeder = Iterator.continually(binaryVotes).flatten.map { case (_, pageId, roundId, rate) =>
-    Map("pageId" -> pageId.toString, "roundId" -> roundId.toString, "rate" -> rate.toString)
+  // a vote on one of the juror's own images in the binary round
+  private val nextVote = exec { s =>
+    val (pageId, roundId, rate) = GatlingTestFixture.nextVote(s("userId").as[String].toLong, Some(binaryId))
+    s.set("pageId", pageId).set("roundId", roundId).set("rate", rate)
   }
 
-  private val jurorFeeder = Iterator.continually(GatlingTestFixture.jurors).flatten.map { case (id, email, pass) =>
+  private val jurorFeeder = Iterator.continually(GatlingTestFixture.jurorsIn(Some(binaryId))).flatten.map { case (id, email, pass) =>
     Map("userId" -> id.toString, "email" -> email, "password" -> pass)
   }
 
@@ -218,7 +220,7 @@ class ConcurrentRoundCreationSimulation extends Simulation {
     .feed(jurorFeeder)
     .exec(jurorLogin)
     .repeat(15) {
-      feed(voteFeeder)
+      exec(nextVote)
         .exec(http("cast vote")
           .post("/rate/round/#{roundId}/pageid/#{pageId}/select/#{rate}")
           .check(status.is(200), bodyString.is("success")))

@@ -1,0 +1,3 @@
+# /etc/default/wlxjury as on production (2026-10-07): wlxjury.service's EnvironmentFile.
+JAVA_OPTS="-Xmx1g -XX:MaxDirectMemorySize=128m -XX:G1PeriodicGCInterval=60000 -XX:NativeMemoryTracking=summary -XX:+ExitOnOutOfMemoryError"
+MALLOC_ARENA_MAX=2

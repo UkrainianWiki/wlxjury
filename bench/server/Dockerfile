@@ -1,0 +1,52 @@
+# The production server for benchmarks (docs/plans/2026-10-07-prod-like-benchmark.md):
+# Ubuntu 22.04 with the Ubuntu packages of MariaDB 10.6 and OpenJDK 17, production's
+# active /etc/mysql files, and the jury tool started as wlxjury.service starts it.
+#
+#   docker build -t wlxjury-bench-server bench/server
+#
+# Run it with the server's limits, by count only (bench/scripts/bench.sh start):
+#   --cpuset-cpus=0,1 --memory=4900m --memory-swap=6900m
+# MariaDB and the app share them, as on the server.
+FROM ubuntu:22.04
+
+ENV DEBIAN_FRONTEND=noninteractive LANG=C.UTF-8
+
+# mariadb-server: production's exact build, 1:10.6.22-0ubuntu0.22.04.1. The archive now
+# serves 10.6.23, so the 10.6.22 debs come from Launchpad (installed over 10.6.23, which
+# pulls in the dependencies).
+# openjdk-17-jdk-headless: production's JRE plus jcmd (NMT summaries, as used on the server).
+ARG MARIADB_VERSION=10.6.22-0ubuntu0.22.04.1
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+      mariadb-server mariadb-client openjdk-17-jdk-headless procps tzdata ca-certificates curl \
+ && mkdir /tmp/debs && cd /tmp/debs \
+ && for p in mariadb-server mariadb-server-10.6 mariadb-server-core-10.6 mariadb-client \
+             mariadb-client-10.6 mariadb-client-core-10.6 mariadb-common libmariadb3; do \
+      curl -fsSLO "https://launchpad.net/ubuntu/+archive/primary/+files/${p}_${MARIADB_VERSION}_amd64.deb" \
+      || curl -fsSLO "https://launchpad.net/ubuntu/+archive/primary/+files/${p}_${MARIADB_VERSION}_all.deb"; \
+    done \
+ && apt-get install -y --no-install-recommends --allow-downgrades ./*.deb \
+ && cd / && rm -rf /tmp/debs \
+ && dpkg -l | grep -E 'mariadb-server-core|libmariadb3' | grep -c "${MARIADB_VERSION}" | grep -qx 2 \
+ && rm -rf /var/lib/apt/lists/* \
+ && rm -rf /var/lib/mysql/* \
+ && useradd --system --home-dir /usr/share/wlxjury --shell /usr/sbin/nologin wlxjury \
+ && mkdir -p /var/log/wlxjury /run/wlxjury /opt/dists /bench/cnf \
+ && chown wlxjury:wlxjury /var/log/wlxjury /run/wlxjury
+
+# Production's active MariaDB files (mariadb.cnf -> conf.d/, mariadb.conf.d/), without
+# debian.cnf. The package's own copies are replaced, not merged.
+RUN rm -rf /etc/mysql/conf.d /etc/mysql/mariadb.conf.d /etc/mysql/mariadb.cnf
+COPY mysql-conf/ /etc/mysql/
+RUN chmod -R go-w /etc/mysql
+
+# /etc/default/wlxjury (JAVA_OPTS, MALLOC_ARENA_MAX) and the benchmark's app config overlay.
+COPY default-wlxjury /etc/default/wlxjury
+COPY bench.conf /etc/wlxjury/bench.conf
+COPY entrypoint.sh /usr/local/bin/bench-entrypoint
+RUN chmod 755 /usr/local/bin/bench-entrypoint && chmod 644 /etc/default/wlxjury /etc/wlxjury/bench.conf
+
+EXPOSE 9000 3306
+VOLUME /var/lib/mysql
+STOPSIGNAL SIGTERM
+ENTRYPOINT ["/usr/local/bin/bench-entrypoint"]

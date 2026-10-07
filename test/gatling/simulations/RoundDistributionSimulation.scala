@@ -29,12 +29,13 @@ import scala.concurrent.duration._
   */
 class RoundDistributionSimulation extends Simulation {
 
-  private val baseUrl   = s"http://localhost:${GatlingTestFixture.port}"
+  private val baseUrl   = GatlingTestFixture.baseUrl
   private val cfg       = GatlingConfig.Distribution
   private val contestId = GatlingTestFixture.contestId
   private val binaryId  = GatlingTestFixture.roundBinaryId
   private val ratedId   = GatlingTestFixture.roundRatingId
-  private val jurorIds  = GatlingTestFixture.jurors.map(_._1)
+  // the binary round's jurors (in the fixture: every juror)
+  private val jurorIds  = GatlingTestFixture.jurorsIn(Some(binaryId)).map(_._1)
   private val timeout   = cfg.timeoutMinutes.minutes
   private val (_, orgEmail, orgPassword) = GatlingTestFixture.organizer
 
@@ -45,6 +46,7 @@ class RoundDistributionSimulation extends Simulation {
   private def categoryImageCount: Int =
     sql"""SELECT COUNT(DISTINCT cm.page_id) FROM category_members cm
           JOIN contest_jury c ON c.category_id = cm.category_id
+          JOIN images i ON i.page_id = cm.page_id
           WHERE c.id = $contestId""".map(_.int(1)).single().getOrElse(0)
 
   private def selectedImageCount(roundId: Long): Int =
@@ -83,9 +85,10 @@ class RoundDistributionSimulation extends Simulation {
       .check(status.is(303)))
       .exitHereIfFailed
 
+  /** None on the code before background jobs (no job table): the submit itself distributed. */
   private def latestJobId(roundId: Long): Option[Long] =
-    sql"""SELECT MAX(id) FROM job WHERE kind = 'round_distribution' AND subject_type = 'round'
-          AND subject_id = $roundId""".map(_.longOpt(1)).single().flatten
+    scala.util.Try(sql"""SELECT MAX(id) FROM job WHERE kind = 'round_distribution' AND subject_type = 'round'
+          AND subject_id = $roundId""".map(_.longOpt(1)).single().flatten).toOption.flatten
 
   private val activeStatuses = Set("queued", "running")
 
@@ -104,12 +107,14 @@ class RoundDistributionSimulation extends Simulation {
     }
       .exec(http(title).post("/admin/rounds/save")
         .formParamSeq(form)
+        .requestTimeout(timeout)
         .check(status.is(303), header("Location").saveAs("location")))
       .exec { s =>
         val roundId = roundIdByName(roundName)
         val jobId   = roundId.flatMap(latestJobId)
         val withIds = roundId.fold(s)(id => s.set("roundId", id))
-        jobId.fold(withIds.markAsFailed)(id => withIds.set("jobId", id))
+        if (roundId.isEmpty) withIds.markAsFailed
+        else jobId.fold(withIds.set("jobStatus", "done").set("jobId", -1L))(id => withIds.set("jobId", id)) // -1: in the request
       }
       .exitHereIfFailed
       .asLongAs(s => activeStatuses.contains(s("jobStatus").as[String]) &&

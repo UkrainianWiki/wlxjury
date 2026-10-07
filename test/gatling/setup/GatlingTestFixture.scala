@@ -5,12 +5,18 @@ import org.testcontainers.utility.DockerImageName
 import play.api.test.TestServer
 import play.api.inject.guice.GuiceApplicationBuilder
 
+import scalikejdbc._
+
 import java.net.ServerSocket
+import scala.util.Random
 
 object GatlingTestFixture {
 
-  private val data: GatlingFixtureData = init()
+  private val data: GatlingFixtureData =
+    if (GatlingConfig.external) GatlingExternalTarget.load() else init()
 
+  /** The fixture mode: a MariaDB testcontainer with the generated fixture, and the app in
+    * this JVM (TestServer). */
   private def init(): GatlingFixtureData = {
     val container = MariaDBContainer(
       dockerImageName = DockerImageName.parse("mariadb:10.6.22"),
@@ -77,6 +83,7 @@ object GatlingTestFixture {
   }
 
   val port: Int           = data.port
+  val baseUrl: String     = if (GatlingConfig.external) GatlingConfig.External.baseUrl else s"http://localhost:$port"
   val contestId: Long     = data.contestId
   val roundBinaryId: Long = data.roundBinaryId
   val roundRatingId: Long = data.roundRatingId
@@ -86,7 +93,50 @@ object GatlingTestFixture {
   val regions: Seq[String]                      = data.regions
   val votingPairs: Seq[(Long, Long, Long, Int)] = data.votingPairs
 
-  /** The fixture organizer first, then extra organizer accounts for concurrent sessions. */
+  /** The fixture organizer first, then extra organizer accounts for concurrent sessions.
+    * External target: the contest's own organizer accounts, repeated when the flows have
+    * more sessions than the contest has organizers (each session logs in on its own). */
   val organizers: Seq[(Long, String, String)] =
-    organizer +: GatlingDbSetup.ensureExtraOrganizers(contestId, GatlingConfig.organizerAccounts - 1)
+    if (GatlingConfig.external) {
+      val all = organizer +: data.extraOrganizers
+      Iterator.continually(all).flatten.take(math.max(GatlingConfig.organizerAccounts, all.size)).toSeq
+    } else
+      organizer +: GatlingDbSetup.ensureExtraOrganizers(contestId, GatlingConfig.organizerAccounts - 1)
+
+  /** (id, number, name, rates) of the binary and the rated round: saving a round with its
+    * own values (RoundManagement) changes nothing. */
+  val managedRounds: Seq[(Long, Int, String, Int)] = {
+    implicit val s: DBSession = AutoSession
+    val ids = Seq(roundBinaryId, roundRatingId)
+    val byId = sql"SELECT id, number, name, rates FROM rounds WHERE id IN ($ids)"
+      .map(rs => rs.long(1) -> ((rs.long(1), rs.int(2), rs.stringOpt(3).getOrElse(""), rs.int(4)))).list().toMap
+    ids.map(byId)
+  }
+
+  /** The rated round's highest rate. */
+  val ratedMaxRate: Int =
+    managedRounds.find(_._1 == roundRatingId).map(_._4).getOrElse(GatlingConfig.maxRate)
+
+  /** Per juror, the (page, round) pairs the juror has in the two rounds: a vote or a
+    * gallery view is of the juror's own images, as a real juror's. */
+  private val votesByJuror: Map[Long, IndexedSeq[(Long, Long)]] =
+    votingPairs.groupBy(_._1).map { case (j, ps) => j -> ps.map(p => (p._2, p._3)).toIndexedSeq }
+
+  /** The juror's rounds among the binary and the rated round. */
+  def roundsOf(juryId: Long): Seq[Long] =
+    votesByJuror.get(juryId).map(_.map(_._2).distinct.sorted).getOrElse(Nil)
+
+  /** Jurors with images in `round` (in either round when None). */
+  def jurorsIn(round: Option[Long]): Seq[(Long, String, String)] =
+    jurors.filter(j => round.fold(roundsOf(j._1).nonEmpty)(roundsOf(j._1).contains))
+
+  /** A random vote of the juror (in `round` if given): (pageId, roundId, rate). The rate is
+    * random as the round allows: binary 1 or -1, rated 1 to its highest rate. */
+  def nextVote(juryId: Long, round: Option[Long] = None): (Long, Long, Int) = {
+    val own = votesByJuror.getOrElse(juryId, IndexedSeq.empty)
+    val ps  = round.fold(own)(r => own.filter(_._2 == r))
+    val (page, r) = ps(Random.nextInt(ps.size))
+    val rate = if (r == roundRatingId) Random.nextInt(ratedMaxRate) + 1 else if (Random.nextBoolean()) 1 else -1
+    (page, r, rate)
+  }
 }
