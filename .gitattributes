@@ -1,3 +1,6 @@
 public/javascripts/unitegallery.js linguist-vendored
 conf/*.properties.* linguist-language=INI
 conf/messages.* linguist-language=INI
+
+# The benchmark server image runs these files on Linux
+bench/** text eol=lf

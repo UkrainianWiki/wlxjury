@@ -17,7 +17,7 @@ import scala.util.Random
   */
 class AggregatedRatingsSimulation extends Simulation {
 
-  private val baseUrl = s"http://localhost:${GatlingTestFixture.port}"
+  private val baseUrl = GatlingTestFixture.baseUrl
   private val cfg     = GatlingConfig.AggRatings
 
   private val rounds = Seq(GatlingTestFixture.roundBinaryId, GatlingTestFixture.roundRatingId)
@@ -56,11 +56,13 @@ class AggregatedRatingsSimulation extends Simulation {
 
   // Optional (gatling.aggRatings.withVoting): jurors voting, as in VotingSimulation, at
   // the same time, to see whether votes and logins stay fast while /roundstat is loaded.
-  private val jurorFeeder = Iterator.continually(GatlingTestFixture.jurors).flatten.map {
-    case (_, email, pass) => Map("email" -> email, "password" -> pass)
+  private val jurorFeeder = Iterator.continually(GatlingTestFixture.jurorsIn(None)).flatten.map {
+    case (id, email, pass) => Map("userId" -> id, "email" -> email, "password" -> pass)
   }
-  private val voteFeeder = Iterator.continually(GatlingTestFixture.votingPairs).flatten.map {
-    case (_, pageId, roundId, rate) => Map("pageId" -> pageId, "voteRoundId" -> roundId, "rate" -> rate)
+  // a vote on one of the juror's own images
+  private val nextVote = exec { s =>
+    val (pageId, roundId, rate) = GatlingTestFixture.nextVote(s("userId").as[Long])
+    s.set("pageId", pageId).set("voteRoundId", roundId).set("rate", rate)
   }
   private val votingScn = scenario("Voting alongside")
     .feed(jurorFeeder)
@@ -69,7 +71,7 @@ class AggregatedRatingsSimulation extends Simulation {
       .check(status.is(303)))
     .exitHereIfFailed
     .repeat(15) {
-      feed(voteFeeder)
+      exec(nextVote)
         .exec(http("cast vote")
           .post("/rate/round/#{voteRoundId}/pageid/#{pageId}/select/#{rate}")
           .check(status.is(200), bodyString.is("success")))

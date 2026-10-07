@@ -62,6 +62,23 @@ object GatlingConfig {
     val timeoutMinutes: Int    = c.getInt("timeoutMinutes")
   }
 
+  /** `gatling.target = external`: run against an app that is already running (see
+    * [[GatlingExternalTarget]]) instead of a TestServer on a generated fixture. */
+  val external: Boolean = cfg.getString("gatling.target") == "external"
+
+  object External {
+    private val c = cfg.getConfig("gatling.external")
+    val baseUrl: String        = c.getString("baseUrl")
+    val appPort: Int           = new java.net.URI(baseUrl).getPort
+    val dbUrl: String          = c.getString("db.url")
+    val dbUser: String         = c.getString("db.user")
+    val dbPassword: String     = c.getString("db.password")
+    val contestId: Long        = c.getLong("contestId")
+    val binaryRoundId: Long    = c.getLong("binaryRoundId")
+    val ratedRoundId: Long     = c.getLong("ratedRoundId")
+    val passwordPrefix: String = c.getString("passwordPrefix")
+  }
+
   object Distribution {
     private val c = cfg.getConfig("gatling.distribution")
     val jurorsPerImage: Int = c.getInt("jurorsPerImage")

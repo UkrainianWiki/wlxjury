@@ -17,7 +17,7 @@ import scala.concurrent.duration._
   */
 class RoundManagementSimulation extends Simulation {
 
-  private val baseUrl   = s"http://localhost:${GatlingTestFixture.port}"
+  private val baseUrl   = GatlingTestFixture.baseUrl
   private val cfg       = GatlingConfig.RoundMgmt
   private val contestId = GatlingTestFixture.contestId
   private val jurorIds  = GatlingTestFixture.jurors.map(_._1)
@@ -26,10 +26,7 @@ class RoundManagementSimulation extends Simulation {
   private def t(sec: Int): FiniteDuration = (sec * cfg.pauseScale * 1000).round.millis
 
   // (id, number, name, ratesId): saving with the same values is idempotent
-  private val roundFeeder = Iterator.continually(Seq(
-    (GatlingTestFixture.roundBinaryId, 1, "Binary Round", 1),
-    (GatlingTestFixture.roundRatingId, 2, "Rating Round", GatlingConfig.maxRate)
-  )).flatten.map { case (id, n, name, rates) =>
+  private val roundFeeder = Iterator.continually(GatlingTestFixture.managedRounds).flatten.map { case (id, n, name, rates) =>
     Map("roundId" -> id, "roundNumber" -> n, "roundName" -> name, "rates" -> rates)
   }
 
