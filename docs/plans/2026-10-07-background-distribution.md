@@ -103,7 +103,7 @@ Read those first.
 - **`JobHandler` per kind:** `step(job, ctx)` does one step (one chunk) in the transaction of `ctx`, with the job's row locked (`SELECT … FOR UPDATE`), and returns `Continue(state, progress)`, `Done(…)` or `Failed(error, …)`; the scheduler writes the state, progress and status in that same transaction. Hooks, each in the transaction of its status change: `onFailed`, `onCancelled`, `onRetry`. `prepare(job)` runs before each step **outside any transaction** (the place for external calls whose result isn't in the state, e.g. a Commons category's file ids), `forget` drops its cache. `details(job)` adds kind-specific figures to the status JSON. A step that throws rolls back and fails the job; deadlocks and lock-wait timeouts are retried (3 times) first.
 - **`JobScheduler`:**
   - its own small thread pool (`jobs.workers`), separate from Play's dispatchers and from `blocking-dispatcher`;
-  - **turns:** a worker runs one step of one job, then the job goes back in line. The next step goes to the **contest served longest ago**, and within it to the job served longest ago: a small job finishes in a few turns while a big one runs, and one contest's many jobs can't starve another contest's;
+  - **turns:** a worker runs one step of one job, then the job goes back in line. The next step goes to the **contest with the least step time so far**, and within it to the job with the least (a fair share by "virtual time"): a job whose steps are cheap gets more of them, so a small job finishes while a big one runs, and one contest's many jobs can't starve another contest's. A new job or contest starts level with the least served one;
   - **per-kind concurrency limits** (`jobs.concurrency.<kind>`, e.g. distribution 2; Commons imports would get 1–2 for the API's rate limits), under the global `workers`;
   - **lease, heartbeat, restart recovery:** every `pollInterval` (2 s) the scheduler claims queued jobs of its kinds, and running jobs whose `heartbeat_at` is older than the `lease` (60 s: their instance died). It renews the heartbeat of the jobs it holds every `heartbeatInterval` (10 s), and each step renews it too. A graceful stop finishes the running steps and hands its running jobs back to `queued`, so the next instance takes them at once; after a crash they are taken over when the lease expires. Each step checks under the row lock that this instance still owns the job, so two instances (a blue-green switch) never run one job;
   - **cancel** (`queued`, `running` or `failed` → `cancelled`) takes the job's row lock, so it waits for the running step to commit (a chunk: well under a second) and the job then stops;
@@ -151,6 +151,48 @@ Read those first.
   - heap after GC, with the production JVM settings (`-Xmx1g`, plus a run at `-Xmx512m`), one GC log per JVM (`gc-%p.log`).
 - **Choose** the worker count and chunk size from these runs, and record them in this plan.
 - **Also re-run the RoundDistribution simulation** (all four steps), to compare single-job time with the old in-request path.
+
+### Results (measured 2026-10-07, this Windows laptop on mains power, production JVM flags)
+
+JVM: `-XX:ActiveProcessorCount=2 -Xmx1g -XX:MaxDirectMemorySize=128m -XX:G1PeriodicGCInterval=60000 -XX:+ExitOnOutOfMemoryError`, GC log per JVM. The fixture's MariaDB container is not CPU-limited (the laptop has 8 logical CPUs); its buffer pool is 512 MB. Single runs; run-to-run noise on the latencies is about ±30%.
+
+**The scenario** (`ConcurrentRoundCreationSimulation`): 10 admins submit at the same moment: 2 large first rounds (38,367 images × 3 jurors = 115,101 rows each), 4 region rounds of 1,500–2,000 images (as special nominations: a full scan of the category), top 100 and top 500 of the rated round, the rated round's images averaging 7+ (2,000 images), and "Distribute new files" on the binary round (nothing new: a full scan). Meanwhile jurors vote and browse in the binary round (20 sessions per 10 s each, for 120 s). Special nominations themselves need the monument lists from the wiki (`SpecialNominationFilter`), so region rounds stand in for them: their cost (a scan of every candidate, few pass) is the same.
+
+**Workers and chunk size** (1g, submit-to-done in seconds; "small" is the 8 small jobs' range; latencies in ms, mean / p95, while the jobs run):
+
+| workers / chunk rows | large (2) | small (8) | everything | gallery | vote |
+|---|---|---|---|---|---|
+| 1 / 15,000 | 60 | 11–41 | 60 | 1839 / 2408 | 128 / 226 |
+| **2 / 15,000** | 44 | 5–25 | 44 | 1805 / 2574 | 81 / 149 |
+| 2 / 5,000 | 44 | 8–36 | 45 | 2742 / 3878 | 187 / 318 |
+| 2 / 50,000 | 37 | 19–25 | 38 | 3361 / 4492 | 472 / 907 |
+| 3 / 15,000 | 30 | 6–16 | 30 | 2701 / 3545 | 243 / 544 |
+
+The same small jobs **alone**, one after another: 0.6 s (top-N) and 0.9–2.6 s (the scans). With the first scheduler (turns by "served longest ago") the small jobs took 18–37 s, as long as the large ones: a region round's steps scan as many candidates as a large round's, so equal turns finish them together. Turns by step time (a fair share, `c6ce49a`) brought them to 5–25 s.
+
+**Chosen:** `jobs.workers = 2`, `jobs.concurrency.round_distribution = 2`, `jobs.roundDistribution.chunkRows = 15000`.
+- 15,000 rows: the smallest chunk without a cost; 5,000 rows didn't finish sooner and made each step's fixed cost (window, count, job row) a bigger share; 50,000 rows made the steps (transactions) long, and votes waited behind them (p95 907 ms).
+- 2 workers: 3 finished sooner on this laptop, whose database has 8 CPUs, at the price of votes and galleries; production has 2 CPUs shared by the app and MariaDB, where a third concurrent writer only queues. 1 worker was slower without sparing the votes or the galleries.
+
+**Against the old in-request path** (`d616319`, the same scenario, 1g, back to back): the 10 POSTs held 8 blocking-dispatcher threads, distributing 8 rounds at once. Everything finished in 21.5 s (small rounds 2.8–5.4 s, large 20–21.5 s); meanwhile the gallery took 2415 / 4434 ms, votes 87 / 271 ms, and the organizers' requests waited up to 21 s. With jobs: 44 s for everything, small rounds 5–25 s (region rounds 15–17 s), gallery 1805 / 2574 ms, votes 81 / 149 ms, and every request (submit 156 ms mean, status polls 28–78 ms) returns at once. On this laptop the old path's 8-way parallelism finishes sooner, because its database has 8 CPUs to spare; on the 2-CPU server it would put 8 distributions on 2 CPUs and block the request threads.
+
+**Vote and gallery latency, the reference:** the jurors alone (no admins): gallery 217 / 636, vote 23 / 62. (The Task 11 / 12 numbers, gallery 136 / 399 and vote 9 / 16, were measured with each scenario alone.) After the jobs end, the gallery stays at 580–820 ms for the rest of the run, with the old path as with jobs: the 270k new selection rows and their indexes push the gallery's pages out of the fixture's 512 MB buffer pool. So most of the gallery's slowdown is the database writing and reading as much as it does, not where the distribution runs; a production buffer pool bigger than the selection table avoids the after-effect.
+
+**Heap after GC (max), 0 full GCs in every run:**
+- 10 admins, 1g: 131–161 MB (old path: 328 MB);
+- 10 admins, 512m: 200 MB; everything done in 34.6 s, gallery 2180 / 2949, vote 167 / 301 while the jobs ran;
+- single job (RoundDistribution, 512m): 62–64 MB per step (old path: 116–462 MB).
+
+**RoundDistribution, one job at a time** (512m, back to back with `d616319`; seconds, submit to done):
+
+| step | d616319 (in the request) | jobs | brief's baseline |
+|---|---|---|---|
+| first round from the category (115k rows) | 5.9 | 6.5 | 6.1 |
+| from the binary round (115k rows) | 5.2 | 6.2 | 5.8 |
+| top 100 of the rated round | 0.78 | 0.49 | 0.68 |
+| "distribute new files", nothing new | 0.86 | 0.58 | 0.92 |
+
+A single large job is 10–20% slower: 8 steps, each with its window query, the job row and a commit, plus up to 0.2 s of polling. The top-N and the no-op top-up are faster: one ranking query; no load of the round.
 
 ## Future job kinds (not implemented)
 
