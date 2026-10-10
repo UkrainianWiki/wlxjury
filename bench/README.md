@@ -5,6 +5,8 @@ This runbook lets an agent or a person, with no other context, finish and reprod
 - **The why and the design:** [`docs/plans/2026-10-07-prod-like-benchmark.md`](../docs/plans/2026-10-07-prod-like-benchmark.md). Read it first: production facts, the phases, and **Results so far**.
 - **Completed 2026-10-10:** phases 3–5, validated full-suite runs, including the post-crash recovery pair. The plan contains the measurements, configuration and archiving decisions, deployment steps and runbook gaps. Raw data stays outside Git. Use new labels when reproducing completed points; existing labels are refused.
 
+- **Latest bgdist follow-up, 2026-10-10:** fresh full-data 128/256 MiB suites passed. Retain 128 MiB for user responsiveness; 256 cut physical reads and large-job time modestly but did not improve concurrent voting/gallery/login. This supersedes the earlier 512 MiB recommendation; see the plan’s final follow-up section.
+
 - **This file:** the how. Prerequisites, what already exists, how to rebuild any of it, the exact commands for the remaining work, comparability rules, troubleshooting, and what to report.
 
 Everything here runs on a Windows laptop with Git Bash and Docker Desktop. Commands are for Git Bash.
@@ -205,7 +207,7 @@ $R p4-pr183-bp1536 pr183v551 v53-innodb bp1536 "${SUITE[@]}"
 - the nightly stats job: about 1.3 GB peak at 00:00 Kyiv;
 - the OS: about 0.3 GB.
 
-That leaves about **1 GB for all of MariaDB**. Treat `bp1g` and `bp1536` as points on the curve, and recommend the best value that fits: likely 512M–768M plus MariaDB's other buffers. Say what the extra memory would buy if the server got more RAM.
+That leaves about **1 GB for all of MariaDB**. Treat `bp1g` and `bp1536` as points on the curve, and recommend the best value that fits: based on measured user latencies/job completion and MariaDB's other buffers, without presuming a larger pool wins. Say what the extra memory would buy if the server got more RAM.
 
 **Other settings worth one run each,** if the first results point at them: `innodb_log_file_size` (96M default), `innodb_flush_log_at_trx_commit=2` (explain the durability trade-off), `tmp_table_size` / `max_heap_table_size` (16M), `max_connections`. Add each as a new file in `bench/cnf/` with a comment saying why.
 
@@ -228,6 +230,17 @@ Contest 603 (2025) is kept, so the suite still works. Re-check the re-opening (s
   - moving closed contests to archive tables or a schema that **the app's DB account cannot read** (ScalikeJDBC's column discovery breaks logins otherwise; see section 8);
   - compressed read-only tables.
 - **If they don't,** say so with the numbers and recommend not archiving.
+
+### Latest background distribution: 128 versus 256 MiB (follow-up complete)
+
+Use fresh labels for another back-to-back full-data pair, with the same latest application tree verified before reusing/building a dist:
+
+```powershell
+pwsh -NoProfile -File bench/scripts/run-monitored.ps1 -Label <fresh-bgdist-128> -Dist bgdistv551 -Snapshot v53-innodb -Cnf -
+pwsh -NoProfile -File bench/scripts/run-monitored.ps1 -Label <fresh-bgdist-256> -Dist bgdistv551 -Snapshot v53-innodb -Cnf bp256
+```
+
+Export BENCH_SCRATCH as in section 5 and satisfy prerequisites; add -AllowLowMemory only with an explicit approved exception. Completed labels p6-bgdist-bp128 / p6-bgdist-bp256 are retained and cannot be reused. The plan records source identity, conditions, latency/job/memory tables and gaps. The current recommendation keeps 128 MiB; 256 MiB is an optional measured trade-off. These full-data runs do not retest the older PR #183 / 512 MiB archiving comparison.
 
 ## 7. Recording results
 

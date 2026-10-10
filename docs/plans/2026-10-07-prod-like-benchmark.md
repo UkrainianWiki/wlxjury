@@ -226,7 +226,9 @@ Latency is mean / p95 in milliseconds. Locks are the concurrent-creation simulat
 | p2-prod-myisam-rerun | 0 | 0 | n/a | 24 | 12 |
 | p4-prod-myisam-kb512 | 0 | 0 | n/a | 24 | 11 |
 
-### Completed study and deployment recommendation (2026-10-10)
+### Original completed study and deployment recommendation (2026-10-10)
+
+> Historical recommendation: the latest-bgdist 128/256 MiB follow-up below supersedes the 512 MiB configuration recommendation. The PR #183 / 512 MiB archiving result retains its original measured scope.
 
 Phases 3–5 are complete: 11 validated full-suite runs, 77 measured simulations, 163,865 HTTP requests and zero failed HTTP requests. Each sequential distribution passed all four image/selection-count checks, and all ten concurrent creation operations completed in each run. Background jobs reached done; their completion times are reported separately from form response times. Raw files, including conditions, host samples, status deltas, GC/NMT and Gatling reports, remain in `C:\scala\wlxjury-bench-work\bench\results` and are not committed.
 
@@ -363,3 +365,96 @@ The public scripts now preserve full application/stdout logs and reject incorrec
 Actual recorded free host RAM at run start ranged from 1.889 to 6.648 GiB, reflecting preparation/cache residency rather than a constant 6.9 GiB. Across measured stages the lowest free host RAM was 2,660 MiB; host sample gaps stayed below 11.048 seconds.
 
 The benchmark container is stopped after each run. Original AC timeout values were already zero and were not changed. Keep raw results, snapshots, image/dists and the dump in their existing external locations until the user accepts the work; cleanup remains a separate approval step.
+
+### Latest background-distribution follow-up: 128 versus 256 MiB (2026-10-10)
+
+**Current configuration recommendation: retain 128 MiB.** This supersedes the earlier 512 MiB recommendation, which prioritized cache headroom on PR #183 without a demonstrated concurrent latency benefit. 256 MiB is a measured optional trade-off for modestly faster large jobs and fewer physical reads; it did not make voting or login faster, and concurrent gallery p95 was higher in this pair. The evidence does not justify making extra buffer memory mandatory for user responsiveness.
+
+The user requested the missing midpoint using only the latest background-distribution code. Verified local branch head `2a22ebac85c96768dd35d3554d5b97c264460405`: its app, conf, build.sbt and project match the retained `bgdistv551` distribution built at `32a1253`. Both suites used that build and freshly loaded copies of the same immutable full-data `v53-innodb` snapshot. No other code version was measured in this follow-up. No branch was fetched or changed.
+
+The seven simulations, three warm-ups, CPU/memory/swap caps, production JVM flags and other active MariaDB settings were unchanged. The pair ran immediately back to back, 21:24–22:08 Kyiv, on mains with AC sleep/hibernate already zero; no other heavy task was launched. Actual free RAM differed as memory/cache residency changed, and is recorded below. The prior explicit RAM-prerequisite exception was retained with ten-second monitoring and the same abort thresholds.
+
+| run | HTTP requests / failures | starting free host GiB | minimum free host MiB: all / measured | maximum sample gap s | V53→V60 startup s |
+| --- | --- | --- | --- | --- | --- |
+| p6-bgdist-bp128 | 15367 / 0 | 4.438 | 838 / 5559 | 10.64 | 121 |
+| p6-bgdist-bp256 | 15334 / 0 | 7.319 | 4032 / 4032 | 11.381 | 96 |
+
+All **14 simulations and 30,701 HTTP requests passed**. Both pools were verified from effective variables (134,217,728 / 268,435,456 bytes), successful Flyway histories through V60 and unchanged container limits. The synthetic-email/re-opening gates passed before warm-up. All four sequential distribution steps checked expected image/selection counts; all ten concurrent operations finished in each run. Raw results, full application/stdout logs, server GC/NMT/RSS and host samples stay outside Git under `C:\scala\wlxjury-bench-work\bench\results\<label>`.
+
+#### Latencies and completed work
+
+Latency below is **mean / p95 / p99 in milliseconds**. Form response time and job completion are separate measures. Concurrent samples contain 3,900 votes, 2,600 gallery requests, 520 juror logins and only ten form submissions per run.
+
+| request | 128 MiB | 256 MiB |
+| --- | --- | --- |
+| vote alone | 7 / 12 / 17 | 7 / 12 / 16 |
+| gallery alone | 13 / 19 / 25 | 13 / 18 / 25 |
+| region gallery | 19 / 38 / 55 | 18 / 33 / 43 |
+| rounds list | 12 / 20 / 24 | 14 / 25 / 30 |
+| edit round | 22 / 33 / 37 | 26 / 48 / 54 |
+| save round | 12 / 22 / 25 | 13 / 24 / 28 |
+| round statistics | 20 / 29 / 39 | 26 / 39 / 43 |
+| vote during creation | 9 / 28 / 58 | 9 / 28 / 54 |
+| gallery during creation | 35 / 148 / 342 | 39 / 175 / 360 |
+| juror login during creation | 18 / 46 / 103 | 17 / 46 / 80 |
+| concurrent form response | 125 / 213 / 248 | 128 / 197 / 197 |
+| job-status response | 20 / 56 / 114 | 22 / 53 / 87 |
+
+| sequential job: submit to done | 128 MiB s | 256 MiB s |
+| --- | --- | --- |
+| create round: from contest category | 4.456 | 4.038 |
+| create round: from binary round | 0.704 | 0.475 |
+| create round: top images of rated round | 0.287 | 0.290 |
+| top up round: distribute new files | 0.524 | 0.494 |
+
+| concurrent job: submit to done | 128 MiB s | 256 MiB s |
+| --- | --- | --- |
+| Large A | 24.258 | 21.118 |
+| Large B | 24.213 | 21.798 |
+| Region 73 | 12.644 | 12.568 |
+| Region 05 | 12.762 | 12.618 |
+| Region 53 | 12.787 | 12.308 |
+| Region 96 | 12.477 | 12.568 |
+| Top 100 | 8.429 | 8.177 |
+| Top 500 | 8.504 | 8.216 |
+| Rated avg 7 | 8.332 | 8.291 |
+| New files | 9.447 | 9.410 |
+
+256 MiB reduced category-round completion from 4.456 to 4.038 s (0.418 s / 9.4%). Large A/B finished 3.140 / 2.415 s earlier (12.9% / 10.0%). Small queued jobs were nearly unchanged, around 8–13 s. Isolated voting was unchanged; concurrent vote/login p95 stayed 28/46 ms. Concurrent gallery p95 was 148→175 ms, with p99 342→360 ms. This is mixed latency evidence, not proof of a regression: one unseeded suite at each size cannot establish small differences or a repeatable job-time gain. HTTP request totals differ because of polling and timed/random flows; the core concurrent vote/gallery/login counts match.
+
+#### Memory and database counters
+
+| measure | 128 MiB | 256 MiB |
+| --- | --- | --- |
+| peak sampled MariaDB RSS MiB | 268.2 | 391.8 |
+| peak sampled server Java RSS MiB | 671.3 | 873.9 |
+| configured principal global buffers MiB | 401 | 529 |
+| concurrent physical buffer-pool reads | 9843 | 49 |
+| concurrent logical buffer-pool reads | 14375107 | 16111265 |
+| concurrent buffer-pool hit % | 99.93153 | 99.99970 |
+| concurrent table-lock waits | 0 | 0 |
+| concurrent row-lock waits / ms | 7 / 6238 | 6 / 3613 |
+| concurrent disk temporary tables | 2600 | 2600 |
+| concurrent slow queries | 9 | 5 |
+| maximum used connections, whole suite | 18 | 21 |
+| log waits / buffer wait-free, whole suite | 0 / 0 | 0 / 0 |
+| server full GC, whole captured lifetime | 0 | 0 |
+| server maximum heap after pause GC MiB, whole captured lifetime | 165 | 168 |
+| server maximum pause GC ms, whole captured lifetime | 152.097 | 102.236 |
+
+The added 128 MiB of configured pool cost about 124 MiB of sampled MariaDB RSS and reduced physical reads 9,843→49 (about 99.5%). That is a real database-cache benefit, but it was not a voting/gallery latency win on this SSD. No MariaDB RSS or Java RSS sample is a hard bound. Java RSS also differed (671→874 MiB); this pair does not establish the cause. GC figures above come from the **server**, include startup/warm-up, and are not client HeapWatcher measurements.
+
+At 128 MiB the principal configured global buffers sum to 401 MiB: pool 128 + key cache 128 + Aria 128 + log buffer 16 + disabled-query-cache allocation 1. At 256 MiB that sum is 529 MiB, versus 785 MiB at 512. Retaining 128 leaves about 599 MiB within the runbook’s approximate 1,000 MiB database allowance for other/query memory; 256 leaves about 471. Keep the app/WordPress/stats/OS reserves and durable defaults. WordPress, midnight stats and the thumbnail cache remain absent. A slower production disk could make the reduced reads more valuable; this benchmark does not measure that.
+
+`recommended-60-wlxjury.cnf` now pins the measured 128 MiB production default rather than increasing it. `bp256.cnf` preserves the optional tested midpoint. Use 256 only if the modest creation-time/cache trade-off is worth roughly 124 MiB extra observed database RSS, and verify it with production workloads or repeated runs before promising gains. No 512 MiB bgdist suite was run, so this pair is not a direct 256-versus-512 comparison.
+
+#### Runbook gaps resolved or retained
+
+- Added the missing 256 MiB point on latest local bgdist, with a fresh 128 MiB control; removed the runbook’s presumption that 512–768 MiB is likely best. The older PR #183 matrix remains historical evidence.
+- Full diagnostics now confirm the startup heartbeat issue: 11 warnings in the 128 MiB run and 9 in the 256 MiB run, each with `IllegalStateException: Connection pool is not yet initialized.(name:default)`. They occur before app readiness and stop afterwards. This replaces the earlier inference about a missing job table; scheduler heartbeat lacks the poll readiness guard. All measured jobs completed. No application source fix was made.
+- Removed a leftover private `Record-BenchPhase` callback from the public monitoring wrapper. The exact old label `p5-pr183-trim` could reach an undefined function after validation; new reproduction labels do not. PowerShell parsing passed after removal. These two full suites also exercise the final pre-copy cache clear and pre-warm-up snapshot gates introduced after the recovery pair.
+- One unseeded suite per size; no statistical claim. Rated-average and concurrent new-files operations still produce zero rows, leaving eight nonempty creations among ten operations. Expected sequential count checks pass, but the binary candidate count varies with random voting (2,336 versus 2,323 images).
+- This is a full-data buffer-size comparison. The previous no-archive result was measured on PR #183 at 512 MiB; it must not be presented as a bgdist full-versus-trim result at the newly retained 128 MiB. No archive experiment or production data change was done in this follow-up. A data-size decision for this exact package/config requires a fresh matching size comparison if needed.
+- January data, local SSD, omitted WordPress/stats/thumb-cache load and Commons calls remain fidelity limits. Conversion/migration and deployment instructions above are unchanged. No other worktree, user process, container, server or branch was changed; no push.
+
+The benchmark container is stopped. Snapshots and both validated result folders are retained. AC timeouts were already zero and remain unchanged. The original completed results and recovery commits are preserved.

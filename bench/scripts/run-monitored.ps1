@@ -146,4 +146,3 @@ try {
     Write-Output "DISCARDED $benchDiscard"
   }
 }
-if ($Label -eq 'p5-pr183-trim') { Record-BenchPhase 5 @('p3-pr183-innodb','p5-pr183-trim') }
