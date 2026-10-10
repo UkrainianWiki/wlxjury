@@ -179,3 +179,27 @@ mean / p95 ms, one run:
 - **V55.1** (`32a1253`): measured per table, by hand, production config: selection 77 s, images 51 s, category_members 6.3 s, monument 3.2 s, the rest < 1 s; ANALYZE 1.1 s; **145 s in all**. Datadir 1.35 GB -> 2.62 GB, **peak 3.17 GB** (+1.83 GB) while selection is copied. mariadbd RSS peak 223 MB.
 - **Through Flyway from MyISAM at V53**: PR #183 + V55.1 and background distribution + V55.1 both start; V54 15 s, V55 44 s, V55.1 160 s, V56 10 s, V57 28 s, V58 61 s, V59/V60 < 1 s: **5.5 min of downtime**. All live tables InnoDB, FK_selection_page_id present.
 - The InnoDB runs (production's code, #183, background distribution) are not done yet.
+
+### Phase 3 measurements (2026-10-10)
+
+Same laptop, on mains power with AC sleep and hibernation disabled. The user closed heavy applications and explicitly approved proceeding below the 8 GiB free-host-RAM prerequisite (6.9 GiB at authorization). Each run has `conditions.json` and 10-second power/free-RAM/free-disk samples. Fresh snapshot per run, identical seven-simulation suite and warm-up, unchanged container resource limits and production JVM flags. Full Flyway history is captured; all seven simulations and all HTTP requests passed. Raw results remain outside the repository.
+
+Latency is mean / p95 in milliseconds. Locks are the concurrent-creation simulation delta; MariaDB RSS is the maximum sampled across the suite.
+
+| run | vote alone | gallery alone | concurrent vote | concurrent gallery | concurrent juror login | table-lock waits | MariaDB RSS MiB | minimum free host MiB during measurements |
+|---|---|---|---|---|---|---:|---:|---:|
+| p2-prod-myisam-rerun | 5 / 9 | 75 / 197 | 1216 / 3321 | 1435 / 3332 | 6295 / 19450 | 11486 | 239 | 4195 |
+| p3-prod-innodb | 7 / 12 | 19 / 30 | 88 / 531 | 176 / 813 | 536 / 3309 | 0 | 306 | 3719 |
+| p3-pr183-innodb | 7 / 12 | 13 / 19 | 11 / 43 | 62 / 396 | 22 / 91 | 0 | 302 | 4120 |
+| p3-bgdist-innodb | 7 / 11 | 13 / 21 | 10 / 32 | 44 / 193 | 21 / 60 | 0 | 267 | 4713 |
+
+| run | region gallery | rounds list | edit round | round statistics |
+|---|---|---|---|---|
+| p2-prod-myisam-rerun | 130 / 343 | 568 / 921 | 1173 / 2675 | 155 / 352 |
+| p3-prod-innodb | 27 / 45 | 287 / 512 | 791 / 1396 | 94 / 198 |
+| p3-pr183-innodb | 19 / 36 | 13 / 26 | 24 / 43 | 23 / 39 |
+| p3-bgdist-innodb | 21 / 45 | 12 / 19 | 22 / 38 | 25 / 36 |
+
+The PR #183 and background-distribution comparisons include their accompanying migrations (V54-V59 / V60), so they measure the deployable code-and-schema packages rather than Scala-only changes. Round creation figures are submit-to-completion from the simulation report; its heap figures belong to the Gatling client JVM in external mode and must not be used as server heap measurements. Use each run's server `gc.log` and NMT capture instead.
+
+The runbook and runner originally used `MAX(version)` / `installed_rank > 52` to inspect Flyway. Versions are strings and installation ranks are not versions: the former returned `9`, and the earlier baseline history file was empty. This session records the full history ordered by installation rank and validates the final successful migration (V53 / V59 / V60). ISO timestamps, refusal to overwrite results, exit cleanup, and nonzero exit on measured-simulation failure were added before all these runs; the workload was unchanged.
