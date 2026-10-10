@@ -1,7 +1,5 @@
 # Production-like Benchmark, Storage Engine and MariaDB Configuration Plan (October 2026)
 
-> **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan phase by phase.
->
 > **To run or resume the benchmark, follow the runbook [`bench/README.md`](../../bench/README.md).** It has the prerequisites, the existing images, snapshots and results, the rebuild steps, the exact commands for the remaining phases, the validity rules and troubleshooting. Raw results and the dump live outside the repository in `C:\scala\wlxjury-bench-work\`.
 
 **Goal:** Measure the jury tool the way it runs in production, and use those measurements to decide:
@@ -148,7 +146,7 @@ Expose 9000 (the app) and 3306 (data loading and checks from the host). Note wha
 
 ---
 
-## Results so far (2026-10-07; Phases 1-2 done, Phase 3 partly)
+## Results (Phases 1–5 complete, 2026-10-10)
 
 ### Phase 1: the environment
 - `bench/server` (Ubuntu 22.04, MariaDB **10.6.22-0ubuntu0.22.04.1**, production's build, from Launchpad; OpenJDK 17.0.20), production's `/etc/mysql` files, `/etc/default/wlxjury` (JAVA_OPTS, `MALLOC_ARENA_MAX=2`, checked in `/proc/<pid>/environ`); `bench/scripts/bench.sh` / `run.sh` / `summarize.js`; Gatling `-Dgatling.target=external` (`GatlingExternalTarget`).
@@ -174,11 +172,11 @@ mean / p95 ms, one run:
 - Max heap after GC 521 MB (1g heap), no full GC.
 - **Finding:** round 1721 filters by a Commons category. On production's code every view of its edit page lists that category through the Commons API: more than 75 s, so Play's default idle timeout (75 s) cuts the page off (7 of 13 edit views timed out at 60 s in Gatling), and "Distribute new files" to it is cut off the same way ("Premature close"). The benchmark copy drops that filter, and the server maps the Wikimedia hosts to 127.0.0.1.
 
-### Phase 3 so far
+### Conversion and migration findings (2026-10-07)
 - **On MyISAM, V56 fails** (`ALGORITHM=INPLACE is not supported for this operation. Try ALGORITHM=COPY`): PR #183's deploy stops at startup after V54 and V55 (59 s) have run, leaving a failed V56 row in `flyway_schema_history` (MariaDB DDL isn't transactional). Run by hand, V58 fails the same way after archiving and deleting its 15 orphans; V57, V59, V60 succeed (V60's `job` table is created InnoDB explicitly).
 - **V55.1** (`32a1253`): measured per table, by hand, production config: selection 77 s, images 51 s, category_members 6.3 s, monument 3.2 s, the rest < 1 s; ANALYZE 1.1 s; **145 s in all**. Datadir 1.35 GB -> 2.62 GB, **peak 3.17 GB** (+1.83 GB) while selection is copied. mariadbd RSS peak 223 MB.
 - **Through Flyway from MyISAM at V53**: PR #183 + V55.1 and background distribution + V55.1 both start; V54 15 s, V55 44 s, V55.1 160 s, V56 10 s, V57 28 s, V58 61 s, V59/V60 < 1 s: **5.5 min of downtime**. All live tables InnoDB, FK_selection_page_id present.
-- The InnoDB runs (production's code, #183, background distribution) are not done yet.
+- The InnoDB runs and remaining phases are complete; see the dated measurements and final recommendation below.
 
 ### Phase 3 measurements (2026-10-10)
 
@@ -227,3 +225,141 @@ Latency is mean / p95 in milliseconds. Locks are the concurrent-creation simulat
 | p4-pr183-bp1536 | 8 | 19000669 | 100.0000 | 2624 | 16 |
 | p2-prod-myisam-rerun | 0 | 0 | n/a | 24 | 12 |
 | p4-prod-myisam-kb512 | 0 | 0 | n/a | 24 | 11 |
+
+### Completed study and deployment recommendation (2026-10-10)
+
+Phases 3–5 are complete: 11 validated full-suite runs, 77 measured simulations, 163,865 HTTP requests and zero failed HTTP requests. Each sequential distribution passed all four image/selection-count checks, and all ten concurrent creation operations completed in each run. Background jobs reached done; their completion times are reported separately from form response times. Raw files, including conditions, host samples, status deltas, GC/NMT and Gatling reports, remain in `C:\scala\wlxjury-bench-work\bench\results` and are not committed.
+
+#### Conversion and deployable application packages
+
+| run | category round completion s | concurrent large A / B completion s | concurrent form mean / p95 ms | peak app RSS MiB | maximum server heap after GC MiB | full GCs | total GC pause ms |
+|---|---:|---|---|---:|---:|---:|---:|
+| p2-prod-myisam-rerun | 8.928 | 14.781 / 23.810 | 8172 / 19739 | 1250 | 744 | 0 | 7454 |
+| p3-prod-innodb | 4.094 | 27.012 / 26.877 | 9296 / 26915 | 1315 | 747 | 0 | 7171 |
+| p3-pr183-innodb | 4.987 | 19.763 / 19.761 | 6434 / 19746 | 1312 | 757 | 0 | 3338 |
+| p3-bgdist-innodb | 4.257 | 23.194 / 23.198 | 103 / 159 | 631 | 162 | 0 | 1713 |
+
+The fresh MyISAM baseline had 11,486 concurrent table-lock waits. The proposed InnoDB conversion removed those table-lock waits and improved concurrent vote / gallery / login p95 from 3,321 / 3,332 / 19,450 ms to 531 / 813 / 3,309 ms on production code. PR #183 on InnoDB reached 43 / 396 / 91 ms, and background distribution reached 32 / 193 / 60 ms at the default 128 MiB pool. V55.1 also standardizes row format and charset/collation, so this is the proposed conversion package, not an isolated engine-only experiment. PR #183 and background distribution include V54–V59 / V60 and are code-and-schema comparisons.
+
+Background distribution lowered peak app RSS and retained much less heap after GC. Its ten concurrent form submissions returned at mean / p95 103 / 159 ms, while work continued in jobs. The two large jobs completed in 23.194 / 23.198 s; PR #183 completed them in 19.763 / 19.761 s. Background small-job completion ranged from 7.456 to 12.848 s, versus 0.630 to 5.525 s for PR #183 (including the zero-output rated filter). Deployment therefore buys response responsiveness and lower memory, not universally faster job completion. Ten admin sessions share four organizer accounts.
+
+RSS peaks are sampled during the measured suite; GC figures cover the captured server lifetime, including startup and warm-up. Background submit-to-done time includes the client’s status-polling delay. These metrics have different scopes and must not be substituted for one another.
+
+#### MariaDB configuration decision
+
+| configuration / data | concurrent vote mean / p95 ms | gallery mean / p95 ms | login mean / p95 ms | buffer-pool physical reads | hit rate % | peak MariaDB RSS MiB | large A / B completion s |
+|---|---|---|---|---:|---:|---:|---|
+| p3-pr183-innodb | 11 / 43 | 62 / 396 | 22 / 91 | 8660 | 99.9573 | 302 | 19.763 / 19.761 |
+| p2-prod-myisam-rerun | 1216 / 3321 | 1435 / 3332 | 6295 / 19450 | 0 | n/a | 239 | 14.781 / 23.810 |
+| p4-pr183-bp512 | 13 / 54 | 77 / 481 | 27 / 104 | 24 | 99.9999 | 683 | 20.422 / 20.628 |
+| p4-pr183-bp1g | 14 / 56 | 101 / 632 | 29 / 117 | 13 | 99.9999 | 1206 | 25.423 / 25.370 |
+| p4-pr183-bp1536 | 12 / 43 | 68 / 439 | 27 / 94 | 8 | 100.0000 | 1661 | 18.205 / 17.910 |
+| p4-prod-myisam-kb512 | 1304 / 3285 | 1610 / 3475 | 6633 / 18127 | 0 | n/a | 304 | 14.912 / 22.593 |
+| p5-pr183-trim | 8 / 21 | 31 / 84 | 16 / 35 | 5342 | 99.9628 | 301 | 14.328 / 14.248 |
+| p5-pr183-full-bp512-recovery | 10 / 26 | 39 / 153 | 20 / 53 | 21 | 99.9999 | 698 | 15.711 / 15.589 |
+| p5-pr183-trim-bp512-recovery | 10 / 29 | 39 / 157 | 21 / 59 | 325 | 99.9980 | 552 | 17.411 / 16.106 |
+
+Recommend `bench/cnf/recommended-60-wlxjury.cnf`: a 512 MiB InnoDB buffer pool with all other active production defaults retained. On the full dataset this reduced concurrent buffer-pool reads from 8,660 to 24 and category-round completion from 4.987 to 3.597 s, with 683 MiB peak sampled MariaDB RSS in the original config run; the recovered full-data control reached 698 MiB. Gallery-only p95 remained 19 ms. It did not establish a concurrent p95 improvement (vote/gallery 54/481 ms versus 43/396 ms at 128 MiB); choose it for cache headroom and faster solo creation, not a promise of lower p95. The larger 1 GiB / 1.5 GiB points reached 1,206 / 1,661 MiB RSS and do not fit the allowance. Their gains were limited or mixed: the 1.5 GiB point finished large rounds around 18 s versus 20.5 s at 512 MiB, while concurrent gallery p95 was still 439 ms.
+
+| MyISAM key cache | concurrent key reads | key-read requests | key-cache hit % | table-lock waits |
+|---|---:|---:|---:|---:|
+| p2-prod-myisam-rerun | 214 | 48450997 | 99.9996 | 11486 |
+| p4-prod-myisam-kb512 | 217 | 48354747 | 99.9996 | 11445 |
+
+The starting MyISAM indexes total approximately 546.3 MiB (the conversion’s retained before-table metadata). The `myisam-kb512.cnf` comment claiming its 512 MiB cache holds every index was corrected; the measured setting was unchanged.
+
+Do not deploy a larger MyISAM key cache as the contention fix: the two cache points had essentially the same concurrent key-cache hit rate and 11,486 / 11,445 table-lock waits. Vote/gallery p95 stayed at 3,321/3,332 ms versus 3,285/3,475 ms, far above the converted packages.
+
+The recommendation file sets only the measured buffer-pool change, keeping the rest of the active production configuration. At 512 MiB the principal configured global buffers total about 785 MiB: InnoDB 512, MyISAM key cache 128, Aria page cache 128, InnoDB log buffer 16, and the disabled query cache allocation 1. This leaves about 215 MiB of the runbook’s approximate 1,000 MiB MariaDB allowance for other memory, but per-connection buffers and WordPress demand remain workload dependent. Observed RSS is evidence for this suite, not a hard memory bound. A 768 MiB pool would already make that global-buffer sum about 1,041 MiB before other memory; the 1 GiB and 1.5 GiB points exceed the shared-server allowance. Keep the 1.3 GiB jury-app reserve even when the background build uses less in this dataset; thumbnail cache growth is unmodelled.
+
+Keep durable commit flushing (`innodb_flush_log_at_trx_commit=1`), 96 MiB redo files, O_DIRECT, I/O capacity 200, 16 MiB temporary-table limits, 151 maximum connections and table-open cache 2,000 for this recommendation. No measured failure or sustained pressure isolated those settings as the bottleneck, so their alternatives were not run. Flush mode 2 would weaken crash durability and is not recommended without a separate durability decision. PR #183 creates one temporary disk table per gallery request even in gallery-only runs; increasing the buffer pool does not change that counter. The MEDIUMTEXT-bearing gallery query is a plausible explanation, not proof of memory exhaustion. Do not size temporary buffers from that counter alone.
+
+Startup of PR #183 while migrating the fresh already-InnoDB V53 snapshot (V55.1 is a no-op): 128M 107 s; bp512 80 s; bp1g 76 s; bp1536 64 s. This measures pending index/schema migration startup, not routine restart or full MyISAM conversion downtime. The matrix shows what extra RAM bought on this dataset; larger caches are not justified on the current shared server, and any larger server should be sized with WordPress/statistics included.
+
+Across the four PR #183 buffer-pool points, Max_used_connections peaked at 21; measured InnoDB log-buffer waits totalled 0 and buffer-pool wait-free events 0. These are checks against needless setting changes, not a guarantee for missing production workloads.
+
+#### Concurrent database counters
+
+| run | table waits | row waits / ms | disk temporary tables | slow queries | log waits / buffer wait-free | max connections |
+|---|---:|---|---:|---:|---|---:|
+| p2-prod-myisam-rerun | 11486 | 0 / 0 | 24 | 12 | 0 / 0 | 12 |
+| p3-prod-innodb | 0 | 0 / 0 | 24 | 12 | 0 / 0 | 12 |
+| p3-pr183-innodb | 0 | 0 / 0 | 2624 | 18 | 0 / 0 | 20 |
+| p3-bgdist-innodb | 0 | 7 / 2414 | 2600 | 7 | 0 / 0 | 25 |
+| p4-pr183-bp512 | 0 | 0 / 0 | 2624 | 24 | 0 / 0 | 19 |
+| p4-pr183-bp1g | 0 | 0 / 0 | 2624 | 31 | 0 / 0 | 20 |
+| p4-pr183-bp1536 | 0 | 0 / 0 | 2624 | 16 | 0 / 0 | 21 |
+| p4-prod-myisam-kb512 | 11445 | 0 / 0 | 24 | 11 | 0 / 0 | 12 |
+| p5-pr183-trim | 0 | 0 / 0 | 2624 | 9 | 0 / 0 | 20 |
+| p5-pr183-full-bp512-recovery | 0 | 1 / 19 | 2624 | 13 | 0 / 0 | 21 |
+| p5-pr183-trim-bp512-recovery | 0 | 0 / 0 | 2624 | 15 | 0 / 0 | 20 |
+
+Table-lock waits and InnoDB row-lock waits are different counters. The background run had seven row waits totaling 2,414 ms although its table-lock-wait delta was zero. All measured jobs and HTTP requests completed successfully.
+
+#### Data size and archiving decision
+
+Recommend **not archiving old contests for active-workload performance on the current evidence after selecting the 512 MiB pool**. The fresh post-crash comparison is the appropriate tuned-data-size pair:
+
+| recovered PR #183 / 512 MiB | concurrent vote / gallery / login p95 ms | large A / B completion s | physical buffer-pool reads | peak MariaDB RSS MiB | V53-to-V59 startup s |
+|---|---|---|---:|---:|---:|
+| full, p5-pr183-full-bp512-recovery | 26 / 153 / 53 | 15.711 / 15.589 | 21 | 698 | 113 |
+| trimmed, p5-pr183-trim-bp512-recovery | 29 / 157 / 59 | 17.411 / 16.106 | 325 | 552 | 14 |
+
+Both ran back to back after recovery, on mains, with the same suite, application, config, container limits and JVM flags, using fresh snapshot copies. All seven simulations, HTTP requests, distribution counts and concurrent operations passed in each. Their buffer-pool hit rates were 99.99987% and 99.99797%. The trimmed copy saves about 146 MiB of sampled MariaDB RSS and makes pending schema/index migration startup much faster, but demonstrates no live latency or creation-time gain at the chosen config. It also has more physical buffer-pool reads in this pair, although both rates remain very low. Ordinary restart time and production historical reads were not measured.
+
+At 128 MiB the earlier full/trim pair did improve concurrent vote/gallery/login p95 from 43/396/91 to 21/84/35 ms, and large-round creation from about 19.8 to 14.3 seconds. That demonstrates a size effect in that earlier configuration/session. It does not justify an archive feature once the tuned back-to-back pair has no active-workload benefit. The full-data 512 MiB control itself changed from the earlier 54/481/104 ms to 26/153/53 ms after recovery; do not attribute that difference to a configuration change. These are unseeded single-suite observations under separate session conditions. Keep both completed controls and prefer the recovered pair for the tuned-size decision.
+
+Consequently no archive layout, partitioning or compression experiment was executed, and no archive schema or archive account was created. The conditional archive branch of the runbook is not needed for the measured 512 MiB outcome. An archive could still be justified later by storage/backup requirements or a different production workload, but those requirements are absent from this brief. It must preserve past-contest lists, galleries, statistics and CSV exports, plus previous-round relationships within a contest. A separate cold schema would need an explicitly routed read-only service/pool and SELECT-only account; the normal app account must remain unable to read it. Partitioning would require reviewing global unique keys and the V58 selection/image foreign key; compression would need storage, CPU and historical-read measurements. None of those alternatives has a measured advantage in this study.
+
+The trimmed copy keeps contests from 2024 onward. It retains shared monument data and legacy tables, then rebuilds the changed tables; it is not a production deletion script. Compare the same 2025 contest at 128 MiB and 512 MiB in the table above. Table-row estimates for InnoDB are approximate; disk-size figures and count checks are recorded separately in `trim-v53-innodb.log` and each run’s `snapshot-checks.txt`.
+
+| table after V59 startup | full rows estimate | trimmed rows estimate | full data + indexes MiB | trimmed data + indexes MiB |
+|---|---:|---:|---:|---:|
+| selection | 2,987,148 | 524,543 | 1234.9 | 190.0 |
+| images | 709,442 | 139,060 | 1004.6 | 114.7 |
+| category_members | 1,364,880 | 136,400 | 103.3 | 10.0 |
+| criteria_rate | 166,246 | 25,216 | 14.0 | 2.0 |
+| monument | 134,285 | 122,305 | 111.8 | 111.8 |
+
+The retained V53 snapshot copies were reported by du as about 2.6 GiB full and 820 MiB trimmed. After V59 startup, table data/index metadata in the table above uses the same schema for both copies. Monument data/index size stayed unchanged; differences in its row estimate are sampling noise, not deleted monuments. Startup migrating the already-converted V53 snapshot to V59 was 107 s full versus 20 s trimmed at 128 MiB.
+
+#### Conversion timing, maintenance and deployment
+
+The retained `convert-prodcnf` measurements from 7 October give 145.156 s total: selection 76.512 s, images 51.233 s, category_members 6.289 s, monument 3.168 s, other tables each under one second, and ANALYZE 1.130 s. Sampled datadir usage was 1,411,383,433 → 2,747,620,623 bytes, peaking at 3,326,269,480 bytes (1.314 → 2.559 GiB; peak 3.098 GiB, additional peak 1.783 GiB). MariaDB RSS peaked at 222.5 MiB. These are conversion-only historical measurements, not new October 10 timings. Existing end-to-end MyISAM/V53 migration runs started both V55.1 builds successfully in about 5.5 minutes on the laptop SSD; the new InnoDB runs also validate the migration’s no-op path. Allow a longer production maintenance window and time it on a current copy; the January dataset and laptop disk do not predict production duration.
+
+V55.1 already exists as self-contained cherry-pickable commit `32a1253`, touching the migration and its test/fixture. It converts twelve live tables, preserves values and AUTO_INCREMENT, normalizes charset/collation, and skips already-converted tables. Seven legacy tables stay MyISAM, including `user_contest`; do not silently drop them. Conversion does not recreate foreign keys that MyISAM ignored historically. V58 explicitly adds the selection-to-image constraint and archives its fifteen historical orphan rows.
+
+The retained `ConvertToInnoDbMigrationSpec` report dated 7 October has four tests, zero errors/failures. It covers the MyISAM failure without conversion, preservation/conversion, the second-run no-op and the full pending migration chain. The new full-suite runs add production-size startup/history and workload verification; no application or migration implementation was changed in this session.
+
+Production sequence (instructions only; nothing was changed on a server):
+
+1. Integrate/review PR #182 → PR #183 with V55.1 → background distribution in that order. Do not deploy the old #183/background packages without V55.1 onto MyISAM: V56 fails at startup. Verify the migration is present in the actual release; the measured packages are `prod` 705689c, `pr183v551` 76542ba (tree identical to bcdf984), and `bgdistv551` 32a1253 (application/config/build/project identical to 2a22eba).
+2. Schedule maintenance outside the midnight Kyiv statistics job, stop writes/app jobs and take a consistent, restorable database backup. MyISAM needs writes paused or suitable table locking; a transaction-only backup is insufficient. Include the current configuration and establish restore readiness before conversion.
+3. Check current datadir and free space, retaining the backup plus growth/copy headroom and logs. The measured conversion needed about 1.8 GiB beyond its starting datadir; reserve more for the current dataset, pending indexes, WordPress and operational margin.
+4. Either let Flyway run V54–V59/60 on first startup during the window, or run the exact `conf/db/migration/default/V55_1__Convert_to_InnoDB.sql` by hand while writes are stopped, then deploy. The latter only moves conversion earlier in the window; it does not remove the remaining migration work. The migration is tested as a no-op after manual conversion.
+5. Install the reviewed `bench/cnf/recommended-60-wlxjury.cnf` as `/etc/mysql/mariadb.conf.d/60-wlxjury.cnf`, restart MariaDB in the maintenance window, then start the reviewed app release and wait for successful migration/startup. Check effective variables, last successful Flyway version ordered by installed_rank, all live table engines/collations, row counts, grants restricted to the app database, and expected constraints. Smoke-test login, voting, galleries, management and complete round creation.
+6. Monitor MariaDB/app RSS, host memory/swap, p95, job completion and errors alongside WordPress and nightly stats. Keep backups through acceptance. MariaDB DDL is not transactional; a failed partial migration requires recovery under the maintenance plan, not an assumed rollback.
+
+#### Recovery and validation record
+
+Codex crashed during `p5-pr183-trim-bp512`; its last host sample was 2026-10-10T13:50:58Z and its log ended during RoundManagementSimulation. No completion was validated. It is retained as `p5-pr183-trim-bp512-DISCARDED-codex-crash-20261010` and is excluded from every table and request total here. Recovery confirmed that no benchmark Java process or container survived. Existing validated results and commits `af4553f`, `890b91f`, `687728f`, plus the host-monitor gap checks in the working tree, were preserved.
+
+Recovery used a new immutable `v53-innodb-trim-recovery` snapshot, verified the same re-opening and synthetic emails, and measured a fresh full-data control followed immediately by the trimmed 512 MiB run. The latter completed at 2026-10-10T19:01:14+03:00. Their raw result labels appear above. Preparation and measurement memory minima are recorded separately; neither run reached the three-sample low-memory abort condition. Subsequent reproduction now also clears VM cache before snapshot copying to reduce preparation pressure, while retaining the cache clear after loading. This preparation/diagnostic hardening was added after the measurement pair and does not change the measured suite.
+
+The public scripts now preserve full application/stdout logs and reject incorrect synthetic-email/re-opening checks before warm-up. Earlier runs only have the warning-line summary, so missing historical exception stack context cannot be recovered. Shell/PowerShell parsing and targeted snapshot-gate checks verify the final script edits; the eleven measured suites verify the workload and the monitoring/validation path before these final diagnostic changes.
+#### Runbook gaps and limits
+
+- Fixed: string `MAX(version)` returned 9 and the old installed-rank filter produced an empty history file. Capture full history and validate successful final V53 / V59 / V60.
+- Fixed: `run.sh` only checked power between simulations, lacked host-memory monitoring, allowed result reuse and could finish successfully after a failed simulation. ISO timestamps, cleanup, failure exits, label protection and the PowerShell 7 monitor now provide reproducible checks. The monitor also validates seven zero-KO reports, distribution count checks, job completion, effective buffer sizes and container limits.
+- Clarified: the conversion is more than an engine change; application-package comparisons include schema migrations; client HeapWatcher output is not server heap evidence.
+- Portability: the plan’s Claude-only dependency on a separate execution skill was removed; the repository commands and monitoring wrapper are the complete reproduction instructions.
+- Workload gap: “Rated avg 7” produced zero qualifying images/selection rows in every run. Its filter/query and job completion were exercised, but the suite does not measure insertion of a nonempty rated-threshold round. The random voting/distribution is not seeded, and most points have one suite rather than statistical repetitions; the 512 MiB full-data repeat was made after recovery under new session conditions, do not treat small millisecond differences as established regressions.
+- Workload/report gap: the concurrent “New files” operation repeats the solo top-up on the same round. In the background run it added zero images/rows, so its concurrent measurement is a no-op scan rather than a new-file insertion load. Old synchronous reports show total round rows while job reports show rows added; those count fields are not comparable. Together with the empty rated filter, the ten concurrent operations include eight nonempty new-round creations and two empty operations. Future workload coverage should provide eligible rated images and an unfilled top-up target without silently changing this comparison suite.
+- Diagnostic gap: original `app-warnings.log` keeps warning lines and drops exception stack context. Background-build startup emitted scheduler heartbeat-failed warnings before migrations finished; source inspection shows poll has a table-existence guard while heartbeat does not. This is an inferred startup-order issue, not a captured root cause. Measured jobs nevertheless all completed; guard/diagnose startup before production release.
+- Fidelity limits: the anonymized January snapshot has no 2026 contests; Apache/WordPress, midnight statistics, real network latency, production virtual-disk speed and thumbnail-cache population are absent. Shared database memory and missing old MyISAM foreign keys must be checked on the live deployment. No other worktree, branch, container, user process or server was changed; no push was made.
+- Comparison limits: round 1721’s Commons category filter was removed in every measured copy and Wikimedia hosts resolve locally, so these runs omit the known Commons edit-page delay. The buffer-pool matrix measures PR #183; the background package was measured at 128 MiB only, so verify that later release with the chosen configuration before rollout.
+- Prerequisite exception: the user explicitly authorized proceeding at 6.9 GiB instead of 8 GiB free host RAM. All runs remained on mains with AC sleep/hibernate already disabled; 10-second sample gaps show no sleep. The first InnoDB run briefly reached 753 MiB and the recovered full-data control reached 405 MiB during snapshot preparation. Both recovered before warm-up and did not meet the three-sample abort threshold. Their measured-stage minima were 3,719 and 2,660 MiB respectively. Preserve that distinction when reproducing.
+
+Actual recorded free host RAM at run start ranged from 1.889 to 6.648 GiB, reflecting preparation/cache residency rather than a constant 6.9 GiB. Across measured stages the lowest free host RAM was 2,660 MiB; host sample gaps stayed below 11.048 seconds.
+
+The benchmark container is stopped after each run. Original AC timeout values were already zero and were not changed. Keep raw results, snapshots, image/dists and the dump in their existing external locations until the user accepts the work; cleanup remains a separate approval step.
