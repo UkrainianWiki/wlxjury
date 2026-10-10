@@ -203,3 +203,27 @@ Latency is mean / p95 in milliseconds. Locks are the concurrent-creation simulat
 The PR #183 and background-distribution comparisons include their accompanying migrations (V54-V59 / V60), so they measure the deployable code-and-schema packages rather than Scala-only changes. Round creation figures are submit-to-completion from the simulation report; its heap figures belong to the Gatling client JVM in external mode and must not be used as server heap measurements. Use each run's server `gc.log` and NMT capture instead.
 
 The runbook and runner originally used `MAX(version)` / `installed_rank > 52` to inspect Flyway. Versions are strings and installation ranks are not versions: the former returned `9`, and the earlier baseline history file was empty. This session records the full history ordered by installation rank and validates the final successful migration (V53 / V59 / V60). ISO timestamps, refusal to overwrite results, exit cleanup, and nonzero exit on measured-simulation failure were added before all these runs; the workload was unchanged.
+
+### Phase 4 measurements (2026-10-10)
+
+Same laptop, on mains power with AC sleep and hibernation disabled. The user closed heavy applications and explicitly approved proceeding below the 8 GiB free-host-RAM prerequisite (6.9 GiB at authorization). Each run has `conditions.json` and 10-second power/free-RAM/free-disk samples. Fresh snapshot per run, identical seven-simulation suite and warm-up, unchanged container resource limits and production JVM flags. Full Flyway history is captured; all seven simulations and all HTTP requests passed. Raw results remain outside the repository.
+
+Latency is mean / p95 in milliseconds. Locks are the concurrent-creation simulation delta; MariaDB RSS is the maximum sampled across the suite.
+
+| run | vote alone | gallery alone | concurrent vote | concurrent gallery | concurrent juror login | table-lock waits | MariaDB RSS MiB | minimum free host MiB during measurements |
+|---|---|---|---|---|---|---:|---:|---:|
+| p3-pr183-innodb | 7 / 12 | 13 / 19 | 11 / 43 | 62 / 396 | 22 / 91 | 0 | 302 | 4120 |
+| p4-pr183-bp512 | 7 / 11 | 13 / 19 | 13 / 54 | 77 / 481 | 27 / 104 | 0 | 683 | 4175 |
+| p4-pr183-bp1g | 7 / 11 | 13 / 20 | 14 / 56 | 101 / 632 | 29 / 117 | 0 | 1206 | 3549 |
+| p4-pr183-bp1536 | 7 / 11 | 14 / 22 | 12 / 43 | 68 / 439 | 27 / 94 | 0 | 1661 | 3196 |
+| p2-prod-myisam-rerun | 5 / 9 | 75 / 197 | 1216 / 3321 | 1435 / 3332 | 6295 / 19450 | 11486 | 239 | 4195 |
+| p4-prod-myisam-kb512 | 5 / 9 | 98 / 289 | 1304 / 3285 | 1610 / 3475 | 6633 / 18127 | 11445 | 304 | 3934 |
+
+| run | concurrent physical buffer-pool reads | logical buffer-pool requests | hit rate % | temporary disk tables | slow queries |
+|---|---:|---:|---:|---:|---:|
+| p3-pr183-innodb | 8660 | 20273344 | 99.9573 | 2624 | 18 |
+| p4-pr183-bp512 | 24 | 18829187 | 99.9999 | 2624 | 24 |
+| p4-pr183-bp1g | 13 | 22398644 | 99.9999 | 2624 | 31 |
+| p4-pr183-bp1536 | 8 | 19000669 | 100.0000 | 2624 | 16 |
+| p2-prod-myisam-rerun | 0 | 0 | n/a | 24 | 12 |
+| p4-prod-myisam-kb512 | 0 | 0 | n/a | 24 | 11 |
