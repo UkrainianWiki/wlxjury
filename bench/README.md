@@ -3,6 +3,8 @@
 This runbook lets an agent or a person, with no other context, finish and reproduce the production-like benchmark: the jury tool and MariaDB running as on the production server, measured with Gatling, on an anonymised copy of production data.
 
 - **The why and the design:** [`docs/plans/2026-10-07-prod-like-benchmark.md`](../docs/plans/2026-10-07-prod-like-benchmark.md). Read it first: production facts, the phases, and **Results so far**.
+- **Completed 2026-10-10:** phases 3–5, validated full-suite runs, including the post-crash recovery pair. The plan contains the measurements, configuration and archiving decisions, deployment steps and runbook gaps. Raw data stays outside Git. Use new labels when reproducing completed points; existing labels are refused.
+
 - **This file:** the how. Prerequisites, what already exists, how to rebuild any of it, the exact commands for the remaining work, comparability rules, troubleshooting, and what to report.
 
 Everything here runs on a Windows laptop with Git Bash and Docker Desktop. Commands are for Git Bash.
@@ -140,14 +142,14 @@ $R <label> <dist> <snapshot> <cnf|-> "${SUITE[@]}" [-- <extra -D options for eve
 ```
 pwsh -NoProfile -File bench/scripts/run-monitored.ps1 -Label <label> -Dist <dist> -Snapshot <snapshot> -Cnf <cnf|->
 ```
-The wrapper sources the same `suite.sh`, writes `conditions.json` and UTC host samples every 10 seconds, checks power throughout preparation and simulations, and aborts after three samples below 768 MiB free host RAM or below 2 GiB free disk. It validates seven reports, zero failed HTTP requests, the distribution row-count checks and completed jobs, intended buffer sizes, container limits, and the full successful Flyway history. Failures are stopped and renamed `...-DISCARDED-<reason>-<timestamp>`; existing result labels are refused. For a new dist name pass `-ExpectedFlywayVersion <version>`. Use `-AllowLowMemory` only after an explicit exception has been approved, and record the actual starting and minimum measured free RAM. This session's user approved proceeding at 6.9 GiB rather than the 8 GiB prerequisite.
+Set `$env:BENCH_SCRATCH = 'C:/scala/wlxjury-bench-work/bench'` in the PowerShell session before invoking it. The wrapper sources the same `suite.sh`, writes `conditions.json` and UTC host samples every 10 seconds, checks power throughout preparation and simulations, and aborts for a power change, three samples below 768 MiB free host RAM, less than 2 GiB free disk, or a host-monitor sample gap over 30 seconds. It validates seven reports, zero failed HTTP requests, the distribution row-count checks and completed jobs, intended buffer sizes, container limits, and the full successful Flyway history. Failures are stopped and renamed `...-DISCARDED-<reason>-<timestamp>`; existing result labels are refused. For a new dist name pass `-ExpectedFlywayVersion <version>`. Use `-AllowLowMemory` only after an explicit exception has been approved, and record the actual starting and minimum measured free RAM. This session's user approved proceeding at 6.9 GiB rather than the 8 GiB prerequisite.
 
 **What it does:**
 - checks mains power;
 - loads the snapshot (a fresh copy every time, so migrations re-run at startup when the dist has newer ones);
 - drops the page cache, starts the server with `bench/cnf/<cnf>.cnf` as `60-wlxjury.cnf` (`-` = production's files only), and waits for the app (up to an hour, enough for migrations);
-- warms up, then runs each simulation of the suite in Gatling's external mode;
-- records per simulation: Gatling results, `SHOW GLOBAL STATUS` before and after, `docker stats` and RSS samples. Per run: the effective variables, the Flyway history, the GC log, NMT, MariaDB's slow log and app warnings.
+- checks synthetic emails and required re-opening before warm-up, then runs each simulation of the suite in Gatling's external mode;
+- records per simulation: Gatling results, `SHOW GLOBAL STATUS` before and after, `docker stats` and RSS samples. Per run: the effective variables, the Flyway history, the GC log, NMT, MariaDB's slow log, full app/stdout logs and a warning summary.
 
 Results go to `$BENCH_SCRATCH/results/<label>/`. **A full suite takes about 20 min** (the Phase 2 baseline ran from 14:42 to 15:01), plus the startup migrations: about 6 min when a `*v551` dist migrates a V53 snapshot.
 
@@ -168,7 +170,7 @@ Otherwise rename the folder `…-DISCARDED-<reason>` and re-run.
 
 **One run at a time.** Runs share the container name, ports and volumes.
 
-## 6. Remaining work, in order
+## 6. Measured matrix, in order (completed 2026-10-10)
 
 ### Phase 3: InnoDB, three code versions (about 1.5 h with the baseline re-run)
 
@@ -183,8 +185,8 @@ $R p3-bgdist-innodb  bgdistv551 v53-innodb - "${SUITE[@]}"
   $R p2-prod-myisam-rerun prod v53-myisam - "${SUITE[@]}"
   ```
 - **Compare:**
-  - production's code, MyISAM against InnoDB: the engine's effect alone;
-  - production's code against #183 against background distribution, all on InnoDB: the code's effect.
+  - production's code, MyISAM against InnoDB: the proposed conversion package (engine, row format and charset/collation);
+  - production's code against #183 against background distribution, all on InnoDB: the deployable code-and-schema packages.
   - Look especially at votes, galleries and logins **during concurrent round creation**, and at `Table_locks_waited`.
 
 ### Phase 4: MariaDB configuration (about 25 min per config)
@@ -215,12 +217,12 @@ That leaves about **1 GB for all of MariaDB**. Treat `bp1g` and `bp1536` as poin
 $B load v53-innodb && $B start -
 $B sql < bench/scripts/trim-old-years.sql          # keeps contests from 2024 on, rebuilds tables
 $B sql -e "SELECT table_name, table_rows, ROUND((data_length+index_length)/1048576) mb FROM information_schema.tables WHERE table_schema='wlxjury' ORDER BY mb DESC"
-$B stop && $B save v53-innodb-trim
-$R p5-pr183-trim pr183v551 v53-innodb-trim - "${SUITE[@]}"
+$B stop && $B save v53-innodb-trim-new
+$R p5-pr183-trim-new pr183v551 v53-innodb-trim-new - "${SUITE[@]}"
 ```
 Contest 603 (2025) is kept, so the suite still works. Re-check the re-opening (section 3).
 
-- **Compare against `p3-pr183-innodb`,** and with the recommended config from Phase 4 if it changes the picture: latencies, buffer-pool reads and hit rate, memory.
+- **Compare against `p3-pr183-innodb`,** and repeat the full-versus-trimmed comparison with `bp512` (measured as `p5-pr183-trim-bp512-recovery` against `p5-pr183-full-bp512-recovery`): latencies, buffer-pool reads and hit rate, memory.
 - **If old years cost a lot,** evaluate archiving, with the app changes each option needs and measure the chosen one. Options (see the plan):
   - partitioning `selection` by `round_id`;
   - moving closed contests to archive tables or a schema that **the app's DB account cannot read** (ScalikeJDBC's column discovery breaks logins otherwise; see section 8);
@@ -230,7 +232,7 @@ Contest 603 (2025) is kept, so the suite still works. Re-check the re-opening (s
 ## 7. Recording results
 
 - **The plan:** after each phase, update **Results so far** in `docs/plans/2026-10-07-prod-like-benchmark.md`: summary tables from `summarize.js`, the runs' labels, and conditions such as the date and anything unusual.
-- **Commits:** commit script and config changes as logical steps, staging only your own files. Never data. Raw results stay in `$BENCH_SCRATCH/results`.
+- **Commits:** commit script and config changes as logical steps, staging only your own files. Never data. Raw results stay in `$BENCH_SCRATCH/results`. Server memory comes from GC/RSS/NMT; the simulation HeapWatcher observes the Gatling client JVM in external mode. Report job completion separately from HTTP form response time.
 - **Final report** (the plan's **Rules** section):
   - the baseline and after-conversion numbers;
   - the conversion runbook and times (`convert-prodcnf`);

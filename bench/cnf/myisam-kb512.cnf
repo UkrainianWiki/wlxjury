@@ -1,3 +1,3 @@
-# Phase 4, MyISAM only: the key cache holds every MyISAM index (production: 128M).
+# Phase 4, MyISAM only: 512M key cache versus production 128M; the starting MyISAM indexes total about 546 MiB, so this does not hold every index.
 [mariadb]
 key_buffer_size = 512M
