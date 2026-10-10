@@ -41,7 +41,7 @@ Everything here runs on a Windows laptop with Git Bash and Docker Desktop. Comma
    powercfg /change standby-timeout-ac 0
    powercfg /change hibernate-timeout-ac 0
    ```
-   Afterwards, restore the user's previous values. Record them first with `powercfg /query SCHEME_CURRENT SUB_SLEEP`, or ask the user. `run.sh` checks mains power before and during each run and aborts with exit code 2 otherwise.
+   Afterwards, restore the user's previous values. Record them first with `powercfg /query SCHEME_CURRENT SUB_SLEEP`, or ask the user. `run.sh` checks mains before startup and between simulations. For monitoring during simulations, use `run-monitored.ps1` (section 5).
 2. **Free memory: at least 8 GB.** Check with `powershell -NoProfile -Command "[math]::Round((Get-CimInstance Win32_OperatingSystem).FreePhysicalMemory/1MB,1)"`.
    - The container may use 4.9 GB plus swap, Gatling and sbt about 2 GB more, Windows the rest.
    - An earlier run was killed when the system ran low on memory.
@@ -128,13 +128,19 @@ $B load v53-myisam && $B start -
 bench/scripts/convert.sh $BENCH_SCRATCH/results/convert-<label>
 $B stop && $B save v53-innodb
 ```
-Check after each step: `$B sql -e "SELECT engine, COUNT(*) FROM information_schema.tables WHERE table_schema='wlxjury' GROUP BY engine"`, and the Flyway version (`SELECT MAX(version) FROM wlxjury.flyway_schema_history WHERE success`).
+Check after each step: `$B sql -e "SELECT engine, COUNT(*) FROM information_schema.tables WHERE table_schema='wlxjury' GROUP BY engine"`, and the Flyway version (`SELECT version FROM wlxjury.flyway_schema_history WHERE success ORDER BY installed_rank DESC LIMIT 1`).
 
 ## 5. One measured run
 
 ```
 $R <label> <dist> <snapshot> <cnf|-> "${SUITE[@]}" [-- <extra -D options for every simulation>]
 ```
+
+**Monitored Windows full-suite runs (PowerShell 7):**
+```
+pwsh -NoProfile -File bench/scripts/run-monitored.ps1 -Label <label> -Dist <dist> -Snapshot <snapshot> -Cnf <cnf|->
+```
+The wrapper sources the same `suite.sh`, writes `conditions.json` and UTC host samples every 10 seconds, checks power throughout preparation and simulations, and aborts after three samples below 768 MiB free host RAM or below 2 GiB free disk. It validates seven reports, zero failed HTTP requests, the distribution row-count checks and completed jobs, intended buffer sizes, container limits, and the full successful Flyway history. Failures are stopped and renamed `...-DISCARDED-<reason>-<timestamp>`; existing result labels are refused. For a new dist name pass `-ExpectedFlywayVersion <version>`. Use `-AllowLowMemory` only after an explicit exception has been approved, and record the actual starting and minimum measured free RAM. This session's user approved proceeding at 6.9 GiB rather than the 8 GiB prerequisite.
 
 **What it does:**
 - checks mains power;
