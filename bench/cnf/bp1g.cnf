@@ -1,0 +1,3 @@
+# Phase 4: InnoDB buffer pool 1G; everything else as production.
+[mariadb]
+innodb_buffer_pool_size = 1G

@@ -33,8 +33,17 @@ done
 [[ "$cnf" == "-" ]] && cnf=""
 
 out="$BENCH_SCRATCH/results/$label"
+[[ ! -e "$out/run.log" ]] || { echo "result label already exists: $label" >&2; exit 1; }
 mkdir -p "$out"
-log() { echo "[run $label] $(date +%H:%M:%S) $*" | tee -a "$out/run.log" >&2; }
+sp=""
+cleanup() {
+  [[ -z "$sp" ]] || { kill "$sp" 2>/dev/null || true; wait "$sp" 2>/dev/null || true; sp=""; }
+  "$B" stop
+}
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+log() { echo "[run $label] $(date -Iseconds) $*" | tee -a "$out/run.log" >&2; }
 
 power() { powershell.exe -NoProfile -Command "(Get-CimInstance Win32_Battery).BatteryStatus" | tr -d '\r'; }
 p=$(power)
@@ -42,14 +51,29 @@ if [[ "$p" != "2" ]]; then log "NOT on mains power (BatteryStatus=$p): aborting"
 log "on mains power; dist=$dist snapshot=$snap cnf=${cnf:-production} sims=${sims[*]} extra=${extra[*]:-}"
 
 "$B" stop
+# Release previous VM cache before copying a fresh snapshot.
+"$B" drop-caches
 "$B" load "$snap" >>"$out/run.log" 2>&1
 "$B" drop-caches
 "$B" start "$dist" "$cnf" >>"$out/run.log" 2>&1
 BENCH_APP_TIMEOUT=${BENCH_APP_TIMEOUT:-3600} "$B" wait-app 2>&1 | tee -a "$out/run.log"
 docker exec wlxjury-bench mariadb -N -e "SHOW GLOBAL VARIABLES" > "$out/variables.txt"
 docker exec wlxjury-bench mariadb -N -e \
-  "SELECT version, description, execution_time FROM wlxjury.flyway_schema_history WHERE installed_rank > 52" \
+  "SELECT installed_rank, version, description, execution_time, success FROM wlxjury.flyway_schema_history ORDER BY installed_rank" \
   > "$out/flyway.txt" || true
+docker inspect wlxjury-bench > "$out/container-start.json"
+docker exec wlxjury-bench mariadb -N -e "SELECT id, active, category FROM wlxjury.rounds WHERE id IN (1721,1775); SELECT round_id, SUM(active), COUNT(*) FROM wlxjury.round_user WHERE round_id IN (1721,1775) GROUP BY round_id; SELECT TABLE_NAME, ENGINE, TABLE_ROWS, DATA_LENGTH, INDEX_LENGTH FROM information_schema.tables WHERE table_schema='wlxjury' ORDER BY TABLE_NAME; SELECT COUNT(*) AS unexpected_emails FROM wlxjury.users WHERE email NOT LIKE '%@bench.test'" > "$out/snapshot-checks.txt"
+if [[ "$(tail -1 "$out/snapshot-checks.txt")" != "0" ]] ||
+   ! grep -Fxq $'1721\t1\tNULL' "$out/snapshot-checks.txt" ||
+   ! grep -Fxq $'1775\t1\tNULL' "$out/snapshot-checks.txt" ||
+   ! grep -Fxq $'1721\t17\t17' "$out/snapshot-checks.txt" ||
+   ! grep -Fxq $'1775\t13\t13' "$out/snapshot-checks.txt"; then
+  log "snapshot email/reopening checks failed: aborting before warm-up"
+  exit 1
+fi
+# the slow log covers this run only (the snapshot may carry entries from migrations)
+docker exec wlxjury-bench bash -c ": > /var/lib/mysql/mariadb-slow.log" || true
+docker exec wlxjury-bench mariadb -e "SET GLOBAL slow_query_log = OFF; TRUNCATE mysql.slow_log; SET GLOBAL slow_query_log = ON; FLUSH SLOW LOGS" || true
 
 sbt_run() { # <simulation> <-D options...>
   local sim=$1; shift
@@ -72,6 +96,7 @@ for w in VotingSimulation JurorGallerySimulation RoundManagementSimulation; do
   sbt_run "$w" -Dgatling.quick=true "${extra[@]}" > "$out/warmup-$w.log" 2>&1 || log "warm-up $w failed (see warmup-$w.log)"
 done
 
+failed=0
 for spec in "${sims[@]}"; do
   sim=${spec%%@*}; opts=()
   [[ "$spec" == *@* ]] && read -r -a opts <<< "${spec#*@}"
@@ -84,7 +109,7 @@ for spec in "${sims[@]}"; do
   log "simulation $name"
   t0=$(date +%s)
   if sbt_run "$sim" "${extra[@]}" "${opts[@]}" > "$d/sbt.log" 2>&1; then rc=ok; else rc=failed; fi
-  kill "$sp" 2>/dev/null || true; wait "$sp" 2>/dev/null || true
+  kill "$sp" 2>/dev/null || true; wait "$sp" 2>/dev/null || true; sp=""
   docker exec wlxjury-bench mariadb -N -e "SHOW GLOBAL STATUS" > "$d/status-after.txt"
   after=$(ls -1d "$REPO"/target/gatling/*/ 2>/dev/null | sort || true)
   new=$(comm -13 <(echo "$before") <(echo "$after") | tail -1)
@@ -93,12 +118,16 @@ for spec in "${sims[@]}"; do
     [[ -f "$REPO/target/gatling/$f" ]] && mv "$REPO/target/gatling/$f" "$d/$f"
   done
   log "simulation $name: $rc in $(( $(date +%s) - t0 )) s"
+  [[ "$rc" == ok ]] || { failed=1; break; }
 done
 
 docker exec wlxjury-bench bash -c 'runuser -u wlxjury -- jcmd $(pgrep -u wlxjury java) VM.native_memory summary' > "$out/nmt.txt" 2>&1 || true
 docker exec wlxjury-bench bash -c 'ps -o rss=,comm= -C mariadbd; ps -o rss=,comm= -u wlxjury' > "$out/rss-end.txt" || true
 docker exec wlxjury-bench cat /var/log/wlxjury/gc.log > "$out/gc.log" 2>/dev/null || true
 docker exec wlxjury-bench cat /var/lib/mysql/mariadb-slow.log > "$out/mariadb-slow.log" 2>/dev/null || true
+docker exec wlxjury-bench cat /var/log/wlxjury/application.log > "$out/application.log" 2>/dev/null || true
+docker exec wlxjury-bench cat /var/log/wlxjury/stdout.log > "$out/stdout.log" 2>/dev/null || true
 docker exec wlxjury-bench bash -c 'grep -E "WARN|ERROR|warn|error" /var/log/wlxjury/application.log | tail -300' > "$out/app-warnings.log" 2>&1 || true
 "$B" stop
-log "done"
+log "done (failed=$failed)"
+exit "$failed"
