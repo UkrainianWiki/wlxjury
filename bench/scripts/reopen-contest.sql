@@ -11,3 +11,11 @@
 UPDATE rounds SET active = 1 WHERE id IN (1721, 1775);
 UPDATE round_user SET active = 1 WHERE round_id IN (1721, 1775);
 SELECT id, name, active FROM rounds WHERE id IN (1721, 1775);
+
+-- Round 1721 filters its images by a Commons category ("Category:Wiki Loves Monuments in
+-- Ukraine 2025 - Quantity"). Production's code lists that category through the Commons
+-- API on every view of the round's edit page (and every distribution to it): more than
+-- 75 s, so Play's idle timeout cuts the page off. The benchmark must not call Commons
+-- (the server image also maps the Wikimedia hosts to 127.0.0.1), so the copy drops the
+-- filter; the finding is reported on its own.
+UPDATE rounds SET category = NULL WHERE id = 1721;

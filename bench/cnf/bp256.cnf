@@ -1,0 +1,4 @@
+# Follow-up on latest background-distribution code: midpoint between 128M and 512M.
+# Only this setting changes; compare user latencies, completed jobs and server RSS.
+[mariadb]
+innodb_buffer_pool_size = 256M
