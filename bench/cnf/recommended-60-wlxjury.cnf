@@ -1,28 +1,33 @@
-# Latest background-distribution follow-up, 2026-10-10.
+# Production choice updated 2026-10-11 after the latest bgdist comparison.
 # Install as /etc/mysql/mariadb.conf.d/60-wlxjury.cnf after InnoDB conversion.
-# This supersedes the earlier 512M recommendation based on PR #183 cache headroom.
+# Select the measured 256M midpoint to reduce database read demand on the
+# disk shared with cached-image reads and other VPS tenants.
 # Read the final follow-up in docs/plans/2026-10-07-prod-like-benchmark.md.
 #
-# Keep the measured production default. On fresh full-data bgdist suites:
-# 128M -> 256M: concurrent vote/login p95 28/46 -> 28/46 ms;
-# gallery p95 148 -> 175 ms; isolated vote p95 12 -> 12 ms.
+# Fresh full-data bgdist suites, 128M -> 256M:
+# concurrent physical buffer-pool reads 9843 -> 49 (about 99.5% fewer);
+# MariaDB peak sampled RSS 268 -> 392 MiB (about 124 MiB extra).
 # Large jobs 24.258/24.213 -> 21.118/21.798 s; category job 4.456 -> 4.038 s.
-# MariaDB peak sampled RSS 268 -> 392 MiB; physical reads 9843 -> 49.
-# 256M is a measured optional job/cache trade-off, not a demonstrated juror
-# latency improvement. One unseeded suite per size: no repeatability claim.
-# There is no latest-bgdist 512M measurement; do not infer a 256/512 comparison.
+# Concurrent vote/login p95 28/46 -> 28/46 ms; gallery p95 148 -> 175 ms.
+# Choose reduced read demand under uncertain production disk contention.
+# Laptop latency results remain mixed; one unseeded suite per size.
+# Image-cache traffic and VPS-neighbour load were not measured; database
+# page-read counters do not quantify physical-host device IO or latency.
+# There is no latest-bgdist 512M measurement; 256M is the measured smaller
+# allocation achieving nearly all cache hits in this workload.
 #
 # Shared-server budget: app 1300, WordPress 1000, midnight stats 1300,
 # OS 300 MiB; approximately 1000 MiB remains for all of MariaDB.
-# Principal configured global buffers at this value: 401 MiB total
-# (128 InnoDB + 128 key + 128 Aria + 16 log + 1 disabled-query-cache allocation).
-# Approximately 599 MiB remains for other/query memory; RSS is not a hard bound.
+# Principal configured global buffers at this value: 529 MiB total
+# (256 InnoDB + 128 key + 128 Aria + 16 log + 1 disabled-query-cache allocation).
+# Approximately 471 MiB remains for other/query memory; RSS is not a hard bound.
 # Keep the app reserve even though measured bgdist Java RSS was 671/874 MiB.
-# WordPress, stats, thumbnails and production disk/network are not modelled.
+# Extra pool memory reduces filesystem/image-cache headroom too: keep the
+# increase bounded and monitor alongside WordPress, stats and image traffic.
 #
 # Everything else inherits active production defaults: durable commit flushing
 # (=1), redo file 96M, O_DIRECT, IO capacity 200, temporary buffers 16M,
 # key cache 128M, Aria 128M, query cache OFF, max_connections 151,
-# table_open_cache 2000. Monitor alongside production workloads.
+# table_open_cache 2000.
 [mariadb]
-innodb_buffer_pool_size = 128M
+innodb_buffer_pool_size = 256M

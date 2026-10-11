@@ -5,7 +5,7 @@ This runbook lets an agent or a person, with no other context, finish and reprod
 - **The why and the design:** [`docs/plans/2026-10-07-prod-like-benchmark.md`](../docs/plans/2026-10-07-prod-like-benchmark.md). Read it first: production facts, the phases, and **Results so far**.
 - **Completed 2026-10-10:** phases 3–5, validated full-suite runs, including the post-crash recovery pair. The plan contains the measurements, configuration and archiving decisions, deployment steps and runbook gaps. Raw data stays outside Git. Use new labels when reproducing completed points; existing labels are refused.
 
-- **Latest bgdist follow-up, 2026-10-10:** fresh full-data 128/256 MiB suites passed. Retain 128 MiB for user responsiveness; 256 cut physical reads and large-job time modestly but did not improve concurrent voting/gallery/login. This supersedes the earlier 512 MiB recommendation; see the plan’s final follow-up section.
+- **Latest bgdist follow-up, 2026-10-10:** fresh full-data 128/256 MiB suites passed. Production choice updated 2026-10-11: select 256 MiB to reduce database read demand competing with cached-image reads and shared VPS storage. Latency results remain mixed. This supersedes the earlier 512 MiB recommendation and the subsequent 128 MiB preference; see the plan’s final follow-up section.
 
 - **This file:** the how. Prerequisites, what already exists, how to rebuild any of it, the exact commands for the remaining work, comparability rules, troubleshooting, and what to report.
 
@@ -240,7 +240,7 @@ pwsh -NoProfile -File bench/scripts/run-monitored.ps1 -Label <fresh-bgdist-128> 
 pwsh -NoProfile -File bench/scripts/run-monitored.ps1 -Label <fresh-bgdist-256> -Dist bgdistv551 -Snapshot v53-innodb -Cnf bp256
 ```
 
-Export BENCH_SCRATCH as in section 5 and satisfy prerequisites; add -AllowLowMemory only with an explicit approved exception. Completed labels p6-bgdist-bp128 / p6-bgdist-bp256 are retained and cannot be reused. The plan records source identity, conditions, latency/job/memory tables and gaps. The current recommendation keeps 128 MiB; 256 MiB is an optional measured trade-off. These full-data runs do not retest the older PR #183 / 512 MiB archiving comparison.
+Export BENCH_SCRATCH as in section 5 and satisfy prerequisites; add -AllowLowMemory only with an explicit approved exception. Completed labels p6-bgdist-bp128 / p6-bgdist-bp256 are retained and cannot be reused. The plan records source identity, conditions, latency/job/memory tables and gaps. The current recommendation selects the measured 256 MiB midpoint for reduced read demand under production disk contention. These full-data runs do not retest the older PR #183 / 512 MiB archiving comparison.
 
 ## 7. Recording results
 
