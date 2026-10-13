@@ -6,10 +6,14 @@ import io
 import json
 import os
 from pathlib import Path
+import shutil
+import signal
+import ssl
 import stat
 import tempfile
 import unittest
 from unittest.mock import patch
+import urllib.error
 import zipfile
 
 spec = importlib.util.spec_from_file_location('deploy', Path(__file__).with_name('wlxjury-deploy.py'))
@@ -32,7 +36,9 @@ class Fixture(unittest.TestCase):
                              backup_root=str(self.base / 'backups'), database_dir=str(self.base / 'mysql'),
                              service='wlxjury.service', port=9000, ready_timeout_seconds=1,
                              minimum_free_bytes=1, quiesce_units=['backup.timer', 'backup.service'],
-                             maintenance_urls=['http://jury.test/', 'https://jury.test/'])
+                             maintenance_urls=['http://jury.test/', 'https://jury.test/'],
+                             systemd_dropin_dir=str(self.base / 'systemd' / 'wlxjury.service.d'),
+                             session_end_timeout_seconds=1)
         for name in ('app', 'runtime', 'backups', 'mysql'):
             (self.base / name).mkdir()
         (self.base / 'app' / 'releases').mkdir()
@@ -163,16 +169,26 @@ class FakeDeployment(deploy.Deployment):
         self.fail_backup = False
         self.fail_readiness = False
         self.maintenance_ok = True
+        self.public_ok = True
+        self.defaults = 'latin1\tlatin1_swedish_ci'
+        self.sessions = []
+        self.other_sessions = 0
+        self.size = 0
+        self.held_at_start = []
 
     def run(self, args, **kwargs):
         self.events.append(tuple(args))
         if args[0] == 'systemctl':
+            if args[1] == 'daemon-reload':
+                return b''
             action, unit = args[1:3]
             if action == 'stop':
                 self.running.discard(unit)
             elif action == 'start':
                 self.running.add(unit)
                 if unit == self.service:
+                    self.held_at_start.append('Restart=no' in self.restart_hold.read_text()
+                                              if self.restart_hold.exists() else False)
                     self.live_schema = self.identity(self.current.resolve())['schemaVersion']
                     self.live_history = '1\t' + self.live_schema + '\t123\t1'
             elif action == 'show':
@@ -185,6 +201,17 @@ class FakeDeployment(deploy.Deployment):
         self.events.append(('sql', sql))
         if sql == 'SELECT @@port':
             return '3307'
+        if 'SCHEMATA' in sql:
+            return self.defaults
+        if 'SUM(DATA_LENGTH' in sql:
+            return str(self.size)
+        if sql.startswith('KILL '):
+            self.sessions.remove(sql[5:])
+            return ''
+        if 'PROCESSLIST' in sql:
+            if 'HEX(USER)' not in sql:
+                return str(self.other_sessions)
+            return str(len(self.sessions)) if 'COUNT(*)' in sql else '\n'.join(self.sessions)
         if 'COUNT(*)' in sql:
             return '0'
         if 'installed_rank, version' in sql:
@@ -197,6 +224,10 @@ class FakeDeployment(deploy.Deployment):
     def check_maintenance(self):
         self.events.append(('maintenance-check',))
         deploy.require(self.maintenance_ok and self.maintenance.exists(), 'Maintenance coverage failed')
+
+    def check_public(self):
+        self.events.append(('public-check',))
+        deploy.require(self.public_ok and not self.maintenance.exists(), 'Public routing failed')
 
     def wait_ready(self, release):
         self.events.append(('ready', str(release)))
@@ -221,7 +252,7 @@ class FailurePathTest(Fixture):
         self.tool.select(self.old)
 
     def record(self):
-        directories = list(self.tool.backups.iterdir())
+        directories = [path for path in self.tool.backups.iterdir() if path.is_dir()]
         self.assertEqual(len(directories), 1)
         return directories[0], deploy.read_json(directories[0] / 'deployment.json')
 
@@ -262,6 +293,241 @@ class FailurePathTest(Fixture):
         self.assertIn(self.tool.service, self.tool.running)
         self.assertEqual(self.tool.current.resolve(), self.old)
         self.assertNotIn(('backup',), self.tool.events)
+
+    def test_abort_backs_out_a_maintenance_coverage_failure_without_a_restart(self):
+        self.tool.maintenance_ok = False
+        with self.assertRaises(deploy.DeploymentError):
+            self.tool.deploy(self.new)
+        directory, record = self.record()
+        self.assertEqual(record['phase'], 'maintenance')
+        # Coverage is still broken: resume-original is not the way out here.
+        with self.assertRaises(deploy.DeploymentError):
+            self.tool.resume_original(directory.name)
+        self.tool.events.clear()
+        self.tool.abort(directory.name)
+        self.assertFalse(self.tool.maintenance.exists())
+        self.assertNotIn(('systemctl', 'stop', 'wlxjury.service'), self.tool.events)
+        self.assertNotIn(('systemctl', 'start', 'wlxjury.service'), self.tool.events)
+        record = deploy.read_json(directory / 'deployment.json')
+        self.assertEqual(record['phase'], 'complete')
+        self.assertTrue(record['aborted'])
+        self.assertTrue(record['traffic_opened'])
+        with self.assertRaises(deploy.DeploymentError):
+            self.tool.restore(directory.name, accept_data_loss=True)
+        self.tool.maintenance_ok = True
+        self.tool.deploy(self.new)  # The next attempt is not blocked by a leftover flag.
+
+    def test_abort_starts_a_service_stopped_before_its_phase_was_saved(self):
+        original = self.tool.save
+        def interrupt(path, record, phase):
+            if phase == 'stopped':
+                raise KeyboardInterrupt()
+            original(path, record, phase)
+        with patch.object(self.tool, 'save', interrupt):
+            with self.assertRaises(KeyboardInterrupt):
+                self.tool.deploy(self.new)
+        directory, record = self.record()
+        self.assertEqual(record['phase'], 'maintenance')
+        self.assertNotIn(self.tool.service, self.tool.running)
+        self.tool.abort(directory.name)
+        self.assertIn(self.tool.service, self.tool.running)
+        self.assertIn('backup.timer', self.tool.running)
+        self.assertEqual(self.tool.current.resolve(), self.old)
+        self.assertFalse(self.tool.restart_hold.exists())
+
+    def test_abort_refuses_once_the_backup_phase_was_reached(self):
+        self.tool.fail_backup = True
+        with self.assertRaises(deploy.DeploymentError):
+            self.tool.deploy(self.new)
+        directory, _ = self.record()
+        with self.assertRaises(deploy.DeploymentError):
+            self.tool.abort(directory.name)
+        self.assertTrue(self.tool.maintenance.exists())
+
+    def test_automatic_restarts_are_held_until_traffic_reopens(self):
+        directory = self.tool.deploy(self.new)
+        self.assertEqual(self.tool.held_at_start, [True])
+        self.assertIn(('systemctl', 'daemon-reload'), self.tool.events)
+        self.assertTrue(self.tool.restart_hold.exists())
+        self.assertEqual(stat.S_IMODE(self.tool.restart_hold.stat().st_mode), 0o644)
+        self.tool.reopen(directory.name)
+        self.assertFalse(self.tool.restart_hold.exists())
+
+    def test_restarts_stay_held_after_a_failed_migration_and_through_restore(self):
+        self.tool.fail_readiness = True
+        with self.assertRaises(deploy.DeploymentError):
+            self.tool.deploy(self.new)
+        directory, _ = self.record()
+        self.assertTrue(self.tool.restart_hold.exists())
+        self.tool.fail_readiness = False
+        with patch.object(deploy.subprocess, 'Popen', self.restore_process()):
+            self.tool.restore(directory.name)
+        self.assertEqual(self.tool.held_at_start, [True, True])
+        self.assertTrue(self.tool.restart_hold.exists())
+        self.tool.reopen(directory.name)
+        self.assertFalse(self.tool.restart_hold.exists())
+
+    def test_public_routing_failure_keeps_the_record_open_for_a_retry(self):
+        directory = self.tool.deploy(self.new)
+        self.tool.public_ok = False
+        with self.assertRaises(deploy.DeploymentError):
+            self.tool.reopen(directory.name)
+        record = deploy.read_json(directory / 'deployment.json')
+        self.assertEqual(record['phase'], 'opening')
+        self.assertTrue(record['traffic_opened'])
+        self.assertNotIn('backup.timer', self.tool.running)
+        self.tool.public_ok = True
+        self.tool.reopen(directory.name)
+        self.assertEqual(deploy.read_json(directory / 'deployment.json')['phase'], 'complete')
+        self.assertIn('backup.timer', self.tool.running)
+
+    def test_failed_paused_unit_start_can_be_retried(self):
+        directory = self.tool.deploy(self.new)
+        original = self.tool.run
+        def failing(args, **kwargs):
+            if tuple(args[:3]) == ('systemctl', 'start', 'backup.timer'):
+                raise deploy.DeploymentError('Command failed: systemctl (exit 1)')
+            return original(args, **kwargs)
+        with patch.object(self.tool, 'run', failing):
+            with self.assertRaises(deploy.DeploymentError):
+                self.tool.reopen(directory.name)
+        self.assertEqual(deploy.read_json(directory / 'deployment.json')['phase'], 'opening')
+        self.tool.reopen(directory.name)
+        self.assertIn('backup.timer', self.tool.running)
+
+    def test_an_older_release_is_refused_before_maintenance(self):
+        older = self.release('older', '50')
+        with self.assertRaises(deploy.DeploymentError) as error:
+            self.tool.deploy(older)
+        self.assertIn('older release', str(error.exception))
+        self.assertFalse(self.tool.maintenance.exists())
+        self.assertEqual(list(self.tool.backups.iterdir()), [])
+        self.assertFalse(any(event[:2] == ('systemctl', 'stop') for event in self.tool.events))
+
+    def test_same_schema_redeployment_is_allowed(self):
+        same = self.release('same', '53')
+        self.tool.deploy(same)
+        self.assertEqual(self.tool.current.resolve(), same)
+
+    def test_restore_recreates_the_original_character_set_and_ends_leftover_sessions(self):
+        directory = self.tool.deploy(self.new)
+        self.assertEqual(deploy.read_json(directory / 'deployment.json')['collation'], 'latin1_swedish_ci')
+        self.tool.sessions = ['17']  # E.g. an ALTER that outlived the stopped JVM.
+        with patch.object(deploy.subprocess, 'Popen', self.restore_process()):
+            self.tool.restore(directory.name)
+        sql = [event[1] for event in self.tool.events if event[0] == 'sql']
+        kill = sql.index('KILL 17')
+        drop = next(i for i, statement in enumerate(sql) if 'DROP DATABASE' in statement)
+        self.assertLess(kill, drop)
+        self.assertIn('CHARACTER SET latin1 COLLATE latin1_swedish_ci', sql[drop])
+        user = runtime_values()['WLXJURY_DB_USER'].encode().hex().upper()
+        self.assertTrue(any("HEX(USER) = '" + user + "'" in statement for statement in sql))
+
+    def test_restore_refuses_without_dropping_while_others_use_the_database(self):
+        directory = self.tool.deploy(self.new)
+        self.tool.other_sessions = 1  # An operator's console in the database.
+        with self.assertRaises(deploy.DeploymentError):
+            self.tool.restore(directory.name)
+        self.assertFalse(any('DROP DATABASE' in e[-1] for e in self.tool.events))
+        self.assertTrue(self.tool.maintenance.exists())
+
+    def test_restore_gives_up_on_sessions_that_do_not_end(self):
+        directory = self.tool.deploy(self.new)
+        self.tool.sessions = ['17']
+        original = self.tool.query
+        def unkillable(sql):
+            if sql.startswith('KILL '):
+                self.tool.events.append(('sql', sql))
+                return ''
+            return original(sql)
+        with patch.object(self.tool, 'query', unkillable), patch.object(deploy.time, 'sleep'):
+            with self.assertRaises(deploy.DeploymentError) as error:
+                self.tool.restore(directory.name)
+        self.assertIn('still ending', str(error.exception))
+        self.assertFalse(any('DROP DATABASE' in e[-1] for e in self.tool.events))
+
+    def test_records_without_a_character_set_keep_the_previous_default(self):
+        directory = self.tool.deploy(self.new)
+        record = deploy.read_json(directory / 'deployment.json')
+        del record['charset'], record['collation']
+        deploy.write_json(directory / 'deployment.json', record)
+        with patch.object(deploy.subprocess, 'Popen', self.restore_process()):
+            self.tool.restore(directory.name)
+        self.assertTrue(any('COLLATE utf8mb4_unicode_ci' in e[-1] for e in self.tool.events if e[0] == 'sql'))
+
+    def test_rescue_snapshot_space_is_checked_before_anything_stops(self):
+        directory = self.tool.deploy(self.new)
+        self.tool.reopen(directory.name)
+        self.tool.size = 1 << 60
+        self.tool.events.clear()
+        with self.assertRaises(deploy.DeploymentError) as error:
+            self.tool.restore(directory.name, accept_data_loss=True)
+        self.assertIn('Capacity', str(error.exception))
+        self.assertFalse(self.tool.maintenance.exists())
+        self.assertFalse(any(event[:2] == ('systemctl', 'stop') for event in self.tool.events))
+
+    def test_release_files_are_hashed_once_per_operation(self):
+        hashed = []
+        original = deploy.digest
+        def counting(path):
+            hashed.append(Path(path))
+            return original(path)
+        self.tool.verified.clear()
+        with patch.object(deploy, 'digest', counting):
+            self.tool.deploy(self.new)
+        self.assertEqual(hashed.count(self.new / 'bin' / 'wlxjury'), 1)
+        self.assertEqual(hashed.count(self.old / 'bin' / 'wlxjury'), 1)
+
+    def live_process(self, argv, environment=('PATH=/usr/bin',)):
+        process = self.base / 'proc' / '1'
+        process.mkdir(parents=True, exist_ok=True)
+        (process / 'cmdline').write_bytes(('\0'.join(argv) + '\0').encode())
+        (process / 'environ').write_bytes(('\0'.join(environment) + '\0').encode())
+        self.tool.proc = self.base / 'proc'
+
+    def accepted_rollout(self):
+        directory = self.tool.deploy(self.new)
+        self.tool.reopen(directory.name)
+        source = self.base / 'package' / 'conf' / 'application.conf'
+        source.parent.mkdir(parents=True)
+        values = runtime_values()
+        source.write_text('db.default.username="app"\n'
+                          'db.default.password=' + json.dumps(values['WLXJURY_DB_PASSWORD']) + '\n'
+                          'play.http.secret.key=' + json.dumps(values['PLAY_HTTP_SECRET_KEY']) + '\n')
+        return directory, source
+
+    def test_scrub_requires_the_effective_config_to_be_external(self):
+        directory, source = self.accepted_rollout()
+        external = '-Dconfig.file=' + str(self.tool.runtime / 'production.conf')
+        text = source.read_text()
+        for argv, environment in (
+                (['java', external, '-Dconfig.file=/usr/share/wlxjury/conf/application.conf'], ()),
+                (['java', external, '-Dconfig.resource=application.conf'], ()),
+                (['java', '-Dconfig.file=/usr/share/wlxjury/conf/application.conf'], ()),
+                (['java', external], ('_JAVA_OPTIONS=-Dconfig.file=/tmp/other.conf',))):
+            self.live_process(argv, environment)
+            with self.assertRaises(deploy.DeploymentError):
+                self.tool.scrub_legacy(directory.name, source)
+            self.assertEqual(source.read_text(), text)
+        # The last -Dconfig.file wins, so an earlier package default is harmless.
+        self.live_process(['java', '-Dconfig.file=/usr/share/wlxjury/conf/application.conf', external],
+                          ('JAVA_OPTS=-Xmx1g',))
+        self.tool.scrub_legacy(directory.name, source)
+        self.assertIn('${WLXJURY_DB_PASSWORD}', source.read_text())
+
+    def restore_process(test):
+        class RestoreProcess:
+            def __init__(self, *args, **kwargs):
+                self.stdin = io.BytesIO()
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                pass
+            def wait(self):
+                test.tool.live_schema = '53'
+                test.tool.live_history = '1\t53\t123\t1'
+                return 0
+        return RestoreProcess
 
     def test_migration_startup_failure_requires_restore_and_keeps_traffic_blocked(self):
         self.tool.fail_readiness = True
@@ -374,9 +640,8 @@ class FailurePathTest(Fixture):
             self.tool.scrub_legacy(directory.name, source)
         self.assertEqual(source.read_text(), text)
         self.tool.reopen(directory.name)
-        argv = ('java\0-Dconfig.file=' + str(self.tool.runtime / 'production.conf') + '\0').encode()
-        with patch.object(Path, 'read_bytes', return_value=argv):
-            self.tool.scrub_legacy(directory.name, source)
+        self.live_process(['java', '-Dconfig.file=' + str(self.tool.runtime / 'production.conf')])
+        self.tool.scrub_legacy(directory.name, source)
         self.assertNotIn(json.dumps(values['WLXJURY_DB_PASSWORD']), source.read_text())
         self.assertIn('${WLXJURY_DB_PASSWORD}', source.read_text())
         retained = directory / 'config' / 'legacy-secret-config.conf'
@@ -407,6 +672,44 @@ class LegacyAdoptionTest(Fixture):
         self.assertEqual(self.tool.identity(target)['schemaVersion'], '53')
         self.assertFalse(any(event[0] == 'systemctl' for event in self.tool.events))
 
+    LEGACY = ('db.default.password="legacy-private"\nplay.http.secret.key="old-private-key"\n'
+              'db.default.username="olduser"\ndb.default.url="jdbc:mariadb://localhost/jury"\n')
+
+    def legacy_package(self, text, extra=None):
+        self.tool = FakeDeployment(self.settings)
+        source = self.base / 'package'
+        if source.exists():
+            shutil.rmtree(str(source))
+        for name in ('bin', 'lib', 'conf'):
+            (source / name).mkdir(parents=True)
+        (source / 'bin' / 'wlxjury').write_text('launcher')
+        (source / 'conf' / 'application.conf').write_text(text)
+        for name, contents in (extra or {}).items():
+            (source / 'conf' / name).write_text(contents)
+        return source
+
+    def test_adoption_refuses_credentials_it_cannot_externalize_and_removes_the_copy(self):
+        for text, extra in ((self.LEGACY + 'play.mailer.password = "mail-private"\n', {}),
+                            (self.LEGACY + 'db {\n  default {\n    password: "nested-private"\n  }\n}\n', {}),
+                            (self.LEGACY, {'application.ini': '-Dsmtp.password=ini-private\n'})):
+            source = self.legacy_package(text, extra)
+            with self.assertRaises(deploy.DeploymentError) as error:
+                self.tool.adopt_legacy(source, 'legacy-0.12-v53')
+            self.assertNotIn('private', str(error.exception))
+            self.assertIn('literal credentials', str(error.exception))
+            self.assertEqual(list(self.tool.releases.iterdir()), [])
+            self.assertFalse(self.tool.current.is_symlink())
+            self.assertEqual((source / 'conf' / 'application.conf').read_text(), text)
+
+    def test_adoption_drops_commented_credentials_and_keeps_other_comments(self):
+        source = self.legacy_package('# db.default.password = "commented-private"\n'
+                                     '# The secret key is used to secure cryptographics functions.\n' + self.LEGACY)
+        self.tool.adopt_legacy(source, 'legacy-0.12-v53')
+        copied = (self.tool.current.resolve() / 'conf' / 'application.conf').read_text()
+        self.assertNotIn('private', copied)
+        self.assertIn('# The secret key is used', copied)
+        self.assertEqual(stat.S_IMODE(self.tool.current.resolve().stat().st_mode), 0o755)
+
     def test_pending_migration_in_installed_jar_blocks_adoption_before_selection(self):
         self.tool = FakeDeployment(self.settings)
         source = self.base / 'package'
@@ -419,6 +722,105 @@ class LegacyAdoptionTest(Fixture):
             self.tool.adopt_legacy(source, 'legacy-0.12-v53')
         self.assertFalse(self.tool.current.is_symlink())
         self.assertEqual(list(self.tool.releases.iterdir()), [])
+
+
+class HttpProbeTest(Fixture):
+    def test_tls_failure_is_named_in_the_maintenance_error(self):
+        failure = urllib.error.URLError(ssl.SSLCertVerificationError('certificate has expired'))
+        with patch.object(self.tool, 'run', return_value=b''), \
+                patch.object(self.tool.http, 'open', side_effect=failure):
+            with self.assertRaises(deploy.DeploymentError) as error:
+                self.tool.check_maintenance()
+        self.assertIn('TLS certificate verification failed', str(error.exception))
+
+    def test_dns_failure_is_named(self):
+        failure = urllib.error.URLError(deploy.socket.gaierror(-2, 'Name or service not known'))
+        with patch.object(self.tool, 'run', return_value=b''), \
+                patch.object(self.tool.http, 'open', side_effect=failure):
+            with self.assertRaises(deploy.DeploymentError) as error:
+                self.tool.check_maintenance()
+        self.assertIn('DNS lookup failed', str(error.exception))
+
+    def test_maintenance_page_is_required_not_just_any_503(self):
+        page = deploy.MAINTENANCE_PAGE
+        def respond(body):
+            def open_url(*args, **kwargs):
+                raise urllib.error.HTTPError('http://jury.test/', 503, 'Unavailable', {}, io.BytesIO(body))
+            return open_url
+        with patch.object(self.tool, 'run', return_value=b''):
+            # Apache's own 503 for a stopped app in a vhost without the snippet.
+            with patch.object(self.tool.http, 'open', side_effect=respond(b'<h1>Service Unavailable</h1>')):
+                with self.assertRaises(deploy.DeploymentError) as error:
+                    self.tool.check_maintenance()
+            self.assertIn('not the maintenance page', str(error.exception))
+            with patch.object(self.tool.http, 'open', side_effect=respond(b'The jury tool is ' + page + b'.')):
+                self.tool.check_maintenance()
+
+    def test_the_tool_and_the_apache_snippet_agree_on_the_page(self):
+        snippet = Path(__file__).resolve().parents[2] / 'conf' / 'apache' / 'wlxjury-maintenance.conf'
+        if not snippet.exists():
+            self.skipTest('Run from a checkout')
+        page = [line for line in snippet.read_text().splitlines() if line.startswith('ErrorDocument 503')]
+        self.assertEqual(len(page), 1)
+        self.assertIn(deploy.MAINTENANCE_PAGE.decode(), page[0])
+
+    def test_wrong_status_is_reported(self):
+        response = urllib.error.HTTPError('http://jury.test/', 301, 'Moved', {}, io.BytesIO(b''))
+        with patch.object(self.tool, 'run', return_value=b''), \
+                patch.object(self.tool.http, 'open', side_effect=response):
+            with self.assertRaises(deploy.DeploymentError) as error:
+                self.tool.check_maintenance()
+        self.assertIn('HTTP 301', str(error.exception))
+
+    def test_public_check_accepts_redirects_and_rejects_maintenance(self):
+        redirect = urllib.error.HTTPError('http://jury.test/', 303, 'See Other', {}, io.BytesIO(b''))
+        with patch.object(self.tool.http, 'open', side_effect=redirect):
+            self.tool.check_public()
+        unavailable = urllib.error.HTTPError('http://jury.test/', 503, 'Unavailable', {}, io.BytesIO(b''))
+        with patch.object(self.tool.http, 'open', side_effect=unavailable):
+            with self.assertRaises(deploy.DeploymentError) as error:
+                self.tool.check_public()
+        self.assertIn('HTTP 503', str(error.exception))
+
+
+class OperatorSessionTest(Fixture):
+    def test_progress_survives_a_closed_terminal_and_is_logged(self):
+        class ClosedTerminal(io.StringIO):
+            def write(self, text):
+                raise OSError(5, 'Input/output error')
+        with patch.object(deploy.sys, 'stdout', ClosedTerminal()):
+            self.tool.say('Deployment x: backed-up')
+        log = self.tool.backups / 'operations.log'
+        self.assertIn('Deployment x: backed-up', log.read_text())
+        if os.name == 'posix':
+            self.assertEqual(stat.S_IMODE(log.stat().st_mode), 0o600)
+
+    @unittest.skipUnless(os.name == 'posix', 'POSIX signals')
+    def test_hangup_is_ignored_and_termination_exits(self):
+        previous = {number: signal.getsignal(number) for number in (signal.SIGHUP, signal.SIGTERM)}
+        try:
+            deploy.install_signal_handlers()
+            self.assertIs(signal.getsignal(signal.SIGHUP), signal.SIG_IGN)
+            with self.assertRaises(SystemExit) as code:
+                signal.getsignal(signal.SIGTERM)(signal.SIGTERM, None)
+            self.assertEqual(code.exception.code, 143)
+        finally:
+            for number, handler in previous.items():
+                signal.signal(number, handler)
+
+
+class CredentialScanTest(unittest.TestCase):
+    def test_literal_credentials_are_found_in_every_supported_form(self):
+        for line in ('play.mailer.password = "mail"', 'password: "nested"', '  smtp.passwd=abc',
+                     'application.secret="old"', '-Dsmtp.password=abc',
+                     'db.default.url="jdbc:mariadb://h/db?user=a&password=b"'):
+            self.assertIsNotNone(deploy.literal_secret(line), line)
+
+    def test_references_and_prose_are_not_credentials(self):
+        for line in ('play.http.secret.key = ${PLAY_HTTP_SECRET_KEY}', 'commons.password = ${?COMMONS_PASSWORD}',
+                     'db.default.password = ""', '# The secret key is used to secure cryptographics functions.',
+                     'db.default.username = "app"', 'play.filters.csrf.token.name = "csrfToken"'):
+            self.assertIsNone(deploy.literal_secret(line), line)
 
 
 if __name__ == '__main__':

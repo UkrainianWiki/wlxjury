@@ -6,6 +6,7 @@ import org.apache.pekko.actor.ActorSystem
 import org.specs2.mock.Mockito
 import org.specs2.specification.AfterAll
 import play.api.libs.json.Json
+import play.api.mvc.request.RemoteConnection
 import play.api.test.{FakeRequest, PlaySpecification}
 import play.api.test.Helpers.stubControllerComponents
 import services.ReadinessCheck
@@ -51,6 +52,23 @@ class ReadinessControllerSpec extends PlaySpecification with Mockito with AfterA
       status(result) mustEqual SERVICE_UNAVAILABLE
       contentAsJson(result) mustEqual Json.obj("status" -> "unavailable")
       contentAsString(result) must not(contain("private"))
+    }
+    "answer only the server itself, without a DB query for anyone else" in {
+      val check = mock[ReadinessCheck]
+      val controller = new ReadinessController(stubControllerComponents(), check, ec)
+      for (remote <- Seq("203.0.113.5", "2001:db8::5", "localhost.example.org")) {
+        val request = FakeRequest().withConnection(RemoteConnection(remote, secure = false, clientCertificateChain = None))
+        val result = controller.ready.apply(request)
+        status(result) mustEqual NOT_FOUND
+        contentAsString(result) must not(contain("schemaVersion"))
+      }
+      there was no(check).schemaVersion()
+    }
+    "treat IPv4 and IPv6 loopback as local" in {
+      Seq("127.0.0.1", "127.0.1.1", "::1", "0:0:0:0:0:0:0:1").map { address =>
+        ReadinessController.isLocal(FakeRequest().withConnection(
+          RemoteConnection(address, secure = false, clientCertificateChain = None)))
+      } must contain(beTrue).forall
     }
   }
 }

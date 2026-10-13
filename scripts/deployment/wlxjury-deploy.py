@@ -15,6 +15,8 @@ from pathlib import Path, PurePosixPath
 import re
 import shutil
 import signal
+import socket
+import ssl
 import stat
 import subprocess
 import sys
@@ -23,6 +25,10 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import zipfile
+
+
+# Text of the ErrorDocument in conf/apache/wlxjury-maintenance.conf.
+MAINTENANCE_PAGE = b'undergoing maintenance'
 
 
 class DeploymentError(Exception):
@@ -168,6 +174,45 @@ def externalize_legacy(text):
     return text
 
 
+# Settings whose name marks a credential, in HOCON/properties/ini/JVM-option form,
+# including URL query parameters such as "&password=...".
+SECRET_SETTING = re.compile(r'([A-Za-z0-9_.-]*(?:password|passwd|secret)[A-Za-z0-9_.-]*)\s*[=:]\s*(.*)', re.I)
+SCANNED_CONFIG = ('.conf', '.ini', '.properties', '.cnf', '.env')
+
+
+def literal_secret(line):
+    """The name of a credential setting this line gives a literal value, or None."""
+    for match in SECRET_SETTING.finditer(line):
+        value = match.group(2).strip()
+        if value and not value.startswith('${') and value not in ('""', "''", 'null'):
+            return match.group(1)
+    return None
+
+
+def sanitize_copied_config(directory):
+    """Drop commented-out credentials from a copied conf/ tree; refuse live ones.
+
+    Comments do not change behavior, so removing them is safe. A literal value
+    in a live setting cannot be externalized without guessing, so it stops the
+    adoption and names the file, line and key, never the value.
+    """
+    found = []
+    for path in sorted(directory.rglob('*')):
+        if not path.is_file() or path.suffix not in SCANNED_CONFIG:
+            continue
+        lines = path.read_text(encoding='utf-8').splitlines(keepends=True)
+        kept = [line for line in lines
+                if not (line.lstrip().startswith(('#', '//')) and literal_secret(line))]
+        if kept != lines:
+            path.write_text(''.join(kept), encoding='utf-8')
+        for number, line in enumerate(kept, 1):
+            key = literal_secret(line)
+            if key:
+                found.append(path.relative_to(directory).as_posix() + ':' + str(number) + ' ' + key)
+    require(not found, 'Adopted copy still has literal credentials (' + ', '.join(found) +
+            '); adopt from a reviewed copy of the installation that references runtime.env instead')
+
+
 def migration_versions(release):
     """Inspect both external config and app/dependency JAR resources before adoption."""
     names = [path.name for path in (release / 'conf' / 'db' / 'migration' / 'default').glob('V*.sql')]
@@ -207,7 +252,14 @@ class Deployment:
         self.service = settings['service']
         self.port = settings['port']
         self.units = settings.get('quiesce_units', [])
-        for path in (self.root, self.runtime, self.backups, Path(settings['database_dir'])):
+        # A later drop-in than deployment.conf; it turns automatic restarts off
+        # while a deployment is open, so a failed or killed start never re-runs
+        # migrations against a partially migrated database on its own.
+        self.restart_hold = Path(settings.get('systemd_dropin_dir', '/etc/systemd/system/' + self.service + '.d')) \
+            / 'zz-deployment-hold.conf'
+        self.proc = Path('/proc')
+        self.verified = {}
+        for path in (self.root, self.runtime, self.backups, Path(settings['database_dir']), self.restart_hold.parent):
             require(path.is_absolute() and str(path) != path.anchor, 'Use a specific absolute directory')
             require(not path.is_symlink(), 'Deployment directories must not be symlinks: ' + str(path))
         for unit in [self.service] + self.units:
@@ -256,6 +308,31 @@ class Deployment:
         pid = self.run(['systemctl', 'show', unit, '-p', 'MainPID', '--value']).decode().strip()
         require(pid in ('0', ''), 'Unit still has a live process: ' + unit)
 
+    def hold_restarts(self):
+        self.restart_hold.parent.mkdir(mode=0o755, parents=True, exist_ok=True)
+        atomic_write(self.restart_hold, '[Service]\n# Written by wlxjury-deploy while a deployment is open; '
+                                        'removed when traffic reopens.\nRestart=no\n', 0o644)
+        self.run(['systemctl', 'daemon-reload'])
+
+    def release_restarts(self):
+        if self.restart_hold.exists():
+            self.restart_hold.unlink()
+            self.run(['systemctl', 'daemon-reload'])
+
+    def say(self, message):
+        """Log durably first; a closed SSH terminal must not stop the operation."""
+        try:
+            stamp = datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
+            fd = os.open(str(self.backups / 'operations.log'), os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+            with os.fdopen(fd, 'a', encoding='utf-8') as log:
+                log.write(stamp + ' ' + message + '\n')
+        except OSError:
+            pass
+        try:
+            print(message, flush=True)
+        except OSError:
+            pass
+
     def client(self, binary):
         private_file(self.runtime / 'runtime.env')
         private_file(self.runtime / 'db-admin.cnf')
@@ -283,6 +360,39 @@ class Deployment:
         return self.query('SELECT version FROM flyway_schema_history WHERE success = 1 AND version IS NOT NULL '
                           'ORDER BY installed_rank DESC LIMIT 1')
 
+    def database_bytes(self):
+        size = self.query('SELECT COALESCE(SUM(DATA_LENGTH + INDEX_LENGTH), 0) FROM information_schema.TABLES '
+                          'WHERE TABLE_SCHEMA = DATABASE()')
+        require(size.isdigit(), 'Cannot measure the database size')
+        return int(size)
+
+    def database_defaults(self):
+        """The database's own default character set and collation, to recreate it exactly."""
+        row = self.query('SELECT DEFAULT_CHARACTER_SET_NAME, DEFAULT_COLLATION_NAME FROM information_schema.SCHEMATA '
+                         'WHERE SCHEMA_NAME = DATABASE()').split('\t')
+        require(len(row) == 2 and all(re.fullmatch(r'[A-Za-z0-9_]+', value) for value in row),
+                'Cannot read the database character set')
+        return row
+
+    def end_sessions(self, env, database):
+        """Before DROP DATABASE: end the stopped app's leftover sessions, such as an
+        ALTER that outlived its JVM, and refuse while anyone else uses the database."""
+        mine = ("ID <> CONNECTION_ID() AND HEX(USER) = '" + env['WLXJURY_DB_USER'].encode('utf-8').hex().upper() + "'")
+        for session in self.query('SELECT ID FROM information_schema.PROCESSLIST WHERE ' + mine).split():
+            require(session.isdigit(), 'Unexpected session ID')
+            try:
+                self.query('KILL ' + session)
+            except DeploymentError:
+                pass  # It ended on its own.
+        deadline = time.monotonic() + self.settings.get('session_end_timeout_seconds', 600)
+        # A killed ALTER stays listed until its rollback finishes.
+        while self.query('SELECT COUNT(*) FROM information_schema.PROCESSLIST WHERE ' + mine) != '0':
+            require(time.monotonic() < deadline, 'Application DB sessions are still ending; maintenance remains enabled')
+            time.sleep(2)
+        others = self.query("SELECT COUNT(*) FROM information_schema.PROCESSLIST WHERE ID <> CONNECTION_ID() "
+                            "AND DB = '" + database + "'")
+        require(others == '0', 'Other sessions use the database; inspect SHOW PROCESSLIST before restoring')
+
     def capacity(self, extra=0, restoring=False):
         reserve = self.settings.get('restore_minimum_free_bytes', self.settings['minimum_free_bytes']) if restoring else self.settings['minimum_free_bytes']
         require(reserve > 0, 'Set a positive restore capacity budget')
@@ -295,6 +405,10 @@ class Deployment:
         release = Path(release)
         require(release.parent.resolve() == self.releases.resolve() and not release.is_symlink(),
                 'Release must be a direct, real child of the release directory')
+        # Hash each release once per operation: it holds the lock, and releases are root-owned.
+        key = str(release.resolve())
+        if key in self.verified:
+            return dict(self.verified[key])
         require((release / 'bin' / 'wlxjury').is_file(), 'Missing release launcher')
         info = read_json(release / 'wlxjury-build.json')
         require(re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]{0,95}', info.get('build', '')) is not None,
@@ -306,6 +420,7 @@ class Deployment:
         for relative, expected in record['files'].items():
             path = release / relative
             require(not path.is_symlink() and digest(path) == expected, 'Prepared release was modified: ' + relative)
+        self.verified[key] = dict(info)
         return info
 
     def select(self, release):
@@ -330,6 +445,7 @@ class Deployment:
                 files[path.relative_to(directory).as_posix()] = digest(path)
         write_json(directory / 'deployment-release.json', {'build': info['build'], 'archiveSha256': archive_hash, 'files': files})
         os.chmod(str(directory / 'deployment-release.json'), 0o644)
+        self.verified.pop(str(directory.resolve()), None)
 
     def prepare(self, archive, expected_hash):
         require(re.fullmatch(r'[0-9a-f]{64}', expected_hash) is not None, 'Pass the full lowercase ZIP SHA-256')
@@ -377,7 +493,7 @@ class Deployment:
                     os.chmod(str(path), 0o755)
             self.record_release(target, info, expected_hash)
             self.identity(target)
-        print('Prepared ' + str(target))
+        self.say('Prepared ' + str(target))
         return target
 
     def adopt_legacy(self, source, build):
@@ -395,18 +511,24 @@ class Deployment:
         self.capacity(sum(p.stat().st_size for d in ('bin', 'lib', 'conf') for p in (source / d).rglob('*') if p.is_file()))
         target = self.releases / build
         require(not target.exists(), 'Legacy snapshot already exists')
-        target.mkdir(mode=0o755)
-        for name in ('bin', 'lib', 'conf', 'share'):
-            if (source / name).exists():
-                shutil.copytree(str(source / name), str(target / name))
-        config = target / 'conf' / 'application.conf'
-        text = config.read_text(encoding='utf-8')
-        config.write_text(externalize_legacy(text), encoding='utf-8')
-        # Package-manager conflict copies may contain old secrets; exclude them
-        # from the adopted release. Originals are deliberately left untouched.
-        for path in (target / 'conf').rglob('*'):
-            if path.is_file() and ('.dpkg-' in path.name or path.suffix in ('.bak', '.old')):
-                path.unlink()
+        target.mkdir(mode=0o700)
+        os.chmod(str(target), 0o700)  # Private until the copy is verified free of credentials.
+        try:
+            for name in ('bin', 'lib', 'conf', 'share'):
+                if (source / name).exists():
+                    shutil.copytree(str(source / name), str(target / name))
+            config = target / 'conf' / 'application.conf'
+            text = config.read_text(encoding='utf-8')
+            config.write_text(externalize_legacy(text), encoding='utf-8')
+            # Package-manager conflict copies may contain old secrets; exclude them
+            # from the adopted release. Originals are deliberately left untouched.
+            for path in (target / 'conf').rglob('*'):
+                if path.is_file() and ('.dpkg-' in path.name or path.suffix in ('.bak', '.old')):
+                    path.unlink()
+            sanitize_copied_config(target / 'conf')
+        except BaseException:
+            shutil.rmtree(str(target), ignore_errors=True)
+            raise
         info = {'build': build, 'version': 'legacy', 'schemaVersion': schema, 'legacy': True}
         write_json(target / 'wlxjury-build.json', info)
         for path in target.rglob('*'):
@@ -414,22 +536,49 @@ class Deployment:
         os.chmod(str(target), 0o755)
         self.record_release(target, info, None)
         self.select(target)
-        print('Adopted sanitized recovery release ' + str(target) + '; service has not been restarted.')
+        self.say('Adopted sanitized recovery release ' + str(target) + '; service has not been restarted.')
 
-    def http_get(self, url):
+    def http_request(self, url):
+        """(status, body, problem); status 0 with a short, secret-free problem on failure."""
         try:
             with self.http.open(url, timeout=5) as response:
-                return response.status, response.read(65536)
+                return response.status, response.read(65536), None
         except urllib.error.HTTPError as response:
-            return response.code, response.read(65536)
-        except (OSError, urllib.error.URLError):
-            return 0, b''
+            return response.code, response.read(65536), None
+        except urllib.error.URLError as error:
+            reason = error.reason
+        except OSError as error:
+            reason = error
+        if isinstance(reason, ssl.SSLCertVerificationError):
+            return 0, b'', 'TLS certificate verification failed'
+        if isinstance(reason, ssl.SSLError):
+            return 0, b'', 'TLS error'
+        if isinstance(reason, socket.gaierror):
+            return 0, b'', 'DNS lookup failed'
+        if isinstance(reason, socket.timeout):
+            return 0, b'', 'timed out'
+        return 0, b'', 'connection failed'
+
+    def http_get(self, url):
+        status, body, _ = self.http_request(url)
+        return status, body
 
     def check_maintenance(self):
         self.run(['apachectl', 'configtest'])
         for url in self.settings['maintenance_urls']:
-            status, _ = self.http_get(url)
-            require(status == 503, 'Maintenance is not HTTP 503 at ' + url)
+            status, body, problem = self.http_request(url)
+            require(status == 503, 'Maintenance is not HTTP 503 at ' + url + ' (' + (problem or 'HTTP ' + str(status)) + ')')
+            # A vhost without the snippet also answers 503 while the app is stopped
+            # (restore, resume-original), but with Apache's own error page.
+            require(MAINTENANCE_PAGE in body, 'HTTP 503 at ' + url + ' is not the maintenance page; '
+                                              'include wlxjury-maintenance.conf in that vhost')
+
+    def check_public(self):
+        """After the flag is removed every jury URL must reach the app again."""
+        for url in self.settings['maintenance_urls']:
+            status, _, problem = self.http_request(url)
+            require(200 <= status < 400, 'Traffic is open but ' + url + ' does not reach the app (' +
+                    (problem or 'HTTP ' + str(status)) + '); inspect routing, then rerun reopen')
 
     def wait_ready(self, release):
         identity = self.identity(release)
@@ -467,7 +616,7 @@ class Deployment:
     def save(self, directory, record, phase):
         record['phase'] = phase
         write_json(directory / 'deployment.json', record)
-        print('Deployment ' + record['id'] + ': ' + phase)
+        self.say('Deployment ' + record['id'] + ': ' + phase)
 
     def begin(self):
         require(not self.maintenance.exists(), 'Maintenance already enabled; inspect the interrupted deployment')
@@ -483,12 +632,13 @@ class Deployment:
         _, env = self.client('mariadb')
         expected_port = env['WLXJURY_DB_HOST'].partition(':')[2] or '3306'
         require(self.query('SELECT @@port') == expected_port, 'Administrative connection points at a different DB port')
+        charset, collation = self.database_defaults()
         name = datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%SZ') + '-' + os.urandom(4).hex()
         directory = self.backups / name
         directory.mkdir(mode=0o700)
         record = {'id': name, 'previous': str(previous), 'database': env['WLXJURY_DB'],
-                  'host': env['WLXJURY_DB_HOST'], 'traffic_opened': False,
-                  'units': [unit for unit in self.units if self.active(unit)]}
+                  'host': env['WLXJURY_DB_HOST'], 'charset': charset, 'collation': collation,
+                  'traffic_opened': False, 'units': [unit for unit in self.units if self.active(unit)]}
         self.save(directory, record, 'created')
         configs = directory / 'config'
         configs.mkdir(mode=0o700)
@@ -502,6 +652,7 @@ class Deployment:
         os.chmod(str(self.maintenance), 0o644)
         self.save(directory, record, 'maintenance')
         self.check_maintenance()  # Verify all hosts before stopping anything.
+        self.hold_restarts()
         for unit in record['units']:
             self.stop(unit)
         self.stop(self.service)  # Also stops all V60 scheduler workers in the cgroup.
@@ -513,7 +664,12 @@ class Deployment:
 
     def deploy(self, release):
         release = Path(release).resolve()
-        self.identity(release)
+        candidate = self.identity(release)
+        live = self.schema()
+        # Flyway would refuse newer history only after the outage had started.
+        require(version_tuple(candidate['schemaVersion']) >= version_tuple(live),
+                'Release expects schema ' + candidate['schemaVersion'] + ' but the database is at ' + live +
+                '; an older release cannot validate newer history. Nothing was changed')
         directory, record = self.begin()
         self.capacity()  # Backup growth must not consume the migration reserve.
         record['candidate'] = str(release)
@@ -524,8 +680,8 @@ class Deployment:
         self.run(['systemctl', 'start', self.service])
         self.wait_ready(release)
         self.save(directory, record, 'ready')
-        print('Ready under maintenance. Record: ' + str(directory))
-        print('Smoke-test locally, then use reopen ' + directory.name)
+        self.say('Ready under maintenance. Record: ' + str(directory))
+        self.say('Smoke-test locally, then use reopen ' + directory.name)
         return directory
 
     def load_record(self, name):
@@ -539,31 +695,56 @@ class Deployment:
                 'Backup DB identity differs from current runtime configuration')
         return directory, record
 
-    def reopen(self, name):
-        directory, record = self.load_record(name)
-        require(record['phase'] in ('ready', 'restored', 'opening'), 'Record is not ready to reopen')
-        require(self.maintenance.exists() or (record['phase'] == 'opening' and record['traffic_opened']),
-                'Maintenance flag is absent; inspect live routing')
-        expected = record['previous'] if record.get('restored') else record['candidate']
-        require(self.current.resolve() == Path(expected), 'Current release differs from deployment record')
-        if self.maintenance.exists():
-            self.check_maintenance()
+    @staticmethod
+    def expected_release(record):
+        return record['previous'] if record.get('restored') else record['candidate']
+
+    def open_traffic(self, directory, record, expected):
         self.wait_ready(expected)
+        self.release_restarts()
         # Save conservatively BEFORE traffic can resume. An interrupt in this
         # narrow interval must not allow an implicit data-losing restore.
         record['traffic_opened'] = True
         self.save(directory, record, 'opening')
         self.maintenance.unlink(missing_ok=True)
-        self.save(directory, record, 'complete')
+        # Still 'opening' if routing or a paused unit fails: rerun reopen once fixed.
+        self.check_public()
         for unit in record['units']:
             self.run(['systemctl', 'start', unit])
-        print('Traffic resumed; snapshots and previous release retained.')
+        self.save(directory, record, 'complete')
+
+    def reopen(self, name):
+        directory, record = self.load_record(name)
+        require(record['phase'] in ('ready', 'restored', 'opening'), 'Record is not ready to reopen')
+        require(self.maintenance.exists() or (record['phase'] == 'opening' and record['traffic_opened']),
+                'Maintenance flag is absent; inspect live routing')
+        expected = self.expected_release(record)
+        require(self.current.resolve() == Path(expected), 'Current release differs from deployment record')
+        if self.maintenance.exists():
+            self.check_maintenance()
+        self.open_traffic(directory, record, expected)
+        self.say('Traffic resumed; snapshots and previous release retained.')
+
+    def abort(self, name):
+        """Back out a deployment that stopped before its backup, such as a failed
+        maintenance check: the release and database were never changed."""
+        directory, record = self.load_record(name)
+        require(record['phase'] in ('created', 'maintenance'),
+                'Abort is only for deployments stopped before their backup; use resume-original or restore')
+        previous = Path(record['previous'])
+        require(self.current.resolve() == previous, 'Current release differs from deployment record')
+        if not self.active(self.service):  # Interrupted right after stopping it.
+            self.run(['systemctl', 'start', self.service])
+        record['restored'] = True
+        record['aborted'] = True
+        self.open_traffic(directory, record, previous)
+        self.say('Deployment aborted; the original release serves an unchanged database.')
 
     def restore(self, name, accept_data_loss=False):
         directory, record = self.load_record(name)
         require(not record['traffic_opened'] or accept_data_loss,
                 'Traffic has resumed: restore needs --accept-data-loss after a reconciliation decision')
-        require(record.get('backupSha256'), 'No completed backup; use resume-original before migration')
+        require(record.get('backupSha256'), 'No completed backup; use abort or resume-original before migration')
         backup = directory / 'database.sql.gz'
         require(digest(backup) == record['backupSha256'], 'Backup checksum mismatch; no DB changes performed')
         # Check gzip CRC and complete readability BEFORE destroying the target.
@@ -572,9 +753,14 @@ class Deployment:
                 pass
         previous = Path(record['previous'])
         self.identity(previous)
-        self.capacity(restoring=True)
+        charset, collation = record.get('charset', 'utf8mb4'), record.get('collation', 'utf8mb4_unicode_ci')
+        require(all(re.fullmatch(r'[A-Za-z0-9_]+', value) for value in (charset, collation)),
+                'Invalid character set in deployment record')
+        # The rescue dump of post-cutover data needs room as well as the restore.
+        self.capacity(extra=self.database_bytes() if record['traffic_opened'] else 0, restoring=True)
         self.maintenance.touch(mode=0o644)
         self.check_maintenance()
+        self.hold_restarts()
         for unit in record['units']:
             self.stop(unit)
         self.stop(self.service)
@@ -586,8 +772,10 @@ class Deployment:
             self.backup(rescue)
         self.save(directory, record, 'restoring')
         db = record['database']  # Validated from runtime.env by client().
-        self.query('DROP DATABASE `' + db + '`; CREATE DATABASE `' + db + '` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci')
-        args, _ = self.client('mariadb')
+        args, env = self.client('mariadb')
+        self.end_sessions(env, db)
+        self.query('DROP DATABASE `' + db + '`; CREATE DATABASE `' + db + '` CHARACTER SET ' + charset +
+                   ' COLLATE ' + collation)
         with subprocess.Popen(args + ['--database=' + db], stdin=subprocess.PIPE, stderr=subprocess.DEVNULL,
                               stdout=subprocess.DEVNULL) as process:
             try:
@@ -609,34 +797,48 @@ class Deployment:
         self.wait_ready(previous)
         record['restored'] = True
         self.save(directory, record, 'restored')
-        print('Original DB/config/release restored. Verify locally, then reopen ' + record['id'])
+        self.say('Original DB/config/release restored. Verify locally, then reopen ' + record['id'])
 
     def resume_original(self, name):
         directory, record = self.load_record(name)
-        require(record['phase'] in ('created', 'maintenance', 'stopped', 'backed-up', 'selecting'),
-                'Migration may have started; use restore')
+        require(record['phase'] in ('stopped', 'backed-up', 'selecting'),
+                'Before the service was stopped use abort; once migration may have started use restore')
         require(not record['traffic_opened'], 'Traffic has resumed; use an explicit recovery decision')
         self.maintenance.touch(mode=0o644)
         self.check_maintenance()
+        self.hold_restarts()
         self.stop(self.service)
         self.select(Path(record['previous']))
         self.run(['systemctl', 'start', self.service])
         self.wait_ready(Path(record['previous']))
         record['restored'] = True
         self.save(directory, record, 'restored')
-        print('Original release resumed without DB changes; reopen ' + record['id'])
+        self.say('Original release resumed without DB changes; reopen ' + record['id'])
+
+    def live_config_is_external(self, pid):
+        """The JVM's effective -Dconfig.file is the last one; config.resource/url
+        or a JVM options variable naming another config would override or clash."""
+        process = self.proc / pid
+        argv = (process / 'cmdline').read_bytes().decode('utf-8', 'replace').split('\x00')
+        files = [arg for arg in argv if arg.startswith('-Dconfig.file=')]
+        if not files or files[-1] != '-Dconfig.file=' + str(self.runtime / 'production.conf'):
+            return False
+        if any(arg.startswith(('-Dconfig.resource=', '-Dconfig.url=')) for arg in argv):
+            return False
+        # Only checked, never printed: the environment holds credentials.
+        environment = (process / 'environ').read_bytes().decode('utf-8', 'replace').split('\x00')
+        return not any(entry.startswith(('JAVA_TOOL_OPTIONS=', 'JDK_JAVA_OPTIONS=', '_JAVA_OPTIONS='))
+                       and '-Dconfig.' in entry for entry in environment)
 
     def scrub_legacy(self, name, path):
         directory, record = self.load_record(name)
         require(record['phase'] == 'complete', 'Complete and verify external-config rollout before removing old literals')
-        expected = record['previous'] if record.get('restored') else record['candidate']
+        expected = self.expected_release(record)
         require(self.current.resolve() == Path(expected), 'Current release differs from accepted rollout')
         self.wait_ready(expected)
         pid = self.run(['systemctl', 'show', self.service, '-p', 'MainPID', '--value']).decode().strip()
         require(pid.isdigit() and int(pid) > 0, 'Service has no live process')
-        argv = (Path('/proc') / pid / 'cmdline').read_bytes().decode().split('\x00')
-        require('-Dconfig.file=' + str(self.runtime / 'production.conf') in argv,
-                'Live service is not using the external production config')
+        require(self.live_config_is_external(pid), 'Live service is not using the external production config')
         path = Path(path).resolve()
         require(path.name == 'application.conf' and self.releases.resolve() not in path.parents,
                 'Specify the original package application.conf, not a managed release')
@@ -649,12 +851,20 @@ class Deployment:
         require(not original.exists(), 'Original config was already retained for this record')
         atomic_write(original, text)
         atomic_write(path, externalize_legacy(text), 0o640)
-        print('Old literal credentials removed; original retained only in the protected recovery record.')
+        self.say('Old literal credentials removed; original retained only in the protected recovery record.')
 
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         return None
+
+
+def install_signal_handlers():
+    # Interrupted operations keep their durable phase record and maintenance flag.
+    signal.signal(signal.SIGTERM, lambda *_: sys.exit(143))
+    # A dropped SSH session must not kill a backup, migration wait or restore
+    # halfway; children such as mariadb-dump inherit the ignored disposition.
+    signal.signal(signal.SIGHUP, signal.SIG_IGN)
 
 
 def main(argv=None):
@@ -674,8 +884,11 @@ def main(argv=None):
     deploy.add_argument('release')
     deploy.add_argument('--writers-reviewed', action='store_true', required=True,
                         help='Other writers/DDL jobs have been identified and coordinated')
-    for name in ('reopen', 'resume-original', 'restore'):
-        command = sub.add_parser(name)
+    for name, description in (('reopen', 'Open traffic after accepted smoke tests'),
+                              ('abort', 'Back out a deployment that stopped before its backup'),
+                              ('resume-original', 'Restart the original release after a pre-migration failure'),
+                              ('restore', 'Restore the pre-deployment database, config and release')):
+        command = sub.add_parser(name, help=description)
         command.add_argument('record')
         if name == 'restore':
             command.add_argument('--accept-data-loss', action='store_true')
@@ -685,8 +898,7 @@ def main(argv=None):
     args = parser.parse_args(argv)
     require(os.name == 'posix' and os.geteuid() == 0, 'Run on Linux as root')
     os.umask(0o077)
-    # Interrupted operations keep their durable phase record and maintenance flag.
-    signal.signal(signal.SIGTERM, lambda *_: sys.exit(143))
+    install_signal_handlers()
     if args.command == 'init-runtime':
         init_runtime(args.legacy_config, args.runtime_dir)
         return
@@ -701,6 +913,8 @@ def main(argv=None):
             deployment.deploy(args.release)
         elif args.command == 'reopen':
             deployment.reopen(args.record)
+        elif args.command == 'abort':
+            deployment.abort(args.record)
         elif args.command == 'restore':
             deployment.restore(args.record, args.accept_data_loss)
         elif args.command == 'resume-original':
@@ -715,6 +929,7 @@ if __name__ == '__main__':
     except (DeploymentError, OSError, ValueError, zipfile.BadZipFile) as error:
         # Never print an arbitrary config/SQL/driver exception containing secrets.
         message = str(error) if isinstance(error, DeploymentError) else type(error).__name__
-        print('Deployment stopped: ' + message, file=sys.stderr)
-        print('Inspect the deployment record. Maintenance is never cleared automatically.', file=sys.stderr)
+        with contextlib.suppress(OSError):
+            print('Deployment stopped: ' + message, file=sys.stderr)
+            print('Inspect the deployment record. Maintenance is never cleared automatically.', file=sys.stderr)
         sys.exit(1)

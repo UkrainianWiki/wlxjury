@@ -14,9 +14,13 @@ dist
 /RUNNING_PID
 /.settings
 .env
-runtime.env
-db-admin.cnf
-deployment.json
+# Real server settings, if ever created in a checkout. Anchored: other files may share these names.
+/runtime.env
+/db-admin.cnf
+/deployment.json
+/conf/wlxjury/runtime.env
+/conf/wlxjury/db-admin.cnf
+/conf/wlxjury/deployment.json
 __pycache__/
 .vagrant
 node_modules
