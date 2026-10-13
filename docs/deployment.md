@@ -134,7 +134,7 @@ An interrupted reopening conservatively marks possible writes even if maintenanc
 
 Once the cutover is complete, deploy releases with `wlxjury-release`. It reads the same `deployment.json`, `runtime.env` and `db-admin.cnf` as `wlxjury-deploy` and takes the same lock (`/opt/wlxjury/deployment.lock`), so no two operations of either tool overlap. Do not use `wlxjury-deploy deploy` after switching: it cannot verify releases it did not prepare. Keep `wlxjury-deploy` only to recover from its own earlier records until they are retired.
 
-Its database commands use the app's endpoint from `runtime.env`. For `WLXJURY_DB_HOST=localhost` they use the socket in `db-admin.cnf`, with root socket authentication, and check that this server listens on port 3306. For any other host, or an explicit port, they connect by TCP to that host and port, so `db-admin.cnf` then needs an administrative account that can log in over TCP.
+Its database commands always use the app's host from `runtime.env`, whatever `db-admin.cnf` says. For `WLXJURY_DB_HOST=localhost` they connect through the socket in `db-admin.cnf`, with root socket authentication, and check that this server listens on port 3306. For any other host, or an explicit port, they connect by TCP to that host and port, so `db-admin.cnf` then needs an administrative account that can log in over TCP. Each operation records the database name and endpoint, and `restore` refuses a backup whose database differs from what `runtime.env` now names.
 
 Install it once, with `curl` and `unzip`:
 
@@ -174,12 +174,12 @@ It unpacks the release into a new root-owned folder under `/opt/wlxjury/releases
 It then records `traffic-may-resume`, restores automatic restarts, removes maintenance, checks every URL reaches the app, and restarts the writer units that were running before the deployment. If a URL fails, fix routing and run `reopen` again.
 
 `restore OPERATION` backs out a deployment, holding the lock throughout and stopping at the first failure:
-1. It refuses an operation without a complete backup, and refuses after `traffic-may-resume` without `--accept-data-loss`.
-2. It verifies the backup's checksum and gzip integrity before changing anything.
+1. It refuses an operation without a complete backup, refuses after `traffic-may-resume` without `--accept-data-loss`, and refuses a backup of a database other than the one `runtime.env` now names.
+2. It verifies the backup's checksum and gzip integrity before changing anything, and checks free space: `restore_minimum_free_bytes` (or `minimum_free_bytes`), plus the database's size when a rescue dump is needed.
 3. It enables and checks maintenance, turns off automatic restarts, and stops every writer unit and the app.
 4. It ends the app account's leftover sessions, waiting up to `session_end_timeout_seconds` for a killed `ALTER` to roll back, and refuses while any other session uses the database.
-5. After `traffic-may-resume`, it saves the current database as a new `before-restore-UTC_TIMESTAMP.sql.gz`, checked, with its checksum, and flushed. Earlier rescue dumps are never replaced.
-6. It records `restoring` and imports the backup; a failure on either side of the import stops it.
+5. If writes may have happened since the last import attempt (`traffic-may-resume` after any earlier `restoring`), it saves the current database as a new `before-restore-UTC_TIMESTAMP.sql.gz`, checked, with its checksum, and flushed, and records its name as a `rescue` milestone. Earlier rescue dumps are never replaced. A retry after an unfinished import takes no new rescue dump: the database is partly restored or even dropped, and the earlier rescue dump already holds those writes.
+6. It rechecks the free-space reserve, records `restoring` and imports the backup; a failure on either side of the import stops it.
 7. It checks that the database has the previous release's schema and no failed migration, switches `current` back, records `database-restored`, starts the previous release and waits until it is ready.
 
 It never restores config: if the release changed config, restore `config.tgz` by hand before reopening.
@@ -235,7 +235,8 @@ Python 3.8 is the oldest supported version. The restore image is self-contained:
 - a vhost without the maintenance page, and a lost milestones file;
 - rerunning `reopen` after a routing failure;
 - `restore` after an interrupted migration, refusing the previous release until the restore finishes;
-- a damaged backup, an import that fails part-way, and its rerun;
+- a damaged backup, an import that fails part-way, and its rerun; an import that fails just after dropping the database, and its retry without a new rescue dump;
+- refusing a backup of another database, too little free space for the reserve and the rescue dump, and a `db-admin.cnf` that names a remote host while the app uses the local server;
 - `restore` after reopening: the data-loss decision, refusing while another session uses the database, ending a leftover app session that holds a table lock before the rescue dump, and keeping every rescue dump across retries.
 
 Tests own a MariaDB 10.6 process and synthetic mixed-engine data. They do not certify real production backups, disk capacity, Apache coverage or outage time; those remain rollout/rehearsal gates.

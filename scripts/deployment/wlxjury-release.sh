@@ -66,6 +66,8 @@ DROPIN_DIR=$(json "$config" systemd_dropin_dir)
 PORT=$(json "$config" port)
 READY_TIMEOUT=$(json "$config" ready_timeout_seconds)
 MIN_FREE=$(json "$config" minimum_free_bytes)
+RESTORE_MIN_FREE=$(json "$config" restore_minimum_free_bytes)
+RESTORE_MIN_FREE=${RESTORE_MIN_FREE:-$MIN_FREE}
 SESSION_TIMEOUT=$(json "$config" session_end_timeout_seconds)
 SESSION_TIMEOUT=${SESSION_TIMEOUT:-600}
 mapfile -t WRITERS < <(json "$config" quiesce_units)
@@ -87,12 +89,15 @@ DB_USER=$(env_value WLXJURY_DB_USER)
 DB_HOST=$(env_value WLXJURY_DB_HOST)
 [[ $DB_HOST =~ ^([A-Za-z0-9_.-]+)(:([0-9]+))?$ ]] || die "unsupported WLXJURY_DB_HOST in runtime.env"
 DB_PORT=${BASH_REMATCH[3]:-3306}
-# Administrative commands reach the app's own endpoint. Only a bare "localhost"
-# uses db-admin.cnf's socket (root socket authentication); check_endpoint then
-# confirms that server listens on the app's port.
-CLIENT=("--defaults-extra-file=$RUNTIME/db-admin.cnf")
-if [ "$DB_HOST" != localhost ]; then
-  CLIENT+=("--host=${BASH_REMATCH[1]}" "--port=$DB_PORT" --protocol=TCP)
+# Administrative commands always reach the app's own host, whatever db-admin.cnf
+# says. A bare "localhost" means the local server through db-admin.cnf's socket
+# (root socket authentication); check_endpoint then confirms it listens on the
+# app's port. Anything else is reached by TCP at the app's host and port.
+CLIENT=("--defaults-extra-file=$RUNTIME/db-admin.cnf" "--host=${BASH_REMATCH[1]}")
+if [ "$DB_HOST" = localhost ]; then
+  CLIENT+=(--protocol=SOCKET)
+else
+  CLIENT+=("--port=$DB_PORT" --protocol=TCP)
 fi
 
 admin() {
@@ -157,12 +162,17 @@ open_operation() {  # Lock, log, and require intact milestones.
   fi
 }
 
-capacity() {
-  local dir free
+capacity() {  # capacity [BYTES]: that much free on every filesystem involved
+  local need=${1:-$MIN_FREE} dir free
   for dir in "$ROOT" "$BACKUPS" "$DATADIR"; do
     free=$(df --output=avail -B1 "$dir" | tail -1 | tr -d ' ')
-    [ "$free" -ge "$MIN_FREE" ] || die "less than $MIN_FREE bytes free at $dir"
+    [ "$free" -ge "$need" ] || die "less than $need bytes free at $dir"
   done
+}
+
+database_bytes() {  # Zero when the database does not exist, as after an interrupted import.
+  admin -e "SELECT COALESCE(SUM(DATA_LENGTH + INDEX_LENGTH), 0) FROM information_schema.TABLES
+            WHERE TABLE_SCHEMA = '$DATABASE'"
 }
 
 ready() {  # ready RELEASE: the service runs that release with its own schema
@@ -327,8 +337,9 @@ deploy() {
   for unit in "${WRITERS[@]}"; do
     if systemctl is-active --quiet "$unit"; then active+=("$unit"); fi
   done
-  printf 'previous=%s\ncandidate=%s\nzip_sha256=%s\nwriters=%s\n' \
-    "$previous" "$release" "$sha" "${active[*]}" > "$op/record"
+  # The database identity lets restore refuse a backup aimed at another database.
+  printf 'previous=%s\ncandidate=%s\nzip_sha256=%s\nwriters=%s\ndatabase=%s\ndb_host=%s\n' \
+    "$previous" "$release" "$sha" "${active[*]}" "$DATABASE" "$DB_HOST" > "$op/record"
   sync "$op/record" "$op"
   echo "Operation $op: $previous -> $release"
   mark started
@@ -388,11 +399,16 @@ reopen() {
 }
 
 restore() {
-  local accept=$2 previous want rescue
+  local accept=$2 previous want rescue='' allowance=0
   open_operation "$1"
   reached backup-complete || die "this operation has no complete backup; nothing was migrated, so use reopen"
   if reached traffic-may-resume && [ "$accept" != yes ]; then
     die "traffic has resumed, so later writes would be lost: rerun with --accept-data-loss after a reconciliation decision"
+  fi
+  # The backup replaces a whole database: only ever the one it was taken from.
+  if [ "$(record_value database)" != "$DATABASE" ] || [ "$(record_value db_host)" != "$DB_HOST" ]; then
+    die "the backup is of database $(record_value database) at $(record_value db_host), but runtime.env now names" \
+        "$DATABASE at $DB_HOST; nothing was changed"
   fi
   previous=$(record_value previous)
   if [ ! -f "$previous/wlxjury-build.json" ] || [ ! -x "$previous/bin/wlxjury" ]; then
@@ -403,17 +419,25 @@ restore() {
   (cd "$op" && sha256sum -c --quiet database.sql.gz.sha256) || die "backup checksum mismatch; nothing was changed"
   gzip -t "$op/database.sql.gz" || die "the backup is not a readable gzip file; nothing was changed"
   check_endpoint
+  # Writes since reopening need a rescue dump, unless an unfinished import
+  # followed the last reopening: then the database is partly restored (or even
+  # dropped), and the rescue dump taken before that import already holds them.
+  if [ "$(grep -xE 'traffic-may-resume|restoring' "$op/milestones" | tail -n 1 || true)" = traffic-may-resume ]; then
+    rescue=before-restore-$(date -u +%Y%m%dT%H%M%SZ).sql.gz
+    allowance=$(database_bytes)
+  fi
+  capacity $((RESTORE_MIN_FREE + allowance))
 
   enable_maintenance
   hold_restarts
   stop_writers
   end_sessions
-  if reached traffic-may-resume; then
-    # Keep the writes made since reopening; earlier rescue dumps are never replaced.
-    rescue=before-restore-$(date -u +%Y%m%dT%H%M%SZ).sql.gz
+  if [ -n "$rescue" ]; then
+    # Earlier rescue dumps are never replaced.
     dump "$rescue"
-    echo "Saved the current database as $op/$rescue"
+    mark "rescue $rescue"
   fi
+  capacity "$RESTORE_MIN_FREE"
   mark restoring
   # pipefail: a failure on either side of the pipe stops here.
   zcat "$op/database.sql.gz" | admin || die "the import failed; maintenance stays on; rerun restore"

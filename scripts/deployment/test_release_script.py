@@ -263,12 +263,13 @@ class ReleaseScriptTest(unittest.TestCase):
         return subprocess.run(self.client() + ['--database=jury', '-e', query], check=True,
                               stdout=subprocess.PIPE, text=True).stdout.strip()
 
-    def write_config(self, urls=None):
+    def write_config(self, urls=None, **settings):
         config = {'release_root': str(self.root), 'runtime_dir': str(self.runtime),
                   'backup_root': str(self.backups), 'database_dir': str(self.datadir),
                   'service': SERVICE, 'systemd_dropin_dir': str(self.dropin), 'port': self.app_port,
                   'ready_timeout_seconds': 10, 'minimum_free_bytes': 1,
                   'quiesce_units': WRITERS, 'maintenance_urls': urls or self.urls}
+        config.update(settings)
         self.config = self.runtime / 'deployment.json'
         self.config.write_text(json.dumps(config))
         self.config.chmod(0o600)
@@ -525,14 +526,115 @@ class ReleaseScriptTest(unittest.TestCase):
         self.assertOriginalDatabase()
         self.assertEqual((self.root / 'current').resolve(), self.old)
 
-        # A retry keeps the first rescue dump, which alone holds the later vote.
+        # Restoring again without reopening: nothing was written since the import,
+        # so no new rescue dump, and the first one, which alone holds the vote, is kept.
         first = rescues[0].read_bytes()
+        self.assertSucceeded(self.release('restore', operation.name, '--accept-data-loss'))
+        self.assertEqual(sorted(operation.glob('before-restore-*.sql.gz')), rescues)
+        self.assertEqual(rescues[0].read_bytes(), first)
+        # After reopening again, new writes get a new rescue dump beside the first.
+        self.assertSucceeded(self.release('reopen', operation.name))
+        self.sql("INSERT INTO votes VALUES (4, 'vote after reopening again')")
         time.sleep(1.1)
         self.assertSucceeded(self.release('restore', operation.name, '--accept-data-loss'))
-        self.assertEqual(len(list(operation.glob('before-restore-*.sql.gz'))), 2)
+        latest = sorted(set(operation.glob('before-restore-*.sql.gz')) - set(rescues))
+        self.assertEqual(len(latest), 1)
+        with gzip.open(str(latest[0]), 'rt', encoding='utf-8') as rescue:
+            self.assertIn('vote after reopening again', rescue.read())
         self.assertEqual(rescues[0].read_bytes(), first)
         self.assertSucceeded(self.release('reopen', operation.name))
         self.assertOriginalDatabase()
+
+    def reopened_deployment(self):
+        archive, sha = self.release_zip()
+        self.assertSucceeded(self.release('deploy', archive, sha))
+        operation = self.operation()
+        self.assertSucceeded(self.release('reopen', operation.name))
+        self.sql("INSERT INTO votes VALUES (3, 'vote after reopening')")
+        return operation
+
+    def write_dump(self, operation, sql):
+        with gzip.open(str(operation / 'database.sql.gz'), 'wb') as dump:
+            dump.write(sql)
+        subprocess.run(['bash', '-c', 'sha256sum database.sql.gz > database.sql.gz.sha256'],
+                       cwd=str(operation), check=True)
+
+    def test_a_restore_interrupted_after_drop_database_can_be_retried(self):
+        operation = self.reopened_deployment()
+        original = (operation / 'database.sql.gz').read_bytes()
+        # The import drops the database and then fails before recreating it.
+        self.write_dump(operation, b'DROP DATABASE IF EXISTS jury; NOT SQL;\n')
+        failed = self.release('restore', operation.name, '--accept-data-loss')
+        self.assertEqual(failed.returncode, 1)
+        self.assertIn('the import failed', failed.stderr)
+        self.assertEqual(self.sql_server("SELECT COUNT(*) FROM information_schema.SCHEMATA WHERE SCHEMA_NAME = 'jury'"), '0')
+        # The retry cannot dump a database that is gone, and need not: the first
+        # rescue dump already holds the vote made after reopening.
+        (operation / 'database.sql.gz').write_bytes(original)
+        subprocess.run(['bash', '-c', 'sha256sum database.sql.gz > database.sql.gz.sha256'],
+                       cwd=str(operation), check=True)
+        self.assertSucceeded(self.release('restore', operation.name, '--accept-data-loss'))
+        rescues = list(operation.glob('before-restore-*.sql.gz'))
+        self.assertEqual(len(rescues), 1)
+        self.assertIn('rescue ' + rescues[0].name, self.milestones_lines(operation))
+        with gzip.open(str(rescues[0]), 'rt', encoding='utf-8') as rescue:
+            self.assertIn('vote after reopening', rescue.read())
+        self.assertSucceeded(self.release('reopen', operation.name))
+        self.assertOriginalDatabase()
+
+    def sql_server(self, query):
+        return subprocess.run(self.client() + ['-e', query], check=True, stdout=subprocess.PIPE, text=True).stdout.strip()
+
+    @staticmethod
+    def milestones_lines(operation):
+        return (operation / 'milestones').read_text().splitlines()
+
+    def test_restore_refuses_a_backup_of_another_database(self):
+        operation = self.failed_deployment()
+        env = (self.runtime / 'runtime.env').read_text()
+        (self.runtime / 'runtime.env').write_text(env.replace('WLXJURY_DB="jury"', 'WLXJURY_DB="jury_copy"'))
+        refused = self.release('restore', operation.name)
+        self.assertEqual(refused.returncode, 1)
+        self.assertIn('the backup is of database jury at localhost:%d, but runtime.env now names jury_copy'
+                      % self.db_port, refused.stderr)
+        self.assertNotIn('restoring', self.milestones(operation))
+        self.assertEqual(self.sql("SELECT COUNT(*) FROM information_schema.TABLES "
+                                  "WHERE TABLE_SCHEMA = 'jury' AND TABLE_NAME = 'job'"), '1')
+
+    def test_restore_needs_the_recovery_reserve_and_room_for_the_rescue_dump(self):
+        operation = self.reopened_deployment()
+        # Enough data that the rescue allowance clearly exceeds disk-usage noise.
+        self.sql("CREATE TABLE padding (data LONGBLOB) ENGINE=InnoDB; "
+                 "INSERT INTO padding VALUES (REPEAT('x', 8 * 1024 * 1024)); ANALYZE TABLE padding")
+        size = int(self.sql_server("SELECT SUM(DATA_LENGTH + INDEX_LENGTH) FROM information_schema.TABLES "
+                                   "WHERE TABLE_SCHEMA = 'jury'"))
+        self.assertGreater(size, 4 * 1024 * 1024)
+        # Room for the reserve alone, but not for the rescue dump on top of it.
+        free = shutil.disk_usage(str(self.backups)).free
+        self.write_config(restore_minimum_free_bytes=free - size // 2)
+        refused = self.release('restore', operation.name, '--accept-data-loss')
+        self.assertEqual(refused.returncode, 1)
+        self.assertIn('bytes free at', refused.stderr)
+        # Refused before anything stopped.
+        self.assertFalse(self.flag.exists())
+        self.assertTrue(self.active(SERVICE))
+        self.assertEqual(list(operation.glob('before-restore-*')), [])
+        self.assertNotIn('restoring', self.milestones(operation))
+
+    def test_a_bare_localhost_uses_the_local_socket_whatever_db_admin_cnf_says(self):
+        admin = self.runtime / 'db-admin.cnf'
+        original = admin.read_text()
+        env = (self.runtime / 'runtime.env').read_text()
+        # db-admin.cnf names a remote server (and the local socket); the app uses the local one.
+        admin.write_text('[client]\nuser=root\nsocket=%s\nhost=203.0.113.1\nport=3306\n' % self.socket)
+        (self.runtime / 'runtime.env').write_text(env.replace('localhost:%d' % self.db_port, 'localhost'))
+        archive, sha = self.release_zip()
+        result = self.release('deploy', archive, sha)
+        admin.write_text(original)
+        self.assertEqual(result.returncode, 1)
+        # It reached the local server (whose test port is not 3306), not the remote one.
+        self.assertIn('db-admin.cnf reaches MariaDB on port %d, but the app uses localhost' % self.db_port, result.stderr)
+        self.assertUnchanged()
 
     def wait_for_session(self, condition):
         deadline = time.monotonic() + 15

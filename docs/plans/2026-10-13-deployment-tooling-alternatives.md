@@ -109,9 +109,16 @@ A review of that first version (`b5a1f9e`) found six more problems, fixed in the
 5. **The rescue dump came before ending leftover sessions.** `restore` now ends the app account's sessions and refuses while others use the database before any dump.
 6. **A retry overwrote the rescue dump.** Each rescue dump gets a new timestamped name, is checked and flushed, and is never overwritten.
 
+A review of the second version (`cc15dfd`) found four more problems, fixed in the third:
+
+1. **An interrupted restore could not be retried.** Every retry after reopening took a new rescue dump, which fails when the interrupted import had dropped the database. Now a rescue dump is taken only if writes may have happened since the last import attempt; its name is recorded as a `rescue` milestone.
+2. **The backup's database was not recorded.** A changed `runtime.env` could aim an old, destructive dump at another server. Each operation now records the database name and endpoint, and `restore` refuses a mismatch before changing anything.
+3. **A bare `localhost` left the host to `db-admin.cnf`.** The client now always passes the app's host; for a bare `localhost` it forces the socket, so a remote host in `db-admin.cnf` cannot pass the port check.
+4. **Restore had no free-space gate.** It now checks `restore_minimum_free_bytes` plus the database's size when a rescue dump is needed, before anything stops, and the reserve again before the import.
+
 The script also keeps the smaller safeguards: HTTP 503 as well as the page text, and a free-space check after the dump.
 
-The script is 440 lines (358 without comments and blank lines) and reads the same `deployment.json`, `runtime.env` and `db-admin.cnf` as the Python tool. Its tests, `scripts/deployment/test_release_script.py` (633 lines), run it unmodified against a real MariaDB 10.6 in the existing `Dockerfile.test` image, with stand-ins only for systemd and Apache. They cover each problem above. For each of five fixes (the `database-restored` rule, stopping every writer, the app's endpoint, ending sessions before the rescue dump, stopping on a failed import), a copy of the script with that fix undone fails its test. A failed import is caught twice: the import step stops, and the later schema check would too. The script passes shellcheck at its strictest level.
+The script is 464 lines (375 without comments and blank lines) and reads the same `deployment.json`, `runtime.env` and `db-admin.cnf` as the Python tool. Its tests, `scripts/deployment/test_release_script.py` (735 lines), run it unmodified against a real MariaDB 10.6 in the existing `Dockerfile.test` image, with stand-ins only for systemd and Apache. They cover each problem above. For each of nine fixes (the `database-restored` rule, stopping every writer, the app's endpoint, ending sessions before the rescue dump, stopping on a failed import, retrying an interrupted restore, the database identity, the bare-`localhost` host and the rescue allowance), a copy of the script with that fix undone fails its test. A failed import is caught twice: the import step stops, and the later schema check would too. The script passes shellcheck at its strictest level.
 
 ### What is lost
 
@@ -141,7 +148,7 @@ It is not the first step, for four reasons:
 1. **Do the cutover with the current, tested tool.** Its adoption, recovery and tests are verified locally, and the V53-to-V60 release is the riskiest one. Remove the one-time cutover code afterwards (about 350 lines of the tool and about 250 lines of tests). Keep the legacy support that recovery still uses: `wait_ready` checks `/auth` instead of `/health/ready` for a release marked `legacy`, and restore selects that release. Keep it until every recovery record targeting the adopted release has been explicitly retired. A later deployment does not retire them: earlier records are kept and can still select the adopted release.
 2. **Switch routine deployments to `wlxjury-release`** once the cutover is complete ([docs/deployment.md](../deployment.md#routine-deployment-after-the-cutover)). It keeps the tool's layout, so no migration is needed.
 3. **Rehearse it and every runbook section on a production copy** before relying on it, including an interrupted migration.
-4. **Retire the Python tool and the tests coupled to it** once its recovery records are retired, or the runbook covers restoring from them (each holds a dump, a config snapshot and the previous release). Keep `Dockerfile.test`, the MariaDB test setup and `test_release_script.py`. This replaces the 1,107-line tool and about 1,230 lines of its tests with a 440-line script and 633 lines of tests that exercise it against a real database.
+4. **Retire the Python tool and the tests coupled to it** once its recovery records are retired, or the runbook covers restoring from them (each holds a dump, a config snapshot and the previous release). Keep `Dockerfile.test`, the MariaDB test setup and `test_release_script.py`. This replaces the 1,107-line tool and about 1,230 lines of its tests with a 464-line script and 735 lines of tests that exercise it against a real database.
 5. **Keep `BuildIdentity.scala` and the manifest.** The script relies on them for the older-release check and the readiness comparison.
 6. **Use Ansible, if at all, for server setup**, not for deployment and recovery.
 7. **Consider the Debian package later**, once its build route and the installed package's maintainer scripts have been checked.
@@ -202,7 +209,7 @@ This document adds four points to that profile:
 1. **Package scripts.** The Debian maintainer scripts are verified rather than unknown: in sbt-native-packager 1.10.0 the old `prerm` stops and disables the service, and the new `postinst` enables and starts it. With the backup taken before `dpkg -i`, the package's start is the intended migration start rather than an early one. The open question is the installed 0.12 package's own `prerm`.
 2. **Exact restore.** `mariadb-dump --databases --add-drop-database` was tested to restore the original collation and remove tables added by a migration, so the record need not store the charset.
 3. **Config snapshot.** By the profile's own rule of keeping cheap checks, a one-line `tar` of the runtime config is worth keeping as evidence rather than dropping.
-4. **Size.** A concrete sketch put the routine path at about 50 lines. That compared an untested sketch with a tested tool, as the next review pointed out; the implementation is 440 lines with 633 lines of tests.
+4. **Size.** A concrete sketch put the routine path at about 50 lines. That compared an untested sketch with a tested tool, as the next review pointed out; the implementation is 464 lines with 735 lines of tests.
 
 ### Review of the plan at `02791bb`
 
