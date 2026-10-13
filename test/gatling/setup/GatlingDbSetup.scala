@@ -23,6 +23,9 @@ case class GatlingFixtureData(
 
 object GatlingDbSetup {
 
+  /** The fixture contest's image category; every fixture image is in it. */
+  val ImageCategory = "Category:Images from Wiki Loves Monuments 2025 in Ukraine"
+
   /** Reconstruct GatlingFixtureData from a restored DB without re-running the CSV load. */
   def loadFromDb(port: Int): GatlingFixtureData = {
     import scalikejdbc.AutoSession
@@ -80,6 +83,20 @@ object GatlingDbSetup {
       imagePageIds = imagePageIds, regions = regions, votingPairs = votingPairs)
   }
 
+  /** Organizer accounts organizer2..organizer(n+1) for the organizer flows' concurrent
+    * sessions. Created after the dump is restored or saved, so they are neither part of
+    * the dump nor of its cache key, and `loadFromDb` still finds the original organizer.
+    */
+  def ensureExtraOrganizers(contestId: Long, n: Int): Seq[(Long, String, String)] =
+    (2 to n + 1).map { i =>
+      val email = s"organizer$i@gatling.test"
+      val pass  = s"orgpass$i"
+      val user = User.findByEmail(email).headOption.getOrElse(
+        User.create(fullname = s"Organizer $i", email = email, password = User.sha1(pass),
+                    roles = Set("admin"), contestId = Some(contestId)))
+      (user.id.get, email, pass)
+    }
+
   def load(port: Int, cfg: GatlingConfig.type): GatlingFixtureData = {
     val numUsers = cfg.users
     val fraction = cfg.jurorFraction
@@ -125,7 +142,11 @@ object GatlingDbSetup {
     val imageMonumentMap: Map[Long, Option[String]] = images.map(img => img.pageId -> img.monumentId).toMap
 
     // ── Entity creation (auto-commits individually; small row counts) ─────────
+    // The contest's images come from its category, as in production: a first round
+    // (no previous rounds) and the edit page's "new files" count load them from there.
+    val categoryId = CategoryJdbc.findOrInsert(ImageCategory)
     val contest   = ContestJuryJdbc.create(id = None, name = "Gatling Perf Test Contest", year = 2024, country = "ua",
+                                           categoryId = Some(categoryId),
                                            monumentIdTemplate = Some("{{UkrainianMonument}}"))
     val contestId = contest.id.get
 
@@ -185,6 +206,7 @@ object GatlingDbSetup {
 
       monuments.grouped(1000).foreach(batch => MonumentJdbc.batchInsertFresh(batch.toSeq))
       images.grouped(1000).foreach(batch => ImageJdbc.batchInsert(batch.toSeq))
+      images.grouped(5000).foreach(batch => CategoryLinkJdbc.addToCategory(categoryId, batch.toSeq))
       (binarySelections ++ ratingSelections).grouped(5000).foreach(batch => SelectionJdbc.batchInsert(batch.toSeq))
 
       SQL("SET foreign_key_checks = 1").execute.apply()

@@ -269,6 +269,7 @@ monument.ids.comma.separated=Monument ids (comma separated)
 minimum.megapixels=Minimum MegaPixels
 minimum.megabytes=Minimum Megabytes
 distribute.x.new.files=Distribute {0} new files
+count.new.files=Count
 round.creation.failed=Could not create the round: {0}
 round.distribute.failed=Could not distribute new files: {0}
 none.selected=None selected

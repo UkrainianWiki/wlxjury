@@ -12,12 +12,14 @@ import play.api.mvc._
 import services.GalleryService
 
 import javax.inject.Inject
+import modules.BlockingExecutionContext
 
 /** Backend for getting and displaying images
   */
 class GalleryController @Inject() (
     galleryService: GalleryService,
-    cc: ControllerComponents
+    cc: ControllerComponents,
+    blocking: BlockingExecutionContext
 ) extends Secured(cc)
     with I18nSupport {
 
@@ -160,7 +162,7 @@ class GalleryController @Inject() (
       roundId: Long = 0,
       rate: Option[Int] = None,
       rated: Option[Boolean] = None
-  ): EssentialAction = withAuth() { user => implicit request =>
+  ): EssentialAction = withAuthOn(blocking)() { user => implicit request =>
     val maybeRound =
       if (roundId == 0) Round.activeRounds(user).headOption
       else Round.findById(roundId)

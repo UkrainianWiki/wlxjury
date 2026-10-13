@@ -4,6 +4,8 @@ import controllers.Secured.UserName
 import db.scalikejdbc.{Round, User}
 import play.api.mvc._
 
+import scala.concurrent.{ExecutionContext, Future}
+
 /** Base trait for secured controllers
   */
 abstract class Secured(cc: ControllerComponents) extends AbstractController(cc) {
@@ -40,6 +42,23 @@ abstract class Secured(cc: ControllerComponents) extends AbstractController(cc) 
       }
     }
   }
+
+  /** [[withAuth]] for actions that run slow blocking JDBC work: the authentication, the
+    * permission check and the action run on `ec` (the blocking dispatcher) instead of
+    * Play's default dispatcher, whose few threads every other request needs.
+    */
+  def withAuthOn(ec: ExecutionContext)(
+      permission: Permission = rolePermission(User.ADMIN_ROLES ++ Set("jury", "organizer"))
+  )(f: => User => Request[AnyContent] => Result): EssentialAction =
+    Action.async { request =>
+      Future {
+        userFromRequest(request) match {
+          case None                           => onUnAuthenticated(request)
+          case Some(user) if permission(user) => f(user)(request)
+          case Some(user)                     => onUnAuthorized(user)
+        }
+      }(ec)
+    }
 
   def rolePermission(roles: Set[String])(user: User): Boolean = user.hasAnyRole(roles)
 

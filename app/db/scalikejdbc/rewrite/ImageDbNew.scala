@@ -86,16 +86,51 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
       val mainSql =
         sqls"${SQLSyntax.createUnsafely(structureStr)} ${where(count)} ${SQLSyntax.createUnsafely(groupByStr + (if (!(count || byRegion)) orderBy() else ""))}"
 
-      if (count && regions.isEmpty && !byRegion) {
-        val countExpr = SQLSyntax.createUnsafely("COUNT(DISTINCT s.page_id)")
+      // A juror has at most one row per image in a round (unique page_id, jury_id,
+      // round_id): with both fixed, the rows are the images.
+      val oneRowPerImage = userId.isDefined && roundId.isDefined
+
+      // Without a monument join every condition is on selection's own columns, so the
+      // count needs no join to images. A region filter alone keeps the old row count
+      // unless the rows are one per image anyway (a juror's in a round, or grouped).
+      val countOnSelection =
+        count && !byRegion && !needsMonumentJoin && (regions.isEmpty || oneRowPerImage || grouped)
+
+      if (countOnSelection) {
+        val countExpr = SQLSyntax.createUnsafely(
+          if (oneRowPerImage) "COUNT(*)" else "COUNT(DISTINCT s.page_id)"
+        )
         sqls"select $countExpr from selection s ${where()}"
       } else if (count) {
         sqls"select count(t.pi_on_i) from ($mainSql) t"
       } else if (noLimit || byRegion) {
         mainSql
+      } else if (!idOnly && !grouped && limit.isDefined && !needsMonumentJoin) {
+        deferredJoinPage(columnsStr)
       } else {
         sqls"$mainSql ${SQLSyntax.createUnsafely(limitSql())}"
       }
+    }
+
+    /** One page of per-selection rows (a juror's gallery) as a deferred join: the inner
+      * query sorts and pages selection ids alone, which an index on (jury_id, round_id,
+      * ...) covers, since every secondary index includes the primary key; only the page's
+      * rows are then read in full. Sorting the whole juror's rows with every column, as
+      * the plain query does, costs a filesort of full rows: on MariaDB 10.6 the
+      * mixed-direction ORDER BY (rate DESC, monument_id ASC, ...) can't be read from the
+      * ascending index.
+      *
+      * The inner query reads selection alone: every selection row has its image (foreign
+      * key FK_selection_page_id, V58), so it pages the same rows the plain query and
+      * [[imageRank]] see when joining images.
+      */
+    private def deferredJoinPage(columnsStr: String): SQLSyntax = {
+      val order = SQLSyntax.createUnsafely(orderBy())
+      val page = SQLSyntax.createUnsafely(limitSql())
+      val columns = SQLSyntax.createUnsafely(columnsStr)
+      sqls"$columns from (select s.id from selection s ${where()} $order $page) k" +
+        sqls" STRAIGHT_JOIN selection s on s.id = k.id" +
+        sqls" STRAIGHT_JOIN images i on i.page_id = s.page_id $order"
     }
 
     def list()(implicit session: DBSession = autoSession): Seq[ImageWithRating] = {
@@ -111,11 +146,20 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
       sql"${imageRankSql(pageId, inner)}".map(_.int(1)).single().getOrElse(0)
     }
 
+    /** The regions of the round's (or the juror's) images. A top-level region is the
+      * monument id's prefix, as monument.adm0 is (MonumentJdbc) and as the single-region
+      * filter matches it (`s.monument_id like 'XX%'`): read from the selection rows
+      * alone, so the regions show even when the monument list was never loaded. Only
+      * sub-regions (adm1) need the monument table.
+      */
     def byRegionStat()(implicit messages: Messages, session: DBSession = autoSession): Seq[Region] = {
-      val map = SQL(s"""SELECT DISTINCT m.$regionColumn
+      val (region, monumentJoin) =
+        if (subRegions) (s"m.$regionColumn", "JOIN monument m ON m.id = s.monument_id")
+        else ("NULLIF(LEFT(SUBSTRING_INDEX(s.monument_id, '-', 1), 3), '')", "")
+      val map = SQL(s"""SELECT DISTINCT $region
                        |FROM selection s
-                       |JOIN monument m ON m.id = s.monument_id
-                       |WHERE m.$regionColumn IS NOT NULL
+                       |$monumentJoin
+                       |WHERE $region IS NOT NULL
                        |  ${userId.fold("") { id => s"AND s.jury_id = $id" }}
                        |  AND s.round_id = ${roundId.get}""".stripMargin)
         .map(rs => rs.string(1) -> None)
@@ -181,8 +225,10 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
           } else if (regions.size > 1) {
             sqls.in(SQLSyntax.createUnsafely("m.adm0"), regions.toSeq)
           } else {
+            // selection's denormalized copy of images.monument_id (V48), so a juror's
+            // region gallery filters on the selection rows alone
             val likeParam = regions.head + "%"
-            sqls"i.monument_id like $likeParam"
+            sqls"s.monument_id like $likeParam"
           }
         }
       ).flatten

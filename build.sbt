@@ -222,6 +222,19 @@ maintainer := "Ilya Korniiko <intracer@gmail.com>"
 
 Debian / debianPackageRecommends ++= Seq("virtual-mysql-server")
 
+// All Gatling simulations in a fixed order: rounds are created and their images
+// distributed before voting starts, so RoundDistribution runs first. Each simulation
+// forks its own JVM and restores the fixture DB, so the order doesn't change results.
+addCommandAlias(
+  "gatlingAll",
+  ";Gatling/testOnly gatling.simulations.RoundDistributionSimulation" +
+    ";Gatling/testOnly gatling.simulations.VotingSimulation" +
+    ";Gatling/testOnly gatling.simulations.JurorGallerySimulation" +
+    ";Gatling/testOnly gatling.simulations.RegionFilterSimulation" +
+    ";Gatling/testOnly gatling.simulations.RoundManagementSimulation" +
+    ";Gatling/testOnly gatling.simulations.AggregatedRatingsSimulation"
+)
+
 addCommandAlias(
   "packageAll",
   "; clean" +
