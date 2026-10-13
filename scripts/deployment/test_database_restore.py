@@ -157,6 +157,43 @@ class DatabaseRestoreTest(DatabaseFixture):
         self.assertIsNotNone(leftover.wait(timeout=10))
         self.assertEqual(self.tool.schema(), '53')
 
+    def test_post_cutover_restore_ends_leftover_locks_before_the_rescue_dump(self):
+        args, _ = self.tool.client('mariadb')
+        self.tool.run(args, input=b"CREATE USER 'app'@'localhost' IDENTIFIED BY 'sleeper'; "
+                                  b"GRANT ALL PRIVILEGES ON jury.* TO 'app'@'localhost'; "
+                                  b"SET GLOBAL lock_wait_timeout=2;")
+        options = self.base / 'app.cnf'
+        deploy.atomic_write(options, '[client]\nuser=app\npassword=sleeper\nsocket=' + str(self.socket) + '\n')
+        with contextlib.redirect_stdout(io.StringIO()):
+            directory = self.tool.deploy(self.new)
+            self.tool.reopen(directory.name)
+        self.tool.query("INSERT INTO votes VALUES (3, 'post-cutover locked vote')")
+        # A table lock survives the stopped app; a rescue dump must not wait on it.
+        # The low metadata-lock timeout bounds the test if cleanup regresses.
+        leftover = subprocess.Popen(['mariadb', '--defaults-file=' + str(options), '--database=jury',
+                                     '-e', 'LOCK TABLES votes WRITE; SELECT SLEEP(600)'],
+                                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        def stop_leftover():
+            if leftover.poll() is None:
+                leftover.kill()
+            leftover.wait(timeout=10)
+        self.addCleanup(stop_leftover)
+        deadline = time.monotonic() + 15
+        while self.tool.query("SELECT COUNT(*) FROM information_schema.PROCESSLIST "
+                             "WHERE USER='app' AND INFO LIKE 'SELECT SLEEP%'") != '1':
+            self.assertLess(time.monotonic(), deadline, 'Leftover lock did not start')
+            time.sleep(0.2)
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.tool.restore(directory.name, accept_data_loss=True)
+        self.assertIsNotNone(leftover.wait(timeout=10))
+        rescue = list(directory.glob('before-restore-*/database.sql.gz'))
+        self.assertEqual(len(rescue), 1)
+        with gzip.open(str(rescue[0]), 'rt') as snapshot:
+            self.assertIn('post-cutover locked vote', snapshot.read())
+        self.assertEqual(self.tool.schema(), '53')
+        self.assertEqual(self.tool.query('SELECT COUNT(*) FROM votes'), '2')
+        self.assertTrue(self.tool.maintenance.exists())
+
 
 class PackagedReleaseTest(DatabaseFixture):
     def test_real_zip_starts_in_production_and_rejects_missing_signing_key(self):

@@ -174,18 +174,25 @@ def externalize_legacy(text):
     return text
 
 
-# Settings whose name marks a credential, in HOCON/properties/ini/JVM-option form,
-# including URL query parameters such as "&password=...".
-SECRET_SETTING = re.compile(r'([A-Za-z0-9_.-]*(?:password|passwd|secret)[A-Za-z0-9_.-]*)\s*[=:]\s*(.*)', re.I)
+# Scan assignment names separately from values so URL query parameters such as
+# "&password=..." are still checked. HOCON/JSON names may be quoted, including
+# separately quoted path components and Unicode escapes.
+QUOTED_KEY = r'"(?:\\.|[^"\\])*"'
+KEY_COMPONENT = r'(?:[A-Za-z0-9_-]+|' + QUOTED_KEY + r')'
+CONFIG_SETTING = re.compile(r'(' + KEY_COMPONENT + r'(?:\.' + KEY_COMPONENT + r')*)\s*[=:]\s*')
+CREDENTIAL_NAME = re.compile(r'password|passwd|secret', re.I)
 SCANNED_CONFIG = ('.conf', '.ini', '.properties', '.cnf', '.env')
 
 
 def literal_secret(line):
     """The name of a credential setting this line gives a literal value, or None."""
-    for match in SECRET_SETTING.finditer(line):
-        value = match.group(2).strip()
+    for match in CONFIG_SETTING.finditer(line):
+        key = re.sub(QUOTED_KEY, lambda quoted: json.loads(quoted.group()), match.group(1))
+        if not CREDENTIAL_NAME.search(key):
+            continue
+        value = line[match.end():].strip()
         if value and not value.startswith('${') and value not in ('""', "''", 'null'):
-            return match.group(1)
+            return key
     return None
 
 
@@ -375,7 +382,7 @@ class Deployment:
         return row
 
     def end_sessions(self, env, database):
-        """Before DROP DATABASE: end the stopped app's leftover sessions, such as an
+        """Before a rescue dump or DROP DATABASE: end leftover app sessions, such as an
         ALTER that outlived its JVM, and refuse while anyone else uses the database."""
         mine = ("ID <> CONNECTION_ID() AND HEX(USER) = '" + env['WLXJURY_DB_USER'].encode('utf-8').hex().upper() + "'")
         for session in self.query('SELECT ID FROM information_schema.PROCESSLIST WHERE ' + mine).split():
@@ -764,6 +771,10 @@ class Deployment:
         for unit in record['units']:
             self.stop(unit)
         self.stop(self.service)
+        db = record['database']  # Validated from runtime.env by client().
+        args, env = self.client('mariadb')
+        # Quiesce surviving DB sessions before the rescue dump takes table locks.
+        self.end_sessions(env, db)
         # Preserve current post-cutover data before an explicitly accepted
         # destructive restore; the original pre-deploy dump is never replaced.
         if record['traffic_opened']:
@@ -771,9 +782,6 @@ class Deployment:
             rescue.mkdir(mode=0o700)
             self.backup(rescue)
         self.save(directory, record, 'restoring')
-        db = record['database']  # Validated from runtime.env by client().
-        args, env = self.client('mariadb')
-        self.end_sessions(env, db)
         self.query('DROP DATABASE `' + db + '`; CREATE DATABASE `' + db + '` CHARACTER SET ' + charset +
                    ' COLLATE ' + collation)
         with subprocess.Popen(args + ['--database=' + db], stdin=subprocess.PIPE, stderr=subprocess.DEVNULL,

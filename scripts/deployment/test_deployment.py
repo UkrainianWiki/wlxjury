@@ -466,6 +466,19 @@ class FailurePathTest(Fixture):
         self.assertFalse(self.tool.maintenance.exists())
         self.assertFalse(any(event[:2] == ('systemctl', 'stop') for event in self.tool.events))
 
+    def test_rescue_snapshot_refuses_while_other_database_sessions_are_active(self):
+        directory = self.tool.deploy(self.new)
+        self.tool.reopen(directory.name)
+        self.tool.other_sessions = 1
+        self.tool.events.clear()
+        with self.assertRaises(deploy.DeploymentError) as error:
+            self.tool.restore(directory.name, accept_data_loss=True)
+        self.assertIn('Other sessions', str(error.exception))
+        self.assertFalse(any(event[0] == 'backup' for event in self.tool.events))
+        self.assertFalse(any('DROP DATABASE' in e[-1] for e in self.tool.events))
+        self.assertEqual(list(directory.glob('before-restore-*')), [])
+        self.assertTrue(self.tool.maintenance.exists())
+
     def test_release_files_are_hashed_once_per_operation(self):
         hashed = []
         original = deploy.digest
@@ -710,6 +723,17 @@ class LegacyAdoptionTest(Fixture):
         self.assertIn('# The secret key is used', copied)
         self.assertEqual(stat.S_IMODE(self.tool.current.resolve().stat().st_mode), 0o755)
 
+    def test_adoption_refuses_quoted_credentials_before_publishing_the_copy(self):
+        setting = 'play.mailer { "password": "quoted-private" }'
+        source = self.legacy_package(self.LEGACY + setting + '\n')
+        with self.assertRaises(deploy.DeploymentError) as error:
+            self.tool.adopt_legacy(source, 'legacy-0.12-v53')
+        self.assertIn('literal credentials', str(error.exception))
+        self.assertNotIn('quoted-private', str(error.exception))
+        self.assertEqual(list(self.tool.releases.iterdir()), [])
+        self.assertFalse(self.tool.current.is_symlink())
+        self.assertIn(setting, (source / 'conf' / 'application.conf').read_text())
+
     def test_pending_migration_in_installed_jar_blocks_adoption_before_selection(self):
         self.tool = FakeDeployment(self.settings)
         source = self.base / 'package'
@@ -813,11 +837,15 @@ class CredentialScanTest(unittest.TestCase):
     def test_literal_credentials_are_found_in_every_supported_form(self):
         for line in ('play.mailer.password = "mail"', 'password: "nested"', '  smtp.passwd=abc',
                      'application.secret="old"', '-Dsmtp.password=abc',
+                     'play.mailer { "password": "quoted" }', '"play.http.secret.key" = "quoted"',
+                     '"play"."http"."secret"."key" = "quoted"', r'"pass\u0077ord": "escaped"',
                      'db.default.url="jdbc:mariadb://h/db?user=a&password=b"'):
             self.assertIsNotNone(deploy.literal_secret(line), line)
 
     def test_references_and_prose_are_not_credentials(self):
         for line in ('play.http.secret.key = ${PLAY_HTTP_SECRET_KEY}', 'commons.password = ${?COMMONS_PASSWORD}',
+                     '"play.http.secret.key" = ${PLAY_HTTP_SECRET_KEY}',
+                     '"commons"."password" = ${?COMMONS_PASSWORD}', '"password": ""',
                      'db.default.password = ""', '# The secret key is used to secure cryptographics functions.',
                      'db.default.username = "app"', 'play.filters.csrf.token.name = "csrfToken"'):
             self.assertIsNone(deploy.literal_secret(line), line)
