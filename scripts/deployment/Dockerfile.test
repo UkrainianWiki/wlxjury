@@ -1,0 +1,5 @@
+# Disposable integration test image; reuses the measured MariaDB 10.6 runtime.
+FROM wlxjury-bench-server:latest
+RUN apt-get update && apt-get install -y --no-install-recommends python3 \
+    && rm -rf /var/lib/apt/lists/*
+ENTRYPOINT ["python3"]

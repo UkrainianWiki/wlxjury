@@ -1,0 +1,20 @@
+{
+  "release_root": "/opt/wlxjury",
+  "runtime_dir": "/etc/wlxjury-runtime",
+  "backup_root": "/var/backups/wlxjury",
+  "database_dir": "/var/lib/mysql",
+  "service": "wlxjury.service",
+  "port": 9000,
+  "ready_timeout_seconds": 900,
+  "minimum_free_bytes": 4294967296,
+  "restore_minimum_free_bytes": 2147483648,
+  "quiesce_units": ["wmua-backup-db@wlxjury.timer", "wmua-backup-db@wlxjury.service"],
+  "maintenance_urls": [
+    "http://jury.wle.org.ua/", "https://jury.wle.org.ua/",
+    "http://jury.wlm.org.ua/", "https://jury.wlm.org.ua/",
+    "http://jury.wikilovesearth.org.ua/", "https://jury.wikilovesearth.org.ua/",
+    "http://jury.wikilovesmonuments.org.ua/", "https://jury.wikilovesmonuments.org.ua/",
+    "http://jury.wikilovesearth.org/", "https://jury.wikilovesearth.org/",
+    "http://wlxjury.wikimedia.in.ua/", "https://wlxjury.wikimedia.in.ua/"
+  ]
+}

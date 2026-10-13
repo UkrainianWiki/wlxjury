@@ -1,0 +1,6 @@
+# Install as root:root 0600. Omit password for local Unix-socket root auth.
+# Administrative/backup access is separate from the application's account.
+[client]
+user=root
+protocol=socket
+socket=/run/mysqld/mysqld.sock

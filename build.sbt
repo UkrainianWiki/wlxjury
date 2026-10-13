@@ -89,6 +89,33 @@ organization := "org.intracer"
 
 version := "0.13"
 
+// The same identity is embedded in the app and placed at the ZIP root. The
+// deployment tool compares readiness with this manifest before opening traffic.
+lazy val deploymentManifest = taskKey[File]("Write the release identity and expected schema")
+deploymentManifest := {
+  val base = baseDirectory.value
+  val commit = scala.util.Try(scala.sys.process.Process(Seq("git", "rev-parse", "--short=12", "HEAD"), base).!!.trim)
+    .getOrElse("development")
+  val dirty = scala.util.Try(scala.sys.process.Process(
+    Seq("git", "diff", "--quiet", "HEAD", "--", "app", "conf", "project", "build.sbt"), base).!).getOrElse(1) != 0
+  val id = sys.props.getOrElse("wlxjury.buildId", s"${version.value}-$commit${if (dirty) "-dirty" else ""}")
+  require(id.matches("[A-Za-z0-9][A-Za-z0-9._-]{0,95}"), "Invalid wlxjury.buildId")
+  val pattern = "V([0-9]+(?:[._][0-9]+)*)__.+\\.sql".r
+  val versions = (base / "conf" / "db" / "migration" / "default").listFiles().toSeq.flatMap { f =>
+    f.getName match { case pattern(v) => Some(v.replace('_', '.')); case _ => None }
+  }
+  val latest = versions.sortWith { (a, b) =>
+    a.split('.').map(_.toInt).toSeq.zipAll(b.split('.').map(_.toInt).toSeq, 0, 0)
+      .find { case (x, y) => x != y }.exists { case (x, y) => x < y }
+  }.last
+  val out = (Compile / resourceManaged).value / "wlxjury-build.json"
+  IO.write(out, s"""{"build":"$id","version":"${version.value}","schemaVersion":"$latest"}
+""")
+  out
+}
+Compile / resourceGenerators += Def.task { Seq(deploymentManifest.value) }.taskValue
+Universal / mappings += deploymentManifest.value -> "wlxjury-build.json"
+
 scalaVersion := "2.13.15"
 
 val ScalikejdbcVersion = "4.3.2"

@@ -3,6 +3,7 @@
 # ~~~~
 
 # Home page
+GET         /health/ready                                                           controllers.ReadinessController.ready
 GET         /                                                                       @controllers.LoginController.index
 
 GET         /wikipedia/commons/thumb/*path                                          @controllers.ImageProxyController.serve(path: String)
