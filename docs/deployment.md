@@ -1,6 +1,6 @@
 # Deployment and recovery
 
-Use `scripts/deployment/wlxjury-deploy.py` on Linux as root, with Python 3.8+, systemd, Apache and MariaDB client tools, for the one-time setup and the cutover release. After the cutover, routine releases use the smaller [`wlxjury-release`](#routine-deployment-after-the-cutover) script with a manual recovery runbook; see `docs/plans/2026-10-13-deployment-tooling-alternatives.md` for why. The old blue/green scripts are disabled and their slot files removed.
+Use `scripts/deployment/wlxjury-deploy.py` on Linux as root, with Python 3.8+, systemd, Apache and MariaDB client tools, for the one-time setup and the cutover release. After the cutover, routine releases use the smaller [`wlxjury-release`](#routine-deployment-after-the-cutover) script, with a `restore` command and a recovery runbook; see `docs/plans/2026-10-13-deployment-tooling-alternatives.md` for why. The old blue/green scripts are disabled and their slot files removed.
 
 Run every `deploy`, `restore` and `reopen` inside `tmux` (or `screen`). The tool ignores SSH hangups and logs each step to `/var/backups/wlxjury/operations.log`, so a dropped connection does not interrupt a backup, migration or restore. You still need the terminal to follow it and to act on the result.
 
@@ -132,7 +132,9 @@ An interrupted reopening conservatively marks possible writes even if maintenanc
 
 ## Routine deployment after the cutover
 
-Once the cutover is complete, deploy releases with `wlxjury-release`. It automates only the normal path; failures are recovered by hand with the runbook below. It reads the same `deployment.json`, `runtime.env` and `db-admin.cnf` as `wlxjury-deploy` and takes the same lock (`/opt/wlxjury/deployment.lock`), so the two never run at once. Do not use `wlxjury-deploy deploy` after switching: it cannot verify releases it did not prepare. Keep `wlxjury-deploy` only to recover from its own earlier records until they are retired.
+Once the cutover is complete, deploy releases with `wlxjury-release`. It reads the same `deployment.json`, `runtime.env` and `db-admin.cnf` as `wlxjury-deploy` and takes the same lock (`/opt/wlxjury/deployment.lock`), so no two operations of either tool overlap. Do not use `wlxjury-deploy deploy` after switching: it cannot verify releases it did not prepare. Keep `wlxjury-deploy` only to recover from its own earlier records until they are retired.
+
+Its database commands use the app's endpoint from `runtime.env`. For `WLXJURY_DB_HOST=localhost` they use the socket in `db-admin.cnf`, with root socket authentication, and check that this server listens on port 3306. For any other host, or an explicit port, they connect by TCP to that host and port, so `db-admin.cnf` then needs an administrative account that can log in over TCP.
 
 Install it once, with `curl` and `unzip`:
 
@@ -151,25 +153,36 @@ sudo wlxjury-release reopen OPERATION
 Before changing anything, `deploy` takes the lock and checks:
 - the ZIP hash, with no symlinks and one top-level folder;
 - the manifest;
+- that `db-admin.cnf` reaches the app's database endpoint;
 - that the release is not older than the database and the database has no failed migration;
-- that `db-admin.cnf` reaches the database in `runtime.env`;
 - that no database event is enabled, and free space.
 
 It unpacks the release into a new root-owned folder under `/opt/wlxjury/releases`. Then it:
 1. creates the operation folder `/var/backups/wlxjury/UTC_TIMESTAMP-BUILD`, with `record`, `milestones` and `operation.log`;
 2. enables maintenance and requires HTTP 503 with the maintenance page at every configured URL;
-3. turns off automatic restarts, and stops the configured writer units and the app, checking each has stopped;
+3. turns off automatic restarts, and stops **every** configured writer unit and the app, checking each has stopped (a timer can start its service at any moment, so the recorded state only decides what `reopen` restarts);
 4. rechecks database events;
 5. dumps the database with `--databases --add-drop-database --lock-tables`, then checks the dump and saves its checksum and a config snapshot;
 6. flushes them and rechecks free space;
 7. switches `/opt/wlxjury/current`, starts the app, and waits until `/health/ready` reports the new build.
 
 `reopen` requires:
-- intact milestones;
-- that `current` is the operation's candidate release, or its previous release under the rules below;
+- intact milestones and no unfinished restore;
+- that `current` is the operation's candidate release, or its previous release after a finished restore;
 - the release to be ready.
 
-It then records `traffic-may-resume`, restores automatic restarts, removes maintenance, checks every URL reaches the app, and restarts the writer units that were running. If a URL fails, fix routing and run `reopen` again.
+It then records `traffic-may-resume`, restores automatic restarts, removes maintenance, checks every URL reaches the app, and restarts the writer units that were running before the deployment. If a URL fails, fix routing and run `reopen` again.
+
+`restore OPERATION` backs out a deployment, holding the lock throughout and stopping at the first failure:
+1. It refuses an operation without a complete backup, and refuses after `traffic-may-resume` without `--accept-data-loss`.
+2. It verifies the backup's checksum and gzip integrity before changing anything.
+3. It enables and checks maintenance, turns off automatic restarts, and stops every writer unit and the app.
+4. It ends the app account's leftover sessions, waiting up to `session_end_timeout_seconds` for a killed `ALTER` to roll back, and refuses while any other session uses the database.
+5. After `traffic-may-resume`, it saves the current database as a new `before-restore-UTC_TIMESTAMP.sql.gz`, checked, with its checksum, and flushed. Earlier rescue dumps are never replaced.
+6. It records `restoring` and imports the backup; a failure on either side of the import stops it.
+7. It checks that the database has the previous release's schema and no failed migration, switches `current` back, records `database-restored`, starts the previous release and waits until it is ready.
+
+It never restores config: if the release changed config, restore `config.tgz` by hand before reopening.
 
 ### Recovery runbook
 
@@ -178,37 +191,30 @@ Maintenance is never cleared automatically. Read `OPERATION/milestones`, `record
 | Milestones | Meaning |
 |---|---|
 | No operation folder | `deploy` stopped during its checks. Nothing changed, apart from a new folder under `releases`. |
-| Missing file, or the first line is not `started` | Unknown. Keep maintenance on, and inspect `current`, the Flyway history and the log before doing anything. |
+| Missing file, or the first line is not `started` | Unknown. Keep maintenance on, and inspect `current`, the Flyway history and the log before doing anything. Every command refuses this operation. |
 | `started`, without `migration-may-start` | The database was never migrated and `current` was never switched. |
 | `migration-may-start` | A migration may have run, even if the app never became ready. |
 | `ready` | The migration completed; the smoke test decides. |
 | `traffic-may-resume` | Writes may have resumed. |
+| `restoring` as the last restore milestone | A restore did not finish: the database may be partly imported. |
 
-**Before `migration-may-start`:** if the app was stopped, start it with `sudo systemctl start wlxjury`. Then run `wlxjury-release reopen OPERATION`. It checks readiness, restores automatic restarts and restarts the paused writers.
+**Before `migration-may-start`:** if the app was stopped, start it with `sudo systemctl start wlxjury`. Then run `sudo wlxjury-release reopen OPERATION`. It checks readiness, restores automatic restarts and restarts the writers that were running.
 
-**From `migration-may-start` until reopening** (including a failed smoke test after `ready`): never just restart the previous release, since its readiness cannot show a half-applied migration. Unless a forward fix is chosen instead, restore:
+**From `migration-may-start` until reopening**, including a failed smoke test after `ready`: never just restart the previous release, since its readiness cannot show a half-applied migration. Prefer a forward fix if one is ready; otherwise:
 
 ```bash
-# As root (sudo -i), inside tmux. The operation folder is readable only by root.
-cd /var/backups/wlxjury/OPERATION
-ADMIN=--defaults-extra-file=/etc/wlxjury-runtime/db-admin.cnf
-systemctl stop wlxjury
-mariadb "$ADMIN" -e 'SHOW PROCESSLIST'      # KILL leftover app sessions; wait until a killed ALTER is gone; nobody else may use the database
-sha256sum -c database.sql.gz.sha256
-zcat database.sql.gz | mariadb "$ADMIN"     # Drops and recreates the database with its own charset and collation
-# Only if this release changed config: tar -C / -xzf config.tgz
-ln -sfn PREVIOUS /opt/wlxjury/current.next && mv -T /opt/wlxjury/current.next /opt/wlxjury/current
-echo database-restored >> milestones && sync milestones
-systemctl start wlxjury                     # Check locally; a legacy release answers /auth instead of /health/ready
-wlxjury-release reopen OPERATION
+sudo wlxjury-release restore OPERATION
+# Check the previous release locally (a legacy release answers /auth, not /health/ready). Then:
+sudo wlxjury-release reopen OPERATION
 ```
 
-`reopen` refuses the previous release after `migration-may-start` until `database-restored` is recorded.
+**After `restoring` without `database-restored`:** fix what stopped the restore (for example a leftover session, or space), then rerun `restore`. `reopen` refuses until a restore finishes.
 
-**After `traffic-may-resume`:** if only `reopen` failed, fix the reported URL and rerun it. Otherwise, prefer a forward fix. Restoring now loses later votes, comments and jobs, and needs an explicit decision and a plan for reconciling them. If that is the decision:
-1. Enable maintenance (`sudo touch /etc/wlxjury-runtime/maintenance`), stop the writer units and the app.
-2. Take a fresh dump into the operation folder (`mariadb-dump "$ADMIN" --databases DATABASE --add-drop-database --lock-tables --quick --routines --events --triggers | gzip > before-restore.sql.gz`).
-3. Follow the restore above.
+**After `traffic-may-resume`:** if only `reopen` failed, fix the reported URL and rerun it. Otherwise, prefer a forward fix. Restoring now loses later votes, comments and jobs, and needs an explicit decision and a plan for reconciling them from the rescue dump. If that is the decision:
+
+```bash
+sudo wlxjury-release restore OPERATION --accept-data-loss
+```
 
 Rehearse the deployment and each section of this runbook on a production copy before relying on them.
 
@@ -223,4 +229,13 @@ docker run --rm --network none --mount type=bind,source="$PWD",target=/workspace
 docker run --rm --mount type=bind,source="$PWD/scripts/deployment",target=/s,readonly koalaman/shellcheck:stable -S style /s/wlxjury-release.sh
 ```
 
-Python 3.8 is the oldest supported version. The restore image is self-contained: Ubuntu 22.04's MariaDB 10.6, OpenJDK 17, Python 3, `curl` and `unzip`. Its packaged-release test runs the ZIP from `sbt dist`, checks that it carries no server setup files and that readiness refuses a forwarded request. `test_release_script` runs `wlxjury-release.sh` unmodified against a real MariaDB, with stand-ins only for systemd (a `systemctl` stub that starts and stops the selected release's launcher) and Apache (a fake proxy that honors the maintenance flag). It covers deploying and reopening; the refusals that leave everything unchanged; a vhost without the maintenance page; rerunning `reopen` after a routing failure; and the runbook restore after an interrupted migration. That includes refusing the previous release until `database-restored` is recorded. Tests own a MariaDB 10.6 process and synthetic mixed-engine data. They do not certify real production backups, disk capacity, Apache coverage or outage time; those remain rollout/rehearsal gates.
+Python 3.8 is the oldest supported version. The restore image is self-contained: Ubuntu 22.04's MariaDB 10.6, OpenJDK 17, Python 3, `curl` and `unzip`. Its packaged-release test runs the ZIP from `sbt dist`, checks that it carries no server setup files and that readiness refuses a forwarded request. `test_release_script` runs `wlxjury-release.sh` unmodified against a real MariaDB, with stand-ins only for systemd (a `systemctl` stub that starts and stops the selected release's launcher) and Apache (a fake proxy that honors the maintenance flag). It covers:
+- deploying and reopening, including a timer that starts its job during the maintenance checks;
+- refusals that leave everything unchanged, including an unreachable database endpoint;
+- a vhost without the maintenance page, and a lost milestones file;
+- rerunning `reopen` after a routing failure;
+- `restore` after an interrupted migration, refusing the previous release until the restore finishes;
+- a damaged backup, an import that fails part-way, and its rerun;
+- `restore` after reopening: the data-loss decision, refusing while another session uses the database, ending a leftover app session that holds a table lock before the rescue dump, and keeping every rescue dump across retries.
+
+Tests own a MariaDB 10.6 process and synthetic mixed-engine data. They do not certify real production backups, disk capacity, Apache coverage or outage time; those remain rollout/rehearsal gates.

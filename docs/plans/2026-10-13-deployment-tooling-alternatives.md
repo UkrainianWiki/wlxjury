@@ -12,7 +12,7 @@ No existing tool does most of what `scripts/deployment/wlxjury-deploy.py` does. 
 2. **Recovery logic specific to this setup** (one server, one MariaDB database, migrations that cannot be undone): saved phase records, the `abort`/`reopen`/`restore`/`resume-original` commands, the rescue dump, ending leftover sessions, and refusing a restore after traffic has reopened without `--accept-data-loss`. No tool found provides this.
 3. **One-time cutover code** for the old 0.12 installation: `init-runtime`, `adopt-legacy`, `scrub-legacy`, the config externalizer and the credential scanner. About 350 lines of the tool and about 250 lines of tests. This is the most complex part, and both review rounds found their hardest bugs in it.
 
-No tool replaces part 2, but at this app's scale most of it is optional ([Optional features](#optional-features-a-simpler-deployment-with-standard-tools)). A smaller script using `unzip`, `mariadb-dump`, `curl`, `flock` and `tmux`, with durable milestones, covers routine deployment; failures are handled by a rehearsed manual runbook. That trades the tool's guided recovery commands for operator work, which is acceptable while the developer is also the operator. It is implemented as `scripts/deployment/wlxjury-release.sh` ([Implementation](#implementation)).
+No tool replaces part 2, but at this app's scale most of it is optional ([Optional features](#optional-features-a-simpler-deployment-with-standard-tools)). A smaller script using `unzip`, `mariadb-dump`, `curl`, `flock` and `tmux`, with durable milestones, covers routine deployment; a `restore` command and a rehearsed runbook handle failures. That trades the tool's guided recovery commands for operator work, which is acceptable while the developer is also the operator. It is implemented as `scripts/deployment/wlxjury-release.sh` ([Implementation](#implementation)).
 
 The recommended plan ([Recommendations](#recommendations)): do the coming cutover with the current, tested tool; switch routine deployments to the script; retire the Python tool and the tests coupled to it once its recovery records are retired or covered by the runbook. The Debian package the build already produces stays a later option.
 
@@ -93,28 +93,29 @@ Each is a line or two in the script or runbook:
 
 ### Implementation
 
-The sketch that first stood here is implemented as [`scripts/deployment/wlxjury-release.sh`](../../scripts/deployment/wlxjury-release.sh), with `deploy` and `reopen` commands, and its recovery runbook is in [docs/deployment.md](../deployment.md#recovery-runbook). The implementation fixes what a review of the sketch found:
+The sketch that first stood here is implemented as [`scripts/deployment/wlxjury-release.sh`](../../scripts/deployment/wlxjury-release.sh), with `deploy`, `reopen` and `restore` commands, and its recovery runbook is in [docs/deployment.md](../deployment.md#recovery-runbook). The first version fixed what a review of the sketch found:
 
-1. **Unknown state.** The sketch's runbook treated missing milestones as "nothing changed". Now an operation writes `started` first, so a missing or damaged milestones file means "unknown", and `reopen` refuses it. Going back to the previous release is accepted without a restore only when `migration-may-start` was never recorded: `current` is switched only after that milestone is durable. After it, `reopen` refuses the previous release until the runbook's restore records `database-restored`. Otherwise an old release would look ready on a database whose interrupted migration left DDL but no history row.
+1. **Unknown state.** The sketch's runbook treated missing milestones as "nothing changed". Now an operation writes `started` first, so a missing or damaged milestones file means "unknown", and every command refuses it. Going back to the previous release is accepted without a restore only when `migration-may-start` was never recorded: `current` is switched only after that milestone is durable. After it, `reopen` refuses the previous release until a restore records `database-restored`. Otherwise an old release would look ready on a database whose interrupted migration left DDL but no history row.
 2. **One lock.** The sketch locked `/run/wlxjury-deploy.lock`; the script takes the Python tool's lock. `reopen` also checks that `current` is the operation's candidate or previous release, and that it is ready, before removing maintenance.
-3. **The configured writers.** The sketch stopped a made-up `wlxjury-backup.timer`. The script reads `deployment.json`, stops each configured unit (the backup timer and its service), and checks that each has stopped. It checks enabled database events before starting and again just before the dump.
+3. **The configured writers.** The sketch stopped a made-up `wlxjury-backup.timer`. The script reads the units from `deployment.json` (the backup timer and its service) and checks each has stopped. It checks enabled database events before starting and again just before the dump.
 4. **Flush before `backup-complete`.** The dump, checksum, config snapshot and record are flushed before the milestone; the `current` switch is flushed before the app starts.
 
-It also keeps the smaller safeguards: HTTP 503 as well as the page text, and a free-space check after the dump.
+A review of that first version (`b5a1f9e`) found six more problems, fixed in the second:
 
-The script is 316 lines (258 without comments and blank lines) and reads the same `deployment.json`, `runtime.env` and `db-admin.cnf` as the Python tool. Its tests, `scripts/deployment/test_release_script.py` (508 lines), run it unmodified against a real MariaDB 10.6 in the existing `Dockerfile.test` image, with stand-ins only for systemd and Apache. They cover:
-- deploying and reopening;
-- refusals that leave everything unchanged;
-- a vhost without the maintenance page;
-- a lost milestones file;
-- rerunning `reopen` after a routing failure;
-- the runbook restore after an interrupted migration, including the refusal before `database-restored`.
+1. **Restore did not stop on failure.** The restore was a block of shell commands to type, so a failed checksum or import would not stop the next step. Rather than make copy-paste shell fail-stop, the runbook's restore became the `restore` command. It verifies the backup before changing anything, stops at any failure (including either side of the import pipe), and records `database-restored` only after checking the restored schema. A `restoring` milestone written before the import makes `reopen` refuse until a restore finishes.
+2. **A matching port did not identify the server.** Database commands now connect to the app's endpoint from `runtime.env`, as the Python tool does. Only a bare `localhost` uses `db-admin.cnf`'s socket, and is then checked against port 3306.
+3. **A timer could start its job after the writer state was recorded.** Every configured writer unit is now stopped and checked; the recorded state only decides what `reopen` restarts.
+4. **Manual recovery skipped the lock.** `restore` holds the shared lock throughout.
+5. **The rescue dump came before ending leftover sessions.** `restore` now ends the app account's sessions and refuses while others use the database before any dump.
+6. **A retry overwrote the rescue dump.** Each rescue dump gets a new timestamped name, is checked and flushed, and is never overwritten.
 
-A copy of the script without that refusal fails the restore test. The script passes shellcheck at its strictest level.
+The script also keeps the smaller safeguards: HTTP 503 as well as the page text, and a free-space check after the dump.
+
+The script is 440 lines (358 without comments and blank lines) and reads the same `deployment.json`, `runtime.env` and `db-admin.cnf` as the Python tool. Its tests, `scripts/deployment/test_release_script.py` (633 lines), run it unmodified against a real MariaDB 10.6 in the existing `Dockerfile.test` image, with stand-ins only for systemd and Apache. They cover each problem above. For each of five fixes (the `database-restored` rule, stopping every writer, the app's endpoint, ending sessions before the rescue dump, stopping on a failed import), a copy of the script with that fix undone fails its test. A failed import is caught twice: the import step stops, and the later schema check would too. The script passes shellcheck at its strictest level.
 
 ### What is lost
 
-- **Guided recovery commands.** The milestones say which runbook section applies and `reopen` enforces the rules above, but the operator carries out a restore by hand, and recovery may take longer.
+- **Most guided recovery.** `restore` and `reopen` cover the common cases, and the milestones say which applies. The Python tool's finer-grained commands (`abort`, `resume-original`) become "start the app, then `reopen`", and anything the milestones cannot explain is investigated by hand.
 - **Most of the Python tool's tests.** Tests coupled to the Python tool go with it. The MariaDB test image and the script's own tests stay, and the rehearsal on a production copy must include each runbook section.
 - **Release re-verification.** Extracted files are not re-hashed before each use; a suspect release is re-extracted from its kept ZIP instead.
 - **Automatic config restore.** The runbook restores `config.tgz` only when config changed with the release; routine releases keep config unchanged.
@@ -140,7 +141,7 @@ It is not the first step, for four reasons:
 1. **Do the cutover with the current, tested tool.** Its adoption, recovery and tests are verified locally, and the V53-to-V60 release is the riskiest one. Remove the one-time cutover code afterwards (about 350 lines of the tool and about 250 lines of tests). Keep the legacy support that recovery still uses: `wait_ready` checks `/auth` instead of `/health/ready` for a release marked `legacy`, and restore selects that release. Keep it until every recovery record targeting the adopted release has been explicitly retired. A later deployment does not retire them: earlier records are kept and can still select the adopted release.
 2. **Switch routine deployments to `wlxjury-release`** once the cutover is complete ([docs/deployment.md](../deployment.md#routine-deployment-after-the-cutover)). It keeps the tool's layout, so no migration is needed.
 3. **Rehearse it and every runbook section on a production copy** before relying on it, including an interrupted migration.
-4. **Retire the Python tool and the tests coupled to it** once its recovery records are retired, or the runbook covers restoring from them (each holds a dump, a config snapshot and the previous release). Keep `Dockerfile.test`, the MariaDB test setup and `test_release_script.py`. This replaces the 1,107-line tool and about 1,230 lines of its tests with a 316-line script and 508 lines of tests that exercise it against a real database.
+4. **Retire the Python tool and the tests coupled to it** once its recovery records are retired, or the runbook covers restoring from them (each holds a dump, a config snapshot and the previous release). Keep `Dockerfile.test`, the MariaDB test setup and `test_release_script.py`. This replaces the 1,107-line tool and about 1,230 lines of its tests with a 440-line script and 633 lines of tests that exercise it against a real database.
 5. **Keep `BuildIdentity.scala` and the manifest.** The script relies on them for the older-release check and the readiness comparison.
 6. **Use Ansible, if at all, for server setup**, not for deployment and recovery.
 7. **Consider the Debian package later**, once its build route and the installed package's maintainer scripts have been checked.
@@ -201,7 +202,7 @@ This document adds four points to that profile:
 1. **Package scripts.** The Debian maintainer scripts are verified rather than unknown: in sbt-native-packager 1.10.0 the old `prerm` stops and disables the service, and the new `postinst` enables and starts it. With the backup taken before `dpkg -i`, the package's start is the intended migration start rather than an early one. The open question is the installed 0.12 package's own `prerm`.
 2. **Exact restore.** `mariadb-dump --databases --add-drop-database` was tested to restore the original collation and remove tables added by a migration, so the record need not store the charset.
 3. **Config snapshot.** By the profile's own rule of keeping cheap checks, a one-line `tar` of the runtime config is worth keeping as evidence rather than dropping.
-4. **Size.** A concrete sketch put the routine path at about 50 lines. That compared an untested sketch with a tested tool, as the next review pointed out; the implementation is 316 lines with 508 lines of tests.
+4. **Size.** A concrete sketch put the routine path at about 50 lines. That compared an untested sketch with a tested tool, as the next review pointed out; the implementation is 440 lines with 633 lines of tests.
 
 ### Review of the plan at `02791bb`
 

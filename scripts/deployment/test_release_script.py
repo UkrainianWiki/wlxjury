@@ -7,6 +7,7 @@ migrates on start and serves readiness, and a fake Apache that honors the
 maintenance flag like wlxjury-maintenance.conf.
 """
 import fcntl
+import gzip
 import hashlib
 import http.server
 import json
@@ -144,6 +145,8 @@ class FakeApache(http.server.BaseHTTPRequestHandler):
         if self.path in test.broken_routes:
             self.reply(502, 'Proxy Error')
         elif self.path != '/no-snippet' and test.flag.exists():
+            if test.timer_fires_during_checks:  # The backup timer starts its job mid-check.
+                (test.state / 'backup.service.on').touch()
             self.reply(503, MAINTENANCE_PAGE)
         else:
             try:
@@ -186,6 +189,7 @@ class ReleaseScriptTest(unittest.TestCase):
         (stubs / 'systemctl').write_text(SYSTEMCTL_STUB)
         (stubs / 'systemctl').chmod(0o755)
         self.broken_routes = set()
+        self.timer_fires_during_checks = False
         self.apache = http.server.ThreadingHTTPServer(('127.0.0.1', 0), FakeApache)
         self.apache.test = self
         threading.Thread(target=self.apache.serve_forever, daemon=True).start()
@@ -244,6 +248,8 @@ class ReleaseScriptTest(unittest.TestCase):
             time.sleep(0.2)
         subprocess.run(self.client() + ['-e', 'CREATE DATABASE jury CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci'],
                        check=True)
+        subprocess.run(self.client() + ['-e', "CREATE USER 'app'@'localhost' IDENTIFIED BY 'app-password'; "
+                                              "GRANT ALL PRIVILEGES ON jury.* TO 'app'@'localhost'"], check=True)
         self.sql("CREATE TABLE flyway_schema_history (installed_rank INT PRIMARY KEY, version VARCHAR(20), "
                  "checksum INT, success BOOLEAN) ENGINE=InnoDB; "
                  "INSERT INTO flyway_schema_history VALUES (1, '53', 123, 1); "
@@ -333,6 +339,10 @@ class ReleaseScriptTest(unittest.TestCase):
         self.assertEqual(self.sql('SELECT MAX(version) FROM flyway_schema_history'), '53')
 
     def test_deploy_migrates_under_maintenance_and_reopen_resumes_traffic(self):
+        # As in production: the timer is active, its backup job is not, and the
+        # timer starts the job while the maintenance checks run.
+        (self.state / 'backup.service.on').unlink()
+        self.timer_fires_during_checks = True
         archive, sha = self.release_zip()
         result = self.release('deploy', archive, sha)
         self.assertSucceeded(result)
@@ -359,7 +369,9 @@ class ReleaseScriptTest(unittest.TestCase):
         self.assertTrue((operation / 'config.tgz').is_file())
         record = (operation / 'record').read_text()
         self.assertIn('previous=' + str(self.old) + '\n', record)
-        self.assertIn('writers=backup.timer backup.service\n', record)
+        # Only the originally active timer resumes; the job it started mid-check was stopped too.
+        self.assertIn('writers=backup.timer\n', record)
+        self.assertIn('stop backup.service', self.calls())
         self.assertEqual(stat.S_IMODE(operation.stat().st_mode), 0o700)
 
         reopened = self.release('reopen', operation.name)
@@ -367,7 +379,8 @@ class ReleaseScriptTest(unittest.TestCase):
         self.assertFalse(self.flag.exists())
         self.assertFalse(self.hold.exists())
         self.assertEqual((self.state / 'reloads').read_text().splitlines()[-1], 'released')
-        self.assertTrue(all(self.active(unit) for unit in WRITERS))
+        self.assertTrue(self.active('backup.timer'))
+        self.assertFalse(self.active('backup.service'))
         self.assertEqual(self.milestones(operation)[-2:], ['traffic-may-resume', 'complete'])
         self.assertIn('Milestone: complete', (operation / 'operation.log').read_text())
 
@@ -402,18 +415,21 @@ class ReleaseScriptTest(unittest.TestCase):
         self.assertIn('a migration may have run', shortcut.stderr)
         self.assertTrue(self.flag.exists())
 
-        # Runbook, "migration-may-start, traffic still blocked": restore, record it, reopen.
-        self.systemctl('stop', SERVICE)
-        subprocess.run(['sha256sum', '-c', '--quiet', 'database.sql.gz.sha256'], cwd=str(operation), check=True)
-        subprocess.run(['bash', '-c', 'zcat database.sql.gz | mariadb "--defaults-extra-file=$0"',
-                        str(self.runtime / 'db-admin.cnf')], cwd=str(operation), check=True)
-        with (operation / 'milestones').open('a') as milestones:
-            milestones.write('database-restored\n')
-        self.systemctl('start', SERVICE)
-        self.wait_for_app()
+        # Runbook, "migration-may-start, traffic still blocked": restore, check, reopen.
+        restored = self.release('restore', operation.name)
+        self.assertSucceeded(restored)
+        self.assertEqual(self.milestones(operation)[-2:], ['restoring', 'database-restored'])
+        self.assertEqual(list(operation.glob('before-restore-*')), [])  # Traffic never resumed.
+        self.assertTrue(self.active(SERVICE))
+        self.assertTrue(self.flag.exists())
         self.assertSucceeded(self.release('reopen', operation.name))
+        self.assertOriginalDatabase()
+        self.assertFalse(self.flag.exists())
+        self.assertFalse(self.hold.exists())
+        self.assertEqual((self.root / 'current').resolve(), self.old)
 
-        # Exactly the old database: history, data, engine and collation, without the new table.
+    def assertOriginalDatabase(self):
+        """Exactly the old database: history, data, engine and collation, without the new table."""
         self.assertEqual(self.sql('SELECT MAX(version) FROM flyway_schema_history'), '53')
         self.assertEqual(self.sql('SELECT * FROM votes ORDER BY id'), self.original_votes)
         self.assertEqual(self.sql("SELECT ENGINE FROM information_schema.TABLES "
@@ -422,9 +438,118 @@ class ReleaseScriptTest(unittest.TestCase):
                                   "WHERE TABLE_SCHEMA = 'jury'"), 'flyway_schema_history,votes')
         self.assertEqual(self.sql("SELECT DEFAULT_COLLATION_NAME FROM information_schema.SCHEMATA "
                                   "WHERE SCHEMA_NAME = 'jury'"), 'utf8mb4_general_ci')
+
+    def failed_deployment(self):
+        archive, sha = self.release_zip(fail=True)
+        self.assertEqual(self.release('deploy', archive, sha).returncode, 1)
+        return self.operation()
+
+    def test_restore_verifies_the_backup_first_and_stops_when_the_import_fails(self):
+        operation = self.failed_deployment()
+        dump = operation / 'database.sql.gz'
+        original = dump.read_bytes()
+        # A damaged backup: refused before anything changes.
+        dump.write_bytes(original[:-20])
+        damaged = self.release('restore', operation.name)
+        self.assertEqual(damaged.returncode, 1)
+        self.assertIn('backup checksum mismatch; nothing was changed', damaged.stderr)
+        self.assertNotIn('restoring', self.milestones(operation))
+        self.assertEqual(self.sql("SELECT COUNT(*) FROM information_schema.TABLES "
+                                  "WHERE TABLE_SCHEMA = 'jury' AND TABLE_NAME = 'job'"), '1')
+        # A readable backup whose SQL fails part-way: the import stops the restore,
+        # nothing is recorded as restored, and reopening refuses.
+        with gzip.open(str(dump), 'wb') as broken:
+            broken.write(b'DROP DATABASE IF EXISTS jury; CREATE DATABASE jury; USE jury; NOT SQL;\n')
+        subprocess.run(['bash', '-c', 'sha256sum database.sql.gz > database.sql.gz.sha256'],
+                       cwd=str(operation), check=True)
+        failed = self.release('restore', operation.name)
+        self.assertEqual(failed.returncode, 1)
+        self.assertIn('the import failed', failed.stderr)
+        self.assertEqual(self.milestones(operation)[-1], 'restoring')
+        self.assertFalse(self.active(SERVICE))
+        self.systemctl('start', SERVICE)  # Even a release started by hand cannot be reopened.
+        refused = self.release('reopen', operation.name)
+        self.assertEqual(refused.returncode, 1)
+        self.assertIn('a restore did not finish', refused.stderr)
+        self.assertTrue(self.flag.exists())
+        # Rerunning with the intact backup finishes the restore.
+        dump.write_bytes(original)
+        subprocess.run(['bash', '-c', 'sha256sum database.sql.gz > database.sql.gz.sha256'],
+                       cwd=str(operation), check=True)
+        self.assertSucceeded(self.release('restore', operation.name))
+        self.assertSucceeded(self.release('reopen', operation.name))
+        self.assertOriginalDatabase()
+
+    def test_restore_after_reopening_needs_a_decision_and_keeps_every_rescue_dump(self):
+        archive, sha = self.release_zip()
+        self.assertSucceeded(self.release('deploy', archive, sha))
+        operation = self.operation()
+        self.assertSucceeded(self.release('reopen', operation.name))
+        self.sql("INSERT INTO votes VALUES (3, 'vote after reopening')")
+
+        refused = self.release('restore', operation.name)
+        self.assertEqual(refused.returncode, 1)
+        self.assertIn('--accept-data-loss', refused.stderr)
         self.assertFalse(self.flag.exists())
-        self.assertFalse(self.hold.exists())
+        self.assertTrue(self.active(SERVICE))
+
+        # Someone else in the database: refused before the rescue dump or any import.
+        other = subprocess.Popen(self.client() + ['--database=jury', '-e', 'SELECT SLEEP(600)'],
+                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        self.addCleanup(other.kill)
+        self.wait_for_session("USER = 'root' AND INFO LIKE 'SELECT SLEEP%'")
+        busy = self.release('restore', operation.name, '--accept-data-loss')
+        self.assertEqual(busy.returncode, 1)
+        self.assertIn('other sessions use the database', busy.stderr)
+        self.assertEqual(list(operation.glob('before-restore-*')), [])
+        self.assertNotIn('restoring', self.milestones(operation))
+        # Killing the client is not enough: the server keeps running its query.
+        self.sql('KILL ' + self.sql("SELECT ID FROM information_schema.PROCESSLIST "
+                                    "WHERE USER = 'root' AND INFO LIKE 'SELECT SLEEP%'"))
+        other.wait(timeout=10)
+
+        # A leftover app session holding a table lock is ended before the rescue
+        # dump; the short lock timeout bounds the test if that regresses.
+        self.sql('SET GLOBAL lock_wait_timeout = 5')
+        leftover = subprocess.Popen(['mariadb', '--socket=' + str(self.socket), '--user=app', '--password=app-password',
+                                     '--database=jury', '-e', 'LOCK TABLES votes WRITE; SELECT SLEEP(600)'],
+                                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        self.addCleanup(leftover.kill)
+        self.wait_for_session("USER = 'app' AND INFO LIKE 'SELECT SLEEP%'")
+        self.assertSucceeded(self.release('restore', operation.name, '--accept-data-loss'))
+        self.assertIsNotNone(leftover.wait(timeout=10))
+        rescues = sorted(operation.glob('before-restore-*.sql.gz'))
+        self.assertEqual(len(rescues), 1)
+        with gzip.open(str(rescues[0]), 'rt', encoding='utf-8') as rescue:
+            self.assertIn('vote after reopening', rescue.read())
+        self.assertOriginalDatabase()
         self.assertEqual((self.root / 'current').resolve(), self.old)
+
+        # A retry keeps the first rescue dump, which alone holds the later vote.
+        first = rescues[0].read_bytes()
+        time.sleep(1.1)
+        self.assertSucceeded(self.release('restore', operation.name, '--accept-data-loss'))
+        self.assertEqual(len(list(operation.glob('before-restore-*.sql.gz'))), 2)
+        self.assertEqual(rescues[0].read_bytes(), first)
+        self.assertSucceeded(self.release('reopen', operation.name))
+        self.assertOriginalDatabase()
+
+    def wait_for_session(self, condition):
+        deadline = time.monotonic() + 15
+        while self.sql('SELECT COUNT(*) FROM information_schema.PROCESSLIST WHERE ' + condition) != '1':
+            self.assertLess(time.monotonic(), deadline, 'Session did not start: ' + condition)
+            time.sleep(0.2)
+
+    def test_administrative_commands_use_the_apps_database_endpoint(self):
+        # db-admin.cnf names a working socket, but the app's endpoint is a different
+        # (closed) port: the check must not pass through the socket.
+        env = (self.runtime / 'runtime.env').read_text()
+        (self.runtime / 'runtime.env').write_text(env.replace('localhost:%d' % self.db_port, 'localhost:%d' % free_port()))
+        archive, sha = self.release_zip()
+        result = self.release('deploy', archive, sha)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn('cannot reach MariaDB at localhost:', result.stderr)
+        self.assertUnchanged()
 
     def test_older_release_is_refused_before_anything_changes(self):
         archive, sha = self.release_zip(schema='50', build='0.11-old')
