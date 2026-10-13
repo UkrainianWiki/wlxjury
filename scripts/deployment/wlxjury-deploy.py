@@ -174,48 +174,210 @@ def externalize_legacy(text):
     return text
 
 
-# Scan assignment names separately from values so URL query parameters such as
-# "&password=..." are still checked. HOCON/JSON names may be quoted, including
-# separately quoted path components and Unicode escapes.
-QUOTED_KEY = r'"(?:\\.|[^"\\])*"'
-KEY_COMPONENT = r'(?:[A-Za-z0-9_-]+|' + QUOTED_KEY + r')'
-CONFIG_SETTING = re.compile(r'(' + KEY_COMPONENT + r'(?:\.' + KEY_COMPONENT + r')*)\s*[=:]\s*')
 CREDENTIAL_NAME = re.compile(r'password|passwd|secret', re.I)
+# A credential as a URL query parameter, such as "...?user=a&password=b".
+QUERY_CREDENTIAL = re.compile(r'[?&;][^=&;]*(?:password|passwd|secret)[^=&;]*=[^&;]', re.I)
+# Line formats (.ini, .cnf, .env, .properties, JVM options) and comment text.
+SECRET_SETTING = re.compile(r'([A-Za-z0-9_."-]*(?:password|passwd|secret)[A-Za-z0-9_."-]*)\s*[=:]\s*(.*)', re.I)
+# Java properties may also separate the key from its value with whitespace alone.
+SPACED_SECRET_SETTING = re.compile(r'([A-Za-z0-9_."-]*(?:password|passwd|secret)[A-Za-z0-9_."-]*)'
+                                   r'(?:\s*[=:]\s*|\s+)(.*)', re.I)
+LINE_COMMENT = ('#', '//', ';', '!')
 SCANNED_CONFIG = ('.conf', '.ini', '.properties', '.cnf', '.env')
 
 
-def literal_secret(line):
-    """The name of a credential setting this line gives a literal value, or None."""
-    for match in CONFIG_SETTING.finditer(line):
-        key = re.sub(QUOTED_KEY, lambda quoted: json.loads(quoted.group()), match.group(1))
-        if not CREDENTIAL_NAME.search(key):
-            continue
-        value = line[match.end():].strip()
+def literal_secret(line, spaced=False):
+    """The name of a credential setting this line-format line gives a literal value, or None."""
+    for match in (SPACED_SECRET_SETTING if spaced else SECRET_SETTING).finditer(line):
+        value = match.group(2).strip()
         if value and not value.startswith('${') and value not in ('""', "''", 'null'):
-            return key
+            return match.group(1).strip('"')
+    if QUERY_CREDENTIAL.search(line):
+        return 'query parameter'
     return None
+
+
+class HoconError(Exception):
+    pass
+
+
+HOCON_QUOTED = re.compile(r'"(?:\\.|[^"\\\n])*"')
+HOCON_UNQUOTED = re.compile(r'(?:[^\s{}\[\],:=#"$+/]|/(?!/)|\$(?!\{)|\+(?!=))+')
+
+
+def hocon_tokens(text):
+    """Tokens (kind, text, line) of a HOCON document, and its comments (line, text, whole line)."""
+    tokens, comments, line, i, content = [], [], 1, 0, False
+    while i < len(text):
+        c = text[i]
+        if c == '\n':
+            tokens.append(('nl', c, line))
+            line, i, content = line + 1, i + 1, False
+        elif c.isspace() or c == '\ufeff':
+            i += 1
+        elif c == '#' or text.startswith('//', i):
+            end = text.find('\n', i)
+            end = len(text) if end < 0 else end
+            comments.append((line, text[i:end], not content))
+            i = end
+        elif text.startswith('"""', i):
+            end = text.find('"""', i + 3)
+            if end < 0:
+                raise HoconError(line)
+            while text.startswith('"', end + 3):  # Extra quotes belong to the string.
+                end += 1
+            tokens.append(('str', text[i + 3:end], line))
+            line, i, content = line + text.count('\n', i, end), end + 3, True
+        elif c == '"':
+            match = HOCON_QUOTED.match(text, i)
+            if not match:
+                raise HoconError(line)
+            try:
+                tokens.append(('str', json.loads(match.group(), strict=False), line))  # Raw tabs are fine.
+            except ValueError:  # An invalid escape, which Typesafe Config rejects too.
+                raise HoconError(line)
+            i, content = match.end(), True
+        elif text.startswith('${', i):
+            end = text.find('}', i)
+            if end < 0 or '\n' in text[i:end]:
+                raise HoconError(line)
+            tokens.append(('sub', text[i:end + 1], line))
+            i, content = end + 1, True
+        elif text.startswith('+=', i):
+            tokens.append(('sep', '+=', line))
+            i, content = i + 2, True
+        elif c in '{}[],:=':
+            tokens.append(('sep' if c in ':=' else c, c, line))
+            i, content = i + 1, True
+        else:
+            match = HOCON_UNQUOTED.match(text, i)
+            tokens.append(('word', match.group(), line))
+            i, content = match.end(), True
+    return tokens, comments
+
+
+class HoconScan:
+    """Find credential settings with literal values by full path, so nested
+    objects (secret { key = ... }), quoted or joined key parts and multi-line
+    strings are read the way Typesafe Config reads them."""
+
+    def __init__(self, text):
+        self.tokens, self.comments = hocon_tokens(text)
+        self.position, self.found = 0, []
+        self.fields(None, '')
+
+    def peek(self):
+        return self.tokens[self.position][0] if self.position < len(self.tokens) else None
+
+    def take(self):
+        self.position += 1
+        return self.tokens[self.position - 1]
+
+    def fields(self, closer, path):
+        while True:
+            while self.peek() in ('nl', ','):
+                self.take()
+            if self.peek() == closer:
+                if closer:
+                    self.take()
+                return
+            if self.peek() is None or self.peek() in ('}', ']'):
+                raise HoconError(self.tokens[-1][2] if self.tokens else 1)
+            line, key = self.tokens[self.position][2], ''
+            while self.peek() in ('word', 'str'):
+                key += self.take()[1]
+            full = path + '.' + key if path and key else path or key
+            if self.peek() == '{':
+                self.take()
+                self.fields('}', full)
+            elif self.peek() == 'sep':
+                self.take()
+                self.value(full, closer)
+            elif not key.startswith('include'):
+                raise HoconError(line)
+
+    def value(self, path, closer):
+        parts = []
+        while self.peek() not in ('nl', ',', closer, None):
+            kind = self.peek()
+            if kind == '{':
+                self.take()
+                self.fields('}', path)
+            elif kind == '[':
+                self.take()
+                self.elements(path)
+            elif kind in ('}', ']'):
+                raise HoconError(self.tokens[self.position][2])
+            else:
+                parts.append(self.take())
+        literal = [part for part in parts if part[0] != 'sub']
+        if not literal or [part[:2] for part in parts] in ([('str', '')], [('word', 'null')]):
+            return
+        if CREDENTIAL_NAME.search(path):
+            self.found.append((parts[0][2], path))
+        elif QUERY_CREDENTIAL.search(''.join(part[1] for part in literal)):
+            self.found.append((parts[0][2], path + ' query parameter'))
+
+    def elements(self, path):
+        while True:
+            while self.peek() in ('nl', ','):
+                self.take()
+            if self.peek() == ']':
+                self.take()
+                return
+            self.value(path, ']')
+
+
+def config_credentials(text, suffix):
+    """Literal credentials as (line, key), and the lines of commented-out ones.
+
+    Comments do not change behavior, so those lines can be dropped. A .conf
+    file that is not HOCON, such as an Apache or systemd one, cannot be Play's
+    config; it is scanned line by line like the other formats.
+    """
+    scan = None
+    if suffix == '.conf':
+        with contextlib.suppress(HoconError):
+            scan = HoconScan(text)
+    if not scan:
+        found, dropped = [], set()
+        # Split on newlines only, like the HOCON reader, so line numbers agree.
+        for number, line in enumerate(text.split('\n'), 1):
+            key = literal_secret(line, spaced=suffix == '.properties')
+            if key and line.lstrip().startswith(LINE_COMMENT):
+                dropped.add(number)
+            elif key:
+                found.append((number, key))
+        return found, dropped
+    dropped = set()
+    for number, comment, whole_line in scan.comments:
+        key = literal_secret(comment)
+        if key and whole_line:
+            dropped.add(number)
+        elif key:
+            scan.found.append((number, key + ' in a comment'))
+    return sorted(scan.found), dropped
 
 
 def sanitize_copied_config(directory):
     """Drop commented-out credentials from a copied conf/ tree; refuse live ones.
 
-    Comments do not change behavior, so removing them is safe. A literal value
-    in a live setting cannot be externalized without guessing, so it stops the
-    adoption and names the file, line and key, never the value.
+    A literal value in a live setting cannot be externalized without guessing,
+    so it stops the adoption and names the file, line and key, never the value.
     """
     found = []
     for path in sorted(directory.rglob('*')):
         if not path.is_file() or path.suffix not in SCANNED_CONFIG:
             continue
-        lines = path.read_text(encoding='utf-8').splitlines(keepends=True)
-        kept = [line for line in lines
-                if not (line.lstrip().startswith(('#', '//')) and literal_secret(line))]
-        if kept != lines:
-            path.write_text(''.join(kept), encoding='utf-8')
-        for number, line in enumerate(kept, 1):
-            key = literal_secret(line)
-            if key:
-                found.append(path.relative_to(directory).as_posix() + ':' + str(number) + ' ' + key)
+        text = path.read_text(encoding='utf-8')
+        credentials, dropped = config_credentials(text, path.suffix)
+        if dropped:
+            lines = text.split('\n')
+            path.write_text('\n'.join(line for number, line in enumerate(lines, 1) if number not in dropped),
+                            encoding='utf-8')
+        # Line numbers are those of the installation's own file.
+        found += [path.relative_to(directory).as_posix() + ':' + str(number) + ' ' + key
+                  for number, key in credentials]
     require(not found, 'Adopted copy still has literal credentials (' + ', '.join(found) +
             '); adopt from a reviewed copy of the installation that references runtime.env instead')
 
@@ -394,11 +556,13 @@ class Deployment:
         deadline = time.monotonic() + self.settings.get('session_end_timeout_seconds', 600)
         # A killed ALTER stays listed until its rollback finishes.
         while self.query('SELECT COUNT(*) FROM information_schema.PROCESSLIST WHERE ' + mine) != '0':
-            require(time.monotonic() < deadline, 'Application DB sessions are still ending; maintenance remains enabled')
+            require(time.monotonic() < deadline, 'Application DB sessions are still ending; maintenance remains enabled. '
+                    'Rerun restore once they end')
             time.sleep(2)
         others = self.query("SELECT COUNT(*) FROM information_schema.PROCESSLIST WHERE ID <> CONNECTION_ID() "
                             "AND DB = '" + database + "'")
-        require(others == '0', 'Other sessions use the database; inspect SHOW PROCESSLIST before restoring')
+        require(others == '0', 'Other sessions use the database; maintenance remains enabled. '
+                'End them (see SHOW PROCESSLIST), then rerun restore')
 
     def capacity(self, extra=0, restoring=False):
         reserve = self.settings.get('restore_minimum_free_bytes', self.settings['minimum_free_bytes']) if restoring else self.settings['minimum_free_bytes']

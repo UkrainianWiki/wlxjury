@@ -474,10 +474,17 @@ class FailurePathTest(Fixture):
         with self.assertRaises(deploy.DeploymentError) as error:
             self.tool.restore(directory.name, accept_data_loss=True)
         self.assertIn('Other sessions', str(error.exception))
+        self.assertIn('rerun restore', str(error.exception))
         self.assertFalse(any(event[0] == 'backup' for event in self.tool.events))
         self.assertFalse(any('DROP DATABASE' in e[-1] for e in self.tool.events))
         self.assertEqual(list(directory.glob('before-restore-*')), [])
         self.assertTrue(self.tool.maintenance.exists())
+        # The way out the message names: once those sessions end, restore completes.
+        self.tool.other_sessions = 0
+        with patch.object(deploy.subprocess, 'Popen', self.restore_process()):
+            self.tool.restore(directory.name, accept_data_loss=True)
+        self.assertEqual(deploy.read_json(directory / 'deployment.json')['phase'], 'restored')
+        self.assertEqual(len(list(directory.glob('before-restore-*'))), 1)
 
     def test_release_files_are_hashed_once_per_operation(self):
         hashed = []
@@ -704,7 +711,10 @@ class LegacyAdoptionTest(Fixture):
     def test_adoption_refuses_credentials_it_cannot_externalize_and_removes_the_copy(self):
         for text, extra in ((self.LEGACY + 'play.mailer.password = "mail-private"\n', {}),
                             (self.LEGACY + 'db {\n  default {\n    password: "nested-private"\n  }\n}\n', {}),
-                            (self.LEGACY, {'application.ini': '-Dsmtp.password=ini-private\n'})):
+                            (self.LEGACY + 'play.http.secret {\n  key = "object-private"\n}\n', {}),
+                            (self.LEGACY + 'mail {\n  password = "unclosed-private"\n', {}),
+                            (self.LEGACY, {'application.ini': '-Dsmtp.password=ini-private\n'}),
+                            (self.LEGACY, {'mail.properties': 'mail.password properties-private\n'})):
             source = self.legacy_package(text, extra)
             with self.assertRaises(deploy.DeploymentError) as error:
                 self.tool.adopt_legacy(source, 'legacy-0.12-v53')
@@ -722,6 +732,27 @@ class LegacyAdoptionTest(Fixture):
         self.assertNotIn('private', copied)
         self.assertIn('# The secret key is used', copied)
         self.assertEqual(stat.S_IMODE(self.tool.current.resolve().stat().st_mode), 0o755)
+
+    def test_adoption_drops_the_commented_line_itself_when_strings_hold_other_line_breaks(self):
+        # U+2028 is a line break to str.splitlines but not to HOCON.
+        source = self.legacy_package(self.LEGACY + 'note = "a' + chr(0x2028) + 'b"\n'
+                                     '# play.mailer.password = "commented-private"\nkeep = 1\n')
+        self.tool.adopt_legacy(source, 'legacy-0.12-v53')
+        copied = (self.tool.current.resolve() / 'conf' / 'application.conf').read_text(encoding='utf-8')
+        self.assertNotIn('private', copied)
+        self.assertIn('note = "a' + chr(0x2028) + 'b"\nkeep = 1\n', copied)
+
+    def test_adoption_accepts_the_shipped_application_conf(self):
+        # Its jury greeting holds "password: {{Password}}" inside a """ string.
+        shipped = Path(__file__).resolve().parents[2] / 'conf'
+        # Older packages also shipped Apache files in conf/; they are not HOCON.
+        source = self.legacy_package((shipped / 'application.conf').read_text(encoding='utf-8'),
+                                     {'jury-images.conf': (shipped / 'apache' / 'jury-images.conf').read_text()})
+        self.tool.adopt_legacy(source, 'legacy-0.12-v53')
+        copied = (self.tool.current.resolve() / 'conf' / 'application.conf').read_text(encoding='utf-8')
+        self.assertIn('and password: {{Password}}', copied)
+        self.assertIn('play.http.secret.key = ${PLAY_HTTP_SECRET_KEY}', copied)
+        self.assertNotIn('changeme', copied)
 
     def test_adoption_refuses_quoted_credentials_before_publishing_the_copy(self):
         setting = 'play.mailer { "password": "quoted-private" }'
@@ -834,21 +865,67 @@ class OperatorSessionTest(Fixture):
 
 
 class CredentialScanTest(unittest.TestCase):
-    def test_literal_credentials_are_found_in_every_supported_form(self):
-        for line in ('play.mailer.password = "mail"', 'password: "nested"', '  smtp.passwd=abc',
-                     'application.secret="old"', '-Dsmtp.password=abc',
-                     'play.mailer { "password": "quoted" }', '"play.http.secret.key" = "quoted"',
-                     '"play"."http"."secret"."key" = "quoted"', r'"pass\u0077ord": "escaped"',
-                     'db.default.url="jdbc:mariadb://h/db?user=a&password=b"'):
-            self.assertIsNotNone(deploy.literal_secret(line), line)
+    @staticmethod
+    def hocon(text):
+        return deploy.config_credentials(text + '\n', '.conf')
 
-    def test_references_and_prose_are_not_credentials(self):
-        for line in ('play.http.secret.key = ${PLAY_HTTP_SECRET_KEY}', 'commons.password = ${?COMMONS_PASSWORD}',
-                     '"play.http.secret.key" = ${PLAY_HTTP_SECRET_KEY}',
-                     '"commons"."password" = ${?COMMONS_PASSWORD}', '"password": ""',
-                     'db.default.password = ""', '# The secret key is used to secure cryptographics functions.',
+    def test_literal_hocon_credentials_are_found_in_every_form(self):
+        escaped = '"pass' + chr(92) + 'u0077ord": "escaped"'
+        for text in ('play.mailer.password = "mail"', 'db {\n  default {\n    password: "nested"\n  }\n}',
+                     '  smtp.passwd=abc', 'application.secret="old"', 'play.mailer { "password": "quoted" }',
+                     '"play.http.secret.key" = "quoted"', '"play"."http"."secret"."key" = "quoted"', escaped,
+                     'play.http.secret { key = "same-line" }', 'play.http.secret {\n  key = "next-line"\n}',
+                     '{ play { http { secret { key = "deep" } } } }', '"pass"word = "joined"',
+                     'pass"word" = "joined"', 'password += "appended"', 'passwords = ["listed"]',
+                     'password = ${?X}"suffix"', 'password = """triple"""',
+                     'db.default.url="jdbc:mariadb://h/db?user=a&password=b"'):
+            found, _ = self.hocon(text)
+            self.assertTrue(found, text)
+            self.assertNotIn('unreadable HOCON', [key for _, key in found], text)
+
+    def test_hocon_references_strings_and_prose_are_not_credentials(self):
+        for text in ('play.http.secret.key = ${PLAY_HTTP_SECRET_KEY}', 'commons.password = ${?COMMONS_PASSWORD}',
+                     '"play.http.secret.key" = ${PLAY_HTTP_SECRET_KEY}', '"commons"."password" = ${?COMMONS_PASSWORD}',
+                     '"password": ""', 'db.default.password = null', 'play.http.secret { key = ${?KEY} }',
+                     'greeting = """Hello,\nwith login: {{Login}} and password: {{Password}}\n"""',
+                     'hint = "password: {{Password}}"', 'include "secrets.conf"',
+                     '# The secret key is used to secure cryptographics functions.',
                      'db.default.username = "app"', 'play.filters.csrf.token.name = "csrfToken"'):
-            self.assertIsNone(deploy.literal_secret(line), line)
+            self.assertEqual(self.hocon(text), ([], set()), text)
+
+    def test_strings_with_raw_tabs_are_still_read_as_hocon(self):
+        self.assertEqual(self.hocon('greeting = "login:\t{{Login}}, password:\t{{Password}}"'), ([], set()))
+
+    def test_commented_hocon_credentials_are_dropped_and_trailing_ones_refused(self):
+        found, dropped = self.hocon('# db.default.password = "old"\n// play.mailer { "password": "old" }\n'
+                                    'db.default.password = ${X} # was password = "old"')
+        self.assertEqual(dropped, {1, 2})
+        self.assertEqual(found, [(3, 'password in a comment')])
+
+    def test_conf_files_that_are_not_hocon_are_scanned_line_by_line_without_crashing(self):
+        bad_escape = chr(92) + 'q'
+        for text, found in (('password = "unterminated', [(1, 'password')]),
+                            ('db {\n  password = "unclosed"', [(2, 'password')]),
+                            ('ok = 1\npattern = "' + chr(92) + 'd+": x', []), ('a = ]', []),
+                            ('# see "C:' + bad_escape + '": here', []),
+                            ('RewriteEngine On\nErrorDocument 503 "The jury tool is undergoing maintenance."', [])):
+            self.assertEqual(self.hocon(text)[0], found, text)
+        self.assertEqual(self.hocon('[Service]\n# Environment=SMTP_PASSWORD=old\nEnvironment=SMTP_PASSWORD=abc'),
+                         ([(3, 'SMTP_PASSWORD')], {2}))
+
+    def test_shipped_apache_and_systemd_conf_files_have_no_findings(self):
+        conf = Path(__file__).resolve().parents[2] / 'conf'
+        for path in sorted(conf.glob('apache/*.conf')) + sorted(conf.glob('systemd/**/*.conf')):
+            self.assertEqual(deploy.config_credentials(path.read_text(encoding='utf-8'), '.conf'), ([], set()),
+                             path.name)
+
+    def test_line_formats_are_scanned_line_by_line(self):
+        self.assertEqual(deploy.config_credentials('-Dsmtp.password=abc\n-J-Xmx1g\n', '.ini'),
+                         ([(1, '-Dsmtp.password')], set()))
+        self.assertEqual(deploy.config_credentials('# mail.password=old\nmail.password abc\n', '.properties'),
+                         ([(2, 'mail.password')], {1}))
+        self.assertEqual(deploy.config_credentials('[client]\npassword = abc\n', '.cnf'), ([(2, 'password')], set()))
+        self.assertEqual(deploy.config_credentials('WLXJURY_DB_PASSWORD=${X}\n', '.env'), ([], set()))
 
 
 if __name__ == '__main__':
