@@ -2,17 +2,21 @@
 
 Date: 2026-10-13
 
-Status: recommendation revised after cross-review of the alternatives analysis against deployment code at `b9fe181`; no replacement has been implemented or tested.
+Status: revised after cross-review and investigation of a reduced feature set on 2026-10-13. The current tool is the baseline; simpler profiles below are proposals, not implemented or tested replacements.
 
 ## Recommendation
 
-**Keep the deployment/recovery core, separate and eventually retire the one-time adoption code, and add a thin Windows SSH frontend for single-command operation.** Use Ansible for repeatable server provisioning and configuration if that becomes worthwhile.
+**A simpler deployment can automate the successful path with standard tools and use a tested manual recovery runbook for failures.** The largest additional reduction comes from making the automated recovery commands optional, rather than recreating every current feature in Ansible. This trades guided recovery commands for more operator work and potentially longer outages.
+
+For the initial V53-to-V60 cutover, retain the current tool as the verified local baseline until an alternative has been rehearsed. For routine deployment afterward, evaluate the reduced profile described below. Keep the existing core if automated restore and resumable commands are required. In either profile, separate the one-time adoption code and provide a thin Windows SSH frontend.
 
 The original recommendation favored Ansible because its modules cover many generic operations. The [other agent's alternatives analysis](2026-10-13-deployment-tooling-alternatives.md) makes a stronger case about the actual maintenance saving: the generic helpers are small and shared by deployment and recovery, while the one-time cutover code is a larger, more complex removal target. Tool capability coverage alone does not demonstrate that rewriting the existing workflow would reduce maintenance.
 
+That comparison assumed the current automated recovery contract had to remain intact. The reduced-feature investigation changes that premise: preserving safe recovery outcomes does not require preserving all the commands and automation that currently provide them.
+
 A single-command entry point can use Windows OpenSSH and a server-side tmux session without introducing another deployment framework. Pyinfra remains an option for broader automation from native Windows, but native controller support is not a reason on its own to replace a tool that executes on the Linux server.
 
-## Current requirements
+## Current design and guarantees
 
 The proposed procedure deploys a Play application to a Linux server using one systemd service, Apache, and a shared MariaDB database. It keeps production credentials and site configuration outside the release; the production cutover remains pending. The selected application baseline includes the benchmarked background-distribution release and migrations through V60.
 
@@ -42,7 +46,7 @@ Sources: [Ansible installation and SSH management](https://docs.ansible.com/proj
 
 ## What Ansible could replace
 
-This is a capability map, not a recommendation to rewrite all these operations. The cross-review below explains why retaining the current core is preferable for this server.
+This is a capability map, not a recommendation to recreate the entire current tool in YAML. The cross-review explains the cost of retaining all its features; the reduced-feature profile below considers a smaller operational contract.
 
 | Current responsibility | Standard building block | Remaining application-specific work |
 |---|---|---|
@@ -122,17 +126,125 @@ The other agent's SSH/tmux suggestion is a practical first choice. Keeping the i
 
 The frontend should reuse the existing commands and report failures and record IDs. It should not become a second recovery engine or silently decide to reopen or restore.
 
+## Simpler deployment by reducing the feature set
+
+Investigation date: 2026-10-13. This section examines which current behaviors are essential outcomes, which can use standard implementations, and which are optional automation. It does not authorize removing any safeguard from the running system.
+
+### Essential outcomes versus optional automation
+
+The earlier analyses correctly found no turnkey substitute for the complete recovery engine. That does not establish that a complete recovery engine is necessary for this single server. An operator can recover using standard database and service tools if the procedure, evidence and backups are sufficient and have been rehearsed.
+
+The current tool already requires an operator to choose and invoke recovery; it does not automatically restore after a failed deployment. The feature being made optional is the guarded automation inside those recovery commands, not a previously implicit rollback.
+
+| Outcome to retain | Why it matters here | Simpler implementation |
+|---|---|---|
+| Credentials and site overrides remain outside releases | This solves the original manual-merge problem. | Existing systemd environment file and external Play overlay; protected files installed once, or an Ansible setup role. |
+| Reviewed artifact, verified transfer and retained old executable | Avoid deploying unintended source and preserve a usable recovery target. | Clean build, ZIP SHA-256 checked on the server, root-owned versioned release directories and retained original ZIPs. |
+| One deployment at a time | Concurrent operators must not switch releases or operate on the database independently. | One lock held for the whole server-side job, using `flock`; pending maintenance also blocks a fresh deployment. |
+| Maintenance and stopped writers | The current production tables include MyISAM; blocking HTTP alone does not stop in-flight work or other writers. | Keep the Apache flag and all-host checks, then stop the app and the known writer services/timers. |
+| No repeated migration starts after failure | A partially applied migration must not be rerun blindly by systemd. | Keep `Restart=no` during the operation and restore normal policy only after acceptance. |
+| Consistent, usable pre-migration backup | Swapping code cannot undo incompatible or destructive DDL. | `mariadb-dump`, compression with pipeline failure detection, backup checksum/integrity checks, and a rehearsed import procedure. |
+| Capacity and database identity checks | The inspected server has limited free disk; a valid backup of the wrong database is not recovery. | Fixed host/database configuration, explicit checks, and a measured free-space budget using standard tools. |
+| Application readiness and explicit reopening | An active process alone does not prove migrations completed or the intended binary is running. | Keep the existing readiness endpoint and expected build/schema checks; reopen only after smoke-test acceptance. |
+| Enough durable evidence for an interrupted run | The operator must not assume an interrupted start ran no migrations or that no writes resumed. | A small protected operation record and conservative milestones, rather than a record of every resumable phase. |
+
+The essential part of backup is its consistency and demonstrated restorability, not the custom Python dump wrapper. `--single-transaction` alone is unsuitable while MyISAM tables remain; even after conversion, concurrent DDL requires coordination. See [MariaDB dump consistency](https://mariadb.com/docs/server/clients-and-utilities/backup-restore-and-import-clients/mariadb-dump).
+
+### Features that can be removed or reduced
+
+| Current feature | Smaller alternative | Tradeoff or condition |
+|---|---|---|
+| Automatic legacy credential export, externalization, HOCON scanning and scrub commands | One reviewed manual cutover, optionally assisted by a secret scanner; then remove the bootstrap machinery. | The signing key and all required credentials still need to be preserved and reviewed. Keep legacy readiness support while retained recovery records need it. |
+| Fine-grained phase engine and the `abort`, `resume-original` and automated `restore` commands | A linear deployment recipe that leaves maintenance and restart suppression in place on failure; a separate manual recovery runbook. | Recovery takes more operator work. An interrupted migration is never handled by simply restarting the old binary. |
+| Integrated post-cutover restore, data-loss flag and rescue-dump workflow | Exclude post-cutover restoration from the routine deployment command. Use a separate incident procedure, with a fresh preservation backup and an explicit data-loss/reconciliation decision. | The automatic command can disappear; protection of later votes and the explicit decision cannot. Prefer a forward fix when traffic has resumed. |
+| Per-file release hash catalog and repeated tree verification | Verify the ZIP hash before unpacking; retain that ZIP/hash and prevent the app account from modifying releases. | Loses automatic detection of edits to extracted files. Recovery can re-extract the verified ZIP into a new directory if the installed tree is suspect. |
+| General-purpose ZIP validator and custom extractor | Standard `unzip` or Ansible `unarchive` into a new staging directory, limited to artifacts produced by the reviewed project build. | This narrows the trust model. Hashing does not make a hostile archive safe; arbitrary third-party ZIPs remain unsupported, staging must be contained, and extraction should run with limited privileges before publishing a root-owned release. |
+| Generic DB endpoint selection and parsing app secrets to construct administrative client arguments | One explicit database name and local socket in server configuration, plus a protected MariaDB client option file. | App and admin connections must still be checked to identify the same instance/database. Remote hosts or nondefault ports require revisiting this profile. |
+| A custom parser for systemd environment-file values | Let systemd read the app's environment file and MariaDB read its own option file. Keep nonsecret deployment inputs separate. | Never source the systemd environment file as shell. Secret presence and app startup still need validation. |
+| Snapshotting and automatically restoring all runtime configuration on every deployment | Keep runtime config unchanged by normal releases; handle configuration changes separately with their own protected backup and compatibility review. | A code/DB restore no longer automatically restores old credentials or site overrides. The runbook must identify compatible config for the old executable. |
+| Custom operation logging and SSH-hangup handling | A server-side tmux session or systemd job, with persistent logs and the small operation record. | Logs require suitable retention. They are evidence, not a substitute for backups or the traffic/migration milestones. |
+| Arbitrary build labels and broad deployment settings | A fixed layout for this server, a commit-derived build identity, one configured DB and a known writer list. | Less reusable across hosts. Keep the existing small build/schema manifest unless there is a concrete reason to change it. |
+
+Automatic session killing during restore is also optional: the manual runbook can inspect and end leftover app sessions and wait for DDL rollback. The requirement to quiesce them before a rescue dump or database replacement remains. A timeout or failed service start does not prove a server-side query has ended.
+
+Do not remove cheap checks merely to shorten the script. All-host maintenance verification, the schema downgrade check, capacity checks, private-file permissions and backup integrity checks prevent failures already identified on this deployment and have little implementation cost when expressed with standard tools.
+
+### Minimal evidence instead of a full recovery state machine
+
+Keep a small root-protected record containing the operation ID, previous and candidate release references, artifact hash, database name/endpoint, backup path/checksum, original database charset/collation or equivalent CREATE DATABASE metadata, and the prior state of paused writers. Record configuration identity separately when config changes are involved. It contains no credential values.
+
+Three conservative milestones are sufficient candidates for the reduced recipe:
+
+1. **Backup complete:** written only after the dump succeeds and integrity checks finish.
+2. **Migration may have started:** written durably before starting the candidate.
+3. **Traffic may have resumed:** written durably before removing maintenance.
+
+This is still a small amount of custom orchestration, but it does not require automatic phase-specific recovery or an arbitrary historical-record restore API. Missing or damaged evidence after an interruption must be treated conservatively: it is not proof that a migration or traffic reopening never occurred. Preserve the backup and stop for manual investigation.
+
+With Ansible, ownership of these milestones and the lock must be defined once for the whole workflow. An in-memory registered variable or a separate `flock` invocation around each task does not provide that guarantee. A single remote job can hold `flock` for its entire lifetime; a distributed controller would need an explicit persistent lock protocol instead. See [util-linux flock](https://github.com/util-linux/util-linux/blob/master/sys-utils/flock.1.adoc).
+
+### Candidate standard-tools workflow
+
+For one VM, a short server-side recipe using the existing OS tools is the first candidate. An Ansible playbook is an alternative when its controller and setup roles already have value. In either case, the normal sequence is:
+
+1. Build or select the reviewed artifact on Windows; upload it with OpenSSH.
+2. On the server, acquire the deployment lock, refuse an unresolved maintenance operation, verify the artifact, unpack it into a new release, and save the small operation record.
+3. Enable maintenance and verify every configured HTTP/HTTPS host, then suppress restarts and stop the app and coordinated writers.
+4. Check for remaining writers/sessions; take and verify the backup, preserving original database creation metadata and Flyway history.
+5. Record that migrations may start, switch the release atomically and start the app.
+6. Wait for the expected local build/schema readiness, then pause for smoke-test acceptance.
+7. Record possible traffic reopening, restore the normal restart policy, remove maintenance, verify public routing and resume only the writer units that should resume.
+
+Any failure stops the recipe and leaves existing maintenance/restart suppression in place. There is no automatic restore and no unconditional failure handler that opens traffic. An early failure before maintenance was enabled leaves the live application alone. A noninteractive invocation ends under maintenance.
+
+The standard building blocks are `ssh`/`scp`, `tmux` or `systemd-run`, `flock`, `sha256sum`, archive tools, `systemctl`, `mariadb-dump`, `mariadb`, compression tools and HTTP checks. These replace infrastructure implementations, not the need to specify their ordering and failure behavior. A systemd job can run independently of its launching SSH session; see [systemd-run documentation source](https://github.com/systemd/systemd/blob/main/man/systemd-run.xml).
+
+Ansible provides [SHA-256 file checks](https://docs.ansible.com/projects/ansible/latest/collections/ansible/builtin/stat_module.html), [archive extraction](https://docs.ansible.com/projects/ansible/latest/collections/ansible/builtin/unarchive_module.html), service and HTTP modules, and [MariaDB dump/import](https://docs.ansible.com/projects/ansible/latest/collections/ansible/mariadb/mariadb_db_module.html). `unarchive` does not itself verify the supplied artifact's expected checksum. For acceptance, an untimed [pause](https://docs.ansible.com/projects/ansible/latest/collections/ansible/builtin/pause_module.html) can collect input, but the recipe must check that input explicitly; a timed pause or pressing Enter is not automatic approval.
+
+### What manual recovery must still cover
+
+The reduced deployment needs a separate, rehearsed runbook for four situations:
+
+- A maintenance check failed before stopping the original service: verify the original is still healthy before removing the flag.
+- Writers stopped but candidate startup is positively known not to have begun: resume the verified old release and the appropriate units, then verify before reopening.
+- Candidate startup/migration may have begun: keep writers stopped, clear leftover DB sessions, verify the backup and target identity, recreate/import the intended database, select compatible old code/config, validate Flyway history and readiness, then decide whether to reopen.
+- Traffic may have resumed: preserve the current data, prefer a forward fix, and make a separate explicit decision about losing or reconciling later writes before restoring an old snapshot.
+
+An exact restore must not leave candidate-only tables behind. The runbook must recreate the intended database with its original defaults before import, or use an equivalently rehearsed self-contained dump; importing an old dump over the migrated database is not enough. Restoring the whole MariaDB datadir is not a shortcut for restoring only the jury database.
+
+This moves complexity from code to an operational procedure. It is a valid trade only if manual recovery time and operator responsibility are acceptable and the procedure has been exercised on an isolated production copy. It cannot support a promise of one-command unattended recovery.
+
+### A further packaging option: use Debian packages
+
+The server currently uses a Debian package, and `build.sbt` already defines `packageDebSystemd`. A reviewed `.deb` installed through standard package tools could eliminate the custom ZIP release manager and `current` symlink altogether. Old package files would be retained for manual code rollback, while credentials and the Play overlay remain in the external runtime directory.
+
+This is a separate candidate, not a ready replacement. The current external systemd drop-in launches `/opt/wlxjury/current/bin/wlxjury`, so it would have to be adapted to the package installation path. The actual package contents, Windows/Linux build route, old-package reinstall behavior and maintainer scripts have not been verified in this investigation.
+
+Package installation can request service starts or restarts. Those actions must be prevented until the backup is complete and the deliberate migration start occurs; `Restart=no` alone does not block an explicit start requested by a package script. Debian also preserves locally modified configuration files, so moving site overrides outside package defaults remains necessary to avoid the original merge problem. See [Debian service policy](https://www.debian.org/doc/debian-policy/ch-opersys.html#starting-system-services) and [configuration-file policy](https://www.debian.org/doc/debian-policy/ch-files.html#configuration-files).
+
+Keep this option behind the smaller ZIP/standard-tools recipe in priority: changing packaging adds an additional deployment behavior to validate during the initial migration-heavy release.
+
+### Choice of operating contract
+
+| Profile | Code and dependencies | Failure handling | Assessment |
+|---|---|---|---|
+| Current core, bootstrap separated | Existing Python engine and shared helpers | Automated phase-aware recovery commands | Keep when those capabilities are required; initial-cutover baseline. |
+| Standard-tools recipe, manual recovery | Small orchestration recipe, minimal evidence and runbook; Ansible optional | Operator diagnoses and follows the rehearsed recovery procedure | Main simplification candidate for one server with infrequent releases. |
+| Debian package workflow, manual recovery | Standard package tools plus maintenance/backup recipe | Operator reinstalls compatible code and restores DB if necessary | Potential further reduction, after packaging behavior is verified. |
+
+The earlier estimate of only about 140 replaceable helper lines applies when all current recovery automation is retained. Dropping that automation changes the scope and could remove more custom code. No reduced implementation exists yet, so a final line count or claimed percentage saving would be speculative.
+
 ## Suggested next steps
 
 1. Let the current deployment fixes finish and preserve the resulting behavior as the baseline.
 2. Separate one-time legacy adoption and credential externalization from routine deployment. Complete the production cutover with the existing safeguards, then retire code that is no longer needed for recovery.
-3. Keep the core deploy and recovery commands and their shared helpers.
-4. Add a thin Windows SSH/tmux frontend for single-command operation, with explicit smoke-test acceptance before reopening.
-5. Adopt Ansible for server provisioning and external configuration only if repeatable setup justifies the additional toolchain. Consider pyinfra if broader native Windows automation is needed.
-6. Rehearse the exact release and interrupted recovery against an isolated production copy; any later replacement must preserve the verified behavior.
+3. Decide whether failure recovery must remain automated. If it must, keep the core commands and shared helpers. If manual recovery is acceptable, evaluate the reduced standard-tools profile and its runbook before replacing them.
+4. Add a thin Windows SSH/tmux frontend for single-command normal deployment, with explicit smoke-test acceptance before reopening.
+5. Adopt Ansible for repeatable setup or the reduced recipe only when its toolchain is justified. Do not duplicate the full Python recovery engine in YAML.
+6. Rehearse the exact release and interrupted recovery against an isolated production copy, including the conservative handling of uncertain migration/traffic state. Verify the candidate's actual maintenance reduction before adopting it.
 
-The concrete maintenance target is removing completed one-time cutover machinery. A frontend improves operation, while provisioning automation improves repeatable setup; neither by itself reduces the existing recovery code.
+The immediate maintenance target is completed one-time cutover machinery. The additional target is optional recovery automation, if the operational contract permits manual incidents. A frontend alone improves convenience; a smaller contract is what makes a substantially smaller implementation possible.
 
 ## Investigation limits
 
-This analysis covers documented capabilities and their fit to the repository, plus a read-only cross-review and verification of file counts. It does not certify module behavior against this server, its credentials, its Apache configuration, or its database. No tools were installed, no production changes were made, and no tests were run during this investigation or cross-review. Testing is deferred until the other agent's fixes are complete, as requested.
+This analysis covers documented capabilities and their fit to the repository, a read-only cross-review and verification of file counts, and a proposed reduced-feature deployment contract. It does not certify module behavior against this server, its credentials, its Apache configuration, or its database. No tools were installed, no production changes were made, and no tests were run during this investigation or cross-review. Neither the reduced recipe nor the Debian package alternative has been implemented or rehearsed. Testing is deferred until the other agent's fixes are complete, as requested.
