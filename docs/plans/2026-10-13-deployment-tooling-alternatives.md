@@ -2,7 +2,7 @@
 
 Date: 2026-10-13
 
-Status: investigation of existing tools against the custom deployment code at `b9fe181`, revised after cross-review with the [deployment tooling analysis](2026-10-13-deployment-tooling-analysis.md), extended with a review of which features are optional, and revised again after comparing that review with the other analysis's reduced-feature profile. Line counts are measured; savings are estimates. Apart from one dump-and-restore check on MariaDB 10.6, nothing has been replaced or tested with another tool.
+Status: investigation of existing tools against the custom deployment code at `b9fe181`, revised after cross-review with the [deployment tooling analysis](2026-10-13-deployment-tooling-analysis.md), extended with a review of which features are optional, revised again after comparing that review with the other analysis's reduced-feature profile, and updated once the routine-deployment script was implemented and tested locally. Line counts are measured. The script has been tested only locally against a real MariaDB 10.6; nothing has been rehearsed on a production copy or replaced with another tool.
 
 ## Summary
 
@@ -12,9 +12,9 @@ No existing tool does most of what `scripts/deployment/wlxjury-deploy.py` does. 
 2. **Recovery logic specific to this setup** (one server, one MariaDB database, migrations that cannot be undone): saved phase records, the `abort`/`reopen`/`restore`/`resume-original` commands, the rescue dump, ending leftover sessions, and refusing a restore after traffic has reopened without `--accept-data-loss`. No tool found provides this.
 3. **One-time cutover code** for the old 0.12 installation: `init-runtime`, `adopt-legacy`, `scrub-legacy`, the config externalizer and the credential scanner. About 350 lines of the tool and about 250 lines of tests. This is the most complex part, and both review rounds found their hardest bugs in it.
 
-No tool replaces part 2, but at this app's scale most of it is optional ([Optional features](#optional-features-a-simpler-deployment-with-standard-tools)). A short script using `unzip`, `mariadb-dump`, `curl`, `flock` and `tmux`, with three durable milestones, covers routine deployment; failures are handled by a rehearsed manual runbook. That trades the tool's guided recovery commands and its automated tests for operator work, which is acceptable while the developer is also the operator.
+No tool replaces part 2, but at this app's scale most of it is optional ([Optional features](#optional-features-a-simpler-deployment-with-standard-tools)). A smaller script using `unzip`, `mariadb-dump`, `curl`, `flock` and `tmux`, with durable milestones, covers routine deployment; failures are handled by a rehearsed manual runbook. That trades the tool's guided recovery commands for operator work, which is acceptable while the developer is also the operator. It is implemented as `scripts/deployment/wlxjury-release.sh` ([Implementation](#implementation)).
 
-The recommended plan ([Recommendations](#recommendations)): do the coming cutover with the current, tested tool; switch routine deployments to the script; delete the tool once its recovery records are retired or covered by the runbook. The Debian package the build already produces stays a later option.
+The recommended plan ([Recommendations](#recommendations)): do the coming cutover with the current, tested tool; switch routine deployments to the script; retire the Python tool and the tests coupled to it once its recovery records are retired or covered by the runbook. The Debian package the build already produces stays a later option.
 
 ## Current size
 
@@ -88,77 +88,34 @@ Each is a line or two in the script or runbook:
 3. Automatic restarts stay off until traffic reopens.
 4. Traffic reopens only after a local smoke test.
 5. After reopening, a restore needs an explicit decision and a fresh dump first.
-6. Three milestones are written durably before the step they describe: `backup-complete`, `migration-may-start` and `traffic-may-resume`. A missing or damaged milestone file is never taken as proof that a step did not happen.
+6. Durable milestones are written before the step they describe: `started` first, then `backup-complete` (after the dump, checksum, config snapshot and record are flushed), `migration-may-start` and `traffic-may-resume`. A missing or damaged milestones file means "unknown", never "nothing happened".
+7. Every operation takes the same lock as `wlxjury-deploy` (`/opt/wlxjury/deployment.lock`), so the two never run at once.
 
-### A minimal procedure (sketch, untested)
+### Implementation
 
-```bash
-#!/bin/bash
-# wlxjury-deploy RELEASE.zip SHA256 -- run as root inside tmux, after the cutover.
-set -euo pipefail
-URLS=(http://jury.wle.org.ua/ https://jury.wle.org.ua/)   # every jury URL, HTTP and HTTPS
-DATABASE=wlxjury                                           # the WLXJURY_DB value
-ADMIN=--defaults-extra-file=/etc/wlxjury-runtime/db-admin.cnf
-ROOT=/opt/wlxjury
-exec 9>/run/wlxjury-deploy.lock; flock -n 9
-[ ! -e /etc/wlxjury-runtime/maintenance ] || { echo "Maintenance is on: finish the previous operation"; exit 1; }
-zip=$(realpath "$1"); echo "$2  $zip" | sha256sum -c -
-dir=/var/backups/wlxjury/$(date -u +%Y%m%dT%H%M%SZ); mkdir -m 700 "$dir"
-exec > >(tee -a "$dir/deploy.log") 2>&1
-mark() { echo "$1" >> "$dir/milestones"; sync "$dir/milestones"; }
-field() { python3 -c 'import json,sys; print(json.load(sys.stdin)[sys.argv[1]])' "$1"; }
+The sketch that first stood here is implemented as [`scripts/deployment/wlxjury-release.sh`](../../scripts/deployment/wlxjury-release.sh), with `deploy` and `reopen` commands, and its recovery runbook is in [docs/deployment.md](../deployment.md#recovery-runbook). The implementation fixes what a review of the sketch found:
 
-# Unpack into a new root-owned release; never overwrite one.
-release=$ROOT/releases/$(basename "$zip" .zip)-${2:0:12}
-[ ! -e "$release" ] || { echo "Release exists: $release"; exit 1; }
-staging=$(mktemp -d "$ROOT/releases/.staging.XXXXXX")
-unzip -q "$zip" -d "$staging"; mv "$staging"/*/ "$release"; rmdir "$staging"
-build=$(field build < "$release/wlxjury-build.json")
-want=$(field schemaVersion < "$release/wlxjury-build.json")
-have=$(mariadb "$ADMIN" -N -e "SELECT version FROM $DATABASE.flyway_schema_history
-  WHERE success = 1 AND version IS NOT NULL ORDER BY installed_rank DESC LIMIT 1")
-[ "$(printf '%s\n' "$have" "$want" | sort -V | tail -1)" = "$want" ] || { echo "Release is older than the database"; exit 1; }
-[ "$(df --output=avail -B1 /var/lib/mysql | tail -1)" -gt $((4 << 30)) ] || { echo "Less than 4 GiB free"; exit 1; }
-printf 'previous=%s\ncandidate=%s\nzip=%s\n' "$(readlink -f "$ROOT/current")" "$release" "$2" > "$dir/record"
+1. **Unknown state.** The sketch's runbook treated missing milestones as "nothing changed". Now an operation writes `started` first, so a missing or damaged milestones file means "unknown", and `reopen` refuses it. Going back to the previous release is accepted without a restore only when `migration-may-start` was never recorded: `current` is switched only after that milestone is durable. After it, `reopen` refuses the previous release until the runbook's restore records `database-restored`. Otherwise an old release would look ready on a database whose interrupted migration left DDL but no history row.
+2. **One lock.** The sketch locked `/run/wlxjury-deploy.lock`; the script takes the Python tool's lock. `reopen` also checks that `current` is the operation's candidate or previous release, and that it is ready, before removing maintenance.
+3. **The configured writers.** The sketch stopped a made-up `wlxjury-backup.timer`. The script reads `deployment.json`, stops each configured unit (the backup timer and its service), and checks that each has stopped. It checks enabled database events before starting and again just before the dump.
+4. **Flush before `backup-complete`.** The dump, checksum, config snapshot and record are flushed before the milestone; the `current` switch is flushed before the app starts.
 
-touch /etc/wlxjury-runtime/maintenance
-for url in "${URLS[@]}"; do
-  curl -s "$url" | grep -q 'undergoing maintenance' || { echo "No maintenance page at $url"; exit 1; }
-done
-printf '[Service]\nRestart=no\n' > /etc/systemd/system/wlxjury.service.d/zz-hold.conf
-systemctl daemon-reload
-systemctl stop wlxjury-backup.timer wlxjury
-mariadb-dump "$ADMIN" --databases "$DATABASE" --add-drop-database --lock-tables --quick \
-  --routines --events --triggers | gzip > "$dir/database.sql.gz"
-gzip -t "$dir/database.sql.gz"; sha256sum "$dir/database.sql.gz" > "$dir/database.sql.gz.sha256"
-tar -C / -czf "$dir/config.tgz" etc/wlxjury-runtime etc/default/wlxjury
-mark backup-complete
+It also keeps the smaller safeguards: HTTP 503 as well as the page text, and a free-space check after the dump.
 
-mark migration-may-start
-ln -sfn "$release" "$ROOT/current.next"; mv -T "$ROOT/current.next" "$ROOT/current"
-systemctl start wlxjury            # Flyway migrates on start
-serving=$(curl -fsS --retry 150 --retry-delay 2 --retry-all-errors http://127.0.0.1:9000/health/ready | field build)
-[ "$serving" = "$build" ] || { echo "Serving $serving, expected $build"; exit 1; }
-echo "Ready under maintenance. Smoke-test 127.0.0.1:9000, then reopen $dir."
-```
+The script is 316 lines (258 without comments and blank lines) and reads the same `deployment.json`, `runtime.env` and `db-admin.cnf` as the Python tool. Its tests, `scripts/deployment/test_release_script.py` (508 lines), run it unmodified against a real MariaDB 10.6 in the existing `Dockerfile.test` image, with stand-ins only for systemd and Apache. They cover:
+- deploying and reopening;
+- refusals that leave everything unchanged;
+- a vhost without the maintenance page;
+- a lost milestones file;
+- rerunning `reopen` after a routing failure;
+- the runbook restore after an interrupted migration, including the refusal before `database-restored`.
 
-Reopening is a few more lines in a second script: `mark traffic-may-resume`, remove `zz-hold.conf`, `systemctl daemon-reload`, remove the maintenance flag, check each URL with `curl -fsS`, start the backup timer.
-
-### Recovery runbook
-
-Read the last milestone in the operation's folder and use the matching section:
-
-- **No `backup-complete`:** the database and the selected release are unchanged. If the app is still running (for example, a URL had no maintenance page), check it locally and remove the flag. If it was stopped, remove the hold, `systemctl daemon-reload`, start the app and the backup timer, check it locally, then remove the flag.
-- **`backup-complete` but no `migration-may-start`:** the same, since the old release was never switched or restarted.
-- **`migration-may-start`, traffic still blocked:** never just restart the old release; the migration may have run. Stop the app. End leftover app sessions (`SHOW PROCESSLIST`, `KILL`, and wait for a killed `ALTER` to finish rolling back) and confirm nobody else uses the database. Check the dump with `sha256sum -c`, import it with `zcat database.sql.gz | mariadb "$ADMIN"`, and restore `config.tgz` if config changed. Switch `current` back to `previous` from the record, start the app, check readiness (a legacy release has no `/health/ready`; use `/auth` and the Flyway history), then reopen.
-- **`traffic-may-resume`:** later writes may exist. Prefer a forward fix. A restore needs an explicit decision to lose or reconcile those writes, and a fresh dump taken first.
-
-Rehearse every section on a production copy. The existing Docker test image can exercise the database steps, as the dump check above did.
+A copy of the script without that refusal fails the restore test. The script passes shellcheck at its strictest level.
 
 ### What is lost
 
-- **Guided recovery commands.** The milestones say which runbook section applies, but the operator carries out the recovery by hand, and nothing stops the wrong command being typed. Recovery may take longer.
-- **About 1,230 lines of automated tests.** The rehearsal on a production copy, which the procedure requires anyway, becomes the main verification and must include each runbook section.
+- **Guided recovery commands.** The milestones say which runbook section applies and `reopen` enforces the rules above, but the operator carries out a restore by hand, and recovery may take longer.
+- **Most of the Python tool's tests.** Tests coupled to the Python tool go with it. The MariaDB test image and the script's own tests stay, and the rehearsal on a production copy must include each runbook section.
 - **Release re-verification.** Extracted files are not re-hashed before each use; a suspect release is re-extracted from its kept ZIP instead.
 - **Automatic config restore.** The runbook restores `config.tgz` only when config changed with the release; routine releases keep config unchanged.
 
@@ -181,9 +138,9 @@ It is not the first step, for four reasons:
 ## Recommendations
 
 1. **Do the cutover with the current, tested tool.** Its adoption, recovery and tests are verified locally, and the V53-to-V60 release is the riskiest one. Remove the one-time cutover code afterwards (about 350 lines of the tool and about 250 lines of tests). Keep the legacy support that recovery still uses: `wait_ready` checks `/auth` instead of `/health/ready` for a release marked `legacy`, and restore selects that release. Keep it until every recovery record targeting the adopted release has been explicitly retired. A later deployment does not retire them: earlier records are kept and can still select the adopted release.
-2. **Switch routine deployments to the script and runbook above**, keeping the six guards. The script keeps the tool's layout, so no migration is needed.
-3. **Rehearse the script and every runbook section on a production copy** before relying on them, including an interrupted migration.
-4. **Delete the Python tool, its tests and `Dockerfile.test`** once the tool's recovery records are retired, or the runbook covers restoring from them (each holds a dump, a config snapshot and the previous release). This removes about 2,300 lines of tool and test code for about 50 lines of script and a page of runbook.
+2. **Switch routine deployments to `wlxjury-release`** once the cutover is complete ([docs/deployment.md](../deployment.md#routine-deployment-after-the-cutover)). It keeps the tool's layout, so no migration is needed.
+3. **Rehearse it and every runbook section on a production copy** before relying on it, including an interrupted migration.
+4. **Retire the Python tool and the tests coupled to it** once its recovery records are retired, or the runbook covers restoring from them (each holds a dump, a config snapshot and the previous release). Keep `Dockerfile.test`, the MariaDB test setup and `test_release_script.py`. This replaces the 1,107-line tool and about 1,230 lines of its tests with a 316-line script and 508 lines of tests that exercise it against a real database.
 5. **Keep `BuildIdentity.scala` and the manifest.** The script relies on them for the older-release check and the readiness comparison.
 6. **Use Ansible, if at all, for server setup**, not for deployment and recovery.
 7. **Consider the Debian package later**, once its build route and the installed package's maintainer scripts have been checked.
@@ -244,7 +201,11 @@ This document adds four points to that profile:
 1. **Package scripts.** The Debian maintainer scripts are verified rather than unknown: in sbt-native-packager 1.10.0 the old `prerm` stops and disables the service, and the new `postinst` enables and starts it. With the backup taken before `dpkg -i`, the package's start is the intended migration start rather than an early one. The open question is the installed 0.12 package's own `prerm`.
 2. **Exact restore.** `mariadb-dump --databases --add-drop-database` was tested to restore the original collation and remove tables added by a migration, so the record need not store the charset.
 3. **Config snapshot.** By the profile's own rule of keeping cheap checks, a one-line `tar` of the runtime config is worth keeping as evidence rather than dropping.
-4. **Size.** A concrete sketch puts the routine path at about 50 lines, against about 2,300 lines of tool and tests today.
+4. **Size.** A concrete sketch put the routine path at about 50 lines. That compared an untested sketch with a tested tool, as the next review pointed out; the implementation is 316 lines with 508 lines of tests.
+
+### Review of the plan at `02791bb`
+
+The other agent's review of this plan found four problems in the sketch, all fixed in the [implementation](#implementation): missing milestones read as "nothing changed", a lock not shared with the Python tool, the wrong writer units, and a milestone recorded before the backup was flushed. It also asked to keep the HTTP 503 check and the free-space check after the dump, which the implementation does. And it disagreed with deleting all tests and `Dockerfile.test`: retire only the tests coupled to the Python tool, and keep the MariaDB test environment with meaningful backup, recovery and failure tests. The recommendations now say so.
 
 ### Earlier combined recommendation
 
@@ -257,4 +218,4 @@ This predates the optional-features review and matches step 1 of [Recommendation
 
 ## Limits
 
-Upstream capabilities were taken from documentation, and the `ansible.mariadb.mariadb_db`, sbt-dynver, kamal-proxy and Gitleaks behavior was checked against their published docs and source. The Debian package behavior was read from the sbt-native-packager 1.10.0 jar this build uses, the Flyway behavior from the flyway-play 8.0.1 and Flyway 9.16.3 sources, and the readiness behavior from `ReadinessController`. The dump-and-restore claim was tested on MariaDB 10.6 in the deployment test image. The script and runbook are a sketch: they have not been run, and no alternative tool was installed or run against this server.
+Upstream capabilities were taken from documentation, and the `ansible.mariadb.mariadb_db`, sbt-dynver, kamal-proxy and Gitleaks behavior was checked against their published docs and source. The Debian package behavior was read from the sbt-native-packager 1.10.0 jar this build uses, the Flyway behavior from the flyway-play 8.0.1 and Flyway 9.16.3 sources, and the readiness behavior from `ReadinessController`. The dump-and-restore claim was tested on MariaDB 10.6 in the deployment test image. `wlxjury-release.sh` and its runbook restore were run only in the local test image, against a real MariaDB 10.6 with stand-ins for systemd and Apache. They have not been rehearsed on a production copy, and no alternative tool was installed or run against this server.
