@@ -28,10 +28,30 @@ function formatJobProgress(p) {
     return "";
 }
 
+/* The counts in a job's details, by kind: a distribution's images added (always), an
+   import's files and monuments (when there are any). */
+var JOB_COUNTS = [
+    ["inserted", "new"],
+    ["linked", "linked"],
+    ["updated", "updated"],
+    ["monumentIdsChanged", "monument ids changed"],
+    ["monuments", "monuments"]
+];
+
+function formatJobCounts(details) {
+    var d = details || {};
+    var parts = [];
+    if (d.imagesAdded != null) parts.push(formatCount(d.imagesAdded) + " added");
+    JOB_COUNTS.forEach(function (c) {
+        if (d[c[0]] > 0) parts.push(formatCount(d[c[0]]) + " " + c[1]);
+    });
+    if (d.missingTitles && d.missingTitles.length > 0) parts.push(formatCount(d.missingTitles.length) + " not found");
+    return parts.length > 0 ? ", " + parts.join(", ") : "";
+}
+
 function formatJobStatus(p) {
     var progress = formatJobProgress(p);
-    var details = p.details || {};
-    var added = details.imagesAdded != null ? ", " + formatCount(details.imagesAdded) + " added" : "";
+    var added = formatJobCounts(p.details);
     switch (p.status) {
         case "queued":
             return "Queued" + (p.queuePosition > 0 ? " (" + p.queuePosition + " ahead)" : "");
@@ -100,6 +120,7 @@ if (typeof module !== "undefined") {
     module.exports = {
         formatJobStatus: formatJobStatus,
         formatJobProgress: formatJobProgress,
+        formatJobCounts: formatJobCounts,
         pollJobStatus: pollJobStatus,
         initJobStatuses: initJobStatuses
     };

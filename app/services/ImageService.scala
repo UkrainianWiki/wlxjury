@@ -6,7 +6,7 @@ import play.api.Logging
 import scalikejdbc.{DB, DBSession}
 import services.imports.ImageImportHandler.Mode
 import services.imports.{ImageImportHandler, ImportParams, ImportSource, MonumentListImportHandler}
-import services.jobs.{Job, JobScheduler}
+import services.jobs.{Job, JobJdbc, JobScheduler}
 
 import javax.inject.Inject
 
@@ -50,6 +50,12 @@ class ImageService @Inject() (
       created.foreach(_.foreach(j => jobs.started(j.id)))
       created
     }
+
+  /** The contest's latest job of each import kind, the newest first. */
+  def latestJobs(contestId: Long): Seq[Job] =
+    Seq(ImageImportHandler.Kind, MonumentListImportHandler.Kind)
+      .flatMap(kind => JobJdbc.latestBySubjects(kind, ImageImportHandler.SubjectType, Seq(contestId)).get(contestId))
+      .sortBy(-_.id)
 
   /** What the job does, for messages, e.g. "Importing files from Category:…". */
   def title(job: Job): String = jobs.handler(job.kind).fold(job.kind)(_.title(job))

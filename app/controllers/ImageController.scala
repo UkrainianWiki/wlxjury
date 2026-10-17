@@ -9,6 +9,7 @@ import play.api.data.Forms._
 import play.api.i18n.I18nSupport
 import play.api.mvc.{ControllerComponents, EssentialAction}
 import play.api.libs.json.Json
+import services.jobs.Job
 import services.{ImageService, LocalImageCacheService}
 import spray.util.pimpFuture
 
@@ -26,7 +27,7 @@ class ImageController @Inject() (
 
   /** Shows contest images view
     */
-  def images(contestId: Long, inProgress: Boolean = false): EssentialAction =
+  def images(contestId: Long): EssentialAction =
     withAuth(contestPermission(User.ADMIN_ROLES, Some(contestId))) { user => implicit request =>
       val contest = ContestJuryJdbc.findById(contestId).get
 
@@ -37,9 +38,13 @@ class ImageController @Inject() (
         importImagesForm.fill((contest.images.getOrElse(""), "", ""))
       Ok(
         views.html
-          .contest_images(filledForm, contest, user, sourceImageNum, dbImagesNum, inProgress)
+          .contest_images(filledForm, contest, user, sourceImageNum, dbImagesNum, importJobs(contestId))
       )
     }
+
+  /** The contest's latest import jobs, each with what it does. */
+  private def importJobs(contestId: Long): Seq[(Job, String)] =
+    imageService.latestJobs(contestId).map(j => j -> imageService.title(j))
 
   def getNumberOfImages(contest: ContestJury): Long = {
     contest.images.fold(0L) { images =>
@@ -58,7 +63,7 @@ class ImageController @Inject() (
           formWithErrors =>
             BadRequest(
               views.html
-                .contest_images(formWithErrors, contest, user, 0, ImageJdbc.countByContest(contest))
+                .contest_images(formWithErrors, contest, user, 0, ImageJdbc.countByContest(contest), importJobs(contestId))
             ),
           { case (source, list, action) =>
             // the import runs in the background: the files page shows its progress

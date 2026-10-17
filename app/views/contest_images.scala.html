@@ -3,13 +3,28 @@
         user: db.scalikejdbc.User,
         sourceImages: Long,
         dbImages: Long,
-        inProgress: Boolean = false
+        importJobs: Seq[(services.jobs.Job, String)] = Nil
 )(implicit flash: Flash, messages: Messages, req: RequestHeader)
     @import helper._
     @import b3.vertical.fieldConstructor
 
     @mainAdmin(Messages("contest.files"), user, user.getId, contestId = contest.id) {
         <h3>@Messages("contest") @contest.fullName</h3>
+
+        @flash.get("error").map { err =>
+            <div class="alert alert-danger" style="color:#a94442;background:#f2dede;border:1px solid #ebccd1;padding:10px;border-radius:4px;margin-bottom:10px">@err</div>
+        }
+
+        @* the imports run in the background: their progress, with Retry and Cancel *@
+        @if(importJobs.nonEmpty) {
+            <div class="well well-sm" id="import-jobs">
+                @for((job, title) <- importJobs) {
+                    <div>@title: @snippets.jobStatus(job, req.uri)</div>
+                }
+            </div>
+            <script src="@routes.Assets.at("javascripts/job-status.js")"></script>
+        }
+
         @b3.vertical.form(routes.ImageController.importImages(contest.getId), Symbol("id") -> "import-images") { implicit vfc =>
             @helper.CSRF.formField
 
