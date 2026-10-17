@@ -64,6 +64,12 @@ class ConvertToInnoDbMigrationSpec extends Specification with AfterAll {
       }
     }
 
+  /** The migrations after V53, in Flyway's order. */
+  private lazy val afterV53: Seq[String] = new File(migrations.toString).listFiles().map(_.getName)
+    .filter(_.matches("V\\d+(_\\d+)?__.*\\.sql"))
+    .map(n => (n.drop(1).takeWhile(_ != '_' ).toInt, n.drop(1).split("__").head.split("_").drop(1).headOption.map(_.toInt).getOrElse(0), n))
+    .filter(_._1 > 53).sortBy(m => (m._1, m._2)).map(_._3).toSeq
+
   /** A fresh database with production's V53 MyISAM schema and a few rows. */
   private def prodLikeDb(name: String): Connection = {
     Using.resource(connect("")) { c =>
@@ -147,16 +153,60 @@ class ConvertToInnoDbMigrationSpec extends Specification with AfterAll {
     }
 
     "every migration after V53 then run in Flyway's order" in {
-      val pending = new File(migrations.toString).listFiles().map(_.getName)
-        .filter(_.matches("V\\d+(_\\d+)?__.*\\.sql"))
-        .map(n => (n.drop(1).takeWhile(_ != '_' ).toInt, n.drop(1).split("__").head.split("_").drop(1).headOption.map(_.toInt).getOrElse(0), n))
-        .filter(_._1 > 53).sortBy(m => (m._1, m._2)).map(_._3).toSeq
-      pending must contain(v55_1)
+      afterV53 must contain(v55_1)
       Using.resource(prodLikeDb("chain")) { c =>
-        pending.foreach(m => run(c, script(m)))
+        afterV53.foreach(m => run(c, script(m)))
         tableStatus(c)("selection")._1 === "InnoDB"
         rows(c, """SELECT COUNT(*) FROM information_schema.REFERENTIAL_CONSTRAINTS
                    WHERE CONSTRAINT_SCHEMA = DATABASE() AND CONSTRAINT_NAME = 'FK_selection_page_id'""")(_.getInt(1)) === List(1)
+      }
+    }
+
+    "V62 move users' contest and roles into user_contest and is_root" in {
+      Using.resource(prodLikeDb("memberships")) { c =>
+        run(c, Seq(
+          "INSERT INTO contest_jury (id, name, country, year) VALUES (8, 'Wiki Loves Earth', 'Ukraine', 2025)",
+          "INSERT INTO users (id, fullname, email, password, roles, contest_id) VALUES " +
+            "(10, 'Root', 'root@bench.test', 'x', 'root', 7), " +
+            "(11, 'Two roles', 'two@bench.test', 'x', 'jury, organizer', 8), " +
+            "(12, 'Gone contest', 'gone@bench.test', 'x', 'jury', 99), " +
+            "(13, 'No contest', 'none@bench.test', 'x', 'jury', NULL), " +
+            "(14, 'No role', 'norole@bench.test', 'x', '', 8), " +
+            "(15, 'Juror+WLE', 'juror1+wle@bench.test', 'x', 'jury', 8)"
+        ))
+        afterV53.foreach(m => run(c, script(m)))
+
+        rows(c, "SELECT user_id, contest_id, role FROM user_contest ORDER BY user_id")(rs =>
+          (rs.getLong(1), rs.getLong(2), rs.getString(3))) === List(
+          (1L, 7L, "jury"), (5L, 7L, "admin"), (11L, 8L, "jury,organizer"), (15L, 8L, "jury"))
+        rows(c, "SELECT id FROM users WHERE is_root ORDER BY id")(_.getLong(1)) === List(10L)
+        rows(c, """SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE()
+                   AND TABLE_NAME = 'users' AND COLUMN_NAME IN ('roles', 'contest_id')""")(_.getInt(1)) === List(0)
+        // every account stays; deleting one deletes its memberships
+        rows(c, "SELECT COUNT(*) FROM users")(_.getInt(1)) === List(8)
+        run(c, Seq("DELETE FROM users WHERE id = 11"))
+        rows(c, "SELECT COUNT(*) FROM user_contest WHERE user_id = 11")(_.getInt(1)) === List(0)
+      }
+    }
+
+    "the alias account report run on production's V53 schema" in {
+      Using.resource(prodLikeDb("aliases")) { c =>
+        run(c, Seq(
+          "INSERT INTO contest_jury (id, name, country, year) VALUES (8, 'Wiki Loves Earth', 'Ukraine', 2025)",
+          "INSERT INTO users (id, fullname, email, password, roles, contest_id) VALUES " +
+            "(20, 'Ann', 'ann@bench.test', 'x', 'jury', 7), " +
+            "(21, 'Ann', 'Ann+WLE@bench.test', 'x', 'jury', 8), " +
+            "(22, 'Bo', 'b.o+wlm@gmail.com', 'x', 'jury', 7), " +
+            "(23, 'Bo', 'bo+wle@gmail.com', 'x', 'jury', 7)"
+        ))
+        val report = statements(new String(Files.readAllBytes(Paths.get("scripts/report-alias-accounts.sql")), "UTF-8"))
+        report.size === 3
+
+        rows(c, report(0))(rs => (rs.getString("person"), rs.getLong("id"))) ===
+          List(("ann@bench.test", 20L), ("ann@bench.test", 21L), ("bo@gmail.com", 22L), ("bo@gmail.com", 23L))
+        rows(c, report(1))(rs => (rs.getLong("account1"), rs.getLong("account2"), rs.getString("shared_contests"))) ===
+          List((22L, 23L, "7"))
+        rows(c, report(2))(rs => (rs.getInt(1), rs.getInt(2), rs.getInt(3))) === List((2, 4, 1))
       }
     }
   }
