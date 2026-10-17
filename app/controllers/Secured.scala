@@ -35,10 +35,9 @@ abstract class Secured(cc: ControllerComponents) extends AbstractController(cc) 
   )(f: => User => Request[AnyContent] => Result): EssentialAction = {
     Security.Authenticated(userFromRequest, onUnAuthenticated) { user =>
       Action { request =>
-        if (permission(user))
-          f(user)(request)
-        else
-          onUnAuthorized(user)
+        permitted(user, permission).fold(onUnAuthorized(user)) { permittedUser =>
+          Secured.switchingContest(user, permittedUser)(f(permittedUser)(request))(request)
+        }
       }
     }
   }
@@ -52,13 +51,26 @@ abstract class Secured(cc: ControllerComponents) extends AbstractController(cc) 
   )(f: => User => Request[AnyContent] => Result): EssentialAction =
     Action.async { request =>
       Future {
-        userFromRequest(request) match {
-          case None                           => onUnAuthenticated(request)
-          case Some(user) if permission(user) => f(user)(request)
-          case Some(user)                     => onUnAuthorized(user)
+        userFromRequest(request).fold(onUnAuthenticated(request)) { user =>
+          permitted(user, permission).fold(onUnAuthorized(user)) { permittedUser =>
+            Secured.switchingContest(user, permittedUser)(f(permittedUser)(request))(request)
+          }
         }
       }(ec)
     }
+
+  /** The user if `permission` lets them in, in the session's current contest; else in
+    * the first other of their contests where it does, so that a link into another of
+    * their contests (a bookmark, a link in an email) opens it instead of failing until
+    * they switch by hand. That contest then becomes the session's current one.
+    */
+  private def permitted(user: User, permission: Permission): Option[User] =
+    if (permission(user)) Some(user)
+    else
+      user.userContests.iterator
+        .filter(m => m.active && !user.contestId.contains(m.contestId))
+        .map(user.inContest)
+        .find(permission)
 
   def rolePermission(roles: Set[String])(user: User): Boolean = user.hasAnyRole(roles)
 
@@ -79,16 +91,33 @@ object Secured {
   val UserName         = "username"
   val CurrentContestId = "current_contest_id"
 
-  /** The user with their memberships, in `currentContestId` (the session's) if they are a
-    * member of it, else in their latest contest. A root user needs no membership.
+  /** The user with their memberships, in `currentContestId` (the session's) if they are an
+    * active member of it, else in their latest contest where they are. A root user needs
+    * no membership.
     */
   def inCurrentContest(user: User, currentContestId: Option[String]): User = {
     val memberships = UserContestJdbc.findByUser(user.getId)
     val withMemberships = user.copy(userContests = memberships)
+    val active = memberships.filter(_.active)
     val requested = currentContestId.flatMap(_.toLongOption)
     requested
-      .flatMap(id => memberships.find(_.contestId == id))
-      .orElse(memberships.headOption)
+      .flatMap(id => active.find(_.contestId == id))
+      .orElse(active.headOption)
       .fold(withMemberships)(withMemberships.inContest)
   }
+
+  /** The user in the contest, if they are an active member of it; else unchanged. */
+  def inContest(user: User, contestId: Long): User =
+    if (user.contestId.contains(contestId)) user
+    else user.userContests.find(m => m.contestId == contestId && m.active).fold(user)(user.inContest)
+
+  /** `result`, with `switchedTo`'s contest as the session's current one if it is not
+    * `sessionUser`'s.
+    */
+  def switchingContest(sessionUser: User, switchedTo: User)(result: => Result)(implicit
+      request: RequestHeader
+  ): Result =
+    switchedTo.contestId
+      .filterNot(id => sessionUser.contestId.contains(id))
+      .fold(result)(id => result.addingToSession(CurrentContestId -> id.toString))
 }

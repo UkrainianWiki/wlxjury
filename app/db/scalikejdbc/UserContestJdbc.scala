@@ -6,8 +6,14 @@ import scalikejdbc.orm.JoinTable
 /** A user's membership in a contest, with their role in it (jury, organizer, admin, ...). */
 case class UserContest(userId: Long, contestId: Long, role: String) {
 
-  /** users.roles could hold a comma-separated list; V62 copied it as written. */
+  /** V62 writes one role; split in case a comma-separated one is written another way. */
   def roles: Set[String] = role.split(",").map(_.trim).filter(_.nonEmpty).toSet
+
+  /** False for the edit form's "no" role: the user stays on the contest's user list, where
+    * an admin can give them a role again, but the contest is not theirs to open (not
+    * picked at login, not in the contest switcher).
+    */
+  def active: Boolean = (roles - User.NO_ROLE).nonEmpty
 }
 
 object UserContestJdbc extends JoinTable[UserContest] {

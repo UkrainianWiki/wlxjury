@@ -178,7 +178,7 @@ class ConvertToInnoDbMigrationSpec extends Specification with AfterAll {
 
         rows(c, "SELECT user_id, contest_id, role FROM user_contest ORDER BY user_id")(rs =>
           (rs.getLong(1), rs.getLong(2), rs.getString(3))) === List(
-          (1L, 7L, "jury"), (5L, 7L, "admin"), (11L, 8L, "jury,organizer"), (15L, 8L, "jury"))
+          (1L, 7L, "jury"), (5L, 7L, "admin"), (11L, 8L, "organizer"), (15L, 8L, "jury"))
         rows(c, "SELECT id FROM users WHERE is_root ORDER BY id")(_.getLong(1)) === List(10L)
         rows(c, """SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE()
                    AND TABLE_NAME = 'users' AND COLUMN_NAME IN ('roles', 'contest_id')""")(_.getInt(1)) === List(0)
@@ -189,19 +189,26 @@ class ConvertToInnoDbMigrationSpec extends Specification with AfterAll {
       }
     }
 
-    "V62 add memberships from round assignments and turn off other years' rounds" in {
-      val thisYear = java.time.Year.now.getValue
+    "V62 add memberships from round assignments and turn off rounds that stop being current" in {
       Using.resource(prodLikeDb("assignments")) { c =>
         run(c, Seq(
+          // 9 is a later WLM Ukraine than 7; 10 has no later contest, from an old year
           "INSERT INTO contest_jury (id, name, country, year) VALUES " +
-            s"(8, 'Wiki Loves Earth', 'Ukraine', 2025), (9, 'Wiki Loves Monuments', 'Ukraine', $thisYear)",
+            "(8, 'Wiki Loves Earth', 'Ukraine', 2025), (9, 'Wiki Loves Monuments', 'Ukraine', 2026), " +
+            "(10, 'Wiki Loves Folklore', 'Ukraine', 2021)",
+          "INSERT INTO users (id, fullname, email, password, roles, contest_id) VALUES " +
+            "(16, 'WLM 2026 juror', 'wlm26@bench.test', 'x', 'jury', 9), " +
+            "(17, 'Folklore juror', 'folk@bench.test', 'x', 'jury', 10)",
           "INSERT INTO rounds (id, name, number, contest_id, rates, active) VALUES " +
-            "(41, 'WLE 1', 1, 8, 1, 1), (42, 'WLE 2', 2, 8, 1, 0), (43, 'Now', 1, 9, 1, 1), (44, 'WLE 3', 3, 8, 1, 0)",
+            "(41, 'WLE 1', 1, 8, 1, 1), (42, 'WLE 2', 2, 8, 1, 0), (43, 'Now', 1, 9, 1, 1), (44, 'WLE 3', 3, 8, 1, 0), " +
+            "(45, 'Folklore', 1, 10, 1, 1), (46, 'Folklore voted', 2, 10, 1, 1)",
           // the marker the old code could write as a role, an organizer assignment, a
           // round_user role that must not make an admin, and a deleted user's assignment
           "INSERT INTO round_user (user_id, round_id, role, active) VALUES " +
             "(1, 41, 'USER_ID_1', 0), (5, 40, 'jury', 1), (5, 41, 'jury', 1), (5, 42, 'organizer', 1), " +
-            "(1, 43, 'admin', 1), (77, 41, 'jury', 1)"
+            "(1, 43, 'admin', 1), (16, 43, 'jury', 1), (77, 41, 'jury', 1), (17, 45, 'jury', 1)",
+          // a legacy round: a vote, no round_user row
+          "INSERT INTO selection (id, page_id, rate, round_id, jury_id) VALUES (12, 100, 1, 46, 17)"
         ))
         afterV53.filterNot(_.startsWith("V62")).foreach(m => run(c, script(m)))
         // a previous round of a running distribution: frozen, with its saved flag on
@@ -210,9 +217,29 @@ class ConvertToInnoDbMigrationSpec extends Specification with AfterAll {
 
         rows(c, "SELECT user_id, contest_id, role FROM user_contest ORDER BY user_id, contest_id")(rs =>
           (rs.getLong(1), rs.getLong(2), rs.getString(3))) === List(
-          (1L, 7L, "jury"), (1L, 8L, "jury"), (1L, 9L, "jury"), (5L, 7L, "admin"), (5L, 8L, "organizer"))
-        rows(c, "SELECT id FROM rounds WHERE active ORDER BY id")(_.getLong(1)) === List(43L)
+          (1L, 7L, "jury"), (1L, 8L, "jury"), (1L, 9L, "jury"), (5L, 7L, "admin"), (5L, 8L, "organizer"),
+          (16L, 9L, "jury"), (17L, 10L, "jury"))
+        // 40: a later WLM Ukraine exists; 41: none of its jurors was in WLE 2025.
+        // 43 and 45, 46: current, their jurors there, whatever the year
+        rows(c, "SELECT id FROM rounds WHERE active ORDER BY id")(_.getLong(1)) === List(43L, 45L, 46L)
         rows(c, "SELECT COALESCE(active_before_freeze, -1) FROM rounds WHERE id = 44")(_.getInt(1)) === List(0)
+        rows(c, "SELECT round_id, active, COALESCE(active_before_freeze, -1) FROM v62_rounds_turned_off ORDER BY round_id")(rs =>
+          (rs.getLong(1), rs.getInt(2), rs.getInt(3))) === List((40L, 1, -1), (41L, 1, -1), (44L, 0, 1))
+      }
+    }
+
+    "V62 stopped before its ALTER, run again, keep the round flags the first run saw" in {
+      Using.resource(prodLikeDb("rerun")) { c =>
+        run(c, Seq("INSERT INTO contest_jury (id, name, country, year) VALUES (9, 'Wiki Loves Monuments', 'Ukraine', 2026)"))
+        afterV53.filterNot(_.startsWith("V62")).foreach(m => run(c, script(m)))
+        val v62 = script("V62__Migrate_roles_to_user_contest.sql")
+        run(c, v62.filterNot(_.startsWith("ALTER TABLE users")))
+        run(c, v62)
+
+        rows(c, "SELECT round_id, active FROM v62_rounds_turned_off")(rs => (rs.getLong(1), rs.getInt(2))) ===
+          List((40L, 1))
+        rows(c, "SELECT user_id, contest_id, role FROM user_contest ORDER BY user_id")(rs =>
+          (rs.getLong(1), rs.getLong(2), rs.getString(3))) === List((1L, 7L, "jury"), (5L, 7L, "admin"))
       }
     }
 

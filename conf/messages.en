@@ -310,3 +310,5 @@ job.status=Distribution
 password.existing=the password you already use in the jury tool
 contest.switch=Switch contest
 user.in.other.contests=This user is also in other contests. Only their role here can be changed; ask a root user or the user to change the rest.
+signup.email.taken=An account with this email already exists. Log in, or ask an organizer to reset its password.
+users.added=New accounts: {0}. Existing accounts added to the contest: {1}. Already in the contest: {2}.

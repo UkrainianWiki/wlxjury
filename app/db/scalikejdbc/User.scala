@@ -91,6 +91,8 @@ object User extends CRUDMapper[User] {
   val ROOT_ROLE = "root"
   val ADMIN_ROLES = Set(ADMIN_ROLE, ROOT_ROLE)
   val USER_ID_PREFIX = "USER_ID_"
+  /** The edit form's "no role": a member of the contest without access to it. */
+  val NO_ROLE = "no"
   val LANGS = Map("en" -> "English", "fr" -> "Français", "ru" -> "Русский", "uk" -> "Українська")
 
   def unapplyEdit(user: User): Option[
@@ -291,6 +293,17 @@ object User extends CRUDMapper[User] {
     val byUser = UserContestJdbc.findAll().groupBy(_.userId)
     users.map(user => user.copy(userContests = byUser.getOrElse(user.getId, Nil).sortBy(-_.contestId)))
   }
+
+  /** The contests the user has a past in: a round they are or were assigned to
+    * (round_user), or voted in (selection, for legacy rounds without round_user rows).
+    * DISTINCT round_id over idx_selection_jury_round_rate_mon_page is a loose index scan.
+    */
+  def contestsWorkedIn(userId: Long)(implicit session: DBSession = autoSession): Seq[Long] =
+    sql"""SELECT r.contest_id FROM round_user ru JOIN rounds r ON r.id = ru.round_id
+          WHERE ru.user_id = $userId
+          UNION
+          SELECT r.contest_id FROM (SELECT DISTINCT round_id FROM selection WHERE jury_id = $userId) s
+          JOIN rounds r ON r.id = s.round_id""".map(_.long(1)).list()
 
   /** The users with selection rows in the round (its jurors), ordered by id.
     *

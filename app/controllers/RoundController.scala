@@ -321,23 +321,28 @@ class RoundController @Inject() (
         )
     }
 
-  def setImages(): EssentialAction =
+  /** Sets the images source of `contestIdParam`, else of the user's current contest. */
+  def setImages(contestIdParam: Option[Long] = None): EssentialAction =
     withAuth(rolePermission(User.ADMIN_ROLES)) { user => implicit request =>
-      val imagesSource: Option[String] = imagesForm.bindFromRequest().get
-      for (contest <- user.currentContest.flatMap(ContestJuryJdbc.findById)) {
-        ContestJuryJdbc.setImagesSource(contest.getId, imagesSource)
+      contestIdParam.orElse(user.currentContest) match {
+        case None => Redirect(routes.ContestController.list())
+        case contestId if !contestPermission(User.ADMIN_ROLES, contestId)(user) => onUnAuthorized(user)
+        case contestId =>
+          val imagesSource: Option[String] = imagesForm.bindFromRequest().get
+          for (contest <- contestId.flatMap(ContestJuryJdbc.findById)) {
+            ContestJuryJdbc.setImagesSource(contest.getId, imagesSource)
 
-        // val images: Seq[Page] = Await.result(Global.commons.categoryMembers(PageQuery.byTitle(imagesSource.get)), 1.minute)
+            // val images: Seq[Page] = Await.result(Global.commons.categoryMembers(PageQuery.byTitle(imagesSource.get)), 1.minute)
 
-        //          for (contestId <- contest.id;
-        //               currentRoundId <- ContestJuryJdbc.currentRound(contestId);
-        //               round <- RoundJdbc.find(currentRoundId)) {
-        //            Tools.distributeImages(round, round.jurors, None)
-        //          }
+            //          for (contestId <- contest.id;
+            //               currentRoundId <- ContestJuryJdbc.currentRound(contestId);
+            //               round <- RoundJdbc.find(currentRoundId)) {
+            //            Tools.distributeImages(round, round.jurors, None)
+            //          }
+          }
+
+          Redirect(routes.RoundController.rounds(contestId))
       }
-
-      Redirect(routes.RoundController.rounds())
-
     }
 
   def currentRoundStat(contestId: Option[Long] = None): EssentialAction =
@@ -375,16 +380,18 @@ class RoundController @Inject() (
 
   def roundStat(roundId: Long): EssentialAction =
     withAuthOn(blocking)(rolePermission(Set(User.ADMIN_ROLE, "jury", "root") ++ User.ORG_COM_ROLES)) {
-      user => implicit request =>
+      sessionUser => implicit request =>
         Round
           .findById(roundId)
           .map { round =>
+            // a round of another of the user's contests opens in that contest
+            val user = Secured.inContest(sessionUser, round.contestId)
             if (!user.canViewOrgInfo(round)) {
               onUnAuthorized(user)
             } else {
               val stat = roundsService.getRoundStat(roundId, round)
 
-              Ok(views.html.roundStat(user, round, stat))
+              Secured.switchingContest(sessionUser, user)(Ok(views.html.roundStat(user, round, stat)))
             }
           }
           .getOrElse {
@@ -392,15 +399,22 @@ class RoundController @Inject() (
           }
     }
 
+  /** Merges two rounds of the target round's contest (RoundService checks the source is
+    * in it too).
+    */
   def mergeRounds(): EssentialAction =
     withAuth(rolePermission(User.ADMIN_ROLES)) { user => implicit request =>
       val mergeRounds = mergeRoundsForm.bindFromRequest().get
-      roundsService.mergeRounds(
-        user.contestId.get,
-        mergeRounds.targetRoundId,
-        mergeRounds.sourceRoundId
-      )
-      Redirect(routes.RoundController.rounds())
+      Round.findById(mergeRounds.targetRoundId) match {
+        case Some(target) if contestPermission(User.ADMIN_ROLES, Some(target.contestId))(user) =>
+          roundsService.mergeRounds(
+            target.contestId,
+            mergeRounds.targetRoundId,
+            mergeRounds.sourceRoundId
+          )
+          Redirect(routes.RoundController.rounds(Some(target.contestId)))
+        case _ => onUnAuthorized(user)
+      }
     }
 
   //  def byRate(roundId: Int) = withAuth({

@@ -92,8 +92,9 @@ class LoginController @Inject() (
           val roles = if (User.count() > 0) Set.empty[String] else Set(User.ROOT_ROLE)
           val newUser =
             new User(fullname = "", email = login, password = Some(password), roles = roles)
-          val user = admin.createNewUser(newUser, newUser)
-          val result = indexRedirect(user).withSession(Secured.UserName -> login)
+          // always a new account: signing up never hands out an existing one
+          val user = admin.createAccount(newUser, newUser, None)
+          val result = indexRedirect(user).withSession(Secured.UserName -> user.emailLo)
           user.lang.fold(result)(l => result.withLang(Lang(l)))
         }
       )
@@ -121,14 +122,20 @@ class LoginController @Inject() (
     })
   )
 
+  /** The login is an email: a session's non-email login is read as a wiki account
+    * ([[User.byUserName]]), which would be someone else's.
+    */
   val signUpForm: Form[(String, String, String)] = Form(
     tuple(
-      "login" -> nonEmptyText,
+      "login" -> email.transform[String](_.trim.toLowerCase, identity),
       "password" -> nonEmptyText,
       "repeat.password" -> nonEmptyText
     ) verifying ("invalid.user.or.password", fields =>
       fields match {
         case (_, p1, p2) => p1 == p2
+      }) verifying ("signup.email.taken", fields =>
+      fields match {
+        case (login, _, _) => User.findByEmail(login).isEmpty
       })
   )
 }
