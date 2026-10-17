@@ -61,15 +61,17 @@ class ImageController @Inject() (
                 .contest_images(formWithErrors, contest, user, 0, ImageJdbc.countByContest(contest))
             ),
           { case (source, list, action) =>
-            val withNewImages = contest.copy(images = Some(source))
-
-            if (action == "import.files") {
-              imageService.appendImages(source, list, withNewImages)
-            } else if (action == "update.monuments") {
-              imageService.updateImageMonuments(source, withNewImages)
+            // the import runs in the background: the files page shows its progress
+            val job =
+              if (action == "import.files") Some(imageService.importFiles(contest, source, list, user.id))
+              else if (action == "update.monuments") imageService.updateMonuments(contest, source, user.id)
+              else None
+            val back = Redirect(routes.ImageController.images(contestId))
+            job match {
+              case Some(Left(running)) =>
+                back.flashing("error" -> s"Not started: the contest's files are already being imported (job ${running.id}).")
+              case _ => back
             }
-
-            Redirect(routes.ImageController.images(contestId))
           }
         )
     }
