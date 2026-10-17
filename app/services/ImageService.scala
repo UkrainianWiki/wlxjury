@@ -2,22 +2,22 @@ package services
 
 import db.scalikejdbc.{CategoryJdbc, ContestJuryJdbc}
 import org.intracer.wmua.{ContestJury, Image}
-import org.scalawiki.wlx.dto.{Contest, Country}
 import play.api.Logging
 import scalikejdbc.{DB, DBSession}
 import services.imports.ImageImportHandler.Mode
-import services.imports.{ImageImportHandler, ImportParams, ImportSource}
+import services.imports.{ImageImportHandler, ImportParams, ImportSource, MonumentListImportHandler}
 import services.jobs.{Job, JobScheduler}
 
 import javax.inject.Inject
 
-/** Imports a contest's files from Commons, and updates their monument ids: as background
-  * jobs ([[ImageImportHandler]]), started here.
+/** Imports a contest's files from Commons, and updates their monument ids and the
+  * monument lists: as background jobs ([[ImageImportHandler]],
+  * [[MonumentListImportHandler]]), started here.
   */
 class ImageService @Inject() (
     jobs: JobScheduler,
     imageImport: ImageImportHandler,
-    monumentService: MonumentService
+    monumentLists: MonumentListImportHandler
 ) extends Logging {
 
   /** Starts importing the contest's files from `source` (a category, a template or a page),
@@ -34,23 +34,25 @@ class ImageService @Inject() (
       job
     }
 
-  /** Updates the monument lists of a Ukrainian contest, then starts setting the monument
-    * ids of the source's files from their text (a contest with a monument id template).
-    * @return the job, as [[importFiles]]; None without a monument id template
+  /** Starts, for a contest with a monument id template, setting the monument ids of the
+    * source's files from their text and, for a Ukrainian contest, updating its monument
+    * lists: two jobs, independent of each other (a file's monument id is the id in its
+    * text; the galleries look the monument up by it).
+    * @return the jobs, each as [[importFiles]]; none without a monument id template
     */
-  def updateMonuments(contest: ContestJury, source: String, createdBy: Option[Long] = None): Option[Either[Job, Job]] =
-    contest.monumentIdTemplate.map { template =>
-      if (contest.country == Country.Ukraine.name) {
-        val monumentContest = Seq("earth", "monuments").filter(contest.name.toLowerCase.contains) match {
-          case Seq("earth")     => Some(Contest.WLEUkraine(contest.year))
-          case Seq("monuments") => Some(Contest.WLMUkraine(contest.year))
-          case _                => None
-        }
-        monumentContest.foreach(monumentService.updateLists)
-      }
+  def updateMonuments(contest: ContestJury, source: String, createdBy: Option[Long] = None): Seq[Either[Job, Job]] =
+    contest.monumentIdTemplate.toSeq.flatMap { template =>
       val params = ImportParams(contest.getId, Mode.MonumentIds, source, monumentIdTemplate = Some(template))
-      start(implicit session => jobs.enqueue(imageImport.newJob(params, createdBy)))
+      val created = DB.localTx { implicit session =>
+        monumentLists.newJob(contest, createdBy).map(jobs.enqueue).toSeq :+
+          jobs.enqueue(imageImport.newJob(params, createdBy))
+      }
+      created.foreach(_.foreach(j => jobs.started(j.id)))
+      created
     }
+
+  /** What the job does, for messages, e.g. "Importing files from Category:…". */
+  def title(job: Job): String = jobs.handler(job.kind).fold(job.kind)(_.title(job))
 
   /** Creates the job in a transaction, and starts it once that has committed. */
   private def start(create: DBSession => Either[Job, Job]): Either[Job, Job] = {

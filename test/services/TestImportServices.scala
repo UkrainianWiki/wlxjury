@@ -1,18 +1,27 @@
 package services
 
 import play.api.Configuration
-import services.imports.{CommonsSource, ImageImportHandler}
+import services.imports._
 import services.jobs.JobScheduler
 
-/** An [[ImageService]] for specs without a Play app, over `source`: its import jobs run
-  * inline, to their end, in the call that starts them (as with `jobs.mode = inline`).
+/** An [[ImageService]] for specs without a Play app, over `commons` and `lists`: its
+  * import jobs run inline, to their end, in the call that starts them (as with
+  * `jobs.mode = inline`).
   */
-class TestImportServices(source: CommonsSource, pageSize: Int = ImageImportHandler.DefaultPageSize) {
+class TestImportServices(
+    commons: CommonsSource,
+    pageSize: Int = ImageImportHandler.DefaultPageSize,
+    lists: MonumentListSource = new FakeMonumentListSource(),
+    listPageSize: Int = MonumentListImportHandler.DefaultPageSize
+) {
 
   val imageImport: ImageImportHandler =
-    new ImageImportHandler(source, Configuration("jobs.commonsImport.pageSize" -> pageSize))
+    new ImageImportHandler(commons, Configuration("jobs.commonsImport.pageSize" -> pageSize))
 
-  val scheduler: JobScheduler = TestRoundServices.inlineScheduler(imageImport)
+  val monumentLists: MonumentListImportHandler =
+    new MonumentListImportHandler(lists, Configuration("jobs.monumentImport.pageSize" -> listPageSize))
 
-  val imageService: ImageService = new ImageService(scheduler, imageImport, new MonumentService)
+  val scheduler: JobScheduler = TestRoundServices.inlineScheduler(imageImport, monumentLists)
+
+  val imageService: ImageService = new ImageService(scheduler, imageImport, monumentLists)
 }

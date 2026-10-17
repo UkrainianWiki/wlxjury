@@ -170,7 +170,7 @@ class AppendImagesSpec extends Specification with JuryTestHelpers with TestDb wi
       val notStored = image(99).copy(description = Some(s"{{$idTemplate|22-345-0099}}"))
       val commons = new FakeCommonsSource(
         images.map(i => FakeFile(i, Some(texts(i.pageId)))) :+ file(notStored))
-      val job = new TestImportServices(commons).imageService.updateMonuments(contest, category).get.toOption.get
+      val job = new TestImportServices(commons).imageService.updateMonuments(contest, category).last.toOption.get
 
       val done = JobJdbc.findById(job.id).get
       done.status === JobStatus.Done
@@ -182,7 +182,7 @@ class AppendImagesSpec extends Specification with JuryTestHelpers with TestDb wi
 
     "do nothing for a contest without a monument id template" in {
       val contest = createContest()
-      new TestImportServices(new FakeCommonsSource(Nil)).imageService.updateMonuments(contest, category) must beNone
+      new TestImportServices(new FakeCommonsSource(Nil)).imageService.updateMonuments(contest, category) must beEmpty
     }
   }
 

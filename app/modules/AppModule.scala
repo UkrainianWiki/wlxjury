@@ -6,7 +6,7 @@ import db.{ImageRepo, RoundRepo}
 import db.scalikejdbc.{ImageJdbc, Round}
 import org.scalawiki.MwBot
 import play.api.{Configuration, Environment, Logging}
-import services.imports.{CommonsSource, MwCommonsSource}
+import services.imports.{CommonsSource, MonumentListSource, MwCommonsSource, MwMonumentListSource}
 import services.jobs.JobScheduler
 
 class AppModule(environment: Environment, configuration: Configuration)
@@ -19,6 +19,7 @@ class AppModule(environment: Environment, configuration: Configuration)
     bind(classOf[RoundRepo]).toInstance(Round)
     bind(classOf[ImageRepo]).toInstance(ImageJdbc)
     bind(classOf[CommonsSource]).to(classOf[MwCommonsSource])
+    bind(classOf[MonumentListSource]).to(classOf[MwMonumentListSource])
     // eager: started with the app, it takes over the jobs a previous run left
     bind(classOf[JobScheduler]).toProvider(classOf[JobSchedulerProvider]).asEagerSingleton()
 

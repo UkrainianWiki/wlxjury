@@ -7,17 +7,13 @@ import org.scalawiki.dto.cmd.query.prop.iiprop.{IiProp, IiPropArgs}
 import org.scalawiki.dto.cmd.query.prop.rvprop.RvProp
 import org.scalawiki.dto.cmd.query.prop.{CategoryInfo, ImageInfo, Prop, PropArg, Revisions, RvPropArgs}
 import org.scalawiki.dto.cmd.query.{Generator, PageIdsParam, Query, QueryParam, TitlesParam}
-import org.scalawiki.dto.{MwException, Namespace, Page}
-import org.scalawiki.json.Parser
-import play.api.Logging
-import play.api.libs.json.{JsObject, JsString}
+import org.scalawiki.dto.{Namespace, Page}
+import play.api.libs.json.JsObject
 
 import java.net.URLDecoder
 import javax.inject.{Inject, Singleton}
-import scala.concurrent.Await
 import scala.concurrent.duration._
-import scala.util.control.NonFatal
-import scala.util.{Failure, Success, Try}
+import scala.util.Try
 
 /** Where a contest's files come from: the "source" field of the files page. */
 sealed trait ImportSource {
@@ -81,12 +77,12 @@ trait CommonsSource {
 }
 
 /** [[CommonsSource]] over the API. A source's files are listed with a generator query
-  * without props, one API page per call, so its `continue` map is the cursor of the next
-  * page; the files' details are fetched by page id, where `bot.run` merges the pages that
-  * a `continue` splits (`rvcontinue`, `iicontinue`).
+  * without props, one API page per call ([[MwApi.page]]), so its `continue` map is the
+  * cursor of the next page; the files' details are fetched by page id, where `bot.run`
+  * merges the pages that a `continue` splits (`rvcontinue`, `iicontinue`).
   */
 @Singleton
-class MwCommonsSource @Inject() (bot: MwBot) extends CommonsSource with Logging {
+class MwCommonsSource @Inject() (bot: MwBot) extends CommonsSource {
 
   import MwCommonsSource._
 
@@ -98,77 +94,31 @@ class MwCommonsSource @Inject() (bot: MwBot) extends CommonsSource with Logging 
     }
     val generator = ListArgs.toDsl(module, generatorTitle, None, Set(Namespace.FILE), Some(limit.toString)).get
     val params: Seq[QueryParam[Any]] = pageTitle.map(t => TitlesParam(Seq(t))).toSeq :+ Generator(generator)
-    val action = Action(Query(params: _*))
-    val continue = if (cursor.keys.isEmpty) Map("continue" -> "") else cursor.value.collect {
-      case (k, JsString(v)) => k -> v
-      case (k, v)           => k -> v.toString
-    }.toMap
-    val (pages, next) = postOnce(action, continue)
-    FilePage(pages.flatMap(_.id).sorted, Option.when(next.nonEmpty)(JsObject(next.map { case (k, v) => k -> JsString(v) })))
+    val (pages, next) = api.page(Action(Query(params: _*)), cursor)
+    FilePage(pages.flatMap(_.id).sorted, next)
   }
 
   def files(pageIds: Seq[Long], info: Boolean, text: Boolean): Seq[Page] =
-    if (pageIds.isEmpty) Nil else run(Query(PageIdsParam(pageIds), Prop(props(info, text): _*)))
+    if (pageIds.isEmpty) Nil else api.run(Query(PageIdsParam(pageIds), Prop(props(info, text): _*)))
 
   def filesByTitles(titles: Seq[String], info: Boolean, text: Boolean): Seq[Page] =
-    if (titles.isEmpty) Nil else run(Query(TitlesParam(titles), Prop(props(info, text): _*)))
+    if (titles.isEmpty) Nil else api.run(Query(TitlesParam(titles), Prop(props(info, text): _*)))
 
   def categoryFileCount(category: String): Option[Long] =
     if (!category.toLowerCase.startsWith("category:")) None
-    else run(Query(TitlesParam(Seq(category)), Prop(CategoryInfo))).headOption.flatMap(_.categoryInfo.map(_.files))
+    else api.run(Query(TitlesParam(Seq(category)), Prop(CategoryInfo))).headOption.flatMap(_.categoryInfo.map(_.files))
 
   private def props(info: Boolean, text: Boolean): Seq[PropArg] =
     Option.when(info)(ImageInfo(IiProp(IiPropArgs.byNames(ImageInfoProps): _*))).toSeq ++
       Option.when(text)(Revisions(RvProp(RvPropArgs.byNames(TextProps): _*)))
 
-  private def run(query: Query): Seq[Page] =
-    withRetries(Action(query).pairs.toString)(Await.result(bot.run(Action(query)), RequestTimeout).toSeq)
+  private lazy val api = new MwApi(bot, retryDelay)
 
-  /** One API request, without following its `continue`: the pages and the next cursor. */
-  private def postOnce(action: Action, continue: Map[String, String]): (Seq[Page], Map[String, String]) = {
-    val params = (action.pairs ++ Seq("format" -> "json", "utf8" -> "")).toMap ++ continue
-    withRetries(params.toString) {
-      val body = Await.result(bot.post(params), RequestTimeout)
-      val trimmed = body.trim
-      if (!trimmed.startsWith("{")) throw new RetryableException(s"not JSON: ${trimmed.take(200)}")
-      val parser = new Parser(action)
-      parser.parse(body) match {
-        case Success(pages)                                       => (pages, parser.continue)
-        case Failure(e: MwException) if RetryableCodes(e.code)    => throw new RetryableException(e.toString)
-        case Failure(e)                                           => throw e
-      }
-    }
-  }
-
-  /** Retries failed requests (timeouts, HTTP errors, a lagged or busy API) with backoff. */
-  private def withRetries[T](what: => String)(f: => T): T = {
-    var attempt = 0
-    var result: Option[T] = None
-    while (result.isEmpty) {
-      try result = Some(f)
-      catch {
-        case e: MwException => throw e // an API error: retrying gives the same answer
-        case NonFatal(e) if attempt < Retries =>
-          attempt += 1
-          logger.warn(s"Commons request failed, retry $attempt of $Retries: ${e.getMessage} ($what)")
-          Thread.sleep(retryDelay.toMillis * (1L << (attempt - 1)))
-      }
-    }
-    result.get
-  }
-
-  /** The wait before the first retry; it doubles with each. */
-  protected def retryDelay: FiniteDuration = RetryDelay
+  /** The wait before the first retry of a failed request; it doubles with each. */
+  protected def retryDelay: FiniteDuration = MwApi.RetryDelay
 }
 
 object MwCommonsSource {
   val ImageInfoProps: Seq[String] = Seq("timestamp", "user", "size", "url", "mime", "mediatype")
   val TextProps: Seq[String] = Seq("content", "timestamp", "user", "comment")
-  val RetryableCodes: Set[String] = Set("maxlag", "ratelimited", "readonly", "internal_api_error_DBQueryError")
-  val Retries = 4
-  val RetryDelay: FiniteDuration = 2.seconds
-  val RequestTimeout: FiniteDuration = 2.minutes
-
-  final class RetryableException(message: String) extends RuntimeException(message)
-
 }

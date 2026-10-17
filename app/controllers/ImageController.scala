@@ -62,15 +62,15 @@ class ImageController @Inject() (
             ),
           { case (source, list, action) =>
             // the import runs in the background: the files page shows its progress
-            val job =
-              if (action == "import.files") Some(imageService.importFiles(contest, source, list, user.id))
+            val jobs =
+              if (action == "import.files") Seq(imageService.importFiles(contest, source, list, user.id))
               else if (action == "update.monuments") imageService.updateMonuments(contest, source, user.id)
-              else None
+              else Nil
             val back = Redirect(routes.ImageController.images(contestId))
-            job match {
-              case Some(Left(running)) =>
-                back.flashing("error" -> s"Not started: the contest's files are already being imported (job ${running.id}).")
-              case _ => back
+            jobs.collect { case Left(running) => running } match {
+              case Nil => back
+              case running =>
+                back.flashing("error" -> running.map(j => s"Already running: ${imageService.title(j)}.").mkString(" "))
             }
           }
         )
