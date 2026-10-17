@@ -1,5 +1,7 @@
 # Multi-Contest User Membership Implementation Plan
 
+> Implemented. Where the code differs from this plan (migrations renumbered to V61/V62, memberships written by `User.create`, existing emails, editing shared accounts), see "Changes while finishing" in `docs/superpowers/specs/2026-04-12-multi-contest-user-design.md`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Allow a user to belong to multiple contests with a different role in each, using a `user_contest` join table and session-scoped contest selection.
