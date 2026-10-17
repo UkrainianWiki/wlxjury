@@ -1,6 +1,6 @@
 package controllers
 
-import controllers.Secured.{CurrentContestId, UserName}
+import controllers.Secured.CurrentContestId
 import db.scalikejdbc.{Round, User, UserContestJdbc}
 import play.api.mvc._
 
@@ -13,15 +13,13 @@ abstract class Secured(cc: ControllerComponents) extends AbstractController(cc) 
   type Permission = User => Boolean
 
   /** @param request
-    *   HTTP request with username set in session
+    *   HTTP request with the user set in session
     * @return
     *   optional user from database, in the session's current contest
     */
   def userFromRequest(request: RequestHeader): Option[User] =
-    request.session
-      .get(UserName)
-      .map(_.trim.toLowerCase)
-      .flatMap(User.byUserName)
+    Secured
+      .sessionUser(request.session)
       .map(Secured.inCurrentContest(_, request.session.get(CurrentContestId)))
 
   def onUnAuthenticated(request: RequestHeader): Result =
@@ -89,7 +87,27 @@ abstract class Secured(cc: ControllerComponents) extends AbstractController(cc) 
 
 object Secured {
   val UserName         = "username"
+  val UserId           = "user_id"
   val CurrentContestId = "current_contest_id"
+
+  /** The session's user: by id if a login set one, else by the login name (an email or a
+    * wiki account, [[User.byUserName]]) of sessions from before ids.
+    */
+  def sessionUser(session: Session): Option[User] =
+    session.get(UserId) match {
+      case Some(id) => id.toLongOption.flatMap(User.findById(_)).filter(_.deletedAt.isEmpty)
+      case None     => session.get(UserName).map(_.trim.toLowerCase).flatMap(User.byUserName)
+    }
+
+  /** A new session for the user who just logged in, in their current contest. */
+  def loginSession(user: User, login: String): (User, Session) = {
+    val inContest = inCurrentContest(user, None)
+    val session = Session(
+      Map(UserId -> user.getId.toString, UserName -> login) ++
+        inContest.contestId.map(id => CurrentContestId -> id.toString)
+    )
+    (inContest, session)
+  }
 
   /** The user with their memberships, in `currentContestId` (the session's) if they are an
     * active member of it, else in their latest contest where they are. A root user needs

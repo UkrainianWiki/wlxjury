@@ -24,6 +24,8 @@ sudo install -o root -g root -m 0600 conf/wlxjury/db-admin.cnf.example /etc/wlxj
 
 The runtime directory is `0755` so Apache can stat its nonsecret maintenance flag. Secrets are root-only `0600`; app-readable nonsecret config is `0640 root:wlxjury`. Preserve `/etc/default/wlxjury` JVM tuning. The production overlay explicitly includes the release's classpath defaults, requires the signing key, maps DB/Commons credentials to the environment and enables Flyway migration/validation while prohibiting automatic baseline/clean behavior. Review intentional production URL, greeting and mail overrides once; leave application tuning with the release.
 
+Login with Google and Wikimedia accounts is off until `production.conf` lists hosts and credentials for it; [oauth.md](oauth.md) covers registering the clients and the `runtime.env` variables.
+
 Review `db-admin.cnf`: its example uses local root Unix-socket authentication. Otherwise configure a separate administrative account in that protected file. Verify access to the intended DB, table locking, routine/event/trigger dumps and database recreation/restore. Application passwords are never passed to DB client commands. The tool uses the same host/port/name as `runtime.env`.
 
 Edit `deployment.json` for the actual datadir, all jury HTTP/HTTPS URLs and coordinated writer services/timers. The example pauses the database-backup timer and any running backup service. Enabled DB events block deployment until coordinated. The 4 GiB migration / 2 GiB recovery free-space gates are starting values to replace with measured budgets, including backups, indexes, conversion, binlogs and other hosted services. They are not a capacity certification. Paths must be real, root-owned directories.

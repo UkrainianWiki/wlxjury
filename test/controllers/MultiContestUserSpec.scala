@@ -9,6 +9,7 @@ import play.api.i18n.{Lang, MessagesImpl}
 import play.api.mvc.{ControllerComponents, Result}
 import play.api.test.CSRFTokenHelper._
 import play.api.test._
+import services.oauth.OAuthSettings
 import services.{SMTPOrWikiMail, UserService}
 
 import scala.concurrent.Future
@@ -24,7 +25,7 @@ class MultiContestUserSpec extends PlaySpecification with PlayTestDb with Mockit
     new UserService(mail, app.configuration)
 
   private def controller(implicit app: Application) =
-    new UserController(app.injector.instanceOf[ControllerComponents], userService(mailer))
+    new UserController(app.injector.instanceOf[ControllerComponents], userService(mailer), new OAuthSettings(app.configuration))
 
   private def messages(implicit app: Application) =
     MessagesImpl(Lang("en"), Helpers.stubMessagesApi(Map("en" -> Map("password.existing" -> "EXISTING"))))

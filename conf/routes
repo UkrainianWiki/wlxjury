@@ -22,6 +22,12 @@ POST        /signup                                                             
 
 GET         /error                                                                  @controllers.LoginController.error(message: String ?= "Unknown error")
 
+# Login with a Google or Wikimedia account (docs/oauth.md)
+GET         /oauth/:provider/login                                                  @controllers.OAuthController.login(provider: String)
+GET         /oauth/:provider/callback                                               @controllers.OAuthController.callback(provider: String)
+GET         /oauth/:provider/link                                                   @controllers.OAuthController.link(provider: String)
+POST        /oauth/:provider/unlink                                                 @controllers.OAuthController.unlink(provider: String)
+
 GET         /query                                                                  controllers.GalleryController.query(module:String ?= "byrate", user: Option[Long] ?= None, page: Int ?= 1, region: String ?= "all", round: Long ?= 0, rate: Option[Int] ?= None, rated: Option[Boolean] ?= None)
 
 GET         /byrate/user/:user/page/:page                                           controllers.GalleryController.byRate(user: Long, page: Int, region: String = "all", round: Long = 0, rated: Option[Boolean] ?= None)

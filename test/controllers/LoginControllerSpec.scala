@@ -7,6 +7,7 @@ import play.api.Application
 import play.api.mvc._
 import play.api.test.CSRFTokenHelper._
 import play.api.test._
+import services.oauth.OAuthSettings
 import services.{SMTPOrWikiMail, UserService}
 
 class LoginControllerSpec extends PlaySpecification with Results with PlayTestDb with Mockito {
@@ -16,7 +17,7 @@ class LoginControllerSpec extends PlaySpecification with Results with PlayTestDb
   def userService(implicit app: Application) =
     new UserService(mock[SMTPOrWikiMail], app.configuration)
   def login(implicit app: Application) =
-    new LoginController(userService, Helpers.stubControllerComponents())
+    new LoginController(userService, new OAuthSettings(app.configuration), Helpers.stubControllerComponents())
 
   "auth" should {
     "fail empty request" in {

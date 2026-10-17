@@ -1,6 +1,6 @@
 package controllers
 
-import db.scalikejdbc.{ContestJuryJdbc, User, UserContestJdbc}
+import db.scalikejdbc.{ContestJuryJdbc, User, UserContestJdbc, UserIdentityJdbc}
 import org.intracer.wmua._
 import org.scalawiki.dto.cmd.query.Query
 import org.scalawiki.dto.cmd.query.list._
@@ -10,6 +10,7 @@ import play.api.data.Forms._
 import play.api.i18n.{I18nSupport, Lang, Messages}
 import play.api.mvc.{ControllerComponents, EssentialAction, Result}
 import services.UserService
+import services.oauth.OAuthSettings
 import spray.util.pimpFuture
 
 import javax.inject.Inject
@@ -19,7 +20,8 @@ import scala.util.Try
   * Controller for admin views
   */
 class UserController @Inject()(cc: ControllerComponents,
-                               userService: UserService)
+                               userService: UserService,
+                               oauthSettings: OAuthSettings)
     extends Secured(cc)
     with I18nSupport {
 
@@ -138,7 +140,12 @@ class UserController @Inject()(cc: ControllerComponents,
       user => implicit request =>
         editableUser(user, userId, contestId).fold(Redirect(routes.LoginController.index)) { editedUser =>
           val filledForm = editUserForm.fill(editedUser)
-          Ok(views.html.editUser(user, filledForm, editedUser.contestId.orElse(user.currentContest)))
+          // only the user's own Google and Wikimedia accounts are theirs to link
+          val (identities, providers) =
+            if (editedUser.getId == user.getId)
+              (UserIdentityJdbc.findByUser(user.getId), oauthSettings.providersFor(request.host))
+            else (Nil, Nil)
+          Ok(views.html.editUser(user, filledForm, editedUser.contestId.orElse(user.currentContest), identities, providers))
         }
     }
 

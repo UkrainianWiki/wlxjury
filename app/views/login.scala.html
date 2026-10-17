@@ -1,4 +1,4 @@
-@(loginForm: Form[(String, String)])(implicit flash: Flash, messages: Messages, req: RequestHeader)
+@(loginForm: Form[(String, String)], providers: Seq[String] = Nil)(implicit flash: Flash, messages: Messages, req: RequestHeader)
 @import b3.inline.fieldConstructor
 
 @mainAdmin(Messages("application.name")) {
@@ -6,6 +6,21 @@
 <fieldset class="col-md-6 col-md-offset-3">
 
     <legend>@Messages("signin.signin")</legend>
+
+    @flash.get(controllers.OAuthController.FlashError).map { key =>
+        <div class="alert alert-danger" role="alert">@Messages(key)</div>
+    }
+
+    @if(providers.nonEmpty) {
+        <div class="oauth-signin">
+        @for(provider <- providers) {
+            <p>
+                <a id="oauth-@provider" class="btn btn-lg btn-default btn-block" href="@routes.OAuthController.login(provider)">@Messages(s"oauth.signin.$provider")</a>
+            </p>
+        }
+        </div>
+        <p class="text-center text-muted">@Messages("oauth.or")</p>
+    }
 
     @b3.vertical.form(action = routes.LoginController.auth()) { implicit vfc =>
 

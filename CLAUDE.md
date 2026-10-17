@@ -76,7 +76,7 @@ sbt packageAll           # All package variants
 - **ScalikeJDBC 4.3** with ORM (`CRUDMapper`) for database access
 - **MariaDB** as the database with **Flyway** migrations (`conf/db/migration/default/`)
 - **Tapir 1.11** + Pekko HTTP for the REST API layer
-- **pac4j** via play-pac4j for authentication
+- **Nimbus OAuth 2.0 SDK** for Google and Wikimedia login (no auth framework)
 - **scalawiki** (internal library) for Wikimedia Commons integration
 
 ### Layer Structure
@@ -108,7 +108,7 @@ Long work runs as a job in the generic `job` table (V60), never on a request thr
 
 ### Authentication & Authorization
 
-Session-based auth via Play session cookie (username stored as `"username"` key). `Secured` trait (`app/controllers/Secured.scala`) provides `withAuth(permission)` action builder. Role checks use `User.hasAnyRole` and contest membership via `User.isInContest`.
+Session-based auth via Play session cookie: a login stores `"user_id"` (and `"username"`, which sessions from before `user_id` are still read by). Logins are by password (`LoginController`) or by a Google or Wikimedia account (`OAuthController`, `services.oauth`, table `user_identity`; only existing accounts, see `docs/oauth.md`). `Secured` trait (`app/controllers/Secured.scala`) provides `withAuth(permission)` action builder. Role checks use `User.hasAnyRole` and contest membership via `User.isInContest`.
 
 ### Database Tests
 

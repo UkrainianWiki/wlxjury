@@ -1,7 +1,9 @@
 @(
         user: db.scalikejdbc.User,
         editUserForm: Form[db.scalikejdbc.User],
-        contestId: Option[Long] = None
+        contestId: Option[Long] = None,
+        identities: Seq[db.scalikejdbc.UserIdentity] = Nil,
+        providers: Seq[String] = Nil
 )(implicit flash: Flash, messages: Messages, req: RequestHeader)
 
 @import views.html.bootstrap._
@@ -89,5 +91,46 @@
                 }
             </div>
         </div>
+
+        @* the logged-in user's own Google and Wikimedia accounts (OAuthController) *@
+        @if(providers.nonEmpty || identities.nonEmpty) {
+            <div class="col-md-4" id="linked-accounts">
+                <h3>@Messages("oauth.linked.accounts")</h3>
+
+                @flash.get("oauth-success").map { key =>
+                    <div class="alert alert-success">@Messages(key)</div>
+                }
+                @flash.get("oauth-error").map { key =>
+                    <div class="alert alert-danger">@Messages(key)</div>
+                }
+
+                <table class="table">
+                @for(provider <- (providers ++ identities.map(_.provider)).distinct) {
+                    @defining(identities.filter(_.provider == provider)) { linked =>
+                        @for(identity <- linked) {
+                            <tr>
+                                <td>@Messages(s"oauth.provider.$provider")</td>
+                                <td>@identity.label</td>
+                                <td>
+                                @form(routes.OAuthController.unlink(provider)) {
+                                    @helper.CSRF.formField
+                                    <input type="hidden" name="subject" value="@identity.subject">
+                                    <button type="submit" class="btn btn-default btn-xs">@Messages("oauth.unlink")</button>
+                                }
+                                </td>
+                            </tr>
+                        }
+                        @if(providers.contains(provider)) {
+                            <tr>
+                                <td>@Messages(s"oauth.provider.$provider")</td>
+                                <td class="text-muted">@if(linked.isEmpty) {@Messages("oauth.not.linked")}</td>
+                                <td><a id="link-@provider" class="btn btn-default btn-xs" href="@routes.OAuthController.link(provider)">@Messages("oauth.connect")</a></td>
+                            </tr>
+                        }
+                    }
+                }
+                </table>
+            </div>
+        }
     </div>
 }

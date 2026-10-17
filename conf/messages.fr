@@ -295,3 +295,21 @@ contest.switch=Changer de concours
 user.in.other.contests=Cet utilisateur participe aussi à d''autres concours. Seul son rôle ici peut être modifié ; pour le reste, demandez à un utilisateur root ou à l''utilisateur.
 signup.email.taken=Un compte avec cet e-mail existe déjà. Connectez-vous, ou demandez à un organisateur de réinitialiser son mot de passe.
 users.added=Nouveaux comptes : {0}. Comptes existants ajoutés au concours : {1}. Déjà dans le concours : {2}.
+
+# Login with a Google or Wikimedia account
+oauth.signin.wikimedia = Se connecter avec Wikimedia
+oauth.signin.google = Se connecter avec Google
+oauth.or = ou avec votre identifiant du jury
+oauth.no.account = Aucun compte du jury ne correspond à ce compte. Demandez à l’organisateur du concours de vous ajouter, ou connectez-vous avec votre mot de passe et liez-le sur votre page de profil.
+oauth.ambiguous = Plusieurs comptes du jury correspondent à ce compte. Contactez l’organisateur du concours.
+oauth.failed = La connexion a échoué. Veuillez réessayer.
+oauth.cancelled = La connexion a été annulée.
+oauth.linked = Le compte est lié. Vous pouvez maintenant vous connecter avec.
+oauth.unlinked = Le compte est délié.
+oauth.linked.other = Ce compte est déjà lié à un autre compte du jury.
+oauth.linked.accounts = Comptes liés
+oauth.not.linked = Non lié
+oauth.connect = Lier
+oauth.unlink = Délier
+oauth.provider.google = Google
+oauth.provider.wikimedia = Wikimedia

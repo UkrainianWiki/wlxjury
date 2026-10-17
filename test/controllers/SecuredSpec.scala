@@ -5,7 +5,7 @@ import org.specs2.mock.Mockito
 import org.specs2.mutable.Specification
 import org.specs2.specification.{BeforeAll, BeforeEach}
 import play.api.mvc.{RequestHeader, Session}
-import play.api.test.{Helpers, PlaySpecification}
+import play.api.test.{FakeRequest, Helpers, PlaySpecification}
 
 class SecuredWithCc extends Secured(Helpers.stubControllerComponents())
 
@@ -20,6 +20,7 @@ class SecuredSpec extends PlaySpecification with Mockito with TestDb
   def mockRequest(username: String, contestId: Option[Long] = None): RequestHeader = {
     val request = mock[RequestHeader]
     val session = mock[Session]
+    session.get(Secured.UserId) returns None
     session.get(Secured.UserName) returns Some(username)
     session.get(Secured.CurrentContestId) returns contestId.map(_.toString)
     request.session returns session
@@ -86,6 +87,29 @@ class SecuredSpec extends PlaySpecification with Mockito with TestDb
       val created = userDao.create(user)
 
       val request: RequestHeader = mockRequest(username + " other")
+      new SecuredWithCc().userFromRequest(request) === None
+    }
+
+    "be the session's user id, not its login name" in {
+      createContests(10L)
+      val byId   = User.create(User("by id", "same@server.com", None, Set.empty, Some("hash"), wikiAccount = Some("Twin")))
+      val byName = User.create(User("by name", "other@server.com", None, Set.empty, Some("hash"), wikiAccount = Some("Twin")))
+      UserContestJdbc.createMembership(byId.getId, 10L, "jury")
+      val secured = new SecuredWithCc()
+
+      val request = FakeRequest().withSession(Secured.UserId -> byId.getId.toString, Secured.UserName -> "other@server.com")
+      val user = secured.userFromRequest(request)
+      user.map(_.getId) === Some(byId.getId)
+      user.flatMap(_.contestId) === Some(10L)
+      byName.getId !== byId.getId
+    }
+
+    "be None for a deleted user's id" in {
+      val deleted = User.create(User("gone", "gone@server.com", None, Set.empty, Some("hash")))
+      scalikejdbc.DB.autoCommit { implicit s =>
+        scalikejdbc.SQL("UPDATE users SET deleted_at = CURRENT_TIMESTAMP WHERE id = ?").bind(deleted.getId).update.apply()
+      }
+      val request = FakeRequest().withSession(Secured.UserId -> deleted.getId.toString, Secured.UserName -> "gone@server.com")
       new SecuredWithCc().userFromRequest(request) === None
     }
 

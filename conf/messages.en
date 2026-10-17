@@ -312,3 +312,21 @@ contest.switch=Switch contest
 user.in.other.contests=This user is also in other contests. Only their role here can be changed; ask a root user or the user to change the rest.
 signup.email.taken=An account with this email already exists. Log in, or ask an organizer to reset its password.
 users.added=New accounts: {0}. Existing accounts added to the contest: {1}. Already in the contest: {2}.
+
+# Login with a Google or Wikimedia account
+oauth.signin.wikimedia = Sign in with Wikimedia
+oauth.signin.google = Sign in with Google
+oauth.or = or with your jury login
+oauth.no.account = No jury account matches this account. Ask your contest organizer to add you, or sign in with your password and link it on your profile page.
+oauth.ambiguous = Several jury accounts match this account. Ask your contest organizer for help.
+oauth.failed = Sign-in failed. Please try again.
+oauth.cancelled = Sign-in was cancelled.
+oauth.linked = The account is linked. You can now sign in with it.
+oauth.unlinked = The account is unlinked.
+oauth.linked.other = This account is already linked to another jury account.
+oauth.linked.accounts = Linked accounts
+oauth.not.linked = Not linked
+oauth.connect = Link
+oauth.unlink = Unlink
+oauth.provider.google = Google
+oauth.provider.wikimedia = Wikimedia
