@@ -44,6 +44,41 @@ class SecuredSpec extends PlaySpecification with Mockito with TestDb
       result.get.userContests === List(UserContest(created.getId, 10L, "jury"))
     }
 
+    "be in the session's contest, with the role there" in {
+      createContests(10L, 20L)
+      val created = User.create(User("fullname", "multi@server.com", None, Set("jury"), Some("hash"), Some(10L)))
+      UserContestJdbc.createMembership(created.getId, 20L, "admin")
+      val secured = new SecuredWithCc()
+
+      val in10 = secured.userFromRequest(mockRequest("multi@server.com", Some(10L))).get
+      in10.contestId === Some(10L)
+      in10.contestRoles === Set("jury")
+
+      val in20 = secured.userFromRequest(mockRequest("multi@server.com", Some(20L))).get
+      in20.contestId === Some(20L)
+      in20.contestRoles === Set("admin")
+    }
+
+    "be in the latest contest when the session has none, or one the user isn't in" in {
+      createContests(10L, 20L, 30L)
+      val created = User.create(User("fullname", "multi@server.com", None, Set("jury"), Some("hash"), Some(10L)))
+      UserContestJdbc.createMembership(created.getId, 20L, "organizer")
+      val secured = new SecuredWithCc()
+
+      secured.userFromRequest(mockRequest("multi@server.com")).flatMap(_.contestId) === Some(20L)
+      val notMember = secured.userFromRequest(mockRequest("multi@server.com", Some(30L))).get
+      notMember.contestId === Some(20L)
+      notMember.isInContest(Some(30L)) === false
+    }
+
+    "be root without a contest" in {
+      User.create(User("root", "root@server.com", None, Set(User.ROOT_ROLE), Some("hash")))
+      val root = new SecuredWithCc().userFromRequest(mockRequest("root@server.com")).get
+      root.isRoot === true
+      root.hasRole(User.ROOT_ROLE) === true
+      root.contestId === None
+    }
+
     "be None if not in db" in {
       val username = "user login"
       val user = User("fullname", username, None, Set("jury"), Some("password hash"), Some(10))

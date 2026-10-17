@@ -31,7 +31,6 @@ class LargeImageSpec extends PlaySpecification with PlayTestDb {
     user = userDao.create(
       User("fullname", email, None, Set("jury"), contestId = contest.id)
     )
-    UserContestJdbc.createMembership(user.getId, contest.getId, "jury")
   }
 
   private def createImages(number: Long, startId: Long = 0): Seq[Image] = {

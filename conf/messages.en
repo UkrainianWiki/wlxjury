@@ -307,3 +307,6 @@ check=Check
 job.retry=Retry
 job.cancel=Cancel
 job.status=Distribution
+password.existing=the password you already use in the jury tool
+contest.switch=Switch contest
+user.in.other.contests=This user is also in other contests. Only their role here can be changed; ask a root user or the user to change the rest.

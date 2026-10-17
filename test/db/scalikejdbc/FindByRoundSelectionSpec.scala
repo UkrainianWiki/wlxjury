@@ -53,14 +53,15 @@ class FindByRoundSelectionSpec extends Specification with BeforeAll with TestDb 
       }
     }
 
-    "include a juror whose contest has since changed" in {
+    "include a juror no longer in the round's contest" in {
       withCleanDb { implicit session =>
         implicit val contest: ContestJury = ContestJuryJdbc.create(Some(30), "contest30", 2030, "country30")
         val later = ContestJuryJdbc.create(Some(31), "contest31", 2031, "country31")
         val round = roundDao.create(mkRound(contest.getId))
         val juror = createUsers("jury", 1).head
         selectionDao.create(pageId = 20L, rate = 1, juryId = juror.getId, roundId = round.getId)
-        userDao.updateById(juror.getId).withAttributes("contestId" -> later.getId)
+        UserContestJdbc.delete(juror.getId, contest.getId)
+        UserContestJdbc.createMembership(juror.getId, later.getId, "jury")
 
         User.findByRoundSelection(round.getId).map(_.id) must_== Seq(juror.id)
       }

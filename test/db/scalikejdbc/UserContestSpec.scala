@@ -12,14 +12,9 @@ class UserContestSpec extends Specification with BeforeAll with TestDb {
     SharedTestDb.truncateAll()
   }
 
-  /** Insert a user directly, bypassing the legacy `roles`/`contest_id` columns
-   *  that were dropped by V51 but are still referenced by User.create(user). */
   private def insertUser(fullname: String, email: String)
                         (implicit session: DBSession): Long =
-    sql"""INSERT INTO users (fullname, email, password, created_at)
-          VALUES ($fullname, $email, 'hash', NOW())"""
-      .updateAndReturnGeneratedKey
-      .apply()
+    userDao.create(User(fullname, email, password = Some("hash"))).getId
 
   "UserContestJdbc" should {
     "create and find membership" in new AutoRollbackDb {
@@ -43,6 +38,25 @@ class UserContestSpec extends Specification with BeforeAll with TestDb {
 
       val memberships = UserContestJdbc.findByContest(2L)
       memberships.map(_.userId).sorted === Seq(userId1, userId2).sorted
+    }
+
+    "not change the role of an existing member" in new AutoRollbackDb {
+      createContests(5L)
+      val userId = insertUser("Frank", "frank@example.com")
+      UserContestJdbc.createMembership(userId, 5L, "admin") === true
+      UserContestJdbc.createMembership(userId, 5L, "jury") === false
+
+      UserContestJdbc.find(userId, 5L).map(_.role) === Some("admin")
+    }
+
+    "find the latest contest first, and split a role list" in new AutoRollbackDb {
+      createContests(6L, 7L)
+      val userId = insertUser("Gina", "gina@example.com")
+      UserContestJdbc.createMembership(userId, 6L, "jury")
+      UserContestJdbc.createMembership(userId, 7L, "jury, organizer")
+
+      UserContestJdbc.findByUser(userId).map(m => (m.contestId, m.roles)) ===
+        Seq((7L, Set("jury", "organizer")), (6L, Set("jury")))
     }
 
     "update role" in new AutoRollbackDb {

@@ -451,7 +451,7 @@ object RoundUser extends JoinTable[RoundUser] {
     )
 
   def apply(r: Round, u: User): Option[RoundUser] =
-    for (rId <- r.id; uId <- u.id) yield RoundUser(rId, uId, u.roles.head, active = true)
+    for (rId <- r.id; uId <- u.id) yield RoundUser(rId, uId, u.contestRole.getOrElse(User.JURY_ROLE), active = true)
 
   def activeJurors(roundId: Long): List[RoundUser] =
     where("roundId" -> roundId, "active" -> true).apply()

@@ -100,7 +100,7 @@ app/
 - **ContestJury**: A photo contest (e.g., "Wiki Loves Monuments 2024 Ukraine")
 - **Round**: A judging round within a contest. Can be binary (select/reject) or rated (1–N stars). Rounds can filter images by region, category, monument, size, media type, and special nomination.
 - **Selection**: A juror's vote/rating on an image in a round (`page_id`, `jury_id`, `round_id`, `rate`)
-- **User roles**: `root` (super-admin), `admin`, `organizer`, `jury`
+- **User roles**: `root` (super-admin, `users.is_root`, no contest), and per contest `admin`, `organizer`, `jury` in `user_contest` (V61/V62): one account per email, a member of any number of contests with a role in each. The session's `current_contest_id` picks the contest a request runs in (`Secured.inCurrentContest`); users loaded with `User.contestMembers` / `findByContest` / `loadJurors` carry their role in that contest, a plain `findById` has none.
 
 ### Background jobs
 

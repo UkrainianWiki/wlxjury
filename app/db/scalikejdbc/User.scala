@@ -36,6 +36,20 @@ case class User(
 
   def currentContest: Option[Long] = contestId
 
+  /** The user's roles in [[contestId]]: [[roles]] without root and the USER_ID_ marker. */
+  def contestRoles: Set[String] =
+    roles.filterNot(r => r == User.ROOT_ROLE || r.startsWith(User.USER_ID_PREFIX))
+
+  /** The role for a round_user row or the edit form; contestRoles normally has one. */
+  def contestRole: Option[String] = contestRoles.toSeq.sorted.headOption
+
+  /** This user as a member of the membership's contest, with their role there. */
+  def inContest(membership: UserContest): User =
+    copy(
+      contestId = Some(membership.contestId),
+      roles = roles -- contestRoles ++ membership.roles
+    )
+
   def hasRole(role: String): Boolean = roles.contains(role)
 
   def hasAnyRole(otherRoles: Set[String]): Boolean = roles.intersect(otherRoles).nonEmpty
@@ -49,10 +63,6 @@ case class User(
   def isAdmin(refContestId: Option[Long]): Boolean =
     hasRole(User.ADMIN_ROLE) && isInContest(refContestId) ||
       hasRole(User.ROOT_ROLE)
-
-  def canEdit(otherUser: User): Boolean =
-    isAdmin(otherUser.contestId) ||
-      id == otherUser.id
 
   def canViewOrgInfo(round: Round): Boolean =
     hasRole("root") ||
@@ -80,6 +90,7 @@ object User extends CRUDMapper[User] {
   val ADMIN_ROLE = "admin"
   val ROOT_ROLE = "root"
   val ADMIN_ROLES = Set(ADMIN_ROLE, ROOT_ROLE)
+  val USER_ID_PREFIX = "USER_ID_"
   val LANGS = Map("en" -> "English", "fr" -> "Français", "ru" -> "Русский", "uk" -> "Українська")
 
   def unapplyEdit(user: User): Option[
@@ -102,7 +113,7 @@ object User extends CRUDMapper[User] {
         user.wikiAccount,
         user.email,
         None,
-        Some(user.roles.toSeq.head),
+        if (user.hasRole(ROOT_ROLE)) Some(ROOT_ROLE) else user.contestRole,
         user.contestId,
         user.lang,
         user.sort
@@ -217,17 +228,19 @@ object User extends CRUDMapper[User] {
 
   override lazy val defaultAlias = createAlias("u")
 
+  /** A user row: no contest, and only the USER_ID_ marker and root in [[User.roles]]. A
+    * contest and the role in it come from user_contest ([[User.inContest]]).
+    */
   override def extract(rs: WrappedResultSet, c: scalikejdbc.ResultName[User]): User = {
-    val id   = rs.int(c.id)
-    val root = rs.booleanOpt(c.isRoot).getOrElse(false)
+    val id   = rs.long(c.id)
+    val root = rs.boolean(c.isRoot)
     User(
       id          = Some(id),
       fullname    = rs.string(c.fullname),
       email       = rs.string(c.email),
-      roles       = Set("USER_ID_" + id) ++ (if (root) Set(User.ROOT_ROLE) else Set.empty),
+      roles       = Set(USER_ID_PREFIX + id) ++ (if (root) Set(ROOT_ROLE) else Set.empty),
       isRoot      = root,
-      contestId   = None,
-      password    = Some(rs.string(c.password)),
+      password    = rs.stringOpt(c.password),
       lang        = rs.stringOpt(c.lang),
       wikiAccount = rs.stringOpt(c.wikiAccount),
       sort        = rs.intOpt(c.sort),
@@ -236,34 +249,47 @@ object User extends CRUDMapper[User] {
     )
   }
 
-  def apply(c: ResultName[User])(rs: WrappedResultSet): User = {
-    val id   = rs.int(c.id)
-    val root = rs.booleanOpt(c.isRoot).getOrElse(false)
-    new User(
-      id          = Some(id),
-      fullname    = rs.string(c.fullname),
-      email       = rs.string(c.email),
-      roles       = Set("USER_ID_" + id) ++ (if (root) Set(User.ROOT_ROLE) else Set.empty),
-      isRoot      = root,
-      contestId   = None,
-      password    = Some(rs.string(c.password)),
-      lang        = rs.stringOpt(c.lang),
-      wikiAccount = rs.stringOpt(c.wikiAccount),
-      sort        = rs.intOpt(c.sort),
-      createdAt   = rs.timestampOpt(c.createdAt).map(_.toZonedDateTime),
-      deletedAt   = rs.timestampOpt(c.deletedAt).map(_.toZonedDateTime)
-    )
-  }
+  def apply(c: ResultName[User])(rs: WrappedResultSet): User = extract(rs, c)
 
-  def findByContest(contestId: Long)(implicit session: DBSession = autoSession): Seq[User] = {
-    val uc = UserContestJdbc.syntax("uc")
-    withSQL {
-      select(u.result.*)
-        .from(User as u)
-        .join(UserContestJdbc as uc).on(u.id, uc.userId)
-        .where.eq(uc.contestId, contestId)
-        .orderBy(u.id)
-    }.map(User(u)).list()
+  /** The contest's members, each with their role in it, ordered by id; only those with one
+    * of `roles` if given, and of `ids` if given.
+    */
+  def contestMembers(
+      contestId: Long,
+      roles: Option[Seq[String]] = None,
+      ids: Option[Seq[Long]] = None
+  )(implicit session: DBSession = autoSession): Seq[User] =
+    if (roles.exists(_.isEmpty) || ids.exists(_.isEmpty)) Nil
+    else {
+      val uc = UserContestJdbc.syntax("uc")
+      withSQL {
+        select(u.result.*, uc.result.*)
+          .from(User as u)
+          .join(UserContestJdbc as uc).on(u.id, uc.userId)
+          .where(
+            sqls.toAndConditionOpt(
+              Some(sqls.eq(uc.contestId, contestId)),
+              roles.map(sqls.in(uc.role, _)),
+              ids.map(sqls.in(u.id, _))
+            )
+          )
+          .orderBy(u.id)
+      }.map { rs =>
+        User(u.resultName)(rs).inContest(UserContestJdbc.extract(rs, uc.resultName))
+      }.list()
+    }
+
+  def findByContest(contestId: Long)(implicit session: DBSession = autoSession): Seq[User] =
+    contestMembers(contestId)
+
+  /** The user as a member of the contest, with their role there; None if not a member. */
+  def findInContest(userId: Long, contestId: Long)(implicit session: DBSession = autoSession): Option[User] =
+    contestMembers(contestId, ids = Some(Seq(userId))).headOption
+
+  /** Users with all their memberships in [[User.userContests]]. */
+  def withMemberships(users: Seq[User])(implicit session: DBSession = autoSession): Seq[User] = {
+    val byUser = UserContestJdbc.findAll().groupBy(_.userId)
+    users.map(user => user.copy(userContests = byUser.getOrElse(user.getId, Nil).sortBy(-_.contestId)))
   }
 
   /** The users with selection rows in the round (its jurors), ordered by id.
@@ -348,32 +374,24 @@ object User extends CRUDMapper[User] {
       contestId: Option[Long],
       lang: Option[String],
       createdAt: Option[ZonedDateTime]
-  ): User = {
-    val id = withSQL {
-      insert
-        .into(User)
-        .namedValues(
-          column.fullname  -> fullname,
-          column.email     -> email.trim.toLowerCase,
-          column.password  -> password,
-          column.isRoot    -> false,
-          column.lang      -> lang,
-          column.createdAt -> createdAt
-        )
-    }.updateAndReturnGeneratedKey()
-
-    User(
-      id        = Some(id),
-      fullname  = fullname,
-      email     = email,
-      password  = Some(password),
-      roles     = roles ++ Set("USER_ID_" + id),
-      contestId = contestId,
-      createdAt = createdAt
+  ): User =
+    create(
+      User(
+        fullname = fullname,
+        email = email,
+        password = Some(password),
+        roles = roles,
+        contestId = contestId,
+        lang = lang,
+        createdAt = createdAt
+      )
     )
-  }
 
+  /** Inserts the user and, when [[User.contestId]] and a contest role are set, their
+    * membership in that contest. A root role sets users.is_root.
+    */
   def create(user: User)(implicit session: DBSession = AutoSession): User = {
+    val root = user.isRoot || user.hasRole(ROOT_ROLE)
     val id = withSQL {
       insert
         .into(User)
@@ -382,22 +400,29 @@ object User extends CRUDMapper[User] {
           column.email       -> user.email.trim.toLowerCase,
           column.wikiAccount -> user.wikiAccount,
           column.password    -> user.password,
-          column.isRoot      -> user.isRoot,
+          column.isRoot      -> root,
           column.lang        -> user.lang,
           column.sort        -> user.sort,
           column.createdAt   -> user.createdAt
         )
     }.updateAndReturnGeneratedKey()
 
-    user.copy(id = Some(id), roles = user.roles ++ Set("USER_ID_" + id))
+    for (contestId <- user.contestId; role <- user.contestRole)
+      UserContestJdbc.createMembership(id, contestId, role)
+
+    user.copy(
+      id = Some(id),
+      isRoot = root,
+      roles = user.roles ++ Set(USER_ID_PREFIX + id) ++ (if (root) Set(ROOT_ROLE) else Set.empty)
+    )
   }
 
+  /** Updates the account; roles are per contest, set with [[UserContestJdbc.updateRole]]. */
   def updateUser(
       id: Long,
       fullname: String,
       wikiAccount: Option[String],
       email: String,
-      roles: Set[String],
       lang: Option[String],
       sort: Option[Int]
   ): Unit =
@@ -410,56 +435,22 @@ object User extends CRUDMapper[User] {
         "sort"        -> sort
       )
 
+  def setRoot(id: Long, root: Boolean): Unit =
+    updateById(id)
+      .withAttributes("isRoot" -> root)
+
   def updateHash(id: Long, hash: String): Unit =
     updateById(id)
       .withAttributes("password" -> hash)
 
-  def loadJurors(contestId: Long)(implicit session: DBSession = autoSession): Seq[User] = {
-    val uc = UserContestJdbc.syntax("uc")
-    withSQL {
-      select(u.result.*)
-        .from(User as u)
-        .join(UserContestJdbc as uc).on(u.id, uc.userId)
-        .where.eq(uc.contestId, contestId)
-        .and.eq(uc.role, "jury")
-        .orderBy(u.id)
-    }.map(User(u)).list()
-  }
+  def loadJurors(contestId: Long)(implicit session: DBSession = autoSession): Seq[User] =
+    contestMembers(contestId, roles = Some(Seq(JURY_ROLE)))
 
-  def loadJurors(contestId: Long, jurorIds: Seq[Long]): Seq[User] = {
-    if (jurorIds.isEmpty) return Nil
-    implicit val session: DBSession = autoSession
-    val uc = UserContestJdbc.syntax("uc")
-    withSQL {
-      select(u.result.*)
-        .from(User as u)
-        .join(UserContestJdbc as uc).on(u.id, uc.userId)
-        .where.in(u.id, jurorIds)
-        .and.eq(uc.contestId, contestId)
-        .and.eq(uc.role, "jury")
-        .orderBy(u.id)
-    }.map(User(u)).list()
-  }
+  def loadJurors(contestId: Long, jurorIds: Seq[Long]): Seq[User] =
+    contestMembers(contestId, roles = Some(Seq(JURY_ROLE)), ids = Some(jurorIds))
 
   def findByContestAndRoles(contestId: Long, roles: Seq[String])
-                           (implicit session: DBSession = autoSession): Seq[User] = {
-    val uc = UserContestJdbc.syntax("uc")
-    withSQL {
-      select(u.result.*, uc.role, uc.contestId)
-        .from(User as u)
-        .join(UserContestJdbc as uc).on(u.id, uc.userId)
-        .where.eq(uc.contestId, contestId)
-        .and.in(uc.role, roles)
-        .orderBy(u.id)
-    }.map { rs =>
-      val user = User(u)(rs)
-      val role = rs.string(uc.role)
-      val ucContestId = rs.long(uc.contestId)
-      user.copy(
-        roles = user.roles + role,
-        contestId = Some(ucContestId)
-      )
-    }.list()
-  }
+                           (implicit session: DBSession = autoSession): Seq[User] =
+    contestMembers(contestId, roles = Some(roles))
 
 }

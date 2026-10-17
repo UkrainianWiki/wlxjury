@@ -73,11 +73,7 @@ trait TestDb {
       contest: ContestJury,
       session: DBSession = AutoSession
   ): Seq[User] =
-    userIndexes.map(i => contestUser(i, role)).map { u =>
-      val created = userDao.create(u)
-      UserContestJdbc.createMembership(created.getId, contest.id.get, role)
-      created
-    }
+    userIndexes.map(i => contestUser(i, role)).map(userDao.create(_))
 }
 
 object TestDb {

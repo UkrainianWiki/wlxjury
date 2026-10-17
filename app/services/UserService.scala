@@ -19,31 +19,46 @@ class UserService @Inject()(val sendMail: SMTPOrWikiMail,
     createUser(user, formUser, contest)
   }
 
+  /** Adds the person to the contest (`contestOpt`, else the creator's): a new account, or,
+    * if one with the email (without an email: the wiki account) exists, a membership of
+    * that account, whose password stays. One account per person, in as many contests as
+    * needed. A new member gets the contest's greeting, if it sends one; an existing member
+    * keeps their role and gets nothing.
+    */
   def createUser(
       creator: User,
       formUser: User,
       contestOpt: Option[ContestJury])(implicit messages: Messages): User = {
-    val password = formUser.password.getOrElse(User.randomString(12))
-    val hash = User.hash(formUser, password)
+    val contestId = contestOpt.flatMap(_.id).orElse(creator.contestId)
+    val role = formUser.contestRole.getOrElse(User.JURY_ROLE)
 
-    val toCreate = formUser.copy(
-      password  = Some(hash),
-      contestId = contestOpt.flatMap(_.id).orElse(creator.contestId))
+    existingAccount(formUser) match {
+      case Some(account) =>
+        val added = contestId.exists(UserContestJdbc.createMembership(account.getId, _, role))
+        val member = contestId.flatMap(User.findInContest(account.getId, _)).getOrElse(account)
+        for (contest <- contestOpt if added && contest.greeting.use)
+          sendMail(creator, member, contest, messages("password.existing"))
+        member
 
-    val createdUser = User.create(toCreate)
-
-    contestOpt.foreach { contest =>
-      contest.id.foreach { cid =>
-        val role = toCreate.roles
-          .find(r => r != db.scalikejdbc.User.ROOT_ROLE && !r.startsWith("USER_ID_"))
-          .getOrElse("jury")
-        db.scalikejdbc.UserContestJdbc.createMembership(createdUser.getId, cid, role)
-      }
-      if (contest.greeting.use) {
-        sendMail(creator, createdUser, contest, password)
-      }
+      case None =>
+        val password = formUser.password.getOrElse(User.randomString(12))
+        val createdUser = User.create(
+          formUser.copy(
+            password = Some(User.hash(formUser, password)),
+            contestId = contestId
+          )
+        )
+        for (contest <- contestOpt if contest.greeting.use)
+          sendMail(creator, createdUser, contest, password)
+        createdUser
     }
-    createdUser
+  }
+
+  /** The account a new user's email (or, without an email, wiki account) already has. */
+  def existingAccount(formUser: User): Option[User] = {
+    val email = formUser.email.trim.toLowerCase
+    if (email.nonEmpty) User.findByEmail(email).headOption
+    else formUser.wikiAccount.map(_.trim).filter(_.nonEmpty).flatMap(User.findByAccount(_).headOption)
   }
 
   def sendMail(creator: User,

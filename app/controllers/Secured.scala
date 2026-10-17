@@ -12,36 +12,17 @@ abstract class Secured(cc: ControllerComponents) extends AbstractController(cc) 
 
   type Permission = User => Boolean
 
-  def userFromRequest(request: RequestHeader): Option[User] = {
+  /** @param request
+    *   HTTP request with username set in session
+    * @return
+    *   optional user from database, in the session's current contest
+    */
+  def userFromRequest(request: RequestHeader): Option[User] =
     request.session
       .get(UserName)
       .map(_.trim.toLowerCase)
       .flatMap(User.byUserName)
-      .map { user =>
-        if (user.isRoot) {
-          user.copy(userContests = Nil)
-        } else {
-          val memberships = UserContestJdbc.findByUser(user.getId)
-          val currentContestId: Option[Long] =
-            Option(request.session.get(CurrentContestId)).flatten
-              .flatMap(s => scala.util.Try(s.toLong).toOption)
-              .filter(cid => memberships.exists(_.contestId == cid))
-              .orElse(memberships.headOption.map(_.contestId))
-
-          currentContestId match {
-            case Some(cid) =>
-              val contestRole = memberships.find(_.contestId == cid).map(_.role).getOrElse("jury")
-              user.copy(
-                contestId    = Some(cid),
-                roles        = user.roles ++ Set(contestRole),
-                userContests = memberships
-              )
-            case None =>
-              user.copy(userContests = memberships)
-          }
-        }
-      }
-  }
+      .map(Secured.inCurrentContest(_, request.session.get(CurrentContestId)))
 
   def onUnAuthenticated(request: RequestHeader): Result =
     Results.Redirect(routes.LoginController.login())
@@ -97,4 +78,17 @@ abstract class Secured(cc: ControllerComponents) extends AbstractController(cc) 
 object Secured {
   val UserName         = "username"
   val CurrentContestId = "current_contest_id"
+
+  /** The user with their memberships, in `currentContestId` (the session's) if they are a
+    * member of it, else in their latest contest. A root user needs no membership.
+    */
+  def inCurrentContest(user: User, currentContestId: Option[String]): User = {
+    val memberships = UserContestJdbc.findByUser(user.getId)
+    val withMemberships = user.copy(userContests = memberships)
+    val requested = currentContestId.flatMap(_.toLongOption)
+    requested
+      .flatMap(id => memberships.find(_.contestId == id))
+      .orElse(memberships.headOption)
+      .fold(withMemberships)(withMemberships.inContest)
+  }
 }
