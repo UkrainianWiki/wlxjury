@@ -61,6 +61,12 @@ trait JobHandler {
     */
   def prepare(job: Job): Unit = ()
 
+  /** [[prepare]] calls an external API before every step: the scheduler runs it on its
+    * fetch lane (`jobs.fetchWorkers`), not on a worker, and gives the job its step once it
+    * is done. See [[FetchingJobHandler]].
+    */
+  def fetchesExternally: Boolean = false
+
   /** One step of the job, in the transaction of `ctx` with the job's row locked. An
     * exception rolls the step back and fails the job (a transient database error, such
     * as a deadlock, is retried first).
