@@ -93,7 +93,7 @@ class LoginController @Inject() (
           val newUser =
             new User(fullname = "", email = login, password = Some(password), roles = roles)
           val user = admin.createNewUser(newUser, newUser)
-          val result = indexRedirect(user).withSession("username" -> password)
+          val result = indexRedirect(user).withSession(Secured.UserName -> login)
           user.lang.fold(result)(l => result.withLang(Lang(l)))
         }
       )
