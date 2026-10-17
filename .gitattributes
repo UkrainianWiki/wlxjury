@@ -4,3 +4,10 @@ conf/messages.* linguist-language=INI
 
 # The benchmark server image runs these files on Linux
 bench/** text eol=lf
+
+# Deployment tooling and systemd files execute on the Linux production server.
+scripts/deployment/** text eol=lf
+bin/wlxjury-*.sh text eol=lf
+conf/systemd/** text eol=lf
+conf/wlxjury/** text eol=lf
+conf/apache/wlxjury-maintenance.conf text eol=lf

@@ -154,7 +154,7 @@ class JobScheduler(handlerList: Seq[JobHandler], val settings: JobScheduler.Sett
     }
 
   private def heartbeat(): Unit =
-    try JobJdbc.heartbeat(instanceId)
+    try { if (!stopping && tableReady()) JobJdbc.heartbeat(instanceId) }
     catch { case NonFatal(e) => logger.warn(s"Job scheduler $instanceId: heartbeat failed", e) }
 
   private def limit(kind: String): Int = settings.kindLimits.getOrElse(kind, settings.defaultKindLimit)
