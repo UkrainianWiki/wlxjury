@@ -129,6 +129,18 @@
 1. Mode `import` stores any value of the monument id template (≤ 100 characters); mode `monument_ids` stores only valid ids. Unify? Default: keep both as they are.
 2. Should Update monuments also refresh the special nominations for WLE (today WLM only)? Default: no.
 
+## Implementation notes (2026-10-17)
+
+Where the code differs from the tasks above:
+- **Task 1:** a source's files are listed with a **generator** query without props (`generator=categorymembers|embeddedin|images`), not with `list=`: the pages come back the same way for all three sources, and with no props the `continue` map has only the generator's token. The one-page request and the retries are in `services.imports.MwApi`, shared with the monument lists.
+- **Task 2:** `FetchingJobHandler[A]` implements `prepare` (the fetch, cached per job with the cursor it was fetched for) and `step` (the write, only if the locked row still has that cursor). The scheduler runs `prepare` of such handlers on its fetch lane, and their steps without it.
+- **Task 3:** `max` is gone: it was only passed to scalawiki's progress events, never a limit. A pasted list's files get their text by title when the contest has a monument id template; the old path took the text from the source category instead, and failed for a listed file that wasn't in it.
+- **Task 4:** **most WLM special-nomination "pages" are navbar templates** (`Template:WLM замки і фортеці`, …), which scalawiki's `byPage` expanded to every page that embeds them. So a monument import is a list of sources, each a list page or a template whose embedding pages are lists, read with the same `embeddedin` paging as the contest's own lists. The progress has no total (list pages done only).
+- **Task 5:** the files page still asks Commons for the category's file count on every render (unchanged).
+- **Task 7:** not done as a Gatling simulation. `ImportScaleSpec` (`-Dimport.scale=true`, optional `-Dimport.latencyMs`, `-Dimport.pageSize`) imports the 38k-file fixture through a background scheduler over a fake Commons, and writes the time and the heap after GC to `target/gatling/import-memory.txt`.
+  - **Measured 2026-10-17** (this laptop, test JVM defaults, no API latency, page size 50): 38,367 files in 109 s (768 steps, ~140 ms each: parsing 50 file texts and one transaction); heap after GC 75 MB before (the fake Commons holds the whole fixture) and at most 78 MB during the import, 0 full GCs. With Commons, each step adds its two API calls (list, details); one job's fetch and write alternate, so prefetching the next page during the write is the next step if imports must be faster.
+  - Not measured: an import alongside distributions and jurors (the Gatling scenario above).
+
 ---
 
 **Out of scope:**
