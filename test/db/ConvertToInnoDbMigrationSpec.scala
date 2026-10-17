@@ -189,6 +189,33 @@ class ConvertToInnoDbMigrationSpec extends Specification with AfterAll {
       }
     }
 
+    "V62 add memberships from round assignments and turn off other years' rounds" in {
+      val thisYear = java.time.Year.now.getValue
+      Using.resource(prodLikeDb("assignments")) { c =>
+        run(c, Seq(
+          "INSERT INTO contest_jury (id, name, country, year) VALUES " +
+            s"(8, 'Wiki Loves Earth', 'Ukraine', 2025), (9, 'Wiki Loves Monuments', 'Ukraine', $thisYear)",
+          "INSERT INTO rounds (id, name, number, contest_id, rates, active) VALUES " +
+            "(41, 'WLE 1', 1, 8, 1, 1), (42, 'WLE 2', 2, 8, 1, 0), (43, 'Now', 1, 9, 1, 1), (44, 'WLE 3', 3, 8, 1, 0)",
+          // the marker the old code could write as a role, an organizer assignment, a
+          // round_user role that must not make an admin, and a deleted user's assignment
+          "INSERT INTO round_user (user_id, round_id, role, active) VALUES " +
+            "(1, 41, 'USER_ID_1', 0), (5, 40, 'jury', 1), (5, 41, 'jury', 1), (5, 42, 'organizer', 1), " +
+            "(1, 43, 'admin', 1), (77, 41, 'jury', 1)"
+        ))
+        afterV53.filterNot(_.startsWith("V62")).foreach(m => run(c, script(m)))
+        // a previous round of a running distribution: frozen, with its saved flag on
+        run(c, Seq("UPDATE rounds SET freeze_count = 1, active_before_freeze = 1 WHERE id = 44"))
+        run(c, script("V62__Migrate_roles_to_user_contest.sql"))
+
+        rows(c, "SELECT user_id, contest_id, role FROM user_contest ORDER BY user_id, contest_id")(rs =>
+          (rs.getLong(1), rs.getLong(2), rs.getString(3))) === List(
+          (1L, 7L, "jury"), (1L, 8L, "jury"), (1L, 9L, "jury"), (5L, 7L, "admin"), (5L, 8L, "organizer"))
+        rows(c, "SELECT id FROM rounds WHERE active ORDER BY id")(_.getLong(1)) === List(43L)
+        rows(c, "SELECT COALESCE(active_before_freeze, -1) FROM rounds WHERE id = 44")(_.getInt(1)) === List(0)
+      }
+    }
+
     "the alias account report run on production's V53 schema" in {
       Using.resource(prodLikeDb("aliases")) { c =>
         run(c, Seq(
