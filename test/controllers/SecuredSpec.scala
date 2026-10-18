@@ -113,6 +113,17 @@ class SecuredSpec extends PlaySpecification with Mockito with TestDb
       new SecuredWithCc().userFromRequest(request) === None
     }
 
+    "be None for a deleted user's login name, nor log them in" in {
+      val deleted = User.create(User("gone", "gone@server.com", None, Set.empty, Some(User.sha1("pass")), wikiAccount = Some("Gone")))
+      scalikejdbc.DB.autoCommit { implicit s =>
+        scalikejdbc.SQL("UPDATE users SET deleted_at = CURRENT_TIMESTAMP WHERE id = ?").bind(deleted.getId).update.apply()
+      }
+      val secured = new SecuredWithCc()
+      secured.userFromRequest(FakeRequest().withSession(Secured.UserName -> "gone@server.com")) === None
+      secured.userFromRequest(FakeRequest().withSession(Secured.UserName -> "gone")) === None
+      User.login("gone@server.com", "pass") === None
+    }
+
   }
 
 }

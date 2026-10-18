@@ -1,6 +1,6 @@
 package controllers
 
-import db.scalikejdbc.{PlayTestDb, Round, RoundUser, User, UserContest, UserContestJdbc}
+import db.scalikejdbc.{PlayTestDb, Round, RoundUser, User, UserContest, UserContestJdbc, UserIdentity, UserIdentityJdbc}
 import org.apache.pekko.stream.Materializer
 import org.intracer.wmua.ContestJury
 import org.specs2.mock.Mockito
@@ -283,6 +283,26 @@ class MultiContestUserSpec extends PlaySpecification with PlayTestDb with Mockit
         status(result) === SEE_OTHER
         flash(result).get("users-added") must beSome(
           "New accounts: 1. Existing accounts added to the contest: 1. Already in the contest: 1.")
+      }
+    }
+  }
+
+  "editing one's own account" should {
+    "not take a wiki account another account has, and still show the linked accounts" in {
+      testDbApp { implicit app =>
+        implicit val mat: Materializer = app.materializer
+        createContests(10)
+        val juror = member("juror@example.com", 10L -> "jury")
+        val bob = member("bob@example.com", 10L -> "jury")
+        User.updateUser(bob.getId, "Bob", Some("Bob_W"), "bob@example.com", None, None)
+        UserIdentityJdbc.create(UserIdentity("google", "g-1", juror.getId, email = Some("juror@gmail.com")))
+
+        // a Wikimedia sign-in as Bob W would be refused, or land in the juror's account
+        val result = save(juror, 10, form(juror, 10, "jury") :+ ("wikiAccount" -> "Bob W"): _*)
+
+        status(result) === BAD_REQUEST
+        contentAsString(result) must contain("linked-accounts")
+        User.findById(juror.getId).flatMap(_.wikiAccount) must beNone
       }
     }
   }

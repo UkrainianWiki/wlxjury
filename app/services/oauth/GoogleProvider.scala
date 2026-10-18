@@ -1,6 +1,8 @@
 package services.oauth
 
 import com.nimbusds.jose.JWSAlgorithm
+import com.nimbusds.jose.jwk.source.JWKSourceBuilder
+import com.nimbusds.jose.proc.{JWSVerificationKeySelector, SecurityContext}
 import com.nimbusds.jose.util.DefaultResourceRetriever
 import com.nimbusds.oauth2.sdk._
 import com.nimbusds.oauth2.sdk.auth.{ClientSecretBasic, Secret}
@@ -13,8 +15,10 @@ import com.nimbusds.openid.connect.sdk.validators.IDTokenValidator
 
 import java.net.URI
 import javax.inject.{Inject, Singleton}
+import scala.annotation.tailrec
 import scala.collection.concurrent.TrieMap
 import scala.util.control.NonFatal
+import scala.util.{Failure, Success, Try}
 
 /** Sign-in with Google: OpenID Connect, its ID token checked against Google's keys.
   *
@@ -28,7 +32,7 @@ class GoogleProvider @Inject() (settings: OAuthSettings) extends OAuthProvider {
 
   @volatile private var resolved: Option[OIDCProviderMetadata] = None
 
-  /** One per client id: each holds its cached copy of the provider's signing keys. */
+  /** Per client id, the validators (one per issuer) and their cached signing keys. */
   private val validators = TrieMap.empty[String, Seq[IDTokenValidator]]
 
   private def metadata: OIDCProviderMetadata =
@@ -94,24 +98,27 @@ class GoogleProvider @Inject() (settings: OAuthSettings) extends OAuthProvider {
     * issues `https://accounts.google.com` or, in older tokens, `accounts.google.com`.
     */
   private def validate(client: OAuthClient, idToken: com.nimbusds.jwt.JWT, flow: OAuthFlow): IDTokenClaimsSet = {
-    val candidates = validators.getOrElseUpdate(client.clientId, newValidators(client))
-    val results = candidates.iterator.map { v =>
-      try Right(v.validate(idToken, flow.nonce))
-      catch { case NonFatal(e) => Left(e) }
-    }.toSeq
-    results.collectFirst { case Right(claims) => claims }.getOrElse {
-      val error = results.collectFirst { case Left(e) => e.getMessage }.getOrElse("")
-      throw new OAuthException(s"invalid ID token: $error")
-    }
+    // the first issuer that checks out: almost always the current one, so one check
+    @tailrec def firstValid(candidates: List[IDTokenValidator], error: String): IDTokenClaimsSet =
+      candidates match {
+        case Nil => throw new OAuthException(s"invalid ID token: $error")
+        case v :: rest =>
+          Try(v.validate(idToken, flow.nonce)) match {
+            case Success(claims) => claims
+            case Failure(e)      => firstValid(rest, if (error.isEmpty) e.getMessage else error)
+          }
+      }
+    firstValid(validators.getOrElseUpdate(client.clientId, newValidators(client)).toList, "")
   }
 
+  /** A validator per issuer, all sharing one cached copy of the provider's signing keys. */
   private def newValidators(client: OAuthClient): Seq[IDTokenValidator] = {
     val m         = metadata
     val retriever = new DefaultResourceRetriever(settings.connectTimeoutMillis, settings.readTimeoutMillis)
+    val keys      = JWKSourceBuilder.create[SecurityContext](m.getJWKSetURI.toURL, retriever).build()
+    val selector  = new JWSVerificationKeySelector[SecurityContext](JWSAlgorithm.RS256, keys)
     val issuers   = Seq(m.getIssuer) ++ legacyIssuer(m.getIssuer)
-    issuers.map { issuer =>
-      new IDTokenValidator(issuer, new ClientID(client.clientId), JWSAlgorithm.RS256, m.getJWKSetURI.toURL, retriever)
-    }
+    issuers.map(issuer => new IDTokenValidator(issuer, new ClientID(client.clientId), selector, null))
   }
 
   private def legacyIssuer(issuer: Issuer): Option[Issuer] =

@@ -7,9 +7,9 @@ Besides the email (or wiki account) and password, jurors can log in with a Googl
 The first time someone signs in with a Google or Wikimedia account, it is linked (table `user_identity`) to the one jury account that has:
 
 - **Google:** the Google account's email, if Google says it is verified.
-- **Wikimedia:** the Wikimedia username as the wiki account, in any case, with underscores or with a `User:` prefix. If there is none, the Wikimedia account's email, if the email is confirmed and the consumer may read it (see below).
+- **Wikimedia:** the Wikimedia username as the wiki account, with underscores, a `User:` prefix or a lower-case first letter, but otherwise exactly as MediaWiki has it (`FooBar` is not `Foobar`, `José` is not `Jose`); or the Wikimedia account's email, if the email is confirmed and the consumer may read it (see below).
 
-After that, the link is by the provider's stable account id: changing the email at Google or renaming the Wikimedia account doesn't matter. Two jury accounts with the same wiki account are refused, never guessed between.
+After that, the link is by the provider's stable account id: changing the email at Google or renaming the Wikimedia account doesn't matter. Two jury accounts that match are refused, never guessed between: two with the same wiki account, or one with the wiki account and another with the email (users can set their own wiki account, so it must not win over the signer's email). Saving a wiki account that another jury account already has is refused.
 
 A juror whose Google email differs from the one the organizer entered can log in with the password and link the account themselves: their own edit page (the user name in the menu) has a **Linked accounts** section with **Link** and **Unlink**.
 

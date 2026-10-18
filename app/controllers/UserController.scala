@@ -1,6 +1,6 @@
 package controllers
 
-import db.scalikejdbc.{ContestJuryJdbc, User, UserContestJdbc, UserIdentityJdbc}
+import db.scalikejdbc.{ContestJuryJdbc, User, UserContestJdbc, UserIdentity, UserIdentityJdbc}
 import org.intracer.wmua._
 import org.scalawiki.dto.cmd.query.Query
 import org.scalawiki.dto.cmd.query.list._
@@ -10,7 +10,7 @@ import play.api.data.Forms._
 import play.api.i18n.{I18nSupport, Lang, Messages}
 import play.api.mvc.{ControllerComponents, EssentialAction, Result}
 import services.UserService
-import services.oauth.OAuthSettings
+import services.oauth.{IdentityLinker, OAuthSettings}
 import spray.util.pimpFuture
 
 import javax.inject.Inject
@@ -140,14 +140,19 @@ class UserController @Inject()(cc: ControllerComponents,
       user => implicit request =>
         editableUser(user, userId, contestId).fold(Redirect(routes.LoginController.index)) { editedUser =>
           val filledForm = editUserForm.fill(editedUser)
-          // only the user's own Google and Wikimedia accounts are theirs to link
-          val (identities, providers) =
-            if (editedUser.getId == user.getId)
-              (UserIdentityJdbc.findByUser(user.getId), oauthSettings.providersFor(request.host))
-            else (Nil, Nil)
+          val (identities, providers) = linkedAccounts(user, editedUser.id)
           Ok(views.html.editUser(user, filledForm, editedUser.contestId.orElse(user.currentContest), identities, providers))
         }
     }
+
+  /** The Google and Wikimedia accounts of the edit page, and the providers to link one
+    * with: only the user's own are theirs to link.
+    */
+  private def linkedAccounts(user: User, editedUserId: Option[Long])(
+      implicit request: play.api.mvc.RequestHeader): (Seq[UserIdentity], Seq[String]) =
+    if (editedUserId.isDefined && editedUserId == user.id)
+      (UserIdentityJdbc.findByUser(user.getId), oauthSettings.providersFor(request.host))
+    else (Nil, Nil)
 
   /**
     * Saves user on user editing form submitting
@@ -158,14 +163,19 @@ class UserController @Inject()(cc: ControllerComponents,
     editUserForm
       .bindFromRequest()
       .fold(
-        formWithErrors => // binding failure, you retrieve the form containing errors,
+        formWithErrors => { // binding failure, you retrieve the form containing errors,
+          val (identities, providers) =
+            linkedAccounts(user, formWithErrors.data.get("id").flatMap(_.toLongOption))
           BadRequest(
             views.html.editUser(
               user,
               formWithErrors,
-              contestId = Try(formWithErrors.data("contest").toLong).toOption
+              contestId = Try(formWithErrors.data("contest").toLong).toOption,
+              identities,
+              providers
             )
-        ),
+          )
+        },
         formUser => {
           val userId = formUser.getId
           if (userId == 0) {
@@ -188,19 +198,26 @@ class UserController @Inject()(cc: ControllerComponents,
 
   private def updateUser(user: User, editedUser: User, formUser: User)(
       implicit request: play.api.mvc.Request[_]): Result = {
-    def badRequest(form: Form[User]) =
-      BadRequest(views.html.editUser(user, form, contestId = editedUser.contestId))
+    def badRequest(form: Form[User]) = {
+      val (identities, providers) = linkedAccounts(user, editedUser.id)
+      BadRequest(views.html.editUser(user, form, contestId = editedUser.contestId, identities, providers))
+    }
 
     val userId = editedUser.getId
     def wikiAccount(u: User) = u.wikiAccount.map(_.trim).filter(_.nonEmpty)
+    val wikiAccountChanged = wikiAccount(formUser) != wikiAccount(editedUser)
     val accountChanged =
       formUser.fullname.trim != editedUser.fullname.trim ||
         formUser.email != editedUser.emailLo ||
-        wikiAccount(formUser) != wikiAccount(editedUser) ||
+        wikiAccountChanged ||
         formUser.password.nonEmpty
 
     if (User.countByEmail(userId, formUser.email) > 0) {
       badRequest(editUserForm.fill(formUser).withError("email", "email should be unique"))
+    } else if (wikiAccountChanged &&
+               wikiAccount(formUser).exists(IdentityLinker.wikiAccountUsers(_).exists(_.id != editedUser.id))) {
+      // a Wikimedia sign-in finds its account by the wiki account: one would refuse it
+      badRequest(editUserForm.fill(formUser).withError("wikiAccount", "wiki account should be unique"))
     } else if (accountChanged && !canEditAccount(user, editedUser)) {
       badRequest(editUserForm.fill(formUser).withGlobalError("user.in.other.contests"))
     } else {

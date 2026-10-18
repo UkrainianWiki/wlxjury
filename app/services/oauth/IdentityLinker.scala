@@ -56,35 +56,47 @@ object IdentityLinker {
       case None =>
         try Right(UserIdentityJdbc.create(identityOf(profile, userId)))
         catch {
-          // linked meanwhile, by a concurrent sign-in
-          case _: SQLIntegrityConstraintViolationException => Left(LinkError.LinkedToOther)
+          // linked meanwhile, by a concurrent sign-in (perhaps to this very user), or the
+          // user is gone (the foreign key)
+          case _: SQLIntegrityConstraintViolationException =>
+            UserIdentityJdbc.find(profile.provider, profile.subject) match {
+              case Some(identity) if identity.userId == userId => Right(())
+              case Some(_)                                     => Left(LinkError.LinkedToOther)
+              case None                                        => Left(LinkError.NoAccount)
+            }
         }
     }
 
-  /** The existing accounts an identity signed in with for the first time may be. */
+  /** The existing accounts an identity signed in with for the first time may be: for a
+    * Wikimedia one, those with its username as the wiki account and those with its email,
+    * all of them, since a user can set their own wiki account and must not take over (or
+    * win over) the account that has the signer's email.
+    */
   private[oauth] def candidates(profile: ExternalProfile): Seq[User] = {
     val byEmail = profile.verifiedEmail.toSeq.flatMap(User.findByEmail).filter(_.deletedAt.isEmpty)
-    profile.provider match {
-      case OAuthProviders.Wikimedia =>
-        val byAccount = profile.username.map(wikiAccountUsers).getOrElse(Nil)
-        if (byAccount.nonEmpty) byAccount else byEmail
-      case _ =>
-        byEmail
+    val byAccount = profile.provider match {
+      case OAuthProviders.Wikimedia => profile.username.map(wikiAccountUsers).getOrElse(Nil)
+      case _                        => Nil
     }
+    (byAccount ++ byEmail).distinctBy(_.id)
   }
 
-  /** Accounts whose wiki account is the username, as organizers may have typed it: any
-    * case (the column's collation), with underscores or a "User:" prefix.
+  /** Accounts whose wiki account is the username, as organizers may have typed it: with
+    * underscores, a "User:" prefix or a lower-case first letter. The rest must match
+    * exactly, as MediaWiki tells "FooBar" from "Foobar" and "José" from "Jose"; the column's
+    * collation does not, so it only narrows the rows down.
     */
-  private def wikiAccountUsers(username: String): Seq[User] = {
+  def wikiAccountUsers(username: String): Seq[User] = {
     val name = canonicalWikiName(username)
     if (name.isEmpty) Nil
     else {
       val u = User.u
-      User.findAllBy(
-        sqls"REPLACE(TRIM(${u.wikiAccount}), '_', ' ') IN (${name}, ${"User:" + name})"
-          .and(User.isNotDeleted)
-      )
+      User
+        .findAllBy(
+          sqls"REPLACE(TRIM(${u.wikiAccount}), '_', ' ') IN (${name}, ${"User:" + name})"
+            .and(User.isNotDeleted)
+        )
+        .filter(_.wikiAccount.map(canonicalWikiName).contains(name))
     }
   }
 

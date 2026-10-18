@@ -31,7 +31,9 @@ class OAuthControllerSpec extends PlaySpecification with Results with PlayTestDb
       URI.create(s"https://$id.example/authorize?client_id=${client.clientId}&state=${flow.state.getValue}&redirect_uri=$redirectUri")
 
     def exchange(client: OAuthClient, redirectUri: URI, code: String, flow: OAuthFlow): ExternalProfile =
-      if (code == "good-code") profile else throw new OAuthException("token error: invalid_grant")
+      if (code == "good-code") profile
+      else if (code == "boom-code") throw new IllegalStateException("database down")
+      else throw new OAuthException("token error: invalid_grant")
   }
 
   val google    = new FakeProvider(OAuthProviders.Google)
@@ -193,6 +195,28 @@ class OAuthControllerSpec extends PlaySpecification with Results with PlayTestDb
       val result = signIn("google", flow => s"code=bad-code&state=${flow(OAuthController.StateKey)}")
 
       flash(result).get(OAuthController.FlashError) === Some("oauth.failed")
+    }
+
+    "tell any other failure, not show an error page with the code" in testDbApp { implicit app =>
+      val result = signIn("google", flow => s"code=boom-code&state=${flow(OAuthController.StateKey)}")
+
+      status(result) === SEE_OTHER
+      redirectLocation(result) === Some(routes.LoginController.login().url)
+      flash(result).get(OAuthController.FlashError) === Some("oauth.failed")
+      OAuthController.FlowKeys.flatMap(sessionOf(result).get) must beEmpty
+    }
+
+    "leave out a login name that is someone else's too" in testDbApp { implicit app =>
+      // a version from before ids reads the user from the login name: the first with it
+      user("other@example.com", Some("Twin"))
+      val twin = user("", Some("Twin"))
+      UserIdentityJdbc.create(UserIdentity("wikimedia", "777", twin.getId))
+      wikimedia.profile = ExternalProfile("wikimedia", "777", username = Some("Twin"))
+
+      val s = sessionOf(signIn("wikimedia", good))
+
+      s.get(Secured.UserId) === Some(twin.getId.toString)
+      s.get(Secured.UserName) must beNone
     }
   }
 

@@ -9,6 +9,7 @@ import services.oauth._
 
 import javax.inject.Inject
 import scala.concurrent.Future
+import scala.util.control.NonFatal
 
 /** Login with a Google or Wikimedia account (docs/oauth.md), and linking one to the
   * logged-in user's account.
@@ -126,6 +127,10 @@ class OAuthController @Inject() (
               }
             } catch {
               case e: OAuthException => fail("oauth.failed", e.getMessage)
+              case NonFatal(e) =>
+                // a database error, say: the user still gets the message, the code leaves the address bar
+                logger.error(s"OAuth $providerId callback failed", e)
+                fail("oauth.failed", e.toString)
             }
         }
     }
@@ -178,7 +183,9 @@ class OAuthController @Inject() (
     }
   }
 
-  /** The session's login name; [[Secured.UserId]] is what identifies the user. */
+  /** The session's login name, if it is theirs ([[Secured.loginSession]]);
+    * [[Secured.UserId]] is what identifies the user.
+    */
   private def loginName(user: User): String =
     if (user.email.trim.nonEmpty) user.emailLo else user.wikiAccount.getOrElse("")
 }

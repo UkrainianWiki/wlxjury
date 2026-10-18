@@ -70,12 +70,30 @@ class IdentityLinkerSpec extends Specification with TestDb with BeforeAll with B
         Right(alice.getId)
     }
 
-    "prefer the wiki account to the email" in {
+    "match the rest of a wiki account exactly, as MediaWiki does" in {
+      user("a@example.com", Some("FooBar"))
+      user("b@example.com", Some("José Foo"))
+
+      IdentityLinker.resolve(wikimedia("1", "Foobar")) === Left(LinkError.NoAccount)
+      IdentityLinker.resolve(wikimedia("2", "Jose Foo")) === Left(LinkError.NoAccount)
+      IdentityLinker.resolve(wikimedia("3", "fooBar")).isRight must beTrue
+    }
+
+    "refuse a wiki account and an email of two different accounts" in {
+      // anyone can set their own wiki account: it must not win over the signer's email
       user("alice@example.com")
-      val byAccount = user("other@example.com", Some("Alice W"))
+      user("other@example.com", Some("Alice W"))
+
+      IdentityLinker.resolve(wikimedia("1", "Alice W", Some("alice@example.com"), confirmed = true)) ===
+        Left(LinkError.Ambiguous)
+      UserIdentityJdbc.find("wikimedia", "1") must beNone
+    }
+
+    "link a wiki account and an email of the same account" in {
+      val alice = user("alice@example.com", Some("Alice W"))
 
       IdentityLinker.resolve(wikimedia("1", "Alice W", Some("alice@example.com"), confirmed = true)).map(_.getId) ===
-        Right(byAccount.getId)
+        Right(alice.getId)
     }
 
     "refuse a wiki account two accounts have" in {
@@ -113,6 +131,11 @@ class IdentityLinkerSpec extends Specification with TestDb with BeforeAll with B
 
       IdentityLinker.link(bob.getId, google("g-1", "personal@gmail.com")) === Left(LinkError.LinkedToOther)
       UserIdentityJdbc.find("google", "g-1").map(_.userId) === Some(alice.getId)
+    }
+
+    "refuse a user who is gone as no account" in {
+      IdentityLinker.link(Long.MaxValue, google("g-1", "personal@gmail.com")) === Left(LinkError.NoAccount)
+      UserIdentityJdbc.find("google", "g-1") must beNone
     }
   }
 

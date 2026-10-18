@@ -97,10 +97,10 @@
             <div class="col-md-4" id="linked-accounts">
                 <h3>@Messages("oauth.linked.accounts")</h3>
 
-                @flash.get("oauth-success").map { key =>
+                @flash.get(controllers.OAuthController.FlashSuccess).map { key =>
                     <div class="alert alert-success">@Messages(key)</div>
                 }
-                @flash.get("oauth-error").map { key =>
+                @flash.get(controllers.OAuthController.FlashError).map { key =>
                     <div class="alert alert-danger">@Messages(key)</div>
                 }
 

@@ -3,7 +3,7 @@ package controllers
 import db.scalikejdbc.User
 import play.api.data.Forms._
 import play.api.data._
-import play.api.i18n.{I18nSupport, Lang}
+import play.api.i18n.I18nSupport
 import play.api.mvc._
 import services.UserService
 import services.oauth.OAuthSettings
@@ -55,9 +55,7 @@ class LoginController @Inject() (
           val newUser =
             new User(fullname = "", email = login, password = Some(password), roles = roles)
           // always a new account: signing up never hands out an existing one
-          val user = admin.createAccount(newUser, newUser, None)
-          val result = indexRedirect(user).withSession(Secured.UserName -> user.emailLo)
-          user.lang.fold(result)(l => result.withLang(Lang(l)))
+          loggedIn(admin.createAccount(newUser, newUser, None), login)
         }
       )
   }

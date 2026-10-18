@@ -99,11 +99,18 @@ object Secured {
       case None     => session.get(UserName).map(_.trim.toLowerCase).flatMap(User.byUserName)
     }
 
-  /** A new session for the user who just logged in, in their current contest. */
+  /** A new session for the user who just logged in, in their current contest. The login
+    * name goes in only if it is theirs alone ([[User.allByUserName]]): a version from before
+    * ids (a rollback) reads the user from it, and an empty or shared wiki account could be
+    * someone else.
+    */
   def loginSession(user: User, login: String): (User, Session) = {
     val inContest = inCurrentContest(user, None)
+    val loginName =
+      Some(login.trim.toLowerCase).filter(l => l.nonEmpty && User.allByUserName(l).map(_.id) == Seq(user.id))
     val session = Session(
-      Map(UserId -> user.getId.toString, UserName -> login) ++
+      Map(UserId -> user.getId.toString) ++
+        loginName.map(UserName -> _) ++
         inContest.contestId.map(id => CurrentContestId -> id.toString)
     )
     (inContest, session)

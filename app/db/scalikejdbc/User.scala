@@ -219,13 +219,17 @@ object User extends CRUDMapper[User] {
   def sha1(input: String): String =
     Codecs.sha1(input.getBytes)
 
-  def byUserName(username: String): Option[User] = {
+  /** The account a login name (an email or a wiki account) is, unless it is deleted. */
+  def byUserName(username: String): Option[User] =
+    allByUserName(username).find(_.deletedAt.isEmpty)
+
+  /** All accounts with the login name, deleted ones too, by id. */
+  def allByUserName(username: String): Seq[User] = {
     val unameTrimmed = username.trim.toLowerCase
-    val users = Constraints.emailAddress()(unameTrimmed) match {
+    Constraints.emailAddress()(unameTrimmed) match {
       case Valid           => findByEmail(username)
       case Invalid(errors) => findByAccount(unameTrimmed)
     }
-    users.headOption
   }
 
   override lazy val defaultAlias = createAlias("u")
