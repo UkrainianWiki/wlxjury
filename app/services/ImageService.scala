@@ -30,7 +30,7 @@ class ImageService @Inject() (
       val params = ImportParams(contest.getId, Mode.Import, source, Some(categoryId), ImportSource.titles(titles),
         contest.monumentIdTemplate)
       val job = jobs.enqueue(imageImport.newJob(params, createdBy))
-      if (job.isRight) ContestJuryJdbc.setImagesSource(contest.getId, Some(source))
+      if (job.isRight) ContestJuryJdbc.setImagesSource(contest.getId, Some(source), Some(categoryId))
       job
     }
 

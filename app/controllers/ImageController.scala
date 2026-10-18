@@ -2,22 +2,20 @@ package controllers
 
 import db.scalikejdbc.{ContestJuryJdbc, ImageJdbc, User}
 import org.intracer.wmua.ContestJury
-import org.intracer.wmua.cmd.FetchImageInfo
-import org.scalawiki.MwBot
 import play.api.data.Form
 import play.api.data.Forms._
 import play.api.i18n.I18nSupport
 import play.api.mvc.{ControllerComponents, EssentialAction}
 import play.api.libs.json.Json
+import services.imports.CommonsSource
 import services.jobs.Job
 import services.{ImageService, LocalImageCacheService}
-import spray.util.pimpFuture
 
 import javax.inject.Inject
 import scala.concurrent.ExecutionContext
 
 class ImageController @Inject() (
-    val commons: MwBot,
+    commonsSource: CommonsSource,
     cc: ControllerComponents,
     imageService: ImageService,
     localImageCacheService: LocalImageCacheService
@@ -46,11 +44,9 @@ class ImageController @Inject() (
   private def importJobs(contestId: Long): Seq[(Job, String)] =
     imageService.latestJobs(contestId).map(j => j -> imageService.title(j))
 
-  def getNumberOfImages(contest: ContestJury): Long = {
-    contest.images.fold(0L) { images =>
-      FetchImageInfo(images, Seq.empty, contest, commons).numberOfImages.await
-    }
-  }
+  /** The number of files in the contest's source, if it is a category. */
+  def getNumberOfImages(contest: ContestJury): Long =
+    contest.images.flatMap(commonsSource.categoryFileCount).getOrElse(0L)
 
   /** Imports images from commons
     */

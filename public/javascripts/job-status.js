@@ -35,7 +35,8 @@ var JOB_COUNTS = [
     ["linked", "linked"],
     ["updated", "updated"],
     ["monumentIdsChanged", "monument ids changed"],
-    ["monuments", "monuments"]
+    ["monuments", "monuments"],
+    ["missing", "not found"]
 ];
 
 function formatJobCounts(details) {
@@ -45,7 +46,6 @@ function formatJobCounts(details) {
     JOB_COUNTS.forEach(function (c) {
         if (d[c[0]] > 0) parts.push(formatCount(d[c[0]]) + " " + c[1]);
     });
-    if (d.missingTitles && d.missingTitles.length > 0) parts.push(formatCount(d.missingTitles.length) + " not found");
     return parts.length > 0 ? ", " + parts.join(", ") : "";
 }
 

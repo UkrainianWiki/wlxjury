@@ -94,7 +94,12 @@ class AppendImagesSpec extends Specification with JuryTestHelpers with TestDb wi
       val list = (images.map(_.title) :+ "File:Missing.jpg").mkString(System.lineSeparator)
       val job = importFiles(images, contest, source = "", titles = list, pageSize = 2)
       stored(contest) === images
-      ImageImportHandler.stateOf(JobJdbc.findById(job.id).get).missingTitles === Seq("File:Missing.jpg")
+      val done = JobJdbc.findById(job.id).get
+      ImageImportHandler.stateOf(done).missingTitles === Seq("File:Missing.jpg")
+      ImageImportHandler.stateOf(done).missing === 1L
+      ImageImportHandler.paramsOf(done).titleCount === 6
+      ImageImportHandler.paramsOf(done).titles must beEmpty // not read back
+      ImageImportHandler.titlesOf(done, 4, 10) === Seq(images(4).title, "File:Missing.jpg")
     }
 
     "update images" in {

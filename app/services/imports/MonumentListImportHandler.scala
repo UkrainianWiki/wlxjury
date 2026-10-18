@@ -26,7 +26,7 @@ object ListSource {
 /** What a [[MonumentListImportHandler]] job reads (`job.params`).
   *
   * @param lists   the scalawiki contest whose lists these are: `wlm_ua` or `wle_ua`
-  * @param sources special nominations' lists first, then the contest's own
+  * @param sources the contest's own lists first, then the special nominations'
   */
 final case class MonumentImportParams(contestId: Long, lists: String, year: Int, sources: Seq[ListSource]) {
   def contest: Contest = MonumentListImportHandler.listContest(lists, year)
@@ -63,10 +63,11 @@ final case class MonumentPage(pages: Int, monuments: Seq[Monument], nextSource: 
   * Each step is a few list pages (`jobs.monumentImport.pageSize`): fetched on the
   * scheduler's fetch lane ([[MonumentListSource]]: the API's continue map of a template's
   * embedding pages as the cursor), then their monuments with valid ids upserted in one
-  * transaction. The special nominations' own lists come first and the contest's lists
-  * last, so a monument on both keeps the contest list's data, as when the nominations'
-  * monuments were left out where the lists had them. The city-based nominations add
-  * nothing: they select monuments from the contest's lists.
+  * transaction. The contest's lists come first and the special nominations' own lists
+  * last; a nomination's monument is written only if it isn't stored or was stored from
+  * the same list page, so a monument on both keeps the contest list's data, also when
+  * the job stops halfway. The city-based nominations add nothing: they select monuments
+  * from the contest's lists.
   *
   * Held in memory: the monuments of one step's list pages. Monuments removed from the
   * lists stay in the table.
@@ -97,7 +98,7 @@ class MonumentListImportHandler @Inject() (lists: MonumentListSource, config: Co
             .flatMap(n => n.pages.map(ListSource(_, n.listTemplate)))
             .distinct
       val ownLists = wiki.listTemplate.map(t => ListSource(templateTitle(t))).toSeq
-      val params = MonumentImportParams(contest.getId, lists, contest.year, nominations ++ ownLists)
+      val params = MonumentImportParams(contest.getId, lists, contest.year, ownLists ++ nominations)
       NewJob(
         kind = Kind,
         contestId = contest.id,
@@ -145,12 +146,20 @@ class MonumentListImportHandler @Inject() (lists: MonumentListSource, config: Co
     val p = paramsOf(job)
     val st = stateOf(job)
     val valid = page.monuments.filter(_.id.matches(ValidId))
-    if (valid.nonEmpty) MonumentJdbc.batchInsert(valid)
+    val nomination = p.sources.lift(st.source).exists(_.listTemplate.isDefined)
+    val written =
+      if (!nomination || valid.isEmpty) valid
+      else {
+        // another list has it: the contest's (written before the nominations') or another nomination's
+        val storedOn = MonumentJdbc.pagesOf(valid.map(_.id))
+        valid.filter(m => storedOn.get(m.id).forall(_ == m.page))
+      }
+    if (written.nonEmpty) MonumentJdbc.batchInsert(written)
     val next = st.copy(
       source = page.nextSource,
       cursor = page.nextCursor,
       pages = st.pages + page.pages,
-      monuments = st.monuments + valid.size
+      monuments = st.monuments + written.size
     )
     val progress = Progress(Some(next.pages), None, Some("list pages"))
     if (next.source < p.sources.size) StepResult.Continue(Json.toJsObject(next), progress)

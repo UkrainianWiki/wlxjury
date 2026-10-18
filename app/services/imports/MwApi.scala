@@ -43,8 +43,7 @@ class MwApi(bot: MwBot, retryDelay: FiniteDuration = MwApi.RetryDelay) extends L
         case Success(pages) =>
           val next = parser.continue
           (pages, Option.when(next.nonEmpty)(JsObject(next.map { case (k, v) => k -> JsString(v) })))
-        case Failure(e: MwException) if RetryableCodes(e.code) => throw new RetryableException(e.toString)
-        case Failure(e)                                        => throw e
+        case Failure(e) => throw e
       }
     }
   }
@@ -53,8 +52,9 @@ class MwApi(bot: MwBot, retryDelay: FiniteDuration = MwApi.RetryDelay) extends L
   def run(query: Query): Seq[Page] =
     withRetries(Action(query).pairs.toString)(Await.result(bot.run(Action(query)), RequestTimeout).toSeq)
 
-  /** Retries failed requests (timeouts, HTTP errors, a lagged or busy API) with backoff;
-    * not API errors, which would answer the same.
+  /** Retries failed requests (timeouts, HTTP errors, a lagged or busy API, a response
+    * that didn't parse) with backoff; not API errors, which would answer the same
+    * ([[retryable]]).
     */
   def withRetries[T](what: => String)(f: => T): T = {
     var attempt = 0
@@ -62,7 +62,7 @@ class MwApi(bot: MwBot, retryDelay: FiniteDuration = MwApi.RetryDelay) extends L
     while (result.isEmpty) {
       try result = Some(f)
       catch {
-        case e: MwException => throw e
+        case e: MwException if !retryable(e) => throw e
         case NonFatal(e) if attempt < Retries =>
           attempt += 1
           logger.warn(s"${bot.host} request failed, retry $attempt of $Retries: ${e.getMessage} ($what)")
@@ -74,6 +74,13 @@ class MwApi(bot: MwBot, retryDelay: FiniteDuration = MwApi.RetryDelay) extends L
 }
 
 object MwApi {
+
+  /** A lagged or busy API (its error codes), or a response that didn't parse: scalawiki
+    * reports one as an error without a code (JSON that isn't an API error) or with the
+    * parser's message as both code and info.
+    */
+  def retryable(e: MwException): Boolean = RetryableCodes(e.code) || e.code.isEmpty || e.code == e.info
+
   val RetryableCodes: Set[String] = Set("maxlag", "ratelimited", "readonly", "internal_api_error_DBQueryError")
   val Retries = 4
   val RetryDelay: FiniteDuration = 2.seconds

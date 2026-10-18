@@ -3,6 +3,8 @@ package services.jobs
 import play.api.{Configuration, Logging}
 import scalikejdbc.DB
 
+import services.jobs.FetchingJobHandler.Step
+
 import java.util.concurrent._
 import java.util.concurrent.atomic.AtomicInteger
 import scala.collection.mutable
@@ -17,7 +19,9 @@ import scala.util.control.NonFatal
   *    `lease` (their instance died). It renews the heartbeat of the jobs it holds every
   *    `heartbeatInterval`; each step renews it too. On a graceful stop it hands its running
   *    jobs back to the queue, so the next instance takes them at once; after a crash they
-  *    are taken over when the lease expires. Each step checks, under the job's row lock,
+  *    are taken over when the lease expires. So is a job the scheduler dropped without
+  *    recording why (a step or fetch that crashed on a database error): it holds it no
+  *    more, so its heartbeat stops. Each step checks, under the job's row lock,
   *    that this instance still owns the job, so two instances never run the same job.
   *  - '''Turns.''' A worker runs one step (one chunk) of one job, then the job goes back in
   *    line. The next step goes to the contest that has had the least step time, and
@@ -29,7 +33,7 @@ import scala.util.control.NonFatal
   *  - '''Limits.''' At most `workers` steps run at once overall, and at most the kind's
   *    concurrency limit of one kind (e.g. 2 distributions, 1 Commons import).
   *  - '''The fetch lane.''' A handler that calls an external API before each step
-  *    ([[JobHandler.fetchesExternally]], e.g. a page of Commons files) has it called on
+  *    (a [[FetchingJobHandler]], e.g. a page of Commons files) has it called on
   *    a pool of its own (`fetchWorkers`), within the kind's limit; the job takes its turn
   *    for a step once the fetch is done. A slow API thus never holds one of the few
   *    workers that write to the database, and only step time counts in the turns.
@@ -59,9 +63,10 @@ class JobScheduler(handlerList: Seq[JobHandler], val settings: JobScheduler.Sett
 
   private final class Held(val id: Long, val kind: String, val contestId: Option[Long], var vtime: Long) {
     var inFlight = false
-    /** On the fetch lane now; fetched: its step may run. */
+    /** On the fetch lane now. */
     var fetching = false
-    var fetched = false
+    /** What a fetch got, as the step that writes it: the step may run. */
+    var fetched: Option[Step] = None
   }
 
   private val lock = new Object
@@ -73,7 +78,7 @@ class JobScheduler(handlerList: Seq[JobHandler], val settings: JobScheduler.Sett
   private val fetchingByKind = mutable.Map.empty[String, Int].withDefaultValue(0)
   private var fetchingTotal = 0
 
-  private def external(h: Held): Boolean = handlers.get(h.kind).exists(_.fetchesExternally)
+  private def external(h: Held): Boolean = handlers.get(h.kind).exists(_.isInstanceOf[FetchingJobHandler[_]])
 
   /** Adds a claimed job, level with the least served job, and its contest level with the
     * least served contest (caller holds `lock`).
@@ -169,7 +174,7 @@ class JobScheduler(handlerList: Seq[JobHandler], val settings: JobScheduler.Sett
     }
 
   private def heartbeat(): Unit =
-    try { if (!stopping && tableReady()) JobJdbc.heartbeat(instanceId) }
+    try { if (!stopping && tableReady()) JobJdbc.heartbeat(instanceId, heldJobs.toSeq) }
     catch { case NonFatal(e) => logger.warn(s"Job scheduler $instanceId: heartbeat failed", e) }
 
   private def limit(kind: String): Int = settings.kindLimits.getOrElse(kind, settings.defaultKindLimit)
@@ -179,7 +184,7 @@ class JobScheduler(handlerList: Seq[JobHandler], val settings: JobScheduler.Sett
     var more = true
     while (more && !stopping && inFlightTotal < settings.workers) {
       val ready = held.values.filter(h =>
-        !h.inFlight && !h.fetching && (h.fetched || !external(h)) && inFlightByKind(h.kind) < limit(h.kind))
+        !h.inFlight && !h.fetching && (h.fetched.isDefined || !external(h)) && inFlightByKind(h.kind) < limit(h.kind))
       if (ready.isEmpty) more = false
       else {
         val h = ready.minBy(h => (contestTime.getOrElse(h.contestId, 0L), h.vtime, h.id))
@@ -202,7 +207,7 @@ class JobScheduler(handlerList: Seq[JobHandler], val settings: JobScheduler.Sett
     var more = true
     while (more && !stopping && fetchingTotal < settings.fetchWorkers) {
       val ready = held.values.filter(h =>
-        external(h) && !h.inFlight && !h.fetching && !h.fetched && fetchingByKind(h.kind) < limit(h.kind))
+        external(h) && !h.inFlight && !h.fetching && h.fetched.isEmpty && fetchingByKind(h.kind) < limit(h.kind))
       if (ready.isEmpty) more = false
       else {
         val h = ready.minBy(h => (contestTime.getOrElse(h.contestId, 0L), h.vtime, h.id))
@@ -219,15 +224,15 @@ class JobScheduler(handlerList: Seq[JobHandler], val settings: JobScheduler.Sett
   }
 
   private def fetch(h: Held): Unit = {
-    var ready = false
-    try ready = prepareStep(h.id)
+    var step: Option[Step] = None
+    try step = prepareStep(h.id)
     catch { case NonFatal(e) => logger.error(s"Job ${h.id}: fetch crashed", e) }
     finally
       lock.synchronized {
         h.fetching = false
         fetchingByKind(h.kind) -= 1
         fetchingTotal -= 1
-        if (ready) h.fetched = true else release(h)
+        if (step.isDefined) h.fetched = step else release(h)
       }
     if (!stopping) dispatch()
   }
@@ -235,12 +240,12 @@ class JobScheduler(handlerList: Seq[JobHandler], val settings: JobScheduler.Sett
   private def work(h: Held): Unit = {
     val started = System.nanoTime()
     val again =
-      try runStep(h.id, prepare = !external(h))
+      try runStep(h.id, h.fetched)
       catch { case NonFatal(e) => logger.error(s"Job ${h.id}: step crashed", e); false }
     val took = System.nanoTime() - started
     lock.synchronized {
       h.inFlight = false
-      h.fetched = false
+      h.fetched = None
       h.vtime += took
       contestTime(h.contestId) = contestTime.getOrElse(h.contestId, 0L) + took
       inFlightByKind(h.kind) -= 1
@@ -266,7 +271,8 @@ class JobScheduler(handlerList: Seq[JobHandler], val settings: JobScheduler.Sett
       Right(JobJdbc.findById(id).get)
     } catch {
       case e: Throwable if JobJdbc.isDuplicateActive(e) =>
-        Left(job.dedupeKey.flatMap(JobJdbc.activeByDedupeKey(_)).getOrElse(throw e))
+        // a locking read: the caller's transaction may have read before the active job committed
+        Left(job.dedupeKey.flatMap(JobJdbc.lockActiveByDedupeKey).getOrElse(throw e))
     }
   }
 
@@ -341,39 +347,47 @@ class JobScheduler(handlerList: Seq[JobHandler], val settings: JobScheduler.Sett
     while (again) again = runStep(jobId)
   }
 
-  /** Runs the handler's [[JobHandler.prepare]] for the next step of a job this instance
-    * owns, outside any transaction. A failure fails the job, unless the scheduler is
-    * stopping (an interrupted fetch): whoever resumes the job prepares it again.
-    * @return true if the job's step may run
+  /** Prepares the next step of a job this instance owns, outside any transaction: the
+    * handler's [[JobHandler.prepare]], or a [[FetchingJobHandler]]'s fetch. A failure
+    * fails the job, unless the scheduler is stopping (an interrupted fetch): whoever
+    * resumes the job prepares it again.
+    * @return the step to run, None if it may not run
     */
-  private[jobs] def prepareStep(jobId: Long): Boolean = {
+  private[jobs] def prepareStep(jobId: Long): Option[Step] = {
     val job = JobJdbc.findById(jobId) match {
       case Some(j) if j.status == JobStatus.Running && j.owner.contains(instanceId) => j
-      case _ => handlers.values.foreach(_.forget(jobId)); return false
+      case _ => handlers.values.foreach(_.forget(jobId)); return None
     }
     handlers.get(job.kind) match {
-      case None => false
+      case None => None
       case Some(h) =>
-        try { h.prepare(job); true }
+        try
+          h match {
+            case f: FetchingJobHandler[_] => Some(f.fetchStep(job))
+            case _                        => h.prepare(job); Some(h.step)
+          }
         catch {
           case e: Throwable if stopping && (NonFatal(e) || e.isInstanceOf[InterruptedException]) =>
             h.forget(jobId)
-            false
+            None
           case NonFatal(e) =>
             logger.error(s"Job $jobId (${job.kind}): preparing failed", e)
             fail(jobId, describe(e))
             h.forget(jobId)
-            false
+            None
         }
     }
   }
 
   /** Runs one step of a job this instance owns.
-    * @param prepare run [[prepareStep]] first (else the fetch lane has done it)
+    * @param prepared the step, if the fetch lane has prepared it (else [[prepareStep]] does)
     * @return true if the job has more steps
     */
-  private[jobs] def runStep(jobId: Long, prepare: Boolean = true): Boolean = {
-    if (prepare && !prepareStep(jobId)) return false
+  private[jobs] def runStep(jobId: Long, prepared: Option[Step] = None): Boolean = {
+    val step = prepared.orElse(prepareStep(jobId)) match {
+      case Some(s) => s
+      case None    => return false
+    }
     val job = JobJdbc.findById(jobId) match {
       case Some(j) if j.status == JobStatus.Running && j.owner.contains(instanceId) => j
       case _ => handlers.values.foreach(_.forget(jobId)); return false
@@ -389,7 +403,7 @@ class JobScheduler(handlerList: Seq[JobHandler], val settings: JobScheduler.Sett
         val outcome = DB.localTx { implicit s =>
           JobJdbc.lock(jobId).filter(j => j.status == JobStatus.Running && j.owner.contains(instanceId)).map { j =>
             val ctx = new StepContext(s)
-            val result = h.step(j, ctx)
+            val result = step(j, ctx)
             result match {
               case StepResult.Continue(state, p) => JobJdbc.update(jobId, JobStatus.Running, state, p, None)
               case StepResult.Done(state, p)     => JobJdbc.update(jobId, JobStatus.Done, state, p, None)

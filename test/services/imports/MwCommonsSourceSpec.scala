@@ -3,6 +3,8 @@ package services.imports
 import org.intracer.wmua.JuryTestHelpers
 import org.mockito.ArgumentCaptor
 import org.scalawiki.MwBot
+import org.scalawiki.dto.cmd.Action
+import org.scalawiki.dto.{MwException, Page}
 import org.specs2.mutable.Specification
 import play.api.libs.json.Json
 
@@ -88,8 +90,45 @@ class MwCommonsSourceSpec extends Specification with JuryTestHelpers {
       val bot = mockBot()
       bot.post(any[Map[String, String]]) returns
         Future.successful("""{"error":{"code":"invalidcategory","info":"The category name you entered is not valid."}}""")
-      source(bot).listFiles(ImportSource("Category:"), Json.obj(), 50) must throwA[org.scalawiki.dto.MwException]
+      source(bot).listFiles(ImportSource("Category:"), Json.obj(), 50) must throwA[MwException]
       postedParams(bot, 1).size === 1
+    }
+
+    "retry a lagged API" in {
+      val bot = mockBot()
+      bot.post(any[Map[String, String]]) returns
+        Future.successful("""{"error":{"code":"maxlag","info":"Waiting for a database server: 6 seconds lagged."}}""") thenReturns
+        Future.successful(lastPage)
+      source(bot).listFiles(ImportSource("Category:X"), Json.obj(), 50) === FilePage(Seq(13L), None)
+      postedParams(bot, 2).size === 2
+    }
+  }
+
+  "files" should {
+
+    def run(bot: MwBot) = bot.run(any[Action], any[Map[String, String]], any[Option[Long]])
+    val file = Seq(Page(13L, Some(6), "File:C.jpg"))
+
+    "retry a lagged API" in {
+      val bot = mockBot()
+      run(bot) returns Future.failed(MwException("maxlag", "Waiting for a database server: 6 seconds lagged.")) thenReturns
+        Future.successful(file)
+      source(bot).files(Seq(13L), info = true, text = false) === file
+    }
+
+    "retry a response that didn't parse" in {
+      val bot = mockBot()
+      run(bot) returns Future.failed(MwException("Unexpected end-of-input", "Unexpected end-of-input")) thenReturns
+        Future.successful(file)
+      source(bot).files(Seq(13L), info = true, text = false) === file
+    }
+
+    "not retry an API error" in {
+      val bot = mockBot()
+      run(bot) returns Future.failed(MwException("toomanyvalues", "Too many values supplied for parameter \"pageids\"."))
+      source(bot).files(Seq(13L), info = true, text = false) must throwA[MwException]
+      org.mockito.Mockito.verify(bot, org.mockito.Mockito.times(1)).run(any[Action], any[Map[String, String]], any[Option[Long]])
+      ok
     }
   }
 

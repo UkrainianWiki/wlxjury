@@ -50,7 +50,7 @@ class MonumentListImportSpec extends Specification with TestDb with BeforeAll wi
 
   "a monument list import" should {
 
-    "upsert the monuments of the special nominations' lists, then of the contest's lists" in {
+    "upsert the monuments of the contest's lists, then of the special nominations' lists" in {
       val lists = wlmLists()
       val services = new TestImportServices(new FakeCommonsSource(Nil), lists = lists, listPageSize = 2)
       val created = services.imageService.updateMonuments(contest("Wiki Loves Monuments"), "Category:X")
@@ -65,12 +65,12 @@ class MonumentListImportSpec extends Specification with TestDb with BeforeAll wi
       name("80-361-0001") === Some("Kyiv fortress") // only in a nomination's lists
       name("80-361-0002") === Some("Library")
       MonumentJdbc.find("not-an-id") must beNone
-      MonumentListImportHandler.stateOf(job).monuments === 6L
+      MonumentListImportHandler.stateOf(job).monuments === 5L
 
       val parsed = lists.parsed.asScala.toSeq
       parsed must contain(("Castles 1", Some("WLM-рядок")), (libraries, Some("WLM-рядок")))
       parsed.filter(_._2.isEmpty) === Seq("Lists A" -> None, "Lists B" -> None, "Lists C" -> None)
-      parsed.indexOf("Castles 1" -> Some("WLM-рядок")) must beLessThan(parsed.indexOf("Lists A" -> None))
+      parsed.indexOf("Lists C" -> None) must beLessThan(parsed.indexOf("Castles 1" -> Some("WLM-рядок")))
     }
 
     "resume a failed import from its list pages" in {
@@ -81,12 +81,16 @@ class MonumentListImportSpec extends Specification with TestDb with BeforeAll wi
       val failed = JobJdbc.findById(id).get
       failed.status === JobStatus.Failed
       failed.error must beSome(contain("Wikipedia is down"))
+      name("01-101-0001") === Some("Castle, as in the lists") // no nomination's data while the lists are unfinished
       name("01-101-0002") === Some("Church")
       name("01-101-0003") must beNone
+      name("80-361-0001") must beNone
 
       services.scheduler.retry(id) must beRight
       JobJdbc.findById(id).get.status === JobStatus.Done
       name("01-101-0003") === Some("Bridge")
+      name("01-101-0001") === Some("Castle, as in the lists")
+      name("80-361-0001") === Some("Kyiv fortress")
       lists.parsed.asScala.count(_._1 == "Lists A") === 1 // not read again
     }
   }

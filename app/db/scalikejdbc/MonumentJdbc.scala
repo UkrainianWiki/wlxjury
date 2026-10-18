@@ -129,6 +129,11 @@ object MonumentJdbc extends SQLSyntaxSupport[Monument] {
         .namedValues(columnDefs: _*)
     }.batch(toBatchParams(monuments): _*).apply()
 
+  /** The list page each stored monument of `ids` is from. */
+  def pagesOf(ids: Seq[String])(implicit session: DBSession = autoSession): Map[String, String] =
+    if (ids.isEmpty) Map.empty
+    else sql"SELECT id, page FROM monument WHERE id IN ($ids)".map(rs => rs.string(1) -> rs.string(2)).list().toMap
+
   def findAll(
       limit: Option[Int] = None
   )(implicit session: DBSession = autoSession): List[Monument] = withSQL {

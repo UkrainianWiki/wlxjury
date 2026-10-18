@@ -1,7 +1,6 @@
 package services.imports
 
 import db.scalikejdbc.{CategoryLinkJdbc, ContestJuryJdbc, ImageJdbc}
-import org.intracer.wmua.cmd.FetchImageText
 import org.intracer.wmua.{ContestJury, Image}
 import org.scalawiki.dto.Page
 import play.api.libs.json._
@@ -17,7 +16,9 @@ import javax.inject.{Inject, Singleton}
   * @param categoryId         the contest's category, which the files are put in (mode import)
   * @param source             a category, a template or a page ([[ImportSource]])
   * @param titles             a pasted list of files, imported instead of the source's
+  *                           (not read back by [[ImageImportHandler.paramsOf]]: it may be long)
   * @param monumentIdTemplate the contest's: with it, the files' text is fetched too
+  * @param titleCount         the size of `titles` (set by [[ImageImportHandler.newJob]])
   */
 final case class ImportParams(
     contestId: Long,
@@ -25,7 +26,8 @@ final case class ImportParams(
     source: String,
     categoryId: Option[Long] = None,
     titles: Seq[String] = Nil,
-    monumentIdTemplate: Option[String] = None
+    monumentIdTemplate: Option[String] = None,
+    titleCount: Int = 0
 )
 
 object ImportParams {
@@ -38,6 +40,8 @@ object ImportParams {
   * @param index  the next title of a pasted list
   * @param seen   files listed so far (the progress)
   * @param linked stored files (another contest's) put in this contest's category
+  * @param missing        titles of the pasted list that Commons doesn't have
+  * @param missingTitles  the first [[ImageImportHandler.MaxMissingTitles]] of them
   */
 final case class ImportState(
     cursor: JsObject = Json.obj(),
@@ -48,6 +52,7 @@ final case class ImportState(
     updated: Long = 0L,
     monumentIdsChanged: Long = 0L,
     total: Option[Long] = None,
+    missing: Long = 0L,
     missingTitles: Seq[String] = Nil
 )
 
@@ -110,7 +115,7 @@ class ImageImportHandler @Inject() (source: CommonsSource, config: Configuration
       subjectType = Some(SubjectType),
       subjectId = Some(params.contestId),
       dedupeKey = Some(dedupeKey(params.contestId)),
-      params = Json.toJsObject(params),
+      params = Json.toJsObject(params.copy(titleCount = params.titles.size)),
       state = Json.toJsObject(ImportState(total = total)),
       progress = Progress(Some(0L), total, Some("files")),
       createdBy = createdBy
@@ -120,7 +125,7 @@ class ImageImportHandler @Inject() (source: CommonsSource, config: Configuration
   override def title(job: Job): String = {
     val p = paramsOf(job)
     if (p.mode == Mode.MonumentIds) s"Updating the monument ids of the files from ${p.source}"
-    else if (p.titles.nonEmpty) s"Importing ${p.titles.size} listed files"
+    else if (p.titleCount > 0) s"Importing ${p.titleCount} listed files"
     else s"Importing files from ${p.source}"
   }
 
@@ -132,6 +137,7 @@ class ImageImportHandler @Inject() (source: CommonsSource, config: Configuration
       "linked" -> st.linked,
       "updated" -> st.updated,
       "monumentIdsChanged" -> st.monumentIdsChanged,
+      "missing" -> st.missing,
       "missingTitles" -> st.missingTitles
     )
   }
@@ -152,8 +158,8 @@ class ImageImportHandler @Inject() (source: CommonsSource, config: Configuration
       .findById(p.contestId)
       .getOrElse(throw new NoSuchElementException(s"Contest ${p.contestId} not found"))
 
-    if (p.titles.nonEmpty && !monumentIds) {
-      val batch = p.titles.slice(st.index, st.index + math.min(pageSize, MaxIdsPerRequest))
+    if (p.titleCount > 0 && !monumentIds) {
+      val batch = titlesOf(job, st.index, math.min(pageSize, MaxIdsPerRequest))
       val pages = source.filesByTitles(batch, info = true, text = text)
       val next = st.index + batch.size
       ImportPage(
@@ -163,8 +169,8 @@ class ImageImportHandler @Inject() (source: CommonsSource, config: Configuration
         missingTitles = pages.filter(_.id.isEmpty).map(_.title),
         nextCursor = st.cursor,
         nextIndex = next,
-        last = next >= p.titles.size,
-        total = Some(p.titles.size.toLong)
+        last = next >= p.titleCount,
+        total = Some(p.titleCount.toLong)
       )
     } else {
       val listed = source.listFiles(ImportSource(p.source), st.cursor, pageSize)
@@ -186,7 +192,7 @@ class ImageImportHandler @Inject() (source: CommonsSource, config: Configuration
     pages
       .flatMap { page =>
         ImageJdbc.fromPage(page, contest).map { image =>
-          if (p.monumentIdTemplate.isDefined) FetchImageText.withText(image, page.text, p.monumentIdTemplate)
+          if (p.monumentIdTemplate.isDefined) ImageText.withText(image, page.text, p.monumentIdTemplate)
           else image
         }
       }
@@ -198,7 +204,7 @@ class ImageImportHandler @Inject() (source: CommonsSource, config: Configuration
       page <- pages.sortBy(_.id)
       pageId <- page.id
       text <- page.text
-      monumentId <- FetchImageText.validMonumentId(text, template)
+      monumentId <- ImageText.validMonumentId(text, template)
     } yield pageId -> monumentId
   }
 
@@ -216,6 +222,7 @@ class ImageImportHandler @Inject() (source: CommonsSource, config: Configuration
       index = page.nextIndex,
       seen = st.seen + page.listed,
       total = page.total.orElse(st.total),
+      missing = st.missing + page.missingTitles.size,
       missingTitles = (st.missingTitles ++ page.missingTitles).take(MaxMissingTitles)
     )
     val progress = Progress(Some(next.seen), next.total, Some("files"))
@@ -274,7 +281,12 @@ object ImageImportHandler {
   val MaxIdsPerRequest = 50
   val MaxMissingTitles = 100
 
-  def paramsOf(job: Job): ImportParams = job.params.as[ImportParams]
+  /** The job's params without the pasted titles: read for every status poll and step. */
+  def paramsOf(job: Job): ImportParams = (job.params - "titles").as[ImportParams]
+
+  /** At most `n` of the pasted titles, from the `from`th. */
+  def titlesOf(job: Job, from: Int, n: Int): Seq[String] =
+    (job.params \ "titles").asOpt[JsArray].fold(Seq.empty[String])(_.value.slice(from, from + n).map(_.as[String]).toSeq)
 
   def stateOf(job: Job): ImportState = job.state.validate[ImportState].getOrElse(ImportState())
 }

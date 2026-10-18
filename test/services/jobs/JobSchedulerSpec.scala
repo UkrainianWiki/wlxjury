@@ -140,6 +140,17 @@ class JobSchedulerSpec extends Specification with BeforeAll with BeforeEach with
       s.retry(failed.id) must beLeft
       status(failed.id) === JobStatus.Failed // its onRetry's writes rolled back with the requeue
     }
+
+    "give the second request the active job committed after its transaction first read" in {
+      val h = new CountingHandler("count")
+      val s = background(Seq(h))
+      val (first, second) = DB.localTx { implicit session =>
+        sql"SELECT COUNT(*) FROM job".map(_.long(1)).single() // the transaction's snapshot: no job yet
+        val first = enqueue(s, newJob("count", 1, subject = Some(42))) // another request, committed
+        (first, s.enqueue(newJob("count", 1, subject = Some(42))))
+      }
+      second must beLeft(first)
+    }
   }
 
   "a background scheduler" should {
@@ -243,6 +254,17 @@ class JobSchedulerSpec extends Specification with BeforeAll with BeforeEach with
       status(live.id) === JobStatus.Running
     }
 
+    "not renew the lease of its job that it dropped, and take it over when the lease expires" in {
+      val h = new CountingHandler("count")
+      val s = background(Seq(h), lease = 1.second)
+      // its own, but not held: as after a step crashed on a database error it couldn't record
+      val dropped = enqueue(s, newJob("count", 2))
+      sql"""UPDATE job SET status = 'running', owner = ${s.instanceId}, heartbeat_at = NOW(3)
+              WHERE id = ${dropped.id}""".update()(AutoSession)
+      s.start()
+      s.await(dropped.id, 10.seconds).status === JobStatus.Done
+    }
+
     "hand its running jobs back to the queue when stopped, for the next instance to resume" in {
       val h = new CountingHandler("count")
       val first = background(Seq(h), workers = 1)
@@ -315,9 +337,9 @@ class JobSchedulerSpec extends Specification with BeforeAll with BeforeEach with
     "write nothing when the job's cursor moved since its fetch" in {
       val paging = new PagingHandler("paging")
       val job = enqueue(background(Seq(paging)), newJob("paging", 3))
-      paging.prepare(job) // page 0
+      val step = paging.fetchStep(job) // page 0
       val moved = job.copy(state = Json.obj("page" -> 1))
-      DB.localTx(s => paging.step(moved, new StepContext(s))) must beLike {
+      DB.localTx(s => step(moved, new StepContext(s))) must beLike {
         case StepResult.Continue(state, _) => state === moved.state
       }
       paging.writes.isEmpty must beTrue
