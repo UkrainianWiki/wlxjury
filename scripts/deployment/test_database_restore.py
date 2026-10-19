@@ -238,8 +238,8 @@ class PackagedReleaseTest(DatabaseFixture):
                     status, body = deploy.Deployment.http_get(self.tool, 'http://127.0.0.1:9000/health/ready')
                     if status == 200:
                         self.assertEqual(json.loads(body)['build'], self.tool.identity(release)['build'])
-                        self.assertEqual(json.loads(body)['schemaVersion'], '60')
-                        self.assertEqual(self.tool.schema(), '60')
+                        self.assertEqual(json.loads(body)['schemaVersion'], self.tool.identity(release)['schemaVersion'])
+                        self.assertEqual(self.tool.schema(), self.tool.identity(release)['schemaVersion'])
                         # Through Apache the request carries the client's address:
                         # readiness stays local to the server.
                         proxied = urllib.request.Request('http://127.0.0.1:9000/health/ready',
