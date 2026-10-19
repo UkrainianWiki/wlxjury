@@ -10,7 +10,7 @@ services:
       - "80"
 
   mariadb:
-    image: mariadb:10.6
+    image: mariadb:10.11.14
     environment:
       MARIADB_DATABASE: wlxjury_test
       MARIADB_USER: wlxjury_user

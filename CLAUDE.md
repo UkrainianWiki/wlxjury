@@ -45,7 +45,7 @@ sbt "testOnly db.scalikejdbc.RoundSpec"               # Run a single test class
 sbt "testOnly db.scalikejdbc.*"                       # Run all DB tests
 ```
 
-Tests use Testcontainers (Docker) to spin up a MariaDB 10.6 instance automatically. No manual DB setup needed for tests. Test configuration is at `test/resources/application.conf`.
+Tests use Testcontainers (Docker) to spin up a MariaDB 10.11 instance automatically (`TestMariaDb.image`: production's version, Ubuntu 24.04's package). No manual DB setup needed for tests. Test configuration is at `test/resources/application.conf`.
 
 ### Performance tests (Gatling)
 ```bash

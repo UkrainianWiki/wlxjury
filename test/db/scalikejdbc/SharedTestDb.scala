@@ -2,7 +2,6 @@ package db.scalikejdbc
 
 import com.dimafeng.testcontainers.MariaDBContainer
 import org.flywaydb.core.Flyway
-import org.testcontainers.utility.DockerImageName
 import scalikejdbc.{ConnectionPool, DB}
 
 object SharedTestDb {
@@ -41,7 +40,7 @@ object SharedTestDb {
    *  Calling `init()` multiple times is safe — initialization happens once. */
   lazy val initialized: Boolean = {
     val container = MariaDBContainer(
-      dockerImageName = DockerImageName.parse("mariadb:10.6.22"),
+      dockerImageName = TestMariaDb.image,
       dbName         = "wlxjury",
       dbUsername     = "WLXJURY_DB_USER",
       dbPassword     = "WLXJURY_DB_PASSWORD"

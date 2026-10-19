@@ -1,7 +1,7 @@
 package gatling.setup
 
 import com.dimafeng.testcontainers.MariaDBContainer
-import org.testcontainers.utility.DockerImageName
+import db.scalikejdbc.TestMariaDb
 import play.api.test.TestServer
 import play.api.inject.guice.GuiceApplicationBuilder
 
@@ -19,7 +19,7 @@ object GatlingTestFixture {
     * this JVM (TestServer). */
   private def init(): GatlingFixtureData = {
     val container = MariaDBContainer(
-      dockerImageName = DockerImageName.parse("mariadb:10.6.22"),
+      dockerImageName = TestMariaDb.image,
       dbName          = "wlxjury",
       dbUsername      = "WLXJURY_DB_USER",
       dbPassword      = "WLXJURY_DB_PASSWORD"

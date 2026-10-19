@@ -1,9 +1,13 @@
-# Disposable integration test image: Ubuntu 22.04's MariaDB 10.6 (production's
+# Disposable integration test image: Ubuntu 24.04's MariaDB 10.11 (production's
 # series), OpenJDK 17 for the packaged-release smoke test, Python 3, and the
 # curl and unzip that wlxjury-release.sh uses.
 #
 #   docker build -f scripts/deployment/Dockerfile.test -t wlxjury-deployment-test:local scripts/deployment
-FROM ubuntu:22.04
+#
+# The server before the move to 24.04 (Ubuntu 22.04, MariaDB 10.6):
+#   docker build --build-arg UBUNTU=22.04 -f scripts/deployment/Dockerfile.test -t wlxjury-deployment-test:jammy scripts/deployment
+ARG UBUNTU=24.04
+FROM ubuntu:${UBUNTU}
 ENV DEBIAN_FRONTEND=noninteractive LANG=C.UTF-8
 RUN apt-get update \
  && apt-get install -y --no-install-recommends mariadb-server mariadb-client openjdk-17-jre-headless python3 \

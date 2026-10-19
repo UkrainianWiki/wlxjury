@@ -3,7 +3,7 @@ package db
 import com.dimafeng.testcontainers.MariaDBContainer
 import org.specs2.mutable.Specification
 import org.specs2.specification.AfterAll
-import org.testcontainers.utility.DockerImageName
+import db.scalikejdbc.TestMariaDb
 
 import java.io.File
 import java.nio.file.{Files, Paths}
@@ -32,7 +32,7 @@ class ConvertToInnoDbMigrationSpec extends Specification with AfterAll {
 
   private lazy val container = {
     val c = MariaDBContainer(
-      dockerImageName = DockerImageName.parse("mariadb:10.6.22"),
+      dockerImageName = TestMariaDb.image,
       dbName = "wlxjury", dbUsername = "wlxjury", dbPassword = "wlxjury")
     c.container.withCommand("--max-allowed-packet=16M")
     c.start()

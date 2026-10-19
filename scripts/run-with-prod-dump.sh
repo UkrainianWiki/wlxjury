@@ -134,11 +134,11 @@ else
   dump_prod_db() {
     local tmp_file="${DUMP_FILE}.tmp"
     local start=$SECONDS
-    echo "==> Dumping prod DB (via docker mariadb:10.6 client)..."
+    echo "==> Dumping prod DB (via docker mariadb:10.11.14 client)..."
     docker run --rm \
       -e MYSQL_PWD="$WLXJURY_DB_PASSWORD" \
-      mariadb:10.6 \
-      mysqldump \
+      mariadb:10.11.14 \
+      mariadb-dump \
         -h "$WLXJURY_DB_HOST" \
         -u "$WLXJURY_DB_USER" \
         --single-transaction \
@@ -171,7 +171,7 @@ else
 
   # Server tuning args (passed through to mariadbd):
   #  * --innodb-use-native-aio=0 : on hosts where io_uring is blocked
-  #    (Docker Desktop / WSL2 set kernel.io_uring_disabled=2), mariadbd 10.6
+  #    (Docker Desktop / WSL2 set kernel.io_uring_disabled=2), mariadbd 10.6+
   #    logs "io_uring_queue_init() failed with EPERM" and then a tpool I/O
   #    thread busy-loops at ~100% CPU (see MDEV-31122). Disabling native AIO
   #    up front skips that code path entirely.
@@ -184,7 +184,7 @@ else
     -e MARIADB_PASSWORD="$LOCAL_PASSWORD" \
     -e MARIADB_ROOT_PASSWORD="$LOCAL_ROOT_PASSWORD" \
     -p "${LOCAL_PORT}:3306" \
-    mariadb:10.6 \
+    mariadb:10.11.14 \
     --innodb-use-native-aio=0 \
     --innodb-buffer-pool-size=1G \
     --innodb-flush-log-at-trx-commit=0 \

@@ -2,7 +2,6 @@ package db.scalikejdbc
 
 import com.dimafeng.testcontainers.MariaDBContainer
 import org.specs2.mutable.Specification
-import org.testcontainers.utility.DockerImageName
 import play.api.inject.guice.GuiceApplicationBuilder
 import play.api.test.Helpers.running
 
@@ -17,7 +16,7 @@ class SchemaBaselineSpec extends Specification {
         skipped("Pass -Dgenerate.baseline=true to regenerate the baseline")
 
       val container = MariaDBContainer(
-        dockerImageName = DockerImageName.parse("mariadb:10.6.22"),
+        dockerImageName = TestMariaDb.image,
         dbName = "wlxjury",
         dbUsername = "WLXJURY_DB_USER",
         dbPassword = "WLXJURY_DB_PASSWORD"
