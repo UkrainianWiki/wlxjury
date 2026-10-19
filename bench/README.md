@@ -77,7 +77,8 @@ ls $BENCH_SCRATCH/results
 
 | Kind | Name | What it is |
 |---|---|---|
-| Image | `wlxjury-bench-server` | Ubuntu 22.04, MariaDB **10.6.22-0ubuntu0.22.04.1** (production's exact build, debs from Launchpad), OpenJDK 17, production's `/etc/mysql` files (`bench/server/mysql-conf`), entrypoint as `wlxjury.service` |
+| Image | `wlxjury-bench-server` | Ubuntu 24.04, MariaDB **10.11.14-0ubuntu0.24.04.1** (the new server's package, version-checked), OpenJDK 17, production's `/etc/mysql` files (`bench/server/mysql-conf`), entrypoint as `wlxjury.service` (runs `mariadb-upgrade`, so 10.6 snapshots start). Built from `bench/server/Dockerfile`. |
+| Image | `wlxjury-bench-server:jammy-10.6` | The server before the move: Ubuntu 22.04, MariaDB **10.6.22-0ubuntu0.22.04.1** (debs from Launchpad). Use with `BENCH_DOCKERFILE=Dockerfile.jammy BENCH_IMAGE=wlxjury-bench-server:jammy-10.6`. Compared in `docs/plans/2026-10-19-mariadb-10.11.md`. |
 | Dist | `prod` | 705689c = deployed 8fdaa7d + only the scalawiki API adaptation needed to build today; migrations up to V53. "Production's current code." |
 | Dist | `pr183v551` | 76542ba. **Identical tree to `bcdf984`**, the head of `ukwikidev/performance-memory` (PR #183) with V55.1. |
 | Dist | `bgdistv551` | 32a1253. **Same `app/`, `conf/`, `build.sbt`, `project/` as `2a22eba`**, the head of `ukwikidev/background-distribution` with V55.1. |
