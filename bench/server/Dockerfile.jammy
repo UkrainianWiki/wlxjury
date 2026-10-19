@@ -1,8 +1,8 @@
-# The production server for benchmarks (docs/plans/2026-10-07-prod-like-benchmark.md):
+# The production server before the move to Ubuntu 24.04, for baselines (docs/plans/2026-10-07-prod-like-benchmark.md):
 # Ubuntu 22.04 with the Ubuntu packages of MariaDB 10.6 and OpenJDK 17, production's
 # active /etc/mysql files, and the jury tool started as wlxjury.service starts it.
 #
-#   docker build -t wlxjury-bench-server bench/server
+#   docker build -f bench/server/Dockerfile.jammy -t wlxjury-bench-server:jammy-10.6 bench/server
 #
 # Run it with the server's limits, by count only (bench/scripts/bench.sh start):
 #   --cpuset-cpus=0,1 --memory=4900m --memory-swap=6900m

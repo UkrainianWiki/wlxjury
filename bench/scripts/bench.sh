@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # The production-like benchmark environment (docs/plans/2026-10-07-prod-like-benchmark.md).
 #
-#   bench.sh image                       build the server image (bench/server)
+#   bench.sh image                       build the server image (bench/server/$BENCH_DOCKERFILE,
+#                                        default Dockerfile: Ubuntu 24.04, MariaDB 10.11)
 #   bench.sh dist <name> <commit>        `sbt dist` of a commit (git archive, built outside the
 #                                        repo) unzipped into the dists volume as <name>
 #   bench.sh restore-dump <dump.sql.gz>  restore a production dump into the data volume and
@@ -22,7 +23,9 @@
 set -euo pipefail
 
 NAME=${BENCH_CONTAINER:-wlxjury-bench}
-IMAGE=wlxjury-bench-server
+# BENCH_IMAGE=wlxjury-bench-server:jammy-10.6 (BENCH_DOCKERFILE=Dockerfile.jammy): the server
+# before the move to Ubuntu 24.04, for baselines
+IMAGE=${BENCH_IMAGE:-wlxjury-bench-server}
 DATA_VOL=wlxjury-bench-mysql
 DISTS_VOL=wlxjury-bench-dists
 APP_PORT=${BENCH_APP_PORT:-19000}
@@ -39,7 +42,7 @@ log() { echo "[bench] $(date +%H:%M:%S) $*" >&2; }
 cmd=${1:-}; shift || true
 case "$cmd" in
   image)
-    dk build -t "$IMAGE" "$REPO/bench/server"
+    dk build -f "$(winpath "$REPO/bench/server/${BENCH_DOCKERFILE:-Dockerfile}")" -t "$IMAGE" "$(winpath "$REPO/bench/server")"
     ;;
 
   dist)
