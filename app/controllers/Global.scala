@@ -22,7 +22,17 @@ object Global {
 
   val sizeFactors = Seq(1.0, 1.5, 2.0)
 
-  lazy val commons = MwBot.fromHost(COMMONS_WIKIMEDIA_ORG)
+  /** The app's Commons bot ([[modules.AppModule.bot]]): logged in by the import jobs'
+    * [[services.imports.CommonsLogin]] when credentials are set. Where no app has started
+    * (scripts, some specs), an anonymous one.
+    */
+  def commons: MwBot = shared.getOrElse(anonymousCommons)
+
+  /** Makes `bot` the one [[commons]] returns. */
+  def useCommons(bot: MwBot): Unit = shared = Some(bot)
+
+  @volatile private var shared: Option[MwBot] = None
+  private lazy val anonymousCommons = MwBot.fromHost(COMMONS_WIKIMEDIA_ORG)
 
   val useLegacyThumbUrl = true
   val thumbUrl: (Image, Int, Int) => String =

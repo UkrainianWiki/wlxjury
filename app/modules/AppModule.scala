@@ -1,12 +1,12 @@
 package modules
 
-import com.google.inject.{AbstractModule, Provides}
-import controllers.KOATUU
+import com.google.inject.{AbstractModule, Provides, Singleton}
+import controllers.{Global, KOATUU}
 import db.{ImageRepo, RoundRepo}
 import db.scalikejdbc.{ImageJdbc, Round}
 import org.scalawiki.MwBot
 import play.api.{Configuration, Environment, Logging}
-import services.imports.{CommonsSource, MonumentListSource, MwCommonsSource, MwMonumentListSource}
+import services.imports.{CommonsLogin, CommonsSource, MonumentListSource, MwCommonsSource, MwMonumentListSource}
 import services.jobs.JobScheduler
 
 class AppModule(environment: Environment, configuration: Configuration)
@@ -26,9 +26,16 @@ class AppModule(environment: Environment, configuration: Configuration)
     KOATUU.load()
   }
 
-  @Provides
+  /** One Commons bot for the whole app, so the session [[CommonsLogin]] logs in is the one
+    * every request uses; [[Global.commons]] is this one too.
+    */
+  @Provides @Singleton
   def bot: MwBot = {
-    val host = configuration.get[String]("commons.host")
-    MwBot.fromHost(host)
+    val bot = MwBot.fromHost(configuration.get[String]("commons.host"))
+    Global.useCommons(bot)
+    bot
   }
+
+  @Provides @Singleton
+  def commonsLogin(bot: MwBot): CommonsLogin = new CommonsLogin(bot, CommonsLogin.credentials(configuration))
 }
