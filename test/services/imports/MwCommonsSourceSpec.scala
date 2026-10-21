@@ -138,13 +138,15 @@ class MwCommonsSourceSpec extends Specification with JuryTestHelpers {
       ok
     }
 
-    "check the account again after the API refuses a batch as too large" in {
+    "fetch a batch the API refuses as too large 50 at a time, and check the account again" in {
       val bot = mockBot()
       bot.post(any[Map[String, String]]) returns Future.successful(loggedIn)
-      run(bot) returns Future.failed(MwException("toomanyvalues", "Too many values supplied for parameter \"pageids\"."))
+      run(bot) returns Future.failed(MwException("toomanyvalues", "Too many values supplied for parameter \"pageids\".")) thenReturns
+        Future.successful(file)
       val commons = source(bot, withAccount)
       commons.maxIdsPerRequest === 500
-      commons.files((1L to 500L), info = true, text = false) must throwA[MwException]
+      commons.files((1L to 500L), info = true, text = false) === Seq.fill(10)(file).flatten
+      org.mockito.Mockito.verify(bot, org.mockito.Mockito.times(11)).run(any[Action], any[Map[String, String]], any[Option[Long]])
       commons.maxIdsPerRequest === 500
       postedParams(bot, 2).map(_("meta")) === Seq("userinfo", "userinfo")
     }

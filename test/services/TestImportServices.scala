@@ -8,22 +8,18 @@ import services.jobs.JobScheduler
   * import jobs run inline, to their end, in the call that starts them (as with
   * `jobs.mode = inline`).
   *
-  * @param pageSize files per import step; [[TestImportServices.AccountPageSize]] leaves
-  *                 `jobs.commonsImport.pageSize` unset, so it follows `commons`' batch size
+  * @param pageSize files per import step (`jobs.commonsImport.pageSize`); None leaves it
+  *                 unset, so it follows `commons`' batch size
   */
 class TestImportServices(
     commons: CommonsSource,
-    pageSize: Int = ImageImportHandler.DefaultPageSize,
+    pageSize: Option[Int] = Some(ImageImportHandler.DefaultPageSize),
     lists: MonumentListSource = new FakeMonumentListSource(),
     listPageSize: Int = MonumentListImportHandler.DefaultPageSize
 ) {
 
   val imageImport: ImageImportHandler =
-    new ImageImportHandler(
-      commons,
-      if (pageSize == TestImportServices.AccountPageSize) Configuration.empty
-      else Configuration("jobs.commonsImport.pageSize" -> pageSize)
-    )
+    new ImageImportHandler(commons, Configuration(pageSize.map("jobs.commonsImport.pageSize" -> _).toSeq: _*))
 
   val monumentLists: MonumentListImportHandler =
     new MonumentListImportHandler(lists, Configuration("jobs.monumentImport.pageSize" -> listPageSize))
@@ -31,10 +27,4 @@ class TestImportServices(
   val scheduler: JobScheduler = TestRoundServices.inlineScheduler(imageImport, monumentLists)
 
   val imageService: ImageService = new ImageService(scheduler, imageImport, monumentLists)
-}
-
-object TestImportServices {
-
-  /** A `pageSize` that leaves the step size to the Commons account's batch size. */
-  val AccountPageSize = 0
 }

@@ -1,7 +1,7 @@
 package modules
 
 import com.google.inject.{AbstractModule, Provides, Singleton}
-import controllers.{Global, KOATUU}
+import controllers.KOATUU
 import db.{ImageRepo, RoundRepo}
 import db.scalikejdbc.{ImageJdbc, Round}
 import org.scalawiki.MwBot
@@ -26,16 +26,14 @@ class AppModule(environment: Environment, configuration: Configuration)
     KOATUU.load()
   }
 
-  /** One Commons bot for the whole app, so the session [[CommonsLogin]] logs in is the one
-    * every request uses; [[Global.commons]] is this one too.
+  /** The Commons bot. `MwBot.fromHost` keeps one per host, so the session [[CommonsLogin]]
+    * logs in is the one every request uses, [[controllers.Global.commons]]'s included (both
+    * `commons.wikimedia.org`).
     */
-  @Provides @Singleton
-  def bot: MwBot = {
-    val bot = MwBot.fromHost(configuration.get[String]("commons.host"))
-    Global.useCommons(bot)
-    bot
-  }
+  @Provides
+  def bot: MwBot = MwBot.fromHost(configuration.get[String]("commons.host"))
 
+  /** One for the app: it keeps what the session is between import steps. */
   @Provides @Singleton
   def commonsLogin(bot: MwBot): CommonsLogin = new CommonsLogin(bot, CommonsLogin.credentials(configuration))
 }

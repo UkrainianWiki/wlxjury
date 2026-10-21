@@ -19,7 +19,8 @@ import scala.util.control.NonFatal
   * and logs in again only if the session has become anonymous: a job that keeps making
   * requests keeps its session, and one that starts after days without any logs in again.
   * A failed login or check leaves the anonymous limits: imports still work, in smaller
-  * batches.
+  * batches. A login the wiki refuses (a wrong or revoked bot password) is tried again only
+  * after `loginRetry`, so as not to run into the wiki's limit of failed logins.
   *
   * @param now nanoseconds of a monotonic clock
   */
@@ -27,19 +28,22 @@ class CommonsLogin(
     bot: MwBot,
     credentials: Option[CommonsLogin.Credentials],
     recheck: FiniteDuration = CommonsLogin.Recheck,
+    loginRetry: FiniteDuration = CommonsLogin.LoginRetry,
     now: () => Long = () => System.nanoTime()
 ) extends Logging {
 
   import CommonsLogin._
 
   @volatile private var status: Status = Status.Anonymous
-  @volatile private var checkedAt: Option[Long] = None
+  /** When [[ensure]] asks again; None: at the next call. */
+  @volatile private var nextCheck: Option[Long] = None
 
   /** Who the session is: checked, and logged in again if needed, when the last check is
-    * older than `recheck`. Without credentials, anonymous, and nothing is asked.
+    * older than `recheck` (`loginRetry` after a refused login). Without credentials,
+    * anonymous, and nothing is asked.
     */
   def ensure(): Status = synchronized {
-    if (credentials.nonEmpty && checkedAt.forall(t => now() - t >= recheck.toNanos)) check()
+    if (credentials.nonEmpty && nextCheck.forall(t => now() - t >= 0)) check()
     status
   }
 
@@ -49,34 +53,39 @@ class CommonsLogin(
   /** Forgets the last check, so the next [[ensure]] asks again: e.g. after the API refused
     * a batch as too large for the session.
     */
-  def invalidate(): Unit = synchronized { checkedAt = None }
+  def invalidate(): Unit = synchronized { nextCheck = None }
 
   private def check(): Unit = {
+    var refused = false
     val checked =
       try {
         val current = userInfo()
         if (!current.anonymous) current
         else {
-          credentials.foreach(login)
-          userInfo()
+          credentials.foreach(c => refused = !login(c))
+          if (refused) Status.Anonymous else userInfo()
         }
       } catch {
         case NonFatal(e) =>
           logger.warn(s"${bot.host}: could not check or log in the account: ${e.getMessage}")
           Status.Anonymous
       }
-    if (checked != status || checkedAt.isEmpty) logger.info(s"${bot.host}: ${checked.describe}")
+    if (checked != status || nextCheck.isEmpty) logger.info(s"${bot.host}: ${checked.describe}")
     status = checked
-    checkedAt = Some(now())
+    nextCheck = Some(now() + (if (refused) loginRetry else recheck).toNanos)
   }
 
   private def userInfo(): Status =
     parseUserInfo(Json.parse(Await.result(bot.post(UserInfoParams), Timeout)))
 
-  /** Logs in; MediaWiki answers a failed login with a result other than `Success`. */
-  private def login(c: Credentials): Unit = {
+  /** Logs in; MediaWiki answers a refused login with a result other than `Success`.
+    * @return false if the wiki refused it
+    */
+  private def login(c: Credentials): Boolean = {
     val result = Await.result(bot.login(c.user, c.password), Timeout)
-    if (result != "Success") logger.warn(s"${bot.host}: login as ${c.user} failed: $result")
+    val success = result == "Success"
+    if (!success) logger.warn(s"${bot.host}: login as ${c.user} failed: $result; trying again in $loginRetry")
+    success
   }
 }
 
@@ -89,6 +98,10 @@ object CommonsLogin {
   val HighLimit = 500
 
   val Recheck: FiniteDuration = 10.minutes
+
+  /** The wait after a refused login: well within Wikimedia's 150 failed logins in 48 hours. */
+  val LoginRetry: FiniteDuration = 6.hours
+
   val Timeout: FiniteDuration = 1.minute
 
   val UserInfoParams: Map[String, String] =

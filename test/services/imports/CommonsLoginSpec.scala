@@ -65,6 +65,33 @@ class CommonsLoginSpec extends Specification with JuryTestHelpers {
       login(mw).idsPerRequest === 50
     }
 
+    "try a refused login again only after loginRetry" in {
+      val mw = mockBot()
+      mw.post(CommonsLogin.UserInfoParams) returns Future.successful(anonymous)
+      mw.login("IlyaBot@jury", "secret") returns Future.successful("Failed")
+      val clock = Array(0L)
+      val l = login(mw, clock)
+      l.idsPerRequest === 50
+      clock(0) += 1.hour.toNanos
+      l.idsPerRequest === 50
+      verify(mw, times(1)).login("IlyaBot@jury", "secret")
+      clock(0) += CommonsLogin.LoginRetry.toNanos
+      l.idsPerRequest === 50
+      verify(mw, times(2)).login("IlyaBot@jury", "secret")
+      userInfoRequests(mw, 2)
+    }
+
+    "check again after recheck when the API couldn't be asked" in {
+      val mw = mockBot()
+      mw.post(CommonsLogin.UserInfoParams) returns Future.failed(new java.io.IOException("connection reset")) thenReturns
+        Future.successful(bot)
+      val clock = Array(0L)
+      val l = login(mw, clock)
+      l.idsPerRequest === 50
+      clock(0) += 10.minutes.toNanos
+      l.idsPerRequest === 500
+    }
+
     "keep the anonymous limit when the API can't be asked" in {
       val mw = mockBot()
       mw.post(CommonsLogin.UserInfoParams) returns Future.failed(new java.io.IOException("connection reset"))

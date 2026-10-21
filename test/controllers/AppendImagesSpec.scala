@@ -47,11 +47,11 @@ class AppendImagesSpec extends Specification with JuryTestHelpers with TestDb wi
     * the job afterwards.
     */
   def importFiles(images: Seq[Image], contest: ContestJury, source: String = category, titles: String = "",
-      pageSize: Int = 50): Job =
+      pageSize: Option[Int] = Some(50)): Job =
     importFrom(new FakeCommonsSource(images.map(file)), contest, source, titles, pageSize)
 
   def importFrom(commons: FakeCommonsSource, contest: ContestJury, source: String = category, titles: String = "",
-      pageSize: Int = 50): Job = {
+      pageSize: Option[Int] = Some(50)): Job = {
     val services = new TestImportServices(commons, pageSize)
     val job = services.imageService.importFiles(contest, source, titles).toOption.get
     JobJdbc.findById(job.id).get
@@ -83,7 +83,7 @@ class AppendImagesSpec extends Specification with JuryTestHelpers with TestDb wi
     "get several images in pages, with descr and monumentId" in {
       val images = (11 to 15).map(id => image(id).copy(description = Some(s"{{$idTemplate|12-345-$id}}")))
       val contest = createContest(Some(idTemplate))
-      val job = importFiles(images, contest, pageSize = 2)
+      val job = importFiles(images, contest, pageSize = Some(2))
       stored(contest) === images
       val done = JobJdbc.findById(job.id).get
       done.status === JobStatus.Done
@@ -96,7 +96,7 @@ class AppendImagesSpec extends Specification with JuryTestHelpers with TestDb wi
       val images = (11 to 15).map(id => image(id).copy(monumentId = None))
       val contest = createContest()
       val list = (images.map(_.title) :+ "File:Missing.jpg").mkString(System.lineSeparator)
-      val job = importFiles(images, contest, source = "", titles = list, pageSize = 2)
+      val job = importFiles(images, contest, source = "", titles = list, pageSize = Some(2))
       stored(contest) === images
       val done = JobJdbc.findById(job.id).get
       ImageImportHandler.stateOf(done).missingTitles === Seq("File:Missing.jpg")
@@ -110,7 +110,7 @@ class AppendImagesSpec extends Specification with JuryTestHelpers with TestDb wi
       val images = (1 to 120).map(id => image(id).copy(monumentId = None))
       val contest = createContest()
       val commons = new FakeCommonsSource(images.map(file), maxIdsPerRequest = 500)
-      importFrom(commons, contest, pageSize = TestImportServices.AccountPageSize).status === JobStatus.Done
+      importFrom(commons, contest, pageSize = None).status === JobStatus.Done
       stored(contest) === images
       commons.listCalls.get === 1
       commons.detailCalls.get === 1
@@ -120,7 +120,7 @@ class AppendImagesSpec extends Specification with JuryTestHelpers with TestDb wi
       val images = (1 to 120).map(id => image(id).copy(monumentId = None))
       val contest = createContest()
       val commons = new FakeCommonsSource(images.map(file))
-      importFrom(commons, contest, pageSize = TestImportServices.AccountPageSize).status === JobStatus.Done
+      importFrom(commons, contest, pageSize = None).status === JobStatus.Done
       stored(contest) === images
       commons.listCalls.get === 3
       commons.detailCalls.get === 3
@@ -130,10 +130,15 @@ class AppendImagesSpec extends Specification with JuryTestHelpers with TestDb wi
       val images = (1 to 120).map(id => image(id).copy(monumentId = None))
       val contest = createContest()
       val commons = new FakeCommonsSource(images.map(file))
-      importFrom(commons, contest, pageSize = 200).status === JobStatus.Done
+      importFrom(commons, contest, pageSize = Some(200)).status === JobStatus.Done
       stored(contest) === images
       commons.listCalls.get === 1
       commons.detailCalls.get === 3
+    }
+
+    "refuse a page size that isn't positive" in {
+      new ImageImportHandler(new FakeCommonsSource(Nil), play.api.Configuration("jobs.commonsImport.pageSize" -> 0)) must
+        throwA[IllegalArgumentException]
     }
 
     "update images" in {
@@ -170,7 +175,7 @@ class AppendImagesSpec extends Specification with JuryTestHelpers with TestDb wi
       val contest = createContest()
       val commons = new FakeCommonsSource(images.map(file))
       commons.failListCall = 3
-      val services = new TestImportServices(commons, pageSize = 2)
+      val services = new TestImportServices(commons, pageSize = Some(2))
       val job = services.imageService.importFiles(contest, category, "").toOption.get
 
       val failed = JobJdbc.findById(job.id).get

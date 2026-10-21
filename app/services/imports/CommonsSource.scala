@@ -8,6 +8,7 @@ import org.scalawiki.dto.cmd.query.prop.rvprop.RvProp
 import org.scalawiki.dto.cmd.query.prop.{CategoryInfo, ImageInfo, Prop, PropArg, Revisions, RvPropArgs}
 import org.scalawiki.dto.cmd.query.{Generator, PageIdsParam, Query, QueryParam, TitlesParam}
 import org.scalawiki.dto.{MwException, Namespace, Page}
+import play.api.Logging
 import play.api.libs.json.JsObject
 
 import java.net.URLDecoder
@@ -87,11 +88,11 @@ trait CommonsSource {
   * merges the pages that a `continue` splits (`rvcontinue`, `iicontinue`).
   *
   * The batch size comes from `login`, which checks before each step that the session
-  * still allows it; a batch the API still refuses as too large (`toomanyvalues`) makes the
-  * next step check again.
+  * still allows it; a batch the API still refuses as too large (`toomanyvalues`) is
+  * fetched again in batches of [[CommonsLogin.Limit]], and the next step checks again.
   */
 @Singleton
-class MwCommonsSource @Inject() (bot: MwBot, login: CommonsLogin) extends CommonsSource {
+class MwCommonsSource @Inject() (bot: MwBot, login: CommonsLogin) extends CommonsSource with Logging {
 
   import MwCommonsSource._
 
@@ -110,18 +111,25 @@ class MwCommonsSource @Inject() (bot: MwBot, login: CommonsLogin) extends Common
   }
 
   def files(pageIds: Seq[Long], info: Boolean, text: Boolean): Seq[Page] =
-    if (pageIds.isEmpty) Nil else batch(api.run(Query(PageIdsParam(pageIds), Prop(props(info, text): _*))))
+    batch(pageIds)(ids => api.run(Query(PageIdsParam(ids), Prop(props(info, text): _*))))
 
   def filesByTitles(titles: Seq[String], info: Boolean, text: Boolean): Seq[Page] =
-    if (titles.isEmpty) Nil else batch(api.run(Query(TitlesParam(titles), Prop(props(info, text): _*))))
+    batch(titles)(ts => api.run(Query(TitlesParam(ts), Prop(props(info, text): _*))))
 
-  private def batch(request: => Seq[Page]): Seq[Page] =
-    try request
-    catch {
-      case e: MwException if e.code == TooManyValues =>
-        login.invalidate()
-        throw e
-    }
+  /** One request of `values`. One the API refuses as too large for the session (it has
+    * become anonymous) is fetched again [[CommonsLogin.Limit]] values per request, so the
+    * step still succeeds, and the next step checks the session again.
+    */
+  private def batch[V](values: Seq[V])(request: Seq[V] => Seq[Page]): Seq[Page] =
+    if (values.isEmpty) Nil
+    else
+      try request(values)
+      catch {
+        case e: MwException if e.code == TooManyValues && values.size > CommonsLogin.Limit =>
+          login.invalidate()
+          logger.warn(s"${bot.host}: ${values.size} values refused (${e.info}); fetching ${CommonsLogin.Limit} per request")
+          values.grouped(CommonsLogin.Limit).flatMap(request).toSeq
+      }
 
   def categoryFileCount(category: String): Option[Long] =
     if (!category.toLowerCase.startsWith("category:")) None

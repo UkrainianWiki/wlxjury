@@ -102,12 +102,11 @@ class ImageImportHandler @Inject() (source: CommonsSource, config: Configuration
 
   val kind: String = Kind
 
-  private val configuredPageSize: Option[Int] = config.getOptional[Int]("jobs.commonsImport.pageSize")
-
-  /** Files per step: `jobs.commonsImport.pageSize`, or else as many as one request of their
+  /** Files per step, `jobs.commonsImport.pageSize`; None: as many as one request of their
     * details takes ([[CommonsSource.maxIdsPerRequest]]: 500 with `apihighlimits`, else 50).
     */
-  def pageSize: Int = configuredPageSize.getOrElse(source.maxIdsPerRequest)
+  val pageSize: Option[Int] = config.getOptional[Int]("jobs.commonsImport.pageSize")
+  require(pageSize.forall(_ > 0), s"jobs.commonsImport.pageSize must be positive, not ${pageSize.get}")
 
   /** A new import of the contest's files. */
   def newJob(params: ImportParams, createdBy: Option[Long]): NewJob = {
@@ -162,7 +161,7 @@ class ImageImportHandler @Inject() (source: CommonsSource, config: Configuration
       .getOrElse(throw new NoSuchElementException(s"Contest ${p.contestId} not found"))
     // once per step: it may check the Commons session
     val idsPerRequest = source.maxIdsPerRequest
-    val stepSize = configuredPageSize.getOrElse(idsPerRequest)
+    val stepSize = pageSize.getOrElse(idsPerRequest)
 
     if (p.titleCount > 0 && !monumentIds) {
       val batch = titlesOf(job, st.index, math.min(stepSize, idsPerRequest))
