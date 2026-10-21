@@ -28,7 +28,10 @@ class AppModule(environment: Environment, configuration: Configuration)
 
   /** The Commons bot. `MwBot.fromHost` keeps one per host, so the session [[CommonsLogin]]
     * logs in is the one every request uses, [[controllers.Global.commons]]'s included (both
-    * `commons.wikimedia.org`).
+    * `commons.wikimedia.org`). The first `fromHost` call creates it, logged in at once as
+    * `SCALAWIKI_LOGIN` / `SCALAWIKI_PASSWORD` when those are set in the environment;
+    * [[CommonsLogin]] then finds the session logged in and keeps that account instead of
+    * `commons.user`, so leave them unset on the server.
     */
   @Provides
   def bot: MwBot = MwBot.fromHost(configuration.get[String]("commons.host"))

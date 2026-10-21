@@ -79,8 +79,10 @@ class ImportScaleSpec extends Specification with TestDb with BeforeAll {
     "hold about one page of files" in {
       SharedTestDb.truncateAll()
       val images = fixture()
-      // as an account with apihighlimits for a page size over 50: one details request per step
-      val commons = new FakeCommonsSource(images.map(i => FakeFile(i, Some(text(i)))), math.max(pageSize, CommonsLogin.Limit)) {
+      // as an account with apihighlimits for a page size over 50: one details request per step,
+      // up to the API's 500
+      val maxIds = math.min(math.max(pageSize, CommonsLogin.Limit), CommonsLogin.HighLimit)
+      val commons = new FakeCommonsSource(images.map(i => FakeFile(i, Some(text(i)))), maxIds) {
         override def listFiles(source: ImportSource, cursor: play.api.libs.json.JsObject, limit: Int): FilePage = {
           Thread.sleep(latencyMs)
           super.listFiles(source, cursor, limit)

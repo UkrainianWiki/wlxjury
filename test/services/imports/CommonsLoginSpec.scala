@@ -145,6 +145,49 @@ class CommonsLoginSpec extends Specification with JuryTestHelpers {
       userInfoRequests(mw, 1)
     }
 
+    "check again when invalidated while a check runs" in {
+      val mw = mockBot()
+      val answer = Promise[String]()
+      mw.post(CommonsLogin.UserInfoParams) returns answer.future thenReturns Future.successful(bot)
+      val l = login(mw)
+      val first = Future(l.ensure())(ExecutionContext.global)
+      verify(mw, timeout(5000)).post(CommonsLogin.UserInfoParams)
+      l.invalidate()
+      answer.success(bot)
+      Await.result(first, 5.seconds) === CommonsLogin.Status(Some("IlyaBot"), highLimits = true)
+      l.ensure()
+      userInfoRequests(mw, 2)
+    }
+
+    "keep a logged-in answer when the API can't be asked" in {
+      val mw = mockBot()
+      mw.post(CommonsLogin.UserInfoParams) returns Future.successful(bot) thenReturns
+        Future.failed(new java.io.IOException("connection reset")) thenReturns Future.successful(readOnly)
+      val clock = Array(0L)
+      val l = login(mw, clock)
+      l.idsPerRequest === 500
+      clock(0) += 10.minutes.toNanos
+      l.idsPerRequest === 500
+      clock(0) += 10.minutes.toNanos
+      l.idsPerRequest === 500
+      verify(mw, never()).login(anyString, anyString)
+      userInfoRequests(mw, 3)
+    }
+
+    "try again after recheck when a successful login leaves the session anonymous" in {
+      val mw = mockBot()
+      mw.post(CommonsLogin.UserInfoParams) returns Future.successful(anonymous) thenReturns
+        Future.successful(anonymous) thenReturns Future.successful(anonymous) thenReturns Future.successful(bot)
+      mw.login("IlyaBot@jury", "secret") returns Future.successful("Success")
+      val clock = Array(0L)
+      val l = login(mw, clock)
+      l.idsPerRequest === 50
+      clock(0) += 10.minutes.toNanos
+      l.idsPerRequest === 500
+      verify(mw, times(2)).login("IlyaBot@jury", "secret")
+      ok
+    }
+
     "keep the anonymous limit when the API can't be asked" in {
       val mw = mockBot()
       mw.post(CommonsLogin.UserInfoParams) returns Future.failed(new java.io.IOException("connection reset"))

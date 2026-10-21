@@ -25,7 +25,8 @@ object Global {
   /** The app's Commons bot: `MwBot.fromHost` keeps one bot (and its session cookies) per
     * host, so this is [[modules.AppModule.bot]] too, logged in by the import jobs'
     * [[services.imports.CommonsLogin]] when credentials are set. Anonymous where no app
-    * has started (scripts, some specs).
+    * has started (scripts, some specs), unless `SCALAWIKI_LOGIN` / `SCALAWIKI_PASSWORD`
+    * are set: then scalawiki logs it in as that account when it is created.
     */
   lazy val commons: MwBot = MwBot.fromHost(COMMONS_WIKIMEDIA_ORG)
 

@@ -4,7 +4,7 @@ import org.scalawiki.MwBot
 import play.api.libs.json.{JsValue, Json}
 import play.api.{Configuration, Logging}
 
-import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.{AtomicBoolean, AtomicLong}
 import scala.concurrent.Await
 import scala.concurrent.duration._
 import scala.util.control.NonFatal
@@ -15,19 +15,25 @@ import scala.util.control.NonFatal
   * per request instead of 50, and list 5000 files per request instead of 500.
   *
   * A MediaWiki session ends after a while without requests, and reads on an ended session
-  * are anonymous, without an error. So [[ensure]], called before each import step, asks the
-  * API who the session is (`meta=userinfo`) when its last answer is older than `recheck`,
-  * and logs in again only if the session has become anonymous: a job that keeps making
-  * requests keeps its session, and one that starts after days without any logs in again.
-  * A failed login or check leaves the anonymous limits: imports still work, in smaller
-  * batches, and the next check is after `recheck`. That includes a check the API answers
-  * with an error, a login that throws (an error page, a timeout), and a login refused for
-  * its token ([[TransientLoginResults]]): none of these is a wrong password. A login the
-  * wiki refuses otherwise (a wrong or revoked bot password, a blocked account) is tried
-  * again only after `loginRetry`, so as not to run into the wiki's limit of failed logins.
+  * are anonymous, without an error. So [[ensure]], called at the start of each import
+  * step's fetch ([[MwCommonsSource.maxIdsPerRequest]]), asks the API who the session is
+  * (`meta=userinfo`) when its last answer is older than `recheck`, and logs in again only
+  * if the session has become anonymous: a job that keeps making requests keeps its
+  * session, and one that starts after days without any logs in again.
+  *
+  * A check the API doesn't answer (a timeout, an error page, an API error) keeps the last
+  * answer: it doesn't say the session has ended, and a batch too large for the session is
+  * fetched again in smaller ones anyway ([[MwCommonsSource]]). A failed login leaves the
+  * anonymous limits: imports still work, in smaller batches, and the next check is after
+  * `recheck`. That includes a login that throws, a login refused for its token
+  * ([[TransientLoginResults]]) and one that succeeds but leaves the session anonymous:
+  * none of these is a wrong password. A login the wiki refuses otherwise (a wrong or
+  * revoked bot password, a blocked account) is tried again only after `loginRetry`, so as
+  * not to run into the wiki's limit of failed logins.
   *
   * One caller checks at a time, and the others don't wait for it: they go on with the last
-  * answer (a batch too large for it is fetched again in smaller ones, [[MwCommonsSource]]).
+  * answer. An [[invalidate]] while it checks makes the next [[ensure]] check again, as the
+  * check may have asked before the session ended.
   *
   * @param now nanoseconds of a monotonic clock
   */
@@ -46,6 +52,8 @@ class CommonsLogin(
   @volatile private var nextCheck: Option[Long] = None
   /** Set while a caller checks. */
   private val checking = new AtomicBoolean(false)
+  /** Counts [[invalidate]] calls, so a check knows whether one came while it ran. */
+  private val invalidations = new AtomicLong()
 
   /** Who the session is: checked, and logged in again if needed, when the last check is
     * older than `recheck` (`loginRetry` after a refused login); while another caller
@@ -64,35 +72,56 @@ class CommonsLogin(
   /** Forgets the last check, so the next [[ensure]] asks again: e.g. after the API refused
     * a batch as too large for the session.
     */
-  def invalidate(): Unit = nextCheck = None
+  def invalidate(): Unit = {
+    invalidations.incrementAndGet()
+    nextCheck = None
+  }
 
   private def due: Boolean = nextCheck.forall(t => now() - t >= 0)
 
   private def check(): Unit = {
-    var refused = false
+    val invalidated = invalidations.get()
+    var retry = recheck
+    // set once the API has said who the session is: an error before that keeps the last answer
+    var answered = false
     val checked =
       try {
         val current = userInfo()
+        answered = true
         if (!current.anonymous) current
         else
           credentials.fold(current) { c =>
             val result = login(c)
-            if (result == LoginSuccess) userInfo()
+            if (result == LoginSuccess) loggedIn(c)
             else {
-              refused = !TransientLoginResults(result)
-              val retry = if (refused) loginRetry else recheck
+              if (!TransientLoginResults(result)) retry = loginRetry
               logger.warn(s"${bot.host}: login as ${c.user} failed: $result; trying again in $retry")
               Status.Anonymous
             }
           }
       } catch {
+        case NonFatal(e) if !answered =>
+          logger.warn(s"${bot.host}: could not check the account: ${e.getMessage}; " +
+            s"keeping the last answer (${status.describe}), checking again in $recheck")
+          status
         case NonFatal(e) =>
-          logger.warn(s"${bot.host}: could not check or log in the account: ${e.getMessage}; trying again in $recheck")
+          logger.warn(s"${bot.host}: could not log in the account: ${e.getMessage}; trying again in $recheck")
           Status.Anonymous
       }
     if (checked != status || nextCheck.isEmpty) logger.info(s"${bot.host}: ${checked.describe}")
     status = checked
-    nextCheck = Some(now() + (if (refused) loginRetry else recheck).toNanos)
+    nextCheck = if (invalidations.get() != invalidated) None else Some(now() + retry.toNanos)
+  }
+
+  /** The session after a successful login: anonymous still if it didn't keep the login
+    * (e.g. its cookies weren't stored), which logging in again won't fix by itself.
+    */
+  private def loggedIn(c: Credentials): Status = {
+    val after = userInfo()
+    if (after.anonymous)
+      logger.warn(s"${bot.host}: logged in as ${c.user}, but the session is still anonymous " +
+        s"(are its cookies kept?); trying again in $recheck")
+    after
   }
 
   private def userInfo(): Status =
