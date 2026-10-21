@@ -5,7 +5,7 @@ import org.intracer.wmua.{ContestJury, Image, JuryTestHelpers}
 import org.specs2.mutable.Specification
 import org.specs2.specification.{BeforeAll, BeforeEach}
 import services.TestImportServices
-import services.imports.{FakeCommonsSource, FakeFile, ImageImportHandler, ImportState, MwCommonsSource}
+import services.imports.{CommonsLogin, FakeCommonsSource, FakeFile, ImageImportHandler, ImportState, MwCommonsSource}
 import services.jobs.{Job, JobJdbc, JobStatus}
 
 /** "Import files" and the files' half of "Update monuments", as background jobs run
@@ -47,8 +47,12 @@ class AppendImagesSpec extends Specification with JuryTestHelpers with TestDb wi
     * the job afterwards.
     */
   def importFiles(images: Seq[Image], contest: ContestJury, source: String = category, titles: String = "",
+      pageSize: Int = 50): Job =
+    importFrom(new FakeCommonsSource(images.map(file)), contest, source, titles, pageSize)
+
+  def importFrom(commons: FakeCommonsSource, contest: ContestJury, source: String = category, titles: String = "",
       pageSize: Int = 50): Job = {
-    val services = new TestImportServices(new FakeCommonsSource(images.map(file)), pageSize)
+    val services = new TestImportServices(commons, pageSize)
     val job = services.imageService.importFiles(contest, source, titles).toOption.get
     JobJdbc.findById(job.id).get
   }
@@ -100,6 +104,36 @@ class AppendImagesSpec extends Specification with JuryTestHelpers with TestDb wi
       ImageImportHandler.paramsOf(done).titleCount === 6
       ImageImportHandler.paramsOf(done).titles must beEmpty // not read back
       ImageImportHandler.titlesOf(done, 4, 10) === Seq(images(4).title, "File:Missing.jpg")
+    }
+
+    "fetch a step's files in one request when the account has apihighlimits" in {
+      val images = (1 to 120).map(id => image(id).copy(monumentId = None))
+      val contest = createContest()
+      val commons = new FakeCommonsSource(images.map(file), maxIdsPerRequest = 500)
+      importFrom(commons, contest, pageSize = TestImportServices.AccountPageSize).status === JobStatus.Done
+      stored(contest) === images
+      commons.listCalls.get === 1
+      commons.detailCalls.get === 1
+    }
+
+    "fetch 50 files per request without apihighlimits" in {
+      val images = (1 to 120).map(id => image(id).copy(monumentId = None))
+      val contest = createContest()
+      val commons = new FakeCommonsSource(images.map(file))
+      importFrom(commons, contest, pageSize = TestImportServices.AccountPageSize).status === JobStatus.Done
+      stored(contest) === images
+      commons.listCalls.get === 3
+      commons.detailCalls.get === 3
+    }
+
+    "split a configured step larger than the account allows into requests it allows" in {
+      val images = (1 to 120).map(id => image(id).copy(monumentId = None))
+      val contest = createContest()
+      val commons = new FakeCommonsSource(images.map(file))
+      importFrom(commons, contest, pageSize = 200).status === JobStatus.Done
+      stored(contest) === images
+      commons.listCalls.get === 1
+      commons.detailCalls.get === 3
     }
 
     "update images" in {
@@ -195,7 +229,8 @@ class AppendImagesSpec extends Specification with JuryTestHelpers with TestDb wi
     "get international images" in {
       val page = "Commons:Wiki Loves Earth 2019/Winners"
       val contest = createContest()
-      new TestImportServices(new MwCommonsSource(Global.commons)).imageService.importFiles(contest, page, "")
+      val commons = new MwCommonsSource(Global.commons, CommonsLogin.anonymous(Global.commons))
+      new TestImportServices(commons).imageService.importFiles(contest, page, "")
       stored(contest).size must be_>=(350)
     }
   }

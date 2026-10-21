@@ -5,7 +5,7 @@ import org.intracer.wmua.JuryTestHelpers
 import org.specs2.mutable.Specification
 import org.specs2.specification.{BeforeAll, BeforeEach}
 import services.TestImportServices
-import services.imports.{ImportSource, MwCommonsSource}
+import services.imports.{CommonsLogin, ImportSource, MwCommonsSource}
 
 /** Importing a pasted list of files, over Commons. */
 class ImagesFromListSpec extends Specification with JuryTestHelpers with TestDb
@@ -27,7 +27,8 @@ class ImagesFromListSpec extends Specification with JuryTestHelpers with TestDb
 
       val contest = contestDao.create(Some(contestId), "WLE", 2020, "Armenia", Some(categoryName))
 
-      new TestImportServices(new MwCommonsSource(Global.commons)).imageService.importFiles(contest, categoryName, list)
+      val commons = new MwCommonsSource(Global.commons, CommonsLogin.anonymous(Global.commons))
+      new TestImportServices(commons).imageService.importFiles(contest, categoryName, list)
 
       val dbCategories = categoryDao.findAll()
 

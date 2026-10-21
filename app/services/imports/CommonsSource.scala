@@ -7,7 +7,7 @@ import org.scalawiki.dto.cmd.query.prop.iiprop.{IiProp, IiPropArgs}
 import org.scalawiki.dto.cmd.query.prop.rvprop.RvProp
 import org.scalawiki.dto.cmd.query.prop.{CategoryInfo, ImageInfo, Prop, PropArg, Revisions, RvPropArgs}
 import org.scalawiki.dto.cmd.query.{Generator, PageIdsParam, Query, QueryParam, TitlesParam}
-import org.scalawiki.dto.{Namespace, Page}
+import org.scalawiki.dto.{MwException, Namespace, Page}
 import play.api.libs.json.JsObject
 
 import java.net.URLDecoder
@@ -63,13 +63,18 @@ final case class FilePage(pageIds: Seq[Long], next: Option[JsObject])
   */
 trait CommonsSource {
 
+  /** Files per [[files]] or [[filesByTitles]] call: 500 when the account the requests
+    * use has `apihighlimits`, 50 without ([[CommonsLogin]]).
+    */
+  def maxIdsPerRequest: Int
+
   /** One page of at most `limit` files of the source, from `cursor` (`{}`: the first). */
   def listFiles(source: ImportSource, cursor: JsObject, limit: Int): FilePage
 
-  /** The files (at most 50), with their image info and/or their page text. */
+  /** The files (at most [[maxIdsPerRequest]]), with their image info and/or their page text. */
   def files(pageIds: Seq[Long], info: Boolean, text: Boolean): Seq[Page]
 
-  /** The files (at most 50) by title; a missing file comes back without an id. */
+  /** The files (at most [[maxIdsPerRequest]]) by title; a missing file comes back without an id. */
   def filesByTitles(titles: Seq[String], info: Boolean, text: Boolean): Seq[Page]
 
   /** The number of files in the category, if it is one. */
@@ -80,11 +85,17 @@ trait CommonsSource {
   * without props, one API page per call ([[MwApi.page]]), so its `continue` map is the
   * cursor of the next page; the files' details are fetched by page id, where `bot.run`
   * merges the pages that a `continue` splits (`rvcontinue`, `iicontinue`).
+  *
+  * The batch size comes from `login`, which checks before each step that the session
+  * still allows it; a batch the API still refuses as too large (`toomanyvalues`) makes the
+  * next step check again.
   */
 @Singleton
-class MwCommonsSource @Inject() (bot: MwBot) extends CommonsSource {
+class MwCommonsSource @Inject() (bot: MwBot, login: CommonsLogin) extends CommonsSource {
 
   import MwCommonsSource._
+
+  def maxIdsPerRequest: Int = login.idsPerRequest
 
   def listFiles(source: ImportSource, cursor: JsObject, limit: Int): FilePage = {
     val (module, generatorTitle, pageTitle) = source match {
@@ -99,10 +110,18 @@ class MwCommonsSource @Inject() (bot: MwBot) extends CommonsSource {
   }
 
   def files(pageIds: Seq[Long], info: Boolean, text: Boolean): Seq[Page] =
-    if (pageIds.isEmpty) Nil else api.run(Query(PageIdsParam(pageIds), Prop(props(info, text): _*)))
+    if (pageIds.isEmpty) Nil else batch(api.run(Query(PageIdsParam(pageIds), Prop(props(info, text): _*))))
 
   def filesByTitles(titles: Seq[String], info: Boolean, text: Boolean): Seq[Page] =
-    if (titles.isEmpty) Nil else api.run(Query(TitlesParam(titles), Prop(props(info, text): _*)))
+    if (titles.isEmpty) Nil else batch(api.run(Query(TitlesParam(titles), Prop(props(info, text): _*))))
+
+  private def batch(request: => Seq[Page]): Seq[Page] =
+    try request
+    catch {
+      case e: MwException if e.code == TooManyValues =>
+        login.invalidate()
+        throw e
+    }
 
   def categoryFileCount(category: String): Option[Long] =
     if (!category.toLowerCase.startsWith("category:")) None
@@ -121,4 +140,7 @@ class MwCommonsSource @Inject() (bot: MwBot) extends CommonsSource {
 object MwCommonsSource {
   val ImageInfoProps: Seq[String] = Seq("timestamp", "user", "size", "url", "mime", "mediatype")
   val TextProps: Seq[String] = Seq("content", "timestamp", "user", "comment")
+
+  /** The API's error for more values than the session may send in one parameter. */
+  val TooManyValues = "toomanyvalues"
 }

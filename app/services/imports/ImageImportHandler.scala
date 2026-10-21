@@ -77,7 +77,8 @@ final case class ImportPage(
   * and the files' half of "Update monuments" (mode `monument_ids`). Both modes share one
   * dedupe key per contest, as both write its files.
   *
-  * Each step is one page of the source's files (`jobs.commonsImport.pageSize`):
+  * Each step is one page of the source's files ([[pageSize]]: by default as many as one
+  * request of their details takes, 500 when the Commons account has `apihighlimits`):
   *  1. fetched on the scheduler's fetch lane, outside any transaction: the page of the
   *     source's files ([[CommonsSource.listFiles]], the API's continue map as the cursor)
   *     or of the pasted titles, then the files' image info and, with a monument id
@@ -101,10 +102,12 @@ class ImageImportHandler @Inject() (source: CommonsSource, config: Configuration
 
   val kind: String = Kind
 
-  /** Files per step: 50 is the API's page id limit without `apihighlimits`; their details
-    * are fetched 50 at a time either way.
+  private val configuredPageSize: Option[Int] = config.getOptional[Int]("jobs.commonsImport.pageSize")
+
+  /** Files per step: `jobs.commonsImport.pageSize`, or else as many as one request of their
+    * details takes ([[CommonsSource.maxIdsPerRequest]]: 500 with `apihighlimits`, else 50).
     */
-  val pageSize: Int = config.getOptional[Int]("jobs.commonsImport.pageSize").getOrElse(DefaultPageSize)
+  def pageSize: Int = configuredPageSize.getOrElse(source.maxIdsPerRequest)
 
   /** A new import of the contest's files. */
   def newJob(params: ImportParams, createdBy: Option[Long]): NewJob = {
@@ -157,9 +160,12 @@ class ImageImportHandler @Inject() (source: CommonsSource, config: Configuration
     lazy val contest = ContestJuryJdbc
       .findById(p.contestId)
       .getOrElse(throw new NoSuchElementException(s"Contest ${p.contestId} not found"))
+    // once per step: it may check the Commons session
+    val idsPerRequest = source.maxIdsPerRequest
+    val stepSize = configuredPageSize.getOrElse(idsPerRequest)
 
     if (p.titleCount > 0 && !monumentIds) {
-      val batch = titlesOf(job, st.index, math.min(pageSize, MaxIdsPerRequest))
+      val batch = titlesOf(job, st.index, math.min(stepSize, idsPerRequest))
       val pages = source.filesByTitles(batch, info = true, text = text)
       val next = st.index + batch.size
       ImportPage(
@@ -173,8 +179,8 @@ class ImageImportHandler @Inject() (source: CommonsSource, config: Configuration
         total = Some(p.titleCount.toLong)
       )
     } else {
-      val listed = source.listFiles(ImportSource(p.source), st.cursor, pageSize)
-      val pages = listed.pageIds.grouped(MaxIdsPerRequest).flatMap(source.files(_, info = !monumentIds, text = text)).toSeq
+      val listed = source.listFiles(ImportSource(p.source), st.cursor, stepSize)
+      val pages = listed.pageIds.grouped(idsPerRequest).flatMap(source.files(_, info = !monumentIds, text = text)).toSeq
       ImportPage(
         listed = listed.pageIds.size,
         images = if (monumentIds) Nil else images(contest, p, pages),
@@ -277,8 +283,8 @@ object ImageImportHandler {
   /** One active import per contest, of either mode. */
   def dedupeKey(contestId: Long): String = s"$Kind:$SubjectType:$contestId"
 
-  val DefaultPageSize = 50
-  val MaxIdsPerRequest = 50
+  /** Files per step without `apihighlimits` (and the specs' default). */
+  val DefaultPageSize: Int = CommonsLogin.Limit
   val MaxMissingTitles = 100
 
   /** The job's params without the pasted titles: read for every status poll and step. */

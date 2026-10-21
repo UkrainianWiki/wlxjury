@@ -71,6 +71,7 @@
 - **`state`:** `cursor`, counters (`seen`, `inserted`, `linked`, `updated`, `monumentIdsChanged`), `missingTitles` (the first 100).
 - **Progress:** `seen / total` files. The total is the category's file count for a category, the list's size for pasted titles, unknown (NULL) for a template or a page.
 - **A step, mode `import`:** one page of ≤ `jobs.commonsImport.pageSize` files (default 50, the API's page id limit without `apihighlimits`).
+  - *Since 2026-10-21 (`ukwikidev/commons-bot-login`):* the jobs log in with `commons.user` / `commons.password` (a bot password), and when unset, the page size follows the account: 500 with `apihighlimits`, 50 without (`CommonsLogin`, `CommonsSource.maxIdsPerRequest`).
   - Fetched (outside the transaction): the list page, then the files' info (and text).
   - Written (one transaction): one query loads the page's stored rows and whether each is linked to the contest's category:
     `SELECT i.*, cm.page_id IS NOT NULL AS linked FROM images i LEFT JOIN category_members cm ON cm.page_id = i.page_id AND cm.category_id = :cat WHERE i.page_id IN (:ids)`.

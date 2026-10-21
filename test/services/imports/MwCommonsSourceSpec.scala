@@ -15,9 +15,16 @@ import scala.jdk.CollectionConverters._
 /** The API paging of [[MwCommonsSource]], against canned responses. */
 class MwCommonsSourceSpec extends Specification with JuryTestHelpers {
 
-  private def source(bot: MwBot) = new MwCommonsSource(bot) {
-    override protected def retryDelay: FiniteDuration = 1.milli
-  }
+  private def source(bot: MwBot, login: MwBot => CommonsLogin = CommonsLogin.anonymous) =
+    new MwCommonsSource(bot, login(bot)) {
+      override protected def retryDelay: FiniteDuration = 1.milli
+    }
+
+  private val loggedIn =
+    """{"batchcomplete":"","query":{"userinfo":{"id":678,"name":"IlyaBot","rights":["read","bot","apihighlimits"]}}}"""
+
+  private def withAccount(bot: MwBot) =
+    new CommonsLogin(bot, Some(CommonsLogin.Credentials("IlyaBot@jury", "secret")))
 
   private def postedParams(bot: MwBot, times: Int): Seq[Map[String, String]] = {
     val captor = ArgumentCaptor.forClass(classOf[Map[String, String]])
@@ -129,6 +136,33 @@ class MwCommonsSourceSpec extends Specification with JuryTestHelpers {
       source(bot).files(Seq(13L), info = true, text = false) must throwA[MwException]
       org.mockito.Mockito.verify(bot, org.mockito.Mockito.times(1)).run(any[Action], any[Map[String, String]], any[Option[Long]])
       ok
+    }
+
+    "check the account again after the API refuses a batch as too large" in {
+      val bot = mockBot()
+      bot.post(any[Map[String, String]]) returns Future.successful(loggedIn)
+      run(bot) returns Future.failed(MwException("toomanyvalues", "Too many values supplied for parameter \"pageids\"."))
+      val commons = source(bot, withAccount)
+      commons.maxIdsPerRequest === 500
+      commons.files((1L to 500L), info = true, text = false) must throwA[MwException]
+      commons.maxIdsPerRequest === 500
+      postedParams(bot, 2).map(_("meta")) === Seq("userinfo", "userinfo")
+    }
+  }
+
+  "maxIdsPerRequest" should {
+
+    "be 50 for anonymous requests, without asking the API" in {
+      val bot = mockBot()
+      source(bot).maxIdsPerRequest === 50
+      org.mockito.Mockito.verify(bot, org.mockito.Mockito.never()).post(any[Map[String, String]])
+      ok
+    }
+
+    "be 500 for an account with apihighlimits" in {
+      val bot = mockBot()
+      bot.post(any[Map[String, String]]) returns Future.successful(loggedIn)
+      source(bot, withAccount).maxIdsPerRequest === 500
     }
   }
 
