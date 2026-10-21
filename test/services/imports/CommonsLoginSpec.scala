@@ -1,13 +1,13 @@
 package services.imports
 
 import org.intracer.wmua.JuryTestHelpers
-import org.mockito.Mockito.{never, times, verify}
+import org.mockito.Mockito.{never, timeout, times, verify}
 import org.scalawiki.MwBot
 import org.specs2.mutable.Specification
 import play.api.Configuration
 
-import scala.concurrent.Future
 import scala.concurrent.duration._
+import scala.concurrent.{Await, ExecutionContext, Future, Promise}
 
 /** [[CommonsLogin]] against canned `meta=userinfo` and login answers. */
 class CommonsLoginSpec extends Specification with JuryTestHelpers {
@@ -16,6 +16,7 @@ class CommonsLoginSpec extends Specification with JuryTestHelpers {
 
   private val anonymous = """{"batchcomplete":"","query":{"userinfo":{"id":0,"name":"203.0.113.7","anon":""}}}"""
   private val bot = """{"batchcomplete":"","query":{"userinfo":{"id":678,"name":"IlyaBot","rights":["read","bot","apihighlimits"]}}}"""
+  private val readOnly = """{"error":{"code":"readonly","info":"The wiki is currently in read-only mode."}}"""
   private val noHighLimits = """{"batchcomplete":"","query":{"userinfo":{"id":679,"name":"Someone","rights":["read","edit"]}}}"""
 
   /** A login over `bot` on a clock the spec moves (`clock(0) += ...`). */
@@ -90,6 +91,58 @@ class CommonsLoginSpec extends Specification with JuryTestHelpers {
       l.idsPerRequest === 50
       clock(0) += 10.minutes.toNanos
       l.idsPerRequest === 500
+    }
+
+    "try a login refused for its token again after recheck, not loginRetry" in {
+      val mw = mockBot()
+      mw.post(CommonsLogin.UserInfoParams) returns Future.successful(anonymous) thenReturns
+        Future.successful(anonymous) thenReturns Future.successful(bot)
+      mw.login("IlyaBot@jury", "secret") returns Future.successful("WrongToken") thenReturns Future.successful("Success")
+      val clock = Array(0L)
+      val l = login(mw, clock)
+      l.idsPerRequest === 50
+      clock(0) += 10.minutes.toNanos
+      l.idsPerRequest === 500
+      verify(mw, times(2)).login("IlyaBot@jury", "secret")
+      ok
+    }
+
+    "try a login that threw again after recheck" in {
+      val mw = mockBot()
+      mw.post(CommonsLogin.UserInfoParams) returns Future.successful(anonymous) thenReturns
+        Future.successful(anonymous) thenReturns Future.successful(bot)
+      mw.login("IlyaBot@jury", "secret") returns Future.failed(new RuntimeException("<html>503</html>")) thenReturns
+        Future.successful("Success")
+      val clock = Array(0L)
+      val l = login(mw, clock)
+      l.idsPerRequest === 50
+      clock(0) += 10.minutes.toNanos
+      l.idsPerRequest === 500
+    }
+
+    "not log in when the API answers the check with an error" in {
+      val mw = mockBot()
+      mw.post(CommonsLogin.UserInfoParams) returns Future.successful(readOnly) thenReturns Future.successful(bot)
+      val clock = Array(0L)
+      val l = login(mw, clock)
+      l.idsPerRequest === 50
+      verify(mw, never()).login(anyString, anyString)
+      clock(0) += 10.minutes.toNanos
+      l.idsPerRequest === 500
+    }
+
+    "not keep other callers waiting while one checks" in {
+      val mw = mockBot()
+      val answer = Promise[String]()
+      mw.post(CommonsLogin.UserInfoParams) returns answer.future
+      val l = login(mw)
+      val first = Future(l.ensure())(ExecutionContext.global)
+      verify(mw, timeout(5000)).post(CommonsLogin.UserInfoParams)
+      Await.result(Future(l.ensure())(ExecutionContext.global), 5.seconds) === CommonsLogin.Status.Anonymous
+      answer.success(bot)
+      Await.result(first, 5.seconds) === CommonsLogin.Status(Some("IlyaBot"), highLimits = true)
+      l.ensure() === CommonsLogin.Status(Some("IlyaBot"), highLimits = true)
+      userInfoRequests(mw, 1)
     }
 
     "keep the anonymous limit when the API can't be asked" in {
@@ -171,6 +224,11 @@ class CommonsLoginSpec extends Specification with JuryTestHelpers {
       CommonsLogin.parseUserInfo(Json.parse(anonymous)) === CommonsLogin.Status.Anonymous
       CommonsLogin.parseUserInfo(Json.parse(bot)) === CommonsLogin.Status(Some("IlyaBot"), highLimits = true)
       CommonsLogin.parseUserInfo(Json.parse(noHighLimits)) === CommonsLogin.Status(Some("Someone"), highLimits = false)
+    }
+
+    "not take an API error for an anonymous session" in {
+      import play.api.libs.json.Json
+      CommonsLogin.parseUserInfo(Json.parse(readOnly)) must throwA[IllegalStateException]
     }
   }
 }

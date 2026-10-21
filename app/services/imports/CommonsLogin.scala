@@ -4,6 +4,7 @@ import org.scalawiki.MwBot
 import play.api.libs.json.{JsValue, Json}
 import play.api.{Configuration, Logging}
 
+import java.util.concurrent.atomic.AtomicBoolean
 import scala.concurrent.Await
 import scala.concurrent.duration._
 import scala.util.control.NonFatal
@@ -19,8 +20,14 @@ import scala.util.control.NonFatal
   * and logs in again only if the session has become anonymous: a job that keeps making
   * requests keeps its session, and one that starts after days without any logs in again.
   * A failed login or check leaves the anonymous limits: imports still work, in smaller
-  * batches. A login the wiki refuses (a wrong or revoked bot password) is tried again only
-  * after `loginRetry`, so as not to run into the wiki's limit of failed logins.
+  * batches, and the next check is after `recheck`. That includes a check the API answers
+  * with an error, a login that throws (an error page, a timeout), and a login refused for
+  * its token ([[TransientLoginResults]]): none of these is a wrong password. A login the
+  * wiki refuses otherwise (a wrong or revoked bot password, a blocked account) is tried
+  * again only after `loginRetry`, so as not to run into the wiki's limit of failed logins.
+  *
+  * One caller checks at a time, and the others don't wait for it: they go on with the last
+  * answer (a batch too large for it is fetched again in smaller ones, [[MwCommonsSource]]).
   *
   * @param now nanoseconds of a monotonic clock
   */
@@ -37,13 +44,17 @@ class CommonsLogin(
   @volatile private var status: Status = Status.Anonymous
   /** When [[ensure]] asks again; None: at the next call. */
   @volatile private var nextCheck: Option[Long] = None
+  /** Set while a caller checks. */
+  private val checking = new AtomicBoolean(false)
 
   /** Who the session is: checked, and logged in again if needed, when the last check is
-    * older than `recheck` (`loginRetry` after a refused login). Without credentials,
-    * anonymous, and nothing is asked.
+    * older than `recheck` (`loginRetry` after a refused login); while another caller
+    * checks, the last answer. Without credentials, anonymous, and nothing is asked.
     */
-  def ensure(): Status = synchronized {
-    if (credentials.nonEmpty && nextCheck.forall(t => now() - t >= 0)) check()
+  def ensure(): Status = {
+    if (credentials.nonEmpty && due && checking.compareAndSet(false, true))
+      try { if (due) check() }
+      finally checking.set(false)
     status
   }
 
@@ -53,7 +64,9 @@ class CommonsLogin(
   /** Forgets the last check, so the next [[ensure]] asks again: e.g. after the API refused
     * a batch as too large for the session.
     */
-  def invalidate(): Unit = synchronized { nextCheck = None }
+  def invalidate(): Unit = nextCheck = None
+
+  private def due: Boolean = nextCheck.forall(t => now() - t >= 0)
 
   private def check(): Unit = {
     var refused = false
@@ -61,13 +74,20 @@ class CommonsLogin(
       try {
         val current = userInfo()
         if (!current.anonymous) current
-        else {
-          credentials.foreach(c => refused = !login(c))
-          if (refused) Status.Anonymous else userInfo()
-        }
+        else
+          credentials.fold(current) { c =>
+            val result = login(c)
+            if (result == LoginSuccess) userInfo()
+            else {
+              refused = !TransientLoginResults(result)
+              val retry = if (refused) loginRetry else recheck
+              logger.warn(s"${bot.host}: login as ${c.user} failed: $result; trying again in $retry")
+              Status.Anonymous
+            }
+          }
       } catch {
         case NonFatal(e) =>
-          logger.warn(s"${bot.host}: could not check or log in the account: ${e.getMessage}")
+          logger.warn(s"${bot.host}: could not check or log in the account: ${e.getMessage}; trying again in $recheck")
           Status.Anonymous
       }
     if (checked != status || nextCheck.isEmpty) logger.info(s"${bot.host}: ${checked.describe}")
@@ -78,15 +98,8 @@ class CommonsLogin(
   private def userInfo(): Status =
     parseUserInfo(Json.parse(Await.result(bot.post(UserInfoParams), Timeout)))
 
-  /** Logs in; MediaWiki answers a refused login with a result other than `Success`.
-    * @return false if the wiki refused it
-    */
-  private def login(c: Credentials): Boolean = {
-    val result = Await.result(bot.login(c.user, c.password), Timeout)
-    val success = result == "Success"
-    if (!success) logger.warn(s"${bot.host}: login as ${c.user} failed: $result; trying again in $loginRetry")
-    success
-  }
+  /** Logs in: `Success`, or why MediaWiki didn't log the account in. */
+  private def login(c: Credentials): String = Await.result(bot.login(c.user, c.password), Timeout)
 }
 
 object CommonsLogin {
@@ -103,6 +116,11 @@ object CommonsLogin {
   val LoginRetry: FiniteDuration = 6.hours
 
   val Timeout: FiniteDuration = 1.minute
+
+  val LoginSuccess = "Success"
+
+  /** `action=login` results that aren't about the password: a token the session lost. */
+  val TransientLoginResults: Set[String] = Set("NeedToken", "WrongToken")
 
   val UserInfoParams: Map[String, String] =
     Map("action" -> "query", "meta" -> "userinfo", "uiprop" -> "rights", "format" -> "json", "utf8" -> "")
@@ -134,9 +152,13 @@ object CommonsLogin {
     val Anonymous: Status = Status(None, highLimits = false)
   }
 
-  /** A `meta=userinfo` answer: `anon` (and id 0) for an anonymous session. */
+  /** A `meta=userinfo` answer: `anon` (and id 0) for an anonymous session.
+    * @throws IllegalStateException for an answer without `userinfo` (an API error): it
+    *                               doesn't say whether the session has ended
+    */
   def parseUserInfo(json: JsValue): Status = {
-    val info = json \ "query" \ "userinfo"
+    val info = (json \ "query" \ "userinfo").toOption.getOrElse(
+      throw new IllegalStateException(s"no userinfo in the answer: ${Json.stringify(json).take(200)}"))
     val anonymous = (info \ "anon").isDefined || (info \ "id").asOpt[Long].forall(_ == 0L)
     if (anonymous) Status.Anonymous
     else Status((info \ "name").asOpt[String], (info \ "rights").asOpt[Seq[String]].exists(_.contains("apihighlimits")))
