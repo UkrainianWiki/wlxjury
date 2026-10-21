@@ -162,11 +162,28 @@ class GalleryController @Inject() (
       roundId: Long = 0,
       rate: Option[Int] = None,
       rated: Option[Boolean] = None
-  ): EssentialAction = withAuthOn(blocking)() { user => implicit request =>
+  ): EssentialAction = withAuthOn(blocking)() { sessionUser => implicit request =>
     val maybeRound =
-      if (roundId == 0) Round.activeRounds(user).headOption
+      if (roundId == 0) Round.activeRounds(sessionUser).headOption
       else Round.findById(roundId)
+    // a round of another of the user's contests opens in that contest
+    val user = maybeRound.fold(sessionUser)(r => Secured.inContest(sessionUser, r.contestId))
 
+    Secured.switchingContest(sessionUser, user)(gallery(user, module, asUserId, pager, region, roundId,
+      rate, rated, maybeRound))
+  }
+
+  private def gallery(
+      user: User,
+      module: String,
+      asUserId: Long,
+      pager: Pager,
+      region: String,
+      roundId: Long,
+      rate: Option[Int],
+      rated: Option[Boolean],
+      maybeRound: Option[Round]
+  )(implicit request: Request[AnyContent]): Result = {
     val roundContestId = maybeRound.map(_.contestId).getOrElse(0L)
     val round = maybeRound.get
     val subRegions = round.specialNomination.contains("Віа Регіа")
@@ -396,16 +413,12 @@ class GalleryController @Inject() (
   }
 
   def thumbnailUrls(contestId: Long, roundId: Option[Long]): EssentialAction =
-    withAuth() { user => implicit request =>
+    withAuth(contestPermission(Set(User.ADMIN_ROLE), Some(contestId))) { _ => implicit request =>
       val contest = ContestJuryJdbc.findById(contestId).get
-      if (user.isAdmin(Some(contestId))) {
-        val urls = resizedImagesUrls(contestId, roundId)
-        val name =
-          "WLXJury_Round_Thumb_Urls" + contest.fullName.replaceAll(" ", "_")
-        urlsStream(urls, name)
-      } else {
-        onUnAuthorized(user)
-      }
+      val urls = resizedImagesUrls(contestId, roundId)
+      val name =
+        "WLXJury_Round_Thumb_Urls" + contest.fullName.replaceAll(" ", "_")
+      urlsStream(urls, name)
     }
 }
 

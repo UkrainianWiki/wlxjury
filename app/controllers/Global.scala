@@ -22,7 +22,13 @@ object Global {
 
   val sizeFactors = Seq(1.0, 1.5, 2.0)
 
-  lazy val commons = MwBot.fromHost(COMMONS_WIKIMEDIA_ORG)
+  /** The app's Commons bot: `MwBot.fromHost` keeps one bot (and its session cookies) per
+    * host, so this is [[modules.AppModule.bot]] too, logged in by the import jobs'
+    * [[services.imports.CommonsLogin]] when credentials are set. Anonymous where no app
+    * has started (scripts, some specs), unless `SCALAWIKI_LOGIN` / `SCALAWIKI_PASSWORD`
+    * are set: then scalawiki logs it in as that account when it is created.
+    */
+  lazy val commons: MwBot = MwBot.fromHost(COMMONS_WIKIMEDIA_ORG)
 
   val useLegacyThumbUrl = true
   val thumbUrl: (Image, Int, Int) => String =

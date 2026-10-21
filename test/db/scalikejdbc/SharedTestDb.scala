@@ -9,7 +9,7 @@ object SharedTestDb {
 
   private val dataTables = Seq(
     "job", "criteria_rate", "selection", "category_members", "comment",
-    "criteria", "round_user", "images", "rounds", "users",
+    "criteria", "round_user", "user_contest", "images", "rounds", "users",
     "category", "monument", "contest_jury"
   )
 

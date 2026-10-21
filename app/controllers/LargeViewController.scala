@@ -29,8 +29,11 @@ class LargeViewController @Inject() (
       roundId: Long,
       rate: Option[Int],
       module: String
-  ): EssentialAction = withAuth() { user => implicit request =>
-    show(pageId, user, asUserId, rate, region, roundId, module)
+  ): EssentialAction = withAuth() { sessionUser => implicit request =>
+    // a round of another of the user's contests opens in that contest
+    val user = Some(roundId).filter(_ != 0).flatMap(Round.findById(_))
+      .fold(sessionUser)(r => Secured.inContest(sessionUser, r.contestId))
+    Secured.switchingContest(sessionUser, user)(show(pageId, user, asUserId, rate, region, roundId, module))
   }
 
   def largeCurrentUser(

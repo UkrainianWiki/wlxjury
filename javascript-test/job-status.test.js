@@ -47,6 +47,18 @@ describe("formatJobStatus", () => {
         expect(formatJobStatus({ status: "running", title: "Importing", progressDone: 3, progressUnit: "pages" }))
             .toBe("Importing: 3 pages…");
     });
+
+    test("shows an import's counts, leaving out the zero ones", () => {
+        expect(formatJobStatus({
+            status: "running", title: "Importing files from Category:X",
+            progressDone: 100, progressTotal: 400, progressUnit: "files",
+            details: { inserted: 1200, linked: 0, updated: 3, monumentIdsChanged: 0, missingTitles: [] }
+        })).toBe("Importing files from Category:X: 100 / 400 files (25%), 1,200 new, 3 updated…");
+        expect(formatJobStatus({ status: "done", details: { inserted: 0, missing: 300, missingTitles: ["File:A.jpg", "File:B.jpg"] } }))
+            .toBe("Done, 300 not found");
+        expect(formatJobStatus({ status: "done", details: { monuments: 51234 } })).toBe("Done, 51,234 monuments");
+        expect(formatJobStatus({ status: "done", details: { inserted: 0, updated: 0 } })).toBe("Done");
+    });
 });
 
 describe("formatJobProgress", () => {

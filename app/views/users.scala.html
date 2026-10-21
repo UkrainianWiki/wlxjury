@@ -20,6 +20,10 @@
             @for(contest <- contestOpt) {
                 <h3>@Messages("contest") @contest.fullName</h3>
 
+                @flash.get("users-added").map { msg =>
+                    <div class="alert alert-info">@msg</div>
+                }
+
                 <div style="margin-bottom: 10px">
                     <a href="@routes.UserController.importUsers(contest.id)" style="margin-right: 5px">
                         <div class="btn btn-primary">@Messages("mass.import")</div>
@@ -79,9 +83,18 @@
                             <td>
                                 @user.email
                             </td>
-                            <td>@user.roles.filterNot(_.startsWith("USER_ID")).map(r => Messages(r)).mkString(", ") </td>
+                            @if(contestOpt.nonEmpty) {
+                                <td>@user.contestRoles.toSeq.sorted.map(r => Messages(r)).mkString(", ") </td>
+                            } else {
+                                <td>
+                                    @if(user.isRoot) { @Messages("root")<br/> }
+                                    @for(uc <- user.userContests) {
+                                        @contests.find(_.id.contains(uc.contestId)).fold(uc.contestId.toString)(_.fullName): @uc.roles.map(r => Messages(r)).mkString(", ")<br/>
+                                    }
+                                </td>
+                            }
                             <td>
-                                <a href="/users/edit/@user.id">
+                                <a href="@routes.UserController.editUser(user.getId, contestOpt.flatMap(_.id))">
                                     <button type="button" class="btn btn-default btn-xs">
                                         <span class="glyphicon glyphicon-edit" aria-hidden="true"></span>
                                     </button>

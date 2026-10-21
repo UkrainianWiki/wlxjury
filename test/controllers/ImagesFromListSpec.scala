@@ -4,10 +4,10 @@ import db.scalikejdbc.{CategoryJdbc, SharedTestDb, TestDb}
 import org.intracer.wmua.JuryTestHelpers
 import org.specs2.mutable.Specification
 import org.specs2.specification.{BeforeAll, BeforeEach}
-import services.{ImageService, MonumentService}
+import services.TestImportServices
+import services.imports.{CommonsLogin, ImportSource, MwCommonsSource}
 
-import scala.concurrent.{ExecutionContext, ExecutionContextExecutor}
-
+/** Importing a pasted list of files, over Commons. */
 class ImagesFromListSpec extends Specification with JuryTestHelpers with TestDb
     with BeforeAll with BeforeEach {
 
@@ -19,19 +19,16 @@ class ImagesFromListSpec extends Specification with JuryTestHelpers with TestDb
   val categoryName = "Category:Category Name"
   val contestId = 10
 
-  implicit val ec: ExecutionContextExecutor = ExecutionContext.global
-
   "contest" should {
 
     "import from list" in {
       val list = resourceAsString("ArmeniaImageList.txt")
-      val names = list.split(System.lineSeparator)
-      val uniqueNormalizedNames = names.map(_.replace("_", " ")).distinct
+      val uniqueNormalizedNames = ImportSource.titles(list)
 
       val contest = contestDao.create(Some(contestId), "WLE", 2020, "Armenia", Some(categoryName))
 
-      val ic = new ImageService(Global.commons, mock[MonumentService])
-      ic.appendImages(categoryName, list, contest)
+      val commons = new MwCommonsSource(Global.commons, CommonsLogin.anonymous(Global.commons))
+      new TestImportServices(commons).imageService.importFiles(contest, categoryName, list)
 
       val dbCategories = categoryDao.findAll()
 
