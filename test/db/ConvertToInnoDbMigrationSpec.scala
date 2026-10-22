@@ -94,7 +94,12 @@ class ConvertToInnoDbMigrationSpec extends Specification with AfterAll {
       "ALTER TABLE selection AUTO_INCREMENT = 5000",
       "INSERT INTO comment (user_id, username, round_id, body, contest_id) VALUES (1, 'Juror 1', 40, 'Добре фото', 7)",
       "INSERT INTO criteria_rate (selection, criteria, rate) VALUES (10, 1, 5)",
-      "INSERT INTO selection_backup (page_id, rate, round, jury_id) VALUES (100, 1, 40, 1)"
+      "INSERT INTO selection_backup (page_id, rate, round, jury_id) VALUES (100, 1, 40, 1)",
+      // the legacy user_contest's rows, as production has 813 of them: roles the old code
+      // never read, a second role in one contest, a soft-deleted row
+      "INSERT INTO user_contest (id, user_id, contest_id, role, deleted_at) VALUES " +
+        "(1, 1, 7, 'jury', NULL), (2, 1, 7, 'no', NULL), (3, 5, 7, 'jury1', NULL), " +
+        "(4, 1, 99, 'organizer', '2019-05-01 00:00:00')"
     ))
     c
   }
@@ -179,6 +184,12 @@ class ConvertToInnoDbMigrationSpec extends Specification with AfterAll {
         rows(c, "SELECT user_id, contest_id, role FROM user_contest ORDER BY user_id")(rs =>
           (rs.getLong(1), rs.getLong(2), rs.getString(3))) === List(
           (1L, 7L, "jury"), (5L, 7L, "admin"), (11L, 8L, "organizer"), (15L, 8L, "jury"))
+        // the legacy table is set aside with its rows, not reused
+        rows(c, "SELECT id FROM user_contest_legacy ORDER BY id")(_.getLong(1)) === List(1L, 2L, 3L, 4L)
+        tableStatus(c)("user_contest")._1 === "InnoDB"
+        rows(c, """SELECT GROUP_CONCAT(COLUMN_NAME ORDER BY ORDINAL_POSITION) FROM information_schema.KEY_COLUMN_USAGE
+                   WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'user_contest' AND CONSTRAINT_NAME = 'PRIMARY'""")(
+          _.getString(1)) === List("user_id,contest_id")
         rows(c, "SELECT id FROM users WHERE is_root ORDER BY id")(_.getLong(1)) === List(10L)
         rows(c, """SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE()
                    AND TABLE_NAME = 'users' AND COLUMN_NAME IN ('roles', 'contest_id')""")(_.getInt(1)) === List(0)
