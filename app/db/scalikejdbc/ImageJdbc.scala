@@ -189,8 +189,46 @@ object ImageJdbc extends CRUDMapper[Image]
     sql"""UPDATE selection SET monument_id = $monumentId
           WHERE page_id = $pageId AND NOT (monument_id <=> $monumentId)""".update()
 
+  /** The stored file of that name, unless it was deleted on Commons (V63): a new upload
+    * under the same name is another file, with another page id.
+    */
   def findByFilename(filename: String)(implicit session: DBSession = AutoSession): Option[Image] =
-    findBy(sqls.eq(column.title, s"File:$filename"))
+    findBy(sqls.eq(column.title, s"File:$filename").and(sqls"deleted_at IS NULL"))
+
+  /** Stores what Commons now says of the file itself (after a rename or a new version):
+    * its title, url, size and type. Its monument id, description and author, which come
+    * from the page text, stay as they are.
+    */
+  def updateFileInfo(image: Image)(implicit session: DBSession): Unit =
+    updateById(image.pageId).withAttributes(
+      "title" -> image.title,
+      "url" -> image.url,
+      "pageUrl" -> image.pageUrl,
+      "width" -> image.width,
+      "height" -> image.height,
+      "size" -> image.size,
+      "mime" -> image.mime,
+      "mediaType" -> image.mediaType
+    )
+
+  /** Marks the files deleted on Commons, and moves their selection rows to
+    * selection_deleted (V63): every gallery, count and result reads selection, so they no
+    * longer show them. The image rows stay: deleting them would cascade to the votes.
+    *
+    * @return the rounds that lost rows (their cached image counts are stale)
+    */
+  def markDeleted(pageIds: Seq[Long])(implicit session: DBSession): Seq[Long] =
+    if (pageIds.isEmpty) Nil
+    else {
+      sql"UPDATE images SET deleted_at = NOW(3) WHERE page_id IN ($pageIds) AND deleted_at IS NULL".update()
+      val roundIds = sql"SELECT DISTINCT round_id FROM selection WHERE page_id IN ($pageIds)"
+        .map(_.longOpt(1))
+        .list()
+        .flatten
+      sql"INSERT IGNORE INTO selection_deleted SELECT * FROM selection WHERE page_id IN ($pageIds)".update()
+      sql"DELETE FROM selection WHERE page_id IN ($pageIds)".update()
+      roundIds
+    }
 
   def findByContestId(contestId: Long)(implicit session: DBSession = AutoSession): List[Image] =
     ContestJuryJdbc.findById(contestId).map(findByContest).getOrElse(Nil)

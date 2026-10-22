@@ -53,7 +53,8 @@ object DistributionState {
   *     images for a first round; the previous rounds' selections, grouped per image in
   *     SQL, otherwise; for top-N the ranked images (ranked once, by the first step);
   *  2. leave out the images already in the round (`NOT EXISTS`): a resumed or repeated
-  *     job never adds an image twice;
+  *     job never adds an image twice; and those deleted on Commons (`images.deleted_at`,
+  *     V63, set by [[services.imports.CommonsFileCheck]]);
   *  3. apply the round's per-image filters ([[DistributeImages.perImageFilters]], the
   *     same chain as the in-memory path);
   *  4. assign jurors from the job's running position ([[DistributeImages.assign]]) and
@@ -401,7 +402,7 @@ object DistributionSource {
   ): Seq[ImageWithRating] =
     sql"""SELECT ${i.result.*} FROM category_members cm JOIN images i ON i.page_id = cm.page_id
           WHERE cm.category_id = $categoryId AND cm.page_id > $from AND cm.page_id <= $to
-            AND ${notInRound(roundId, sqls"cm.page_id")}
+            AND i.deleted_at IS NULL AND ${notInRound(roundId, sqls"cm.page_id")}
           ORDER BY cm.page_id"""
       .map(rs => new ImageWithRating(ImageJdbc(i)(rs), Seq.empty))
       .list()
@@ -436,6 +437,7 @@ object DistributionSource {
                 AND ${notInRound(roundId, sqls"s.page_id")}
               GROUP BY s.page_id, s.round_id) g
             JOIN images i ON i.page_id = g.page_id
+            WHERE i.deleted_at IS NULL
             ORDER BY g.page_id, g.round_id"""
       .map(rs => (ImageJdbc(i)(rs), rs.intOpt("rs").getOrElse(0), rs.int("c")))
       .list()
@@ -455,7 +457,7 @@ object DistributionSource {
     if (ids.isEmpty) Nil
     else
       sql"""SELECT ${i.result.*} FROM images i
-            WHERE i.page_id IN ($ids) AND ${notInRound(roundId, sqls"i.page_id")}
+            WHERE i.page_id IN ($ids) AND i.deleted_at IS NULL AND ${notInRound(roundId, sqls"i.page_id")}
             ORDER BY i.page_id"""
         .map(rs => ImageJdbc(i)(rs))
         .list()
@@ -498,7 +500,7 @@ object DistributionSource {
         .map(rs => (rs.long(1), rs.long(2), rs.long(3)))
         .list()
       val images = if (page.isEmpty) Map.empty[Long, Image] else
-        sql"SELECT ${i.result.*} FROM images i WHERE i.page_id IN (${page.map(_._1)})"
+        sql"SELECT ${i.result.*} FROM images i WHERE i.page_id IN (${page.map(_._1)}) AND i.deleted_at IS NULL"
           .map(rs => ImageJdbc(i)(rs)).list().map(img => img.pageId -> img).toMap
       val candidates = page.flatMap { case (pageId, sum, count) =>
         images.get(pageId).map(img =>
