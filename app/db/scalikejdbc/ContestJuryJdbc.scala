@@ -32,12 +32,14 @@ object ContestJuryJdbc extends CRUDMapper[ContestJury] {
     campaign = rs.stringOpt(c.campaign)
   )
 
-  def setImagesSource(id: Long, images: Option[String])(implicit session: DBSession = AutoSession): Int = {
-    val categoryId = images.map(CategoryJdbc.findOrInsert)
-
+  /** Sets the contest's source of files, and its category (by the source's title, unless
+    * the caller has looked it up).
+    */
+  def setImagesSource(id: Long, images: Option[String], categoryId: Option[Long] = None)(implicit
+      session: DBSession = AutoSession
+  ): Int =
     updateById(id)
-      .withAttributes("images" -> images, "categoryId" -> categoryId)
-  }
+      .withAttributes("images" -> images, "categoryId" -> categoryId.orElse(images.map(CategoryJdbc.findOrInsert)))
 
   def updateGreeting(id: Long, greeting: Greeting): Int =
     updateById(id)

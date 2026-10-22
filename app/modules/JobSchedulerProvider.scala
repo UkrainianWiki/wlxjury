@@ -4,6 +4,7 @@ import play.api.Configuration
 import play.api.db.DBApi
 import play.api.inject.ApplicationLifecycle
 import services.distribution.RoundDistributionHandler
+import services.imports.{ImageImportHandler, MonumentListImportHandler}
 import services.jobs.JobScheduler
 
 import javax.inject.{Inject, Provider, Singleton}
@@ -18,11 +19,13 @@ class JobSchedulerProvider @Inject() (
     config: Configuration,
     lifecycle: ApplicationLifecycle,
     dbApi: DBApi,
-    roundDistribution: RoundDistributionHandler
+    roundDistribution: RoundDistributionHandler,
+    imageImport: ImageImportHandler,
+    monumentLists: MonumentListImportHandler
 ) extends Provider[JobScheduler] {
 
   lazy val get: JobScheduler = {
-    val scheduler = new JobScheduler(Seq(roundDistribution), JobScheduler.Settings.from(config))
+    val scheduler = new JobScheduler(Seq(roundDistribution, imageImport, monumentLists), JobScheduler.Settings.from(config))
     scheduler.start()
     lifecycle.addStopHook(() => Future.successful(scheduler.stop()))
     scheduler

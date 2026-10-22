@@ -145,6 +145,12 @@ object JobJdbc {
   def activeByDedupeKey(key: String)(implicit session: DBSession = AutoSession): Option[Job] =
     sql"SELECT $columns FROM job WHERE active_dedupe_key = $key".map(extract).single()
 
+  /** The key's active job as committed now, not as the caller's transaction's snapshot has
+    * it (a locking read), locked until the end of that transaction.
+    */
+  def lockActiveByDedupeKey(key: String)(implicit session: DBSession): Option[Job] =
+    sql"SELECT $columns FROM job WHERE active_dedupe_key = $key LOCK IN SHARE MODE".map(extract).single()
+
   /** The latest job of each subject, e.g. of each round of a contest. */
   def latestBySubjects(kind: String, subjectType: String, subjectIds: Seq[Long])(implicit
       session: DBSession = AutoSession
@@ -188,11 +194,15 @@ object JobJdbc {
                 AND (heartbeat_at IS NULL OR heartbeat_at < NOW(3) - INTERVAL $leaseSeconds SECOND)))"""
       .update() == 1
 
-  /** Renews the lease of every job `owner` runs. */
-  def heartbeat(owner: String)(implicit session: DBSession = AutoSession): Int =
-    sql"""UPDATE job SET heartbeat_at = NOW(3)
-          WHERE owner = $owner AND status = ${JobStatus.Running}"""
-      .update()
+  /** Renews the lease of the jobs `owner` runs and still holds: one it dropped (after a
+    * crash it couldn't record) is taken over when its lease expires.
+    */
+  def heartbeat(owner: String, ids: Seq[Long])(implicit session: DBSession = AutoSession): Int =
+    if (ids.isEmpty) 0
+    else
+      sql"""UPDATE job SET heartbeat_at = NOW(3)
+            WHERE owner = $owner AND status = ${JobStatus.Running} AND id IN ($ids)"""
+        .update()
 
   /** Hands `owner`'s running jobs back to the queue (a graceful shutdown): another
     * instance, or this one restarted, takes them at once instead of after the lease.

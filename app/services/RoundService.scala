@@ -115,7 +115,7 @@ class RoundService @Inject() (
         val created = dao.create(
           round.copy(number = number, submitToken = submitToken, active = false, distributing = true)
         )
-        created.addUsersIn(jurors.map(u => RoundUser(created.getId, u.getId, u.roles.head, active = true)))
+        created.addUsersIn(jurors.map(u => RoundUser(created.getId, u.getId, u.contestRole.getOrElse(User.JURY_ROLE), active = true)))
         val job = enqueueOrFail(created, completingCreation = true, imagesBefore = 0L, createdBy)
         (created, job)
       })

@@ -107,7 +107,7 @@ object MonumentJdbc extends SQLSyntaxSupport[Monument] {
   // ── Public API ─────────────────────────────────────────────────────────────
 
   /** Upsert monuments — inserts new rows, updates all columns on duplicate id.
-   *  Use for production data refresh (MonumentService.updateLists).
+   *  Use for production data refresh (MonumentListImportHandler).
    *  More efficient than REPLACE INTO: no delete step, no auto-increment side-effects.
    */
   def batchInsert(monuments: Seq[Monument])(implicit session: DBSession = AutoSession): Unit =
@@ -128,6 +128,11 @@ object MonumentJdbc extends SQLSyntaxSupport[Monument] {
         .into(MonumentJdbc)
         .namedValues(columnDefs: _*)
     }.batch(toBatchParams(monuments): _*).apply()
+
+  /** The list page each stored monument of `ids` is from. */
+  def pagesOf(ids: Seq[String])(implicit session: DBSession = autoSession): Map[String, String] =
+    if (ids.isEmpty) Map.empty
+    else sql"SELECT id, page FROM monument WHERE id IN ($ids)".map(rs => rs.string(1) -> rs.string(2)).list().toMap
 
   def findAll(
       limit: Option[Int] = None

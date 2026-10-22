@@ -91,7 +91,7 @@ class LoginControllerSpec extends PlaySpecification with Results with PlayTestDb
           User("name",
                "qwerty@dot.com",
                password = Some(User.sha1("strong")),
-               roles = Set(User.ROOT_ROLE))
+               isRoot = true)
         )
         val result = login
           .auth()
@@ -133,6 +133,45 @@ class LoginControllerSpec extends PlaySpecification with Results with PlayTestDb
 
         status(result) === SEE_OTHER
         session(result).get(Secured.UserName) === Some("new@dot.com")
+      }
+    }
+
+    def signUp(loginName: String)(implicit app: Application) = {
+      implicit val mat: Materializer = app.materializer
+      login
+        .signUp()
+        .apply(
+          FakeRequest()
+            .withFormUrlEncodedBody(
+              "login" -> loginName,
+              "password" -> "anything",
+              "repeat.password" -> "anything"
+            )
+            .withCSRFToken)
+    }
+
+    "not log in as an existing account with the email" in {
+      testDbApp { implicit app =>
+        val root = User.create(
+          User("root", "root@dot.com", password = Some(User.sha1("strong")), roles = Set(User.ROOT_ROLE))
+        )
+        val result = signUp("Root@Dot.com")
+
+        status(result) === BAD_REQUEST
+        session(result).get(Secured.UserName) must beNone
+        User.findAll().map(_.id) === Seq(root.id)
+        User.findById(root.getId).flatMap(_.password) === Some(User.sha1("strong"))
+      }
+    }
+
+    "not take a login that is not an email: it would be read as someone's wiki account" in {
+      testDbApp { implicit app =>
+        User.create(User("Wiki user", "wiki@dot.com", wikiAccount = Some("WikiUser"), password = Some("x")))
+        val result = signUp("WikiUser")
+
+        status(result) === BAD_REQUEST
+        session(result).get(Secured.UserName) must beNone
+        User.findAll().size === 1
       }
     }
   }

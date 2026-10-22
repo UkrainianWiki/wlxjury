@@ -46,10 +46,7 @@ object GatlingDbSetup {
     val ratingRound = rounds.find(_.name.exists(_.contains("Rating")))
       .getOrElse(throw new RuntimeException("Rating round not found"))
 
-    val allUsers = User.findAllBy(sqls.eq(User.defaultAlias.contestId, contestId))
-
-    val jurors = allUsers
-      .filter(_.roles.contains("jury"))
+    val jurors = User.loadJurors(contestId)
       .sortBy(_.email)
       .map { u =>
         val email = u.email
@@ -57,7 +54,7 @@ object GatlingDbSetup {
         (u.id.get, email, s"pass$idx")
       }
 
-    val orgUser = allUsers.find(_.roles.contains("admin"))
+    val orgUser = User.findByContestAndRoles(contestId, Seq("admin")).headOption
       .getOrElse(throw new RuntimeException("Organizer not found"))
     val organizer = (orgUser.id.get, orgUser.email, "orgpass")
 

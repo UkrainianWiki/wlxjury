@@ -62,9 +62,7 @@ case class Round(
   def openToJurors: Boolean = active && !distributing
 
   def availableJurors(implicit session: DBSession = AutoSession): Seq[User] =
-    User.findAllBy(
-      sqls.in(User.u.roles, roles.toSeq).and.eq(User.u.contestId, contestId)
-    )
+    User.findByContestAndRoles(contestId, roles.toSeq)
 
   lazy val numberOfActiveJurors = SelectionJdbc.activeJurors(id.get)
 
@@ -453,7 +451,7 @@ object RoundUser extends JoinTable[RoundUser] {
     )
 
   def apply(r: Round, u: User): Option[RoundUser] =
-    for (rId <- r.id; uId <- u.id) yield RoundUser(rId, uId, u.roles.head, active = true)
+    for (rId <- r.id; uId <- u.id) yield RoundUser(rId, uId, u.contestRole.getOrElse(User.JURY_ROLE), active = true)
 
   def activeJurors(roundId: Long): List[RoundUser] =
     where("roundId" -> roundId, "active" -> true).apply()
