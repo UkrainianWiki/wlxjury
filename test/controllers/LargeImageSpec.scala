@@ -52,7 +52,7 @@ class LargeImageSpec extends PlaySpecification with PlayTestDb {
 
   private def request(url: String): RequestHeader = {
     FakeRequest(GET, url)
-      .withSession(Secured.UserName -> email)
+      .withSession(Secured.UserName -> email, Secured.CurrentContestId -> contest.getId.toString)
       .withHeaders("Accept" -> "application/json")
       .withCSRFToken
   }

@@ -21,6 +21,7 @@ trait TestDb {
   val roundDao: Round.type             = Round
   val selectionDao: SelectionJdbc.type = SelectionJdbc
   val userDao: User.type               = User
+  val userContestDao: UserContestJdbc.type = UserContestJdbc
 
   def now: ZonedDateTime = TestDb.now
 
@@ -72,7 +73,7 @@ trait TestDb {
       contest: ContestJury,
       session: DBSession = AutoSession
   ): Seq[User] =
-    userIndexes.map(i => contestUser(i, role)).map(userDao.create)
+    userIndexes.map(i => contestUser(i, role)).map(userDao.create(_))
 }
 
 object TestDb {

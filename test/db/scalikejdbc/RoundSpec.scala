@@ -24,6 +24,7 @@ class RoundSpec extends Specification with BeforeAll {
 
     "available jurors" in new AutoRollbackDb {
       implicit val contest: ContestJury = createContests(10).head
+      createContests(20)  // Create contest 20 for users that should be filtered out
       val created = roundDao.create(round)
       val jurors = createUsers(1 to 3).map(u => u.copy(roles = u.roles + s"USER_ID_${u.getId}"))
       createUsers("prejury", 11 to 13)

@@ -56,8 +56,10 @@ trait JobHandler {
   def details(job: Job): JsObject = JsObject.empty
 
   /** Runs before each step, outside any transaction: builds what the steps need and
-    * isn't in the job's state (it is lost on a restart), e.g. data from an external API.
-    * Cache it per job id; [[forget]] drops it.
+    * isn't in the job's state (it is lost on a restart). Cache it per job id; [[forget]]
+    * drops it. A handler that calls an external API before every step is a
+    * [[FetchingJobHandler]] instead: the scheduler fetches on its fetch lane
+    * (`jobs.fetchWorkers`), not on a worker, and gives the job its step once it is done.
     */
   def prepare(job: Job): Unit = ()
 

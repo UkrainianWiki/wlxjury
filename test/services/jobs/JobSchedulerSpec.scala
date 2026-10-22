@@ -3,11 +3,11 @@ package services.jobs
 import db.scalikejdbc.SharedTestDb
 import org.specs2.mutable.Specification
 import org.specs2.specification.{AfterEach, BeforeAll, BeforeEach}
-import play.api.libs.json.{JsObject, Json}
+import play.api.libs.json.{JsObject, JsValue, Json}
 import scalikejdbc._
 
 import java.util.concurrent.atomic.AtomicInteger
-import java.util.concurrent.{ConcurrentHashMap, CopyOnWriteArrayList}
+import java.util.concurrent.{ConcurrentHashMap, CopyOnWriteArrayList, CountDownLatch, TimeUnit}
 import scala.collection.mutable
 import scala.concurrent.duration._
 import scala.jdk.CollectionConverters._
@@ -60,6 +60,36 @@ class JobSchedulerSpec extends Specification with BeforeAll with BeforeEach with
     override def onRetry(job: Job, ctx: StepContext): JsObject = { retried.add(job.id); job.state }
   }
 
+  /** Fetches page `state.page` before each step (waiting for `gate` first, as for a slow
+    * API) and writes it; `params.steps` pages. Records its fetches and writes.
+    */
+  class PagingHandler(val kind: String) extends FetchingJobHandler[Int] {
+    val fetches = new CopyOnWriteArrayList[Int]()
+    val writes = new CopyOnWriteArrayList[Int]()
+    @volatile var gate = new CountDownLatch(0)
+    val failAtPage = new ConcurrentHashMap[Long, Int]()
+
+    private def page(job: Job) = (job.state \ "page").asOpt[Int].getOrElse(0)
+
+    def cursorOf(job: Job): JsValue = Json.toJson(page(job))
+
+    def fetch(job: Job): Int = {
+      gate.await(10, TimeUnit.SECONDS)
+      val p = page(job)
+      if (failAtPage.containsKey(job.id) && failAtPage.get(job.id) == p) throw new RuntimeException(s"API down at page $p")
+      fetches.add(p)
+      p
+    }
+
+    def write(job: Job, fetched: Int, ctx: StepContext): StepResult = {
+      writes.add(fetched)
+      val pages = (job.params \ "steps").as[Int]
+      val state = Json.obj("page" -> (fetched + 1))
+      val progress = Progress(Some(fetched + 1L), Some(pages.toLong), Some("pages"))
+      if (fetched + 1 >= pages) StepResult.Done(state, progress) else StepResult.Continue(state, progress)
+    }
+  }
+
   private def background(handlers: Seq[JobHandler], workers: Int = 3, limits: Map[String, Int] = Map.empty,
       lease: FiniteDuration = 60.seconds): JobScheduler = {
     val s = new JobScheduler(handlers, JobScheduler.Settings(
@@ -109,6 +139,17 @@ class JobSchedulerSpec extends Specification with BeforeAll with BeforeEach with
       enqueue(s, newJob("count", 1, subject = Some(7)))
       s.retry(failed.id) must beLeft
       status(failed.id) === JobStatus.Failed // its onRetry's writes rolled back with the requeue
+    }
+
+    "give the second request the active job committed after its transaction first read" in {
+      val h = new CountingHandler("count")
+      val s = background(Seq(h))
+      val (first, second) = DB.localTx { implicit session =>
+        sql"SELECT COUNT(*) FROM job".map(_.long(1)).single() // the transaction's snapshot: no job yet
+        val first = enqueue(s, newJob("count", 1, subject = Some(42))) // another request, committed
+        (first, s.enqueue(newJob("count", 1, subject = Some(42))))
+      }
+      second must beLeft(first)
     }
   }
 
@@ -213,6 +254,17 @@ class JobSchedulerSpec extends Specification with BeforeAll with BeforeEach with
       status(live.id) === JobStatus.Running
     }
 
+    "not renew the lease of its job that it dropped, and take it over when the lease expires" in {
+      val h = new CountingHandler("count")
+      val s = background(Seq(h), lease = 1.second)
+      // its own, but not held: as after a step crashed on a database error it couldn't record
+      val dropped = enqueue(s, newJob("count", 2))
+      sql"""UPDATE job SET status = 'running', owner = ${s.instanceId}, heartbeat_at = NOW(3)
+              WHERE id = ${dropped.id}""".update()(AutoSession)
+      s.start()
+      s.await(dropped.id, 10.seconds).status === JobStatus.Done
+    }
+
     "hand its running jobs back to the queue when stopped, for the next instance to resume" in {
       val h = new CountingHandler("count")
       val first = background(Seq(h), workers = 1)
@@ -240,6 +292,66 @@ class JobSchedulerSpec extends Specification with BeforeAll with BeforeEach with
       s.start()
       Thread.sleep(300)
       status(other.id) === JobStatus.Queued
+    }
+  }
+
+  "the fetch lane" should {
+
+    "fetch off the workers: a waiting fetch doesn't hold up another kind's steps" in {
+      val paging = new PagingHandler("paging")
+      paging.gate = new CountDownLatch(1)
+      val count = new CountingHandler("count")
+      val s = background(Seq(paging, count), workers = 1)
+      s.start()
+      val p = enqueue(s, newJob("paging", 3))
+      val c = enqueue(s, newJob("count", 5, contest = 2))
+      s.wake()
+      s.await(c.id, 10.seconds).status === JobStatus.Done
+      status(p.id) === JobStatus.Running
+      paging.writes.isEmpty must beTrue
+
+      paging.gate.countDown()
+      s.await(p.id, 10.seconds).status === JobStatus.Done
+      paging.fetches.asScala.toSeq === Seq(0, 1, 2)
+      paging.writes.asScala.toSeq === Seq(0, 1, 2)
+    }
+
+    "fail a job whose fetch fails, and resume it from that page on retry" in {
+      val paging = new PagingHandler("paging")
+      val s = background(Seq(paging))
+      s.start()
+      val p = enqueue(s, newJob("paging", 4))
+      paging.failAtPage.put(p.id, 2)
+      s.started(p.id)
+      val failed = s.await(p.id, 10.seconds)
+      failed.status === JobStatus.Failed
+      failed.error must beSome(contain("API down at page 2"))
+      (failed.state \ "page").as[Int] === 2
+
+      paging.failAtPage.remove(p.id)
+      s.retry(p.id) must beRight
+      s.await(p.id, 10.seconds).status === JobStatus.Done
+      paging.writes.asScala.toSeq === Seq(0, 1, 2, 3)
+    }
+
+    "write nothing when the job's cursor moved since its fetch" in {
+      val paging = new PagingHandler("paging")
+      val job = enqueue(background(Seq(paging)), newJob("paging", 3))
+      val step = paging.fetchStep(job) // page 0
+      val moved = job.copy(state = Json.obj("page" -> 1))
+      DB.localTx(s => step(moved, new StepContext(s))) must beLike {
+        case StepResult.Continue(state, _) => state === moved.state
+      }
+      paging.writes.isEmpty must beTrue
+    }
+
+    "fetch and write in the starting call when inline" in {
+      val paging = new PagingHandler("paging")
+      val s = new JobScheduler(Seq(paging), JobScheduler.Settings(mode = JobScheduler.Mode.Inline))
+      val job = DB.localTx(implicit session => s.enqueue(newJob("paging", 3))).toOption.get
+      s.started(job.id)
+      status(job.id) === JobStatus.Done
+      paging.writes.asScala.toSeq === Seq(0, 1, 2)
     }
   }
 

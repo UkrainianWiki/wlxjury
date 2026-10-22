@@ -38,6 +38,15 @@ object CategoryLinkJdbc extends SQLSyntaxSupport[CategoryLink] {
     batchInsert(categoryLinks)
   }
 
+  /** Puts the pages in the category, skipping the links that exist (unique
+    * cm_category_page), so an import page repeated after a crash or a retry is a no-op.
+    */
+  def linkIgnore(categoryId: Long, pageIds: Seq[Long])(implicit session: DBSession): Unit =
+    if (pageIds.nonEmpty)
+      sql"INSERT IGNORE INTO category_members (category_id, page_id) VALUES (?, ?)"
+        .batch(pageIds.map(id => Seq(categoryId, id)): _*)
+        .apply()
+
   def batchInsert(links: Seq[CategoryLink])(implicit session: DBSession = AutoSession): Unit = {
     val column = CategoryLinkJdbc.column
 

@@ -218,8 +218,8 @@ routesGenerator := InjectedRoutesGenerator
 Test / javaOptions += "-Dconfig.file=test/resources/application.conf"
 Test / javaOptions += "-Djna.nosys=true"
 Test / fork := true
-// Forward -Dintegration, -Ddocker.tests, and -Dgenerate.baseline to the forked test JVM
-Test / javaOptions ++= Seq("integration", "docker.tests", "generate.baseline").flatMap { key =>
+// Forward -Dintegration, -Ddocker.tests, -Dgenerate.baseline and -Dimport.* (ImportScaleSpec) to the forked test JVM
+Test / javaOptions ++= Seq("integration", "docker.tests", "generate.baseline", "import.scale", "import.latencyMs", "import.pageSize").flatMap { key =>
   sys.props.get(key).map(v => s"-D$key=$v")
 }
 

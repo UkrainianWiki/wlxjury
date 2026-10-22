@@ -1,6 +1,7 @@
 -- Production's jury schema at V53, MyISAM (structure only, from an anonymised copy of the
 -- production database, 2026-10): the starting point of V55_1ConvertToInnoDbSpec.
--- selection_backup stands for the legacy tables the conversion leaves alone.
+-- selection_backup stands for the legacy tables the conversion leaves alone. user_contest
+-- is the legacy table of an older multi-contest attempt, which V61 must not reuse.
 CREATE TABLE `users` (
   `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
   `fullname` varchar(255) NOT NULL,
@@ -193,4 +194,15 @@ CREATE TABLE `selection_backup` (
   KEY `selection_round_index` (`round`),
   KEY `selection_jury_id_index` (`jury_id`),
   KEY `selection_page_id_index` (`page_id`)
+) ENGINE=MyISAM DEFAULT CHARSET=utf8mb3 COLLATE=utf8mb3_general_ci;
+CREATE TABLE `user_contest` (
+  `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  `user_id` int(11) NOT NULL,
+  `contest_id` int(11) NOT NULL,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  `deleted_at` timestamp NULL DEFAULT NULL,
+  `role` varchar(32) DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `id` (`id`),
+  UNIQUE KEY `user_contest_index` (`user_id`,`contest_id`,`role`)
 ) ENGINE=MyISAM DEFAULT CHARSET=utf8mb3 COLLATE=utf8mb3_general_ci;

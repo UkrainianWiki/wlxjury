@@ -2,21 +2,20 @@ package controllers
 
 import db.scalikejdbc.{ContestJuryJdbc, ImageJdbc, User}
 import org.intracer.wmua.ContestJury
-import org.intracer.wmua.cmd.FetchImageInfo
-import org.scalawiki.MwBot
 import play.api.data.Form
 import play.api.data.Forms._
 import play.api.i18n.I18nSupport
 import play.api.mvc.{ControllerComponents, EssentialAction}
 import play.api.libs.json.Json
+import services.imports.CommonsSource
+import services.jobs.Job
 import services.{ImageService, LocalImageCacheService}
-import spray.util.pimpFuture
 
 import javax.inject.Inject
 import scala.concurrent.ExecutionContext
 
 class ImageController @Inject() (
-    val commons: MwBot,
+    commonsSource: CommonsSource,
     cc: ControllerComponents,
     imageService: ImageService,
     localImageCacheService: LocalImageCacheService
@@ -26,7 +25,7 @@ class ImageController @Inject() (
 
   /** Shows contest images view
     */
-  def images(contestId: Long, inProgress: Boolean = false): EssentialAction =
+  def images(contestId: Long): EssentialAction =
     withAuth(contestPermission(User.ADMIN_ROLES, Some(contestId))) { user => implicit request =>
       val contest = ContestJuryJdbc.findById(contestId).get
 
@@ -37,15 +36,17 @@ class ImageController @Inject() (
         importImagesForm.fill((contest.images.getOrElse(""), "", ""))
       Ok(
         views.html
-          .contest_images(filledForm, contest, user, sourceImageNum, dbImagesNum, inProgress)
+          .contest_images(filledForm, contest, user, sourceImageNum, dbImagesNum, importJobs(contestId))
       )
     }
 
-  def getNumberOfImages(contest: ContestJury): Long = {
-    contest.images.fold(0L) { images =>
-      FetchImageInfo(images, Seq.empty, contest, commons).numberOfImages.await
-    }
-  }
+  /** The contest's latest import jobs, each with what it does. */
+  private def importJobs(contestId: Long): Seq[(Job, String)] =
+    imageService.latestJobs(contestId).map(j => j -> imageService.title(j))
+
+  /** The number of files in the contest's source, if it is a category. */
+  def getNumberOfImages(contest: ContestJury): Long =
+    contest.images.flatMap(commonsSource.categoryFileCount).getOrElse(0L)
 
   /** Imports images from commons
     */
@@ -58,18 +59,20 @@ class ImageController @Inject() (
           formWithErrors =>
             BadRequest(
               views.html
-                .contest_images(formWithErrors, contest, user, 0, ImageJdbc.countByContest(contest))
+                .contest_images(formWithErrors, contest, user, 0, ImageJdbc.countByContest(contest), importJobs(contestId))
             ),
           { case (source, list, action) =>
-            val withNewImages = contest.copy(images = Some(source))
-
-            if (action == "import.files") {
-              imageService.appendImages(source, list, withNewImages)
-            } else if (action == "update.monuments") {
-              imageService.updateImageMonuments(source, withNewImages)
+            // the import runs in the background: the files page shows its progress
+            val jobs =
+              if (action == "import.files") Seq(imageService.importFiles(contest, source, list, user.id))
+              else if (action == "update.monuments") imageService.updateMonuments(contest, source, user.id)
+              else Nil
+            val back = Redirect(routes.ImageController.images(contestId))
+            jobs.collect { case Left(running) => running } match {
+              case Nil => back
+              case running =>
+                back.flashing("error" -> running.map(j => s"Already running: ${imageService.title(j)}.").mkString(" "))
             }
-
-            Redirect(routes.ImageController.images(contestId))
           }
         )
     }

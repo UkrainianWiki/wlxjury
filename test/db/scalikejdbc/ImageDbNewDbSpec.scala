@@ -180,8 +180,9 @@ class ImageDbNewDbSpec extends Specification with BeforeAll with TestDb {
 
     "page ids through the selection rows alone, then join the page's rows" in {
       val sql = page(3, 0).query().value
-      sql must contain("from (select s.id from selection s")
+      sql must contain("from (select s.id, rate as o0, s.monument_id as o1, s.page_id as o2 from selection s")
       sql must contain("STRAIGHT_JOIN images i")
+      sql must endWith("order by k.o0 desc, k.o1 asc, k.o2 asc")
     }
 
     "keep the gallery order across pages" in new AutoRollbackDb {
@@ -212,6 +213,17 @@ class ImageDbNewDbSpec extends Specification with BeforeAll with TestDb {
       page(3, 0).count() === expectedOrder.size
       // imageRank (the large view's navigation) agrees with the pages' positions
       expectedOrder.zipWithIndex.forall { case (p, i) => page(3, 0).imageRank(p) == i + 1 } must beTrue
+    }
+
+    // Ordering the joined rows by s.* columns made MariaDB copy them, images' TEXT
+    // columns included, into an on-disk temporary table for every gallery page.
+    "sort the page's rows without a temporary table" in new AutoRollbackDb {
+      import _root_.scalikejdbc._
+      insertRows()
+      val query = page(3, 3)
+      val extra = sql"EXPLAIN ${query.query()}".map(_.stringOpt("Extra").getOrElse("")).list()
+      extra.mkString("; ") must not(contain("Using temporary"))
+      query.list().map(_.image.pageId) === expectedOrder.slice(3, 6)
     }
 
     "page selection ids without reading images" in {
