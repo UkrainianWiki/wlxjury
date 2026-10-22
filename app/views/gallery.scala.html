@@ -37,6 +37,8 @@
                         src="@controllers.Global.resizeTo(file.image, controllers.Global.gallerySizeY)"
                         srcset="@controllers.Global.resizeTo(file.image, (controllers.Global.gallerySizeY*1.5).toInt) 1.5x, @controllers.Global.resizeTo(file.image, controllers.Global.gallerySizeY*2) 2x"
                         data-image="@controllers.Global.resizeTo(file.image, controllers.Global.largeSizeX, controllers.Global.largeSizeY)"
+                        data-width="@file.image.width"
+                        data-height="@file.image.height"
                         data-description="<b>@file.title</b>"
                         data-pageId="@file.pageId"
                         data-roundId="@roundId"

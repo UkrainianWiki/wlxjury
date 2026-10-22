@@ -242,3 +242,23 @@ body {
 .bs-callout-info h4 {
     color: #5bc0de;
 }
+
+/* A gallery tile whose thumbnail failed to load (a file deleted or renamed on Commons):
+   unitegallery.js marks it, sized from the image's data-width/height. A plain grey tile
+   instead of the browser's broken-image icon; hovering still shows the file's title. */
+.ug-thumb-wrapper.ug-thumb-error {
+    background-color: #e0e0e0;
+}
+.ug-thumb-wrapper.ug-thumb-error img.ug-thumb-image {
+    visibility: hidden;
+}
+.ug-thumb-wrapper.ug-thumb-error::after {
+    content: "\2298";
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 48px;
+    color: #9e9e9e;
+    pointer-events: none;
+}

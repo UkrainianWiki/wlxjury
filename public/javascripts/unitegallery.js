@@ -2993,6 +2993,17 @@ function UGThumbsGeneral(){
 
 		var objSize = g_functions.getImageOriginalSize(objImage);
 
+		//wlxjury: a thumb that failed to load (e.g. a file deleted or renamed on Commons) has
+		//no size, and its 0 / 0 ratio would leave every tile of the justified layout unplaced.
+		//Keep the size from the img's data-width / data-height, else 4:3, and mark the tile.
+		if(!objSize.width || !objSize.height){
+			objThumb.addClass("ug-thumb-error");
+			if(objItem.thumbWidth && objItem.thumbHeight)
+				objSize = {width: objItem.thumbWidth, height: objItem.thumbHeight};
+			else
+				objSize = {width: 400, height: 300};
+		}
+
 		objItem.thumbWidth = objSize.width;
 		objItem.thumbHeight = objSize.height;
 		objItem.thumbRatioByWidth = objSize.width / objSize.height;
