@@ -46,6 +46,22 @@ describe("formatCacheStatus", () => {
         expect(result).toContain(", 3 errors");
     });
 
+    test("includes files renamed and deleted on Commons before the errors", () => {
+        const result = formatCacheStatus({
+            total: 100, done: 50, errors: 3, renamed: 2, deleted: 5, running: false, ratePerSec: 0, etaSeconds: 0
+        });
+        expect(result).toBe("50 / 100 downloaded (50%, 2 renamed on Commons, 5 deleted on Commons, 3 errors) – done");
+    });
+
+    test("omits renamed and deleted when they are 0 or absent", () => {
+        expect(formatCacheStatus({
+            total: 10, done: 10, errors: 0, renamed: 0, deleted: 0, running: false, ratePerSec: 0, etaSeconds: 0
+        })).toBe("10 / 10 downloaded (100%) – done");
+        expect(formatCacheStatus({
+            total: 10, done: 10, errors: 0, running: false, ratePerSec: 0, etaSeconds: 0
+        })).toBe("10 / 10 downloaded (100%) – done");
+    });
+
     test("omits error string when errors is 0", () => {
         const result = formatCacheStatus({
             total: 100, done: 50, errors: 0, running: false, ratePerSec: 0, etaSeconds: 0

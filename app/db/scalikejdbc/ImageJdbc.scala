@@ -240,6 +240,7 @@ object ImageJdbc extends CRUDMapper[Image]
   def countByContest(contest: ContestJury): Long =
     contest.categoryId.map(ImageJdbc.countByCategory).getOrElse(0L)
 
+  /** The category's images, but those deleted on Commons (V63). */
   def findByCategory(categoryId: Long)(implicit session: DBSession = AutoSession): List[Image] =
     withSQL {
       select
@@ -248,6 +249,8 @@ object ImageJdbc extends CRUDMapper[Image]
         .on(i.pageId, cl.pageId)
         .where
         .eq(cl.categoryId, categoryId)
+        .and
+        .isNull(i.column("deleted_at"))
     }.map(ImageJdbc(i)).list()
 
   def countByCategory(categoryId: Long): Long = {

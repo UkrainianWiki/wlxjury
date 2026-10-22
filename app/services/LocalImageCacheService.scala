@@ -10,6 +10,7 @@ import org.apache.pekko.stream.scaladsl._
 import org.intracer.wmua.{Image, ImageUtil}
 import play.api.libs.json.{Json, Reads, Writes}
 import play.api.{Configuration, Logging}
+import services.imports.{CommonsFileCheck, FileCheck}
 
 import java.awt.RenderingHints
 import java.awt.image.BufferedImage
@@ -32,7 +33,9 @@ case class CacheProgress(
     startedAtMs: Long  = 0L,
     elapsedMs: Long    = 0L,
     ratePerSec: Double = 0.0,
-    etaSeconds: Long   = 0L
+    etaSeconds: Long   = 0L,
+    renamed: Int       = 0, // renamed on Commons, downloaded under the new name (in done)
+    deleted: Int       = 0  // deleted on Commons (in done, not in errors)
 )
 
 object CacheProgress {
@@ -41,12 +44,22 @@ object CacheProgress {
     play.api.libs.json.Json.reads[CacheProgress]
 }
 
+/** @param fileCheck asks Commons about a file whose thumbnail can't be downloaded */
 @Singleton
-class LocalImageCacheService @Inject() (
+class LocalImageCacheService(
     config: Configuration,
-    actorSystem: ActorSystem
+    actorSystem: ActorSystem,
+    fileCheck: Option[CommonsFileCheck]
 )(implicit ec: ExecutionContext)
     extends Logging {
+
+  @Inject() def this(config: Configuration, actorSystem: ActorSystem, fileCheck: CommonsFileCheck)(implicit
+      ec: ExecutionContext
+  ) = this(config, actorSystem, Some(fileCheck))
+
+  /** Without asking Commons (specs). */
+  def this(config: Configuration, actorSystem: ActorSystem)(implicit ec: ExecutionContext) =
+    this(config, actorSystem, None)
 
   implicit private val system: ActorSystem = actorSystem
 
@@ -221,14 +234,15 @@ class LocalImageCacheService @Inject() (
     val startMs = System.currentTimeMillis()
     val total   = toDownload.size
     val done    = new AtomicInteger(0)
-    val errs    = new AtomicInteger(0)
+    val counts  = new FailureCounts
 
     def mkProgress(d: Int, running: Boolean): CacheProgress = {
       val elapsed = System.currentTimeMillis() - startMs
       val rate    = if (elapsed > 0) d * 1000.0 / elapsed else 0.0
       val eta     = if (rate > 0) ((total - d) / rate).toLong else 0L
-      CacheProgress(d, total, errs.get, running,
-        startedAtMs = startMs, elapsedMs = elapsed, ratePerSec = rate, etaSeconds = eta)
+      CacheProgress(d, total, counts.errors.get, running,
+        startedAtMs = startMs, elapsedMs = elapsed, ratePerSec = rate, etaSeconds = eta,
+        renamed = counts.renamed.get, deleted = counts.deleted.get)
     }
 
     tracker.put(key, mkProgress(0, running = true))
@@ -237,10 +251,7 @@ class LocalImageCacheService @Inject() (
       .throttle(ratePerSec, 1.second)
       .mapAsyncUnordered(parallelism) { image =>
         downloadAndResize(image)
-          .recover { case ex =>
-            logger.warn(s"Failed to cache ${image.title}: ${ex.getMessage}")
-            errs.incrementAndGet()
-          }
+          .recoverWith { case ex => afterFailedDownload(image, ex, counts) }
           .map { _ =>
             val d = done.incrementAndGet()
             tracker.put(key, mkProgress(d, running = true))
@@ -250,6 +261,42 @@ class LocalImageCacheService @Inject() (
       .map { _ =>
         tracker.put(key, mkProgress(done.get, running = false))
       }
+  }
+
+  private final class FailureCounts {
+    val errors  = new AtomicInteger(0)
+    val renamed = new AtomicInteger(0)
+    val deleted = new AtomicInteger(0)
+  }
+
+  /** A thumbnail that couldn't be downloaded: perhaps its file was renamed or deleted on
+    * Commons ([[CommonsFileCheck]], which stores what it finds, as for a thumbnail request
+    * in [[controllers.ImageProxyController]]). A renamed file is downloaded again under its
+    * new name; a deleted one is counted apart from the errors.
+    */
+  private def afterFailedDownload(image: Image, ex: Throwable, counts: FailureCounts): Future[Unit] = {
+    def error(e: Throwable): Unit = {
+      logger.warn(s"Failed to cache ${image.title}: ${e.getMessage}")
+      counts.errors.incrementAndGet()
+    }
+    fileCheck match {
+      case None => Future.successful(error(ex))
+      case Some(check) =>
+        check
+          .check(image)
+          .flatMap {
+            case FileCheck.Changed(current) if current.url != image.url =>
+              downloadAndResize(current)
+                .map(_ => counts.renamed.incrementAndGet(): Unit)
+                .recover { case e => error(e) }
+            case FileCheck.Deleted =>
+              counts.deleted.incrementAndGet()
+              Future.unit
+            case _ =>
+              Future.successful(error(ex))
+          }
+          .recover { case _ => error(ex) }
+    }
   }
 
   private[services] def allSizesCached(image: Image): Boolean =
