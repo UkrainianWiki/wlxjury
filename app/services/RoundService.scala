@@ -289,6 +289,8 @@ class RoundService @Inject() (
         SelectionJdbc.mergeRounds(targetRoundId = targetId, sourceRoundId = sourceId)
       }
       RoundImageCounts.invalidate(targetId, sourceId)
+      Round.settleDeletedFiles(targetId) // a finished round keeps a deleted file's votes
+
     }
   }
 

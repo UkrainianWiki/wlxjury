@@ -249,11 +249,12 @@ class CommonsFileCheck(
     val changed = results.values.collect {
       case FileCheck.Renamed(image) => image
       case FileCheck.Changed(image) => image
-    }.toSeq.sortBy(_.pageId) // locked in page id order, as a distribution's chunk does
-    val deleted = results.collect { case (id, FileCheck.Deleted) => id }.toSeq.sorted
+    }.toSeq
+    val deleted = results.collect { case (id, FileCheck.Deleted) => id }.toSeq
     if (changed.nonEmpty || deleted.nonEmpty) {
       val rounds = DB.localTx { implicit session =>
-        val rounds = DeletedFiles.markDeleted(deleted) // first: it locks the open rounds
+        // First: it locks the open rounds, then all these files in page id order
+        val rounds = DeletedFiles.markDeleted(deleted, alsoLock = changed.map(_.pageId))
         changed.foreach { image =>
           ImageJdbc.updateFileInfo(image)
           val former = stored(image.pageId).title
@@ -261,7 +262,14 @@ class CommonsFileCheck(
         }
         rounds
       }
-      RoundImageCounts.invalidate(rounds: _*)
+      val settled =
+        try DeletedFiles.settle(deleted)
+        catch {
+          case NonFatal(e) =>
+            logger.warn(s"Could not settle the votes of ${deleted.size} files deleted on Commons: $e")
+            Nil
+        }
+      RoundImageCounts.invalidate(rounds ++ settled: _*)
       changed.foreach { image =>
         val former = stored(image.pageId).title
         if (former != image.title) logger.info(s"Commons file ${image.pageId} was renamed: $former -> ${image.title}")
@@ -289,7 +297,10 @@ object CommonsFileCheck {
   /** A file uploaded to Commons, not to another wiki. */
   def isCommonsUrl(url: String): Boolean = url.contains("//upload.wikimedia.org/wikipedia/commons/")
 
-  private def withoutQuery(url: String): String = url.takeWhile(_ != '?')
+  /** The url without the tracking parameters the API adds ("?utm_source=..."): the file's
+    * name is its last segment.
+    */
+  def withoutQuery(url: String): String = url.takeWhile(_ != '?')
 
   private val Unchanged: Future[FileCheck] = Future.successful(FileCheck.Unchanged)
 

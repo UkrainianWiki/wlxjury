@@ -227,14 +227,28 @@ object ImageJdbc extends CRUDMapper[Image]
       .map(ImageJdbc(i))
       .single()
 
+  /** The file of that name deleted on Commons (V63), the latest marked if several were. */
+  def findDeletedByFilename(filename: String)(implicit session: DBSession = AutoSession): Option[Image] = {
+    val title = s"File:$filename"
+    sql"""SELECT ${i.result.*} FROM images i
+          WHERE i.title = $title AND BINARY i.title = $title AND i.deleted_at IS NOT NULL
+          ORDER BY i.deleted_at DESC LIMIT 1"""
+      .map(ImageJdbc(i))
+      .single()
+  }
+
   /** The file a thumbnail of `filename` shows: the stored file of that name
-    * ([[findByFilename]]), else the one renamed from it ([[findRenamed]]), looked up only
-    * then: nearly every thumbnail is of a file stored under its name.
+    * ([[findByFilename]]), else the one renamed from it ([[findRenamed]]), else the one of
+    * that name deleted on Commons ([[findDeletedByFilename]]), whose thumbnails the finished
+    * rounds still show from the cache. Each looked up only if the one before finds none:
+    * nearly every thumbnail is of a file stored under its name.
     *
     * @return the file, and whether it is stored under that name
     */
   def findForThumbnail(filename: String)(implicit session: DBSession = AutoSession): Option[(Image, Boolean)] =
-    findByFilename(filename).map(_ -> true).orElse(findRenamed(filename).map(_ -> false))
+    findByFilename(filename).map(_ -> true)
+      .orElse(findRenamed(filename).map(_ -> false))
+      .orElse(findDeletedByFilename(filename).map(_ -> true))
 
   /** Remembers a file's former title (V63), for [[findRenamed]]. */
   def recordRename(formerTitle: String, pageId: Long)(implicit session: DBSession): Unit =
@@ -250,6 +264,27 @@ object ImageJdbc extends CRUDMapper[Image]
   /** Whether the file is marked deleted on Commons (V63). */
   def isDeleted(pageId: Long)(implicit session: DBSession = AutoSession): Boolean =
     sql"SELECT 1 FROM images WHERE page_id = $pageId AND deleted_at IS NOT NULL".map(_.int(1)).single().isDefined
+
+  /** Of `pageIds`, those marked deleted, read as committed and locked in share mode until
+    * the transaction ends: a restore ([[clearDeleted]]) waits for it, or it for the restore.
+    */
+  def lockDeleted(pageIds: Seq[Long])(implicit session: DBSession): Seq[Long] =
+    if (pageIds.isEmpty) Nil
+    else
+      sql"""SELECT page_id FROM images WHERE page_id IN ($pageIds) AND deleted_at IS NOT NULL
+            ORDER BY page_id LOCK IN SHARE MODE"""
+        .map(_.long(1))
+        .list()
+
+  /** Locks the files' rows for update, in page id order, as a distribution's chunk locks
+    * them (in share mode, for selection's foreign key): a transaction that updates several
+    * files in more than one statement locks them all with this first.
+    */
+  def lockFiles(pageIds: Seq[Long])(implicit session: DBSession): Unit =
+    if (pageIds.nonEmpty)
+      sql"SELECT page_id FROM images WHERE page_id IN (${pageIds.distinct}) ORDER BY page_id FOR UPDATE"
+        .map(_.long(1))
+        .list(): Unit
 
   /** Of `pageIds`, those marked deleted or with votes moved aside: those to restore. */
   def deletedOrArchived(pageIds: Seq[Long])(implicit session: DBSession): Seq[Long] =
@@ -300,11 +335,14 @@ object ImageJdbc extends CRUDMapper[Image]
     * opens ([[Round.setActiveGuarded]]), or those a distribution added to it as they were
     * being marked deleted.
     *
+    * From the files marked deleted (V64's index), few, to their votes in the round: not
+    * from the round's votes, up to some 760k rows, nearly always to none.
+    *
     * @return the files moved
     */
   def archiveDeletedVotesInRound(roundId: Long)(implicit session: DBSession): Seq[Long] = {
-    val pageIds = sql"""SELECT DISTINCT s.page_id FROM selection s JOIN images i ON i.page_id = s.page_id
-                        WHERE s.round_id = $roundId AND i.deleted_at IS NOT NULL"""
+    val pageIds = sql"""SELECT DISTINCT STRAIGHT_JOIN s.page_id FROM images i JOIN selection s ON s.page_id = i.page_id
+                        WHERE i.deleted_at IS NOT NULL AND s.round_id = $roundId"""
       .map(_.long(1))
       .list()
     if (pageIds.nonEmpty) moveVotesAside(sqls"round_id = $roundId AND page_id IN ($pageIds)")

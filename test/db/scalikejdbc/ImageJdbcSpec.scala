@@ -39,6 +39,15 @@ class ImageJdbcSpec extends Specification with BeforeAll {
       ImageJdbc.findForThumbnail("Unknown.jpg") must beNone
     }
 
+    "find a file deleted on Commons last, for the finished rounds' cached thumbnails" in new AutoRollbackDb {
+      imageDao.batchInsert(Seq(image(1L, "Gone.jpg"), image(2L, "Reused.jpg"), image(3L, "Reused.jpg")))
+      ImageJdbc.setDeleted(Seq(1L, 2L)) // 3 is a later upload under 2's name
+
+      ImageJdbc.findByFilename("Gone.jpg") must beNone
+      ImageJdbc.findForThumbnail("Gone.jpg").map { case (i, direct) => (i.pageId, direct) } must beSome((1L, true))
+      ImageJdbc.findForThumbnail("Reused.jpg").map(_._1.pageId) must beSome(3L)
+    }
+
     "tell former names apart by case, as Commons does" in new AutoRollbackDb {
       imageDao.batchInsert(Seq(image(1L, "A.jpg"), image(2L, "B.jpg")))
       ImageJdbc.recordRename("File:Foo bar.jpg", 1L)

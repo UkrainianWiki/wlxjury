@@ -122,6 +122,81 @@ class DeletedFilesSpec extends Specification with TestDb with BeforeAll with Bef
     }
   }
 
+  "votes moved into an open round" should {
+
+    "be moved aside there when a deleted file's are merged in from a finished round" in {
+      val (Seq(r1, r2), _) = setUp()
+      setRound(r2, sqls"active = 0") // finished: keeps the deleted file's votes
+      DB.localTx(implicit s => DeletedFiles.markDeleted(Seq(1L)))
+      rows("selection", 1L, r2) === Seq(1, 1)
+
+      DB.localTx(implicit s => SelectionJdbc.mergeRounds(targetRoundId = r1, sourceRoundId = r2))
+      Round.settleDeletedFiles(r1) // as RoundService.mergeRounds does
+      rows("selection", 1L, r1) must beEmpty
+      rows("selection_deleted", 1L, r1) === Seq(1, 1)
+      rows("selection", 2L, r1) === Seq(1, 1)
+    }
+
+    "be moved aside there when a deleted file's are set to it from a finished round" in {
+      val (Seq(_, r2), _) = setUp()
+      setRound(r2, sqls"active = 0")
+      DB.localTx(implicit s => DeletedFiles.markDeleted(Seq(1L)))
+      implicit val contest: ContestJury = ContestJuryJdbc.findAll().head
+      val r3 = roundDao.create(Round(None, 3, None, contest.getId, createdAt = now, active = true)).getId
+
+      SelectionJdbc.setRound(1L, r2, r3)
+      rows("selection", 1L, r3) must beEmpty
+      rows("selection_deleted", 1L, r3) === Seq(1, 1)
+    }
+
+    "stay in a round that isn't open" in {
+      val (Seq(r1, r2), _) = setUp()
+      setRound(r2, sqls"active = 0")
+      DB.localTx(implicit s => DeletedFiles.markDeleted(Seq(1L)))
+      setRound(r1, sqls"active = 0")
+      DB.localTx(implicit s => DeletedFiles.restore(Seq(1L)))
+      DB.localTx(implicit s => DeletedFiles.markDeleted(Seq(1L))) must beEmpty
+
+      SelectionJdbc.setRound(1L, r2, r1)
+      rows("selection", 1L, r1) === Seq(1, 1) // r1's own votes win over r2's
+      rows("selection", 1L, r2) must beEmpty
+    }
+
+    "keep a juror's vote in the target round over the moved one, also those moved aside" in {
+      val (Seq(r1, r2), Seq(j1, _)) = setUp()
+      SelectionJdbc.rate(1L, j1, r2, 5)
+      DB.localTx(implicit s => DeletedFiles.markDeleted(Seq(1L))) // both rounds open: all aside
+
+      SelectionJdbc.setRound(1L, r1, r2)
+      rows("selection_deleted", 1L, r2) === Seq(5, 1)
+      rows("selection_deleted", 1L, r1) must beEmpty
+    }
+
+    "be moved aside by settle when moved after markDeleted read the rounds" in {
+      val (Seq(r1, r2), _) = setUp()
+      setRound(r2, sqls"active = 0")
+      DB.localTx(implicit s => DeletedFiles.markDeleted(Seq(1L)))
+      // Moved into the open r1 by a transaction that committed before markDeleted did
+      DB.autoCommit { implicit s =>
+        sql"DELETE FROM selection_deleted WHERE page_id = 1".update()
+        sql"UPDATE selection SET round_id = $r1 WHERE page_id = 1 AND round_id = $r2".update()
+      }
+
+      DeletedFiles.settle(Seq(1L)) === Seq(r1)
+      rows("selection", 1L, r1) must beEmpty
+      rows("selection_deleted", 1L, r1) === Seq(1, 1)
+    }
+
+    "not be moved aside by settle when the file was restored meanwhile" in {
+      val (Seq(r1, _), _) = setUp()
+      DB.localTx(implicit s => DeletedFiles.markDeleted(Seq(1L)))
+      DB.localTx(implicit s => DeletedFiles.restore(Seq(1L)))
+
+      DeletedFiles.settle(Seq(1L)) must beEmpty
+      rows("selection", 1L, r1) === Seq(1, 1)
+    }
+  }
+
   "restore" should {
 
     "clear the mark and move the votes back in every round, also those no longer open" in {

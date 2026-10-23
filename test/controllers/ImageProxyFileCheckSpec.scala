@@ -83,6 +83,24 @@ class ImageProxyFileCheckSpec
       results.map(status(_)).distinct === Seq(SEE_OTHER)
       lookups.get === 1
     }
+
+    "look a refused user up again sooner than an allowed one, as they may have just been added" in {
+      val clock = new java.util.concurrent.atomic.AtomicLong(0L)
+      val allowed = new java.util.concurrent.atomic.AtomicBoolean(false)
+      val proxy = new ImageProxyController(stubControllerComponents(), new LocalImageCacheService(thumbsConfig(), system),
+        () => clock.get, _ => allowed.get)
+      val missing = "x/xx/Missing.jpg/250px-Missing.jpg"
+
+      status(proxy.serve(missing)(signedIn)) === UNAUTHORIZED
+      allowed.set(true)
+      status(proxy.serve(missing)(signedIn)) === UNAUTHORIZED // within the refusal's few seconds
+      clock.set(ImageProxyController.RefusedTtl.toMillis)
+      status(proxy.serve(missing)(signedIn)) === SEE_OTHER
+
+      allowed.set(false)
+      clock.set(ImageProxyController.RefusedTtl.toMillis * 2)
+      status(proxy.serve(missing)(signedIn)) === SEE_OTHER // an access is kept the whole ViewerTtl
+    }
   }
 
   "a thumbnail Wikimedia doesn't have" should {
@@ -114,7 +132,20 @@ class ImageProxyFileCheckSpec
       val result = proxy.serve(thumb("Old_name"))(signedIn)
       status(result) === SEE_OTHER
       check.stop()
-      redirectLocation(result) must beSome(endWith("/wikipedia/commons/thumb/c/cd/Error_new_name.jpg/333px-Error_new_name.jpg"))
+      // 333 wide is not one of Wikimedia's sizes, which it only serves
+      redirectLocation(result) must beSome(endWith("/wikipedia/commons/thumb/c/cd/Error_new_name.jpg/500px-Error_new_name.jpg"))
+    }
+
+    "redirect to a renamed file's large view size on Wikimedia, without fetching it" in {
+      val old = commonsImage(1L, "Old_name")
+      store(old)
+      // New_ files are on this Wikimedia: the redirect is not for a failed fetch
+      val (proxy, _, check) = controller(Seq(renamed(old, "New_name").copy(width = 4000, height = 3000)))
+
+      val result = proxy.serve("a/ab/Old_name.jpg/1280px-Old_name.jpg")(signedIn)
+      status(result) === SEE_OTHER
+      check.stop()
+      redirectLocation(result) must beSome(endWith("/wikipedia/commons/thumb/c/cd/New_name.jpg/1280px-New_name.jpg"))
     }
 
     "be no wider than the file now is when it was uploaded again smaller" in {
@@ -140,7 +171,7 @@ class ImageProxyFileCheckSpec
       status(result) === SEE_OTHER
       check.stop()
       redirectLocation(result) must beSome(
-        endWith("/wikipedia/commons/thumb/c/cd/Error_new_name.pdf/page1-333px-Error_new_name.pdf.jpg"))
+        endWith("/wikipedia/commons/thumb/c/cd/Error_new_name.pdf/page1-500px-Error_new_name.pdf.jpg"))
     }
 
     "refuse a session whose user is no longer in any contest" in {

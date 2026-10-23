@@ -156,6 +156,7 @@ class RoundDistributionHandler @Inject() (distributeImages: DistributeImages, co
     implicit val session: DBSession = ctx.session
     val st = stateOf(job)
     val roundId = roundIdOf(job)
+    lockRounds(st.frozen :+ roundId)
     Round.release(st.frozen, close = false)
     if (settleFiles(roundId)) ctx.afterCommit(RoundImageCounts.invalidate(roundId))
     Json.toJsObject(st.copy(frozen = Nil))
@@ -232,10 +233,7 @@ class RoundDistributionHandler @Inject() (distributeImages: DistributeImages, co
             progress(st)
           )
         else {
-          // Locked in id order, as DeletedFiles locks rounds
-          val distributing =
-            sql"""SELECT id, distributing FROM rounds WHERE id IN (${st.frozen :+ roundId}) ORDER BY id FOR UPDATE"""
-              .map(rs => rs.long(1) -> rs.boolean(2)).list().find(_._1 == roundId).exists(_._2)
+          val distributing = lockRounds(st.frozen :+ roundId).getOrElse(roundId, false)
           val creating = distributing || (job.params \ "completingCreation").asOpt[Boolean].getOrElse(false)
           if (distributing) Round.completeCreation(roundId)
           Round.release(st.frozen, close = creating)
@@ -267,19 +265,32 @@ class RoundDistributionHandler @Inject() (distributeImages: DistributeImages, co
     deleted.nonEmpty
   }
 
+  /** Locks the rounds for update in id order, as DeletedFiles locks them, before any of
+    * their updates.
+    *
+    * @return whether each is being created (`distributing`)
+    */
+  private def lockRounds(ids: Seq[Long])(implicit session: DBSession): Map[Long, Boolean] =
+    sql"SELECT id, distributing FROM rounds WHERE id IN (${ids.distinct}) ORDER BY id FOR UPDATE"
+      .map(rs => rs.long(1) -> rs.boolean(2))
+      .list()
+      .toMap
+
   private def continue(st: DistributionState) = StepResult.Continue(Json.toJsObject(st), progress(st))
 
   private def progress(st: DistributionState) =
     Progress(done = Some(st.candidatesSeen), total = st.total, unit = Some("images"))
 
   /** The round's images for the count check: also those with votes moved aside (V63), so
-    * moving votes aside or back doesn't change it.
+    * moving votes aside or back doesn't change it: the visible ones, counted on the
+    * (round_id, page_id) index, and the few aside that have no visible vote in the round.
     */
   private def imageCount(roundId: Long)(implicit session: DBSession): Long =
-    sql"""SELECT COUNT(DISTINCT page_id) FROM (
-            SELECT page_id FROM selection WHERE round_id = $roundId
-            UNION ALL SELECT page_id FROM selection_deleted WHERE round_id = $roundId) v"""
-      .map(_.long(1)).single().getOrElse(0L)
+    visibleImageCount(roundId) +
+      sql"""SELECT COUNT(DISTINCT d.page_id) FROM selection_deleted d
+            WHERE d.round_id = $roundId
+              AND NOT EXISTS (SELECT 1 FROM selection s WHERE s.round_id = $roundId AND s.page_id = d.page_id)"""
+        .map(_.long(1)).single().getOrElse(0L)
 
   /** The round's images the galleries show. */
   private def visibleImageCount(roundId: Long)(implicit session: DBSession): Long =

@@ -252,7 +252,20 @@ body {
 .ug-thumb-wrapper.wlx-thumb-failed img.ug-thumb-image {
     visibility: hidden;
 }
-.ug-thumb-wrapper.wlx-thumb-failed::after {
+/* The large view's image that failed to load from Wikimedia and from this server (a file
+   deleted on Commons): large.scala.html marks its link. The same grey box. */
+a.wlx-large-failed {
+    display: inline-block;
+    position: relative;
+    width: 640px;
+    max-width: 100%;
+    height: 480px;
+    background-color: #e0e0e0;
+}
+a.wlx-large-failed img {
+    display: none;
+}
+.ug-thumb-wrapper.wlx-thumb-failed::after, a.wlx-large-failed::after {
     content: "\2298";
     position: absolute;
     top: 50%;

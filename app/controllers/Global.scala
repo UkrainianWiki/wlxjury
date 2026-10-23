@@ -78,6 +78,52 @@ object Global {
     s"${resizeTo(image, (resizeToWidth * 1.5).toInt, (resizeToHeight * 1.5).toInt)} 1.5x, ${resizeTo(image, resizeToWidth * 2, resizeToHeight * 2)} 2x"
   }
 
+  /** The widths Wikimedia serves thumbnails at ($wgThumbnailSteps): it refuses others. */
+  val wikimediaSteps: Seq[Int] = Seq(20, 40, 60, 120, 250, 330, 500, 960, 1280, 1920, 3840)
+
+  /** The narrowest of [[wikimediaSteps]] at least `px` wide, else the widest. */
+  def wikimediaStep(px: Int): Int = wikimediaSteps.find(_ >= px).getOrElse(wikimediaSteps.last)
+
+  private val WikimediaUpload = "https://upload.wikimedia.org"
+
+  /** The large view's image, as the browser loads it from Wikimedia, not from this server:
+    * at Wikimedia's sizes ([[wikimediaSteps]]) only, so nothing is fetched or scaled here.
+    *
+    * @param sizes    the width the image is shown at in the large box: of `srcset`, the
+    *                 browser loads the narrowest at least that times the screen's pixel
+    *                 ratio wide
+    * @param fallback the image's thumbnail on this server, to load if Wikimedia doesn't have
+    *                 it (`onerror`): the file may have been renamed or deleted on Commons,
+    *                 which the proxy finds out ([[ImageProxyController]])
+    */
+  final case class LargeImage(src: String, srcset: String, sizes: Option[String], fallback: Option[String])
+
+  /** [[LargeImage]] of a Commons file of known width: Wikimedia's sizes from the one the
+    * large box needs to twice that, the file itself in place of those no narrower than it
+    * (unless only thumbnails show it, [[Image.thumbnailOnly]]). Other files' as before,
+    * through this server.
+    */
+  def largeImage(image: Image): LargeImage =
+    if (image.width <= 0 || !image.url.exists(services.imports.CommonsFileCheck.isCommonsUrl))
+      LargeImage(resizeTo(image, largeSizeX, largeSizeY), srcSet(image, largeSizeX, largeSizeY), None, None)
+    else {
+      val px = image.resizeTo(largeSizeX, largeSizeY)
+      val (from, to) = (wikimediaStep(px), wikimediaStep(2 * px))
+      val candidates = wikimediaSteps
+        .filter(step => step >= from && step <= to)
+        .map { step =>
+          if (!image.thumbnailOnly && step >= image.width) image.width -> image.url.getOrElse("")
+          else step -> (WikimediaUpload + legacyThumbUrl(image, step))
+        }
+        .distinctBy(_._1)
+      LargeImage(
+        src = candidates.head._2,
+        srcset = candidates.map { case (width, url) => s"$url ${width}w" }.mkString(", "),
+        sizes = Some(s"${px}px"),
+        fallback = Some(legacyThumbUrl(image, from))
+      )
+    }
+
   def thumbPhpUrl(info: Image, px: Int, resizeToHeight: Int): String = {
     val file = URLEncoder.encode(
       info.title.replaceFirst("File:", "").replace(" ", "_"),
@@ -94,9 +140,7 @@ object Global {
     val isPdf = lowerCaseTitle.endsWith(".pdf")
     val isTif = List(".tif", ".tiff").exists(lowerCaseTitle.endsWith)
 
-    // Commons imageinfo API appends UTM tracking params to `url` (e.g. "?utm_source=..."),
-    // which must be stripped before treating the trailing segment as a filename.
-    val url = info.url.getOrElse("").takeWhile(_ != '?')
+    val url = services.imports.CommonsFileCheck.withoutQuery(info.url.getOrElse(""))
     val lastSlash = url.lastIndexOf("/")
     val utf8Size = info.title.getBytes("UTF8").length
     val thumbStr = if (utf8Size > 165) "thumbnail.jpg" else url.substring(lastSlash + 1)

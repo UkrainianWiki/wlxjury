@@ -33,10 +33,6 @@ class ImageProxyController(
 
   private val logger = play.api.Logger(getClass)
 
-  // Matches standard JPEG thumbs (250px-foo.jpg) and PDF/TIFF variants
-  // (page1-250px-foo.pdf.jpg, lossy-page1-250px-foo.tif.jpg).
-  private val pxPattern = """^(?:(?:lossy-)?page\d+-)?(\d+)px-.*""".r
-
   // Hard cap matching the largest Wikimedia thumbnail step ($wgThumbnailSteps max = 3840).
   private val MaxAllowedPx = 3840
 
@@ -61,17 +57,20 @@ class ImageProxyController(
   }
 
   /** One lookup per user at a time: a gallery's thumbnails, asked for at once, share it. A
-    * failed lookup is forgotten.
+    * failed lookup is forgotten; a refusal is kept only [[RefusedTtl]], so a user just
+    * added to a contest sees the thumbnails at once.
     */
   private def mayView(name: String): Future[Boolean] = {
     val user = Secured.normalizeUserName(name)
     val at = now()
     if (viewers.size >= MaxViewers) viewers.clear()
+    def ttl(allowed: Future[Boolean]) =
+      if (allowed.value.contains(scala.util.Success(false))) RefusedTtl else ViewerTtl
     var started: Option[(Future[Boolean], Long)] = None
     val (allowed, _) = viewers.compute(
       user,
       (_, last) =>
-        if (last != null && at - last._2 < ViewerTtl.toMillis) last
+        if (last != null && at - last._2 < ttl(last._1).toMillis) last
         else {
           val entry = (Future(scala.concurrent.blocking(viewerMayView(user))), at)
           started = Some(entry)
@@ -91,11 +90,8 @@ class ImageProxyController(
       // not a space (URLDecoder follows query-param convention by default).
       filename    = URLDecoder.decode(rawFilename.replace("+", "%2B"), "UTF-8").replace('_', ' ')
       lastSeg    <- segments.lastOption
-      px         <- lastSeg match {
-                      case pxPattern(n) => Try(n.toInt).toOption
-                      case _            => None
-                    }
-      if px > 0 && px <= MaxAllowedPx
+      px         <- LocalImageCacheService.thumbnailPx(lastSeg)
+      if px <= MaxAllowedPx
     } yield (filename, px)
 
     parsed match {
@@ -141,7 +137,8 @@ class ImageProxyController(
         // File missing from disk or not cached — fetch from Wikimedia
         cache.fetchAndCacheAll(image, px)
           .map { bytes =>
-            Ok(bytes).as("image/jpeg")
+            // A JPEG scaled here, or as Wikimedia sent it (the large view's)
+            Ok(bytes).as(LocalImageCacheService.contentType(bytes))
               .withHeaders(CacheControl)
           }
           .recoverWith { case ex =>
@@ -153,27 +150,32 @@ class ImageProxyController(
   /** A stored file's thumbnail could not be fetched: if Wikimedia doesn't have it, perhaps
     * the file was renamed, re-uploaded or deleted on Commons
     * ([[LocalImageCacheService.checkOnCommons]]). A renamed or re-uploaded file's thumbnail
-    * is served right away ([[serveCurrent]]); a deleted file's is 404. Other failures and
+    * is served right away ([[serveCurrent]]), a re-uploaded one's other cached sizes dropped
+    * ([[LocalImageCacheService.evict]]); a deleted file's is 404. Other failures and
     * answers, or none in time, redirect to Wikimedia as before.
     */
   private def afterFailedFetch(image: Image, ex: Throwable, px: Int, path: String): Future[Result] =
     cache.checkOnCommons(image, ex).flatMap {
       case FileCheck.Renamed(current) => serveCurrent(current, px, path)
-      case FileCheck.Changed(current) => serveCurrent(current, px, path)
-      case FileCheck.Deleted          => Future.successful(NotFound)
-      case _                          => Future.successful(wikimedia(path))
+      case FileCheck.Changed(current) =>
+        cache.evict(image)
+        serveCurrent(current, px, path)
+      case FileCheck.Deleted => Future.successful(NotFound)
+      case _                 => Future.successful(wikimedia(path))
     }
 
   /** The thumbnail of a renamed or re-uploaded file as now stored, no wider than the file
     * now is (unless it is only shown by thumbnails, [[Image.thumbnailOnly]]); if that fails
     * too, a redirect to it on Wikimedia, under its new name: the requested path is the old
-    * file's.
+    * file's. A size not cached (the large view's) is that redirect right away: the browser
+    * loads it from Wikimedia, and nothing is fetched or scaled here.
     */
   private def serveCurrent(current: Image, px: Int, path: String): Future[Result] = {
     val width = if (current.width > 0 && !current.thumbnailOnly) math.min(px, current.width) else px
-    serveImage(current, width, path) { _ =>
-      Future.successful(cache.wikimediaUrl(current, width).fold[Result](NotFound)(Redirect(_, SEE_OTHER)))
-    }
+    // At one of Wikimedia's sizes: it refuses others
+    def onWikimedia = cache.wikimediaUrl(current, Global.wikimediaStep(width)).fold[Result](NotFound)(Redirect(_, SEE_OTHER))
+    if (!cache.cacheable(current, width)) Future.successful(onWikimedia)
+    else serveImage(current, width, path)(_ => Future.successful(onWikimedia))
   }
 
   private def wikimedia(path: String): Result =
@@ -184,6 +186,9 @@ object ImageProxyController {
 
   /** How long a user's access to the thumbnails is taken as read: a removed juror loses it within that. */
   val ViewerTtl: FiniteDuration = 1.minute
+
+  /** How long a refusal is: a gallery's burst of thumbnails shares it. */
+  val RefusedTtl: FiniteDuration = 5.seconds
 
   /** Users' access kept at most; past it, all is read again. */
   val MaxViewers = 10000

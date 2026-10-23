@@ -366,6 +366,18 @@ object Round extends RoundRepo with CRUDMapper[Round] {
     !refused
   }
 
+  /** After votes were moved into the round ([[SelectionJdbc.mergeRounds]],
+    * [[SelectionJdbc.setRound]]) and committed: if it is open, moves aside its votes of
+    * files deleted on Commons, in a transaction of its own. One marked deleted after this
+    * reads them moves them itself ([[services.imports.DeletedFiles.settle]]).
+    */
+  def settleDeletedFiles(id: Long): Unit = {
+    val archived = DB.localTx { implicit session =>
+      isOpen(id) && ImageJdbc.archiveDeletedVotesInRound(id).nonEmpty
+    }
+    if (archived) RoundImageCounts.invalidate(id)
+  }
+
   /** A round jurors vote in, or will when a running distribution ends: active, being
     * created, or frozen while active. A file deleted on Commons leaves the open rounds only
     * (V63, [[ImageJdbc.lockOpenRoundsOf]]); the others, finished or not started yet, keep

@@ -864,6 +864,81 @@ class LocalImageCacheServiceSpec extends Specification {
       tmpDir.delete()
       ok
     }
+
+    "pass a large view size that is one of Wikimedia's on as Wikimedia sent it, not decoded" in {
+      val tmpDir    = Files.createTempDirectory("fetch-large-step").toFile
+      val sent      = "\u0089PNG not decodable".getBytes("ISO-8859-1")
+      val requested = new java.util.concurrent.ConcurrentLinkedQueue[String]()
+      val binding = Await.result(
+        Http().newServerAt("127.0.0.1", 0).bindSync { req =>
+          requested.add(req.uri.path.toString)
+          HttpResponse(entity = HttpEntity(ContentTypes.`application/octet-stream`, ByteString(sent)))
+        },
+        5.seconds
+      )
+      try {
+        val svc   = mkService(tmpDir, serverPort = Some(binding.localAddress.getPort))
+        val bytes = Await.result(svc.fetchAndCacheAll(mkImage(), 1280), 30.seconds)
+
+        bytes.toSeq === sent.toSeq
+        LocalImageCacheService.contentType(bytes) === "image/png"
+        requested.asScala.toSeq === Seq("/wikipedia/commons/thumb/a/ab/Test_photo.jpg/1280px-Test_photo.jpg")
+        svc.registrySize === 0
+      } finally Await.result(binding.unbind(), 5.seconds)
+
+      tmpDir.delete()
+      ok
+    }
+
+    "fetch a PDF's size as wide as the file from its thumbnail, not from the file" in {
+      val tmpDir    = Files.createTempDirectory("fetch-pdf").toFile
+      val pdf       = mkImage(w = 300, h = 400, filename = "Doc.pdf")
+      val requested = new java.util.concurrent.ConcurrentLinkedQueue[String]()
+      val binding = Await.result(
+        Http().newServerAt("127.0.0.1", 0).bindSync { req =>
+          requested.add(req.uri.path.toString)
+          HttpResponse(entity = HttpEntity(ContentTypes.`application/octet-stream`, ByteString(jpegBytes(330, 440))))
+        },
+        5.seconds
+      )
+      try {
+        val svc = mkService(tmpDir, serverPort = Some(binding.localAddress.getPort))
+        Await.result(svc.fetchAndCacheAll(pdf, 330), 30.seconds) must not be empty
+        requested.asScala.toSeq === Seq("/wikipedia/commons/thumb/a/ab/Doc.pdf/page1-330px-Doc.pdf.jpg")
+      } finally Await.result(binding.unbind(), 5.seconds)
+
+      tmpDir.delete()
+      ok
+    }
+  }
+
+  "contentType" should {
+    "tell a PNG, GIF and WebP from a JPEG by their first bytes" in {
+      def bytes(s: String) = s.getBytes("ISO-8859-1")
+      LocalImageCacheService.contentType(bytes("\u0089PNG\r\n")) === "image/png"
+      LocalImageCacheService.contentType(bytes("GIF89a")) === "image/gif"
+      LocalImageCacheService.contentType(bytes("RIFF\u0000\u0000\u0000\u0000WEBPVP8 ")) === "image/webp"
+      LocalImageCacheService.contentType(jpegBytes(10, 10)) === "image/jpeg"
+      LocalImageCacheService.contentType(Array.emptyByteArray) === "image/jpeg"
+    }
+  }
+
+  "evict" should {
+    "delete the image's cached sizes and forget them, and no other image's" in {
+      val tmpDir = mkTempDir()
+      val svc    = mkService(tmpDir)
+      val img    = mkImage(filename = "Evicted.jpg")
+      val other  = mkImage(id = 2, filename = "Kept.jpg")
+      Seq(img, other).foreach(i => svc.saveResized(i, new BufferedImage(1000, 750, BufferedImage.TYPE_INT_RGB), 1000))
+      val widths = Global.thumbnailWidths(4000, 3000).filter(_ <= 1000)
+      awaitFiles((widths.map(svc.localFile(img, _)) ++ widths.map(svc.localFile(other, _))): _*)
+
+      svc.evict(img)
+
+      widths.map(svc.localFile(img, _)).filter(_.exists()) must beEmpty
+      widths.flatMap(svc.fileIfCached(img, _)) must beEmpty
+      widths.flatMap(svc.fileIfCached(other, _)).filter(_.exists()).size === widths.size
+    }
   }
 
   // ── sizes scaled from the cached widest size ─────────────────────────────
@@ -899,6 +974,22 @@ class LocalImageCacheServiceSpec extends Specification {
 
         ImageIO.read(new ByteArrayInputStream(bytes)).getWidth === 300
         awaitFiles(neededWidths.map(svc.localFile(img, _)): _*)
+        requests.get() === 0
+      }
+    }
+
+    "scale a missing size from the narrowest cached one wider than it, not from the widest" in {
+      withWidestCached { (svc, img, requests) =>
+        val narrowest = neededWidths.head
+        // All but the narrowest cached; the widest unreadable, so only a narrower one can serve
+        neededWidths.tail.init.foreach { px =>
+          ImageIO.write(new BufferedImage(px, px * 3 / 4, BufferedImage.TYPE_INT_RGB), "JPEG", svc.localFile(img, px))
+        }
+        Files.write(svc.localFile(img, neededWidths.last).toPath, "not a JPEG".getBytes)
+        Await.result(svc.initRegistry(), 10.seconds)
+
+        val bytes = Await.result(svc.fetchAndCacheAll(img, narrowest), 30.seconds)
+        ImageIO.read(new ByteArrayInputStream(bytes)).getWidth === narrowest
         requests.get() === 0
       }
     }

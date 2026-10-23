@@ -248,11 +248,12 @@ class ImageImportHandler @Inject() (source: CommonsSource, config: Configuration
       .findWithCategoryLink(page.images.map(_.pageId), categoryId)
       .map { case (image, linked) => image.pageId -> (image, linked) }
       .toMap
-    val restored = DeletedFiles.restore(stored.keys.toSeq)
-    if (restored.nonEmpty) ctx.afterCommit(RoundImageCounts.invalidate(restored: _*))
     val fresh = page.images.filterNot(i => stored.contains(i.pageId))
     val unlinked = page.images.filterNot(i => stored.get(i.pageId).exists(_._2))
     val changed = ImageService.changedImages(page.images, stored.values.collect { case (i, true) => i }.toSeq)
+    // Locks the restored files with those updated below, in page id order
+    val restored = DeletedFiles.restore(stored.keys.toSeq, alsoLock = changed.map(_.pageId))
+    if (restored.nonEmpty) ctx.afterCommit(RoundImageCounts.invalidate(restored: _*))
     ImageJdbc.insertIgnore(fresh)
     CategoryLinkJdbc.linkIgnore(categoryId, unlinked.map(_.pageId))
     changed.foreach { image =>

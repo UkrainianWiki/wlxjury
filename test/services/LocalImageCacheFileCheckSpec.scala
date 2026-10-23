@@ -53,6 +53,26 @@ class LocalImageCacheFileCheckSpec
       // the four 404s, one at a time, and whether the absent one is missing; not the 500
       source.detailCalls.get === 5
     }
+
+    "replace the cached sizes of a file uploaded again under its name, not keep the old version's" in {
+      val old = commonsImage(1L, "Reuploaded_cached")
+      imageDao.batchInsert(Seq(old))
+      val check = new CommonsFileCheck(new FakeCommonsSource(Seq(FakeFile(reuploaded(old)))), batchWindow = 20.millis)
+      val cache = new LocalImageCacheService(thumbsConfig(), system, Some(check))
+      Await.result(cache.unusedSizesCleanedUp, 10.seconds)
+      val stale = cache.localFile(old, 333) // a size of the new version too
+      stale.getParentFile.mkdirs()
+      java.nio.file.Files.write(stale.toPath, "the old version".getBytes)
+      Await.result(cache.initRegistry(), 10.seconds)
+
+      Await.result(cache.runDownload(1L, Seq(old)), 30.seconds)
+      check.stop()
+
+      val deadline = System.currentTimeMillis() + 5000
+      def decodes = scala.util.Try(javax.imageio.ImageIO.read(stale)).toOption.exists(_ != null)
+      while (!decodes && System.currentTimeMillis() < deadline) Thread.sleep(20)
+      decodes must beTrue
+    }
   }
 
   "the contest's images" should {

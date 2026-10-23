@@ -173,15 +173,16 @@ object SelectionJdbc extends CRUDMapper[Selection] {
     }.update()
 
   /** Moves the image's votes to another round, also those moved aside (V63), as
-    * [[mergeRounds]] does.
+    * [[mergeRounds]] does: a juror's vote already in the new round wins. If the new round
+    * is open, the votes of a file deleted on Commons are then moved aside there
+    * ([[Round.settleDeletedFiles]]).
     */
   def setRound(pageId: Long, oldRoundId: Long, newRoundId: Long): Unit = {
     DB.localTx { implicit session =>
-      Seq(sqls"selection", sqls"selection_deleted").foreach { table =>
-        sql"UPDATE $table SET round_id = $newRoundId WHERE page_id = $pageId AND round_id = $oldRoundId".update()
-      }
+      moveVotes(newRoundId, oldRoundId, sqls"AND src.page_id = $pageId")
     }
     RoundImageCounts.invalidate(oldRoundId, newRoundId)
+    Round.settleDeletedFiles(newRoundId)
   }
 
   def activeJurors(roundId: Long): Int =
@@ -252,21 +253,31 @@ object SelectionJdbc extends CRUDMapper[Selection] {
     *
     * Runs in the caller's session: wrap it in a transaction (as
     * `RoundService.mergeRounds` does) so the delete and the update apply together,
-    * and invalidate both rounds' [[RoundImageCounts]] after it commits.
+    * and invalidate both rounds' [[RoundImageCounts]] after it commits, and settle the
+    * target round's files deleted on Commons ([[Round.settleDeletedFiles]]).
     *
     * The votes moved aside (V63) are merged the same way, so a restored file's votes come
     * back into the target round.
     */
   def mergeRounds(targetRoundId: Long, sourceRoundId: Long)(implicit session: DBSession = AutoSession): Unit =
+    moveVotes(targetRoundId, sourceRoundId, sqls"")
+
+  /** Moves the source round's votes `andWhere` selects (on `src`) to the target round, in
+    * selection and in selection_deleted, but those of a juror who has the image in the
+    * target round already: they are dropped.
+    */
+  private def moveVotes(targetRoundId: Long, sourceRoundId: Long, andWhere: SQLSyntax)(implicit
+      session: DBSession
+  ): Unit =
     Seq(sqls"selection", sqls"selection_deleted").foreach { table =>
       sql"""DELETE src FROM $table src
             JOIN $table tgt
               ON tgt.round_id = $targetRoundId
              AND tgt.page_id = src.page_id
              AND tgt.jury_id = src.jury_id
-            WHERE src.round_id = $sourceRoundId""".update()
+            WHERE src.round_id = $sourceRoundId $andWhere""".update()
 
-      sql"UPDATE $table SET round_id = $targetRoundId WHERE round_id = $sourceRoundId".update()
+      sql"UPDATE $table src SET src.round_id = $targetRoundId WHERE src.round_id = $sourceRoundId $andWhere".update()
     }
 
 }
