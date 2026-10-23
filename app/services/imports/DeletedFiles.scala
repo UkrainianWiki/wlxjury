@@ -8,9 +8,10 @@ import services.distribution.RoundDistributionHandler
   * when Commons has them again (an undeletion, seen by the next import).
   *
   * Both leave alone the rounds a distribution is filling: moving votes in or out of them
-  * would upset its count check. Such a round's votes of a deleted file are moved when its
-  * distribution ends, done, failed or cancelled ([[RoundDistributionHandler]]); those of a
-  * restored file stay aside until the next import restores them.
+  * would upset its count check. Such a round's votes are moved when its distribution ends,
+  * done, failed or cancelled ([[RoundDistributionHandler]]): aside those of a deleted file,
+  * back those of a restored one. Until then the distribution doesn't give a restored file
+  * whose votes are aside to other jurors.
   */
 object DeletedFiles {
 

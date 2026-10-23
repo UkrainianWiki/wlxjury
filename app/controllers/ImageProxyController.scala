@@ -7,15 +7,27 @@ import services.LocalImageCacheService
 import services.imports.FileCheck
 
 import java.net.URLDecoder
-import javax.inject.Inject
+import java.util.concurrent.ConcurrentHashMap
+import javax.inject.{Inject, Singleton}
+import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Future}
 import scala.util.Try
 
-/** Thumbnails, for signed-in users only: only they see the galleries. */
-class ImageProxyController @Inject() (
+/** Thumbnails, for signed-in users only: only they see the galleries.
+  *
+  * @param now milliseconds
+  */
+@Singleton
+class ImageProxyController(
     cc: ControllerComponents,
-    cache: LocalImageCacheService
+    cache: LocalImageCacheService,
+    now: () => Long
 )(implicit ec: ExecutionContext) extends AbstractController(cc) {
+
+  @Inject() def this(cc: ControllerComponents, cache: LocalImageCacheService)(implicit ec: ExecutionContext) =
+    this(cc, cache, () => System.currentTimeMillis())
+
+  import ImageProxyController._
 
   private val logger = play.api.Logger(getClass)
 
@@ -29,13 +41,31 @@ class ImageProxyController @Inject() (
   /** Private: a shared cache must not serve a thumbnail to someone not signed in. */
   private val CacheControl = "Cache-Control" -> "private, max-age=2592000"
 
-  /** 401 without a user name in the (signed) session. The user isn't loaded from the
-    * database, as [[Secured]] does: a gallery asks for hundreds of thumbnails at once.
+  /** Whether each session user name may see thumbnails ([[Secured.mayView]]), and when that was read. */
+  private val viewers = new ConcurrentHashMap[String, (Boolean, Long)]()
+
+  /** 401 unless the session's user may see the galleries ([[Secured.mayView]]): as
+    * [[Secured.withAuth]] would let them in, read at most once per [[ViewerTtl]] per user,
+    * as a gallery asks for hundreds of thumbnails at once.
     */
   def serve(path: String): Action[AnyContent] = Action.async { request =>
-    if (request.session.get(Secured.UserName).isEmpty) Future.successful(Unauthorized)
-    else serveThumbnail(path)
+    request.session.get(Secured.UserName) match {
+      case None       => Future.successful(Unauthorized)
+      case Some(name) =>
+        mayView(name).flatMap(allowed => if (allowed) serveThumbnail(path) else Future.successful(Unauthorized))
+    }
   }
+
+  private def mayView(name: String): Future[Boolean] =
+    Option(viewers.get(name)).filter { case (_, at) => now() - at < ViewerTtl.toMillis } match {
+      case Some((allowed, _)) => Future.successful(allowed)
+      case None =>
+        Future(scala.concurrent.blocking(Secured.mayView(name))).map { allowed =>
+          if (viewers.size >= MaxViewers) viewers.clear()
+          viewers.put(name, (allowed, now()))
+          allowed
+        }
+    }
 
   private def serveThumbnail(path: String): Future[Result] = {
     val segments = path.split("/").toSeq
@@ -69,8 +99,10 @@ class ImageProxyController @Inject() (
             .getOrElse(None)
         ))
           .flatMap {
-            case Some((image, check)) =>
-              serveImage(image, px, path, check)
+            case Some((image, direct)) =>
+              serveImage(image, px, path) { ex =>
+                if (direct) afterFailedFetch(image, ex, px, path) else Future.successful(wikimedia(path))
+              }
 
             case None =>
               // Not in DB: redirect to Wikimedia; browser follows transparently for <img>
@@ -79,10 +111,10 @@ class ImageProxyController @Inject() (
     }
   }
 
-  /** The thumbnail from the local cache, else fetched from Wikimedia and cached. If that
-    * fails and `check` is set, asks Commons whether the file was renamed, changed or deleted.
+  /** The thumbnail from the local cache, else fetched from Wikimedia and cached; else what
+    * `onFailure` makes of the failure.
     */
-  private def serveImage(image: Image, px: Int, path: String, check: Boolean): Future[Result] =
+  private def serveImage(image: Image, px: Int, path: String)(onFailure: Throwable => Future[Result]): Future[Result] =
     // Guard against stale registry entries where the file was deleted on disk
     cache.fileIfCached(image, px) match {
       case Some(file) if file.exists() =>
@@ -99,25 +131,44 @@ class ImageProxyController @Inject() (
           }
           .recoverWith { case ex =>
             logger.warn(s"Failed to fetch $path: ${ex.getMessage}")
-            if (check) afterFailedFetch(image, ex, px, path)
-            else Future.successful(wikimedia(path))
+            onFailure(ex)
           }
     }
 
   /** A stored file's thumbnail could not be fetched: if Wikimedia doesn't have it, perhaps
     * the file was renamed, re-uploaded or deleted on Commons
     * ([[LocalImageCacheService.checkOnCommons]]). A renamed or re-uploaded file's thumbnail
-    * is served right away, under its new name or for its new size; a deleted file's is 404.
-    * Other failures and answers, or none in time, redirect to Wikimedia as before.
+    * is served right away ([[serveCurrent]]); a deleted file's is 404. Other failures and
+    * answers, or none in time, redirect to Wikimedia as before.
     */
   private def afterFailedFetch(image: Image, ex: Throwable, px: Int, path: String): Future[Result] =
     cache.checkOnCommons(image, ex).flatMap {
-      case FileCheck.Renamed(current) => serveImage(current, px, path, check = false)
-      case FileCheck.Changed(current) => serveImage(current, px, path, check = false)
+      case FileCheck.Renamed(current) => serveCurrent(current, px, path)
+      case FileCheck.Changed(current) => serveCurrent(current, px, path)
       case FileCheck.Deleted          => Future.successful(NotFound)
       case _                          => Future.successful(wikimedia(path))
     }
 
+  /** The thumbnail of a renamed or re-uploaded file as now stored, no wider than the file
+    * now is; if that fails too, a redirect to it on Wikimedia, under its new name: the
+    * requested path is the old file's.
+    */
+  private def serveCurrent(current: Image, px: Int, path: String): Future[Result] = {
+    val width = if (current.width > 0) math.min(px, current.width) else px
+    serveImage(current, width, path) { _ =>
+      Future.successful(cache.wikimediaUrl(current, width).fold[Result](NotFound)(Redirect(_, SEE_OTHER)))
+    }
+  }
+
   private def wikimedia(path: String): Result =
     Redirect(s"https://upload.wikimedia.org/wikipedia/commons/thumb/$path", SEE_OTHER)
+}
+
+object ImageProxyController {
+
+  /** How long a user's access to the thumbnails is taken as read: a removed juror loses it within that. */
+  val ViewerTtl: FiniteDuration = 1.minute
+
+  /** Users' access kept at most; past it, all is read again. */
+  val MaxViewers = 10000
 }

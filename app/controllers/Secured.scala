@@ -31,7 +31,7 @@ abstract class Secured(cc: ControllerComponents) extends AbstractController(cc) 
     Results.Redirect(routes.LoginController.error("You don't have permission to access this page"))
 
   def withAuth(
-      permission: Permission = rolePermission(User.ADMIN_ROLES ++ Set("jury", "organizer"))
+      permission: Permission = rolePermission(Secured.ViewerRoles)
   )(f: => User => Request[AnyContent] => Result): EssentialAction = {
     Security.Authenticated(userFromRequest, onUnAuthenticated) { user =>
       Action { request =>
@@ -47,7 +47,7 @@ abstract class Secured(cc: ControllerComponents) extends AbstractController(cc) 
     * Play's default dispatcher, whose few threads every other request needs.
     */
   def withAuthOn(ec: ExecutionContext)(
-      permission: Permission = rolePermission(User.ADMIN_ROLES ++ Set("jury", "organizer"))
+      permission: Permission = rolePermission(Secured.ViewerRoles)
   )(f: => User => Request[AnyContent] => Result): EssentialAction =
     Action.async { request =>
       Future {
@@ -90,6 +90,18 @@ abstract class Secured(cc: ControllerComponents) extends AbstractController(cc) 
 object Secured {
   val UserName         = "username"
   val CurrentContestId = "current_contest_id"
+
+  /** The roles [[Secured.withAuth]] lets in by default: any page's. */
+  val ViewerRoles: Set[String] = User.ADMIN_ROLES ++ Set("jury", "organizer")
+
+  /** Whether the session's user may see a page of [[Secured.withAuth]]'s default
+    * permission: a root user, or one with a role in one of their active contests.
+    */
+  def mayView(userName: String): Boolean =
+    User.byUserName(userName).map(inCurrentContest(_, None)).exists { user =>
+      user.hasAnyRole(ViewerRoles) ||
+      user.userContests.exists(m => m.active && user.inContest(m).hasAnyRole(ViewerRoles))
+    }
 
   /** The user with their memberships, in `currentContestId` (the session's) if they are an
     * active member of it, else in their latest contest where they are. A root user needs

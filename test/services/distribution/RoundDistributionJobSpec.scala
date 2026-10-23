@@ -168,7 +168,51 @@ class RoundDistributionJobSpec extends Specification with TestDb with BeforeAll 
       RoundImageCounts.get(Seq(created.getId))(ImageJdbc.imageCountByRounds)(created.getId) === 19
     }
 
-    "move aside the votes of a file deleted while it ran when it fails, and count again on a retry" in {
+    "give a file restored on Commons while it ran its votes back at its end, not new jurors" in {
+      val (contest, imgs, jurors) = setUp(20, 3)
+      val roundId = inlineService(new TestHandler(chunkRows = 4)).createNewRound(newRound(contest, "R1"), jurors.map(_.getId)).getId
+      val voted = SelectionJdbc.byRound(roundId).find(_.pageId == 20L).get
+      SelectionJdbc.rate(20L, voted.juryId, roundId, 1)
+      DB.localTx(implicit s => DeletedFiles.markDeleted(Seq(20L)))
+      val extra = images(26).drop(20)
+      imageDao.batchInsert(extra)
+      CategoryLinkJdbc.addToCategory(contestDao.findById(contest.getId).get.categoryId.get, extra)
+
+      val h = new TestHandler(chunkRows = 3) // image 20 is in chunk 7
+      val restore = Promise[Seq[Long]]()
+      // In its own transaction, as an import does: it waits for chunk 1 to commit
+      h.atChunk = Some(1 -> (() =>
+        restore.completeWith(Future(DB.localTx(implicit s => DeletedFiles.restore(Seq(20L))))(
+          scala.concurrent.ExecutionContext.global))))
+      inlineService(h).distributeNewImages(roundId) === 6
+      Await.result(restore.future, 60.seconds)
+
+      jobOf(roundId).status === JobStatus.Done
+      pageIds(roundId) === (imgs ++ extra).map(_.pageId).toSet
+      SelectionJdbc.byRound(roundId).filter(_.pageId == 20L).map(s => (s.juryId, s.rate)) === Seq((voted.juryId, 1))
+      DB.readOnly(implicit s => sql"SELECT COUNT(*) FROM selection_deleted".map(_.int(1)).single()) === Some(0)
+      RoundImageCounts.get(Seq(roundId))(ImageJdbc.imageCountByRounds)(roundId) === 26
+    }
+
+    "not take the images it added that went missing before it failed as never added, on a retry" in {
+      val (contest, imgs, jurors) = setUp(20, 3)
+      val h = new TestHandler(chunkRows = 3)
+      // Committed with chunk 2: an image chunk 1 added goes missing
+      h.atChunk = Some(2 -> (() => DB.autoCommit(implicit s => sql"DELETE FROM selection WHERE page_id = 1".update())))
+      h.failBeforeChunk = Some(3)
+      val service = inlineService(h)
+      val roundId = service.submit(newRound(contest, "R1"), jurors.map(_.getId), None).round.getId
+      jobOf(roundId).status === JobStatus.Failed
+      pageIds(roundId) === (2L to 6L).toSet
+
+      service.distributeNewImages(roundId) must throwA[RoundService.RoundDistributionFailed]
+      jobOf(roundId).error must beSome(contain("19 of 20"))
+      service.distributeNewImages(roundId) // the retry after a failed count check rescans
+      jobOf(roundId).status === JobStatus.Done
+      pageIds(roundId) === imgs.map(_.pageId).toSet
+    }
+
+    "move aside the votes of a file deleted while it ran when it fails, and count those moved meanwhile on a retry" in {
       val (contest, imgs, jurors) = setUp(20, 3)
       val h = new TestHandler(chunkRows = 3) // image 1 is in chunk 1
       val deletion = Promise[Seq[Long]]()
@@ -188,7 +232,7 @@ class RoundDistributionJobSpec extends Specification with TestDb with BeforeAll 
       val deletedWhileFailed = pageIds(roundId).min
       DB.localTx(implicit s => DeletedFiles.markDeleted(Seq(deletedWhileFailed))) must contain(roundId)
 
-      service.distributeNewImages(roundId) // resumes the failed job, which counts the round again
+      service.distributeNewImages(roundId) // resumes the failed job, counting what moved meanwhile
       jobOf(roundId).status === JobStatus.Done
       pageIds(roundId) === imgs.map(_.pageId).toSet - 1L - deletedWhileFailed
       roundDao.findById(roundId).get.active must beTrue

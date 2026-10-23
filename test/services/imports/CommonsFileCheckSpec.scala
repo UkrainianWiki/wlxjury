@@ -223,6 +223,50 @@ class CommonsFileCheckSpec extends Specification with TestDb with BeforeAll with
       source.detailCalls.get === 2
     }
 
+    "ask again about a deleted file an import has restored since, within the cooldown" in {
+      val gone = stored(1L, "Deleted")
+      setUp(gone)
+      val source = new FakeCommonsSource(Nil)
+      val check = mkCheck(source)
+
+      await(check.check(gone)) === FileCheck.Deleted
+      await(check.check(gone)) === FileCheck.Deleted // a request that read it before the mark
+      source.detailCalls.get === 2 // its info, then whether it is missing
+
+      DB.localTx { implicit s => DeletedFiles.restore(Seq(1L)) }
+      await(check.check(gone)) === FileCheck.Deleted // asked again: Commons still hasn't it
+      check.stop()
+      source.detailCalls.get === 4
+    }
+
+    "answer Unchanged for a rename it stored, and the rename to a request that read the file before" in {
+      val old = stored(1L, "Old_name")
+      setUp(old)
+      val source = new FakeCommonsSource(Seq(FakeFile(renamedTo(old, "New_name"))))
+      val check = mkCheck(source)
+
+      val current = await(check.check(old)) match {
+        case FileCheck.Renamed(image) => image
+        case other                    => sys.error(s"not renamed: $other")
+      }
+      await(check.check(ImageJdbc.findById(1L).get)) === FileCheck.Unchanged
+      await(check.check(old)) === FileCheck.Renamed(current)
+      check.stop()
+      source.detailCalls.get === 1
+    }
+
+    "ask again about a file stored otherwise since, within the cooldown" in {
+      val same = stored(1L, "Same")
+      setUp(same)
+      val source = new FakeCommonsSource(Seq(FakeFile(same)))
+      val check = mkCheck(source)
+
+      await(check.check(same)) === FileCheck.Unchanged
+      await(check.check(same.copy(width = 1600, height = 1200))) must beLike { case FileCheck.Changed(_) => ok }
+      check.stop()
+      source.detailCalls.get === 2
+    }
+
     "change nothing when Commons can't be asked, and ask again after a while" in {
       val file = stored(1L, "File")
       setUp(file)

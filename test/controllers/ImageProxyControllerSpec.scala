@@ -1,6 +1,6 @@
 package controllers
 
-import db.scalikejdbc.PlayTestDb
+import db.scalikejdbc.{PlayTestDb, User}
 import org.intracer.wmua.Image
 import org.specs2.mutable.Specification
 import play.api.test.Helpers._
@@ -31,9 +31,16 @@ class ImageProxyControllerSpec extends Specification with PlayTestDb {
         .forEach(p => Files.deleteIfExists(p))
     }
 
-  /** Thumbnails are for signed-in users only. */
-  private def thumbRequest(path: String) =
-    FakeRequest("GET", path).withSession(Secured.UserName -> "juror@example.org")
+  private val JurorEmail = "juror@example.org"
+
+  /** Thumbnails are for signed-in users only: a juror of a contest. */
+  private def thumbRequest(path: String) = {
+    if (User.byUserName(JurorEmail).isEmpty) {
+      val contest = contestDao.create(None, "WLE", 2024, "Ukraine")
+      userDao.create(User("Juror", JurorEmail, None, Set("jury"), contestId = contest.id))
+    }
+    FakeRequest("GET", path).withSession(Secured.UserName -> JurorEmail)
+  }
 
   "ImageProxyController" should {
 
@@ -41,6 +48,15 @@ class ImageProxyControllerSpec extends Specification with PlayTestDb {
       testDbApp { implicit app =>
         val result = route(app,
           FakeRequest("GET", "/wikipedia/commons/thumb/x/xx/NoSuchFile.jpg/250px-NoSuchFile.jpg")).get
+        status(result) mustEqual UNAUTHORIZED
+      }
+    }
+
+    "refuse a thumbnail to a session whose user no longer exists" in {
+      testDbApp { implicit app =>
+        val result = route(app,
+          FakeRequest("GET", "/wikipedia/commons/thumb/x/xx/NoSuchFile.jpg/250px-NoSuchFile.jpg")
+            .withSession(Secured.UserName -> "removed@example.org")).get
         status(result) mustEqual UNAUTHORIZED
       }
     }

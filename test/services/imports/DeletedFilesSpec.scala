@@ -112,6 +112,59 @@ class DeletedFilesSpec extends Specification with TestDb with BeforeAll with Bef
       rows("selection_deleted", 1L, r2) must beEmpty
     }
 
+    "leave to the end of a round's distribution the votes it kept aside" in {
+      val (Seq(r1, r2), _) = setUp()
+      DB.localTx(implicit s => DeletedFiles.markDeleted(Seq(1L, 2L)))
+      val end = distributing(r2)
+      DB.localTx(implicit s => DeletedFiles.restore(Seq(1L)))
+      end()
+
+      DB.localTx(implicit s => ImageJdbc.restoreVotesInRound(r2)) === Seq(1L) // not 2: still deleted
+      rows("selection", 1L, r2) === Seq(1, 1)
+      rows("selection_deleted", 1L, r2) must beEmpty
+      rows("selection_deleted", 2L, r2) === Seq(1, 1)
+      rows("selection", 1L, r1) === Seq(1, 1)
+    }
+
+    "not bring back the votes an admin removed meanwhile" in {
+      val (Seq(r1, r2), Seq(j1, _)) = setUp()
+      DB.autoCommit(implicit s => sql"UPDATE selection SET rate = 0 WHERE page_id = 1 AND round_id = $r2 AND jury_id = $j1".update())
+      DB.localTx(implicit s => DeletedFiles.markDeleted(Seq(1L)))
+      SelectionJdbc.removeImage(1L, r1)
+      SelectionJdbc.removeUnrated(r2)
+
+      DB.localTx(implicit s => DeletedFiles.restore(Seq(1L)))
+      rows("selection", 1L, r1) must beEmpty
+      rows("selection", 1L, r2) === Seq(1)
+      rows("selection_deleted", 1L, r2) must beEmpty
+    }
+
+    "bring the votes of a merged round back into the round it was merged into" in {
+      val (Seq(r1, r2), _) = setUp()
+      implicit val contest: ContestJury = ContestJuryJdbc.findAll().head
+      val j3 = createUsers("jury", 3).head.getId
+      selectionDao.create(1L, rate = 3, juryId = j3, roundId = r2)
+      DB.localTx(implicit s => DeletedFiles.markDeleted(Seq(1L)))
+      DB.localTx(implicit s => SelectionJdbc.mergeRounds(targetRoundId = r1, sourceRoundId = r2))
+
+      DB.localTx(implicit s => DeletedFiles.restore(Seq(1L)))
+      rows("selection", 1L, r1) === Seq(1, 1, 3) // j1 and j2 of r1 win over theirs of r2
+      rows("selection", 1L, r2) must beEmpty
+      rows("selection_deleted", 1L, r1) must beEmpty
+      rows("selection_deleted", 1L, r2) must beEmpty
+    }
+
+    "drop the votes of a round deleted meanwhile" in {
+      val (Seq(r1, r2), _) = setUp()
+      DB.localTx(implicit s => DeletedFiles.markDeleted(Seq(1L)))
+      DB.autoCommit(implicit s => sql"DELETE FROM rounds WHERE id = $r2".update())
+
+      DB.localTx(implicit s => DeletedFiles.restore(Seq(1L)))
+      rows("selection", 1L, r1) === Seq(1, 1)
+      rows("selection", 1L, r2) must beEmpty
+      rows("selection_deleted", 1L, r2) must beEmpty
+    }
+
     "let the juror's vote win over the rows distributed meanwhile, and keep nothing aside" in {
       val (Seq(r1, _), Seq(j1, j2)) = setUp()
       DB.localTx(implicit s => DeletedFiles.markDeleted(Seq(1L)))

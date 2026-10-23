@@ -46,7 +46,7 @@ class ImageProxyFileCheckSpec
   private def store(img: Image): Unit = {
     implicit val contest: ContestJury = createContests(10).head
     val round = roundDao.create(Round(None, 1, None, contest.getId, createdAt = now)).getId
-    val juror = createUsers("jury", 1).head.getId
+    val juror = userDao.create(User("Juror", "juror@example.org", None, Set("jury"), contestId = contest.id)).getId
     imageDao.batchInsert(Seq(img))
     selectionDao.create(img.pageId, rate = 1, juryId = juror, roundId = round, monumentId = img.monumentId)
   }
@@ -84,6 +84,40 @@ class ImageProxyFileCheckSpec
       val (restarted, source, again) = controller(Nil)
       status(restarted.serve(thumb("Old_name"))(signedIn)) === OK
       again.stop()
+      source.detailCalls.get === 0
+    }
+
+    "redirect to the file's new name on Wikimedia when that can't be fetched either" in {
+      val old = commonsImage(1L, "Old_name")
+      store(old)
+      val (proxy, _, check) = controller(Seq(renamed(old, "Error_new_name")))
+
+      val result = proxy.serve(thumb("Old_name"))(signedIn)
+      status(result) === SEE_OTHER
+      check.stop()
+      redirectLocation(result) must beSome(endWith("/wikipedia/commons/thumb/c/cd/Error_new_name.jpg/333px-Error_new_name.jpg"))
+    }
+
+    "be no wider than the file now is when it was uploaded again smaller" in {
+      val old = commonsImage(1L, "Reuploaded_small")
+      store(old)
+      val (proxy, _, check) = controller(Seq(old.copy(width = 200, height = 150, size = Some(1000))))
+
+      // Wikimedia doesn't have its original here: redirected to it, not to a 333px thumbnail
+      val result = proxy.serve(thumb("Reuploaded_small"))(signedIn)
+      status(result) === SEE_OTHER
+      check.stop()
+      redirectLocation(result) must beSome("https://upload.wikimedia.org/wikipedia/commons/a/ab/Reuploaded_small.jpg")
+    }
+
+    "refuse a session whose user is no longer in any contest" in {
+      val gone = commonsImage(1L, "Gone")
+      store(gone)
+      DB.autoCommit(implicit s => sql"DELETE FROM user_contest".update())
+      val (proxy, source, check) = controller(Nil)
+
+      status(proxy.serve(thumb("Gone"))(signedIn)) === UNAUTHORIZED
+      check.stop()
       source.detailCalls.get === 0
     }
 

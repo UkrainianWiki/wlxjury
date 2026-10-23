@@ -9,7 +9,7 @@ import scalikejdbc.DB
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.{ConcurrentHashMap, ConcurrentLinkedQueue, Executors, RejectedExecutionException, ScheduledExecutorService, TimeUnit}
 import scala.concurrent.duration._
-import scala.concurrent.{ExecutionContext, Future, Promise}
+import scala.concurrent.{ExecutionContext, Future, Promise, blocking}
 import scala.util.control.NonFatal
 import scala.util.{Success, Try}
 
@@ -56,8 +56,11 @@ object FileCheck {
   * within `batchWindow` go in one request (up to the account's ids per request), one
   * request at a time, on this check's own thread. A file is checked at most once per
   * `cooldown` (per `retryAfterError` when Commons couldn't be asked); a later ask gets the
-  * last answer, so a file that keeps failing for another reason costs one request. Past
-  * `maxAnswers` answers, the stale ones are forgotten.
+  * last answer, so a file that keeps failing for another reason costs one request. Unless
+  * the file was stored otherwise since (an import, this check, another instance): then a
+  * rename or new version it found that is now stored is, as of then, unchanged; any other
+  * answer for other stored attributes, and a deletion an import has undone, is asked again.
+  * Past `maxAnswers` answers, the stale ones are forgotten.
   *
   * @param now milliseconds
   */
@@ -89,19 +92,25 @@ class CommonsFileCheck(
   def check(image: Image, within: FiniteDuration = Wait): Future[FileCheck] =
     if (stopped || !isCommonsFile(image)) Future.successful(FileCheck.Unknown)
     else {
-      val result = answers
-        .compute(
-          image.pageId,
-          (_, last) =>
-            if (last != null && !stale(last)) last
-            else {
+      // Read outside compute: a cached deletion is rare, and its check is a query
+      val restored = Option(answers.get(image.pageId)).exists(a =>
+        a.result.value.contains(Success(FileCheck.Deleted)) && !blocking(ImageJdbc.isDeleted(image.pageId)))
+      var result: Future[FileCheck] = null
+      answers.compute(
+        image.pageId,
+        (_, last) =>
+          reusable(last, image, restored) match {
+            case Some(r) =>
+              result = r
+              last
+            case None =>
               val promise = Promise[FileCheck]()
               pending.add(image -> promise)
               scheduleFlush()
-              Answer(promise.future, now())
-            }
-        )
-        .result
+              result = promise.future
+              Answer(promise.future, now(), image)
+          }
+      )
       evict()
       if (result.isCompleted) result else waitAtMost(result, within)
     }
@@ -112,6 +121,23 @@ class CommonsFileCheck(
     timer.shutdownNow()
     answerPendingUnknown()
   }
+
+  /** The last answer for `image` as stored now, if it still holds (see the class doc). It
+    * stays the cached one: a request that read the file before it was stored otherwise
+    * still gets it.
+    *
+    * @param restored the last answer is a deletion, and the file is no longer marked deleted
+    */
+  private def reusable(last: Answer, image: Image, restored: Boolean): Option[Future[FileCheck]] =
+    if (last == null || stale(last)) None
+    else
+      last.result.value match {
+        case None                            => Some(last.result) // being asked
+        case Some(Success(FileCheck.Deleted)) => Option.when(!restored)(last.result)
+        case Some(Success(FileCheck.Renamed(current))) if sameFile(current, image) => Some(Unchanged)
+        case Some(Success(FileCheck.Changed(current))) if sameFile(current, image) => Some(Unchanged)
+        case _                               => Option.when(sameFile(last.asked, image))(last.result)
+      }
 
   private def stale(answer: Answer): Boolean =
     answer.result.value match {
@@ -213,7 +239,7 @@ class CommonsFileCheck(
           mediaType = info.mediaType
         )
         if (current.title != stored.title || current.url != stored.url) FileCheck.Renamed(current)
-        else if (fileInfo(current) != fileInfo(stored)) FileCheck.Changed(current)
+        else if (!sameFile(current, stored)) FileCheck.Changed(current)
         else FileCheck.Unchanged
     }
 
@@ -261,10 +287,13 @@ object CommonsFileCheck {
   /** A file uploaded to Commons, not to another wiki. */
   def isCommonsUrl(url: String): Boolean = url.contains("//upload.wikimedia.org/wikipedia/commons/")
 
-  private final case class Answer(result: Future[FileCheck], at: Long)
+  private val Unchanged: Future[FileCheck] = Future.successful(FileCheck.Unchanged)
+
+  /** @param asked the file as stored when it was asked about */
+  private final case class Answer(result: Future[FileCheck], at: Long, asked: Image)
 
   /** What a check compares: the file's own attributes, not those from its page text. */
-  private def fileInfo(i: Image) = (i.title, i.url, i.width, i.height, i.size, i.mime, i.mediaType)
+  private def sameFile(a: Image, b: Image) = ImageJdbc.fileInfo(a) == ImageJdbc.fileInfo(b)
 
   private def daemonScheduler(name: String): ScheduledExecutorService =
     Executors.newSingleThreadScheduledExecutor { r =>

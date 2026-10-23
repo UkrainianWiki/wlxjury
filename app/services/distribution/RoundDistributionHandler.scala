@@ -20,9 +20,14 @@ import scala.collection.mutable
   * @param position       images assigned so far: the juror rotation continues from it
   * @param candidatesSeen candidates read (the progress)
   * @param imagesBefore   the round's images this job didn't add (for the count check): counted
-  *                       by the first step after the job is queued or retried, under its
-  *                       job lock, so a file check that moves votes before the job is active
-  *                       ([[RoundDistributionHandler.lockRoundsBeingDistributed]]) is in it
+  *                       by the first step after the job is queued, under its job lock, so a
+  *                       file check that moves votes before the job is active
+  *                       ([[RoundDistributionHandler.lockRoundsBeingDistributed]]) is in it;
+  *                       after a retry, moved by what the round's count changed by while the
+  *                       job wasn't active (`countAtEnd`)
+  * @param countAtEnd     the round's images when the job last failed, before it moved the
+  *                       votes of deleted and restored files: until the first step after a
+  *                       retry
   * @param total          the number of candidates, for the progress
   * @param ranked         top-N: the chosen images, ascending
   * @param frozen         the previous rounds this job holds frozen
@@ -36,6 +41,7 @@ final case class DistributionState(
     imagesAdded: Long = 0L,
     rowsAdded: Long = 0L,
     imagesBefore: Option[Long] = None,
+    countAtEnd: Option[Long] = None,
     total: Option[Long] = None,
     ranked: Seq[Long] = Nil,
     frozen: Seq[Long] = Nil,
@@ -57,7 +63,8 @@ object DistributionState {
   *     SQL, otherwise; for top-N the ranked images (ranked once, by the first step);
   *  2. leave out the images already in the round (`NOT EXISTS`): a resumed or repeated
   *     job never adds an image twice; and those deleted on Commons (`images.deleted_at`,
-  *     V63, set by [[services.imports.CommonsFileCheck]]);
+  *     V63, set by [[services.imports.CommonsFileCheck]]) or with votes of the round moved
+  *     aside then (`selection_deleted`);
   *  3. apply the round's per-image filters ([[DistributeImages.perImageFilters]], the
   *     same chain as the in-memory path);
   *  4. assign jurors from the job's running position ([[DistributeImages.assign]]) and
@@ -148,23 +155,27 @@ class RoundDistributionHandler @Inject() (distributeImages: DistributeImages, co
 
   override def onCancelled(job: Job, ctx: StepContext): JsObject = end(job, ctx)
 
-  /** Unfreezes the previous rounds, and moves aside the votes of the files deleted on
-    * Commons that the job kept in the round while it ran ([[archiveDeletedVotes]]): once
-    * the job is no longer active, nothing else would.
+  /** Unfreezes the previous rounds, and moves the votes of the files deleted or restored on
+    * Commons that the job left as they were while it ran ([[settleFiles]]): once the job is
+    * no longer active, nothing else would. Remembers the round's count before (`countAtEnd`).
     */
   private def end(job: Job, ctx: StepContext): JsObject = {
     implicit val session: DBSession = ctx.session
     val st = stateOf(job)
+    val roundId = roundIdOf(job)
+    val count = imageCount(roundId)
     Round.release(st.frozen, close = false)
-    if (archiveDeletedVotes(roundIdOf(job)).nonEmpty) ctx.afterCommit(RoundImageCounts.invalidate(roundIdOf(job)))
-    Json.toJsObject(st.copy(frozen = Nil))
+    if (settleFiles(roundId)) ctx.afterCommit(RoundImageCounts.invalidate(roundId))
+    Json.toJsObject(st.copy(frozen = Nil, countAtEnd = Some(count)))
   }
 
-  /** Freezes the previous rounds again and resumes; the next step counts the round's
-    * images again: votes may have been moved while the job wasn't active. After a failed
-    * count check the round is rescanned from the start with fresh accounting, as
-    * "Distribute new files" would: the images already in it are skipped, the missing ones
-    * added.
+  /** Freezes the previous rounds again and resumes; the next step moves `imagesBefore` by
+    * what the round's count changed by since the failure: votes may have been moved while
+    * the job wasn't active. Counting the round again instead would take the images the job
+    * added but are missing as never added, and the count check would pass without them.
+    * After a failed count check the round is rescanned from the start with fresh
+    * accounting, as "Distribute new files" would: the images already in it are skipped, the
+    * missing ones added.
     */
   override def onRetry(job: Job, ctx: StepContext): JsObject = {
     implicit val session: DBSession = ctx.session
@@ -178,8 +189,8 @@ class RoundDistributionHandler @Inject() (distributeImages: DistributeImages, co
       if (!st.verifyFailed) st
       else
         st.copy(phase = Phase.Distribute, cursor = 0L, candidatesSeen = 0L, imagesAdded = 0L, rowsAdded = 0L,
-          verifyFailed = false)
-    Json.toJsObject(resumed.copy(imagesBefore = None, frozen = prevIds))
+          imagesBefore = None, countAtEnd = None, verifyFailed = false)
+    Json.toJsObject(resumed.copy(frozen = prevIds))
   }
 
   // ── steps ──────────────────────────────────────────────────────────────────
@@ -188,9 +199,12 @@ class RoundDistributionHandler @Inject() (distributeImages: DistributeImages, co
     implicit val session: DBSession = ctx.session
     val roundId = roundIdOf(job)
     val c = contexts.getOrElseUpdate(job.id, context(roundId))
-    val st = stateOf(job) match {
-      case s if s.imagesBefore.isDefined => s
-      case s => s.copy(imagesBefore = Some(imageCount(roundId) - s.imagesAdded)) // see DistributionState
+    val st = stateOf(job) match { // see DistributionState
+      case s if s.imagesBefore.isEmpty =>
+        s.copy(imagesBefore = Some(imageCount(roundId) - s.imagesAdded), countAtEnd = None)
+      case s if s.countAtEnd.isDefined =>
+        s.copy(imagesBefore = s.imagesBefore.map(_ + imageCount(roundId) - s.countAtEnd.get), countAtEnd = None)
+      case s => s
     }
 
     st.phase match {
@@ -233,13 +247,14 @@ class RoundDistributionHandler @Inject() (distributeImages: DistributeImages, co
             progress(st)
           )
         else {
-          val deleted = archiveDeletedVotes(roundId)
+          val moved = settleFiles(roundId)
           val distributing =
             sql"SELECT distributing FROM rounds WHERE id = $roundId FOR UPDATE".map(_.boolean(1)).single().getOrElse(false)
           val creating = distributing || (job.params \ "completingCreation").asOpt[Boolean].getOrElse(false)
           if (distributing) Round.completeCreation(roundId)
           Round.release(st.frozen, close = creating)
-          ctx.afterCommit(RoundImageCounts.refresh(roundId)(count.toInt - deleted.size))
+          val finalCount = if (moved) imageCount(roundId) else count
+          ctx.afterCommit(RoundImageCounts.refresh(roundId)(finalCount.toInt))
           logger.info(
             s"Round $roundId: distributed ${st.imagesAdded} images (${st.rowsAdded} selection rows) " +
               s"to ${c.jurors.size} jurors" +
@@ -252,17 +267,22 @@ class RoundDistributionHandler @Inject() (distributeImages: DistributeImages, co
     }
   }
 
-  /** Moves aside the round's votes of files deleted on Commons while the job was active: a
-    * step may have added one before it was marked, and the mark left this round's votes in
-    * place ([[RoundDistributionHandler.lockRoundsBeingDistributed]]). The transaction that
-    * marked it has committed: this one's job lock waited for it.
+  /** Moves the round's votes of files deleted or restored on Commons while the job was
+    * active, which left this round's votes as they were
+    * ([[RoundDistributionHandler.lockRoundsBeingDistributed]]): aside those of deleted files
+    * (a step may have added one before it was marked), back those of restored ones (the
+    * steps didn't give them to other jurors meanwhile: [[DistributionSource]]). The
+    * transactions that marked or restored them have committed: this one's job lock waited
+    * for them.
     *
-    * @return the files moved
+    * @return whether any votes moved
     */
-  private def archiveDeletedVotes(roundId: Long)(implicit session: DBSession): Seq[Long] = {
+  private def settleFiles(roundId: Long)(implicit session: DBSession): Boolean = {
     val deleted = ImageJdbc.archiveDeletedVotesInRound(roundId)
+    val restored = ImageJdbc.restoreVotesInRound(roundId)
     if (deleted.nonEmpty) logger.info(s"Round $roundId: moved aside the votes of ${deleted.size} files deleted on Commons")
-    deleted
+    if (restored.nonEmpty) logger.info(s"Round $roundId: moved back the votes of ${restored.size} files restored on Commons")
+    deleted.nonEmpty || restored.nonEmpty
   }
 
   private def continue(st: DistributionState) = StepResult.Continue(Json.toJsObject(st), progress(st))
@@ -424,9 +444,13 @@ object DistributionSource {
     case None        => sqls""
   }
 
-  /** Images of the round never come back: the anti-join that makes a resume idempotent. */
+  /** Images of the round never come back: the anti-join that makes a resume idempotent.
+    * Nor do those with votes of the round moved aside (V63): a file restored on Commons
+    * while the job runs gets its votes back when the job ends, not new jurors now.
+    */
   private def notInRound(roundId: Long, pageId: SQLSyntax): SQLSyntax =
-    sqls"NOT EXISTS (SELECT 1 FROM selection x WHERE x.round_id = $roundId AND x.page_id = $pageId)"
+    sqls"""NOT EXISTS (SELECT 1 FROM selection x WHERE x.round_id = $roundId AND x.page_id = $pageId)
+           AND NOT EXISTS (SELECT 1 FROM selection_deleted xd WHERE xd.round_id = $roundId AND xd.page_id = $pageId)"""
 
   def categoryCount(categoryId: Long)(implicit session: DBSession): Long =
     sql"SELECT COUNT(*) FROM category_members WHERE category_id = $categoryId".map(_.long(1)).single().getOrElse(0L)
