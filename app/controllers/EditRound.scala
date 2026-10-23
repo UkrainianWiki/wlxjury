@@ -8,10 +8,15 @@ import play.api.data.validation._
 
 import scala.util.Try
 
+/** The round form.
+  *
+  * @param fileList  "Add files": a pasted list of files to add to the round
+  * @param newImages "Distribute new files"
+  */
 case class EditRound(
     round: Round,
     jurors: Seq[Long],
-    returnTo: Option[String],
+    fileList: Option[String] = None,
     newImages: Boolean = false
 )
 
@@ -33,7 +38,7 @@ object EditRound {
       "roles" -> text,
       "distribution" -> number,
       "rates" -> number,
-      "returnTo" -> optional(text),
+      "fileList" -> optional(text),
       "minMpx" -> text,
       "previousRound" -> seq(text),
       "minJurors" -> optional(text),
@@ -67,7 +72,7 @@ object EditRound {
       roles: String,
       distribution: Int,
       rates: Int,
-      returnTo: Option[String],
+      fileList: Option[String],
       minMpx: String,
       previousRounds: Seq[String],
       prevSelectedBy: Option[String],
@@ -111,7 +116,7 @@ object EditRound {
       },
       mediaType = Option(mediaType).filterNot(_ == MediaType.All)
     ).withFixedCategories
-    EditRound(round, jurors.flatMap(s => Try(s.toLong).toOption), returnTo, newImages)
+    EditRound(round, jurors.flatMap(s => Try(s.toLong).toOption), fileList.filter(_.trim.nonEmpty), newImages)
   }
 
   def unapplyEdit(editRound: EditRound): Option[
@@ -150,7 +155,7 @@ object EditRound {
         round.roles.head,
         round.distribution,
         round.rates.id,
-        editRound.returnTo,
+        editRound.fileList,
         round.minMpx.fold("No")(_.toString),
         round.previousIds.map(_.toString),
         round.prevSelectedBy.map(_.toString),

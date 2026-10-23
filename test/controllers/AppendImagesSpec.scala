@@ -1,10 +1,10 @@
 package controllers
 
-import db.scalikejdbc.{ImageJdbc, Round, SharedTestDb, TestDb}
+import db.scalikejdbc.{CategoryJdbc, ImageJdbc, Round, SharedTestDb, TestDb}
 import org.intracer.wmua.{ContestJury, Image, JuryTestHelpers}
 import org.specs2.mutable.Specification
 import org.specs2.specification.{BeforeAll, BeforeEach}
-import services.TestImportServices
+import services.{ImageService, TestImportServices}
 import scalikejdbc.{DB, scalikejdbcSQLInterpolationImplicitDef}
 import services.imports.{CommonsLogin, DeletedFiles, FakeCommonsSource, FakeFile, ImageImportHandler, ImportState, MwCommonsSource}
 import services.jobs.{Job, JobJdbc, JobStatus}
@@ -105,6 +105,55 @@ class AppendImagesSpec extends Specification with JuryTestHelpers with TestDb wi
       ImageImportHandler.paramsOf(done).titleCount === 6
       ImageImportHandler.paramsOf(done).titles must beEmpty // not read back
       ImageImportHandler.titlesOf(done, 4, 10) === Seq(images(4).title, "File:Missing.jpg")
+    }
+
+    "add a source's and lists' files to the contest's own category, removing none" in {
+      val inSource = (11 to 13).map(id => image(id).copy(monumentId = None))
+      val listed = (21 to 22).map(id => image(id).copy(monumentId = None))
+      val contest = createContest()
+      importFiles(inSource, contest)
+      stored(contest) === inSource
+
+      importFiles(listed.take(1), contest, titles = listed(0).title)
+      importFiles(listed.drop(1), contest, titles = listed(1).title)
+      stored(contest) === inSource ++ listed // the lists join the source's files, and each other
+
+      // the source again: its new files are added, the listed ones stay
+      val more = inSource :+ image(14).copy(monumentId = None)
+      importFiles(more, contest)
+      stored(contest) === (more ++ listed).sortBy(_.pageId)
+
+      val updated = contestDao.findById(contest.getId).get
+      updated.images === Some(category) // a list doesn't change the source
+      updated.categoryId === Some(CategoryJdbc.findOrInsert(ImageService.ownCategory(contest.getId)))
+    }
+
+    "not add to another contest with the same source" in {
+      val inSource = (11 to 13).map(id => image(id).copy(monumentId = None))
+      val listed = image(21).copy(monumentId = None)
+      val contest = createContest()
+      val other = createContest(id = Some(contestId + 1))
+      importFiles(inSource, contest)
+      importFiles(inSource, other)
+      importFiles(Seq(listed), contest, source = "", titles = listed.title)
+      stored(contest) === inSource :+ listed
+      stored(other) === inSource
+    }
+
+    "start a contest's own category with the files of its shared one" in {
+      val images = (11 to 13).map(id => image(id).copy(monumentId = None))
+      val listed = image(21).copy(monumentId = None)
+      val contest = createContest()
+      // as before own categories: the contest's category is its source's, by title
+      contestDao.setImagesSource(contest.getId, Some(category))
+      val shared = CategoryJdbc.findOrInsert(category)
+      imageDao.batchInsert(images)
+      db.scalikejdbc.CategoryLinkJdbc.addToCategory(shared, images)
+      stored(contest) === images
+
+      importFiles(Seq(listed), contest, titles = listed.title)
+      stored(contest) === images :+ listed
+      imageDao.findByCategory(shared).map(_.pageId).sorted === images.map(_.pageId) // left as it was
     }
 
     "fetch a step's files in one request when the account has apihighlimits" in {

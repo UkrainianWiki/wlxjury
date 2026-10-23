@@ -37,7 +37,7 @@ class RoundDistributionJobSpec extends Specification with TestDb with BeforeAll 
     * the watched rounds were active at each chunk.
     */
   private class TestHandler(chunkRows: Int, watch: => Seq[Long] = Nil)
-      extends RoundDistributionHandler(di, TestRoundServices.config(chunkRows)) {
+      extends RoundDistributionHandler(di, TestRoundServices.config(chunkRows), TestRoundServices.emptyCommons) {
     val chunks = new AtomicInteger()
     @volatile var failBeforeChunk: Option[Int] = None
     @volatile var failAfterInsertOfChunk: Option[Int] = None
