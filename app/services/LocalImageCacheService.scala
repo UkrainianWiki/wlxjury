@@ -391,10 +391,12 @@ class LocalImageCacheService(
     targetWidths(image).forall(px => registry.containsKey(localFile(image, px).getAbsolutePath))
 
   /** Where Wikimedia serves the file `px` wide: its thumbnail, or the file itself if it is
-    * no wider. None without a Commons url.
+    * no wider and a browser can show it ([[Image.thumbnailOnly]], as
+    * [[controllers.Global.resizeTo]] does). None without a Commons url.
     */
   def wikimediaUrl(image: Image, px: Int): Option[String] =
-    if (px >= image.width) image.url.filter(CommonsFileCheck.isCommonsUrl) else wikiThumbUrl(image, px)
+    if (image.width > 0 && px >= image.width && !image.thumbnailOnly) image.url.filter(CommonsFileCheck.isCommonsUrl)
+    else wikiThumbUrl(image, px)
 
   // Mirrors the URL construction in Global.legacyThumbUlr, using wikiBaseUrl as host
   private[services] def wikiThumbUrl(image: Image, px: Int): Option[String] =

@@ -248,7 +248,6 @@ class ImageImportHandler @Inject() (source: CommonsSource, config: Configuration
       .findWithCategoryLink(page.images.map(_.pageId), categoryId)
       .map { case (image, linked) => image.pageId -> (image, linked) }
       .toMap
-    // Before any other write: it locks the distribution jobs (DeletedFiles)
     val restored = DeletedFiles.restore(stored.keys.toSeq)
     if (restored.nonEmpty) ctx.afterCommit(RoundImageCounts.invalidate(restored: _*))
     val fresh = page.images.filterNot(i => stored.contains(i.pageId))

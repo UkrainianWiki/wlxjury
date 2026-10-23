@@ -33,7 +33,7 @@ class CommonsFileCheckSpec extends Specification with TestDb with BeforeAll with
   /** The images, each voted on by two jurors in two rounds. Returns the round ids. */
   private def setUp(images: Image*): Seq[Long] = {
     implicit val contest: ContestJury = createContests(10).head
-    val rounds = (1 to 2).map(n => roundDao.create(Round(None, n, None, contest.getId, createdAt = now)).getId)
+    val rounds = (1 to 2).map(n => roundDao.create(Round(None, n, None, contest.getId, createdAt = now, active = true)).getId)
     val jurors = createUsers("jury", 1, 2).map(_.getId)
     imageDao.batchInsert(images)
     for (img <- images; r <- rounds; j <- jurors)
@@ -189,6 +189,17 @@ class CommonsFileCheckSpec extends Specification with TestDb with BeforeAll with
       ImageJdbc.findById(1L).map(_.title) must beSome("File:Same.jpg")
       deletedAt(1L) must beNone
       selectionRows("selection", 1L) === 4
+    }
+
+    "change nothing for a file whose url Commons now gives with tracking parameters" in {
+      val same = stored(1L, "Same")
+      setUp(same)
+      val tracked = same.copy(url = same.url.map(_ + "?utm_source=commons.wikimedia.org&utm_campaign=index"))
+      val check = mkCheck(new FakeCommonsSource(Seq(FakeFile(tracked))))
+
+      await(check.check(same)) === FileCheck.Unchanged
+      check.stop()
+      ImageJdbc.findById(1L).flatMap(_.url) === same.url
     }
 
     "ask about the files checked together in one request" in {

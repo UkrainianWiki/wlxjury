@@ -15,17 +15,19 @@ import scala.util.Try
 
 /** Thumbnails, for signed-in users only: only they see the galleries.
   *
-  * @param now milliseconds
+  * @param now           milliseconds
+  * @param viewerMayView whether the session's user may see the galleries ([[Secured.mayView]])
   */
 @Singleton
 class ImageProxyController(
     cc: ControllerComponents,
     cache: LocalImageCacheService,
-    now: () => Long
+    now: () => Long,
+    viewerMayView: String => Boolean
 )(implicit ec: ExecutionContext) extends AbstractController(cc) {
 
   @Inject() def this(cc: ControllerComponents, cache: LocalImageCacheService)(implicit ec: ExecutionContext) =
-    this(cc, cache, () => System.currentTimeMillis())
+    this(cc, cache, () => System.currentTimeMillis(), Secured.mayView)
 
   import ImageProxyController._
 
@@ -41,8 +43,10 @@ class ImageProxyController(
   /** Private: a shared cache must not serve a thumbnail to someone not signed in. */
   private val CacheControl = "Cache-Control" -> "private, max-age=2592000"
 
-  /** Whether each session user name may see thumbnails ([[Secured.mayView]]), and when that was read. */
-  private val viewers = new ConcurrentHashMap[String, (Boolean, Long)]()
+  /** Whether each session user may see thumbnails ([[Secured.mayView]]), or the lookup
+    * under way, and when it started.
+    */
+  private val viewers = new ConcurrentHashMap[String, (Future[Boolean], Long)]()
 
   /** 401 unless the session's user may see the galleries ([[Secured.mayView]]): as
     * [[Secured.withAuth]] would let them in, read at most once per [[ViewerTtl]] per user,
@@ -56,16 +60,27 @@ class ImageProxyController(
     }
   }
 
-  private def mayView(name: String): Future[Boolean] =
-    Option(viewers.get(name)).filter { case (_, at) => now() - at < ViewerTtl.toMillis } match {
-      case Some((allowed, _)) => Future.successful(allowed)
-      case None =>
-        Future(scala.concurrent.blocking(Secured.mayView(name))).map { allowed =>
-          if (viewers.size >= MaxViewers) viewers.clear()
-          viewers.put(name, (allowed, now()))
-          allowed
+  /** One lookup per user at a time: a gallery's thumbnails, asked for at once, share it. A
+    * failed lookup is forgotten.
+    */
+  private def mayView(name: String): Future[Boolean] = {
+    val user = Secured.normalizeUserName(name)
+    val at = now()
+    if (viewers.size >= MaxViewers) viewers.clear()
+    var started: Option[(Future[Boolean], Long)] = None
+    val (allowed, _) = viewers.compute(
+      user,
+      (_, last) =>
+        if (last != null && at - last._2 < ViewerTtl.toMillis) last
+        else {
+          val entry = (Future(scala.concurrent.blocking(viewerMayView(user))), at)
+          started = Some(entry)
+          entry
         }
-    }
+    )
+    started.foreach(entry => entry._1.failed.foreach(_ => viewers.remove(user, entry)))
+    allowed
+  }
 
   private def serveThumbnail(path: String): Future[Result] = {
     val segments = path.split("/").toSeq
@@ -150,11 +165,12 @@ class ImageProxyController(
     }
 
   /** The thumbnail of a renamed or re-uploaded file as now stored, no wider than the file
-    * now is; if that fails too, a redirect to it on Wikimedia, under its new name: the
-    * requested path is the old file's.
+    * now is (unless it is only shown by thumbnails, [[Image.thumbnailOnly]]); if that fails
+    * too, a redirect to it on Wikimedia, under its new name: the requested path is the old
+    * file's.
     */
   private def serveCurrent(current: Image, px: Int, path: String): Future[Result] = {
-    val width = if (current.width > 0) math.min(px, current.width) else px
+    val width = if (current.width > 0 && !current.thumbnailOnly) math.min(px, current.width) else px
     serveImage(current, width, path) { _ =>
       Future.successful(cache.wikimediaUrl(current, width).fold[Result](NotFound)(Redirect(_, SEE_OTHER)))
     }

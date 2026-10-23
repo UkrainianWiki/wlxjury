@@ -28,7 +28,7 @@ object FileCheck {
     */
   final case class Changed(image: Image) extends FileCheck
 
-  /** Commons no longer has the file: it is marked deleted and its votes moved aside. */
+  /** Commons no longer has the file: it is marked deleted and its votes in the open rounds moved aside. */
   case object Deleted extends FileCheck
 
   /** Commons has the file as stored: the thumbnail failed for another reason. */
@@ -47,9 +47,9 @@ object FileCheck {
   *    without a title, which scalawiki's parser drops, as it drops any page it can't parse.
   *    So the ids missing from the answer are asked again, without props
   *    ([[CommonsSource.missingFiles]]), and only those the API says are missing count; a
-  *    failed request changes nothing. The file is marked deleted, and its votes moved aside
-  *    ([[DeletedFiles.markDeleted]]), so the galleries no longer show it; the next import
-  *    that finds it on Commons again restores it.
+  *    failed request changes nothing. The file is marked deleted, and its votes in the open
+  *    rounds moved aside ([[DeletedFiles.markDeleted]]), so their galleries no longer show
+  *    it; the next import that finds it on Commons again restores it.
   *  - Only files with a Commons url are asked about: another wiki's page id is not theirs.
   *
   * A gallery asks for many thumbnails at once, so the checks are batched: the files asked
@@ -230,7 +230,9 @@ class CommonsFileCheck(
       case Some(info) =>
         val current = stored.copy(
           title = p.title,
-          url = info.url,
+          // The API adds tracking parameters to urls ("?utm_source=..."), which older
+          // imports didn't store: the same file
+          url = if (info.url.map(withoutQuery) == stored.url.map(withoutQuery)) stored.url else info.url,
           pageUrl = info.pageUrl,
           width = info.width.getOrElse(stored.width),
           height = info.height.getOrElse(stored.height),
@@ -251,7 +253,7 @@ class CommonsFileCheck(
     val deleted = results.collect { case (id, FileCheck.Deleted) => id }.toSeq.sorted
     if (changed.nonEmpty || deleted.nonEmpty) {
       val rounds = DB.localTx { implicit session =>
-        val rounds = DeletedFiles.markDeleted(deleted) // first: it locks the distribution jobs
+        val rounds = DeletedFiles.markDeleted(deleted) // first: it locks the open rounds
         changed.foreach { image =>
           ImageJdbc.updateFileInfo(image)
           val former = stored(image.pageId).title
@@ -286,6 +288,8 @@ object CommonsFileCheck {
 
   /** A file uploaded to Commons, not to another wiki. */
   def isCommonsUrl(url: String): Boolean = url.contains("//upload.wikimedia.org/wikipedia/commons/")
+
+  private def withoutQuery(url: String): String = url.takeWhile(_ != '?')
 
   private val Unchanged: Future[FileCheck] = Future.successful(FileCheck.Unchanged)
 

@@ -353,12 +353,36 @@ object Round extends RoundRepo with CRUDMapper[Round] {
   def setActiveGuarded(id: Long, active: Boolean): Boolean = {
     val refused =
       sql"SELECT distributing FROM rounds WHERE id = $id".map(_.boolean(1)).single().getOrElse(false) && active
-    sql"""UPDATE rounds
-          SET active_before_freeze = IF(freeze_count > 0, $active AND NOT distributing, active_before_freeze),
-              active = IF(freeze_count > 0, active, $active AND NOT distributing)
-          WHERE id = $id""".update()
+    val archived = DB.localTx { implicit session =>
+      val wasOpen = isOpen(id)
+      sql"""UPDATE rounds
+            SET active_before_freeze = IF(freeze_count > 0, $active AND NOT distributing, active_before_freeze),
+                active = IF(freeze_count > 0, active, $active AND NOT distributing)
+            WHERE id = $id""".update()
+      // After the update, and read as of then: see ImageJdbc.lockOpenRoundsOf
+      !wasOpen && isOpen(id) && ImageJdbc.archiveDeletedVotesInRound(id).nonEmpty
+    }
+    if (archived) RoundImageCounts.invalidate(id)
     !refused
   }
+
+  /** A round jurors vote in, or will when a running distribution ends: active, being
+    * created, or frozen while active. A file deleted on Commons leaves the open rounds only
+    * (V63, [[ImageJdbc.lockOpenRoundsOf]]); the others, finished or not started yet, keep
+    * its votes until they open ([[setActiveGuarded]]).
+    *
+    * @param table the rounds table or its alias
+    */
+  def openCond(table: SQLSyntax): SQLSyntax =
+    sqls"""($table.active = 1 OR $table.distributing = 1
+            OR ($table.freeze_count > 0 AND $table.active_before_freeze = 1))"""
+
+  /** Whether the round is open ([[openCond]]), read as committed and locked for update. */
+  def isOpen(id: Long)(implicit session: DBSession): Boolean =
+    sql"SELECT ${openCond(sqls"rounds")} FROM rounds WHERE id = $id FOR UPDATE"
+      .map(_.booleanOpt(1).getOrElse(false))
+      .single()
+      .getOrElse(false)
 
   /** Freezes previous rounds for a distribution that reads their votes: they become
     * inactive (no votes) until [[release]]. The first freeze of a round saves its active

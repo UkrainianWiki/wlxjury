@@ -189,14 +189,17 @@ object ImageJdbc extends CRUDMapper[Image]
   }
 
   /** selection.monument_id (V48) is a copy of images.monument_id that the galleries
-    * sort and filter by regions on; it must follow the image. A page_id lookup on the
-    * unique (page_id, jury_id, round_id) index; rows already right aren't rewritten.
+    * sort and filter by regions on; it must follow the image, also in the votes moved
+    * aside (V63), which may come back. A page_id lookup on the unique
+    * (page_id, jury_id, round_id) index; rows already right aren't rewritten.
     */
   private def syncSelectionMonumentId(pageId: Long, monumentId: Option[String])(implicit
       session: DBSession
   ): Unit =
-    sql"""UPDATE selection SET monument_id = $monumentId
-          WHERE page_id = $pageId AND NOT (monument_id <=> $monumentId)""".update()
+    Seq(sqls"selection", sqls"selection_deleted").foreach { table =>
+      sql"""UPDATE $table SET monument_id = $monumentId
+            WHERE page_id = $pageId AND NOT (monument_id <=> $monumentId)""".update()
+    }
 
   /** The stored file of that name, unless it was deleted on Commons (V63): a new upload
     * under the same name is another file, with another page id. Compared case-sensitively,
@@ -262,19 +265,40 @@ object ImageJdbc extends CRUDMapper[Image]
     if (pageIds.nonEmpty)
       sql"UPDATE images SET deleted_at = NULL WHERE page_id IN ($pageIds) AND deleted_at IS NOT NULL".update()
 
-  /** Moves the selection rows of `pageIds` to selection_deleted (V63), but those of the
-    * `except` rounds: every gallery, count and result reads selection, so they no longer
-    * show the files. A row moved before (a file deleted, restored and deleted again) is
-    * replaced by the current one.
+  /** The open rounds ([[Round.openCond]]) that `pageIds` have votes in, read as committed
+    * and locked in share mode until the transaction ends. A file deleted on Commons leaves
+    * these rounds only ([[archiveVotes]]); a round opened meanwhile ([[Round.setActiveGuarded]])
+    * then either is open here, or waits for this transaction and sees the files deleted.
+    * Call it before marking them deleted.
+    */
+  def lockOpenRoundsOf(pageIds: Seq[Long])(implicit session: DBSession): Set[Long] =
+    if (pageIds.isEmpty) Set.empty
+    else {
+      val roundIds = sql"SELECT DISTINCT round_id FROM selection WHERE page_id IN ($pageIds)".map(_.long(1)).list()
+      if (roundIds.isEmpty) Set.empty
+      else
+        sql"""SELECT id, ${Round.openCond(sqls"rounds")} FROM rounds WHERE id IN ($roundIds)
+              ORDER BY id LOCK IN SHARE MODE"""
+          .map(rs => rs.long(1) -> rs.booleanOpt(2).getOrElse(false))
+          .list()
+          .collect { case (id, true) => id }
+          .toSet
+    }
+
+  /** Moves the selection rows of `pageIds` in the `roundIds` rounds to selection_deleted
+    * (V63): every gallery, count and result reads selection, so they no longer show the
+    * files. A row moved before (a file deleted, restored and deleted again) is replaced by
+    * the current one.
     *
     * @return the rounds that lost rows (their cached image counts are stale)
     */
-  def archiveVotes(pageIds: Seq[Long], except: Set[Long])(implicit session: DBSession): Seq[Long] =
-    if (pageIds.isEmpty) Nil
-    else moveVotesAside(sqls"page_id IN ($pageIds) AND ${notInRounds(except)}")
+  def archiveVotes(pageIds: Seq[Long], roundIds: Set[Long])(implicit session: DBSession): Seq[Long] =
+    if (pageIds.isEmpty || roundIds.isEmpty) Nil
+    else moveVotesAside(sqls"page_id IN ($pageIds) AND round_id IN ($roundIds)")
 
-  /** [[archiveVotes]] of the files in the round that were deleted on Commons: those a
-    * distribution added while it ran, or that [[archiveVotes]] left in it then.
+  /** [[archiveVotes]] of the files in the round that were deleted on Commons: when the round
+    * opens ([[Round.setActiveGuarded]]), or those a distribution added to it as they were
+    * being marked deleted.
     *
     * @return the files moved
     */
@@ -302,28 +326,14 @@ object ImageJdbc extends CRUDMapper[Image]
     roundIds
   }
 
-  /** Moves back the selection rows of `pageIds` that [[archiveVotes]] moved aside, but
-    * those of the `except` rounds ([[moveVotesBack]]).
+  /** Moves back all the selection rows of `pageIds` that [[archiveVotes]] moved aside
+    * ([[moveVotesBack]]).
     *
     * @return the rounds that gained rows (their cached image counts are stale)
     */
-  def restoreVotes(pageIds: Seq[Long], except: Set[Long])(implicit session: DBSession): Seq[Long] =
+  def restoreVotes(pageIds: Seq[Long])(implicit session: DBSession): Seq[Long] =
     if (pageIds.isEmpty) Nil
-    else moveVotesBack(sqls"d.page_id IN ($pageIds) AND ${notInRounds(except, sqls"d.round_id")}")
-
-  /** [[restoreVotes]] of the files in the round that are no longer deleted on Commons:
-    * those an import restored while a distribution filled the round, which left them aside.
-    *
-    * @return the files moved back
-    */
-  def restoreVotesInRound(roundId: Long)(implicit session: DBSession): Seq[Long] = {
-    val pageIds = sql"""SELECT DISTINCT d.page_id FROM selection_deleted d JOIN images i ON i.page_id = d.page_id
-                        WHERE d.round_id = $roundId AND i.deleted_at IS NULL"""
-      .map(_.long(1))
-      .list()
-    if (pageIds.nonEmpty) moveVotesBack(sqls"d.round_id = $roundId AND d.page_id IN ($pageIds)")
-    pageIds
-  }
+    else moveVotesBack(sqls"d.page_id IN ($pageIds)")
 
   /** Moves the selection_deleted rows `where` selects (on `d`) back to selection, but those
     * of rounds deleted meanwhile, which are dropped. Where the file was distributed again to
@@ -346,9 +356,6 @@ object ImageJdbc extends CRUDMapper[Image]
     sql"DELETE d FROM selection_deleted d WHERE $where".update()
     roundIds
   }
-
-  private def notInRounds(roundIds: Set[Long], column: SQLSyntax = sqls"round_id"): SQLSyntax =
-    if (roundIds.isEmpty) sqls"$column IS NOT NULL" else sqls"$column NOT IN ($roundIds)"
 
   def findByContestId(contestId: Long)(implicit session: DBSession = AutoSession): List[Image] =
     ContestJuryJdbc.findById(contestId).map(findByContest).getOrElse(Nil)

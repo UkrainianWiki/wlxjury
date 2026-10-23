@@ -45,7 +45,7 @@ class ImageProxyFileCheckSpec
   /** The image, voted on by one juror in one round. */
   private def store(img: Image): Unit = {
     implicit val contest: ContestJury = createContests(10).head
-    val round = roundDao.create(Round(None, 1, None, contest.getId, createdAt = now)).getId
+    val round = roundDao.create(Round(None, 1, None, contest.getId, createdAt = now, active = true)).getId
     val juror = userDao.create(User("Juror", "juror@example.org", None, Set("jury"), contestId = contest.id)).getId
     imageDao.batchInsert(Seq(img))
     selectionDao.create(img.pageId, rate = 1, juryId = juror, roundId = round, monumentId = img.monumentId)
@@ -63,6 +63,25 @@ class ImageProxyFileCheckSpec
       check.stop()
       source.detailCalls.get === 0
       count("SELECT COUNT(*) FROM images WHERE deleted_at IS NOT NULL") === 0
+    }
+
+    "be served to a session user name with spaces or capitals, as the pages are" in {
+      store(commonsImage(1L, "New_file"))
+      val (proxy, _, check) = controller(Nil)
+
+      status(proxy.serve(thumb("New_file"))(FakeRequest().withSession(Secured.UserName -> " Juror@Example.org"))) === OK
+      check.stop()
+      ok
+    }
+
+    "look the user up once for the thumbnails a gallery asks for at once" in {
+      val lookups = new java.util.concurrent.atomic.AtomicInteger()
+      val proxy = new ImageProxyController(stubControllerComponents(), new LocalImageCacheService(thumbsConfig(), system),
+        () => System.currentTimeMillis(), { _ => lookups.incrementAndGet(); Thread.sleep(200); true })
+
+      val results = (1 to 20).map(n => proxy.serve(s"x/xx/Missing$n.jpg/250px-Missing$n.jpg")(signedIn))
+      results.map(status(_)).distinct === Seq(SEE_OTHER)
+      lookups.get === 1
     }
   }
 
@@ -108,6 +127,20 @@ class ImageProxyFileCheckSpec
       status(result) === SEE_OTHER
       check.stop()
       redirectLocation(result) must beSome("https://upload.wikimedia.org/wikipedia/commons/a/ab/Reuploaded_small.jpg")
+    }
+
+    "redirect to a thumbnail of a renamed PDF that can't be fetched, not to the file itself" in {
+      val old = commonsImage(1L, "Old_name")
+      store(old)
+      val pdf = old.copy(title = "File:Error new name.pdf",
+        url = Some("https://upload.wikimedia.org/wikipedia/commons/c/cd/Error_new_name.pdf"), width = 300, height = 400)
+      val (proxy, _, check) = controller(Seq(pdf))
+
+      val result = proxy.serve(thumb("Old_name"))(signedIn)
+      status(result) === SEE_OTHER
+      check.stop()
+      redirectLocation(result) must beSome(
+        endWith("/wikipedia/commons/thumb/c/cd/Error_new_name.pdf/page1-333px-Error_new_name.pdf.jpg"))
     }
 
     "refuse a session whose user is no longer in any contest" in {

@@ -2997,7 +2997,7 @@ function UGThumbsGeneral(){
 		//no size, and its 0 / 0 ratio would leave every tile of the justified layout unplaced.
 		//Keep the size from the img's data-width / data-height, else 4:3, and mark the tile.
 		if(!objSize.width || !objSize.height){
-			objThumb.addClass("ug-thumb-error");
+			objThumb.addClass("wlx-thumb-failed");
 			if(objItem.thumbWidth && objItem.thumbHeight)
 				objSize = {width: objItem.thumbWidth, height: objItem.thumbHeight};
 			else

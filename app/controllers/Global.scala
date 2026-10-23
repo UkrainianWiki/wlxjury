@@ -59,11 +59,7 @@ object Global {
   }
 
   private def resizeToPx(info: Image, resizeToHeight: Int, px: Int) = {
-    val resizeExtensions = List(".pdf", ".tif", ".tiff", ".svg", ".webm")
-    val lowerCaseTitle = info.title.toLowerCase
-    val isResizeExtension = resizeExtensions.exists(lowerCaseTitle.endsWith)
-
-    if (px < info.width || isResizeExtension) {
+    if (px < info.width || info.thumbnailOnly) {
       thumbUrl(info, px, resizeToHeight)
     } else {
       info.url.getOrElse("")

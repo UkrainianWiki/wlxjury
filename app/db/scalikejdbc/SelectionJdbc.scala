@@ -172,15 +172,15 @@ object SelectionJdbc extends CRUDMapper[Selection] {
         .eq(column.roundId, roundId)
     }.update()
 
+  /** Moves the image's votes to another round, also those moved aside (V63), as
+    * [[mergeRounds]] does.
+    */
   def setRound(pageId: Long, oldRoundId: Long, newRoundId: Long): Unit = {
-    withSQL {
-      update(SelectionJdbc)
-        .set(column.roundId -> newRoundId)
-        .where
-        .eq(column.pageId, pageId)
-        .and
-        .eq(column.roundId, oldRoundId)
-    }.update()
+    DB.localTx { implicit session =>
+      Seq(sqls"selection", sqls"selection_deleted").foreach { table =>
+        sql"UPDATE $table SET round_id = $newRoundId WHERE page_id = $pageId AND round_id = $oldRoundId".update()
+      }
+    }
     RoundImageCounts.invalidate(oldRoundId, newRoundId)
   }
 

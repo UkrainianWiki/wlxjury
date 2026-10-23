@@ -159,7 +159,7 @@ class AppendImagesSpec extends Specification with JuryTestHelpers with TestDb wi
       implicit val contest: ContestJury = createContest()
       val images = (11 to 13).map(image(_))
       importFiles(images, contest)
-      val round = roundDao.create(Round(None, 1, None, contest.getId, createdAt = now)).getId
+      val round = roundDao.create(Round(None, 1, None, contest.getId, createdAt = now, active = true)).getId
       val juror = createUsers("jury", 1).head.getId
       selectionDao.create(11L, rate = 1, juryId = juror, roundId = round)
       DB.localTx(implicit s => DeletedFiles.markDeleted(Seq(11L)))
