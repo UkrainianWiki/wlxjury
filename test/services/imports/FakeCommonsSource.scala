@@ -22,7 +22,7 @@ class FakeCommonsSource(files: Seq[FakeFile], val maxIdsPerRequest: Int = Common
 
   val listCalls = new AtomicInteger()
 
-  /** Calls of [[files]] and [[filesByTitles]], each one API request on the real Commons. */
+  /** Calls of [[files]], [[missingFiles]] and [[filesByTitles]], each one API request on the real Commons. */
   val detailCalls = new AtomicInteger()
 
   /** Fails the n-th call of [[listFiles]] (from 1), once. */
@@ -41,7 +41,15 @@ class FakeCommonsSource(files: Seq[FakeFile], val maxIdsPerRequest: Int = Common
 
   def files(pageIds: Seq[Long], info: Boolean, text: Boolean): Seq[Page] = {
     detail(pageIds.size)
-    pageIds.flatMap(byId.get).map(page(_, info, text))
+    pageIds.filterNot(unparsed).flatMap(byId.get).map(page(_, info, text))
+  }
+
+  /** Files [[files]] leaves out, as scalawiki's parser drops a page it can't parse. */
+  @volatile var unparsed: Set[Long] = Set.empty
+
+  def missingFiles(pageIds: Seq[Long]): Seq[Long] = {
+    detail(pageIds.size)
+    pageIds.filterNot(byId.contains)
   }
 
   def filesByTitles(titles: Seq[String], info: Boolean, text: Boolean): Seq[Page] = {

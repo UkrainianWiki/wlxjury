@@ -15,7 +15,6 @@
         region: String = "all",
         round: Round,
         module: String = "byrate",
-        preload: Iterable[ImageWithRating] = Seq.empty,
         byCriteria: Map[Int, Int] = Map.empty)(content: Html)(implicit request: Request[Any], messages: Messages)
 
 <!DOCTYPE html>
@@ -37,8 +36,6 @@
 
         @raty(score, url, readOnly, round, rate, module, byCriteria)
         @keyboardNav(user, asUserId, files, index, page, rate, region, round, module)
-
-        @preloadImages(preload)
 
     </head>
     <body class="gallery" style="height: 100%;">

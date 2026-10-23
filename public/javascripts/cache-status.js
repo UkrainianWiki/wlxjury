@@ -12,7 +12,9 @@
 function formatCacheStatus(p) {
     if (p.total > 0) {
         var pct    = Math.round(100 * p.done / p.total);
-        var errStr = p.errors > 0 ? ", " + p.errors + " errors" : "";
+        var errStr = (p.renamed > 0 ? ", " + p.renamed + " renamed on Commons" : "")
+            + (p.deleted > 0 ? ", " + p.deleted + " deleted on Commons" : "")
+            + (p.errors > 0 ? ", " + p.errors + " errors" : "");
         var rate   = p.ratePerSec > 0 ? " \u2013 " + p.ratePerSec.toFixed(1) + " img/s" : "";
         var eta    = "";
         if (p.running && p.etaSeconds > 0) {

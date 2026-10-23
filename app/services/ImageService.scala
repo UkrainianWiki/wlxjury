@@ -1,6 +1,6 @@
 package services
 
-import db.scalikejdbc.{CategoryJdbc, ContestJuryJdbc}
+import db.scalikejdbc.{CategoryJdbc, ContestJuryJdbc, ImageJdbc}
 import org.intracer.wmua.{ContestJury, Image}
 import play.api.Logging
 import scalikejdbc.{DB, DBSession}
@@ -72,11 +72,10 @@ object ImageService {
 
   /** The fetched images that are stored already but changed: those
     * [[db.scalikejdbc.ImageJdbc.update]] has something to write for. Compared on the fields
-    * it writes, except pageUrl, which reading an image back doesn't return.
+    * it writes ([[ImageJdbc.fileInfo]], the monument id and the description).
     */
   def changedImages(fetched: Seq[Image], existing: Seq[Image]): Seq[Image] = {
-    def stored(i: Image) =
-      (i.title, i.url, i.width, i.height, i.monumentId, i.description, i.size, i.mime, i.mediaType)
+    def stored(i: Image) = ImageJdbc.fileInfo(i) ++ Seq("monumentId" -> i.monumentId, "description" -> i.description)
     val existingById = existing.map(i => i.pageId -> stored(i)).toMap
     fetched.filter(i => existingById.get(i.pageId).exists(_ != stored(i)))
   }

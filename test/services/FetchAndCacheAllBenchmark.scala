@@ -1,6 +1,7 @@
 package services
 
 import com.typesafe.config.ConfigFactory
+import controllers.Global
 import org.apache.pekko.actor.ActorSystem
 import org.intracer.wmua.ImageUtil
 import org.openjdk.jmh.annotations._
@@ -21,8 +22,8 @@ import scala.concurrent.ExecutionContext.Implicits.global
 @Fork(1)
 class FetchAndCacheAllBenchmark {
 
-  /** Each param value is one of the target heights from LocalImageCacheService#targetHeights. */
-  @Param(Array("120", "180", "240", "250", "375", "500", "1100", "1650"))
+  /** Each param value is one of the heights of a binary round's gallery (Global.thumbnailWidths). */
+  @Param(Array("250", "375", "500"))
   var targetHeightStr: String = _
 
   var system: ActorSystem = _
@@ -56,8 +57,7 @@ class FetchAndCacheAllBenchmark {
     // >= requestedPx (i.e. from the largest target down to requestedPx inclusive), so
     // cascadeScale(sourceImg, cascadeWidths) starts from sourceImg and cascades through
     // the same intermediate steps as it would in production.
-    cascadeWidths = Seq(120, 180, 240, 250, 375, 500, 1100, 1650)
-      .map(h => ImageUtil.resizeTo(imageW, imageH, h))
+    cascadeWidths = Global.thumbnailWidths(imageW, imageH)
       .filter(px => px > 0 && px < imageW)
       .distinct
       .sorted(Ordering[Int].reverse)    // largest first

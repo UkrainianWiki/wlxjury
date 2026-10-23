@@ -1,6 +1,7 @@
 package services
 
 import com.typesafe.config.ConfigFactory
+import controllers.Global
 import org.apache.pekko.actor.ActorSystem
 import org.apache.pekko.http.scaladsl.Http
 import org.apache.pekko.http.scaladsl.model.{ContentTypes, HttpEntity, HttpResponse, _}
@@ -17,6 +18,7 @@ import javax.imageio.ImageIO
 import scala.concurrent.duration._
 import scala.concurrent.{Await, ExecutionContext, Future}
 import java.util.concurrent.atomic.AtomicInteger
+import scala.jdk.CollectionConverters._
 
 class LocalImageCacheServiceSpec extends Specification {
 
@@ -175,17 +177,16 @@ class LocalImageCacheServiceSpec extends Specification {
 
   // ── allSizesCached ────────────────────────────────────────────────────────
 
-  // For a 400×300 image, heights 375+ produce px=400=image.width (no file needed).
-  // The exact needed widths are computed via ImageUtil.resizeTo to avoid floating-point
-  // discrepancies from hand-rolled arithmetic.
+  // For a 400×300 image, the 375 and 500 tall sizes and the 450×375 and 600×500 boxes all
+  // produce px=400=image.width (no file needed). The exact needed widths are computed via
+  // Global.thumbnailWidths to avoid floating-point discrepancies from hand-rolled arithmetic.
   "allSizesCached" should {
 
     val SW = 400; val SH = 300
     def smallImg = mkImage(filename = "Photo.jpg", w = SW, h = SH)
 
-    val targetHeights = Seq(120, 180, 240, 250, 375, 500, 1100, 1650)
     // Widths that require local files (px strictly < image.width)
-    val neededWidths  = targetHeights.map(h => ImageUtil.resizeTo(SW, SH, h)).filter(_ < SW)
+    val neededWidths  = Global.thumbnailWidths(SW, SH).filter(_ < SW)
 
     "return false when no files are present" in {
       val dir = mkTempDir()
@@ -221,8 +222,8 @@ class LocalImageCacheServiceSpec extends Specification {
     }
 
     "treat sizes where px >= image.width as cached without any file" in {
-      // Heights 375, 500, 1100, 1650 all produce px=400=image.width for a 400×300 image.
-      // Those sizes count as cached regardless of filesystem, so only the 4 small files matter.
+      // Sizes that produce px=400=image.width for a 400×300 image count as cached
+      // regardless of filesystem, so only the 4 smaller files matter.
       val dir = mkTempDir()
       val svc = mkService(dir)
       val img = smallImg
@@ -272,8 +273,7 @@ class LocalImageCacheServiceSpec extends Specification {
 
     // Compute expected widths the same way the service does, avoiding hand-rolled
     // floating-point arithmetic that can disagree with ImageUtil.resizeTo.
-    val targetHeights = Seq(120, 180, 240, 250, 375, 500, 1100, 1650)
-    val allWidths     = targetHeights.map(h => ImageUtil.resizeTo(W, H, h)).filter(_ < W)
+    val allWidths     = Global.thumbnailWidths(W, H).filter(_ < W)
 
     "create files for all sizes where px < image.width" in {
       val dir = mkTempDir()
@@ -324,12 +324,12 @@ class LocalImageCacheServiceSpec extends Specification {
 
       svc.saveResized(img, new BufferedImage(400, 300, BufferedImage.TYPE_INT_RGB), sourcePx = 400)
       // Wait for the smallest expected file to appear before asserting the rest.
-      awaitFiles(svc.localFile(img, 160))
+      awaitFiles(svc.localFile(img, 150))
 
-      // For 400×300, heights 375+ all produce px=400=image.width → no file
+      // For 400×300, the 375 and 500 tall sizes and wider boxes produce px=400=image.width → no file
       svc.localFile(img, 400).exists() must beFalse
       // But the smaller sizes ARE created
-      Seq(160, 240, 320, 333).forall(px => svc.localFile(img, px).exists()) must beTrue
+      Seq(150, 225, 300, 333).forall(px => svc.localFile(img, px).exists()) must beTrue
     }
 
     "not create files for sizes larger than sourcePx" in {
@@ -400,17 +400,31 @@ class LocalImageCacheServiceSpec extends Specification {
       }
     }
 
-    "return None on a non-200/non-429 status without retrying" in {
+    "return None on a non-200/non-429/non-404 status without retrying" in {
       val requestsSeen = new AtomicInteger(0)
       withServer { n =>
         requestsSeen.set(n)
-        HttpResponse(StatusCodes.NotFound)
+        HttpResponse(StatusCodes.InternalServerError)
       } { port =>
         val result = Await.result(
           mkService(mkTempDir()).downloadWithRetry(s"http://127.0.0.1:$port/img", attempt = 1),
           10.seconds
         )
         result must beNone
+        requestsSeen.get() === 1
+      }
+    }
+
+    "fail with ThumbnailNotFound on a 404, without retrying" in {
+      val requestsSeen = new AtomicInteger(0)
+      withServer { n =>
+        requestsSeen.set(n)
+        HttpResponse(StatusCodes.NotFound)
+      } { port =>
+        Await.result(
+          mkService(mkTempDir()).downloadWithRetry(s"http://127.0.0.1:$port/img", attempt = 1),
+          10.seconds
+        ) must throwA[ThumbnailNotFound]
         requestsSeen.get() === 1
       }
     }
@@ -524,8 +538,7 @@ class LocalImageCacheServiceSpec extends Specification {
   "registry" should {
 
     val SW = 4000; val SH = 3000
-    val targetHeights = Seq(120, 180, 240, 250, 375, 500, 1100, 1650)
-    val neededWidths  = targetHeights.map(h => ImageUtil.resizeTo(SW, SH, h)).filter(_ < SW)
+    val neededWidths  = Global.thumbnailWidths(SW, SH).filter(_ < SW)
 
     "be empty before any files are saved" in {
       val tmpDir = Files.createTempDirectory("registry-test").toFile
@@ -586,6 +599,102 @@ class LocalImageCacheServiceSpec extends Specification {
       tmpDir.delete()
       ok
     }
+
+    "not register the sizes marker" in {
+      val tmpDir = Files.createTempDirectory("registry-marker").toFile
+      val svc    = mkService(tmpDir)
+      Await.result(svc.unusedSizesCleanedUp, 10.seconds)
+      new File(tmpDir, svc.SizesMarker).exists() must beTrue
+
+      val restarted = mkService(tmpDir)
+      Await.result(restarted.initRegistry(), 10.seconds)
+      restarted.registrySize mustEqual 0
+      tmpDir.delete()
+      ok
+    }
+  }
+
+  // ── cleanUpUnusedSizes ───────────────────────────────────────────────────
+
+  "the cleanup of sizes no longer cached" should {
+
+    val wide = mkImage(filename = "Wide.jpg") // 4000×3000
+    val tall = mkImage(id = 2, w = 1000, h = 4000, filename = "Tall.jpg")
+
+    // Paths come from a service of another directory: one of `dir` would clean it up
+    // before the files are written.
+    val pathsDir = mkTempDir()
+    val paths    = mkService(pathsDir)
+
+    def writeTo(dir: File, img: Image, px: Int): File = {
+      val f = new File(dir, paths.localFile(img, px).getAbsolutePath.stripPrefix(pathsDir.getAbsolutePath))
+      f.getParentFile.mkdirs()
+      ImageIO.write(new BufferedImage(px, img.height * px / img.width, BufferedImage.TYPE_INT_RGB), "JPEG", f)
+      f
+    }
+
+    /** A service started on `dir`, once its cleanup is done. */
+    def start(dir: File): LocalImageCacheService = {
+      val svc = mkService(dir)
+      Await.result(svc.unusedSizesCleanedUp, 30.seconds)
+      svc
+    }
+
+    def marker(dir: File): File = new File(dir, paths.SizesMarker)
+
+    "delete them at the first start, keep the others, and write the marker" in {
+      val tmpDir = mkTempDir()
+      def write(img: Image, px: Int): File = writeTo(tmpDir, img, px)
+      val kept = Seq(
+        write(wide, 150), // 150×120 box
+        write(wide, 333), // 250 tall
+        write(wide, 600), // 600×500 box
+        write(wide, 666), // 500 tall
+        write(tall, 30),  // 120 tall, which is the 150×120 box
+        write(tall, 125)  // 500 tall
+      )
+      val deleted = Seq(
+        write(wide, 160),  // 120 tall
+        write(wide, 320),  // 240 tall
+        write(wide, 1466), // 1100 tall: the large view
+        write(tall, 275)   // 1100 tall: narrower than a wide image's gallery sizes
+      )
+      // Only a large size left of an image
+      val onlyLarge = write(mkImage(id = 3, filename = "Only.jpg"), 1466)
+
+      val svc = start(tmpDir)
+
+      kept.forall(f => f.exists() && svc.registryContains(f)) must beTrue
+      (deleted :+ onlyLarge).exists(_.exists()) must beFalse
+      svc.registrySize mustEqual kept.size
+      new String(Files.readAllBytes(marker(tmpDir).toPath), "UTF-8") mustEqual svc.cachedSizes
+    }
+
+    "not run again once the marker names the sizes cached" in {
+      val tmpDir = mkTempDir()
+      start(tmpDir)
+      marker(tmpDir).exists() must beTrue
+
+      val planted = writeTo(tmpDir, wide, 160) // 120 tall
+      start(tmpDir)
+      planted.exists() must beTrue
+    }
+
+    "run again when the marker names other sizes" in {
+      val tmpDir = mkTempDir()
+      Files.write(marker(tmpDir).toPath, "*x120 150x120".getBytes("UTF-8"))
+      val planted = writeTo(tmpDir, wide, 160)
+      val kept    = writeTo(tmpDir, wide, 666)
+
+      val svc = start(tmpDir)
+      planted.exists() must beFalse
+      kept.exists() must beTrue
+      new String(Files.readAllBytes(marker(tmpDir).toPath), "UTF-8") mustEqual svc.cachedSizes
+    }
+
+    "name the boxes the views fit thumbnails into" in {
+      paths.cachedSizes mustEqual "*x250 300x250 150x120 *x375 450x375 225x180 *x500 600x500 300x240"
+    }
   }
 
   // ── fetchAndCacheAll / fileIfCached ──────────────────────────────────────
@@ -593,8 +702,7 @@ class LocalImageCacheServiceSpec extends Specification {
   "fetchAndCacheAll" should {
 
     val SW = 4000; val SH = 3000
-    val targetHeights = Seq(120, 180, 240, 250, 375, 500, 1100, 1650)
-    val neededWidths  = targetHeights.map(h => ImageUtil.resizeTo(SW, SH, h)).filter(_ < SW)
+    val neededWidths  = Global.thumbnailWidths(SW, SH).filter(_ < SW)
 
     "return JPEG bytes for the requested px" in {
       val tmpDir = Files.createTempDirectory("fetch-bytes").toFile
@@ -710,8 +818,8 @@ class LocalImageCacheServiceSpec extends Specification {
     }
 
     "use the full-image URL when sourcePx >= image.width (small image)" in {
-      // A 100×75 image: resizeTo(100, 75, 1650) = 2200, which exceeds all wikiThumbnailSteps
-      // up to 1920; the next step 3840 >= 100 (image.width), so the full-image URL branch fires.
+      // A 100×75 image: no target size is narrower than the file, and the step for 100px
+      // is 120 >= 100 (image.width), so the full-image URL branch fires.
       val tmpDir = Files.createTempDirectory("fetch-full-url").toFile
       val img    = mkImage(w = 100, h = 75)
 
@@ -728,6 +836,175 @@ class LocalImageCacheServiceSpec extends Specification {
       tmpDir.delete()
       ok
     }
+
+    "fetch a large view size from its own thumbnail step, without caching anything" in {
+      val tmpDir    = Files.createTempDirectory("fetch-large").toFile
+      val img       = mkImage()
+      val px        = ImageUtil.resizeTo(SW, SH, 1100) // 1466, the large view's 1x
+      val requested = new java.util.concurrent.ConcurrentLinkedQueue[String]()
+      val binding = Await.result(
+        Http().newServerAt("127.0.0.1", 0).bindSync { req =>
+          requested.add(req.uri.path.toString)
+          HttpResponse(entity = HttpEntity(ContentTypes.`application/octet-stream`, ByteString(jpegBytes(1920, 1440))))
+        },
+        5.seconds
+      )
+      try {
+        val svc   = mkService(tmpDir, serverPort = Some(binding.localAddress.getPort))
+        val bytes = Await.result(svc.fetchAndCacheAll(img, px), 30.seconds)
+
+        ImageIO.read(new ByteArrayInputStream(bytes)).getWidth === px
+        requested.asScala.toSeq === Seq("/wikipedia/commons/thumb/a/ab/Test_photo.jpg/1920px-Test_photo.jpg")
+        Thread.sleep(200)
+        svc.registrySize === 0
+        Files.walk(tmpDir.toPath).iterator().asScala
+          .count(p => Files.isRegularFile(p) && p.getFileName.toString != svc.SizesMarker) === 0
+      } finally Await.result(binding.unbind(), 5.seconds)
+
+      tmpDir.delete()
+      ok
+    }
+
+    "pass a large view size that is one of Wikimedia's on as Wikimedia sent it, not decoded" in {
+      val tmpDir    = Files.createTempDirectory("fetch-large-step").toFile
+      val sent      = "\u0089PNG not decodable".getBytes("ISO-8859-1")
+      val requested = new java.util.concurrent.ConcurrentLinkedQueue[String]()
+      val binding = Await.result(
+        Http().newServerAt("127.0.0.1", 0).bindSync { req =>
+          requested.add(req.uri.path.toString)
+          HttpResponse(entity = HttpEntity(ContentTypes.`application/octet-stream`, ByteString(sent)))
+        },
+        5.seconds
+      )
+      try {
+        val svc   = mkService(tmpDir, serverPort = Some(binding.localAddress.getPort))
+        val bytes = Await.result(svc.fetchAndCacheAll(mkImage(), 1280), 30.seconds)
+
+        bytes.toSeq === sent.toSeq
+        LocalImageCacheService.contentType(bytes) === "image/png"
+        requested.asScala.toSeq === Seq("/wikipedia/commons/thumb/a/ab/Test_photo.jpg/1280px-Test_photo.jpg")
+        svc.registrySize === 0
+      } finally Await.result(binding.unbind(), 5.seconds)
+
+      tmpDir.delete()
+      ok
+    }
+
+    "fetch a PDF's size as wide as the file from its thumbnail, not from the file" in {
+      val tmpDir    = Files.createTempDirectory("fetch-pdf").toFile
+      val pdf       = mkImage(w = 300, h = 400, filename = "Doc.pdf")
+      val requested = new java.util.concurrent.ConcurrentLinkedQueue[String]()
+      val binding = Await.result(
+        Http().newServerAt("127.0.0.1", 0).bindSync { req =>
+          requested.add(req.uri.path.toString)
+          HttpResponse(entity = HttpEntity(ContentTypes.`application/octet-stream`, ByteString(jpegBytes(330, 440))))
+        },
+        5.seconds
+      )
+      try {
+        val svc = mkService(tmpDir, serverPort = Some(binding.localAddress.getPort))
+        Await.result(svc.fetchAndCacheAll(pdf, 330), 30.seconds) must not be empty
+        requested.asScala.toSeq === Seq("/wikipedia/commons/thumb/a/ab/Doc.pdf/page1-330px-Doc.pdf.jpg")
+      } finally Await.result(binding.unbind(), 5.seconds)
+
+      tmpDir.delete()
+      ok
+    }
+  }
+
+  "contentType" should {
+    "tell a PNG, GIF and WebP from a JPEG by their first bytes" in {
+      def bytes(s: String) = s.getBytes("ISO-8859-1")
+      LocalImageCacheService.contentType(bytes("\u0089PNG\r\n")) === "image/png"
+      LocalImageCacheService.contentType(bytes("GIF89a")) === "image/gif"
+      LocalImageCacheService.contentType(bytes("RIFF\u0000\u0000\u0000\u0000WEBPVP8 ")) === "image/webp"
+      LocalImageCacheService.contentType(jpegBytes(10, 10)) === "image/jpeg"
+      LocalImageCacheService.contentType(Array.emptyByteArray) === "image/jpeg"
+    }
+  }
+
+  "evict" should {
+    "delete the image's cached sizes and forget them, and no other image's" in {
+      val tmpDir = mkTempDir()
+      val svc    = mkService(tmpDir)
+      val img    = mkImage(filename = "Evicted.jpg")
+      val other  = mkImage(id = 2, filename = "Kept.jpg")
+      Seq(img, other).foreach(i => svc.saveResized(i, new BufferedImage(1000, 750, BufferedImage.TYPE_INT_RGB), 1000))
+      val widths = Global.thumbnailWidths(4000, 3000).filter(_ <= 1000)
+      awaitFiles((widths.map(svc.localFile(img, _)) ++ widths.map(svc.localFile(other, _))): _*)
+
+      svc.evict(img)
+
+      widths.map(svc.localFile(img, _)).filter(_.exists()) must beEmpty
+      widths.flatMap(svc.fileIfCached(img, _)) must beEmpty
+      widths.flatMap(svc.fileIfCached(other, _)).filter(_.exists()).size === widths.size
+    }
+  }
+
+  // ── sizes scaled from the cached widest size ─────────────────────────────
+
+  "the cached widest size" should {
+
+    val SW = 4000; val SH = 3000
+    val neededWidths = Global.thumbnailWidths(SW, SH).filter(_ < SW)
+
+    /** A service whose only cached file of the image is its widest size, 666×500; Wikimedia
+      * counts the requests it gets.
+      */
+    def withWidestCached[T](body: (LocalImageCacheService, Image, AtomicInteger) => T): T = {
+      val tmpDir   = Files.createTempDirectory("widest-cached").toFile
+      val img      = mkImage()
+      val requests = new AtomicInteger(0)
+      withServer { _ =>
+        requests.incrementAndGet()
+        HttpResponse(entity = HttpEntity(ContentTypes.`application/octet-stream`, ByteString(jpegBytes(960, 720))))
+      } { port =>
+        val svc    = mkService(tmpDir, serverPort = Some(port))
+        val widest = svc.localFile(img, neededWidths.last)
+        widest.getParentFile.mkdirs()
+        ImageIO.write(new BufferedImage(neededWidths.last, 500, BufferedImage.TYPE_INT_RGB), "JPEG", widest)
+        Await.result(svc.initRegistry(), 10.seconds)
+        body(svc, img, requests)
+      }
+    }
+
+    "give the other sizes to the proxy without asking Wikimedia" in {
+      withWidestCached { (svc, img, requests) =>
+        val bytes = Await.result(svc.fetchAndCacheAll(img, 300), 30.seconds)
+
+        ImageIO.read(new ByteArrayInputStream(bytes)).getWidth === 300
+        awaitFiles(neededWidths.map(svc.localFile(img, _)): _*)
+        requests.get() === 0
+      }
+    }
+
+    "scale a missing size from the narrowest cached one wider than it, not from the widest" in {
+      withWidestCached { (svc, img, requests) =>
+        val narrowest = neededWidths.head
+        // All but the narrowest cached; the widest unreadable, so only a narrower one can serve
+        neededWidths.tail.init.foreach { px =>
+          ImageIO.write(new BufferedImage(px, px * 3 / 4, BufferedImage.TYPE_INT_RGB), "JPEG", svc.localFile(img, px))
+        }
+        Files.write(svc.localFile(img, neededWidths.last).toPath, "not a JPEG".getBytes)
+        Await.result(svc.initRegistry(), 10.seconds)
+
+        val bytes = Await.result(svc.fetchAndCacheAll(img, narrowest), 30.seconds)
+        ImageIO.read(new ByteArrayInputStream(bytes)).getWidth === narrowest
+        requests.get() === 0
+      }
+    }
+
+    "give the other sizes to the download job without asking Wikimedia" in {
+      withWidestCached { (svc, img, requests) =>
+        svc.allSizesCached(img) must beFalse
+        Await.result(svc.runDownload(1L, Seq(img)), 30.seconds)
+
+        awaitFiles(neededWidths.map(svc.localFile(img, _)): _*)
+        svc.allSizesCached(img) must beTrue
+        svc.progress(1L).done === 1
+        requests.get() === 0
+      }
+    }
   }
 
   // ── saveResized (concurrent) ─────────────────────────────────────────────
@@ -736,8 +1013,7 @@ class LocalImageCacheServiceSpec extends Specification {
 
     val W = 4000; val H = 3000
     def largeImg  = mkImage(filename = "ConcurrentPhoto.jpg", w = W, h = H)
-    val targetHts = Seq(120, 180, 240, 250, 375, 500, 1100, 1650)
-    val allWidths = targetHts.map(h => ImageUtil.resizeTo(W, H, h)).filter(_ < W)
+    val allWidths = Global.thumbnailWidths(W, H).filter(_ < W)
 
     "not corrupt files when called from many threads simultaneously" in {
       val dir     = mkTempDir()
@@ -767,13 +1043,14 @@ class LocalImageCacheServiceSpec extends Specification {
       val svc2 = mkService(dir) // simulates JVM instance 2 — separate empty registry
       val img  = mkImage(filename = "CrossInstance.jpg", w = 4000, h = 3000)
       val src  = new BufferedImage(2200, 1650, BufferedImage.TYPE_INT_RGB)
-      val targetHts = Seq(120, 180, 240, 250, 375, 500, 1100, 1650)
-      val allWidths = targetHts.map(h => ImageUtil.resizeTo(4000, 3000, h)).filter(_ < 4000)
+      val allWidths = Global.thumbnailWidths(4000, 3000).filter(_ < 4000)
 
       val barrier = new java.util.concurrent.CyclicBarrier(2)
       val f1 = Future { barrier.await(); svc1.saveResized(img, src, 2200) }
       val f2 = Future { barrier.await(); svc2.saveResized(img, src, 2200) }
       Await.result(Future.sequence(Seq(f1, f2)), 30.seconds)
+      // The services' own start: their cleanup writes the sizes marker through a temp file
+      Await.result(Future.sequence(Seq(svc1.unusedSizesCleanedUp, svc2.unusedSizesCleanedUp)), 30.seconds)
 
       // No temp files must be left behind (walk subdirectories recursively)
       val tmpFiles = {
@@ -799,8 +1076,7 @@ class LocalImageCacheServiceSpec extends Specification {
   "fetchAndCacheAll (concurrent)" should {
 
     val SW = 4000; val SH = 3000
-    val neededWidths = Seq(120, 180, 240, 250, 375, 500, 1100, 1650)
-      .map(h => ImageUtil.resizeTo(SW, SH, h)).filter(_ < SW)
+    val neededWidths = Global.thumbnailWidths(SW, SH).filter(_ < SW)
 
     "download from upstream only once when called concurrently for the same image" in {
       val tmpDir        = Files.createTempDirectory("fetch-dedup").toFile

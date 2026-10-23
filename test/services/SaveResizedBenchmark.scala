@@ -1,8 +1,8 @@
 package services
 
 import com.typesafe.config.ConfigFactory
+import controllers.Global
 import org.apache.pekko.actor.ActorSystem
-import org.intracer.wmua.ImageUtil
 import org.openjdk.jmh.annotations._
 import play.api.Configuration
 
@@ -26,8 +26,6 @@ class SaveResizedBenchmark {
 
   val imageW = 4000
   val imageH = 3000
-  // Heights mirroring LocalImageCacheService#targetHeights
-  val targetHeights: Seq[Int] = Seq(120, 180, 240, 250, 375, 500, 1100, 1650)
 
   @Setup(Level.Trial)
   def setup(): Unit = {
@@ -45,8 +43,8 @@ class SaveResizedBenchmark {
     svc = new LocalImageCacheService(config, system)
     // Simulated downloaded source: 2200x1650 (typical largest Wikimedia thumbnail)
     sourceImg = new BufferedImage(2200, 1650, BufferedImage.TYPE_INT_RGB)
-    targetWidths = targetHeights
-      .map(h => ImageUtil.resizeTo(imageW, imageH, h))
+    // Widths mirroring LocalImageCacheService#targetWidths
+    targetWidths = Global.thumbnailWidths(imageW, imageH)
       .filter(px => px > 0 && px < imageW)
       .distinct
       .sorted(Ordering[Int].reverse)   // largest first (needed for cascade later)
