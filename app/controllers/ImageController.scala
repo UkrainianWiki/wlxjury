@@ -7,7 +7,7 @@ import play.api.data.Forms._
 import play.api.i18n.I18nSupport
 import play.api.mvc.{ControllerComponents, EssentialAction}
 import play.api.libs.json.Json
-import services.imports.CommonsSource
+import services.imports.{CommonsSource, FileTitles}
 import services.jobs.Job
 import services.{ImageService, LocalImageCacheService}
 
@@ -62,16 +62,29 @@ class ImageController @Inject() (
                 .contest_images(formWithErrors, contest, user, 0, ImageJdbc.countByContest(contest), importJobs(contestId))
             ),
           { case (source, list, action) =>
-            // the import runs in the background: the files page shows its progress
-            val jobs =
-              if (action == "import.files") Seq(imageService.importFiles(contest, source, list, user.id))
-              else if (action == "update.monuments") imageService.updateMonuments(contest, source, user.id)
-              else Nil
-            val back = Redirect(routes.ImageController.images(contestId))
-            jobs.collect { case Left(running) => running } match {
-              case Nil => back
-              case running =>
-                back.flashing("error" -> running.map(j => s"Already running: ${imageService.title(j)}.").mkString(" "))
+            // lines of the list that name no file are shown, not dropped
+            val unreadable = if (action == "import.files") FileTitles.unreadable(list) else Nil
+            if (unreadable.nonEmpty)
+              BadRequest(
+                views.html.contest_images(
+                  importImagesForm
+                    .fill((source, list, action))
+                    .withGlobalError("files.list.unreadable", unreadable.size, unreadable.take(5).mkString(" · ")),
+                  contest, user, 0, ImageJdbc.countByContest(contest), importJobs(contestId)
+                )
+              )
+            else {
+              // the import runs in the background: the files page shows its progress
+              val jobs =
+                if (action == "import.files") Seq(imageService.importFiles(contest, source, list, user.id))
+                else if (action == "update.monuments") imageService.updateMonuments(contest, source, user.id)
+                else Nil
+              val back = Redirect(routes.ImageController.images(contestId))
+              jobs.collect { case Left(running) => running } match {
+                case Nil => back
+                case running =>
+                  back.flashing("error" -> running.map(j => s"Already running: ${imageService.title(j)}.").mkString(" "))
+              }
             }
           }
         )

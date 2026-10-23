@@ -30,7 +30,7 @@ class RoundCreationResubmitSpec extends Specification with TestDb with BeforeAll
     * (previous) rounds were active when a chunk was inserted.
     */
   private class FlakyHandler(failures: Int, watch: => Seq[Long] = Nil)
-      extends RoundDistributionHandler(new DistributeImages(ImageJdbc), TestRoundServices.config(15000)) {
+      extends RoundDistributionHandler(new DistributeImages(ImageJdbc), TestRoundServices.config(15000), TestRoundServices.emptyCommons) {
     @volatile private var remaining = failures
     val previousActive: mutable.Buffer[Boolean] = mutable.Buffer.empty
 

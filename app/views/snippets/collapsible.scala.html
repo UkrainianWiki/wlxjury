@@ -1,12 +1,12 @@
-@(titleKey: String, headingId: String, collapsibleId: String)(body: Html)(implicit messages: Messages)
+@(titleKey: String, headingId: String, collapsibleId: String, open: Boolean = false)(body: Html)(implicit messages: Messages)
 <div class="panel panel-default">
     <div class="panel-heading" id="@headingId">
-        <a role="button" data-toggle="collapse" href="#@collapsibleId" aria-expanded="false" aria-controls="@collapsibleId">
+        <a role="button" data-toggle="collapse" href="#@collapsibleId" aria-expanded="@open" aria-controls="@collapsibleId">
             <h3 class="panel-title">@Messages(titleKey)</h3>
         </a>
     </div>
 
-    <div id="@collapsibleId" class="panel-collapse collapse" role="tabpanel" aria-labelledby="@headingId">
+    <div id="@collapsibleId" class="panel-collapse collapse @if(open) {in}" role="tabpanel" aria-labelledby="@headingId">
         <div class="panel-body">
             @body
         </div>

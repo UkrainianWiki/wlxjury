@@ -62,6 +62,15 @@
                     @defining(!newRound) { noEdit =>
                         @round.edit.imageFiltering(editRoundForm, rounds, regions, user, noEdit, specialNominations)
 
+                        @* open when the form comes back with a list in it *@
+                        @snippets.collapsible("add.files", "headingAddFiles", "collapseAddFiles",
+                            open = editRoundForm("fileList").value.exists(_.trim.nonEmpty)) {
+                            @b3.textarea(editRoundForm("fileList"),
+                                Symbol("_label") -> Messages("add.files.list"),
+                                Symbol("_help") -> Messages("add.files.help"),
+                                Symbol("rows") -> 8)
+                        }
+
                         <div @if(noEdit) {style="display: none"}>
                             @b3.select(
                                 editRoundForm("jurors"),
