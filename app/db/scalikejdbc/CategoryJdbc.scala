@@ -47,6 +47,11 @@ object CategoryLinkJdbc extends SQLSyntaxSupport[CategoryLink] {
         .batch(pageIds.map(id => Seq(categoryId, id)): _*)
         .apply()
 
+  /** Puts the pages of category `from` in category `to` too, skipping the links that exist. */
+  def copyIgnore(from: Long, to: Long)(implicit session: DBSession): Unit =
+    sql"""INSERT IGNORE INTO category_members (category_id, page_id)
+          SELECT $to, page_id FROM category_members WHERE category_id = $from""".update.apply()
+
   def batchInsert(links: Seq[CategoryLink])(implicit session: DBSession = AutoSession): Unit = {
     val column = CategoryLinkJdbc.column
 

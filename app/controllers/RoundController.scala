@@ -12,6 +12,7 @@ import play.api.mvc.{AnyContent, ControllerComponents, EssentialAction, Request,
 import play.twirl.api.Html
 import services.RoundService
 import services.distribution.RoundDistributionHandler
+import services.imports.ImportSource
 import services.jobs.JobJdbc
 
 import javax.inject.Inject
@@ -206,6 +207,8 @@ class RoundController @Inject() (
             val round = editForm.round.copy(active = true)
             val contestId = round.contestId
             val toRoundsList = Redirect(routes.RoundController.rounds(Some(contestId)))
+            // "Add files": added by the round's distribution job, after the files its filters choose
+            val titles = ImportSource.titles(editForm.fileList.getOrElse(""))
 
             // Re-render the same create/edit form with the entered values kept and the
             // failure shown as a global form error, so the admin can fix and resubmit
@@ -216,7 +219,7 @@ class RoundController @Inject() (
                   user,
                   r,
                   editRoundForm
-                    .fill(EditRound(r, editForm.jurors, editForm.returnTo, editForm.newImages))
+                    .fill(EditRound(r, editForm.jurors, editForm.fileList, editForm.newImages))
                     .withGlobalError(message, args: _*),
                   // a creation rejected before anything was created keeps the form's token
                   submitToken = RoundController.submitToken(request).filter(_ => r.id.isEmpty)
@@ -239,7 +242,7 @@ class RoundController @Inject() (
             else round.id match {
               case None =>
                 try {
-                  roundsService.submit(round, editForm.jurors, RoundController.submitToken(request), user.id) match {
+                  roundsService.submit(round, editForm.jurors, RoundController.submitToken(request), user.id, titles) match {
                     // the distribution runs in the background: the rounds list shows its progress
                     case _: RoundService.Created => toRoundsList
                     // The same form submitted again (a double click, or Back and Submit):
@@ -262,13 +265,17 @@ class RoundController @Inject() (
                     val notStarted =
                       if (Round.updateRound(roundId, round)) Nil
                       else Seq("error" -> RoundController.stillDistributing(stored))
-                    if (!editForm.newImages) toRoundsList.flashing(notStarted: _*)
+                    if (!editForm.newImages && titles.isEmpty) toRoundsList.flashing(notStarted: _*)
                     else
                       try {
-                        roundsService.distributeNewFiles(roundId, user.id) match {
+                        roundsService.distributeNewFiles(roundId, user.id, titles, newFiles = editForm.newImages) match {
                           case RoundService.AlreadyRunning(_) =>
                             toRoundsList.flashing(
                               "error" -> s"Round ${stored.number}: its images are already being distributed.")
+                          case RoundService.Resumed(_) if titles.nonEmpty =>
+                            toRoundsList.flashing(
+                              "error" -> (s"Round ${stored.number}: its failed distribution was resumed instead of " +
+                                "adding the listed files. Add them again once it has finished."))
                           case _ => toRoundsList.flashing(notStarted: _*)
                         }
                       } catch {
@@ -330,7 +337,8 @@ class RoundController @Inject() (
         case contestId =>
           val imagesSource: Option[String] = imagesForm.bindFromRequest().get
           for (contest <- contestId.flatMap(ContestJuryJdbc.findById)) {
-            ContestJuryJdbc.setImagesSource(contest.getId, imagesSource)
+            // the source only: the contest's files stay those of its imports
+            ContestJuryJdbc.setImagesSource(contest.getId, imagesSource, contest.categoryId)
 
             // val images: Seq[Page] = Await.result(Global.commons.categoryMembers(PageQuery.byTitle(imagesSource.get)), 1.minute)
 

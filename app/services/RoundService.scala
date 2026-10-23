@@ -48,12 +48,16 @@ class RoundService @Inject() (
     *
     * Invalid settings (no jurors, previous rounds of another contest or of mixed rate
     * types, more jurors per image than jurors) are refused before anything is created.
+    *
+    * @param titles a pasted list of files ("Add files"), added to the round after the
+    *               images its filters choose
     */
   def submit(
       round: Round,
       jurorIds: Seq[Long],
       submitToken: Option[String] = None,
-      createdBy: Option[Long] = None
+      createdBy: Option[Long] = None,
+      titles: Seq[String] = Nil
   ): Submitted =
     submitToken.flatMap(submitted(_, round.contestId)) match {
       case Some(existing) => resubmitted(existing)
@@ -65,7 +69,7 @@ class RoundService @Inject() (
           round.distribution <= jurors.size,
           s"${round.distribution} jurors per image, but only ${jurors.size} jurors selected"
         )
-        insert(round, jurors, submitToken, createdBy) match {
+        insert(round, jurors, submitToken, createdBy, titles) match {
           case Left(existing) => resubmitted(existing)
           case Right((created, job)) =>
             logger.info(
@@ -107,7 +111,8 @@ class RoundService @Inject() (
       round: Round,
       jurors: Seq[User],
       submitToken: Option[String],
-      createdBy: Option[Long]
+      createdBy: Option[Long],
+      titles: Seq[String]
   ): Either[Round, (Round, Job)] = {
     val number = dao.countByContest(round.contestId) + 1
     try
@@ -116,7 +121,7 @@ class RoundService @Inject() (
           round.copy(number = number, submitToken = submitToken, active = false, distributing = true)
         )
         created.addUsersIn(jurors.map(u => RoundUser(created.getId, u.getId, u.contestRole.getOrElse(User.JURY_ROLE), active = true)))
-        val job = enqueueOrFail(created, completingCreation = true, createdBy)
+        val job = enqueueOrFail(created, completingCreation = true, createdBy, titles)
         (created, job)
       })
     catch {
@@ -129,13 +134,18 @@ class RoundService @Inject() (
   /** Creates the round's distribution job in the caller's transaction, freezing its
     * previous rounds; throws [[AlreadyDistributing]] (rolling the transaction back, the
     * freeze included) if the round already has an active one.
+    *
+    * @param titles   a pasted list of files the job adds to the round
+    * @param listOnly the job adds only `titles`, not the images the round's filters choose
     */
   private def enqueueOrFail(
       round: Round,
       completingCreation: Boolean,
-      createdBy: Option[Long]
+      createdBy: Option[Long],
+      titles: Seq[String] = Nil,
+      listOnly: Boolean = false
   )(implicit session: DBSession): Job = {
-    val state = distribution.initialState(round)
+    val state = distribution.initialState(round, listOnly)
     jobs.enqueue(
       NewJob(
         kind = RoundDistributionHandler.Kind,
@@ -162,7 +172,8 @@ class RoundService @Inject() (
             "mediaType" -> round.mediaType,
             "specialNomination" -> round.specialNomination
           )
-        ),
+        ) ++ (if (titles.isEmpty) Json.obj()
+              else Json.obj("titles" -> titles, "titleCount" -> titles.size, "listOnly" -> listOnly)),
         state = state,
         progress = Progress(unit = Some("images")),
         createdBy = createdBy
@@ -180,10 +191,20 @@ class RoundService @Inject() (
       .get(roundId)
 
   /** "Distribute new files": distributes to the round, in the background, the images that
-    * qualify for it but aren't in it yet. A failed distribution of the round is resumed
-    * instead; a running one goes on.
+    * qualify for it but aren't in it yet, and/or ("Add files") the files of a pasted list.
+    * A failed distribution of the round is resumed instead (without the list); a running
+    * one goes on.
+    *
+    * @param titles   a pasted list of files to add to the round, whatever its filters
+    * @param newFiles also the images that qualify for the round; without, only the list
+    *                 (but for a round still being created, which its filters must fill)
     */
-  def distributeNewFiles(roundId: Long, createdBy: Option[Long] = None): DistributionStart = {
+  def distributeNewFiles(
+      roundId: Long,
+      createdBy: Option[Long] = None,
+      titles: Seq[String] = Nil,
+      newFiles: Boolean = true
+  ): DistributionStart = {
     val round = dao.findById(roundId).getOrElse(throw new NoSuchElementException(s"Round $roundId not found"))
     distributionJob(roundId) match {
       case Some(j) if j.isActive => AlreadyRunning(j)
@@ -197,7 +218,8 @@ class RoundService @Inject() (
         DistributeImages.checkJury(round, User.distributionJurors(roundId))
         try {
           val job = DB.localTx { implicit session =>
-            enqueueOrFail(round, completingCreation = round.distributing, createdBy)
+            enqueueOrFail(round, completingCreation = round.distributing, createdBy, titles,
+              listOnly = titles.nonEmpty && !newFiles && !round.distributing)
           }
           jobs.started(job.id)
           Started(JobJdbc.findById(job.id).getOrElse(job))

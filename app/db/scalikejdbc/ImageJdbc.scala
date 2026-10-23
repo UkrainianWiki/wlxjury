@@ -122,6 +122,12 @@ object ImageJdbc extends CRUDMapper[Image]
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""".batch(params: _*).apply()
     }
 
+  /** The stored images with these titles (`images_title_index`), deleted ones too. */
+  def findByTitles(titles: Seq[String])(implicit session: DBSession = AutoSession): Seq[Image] =
+    titles.distinct.grouped(1000).toSeq.flatMap { chunk =>
+      sql"SELECT ${i.result.*} FROM images i WHERE i.title IN ($chunk)".map(rs => ImageJdbc(i)(rs)).list()
+    }
+
   /** The stored images among `pageIds`, each with whether it is in the category. */
   def findWithCategoryLink(pageIds: Seq[Long], categoryId: Long)(implicit session: DBSession): Seq[(Image, Boolean)] =
     if (pageIds.isEmpty) Nil
