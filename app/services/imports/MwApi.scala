@@ -2,11 +2,11 @@ package services.imports
 
 import org.scalawiki.MwBot
 import org.scalawiki.dto.cmd.Action
-import org.scalawiki.dto.cmd.query.Query
+import org.scalawiki.dto.cmd.query.{PageIdsParam, Query}
 import org.scalawiki.dto.{MwException, Page}
 import org.scalawiki.json.Parser
 import play.api.Logging
-import play.api.libs.json.{JsObject, JsString}
+import play.api.libs.json.{JsObject, JsString, Json}
 
 import scala.concurrent.Await
 import scala.concurrent.duration._
@@ -45,6 +45,23 @@ class MwApi(bot: MwBot, retryDelay: FiniteDuration = MwApi.RetryDelay) extends L
           (pages, Option.when(next.nonEmpty)(JsObject(next.map { case (k, v) => k -> JsString(v) })))
         case Failure(e) => throw e
       }
+    }
+  }
+
+  /** Of the page ids, those the wiki answers `missing` (`{"pageid": N, "missing": ""}`), in
+    * one request without props, which has no `continue`. scalawiki's parser drops such
+    * pages, as it drops any page it can't parse; this reads the answer itself.
+    */
+  def missingPageIds(pageIds: Seq[Long]): Seq[Long] = {
+    val action = Action(Query(PageIdsParam(pageIds)))
+    val params = (action.pairs ++ Seq("format" -> "json", "utf8" -> "")).toMap
+    withRetries(params.toString) {
+      val body = Await.result(bot.post(params), RequestTimeout)
+      if (!body.trim.startsWith("{")) throw new RetryableException(s"not JSON: ${body.trim.take(200)}")
+      new Parser(action).parse(body).get // an API error, as the other requests report it
+      (Json.parse(body) \ "query" \ "pages").asOpt[JsObject].toSeq.flatMap(_.values).collect {
+        case page: JsObject if page.keys.contains("missing") => (page \ "pageid").asOpt[Long]
+      }.flatten
     }
   }
 

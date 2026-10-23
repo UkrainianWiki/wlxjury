@@ -7,7 +7,7 @@ import play.api.Logging
 import scalikejdbc.DB
 
 import java.util.concurrent.atomic.AtomicBoolean
-import java.util.concurrent.{ConcurrentHashMap, ConcurrentLinkedQueue, Executors, ScheduledExecutorService, TimeUnit}
+import java.util.concurrent.{ConcurrentHashMap, ConcurrentLinkedQueue, Executors, RejectedExecutionException, ScheduledExecutorService, TimeUnit}
 import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Future, Promise}
 import scala.util.control.NonFatal
@@ -44,10 +44,12 @@ object FileCheck {
   *    size and type are stored ([[ImageJdbc.updateFileInfo]]), and its former title too
   *    ([[ImageJdbc.recordRename]]), for the pages that still link the old thumbnails.
   *  - A deleted file doesn't come back: the API answers `{"pageid": N, "missing": ""}`,
-  *    without a title, which scalawiki's parser drops. Only an id missing from an answer
-  *    that came counts; a failed request changes nothing. The file is marked deleted, and
-  *    its votes moved aside ([[DeletedFiles.markDeleted]]), so the galleries no longer show
-  *    it; the next import that finds it on Commons again restores it.
+  *    without a title, which scalawiki's parser drops, as it drops any page it can't parse.
+  *    So the ids missing from the answer are asked again, without props
+  *    ([[CommonsSource.missingFiles]]), and only those the API says are missing count; a
+  *    failed request changes nothing. The file is marked deleted, and its votes moved aside
+  *    ([[DeletedFiles.markDeleted]]), so the galleries no longer show it; the next import
+  *    that finds it on Commons again restores it.
   *  - Only files with a Commons url are asked about: another wiki's page id is not theirs.
   *
   * A gallery asks for many thumbnails at once, so the checks are batched: the files asked
@@ -108,7 +110,7 @@ class CommonsFileCheck(
     stopped = true
     executor.shutdownNow()
     timer.shutdownNow()
-    Iterator.continually(pending.poll()).takeWhile(_ != null).foreach(_._2.trySuccess(FileCheck.Unknown))
+    answerPendingUnknown()
   }
 
   private def stale(answer: Answer): Boolean =
@@ -129,18 +131,31 @@ class CommonsFileCheck(
 
   private def waitAtMost(result: Future[FileCheck], within: FiniteDuration): Future[FileCheck] = {
     val promise = Promise[FileCheck]()
-    val timeout =
-      timer.schedule((() => promise.trySuccess(FileCheck.Unknown)): Runnable, within.toMillis, TimeUnit.MILLISECONDS)
-    result.onComplete { r =>
-      timeout.cancel(false)
-      promise.tryComplete(r)
-    }(ExecutionContext.parasitic)
-    promise.future
+    try {
+      val timeout =
+        timer.schedule((() => promise.trySuccess(FileCheck.Unknown)): Runnable, within.toMillis, TimeUnit.MILLISECONDS)
+      result.onComplete { r =>
+        timeout.cancel(false)
+        promise.tryComplete(r)
+      }(ExecutionContext.parasitic)
+      promise.future
+    } catch {
+      case _: RejectedExecutionException => result // stopped meanwhile: stop answers it
+    }
   }
 
+  /** Answers the pending checks Unknown if [[stop]] shut the executor down meanwhile. */
   private def scheduleFlush(): Unit =
     if (flushScheduled.compareAndSet(false, true))
-      executor.schedule((() => flush()): Runnable, batchWindow.toMillis, TimeUnit.MILLISECONDS)
+      try executor.schedule((() => flush()): Runnable, batchWindow.toMillis, TimeUnit.MILLISECONDS)
+      catch {
+        case _: RejectedExecutionException =>
+          flushScheduled.set(false)
+          answerPendingUnknown()
+      }
+
+  private def answerPendingUnknown(): Unit =
+    Iterator.continually(pending.poll()).takeWhile(_ != null).foreach(_._2.trySuccess(FileCheck.Unknown))
 
   private def flush(): Unit = {
     flushScheduled.set(false)
@@ -162,7 +177,11 @@ class CommonsFileCheck(
     try {
       val stored = images.map(i => i.pageId -> i).toMap
       val pages = source.files(stored.keys.toSeq, info = true, text = false).flatMap(p => p.id.map(_ -> p)).toMap
-      val results = stored.map { case (id, image) => id -> compare(image, pages.get(id)) }
+      val absent = stored.keys.filterNot(pages.contains).toSeq
+      val missing = if (absent.isEmpty) Set.empty[Long] else source.missingFiles(absent).toSet
+      val results = stored.map { case (id, image) =>
+        id -> pages.get(id).fold[FileCheck](if (missing(id)) FileCheck.Deleted else unparsed(image))(compare(image, _))
+      }
       write(stored, results)
       results
     } catch {
@@ -171,29 +190,31 @@ class CommonsFileCheck(
         images.map(_.pageId -> FileCheck.Unknown).toMap
     }
 
-  private def compare(stored: Image, page: Option[Page]): FileCheck =
-    page match {
-      case None => FileCheck.Deleted
-      case Some(p) =>
-        p.images.headOption match {
-          case None =>
-            logger.warn(s"Commons has page ${stored.pageId} (${p.title}) without a file")
-            FileCheck.Unknown
-          case Some(info) =>
-            val current = stored.copy(
-              title = p.title,
-              url = info.url,
-              pageUrl = info.pageUrl,
-              width = info.width.getOrElse(stored.width),
-              height = info.height.getOrElse(stored.height),
-              size = info.size.map(_.toInt),
-              mime = info.mime,
-              mediaType = info.mediaType
-            )
-            if (current.title != stored.title || current.url != stored.url) FileCheck.Renamed(current)
-            else if (fileInfo(current) != fileInfo(stored)) FileCheck.Changed(current)
-            else FileCheck.Unchanged
-        }
+  /** Left out of the answer, but not missing on Commons: most likely its page didn't parse. */
+  private def unparsed(stored: Image): FileCheck = {
+    logger.warn(s"Commons left page ${stored.pageId} (${stored.title}) out of its answer, but doesn't say it is missing")
+    FileCheck.Unknown
+  }
+
+  private def compare(stored: Image, p: Page): FileCheck =
+    p.images.headOption match {
+      case None =>
+        logger.warn(s"Commons has page ${stored.pageId} (${p.title}) without a file")
+        FileCheck.Unknown
+      case Some(info) =>
+        val current = stored.copy(
+          title = p.title,
+          url = info.url,
+          pageUrl = info.pageUrl,
+          width = info.width.getOrElse(stored.width),
+          height = info.height.getOrElse(stored.height),
+          size = info.size.map(_.toInt),
+          mime = info.mime,
+          mediaType = info.mediaType
+        )
+        if (current.title != stored.title || current.url != stored.url) FileCheck.Renamed(current)
+        else if (fileInfo(current) != fileInfo(stored)) FileCheck.Changed(current)
+        else FileCheck.Unchanged
     }
 
   private def write(stored: Map[Long, Image], results: Map[Long, FileCheck]): Unit = {
@@ -235,8 +256,10 @@ object CommonsFileCheck {
   val MaxAnswers = 10000
 
   /** Only these urls' page ids are Commons page ids. */
-  def isCommonsFile(image: Image): Boolean =
-    image.url.exists(_.contains("//upload.wikimedia.org/wikipedia/commons/"))
+  def isCommonsFile(image: Image): Boolean = image.url.exists(isCommonsUrl)
+
+  /** A file uploaded to Commons, not to another wiki. */
+  def isCommonsUrl(url: String): Boolean = url.contains("//upload.wikimedia.org/wikipedia/commons/")
 
   private final case class Answer(result: Future[FileCheck], at: Long)
 

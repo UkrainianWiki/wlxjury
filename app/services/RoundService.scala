@@ -116,7 +116,7 @@ class RoundService @Inject() (
           round.copy(number = number, submitToken = submitToken, active = false, distributing = true)
         )
         created.addUsersIn(jurors.map(u => RoundUser(created.getId, u.getId, u.contestRole.getOrElse(User.JURY_ROLE), active = true)))
-        val job = enqueueOrFail(created, completingCreation = true, imagesBefore = 0L, createdBy)
+        val job = enqueueOrFail(created, completingCreation = true, createdBy)
         (created, job)
       })
     catch {
@@ -133,10 +133,9 @@ class RoundService @Inject() (
   private def enqueueOrFail(
       round: Round,
       completingCreation: Boolean,
-      imagesBefore: Long,
       createdBy: Option[Long]
   )(implicit session: DBSession): Job = {
-    val state = distribution.initialState(round, imagesBefore)
+    val state = distribution.initialState(round)
     jobs.enqueue(
       NewJob(
         kind = RoundDistributionHandler.Kind,
@@ -198,12 +197,7 @@ class RoundService @Inject() (
         DistributeImages.checkJury(round, User.distributionJurors(roundId))
         try {
           val job = DB.localTx { implicit session =>
-            enqueueOrFail(
-              round,
-              completingCreation = round.distributing,
-              imagesBefore = SelectionJdbc.imageCountByRound(roundId),
-              createdBy
-            )
+            enqueueOrFail(round, completingCreation = round.distributing, createdBy)
           }
           jobs.started(job.id)
           Started(JobJdbc.findById(job.id).getOrElse(job))

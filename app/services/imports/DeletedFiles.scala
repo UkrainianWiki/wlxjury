@@ -9,8 +9,8 @@ import services.distribution.RoundDistributionHandler
   *
   * Both leave alone the rounds a distribution is filling: moving votes in or out of them
   * would upset its count check. Such a round's votes of a deleted file are moved when its
-  * distribution ends ([[RoundDistributionHandler]]'s verify step); those of a restored
-  * file stay aside until the next import restores them.
+  * distribution ends, done, failed or cancelled ([[RoundDistributionHandler]]); those of a
+  * restored file stay aside until the next import restores them.
   */
 object DeletedFiles {
 

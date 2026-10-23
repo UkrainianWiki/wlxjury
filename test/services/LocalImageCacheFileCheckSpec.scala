@@ -29,26 +29,29 @@ class LocalImageCacheFileCheckSpec
 
   "the thumbnail download job" should {
 
-    "download a renamed file under its new name, and count deleted files apart from the errors" in {
+    "download a renamed file under its new name, a re-uploaded one for its new size, and count deleted files apart from the errors" in {
       val old = commonsImage(1L, "Old_name")
       val deleted = commonsImage(2L, "Gone")
       val failing = commonsImage(3L, "Same")
       val broken = commonsImage(4L, "Error_file")
-      imageDao.batchInsert(Seq(old, deleted, failing, broken))
-      val source = new FakeCommonsSource(Seq(renamed(old, "New_name"), failing).map(FakeFile(_)))
+      val again = commonsImage(5L, "Reuploaded_file")
+      imageDao.batchInsert(Seq(old, deleted, failing, broken, again))
+      val source = new FakeCommonsSource(Seq(renamed(old, "New_name"), failing, reuploaded(again)).map(FakeFile(_)))
       val check = new CommonsFileCheck(source, batchWindow = 20.millis)
       val cache = new LocalImageCacheService(thumbsConfig(), system, Some(check))
 
-      Await.result(cache.runDownload(1L, Seq(old, deleted, failing, broken)), 30.seconds)
+      Await.result(cache.runDownload(1L, Seq(old, deleted, failing, broken, again)), 30.seconds)
       check.stop()
 
       val progress = cache.progress(1L)
-      (progress.done, progress.renamed, progress.deleted, progress.errors, progress.running) === (4, 1, 1, 2, false)
+      (progress.done, progress.renamed, progress.deleted, progress.errors, progress.running) === (5, 1, 1, 2, false)
       ImageJdbc.findById(1L).map(_.title) must beSome("File:New name.jpg")
+      ImageJdbc.findById(5L).map(_.width) must beSome(8000)
       DB.readOnly { implicit s =>
         sql"SELECT page_id FROM images WHERE deleted_at IS NOT NULL".map(_.long(1)).list()
       } === List(2L)
-      source.detailCalls.get === 3 // the three 404s, one at a time; not the 500
+      // the four 404s, one at a time, and whether the absent one is missing; not the 500
+      source.detailCalls.get === 5
     }
   }
 

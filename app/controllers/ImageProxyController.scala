@@ -60,10 +60,8 @@ class ImageProxyController @Inject() (
       case Some((filename, px)) =>
         // Wrap the blocking JDBC call so it doesn't starve the Play dispatcher
         Future(scala.concurrent.blocking(
-          Try(ImageJdbc.findByFilename(filename).map(_ -> true).orElse(
-            // A page rendered before a rename still links the former name
-            ImageJdbc.findRenamed(filename).map(_ -> false)
-          ))
+          // Also under a former name: a page rendered before a rename still links it
+          Try(ImageJdbc.findForThumbnail(filename))
             .recover { case ex =>
               logger.error(s"DB error while looking up filename '$filename': ${ex.getMessage}", ex)
               None
@@ -82,7 +80,7 @@ class ImageProxyController @Inject() (
   }
 
   /** The thumbnail from the local cache, else fetched from Wikimedia and cached. If that
-    * fails and `check` is set, asks Commons whether the file was renamed or deleted.
+    * fails and `check` is set, asks Commons whether the file was renamed, changed or deleted.
     */
   private def serveImage(image: Image, px: Int, path: String, check: Boolean): Future[Result] =
     // Guard against stale registry entries where the file was deleted on disk
@@ -107,13 +105,15 @@ class ImageProxyController @Inject() (
     }
 
   /** A stored file's thumbnail could not be fetched: if Wikimedia doesn't have it, perhaps
-    * the file was renamed or deleted on Commons ([[LocalImageCacheService.checkOnCommons]]).
-    * A renamed file's thumbnail is served under its new name right away; a deleted file's
-    * is 404. Other failures and answers, or none in time, redirect to Wikimedia as before.
+    * the file was renamed, re-uploaded or deleted on Commons
+    * ([[LocalImageCacheService.checkOnCommons]]). A renamed or re-uploaded file's thumbnail
+    * is served right away, under its new name or for its new size; a deleted file's is 404.
+    * Other failures and answers, or none in time, redirect to Wikimedia as before.
     */
   private def afterFailedFetch(image: Image, ex: Throwable, px: Int, path: String): Future[Result] =
     cache.checkOnCommons(image, ex).flatMap {
       case FileCheck.Renamed(current) => serveImage(current, px, path, check = false)
+      case FileCheck.Changed(current) => serveImage(current, px, path, check = false)
       case FileCheck.Deleted          => Future.successful(NotFound)
       case _                          => Future.successful(wikimedia(path))
     }

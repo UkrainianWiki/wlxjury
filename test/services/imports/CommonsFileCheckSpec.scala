@@ -163,6 +163,21 @@ class CommonsFileCheckSpec extends Specification with TestDb with BeforeAll with
       ImageJdbc.imageCountByRounds(rounds) === rounds.map(_ -> 1).toMap
     }
 
+    "change nothing for a file left out of the answer that Commons doesn't say is missing" in {
+      val file = stored(1L, "File")
+      setUp(file)
+      val source = new FakeCommonsSource(Seq(FakeFile(file)))
+      source.unparsed = Set(1L)
+      val check = mkCheck(source)
+
+      await(check.check(file)) === FileCheck.Unknown
+      check.stop()
+
+      deletedAt(1L) must beNone
+      selectionRows("selection", 1L) === 4
+      selectionRows("selection_deleted", 1L) === 0
+    }
+
     "change nothing for a file Commons has as stored" in {
       val same = stored(1L, "Same")
       setUp(same)

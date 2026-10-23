@@ -112,6 +112,20 @@ class DeletedFilesSpec extends Specification with TestDb with BeforeAll with Bef
       rows("selection_deleted", 1L, r2) must beEmpty
     }
 
+    "let the juror's vote win over the rows distributed meanwhile, and keep nothing aside" in {
+      val (Seq(r1, _), Seq(j1, j2)) = setUp()
+      DB.localTx(implicit s => DeletedFiles.markDeleted(Seq(1L)))
+      // Distributed again meanwhile: j1 hasn't voted yet, j2 has
+      selectionDao.create(1L, rate = 0, juryId = j1, roundId = r1)
+      selectionDao.create(1L, rate = -1, juryId = j2, roundId = r1)
+
+      DB.localTx(implicit s => DeletedFiles.restore(Seq(1L))) must contain(r1)
+
+      rows("selection", 1L, r1) === Seq(1, -1)
+      rows("selection_deleted", 1L, r1) must beEmpty
+      DB.localTx(implicit s => ImageJdbc.deletedOrArchived(Seq(1L))) must beEmpty
+    }
+
     "change nothing for files never deleted" in {
       val (Seq(r1, _), _) = setUp()
       DB.localTx(implicit s => DeletedFiles.restore(Seq(1L, 2L))) must beEmpty

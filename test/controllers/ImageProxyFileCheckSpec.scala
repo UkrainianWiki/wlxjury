@@ -87,6 +87,18 @@ class ImageProxyFileCheckSpec
       source.detailCalls.get === 0
     }
 
+    "be served for the file's new size when it was uploaded again on Commons, and stored so" in {
+      val old = commonsImage(1L, "Reuploaded_file")
+      store(old)
+      val (proxy, _, check) = controller(Seq(reuploaded(old)))
+
+      val result = proxy.serve(thumb("Reuploaded_file"))(signedIn)
+      status(result) === OK
+      contentType(result) must beSome("image/jpeg")
+      check.stop()
+      ImageJdbc.findById(1L).map(i => (i.width, i.height)) must beSome((8000, 6000))
+    }
+
     "be 404 when Commons deleted the file, which no longer shows in the galleries" in {
       val gone = commonsImage(1L, "Gone")
       store(gone)

@@ -14,8 +14,9 @@ import javax.imageio.ImageIO
 import scala.concurrent.duration._
 import scala.concurrent.{Await, ExecutionContext}
 
-/** Wikimedia for specs: a local server that has only the files named `New_…`, answers 500
-  * for those named `Error_…` and 404 for the rest; and a thumbnail cache over it.
+/** Wikimedia for specs: a local server that has only the files named `New_…`, and the
+  * thumbnails (not the originals) of those named `Reuploaded_…`, answers 500 for those named
+  * `Error_…` and 404 for the rest; and a thumbnail cache over it.
   */
 trait FakeWikimedia {
 
@@ -31,7 +32,8 @@ trait FakeWikimedia {
   private lazy val wikimedia = Await.result(
     Http().newServerAt("127.0.0.1", 0).bindSync { request =>
       val path = request.uri.path.toString
-      if (path.contains("New_")) HttpResponse(entity = HttpEntity(ContentTypes.`application/octet-stream`, jpeg))
+      if (path.contains("New_") || (path.contains("Reuploaded_") && path.contains("/thumb/")))
+        HttpResponse(entity = HttpEntity(ContentTypes.`application/octet-stream`, jpeg))
       else if (path.contains("Error_")) HttpResponse(StatusCodes.InternalServerError)
       else HttpResponse(StatusCodes.NotFound)
     },
@@ -52,6 +54,9 @@ trait FakeWikimedia {
   def renamed(image: Image, name: String): Image =
     image.copy(title = s"File:${name.replace('_', ' ')}.jpg",
       url = Some(s"https://upload.wikimedia.org/wikipedia/commons/c/cd/$name.jpg"))
+
+  /** `image` uploaded again on Commons, larger: its thumbnails are no longer its original. */
+  def reuploaded(image: Image): Image = image.copy(width = 8000, height = 6000, size = Some(5000000))
 
   /** An empty thumbnail cache that downloads from this Wikimedia, once per file. */
   def thumbsConfig(): Configuration = {

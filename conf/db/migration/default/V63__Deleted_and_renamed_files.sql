@@ -14,9 +14,10 @@ CREATE TABLE IF NOT EXISTS selection_deleted LIKE selection;
 -- The former titles of files renamed on Commons (CommonsFileCheck, and the image import),
 -- so a thumbnail requested under a former name (a page rendered before the rename, the
 -- other blue/green instance, a restart) is still found by its page id. A title is a
--- file's at most once: a later rename of another file from it replaces it.
+-- file's at most once: a later rename of another file from it replaces it. Compared
+-- case-sensitively (utf8mb4_bin): Commons titles differ by case after the first letter.
 CREATE TABLE IF NOT EXISTS image_renames (
-  title VARCHAR(255) NOT NULL,
+  title VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
   page_id BIGINT NOT NULL,
   renamed_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
   PRIMARY KEY (title),

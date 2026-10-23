@@ -147,19 +147,23 @@ object ImageJdbc extends CRUDMapper[Image]
   /** [[update]] in the caller's transaction. */
   def updateIn(image: Image)(implicit session: DBSession): Unit = {
     updateById(image.pageId).withAttributes(
+      fileAttributes(image) ++ Seq("monumentId" -> image.monumentId, "description" -> image.description): _*
+    )
+    syncSelectionMonumentId(image.pageId, image.monumentId)
+  }
+
+  /** What Commons says of the file itself, not of its page text. */
+  private def fileAttributes(image: Image): Seq[(String, Any)] =
+    Seq(
       "title" -> image.title,
       "url" -> image.url,
       "pageUrl" -> image.pageUrl,
       "width" -> image.width,
       "height" -> image.height,
-      "monumentId" -> image.monumentId,
-      "description" -> image.description,
       "size" -> image.size,
       "mime" -> image.mime,
       "mediaType" -> image.mediaType
     )
-    syncSelectionMonumentId(image.pageId, image.monumentId)
-  }
 
   /** @param pageId
     * @param width
@@ -200,16 +204,7 @@ object ImageJdbc extends CRUDMapper[Image]
     * from the page text, stay as they are.
     */
   def updateFileInfo(image: Image)(implicit session: DBSession): Unit =
-    updateById(image.pageId).withAttributes(
-      "title" -> image.title,
-      "url" -> image.url,
-      "pageUrl" -> image.pageUrl,
-      "width" -> image.width,
-      "height" -> image.height,
-      "size" -> image.size,
-      "mime" -> image.mime,
-      "mediaType" -> image.mediaType
-    )
+    updateById(image.pageId).withAttributes(fileAttributes(image): _*)
 
   /** The file stored under a former title (V63), renamed on Commons since, unless it was
     * deleted there.
@@ -219,6 +214,22 @@ object ImageJdbc extends CRUDMapper[Image]
           WHERE r.title = ${s"File:$filename"} AND i.deleted_at IS NULL"""
       .map(ImageJdbc(i))
       .single()
+
+  /** The file a thumbnail of `filename` shows, in one query: the stored file of that name
+    * ([[findByFilename]]), else the one renamed from it ([[findRenamed]]).
+    *
+    * @return the file, and whether it is stored under that name
+    */
+  def findForThumbnail(filename: String)(implicit session: DBSession = AutoSession): Option[(Image, Boolean)] = {
+    val title = s"File:$filename"
+    sql"""(SELECT ${i.result.*}, 1 AS direct FROM images i WHERE i.title = $title AND i.deleted_at IS NULL)
+          UNION ALL
+          (SELECT ${i.result.*}, 0 FROM image_renames r JOIN images i ON i.page_id = r.page_id
+           WHERE r.title = $title AND i.deleted_at IS NULL)
+          ORDER BY direct DESC LIMIT 1"""
+      .map(rs => (ImageJdbc(i)(rs), rs.int("direct") == 1))
+      .single()
+  }
 
   /** Remembers a file's former title (V63), for [[findRenamed]]. */
   def recordRename(formerTitle: String, pageId: Long)(implicit session: DBSession): Unit =
@@ -254,16 +265,7 @@ object ImageJdbc extends CRUDMapper[Image]
     */
   def archiveVotes(pageIds: Seq[Long], except: Set[Long])(implicit session: DBSession): Seq[Long] =
     if (pageIds.isEmpty) Nil
-    else {
-      val where = sqls"page_id IN ($pageIds) AND ${notInRounds(except)}"
-      // Locking reads, like the REPLACE ... SELECT: the latest rows, not the snapshot's
-      val roundIds = sql"SELECT DISTINCT round_id FROM selection WHERE $where LOCK IN SHARE MODE"
-        .map(_.long(1))
-        .list()
-      sql"REPLACE INTO selection_deleted SELECT * FROM selection WHERE $where".update()
-      sql"DELETE FROM selection WHERE $where".update()
-      roundIds
-    }
+    else moveVotesAside(sqls"page_id IN ($pageIds) AND ${notInRounds(except)}")
 
   /** [[archiveVotes]] of the files in the round that were deleted on Commons: those a
     * distribution added while it ran, or that [[archiveVotes]] left in it then.
@@ -275,35 +277,50 @@ object ImageJdbc extends CRUDMapper[Image]
                         WHERE s.round_id = $roundId AND i.deleted_at IS NOT NULL"""
       .map(_.long(1))
       .list()
-    if (pageIds.nonEmpty) {
-      val where = sqls"round_id = $roundId AND page_id IN ($pageIds)"
-      sql"REPLACE INTO selection_deleted SELECT * FROM selection WHERE $where".update()
-      sql"DELETE FROM selection WHERE $where".update()
-    }
+    if (pageIds.nonEmpty) moveVotesAside(sqls"round_id = $roundId AND page_id IN ($pageIds)")
     pageIds
   }
 
+  /** Moves the selection rows `where` selects to selection_deleted.
+    *
+    * @return their rounds
+    */
+  private def moveVotesAside(where: SQLSyntax)(implicit session: DBSession): Seq[Long] = {
+    // Locking reads, like the REPLACE ... SELECT: the latest rows, not the snapshot's
+    val roundIds = sql"SELECT DISTINCT round_id FROM selection WHERE $where LOCK IN SHARE MODE"
+      .map(_.long(1))
+      .list()
+    sql"REPLACE INTO selection_deleted SELECT * FROM selection WHERE $where".update()
+    sql"DELETE FROM selection WHERE $where".update()
+    roundIds
+  }
+
   /** Moves back the selection rows of `pageIds` that [[archiveVotes]] moved aside, but
-    * those of the `except` rounds. A row that conflicts with one in selection now (the file
-    * was distributed again) stays aside.
+    * those of the `except` rounds. Where the file was distributed again to the same juror
+    * in the round meanwhile, the juror's vote wins: the moved row replaces an unrated new
+    * one, and gives way to a rated one (the juror voted again). Nothing of these rounds
+    * stays aside.
     *
     * @return the rounds that gained rows (their cached image counts are stale)
     */
   def restoreVotes(pageIds: Seq[Long], except: Set[Long])(implicit session: DBSession): Seq[Long] =
     if (pageIds.isEmpty) Nil
     else {
-      val where = sqls"page_id IN ($pageIds) AND ${notInRounds(except)}"
-      val roundIds = sql"SELECT DISTINCT round_id FROM selection_deleted WHERE $where".map(_.long(1)).list()
-      sql"INSERT IGNORE INTO selection SELECT * FROM selection_deleted WHERE $where".update()
-      sql"""DELETE d FROM selection_deleted d
-            JOIN selection s ON s.id = d.id AND s.page_id = d.page_id AND s.jury_id = d.jury_id
-                            AND s.round_id = d.round_id
-            WHERE d.page_id IN ($pageIds)""".update()
+      val where = sqls"d.page_id IN ($pageIds) AND ${notInRounds(except, sqls"d.round_id")}"
+      val sameVote = sqls"s.page_id = d.page_id AND s.jury_id = d.jury_id AND s.round_id = d.round_id"
+      val roundIds = sql"SELECT DISTINCT d.round_id FROM selection_deleted d WHERE $where FOR UPDATE"
+        .map(_.long(1))
+        .list()
+      sql"""DELETE s FROM selection s JOIN selection_deleted d ON $sameVote
+            WHERE $where AND COALESCE(s.rate, 0) = 0 AND COALESCE(d.rate, 0) <> 0""".update()
+      sql"""INSERT INTO selection SELECT d.* FROM selection_deleted d
+            WHERE $where AND NOT EXISTS (SELECT 1 FROM selection s WHERE $sameVote)""".update()
+      sql"DELETE d FROM selection_deleted d WHERE $where".update()
       roundIds
     }
 
-  private def notInRounds(roundIds: Set[Long]): SQLSyntax =
-    if (roundIds.isEmpty) sqls"round_id IS NOT NULL" else sqls"round_id NOT IN ($roundIds)"
+  private def notInRounds(roundIds: Set[Long], column: SQLSyntax = sqls"round_id"): SQLSyntax =
+    if (roundIds.isEmpty) sqls"$column IS NOT NULL" else sqls"$column NOT IN ($roundIds)"
 
   def findByContestId(contestId: Long)(implicit session: DBSession = AutoSession): List[Image] =
     ContestJuryJdbc.findById(contestId).map(findByContest).getOrElse(Nil)

@@ -23,7 +23,7 @@ import javax.imageio.ImageIO
 import javax.inject.{Inject, Singleton}
 import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Future}
-import scala.util.Random
+import scala.util.{Random, Try}
 
 case class CacheProgress(
     done: Int,
@@ -275,9 +275,10 @@ class LocalImageCacheService(
     val deleted = new AtomicInteger(0)
   }
 
-  /** A thumbnail that Wikimedia doesn't have: perhaps its file was renamed or deleted on
-    * Commons ([[checkOnCommons]]). A renamed file is downloaded again under its new name; a
-    * deleted one is counted apart from the errors.
+  /** A thumbnail that Wikimedia doesn't have: perhaps its file was renamed, re-uploaded or
+    * deleted on Commons ([[checkOnCommons]]). A renamed file is downloaded again under its
+    * new name, a re-uploaded one for its new size; a deleted one is counted apart from the
+    * errors.
     */
   private def afterFailedDownload(image: Image, ex: Throwable, counts: FailureCounts): Future[Unit] = {
     def error(e: Throwable): Unit = {
@@ -290,6 +291,8 @@ class LocalImageCacheService(
           downloadAndResize(current)
             .map(_ => counts.renamed.incrementAndGet(): Unit)
             .recover { case e => error(e) }
+        case FileCheck.Changed(current) =>
+          downloadAndResize(current).recover { case e => error(e) }
         case FileCheck.Deleted =>
           counts.deleted.incrementAndGet()
           Future.unit
@@ -305,12 +308,13 @@ class LocalImageCacheService(
     */
   def checkOnCommons(image: Image, ex: Throwable): Future[FileCheck] =
     (ex, fileCheck) match {
-      case (_: ThumbnailNotFound, Some(check)) => check.check(image).recover { case _ => FileCheck.Unknown }
+      case (_: ThumbnailNotFound, Some(check)) =>
+        Future.fromTry(Try(check.check(image))).flatten.recover { case _ => FileCheck.Unknown }
       case _                                   => Future.successful(FileCheck.Unknown)
     }
 
   private[services] def allSizesCached(image: Image): Boolean =
-    image.url.exists(_.contains("//upload.wikimedia.org/wikipedia/commons/")) &&
+    CommonsFileCheck.isCommonsFile(image) &&
     targetHeights.forall { h =>
       val px = ImageUtil.resizeTo(image.width, image.height, h)
       px >= image.width || registry.containsKey(localFile(image, px).getAbsolutePath)
@@ -318,7 +322,7 @@ class LocalImageCacheService(
 
   // Mirrors the URL construction in Global.legacyThumbUlr, using wikiBaseUrl as host
   private[services] def wikiThumbUrl(image: Image, px: Int): Option[String] =
-    image.url.filter(_.contains("//upload.wikimedia.org/wikipedia/commons/")).map { rawUrl =>
+    image.url.filter(CommonsFileCheck.isCommonsUrl).map { rawUrl =>
       val lower     = image.title.toLowerCase
       val isPdf     = lower.endsWith(".pdf")
       val isTif     = lower.endsWith(".tif") || lower.endsWith(".tiff")
