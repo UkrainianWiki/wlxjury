@@ -15,12 +15,26 @@ object Global {
   val largeSizeX = 1280
   val largeSizeY = 1100
 
-  val smallSizes = Seq(
-    (gallerySizeX, gallerySizeY),
-    (thumbSizeX, thumbSizeY)
-  )
-
   val sizeFactors = Seq(1.0, 1.5, 2.0)
+
+  /** The widths the views show a `width` × `height` image at, as thumbnails, at each of
+    * [[sizeFactors]]: [[gallerySizeY]] tall in a binary round's gallery, fit into the
+    * gallery box in a rated one and into the thumbnail box in the large view's bar.
+    * Those of them narrower than the file are cached ([[services.LocalImageCacheService]]).
+    */
+  def thumbnailWidths(width: Int, height: Int): Seq[Int] =
+    sizeFactors.flatMap { factor =>
+      def scaled(size: Int) = (size * factor).toInt
+      Seq(
+        ImageUtil.resizeTo(width, height, scaled(gallerySizeY)),
+        ImageUtil.resizeTo(width, height, scaled(gallerySizeX), scaled(gallerySizeY)),
+        ImageUtil.resizeTo(width, height, scaled(thumbSizeX), scaled(thumbSizeY))
+      )
+    }.distinct.sorted
+
+  /** Where the image is shown `px` wide, as [[resizeTo]] gives it. */
+  def resizeToPx(info: Image, px: Int): String =
+    resizeToPx(info, if (info.width > 0) (info.height.toLong * px / info.width).toInt else 0, px)
 
   /** The app's Commons bot: `MwBot.fromHost` keeps one bot (and its session cookies) per
     * host, so this is [[modules.AppModule.bot]] too, logged in by the import jobs'

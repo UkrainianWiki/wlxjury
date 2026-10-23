@@ -201,10 +201,8 @@ class LocalImageCacheServiceDockerSpec extends Specification with CommonsImageFe
           // X-Cache: proxied → file missing from container, Apache fetched from Wikimedia ✗
           // Using X-Cache avoids false passes (local file ≈ proxied file both return 200)
           // and avoids 429s from Wikimedia caused by making many rapid proxy requests.
-          val checkHeights = Seq(120, 250, 1100)
           images.take(3).foldLeft(ok: org.specs2.matcher.MatchResult[Any]) { (acc, img) =>
-            checkHeights.foldLeft(acc) { (acc2, h) =>
-              val px = org.intracer.wmua.ImageUtil.resizeTo(img.width, img.height, h)
+            controllers.Global.thumbnailWidths(img.width, img.height).foldLeft(acc) { (acc2, px) =>
               if (px < img.width) {
                 svc.wikiThumbUrl(img, px) match {
                   case None => acc2
