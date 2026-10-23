@@ -4,6 +4,7 @@ import db.scalikejdbc.{ImageJdbc, Round}
 import org.intracer.wmua.cmd.DistributeImages
 import play.api.Configuration
 import services.distribution.RoundDistributionHandler
+import services.imports.{CommonsSource, FakeCommonsSource}
 import services.jobs.{JobHandler, JobScheduler}
 
 /** A [[RoundService]] for specs without a Play app: its distribution jobs run inline, to
@@ -11,8 +12,14 @@ import services.jobs.{JobHandler, JobScheduler}
   */
 object TestRoundServices {
 
-  def handler(chunkRows: Int = RoundDistributionHandler.DefaultChunkRows): RoundDistributionHandler =
-    new RoundDistributionHandler(new DistributeImages(ImageJdbc), config(chunkRows))
+  /** A Commons with no files: a listed file not stored is missing. */
+  def emptyCommons: CommonsSource = new FakeCommonsSource(Nil)
+
+  def handler(
+      chunkRows: Int = RoundDistributionHandler.DefaultChunkRows,
+      commons: CommonsSource = emptyCommons
+  ): RoundDistributionHandler =
+    new RoundDistributionHandler(new DistributeImages(ImageJdbc), config(chunkRows), commons)
 
   def config(chunkRows: Int): Configuration =
     Configuration("jobs.roundDistribution.chunkRows" -> chunkRows)

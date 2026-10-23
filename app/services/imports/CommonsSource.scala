@@ -11,10 +11,8 @@ import org.scalawiki.dto.{MwException, Namespace, Page}
 import play.api.Logging
 import play.api.libs.json.JsObject
 
-import java.net.URLDecoder
 import javax.inject.{Inject, Singleton}
 import scala.concurrent.duration._
-import scala.util.Try
 
 /** Where a contest's files come from: the "source" field of the files page. */
 sealed trait ImportSource {
@@ -39,19 +37,10 @@ object ImportSource {
     else PageFiles(source)
   }
 
-  /** The titles of a pasted list, one per line: trimmed, URL-decoded, without the Commons
-    * URL prefix, with spaces for underscores, without duplicates.
+  /** The titles of a pasted list, one per line, in whatever form they were pasted
+    * ([[FileTitles]]), as Commons names them, without duplicates.
     */
-  def titles(list: String): Seq[String] =
-    list
-      .split("(\r\n|\n|\r)")
-      .iterator
-      .map(_.trim)
-      .filter(_.nonEmpty)
-      .map(t => Try(URLDecoder.decode(t, "UTF8")).getOrElse(t))
-      .map(_.replace("https://commons.wikimedia.org/wiki/", "").replace("_", " "))
-      .toSeq
-      .distinct
+  def titles(list: String): Seq[String] = FileTitles(list)
 }
 
 /** One page of a source's files: their page ids, and the cursor of the next page (None:

@@ -1,6 +1,8 @@
 package services.imports
 
-import org.intracer.wmua.Image
+import db.scalikejdbc.ImageJdbc
+import org.intracer.wmua.{ContestJury, Image}
+import org.scalawiki.dto.Page
 import org.scalawiki.wikitext.TemplateParser
 
 /** What an import reads from a file's page text. */
@@ -25,6 +27,20 @@ object ImageText {
       author = text.flatMap(namedParam(_, "Information", "author")).map(_.take(256)).filterNot(_.trim.isEmpty)
     )
   }
+
+  /** The files among the pages, as the contest's images by page id: with what their text
+    * gives ([[withText]]) when the contest has a monument id template (the pages were
+    * fetched with their text then).
+    */
+  def images(pages: Seq[Page], contest: ContestJury, monumentIdTemplate: Option[String]): Seq[Image] =
+    pages
+      .flatMap { page =>
+        ImageJdbc.fromPage(page, contest).map { image =>
+          if (monumentIdTemplate.isDefined) withText(image, page.text, monumentIdTemplate)
+          else image
+        }
+      }
+      .sortBy(_.pageId)
 
   /** The monument id that "Update monuments" sets from a file's text: the template's
     * first parameter, if it is a valid id.

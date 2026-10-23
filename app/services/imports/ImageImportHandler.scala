@@ -194,14 +194,7 @@ class ImageImportHandler @Inject() (source: CommonsSource, config: Configuration
   }
 
   private def images(contest: ContestJury, p: ImportParams, pages: Seq[Page]): Seq[Image] =
-    pages
-      .flatMap { page =>
-        ImageJdbc.fromPage(page, contest).map { image =>
-          if (p.monumentIdTemplate.isDefined) ImageText.withText(image, page.text, p.monumentIdTemplate)
-          else image
-        }
-      }
-      .sortBy(_.pageId)
+    ImageText.images(pages, contest, p.monumentIdTemplate)
 
   private def monumentIdsOf(p: ImportParams, pages: Seq[Page]): Seq[(Long, String)] = {
     val template = p.monumentIdTemplate.getOrElse(throw new IllegalStateException("no monument id template"))
