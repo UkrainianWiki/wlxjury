@@ -699,6 +699,42 @@ class LocalImageCacheServiceSpec extends Specification {
 
   // ── fetchAndCacheAll / fileIfCached ──────────────────────────────────────
 
+  for {
+    encoding <- Seq("lossy", "lossless")
+    width    <- Seq(4000, 960) // a Commons thumbnail, or the original WebP itself
+  } {
+    s"WebP thumbnails ($encoding, width $width)" should {
+      val img = mkImage(w = width, h = width * 3 / 4, filename = s"Photo-$encoding.webp")
+      val widths = Global.thumbnailWidths(img.width, img.height).filter(_ < img.width)
+      val stream = getClass.getResourceAsStream(s"/images/thumbnail-$encoding.webp")
+      val webp = try stream.readAllBytes() finally stream.close()
+
+      s"resize and cache a requested $encoding WebP of width $width" in {
+        withServer(_ => HttpResponse(entity = HttpEntity(ContentTypes.`application/octet-stream`, webp))) { port =>
+          val svc = mkService(mkTempDir(), serverPort = Some(port))
+          val bytes = Await.result(svc.fetchAndCacheAll(img, widths.head), 30.seconds)
+          LocalImageCacheService.contentType(bytes) mustEqual "image/jpeg"
+          val decoded = ImageIO.read(new ByteArrayInputStream(bytes))
+          decoded.getWidth mustEqual widths.head
+          decoded.getHeight mustEqual widths.head * 3 / 4
+          awaitFiles(widths.map(svc.localFile(img, _)): _*)
+          forall(widths) { px => ImageIO.read(svc.localFile(img, px)).getWidth mustEqual px }
+        }
+      }
+
+      s"cache a $encoding WebP of width $width in the download job" in {
+        withServer(_ => HttpResponse(entity = HttpEntity(ContentTypes.`application/octet-stream`, webp))) { port =>
+          val svc = mkService(mkTempDir(), serverPort = Some(port))
+          Await.result(svc.runDownload(1L, Seq(img)), 30.seconds)
+          svc.progress(1L).errors mustEqual 0
+          awaitFiles(widths.map(svc.localFile(img, _)): _*)
+          svc.allSizesCached(img) must beTrue
+          forall(widths) { px => ImageIO.read(svc.localFile(img, px)).getWidth mustEqual px }
+        }
+      }
+    }
+  }
+
   "fetchAndCacheAll" should {
 
     val SW = 4000; val SH = 3000

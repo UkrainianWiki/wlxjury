@@ -173,6 +173,8 @@ libraryDependencies ++= Seq(
   "com.typesafe.play" %% "play-mailer" % PlayMailerVersion,
   "com.typesafe.play" %% "play-mailer-guice" % PlayMailerVersion,
   "com.github.tototoshi" %% "scala-csv" % "1.4.1",
+  // ImageIO needs a WebP reader to resize Commons images for the thumbnail cache.
+  "com.twelvemonkeys.imageio" % "imageio-webp" % "3.15.0",
   "uk.org.lidalia" % "sysout-over-slf4j" % "1.0.2",
   "javax.xml.bind" % "jaxb-api" % "2.3.1",
   "com.softwaremill.sttp.tapir" %% "tapir-core" % TapirVersion,
