@@ -75,6 +75,11 @@ trait CommonsSource {
   /** The files (at most [[maxIdsPerRequest]]), with their image info and/or their page text. */
   def files(pageIds: Seq[Long], info: Boolean, text: Boolean): Seq[Page]
 
+  /** Of the page ids (at most [[maxIdsPerRequest]]), those Commons has no page of: the API
+    * answers them `missing`. [[files]] can't tell them from pages it couldn't parse.
+    */
+  def missingFiles(pageIds: Seq[Long]): Seq[Long]
+
   /** The files (at most [[maxIdsPerRequest]]) by title; a missing file comes back without an id. */
   def filesByTitles(titles: Seq[String], info: Boolean, text: Boolean): Seq[Page]
 
@@ -113,6 +118,9 @@ class MwCommonsSource @Inject() (bot: MwBot, login: CommonsLogin) extends Common
   def files(pageIds: Seq[Long], info: Boolean, text: Boolean): Seq[Page] =
     batch(pageIds)(ids => api.run(Query(PageIdsParam(ids), Prop(props(info, text): _*))))
 
+  def missingFiles(pageIds: Seq[Long]): Seq[Long] =
+    batch(pageIds)(api.missingPageIds)
+
   def filesByTitles(titles: Seq[String], info: Boolean, text: Boolean): Seq[Page] =
     batch(titles)(ts => api.run(Query(TitlesParam(ts), Prop(props(info, text): _*))))
 
@@ -120,7 +128,7 @@ class MwCommonsSource @Inject() (bot: MwBot, login: CommonsLogin) extends Common
     * become anonymous) is fetched again [[CommonsLogin.Limit]] values per request, so the
     * step still succeeds, and the next step checks the session again.
     */
-  private def batch[V](values: Seq[V])(request: Seq[V] => Seq[Page]): Seq[Page] =
+  private def batch[V, R](values: Seq[V])(request: Seq[V] => Seq[R]): Seq[R] =
     if (values.isEmpty) Nil
     else
       try request(values)

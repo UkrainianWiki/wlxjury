@@ -172,16 +172,17 @@ object SelectionJdbc extends CRUDMapper[Selection] {
         .eq(column.roundId, roundId)
     }.update()
 
+  /** Moves the image's votes to another round, also those moved aside (V63), as
+    * [[mergeRounds]] does: a juror's vote already in the new round wins. If the new round
+    * is open, the votes of a file deleted on Commons are then moved aside there
+    * ([[Round.settleDeletedFiles]]).
+    */
   def setRound(pageId: Long, oldRoundId: Long, newRoundId: Long): Unit = {
-    withSQL {
-      update(SelectionJdbc)
-        .set(column.roundId -> newRoundId)
-        .where
-        .eq(column.pageId, pageId)
-        .and
-        .eq(column.roundId, oldRoundId)
-    }.update()
+    DB.localTx { implicit session =>
+      moveVotes(newRoundId, oldRoundId, sqls"AND src.page_id = $pageId")
+    }
     RoundImageCounts.invalidate(oldRoundId, newRoundId)
+    Round.settleDeletedFiles(newRoundId)
   }
 
   def activeJurors(roundId: Long): Int =
@@ -213,24 +214,34 @@ object SelectionJdbc extends CRUDMapper[Selection] {
     updateBy(sqls.eq(s.pageId, pageId))
       .withAttributes("deletedAt" -> ZonedDateTime.now)
 
+  /** Removes the image from the round, also its votes moved aside (V63): restoring its file
+    * on Commons must not bring them back.
+    */
   def removeImage(pageId: Long, roundId: Long): Unit = {
-    // unaliased columns: a DELETE has no "s" alias ("Unknown column 's.page_id'")
-    deleteBy(
-      sqls
-        .eq(column.pageId, pageId)
-        .and
-        .eq(column.roundId, roundId)
-    )
+    DB.localTx { implicit session =>
+      // unaliased columns: a DELETE has no "s" alias ("Unknown column 's.page_id'")
+      deleteBy(
+        sqls
+          .eq(column.pageId, pageId)
+          .and
+          .eq(column.roundId, roundId)
+      )
+      sql"DELETE FROM selection_deleted WHERE page_id = $pageId AND round_id = $roundId".update()
+    }
     RoundImageCounts.invalidate(roundId)
   }
 
+  /** Removes the round's unrated votes, also those moved aside (V63), as [[removeImage]]. */
   def removeUnrated(roundId: Long): Unit = {
-    deleteBy(
-      sqls
-        .eq(column.rate, 0)
-        .and
-        .eq(column.roundId, roundId)
-    )
+    DB.localTx { implicit session =>
+      deleteBy(
+        sqls
+          .eq(column.rate, 0)
+          .and
+          .eq(column.roundId, roundId)
+      )
+      sql"DELETE FROM selection_deleted WHERE rate = 0 AND round_id = $roundId".update()
+    }
     RoundImageCounts.invalidate(roundId)
   }
 
@@ -242,22 +253,31 @@ object SelectionJdbc extends CRUDMapper[Selection] {
     *
     * Runs in the caller's session: wrap it in a transaction (as
     * `RoundService.mergeRounds` does) so the delete and the update apply together,
-    * and invalidate both rounds' [[RoundImageCounts]] after it commits.
+    * and invalidate both rounds' [[RoundImageCounts]] after it commits, and settle the
+    * target round's files deleted on Commons ([[Round.settleDeletedFiles]]).
+    *
+    * The votes moved aside (V63) are merged the same way, so a restored file's votes come
+    * back into the target round.
     */
-  def mergeRounds(targetRoundId: Long, sourceRoundId: Long)(implicit session: DBSession = AutoSession): Unit = {
-    sql"""DELETE src FROM selection src
-          JOIN selection tgt
-            ON tgt.round_id = $targetRoundId
-           AND tgt.page_id = src.page_id
-           AND tgt.jury_id = src.jury_id
-          WHERE src.round_id = $sourceRoundId""".update()
+  def mergeRounds(targetRoundId: Long, sourceRoundId: Long)(implicit session: DBSession = AutoSession): Unit =
+    moveVotes(targetRoundId, sourceRoundId, sqls"")
 
-    withSQL {
-      update(SelectionJdbc)
-        .set(column.roundId -> targetRoundId)
-        .where
-        .eq(column.roundId, sourceRoundId)
-    }.update()
-  }
+  /** Moves the source round's votes `andWhere` selects (on `src`) to the target round, in
+    * selection and in selection_deleted, but those of a juror who has the image in the
+    * target round already: they are dropped.
+    */
+  private def moveVotes(targetRoundId: Long, sourceRoundId: Long, andWhere: SQLSyntax)(implicit
+      session: DBSession
+  ): Unit =
+    Seq(sqls"selection", sqls"selection_deleted").foreach { table =>
+      sql"""DELETE src FROM $table src
+            JOIN $table tgt
+              ON tgt.round_id = $targetRoundId
+             AND tgt.page_id = src.page_id
+             AND tgt.jury_id = src.jury_id
+            WHERE src.round_id = $sourceRoundId $andWhere""".update()
+
+      sql"UPDATE $table src SET src.round_id = $targetRoundId WHERE src.round_id = $sourceRoundId $andWhere".update()
+    }
 
 }

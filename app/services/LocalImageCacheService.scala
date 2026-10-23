@@ -7,14 +7,16 @@ import org.apache.pekko.http.scaladsl.Http
 import org.apache.pekko.http.scaladsl.model._
 import org.apache.pekko.pattern.after
 import org.apache.pekko.stream.scaladsl._
-import org.intracer.wmua.{Image, ImageUtil}
+import org.intracer.wmua.Image
 import play.api.libs.json.{Json, Reads, Writes}
 import play.api.{Configuration, Logging}
+import services.imports.{CommonsFileCheck, FileCheck}
 
 import java.awt.RenderingHints
 import java.awt.image.BufferedImage
 import java.io.{ByteArrayInputStream, File}
-import java.nio.file.{Files, StandardCopyOption}
+import java.nio.charset.StandardCharsets.UTF_8
+import java.nio.file.{Files, Path, StandardCopyOption}
 import scala.jdk.CollectionConverters._
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
@@ -22,7 +24,7 @@ import javax.imageio.ImageIO
 import javax.inject.{Inject, Singleton}
 import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Future}
-import scala.util.Random
+import scala.util.{Random, Try}
 
 case class CacheProgress(
     done: Int,
@@ -32,8 +34,16 @@ case class CacheProgress(
     startedAtMs: Long  = 0L,
     elapsedMs: Long    = 0L,
     ratePerSec: Double = 0.0,
-    etaSeconds: Long   = 0L
+    etaSeconds: Long   = 0L,
+    renamed: Int       = 0, // renamed on Commons, downloaded under the new name (in done)
+    deleted: Int       = 0  // deleted on Commons (in done, not in errors)
 )
+
+/** Wikimedia has no file at `url` (HTTP 404): perhaps the file was renamed or deleted on
+  * Commons ([[CommonsFileCheck]]). Other failures (429s, decode errors, no Commons url)
+  * say nothing of that.
+  */
+final class ThumbnailNotFound(val url: String) extends Exception(s"Not found: $url")
 
 object CacheProgress {
   implicit val writes: Writes[CacheProgress] = Json.writes[CacheProgress]
@@ -41,12 +51,24 @@ object CacheProgress {
     play.api.libs.json.Json.reads[CacheProgress]
 }
 
+/** @param fileCheck asks Commons about a file whose thumbnail can't be downloaded */
 @Singleton
-class LocalImageCacheService @Inject() (
+class LocalImageCacheService(
     config: Configuration,
-    actorSystem: ActorSystem
+    actorSystem: ActorSystem,
+    fileCheck: Option[CommonsFileCheck]
 )(implicit ec: ExecutionContext)
     extends Logging {
+
+  import LocalImageCacheService._
+
+  @Inject() def this(config: Configuration, actorSystem: ActorSystem, fileCheck: CommonsFileCheck)(implicit
+      ec: ExecutionContext
+  ) = this(config, actorSystem, Some(fileCheck))
+
+  /** Without asking Commons (specs). */
+  def this(config: Configuration, actorSystem: ActorSystem)(implicit ec: ExecutionContext) =
+    this(config, actorSystem, None)
 
   implicit private val system: ActorSystem = actorSystem
 
@@ -54,24 +76,6 @@ class LocalImageCacheService @Inject() (
   private val parallelism = config.getOptional[Int]("wlxjury.thumbs.parallelism").getOrElse(1)
   private val ratePerSec  = config.getOptional[Int]("wlxjury.thumbs.rate-per-second").getOrElse(10)
   private val maxAttempts = config.getOptional[Int]("wlxjury.thumbs.max-attempts").getOrElse(3)
-
-  // All thumbnail heights used by the jury UI (1x, 1.5x and 2x for each size slot)
-  private val targetHeights: Seq[Int] = Seq(
-    Global.thumbSizeY,                     // 120  – thumbs bar 1x
-    (Global.thumbSizeY * 1.5).toInt,       // 180  – thumbs bar 1.5x
-    Global.thumbSizeY * 2,                 // 240  – thumbs bar 2x
-    Global.gallerySizeY,                   // 250  – gallery 1x
-    (Global.gallerySizeY * 1.5).toInt,     // 375  – gallery 1.5x
-    Global.gallerySizeY * 2,               // 500  – gallery 2x
-    Global.largeSizeY,                     // 1100 – large view 1x
-    (Global.largeSizeY * 1.5).toInt        // 1650 – large view 1.5x
-  ).distinct.sorted
-
-  // The source image downloaded from wikimedia covers all target heights
-  private val sourceHeight = (Global.largeSizeY * 1.5).toInt // 1650
-
-  // Wikimedia only serves thumbnails at these fixed widths ($wgThumbnailSteps)
-  private val wikiThumbnailSteps = Seq(20, 40, 60, 120, 250, 330, 500, 960, 1280, 1920, 3840)
 
   private val userAgent = headers.RawHeader("User-Agent", "WLXJury/1.0 (https://commons.wikimedia.org/wiki/Commons:WLX_Jury_Tool; intracer@gmail.com)")
 
@@ -94,19 +98,46 @@ class LocalImageCacheService @Inject() (
     if (registry.containsKey(file.getAbsolutePath)) Some(file) else None
   }
 
-  def fetchAndCacheAll(image: Image, requestedPx: Int): Future[Array[Byte]] = {
-    val neededPx = ImageUtil.resizeTo(image.width, image.height, sourceHeight)
-    val sourcePx = wikiThumbnailSteps.find(_ >= neededPx).getOrElse(image.width)
-    val urlOpt   =
-      if (sourcePx >= image.width)
-        image.url.map(_.replaceFirst("https?://upload\\.wikimedia\\.org", wikiBaseUrl))
-      else
-        wikiThumbUrl(image, sourcePx)
+  /** Whether the image's thumbnail `px` wide is cached, or scaled from a cached size: no
+    * wider than all its target sizes. A wider one (the large view's) is not.
+    */
+  def cacheable(image: Image, px: Int): Boolean = targetWidths(image).exists(_ >= px)
 
-    urlOpt match {
-      case None =>
+  /** The image `requestedPx` wide, caching all target sizes on the way: scaled from a
+    * cached one if it can be ([[localSource]]), else from Wikimedia. A size wider than all
+    * of them (the large view's, [[cacheable]]) is fetched on its own and not cached: as
+    * Wikimedia sends it, if it is one of its sizes or the file itself, else scaled.
+    */
+  def fetchAndCacheAll(image: Image, requestedPx: Int): Future[Array[Byte]] = {
+    val widths    = targetWidths(image)
+    val cacheable = widths.exists(_ >= requestedPx)
+    val WikimediaSource(sourcePx, urlOpt, original) = source(image, if (cacheable) widths.max else requestedPx)
+    val passOn    = !cacheable && (sourcePx == requestedPx || original)
+
+    def resized(sourceImg: BufferedImage, sourcePx: Int): Array[Byte] = {
+      // Run cascade synchronously: saves fire async inside saveResized, cascade CPU returns
+      // the requested image immediately. A try/catch preserves the current behavior where
+      // scaling errors (e.g. OOM) are logged and fall back to a direct scale rather than
+      // propagating a failed Future to the caller.
+      val imgOpt = if (!cacheable) None else try {
+        saveResized(image, sourceImg, sourcePx, Some(requestedPx))
+      } catch {
+        case ex: Exception =>
+          logger.warn(s"Cascade failed for ${image.title}: ${ex.getMessage}")
+          None
+      }
+      val requestedImg = imgOpt.getOrElse(scale(sourceImg, requestedPx))
+      val baos = new java.io.ByteArrayOutputStream()
+      ImageIO.write(requestedImg, "JPEG", baos)
+      baos.toByteArray
+    }
+
+    (if (cacheable) localSource(image, requestedPx) else None, urlOpt) match {
+      case (Some((localPx, localImg)), _) =>
+        Future(resized(localImg, localPx))
+      case (None, None) =>
         Future.failed(new Exception(s"No cacheable URL for ${image.title}"))
-      case Some(url) =>
+      case (None, Some(url)) =>
         // Deduplicate concurrent downloads of the same URL: only one HTTP request fires;
         // all concurrent callers share the resulting Future.
         val download: Future[Array[Byte]] =
@@ -118,30 +149,46 @@ class LocalImageCacheService @Inject() (
               }
               .andThen { case _ => inFlight.remove(url) }
           )
-        download.flatMap { bytes =>
-          val sourceImg = ImageIO.read(new ByteArrayInputStream(bytes))
-          if (sourceImg == null)
-            Future.failed(new Exception(s"Could not decode image from $url"))
-          else {
-            // Run cascade synchronously: saves fire async inside saveResized, cascade CPU returns
-            // the requested image immediately. A try/catch preserves the current behavior where
-            // scaling errors (e.g. OOM) are logged and fall back to a direct scale rather than
-            // propagating a failed Future to the caller.
-            val imgOpt = try {
-              saveResized(image, sourceImg, sourcePx, Some(requestedPx))
-            } catch {
-              case ex: Exception =>
-                logger.warn(s"Cascade failed for ${image.title}: ${ex.getMessage}")
-                None
-            }
-            val requestedImg = imgOpt.getOrElse(scale(sourceImg, requestedPx))
-            val baos = new java.io.ByteArrayOutputStream()
-            ImageIO.write(requestedImg, "JPEG", baos)
-            Future.successful(baos.toByteArray)
+        if (passOn) download
+        else
+          download.flatMap { bytes =>
+            val sourceImg = ImageIO.read(new ByteArrayInputStream(bytes))
+            if (sourceImg == null)
+              Future.failed(new Exception(s"Could not decode image from $url"))
+            else
+              Future.successful(resized(sourceImg, sourcePx))
           }
-        }
     }
   }
+
+  /** The narrowest cached target size of the image no narrower than `atLeast` and wider
+    * than all those not cached, if its widest is cached: those can be scaled from it,
+    * without asking Wikimedia, and the wider ones are not scaled again.
+    */
+  private def localSourceFile(image: Image, atLeast: Int = 0): Option[(Int, File)] = {
+    val sizes   = targetWidths(image).map(px => px -> fileIfCached(image, px).filter(_.exists()))
+    val missing = sizes.collect { case (px, None) => px }
+    if (!sizes.lastOption.exists(_._2.isDefined)) None
+    else sizes.collectFirst { case (px, Some(file)) if px >= atLeast && missing.forall(_ < px) => px -> file }
+  }
+
+  /** [[localSourceFile]], decoded. None if it can't be read. */
+  private def localSource(image: Image, atLeast: Int = 0): Option[(Int, BufferedImage)] =
+    localSourceFile(image, atLeast).flatMap { case (px, file) =>
+      Try(ImageIO.read(file)).toOption.flatMap(Option(_)).map(px -> _)
+    }
+
+  /** Deletes the image's cached sizes, as of a version of the file that Commons has
+    * replaced ([[FileCheck.Changed]]): under the same url, they would be served instead of
+    * the new version's, and scaled from.
+    */
+  def evict(image: Image): Unit =
+    wikiThumbUrl(image, 1).map(_ => localFile(image, 1).getParentFile).foreach { dir =>
+      Option(dir.listFiles()).toSeq.flatten.filter(_.isFile).foreach { file =>
+        registry.remove(file.getAbsolutePath)
+        Try(Files.deleteIfExists(file.toPath))
+      }
+    }
 
   private[services] def initRegistry(): Future[Unit] = Future {
     val root = new File(localPath)
@@ -150,15 +197,105 @@ class LocalImageCacheService @Inject() (
       try stream.iterator().asScala
             .filter(p => Files.isRegularFile(p))
             .foreach { p =>
-              if (p.getFileName.toString.startsWith(".tmp-"))
+              val name = p.getFileName.toString
+              if (name.startsWith(".tmp-"))
                 Files.deleteIfExists(p) // stale temp file from a prior crash
-              else
+              else if (name != SizesMarker)
                 registry.put(p.toAbsolutePath.toString, ())
             }
       finally stream.close()
       logger.info(s"Registry initialized with ${registry.size()} cached files")
     }
   }
+
+  /** The file in the cache's root naming the sizes cached ([[cachedSizes]]) once the files of
+    * other sizes are deleted ([[cleanUpUnusedSizes]]). In the cache, not in the config or the
+    * database, it goes with the files: blue/green slots share it, a restored or new cache
+    * has its own.
+    */
+  private[services] val SizesMarker = ".cache-sizes"
+
+  /** The sizes cached ([[Global.thumbnailBoxes]]): when they change, the files of the old
+    * ones are deleted once.
+    */
+  private[services] val cachedSizes: String =
+    Global.thumbnailBoxes.map { case (x, y) => s"${x.fold("*")(_.toString)}x$y" }.mkString(" ")
+
+  /** Deletes the files of sizes no longer cached ([[unusedFiles]]), unless the
+    * [[SizesMarker]] says it was done for these sizes; then writes the marker. One image
+    * directory at a time, after [[initRegistry]], not delaying it. Interrupted, it runs
+    * again at the next start.
+    */
+  private[services] def cleanUpUnusedSizes(): Future[Unit] = Future(scala.concurrent.blocking {
+    val root   = new File(localPath)
+    val marker = new File(root, SizesMarker)
+    val done   = Try(new String(Files.readAllBytes(marker.toPath), UTF_8).trim).toOption.contains(cachedSizes)
+    if (root.exists() && !done) {
+      logger.info(s"Deleting the cached files of sizes no longer cached: other than $cachedSizes")
+      val startMs = System.currentTimeMillis()
+      val dirs = {
+        val stream = Files.walk(root.toPath)
+        try stream.iterator().asScala.filter(p => Files.isDirectory(p)).toVector
+        finally stream.close()
+      }
+      val deleted = dirs.map { dir =>
+        val files = {
+          val stream = Files.list(dir)
+          try stream.iterator().asScala.filter(p => Files.isRegularFile(p)).toVector
+          finally stream.close()
+        }
+        unusedFiles(files).count { p =>
+          val removed = Try(Files.deleteIfExists(p)).getOrElse(false)
+          if (removed) registry.remove(p.toAbsolutePath.toString)
+          removed
+        }
+      }.sum
+      val tmp = File.createTempFile(".tmp-", ".marker", root)
+      Files.write(tmp.toPath, cachedSizes.getBytes(UTF_8))
+      // A failed move (on Windows, when another instance replaces the marker at once) leaves no temp file
+      try Files.move(tmp.toPath, marker.toPath, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
+      finally Files.deleteIfExists(tmp.toPath)
+      logger.info(
+        s"Deleted $deleted cached files of sizes no longer cached in ${dirs.size} directories, " +
+          s"in ${(System.currentTimeMillis() - startMs) / 1000}s"
+      )
+    }
+  })
+
+  /** The files of widths the views don't show their image at ([[Global.thumbnailWidths]]):
+    * the large view's, and other sizes cached before. A directory holds the sizes of one
+    * image, so the dimensions of its widest file give those widths, within rounding: one
+    * header read per image. A directory whose widest file can't be read is kept.
+    */
+  private def unusedFiles(files: Seq[Path]): Set[Path] =
+    files
+      .flatMap(p => thumbnailPx(p.getFileName.toString).map(p -> _))
+      .groupBy(_._1.getParent)
+      .values
+      .flatMap { sizes =>
+        imageSize(sizes.maxBy(_._2)._1).toSeq.flatMap { case (width, height) =>
+          val used = Global.thumbnailWidths(width, height)
+          sizes.collect { case (p, px) if !used.exists(w => math.abs(w - px) <= 2 + w / 100) => p }
+        }
+      }
+      .toSet
+
+  /** The width and height in an image file's header, without decoding the image. */
+  private def imageSize(path: Path): Option[(Int, Int)] =
+    Try {
+      val in = ImageIO.createImageInputStream(path.toFile)
+      try {
+        val readers = ImageIO.getImageReaders(in)
+        if (!readers.hasNext) None
+        else {
+          val reader = readers.next()
+          try {
+            reader.setInput(in, true, true)
+            Some((reader.getWidth(0), reader.getHeight(0)))
+          } finally reader.dispose()
+        }
+      } finally in.close()
+    }.toOption.flatten
 
   def progress(contestId: Long): CacheProgress =
     Option(progressMap.get(contestId)).getOrElse(CacheProgress(0, 0, 0, running = false))
@@ -221,26 +358,26 @@ class LocalImageCacheService @Inject() (
     val startMs = System.currentTimeMillis()
     val total   = toDownload.size
     val done    = new AtomicInteger(0)
-    val errs    = new AtomicInteger(0)
+    val counts  = new FailureCounts
 
     def mkProgress(d: Int, running: Boolean): CacheProgress = {
       val elapsed = System.currentTimeMillis() - startMs
       val rate    = if (elapsed > 0) d * 1000.0 / elapsed else 0.0
       val eta     = if (rate > 0) ((total - d) / rate).toLong else 0L
-      CacheProgress(d, total, errs.get, running,
-        startedAtMs = startMs, elapsedMs = elapsed, ratePerSec = rate, etaSeconds = eta)
+      CacheProgress(d, total, counts.errors.get, running,
+        startedAtMs = startMs, elapsedMs = elapsed, ratePerSec = rate, etaSeconds = eta,
+        renamed = counts.renamed.get, deleted = counts.deleted.get)
     }
 
     tracker.put(key, mkProgress(0, running = true))
 
-    Source(toDownload)
-      .throttle(ratePerSec, 1.second)
+    // Those scaled from a cached size don't ask Wikimedia: first, and not throttled.
+    val (local, remote) = toDownload.partition(image => localSourceFile(image).isDefined)
+    Source(local)
+      .concat(Source(remote).throttle(ratePerSec, 1.second))
       .mapAsyncUnordered(parallelism) { image =>
         downloadAndResize(image)
-          .recover { case ex =>
-            logger.warn(s"Failed to cache ${image.title}: ${ex.getMessage}")
-            errs.incrementAndGet()
-          }
+          .recoverWith { case ex => afterFailedDownload(image, ex, counts) }
           .map { _ =>
             val d = done.incrementAndGet()
             tracker.put(key, mkProgress(d, running = true))
@@ -252,22 +389,91 @@ class LocalImageCacheService @Inject() (
       }
   }
 
-  private[services] def allSizesCached(image: Image): Boolean =
-    image.url.exists(_.contains("//upload.wikimedia.org/wikipedia/commons/")) &&
-    targetHeights.forall { h =>
-      val px = ImageUtil.resizeTo(image.width, image.height, h)
-      px >= image.width || registry.containsKey(localFile(image, px).getAbsolutePath)
+  private final class FailureCounts {
+    val errors  = new AtomicInteger(0)
+    val renamed = new AtomicInteger(0)
+    val deleted = new AtomicInteger(0)
+  }
+
+  /** A thumbnail that Wikimedia doesn't have: perhaps its file was renamed, re-uploaded or
+    * deleted on Commons ([[checkOnCommons]]). A renamed file is downloaded again under its
+    * new name, a re-uploaded one for its new size; a deleted one is counted apart from the
+    * errors.
+    */
+  private def afterFailedDownload(image: Image, ex: Throwable, counts: FailureCounts): Future[Unit] = {
+    def error(e: Throwable): Unit = {
+      logger.warn(s"Failed to cache ${image.title}: ${e.getMessage}")
+      counts.errors.incrementAndGet()
     }
+    checkOnCommons(image, ex)
+      .flatMap {
+        case FileCheck.Renamed(current) =>
+          downloadAndResize(current)
+            .map(_ => counts.renamed.incrementAndGet(): Unit)
+            .recover { case e => error(e) }
+        case FileCheck.Changed(current) =>
+          evict(image)
+          downloadAndResize(current).recover { case e => error(e) }
+        case FileCheck.Deleted =>
+          counts.deleted.incrementAndGet()
+          Future.unit
+        case _ =>
+          Future.successful(error(ex))
+      }
+  }
+
+  /** What Commons says of a file whose thumbnail failed with `ex` ([[CommonsFileCheck]],
+    * which stores what it finds): asked only when Wikimedia doesn't have the thumbnail,
+    * [[FileCheck.Unknown]] otherwise, or after [[CommonsFileCheck.Wait]]. For the download
+    * job and for [[controllers.ImageProxyController]].
+    */
+  def checkOnCommons(image: Image, ex: Throwable): Future[FileCheck] =
+    (ex, fileCheck) match {
+      case (_: ThumbnailNotFound, Some(check)) =>
+        Future.fromTry(Try(check.check(image))).flatten.recover { case _ => FileCheck.Unknown }
+      case _                                   => Future.successful(FileCheck.Unknown)
+    }
+
+  /** The widths cached: those the views show the image at ([[Global.thumbnailWidths]]), if
+    * narrower than the file, narrowest first. The large view's sizes are not cached: they
+    * would take most of the disk.
+    */
+  private def targetWidths(image: Image): Seq[Int] =
+    Global.thumbnailWidths(image.width, image.height).filter(px => px > 0 && px < image.width)
+
+  /** The Wikimedia image to scale down to `px`: the thumbnail of the nearest of its sizes
+    * no narrower ([[Global.wikimediaSteps]]), or the file itself if that is no wider, unless
+    * only thumbnails show it ([[Image.thumbnailOnly]]: a PDF, TIFF or SVG doesn't decode).
+    */
+  private def source(image: Image, px: Int): WikimediaSource = {
+    val step = Global.wikimediaSteps.find(_ >= px)
+    if (!image.thumbnailOnly && step.forall(_ >= image.width))
+      WikimediaSource(image.width, image.url.map(_.replaceFirst("https?://upload\\.wikimedia\\.org", wikiBaseUrl)), original = true)
+    else {
+      val sourcePx = step.getOrElse(Global.wikimediaSteps.last)
+      WikimediaSource(sourcePx, wikiThumbUrl(image, sourcePx), original = false)
+    }
+  }
+
+  private[services] def allSizesCached(image: Image): Boolean =
+    CommonsFileCheck.isCommonsFile(image) &&
+    targetWidths(image).forall(px => registry.containsKey(localFile(image, px).getAbsolutePath))
+
+  /** Where Wikimedia serves the file `px` wide: its thumbnail, or the file itself if it is
+    * no wider and a browser can show it ([[Image.thumbnailOnly]], as
+    * [[controllers.Global.resizeTo]] does). None without a Commons url.
+    */
+  def wikimediaUrl(image: Image, px: Int): Option[String] =
+    if (px >= image.width && !image.thumbnailOnly) image.url.filter(CommonsFileCheck.isCommonsUrl)
+    else wikiThumbUrl(image, px)
 
   // Mirrors the URL construction in Global.legacyThumbUlr, using wikiBaseUrl as host
   private[services] def wikiThumbUrl(image: Image, px: Int): Option[String] =
-    image.url.filter(_.contains("//upload.wikimedia.org/wikipedia/commons/")).map { rawUrl =>
+    image.url.filter(CommonsFileCheck.isCommonsUrl).map { rawUrl =>
       val lower     = image.title.toLowerCase
       val isPdf     = lower.endsWith(".pdf")
       val isTif     = lower.endsWith(".tif") || lower.endsWith(".tiff")
-      // Commons imageinfo API appends UTM tracking params to `url` (e.g. "?utm_source=..."),
-      // which must be stripped before treating the trailing segment as a filename.
-      val url       = rawUrl.takeWhile(_ != '?')
+      val url       = CommonsFileCheck.withoutQuery(rawUrl)
       val lastSlash = url.lastIndexOf("/")
       val utf8Size  = image.title.getBytes("UTF-8").length
       val thumbStr  = if (utf8Size > 165) "thumbnail.jpg" else url.substring(lastSlash + 1)
@@ -295,15 +501,21 @@ class LocalImageCacheService @Inject() (
     new File(localPath + decoded)
   }
 
-  private def downloadAndResize(image: Image): Future[Unit] = {
-    val neededPx = ImageUtil.resizeTo(image.width, image.height, sourceHeight)
-    // Snap up to the nearest Wikimedia thumbnail step; fall back to original if none is large enough
-    val sourcePx = wikiThumbnailSteps.find(_ >= neededPx).getOrElse(image.width)
-    // Use original URL if snapped step meets or exceeds the full image width
-    val urlOpt = if (sourcePx >= image.width)
-      image.url.map(_.replaceFirst("https?://upload\\.wikimedia\\.org", wikiBaseUrl))
-    else
-      wikiThumbUrl(image, sourcePx)
+  /** Caches the target sizes of the image: scaled from a cached one if it can be
+    * ([[localSource]]), else downloaded from Wikimedia.
+    */
+  private def downloadAndResize(image: Image): Future[Unit] =
+    Future(localSource(image)).flatMap {
+      case Some((localPx, localImg)) =>
+        saveResized(image, localImg, localPx)
+        Future.unit
+      case None =>
+        downloadFromWikimedia(image)
+    }
+
+  private def downloadFromWikimedia(image: Image): Future[Unit] = {
+    val widest                          = targetWidths(image).lastOption.getOrElse(image.width)
+    val WikimediaSource(sourcePx, urlOpt, _) = source(image, widest)
 
     urlOpt match {
       case None =>
@@ -327,6 +539,7 @@ class LocalImageCacheService @Inject() (
 
   /** Downloads a URL, retrying on 429 with exponential backoff + jitter.
     * Respects the Retry-After header if present. Gives up after maxAttempts.
+    * None on another failed status, but a 404: [[ThumbnailNotFound]].
     */
   private[services] def downloadWithRetry(url: String, attempt: Int): Future[Option[Array[Byte]]] =
     Http()
@@ -347,6 +560,11 @@ class LocalImageCacheService @Inject() (
               after(delay)(downloadWithRetry(url, attempt + 1))
             }
           }
+
+        case resp if resp.status == StatusCodes.NotFound =>
+          resp.entity.discardBytes()
+          logger.warn(s"HTTP ${resp.status} for $url")
+          Future.failed(new ThumbnailNotFound(url))
 
         case resp =>
           resp.entity.discardBytes()
@@ -381,9 +599,8 @@ class LocalImageCacheService @Inject() (
     sourcePx: Int,
     requestedPx: Option[Int] = None
   ): Option[BufferedImage] = {
-    val toGenerate = targetHeights
-      .map(h => ImageUtil.resizeTo(image.width, image.height, h))
-      .filter(px => px > 0 && px < image.width && px <= sourcePx)
+    val toGenerate = targetWidths(image)
+      .filter(_ <= sourcePx)
       .distinct
       .sorted(Ordering[Int].reverse)  // largest first for cascade
 
@@ -420,8 +637,12 @@ class LocalImageCacheService @Inject() (
     requestedPx.flatMap(rpx => results.find(_._1 == rpx).map(_._2))
   }
 
-  private[services] def scale(src: BufferedImage, targetWidth: Int): BufferedImage = {
-    val targetHeight = (src.getHeight.toDouble * targetWidth / src.getWidth).toInt
+  private[services] def scale(src: BufferedImage, targetWidth: Int): BufferedImage =
+    scale(src, targetWidth, src)
+
+  /** @param proportions the image whose proportions give the height */
+  private def scale(src: BufferedImage, targetWidth: Int, proportions: BufferedImage): BufferedImage = {
+    val targetHeight = (proportions.getHeight.toDouble * targetWidth / proportions.getWidth).toInt
     val out = new BufferedImage(targetWidth, targetHeight, BufferedImage.TYPE_INT_RGB)
     val g   = out.createGraphics()
     g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BICUBIC)
@@ -434,7 +655,10 @@ class LocalImageCacheService @Inject() (
 
   /** Scales sourceImg down through targetWidths in order (largest first).
     * Each step uses the previous output as source, reducing the downscale ratio
-    * and the number of pixels read per step. Pure CPU — no IO.
+    * and the number of pixels read per step. Each height follows from sourceImg's
+    * proportions, so rounding doesn't add up over the steps. A width the previous image
+    * has already (the source's own) is that image, unless it has an alpha channel, which a
+    * JPEG can't hold. Pure CPU — no IO.
     *
     * @param sourceImg   the starting (largest) image
     * @param targetWidths widths to generate, sorted descending (largest first)
@@ -450,11 +674,48 @@ class LocalImageCacheService @Inject() (
     )
     var prev = sourceImg
     targetWidths.map { px =>
-      val scaled = scale(prev, px)
+      val scaled =
+        if (px == prev.getWidth && !prev.getColorModel.hasAlpha) prev
+        else scale(prev, px, sourceImg)
       prev = scaled
       (px, scaled)
     }
   }
 
   private val registryReady: Future[Unit] = initRegistry()
+
+  private[services] val unusedSizesCleanedUp: Future[Unit] =
+    registryReady.flatMap(_ => cleanUpUnusedSizes()).recover { case ex =>
+      logger.warn(s"Failed to delete the cached files of sizes no longer cached: ${ex.getMessage}", ex)
+    }
+}
+
+object LocalImageCacheService {
+
+  /** What Wikimedia serves for the image: `px` wide, at `url`, the file itself or not. */
+  private final case class WikimediaSource(px: Int, url: Option[String], original: Boolean)
+
+  // A thumbnail's file name: 250px-foo.jpg, or for a PDF or TIFF page1-250px-foo.pdf.jpg
+  // and lossy-page1-250px-foo.tif.jpg.
+  private val pxPattern = """^(?:(?:lossy-)?page\d+-)?(\d+)px-.*""".r
+
+  /** The width in a thumbnail's file name. */
+  def thumbnailPx(fileName: String): Option[Int] =
+    fileName match {
+      case pxPattern(n) => n.toIntOption.filter(_ > 0)
+      case _            => None
+    }
+
+  /** The type of image `bytes` are, by their first bytes: Wikimedia sends a PNG, GIF or
+    * WebP file's thumbnails as PNG, GIF or WebP, a JPEG otherwise.
+    */
+  def contentType(bytes: Array[Byte]): String = {
+    def startsWith(offset: Int, magic: String) =
+      bytes.length >= offset + magic.length &&
+        magic.indices.forall(i => bytes(offset + i) == magic.charAt(i).toByte)
+    if (startsWith(0, "\u0089PNG")) "image/png"
+    else if (startsWith(0, "GIF8")) "image/gif"
+    else if (startsWith(0, "RIFF") && startsWith(8, "WEBP")) "image/webp"
+    else "image/jpeg"
+  }
 }
