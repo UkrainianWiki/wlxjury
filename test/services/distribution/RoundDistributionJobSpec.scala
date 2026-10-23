@@ -6,12 +6,14 @@ import org.intracer.wmua.{ContestJury, Image, ImageWithRating, Selection}
 import org.specs2.mutable.Specification
 import org.specs2.specification.{AfterEach, BeforeAll, BeforeEach}
 import scalikejdbc._
+import services.imports.DeletedFiles
 import services.jobs.{JobJdbc, JobScheduler, JobStatus}
 import services.{GalleryService, RoundService, TestRoundServices}
 
 import java.util.concurrent.atomic.AtomicInteger
 import scala.collection.mutable
 import scala.concurrent.duration._
+import scala.concurrent.{Await, Future, Promise}
 import scala.util.Random
 
 /** The background, chunked distribution (RoundDistributionHandler): the job's lifecycle,
@@ -41,12 +43,15 @@ class RoundDistributionJobSpec extends Specification with TestDb with BeforeAll 
     @volatile var failAfterInsertOfChunk: Option[Int] = None
     @volatile var crashAtChunk: Option[Int] = None
     @volatile var sleepMs = 0L
+    /** Runs before the inserts of that chunk, in its transaction. */
+    @volatile var atChunk: Option[(Int, () => Unit)] = None
     val watchedActive: mutable.Buffer[Boolean] = mutable.Buffer.empty
 
     override protected def beforeInsert(round: Round, images: Seq[Image])(implicit session: DBSession): Unit = {
       val n = chunks.incrementAndGet()
       watchedActive.synchronized(watchedActive ++= watch.flatMap(id => Round.findById(id).map(_.active)))
       if (sleepMs > 0) Thread.sleep(sleepMs)
+      atChunk.filter(_._1 == n).foreach(_._2())
       if (crashAtChunk.contains(n)) { crashAtChunk = None; throw new InterruptedException("simulated crash") }
       if (failBeforeChunk.contains(n)) { failBeforeChunk = None; throw new RuntimeException(s"simulated failure in chunk $n") }
     }
@@ -141,6 +146,26 @@ class RoundDistributionJobSpec extends Specification with TestDb with BeforeAll 
       stateOf(created.getId).imagesAdded === 20
       RoundImageCounts.get(Seq(created.getId))(ImageJdbc.imageCountByRounds)(created.getId) === 20
       rotationHolds(created.getId, jurors, 1) must beTrue
+    }
+
+    "move aside the votes of a file deleted on Commons while it ran, and still pass its count check" in {
+      val (contest, imgs, jurors) = setUp(20, 3)
+      val h = new TestHandler(chunkRows = 3) // image 1 is in chunk 1
+      val deletion = Promise[Seq[Long]]()
+      // In its own transaction, as CommonsFileCheck does: it waits for chunk 2 to commit,
+      // then runs before or after chunk 3; either way the result is the same
+      h.atChunk = Some(2 -> (() =>
+        deletion.completeWith(Future(DB.localTx(implicit s => DeletedFiles.markDeleted(Seq(1L))))(
+          scala.concurrent.ExecutionContext.global))))
+      val created = inlineService(h).createNewRound(newRound(contest, "R1"), jurors.map(_.getId))
+      Await.result(deletion.future, 60.seconds)
+
+      jobOf(created.getId).status === JobStatus.Done
+      created.active must beTrue
+      pageIds(created.getId) === imgs.map(_.pageId).toSet - 1L
+      DB.readOnly(implicit s => sql"SELECT COUNT(*) FROM selection_deleted WHERE page_id = 1".map(_.int(1)).single()) ===
+        Some(1)
+      RoundImageCounts.get(Seq(created.getId))(ImageJdbc.imageCountByRounds)(created.getId) === 19
     }
 
     "fail at a chunk, keep the committed chunks, and resume from the cursor without duplicates" in {

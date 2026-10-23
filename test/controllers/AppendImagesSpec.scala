@@ -1,11 +1,12 @@
 package controllers
 
-import db.scalikejdbc.{ImageJdbc, SharedTestDb, TestDb}
+import db.scalikejdbc.{ImageJdbc, Round, SharedTestDb, TestDb}
 import org.intracer.wmua.{ContestJury, Image, JuryTestHelpers}
 import org.specs2.mutable.Specification
 import org.specs2.specification.{BeforeAll, BeforeEach}
 import services.TestImportServices
-import services.imports.{CommonsLogin, FakeCommonsSource, FakeFile, ImageImportHandler, ImportState, MwCommonsSource}
+import scalikejdbc.{DB, scalikejdbcSQLInterpolationImplicitDef}
+import services.imports.{CommonsLogin, DeletedFiles, FakeCommonsSource, FakeFile, ImageImportHandler, ImportState, MwCommonsSource}
 import services.jobs.{Job, JobJdbc, JobStatus}
 
 /** "Import files" and the files' half of "Update monuments", as background jobs run
@@ -152,6 +153,32 @@ class AppendImagesSpec extends Specification with JuryTestHelpers with TestDb wi
       ImageImportHandler.stateOf(JobJdbc.findById(job.id).get) must beLike { case st: ImportState =>
         (st.inserted, st.linked, st.updated) === ((0L, 0L, 5L))
       }
+    }
+
+    "restore a file deleted on Commons and undeleted since, with its votes" in {
+      implicit val contest: ContestJury = createContest()
+      val images = (11 to 13).map(image(_))
+      importFiles(images, contest)
+      val round = roundDao.create(Round(None, 1, None, contest.getId, createdAt = now)).getId
+      val juror = createUsers("jury", 1).head.getId
+      selectionDao.create(11L, rate = 1, juryId = juror, roundId = round)
+      DB.localTx(implicit s => DeletedFiles.markDeleted(Seq(11L)))
+      stored(contest).map(_.pageId) === Seq(12L, 13L)
+
+      importFiles(images, contest)
+
+      stored(contest).map(_.pageId) === Seq(11L, 12L, 13L)
+      selectionDao.byRound(round).map(_.pageId) === Seq(11L)
+      DB.readOnly(implicit s => sql"SELECT COUNT(*) FROM selection_deleted".map(_.int(1)).single()) === Some(0)
+    }
+
+    "remember the former title of a file renamed on Commons" in {
+      val contest = createContest()
+      importFiles(Seq(image(11)), contest)
+      importFiles(Seq(image(11).copy(title = "File:Renamed11.jpg")), contest)
+
+      ImageJdbc.findByFilename("Image11.jpg") must beNone
+      ImageJdbc.findRenamed("Image11.jpg").map(_.title) must beSome("File:Renamed11.jpg")
     }
 
     "link another contest's files without updating them" in {

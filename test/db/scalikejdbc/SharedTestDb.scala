@@ -8,7 +8,7 @@ import scalikejdbc.{ConnectionPool, DB}
 object SharedTestDb {
 
   private val dataTables = Seq(
-    "job", "criteria_rate", "selection", "selection_deleted", "category_members", "comment",
+    "job", "criteria_rate", "selection", "selection_deleted", "image_renames", "category_members", "comment",
     "criteria", "round_user", "user_contest", "images", "rounds", "users",
     "category", "monument", "contest_jury"
   )

@@ -211,24 +211,99 @@ object ImageJdbc extends CRUDMapper[Image]
       "mediaType" -> image.mediaType
     )
 
-  /** Marks the files deleted on Commons, and moves their selection rows to
-    * selection_deleted (V63): every gallery, count and result reads selection, so they no
-    * longer show them. The image rows stay: deleting them would cascade to the votes.
+  /** The file stored under a former title (V63), renamed on Commons since, unless it was
+    * deleted there.
+    */
+  def findRenamed(filename: String)(implicit session: DBSession = AutoSession): Option[Image] =
+    sql"""SELECT ${i.result.*} FROM image_renames r JOIN images i ON i.page_id = r.page_id
+          WHERE r.title = ${s"File:$filename"} AND i.deleted_at IS NULL"""
+      .map(ImageJdbc(i))
+      .single()
+
+  /** Remembers a file's former title (V63), for [[findRenamed]]. */
+  def recordRename(formerTitle: String, pageId: Long)(implicit session: DBSession): Unit =
+    sql"REPLACE INTO image_renames (title, page_id) VALUES ($formerTitle, $pageId)".update()
+
+  /** Marks the files deleted on Commons (V63). The image rows stay: deleting them would
+    * cascade to the votes. Their votes are moved with [[archiveVotes]].
+    */
+  def setDeleted(pageIds: Seq[Long])(implicit session: DBSession): Unit =
+    if (pageIds.nonEmpty)
+      sql"UPDATE images SET deleted_at = NOW(3) WHERE page_id IN ($pageIds) AND deleted_at IS NULL".update()
+
+  /** Of `pageIds`, those marked deleted or with votes moved aside: those to restore. */
+  def deletedOrArchived(pageIds: Seq[Long])(implicit session: DBSession): Seq[Long] =
+    if (pageIds.isEmpty) Nil
+    else
+      sql"""SELECT page_id FROM images WHERE page_id IN ($pageIds) AND deleted_at IS NOT NULL
+            UNION SELECT DISTINCT page_id FROM selection_deleted WHERE page_id IN ($pageIds)"""
+        .map(_.long(1))
+        .list()
+
+  /** Clears the deleted mark of files Commons has again (an undeletion). */
+  def clearDeleted(pageIds: Seq[Long])(implicit session: DBSession): Unit =
+    if (pageIds.nonEmpty)
+      sql"UPDATE images SET deleted_at = NULL WHERE page_id IN ($pageIds) AND deleted_at IS NOT NULL".update()
+
+  /** Moves the selection rows of `pageIds` to selection_deleted (V63), but those of the
+    * `except` rounds: every gallery, count and result reads selection, so they no longer
+    * show the files. A row moved before (a file deleted, restored and deleted again) is
+    * replaced by the current one.
     *
     * @return the rounds that lost rows (their cached image counts are stale)
     */
-  def markDeleted(pageIds: Seq[Long])(implicit session: DBSession): Seq[Long] =
+  def archiveVotes(pageIds: Seq[Long], except: Set[Long])(implicit session: DBSession): Seq[Long] =
     if (pageIds.isEmpty) Nil
     else {
-      sql"UPDATE images SET deleted_at = NOW(3) WHERE page_id IN ($pageIds) AND deleted_at IS NULL".update()
-      val roundIds = sql"SELECT DISTINCT round_id FROM selection WHERE page_id IN ($pageIds)"
-        .map(_.longOpt(1))
+      val where = sqls"page_id IN ($pageIds) AND ${notInRounds(except)}"
+      // Locking reads, like the REPLACE ... SELECT: the latest rows, not the snapshot's
+      val roundIds = sql"SELECT DISTINCT round_id FROM selection WHERE $where LOCK IN SHARE MODE"
+        .map(_.long(1))
         .list()
-        .flatten
-      sql"INSERT IGNORE INTO selection_deleted SELECT * FROM selection WHERE page_id IN ($pageIds)".update()
-      sql"DELETE FROM selection WHERE page_id IN ($pageIds)".update()
+      sql"REPLACE INTO selection_deleted SELECT * FROM selection WHERE $where".update()
+      sql"DELETE FROM selection WHERE $where".update()
       roundIds
     }
+
+  /** [[archiveVotes]] of the files in the round that were deleted on Commons: those a
+    * distribution added while it ran, or that [[archiveVotes]] left in it then.
+    *
+    * @return the files moved
+    */
+  def archiveDeletedVotesInRound(roundId: Long)(implicit session: DBSession): Seq[Long] = {
+    val pageIds = sql"""SELECT DISTINCT s.page_id FROM selection s JOIN images i ON i.page_id = s.page_id
+                        WHERE s.round_id = $roundId AND i.deleted_at IS NOT NULL"""
+      .map(_.long(1))
+      .list()
+    if (pageIds.nonEmpty) {
+      val where = sqls"round_id = $roundId AND page_id IN ($pageIds)"
+      sql"REPLACE INTO selection_deleted SELECT * FROM selection WHERE $where".update()
+      sql"DELETE FROM selection WHERE $where".update()
+    }
+    pageIds
+  }
+
+  /** Moves back the selection rows of `pageIds` that [[archiveVotes]] moved aside, but
+    * those of the `except` rounds. A row that conflicts with one in selection now (the file
+    * was distributed again) stays aside.
+    *
+    * @return the rounds that gained rows (their cached image counts are stale)
+    */
+  def restoreVotes(pageIds: Seq[Long], except: Set[Long])(implicit session: DBSession): Seq[Long] =
+    if (pageIds.isEmpty) Nil
+    else {
+      val where = sqls"page_id IN ($pageIds) AND ${notInRounds(except)}"
+      val roundIds = sql"SELECT DISTINCT round_id FROM selection_deleted WHERE $where".map(_.long(1)).list()
+      sql"INSERT IGNORE INTO selection SELECT * FROM selection_deleted WHERE $where".update()
+      sql"""DELETE d FROM selection_deleted d
+            JOIN selection s ON s.id = d.id AND s.page_id = d.page_id AND s.jury_id = d.jury_id
+                            AND s.round_id = d.round_id
+            WHERE d.page_id IN ($pageIds)""".update()
+      roundIds
+    }
+
+  private def notInRounds(roundIds: Set[Long]): SQLSyntax =
+    if (roundIds.isEmpty) sqls"round_id IS NOT NULL" else sqls"round_id NOT IN ($roundIds)"
 
   def findByContestId(contestId: Long)(implicit session: DBSession = AutoSession): List[Image] =
     ContestJuryJdbc.findById(contestId).map(findByContest).getOrElse(Nil)
@@ -253,6 +328,7 @@ object ImageJdbc extends CRUDMapper[Image]
         .isNull(i.column("deleted_at"))
     }.map(ImageJdbc(i)).list()
 
+  /** The number of [[findByCategory]]'s images: those deleted on Commons are left out. */
   def countByCategory(categoryId: Long): Long = {
     import sqls.{distinct, count => _count}
 
@@ -263,6 +339,8 @@ object ImageJdbc extends CRUDMapper[Image]
         .on(i.pageId, cl.pageId)
         .where
         .eq(cl.categoryId, categoryId)
+        .and
+        .isNull(i.column("deleted_at"))
     }.map(_.int(1)).single().get
   }
 

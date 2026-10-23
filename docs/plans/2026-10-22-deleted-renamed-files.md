@@ -43,7 +43,9 @@ Checked in headless Chrome with the gallery's options and one 404 thumbnail amon
 - **Never `DELETE FROM images`:** `FK_selection_page_id` (V58) and `FK_category_member_page_id` cascade, so the votes would be lost with no archive.
 - **New rounds:** `RoundDistributionHandler` reads candidates from `category_members ⋈ images` (around lines 402, 438, 457, 501). Add `i.deleted_at IS NULL` there; that is the job path, not a request path. Distributions from a previous round read `selection`, which is already clean.
 - **A file shared by two contests** is deleted on Commons for both: its rows are moved in both.
-- **Undeletion (rare):** if an import or refresh sees a `deleted_at` file again, clear `deleted_at` and move its rows back from `selection_deleted`. Optional; it can come later.
+- **Undeletion:** an import that sees a deleted file again clears `deleted_at` and moves its rows back from `selection_deleted` (`DeletedFiles.restore`, first in the import's write step).
+- **Rounds being distributed:** moving votes in or out of a round while a `round_distribution` job fills it would upset its count check. `DeletedFiles` first locks the active distribution jobs' rows in share mode (`RoundDistributionHandler.lockRoundsBeingDistributed`) and leaves those rounds alone: a step locks its job's row first, so the two serialize. The job's verify step moves aside, after its count check, the votes of files deleted while it ran.
+- **Deleted again:** the rows go to `selection_deleted` with `REPLACE`, so the current votes replace any moved aside before.
 
 ## 3a. Detecting a deleted or renamed file when a browser asks for its thumbnail
 
@@ -51,7 +53,10 @@ Checked in headless Chrome with the gallery's options and one 404 thumbnail amon
 - `services.imports.CommonsFileCheck` batches the checks on its own thread (200 ms window, one request at a time) and keeps each answer for 1 h (5 min after a failed request).
 - A deleted file is a requested id **absent** from the answer. The API answers `{"pageid": N, "missing": ""}` without a title, which scalawiki's parser drops (checked against the live API).
 - `ImageJdbc.findByFilename` skips deleted files.
-- The controller waits up to 5 s for the check.
+- The controller and the download job wait up to 5 s for the check; it goes on after, and a later ask gets its answer. Only a 404 from Wikimedia (`ThumbnailNotFound`) triggers it, and only for files with a Commons url.
+- Former titles are stored (`image_renames`, V63), by the check and by the import, so a thumbnail under a former name keeps working after a restart and on the other instance.
+- The thumbnail proxy serves signed-in users only (a user name in the session; 401 otherwise), with `Cache-Control: private`. So only a juror or organizer loading a gallery can trigger a check.
+- It is not a job: it needs an answer within the thumbnail request. Section 2's refresh job is still the way to find every deleted file.
 
 **Feasible, and cheap, but it only sees thumbnails that aren't cached.**
 

@@ -1,6 +1,6 @@
 package services.imports
 
-import db.scalikejdbc.{CategoryLinkJdbc, ContestJuryJdbc, ImageJdbc}
+import db.scalikejdbc.{CategoryLinkJdbc, ContestJuryJdbc, ImageJdbc, RoundImageCounts}
 import org.intracer.wmua.{ContestJury, Image}
 import org.scalawiki.dto.Page
 import play.api.libs.json._
@@ -221,7 +221,7 @@ class ImageImportHandler @Inject() (source: CommonsSource, config: Configuration
     val st = stateOf(job)
     val written =
       if (p.mode == Mode.MonumentIds) writeMonumentIds(page, st)
-      else writeImages(p.categoryId.getOrElse(throw new IllegalStateException("no category")), page, st)
+      else writeImages(p.categoryId.getOrElse(throw new IllegalStateException("no category")), page, st, ctx)
     val next = written.copy(
       cursor = page.nextCursor,
       index = page.nextIndex,
@@ -241,19 +241,25 @@ class ImageImportHandler @Inject() (source: CommonsSource, config: Configuration
     }
   }
 
-  private def writeImages(categoryId: Long, page: ImportPage, st: ImportState)(implicit
+  private def writeImages(categoryId: Long, page: ImportPage, st: ImportState, ctx: StepContext)(implicit
       session: DBSession
   ): ImportState = {
     val stored = ImageJdbc
       .findWithCategoryLink(page.images.map(_.pageId), categoryId)
       .map { case (image, linked) => image.pageId -> (image, linked) }
       .toMap
+    // Before any other write: it locks the distribution jobs (DeletedFiles)
+    val restored = DeletedFiles.restore(stored.keys.toSeq)
+    if (restored.nonEmpty) ctx.afterCommit(RoundImageCounts.invalidate(restored: _*))
     val fresh = page.images.filterNot(i => stored.contains(i.pageId))
     val unlinked = page.images.filterNot(i => stored.get(i.pageId).exists(_._2))
     val changed = ImageService.changedImages(page.images, stored.values.collect { case (i, true) => i }.toSeq)
     ImageJdbc.insertIgnore(fresh)
     CategoryLinkJdbc.linkIgnore(categoryId, unlinked.map(_.pageId))
-    changed.foreach(ImageJdbc.updateIn)
+    changed.foreach { image =>
+      ImageJdbc.updateIn(image)
+      stored.get(image.pageId).map(_._1.title).filter(_ != image.title).foreach(ImageJdbc.recordRename(_, image.pageId))
+    }
     st.copy(
       inserted = st.inserted + fresh.size,
       linked = st.linked + unlinked.size - fresh.size,

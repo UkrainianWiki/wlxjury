@@ -400,17 +400,31 @@ class LocalImageCacheServiceSpec extends Specification {
       }
     }
 
-    "return None on a non-200/non-429 status without retrying" in {
+    "return None on a non-200/non-429/non-404 status without retrying" in {
       val requestsSeen = new AtomicInteger(0)
       withServer { n =>
         requestsSeen.set(n)
-        HttpResponse(StatusCodes.NotFound)
+        HttpResponse(StatusCodes.InternalServerError)
       } { port =>
         val result = Await.result(
           mkService(mkTempDir()).downloadWithRetry(s"http://127.0.0.1:$port/img", attempt = 1),
           10.seconds
         )
         result must beNone
+        requestsSeen.get() === 1
+      }
+    }
+
+    "fail with ThumbnailNotFound on a 404, without retrying" in {
+      val requestsSeen = new AtomicInteger(0)
+      withServer { n =>
+        requestsSeen.set(n)
+        HttpResponse(StatusCodes.NotFound)
+      } { port =>
+        Await.result(
+          mkService(mkTempDir()).downloadWithRetry(s"http://127.0.0.1:$port/img", attempt = 1),
+          10.seconds
+        ) must throwA[ThumbnailNotFound]
         requestsSeen.get() === 1
       }
     }

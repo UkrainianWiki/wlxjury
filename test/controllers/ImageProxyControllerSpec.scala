@@ -31,12 +31,24 @@ class ImageProxyControllerSpec extends Specification with PlayTestDb {
         .forEach(p => Files.deleteIfExists(p))
     }
 
+  /** Thumbnails are for signed-in users only. */
+  private def thumbRequest(path: String) =
+    FakeRequest("GET", path).withSession(Secured.UserName -> "juror@example.org")
+
   "ImageProxyController" should {
+
+    "refuse a thumbnail without signing in" in {
+      testDbApp { implicit app =>
+        val result = route(app,
+          FakeRequest("GET", "/wikipedia/commons/thumb/x/xx/NoSuchFile.jpg/250px-NoSuchFile.jpg")).get
+        status(result) mustEqual UNAUTHORIZED
+      }
+    }
 
     "return 404 for a path not matching the thumb pattern" in {
       testDbApp { implicit app =>
         val result = route(app,
-          FakeRequest("GET", "/wikipedia/commons/thumb/bad")).get
+          thumbRequest("/wikipedia/commons/thumb/bad")).get
         status(result) must beOneOf(NOT_FOUND, BAD_REQUEST)
       }
     }
@@ -44,7 +56,7 @@ class ImageProxyControllerSpec extends Specification with PlayTestDb {
     "redirect to Wikimedia when image is not in DB" in {
       testDbApp { implicit app =>
         val result = route(app,
-          FakeRequest("GET",
+          thumbRequest(
             "/wikipedia/commons/thumb/x/xx/NoSuchFile.jpg/250px-NoSuchFile.jpg")).get
         status(result) mustEqual SEE_OTHER
         header("Location", result) must beSome(contain("upload.wikimedia.org"))
@@ -81,7 +93,7 @@ class ImageProxyControllerSpec extends Specification with PlayTestDb {
 
           // Request uses underscore (standard Wikimedia URL encoding)
           val result = route(app,
-            FakeRequest("GET",
+            thumbRequest(
               "/wikipedia/commons/thumb/a/ab/My_Image.jpg/333px-My_Image.jpg")).get
 
           status(result)      mustEqual OK
@@ -97,7 +109,7 @@ class ImageProxyControllerSpec extends Specification with PlayTestDb {
         // No image inserted — DB is empty.
         // The underscore→space normalisation does not create a false match.
         val result = route(app,
-          FakeRequest("GET",
+          thumbRequest(
             "/wikipedia/commons/thumb/a/ab/No_Such_Image.jpg/250px-No_Such_Image.jpg")).get
         status(result) mustEqual SEE_OTHER
         header("Location", result) must beSome(contain("upload.wikimedia.org"))
@@ -107,7 +119,7 @@ class ImageProxyControllerSpec extends Specification with PlayTestDb {
     "include /wikipedia/commons/thumb/ in the Wikimedia redirect URL" in {
       testDbApp { implicit app =>
         val result = route(app,
-          FakeRequest("GET",
+          thumbRequest(
             "/wikipedia/commons/thumb/x/xx/Missing.jpg/120px-Missing.jpg")).get
         status(result) mustEqual SEE_OTHER
         header("Location", result) must beSome(
@@ -118,7 +130,7 @@ class ImageProxyControllerSpec extends Specification with PlayTestDb {
     "parse px from a PDF thumbnail (page1-250px- prefix) and redirect to Wikimedia" in {
       testDbApp { implicit app =>
         val result = route(app,
-          FakeRequest("GET",
+          thumbRequest(
             "/wikipedia/commons/thumb/a/ab/Report.pdf/page1-250px-Report.pdf.jpg")).get
         // No matching image in DB → redirect to Wikimedia
         status(result) mustEqual SEE_OTHER
@@ -129,7 +141,7 @@ class ImageProxyControllerSpec extends Specification with PlayTestDb {
     "parse px from a TIFF thumbnail (lossy-page1-250px- prefix) and redirect to Wikimedia" in {
       testDbApp { implicit app =>
         val result = route(app,
-          FakeRequest("GET",
+          thumbRequest(
             "/wikipedia/commons/thumb/a/ab/Scan.tif/lossy-page1-250px-Scan.tif.jpg")).get
         status(result) mustEqual SEE_OTHER
         header("Location", result) must beSome(contain("upload.wikimedia.org"))
@@ -139,7 +151,7 @@ class ImageProxyControllerSpec extends Specification with PlayTestDb {
     "return 404 for px values exceeding the maximum allowed width" in {
       testDbApp { implicit app =>
         val result = route(app,
-          FakeRequest("GET",
+          thumbRequest(
             "/wikipedia/commons/thumb/x/xx/Photo.jpg/99999px-Photo.jpg")).get
         status(result) mustEqual NOT_FOUND
       }

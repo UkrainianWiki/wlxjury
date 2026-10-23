@@ -57,6 +57,76 @@ class CommonsFileCheckSpec extends Specification with TestDb with BeforeAll with
 
   "CommonsFileCheck" should {
 
+    "store a new version of a file under the same name" in {
+      val old = stored(1L, "File")
+      setUp(old)
+      val check = mkCheck(new FakeCommonsSource(Seq(FakeFile(old.copy(width = 1600, height = 1200, size = Some(2000))))))
+
+      await(check.check(old)) must beLike { case FileCheck.Changed(image) => image.width === 1600 }
+      check.stop()
+      ImageJdbc.findById(1L).map(i => (i.width, i.size)) must beSome((1600, Some(2000)))
+    }
+
+    "not ask about a file that isn't on Commons" in {
+      val local = stored(1L, "Local").copy(url = Some("https://upload.wikimedia.org/wikipedia/uk/a/ab/Local.jpg"))
+      setUp(local)
+      val source = new FakeCommonsSource(Nil)
+      val check = mkCheck(source)
+
+      await(check.check(local)) === FileCheck.Unknown
+      check.stop()
+      source.detailCalls.get === 0
+      deletedAt(1L) must beNone
+    }
+
+    "answer Unknown when Commons is slow, and the answer once it comes" in {
+      val same = stored(1L, "Same")
+      setUp(same)
+      val release = new java.util.concurrent.CountDownLatch(1)
+      val slow = new FakeCommonsSource(Seq(FakeFile(same))) {
+        override def files(pageIds: Seq[Long], info: Boolean, text: Boolean): Seq[Page] = {
+          release.await()
+          super.files(pageIds, info, text)
+        }
+      }
+      val check = mkCheck(slow)
+
+      await(check.check(same, within = 100.millis)) === FileCheck.Unknown
+      release.countDown()
+      await(check.check(same, within = 10.seconds)) === FileCheck.Unchanged
+      check.stop()
+      slow.detailCalls.get === 1
+    }
+
+    "answer Unknown to the checks still waiting when it stops" in {
+      val same = stored(1L, "Same")
+      setUp(same)
+      val blocked = new FakeCommonsSource(Seq(FakeFile(same))) {
+        override def files(pageIds: Seq[Long], info: Boolean, text: Boolean): Seq[Page] = {
+          Thread.sleep(60000) // interrupted by stop
+          super.files(pageIds, info, text)
+        }
+      }
+      val check = mkCheck(blocked)
+      val waiting = check.check(same, within = 1.minute)
+      Thread.sleep(200) // the request has started
+
+      check.stop()
+      await(waiting) === FileCheck.Unknown
+      await(check.check(same)) === FileCheck.Unknown
+    }
+
+    "keep no more answers than its limit" in {
+      val images = (1L to 3L).map(id => stored(id, s"File$id"))
+      setUp(images: _*)
+      val check = new CommonsFileCheck(new FakeCommonsSource(images.map(FakeFile(_))), batchWindow = 20.millis,
+        maxAnswers = 2)
+
+      images.foreach(i => await(check.check(i)))
+      check.stop()
+      check.answerCount must beLessThanOrEqualTo(2)
+    }
+
     "store a renamed file's new title and url, keeping what came from its page text" in {
       val old = stored(1L, "Old_name")
       setUp(old)
@@ -65,13 +135,13 @@ class CommonsFileCheckSpec extends Specification with TestDb with BeforeAll with
       val result = await(check.check(old))
       check.stop()
 
-      result must beLike { case FileCheck.Changed(image) => image.title === "File:New_name.jpg" }
+      result must beLike { case FileCheck.Renamed(image) => image.title === "File:New_name.jpg" }
       val now = ImageJdbc.findById(1L).get
       (now.title, now.url) === ("File:New_name.jpg", Some("https://upload.wikimedia.org/wikipedia/commons/c/cd/New_name.jpg"))
       (now.monumentId, now.description, now.author) === (old.monumentId, old.description, old.author)
       ImageJdbc.findByFilename("Old_name.jpg") must beNone
       ImageJdbc.findByFilename("New_name.jpg").map(_.pageId) must beSome(1L)
-      check.renamedFrom("File:Old_name.jpg").map(_.title) must beSome("File:New_name.jpg")
+      ImageJdbc.findRenamed("Old_name.jpg").map(_.title) must beSome("File:New_name.jpg")
       selectionRows("selection", 1L) === 4
     }
 
@@ -113,7 +183,7 @@ class CommonsFileCheckSpec extends Specification with TestDb with BeforeAll with
       val check = mkCheck(source)
 
       import scala.concurrent.ExecutionContext.Implicits.global
-      val results = await(Future.sequence(images.map(check.check)))
+      val results = await(Future.sequence(images.map(check.check(_))))
       check.stop()
 
       results === Seq.fill(3)(FileCheck.Unchanged)

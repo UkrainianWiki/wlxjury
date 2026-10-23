@@ -38,6 +38,12 @@ case class CacheProgress(
     deleted: Int       = 0  // deleted on Commons (in done, not in errors)
 )
 
+/** Wikimedia has no file at `url` (HTTP 404): perhaps the file was renamed or deleted on
+  * Commons ([[CommonsFileCheck]]). Other failures (429s, decode errors, no Commons url)
+  * say nothing of that.
+  */
+final class ThumbnailNotFound(val url: String) extends Exception(s"Not found: $url")
+
 object CacheProgress {
   implicit val writes: Writes[CacheProgress] = Json.writes[CacheProgress]
   implicit val reads: play.api.libs.json.Reads[CacheProgress] =
@@ -269,35 +275,39 @@ class LocalImageCacheService(
     val deleted = new AtomicInteger(0)
   }
 
-  /** A thumbnail that couldn't be downloaded: perhaps its file was renamed or deleted on
-    * Commons ([[CommonsFileCheck]], which stores what it finds, as for a thumbnail request
-    * in [[controllers.ImageProxyController]]). A renamed file is downloaded again under its
-    * new name; a deleted one is counted apart from the errors.
+  /** A thumbnail that Wikimedia doesn't have: perhaps its file was renamed or deleted on
+    * Commons ([[checkOnCommons]]). A renamed file is downloaded again under its new name; a
+    * deleted one is counted apart from the errors.
     */
   private def afterFailedDownload(image: Image, ex: Throwable, counts: FailureCounts): Future[Unit] = {
     def error(e: Throwable): Unit = {
       logger.warn(s"Failed to cache ${image.title}: ${e.getMessage}")
       counts.errors.incrementAndGet()
     }
-    fileCheck match {
-      case None => Future.successful(error(ex))
-      case Some(check) =>
-        check
-          .check(image)
-          .flatMap {
-            case FileCheck.Changed(current) if current.url != image.url =>
-              downloadAndResize(current)
-                .map(_ => counts.renamed.incrementAndGet(): Unit)
-                .recover { case e => error(e) }
-            case FileCheck.Deleted =>
-              counts.deleted.incrementAndGet()
-              Future.unit
-            case _ =>
-              Future.successful(error(ex))
-          }
-          .recover { case _ => error(ex) }
-    }
+    checkOnCommons(image, ex)
+      .flatMap {
+        case FileCheck.Renamed(current) =>
+          downloadAndResize(current)
+            .map(_ => counts.renamed.incrementAndGet(): Unit)
+            .recover { case e => error(e) }
+        case FileCheck.Deleted =>
+          counts.deleted.incrementAndGet()
+          Future.unit
+        case _ =>
+          Future.successful(error(ex))
+      }
   }
+
+  /** What Commons says of a file whose thumbnail failed with `ex` ([[CommonsFileCheck]],
+    * which stores what it finds): asked only when Wikimedia doesn't have the thumbnail,
+    * [[FileCheck.Unknown]] otherwise, or after [[CommonsFileCheck.Wait]]. For the download
+    * job and for [[controllers.ImageProxyController]].
+    */
+  def checkOnCommons(image: Image, ex: Throwable): Future[FileCheck] =
+    (ex, fileCheck) match {
+      case (_: ThumbnailNotFound, Some(check)) => check.check(image).recover { case _ => FileCheck.Unknown }
+      case _                                   => Future.successful(FileCheck.Unknown)
+    }
 
   private[services] def allSizesCached(image: Image): Boolean =
     image.url.exists(_.contains("//upload.wikimedia.org/wikipedia/commons/")) &&
@@ -374,6 +384,7 @@ class LocalImageCacheService(
 
   /** Downloads a URL, retrying on 429 with exponential backoff + jitter.
     * Respects the Retry-After header if present. Gives up after maxAttempts.
+    * None on another failed status, but a 404: [[ThumbnailNotFound]].
     */
   private[services] def downloadWithRetry(url: String, attempt: Int): Future[Option[Array[Byte]]] =
     Http()
@@ -394,6 +405,11 @@ class LocalImageCacheService(
               after(delay)(downloadWithRetry(url, attempt + 1))
             }
           }
+
+        case resp if resp.status == StatusCodes.NotFound =>
+          resp.entity.discardBytes()
+          logger.warn(s"HTTP ${resp.status} for $url")
+          Future.failed(new ThumbnailNotFound(url))
 
         case resp =>
           resp.entity.discardBytes()

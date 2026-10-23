@@ -2,22 +2,19 @@ package controllers
 
 import db.scalikejdbc.ImageJdbc
 import org.intracer.wmua.Image
-import play.api.libs.concurrent.Futures
 import play.api.mvc._
 import services.LocalImageCacheService
-import services.imports.{CommonsFileCheck, FileCheck}
+import services.imports.FileCheck
 
 import java.net.URLDecoder
 import javax.inject.Inject
-import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Future}
 import scala.util.Try
 
+/** Thumbnails, for signed-in users only: only they see the galleries. */
 class ImageProxyController @Inject() (
     cc: ControllerComponents,
-    cache: LocalImageCacheService,
-    fileCheck: CommonsFileCheck,
-    futures: Futures
+    cache: LocalImageCacheService
 )(implicit ec: ExecutionContext) extends AbstractController(cc) {
 
   private val logger = play.api.Logger(getClass)
@@ -29,10 +26,18 @@ class ImageProxyController @Inject() (
   // Hard cap matching the largest Wikimedia thumbnail step ($wgThumbnailSteps max = 3840).
   private val MaxAllowedPx = 3840
 
-  /** How long a thumbnail request waits for [[CommonsFileCheck]]; the check goes on after. */
-  private val CheckTimeout = 5.seconds
+  /** Private: a shared cache must not serve a thumbnail to someone not signed in. */
+  private val CacheControl = "Cache-Control" -> "private, max-age=2592000"
 
-  def serve(path: String): Action[AnyContent] = Action.async { _ =>
+  /** 401 without a user name in the (signed) session. The user isn't loaded from the
+    * database, as [[Secured]] does: a gallery asks for hundreds of thumbnails at once.
+    */
+  def serve(path: String): Action[AnyContent] = Action.async { request =>
+    if (request.session.get(Secured.UserName).isEmpty) Future.successful(Unauthorized)
+    else serveThumbnail(path)
+  }
+
+  private def serveThumbnail(path: String): Future[Result] = {
     val segments = path.split("/").toSeq
     // Expect at least: X/XX/filename/Npx-filename (or page1-Npx-filename for PDF/TIF)
     val parsed = for {
@@ -55,7 +60,10 @@ class ImageProxyController @Inject() (
       case Some((filename, px)) =>
         // Wrap the blocking JDBC call so it doesn't starve the Play dispatcher
         Future(scala.concurrent.blocking(
-          Try(ImageJdbc.findByFilename(filename))
+          Try(ImageJdbc.findByFilename(filename).map(_ -> true).orElse(
+            // A page rendered before a rename still links the former name
+            ImageJdbc.findRenamed(filename).map(_ -> false)
+          ))
             .recover { case ex =>
               logger.error(s"DB error while looking up filename '$filename': ${ex.getMessage}", ex)
               None
@@ -63,16 +71,12 @@ class ImageProxyController @Inject() (
             .getOrElse(None)
         ))
           .flatMap {
-            case Some(image) =>
-              serveImage(image, px, path, check = true)
+            case Some((image, check)) =>
+              serveImage(image, px, path, check)
 
             case None =>
-              fileCheck.renamedFrom(s"File:$filename") match {
-                // A page rendered before the rename still links the old name
-                case Some(renamed) => serveImage(renamed, px, path, check = false)
-                // Not in DB: redirect to Wikimedia; browser follows transparently for <img>
-                case None => Future.successful(wikimedia(path))
-              }
+              // Not in DB: redirect to Wikimedia; browser follows transparently for <img>
+              Future.successful(wikimedia(path))
           }
     }
   }
@@ -86,42 +90,33 @@ class ImageProxyController @Inject() (
       case Some(file) if file.exists() =>
         Future.successful(Ok.sendFile(file, inline = true)
           .as("image/jpeg")
-          .withHeaders("Cache-Control" -> "public, max-age=2592000"))
+          .withHeaders(CacheControl))
 
       case Some(_) | None =>
         // File missing from disk or not cached — fetch from Wikimedia
         cache.fetchAndCacheAll(image, px)
           .map { bytes =>
             Ok(bytes).as("image/jpeg")
-              .withHeaders("Cache-Control" -> "public, max-age=2592000")
+              .withHeaders(CacheControl)
           }
           .recoverWith { case ex =>
             logger.warn(s"Failed to fetch $path: ${ex.getMessage}")
-            if (check) checkOnCommons(image, px, path)
+            if (check) afterFailedFetch(image, ex, px, path)
             else Future.successful(wikimedia(path))
           }
     }
 
-  /** A stored file's thumbnail could not be fetched: perhaps the file was renamed or
-    * deleted on Commons ([[CommonsFileCheck]], which stores what it finds). A renamed file's
-    * thumbnail is served under its new name right away; a deleted file's is 404. Other
-    * answers, or none within [[CheckTimeout]], redirect to Wikimedia as before.
+  /** A stored file's thumbnail could not be fetched: if Wikimedia doesn't have it, perhaps
+    * the file was renamed or deleted on Commons ([[LocalImageCacheService.checkOnCommons]]).
+    * A renamed file's thumbnail is served under its new name right away; a deleted file's
+    * is 404. Other failures and answers, or none in time, redirect to Wikimedia as before.
     */
-  private def checkOnCommons(image: Image, px: Int, path: String): Future[Result] =
-    futures
-      .timeout(CheckTimeout)(fileCheck.check(image))
-      .flatMap {
-        case FileCheck.Changed(current) if current.url != image.url =>
-          serveImage(current, px, path, check = false)
-        case FileCheck.Deleted =>
-          Future.successful(NotFound)
-        case _ =>
-          Future.successful(wikimedia(path))
-      }
-      .recover { case ex =>
-        logger.warn(s"No answer from the Commons check of ${image.title}: ${ex.getMessage}")
-        wikimedia(path)
-      }
+  private def afterFailedFetch(image: Image, ex: Throwable, px: Int, path: String): Future[Result] =
+    cache.checkOnCommons(image, ex).flatMap {
+      case FileCheck.Renamed(current) => serveImage(current, px, path, check = false)
+      case FileCheck.Deleted          => Future.successful(NotFound)
+      case _                          => Future.successful(wikimedia(path))
+    }
 
   private def wikimedia(path: String): Result =
     Redirect(s"https://upload.wikimedia.org/wikipedia/commons/thumb/$path", SEE_OTHER)

@@ -1,79 +1,44 @@
 package controllers
 
-import com.typesafe.config.ConfigFactory
 import db.scalikejdbc._
-import org.apache.pekko.actor.ActorSystem
-import org.apache.pekko.http.scaladsl.Http
-import org.apache.pekko.http.scaladsl.model.{ContentTypes, HttpEntity, HttpResponse, StatusCodes}
 import org.intracer.wmua.{ContestJury, Image}
 import org.specs2.mutable.Specification
 import org.specs2.specification.{AfterAll, BeforeAll, BeforeEach}
-import play.api.Configuration
-import play.api.libs.concurrent.DefaultFutures
 import play.api.test.FakeRequest
 import play.api.test.Helpers._
 import scalikejdbc._
-import services.LocalImageCacheService
 import services.imports.{CommonsFileCheck, FakeCommonsSource, FakeFile}
+import services.{FakeWikimedia, LocalImageCacheService}
 
-import java.awt.image.BufferedImage
-import java.io.ByteArrayOutputStream
-import java.nio.file.Files
-import javax.imageio.ImageIO
 import scala.concurrent.duration._
-import scala.concurrent.{Await, ExecutionContext}
 
-/** A thumbnail request for a stored file that Wikimedia no longer serves asks Commons
+/** A thumbnail request for a stored file that Wikimedia doesn't have asks Commons
   * ([[CommonsFileCheck]]) whether the file was renamed or deleted. Wikimedia is a local
-  * server that has only the files named `New_…`; Commons is a fake.
+  * server ([[FakeWikimedia]]); Commons is a fake.
   */
-class ImageProxyFileCheckSpec extends Specification with TestDb with BeforeAll with BeforeEach with AfterAll {
+class ImageProxyFileCheckSpec
+    extends Specification
+    with TestDb
+    with FakeWikimedia
+    with BeforeAll
+    with BeforeEach
+    with AfterAll {
 
   sequential
 
-  implicit val system: ActorSystem = ActorSystem("ImageProxyFileCheckSpec")
-  implicit val ec: ExecutionContext = system.dispatcher
-
-  private val jpeg: Array[Byte] = {
-    val out = new ByteArrayOutputStream()
-    ImageIO.write(new BufferedImage(800, 600, BufferedImage.TYPE_INT_RGB), "JPEG", out)
-    out.toByteArray
-  }
-
-  private lazy val wikimedia = Await.result(
-    Http().newServerAt("127.0.0.1", 0).bindSync { request =>
-      if (request.uri.path.toString.contains("New_")) HttpResponse(entity = HttpEntity(ContentTypes.`application/octet-stream`, jpeg))
-      else HttpResponse(StatusCodes.NotFound)
-    },
-    5.seconds
-  )
-
   override def beforeAll(): Unit = SharedTestDb.init()
   override protected def before: Any = SharedTestDb.truncateAll()
-  override def afterAll(): Unit = {
-    Await.result(wikimedia.unbind(), 5.seconds)
-    Await.result(system.terminate(), 10.seconds)
-  }
-
-  private def image(id: Long, name: String) =
-    Image(id, s"File:${name.replace('_', ' ')}.jpg", Some(s"https://upload.wikimedia.org/wikipedia/commons/a/ab/$name.jpg"),
-      None, 800, 600, Some(s"07-101-000$id"))
+  override def afterAll(): Unit = stopWikimedia()
 
   private def thumb(name: String) = s"a/ab/$name.jpg/333px-$name.jpg"
 
+  private val signedIn = FakeRequest().withSession(Secured.UserName -> "juror@example.org")
+
   /** The controller, with an empty local cache and the files Commons has. */
   private def controller(commons: Seq[Image]): (ImageProxyController, FakeCommonsSource, CommonsFileCheck) = {
-    val dir = Files.createTempDirectory("proxy-file-check").toFile
-    dir.deleteOnExit()
-    val config = Configuration(ConfigFactory.parseString(
-      s"""wlxjury.thumbs.local-path = "${dir.getAbsolutePath.replace("\\", "/")}"
-         |wlxjury.thumbs.max-attempts = 1
-         |wlxjury.thumbs.wiki-base-url = "http://127.0.0.1:${wikimedia.localAddress.getPort}"
-         |""".stripMargin))
     val source = new FakeCommonsSource(commons.map(FakeFile(_)))
     val check = new CommonsFileCheck(source, batchWindow = 20.millis)
-    val proxy = new ImageProxyController(stubControllerComponents(), new LocalImageCacheService(config, system), check,
-      new DefaultFutures(system))
+    val proxy = new ImageProxyController(stubControllerComponents(), new LocalImageCacheService(thumbsConfig(), system, Some(check)))
     (proxy, source, check)
   }
 
@@ -88,31 +53,46 @@ class ImageProxyFileCheckSpec extends Specification with TestDb with BeforeAll w
 
   private def count(sqlText: String): Int = DB.readOnly { implicit s => SQL(sqlText).map(_.int(1)).single().getOrElse(0) }
 
-  "a thumbnail Wikimedia doesn't serve" should {
+  "a thumbnail request" should {
+    "be refused without signing in, without fetching or asking anything" in {
+      val gone = commonsImage(1L, "Gone")
+      store(gone)
+      val (proxy, source, check) = controller(Nil)
+
+      status(proxy.serve(thumb("Gone"))(FakeRequest())) === UNAUTHORIZED
+      check.stop()
+      source.detailCalls.get === 0
+      count("SELECT COUNT(*) FROM images WHERE deleted_at IS NOT NULL") === 0
+    }
+  }
+
+  "a thumbnail Wikimedia doesn't have" should {
 
     "be served under the file's new name when Commons renamed it, and stored so" in {
-      val old = image(1L, "Old_name")
+      val old = commonsImage(1L, "Old_name")
       store(old)
-      val renamed = old.copy(title = "File:New name.jpg", url = Some("https://upload.wikimedia.org/wikipedia/commons/c/cd/New_name.jpg"))
-      val (proxy, _, check) = controller(Seq(renamed))
+      val (proxy, _, check) = controller(Seq(renamed(old, "New_name")))
 
-      val result = proxy.serve(thumb("Old_name"))(FakeRequest())
+      val result = proxy.serve(thumb("Old_name"))(signedIn)
       status(result) === OK
       contentType(result) must beSome("image/jpeg")
+      header("Cache-Control", result) must beSome(startWith("private"))
       ImageJdbc.findById(1L).map(_.title) must beSome("File:New name.jpg")
-
-      // a page rendered before the rename still links the old name
-      status(proxy.serve(thumb("Old_name"))(FakeRequest())) === OK
       check.stop()
-      ok
+
+      // a page rendered before the rename still links the old name, also after a restart
+      val (restarted, source, again) = controller(Nil)
+      status(restarted.serve(thumb("Old_name"))(signedIn)) === OK
+      again.stop()
+      source.detailCalls.get === 0
     }
 
     "be 404 when Commons deleted the file, which no longer shows in the galleries" in {
-      val gone = image(1L, "Gone")
+      val gone = commonsImage(1L, "Gone")
       store(gone)
       val (proxy, _, check) = controller(Nil)
 
-      status(proxy.serve(thumb("Gone"))(FakeRequest())) === NOT_FOUND
+      status(proxy.serve(thumb("Gone"))(signedIn)) === NOT_FOUND
       check.stop()
       count("SELECT COUNT(*) FROM images WHERE page_id = 1 AND deleted_at IS NOT NULL") === 1
       count("SELECT COUNT(*) FROM selection WHERE page_id = 1") === 0
@@ -120,11 +100,11 @@ class ImageProxyFileCheckSpec extends Specification with TestDb with BeforeAll w
     }
 
     "redirect to Wikimedia as before when Commons has the file as stored" in {
-      val same = image(1L, "Same")
+      val same = commonsImage(1L, "Same")
       store(same)
       val (proxy, _, check) = controller(Seq(same))
 
-      val result = proxy.serve(thumb("Same"))(FakeRequest())
+      val result = proxy.serve(thumb("Same"))(signedIn)
       status(result) === SEE_OTHER
       redirectLocation(result) must beSome(s"https://upload.wikimedia.org/wikipedia/commons/thumb/${thumb("Same")}")
       check.stop()
@@ -133,13 +113,26 @@ class ImageProxyFileCheckSpec extends Specification with TestDb with BeforeAll w
     }
   }
 
-  "a thumbnail Wikimedia serves" should {
+  "a thumbnail Wikimedia fails to serve for another reason" should {
     "not ask Commons" in {
-      val img = image(1L, "New_file")
+      val img = commonsImage(1L, "Error_file")
       store(img)
       val (proxy, source, check) = controller(Nil)
 
-      status(proxy.serve(thumb("New_file"))(FakeRequest())) === OK
+      status(proxy.serve(thumb("Error_file"))(signedIn)) === SEE_OTHER
+      check.stop()
+      source.detailCalls.get === 0
+      count("SELECT COUNT(*) FROM images WHERE deleted_at IS NOT NULL") === 0
+    }
+  }
+
+  "a thumbnail Wikimedia serves" should {
+    "not ask Commons" in {
+      val img = commonsImage(1L, "New_file")
+      store(img)
+      val (proxy, source, check) = controller(Nil)
+
+      status(proxy.serve(thumb("New_file"))(signedIn)) === OK
       check.stop()
       source.detailCalls.get === 0
       count("SELECT COUNT(*) FROM images WHERE deleted_at IS NOT NULL") === 0

@@ -220,12 +220,17 @@ class RoundDistributionHandler @Inject() (distributeImages: DistributeImages, co
             progress(st)
           )
         else {
+          // Files deleted on Commons while this ran: a step may have added one before it was
+          // marked, and the mark left this round's votes in place (lockRoundsBeingDistributed).
+          // The step that marked it has committed: this step's job lock waited for it.
+          val deleted = ImageJdbc.archiveDeletedVotesInRound(roundId)
+          if (deleted.nonEmpty) logger.info(s"Round $roundId: moved aside the votes of ${deleted.size} files deleted on Commons")
           val distributing =
             sql"SELECT distributing FROM rounds WHERE id = $roundId FOR UPDATE".map(_.boolean(1)).single().getOrElse(false)
           val creating = distributing || (job.params \ "completingCreation").asOpt[Boolean].getOrElse(false)
           if (distributing) Round.completeCreation(roundId)
           Round.release(st.frozen, close = creating)
-          ctx.afterCommit(RoundImageCounts.refresh(roundId)(count.toInt))
+          ctx.afterCommit(RoundImageCounts.refresh(roundId)(count.toInt - deleted.size))
           logger.info(
             s"Round $roundId: distributed ${st.imagesAdded} images (${st.rowsAdded} selection rows) " +
               s"to ${c.jurors.size} jurors" +
@@ -294,6 +299,21 @@ object RoundDistributionHandler {
 
   /** One active distribution per round (see V60). */
   def dedupeKey(roundId: Long): String = s"$Kind:$SubjectType:$roundId"
+
+  /** The rounds a distribution is filling, with their jobs' rows locked in share mode
+    * until the transaction ends: no step of these jobs runs meanwhile, and no new one
+    * starts (the range lock on `job_active_dedupe_uidx`). A transaction that moves a file's
+    * votes in or out of rounds calls this first, and leaves these rounds alone: a step
+    * locks its job's row before anything else, so the order is the same, and a move can't
+    * upset a running distribution's count check.
+    */
+  def lockRoundsBeingDistributed()(implicit session: DBSession): Set[Long] =
+    sql"""SELECT subject_id FROM job WHERE active_dedupe_key LIKE ${s"$Kind:$SubjectType:%"}
+          LOCK IN SHARE MODE"""
+      .map(_.longOpt(1))
+      .list()
+      .flatten
+      .toSet
 
   /** Rows per chunk when `jobs.roundDistribution.chunkRows` isn't set: see the plan's
     * 13.7 measurements.
