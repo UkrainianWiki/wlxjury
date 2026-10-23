@@ -12,7 +12,7 @@ import play.api.mvc.{AnyContent, ControllerComponents, EssentialAction, Request,
 import play.twirl.api.Html
 import services.RoundService
 import services.distribution.RoundDistributionHandler
-import services.imports.ImportSource
+import services.imports.{FileTitles, ImportSource}
 import services.jobs.JobJdbc
 
 import javax.inject.Inject
@@ -236,10 +236,16 @@ class RoundController @Inject() (
                 .replace("}", ")")
                 .take(500)
 
+            // "Add files": lines that name no file are shown, not dropped
+            val unreadable = FileTitles.unreadable(editForm.fileList.getOrElse(""))
+            def unreadableLines: Result =
+              reRender(round, "files.list.unreadable", unreadable.size, unreadable.take(5).mkString(" · "))
+
             // the submitted contest must be one the user administers; an edited round
             // must belong to it (checked below)
             if (!contestPermission(User.ADMIN_ROLES, Some(contestId))(user)) onUnAuthorized(user)
             else round.id match {
+              case None if unreadable.nonEmpty => unreadableLines
               case None =>
                 try {
                   roundsService.submit(round, editForm.jurors, RoundController.submitToken(request), user.id, titles) match {
@@ -261,6 +267,7 @@ class RoundController @Inject() (
               case Some(roundId) =>
                 withAdminRound(user, roundId, NotFound(s"Round $roundId not found")) {
                   case stored if stored.contestId != contestId => onUnAuthorized(user)
+                  case _ if unreadable.nonEmpty => unreadableLines
                   case stored =>
                     val notStarted =
                       if (Round.updateRound(roundId, round)) Nil
@@ -271,7 +278,9 @@ class RoundController @Inject() (
                         roundsService.distributeNewFiles(roundId, user.id, titles, newFiles = editForm.newImages) match {
                           case RoundService.AlreadyRunning(_) =>
                             toRoundsList.flashing(
-                              "error" -> s"Round ${stored.number}: its images are already being distributed.")
+                              "error" -> (s"Round ${stored.number}: its images are already being distributed." +
+                                (if (titles.nonEmpty) " The listed files were not added: add them again once it has finished."
+                                 else "")))
                           case RoundService.Resumed(_) if titles.nonEmpty =>
                             toRoundsList.flashing(
                               "error" -> (s"Round ${stored.number}: its failed distribution was resumed instead of " +

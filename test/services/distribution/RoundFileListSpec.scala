@@ -4,7 +4,8 @@ import db.scalikejdbc._
 import org.intracer.wmua.{ContestJury, Image}
 import org.specs2.mutable.Specification
 import org.specs2.specification.{BeforeAll, BeforeEach}
-import services.imports.{FakeCommonsSource, FakeFile, ImportSource}
+import scalikejdbc.DB
+import services.imports.{DeletedFiles, FakeCommonsSource, FakeFile, ImportSource}
 import services.jobs.{JobJdbc, JobStatus}
 import services.{RoundService, TestRoundServices}
 
@@ -102,6 +103,54 @@ class RoundFileListSpec extends Specification with TestDb with BeforeAll with Be
       svc.distributeNewFiles(round.getId, titles = ImportSource.titles(list), newFiles = true)
       pageIds(round.getId) === (1L to 10L).toSet + 100L
       RoundDistributionHandler.stateOf(jobOf(round.getId)).imagesAdded === 1L
+    }
+
+    "tell stored titles apart by case, as Commons does" in {
+      val (contest, jurors) = setUp()
+      // another file than the stored File:Image 3.jpg
+      val upper = Image(200, "File:Image 3.JPG", Some("url200"), Some("pageUrl200"), 640, 480, None)
+      val svc = TestRoundServices.roundService(
+        TestRoundServices.handler(commons = new FakeCommonsSource(Seq(FakeFile(upper)))))
+      val round = svc.createNewRound(newRound(contest), jurors.map(_.getId))
+
+      svc.distributeNewFiles(round.getId, titles = Seq(upper.title), newFiles = false)
+
+      pageIds(round.getId) === Set(200L)
+      RoundDistributionHandler.stateOf(jobOf(round.getId)).missing === 0L
+    }
+
+    "look up on Commons the titles of files deleted there" in {
+      val (contest, jurors) = setUp()
+      // File:Image 4.jpg uploaded again after its deletion: another page
+      val reuploaded = image(4).copy(pageId = 300)
+      val svc = TestRoundServices.roundService(
+        TestRoundServices.handler(commons = new FakeCommonsSource(Seq(FakeFile(reuploaded)))))
+      DB.localTx(implicit s => DeletedFiles.markDeleted(Seq(3L, 4L)))
+      val round = svc.createNewRound(newRound(contest), jurors.map(_.getId))
+
+      svc.distributeNewFiles(round.getId, titles = Seq(image(3).title, image(4).title), newFiles = false)
+
+      pageIds(round.getId) === Set(300L)
+      val st = RoundDistributionHandler.stateOf(jobOf(round.getId))
+      st.missing === 1L
+      st.missingTitles === Seq(image(3).title)
+    }
+
+    "look the list up a Commons request per step" in {
+      val (contest, jurors) = setUp()
+      val onCommonsOnly = (101L to 105L).map(image)
+      val commons = new FakeCommonsSource(onCommonsOnly.map(FakeFile(_)), maxIdsPerRequest = 2)
+      val svc = TestRoundServices.roundService(TestRoundServices.handler(commons = commons))
+      val round = svc.createNewRound(newRound(contest), jurors.map(_.getId))
+
+      // the fake refuses a request of more than 2 files
+      svc.distributeNewFiles(round.getId, titles = (image(1) +: onCommonsOnly).map(_.title), newFiles = false)
+
+      pageIds(round.getId) === (101L to 105L).toSet + 1L
+      commons.detailCalls.get === 3
+      val job = jobOf(round.getId)
+      job.status === JobStatus.Done
+      RoundDistributionHandler.stateOf(job).imagesAdded === 6L
     }
 
     "fill a new round with the files its filters choose and the list" in {

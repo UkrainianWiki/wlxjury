@@ -28,6 +28,7 @@ import scala.collection.mutable
   * @param ranked         top-N: the chosen images, ascending
   * @param frozen         the previous rounds this job holds frozen
   * @param verifyFailed   the count check failed: a retry rescans with fresh accounting
+  * @param listIndex      the next title of the pasted list (phase "list")
   * @param missing        titles of the pasted list that neither the database nor Commons
   *                       has a file of
   * @param missingTitles  the first [[RoundDistributionHandler.MaxMissingTitles]] of them
@@ -44,6 +45,7 @@ final case class DistributionState(
     ranked: Seq[Long] = Nil,
     frozen: Seq[Long] = Nil,
     verifyFailed: Boolean = false,
+    listIndex: Int = 0,
     missing: Long = 0L,
     missingTitles: Seq[String] = Nil
 )
@@ -72,11 +74,12 @@ object DistributionState {
   *
   * A job may carry a pasted list of files (`params.titles`, from the round form's "Add
   * files"): after the filtered candidates (or instead of them, with `params.listOnly`) its
-  * "list" phase adds the listed files to the round, chunk by chunk, whatever the round's
-  * filters; those in the round already or deleted on Commons are left out. The listed
-  * files are looked up once per job run, in [[prepare]]: by title among the stored images
-  * (usually the contest's), and on Commons only those not stored; these are inserted, but
-  * not put in any category (they are the round's, not the contest's).
+  * "list" phase adds the listed files to the round, whatever the round's filters; those in
+  * the round already or deleted on Commons are left out. Each step takes the next titles,
+  * as many as one Commons request of their details takes, looked up in [[prepare]], outside
+  * any transaction: by title among the stored images (usually the contest's), and on
+  * Commons only those not stored; these are inserted, but not put in any category (they are
+  * the round's, not the contest's).
   *
   * The last step checks the round's distinct-image count against the images added
   * (exact, as `distributeAndVerify` did) and, for a creation, shows the round to its
@@ -85,9 +88,9 @@ object DistributionState {
   * change it. The previous rounds stay frozen ([[Round.freeze]]) from the job's creation
   * until it ends; a creation then closes them, anything else restores them.
   *
-  * Held in memory per job: at most one window of candidates (the chunk), the jurors, the
-  * Commons category file ids of the round's category filters and the pasted list's files
-  * (fetched once per job run, in [[prepare]], outside any transaction).
+  * Held in memory per job: at most one window of candidates (the chunk) or one chunk of the
+  * pasted list's files, the jurors and the Commons category file ids of the round's
+  * category filters (fetched once per job run, in [[prepare]], outside any transaction).
   */
 @Singleton
 class RoundDistributionHandler @Inject() (
@@ -107,6 +110,9 @@ class RoundDistributionHandler @Inject() (
 
   private val contexts = TrieMap.empty[Long, Context]
 
+  /** The pasted list's files of each job's next "list" step. */
+  private val listChunks = TrieMap.empty[Long, ListChunk]
+
   override def title(job: Job): String = {
     val round = job.subjectId.getOrElse("?")
     titleCountOf(job) match {
@@ -122,23 +128,24 @@ class RoundDistributionHandler @Inject() (
       "phase" -> st.phase, "missing" -> st.missing, "missingTitles" -> st.missingTitles)
   }
 
-  override def prepare(job: Job): Unit =
-    if (!contexts.contains(job.id)) contexts.put(job.id, context(job))
+  override def prepare(job: Job): Unit = {
+    val c = contexts.getOrElseUpdate(job.id, context(roundIdOf(job)))
+    val st = stateOf(job)
+    if (st.phase == Phase.List && st.listIndex < titleCountOf(job) && !listChunks.get(job.id).exists(_.index == st.listIndex))
+      listChunks.put(job.id, listChunk(c.round, st.listIndex, titlesOf(job, st.listIndex, commons.maxIdsPerRequest)))
+  }
 
-  override def forget(jobId: Long): Unit = contexts.remove(jobId)
+  override def forget(jobId: Long): Unit = {
+    contexts.remove(jobId)
+    listChunks.remove(jobId)
+  }
 
   /** Hooks for tests: run in a chunk's transaction before and after its rows are inserted. */
   protected def beforeInsert(round: Round, images: Seq[Image])(implicit session: DBSession): Unit = ()
   protected def afterInsert(round: Round, rows: Seq[Selection])(implicit session: DBSession): Unit = ()
 
-  private def context(job: Job): Context = {
-    // the list's files are looked up only while the job still has them to add
-    val titles = if (stateOf(job).phase == Phase.Verify) Nil else titlesOf(job)
-    context(roundIdOf(job), titles)
-  }
-
-  /** What the steps need, with the files of `titles` looked up ([[listed]]). */
-  private def context(roundId: Long, titles: Seq[String] = Nil): Context = {
+  /** What the steps need. */
+  private def context(roundId: Long): Context = {
     val round = Round.findById(roundId).getOrElse(throw new NoSuchElementException(s"Round $roundId not found"))
     val prevRounds = RoundDistributionHandler.previousRounds(round)
     val jurors = User.distributionJurors(roundId).sortBy(_.getId).toIndexedSeq
@@ -162,35 +169,31 @@ class RoundDistributionHandler @Inject() (
         case Some(p) if p.optionalRate => Denominator.Const(p.numberOfActiveJurors.toLong)
         case _                         => Denominator.PerImage
       },
-      windowSize = math.max(1, math.min(MaxWindow, chunkRows / math.max(1, perImage))),
-      listed = if (titles.isEmpty) Listed.empty else listed(round, titles)
+      windowSize = math.max(1, math.min(MaxWindow, chunkRows / math.max(1, perImage)))
     )
   }
 
-  /** The files of the pasted list: the stored images of its titles, usually imported with
-    * the contest already, and the rest as Commons has them ([[CommonsSource.maxIdsPerRequest]]
-    * titles per request, with their text when the contest has a monument id template).
+  /** The files of `titles`, the pasted list's from the `index`th: the stored images of
+    * those titles, usually imported with the contest already, and the rest as Commons has
+    * them (one request, with their text when the contest has a monument id template).
     */
-  private def listed(round: Round, titles: Seq[String]): Listed = {
+  private def listChunk(round: Round, index: Int, titles: Seq[String]): ListChunk = {
     val stored = ImageJdbc.findByTitles(titles)
-    // titles compare case-insensitively, as the column does
-    val storedTitles = stored.map(_.title.toLowerCase).toSet
-    val notStored = titles.filterNot(t => storedTitles.contains(t.toLowerCase))
-    val fetched =
-      if (notStored.isEmpty) Listed.empty
+    val storedTitles = stored.map(_.title).toSet
+    val notStored = titles.filterNot(storedTitles.contains)
+    val (fetched, missing) =
+      if (notStored.isEmpty) (Nil, Nil)
       else {
         val contest = ContestJuryJdbc
           .findById(round.contestId)
           .getOrElse(throw new NoSuchElementException(s"Contest ${round.contestId} not found"))
-        val text = contest.monumentIdTemplate.isDefined
-        val pages =
-          notStored.grouped(commons.maxIdsPerRequest).flatMap(commons.filesByTitles(_, info = true, text = text)).toSeq
+        val pages = commons.filesByTitles(notStored, info = true, text = contest.monumentIdTemplate.isDefined)
         val images = ImageText.images(pages, contest, contest.monumentIdTemplate)
         val found = images.map(_.pageId).toSet
         // a missing title, or a page that isn't a file
-        Listed(images, pages.filterNot(_.id.exists(found.contains)).map(_.title).distinct)
+        (images, pages.filterNot(_.id.exists(found.contains)).map(_.title).distinct)
       }
-    Listed((stored ++ fetched.images).distinctBy(_.pageId).sortBy(_.pageId), fetched.missingTitles)
+    ListChunk(index, titles.size, stored, fetched, missing)
   }
 
   // ── job creation, failure, cancel, retry ───────────────────────────────────
@@ -232,7 +235,7 @@ class RoundDistributionHandler @Inject() (
     */
   override def onRetry(job: Job, ctx: StepContext): JsObject = {
     implicit val session: DBSession = ctx.session
-    contexts.remove(job.id) // the jurors and filters are read again
+    forget(job.id) // the jurors and filters are read again
     val st = stateOf(job)
     val roundId = roundIdOf(job)
     val prevIds = if (listOnly(job)) Nil else Round.findById(roundId).map(_.previousIds).getOrElse(Nil)
@@ -242,7 +245,8 @@ class RoundDistributionHandler @Inject() (
       if (!st.verifyFailed) st
       else
         st.copy(phase = if (listOnly(job)) Phase.List else Phase.Distribute, cursor = 0L, candidatesSeen = 0L,
-          imagesAdded = 0L, rowsAdded = 0L, imagesBefore = None, verifyFailed = false)
+          imagesAdded = 0L, rowsAdded = 0L, imagesBefore = None, verifyFailed = false, listIndex = 0, missing = 0L,
+          missingTitles = Nil)
     Json.toJsObject(resumed.copy(frozen = prevIds))
   }
 
@@ -251,7 +255,7 @@ class RoundDistributionHandler @Inject() (
   def step(job: Job, ctx: StepContext): StepResult = {
     implicit val session: DBSession = ctx.session
     val roundId = roundIdOf(job)
-    val c = contexts.getOrElseUpdate(job.id, context(job))
+    val c = contexts.getOrElseUpdate(job.id, context(roundId))
     val st = stateOf(job) match {
       case s if s.imagesBefore.isEmpty => s.copy(imagesBefore = Some(imageCount(roundId) - s.imagesAdded))
       case s                           => s
@@ -261,11 +265,11 @@ class RoundDistributionHandler @Inject() (
       case Phase.Rank =>
         val ranked = DistributionSource.rank(c.prevRounds.flatMap(_.id), c.rated, c.denominator, c.topN.get, c.filter)
         val next = st.copy(phase = Phase.Distribute, ranked = ranked.sorted,
-          total = Some(ranked.size.toLong + c.listed.images.size), cursor = 0L)
+          total = Some(ranked.size.toLong + titleCountOf(job)), cursor = 0L)
         continue(next)
 
       case Phase.Distribute =>
-        val st1 = if (st.total.isDefined) st else st.copy(total = Some(estimate(c, st)))
+        val st1 = if (st.total.isDefined) st else st.copy(total = Some(estimate(c, st) + titleCountOf(job)))
         val window = nextWindow(c, st1)
         if (window.size == 0)
           continue(st1.copy(phase = if (titleCountOf(job) > 0) Phase.List else Phase.Verify, cursor = 0L))
@@ -290,32 +294,35 @@ class RoundDistributionHandler @Inject() (
         }
 
       case Phase.List =>
-        // set, not added: a retry that rescans the list finds the same ones missing
-        val st1 = st.copy(
-          total = st.total.orElse(Some(c.listed.images.size.toLong)),
-          missing = c.listed.missingTitles.size.toLong,
-          missingTitles = c.listed.missingTitles.take(MaxMissingTitles)
-        )
-        val chunk = c.listed.images.iterator.filter(_.pageId > st1.cursor).take(c.windowSize).toSeq
-        if (chunk.isEmpty) continue(st1.copy(phase = Phase.Verify))
-        else {
-          ImageJdbc.insertIgnore(chunk)
-          val passed = DistributionSource.imagesIn(chunk.map(_.pageId), roundId)
-          val rows = DistributeImages.assign(c.round, passed, c.jurors, st1.position)
-          beforeInsert(c.round, passed)
-          DistributeImages.insertRows(c.round, rows)
-          afterInsert(c.round, rows)
-          if (rows.nonEmpty) ctx.afterCommit(RoundImageCounts.invalidate(roundId))
-          continue(
-            st1.copy(
-              cursor = chunk.last.pageId,
-              position = st1.position + passed.size,
-              candidatesSeen = st1.candidatesSeen + chunk.size,
-              imagesAdded = st1.imagesAdded + passed.size,
-              rowsAdded = st1.rowsAdded + rows.size
-            )
-          )
-        }
+        val st1 = if (st.total.isDefined) st else st.copy(total = Some(titleCountOf(job).toLong))
+        if (st1.listIndex >= titleCountOf(job)) continue(st1.copy(phase = Phase.Verify))
+        else
+          listChunks.get(job.id).filter(_.index == st1.listIndex) match {
+            // prepared for another position: the next turn prepares this one
+            case None => continue(st1)
+            // the params have fewer titles than they count
+            case Some(chunk) if chunk.titles == 0 => continue(st1.copy(phase = Phase.Verify))
+            case Some(chunk) =>
+              ImageJdbc.insertIgnore(chunk.fetched)
+              val passed =
+                DistributionSource.imagesIn((chunk.stored ++ chunk.fetched).map(_.pageId).distinct.sorted, roundId)
+              val rows = DistributeImages.assign(c.round, passed, c.jurors, st1.position)
+              beforeInsert(c.round, passed)
+              DistributeImages.insertRows(c.round, rows)
+              afterInsert(c.round, rows)
+              if (rows.nonEmpty) ctx.afterCommit(RoundImageCounts.invalidate(roundId))
+              continue(
+                st1.copy(
+                  listIndex = chunk.index + chunk.titles,
+                  position = st1.position + passed.size,
+                  candidatesSeen = st1.candidatesSeen + chunk.titles,
+                  imagesAdded = st1.imagesAdded + passed.size,
+                  rowsAdded = st1.rowsAdded + rows.size,
+                  missing = st1.missing + chunk.missingTitles.size,
+                  missingTitles = (st1.missingTitles ++ chunk.missingTitles).take(MaxMissingTitles)
+                )
+              )
+          }
 
       case Phase.Verify =>
         val count = imageCount(roundId)
@@ -385,11 +392,9 @@ class RoundDistributionHandler @Inject() (
     sql"SELECT COUNT(DISTINCT page_id) FROM selection WHERE round_id = $roundId".map(_.long(1)).single().getOrElse(0L)
 
   private def estimate(c: Context, st: DistributionState)(implicit session: DBSession): Long =
-    c.listed.images.size + {
-      if (c.topN.isDefined) st.ranked.size.toLong
-      else if (c.prevRounds.nonEmpty) DistributionSource.previousCount(c.prevRounds.flatMap(_.id), c.rated)
-      else c.categoryId.fold(0L)(DistributionSource.categoryCount)
-    }
+    if (c.topN.isDefined) st.ranked.size.toLong
+    else if (c.prevRounds.nonEmpty) DistributionSource.previousCount(c.prevRounds.flatMap(_.id), c.rated)
+    else c.categoryId.fold(0L)(DistributionSource.categoryCount)
 
   private def nextWindow(c: Context, st: DistributionState)(implicit session: DBSession): Window =
     if (c.topN.isDefined) {
@@ -456,17 +461,19 @@ object RoundDistributionHandler {
       topN: Option[Int],
       categoryId: Option[Long],
       denominator: Denominator,
-      windowSize: Int,
-      listed: Listed = Listed.empty
+      windowSize: Int
   )
 
-  /** The files of a job's pasted list, by page id, and the titles found nowhere. */
-  final case class Listed(images: Seq[Image], missingTitles: Seq[String])
-
-  object Listed {
-    val empty: Listed = Listed(Nil, Nil)
-  }
-
+  /** The files of `titles` titles of a job's pasted list, from the `index`th: those stored,
+    * those fetched from Commons (to insert), and the titles found nowhere.
+    */
+  final case class ListChunk(
+      index: Int,
+      titles: Int,
+      stored: Seq[Image],
+      fetched: Seq[Image],
+      missingTitles: Seq[String]
+  )
 
   object Phase {
     val Rank = "rank"
@@ -477,6 +484,10 @@ object RoundDistributionHandler {
 
   /** The job's pasted list of files to add to the round (`params.titles`), if it has one. */
   def titlesOf(job: Job): Seq[String] = (job.params \ "titles").asOpt[Seq[String]].getOrElse(Nil)
+
+  /** At most `n` of the pasted titles, from the `from`th. */
+  def titlesOf(job: Job, from: Int, n: Int): Seq[String] =
+    (job.params \ "titles").asOpt[JsArray].fold(Seq.empty[String])(_.value.slice(from, from + n).map(_.as[String]).toSeq)
 
   def titleCountOf(job: Job): Int = (job.params \ "titleCount").asOpt[Int].getOrElse(0)
 

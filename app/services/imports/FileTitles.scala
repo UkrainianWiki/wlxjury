@@ -10,13 +10,22 @@ import scala.util.Try
   * description page (on Commons or another wiki: `/wiki/…`, `index.php?title=…`,
   * `#/media/…`, `Special:FilePath/…`) or to the file itself (`upload.wikimedia.org`, full
   * size or a thumbnail); a wiki link or a gallery line (`[[File:A.jpg|thumb]]`,
-  * `File:A.jpg|caption`); a spreadsheet row (its first cell).
+  * `File:A.jpg|caption`), in a wiki list too (`* [[File:A.jpg]]`); a spreadsheet row (its
+  * first cell).
   */
 object FileTitles {
 
   /** The list's titles as Commons names them (`File:A b.jpg`), without duplicates. */
   def apply(list: String): Seq[String] =
-    list.split("(\r\n|\n|\r)").iterator.flatMap(title).toSeq.distinct
+    lines(list).flatMap(title).distinct
+
+  /** The list's lines with text but no file title (e.g. a link without the file's name),
+    * to tell whoever pasted them.
+    */
+  def unreadable(list: String): Seq[String] = lines(list).filter(title(_).isEmpty)
+
+  private def lines(list: String): Seq[String] =
+    list.split("(\r\n|\n|\r)").iterator.map(_.trim).filter(_.nonEmpty).toSeq
 
   /** The line's file title, if it has one. */
   def title(line: String): Option[String] = {
@@ -29,9 +38,13 @@ object FileTitles {
       .map(n => "File:" + n.head.toUpper + n.tail)
   }
 
-  /** `[[File:A.jpg|thumb|…]]` and `File:A.jpg|caption`: the link's target. */
+  /** `[[File:A.jpg|thumb|…]]`, `* [[:File:A.jpg]]` and `File:A.jpg|caption`: the link's
+    * target. A `#` can't be in a title, nor hardly a leading `*`: a wiki list's bullets.
+    */
   private def withoutWikiLink(text: String): String = {
-    val inner = text.stripPrefix("[[").takeWhile(_ != ']')
+    val item = text.dropWhile(c => c == '*' || c == '#' || c.isWhitespace)
+    val link = item.indexOf("[[")
+    val inner = (if (link >= 0) item.substring(link + 2) else item).takeWhile(_ != ']').trim.stripPrefix(":")
     if (isUrl(inner)) inner else inner.takeWhile(_ != '|')
   }
 

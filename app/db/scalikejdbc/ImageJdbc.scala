@@ -122,10 +122,15 @@ object ImageJdbc extends CRUDMapper[Image]
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""".batch(params: _*).apply()
     }
 
-  /** The stored images with these titles (`images_title_index`), deleted ones too. */
+  /** The stored images with these titles, but those deleted on Commons (V63): a new upload
+    * under the same name is another file, with another page id. Compared case-sensitively,
+    * as [[findByFilename]] does (the general_ci index finds the candidates, BINARY picks).
+    */
   def findByTitles(titles: Seq[String])(implicit session: DBSession = AutoSession): Seq[Image] =
     titles.distinct.grouped(1000).toSeq.flatMap { chunk =>
-      sql"SELECT ${i.result.*} FROM images i WHERE i.title IN ($chunk)".map(rs => ImageJdbc(i)(rs)).list()
+      sql"""SELECT ${i.result.*} FROM images i
+            WHERE i.title IN ($chunk) AND BINARY i.title IN ($chunk) AND i.deleted_at IS NULL"""
+        .map(rs => ImageJdbc(i)(rs)).list()
     }
 
   /** The stored images among `pageIds`, each with whether it is in the category. */

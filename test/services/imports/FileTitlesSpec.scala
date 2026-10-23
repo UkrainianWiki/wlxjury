@@ -64,8 +64,19 @@ class FileTitlesSpec extends Specification {
       FileTitles.title("File:A.jpg\tAuthor\t5") === Some("File:A.jpg")
     }
 
+    "read a wiki list's item and a link with a leading colon" in {
+      FileTitles.title("* [[File:A b.jpg]]") === Some("File:A b.jpg")
+      FileTitles.title("# [[:File:A.jpg|A]]") === Some("File:A.jpg")
+      FileTitles.title("** File:A.jpg") === Some("File:A.jpg")
+      FileTitles.title("[[:Файл:A.jpg]]") === Some("File:A.jpg")
+    }
+
     "skip an empty line" in {
       FileTitles.title("   ") must beNone
+    }
+
+    "find no title in a link without the file's name" in {
+      FileTitles.title("https://commons.wikimedia.org/w/index.php?curid=123456") must beNone
     }
   }
 
@@ -74,6 +85,12 @@ class FileTitlesSpec extends Specification {
       FileTitles(
         "File:A_b.jpg\r\n\r\n  https://commons.wikimedia.org/wiki/File:C%C3%A9.jpg \nA b.jpg\nФайл:A_b.jpg\n") ===
         Seq("File:A b.jpg", "File:Cé.jpg")
+    }
+
+    "tell the lines with text but no title" in {
+      FileTitles.unreadable("File:A.jpg\n\n  \nhttps://commons.wikimedia.org/w/index.php?curid=1\n[[]]\n") ===
+        Seq("https://commons.wikimedia.org/w/index.php?curid=1", "[[]]")
+      FileTitles.unreadable("File:A.jpg\nB.jpg") must beEmpty
     }
   }
 }
