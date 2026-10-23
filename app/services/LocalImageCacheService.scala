@@ -15,6 +15,7 @@ import services.imports.{CommonsFileCheck, FileCheck}
 import java.awt.RenderingHints
 import java.awt.image.BufferedImage
 import java.io.{ByteArrayInputStream, File}
+import java.nio.charset.StandardCharsets.UTF_8
 import java.nio.file.{Files, Path, StandardCopyOption}
 import scala.jdk.CollectionConverters._
 import java.util.concurrent.ConcurrentHashMap
@@ -164,27 +165,77 @@ class LocalImageCacheService(
       Try(ImageIO.read(file)).toOption.flatMap(Option(_)).map(px -> _)
     }
 
-  /** Registers the cached files. Deletes stale temp files from a prior crash, and the files
-    * of sizes no longer cached ([[unusedFiles]]).
-    */
   private[services] def initRegistry(): Future[Unit] = Future {
     val root = new File(localPath)
     if (root.exists()) {
       val stream = Files.walk(root.toPath)
-      val (tmp, cached) =
-        try stream.iterator().asScala
-              .filter(p => Files.isRegularFile(p))
-              .toVector
-              .partition(_.getFileName.toString.startsWith(".tmp-"))
-        finally stream.close()
-      tmp.foreach(Files.deleteIfExists)
-      val unused = unusedFiles(cached)
-      unused.foreach(p => Try(Files.deleteIfExists(p)))
-      cached.filterNot(unused).foreach(p => registry.put(p.toAbsolutePath.toString, ()))
-      if (unused.nonEmpty) logger.info(s"Deleted ${unused.size} cached files of sizes no longer cached")
+      try stream.iterator().asScala
+            .filter(p => Files.isRegularFile(p))
+            .foreach { p =>
+              val name = p.getFileName.toString
+              if (name.startsWith(".tmp-"))
+                Files.deleteIfExists(p) // stale temp file from a prior crash
+              else if (name != SizesMarker)
+                registry.put(p.toAbsolutePath.toString, ())
+            }
+      finally stream.close()
       logger.info(s"Registry initialized with ${registry.size()} cached files")
     }
   }
+
+  /** The file in the cache's root naming the sizes cached ([[cachedSizes]]) once the files of
+    * other sizes are deleted ([[cleanUpUnusedSizes]]). In the cache, not in the config or the
+    * database, it goes with the files: blue/green slots share it, a restored or new cache
+    * has its own.
+    */
+  private[services] val SizesMarker = ".cache-sizes"
+
+  /** The sizes cached ([[Global.thumbnailBoxes]]): when they change, the files of the old
+    * ones are deleted once.
+    */
+  private[services] val cachedSizes: String =
+    Global.thumbnailBoxes.map { case (x, y) => s"${x.fold("*")(_.toString)}x$y" }.mkString(" ")
+
+  /** Deletes the files of sizes no longer cached ([[unusedFiles]]), unless the
+    * [[SizesMarker]] says it was done for these sizes; then writes the marker. One image
+    * directory at a time, after [[initRegistry]], not delaying it. Interrupted, it runs
+    * again at the next start.
+    */
+  private[services] def cleanUpUnusedSizes(): Future[Unit] = Future(scala.concurrent.blocking {
+    val root   = new File(localPath)
+    val marker = new File(root, SizesMarker)
+    val done   = Try(new String(Files.readAllBytes(marker.toPath), UTF_8).trim).toOption.contains(cachedSizes)
+    if (root.exists() && !done) {
+      logger.info(s"Deleting the cached files of sizes no longer cached: other than $cachedSizes")
+      val startMs = System.currentTimeMillis()
+      val dirs = {
+        val stream = Files.walk(root.toPath)
+        try stream.iterator().asScala.filter(p => Files.isDirectory(p)).toVector
+        finally stream.close()
+      }
+      val deleted = dirs.map { dir =>
+        val files = {
+          val stream = Files.list(dir)
+          try stream.iterator().asScala.filter(p => Files.isRegularFile(p)).toVector
+          finally stream.close()
+        }
+        unusedFiles(files).count { p =>
+          val removed = Try(Files.deleteIfExists(p)).getOrElse(false)
+          if (removed) registry.remove(p.toAbsolutePath.toString)
+          removed
+        }
+      }.sum
+      val tmp = File.createTempFile(".tmp-", ".marker", root)
+      Files.write(tmp.toPath, cachedSizes.getBytes(UTF_8))
+      // A failed move (on Windows, when another instance replaces the marker at once) leaves no temp file
+      try Files.move(tmp.toPath, marker.toPath, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
+      finally Files.deleteIfExists(tmp.toPath)
+      logger.info(
+        s"Deleted $deleted cached files of sizes no longer cached in ${dirs.size} directories, " +
+          s"in ${(System.currentTimeMillis() - startMs) / 1000}s"
+      )
+    }
+  })
 
   /** The files of widths the views don't show their image at ([[Global.thumbnailWidths]]):
     * the large view's, and other sizes cached before. A directory holds the sizes of one
@@ -612,4 +663,9 @@ class LocalImageCacheService(
   }
 
   private val registryReady: Future[Unit] = initRegistry()
+
+  private[services] val unusedSizesCleanedUp: Future[Unit] =
+    registryReady.flatMap(_ => cleanUpUnusedSizes()).recover { case ex =>
+      logger.warn(s"Failed to delete the cached files of sizes no longer cached: ${ex.getMessage}", ex)
+    }
 }

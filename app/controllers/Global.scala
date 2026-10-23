@@ -17,19 +17,27 @@ object Global {
 
   val sizeFactors = Seq(1.0, 1.5, 2.0)
 
-  /** The widths the views show a `width` × `height` image at, as thumbnails, at each of
-    * [[sizeFactors]]: [[gallerySizeY]] tall in a binary round's gallery, fit into the
-    * gallery box in a rated one and into the thumbnail box in the large view's bar.
-    * Those of them narrower than the file are cached ([[services.LocalImageCacheService]]).
+  /** The boxes the views fit thumbnails into, (width, height), at each of [[sizeFactors]]:
+    * [[gallerySizeY]] tall at any width in a binary round's gallery, the gallery box in a
+    * rated one and the thumbnail box in the large view's bar.
     */
-  def thumbnailWidths(width: Int, height: Int): Seq[Int] =
+  val thumbnailBoxes: Seq[(Option[Int], Int)] =
     sizeFactors.flatMap { factor =>
       def scaled(size: Int) = (size * factor).toInt
       Seq(
-        ImageUtil.resizeTo(width, height, scaled(gallerySizeY)),
-        ImageUtil.resizeTo(width, height, scaled(gallerySizeX), scaled(gallerySizeY)),
-        ImageUtil.resizeTo(width, height, scaled(thumbSizeX), scaled(thumbSizeY))
+        None                       -> scaled(gallerySizeY),
+        Some(scaled(gallerySizeX)) -> scaled(gallerySizeY),
+        Some(scaled(thumbSizeX))   -> scaled(thumbSizeY)
       )
+    }.distinct
+
+  /** The widths a `width` × `height` image is shown at in the [[thumbnailBoxes]]. Those of
+    * them narrower than the file are cached ([[services.LocalImageCacheService]]).
+    */
+  def thumbnailWidths(width: Int, height: Int): Seq[Int] =
+    thumbnailBoxes.map {
+      case (None, y)    => ImageUtil.resizeTo(width, height, y)
+      case (Some(x), y) => ImageUtil.resizeTo(width, height, x, y)
     }.distinct.sorted
 
   /** Where the image is shown `px` wide, as [[resizeTo]] gives it. */

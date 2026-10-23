@@ -600,18 +600,51 @@ class LocalImageCacheServiceSpec extends Specification {
       ok
     }
 
-    "delete the files of sizes no longer cached during initRegistry, keeping the others" in {
-      val tmpDir = Files.createTempDirectory("registry-unused").toFile
+    "not register the sizes marker" in {
+      val tmpDir = Files.createTempDirectory("registry-marker").toFile
       val svc    = mkService(tmpDir)
-      val wide   = mkImage(filename = "Wide.jpg")                    // 4000×3000
-      val tall   = mkImage(id = 2, w = 1000, h = 4000, filename = "Tall.jpg")
+      Await.result(svc.unusedSizesCleanedUp, 10.seconds)
+      new File(tmpDir, svc.SizesMarker).exists() must beTrue
 
-      def write(img: Image, px: Int): File = {
-        val f = svc.localFile(img, px)
-        f.getParentFile.mkdirs()
-        ImageIO.write(new BufferedImage(px, img.height * px / img.width, BufferedImage.TYPE_INT_RGB), "JPEG", f)
-        f
-      }
+      val restarted = mkService(tmpDir)
+      Await.result(restarted.initRegistry(), 10.seconds)
+      restarted.registrySize mustEqual 0
+      tmpDir.delete()
+      ok
+    }
+  }
+
+  // ── cleanUpUnusedSizes ───────────────────────────────────────────────────
+
+  "the cleanup of sizes no longer cached" should {
+
+    val wide = mkImage(filename = "Wide.jpg") // 4000×3000
+    val tall = mkImage(id = 2, w = 1000, h = 4000, filename = "Tall.jpg")
+
+    // Paths come from a service of another directory: one of `dir` would clean it up
+    // before the files are written.
+    val pathsDir = mkTempDir()
+    val paths    = mkService(pathsDir)
+
+    def writeTo(dir: File, img: Image, px: Int): File = {
+      val f = new File(dir, paths.localFile(img, px).getAbsolutePath.stripPrefix(pathsDir.getAbsolutePath))
+      f.getParentFile.mkdirs()
+      ImageIO.write(new BufferedImage(px, img.height * px / img.width, BufferedImage.TYPE_INT_RGB), "JPEG", f)
+      f
+    }
+
+    /** A service started on `dir`, once its cleanup is done. */
+    def start(dir: File): LocalImageCacheService = {
+      val svc = mkService(dir)
+      Await.result(svc.unusedSizesCleanedUp, 30.seconds)
+      svc
+    }
+
+    def marker(dir: File): File = new File(dir, paths.SizesMarker)
+
+    "delete them at the first start, keep the others, and write the marker" in {
+      val tmpDir = mkTempDir()
+      def write(img: Image, px: Int): File = writeTo(tmpDir, img, px)
       val kept = Seq(
         write(wide, 150), // 150×120 box
         write(wide, 333), // 250 tall
@@ -629,14 +662,38 @@ class LocalImageCacheServiceSpec extends Specification {
       // Only a large size left of an image
       val onlyLarge = write(mkImage(id = 3, filename = "Only.jpg"), 1466)
 
-      Await.result(svc.initRegistry(), 10.seconds)
+      val svc = start(tmpDir)
 
       kept.forall(f => f.exists() && svc.registryContains(f)) must beTrue
       (deleted :+ onlyLarge).exists(_.exists()) must beFalse
       svc.registrySize mustEqual kept.size
+      new String(Files.readAllBytes(marker(tmpDir).toPath), "UTF-8") mustEqual svc.cachedSizes
+    }
 
-      tmpDir.delete()
-      ok
+    "not run again once the marker names the sizes cached" in {
+      val tmpDir = mkTempDir()
+      start(tmpDir)
+      marker(tmpDir).exists() must beTrue
+
+      val planted = writeTo(tmpDir, wide, 160) // 120 tall
+      start(tmpDir)
+      planted.exists() must beTrue
+    }
+
+    "run again when the marker names other sizes" in {
+      val tmpDir = mkTempDir()
+      Files.write(marker(tmpDir).toPath, "*x120 150x120".getBytes("UTF-8"))
+      val planted = writeTo(tmpDir, wide, 160)
+      val kept    = writeTo(tmpDir, wide, 666)
+
+      val svc = start(tmpDir)
+      planted.exists() must beFalse
+      kept.exists() must beTrue
+      new String(Files.readAllBytes(marker(tmpDir).toPath), "UTF-8") mustEqual svc.cachedSizes
+    }
+
+    "name the boxes the views fit thumbnails into" in {
+      paths.cachedSizes mustEqual "*x250 300x250 150x120 *x375 450x375 225x180 *x500 600x500 300x240"
     }
   }
 
@@ -800,7 +857,8 @@ class LocalImageCacheServiceSpec extends Specification {
         requested.asScala.toSeq === Seq("/wikipedia/commons/thumb/a/ab/Test_photo.jpg/1920px-Test_photo.jpg")
         Thread.sleep(200)
         svc.registrySize === 0
-        Files.walk(tmpDir.toPath).iterator().asScala.count(Files.isRegularFile(_)) === 0
+        Files.walk(tmpDir.toPath).iterator().asScala
+          .count(p => Files.isRegularFile(p) && p.getFileName.toString != svc.SizesMarker) === 0
       } finally Await.result(binding.unbind(), 5.seconds)
 
       tmpDir.delete()
@@ -900,6 +958,8 @@ class LocalImageCacheServiceSpec extends Specification {
       val f1 = Future { barrier.await(); svc1.saveResized(img, src, 2200) }
       val f2 = Future { barrier.await(); svc2.saveResized(img, src, 2200) }
       Await.result(Future.sequence(Seq(f1, f2)), 30.seconds)
+      // The services' own start: their cleanup writes the sizes marker through a temp file
+      Await.result(Future.sequence(Seq(svc1.unusedSizesCleanedUp, svc2.unusedSizesCleanedUp)), 30.seconds)
 
       // No temp files must be left behind (walk subdirectories recursively)
       val tmpFiles = {
