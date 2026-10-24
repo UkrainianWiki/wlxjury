@@ -26,7 +26,7 @@ class ImageController @Inject() (
   /** Shows contest images view
     */
   def images(contestId: Long): EssentialAction =
-    withAuth(contestPermission(User.ADMIN_ROLES, Some(contestId))) { user => implicit request =>
+    withAuth(_.canManageContestFiles(contestId)) { user => implicit request =>
       val contest = ContestJuryJdbc.findById(contestId).get
 
       val sourceImageNum = getNumberOfImages(contest)

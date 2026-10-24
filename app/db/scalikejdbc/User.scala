@@ -74,6 +74,12 @@ case class User(
   def canViewContestFiles(refContestId: Long): Boolean =
     hasContestRole(User.ADMIN_ROLES ++ User.ORG_COM_ROLES, Some(refContestId))
 
+  /** Whether the user may import the contest's files and cache them locally
+    * ([[controllers.ImageController.images]]): its admins.
+    */
+  def canManageContestFiles(refContestId: Long): Boolean =
+    hasContestRole(User.ADMIN_ROLES, Some(refContestId))
+
   def canViewOrgInfo(round: Round): Boolean =
     hasRole("root") ||
       (contestId.contains(round.contestId) &&

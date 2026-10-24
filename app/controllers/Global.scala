@@ -89,6 +89,24 @@ object Global {
       Option.when(px < image.width)(s"${thumbUrl(image, px, height)} $descriptor")
     }.mkString(", ")
 
+  /** The largest thumbnail of a file deleted on Commons that the cache keeps
+    * ([[thumbnailWidths]] narrower than the file), for its large view: the file itself is
+    * gone. None if there is none.
+    */
+  def largestCachedThumbnail(image: Image): Option[String] =
+    thumbnailWidths(image.width, image.height).filter(_ < image.width).lastOption.map(resizeToPx(image, _))
+
+  /** The file's page on Commons (with its deletion log, if it was deleted there). */
+  def commonsPageUrl(image: Image): String =
+    s"https://$COMMONS_WIKIMEDIA_ORG/wiki/${encodedTitle(image)}"
+
+  /** Commons' page to undelete the file (for its admins; others see the deletion log). */
+  def commonsUndeleteUrl(image: Image): String =
+    s"https://$COMMONS_WIKIMEDIA_ORG/wiki/Special:Undelete/${encodedTitle(image)}"
+
+  private def encodedTitle(image: Image): String =
+    URLEncoder.encode(image.title.replace(" ", "_"), "UTF8")
+
   /** The widths Wikimedia serves thumbnails at ($wgThumbnailSteps): it refuses others. */
   val wikimediaSteps: Seq[Int] = Seq(20, 40, 60, 120, 250, 330, 500, 960, 1280, 1920, 3840)
 

@@ -265,30 +265,83 @@ a.wlx-large-failed {
 a.wlx-large-failed img {
     display: none;
 }
-/* The contest files page (contestFiles.scala.html): a thumbnail not cached and gone from
-   Wikimedia (a deleted file's) is the same grey box; a tile's title, and its deleted mark. */
-li.contest-file div.thumb.thumb-missing {
+/* The contest files page (contestFiles.scala.html), on the galleries' dark background: its
+   heading, tabs and notes. */
+.contest-files-head {
+    color: #ddd;
+}
+.contest-files-head h4 {
+    color: #eee;
+}
+.contest-files-head a {
+    color: #9cc9ff;
+}
+.contest-files-head a.btn-default {
+    color: #333;
+}
+.contest-files-head .text-muted {
+    color: #aaa;
+}
+.contest-files-head .nav-tabs {
+    border-bottom-color: #555;
+    margin-bottom: 10px;
+}
+.contest-files-head .nav-tabs > li > a {
+    color: #ccc;
+}
+.contest-files-head .nav-tabs > li > a:hover, .contest-files-head .nav-tabs > li > a:focus {
+    color: #fff;
+    background-color: #444;
+    border-color: #555 #555 #555;
+}
+.contest-files-head .nav-tabs > li.active > a, .contest-files-head .nav-tabs > li.active > a:hover,
+.contest-files-head .nav-tabs > li.active > a:focus {
+    color: #fff;
+    background-color: #303030;
+    border-color: #555 #555 transparent;
+}
+/* A file deleted on Commons, in the contest files' gallery (unitegallery.js marks its tile,
+   data-deleted) and in its large view's thumbnails: a red frame. The tile's mark links the
+   file's page on Commons, above the tile, which opens the large view. */
+.ug-thumb-wrapper.ug-tile.wlx-deleted::before, div.thumb_small.wlx-deleted::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    border: 3px solid #d9534f;
+    z-index: 4;
+    pointer-events: none;
+}
+.ug-thumb-wrapper.ug-tile a.wlx-deleted-label {
+    position: absolute;
+    left: 6px;
+    bottom: 6px;
+    z-index: 7;
+    max-width: calc(100% - 12px);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    cursor: pointer;
+}
+/* The read-only large view's thumbnails (large/contestFile.scala.html): the link fills the
+   box, so a thumbnail that failed to load, hidden, still opens its file; that one is the
+   same grey box. */
+div.thumb_small a.wlx-box-link {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+}
+div.thumb_small.wlx-thumb-failed {
     background-color: #e0e0e0;
 }
-li.contest-file div.thumb.thumb-missing img {
+div.thumb_small.wlx-thumb-failed img {
     visibility: hidden;
 }
-li.contest-file .file-caption {
-    width: 305px;
-    margin: 0 auto;
-    overflow: hidden;
-    white-space: nowrap;
-    text-overflow: ellipsis;
-    font-size: 12px;
-}
-li.contest-file .file-deleted {
-    width: 305px;
-    margin: 2px auto 0;
-}
-li.contest-file.deleted-file div.thumb {
-    outline: 3px solid #d9534f;
-}
-.ug-thumb-wrapper.wlx-thumb-failed::after, a.wlx-large-failed::after, li.contest-file div.thumb.thumb-missing::after {
+.ug-thumb-wrapper.wlx-thumb-failed::after, a.wlx-large-failed::after, div.thumb_small.wlx-thumb-failed::after {
     content: "\2298";
     position: absolute;
     top: 50%;

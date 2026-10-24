@@ -5,16 +5,6 @@
         region: String = "all",
         module: String = "gallery"
         )(implicit messages: Messages)
-    @if(pager.display) {
-
-        @defining(maybeRoundId.getOrElse(0L)) { roundId =>
-            <li>
-                <div class="col-md-12 text-center" >
-                    @pageLinks(pager,
-                        page => routes.GalleryController.query(module, Some(asUserId), page, region, roundId, rate).url,
-                        "margin-top: 10px;margin-bottom: 0px;")
-                </div>
-            </li>
-        }
-    }
-
+@* A round gallery's pager in the navbar *@
+@pagerNav(pager,
+    page => routes.GalleryController.query(module, Some(asUserId), page, region, maybeRoundId.getOrElse(0L), rate).url)

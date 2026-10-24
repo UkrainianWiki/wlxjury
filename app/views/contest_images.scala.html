@@ -10,6 +10,7 @@
 
     @mainAdmin(Messages("contest.files"), user, user.getId, contestId = contest.id) {
         <h3>@Messages("contest") @contest.fullName</h3>
+        <p><a id="browse-files" href="@routes.GalleryController.contestFiles(contest.getId)">&larr; @Messages("contest.files")</a></p>
 
         @flash.get("error").map { err =>
             <div class="alert alert-danger" style="color:#a94442;background:#f2dede;border:1px solid #ebccd1;padding:10px;border-radius:4px;margin-bottom:10px">@err</div>
@@ -43,8 +44,7 @@
                 </a>
             }
             <br>
-            @Messages("files.in.database"): @dbImages (<a href="/thumb_urls/@contest.id">@Messages("thumbnail.urls")</a>,
-            <a id="browse-files" href="@routes.GalleryController.contestFiles(contest.getId)">@Messages("files.browse")</a>)
+            @Messages("files.in.database"): @dbImages (<a href="/thumb_urls/@contest.id">@Messages("thumbnail.urls")</a>)
 
             <div>
                 <button type="submit" id="import-btn" class="btn btn-primary" name="action" value="import.files">

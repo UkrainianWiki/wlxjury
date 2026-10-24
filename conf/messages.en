@@ -319,9 +319,11 @@ user.in.other.contests=This user is also in other contests. Only their role here
 signup.email.taken=An account with this email already exists. Log in, or ask an organizer to reset its password.
 users.added=New accounts: {0}. Existing accounts added to the contest: {1}. Already in the contest: {2}.
 
-files.browse = Browse files
+files.import.cache = Import and cache
 files.all = All files
 files.deleted.on.commons = Deleted on Commons
 deleted.on.commons = Deleted on Commons {0}
 files.deleted.still.counted = {0} of them still count in this round: it wasn''t open when they were deleted.
 no.files = No files
+files.open.on.commons = Open on Commons
+files.undelete.on.commons = Undelete on Commons

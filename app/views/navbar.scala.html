@@ -29,17 +29,17 @@
                         <li role="presentation"><a class="brand" href="@routes.UserController.allUsers()">@Messages("users")</a>
                     }
                     }
-                        <!-- Admin items: images,  users and rounds setup -->
-                    @if(user.hasAnyRole(User.ADMIN_ROLES)) {
-                        @for(cId <- contestId) {
-                            <li role="presentation"><a class="brand" href="@routes.ImageController.images(cId)">@Messages("images")</a>
-                            <li role="presentation"><a class="brand" href="@routes.UserController.users(contestId)">@Messages("users")</a>
-                            <li role="presentation"><a class="brand" href="@routes.RoundController.rounds(contestId)">@Messages("rounds")</a>
-                        }
-                    }
+                        <!-- The contest's files: their gallery, which links their import for admins -->
                     @for(cId <- contestId) {
                         @if(user.canViewContestFiles(cId)) {
-                            <li role="presentation"><a class="brand" href="@routes.GalleryController.contestFiles(cId)">@Messages("files.browse")</a>
+                            <li role="presentation"><a class="brand" id="menu-contest-files" href="@routes.GalleryController.contestFiles(cId)">@Messages("contest.files")</a>
+                        }
+                    }
+                        <!-- Admin items: users and rounds setup -->
+                    @if(user.hasAnyRole(User.ADMIN_ROLES)) {
+                        @for(cId <- contestId) {
+                            <li role="presentation"><a class="brand" href="@routes.UserController.users(contestId)">@Messages("users")</a>
+                            <li role="presentation"><a class="brand" href="@routes.RoundController.rounds(contestId)">@Messages("rounds")</a>
                         }
                     }
 

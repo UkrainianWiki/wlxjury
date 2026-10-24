@@ -1,82 +1,72 @@
 @import controllers.{ContestFilesView, Global}
 @import db.scalikejdbc.{ImageJdbc, User}
-@import java.net.URLEncoder
 @(user: User,
-        contest: org.intracer.wmua.ContestJury,
         files: Seq[ImageJdbc.StoredFile],
         pager: Pager,
-        view: ContestFilesView)(implicit messages: Messages)
+        view: ContestFilesView)(implicit flash: Flash, messages: Messages)
 
-@* The contest's files, or a round's deleted on Commons: a tile links the file's page there *@
-@pageUrl(page: Int) = @{
-    routes.GalleryController.contestFiles(contest.getId, page, view.deletedOnly, view.round.flatMap(_.id)).url
-}
+@* The contest's files, or a round's deleted on Commons, laid out as a round's gallery
+   (gallery.scala.html): the pager in the navbar, the regions above, justified tiles. A tile
+   opens the file's large view; a deleted file's mark (unitegallery.js, data-deleted) links
+   its page on Commons. *@
+@main("contest.files", user, gallery = true, pager = pagerNav(pager, view.pageUrl), contestId = view.contest.id) {
 
-@* a deleted file's larger sizes from the cache too: not the file itself, which is gone *@
-@srcSet(file: ImageJdbc.StoredFile) = @{
-    if (file.deletedAt.isDefined) Global.cachedSrcSet(file.image, Global.gallerySizeX, Global.gallerySizeY)
-    else Global.srcSet(file.image, Global.gallerySizeX, Global.gallerySizeY)
-}
-
-@mainAdmin(Messages("contest.files"), user, user.getId, contestId = contest.id) {
-    <h3>@Messages("contest") @contest.fullName</h3>
-
-    @view.round match {
-        case Some(round) => {
-            <h4>@Messages("round") @round.description: @Messages("files.deleted.on.commons") (@view.deletedCount)</h4>
-            @if(view.countedInRound > 0) {
-                <p class="text-muted">@Messages("files.deleted.still.counted", view.countedInRound)</p>
+    <div class="contest-files-head">
+        <h4>@Messages("contest") @view.contest.fullName
+            @* the files' import and local cache, for the contest's admins *@
+            @if(user.canManageContestFiles(view.contest.getId)) {
+                <a id="import-files" class="btn btn-default btn-xs" style="margin-left: 10px"
+                   href="@routes.ImageController.images(view.contest.getId)">@Messages("files.import.cache")</a>
             }
-            <p><a href="@routes.RoundController.roundStat(round.getId)">@Messages("statistics")</a></p>
+        </h4>
+
+        @view.round match {
+            case Some(round) => {
+                <h4>@Messages("round") @round.description: @Messages("files.deleted.on.commons") (@view.deletedCount)</h4>
+                @if(view.countedInRound > 0) {
+                    <p class="text-muted">@Messages("files.deleted.still.counted", view.countedInRound)</p>
+                }
+                <p><a href="@routes.RoundController.roundStat(round.getId)">@Messages("statistics")</a></p>
+            }
+            case None => {
+                <ul class="nav nav-tabs" id="file-tabs">
+                    <li @if(!view.deletedOnly) {class="active"}>
+                        <a href="@routes.GalleryController.contestFiles(view.contest.getId)">@Messages("files.all") (@view.allCount)</a>
+                    </li>
+                    <li @if(view.deletedOnly) {class="active"}>
+                        <a href="@routes.GalleryController.contestFiles(view.contest.getId, deleted = true)">@Messages("files.deleted.on.commons") (@view.deletedCount)</a>
+                    </li>
+                </ul>
+            }
         }
-        case None => {
-            <ul class="nav nav-tabs" id="file-tabs">
-                <li @if(!view.deletedOnly) {class="active"}>
-                    <a href="@routes.GalleryController.contestFiles(contest.getId)">@Messages("files.all") (@view.allCount)</a>
-                </li>
-                <li @if(view.deletedOnly) {class="active"}>
-                    <a href="@routes.GalleryController.contestFiles(contest.getId, deleted = true)">@Messages("files.deleted.on.commons") (@view.deletedCount)</a>
-                </li>
-            </ul>
-        }
+    </div>
+
+    @if(view.regions.nonEmpty) {
+        @regionNav(view.regionUrl, view.round, view.region.getOrElse("all"), view.regions)
     }
 
     @if(files.isEmpty) {
-        <p class="text-muted" style="margin-top: 10px">@Messages("no.files")</p>
+        <p class="contest-files-head text-muted">@Messages("no.files")</p>
     }
 
-    <div class="row">
-        <ul class="gallery mw-gallery-traditional" id="contest-files">
+    <div class="row" >
+        <div id="gallery" class="gallery mw-gallery-traditional" style="display:none;">
         @for(file <- files) {
-            <li class="gallerybox contest-file@if(file.deletedAt.isDefined) { deleted-file}" data-pageid="@file.image.pageId">
-                <div class="thumb">
-                    <a href="https://commons.wikimedia.org/wiki/@URLEncoder.encode(file.image.title.replace(" ", "_"), "UTF8")" target="_blank" title="@file.image.title">
-                    @if(file.image.isImage) {
-                        @* from the cache, for a deleted file: Wikimedia no longer has it *@
-                        @defining(srcSet(file)) { srcset =>
-                        <img class="cropped" alt="@file.image.title" loading="lazy"
-                            src="@Global.resizeTo(file.image, Global.gallerySizeX, Global.gallerySizeY)"
-                            @if(srcset.nonEmpty) {srcset="@srcset"}
-                            onerror="this.parentNode.parentNode.classList.add('thumb-missing')">
-                        }
-                    }
-                    @if(file.image.isVideo) {
-                        <video width="100%" height="100%" muted>
-                            <source src="@file.image.url" type="video/webm">
-                        </video>
-                    }
-                    </a>
-                </div>
-                <div class="file-caption" title="@file.image.title">@file.image.title.stripPrefix("File:")</div>
+            @* a deleted file's thumbnail from the cache: the gallery's size is one it keeps *@
+            <img alt="@file.image.title"
+                src="@Global.resizeTo(file.image, Global.gallerySizeY)"
+                data-image="@Global.largeImage(file.image).src"
+                data-width="@file.image.width"
+                data-height="@file.image.height"
+                data-description="<b>@file.image.title</b>"
+                data-pageId="@file.image.pageId"
+                data-largeUrl="@view.largeUrl(file.image.pageId)"
                 @for(at <- file.deletedAt) {
-                    <div class="file-deleted"><span class="label label-danger">@Messages("deleted.on.commons", at.toLocalDate)</span></div>
+                    data-deleted="@Messages("deleted.on.commons", at.toLocalDate)"
+                    data-commonsUrl="@Global.commonsPageUrl(file.image)"
                 }
-            </li>
+            >
         }
-        </ul>
+        </div>
     </div>
-
-    @if(pager.display) {
-        <div class="text-center">@pageLinks(pager, pageUrl)</div>
-    }
 }

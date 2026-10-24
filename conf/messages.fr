@@ -303,9 +303,11 @@ user.in.other.contests=Cet utilisateur participe aussi à d''autres concours. Se
 signup.email.taken=Un compte avec cet e-mail existe déjà. Connectez-vous, ou demandez à un organisateur de réinitialiser son mot de passe.
 users.added=Nouveaux comptes : {0}. Comptes existants ajoutés au concours : {1}. Déjà dans le concours : {2}.
 
-files.browse = Parcourir les images
+files.import.cache = Import et cache
 files.all = Toutes les images
 files.deleted.on.commons = Supprimées de Commons
 deleted.on.commons = Supprimée de Commons le {0}
 files.deleted.still.counted = {0} d’entre elles comptent encore dans ce tour : il n’était pas ouvert lors de leur suppression.
 no.files = Aucune image
+files.open.on.commons = Ouvrir sur Commons
+files.undelete.on.commons = Restaurer sur Commons

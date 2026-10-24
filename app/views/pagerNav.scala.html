@@ -1,0 +1,9 @@
+@(pager: Pager, pageUrl: Int => String)(implicit messages: Messages)
+@* The pager in the navbar (main.scala.html's pager), if there is more than one page *@
+@if(pager.display) {
+    <li>
+        <div class="col-md-12 text-center" >
+            @pageLinks(pager, pageUrl, "margin-top: 10px;margin-bottom: 0px;")
+        </div>
+    </li>
+}
