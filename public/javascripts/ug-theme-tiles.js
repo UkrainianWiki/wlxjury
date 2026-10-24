@@ -181,7 +181,9 @@ function UGTheme_tiles(){
 		var objItem = g_objTileDesign.getItemByTile(objTile);
 
 		var rate = objItem.rate;
-		var url = objItem.largeUrl.split('?')[0] + '?rate=' + rate;
+		//a round's tile opens the large view with its rate; a contest file's (no data-rate),
+		//its large view's url as it is, with the list's filters
+		var url = (rate === undefined) ? objItem.largeUrl : objItem.largeUrl.split('?')[0] + '?rate=' + rate;
 
 		window.open(url, "_self");
 	}

@@ -10829,6 +10829,15 @@ function UGTileDesign(){
 
 		}
 
+		//wlxjury: a file deleted on Commons: a red frame, and its mark, a link to its page there in
+		//a new tab (onDeletedLabelClick keeps the click from the tile, which opens the large view)
+		if(objItem.deletedLabel){
+			objThumbWrapper.addClass("wlx-deleted");
+			var objLabel = jQuery("<a class='label label-danger wlx-deleted-label' target='_blank' rel='noopener'></a>");
+			objLabel.attr("href", objItem.commonsUrl).attr("title", objItem.deletedLabel).text(objItem.deletedLabel);
+			objThumbWrapper.append(objLabel);
+		}
+
 		//add additional html
 		if(objItem.addHtml !== null)
 			objThumbWrapper.append(objItem.addHtml);
@@ -11629,6 +11638,14 @@ function UGTileDesign(){
 	}
 
 	/**
+	 * wlxjury: on a deleted file's mark click: its link opens the file's page on Commons, and
+	 * the tile under it doesn't take the click (it would open the large view in this tab)
+	 */
+	function onDeletedLabelClick(event){
+		event.stopPropagation();
+	}
+
+	/**
 	 * on select icon click
 	 */
 	function onSelectButtonClick(event){
@@ -11683,6 +11700,7 @@ function UGTileDesign(){
 		g_objParentWrapper.delegate(".ug-tile", "click", onTileClick);
 
 		g_objParentWrapper.delegate(".ug-tile .ug-icon-link", "click", onLinkButtonClick);
+		g_objParentWrapper.delegate(".ug-tile .wlx-deleted-label", "click", onDeletedLabelClick);
 		g_objParentWrapper.delegate(".ug-tile .ug-icon-select", "click", onSelectButtonClick);
 		g_objParentWrapper.delegate(".ug-tile .ug-icon-reject", "click", onRejectButtonClick);
 	}
@@ -19831,6 +19849,10 @@ function UniteGalleryMain(){
 				objItem.roundId = objChild.attr("data-roundId");
 				objItem.rate = objChild.attr("data-rate");
 				objItem.largeUrl = objChild.attr("data-largeUrl");
+
+				//wlxjury: a file deleted on Commons (the contest files page): its mark, and its page there
+				objItem.deletedLabel = objChild.attr("data-deleted");
+				objItem.commonsUrl = objChild.attr("data-commonsUrl");
 
 				//always set thumb image to object
 				objItem.objThumbImage = objChild;

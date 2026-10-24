@@ -16,6 +16,43 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
   private val s = SelectionJdbc.s
   private val s1 = SelectionJdbc.syntax("s1")
 
+  /** A file's top-level region: its monument id's prefix, as monument.adm0 is (MonumentJdbc)
+    * and as a gallery's single-region filter matches it; NULL without a monument id.
+    *
+    * @param monumentId the monument id column, e.g. `s.monument_id`
+    */
+  def regionOf(monumentId: String): String = s"NULLIF(LEFT(SUBSTRING_INDEX($monumentId, '-', 1), 3), '')"
+
+  /** The regions, by id, with their names and file counts if known, in id order; with
+    * `subRegions` (adm1 ids), Kyiv's sub-regions as one region, in name order.
+    */
+  def regions(byRegion: Map[String, Option[Int]], subRegions: Boolean = false)(implicit
+      messages: Messages
+  ): Seq[Region] = {
+    val regions = byRegion.keys
+      .filterNot(_ == null)
+      .map { id =>
+        val adm = Ukraine.byMonumentId(id)
+        val name =
+          if (messages.isDefinedAt(id)) messages(id)
+          else adm.map(_.name).getOrElse("Unknown")
+        Region(id, name, byRegion(id))
+      }
+      .toSeq
+      .sortBy(_.id)
+
+    if (subRegions) {
+      val kyivPictures =
+        regions.filter(_.id.startsWith("80-")).map(_.count.getOrElse(0)).sum
+      val withoutKyivRegions = regions.filterNot(_.id.startsWith("80-"))
+      val unsorted =
+        withoutKyivRegions ++ Seq(Region("80", messages("80"), Some(kyivPictures)))
+      unsorted.sortBy(_.name)
+    } else {
+      regions.sortBy(_.id)
+    }
+  }
+
   case class Limit(
       pageSize: Option[Int] = None,
       offset: Option[Int] = None,
@@ -163,7 +200,7 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
     def byRegionStat()(implicit messages: Messages, session: DBSession = autoSession): Seq[Region] = {
       val (region, monumentJoin) =
         if (subRegions) (s"m.$regionColumn", "JOIN monument m ON m.id = s.monument_id")
-        else ("NULLIF(LEFT(SUBSTRING_INDEX(s.monument_id, '-', 1), 3), '')", "")
+        else (regionOf("s.monument_id"), "")
       val map = SQL(s"""SELECT DISTINCT $region
                        |FROM selection s
                        |$monumentJoin
@@ -178,30 +215,7 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
 
     def regions(byRegion: Map[String, Option[Int]], subRegions: Boolean = false)(implicit
         messages: Messages
-    ): Seq[Region] = {
-      val regions = byRegion.keys
-        .filterNot(_ == null)
-        .map { id =>
-          val adm = Ukraine.byMonumentId(id)
-          val name =
-            if (messages.isDefinedAt(id)) messages(id)
-            else adm.map(_.name).getOrElse("Unknown")
-          Region(id, name, byRegion(id))
-        }
-        .toSeq
-        .sortBy(_.id)
-
-      if (subRegions) {
-        val kyivPictures =
-          regions.filter(_.id.startsWith("80-")).map(_.count.getOrElse(0)).sum
-        val withoutKyivRegions = regions.filterNot(_.id.startsWith("80-"))
-        val unsorted =
-          withoutKyivRegions ++ Seq(Region("80", messages("80"), Some(kyivPictures)))
-        unsorted.sortBy(_.name)
-      } else {
-        regions.sortBy(_.id)
-      }
-    }
+    ): Seq[Region] = ImageDbNew.regions(byRegion, subRegions)
 
     private val imagesJoinSelection =
       """ from selection s
