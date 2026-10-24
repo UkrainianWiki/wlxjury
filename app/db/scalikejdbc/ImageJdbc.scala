@@ -445,6 +445,67 @@ object ImageJdbc extends CRUDMapper[Image]
     }.map(_.int(1)).single().get
   }
 
+  /** A stored file, with when it was marked deleted on Commons (V63), if it was. */
+  final case class StoredFile(image: Image, deletedAt: Option[java.time.ZonedDateTime])
+
+  /** The category's files, those deleted on Commons too ([[findByCategory]] leaves them
+    * out), or only those: in page id order, or the latest deleted first.
+    */
+  def categoryFiles(categoryId: Long, deletedOnly: Boolean, limit: Int, offset: Int)(implicit
+      session: DBSession = AutoSession
+  ): Seq[StoredFile] =
+    sql"""SELECT ${i.result.*}, i.deleted_at AS file_deleted_at
+          FROM category_members cm JOIN images i ON i.page_id = cm.page_id
+          WHERE cm.category_id = $categoryId ${if (deletedOnly) sqls"AND i.deleted_at IS NOT NULL" else sqls""}
+          ORDER BY ${if (deletedOnly) LatestDeletedFirst else sqls"cm.page_id"}
+          LIMIT $limit OFFSET $offset"""
+      .map(storedFile)
+      .list()
+
+  /** The number of [[categoryFiles]], and of those deleted on Commons. */
+  def categoryFileCounts(categoryId: Long)(implicit session: DBSession = AutoSession): (Int, Int) =
+    sql"""SELECT COUNT(*), COUNT(i.deleted_at)
+          FROM category_members cm JOIN images i ON i.page_id = cm.page_id
+          WHERE cm.category_id = $categoryId"""
+      .map(rs => rs.int(1) -> rs.int(2))
+      .single()
+      .getOrElse((0, 0))
+
+  /** The round's files deleted on Commons: with votes of the round moved aside (V63), or
+    * still counted in it (a round finished before they were deleted keeps them), the latest
+    * deleted first. Found from the few files marked deleted (V64's index).
+    */
+  def roundDeletedFiles(roundId: Long, limit: Int, offset: Int)(implicit
+      session: DBSession = AutoSession
+  ): Seq[StoredFile] =
+    sql"""SELECT ${i.result.*}, i.deleted_at AS file_deleted_at FROM images i
+          WHERE i.deleted_at IS NOT NULL AND ${inRound(roundId)}
+          ORDER BY $LatestDeletedFirst LIMIT $limit OFFSET $offset"""
+      .map(storedFile)
+      .list()
+
+  /** The number of [[roundDeletedFiles]], and of those still counted in the round: with
+    * votes in selection, which its galleries and results read.
+    */
+  def roundDeletedFileCounts(roundId: Long)(implicit session: DBSession = AutoSession): (Int, Int) =
+    sql"""SELECT COUNT(*), COALESCE(SUM(${hasVotes(sqls"selection", roundId)}), 0) FROM images i
+          WHERE i.deleted_at IS NOT NULL AND ${inRound(roundId)}"""
+      .map(rs => rs.int(1) -> rs.int(2))
+      .single()
+      .getOrElse((0, 0))
+
+  /** The file `i` has votes in the round, counted or moved aside. */
+  private def inRound(roundId: Long): SQLSyntax =
+    sqls"(${hasVotes(sqls"selection", roundId)} OR ${hasVotes(sqls"selection_deleted", roundId)})"
+
+  private def hasVotes(table: SQLSyntax, roundId: Long): SQLSyntax =
+    sqls"EXISTS (SELECT 1 FROM $table v WHERE v.round_id = $roundId AND v.page_id = i.page_id)"
+
+  private val LatestDeletedFirst = sqls"i.deleted_at DESC, i.page_id"
+
+  private def storedFile(rs: WrappedResultSet): StoredFile =
+    StoredFile(ImageJdbc(i)(rs), rs.zonedDateTimeOpt("file_deleted_at"))
+
   def findByMonumentId(monumentId: String): List[Image] =
     where("monumentId" -> monumentId)
       .orderBy(i.pageId)

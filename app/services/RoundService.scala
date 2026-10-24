@@ -297,7 +297,9 @@ class RoundService @Inject() (
       .filter(_.id.exists(byUserCount.contains))
       .map(u => u.copy(active = roundUsers.get(u.getId).flatMap(_.headOption.map(_.active))))
 
-    RoundStat(jurors, round, rounds, byUserCount, byUserRateCount, total, totalByRate)
+    val (deletedFiles, deletedCounted) = ImageJdbc.roundDeletedFileCounts(roundId)
+
+    RoundStat(jurors, round, rounds, byUserCount, byUserRateCount, total, totalByRate, deletedFiles, deletedCounted)
   }
 
   def mergeRounds(contestId: Long, targetRoundId: Long, sourceRoundId: Long): Unit = {

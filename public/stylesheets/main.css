@@ -265,7 +265,30 @@ a.wlx-large-failed {
 a.wlx-large-failed img {
     display: none;
 }
-.ug-thumb-wrapper.wlx-thumb-failed::after, a.wlx-large-failed::after {
+/* The contest files page (contestFiles.scala.html): a thumbnail not cached and gone from
+   Wikimedia (a deleted file's) is the same grey box; a tile's title, and its deleted mark. */
+li.contest-file div.thumb.thumb-missing {
+    background-color: #e0e0e0;
+}
+li.contest-file div.thumb.thumb-missing img {
+    visibility: hidden;
+}
+li.contest-file .file-caption {
+    width: 305px;
+    margin: 0 auto;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    font-size: 12px;
+}
+li.contest-file .file-deleted {
+    width: 305px;
+    margin: 2px auto 0;
+}
+li.contest-file.deleted-file div.thumb {
+    outline: 3px solid #d9534f;
+}
+.ug-thumb-wrapper.wlx-thumb-failed::after, a.wlx-large-failed::after, li.contest-file div.thumb.thumb-missing::after {
     content: "\2298";
     position: absolute;
     top: 50%;

@@ -1,0 +1,89 @@
+@import controllers.{ContestFilesView, Global}
+@import db.scalikejdbc.{ImageJdbc, User}
+@(user: User,
+        contest: org.intracer.wmua.ContestJury,
+        files: Seq[ImageJdbc.StoredFile],
+        pager: Pager,
+        view: ContestFilesView)(implicit messages: Messages)
+
+@* The contest's files, or a round's deleted on Commons: a tile links the file's page there *@
+@pageUrl(page: Int) = @{
+    routes.GalleryController.contestFiles(contest.getId, page, view.deletedOnly, view.round.flatMap(_.id)).url
+}
+
+@mainAdmin(Messages("contest.files"), user, user.getId, contestId = contest.id) {
+    <h3>@Messages("contest") @contest.fullName</h3>
+
+    @view.round match {
+        case Some(round) => {
+            <h4>@Messages("round") @round.description: @Messages("files.deleted.on.commons") (@view.deletedCount)</h4>
+            @if(view.countedInRound > 0) {
+                <p class="text-muted">@Messages("files.deleted.still.counted", view.countedInRound)</p>
+            }
+            <p><a href="@routes.RoundController.roundStat(round.getId)">@Messages("statistics")</a></p>
+        }
+        case None => {
+            <ul class="nav nav-tabs" id="file-tabs">
+                <li @if(!view.deletedOnly) {class="active"}>
+                    <a href="@routes.GalleryController.contestFiles(contest.getId)">@Messages("files.all") (@view.allCount)</a>
+                </li>
+                <li @if(view.deletedOnly) {class="active"}>
+                    <a href="@routes.GalleryController.contestFiles(contest.getId, deleted = true)">@Messages("files.deleted.on.commons") (@view.deletedCount)</a>
+                </li>
+            </ul>
+        }
+    }
+
+    @if(files.isEmpty) {
+        <p class="text-muted" style="margin-top: 10px">@Messages("no.files")</p>
+    }
+
+    <div class="row">
+        <ul class="gallery mw-gallery-traditional" id="contest-files">
+        @for(file <- files) {
+            <li class="gallerybox contest-file@if(file.deletedAt.isDefined) { deleted-file}" data-pageid="@file.image.pageId">
+                <div class="thumb">
+                    <a href="https://commons.wikimedia.org/wiki/@file.image.title" target="_blank" title="@file.image.title">
+                    @if(file.image.isImage) {
+                        @* from the cache, for a deleted file: Wikimedia no longer has it *@
+                        <img class="cropped" alt="@file.image.title" loading="lazy"
+                            src="@Global.resizeTo(file.image, Global.gallerySizeX, Global.gallerySizeY)"
+                            srcset="@Global.srcSet(file.image, Global.gallerySizeX, Global.gallerySizeY)"
+                            onerror="this.parentNode.parentNode.classList.add('thumb-missing')">
+                    }
+                    @if(file.image.isVideo) {
+                        <video width="100%" height="100%" muted>
+                            <source src="@file.image.url" type="video/webm">
+                        </video>
+                    }
+                    </a>
+                </div>
+                <div class="file-caption" title="@file.image.title">@file.image.title.stripPrefix("File:")</div>
+                @for(at <- file.deletedAt) {
+                    <div class="file-deleted"><span class="label label-danger">@Messages("deleted.on.commons", at.toLocalDate)</span></div>
+                }
+            </li>
+        }
+        </ul>
+    </div>
+
+    @if(pager.display) {
+        <div class="text-center">
+            <ul class="pagination" id="pagenav">
+                @if(pager.page > 1) {
+                    <li><a href="@pageUrl(pager.page - 1)">&laquo;</a></li>
+                } else {
+                    <li class="disabled"><span>&laquo;</span></li>
+                }
+                @for(i <- pager.pageNumbers) {
+                    <li @if(i == pager.page) {class="active"}><a href="@pageUrl(i)">@i</a></li>
+                }
+                @if(pager.hasNext) {
+                    <li><a href="@pageUrl(pager.page + 1)">&raquo;</a></li>
+                } else {
+                    <li class="disabled"><span>&raquo;</span></li>
+                }
+            </ul>
+        </div>
+    }
+}

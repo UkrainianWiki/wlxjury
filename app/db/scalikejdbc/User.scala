@@ -64,6 +64,12 @@ case class User(
     hasRole(User.ADMIN_ROLE) && isInContest(refContestId) ||
       hasRole(User.ROOT_ROLE)
 
+  /** Whether the user may browse the contest's files, those deleted on Commons too
+    * ([[controllers.GalleryController.contestFiles]]): its admins and organizers.
+    */
+  def canViewContestFiles(refContestId: Long): Boolean =
+    hasRole(User.ROOT_ROLE) || hasAnyRole(User.ADMIN_ROLES ++ User.ORG_COM_ROLES) && isInContest(Some(refContestId))
+
   def canViewOrgInfo(round: Round): Boolean =
     hasRole("root") ||
       (contestId.contains(round.contestId) &&

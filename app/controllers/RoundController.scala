@@ -519,5 +519,9 @@ case class RoundStat(
     byUserCount: Map[Long, Int],
     byUserRateCount: Map[Long, Map[Int, Int]],
     total: Int,
-    totalByRate: Map[Int, Int]
+    totalByRate: Map[Int, Int],
+    deletedFiles: Int = 0,
+    deletedCounted: Int = 0
 )
+// deletedFiles: the round's files deleted on Commons (ImageJdbc.roundDeletedFiles);
+// deletedCounted: those of them still in its galleries and results
