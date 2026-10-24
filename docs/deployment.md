@@ -8,6 +8,15 @@ The selected baseline is the latest benchmarked background-distribution release,
 
 ## One-time setup on the server
 
+**The server setup is now automated** by the separate `wlxjury-infra` repository (Ansible). It manages:
+- the Apache vhosts with the maintenance include, and the maintenance snippet;
+- the certificates;
+- `/etc/wlxjury-runtime` and its files, with secrets from an encrypted vault;
+- the systemd unit and the app's MariaDB settings;
+- the installation of `wlxjury-deploy` and `wlxjury-release`.
+
+It can also recreate a new server. For this server, follow its `docs/adopting-the-existing-server.md`. It replaces the manual steps below, apart from `adopt-legacy` and `scrub-legacy`. Those steps, and the files under `conf/apache`, `conf/systemd` and `conf/wlxjury`, stay here until production is configured from that repository.
+
 Run from a reviewed checkout. `/etc/wlxjury` points into the package, so runtime settings go in a new real directory. No credentials belong in the checkout, ZIP, command-line arguments or console output.
 
 ```bash

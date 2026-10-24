@@ -32,3 +32,5 @@ null
 .metals
 .superpowers
 data/cache/
+
+.claude/settings.local.json
