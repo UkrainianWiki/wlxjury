@@ -51,7 +51,7 @@ object SharedTestDb {
       dbUsername     = "WLXJURY_DB_USER",
       dbPassword     = "WLXJURY_DB_PASSWORD"
     )
-    db.TestDocker.start("the test database")(container.start())
+    db.TestDocker.start("the test database", container)
 
     _url             = container.jdbcUrl
     _user            = container.username

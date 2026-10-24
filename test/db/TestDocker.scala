@@ -27,10 +27,15 @@ object TestDocker {
   /** Fails unless Docker answers within [[PingTimeout]]. */
   def require(): Unit = answer.fold(message => throw new IllegalStateException(message), identity)
 
-  /** Starts `what` (a container) once Docker answers, failing after [[StartTimeout]]. */
-  def start(what: String)(start: => Unit): Unit = {
+  /** Starts the container once Docker answers, failing after [[StartTimeout]].
+    *
+    * Takes the container, not code to run: the start runs on another thread, and code
+    * passed from an object's initializer (as `GatlingTestFixture` starts its container)
+    * would wait there for that initializer to end, which waits for it.
+    */
+  def start(what: String, container: com.dimafeng.testcontainers.Container): Unit = {
     require()
-    within(StartTimeout, s"start $what")(start)
+    within(StartTimeout, s"start $what")(container.start())
   }
 
   /** `body` on a thread of its own, failing after `timeout`: a call into a Docker that

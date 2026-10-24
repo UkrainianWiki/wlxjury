@@ -38,7 +38,7 @@ object GatlingTestFixture {
       "--max-allowed-packet=16M",
       "--skip-name-resolve"
     )
-    db.TestDocker.start("the Gatling fixture database")(container.start())
+    db.TestDocker.start("the Gatling fixture database", container)
 
     val port = freePort()
     val app  = new GuiceApplicationBuilder()
