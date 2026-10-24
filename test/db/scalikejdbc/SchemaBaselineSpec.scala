@@ -23,7 +23,7 @@ class SchemaBaselineSpec extends Specification {
         dbPassword = "WLXJURY_DB_PASSWORD"
       )
 
-      container.start()
+      db.TestDocker.start("the baseline database", container)
       try {
         val app = new GuiceApplicationBuilder()
           .configure(Map(

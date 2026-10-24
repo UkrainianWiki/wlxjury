@@ -38,15 +38,20 @@ object SharedTestDb {
   def driverClassName: String = { require(initialized); _driverClassName }
 
   /** Lazily starts the container and wires the default ScalikeJDBC pool.
-   *  Calling `init()` multiple times is safe — initialization happens once. */
-  lazy val initialized: Boolean = {
+   *  Calling `init()` multiple times is safe — initialization happens once. A failure to
+   *  start (Docker not answering, [[db.TestDocker]]) is kept: every spec fails at once. */
+  lazy val initialized: Boolean = started.get
+
+  private lazy val started: scala.util.Try[Boolean] = scala.util.Try(start())
+
+  private def start(): Boolean = {
     val container = MariaDBContainer(
       dockerImageName = DockerImageName.parse("mariadb:10.6.22"),
       dbName         = "wlxjury",
       dbUsername     = "WLXJURY_DB_USER",
       dbPassword     = "WLXJURY_DB_PASSWORD"
     )
-    container.start()
+    db.TestDocker.start("the test database", container)
 
     _url             = container.jdbcUrl
     _user            = container.username

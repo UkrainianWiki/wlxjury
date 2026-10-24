@@ -22,4 +22,21 @@
         <div class="row">
             @roundStatTable(user, round, stat)
         </div>
+
+        @* the round's files deleted on Commons: out of the table above while it is open *@
+        @if(stat.deletedFiles > 0) {
+            <div class="row" id="deleted-files">
+                <div class="col-md-12">
+                    @Messages("files.deleted.on.commons"):
+                    @if(user.canViewContestFiles(round.contestId)) {
+                        <a href="@routes.GalleryController.contestFiles(round.contestId, round = round.id)">@stat.deletedFiles</a>
+                    } else {
+                        @stat.deletedFiles
+                    }
+                    @if(stat.deletedCounted > 0) {
+                        <span class="text-muted">@Messages("files.deleted.still.counted", stat.deletedCounted)</span>
+                    }
+                </div>
+            </div>
+        }
     }

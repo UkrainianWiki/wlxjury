@@ -1,11 +1,13 @@
 #!/bin/bash
 # Routine WLX Jury deployments after the cutover: back up, migrate under
 # maintenance, reopen after a local smoke test, and restore the pre-deployment
-# database and release when a deployment must be backed out. Every step stops
-# at the first failure and never clears maintenance on failure; the runbook
-# in docs/deployment.md says which command fits the operation's milestones.
+# database and release when a deployment must be backed out. A release without
+# new migrations skips the backup unless --backup asks for one; backing it out
+# then only switches the release back. Every step stops at the first failure
+# and never clears maintenance on failure; the runbook in docs/deployment.md
+# says which command fits the operation's milestones.
 #
-#   wlxjury-release [--config FILE] deploy RELEASE.zip SHA256
+#   wlxjury-release [--config FILE] deploy RELEASE.zip SHA256 [--backup]
 #   wlxjury-release [--config FILE] reopen OPERATION
 #   wlxjury-release [--config FILE] restore OPERATION [--accept-data-loss]
 #
@@ -20,7 +22,7 @@ op=''
 staging=''
 
 usage() {
-  echo "usage: wlxjury-release [--config FILE] deploy RELEASE.zip SHA256" \
+  echo "usage: wlxjury-release [--config FILE] deploy RELEASE.zip SHA256 [--backup]" \
        "| reopen OPERATION | restore OPERATION [--accept-data-loss]" >&2
   exit 2
 }
@@ -284,7 +286,7 @@ select_release() {
 }
 
 deploy() {
-  local zip=$1 sha=$2 top manifest build want have release previous unit
+  local zip=$1 sha=$2 backup=$3 top manifest build want have release previous unit
   local -a entries active=() config_files
   [[ $sha =~ ^[0-9a-f]{64}$ ]] || die "pass the full lowercase SHA-256"
   [ -f "$zip" ] || die "missing $zip"
@@ -320,6 +322,8 @@ deploy() {
   # Flyway would refuse an older release only after the outage had started.
   [ "$(printf '%s\n' "$have" "$want" | sort -V | tail -1)" = "$want" ] ||
     die "release expects schema $want but the database is at $have; nothing was changed"
+  # Without migrations the database stays as it is, so the release alone can be switched back.
+  if [ "$want" != "$have" ]; then backup=yes; fi
   no_enabled_events || die "coordinate enabled database events before deploying"
   capacity
   previous=$(readlink -f "$ROOT/current")
@@ -342,19 +346,20 @@ deploy() {
     "$previous" "$release" "$sha" "${active[*]}" "$DATABASE" "$DB_HOST" > "$op/record"
   sync "$op/record" "$op"
   echo "Operation $op: $previous -> $release"
+  if [ "$backup" = no ]; then echo "No new migrations (schema $have): skipping the database backup"; fi
   mark started
 
   enable_maintenance
   hold_restarts
   stop_writers
   no_enabled_events || die "an enabled database event appeared; coordinate it before the backup"
-  dump database.sql.gz
+  if [ "$backup" = yes ]; then dump database.sql.gz; fi
   config_files=("${RUNTIME#/}")
   if [ -f /etc/default/wlxjury ]; then config_files+=(etc/default/wlxjury); fi
   tar -C / -czf "$op/config.tgz" "${config_files[@]}"
   sync "$op"/*
   capacity  # The dump must not have used the migration reserve.
-  mark backup-complete
+  if [ "$backup" = yes ]; then mark backup-complete; else mark backup-skipped; fi
 
   mark migration-may-start
   select_release "$release"
@@ -371,7 +376,7 @@ reopen() {
   if [ ! -e "$FLAG" ] && ! reached traffic-may-resume; then
     die "the maintenance flag is absent; inspect live routing before reopening"
   fi
-  last_restore=$(grep -xE 'restoring|database-restored' "$op/milestones" | tail -n 1 || true)
+  last_restore=$(grep -xE 'restoring|database-restored|release-restored' "$op/milestones" | tail -n 1 || true)
   [ "$last_restore" != restoring ] || die "a restore did not finish; rerun wlxjury-release restore"
   previous=$(record_value previous)
   candidate=$(record_value candidate)
@@ -380,7 +385,8 @@ reopen() {
     # `current` is switched only after migration-may-start is durable, so without
     # it the database was never migrated. With it, only a finished restore makes
     # the previous release safe again.
-    if reached migration-may-start && [ "$last_restore" != database-restored ]; then
+    if reached migration-may-start && [ "$last_restore" != database-restored ] &&
+       [ "$last_restore" != release-restored ]; then
       die "a migration may have run: run wlxjury-release restore first"
     fi
   elif [ "$current" != "$candidate" ]; then
@@ -398,9 +404,36 @@ reopen() {
   echo "Traffic resumed with $current. Keep $op and the previous release."
 }
 
+restore_release() {  # A deployment without migrations: the database stays, the release goes back.
+  local previous want
+  previous=$(record_value previous)
+  if [ ! -f "$previous/wlxjury-build.json" ] || [ ! -x "$previous/bin/wlxjury" ]; then
+    die "the previous release $previous is missing"
+  fi
+  want=$(json "$previous/wlxjury-build.json" schemaVersion)
+  check_endpoint
+  # A later deployment may have migrated since; only its own backup can undo that.
+  if [ "$(sql 'SELECT COUNT(*) FROM flyway_schema_history WHERE success = 0')" != 0 ] || [ "$(schema)" != "$want" ]; then
+    die "the database no longer has schema $want of $previous, and this operation has no backup; nothing was changed"
+  fi
+  enable_maintenance
+  hold_restarts
+  stop_writers
+  select_release "$previous"
+  mark release-restored
+  systemctl start "$SERVICE"
+  wait_ready "$previous"
+  echo "Switched back to $previous under maintenance; the database was kept. Check it locally, then run:"
+  echo "  wlxjury-release reopen $(basename "$op")"
+}
+
 restore() {
   local accept=$2 previous want rescue='' allowance=0
   open_operation "$1"
+  if reached backup-skipped; then
+    restore_release
+    return
+  fi
   reached backup-complete || die "this operation has no complete backup; nothing was migrated, so use reopen"
   if reached traffic-may-resume && [ "$accept" != yes ]; then
     die "traffic has resumed, so later writes would be lost: rerun with --accept-data-loss after a reconciliation decision"
@@ -453,7 +486,11 @@ restore() {
 }
 
 case ${1:-} in
-  deploy) [ $# = 3 ] || usage; deploy "$2" "$3" ;;
+  deploy)
+    if [ $# = 3 ]; then deploy "$2" "$3" no
+    elif [ $# = 4 ] && [ "$4" = --backup ]; then deploy "$2" "$3" yes
+    else usage
+    fi ;;
   reopen) [ $# = 2 ] || usage; reopen "$2" ;;
   restore)
     if [ $# = 2 ]; then restore "$2" no

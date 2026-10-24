@@ -385,6 +385,56 @@ class ReleaseScriptTest(unittest.TestCase):
         self.assertEqual(self.milestones(operation)[-2:], ['traffic-may-resume', 'complete'])
         self.assertIn('Milestone: complete', (operation / 'operation.log').read_text())
 
+    def test_a_release_without_migrations_skips_the_backup_and_restore_only_switches_back(self):
+        archive, sha = self.release_zip(schema='53', build='0.13-same')
+        result = self.release('deploy', archive, sha)
+        self.assertSucceeded(result)
+        self.assertIn('No new migrations (schema 53): skipping the database backup', result.stdout)
+        operation = self.operation()
+        self.assertEqual(self.milestones(operation), ['started', 'backup-skipped', 'migration-may-start', 'ready'])
+        self.assertEqual(list(operation.glob('*.sql.gz*')), [])
+        self.assertTrue((operation / 'config.tgz').is_file())
+        release = self.root / 'releases' / ('0.13-same-' + sha[:12])
+        self.assertEqual((self.root / 'current').resolve(), release)
+        self.assertSucceeded(self.release('reopen', operation.name))
+        self.sql("INSERT INTO votes VALUES (3, 'vote after reopening')")
+
+        # Nothing to lose: no data-loss decision, no rescue dump, and the vote stays.
+        restored = self.release('restore', operation.name)
+        self.assertSucceeded(restored)
+        self.assertEqual(self.milestones(operation)[-1], 'release-restored')
+        self.assertEqual(list(operation.glob('*.sql.gz*')), [])
+        self.assertEqual((self.root / 'current').resolve(), self.old)
+        self.assertTrue(self.flag.exists())
+        self.assertTrue(self.hold.exists())
+        self.assertFalse(any(self.active(unit) for unit in WRITERS))
+        self.assertSucceeded(self.release('reopen', operation.name))
+        self.assertFalse(self.flag.exists())
+        self.assertTrue(self.active('backup.timer'))
+        self.assertEqual(self.sql("SELECT value FROM votes WHERE id = 3"), 'vote after reopening')
+
+    def test_a_skipped_backup_cannot_switch_back_over_a_later_migration(self):
+        archive, sha = self.release_zip(schema='53', build='0.13-same')
+        self.assertSucceeded(self.release('deploy', archive, sha))
+        operation = self.operation()
+        self.assertSucceeded(self.release('reopen', operation.name))
+        self.sql("INSERT INTO flyway_schema_history VALUES (2, '60', 456, 1)")  # A later deployment's migration.
+        refused = self.release('restore', operation.name)
+        self.assertEqual(refused.returncode, 1)
+        self.assertIn('no longer has schema 53', refused.stderr)
+        self.assertNotIn('release-restored', self.milestones(operation))
+        self.assertFalse(self.flag.exists())
+        self.assertTrue(self.active(SERVICE))
+
+    def test_backup_flag_dumps_a_release_without_migrations(self):
+        archive, sha = self.release_zip(schema='53', build='0.13-same')
+        self.assertSucceeded(self.release('deploy', archive, sha, '--backup'))
+        operation = self.operation()
+        self.assertEqual(self.milestones(operation), ['started', 'backup-complete', 'migration-may-start', 'ready'])
+        check = subprocess.run(['sha256sum', '-c', '--quiet', 'database.sql.gz.sha256'], cwd=str(operation))
+        self.assertEqual(check.returncode, 0)
+        self.assertEqual(self.release('deploy', archive, sha, '--no-backup').returncode, 2)  # Usage error.
+
     def test_runbook_restore_after_an_interrupted_migration_recovers_the_exact_database(self):
         archive, sha = self.release_zip(fail=True)
         result = self.release('deploy', archive, sha)

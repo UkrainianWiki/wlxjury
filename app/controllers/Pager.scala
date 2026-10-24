@@ -12,7 +12,7 @@ case class Pager(var page: Int = 1,
 
   def hasNext: Boolean = pages.exists(page < _)
 
-  def hasPrev: Boolean = page > 0
+  def hasPrev: Boolean = page > 1
 
   def pageSize: Int = limit.getOrElse(Pager.pageSize)
 

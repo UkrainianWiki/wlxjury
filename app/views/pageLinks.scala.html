@@ -1,0 +1,17 @@
+@(pager: Pager, pageUrl: Int => String, style: String = "")
+@* The pager's links: previous, the page numbers and next, each to pageUrl(page) *@
+<ul class="pagination" id="pagenav"@if(style.nonEmpty) { style="@style"}>
+    @if(pager.hasPrev) {
+        <li><a href="@pageUrl(pager.page - 1)">&laquo;</a></li>
+    } else {
+        <li class="disabled"><span>&laquo;</span></li>
+    }
+    @for(i <- pager.pageNumbers) {
+        <li @if(i == pager.page) {class="active"}><a href="@pageUrl(i)">@i</a></li>
+    }
+    @if(pager.hasNext) {
+        <li><a href="@pageUrl(pager.page + 1)">&raquo;</a></li>
+    } else {
+        <li class="disabled"><span>&raquo;</span></li>
+    }
+</ul>
