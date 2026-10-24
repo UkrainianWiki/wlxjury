@@ -408,6 +408,38 @@ class GalleryController @Inject() (
     )
   }
 
+  /** The contest's files, those deleted on Commons too, marked; or only those
+    * (`deleted`); or, with `round`, the round's files deleted on Commons
+    * ([[ImageJdbc.roundDeletedFiles]]). For the contest's admins and organizers
+    * ([[User.canViewContestFiles]]). A tile links the file's page on Commons.
+    */
+  def contestFiles(contestId: Long, page: Int, deleted: Boolean, round: Option[Long]): EssentialAction =
+    withAuthOn(blocking)(_.canViewContestFiles(contestId)) { user => implicit request =>
+      val contest = ContestJuryJdbc.findById(contestId)
+      val maybeRound = round.flatMap(Round.findById).filter(_.contestId == contestId)
+      if (contest.isEmpty || round.isDefined && maybeRound.isEmpty)
+        Redirect(routes.LoginController.error(if (contest.isEmpty) "Contest not found" else "Round not found"))
+      else {
+        // as many files per page as the other galleries
+        val pager = pageOffset(math.max(page, 1))
+        val offset = pager.offset.getOrElse(0)
+        val (count, files, view) = maybeRound match {
+          case Some(r) =>
+            val (deletedCount, counted) = ImageJdbc.roundDeletedFileCounts(r.getId)
+            (deletedCount, ImageJdbc.roundDeletedFiles(r.getId, pager.pageSize, offset),
+              ContestFilesView(deletedOnly = true, Some(r), deletedCount = deletedCount, countedInRound = counted))
+          case None =>
+            val categoryId = contest.flatMap(_.categoryId)
+            val (all, deletedCount) = categoryId.fold((0, 0))(ImageJdbc.categoryFileCounts(_))
+            (if (deleted) deletedCount else all,
+              categoryId.fold(Seq.empty[ImageJdbc.StoredFile])(ImageJdbc.categoryFiles(_, deleted, pager.pageSize, offset)),
+              ContestFilesView(deleted, None, allCount = all, deletedCount = deletedCount))
+        }
+        pager.setCount(count)
+        Ok(views.html.contestFiles(user, contest.get, files, pager, view))
+      }
+    }
+
   def thumbnailUrls(contestId: Long, roundId: Option[Long]): EssentialAction =
     withAuth(contestPermission(Set(User.ADMIN_ROLE), Some(contestId))) { _ => implicit request =>
       val contest = ContestJuryJdbc.findById(contestId).get
@@ -417,6 +449,19 @@ class GalleryController @Inject() (
       urlsStream(urls, name)
     }
 }
+
+/** What [[GalleryController.contestFiles]] shows: the contest's files, all or only those
+  * deleted on Commons, or a round's deleted ones; and how many there are.
+  *
+  * @param countedInRound of the round's deleted files, those still in its galleries and results
+  */
+final case class ContestFilesView(
+    deletedOnly: Boolean,
+    round: Option[Round],
+    allCount: Int = 0,
+    deletedCount: Int = 0,
+    countedInRound: Int = 0
+)
 
 class RateDistribution(rateMap: Map[Int, Int]) {
 

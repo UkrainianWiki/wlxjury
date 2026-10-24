@@ -112,7 +112,7 @@ class LocalImageCacheServiceDockerSpec extends Specification with CommonsImageFe
     } else {
       imagesDir.mkdirs()
     }
-    compose.start()
+    db.TestDocker.start("the Apache cache containers")(compose.start())
   }
 
   // ── test (a): Apache serving ────────────────────────────────────────────────

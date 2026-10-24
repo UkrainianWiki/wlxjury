@@ -43,7 +43,8 @@
                 </a>
             }
             <br>
-            @Messages("files.in.database"): @dbImages (<a href="/thumb_urls/@contest.id">@Messages("thumbnail.urls")</a>)
+            @Messages("files.in.database"): @dbImages (<a href="/thumb_urls/@contest.id">@Messages("thumbnail.urls")</a>,
+            <a id="browse-files" href="@routes.GalleryController.contestFiles(contest.getId)">@Messages("files.browse")</a>)
 
             <div>
                 <button type="submit" id="import-btn" class="btn btn-primary" name="action" value="import.files">

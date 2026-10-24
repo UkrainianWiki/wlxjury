@@ -35,7 +35,7 @@ class ConvertToInnoDbMigrationSpec extends Specification with AfterAll {
       dockerImageName = DockerImageName.parse("mariadb:10.6.22"),
       dbName = "wlxjury", dbUsername = "wlxjury", dbPassword = "wlxjury")
     c.container.withCommand("--max-allowed-packet=16M")
-    c.start()
+    db.TestDocker.start("the migration database")(c.start())
     c
   }
 

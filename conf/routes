@@ -92,6 +92,7 @@ GET         /contests                                                           
 POST        /contests/save                                                          @controllers.ContestController.saveContest()
 POST        /contests/import                                                        @controllers.ContestController.importContests()
 GET         /contest/:id/images                                                     @controllers.ImageController.images(id: Long)
+GET         /contest/:contestId/files                                               @controllers.GalleryController.contestFiles(contestId: Long, page: Int ?= 1, deleted: Boolean ?= false, round: Option[Long] ?= None)
 POST        /contest/:id/importimages                                               @controllers.ImageController.importImages(id: Long)
 POST        /contest/:id/images/cache/start                                         @controllers.ImageController.startImageCache(id: Long)
 GET         /contest/:id/images/cache/status                                        @controllers.ImageController.imageCacheStatus(id: Long)

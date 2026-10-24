@@ -37,6 +37,11 @@
                             <li role="presentation"><a class="brand" href="@routes.RoundController.rounds(contestId)">@Messages("rounds")</a>
                         }
                     }
+                    @for(cId <- contestId) {
+                        @if(user.canViewContestFiles(cId)) {
+                            <li role="presentation"><a class="brand" href="@routes.GalleryController.contestFiles(cId)">@Messages("files.browse")</a>
+                        }
+                    }
 
                         <!-- Link to statistics view, if user has rights -->
                     @if(selectedRound.nonEmpty && user.canViewOrgInfo(selectedRound.get)) {
