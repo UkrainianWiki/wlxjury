@@ -43,6 +43,15 @@ class ContestFilesPageSpec extends PlaySpecification with PlayTestDb {
     Fixture(contest, admin, organizer, juror, open, finished)
   }
 
+  /** Adds files to the contest's category. */
+  private def addFiles(contest: ContestJury, files: Seq[Image]): Unit = {
+    imageDao.batchInsert(files)
+    DB.localTx { implicit s =>
+      val categoryId = sql"SELECT category_id FROM contest_jury WHERE id = ${contest.getId}".map(_.long(1)).single().get
+      files.foreach(f => sql"INSERT INTO category_members (category_id, page_id) VALUES ($categoryId, ${f.pageId})".update())
+    }
+  }
+
   private def get(path: String, user: User)(implicit app: Application): (Int, String) = {
     // with a CSRF token, for the forms of the round statistics
     val result = route(app, FakeRequest(GET, path).withSession(Secured.UserName -> user.email).withCSRFToken).get
@@ -64,6 +73,31 @@ class ContestFilesPageSpec extends PlaySpecification with PlayTestDb {
         page must contain(s"""data-pageid="2"""")
         "Deleted on Commons \\d{4}-\\d{2}-\\d{2}".r.findAllIn(page).size === 1
         page must contain("/wikipedia/commons/thumb/a/ab/Gone.jpg/") // its cached thumbnails
+      }
+    }
+
+    "link a file's page on Commons by its encoded title" in {
+      testDbApp { implicit app =>
+        val f = fixture()
+        addFiles(f.contest, Seq(image(3L, "Who is this?")))
+        val (_, page) = get(s"/contest/${f.contest.getId}/files", f.admin)
+
+        page must contain("https://commons.wikimedia.org/wiki/File%3AWho_is_this%3F.jpg")
+      }
+    }
+
+    "page the files in page id order" in {
+      testDbApp { implicit app =>
+        val f = fixture()
+        addFiles(f.contest, (3L to 18L).map(id => image(id, s"File$id")))
+        val (_, first) = get(s"/contest/${f.contest.getId}/files", f.admin)
+        val (_, second) = get(s"/contest/${f.contest.getId}/files?page=2", f.admin)
+
+        first must contain("All files (18)")
+        first must contain("File15.jpg")
+        first must not contain "File16.jpg"
+        """data-pageid="(\d+)"""".r.findAllMatchIn(second).map(_.group(1).toLong).toList === List(16L, 17L, 18L)
+        second must contain(s"""<li><a href="/contest/${f.contest.getId}/files">&laquo;</a></li>""") // to page 1
       }
     }
 
@@ -89,6 +123,7 @@ class ContestFilesPageSpec extends PlaySpecification with PlayTestDb {
         val (_, finished) = get(s"/contest/${f.contest.getId}/files?round=${f.finished}", f.admin)
         finished must contain("Gone.jpg")
         finished must contain("1 of them still count in this round")
+        finished must not contain "ended before"
       }
     }
 

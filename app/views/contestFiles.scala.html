@@ -1,5 +1,6 @@
 @import controllers.{ContestFilesView, Global}
 @import db.scalikejdbc.{ImageJdbc, User}
+@import java.net.URLEncoder
 @(user: User,
         contest: org.intracer.wmua.ContestJury,
         files: Seq[ImageJdbc.StoredFile],
@@ -9,6 +10,12 @@
 @* The contest's files, or a round's deleted on Commons: a tile links the file's page there *@
 @pageUrl(page: Int) = @{
     routes.GalleryController.contestFiles(contest.getId, page, view.deletedOnly, view.round.flatMap(_.id)).url
+}
+
+@* a deleted file's larger sizes from the cache too: not the file itself, which is gone *@
+@srcSet(file: ImageJdbc.StoredFile) = @{
+    if (file.deletedAt.isDefined) Global.cachedSrcSet(file.image, Global.gallerySizeX, Global.gallerySizeY)
+    else Global.srcSet(file.image, Global.gallerySizeX, Global.gallerySizeY)
 }
 
 @mainAdmin(Messages("contest.files"), user, user.getId, contestId = contest.id) {
@@ -43,13 +50,15 @@
         @for(file <- files) {
             <li class="gallerybox contest-file@if(file.deletedAt.isDefined) { deleted-file}" data-pageid="@file.image.pageId">
                 <div class="thumb">
-                    <a href="https://commons.wikimedia.org/wiki/@file.image.title" target="_blank" title="@file.image.title">
+                    <a href="https://commons.wikimedia.org/wiki/@URLEncoder.encode(file.image.title.replace(" ", "_"), "UTF8")" target="_blank" title="@file.image.title">
                     @if(file.image.isImage) {
                         @* from the cache, for a deleted file: Wikimedia no longer has it *@
+                        @defining(srcSet(file)) { srcset =>
                         <img class="cropped" alt="@file.image.title" loading="lazy"
                             src="@Global.resizeTo(file.image, Global.gallerySizeX, Global.gallerySizeY)"
-                            srcset="@Global.srcSet(file.image, Global.gallerySizeX, Global.gallerySizeY)"
+                            @if(srcset.nonEmpty) {srcset="@srcset"}
                             onerror="this.parentNode.parentNode.classList.add('thumb-missing')">
+                        }
                     }
                     @if(file.image.isVideo) {
                         <video width="100%" height="100%" muted>
@@ -68,22 +77,6 @@
     </div>
 
     @if(pager.display) {
-        <div class="text-center">
-            <ul class="pagination" id="pagenav">
-                @if(pager.page > 1) {
-                    <li><a href="@pageUrl(pager.page - 1)">&laquo;</a></li>
-                } else {
-                    <li class="disabled"><span>&laquo;</span></li>
-                }
-                @for(i <- pager.pageNumbers) {
-                    <li @if(i == pager.page) {class="active"}><a href="@pageUrl(i)">@i</a></li>
-                }
-                @if(pager.hasNext) {
-                    <li><a href="@pageUrl(pager.page + 1)">&raquo;</a></li>
-                } else {
-                    <li class="disabled"><span>&raquo;</span></li>
-                }
-            </ul>
-        </div>
+        <div class="text-center">@pageLinks(pager, pageUrl)</div>
     }
 }

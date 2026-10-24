@@ -196,6 +196,7 @@ comments = Commentaires
 submit.comment = Envoyer un commentaire
 
 images = Images
+contest.files = Images du concours
 files.source = Source des images
 commons.category.or.page.with.files = Catégorie Commons ou page avec les images
 or.image.list = ou la liste d'images
@@ -306,5 +307,5 @@ files.browse = Parcourir les images
 files.all = Toutes les images
 files.deleted.on.commons = Supprimées de Commons
 deleted.on.commons = Supprimée de Commons le {0}
-files.deleted.still.counted = {0} d’entre elles comptent encore dans ce tour : il s’est terminé avant leur suppression.
+files.deleted.still.counted = {0} d’entre elles comptent encore dans ce tour : il n’était pas ouvert lors de leur suppression.
 no.files = Aucune image

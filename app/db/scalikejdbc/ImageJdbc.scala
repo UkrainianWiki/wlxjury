@@ -450,30 +450,46 @@ object ImageJdbc extends CRUDMapper[Image]
 
   /** The category's files, those deleted on Commons too ([[findByCategory]] leaves them
     * out), or only those: in page id order, or the latest deleted first.
+    *
+    * All of them are paged over the category's index alone, then joined to their images
+    * (every member has one: FK_category_member_page_id, which production has since V65):
+    * a deep page doesn't read the images it skips. The deleted ones are found from the few
+    * files marked deleted (V64's index).
     */
   def categoryFiles(categoryId: Long, deletedOnly: Boolean, limit: Int, offset: Int)(implicit
       session: DBSession = AutoSession
   ): Seq[StoredFile] =
-    sql"""SELECT ${i.result.*}, i.deleted_at AS file_deleted_at
-          FROM category_members cm JOIN images i ON i.page_id = cm.page_id
-          WHERE cm.category_id = $categoryId ${if (deletedOnly) sqls"AND i.deleted_at IS NOT NULL" else sqls""}
-          ORDER BY ${if (deletedOnly) LatestDeletedFirst else sqls"cm.page_id"}
-          LIMIT $limit OFFSET $offset"""
+    (if (deletedOnly)
+       sql"""SELECT ${i.result.*}, i.deleted_at AS file_deleted_at
+             FROM images i STRAIGHT_JOIN category_members cm
+               ON cm.category_id = $categoryId AND cm.page_id = i.page_id
+             WHERE i.deleted_at IS NOT NULL
+             ORDER BY $LatestDeletedFirst LIMIT $limit OFFSET $offset"""
+     else
+       sql"""SELECT ${i.result.*}, i.deleted_at AS file_deleted_at
+             FROM (SELECT page_id FROM category_members WHERE category_id = $categoryId
+                   ORDER BY page_id LIMIT $limit OFFSET $offset) cm
+             JOIN images i ON i.page_id = cm.page_id
+             ORDER BY cm.page_id""")
       .map(storedFile)
       .list()
 
-  /** The number of [[categoryFiles]], and of those deleted on Commons. */
+  /** The number of [[categoryFiles]], and of those deleted on Commons: from the category's
+    * index and the files marked deleted, as [[categoryFiles]] reads them.
+    */
   def categoryFileCounts(categoryId: Long)(implicit session: DBSession = AutoSession): (Int, Int) =
-    sql"""SELECT COUNT(*), COUNT(i.deleted_at)
-          FROM category_members cm JOIN images i ON i.page_id = cm.page_id
-          WHERE cm.category_id = $categoryId"""
+    sql"""SELECT (SELECT COUNT(*) FROM category_members WHERE category_id = $categoryId),
+                 (SELECT COUNT(*) FROM images i STRAIGHT_JOIN category_members cm
+                    ON cm.category_id = $categoryId AND cm.page_id = i.page_id
+                  WHERE i.deleted_at IS NOT NULL)"""
       .map(rs => rs.int(1) -> rs.int(2))
       .single()
       .getOrElse((0, 0))
 
   /** The round's files deleted on Commons: with votes of the round moved aside (V63), or
-    * still counted in it (a round finished before they were deleted keeps them), the latest
-    * deleted first. Found from the few files marked deleted (V64's index).
+    * still counted in it (a round not open when they were deleted keeps them,
+    * [[Round.openCond]]), the latest deleted first. Found from the few files marked deleted
+    * (V64's index).
     */
   def roundDeletedFiles(roundId: Long, limit: Int, offset: Int)(implicit
       session: DBSession = AutoSession

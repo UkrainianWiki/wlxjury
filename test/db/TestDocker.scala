@@ -2,6 +2,7 @@ package db
 
 import org.testcontainers.DockerClientFactory
 
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.{ExecutionException, Executors, TimeUnit, TimeoutException}
 import scala.concurrent.duration._
 
@@ -27,7 +28,8 @@ object TestDocker {
   /** Fails unless Docker answers within [[PingTimeout]]. */
   def require(): Unit = answer.fold(message => throw new IllegalStateException(message), identity)
 
-  /** Starts the container once Docker answers, failing after [[StartTimeout]].
+  /** Starts the container once Docker answers, failing after [[StartTimeout]]. A start
+    * that ends after that is stopped: the caller has failed and won't stop it.
     *
     * Takes the container, not code to run: the start runs on another thread, and code
     * passed from an object's initializer (as `GatlingTestFixture` starts its container)
@@ -35,14 +37,21 @@ object TestDocker {
     */
   def start(what: String, container: com.dimafeng.testcontainers.Container): Unit = {
     require()
-    within(StartTimeout, s"start $what")(container.start())
+    // settled by the start ending or by giving up on it, whichever comes first; the other
+    // finds it settled and stops the container
+    val settled = new AtomicBoolean(false)
+    def settleOrStop(): Unit = if (!settled.compareAndSet(false, true)) container.stop()
+    within(StartTimeout, s"start $what", onTimeout = settleOrStop()) {
+      container.start()
+      settleOrStop()
+    }
   }
 
-  /** `body` on a thread of its own, failing after `timeout`: a call into a Docker that
-    * doesn't answer blocks for good, so the thread is left to it (a daemon thread, which
-    * doesn't keep the JVM from exiting).
+  /** `body` on a thread of its own, failing after `timeout` (after `onTimeout`): a call
+    * into a Docker that doesn't answer blocks for good, so the thread is left to it (a
+    * daemon thread, which doesn't keep the JVM from exiting).
     */
-  private def within[T](timeout: FiniteDuration, what: String)(body: => T): T = {
+  private def within[T](timeout: FiniteDuration, what: String, onTimeout: => Unit = ())(body: => T): T = {
     val executor = Executors.newSingleThreadExecutor { r =>
       val thread = new Thread(r, "test-docker")
       thread.setDaemon(true)
@@ -53,7 +62,7 @@ object TestDocker {
     try result.get(timeout.toMillis, TimeUnit.MILLISECONDS)
     catch {
       case _: TimeoutException =>
-        result.cancel(true)
+        onTimeout
         throw new IllegalStateException(
           s"Docker didn't $what within $timeout: start or restart Docker (Docker Desktop on Windows and macOS)")
       case e: ExecutionException =>

@@ -262,7 +262,10 @@ class RoundService @Inject() (
       round.previousIds.flatMap(id => found.find(_.id.contains(id)))
     }
 
-  def getRoundStat(roundId: Long, round: Round): RoundStat = {
+  /** @param withDeletedFiles count the round's files deleted on Commons too: only the
+    *                         statistics page shows them, not the edit page's stat table
+    */
+  def getRoundStat(roundId: Long, round: Round, withDeletedFiles: Boolean = false): RoundStat = {
     val rounds = dao.findByContest(round.contestId)
 
     val statRows: Seq[RoundStatRow] = dao.roundUserStat(roundId)
@@ -297,7 +300,8 @@ class RoundService @Inject() (
       .filter(_.id.exists(byUserCount.contains))
       .map(u => u.copy(active = roundUsers.get(u.getId).flatMap(_.headOption.map(_.active))))
 
-    val (deletedFiles, deletedCounted) = ImageJdbc.roundDeletedFileCounts(roundId)
+    val (deletedFiles, deletedCounted) =
+      if (withDeletedFiles) ImageJdbc.roundDeletedFileCounts(roundId) else (0, 0)
 
     RoundStat(jurors, round, rounds, byUserCount, byUserRateCount, total, totalByRate, deletedFiles, deletedCounted)
   }

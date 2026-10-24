@@ -1,6 +1,7 @@
 package db
 
 import com.dimafeng.testcontainers.MariaDBContainer
+import org.flywaydb.core.Flyway
 import org.specs2.mutable.Specification
 import org.specs2.specification.AfterAll
 import org.testcontainers.utility.DockerImageName
@@ -22,7 +23,10 @@ import scala.util.Using
   *    rows, the AUTO_INCREMENT counters and the unique keys, and leaves legacy tables alone;
   *  - a second run is a no-op (no table is rebuilt);
   *  - every migration after V53 in conf/db/migration/default, V55.1 included, then runs in
-  *    Flyway's order, as a deploy runs them.
+  *    Flyway's order, as a deploy runs them;
+  *  - V65 adds category_members' foreign keys, which production lacks (MyISAM ignored
+  *    V24's), after archiving the members whose image or category is gone, and is a no-op
+  *    on a second run and on the B44 baseline, which has the keys.
   */
 class ConvertToInnoDbMigrationSpec extends Specification with AfterAll {
 
@@ -30,20 +34,32 @@ class ConvertToInnoDbMigrationSpec extends Specification with AfterAll {
 
   private val migrations = Paths.get("conf/db/migration/default")
 
+  // afterAll stops the container only if it started: evaluating `container` after a failed
+  // start would start it again
+  @volatile private var started = false
+
   private lazy val container = {
     val c = MariaDBContainer(
       dockerImageName = DockerImageName.parse("mariadb:10.6.22"),
       dbName = "wlxjury", dbUsername = "wlxjury", dbPassword = "wlxjury")
     c.container.withCommand("--max-allowed-packet=16M")
     db.TestDocker.start("the migration database", c)
+    started = true
     c
   }
 
-  override def afterAll(): Unit = container.stop()
+  override def afterAll(): Unit = if (started) container.stop()
 
   /** Root, so each example can have a database of its own. */
   private def connect(db: String): Connection =
-    DriverManager.getConnection(container.jdbcUrl.replaceFirst("/wlxjury(\\?|$)", s"/$db$$1"), "root", container.password)
+    DriverManager.getConnection(jdbcUrl(db), "root", container.password)
+
+  private def jdbcUrl(db: String): String = container.jdbcUrl.replaceFirst("/wlxjury(\\?|$)", s"/$db$$1")
+
+  /** Flyway on a database, as a deploy runs it, up to a version. */
+  private def flywayTo(db: String, version: String): Unit =
+    Flyway.configure().dataSource(jdbcUrl(db), "root", container.password)
+      .locations("filesystem:conf/db/migration/default").target(version).load().migrate()
 
   private def statements(sql: String): Seq[String] =
     sql.linesIterator.filterNot(_.trim.startsWith("--")).mkString("\n")
@@ -70,12 +86,34 @@ class ConvertToInnoDbMigrationSpec extends Specification with AfterAll {
     .map(n => (n.drop(1).takeWhile(_ != '_' ).toInt, n.drop(1).split("__").head.split("_").drop(1).headOption.map(_.toInt).getOrElse(0), n))
     .filter(_._1 > 53).sortBy(m => (m._1, m._2)).map(_._3).toSeq
 
-  /** A fresh database with production's V53 MyISAM schema and a few rows. */
-  private def prodLikeDb(name: String): Connection = {
+  private val v65 = "V65__Category_members_foreign_keys.sql"
+
+  /** category_members' foreign keys: name -> (referenced table, delete rule). */
+  private def memberKeys(c: Connection): Map[String, (String, String)] =
+    rows(c, """SELECT CONSTRAINT_NAME, REFERENCED_TABLE_NAME, DELETE_RULE FROM information_schema.REFERENTIAL_CONSTRAINTS
+               WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'category_members'""")(rs =>
+      rs.getString(1) -> ((rs.getString(2), rs.getString(3)))).toMap
+
+  private val cascadingMemberKeys = Map(
+    "FK_category_member_page_id" -> (("images", "CASCADE")),
+    "FK_category_member_category" -> (("category", "CASCADE")))
+
+  private def members(c: Connection, table: String): List[(Long, Long)] =
+    rows(c, s"SELECT category_id, page_id FROM $table ORDER BY category_id, page_id")(rs => (rs.getLong(1), rs.getLong(2)))
+
+  private def createStatement(c: Connection, table: String): String =
+    rows(c, s"SHOW CREATE TABLE $table")(_.getString(2)).head
+
+  private def emptyDb(name: String): Connection = {
     Using.resource(connect("")) { c =>
       run(c, Seq(s"DROP DATABASE IF EXISTS $name", s"CREATE DATABASE $name"))
     }
-    val c = connect(name)
+    connect(name)
+  }
+
+  /** A fresh database with production's V53 MyISAM schema and a few rows. */
+  private def prodLikeDb(name: String): Connection = {
+    val c = emptyDb(name)
     run(c, statements(new String(Files.readAllBytes(Paths.get("test/resources/db/prod-v53-myisam-schema.sql")), "UTF-8")))
     run(c, Seq(
       "INSERT INTO users (id, fullname, email, password, roles, contest_id) VALUES " +
@@ -164,6 +202,53 @@ class ConvertToInnoDbMigrationSpec extends Specification with AfterAll {
         tableStatus(c)("selection")._1 === "InnoDB"
         rows(c, """SELECT COUNT(*) FROM information_schema.REFERENTIAL_CONSTRAINTS
                    WHERE CONSTRAINT_SCHEMA = DATABASE() AND CONSTRAINT_NAME = 'FK_selection_page_id'""")(_.getInt(1)) === List(1)
+        memberKeys(c) === cascadingMemberKeys
+      }
+    }
+
+    "V65 archive the category members whose image or category is gone, then add their foreign keys" in {
+      Using.resource(prodLikeDb("members")) { c =>
+        // MyISAM let these in: page 102 has no image, category 9 no row
+        run(c, Seq("INSERT INTO category_members (category_id, page_id) VALUES (3, 102), (9, 100)"))
+        afterV53.takeWhile(_ != v65).foreach(m => run(c, script(m)))
+        memberKeys(c) must beEmpty // V55.1 changed the engine only
+        run(c, script(v65))
+
+        memberKeys(c) === cascadingMemberKeys
+        members(c, "category_members") === List((3L, 100L), (3L, 101L))
+        members(c, "category_members_orphans") === List((3L, 102L), (9L, 100L))
+
+        // a second run archives nothing twice and rebuilds nothing
+        val before = tableStatus(c)
+        Thread.sleep(1100) // CREATE_TIME has a resolution of one second
+        run(c, script(v65))
+        tableStatus(c) === before
+        members(c, "category_members_orphans") === List((3L, 102L), (9L, 100L))
+
+        // enforced: no new orphans, and deleting an image or a category deletes its members
+        run(c, Seq("INSERT INTO category_members (category_id, page_id) VALUES (3, 404)")) must throwA[SQLException]
+        run(c, Seq("INSERT INTO category_members (category_id, page_id) VALUES (404, 100)")) must throwA[SQLException]
+        run(c, Seq(
+          "INSERT INTO category (id, title) VALUES (4, 'Images from Wiki Loves Earth 2025 in Ukraine')",
+          "INSERT INTO category_members (category_id, page_id) VALUES (4, 100), (4, 101)"))
+        run(c, Seq("DELETE FROM images WHERE page_id = 101"))
+        members(c, "category_members") === List((3L, 100L), (4L, 100L))
+        run(c, Seq("DELETE FROM category WHERE id = 4"))
+        members(c, "category_members") === List((3L, 100L))
+      }
+    }
+
+    "V65 be a no-op on the B44 baseline, which has category_members' keys" in {
+      // a fresh database, as the test suite's: Flyway applies B44, then the migrations after it
+      Using.resource(emptyDb("baseline")) { c =>
+        flywayTo("baseline", "64")
+        memberKeys(c) === cascadingMemberKeys
+        val before = (createStatement(c, "category_members"), tableStatus(c)("category_members"))
+        Thread.sleep(1100)
+        flywayTo("baseline", "65")
+        rows(c, "SELECT success FROM flyway_schema_history WHERE version = '65'")(_.getBoolean(1)) === List(true)
+        (createStatement(c, "category_members"), tableStatus(c)("category_members")) === before
+        members(c, "category_members_orphans") must beEmpty
       }
     }
 

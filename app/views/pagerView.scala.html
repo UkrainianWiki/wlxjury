@@ -10,25 +10,9 @@
         @defining(maybeRoundId.getOrElse(0L)) { roundId =>
             <li>
                 <div class="col-md-12 text-center" >
-                    <ul class="pagination" id="pagenav" style="margin-top: 10px;margin-bottom: 0px;">
-                        @if(pager.hasPrev) {
-                            <li><a href="@routes.GalleryController.query(module, Some(asUserId), pager.page - 1, region, roundId, rate)">&laquo;</a></li>
-                        } else {
-                            <li class="disabled"><a href="#" style="color: #999999; background-color: #f5f5f5 ;">&laquo;</a></li>
-                        }
-                        @for(i <- pager.pageNumbers) {
-                            @if(i == pager.page) {
-                                <li class="active"><a href="@routes.GalleryController.query(module, Some(asUserId), i, region, roundId, rate)">@i</a></li>
-                            } else {
-                                <li><a href="@routes.GalleryController.query(module, Some(asUserId), i, region, roundId, rate)">@i</a></li>
-                            }
-                        }
-                        @if(pager.hasNext) {
-                            <li><a href="@routes.GalleryController.query(module, Some(asUserId), pager.page + 1, region, roundId, rate)">&raquo;</a></li>
-                        } else {
-                            <li class="disabled"><a href="#" style="color: #999999; background-color: #f5f5f5 ;">&raquo;</a></li>
-                        }
-                    </ul>
+                    @pageLinks(pager,
+                        page => routes.GalleryController.query(module, Some(asUserId), page, region, roundId, rate).url,
+                        "margin-top: 10px;margin-bottom: 0px;")
                 </div>
             </li>
         }

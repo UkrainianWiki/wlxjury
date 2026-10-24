@@ -60,6 +60,10 @@ case class User(
     (for (c <- contestId; oc <- refContestId) yield c == oc)
       .getOrElse(false)
 
+  /** Root, or one of `otherRoles` in the contest ([[controllers.Secured.contestPermission]]). */
+  def hasContestRole(otherRoles: Set[String], refContestId: Option[Long]): Boolean =
+    hasRole(User.ROOT_ROLE) || hasAnyRole(otherRoles) && isInContest(refContestId)
+
   def isAdmin(refContestId: Option[Long]): Boolean =
     hasRole(User.ADMIN_ROLE) && isInContest(refContestId) ||
       hasRole(User.ROOT_ROLE)
@@ -68,7 +72,7 @@ case class User(
     * ([[controllers.GalleryController.contestFiles]]): its admins and organizers.
     */
   def canViewContestFiles(refContestId: Long): Boolean =
-    hasRole(User.ROOT_ROLE) || hasAnyRole(User.ADMIN_ROLES ++ User.ORG_COM_ROLES) && isInContest(Some(refContestId))
+    hasContestRole(User.ADMIN_ROLES ++ User.ORG_COM_ROLES, Some(refContestId))
 
   def canViewOrgInfo(round: Round): Boolean =
     hasRole("root") ||

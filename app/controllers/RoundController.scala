@@ -406,7 +406,7 @@ class RoundController @Inject() (
             if (!user.canViewOrgInfo(round)) {
               onUnAuthorized(user)
             } else {
-              val stat = roundsService.getRoundStat(roundId, round)
+              val stat = roundsService.getRoundStat(roundId, round, withDeletedFiles = true)
 
               Secured.switchingContest(sessionUser, user)(Ok(views.html.roundStat(user, round, stat)))
             }

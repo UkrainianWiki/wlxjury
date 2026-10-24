@@ -30,7 +30,7 @@ body.gallery{
     padding-left: 8px;
 }
 
-#pagenav>li>a {
+#pagenav>li>a, #pagenav>li>span {
     padding-top: 4px;
     padding-right: 8px;
     padding-bottom: 4px;
