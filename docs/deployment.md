@@ -159,16 +159,18 @@ Before changing anything, `deploy` takes the lock and checks:
 
 It unpacks the release into a new root-owned folder under `/opt/wlxjury/releases`. Then it:
 1. creates the operation folder `/var/backups/wlxjury/UTC_TIMESTAMP-BUILD`, with `record`, `milestones` and `operation.log`;
+A release with new migrations always gets a database backup. A release without them (its `schemaVersion` equals the database's) skips the dump, which shortens the outage, and records `backup-skipped`; add `--backup` to take one anyway. Backing out such a deployment only switches the release back, keeping the database and every write made since.
+
 2. enables maintenance and requires HTTP 503 with the maintenance page at every configured URL;
 3. turns off automatic restarts, and stops **every** configured writer unit and the app, checking each has stopped (a timer can start its service at any moment, so the recorded state only decides what `reopen` restarts);
 4. rechecks database events;
-5. dumps the database with `--databases --add-drop-database --lock-tables`, then checks the dump and saves its checksum and a config snapshot;
+5. dumps the database with `--databases --add-drop-database --lock-tables`, unless the backup is skipped, then checks the dump and saves its checksum and a config snapshot;
 6. flushes them and rechecks free space;
 7. switches `/opt/wlxjury/current`, starts the app, and waits until `/health/ready` reports the new build.
 
 `reopen` requires:
 - intact milestones and no unfinished restore;
-- that `current` is the operation's candidate release, or its previous release after a finished restore;
+- that `current` is the operation's candidate release, or its previous release after a finished restore (`database-restored` or `release-restored`);
 - the release to be ready.
 
 It then records `traffic-may-resume`, restores automatic restarts, removes maintenance, checks every URL reaches the app, and restarts the writer units that were running before the deployment. If a URL fails, fix routing and run `reopen` again.
@@ -191,6 +193,8 @@ Maintenance is never cleared automatically. Read `OPERATION/milestones`, `record
 | Milestones | Meaning |
 |---|---|
 | No operation folder | `deploy` stopped during its checks. Nothing changed, apart from a new folder under `releases`. |
+After `backup-skipped`, `restore OPERATION` imports nothing and needs no `--accept-data-loss`: it checks that the database still has the previous release's schema with no failed migration (refusing if a later deployment migrated it), enables and checks maintenance, turns off automatic restarts, stops the writers and the app, switches `current` back, records `release-restored`, starts the previous release and waits until it is ready.
+
 | Missing file, or the first line is not `started` | Unknown. Keep maintenance on, and inspect `current`, the Flyway history and the log before doing anything. Every command refuses this operation. |
 | `started`, without `migration-may-start` | The database was never migrated and `current` was never switched. |
 | `migration-may-start` | A migration may have run, even if the app never became ready. |
@@ -202,6 +206,7 @@ Maintenance is never cleared automatically. Read `OPERATION/milestones`, `record
 
 **From `migration-may-start` until reopening**, including a failed smoke test after `ready`: never just restart the previous release, since its readiness cannot show a half-applied migration. Prefer a forward fix if one is ready; otherwise:
 
+| `backup-skipped` | The release had no new migrations, so there is no dump; `restore` only switches the release back. |
 ```bash
 sudo wlxjury-release restore OPERATION
 # Check the previous release locally (a legacy release answers /auth, not /health/ready). Then:
@@ -219,6 +224,8 @@ sudo wlxjury-release restore OPERATION --accept-data-loss
 Rehearse the deployment and each section of this runbook on a production copy before relying on them.
 
 ## Local verification
+**After `backup-skipped`**, at any later milestone: `sudo wlxjury-release restore OPERATION`, then `reopen`. No data is lost, so this needs no decision.
+
 
 ```bash
 docker run --rm --network none --mount type=bind,source="$PWD",target=/workspace,readonly --workdir /workspace/scripts/deployment python:3.8-slim python -B -m unittest -v test_deployment
@@ -240,3 +247,4 @@ Python 3.8 is the oldest supported version. The restore image is self-contained:
 - `restore` after reopening: the data-loss decision, refusing while another session uses the database, ending a leftover app session that holds a table lock before the rescue dump, and keeping every rescue dump across retries.
 
 Tests own a MariaDB 10.6 process and synthetic mixed-engine data. They do not certify real production backups, disk capacity, Apache coverage or outage time; those remain rollout/rehearsal gates.
+- a release without migrations: no dump by default (or one with `--backup`), and a `restore` that only switches the release back, keeping later writes, but refuses once a later migration ran;
