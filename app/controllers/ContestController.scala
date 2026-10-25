@@ -4,7 +4,8 @@ import db.scalikejdbc.{ContestJuryJdbc, User}
 import org.intracer.wmua.ContestJury
 import org.scalawiki.MwBot
 import org.scalawiki.wlx.CampaignList
-import org.scalawiki.wlx.dto.{Contest, ContestType, NoAdmDivision}
+import org.scalawiki.wlx.dto.{Contest, ContestType, Country, NoAdmDivision}
+import services.regions.ContestKind
 import play.api.data.Form
 import play.api.data.Forms._
 import play.api.i18n.I18nSupport
@@ -100,10 +101,11 @@ class ContestController @Inject() (
       )
   }
 
+  /** The regions a round's form offers: Ukraine's, for a contest in Ukraine ("Ukraine" or "ua", [[ContestKind.country]]). */
   def regions(contestId: Long): Map[String, String] = {
     ContestJuryJdbc
       .findById(contestId)
-      .filter(_.country == "Ukraine")
+      .filter(c => ContestKind.country(c.country).exists(_.code == Country.Ukraine.code))
       .map(_ => KOATUU.regions)
       .getOrElse(Map.empty)
   }

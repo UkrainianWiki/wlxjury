@@ -2,7 +2,6 @@ package controllers
 
 import db.scalikejdbc.Round.binaryRound
 import db.scalikejdbc._
-import db.scalikejdbc.rewrite.ImageDbNew
 import org.apache.pekko.http.scaladsl.model.ContentTypes
 import org.apache.pekko.stream.scaladsl.Source
 import org.apache.pekko.util.ByteString
@@ -11,6 +10,7 @@ import play.api.http.HttpEntity
 import play.api.i18n.I18nSupport
 import play.api.mvc._
 import services.GalleryService
+import services.regions.RegionScheme
 
 import javax.inject.Inject
 import modules.BlockingExecutionContext
@@ -220,7 +220,7 @@ class GalleryController @Inject() (
       val contest = ContestJuryJdbc.findById(roundContestId).get
 
       val byReg = if (contest.monumentIdTemplate.isDefined) {
-        query.copy(regions = Set.empty).byRegionStat()
+        RegionScheme.of(contest).regions(query.copy(regions = Set.empty).byRegionStat(), subRegions)
       } else {
         Nil
       }
@@ -433,7 +433,7 @@ class GalleryController @Inject() (
           if (byMonuments || view.region.isDefined) view.list.fold(Map.empty[String, Int])(ImageJdbc.regionCounts(_))
           else Map.empty[String, Int]
         val regions =
-          if (byMonuments) ImageDbNew.regions(regionCounts.map { case (id, n) => id -> Some(n) })
+          if (byMonuments) RegionScheme.of(view.contest).regions(regionCounts.map { case (id, n) => id -> Some(n) })
           else Seq.empty[Region]
 
         // as many files per page as the galleries
