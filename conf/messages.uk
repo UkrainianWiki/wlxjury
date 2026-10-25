@@ -294,3 +294,4 @@ files.open.on.commons = Відкрити на ВікіСховищі
 files.undelete.on.commons = Відновити на ВікіСховищі
 id.template.from.campaign = з налаштувань кампанії
 id.template.help = Порожнє: шаблон із налаштувань кампанії, якщо він там є
+region.other = Інше ({0})

@@ -167,3 +167,4 @@ files.open.on.commons = Открыть на Викискладе
 files.undelete.on.commons = Восстановить на Викискладе
 id.template.from.campaign = из настроек кампании
 id.template.help = Пусто: шаблон из настроек кампании, если он там есть
+region.other = Другое ({0})

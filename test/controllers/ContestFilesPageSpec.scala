@@ -229,6 +229,22 @@ class ContestFilesPageSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
+    "name a special nomination's region after it, after the regions" in {
+      testDbApp { implicit app =>
+        val f = fixture()
+        DB.autoCommit { implicit s =>
+          sql"""UPDATE contest_jury SET name = 'Wiki Loves Monuments', country = 'Ukraine', year = 2025
+                WHERE id = ${f.contest.getId}""".update()
+        }
+        addFiles(f.contest, Seq(
+          image(3L, "Synagogue").copy(monumentId = Some("99-141-2306")),
+          image(4L, "Church").copy(monumentId = Some("14-101-0001"))))
+        val (_, page) = get(s"/contest/${f.contest.getId}/files", f.admin)
+
+        page must beMatching("""(?s).*Donetsk O\.\s+\(1\).*Єврейська спадщина\s+\(1\).*""")
+      }
+    }
+
     "serve the region counts from the cache" in {
       testDbApp { implicit app =>
         val f = fixture()

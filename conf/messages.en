@@ -329,3 +329,4 @@ files.open.on.commons = Open on Commons
 files.undelete.on.commons = Undelete on Commons
 id.template.from.campaign = from the campaign config
 id.template.help = Empty: the campaign config's, if it has one
+region.other = Other ({0})

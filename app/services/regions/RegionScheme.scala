@@ -1,18 +1,28 @@
 package services.regions
 
 import org.intracer.wmua.{ContestJury, Region}
-import org.scalawiki.wlx.dto.{AdmDivision, Country}
+import org.scalawiki.wlx.dto.{AdmDivision, Country, SpecialNomination}
 import play.api.i18n.Messages
 
+import java.text.Collator
+import java.util.Locale
 import scala.collection.concurrent.TrieMap
 
 /** How a contest names the regions of its files' monument ids (their prefixes,
   * [[db.scalikejdbc.rewrite.ImageDbNew.regionOf]]): by its country's regions, KOATUU's for
-  * Ukraine, WLM's and WLE's alike.
+  * Ukraine, WLM's and WLE's alike; by its special nominations for the prefixes their lists
+  * give monuments of their own (`99-141-2306`: Jewish heritage); "Other (xx)" for any other.
   *
-  * @param country the contest's country ([[ContestKind]]); without one a region is named by its id
+  * @param country          the contest's country ([[ContestKind]]); without one a region is named by its id
+  * @param byPrefix         the nominations of the contest's year, by id prefix
+  * @param fallbackByPrefix the campaign's nominations of any year, by id prefix: a prefix
+  *                         belongs to its lists, which files of other years cite too
   */
-final case class RegionScheme(country: Option[Country]) {
+final case class RegionScheme(
+    country: Option[Country],
+    byPrefix: Map[String, SpecialNomination] = Map.empty,
+    fallbackByPrefix: Map[String, SpecialNomination] = Map.empty
+) {
 
   private def ukrainian: Boolean = country.exists(_.code.equalsIgnoreCase(Country.Ukraine.code))
 
@@ -25,49 +35,68 @@ final case class RegionScheme(country: Option[Country]) {
       else c.regionById.get(id)
     }
 
-  /** The region's name: for Ukraine the messages' (`07=Volyn O.`) if there is one, else the
-    * country's region's; "Unknown" for an id that is no region of the country; the id
-    * itself for a contest of no known country, or of one whose regions scalawiki doesn't have.
+  /** The region of that id: for Ukraine named by the messages (`07=Volyn O.`) if they have
+    * it, else by the country's region; else a nomination's, by its name (translated if the
+    * messages have it); else "Other (xx)". For a contest of no known country, or of one whose
+    * regions scalawiki doesn't have, the id itself.
     */
-  def name(id: String)(implicit messages: Messages): String =
-    if (ukrainian && messages.isDefinedAt(id)) messages(id)
-    else if (country.forall(_.regions.isEmpty)) id
-    else geographic(id).map(_.name).getOrElse("Unknown")
+  def region(id: String, count: Option[Int])(implicit messages: Messages): Region =
+    if (ukrainian && messages.isDefinedAt(id)) Region(id, messages(id), count)
+    else if (country.forall(_.regions.isEmpty)) Region(id, id, count, Region.Other)
+    else
+      geographic(id) match {
+        case Some(adm) => Region(id, adm.name, count)
+        case None =>
+          byPrefix.get(id).orElse(fallbackByPrefix.get(id)) match {
+            case Some(n) =>
+              Region(id, if (messages.isDefinedAt(n.name)) messages(n.name) else n.name, count, Region.Nomination)
+            case None => Region(id, messages("region.other", id), count, Region.Other)
+          }
+      }
 
-  /** The regions, by id, with their names and file counts if known, in id order; with
-    * `subRegions` (adm1 ids), Kyiv's sub-regions as one region, in name order.
+  /** The regions, by id, with their names and file counts if known: the country's regions
+    * in id order (with `subRegions`, adm1 ids, Kyiv's sub-regions as one region, in name
+    * order), then the nominations in Ukrainian alphabetical order, then the others by id.
     */
   def regions(byRegion: Map[String, Option[Int]], subRegions: Boolean = false)(implicit
       messages: Messages
   ): Seq[Region] = {
-    val regions = byRegion.keys
-      .filterNot(_ == null)
-      .map(id => Region(id, name(id), byRegion(id)))
-      .toSeq
-      .sortBy(_.id)
+    val all = byRegion.keys.filterNot(_ == null).map(id => region(id, byRegion(id))).toSeq.sortBy(_.id)
+    val (geographic, rest) = all.partition(_.kind == Region.Geographic)
+    val (nominations, other) = rest.partition(_.kind == Region.Nomination)
 
-    if (subRegions) {
-      val kyivPictures = regions.filter(_.id.startsWith("80-")).map(_.count.getOrElse(0)).sum
-      val withoutKyivRegions = regions.filterNot(_.id.startsWith("80-"))
-      (withoutKyivRegions :+ Region("80", name("80"), Some(kyivPictures))).sortBy(_.name)
-    } else regions
+    val regions =
+      if (subRegions) {
+        val kyivPictures = geographic.filter(_.id.startsWith("80-")).map(_.count.getOrElse(0)).sum
+        val withoutKyivRegions = geographic.filterNot(_.id.startsWith("80-"))
+        (withoutKyivRegions :+ region("80", Some(kyivPictures))).sortBy(_.name)
+      } else geographic
+
+    val collator = Collator.getInstance(Locale.forLanguageTag("uk"))
+    regions ++ nominations.sortWith((a, b) => collator.compare(a.name, b.name) < 0) ++ other
   }
 }
 
 object RegionScheme {
 
-  /** Ukraine's regions, whatever the contest. */
+  /** Ukraine's regions, whatever the contest, without nominations. */
   val Ukraine: RegionScheme = RegionScheme(Some(Country.Ukraine))
 
-  private val schemes = TrieMap.empty[(Option[String], String, String), RegionScheme]
+  private val schemes = TrieMap.empty[(Option[String], String, String, Int), RegionScheme]
 
   /** The contest's scheme: its campaign's country ([[ContestKind]]), else the country it
-    * names ("Ukraine", "ua"), whatever the contest's name.
+    * names ("Ukraine", "ua"), whatever the contest's name; its campaign's nominations.
     */
   def of(contest: ContestJury): RegionScheme =
     schemes.getOrElseUpdate(
-      (contest.campaign, contest.name, contest.country),
-      RegionScheme(ContestKind.of(contest).map(_.country).filter(_.code.nonEmpty).orElse(ContestKind.country(contest.country)))
+      (contest.campaign, contest.name, contest.country, contest.year), {
+        val nominations = ContestKind.nominations(contest)
+        RegionScheme(
+          ContestKind.of(contest).map(_.country).filter(_.code.nonEmpty).orElse(ContestKind.country(contest.country)),
+          SpecialNomination.byIdPrefix(nominations, contest.year),
+          SpecialNomination.byIdPrefix(nominations)
+        )
+      }
     )
 
   /** Forgets the memoised schemes: for tests. */

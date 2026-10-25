@@ -54,11 +54,11 @@
                 @for(region <- regions) {
                     <div class="well col-sm-1">
                         <a href="@regionToUrl(region.id)">
-                            @region.name @region.count
+                            @region.name @region.count.fold("")(count => s"($count)")
                         </a>
                     </div>
                     <ul class="gallery mw-gallery-traditional">
-                    @for((file, index) <- files.filter(_.image.monumentId.exists(_.startsWith(region.id))).view.zipWithIndex) {
+                    @for((file, index) <- files.filter(_.image.monumentId.exists(region.holds)).view.zipWithIndex) {
                         <li class="gallerybox">
                             <h1 id="@file.pageId" style="display: inline; width: 1px; height: 1px"></h1>
 

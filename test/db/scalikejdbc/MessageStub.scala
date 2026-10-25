@@ -6,7 +6,8 @@ import play.i18n
 /** Messages of a fixed dictionary; a missing key throws. */
 case class MessageStub(dict: Map[String, String]) extends Messages {
 
-  override def apply(key: String, args: Any*): String = dict(key)
+  override def apply(key: String, args: Any*): String =
+    if (args.isEmpty) dict(key) else java.text.MessageFormat.format(dict(key), args.map(_.asInstanceOf[AnyRef]): _*)
 
   override def apply(keys: Seq[String], args: Any*): String = ???
 

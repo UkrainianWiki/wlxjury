@@ -313,3 +313,4 @@ files.open.on.commons = Ouvrir sur Commons
 files.undelete.on.commons = Restaurer sur Commons
 id.template.from.campaign = de la configuration de la campagne
 id.template.help = Vide : celui de la configuration de la campagne, s’il y en a un
+region.other = Autre ({0})

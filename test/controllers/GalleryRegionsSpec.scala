@@ -62,6 +62,17 @@ class GalleryRegionsSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
+    "name a special nomination's prefix after it, after the regions" in {
+      testDbApp { implicit app =>
+        val f = fixture("Wiki Loves Monuments", "Ukraine", 2025, None,
+          Seq("99-141-2306", "14-101-0001", "07-101-0001", "91-101-0001"))
+        val page = get(gallery(f), f.admin)
+        regionNames(page) === List("Volyn O.", "Donetsk O.", "Єврейська спадщина", "Other (91)")
+        page must contain("""<li class="region-nomination" >""")
+        "region-separator".r.findAllIn(page).size === 2
+      }
+    }
+
     "not name another country's regions as Ukraine's" in {
       testDbApp { implicit app =>
         val f = fixture("Wiki Loves Monuments", "Germany", 2025, Some("Denkmal"), Seq("07-101-0001", "14-101-0001"))

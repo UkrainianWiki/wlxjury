@@ -23,6 +23,15 @@ body.gallery{
     color : #c75b5b;
 }
 
+#regionnav>li.region-nomination>a {
+    font-style: italic;
+}
+
+#regionnav>li.region-separator>span {
+    border: none;
+    background: none;
+}
+
 #regionnav>li>a {
     padding-top: 4px;
     padding-right: 8px;
