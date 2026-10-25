@@ -24,7 +24,7 @@ object ContestKind {
   private val nominationsByKey = TrieMap.empty[Key, Seq[SpecialNomination]]
 
   private def key(c: ContestJury): Key =
-    Key(c.campaign.map(_.trim).filter(_.nonEmpty), c.name.trim, c.country.trim)
+    Key(c.campaign.map(_.trim.toLowerCase(java.util.Locale.ROOT)).filter(_.nonEmpty), c.name.trim, c.country.trim)
 
   /** The contest's campaign, in the contest's year; None if neither its campaign nor its
     * name and country are known to scalawiki.
@@ -33,15 +33,15 @@ object ContestKind {
     kinds.getOrElseUpdate(key(c), resolve(key(c))).map(_.copy(year = c.year))
 
   private def resolve(k: Key): Option[Contest] =
-    k.campaign
-      .flatMap(campaign => Contest.byCampaign(campaign))
-      .orElse {
+    k.campaign match {
+      case Some(campaign) => Contest.byCampaign(campaign)
+      case None =>
         for {
           contestType <- ContestType.all.find(_.name.equalsIgnoreCase(k.name))
           country <- country(k.country)
           contest <- Contest.byCampaign(s"${contestType.code}-${country.code.toLowerCase}")
         } yield contest
-      }
+    }
 
   /** The country of that name or code, exactly (case aside). */
   def country(nameOrCode: String): Option[Country] =

@@ -52,6 +52,12 @@ class RegionCountsSpec extends Specification with BeforeAll with TestDb {
       juror(rated = Some(false)) === Map("07" -> 0, "14" -> 0, "99" -> 1)
     }
 
+    "apply rate and rated together just as the gallery does" in new AutoRollbackDb {
+      votes()
+      juror(rate = Some(-1), rated = Some(true)) === Map("07" -> 0, "14" -> 0, "99" -> 0)
+      juror(rate = Some(1), rated = Some(true)) === Map("07" -> 1, "14" -> 1, "99" -> 0)
+    }
+
     "be read from the juror's index alone" in new AutoRollbackDb {
       votes()
       val plan = sql"""EXPLAIN SELECT LEFT(SUBSTRING_INDEX(s.monument_id, '-', 1), 3) AS region, SUM(s.rate = 1)
@@ -68,6 +74,11 @@ class RegionCountsSpec extends Specification with BeforeAll with TestDb {
     "count a file voted on by several jurors once" in new AutoRollbackDb {
       votes()
       wholeRound() === Map("07" -> 2, "14" -> 1, "99" -> 1)
+    }
+
+    "apply combined rate filters to the same vote" in new AutoRollbackDb {
+      votes()
+      wholeRound(rate = Some(-1), rated = Some(true)) === Map("07" -> 0, "14" -> 0, "99" -> 0)
     }
 
     "count the files a rate filter lists: those with such a vote" in new AutoRollbackDb {

@@ -12,7 +12,8 @@
         rounds: Seq[Round],
         rate: Option[Int] = None,
         currentRegion: String = "all",
-        regions: Seq[Region])(implicit flash: Flash, messages: Messages)
+        regions: Seq[Region],
+        rated: Option[Boolean] = None)(implicit flash: Flash, messages: Messages)
 
 
 @showRateGalery(file: org.intracer.wmua.ImageWithRating, index: Int) = {
@@ -44,8 +45,8 @@
 ) {
 
     @defining(maybeRound.get) { round =>
-        @defining(round.id.getOrElse(0)) { roundId =>
-            @defining({ region: String => s"/byrate/round/$roundId/user/$asUserId/region/$region/page/1" }) { regionToUrl =>
+        @defining(round.id.getOrElse(0L)) { roundId =>
+            @defining({ region: String => routes.GalleryController.query("byrate", Some(asUserId), 1, region, roundId, rate, rated).url }) { regionToUrl =>
 
                 @regionNav(regionToUrl, maybeRound, currentRegion, regions)
 

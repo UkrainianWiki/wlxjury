@@ -56,6 +56,7 @@ object RegionCountBenchmark {
     }
 
   def main(args: Array[String]): Unit = {
+    require(!GatlingConfig.external, "RegionCountBenchmark mutates its data: use the disposable fixture, never an external target")
     val f = GatlingTestFixture
     implicit val session: DBSession = AutoSession
 
@@ -84,7 +85,7 @@ object RegionCountBenchmark {
                      (SELECT COUNT(*) FROM images i STRAIGHT_JOIN category_members cm
                         ON cm.category_id = $cat AND cm.page_id = i.page_id WHERE i.deleted_at IS NOT NULL)"""
         },
-        literal("Q2", ds, "deleted list region counts + deleted count (1% deleted)") { _ =>
+        literal("Q2", ds, "deleted list region counts (1% deleted)") { _ =>
           s"""SELECT ${regionOf("i.monument_id")} AS region, COUNT(*) FROM images i
               STRAIGHT_JOIN category_members cm ON cm.category_id = $cat AND cm.page_id = i.page_id
               WHERE i.deleted_at IS NOT NULL GROUP BY region"""
@@ -175,7 +176,8 @@ object RegionCountBenchmark {
       Seq((binary, None, None), (binary, Some(1), None), (binary, Some(-1), None), (binary, Some(0), None),
         (rated, None, None), (rated, None, Some(true)))
     def juror(n: Int) = jurors(n % jurors.size)
-    def filter(n: Int) = filters((n / jurors.size) % filters.size)
+    // Rotate within each group of jurors too: 100 samples must reach all six filters.
+    def filter(n: Int) = filters((n + n / jurors.size) % filters.size)
     // the organisers' views of both rounds: all, then selected (binary) or rated
     val roundFilters: Seq[(Long, Option[Int], Option[Boolean])] =
       Seq((binary, None, None), (rated, None, None), (binary, Some(1), None), (rated, None, Some(true)))
@@ -187,6 +189,16 @@ object RegionCountBenchmark {
       Bench("Q5app", "D1", "SelectionQuery.regionCounts, a juror (every juror, each filter)", _ => "") { (s, n) =>
         val (round, rate, isRated) = filter(n)
         SelectionQuery(userId = Some(juror(n)), roundId = Some(round), rate = rate, rated = isRated).regionCounts()(s): Unit
+      },
+      Bench("Q2app", "D1", "deleted category region counts and pager count (live)", _ => "") { (s, _) =>
+        ImageJdbc.regionCounts(ImageJdbc.FileList.Category(categoryId, true))(s)
+        ImageJdbc.categoryDeletedCount(categoryId)(s): Unit
+      },
+      Bench("Q6all", "D1", "SelectionQuery.regionCounts, whole round (unfiltered, both rounds)", _ => "") { (s, n) =>
+        SelectionQuery(roundId = Some(if (n % 2 == 0) binary else rated)).regionCounts()(s): Unit
+      },
+      Bench("Q6rated", "D1", "SelectionQuery.regionCounts, whole round (rate > 0, both rounds)", _ => "") { (s, n) =>
+        SelectionQuery(roundId = Some(if (n % 2 == 0) binary else rated), rated = Some(true)).regionCounts()(s): Unit
       },
       Bench("Q6app", "D1", "SelectionQuery.regionCounts, the whole round (each filter)", _ => "") { (s, n) =>
         val (round, rate, isRated) = roundFilters(n % roundFilters.size)

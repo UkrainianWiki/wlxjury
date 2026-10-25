@@ -193,9 +193,9 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
       * (page_id, monument_id) index (V66) for their regions.
       */
     def regionCounts()(implicit session: DBSession = autoSession): Map[String, Int] = {
-      val hit = rate.map(r => s"s.rate = ${r.toInt}")
-        .orElse(rated.map(r => if (r) "s.rate > 0" else "s.rate = 0"))
-        .getOrElse("1")
+      val conditions = rate.toSeq.map(r => s"s.rate = ${r.toInt}") ++
+        rated.toSeq.map(r => if (r) "s.rate > 0" else "s.rate = 0")
+      val hit = if (conditions.isEmpty) "1" else conditions.mkString("(", " AND ", ")")
       val sql = userId match {
         case Some(juror) =>
           s"""SELECT ${regionOf("s.monument_id")} AS region, SUM($hit) FROM selection s

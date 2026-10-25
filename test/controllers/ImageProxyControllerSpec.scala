@@ -112,6 +112,8 @@ class ImageProxyControllerSpec extends Specification with PlayTestDb {
             thumbRequest(
               "/wikipedia/commons/thumb/a/ab/My_Image.jpg/333px-My_Image.jpg")).get
 
+          // Complete the async file response while the app and temporary file still exist.
+          play.api.test.Helpers.await(result)
           status(result)      mustEqual OK
           contentType(result) must beSome("image/jpeg")
         }

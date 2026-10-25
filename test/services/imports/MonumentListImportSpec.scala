@@ -114,6 +114,14 @@ class MonumentListImportSpec extends Specification with TestDb with BeforeAll wi
       handler.newJob(contest("Wiki Loves Folklore"), None) must beNone
     }
 
+    "resolve the lists by the country code and prefer an explicit campaign" in {
+      val c = contest("Wiki Loves Monuments", country = "ua", template = None)
+      MonumentListImportHandler.listsOf(c) must beSome("wlm_ua")
+      MonumentListImportHandler.listsOf(c.copy(campaign = Some("wle-UA"))) must beSome("wle_ua")
+      MonumentListImportHandler.listsOf(c.copy(campaign = Some("wlm-de"))) must beNone
+      MonumentListImportHandler.listsOf(c.copy(name = "Custom", campaign = Some("wle-UA"))) must beSome("wle_ua")
+    }
+
     "exist for a Ukrainian contest without a template of its own: its campaign config has one" in {
       MonumentListImportHandler.listsOf(contest("Wiki Loves Monuments", template = None)) must beSome("wlm_ua")
       MonumentListImportHandler.listsOf(contest("Wiki Loves Earth", template = None)) must beSome("wle_ua")

@@ -43,7 +43,7 @@ class GalleryController @Inject() (
     * organisers' (`user/0`) views ("all"). docs/plans/2026-10-25-region-improvements.md
     * has the measurements behind the default.
     */
-  private val roundRegionCounts = config.getOptional[String]("gallery.regionCounts").getOrElse("off")
+  private val roundRegionCounts = config.getOptional[String]("gallery.regionCounts").getOrElse("all")
 
   /** All the category's files' counts per region, cached unless switched off. */
   private def categoryCounts(categoryId: Long): RegionCountCache.Counts =
@@ -265,7 +265,8 @@ class GalleryController @Inject() (
               rate,
               region,
               byReg,
-              rates
+              rates,
+              rated
             )
           )
         case "csv" =>
@@ -337,7 +338,8 @@ class GalleryController @Inject() (
                 rounds,
                 rate,
                 region,
-                byReg
+                byReg,
+                rated
               )
             )
           }

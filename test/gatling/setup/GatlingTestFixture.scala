@@ -12,6 +12,15 @@ import scala.util.Random
 
 object GatlingTestFixture {
 
+  private var localApplication: Option[_root_.play.api.Application] = None
+
+  /** For controller benchmarks against the same disposable fixture and dependency graph. */
+  def application: _root_.play.api.Application = {
+    require(!GatlingConfig.external, "No application is exposed for an external target")
+    val _ = data
+    localApplication.get
+  }
+
   private val data: GatlingFixtureData =
     if (GatlingConfig.external) GatlingExternalTarget.load() else init()
 
@@ -60,6 +69,7 @@ object GatlingTestFixture {
         "regions.countCache"                     -> GatlingConfig.regionCountCache
       ) ++ GatlingConfig.regionCounts.map("gallery.regionCounts" -> _))
       .build()
+    localApplication = Some(app)
     val server = TestServer(port, app)
     server.start()
 

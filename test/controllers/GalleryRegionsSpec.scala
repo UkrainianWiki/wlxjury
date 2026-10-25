@@ -51,7 +51,7 @@ class GalleryRegionsSpec extends PlaySpecification with PlayTestDb {
   }
 
   private def tiles(page: String): List[Long] =
-    """data-pageId="(\d+)"""".r.findAllMatchIn(page).map(_.group(1).toLong).toList
+    """(?:data-pageId|<h1 id)="(\d+)"""".r.findAllMatchIn(page).map(_.group(1).toLong).toList
 
   "a round's gallery" should {
 
@@ -59,7 +59,7 @@ class GalleryRegionsSpec extends PlaySpecification with PlayTestDb {
       testDbApp { implicit app =>
         val f = fixture("Wiki Loves Earth", "Ukraine", 2025, Some("UkrainianNaturalHeritageSite"),
           Seq("26-103-0021", "26-103-0022", "61-101-0001"))
-        regionNames(get(gallery(f), f.admin)) === List("Ivano-Frankivsk O.", "Ternopil O.")
+        regionNames(get(gallery(f), f.admin)) === List("Ivano-Frankivsk O. (2)", "Ternopil O. (1)")
       }
     }
 
@@ -68,7 +68,7 @@ class GalleryRegionsSpec extends PlaySpecification with PlayTestDb {
         val f = fixture("Wiki Loves Monuments", "Ukraine", 2025, None,
           Seq("99-141-2306", "14-101-0001", "07-101-0001", "91-101-0001"))
         val page = get(gallery(f), f.admin)
-        regionNames(page) === List("Volyn O.", "Donetsk O.", "Єврейська спадщина", "Other (91)")
+        regionNames(page) === List("Volyn O. (1)", "Donetsk O. (1)", "Єврейська спадщина (1)", "Other (91) (1)")
         page must contain("""<li class="region-nomination" >""")
         "region-separator".r.findAllIn(page).size === 2
       }
@@ -87,6 +87,48 @@ class GalleryRegionsSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
+    "count each organiser file once with all enabled, including the active rate filter" in {
+      implicit val cfg: Map[String, String] = Map("gallery.regionCounts" -> "all")
+      testDbApp { implicit app =>
+        SharedTestDb.truncateAll()
+        val f = fixture("Wiki Loves Monuments", "Ukraine", 2025, None,
+          Seq("07-101-0001", "07-101-0002", "14-101-0001"))
+        val second = userDao.create(User("Second", "second@example.com", None, Set("jury"), contestId = f.contest.id))
+        val image = imageDao.findById(1L).get
+        selectionDao.batchInsert(Seq(Selection(image, second, f.round, 1)))
+        val url = s"/byrate/round/${f.round.getId}/user/0/page/1"
+        regionNames(get(url, f.admin)) === List("Volyn O. (2)", "Donetsk O. (1)")
+        regionNames(get(url + "?rated=true", f.admin)) === List("Volyn O. (1)", "Donetsk O. (0)")
+      }
+    }
+
+    "keep the rated filter when following a counted region link" in {
+      testDbApp { implicit app =>
+        val f = fixture("Wiki Loves Monuments", "Ukraine", 2025, None,
+          Seq("07-101-0001", "07-101-0002", "14-101-0001"))
+        DB.autoCommit { implicit session => sql"UPDATE selection SET rate = 1 WHERE page_id = 1".update() }
+        val paths = Seq(
+          s"/byrate/round/${f.round.getId}/user/${f.juror.getId}/page/1?rated=true",
+          s"/query?module=gallery&round=${f.round.getId}&user=${f.juror.getId}&rated=true")
+        forall(paths) { path =>
+          val page = get(path, f.admin)
+          val link = """<a href="([^"]*)" >\s*Volyn O\. \(1\)""".r.findFirstMatchIn(page).get
+            .group(1).replace("&amp;", "&")
+          link must contain("rated=true")
+          tiles(get(link, f.admin)) === List(1L)
+        }
+      }
+    }
+
+    "leave organiser counts off in juror mode" in {
+      implicit val cfg: Map[String, String] = Map("gallery.regionCounts" -> "juror")
+      testDbApp { implicit app =>
+        SharedTestDb.truncateAll()
+        val f = fixture("Wiki Loves Monuments", "Ukraine", 2025, None, Seq("07-101-0001", "14-101-0001"))
+        regionNames(get(s"/byrate/round/${f.round.getId}/user/0/page/1", f.admin)) === List("Volyn O.", "Donetsk O.")
+      }
+    }
+
     "show no counts with gallery.regionCounts off" in {
       implicit val cfg: Map[String, String] = Map("gallery.regionCounts" -> "off")
       testDbApp { implicit app =>
@@ -99,7 +141,7 @@ class GalleryRegionsSpec extends PlaySpecification with PlayTestDb {
     "not name another country's regions as Ukraine's" in {
       testDbApp { implicit app =>
         val f = fixture("Wiki Loves Monuments", "Germany", 2025, Some("Denkmal"), Seq("07-101-0001", "14-101-0001"))
-        regionNames(get(gallery(f), f.admin)) === List("07", "14")
+        regionNames(get(gallery(f), f.admin)) === List("07 (1)", "14 (1)")
       }
     }
 

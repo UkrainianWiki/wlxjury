@@ -185,18 +185,16 @@ object MonumentListImportHandler {
   /** The ids the contests use: region, district, number. */
   val ValidId = """\d{2}-\d{3}-\d{4}"""
 
-  /** The lists of a Ukrainian contest with a monument id template (its own or its campaign's,
-    * [[ContestKind.monumentIdTemplate]]): `wlm_ua` or `wle_ua`
-    * by its name, as "Update monuments" always chose them.
-    */
+  /** The Ukrainian lists of the resolved campaign, with its effective monument id template. */
   def listsOf(contest: ContestJury): Option[String] =
-    if (contest.country != Country.Ukraine.name || ContestKind.monumentIdTemplate(contest).isEmpty) None
-    else
-      Seq("earth", "monuments").filter(contest.name.toLowerCase.contains) match {
-        case Seq("earth")     => Some("wle_ua")
-        case Seq("monuments") => Some("wlm_ua")
-        case _                => None
-      }
+    ContestKind.of(contest)
+      .filter(_.country.code == Country.Ukraine.code)
+      .filter(_ => ContestKind.monumentIdTemplate(contest).isDefined)
+      .flatMap(_.contestType match {
+        case ContestType.WLM => Some("wlm_ua")
+        case ContestType.WLE => Some("wle_ua")
+        case _               => None
+      })
 
   def listContest(lists: String, year: Int): Contest = lists match {
     case "wlm_ua" => Contest.WLMUkraine(year)

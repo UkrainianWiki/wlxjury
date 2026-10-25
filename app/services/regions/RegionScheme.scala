@@ -66,10 +66,11 @@ final case class RegionScheme(
     val (nominations, other) = rest.partition(_.kind == Region.Nomination)
 
     val regions =
-      if (subRegions) {
-        val kyivPictures = geographic.filter(_.id.startsWith("80-")).map(_.count.getOrElse(0)).sum
-        val withoutKyivRegions = geographic.filterNot(_.id.startsWith("80-"))
-        (withoutKyivRegions :+ region("80", Some(kyivPictures))).sortBy(_.name)
+      if (subRegions && ukrainian) {
+        val kyiv = geographic.filter(r => r.id == "80" || r.id.startsWith("80-"))
+        val kyivCount = Option.when(kyiv.forall(_.count.isDefined))(kyiv.flatMap(_.count).sum)
+        val withoutKyivRegions = geographic.filterNot(kyiv.contains)
+        (withoutKyivRegions ++ Option.when(kyiv.nonEmpty)(region("80", kyivCount))).sortBy(_.name)
       } else geographic
 
     val collator = Collator.getInstance(Locale.forLanguageTag("uk"))

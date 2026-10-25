@@ -5,7 +5,7 @@ import org.intracer.wmua.ContestJury
 import org.scalawiki.MwBot
 import org.scalawiki.wlx.CampaignList
 import org.scalawiki.wlx.dto.{Contest, ContestType, Country, NoAdmDivision}
-import services.regions.ContestKind
+import services.regions.RegionScheme
 import play.api.data.Form
 import play.api.data.Forms._
 import play.api.i18n.I18nSupport
@@ -101,11 +101,11 @@ class ContestController @Inject() (
       )
   }
 
-  /** The regions a round's form offers: Ukraine's, for a contest in Ukraine ("Ukraine" or "ua", [[ContestKind.country]]). */
+  /** The round form uses the same campaign/country resolution as the gallery's [[RegionScheme]]. */
   def regions(contestId: Long): Map[String, String] = {
     ContestJuryJdbc
       .findById(contestId)
-      .filter(c => ContestKind.country(c.country).exists(_.code == Country.Ukraine.code))
+      .filter(c => RegionScheme.of(c).country.exists(_.code == Country.Ukraine.code))
       .map(_ => KOATUU.regions)
       .getOrElse(Map.empty)
   }

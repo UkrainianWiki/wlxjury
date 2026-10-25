@@ -23,6 +23,15 @@ class ContestKindSpec extends Specification {
       ContestKind.of(contest("Wiki Loves Earth", "UA")).map(_.campaign) must beSome("wle-UA")
     }
 
+    "load the config for a mixed-case campaign as stored by contest creation" in {
+      val c = contest("Custom title", "Other country", campaign = Some(" WLE-UA "))
+      ContestKind.monumentIdTemplate(c) must beSome("UkrainianNaturalHeritageSite")
+    }
+
+    "keep an explicit unknown campaign from falling back to the name" in {
+      ContestKind.of(contest("Wiki Loves Monuments", "Ukraine", campaign = Some("unknown-ua"))) must beNone
+    }
+
     "prefer the campaign to the name" in {
       ContestKind.of(contest("Wiki Loves Monuments", "Ukraine", campaign = Some("wle-ua"))).map(_.contestType) must
         beSome(ContestType.WLE)

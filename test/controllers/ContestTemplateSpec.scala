@@ -68,6 +68,18 @@ class ContestTemplateSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
+    "offer round regions for the campaign's country, including country codes" in {
+      testDbApp { implicit app =>
+        val controller = app.injector.instanceOf[ContestController]
+        val coded = contestDao.create(None, "Wiki Loves Earth", 2025, "ua")
+        val campaign = contestDao.create(None, "Custom", 2025, "Custom", campaign = Some("wle-UA"))
+        val german = contestDao.create(None, "Wiki Loves Monuments", 2025, "Ukraine", campaign = Some("wlm-de"))
+        controller.regions(coded.getId) must not(beEmpty)
+        controller.regions(campaign.getId) === controller.regions(coded.getId)
+        controller.regions(german.getId) must beEmpty
+      }
+    }
+
     "be the campaign config's in an import's params" in {
       testDbApp { implicit app =>
         val wlm = contestDao.create(None, "Wiki Loves Monuments", 2025, "Ukraine")

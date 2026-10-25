@@ -44,6 +44,14 @@ class RegionSchemeSpec extends Specification {
         ids.zipWithIndex.map { case (id, i) => Region(id, s"Other ($id)", Some(i), Region.Other) }
     }
 
+    "keep uncounted Kyiv sub-regions uncounted and omit absent Kyiv" in {
+      RegionScheme.Ukraine.regions(Map("80-361" -> None), subRegions = true)(MessageStub(Map("80" -> "Kyiv"))) ===
+        Seq(Region("80", "Kyiv", None))
+      RegionScheme.Ukraine.regions(Map.empty, subRegions = true)(MessageStub(Map.empty)) must beEmpty
+      RegionScheme(None).regions(Map("07-101" -> None), subRegions = true)(MessageStub(Map.empty)) ===
+        Seq(Region("07-101", "07-101", None, Region.Other))
+    }
+
     "group Kyiv's sub-regions, in name order" in {
       val regions = RegionScheme.Ukraine.regions(Map("80-361" -> Some(2), "80-363" -> Some(3), "07-101" -> Some(1)),
         subRegions = true)(MessageStub(Map("80" -> "Київ")))
