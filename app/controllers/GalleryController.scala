@@ -6,6 +6,7 @@ import org.apache.pekko.http.scaladsl.model.ContentTypes
 import org.apache.pekko.stream.scaladsl.Source
 import org.apache.pekko.util.ByteString
 import org.intracer.wmua._
+import play.api.Configuration
 import play.api.http.HttpEntity
 import play.api.i18n.I18nSupport
 import play.api.mvc._
@@ -20,7 +21,8 @@ import modules.BlockingExecutionContext
 class GalleryController @Inject() (
     galleryService: GalleryService,
     cc: ControllerComponents,
-    blocking: BlockingExecutionContext
+    blocking: BlockingExecutionContext,
+    config: Configuration = Configuration.empty
 ) extends Secured(cc)
     with I18nSupport {
 
@@ -32,6 +34,14 @@ class GalleryController @Inject() (
 
   val UrlInProgress =
     "https://upload.wikimedia.org/wikipedia/commons/thumb/8/8e/Icon_tools.svg/120px-Icon_tools.svg.png"
+
+  /** Whether the contest files page's region counts are cached ([[RegionCountCache]]). */
+  private val countCache = config.getOptional[Boolean]("regions.countCache").getOrElse(true)
+
+  /** All the category's files' counts per region, cached unless switched off. */
+  private def categoryCounts(categoryId: Long): RegionCountCache.Counts =
+    if (countCache) RegionCountCache.category(categoryId)(ImageJdbc.categoryRegionCounts(categoryId))
+    else ImageJdbc.categoryRegionCounts(categoryId)
 
   private def moduleByUserId(asUserId: Long): String =
     if (asUserId == 0) "byrate" else "gallery"
@@ -419,19 +429,25 @@ class GalleryController @Inject() (
   def contestFiles(contestId: Long, page: Int, deleted: Boolean, round: Option[Long], region: String): EssentialAction =
     withAuthOn(blocking)(_.canViewContestFiles(contestId)) { user => implicit request =>
       contestFilesView(contestId, deleted, round, region).fold(identity, { listed =>
+        // all the category's files' counts (cached), which also give their number
+        val all = listed.contest.categoryId.filter(_ => listed.round.isEmpty).map(categoryCounts)
         val view = listed.round match {
           case Some(r) =>
             val (deletedCount, counted) = ImageJdbc.roundDeletedFileCounts(r.getId)
             listed.copy(deletedCount = deletedCount, countedInRound = counted)
           case None =>
-            val (all, deletedCount) = listed.contest.categoryId.fold((0, 0))(ImageJdbc.categoryFileCounts(_))
-            listed.copy(allCount = all, deletedCount = deletedCount)
+            listed.copy(allCount = all.fold(0)(_.total),
+              deletedCount = listed.contest.categoryId.fold(0)(ImageJdbc.categoryDeletedCount(_)))
         }
         // the regions as a round's gallery has them: for a contest of monuments
         val byMonuments = ContestKind.monumentIdTemplate(view.contest).isDefined
         val regionCounts =
-          if (byMonuments || view.region.isDefined) view.list.fold(Map.empty[String, Int])(ImageJdbc.regionCounts(_))
-          else Map.empty[String, Int]
+          if (!(byMonuments || view.region.isDefined)) Map.empty[String, Int]
+          else
+            view.list match {
+              case Some(ImageJdbc.FileList.Category(_, false)) => all.fold(Map.empty[String, Int])(_.byRegion)
+              case list => list.fold(Map.empty[String, Int])(ImageJdbc.regionCounts(_))
+            }
         val regions =
           if (byMonuments) RegionScheme.of(view.contest).regions(regionCounts.map { case (id, n) => id -> Some(n) })
           else Seq.empty[Region]

@@ -1,6 +1,6 @@
 package services
 
-import db.scalikejdbc.{CategoryJdbc, CategoryLinkJdbc, ContestJuryJdbc, ImageJdbc}
+import db.scalikejdbc.{CategoryJdbc, CategoryLinkJdbc, ContestJuryJdbc, ImageJdbc, RegionCountCache}
 import org.intracer.wmua.{ContestJury, Image}
 import play.api.Logging
 import scalikejdbc.{DB, DBSession}
@@ -32,7 +32,8 @@ class ImageService @Inject() (
     */
   def importFiles(contest: ContestJury, source: String, titles: String, createdBy: Option[Long] = None): Either[Job, Job] = {
     val listed = ImportSource.titles(titles)
-    start { implicit session =>
+    var copiedTo = Option.empty[Long]
+    val started = start { implicit session =>
       val categoryId = CategoryJdbc.findOrInsert(ImageService.ownCategory(contest.getId))
       val params =
         ImportParams(contest.getId, Mode.Import, source, Some(categoryId), listed, ContestKind.monumentIdTemplate(contest))
@@ -41,12 +42,17 @@ class ImageService @Inject() (
         val current = ContestJuryJdbc.findById(contest.getId)
         // A contest that has none yet starts its own with the files it has: those of its
         // source's category, which other contests with the same source may share.
-        current.flatMap(_.categoryId).filter(_ != categoryId).foreach(CategoryLinkJdbc.copyIgnore(_, categoryId))
+        current.flatMap(_.categoryId).filter(_ != categoryId).foreach { from =>
+          CategoryLinkJdbc.copyIgnore(from, categoryId)
+          copiedTo = Some(categoryId)
+        }
         val images = if (listed.isEmpty) Some(source) else current.flatMap(_.images)
         ContestJuryJdbc.setImagesSource(contest.getId, images, Some(categoryId))
       }
       job
     }
+    copiedTo.foreach(RegionCountCache.invalidateCategory(_)) // its files changed, now committed
+    started
   }
 
   /** Starts, for a contest with a monument id template (its own or its campaign's,

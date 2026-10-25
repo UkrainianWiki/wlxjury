@@ -50,6 +50,7 @@ class ContestFilesPageSpec extends PlaySpecification with PlayTestDb {
       val categoryId = sql"SELECT category_id FROM contest_jury WHERE id = ${contest.getId}".map(_.long(1)).single().get
       files.foreach(f => sql"INSERT INTO category_members (category_id, page_id) VALUES ($categoryId, ${f.pageId})".update())
     }
+    RegionCountCache.clear() // written by raw SQL, past the cache's invalidation
   }
 
   private def get(path: String, user: User)(implicit app: Application): (Int, String) = {
@@ -225,6 +226,34 @@ class ContestFilesPageSpec extends PlaySpecification with PlayTestDb {
 
         page must contain("""id="regionnav"""")
         page must beMatching("""(?s).*Ternopil O\.\s+\(1\).*""")
+      }
+    }
+
+    "serve the region counts from the cache" in {
+      testDbApp { implicit app =>
+        val f = fixture()
+        byMonuments(f.contest)
+        addRegionFiles(f)
+        val before = RegionCountCache.loads.get
+        val (_, first) = get(s"/contest/${f.contest.getId}/files", f.admin)
+        val (_, second) = get(s"/contest/${f.contest.getId}/files?region=07", f.admin)
+        RegionCountCache.loads.get === before + 1
+        first must contain("All files (8)")
+        second must contain("All files (8)")
+      }
+    }
+
+    "count the regions on every view with the cache switched off" in {
+      implicit val cfg: Map[String, String] = Map("regions.countCache" -> "false")
+      testDbApp { implicit app =>
+        SharedTestDb.truncateAll() // a per-test app doesn't
+        val f = fixture()
+        byMonuments(f.contest)
+        addRegionFiles(f)
+        val before = RegionCountCache.loads.get
+        get(s"/contest/${f.contest.getId}/files", f.admin)
+        get(s"/contest/${f.contest.getId}/files", f.admin)
+        RegionCountCache.loads.get === before
       }
     }
 
