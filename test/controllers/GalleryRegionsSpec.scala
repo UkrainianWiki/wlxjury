@@ -5,6 +5,7 @@ import org.intracer.wmua.{ContestJury, Image, Selection}
 import play.api.Application
 import play.api.test.CSRFTokenHelper._
 import play.api.test.{FakeRequest, PlaySpecification}
+import scalikejdbc._
 
 import java.net.URLEncoder
 
@@ -70,6 +71,28 @@ class GalleryRegionsSpec extends PlaySpecification with PlayTestDb {
         regionNames(page) === List("Volyn O.", "Donetsk O.", "Єврейська спадщина", "Other (91)")
         page must contain("""<li class="region-nomination" >""")
         "region-separator".r.findAllIn(page).size === 2
+      }
+    }
+
+    "show a juror's regions' counts with gallery.regionCounts on, for the rate filter" in {
+      implicit val cfg: Map[String, String] = Map("gallery.regionCounts" -> "juror")
+      testDbApp { implicit app =>
+        SharedTestDb.truncateAll() // a per-test app doesn't
+        val f = fixture("Wiki Loves Monuments", "Ukraine", 2025, None, Seq("07-101-0001", "07-101-0002", "14-101-0001"))
+        regionNames(get(gallery(f), f.admin)) === List("Volyn O. (2)", "Donetsk O. (1)")
+        DB.autoCommit { implicit s =>
+          sql"UPDATE selection SET rate = 1 WHERE page_id = 1".update()
+        }
+        regionNames(get(gallery(f) + "?rate=1", f.admin)) === List("Volyn O. (1)", "Donetsk O. (0)")
+      }
+    }
+
+    "show no counts with gallery.regionCounts off" in {
+      implicit val cfg: Map[String, String] = Map("gallery.regionCounts" -> "off")
+      testDbApp { implicit app =>
+        SharedTestDb.truncateAll()
+        val f = fixture("Wiki Loves Monuments", "Ukraine", 2025, None, Seq("07-101-0001", "14-101-0001"))
+        regionNames(get(gallery(f), f.admin)) === List("Volyn O.", "Donetsk O.")
       }
     }
 

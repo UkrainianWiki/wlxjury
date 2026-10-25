@@ -124,7 +124,8 @@ object RegionCountBenchmark {
       }
     )
 
-    val benches = (categorySql(categoryId) ++ d2Category.toSeq.flatMap(categorySql) ++ selectionSql ++ extra(categoryId))
+    val benches = (categorySql(categoryId) ++ d2Category.toSeq.flatMap(categorySql) ++ selectionSql ++
+      appMethods(categoryId, binary, rated, jurors))
       .filter(b => only.isEmpty || only.contains(b.id))
 
     val out = new StringBuilder
@@ -146,7 +147,7 @@ object RegionCountBenchmark {
     }
 
     log("")
-    benches.foreach { b =>
+    benches.filter(_.sql(0).nonEmpty).foreach { b =>
       val plan = analyze(b.sql(0))
       val handlers = handlerReads(b)
       log(s"${b.id} ${b.dataset}: $plan; $handlers")
@@ -164,8 +165,35 @@ object RegionCountBenchmark {
     sys.exit(0)
   }
 
-  /** Queries of the app's own methods, added once they exist. */
-  private def extra(categoryId: Long): Seq[Bench] = Nil
+  /** The app's own methods, as the pages call them. */
+  private def appMethods(categoryId: Long, binary: Long, rated: Long, jurors: IndexedSeq[Long]): Seq[Bench] = {
+    import db.scalikejdbc.{ImageJdbc, RegionCountCache}
+    import db.scalikejdbc.rewrite.ImageDbNew.SelectionQuery
+    def cached(s: DBSession) = RegionCountCache.category(categoryId)(ImageJdbc.categoryRegionCounts(categoryId)(s))
+    // a juror's gallery's filters: all, then binary 1, -1, 0 or rated "rated"; every juror
+    val filters: Seq[(Long, Option[Int], Option[Boolean])] =
+      Seq((binary, None, None), (binary, Some(1), None), (binary, Some(-1), None), (binary, Some(0), None),
+        (rated, None, None), (rated, None, Some(true)))
+    def juror(n: Int) = jurors(n % jurors.size)
+    def filter(n: Int) = filters((n / jurors.size) % filters.size)
+    // the organisers' views of both rounds: all, then selected (binary) or rated
+    val roundFilters: Seq[(Long, Option[Int], Option[Boolean])] =
+      Seq((binary, None, None), (rated, None, None), (binary, Some(1), None), (rated, None, Some(true)))
+    Seq(
+      Bench("Q1app", "D1", "ImageJdbc.categoryRegionCounts (uncached)", _ => "") { (s, _) =>
+        ImageJdbc.categoryRegionCounts(categoryId)(s): Unit
+      },
+      Bench("Q1hit", "D1", "RegionCountCache.category, a hit", _ => "") { (s, _) => cached(s): Unit },
+      Bench("Q5app", "D1", "SelectionQuery.regionCounts, a juror (every juror, each filter)", _ => "") { (s, n) =>
+        val (round, rate, isRated) = filter(n)
+        SelectionQuery(userId = Some(juror(n)), roundId = Some(round), rate = rate, rated = isRated).regionCounts()(s): Unit
+      },
+      Bench("Q6app", "D1", "SelectionQuery.regionCounts, the whole round (each filter)", _ => "") { (s, n) =>
+        val (round, rate, isRated) = roundFilters(n % roundFilters.size)
+        SelectionQuery(roundId = Some(round), rate = rate, rated = isRated).regionCounts()(s): Unit
+      }
+    )
+  }
 
   private def count(sql: String)(implicit session: DBSession): Long = SQL(sql).map(_.long(1)).single().getOrElse(0L)
 

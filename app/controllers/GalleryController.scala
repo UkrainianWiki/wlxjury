@@ -38,6 +38,13 @@ class GalleryController @Inject() (
   /** Whether the contest files page's region counts are cached ([[RegionCountCache]]). */
   private val countCache = config.getOptional[Boolean]("regions.countCache").getOrElse(true)
 
+  /** Which round galleries' region navs show their regions' file counts
+    * (`gallery.regionCounts`): "off", a juror's ("juror"), or also the whole round's, the
+    * organisers' (`user/0`) views ("all"). docs/plans/2026-10-25-region-improvements.md
+    * has the measurements behind the default.
+    */
+  private val roundRegionCounts = config.getOptional[String]("gallery.regionCounts").getOrElse("off")
+
   /** All the category's files' counts per region, cached unless switched off. */
   private def categoryCounts(categoryId: Long): RegionCountCache.Counts =
     if (countCache) RegionCountCache.category(categoryId)(ImageJdbc.categoryRegionCounts(categoryId))
@@ -230,7 +237,12 @@ class GalleryController @Inject() (
       val contest = ContestJuryJdbc.findById(roundContestId).get
 
       val byReg = if (ContestKind.monumentIdTemplate(contest).isDefined) {
-        RegionScheme.of(contest).regions(query.copy(regions = Set.empty).byRegionStat(), subRegions)
+        val all = query.copy(regions = Set.empty)
+        val counted = !subRegions && (roundRegionCounts == "all" || roundRegionCounts == "juror" && asUserId != 0)
+        val byRegion =
+          if (counted) all.regionCounts().map { case (id, n) => id -> Option(n) }
+          else all.byRegionStat()
+        RegionScheme.of(contest).regions(byRegion, subRegions)
       } else {
         Nil
       }

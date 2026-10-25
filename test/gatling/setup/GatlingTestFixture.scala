@@ -55,8 +55,10 @@ object GatlingTestFixture {
         "jobs.workers"                           -> GatlingConfig.Jobs.workers,
         "jobs.concurrency.round_distribution"    -> GatlingConfig.Jobs.distributionConcurrency,
         "jobs.roundDistribution.chunkRows"       -> GatlingConfig.Jobs.chunkRows,
-        "jobs.pollInterval"                      -> "2 seconds"
-      ))
+        "jobs.pollInterval"                      -> "2 seconds",
+        // region counts: the contest files page's cache, and the round galleries' counts
+        "regions.countCache"                     -> GatlingConfig.regionCountCache
+      ) ++ GatlingConfig.regionCounts.map("gallery.regionCounts" -> _))
       .build()
     val server = TestServer(port, app)
     server.start()

@@ -182,6 +182,35 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
       map
     }
 
+    /** The number of the query's images in each region, without its region filter: every
+      * region of the juror's (or the round's) images, those the rate filter leaves out
+      * counted 0, so a region's count is what its link lists. Files without a monument id
+      * are left out. The `rated` filter's extra page (`withPageId`) isn't counted.
+      *
+      * A juror's: one scan of the juror's rows on (jury_id, round_id, rate, monument_id,
+      * page_id) (V48), the juror having one row per image. The whole round's: its images
+      * once each, from selection's (round_id, page_id, rate) index, joined to the images'
+      * (page_id, monument_id) index (V66) for their regions.
+      */
+    def regionCounts()(implicit session: DBSession = autoSession): Map[String, Int] = {
+      val hit = rate.map(r => s"s.rate = ${r.toInt}")
+        .orElse(rated.map(r => if (r) "s.rate > 0" else "s.rate = 0"))
+        .getOrElse("1")
+      val sql = userId match {
+        case Some(juror) =>
+          s"""SELECT ${regionOf("s.monument_id")} AS region, SUM($hit) FROM selection s
+             |WHERE s.jury_id = ${juror.toLong} AND s.round_id = ${roundId.get.toLong}
+             |GROUP BY region ORDER BY NULL""".stripMargin
+        case None =>
+          s"""SELECT ${regionOf("i.monument_id")} AS region, SUM(p.hit)
+             |FROM (SELECT s.page_id, MAX($hit) AS hit FROM selection s WHERE s.round_id = ${roundId.get.toLong}
+             |      GROUP BY s.page_id) p
+             |JOIN images i FORCE INDEX (images_page_monument_idx) ON i.page_id = p.page_id
+             |GROUP BY region ORDER BY NULL""".stripMargin
+      }
+      SQL(sql).map(rs => rs.stringOpt(1) -> rs.int(2)).list().collect { case (Some(region), n) => region -> n }.toMap
+    }
+
     /** A single sub-region (adm1) filter, which the monument table has. */
     private def subRegionFilter: Boolean = subRegions && regions.size == 1 && regions.head.length > 2
 
