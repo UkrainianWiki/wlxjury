@@ -24,6 +24,14 @@ case class GatlingFixtureData(
 
 object GatlingDbSetup {
 
+  /** The fixture contest: WLM 2025 in Ukraine, whose files the fixture's are, without a
+    * campaign, as production's contests are (contest 603): its regions and special
+    * nominations are named as theirs.
+    */
+  val ContestName = "Wiki Loves Monuments"
+  val ContestYear = 2025
+  val ContestCountry = "Ukraine"
+
   /** The fixture contest's image category; every fixture image is in it. */
   val ImageCategory = "Category:Images from Wiki Loves Monuments 2025 in Ukraine"
 
@@ -36,7 +44,7 @@ object GatlingDbSetup {
     Round.usersRef
 
     val contest = ContestJuryJdbc.findAll()
-      .find(_.name == "Gatling Perf Test Contest")
+      .find(c => c.name == ContestName && c.year == ContestYear && c.country == ContestCountry)
       .getOrElse(throw new RuntimeException("Gatling contest not found — is the dump stale?"))
     val contestId = contest.id.get
 
@@ -143,9 +151,9 @@ object GatlingDbSetup {
     // The contest's images come from its category, as in production: a first round
     // (no previous rounds) and the edit page's "new files" count load them from there.
     val categoryId = CategoryJdbc.findOrInsert(ImageCategory)
-    val contest   = ContestJuryJdbc.create(id = None, name = "Gatling Perf Test Contest", year = 2024, country = "ua",
+    val contest   = ContestJuryJdbc.create(id = None, name = ContestName, year = ContestYear, country = ContestCountry,
                                            categoryId = Some(categoryId),
-                                           monumentIdTemplate = Some("{{UkrainianMonument}}"))
+                                           monumentIdTemplate = Some("Monument Ukraine"))
     val contestId = contest.id.get
 
     val jurors = (1 to numUsers).map { i =>

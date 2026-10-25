@@ -22,8 +22,9 @@ object GatlingDbCache {
 
   private val cacheDir = new File("data/cache")
 
-  /** v2: the contest has an image category holding every fixture image. */
-  val FixtureVersion = "fixture-v2"
+  /** v2: the contest has an image category holding every fixture image.
+    * v3: the contest is "Wiki Loves Monuments" 2025 in "Ukraine", as production's are. */
+  val FixtureVersion = "fixture-v3"
 
   // ── Cache key ──────────────────────────────────────────────────────────────
 
