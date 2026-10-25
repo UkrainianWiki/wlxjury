@@ -110,8 +110,14 @@ class MonumentListImportSpec extends Specification with TestDb with BeforeAll wi
 
     "not exist for a contest without Ukrainian lists" in {
       handler.newJob(contest("Wiki Loves Monuments", country = "Armenia"), None) must beNone
-      handler.newJob(contest("Wiki Loves Monuments", template = None), None) must beNone
+      handler.newJob(contest("Wiki Loves Folklore", template = None), None) must beNone
       handler.newJob(contest("Wiki Loves Folklore"), None) must beNone
+    }
+
+    "exist for a Ukrainian contest without a template of its own: its campaign config has one" in {
+      MonumentListImportHandler.listsOf(contest("Wiki Loves Monuments", template = None)) must beSome("wlm_ua")
+      MonumentListImportHandler.listsOf(contest("Wiki Loves Earth", template = None)) must beSome("wle_ua")
+      handler.newJob(contest("Wiki Loves Monuments", template = None), None) must beSome
     }
   }
 }

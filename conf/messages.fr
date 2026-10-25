@@ -311,3 +311,5 @@ files.deleted.still.counted = {0} d’entre elles comptent encore dans ce tour :
 no.files = Aucune image
 files.open.on.commons = Ouvrir sur Commons
 files.undelete.on.commons = Restaurer sur Commons
+id.template.from.campaign = de la configuration de la campagne
+id.template.help = Vide : celui de la configuration de la campagne, s’il y en a un

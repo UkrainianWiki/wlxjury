@@ -211,6 +211,23 @@ class ContestFilesPageSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
+    "show the regions of a Wiki Loves Earth contest without a template of its own" in {
+      testDbApp { implicit app =>
+        val f = fixture()
+        DB.autoCommit { implicit s =>
+          sql"""UPDATE contest_jury SET name = 'Wiki Loves Earth', country = 'Ukraine', year = 2025,
+                monument_id_template = NULL WHERE id = ${f.contest.getId}""".update()
+        }
+        addFiles(f.contest, Seq(
+          image(3L, "Lake").copy(monumentId = Some("26-103-0021")),
+          image(4L, "Forest").copy(monumentId = Some("61-101-0001"))))
+        val (_, page) = get(s"/contest/${f.contest.getId}/files", f.admin)
+
+        page must contain("""id="regionnav"""")
+        page must beMatching("""(?s).*Ternopil O\.\s+\(1\).*""")
+      }
+    }
+
     "show a round's deleted files in a region" in {
       testDbApp { implicit app =>
         val f = fixture()

@@ -7,6 +7,7 @@ import play.api.libs.json._
 import play.api.{Configuration, Logging}
 import scalikejdbc.DBSession
 import services.jobs._
+import services.regions.ContestKind
 
 import javax.inject.{Inject, Singleton}
 
@@ -184,11 +185,12 @@ object MonumentListImportHandler {
   /** The ids the contests use: region, district, number. */
   val ValidId = """\d{2}-\d{3}-\d{4}"""
 
-  /** The lists of a Ukrainian contest with a monument id template: `wlm_ua` or `wle_ua`
+  /** The lists of a Ukrainian contest with a monument id template (its own or its campaign's,
+    * [[ContestKind.monumentIdTemplate]]): `wlm_ua` or `wle_ua`
     * by its name, as "Update monuments" always chose them.
     */
   def listsOf(contest: ContestJury): Option[String] =
-    if (contest.country != Country.Ukraine.name || contest.monumentIdTemplate.isEmpty) None
+    if (contest.country != Country.Ukraine.name || ContestKind.monumentIdTemplate(contest).isEmpty) None
     else
       Seq("earth", "monuments").filter(contest.name.toLowerCase.contains) match {
         case Seq("earth")     => Some("wle_ua")

@@ -46,6 +46,27 @@ class ContestKindSpec extends Specification {
     }
   }
 
+  "ContestKind.monumentIdTemplate" should {
+
+    "be the campaign config's for a contest without one" in {
+      ContestKind.monumentIdTemplate(contest("Wiki Loves Earth", "Ukraine")) must beSome("UkrainianNaturalHeritageSite")
+      ContestKind.monumentIdTemplate(contest("Wiki Loves Monuments", "Ukraine")) must beSome("Monument Ukraine")
+      ContestKind.monumentIdTemplate(contest("Wiki Loves Monuments", "Ukraine").copy(monumentIdTemplate = Some(" ")))
+        .must(beSome("Monument Ukraine"))
+    }
+
+    "be the admin's when there is one" in {
+      ContestKind.monumentIdTemplate(contest("Wiki Loves Earth", "Ukraine").copy(monumentIdTemplate = Some("Custom"))) must
+        beSome("Custom")
+    }
+
+    "be none for a contest of no known campaign" in {
+      ContestKind.monumentIdTemplate(contest("contest10", "country10")) must beNone
+      ContestKind.monumentIdTemplate(contest("Wiki Loves Earth", "Ukraine Int")) must beNone
+      ContestKind.monumentIdTemplate(contest("Wiki Loves Monuments", "Germany")) must beNone
+    }
+  }
+
   "ContestKind.nominations" should {
 
     "be WLM Ukraine's for a WLM Ukraine contest, and none for WLE's" in {

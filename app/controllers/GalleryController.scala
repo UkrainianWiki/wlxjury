@@ -10,7 +10,7 @@ import play.api.http.HttpEntity
 import play.api.i18n.I18nSupport
 import play.api.mvc._
 import services.GalleryService
-import services.regions.RegionScheme
+import services.regions.{ContestKind, RegionScheme}
 
 import javax.inject.Inject
 import modules.BlockingExecutionContext
@@ -219,7 +219,7 @@ class GalleryController @Inject() (
 
       val contest = ContestJuryJdbc.findById(roundContestId).get
 
-      val byReg = if (contest.monumentIdTemplate.isDefined) {
+      val byReg = if (ContestKind.monumentIdTemplate(contest).isDefined) {
         RegionScheme.of(contest).regions(query.copy(regions = Set.empty).byRegionStat(), subRegions)
       } else {
         Nil
@@ -428,7 +428,7 @@ class GalleryController @Inject() (
             listed.copy(allCount = all, deletedCount = deletedCount)
         }
         // the regions as a round's gallery has them: for a contest of monuments
-        val byMonuments = view.contest.monumentIdTemplate.isDefined
+        val byMonuments = ContestKind.monumentIdTemplate(view.contest).isDefined
         val regionCounts =
           if (byMonuments || view.region.isDefined) view.list.fold(Map.empty[String, Int])(ImageJdbc.regionCounts(_))
           else Map.empty[String, Int]
