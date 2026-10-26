@@ -1,12 +1,13 @@
 package services
 
-import db.scalikejdbc.{CategoryJdbc, CategoryLinkJdbc, ContestJuryJdbc, ImageJdbc}
+import db.scalikejdbc.{CategoryJdbc, CategoryLinkJdbc, ContestJuryJdbc, ImageJdbc, RegionCountCache}
 import org.intracer.wmua.{ContestJury, Image}
 import play.api.Logging
 import scalikejdbc.{DB, DBSession}
 import services.imports.ImageImportHandler.Mode
 import services.imports.{ImageImportHandler, ImportParams, ImportSource, MonumentListImportHandler}
 import services.jobs.{Job, JobJdbc, JobScheduler}
+import services.regions.ContestKind
 
 import javax.inject.Inject
 
@@ -31,30 +32,38 @@ class ImageService @Inject() (
     */
   def importFiles(contest: ContestJury, source: String, titles: String, createdBy: Option[Long] = None): Either[Job, Job] = {
     val listed = ImportSource.titles(titles)
-    start { implicit session =>
+    var copiedTo = Option.empty[Long]
+    val started = start { implicit session =>
       val categoryId = CategoryJdbc.findOrInsert(ImageService.ownCategory(contest.getId))
-      val params = ImportParams(contest.getId, Mode.Import, source, Some(categoryId), listed, contest.monumentIdTemplate)
+      val params =
+        ImportParams(contest.getId, Mode.Import, source, Some(categoryId), listed, ContestKind.monumentIdTemplate(contest))
       val job = jobs.enqueue(imageImport.newJob(params, createdBy))
       if (job.isRight) {
         val current = ContestJuryJdbc.findById(contest.getId)
         // A contest that has none yet starts its own with the files it has: those of its
         // source's category, which other contests with the same source may share.
-        current.flatMap(_.categoryId).filter(_ != categoryId).foreach(CategoryLinkJdbc.copyIgnore(_, categoryId))
+        current.flatMap(_.categoryId).filter(_ != categoryId).foreach { from =>
+          CategoryLinkJdbc.copyIgnore(from, categoryId)
+          copiedTo = Some(categoryId)
+        }
         val images = if (listed.isEmpty) Some(source) else current.flatMap(_.images)
         ContestJuryJdbc.setImagesSource(contest.getId, images, Some(categoryId))
       }
       job
     }
+    copiedTo.foreach(RegionCountCache.invalidateCategory(_)) // its files changed, now committed
+    started
   }
 
-  /** Starts, for a contest with a monument id template, setting the monument ids of the
+  /** Starts, for a contest with a monument id template (its own or its campaign's,
+    * [[ContestKind.monumentIdTemplate]]), setting the monument ids of the
     * source's files from their text and, for a Ukrainian contest, updating its monument
     * lists: two jobs, independent of each other (a file's monument id is the id in its
     * text; the galleries look the monument up by it).
     * @return the jobs, each as [[importFiles]]; none without a monument id template
     */
   def updateMonuments(contest: ContestJury, source: String, createdBy: Option[Long] = None): Seq[Either[Job, Job]] =
-    contest.monumentIdTemplate.toSeq.flatMap { template =>
+    ContestKind.monumentIdTemplate(contest).toSeq.flatMap { template =>
       val params = ImportParams(contest.getId, Mode.MonumentIds, source, monumentIdTemplate = Some(template))
       val created = DB.localTx { implicit session =>
         monumentLists.newJob(contest, createdBy).map(jobs.enqueue).toSeq :+

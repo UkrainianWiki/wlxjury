@@ -50,7 +50,7 @@
                 <button type="submit" id="import-btn" class="btn btn-primary" name="action" value="import.files">
                     @Messages("import.files")
                 </button>
-                @if(contest.monumentIdTemplate.isDefined) {
+                @if(services.regions.ContestKind.monumentIdTemplate(contest).isDefined) {
                     <button type="submit" id="update-monuments-btn" class="btn btn-primary" name="action"
                     value="update.monuments">
                         @Messages("update.monuments")

@@ -12,7 +12,8 @@
         rate: Option[Int],
         region: String = "all",
         regions: Seq[Region],
-        rates: RateDistribution)(implicit flash: Flash, messages: Messages)
+        rates: RateDistribution,
+        rated: Option[Boolean] = None)(implicit flash: Flash, messages: Messages)
 
 @import java.net.URLEncoder
 
@@ -23,7 +24,7 @@
 
             @if(regions.nonEmpty) {
                 @regionNav((region: String) =>
-                                routes.GalleryController.query("gallery", Some(asUserId), 1, region, roundId, rate).url,
+                                routes.GalleryController.query("gallery", Some(asUserId), 1, region, roundId, rate, rated).url,
                             round, region, regions)
             }
 

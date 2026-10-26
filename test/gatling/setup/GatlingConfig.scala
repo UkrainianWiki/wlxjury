@@ -38,6 +38,14 @@ object GatlingConfig {
     val withVoting: Boolean = cfg.getBoolean("gatling.aggRatings.withVoting")
   }
 
+  /** The app's `regions.countCache` (`-Dgatling.regionCountCache`), true by default. */
+  val regionCountCache: Boolean =
+    !cfg.hasPath("gatling.regionCountCache") || cfg.getBoolean("gatling.regionCountCache")
+
+  /** The app's `gallery.regionCounts` (`-Dgatling.regionCounts=off|juror|all`); the app's default if not set. */
+  val regionCounts: Option[String] =
+    Option.when(cfg.hasPath("gatling.regionCounts"))(cfg.getString("gatling.regionCounts"))
+
   /** Organizer accounts the fixture provides: the most sessions any organizer flow uses. */
   def organizerAccounts: Int = Seq(RoundMgmt.organizers, AggRatings.organizers, Concurrent.admins).max
 

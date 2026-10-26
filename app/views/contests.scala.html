@@ -82,7 +82,7 @@
                             <td>
                             </td>
                             <td>
-                            @inputText(editContestForm("monumentIdTemplate"), Symbol("placeholder") -> Messages("id.template"), Symbol("_label") -> "", Symbol("_help") -> "")
+                            @inputText(editContestForm("monumentIdTemplate"), Symbol("placeholder") -> Messages("id.template"), Symbol("_label") -> "", Symbol("_help") -> Messages("id.template.help"))
                             </td>
                             <td>
                                 <div class="btn btn-primary" onClick="document.forms['add-contest'].submit();">
@@ -115,7 +115,11 @@
                             </button>
                         </a>
                         </td>
-                        <td>@contest.monumentIdTemplate.getOrElse("")</td>
+                        <td class="id-template">@contest.monumentIdTemplate.filter(_.trim.nonEmpty).getOrElse {
+                            @for(template <- services.regions.ContestKind.configMonumentIdTemplate(contest)) {
+                                @template <span class="text-muted" title="@Messages("id.template.from.campaign")">(@Messages("id.template.from.campaign"))</span>
+                            }
+                        }</td>
                         <td>
                     </td>
                     </tr>
