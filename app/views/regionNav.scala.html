@@ -14,8 +14,12 @@
                 <li @if("all" == selectedRegion) {style="font-weight: bold"}>
                     <a href="@regionToUrl("all")" >*</a>
                 </li>
-                @for(region <- regions) {
-                    <li @if(region.id == selectedRegion) {style="font-weight: bold"}>
+                @for((region, i) <- regions.zipWithIndex) {
+                    @* regions, then special nominations, then the others *@
+                    @if(i > 0 && regions(i - 1).kind != region.kind) {
+                        <li class="disabled region-separator"><span>&middot;</span></li>
+                    }
+                    <li @if(region.kind == Region.Nomination) {class="region-nomination"} @if(region.id == selectedRegion) {style="font-weight: bold"}>
                         <a href="@regionToUrl(region.id)" >
                             @region.name @region.count.fold("")(count => s"($count)")
                         </a>

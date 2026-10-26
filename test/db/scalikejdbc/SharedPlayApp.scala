@@ -70,5 +70,6 @@ object SharedPlayApp {
     }
     // TRUNCATE resets AUTO_INCREMENT, so round ids are reused
     RoundImageCounts.clear()
+    RegionCountCache.clear()
   }
 }

@@ -11,8 +11,6 @@ class RegionStatSpec extends Specification with BeforeAll with TestDb {
 
   override def beforeAll(): Unit = SharedTestDb.init()
 
-  implicit val messages: MessageStub = MessageStub(Map.empty)
-
   private def image(pageId: Long, monumentId: String): Image =
     Image(pageId, s"File:Image$pageId.jpg", None, None, 640, 480, Some(monumentId))
 
@@ -35,7 +33,7 @@ class RegionStatSpec extends Specification with BeforeAll with TestDb {
 
     "return empty when no selections exist for the round" in new AutoRollbackDb {
       val regions = SelectionQuery(roundId = Some(999L)).byRegionStat()
-      regions must_== Seq.empty
+      regions must_== Map.empty
     }
 
     "return one region code for images all from the same region" in new AutoRollbackDb {
@@ -51,7 +49,7 @@ class RegionStatSpec extends Specification with BeforeAll with TestDb {
       insertSelections(imgs.map(i => selection(i.pageId, userId, roundId, i.monumentId)))
 
       val result = SelectionQuery(roundId = Some(roundId)).byRegionStat()
-      result.map(_.id) must_== Seq("07")
+      result.keys.toSeq.sorted must_== Seq("07")
     }
 
     "return two distinct region codes for images from different regions" in new AutoRollbackDb {
@@ -66,7 +64,7 @@ class RegionStatSpec extends Specification with BeforeAll with TestDb {
       insertSelections(imgs.map(i => selection(i.pageId, userId, roundId, i.monumentId)))
 
       val result = SelectionQuery(roundId = Some(roundId)).byRegionStat()
-      result.map(_.id).sorted must_== Seq("07", "14")
+      result.keys.toSeq.sorted must_== Seq("07", "14")
     }
 
     "return the regions when the monument list was never loaded" in new AutoRollbackDb {
@@ -82,7 +80,7 @@ class RegionStatSpec extends Specification with BeforeAll with TestDb {
         selection(253L, userId, roundId, None))
 
       val result = SelectionQuery(roundId = Some(roundId)).byRegionStat()
-      result.map(_.id).sorted must_== Seq("07", "14")
+      result.keys.toSeq.sorted must_== Seq("07", "14")
     }
 
     "filter by userId — juror sees only their own regions" in new AutoRollbackDb {
@@ -99,10 +97,10 @@ class RegionStatSpec extends Specification with BeforeAll with TestDb {
       ))
 
       val resultUser3 = SelectionQuery(userId = Some(userId3), roundId = Some(roundId)).byRegionStat()
-      resultUser3.map(_.id) must_== Seq("07")
+      resultUser3.keys.toSeq must_== Seq("07")
 
       val resultUser4 = SelectionQuery(userId = Some(userId4), roundId = Some(roundId)).byRegionStat()
-      resultUser4.map(_.id) must_== Seq("14")
+      resultUser4.keys.toSeq must_== Seq("14")
     }
 
     "not include regions from a different round" in new AutoRollbackDb {
@@ -119,10 +117,10 @@ class RegionStatSpec extends Specification with BeforeAll with TestDb {
       ))
 
       val resultRound1 = SelectionQuery(roundId = Some(round1)).byRegionStat()
-      resultRound1.map(_.id) must_== Seq("07")
+      resultRound1.keys.toSeq must_== Seq("07")
 
       val resultRound2 = SelectionQuery(roundId = Some(round2)).byRegionStat()
-      resultRound2.map(_.id) must_== Seq("14")
+      resultRound2.keys.toSeq must_== Seq("14")
     }
   }
 }
