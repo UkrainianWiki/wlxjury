@@ -1,0 +1,6 @@
+# Repository defaults for future sessions; explicit host/session choices can override these.
+model_reasoning_effort = "medium"
+tool_output_token_limit = 2000
+
+[agents]
+default_subagent_reasoning_effort = "medium"
