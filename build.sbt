@@ -121,6 +121,14 @@ Test / unmanagedSources += baseDirectory.value / "project" / "BuildIdentity.scal
 
 scalaVersion := "2.13.15"
 
+// Keep source decoding and forked JVM defaults deterministic across machines.
+ThisBuild / scalacOptions += "-encoding"
+ThisBuild / scalacOptions += "UTF-8"
+ThisBuild / javacOptions += "-encoding"
+ThisBuild / javacOptions += "UTF-8"
+ThisBuild / javaOptions += "-Dfile.encoding=UTF-8"
+Universal / javaOptions += "-Dfile.encoding=UTF-8"
+
 val ScalikejdbcVersion = "4.3.2"
 val ScalikejdbcPlayVersion = "3.0.1-scalikejdbc-4.3"
 val ScalawikiVersion = "0.7.0-SNAPSHOT"
