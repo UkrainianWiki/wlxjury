@@ -1,6 +1,6 @@
 package services.imports
 
-import db.scalikejdbc.{CategoryLinkJdbc, ContestJuryJdbc, ImageJdbc, RoundImageCounts}
+import db.scalikejdbc.{CategoryLinkJdbc, ContestJuryJdbc, ImageJdbc, RegionCountCache, RoundImageCounts}
 import org.intracer.wmua.{ContestJury, Image}
 import org.scalawiki.dto.Page
 import play.api.libs.json._
@@ -213,7 +213,7 @@ class ImageImportHandler @Inject() (source: CommonsSource, config: Configuration
     val p = paramsOf(job)
     val st = stateOf(job)
     val written =
-      if (p.mode == Mode.MonumentIds) writeMonumentIds(page, st)
+      if (p.mode == Mode.MonumentIds) writeMonumentIds(page, st, ctx)
       else writeImages(p.categoryId.getOrElse(throw new IllegalStateException("no category")), page, st, ctx)
     val next = written.copy(
       cursor = page.nextCursor,
@@ -247,6 +247,9 @@ class ImageImportHandler @Inject() (source: CommonsSource, config: Configuration
     // Locks the restored files with those updated below, in page id order
     val restored = DeletedFiles.restore(stored.keys.toSeq, alsoLock = changed.map(_.pageId))
     if (restored.nonEmpty) ctx.afterCommit(RoundImageCounts.invalidate(restored: _*))
+    // the category's region counts: files join it, or a changed file's monument id may change
+    if (unlinked.nonEmpty) ctx.afterCommit(RegionCountCache.invalidateCategory(categoryId))
+    if (changed.nonEmpty) ctx.afterCommit(RegionCountCache.invalidateMonumentIds())
     ImageJdbc.insertIgnore(fresh)
     CategoryLinkJdbc.linkIgnore(categoryId, unlinked.map(_.pageId))
     changed.foreach { image =>
@@ -260,10 +263,13 @@ class ImageImportHandler @Inject() (source: CommonsSource, config: Configuration
     )
   }
 
-  private def writeMonumentIds(page: ImportPage, st: ImportState)(implicit session: DBSession): ImportState = {
+  private def writeMonumentIds(page: ImportPage, st: ImportState, ctx: StepContext)(implicit
+      session: DBSession
+  ): ImportState = {
     val current = ImageJdbc.monumentIds(page.monumentIds.map(_._1))
     val changed = page.monumentIds.filter { case (pageId, id) => current.get(pageId).exists(!_.contains(id)) }
     changed.foreach { case (pageId, id) => ImageJdbc.updateMonumentIdIn(pageId, id) }
+    if (changed.nonEmpty) ctx.afterCommit(RegionCountCache.invalidateMonumentIds())
     st.copy(monumentIdsChanged = st.monumentIdsChanged + changed.size)
   }
 }

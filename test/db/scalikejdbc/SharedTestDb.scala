@@ -23,6 +23,7 @@ object SharedTestDb {
     }
     // TRUNCATE resets AUTO_INCREMENT, so round ids are reused
     RoundImageCounts.clear()
+    RegionCountCache.clear()
   }
 
   // Exposed so that SharedPlayApp can reuse this container (one container per JVM)

@@ -327,3 +327,6 @@ files.deleted.still.counted = {0} of them still count in this round: it wasn''t 
 no.files = No files
 files.open.on.commons = Open on Commons
 files.undelete.on.commons = Undelete on Commons
+id.template.from.campaign = from the campaign config
+id.template.help = Empty: the campaign config's, if it has one
+region.other = Other ({0})

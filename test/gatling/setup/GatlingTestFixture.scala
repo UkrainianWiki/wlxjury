@@ -12,6 +12,15 @@ import scala.util.Random
 
 object GatlingTestFixture {
 
+  private var localApplication: Option[_root_.play.api.Application] = None
+
+  /** For controller benchmarks against the same disposable fixture and dependency graph. */
+  def application: _root_.play.api.Application = {
+    require(!GatlingConfig.external, "No application is exposed for an external target")
+    val _ = data
+    localApplication.get
+  }
+
   private val data: GatlingFixtureData =
     if (GatlingConfig.external) GatlingExternalTarget.load() else init()
 
@@ -55,9 +64,12 @@ object GatlingTestFixture {
         "jobs.workers"                           -> GatlingConfig.Jobs.workers,
         "jobs.concurrency.round_distribution"    -> GatlingConfig.Jobs.distributionConcurrency,
         "jobs.roundDistribution.chunkRows"       -> GatlingConfig.Jobs.chunkRows,
-        "jobs.pollInterval"                      -> "2 seconds"
-      ))
+        "jobs.pollInterval"                      -> "2 seconds",
+        // region counts: the contest files page's cache, and the round galleries' counts
+        "regions.countCache"                     -> GatlingConfig.regionCountCache
+      ) ++ GatlingConfig.regionCounts.map("gallery.regionCounts" -> _))
       .build()
+    localApplication = Some(app)
     val server = TestServer(port, app)
     server.start()
 

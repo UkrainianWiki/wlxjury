@@ -1,9 +1,7 @@
 package db.scalikejdbc.rewrite
 
-import _root_.play.api.i18n.Messages
 import db.scalikejdbc.{ImageJdbc, SelectionJdbc}
-import org.intracer.wmua.{Image, ImageWithRating, Region, Selection}
-import org.scalawiki.wlx.dto.Country.Ukraine
+import org.intracer.wmua.{Image, ImageWithRating, Selection}
 import scalikejdbc.{DBSession, _}
 
 object ImageDbNew extends SQLSyntaxSupport[Image] {
@@ -22,36 +20,6 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
     * @param monumentId the monument id column, e.g. `s.monument_id`
     */
   def regionOf(monumentId: String): String = s"NULLIF(LEFT(SUBSTRING_INDEX($monumentId, '-', 1), 3), '')"
-
-  /** The regions, by id, with their names and file counts if known, in id order; with
-    * `subRegions` (adm1 ids), Kyiv's sub-regions as one region, in name order.
-    */
-  def regions(byRegion: Map[String, Option[Int]], subRegions: Boolean = false)(implicit
-      messages: Messages
-  ): Seq[Region] = {
-    val regions = byRegion.keys
-      .filterNot(_ == null)
-      .map { id =>
-        val adm = Ukraine.byMonumentId(id)
-        val name =
-          if (messages.isDefinedAt(id)) messages(id)
-          else adm.map(_.name).getOrElse("Unknown")
-        Region(id, name, byRegion(id))
-      }
-      .toSeq
-      .sortBy(_.id)
-
-    if (subRegions) {
-      val kyivPictures =
-        regions.filter(_.id.startsWith("80-")).map(_.count.getOrElse(0)).sum
-      val withoutKyivRegions = regions.filterNot(_.id.startsWith("80-"))
-      val unsorted =
-        withoutKyivRegions ++ Seq(Region("80", messages("80"), Some(kyivPictures)))
-      unsorted.sortBy(_.name)
-    } else {
-      regions.sortBy(_.id)
-    }
-  }
 
   case class Limit(
       pageSize: Option[Int] = None,
@@ -114,8 +82,8 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
 
       // SQL clause order: FROM/JOIN → WHERE → GROUP BY → ORDER BY
       // Monument join needed when: multiple regions (IN clause on m.adm0),
-      // byRegion stats, or a single full-region-code (length > 2) that references m.adm0/m.adm1
-      val needsMonumentJoin = regions.size > 1 || byRegion || regions.headOption.exists(_.length > 2)
+      // byRegion stats, or a single sub-region (adm1, longer than a region's two characters)
+      val needsMonumentJoin = regions.size > 1 || byRegion || subRegionFilter
       val structureStr =
         columnsStr +
           join(monuments = needsMonumentJoin)
@@ -191,13 +159,14 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
       sql"${imageRankSql(pageId, inner)}".map(_.int(1)).single().getOrElse(0)
     }
 
-    /** The regions of the round's (or the juror's) images. A top-level region is the
+    /** The regions of the round's (or the juror's) images, by id, without counts (the
+      * contest's [[services.regions.RegionScheme]] names them). A top-level region is the
       * monument id's prefix, as monument.adm0 is (MonumentJdbc) and as the single-region
       * filter matches it (`s.monument_id like 'XX%'`): read from the selection rows
       * alone, so the regions show even when the monument list was never loaded. Only
       * sub-regions (adm1) need the monument table.
       */
-    def byRegionStat()(implicit messages: Messages, session: DBSession = autoSession): Seq[Region] = {
+    def byRegionStat()(implicit session: DBSession = autoSession): Map[String, Option[Int]] = {
       val (region, monumentJoin) =
         if (subRegions) (s"m.$regionColumn", "JOIN monument m ON m.id = s.monument_id")
         else (regionOf("s.monument_id"), "")
@@ -207,15 +176,43 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
                        |WHERE $region IS NOT NULL
                        |  ${userId.fold("") { id => s"AND s.jury_id = $id" }}
                        |  AND s.round_id = ${roundId.get}""".stripMargin)
-        .map(rs => rs.string(1) -> None)
+        .map(rs => rs.string(1) -> Option.empty[Int])
         .list()
         .toMap
-      regions(map, subRegions)
+      map
     }
 
-    def regions(byRegion: Map[String, Option[Int]], subRegions: Boolean = false)(implicit
-        messages: Messages
-    ): Seq[Region] = ImageDbNew.regions(byRegion, subRegions)
+    /** The number of the query's images in each region, without its region filter: every
+      * region of the juror's (or the round's) images, those the rate filter leaves out
+      * counted 0, so a region's count is what its link lists. Files without a monument id
+      * are left out. The `rated` filter's extra page (`withPageId`) isn't counted.
+      *
+      * A juror's: one scan of the juror's rows on (jury_id, round_id, rate, monument_id,
+      * page_id) (V48), the juror having one row per image. The whole round's: its images
+      * once each, from selection's (round_id, page_id, rate) index, joined to the images'
+      * (page_id, monument_id) index (V66) for their regions.
+      */
+    def regionCounts()(implicit session: DBSession = autoSession): Map[String, Int] = {
+      val conditions = rate.toSeq.map(r => s"s.rate = ${r.toInt}") ++
+        rated.toSeq.map(r => if (r) "s.rate > 0" else "s.rate = 0")
+      val hit = if (conditions.isEmpty) "1" else conditions.mkString("(", " AND ", ")")
+      val sql = userId match {
+        case Some(juror) =>
+          s"""SELECT ${regionOf("s.monument_id")} AS region, SUM($hit) FROM selection s
+             |WHERE s.jury_id = ${juror.toLong} AND s.round_id = ${roundId.get.toLong}
+             |GROUP BY region ORDER BY NULL""".stripMargin
+        case None =>
+          s"""SELECT ${regionOf("i.monument_id")} AS region, SUM(p.hit)
+             |FROM (SELECT s.page_id, MAX($hit) AS hit FROM selection s WHERE s.round_id = ${roundId.get.toLong}
+             |      GROUP BY s.page_id) p
+             |JOIN images i FORCE INDEX (images_page_monument_idx) ON i.page_id = p.page_id
+             |GROUP BY region ORDER BY NULL""".stripMargin
+      }
+      SQL(sql).map(rs => rs.stringOpt(1) -> rs.int(2)).list().collect { case (Some(region), n) => region -> n }.toMap
+    }
+
+    /** A single sub-region (adm1) filter, which the monument table has. */
+    private def subRegionFilter: Boolean = subRegions && regions.size == 1 && regions.head.length > 2
 
     private val imagesJoinSelection =
       """ from selection s
@@ -242,15 +239,19 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
           }
         },
         regions.headOption.map { _ =>
-          if (regions.headOption.exists(_.length > 2)) {
+          if (subRegionFilter) {
             sqls.in(col, regions.toSeq)
           } else if (regions.size > 1) {
             sqls.in(SQLSyntax.createUnsafely("m.adm0"), regions.toSeq)
           } else {
             // selection's denormalized copy of images.monument_id (V48), so a juror's
-            // region gallery filters on the selection rows alone
-            val likeParam = regions.head + "%"
-            sqls"s.monument_id like $likeParam"
+            // region gallery filters on the selection rows alone: the LIKE reads the index
+            // range, regionOf makes it the region the counts and the nav have (`7` isn't
+            // `71-...`, a three-character prefix such as WLE's free text lists its files)
+            val region = regions.head
+            val likeParam = region + "%"
+            if (subRegions) sqls"s.monument_id like $likeParam"
+            else sqls"s.monument_id like $likeParam and ${SQLSyntax.createUnsafely(regionOf("s.monument_id"))} = $region"
           }
         }
       ).flatten

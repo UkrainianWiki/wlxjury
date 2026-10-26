@@ -50,6 +50,7 @@ class ContestFilesPageSpec extends PlaySpecification with PlayTestDb {
       val categoryId = sql"SELECT category_id FROM contest_jury WHERE id = ${contest.getId}".map(_.long(1)).single().get
       files.foreach(f => sql"INSERT INTO category_members (category_id, page_id) VALUES ($categoryId, ${f.pageId})".update())
     }
+    RegionCountCache.clear() // written by raw SQL, past the cache's invalidation
   }
 
   private def get(path: String, user: User)(implicit app: Application): (Int, String) = {
@@ -190,6 +191,85 @@ class ContestFilesPageSpec extends PlaySpecification with PlayTestDb {
         val (_, deleted) = get(s"$base?deleted=true&region=14", f.admin)
         tiles(deleted) === List(6L)
         deleted must contain(s"""href="$base?deleted=true&amp;region=07"""") // the deleted files' regions
+      }
+    }
+
+    "show a Wiki Loves Earth contest's regions, named as Ukraine's" in {
+      testDbApp { implicit app =>
+        val f = fixture()
+        DB.autoCommit { implicit s =>
+          sql"""UPDATE contest_jury SET name = 'Wiki Loves Earth', country = 'Ukraine', year = 2025,
+                monument_id_template = 'UkrainianNaturalHeritageSite' WHERE id = ${f.contest.getId}""".update()
+        }
+        addFiles(f.contest, Seq(
+          image(3L, "Lake").copy(monumentId = Some("26-103-0021")),
+          image(4L, "Forest").copy(monumentId = Some("61-101-0001"))))
+        val (_, page) = get(s"/contest/${f.contest.getId}/files", f.admin)
+
+        page must contain("""id="regionnav"""")
+        page must beMatching("""(?s).*Ivano-Frankivsk O\.\s+\(1\).*""")
+        page must beMatching("""(?s).*Ternopil O\.\s+\(1\).*""")
+      }
+    }
+
+    "show the regions of a Wiki Loves Earth contest without a template of its own" in {
+      testDbApp { implicit app =>
+        val f = fixture()
+        DB.autoCommit { implicit s =>
+          sql"""UPDATE contest_jury SET name = 'Wiki Loves Earth', country = 'Ukraine', year = 2025,
+                monument_id_template = NULL WHERE id = ${f.contest.getId}""".update()
+        }
+        addFiles(f.contest, Seq(
+          image(3L, "Lake").copy(monumentId = Some("26-103-0021")),
+          image(4L, "Forest").copy(monumentId = Some("61-101-0001"))))
+        val (_, page) = get(s"/contest/${f.contest.getId}/files", f.admin)
+
+        page must contain("""id="regionnav"""")
+        page must beMatching("""(?s).*Ternopil O\.\s+\(1\).*""")
+      }
+    }
+
+    "name a special nomination's region after it, after the regions" in {
+      testDbApp { implicit app =>
+        val f = fixture()
+        DB.autoCommit { implicit s =>
+          sql"""UPDATE contest_jury SET name = 'Wiki Loves Monuments', country = 'Ukraine', year = 2025
+                WHERE id = ${f.contest.getId}""".update()
+        }
+        addFiles(f.contest, Seq(
+          image(3L, "Synagogue").copy(monumentId = Some("99-141-2306")),
+          image(4L, "Church").copy(monumentId = Some("14-101-0001"))))
+        val (_, page) = get(s"/contest/${f.contest.getId}/files", f.admin)
+
+        page must beMatching("""(?s).*Donetsk O\.\s+\(1\).*Єврейська спадщина\s+\(1\).*""")
+      }
+    }
+
+    "serve the region counts from the cache" in {
+      testDbApp { implicit app =>
+        val f = fixture()
+        byMonuments(f.contest)
+        addRegionFiles(f)
+        val before = RegionCountCache.loads.get
+        val (_, first) = get(s"/contest/${f.contest.getId}/files", f.admin)
+        val (_, second) = get(s"/contest/${f.contest.getId}/files?region=07", f.admin)
+        RegionCountCache.loads.get === before + 1
+        first must contain("All files (8)")
+        second must contain("All files (8)")
+      }
+    }
+
+    "count the regions on every view with the cache switched off" in {
+      implicit val cfg: Map[String, String] = Map("regions.countCache" -> "false")
+      testDbApp { implicit app =>
+        SharedTestDb.truncateAll() // a per-test app doesn't
+        val f = fixture()
+        byMonuments(f.contest)
+        addRegionFiles(f)
+        val before = RegionCountCache.loads.get
+        get(s"/contest/${f.contest.getId}/files", f.admin)
+        get(s"/contest/${f.contest.getId}/files", f.admin)
+        RegionCountCache.loads.get === before
       }
     }
 

@@ -29,6 +29,22 @@ If `target/dep-sources/` is empty or missing, run `sbt extractDepSources` once.
 
 ## Commands
 
+### Agent efficiency (applies to Codex and Claude)
+
+- Use medium effort for ordinary implementation. Use low effort/a smaller available model for mechanical extraction, log summaries and simple edits when the host allows selection. Reserve high effort for unresolved authorization, migrations, concurrency or architecture decisions; return to the ordinary setting afterward. Instructions cannot change a running model: report the actual setting rather than claiming a switch. Codex defaults are in `.codex/config.toml`; explicit app/session choices may override them.
+- Keep the task bounded. Confirm the signed-in account and target contest before investigating a reported permission failure. Do not weaken authorization because another account has the expected role.
+- Search with `rg -n` first, then read the relevant range. Do not repeatedly dump whole controllers, plans, dependency catalogs or tool inventories. Parse structured results with scripts; give the model the derived table and anomalies, not raw samples.
+- Run checks through `python scripts/agent-check.py -- COMMAND`. It saves full output under `target/checks/`, prints a bounded summary, and preserves the exit code. To inspect an existing log: `python scripts/agent-check.py --summarize PATH --exit-code 1`. Inspect a named failing block only if the summary is insufficient. A successful failure-path test may log `[error]`; use test totals and the process exit code, not that prefix alone.
+- Compile changed Scala/tests before a costly run. On Windows use UTF-8 and the direct sbt launcher, since `sbt.bat` can strip quotes from `set ... Seq(...)` commands. Example in PowerShell:
+  ```powershell
+  python scripts/agent-check.py -- java -Xmx512m -Dfile.encoding=UTF-8 -jar 'C:/Program Files (x86)/sbt/bin/sbt-launch.jar' 'set Test / javaOptions ++= Seq("-Xmx768m", "-Dfile.encoding=UTF-8")' 'Test/compile' 'testOnly controllers.ContestFilesPageSpec'
+  ```
+- Start with affected specs, including negative authorization cases for permission changes. Run the full suite once at the release boundary when required. If it fails, compile and rerun the affected specs after fixes before considering another full run. Repeat broad tests only for a shared-code change, unresolved risk, or an explicit clean-release gate. Do not run tests for documentation-only changes or tests that merely assert CSS class names.
+- Benchmark progressively: reuse relevant measurements, run a small paired pilot on the actual application path, then expand only if the result could change the decision. State absolute response deltas and run variation separately; do not infer user impact from query percentages alone. Estimate runtime before launching a large matrix; avoid overlapping DB benchmarks and tests. Disable per-query SQL debug logging for performance runs and record that choice consistently for both variants. Stop when the decision is supported, retaining outliers and limitations.
+- While a process runs, use the tool's bounded wait (up to 60 seconds) rather than alternating sleep, clock, tail and status calls. Keep required user updates short. Do not reopen unchanged source, reanalyse the plan, or print raw logs on each wait. Resume investigation only on completion, failure, or a meaningful progress change.
+- Use an independent reviewer only when requested or required. Give it the final diff, relevant invariants and concise validation results. One review plus one follow-up for material fixes is normally enough; do not re-review each assertion, import or helper qualification. Do not rerun tests in the reviewer unless a specific uncertainty requires it.
+- Preserve full logs and machine-readable benchmark results. Reduce what enters model context, not evidence or required safety/release checks. Do not change sandbox, approval or deployment safeguards to save usage.
+
 ### Running the application
 ```bash
 sbt run          # Start with auto-reloading on HTTP requests

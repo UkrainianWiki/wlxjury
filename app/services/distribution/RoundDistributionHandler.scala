@@ -8,6 +8,7 @@ import play.api.{Configuration, Logging}
 import scalikejdbc._
 import services.imports.{CommonsSource, ImageText}
 import services.jobs._
+import services.regions.ContestKind
 
 import javax.inject.{Inject, Singleton}
 import scala.collection.concurrent.TrieMap
@@ -187,8 +188,9 @@ class RoundDistributionHandler @Inject() (
         val contest = ContestJuryJdbc
           .findById(round.contestId)
           .getOrElse(throw new NoSuchElementException(s"Contest ${round.contestId} not found"))
-        val pages = commons.filesByTitles(notStored, info = true, text = contest.monumentIdTemplate.isDefined)
-        val images = ImageText.images(pages, contest, contest.monumentIdTemplate)
+        val template = ContestKind.monumentIdTemplate(contest)
+        val pages = commons.filesByTitles(notStored, info = true, text = template.isDefined)
+        val images = ImageText.images(pages, contest, template)
         val found = images.map(_.pageId).toSet
         // a missing title, or a page that isn't a file
         (images, pages.filterNot(_.id.exists(found.contains)).map(_.title).distinct)

@@ -154,9 +154,13 @@ object ImageJdbc extends CRUDMapper[Image]
         .toMap
 
   /** Updates the image, and its selection rows' copy of its monument id. */
-  def update(image: Image): Unit = DB.localTx { implicit session => updateIn(image) }
+  def update(image: Image): Unit = {
+    DB.localTx { implicit session => updateIn(image) }
+    RegionCountCache.invalidateMonumentIds()
+  }
 
-  /** [[update]] in the caller's transaction. */
+  /** [[update]] in the caller's transaction: the caller invalidates
+    * [[RegionCountCache.invalidateMonumentIds]] after it commits. */
   def updateIn(image: Image)(implicit session: DBSession): Unit = {
     updateById(image.pageId).withAttributes(
       fileAttributes(image) ++ Seq("monumentId" -> image.monumentId, "description" -> image.description): _*
@@ -190,11 +194,13 @@ object ImageJdbc extends CRUDMapper[Image]
     updateById(pageId).withAttributes("width" -> width, "height" -> height)
 
   /** Sets the image's monument id, and its selection rows' copy of it. */
-  def updateMonumentId(pageId: Long, monumentId: String): Unit = DB.localTx { implicit session =>
-    updateMonumentIdIn(pageId, monumentId)
+  def updateMonumentId(pageId: Long, monumentId: String): Unit = {
+    DB.localTx { implicit session => updateMonumentIdIn(pageId, monumentId) }
+    RegionCountCache.invalidateMonumentIds()
   }
 
-  /** [[updateMonumentId]] in the caller's transaction. */
+  /** [[updateMonumentId]] in the caller's transaction: the caller invalidates
+    * [[RegionCountCache.invalidateMonumentIds]] after it commits. */
   def updateMonumentIdIn(pageId: Long, monumentId: String)(implicit session: DBSession): Unit = {
     updateById(pageId).withAttributes("monumentId" -> monumentId)
     syncSelectionMonumentId(pageId, Some(monumentId))
@@ -489,6 +495,27 @@ object ImageJdbc extends CRUDMapper[Image]
     query.map(rs => rs.stringOpt(1) -> rs.int(2)).list().collect { case (Some(region), n) => region -> n }.toMap
   }
 
+  /** The number of the category's files in each region, and of those without one: from the
+    * category's index and the images' (page_id, monument_id) index (V66) alone, as
+    * [[regionCounts]] reads them. Every member has an image (FK_category_member_page_id, V65),
+    * so their total is the category's number of files. Cached by [[RegionCountCache]].
+    */
+  def categoryRegionCounts(categoryId: Long)(implicit session: DBSession = AutoSession): RegionCountCache.Counts = {
+    val rows = sql"""SELECT ${regionOf(sqls"r")} AS region, COUNT(*) FROM ${categoryMembers(categoryId, Some(sqls"r"))}
+                     GROUP BY region ORDER BY NULL"""
+      .map(rs => rs.stringOpt(1) -> rs.int(2)).list()
+    RegionCountCache.Counts(rows.collect { case (Some(region), n) => region -> n }.toMap,
+      rows.collect { case (None, n) => n }.sum)
+  }
+
+  /** The number of the category's files deleted on Commons, from the files marked deleted
+    * (V64's index).
+    */
+  def categoryDeletedCount(categoryId: Long)(implicit session: DBSession = AutoSession): Int =
+    sql"""SELECT COUNT(*) FROM images i STRAIGHT_JOIN category_members cm
+            ON cm.category_id = $categoryId AND cm.page_id = i.page_id
+          WHERE i.deleted_at IS NOT NULL""".map(_.int(1)).single().getOrElse(0)
+
   /** The number of the list's files, in the region or all of them, before the file `pageId`
     * in the list's order: its position, if it is in the list, as [[listFiles]] pages them.
     */
@@ -533,18 +560,6 @@ object ImageJdbc extends CRUDMapper[Image]
      })
       .map(storedFile)
       .list()
-
-  /** The number of [[categoryFiles]], and of those deleted on Commons: from the category's
-    * index and the files marked deleted, as [[categoryFiles]] reads them.
-    */
-  def categoryFileCounts(categoryId: Long)(implicit session: DBSession = AutoSession): (Int, Int) =
-    sql"""SELECT (SELECT COUNT(*) FROM category_members WHERE category_id = $categoryId),
-                 (SELECT COUNT(*) FROM images i STRAIGHT_JOIN category_members cm
-                    ON cm.category_id = $categoryId AND cm.page_id = i.page_id
-                  WHERE i.deleted_at IS NOT NULL)"""
-      .map(rs => rs.int(1) -> rs.int(2))
-      .single()
-      .getOrElse((0, 0))
 
   /** The round's files deleted on Commons: with votes of the round moved aside (V63), or
     * still counted in it (a round not open when they were deleted keeps them,

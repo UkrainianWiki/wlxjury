@@ -39,11 +39,12 @@ class SelectionQuerySpec extends Specification {
     }
 
     "region — single short code uses LIKE with bind parameter (injection blocked)" in {
-      // "u'" is length 2 (≤ 2) → goes through the LIKE branch, not IN
+      // The index range and the exact region check must both bind the input.
       val injection = "u'"
       val w = SelectionQuery(regions = Set(injection)).where()
       w.value must contain("monument_id like ?")
-      w.parameters.toSeq must_=== Seq(injection + "%")
+      w.value must not contain injection
+      w.parameters.toSeq must_=== Seq(injection + "%", injection)
     }
 
     "region — multi-code uses IN with bind parameters (injection blocked)" in {
