@@ -376,6 +376,26 @@ class MutationAuthorizationSpec extends PlaySpecification with PlayTestDb {
     }
   }
 
+  "a round's thumbnail urls, listed through a contest" should {
+    "be refused for a round of another contest" in {
+      testDbApp { app =>
+        implicit val materializer: Materializer = app.materializer
+        val a = contestDao.create(None, "WLE", 2024, "Ukraine")
+        val b = contestDao.create(None, "WLM", 2024, "Poland")
+        val aRound = roundDao.create(Round(None, 1, Some("A's round"), contestId = a.getId, active = true))
+        val bRound = roundDao.create(Round(None, 1, Some("B's round"), contestId = b.getId, active = true))
+        val admin = userDao.create(User("Admin", "admin@example.com", None, Set("admin"), contestId = a.id))
+        val gallery = app.injector.instanceOf[GalleryController]
+        def urlsOf(round: Option[Round]) = call(gallery.thumbnailUrls(a.getId, round.map(_.getId)),
+          sessionRequest(GET, s"/thumb_urls/${a.getId}", admin.email))
+
+        status(urlsOf(Some(bRound))) === NOT_FOUND
+        status(urlsOf(Some(aRound))) === OK
+        status(urlsOf(None)) === OK
+      }
+    }
+  }
+
   "a round's organizer views" should {
     // contests A and B, B's round with and without juryOrgView
     def setup() = {

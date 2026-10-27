@@ -523,12 +523,19 @@ class GalleryController @Inject() (
   }
 
   def thumbnailUrls(contestId: Long, roundId: Option[Long]): EssentialAction =
-    withAuth(contestPermission(Set(User.ADMIN_ROLE), Some(contestId))) { _ => implicit request =>
-      val contest = ContestJuryJdbc.findById(contestId).get
-      val urls = resizedImagesUrls(contestId, roundId)
-      val name =
-        "WLXJury_Round_Thumb_Urls" + contest.fullName.replaceAll(" ", "_")
-      urlsStream(urls, name)
+    withAuth(contestPermission(Set(User.ADMIN_ROLE), Some(contestId))) { user => implicit request =>
+      // the permission is the contest's, so the round must be one of its: never another's
+      val contest = ContestJuryJdbc.findById(contestId)
+      val roundInContest = roundId.forall(id => Round.findById(id).exists(_.contestId == contestId))
+      contest.filter(_ => roundInContest).fold[Result](
+        NotFound(views.html.errorPage(Some(user), "error.title",
+          if (contest.isEmpty) "error.contest.not.found" else "error.round.not.found"))
+      ) { contest =>
+        val urls = resizedImagesUrls(contestId, roundId)
+        val name =
+          "WLXJury_Round_Thumb_Urls" + contest.fullName.replaceAll(" ", "_")
+        urlsStream(urls, name)
+      }
     }
 }
 
