@@ -264,3 +264,16 @@ what jurors see; Step 5 decides whether they need an index.
   by rate, or takes it out of another filtered list (Rated, Selected, Rejected). It is a
   dismissible Bootstrap alert on the next large view (or gallery page), linking the file in
   the same list (in all files, if it left the list).
+- Step 5: paired pilot of `JurorGallerySimulation` (20 jurors, 60 s, 1,400 gallery pages a
+  run, the fixture's ~38k files), the same code with `-Dgatling.gallerySort=file` or `=rate`,
+  SQL logging off in both, run as file, rate, rate, file:
+
+  | order | mean ms | p50 | p95 | p99 | std |
+  |---|---|---|---|---|---|
+  | file (1st run) | 216 | 98 | 657 | 1058 | 334 |
+  | rate (2nd) | 248 | 109 | 817 | 1230 | 336 |
+  | rate (3rd) | 247 | 89 | 843 | 1203 | 362 |
+  | file (4th) | 246 | 99 | 826 | 1244 | 336 |
+
+  File order is no slower than by rate (within the runs' spread), so no index was added. Not
+  measured: the large view's `position`/`around` queries on their own.
