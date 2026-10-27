@@ -52,12 +52,12 @@
 
 @buttonSelect() = {
     @if(files(index).rate <=0 ) {
-        <a role="button" class="btn btn-default btn-sm active btn-success" href="/large/round/@round.getId/region/@region/pageid/@files(index).pageId/select/1@{rateParam(rate)}" title="@Messages("select.image") &lt;Space&gt;">
+        <a role="button" class="btn btn-default btn-sm active btn-success" href="#" data-vote-url="/large/round/@round.getId/region/@region/pageid/@files(index).pageId/select/1@{rateParam(rate)}" title="@Messages("select.image") &lt;Space&gt;">
             <span class="glyphicon glyphicon-thumbs-up icon-white" aria-hidden="true"></span>
         </a>
     }
     @if(files(index).rate >=0 ) {
-        <a role="button" class="btn btn-default btn-sm active btn-danger" href="/large/round/@round.getId/region/@region/pageid/@files(index).pageId/select/-1@{rateParam(rate)}" title="@Messages("reject.image") &lt;Delete&gt;">
+        <a role="button" class="btn btn-default btn-sm active btn-danger" href="#" data-vote-url="/large/round/@round.getId/region/@region/pageid/@files(index).pageId/select/-1@{rateParam(rate)}" title="@Messages("reject.image") &lt;Delete&gt;">
             <span class="glyphicon glyphicon-thumbs-down icon-white" aria-hidden="true"></span>
         </a>
     }
@@ -65,12 +65,12 @@
 
 @buttonStar() = {
     @if(files(index).rate <= 0 ) {
-        <a href="/large/round/@round.getId/region/@region/pageid/@files(index).pageId/select/1@{rateParam(rate)}">
+        <a href="#" data-vote-url="/large/round/@round.getId/region/@region/pageid/@files(index).pageId/select/1@{rateParam(rate)}">
         @buttonWithImage("btn btn-small", "star-off.png")
         </a>
     }
     @if(files(index).rate > 0 ) {
-        <a href="/large/round/@round.getId/region/@region/pageid/@files(index).pageId/select/0@{rateParam(rate)}">
+        <a href="#" data-vote-url="/large/round/@round.getId/region/@region/pageid/@files(index).pageId/select/0@{rateParam(rate)}">
         @buttonWithImage("btn btn-small", "star-on.png")
         </a>
     }

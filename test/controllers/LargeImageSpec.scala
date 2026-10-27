@@ -58,6 +58,12 @@ class LargeImageSpec extends PlaySpecification with PlayTestDb {
       .withCSRFToken
   }
 
+  /** A vote as the large view's vote form posts it. */
+  private def voteRequest(url: String): RequestHeader =
+    FakeRequest(POST, url)
+      .withSession(Secured.UserName -> email, Secured.CurrentContestId -> contest.getId.toString)
+      .withCSRFToken
+
   private def imageJson(id: Int, rate: Int = 0) = {
     s"""{"image":{"pageId":$id,"title":"File:Image$id.jpg","width":640,"height":480,"monumentId":"12-345-$id"},
        |"selection":[{"pageId":$id,"juryId":1,"roundId":1,"rate":$rate,"id":${id + 1},"monumentId":"12-345-$id"}],
@@ -223,7 +229,7 @@ class LargeImageSpec extends PlaySpecification with PlayTestDb {
       createSelection(images)
 
       val result = controller.rateByPageId(round.id.get, images.head.pageId, select = 5, module = "gallery", rate = Some(0))
-        .apply(request(s"/large/round/${round.id.get}/user/${user.id.get}/pageid/${images.head.pageId}/select/5?rate=0"))
+        .apply(voteRequest(s"/large/round/${round.id.get}/pageid/${images.head.pageId}/select/5?rate=0"))
         .run()
 
       status(result) mustEqual SEE_OTHER
@@ -241,7 +247,7 @@ class LargeImageSpec extends PlaySpecification with PlayTestDb {
       createSelection(images, rate = 5)
 
       val result = controller.rateByPageId(round.id.get, images.head.pageId, select = 0, module = "gallery", rate = None)
-        .apply(request(s"/large/round/${round.id.get}/user/${user.id.get}/pageid/${images.head.pageId}/select/0?module=byrate"))
+        .apply(voteRequest(s"/large/round/${round.id.get}/pageid/${images.head.pageId}/select/0?module=byrate"))
         .run()
 
       status(result) mustEqual SEE_OTHER
@@ -259,7 +265,7 @@ class LargeImageSpec extends PlaySpecification with PlayTestDb {
       createSelection(images, rate = 5)
 
       val result = controller.rateByPageId(round.id.get, images.head.pageId, select = 3, module = "byrate", rate = None)
-        .apply(request(s"/large/round/${round.id.get}/user/${user.id.get}/pageid/${images.head.pageId}/select/0?module=byrate"))
+        .apply(voteRequest(s"/large/round/${round.id.get}/pageid/${images.head.pageId}/select/0?module=byrate"))
         .run()
 
       status(result) mustEqual SEE_OTHER
@@ -278,7 +284,7 @@ class LargeImageSpec extends PlaySpecification with PlayTestDb {
       createSelection(images.tail, rate = 3)
 
       val result = controller.rateByPageId(round.id.get, images.head.pageId, select = 2, module = "byrate", rate = None)
-        .apply(request(s"/large/round/${round.id.get}/user/${user.id.get}/pageid/${images.head.pageId}/select/0?module=byrate"))
+        .apply(voteRequest(s"/large/round/${round.id.get}/pageid/${images.head.pageId}/select/0?module=byrate"))
         .run()
 
       status(result) mustEqual SEE_OTHER
@@ -297,7 +303,7 @@ class LargeImageSpec extends PlaySpecification with PlayTestDb {
       createSelection(images.tail, rate = 2)
 
       val result = controller.rateByPageId(round.id.get, images.last.pageId, select = 4, module = "byrate", rate = None)
-        .apply(request(s"/large/round/${round.id.get}/user/${user.id.get}/pageid/${images.last.pageId}/select/0?module=byrate"))
+        .apply(voteRequest(s"/large/round/${round.id.get}/pageid/${images.last.pageId}/select/0?module=byrate"))
         .run()
 
       status(result) mustEqual SEE_OTHER
@@ -316,7 +322,7 @@ class LargeImageSpec extends PlaySpecification with PlayTestDb {
       createSelection(images.tail, 5)
 
       val result = controller.rateByPageId(round.id.get, images.head.pageId, select = 5, module = "gallery", rate = Some(0))
-        .apply(request(s"/large/round/${round.id.get}/user/${user.id.get}/pageid/${images.head.pageId}/select/5?rate=0"))
+        .apply(voteRequest(s"/large/round/${round.id.get}/pageid/${images.head.pageId}/select/5?rate=0"))
         .run()
 
       status(result) mustEqual SEE_OTHER
@@ -335,7 +341,7 @@ class LargeImageSpec extends PlaySpecification with PlayTestDb {
       createSelection(images.tail, 0)
 
       val result = controller.rateByPageId(round.id.get, images.last.pageId, select = 5, module = "gallery", rate = Some(0))
-        .apply(request(s"/large/round/${round.id.get}/user/${user.id.get}/pageid/${images.last.pageId}/select/5?rate=0"))
+        .apply(voteRequest(s"/large/round/${round.id.get}/pageid/${images.last.pageId}/select/5?rate=0"))
         .run()
 
       status(result) mustEqual SEE_OTHER
@@ -353,7 +359,7 @@ class LargeImageSpec extends PlaySpecification with PlayTestDb {
       createSelection(images)
 
       val result = controller.rateByPageId(round.id.get, images.head.pageId, select = 5, module = "gallery", rate = Some(0))
-        .apply(request(s"/large/round/${round.id.get}/user/${user.id.get}/pageid/${images.head.pageId}/select/5?rate=0"))
+        .apply(voteRequest(s"/large/round/${round.id.get}/pageid/${images.head.pageId}/select/5?rate=0"))
         .run()
 
       status(result) mustEqual SEE_OTHER
@@ -371,7 +377,7 @@ class LargeImageSpec extends PlaySpecification with PlayTestDb {
       createSelection(images)
 
       val result = controller.rateByPageId(round.id.get, images.last.pageId, select = 5, module = "gallery", rate = Some(0))
-        .apply(request(s"/large/round/${round.id.get}/user/${user.id.get}/pageid/${images.last.pageId}/select/5?rate=0"))
+        .apply(voteRequest(s"/large/round/${round.id.get}/pageid/${images.last.pageId}/select/5?rate=0"))
         .run()
 
       status(result) mustEqual SEE_OTHER
@@ -392,7 +398,7 @@ class LargeImageSpec extends PlaySpecification with PlayTestDb {
       val nextPageId = images(8).pageId
 
       val result = controller.rateByPageId(round.id.get, pageId, select = 5, module = "gallery", rate = Some(0))
-        .apply(request(s"/large/round/${round.id.get}/user/${user.id.get}/pageid/$pageId/select/5?rate=0"))
+        .apply(voteRequest(s"/large/round/${round.id.get}/pageid/$pageId/select/5?rate=0"))
         .run()
 
       status(result) mustEqual SEE_OTHER
@@ -517,6 +523,78 @@ class LargeImageSpec extends PlaySpecification with PlayTestDb {
         contentAsString(result) must contain("No round configured yet.")
         status(call(appController(app).largeCurrentUser(1L, "all", None, "gallery"),
           FakeRequest(GET, "/large/pageid/1").withSession(Secured.UserName -> idle.email))) === OK
+      }
+    }
+  }
+
+  /** `body` with an app that has the CSRF filter, as in production (the test config
+    * disables it for the Gatling simulations), on the shared, truncated database.
+    */
+  private def withCsrfApp[T](body: play.api.Application => T): T = {
+    SharedTestDb.init()
+    SharedTestDb.truncateAll()
+    val csrfApp = new play.api.inject.guice.GuiceApplicationBuilder()
+      .configure(
+        "db.default.driver"     -> SharedTestDb.driverClassName,
+        "db.default.username"   -> SharedTestDb.username,
+        "db.default.password"   -> SharedTestDb.password,
+        "db.default.url"        -> SharedTestDb.jdbcUrl,
+        "play.filters.disabled" -> Seq("play.filters.hosts.AllowedHostsFilter")
+      )
+      .build()
+    try body(csrfApp)
+    finally {
+      scala.concurrent.Await.result(csrfApp.stop(), scala.concurrent.duration.Duration(30, "seconds"))
+      SharedTestDb.reregisterDefault()
+    }
+  }
+
+  "a vote in the large view, through the router and the filters" should {
+    // a rated round with two unrated files; the session has a CSRF token, as a signed-in
+    // browser's has, and sends a cookie, which makes the filter check the request
+    var images: Seq[Image] = Nil
+    var token = ""
+    def setUpVote(app: play.api.Application): Unit = {
+      setUp(rates = Round.ratesById(5))
+      images = createImages(2)
+      createSelection(images)
+      token = app.injector.instanceOf[play.filters.csrf.CSRF.TokenProvider].generateToken
+    }
+    def send(app: play.api.Application, method: String, body: (String, String)*) =
+      route(app, FakeRequest(method, s"/large/round/${round.getId}/pageid/${images.head.pageId}/select/5?rate=0")
+        .withHeaders(COOKIE -> "PLAY_SESSION=signed-in")
+        .withSession(Secured.UserName -> email, Secured.CurrentContestId -> contest.getId.toString,
+          "csrfToken" -> token)
+        .withFormUrlEncodedBody(body: _*)).get
+    def rate() = SelectionJdbc.findBy(images.head.pageId, user.getId, round.getId).map(_.rate)
+
+    "not be cast by a GET" in {
+      withCsrfApp { app =>
+        setUpVote(app)
+
+        status(send(app, GET)) must beOneOf(NOT_FOUND, METHOD_NOT_ALLOWED)
+        rate() === Some(0)
+      }
+    }
+
+    "be refused without the CSRF token" in {
+      withCsrfApp { app =>
+        setUpVote(app)
+
+        status(send(app, POST)) === FORBIDDEN
+        status(send(app, POST, "csrfToken" -> "forged")) === FORBIDDEN
+        rate() === Some(0)
+      }
+    }
+
+    "be cast by a POST with the token, going on to the next file" in {
+      withCsrfApp { app =>
+        setUpVote(app)
+
+        val result = send(app, POST, "csrfToken" -> token)
+        status(result) === SEE_OTHER
+        redirectLocation(result) === Some(s"/large/round/${round.getId}/user/${user.getId}/pageid/${images.last.pageId}?rate=0")
+        rate() === Some(5)
       }
     }
   }

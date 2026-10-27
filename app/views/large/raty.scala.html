@@ -38,7 +38,7 @@
                     readOnly : 'true'
                 } else {
                     click : function(score, evt) {
-                        document.location.href = '@url' + Math.round(score*@k) + '?module=@module@rateParam(rate, "", "&")';
+                        voteLarge('@url' + Math.round(score*@k) + '?module=@module@rateParam(rate, "", "&")');
                         return false;
                     }
                 }
@@ -63,7 +63,7 @@
             readOnly : 'true'
             } else {
             click : function(score, evt) {
-                document.location.href = '@url' + Math.round(score*@k) + '?module=@module@rateParam(rate, "", "&", Some(rateId))';
+                voteLarge('@url' + Math.round(score*@k) + '?module=@module@rateParam(rate, "", "&", Some(rateId))');
                 return false;
             }
             }

@@ -574,7 +574,7 @@ class MutationAuthorizationSpec extends PlaySpecification with PlayTestDb {
 
         val result = largeViewController
           .rateByPageId(foreignRound.getId, 1002L, select = 5, module = "gallery", rate = Some(0))
-          .apply(sessionRequest(GET, s"/large/round/${foreignRound.getId}/pageid/1002/select/5?rate=0", juror.email))
+          .apply(sessionRequest(POST, s"/large/round/${foreignRound.getId}/pageid/1002/select/5?rate=0", juror.email))
           .run()
 
         expectUnauthorized(result)
