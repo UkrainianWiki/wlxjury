@@ -367,3 +367,6 @@ job.status.denied=No access to this job''s status.
 round.stat.table.failed=The jurors'' table could not be loaded: you may have been signed out or lost access to this contest. Reload the page to try again.
 sort.file=In file order
 sort.rate=By my rating
+vote.moved=The image you rated ({0}) moved to its place by rating.
+vote.moved.out=The image you rated ({0}) is no longer in this list.
+vote.moved.view=View it

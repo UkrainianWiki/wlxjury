@@ -86,7 +86,7 @@ object LargeViewRenders {
     views.html.large.large(
         user = user,
         list = list,
-        hood = Neighbourhood(fs, index),
+        hood = Neighbourhood(fs, index, index),
         monument = None,
         comments = Nil,
         selection = Nil,

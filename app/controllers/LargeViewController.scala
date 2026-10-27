@@ -57,7 +57,8 @@ class LargeViewController @Inject() (
       Redirect(routes.GalleryController.list(user.getId, 1, region, roundId))
     ) { round =>
       val list = RoundList.of(round, user, user.getId, region, GalleryView.of(request))
-      val result = afterVote(list, pageId)
+      // the file's place, and where the vote goes on to, before the vote changes the list
+      val hood = list.around(pageId)
 
       criteria match {
         case None =>
@@ -74,20 +75,14 @@ class LargeViewController @Inject() (
             .findBy(pageId, user.getId, round.getId)
             .foreach(selection => CriteriaRate.updateRate(selection.getId, criterion, select))
       }
-      result
+
+      // the file itself in a round with criteria, voted for one by one; the list's first page
+      // if it has no other
+      val next = hood.flatMap(h => if (round.hasCriteria) Some(h.file) else h.next)
+      val moved = hood.filter(_ => criteria.isEmpty).flatMap(h => list.voteMoved(pageId, h.position, select))
+      Redirect(next.fold(list.pageUrl(1))(file => list.largeUrl(file.pageId))).flashing(moved.map(_.flash).toSeq: _*)
     }
   }
-
-  /** Where a vote for the file goes on to, found before the vote changes the list: the file
-    * itself in a round with criteria, voted for one by one; the list's first page if it has no
-    * other.
-    */
-  private def afterVote(list: RoundList, pageId: Long): Result =
-    Redirect(
-      list.around(pageId)
-        .flatMap(hood => if (list.round.hasCriteria) Some(hood.file) else hood.next)
-        .fold(list.pageUrl(1))(file => list.largeUrl(file.pageId))
-    )
 
   /** The large view of a round's file, by the round gallery's rules: the round must exist
     * ([[GalleryController.listGeneric]]'s pages if not), the user may view it

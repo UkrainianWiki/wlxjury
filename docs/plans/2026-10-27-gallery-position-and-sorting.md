@@ -259,3 +259,8 @@ what jurors see; Step 5 decides whether they need an index.
   links (sign-in, the access-denied suggestion, the navbar on other pages) carry the
   remembered order. The juror's tabs and the sort menu are in the navbar; Unrated shows also
   with 0 files.
+- Step 4: no note when a vote takes a file out of the **Unrated** list: that is what the tab is
+  for, and a note on every vote there would be noise. The note shows when a vote moves the file
+  by rate, or takes it out of another filtered list (Rated, Selected, Rejected). It is a
+  dismissible Bootstrap alert on the next large view (or gallery page), linking the file in
+  the same list (in all files, if it left the list).

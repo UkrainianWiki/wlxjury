@@ -3,7 +3,7 @@ package controllers
 import db.scalikejdbc.{Round, User}
 import db.scalikejdbc.rewrite.ImageDbNew.{Limit, SelectionQuery}
 import org.intracer.wmua.ImageWithRating
-import play.api.mvc.{Cookie, RequestHeader}
+import play.api.mvc.{Cookie, Flash, RequestHeader}
 
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets.UTF_8
@@ -172,7 +172,19 @@ final case class RoundList(
       val files = query
         .copy(withPageId = Some(pageId), limit = Some(Limit(Some(2 * Neighbourhood.Side + 1), Some(offset))))
         .list()
-      Some(files.indexWhere(_.pageId == pageId)).filter(_ >= 0).map(Neighbourhood(files, _))
+      Some(files.indexWhere(_.pageId == pageId)).filter(_ >= 0).map(Neighbourhood(files, _, position))
+    }
+
+  /** How a vote for the file, at `before` in the list before the vote, changed its place:
+    * moved by its new rate, or out of the list by the filter. Not out of the unrated files,
+    * which a vote is meant to take out of them; never in file order with all the files.
+    */
+  def voteMoved(pageId: Long, before: Int, rate: Int): Option[MovedVote] =
+    if (order == ListOrder.FileOrder && filter == VoteFilter.All) None
+    else {
+      val rank = query.imageRank(pageId)
+      if (rank == 0) Option.when(filter != VoteFilter.Unrated)(MovedVote(pageId, out = true, rate))
+      else Option.when(rank - 1 != before)(MovedVote(pageId, out = false, rate))
     }
 
   def withFilter(filter: VoteFilter): RoundList = copy(filter = filter)
@@ -243,13 +255,34 @@ final case class RoundList(
     withParams(routes.ImageDiscussionController.addComment(pageId, regionParam, Some(roundId)).url, params(module = true))
 }
 
-/** A large view's file (`files(index)`) and the files around it in its list. */
-final case class Neighbourhood(files: Seq[ImageWithRating], index: Int) {
+/** A large view's file (`files(index)`, at `position` in its list) and the files around it. */
+final case class Neighbourhood(files: Seq[ImageWithRating], index: Int, position: Int) {
 
   def file: ImageWithRating = files(index)
 
   /** Where a vote for the file goes on to: the file after it, or before it at the list's end. */
   def next: Option[ImageWithRating] = files.lift(index + 1).orElse(files.lift(index - 1))
+}
+
+/** A vote that moved its file in the juror's list, or out of it ([[RoundList.voteMoved]]): the
+  * next page, which the vote goes on to, says so and links the file. Carried in the flash.
+  *
+  * @param rate the file's new rate
+  */
+final case class MovedVote(pageId: Long, out: Boolean, rate: Int) {
+  def flash: (String, String) = MovedVote.Key -> s"$pageId:${if (out) "out" else "moved"}:$rate"
+}
+
+object MovedVote {
+
+  val Key = "movedVote"
+
+  def of(flash: Flash): Option[MovedVote] =
+    flash.get(Key).map(_.split(':')).flatMap {
+      case Array(id, kind, rate) if kind == "out" || kind == "moved" =>
+        for (pageId <- id.toLongOption; r <- rate.toIntOption) yield MovedVote(pageId, kind == "out", r)
+      case _ => None
+    }
 }
 
 object Neighbourhood {

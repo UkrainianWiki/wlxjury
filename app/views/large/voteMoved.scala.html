@@ -1,0 +1,19 @@
+@(list: RoundList)(implicit flash: Flash, messages: Messages)
+@* After a vote that moved its file in the juror's list, or took it out of it
+   (LargeViewController.rateByPageId): a note saying so, linking the file. Not a dialog, so
+   voting by keys goes on. *@
+
+@rateText(rate: Int) = @{
+    val round = list.round
+    if (round.isBinary) Messages(rate match { case 1 => "selected"; case -1 => "rejected"; case _ => "unrated" })
+    else if (rate == 0) Messages("unrated")
+    else "\u2605 " + (if (round.rates.id > 5 && round.halfStar) BigDecimal(rate) / 2 else BigDecimal(rate)).toString
+}
+
+@for(moved <- MovedVote.of(flash)) {
+<div class="alert alert-info alert-dismissible" role="status" id="vote-moved" style="margin-right: 5px;">
+    <button type="button" class="close" data-dismiss="alert"><span aria-hidden="true">&times;</span></button>
+    @Messages(if (moved.out) "vote.moved.out" else "vote.moved", rateText(moved.rate))
+    <a class="alert-link" href="@{(if (moved.out) list.withFilter(VoteFilter.All) else list).largeUrl(moved.pageId)}">@Messages("vote.moved.view")</a>
+</div>
+}

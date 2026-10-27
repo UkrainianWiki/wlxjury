@@ -22,6 +22,8 @@
                 @regionNav((r: String) => list.withRegion(r).pageUrl(1), list.regionParam, regions)
             }
 
+            @large.voteMoved(list)
+
         @* a vote on a tile (ug-theme-tiles.js) sends the session's CSRF token as the Csrf-Token header
            (empty if the request has none, as without the CSRF filter); a failed one shows why
            (vote-errors.js), signed out going on to the login page, back here after it *@

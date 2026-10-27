@@ -351,3 +351,6 @@ job.status.denied=Pas d’accès à l’état de cette tâche.
 round.stat.table.failed=Le tableau du jury n''a pas pu être chargé : vous avez peut-être été déconnecté ou perdu l''accès à ce concours. Rechargez la page pour réessayer.
 sort.file=Dans l''ordre des fichiers
 sort.rate=Par ma note
+vote.moved=L''image notée ({0}) a changé de place selon sa note.
+vote.moved.out=L''image notée ({0}) n''est plus dans cette liste.
+vote.moved.view=La voir

@@ -116,4 +116,39 @@ class GalleryOrderSpec extends PlaySpecification with PlayTestDb {
       }
     }
   }
+
+  "a juror's vote in the large view" should {
+
+    def vote(f: Fixture, pageId: Long, rate: Int, query: String)(implicit app: Application): Future[Result] =
+      route(app, FakeRequest(POST, s"/large/round/${f.round.getId}/pageid/$pageId/select/$rate$query")
+        .withSession(Secured.UserName -> f.juror.email).withCSRFToken).get
+
+    "say nothing in file order, where it moves nothing" in {
+      testDbApp { implicit app =>
+        val f = fixture()
+        val result = vote(f, f.pageIds(9), 4, "?sort=file")
+        redirectLocation(result) === Some(s"/large/round/${f.round.getId}/user/${f.juror.getId}/pageid/${f.pageIds(10)}?sort=file")
+        flash(result).get(MovedVote.Key) must beNone
+      }
+    }
+
+    "say by rate that the file moved, the next large view linking it, not as a dialog" in {
+      testDbApp { implicit app =>
+        val f = fixture()
+        val result = vote(f, f.pageIds(9), 4, "?sort=rate")
+        val next = redirectLocation(result).get
+        next === s"/large/round/${f.round.getId}/user/${f.juror.getId}/pageid/${f.pageIds(10)}?sort=rate"
+        val moved = flash(result).get(MovedVote.Key)
+        moved === Some(s"${f.pageIds(9)}:moved:4")
+
+        val html = contentAsString(route(app, FakeRequest(GET, next).withSession(Secured.UserName -> f.juror.email)
+          .withFlash(MovedVote.Key -> moved.get).withHeaders(ACCEPT -> "text/html").withCSRFToken).get)
+        html must contain("id=\"vote-moved\"")
+        html must contain("The image you rated (★ 4) moved to its place by rating.")
+        html.replace("&amp;", "&") must contain(
+          s"""href="/large/round/${f.round.getId}/user/${f.juror.getId}/pageid/${f.pageIds(9)}?sort=rate">View it</a>""")
+        html must not(contain("modal"))
+      }
+    }
+  }
 }

@@ -281,4 +281,46 @@ class RoundListDbSpec extends Specification with TestDb with BeforeAll with Befo
       hood.files.map(_.pageId) === order(5) +: order.filterNot(_ == order(5)).take(4)
     }
   }
+
+  "a vote's move in a juror's list" should {
+
+    def setUp10(): (Round, User, Seq[Long]) = {
+      val (_, round, user) = setUp(Round.ratesById(5))
+      createSelection(createImages(10), 0, user, round)
+      (round, user, RoundList(round, user.getId).query.list().map(_.pageId))
+    }
+
+    /** The vote for the file, as the large view casts it: its place first, then the vote. */
+    def vote(list: RoundList, pageId: Long, rate: Int): Option[MovedVote] = {
+      val before = list.position(pageId).get
+      SelectionJdbc.rate(pageId, list.asUserId, list.roundId, rate)
+      list.voteMoved(pageId, before, rate)
+    }
+
+    "be none in file order with all the files" in {
+      val (round, user, order) = setUp10()
+      vote(RoundList(round, user.getId, order = ListOrder.FileOrder), order(5), 4) must beNone
+    }
+
+    "be a move by rate, and none for a vote that leaves the file in place" in {
+      val (round, user, order) = setUp10()
+      val byRate = RoundList(round, user.getId)
+      vote(byRate, order(5), 4) === Some(MovedVote(order(5), out = false, 4))
+      vote(byRate, order(5), 3) must beNone // still the first
+    }
+
+    "be out of a filtered list, but not out of the unrated files" in {
+      val (round, user, order) = setUp10()
+      val fileOrder = RoundList(round, user.getId, order = ListOrder.FileOrder)
+      vote(fileOrder.withFilter(VoteFilter.Unrated), order(5), 4) must beNone
+      vote(fileOrder.withFilter(VoteFilter.Rated), order(5), 0) === Some(MovedVote(order(5), out = true, 0))
+    }
+
+    "go through the flash and back" in {
+      val moved = MovedVote(105, out = true, 4)
+      MovedVote.of(play.api.mvc.Flash(Map(moved.flash))) === Some(moved)
+      MovedVote.of(play.api.mvc.Flash(Map(MovedVote.Key -> "105:nosuch:4"))) must beNone
+      MovedVote.of(play.api.mvc.Flash()) must beNone
+    }
+  }
 }

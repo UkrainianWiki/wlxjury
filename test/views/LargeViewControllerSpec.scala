@@ -30,7 +30,7 @@ class LargeViewControllerSpec extends PlaySpecification {
         list = RoundList(round, asUserId = 1, filter = VoteFilter.Unrated, view = GalleryView.ByRate),
         score = 0.0,
         readOnly = false,
-        hood = Neighbourhood(files, 0))(Html("html"))
+        hood = Neighbourhood(files, 0, 0))(Html("html"))
 
       val view = contentAsString(html)
       view must not contain "&amp"
