@@ -124,7 +124,14 @@ Long work runs as a job in the generic `job` table (V60), never on a request thr
 
 ### Authentication & Authorization
 
-Session-based auth via Play session cookie (username stored as `"username"` key). `Secured` trait (`app/controllers/Secured.scala`) provides `withAuth(permission)` action builder. Role checks use `User.hasAnyRole` and contest membership via `User.isInContest`.
+Session-based auth via Play session cookie (username stored as `"username"` key). `Secured` (`app/controllers/Secured.scala`) provides the action builders: `withAuth(permission)` for pages, `withAuthOn(ec)(permission)` for slow blocking JDBC work (runs on that pool), `withAuthJson(permission)` for endpoints called by script. Role checks use `User.hasAnyRole` / `hasContestRole` and contest membership via `User.isInContest`.
+
+- **Denials** go through `onUnAuthorized` (403 page) or `onUnAuthorizedJson` (`{error: "forbidden", reference}`) with a `Secured.Denial` (contest, resource, required roles, reason). Each is logged at WARN on `security.authz` (`Secured.denialLogLine`, key-value, untrusted text quoted) with the reference the user sees. The line keeps the account's email for support; a possible later change logs `accountId` only.
+- **Signed out:** a script request (`X-Requested-With` or a non-`navigate` `Sec-Fetch-Mode`) gets JSON 401; a page GET goes to the login page keeping `returnTo`. Every `returnTo` passes `Secured.safeLocalPath` (local paths only).
+- **Contest switching:** only page GETs switch the session's contest (`Secured.isPageRequest`: a GET that is neither a script request, `Sec-Fetch-Mode` included, nor a prefetch). A check against a resource's contest (round, job, comment) runs as the user in that contest via `Secured.inContest` (active memberships only), never by switching on a POST or poll. Root needs no membership.
+- **Own votes:** a round's galleries and large view use `GalleryService.viewerRounds` / `mayViewRound` / `viewAs`: a juror sees only their own votes; others' (or `asUserId == 0`, all jurors) only for `User.canViewOrgInfo`, and only of a juror of the round (`User.isRoundJuror`; otherwise 404). The galleries' juror menu lists the same set (`User.findRoundJurorsToView`).
+- **CSRF:** votes, sign-out (`POST /logout`) and contest switching (`POST /switch-contest/:id`) are POSTs with the CSRF token: a form field in the large view and forms (`csrfField` renders it only if the request has a token), the `Csrf-Token` header from `data-csrf-token` for gallery votes. A refused token gets `CsrfErrorHandler` (a page saying to reload, or JSON `{error: "csrf", reference}`). Tests run with the CSRF filter off (`test/resources/application.conf`); `controllers.CsrfTestApp.withCsrfApp` re-enables it for router tests.
+- **Errors:** one error page, `views.html.errorPage` (message keys only, never request or exception text); a missing resource is a 404 with it, never a `.get` on a lookup of a request-supplied id. `ErrorHandler` handles the rest (a server error shows a logged reference).
 
 ### Database Tests
 
@@ -141,6 +148,8 @@ One MariaDB Testcontainer per JVM, shared across all specs via `SharedTestDb` (l
 
 `autoSession` bypasses any outer AutoRollback transaction and reads only committed data — this is why service-layer tests (`Secured.userFromRequest`, `GalleryService`, `Round.addUsers`) must use truncation not AutoRollback.
 
+**Keyboard voting:** the large view's key handlers vote and move by paths, never `http://` URLs (`Call.absoluteURL` behind the HTTPS proxy redirected the POST to a GET and lost the vote); `views.LargeViewControllerSpec` guards it.
+
 **Pool lifecycle:** `running(app)` (Play test helper) stops Play and calls `ConnectionPool.closeAll()`. Any spec that uses `running(app)` must call `SharedTestDb.reregisterDefault()` in a `finally` block afterward.
 
 ### ScalikeJDBC Patterns
@@ -152,7 +161,7 @@ One MariaDB Testcontainer per JVM, shared across all specs via `SharedTestDb` (l
 
 ### REST API
 
-Tapir endpoints are defined in `app/api/Api.scala` and routed through Pekko HTTP (separate from Play routing). Swagger UI is auto-generated at `/api/docs`. Play routes are in `conf/routes`.
+Tapir endpoints are defined in `app/api/Api.scala` as Pekko HTTP routes (separate from Play routing), with a Swagger UI. They are **not served**: no route, binding or server uses `Api.routes` (only `test/api/ApiSpec`). They have **no authentication** (contests can be created and changed by anyone who reaches them), so they must get authentication and authorization before they are ever exposed. Play routes are in `conf/routes`.
 
 ### Wikimedia Commons Integration
 

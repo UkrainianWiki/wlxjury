@@ -13,7 +13,6 @@ Builds on the working tree of `ukwikidev/deployment-branch` (the commit's change
 - Do not weaken authorization. A check moves to a resource's contest only where the user is an **active** member there (`Secured.inContest`), as `Secured.permitted` and `RoundController.roundStat` already do. Every change ships with a negative test: an account that is not an admin of the resource's contest is still denied.
 - A background request (a JSON poll, an HTML fragment loaded by script) or a POST must not rewrite the session's current contest. Only full-page GETs may switch contest (`Secured.switchingContest`), as today.
 - New message keys go to all four of `conf/messages.{en,fr,uk,ru}`.
-- No commits. Leave the changes in the working tree.
 
 ## 1. Denial context and the log line
 
@@ -93,3 +92,24 @@ Three paths render errors today: `ErrorHandler` (raw English, every 4xx logged a
 - The untracked 2018 templates (`error401/403/500.scala.html`, `loginForm.scala.html`, `scalaHelper/`) were unused and have been deleted.
 - The denial log line keeps the account's email for support's convenience. Possible later fix: log only `accountId` (support looks the account up), so rotated logs hold no personal data.
 - Signup keeping `returnTo`.
+
+## Follow-up (implemented)
+
+`b7349951` ("Explain authorization denials and unify error pages") implemented the plan above. Reviews of it, and of the own-votes and voting work that followed, were addressed in:
+
+- `fec056f4` Address review of authorization denial handling.
+- `d0bd21fd` Restrict organizer round views to the round's contest.
+- `a44cba9f` Restrict thumbnail URL lists to the contest's own rounds.
+- `c55e2786` Run the sbt launcher example from Git Bash (`CLAUDE.md`).
+- `62f4af61` Authorize the large image view by round and juror.
+- `e53ad907` Address second review of authorization denial handling.
+- `454b8cc7` Vote in the large view by POST.
+- `b007de1e` Show jurors only their own votes (`GalleryService.viewerRounds` / `mayViewRound` / `viewAs`).
+- `9c19f6fd` Require a CSRF token for gallery votes (`Csrf-Token` header).
+- `5689cbe0` Handle missing selections in criteria votes and views.
+- `c4a6c6b1` Vote and move by keys with paths, not `http://` URLs.
+- `1fbe1a61` Answer missing jurors, contests and modules without server errors (404 error page; the juror menu lists every juror `isRoundJuror` accepts; no round is a 200 state).
+- `7694d301` Check comments against the round the user may view (`Secured.inContest`, `mayViewRound`, the file in the user's view).
+- `362b51f9` Hide job ids from other contests (404 as for a missing job, the denial still logged) and sign out and switch contest by POST with the CSRF token.
+- `ae988ec2` Explain vote failures to jurors (`vote-errors.js`, `CsrfErrorHandler`).
+- Document the authorization and error-handling rules (`CLAUDE.md`).
