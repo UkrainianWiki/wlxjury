@@ -72,17 +72,20 @@ class LargeViewController @Inject() (
       val result =
         checkLargeIndex(user, rate, pageId, region, round, module)
 
-      if (criteria.isEmpty) {
-        SelectionJdbc.rate(
-          pageId = pageId,
-          juryId = user.getId,
-          roundId = round.getId,
-          rate = select
-        )
-      } else {
-        val selection =
-          SelectionJdbc.findBy(pageId, user.getId, roundId).get
-        CriteriaRate.updateRate(selection.getId, criteria.get, select)
+      criteria match {
+        case None =>
+          SelectionJdbc.rate(
+            pageId = pageId,
+            juryId = user.getId,
+            roundId = round.getId,
+            rate = select
+          )
+        case Some(criterion) =>
+          // as a vote above (and the gallery's), a file the juror has no selection for in the
+          // round changes nothing
+          SelectionJdbc
+            .findBy(pageId, user.getId, round.getId)
+            .foreach(selection => CriteriaRate.updateRate(selection.getId, criterion, select))
       }
       result
     }
@@ -96,9 +99,13 @@ class LargeViewController @Inject() (
       module: String
   ): EssentialAction =
     withAuth(roundPermission(User.ADMIN_ROLES, roundId)) { user => implicit request =>
-      SelectionJdbc.removeImage(pageId, roundId)
-      val round = Round.findById(roundId).get
-      checkLargeIndex(user, rate, pageId, region, round, module)
+      // the permission found the round; a page saying so if it is gone since, not a server error
+      Round.findById(roundId).fold(
+        NotFound(views.html.errorPage(Some(user), "error.title", "error.round.not.found"))
+      ) { round =>
+        SelectionJdbc.removeImage(pageId, roundId)
+        checkLargeIndex(user, rate, pageId, region, round, module)
+      }
     }
 
   def checkLargeIndex(
@@ -243,15 +250,13 @@ class LargeViewController @Inject() (
 
     val page = index / (Pager.pageSize + 1) + 1
 
+    // the round's, also when it is the current one (roundId 0); none without a selection
     val byCriteria = if (round.hasCriteria && asUserId != 0) {
-      val criteria = {
-        val selection = SelectionJdbc.findBy(pageId, asUserId, roundId).get
-        CriteriaRate.getRates(selection.getId)
-      }
-
-      criteria.map { c =>
-        c.criteria.toInt -> c.rate
-      }.toMap
+      SelectionJdbc
+        .findBy(pageId, asUserId, round.getId)
+        .fold(Seq.empty[CriteriaRate])(selection => CriteriaRate.getRates(selection.getId))
+        .map(c => c.criteria.toInt -> c.rate)
+        .toMap
     } else Map.empty[Int, Int]
 
     val criteriaNames = if (round.hasCriteria) {

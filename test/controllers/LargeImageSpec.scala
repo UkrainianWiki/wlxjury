@@ -7,6 +7,7 @@ import play.api.libs.json.Json
 import play.api.mvc.RequestHeader
 import play.api.test.CSRFTokenHelper._
 import play.api.test.{FakeRequest, Helpers, PlaySpecification}
+import scalikejdbc.{DB, scalikejdbcSQLInterpolationImplicitDef}
 import services.GalleryService
 
 class LargeImageSpec extends PlaySpecification with PlayTestDb {
@@ -403,6 +404,111 @@ class LargeImageSpec extends PlaySpecification with PlayTestDb {
 
       status(result) mustEqual SEE_OTHER
       redirectLocation(result) must beSome.which(_ === s"/large/round/${round.id.get}/user/${user.id.get}/pageid/$nextPageId?rate=0")
+    }
+  }
+
+  "a round with criteria" should {
+    // a rated round with criteria, the juror's current one; criteria 1 and 2 of the juror's
+    // selection of file 0 rated 3 and 4. File 1 is only another juror's.
+    def setUpCriteria(): (Image, Image, User) = {
+      setUp(rates = Round.ratesById(10))
+      DB.autoCommit { implicit s => sql"UPDATE rounds SET has_criteria = 1 WHERE id = ${round.getId}".update() }
+      round = roundDao.findById(round.getId).get
+      val Seq(mine, others) = createImages(2)
+      createSelection(Seq(mine))
+      val other = userDao.create(User("Other", "other@example.com", None, Set("jury"), contestId = contest.id))
+      round.addUsers(Seq(RoundUser(round.getId, other.getId, "jury", active = true)))
+      createSelection(Seq(others), user = other)
+      val selection = SelectionJdbc.findBy(mine.pageId, user.getId, round.getId).get
+      val othersSelection = SelectionJdbc.findBy(others.pageId, other.getId, round.getId).get
+      DB.autoCommit { implicit s =>
+        sql"""INSERT INTO criteria_rate (id, selection, criteria, rate) VALUES
+              (1, ${selection.getId}, 1, 3), (2, ${selection.getId}, 2, 4), (3, ${othersSelection.getId}, 1, 5)"""
+          .update()
+      }
+      (mine, others, other)
+    }
+    def criteriaRates(pageId: Long, juror: User): Map[Long, Int] =
+      SelectionJdbc.findBy(pageId, juror.getId, round.getId).toSeq
+        .flatMap(s => CriteriaRate.getRates(s.getId)).map(c => c.criteria -> c.rate).toMap
+    def viewRequest(roundId: Long, pageId: Long) =
+      FakeRequest(GET, s"/large/round/$roundId/user/${user.getId}/pageid/$pageId")
+        .withSession(Secured.UserName -> email, Secured.CurrentContestId -> contest.getId.toString)
+        .withHeaders("Accept" -> "text/html")
+        .withCSRFToken
+
+    "show the juror's criteria rates in the current round's view (round 0), which failed before" in {
+      testDbApp { app =>
+        implicit val materializer: Materializer = app.materializer
+        val (mine, _, _) = setUpCriteria()
+        val appController = new LargeViewController(app.injector.instanceOf[play.api.mvc.ControllerComponents], galleryService)
+
+        forall(Seq(0L, round.getId)) { roundId =>
+          val result = call(appController.large(user.getId, mine.pageId, "all", roundId, None, "gallery"),
+            viewRequest(roundId, mine.pageId))
+          status(result) === OK
+          val page = contentAsString(result)
+          page must contain("Науковість")
+          page must contain("Підпис")
+        }
+      }
+    }
+
+    "show no criteria rates for a selection without them" in {
+      testDbApp { app =>
+        implicit val materializer: Materializer = app.materializer
+        val (mine, _, _) = setUpCriteria()
+        DB.autoCommit { implicit s => sql"DELETE FROM criteria_rate".update() }
+        val appController = new LargeViewController(app.injector.instanceOf[play.api.mvc.ControllerComponents], galleryService)
+
+        val result = call(appController.large(user.getId, mine.pageId, "all", 0L, None, "gallery"),
+          viewRequest(0L, mine.pageId))
+        status(result) === OK
+        contentAsString(result) must not(contain("Науковість"))
+      }
+    }
+
+    "rate a criterion of the juror's selection" in {
+      testDbApp { app =>
+        implicit val materializer: Materializer = app.materializer
+        val (mine, _, _) = setUpCriteria()
+
+        val result = controller.rateByPageId(round.getId, mine.pageId, select = 7, module = "gallery", criteria = Some(2))
+          .apply(voteRequest(s"/large/round/${round.getId}/pageid/${mine.pageId}/select/7?criteria=2"))
+          .run()
+
+        status(result) === SEE_OTHER
+        criteriaRates(mine.pageId, user) === Map(1L -> 3, 2L -> 7)
+      }
+    }
+
+    "change nothing for a file the juror has no selection for, which failed before" in {
+      testDbApp { app =>
+        implicit val materializer: Materializer = app.materializer
+        val (_, others, other) = setUpCriteria()
+
+        val result = controller.rateByPageId(round.getId, others.pageId, select = 1, module = "gallery", criteria = Some(1))
+          .apply(voteRequest(s"/large/round/${round.getId}/pageid/${others.pageId}/select/1?criteria=1"))
+          .run()
+
+        status(result) === SEE_OTHER
+        criteriaRates(others.pageId, other) === Map(1L -> 5)
+        SelectionJdbc.findBy(others.pageId, user.getId, round.getId) must beNone
+      }
+    }
+
+    "refuse a vote in round 0, as the gallery's votes, changing nothing" in {
+      testDbApp { app =>
+        implicit val materializer: Materializer = app.materializer
+        val (mine, _, _) = setUpCriteria()
+
+        val result = controller.rateByPageId(0L, mine.pageId, select = 7, module = "gallery", criteria = Some(1))
+          .apply(voteRequest(s"/large/round/0/pageid/${mine.pageId}/select/7?criteria=1"))
+          .run()
+
+        status(result) === FORBIDDEN
+        criteriaRates(mine.pageId, user) === Map(1L -> 3, 2L -> 4)
+      }
     }
   }
 
