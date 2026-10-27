@@ -26,7 +26,7 @@ class MutationAuthorizationSpec extends PlaySpecification with PlayTestDb {
     new LargeViewController(Helpers.stubControllerComponents(), galleryService)
 
   private def imageDiscussionController =
-    new ImageDiscussionController(Helpers.stubControllerComponents())
+    new ImageDiscussionController(Helpers.stubControllerComponents(), galleryService)
 
   // the app's components: stubControllerComponents' body parser drops the form
   private def roundController(app: Application) =
