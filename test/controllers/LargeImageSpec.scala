@@ -484,7 +484,7 @@ class LargeImageSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
-    "answer another juror of the round's view as the round's gallery does" in {
+    "refuse another juror of the round that juror's votes, as the round's gallery does" in {
       testDbApp { app =>
         implicit val materializer: Materializer = app.materializer
         val (roundA, _, juror1, juror2, _, _, _, _, _, images) = setUpContests()
@@ -496,7 +496,9 @@ class LargeImageSpec extends PlaySpecification with PlayTestDb {
             .withSession(Secured.UserName -> juror2.email).withCSRFToken))
         val largeStatus = status(large(app, juror2.email, roundA.getId, juror1.getId, images.head.pageId))
 
-        largeStatus === galleryStatus
+        galleryStatus === FORBIDDEN
+        largeStatus === FORBIDDEN
+        status(large(app, juror2.email, roundA.getId, juror1.getId, images.head.pageId, json = true)) === FORBIDDEN
       }
     }
 

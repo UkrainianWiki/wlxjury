@@ -162,8 +162,8 @@ class LargeViewController @Inject() (
   }
 
   /** The large view of a round's file, by the round gallery's rules: the round must exist
-    * ([[GalleryController.listGeneric]]'s pages if not) and the user may view it
-    * ([[GalleryService.mayViewRound]]).
+    * ([[GalleryController.listGeneric]]'s pages if not), the user may view it
+    * ([[GalleryService.mayViewRound]]) and with `asUserId`'s votes ([[GalleryService.viewAs]]).
     */
   def show(
       pageId: Long,
@@ -192,7 +192,16 @@ class LargeViewController @Inject() (
           case Accepts.Json() => onUnAuthorizedJson(user, request, denial)
         }
       case Some(round) =>
-        showRound(pageId, user, asUserId, rate, region, roundId, round, module)
+        galleryService.viewAs(user, round, asUserId) match {
+          // a juror's votes are their own: another's, or all together, for the organisers
+          case refusal if refusal != GalleryService.ViewAs.Allowed =>
+            render {
+              case Accepts.Html() => viewAsRefused(user, round, refusal, json = false)
+              case Accepts.Json() => viewAsRefused(user, round, refusal, json = true)
+            }
+          case _ =>
+            showRound(pageId, user, asUserId, rate, region, roundId, round, module)
+        }
     }
 
   private def showRound(

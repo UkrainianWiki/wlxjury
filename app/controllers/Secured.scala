@@ -67,6 +67,27 @@ abstract class Secured(cc: ControllerComponents) extends AbstractController(cc) 
     Results.Forbidden(Json.obj("error" -> "forbidden", "reference" -> reference))
   }
 
+  /** The answer to a round's view with a user's votes that [[services.GalleryService.viewAs]]
+    * refuses: another user's votes (or all jurors' together) a denial (403); an organiser's
+    * view as a user who is not a juror of the round, not found (404).
+    */
+  def viewAsRefused(user: User, round: Round, refusal: services.GalleryService.ViewAs, json: Boolean)(implicit
+      request: RequestHeader
+  ): Result =
+    refusal match {
+      case services.GalleryService.ViewAs.NotRoundJuror =>
+        if (json) Results.NotFound(Json.obj("error" -> "juror_not_found"))
+        else
+          Results.NotFound(
+            views.html.errorPage(Some(user), "error.title", "error.juror.not.found")(cc.messagesApi.preferred(request))
+          )
+      case _ =>
+        val denial = Secured.Denial
+          .round(round, User.ADMIN_ROLES ++ User.ORG_COM_ROLES)
+          .copy(reason = Some(services.GalleryService.OtherUsersVotesReason))
+        if (json) onUnAuthorizedJson(user, request, denial) else onUnAuthorized(user, request, denial)
+    }
+
   /** A useful destination from an active membership, the current contest's first: the
     * contest's files if the user may view them, else a gallery of one of its active rounds.
     */

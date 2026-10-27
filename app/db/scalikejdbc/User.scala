@@ -324,6 +324,16 @@ object User extends CRUDMapper[User] {
           SELECT r.contest_id FROM (SELECT DISTINCT round_id FROM selection WHERE jury_id = $userId) s
           JOIN rounds r ON r.id = s.round_id""".map(_.long(1)).list()
 
+  /** Whether the user is a juror of the round: with votes in it (selection, as
+    * [[findByRoundSelection]] lists them, for legacy rounds without round_user rows) or
+    * assigned to it (round_user, active or not).
+    */
+  def isRoundJuror(roundId: Long, userId: Long)(implicit session: DBSession = autoSession): Boolean =
+    sql"""SELECT EXISTS(SELECT 1 FROM users u WHERE u.id = $userId AND (
+            EXISTS(SELECT 1 FROM selection s WHERE s.round_id = $roundId AND s.jury_id = $userId) OR
+            EXISTS(SELECT 1 FROM round_user ru WHERE ru.round_id = $roundId AND ru.user_id = $userId)))"""
+      .map(_.boolean(1)).single().getOrElse(false)
+
   /** The users with selection rows in the round (its jurors), ordered by id.
     *
     * DISTINCT jury_id over idx_selection_round_jury_rate is a loose index scan, one

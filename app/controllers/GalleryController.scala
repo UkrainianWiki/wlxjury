@@ -215,7 +215,11 @@ class GalleryController @Inject() (
 
     if (galleryService.isNotAuthorized(user, maybeRound, roundContestId, rounds)) {
       onUnAuthorized(user, request, Secured.Denial.round(round, Secured.ViewerRoles))
-    } else {
+    } else galleryService.viewAs(user, round, asUserId) match {
+      // a juror's votes are their own: another's, or all together, for the organisers
+      case refusal if refusal != GalleryService.ViewAs.Allowed =>
+        viewAsRefused(user, round, refusal, json = false)
+      case _ =>
 
       lazy val asUser = galleryService.getAsUser(asUserId, user)
 
