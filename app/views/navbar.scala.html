@@ -130,7 +130,7 @@
                             @(new UiSelectionDto[Option[Long]](
                                 { userId: Option[Long] => routes.GalleryController.query(module = title, userId, page = 1, region = region, round = round.getId, rate) },
                                 Some(asUserId),
-                                User.findByRoundSelection(round.getId).map(u => (Some(u.getId), SelectionItem(u.fullname, localized = false))),
+                                User.findRoundJurorsToView(round.getId).map(u => (Some(u.getId), SelectionItem(u.fullname, localized = false))),
                                 Some(Some(0L) -> SelectionItem("all"))
                             ).toDropDown())
 

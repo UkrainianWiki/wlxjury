@@ -409,7 +409,8 @@ class RoundController @Inject() (
               Redirect(routes.RoundController.roundStat(round.getId))
             }
             .getOrElse {
-              NotFound(views.html.errorPage(Some(user), "error.title", "no.round.yet"))
+              // a state, not an error, as for a juror ([[LoginController.index]])
+              Ok(views.html.errorPage(Some(user), "error.title", "no.round.yet"))
             }
         }
     }

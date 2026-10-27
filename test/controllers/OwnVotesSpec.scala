@@ -152,6 +152,37 @@ class OwnVotesSpec extends PlaySpecification with PlayTestDb {
         }
       }
     }
+
+    "view the round as a juror assigned to it who has not voted yet, listed in the juror menu" in {
+      testDbApp { app =>
+        val f = fixture()
+        val newcomer = userDao.create(User("Newcomer", "newcomer@example.com", None, Set("jury"),
+          contestId = Some(f.roundA.contestId)))
+        f.roundA.addUsers(Seq(RoundUser(f.roundA.getId, newcomer.getId, "jury", active = true)))
+
+        forall(Seq(
+          s"/gallery/round/${f.roundA.getId}/user/${newcomer.getId}/page/1",
+          s"/byrate/round/${f.roundA.getId}/user/${newcomer.getId}/page/1",
+          s"/filelist/round/${f.roundA.getId}/user/${newcomer.getId}/page/1"
+        )) { path =>
+          val page = get(app, f.organizer, path)
+          (path, status(page)) === (path, OK)
+          contentAsString(page) must contain("Newcomer")
+        }
+        // and the round's menu lists them from any of its views
+        contentAsString(get(app, f.organizer, s"/byrate/round/${f.roundA.getId}/user/0/page/1")) must
+          contain("Newcomer")
+      }
+    }
+
+    "find no view of the round a module does not name" in {
+      testDbApp { app =>
+        val f = fixture()
+        val page = get(app, f.organizer, s"/query?module=nosuch&round=${f.roundA.getId}&user=0")
+        status(page) === NOT_FOUND
+        contentAsString(page) must contain("The page you asked for was not found.")
+      }
+    }
   }
 
   "a juror's normal navigation" should {

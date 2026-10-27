@@ -334,6 +334,19 @@ object User extends CRUDMapper[User] {
             EXISTS(SELECT 1 FROM round_user ru WHERE ru.round_id = $roundId AND ru.user_id = $userId)))"""
       .map(_.boolean(1)).single().getOrElse(false)
 
+  /** The round's jurors as [[isRoundJuror]] accepts them, ordered by id: with votes in it
+    * or assigned to it (round_user, active or not). The galleries' juror menu, so that it
+    * lists every juror an organiser may view the round as, also one without votes yet.
+    */
+  def findRoundJurorsToView(roundId: Long)(implicit session: DBSession = autoSession): Seq[User] = {
+    val ids = sql"""SELECT DISTINCT jury_id FROM selection WHERE round_id = $roundId
+                    UNION
+                    SELECT user_id FROM round_user WHERE round_id = $roundId"""
+      .map(_.long(1))
+      .list()
+    if (ids.isEmpty) Nil else findAllBy(sqls.in(u.id, ids)).sortBy(_.id)
+  }
+
   /** The users with selection rows in the round (its jurors), ordered by id.
     *
     * DISTINCT jury_id over idx_selection_round_jury_rate is a loose index scan, one

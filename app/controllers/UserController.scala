@@ -387,27 +387,30 @@ class UserController @Inject()(cc: ControllerComponents,
 
   def resetPassword(id: Long): EssentialAction =
     withAuth(rolePermission(Set(User.ROOT_ROLE))) { user => implicit request =>
-      val editedUser = Secured.inCurrentContest(User.findById(id).get, None)
+      User.findById(id).fold[Result](
+        NotFound(views.html.errorPage(Some(user), "error.title", "error.user.not.found"))
+      ) { found =>
+        val editedUser = Secured.inCurrentContest(found, None)
 
-      val password = User.randomString(8)
-      val contest: Option[ContestJury] =
-        editedUser.currentContest.flatMap(ContestJuryJdbc.findById)
-      val contestName = contest.fold("")(_.name)
-      val hash = User.hash(editedUser, password)
+        val password = User.randomString(8)
+        val contest: Option[ContestJury] =
+          editedUser.currentContest.flatMap(ContestJuryJdbc.findById)
+        val contestName = contest.fold("")(_.name)
+        val hash = User.hash(editedUser, password)
 
-      User.updateHash(editedUser.getId, hash)
+        User.updateHash(editedUser.getId, hash)
 
-      val juryhome = "http://localhost:9000"
-      //        User.updateUser(formUser.fullname, formUser.email, hash, formUser.roles, formUser.contest)
-      val subject: String = s"Password changed for $contestName jury"
-      val message: String = s"Password changed for $contestName jury\n" +
-        s" Please login to our jury tool $juryhome \nwith login: ${editedUser.email} and password: $password\n" +
-        s"Regards, ${user.fullname}"
-      // sendMail.sendMail(from = (user.fullname, user.email), to = Seq(user.email), bcc = Seq(user.email), subject = subject, message = message)
+        val juryhome = "http://localhost:9000"
+        //        User.updateUser(formUser.fullname, formUser.email, hash, formUser.roles, formUser.contest)
+        val subject: String = s"Password changed for $contestName jury"
+        val message: String = s"Password changed for $contestName jury\n" +
+          s" Please login to our jury tool $juryhome \nwith login: ${editedUser.email} and password: $password\n" +
+          s"Regards, ${user.fullname}"
+        // sendMail.sendMail(from = (user.fullname, user.email), to = Seq(user.email), bcc = Seq(user.email), subject = subject, message = message)
 
-      Redirect(routes.UserController.editUser(id)).flashing(
-        "password-reset" -> s"Password reset. New Password sent to ${editedUser.email}")
-
+        Redirect(routes.UserController.editUser(id)).flashing(
+          "password-reset" -> s"Password reset. New Password sent to ${editedUser.email}")
+      }
     }
 }
 

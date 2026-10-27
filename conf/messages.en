@@ -355,5 +355,6 @@ error.unknown=Something went wrong.
 error.contest.not.found=There is no such contest.
 error.round.not.found=There is no such round.
 error.juror.not.found=This user is not a juror of the round.
+error.user.not.found=There is no such user.
 job.status.denied=No access to this job''s status.
 round.stat.table.failed=The jurors'' table could not be loaded: you may have been signed out or lost access to this contest. Reload the page to try again.

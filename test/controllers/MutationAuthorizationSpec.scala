@@ -528,8 +528,11 @@ class MutationAuthorizationSpec extends PlaySpecification with PlayTestDb {
 
         val current = call(roundController(app).currentRoundStat(Some(b.getId)),
           inA(s"/roundstat?contestId=${b.getId}", aOnly.email, a.getId))
-        status(current) === NOT_FOUND
+        // no round of theirs: a state, not an error, as on the juror's start page
+        status(current) === OK
         redirectLocation(current) must beNone
+        contentAsString(current) must contain("No round configured yet.")
+        contentAsString(current) must not(contain("B open round"))
 
         status(call(roundController(app).roundStat(bRound.getId),
           inA(s"/roundstat/${bRound.getId}", aOnly.email, a.getId))) === FORBIDDEN
