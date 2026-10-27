@@ -26,8 +26,9 @@
 }
 
 @* The viewer's own files by their votes, in all regions: all, the unrated, and the selected and
-   rejected (a binary round) or the rated *@
+   rejected (a binary round) or the rated; none if the viewer has no files in the round *@
 @ownTabs(l: RoundList) = {
+    @if(rates.all > 0) {
     @defining(ownList(l).withRegion("all")) { own =>
     @for((filter, name, count) <- Seq((VoteFilter.All, "all", rates.all), (VoteFilter.Unrated, "unrated", rates.unrated)) ++
             (if (l.round.isBinary) Seq((VoteFilter.Rate(1), "selected", rates.selected), (VoteFilter.Rate(-1), "rejected", rates.rejected))
@@ -39,16 +40,20 @@
         }
     }
     }
+    }
 }
 
-@* The order of the viewer's own gallery: in file order, which a vote doesn't change, or by their rate *@
+@* The order of the viewer's own gallery, if they have files in the round: in file order, which a
+   vote doesn't change, or by their rate *@
 @sortMenu(l: RoundList) = {
+    @if(rates.all > 0) {
     @defining(ownList(l)) { own =>
     @(new UiSelectionDto[ListOrder](
         (order: ListOrder) => Call("GET", own.withOrder(order).pageUrl(1)),
         own.order,
         Seq(ListOrder.FileOrder -> SelectionItem("sort.file"), ListOrder.ByRate -> SelectionItem("sort.rate"))
     ).toDropDown())
+    }
     }
 }
 
