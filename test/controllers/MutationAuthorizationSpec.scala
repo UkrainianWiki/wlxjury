@@ -143,6 +143,34 @@ class MutationAuthorizationSpec extends PlaySpecification with PlayTestDb {
         (contentAsJson(ok) \ "status").as[String] === "running"
       }
     }
+
+    "go back only to a local page after Cancel, else to the job's contest's rounds" in {
+      testDbApp { app =>
+        implicit val materializer: Materializer = app.materializer
+        val contest = contestDao.create(None, "WLE", 2024, "Ukraine")
+        val admin = userDao.create(User("Admin", "admin@example.com", None, Set("admin"), contestId = contest.id))
+        val scheduler = services.TestRoundServices.inlineScheduler(services.TestRoundServices.handler())
+        val job = scalikejdbc.DB.localTx { implicit s =>
+          scheduler.enqueue(services.jobs.NewJob(
+            services.distribution.RoundDistributionHandler.Kind, contestId = contest.id,
+            subjectType = Some("round"), subjectId = Some(1L))).toOption.get
+        }
+        val controller = new JobController(
+          app.injector.instanceOf[ControllerComponents], scheduler, new BlockingExecutionContext(app.actorSystem))
+        def cancel(returnTo: String) = {
+          val result = call(controller.cancel(job.id),
+            adminPost(s"/admin/jobs/${job.id}/cancel", admin.email, "returnTo" -> returnTo))
+          status(result) === SEE_OTHER
+          redirectLocation(result)
+        }
+        val rounds = routes.RoundController.rounds(contest.id).url
+
+        cancel("/admin/rounds?contestId=1") === Some("/admin/rounds?contestId=1")
+        cancel("/\\evil.example") === Some(rounds)
+        cancel("https://evil.example") === Some(rounds)
+        cancel("//evil.example") === Some(rounds)
+      }
+    }
   }
 
   "an admin of two contests, with the session in the other one" should {
@@ -223,6 +251,102 @@ class MutationAuthorizationSpec extends PlaySpecification with PlayTestDb {
             FORBIDDEN
         }
         services.jobs.JobJdbc.findById(job.id).map(_.status) === Some(services.jobs.JobStatus.Running)
+      }
+    }
+  }
+
+  "a juror of contest C who is an admin of contest A, with the session in C" should {
+    // the admin permission is found only in A, so a page request switches the session to A
+    def setup() = {
+      val a = contestDao.create(None, "WLE", 2024, "Ukraine")
+      val c = contestDao.create(None, "WLM", 2024, "Poland")
+      val user = userDao.create(User("Juror and admin", "mixed@example.com", None, Set("jury"), contestId = c.id))
+      UserContestJdbc.createMembership(user.getId, a.getId, "admin")
+      val round = roundDao.create(Round(None, 1, Some("A's round"), contestId = a.getId, active = true))
+      (a, c, user, round)
+    }
+
+    def inC(method: String, url: String, email: String, c: Long, headers: (String, String)*) =
+      FakeRequest(method, url)
+        .withSession(Secured.UserName -> email, Secured.CurrentContestId -> c.toString)
+        .withHeaders(headers: _*)
+        .withCSRFToken
+
+    "load A's stat table by script without switching the session, but switch it for a page" in {
+      testDbApp { app =>
+        implicit val materializer: Materializer = app.materializer
+        val (a, c, user, round) = setup()
+        def table(headers: (String, String)*) = roundController(app).roundStatTable(round.getId)
+          .apply(inC(GET, s"/roundstat/${round.getId}/table", user.email, c.getId, headers: _*)).run()
+
+        val xhr = table("X-Requested-With" -> "XMLHttpRequest")
+        status(xhr) === OK
+        session(xhr).get(Secured.CurrentContestId) must beNone
+
+        val fetched = table("Sec-Fetch-Mode" -> "cors")
+        status(fetched) === OK
+        session(fetched).get(Secured.CurrentContestId) must beNone
+
+        val page = table()
+        status(page) === OK
+        session(page).get(Secured.CurrentContestId) === Some(a.getId.toString)
+
+        val navigated = table("Sec-Fetch-Mode" -> "navigate")
+        status(navigated) === OK
+        session(navigated).get(Secured.CurrentContestId) === Some(a.getId.toString)
+      }
+    }
+
+    "stop A's round by a form POST without switching the session" in {
+      testDbApp { app =>
+        implicit val materializer: Materializer = app.materializer
+        val (_, c, user, round) = setup()
+
+        val result = call(
+          roundController(app).setRound(),
+          FakeRequest(POST, "/admin/setround")
+            .withFormUrlEncodedBody("currentId" -> round.getId.toString, "setActive" -> "false")
+            .withSession(Secured.UserName -> user.email, Secured.CurrentContestId -> c.getId.toString)
+            .withCSRFToken
+        )
+
+        status(result) === SEE_OTHER
+        roundDao.findById(round.getId).map(_.active) must beSome(false)
+        session(result).get(Secured.CurrentContestId) must beNone
+      }
+    }
+  }
+
+  "the image cache status" should {
+    "answer JSON: 401 signed out, 403 to a non-admin, the progress to an admin" in {
+      testDbApp { app =>
+        implicit val materializer: Materializer = app.materializer
+        val a = contestDao.create(None, "WLE", 2024, "Ukraine")
+        val round = roundDao.create(Round(None, 1, Some("A's round"), contestId = a.getId, active = true))
+        val juror = userDao.create(User("Juror", "juror@example.com", None, Set("jury"), contestId = a.id))
+        val admin = userDao.create(User("Admin", "admin@example.com", None, Set("admin"), contestId = a.id))
+        val images = app.injector.instanceOf[ImageController]
+        val contestUrl = s"/contest/${a.getId}/images/cache/status"
+        val roundUrl = s"/contest/${a.getId}/round/${round.getId}/images/cache/status"
+        def statuses(request: String => FakeRequest[play.api.mvc.AnyContentAsEmpty.type]) = Seq(
+          images.imageCacheStatus(a.getId).apply(request(contestUrl)).run(),
+          images.roundImageCacheStatus(a.getId, round.getId).apply(request(roundUrl)).run()
+        )
+
+        statuses(url => FakeRequest(GET, url)).foreach { signedOut =>
+          status(signedOut) === UNAUTHORIZED
+          (contentAsJson(signedOut) \ "error").as[String] === "unauthenticated"
+        }
+        statuses(url => FakeRequest(GET, url).withSession(Secured.UserName -> juror.email)).foreach { denied =>
+          status(denied) === FORBIDDEN
+          (contentAsJson(denied) \ "error").as[String] === "forbidden"
+          (contentAsJson(denied) \ "reference").as[String] must beMatching("[0-9a-f]{8}")
+        }
+        statuses(url => FakeRequest(GET, url).withSession(Secured.UserName -> admin.email)).foreach { allowed =>
+          status(allowed) === OK
+          (contentAsJson(allowed) \ "running").as[Boolean] === false
+        }
+        ok
       }
     }
   }

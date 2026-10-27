@@ -57,8 +57,8 @@ account.successfully.validated=Compte validé avec succès
 account.settings.email.successful=Courriel validé avec succès ({0})
 invalid.user.or.password=Utilisateur ou mot de passe invalide
 youve.been.logged.out=Vous avez été déconnecté
-error.sending.email=Erreur d'envoi de courriel
-error.sending.confirm.email=Erreur lors de l'envoi du courriel de confirmation
+error.sending.email=Erreur d''envoi de courriel
+error.sending.confirm.email=Erreur lors de l''envoi du courriel de confirmation
 error.email.already.exist=Ce courriel existe déjà
 error.account.already.validated=Ce compte est déjà validé
 error.unknown.email=Courriel inconnu
@@ -73,7 +73,7 @@ signin.your.password=Votre mot de passe
 
 forgot.password=Mot de passe oublié ?
 
-signup.signup=S'inscrire
+signup.signup=S''inscrire
 signup.successfull=Inscription réussie !
 signup.new=Nouveau ?
 signup.reset.password=Réinitialisez votre mot de passe
@@ -102,8 +102,8 @@ mail.reset.ask.message=Vous avez demandé que votre mot de passe soit réinitial
 mail.change.ask.subject=Jury - Confirmez votre adresse courriel
 mail.change.ask.message=Vous avez demandé que votre courriel soit modifié. <br> Cliquez sur ce lien : {0} pour confirmer votre adresse courriel.
 
-mail.reset.fail.subject=Tentative d'Accéder au compte
-mail.reset.fail.message=Vous (ou quelqu'un d'autre) a entré cette adresse courriel en tentant de changer le mot de passe. Toutefois, cette adresse courriel ne figure pas dans notre liste d'utilisateurs enregistrés. La tentative de réinitialisation du mot de passe a donc échoué.
+mail.reset.fail.subject=Tentative d''Accéder au compte
+mail.reset.fail.message=Vous (ou quelqu''un d''autre) a entré cette adresse courriel en tentant de changer le mot de passe. Toutefois, cette adresse courriel ne figure pas dans notre liste d''utilisateurs enregistrés. La tentative de réinitialisation du mot de passe a donc échoué.
 
 mail.reset.confirm.subject=Jury - Nouveau mot de passe
 mail.reset.confirm.message=Bonjour, <br><br> Votre mot de passe a été réinitialisé.
@@ -176,20 +176,20 @@ back.to.gallery = Retour à la galerie
 previous.image = Image précédente
 next.image = Image suivante
 select.image = Sélectionner une image
-reject.image = Rejeter l'image
-remove.image = Supprimer l'image du tour
+reject.image = Rejeter l''image
+remove.image = Supprimer l''image du tour
 up.key = Monter
 down.key = Descendre
 format.boolean=
 
-no.round.yet=Aucun tour configuré pour le moment. Veuillez attendre que l'administrateur du concours configure l'outil.
+no.round.yet=Aucun tour configuré pour le moment. Veuillez attendre que l''administrateur du concours configure l''outil.
 
 not.a.member = Pas un membre ?
 forgot.your.password = Mot de passe oublié ?
-sign.up.now = S'inscrire maintenant
+sign.up.now = S''inscrire maintenant
 or.use.social = Ou utilisez votre compte de MediaWiki pour vous connecter:
 
-edit.user = Modifier l'utilisateur
+edit.user = Modifier l''utilisateur
 create.user = Créer un utilisateur
 
 save = Sauvegarder
@@ -210,17 +210,17 @@ images = Images
 contest.files = Images du concours
 files.source = Source des images
 commons.category.or.page.with.files = Catégorie Commons ou page avec les images
-or.image.list = ou la liste d'images
+or.image.list = ou la liste d''images
 files.on.commons = Images sur Commons
 files.in.database = Images dans la base de données
 import.files = Importer les images
 thumbnail.urls = urls des vignettes
-local.image.cache = Cache d'images local
+local.image.cache = Cache d''images local
 download.images.locally = Télécharger les images localement
 contest = Concours
 
 mass.import = Importer massivement
-edit.greeting.message = Modifier le message d'accueil
+edit.greeting.message = Modifier le message d''accueil
 role=Rôle
 edit=Modifier
 
@@ -231,8 +231,8 @@ no=Non
 
 campaigns=Campaignes
 campaign=Campaigne
-import.from.list.page.images.category=Importer depuis la page des images / catégorie d'images
-examples.of.inputs=Exemples d'entrées
+import.from.list.page.images.category=Importer depuis la page des images / catégorie d''images
+examples.of.inputs=Exemples d''entrées
 source=Source
 import=Importer
 
@@ -244,7 +244,7 @@ id.template = Modèle ID
 add=Ajouter
 add.round=Ajouter un tour
 number = Numbre
-file.distribution = Distribution d'image
+file.distribution = Distribution d''image
 selected.rated = Sélectionné / évalué
 rating.type = Type de notation
 
@@ -257,9 +257,9 @@ error.previous.rounds.mixed.type = Tous les tours précédents doivent être du 
 round.name = Nom du tour
 jurors = Jurés
 juror.name=Nom du juré
-media.filtering = Filtrage d'image
+media.filtering = Filtrage d''image
 selected.by.at.least.x.jurors=Sélectionné par au moins X jurés
-average.file.rating.is.at.least=La note moyenne d'image est au moins
+average.file.rating.is.at.least=La note moyenne d''image est au moins
 each.file.to.all.jurors=Chaque image à tous les jurés
 each.file.to.i.juror.s=Chaque image à {0} juré(s)
 category.filter=Filtre de catégorie
@@ -298,12 +298,12 @@ rating = Évaluation
 byrate = Par note
 csv=CSV
 
-edit.greeting.template=Modifier le modèle de message d'accueil
+edit.greeting.template=Modifier le modèle de message d''accueil
 variables=Variables
 variable=Variable
 value=Valeur
-greeting.template=Modèle de message d'accueil
-send.greeting.to.new.users=Envoyer un message d'accueil aux nouveaux utilisateurs
+greeting.template=Modèle de message d''accueil
+send.greeting.to.new.users=Envoyer un message d''accueil aux nouveaux utilisateurs
 check=Vérifier
 job.retry=Réessayer
 job.cancel=Annuler

@@ -18,6 +18,17 @@ class SecuredSpec extends PlaySpecification with Mockito with PlayTestDb
   override def beforeAll(): Unit = SharedTestDb.init()
   override protected def before: Any = SharedTestDb.truncateAll()
 
+  "isPageRequest" should {
+    "be a GET the browser navigates to, not one sent by script" in {
+      Secured.isPageRequest(FakeRequest("GET", "/")) === true
+      Secured.isPageRequest(FakeRequest("GET", "/").withHeaders("Sec-Fetch-Mode" -> "navigate")) === true
+      Secured.isPageRequest(FakeRequest("GET", "/").withHeaders("Sec-Fetch-Mode" -> "cors")) === false
+      Secured.isPageRequest(FakeRequest("GET", "/").withHeaders("Sec-Fetch-Mode" -> "same-origin")) === false
+      Secured.isPageRequest(FakeRequest("GET", "/").withHeaders("X-Requested-With" -> "XMLHttpRequest")) === false
+      Secured.isPageRequest(FakeRequest("POST", "/").withHeaders("Sec-Fetch-Mode" -> "navigate")) === false
+    }
+  }
+
   "safeLocalPath" should {
     "accept only local absolute paths" in {
       Secured.safeLocalPath(Some("/contest/628/files?page=2")) === Some("/contest/628/files?page=2")
@@ -163,6 +174,9 @@ class SecuredSpec extends PlaySpecification with Mockito with PlayTestDb
       reason(Secured.Denial(Some(40L), requiredRoles = Set("jury"), reason = Some("custom"))) === "reason=custom"
       reason(Secured.Denial.empty) === "reason=permission_check_failed"
       Secured.denialReason(user.copy(userContests = Nil, contestId = None), Secured.Denial.empty) === "not_member"
+      val formerOnly = user.copy(roles = Set("USER_ID_7"), contestId = None,
+        userContests = Seq(UserContest(7L, 20L, User.NO_ROLE)))
+      Secured.denialReason(formerOnly, Secured.Denial(requiredRoles = Secured.ViewerRoles)) === "membership_inactive"
     }
 
     "say what is unknown" in {

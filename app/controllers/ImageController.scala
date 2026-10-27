@@ -97,7 +97,7 @@ class ImageController @Inject() (
     }
 
   def imageCacheStatus(contestId: Long): EssentialAction =
-    withAuth(contestPermission(User.ADMIN_ROLES, Some(contestId))) { _ => _ =>
+    withAuthJson(contestPermission(User.ADMIN_ROLES, Some(contestId))) { _ => _ =>
       Ok(Json.toJson(localImageCacheService.progress(contestId)))
     }
 
@@ -108,7 +108,7 @@ class ImageController @Inject() (
     }
 
   def roundImageCacheStatus(id: Long, rid: Long): EssentialAction =
-    withAuth(contestPermission(User.ADMIN_ROLES, Some(id))) { _ => _ =>
+    withAuthJson(contestPermission(User.ADMIN_ROLES, Some(id))) { _ => _ =>
       Ok(Json.toJson(localImageCacheService.progressForRound(rid)))
     }
 

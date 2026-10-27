@@ -62,10 +62,9 @@ class JobController @Inject() (cc: ControllerComponents, jobs: JobScheduler, blo
 
   /** Back to the page the button was on (a local path only), else the contest's rounds. */
   private def back(request: Request[AnyContent], job: Job): Result = {
-    val returnTo = request.body.asFormUrlEncoded
-      .flatMap(_.get("returnTo"))
-      .flatMap(_.headOption)
-      .filter(p => p.startsWith("/") && !p.startsWith("//"))
+    val returnTo = Secured.safeLocalPath(
+      request.body.asFormUrlEncoded.flatMap(_.get("returnTo")).flatMap(_.headOption)
+    )
     Redirect(returnTo.getOrElse(routes.RoundController.rounds(job.contestId).url))
   }
 }

@@ -180,7 +180,8 @@ class MultiContestUserSpec extends PlaySpecification with PlayTestDb with Mockit
         status(denied) mustEqual FORBIDDEN
         val body = contentAsString(denied)
         body must contain("Accès refusé")
-        body must contain("switch-contest")
+        body must contain("Vous êtes connecté avec le compte gina@example.com.")
+        body must beMatching("""(?s).*Référence : [0-9a-f]{8}, \d{4}-\d\d-\d\d \d\d:\d\d UTC.*""")
       }
     }
 
@@ -296,6 +297,25 @@ class MultiContestUserSpec extends PlaySpecification with PlayTestDb with Mockit
   }
 
   "editing users" should {
+    "deny a juror another user's edit page without naming the page's own user as a role" in {
+      testDbApp { implicit app =>
+        implicit val mat: Materializer = app.materializer
+        createContests(10)
+        val juror = member("juror@example.com", 10L -> "jury")
+        val other = member("other@example.com", 10L -> "jury")
+
+        val page = call(
+          controller.editUser(other.getId, Some(10)),
+          FakeRequest(GET, s"/users/edit/${other.getId}?contestId=10").withSession(Secured.UserName -> juror.email)
+        )
+
+        status(page) mustEqual FORBIDDEN
+        val html = contentAsString(page)
+        html must contain("This page is for: Admin, Root.")
+        html must not(contain("USER_ID_"))
+      }
+    }
+
     "let root edit the role in the contest the edit link names" in {
       testDbApp { implicit app =>
         implicit val mat: Materializer = app.materializer

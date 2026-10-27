@@ -45,7 +45,8 @@ class LoginController @Inject() (
       case u if u.hasAnyRole(User.ADMIN_ROLES) =>
         Redirect(routes.UserController.users(u.contestId))
       case _ =>
-        onUnAuthorized(user, request, Secured.Denial(reason = Some("not_member")))
+        // the reason (not a member, an inactive membership, no role) is derived
+        onUnAuthorized(user, request, Secured.denialOf(rolePermission(Secured.ViewerRoles)))
     }
   }
 
@@ -72,7 +73,9 @@ class LoginController @Inject() (
           User
             .login(login, password)
             .map { user =>
-              val inContest = Secured.inCurrentContest(user, None)
+              val latest = Secured.inCurrentContest(user, None)
+              // the latest contest where the user may see a page, else the latest one
+              val inContest = Secured.permitted(latest, _.hasAnyRole(Secured.ViewerRoles)).getOrElse(latest)
               val sessionData = Seq(Secured.UserName -> login) ++
                 inContest.contestId.map(id => Secured.CurrentContestId -> id.toString)
               val nextPage = returnTo.fold(indexRedirect(inContest))(url => Redirect(url))

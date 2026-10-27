@@ -55,7 +55,7 @@ account.not.validated.check.mail=Account not validated. Check your emails.
 account.successfully.validated=Account successfully validated
 account.settings.email.successful=Email successfully validated ({0})
 invalid.user.or.password=Невірний користувач або пароль
-youve.been.logged.out=You've been logged out
+youve.been.logged.out=You''ve been logged out
 error.sending.email=Error sending email
 error.sending.confirm.email=Error while sending confirmation mail
 error.email.already.exist=Email already exist
@@ -106,7 +106,7 @@ mail.reset.fail.message=You (or someone else) entered this email address when tr
 mail.reset.confirm.subject=Play20StartApp - New password
 mail.reset.confirm.message=Hello, <br><br> Your password has been reset.
 
-error.required=Обов'язкове поле
+error.required=Обов''язкове поле
 error.email=Потрібна адреса пошти
 
 dates = Дати

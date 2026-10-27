@@ -15,6 +15,8 @@
 @roleNames(roles: Set[String]) = @{
     roles.toSeq.sortBy(r => (r == User.ROOT_ROLE, r)).map(r => Messages("role." + r)).mkString(", ")
 }
+@* a page's own user (USER_ID_<n>) is not a role to ask for *@
+@requiredRoles = @{ denial.requiredRoles.filterNot(_.startsWith(User.USER_ID_PREFIX)) }
 
 @main(
     "access.denied.title",
@@ -29,8 +31,8 @@
         <h4>@Messages("access.denied.title")</h4>
         <p>@Messages("access.denied.account", user.emailLo)</p>
         <p>@Messages("access.denied.explanation")</p>
-        @if(denial.requiredRoles.nonEmpty) {
-            <p>@Messages("access.denied.required", roleNames(denial.requiredRoles))</p>
+        @if(requiredRoles.nonEmpty) {
+            <p>@Messages("access.denied.required", roleNames(requiredRoles))</p>
         }
         @for(contest <- currentContest.filter(_ => (user.contestRoles - User.NO_ROLE).nonEmpty)) {
             <p>@Messages("access.denied.current.role", contest.fullName, roleNames(user.contestRoles - User.NO_ROLE))</p>

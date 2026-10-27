@@ -108,6 +108,21 @@ abstract class Secured(cc: ControllerComponents) extends AbstractController(cc) 
     }
   }
 
+  /** [[withAuth]] for JSON endpoints polled by script: signed out is a JSON 401 and a
+    * denial a JSON 403 ([[onUnAuthorizedJson]]) instead of the login redirect and the
+    * denial page, and the session's contest is never switched.
+    */
+  def withAuthJson(
+      permission: Permission = rolePermission(Secured.ViewerRoles)
+  )(f: => User => Request[AnyContent] => Result): EssentialAction =
+    Action { request =>
+      userFromRequest(request).fold[Result](Results.Unauthorized(Json.obj("error" -> "unauthenticated"))) { user =>
+        permitted(user, permission).fold(onUnAuthorizedJson(user, request, Secured.denialOf(permission))) {
+          permittedUser => f(permittedUser)(request)
+        }
+      }
+    }
+
   /** [[withAuth]] for actions that run slow blocking JDBC work: the authentication, the
     * permission check and the action run on `ec` (the blocking dispatcher) instead of
     * Play's default dispatcher, whose few threads every other request needs.
@@ -219,7 +234,7 @@ object Secured {
     ZonedDateTime.now(ZoneOffset.UTC).format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm 'UTC'"))
 
   /** Why the user was denied, unless the call site says: from their membership of the
-    * target contest, else of any contest.
+    * target contest, else of any contest (only inactive ones: `membership_inactive`).
     */
   def denialReason(user: User, denial: Denial): String =
     denial.reason.getOrElse {
@@ -235,7 +250,9 @@ object Secured {
           }
         case None =>
           val active = user.userContests.filter(_.active)
-          if (active.isEmpty && !user.hasRole(User.ROOT_ROLE)) "not_member"
+          if (active.isEmpty && !user.hasRole(User.ROOT_ROLE)) {
+            if (user.userContests.nonEmpty) "membership_inactive" else "not_member"
+          }
           else if (required.nonEmpty && !active.exists(_.roles.intersect(required).nonEmpty)) "missing_role"
           else "permission_check_failed"
       }
@@ -354,8 +371,11 @@ object Secured {
       .fold(result)(id => result.addingToSession(CurrentContestId -> id.toString))
 
   /** A full page opened in the browser, which may switch the session's contest: a GET that
-    * is not a JSON poll or a fragment loaded by script (these send `X-Requested-With`).
+    * is not a JSON poll or a fragment loaded by script. Scripts here send `X-Requested-With`;
+    * browsers also say so with `Sec-Fetch-Mode` (`navigate` only for a page they open).
     */
   def isPageRequest(request: RequestHeader): Boolean =
-    request.method == "GET" && !request.headers.get("X-Requested-With").contains("XMLHttpRequest")
+    request.method == "GET" &&
+      !request.headers.get("X-Requested-With").contains("XMLHttpRequest") &&
+      request.headers.get("Sec-Fetch-Mode").forall(_.equalsIgnoreCase("navigate"))
 }

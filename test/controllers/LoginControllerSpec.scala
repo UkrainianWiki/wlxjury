@@ -1,9 +1,10 @@
 package controllers
 
-import db.scalikejdbc.{PlayTestDb, User}
+import db.scalikejdbc.{PlayTestDb, User, UserContestJdbc}
 import org.apache.pekko.stream.Materializer
 import org.specs2.mock.Mockito
 import play.api.Application
+import play.api.i18n.{Lang, MessagesApi}
 import play.api.mvc._
 import play.api.test.CSRFTokenHelper._
 import play.api.test._
@@ -134,6 +135,44 @@ class LoginControllerSpec extends PlaySpecification with Results with PlayTestDb
       }
     }
 
+    "start in the contest where the user is an active member, not their deactivated latest one" in {
+      testDbApp { implicit app =>
+        implicit val mat: Materializer = app.materializer
+        createContests(10, 20)
+        val juror = User.create(User("Juror", "juror@dot.com", None, Set("jury"), Some(User.sha1("strong")), Some(10L)))
+        UserContestJdbc.createMembership(juror.getId, 20L, User.NO_ROLE)
+
+        val result = appLogin.auth().apply(
+          FakeRequest().withFormUrlEncodedBody("login" -> "juror@dot.com", "password" -> "strong").withCSRFToken
+        )
+
+        // a juror of contest 10 without a round yet: the page saying so, not a denial
+        status(result) === OK
+        contentAsString(result) must contain("No round configured yet.")
+        session(result).get(Secured.CurrentContestId) === Some("10")
+      }
+    }
+
+    "deny a user whose memberships are all deactivated, saying so" in {
+      testDbApp { implicit app =>
+        implicit val mat: Materializer = app.materializer
+        createContests(10, 20)
+        val former = User.create(User("Former", "former@dot.com", None, Set(User.NO_ROLE), Some(User.sha1("strong")), Some(10L)))
+        UserContestJdbc.createMembership(former.getId, 20L, User.NO_ROLE)
+
+        val result = appLogin.auth().apply(
+          FakeRequest().withFormUrlEncodedBody("login" -> "former@dot.com", "password" -> "strong").withCSRFToken
+        )
+
+        status(result) === FORBIDDEN
+        contentAsString(result) must contain("Your membership in this contest has been deactivated.")
+        val signedIn = Secured.inCurrentContest(User.findById(former.getId).get, None)
+        Secured.denialLogLine(signedIn, FakeRequest(POST, "/auth"),
+          Secured.denialOf(Secured.RolePermission(Secured.ViewerRoles)), "0a1b2c3d") must
+          endWith("reason=membership_inactive")
+      }
+    }
+
     "ignore an external return URL after signing in" in {
       testDbApp { implicit app =>
         implicit val mat: Materializer = app.materializer
@@ -197,6 +236,13 @@ class LoginControllerSpec extends PlaySpecification with Results with PlayTestDb
         arbitrary must contain("Something went wrong.")
 
         errorPage("no.round.yet")._2 must contain("No round configured yet.")
+      }
+    }
+
+    "keep the apostrophes of a French message (MessageFormat drops a single one)" in {
+      testDbApp { implicit app =>
+        val messages = app.injector.instanceOf[MessagesApi]
+        messages("no.round.yet")(Lang("fr")) must contain("l'administrateur du concours configure l'outil")
       }
     }
 

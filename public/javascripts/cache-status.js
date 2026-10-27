@@ -6,7 +6,9 @@
  *
  * pollCacheStatus(statusUrl) – starts the fetch/poll loop, wiring the result
  * into the #cache-status element.  The URL is supplied by the Scala template
- * so that no server-side expression leaks into this file.
+ * so that no server-side expression leaks into this file.  On 401 or 403
+ * (signed out, or no longer an admin of the contest) it stops; on other
+ * failures it retries, slower.
  */
 
 function formatCacheStatus(p) {
@@ -33,18 +35,25 @@ function formatCacheStatus(p) {
 function pollCacheStatus(statusUrl, elementId) {
     elementId = elementId || 'cache-status';
     function update() {
-        fetch(statusUrl)
-            .then(function(r) { return r.json(); })
+        // X-Requested-With: a poll, which must not switch the session's contest
+        return fetch(statusUrl,
+                { credentials: "same-origin", headers: { "X-Requested-With": "XMLHttpRequest" } })
+            .then(function(r) {
+                if (r.status === 401 || r.status === 403) return { denied: true };
+                return r.json();
+            })
             .then(function(p) {
+                if (p.denied) { return p; }
                 var text = formatCacheStatus(p);
                 if (text !== null) {
                     document.getElementById(elementId).innerHTML = text;
                 }
                 if (p.running) { setTimeout(update, 3000); }
+                return p;
             })
             .catch(function() { setTimeout(update, 5000); });
     }
-    update();
+    return update();
 }
 
 /* CommonJS export for Jest; ignored in the browser (no module object). */
