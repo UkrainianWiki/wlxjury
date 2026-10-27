@@ -41,12 +41,12 @@
 
 @buttonUp() = {
     @optionalButton(() => index > 0,
-        () => routes.LargeViewController.large(asUserId, files(index-1).pageId, region, round.getId, rate, module).absoluteURL(false)(request),
+        () => routes.LargeViewController.large(asUserId, files(index-1).pageId, region, round.getId, rate, module).url,
         "chevron-up", "", s"${Messages("previous.image")} &lt;${Messages("up.key")}&gt;")
 }
 
 @buttonDown() = {
-    @optionalButton(() => index < files.size-1, () => routes.LargeViewController.large(asUserId, files(index+1).pageId, region, round.getId, rate, module).absoluteURL(false)(request),
+    @optionalButton(() => index < files.size-1, () => routes.LargeViewController.large(asUserId, files(index+1).pageId, region, round.getId, rate, module).url,
         "chevron-down", "", s"${Messages("next.image")} &lt;${Messages("down.key")}&gt;")
 }
 

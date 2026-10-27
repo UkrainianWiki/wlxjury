@@ -150,12 +150,13 @@ class LargeViewUrlsSpec extends Specification {
     }
 
     "link the previous and next files by paths, not http:// URLs" in {
-      // navigationButtons.scala.html's Up / Down buttons use Call.absoluteURL(false): behind
-      // HTTPS a click goes to http:// and is redirected. Not a lost vote (a GET), but the
-      // same mistake; pending until the template is fixed.
+      // navigationButtons.scala.html's Up / Down buttons: with Call.absoluteURL(false) a click
+      // behind HTTPS went to http:// and was redirected
       val u = urls(large(binaryRound, middle))
-      u.hrefs.collect { case (a, href) if isUpDownButton(a) => href }.filterNot(isPath) must beEmpty
-    }.pendingUntilFixed("navigationButtons' Up / Down hrefs are built with absoluteURL(false)")
+      val upDown = u.hrefs.collect { case (a, href) if isUpDownButton(a) => href }
+      upDown must not(beEmpty)
+      upDown.filterNot(isPath) must beEmpty
+    }
   }
 
   "a contest file's large view" should {
