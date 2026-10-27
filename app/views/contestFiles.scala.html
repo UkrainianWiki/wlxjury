@@ -3,7 +3,7 @@
 @(user: User,
         files: Seq[ImageJdbc.StoredFile],
         pager: Pager,
-        view: ContestFilesView)(implicit flash: Flash, messages: Messages)
+        view: ContestFilesView)(implicit flash: Flash, messages: Messages, request: RequestHeader)
 
 @* The contest's files, or a round's deleted on Commons, laid out as a round's gallery
    (gallery.scala.html): the pager in the navbar, the regions above, justified tiles. A tile

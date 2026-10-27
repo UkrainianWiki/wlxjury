@@ -111,13 +111,21 @@ class LoginController @Inject() (
       )
   }
 
-  /** Logout and clean the session.
-    *
-    * @return
-    *   Index page
+  /** The sign-out page: a button that signs out (POST, [[logout]]), for old links and
+    * bookmarks to `GET /logout`, which no longer sign out by themselves.
     */
-  def logout(returnTo: Option[String] = None): Action[AnyContent] = Action {
-    Redirect(routes.LoginController.login(Secured.safeLocalPath(returnTo))).withNewSession
+  def logoutPage(returnTo: Option[String] = None): Action[AnyContent] = Action { implicit request =>
+    noStore(Ok(views.html.logout(Secured.safeLocalPath(returnTo))))
+  }
+
+  /** Signs out (a POST with the CSRF token): a new session, and the login page, which
+    * comes back to `returnTo` (a local path only) after signing in again.
+    */
+  def logout(): Action[AnyContent] = Action { implicit request =>
+    val returnTo = Secured.safeLocalPath(
+      request.body.asFormUrlEncoded.flatMap(_.get("returnTo").flatMap(_.headOption))
+    )
+    Redirect(routes.LoginController.login(returnTo)).withNewSession
   }
 
   /** Old links to the error page: only known message keys, never the link's text. */

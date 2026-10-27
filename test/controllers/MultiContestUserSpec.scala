@@ -167,13 +167,13 @@ class MultiContestUserSpec extends PlaySpecification with PlayTestDb with Mockit
         val gina = member("gina@example.com", 10L -> "jury", 20L -> "organizer")
         def switch(to: Long) = call(
           controller.switchContest(to),
-          FakeRequest(GET, s"/switch-contest/$to").withSession(Secured.UserName -> gina.email)
+          FakeRequest(POST, s"/switch-contest/$to").withSession(Secured.UserName -> gina.email)
         )
 
         session(switch(10)).get(Secured.CurrentContestId) === Some("10")
         val denied = call(
           controller.switchContest(30),
-          FakeRequest(GET, "/switch-contest/30")
+          FakeRequest(POST, "/switch-contest/30")
             .withHeaders("Accept-Language" -> "fr")
             .withSession(Secured.UserName -> gina.email)
         )
@@ -195,7 +195,7 @@ class MultiContestUserSpec extends PlaySpecification with PlayTestDb with Mockit
         Secured.inCurrentContest(hal, Some("20")).contestId === Some(10L)
         status(call(
           controller.switchContest(20),
-          FakeRequest(GET, "/switch-contest/20").withSession(Secured.UserName -> hal.email)
+          FakeRequest(POST, "/switch-contest/20").withSession(Secured.UserName -> hal.email)
         )) mustEqual FORBIDDEN
       }
     }

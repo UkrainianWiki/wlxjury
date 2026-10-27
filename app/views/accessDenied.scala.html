@@ -9,7 +9,7 @@
     currentContest: Option[ContestJury],
     reference: String,
     time: String
-)(implicit flash: Flash, messages: Messages)
+)(implicit flash: Flash, messages: Messages, request: RequestHeader)
 
 @* the roles' names, root last; nothing when the page does not say what it needs *@
 @roleNames(roles: Set[String]) = @{
@@ -45,9 +45,14 @@
             @for(destination <- suggestion) {
                 <a class="btn btn-primary" href="@destination.url">@Messages(destination.labelKey)</a>
             }
-            <a class="btn btn-default" href="@routes.LoginController.logout(returnTo)">
-                @Messages("access.denied.switch.account")
-            </a>
+            @* a POST with the CSRF token, back here (a local path only) after signing in again *@
+            <form method="post" action="@routes.LoginController.logout()" style="display: inline">
+                @csrfField()
+                @for(path <- returnTo) {
+                    <input type="hidden" name="returnTo" value="@path"/>
+                }
+                <button type="submit" class="btn btn-default">@Messages("access.denied.switch.account")</button>
+            </form>
         </p>
         <p class="text-muted"><small>@Messages("access.denied.reference", reference, time)</small></p>
     </div>

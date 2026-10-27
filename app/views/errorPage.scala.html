@@ -6,7 +6,7 @@
     args: Seq[Any] = Seq.empty,
     reference: Option[String] = None,
     time: Option[String] = None
-)(implicit messages: Messages)
+)(implicit messages: Messages, request: RequestHeader)
 
 @* Any error but an authorization denial (accessDenied): a message from conf/messages,
    never text from the request or an exception, and the reference of its log line. *@

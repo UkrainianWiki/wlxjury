@@ -10,6 +10,7 @@ email=Courriel
 login=Se connecter
 fullname=Nom complet
 logout=Se déconnecter
+logout.confirm=Se déconnecter de l’outil du jury ?
 access.denied.title=Accès refusé
 access.denied.account=Vous êtes connecté avec le compte {0}.
 access.denied.explanation=Ce compte n’a pas l’autorisation d’ouvrir cette page.

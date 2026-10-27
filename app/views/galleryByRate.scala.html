@@ -12,7 +12,7 @@
         region: String = "all",
         regions: Seq[Region],
         rates: RateDistribution,
-        rated: Option[Boolean])(implicit flash: Flash, messages: Messages)
+        rated: Option[Boolean])(implicit flash: Flash, messages: Messages, request: RequestHeader)
 
     @showRateGalery(file: ImageWithRating, index: Int) = {
     @defining(maybeRound.get) { round =>

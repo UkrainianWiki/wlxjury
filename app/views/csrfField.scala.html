@@ -1,0 +1,4 @@
+@()(implicit request: RequestHeader)
+@* The request's CSRF token as a form field, if it has one: helper.CSRF.formField fails
+   without one (an error page of a request the CSRF filter did not give one to). *@
+@for(token <- play.filters.csrf.CSRF.getToken(request)) {<input type="hidden" name="@token.name" value="@token.value"/>}

@@ -10,6 +10,7 @@ email=Електронна пошта
 login=Логін
 full.name = Ім''я
 logout=Вийти
+logout.confirm=Вийти з інструмента журі?
 access.denied.title=Доступ заборонено
 access.denied.account=Ви увійшли як {0}.
 access.denied.explanation=Цей обліковий запис не має доступу до запитаної сторінки.

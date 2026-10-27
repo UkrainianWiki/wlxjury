@@ -11,7 +11,8 @@ GET         /wikipedia/commons/thumb/*path                                      
 # Map static resources from the /public folder to the /assets URL path
 GET         /assets/*file                                                           @controllers.Assets.at(path="/public", file)
 
-GET         /logout                                                                 @controllers.LoginController.logout(returnTo: Option[String] ?= None)
+GET         /logout                                                                 @controllers.LoginController.logoutPage(returnTo: Option[String] ?= None)
+POST        /logout                                                                 @controllers.LoginController.logout()
 
 POST        /auth                                                                   @controllers.LoginController.auth()
 
@@ -65,7 +66,9 @@ POST        /admin/greeting                                                     
 GET         /users/edit/:id                                                         @controllers.UserController.editUser(id: Long, contestId: Option[Long] ?= None)
 POST        /users/save                                                             @controllers.UserController.saveUser()
 POST        /users/resetpasswd/:id                                                  @controllers.UserController.resetPassword(id: Long)
-GET         /switch-contest/:contestId                                              @controllers.UserController.switchContest(contestId: Long)
+POST        /switch-contest/:contestId                                              @controllers.UserController.switchContest(contestId: Long)
+# an old link: the contest is switched by the navbar's menu (POST) only
+GET         /switch-contest/:contestId                                              @controllers.UserController.switchContestLink(contestId: Long)
 
 GET         /admin/rounds                                                           @controllers.RoundController.rounds(contestId: Option[Long] ?= None)
 GET         /admin/rounds/edit                                                      @controllers.RoundController.editRound(id: Option[Long] ?= None, contestId: Long, topImages: Option[Int] ?= None)

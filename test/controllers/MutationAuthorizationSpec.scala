@@ -58,6 +58,19 @@ class MutationAuthorizationSpec extends PlaySpecification with PlayTestDb {
       .withSession(Secured.UserName -> email)
       .withCSRFToken
 
+  /** `f`'s result and the denials ([[Secured.logDenial]]) logged on security.authz meanwhile. */
+  private def withAuthzLog[T](f: => T): (T, Seq[String]) = {
+    val logger = org.slf4j.LoggerFactory.getLogger("security.authz").asInstanceOf[ch.qos.logback.classic.Logger]
+    val appender = new ch.qos.logback.core.read.ListAppender[ch.qos.logback.classic.spi.ILoggingEvent]
+    appender.start()
+    logger.addAppender(appender)
+    try {
+      val result = f
+      import scala.jdk.CollectionConverters._
+      (result, appender.list.asScala.toSeq.map(_.getFormattedMessage))
+    } finally logger.detachAppender(appender)
+  }
+
   private def expectUnauthorized(result: scala.concurrent.Future[play.api.mvc.Result]) = {
     status(result) mustEqual FORBIDDEN
   }
@@ -131,16 +144,55 @@ class MutationAuthorizationSpec extends PlaySpecification with PlayTestDb {
         val controller = new JobController(
           app.injector.instanceOf[ControllerComponents], scheduler, new BlockingExecutionContext(app.actorSystem))
 
-        expectUnauthorized(controller.status(job.id)
-          .apply(sessionRequest(GET, s"/admin/jobs/${job.id}", admin.email)).run())
-        expectUnauthorized(controller.cancel(job.id)
-          .apply(sessionRequest(POST, s"/admin/jobs/${job.id}/cancel", admin.email)).run())
+        // another contest's job is answered as a missing one
+        status(controller.status(job.id)
+          .apply(sessionRequest(GET, s"/admin/jobs/${job.id}", admin.email)).run()) === NOT_FOUND
+        status(controller.cancel(job.id)
+          .apply(sessionRequest(POST, s"/admin/jobs/${job.id}/cancel", admin.email)).run()) === NOT_FOUND
         services.jobs.JobJdbc.findById(job.id).map(_.status) === Some(services.jobs.JobStatus.Running)
 
         val own = userDao.create(User("Own", "own@example.com", None, Set("admin"), contestId = foreign.id))
         val ok = controller.status(job.id).apply(sessionRequest(GET, s"/admin/jobs/${job.id}", own.email)).run()
         status(ok) === OK
         (contentAsJson(ok) \ "status").as[String] === "running"
+      }
+    }
+
+    "answer another contest's job exactly as a missing one, logging the denial" in {
+      testDbApp { app =>
+        implicit val materializer: Materializer = app.materializer
+        val home = contestDao.create(None, "WLE", 2024, "Ukraine")
+        val foreign = contestDao.create(None, "WLM", 2024, "Poland")
+        val admin = userDao.create(User("Admin", "admin@example.com", None, Set("admin"), contestId = home.id))
+        val scheduler = services.TestRoundServices.inlineScheduler(services.TestRoundServices.handler())
+        val job = scalikejdbc.DB.localTx { implicit s =>
+          scheduler.enqueue(services.jobs.NewJob(
+            services.distribution.RoundDistributionHandler.Kind, contestId = foreign.id,
+            subjectType = Some("round"), subjectId = Some(1L))).toOption.get
+        }
+        val missing = job.id + 1000
+        val controller = new JobController(
+          app.injector.instanceOf[ControllerComponents], scheduler, new BlockingExecutionContext(app.actorSystem))
+
+        val (answers, logged) = withAuthzLog {
+          for (id <- Seq(job.id, missing)) yield {
+            val polled = controller.status(id).apply(sessionRequest(GET, s"/admin/jobs/$id", admin.email)).run()
+            val cancelled = controller.cancel(id).apply(sessionRequest(POST, s"/admin/jobs/$id/cancel", admin.email)).run()
+            // the page names no id; only its forms' CSRF tokens differ between requests
+            def body(result: scala.concurrent.Future[play.api.mvc.Result]) =
+              contentAsString(result).replaceAll("name=\"csrfToken\" value=\"[^\"]*\"", "csrfToken")
+            (status(polled), body(polled), status(cancelled), body(cancelled))
+          }
+        }
+        val Seq(foreignJob, missingJob) = answers
+        foreignJob === missingJob
+        foreignJob._1 === NOT_FOUND
+        foreignJob._3 === NOT_FOUND
+        // the other contest's job's two requests are logged as denials, the missing one's not
+        logged.size === 2
+        forall(logged)(_ must contain(s"resource=\"job:${job.id}\""))
+        forall(logged)(_ must contain(s"targetContestId=${foreign.getId}"))
+        services.jobs.JobJdbc.findById(job.id).map(_.status) === Some(services.jobs.JobStatus.Running)
       }
     }
 
@@ -233,13 +285,13 @@ class MutationAuthorizationSpec extends PlaySpecification with PlayTestDb {
         val (b, _, bOnly, former, job, round, jobs) = setup(app)
 
         Seq(bOnly, former).foreach { admin =>
+          // A's job is answered as a missing one
           val denied = jobs.status(job.id).apply(inContest(GET, s"/admin/jobs/${job.id}", admin.email, b.getId)).run()
-          status(denied) === FORBIDDEN
-          (contentAsJson(denied) \ "error").as[String] === "forbidden"
-          (contentAsJson(denied) \ "reference").as[String] must beMatching("[0-9a-f]{8}")
+          status(denied) === NOT_FOUND
+          (contentAsJson(denied) \ "error").as[String] === "job not found"
 
           status(jobs.cancel(job.id)
-            .apply(inContest(POST, s"/admin/jobs/${job.id}/cancel", admin.email, b.getId)).run()) === FORBIDDEN
+            .apply(inContest(POST, s"/admin/jobs/${job.id}/cancel", admin.email, b.getId)).run()) === NOT_FOUND
 
           val count = roundController(app).newFilesCount(round.getId)
             .apply(inContest(GET, s"/admin/rounds/newfiles?id=${round.getId}", admin.email, b.getId)).run()

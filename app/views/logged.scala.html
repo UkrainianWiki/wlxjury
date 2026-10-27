@@ -1,6 +1,6 @@
 @import db.scalikejdbc.ContestJuryJdbc
 @import scalikejdbc.sqls
-@(user: db.scalikejdbc.User)(implicit messages: Messages)
+@(user: db.scalikejdbc.User)(implicit messages: Messages, request: RequestHeader)
 
 @if(user != null) {
     <ul class="nav navbar-nav navbar-right" >
@@ -16,7 +16,11 @@
             <ul class="dropdown-menu">
                 @for(uc <- memberships; contest <- contests.find(_.id.contains(uc.contestId))) {
                     <li class="@if(user.contestId.contains(uc.contestId)){active}">
-                        <a href="@routes.UserController.switchContest(uc.contestId)">@contest.fullName (@uc.roles.map(r => Messages(r)).mkString(", "))</a>
+                        @* a POST with the CSRF token: a link could switch it from another site *@
+                        <form method="post" action="@routes.UserController.switchContest(uc.contestId)" class="navbar-menu-form">
+                            @csrfField()
+                            <button type="submit" class="btn btn-link">@contest.fullName (@uc.roles.map(r => Messages(r)).mkString(", "))</button>
+                        </form>
                     </li>
                 }
             </ul>
@@ -35,9 +39,12 @@
                 </a>
             </li>
             <li>
-                <a href="@routes.LoginController.logout()">
-                    <span class="glyphicon glyphicon-off"></span> @Messages("logout")
-                </a>
+                <form method="post" action="@routes.LoginController.logout()" class="navbar-menu-form">
+                    @csrfField()
+                    <button type="submit" class="btn btn-link">
+                        <span class="glyphicon glyphicon-off"></span> @Messages("logout")
+                    </button>
+                </form>
             </li>
         </ul>
         </li>

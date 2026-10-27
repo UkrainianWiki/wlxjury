@@ -13,7 +13,7 @@
         pager: Html = Html(""),
         contestId: Option[Long] = None,
         rates: RateDistribution = new RateDistribution(Map.empty),
-        rated: Option[Boolean] = None)(implicit messages: Messages)
+        rated: Option[Boolean] = None)(implicit messages: Messages, request: RequestHeader)
 
 <!-- Navigation bar on the top of the page -->
 <nav class="navbar navbar-inverse" role="navigation" style="margin-bottom: 10px;">

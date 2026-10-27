@@ -57,7 +57,7 @@ abstract class Secured(cc: ControllerComponents) extends AbstractController(cc) 
         currentContest,
         reference,
         Secured.referenceTime()
-      )(request.flash, messages)
+      )(request.flash, messages, request)
     )
   }
 
@@ -79,7 +79,8 @@ abstract class Secured(cc: ControllerComponents) extends AbstractController(cc) 
         if (json) Results.NotFound(Json.obj("error" -> "juror_not_found"))
         else
           Results.NotFound(
-            views.html.errorPage(Some(user), "error.title", "error.juror.not.found")(cc.messagesApi.preferred(request))
+            views.html.errorPage(Some(user), "error.title", "error.juror.not.found")(
+              cc.messagesApi.preferred(request), request)
           )
       case _ =>
         val denial = Secured.Denial

@@ -635,27 +635,7 @@ class LargeImageSpec extends PlaySpecification with PlayTestDb {
     }
   }
 
-  /** `body` with an app that has the CSRF filter, as in production (the test config
-    * disables it for the Gatling simulations), on the shared, truncated database.
-    */
-  private def withCsrfApp[T](body: play.api.Application => T): T = {
-    SharedTestDb.init()
-    SharedTestDb.truncateAll()
-    val csrfApp = new play.api.inject.guice.GuiceApplicationBuilder()
-      .configure(
-        "db.default.driver"     -> SharedTestDb.driverClassName,
-        "db.default.username"   -> SharedTestDb.username,
-        "db.default.password"   -> SharedTestDb.password,
-        "db.default.url"        -> SharedTestDb.jdbcUrl,
-        "play.filters.disabled" -> Seq("play.filters.hosts.AllowedHostsFilter")
-      )
-      .build()
-    try body(csrfApp)
-    finally {
-      scala.concurrent.Await.result(csrfApp.stop(), scala.concurrent.duration.Duration(30, "seconds"))
-      SharedTestDb.reregisterDefault()
-    }
-  }
+  private def withCsrfApp[T](body: play.api.Application => T): T = CsrfTestApp.withCsrfApp(body)
 
   "a vote in the large view, through the router and the filters" should {
     // a rated round with two unrated files; the session has a CSRF token, as a signed-in

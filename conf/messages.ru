@@ -10,6 +10,7 @@ email=Почта
 login=Логин
 fullname=Full Name
 logout=Выйти
+logout.confirm=Выйти из инструмента жюри?
 access.denied.title=Доступ запрещён
 access.denied.account=Вы вошли в систему как {0}.
 access.denied.explanation=У этой учётной записи нет доступа к запрошенной странице.

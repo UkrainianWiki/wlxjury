@@ -10,6 +10,7 @@ email=Email
 login=Login
 fullname=Full Name
 logout=Logout
+logout.confirm=Sign out of the jury tool?
 access.denied.title=Access denied
 access.denied.account=You are signed in as {0}.
 access.denied.explanation=This account does not have permission to open the requested page.

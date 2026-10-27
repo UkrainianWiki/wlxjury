@@ -46,16 +46,22 @@ class JobController @Inject() (cc: ControllerComponents, jobs: JobScheduler, blo
 
   /** Runs `f` with the job if `user` administers its contest, checked in that contest (one
     * of the user's others than the session's, too); the session's contest stays as it is.
-    * A denial is JSON for the status poll, else the denial page.
+    * A job of a contest the user does not administer is answered exactly as a missing one,
+    * so that its id says nothing of it; the denial is still logged ([[Secured.logDenial]]).
     */
   private def withJob(user: User, id: Long, request: RequestHeader, json: Boolean = false)(f: Job => Result): Result =
     JobJdbc.findById(id) match {
-      case None => NotFound(Json.obj("error" -> "job not found"))
       case Some(job) if adminOf(user, job.contestId) => f(job)
       case Some(job) =>
-        val denial = Secured.Denial(job.contestId, Some(s"job:${job.id}"), User.ADMIN_ROLES)
-        if (json) onUnAuthorizedJson(user, request, denial) else onUnAuthorized(user, request, denial)
+        Secured.logDenial(user, request, Secured.Denial(job.contestId, Some(s"job:${job.id}"), User.ADMIN_ROLES))
+        notFound(user, request, json)
+      case None => notFound(user, request, json)
     }
+
+  /** No such job: JSON for the status poll, else the error page. */
+  private def notFound(user: User, request: RequestHeader, json: Boolean): Result =
+    if (json) NotFound(Json.obj("error" -> "job not found"))
+    else NotFound(views.html.errorPage(Some(user), "error.title", "error.not.found")(cc.messagesApi.preferred(request), request))
 
   private def adminOf(user: User, contestId: Option[Long]): Boolean =
     contestPermission(User.ADMIN_ROLES, contestId)(contestId.fold(user)(Secured.inContest(user, _)))
