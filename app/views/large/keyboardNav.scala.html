@@ -16,7 +16,7 @@
     @if(index < files.size-1) {
     $(document).on('keydown', null, 'down', function (e) {
         e.preventDefault() ;
-        window.location = "@Html(routes.LargeViewController.large(asUserId, files(index + 1).pageId, region, round.getId, rate, module).absoluteURL(false)(request))";
+        window.location = "@Html(routes.LargeViewController.large(asUserId, files(index + 1).pageId, region, round.getId, rate, module).url)";
         return false;
     });
     }
@@ -24,7 +24,7 @@
     @if(index > 0) {
     $(document).on('keydown', null, 'up', function (e) {
         e.preventDefault() ;
-        window.location = "@Html(routes.LargeViewController.large(asUserId, files(index - 1).pageId, region, round.getId, rate, module).absoluteURL(false)(request))";
+        window.location = "@Html(routes.LargeViewController.large(asUserId, files(index - 1).pageId, region, round.getId, rate, module).url)";
         return false;
     });
     }
@@ -38,31 +38,31 @@
     $(document).on('keydown', null, 'pagedown', function (e) {
         e.preventDefault() ;
         @if(index < files.size-5) {
-        window.location = "@Html(routes.LargeViewController.large(asUserId, files(index + 5).pageId, region, round.getId, rate, module).absoluteURL(false)(request))";
+        window.location = "@Html(routes.LargeViewController.large(asUserId, files(index + 5).pageId, region, round.getId, rate, module).url)";
         } else {
-        window.location = "@Html(routes.LargeViewController.large(asUserId, files.last.pageId, region, round.getId, rate, module).absoluteURL(false)(request))";
+        window.location = "@Html(routes.LargeViewController.large(asUserId, files.last.pageId, region, round.getId, rate, module).url)";
         }
         return false;
     });
     $(document).on('keydown', null, 'pageup', function (e) {
         e.preventDefault() ;
         @if(index > 4) {
-        window.location = "@Html(routes.LargeViewController.large(asUserId, files(index - 5).pageId, region, round.getId, rate, module).absoluteURL(false)(request))";
+        window.location = "@Html(routes.LargeViewController.large(asUserId, files(index - 5).pageId, region, round.getId, rate, module).url)";
         } else {
-        window.location = "@Html(routes.LargeViewController.large(asUserId, files(0).pageId, region, round.getId, rate, module).absoluteURL(false)(request))";
+        window.location = "@Html(routes.LargeViewController.large(asUserId, files(0).pageId, region, round.getId, rate, module).url)";
         }
         return false ;
     });
 
     $(document).on('keydown', null, 'home', function (e) {
         e.preventDefault() ;
-        window.location = "@Html(routes.LargeViewController.large(asUserId, files(0).pageId, region, round.getId, rate, module).absoluteURL(false)(request))";
+        window.location = "@Html(routes.LargeViewController.large(asUserId, files(0).pageId, region, round.getId, rate, module).url)";
         return false ;
     });
 
     $(document).on('keydown', null, 'end', function (e) {
         e.preventDefault() ;
-        window.location = "@Html(routes.LargeViewController.large(asUserId, files.last.pageId, region, round.getId, rate, module).absoluteURL(false)(request))";
+        window.location = "@Html(routes.LargeViewController.large(asUserId, files.last.pageId, region, round.getId, rate, module).url)";
         return false ;
     });
 
@@ -71,14 +71,14 @@
             @if(files(index).rate <= 0) {
                 $(document).on('keydown', null, 'space', function (e) {
                     e.preventDefault() ;
-                    voteLarge("@Html(routes.LargeViewController.rateByPageId(round.getId, files(index).pageId, select = 1, region, rate, module).absoluteURL(false)(request))");
+                    voteLarge("@Html(routes.LargeViewController.rateByPageId(round.getId, files(index).pageId, select = 1, region, rate, module).url)");
                     return false ;
                 });
             }
             @if(files(index).rate >= 0) {
                 $(document).on('keydown', null, 'del', function (e) {
                     e.preventDefault() ;
-                    voteLarge("@Html(routes.LargeViewController.rateByPageId(round.getId, files(index).pageId, select = -1, region, rate, module).absoluteURL(false)(request))");
+                    voteLarge("@Html(routes.LargeViewController.rateByPageId(round.getId, files(index).pageId, select = -1, region, rate, module).url)");
                     return false ;
                 });
             }
@@ -86,7 +86,7 @@
             @for(i <- 0 to Math.min(round.rates.id, 9)) {
                 $(document).on('keydown', null, '@i', function (e) {
                     e.preventDefault() ;
-                    voteLarge("@Html(routes.LargeViewController.rateByPageId(round.getId, files(index).pageId, select = i, region, rate, module).absoluteURL(false)(request))");
+                    voteLarge("@Html(routes.LargeViewController.rateByPageId(round.getId, files(index).pageId, select = i, region, rate, module).url)");
                     return false ;
                 });
             }

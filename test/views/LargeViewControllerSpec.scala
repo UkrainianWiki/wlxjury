@@ -25,7 +25,7 @@ class LargeViewControllerSpec extends PlaySpecification {
       val html = views.html.large.main_large(
         title = "title",
         user = User("name", "email", id = Some(1), roles = Set("jury"), contestId = Some(1)),
-        asUserId = 0,
+        asUserId = 1, // the juror's own view, where the keys vote
         score = 0.0,
         readOnly = false,
         url = "url",
@@ -43,6 +43,11 @@ class LargeViewControllerSpec extends PlaySpecification {
       view must contain("<form id=\"vote-form\" method=\"post\"")
       view must contain("name=\"csrfToken\"")
       view must contain("voteLarge('url' + Math.round(")
+      // the keys vote and move by paths, never by http:// URLs: behind HTTPS a form posted
+      // to http:// is redirected to https as a GET, and the vote is lost
+      view must contain("voteLarge(\"/large/round/1/pageid/1/select/1")
+      view must contain("window.location = \"/large/")
+      view must not(beMatching("(?s).*(voteLarge\\(|window\\.location = )\"https?://.*"))
     }
   }
 
