@@ -35,8 +35,10 @@ jsTest := {
   val jsDir = baseDirectory.value / "javascript-test"
   // Windows can only start npm through its npm.cmd wrapper
   val npm = if (scala.util.Properties.isWin) "npm.cmd" else "npm"
-  // node_modules is git-ignored: install Jest from package-lock.json on a fresh checkout
-  if (!(jsDir / "node_modules").exists()) {
+  // node_modules is git-ignored: install Jest from package-lock.json on a fresh checkout, and
+  // again when the lockfile changed since (npm records the install in node_modules/.package-lock.json)
+  val installedLock = jsDir / "node_modules" / ".package-lock.json"
+  if (!installedLock.exists() || installedLock.lastModified() < (jsDir / "package-lock.json").lastModified()) {
     val installed = scala.sys.process.Process(Seq(npm, "ci"), jsDir).!
     if (installed != 0) throw new MessageOnlyException("npm ci failed")
   }

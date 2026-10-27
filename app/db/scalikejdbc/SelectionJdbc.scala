@@ -127,6 +127,15 @@ object SelectionJdbc extends CRUDMapper[Selection] {
         .desc
     }.map(rs => (SelectionJdbc(s)(rs), User(u)(rs))).list()
 
+  /** Whether the file is in the round: has a selection row in it, `juryId`'s if given.
+    * As the galleries and large view list a round's files, deleted rows count too.
+    */
+  def inRound(roundId: Long, pageId: Long, juryId: Option[Long]): Boolean = {
+    val ofJuror = juryId.fold(sqls"")(id => sqls"AND jury_id = $id")
+    sql"""SELECT EXISTS(SELECT 1 FROM selection WHERE round_id = $roundId AND page_id = $pageId $ofJuror)"""
+      .map(_.boolean(1)).single().getOrElse(false)
+  }
+
   def findBy(pageId: Long, juryId: Long, roundId: Long): Option[Selection] =
     where("pageId" -> pageId, "juryId" -> juryId, "roundId" -> roundId)
       .apply()

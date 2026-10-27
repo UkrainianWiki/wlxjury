@@ -33,12 +33,29 @@
         <script type="text/javascript" src="https://ajax.googleapis.com/ajax/libs/jquery/1.11.1/jquery.min.js"></script>
         <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.1/js/bootstrap.min.js"></script>
         <script src="@routes.Assets.at("javascripts/checkwidth.js")"></script>
+        <script>
+            // A vote is a POST of the page's vote form, with its CSRF token: a GET changes nothing.
+            // The keys, the stars and the buttons with a data-vote-url submit it.
+            function voteLarge(url) {
+                var form = document.getElementById('vote-form');
+                if (!form) return;
+                form.action = url;
+                form.submit();
+            }
+            $(document).on('click', '[data-vote-url]', function (e) {
+                e.preventDefault();
+                voteLarge($(this).attr('data-vote-url'));
+            });
+        </script>
 
         @raty(score, url, readOnly, round, rate, module, byCriteria)
         @keyboardNav(user, asUserId, files, index, page, rate, region, round, module)
 
     </head>
     <body class="gallery" style="height: 100%;">
+        @if(!readOnly) {
+            <form id="vote-form" method="post" style="display: none;">@helper.CSRF.formField</form>
+        }
         @content
     </body>
 </html>

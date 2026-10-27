@@ -169,10 +169,9 @@ class RoundEditPageSpec extends PlaySpecification with PlayTestDb {
         val otherAdmin =
           userDao.create(User("Other", "other@example.com", None, Set("admin"), contestId = other.id))
         val count = route(app, get(s"/admin/rounds/newfiles?id=${round.getId}", otherAdmin)).get
-        status(count) must_== SEE_OTHER
-        redirectLocation(count) must beSome.which(_.startsWith("/error"))
+        status(count) must_== FORBIDDEN
         val table = route(app, get(s"/roundstat/${round.getId}/table", otherAdmin)).get
-        redirectLocation(table) must beSome.which(_.startsWith("/error"))
+        status(table) must_== FORBIDDEN
       }
     }
   }

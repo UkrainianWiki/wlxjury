@@ -94,13 +94,14 @@ class ImageProxyControllerSpec extends Specification with PlayTestDb {
       // (333 = ImageUtil.resizeTo(800, 600, 250), the width scaled to a 250px-tall box)
       val cachedFile = new File(tmpDir,
         "wikipedia/commons/thumb/a/ab/My_Image.jpg/333px-My_Image.jpg")
-      writeJpeg(cachedFile)
+      writeJpeg(cachedFile, w = 333, h = 250)
 
       implicit val cfg: Map[String, String] =
         Map("wlxjury.thumbs.local-path" -> tmpDir.getAbsolutePath)
 
       try {
         testDbApp { implicit app =>
+          implicit val materializer: org.apache.pekko.stream.Materializer = app.materializer
           imageDao.batchInsert(Seq(image))
 
           // Registry startup scan is a background Future over a single-file dir;
@@ -112,10 +113,11 @@ class ImageProxyControllerSpec extends Specification with PlayTestDb {
             thumbRequest(
               "/wikipedia/commons/thumb/a/ab/My_Image.jpg/333px-My_Image.jpg")).get
 
-          // Complete the async file response while the app and temporary file still exist.
-          play.api.test.Helpers.await(result)
+          // Consume the streamed file response before the temporary directory is deleted.
+          val responseBytes = contentAsBytes(result)
           status(result)      mustEqual OK
           contentType(result) must beSome("image/jpeg")
+          responseBytes.toArray.toSeq mustEqual Files.readAllBytes(cachedFile.toPath).toSeq
         }
       } finally {
         deleteDir(tmpDir)

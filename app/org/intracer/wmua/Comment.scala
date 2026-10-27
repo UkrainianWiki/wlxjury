@@ -1,6 +1,7 @@
 package org.intracer.wmua
 
-import java.time.ZonedDateTime
+import java.time.OffsetDateTime
+import java.time.temporal.ChronoUnit
 
 import scalikejdbc._
 
@@ -20,6 +21,11 @@ object CommentJdbc extends SQLSyntaxSupport[Comment] {
 
   val c = CommentJdbc.syntax("c")
 
+  /** The time a comment is created, to the second with its offset: it fits created_at
+    * (varchar(40)), which a ZonedDateTime with a zone id and microseconds does not.
+    */
+  def now(): String = OffsetDateTime.now.truncatedTo(ChronoUnit.SECONDS).toString
+
   def apply(c: SyntaxProvider[Comment])(rs: WrappedResultSet): Comment = apply(c.resultName)(rs)
 
   def apply(c: ResultName[Comment])(rs: WrappedResultSet): Comment = new Comment(
@@ -34,7 +40,7 @@ object CommentJdbc extends SQLSyntaxSupport[Comment] {
   )
 
   def create(userId: Long, username: String, roundId: Long, contestId: Option[Long], room: Long, body: String,
-             createdAt: String = ZonedDateTime.now.toString)(implicit session: DBSession = autoSession): Comment = {
+             createdAt: String = CommentJdbc.now())(implicit session: DBSession = autoSession): Comment = {
     val id = withSQL {
       insert.into(CommentJdbc).namedValues(
         column.userId -> userId,
