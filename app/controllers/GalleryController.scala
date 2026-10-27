@@ -139,9 +139,9 @@ class GalleryController @Inject() (
           ContestJuryJdbc.findById(round.contestId).fold[Result](
             NotFound(views.html.errorPage(Some(user), "error.title", "error.contest.not.found"))
           ) { contest =>
-            val list = RoundList.of(round, asUserId, region, view)
+            val list = RoundList.of(round, user, asUserId, region, view)
             at.fold(
-              galleryOf(user, list, _, rounds, contest),
+              page => galleryOf(user, list, page, rounds, contest).withCookies(RoundList.remembered(list, user).toSeq: _*),
               // the page with the file, or where it would be if the filter now leaves it out
               pageId => Redirect(list.position(pageId).fold(list.pageUrl(1))(p => list.pageUrl(Pager.pageOf(p)) + "#" + pageId))
             )

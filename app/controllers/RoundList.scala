@@ -1,9 +1,9 @@
 package controllers
 
-import db.scalikejdbc.Round
+import db.scalikejdbc.{Round, User}
 import db.scalikejdbc.rewrite.ImageDbNew.{Limit, SelectionQuery}
 import org.intracer.wmua.ImageWithRating
-import play.api.mvc.RequestHeader
+import play.api.mvc.{Cookie, RequestHeader}
 
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets.UTF_8
@@ -70,10 +70,13 @@ sealed abstract class ListOrder(val param: String, val columns: Seq[(String, Int
 
 object ListOrder {
 
-  /** The highest rated first; files of a rate by monument, then page id. */
+  /** By monument, then page id: a vote never moves a file. */
+  case object FileOrder extends ListOrder("file", Seq("s.monument_id" -> 1, "s.page_id" -> 1))
+
+  /** The highest rated first; files of a rate in file order. */
   case object ByRate extends ListOrder("rate", Seq("rate" -> -1, "s.monument_id" -> 1, "s.page_id" -> 1))
 
-  val all: Seq[ListOrder] = Seq(ByRate)
+  val all: Seq[ListOrder] = Seq(FileOrder, ByRate)
 
   def parse(param: String): Option[ListOrder] = all.find(_.param == param)
 }
@@ -257,10 +260,16 @@ object Neighbourhood {
 
 object RoundList {
 
-  /** The list a request is for: the round, whose votes, the region from its path; the view
-    * from its path or, for a large view, its `module`; the filter and order from its query.
+  /** The cookie with the order a juror last chose for their own gallery, in this browser: kept
+    * after signing out, unlike the session.
     */
-  def of(round: Round, asUserId: Long, region: String, view: GalleryView)(implicit
+  val SortCookie = "gallerySort"
+
+  /** The list a request is for: the round, whose votes, the region from its path; the view
+    * from its path or, for a large view, its `module`; the filter and order from its query,
+    * the order [[defaultOrder]] if it names none.
+    */
+  def of(round: Round, viewer: User, asUserId: Long, region: String, view: GalleryView)(implicit
       request: RequestHeader
   ): RoundList =
     RoundList(
@@ -268,7 +277,37 @@ object RoundList {
       asUserId,
       Some(region).filter(_ != "all"),
       VoteFilter.of(request),
-      request.getQueryString("sort").flatMap(ListOrder.parse).getOrElse(ListOrder.ByRate),
+      requestedOrder.getOrElse(defaultOrder(viewer, asUserId, view)),
       view
     )
+
+  /** Where a juror starts in a round: all their files, in their order. */
+  def landing(round: Round, juror: User)(implicit request: RequestHeader): RoundList =
+    RoundList(round, juror.getId, order = defaultOrder(juror, juror.getId, GalleryView.Gallery))
+
+  /** A list's order when its URL names none: in a juror's own gallery the one they last
+    * chose ([[SortCookie]]), else file order, which a vote doesn't change; by rate for the
+    * others, the organisers' and the results.
+    */
+  def defaultOrder(viewer: User, asUserId: Long, view: GalleryView)(implicit request: RequestHeader): ListOrder =
+    if (ownGallery(viewer, asUserId, view))
+      request.cookies.get(SortCookie).flatMap(c => ListOrder.parse(c.value)).getOrElse(ListOrder.FileOrder)
+    else ListOrder.ByRate
+
+  /** The cookie remembering the order of the viewer's own gallery, if the request names
+    * another than the one remembered.
+    */
+  def remembered(list: RoundList, viewer: User)(implicit request: RequestHeader): Option[Cookie] =
+    Option.when(
+      ownGallery(viewer, list.asUserId, list.view) && requestedOrder.contains(list.order) &&
+        !request.cookies.get(SortCookie).exists(_.value == list.order.param)
+    )(Cookie(SortCookie, list.order.param, maxAge = Some(SortCookieAge), sameSite = Some(Cookie.SameSite.Lax)))
+
+  private val SortCookieAge = 365 * 24 * 60 * 60
+
+  private def requestedOrder(implicit request: RequestHeader): Option[ListOrder] =
+    request.getQueryString("sort").flatMap(ListOrder.parse)
+
+  private def ownGallery(viewer: User, asUserId: Long, view: GalleryView): Boolean =
+    asUserId != 0 && viewer.id.contains(asUserId) && view == GalleryView.Gallery
 }

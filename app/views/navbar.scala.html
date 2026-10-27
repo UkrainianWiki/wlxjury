@@ -11,9 +11,9 @@
         contestId: Option[Long] = None,
         rates: RateDistribution = new RateDistribution(Map.empty))(implicit messages: Messages, request: RequestHeader)
 
-@* The list's first page as the viewer's own, in all regions, in a view and by a filter *@
-@ownTab(l: RoundList, view: GalleryView, filter: VoteFilter) = @{
-    l.withViewer(user.getId).withRegion("all").withView(view).withFilter(filter).pageUrl(1)
+@* The viewer's own gallery: the page's list if it is that, else where they start in its round *@
+@ownList(l: RoundList) = @{
+    if (l.asUserId == user.getId && l.view == GalleryView.Gallery) l else RoundList.landing(l.round, user)
 }
 
 @* The rounds the viewer may see, each opening the list in it *@
@@ -25,18 +25,31 @@
     ).toDropDown())
 }
 
-@* A rated round's tabs: the unrated files, and all the viewer's own by rate *@
-@ratedRoundTabs(l: RoundList) = {
-    @if(rates.unrated > 0) {
-        <li role="presentation" class="@if(l.filter == VoteFilter.Unrated) {active}">
-            <a href="@l.withRegion("all").withView(GalleryView.Gallery).withFilter(VoteFilter.Unrated).pageUrl(1)">@Messages("unrated")
-                (@rates.unrated)
-            </a>
+@* The viewer's own files by their votes, in all regions: all, the unrated, and the selected and
+   rejected (a binary round) or the rated *@
+@ownTabs(l: RoundList) = {
+    @defining(ownList(l).withRegion("all")) { own =>
+    @for((filter, name, count) <- Seq((VoteFilter.All, "all", rates.all), (VoteFilter.Unrated, "unrated", rates.unrated)) ++
+            (if (l.round.isBinary) Seq((VoteFilter.Rate(1), "selected", rates.selected), (VoteFilter.Rate(-1), "rejected", rates.rejected))
+             else Seq((VoteFilter.Rated, "rated", rates.rated)))) {
+        @defining(l.asUserId == user.getId && l.filter == filter) { active =>
+        <li role="presentation" class="@if(active) {active}@if(filter.isInstanceOf[VoteFilter.Rate]) {@if(active) { active-}@name}">
+            <a href="@own.withFilter(filter).pageUrl(1)">@Messages(name) (@count)</a>
+        </li>
+        }
     }
-    <li role="presentation" class="@if(l.filter != VoteFilter.Unrated && l.asUserId == user.getId) {active}">
-        <a href="@ownTab(l, GalleryView.ByRate, VoteFilter.All)">@Messages("rated")
-            (@rates.rated)
-        </a>
+    }
+}
+
+@* The order of the viewer's own gallery: in file order, which a vote doesn't change, or by their rate *@
+@sortMenu(l: RoundList) = {
+    @defining(ownList(l)) { own =>
+    @(new UiSelectionDto[ListOrder](
+        (order: ListOrder) => Call("GET", own.withOrder(order).pageUrl(1)),
+        own.order,
+        Seq(ListOrder.FileOrder -> SelectionItem("sort.file"), ListOrder.ByRate -> SelectionItem("sort.rate"))
+    ).toDropDown())
+    }
 }
 
 <!-- Navigation bar on the top of the page -->
@@ -78,7 +91,7 @@
 
                     @for(round <- selectedRound.toSeq) {
                     @* the list the page shows; on another page, the round's gallery as the viewer's *@
-                    @defining(list.getOrElse(RoundList(round, asUserId))) { l =>
+                    @defining(list.getOrElse(if (asUserId == user.getId) RoundList.landing(round, user) else RoundList(round, asUserId))) { l =>
 
                         @if(!(user.canViewOrgInfo(round) || rounds.size > 1)) {
                             <li class="navbar-brand" style="margin-left: 10px">@Messages(round.description)</li>
@@ -94,29 +107,9 @@
                             </li>
                         }
 
-                            <!--
-                                If binary round show unrated, selected, rejected tabs
-                            -->
-                        @if(round.isBinary) {
-
-                                <li role="presentation" class="@if(l.filter == VoteFilter.Unrated) {active}">
-                                    <a href="@ownTab(l, GalleryView.Gallery, VoteFilter.Unrated)">
-                                        @Messages("unrated") (@rates.unrated)
-                                    </a>
-
-                            <li role="presentation" class="@if(l.filter == VoteFilter.Rate(1)) {active active-}selected">
-                                <a href="@ownTab(l, GalleryView.Gallery, VoteFilter.Rate(1))">
-                                    @Messages("selected") (@rates.selected)
-                                </a>
-
-                                <li role="presentation" class="@if(l.filter == VoteFilter.Rate(-1)) {active active-}rejected">
-                                    <a href="@ownTab(l, GalleryView.Gallery, VoteFilter.Rate(-1))">
-                                        @Messages("rejected") (@rates.rejected)
-                                    </a>
-                        } else {
-                                <!-- Rating round -->
-                            @ratedRoundTabs(l)
-                        }
+                            <!-- The viewer's own files by their votes, and their order -->
+                            @ownTabs(l)
+                            @sortMenu(l)
                     }
 
                         @if(user.getId != asUserId && user.canViewOrgInfo(round)) {
@@ -150,7 +143,7 @@
                                 Some(VoteFilter.All -> SelectionItem("all"))
                             ).toDropDown())
 
-                            @ratedRoundTabs(l)
+                            @ownTabs(l)
 
                             @(new UiSelectionDto[GalleryView](
                                 { view: GalleryView => Call("GET", l.withView(view).pageUrl(1)) },

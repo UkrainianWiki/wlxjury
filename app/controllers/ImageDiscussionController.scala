@@ -61,7 +61,7 @@ class ImageDiscussionController @Inject()(cc: ControllerComponents, galleryServi
       request: Request[AnyContent]
   ): Result = {
     val roundId = targetRound.getId
-    val list = RoundList.of(targetRound, user.getId, region, GalleryView.of(request))
+    val list = RoundList.of(targetRound, user, user.getId, region, GalleryView.of(request))
 
     editCommentForm.bindFromRequest().fold(
       _ => Redirect(list.largeUrl(pageId)),

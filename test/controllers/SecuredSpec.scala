@@ -99,7 +99,8 @@ class SecuredSpec extends PlaySpecification with Mockito with PlayTestDb
         val controller = new Secured(app.injector.instanceOf[ControllerComponents]) {}
         val result = controller.onUnAuthorized(signedIn, FakeRequest("GET", "/contest/999/files"))
         val html = result.body.asInstanceOf[HttpEntity.Strict].data.utf8String
-        val firstGalleryPage = routes.GalleryController.byRate(signedIn.getId, 1, "all", round.getId).url
+        // all the juror's files, in file order
+        val firstGalleryPage = RoundList(round, signedIn.getId, order = ListOrder.FileOrder).pageUrl(1)
 
         result.header.status === Helpers.FORBIDDEN
         html must contain(firstGalleryPage)
@@ -174,7 +175,7 @@ class SecuredSpec extends PlaySpecification with Mockito with PlayTestDb
         val signedIn = Secured.inCurrentContest(juror, Some("2025"))
         val (_, html) = page(signedIn, Secured.Denial.empty)
 
-        val gallery = RoundList(round, signedIn.getId, filter = VoteFilter.Unrated).pageUrl(1)
+        val gallery = RoundList(round, signedIn.getId, order = ListOrder.FileOrder).pageUrl(1)
         html must contain(s"""<a class="btn btn-primary" href="${gallery.replace("&", "&amp;")}">""")
         html must not(contain(routes.GalleryController.contestFiles(603).url))
         // without a known requirement, no "This page is for"

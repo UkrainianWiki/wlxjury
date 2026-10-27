@@ -349,3 +349,5 @@ vote.error.failed=Votre vote n''a pas pu être enregistré. Réessayez.
 vote.error.reference=Référence : {0}
 job.status.denied=Pas d’accès à l’état de cette tâche.
 round.stat.table.failed=Le tableau du jury n''a pas pu être chargé : vous avez peut-être été déconnecté ou perdu l''accès à ce concours. Rechargez la page pour réessayer.
+sort.file=Dans l''ordre des fichiers
+sort.rate=Par ma note

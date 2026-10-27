@@ -1,7 +1,8 @@
 package controllers
 
-import db.scalikejdbc.Round
+import db.scalikejdbc.{Round, User}
 import org.specs2.mutable.Specification
+import play.api.mvc.Cookie
 import play.api.test.FakeRequest
 
 /** [[RoundList]]'s URLs and how a request names a list, without a database. */
@@ -9,8 +10,15 @@ class RoundListSpec extends Specification {
 
   private val round = Round(id = Some(7), number = 1, contestId = 1, active = true, rates = Round.ratesById(5))
 
-  private def parse(uri: String, view: GalleryView = GalleryView.Gallery, asUserId: Long = 3): RoundList =
-    RoundList.of(round, asUserId, "all", view)(FakeRequest("GET", uri))
+  private val juror = User("Juror", "juror@example.org", id = Some(3), roles = Set("jury"), contestId = Some(1))
+  private val organizer = User("Organizer", "org@example.org", id = Some(4), roles = Set("organizer"), contestId = Some(1))
+
+  private def request(uri: String, sortCookie: Option[String]) =
+    sortCookie.fold(FakeRequest("GET", uri))(v => FakeRequest("GET", uri).withCookies(Cookie(RoundList.SortCookie, v)))
+
+  private def parse(uri: String, view: GalleryView = GalleryView.Gallery, asUserId: Long = 3, viewer: User = juror,
+                    sortCookie: Option[String] = None): RoundList =
+    RoundList.of(round, viewer, asUserId, "all", view)(request(uri, sortCookie))
 
   "a list URL's filter" should {
     "be read from filter=" in {
@@ -98,6 +106,43 @@ class RoundListSpec extends Specification {
       list.order === ListOrder.ByRate
       list.view === GalleryView.ByRate
       list.region must beNone
+    }
+  }
+
+  "a list's order" should {
+    "be file order in a juror's own gallery, by rate in the others' and the results" in {
+      parse("/").order === ListOrder.FileOrder
+      parse("/", viewer = organizer).order === ListOrder.ByRate
+      parse("/", asUserId = 0, viewer = organizer).order === ListOrder.ByRate
+      parse("/", view = GalleryView.ByRate).order === ListOrder.ByRate
+      parse("/", view = GalleryView.FileList).order === ListOrder.ByRate
+    }
+
+    "be the one the juror last chose, remembered in the cookie, unless the URL names one" in {
+      parse("/", sortCookie = Some("rate")).order === ListOrder.ByRate
+      parse("/?sort=file", sortCookie = Some("rate")).order === ListOrder.FileOrder
+      parse("/", sortCookie = Some("nosuch")).order === ListOrder.FileOrder
+      // not in the organisers' views, nor another juror's
+      parse("/", viewer = organizer, sortCookie = Some("file")).order === ListOrder.ByRate
+    }
+
+    "be remembered when the juror's own gallery names another" in {
+      def remembered(uri: String, cookie: Option[String], viewer: User = juror) = {
+        implicit val req: play.api.mvc.RequestHeader = request(uri, cookie)
+        RoundList.remembered(RoundList.of(round, viewer, 3, "all", GalleryView.Gallery), viewer).map(_.value)
+      }
+      remembered("/?sort=rate", None) === Some("rate")
+      remembered("/?sort=file", Some("rate")) === Some("file")
+      remembered("/?sort=rate", Some("rate")) must beNone
+      remembered("/", None) must beNone
+      remembered("/?sort=rate", None, viewer = organizer) must beNone
+    }
+
+    "start a juror on all their files, in their order" in {
+      val start = RoundList.landing(round, juror)(FakeRequest("GET", "/"))
+      (start.asUserId, start.filter, start.order, start.view) ===
+        ((3L, VoteFilter.All, ListOrder.FileOrder, GalleryView.Gallery))
+      RoundList.landing(round, juror)(request("/", Some("rate"))).order === ListOrder.ByRate
     }
   }
 }

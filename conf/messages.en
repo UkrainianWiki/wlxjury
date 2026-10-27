@@ -365,3 +365,5 @@ vote.error.failed=Your vote could not be saved. Try again.
 vote.error.reference=Reference: {0}
 job.status.denied=No access to this job''s status.
 round.stat.table.failed=The jurors'' table could not be loaded: you may have been signed out or lost access to this contest. Reload the page to try again.
+sort.file=In file order
+sort.rate=By my rating

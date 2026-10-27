@@ -44,7 +44,7 @@ abstract class Secured(cc: ControllerComponents) extends AbstractController(cc) 
     */
   def onUnAuthorized(user: User, request: RequestHeader, denial: Secured.Denial = Secured.Denial.empty): Result = {
     val reference = Secured.logDenial(user, request, denial)
-    val suggestion = suggestedAccess(user)
+    val suggestion = suggestedAccess(user)(request)
     val safeReturnTo = Secured.safeLocalPath(Option.when(request.method == "GET")(request.uri))
     val messages = cc.messagesApi.preferred(request)
     val currentContest = user.contestId.flatMap(ContestJuryJdbc.findById)
@@ -92,7 +92,7 @@ abstract class Secured(cc: ControllerComponents) extends AbstractController(cc) 
   /** A useful destination from an active membership, the current contest's first: the
     * contest's files if the user may view them, else a gallery of one of its active rounds.
     */
-  private def suggestedAccess(user: User): Option[Secured.AccessSuggestion] = {
+  private def suggestedAccess(user: User)(implicit request: RequestHeader): Option[Secured.AccessSuggestion] = {
     val memberships = user.userContests
       .filter(_.active)
       .sortBy(membership => if (user.contestId.contains(membership.contestId)) 0 else 1)
@@ -112,10 +112,7 @@ abstract class Secured(cc: ControllerComponents) extends AbstractController(cc) 
       else {
         val rounds = Round.activeRounds(memberUser)
         rounds.headOption.map { round =>
-          val url = if (round.isBinary)
-            RoundList(round, user.getId, filter = VoteFilter.Unrated).pageUrl(1)
-          else
-            RoundList(round, user.getId, view = GalleryView.ByRate).pageUrl(1)
+          val url = RoundList.landing(round, memberUser).pageUrl(1)
           Secured.AccessSuggestion(url, "access.denied.suggested.gallery", Some(membership.contestId), Some(round), rounds)
         }
       }

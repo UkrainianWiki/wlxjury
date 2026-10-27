@@ -252,3 +252,10 @@ what jurors see; Step 5 decides whether they need an index.
   going back from it is still not its old page; file order (Step 3) keeps it in place.
 - Step 2: the vote redirect and the large view use the same `around`; the large view's moves
   are `fileKeyboardNav`'s, `keyboardNav` keeps only the vote keys.
+- Step 3: file order is the default of a juror's own *gallery* view (`/gallery/...`, and a large
+  view going back to it); a juror's `/byrate/...` list stays by rate, as its name says. The
+  cookie is set when a juror's own gallery is shown with a `sort=` other than the remembered
+  one: every list link carries `sort=`, so the order last used is the one remembered. Landing
+  links (sign-in, the access-denied suggestion, the navbar on other pages) carry the
+  remembered order. The juror's tabs and the sort menu are in the navbar; Unrated shows also
+  with 0 files.

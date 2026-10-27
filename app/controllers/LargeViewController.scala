@@ -56,7 +56,7 @@ class LargeViewController @Inject() (
     Round.findById(roundId).filter(_.openToJurors).fold(
       Redirect(routes.GalleryController.list(user.getId, 1, region, roundId))
     ) { round =>
-      val list = RoundList.of(round, user.getId, region, GalleryView.of(request))
+      val list = RoundList.of(round, user, user.getId, region, GalleryView.of(request))
       val result = afterVote(list, pageId)
 
       criteria match {
@@ -126,7 +126,7 @@ class LargeViewController @Inject() (
               case Accepts.Json() => viewAsRefused(user, round, refusal, json = true)
             }
           case _ =>
-            showRound(pageId, user, RoundList.of(round, asUserId, region, GalleryView.of(request)))
+            showRound(pageId, user, RoundList.of(round, user, asUserId, region, GalleryView.of(request)))
         }
     }
 
