@@ -379,7 +379,9 @@ class RoundController @Inject() (
 
   def currentRoundStat(contestId: Option[Long] = None): EssentialAction =
     withAuth(rolePermission(Set(User.ADMIN_ROLE, "jury", "root") ++ User.ORG_COM_ROLES)) {
-      user => implicit request =>
+      sessionUser => implicit request =>
+        // the asked-for contest's rounds are checked as a member of it, if an active one
+        val user = contestId.fold(sessionUser)(Secured.inContest(sessionUser, _))
         val currentContestId = contestId.orElse(user.currentContest)
         val activeRound = Round
           .activeRounds(user)
@@ -401,13 +403,15 @@ class RoundController @Inject() (
             }
           }
 
-        activeRound
-          .map { round =>
-            Redirect(routes.RoundController.roundStat(round.getId))
-          }
-          .getOrElse {
-            NotFound(views.html.errorPage(Some(user), "error.title", "no.round.yet"))
-          }
+        Secured.switchingContest(sessionUser, user) {
+          activeRound
+            .map { round =>
+              Redirect(routes.RoundController.roundStat(round.getId))
+            }
+            .getOrElse {
+              NotFound(views.html.errorPage(Some(user), "error.title", "no.round.yet"))
+            }
+        }
     }
 
   def roundStat(roundId: Long): EssentialAction =

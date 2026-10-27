@@ -28,11 +28,16 @@ abstract class Secured(cc: ControllerComponents) extends AbstractController(cc) 
   def userFromRequest(request: RequestHeader): Option[User] =
     request.session.get(UserName).flatMap(Secured.sessionUser(_, request.session.get(CurrentContestId)))
 
-  /** To the login page, which comes back here after signing in: a GET's page only. */
+  /** To the login page, which comes back here after signing in: a GET's page only. A
+    * request sent by script ([[Secured.isScriptRequest]]) gets a JSON 401 instead, so that
+    * a fragment loaded into a page is not replaced by the login page.
+    */
   def onUnAuthenticated(request: RequestHeader): Result =
-    Results.Redirect(
-      routes.LoginController.login(Secured.safeLocalPath(Option.when(request.method == "GET")(request.uri)))
-    )
+    if (Secured.isScriptRequest(request)) Results.Unauthorized(Json.obj("error" -> "unauthenticated"))
+    else
+      Results.Redirect(
+        routes.LoginController.login(Secured.safeLocalPath(Option.when(request.method == "GET")(request.uri)))
+      )
 
   /** The denial page (403): what the page needs, what the user has, a useful destination
     * and the reference of the denial's log line ([[Secured.logDenial]]).
@@ -371,11 +376,22 @@ object Secured {
       .fold(result)(id => result.addingToSession(CurrentContestId -> id.toString))
 
   /** A full page opened in the browser, which may switch the session's contest: a GET that
-    * is not a JSON poll or a fragment loaded by script. Scripts here send `X-Requested-With`;
-    * browsers also say so with `Sec-Fetch-Mode` (`navigate` only for a page they open).
+    * is not a JSON poll, a fragment loaded by script ([[isScriptRequest]]) or a prefetch
+    * (`Sec-Purpose` or `Purpose: prefetch`), which the user may never open.
     */
   def isPageRequest(request: RequestHeader): Boolean =
-    request.method == "GET" &&
-      !request.headers.get("X-Requested-With").contains("XMLHttpRequest") &&
-      request.headers.get("Sec-Fetch-Mode").forall(_.equalsIgnoreCase("navigate"))
+    request.method == "GET" && !isScriptRequest(request) && !isPrefetch(request)
+
+  /** A request sent by a script, not a page or form the browser opens: scripts here send
+    * `X-Requested-With`; browsers also say so with `Sec-Fetch-Mode` (`navigate` only for a
+    * page they open).
+    */
+  def isScriptRequest(request: RequestHeader): Boolean =
+    request.headers.get("X-Requested-With").contains("XMLHttpRequest") ||
+      request.headers.get("Sec-Fetch-Mode").exists(!_.equalsIgnoreCase("navigate"))
+
+  private def isPrefetch(request: RequestHeader): Boolean =
+    Seq("Sec-Purpose", "Purpose").exists(name =>
+      request.headers.getAll(name).exists(_.toLowerCase(java.util.Locale.ROOT).contains("prefetch"))
+    )
 }

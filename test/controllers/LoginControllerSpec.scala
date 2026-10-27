@@ -135,7 +135,9 @@ class LoginControllerSpec extends PlaySpecification with Results with PlayTestDb
       }
     }
 
-    "start in the contest where the user is an active member, not their deactivated latest one" in {
+    // a regression test: inCurrentContest picks an active membership, so it also passes
+    // without auth's permitted fallback
+    "(regression) start in the contest where the user is an active member, never a deactivated one" in {
       testDbApp { implicit app =>
         implicit val mat: Materializer = app.materializer
         createContests(10, 20)

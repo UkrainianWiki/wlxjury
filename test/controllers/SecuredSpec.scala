@@ -27,6 +27,37 @@ class SecuredSpec extends PlaySpecification with Mockito with PlayTestDb
       Secured.isPageRequest(FakeRequest("GET", "/").withHeaders("X-Requested-With" -> "XMLHttpRequest")) === false
       Secured.isPageRequest(FakeRequest("POST", "/").withHeaders("Sec-Fetch-Mode" -> "navigate")) === false
     }
+
+    "not be a prefetch, which the user may never open" in {
+      Seq("Sec-Purpose" -> "prefetch", "Sec-Purpose" -> "prefetch;prerender", "Purpose" -> "prefetch",
+        "Purpose" -> "Prefetch", "Sec-Purpose" -> "PREFETCH").foreach { header =>
+        Secured.isPageRequest(FakeRequest("GET", "/").withHeaders(header, "Sec-Fetch-Mode" -> "navigate")) === false
+      }
+      Secured.isPageRequest(FakeRequest("GET", "/").withHeaders("Purpose" -> "other")) === true
+    }
+  }
+
+  "onUnAuthenticated" should {
+    val secured = new SecuredWithCc
+
+    "answer a script's request with a JSON 401, not the login page" in {
+      Seq("X-Requested-With" -> "XMLHttpRequest", "Sec-Fetch-Mode" -> "cors").foreach { header =>
+        val result = secured.onUnAuthenticated(FakeRequest("GET", "/admin/rounds/1/stat-table").withHeaders(header))
+        result.header.status === 401
+        result.body.contentType must beSome("application/json")
+      }
+      ok
+    }
+
+    "send a page or a form to the login page, a page's with its address to come back to" in {
+      val page = secured.onUnAuthenticated(FakeRequest("GET", "/roundstat/1").withHeaders("Sec-Fetch-Mode" -> "navigate"))
+      page.header.status === 303
+      page.header.headers.get("Location") must beSome(routes.LoginController.login(Some("/roundstat/1")).url)
+
+      val form = secured.onUnAuthenticated(FakeRequest("POST", "/admin/setround").withHeaders("Sec-Fetch-Mode" -> "navigate"))
+      form.header.status === 303
+      form.header.headers.get("Location") must beSome(routes.LoginController.login(None).url)
+    }
   }
 
   "safeLocalPath" should {

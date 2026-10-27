@@ -452,6 +452,112 @@ class MutationAuthorizationSpec extends PlaySpecification with PlayTestDb {
     }
   }
 
+  "an admin of both contests, with the session in A" should {
+    "be refused B's round's cache and thumbnail urls through A's contest" in {
+      testDbApp { app =>
+        implicit val materializer: Materializer = app.materializer
+        val a = contestDao.create(None, "WLE", 2024, "Ukraine")
+        val b = contestDao.create(None, "WLM", 2024, "Poland")
+        val aRound = roundDao.create(Round(None, 1, Some("A's round"), contestId = a.getId, active = true))
+        val bRound = roundDao.create(Round(None, 1, Some("B's round"), contestId = b.getId, active = true))
+        val both = userDao.create(User("Both", "both@example.com", None, Set("admin"), contestId = a.id))
+        UserContestJdbc.createMembership(both.getId, b.getId, "admin")
+        val images = app.injector.instanceOf[ImageController]
+        val gallery = app.injector.instanceOf[GalleryController]
+        def inA(method: String, url: String) =
+          FakeRequest(method, url)
+            .withSession(Secured.UserName -> both.email, Secured.CurrentContestId -> a.getId.toString)
+            .withCSRFToken
+        def statusOf(round: Round) = call(images.roundImageCacheStatus(a.getId, round.getId),
+          inA(GET, s"/contest/${a.getId}/round/${round.getId}/images/cache/status"))
+        def start(round: Round) = call(images.startRoundImageCache(a.getId, round.getId),
+          inA(POST, s"/contest/${a.getId}/round/${round.getId}/images/cache/start"))
+        def urlsOf(round: Round) = call(gallery.thumbnailUrls(a.getId, Some(round.getId)),
+          inA(GET, s"/thumb_urls/${a.getId}?roundId=${round.getId}"))
+
+        status(statusOf(bRound)) === NOT_FOUND
+        status(start(bRound)) === NOT_FOUND
+        status(urlsOf(bRound)) === NOT_FOUND
+
+        status(statusOf(aRound)) === OK
+        status(urlsOf(aRound)) === OK
+      }
+    }
+  }
+
+  "a juror of A and B, with the session in A, and B's round open to its jurors" should {
+    // B's round with juryOrgView, the juror not listed in it; a juror of A only
+    def setup() = {
+      val a = contestDao.create(None, "WLE", 2024, "Ukraine")
+      val b = contestDao.create(None, "WLM", 2024, "Poland")
+      val bRound = roundDao.create(
+        Round(None, 1, Some("B open round"), contestId = b.getId, active = true, juryOrgView = true))
+      val both = userDao.create(User("Both", "both@example.com", None, Set("jury"), contestId = a.id))
+      UserContestJdbc.createMembership(both.getId, b.getId, "jury")
+      val aOnly = userDao.create(User("A only", "aonly@example.com", None, Set("jury"), contestId = a.id))
+      (a, b, bRound, both, aOnly)
+    }
+
+    def inA(url: String, email: String, a: Long) =
+      FakeRequest(GET, url)
+        .withSession(Secured.UserName -> email, Secured.CurrentContestId -> a.toString)
+        .withCSRFToken
+
+    "reach B's round stat, by B's id and by the round's" in {
+      testDbApp { app =>
+        implicit val materializer: Materializer = app.materializer
+        val (a, b, bRound, both, _) = setup()
+
+        val current = call(roundController(app).currentRoundStat(Some(b.getId)),
+          inA(s"/roundstat?contestId=${b.getId}", both.email, a.getId))
+        status(current) === SEE_OTHER
+        redirectLocation(current) === Some(routes.RoundController.roundStat(bRound.getId).url)
+        session(current).get(Secured.CurrentContestId) === Some(b.getId.toString)
+
+        val stat = call(roundController(app).roundStat(bRound.getId),
+          inA(s"/roundstat/${bRound.getId}", both.email, a.getId))
+        status(stat) === OK
+        contentAsString(stat) must contain("B open round")
+      }
+    }
+
+    "still be refused to a juror of A only" in {
+      testDbApp { app =>
+        implicit val materializer: Materializer = app.materializer
+        val (a, b, bRound, _, aOnly) = setup()
+
+        val current = call(roundController(app).currentRoundStat(Some(b.getId)),
+          inA(s"/roundstat?contestId=${b.getId}", aOnly.email, a.getId))
+        status(current) === NOT_FOUND
+        redirectLocation(current) must beNone
+
+        status(call(roundController(app).roundStat(bRound.getId),
+          inA(s"/roundstat/${bRound.getId}", aOnly.email, a.getId))) === FORBIDDEN
+      }
+    }
+  }
+
+  "a round's stat table, signed out" should {
+    "be a 401 to a script, and the login page to a page" in {
+      testDbApp { app =>
+        implicit val materializer: Materializer = app.materializer
+        val contest = contestDao.create(None, "WLE", 2024, "Ukraine")
+        val round = roundDao.create(Round(None, 1, Some("Round"), contestId = contest.getId, active = true))
+        val url = s"/roundstat/${round.getId}/table"
+        def table(headers: (String, String)*) =
+          call(roundController(app).roundStatTable(round.getId), FakeRequest(GET, url).withHeaders(headers: _*))
+
+        val xhr = table("X-Requested-With" -> "XMLHttpRequest")
+        status(xhr) === UNAUTHORIZED
+        (contentAsJson(xhr) \ "error").as[String] === "unauthenticated"
+
+        val page = table()
+        status(page) === SEE_OTHER
+        redirectLocation(page) === Some(routes.LoginController.login(Some(url)).url)
+      }
+    }
+  }
+
   "LargeViewController.rateByPageId" should {
     "reject cross-contest rating mutations" in {
       testDbApp { app =>

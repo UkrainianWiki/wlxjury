@@ -75,6 +75,7 @@ class LoginController @Inject() (
             .map { user =>
               val latest = Secured.inCurrentContest(user, None)
               // the latest contest where the user may see a page, else the latest one
+              // defensive: inCurrentContest already picks an active membership; kept should its rules change
               val inContest = Secured.permitted(latest, _.hasAnyRole(Secured.ViewerRoles)).getOrElse(latest)
               val sessionData = Seq(Secured.UserName -> login) ++
                 inContest.contestId.map(id => Secured.CurrentContestId -> id.toString)

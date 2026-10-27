@@ -339,3 +339,4 @@ error.unknown=Une erreur s’est produite.
 error.contest.not.found=Ce concours n’existe pas.
 error.round.not.found=Ce tour n’existe pas.
 job.status.denied=Pas d’accès à l’état de cette tâche.
+round.stat.table.failed=Le tableau du jury n''a pas pu être chargé : vous avez peut-être été déconnecté ou perdu l''accès à ce concours. Rechargez la page pour réessayer.
