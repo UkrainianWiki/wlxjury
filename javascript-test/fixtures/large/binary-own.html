@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="en" style="height: 100%;">
+<head>
+<title>gallery</title>
+<meta charset="UTF-8">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="shortcut icon" type="image/png" href="/assets/images/favicon.png">
+<link rel="stylesheet" media="screen" href="/assets/stylesheets/main.css">
+<link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.1/css/bootstrap.min.css">
+<script type="text/javascript" src="https://ajax.googleapis.com/ajax/libs/jquery/1.11.1/jquery.min.js"></script>
+<script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.1/js/bootstrap.min.js"></script>
+<script src="/assets/javascripts/checkwidth.js"></script>
+<script>
+// A vote is a POST of the page's vote form, with its CSRF token: a GET changes nothing.
+// The keys, the stars and the buttons with a data-vote-url submit it.
+function voteLarge(url) {
+var form = document.getElementById('vote-form');
+if (!form) return;
+form.action = url;
+form.submit();
+}
+$(document).on('click', '[data-vote-url]', function (e) {
+e.preventDefault();
+voteLarge($(this).attr('data-vote-url'));
+});
+</script>
+<script src="/assets/javascripts/jquery.hotkeys.js"></script>
+<script>
+$(document).on('keydown', null, 'down', function (e) {
+e.preventDefault() ;
+window.location = "/large/round/1/user/1/pageid/108";
+return false;
+});
+$(document).on('keydown', null, 'up', function (e) {
+e.preventDefault() ;
+window.location = "/large/round/1/user/1/pageid/106";
+return false;
+});
+$(document).on('keydown', null, 'esc', function (e) {
+e.preventDefault() ;
+window.location = "/gallery/round/1/user/1/region/all/pageid/107#107";
+return false;
+});
+$(document).on('keydown', null, 'pagedown', function (e) {
+e.preventDefault() ;
+window.location = "/large/round/1/user/1/pageid/112";
+return false;
+});
+$(document).on('keydown', null, 'pageup', function (e) {
+e.preventDefault() ;
+window.location = "/large/round/1/user/1/pageid/102";
+return false ;
+});
+$(document).on('keydown', null, 'home', function (e) {
+e.preventDefault() ;
+window.location = "/large/round/1/user/1/pageid/101";
+return false ;
+});
+$(document).on('keydown', null, 'end', function (e) {
+e.preventDefault() ;
+window.location = "/large/round/1/user/1/pageid/113";
+return false ;
+});
+$(document).on('keydown', null, 'space', function (e) {
+e.preventDefault() ;
+voteLarge("/large/round/1/pageid/107/select/1");
+return false ;
+});
+$(document).on('keydown', null, 'del', function (e) {
+e.preventDefault() ;
+voteLarge("/large/round/1/pageid/107/select/-1");
+return false ;
+});
+</script>
+</head>
+<body class="gallery" style="height: 100%;">
+<form id="vote-form" method="post" style="display: none;"><input type="hidden" name="csrfToken" value="fixture-csrf-token"/></form>
+<div class="container-fluid" style="padding-left:5px; margin-left:0px; margin-right:0px; height:100%">
+<div class="row" style="height:100%">
+<div class="col-xs-1" style="margin-left:0px; min-width: 220px">
+<div class="btn-group" role="group" style="margin:10px;">
+<a role="button" class="btn btn-default btn-sm active" href="/gallery/round/1/user/1/region/all/pageid/107#107" title="back.to.gallery &lt;Esc&gt;">
+<span class="glyphicon glyphicon-th" aria-hidden="true"></span>
+</a>
+<a role="button" class="btn btn-default btn-sm active " href="http://jury.example/large/round/1/user/1/pageid/106" title="previous.image &lt;up.key&gt;">
+<span class="glyphicon glyphicon-chevron-up" aria-hidden="true"></span>
+</a>
+<a role="button" class="btn btn-default btn-sm active " href="http://jury.example/large/round/1/user/1/pageid/108" title="next.image &lt;down.key&gt;">
+<span class="glyphicon glyphicon-chevron-down" aria-hidden="true"></span>
+</a>
+<a role="button" class="btn btn-default btn-sm active btn-success" href="#" data-vote-url="/large/round/1/region/all/pageid/107/select/1" title="select.image &lt;Space&gt;">
+<span class="glyphicon glyphicon-thumbs-up icon-white" aria-hidden="true"></span>
+</a>
+<a role="button" class="btn btn-default btn-sm active btn-danger" href="#" data-vote-url="/large/round/1/region/all/pageid/107/select/-1" title="reject.image &lt;Delete&gt;">
+<span class="glyphicon glyphicon-thumbs-down icon-white" aria-hidden="true"></span>
+</a>
+</div>
+<ul class="gallery mw-gallery-traditional">
+<li class="gallerybox">
+<div class="thumb_small">
+<div style="margin:5px auto;">
+<a href="/large/round/1/user/1/pageid/101">
+<img class="cropped" alt="File:Image 101.jpg"
+src="https://upload.wikimedia.org/wikipedia/commons/a/ab/Image_101.jpg"
+srcset="https://upload.wikimedia.org/wikipedia/commons/a/ab/Image_101.jpg 1.5x, https://upload.wikimedia.org/wikipedia/commons/a/ab/Image_101.jpg 2x">
+</a>
+</div>
+</div>
+</li>
+<li class="gallerybox">
+<div class="thumb_small">
+<div style="margin:5px auto;">
+<a href="/large/round/1/user/1/pageid/102">
+<img class="cropped" alt="File:Image 102.jpg"
+src="https://upload.wikimedia.org/wikipedia/commons/a/ab/Image_102.jpg"
+srcset="https://upload.wikimedia.org/wikipedia/commons/a/ab/Image_102.jpg 1.5x, https://upload.wikimedia.org/wikipedia/commons/a/ab/Image_102.jpg 2x">
+</a>
+</div>
+</div>
+</li>
+<li class="gallerybox">
+<div class="thumb_small">
+<div style="margin:5px auto;">
+<a href="/large/round/1/user/1/pageid/103">
+<img class="cropped" alt="File:Image 103.jpg"
+src="https://upload.wikimedia.org/wikipedia/commons/a/ab/Image_103.jpg"
+srcset="https://upload.wikimedia.org/wikipedia/commons/a/ab/Image_103.jpg 1.5x, https://upload.wikimedia.org/wikipedia/commons/a/ab/Image_103.jpg 2x">
+</a>
+</div>
+</div>
+</li>
+<li class="gallerybox">
+<div class="thumb_small">
+<div style="margin:5px auto;">
+<a href="/large/round/1/user/1/pageid/104">
+<img class="cropped" alt="File:Image 104.jpg"
+src="https://upload.wikimedia.org/wikipedia/commons/a/ab/Image_104.jpg"
+srcset="https://upload.wikimedia.org/wikipedia/commons/a/ab/Image_104.jpg 1.5x, https://upload.wikimedia.org/wikipedia/commons/a/ab/Image_104.jpg 2x">
+</a>
+</div>
+</div>
+</li>
+<li class="gallerybox">
+<div class="thumb_small">
+<div style="margin:5px auto;">
+<a href="/large/round/1/user/1/pageid/105">
+<img class="cropped" alt="File:Image 105.jpg"
+src="https://upload.wikimedia.org/wikipedia/commons/a/ab/Image_105.jpg"
+srcset="https://upload.wikimedia.org/wikipedia/commons/a/ab/Image_105.jpg 1.5x, https://upload.wikimedia.org/wikipedia/commons/a/ab/Image_105.jpg 2x">
+</a>
+</div>
+</div>
+</li>
+<li class="gallerybox">
+<div class="thumb_small">
+<div style="margin:5px auto;">
+<a href="/large/round/1/user/1/pageid/106">
+<img class="cropped" alt="File:Image 106.jpg"
+src="https://upload.wikimedia.org/wikipedia/commons/a/ab/Image_106.jpg"
+srcset="https://upload.wikimedia.org/wikipedia/commons/a/ab/Image_106.jpg 1.5x, https://upload.wikimedia.org/wikipedia/commons/a/ab/Image_106.jpg 2x">
+</a>
+</div>
+</div>
+</li>
+<li class="gallerybox">
+<div class="thumb_small current">
+<div style="margin:5px auto;">
+<a href="/large/round/1/user/1/pageid/107">
+<img class="cropped" alt="File:Image 107.jpg"
+src="https://upload.wikimedia.org/wikipedia/commons/a/ab/Image_107.jpg"
+srcset="https://upload.wikimedia.org/wikipedia/commons/a/ab/Image_107.jpg 1.5x, https://upload.wikimedia.org/wikipedia/commons/a/ab/Image_107.jpg 2x">
+</a>
+</div>
+</div>
+</li>
+<li class="gallerybox">
+<div class="thumb_small">
+<div style="margin:5px auto;">
+<a href="/large/round/1/user/1/pageid/108">
+<img class="cropped" alt="File:Image 108.jpg"
+src="https://upload.wikimedia.org/wikipedia/commons/a/ab/Image_108.jpg"
+srcset="https://upload.wikimedia.org/wikipedia/commons/a/ab/Image_108.jpg 1.5x, https://upload.wikimedia.org/wikipedia/commons/a/ab/Image_108.jpg 2x">
+</a>
+</div>
+</div>
+</li>
+<li class="gallerybox">
+<div class="thumb_small">
+<div style="margin:5px auto;">
+<a href="/large/round/1/user/1/pageid/109">
+<img class="cropped" alt="File:Image 109.jpg"
+src="https://upload.wikimedia.org/wikipedia/commons/a/ab/Image_109.jpg"
+srcset="https://upload.wikimedia.org/wikipedia/commons/a/ab/Image_109.jpg 1.5x, https://upload.wikimedia.org/wikipedia/commons/a/ab/Image_109.jpg 2x">
+</a>
+</div>
+</div>
+</li>
+<li class="gallerybox">
+<div class="thumb_small">
+<div style="margin:5px auto;">
+<a href="/large/round/1/user/1/pageid/110">
+<img class="cropped" alt="File:Image 110.jpg"
+src="https://upload.wikimedia.org/wikipedia/commons/a/ab/Image_110.jpg"
+srcset="https://upload.wikimedia.org/wikipedia/commons/a/ab/Image_110.jpg 1.5x, https://upload.wikimedia.org/wikipedia/commons/a/ab/Image_110.jpg 2x">
+</a>
+</div>
+</div>
+</li>
+<li class="gallerybox">
+<div class="thumb_small">
+<div style="margin:5px auto;">
+<a href="/large/round/1/user/1/pageid/111">
+<img class="cropped" alt="File:Image 111.jpg"
+src="https://upload.wikimedia.org/wikipedia/commons/a/ab/Image_111.jpg"
+srcset="https://upload.wikimedia.org/wikipedia/commons/a/ab/Image_111.jpg 1.5x, https://upload.wikimedia.org/wikipedia/commons/a/ab/Image_111.jpg 2x">
+</a>
+</div>
+</div>
+</li>
+<li class="gallerybox">
+<div class="thumb_small">
+<div style="margin:5px auto;">
+<a href="/large/round/1/user/1/pageid/112">
+<img class="cropped" alt="File:Image 112.jpg"
+src="https://upload.wikimedia.org/wikipedia/commons/a/ab/Image_112.jpg"
+srcset="https://upload.wikimedia.org/wikipedia/commons/a/ab/Image_112.jpg 1.5x, https://upload.wikimedia.org/wikipedia/commons/a/ab/Image_112.jpg 2x">
+</a>
+</div>
+</div>
+</li>
+<li class="gallerybox">
+<div class="thumb_small">
+<div style="margin:5px auto;">
+<a href="/large/round/1/user/1/pageid/113">
+<img class="cropped" alt="File:Image 113.jpg"
+src="https://upload.wikimedia.org/wikipedia/commons/a/ab/Image_113.jpg"
+srcset="https://upload.wikimedia.org/wikipedia/commons/a/ab/Image_113.jpg 1.5x, https://upload.wikimedia.org/wikipedia/commons/a/ab/Image_113.jpg 2x">
+</a>
+</div>
+</div>
+</li>
+</ul>
+<div style="margin-right: 5px; margin-top: 5px; padding: 5px;">
+<a href="https://upload.wikimedia.org/wikipedia/commons/a/ab/Image_107.jpg">full.resolution</a>
+</div>
+<div style="margin-right: 5px;
+margin-top: 5px;
+padding: 5px;">
+<ol>
+</ol>
+</div>
+</div>
+<div id="mainContent" class="col-xs-10"  style="margin-left:5px; margin-top: 10px; height:100%">
+<a href="https://commons.wikimedia.org/wiki/File:Image 107.jpg" target="_blank">
+<img id="large_image" alt="File:Image 107.jpg"
+src="https://upload.wikimedia.org/wikipedia/commons/a/ab/Image_107.jpg" style="max-width:100%; max-height:100%;"
+srcset="https://upload.wikimedia.org/wikipedia/commons/a/ab/Image_107.jpg 1.5x, https://upload.wikimedia.org/wikipedia/commons/a/ab/Image_107.jpg 2x"
+onerror="var f = this.getAttribute('data-fallback');
+if (f) { this.removeAttribute('data-fallback'); this.removeAttribute('srcset'); this.removeAttribute('sizes'); this.src = f; }
+else this.parentNode.classList.add('wlx-large-failed');">
+</a>
+<div style="margin-right: 5px;
+margin-top: 10px;
+padding: 5px;">
+<div id="comments" name="comments" class="comment-header msg">
+<strong>comments</strong>
+</div>
+<div>
+<form action="/comment/region/all/pageid/107?round=1" method="POST" class="form-vertical" id="addComment">
+<input type="hidden" name="csrfToken" value="fixture-csrf-token"/>
+<input type="hidden" name="id" id="id" value="0" />
+<textarea class="imageComment" id="text" name="text" rows="3" placeholder="your.comment.here"></textarea>
+<input type="button" class="btn btn-primary" id="saySomething" value="submit.comment" onClick="document.forms[ 'addComment' ].submit ( ) ;" />
+</form>
+</div>
+</div>
+</div>
+</div>
+</div>
+</body>
+</html>
