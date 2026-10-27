@@ -27,41 +27,18 @@ voteLarge($(this).attr('data-vote-url'));
 </script>
 <script src="/assets/javascripts/jquery.hotkeys.js"></script>
 <script>
-$(document).on('keydown', null, 'down', function (e) {
-e.preventDefault() ;
-window.location = "/large/round/1/user/2/pageid/108?sort=rate";
+function wlxGo(e, url) {
+e.preventDefault();
+window.location = url;
 return false;
-});
-$(document).on('keydown', null, 'up', function (e) {
-e.preventDefault() ;
-window.location = "/large/round/1/user/2/pageid/106?sort=rate";
-return false;
-});
-$(document).on('keydown', null, 'esc', function (e) {
-e.preventDefault() ;
-window.location = "/gallery/round/1/user/2/region/all/pageid/107?sort=rate#107";
-return false;
-});
-$(document).on('keydown', null, 'pagedown', function (e) {
-e.preventDefault() ;
-window.location = "/large/round/1/user/2/pageid/112?sort=rate";
-return false;
-});
-$(document).on('keydown', null, 'pageup', function (e) {
-e.preventDefault() ;
-window.location = "/large/round/1/user/2/pageid/102?sort=rate";
-return false ;
-});
-$(document).on('keydown', null, 'home', function (e) {
-e.preventDefault() ;
-window.location = "/large/round/1/user/2/pageid/101?sort=rate";
-return false ;
-});
-$(document).on('keydown', null, 'end', function (e) {
-e.preventDefault() ;
-window.location = "/large/round/1/user/2/pageid/113?sort=rate";
-return false ;
-});
+}
+$(document).on('keydown', null, 'down', function (e) { return wlxGo(e, "/large/round/1/user/2/pageid/108?sort=rate"); });
+$(document).on('keydown', null, 'up', function (e) { return wlxGo(e, "/large/round/1/user/2/pageid/106?sort=rate"); });
+$(document).on('keydown', null, 'esc', function (e) { return wlxGo(e, "/gallery/round/1/user/2/region/all/pageid/107?sort=rate#107"); });
+$(document).on('keydown', null, 'pagedown', function (e) { return wlxGo(e, "/large/round/1/user/2/pageid/112?sort=rate"); });
+$(document).on('keydown', null, 'pageup', function (e) { return wlxGo(e, "/large/round/1/user/2/pageid/102?sort=rate"); });
+$(document).on('keydown', null, 'home', function (e) { return wlxGo(e, "/large/round/1/user/2/pageid/101?sort=rate"); });
+$(document).on('keydown', null, 'end', function (e) { return wlxGo(e, "/large/round/1/user/2/pageid/113?sort=rate"); });
 </script>
 </head>
 <body class="gallery" style="height: 100%;">

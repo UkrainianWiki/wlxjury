@@ -1,13 +1,13 @@
-@import org.intracer.wmua.ImageWithRating
 @import db.scalikejdbc.User
 @(
         user: User,
         list: RoundList,
-        files: Seq[ImageWithRating],
-        index: Int)(
+        hood: Neighbourhood)(
         implicit flash: Flash, request: Request[Any], messages: Messages)
 
 @round = @{ list.round }
+@files = @{ hood.files }
+@index = @{ hood.index }
 
 @optionalButton(url: Option[String], icon: String, title: String) = {
     <a role="button" class="btn btn-default btn-sm active@if(url.isEmpty) { disabled}" href="@url.getOrElse("#")" title="@Html(title)">

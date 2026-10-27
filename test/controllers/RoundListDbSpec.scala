@@ -202,4 +202,83 @@ class RoundListDbSpec extends Specification with TestDb with BeforeAll with Befo
       )
     }
   }
+
+  "a file's place in a juror's list" should {
+
+    /** A binary round with 20 of the juror's files, unrated but `selected`. */
+    def setUp20(selected: Set[Int] = Set.empty): (Round, User, Seq[Image]) = {
+      val (_, round, user) = setUp(Round.binaryRound)
+      val images = createImages(20)
+      images.zipWithIndex.foreach { case (image, i) =>
+        createSelection(Seq(image), if (selected(i)) 1 else 0, user, round)
+      }
+      (round, user, images)
+    }
+
+    /** The list's files in order, all of them. */
+    def ordered(list: RoundList): Seq[Long] = list.query.list().map(_.pageId)
+
+    "be its index, from 0, and the 15th file on page 1, the 16th on page 2" in {
+      val (round, user, _) = setUp20()
+      val list = RoundList(round, user.getId)
+      val order = ordered(list)
+      order.indices.map(i => list.position(order(i))) === order.indices.map(Some(_))
+      Pager.pageOf(list.position(order(14)).get) === 1
+      Pager.pageOf(list.position(order(15)).get) === 2
+    }
+
+    "be where it would be for a file the filter leaves out, as one just voted for" in {
+      val (round, user, images) = setUp20(selected = Set(7))
+      val voted = images(7).pageId
+      val unrated = RoundList(round, user.getId, filter = VoteFilter.Unrated)
+      val order = ordered(unrated)
+      order must not(contain(voted))
+      // by rate, a selected file comes before the unrated ones; they keep their places
+      unrated.position(voted) === Some(0)
+      order.indices.map(i => unrated.position(order(i))) === order.indices.map(Some(_))
+    }
+
+    "be none for a file not in the juror's round" in {
+      val (round, user, _) = setUp20()
+      RoundList(round, user.getId).position(99999L) must beNone
+      RoundList(round, user.getId).around(99999L) must beNone
+    }
+  }
+
+  "a large view's files" should {
+
+    def setUpN(n: Int): (Round, User, Seq[Long]) = {
+      val (_, round, user) = setUp(Round.ratesById(5))
+      val images = createImages(n)
+      createSelection(images, 0, user, round)
+      (round, user, RoundList(round, user.getId).query.list().map(_.pageId))
+    }
+
+    "be the file and two on each side" in {
+      val (round, user, order) = setUpN(10)
+      val hood = RoundList(round, user.getId).around(order(5)).get
+      hood.files.map(_.pageId) === order.slice(3, 8)
+      hood.index === 2
+      hood.next.map(_.pageId) === Some(order(6))
+    }
+
+    "be five at the list's start, fewer at its end, going on back at its last file" in {
+      val (round, user, order) = setUpN(10)
+      val list = RoundList(round, user.getId)
+      val first = list.around(order.head).get
+      (first.index, first.files.map(_.pageId)) === (0, order.take(5))
+      val last = list.around(order.last).get
+      (last.index, last.files.map(_.pageId)) === (2, order.takeRight(3))
+      last.next.map(_.pageId) === Some(order(8))
+    }
+
+    "keep a file the filter now leaves out, where its new rate puts it" in {
+      val (round, user, order) = setUpN(10)
+      SelectionJdbc.rate(order(5), user.getId, round.getId, 4)
+      val hood = RoundList(round, user.getId, filter = VoteFilter.Unrated).around(order(5)).get
+      // by rate, first: the unrated files after it
+      hood.file.pageId === order(5)
+      hood.files.map(_.pageId) === order(5) +: order.filterNot(_ == order(5)).take(4)
+    }
+  }
 }

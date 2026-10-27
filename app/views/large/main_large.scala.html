@@ -1,13 +1,11 @@
 @import db.scalikejdbc.Round
-@import org.intracer.wmua.ImageWithRating
 @import db.scalikejdbc.User
 @(
         user: User = null,
         list: RoundList,
         score: Double,
         readOnly: Boolean = false,
-        files: Seq[ImageWithRating],
-        index: Int,
+        hood: Neighbourhood,
         byCriteria: Map[Int, Int] = Map.empty)(content: Html)(implicit request: Request[Any], messages: Messages)
 
 <!DOCTYPE html>
@@ -41,8 +39,9 @@
             });
         </script>
 
-        @raty(score, readOnly, list, files(index).pageId, byCriteria)
-        @keyboardNav(user, list, files, index)
+        @raty(score, readOnly, list, hood.file.pageId, byCriteria)
+        @fileKeyboardNav(hood.index, hood.files.size, i => list.largeUrl(hood.files(i).pageId), list.atUrl(hood.file.pageId))
+        @keyboardNav(user, list, hood.file)
 
     </head>
     <body class="gallery" style="height: 100%;">

@@ -246,3 +246,9 @@ what jurors see; Step 5 decides whether they need an index.
   to go back to it.
 - Step 1: removed the unrouted `LargeViewController.removeImage` and the unused
   `rateSelection`, `pagerView` and `rateParam` templates.
+- Step 2: `around` keeps the old window: two files before the file and five in all where the
+  list has them (at its start, the file and four after). By rate, a file a vote took out of
+  the filter is placed by its *new* rate (a selected file first, a rejected one last), so
+  going back from it is still not its old page; file order (Step 3) keeps it in place.
+- Step 2: the vote redirect and the large view use the same `around`; the large view's moves
+  are `fileKeyboardNav`'s, `keyboardNav` keeps only the vote keys.

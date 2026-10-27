@@ -96,6 +96,20 @@ class SelectionQuerySpec extends Specification {
       (w.value === " where s.jury_id = ? and s.round_id = ? and (s.rate = 0 or s.page_id = ?)") and (w.parameters.toSeq === Seq(userId, roundId, pageId))
     }
 
+    "userId and roundId and rate and withPageId" in {
+      val w = SelectionQuery(
+        userId = Some(userId), roundId = Some(roundId),
+        rate = Some(0), withPageId = Some(pageId)
+      ).where()
+      (w.value === " where s.jury_id = ? and s.round_id = ? and (s.rate = ? or s.page_id = ?)") and
+        (w.parameters.toSeq === Seq(userId, roundId, 0, pageId))
+    }
+
+    "userId and roundId and withPageId, no vote filter" in {
+      val w = SelectionQuery(userId = Some(userId), roundId = Some(roundId), withPageId = Some(pageId)).where()
+      w.value === " where s.jury_id = ? and s.round_id = ?"
+    }
+
     "userId and roundId and rated and region" in {
       val w = SelectionQuery(
         userId = Some(userId), roundId = Some(roundId),

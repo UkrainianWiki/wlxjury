@@ -1,11 +1,7 @@
 @import controllers.Global
-@import org.intracer.wmua.ImageWithRating
 @(
         list: RoundList,
-        files: Seq[ImageWithRating],
-        index: Int,
-        start: Int,
-        end: Int)(
+        hood: Neighbourhood)(
         implicit flash: Flash, request: Request[Any], messages: Messages)
 
 @thumbSmall(style:String) = {
@@ -13,10 +9,10 @@
 }
 
 <ul class="gallery mw-gallery-traditional">
-@for((file, i) <- files.view.zipWithIndex.slice(start, end)) {
+@for((file, i) <- hood.files.zipWithIndex) {
     <li class="gallerybox">
 
-    @thumbSmall(if(i == index) "thumb_small current" else "thumb_small")
+    @thumbSmall(if(i == hood.index) "thumb_small current" else "thumb_small")
         <div style="margin:5px auto;">
             <a href="@list.largeUrl(file.pageId)">
                 @if(file.image.isImage) {

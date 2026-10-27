@@ -1,6 +1,5 @@
 package controllers
 
-import db.scalikejdbc.rewrite.ImageDbNew.Limit
 import db.scalikejdbc.{MonumentJdbc, Round, SelectionJdbc, User}
 import org.intracer.wmua._
 import play.api.i18n.I18nSupport
@@ -79,24 +78,16 @@ class LargeViewController @Inject() (
     }
   }
 
-  /** Where a vote for the file goes on to, found before the vote changes the list. */
-  private def afterVote(list: RoundList, pageId: Long): Result = {
-    val rank = list.query.imageRank(pageId)
-    val offset = Math.max(0, rank - 3)
-    val files = list.query.copy(limit = Some(Limit(Some(5), Some(offset)))).list()
-    val index = files.indexWhere(_.pageId == pageId)
-
-    val newIndex = if (!list.round.hasCriteria) {
-      if (index >= files.size - 1)
-        files.size - 2
-      else index + 1
-    } else {
-      index
-    }
-
-    if (newIndex >= 0) Redirect(list.largeUrl(files(newIndex).pageId))
-    else Redirect(list.pageUrl(1))
-  }
+  /** Where a vote for the file goes on to, found before the vote changes the list: the file
+    * itself in a round with criteria, voted for one by one; the list's first page if it has no
+    * other.
+    */
+  private def afterVote(list: RoundList, pageId: Long): Result =
+    Redirect(
+      list.around(pageId)
+        .flatMap(hood => if (list.round.hasCriteria) Some(hood.file) else hood.next)
+        .fold(list.pageUrl(1))(file => list.largeUrl(file.pageId))
+    )
 
   /** The large view of a round's file, by the round gallery's rules: the round must exist
     * ([[GalleryController.listGeneric]]'s pages if not), the user may view it
@@ -139,18 +130,16 @@ class LargeViewController @Inject() (
         }
     }
 
-  private def showRound(pageId: Long, user: User, list: RoundList)(implicit request: Request[Any]): Result = {
+  /** The file in its list, with the files around it; a file not in the viewer's round (or
+    * region), the list's first page.
+    */
+  private def showRound(pageId: Long, user: User, list: RoundList)(implicit request: Request[Any]): Result =
+    list.around(pageId).fold(Redirect(list.pageUrl(1)))(showFile(_, user, list))
+
+  private def showFile(hood: Neighbourhood, user: User, list: RoundList)(implicit request: Request[Any]): Result = {
     val round = list.round
     val asUserId = list.asUserId
-    val query = list.query.copy(withPageId = Some(pageId).filter(_ => round.hasCriteria))
-    val rank = query.imageRank(pageId)
-    val offset = Math.max(0, rank - 3)
-    val files = query.copy(limit = Some(Limit(Some(5), Some(offset)))).list()
-
-    val index = files.indexWhere(_.pageId == pageId)
-    if (index < 0) {
-      return Redirect(files.headOption.fold(list.pageUrl(1))(file => list.largeUrl(file.pageId)))
-    }
+    val pageId = hood.file.pageId
 
     val selection = if (user.canViewOrgInfo(round)) {
       SelectionJdbc.byRoundAndImageWithJury(round.getId, pageId)
@@ -180,46 +169,17 @@ class LargeViewController @Inject() (
 
     } else Nil
 
-    show2(
-      index,
-      files,
-      user,
-      list.withRound(round.copy(criteriaNames = criteriaNames)),
-      selection,
-      byCriteria
-    )
-  }
+    val monument = hood.file.image.monumentId.flatMap(id => if (id.trim.nonEmpty) MonumentJdbc.find(id) else None)
 
-  def show2(
-      index: Int,
-      files: Seq[ImageWithRating],
-      user: User,
-      list: RoundList,
-      selection: Seq[(Selection, User)],
-      byCriteria: Map[Int, Int] = Map.empty
-  )(implicit request: Request[Any]): Result = {
-    val extraRight = if (index - 2 < 0) 2 - index else 0
-    val extraLeft = if (files.size < index + 3) index + 3 - files.size else 0
-
-    val left = Math.max(0, index - 2)
-    val right = Math.min(index + 3, files.size)
-    val start = Math.max(0, left - extraLeft)
-    val end = Math.min(files.size, right + extraRight)
-    val monument = files(index).image.monumentId.flatMap(id => if (id.trim.nonEmpty) MonumentJdbc.find(id) else None)
-
-    val comments =
-      CommentJdbc.findBySubjectAndContest(files(index).pageId, list.round.contestId)
+    val comments = CommentJdbc.findBySubjectAndContest(pageId, round.contestId)
 
     render {
       case Accepts.Html() =>
         Ok(
           views.html.large.large(
             user,
-            list,
-            files,
-            index,
-            start,
-            end,
+            list.withRound(round.copy(criteriaNames = criteriaNames)),
+            hood,
             monument,
             comments,
             selection,
@@ -229,7 +189,7 @@ class LargeViewController @Inject() (
       case Accepts.Json() =>
         Ok(
           Json.toJson(
-            files.map(file => file.copy(selection = file.selection.map(_.copy(createdAt = None))))
+            hood.files.map(file => file.copy(selection = file.selection.map(_.copy(createdAt = None))))
           )
         )
     }

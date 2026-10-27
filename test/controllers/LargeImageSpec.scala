@@ -804,4 +804,62 @@ class LargeImageSpec extends PlaySpecification with PlayTestDb {
       }
     }
   }
+
+  "going back from the large view to the gallery" should {
+
+    def gallery(app: play.api.Application) =
+      new GalleryController(galleryService, Helpers.stubControllerComponents(),
+        new modules.BlockingExecutionContext(app.actorSystem))
+
+    def back(app: play.api.Application, pageId: Long, query: String = "") = {
+      implicit val materializer: Materializer = app.materializer
+      val path = s"/gallery/round/${round.getId}/user/${user.getId}/region/all/pageid/$pageId$query"
+      call(gallery(app).listAtId(user.getId, pageId, "all", round.getId),
+        FakeRequest(GET, path).withSession(Secured.UserName -> email, Secured.CurrentContestId -> contest.getId.toString))
+    }
+
+    "open the page with the file: the 15th file's is page 1, the 16th's page 2, which failed before" in {
+      testDbApp { app =>
+        setUp()
+        createSelection(createImages(20))
+        val order = RoundList(round, user.getId).query.list().map(_.pageId)
+
+        redirectLocation(back(app, order(14))) === Some(s"/gallery/round/${round.getId}/user/${user.getId}/page/1?sort=rate#${order(14)}")
+        redirectLocation(back(app, order(15))) === Some(s"/gallery/round/${round.getId}/user/${user.getId}/page/2?sort=rate#${order(15)}")
+      }
+    }
+
+    "keep the list's filter, and open page 1 for a file not in the round" in {
+      testDbApp { app =>
+        setUp()
+        createSelection(createImages(20))
+        val order = RoundList(round, user.getId).query.list().map(_.pageId)
+
+        redirectLocation(back(app, order(16), "?rate=0")) ===
+          Some(s"/gallery/round/${round.getId}/user/${user.getId}/page/2?filter=unrated&sort=rate#${order(16)}")
+        redirectLocation(back(app, 99999L)) === Some(s"/gallery/round/${round.getId}/user/${user.getId}/page/1?sort=rate")
+      }
+    }
+  }
+
+  "the large view of a file just voted out of its list" should {
+    "show that file, not the list's first, which it went to before" in {
+      testDbApp { app =>
+        implicit val materializer: Materializer = app.materializer
+        setUp()
+        val images = createImages(5)
+        createSelection(images)
+        val order = RoundList(round, user.getId).query.list().map(_.pageId)
+        SelectionJdbc.rate(order(3), user.getId, round.getId, -1)
+
+        val result = controller.large(user.getId, order(3), "all", round.getId)
+          .apply(request(s"/large/round/${round.getId}/user/${user.getId}/pageid/${order(3)}?rate=0"))
+          .run()
+        status(result) mustEqual OK
+        // after the unrated files, by rate: the file and the two before it
+        contentAsJson(result).as[Seq[play.api.libs.json.JsValue]].map(f => (f \ "image" \ "pageId").as[Long]) ===
+          Seq(order(2), order(4), order(3))
+      }
+    }
+  }
 }

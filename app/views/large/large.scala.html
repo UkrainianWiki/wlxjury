@@ -7,10 +7,7 @@
 @(
         user: db.scalikejdbc.User,
         list: RoundList,
-        files: Seq[org.intracer.wmua.ImageWithRating],
-        index: Int,
-        start: Int,
-        end: Int,
+        hood: Neighbourhood,
         monument: Option[Monument],
         comments: Seq[Comment],
         selection: Seq[(Selection, User)],
@@ -21,18 +18,17 @@
     @main_large(
     user,
     list,
-    files(index).totalRate(round) / (if (round.rates.id > 5 && round.halfStar) 2.0 else 1.0),
+    hood.file.totalRate(round) / (if (round.rates.id > 5 && round.halfStar) 2.0 else 1.0),
     readOnly = !user.roles.contains("jury") || !round.active || user.getId != list.asUserId,
-    files = files,
-    index = index,
+    hood = hood,
     byCriteria = byCriteria) {
-        @defining(files(index).image) { image =>
+        @defining(hood.file.image) { image =>
         <div class="container-fluid" style="padding-left:5px; margin-left:0px; margin-right:0px; height:100%">
             <div class="row" style="height:100%">
                 <div class="col-xs-1" style="margin-left:0px; min-width: 220px">
 
-                    @navigationButtons(user, list, files, index)
-                    @thumbsBar(list, files, index, start, end)
+                    @navigationButtons(user, list, hood)
+                    @thumbsBar(list, hood)
                     @if(user.canViewOrgInfo(round)){
                         @authorInfo(image, user)
                     }
@@ -44,12 +40,12 @@
 
                <div id="mainContent" class="col-xs-10"  style="margin-left:5px; margin-top: 10px; height:100%">
 
-                    <a href="https://commons.wikimedia.org/wiki/@files(index).title" target="_blank">
+                    <a href="https://commons.wikimedia.org/wiki/@hood.file.title" target="_blank">
                         @if(image.isImage) {
                             @* From Wikimedia, at its sizes; if that fails, once from this server, which
                                finds a file renamed or deleted on Commons; if that fails too, a grey box *@
                             @defining(Global.largeImage(image)) { large =>
-                            <img id="large_image" alt="@files(index).title"
+                            <img id="large_image" alt="@hood.file.title"
                                 src="@large.src" style="max-width:100%; max-height:100%;"
                                 srcset="@large.srcset" @large.sizes.map { sizes => sizes="@sizes" }
                                 @large.fallback.map { fallback => data-fallback="@fallback" }
@@ -66,7 +62,7 @@
                          }
                     </a>
 
-                    @commentsView(files(index).pageId, list, comments)
+                    @commentsView(hood.file.pageId, list, comments)
 
                 </div>
         </div>

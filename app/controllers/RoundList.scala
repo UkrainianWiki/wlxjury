@@ -150,6 +150,28 @@ final case class RoundList(
     if (withDetails) query.list()
     else query.copy(limit = Some(Limit(Some(pager.pageSize), Some(pager.offset)))).list()
 
+  /** The file's index in the list, from 0. For a file of the viewer's round that the filter
+    * leaves out (one just voted on), where it would be: the number of the list's files before
+    * it. None for a file not in the viewer's round (or region).
+    */
+  def position(pageId: Long): Option[Int] = {
+    val rank = query.copy(withPageId = Some(pageId)).imageRank(pageId)
+    Option.when(rank > 0)(rank - 1)
+  }
+
+  /** The file among the list's files around it, as its large view shows them: up to two
+    * before it, and five in all where the list has them. The file too if the filter now leaves
+    * it out, in its place. None for a file not in the viewer's round (or region).
+    */
+  def around(pageId: Long): Option[Neighbourhood] =
+    position(pageId).flatMap { position =>
+      val offset = math.max(0, position - Neighbourhood.Side)
+      val files = query
+        .copy(withPageId = Some(pageId), limit = Some(Limit(Some(2 * Neighbourhood.Side + 1), Some(offset))))
+        .list()
+      Some(files.indexWhere(_.pageId == pageId)).filter(_ >= 0).map(Neighbourhood(files, _))
+    }
+
   def withFilter(filter: VoteFilter): RoundList = copy(filter = filter)
 
   def withOrder(order: ListOrder): RoundList = copy(order = order)
@@ -216,6 +238,21 @@ final case class RoundList(
   /** A comment on the file in its large view, going back to it in this list. */
   def commentUrl(pageId: Long): String =
     withParams(routes.ImageDiscussionController.addComment(pageId, regionParam, Some(roundId)).url, params(module = true))
+}
+
+/** A large view's file (`files(index)`) and the files around it in its list. */
+final case class Neighbourhood(files: Seq[ImageWithRating], index: Int) {
+
+  def file: ImageWithRating = files(index)
+
+  /** Where a vote for the file goes on to: the file after it, or before it at the list's end. */
+  def next: Option[ImageWithRating] = files.lift(index + 1).orElse(files.lift(index - 1))
+}
+
+object Neighbourhood {
+
+  /** The files a large view shows before its file; it shows `2 * Side + 1` in all. */
+  val Side = 2
 }
 
 object RoundList {

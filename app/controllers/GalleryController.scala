@@ -66,7 +66,9 @@ class GalleryController @Inject() (
   def list(asUserId: Long, page: Int = 1, region: String = "all", roundId: Long = 0): EssentialAction =
     listGeneric(Some(GalleryView.ofPath(asUserId)), asUserId, Left(page), region, roundId)
 
-  /** The page of the list with the file. */
+  /** The page of the list with the file ([[RoundList.atUrl]]): a redirect to it, so the URL
+    * shows the page.
+    */
   def listAtId(asUserId: Long, pageId: Long, region: String = "all", roundId: Long = 0): EssentialAction =
     listGeneric(Some(GalleryView.ofPath(asUserId)), asUserId, Right(pageId), region, roundId)
 
@@ -138,8 +140,11 @@ class GalleryController @Inject() (
             NotFound(views.html.errorPage(Some(user), "error.title", "error.contest.not.found"))
           ) { contest =>
             val list = RoundList.of(round, asUserId, region, view)
-            val page = at.fold(identity, pageId => list.query.imageRank(pageId) / Pager.pageSize + 1)
-            galleryOf(user, list, page, rounds, contest)
+            at.fold(
+              galleryOf(user, list, _, rounds, contest),
+              // the page with the file, or where it would be if the filter now leaves it out
+              pageId => Redirect(list.position(pageId).fold(list.pageUrl(1))(p => list.pageUrl(Pager.pageOf(p)) + "#" + pageId))
+            )
           }
         }
     }

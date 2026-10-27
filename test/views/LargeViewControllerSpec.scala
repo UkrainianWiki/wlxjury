@@ -1,6 +1,6 @@
 package views
 
-import controllers.{GalleryView, RoundList, VoteFilter}
+import controllers.{GalleryView, Neighbourhood, RoundList, VoteFilter}
 import db.scalikejdbc.{Round, User}
 import org.intracer.wmua._
 import play.api.test.CSRFTokenHelper._
@@ -30,8 +30,7 @@ class LargeViewControllerSpec extends PlaySpecification {
         list = RoundList(round, asUserId = 1, filter = VoteFilter.Unrated, view = GalleryView.ByRate),
         score = 0.0,
         readOnly = false,
-        files = files,
-        index = 0)(Html("html"))
+        hood = Neighbourhood(files, 0))(Html("html"))
 
       val view = contentAsString(html)
       view must not contain "&amp"
@@ -43,8 +42,8 @@ class LargeViewControllerSpec extends PlaySpecification {
       // the keys vote and move by paths, never by http:// URLs: behind HTTPS a form posted
       // to http:// is redirected to https as a GET, and the vote is lost
       view must contain("voteLarge(\"/large/round/1/pageid/1/select/1")
-      view must contain("window.location = \"/large/")
-      view must not(beMatching("(?s).*(voteLarge\\(|window\\.location = )\"https?://.*"))
+      view must contain("wlxGo(e, \"/large/")
+      view must not(beMatching("(?s).*(voteLarge\\(|wlxGo\\(e, )\"https?://.*"))
     }
   }
 

@@ -1,6 +1,6 @@
 package views
 
-import controllers.{ContestFilesView, GalleryView, RoundList, VoteFilter}
+import controllers.{ContestFilesView, GalleryView, Neighbourhood, RoundList, VoteFilter}
 import db.scalikejdbc.{ImageJdbc, Round, User}
 import org.intracer.wmua._
 import play.api.http.HeaderNames.HOST
@@ -86,10 +86,7 @@ object LargeViewRenders {
     views.html.large.large(
         user = user,
         list = list,
-        files = fs,
-        index = index,
-        start = 0,
-        end = fs.size,
+        hood = Neighbourhood(fs, index),
         monument = None,
         comments = Nil,
         selection = Nil,

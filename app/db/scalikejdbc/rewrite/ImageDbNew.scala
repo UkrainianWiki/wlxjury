@@ -37,6 +37,7 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
       groupWithDetails: Boolean = false,
       order: Seq[(String, Int)] = Seq.empty,
       subRegions: Boolean = false,
+      // a file listed whatever the vote filter: the large view's, which a vote may have filtered out
       withPageId: Option[Long] = None,
       driver: String = "mysql"
   ) {
@@ -184,7 +185,7 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
     /** The number of the query's images in each region, without its region filter: every
       * region of the juror's (or the round's) images, those the rate filter leaves out
       * counted 0, so a region's count is what its link lists. Files without a monument id
-      * are left out. The `rated` filter's extra page (`withPageId`) isn't counted.
+      * are left out. The vote filter's extra file (`withPageId`) isn't counted.
       *
       * A juror's: one scan of the juror's rows on (jury_id, round_id, rate, monument_id,
       * page_id) (V48), the juror having one row per image. The whole round's: its images
@@ -227,16 +228,20 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
     def where(count: Boolean = false): SQLSyntax = {
       val col = SQLSyntax.createUnsafely(s"m.$regionColumn")
 
+      // the votes the list has; and the file `withPageId` too, whatever its vote
+      val votes: Seq[SQLSyntax] = Seq(
+        rate.map(r => sqls"s.rate = $r"),
+        rated.map(r => if (r) sqls"s.rate > 0" else sqls"s.rate = 0")
+      ).flatten
+      val voteFilter = votes.headOption.map { _ =>
+        val cond = SQLSyntax.join(votes, sqls"and")
+        withPageId.fold(cond)(pageId => sqls"($cond or s.page_id = $pageId)")
+      }
+
       val conditions: Seq[SQLSyntax] = Seq(
         userId.map(id => sqls"s.jury_id = $id"),
         roundId.map(id => sqls"s.round_id = $id"),
-        rate.map(r => sqls"s.rate = $r"),
-        rated.map { r =>
-          val ratedCond: SQLSyntax = if (r) sqls"s.rate > 0" else sqls"s.rate = 0"
-          withPageId.fold(ratedCond) { pageId =>
-            sqls"($ratedCond or s.page_id = $pageId)"
-          }
-        },
+        voteFilter,
         regions.headOption.map { _ =>
           if (subRegionFilter) {
             sqls.in(col, regions.toSeq)
