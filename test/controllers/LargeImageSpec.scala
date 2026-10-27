@@ -675,6 +675,28 @@ class LargeImageSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
+    "be refused without the token with a page that says to reload it, and to sign in if signed out" in {
+      withCsrfApp { app =>
+        setUpVote(app)
+
+        val refused = send(app, POST)
+        status(refused) === FORBIDDEN
+        val page = contentAsString(refused)
+        page must contain("This page has expired or you were signed out. Go back, reload the page and try again.")
+        page must beMatching("(?s).*Reference: [0-9a-f]{8}, .*")
+        page must not(contain(routes.LoginController.login().url + "\""))
+
+        // signed out: the session (and its token) is gone, the form is the old page's
+        val signedOut = route(app, FakeRequest(POST, s"/large/round/${round.getId}/pageid/${images.head.pageId}/select/5?rate=0")
+          .withHeaders(COOKIE -> "PLAY_SESSION=expired")
+          .withFormUrlEncodedBody("csrfToken" -> token)).get
+        status(signedOut) === FORBIDDEN
+        contentAsString(signedOut) must contain("This page has expired or you were signed out.")
+        contentAsString(signedOut) must contain("href=\"" + routes.LoginController.login().url + "\"")
+        rate() === Some(0)
+      }
+    }
+
     "be cast by a POST with the token, going on to the next file" in {
       withCsrfApp { app =>
         setUpVote(app)
@@ -711,6 +733,54 @@ class LargeImageSpec extends PlaySpecification with PlayTestDb {
         status(vote(app, token)) === FORBIDDEN
         status(vote(app, token, "Csrf-Token" -> "forged")) === FORBIDDEN
         rate() === Some(0)
+      }
+    }
+
+    "be refused without the token as JSON the gallery explains (vote-errors.js)" in {
+      withCsrfApp { app =>
+        setUpTile()
+        val refused = vote(app, CsrfTestApp.token(app))
+        status(refused) === FORBIDDEN
+        (contentAsJson(refused) \ "error").as[String] === "csrf"
+        (contentAsJson(refused) \ "reference").as[String] must beMatching("[0-9a-f]{8}")
+        rate() === Some(0)
+      }
+    }
+
+    "be answered as JSON when the round is closed, or the juror signed out" in {
+      withCsrfApp { app =>
+        setUpTile()
+        val sessionToken = CsrfTestApp.token(app)
+        roundDao.updateById(round.getId).withAttributes("active" -> false)
+        val closed = vote(app, sessionToken, "Csrf-Token" -> sessionToken)
+        status(closed) === CONFLICT
+        (contentAsJson(closed) \ "error").as[String] === "round_closed"
+
+        // the session has its token, but no user: signed out elsewhere
+        val signedOut = route(app, FakeRequest(POST, s"/rate/round/${round.getId}/pageid/${image.pageId}/select/1")
+          .withHeaders(COOKIE -> "PLAY_SESSION=signed-in", "X-Requested-With" -> "XMLHttpRequest",
+            "Csrf-Token" -> sessionToken)
+          .withSession("csrfToken" -> sessionToken)).get
+        status(signedOut) === UNAUTHORIZED
+        (contentAsJson(signedOut) \ "error").as[String] === "unauthenticated"
+        rate() === Some(0)
+      }
+    }
+
+    "be explained to the juror in the page's language: the gallery renders the texts" in {
+      withCsrfApp { app =>
+        setUpTile()
+        val path = s"/gallery/round/${round.getId}/user/${user.getId}/page/1?rate=0"
+        val page = route(app, FakeRequest(GET, path)
+          .withHeaders(COOKIE -> "PLAY_SESSION=signed-in", ACCEPT -> "text/html", ACCEPT_LANGUAGE -> "fr")
+          .withSession(Secured.UserName -> email, Secured.CurrentContestId -> contest.getId.toString)).get
+        status(page) === OK
+        val html = contentAsString(page)
+        html must contain("data-vote-expired=\"Cette page a expiré. Rechargez-la et votez à nouveau.\"")
+        html must contain("data-vote-closed=\"Ce tour n&#x27;est plus ouvert au vote.\"")
+        html must contain("data-vote-reference=\"Référence : {0}\"")
+        html must contain("data-vote-login-url=\"" + routes.LoginController.login(Some(path)).url + "\"")
+        html must contain("javascripts/vote-errors.js")
       }
     }
 

@@ -29,8 +29,15 @@
             }
 
         @* a vote on a tile (ug-theme-tiles.js) sends the session's CSRF token as the Csrf-Token header
-           (empty if the request has none, as without the CSRF filter) *@
-        <div class="row" data-csrf-token="@play.filters.csrf.CSRF.getToken.fold("")(_.value)">
+           (empty if the request has none, as without the CSRF filter); a failed one shows why
+           (vote-errors.js), signed out going on to the login page, back here after it *@
+        <div class="row" data-csrf-token="@play.filters.csrf.CSRF.getToken.fold("")(_.value)"
+            data-vote-signed-out="@Messages("vote.error.signed.out")"
+            data-vote-expired="@Messages("vote.error.expired")"
+            data-vote-closed="@Messages("vote.error.closed")"
+            data-vote-failed="@Messages("vote.error.failed")"
+            data-vote-reference="@Messages("vote.error.reference", "{0}")"
+            data-vote-login-url="@routes.LoginController.login(controllers.Secured.safeLocalPath(Some(request.uri)))">
 
             <div id="gallery" class="gallery mw-gallery-traditional" style="display:none;">
 

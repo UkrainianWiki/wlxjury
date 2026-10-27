@@ -5,7 +5,8 @@
     messageKey: String,
     args: Seq[Any] = Seq.empty,
     reference: Option[String] = None,
-    time: Option[String] = None
+    time: Option[String] = None,
+    signIn: Boolean = false
 )(implicit messages: Messages, request: RequestHeader)
 
 @* Any error but an authorization denial (accessDenied): a message from conf/messages,
@@ -14,6 +15,9 @@
     <div class="alert alert-danger" role="alert">
         <h4>@Messages(titleKey)</h4>
         <p>@Messages(messageKey, args: _*)</p>
+        @if(signIn) {
+            <p><a class="btn btn-primary" href="@routes.LoginController.login()">@Messages("signin.signin")</a></p>
+        }
         <p><a href="/">@Messages("error.home")</a></p>
         @for(ref <- reference) {
             <p class="text-muted"><small>@Messages("access.denied.reference", ref, time.getOrElse(""))</small></p>

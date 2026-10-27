@@ -383,7 +383,9 @@ class GalleryController @Inject() (
       module: String,
       criteria: Option[Int]
   ): EssentialAction =
-    withAuth(
+    // a tile's vote, sent by script: JSON answers (401, 403 with the denial's reference, 409)
+    // that the gallery explains (vote-errors.js)
+    withAuthJson(
       roundPermission(
         User.ADMIN_ROLES ++ User.JURY_ROLES ++ User.ORG_COM_ROLES,
         roundId
@@ -392,7 +394,7 @@ class GalleryController @Inject() (
     // Votes only in a round open to its jurors: not in a stopped round, a previous round
     // frozen while a distribution reads its votes, or a round still being distributed.
     if (!Round.findById(roundId).exists(_.openToJurors))
-      Conflict("The round is not open for voting")
+      Conflict(play.api.libs.json.Json.obj("error" -> "round_closed"))
     else {
       SelectionJdbc.rate(
         pageId = pageId,

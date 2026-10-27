@@ -254,8 +254,11 @@ function UGTheme_tiles(){
 
 			objTile.css(objCss);
 
-		}).fail(function() {
-			alert( "error" );
+		}).fail(function(jqXHR) {
+			// why, in the page's language (vote-errors.js); signed out, on to the login page
+			var texts = voteErrorTexts(document.querySelector("[data-csrf-token]"));
+			alert(voteErrorMessage(jqXHR.status, jqXHR.responseJSON || null, texts));
+			if (jqXHR.status === 401 && texts.loginUrl) window.location.href = texts.loginUrl;
 		});
 	}
 
