@@ -46,7 +46,6 @@ GET         /filelist/round/:round/user/:user/region/:region/page/:page         
 
 POST        /comment/region/:region/pageid/:pageid                                  controllers.ImageDiscussionController.addComment(pageid: Long, region: String, rate: Option[Int] ?= None, module: String ?= "gallery", round: Option[Long] ?= None, contestId: Option[Long] ?= None)
 
-+ nocsrf
 POST        /rate/round/:round/pageid/:pageId/select/:select                        controllers.GalleryController.selectWS(round: Long, pageId: Long, select: Int, region: String = "all", rate: Option[Int] ?= None, module: String ?= "gallery", criteria: Option[Int] ?= None)
 GET         /large/user/:user/pageid/:pageid                                        controllers.LargeViewController.large(user: Long, pageid: Long, region: String = "all", round: Long = 0, rate: Option[Int] ?= None, module: String ?= "gallery")
 GET         /large/user/:user/region/:region/pageid/:pageid                         controllers.LargeViewController.large(user: Long, pageid: Long, region: String, round: Long = 0, rate: Option[Int] ?= None, module: String ?= "gallery")

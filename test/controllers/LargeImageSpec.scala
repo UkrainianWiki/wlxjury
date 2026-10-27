@@ -600,4 +600,52 @@ class LargeImageSpec extends PlaySpecification with PlayTestDb {
       }
     }
   }
+
+  "a vote on a gallery tile, through the router and the filters" should {
+    // a binary round with an unrated file; a session with a CSRF token, as a signed-in
+    // browser's has, and a cookie, which makes the filter check the request
+    var image: Image = null
+    def setUpTile(): Unit = {
+      setUp()
+      image = createImages(1).head
+      createSelection(Seq(image))
+    }
+    def vote(app: play.api.Application, sessionToken: String, headers: (String, String)*) =
+      route(app, FakeRequest(POST, s"/rate/round/${round.getId}/pageid/${image.pageId}/select/1")
+        .withHeaders(Seq(COOKIE -> "PLAY_SESSION=signed-in", "X-Requested-With" -> "XMLHttpRequest") ++ headers: _*)
+        .withSession(Secured.UserName -> email, Secured.CurrentContestId -> contest.getId.toString,
+          "csrfToken" -> sessionToken)).get
+    def rate() = SelectionJdbc.findBy(image.pageId, user.getId, round.getId).map(_.rate)
+
+    "be refused without the CSRF token, or with a forged one" in {
+      withCsrfApp { app =>
+        setUpTile()
+        val token = app.injector.instanceOf[play.filters.csrf.CSRF.TokenProvider].generateToken
+
+        status(vote(app, token)) === FORBIDDEN
+        status(vote(app, token, "Csrf-Token" -> "forged")) === FORBIDDEN
+        rate() === Some(0)
+      }
+    }
+
+    "be cast with the token the gallery page renders, in the Csrf-Token header" in {
+      withCsrfApp { app =>
+        setUpTile()
+        // the juror's gallery, as the browser opens it: the filter gives the session a token
+        val page = route(app, FakeRequest(GET, s"/gallery/round/${round.getId}/user/${user.getId}/page/1?rate=0")
+          .withHeaders(COOKIE -> "PLAY_SESSION=signed-in", ACCEPT -> "text/html")
+          .withSession(Secured.UserName -> email, Secured.CurrentContestId -> contest.getId.toString)).get
+        status(page) === OK
+        val rendered = """data-csrf-token="([^"]+)"""".r.findFirstMatchIn(contentAsString(page)).map(_.group(1))
+        rendered must beSome
+        val sessionToken = session(page).get("csrfToken")
+        sessionToken must beSome
+
+        val result = vote(app, sessionToken.get, "Csrf-Token" -> rendered.get)
+        status(result) === OK
+        contentAsString(result) === "success"
+        rate() === Some(1)
+      }
+    }
+  }
 }

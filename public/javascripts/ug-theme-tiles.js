@@ -220,9 +220,22 @@ function UGTheme_tiles(){
 		}
 	}
 
+	/**
+	 * the session's CSRF token, which the gallery page renders (data-csrf-token)
+	 */
+	function csrfToken() {
+		var holder = document.querySelector("[data-csrf-token]");
+		return holder ? holder.getAttribute("data-csrf-token") : "";
+	}
+
 	function serviceCall(objItem, rate, objTile) {
 
-		var jqxhr = $.post( "/rate/round/" + objItem.roundId +"/pageid/" + objItem.pageId + "/select/" + rate, function() {
+		//a vote is a POST with the page's CSRF token in Play's header (play.filters.csrf.header.name)
+		var jqxhr = $.ajax({
+			type: "POST",
+			url: "/rate/round/" + objItem.roundId +"/pageid/" + objItem.pageId + "/select/" + rate,
+			headers: { "Csrf-Token": csrfToken() }
+		}).done(function() {
 
 			var border = 3;
 			var color;
