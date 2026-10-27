@@ -1,4 +1,4 @@
-@(loginForm: Form[(String, String)])(implicit flash: Flash, messages: Messages, req: RequestHeader)
+@(loginForm: Form[(String, String)], returnTo: Option[String] = None)(implicit flash: Flash, messages: Messages, req: RequestHeader)
 @import b3.inline.fieldConstructor
 
 @mainAdmin(Messages("application.name")) {
@@ -8,6 +8,10 @@
     <legend>@Messages("signin.signin")</legend>
 
     @b3.vertical.form(action = routes.LoginController.auth()) { implicit vfc =>
+
+        @for(value <- returnTo) {
+            <input type="hidden" name="returnTo" value="@value">
+        }
 
         @if(loginForm.hasGlobalErrors) {
             <div class="alert alert-danger" role="alert">

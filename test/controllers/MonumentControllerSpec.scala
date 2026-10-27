@@ -15,7 +15,8 @@ class MonumentControllerSpec extends Specification with PlayTestDb {
         Seq("/monuments", "/monuments/id/07-101-0001").map { path =>
           val result = route(app, FakeRequest("GET", path)).get
           (status(result), redirectLocation(result))
-        } === Seq.fill(2)((SEE_OTHER, Some(routes.LoginController.login().url)))
+        } === Seq("/monuments", "/monuments/id/07-101-0001")
+          .map(path => (SEE_OTHER, Some(routes.LoginController.login(Some(path)).url)))
       }
     }
   }

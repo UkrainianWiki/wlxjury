@@ -13,7 +13,7 @@
         rate: Option[Int] = None,
         currentRegion: String = "all",
         regions: Seq[Region],
-        rated: Option[Boolean] = None)(implicit flash: Flash, messages: Messages)
+        rated: Option[Boolean] = None)(implicit flash: Flash, messages: Messages, request: RequestHeader)
 
 
 @showRateGalery(file: org.intracer.wmua.ImageWithRating, index: Int) = {

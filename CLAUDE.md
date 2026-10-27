@@ -31,12 +31,12 @@ If `target/dep-sources/` is empty or missing, run `sbt extractDepSources` once.
 
 ### Agent efficiency (applies to Codex and Claude)
 
-- Use medium effort for ordinary implementation. Use low effort/a smaller available model for mechanical extraction, log summaries and simple edits when the host allows selection. Reserve high effort for unresolved authorization, migrations, concurrency or architecture decisions; return to the ordinary setting afterward. Instructions cannot change a running model: report the actual setting rather than claiming a switch. Codex defaults are in `.codex/config.toml`; explicit app/session choices may override them.
+- Choose the model and effort for the task, not by defaulting to the most capable option. Use a lower-cost near-peer for routine implementation and independent reviews when it meets the need: GPT-6.1 Sol is described as near GPT-6 Astra on coding, computer use and professional work at one-fifth of Astra's standard input/output token prices; Claude Opus 5.5 is described as performing at Claude Fable 5.1 level on most work, with 60% lower standard input/output token prices ($4/$20 vs. $10/$50 per million tokens). Check current prices and task-specific benchmark gaps before extended or high-volume use; token prices do not necessarily map directly to a product's subscription quota. Escalate to the more expensive model when a relevant capability gap, task difficulty or a failed first attempt justifies it. Use medium effort for ordinary implementation and low effort/a smaller available model for mechanical extraction, log summaries and simple edits when the host allows selection. Reserve high effort for unresolved authorization, migrations, concurrency or architecture decisions; high effort does not by itself require the most expensive model. Instructions cannot change a running model: report the actual setting rather than claiming a switch. Codex defaults are in `.codex/config.toml`; explicit app/session choices may override them. Sources: [GPT-6.1 Sol](https://openai.com/index/introducing-gpt-6-1-sol/) and [Claude Opus 5.5](https://www.anthropic.com/claude-opus-5-5).
 - Keep the task bounded. Confirm the signed-in account and target contest before investigating a reported permission failure. Do not weaken authorization because another account has the expected role.
 - Search with `rg -n` first, then read the relevant range. Do not repeatedly dump whole controllers, plans, dependency catalogs or tool inventories. Parse structured results with scripts; give the model the derived table and anomalies, not raw samples.
 - Run checks through `python scripts/agent-check.py -- COMMAND`. It saves full output under `target/checks/`, prints a bounded summary, and preserves the exit code. To inspect an existing log: `python scripts/agent-check.py --summarize PATH --exit-code 1`. Inspect a named failing block only if the summary is insufficient. A successful failure-path test may log `[error]`; use test totals and the process exit code, not that prefix alone.
-- Compile changed Scala/tests before a costly run. On Windows use UTF-8 and the direct sbt launcher, since `sbt.bat` can strip quotes from `set ... Seq(...)` commands. Example in PowerShell:
-  ```powershell
+- Compile changed Scala/tests before a costly run. On Windows use UTF-8 and the direct sbt launcher, since `sbt.bat` can strip quotes from `set ... Seq(...)` commands. Run it from Git Bash (the Bash tool): Windows PowerShell 5.1 splits `-Dfile.encoding=UTF-8` at the dot and drops the inner double quotes of the `set` argument when passing them to a native program.
+  ```bash
   python scripts/agent-check.py -- java -Xmx512m -Dfile.encoding=UTF-8 -jar 'C:/Program Files (x86)/sbt/bin/sbt-launch.jar' 'set Test / javaOptions ++= Seq("-Xmx768m", "-Dfile.encoding=UTF-8")' 'Test/compile' 'testOnly controllers.ContestFilesPageSpec'
   ```
 - Start with affected specs, including negative authorization cases for permission changes. Run the full suite once at the release boundary when required. If it fails, compile and rerun the affected specs after fixes before considering another full run. Repeat broad tests only for a shared-code change, unresolved risk, or an explicit clean-release gate. Do not run tests for documentation-only changes or tests that merely assert CSS class names.
@@ -124,7 +124,14 @@ Long work runs as a job in the generic `job` table (V60), never on a request thr
 
 ### Authentication & Authorization
 
-Session-based auth via Play session cookie (username stored as `"username"` key). `Secured` trait (`app/controllers/Secured.scala`) provides `withAuth(permission)` action builder. Role checks use `User.hasAnyRole` and contest membership via `User.isInContest`.
+Session-based auth via Play session cookie (username stored as `"username"` key). `Secured` (`app/controllers/Secured.scala`) provides the action builders: `withAuth(permission)` for pages, `withAuthOn(ec)(permission)` for slow blocking JDBC work (runs on that pool), `withAuthJson(permission)` for endpoints called by script. Role checks use `User.hasAnyRole` / `hasContestRole` and contest membership via `User.isInContest`.
+
+- **Denials** go through `onUnAuthorized` (403 page) or `onUnAuthorizedJson` (`{error: "forbidden", reference}`) with a `Secured.Denial` (contest, resource, required roles, reason). Each is logged at WARN on `security.authz` (`Secured.denialLogLine`, key-value, untrusted text quoted) with the reference the user sees. The line keeps the account's email for support; a possible later change logs `accountId` only.
+- **Signed out:** a script request (`X-Requested-With` or a non-`navigate` `Sec-Fetch-Mode`) gets JSON 401; a page GET goes to the login page keeping `returnTo`. Every `returnTo` passes `Secured.safeLocalPath` (local paths only).
+- **Contest switching:** only page GETs switch the session's contest (`Secured.isPageRequest`: a GET that is neither a script request, `Sec-Fetch-Mode` included, nor a prefetch). A check against a resource's contest (round, job, comment) runs as the user in that contest via `Secured.inContest` (active memberships only), never by switching on a POST or poll. Root needs no membership.
+- **Own votes:** a round's galleries and large view use `GalleryService.viewerRounds` / `mayViewRound` / `viewAs`: a juror sees only their own votes; others' (or `asUserId == 0`, all jurors) only for `User.canViewOrgInfo`, and only of a juror of the round (`User.isRoundJuror`; otherwise 404). The galleries' juror menu lists the same set (`User.findRoundJurorsToView`).
+- **CSRF:** votes, sign-out (`POST /logout`) and contest switching (`POST /switch-contest/:id`) are POSTs with the CSRF token: a form field in the large view and forms (`csrfField` renders it only if the request has a token), the `Csrf-Token` header from `data-csrf-token` for gallery votes. A refused token gets `CsrfErrorHandler` (a page saying to reload, or JSON `{error: "csrf", reference}`). Tests run with the CSRF filter off (`test/resources/application.conf`); `controllers.CsrfTestApp.withCsrfApp` re-enables it for router tests.
+- **Errors:** one error page, `views.html.errorPage` (message keys only, never request or exception text); a missing resource is a 404 with it, never a `.get` on a lookup of a request-supplied id. `ErrorHandler` handles the rest (a server error shows a logged reference).
 
 ### Database Tests
 
@@ -141,6 +148,8 @@ One MariaDB Testcontainer per JVM, shared across all specs via `SharedTestDb` (l
 
 `autoSession` bypasses any outer AutoRollback transaction and reads only committed data — this is why service-layer tests (`Secured.userFromRequest`, `GalleryService`, `Round.addUsers`) must use truncation not AutoRollback.
 
+**Keyboard voting:** the large view's key handlers vote and move by paths, never `http://` URLs (`Call.absoluteURL` behind the HTTPS proxy redirected the POST to a GET and lost the vote); `views.LargeViewControllerSpec` guards it.
+
 **Pool lifecycle:** `running(app)` (Play test helper) stops Play and calls `ConnectionPool.closeAll()`. Any spec that uses `running(app)` must call `SharedTestDb.reregisterDefault()` in a `finally` block afterward.
 
 ### ScalikeJDBC Patterns
@@ -152,7 +161,7 @@ One MariaDB Testcontainer per JVM, shared across all specs via `SharedTestDb` (l
 
 ### REST API
 
-Tapir endpoints are defined in `app/api/Api.scala` and routed through Pekko HTTP (separate from Play routing). Swagger UI is auto-generated at `/api/docs`. Play routes are in `conf/routes`.
+Tapir endpoints are defined in `app/api/Api.scala` as Pekko HTTP routes (separate from Play routing), with a Swagger UI. They are **not served**: no route, binding or server uses `Api.routes` (only `test/api/ApiSpec`). They have **no authentication** (contests can be created and changed by anyone who reaches them), so they must get authentication and authorization before they are ever exposed. Play routes are in `conf/routes`.
 
 ### Wikimedia Commons Integration
 

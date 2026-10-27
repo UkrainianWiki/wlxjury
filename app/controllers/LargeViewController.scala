@@ -30,10 +30,12 @@ class LargeViewController @Inject() (
       rate: Option[Int],
       module: String
   ): EssentialAction = withAuth() { sessionUser => implicit request =>
+    val maybeRound =
+      if (roundId == 0) Round.activeRounds(sessionUser).headOption
+      else Round.findById(roundId)
     // a round of another of the user's contests opens in that contest
-    val user = Some(roundId).filter(_ != 0).flatMap(Round.findById(_))
-      .fold(sessionUser)(r => Secured.inContest(sessionUser, r.contestId))
-    Secured.switchingContest(sessionUser, user)(show(pageId, user, asUserId, rate, region, roundId, module))
+    val user = maybeRound.fold(sessionUser)(r => Secured.inContest(sessionUser, r.contestId))
+    Secured.switchingContest(sessionUser, user)(show(pageId, user, asUserId, rate, region, roundId, maybeRound, module))
   }
 
   def largeCurrentUser(
@@ -42,7 +44,7 @@ class LargeViewController @Inject() (
       rate: Option[Int],
       module: String
   ): EssentialAction = withAuth() { user => implicit request =>
-    show(pageId, user, user.getId, rate, region, 0, module)
+    show(pageId, user, user.getId, rate, region, 0, Round.activeRounds(user).headOption, module)
   }
 
   def rateByPageId(
@@ -70,17 +72,20 @@ class LargeViewController @Inject() (
       val result =
         checkLargeIndex(user, rate, pageId, region, round, module)
 
-      if (criteria.isEmpty) {
-        SelectionJdbc.rate(
-          pageId = pageId,
-          juryId = user.getId,
-          roundId = round.getId,
-          rate = select
-        )
-      } else {
-        val selection =
-          SelectionJdbc.findBy(pageId, user.getId, roundId).get
-        CriteriaRate.updateRate(selection.getId, criteria.get, select)
+      criteria match {
+        case None =>
+          SelectionJdbc.rate(
+            pageId = pageId,
+            juryId = user.getId,
+            roundId = round.getId,
+            rate = select
+          )
+        case Some(criterion) =>
+          // as a vote above (and the gallery's), a file the juror has no selection for in the
+          // round changes nothing
+          SelectionJdbc
+            .findBy(pageId, user.getId, round.getId)
+            .foreach(selection => CriteriaRate.updateRate(selection.getId, criterion, select))
       }
       result
     }
@@ -94,9 +99,13 @@ class LargeViewController @Inject() (
       module: String
   ): EssentialAction =
     withAuth(roundPermission(User.ADMIN_ROLES, roundId)) { user => implicit request =>
-      SelectionJdbc.removeImage(pageId, roundId)
-      val round = Round.findById(roundId).get
-      checkLargeIndex(user, rate, pageId, region, round, module)
+      // the permission found the round; a page saying so if it is gone since, not a server error
+      Round.findById(roundId).fold(
+        NotFound(views.html.errorPage(Some(user), "error.title", "error.round.not.found"))
+      ) { round =>
+        SelectionJdbc.removeImage(pageId, roundId)
+        checkLargeIndex(user, rate, pageId, region, round, module)
+      }
     }
 
   def checkLargeIndex(
@@ -159,6 +168,10 @@ class LargeViewController @Inject() (
     }
   }
 
+  /** The large view of a round's file, by the round gallery's rules: the round must exist
+    * ([[GalleryController.listGeneric]]'s pages if not), the user may view it
+    * ([[GalleryService.mayViewRound]]) and with `asUserId`'s votes ([[GalleryService.viewAs]]).
+    */
   def show(
       pageId: Long,
       user: User,
@@ -166,13 +179,48 @@ class LargeViewController @Inject() (
       rate: Option[Int],
       region: String,
       roundId: Long,
+      maybeRound: Option[Round],
+      module: String
+  )(implicit request: Request[Any]): Result =
+    maybeRound match {
+      case None =>
+        // no such round, or no active one: a page saying so, not a server error
+        render {
+          case Accepts.Html() =>
+            if (roundId == 0) Ok(views.html.errorPage(Some(user), "error.title", "no.round.yet"))
+            else NotFound(views.html.errorPage(Some(user), "error.title", "error.round.not.found"))
+          case Accepts.Json() =>
+            NotFound(Json.obj("error" -> (if (roundId == 0) "no_round" else "round_not_found")))
+        }
+      case Some(round) if !galleryService.mayViewRound(user, round) =>
+        val denial = Secured.Denial.round(round, Secured.ViewerRoles)
+        render {
+          case Accepts.Html() => onUnAuthorized(user, request, denial)
+          case Accepts.Json() => onUnAuthorizedJson(user, request, denial)
+        }
+      case Some(round) =>
+        galleryService.viewAs(user, round, asUserId) match {
+          // a juror's votes are their own: another's, or all together, for the organisers
+          case refusal if refusal != GalleryService.ViewAs.Allowed =>
+            render {
+              case Accepts.Html() => viewAsRefused(user, round, refusal, json = false)
+              case Accepts.Json() => viewAsRefused(user, round, refusal, json = true)
+            }
+          case _ =>
+            showRound(pageId, user, asUserId, rate, region, roundId, round, module)
+        }
+    }
+
+  private def showRound(
+      pageId: Long,
+      user: User,
+      asUserId: Long,
+      rate: Option[Int],
+      region: String,
+      roundId: Long,
+      round: Round,
       module: String
   )(implicit request: Request[Any]): Result = {
-    val maybeRound =
-      if (roundId == 0) Round.activeRounds(user).headOption
-      else Round.findById(roundId)
-    val round = maybeRound.get
-
     val subRegions = round.specialNomination.contains("Віа Регіа")
     val query = galleryService.getQuery(
       asUserId,
@@ -202,15 +250,13 @@ class LargeViewController @Inject() (
 
     val page = index / (Pager.pageSize + 1) + 1
 
+    // the round's, also when it is the current one (roundId 0); none without a selection
     val byCriteria = if (round.hasCriteria && asUserId != 0) {
-      val criteria = {
-        val selection = SelectionJdbc.findBy(pageId, asUserId, roundId).get
-        CriteriaRate.getRates(selection.getId)
-      }
-
-      criteria.map { c =>
-        c.criteria.toInt -> c.rate
-      }.toMap
+      SelectionJdbc
+        .findBy(pageId, asUserId, round.getId)
+        .fold(Seq.empty[CriteriaRate])(selection => CriteriaRate.getRates(selection.getId))
+        .map(c => c.criteria.toInt -> c.rate)
+        .toMap
     } else Map.empty[Int, Int]
 
     val criteriaNames = if (round.hasCriteria) {

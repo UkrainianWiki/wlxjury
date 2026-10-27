@@ -11,11 +11,12 @@ GET         /wikipedia/commons/thumb/*path                                      
 # Map static resources from the /public folder to the /assets URL path
 GET         /assets/*file                                                           @controllers.Assets.at(path="/public", file)
 
-GET         /logout                                                                 @controllers.LoginController.logout()
+GET         /logout                                                                 @controllers.LoginController.logoutPage(returnTo: Option[String] ?= None)
+POST        /logout                                                                 @controllers.LoginController.logout()
 
 POST        /auth                                                                   @controllers.LoginController.auth()
 
-GET         /auth                                                                   @controllers.LoginController.login()
+GET         /auth                                                                   @controllers.LoginController.login(returnTo: Option[String] ?= None)
 
 GET         /signup                                                                 @controllers.LoginController.signUpView()
 POST        /signup                                                                 @controllers.LoginController.signUp()
@@ -46,14 +47,13 @@ GET         /filelist/round/:round/user/:user/region/:region/page/:page         
 
 POST        /comment/region/:region/pageid/:pageid                                  controllers.ImageDiscussionController.addComment(pageid: Long, region: String, rate: Option[Int] ?= None, module: String ?= "gallery", round: Option[Long] ?= None, contestId: Option[Long] ?= None)
 
-+ nocsrf
 POST        /rate/round/:round/pageid/:pageId/select/:select                        controllers.GalleryController.selectWS(round: Long, pageId: Long, select: Int, region: String = "all", rate: Option[Int] ?= None, module: String ?= "gallery", criteria: Option[Int] ?= None)
 GET         /large/user/:user/pageid/:pageid                                        controllers.LargeViewController.large(user: Long, pageid: Long, region: String = "all", round: Long = 0, rate: Option[Int] ?= None, module: String ?= "gallery")
 GET         /large/user/:user/region/:region/pageid/:pageid                         controllers.LargeViewController.large(user: Long, pageid: Long, region: String, round: Long = 0, rate: Option[Int] ?= None, module: String ?= "gallery")
 GET         /large/round/:round/user/:user/pageid/:pageid                           controllers.LargeViewController.large(user: Long, pageid: Long, region: String = "all", round: Long, rate: Option[Int] ?= None, module: String ?= "gallery")
 GET         /large/round/:round/user/:user/region/:region/pageid/:pageid            controllers.LargeViewController.large(user: Long, pageid: Long, region: String, round:Long, rate: Option[Int] ?= None, module: String ?= "gallery")
-GET         /large/round/:round/pageid/:pageId/select/:select                       controllers.LargeViewController.rateByPageId(round: Long, pageId: Long, select: Int, region: String = "all", rate: Option[Int] ?= None, module: String ?= "gallery", criteria: Option[Int] ?= None)
-GET         /large/round/:round/region/:region/pageid/:pageId/select/:select        controllers.LargeViewController.rateByPageId(round: Long, pageId: Long, select: Int, region: String, rate: Option[Int] ?= None, module: String ?= "gallery", criteria: Option[Int] ?= None)
+POST        /large/round/:round/pageid/:pageId/select/:select                       controllers.LargeViewController.rateByPageId(round: Long, pageId: Long, select: Int, region: String = "all", rate: Option[Int] ?= None, module: String ?= "gallery", criteria: Option[Int] ?= None)
+POST        /large/round/:round/region/:region/pageid/:pageId/select/:select        controllers.LargeViewController.rateByPageId(round: Long, pageId: Long, select: Int, region: String, rate: Option[Int] ?= None, module: String ?= "gallery", criteria: Option[Int] ?= None)
 GET         /large/pageid/:pageid                                                   controllers.LargeViewController.largeCurrentUser(pageid: Long, region: String = "all", rate: Option[Int] ?= None, module: String ?= "gallery")
 GET         /large/region/:region/pageid/:pageid                                    controllers.LargeViewController.largeCurrentUser(pageid: Long, region: String, rate: Option[Int] ?= None, module: String ?= "gallery")
 
@@ -66,7 +66,9 @@ POST        /admin/greeting                                                     
 GET         /users/edit/:id                                                         @controllers.UserController.editUser(id: Long, contestId: Option[Long] ?= None)
 POST        /users/save                                                             @controllers.UserController.saveUser()
 POST        /users/resetpasswd/:id                                                  @controllers.UserController.resetPassword(id: Long)
-GET         /switch-contest/:contestId                                              @controllers.UserController.switchContest(contestId: Long)
+POST        /switch-contest/:contestId                                              @controllers.UserController.switchContest(contestId: Long)
+# an old link: the contest is switched by the navbar's menu (POST) only
+GET         /switch-contest/:contestId                                              @controllers.UserController.switchContestLink(contestId: Long)
 
 GET         /admin/rounds                                                           @controllers.RoundController.rounds(contestId: Option[Long] ?= None)
 GET         /admin/rounds/edit                                                      @controllers.RoundController.editRound(id: Option[Long] ?= None, contestId: Long, topImages: Option[Int] ?= None)

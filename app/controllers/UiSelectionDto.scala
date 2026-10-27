@@ -17,11 +17,18 @@ class UiSelectionDto[T](val itemUrlFunction: T => Call,
 
   def map: Map[T, SelectionItem] = optValues.toMap
 
-  def current: SelectionItem = map(selectedItemId)
+  /** The selected item; a neutral one if it is not in the menu, never an error. */
+  def current: SelectionItem = map.getOrElse(selectedItemId, UiSelectionDto.Unlisted)
 
   def toDropDown(iconOnly: Boolean = false)(implicit messages: Messages): Html =
     views.html
       .dropDownSelection(this.asInstanceOf[UiSelectionDto[Any]], iconOnly)
+}
+
+object UiSelectionDto {
+
+  /** The current item of a menu that does not list the selected one. */
+  val Unlisted: SelectionItem = SelectionItem("—", localized = false)
 }
 
 object Test {

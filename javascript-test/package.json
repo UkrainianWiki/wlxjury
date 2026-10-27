@@ -5,6 +5,8 @@
     "test": "jest"
   },
   "devDependencies": {
-    "jest": "^29.7.0"
+    "jest": "^29.7.0",
+    "jest-environment-jsdom": "^29.7.0",
+    "jquery": "1.11.1"
   }
 }

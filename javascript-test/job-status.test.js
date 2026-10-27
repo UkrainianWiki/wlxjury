@@ -73,7 +73,8 @@ describe("formatJobProgress", () => {
 // ---------------------------------------------------------------------------
 
 function fakeElement(status) {
-    const attrs = { "data-src": "/admin/jobs/1", "data-status": status, "data-reload-on-done": "true" };
+    const attrs = { "data-src": "/admin/jobs/1", "data-status": status, "data-reload-on-done": "true",
+        "data-denied-text": "No access" };
     const parts = {
         ".job-status-text": { textContent: "" },
         ".job-retry": { style: { display: "none" } },
@@ -125,5 +126,24 @@ describe("pollJobStatus", () => {
         const reload = jest.fn();
         await pollJobStatus(fakeElement("done"), { reload: reload });
         expect(reload).not.toHaveBeenCalled();
+    });
+
+    test("stops polling and says so when access to the job is denied", async () => {
+        for (const code of [401, 403]) {
+            global.fetch = jest.fn(() => Promise.resolve({ status: code, json: () => Promise.reject(new Error("html")) }));
+            const el = fakeElement("running");
+            await pollJobStatus(el, { reload: jest.fn(), interval: 1000 });
+            await jest.advanceTimersByTimeAsync(10000);
+            expect(global.fetch).toHaveBeenCalledTimes(1);
+            expect(el.parts[".job-status-text"].textContent).toBe("No access");
+            expect(el.parts[".job-cancel"].style.display).toBe("none");
+        }
+    });
+
+    test("keeps retrying, slower, after another failure", async () => {
+        global.fetch = jest.fn(() => Promise.resolve({ status: 500, json: () => Promise.reject(new Error("html")) }));
+        await pollJobStatus(fakeElement("running"), { reload: jest.fn(), interval: 1000 });
+        await jest.advanceTimersByTimeAsync(2000);
+        expect(global.fetch).toHaveBeenCalledTimes(2);
     });
 });

@@ -8,7 +8,9 @@
  * pollJobStatus(el)  – the fetch/poll loop for one element; shows the Retry button of a
  *                      failed job and the Cancel button of an active or failed one, and
  *                      reloads the page when a job finishes (data-reload-on-done), so its
- *                      results (image counts, the round's state) show.
+ *                      results (image counts, the round's state) show. On 401 or 403
+ *                      (signed out, or no access to the job) it stops and shows the
+ *                      element's data-denied-text; on other failures it retries, slower.
  * initJobStatuses()  – starts pollJobStatus for every .job-status element.
  */
 
@@ -84,9 +86,21 @@ function pollJobStatus(el, options) {
     }
 
     function update() {
-        return fetch(el.getAttribute("data-src"), { credentials: "same-origin" })
-            .then(function (r) { return r.json(); })
+        // X-Requested-With: a poll, which must not switch the session's contest
+        return fetch(el.getAttribute("data-src"),
+                { credentials: "same-origin", headers: { "X-Requested-With": "XMLHttpRequest" } })
+            .then(function (r) {
+                if (r.status === 401 || r.status === 403) return { denied: true };
+                return r.json();
+            })
             .then(function (p) {
+                if (p.denied) {
+                    var deniedText = el.querySelector(".job-status-text");
+                    if (deniedText) deniedText.textContent = el.getAttribute("data-denied-text") || "";
+                    show(".job-retry", false);
+                    show(".job-cancel", false);
+                    return p;
+                }
                 var text = el.querySelector(".job-status-text");
                 if (text) text.textContent = formatJobStatus(p);
                 el.setAttribute("data-status", p.status);

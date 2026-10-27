@@ -8,7 +8,7 @@ import play.api.Configuration
 import play.api.data.Form
 import play.api.data.Forms._
 import play.api.i18n.{I18nSupport, Lang, Messages}
-import play.api.mvc.{ControllerComponents, EssentialAction, Result}
+import play.api.mvc.{Action, AnyContent, ControllerComponents, EssentialAction, Result}
 import services.UserService
 import spray.util.pimpFuture
 
@@ -375,39 +375,51 @@ class UserController @Inject()(cc: ControllerComponents,
     )(Greeting.apply)(Greeting.unapply)
   )
 
-  /** Makes `contestId`, one of the user's contests, the session's current contest. */
+  /** Makes `contestId`, one of the user's contests, the session's current contest: a POST
+    * with the CSRF token (the navbar's contest menu), never a link another site could open.
+    */
   def switchContest(contestId: Long): EssentialAction = withAuth() { user => request =>
     if (user.userContests.exists(m => m.contestId == contestId && m.active)) {
       val newSession = request.session + (Secured.CurrentContestId -> contestId.toString)
       Redirect(routes.LoginController.index).withSession(newSession)
     } else {
-      onUnAuthorized(user)
+      onUnAuthorized(user, request, Secured.Denial.contest(Some(contestId), Secured.ViewerRoles))
     }
+  }
+
+  /** An old link to switch the contest (or a page cached from before it was a POST): the
+    * start page, the contest unchanged.
+    */
+  def switchContestLink(contestId: Long): Action[AnyContent] = Action {
+    Redirect(routes.LoginController.index)
   }
 
   def resetPassword(id: Long): EssentialAction =
     withAuth(rolePermission(Set(User.ROOT_ROLE))) { user => implicit request =>
-      val editedUser = Secured.inCurrentContest(User.findById(id).get, None)
+      User.findById(id).fold[Result](
+        NotFound(views.html.errorPage(Some(user), "error.title", "error.user.not.found"))
+      ) { found =>
+        val editedUser = Secured.inCurrentContest(found, None)
 
-      val password = User.randomString(8)
-      val contest: Option[ContestJury] =
-        editedUser.currentContest.flatMap(ContestJuryJdbc.findById)
-      val contestName = contest.fold("")(_.name)
-      val hash = User.hash(editedUser, password)
+        val password = User.randomString(8)
+        val contest: Option[ContestJury] =
+          editedUser.currentContest.flatMap(ContestJuryJdbc.findById)
+        val contestName = contest.fold("")(_.name)
+        val hash = User.hash(editedUser, password)
 
-      User.updateHash(editedUser.getId, hash)
+        User.updateHash(editedUser.getId, hash)
 
-      val juryhome = "http://localhost:9000"
-      //        User.updateUser(formUser.fullname, formUser.email, hash, formUser.roles, formUser.contest)
-      val subject: String = s"Password changed for $contestName jury"
-      val message: String = s"Password changed for $contestName jury\n" +
-        s" Please login to our jury tool $juryhome \nwith login: ${editedUser.email} and password: $password\n" +
-        s"Regards, ${user.fullname}"
-      // sendMail.sendMail(from = (user.fullname, user.email), to = Seq(user.email), bcc = Seq(user.email), subject = subject, message = message)
+        val juryhome = "http://localhost:9000"
+        //        User.updateUser(formUser.fullname, formUser.email, hash, formUser.roles, formUser.contest)
+        val subject: String = s"Password changed for $contestName jury"
+        val message: String = s"Password changed for $contestName jury\n" +
+          s" Please login to our jury tool $juryhome \nwith login: ${editedUser.email} and password: $password\n" +
+          s"Regards, ${user.fullname}"
+        // sendMail.sendMail(from = (user.fullname, user.email), to = Seq(user.email), bcc = Seq(user.email), subject = subject, message = message)
 
-      Redirect(routes.UserController.editUser(id)).flashing(
-        "password-reset" -> s"Password reset. New Password sent to ${editedUser.email}")
-
+        Redirect(routes.UserController.editUser(id)).flashing(
+          "password-reset" -> s"Password reset. New Password sent to ${editedUser.email}")
+      }
     }
 }
 
