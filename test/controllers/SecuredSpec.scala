@@ -174,7 +174,7 @@ class SecuredSpec extends PlaySpecification with Mockito with PlayTestDb
         val signedIn = Secured.inCurrentContest(juror, Some("2025"))
         val (_, html) = page(signedIn, Secured.Denial.empty)
 
-        val gallery = routes.GalleryController.list(signedIn.getId, 1, "all", round.getId, Some(0)).url
+        val gallery = RoundList(round, signedIn.getId, filter = VoteFilter.Unrated).pageUrl(1)
         html must contain(s"""<a class="btn btn-primary" href="${gallery.replace("&", "&amp;")}">""")
         html must not(contain(routes.GalleryController.contestFiles(603).url))
         // without a known requirement, no "This page is for"

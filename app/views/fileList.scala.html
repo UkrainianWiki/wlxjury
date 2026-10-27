@@ -5,16 +5,12 @@
 @import org.intracer.wmua.ImageWithRating
 @(
         user: User, /* logged in user */
-        asUserId: Long, /* viewing files of user with asUserId id  */
+        list: RoundList,
         asUser: User, /* viewing files of user asUser  */
         files: Seq[ImageWithRating],
         ranks: Seq[String],
         jurors: Seq[User],
-        pager: Pager, /* not used */
-        round: Option[Round],
         rounds: Seq[Round],
-        rate: Option[Int],
-        region: String = "all",
         regions: Seq[Region],
         outputFormat: String = "wiki",
         wrapInTable: Boolean,
@@ -36,13 +32,15 @@
     }
 }
 
-@main("filelist", user, asUserId, round, rounds, gallery = false, rate, region) {
+@main("filelist", user, list.asUserId, Some(list.round), rounds, gallery = false, Some(list)) {
 
     <div class="container">
 
-    @defining(round.flatMap(_.id).getOrElse(0L)) { roundId =>
+    @defining(Some(list.round)) { round =>
+    @defining(list.asUserId) { asUserId =>
+    @defining(list.regionParam) { region =>
 
-        @regionNav({ region: String => s"/filelist/round/$roundId/user/$asUserId/region/$region/page/1${rateParam(rate).body}" }, round, region, regions)
+        @regionNav((r: String) => list.withRegion(r).pageUrl(1), region, regions)
 
     <div class="row">
 
@@ -125,5 +123,7 @@
     </div>
     </div>
     </div>
+}
+}
 }
 }

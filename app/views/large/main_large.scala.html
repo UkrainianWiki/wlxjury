@@ -2,26 +2,19 @@
 @import org.intracer.wmua.ImageWithRating
 @import db.scalikejdbc.User
 @(
-        title: String,
         user: User = null,
-        asUserId: Long,
+        list: RoundList,
         score: Double,
-        url: String,
         readOnly: Boolean = false,
         files: Seq[ImageWithRating],
         index: Int,
-        page: Int,
-        rate: Option[Int],
-        region: String = "all",
-        round: Round,
-        module: String = "byrate",
         byCriteria: Map[Int, Int] = Map.empty)(content: Html)(implicit request: Request[Any], messages: Messages)
 
 <!DOCTYPE html>
 
 <html lang="@messages.lang.language" style="height: 100%;">
     <head>
-        <title>@Messages(title)</title>
+        <title>@Messages(list.view.name)</title>
         <meta charset="UTF-8">
 
         <meta http-equiv="X-UA-Compatible" content="IE=edge">
@@ -48,8 +41,8 @@
             });
         </script>
 
-        @raty(score, url, readOnly, round, rate, module, byCriteria)
-        @keyboardNav(user, asUserId, files, index, page, rate, region, round, module)
+        @raty(score, readOnly, list, files(index).pageId, byCriteria)
+        @keyboardNav(user, list, files, index)
 
     </head>
     <body class="gallery" style="height: 100%;">

@@ -6,49 +6,39 @@
 @import db.scalikejdbc.Round
 @(
         user: db.scalikejdbc.User,
-        asUserId: Long,
+        list: RoundList,
         files: Seq[org.intracer.wmua.ImageWithRating],
         index: Int,
         start: Int,
         end: Int,
-        page: Int,
-        rate: Option[Int],
-        region: String = "all",
-        round: Round,
         monument: Option[Monument],
-        module : String = "gallery",
         comments: Seq[Comment],
         selection: Seq[(Selection, User)],
         byCriteria: Map[Int, Int] = Map.empty)(
         implicit flash: Flash, request: Request[Any], messages: Messages)
 
-    @main_large(module,
+    @defining(list.round) { round =>
+    @main_large(
     user,
-    asUserId,
+    list,
     files(index).totalRate(round) / (if (round.rates.id > 5 && round.halfStar) 2.0 else 1.0),
-    s"/large/round/${round.getId}/region/$region/pageid/${files(index).pageId}/select/",
-    readOnly = !user.roles.contains("jury") || !round.active || user.getId != asUserId,
+    readOnly = !user.roles.contains("jury") || !round.active || user.getId != list.asUserId,
     files = files,
     index = index,
-    page = page,
-    region = region,
-    round = round,
-    rate = rate,
-    module = module,
-        byCriteria = byCriteria) {
+    byCriteria = byCriteria) {
         @defining(files(index).image) { image =>
         <div class="container-fluid" style="padding-left:5px; margin-left:0px; margin-right:0px; height:100%">
             <div class="row" style="height:100%">
                 <div class="col-xs-1" style="margin-left:0px; min-width: 220px">
 
-                    @navigationButtons(user, asUserId, files, index, page, rate, region, round, module)
-                    @thumbsBar(user, asUserId, files, index, start, end, rate, region, round, module)
+                    @navigationButtons(user, list, files, index)
+                    @thumbsBar(list, files, index, start, end)
                     @if(user.canViewOrgInfo(round)){
                         @authorInfo(image, user)
                     }
                     @monumentInfo(image, monument)
                     @fullSizeUrl(image, round)
-                    @juryStat(selection, round, module, region)
+                    @juryStat(selection, list)
 
                </div>
 
@@ -76,10 +66,11 @@
                          }
                     </a>
 
-                    @commentsView(files(index).pageId, rate, region, round, module, comments)
+                    @commentsView(files(index).pageId, list, comments)
 
                 </div>
         </div>
     </div>
     }
 }
+    }

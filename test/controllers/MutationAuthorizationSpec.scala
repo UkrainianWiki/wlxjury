@@ -90,7 +90,7 @@ class MutationAuthorizationSpec extends PlaySpecification with PlayTestDb {
         imageDao.batchInsert(Seq(image(1001L, "PL-1001")))
 
         val result = galleryController(app)
-          .selectWS(foreignRound.getId, 1001L, select = 1, module = "gallery", rate = Some(0), criteria = None)
+          .selectWS(foreignRound.getId, 1001L, select = 1)
           .apply(sessionRequest(POST, s"/rate/round/${foreignRound.getId}/pageid/1001/select/1?rate=0", juror.email))
           .run()
 
@@ -111,7 +111,7 @@ class MutationAuthorizationSpec extends PlaySpecification with PlayTestDb {
         def vote(round: Round) = {
           SelectionJdbc.create(1004L, 0, juror.getId, round.getId)
           val result = galleryController(app)
-            .selectWS(round.getId, 1004L, select = 1, module = "gallery", rate = Some(0), criteria = None)
+            .selectWS(round.getId, 1004L, select = 1)
             .apply(sessionRequest(POST, s"/rate/round/${round.getId}/pageid/1004/select/1?rate=0", juror.email))
             .run()
           (status(result), SelectionJdbc.findBy(1004L, juror.getId, round.getId).map(_.rate))
@@ -477,7 +477,7 @@ class MutationAuthorizationSpec extends PlaySpecification with PlayTestDb {
           status(roundStat(app, open, juror.email)) === FORBIDDEN
           Secured.inContest(Secured.inCurrentContest(juror, None), b.getId).canViewOrgInfo(open) === false
 
-          val gallery = call(galleryController(app).list(0, 1, "all", open.getId, None),
+          val gallery = call(galleryController(app).list(0, 1, "all", open.getId),
             FakeRequest(GET, s"/gallery/round/${open.getId}").withSession(Secured.UserName -> juror.email))
           status(gallery) === FORBIDDEN
           contentAsString(gallery) must not(contain("B open round"))
@@ -628,7 +628,7 @@ class MutationAuthorizationSpec extends PlaySpecification with PlayTestDb {
         imageDao.batchInsert(Seq(image(1002L, "PL-1002")))
 
         val result = largeViewController
-          .rateByPageId(foreignRound.getId, 1002L, select = 5, module = "gallery", rate = Some(0))
+          .rateByPageId(foreignRound.getId, 1002L, select = 5)
           .apply(sessionRequest(POST, s"/large/round/${foreignRound.getId}/pageid/1002/select/5?rate=0", juror.email))
           .run()
 
@@ -818,8 +818,6 @@ class MutationAuthorizationSpec extends PlaySpecification with PlayTestDb {
           .addComment(
             pageId = 1003L,
             region = "all",
-            rate = Some(0),
-            module = "gallery",
             round = Some(foreignRound.getId),
             contestId = Some(foreignContest.getId)
           )

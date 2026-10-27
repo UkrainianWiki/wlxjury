@@ -114,7 +114,7 @@ class GalleryRegionsSpec extends PlaySpecification with PlayTestDb {
           val page = get(path, f.admin)
           val link = """<a href="([^"]*)" >\s*Volyn O\. \(1\)""".r.findFirstMatchIn(page).get
             .group(1).replace("&amp;", "&")
-          link must contain("rated=true")
+          link must contain("filter=rated")
           tiles(get(link, f.admin)) === List(1L)
         }
       }

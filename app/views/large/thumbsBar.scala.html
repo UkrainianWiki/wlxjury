@@ -1,18 +1,11 @@
 @import controllers.Global
-@import db.scalikejdbc.Round
-@import db.scalikejdbc.User
 @import org.intracer.wmua.ImageWithRating
 @(
-        user: User,
-        asUserId: Long,
+        list: RoundList,
         files: Seq[ImageWithRating],
         index: Int,
         start: Int,
-        end: Int,
-        rate: Option[Int],
-        region: String = "all",
-        round: Round,
-        module : String = "gallery")(
+        end: Int)(
         implicit flash: Flash, request: Request[Any], messages: Messages)
 
 @thumbSmall(style:String) = {
@@ -25,7 +18,7 @@
 
     @thumbSmall(if(i == index) "thumb_small current" else "thumb_small")
         <div style="margin:5px auto;">
-            <a href="@routes.LargeViewController.large(asUserId, file.pageId, region, round.getId, rate, module)">
+            <a href="@list.largeUrl(file.pageId)">
                 @if(file.image.isImage) {
                     <img class="cropped" alt="@file.title"
                     src="@Global.resizeTo(file.image, Global.thumbSizeX, Global.thumbSizeY)"

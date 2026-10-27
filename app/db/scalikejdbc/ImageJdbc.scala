@@ -686,7 +686,7 @@ object ImageJdbc extends CRUDMapper[Image]
     SelectionQuery(
       roundId = Some(roundId),
       grouped = true,
-      order = Map("rate" -> -1),
+      order = Seq("rate" -> -1),
       rated = rated,
       limit = Some(Limit(pageSize = Some(pageSize), offset = Some(offset)))
     ).list()

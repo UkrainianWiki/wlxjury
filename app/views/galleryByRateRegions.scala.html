@@ -5,19 +5,15 @@
 @import db.scalikejdbc.User
 @(
         user: User,
-        asUserId: Long,
+        list: RoundList,
         files: Seq[ImageWithRating],
         pager: Pager,
-        maybeRound: Option[Round],
         rounds: Seq[Round],
-        rate: Option[Int] = None,
-        currentRegion: String = "all",
-        regions: Seq[Region],
-        rated: Option[Boolean] = None)(implicit flash: Flash, messages: Messages, request: RequestHeader)
+        regions: Seq[Region])(implicit flash: Flash, messages: Messages, request: RequestHeader)
 
 
 @showRateGalery(file: org.intracer.wmua.ImageWithRating, index: Int) = {
-@defining(maybeRound.get) { round =>
+@defining(list.round) { round =>
 
     <div style="margin-bottom: 10px;
         color: #ffffff;"> <b>@file.rankStr </b>
@@ -40,15 +36,12 @@
 }
 }
 
-@main("byrate", user, asUserId, maybeRound, rounds, true, None, currentRegion,
-    pagerView(asUserId, pager, rate, maybeRound.flatMap(_.id), currentRegion, "byrate")
-) {
+@main("byrate", user, list.asUserId, Some(list.round), rounds, true, Some(list), pagerNav(pager, list.pageUrl)) {
 
-    @defining(maybeRound.get) { round =>
-        @defining(round.id.getOrElse(0L)) { roundId =>
-            @defining({ region: String => routes.GalleryController.query("byrate", Some(asUserId), 1, region, roundId, rate, rated).url }) { regionToUrl =>
+    @defining(list.round) { round =>
+            @defining({ region: String => list.withRegion(region).pageUrl(1) }) { regionToUrl =>
 
-                @regionNav(regionToUrl, maybeRound, currentRegion, regions)
+                @regionNav(regionToUrl, list.regionParam, regions)
 
             <div class="row">
 
@@ -64,7 +57,7 @@
                             <h1 id="@file.pageId" style="display: inline; width: 1px; height: 1px"></h1>
 
                             <div class="thumb">
-                                <a href="@routes.LargeViewController.large(asUserId, file.pageId, currentRegion, round.getId, None, "byrate")" >
+                                <a href="@list.largeUrl(file.pageId)" >
                                     <img class="cropped" alt="@file.title"
                                     src="@Global.resizeTo(file.image, Global.gallerySizeX, Global.gallerySizeY)"
                                     srcset="@Global.srcSet(file.image, Global.gallerySizeX, Global.gallerySizeY)">
@@ -80,6 +73,5 @@
 
             </div>
             }
-        }
     }
 }

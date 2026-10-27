@@ -42,7 +42,7 @@
     </div>
 
     @if(view.regions.nonEmpty) {
-        @regionNav(view.regionUrl, view.round, view.region.getOrElse("all"), view.regions)
+        @regionNav(view.regionUrl, view.region.getOrElse("all"), view.regions)
     }
 
     @if(files.isEmpty) {

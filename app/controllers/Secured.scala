@@ -113,9 +113,9 @@ abstract class Secured(cc: ControllerComponents) extends AbstractController(cc) 
         val rounds = Round.activeRounds(memberUser)
         rounds.headOption.map { round =>
           val url = if (round.isBinary)
-            routes.GalleryController.list(user.getId, 1, "all", round.getId, Some(0)).url
+            RoundList(round, user.getId, filter = VoteFilter.Unrated).pageUrl(1)
           else
-            routes.GalleryController.byRate(user.getId, 1, "all", round.getId).url
+            RoundList(round, user.getId, view = GalleryView.ByRate).pageUrl(1)
           Secured.AccessSuggestion(url, "access.denied.suggested.gallery", Some(membership.contestId), Some(round), rounds)
         }
       }

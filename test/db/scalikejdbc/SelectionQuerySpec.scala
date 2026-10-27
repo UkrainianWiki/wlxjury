@@ -146,17 +146,17 @@ class SelectionQuerySpec extends Specification {
 
     "include monument_id asc when specified" in {
       SelectionQuery(userId = Some(userId), roundId = Some(roundId))
-        .orderBy(Map("s.monument_id" -> 1)) must contain("s.monument_id asc")
+        .orderBy(Seq("s.monument_id" -> 1)) must contain("s.monument_id asc")
     }
 
     "include rate desc when specified" in {
       SelectionQuery(userId = Some(userId), roundId = Some(roundId))
-        .orderBy(Map("rate" -> -1)) must contain("rate desc")
+        .orderBy(Seq("rate" -> -1)) must contain("rate desc")
     }
 
-    "produce empty string when order map is empty" in {
+    "produce empty string when the order is empty" in {
       SelectionQuery(userId = Some(userId), roundId = Some(roundId))
-        .orderBy(Map.empty) === ""
+        .orderBy(Seq.empty) === ""
     }
   }
 

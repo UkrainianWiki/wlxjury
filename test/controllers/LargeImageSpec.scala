@@ -82,7 +82,7 @@ class LargeImageSpec extends PlaySpecification with PlayTestDb {
       val images = createImages(1)
       createSelection(images)
 
-      val result = controller.large(user.id.get, images.head.pageId, roundId = round.id.get, rate = Some(0), module = "gallery")
+      val result = controller.large(user.id.get, images.head.pageId, roundId = round.id.get)
         .apply(request(s"/large/round/${round.id.get}/user/${user.id.get}/pageid/${images.head.pageId}?rate=0"))
 
       status(result) mustEqual OK
@@ -99,7 +99,7 @@ class LargeImageSpec extends PlaySpecification with PlayTestDb {
       val images = createImages(1)
       createSelection(images, rate = 5)
 
-      val result = controller.large(user.id.get, images.head.pageId, roundId = round.id.get, rate = None, module = "byrate")
+      val result = controller.large(user.id.get, images.head.pageId, roundId = round.id.get)
         .apply(request(s"/large/round/${round.id.get}/user/${user.id.get}/pageid/${images.head.pageId}?module=byrate"))
 
       status(result) mustEqual OK
@@ -116,7 +116,7 @@ class LargeImageSpec extends PlaySpecification with PlayTestDb {
       val images = createImages(2)
       createSelection(images)
 
-      val result = controller.large(user.id.get, images.head.pageId, roundId = round.id.get, rate = None, module = "gallery")
+      val result = controller.large(user.id.get, images.head.pageId, roundId = round.id.get)
         .apply(request(s"/large/round/${round.id.get}/user/${user.id.get}/pageid/${images.head.pageId}?rate=0"))
         .run()
 
@@ -135,7 +135,7 @@ class LargeImageSpec extends PlaySpecification with PlayTestDb {
       createSelection(images.init, 3)
       createSelection(images.tail, 5)
 
-      val result = controller.large(user.id.get, images.last.pageId, roundId = round.id.get, rate = None, module = "byrate")
+      val result = controller.large(user.id.get, images.last.pageId, roundId = round.id.get)
         .apply(request(s"/large/round/${round.id.get}/user/${user.id.get}/pageid/${images.last.pageId}?module=byrate"))
         .run()
 
@@ -154,7 +154,7 @@ class LargeImageSpec extends PlaySpecification with PlayTestDb {
       createSelection(images.init, 0)
       createSelection(images.tail, 5)
 
-      val result = controller.large(user.id.get, images.head.pageId, roundId = round.id.get, rate = Some(0), module = "gallery")
+      val result = controller.large(user.id.get, images.head.pageId, roundId = round.id.get)
         .apply(request(s"/large/round/${round.id.get}/user/${user.id.get}/pageid/${images.head.pageId}?rate=0"))
         .run()
 
@@ -173,7 +173,7 @@ class LargeImageSpec extends PlaySpecification with PlayTestDb {
       createSelection(images.init, 5)
       createSelection(images.tail, 0)
 
-      val result = controller.large(user.id.get, images.last.pageId, roundId = round.id.get, rate = Some(0), module = "gallery")
+      val result = controller.large(user.id.get, images.last.pageId, roundId = round.id.get)
         .apply(request(s"/large/round/${round.id.get}/user/${user.id.get}/pageid/${images.last.pageId}?rate=0"))
         .run()
 
@@ -192,7 +192,7 @@ class LargeImageSpec extends PlaySpecification with PlayTestDb {
       createSelection(images.init, 5)
       createSelection(images.tail, 0)
 
-      val result = controller.large(user.id.get, images.head.pageId, roundId = round.id.get, rate = None, module = "byrate")
+      val result = controller.large(user.id.get, images.head.pageId, roundId = round.id.get)
         .apply(request(s"/large/round/${round.id.get}/user/${user.id.get}/pageid/${images.head.pageId}?module=byrate"))
         .run()
 
@@ -211,7 +211,7 @@ class LargeImageSpec extends PlaySpecification with PlayTestDb {
       createSelection(images.init, 0)
       createSelection(images.tail, 5)
 
-      val result = controller.large(user.id.get, images.last.pageId, roundId = round.id.get, rate = None, module = "byrate")
+      val result = controller.large(user.id.get, images.last.pageId, roundId = round.id.get)
         .apply(request(s"/large/round/${round.id.get}/user/${user.id.get}/pageid/${images.last.pageId}?module=byrate"))
         .run()
 
@@ -229,12 +229,12 @@ class LargeImageSpec extends PlaySpecification with PlayTestDb {
       val images = createImages(1)
       createSelection(images)
 
-      val result = controller.rateByPageId(round.id.get, images.head.pageId, select = 5, module = "gallery", rate = Some(0))
+      val result = controller.rateByPageId(round.id.get, images.head.pageId, select = 5)
         .apply(voteRequest(s"/large/round/${round.id.get}/pageid/${images.head.pageId}/select/5?rate=0"))
         .run()
 
       status(result) mustEqual SEE_OTHER
-      redirectLocation(result) must beSome.which(_ === s"/gallery/round/${round.id.get}/user/${user.id.get}/page/1?rate=0")
+      redirectLocation(result) must beSome.which(_ === s"/gallery/round/${round.id.get}/user/${user.id.get}/page/1?filter=unrated&sort=rate")
     }
   }
 
@@ -247,12 +247,12 @@ class LargeImageSpec extends PlaySpecification with PlayTestDb {
       val images = createImages(1)
       createSelection(images, rate = 5)
 
-      val result = controller.rateByPageId(round.id.get, images.head.pageId, select = 0, module = "gallery", rate = None)
-        .apply(voteRequest(s"/large/round/${round.id.get}/pageid/${images.head.pageId}/select/0?module=byrate"))
+      val result = controller.rateByPageId(round.id.get, images.head.pageId, select = 0)
+        .apply(voteRequest(s"/large/round/${round.id.get}/pageid/${images.head.pageId}/select/0"))
         .run()
 
       status(result) mustEqual SEE_OTHER
-      redirectLocation(result) must beSome.which(_ === s"/gallery/round/${round.id.get}/user/${user.id.get}/page/1")
+      redirectLocation(result) must beSome.which(_ === s"/gallery/round/${round.id.get}/user/${user.id.get}/page/1?sort=rate")
     }
   }
 
@@ -265,12 +265,12 @@ class LargeImageSpec extends PlaySpecification with PlayTestDb {
       val images = createImages(1)
       createSelection(images, rate = 5)
 
-      val result = controller.rateByPageId(round.id.get, images.head.pageId, select = 3, module = "byrate", rate = None)
+      val result = controller.rateByPageId(round.id.get, images.head.pageId, select = 3)
         .apply(voteRequest(s"/large/round/${round.id.get}/pageid/${images.head.pageId}/select/0?module=byrate"))
         .run()
 
       status(result) mustEqual SEE_OTHER
-      redirectLocation(result) must beSome.which(_ === s"/byrate/round/${round.id.get}/user/${user.id.get}/page/1")
+      redirectLocation(result) must beSome.which(_ === s"/byrate/round/${round.id.get}/user/${user.id.get}/page/1?sort=rate")
     }
   }
 
@@ -284,12 +284,12 @@ class LargeImageSpec extends PlaySpecification with PlayTestDb {
       createSelection(images.init, rate = 5)
       createSelection(images.tail, rate = 3)
 
-      val result = controller.rateByPageId(round.id.get, images.head.pageId, select = 2, module = "byrate", rate = None)
+      val result = controller.rateByPageId(round.id.get, images.head.pageId, select = 2)
         .apply(voteRequest(s"/large/round/${round.id.get}/pageid/${images.head.pageId}/select/0?module=byrate"))
         .run()
 
       status(result) mustEqual SEE_OTHER
-      redirectLocation(result) must beSome.which(_ === s"/large/round/${round.id.get}/user/${user.id.get}/pageid/${images.last.pageId}?module=byrate")
+      redirectLocation(result) must beSome.which(_ === s"/large/round/${round.id.get}/user/${user.id.get}/pageid/${images.last.pageId}?module=byrate&sort=rate")
     }
   }
 
@@ -303,12 +303,12 @@ class LargeImageSpec extends PlaySpecification with PlayTestDb {
       createSelection(images.init, rate = 3)
       createSelection(images.tail, rate = 2)
 
-      val result = controller.rateByPageId(round.id.get, images.last.pageId, select = 4, module = "byrate", rate = None)
+      val result = controller.rateByPageId(round.id.get, images.last.pageId, select = 4)
         .apply(voteRequest(s"/large/round/${round.id.get}/pageid/${images.last.pageId}/select/0?module=byrate"))
         .run()
 
       status(result) mustEqual SEE_OTHER
-      redirectLocation(result) must beSome.which(_ === s"/large/round/${round.id.get}/user/${user.id.get}/pageid/${images.head.pageId}?module=byrate")
+      redirectLocation(result) must beSome.which(_ === s"/large/round/${round.id.get}/user/${user.id.get}/pageid/${images.head.pageId}?module=byrate&sort=rate")
     }
   }
 
@@ -322,12 +322,12 @@ class LargeImageSpec extends PlaySpecification with PlayTestDb {
       createSelection(images.init, 0)
       createSelection(images.tail, 5)
 
-      val result = controller.rateByPageId(round.id.get, images.head.pageId, select = 5, module = "gallery", rate = Some(0))
+      val result = controller.rateByPageId(round.id.get, images.head.pageId, select = 5)
         .apply(voteRequest(s"/large/round/${round.id.get}/pageid/${images.head.pageId}/select/5?rate=0"))
         .run()
 
       status(result) mustEqual SEE_OTHER
-      redirectLocation(result) must beSome.which(_ === s"/gallery/round/${round.id.get}/user/${user.id.get}/page/1?rate=0")
+      redirectLocation(result) must beSome.which(_ === s"/gallery/round/${round.id.get}/user/${user.id.get}/page/1?filter=unrated&sort=rate")
     }
   }
 
@@ -341,12 +341,12 @@ class LargeImageSpec extends PlaySpecification with PlayTestDb {
       createSelection(images.init, 5)
       createSelection(images.tail, 0)
 
-      val result = controller.rateByPageId(round.id.get, images.last.pageId, select = 5, module = "gallery", rate = Some(0))
+      val result = controller.rateByPageId(round.id.get, images.last.pageId, select = 5)
         .apply(voteRequest(s"/large/round/${round.id.get}/pageid/${images.last.pageId}/select/5?rate=0"))
         .run()
 
       status(result) mustEqual SEE_OTHER
-      redirectLocation(result) must beSome.which(_ === s"/gallery/round/${round.id.get}/user/${user.id.get}/page/1?rate=0")
+      redirectLocation(result) must beSome.which(_ === s"/gallery/round/${round.id.get}/user/${user.id.get}/page/1?filter=unrated&sort=rate")
     }
   }
 
@@ -359,12 +359,12 @@ class LargeImageSpec extends PlaySpecification with PlayTestDb {
       val images = createImages(2)
       createSelection(images)
 
-      val result = controller.rateByPageId(round.id.get, images.head.pageId, select = 5, module = "gallery", rate = Some(0))
+      val result = controller.rateByPageId(round.id.get, images.head.pageId, select = 5)
         .apply(voteRequest(s"/large/round/${round.id.get}/pageid/${images.head.pageId}/select/5?rate=0"))
         .run()
 
       status(result) mustEqual SEE_OTHER
-      redirectLocation(result) must beSome.which(_ === s"/large/round/${round.id.get}/user/${user.id.get}/pageid/${images.last.pageId}?rate=0")
+      redirectLocation(result) must beSome.which(_ === s"/large/round/${round.id.get}/user/${user.id.get}/pageid/${images.last.pageId}?filter=unrated&sort=rate")
     }
   }
 
@@ -377,12 +377,12 @@ class LargeImageSpec extends PlaySpecification with PlayTestDb {
       val images = createImages(2)
       createSelection(images)
 
-      val result = controller.rateByPageId(round.id.get, images.last.pageId, select = 5, module = "gallery", rate = Some(0))
+      val result = controller.rateByPageId(round.id.get, images.last.pageId, select = 5)
         .apply(voteRequest(s"/large/round/${round.id.get}/pageid/${images.last.pageId}/select/5?rate=0"))
         .run()
 
       status(result) mustEqual SEE_OTHER
-      redirectLocation(result) must beSome.which(_ === s"/large/round/${round.id.get}/user/${user.id.get}/pageid/${images.head.pageId}?rate=0")
+      redirectLocation(result) must beSome.which(_ === s"/large/round/${round.id.get}/user/${user.id.get}/pageid/${images.head.pageId}?filter=unrated&sort=rate")
     }
   }
 
@@ -398,12 +398,12 @@ class LargeImageSpec extends PlaySpecification with PlayTestDb {
       val pageId = images(7).pageId
       val nextPageId = images(8).pageId
 
-      val result = controller.rateByPageId(round.id.get, pageId, select = 5, module = "gallery", rate = Some(0))
+      val result = controller.rateByPageId(round.id.get, pageId, select = 5)
         .apply(voteRequest(s"/large/round/${round.id.get}/pageid/$pageId/select/5?rate=0"))
         .run()
 
       status(result) mustEqual SEE_OTHER
-      redirectLocation(result) must beSome.which(_ === s"/large/round/${round.id.get}/user/${user.id.get}/pageid/$nextPageId?rate=0")
+      redirectLocation(result) must beSome.which(_ === s"/large/round/${round.id.get}/user/${user.id.get}/pageid/$nextPageId?filter=unrated&sort=rate")
     }
   }
 
@@ -444,7 +444,7 @@ class LargeImageSpec extends PlaySpecification with PlayTestDb {
         val appController = new LargeViewController(app.injector.instanceOf[play.api.mvc.ControllerComponents], galleryService)
 
         forall(Seq(0L, round.getId)) { roundId =>
-          val result = call(appController.large(user.getId, mine.pageId, "all", roundId, None, "gallery"),
+          val result = call(appController.large(user.getId, mine.pageId, "all", roundId),
             viewRequest(roundId, mine.pageId))
           status(result) === OK
           val page = contentAsString(result)
@@ -461,7 +461,7 @@ class LargeImageSpec extends PlaySpecification with PlayTestDb {
         DB.autoCommit { implicit s => sql"DELETE FROM criteria_rate".update() }
         val appController = new LargeViewController(app.injector.instanceOf[play.api.mvc.ControllerComponents], galleryService)
 
-        val result = call(appController.large(user.getId, mine.pageId, "all", 0L, None, "gallery"),
+        val result = call(appController.large(user.getId, mine.pageId, "all", 0L),
           viewRequest(0L, mine.pageId))
         status(result) === OK
         contentAsString(result) must not(contain("Науковість"))
@@ -473,7 +473,7 @@ class LargeImageSpec extends PlaySpecification with PlayTestDb {
         implicit val materializer: Materializer = app.materializer
         val (mine, _, _) = setUpCriteria()
 
-        val result = controller.rateByPageId(round.getId, mine.pageId, select = 7, module = "gallery", criteria = Some(2))
+        val result = controller.rateByPageId(round.getId, mine.pageId, select = 7, criteria = Some(2))
           .apply(voteRequest(s"/large/round/${round.getId}/pageid/${mine.pageId}/select/7?criteria=2"))
           .run()
 
@@ -487,7 +487,7 @@ class LargeImageSpec extends PlaySpecification with PlayTestDb {
         implicit val materializer: Materializer = app.materializer
         val (_, others, other) = setUpCriteria()
 
-        val result = controller.rateByPageId(round.getId, others.pageId, select = 1, module = "gallery", criteria = Some(1))
+        val result = controller.rateByPageId(round.getId, others.pageId, select = 1, criteria = Some(1))
           .apply(voteRequest(s"/large/round/${round.getId}/pageid/${others.pageId}/select/1?criteria=1"))
           .run()
 
@@ -502,7 +502,7 @@ class LargeImageSpec extends PlaySpecification with PlayTestDb {
         implicit val materializer: Materializer = app.materializer
         val (mine, _, _) = setUpCriteria()
 
-        val result = controller.rateByPageId(0L, mine.pageId, select = 7, module = "gallery", criteria = Some(1))
+        val result = controller.rateByPageId(0L, mine.pageId, select = 7, criteria = Some(1))
           .apply(voteRequest(s"/large/round/0/pageid/${mine.pageId}/select/7?criteria=1"))
           .run()
 
@@ -543,7 +543,7 @@ class LargeImageSpec extends PlaySpecification with PlayTestDb {
         .withSession(Secured.UserName -> email)
         .withHeaders("Accept" -> (if (json) "application/json" else "text/html"))
         .withCSRFToken
-      call(appController(app).large(asUserId, pageId, "all", roundId, None, "gallery"), req)
+      call(appController(app).large(asUserId, pageId, "all", roundId), req)
     }
 
     // the app's components, for the pages' messages
@@ -597,7 +597,7 @@ class LargeImageSpec extends PlaySpecification with PlayTestDb {
         val gallery = new GalleryController(galleryService, Helpers.stubControllerComponents(),
           new modules.BlockingExecutionContext(app.actorSystem))
 
-        val galleryStatus = status(call(gallery.list(juror1.getId, 1, "all", roundA.getId, None),
+        val galleryStatus = status(call(gallery.list(juror1.getId, 1, "all", roundA.getId),
           FakeRequest(GET, s"/gallery/round/${roundA.getId}/user/${juror1.getId}/page/1")
             .withSession(Secured.UserName -> juror2.email).withCSRFToken))
         val largeStatus = status(large(app, juror2.email, roundA.getId, juror1.getId, images.head.pageId))
@@ -626,10 +626,10 @@ class LargeImageSpec extends PlaySpecification with PlayTestDb {
         val idle = userDao.create(User("Idle", "idle@example.com", None, Set("jury"), contestId = contestC.id))
         val req = FakeRequest(GET, s"/large/user/${idle.getId}/pageid/1").withSession(Secured.UserName -> idle.email)
 
-        val result = call(appController(app).large(idle.getId, 1L, "all", 0L, None, "gallery"), req)
+        val result = call(appController(app).large(idle.getId, 1L, "all", 0L), req)
         status(result) === OK
         contentAsString(result) must contain("No round configured yet.")
-        status(call(appController(app).largeCurrentUser(1L, "all", None, "gallery"),
+        status(call(appController(app).largeCurrentUser(1L, "all"),
           FakeRequest(GET, "/large/pageid/1").withSession(Secured.UserName -> idle.email))) === OK
       }
     }
@@ -703,7 +703,7 @@ class LargeImageSpec extends PlaySpecification with PlayTestDb {
 
         val result = send(app, POST, "csrfToken" -> token)
         status(result) === SEE_OTHER
-        redirectLocation(result) === Some(s"/large/round/${round.getId}/user/${user.getId}/pageid/${images.last.pageId}?rate=0")
+        redirectLocation(result) === Some(s"/large/round/${round.getId}/user/${user.getId}/pageid/${images.last.pageId}?filter=unrated&sort=rate")
         rate() === Some(5)
       }
     }

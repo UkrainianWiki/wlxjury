@@ -4,9 +4,9 @@ import db.scalikejdbc._
 import org.intracer.wmua._
 import org.specs2.mutable.Specification
 import org.specs2.specification.{BeforeAll, BeforeEach}
-import services.GalleryService
 
-class GalleryServiceSpec extends Specification with TestDb with BeforeAll with BeforeEach {
+/** [[RoundList]]'s files, as a round's galleries list them. */
+class RoundListDbSpec extends Specification with TestDb with BeforeAll with BeforeEach {
 
   sequential
 
@@ -26,6 +26,11 @@ class GalleryServiceSpec extends Specification with TestDb with BeforeAll with B
     )
     (contest, round, user)
   }
+
+  /** The list's first page; all of it for a file list. */
+  private def files(round: Round, asUserId: Long, filter: VoteFilter = VoteFilter.All,
+                    view: GalleryView = GalleryView.Gallery): Seq[ImageWithRating] =
+    RoundList(round, asUserId, filter = filter, view = view).files(Pager(1, 0))
 
   private def createImages(number: Long, startId: Long = 0): Seq[Image] = {
     val images = (startId until number + startId).map(contestImage)
@@ -50,7 +55,7 @@ class GalleryServiceSpec extends Specification with TestDb with BeforeAll with B
       val images = createImages(6)
       createSelection(images.slice(0, 3), 0, user, round)
 
-      val result = new GalleryService().getSortedImages(user.getId, None, round.id, "gallery")
+      val result = files(round, user.getId)
 
       result.size === 3
       result.map(_.image) === images.slice(0, 3)
@@ -70,7 +75,7 @@ class GalleryServiceSpec extends Specification with TestDb with BeforeAll with B
       }
 
       for (rate <- -1 to 1) yield {
-        val result = new GalleryService().getSortedImages(user.getId, Some(rate), round.id, "gallery")
+        val result = files(round, user.getId, VoteFilter.ofRate(rate))
 
         result.size === 2
         result.map(_.image) === slice(rate)
@@ -90,7 +95,7 @@ class GalleryServiceSpec extends Specification with TestDb with BeforeAll with B
         createSelection(slice(rate), rate, user, round)
       }
 
-      val result = new GalleryService().getSortedImages(user.getId, None, round.id, "gallery")
+      val result = files(round, user.getId)
 
       result.size === 6
       result.map(_.image) === slice(1) ++ slice(0) ++ slice(-1)
@@ -107,7 +112,7 @@ class GalleryServiceSpec extends Specification with TestDb with BeforeAll with B
       }
       selectionDao.batchInsert(selections)
 
-      val result = new GalleryService().getSortedImages(user.getId, None, round.id, "gallery")
+      val result = files(round, user.getId)
 
       result.size === 6
       result.map(_.image) === images.reverse
@@ -133,7 +138,7 @@ class GalleryServiceSpec extends Specification with TestDb with BeforeAll with B
       val selectedByX = (0 to 3).flatMap(x => selectedBy(x, images(x)))
       selectionDao.batchInsert(selectedByX)
 
-      val result = new GalleryService().getSortedImages(0, None, round.id, "gallery")
+      val result = files(round, 0)
 
       result.size === 4
       result.map(_.image) === Seq(images(3), images(2), images(1), images(0))
@@ -159,7 +164,7 @@ class GalleryServiceSpec extends Specification with TestDb with BeforeAll with B
           rateN(1, Seq(0, 0, 0))
       selectionDao.batchInsert(selections)
 
-      val result = new GalleryService().getSortedImages(0, None, round.id, "filelist")
+      val result = files(round, 0, view = GalleryView.FileList)
 
       result.size === 2
       result.map(_.image) === Seq(images(0), images(1))
@@ -183,7 +188,7 @@ class GalleryServiceSpec extends Specification with TestDb with BeforeAll with B
       val selectedByX = (0 to 3).flatMap(x => selectedBy(x, images(x)))
       selectionDao.batchInsert(selectedByX)
 
-      val result = new GalleryService().getSortedImages(0, None, round.id, "filelist")
+      val result = files(round, 0, view = GalleryView.FileList)
 
       result.size === 4
       result.map(_.image) === Seq(images(3), images(2), images(1), images(0))

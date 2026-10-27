@@ -6,14 +6,38 @@
         asUserId: Long = 0,
         selectedRound: Option[Round],
         rounds: Seq[Round] = Seq.empty,
-        gallery: Boolean = false,
-        rate: Option[Int] = None,
-        region: String = "all",
-        //        menu: Html = Html.empty,
+        list: Option[RoundList] = None,
         pager: Html = Html(""),
         contestId: Option[Long] = None,
-        rates: RateDistribution = new RateDistribution(Map.empty),
-        rated: Option[Boolean] = None)(implicit messages: Messages, request: RequestHeader)
+        rates: RateDistribution = new RateDistribution(Map.empty))(implicit messages: Messages, request: RequestHeader)
+
+@* The list's first page as the viewer's own, in all regions, in a view and by a filter *@
+@ownTab(l: RoundList, view: GalleryView, filter: VoteFilter) = @{
+    l.withViewer(user.getId).withRegion("all").withView(view).withFilter(filter).pageUrl(1)
+}
+
+@* The rounds the viewer may see, each opening the list in it *@
+@roundMenu(l: RoundList) = {
+    @(new UiSelectionDto[Long](
+        (roundId: Long) => Call("GET", rounds.find(_.getId == roundId).fold("#")(r => l.withRound(r).pageUrl(1))),
+        l.roundId,
+        rounds.map(r => (r.getId, SelectionItem(r.description, localized = false)))
+    ).toDropDown())
+}
+
+@* A rated round's tabs: the unrated files, and all the viewer's own by rate *@
+@ratedRoundTabs(l: RoundList) = {
+    @if(rates.unrated > 0) {
+        <li role="presentation" class="@if(l.filter == VoteFilter.Unrated) {active}">
+            <a href="@l.withRegion("all").withView(GalleryView.Gallery).withFilter(VoteFilter.Unrated).pageUrl(1)">@Messages("unrated")
+                (@rates.unrated)
+            </a>
+    }
+    <li role="presentation" class="@if(l.filter != VoteFilter.Unrated && l.asUserId == user.getId) {active}">
+        <a href="@ownTab(l, GalleryView.ByRate, VoteFilter.All)">@Messages("rated")
+            (@rates.rated)
+        </a>
+}
 
 <!-- Navigation bar on the top of the page -->
 <nav class="navbar navbar-inverse" role="navigation" style="margin-bottom: 10px;">
@@ -53,6 +77,8 @@
                     }
 
                     @for(round <- selectedRound.toSeq) {
+                    @* the list the page shows; on another page, the round's gallery as the viewer's *@
+                    @defining(list.getOrElse(RoundList(round, asUserId))) { l =>
 
                         @if(!(user.canViewOrgInfo(round) || rounds.size > 1)) {
                             <li class="navbar-brand" style="margin-left: 10px">@Messages(round.description)</li>
@@ -64,13 +90,7 @@
                             <!-- Show rounds dropdown -->
                         @if(user.canViewOrgInfo(round) || (rounds.size > 1)) {
                             <li role="presentation" class="brand" style="margin-left: 10px">
-                            @(new UiSelectionDto[Long](
-                                itemUrlFunction = (roundId: Long) => routes.GalleryController.query(module = title, Some(asUserId), page = 1, region = region, roundId, rate),
-                                selectedItemId = selectedRound.flatMap(_.id).get,
-                                items = rounds.map {
-                                        r => (r.getId, SelectionItem(r.description, localized = false))
-                                    }
-                            ).toDropDown())
+                            @roundMenu(l)
                             </li>
                         }
 
@@ -78,38 +98,24 @@
                                 If binary round show unrated, selected, rejected tabs
                             -->
                         @if(round.isBinary) {
-                            @defining(selectedRound.flatMap(_.id) == round.id) { isActive =>
 
-                                <li role="presentation" class="@if(rate.contains(0) && isActive) {active}">
-                                    <a href="/gallery/round/@round.getId/user/@user.getId/page/1@rateParam(Some(0))">
+                                <li role="presentation" class="@if(l.filter == VoteFilter.Unrated) {active}">
+                                    <a href="@ownTab(l, GalleryView.Gallery, VoteFilter.Unrated)">
                                         @Messages("unrated") (@rates.unrated)
                                     </a>
 
-                            <li role="presentation" class="@if(rate.contains(1) && isActive) {active active-}selected">
-                                <a href="/gallery/round/@round.getId/user/@user.getId/page/1@rateParam(Some(1))">
+                            <li role="presentation" class="@if(l.filter == VoteFilter.Rate(1)) {active active-}selected">
+                                <a href="@ownTab(l, GalleryView.Gallery, VoteFilter.Rate(1))">
                                     @Messages("selected") (@rates.selected)
                                 </a>
 
-                                <li role="presentation" class="@if(rate.contains(-1) && isActive) {active active-}rejected">
-                                    <a href="/gallery/round/@round.getId/user/@user.getId/page/1@rateParam(Some(-1))">
+                                <li role="presentation" class="@if(l.filter == VoteFilter.Rate(-1)) {active active-}rejected">
+                                    <a href="@ownTab(l, GalleryView.Gallery, VoteFilter.Rate(-1))">
                                         @Messages("rejected") (@rates.rejected)
                                     </a>
-                            }
                         } else {
                                 <!-- Rating round -->
-
-                            @defining(selectedRound.flatMap(_.id) == round.id) { isActive =>
-                                @if(rates.unrated > 0) {
-                                    <li role="presentation" class="@if(rate.contains(0) && isActive) {active}">
-                                        <a href="/gallery/round/@round.getId/user/@asUserId/page/1@rateParam(Some(0))">@Messages("unrated")
-                                            (@rates.unrated)
-                                        </a>
-                                }
-                            <li role="presentation" class="@if(!rate.contains(0) && isActive && asUserId == user.getId) {active}">
-                                <a href="/byrate/round/@round.getId/user/@user.getId/page/1">@Messages("rated")
-                                    (@rates.rated)
-                            </a>
-                            }
+                            @ratedRoundTabs(l)
                         }
                     }
 
@@ -117,72 +123,48 @@
                                 <!-- Select round -->
 
                             <li role="presentation" class="brand" >
-                            @(new UiSelectionDto[Long](
-                                { roundId: Long => routes.GalleryController.query(module = title, Some(asUserId), page = 1, region = region, roundId, rate) },
-                                round.getId,
-                                rounds.map(r => (r.getId, SelectionItem(r.description, localized = false)))
-                            ).toDropDown())
+                            @roundMenu(l)
                             </li>
 
                                 <!-- Select user -->
 
                             <li role="presentation">
-                            @(new UiSelectionDto[Option[Long]](
-                                { userId: Option[Long] => routes.GalleryController.query(module = title, userId, page = 1, region = region, round = round.getId, rate) },
-                                Some(asUserId),
-                                User.findRoundJurorsToView(round.getId).map(u => (Some(u.getId), SelectionItem(u.fullname, localized = false))),
-                                Some(Some(0L) -> SelectionItem("all"))
+                            @(new UiSelectionDto[Long](
+                                { userId: Long => Call("GET", l.withViewer(userId).pageUrl(1)) },
+                                asUserId,
+                                User.findRoundJurorsToView(round.getId).map(u => (u.getId, SelectionItem(u.fullname, localized = false))),
+                                Some(0L -> SelectionItem("all"))
                             ).toDropDown())
 
-                            @if(round.isBinary) {
-                                @(new UiSelectionDto[Option[Int]](
-                                    routes.GalleryController.query(module = title, user = Some(asUserId), page = 1, region = region, round = round.getId, _),
-                                    rate,
-                                    Seq(
-                                        Some(1) -> SelectionItem("selected"),
-                                        Some(0) -> SelectionItem("unrated"),
-                                        Some(-1) -> SelectionItem("rejected")
-                                    ),
-                                    Some(None -> SelectionItem("all"))
-                                ).toDropDown())
-                            } else {
-                                @(new UiSelectionDto[Option[Boolean]](
-                                    routes.GalleryController.query(module = title, user = Some(asUserId), page = 1, region = region, round = round.getId, None, _),
-                                    rated,
-                                    Seq(
-                                        Some(true) -> SelectionItem("rated"),
-                                        Some(false) -> SelectionItem("unrated")
-                                    ),
-                                    Some(None -> SelectionItem("all"))
-                                ).toDropDown())
-                            }
-                            @if(rates.unrated > 0) {
-                                <li role="presentation" class="@if(rate.contains(0)) {active}">
-                                    <a href="/gallery/round/@round.getId/user/@asUserId/page/1@rateParam(Some(0))">@Messages("unrated")
-                                        (@rates.unrated)
-                                    </a>
+                            @(new UiSelectionDto[VoteFilter](
+                                { filter: VoteFilter => Call("GET", l.withFilter(filter).pageUrl(1)) },
+                                l.filter,
+                                if (round.isBinary) Seq(
+                                    VoteFilter.Rate(1) -> SelectionItem("selected"),
+                                    VoteFilter.Unrated -> SelectionItem("unrated"),
+                                    VoteFilter.Rate(-1) -> SelectionItem("rejected")
+                                ) else Seq(
+                                    VoteFilter.Rated -> SelectionItem("rated"),
+                                    VoteFilter.Unrated -> SelectionItem("unrated")
+                                ),
+                                Some(VoteFilter.All -> SelectionItem("all"))
+                            ).toDropDown())
 
-                            <li role="presentation" class="@if(!rate.contains(0) && asUserId == user.getId) {active}">
-                                <a href="/byrate/round/@round.getId/user/@user.getId/page/1">@Messages("rated")
-                                    (@rates.rated)
-                                </a>
-                            }
+                            @ratedRoundTabs(l)
 
-                            @(new UiSelectionDto[String](
-                                { module: String =>
-                                    routes.GalleryController.query(module, Some(asUserId), page = 1, region = region, round = round.getId, rate = rate)
-                                },
-                                title,
+                            @(new UiSelectionDto[GalleryView](
+                                { view: GalleryView => Call("GET", l.withView(view).pageUrl(1)) },
+                                l.view,
                                 Seq(
-                                    /*"gallerylarge" -> SelectionItem("large.thumbnails",Some("icon-th-large")),*/
-                                    "gallery" -> SelectionItem("gallery", Some("glyphicon glyphicon-th")),
-                                    "byrate" -> SelectionItem("byrate", Some("glyphicon glyphicon-signal")),
-                                    "filelist" -> SelectionItem("file.list", Some("glyphicon glyphicon-align-justify")),
-                                    "csv" -> SelectionItem("csv", Some("fa fa-file-text-o"))
+                                    GalleryView.Gallery -> SelectionItem("gallery", Some("glyphicon glyphicon-th")),
+                                    GalleryView.ByRate -> SelectionItem("byrate", Some("glyphicon glyphicon-signal")),
+                                    GalleryView.FileList -> SelectionItem("file.list", Some("glyphicon glyphicon-align-justify")),
+                                    GalleryView.Csv -> SelectionItem("csv", Some("fa fa-file-text-o"))
                                 )
                             ).toDropDown(iconOnly = true))
                         </li>
                         }
+                    }
                     }
                 } else {
                     <a class="brand" href="#">@Messages("application.name")</a>

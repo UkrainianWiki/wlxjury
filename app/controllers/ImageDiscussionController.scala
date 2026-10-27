@@ -29,8 +29,6 @@ class ImageDiscussionController @Inject()(cc: ControllerComponents, galleryServi
     */
   def addComment(pageId: Long,
                  region: String = "all",
-                 rate: Option[Int],
-                 module: String,
                  round: Option[Long],
                  contestId: Option[Long]): EssentialAction = withAuth() {
     sessionUser => implicit request =>
@@ -43,7 +41,7 @@ class ImageDiscussionController @Inject()(cc: ControllerComponents, galleryServi
           val user = Secured.inContest(sessionUser, targetRound.contestId)
           if (!mayComment(user, targetRound, pageId, commenterRoles))
             onUnAuthorized(user, request, Secured.Denial.round(targetRound, commenterRoles))
-          else addCommentTo(user, targetRound, pageId, region, rate, module)
+          else addCommentTo(user, targetRound, pageId, region)
         }
   }
 
@@ -56,16 +54,17 @@ class ImageDiscussionController @Inject()(cc: ControllerComponents, galleryServi
       galleryService.mayViewRound(user, round) &&
       SelectionJdbc.inRound(round.getId, pageId, Option.unless(user.canViewOrgInfo(round))(user.getId))
 
-  private def addCommentTo(user: User, targetRound: Round, pageId: Long, region: String, rate: Option[Int],
-                           module: String)(implicit request: Request[AnyContent]): Result = {
+  /** Adds the comment, then goes back to the file's large view in the user's list it was
+    * made in ([[RoundList.commentUrl]]).
+    */
+  private def addCommentTo(user: User, targetRound: Round, pageId: Long, region: String)(implicit
+      request: Request[AnyContent]
+  ): Result = {
     val roundId = targetRound.getId
+    val list = RoundList.of(targetRound, user.getId, region, GalleryView.of(request))
 
     editCommentForm.bindFromRequest().fold(
-      _ =>
-        Redirect(
-          routes.LargeViewController
-            .large(user.getId, pageId, region, roundId, rate, module)
-        ),
+      _ => Redirect(list.largeUrl(pageId)),
       commentBody => {
         CommentJdbc.create(
           user.getId,
@@ -75,12 +74,7 @@ class ImageDiscussionController @Inject()(cc: ControllerComponents, galleryServi
           pageId,
           commentBody.text
         )
-        Redirect(
-          routes.LargeViewController
-            .large(user.getId, pageId, region, roundId, rate, module)
-            .url
-            .concat("#comments")
-        )
+        Redirect(list.largeUrl(pageId) + "#comments")
       }
     )
   }

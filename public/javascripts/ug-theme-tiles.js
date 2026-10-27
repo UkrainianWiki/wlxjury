@@ -180,12 +180,8 @@ function UGTheme_tiles(){
 		
 		var objItem = g_objTileDesign.getItemByTile(objTile);
 
-		var rate = objItem.rate;
-		//a round's tile opens the large view with its rate; a contest file's (no data-rate),
-		//its large view's url as it is, with the list's filters
-		var url = (rate === undefined) ? objItem.largeUrl : objItem.largeUrl.split('?')[0] + '?rate=' + rate;
-
-		window.open(url, "_self");
+		//the tile's large view in the gallery's list (its filter and order), as the page has it
+		window.open(objItem.largeUrl, "_self");
 	}
 
 	/**

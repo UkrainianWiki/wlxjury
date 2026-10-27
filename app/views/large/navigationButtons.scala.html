@@ -1,77 +1,45 @@
-@import db.scalikejdbc.Round
 @import org.intracer.wmua.ImageWithRating
 @import db.scalikejdbc.User
 @(
         user: User,
-        asUserId: Long,
+        list: RoundList,
         files: Seq[ImageWithRating],
-        index: Int,
-        page: Int,
-        rate: Option[Int],
-        region: String = "all",
-        round: Round,
-        module : String = "gallery")(
+        index: Int)(
         implicit flash: Flash, request: Request[Any], messages: Messages)
 
-@button(btnClass: String, iconClass: String) = {
-    <button type="button" class="btn btn-default btn-sm active @btnClass">
-        <span class="glyphicon glyphicon-@iconClass" aria-hidden="true"></span>
-    </button>
-    }
+@round = @{ list.round }
 
-@buttonWithImage(btnClass: String, image:String) = { <div class="@btnClass"><img src="@routes.Assets.at(s"images/$image")"></div> }
-
-@optionalButton(condition: () => Boolean, link: ()=> String, icon: String, clazz: String, title: String = "") = {
-    @if(condition()) {
-        <a role="button" class="btn btn-default btn-sm active @clazz" href="@link.apply()" title="@Html(title)">
-            <span class="glyphicon glyphicon-@icon" aria-hidden="true"></span>
-        </a>
-    } else {
-        <a role="button" class="btn btn-default btn-sm active disabled @clazz" href="#" title="@Html(title)">
-            <span class="glyphicon glyphicon-@icon" aria-hidden="true"></span>
-        </a>
-    }
+@optionalButton(url: Option[String], icon: String, title: String) = {
+    <a role="button" class="btn btn-default btn-sm active@if(url.isEmpty) { disabled}" href="@url.getOrElse("#")" title="@Html(title)">
+        <span class="glyphicon glyphicon-@icon" aria-hidden="true"></span>
+    </a>
 }
 
 @buttonGallery() = {
-    <a role="button" class="btn btn-default btn-sm active" href="/@module/round/@round.id/user/@asUserId/region/@region/pageid/@files(index).pageId@rateParam(rate)#@files(index).pageId" title="@Messages("back.to.gallery") &lt;Esc&gt;">
+    <a role="button" class="btn btn-default btn-sm active" href="@list.atUrl(files(index).pageId)" title="@Messages("back.to.gallery") &lt;Esc&gt;">
         <span class="glyphicon glyphicon-th" aria-hidden="true"></span>
     </a>
 }
 
 @buttonUp() = {
-    @optionalButton(() => index > 0,
-        () => routes.LargeViewController.large(asUserId, files(index-1).pageId, region, round.getId, rate, module).url,
-        "chevron-up", "", s"${Messages("previous.image")} &lt;${Messages("up.key")}&gt;")
+    @optionalButton(Option.when(index > 0)(list.largeUrl(files(index - 1).pageId)),
+        "chevron-up", s"${Messages("previous.image")} &lt;${Messages("up.key")}&gt;")
 }
 
 @buttonDown() = {
-    @optionalButton(() => index < files.size-1, () => routes.LargeViewController.large(asUserId, files(index+1).pageId, region, round.getId, rate, module).url,
-        "chevron-down", "", s"${Messages("next.image")} &lt;${Messages("down.key")}&gt;")
+    @optionalButton(Option.when(index < files.size - 1)(list.largeUrl(files(index + 1).pageId)),
+        "chevron-down", s"${Messages("next.image")} &lt;${Messages("down.key")}&gt;")
 }
 
 @buttonSelect() = {
     @if(files(index).rate <=0 ) {
-        <a role="button" class="btn btn-default btn-sm active btn-success" href="#" data-vote-url="/large/round/@round.getId/region/@region/pageid/@files(index).pageId/select/1@{rateParam(rate)}" title="@Messages("select.image") &lt;Space&gt;">
+        <a role="button" class="btn btn-default btn-sm active btn-success" href="#" data-vote-url="@list.voteUrl(files(index).pageId, 1)" title="@Messages("select.image") &lt;Space&gt;">
             <span class="glyphicon glyphicon-thumbs-up icon-white" aria-hidden="true"></span>
         </a>
     }
     @if(files(index).rate >=0 ) {
-        <a role="button" class="btn btn-default btn-sm active btn-danger" href="#" data-vote-url="/large/round/@round.getId/region/@region/pageid/@files(index).pageId/select/-1@{rateParam(rate)}" title="@Messages("reject.image") &lt;Delete&gt;">
+        <a role="button" class="btn btn-default btn-sm active btn-danger" href="#" data-vote-url="@list.voteUrl(files(index).pageId, -1)" title="@Messages("reject.image") &lt;Delete&gt;">
             <span class="glyphicon glyphicon-thumbs-down icon-white" aria-hidden="true"></span>
-        </a>
-    }
-}
-
-@buttonStar() = {
-    @if(files(index).rate <= 0 ) {
-        <a href="#" data-vote-url="/large/round/@round.getId/region/@region/pageid/@files(index).pageId/select/1@{rateParam(rate)}">
-        @buttonWithImage("btn btn-small", "star-off.png")
-        </a>
-    }
-    @if(files(index).rate > 0 ) {
-        <a href="#" data-vote-url="/large/round/@round.getId/region/@region/pageid/@files(index).pageId/select/0@{rateParam(rate)}">
-        @buttonWithImage("btn btn-small", "star-on.png")
         </a>
     }
 }
@@ -82,10 +50,8 @@
     @buttonDown()
 
     @if(round.isBinary) {
-        @if(user.getId == asUserId && round.active && user.roles.contains("jury")) {
+        @if(user.getId == list.asUserId && round.active && user.roles.contains("jury")) {
             @buttonSelect()
-        } else {
-                <!--  @buttonStar() -->
         }
     </div>
     } else {
@@ -97,7 +63,5 @@
        }
     } else if (round.rates.id > 0)  {
         <div id="rate-image" style="margin-top:10px ;"></div>
-            <!-- <input type="text" id="scoretarget"/> -->
     }
     }
-

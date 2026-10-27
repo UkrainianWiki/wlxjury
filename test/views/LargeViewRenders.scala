@@ -1,6 +1,6 @@
 package views
 
-import controllers.ContestFilesView
+import controllers.{ContestFilesView, GalleryView, RoundList, VoteFilter}
 import db.scalikejdbc.{ImageJdbc, Round, User}
 import org.intracer.wmua._
 import play.api.http.HeaderNames.HOST
@@ -81,19 +81,16 @@ object LargeViewRenders {
     implicit val msgs: Messages = messages
     implicit val flash: Flash = Flash()
     val byCriteria = if (round.hasCriteria) Map(1 -> 2, 2 -> 3) else Map.empty[Int, Int]
+    val list = RoundList(round, asUserId, filter = rate.fold[VoteFilter](VoteFilter.All)(VoteFilter.ofRate),
+      view = GalleryView.parse(module).get)
     views.html.large.large(
         user = user,
-        asUserId = asUserId,
+        list = list,
         files = fs,
         index = index,
         start = 0,
         end = fs.size,
-        page = 1,
-        rate = rate,
-        region = "all",
-        round = round,
         monument = None,
-        module = module,
         comments = Nil,
         selection = Nil,
         byCriteria = byCriteria

@@ -1,7 +1,7 @@
 package controllers
 
 import db.scalikejdbc.rewrite.ImageDbNew.Limit
-import db.scalikejdbc.{ContestJuryJdbc, MonumentJdbc, Round, SelectionJdbc, User}
+import db.scalikejdbc.{MonumentJdbc, Round, SelectionJdbc, User}
 import org.intracer.wmua._
 import play.api.i18n.I18nSupport
 import play.api.mvc.{ControllerComponents, EssentialAction, Request, Result}
@@ -22,38 +22,30 @@ class LargeViewController @Inject() (
   implicit val iwrWrites: OWrites[ImageWithRating] =
     Json.writes[ImageWithRating]
 
-  def large(
-      asUserId: Long,
-      pageId: Long,
-      region: String = "all",
-      roundId: Long,
-      rate: Option[Int],
-      module: String
-  ): EssentialAction = withAuth() { sessionUser => implicit request =>
-    val maybeRound =
-      if (roundId == 0) Round.activeRounds(sessionUser).headOption
-      else Round.findById(roundId)
-    // a round of another of the user's contests opens in that contest
-    val user = maybeRound.fold(sessionUser)(r => Secured.inContest(sessionUser, r.contestId))
-    Secured.switchingContest(sessionUser, user)(show(pageId, user, asUserId, rate, region, roundId, maybeRound, module))
-  }
+  def large(asUserId: Long, pageId: Long, region: String = "all", roundId: Long): EssentialAction =
+    withAuth() { sessionUser => implicit request =>
+      val maybeRound =
+        if (roundId == 0) Round.activeRounds(sessionUser).headOption
+        else Round.findById(roundId)
+      // a round of another of the user's contests opens in that contest
+      val user = maybeRound.fold(sessionUser)(r => Secured.inContest(sessionUser, r.contestId))
+      Secured.switchingContest(sessionUser, user)(show(pageId, user, asUserId, region, roundId, maybeRound))
+    }
 
-  def largeCurrentUser(
-      pageId: Long,
-      region: String = "all",
-      rate: Option[Int],
-      module: String
-  ): EssentialAction = withAuth() { user => implicit request =>
-    show(pageId, user, user.getId, rate, region, 0, Round.activeRounds(user).headOption, module)
-  }
+  def largeCurrentUser(pageId: Long, region: String = "all"): EssentialAction =
+    withAuth() { user => implicit request =>
+      show(pageId, user, user.getId, region, 0, Round.activeRounds(user).headOption)
+    }
 
+  /** A vote in the large view, going on in its list ([[RoundList.voteUrl]]): to the file after
+    * this one (before the vote), or the one before at the list's end; to the same file in a
+    * round with criteria.
+    */
   def rateByPageId(
       roundId: Long,
       pageId: Long,
       select: Int,
       region: String = "all",
-      rate: Option[Int] = None,
-      module: String,
       criteria: Option[Int] = None
   ): EssentialAction =
     withAuth(
@@ -62,15 +54,11 @@ class LargeViewController @Inject() (
         roundId
       )
     ) { user => implicit request =>
-    val roundOption = Round.findById(roundId).filter(_.openToJurors)
-
-    roundOption.fold(
-      Redirect(
-        routes.GalleryController.list(user.getId, 1, region, roundId, rate)
-      )
+    Round.findById(roundId).filter(_.openToJurors).fold(
+      Redirect(routes.GalleryController.list(user.getId, 1, region, roundId))
     ) { round =>
-      val result =
-        checkLargeIndex(user, rate, pageId, region, round, module)
+      val list = RoundList.of(round, user.getId, region, GalleryView.of(request))
+      val result = afterVote(list, pageId)
 
       criteria match {
         case None =>
@@ -91,50 +79,14 @@ class LargeViewController @Inject() (
     }
   }
 
-  def removeImage(
-      pageId: Long,
-      roundId: Long,
-      region: String = "all",
-      rate: Option[Int],
-      module: String
-  ): EssentialAction =
-    withAuth(roundPermission(User.ADMIN_ROLES, roundId)) { user => implicit request =>
-      // the permission found the round; a page saying so if it is gone since, not a server error
-      Round.findById(roundId).fold(
-        NotFound(views.html.errorPage(Some(user), "error.title", "error.round.not.found"))
-      ) { round =>
-        SelectionJdbc.removeImage(pageId, roundId)
-        checkLargeIndex(user, rate, pageId, region, round, module)
-      }
-    }
-
-  def checkLargeIndex(
-      asUser: User,
-      rate: Option[Int],
-      pageId: Long,
-      region: String,
-      round: Round,
-      module: String
-  ): Result = {
-
-    val subRegions = round.specialNomination.contains("Віа Регіа")
-    val query = galleryService.getQuery(
-      asUser.getId,
-      rate,
-      round.id,
-      regions = Set(region).filter(_ != "all"),
-      subRegions = subRegions
-    )
-
-    val rank = query.imageRank(pageId)
-
+  /** Where a vote for the file goes on to, found before the vote changes the list. */
+  private def afterVote(list: RoundList, pageId: Long): Result = {
+    val rank = list.query.imageRank(pageId)
     val offset = Math.max(0, rank - 3)
-
-    val files = query.copy(limit = Some(Limit(Some(5), Some(offset)))).list()
-
+    val files = list.query.copy(limit = Some(Limit(Some(5), Some(offset)))).list()
     val index = files.indexWhere(_.pageId == pageId)
 
-    val newIndex = if (!round.hasCriteria) {
+    val newIndex = if (!list.round.hasCriteria) {
       if (index >= files.size - 1)
         files.size - 2
       else index + 1
@@ -142,30 +94,8 @@ class LargeViewController @Inject() (
       index
     }
 
-    val newPageId =
-      if (newIndex < 0)
-        files.lastOption.fold(-1L)(_.pageId)
-      else files(newIndex).pageId
-
-    val roundId = round.getId
-
-    if (newIndex >= 0) {
-      Redirect(
-        routes.LargeViewController
-          .large(asUser.getId, newPageId, region, roundId, rate, module)
-      )
-    } else {
-
-      if (module == "gallery") {
-        Redirect(
-          routes.GalleryController.list(asUser.getId, 1, region, roundId, rate)
-        )
-      } else {
-        Redirect(
-          routes.GalleryController.byRate(asUser.getId, 1, region, roundId)
-        )
-      }
-    }
+    if (newIndex >= 0) Redirect(list.largeUrl(files(newIndex).pageId))
+    else Redirect(list.pageUrl(1))
   }
 
   /** The large view of a round's file, by the round gallery's rules: the round must exist
@@ -176,11 +106,9 @@ class LargeViewController @Inject() (
       pageId: Long,
       user: User,
       asUserId: Long,
-      rate: Option[Int],
       region: String,
       roundId: Long,
-      maybeRound: Option[Round],
-      module: String
+      maybeRound: Option[Round]
   )(implicit request: Request[Any]): Result =
     maybeRound match {
       case None =>
@@ -207,48 +135,26 @@ class LargeViewController @Inject() (
               case Accepts.Json() => viewAsRefused(user, round, refusal, json = true)
             }
           case _ =>
-            showRound(pageId, user, asUserId, rate, region, roundId, round, module)
+            showRound(pageId, user, RoundList.of(round, asUserId, region, GalleryView.of(request)))
         }
     }
 
-  private def showRound(
-      pageId: Long,
-      user: User,
-      asUserId: Long,
-      rate: Option[Int],
-      region: String,
-      roundId: Long,
-      round: Round,
-      module: String
-  )(implicit request: Request[Any]): Result = {
-    val subRegions = round.specialNomination.contains("Віа Регіа")
-    val query = galleryService.getQuery(
-      asUserId,
-      rate,
-      round.id,
-      regions = Set(region).filter(_ != "all"),
-      subRegions = subRegions,
-      withPageId = Some(pageId).filter(_ => round.hasCriteria)
-    )
+  private def showRound(pageId: Long, user: User, list: RoundList)(implicit request: Request[Any]): Result = {
+    val round = list.round
+    val asUserId = list.asUserId
+    val query = list.query.copy(withPageId = Some(pageId).filter(_ => round.hasCriteria))
     val rank = query.imageRank(pageId)
     val offset = Math.max(0, rank - 3)
     val files = query.copy(limit = Some(Limit(Some(5), Some(offset)))).list()
 
     val index = files.indexWhere(_.pageId == pageId)
     if (index < 0) {
-      return Redirect(if (files.nonEmpty) {
-        routes.LargeViewController
-          .large(asUserId, files.head.pageId, region, round.getId, rate, module)
-      } else {
-        routes.GalleryController.list(asUserId, 1, region, round.getId, rate)
-      })
+      return Redirect(files.headOption.fold(list.pageUrl(1))(file => list.largeUrl(file.pageId)))
     }
 
     val selection = if (user.canViewOrgInfo(round)) {
       SelectionJdbc.byRoundAndImageWithJury(round.getId, pageId)
     } else Seq.empty
-
-    val page = index / (Pager.pageSize + 1) + 1
 
     // the round's, also when it is the current one (roundId 0); none without a selection
     val byCriteria = if (round.hasCriteria && asUserId != 0) {
@@ -278,12 +184,7 @@ class LargeViewController @Inject() (
       index,
       files,
       user,
-      asUserId,
-      rate,
-      page,
-      round.copy(criteriaNames = criteriaNames),
-      region,
-      module,
+      list.withRound(round.copy(criteriaNames = criteriaNames)),
       selection,
       byCriteria
     )
@@ -293,12 +194,7 @@ class LargeViewController @Inject() (
       index: Int,
       files: Seq[ImageWithRating],
       user: User,
-      asUserId: Long,
-      rate: Option[Int],
-      page: Int,
-      round: Round,
-      region: String,
-      module: String,
+      list: RoundList,
       selection: Seq[(Selection, User)],
       byCriteria: Map[Int, Int] = Map.empty
   )(implicit request: Request[Any]): Result = {
@@ -312,24 +208,19 @@ class LargeViewController @Inject() (
     val monument = files(index).image.monumentId.flatMap(id => if (id.trim.nonEmpty) MonumentJdbc.find(id) else None)
 
     val comments =
-      CommentJdbc.findBySubjectAndContest(files(index).pageId, round.contestId)
+      CommentJdbc.findBySubjectAndContest(files(index).pageId, list.round.contestId)
 
     render {
       case Accepts.Html() =>
         Ok(
           views.html.large.large(
             user,
-            asUserId,
+            list,
             files,
             index,
             start,
             end,
-            page,
-            rate,
-            region,
-            round,
             monument,
-            module,
             comments,
             selection,
             byCriteria

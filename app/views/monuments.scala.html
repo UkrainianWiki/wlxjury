@@ -4,7 +4,7 @@
 @import java.net.URLEncoder
 @(monuments: Seq[Monument], region: String = "all")(implicit flash: Flash, messages: Messages, request: RequestHeader)
 
-@main("gallery", null, 0, None, Seq.empty, gallery = false, None, region, Html(""))  {
+@main("gallery", null, 0, None, Seq.empty, gallery = false)  {
 
     <script type="text/javascript" src="@routes.Assets.at("javascripts/bootstrap-multiselect.js")"></script>
     <link rel="stylesheet" href="@routes.Assets.at("stylesheets/bootstrap-multiselect.css")" type="text/css"/>
@@ -40,7 +40,7 @@
     </div>
 
     @if(false) {
-        @regionNav({ region: String => "/monuments/region/" + region}, null, region, Seq.empty)
+        @regionNav({ region: String => "/monuments/region/" + region}, region, Seq.empty)
     }
 
         <div class="row" >

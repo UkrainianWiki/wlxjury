@@ -4,28 +4,22 @@
 @import db.scalikejdbc.Round
 @(
         user: User,
-        asUserId: Long,
+        list: RoundList,
         pageFiles: Seq[ImageWithRating],
         pager: Pager,
-        round: Option[Round],
         rounds: Seq[Round],
-        rate: Option[Int],
-        region: String = "all",
         regions: Seq[Region],
-        rates: RateDistribution,
-        rated: Option[Boolean] = None)(implicit flash: Flash, messages: Messages, request: RequestHeader)
+        rates: RateDistribution)(implicit flash: Flash, messages: Messages, request: RequestHeader)
 
 @import java.net.URLEncoder
 
-    @main("gallery", user, asUserId, round, rounds, gallery = true, rate, region,
-        pagerView(asUserId, pager, rate, round.flatMap(_.id), region), rates = rates) {
+    @main("gallery", user, list.asUserId, Some(list.round), rounds, gallery = true, Some(list),
+        pagerNav(pager, list.pageUrl), rates = rates) {
 
-        @defining(round.flatMap(_.id).getOrElse(0L)) { roundId =>
+        @defining(list.roundId) { roundId =>
 
             @if(regions.nonEmpty) {
-                @regionNav((region: String) =>
-                                routes.GalleryController.query("gallery", Some(asUserId), 1, region, roundId, rate, rated).url,
-                            round, region, regions)
+                @regionNav((r: String) => list.withRegion(r).pageUrl(1), list.regionParam, regions)
             }
 
         @* a vote on a tile (ug-theme-tiles.js) sends the session's CSRF token as the Csrf-Token header
@@ -53,7 +47,7 @@
                         data-pageId="@file.pageId"
                         data-roundId="@roundId"
                         data-rate="@file.rate"
-                        data-largeUrl="/large/round/@roundId/user/@asUserId/region/@region/pageid/@file.pageId@rateParam(rate)"
+                        data-largeUrl="@list.largeUrl(file.pageId)"
                         >
                     }
             </div>

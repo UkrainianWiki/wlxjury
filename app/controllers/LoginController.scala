@@ -33,9 +33,7 @@ class LoginController @Inject() (
             Ok(views.html.errorPage(Some(u), "error.title", "no.round.yet"))
           } { round =>
             if (round.isBinary) {
-              Redirect(
-                routes.GalleryController.list(u.getId, 1, "all", round.getId, rate = Some(0))
-              )
+              Redirect(RoundList(round, u.getId, filter = VoteFilter.Unrated).pageUrl(1))
             } else {
               Redirect(routes.GalleryController.byRate(u.getId, 0, "all", 0))
             }

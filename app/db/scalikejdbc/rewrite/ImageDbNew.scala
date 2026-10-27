@@ -23,8 +23,7 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
 
   case class Limit(
       pageSize: Option[Int] = None,
-      offset: Option[Int] = None,
-      startPageId: Option[Long] = None
+      offset: Option[Int] = None
   )
 
   case class SelectionQuery(
@@ -36,7 +35,7 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
       limit: Option[Limit] = None,
       grouped: Boolean = false,
       groupWithDetails: Boolean = false,
-      order: Map[String, Int] = Map.empty,
+      order: Seq[(String, Int)] = Seq.empty,
       subRegions: Boolean = false,
       withPageId: Option[Long] = None,
       driver: String = "mysql"
@@ -135,7 +134,7 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
       * joined rows, images' TEXT columns included, into an on-disk temporary table.
       */
     private def deferredJoinPage(columnsStr: String): SQLSyntax = {
-      val keys = order.toSeq.zipWithIndex.map { case ((name, dir), n) => (name, s"o$n", dir) }
+      val keys = order.zipWithIndex.map { case ((name, dir), n) => (name, s"o$n", dir) }
       val keyColumns = SQLSyntax.createUnsafely(keys.map { case (name, alias, _) => s", $name as $alias" }.mkString)
       val innerOrder = SQLSyntax.createUnsafely(orderBy())
       val outerOrder = SQLSyntax.createUnsafely(orderSql(keys.map { case (_, alias, dir) => s"k.$alias" -> dir }))
@@ -261,7 +260,7 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
       }
     }
 
-    def orderBy(fields: Map[String, Int] = order): String = orderSql(fields.toSeq)
+    def orderBy(fields: Seq[(String, Int)] = order): String = orderSql(fields)
 
     private def orderSql(fields: Seq[(String, Int)]): String = {
       val dirMap = Map(1 -> "asc", -1 -> "desc")

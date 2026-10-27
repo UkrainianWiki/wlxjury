@@ -1,22 +1,18 @@
-@import db.scalikejdbc.Round
 @import org.intracer.wmua.ImageWithRating
 @import db.scalikejdbc.User
 
 @(user: User,
-  asUserId: Long,
+  list: RoundList,
   files: Seq[ImageWithRating],
-  index: Int,
-  page: Int,
-  rate: Option[Int],
-  region: String = "all",
-  round: Round,
-  module: String = "gallery")(implicit request: Request[Any], messages: Messages)
+  index: Int)(implicit request: Request[Any], messages: Messages)
 <script src="@routes.Assets.at("javascripts/jquery.hotkeys.js")"></script>
+@defining(list.round) { round =>
+@defining(files(index).pageId) { pageId =>
 <script>
     @if(index < files.size-1) {
     $(document).on('keydown', null, 'down', function (e) {
         e.preventDefault() ;
-        window.location = "@Html(routes.LargeViewController.large(asUserId, files(index + 1).pageId, region, round.getId, rate, module).url)";
+        window.location = "@Html(list.largeUrl(files(index + 1).pageId))";
         return false;
     });
     }
@@ -24,61 +20,53 @@
     @if(index > 0) {
     $(document).on('keydown', null, 'up', function (e) {
         e.preventDefault() ;
-        window.location = "@Html(routes.LargeViewController.large(asUserId, files(index - 1).pageId, region, round.getId, rate, module).url)";
+        window.location = "@Html(list.largeUrl(files(index - 1).pageId))";
         return false;
     });
     }
 
     $(document).on('keydown', null, 'esc', function (e) {
         e.preventDefault() ;
-        window.location = "/@module/round/@round.id/user/@asUserId/region/@region/pageid/@files(index).pageId@rateParam(rate)#@files(index).pageId";
+        window.location = "@Html(list.atUrl(pageId))";
         return false;
     });
 
     $(document).on('keydown', null, 'pagedown', function (e) {
         e.preventDefault() ;
-        @if(index < files.size-5) {
-        window.location = "@Html(routes.LargeViewController.large(asUserId, files(index + 5).pageId, region, round.getId, rate, module).url)";
-        } else {
-        window.location = "@Html(routes.LargeViewController.large(asUserId, files.last.pageId, region, round.getId, rate, module).url)";
-        }
+        window.location = "@Html(list.largeUrl(files(math.min(index + 5, files.size - 1)).pageId))";
         return false;
     });
     $(document).on('keydown', null, 'pageup', function (e) {
         e.preventDefault() ;
-        @if(index > 4) {
-        window.location = "@Html(routes.LargeViewController.large(asUserId, files(index - 5).pageId, region, round.getId, rate, module).url)";
-        } else {
-        window.location = "@Html(routes.LargeViewController.large(asUserId, files(0).pageId, region, round.getId, rate, module).url)";
-        }
+        window.location = "@Html(list.largeUrl(files(math.max(index - 5, 0)).pageId))";
         return false ;
     });
 
     $(document).on('keydown', null, 'home', function (e) {
         e.preventDefault() ;
-        window.location = "@Html(routes.LargeViewController.large(asUserId, files(0).pageId, region, round.getId, rate, module).url)";
+        window.location = "@Html(list.largeUrl(files(0).pageId))";
         return false ;
     });
 
     $(document).on('keydown', null, 'end', function (e) {
         e.preventDefault() ;
-        window.location = "@Html(routes.LargeViewController.large(asUserId, files.last.pageId, region, round.getId, rate, module).url)";
+        window.location = "@Html(list.largeUrl(files.last.pageId))";
         return false ;
     });
 
-    @if(user.getId == asUserId && round.active && user.roles.contains("jury")) {
+    @if(user.getId == list.asUserId && round.active && user.roles.contains("jury")) {
         @if(round.isBinary) {
             @if(files(index).rate <= 0) {
                 $(document).on('keydown', null, 'space', function (e) {
                     e.preventDefault() ;
-                    voteLarge("@Html(routes.LargeViewController.rateByPageId(round.getId, files(index).pageId, select = 1, region, rate, module).url)");
+                    voteLarge("@Html(list.voteUrl(pageId, 1))");
                     return false ;
                 });
             }
             @if(files(index).rate >= 0) {
                 $(document).on('keydown', null, 'del', function (e) {
                     e.preventDefault() ;
-                    voteLarge("@Html(routes.LargeViewController.rateByPageId(round.getId, files(index).pageId, select = -1, region, rate, module).url)");
+                    voteLarge("@Html(list.voteUrl(pageId, -1))");
                     return false ;
                 });
             }
@@ -86,10 +74,12 @@
             @for(i <- 0 to Math.min(round.rates.id, 9)) {
                 $(document).on('keydown', null, '@i', function (e) {
                     e.preventDefault() ;
-                    voteLarge("@Html(routes.LargeViewController.rateByPageId(round.getId, files(index).pageId, select = i, region, rate, module).url)");
+                    voteLarge("@Html(list.voteUrl(pageId, i))");
                     return false ;
                 });
             }
         }
     }
 </script>
+}
+}

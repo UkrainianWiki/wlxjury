@@ -3,19 +3,15 @@
 @import db.scalikejdbc.Round
 @import org.intracer.wmua.ImageWithRating
 @(user: db.scalikejdbc.User,
-        asUserId: Long,
+        list: RoundList,
         files: Seq[ImageWithRating],
         pager: Pager,
-        maybeRound: Option[Round],
         rounds: Seq[Round],
-        rate: Option[Int] = None,
-        region: String = "all",
         regions: Seq[Region],
-        rates: RateDistribution,
-        rated: Option[Boolean])(implicit flash: Flash, messages: Messages, request: RequestHeader)
+        rates: RateDistribution)(implicit flash: Flash, messages: Messages, request: RequestHeader)
 
     @showRateGalery(file: ImageWithRating, index: Int) = {
-    @defining(maybeRound.get) { round =>
+    @defining(list.round) { round =>
         @if(round.rates.id > 0) {
         <div style="margin-bottom: 10px;
             color: #ffffff;"> <b>@file.rankStr</b>
@@ -39,18 +35,12 @@
     }
     }
 
-    @main("byrate", user, asUserId, maybeRound, rounds, true, rate, region,
-        pagerView(asUserId, pager, rate, maybeRound.flatMap(_.id), region, "byrate"), rates, rated
-    ) {
+    @main("byrate", user, list.asUserId, Some(list.round), rounds, true, Some(list), pagerNav(pager, list.pageUrl), rates) {
 
-        @defining(maybeRound.get) { round =>
-            @defining(round.id.getOrElse(0)) { roundId =>
+        @defining(list.round) { round =>
 
                 @if(regions.nonEmpty) {
-                    @regionNav(
-                        (region: String) =>
-                            routes.GalleryController.query("byrate", Some(asUserId), 1, region, roundId.asInstanceOf[Long], rate, rated).url,
-                        maybeRound, region, regions)
+                    @regionNav((r: String) => list.withRegion(r).pageUrl(1), list.regionParam, regions)
                 }
 
             <div class="row" >
@@ -63,7 +53,7 @@
                             height: 1px"></h1>
 
                         <div class="thumb">
-                            <a href="@routes.LargeViewController.large(asUserId, file.pageId, region, round.getId, None, "byrate")" >
+                            <a href="@list.largeUrl(file.pageId)" >
                             @if(file.image.isImage) {
                                 <img class="cropped" alt="@file.title"
                                 src="@Global.resizeTo(file.image, Global.gallerySizeX, Global.gallerySizeY)"
@@ -85,6 +75,5 @@
 
             </ul>
             </div>
-            }
         }
     }

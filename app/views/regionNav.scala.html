@@ -1,7 +1,5 @@
 @import org.intracer.wmua.Region
-@import db.scalikejdbc.Round
 @(      regionToUrl: String => String,
-        round: Option[Round],
         selectedRegion: String = "all",
         regions: Seq[Region]
         )(implicit flash: Flash, messages: Messages)

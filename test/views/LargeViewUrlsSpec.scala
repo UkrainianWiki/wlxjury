@@ -32,7 +32,7 @@ class LargeViewUrlsSpec extends Specification {
       html: String
   ) {
     /** The votes, with a sample score for the stars'. */
-    def votes: Seq[String] = keyVotes ++ dataVoteUrls ++ ratyVotePrefixes.map(_ + "3?module=gallery")
+    def votes: Seq[String] = keyVotes ++ dataVoteUrls ++ ratyVotePrefixes.map(_ + "3?sort=rate")
   }
 
   private def captures(regex: String, text: String): Seq[String] =
@@ -116,12 +116,12 @@ class LargeViewUrlsSpec extends Specification {
         if (round.isBinary) {
           // Space to select an unselected file, Del to reject one not rejected
           val expected = (if (index == 0) Nil else Seq(1)) ++ (if (index == fileCount - 1) Nil else Seq(-1))
-          u.keyVotes must_== expected.map(s => s"/large/round/1/pageid/${pageIdAt(index)}/select/$s")
+          u.keyVotes must_== expected.map(s => s"/large/round/1/pageid/${pageIdAt(index)}/select/$s?sort=rate")
           u.dataVoteUrls must haveSize(expected.size)
         } else {
-          u.keyVotes must_== (0 to 5).map(s => s"/large/round/1/pageid/${pageIdAt(index)}/select/$s")
+          u.keyVotes must_== (0 to 5).map(s => s"/large/round/1/pageid/${pageIdAt(index)}/select/$s?sort=rate")
           u.ratyVotePrefixes must haveSize(if (round.hasCriteria) 3 else 1)
-          u.ratyVotePrefixes.head must_== s"/large/round/1/region/all/pageid/${pageIdAt(index)}/select/"
+          u.ratyVotePrefixes.head must_== s"/large/round/1/pageid/${pageIdAt(index)}/select/"
         }
       }
 
@@ -145,8 +145,22 @@ class LargeViewUrlsSpec extends Specification {
       val u = urls(large(ratedRound, middle, module = "byrate", rate = Some(1)))
       checkCommon(u, roundView = true)
       u.keyVotes must not(beEmpty)
-      u.keyVotes.forall(_.contains("module=byrate")) must beTrue
-      u.locations.filter(_.startsWith("/large/")).forall(_.contains("module=byrate")) must beTrue
+      u.keyVotes.forall(_.contains("module=byrate&filter=selected")) must beTrue
+      u.locations.filter(_.startsWith("/large/")).forall(_.contains("module=byrate&filter=selected")) must beTrue
+      // back to the gallery by rate, in the same list
+      u.locations.filter(_.startsWith("/byrate/")) must haveSize(1)
+      u.locations.filter(_.startsWith("/byrate/")).forall(_.contains("filter=selected")) must beTrue
+    }
+
+    "keep a rated round's Unrated tab in every link, which it lost before" in {
+      // the gallery's tile opened the large view without the filter, and Esc went back to all
+      // the files by rate (docs/plans/2026-10-27-gallery-position-and-sorting.md, A)
+      val u = urls(large(ratedRound, middle, rate = Some(0)))
+      val moves = u.locations ++ u.hrefs.collect { case (a, href) if isUpDownButton(a) => href }
+      moves must not(beEmpty)
+      moves.filterNot(_.contains("filter=unrated")) must beEmpty
+      u.keyVotes.filterNot(_.contains("filter=unrated")) must beEmpty
+      u.html must contain("/gallery/round/1/user/1/region/all/pageid/107?filter=unrated&amp;sort=rate#107")
     }
 
     "link the previous and next files by paths, not http:// URLs" in {
