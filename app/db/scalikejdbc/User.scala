@@ -80,11 +80,14 @@ case class User(
   def canManageContestFiles(refContestId: Long): Boolean =
     hasContestRole(User.ADMIN_ROLES, Some(refContestId))
 
+  /** Whether the user may see the round's organizer views (its statistics, the jurors'
+    * votes): root, or in the round's contest an admin or organizer, or a juror when the
+    * round lets its jurors see them ([[Round.juryOrgView]]).
+    */
   def canViewOrgInfo(round: Round): Boolean =
-    hasRole("root") ||
-      (contestId.contains(round.contestId) &&
-        hasAnyRole(Set("organizer", "admin", "root")) ||
-        (roles.contains("jury") && round.juryOrgView))
+    hasRole(User.ROOT_ROLE) ||
+      contestId.contains(round.contestId) &&
+      (hasAnyRole(User.ADMIN_ROLES ++ User.ORG_COM_ROLES) || hasRole(User.JURY_ROLE) && round.juryOrgView)
 
   def description: String =
     Seq(fullname, wikiAccount.fold("")(u => "User:" + u), email).mkString(" / ")

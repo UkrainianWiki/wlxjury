@@ -351,6 +351,87 @@ class MutationAuthorizationSpec extends PlaySpecification with PlayTestDb {
     }
   }
 
+  "a round's cache, started or read through a contest" should {
+    "be refused for a round of another contest, by its admin there or not" in {
+      testDbApp { app =>
+        implicit val materializer: Materializer = app.materializer
+        val a = contestDao.create(None, "WLE", 2024, "Ukraine")
+        val b = contestDao.create(None, "WLM", 2024, "Poland")
+        val aRound = roundDao.create(Round(None, 1, Some("A's round"), contestId = a.getId, active = true))
+        val bRound = roundDao.create(Round(None, 1, Some("B's round"), contestId = b.getId, active = true))
+        val admin = userDao.create(User("Admin", "admin@example.com", None, Set("admin"), contestId = a.id))
+        val images = app.injector.instanceOf[ImageController]
+        def statusOf(round: Round) = images.roundImageCacheStatus(a.getId, round.getId)
+          .apply(sessionRequest(GET, s"/contest/${a.getId}/round/${round.getId}/images/cache/status", admin.email))
+          .run()
+        def start(round: Round) = call(images.startRoundImageCache(a.getId, round.getId),
+          sessionRequest(POST, s"/contest/${a.getId}/round/${round.getId}/images/cache/start", admin.email))
+
+        status(statusOf(bRound)) === NOT_FOUND
+        status(start(bRound)) === NOT_FOUND
+
+        status(statusOf(aRound)) === OK
+        status(start(aRound)) === SEE_OTHER
+      }
+    }
+  }
+
+  "a round's organizer views" should {
+    // contests A and B, B's round with and without juryOrgView
+    def setup() = {
+      val a = contestDao.create(None, "WLE", 2024, "Ukraine")
+      val b = contestDao.create(None, "WLM", 2024, "Poland")
+      val open = roundDao.create(
+        Round(None, 1, Some("B open round"), contestId = b.getId, active = true, juryOrgView = true))
+      val closed = roundDao.create(Round(None, 2, Some("B closed round"), contestId = b.getId, active = true))
+      (a, b, open, closed)
+    }
+
+    def roundStat(app: Application, round: Round, email: String) = {
+      implicit val materializer: Materializer = app.materializer
+      call(roundController(app).roundStat(round.getId),
+        FakeRequest(GET, s"/roundstat/${round.getId}").withSession(Secured.UserName -> email).withCSRFToken)
+    }
+
+    "be refused to a juror of another contest, and to one deactivated in the round's" in {
+      testDbApp { app =>
+        implicit val materializer: Materializer = app.materializer
+        val (a, b, open, _) = setup()
+        val outsider = userDao.create(User("Outsider", "outsider@example.com", None, Set("jury"), contestId = a.id))
+        val former = userDao.create(User("Former", "former@example.com", None, Set("jury"), contestId = a.id))
+        UserContestJdbc.createMembership(former.getId, b.getId, User.NO_ROLE)
+
+        Seq(outsider, former).foreach { juror =>
+          status(roundStat(app, open, juror.email)) === FORBIDDEN
+          Secured.inContest(Secured.inCurrentContest(juror, None), b.getId).canViewOrgInfo(open) === false
+
+          val gallery = call(galleryController(app).list(0, 1, "all", open.getId, None),
+            FakeRequest(GET, s"/gallery/round/${open.getId}").withSession(Secured.UserName -> juror.email))
+          status(gallery) === FORBIDDEN
+          contentAsString(gallery) must not(contain("B open round"))
+        }
+        ok
+      }
+    }
+
+    "be open to a juror of the round's contest only if the round says so, and to its organizers and root" in {
+      testDbApp { app =>
+        val (_, b, open, closed) = setup()
+        val juror = userDao.create(User("Juror", "juror@example.com", None, Set("jury"), contestId = b.id))
+        val organizer = userDao.create(User("Org", "org@example.com", None, Set("organizer"), contestId = b.id))
+        val root = User.create(User("Root", "root@example.com", roles = Set(User.ROOT_ROLE), password = Some("hash")))
+
+        status(roundStat(app, open, juror.email)) === OK
+        status(roundStat(app, closed, juror.email)) === FORBIDDEN
+        Seq(organizer, root).foreach { user =>
+          status(roundStat(app, open, user.email)) === OK
+          status(roundStat(app, closed, user.email)) === OK
+        }
+        ok
+      }
+    }
+  }
+
   "LargeViewController.rateByPageId" should {
     "reject cross-contest rating mutations" in {
       testDbApp { app =>

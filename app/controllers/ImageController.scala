@@ -1,6 +1,6 @@
 package controllers
 
-import db.scalikejdbc.{ContestJuryJdbc, ImageJdbc, User}
+import db.scalikejdbc.{ContestJuryJdbc, ImageJdbc, Round, User}
 import org.intracer.wmua.ContestJury
 import play.api.data.Form
 import play.api.data.Forms._
@@ -101,15 +101,24 @@ class ImageController @Inject() (
       Ok(Json.toJson(localImageCacheService.progress(contestId)))
     }
 
+  /** The permission is the contest's, so the round must be one of its: never another's. */
+  private def inContest(contestId: Long, roundId: Long): Boolean =
+    Round.findById(roundId).exists(_.contestId == contestId)
+
   def startRoundImageCache(id: Long, rid: Long): EssentialAction =
-    withAuth(contestPermission(User.ADMIN_ROLES, Some(id))) { _ => implicit request =>
-      localImageCacheService.startDownloadForRound(id, rid)
-      Redirect(routes.RoundController.editRound(Some(rid), id, None))
+    withAuth(contestPermission(User.ADMIN_ROLES, Some(id))) { user => implicit request =>
+      if (!inContest(id, rid))
+        NotFound(views.html.errorPage(Some(user), "error.title", "error.round.not.found"))
+      else {
+        localImageCacheService.startDownloadForRound(id, rid)
+        Redirect(routes.RoundController.editRound(Some(rid), id, None))
+      }
     }
 
   def roundImageCacheStatus(id: Long, rid: Long): EssentialAction =
     withAuthJson(contestPermission(User.ADMIN_ROLES, Some(id))) { _ => _ =>
-      Ok(Json.toJson(localImageCacheService.progressForRound(rid)))
+      if (!inContest(id, rid)) NotFound(Json.obj("error" -> "round not found"))
+      else Ok(Json.toJson(localImageCacheService.progressForRound(rid)))
     }
 
   val importImagesForm = Form(
