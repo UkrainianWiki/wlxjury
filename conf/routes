@@ -11,11 +11,11 @@ GET         /wikipedia/commons/thumb/*path                                      
 # Map static resources from the /public folder to the /assets URL path
 GET         /assets/*file                                                           @controllers.Assets.at(path="/public", file)
 
-GET         /logout                                                                 @controllers.LoginController.logout()
+GET         /logout                                                                 @controllers.LoginController.logout(returnTo: Option[String] ?= None)
 
 POST        /auth                                                                   @controllers.LoginController.auth()
 
-GET         /auth                                                                   @controllers.LoginController.login()
+GET         /auth                                                                   @controllers.LoginController.login(returnTo: Option[String] ?= None)
 
 GET         /signup                                                                 @controllers.LoginController.signUpView()
 POST        /signup                                                                 @controllers.LoginController.signUp()

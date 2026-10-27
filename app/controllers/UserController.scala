@@ -381,7 +381,7 @@ class UserController @Inject()(cc: ControllerComponents,
       val newSession = request.session + (Secured.CurrentContestId -> contestId.toString)
       Redirect(routes.LoginController.index).withSession(newSession)
     } else {
-      onUnAuthorized(user)
+      onUnAuthorized(user, request, Secured.Denial.contest(Some(contestId), Secured.ViewerRoles))
     }
   }
 

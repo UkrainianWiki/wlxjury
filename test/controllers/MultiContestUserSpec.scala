@@ -171,7 +171,16 @@ class MultiContestUserSpec extends PlaySpecification with PlayTestDb with Mockit
         )
 
         session(switch(10)).get(Secured.CurrentContestId) === Some("10")
-        redirectLocation(switch(30)) must beSome(contain("/error"))
+        val denied = call(
+          controller.switchContest(30),
+          FakeRequest(GET, "/switch-contest/30")
+            .withHeaders("Accept-Language" -> "fr")
+            .withSession(Secured.UserName -> gina.email)
+        )
+        status(denied) mustEqual FORBIDDEN
+        val body = contentAsString(denied)
+        body must contain("Accès refusé")
+        body must contain("switch-contest")
       }
     }
 
@@ -183,10 +192,10 @@ class MultiContestUserSpec extends PlaySpecification with PlayTestDb with Mockit
 
         Secured.inCurrentContest(hal, None).contestId === Some(10L)
         Secured.inCurrentContest(hal, Some("20")).contestId === Some(10L)
-        redirectLocation(call(
+        status(call(
           controller.switchContest(20),
           FakeRequest(GET, "/switch-contest/20").withSession(Secured.UserName -> hal.email)
-        )) must beSome(contain("/error"))
+        )) mustEqual FORBIDDEN
       }
     }
   }
@@ -240,7 +249,7 @@ class MultiContestUserSpec extends PlaySpecification with PlayTestDb with Mockit
             .withSession(Secured.UserName -> kim.email, Secured.CurrentContestId -> "10")
         )
 
-        redirectLocation(result) must beSome(contain("/error"))
+        status(result) mustEqual FORBIDDEN
         // the session cookie is not rewritten: contest 10 stays current
         session(result).get(Secured.CurrentContestId) must beNone
       }

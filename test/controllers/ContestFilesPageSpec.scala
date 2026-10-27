@@ -324,8 +324,7 @@ class ContestFilesPageSpec extends PlaySpecification with PlayTestDb {
 
         val organizerImages = route(app,
           FakeRequest(GET, s"/contest/$id/images").withSession(Secured.UserName -> f.organizer.email)).get
-        status(organizerImages) === SEE_OTHER
-        redirectLocation(organizerImages) must beSome(contain("/error"))
+        status(organizerImages) === FORBIDDEN
       }
     }
 
@@ -335,13 +334,26 @@ class ContestFilesPageSpec extends PlaySpecification with PlayTestDb {
         val other = roundDao.create(Round(None, 1, None, createContests(20).head.getId, createdAt = now, active = true)).getId
 
         val juror = route(app, FakeRequest(GET, s"/contest/${f.contest.getId}/files").withSession(Secured.UserName -> f.juror.email)).get
-        status(juror) === SEE_OTHER
-        redirectLocation(juror) must beSome(contain("/error"))
+        status(juror) === FORBIDDEN
 
         val otherRound = route(app,
           FakeRequest(GET, s"/contest/${f.contest.getId}/files?round=$other").withSession(Secured.UserName -> f.admin.email)).get
-        status(otherRound) === SEE_OTHER
-        redirectLocation(otherRound).map(java.net.URLDecoder.decode(_, "UTF-8")) must beSome(contain("Round not found"))
+        status(otherRound) === NOT_FOUND
+        contentAsString(otherRound) must contain("There is no such round.")
+      }
+    }
+
+    "say there is no such round, for an unknown round here and in its gallery" in {
+      testDbApp { implicit app =>
+        val f = fixture()
+
+        val (filesStatus, filesPage) = get(s"/contest/${f.contest.getId}/files?round=999999", f.admin)
+        filesStatus === NOT_FOUND
+        filesPage must contain("There is no such round.")
+
+        val (galleryStatus, galleryPage) = get(s"/gallery/round/999999/user/${f.juror.getId}/page/1", f.juror)
+        galleryStatus === NOT_FOUND
+        galleryPage must contain("There is no such round.")
       }
     }
   }
@@ -447,8 +459,7 @@ class ContestFilesPageSpec extends PlaySpecification with PlayTestDb {
         redirectLocation(notDeleted) must beSome(s"$files?deleted=true")
 
         val juror = route(app, FakeRequest(GET, s"$files/1").withSession(Secured.UserName -> f.juror.email)).get
-        status(juror) === SEE_OTHER
-        redirectLocation(juror) must beSome(contain("/error"))
+        status(juror) === FORBIDDEN
       }
     }
   }

@@ -126,19 +126,19 @@ class RoundController @Inject() (
     * `{"count": n}`: the distribution's own windows and filters, read only (which may
     * query Commons), so it runs only when the organizer asks for it. Off the request
     * threads: on one thread of its own ([[RoundController.countContext]]), so a few
-    * counts at once queue there instead of holding the blocking dispatcher.
+    * counts at once queue there instead of holding the blocking dispatcher. Errors are
+    * JSON too, and the request never switches the session's contest.
     */
   def newFilesCount(id: Long): EssentialAction =
     Action.async { request =>
       implicit val ec: ExecutionContext = blocking
       Future(userFromRequest(request)).flatMap {
-        case None => Future.successful(onUnAuthenticated(request))
-        case Some(user) if !rolePermission(User.ADMIN_ROLES)(user) => Future.successful(onUnAuthorized(user))
+        case None => Future.successful(Unauthorized(Json.obj("error" -> "unauthenticated")))
         case Some(user) =>
           Future(Round.findById(id)).flatMap {
             case None => Future.successful(NotFound(Json.obj("error" -> "round not found")))
-            case Some(round) if !contestPermission(User.ADMIN_ROLES, Some(round.contestId))(user) =>
-              Future.successful(onUnAuthorized(user))
+            case Some(round) if !adminOfRound(user, round) =>
+              Future.successful(onUnAuthorizedJson(user, request, Secured.Denial.round(round, User.ADMIN_ROLES)))
             case Some(round) =>
               Future(Ok(Json.obj("count" -> roundsService.newFilesCount(round.getId))))(RoundController.countContext)
           }
@@ -150,20 +150,30 @@ class RoundController @Inject() (
     */
   def roundStatTable(roundId: Long): EssentialAction =
     withAuthOn(blocking)(rolePermission(User.ADMIN_ROLES)) { user => implicit request =>
-      withAdminRound(user, roundId, NotFound("")) { round =>
+      withAdminRound(user, roundId, NotFound(""), request) { round =>
         Ok(views.html.roundStatTable(user, round, roundsService.getRoundStat(roundId, round)))
       }
     }
 
   /** Runs `f` with the round if `user` administers its contest: the round is loaded
-    * once, for the permission check and the action.
+    * once, for the permission check and the action. Checked in the round's contest, which
+    * may be another of the user's than the session's; the session stays as it is.
     */
-  private def withAdminRound(user: User, roundId: Long, notFound: => Result)(f: Round => Result): Result =
+  private def withAdminRound(
+      user: User,
+      roundId: Long,
+      notFound: => Result,
+      request: RequestHeader
+  )(f: Round => Result): Result =
     Round.findById(roundId) match {
-      case None                                                                         => notFound
-      case Some(round) if contestPermission(User.ADMIN_ROLES, Some(round.contestId))(user) => f(round)
-      case Some(_)                                                                      => onUnAuthorized(user)
+      case None                                     => notFound
+      case Some(round) if adminOfRound(user, round) => f(round)
+      case Some(round)                              => onUnAuthorized(user, request, Secured.Denial.round(round, User.ADMIN_ROLES))
     }
+
+  /** Whether `user` administers the round's contest, as an active member of it. */
+  private def adminOfRound(user: User, round: Round): Boolean =
+    contestPermission(User.ADMIN_ROLES, Some(round.contestId))(Secured.inContest(user, round.contestId))
 
   def contestSpecialNominations(contestId: Long): Seq[SpecialNomination] = {
     ContestJuryJdbc
@@ -187,7 +197,8 @@ class RoundController @Inject() (
           formWithErrors => {
             val contestId: Option[Long] = formWithErrors.data.get("contest").flatMap(_.toLongOption)
             // the form lists the contest's rounds and jurors: only for its own admins
-            if (!contestPermission(User.ADMIN_ROLES, contestId)(user)) onUnAuthorized(user)
+            if (!contestPermission(User.ADMIN_ROLES, contestId)(user))
+              onUnAuthorized(user, request, Secured.Denial.contest(contestId, User.ADMIN_ROLES))
             else
               BadRequest(
                 views.html.editRound(
@@ -243,7 +254,8 @@ class RoundController @Inject() (
 
             // the submitted contest must be one the user administers; an edited round
             // must belong to it (checked below)
-            if (!contestPermission(User.ADMIN_ROLES, Some(contestId))(user)) onUnAuthorized(user)
+            if (!contestPermission(User.ADMIN_ROLES, Some(contestId))(user))
+              onUnAuthorized(user, request, Secured.Denial.contest(Some(contestId), User.ADMIN_ROLES))
             else round.id match {
               case None if unreadable.nonEmpty => unreadableLines
               case None =>
@@ -265,8 +277,10 @@ class RoundController @Inject() (
                 }
 
               case Some(roundId) =>
-                withAdminRound(user, roundId, NotFound(s"Round $roundId not found")) {
-                  case stored if stored.contestId != contestId => onUnAuthorized(user)
+                withAdminRound(user, roundId, NotFound(s"Round $roundId not found"), request) {
+                  case stored if stored.contestId != contestId =>
+                    onUnAuthorized(user, request,
+                      Secured.Denial.round(stored, User.ADMIN_ROLES).copy(reason = Some("round_in_other_contest")))
                   case _ if unreadable.nonEmpty => unreadableLines
                   case stored =>
                     val notStarted =
@@ -307,7 +321,7 @@ class RoundController @Inject() (
           _ => BadRequest,
           selectRound =>
             selectRound.roundId.toLongOption.fold[Result](BadRequest) { id =>
-              withAdminRound(user, id, NotFound(s"Round $id not found")) { round =>
+              withAdminRound(user, id, NotFound(s"Round $id not found"), request) { round =>
                 val toList = Redirect(routes.RoundController.rounds(Some(round.contestId)))
                 if (roundsService.setCurrentRound(Nil, round.copy(active = selectRound.active))) toList
                 else toList.flashing("error" -> RoundController.stillDistributing(round))
@@ -328,7 +342,7 @@ class RoundController @Inject() (
           setRoundUser =>
             (setRoundUser.roundId.toLongOption, setRoundUser.userId.toLongOption) match {
               case (Some(roundId), Some(userId)) =>
-                withAdminRound(user, roundId, NotFound(s"Round $roundId not found")) { _ =>
+                withAdminRound(user, roundId, NotFound(s"Round $roundId not found"), request) { _ =>
                   RoundUser.setActive(roundId, userId, setRoundUser.active)
                   Redirect(routes.RoundController.roundStat(roundId))
                 }
@@ -342,7 +356,8 @@ class RoundController @Inject() (
     withAuth(rolePermission(User.ADMIN_ROLES)) { user => implicit request =>
       contestIdParam.orElse(user.currentContest) match {
         case None => Redirect(routes.ContestController.list())
-        case contestId if !contestPermission(User.ADMIN_ROLES, contestId)(user) => onUnAuthorized(user)
+        case contestId if !contestPermission(User.ADMIN_ROLES, contestId)(user) =>
+          onUnAuthorized(user, request, Secured.Denial.contest(contestId, User.ADMIN_ROLES))
         case contestId =>
           val imagesSource: Option[String] = imagesForm.bindFromRequest().get
           for (contest <- contestId.flatMap(ContestJuryJdbc.findById)) {
@@ -391,7 +406,7 @@ class RoundController @Inject() (
             Redirect(routes.RoundController.roundStat(round.getId))
           }
           .getOrElse {
-            Redirect(routes.LoginController.error("There is no active rounds in your contest"))
+            NotFound(views.html.errorPage(Some(user), "error.title", "no.round.yet"))
           }
     }
 
@@ -404,7 +419,7 @@ class RoundController @Inject() (
             // a round of another of the user's contests opens in that contest
             val user = Secured.inContest(sessionUser, round.contestId)
             if (!user.canViewOrgInfo(round)) {
-              onUnAuthorized(user)
+              onUnAuthorized(user, request, Secured.Denial.round(round, User.ADMIN_ROLES ++ User.ORG_COM_ROLES))
             } else {
               val stat = roundsService.getRoundStat(roundId, round, withDeletedFiles = true)
 
@@ -412,7 +427,7 @@ class RoundController @Inject() (
             }
           }
           .getOrElse {
-            Redirect(routes.LoginController.error("Round not found"))
+            NotFound(views.html.errorPage(Some(sessionUser), "error.title", "error.round.not.found"))
           }
     }
 
@@ -430,7 +445,10 @@ class RoundController @Inject() (
             mergeRounds.sourceRoundId
           )
           Redirect(routes.RoundController.rounds(Some(target.contestId)))
-        case _ => onUnAuthorized(user)
+        case Some(target) => onUnAuthorized(user, request, Secured.Denial.round(target, User.ADMIN_ROLES))
+        case None =>
+          onUnAuthorized(user, request,
+            Secured.Denial(resource = Some(s"round:${mergeRounds.targetRoundId}"), requiredRoles = User.ADMIN_ROLES))
       }
     }
 

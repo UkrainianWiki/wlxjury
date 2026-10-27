@@ -1,0 +1,28 @@
+@import db.scalikejdbc.User
+@(
+    user: Option[User],
+    titleKey: String,
+    messageKey: String,
+    args: Seq[Any] = Seq.empty,
+    reference: Option[String] = None,
+    time: Option[String] = None
+)(implicit messages: Messages)
+
+@* Any error but an authorization denial (accessDenied): a message from conf/messages,
+   never text from the request or an exception, and the reference of its log line. *@
+@content = {
+    <div class="alert alert-danger" role="alert">
+        <h4>@Messages(titleKey)</h4>
+        <p>@Messages(messageKey, args: _*)</p>
+        <p><a href="/">@Messages("error.home")</a></p>
+        @for(ref <- reference) {
+            <p class="text-muted"><small>@Messages("access.denied.reference", ref, time.getOrElse(""))</small></p>
+        }
+    </div>
+}
+
+@if(user.isEmpty) {
+    @mainAdmin(Messages(titleKey))(content)
+} else {
+    @main(titleKey, user.get, user.get.getId)(content)
+}

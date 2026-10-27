@@ -3,6 +3,7 @@
 @* A background job's status with its Retry / Cancel buttons, refreshed by
    public/javascripts/job-status.js while the job is queued or running. *@
 <div class="job-status" data-src="@routes.JobController.status(job.id)" data-status="@job.status"
+     data-denied-text="@Messages("job.status.denied")"
      @if(reloadOnDone) {data-reload-on-done="true"}>
     <span class="job-status-text">@job.status@for(done <- job.progressDone; total <- job.progressTotal) { (@done / @total @job.progressUnit.getOrElse(""))}@for(e <- job.error) {: @e}</span>
     <form method="post" action="@routes.JobController.retry(job.id)" class="job-retry"

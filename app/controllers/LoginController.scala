@@ -15,11 +15,12 @@ class LoginController @Inject() (
 ) extends Secured(cc)
     with I18nSupport {
 
-  def index: EssentialAction = withAuth() { user => _ =>
+  def index: EssentialAction = withAuth() { user => implicit request =>
     indexRedirect(user)
   }
 
-  private def indexRedirect(user: User): Result = {
+  /** The user's start page: a page of their role, else a page saying why there is none. */
+  private def indexRedirect(user: User)(implicit request: RequestHeader): Result = {
     user match {
       case u if u.hasAnyRole(User.ORG_COM_ROLES) =>
         Redirect(routes.RoundController.currentRoundStat())
@@ -28,7 +29,8 @@ class LoginController @Inject() (
           .activeRounds(u)
           .headOption
           .fold {
-            Redirect(routes.LoginController.error("no.round.yet"))
+            // a state, not an error: the juror waits for a round
+            Ok(views.html.errorPage(Some(u), "error.title", "no.round.yet"))
           } { round =>
             if (round.isBinary) {
               Redirect(
@@ -43,25 +45,29 @@ class LoginController @Inject() (
       case u if u.hasAnyRole(User.ADMIN_ROLES) =>
         Redirect(routes.UserController.users(u.contestId))
       case _ =>
-        Redirect(routes.LoginController.error("You don't have permission to access this page"))
+        onUnAuthorized(user, request, Secured.Denial(reason = Some("not_member")))
     }
   }
 
   private def noStore(result: Result): Result =
     result.withHeaders("Cache-Control" -> "no-store")
 
-  def login: Action[AnyContent] = Action { implicit request =>
+  def login(returnTo: Option[String] = None): Action[AnyContent] = Action { implicit request =>
+    val safeReturnTo = Secured.safeLocalPath(returnTo)
     val result =
-      if (User.count() > 0) Ok(views.html.index(loginForm))
+      if (User.count() > 0) Ok(views.html.index(loginForm, safeReturnTo))
       else Ok(views.html.signUp(signUpForm))
     noStore(result)
   }
 
   def auth(): Action[AnyContent] = Action { implicit request =>
+    val returnTo = Secured.safeLocalPath(
+      request.body.asFormUrlEncoded.flatMap(_.get("returnTo").flatMap(_.headOption))
+    )
     loginForm
       .bindFromRequest()
       .fold(
-        formWithErrors => noStore(BadRequest(views.html.index(formWithErrors))),
+        formWithErrors => noStore(BadRequest(views.html.index(formWithErrors, returnTo))),
         { case (login, password) =>
           User
             .login(login, password)
@@ -69,11 +75,12 @@ class LoginController @Inject() (
               val inContest = Secured.inCurrentContest(user, None)
               val sessionData = Seq(Secured.UserName -> login) ++
                 inContest.contestId.map(id => Secured.CurrentContestId -> id.toString)
-              val result = indexRedirect(inContest).withSession(sessionData: _*)
+              val nextPage = returnTo.fold(indexRedirect(inContest))(url => Redirect(url))
+              val result = nextPage.withSession(sessionData: _*)
               user.lang.fold(result)(l => result.withLang(Lang(l)))
             }
             .getOrElse(
-              noStore(BadRequest(views.html.index(loginForm.withGlobalError("invalid.user.or.password"))))
+              noStore(BadRequest(views.html.index(loginForm.withGlobalError("invalid.user.or.password"), returnTo)))
             )
         }
       )
@@ -105,12 +112,14 @@ class LoginController @Inject() (
     * @return
     *   Index page
     */
-  def logout: Action[AnyContent] = Action {
-    Redirect(routes.LoginController.login()).withNewSession
+  def logout(returnTo: Option[String] = None): Action[AnyContent] = Action {
+    Redirect(routes.LoginController.login(Secured.safeLocalPath(returnTo))).withNewSession
   }
 
+  /** Old links to the error page: only known message keys, never the link's text. */
   def error(message: String): EssentialAction = withAuth() { user => implicit request =>
-    Ok(views.html.error(message, user, user.getId))
+    val messageKey = if (LoginController.ErrorPageKeys.contains(message)) message else "error.unknown"
+    Ok(views.html.errorPage(Some(user), "error.title", messageKey))
   }
 
   val loginForm: Form[(String, String)] = Form(
@@ -138,4 +147,11 @@ class LoginController @Inject() (
         case (login, _, _) => User.findByEmail(login).isEmpty
       })
   )
+}
+
+object LoginController {
+
+  /** The messages `/error?message=` shows; any other text shows error.unknown. */
+  val ErrorPageKeys: Set[String] =
+    Set("no.round.yet", "error.not.found", "error.contest.not.found", "error.round.not.found")
 }

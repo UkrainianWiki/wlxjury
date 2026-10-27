@@ -1,6 +1,6 @@
 package controllers
 
-import db.scalikejdbc.{ImageJdbc, PlayTestDb, Round, RoundUser, SelectionJdbc, User}
+import db.scalikejdbc.{ImageJdbc, PlayTestDb, Round, RoundUser, SelectionJdbc, User, UserContestJdbc}
 import modules.BlockingExecutionContext
 import org.apache.pekko.stream.Materializer
 import play.api.Application
@@ -59,8 +59,7 @@ class MutationAuthorizationSpec extends PlaySpecification with PlayTestDb {
       .withCSRFToken
 
   private def expectUnauthorized(result: scala.concurrent.Future[play.api.mvc.Result]) = {
-    status(result) mustEqual SEE_OTHER
-    redirectLocation(result) must beSome.which(_.startsWith("/error?message="))
+    status(result) mustEqual FORBIDDEN
   }
 
   "GalleryController.selectWS" should {
@@ -142,6 +141,88 @@ class MutationAuthorizationSpec extends PlaySpecification with PlayTestDb {
         val ok = controller.status(job.id).apply(sessionRequest(GET, s"/admin/jobs/${job.id}", own.email)).run()
         status(ok) === OK
         (contentAsJson(ok) \ "status").as[String] === "running"
+      }
+    }
+  }
+
+  "an admin of two contests, with the session in the other one" should {
+    // contest A's job and round, and three admins: of A and B, of B only, and of B with
+    // A's membership deactivated
+    def setup(app: Application) = {
+      val a = contestDao.create(None, "WLE", 2024, "Ukraine")
+      val b = contestDao.create(None, "WLM", 2024, "Poland")
+      val both = userDao.create(User("Both", "both@example.com", None, Set("admin"), contestId = a.id))
+      UserContestJdbc.createMembership(both.getId, b.getId, "admin")
+      val bOnly = userDao.create(User("B only", "bonly@example.com", None, Set("admin"), contestId = b.id))
+      val former = userDao.create(User("Former", "former@example.com", None, Set(User.NO_ROLE), contestId = a.id))
+      UserContestJdbc.createMembership(former.getId, b.getId, "admin")
+      val scheduler = services.TestRoundServices.inlineScheduler(services.TestRoundServices.handler())
+      val job = scalikejdbc.DB.localTx { implicit s =>
+        scheduler.enqueue(services.jobs.NewJob(
+          services.distribution.RoundDistributionHandler.Kind, contestId = a.id,
+          subjectType = Some("round"), subjectId = Some(1L))).toOption.get
+      }
+      val round = roundDao.create(Round(None, 1, Some("A's round"), contestId = a.getId, active = true))
+      val juror = userDao.create(User("Juror", "juror@example.com", None, Set("jury"), contestId = a.id))
+      round.addUsers(Seq(RoundUser(round.getId, juror.getId, "jury", active = true)))
+      val jobs = new JobController(
+        app.injector.instanceOf[ControllerComponents], scheduler, new BlockingExecutionContext(app.actorSystem))
+      (b, both, bOnly, former, job, round, jobs)
+    }
+
+    def inContest(method: String, url: String, email: String, contestId: Long) =
+      FakeRequest(method, url)
+        .withSession(Secured.UserName -> email, Secured.CurrentContestId -> contestId.toString)
+        .withHeaders("X-Requested-With" -> "XMLHttpRequest")
+        .withCSRFToken
+
+    "see A's job status and count A's round's new files, without switching the session" in {
+      testDbApp { app =>
+        implicit val materializer: Materializer = app.materializer
+        val (b, both, _, _, job, round, jobs) = setup(app)
+
+        val status1 = jobs.status(job.id).apply(inContest(GET, s"/admin/jobs/${job.id}", both.email, b.getId)).run()
+        status(status1) === OK
+        (contentAsJson(status1) \ "status").as[String] === "running"
+        session(status1).get(Secured.CurrentContestId) must beNone
+
+        val url = s"/admin/rounds/newfiles?id=${round.getId}"
+        val count = roundController(app).newFilesCount(round.getId).apply(inContest(GET, url, both.email, b.getId)).run()
+        status(count) === OK
+        (contentAsJson(count) \ "count").as[Long] === 0L
+        session(count).get(Secured.CurrentContestId) must beNone
+
+        val table = roundController(app).roundStatTable(round.getId)
+          .apply(inContest(GET, s"/admin/rounds/${round.getId}/stat-table", both.email, b.getId)).run()
+        status(table) === OK
+        session(table).get(Secured.CurrentContestId) must beNone
+      }
+    }
+
+    "still be denied A's job and round as an admin of B only, or with A's membership deactivated" in {
+      testDbApp { app =>
+        implicit val materializer: Materializer = app.materializer
+        val (b, _, bOnly, former, job, round, jobs) = setup(app)
+
+        Seq(bOnly, former).foreach { admin =>
+          val denied = jobs.status(job.id).apply(inContest(GET, s"/admin/jobs/${job.id}", admin.email, b.getId)).run()
+          status(denied) === FORBIDDEN
+          (contentAsJson(denied) \ "error").as[String] === "forbidden"
+          (contentAsJson(denied) \ "reference").as[String] must beMatching("[0-9a-f]{8}")
+
+          status(jobs.cancel(job.id)
+            .apply(inContest(POST, s"/admin/jobs/${job.id}/cancel", admin.email, b.getId)).run()) === FORBIDDEN
+
+          val count = roundController(app).newFilesCount(round.getId)
+            .apply(inContest(GET, s"/admin/rounds/newfiles?id=${round.getId}", admin.email, b.getId)).run()
+          status(count) === FORBIDDEN
+          (contentAsJson(count) \ "error").as[String] === "forbidden"
+
+          status(roundController(app).roundStatTable(round.getId)
+            .apply(inContest(GET, s"/admin/rounds/${round.getId}/stat-table", admin.email, b.getId)).run()) ===
+            FORBIDDEN
+        }
+        services.jobs.JobJdbc.findById(job.id).map(_.status) === Some(services.jobs.JobStatus.Running)
       }
     }
   }

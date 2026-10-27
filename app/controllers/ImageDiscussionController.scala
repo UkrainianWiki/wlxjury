@@ -29,18 +29,13 @@ class ImageDiscussionController @Inject()(cc: ControllerComponents)
                  round: Option[Long],
                  contestId: Option[Long]): EssentialAction = withAuth() {
     user => implicit request =>
-      round
-        .flatMap(Round.findById)
+      val requested = round.flatMap(Round.findById)
+      val commenterRoles = User.ADMIN_ROLES ++ User.JURY_ROLES ++ User.ORG_COM_ROLES
+      requested
         .filter(targetRound => contestId.forall(_ == targetRound.contestId))
-        .filter(targetRound =>
-          roundPermission(
-            User.ADMIN_ROLES ++
-              User.JURY_ROLES ++
-              User.ORG_COM_ROLES,
-            targetRound.getId
-          )(user)
-        )
-        .fold(onUnAuthorized(user)) { targetRound =>
+        .filter(targetRound => contestPermission(commenterRoles, Some(targetRound.contestId))(user))
+        .fold(onUnAuthorized(user, request, Secured.Denial(
+          requested.map(_.contestId).orElse(contestId), round.map(id => s"round:$id"), commenterRoles))) { targetRound =>
           val roundId = targetRound.getId
 
           editCommentForm.bindFromRequest().fold(

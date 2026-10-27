@@ -3,7 +3,7 @@ package controllers
 import db.scalikejdbc.User
 import modules.BlockingExecutionContext
 import play.api.libs.json.{JsObject, Json}
-import play.api.mvc.{AnyContent, ControllerComponents, EssentialAction, Request, Result}
+import play.api.mvc.{AnyContent, ControllerComponents, EssentialAction, Request, RequestHeader, Result}
 import services.jobs.{Job, JobJdbc, JobScheduler, JobStatus}
 
 import javax.inject.Inject
@@ -16,16 +16,19 @@ class JobController @Inject() (cc: ControllerComponents, jobs: JobScheduler, blo
 
   /** The job's status as JSON, polled by public/javascripts/job-status.js: a few primary
     * key lookups, so on Play's default dispatcher, not queued behind slow gallery pages on
-    * the blocking one (measured: 494 ms mean there during a 10-admin run).
+    * the blocking one (measured: 494 ms mean there during a 10-admin run). Errors are JSON
+    * too, and the poll never switches the session's contest.
     */
   def status(id: Long): EssentialAction =
-    withAuth(rolePermission(User.ADMIN_ROLES)) { user => _ =>
-      withJob(user, id)(job => Ok(JobController.json(job, jobs)))
+    Action { request =>
+      userFromRequest(request).fold[Result](Unauthorized(Json.obj("error" -> "unauthenticated"))) { user =>
+        withJob(user, id, request, json = true)(job => Ok(JobController.json(job, jobs)))
+      }
     }
 
   def cancel(id: Long): EssentialAction =
     withAuthOn(blocking)(rolePermission(User.ADMIN_ROLES)) { user => implicit request =>
-      withJob(user, id) { job =>
+      withJob(user, id, request) { job =>
         jobs.cancel(job.id)
         back(request, job)
       }
@@ -33,7 +36,7 @@ class JobController @Inject() (cc: ControllerComponents, jobs: JobScheduler, blo
 
   def retry(id: Long): EssentialAction =
     withAuthOn(blocking)(rolePermission(User.ADMIN_ROLES)) { user => implicit request =>
-      withJob(user, id) { job =>
+      withJob(user, id, request) { job =>
         jobs.retry(job.id) match {
           case Right(_)     => back(request, job)
           case Left(reason) => back(request, job).flashing("error" -> s"Can't retry: $reason")
@@ -41,12 +44,21 @@ class JobController @Inject() (cc: ControllerComponents, jobs: JobScheduler, blo
       }
     }
 
-  private def withJob(user: User, id: Long)(f: Job => Result): Result =
+  /** Runs `f` with the job if `user` administers its contest, checked in that contest (one
+    * of the user's others than the session's, too); the session's contest stays as it is.
+    * A denial is JSON for the status poll, else the denial page.
+    */
+  private def withJob(user: User, id: Long, request: RequestHeader, json: Boolean = false)(f: Job => Result): Result =
     JobJdbc.findById(id) match {
       case None => NotFound(Json.obj("error" -> "job not found"))
-      case Some(job) if contestPermission(User.ADMIN_ROLES, job.contestId)(user) => f(job)
-      case Some(_) => onUnAuthorized(user)
+      case Some(job) if adminOf(user, job.contestId) => f(job)
+      case Some(job) =>
+        val denial = Secured.Denial(job.contestId, Some(s"job:${job.id}"), User.ADMIN_ROLES)
+        if (json) onUnAuthorizedJson(user, request, denial) else onUnAuthorized(user, request, denial)
     }
+
+  private def adminOf(user: User, contestId: Option[Long]): Boolean =
+    contestPermission(User.ADMIN_ROLES, contestId)(contestId.fold(user)(Secured.inContest(user, _)))
 
   /** Back to the page the button was on (a local path only), else the contest's rounds. */
   private def back(request: Request[AnyContent], job: Job): Result = {

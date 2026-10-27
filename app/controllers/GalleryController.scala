@@ -187,8 +187,14 @@ class GalleryController @Inject() (
     // a round of another of the user's contests opens in that contest
     val user = maybeRound.fold(sessionUser)(r => Secured.inContest(sessionUser, r.contestId))
 
-    Secured.switchingContest(sessionUser, user)(gallery(user, module, asUserId, pager, region, roundId,
-      rate, rated, maybeRound))
+    maybeRound.fold {
+      // no such round, or no active one: a page saying so, not a server error
+      if (roundId == 0) Ok(views.html.errorPage(Some(sessionUser), "error.title", "no.round.yet"))
+      else NotFound(views.html.errorPage(Some(sessionUser), "error.title", "error.round.not.found"))
+    } { round =>
+      Secured.switchingContest(sessionUser, user)(gallery(user, module, asUserId, pager, region, roundId,
+        rate, rated, round))
+    }
   }
 
   private def gallery(
@@ -200,10 +206,10 @@ class GalleryController @Inject() (
       roundId: Long,
       rate: Option[Int],
       rated: Option[Boolean],
-      maybeRound: Option[Round]
+      round: Round
   )(implicit request: Request[AnyContent]): Result = {
-    val roundContestId = maybeRound.map(_.contestId).getOrElse(0L)
-    val round = maybeRound.get
+    val maybeRound = Some(round)
+    val roundContestId = round.contestId
     val subRegions = round.specialNomination.contains("Віа Регіа")
     val rounds = if (user.canViewOrgInfo(round)) {
       Round.findByContest(roundContestId).filter(user.canViewOrgInfo)
@@ -212,7 +218,7 @@ class GalleryController @Inject() (
     }
 
     if (galleryService.isNotAuthorized(user, maybeRound, roundContestId, rounds)) {
-      onUnAuthorized(user)
+      onUnAuthorized(user, request, Secured.Denial.round(round, Secured.ViewerRoles))
     } else {
 
       lazy val asUser = galleryService.getAsUser(asUserId, user)
@@ -441,8 +447,8 @@ class GalleryController @Inject() (
     * ([[contestFileLarge]]); a deleted file's mark links its page on Commons.
     */
   def contestFiles(contestId: Long, page: Int, deleted: Boolean, round: Option[Long], region: String): EssentialAction =
-    withAuthOn(blocking)(_.canViewContestFiles(contestId)) { user => implicit request =>
-      contestFilesView(contestId, deleted, round, region).fold(identity, { listed =>
+    withAuthOn(blocking)(contestPermission(User.ADMIN_ROLES ++ User.ORG_COM_ROLES, Some(contestId))) { user => implicit request =>
+      contestFilesView(user, contestId, deleted, round, region).fold(identity, { listed =>
         // all the category's files' counts (cached), which also give their number
         val all = listed.contest.categoryId.filter(_ => listed.round.isEmpty).map(categoryCounts)
         val view = listed.round match {
@@ -483,8 +489,8 @@ class GalleryController @Inject() (
     */
   def contestFileLarge(contestId: Long, pageId: Long, deleted: Boolean, round: Option[Long], region: String)
       : EssentialAction =
-    withAuthOn(blocking)(_.canViewContestFiles(contestId)) { user => implicit request =>
-      contestFilesView(contestId, deleted, round, region).fold(identity, { view =>
+    withAuthOn(blocking)(contestPermission(User.ADMIN_ROLES ++ User.ORG_COM_ROLES, Some(contestId))) { user => implicit request =>
+      contestFilesView(user, contestId, deleted, round, region).fold(identity, { view =>
         // two files before it, as a round's large view has them
         val (files, offset) = view.list.fold((Seq.empty[ImageJdbc.StoredFile], 0)) { list =>
           val offset = math.max(0, ImageJdbc.fileRank(list, view.region, pageId) - 2)
@@ -503,12 +509,14 @@ class GalleryController @Inject() (
     * ones, in the region or all; its counts not read yet. An error page if there is no such
     * contest, or round in it.
     */
-  private def contestFilesView(contestId: Long, deleted: Boolean, round: Option[Long], region: String)
-      : Either[Result, ContestFilesView] = {
+  private def contestFilesView(user: User, contestId: Long, deleted: Boolean, round: Option[Long], region: String)(
+      implicit request: RequestHeader
+  ): Either[Result, ContestFilesView] = {
     val contest = ContestJuryJdbc.findById(contestId)
     val maybeRound = round.flatMap(Round.findById).filter(_.contestId == contestId)
     if (contest.isEmpty || round.isDefined && maybeRound.isEmpty)
-      Left(Redirect(routes.LoginController.error(if (contest.isEmpty) "Contest not found" else "Round not found")))
+      Left(NotFound(views.html.errorPage(Some(user), "error.title",
+        if (contest.isEmpty) "error.contest.not.found" else "error.round.not.found")))
     else
       Right(ContestFilesView(contest.get, deletedOnly = deleted || maybeRound.isDefined, maybeRound,
         Some(region).filter(_ != "all")))

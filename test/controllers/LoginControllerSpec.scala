@@ -18,6 +18,10 @@ class LoginControllerSpec extends PlaySpecification with Results with PlayTestDb
   def login(implicit app: Application) =
     new LoginController(userService, Helpers.stubControllerComponents())
 
+  /** With the app's messages, for the pages' text. */
+  def appLogin(implicit app: Application) =
+    new LoginController(userService, app.injector.instanceOf[ControllerComponents])
+
   "auth" should {
     "fail empty request" in {
       testDbApp { implicit app =>
@@ -68,7 +72,7 @@ class LoginControllerSpec extends PlaySpecification with Results with PlayTestDb
         implicit val mat: Materializer = app.materializer
         User.create(
           User("name", "qwerty@dot.com", password = Some(User.sha1("strong"))))
-        val result = login
+        val result = appLogin
           .auth()
           .apply(
             FakeRequest()
@@ -78,9 +82,10 @@ class LoginControllerSpec extends PlaySpecification with Results with PlayTestDb
               )
               .withCSRFToken)
 
-        status(result) === SEE_OTHER
-        header(LOCATION, result) === Some(
-          "/error?message=You+don%27t+have+permission+to+access+this+page")
+        // the denial page, saying whom to ask, not a redirect to /error
+        status(result) === FORBIDDEN
+        contentAsString(result) must contain("If you need access, ask your contest organizer.")
+        session(result).get(Secured.UserName) === Some("qwerty@dot.com")
       }
     }
 
@@ -108,6 +113,103 @@ class LoginControllerSpec extends PlaySpecification with Results with PlayTestDb
       }
     }
 
+    "return to the requested local page after signing in" in {
+      testDbApp { implicit app =>
+        implicit val mat: Materializer = app.materializer
+        User.create(User("name", "return@dot.com", password = Some(User.sha1("strong"))))
+
+        val result = login.auth().apply(
+          FakeRequest()
+            .withFormUrlEncodedBody(
+              "login" -> "return@dot.com",
+              "password" -> "strong",
+              "returnTo" -> "/contest/628/files"
+            )
+            .withCSRFToken
+        )
+
+        status(result) === SEE_OTHER
+        header(LOCATION, result) === Some("/contest/628/files")
+        session(result).get(Secured.UserName) === Some("return@dot.com")
+      }
+    }
+
+    "ignore an external return URL after signing in" in {
+      testDbApp { implicit app =>
+        implicit val mat: Materializer = app.materializer
+        User.create(
+          User(
+            "root",
+            "root-return@dot.com",
+            password = Some(User.sha1("strong")),
+            roles = Set(User.ROOT_ROLE)
+          )
+        )
+
+        val result = login.auth().apply(
+          FakeRequest()
+            .withFormUrlEncodedBody(
+              "login" -> "root-return@dot.com",
+              "password" -> "strong",
+              "returnTo" -> "https://evil.example/"
+            )
+            .withCSRFToken
+        )
+
+        status(result) === SEE_OTHER
+        header(LOCATION, result) === Some("/contests")
+      }
+    }
+
+  }
+
+  "a request without a session" should {
+    "go to the login page, which comes back to a GET's page" in {
+      testDbApp { implicit app =>
+        val page = route(app, FakeRequest(GET, "/contest/628/files?page=2")).get
+        status(page) === SEE_OTHER
+        redirectLocation(page) === Some(routes.LoginController.login(Some("/contest/628/files?page=2")).url)
+        redirectLocation(page) === Some("/auth?returnTo=%2Fcontest%2F628%2Ffiles%3Fpage%3D2")
+
+        val post = route(app, FakeRequest(POST, "/admin/setround").withHeaders("Csrf-Token" -> "nocheck")).get
+        status(post) === SEE_OTHER
+        redirectLocation(post) === Some("/auth")
+      }
+    }
+  }
+
+  "the error page" should {
+    "show only known messages, never the link's text" in {
+      testDbApp { implicit app =>
+        val contest = createContests(10).head
+        val juror = User.create(User("Juror", "juror@dot.com", None, Set("jury"), Some("hash"), contest.id))
+
+        def errorPage(message: String) = {
+          val result = route(app,
+            FakeRequest(GET, s"/error?message=${java.net.URLEncoder.encode(message, "UTF-8")}")
+              .withSession(Secured.UserName -> juror.email)).get
+          (status(result), contentAsString(result))
+        }
+
+        val (arbitraryStatus, arbitrary) = errorPage("Your account is suspended, call +1 555 0100")
+        arbitraryStatus === OK
+        arbitrary must not(contain("suspended"))
+        arbitrary must contain("Something went wrong.")
+
+        errorPage("no.round.yet")._2 must contain("No round configured yet.")
+      }
+    }
+
+    "send a juror without an active round to a page saying so" in {
+      testDbApp { implicit app =>
+        val contest = createContests(10).head
+        val juror = User.create(User("Juror", "juror@dot.com", None, Set("jury"), Some("hash"), contest.id))
+
+        val result = route(app, FakeRequest(GET, "/").withSession(Secured.UserName -> juror.email)).get
+        status(result) === OK
+        contentAsString(result) must contain("No round configured yet.")
+      }
+    }
   }
 
   "signUp" should {
@@ -131,7 +233,8 @@ class LoginControllerSpec extends PlaySpecification with Results with PlayTestDb
               )
               .withCSRFToken)
 
-        status(result) === SEE_OTHER
+        // a new account has no role in any contest yet: the denial page
+        status(result) === FORBIDDEN
         session(result).get(Secured.UserName) === Some("new@dot.com")
       }
     }

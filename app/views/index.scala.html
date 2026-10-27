@@ -1,6 +1,6 @@
-@(loginForm: Form[(String, String)])(implicit flash: Flash, messages: Messages, req: RequestHeader)
+@(loginForm: Form[(String, String)], returnTo: Option[String] = None)(implicit flash: Flash, messages: Messages, req: RequestHeader)
 
 
-@login(loginForm)
+@login(loginForm, returnTo)
 
 
