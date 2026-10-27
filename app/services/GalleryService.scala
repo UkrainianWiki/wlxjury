@@ -23,6 +23,19 @@ class GalleryService {
     )
   }
 
+  /** The rounds a round's gallery lists beside it: the contest's the user may see as an
+    * organizer of it, else the user's own active rounds.
+    */
+  def viewerRounds(user: User, round: Round): Seq[Round] =
+    if (user.canViewOrgInfo(round)) Round.findByContest(round.contestId).filter(user.canViewOrgInfo)
+    else Round.activeRounds(user)
+
+  /** Whether `user` (in the round's contest if they are an active member of it) may view
+    * the round's files and votes, as in its gallery and its large view.
+    */
+  def mayViewRound(user: User, round: Round): Boolean =
+    !isNotAuthorized(user, Some(round), round.contestId, viewerRounds(user, round))
+
   def isNotAuthorized(
       user: User,
       maybeRound: Option[Round],

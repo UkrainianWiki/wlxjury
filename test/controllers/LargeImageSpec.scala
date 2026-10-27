@@ -31,6 +31,7 @@ class LargeImageSpec extends PlaySpecification with PlayTestDb {
     user = userDao.create(
       User("fullname", email, None, Set("jury"), contestId = contest.id)
     )
+    round.addUsers(Seq(RoundUser(round.getId, user.getId, "jury", active = true)))
   }
 
   private def createImages(number: Long, startId: Long = 0): Seq[Image] = {
@@ -396,6 +397,127 @@ class LargeImageSpec extends PlaySpecification with PlayTestDb {
 
       status(result) mustEqual SEE_OTHER
       redirectLocation(result) must beSome.which(_ === s"/large/round/${round.id.get}/user/${user.id.get}/pageid/$nextPageId?rate=0")
+    }
+  }
+
+  "the large view of a round" should {
+    // contests A and B, each with a rated round; two jurors of A and one of B, each with a
+    // vote on two files in their round; A's organizer and admin, a root, and a juror of B
+    // whose membership of A is deactivated, still listed in A's round
+    def setUpContests() = {
+      val a = contestDao.create(None, "WLE", 2024, "Ukraine")
+      val b = contestDao.create(None, "WLM", 2024, "Poland")
+      val roundA = roundDao.create(Round(None, 1, Some("A round"), contestId = a.getId, rates = Round.ratesById(5), active = true))
+      val roundB = roundDao.create(Round(None, 1, Some("B round"), contestId = b.getId, rates = Round.ratesById(5), active = true))
+      val juror1 = userDao.create(User("Juror 1", "juror1@example.com", None, Set("jury"), contestId = a.id))
+      val juror2 = userDao.create(User("Juror 2", "juror2@example.com", None, Set("jury"), contestId = a.id))
+      val jurorB = userDao.create(User("Juror B", "jurorb@example.com", None, Set("jury"), contestId = b.id))
+      val former = userDao.create(User("Former", "former@example.com", None, Set("jury"), contestId = b.id))
+      UserContestJdbc.createMembership(former.getId, a.getId, User.NO_ROLE)
+      val organizer = userDao.create(User("Org", "org@example.com", None, Set("organizer"), contestId = a.id))
+      val admin = userDao.create(User("Admin", "admin@example.com", None, Set("admin"), contestId = a.id))
+      val root = User.create(User("Root", "root@example.com", roles = Set(User.ROOT_ROLE), password = Some("hash")))
+      val images = createImages(2)
+      Seq(roundA -> Seq(juror1, juror2, former), roundB -> Seq(jurorB)).foreach { case (r, jurors) =>
+        r.addUsers(jurors.map(j => RoundUser(r.getId, j.getId, "jury", active = true)))
+        jurors.foreach(j => createSelection(images, rate = 3, user = j, round = r))
+      }
+      (roundA, roundB, juror1, juror2, jurorB, former, organizer, admin, root, images)
+    }
+
+    def large(app: play.api.Application, email: String, roundId: Long, asUserId: Long, pageId: Long, json: Boolean = false) = {
+      implicit val materializer: Materializer = app.materializer
+      val req = FakeRequest(GET, s"/large/round/$roundId/user/$asUserId/pageid/$pageId")
+        .withSession(Secured.UserName -> email)
+        .withHeaders("Accept" -> (if (json) "application/json" else "text/html"))
+        .withCSRFToken
+      call(appController(app).large(asUserId, pageId, "all", roundId, None, "gallery"), req)
+    }
+
+    // the app's components, for the pages' messages
+    def appController(app: play.api.Application) =
+      new LargeViewController(app.injector.instanceOf[play.api.mvc.ControllerComponents], galleryService)
+
+    "be refused to a juror of another contest, as a page and as JSON" in {
+      testDbApp { app =>
+        val (_, roundB, juror1, _, jurorB, _, _, _, _, images) = setUpContests()
+
+        Seq(jurorB.getId, juror1.getId).foreach { asUserId =>
+          val page = large(app, juror1.email, roundB.getId, asUserId, images.head.pageId)
+          status(page) === FORBIDDEN
+          contentAsString(page) must not(contain("File:Image0.jpg"))
+
+          val json = large(app, juror1.email, roundB.getId, asUserId, images.head.pageId, json = true)
+          status(json) === FORBIDDEN
+          (contentAsJson(json) \ "error").as[String] === "forbidden"
+        }
+        ok
+      }
+    }
+
+    "be refused to a juror whose membership of the round's contest is deactivated" in {
+      testDbApp { app =>
+        val (roundA, _, _, _, _, former, _, _, _, images) = setUpContests()
+
+        status(large(app, former.email, roundA.getId, former.getId, images.head.pageId)) === FORBIDDEN
+        status(large(app, former.email, roundA.getId, former.getId, images.head.pageId, json = true)) === FORBIDDEN
+      }
+    }
+
+    "be open to the round's juror, its contest's organizer and admin, and root" in {
+      testDbApp { app =>
+        val (roundA, _, juror1, _, _, _, organizer, admin, root, images) = setUpContests()
+
+        Seq(juror1, organizer, admin, root).foreach { viewer =>
+          val page = large(app, viewer.email, roundA.getId, juror1.getId, images.head.pageId)
+          status(page) === OK
+          contentAsString(page) must contain("File:Image0.jpg")
+          status(large(app, viewer.email, roundA.getId, juror1.getId, images.head.pageId, json = true)) === OK
+        }
+        ok
+      }
+    }
+
+    "answer another juror of the round's view as the round's gallery does" in {
+      testDbApp { app =>
+        implicit val materializer: Materializer = app.materializer
+        val (roundA, _, juror1, juror2, _, _, _, _, _, images) = setUpContests()
+        val gallery = new GalleryController(galleryService, Helpers.stubControllerComponents(),
+          new modules.BlockingExecutionContext(app.actorSystem))
+
+        val galleryStatus = status(call(gallery.list(juror1.getId, 1, "all", roundA.getId, None),
+          FakeRequest(GET, s"/gallery/round/${roundA.getId}/user/${juror1.getId}/page/1")
+            .withSession(Secured.UserName -> juror2.email).withCSRFToken))
+        val largeStatus = status(large(app, juror2.email, roundA.getId, juror1.getId, images.head.pageId))
+
+        largeStatus === galleryStatus
+      }
+    }
+
+    "be a page saying so for a missing round, not a server error" in {
+      testDbApp { app =>
+        val (_, _, juror1, _, _, _, _, _, _, images) = setUpContests()
+
+        val missing = large(app, juror1.email, 999999L, juror1.getId, images.head.pageId)
+        status(missing) === NOT_FOUND
+        contentAsString(missing) must contain("There is no such round.")
+        status(large(app, juror1.email, 999999L, juror1.getId, images.head.pageId, json = true)) === NOT_FOUND
+      }
+    }
+
+    "be a page saying so without an active round, not a server error" in {
+      testDbApp { app =>
+        implicit val materializer: Materializer = app.materializer
+        val contestC = contestDao.create(None, "WLE", 2024, "Ukraine")
+        val idle = userDao.create(User("Idle", "idle@example.com", None, Set("jury"), contestId = contestC.id))
+        val req = FakeRequest(GET, s"/large/user/${idle.getId}/pageid/1").withSession(Secured.UserName -> idle.email)
+
+        val result = call(appController(app).large(idle.getId, 1L, "all", 0L, None, "gallery"), req)
+        status(result) === OK
+        contentAsString(result) must contain("No round configured yet.")
+        status(call(appController(app).largeCurrentUser(1L, "all", None, "gallery"),
+          FakeRequest(GET, "/large/pageid/1").withSession(Secured.UserName -> idle.email))) === OK
+      }
     }
   }
 }

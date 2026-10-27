@@ -211,11 +211,7 @@ class GalleryController @Inject() (
     val maybeRound = Some(round)
     val roundContestId = round.contestId
     val subRegions = round.specialNomination.contains("Віа Регіа")
-    val rounds = if (user.canViewOrgInfo(round)) {
-      Round.findByContest(roundContestId).filter(user.canViewOrgInfo)
-    } else {
-      Round.activeRounds(user)
-    }
+    val rounds = galleryService.viewerRounds(user, round)
 
     if (galleryService.isNotAuthorized(user, maybeRound, roundContestId, rounds)) {
       onUnAuthorized(user, request, Secured.Denial.round(round, Secured.ViewerRoles))

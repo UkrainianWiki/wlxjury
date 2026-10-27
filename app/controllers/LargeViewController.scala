@@ -30,10 +30,12 @@ class LargeViewController @Inject() (
       rate: Option[Int],
       module: String
   ): EssentialAction = withAuth() { sessionUser => implicit request =>
+    val maybeRound =
+      if (roundId == 0) Round.activeRounds(sessionUser).headOption
+      else Round.findById(roundId)
     // a round of another of the user's contests opens in that contest
-    val user = Some(roundId).filter(_ != 0).flatMap(Round.findById(_))
-      .fold(sessionUser)(r => Secured.inContest(sessionUser, r.contestId))
-    Secured.switchingContest(sessionUser, user)(show(pageId, user, asUserId, rate, region, roundId, module))
+    val user = maybeRound.fold(sessionUser)(r => Secured.inContest(sessionUser, r.contestId))
+    Secured.switchingContest(sessionUser, user)(show(pageId, user, asUserId, rate, region, roundId, maybeRound, module))
   }
 
   def largeCurrentUser(
@@ -42,7 +44,7 @@ class LargeViewController @Inject() (
       rate: Option[Int],
       module: String
   ): EssentialAction = withAuth() { user => implicit request =>
-    show(pageId, user, user.getId, rate, region, 0, module)
+    show(pageId, user, user.getId, rate, region, 0, Round.activeRounds(user).headOption, module)
   }
 
   def rateByPageId(
@@ -159,6 +161,10 @@ class LargeViewController @Inject() (
     }
   }
 
+  /** The large view of a round's file, by the round gallery's rules: the round must exist
+    * ([[GalleryController.listGeneric]]'s pages if not) and the user may view it
+    * ([[GalleryService.mayViewRound]]).
+    */
   def show(
       pageId: Long,
       user: User,
@@ -166,13 +172,39 @@ class LargeViewController @Inject() (
       rate: Option[Int],
       region: String,
       roundId: Long,
+      maybeRound: Option[Round],
+      module: String
+  )(implicit request: Request[Any]): Result =
+    maybeRound match {
+      case None =>
+        // no such round, or no active one: a page saying so, not a server error
+        render {
+          case Accepts.Html() =>
+            if (roundId == 0) Ok(views.html.errorPage(Some(user), "error.title", "no.round.yet"))
+            else NotFound(views.html.errorPage(Some(user), "error.title", "error.round.not.found"))
+          case Accepts.Json() =>
+            NotFound(Json.obj("error" -> (if (roundId == 0) "no_round" else "round_not_found")))
+        }
+      case Some(round) if !galleryService.mayViewRound(user, round) =>
+        val denial = Secured.Denial.round(round, Secured.ViewerRoles)
+        render {
+          case Accepts.Html() => onUnAuthorized(user, request, denial)
+          case Accepts.Json() => onUnAuthorizedJson(user, request, denial)
+        }
+      case Some(round) =>
+        showRound(pageId, user, asUserId, rate, region, roundId, round, module)
+    }
+
+  private def showRound(
+      pageId: Long,
+      user: User,
+      asUserId: Long,
+      rate: Option[Int],
+      region: String,
+      roundId: Long,
+      round: Round,
       module: String
   )(implicit request: Request[Any]): Result = {
-    val maybeRound =
-      if (roundId == 0) Round.activeRounds(user).headOption
-      else Round.findById(roundId)
-    val round = maybeRound.get
-
     val subRegions = round.specialNomination.contains("Віа Регіа")
     val query = galleryService.getQuery(
       asUserId,
