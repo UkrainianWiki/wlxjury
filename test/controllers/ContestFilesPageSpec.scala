@@ -284,7 +284,7 @@ class ContestFilesPageSpec extends PlaySpecification with PlayTestDb {
         }
         val prefix = ContestCountries.prefix(ContestJuryJdbc.findById(f.contest.getId).get)
         DB.autoCommit { implicit s =>
-          CategoryLinkJdbc.setCountries(prefix, Seq(1L -> (prefix + "Armenia"), 2L -> (prefix + "Bénin")))
+          CategoryLinkJdbc.addCountries(Seq(1L -> (prefix + "Armenia"), 2L -> (prefix + "Bénin")))
         }
         val base = s"/contest/${f.contest.getId}/files"
 
