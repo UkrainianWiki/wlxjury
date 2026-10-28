@@ -397,9 +397,9 @@ class GalleryController @Inject() (
           .sortWith((a, b) => collator.compare(a._1, b._1) < 0)
 
         // of the country: its files, or its files deleted on Commons
-        val listCount = view.countryCategory.fold(if (view.deletedOnly) view.deletedCount else view.allCount) { id =>
-          if (view.deletedOnly) view.contest.categoryId.fold(0)(ImageJdbc.categoryDeletedCount(_, Some(id)))
-          else countryCounts.find(_.categoryId == id).fold(0)(_.count)
+        val listCount = view.countryFilter.fold(if (view.deletedOnly) view.deletedCount else view.allCount) { country =>
+          if (view.deletedOnly) view.contest.categoryId.fold(0)(ImageJdbc.categoryDeletedCount(_, Some(country)))
+          else countryCounts.find(_.categoryId == country.categoryId).fold(0)(_.count)
         }
         // as many files per page as the galleries
         val pager = Pager(math.max(page, 1), view.region.fold(listCount)(regionCounts.getOrElse(_, 0)))
@@ -503,7 +503,11 @@ final case class ContestFilesView(
   /** The files listed, if there are any: none for a contest without a category. */
   def list: Option[ImageJdbc.FileList] =
     round.map(r => ImageJdbc.FileList.RoundDeleted(r.getId))
-      .orElse(contest.categoryId.map(ImageJdbc.FileList.Category(_, deletedOnly, countryCategory)))
+      .orElse(contest.categoryId.map(ImageJdbc.FileList.Category(_, deletedOnly, countryFilter)))
+
+  /** The chosen country's files ([[ImageJdbc.CountryFilter]]). */
+  def countryFilter: Option[ImageJdbc.CountryFilter] =
+    countryCategory.map(ImageJdbc.CountryFilter(_, ContestCountries.prefix(contest)))
 
   private def roundId: Option[Long] = round.flatMap(_.id)
 

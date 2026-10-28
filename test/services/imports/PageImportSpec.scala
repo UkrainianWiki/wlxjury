@@ -60,7 +60,8 @@ class PageImportSpec extends Specification with TestDb with BeforeAll with Befor
       val counts = ImageJdbc.categoryCountryCounts(categoryId, s"$root in ")
       counts.map(c => c.title -> c.count).toMap ===
         Map(s"$root in Armenia" -> 2, s"$root in Bangladesh" -> 1, s"$root in Benin" -> 1)
-      val armenia = FileList.Category(categoryId, deletedOnly = false, counts.find(_.title.endsWith("Armenia")).map(_.categoryId))
+      val armenia = FileList.Category(categoryId, deletedOnly = false,
+        counts.find(_.title.endsWith("Armenia")).map(c => ImageJdbc.CountryFilter(c.categoryId, s"$root in ")))
       ImageJdbc.listFiles(armenia, None, 10, 0).map(_.image.pageId) === Seq(11L, 12L)
       ImageJdbc.fileRank(armenia, None, 12L) === 1
     }
@@ -93,13 +94,17 @@ class PageImportSpec extends Specification with TestDb with BeforeAll with Befor
       commons.categoryCalls.get === 0
     }
 
-    "set a file's country when imported again" in {
+    "add a file's new country when imported again, never taking it out of a category" in {
       val c = contest()
       new TestImportServices(new FakeCommonsSource(files)).imageService.importFiles(c, winners, "File:Lake.jpg")
       val moved = files.map(f => if (f.image.pageId == 11L) f.copy(categories = Seq(s"$root in Georgia")) else f)
       new TestImportServices(new FakeCommonsSource(moved)).imageService.importFiles(c, winners, "File:Lake.jpg")
 
-      members(c) === Map(11L -> Some("Georgia"))
+      val countries = DB.readOnly { implicit s =>
+        sql"""SELECT c.title FROM category_members cc JOIN category c ON c.id = cc.category_id
+              WHERE cc.page_id = 11 AND c.title LIKE ${s"$root in %"}""".map(_.string(1)).list()
+      }
+      countries.toSet === Set(s"$root in Armenia", s"$root in Georgia")
     }
   }
 }

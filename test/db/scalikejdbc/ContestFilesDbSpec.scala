@@ -105,13 +105,13 @@ class ContestFilesDbSpec extends Specification with BeforeAll with TestDb {
     "be paged, counted and placed of a country: in its country category too" in new AutoRollbackDb {
       val categoryId = categoryFixture()
       val prefix = "Category:Images from Wiki Loves Earth 2026 in "
-      CategoryLinkJdbc.setCountries(prefix, (1L to 6L).map(id => id -> (prefix + (if (id <= 4) "Armenia" else "Bénin"))))
+      CategoryLinkJdbc.addCountries((1L to 6L).map(id => id -> (prefix + (if (id <= 4) "Armenia" else "Bénin"))))
       // file 13, of another category, in Armenia's too: not counted
-      CategoryLinkJdbc.setCountries(prefix, Seq(13L -> (prefix + "Armenia")))
+      CategoryLinkJdbc.addCountries(Seq(13L -> (prefix + "Armenia")))
       val counts = ImageJdbc.categoryCountryCounts(categoryId, prefix)
       val armeniaId = counts.find(_.title == prefix + "Armenia").get.categoryId
       val beninId = counts.find(_.title == prefix + "Bénin").get.categoryId
-      val armenia = FileList.Category(categoryId, deletedOnly = false, Some(armeniaId))
+      val armenia = FileList.Category(categoryId, deletedOnly = false, Some(ImageJdbc.CountryFilter(armeniaId, prefix)))
 
       counts.map(c => c.title.stripPrefix(prefix) -> c.count).toMap === Map("Armenia" -> 4, "Bénin" -> 2)
       ImageJdbc.categoryCountryCounts(categoryId, "Category:Images from Wiki Loves Earth 2025 in ") must beEmpty
@@ -120,20 +120,27 @@ class ContestFilesDbSpec extends Specification with BeforeAll with TestDb {
       ImageJdbc.regionCounts(armenia) === Map("07" -> 2, "14" -> 2)
       ImageJdbc.fileRank(armenia, None, 4L) === 3
       ids(ImageJdbc.listFiles(armenia.copy(deletedOnly = true), None, 10, 0)) === Seq(3L, 2L)
-      ImageJdbc.categoryDeletedCount(categoryId, Some(beninId)) === 1
+      ImageJdbc.categoryDeletedCount(categoryId, Some(ImageJdbc.CountryFilter(beninId, prefix))) === 1
       ImageJdbc.categoryDeletedCount(categoryId) === 3
     }
 
-    "move a file to the country Commons has it in, keeping other categories" in new AutoRollbackDb {
+    "count a file once, of its country's category, never taking it out of another's" in new AutoRollbackDb {
       val categoryId = categoryFixture()
       val prefix = "Category:Images from Wiki Loves Earth 2026 in "
-      CategoryLinkJdbc.setCountries(prefix, Seq(1L -> (prefix + "Armenia"), 2L -> (prefix + "Armenia")))
-      val changed = CategoryLinkJdbc.setCountries(prefix, Seq(1L -> (prefix + "Georgia"), 2L -> (prefix + "Armenia")))
+      // a Serbian contest's source category, and one of its own named after the country's
+      val detail = sql"INSERT INTO category (title) VALUES (${prefix + "Serbia - detail"})".updateAndReturnGeneratedKey()
+      sql"INSERT INTO category_members (category_id, page_id) VALUES ($detail, 1), ($detail, 2)".update()
+      CategoryLinkJdbc.addCountries(Seq(1L -> (prefix + "Serbia"), 3L -> (prefix + "Serbia")))
 
-      ImageJdbc.categoryCountryCounts(categoryId, prefix).map(c => c.title.stripPrefix(prefix) -> c.count).toMap ===
-        Map("Armenia" -> 1, "Georgia" -> 1)
-      changed must haveSize(2) // Armenia's and Georgia's
-      CategoryLinkJdbc.setCountries(prefix, Seq(1L -> (prefix + "Georgia"))) must beEmpty
+      val counts = ImageJdbc.categoryCountryCounts(categoryId, prefix)
+      counts.map(c => c.title.stripPrefix(prefix) -> c.count).toMap === Map("Serbia" -> 2, "Serbia - detail" -> 1)
+      val serbia = ImageJdbc.CountryFilter(counts.find(_.title.endsWith("in Serbia")).get.categoryId, prefix)
+      ids(ImageJdbc.listFiles(FileList.Category(categoryId, deletedOnly = false, Some(serbia)), None, 10, 0)) ===
+        Seq(1L, 3L)
+      ids(ImageJdbc.listFiles(FileList.Category(categoryId, deletedOnly = false,
+        Some(ImageJdbc.CountryFilter(detail, prefix))), None, 10, 0)) === Seq(2L)
+      // the Serbian contest keeps its files
+      sql"SELECT COUNT(*) FROM category_members WHERE category_id = $detail".map(_.int(1)).single() === Some(2)
       sql"SELECT COUNT(*) FROM category_members WHERE category_id = $categoryId".map(_.int(1)).single() === Some(12)
     }
 
