@@ -1,6 +1,7 @@
 package controllers
 
 import db.scalikejdbc.{MonumentJdbc, Round, SelectionJdbc, User}
+import modules.RequestTiming
 import org.intracer.wmua._
 import play.api.i18n.I18nSupport
 import play.api.mvc.{ControllerComponents, EssentialAction, Request, Result}
@@ -171,14 +172,16 @@ class LargeViewController @Inject() (
     render {
       case Accepts.Html() =>
         Ok(
-          views.html.large.large(
-            user,
-            list.withRound(round.copy(criteriaNames = criteriaNames)),
-            hood,
-            monument,
-            comments,
-            selection,
-            byCriteria
+          RequestTiming.render(
+            views.html.large.large(
+              user,
+              list.withRound(round.copy(criteriaNames = criteriaNames)),
+              hood,
+              monument,
+              comments,
+              selection,
+              byCriteria
+            )
           )
         )
       case Accepts.Json() =>

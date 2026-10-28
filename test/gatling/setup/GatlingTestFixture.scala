@@ -67,7 +67,7 @@ object GatlingTestFixture {
         "jobs.pollInterval"                      -> "2 seconds",
         // region counts: the contest files page's cache, and the round galleries' counts
         "regions.countCache"                     -> GatlingConfig.regionCountCache
-      ) ++ GatlingConfig.regionCounts.map("gallery.regionCounts" -> _))
+      ) ++ GatlingConfig.regionCounts.map("gallery.regionCounts" -> _) ++ timingConfig)
       .build()
     localApplication = Some(app)
     val server = TestServer(port, app)
@@ -88,6 +88,18 @@ object GatlingTestFixture {
       data
     }
   }
+
+  /** The timing log (modules.RequestTimingFilter) after Play's default filters, if enabled. */
+  private def timingConfig: Map[String, Any] =
+    if (!GatlingConfig.timing) Map.empty
+    else {
+      println(s"[timing] logging requests to ${GatlingConfig.timingFile}")
+      Map(
+        "play.filters.enabled" -> Seq("modules.RequestTimingFilter", "play.filters.csrf.CSRFFilter",
+          "play.filters.headers.SecurityHeadersFilter", "play.filters.hosts.AllowedHostsFilter"),
+        "timing.file" -> GatlingConfig.timingFile
+      )
+    }
 
   private def freePort(): Int = {
     val s = new ServerSocket(0)

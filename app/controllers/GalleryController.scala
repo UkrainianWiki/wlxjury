@@ -14,7 +14,7 @@ import services.GalleryService
 import services.regions.{ContestKind, RegionScheme}
 
 import javax.inject.Inject
-import modules.BlockingExecutionContext
+import modules.{BlockingExecutionContext, RequestTiming}
 
 /** Backend for getting and displaying images
   */
@@ -185,7 +185,7 @@ class GalleryController @Inject() (
 
     list.view match {
       case GalleryView.Gallery if round.isBinary =>
-        Ok(views.html.gallery(user, list, files, pager, rounds, byReg, rates))
+        Ok(RequestTiming.render(views.html.gallery(user, list, files, pager, rounds, byReg, rates)))
 
       case GalleryView.Csv =>
         val data = Csv.exportRates(files, jurors, round)
@@ -201,9 +201,9 @@ class GalleryController @Inject() (
 
       case GalleryView.Gallery | GalleryView.ByRate =>
         if (list.region.contains("grouped"))
-          Ok(views.html.galleryByRateRegions(user, list, files, pager, rounds, byReg))
+          Ok(RequestTiming.render(views.html.galleryByRateRegions(user, list, files, pager, rounds, byReg)))
         else
-          Ok(views.html.galleryByRate(user, list, files, pager, rounds, byReg, rates))
+          Ok(RequestTiming.render(views.html.galleryByRate(user, list, files, pager, rounds, byReg, rates)))
     }
   }
 

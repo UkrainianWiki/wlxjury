@@ -39,8 +39,13 @@ class JurorGallerySimulation extends Simulation {
       }
         .exec(http("gallery page")
           .get("/gallery/round/#{roundId}/user/#{userId}/page/#{page}" + sortQuery)
+          .header("X-Timing-Label", "gallery page")
           .check(status.is(200)))
     }
+
+  // with -Dgatling.timing=true, the app's DB pool and the GC beside the timing log
+  before(if (cfg.timing) gatling.setup.PoolWatcher.start())
+  after(if (cfg.timing) gatling.setup.PoolWatcher.stop("gallery"))
 
   setUp(
     scn.inject(

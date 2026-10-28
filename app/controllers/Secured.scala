@@ -2,6 +2,7 @@ package controllers
 
 import controllers.Secured.{CurrentContestId, UserName}
 import db.scalikejdbc.{ContestJuryJdbc, Round, User, UserContestJdbc}
+import modules.RequestTiming
 import play.api.Logging
 import play.api.libs.json.Json
 import play.api.mvc._
@@ -122,11 +123,13 @@ abstract class Secured(cc: ControllerComponents) extends AbstractController(cc) 
   def withAuth(
       permission: Permission = rolePermission(Secured.ViewerRoles)
   )(f: => User => Request[AnyContent] => Result): EssentialAction = {
-    Security.Authenticated(userFromRequest, onUnAuthenticated) { user =>
+    Security.Authenticated(r => RequestTiming.within(r)(userFromRequest(r)), onUnAuthenticated) { user =>
       Action { request =>
-        permitted(user, permission).fold(onUnAuthorized(user, request, Secured.denialOf(permission))) {
-          permittedUser =>
-            Secured.switchingContest(user, permittedUser)(f(permittedUser)(request))(request)
+        RequestTiming.within(request) {
+          permitted(user, permission).fold(onUnAuthorized(user, request, Secured.denialOf(permission))) {
+            permittedUser =>
+              Secured.switchingContest(user, permittedUser)(f(permittedUser)(request))(request)
+          }
         }
       }
     }
@@ -140,9 +143,11 @@ abstract class Secured(cc: ControllerComponents) extends AbstractController(cc) 
       permission: Permission = rolePermission(Secured.ViewerRoles)
   )(f: => User => Request[AnyContent] => Result): EssentialAction =
     Action { request =>
-      userFromRequest(request).fold[Result](Results.Unauthorized(Json.obj("error" -> "unauthenticated"))) { user =>
-        permitted(user, permission).fold(onUnAuthorizedJson(user, request, Secured.denialOf(permission))) {
-          permittedUser => f(permittedUser)(request)
+      RequestTiming.within(request) {
+        userFromRequest(request).fold[Result](Results.Unauthorized(Json.obj("error" -> "unauthenticated"))) { user =>
+          permitted(user, permission).fold(onUnAuthorizedJson(user, request, Secured.denialOf(permission))) {
+            permittedUser => f(permittedUser)(request)
+          }
         }
       }
     }
@@ -156,10 +161,13 @@ abstract class Secured(cc: ControllerComponents) extends AbstractController(cc) 
   )(f: => User => Request[AnyContent] => Result): EssentialAction =
     Action.async { request =>
       Future {
-        userFromRequest(request).fold(onUnAuthenticated(request)) { user =>
-          permitted(user, permission).fold(onUnAuthorized(user, request, Secured.denialOf(permission))) {
-            permittedUser =>
-              Secured.switchingContest(user, permittedUser)(f(permittedUser)(request))(request)
+        RequestTiming.dequeued(request)
+        RequestTiming.within(request) {
+          userFromRequest(request).fold(onUnAuthenticated(request)) { user =>
+            permitted(user, permission).fold(onUnAuthorized(user, request, Secured.denialOf(permission))) {
+              permittedUser =>
+                Secured.switchingContest(user, permittedUser)(f(permittedUser)(request))(request)
+            }
           }
         }
       }(ec)

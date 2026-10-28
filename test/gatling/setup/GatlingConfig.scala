@@ -46,8 +46,31 @@ object GatlingConfig {
   val regionCounts: Option[String] =
     Option.when(cfg.hasPath("gatling.regionCounts"))(cfg.getString("gatling.regionCounts"))
 
+  /** The app's timing log (`-Dgatling.timing=true`, modules.RequestTimingFilter): one JSON line
+    * per request to [[timingFile]]. Off by default.
+    */
+  val timing: Boolean = cfg.hasPath("gatling.timing") && cfg.getBoolean("gatling.timing")
+
+  /** The timing log's file: `-Dgatling.timingFile`, else one per run under target/gatling. */
+  lazy val timingFile: String =
+    if (cfg.hasPath("gatling.timingFile")) cfg.getString("gatling.timingFile")
+    else "target/gatling/timing-" +
+      java.time.LocalDateTime.now.format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss")) + ".jsonl"
+
   /** Organizer accounts the fixture provides: the most sessions any organizer flow uses. */
   def organizerAccounts: Int = Seq(RoundMgmt.organizers, AggRatings.organizers, Concurrent.admins).max
+
+  /** A juror clicking through files (JurorClickSimulation). */
+  object Clicks {
+    private val c = cfg.getConfig("gatling.clicks")
+    val stress: Boolean      = c.getBoolean("stress")
+    val jurors: Int          = c.getInt("jurors")
+    val rampUpSeconds: Int   = c.getInt("rampUpSeconds")
+    val durationSeconds: Int = if (quick) c.getInt("quickDurationSeconds") else c.getInt("durationSeconds")
+    val pauseMin: Int        = c.getInt("pauseMinSeconds")
+    val pauseMax: Int        = c.getInt("pauseMaxSeconds")
+    val votesPerVisit: Int   = c.getInt("votesPerVisit")
+  }
 
   /** The app's background job scheduler (jobs.* in application.conf). */
   object Jobs {
