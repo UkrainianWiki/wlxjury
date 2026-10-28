@@ -1,13 +1,13 @@
 @(star: Int, rate: Int, big: Boolean, half: Boolean)
     @if(half) {
         @defining(if(big) "-big.png" else ".png") { sizeSuffix =>
-            @if((rate / 2) >= star) {/assets/images/star-on@sizeSuffix}
-            @if(rate < star * 2 && rate > (star - 1) * 2) {/assets/images/star-half@sizeSuffix}
-            @if(rate <= (star - 1) * 2) {/assets/images/star-off@sizeSuffix}
+            @if((rate / 2) >= star) {@routes.Assets.versioned("images/star-on" + sizeSuffix)}
+            @if(rate < star * 2 && rate > (star - 1) * 2) {@routes.Assets.versioned("images/star-half" + sizeSuffix)}
+            @if(rate <= (star - 1) * 2) {@routes.Assets.versioned("images/star-off" + sizeSuffix)}
         }
     } else {
         @defining(if(big) "-big.png" else ".png") { sizeSuffix =>
-            @if(rate >= star) {/assets/images/star-on@sizeSuffix}
-            @if(rate <= star - 1) {/assets/images/star-off@sizeSuffix}
+            @if(rate >= star) {@routes.Assets.versioned("images/star-on" + sizeSuffix)}
+            @if(rate <= star - 1) {@routes.Assets.versioned("images/star-off" + sizeSuffix)}
         }
     }

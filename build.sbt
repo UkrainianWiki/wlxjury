@@ -121,6 +121,11 @@ Universal / mappings ~= (_.filterNot { case (_, path) =>
 })
 Test / unmanagedSources += baseDirectory.value / "project" / "BuildIdentity.scala"
 
+// Packaged assets get <md5>-<name> copies and <name>.md5 files, which routes.Assets.versioned
+// puts in asset URLs, so a deploy changes the URL of every changed file. Only the packaged
+// pipeline (stage, dist) runs it: `sbt run` and tests serve plain names.
+pipelineStages := Seq(digest)
+
 scalaVersion := "2.13.15"
 
 // Keep source decoding and forked JVM defaults deterministic across machines.
