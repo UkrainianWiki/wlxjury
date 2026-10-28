@@ -22,12 +22,15 @@ import scala.util.Random
   * sbt 'set Test / javaOptions ++= Seq("-Xmx512m", "-Dfile.encoding=UTF-8", "-Dgatling.timing=true")' \
   *     'Test/runMain gatling.setup.GalleryLatencyBenchmark'
   * }}}
-  * `-Dbench.samples` (50) and `-Dbench.warmup` (10) per case.
+  * `-Dbench.samples` (50) and `-Dbench.warmup` (10) per case; `-Dbench.cases` a regex of the labels to run.
   */
 object GalleryLatencyBenchmark {
   private def prop(key: String, default: String) = sys.props.getOrElse(s"bench.$key", default)
   private val samples = prop("samples", "50").toInt
   private val warmup = prop("warmup", "10").toInt
+  // only the cases whose label matches (`-Dbench.cases=^gallery`), all by default
+  private val cases = prop("cases", "").r
+  private def included(label: String) = cases.findFirstIn(label).isDefined
 
   def main(args: Array[String]): Unit = {
     val status = try { run(); 0 } catch {
@@ -83,7 +86,7 @@ object GalleryLatencyBenchmark {
       organizer.send("POST", "/auth", "login", Map("login" -> f.organizer._2, "password" -> f.organizer._3))
     require(orgStatus == 303, s"organizer login failed: $orgStatus")
 
-    def measure(client: Client, label: String, n: Int = samples)(path: Int => String): Unit = {
+    def measure(client: Client, label: String, n: Int = samples)(path: Int => String): Unit = if (included(label)) {
       (0 until warmup).foreach(i => client.send("GET", path(i), "warmup"))
       for (i <- 0 until n) {
         val (status, _, _, ms) = client.send("GET", path(i), label)
@@ -134,7 +137,7 @@ object GalleryLatencyBenchmark {
 
     // votes last: they change the juror's lists. Each vote goes on to the next file's large view.
     val random = new Random(1)
-    for ((kind, roundId) <- rounds; order <- Seq("file", "rate")) {
+    for ((kind, roundId) <- rounds; order <- Seq("file", "rate") if included(s"vote-$kind-$order")) {
       val count = sql"SELECT COUNT(*) FROM selection WHERE jury_id = $jurorId AND round_id = $roundId"
         .map(_.int(1)).single().getOrElse(0)
       val start = sql"""SELECT page_id FROM selection WHERE jury_id = $jurorId AND round_id = $roundId

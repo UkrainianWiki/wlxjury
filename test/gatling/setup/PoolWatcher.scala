@@ -22,6 +22,7 @@ object PoolWatcher {
   private val pauses = mutable.ArrayBuffer.empty[(Long, String, String, Long)]
   @volatile private var running = false
   private var started = 0L
+  private var poolName = ""
 
   private val listener = new NotificationListener {
     override def handleNotification(n: Notification, handback: Any): Unit =
@@ -45,11 +46,20 @@ object PoolWatcher {
         case e: NotificationEmitter => e.addNotificationListener(listener, null, null)
         case _                      =>
       }
-      val pool = scalikejdbc.ConnectionPool.get().dataSource.unwrap(classOf[HikariDataSource]).getHikariPoolMXBean
+      val cp = scalikejdbc.ConnectionPool.get()
+      // Play's HikariCP pool, or a ScalikeJDBC pool (commons-dbcp2: no count of waiting threads, -1)
+      val sample: () => (Int, Int, Int) = cp.dataSource match {
+        case h: HikariDataSource =>
+          poolName = s"HikariCP max ${h.getMaximumPoolSize}"
+          val m = h.getHikariPoolMXBean
+          () => (m.getActiveConnections, m.getIdleConnections, m.getThreadsAwaitingConnection)
+        case other =>
+          poolName = s"${other.getClass.getSimpleName} max ${cp.maxActive}"
+          () => (cp.numActive, cp.numIdle, -1)
+      }
       scheduler.scheduleAtFixedRate(() => {
-        val s = (System.currentTimeMillis(), pool.getActiveConnections, pool.getIdleConnections,
-          pool.getThreadsAwaitingConnection)
-        PoolWatcher.synchronized(samples += s)
+        val (a, i, w) = sample()
+        PoolWatcher.synchronized(samples += ((System.currentTimeMillis(), a, i, w)))
       }, 0, 100, TimeUnit.MILLISECONDS)
     }
   }
@@ -61,12 +71,13 @@ object PoolWatcher {
       def pct(xs: Seq[Int], p: Double): Int =
         if (xs.isEmpty) 0 else xs.sorted.apply(math.max(0, math.ceil(p * xs.size).toInt - 1))
       val active = samples.map(_._2).toSeq
+      val maxActive = """max (\d+)""".r.findFirstMatchIn(poolName).fold(Int.MaxValue)(_.group(1).toInt)
       val waiting = samples.map(_._4).toSeq
       val seconds = (System.currentTimeMillis() - started) / 1000.0
       val gcMs = pauses.map(_._4)
       val text =
-        f"$name: ${samples.size} samples over $seconds%.0f s; pool active p50=${pct(active, .5)} " +
-          f"p95=${pct(active, .95)} max=${active.maxOption.getOrElse(0)}; threads waiting for a connection " +
+        f"$name: ${samples.size} samples over $seconds%.0f s; pool $poolName: active p50=${pct(active, .5)} " +
+          f"p95=${pct(active, .95)} max=${active.maxOption.getOrElse(0)} (at the maximum in ${active.count(_ >= maxActive)} samples); threads waiting for a connection " +
           f"max=${waiting.maxOption.getOrElse(0)} (in ${waiting.count(_ > 0)} samples); " +
           f"GC: ${pauses.size} pauses, ${gcMs.sum} ms in all, max ${gcMs.maxOption.getOrElse(0L)} ms, " +
           f"${pauses.count(_._3.contains("major"))} major"

@@ -51,6 +51,9 @@ object GatlingConfig {
     */
   val timing: Boolean = cfg.hasPath("gatling.timing") && cfg.getBoolean("gatling.timing")
 
+  /** ScalikeJDBC's default pool for the run: hikari (default), dbcp or as-started (GatlingTestFixture). */
+  val pool: String = if (cfg.hasPath("gatling.pool")) cfg.getString("gatling.pool") else "hikari"
+
   /** The timing log's file: `-Dgatling.timingFile`, else one per run under target/gatling. */
   lazy val timingFile: String =
     if (cfg.hasPath("gatling.timingFile")) cfg.getString("gatling.timingFile")
