@@ -94,5 +94,26 @@ class GlobalLegacyThumbUrlSpec extends Specification {
       result must contain("Corallus.jpg")
       result must not contain "thumbnail.jpg"
     }
+
+    "render an SVG as PNG, as Wikimedia names it" in {
+      val svg = Image(6L, "File:1 green.svg", Some("https://upload.wikimedia.org/wikipedia/commons/c/c0/1_green.svg"),
+        width = 212, height = 212)
+      Global.legacyThumbUrl(svg, px = 250) mustEqual "/wikipedia/commons/thumb/c/c0/1_green.svg/250px-1_green.svg.png"
+    }
+
+    "show a video by its still, as Wikimedia names it" in {
+      val webm = Image(7L, "File:Rio Pando 1.webm",
+        Some("https://upload.wikimedia.org/wikipedia/commons/5/5c/Rio_Pando_1.webm?utm_source=commons.wikimedia.org"),
+        width = 4096, height = 2160)
+      Global.legacyThumbUrl(webm, px = 250) mustEqual
+        "/wikipedia/commons/thumb/5/5c/Rio_Pando_1.webm/250px--Rio_Pando_1.webm.jpg"
+    }
+
+    "name a long-titled file's thumbnail by its extension" in {
+      val title = "File:" + "А" * 100 + ".svg"
+      val url = "https://upload.wikimedia.org/wikipedia/commons/d/de/" + ("A" * 50) + ".svg"
+      Global.legacyThumbUrl(Image(8L, title, Some(url), width = 800, height = 600), px = 250) must
+        endWith("/250px-thumbnail.svg.png")
+    }
   }
 }
