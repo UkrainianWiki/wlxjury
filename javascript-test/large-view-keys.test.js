@@ -170,9 +170,9 @@ describe("a binary round, the juror's own large view of an unrated file", () => 
 
     test("the select and reject buttons post the same votes", () => {
         document.querySelector(".btn-success[data-vote-url]").click();
-        expect(sameOriginUrl(submits[0].action).pathname).toBe("/large/round/1/region/all/pageid/107/select/1");
+        expect(sameOriginUrl(submits[0].action).pathname).toBe("/large/round/1/pageid/107/select/1");
         document.querySelector(".btn-danger[data-vote-url]").click();
-        expect(sameOriginUrl(submits[1].action).pathname).toBe("/large/round/1/region/all/pageid/107/select/-1");
+        expect(sameOriginUrl(submits[1].action).pathname).toBe("/large/round/1/pageid/107/select/-1");
     });
 
     test.each([

@@ -1,18 +1,16 @@
-@import db.scalikejdbc.Round
 @import org.intracer.wmua.Selection
 @import db.scalikejdbc.User
 @(selections: Seq[(Selection, User)],
-        round: Round,
-        module: String,
-        region: String)
+        list: RoundList)
 
 <div style="margin-right: 5px;
     margin-top: 5px;
     padding: 5px;">
     <ol>
         @for((selection, user) <- selections) {
-            <li>@showRate(selection, round, user.fullname, module, user.getId, region, selection.pageId)
+            @* each juror's vote, linking the file in that juror's gallery *@
+            <li>@showRate(selection, list.round, user.fullname,
+                list.withViewer(user.getId).withFilter(VoteFilter.All).atUrl(selection.pageId))
             }
     </ol>
 </div>
-

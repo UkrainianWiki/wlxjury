@@ -36,7 +36,7 @@ class ImageMonumentIdSyncSpec extends Specification with TestDb with BeforeAll w
 
   private def regionGallery(juror: Long, round: Long, region: String): Seq[Long] =
     SelectionQuery(userId = Some(juror), roundId = Some(round), regions = Set(region),
-      order = Map("s.page_id" -> 1)).list().map(_.image.pageId)
+      order = Seq("s.page_id" -> 1)).list().map(_.image.pageId)
 
   "ImageJdbc.updateMonumentId" should {
     "update the image's selection rows in every round, and only its own" in {

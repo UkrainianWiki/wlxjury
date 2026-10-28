@@ -57,7 +57,7 @@ class CommentAuthorizationSpec extends PlaySpecification with PlayTestDb {
 
   private def comment(app: Application, as: User, f: Fixture, sessionContest: Option[Long] = None): Future[Result] = {
     val url = routes.ImageDiscussionController
-      .addComment(f.image.pageId, "all", None, "gallery", Some(f.round.getId), None).url
+      .addComment(f.image.pageId, "all", Some(f.round.getId), None).url
     route(app, FakeRequest(POST, url)
       .withSession(Seq(Secured.UserName -> as.email) ++ sessionContest.map(Secured.CurrentContestId -> _.toString): _*)
       .withFormUrlEncodedBody("id" -> "0", "text" -> s"by ${as.fullname}")
