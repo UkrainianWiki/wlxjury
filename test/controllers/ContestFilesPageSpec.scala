@@ -3,10 +3,11 @@ package controllers
 import db.scalikejdbc._
 import org.intracer.wmua.{ContestJury, Image}
 import play.api.Application
+import play.api.libs.json.JsObject
 import play.api.test.CSRFTokenHelper._
 import play.api.test.{FakeRequest, PlaySpecification}
 import scalikejdbc._
-import services.imports.DeletedFiles
+import services.imports.{ContestCountries, DeletedFiles}
 
 /** The contest's files, those deleted on Commons too, and a round's deleted ones; and the
   * round statistics' count of them.
@@ -77,6 +78,28 @@ class ContestFilesPageSpec extends PlaySpecification with PlayTestDb {
     DB.localTx { implicit s => DeletedFiles.markDeleted(Seq(5L, 6L)) }
   }
 
+  /** A script request (region-menu.js's), signed in or not. */
+  private def script(path: String, user: Option[User])(implicit app: Application) = {
+    val r = FakeRequest(GET, path).withHeaders("X-Requested-With" -> "XMLHttpRequest")
+    route(app, user.fold(r)(u => r.withSession(Secured.UserName -> u.email))).get
+  }
+
+  /** The places of the page's menu of that id, as region-menu.js reads them when it is opened:
+    * name, files' count and URL.
+    */
+  private def menuPlaces(page: String, menuId: String, user: User)(implicit app: Application)
+      : Seq[(String, Option[Int], String)] = {
+    val url = s"""id="$menuId" data-regions-url="([^"]*)"""".r.findFirstMatchIn(page).get.group(1).replace("&amp;", "&")
+    val result = script(url, Some(user))
+    status(result) === OK
+    (contentAsJson(result) \ "regions").as[Seq[JsObject]]
+      .map(r => ((r \ "name").as[String], (r \ "count").asOpt[Int], (r \ "url").as[String]))
+  }
+
+  /** The places with files: URL -> count. */
+  private def counted(places: Seq[(String, Option[Int], String)]): Map[String, Int] =
+    places.collect { case (_, Some(n), url) if n > 0 => url -> n }.toMap
+
   /** The href of the large view's button of that title. */
   private def button(page: String, title: String): Option[String] =
     s"""href="([^"]*)" title="$title""".r.findFirstMatchIn(page).map(_.group(1).replace("&amp;", "&"))
@@ -143,6 +166,7 @@ class ContestFilesPageSpec extends PlaySpecification with PlayTestDb {
         second must contain(s"""<li><a href="/contest/${f.contest.getId}/files" rel="prev"""") // to page 1
         first must contain("1–15 of 18")
         second must contain("16–18 of 18")
+        first must contain(s"""data-page-url="/contest/${f.contest.getId}/files?page={page}"""")
       }
     }
 
@@ -181,9 +205,10 @@ class ContestFilesPageSpec extends PlaySpecification with PlayTestDb {
         val base = s"/contest/${f.contest.getId}/files"
 
         val (_, all) = get(base, f.admin)
-        all must contain("""id="regionnav"""")
-        all must contain(s"""href="$base?region=07"""")
-        """\(3\)\s+</a>""".r.findAllIn(all).size === 2 // 07 and 14: three files each
+        // a menu in the navbar, its regions read when it is opened
+        all must contain("""id="regionmenu"""")
+        all must not contain "regionnav"
+        counted(menuPlaces(all, "regionmenu", f.admin)) === Map(s"$base?region=07" -> 3, s"$base?region=14" -> 3)
         tiles(all) === (1L to 8L).toList
 
         val (_, region) = get(s"$base?region=07", f.admin)
@@ -192,7 +217,10 @@ class ContestFilesPageSpec extends PlaySpecification with PlayTestDb {
 
         val (_, deleted) = get(s"$base?deleted=true&region=14", f.admin)
         tiles(deleted) === List(6L)
-        deleted must contain(s"""href="$base?deleted=true&amp;region=07"""") // the deleted files' regions
+        deleted must contain("Region: <b>14</b>") // the region shown
+        // the deleted files' regions
+        counted(menuPlaces(deleted, "regionmenu", f.admin)) ===
+          Map(s"$base?deleted=true&region=07" -> 1, s"$base?deleted=true&region=14" -> 1)
       }
     }
 
@@ -208,9 +236,9 @@ class ContestFilesPageSpec extends PlaySpecification with PlayTestDb {
           image(4L, "Forest").copy(monumentId = Some("61-101-0001"))))
         val (_, page) = get(s"/contest/${f.contest.getId}/files", f.admin)
 
-        page must contain("""id="regionnav"""")
-        page must beMatching("""(?s).*Ivano-Frankivsk O\.\s+\(1\).*""")
-        page must beMatching("""(?s).*Ternopil O\.\s+\(1\).*""")
+        val names = menuPlaces(page, "regionmenu", f.admin).collect { case (name, Some(1), _) => name }
+        names must contain("Ivano-Frankivsk O.")
+        names must contain("Ternopil O.")
       }
     }
 
@@ -226,8 +254,7 @@ class ContestFilesPageSpec extends PlaySpecification with PlayTestDb {
           image(4L, "Forest").copy(monumentId = Some("61-101-0001"))))
         val (_, page) = get(s"/contest/${f.contest.getId}/files", f.admin)
 
-        page must contain("""id="regionnav"""")
-        page must beMatching("""(?s).*Ternopil O\.\s+\(1\).*""")
+        menuPlaces(page, "regionmenu", f.admin).collect { case (name, Some(1), _) => name } must contain("Ternopil O.")
       }
     }
 
@@ -243,7 +270,52 @@ class ContestFilesPageSpec extends PlaySpecification with PlayTestDb {
           image(4L, "Church").copy(monumentId = Some("14-101-0001"))))
         val (_, page) = get(s"/contest/${f.contest.getId}/files", f.admin)
 
-        page must beMatching("""(?s).*Donetsk O\.\s+\(1\).*Єврейська спадщина\s+\(1\).*""")
+        val names = menuPlaces(page, "regionmenu", f.admin).collect { case (name, Some(1), _) => name }
+        names === Seq("Donetsk O.", "Єврейська спадщина")
+      }
+    }
+
+    "list a contest of many countries' countries in its country menu, and a country's files" in {
+      testDbApp { implicit app =>
+        val f = fixture()
+        DB.autoCommit { implicit s =>
+          sql"""UPDATE contest_jury SET name = 'Wiki Loves Earth', country = 'international', year = 2026,
+                monument_id_template = NULL WHERE id = ${f.contest.getId}""".update()
+        }
+        val prefix = ContestCountries.prefix(ContestJuryJdbc.findById(f.contest.getId).get)
+        DB.autoCommit { implicit s =>
+          CategoryLinkJdbc.setCountries(prefix, Seq(1L -> (prefix + "Armenia"), 2L -> (prefix + "Bénin")))
+        }
+        val base = s"/contest/${f.contest.getId}/files"
+
+        val (_, page) = get(base, f.admin)
+        page must contain("""id="countrymenu"""")
+        page must contain("<b>All countries</b>")
+        page must not contain "regionmenu" // not a contest of monuments
+        val countries = menuPlaces(page, "countrymenu", f.admin)
+        countries.map { case (name, n, _) => name -> n } === Seq("Armenia" -> Some(1), "Bénin" -> Some(1))
+
+        val (_, armenia) = get(countries.head._3, f.admin)
+        tiles(armenia) === List(1L)
+        armenia must contain("<b>Armenia</b>")
+      }
+    }
+
+    "read its menus' regions and countries only for those who may see the page, never as a page" in {
+      testDbApp { implicit app =>
+        val f = fixture()
+        byMonuments(f.contest)
+        val regions = s"/contest/${f.contest.getId}/files/regions"
+        val countries = s"/contest/${f.contest.getId}/files/countries"
+        status(script(regions, Some(f.organizer))) === OK
+        status(script(countries, Some(f.admin))) === OK
+        // a juror may not see the contest's files, nor their regions
+        status(script(regions, Some(f.juror))) === FORBIDDEN
+        status(script(countries, Some(f.juror))) === FORBIDDEN
+        status(script(regions, None)) === UNAUTHORIZED
+        val gone = script(s"$regions?round=999999", Some(f.admin))
+        status(gone) === NOT_FOUND
+        (contentAsJson(gone) \ "error").as[String] === "round_not_found"
       }
     }
 

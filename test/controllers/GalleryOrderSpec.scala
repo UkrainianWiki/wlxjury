@@ -68,6 +68,14 @@ class GalleryOrderSpec extends PlaySpecification with PlayTestDb {
         second must contain("16–20 of 20")
         second must contain("rel=\"prev\"")
         second must not contain "rel=\"next\""
+        // the first and the last page, and a page by its number (pager-jump.js)
+        val pages = s"/gallery/round/${f.round.getId}/user/${f.juror.getId}/page"
+        first must contain(s"""href="$pages/2?sort=file" rel="last"""")
+        first must not contain "rel=\"first\""
+        first must contain(s"""data-page-url="$pages/{page}?sort=file"""")
+        first must contain("""max="2"""")
+        second must contain(s"""href="$pages/1?sort=file" rel="first"""")
+        second must not contain "rel=\"last\""
         // the Rated tab's list: the files the filter lists, not all the juror's
         page(gallery(f, "?filter=rated"), f) must not contain "id=\"pagenav\""
         page(gallery(f, "?filter=unrated"), f) must contain("1–15 of 19")

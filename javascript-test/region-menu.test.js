@@ -7,7 +7,7 @@
 // A round gallery's region menu (region-menu.js): its regions are read on its first opening
 // only, listed with their counts, kept for the page; a failure keeps the page's own items and
 // says so, and the next opening tries again. The menu below is regionMenu.scala.html's, as
-// rendered for a juror in a region; it is a Bootstrap dropdown, whose show.bs.dropdown and
+// rendered in the navbar for a juror in a region; it is a Bootstrap dropdown, whose show.bs.dropdown and
 // hide.bs.dropdown (jQuery events) are triggered here as Bootstrap's dropdown.js triggers them.
 
 const path = require("path");
@@ -16,17 +16,18 @@ const SCRIPT = path.join(__dirname, "..", "public", "javascripts", "region-menu.
 const REGIONS_URL = "/regions/round/1/user/2/region/80";
 
 const MENU = `
-<div class="dropdown region-menu" id="regionmenu" data-regions-url="${REGIONS_URL}"
-    data-loading="LOADING" data-failed="FAILED">
-    <a class="btn btn-default btn-sm dropdown-toggle" href="/gallery/round/1/user/2/page/1" data-toggle="dropdown"
-        role="button" aria-haspopup="true" aria-expanded="false">Region: <b>Kyiv</b> <span class="caret"></span></a>
-    <ul class="dropdown-menu region-menu-list">
-        <li><a href="/gallery/round/1/user/2/page/1">All</a></li>
-        <li class="active"><a href="/gallery/round/1/user/2/region/80/page/1">Kyiv</a></li>
-        <li class="region-menu-status"></li>
-    </ul>
-    <noscript><span class="region-menu-noscript">NOSCRIPT</span></noscript>
-</div>`;
+<ul class="nav navbar-nav">
+    <li class="dropdown region-menu" id="regionmenu" data-regions-url="${REGIONS_URL}"
+        data-loading="LOADING" data-failed="FAILED">
+        <a class="dropdown-toggle" href="/gallery/round/1/user/2/page/1" data-toggle="dropdown" role="button"
+            aria-haspopup="true" aria-expanded="false">Region: <b>Kyiv</b> <span class="caret"></span></a>
+        <ul class="dropdown-menu region-menu-list">
+            <li><a href="/gallery/round/1/user/2/page/1">All</a></li>
+            <li class="active"><a href="/gallery/round/1/user/2/region/80/page/1">Kyiv</a></li>
+            <li class="region-menu-status"></li>
+        </ul>
+    </li>
+</ul>`;
 
 const REGIONS = {
     current: "80",

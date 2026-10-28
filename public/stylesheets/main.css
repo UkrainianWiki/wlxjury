@@ -389,3 +389,21 @@ div.thumb_small.wlx-thumb-failed img {
     color: #fff;
     background-color: #337ab7;
 }
+
+/* A gallery's region or country menu in the navbar (regionMenu.scala.html): a long list scrolls */
+.region-menu .region-menu-list { min-width: 240px; max-height: 70vh; overflow-y: auto; }
+.region-menu-status { padding: 3px 20px; color: #777; white-space: normal; }
+.region-menu-status:empty { display: none; }
+
+/* The pager's page box (pageLinks.scala.html), in a dropdown of the items shown */
+.pagination > .pager-jump-menu { position: relative; display: inline-block; vertical-align: top; }
+.dropdown-menu.pager-jump-box { padding: 8px 12px; min-width: 280px; }
+.pager-jump { white-space: nowrap; }
+.pager-jump label { font-weight: normal; margin: 0 6px 0 0; }
+.pager-jump input[type=number] { display: inline-block; width: 80px; margin: 0 4px; }
+
+/* A pager link with no page to go to: greyed out, not a link that only forbids the cursor
+   (li.disabled: above Bootstrap's .disabled, which loads after this file) */
+.pagination > li.disabled > span,
+.pagination > li.disabled > span:hover,
+.pagination > li.disabled > span:focus { color: #c8c8c8; background-color: #f7f7f7; cursor: default; }
