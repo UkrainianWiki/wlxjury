@@ -282,7 +282,7 @@ class ContestFilesPageSpec extends PlaySpecification with PlayTestDb {
           sql"""UPDATE contest_jury SET name = 'Wiki Loves Earth', country = 'international', year = 2026,
                 monument_id_template = NULL WHERE id = ${f.contest.getId}""".update()
         }
-        val prefix = ContestCountries.prefix(ContestJuryJdbc.findById(f.contest.getId).get)
+        val prefix = ContestCountries.prefixes(ContestJuryJdbc.findById(f.contest.getId).get).head
         DB.autoCommit { implicit s =>
           CategoryLinkJdbc.addCountries(Seq(1L -> (prefix + "Armenia"), 2L -> (prefix + "Bénin")))
         }

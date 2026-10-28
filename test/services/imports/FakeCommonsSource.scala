@@ -14,11 +14,13 @@ final case class FakeFile(image: Image, text: Option[String] = None, categories:
   *
   * @param maxIdsPerRequest the batch size its account allows (500: `apihighlimits`)
   * @param categoryCounts   the file counts of categories; any other has all the files
+  * @param parents          the parent categories of categories, by title
   */
 class FakeCommonsSource(
     files: Seq[FakeFile],
     val maxIdsPerRequest: Int = CommonsLogin.Limit,
-    categoryCounts: Map[String, Long] = Map.empty
+    categoryCounts: Map[String, Long] = Map.empty,
+    parents: Map[String, Seq[String]] = Map.empty
 ) extends CommonsSource {
 
   private val sorted = files.sortBy(_.image.pageId)
@@ -70,7 +72,14 @@ class FakeCommonsSource(
 
   def categoryFileCount(category: String): Option[Long] = categoryCounts.get(category).orElse(Some(files.size.toLong))
 
-  /** Calls of [[categories]]: one API request each on the real Commons (not in [[detailCalls]]). */
+  def categoriesByTitle(titles: Seq[String]): Map[String, Seq[String]] = {
+    categoryCalls.incrementAndGet()
+    titles.flatMap(t => parents.get(t).map(t -> _)).toMap
+  }
+
+  /** Calls of [[categories]] and [[categoriesByTitle]]: one API request each on the real
+    * Commons (not in [[detailCalls]]).
+    */
   val categoryCalls = new AtomicInteger()
 
   def categories(pageIds: Seq[Long]): Map[Long, Seq[String]] = {
