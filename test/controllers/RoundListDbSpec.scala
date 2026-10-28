@@ -4,9 +4,9 @@ import db.scalikejdbc._
 import org.intracer.wmua._
 import org.specs2.mutable.Specification
 import org.specs2.specification.{BeforeAll, BeforeEach}
-import services.GalleryService
 
-class GalleryServiceSpec extends Specification with TestDb with BeforeAll with BeforeEach {
+/** [[RoundList]]'s files, as a round's galleries list them. */
+class RoundListDbSpec extends Specification with TestDb with BeforeAll with BeforeEach {
 
   sequential
 
@@ -26,6 +26,11 @@ class GalleryServiceSpec extends Specification with TestDb with BeforeAll with B
     )
     (contest, round, user)
   }
+
+  /** The list's first page; all of it for a file list. */
+  private def files(round: Round, asUserId: Long, filter: VoteFilter = VoteFilter.All,
+                    view: GalleryView = GalleryView.Gallery): Seq[ImageWithRating] =
+    RoundList(round, asUserId, filter = filter, view = view).files(Pager(1, 0))
 
   private def createImages(number: Long, startId: Long = 0): Seq[Image] = {
     val images = (startId until number + startId).map(contestImage)
@@ -50,7 +55,7 @@ class GalleryServiceSpec extends Specification with TestDb with BeforeAll with B
       val images = createImages(6)
       createSelection(images.slice(0, 3), 0, user, round)
 
-      val result = new GalleryService().getSortedImages(user.getId, None, round.id, "gallery")
+      val result = files(round, user.getId)
 
       result.size === 3
       result.map(_.image) === images.slice(0, 3)
@@ -70,7 +75,7 @@ class GalleryServiceSpec extends Specification with TestDb with BeforeAll with B
       }
 
       for (rate <- -1 to 1) yield {
-        val result = new GalleryService().getSortedImages(user.getId, Some(rate), round.id, "gallery")
+        val result = files(round, user.getId, VoteFilter.ofRate(rate))
 
         result.size === 2
         result.map(_.image) === slice(rate)
@@ -90,7 +95,7 @@ class GalleryServiceSpec extends Specification with TestDb with BeforeAll with B
         createSelection(slice(rate), rate, user, round)
       }
 
-      val result = new GalleryService().getSortedImages(user.getId, None, round.id, "gallery")
+      val result = files(round, user.getId)
 
       result.size === 6
       result.map(_.image) === slice(1) ++ slice(0) ++ slice(-1)
@@ -107,7 +112,7 @@ class GalleryServiceSpec extends Specification with TestDb with BeforeAll with B
       }
       selectionDao.batchInsert(selections)
 
-      val result = new GalleryService().getSortedImages(user.getId, None, round.id, "gallery")
+      val result = files(round, user.getId)
 
       result.size === 6
       result.map(_.image) === images.reverse
@@ -133,7 +138,7 @@ class GalleryServiceSpec extends Specification with TestDb with BeforeAll with B
       val selectedByX = (0 to 3).flatMap(x => selectedBy(x, images(x)))
       selectionDao.batchInsert(selectedByX)
 
-      val result = new GalleryService().getSortedImages(0, None, round.id, "gallery")
+      val result = files(round, 0)
 
       result.size === 4
       result.map(_.image) === Seq(images(3), images(2), images(1), images(0))
@@ -159,7 +164,7 @@ class GalleryServiceSpec extends Specification with TestDb with BeforeAll with B
           rateN(1, Seq(0, 0, 0))
       selectionDao.batchInsert(selections)
 
-      val result = new GalleryService().getSortedImages(0, None, round.id, "filelist")
+      val result = files(round, 0, view = GalleryView.FileList)
 
       result.size === 2
       result.map(_.image) === Seq(images(0), images(1))
@@ -183,7 +188,7 @@ class GalleryServiceSpec extends Specification with TestDb with BeforeAll with B
       val selectedByX = (0 to 3).flatMap(x => selectedBy(x, images(x)))
       selectionDao.batchInsert(selectedByX)
 
-      val result = new GalleryService().getSortedImages(0, None, round.id, "filelist")
+      val result = files(round, 0, view = GalleryView.FileList)
 
       result.size === 4
       result.map(_.image) === Seq(images(3), images(2), images(1), images(0))
@@ -195,6 +200,127 @@ class GalleryServiceSpec extends Specification with TestDb with BeforeAll with B
         Seq(1, 0, 0, 0),
         Seq(0, 0, 0, 0)
       )
+    }
+  }
+
+  "a file's place in a juror's list" should {
+
+    /** A binary round with 20 of the juror's files, unrated but `selected`. */
+    def setUp20(selected: Set[Int] = Set.empty): (Round, User, Seq[Image]) = {
+      val (_, round, user) = setUp(Round.binaryRound)
+      val images = createImages(20)
+      images.zipWithIndex.foreach { case (image, i) =>
+        createSelection(Seq(image), if (selected(i)) 1 else 0, user, round)
+      }
+      (round, user, images)
+    }
+
+    /** The list's files in order, all of them. */
+    def ordered(list: RoundList): Seq[Long] = list.query.list().map(_.pageId)
+
+    "be its index, from 0, and the 15th file on page 1, the 16th on page 2" in {
+      val (round, user, _) = setUp20()
+      val list = RoundList(round, user.getId)
+      val order = ordered(list)
+      order.indices.map(i => list.position(order(i))) === order.indices.map(Some(_))
+      Pager.pageOf(list.position(order(14)).get) === 1
+      Pager.pageOf(list.position(order(15)).get) === 2
+    }
+
+    "be where it would be for a file the filter leaves out, as one just voted for" in {
+      val (round, user, images) = setUp20(selected = Set(7))
+      val voted = images(7).pageId
+      val unrated = RoundList(round, user.getId, filter = VoteFilter.Unrated)
+      val order = ordered(unrated)
+      order must not(contain(voted))
+      // by rate, a selected file comes before the unrated ones; they keep their places
+      unrated.position(voted) === Some(0)
+      order.indices.map(i => unrated.position(order(i))) === order.indices.map(Some(_))
+    }
+
+    "be none for a file not in the juror's round" in {
+      val (round, user, _) = setUp20()
+      RoundList(round, user.getId).position(99999L) must beNone
+      RoundList(round, user.getId).around(99999L) must beNone
+    }
+  }
+
+  "a large view's files" should {
+
+    def setUpN(n: Int): (Round, User, Seq[Long]) = {
+      val (_, round, user) = setUp(Round.ratesById(5))
+      val images = createImages(n)
+      createSelection(images, 0, user, round)
+      (round, user, RoundList(round, user.getId).query.list().map(_.pageId))
+    }
+
+    "be the file and two on each side" in {
+      val (round, user, order) = setUpN(10)
+      val hood = RoundList(round, user.getId).around(order(5)).get
+      hood.files.map(_.pageId) === order.slice(3, 8)
+      hood.index === 2
+      hood.next.map(_.pageId) === Some(order(6))
+    }
+
+    "be five at the list's start, fewer at its end, going on back at its last file" in {
+      val (round, user, order) = setUpN(10)
+      val list = RoundList(round, user.getId)
+      val first = list.around(order.head).get
+      (first.index, first.files.map(_.pageId)) === (0, order.take(5))
+      val last = list.around(order.last).get
+      (last.index, last.files.map(_.pageId)) === (2, order.takeRight(3))
+      last.next.map(_.pageId) === Some(order(8))
+    }
+
+    "keep a file the filter now leaves out, where its new rate puts it" in {
+      val (round, user, order) = setUpN(10)
+      SelectionJdbc.rate(order(5), user.getId, round.getId, 4)
+      val hood = RoundList(round, user.getId, filter = VoteFilter.Unrated).around(order(5)).get
+      // by rate, first: the unrated files after it
+      hood.file.pageId === order(5)
+      hood.files.map(_.pageId) === order(5) +: order.filterNot(_ == order(5)).take(4)
+    }
+  }
+
+  "a vote's move in a juror's list" should {
+
+    def setUp10(): (Round, User, Seq[Long]) = {
+      val (_, round, user) = setUp(Round.ratesById(5))
+      createSelection(createImages(10), 0, user, round)
+      (round, user, RoundList(round, user.getId).query.list().map(_.pageId))
+    }
+
+    /** The vote for the file, as the large view casts it: its place first, then the vote. */
+    def vote(list: RoundList, pageId: Long, rate: Int): Option[MovedVote] = {
+      val before = list.position(pageId).get
+      SelectionJdbc.rate(pageId, list.asUserId, list.roundId, rate)
+      list.voteMoved(pageId, before, rate)
+    }
+
+    "be none in file order with all the files" in {
+      val (round, user, order) = setUp10()
+      vote(RoundList(round, user.getId, order = ListOrder.FileOrder), order(5), 4) must beNone
+    }
+
+    "be a move by rate, and none for a vote that leaves the file in place" in {
+      val (round, user, order) = setUp10()
+      val byRate = RoundList(round, user.getId)
+      vote(byRate, order(5), 4) === Some(MovedVote(order(5), out = false, 4))
+      vote(byRate, order(5), 3) must beNone // still the first
+    }
+
+    "be out of a filtered list, but not out of the unrated files" in {
+      val (round, user, order) = setUp10()
+      val fileOrder = RoundList(round, user.getId, order = ListOrder.FileOrder)
+      vote(fileOrder.withFilter(VoteFilter.Unrated), order(5), 4) must beNone
+      vote(fileOrder.withFilter(VoteFilter.Rated), order(5), 0) === Some(MovedVote(order(5), out = true, 0))
+    }
+
+    "go through the flash and back" in {
+      val moved = MovedVote(105, out = true, 4)
+      MovedVote.of(play.api.mvc.Flash(Map(moved.flash))) === Some(moved)
+      MovedVote.of(play.api.mvc.Flash(Map(MovedVote.Key -> "105:nosuch:4"))) must beNone
+      MovedVote.of(play.api.mvc.Flash()) must beNone
     }
   }
 }

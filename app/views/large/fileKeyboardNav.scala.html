@@ -1,7 +1,8 @@
 @(index: Int, size: Int, urlAt: Int => String, backUrl: String)
-@* A read-only large view's keys, as keyboardNav.scala.html's in a round: Up and Down to the
-   previous and next file, Page Up / Page Down five files back or on (or the first / last
-   shown), Home and End to the first and last shown, Esc back to the gallery. *@
+@* A large view's moves, a contest file's and a round's (keyboardNav.scala.html adds a round's
+   vote keys): Up and Down to the previous and next file, Page Up / Page Down five files back or
+   on (or the first / last shown), Home and End to the first and last shown, Esc back to the
+   gallery. *@
 <script src="@routes.Assets.at("javascripts/jquery.hotkeys.js")"></script>
 <script>
     function wlxGo(e, url) {

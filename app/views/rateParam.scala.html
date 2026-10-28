@@ -1,1 +1,0 @@
-@(rate: Option[Int], default: String = "", prefix: String = "?", criteria: Option[Int] = None)@Html(rate.fold(default)(prefix + "rate=" + _))@Html(criteria.fold("")("&criteria=" + _))

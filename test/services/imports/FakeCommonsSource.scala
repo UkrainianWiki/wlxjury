@@ -6,15 +6,20 @@ import play.api.libs.json.Json
 
 import java.util.concurrent.atomic.AtomicInteger
 
-/** A file on the fake Commons: its image info, and its page text. */
-final case class FakeFile(image: Image, text: Option[String] = None)
+/** A file on the fake Commons: its image info, its page text and its categories. */
+final case class FakeFile(image: Image, text: Option[String] = None, categories: Seq[String] = Nil)
 
 /** Commons for specs: the files of any source are `files`, listed by page id, `limit` at a
   * time with an offset as the cursor.
   *
   * @param maxIdsPerRequest the batch size its account allows (500: `apihighlimits`)
+  * @param categoryCounts   the file counts of categories; any other has all the files
   */
-class FakeCommonsSource(files: Seq[FakeFile], val maxIdsPerRequest: Int = CommonsLogin.Limit) extends CommonsSource {
+class FakeCommonsSource(
+    files: Seq[FakeFile],
+    val maxIdsPerRequest: Int = CommonsLogin.Limit,
+    categoryCounts: Map[String, Long] = Map.empty
+) extends CommonsSource {
 
   private val sorted = files.sortBy(_.image.pageId)
   private val byId = files.map(f => f.image.pageId -> f).toMap
@@ -63,7 +68,17 @@ class FakeCommonsSource(files: Seq[FakeFile], val maxIdsPerRequest: Int = Common
     if (n > maxIdsPerRequest) throw new IllegalArgumentException(s"$n files in one request, the limit is $maxIdsPerRequest")
   }
 
-  def categoryFileCount(category: String): Option[Long] = Some(files.size.toLong)
+  def categoryFileCount(category: String): Option[Long] = categoryCounts.get(category).orElse(Some(files.size.toLong))
+
+  /** Calls of [[categories]]: one API request each on the real Commons (not in [[detailCalls]]). */
+  val categoryCalls = new AtomicInteger()
+
+  def categories(pageIds: Seq[Long]): Map[Long, Seq[String]] = {
+    categoryCalls.incrementAndGet()
+    if (pageIds.size > maxIdsPerRequest)
+      throw new IllegalArgumentException(s"${pageIds.size} files in one request, the limit is $maxIdsPerRequest")
+    pageIds.flatMap(byId.get).filter(_.categories.nonEmpty).map(f => f.image.pageId -> f.categories).toMap
+  }
 
   private def page(f: FakeFile, info: Boolean, text: Boolean): Page = {
     val i = f.image

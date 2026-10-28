@@ -2,6 +2,7 @@ package controllers
 
 import controllers.Secured.{CurrentContestId, UserName}
 import db.scalikejdbc.{ContestJuryJdbc, Round, User, UserContestJdbc}
+import modules.RequestTiming
 import play.api.Logging
 import play.api.libs.json.Json
 import play.api.mvc._
@@ -44,7 +45,7 @@ abstract class Secured(cc: ControllerComponents) extends AbstractController(cc) 
     */
   def onUnAuthorized(user: User, request: RequestHeader, denial: Secured.Denial = Secured.Denial.empty): Result = {
     val reference = Secured.logDenial(user, request, denial)
-    val suggestion = suggestedAccess(user)
+    val suggestion = suggestedAccess(user)(request)
     val safeReturnTo = Secured.safeLocalPath(Option.when(request.method == "GET")(request.uri))
     val messages = cc.messagesApi.preferred(request)
     val currentContest = user.contestId.flatMap(ContestJuryJdbc.findById)
@@ -92,7 +93,7 @@ abstract class Secured(cc: ControllerComponents) extends AbstractController(cc) 
   /** A useful destination from an active membership, the current contest's first: the
     * contest's files if the user may view them, else a gallery of one of its active rounds.
     */
-  private def suggestedAccess(user: User): Option[Secured.AccessSuggestion] = {
+  private def suggestedAccess(user: User)(implicit request: RequestHeader): Option[Secured.AccessSuggestion] = {
     val memberships = user.userContests
       .filter(_.active)
       .sortBy(membership => if (user.contestId.contains(membership.contestId)) 0 else 1)
@@ -112,10 +113,7 @@ abstract class Secured(cc: ControllerComponents) extends AbstractController(cc) 
       else {
         val rounds = Round.activeRounds(memberUser)
         rounds.headOption.map { round =>
-          val url = if (round.isBinary)
-            routes.GalleryController.list(user.getId, 1, "all", round.getId, Some(0)).url
-          else
-            routes.GalleryController.byRate(user.getId, 1, "all", round.getId).url
+          val url = RoundList.landing(round, memberUser).pageUrl(1)
           Secured.AccessSuggestion(url, "access.denied.suggested.gallery", Some(membership.contestId), Some(round), rounds)
         }
       }
@@ -125,11 +123,13 @@ abstract class Secured(cc: ControllerComponents) extends AbstractController(cc) 
   def withAuth(
       permission: Permission = rolePermission(Secured.ViewerRoles)
   )(f: => User => Request[AnyContent] => Result): EssentialAction = {
-    Security.Authenticated(userFromRequest, onUnAuthenticated) { user =>
+    Security.Authenticated(r => RequestTiming.within(r)(userFromRequest(r)), onUnAuthenticated) { user =>
       Action { request =>
-        permitted(user, permission).fold(onUnAuthorized(user, request, Secured.denialOf(permission))) {
-          permittedUser =>
-            Secured.switchingContest(user, permittedUser)(f(permittedUser)(request))(request)
+        RequestTiming.within(request) {
+          permitted(user, permission).fold(onUnAuthorized(user, request, Secured.denialOf(permission))) {
+            permittedUser =>
+              Secured.switchingContest(user, permittedUser)(f(permittedUser)(request))(request)
+          }
         }
       }
     }
@@ -143,11 +143,32 @@ abstract class Secured(cc: ControllerComponents) extends AbstractController(cc) 
       permission: Permission = rolePermission(Secured.ViewerRoles)
   )(f: => User => Request[AnyContent] => Result): EssentialAction =
     Action { request =>
-      userFromRequest(request).fold[Result](Results.Unauthorized(Json.obj("error" -> "unauthenticated"))) { user =>
-        permitted(user, permission).fold(onUnAuthorizedJson(user, request, Secured.denialOf(permission))) {
-          permittedUser => f(permittedUser)(request)
+      RequestTiming.within(request) {
+        userFromRequest(request).fold[Result](Results.Unauthorized(Json.obj("error" -> "unauthenticated"))) { user =>
+          permitted(user, permission).fold(onUnAuthorizedJson(user, request, Secured.denialOf(permission))) {
+            permittedUser => f(permittedUser)(request)
+          }
         }
       }
+    }
+
+  /** [[withAuthJson]] for script requests that run slow blocking JDBC work: on `ec` (the
+    * blocking dispatcher), as [[withAuthOn]]; never switching the session's contest.
+    */
+  def withAuthJsonOn(ec: ExecutionContext)(
+      permission: Permission = rolePermission(Secured.ViewerRoles)
+  )(f: => User => Request[AnyContent] => Result): EssentialAction =
+    Action.async { request =>
+      Future {
+        RequestTiming.dequeued(request)
+        RequestTiming.within(request) {
+          userFromRequest(request).fold[Result](Results.Unauthorized(Json.obj("error" -> "unauthenticated"))) { user =>
+            permitted(user, permission).fold(onUnAuthorizedJson(user, request, Secured.denialOf(permission))) {
+              permittedUser => f(permittedUser)(request)
+            }
+          }
+        }
+      }(ec)
     }
 
   /** [[withAuth]] for actions that run slow blocking JDBC work: the authentication, the
@@ -159,10 +180,13 @@ abstract class Secured(cc: ControllerComponents) extends AbstractController(cc) 
   )(f: => User => Request[AnyContent] => Result): EssentialAction =
     Action.async { request =>
       Future {
-        userFromRequest(request).fold(onUnAuthenticated(request)) { user =>
-          permitted(user, permission).fold(onUnAuthorized(user, request, Secured.denialOf(permission))) {
-            permittedUser =>
-              Secured.switchingContest(user, permittedUser)(f(permittedUser)(request))(request)
+        RequestTiming.dequeued(request)
+        RequestTiming.within(request) {
+          userFromRequest(request).fold(onUnAuthenticated(request)) { user =>
+            permitted(user, permission).fold(onUnAuthorized(user, request, Secured.denialOf(permission))) {
+              permittedUser =>
+                Secured.switchingContest(user, permittedUser)(f(permittedUser)(request))(request)
+            }
           }
         }
       }(ec)

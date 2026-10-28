@@ -12,26 +12,26 @@
         @if(count != 0) {
         <div class="btn-group">
             @if(round.isBinary || rate == 0) {
-                <a href="/gallery/round/@round.id/user/@user.id/page/1@rateParam(Some(rate))">
+                <a href="@RoundList(round, user.getId, filter = VoteFilter.ofRate(rate)).pageUrl(1)">
                     <button type="button" class="btn btn-default btn-xs @if(count == 0) {disabled}">
                         <span class="glyphicon glyphicon-th" aria-hidden="true"></span>
                     </button>
                 </a>
             } else {
-                <a href="@routes.GalleryController.query(round = round.getId, user = user.id, rated = Some(true))">
+                <a href="@RoundList(round, user.getId, filter = VoteFilter.Rated, view = GalleryView.ByRate).pageUrl(1)">
                     <button type="button" class="btn btn-default btn-xs @if(count == 0) {disabled}">
                         <span class="glyphicon glyphicon-signal" aria-hidden="true"></span>
                     </button>
                 </a>
             }
             @if(round.isBinary || rate == 0) {
-                <a href="/filelist/round/@round.id/user/@user.id/page/1@rateParam(Some(rate))">
+                <a href="@RoundList(round, user.getId, filter = VoteFilter.ofRate(rate), view = GalleryView.FileList).pageUrl(1)">
                     <button type="button" class="btn btn-default btn-xs @if(count == 0) {disabled}">
                         <span class="glyphicon glyphicon-align-justify" aria-hidden="true"></span>
                     </button>
                 </a>
             } else {
-                <a href="/filelist/round/@round.id/user/@user.id/page/1">
+                <a href="@RoundList(round, user.getId, view = GalleryView.FileList).pageUrl(1)">
                     <button type="button" class="btn btn-default btn-xs @if(count == 0) {disabled}">
                         <span class="glyphicon glyphicon-align-justify" aria-hidden="true"></span>
                     </button>

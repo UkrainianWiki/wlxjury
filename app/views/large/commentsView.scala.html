@@ -1,15 +1,12 @@
-@import db.scalikejdbc.Round
 @import org.intracer.wmua.Comment
 @(
         objectId: Long,
-        rate: Option[Int],
-        region: String = "all",
-        round: Round,
-        module: String = "gallery",
+        list: RoundList,
         comments: Seq[Comment])(
         implicit flash: Flash, request: Request[Any], messages: Messages)
 @import helper._
 
+@defining(list.round) { round =>
 @if(round.active || comments.nonEmpty) {
     <div style="margin-right: 5px;
         margin-top: 10px;
@@ -25,7 +22,7 @@
         }
         @if(round.active) {
             <div>
-            @form(routes.ImageDiscussionController.addComment(objectId, region, rate, module, Some(round.getId)), Symbol("class") -> "form-vertical", Symbol("id") -> "addComment") {
+            @form(Call("POST", list.commentUrl(objectId)), Symbol("class") -> "form-vertical", Symbol("id") -> "addComment") {
                 @helper.CSRF.formField
                 <input type="hidden" name="id" id="id" value="0" />
                 <textarea class="imageComment" id="text" name="text" rows="3" placeholder="@Messages("your.comment.here")"></textarea>
@@ -35,4 +32,5 @@
         }
 
     </div>
+}
 }

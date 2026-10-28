@@ -32,13 +32,8 @@ class LoginController @Inject() (
             // a state, not an error: the juror waits for a round
             Ok(views.html.errorPage(Some(u), "error.title", "no.round.yet"))
           } { round =>
-            if (round.isBinary) {
-              Redirect(
-                routes.GalleryController.list(u.getId, 1, "all", round.getId, rate = Some(0))
-              )
-            } else {
-              Redirect(routes.GalleryController.byRate(u.getId, 0, "all", 0))
-            }
+            // all the juror's files, in their order
+            Redirect(RoundList.landing(round, u).pageUrl(1))
           }
       case u if u.hasRole(User.ROOT_ROLE) =>
         Redirect(routes.ContestController.list())

@@ -23,9 +23,14 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
 
   case class Limit(
       pageSize: Option[Int] = None,
-      offset: Option[Int] = None,
-      startPageId: Option[Long] = None
+      offset: Option[Int] = None
   )
+
+  /** A file's place in a list's order, its values of the order's columns
+    * ([[SelectionQuery.orderKey]]): a query with it lists the files ordered before the file
+    * (`before`, nearest first) or the file and those after it, in the list's order.
+    */
+  case class Keyset(values: Seq[Option[Any]], before: Boolean)
 
   case class SelectionQuery(
       userId: Option[Long] = None,
@@ -36,9 +41,12 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
       limit: Option[Limit] = None,
       grouped: Boolean = false,
       groupWithDetails: Boolean = false,
-      order: Map[String, Int] = Map.empty,
+      order: Seq[(String, Int)] = Seq.empty,
       subRegions: Boolean = false,
+      // a file listed whatever the vote filter: the large view's, which a vote may have filtered out
       withPageId: Option[Long] = None,
+      // only the files before, or from, a file's place in the order (the large view's neighbours)
+      keyset: Option[Keyset] = None,
       driver: String = "mysql"
   ) {
 
@@ -46,6 +54,10 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
       if (grouped) Readers.groupedReader else Readers.rowReader
 
     private val regionColumn = if (subRegions) "adm1" else "adm0"
+
+    /** The order rows are read in: the list's, reversed for the files before a file (nearest first). */
+    private val sortOrder: Seq[(String, Int)] =
+      if (keyset.exists(_.before)) order.map { case (column, dir) => (column, -dir) } else order
 
     def query(
         count: Boolean = false,
@@ -135,7 +147,7 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
       * joined rows, images' TEXT columns included, into an on-disk temporary table.
       */
     private def deferredJoinPage(columnsStr: String): SQLSyntax = {
-      val keys = order.toSeq.zipWithIndex.map { case ((name, dir), n) => (name, s"o$n", dir) }
+      val keys = sortOrder.zipWithIndex.map { case ((name, dir), n) => (name, s"o$n", dir) }
       val keyColumns = SQLSyntax.createUnsafely(keys.map { case (name, alias, _) => s", $name as $alias" }.mkString)
       val innerOrder = SQLSyntax.createUnsafely(orderBy())
       val outerOrder = SQLSyntax.createUnsafely(orderSql(keys.map { case (_, alias, dir) => s"k.$alias" -> dir }))
@@ -157,6 +169,57 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
     def imageRank(pageId: Long)(implicit session: DBSession = autoSession): Int = {
       val inner = query(ranked = true, idOnly = true, noLimit = true)
       sql"${imageRankSql(pageId, inner)}".map(_.int(1)).single().getOrElse(0)
+    }
+
+    /** Whether [[orderKey]] and [[countBefore]] place a file: a juror's list in a round, on
+      * the selection rows alone (no grouping, no monument table).
+      */
+    def keyed: Boolean =
+      userId.isDefined && roundId.isDefined && !grouped && !groupWithDetails && order.nonEmpty &&
+        !(regions.size > 1 || subRegionFilter)
+
+    /** The file's values of the list's order columns, from the juror's row of it in the round
+      * (in the list's region), whatever the vote filter: None if the juror has no such file.
+      */
+    def orderKey(pageId: Long)(implicit session: DBSession = autoSession): Option[Keyset] = {
+      require(keyed, "a juror's list in a round")
+      val columns = SQLSyntax.createUnsafely(order.map(_._1).mkString(", "))
+      val conditions = copy(rate = None, rated = None, withPageId = None).where()
+      sql"select $columns from selection s $conditions and s.page_id = $pageId"
+        .map(rs => Keyset((1 to order.size).map(i => Option(rs.any(i))), before = true))
+        .single()
+    }
+
+    /** The number of the list's files ordered before the file at `key`: its index in the list,
+      * or where it would be if the filter leaves it out. One count over the juror's rows.
+      */
+    def countBefore(key: Keyset)(implicit session: DBSession = autoSession): Int =
+      sql"select count(*) from selection s ${copy(withPageId = None, keyset = Some(key.copy(before = true))).where()}"
+        .map(_.int(1)).single().getOrElse(0)
+
+    /** The rows ordered before a file's values of the order columns: on each column in turn,
+      * equal on those before it and before on it (`<` ascending, `>` descending). MariaDB
+      * sorts NULL first ascending and last descending, which the conditions follow, and none
+      * of them is NULL, so NOT of it is the file and the rows after it.
+      */
+    private def orderedBefore(values: Seq[Option[Any]]): SQLSyntax = {
+      val columns = order.zip(values)
+      def column(name: String) = SQLSyntax.createUnsafely(name)
+      val terms = columns.indices.map { i =>
+        val equal = columns.take(i).map { case ((name, _), value) =>
+          value.fold(sqls"${column(name)} is null")(v => sqls"${column(name)} = $v")
+        }
+        val ((name, dir), value) = columns(i)
+        val c = column(name)
+        val step = (dir, value) match {
+          case (1, Some(v))  => sqls"(${c} is null or ${c} < $v)"
+          case (1, None)     => sqls"false"
+          case (_, Some(v))  => sqls"(${c} is not null and ${c} > $v)"
+          case (_, None)     => sqls"${c} is not null"
+        }
+        sqls"(${SQLSyntax.join(equal :+ step, sqls"and")})"
+      }
+      sqls"(${SQLSyntax.join(terms, sqls"or")})"
     }
 
     /** The regions of the round's (or the juror's) images, by id, without counts (the
@@ -185,7 +248,7 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
     /** The number of the query's images in each region, without its region filter: every
       * region of the juror's (or the round's) images, those the rate filter leaves out
       * counted 0, so a region's count is what its link lists. Files without a monument id
-      * are left out. The `rated` filter's extra page (`withPageId`) isn't counted.
+      * are left out. The vote filter's extra file (`withPageId`) isn't counted.
       *
       * A juror's: one scan of the juror's rows on (jury_id, round_id, rate, monument_id,
       * page_id) (V48), the juror having one row per image. The whole round's: its images
@@ -211,6 +274,22 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
       SQL(sql).map(rs => rs.stringOpt(1) -> rs.int(2)).list().collect { case (Some(region), n) => region -> n }.toMap
     }
 
+    /** A juror's files in the round by top-level region (None: no monument id) and rate, all
+      * of them whatever the query's filters: one scan of the juror's rows on (jury_id,
+      * round_id, rate, monument_id, page_id) (V48), the juror having one row per file. The
+      * tabs' counts, the region nav's and the list's total all come from it
+      * ([[controllers.JurorCounts]]).
+      */
+    def regionRateCounts()(implicit session: DBSession = autoSession): Map[(Option[String], Int), Int] = {
+      require(userId.isDefined && roundId.isDefined, "a juror's counts in a round")
+      SQL(s"""SELECT ${regionOf("s.monument_id")} AS region, s.rate, COUNT(*) FROM selection s
+             |WHERE s.jury_id = ${userId.get.toLong} AND s.round_id = ${roundId.get.toLong}
+             |GROUP BY region, s.rate ORDER BY NULL""".stripMargin)
+        .map(rs => (rs.stringOpt(1), rs.int(2)) -> rs.int(3))
+        .list()
+        .toMap
+    }
+
     /** A single sub-region (adm1) filter, which the monument table has. */
     private def subRegionFilter: Boolean = subRegions && regions.size == 1 && regions.head.length > 2
 
@@ -228,16 +307,21 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
     def where(count: Boolean = false): SQLSyntax = {
       val col = SQLSyntax.createUnsafely(s"m.$regionColumn")
 
+      // the votes the list has; and the file `withPageId` too, whatever its vote
+      val votes: Seq[SQLSyntax] = Seq(
+        rate.map(r => sqls"s.rate = $r"),
+        rated.map(r => if (r) sqls"s.rate > 0" else sqls"s.rate = 0")
+      ).flatten
+      val voteFilter = votes.headOption.map { _ =>
+        val cond = SQLSyntax.join(votes, sqls"and")
+        withPageId.fold(cond)(pageId => sqls"($cond or s.page_id = $pageId)")
+      }
+
       val conditions: Seq[SQLSyntax] = Seq(
         userId.map(id => sqls"s.jury_id = $id"),
         roundId.map(id => sqls"s.round_id = $id"),
-        rate.map(r => sqls"s.rate = $r"),
-        rated.map { r =>
-          val ratedCond: SQLSyntax = if (r) sqls"s.rate > 0" else sqls"s.rate = 0"
-          withPageId.fold(ratedCond) { pageId =>
-            sqls"($ratedCond or s.page_id = $pageId)"
-          }
-        },
+        voteFilter,
+        keyset.map(k => if (k.before) orderedBefore(k.values) else sqls"not ${orderedBefore(k.values)}"),
         regions.headOption.map { _ =>
           if (subRegionFilter) {
             sqls.in(col, regions.toSeq)
@@ -261,7 +345,7 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
       }
     }
 
-    def orderBy(fields: Map[String, Int] = order): String = orderSql(fields.toSeq)
+    def orderBy(fields: Seq[(String, Int)] = sortOrder): String = orderSql(fields)
 
     private def orderSql(fields: Seq[(String, Int)]): String = {
       val dirMap = Map(1 -> "asc", -1 -> "desc")

@@ -142,7 +142,7 @@ class ImagesSqlSpec extends FunSuite with AutoRollbackMunitDb {
 
   dbTest("ranked=true emits ROW_NUMBER() over orderBy in column list") { implicit session =>
     check(
-      SelectionQuery(userId = Some(1L), roundId = Some(2L), order = Map("rate" -> -1)),
+      SelectionQuery(userId = Some(1L), roundId = Some(2L), order = Seq("rate" -> -1)),
       s"""select  i.page_id as pi_on_i, ROW_NUMBER() over ( order by rate desc) ranked from selection s
           STRAIGHT_JOIN images i
           on i.page_id = s.page_id

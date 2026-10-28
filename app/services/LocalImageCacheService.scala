@@ -7,7 +7,7 @@ import org.apache.pekko.http.scaladsl.Http
 import org.apache.pekko.http.scaladsl.model._
 import org.apache.pekko.pattern.after
 import org.apache.pekko.stream.scaladsl._
-import org.intracer.wmua.Image
+import org.intracer.wmua.{Image, ImageUtil}
 import play.api.libs.json.{Json, Reads, Writes}
 import play.api.{Configuration, Logging}
 import services.imports.{CommonsFileCheck, FileCheck}
@@ -470,21 +470,12 @@ class LocalImageCacheService(
   // Mirrors the URL construction in Global.legacyThumbUlr, using wikiBaseUrl as host
   private[services] def wikiThumbUrl(image: Image, px: Int): Option[String] =
     image.url.filter(CommonsFileCheck.isCommonsUrl).map { rawUrl =>
-      val lower     = image.title.toLowerCase
-      val isPdf     = lower.endsWith(".pdf")
-      val isTif     = lower.endsWith(".tif") || lower.endsWith(".tiff")
-      val url       = CommonsFileCheck.withoutQuery(rawUrl)
-      val lastSlash = url.lastIndexOf("/")
-      val utf8Size  = image.title.getBytes("UTF-8").length
-      val thumbStr  = if (utf8Size > 165) "thumbnail.jpg" else url.substring(lastSlash + 1)
+      val url    = CommonsFileCheck.withoutQuery(rawUrl)
       val scheme = wikiBaseUrl.takeWhile(_ != ':')
       val host   = wikiBaseUrl.replaceFirst("https?://", "")
       url.replaceFirst("https?://upload\\.wikimedia\\.org/wikipedia/commons/",
         s"$scheme://$host/wikipedia/commons/thumb/"
-      ) + "/" +
-        (if (isPdf) "page1-" else if (isTif) "lossy-page1-" else "") +
-        px + "px-" + thumbStr +
-        (if (isPdf || isTif) ".jpg" else "")
+      ) + "/" + ImageUtil.thumbName(image.title, url.substring(url.lastIndexOf("/") + 1), px)
     }
 
   // Local path mirrors the URL path, so Apache can serve it under the same URL structure.
@@ -696,7 +687,7 @@ object LocalImageCacheService {
   private final case class WikimediaSource(px: Int, url: Option[String], original: Boolean)
 
   // A thumbnail's file name: 250px-foo.jpg, or for a PDF or TIFF page1-250px-foo.pdf.jpg
-  // and lossy-page1-250px-foo.tif.jpg.
+  // and lossy-page1-250px-foo.tif.jpg, a video's 250px--foo.webm.jpg (ImageUtil.thumbName).
   private val pxPattern = """^(?:(?:lossy-)?page\d+-)?(\d+)px-.*""".r
 
   /** The width in a thumbnail's file name. */

@@ -42,6 +42,9 @@ object ImportParams {
   * @param linked stored files (another contest's) put in this contest's category
   * @param missing        titles of the pasted list that Commons doesn't have
   * @param missingTitles  the first [[ImageImportHandler.MaxMissingTitles]] of them
+  * @param byCountry      whether a page's files are only those in the contest's country
+  *                       categories ([[ContestCountries]]): decided by the first step
+  * @param notInCountries a page's files left out as in none of them (icons, logos)
   */
 final case class ImportState(
     cursor: JsObject = Json.obj(),
@@ -53,14 +56,22 @@ final case class ImportState(
     monumentIdsChanged: Long = 0L,
     total: Option[Long] = None,
     missing: Long = 0L,
-    missingTitles: Seq[String] = Nil
+    missingTitles: Seq[String] = Nil,
+    byCountry: Option[Boolean] = None,
+    notInCountries: Long = 0L
 )
 
 object ImportState {
   implicit val format: OFormat[ImportState] = Json.using[Json.WithDefaultValues].format[ImportState]
 }
 
-/** What one fetch of an import got: the files of one page, and where the next page is. */
+/** What one fetch of an import got: the files of one page, and where the next page is.
+  *
+  * @param countries      the files' contest country categories ([[ContestCountries]]),
+  *                       by page id
+  * @param countryPrefix  what the titles of the contest's country categories start with
+  * @param notInCountries files of a page source left out, as in none of those categories
+  */
 final case class ImportPage(
     listed: Int,
     images: Seq[Image],
@@ -69,7 +80,11 @@ final case class ImportPage(
     nextCursor: JsObject,
     nextIndex: Int,
     last: Boolean,
-    total: Option[Long]
+    total: Option[Long],
+    countries: Seq[(Long, String)] = Nil,
+    countryPrefix: String = "",
+    byCountry: Option[Boolean] = None,
+    notInCountries: Int = 0
 )
 
 /** Imports a contest's files from Commons in the background, as a [[Job]] of kind
@@ -82,13 +97,17 @@ final case class ImportPage(
   *  1. fetched on the scheduler's fetch lane, outside any transaction: the page of the
   *     source's files ([[CommonsSource.listFiles]], the API's continue map as the cursor)
   *     or of the pasted titles, then the files' image info and, with a monument id
-  *     template, their text;
+  *     template, their text; of a page, and of a pasted list for a contest of many
+  *     countries (the international one), the files' categories, for their countries
+  *     ([[ContestCountries]]): a page's files are only those in a country category, if the
+  *     contest has them on Commons (a WLx contest's winners page shows icons and logos too);
   *  2. written in one transaction with the next cursor, by the rules the whole-contest
   *     import had, per page: a file not stored is inserted and put in the contest's
   *     category; a stored file of another contest is put in the category only; a file of
   *     the contest is updated if it changed ([[ImageService.changedImages]]), with its
-  *     selection rows' monument id. Mode `monument_ids` sets the stored files' monument
-  *     ids from their text, where they differ.
+  *     selection rows' monument id; a file is put in its country category, and taken out
+  *     of the contest's other countries'. Mode `monument_ids` sets the stored files'
+  *     monument ids from their text, where they differ.
   *
   * Every write is idempotent (`INSERT IGNORE`, compare before update), so a page fetched
   * and written again after a crash or a Retry changes nothing. Held in memory: one page.
@@ -140,7 +159,8 @@ class ImageImportHandler @Inject() (source: CommonsSource, config: Configuration
       "updated" -> st.updated,
       "monumentIdsChanged" -> st.monumentIdsChanged,
       "missing" -> st.missing,
-      "missingTitles" -> st.missingTitles
+      "missingTitles" -> st.missingTitles,
+      "notInCountries" -> st.notInCountries
     )
   }
 
@@ -166,23 +186,37 @@ class ImageImportHandler @Inject() (source: CommonsSource, config: Configuration
     if (p.titleCount > 0 && !monumentIds) {
       val batch = titlesOf(job, st.index, math.min(stepSize, idsPerRequest))
       val pages = source.filesByTitles(batch, info = true, text = text)
+      val found = pages.filter(_.id.isDefined)
       val next = st.index + batch.size
       ImportPage(
         listed = batch.size,
-        images = images(contest, p, pages.filter(_.id.isDefined)),
+        images = images(contest, p, found),
         monumentIds = Nil,
         missingTitles = pages.filter(_.id.isEmpty).map(_.title),
         nextCursor = st.cursor,
         nextIndex = next,
         last = next >= p.titleCount,
-        total = Some(p.titleCount.toLong)
+        total = Some(p.titleCount.toLong),
+        // a national contest's files are all of its country
+        countries = if (ContestCountries.ofManyCountries(contest)) countries(contest, found).toSeq else Nil,
+        countryPrefix = ContestCountries.prefix(contest)
       )
     } else {
       val listed = source.listFiles(ImportSource(p.source), st.cursor, stepSize)
       val pages = listed.pageIds.grouped(idsPerRequest).flatMap(source.files(_, info = !monumentIds, text = text)).toSeq
+      // a page's files: those of the contest's countries, if it has country categories
+      val byCountry = Option.when(!monumentIds && ImportSource(p.source).isInstanceOf[ImportSource.PageFiles]) {
+        st.byCountry.getOrElse(source.categoryFileCount(ContestCountries.root(contest)).exists(_ > 0))
+      }
+      val countryOf = if (byCountry.contains(true)) countries(contest, pages) else Map.empty[Long, String]
+      val kept = if (byCountry.contains(true)) pages.filter(_.id.exists(countryOf.contains)) else pages
       ImportPage(
+        countries = countryOf.toSeq,
+        countryPrefix = ContestCountries.prefix(contest),
+        byCountry = byCountry,
+        notInCountries = pages.size - kept.size,
         listed = listed.pageIds.size,
-        images = if (monumentIds) Nil else images(contest, p, pages),
+        images = if (monumentIds) Nil else images(contest, p, kept),
         monumentIds = if (monumentIds) monumentIdsOf(p, pages) else Nil,
         missingTitles = Nil,
         nextCursor = listed.next.getOrElse(st.cursor),
@@ -191,6 +225,16 @@ class ImageImportHandler @Inject() (source: CommonsSource, config: Configuration
         total = st.total.orElse(if (st.seen == 0) source.categoryFileCount(p.source) else None)
       )
     }
+  }
+
+  /** The files' contest country categories, by page id ([[ContestCountries]]). */
+  private def countries(contest: ContestJury, pages: Seq[Page]): Map[Long, String] = {
+    val ids = pages.flatMap(_.id)
+    if (ids.isEmpty) Map.empty
+    else
+      ids.grouped(source.maxIdsPerRequest).flatMap(source.categories).flatMap { case (pageId, categories) =>
+        ContestCountries.category(contest, categories).map(pageId -> _)
+      }.toMap
   }
 
   private def images(contest: ContestJury, p: ImportParams, pages: Seq[Page]): Seq[Image] =
@@ -221,14 +265,17 @@ class ImageImportHandler @Inject() (source: CommonsSource, config: Configuration
       seen = st.seen + page.listed,
       total = page.total.orElse(st.total),
       missing = st.missing + page.missingTitles.size,
-      missingTitles = (st.missingTitles ++ page.missingTitles).take(MaxMissingTitles)
+      missingTitles = (st.missingTitles ++ page.missingTitles).take(MaxMissingTitles),
+      byCountry = page.byCountry.orElse(st.byCountry),
+      notInCountries = st.notInCountries + page.notInCountries
     )
     val progress = Progress(Some(next.seen), next.total, Some("files"))
     if (!page.last) StepResult.Continue(Json.toJsObject(next), progress)
     else {
       logger.info(
         s"Job ${job.id}, contest ${p.contestId}: ${title(job)}: ${next.seen} files, ${next.inserted} inserted, " +
-          s"${next.linked} linked, ${next.updated} updated, ${next.monumentIdsChanged} monument ids changed"
+          s"${next.linked} linked, ${next.updated} updated, ${next.monumentIdsChanged} monument ids changed" +
+          (if (next.notInCountries > 0) s", ${next.notInCountries} left out as in no country category" else "")
       )
       StepResult.Done(Json.toJsObject(next), progress)
     }
@@ -252,6 +299,8 @@ class ImageImportHandler @Inject() (source: CommonsSource, config: Configuration
     if (changed.nonEmpty) ctx.afterCommit(RegionCountCache.invalidateMonumentIds())
     ImageJdbc.insertIgnore(fresh)
     CategoryLinkJdbc.linkIgnore(categoryId, unlinked.map(_.pageId))
+    val countriesChanged = CategoryLinkJdbc.setCountries(page.countryPrefix, page.countries)
+    if (countriesChanged.nonEmpty) ctx.afterCommit(RegionCountCache.invalidateCategory(countriesChanged: _*))
     changed.foreach { image =>
       ImageJdbc.updateIn(image)
       stored.get(image.pageId).map(_._1.title).filter(_ != image.title).foreach(ImageJdbc.recordRename(_, image.pageId))
