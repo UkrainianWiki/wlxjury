@@ -117,6 +117,21 @@ class GalleryOrderSpec extends PlaySpecification with PlayTestDb {
     }
   }
 
+  "an organiser who has no files in the round" should {
+    "see a juror's gallery without tabs or an order of their own" in {
+      testDbApp { implicit app =>
+        val f = fixture()
+        val organizer = userDao.create(User("Organizer", "org@example.com", None, Set("organizer"), contestId = f.contest.id))
+        val result = route(app, FakeRequest(GET, gallery(f)).withSession(Secured.UserName -> organizer.email)
+          .withHeaders(ACCEPT -> "text/html").withCSRFToken).get
+        status(result) === OK
+        val html = contentAsString(result)
+        html must not(contain("All (0)"))
+        html must not(contain("In file order"))
+      }
+    }
+  }
+
   "a juror's vote in the large view" should {
 
     def vote(f: Fixture, pageId: Long, rate: Int, query: String)(implicit app: Application): Future[Result] =
