@@ -11,6 +11,7 @@ import play.api.http.HttpEntity
 import play.api.i18n.I18nSupport
 import play.api.mvc._
 import services.GalleryService
+import services.imports.ContestCountries
 import services.regions.{ContestKind, RegionScheme}
 
 import javax.inject.Inject
@@ -355,15 +356,22 @@ class GalleryController @Inject() (
   /** The contest's files, those deleted on Commons too, marked; or only those
     * (`deleted`); or, with `round`, the round's files deleted on Commons
     * ([[ImageJdbc.roundDeletedFiles]]). All, or those of a region (with the regions and
-    * their file counts above, as in a round's gallery). For the contest's admins and
-    * organizers ([[User.canViewContestFiles]]). A tile opens the file's large view
-    * ([[contestFileLarge]]); a deleted file's mark links its page on Commons.
+    * their file counts above, as in a round's gallery), or of a country (with the countries
+    * and their file counts above: the contest's country categories the files are in, of a
+    * contest of many, [[ContestCountries]]). For the contest's admins and organizers
+    * ([[User.canViewContestFiles]]). A
+    * tile opens the file's large view ([[contestFileLarge]]); a deleted file's mark links
+    * its page on Commons.
     */
-  def contestFiles(contestId: Long, page: Int, deleted: Boolean, round: Option[Long], region: String): EssentialAction =
+  def contestFiles(contestId: Long, page: Int, deleted: Boolean, round: Option[Long], region: String,
+      country: Option[String]): EssentialAction =
     withAuthOn(blocking)(contestPermission(User.ADMIN_ROLES ++ User.ORG_COM_ROLES, Some(contestId))) { user => implicit request =>
-      contestFilesView(user, contestId, deleted, round, region).fold(identity, { listed =>
+      contestFilesView(user, contestId, deleted, round, region, country).fold(identity, { listed =>
         // all the category's files' counts (cached), which also give their number
         val all = listed.contest.categoryId.filter(_ => listed.round.isEmpty).map(categoryCounts)
+        val countryCounts = listed.contest.categoryId
+          .filter(_ => listed.round.isEmpty && ContestCountries.ofManyCountries(listed.contest))
+          .fold(Seq.empty[ImageJdbc.CountryCount])(ImageJdbc.categoryCountryCounts(_, ContestCountries.prefix(listed.contest)))
         val view = listed.round match {
           case Some(r) =>
             val (deletedCount, counted) = ImageJdbc.roundDeletedFileCounts(r.getId)
@@ -378,19 +386,26 @@ class GalleryController @Inject() (
           if (!(byMonuments || view.region.isDefined)) Map.empty[String, Int]
           else
             view.list match {
-              case Some(ImageJdbc.FileList.Category(_, false)) => all.fold(Map.empty[String, Int])(_.byRegion)
+              case Some(ImageJdbc.FileList.Category(_, false, None)) => all.fold(Map.empty[String, Int])(_.byRegion)
               case list => list.fold(Map.empty[String, Int])(ImageJdbc.regionCounts(_))
             }
         val regions =
           if (byMonuments) RegionScheme.of(view.contest).regions(regionCounts.map { case (id, n) => id -> Some(n) })
           else Seq.empty[Region]
+        val collator = java.text.Collator.getInstance(java.util.Locale.ROOT)
+        val countries = countryCounts.map(c => ContestCountries.country(view.contest, c.title) -> c.count)
+          .sortWith((a, b) => collator.compare(a._1, b._1) < 0)
 
+        // of the country: its files, or its files deleted on Commons
+        val listCount = view.countryCategory.fold(if (view.deletedOnly) view.deletedCount else view.allCount) { id =>
+          if (view.deletedOnly) view.contest.categoryId.fold(0)(ImageJdbc.categoryDeletedCount(_, Some(id)))
+          else countryCounts.find(_.categoryId == id).fold(0)(_.count)
+        }
         // as many files per page as the galleries
-        val pager = Pager(math.max(page, 1),
-          view.region.fold(if (view.deletedOnly) view.deletedCount else view.allCount)(regionCounts.getOrElse(_, 0)))
+        val pager = Pager(math.max(page, 1), view.region.fold(listCount)(regionCounts.getOrElse(_, 0)))
         val files = view.list.fold(Seq.empty[ImageJdbc.StoredFile])(
           ImageJdbc.listFiles(_, view.region, pager.pageSize, pager.offset))
-        Ok(views.html.contestFiles(user, files, pager, view.copy(regions = regions)))
+        Ok(views.html.contestFiles(user, files, pager, view.copy(regions = regions, countries = countries)))
       })
     }
 
@@ -400,10 +415,10 @@ class GalleryController @Inject() (
     * (a deleted file's undeletion there too). Read-only: no round or votes. For those who
     * may see the files page.
     */
-  def contestFileLarge(contestId: Long, pageId: Long, deleted: Boolean, round: Option[Long], region: String)
-      : EssentialAction =
+  def contestFileLarge(contestId: Long, pageId: Long, deleted: Boolean, round: Option[Long], region: String,
+      country: Option[String]): EssentialAction =
     withAuthOn(blocking)(contestPermission(User.ADMIN_ROLES ++ User.ORG_COM_ROLES, Some(contestId))) { user => implicit request =>
-      contestFilesView(user, contestId, deleted, round, region).fold(identity, { view =>
+      contestFilesView(user, contestId, deleted, round, region, country).fold(identity, { view =>
         // two files before it, as a round's large view has them
         val (files, offset) = view.list.fold((Seq.empty[ImageJdbc.StoredFile], 0)) { list =>
           val offset = math.max(0, ImageJdbc.fileRank(list, view.region, pageId) - 2)
@@ -419,20 +434,30 @@ class GalleryController @Inject() (
     }
 
   /** The list of the files page: the contest's files, all or deleted, or the round's deleted
-    * ones, in the region or all; its counts not read yet. An error page if there is no such
-    * contest, or round in it.
+    * ones, in the region and of the country (not of a round's) or all; its counts not read
+    * yet. An error page if there is no such contest, round in it, or country category.
     */
-  private def contestFilesView(user: User, contestId: Long, deleted: Boolean, round: Option[Long], region: String)(
+  private def contestFilesView(user: User, contestId: Long, deleted: Boolean, round: Option[Long], region: String,
+      country: Option[String])(
       implicit request: RequestHeader
   ): Either[Result, ContestFilesView] = {
     val contest = ContestJuryJdbc.findById(contestId)
     val maybeRound = round.flatMap(Round.findById).filter(_.contestId == contestId)
+    val chosenCountry = country.filter(_ => maybeRound.isEmpty)
+    // the country's category: one of the contest's country categories
+    val countryCategory = for {
+      c <- contest
+      name <- chosenCountry
+      id <- CategoryJdbc.where("title" -> (ContestCountries.prefix(c) + name)).apply().headOption.map(_.id)
+    } yield id
     if (contest.isEmpty || round.isDefined && maybeRound.isEmpty)
       Left(NotFound(views.html.errorPage(Some(user), "error.title",
         if (contest.isEmpty) "error.contest.not.found" else "error.round.not.found")))
+    else if (chosenCountry.isDefined && countryCategory.isEmpty)
+      Left(NotFound(views.html.errorPage(Some(user), "error.title", "error.not.found")))
     else
       Right(ContestFilesView(contest.get, deletedOnly = deleted || maybeRound.isDefined, maybeRound,
-        Some(region).filter(_ != "all")))
+        Some(region).filter(_ != "all"), chosenCountry, countryCategory))
   }
 
   def thumbnailUrls(contestId: Long, roundId: Option[Long]): EssentialAction =
@@ -456,39 +481,48 @@ class GalleryController @Inject() (
   * deleted on Commons, or a round's deleted ones; in a region or all; and how many there are.
   *
   * @param region         the region's id ([[db.scalikejdbc.rewrite.ImageDbNew.regionOf]]), if one is chosen
+  * @param country        the country ([[ContestCountries]]), if one is chosen, and its category
   * @param countedInRound of the round's deleted files, those still in its galleries and results
   * @param regions        the regions of the list's files, with their counts
+  * @param countries      the countries of the contest's files and their file counts, in name order
   */
 final case class ContestFilesView(
     contest: ContestJury,
     deletedOnly: Boolean,
     round: Option[Round],
     region: Option[String] = None,
+    country: Option[String] = None,
+    countryCategory: Option[Long] = None,
     allCount: Int = 0,
     deletedCount: Int = 0,
     countedInRound: Int = 0,
-    regions: Seq[Region] = Seq.empty
+    regions: Seq[Region] = Seq.empty,
+    countries: Seq[(String, Int)] = Seq.empty
 ) {
 
   /** The files listed, if there are any: none for a contest without a category. */
   def list: Option[ImageJdbc.FileList] =
     round.map(r => ImageJdbc.FileList.RoundDeleted(r.getId))
-      .orElse(contest.categoryId.map(ImageJdbc.FileList.Category(_, deletedOnly)))
+      .orElse(contest.categoryId.map(ImageJdbc.FileList.Category(_, deletedOnly, countryCategory)))
 
   private def roundId: Option[Long] = round.flatMap(_.id)
 
   /** This list's page. */
-  def pageUrl(page: Int): String = pageUrl(page, region.getOrElse("all"))
+  def pageUrl(page: Int): String = pageUrl(page, region.getOrElse("all"), country)
 
   /** This list's first page in the region, or all of it ("all"). */
-  def regionUrl(region: String): String = pageUrl(1, region)
+  def regionUrl(region: String): String = pageUrl(1, region, country)
 
-  private def pageUrl(page: Int, region: String): String =
-    routes.GalleryController.contestFiles(contest.getId, page, deletedOnly, roundId, region).url
+  /** This list's first page of the country, or all of it ("all"), in all regions. */
+  def countryUrl(country: String): String = pageUrl(1, "all", Some(country).filter(_ != "all"))
+
+  private def pageUrl(page: Int, region: String, country: Option[String]): String =
+    routes.GalleryController.contestFiles(contest.getId, page, deletedOnly, roundId, region, country).url
 
   /** The large view of a file in this list. */
   def largeUrl(pageId: Long): String =
-    routes.GalleryController.contestFileLarge(contest.getId, pageId, deletedOnly, roundId, region.getOrElse("all")).url
+    routes.GalleryController.contestFileLarge(contest.getId, pageId, deletedOnly, roundId, region.getOrElse("all"),
+      country).url
 }
 
 /** A round gallery's region menu (regionMenu.scala.html): the region shown (None: all), the

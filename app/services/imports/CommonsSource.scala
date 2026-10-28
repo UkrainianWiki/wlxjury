@@ -5,7 +5,7 @@ import org.scalawiki.dto.cmd.Action
 import org.scalawiki.dto.cmd.query.list.ListArgs
 import org.scalawiki.dto.cmd.query.prop.iiprop.{IiProp, IiPropArgs}
 import org.scalawiki.dto.cmd.query.prop.rvprop.RvProp
-import org.scalawiki.dto.cmd.query.prop.{CategoryInfo, ImageInfo, Prop, PropArg, Revisions, RvPropArgs}
+import org.scalawiki.dto.cmd.query.prop.{Categories, CategoryInfo, ClLimit, ImageInfo, Prop, PropArg, Revisions, RvPropArgs}
 import org.scalawiki.dto.cmd.query.{Generator, PageIdsParam, Query, QueryParam, TitlesParam}
 import org.scalawiki.dto.{MwException, Namespace, Page}
 import play.api.Logging
@@ -27,7 +27,9 @@ object ImportSource {
   /** The files that embed the template. */
   final case class Template(title: String) extends ImportSource
 
-  /** The files used on the page, e.g. a list of winners. */
+  /** The files used on the page, e.g. a list of winners: of a WLx contest, those in its
+    * country categories only ([[ContestCountries]]), not the icons and logos it shows too.
+    */
   final case class PageFiles(title: String) extends ImportSource
 
   def apply(source: String): ImportSource = {
@@ -74,6 +76,11 @@ trait CommonsSource {
 
   /** The number of files in the category, if it is one. */
   def categoryFileCount(category: String): Option[Long]
+
+  /** The categories of the files (at most [[maxIdsPerRequest]]), by page id; a file without
+    * categories is left out.
+    */
+  def categories(pageIds: Seq[Long]): Map[Long, Seq[String]]
 }
 
 /** [[CommonsSource]] over the API. A source's files are listed with a generator query
@@ -127,6 +134,11 @@ class MwCommonsSource @Inject() (bot: MwBot, login: CommonsLogin) extends Common
           logger.warn(s"${bot.host}: ${values.size} values refused (${e.info}); fetching ${CommonsLogin.Limit} per request")
           values.grouped(CommonsLogin.Limit).flatMap(request).toSeq
       }
+
+  def categories(pageIds: Seq[Long]): Map[Long, Seq[String]] =
+    batch(pageIds)(ids => api.run(Query(PageIdsParam(ids), Prop(Categories(ClLimit("max"))))))
+      .flatMap(page => page.id.filter(_ => page.categories.nonEmpty).map(_ -> page.categories))
+      .toMap
 
   def categoryFileCount(category: String): Option[Long] =
     if (!category.toLowerCase.startsWith("category:")) None

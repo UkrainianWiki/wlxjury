@@ -41,6 +41,12 @@
         }
     </div>
 
+    @* the countries of the contest's files (their Commons country categories), and their files *@
+    @if(view.countries.nonEmpty) {
+        @regionNav(view.countryUrl, view.country.getOrElse("all"),
+            view.countries.map { case (country, count) => org.intracer.wmua.Region(country, country, Some(count)) })
+    }
+
     @if(view.regions.nonEmpty) {
         @regionNav(view.regionUrl, view.region.getOrElse("all"), view.regions)
     }
