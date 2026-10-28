@@ -1,7 +1,9 @@
 package controllers
 
 /** A page of a list of `count` items, `pageSize` to a page. Page 0 is a list shown whole,
-  * with no page links.
+  * with no page links. Its links are the previous and the next page, with the items shown
+  * ("46–60 of 5,712"): the count comes from what the page reads anyway (a juror's
+  * [[JurorCounts]]), page numbers told a juror little.
   */
 final case class Pager(page: Int, count: Int, pageSize: Int = Pager.pageSize) {
 
@@ -16,15 +18,11 @@ final case class Pager(page: Int, count: Int, pageSize: Int = Pager.pageSize) {
 
   def hasPrev: Boolean = page > 1
 
-  def pageNumbers: Seq[Int] = {
-    val tenPowers = Seq(1000, 100, 10, 1).filter(_ <= pages)
+  /** The page's first item, from 1 (0 if the list is empty). */
+  def first: Int = if (count == 0) 0 else math.min(offset + 1, count)
 
-    val numbers = Seq(1) ++ tenPowers.flatMap { power =>
-      (1 to 9).map(_ * power + (page / (power * 10)) * power * 10)
-    }
-
-    numbers.filter(_ <= pages).distinct.sorted
-  }
+  /** The page's last item, from 1. */
+  def last: Int = math.min(offset + pageSize, count)
 }
 
 object Pager {

@@ -209,3 +209,6 @@ sort.rate=По моей оценке
 vote.moved=Оценённое изображение ({0}) переместилось на своё место по оценке.
 vote.moved.out=Оценённое изображение ({0}) больше не в этом списке.
 vote.moved.view=Посмотреть
+pager.range = {0,number,integer}–{1,number,integer} из {2,number,integer}
+pager.previous = Предыдущая страница
+pager.next = Следующая страница

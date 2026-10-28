@@ -354,3 +354,6 @@ sort.rate=Par ma note
 vote.moved=L''image notée ({0}) a changé de place selon sa note.
 vote.moved.out=L''image notée ({0}) n''est plus dans cette liste.
 vote.moved.view=La voir
+pager.range = {0,number,integer}–{1,number,integer} sur {2,number,integer}
+pager.previous = Page précédente
+pager.next = Page suivante

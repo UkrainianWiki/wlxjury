@@ -370,3 +370,6 @@ sort.rate=By my rating
 vote.moved=The image you rated ({0}) moved to its place by rating.
 vote.moved.out=The image you rated ({0}) is no longer in this list.
 vote.moved.view=View it
+pager.range = {0,number,integer}–{1,number,integer} of {2,number,integer}
+pager.previous = Previous page
+pager.next = Next page

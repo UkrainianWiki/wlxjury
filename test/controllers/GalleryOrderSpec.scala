@@ -56,6 +56,24 @@ class GalleryOrderSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
+    "page through their files by previous and next, with the files shown of how many" in {
+      testDbApp { implicit app =>
+        val f = fixture()
+        SelectionJdbc.rate(f.pageIds(0), f.juror.getId, f.round.getId, 5)
+        val first = page(gallery(f), f)
+        first must contain("1–15 of 20")
+        first must contain(s"""href="/gallery/round/${f.round.getId}/user/${f.juror.getId}/page/2?sort=file" rel="next"""")
+        first must not contain "rel=\"prev\""
+        val second = page(gallery(f).replace("/page/1", "/page/2"), f)
+        second must contain("16–20 of 20")
+        second must contain("rel=\"prev\"")
+        second must not contain "rel=\"next\""
+        // the Rated tab's list: the files the filter lists, not all the juror's
+        page(gallery(f, "?filter=rated"), f) must not contain "id=\"pagenav\""
+        page(gallery(f, "?filter=unrated"), f) must contain("1–15 of 19")
+      }
+    }
+
     "see a file they rate keep its place, which by rate moved to the top" in {
       testDbApp { implicit app =>
         val f = fixture()

@@ -6,58 +6,24 @@ class PagerSpec extends Specification {
 
   "pager" should {
 
-    "list 2 page numbers" in {
-      val pager = Pager(page = 1, count = 2 * Pager.pageSize)
-
-      pager.pageNumbers === (1 to 2)
+    "show the items of the page, the last one part full" in {
+      Pager(page = 1, count = 5712).first === 1
+      Pager(page = 1, count = 5712).last === 15
+      Pager(page = 4, count = 5712).first === 46
+      Pager(page = 4, count = 5712).last === 60
+      Pager(page = 381, count = 5712).first === 5701
+      Pager(page = 381, count = 5712).last === 5712
+      Pager(page = 1, count = 0).first === 0
+      Pager(page = 1, count = 0).last === 0
     }
 
-    "list 10 page numbers" in {
-      val pager = Pager(page = 1, count = 10 * Pager.pageSize)
-
-      pager.pageNumbers === (1 to 10)
-    }
-
-    "list 100 page numbers, page 1" in {
-      val pager = Pager(page = 1, count = 100 * Pager.pageSize)
-
-      pager.pageNumbers === (1 to 9) ++ (1 to 10).map(_ * 10)
-    }
-
-    "list 100 page numbers, page 11" in {
-      val pager = Pager(page = 11, count = 100 * Pager.pageSize)
-
-      pager.pageNumbers === Seq(1) ++ (10 to 19) ++ (2 to 10).map(_ * 10)
-    }
-
-    "list 15 page numbers, page 15" in {
-      val pager = Pager(page = 15, count = 15 * Pager.pageSize)
-
-      pager.pageNumbers === Seq(1) ++ (10 to 15)
-    }
-
-    "list 95 page numbers, page 90" in {
-      val pager = Pager(page = 90, count = 95 * Pager.pageSize)
-
-      pager.pageNumbers === Seq(1) ++ (1 to 9).map(_ * 10) ++ (91 to 95)
-    }
-
-    "list 250 page numbers, page 1" in {
-      val pager = Pager(page = 1, count = 250 * Pager.pageSize)
-
-      pager.pageNumbers === (1 to 9) ++ (1 to 10).map(_ * 10) ++ Seq(200)
-    }
-
-    "list 250 page numbers, page 150" in {
-      val pager = Pager(page = 150, count = 250 * Pager.pageSize)
-
-      pager.pageNumbers === Seq(1) ++ (100 to 150 by 10) ++ (151 to 159) ++ (160 to 200 by 10)
-    }
-
-    "list 250 page numbers, page 245" in {
-      val pager = Pager(page = 245, count = 250 * Pager.pageSize)
-
-      pager.pageNumbers === Seq(1, 100) ++ (200 to 240 by 10) ++ (241 to 250)
+    "link the previous and the next page only where there is one" in {
+      Pager(page = 1, count = 40).hasPrev must beFalse
+      Pager(page = 1, count = 40).hasNext must beTrue
+      Pager(page = 3, count = 40).hasPrev must beTrue
+      Pager(page = 3, count = 40).hasNext must beFalse
+      Pager(page = 1, count = 15).display must beFalse
+      Pager(page = 0, count = 40).display must beFalse
     }
 
     "count its pages, a last one part full" in {
