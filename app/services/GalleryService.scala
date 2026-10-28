@@ -1,27 +1,9 @@
 package services
 
-import controllers.{Pager, RateDistribution}
+import controllers.RateDistribution
 import db.scalikejdbc.{ImageJdbc, Round, User}
-import db.scalikejdbc.rewrite.ImageDbNew
-import db.scalikejdbc.rewrite.ImageDbNew.{Limit, SelectionQuery}
-import org.intracer.wmua.ImageWithRating
 
 class GalleryService {
-
-  def getSortedImages(
-      asUserId: Long,
-      rate: Option[Int],
-      roundId: Option[Long],
-      module: String,
-      pager: Pager = Pager.pageOffset(1)
-  ): Seq[ImageWithRating] = {
-    val userDetails = module == "filelist"
-    filesByUserId(
-      getQuery(asUserId, rate, roundId, Some(pager), userDetails),
-      pager,
-      userDetails
-    )
-  }
 
   /** The rounds a round's gallery lists beside it: the contest's the user may see as an
     * organizer of it, else the user's own active rounds.
@@ -78,54 +60,6 @@ class GalleryService {
     } else {
       user
     }
-  }
-
-  def filesByUserId(
-      query: SelectionQuery,
-      pager: Pager,
-      userDetails: Boolean = false
-  ): Seq[ImageWithRating] = {
-
-    val withPageIdOffset = pager.startPageId
-      .fold(query) { pageId =>
-        val rank = query.imageRank(pageId)
-        val pageSize = pager.pageSize
-        val page = rank / pageSize
-        val offset = page * pageSize
-        pager.page = page + 1
-        query.copy(limit = Some(Limit(Some(pageSize), Some(offset))))
-      }
-      .copy(limit = query.limit.filter(_ => !userDetails))
-
-    withPageIdOffset.list()
-  }
-
-  def getQuery(
-      userId: Long,
-      rate: Option[Int],
-      roundId: Option[Long],
-      pager: Option[Pager] = None,
-      userDetails: Boolean = false,
-      rated: Option[Boolean] = None,
-      regions: Set[String] = Set.empty,
-      subRegions: Boolean = false,
-      withPageId: Option[Long] = None
-  ): SelectionQuery = {
-    val userIdOpt = Some(userId).filter(_ != 0)
-
-    ImageDbNew.SelectionQuery(
-      userId = userIdOpt,
-      rate = rate,
-      rated = rated,
-      roundId = roundId,
-      regions = regions,
-      order = Map("rate" -> -1, "s.monument_id" -> 1, "s.page_id" -> 1),
-      grouped = userIdOpt.isEmpty && !userDetails,
-      groupWithDetails = userDetails,
-      limit = pager.map(p => Limit(Some(p.pageSize), p.offset, p.startPageId)),
-      subRegions = subRegions,
-      withPageId = withPageId
-    )
   }
 
   def rateDistribution(user: User, round: Round): RateDistribution = {

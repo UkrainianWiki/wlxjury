@@ -67,11 +67,12 @@ object GatlingTestFixture {
         "jobs.pollInterval"                      -> "2 seconds",
         // region counts: the contest files page's cache, and the round galleries' counts
         "regions.countCache"                     -> GatlingConfig.regionCountCache
-      ) ++ GatlingConfig.regionCounts.map("gallery.regionCounts" -> _))
+      ) ++ GatlingConfig.regionCounts.map("gallery.regionCounts" -> _) ++ timingConfig)
       .build()
     localApplication = Some(app)
     val server = TestServer(port, app)
     server.start()
+    choosePool(app)
 
     Runtime.getRuntime.addShutdownHook(new Thread(() => {
       try server.stop() finally container.stop()
@@ -88,6 +89,42 @@ object GatlingTestFixture {
       data
     }
   }
+
+  /** ScalikeJDBC's default pool for the run (`-Dgatling.pool`). Two eager modules register it
+    * at start, whichever runs last winning: scalikejdbc.PlayDBApiAdapterModule with Play's
+    * HikariCP pool (db.default.hikaricp, 30 connections), and scalikejdbc.PlayFixtureModule's
+    * PlayInitializer with a commons-dbcp2 pool of ScalikeJDBC's defaults (8 connections). So
+    * that runs compare, "hikari" (the default) registers Play's pool again after the start,
+    * "dbcp" a dbcp2 pool as PlayInitializer makes it, "as-started" leaves whichever won.
+    */
+  private def choosePool(app: _root_.play.api.Application): Unit = {
+    val started = scalikejdbc.ConnectionPool.get().dataSource.getClass.getName
+    GatlingConfig.pool match {
+      case "hikari" =>
+        val ds = app.injector.instanceOf[_root_.play.api.db.DBApi].database("default").dataSource
+        if (scalikejdbc.ConnectionPool.get().dataSource ne ds)
+          scalikejdbc.ConnectionPool.add(scalikejdbc.ConnectionPool.DEFAULT_NAME, new scalikejdbc.DataSourceConnectionPool(ds))
+      case "dbcp" =>
+        val c = app.configuration
+        scalikejdbc.ConnectionPool.add(scalikejdbc.ConnectionPool.DEFAULT_NAME, c.get[String]("db.default.url"),
+          c.get[String]("db.default.username"), c.get[String]("db.default.password"), scalikejdbc.ConnectionPoolSettings())
+      case _ =>
+    }
+    println(s"[pool] at start: $started; for the run (gatling.pool=${GatlingConfig.pool}): " +
+      scalikejdbc.ConnectionPool.get().dataSource.getClass.getName)
+  }
+
+  /** The timing log (modules.RequestTimingFilter) after Play's default filters, if enabled. */
+  private def timingConfig: Map[String, Any] =
+    if (!GatlingConfig.timing) Map.empty
+    else {
+      println(s"[timing] logging requests to ${GatlingConfig.timingFile}")
+      Map(
+        "play.filters.enabled" -> Seq("modules.RequestTimingFilter", "play.filters.csrf.CSRFFilter",
+          "play.filters.headers.SecurityHeadersFilter", "play.filters.hosts.AllowedHostsFilter"),
+        "timing.file" -> GatlingConfig.timingFile
+      )
+    }
 
   private def freePort(): Int = {
     val s = new ServerSocket(0)

@@ -1,13 +1,12 @@
-@import db.scalikejdbc.Round
 @(      score: Double,
-        url: String,
         readOnly: Boolean = false,
-        round: Round,
-        rate: Option[Int],
-        module: String = "byrate",
+        list: RoundList,
+        pageId: Long,
         byCriteria: Map[Int, Int] = Map.empty
 )(implicit messages: Messages)
 
+@* the stars' votes: the vote URL's start, the score, then the list's query string *@
+@defining(list.round) { round =>
 @if(!round.isBinary) {
 
     <script src="@routes.Assets.at("javascripts/jquery.raty.js")"></script>
@@ -38,7 +37,7 @@
                     readOnly : 'true'
                 } else {
                     click : function(score, evt) {
-                        voteLarge('@url' + Math.round(score*@k) + '?module=@module@rateParam(rate, "", "&")');
+                        voteLarge('@Html(list.votePrefix(pageId))' + Math.round(score*@k) + '@Html(list.voteQuery())');
                         return false;
                     }
                 }
@@ -63,7 +62,7 @@
             readOnly : 'true'
             } else {
             click : function(score, evt) {
-                voteLarge('@url' + Math.round(score*@k) + '?module=@module@rateParam(rate, "", "&", Some(rateId))');
+                voteLarge('@Html(list.votePrefix(pageId))' + Math.round(score*@k) + '@Html(list.voteQuery(Some(rateId)))');
                 return false;
             }
             }
@@ -76,4 +75,5 @@
         }
     })
     </script>
+}
 }

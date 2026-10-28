@@ -229,8 +229,8 @@ class MultiContestUserSpec extends PlaySpecification with PlayTestDb with Mockit
         round.addUsers(Seq(RoundUser(round.getId, jane.getId, "jury", active = true)))
 
         val result = call(
-          app.injector.instanceOf[GalleryController].list(jane.getId, 1, "all", round.getId, Some(0)),
-          FakeRequest(GET, "/").withSession(Secured.UserName -> jane.email, Secured.CurrentContestId -> "10")
+          app.injector.instanceOf[GalleryController].list(jane.getId, 1, "all", round.getId),
+          FakeRequest(GET, "/?rate=0").withSession(Secured.UserName -> jane.email, Secured.CurrentContestId -> "10")
         )
 
         status(result) === OK

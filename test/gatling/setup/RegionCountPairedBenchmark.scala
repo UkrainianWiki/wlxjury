@@ -84,8 +84,10 @@ object RegionCountPairedBenchmark {
         val email = if (whole) f.organizer._2 else f.jurors(n % f.jurors.size)._2
         val action = (if (enabled) on else off).query(
           if (whole || q.roundId.contains(f.roundRatingId)) "byrate" else "gallery", q.userId, page = n % 3 + 1,
-          roundId = q.roundId.get, rate = q.rate, rated = q.rated)
-        val result = Helpers.call(action, FakeRequest("GET", "/query").withSession(
+          roundId = q.roundId.get)
+        // the filter as a list URL's query has it (RoundList)
+        val filter = q.rate.map(r => s"rate=$r").orElse(q.rated.map(r => s"rated=$r")).fold("")("?" + _)
+        val result = Helpers.call(action, FakeRequest("GET", "/query" + filter).withSession(
           Secured.UserName -> email, Secured.CurrentContestId -> f.contestId.toString))
         require(Helpers.status(result) == 200, s"$kind did not return a gallery")
         val html = Helpers.contentAsString(result)

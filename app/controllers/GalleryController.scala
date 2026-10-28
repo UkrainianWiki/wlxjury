@@ -11,10 +11,11 @@ import play.api.http.HttpEntity
 import play.api.i18n.I18nSupport
 import play.api.mvc._
 import services.GalleryService
+import services.imports.ContestCountries
 import services.regions.{ContestKind, RegionScheme}
 
 import javax.inject.Inject
-import modules.BlockingExecutionContext
+import modules.{BlockingExecutionContext, RequestTiming}
 
 /** Backend for getting and displaying images
   */
@@ -25,8 +26,6 @@ class GalleryController @Inject() (
     config: Configuration = Configuration.empty
 ) extends Secured(cc)
     with I18nSupport {
-
-  import Pager._
 
   val Selected = "selected"
 
@@ -50,136 +49,60 @@ class GalleryController @Inject() (
     if (countCache) RegionCountCache.category(categoryId)(ImageJdbc.categoryRegionCounts(categoryId))
     else ImageJdbc.categoryRegionCounts(categoryId)
 
-  private def moduleByUserId(asUserId: Long): String =
-    if (asUserId == 0) "byrate" else "gallery"
-
-  /** Queries images
+  /** A round's files as [[RoundList]] has them: its view (gallery, by rate, file list, CSV),
+    * a juror's (or all jurors', with `asUserId` 0) votes, a page, a region; the filter and
+    * order from the request's query.
     *
-    * @param module
-    *   one of "gallery", "byrate" or "filelist"
-    * @param asUserId
-    *   view images assigned to specific user
-    * @param page
-    *   show specific page
-    * @param region
-    *   region code to filter
-    * @param roundId
-    *   round id
-    * @param rate
-    *   filter by rate. For select/reject rounds it is selected: 1, rejected: -1, unrated: 0
-    * @return
+    * @param module one of "gallery", "byrate", "filelist" or "csv"
     */
   def query(
       module: String,
       asUserId: Option[Long],
       page: Int = 1,
       region: String = "all",
-      roundId: Long = 0,
-      rate: Option[Int],
-      rated: Option[Boolean] = None
+      roundId: Long = 0
   ): EssentialAction =
-    listGeneric(
-      module,
-      asUserId.getOrElse(0),
-      pageOffset(page),
-      region,
-      roundId,
-      rate,
-      rated
-    )
+    listGeneric(GalleryView.parse(module), asUserId.getOrElse(0), Left(page), region, roundId)
 
-  def list(
-      asUserId: Long,
-      page: Int = 1,
-      region: String = "all",
-      roundId: Long = 0,
-      rate: Option[Int]
-  ): EssentialAction =
-    listGeneric(
-      moduleByUserId(asUserId),
-      asUserId,
-      pageOffset(page),
-      region,
-      roundId,
-      rate
-    )
+  def list(asUserId: Long, page: Int = 1, region: String = "all", roundId: Long = 0): EssentialAction =
+    listGeneric(Some(GalleryView.ofPath(asUserId)), asUserId, Left(page), region, roundId)
 
-  def listAtId(
-      asUserId: Long,
-      pageId: Long,
-      region: String = "all",
-      roundId: Long = 0,
-      rate: Option[Int]
-  ): EssentialAction =
-    listGeneric(
-      moduleByUserId(asUserId),
-      asUserId,
-      startPageId(pageId),
-      region,
-      roundId,
-      rate
-    )
+  /** The page of the list with the file ([[RoundList.atUrl]]): a redirect to it, so the URL
+    * shows the page.
+    */
+  def listAtId(asUserId: Long, pageId: Long, region: String = "all", roundId: Long = 0): EssentialAction =
+    listGeneric(Some(GalleryView.ofPath(asUserId)), asUserId, Right(pageId), region, roundId)
 
-  def byRate(
-      asUserId: Long,
-      page: Int = 1,
-      region: String = "all",
-      roundId: Long = 0,
-      rated: Option[Boolean] = None
-  ): EssentialAction =
-    listGeneric(
-      "byrate",
-      asUserId,
-      pageOffset(page),
-      region,
-      roundId,
-      rated = rated
-    )
+  def byRate(asUserId: Long, page: Int = 1, region: String = "all", roundId: Long = 0): EssentialAction =
+    listGeneric(Some(GalleryView.ByRate), asUserId, Left(page), region, roundId)
 
-  def byRateAt(
-      asUserId: Long,
-      pageId: Long,
-      region: String = "all",
-      roundId: Long = 0,
-      rated: Option[Boolean] = None
-  ): EssentialAction =
-    listGeneric(
-      "byrate",
-      asUserId,
-      startPageId(pageId),
-      region,
-      roundId,
-      None,
-      rated = rated
-    )
+  /** The page of the list by rate with the file. */
+  def byRateAt(asUserId: Long, pageId: Long, region: String = "all", roundId: Long = 0): EssentialAction =
+    listGeneric(Some(GalleryView.ByRate), asUserId, Right(pageId), region, roundId)
 
   def fileList(
       asUserId: Long,
       page: Int = 1,
       region: String = "all",
       roundId: Long = 0,
-      format: String = "wiki",
-      rate: Option[Int]
+      format: String = "wiki"
   ): EssentialAction =
-    listGeneric("filelist", asUserId, pageOffset(page), region, roundId, rate)
+    listGeneric(Some(GalleryView.FileList), asUserId, Left(page), region, roundId)
 
-  def listCurrent(
-      page: Int = 1,
-      region: String = "all",
-      rate: Option[Int]
-  ): EssentialAction =
+  def listCurrent(page: Int = 1, region: String = "all"): EssentialAction =
     withAuth() { user => implicit request =>
-      Redirect(routes.GalleryController.list(user.getId, page, region, 0, rate))
+      Redirect(routes.GalleryController.list(user.getId, page, region, 0).url, request.queryString)
     }
 
+  /** A round's list (the user's active round's for round 0) at a page, or at the page with a
+    * file; an unknown view (`/query?module=`) a page that does not exist.
+    */
   def listGeneric(
-      module: String,
+      view: Option[GalleryView],
       asUserId: Long,
-      pager: Pager,
+      at: Either[Int, Long],
       region: String = "all",
-      roundId: Long = 0,
-      rate: Option[Int] = None,
-      rated: Option[Boolean] = None
+      roundId: Long = 0
   ): EssentialAction = withAuthOn(blocking)() { sessionUser => implicit request =>
     val maybeRound =
       if (roundId == 0) Round.activeRounds(sessionUser).headOption
@@ -192,197 +115,165 @@ class GalleryController @Inject() (
       if (roundId == 0) Ok(views.html.errorPage(Some(sessionUser), "error.title", "no.round.yet"))
       else NotFound(views.html.errorPage(Some(sessionUser), "error.title", "error.round.not.found"))
     } { round =>
-      Secured.switchingContest(sessionUser, user)(gallery(user, module, asUserId, pager, region, roundId,
-        rate, rated, round))
+      Secured.switchingContest(sessionUser, user)(gallery(user, view, asUserId, at, region, round))
     }
   }
 
   private def gallery(
       user: User,
-      module: String,
+      view: Option[GalleryView],
       asUserId: Long,
-      pager: Pager,
+      at: Either[Int, Long],
       region: String,
-      roundId: Long,
-      rate: Option[Int],
-      rated: Option[Boolean],
       round: Round
   )(implicit request: Request[AnyContent]): Result = {
-    val maybeRound = Some(round)
-    val roundContestId = round.contestId
     val rounds = galleryService.viewerRounds(user, round)
 
-    if (galleryService.isNotAuthorized(user, maybeRound, roundContestId, rounds)) {
+    if (galleryService.isNotAuthorized(user, Some(round), round.contestId, rounds)) {
       onUnAuthorized(user, request, Secured.Denial.round(round, Secured.ViewerRoles))
     } else galleryService.viewAs(user, round, asUserId) match {
       // a juror's votes are their own: another's, or all together, for the organisers
       case refusal if refusal != GalleryService.ViewAs.Allowed =>
         viewAsRefused(user, round, refusal, json = false)
-      // an unknown view (`/query?module=`) is a page that does not exist
-      case _ if !GalleryController.Modules.contains(module) =>
-        NotFound(views.html.errorPage(Some(user), "error.title", "error.not.found"))
       case _ =>
-        ContestJuryJdbc.findById(roundContestId).fold[Result](
-          NotFound(views.html.errorPage(Some(user), "error.title", "error.contest.not.found"))
-        )(contest => galleryOf(user, module, asUserId, pager, region, roundId, rate, rated, round, rounds, contest))
+        view.fold[Result](NotFound(views.html.errorPage(Some(user), "error.title", "error.not.found"))) { view =>
+          ContestJuryJdbc.findById(round.contestId).fold[Result](
+            NotFound(views.html.errorPage(Some(user), "error.title", "error.contest.not.found"))
+          ) { contest =>
+            val list = RoundList.of(round, user, asUserId, region, view)
+            at.fold(
+              page => galleryOf(user, list, page, rounds, contest).withCookies(RoundList.remembered(list, user).toSeq: _*),
+              // the page with the file, or where it would be if the filter now leaves it out
+              pageId => Redirect(list.position(pageId).fold(list.pageUrl(1))(p => list.pageUrl(Pager.pageOf(p)) + "#" + pageId))
+            )
+          }
+        }
     }
   }
 
   private def galleryOf(
       user: User,
-      module: String,
-      asUserId: Long,
-      pager: Pager,
-      region: String,
-      roundId: Long,
-      rate: Option[Int],
-      rated: Option[Boolean],
-      round: Round,
+      list: RoundList,
+      page: Int,
       rounds: Seq[Round],
       contest: ContestJury
   )(implicit request: Request[AnyContent]): Result = {
-    val maybeRound = Some(round)
-    val subRegions = round.specialNomination.contains("Віа Регіа")
+    val round = list.round
+    val asUserId = list.asUserId
 
     lazy val asUser = galleryService.getAsUser(asUserId, user)
 
-    val regions = Set(region).filter(_ != "all")
+    // a juror's list: its total, region counts and tabs from one query over the juror's files
+    val counts = list.jurorCounts()
 
-    val userDetails = Set("filelist", "csv").contains(module)
-    val query = galleryService.getQuery(
-      asUserId,
-      rate,
-      round.id,
-      Some(pager),
-      userDetails,
-      rated,
-      regions,
-      subRegions
-    )
-    pager.setCount(query.count())
+    val pager = Pager(page, counts.fold(list.count())(_.total(list.filter, list.region)))
+    val files = list.files(pager)
 
-    val files = galleryService.filesByUserId(query, pager, userDetails)
+    // the region menu, whose regions are read when it is opened (regions); the grouped view's
+    // regions, by which it shows the files
+    val menu = regionMenu(list, contest)
+    val byReg = if (list.region.contains("grouped")) listRegions(list, contest, counts) else Nil
 
-    val byReg = if (ContestKind.monumentIdTemplate(contest).isDefined) {
-      val all = query.copy(regions = Set.empty)
-      val counted = !subRegions && (roundRegionCounts == "all" || roundRegionCounts == "juror" && asUserId != 0)
-      val byRegion =
-        if (counted) all.regionCounts().map { case (id, n) => id -> Option(n) }
-        else all.byRegionStat()
-      RegionScheme.of(contest).regions(byRegion, subRegions)
-    } else {
-      Nil
-    }
+    // the viewer's own tabs: the counts above when the list is their own
+    val rates = counts.filter(_ => user.id.contains(asUserId)).fold(galleryService.rateDistribution(user, round))(c =>
+      new RateDistribution(c.rates))
 
-    val rates = galleryService.rateDistribution(user, round)
+    lazy val jurors =
+      if (user.canViewOrgInfo(round) && asUserId == 0) User.findByRoundSelection(round.getId)
+      else Seq(asUser)
 
-    //   val ranks = ImageWithRating.rankImages(sortedFiles, round)
-    val useTable = !round.isBinary || asUserId == 0
+    list.view match {
+      case GalleryView.Gallery if round.isBinary =>
+        Ok(RequestTiming.render(views.html.gallery(user, list, files, pager, rounds, menu, rates)))
 
-    module match {
-      case "gallery" if round.rates == binaryRound =>
-        Ok(
-          views.html.gallery(
-            user,
-            asUserId,
-            files,
-            pager,
-            maybeRound,
-            rounds,
-            rate,
-            region,
-            byReg,
-            rates,
-            rated
-          )
-        )
-      case "csv" =>
-        val jurors = if (user.canViewOrgInfo(round) && asUserId == 0) {
-          User.findByRoundSelection(roundId)
-        } else {
-          Seq(asUser)
-        }
+      case GalleryView.Csv =>
         val data = Csv.exportRates(files, jurors, round)
         val name = "WLXJury_Round_" + round.description
         csvStream(data, name)
 
-      case "filelist" =>
+      case GalleryView.FileList =>
         val ranks = ImageWithRating.rankImages(files, round)
+        val useTable = !round.isBinary || asUserId == 0
+        val showAuthor = user.canViewOrgInfo(round) && files.exists(_.image.author.nonEmpty)
+        Ok(views.html.fileList(user, list, asUser, files, ranks, jurors, rounds, menu, "wiki", useTable, rates,
+          showAuthor))
 
-        val jurors = if (user.canViewOrgInfo(round) && asUserId == 0) {
-          User.findByRoundSelection(roundId)
-        } else {
-          Seq(asUser)
-        }
-
-        val showAuthor = maybeRound.exists(user.canViewOrgInfo) && files
-          .exists(_.image.author.nonEmpty)
-        Ok(
-          views.html.fileList(
-            user,
-            asUserId,
-            asUser,
-            files,
-            ranks,
-            jurors,
-            pager,
-            maybeRound,
-            rounds,
-            rate,
-            region,
-            byReg,
-            "wiki",
-            useTable,
-            rates,
-            showAuthor
-          )
-        )
-      case "byrate" | "gallery" =>
-        if (region != "grouped") {
-          Ok(
-            views.html.galleryByRate(
-              user,
-              asUserId,
-              files,
-              pager,
-              maybeRound,
-              rounds,
-              rate,
-              region,
-              byReg,
-              rates,
-              rated
-            )
-          )
-        } else {
-          Ok(
-            views.html.galleryByRateRegions(
-              user,
-              asUserId,
-              files,
-              pager,
-              maybeRound,
-              rounds,
-              rate,
-              region,
-              byReg,
-              rated
-            )
-          )
-        }
-      case _ => NotFound(views.html.errorPage(Some(user), "error.title", "error.not.found"))
+      case GalleryView.Gallery | GalleryView.ByRate =>
+        if (list.region.contains("grouped"))
+          Ok(RequestTiming.render(views.html.galleryByRateRegions(user, list, files, pager, rounds, menu, byReg)))
+        else
+          Ok(RequestTiming.render(views.html.galleryByRate(user, list, files, pager, rounds, menu, rates)))
     }
   }
 
-  def selectWS(
-      roundId: Long,
-      pageId: Long,
-      select: Int,
-      region: String = "all",
-      rate: Option[Int],
-      module: String,
-      criteria: Option[Int]
-  ): EssentialAction =
+  /** The region menu of a round's list in a contest of monuments: the region shown, and the
+    * URL of its regions ([[regions]]); None in a contest whose files have no monument ids.
+    */
+  private def regionMenu(list: RoundList, contest: ContestJury)(implicit messages: play.api.i18n.Messages)
+      : Option[RegionMenu] =
+    Option.when(ContestKind.monumentIdTemplate(contest).isDefined) {
+      val current = list.region.filter(_ != "grouped").map(RegionScheme.of(contest).region(_, None))
+      RegionMenu(current, list.withRegion("all").pageUrl(1), list.pageUrl(1), list.regionsUrl)
+    }
+
+  /** The list's regions (without its region filter), named by the contest's kind, with the
+    * files the list's filter has in each where they are counted (`gallery.regionCounts`; not
+    * sub-regions): from a juror's counts, else the whole round's. None in a contest whose files
+    * have no monument ids.
+    */
+  private def listRegions(list: RoundList, contest: ContestJury, counts: Option[JurorCounts])(implicit
+      messages: play.api.i18n.Messages
+  ): Seq[Region] =
+    if (ContestKind.monumentIdTemplate(contest).isEmpty) Nil
+    else {
+      val subRegions = list.query.subRegions
+      val all = list.query.copy(regions = Set.empty)
+      val counted = !subRegions && (roundRegionCounts == "all" || roundRegionCounts == "juror" && list.asUserId != 0)
+      val byRegion = counts match {
+        case Some(c) => c.regions(list.filter).map { case (id, n) => id -> Option.when(counted)(n) }
+        case None =>
+          if (counted) all.regionCounts().map { case (id, n) => id -> Option(n) }
+          else all.byRegionStat()
+      }
+      RegionScheme.of(contest).regions(byRegion, subRegions)
+    }
+
+  /** The regions of a round's list ([[RoundList.regionsUrl]]: its viewer, filter, order and
+    * view), as JSON for the gallery's region menu, read when it is first opened
+    * (region-menu.js): each region's name, its file count if counted, and its list's first
+    * page; and the list in all regions. By the gallery's rules (the round's contest, may view
+    * it, whose votes); sent by script, it never switches the session's contest.
+    */
+  def regions(asUserId: Long, region: String, roundId: Long): EssentialAction =
+    withAuthJsonOn(blocking)() { sessionUser => implicit request =>
+      import play.api.libs.json.Json
+      Round.findById(roundId).fold[Result](NotFound(Json.obj("error" -> "round_not_found"))) { round =>
+        val user = Secured.inContest(sessionUser, round.contestId)
+        if (!galleryService.mayViewRound(user, round))
+          onUnAuthorizedJson(user, request, Secured.Denial.round(round, Secured.ViewerRoles))
+        else
+          galleryService.viewAs(user, round, asUserId) match {
+            case refusal if refusal != GalleryService.ViewAs.Allowed => viewAsRefused(user, round, refusal, json = true)
+            case _ =>
+              ContestJuryJdbc.findById(round.contestId).fold[Result](
+                NotFound(Json.obj("error" -> "contest_not_found"))
+              ) { contest =>
+                val view = request.getQueryString("module").flatMap(GalleryView.parse).getOrElse(GalleryView.ofPath(asUserId))
+                val list = RoundList.of(round, user, asUserId, region, view)
+                val regions = listRegions(list, contest, list.jurorCounts())
+                Ok(Json.obj(
+                  "current" -> list.region.filter(_ != "grouped"),
+                  "all" -> Json.obj("name" -> messagesApi.preferred(request)("region.all"), "url" -> list.withRegion("all").pageUrl(1)),
+                  "regions" -> regions.map(r => Json.obj(
+                    "id" -> r.id, "name" -> r.name, "count" -> r.count, "kind" -> r.kind.toString,
+                    "url" -> list.withRegion(r.id).pageUrl(1)))
+                ))
+              }
+          }
+      }
+    }
+
+  def selectWS(roundId: Long, pageId: Long, select: Int): EssentialAction =
     // a tile's vote, sent by script: JSON answers (401, 403 with the denial's reference, 409)
     // that the gallery explains (vote-errors.js)
     withAuthJson(
@@ -465,15 +356,22 @@ class GalleryController @Inject() (
   /** The contest's files, those deleted on Commons too, marked; or only those
     * (`deleted`); or, with `round`, the round's files deleted on Commons
     * ([[ImageJdbc.roundDeletedFiles]]). All, or those of a region (with the regions and
-    * their file counts above, as in a round's gallery). For the contest's admins and
-    * organizers ([[User.canViewContestFiles]]). A tile opens the file's large view
-    * ([[contestFileLarge]]); a deleted file's mark links its page on Commons.
+    * their file counts above, as in a round's gallery), or of a country (with the countries
+    * and their file counts above: the contest's country categories the files are in, of a
+    * contest of many, [[ContestCountries]]). For the contest's admins and organizers
+    * ([[User.canViewContestFiles]]). A
+    * tile opens the file's large view ([[contestFileLarge]]); a deleted file's mark links
+    * its page on Commons.
     */
-  def contestFiles(contestId: Long, page: Int, deleted: Boolean, round: Option[Long], region: String): EssentialAction =
+  def contestFiles(contestId: Long, page: Int, deleted: Boolean, round: Option[Long], region: String,
+      country: Option[String]): EssentialAction =
     withAuthOn(blocking)(contestPermission(User.ADMIN_ROLES ++ User.ORG_COM_ROLES, Some(contestId))) { user => implicit request =>
-      contestFilesView(user, contestId, deleted, round, region).fold(identity, { listed =>
+      contestFilesView(user, contestId, deleted, round, region, country).fold(identity, { listed =>
         // all the category's files' counts (cached), which also give their number
         val all = listed.contest.categoryId.filter(_ => listed.round.isEmpty).map(categoryCounts)
+        val countryCounts = listed.contest.categoryId
+          .filter(_ => listed.round.isEmpty && ContestCountries.ofManyCountries(listed.contest))
+          .fold(Seq.empty[ImageJdbc.CountryCount])(ImageJdbc.categoryCountryCounts(_, ContestCountries.prefix(listed.contest)))
         val view = listed.round match {
           case Some(r) =>
             val (deletedCount, counted) = ImageJdbc.roundDeletedFileCounts(r.getId)
@@ -488,19 +386,26 @@ class GalleryController @Inject() (
           if (!(byMonuments || view.region.isDefined)) Map.empty[String, Int]
           else
             view.list match {
-              case Some(ImageJdbc.FileList.Category(_, false)) => all.fold(Map.empty[String, Int])(_.byRegion)
+              case Some(ImageJdbc.FileList.Category(_, false, None)) => all.fold(Map.empty[String, Int])(_.byRegion)
               case list => list.fold(Map.empty[String, Int])(ImageJdbc.regionCounts(_))
             }
         val regions =
           if (byMonuments) RegionScheme.of(view.contest).regions(regionCounts.map { case (id, n) => id -> Some(n) })
           else Seq.empty[Region]
+        val collator = java.text.Collator.getInstance(java.util.Locale.ROOT)
+        val countries = countryCounts.map(c => ContestCountries.country(view.contest, c.title) -> c.count)
+          .sortWith((a, b) => collator.compare(a._1, b._1) < 0)
 
+        // of the country: its files, or its files deleted on Commons
+        val listCount = view.countryCategory.fold(if (view.deletedOnly) view.deletedCount else view.allCount) { id =>
+          if (view.deletedOnly) view.contest.categoryId.fold(0)(ImageJdbc.categoryDeletedCount(_, Some(id)))
+          else countryCounts.find(_.categoryId == id).fold(0)(_.count)
+        }
         // as many files per page as the galleries
-        val pager = pageOffset(math.max(page, 1))
-        pager.setCount(view.region.fold(if (view.deletedOnly) view.deletedCount else view.allCount)(regionCounts.getOrElse(_, 0)))
+        val pager = Pager(math.max(page, 1), view.region.fold(listCount)(regionCounts.getOrElse(_, 0)))
         val files = view.list.fold(Seq.empty[ImageJdbc.StoredFile])(
-          ImageJdbc.listFiles(_, view.region, pager.pageSize, pager.offset.getOrElse(0)))
-        Ok(views.html.contestFiles(user, files, pager, view.copy(regions = regions)))
+          ImageJdbc.listFiles(_, view.region, pager.pageSize, pager.offset))
+        Ok(views.html.contestFiles(user, files, pager, view.copy(regions = regions, countries = countries)))
       })
     }
 
@@ -510,10 +415,10 @@ class GalleryController @Inject() (
     * (a deleted file's undeletion there too). Read-only: no round or votes. For those who
     * may see the files page.
     */
-  def contestFileLarge(contestId: Long, pageId: Long, deleted: Boolean, round: Option[Long], region: String)
-      : EssentialAction =
+  def contestFileLarge(contestId: Long, pageId: Long, deleted: Boolean, round: Option[Long], region: String,
+      country: Option[String]): EssentialAction =
     withAuthOn(blocking)(contestPermission(User.ADMIN_ROLES ++ User.ORG_COM_ROLES, Some(contestId))) { user => implicit request =>
-      contestFilesView(user, contestId, deleted, round, region).fold(identity, { view =>
+      contestFilesView(user, contestId, deleted, round, region, country).fold(identity, { view =>
         // two files before it, as a round's large view has them
         val (files, offset) = view.list.fold((Seq.empty[ImageJdbc.StoredFile], 0)) { list =>
           val offset = math.max(0, ImageJdbc.fileRank(list, view.region, pageId) - 2)
@@ -523,26 +428,36 @@ class GalleryController @Inject() (
         if (index < 0) Redirect(view.pageUrl(1))
         else {
           val monument = files(index).image.monumentId.filter(_.trim.nonEmpty).flatMap(MonumentJdbc.find(_))
-          Ok(views.html.large.contestFile(user, view, files, index, (offset + index) / Pager.pageSize + 1, monument))
+          Ok(views.html.large.contestFile(user, view, files, index, Pager.pageOf(offset + index), monument))
         }
       })
     }
 
   /** The list of the files page: the contest's files, all or deleted, or the round's deleted
-    * ones, in the region or all; its counts not read yet. An error page if there is no such
-    * contest, or round in it.
+    * ones, in the region and of the country (not of a round's) or all; its counts not read
+    * yet. An error page if there is no such contest, round in it, or country category.
     */
-  private def contestFilesView(user: User, contestId: Long, deleted: Boolean, round: Option[Long], region: String)(
+  private def contestFilesView(user: User, contestId: Long, deleted: Boolean, round: Option[Long], region: String,
+      country: Option[String])(
       implicit request: RequestHeader
   ): Either[Result, ContestFilesView] = {
     val contest = ContestJuryJdbc.findById(contestId)
     val maybeRound = round.flatMap(Round.findById).filter(_.contestId == contestId)
+    val chosenCountry = country.filter(_ => maybeRound.isEmpty)
+    // the country's category: one of the contest's country categories
+    val countryCategory = for {
+      c <- contest
+      name <- chosenCountry
+      id <- CategoryJdbc.where("title" -> (ContestCountries.prefix(c) + name)).apply().headOption.map(_.id)
+    } yield id
     if (contest.isEmpty || round.isDefined && maybeRound.isEmpty)
       Left(NotFound(views.html.errorPage(Some(user), "error.title",
         if (contest.isEmpty) "error.contest.not.found" else "error.round.not.found")))
+    else if (chosenCountry.isDefined && countryCategory.isEmpty)
+      Left(NotFound(views.html.errorPage(Some(user), "error.title", "error.not.found")))
     else
       Right(ContestFilesView(contest.get, deletedOnly = deleted || maybeRound.isDefined, maybeRound,
-        Some(region).filter(_ != "all")))
+        Some(region).filter(_ != "all"), chosenCountry, countryCategory))
   }
 
   def thumbnailUrls(contestId: Long, roundId: Option[Long]): EssentialAction =
@@ -566,45 +481,55 @@ class GalleryController @Inject() (
   * deleted on Commons, or a round's deleted ones; in a region or all; and how many there are.
   *
   * @param region         the region's id ([[db.scalikejdbc.rewrite.ImageDbNew.regionOf]]), if one is chosen
+  * @param country        the country ([[ContestCountries]]), if one is chosen, and its category
   * @param countedInRound of the round's deleted files, those still in its galleries and results
   * @param regions        the regions of the list's files, with their counts
+  * @param countries      the countries of the contest's files and their file counts, in name order
   */
 final case class ContestFilesView(
     contest: ContestJury,
     deletedOnly: Boolean,
     round: Option[Round],
     region: Option[String] = None,
+    country: Option[String] = None,
+    countryCategory: Option[Long] = None,
     allCount: Int = 0,
     deletedCount: Int = 0,
     countedInRound: Int = 0,
-    regions: Seq[Region] = Seq.empty
+    regions: Seq[Region] = Seq.empty,
+    countries: Seq[(String, Int)] = Seq.empty
 ) {
 
   /** The files listed, if there are any: none for a contest without a category. */
   def list: Option[ImageJdbc.FileList] =
     round.map(r => ImageJdbc.FileList.RoundDeleted(r.getId))
-      .orElse(contest.categoryId.map(ImageJdbc.FileList.Category(_, deletedOnly)))
+      .orElse(contest.categoryId.map(ImageJdbc.FileList.Category(_, deletedOnly, countryCategory)))
 
   private def roundId: Option[Long] = round.flatMap(_.id)
 
   /** This list's page. */
-  def pageUrl(page: Int): String = pageUrl(page, region.getOrElse("all"))
+  def pageUrl(page: Int): String = pageUrl(page, region.getOrElse("all"), country)
 
   /** This list's first page in the region, or all of it ("all"). */
-  def regionUrl(region: String): String = pageUrl(1, region)
+  def regionUrl(region: String): String = pageUrl(1, region, country)
 
-  private def pageUrl(page: Int, region: String): String =
-    routes.GalleryController.contestFiles(contest.getId, page, deletedOnly, roundId, region).url
+  /** This list's first page of the country, or all of it ("all"), in all regions. */
+  def countryUrl(country: String): String = pageUrl(1, "all", Some(country).filter(_ != "all"))
+
+  private def pageUrl(page: Int, region: String, country: Option[String]): String =
+    routes.GalleryController.contestFiles(contest.getId, page, deletedOnly, roundId, region, country).url
 
   /** The large view of a file in this list. */
   def largeUrl(pageId: Long): String =
-    routes.GalleryController.contestFileLarge(contest.getId, pageId, deletedOnly, roundId, region.getOrElse("all")).url
+    routes.GalleryController.contestFileLarge(contest.getId, pageId, deletedOnly, roundId, region.getOrElse("all"),
+      country).url
 }
-object GalleryController {
 
-  /** The views of a round's files `module` names: its gallery, by rate, file list and CSV. */
-  val Modules: Set[String] = Set("gallery", "byrate", "filelist", "csv")
-}
+/** A round gallery's region menu (regionMenu.scala.html): the region shown (None: all), the
+  * list in all regions and in this one, and the URL of its regions ([[GalleryController.regions]]),
+  * read when the menu is first opened.
+  */
+final case class RegionMenu(current: Option[Region], allUrl: String, currentUrl: String, regionsUrl: String)
 
 class RateDistribution(rateMap: Map[Int, Int]) {
 

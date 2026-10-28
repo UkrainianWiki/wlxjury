@@ -74,12 +74,12 @@
                     @Messages("total")
                 </th>
                 <th>
-                        <a href="@routes.GalleryController.query("byrate", None, 1, "all", round.getId)">
+                        <a href="@RoundList(round, 0, view = GalleryView.ByRate).pageUrl(1)">
                             <button type="button" class="btn btn-default btn-xs @if(total == 0) {disabled}">
                                 <span class="glyphicon glyphicon-signal" aria-hidden="true"></span>
                             </button>
                         </a>
-                        <a href="@routes.GalleryController.query("filelist", None, 1, "all", round.getId)">
+                        <a href="@RoundList(round, 0, view = GalleryView.FileList).pageUrl(1)">
                             <button type="button" class="btn btn-default btn-xs @if(total == 0) {disabled}">
                                 <span class="glyphicon glyphicon-align-justify" aria-hidden="true"></span>
                             </button>
@@ -93,12 +93,12 @@
                 <th>
                     <div class="btn-group">
                     @if(round.isBinary) {
-                        <a href="@routes.GalleryController.query("byrate", None, 1, "all", round.getId, Some(1))">
+                        <a href="@RoundList(round, 0, filter = VoteFilter.Rate(1), view = GalleryView.ByRate).pageUrl(1)">
                             <button type="button" class="btn btn-default btn-xs @if(total == 0) {disabled}">
                                 <span class="glyphicon glyphicon-signal" aria-hidden="true"></span>
                             </button>
                         </a>
-                        <a href="@routes.GalleryController.query("filelist", None, 1, "all", round.getId, Some(1))">
+                        <a href="@RoundList(round, 0, filter = VoteFilter.Rate(1), view = GalleryView.FileList).pageUrl(1)">
                             <button type="button" class="btn btn-default btn-xs @if(total == 0) {disabled}">
                                 <span class="glyphicon glyphicon-align-justify" aria-hidden="true"></span>
                             </button>

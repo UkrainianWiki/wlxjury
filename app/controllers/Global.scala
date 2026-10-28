@@ -165,20 +165,12 @@ object Global {
     legacyThumbUrl(info, px)
 
   private[controllers] def legacyThumbUrl(info: Image, px: Int): String = {
-    val lowerCaseTitle = info.title.toLowerCase
-    val isPdf = lowerCaseTitle.endsWith(".pdf")
-    val isTif = List(".tif", ".tiff").exists(lowerCaseTitle.endsWith)
-
     val url = services.imports.CommonsFileCheck.withoutQuery(info.url.getOrElse(""))
-    val lastSlash = url.lastIndexOf("/")
-    val utf8Size = info.title.getBytes("UTF8").length
-    val thumbStr = if (utf8Size > 165) "thumbnail.jpg" else url.substring(lastSlash + 1)
+    val urlName = url.substring(url.lastIndexOf("/") + 1)
 
     url.replaceFirst(
       "(?:https?:)?//upload\\.wikimedia\\.org/wikipedia/commons/",
       "/wikipedia/commons/thumb/"
-    ) + "/" +
-      (if (isPdf) "page1-" else if (isTif) "lossy-page1-" else "") +
-      px + "px-" + thumbStr + (if (isPdf || isTif) ".jpg" else "")
+    ) + "/" + ImageUtil.thumbName(info.title, urlName, px)
   }
 }

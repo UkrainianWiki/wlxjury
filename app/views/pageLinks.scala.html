@@ -1,16 +1,14 @@
-@(pager: Pager, pageUrl: Int => String, style: String = "")
-@* The pager's links: previous, the page numbers and next, each to pageUrl(page) *@
+@(pager: Pager, pageUrl: Int => String, style: String = "")(implicit messages: Messages)
+@* The pager's links: the previous page, the items shown ("46–60 of 5,712") and the next page *@
 <ul class="pagination" id="pagenav"@if(style.nonEmpty) { style="@style"}>
     @if(pager.hasPrev) {
-        <li><a href="@pageUrl(pager.page - 1)">&laquo;</a></li>
+        <li><a href="@pageUrl(pager.page - 1)" rel="prev" title="@Messages("pager.previous")">&laquo;</a></li>
     } else {
         <li class="disabled"><span>&laquo;</span></li>
     }
-    @for(i <- pager.pageNumbers) {
-        <li @if(i == pager.page) {class="active"}><a href="@pageUrl(i)">@i</a></li>
-    }
+    <li class="disabled"><span class="pager-range">@Messages("pager.range", pager.first, pager.last, pager.count)</span></li>
     @if(pager.hasNext) {
-        <li><a href="@pageUrl(pager.page + 1)">&raquo;</a></li>
+        <li><a href="@pageUrl(pager.page + 1)" rel="next" title="@Messages("pager.next")">&raquo;</a></li>
     } else {
         <li class="disabled"><span>&raquo;</span></li>
     }
