@@ -1,6 +1,7 @@
 package controllers
 
 import db.scalikejdbc.{Round, User}
+import db.scalikejdbc.rewrite.ImageDbNew
 import db.scalikejdbc.rewrite.ImageDbNew.{Limit, SelectionQuery}
 import org.intracer.wmua.ImageWithRating
 import play.api.mvc.{Cookie, Flash, RequestHeader}
@@ -166,8 +167,17 @@ final case class RoundList(
   /** The file's index in the list, from 0. For a file of the viewer's round that the filter
     * leaves out (one just voted on), where it would be: the number of the list's files before
     * it. None for a file not in the viewer's round (or region).
+    *
+    * A juror's list: the file's row, then a count of the rows ordered before it
+    * ([[SelectionQuery.countBefore]]); all the jurors' votes together: its rank among all the
+    * round's files ([[rankPosition]]).
     */
-  def position(pageId: Long): Option[Int] = {
+  def position(pageId: Long): Option[Int] =
+    if (query.keyed) query.orderKey(pageId).map(query.countBefore(_))
+    else rankPosition(pageId)
+
+  /** [[position]] by the file's rank (ROW_NUMBER) among all the list's files. */
+  private[controllers] def rankPosition(pageId: Long): Option[Int] = {
     val rank = query.copy(withPageId = Some(pageId)).imageRank(pageId)
     Option.when(rank > 0)(rank - 1)
   }
@@ -175,9 +185,30 @@ final case class RoundList(
   /** The file among the list's files around it, as its large view shows them: up to two
     * before it, and five in all where the list has them. The file too if the filter now leaves
     * it out, in its place. None for a file not in the viewer's round (or region).
+    *
+    * A juror's list: the files before it, nearest first, and the file with those after it,
+    * each read from its place in the order ([[ImageDbNew.Keyset]]), not at an offset.
     */
   def around(pageId: Long): Option[Neighbourhood] =
-    position(pageId).flatMap { position =>
+    if (!query.keyed) aroundAtOffset(pageId)
+    else
+      query.orderKey(pageId).flatMap { key =>
+        val position = query.countBefore(key)
+        val side = math.min(Neighbourhood.Side, position)
+        val all = 2 * Neighbourhood.Side + 1
+        val before =
+          if (side == 0) Nil
+          else query.copy(keyset = Some(key.copy(before = true)), limit = Some(Limit(Some(side), Some(0)))).list().reverse
+        val from = query
+          .copy(withPageId = Some(pageId), keyset = Some(key.copy(before = false)), limit = Some(Limit(Some(all - side), Some(0))))
+          .list()
+        val files = before ++ from
+        Some(files.indexWhere(_.pageId == pageId)).filter(_ >= 0).map(Neighbourhood(files, _, position))
+      }
+
+  /** [[around]] by the file's position and the list's files at an offset from it. */
+  private[controllers] def aroundAtOffset(pageId: Long): Option[Neighbourhood] =
+    rankPosition(pageId).flatMap { position =>
       val offset = math.max(0, position - Neighbourhood.Side)
       val files = query
         .copy(withPageId = Some(pageId), limit = Some(Limit(Some(2 * Neighbourhood.Side + 1), Some(offset))))
@@ -192,9 +223,14 @@ final case class RoundList(
   def voteMoved(pageId: Long, before: Int, rate: Int): Option[MovedVote] =
     if (order == ListOrder.FileOrder && filter == VoteFilter.All) None
     else {
-      val rank = query.imageRank(pageId)
-      if (rank == 0) Option.when(filter != VoteFilter.Unrated)(MovedVote(pageId, out = true, rate))
-      else Option.when(rank - 1 != before)(MovedVote(pageId, out = false, rate))
+      // the file's place in the list after the vote; None if the filter leaves it out
+      val now =
+        if (query.keyed) query.orderKey(pageId).filter(_ => filter.matches(rate)).map(query.countBefore(_))
+        else Some(query.imageRank(pageId)).filter(_ > 0).map(_ - 1)
+      now match {
+        case None    => Option.when(filter != VoteFilter.Unrated)(MovedVote(pageId, out = true, rate))
+        case Some(p) => Option.when(p != before)(MovedVote(pageId, out = false, rate))
+      }
     }
 
   def withFilter(filter: VoteFilter): RoundList = copy(filter = filter)
