@@ -1,9 +1,11 @@
-// A round gallery's region menu (regionMenu.scala.html): on its first opening, the list's
-// regions and their file counts are read (GalleryController.regions) and listed, each linking
-// its list's first page; kept for the page. If that fails, the menu keeps "all" and the region
-// shown, and says so; opening it again tries again.
-(function () {
+// A round gallery's region menu (regionMenu.scala.html), a Bootstrap dropdown: on its first
+// opening (Bootstrap's show.bs.dropdown, a jQuery event), the list's regions and their file
+// counts are read (GalleryController.regions) and listed, each linking its list's first page;
+// kept for the page. If that fails, the menu keeps "all" and the region shown, and says so;
+// opening it again tries again.
+(function ($) {
   'use strict';
+  if (!$) return;
 
   function item(text, url, active) {
     var li = document.createElement('li');
@@ -23,7 +25,7 @@
       // regions, then special nominations, then the others
       if (previousKind !== null && region.kind !== previousKind) {
         var separator = document.createElement('li');
-        separator.className = 'region-separator';
+        separator.className = 'divider';
         separator.setAttribute('role', 'separator');
         list.appendChild(separator);
       }
@@ -37,8 +39,8 @@
 
   function init(menu) {
     var state = 'idle'; // idle, loading, done
-    menu.addEventListener('toggle', function () {
-      if (!menu.open || state !== 'idle') return;
+    $(menu).on('show.bs.dropdown', function () {
+      if (state !== 'idle') return;
       state = 'loading';
       var list = menu.querySelector('.region-menu-list');
       var status = menu.querySelector('.region-menu-status');
@@ -60,9 +62,9 @@
   }
 
   function start() {
-    Array.prototype.forEach.call(document.querySelectorAll('details.region-menu[data-regions-url]'), init);
+    Array.prototype.forEach.call(document.querySelectorAll('.region-menu[data-regions-url]'), init);
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
   else start();
-})();
+})(window.jQuery);

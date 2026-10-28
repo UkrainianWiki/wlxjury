@@ -7,7 +7,8 @@
 // A round gallery's region menu (region-menu.js): its regions are read on its first opening
 // only, listed with their counts, kept for the page; a failure keeps the page's own items and
 // says so, and the next opening tries again. The menu below is regionMenu.scala.html's, as
-// rendered for a juror in a region.
+// rendered for a juror in a region; it is a Bootstrap dropdown, whose show.bs.dropdown and
+// hide.bs.dropdown (jQuery events) are triggered here as Bootstrap's dropdown.js triggers them.
 
 const path = require("path");
 
@@ -15,15 +16,17 @@ const SCRIPT = path.join(__dirname, "..", "public", "javascripts", "region-menu.
 const REGIONS_URL = "/regions/round/1/user/2/region/80";
 
 const MENU = `
-<details class="region-menu" id="regionmenu" data-regions-url="${REGIONS_URL}"
+<div class="dropdown region-menu" id="regionmenu" data-regions-url="${REGIONS_URL}"
     data-loading="LOADING" data-failed="FAILED">
-    <summary class="btn btn-default btn-sm">Region: <b>Kyiv</b> <span class="caret"></span></summary>
-    <ul class="region-menu-list">
+    <a class="btn btn-default btn-sm dropdown-toggle" href="/gallery/round/1/user/2/page/1" data-toggle="dropdown"
+        role="button" aria-haspopup="true" aria-expanded="false">Region: <b>Kyiv</b> <span class="caret"></span></a>
+    <ul class="dropdown-menu region-menu-list">
         <li><a href="/gallery/round/1/user/2/page/1">All</a></li>
         <li class="active"><a href="/gallery/round/1/user/2/region/80/page/1">Kyiv</a></li>
-        <li class="region-menu-status"><noscript>NOSCRIPT</noscript></li>
+        <li class="region-menu-status"></li>
     </ul>
-</details>`;
+    <noscript><span class="region-menu-noscript">NOSCRIPT</span></noscript>
+</div>`;
 
 const REGIONS = {
     current: "80",
@@ -41,7 +44,7 @@ function answer(status, body) {
     return Promise.resolve({ ok: status >= 200 && status < 300, status, json: () => Promise.resolve(body) });
 }
 
-/** Lets jsdom's `toggle` (a task after `open` changes) and the fetch's promise chain run. */
+/** Lets the fetch's promise chain run. */
 async function settle() {
     await new Promise(resolve => setTimeout(resolve, 0));
     await new Promise(resolve => setTimeout(resolve, 0));
@@ -51,14 +54,14 @@ function menu() {
     return document.getElementById("regionmenu");
 }
 
-/** Opens the menu as a click on its summary does; jsdom then fires `toggle`. */
+/** Opens the menu as Bootstrap's dropdown.js does: show.bs.dropdown on the toggle's parent. */
 async function open() {
-    menu().open = true;
+    window.jQuery(menu()).trigger("show.bs.dropdown");
     await settle();
 }
 
 async function close() {
-    menu().open = false;
+    window.jQuery(menu()).trigger("hide.bs.dropdown");
     await settle();
 }
 
@@ -73,17 +76,19 @@ function items() {
 beforeEach(() => {
     document.body.innerHTML = MENU;
     global.fetch = jest.fn();
+    window.jQuery = window.$ = require("jquery");
     jest.isolateModules(() => require(SCRIPT));
 });
 
 afterEach(() => {
     delete global.fetch;
+    if (window.jQuery) window.jQuery(document).off();
 });
 
 test("reads nothing until the menu is opened", async () => {
     await settle();
     expect(fetch).not.toHaveBeenCalled();
-    expect(items().map(i => i.text)).toEqual(["All", "Kyiv", "NOSCRIPT"]);
+    expect(items().map(i => i.text)).toEqual(["All", "Kyiv", ""]);
 });
 
 test("on its first opening reads the regions as a script request, saying it is loading", async () => {
@@ -114,7 +119,7 @@ test("lists all, then the regions with their counts, the region shown active, ki
         { text: "All", href: "/gallery/round/1/user/2/page/1", classes: "" },
         { text: "Volyn (12)", href: "/gallery/round/1/user/2/region/07/page/1", classes: "" },
         { text: "Kyiv (0)", href: "/gallery/round/1/user/2/region/80/page/1", classes: "active" },
-        { text: "", href: null, classes: "region-separator" },
+        { text: "", href: null, classes: "divider" },
         // no count (not counted): the name alone; a name is text, never markup
         { text: "Nature <b>reserves</b>", href: "/gallery/round/1/user/2/region/WLE/page/1",
           classes: " region-nomination" }
@@ -145,8 +150,7 @@ test("a second toggle while loading reads nothing more", async () => {
     fetch.mockReturnValue(new Promise(() => {}));
 
     await open();
-    menu().dispatchEvent(new Event("toggle"));
-    await settle();
+    await open();
 
     expect(fetch).toHaveBeenCalledTimes(1);
 });
@@ -177,4 +181,10 @@ test.each([
 test("closing the menu reads nothing", async () => {
     await close();
     expect(fetch).not.toHaveBeenCalled();
+});
+
+test("does nothing without jQuery (Bootstrap's dropdown needs it too)", async () => {
+    delete window.jQuery;
+    delete window.$;
+    expect(() => jest.isolateModules(() => require(SCRIPT))).not.toThrow();
 });
