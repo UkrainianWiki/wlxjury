@@ -159,7 +159,6 @@ class GalleryController @Inject() (
   )(implicit request: Request[AnyContent]): Result = {
     val round = list.round
     val asUserId = list.asUserId
-    val subRegions = round.specialNomination.contains("Віа Регіа")
 
     lazy val asUser = galleryService.getAsUser(asUserId, user)
 
@@ -169,19 +168,10 @@ class GalleryController @Inject() (
     val pager = Pager(page, counts.fold(list.count())(_.total(list.filter, list.region)))
     val files = list.files(pager)
 
-    val byReg = if (ContestKind.monumentIdTemplate(contest).isDefined) {
-      val all = list.query.copy(regions = Set.empty)
-      val counted = !subRegions && (roundRegionCounts == "all" || roundRegionCounts == "juror" && asUserId != 0)
-      val byRegion = counts match {
-        case Some(c) => c.regions(list.filter).map { case (id, n) => id -> Option.when(counted)(n) }
-        case None =>
-          if (counted) all.regionCounts().map { case (id, n) => id -> Option(n) }
-          else all.byRegionStat()
-      }
-      RegionScheme.of(contest).regions(byRegion, subRegions)
-    } else {
-      Nil
-    }
+    // the region menu, whose regions are read when it is opened (regions); the grouped view's
+    // regions, by which it shows the files
+    val menu = regionMenu(list, contest)
+    val byReg = if (list.region.contains("grouped")) listRegions(list, contest, counts) else Nil
 
     // the viewer's own tabs: the counts above when the list is their own
     val rates = counts.filter(_ => user.id.contains(asUserId)).fold(galleryService.rateDistribution(user, round))(c =>
@@ -193,7 +183,7 @@ class GalleryController @Inject() (
 
     list.view match {
       case GalleryView.Gallery if round.isBinary =>
-        Ok(RequestTiming.render(views.html.gallery(user, list, files, pager, rounds, byReg, rates)))
+        Ok(RequestTiming.render(views.html.gallery(user, list, files, pager, rounds, menu, rates)))
 
       case GalleryView.Csv =>
         val data = Csv.exportRates(files, jurors, round)
@@ -204,16 +194,83 @@ class GalleryController @Inject() (
         val ranks = ImageWithRating.rankImages(files, round)
         val useTable = !round.isBinary || asUserId == 0
         val showAuthor = user.canViewOrgInfo(round) && files.exists(_.image.author.nonEmpty)
-        Ok(views.html.fileList(user, list, asUser, files, ranks, jurors, rounds, byReg, "wiki", useTable, rates,
+        Ok(views.html.fileList(user, list, asUser, files, ranks, jurors, rounds, menu, "wiki", useTable, rates,
           showAuthor))
 
       case GalleryView.Gallery | GalleryView.ByRate =>
         if (list.region.contains("grouped"))
-          Ok(RequestTiming.render(views.html.galleryByRateRegions(user, list, files, pager, rounds, byReg)))
+          Ok(RequestTiming.render(views.html.galleryByRateRegions(user, list, files, pager, rounds, menu, byReg)))
         else
-          Ok(RequestTiming.render(views.html.galleryByRate(user, list, files, pager, rounds, byReg, rates)))
+          Ok(RequestTiming.render(views.html.galleryByRate(user, list, files, pager, rounds, menu, rates)))
     }
   }
+
+  /** The region menu of a round's list in a contest of monuments: the region shown, and the
+    * URL of its regions ([[regions]]); None in a contest whose files have no monument ids.
+    */
+  private def regionMenu(list: RoundList, contest: ContestJury)(implicit messages: play.api.i18n.Messages)
+      : Option[RegionMenu] =
+    Option.when(ContestKind.monumentIdTemplate(contest).isDefined) {
+      val current = list.region.filter(_ != "grouped").map(RegionScheme.of(contest).region(_, None))
+      RegionMenu(current, list.withRegion("all").pageUrl(1), list.pageUrl(1), list.regionsUrl)
+    }
+
+  /** The list's regions (without its region filter), named by the contest's kind, with the
+    * files the list's filter has in each where they are counted (`gallery.regionCounts`; not
+    * sub-regions): from a juror's counts, else the whole round's. None in a contest whose files
+    * have no monument ids.
+    */
+  private def listRegions(list: RoundList, contest: ContestJury, counts: Option[JurorCounts])(implicit
+      messages: play.api.i18n.Messages
+  ): Seq[Region] =
+    if (ContestKind.monumentIdTemplate(contest).isEmpty) Nil
+    else {
+      val subRegions = list.query.subRegions
+      val all = list.query.copy(regions = Set.empty)
+      val counted = !subRegions && (roundRegionCounts == "all" || roundRegionCounts == "juror" && list.asUserId != 0)
+      val byRegion = counts match {
+        case Some(c) => c.regions(list.filter).map { case (id, n) => id -> Option.when(counted)(n) }
+        case None =>
+          if (counted) all.regionCounts().map { case (id, n) => id -> Option(n) }
+          else all.byRegionStat()
+      }
+      RegionScheme.of(contest).regions(byRegion, subRegions)
+    }
+
+  /** The regions of a round's list ([[RoundList.regionsUrl]]: its viewer, filter, order and
+    * view), as JSON for the gallery's region menu, read when it is first opened
+    * (region-menu.js): each region's name, its file count if counted, and its list's first
+    * page; and the list in all regions. By the gallery's rules (the round's contest, may view
+    * it, whose votes); sent by script, it never switches the session's contest.
+    */
+  def regions(asUserId: Long, region: String, roundId: Long): EssentialAction =
+    withAuthJsonOn(blocking)() { sessionUser => implicit request =>
+      import play.api.libs.json.Json
+      Round.findById(roundId).fold[Result](NotFound(Json.obj("error" -> "round_not_found"))) { round =>
+        val user = Secured.inContest(sessionUser, round.contestId)
+        if (!galleryService.mayViewRound(user, round))
+          onUnAuthorizedJson(user, request, Secured.Denial.round(round, Secured.ViewerRoles))
+        else
+          galleryService.viewAs(user, round, asUserId) match {
+            case refusal if refusal != GalleryService.ViewAs.Allowed => viewAsRefused(user, round, refusal, json = true)
+            case _ =>
+              ContestJuryJdbc.findById(round.contestId).fold[Result](
+                NotFound(Json.obj("error" -> "contest_not_found"))
+              ) { contest =>
+                val view = request.getQueryString("module").flatMap(GalleryView.parse).getOrElse(GalleryView.ofPath(asUserId))
+                val list = RoundList.of(round, user, asUserId, region, view)
+                val regions = listRegions(list, contest, list.jurorCounts())
+                Ok(Json.obj(
+                  "current" -> list.region.filter(_ != "grouped"),
+                  "all" -> Json.obj("name" -> messagesApi.preferred(request)("region.all"), "url" -> list.withRegion("all").pageUrl(1)),
+                  "regions" -> regions.map(r => Json.obj(
+                    "id" -> r.id, "name" -> r.name, "count" -> r.count, "kind" -> r.kind.toString,
+                    "url" -> list.withRegion(r.id).pageUrl(1)))
+                ))
+              }
+          }
+      }
+    }
 
   def selectWS(roundId: Long, pageId: Long, select: Int): EssentialAction =
     // a tile's vote, sent by script: JSON answers (401, 403 with the denial's reference, 409)
@@ -433,6 +490,12 @@ final case class ContestFilesView(
   def largeUrl(pageId: Long): String =
     routes.GalleryController.contestFileLarge(contest.getId, pageId, deletedOnly, roundId, region.getOrElse("all")).url
 }
+
+/** A round gallery's region menu (regionMenu.scala.html): the region shown (None: all), the
+  * list in all regions and in this one, and the URL of its regions ([[GalleryController.regions]]),
+  * read when the menu is first opened.
+  */
+final case class RegionMenu(current: Option[Region], allUrl: String, currentUrl: String, regionsUrl: String)
 
 class RateDistribution(rateMap: Map[Int, Int]) {
 

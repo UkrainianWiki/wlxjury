@@ -7,7 +7,7 @@
         files: Seq[ImageWithRating],
         pager: Pager,
         rounds: Seq[Round],
-        regions: Seq[Region],
+        regionMenu: Option[RegionMenu],
         rates: RateDistribution)(implicit flash: Flash, messages: Messages, request: RequestHeader)
 
     @showRateGalery(file: ImageWithRating, index: Int) = {
@@ -39,9 +39,7 @@
 
         @defining(list.round) { round =>
 
-                @if(regions.nonEmpty) {
-                    @regionNav((r: String) => list.withRegion(r).pageUrl(1), list.regionParam, regions)
-                }
+                @views.html.regionMenu(regionMenu)
 
             @large.voteMoved(list)
 

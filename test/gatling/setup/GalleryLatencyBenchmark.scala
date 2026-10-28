@@ -61,6 +61,16 @@ object GalleryLatencyBenchmark {
     }
   }
 
+  /** The bytes of a page's region nav (the list of regions, or the region menu), 0 without one. */
+  private def regionNavBytes(page: String): Int = {
+    val start = Seq(page.indexOf("id=\"regionnav\""), page.indexOf("id=\"regionmenu\"")).filter(_ >= 0).minOption
+    start.fold(0) { s =>
+      val from = page.lastIndexOf("<", s)
+      val end = page.indexOf("</nav>", s)
+      page.substring(from, if (end < 0) page.length else end + 6).getBytes(UTF_8).length
+    }
+  }
+
   private def run(): Unit = {
     require(!GatlingConfig.external, "Use the disposable fixture, never an external target")
     require(GatlingConfig.timing, "Run with -Dgatling.timing=true: the breakdown is the timing log's")
@@ -71,7 +81,7 @@ object GalleryLatencyBenchmark {
     val dir = new File("target/gatling")
     dir.mkdirs()
     val out = new PrintWriter(new File(dir, s"latency-client-$stamp.csv"), "UTF-8")
-    out.println("label,sample,status,ms")
+    out.println("label,sample,status,ms,bytes,regionNavBytes")
     println(s"[latency] client times: target/gatling/latency-client-$stamp.csv, timing log: ${GatlingConfig.timingFile}")
 
     // the juror with the most files in both rounds
@@ -89,9 +99,9 @@ object GalleryLatencyBenchmark {
     def measure(client: Client, label: String, n: Int = samples)(path: Int => String): Unit = if (included(label)) {
       (0 until warmup).foreach(i => client.send("GET", path(i), "warmup"))
       for (i <- 0 until n) {
-        val (status, _, _, ms) = client.send("GET", path(i), label)
+        val (status, body, _, ms) = client.send("GET", path(i), label)
         require(status == 200 || status == 303, s"$label: $status for ${path(i)}")
-        out.println(f"$label,$i,$status,$ms%.2f")
+        out.println(f"$label,$i,$status,$ms%.2f,${body.getBytes(UTF_8).length},${regionNavBytes(body)}")
       }
       out.flush()
       println(s"[latency] $label done")
@@ -131,6 +141,9 @@ object GalleryLatencyBenchmark {
           s"/gallery/round/$roundId/user/$jurorId/region/all/pageid/${files(1)._2}?sort=$order")
       }
       measure(organizer, s"organizer-$kind-byrate-p1")(_ => s"/byrate/round/$roundId/user/0/page/1")
+      // the region menu's regions, read when it is opened
+      measure(juror, s"regions-$kind-juror")(_ => s"/regions/round/$roundId/user/$jurorId/region/all?sort=file")
+      measure(organizer, s"regions-$kind-organizer")(_ => s"/regions/round/$roundId/user/0/region/all?module=byrate&sort=rate")
       measure(organizer, s"organizer-$kind-large-middle")(_ =>
         s"/large/round/$roundId/user/0/pageid/${files(1)._2}?sort=rate")
     }

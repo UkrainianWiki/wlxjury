@@ -11,7 +11,7 @@
         ranks: Seq[String],
         jurors: Seq[User],
         rounds: Seq[Round],
-        regions: Seq[Region],
+        regionMenu: Option[RegionMenu],
         outputFormat: String = "wiki",
         wrapInTable: Boolean,
         rates: RateDistribution,
@@ -40,7 +40,7 @@
     @defining(list.asUserId) { asUserId =>
     @defining(list.regionParam) { region =>
 
-        @regionNav((r: String) => list.withRegion(r).pageUrl(1), region, regions)
+        @views.html.regionMenu(regionMenu)
 
     <div class="row">
 

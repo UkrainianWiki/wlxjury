@@ -36,6 +36,7 @@ GET         /gallery/user/:user/region/:region/page/:page                       
 GET         /gallery/round/:round/user/:user/page/:page                             controllers.GalleryController.list(user: Long, page: Int, region: String = "all", round: Long)
 GET         /gallery/round/:round/user/:user/region/:region/page/:page              controllers.GalleryController.list(user: Long, page: Int, region: String, round: Long)
 GET         /gallery/round/:round/user/:user/region/:region/pageid/:pageid          controllers.GalleryController.listAtId(user: Long, pageid: Long, region: String, round: Long)
+GET         /regions/round/:round/user/:user/region/:region                         controllers.GalleryController.regions(user: Long, region: String, round: Long)
 GET         /gallery/page/:page                                                     controllers.GalleryController.listCurrent(page: Int, region: String = "all")
 GET         /gallery/region/:region/page/:page                                      controllers.GalleryController.listCurrent(page: Int, region: String)
 

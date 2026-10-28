@@ -9,6 +9,7 @@
         files: Seq[ImageWithRating],
         pager: Pager,
         rounds: Seq[Round],
+        regionMenu: Option[RegionMenu],
         regions: Seq[Region])(implicit flash: Flash, messages: Messages, request: RequestHeader)
 
 
@@ -41,7 +42,7 @@
     @defining(list.round) { round =>
             @defining({ region: String => list.withRegion(region).pageUrl(1) }) { regionToUrl =>
 
-                @regionNav(regionToUrl, list.regionParam, regions)
+                @views.html.regionMenu(regionMenu)
 
             <div class="row">
 

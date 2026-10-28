@@ -3,14 +3,15 @@ package controllers
 import db.scalikejdbc._
 import org.intracer.wmua.{ContestJury, Image, Selection}
 import play.api.Application
+import play.api.libs.json.JsObject
 import play.api.test.CSRFTokenHelper._
 import play.api.test.{FakeRequest, PlaySpecification}
 import scalikejdbc._
 
 import java.net.URLEncoder
 
-/** A round's gallery's regions (regionNav): named by the contest's kind, and each region's
-  * link listing the files the region has.
+/** A round's gallery's regions (its region menu, read when opened: GalleryController.regions):
+  * named by the contest's kind, and each region's link listing the files the region has.
   */
 class GalleryRegionsSpec extends PlaySpecification with PlayTestDb {
 
@@ -43,12 +44,23 @@ class GalleryRegionsSpec extends PlaySpecification with PlayTestDb {
     s"/gallery/round/${f.round.getId}/user/${f.juror.getId}/" +
       (if (region == "all") "" else s"region/${URLEncoder.encode(region, "UTF-8")}/") + "page/1"
 
-  /** The names the region nav shows, in order. */
-  private def regionNames(page: String): List[String] = {
-    val nav = page.substring(page.indexOf("id=\"regionnav\""))
-    """<a href="[^"]*" >\s*([^<]*?)\s*</a>""".r.findAllMatchIn(nav.substring(0, nav.indexOf("</ul>")))
-      .map(_.group(1).trim).toList.tail // without "*"
+  /** The regions of the list at `path`, as its region menu reads them when opened: its
+    * `data-regions-url`, sent by script.
+    */
+  private def regions(path: String, user: User)(implicit app: Application): Seq[JsObject] = {
+    val page = get(path, user)
+    val url = """data-regions-url="([^"]*)"""".r.findFirstMatchIn(page).get.group(1).replace("&amp;", "&")
+    val result = route(app, FakeRequest(GET, url).withSession(Secured.UserName -> user.email)
+      .withHeaders("X-Requested-With" -> "XMLHttpRequest")).get
+    status(result) === OK
+    (contentAsJson(result) \ "regions").as[Seq[JsObject]]
   }
+
+  /** The names the region menu shows, in order, with their counts. */
+  private def regionNames(path: String, user: User)(implicit app: Application): List[String] =
+    regions(path, user).map { r =>
+      (r \ "name").as[String] + (r \ "count").asOpt[Int].fold("")(n => s" ($n)")
+    }.toList
 
   private def tiles(page: String): List[Long] =
     """(?:data-pageId|<h1 id)="(\d+)"""".r.findAllMatchIn(page).map(_.group(1).toLong).toList
@@ -59,7 +71,7 @@ class GalleryRegionsSpec extends PlaySpecification with PlayTestDb {
       testDbApp { implicit app =>
         val f = fixture("Wiki Loves Earth", "Ukraine", 2025, Some("UkrainianNaturalHeritageSite"),
           Seq("26-103-0021", "26-103-0022", "61-101-0001"))
-        regionNames(get(gallery(f), f.admin)) === List("Ivano-Frankivsk O. (2)", "Ternopil O. (1)")
+        regionNames(gallery(f), f.admin) === List("Ivano-Frankivsk O. (2)", "Ternopil O. (1)")
       }
     }
 
@@ -67,10 +79,8 @@ class GalleryRegionsSpec extends PlaySpecification with PlayTestDb {
       testDbApp { implicit app =>
         val f = fixture("Wiki Loves Monuments", "Ukraine", 2025, None,
           Seq("99-141-2306", "14-101-0001", "07-101-0001", "91-101-0001"))
-        val page = get(gallery(f), f.admin)
-        regionNames(page) === List("Volyn O. (1)", "Donetsk O. (1)", "Єврейська спадщина (1)", "Other (91) (1)")
-        page must contain("""<li class="region-nomination" >""")
-        "region-separator".r.findAllIn(page).size === 2
+        regionNames(gallery(f), f.admin) === List("Volyn O. (1)", "Donetsk O. (1)", "Єврейська спадщина (1)", "Other (91) (1)")
+        regions(gallery(f), f.admin).map(r => (r \ "kind").as[String]) === List("Geographic", "Geographic", "Nomination", "Other")
       }
     }
 
@@ -79,11 +89,11 @@ class GalleryRegionsSpec extends PlaySpecification with PlayTestDb {
       testDbApp { implicit app =>
         SharedTestDb.truncateAll() // a per-test app doesn't
         val f = fixture("Wiki Loves Monuments", "Ukraine", 2025, None, Seq("07-101-0001", "07-101-0002", "14-101-0001"))
-        regionNames(get(gallery(f), f.admin)) === List("Volyn O. (2)", "Donetsk O. (1)")
+        regionNames(gallery(f), f.admin) === List("Volyn O. (2)", "Donetsk O. (1)")
         DB.autoCommit { implicit s =>
           sql"UPDATE selection SET rate = 1 WHERE page_id = 1".update()
         }
-        regionNames(get(gallery(f) + "?rate=1", f.admin)) === List("Volyn O. (1)", "Donetsk O. (0)")
+        regionNames(gallery(f) + "?rate=1", f.admin) === List("Volyn O. (1)", "Donetsk O. (0)")
       }
     }
 
@@ -97,8 +107,8 @@ class GalleryRegionsSpec extends PlaySpecification with PlayTestDb {
         val image = imageDao.findById(1L).get
         selectionDao.batchInsert(Seq(Selection(image, second, f.round, 1)))
         val url = s"/byrate/round/${f.round.getId}/user/0/page/1"
-        regionNames(get(url, f.admin)) === List("Volyn O. (2)", "Donetsk O. (1)")
-        regionNames(get(url + "?rated=true", f.admin)) === List("Volyn O. (1)", "Donetsk O. (0)")
+        regionNames(url, f.admin) === List("Volyn O. (2)", "Donetsk O. (1)")
+        regionNames(url + "?rated=true", f.admin) === List("Volyn O. (1)", "Donetsk O. (0)")
       }
     }
 
@@ -111,9 +121,9 @@ class GalleryRegionsSpec extends PlaySpecification with PlayTestDb {
           s"/byrate/round/${f.round.getId}/user/${f.juror.getId}/page/1?rated=true",
           s"/query?module=gallery&round=${f.round.getId}&user=${f.juror.getId}&rated=true")
         forall(paths) { path =>
-          val page = get(path, f.admin)
-          val link = """<a href="([^"]*)" >\s*Volyn O\. \(1\)""".r.findFirstMatchIn(page).get
-            .group(1).replace("&amp;", "&")
+          val volyn = regions(path, f.admin).find(r => (r \ "name").as[String] == "Volyn O.").get
+          (volyn \ "count").as[Int] === 1
+          val link = (volyn \ "url").as[String]
           link must contain("filter=rated")
           tiles(get(link, f.admin)) === List(1L)
         }
@@ -125,7 +135,7 @@ class GalleryRegionsSpec extends PlaySpecification with PlayTestDb {
       testDbApp { implicit app =>
         SharedTestDb.truncateAll()
         val f = fixture("Wiki Loves Monuments", "Ukraine", 2025, None, Seq("07-101-0001", "14-101-0001"))
-        regionNames(get(s"/byrate/round/${f.round.getId}/user/0/page/1", f.admin)) === List("Volyn O.", "Donetsk O.")
+        regionNames(s"/byrate/round/${f.round.getId}/user/0/page/1", f.admin) === List("Volyn O.", "Donetsk O.")
       }
     }
 
@@ -134,14 +144,14 @@ class GalleryRegionsSpec extends PlaySpecification with PlayTestDb {
       testDbApp { implicit app =>
         SharedTestDb.truncateAll()
         val f = fixture("Wiki Loves Monuments", "Ukraine", 2025, None, Seq("07-101-0001", "14-101-0001"))
-        regionNames(get(gallery(f), f.admin)) === List("Volyn O.", "Donetsk O.")
+        regionNames(gallery(f), f.admin) === List("Volyn O.", "Donetsk O.")
       }
     }
 
     "not name another country's regions as Ukraine's" in {
       testDbApp { implicit app =>
         val f = fixture("Wiki Loves Monuments", "Germany", 2025, Some("Denkmal"), Seq("07-101-0001", "14-101-0001"))
-        regionNames(get(gallery(f), f.admin)) === List("07 (1)", "14 (1)")
+        regionNames(gallery(f), f.admin) === List("07 (1)", "14 (1)")
       }
     }
 

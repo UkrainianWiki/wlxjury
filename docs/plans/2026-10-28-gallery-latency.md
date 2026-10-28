@@ -99,6 +99,13 @@ Candidates, in the order they are likely to matter:
    numbers and propose a size (it is a production setting: propose, don't change it).
 6. Deep pages (`OFFSET` over thousands of rows): keyset paging only if Phase 1 shows it
    matters; it changes URLs.
+7. **A region menu instead of the region nav.** **Decision (2026-10-28, user):** the gallery no
+   longer lists every region with its file count on each page; it shows the current region (or
+   all) as a dropdown, and reads the regions and their counts only when the juror opens it (a
+   JSON GET with the list's filter, by the gallery's checks, never switching the session's
+   contest). Without script, or if the request fails, the menu still offers all regions and
+   the current one, with a short message. Made whatever candidate 1 gives (a UI decision);
+   its own effect on the numbers is reported separately.
 
 ### Rules (CLAUDE.md)
 

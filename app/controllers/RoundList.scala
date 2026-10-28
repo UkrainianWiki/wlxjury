@@ -296,6 +296,13 @@ final case class RoundList(
   def voteQuery(criterion: Option[Int] = None): String =
     withParams("", params(module = true) ++ criterion.map(c => "criteria" -> c.toString))
 
+  /** The list's regions, for its region menu ([[GalleryController.regions]]): its viewer,
+    * filter, order and view (`module`), the region it is in.
+    */
+  def regionsUrl: String =
+    withParams(routes.GalleryController.regions(asUserId, regionParam, roundId).url,
+      Option.when(view != GalleryView.Gallery)("module" -> view.name).toSeq ++ params(module = false))
+
   /** A comment on the file in its large view, going back to it in this list. */
   def commentUrl(pageId: Long): String =
     withParams(routes.ImageDiscussionController.addComment(pageId, regionParam, Some(roundId)).url, params(module = true))

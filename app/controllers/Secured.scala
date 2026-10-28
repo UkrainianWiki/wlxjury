@@ -152,6 +152,25 @@ abstract class Secured(cc: ControllerComponents) extends AbstractController(cc) 
       }
     }
 
+  /** [[withAuthJson]] for script requests that run slow blocking JDBC work: on `ec` (the
+    * blocking dispatcher), as [[withAuthOn]]; never switching the session's contest.
+    */
+  def withAuthJsonOn(ec: ExecutionContext)(
+      permission: Permission = rolePermission(Secured.ViewerRoles)
+  )(f: => User => Request[AnyContent] => Result): EssentialAction =
+    Action.async { request =>
+      Future {
+        RequestTiming.dequeued(request)
+        RequestTiming.within(request) {
+          userFromRequest(request).fold[Result](Results.Unauthorized(Json.obj("error" -> "unauthenticated"))) { user =>
+            permitted(user, permission).fold(onUnAuthorizedJson(user, request, Secured.denialOf(permission))) {
+              permittedUser => f(permittedUser)(request)
+            }
+          }
+        }
+      }(ec)
+    }
+
   /** [[withAuth]] for actions that run slow blocking JDBC work: the authentication, the
     * permission check and the action run on `ec` (the blocking dispatcher) instead of
     * Play's default dispatcher, whose few threads every other request needs.

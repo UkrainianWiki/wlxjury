@@ -1,0 +1,39 @@
+@(menu: Option[RegionMenu])(implicit messages: Messages)
+@* A round gallery's region menu: the region shown, or all. Its regions and their file counts
+   are read when it is first opened (region-menu.js, GalleryController.regions); without
+   script, or if that fails, it still lists all the regions and the region shown. A native
+   <details>, so it opens without script too. *@
+@for(m <- menu) {
+    <style>
+        .region-menu { display: inline-block; position: relative; text-align: left; }
+        .region-menu > summary { list-style: none; cursor: pointer; }
+        .region-menu > summary::-webkit-details-marker { display: none; }
+        .region-menu-list { position: absolute; z-index: 1000; left: 0; margin: 2px 0 0; padding: 5px 0;
+            min-width: 240px; max-height: 70vh; overflow-y: auto; list-style: none; background: #fff; color: #333;
+            border: 1px solid rgba(0, 0, 0, .15); border-radius: 4px; box-shadow: 0 6px 12px rgba(0, 0, 0, .175); }
+        .region-menu-list a { display: block; padding: 3px 20px; color: #333; white-space: nowrap; }
+        .region-menu-list a:hover, .region-menu-list a:focus { background: #f5f5f5; text-decoration: none; }
+        .region-menu-list li.active > a { font-weight: bold; }
+        .region-menu-list li.region-separator { height: 1px; margin: 4px 0; background: #e5e5e5; }
+        .region-menu-status { padding: 3px 20px; color: #777; white-space: normal; }
+    </style>
+    <div class="row">
+        <nav>
+        <div class="col-md-12 text-center" style="margin-bottom: 5px;">
+            <details class="region-menu" id="regionmenu" data-regions-url="@m.regionsUrl"
+                data-loading="@Messages("region.menu.loading")" data-failed="@Messages("region.menu.failed")">
+                <summary class="btn btn-default btn-sm">
+                    @Messages("region.menu"): <b>@m.current.fold(Messages("region.all"))(_.name)</b> <span class="caret"></span>
+                </summary>
+                <ul class="region-menu-list">
+                    <li @if(m.current.isEmpty) {class="active"}><a href="@m.allUrl">@Messages("region.all")</a></li>
+                    @for(region <- m.current) {
+                        <li class="active"><a href="@m.currentUrl">@region.name</a></li>
+                    }
+                    <li class="region-menu-status"><noscript>@Messages("region.menu.noscript")</noscript></li>
+                </ul>
+            </details>
+        </div>
+        </nav>
+    </div>
+}
