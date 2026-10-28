@@ -19,6 +19,9 @@ sealed abstract class VoteFilter(val param: String) {
   /** As [[SelectionQuery]] has it. */
   def rate: Option[Int] = None
   def rated: Option[Boolean] = None
+
+  /** Whether a file of this rate is in the list, as the query's `rate` and `rated` have it. */
+  def matches(rate: Int): Boolean = this.rate.forall(_ == rate) && rated.forall(r => if (r) rate > 0 else rate == 0)
 }
 
 object VoteFilter {
@@ -148,6 +151,13 @@ final case class RoundList(
 
   def count(): Int = query.count()
 
+  /** The juror's files by region and rate, which give the list's total, its region nav's
+    * counts and the juror's tabs in one query; None for all the jurors' votes together, or
+    * sub-regions (the monument table's).
+    */
+  def jurorCounts(): Option[JurorCounts] =
+    Option.when(asUserId != 0 && !query.subRegions)(JurorCounts(query.regionRateCounts()))
+
   /** The pager's page of files; all of them for a file list or CSV. */
   def files(pager: Pager): Seq[ImageWithRating] =
     if (withDetails) query.list()
@@ -253,6 +263,28 @@ final case class RoundList(
   /** A comment on the file in its large view, going back to it in this list. */
   def commentUrl(pageId: Long): String =
     withParams(routes.ImageDiscussionController.addComment(pageId, regionParam, Some(roundId)).url, params(module = true))
+}
+
+/** A juror's files in a round by top-level region (None: without a monument id) and rate
+  * ([[db.scalikejdbc.rewrite.ImageDbNew.SelectionQuery.regionRateCounts]]).
+  */
+final case class JurorCounts(byRegionRate: Map[(Option[String], Int), Int]) {
+
+  /** The files per rate: the juror's tabs ([[RateDistribution]]). */
+  def rates: Map[Int, Int] = byRegionRate.groupMapReduce(_._1._2)(_._2)(_ + _)
+
+  /** The files the filter lists per region, every region of the juror's files kept (0 if
+    * none), without the files without a monument id: the region nav's counts.
+    */
+  def regions(filter: VoteFilter): Map[String, Int] =
+    byRegionRate.toSeq.collect { case ((Some(region), rate), n) => region -> (if (filter.matches(rate)) n else 0) }
+      .groupMapReduce(_._1)(_._2)(_ + _)
+
+  /** The files the filter lists, in the region or in all of them: the list's total. */
+  def total(filter: VoteFilter, region: Option[String]): Int =
+    byRegionRate.toSeq.collect {
+      case ((r, rate), n) if region.forall(r.contains) && filter.matches(rate) => n
+    }.sum
 }
 
 /** A large view's file (`files(index)`, at `position` in its list) and the files around it. */

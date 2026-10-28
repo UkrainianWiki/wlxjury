@@ -211,6 +211,22 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
       SQL(sql).map(rs => rs.stringOpt(1) -> rs.int(2)).list().collect { case (Some(region), n) => region -> n }.toMap
     }
 
+    /** A juror's files in the round by top-level region (None: no monument id) and rate, all
+      * of them whatever the query's filters: one scan of the juror's rows on (jury_id,
+      * round_id, rate, monument_id, page_id) (V48), the juror having one row per file. The
+      * tabs' counts, the region nav's and the list's total all come from it
+      * ([[controllers.JurorCounts]]).
+      */
+    def regionRateCounts()(implicit session: DBSession = autoSession): Map[(Option[String], Int), Int] = {
+      require(userId.isDefined && roundId.isDefined, "a juror's counts in a round")
+      SQL(s"""SELECT ${regionOf("s.monument_id")} AS region, s.rate, COUNT(*) FROM selection s
+             |WHERE s.jury_id = ${userId.get.toLong} AND s.round_id = ${roundId.get.toLong}
+             |GROUP BY region, s.rate ORDER BY NULL""".stripMargin)
+        .map(rs => (rs.stringOpt(1), rs.int(2)) -> rs.int(3))
+        .list()
+        .toMap
+    }
+
     /** A single sub-region (adm1) filter, which the monument table has. */
     private def subRegionFilter: Boolean = subRegions && regions.size == 1 && regions.head.length > 2
 

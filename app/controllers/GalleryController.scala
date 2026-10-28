@@ -163,21 +163,29 @@ class GalleryController @Inject() (
 
     lazy val asUser = galleryService.getAsUser(asUserId, user)
 
-    val pager = Pager(page, list.count())
+    // a juror's list: its total, region counts and tabs from one query over the juror's files
+    val counts = list.jurorCounts()
+
+    val pager = Pager(page, counts.fold(list.count())(_.total(list.filter, list.region)))
     val files = list.files(pager)
 
     val byReg = if (ContestKind.monumentIdTemplate(contest).isDefined) {
       val all = list.query.copy(regions = Set.empty)
       val counted = !subRegions && (roundRegionCounts == "all" || roundRegionCounts == "juror" && asUserId != 0)
-      val byRegion =
-        if (counted) all.regionCounts().map { case (id, n) => id -> Option(n) }
-        else all.byRegionStat()
+      val byRegion = counts match {
+        case Some(c) => c.regions(list.filter).map { case (id, n) => id -> Option.when(counted)(n) }
+        case None =>
+          if (counted) all.regionCounts().map { case (id, n) => id -> Option(n) }
+          else all.byRegionStat()
+      }
       RegionScheme.of(contest).regions(byRegion, subRegions)
     } else {
       Nil
     }
 
-    val rates = galleryService.rateDistribution(user, round)
+    // the viewer's own tabs: the counts above when the list is their own
+    val rates = counts.filter(_ => user.id.contains(asUserId)).fold(galleryService.rateDistribution(user, round))(c =>
+      new RateDistribution(c.rates))
 
     lazy val jurors =
       if (user.canViewOrgInfo(round) && asUserId == 0) User.findByRoundSelection(round.getId)
