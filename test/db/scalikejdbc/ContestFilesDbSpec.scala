@@ -102,6 +102,41 @@ class ContestFilesDbSpec extends Specification with BeforeAll with TestDb {
       ImageJdbc.fileRank(deleted, Some("14"), 2L) === 0
     }
 
+    "be paged, counted and placed of a country: in its country category too" in new AutoRollbackDb {
+      val categoryId = categoryFixture()
+      val prefix = "Category:Images from Wiki Loves Earth 2026 in "
+      CategoryLinkJdbc.setCountries(prefix, (1L to 6L).map(id => id -> (prefix + (if (id <= 4) "Armenia" else "Bénin"))))
+      // file 13, of another category, in Armenia's too: not counted
+      CategoryLinkJdbc.setCountries(prefix, Seq(13L -> (prefix + "Armenia")))
+      val counts = ImageJdbc.categoryCountryCounts(categoryId, prefix)
+      val armeniaId = counts.find(_.title == prefix + "Armenia").get.categoryId
+      val beninId = counts.find(_.title == prefix + "Bénin").get.categoryId
+      val armenia = FileList.Category(categoryId, deletedOnly = false, Some(armeniaId))
+
+      counts.map(c => c.title.stripPrefix(prefix) -> c.count).toMap === Map("Armenia" -> 4, "Bénin" -> 2)
+      ImageJdbc.categoryCountryCounts(categoryId, "Category:Images from Wiki Loves Earth 2025 in ") must beEmpty
+      ids(ImageJdbc.listFiles(armenia, None, 3, 1)) === Seq(2L, 3L, 4L)
+      ids(ImageJdbc.listFiles(armenia, Some("07"), 10, 0)) === Seq(1L, 3L)
+      ImageJdbc.regionCounts(armenia) === Map("07" -> 2, "14" -> 2)
+      ImageJdbc.fileRank(armenia, None, 4L) === 3
+      ids(ImageJdbc.listFiles(armenia.copy(deletedOnly = true), None, 10, 0)) === Seq(3L, 2L)
+      ImageJdbc.categoryDeletedCount(categoryId, Some(beninId)) === 1
+      ImageJdbc.categoryDeletedCount(categoryId) === 3
+    }
+
+    "move a file to the country Commons has it in, keeping other categories" in new AutoRollbackDb {
+      val categoryId = categoryFixture()
+      val prefix = "Category:Images from Wiki Loves Earth 2026 in "
+      CategoryLinkJdbc.setCountries(prefix, Seq(1L -> (prefix + "Armenia"), 2L -> (prefix + "Armenia")))
+      val changed = CategoryLinkJdbc.setCountries(prefix, Seq(1L -> (prefix + "Georgia"), 2L -> (prefix + "Armenia")))
+
+      ImageJdbc.categoryCountryCounts(categoryId, prefix).map(c => c.title.stripPrefix(prefix) -> c.count).toMap ===
+        Map("Armenia" -> 1, "Georgia" -> 1)
+      changed must haveSize(2) // Armenia's and Georgia's
+      CategoryLinkJdbc.setCountries(prefix, Seq(1L -> (prefix + "Georgia"))) must beEmpty
+      sql"SELECT COUNT(*) FROM category_members WHERE category_id = $categoryId".map(_.int(1)).single() === Some(12)
+    }
+
     "be read from the indexes alone in a region: the category's and images' (page_id, monument_id)" in
       new AutoRollbackDb {
         val categoryId = categoryFixture()
