@@ -223,14 +223,19 @@ class ImageImportHandler @Inject() (source: CommonsSource, config: Configuration
     }
   }
 
-  /** The files' contest country categories, by page id ([[ContestCountries]]). */
+  /** The files' contest country categories, by page id ([[ContestCountries.choose]]): of a
+    * file in several that don't overlap (`the United Kingdom`, `England`), by their parent
+    * categories, asked for those only.
+    */
   private def countries(contest: ContestJury, pages: Seq[Page]): Map[Long, String] = {
     val ids = pages.flatMap(_.id)
-    if (ids.isEmpty) Map.empty
-    else
-      ids.grouped(source.maxIdsPerRequest).flatMap(source.categories).flatMap { case (pageId, categories) =>
-        ContestCountries.category(contest, categories).map(pageId -> _)
-      }.toMap
+    val candidates = ids.grouped(source.maxIdsPerRequest).flatMap(source.categories)
+      .map { case (pageId, categories) => pageId -> ContestCountries.candidates(contest, categories) }
+      .filter(_._2.nonEmpty)
+      .toMap
+    val several = candidates.values.filter(_.size > 1).flatMap(_.map(_._2)).toSeq.distinct
+    val parents = several.grouped(source.maxIdsPerRequest).flatMap(source.categoriesByTitle).toMap
+    candidates.flatMap { case (pageId, cs) => ContestCountries.choose(cs, parents).map(pageId -> _) }
   }
 
   private def images(contest: ContestJury, p: ImportParams, pages: Seq[Page]): Seq[Image] =

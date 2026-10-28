@@ -463,12 +463,8 @@ object ImageJdbc extends CRUDMapper[Image]
     */
   sealed trait FileList
 
-  /** The files of a country: those whose country category ([[countryOf]]) is `categoryId`.
-    *
-    * @param prefix what the titles of the contest's country categories start with
-    *               (services.imports.ContestCountries)
-    */
-  final case class CountryFilter(categoryId: Long, prefix: String)
+  /** The files of a country, by page id (services.imports.ContestCountries.fileCountries). */
+  final case class CountryFilter(pageIds: Seq[Long])
 
   object FileList {
 
@@ -518,25 +514,25 @@ object ImageJdbc extends CRUDMapper[Image]
       rows.collect { case (None, n) => n }.sum)
   }
 
-  /** A country category of a category's files ([[categoryCountryCounts]]): its id, title, and
-    * how many of the files are of it.
-    */
-  final case class CountryCount(categoryId: Long, title: String, count: Int)
-
-  /** The countries of the category's files ([[countryOf]]), with how many of them each has;
-    * the files of none left out. From the category's members, each looking up its
+  /** The links of the category's files to the categories whose titles start with one of
+    * `prefixes` (a contest's country categories, services.imports.ContestCountries):
+    * `(page id, category id, title)`. From the category's members, each looking up its
     * categories by the members' page_id index (FK_category_member_page_id): for a contest's
     * few hundred files, not the countries' many.
     */
-  def categoryCountryCounts(categoryId: Long, prefix: String)(implicit
+  def categoryCountryLinks(categoryId: Long, prefixes: Seq[String])(implicit
       session: DBSession = AutoSession
-  ): Seq[CountryCount] =
-    sql"""SELECT c.id, c.title, f.n
-          FROM (SELECT ${countryOf(sqls"m", prefix)} AS country, COUNT(*) AS n FROM category_members m
-                WHERE m.category_id = $categoryId GROUP BY country) f
-          JOIN category c ON c.id = f.country"""
-      .map(rs => CountryCount(rs.long(1), rs.string(2), rs.int(3)))
-      .list()
+  ): Seq[(Long, Long, String)] =
+    if (prefixes.isEmpty) Nil
+    else {
+      val titled = sqls.joinWithOr(prefixes.map(p => sqls"LEFT(c.title, ${p.length}) = $p"): _*)
+      sql"""SELECT cc.page_id, c.id, c.title FROM category_members m
+              STRAIGHT_JOIN category_members cc ON cc.page_id = m.page_id AND cc.category_id <> m.category_id
+              STRAIGHT_JOIN category c ON c.id = cc.category_id
+            WHERE m.category_id = $categoryId AND ($titled)"""
+        .map(rs => (rs.long(1), rs.long(2), rs.string(3)))
+        .list()
+    }
 
   /** The number of the category's files deleted on Commons, of the country or all of them,
     * from the files marked deleted (V64's index).
@@ -651,20 +647,9 @@ object ImageJdbc extends CRUDMapper[Image]
         sqls"FROM images i WHERE i.deleted_at IS NOT NULL AND ${inRound(roundId)}"
     }
 
-  /** The country category of the file of `alias` (its page_id): of its categories whose
-    * titles start with `prefix`, the shortest. A contest that ran in the jury tool keeps its
-    * source category's files, so a file may be in a country's category and in others named
-    * after it (`… in Serbia - detail`, `… in Bangladesh under assessment`); its country is
-    * the country's. By the members' page_id index; NULL if there is none.
-    */
-  private def countryOf(alias: SQLSyntax, prefix: String): SQLSyntax =
-    sqls"""(SELECT c.id FROM category_members cc JOIN category c ON c.id = cc.category_id
-            WHERE cc.page_id = $alias.page_id AND LEFT(c.title, ${prefix.length}) = $prefix
-            ORDER BY CHAR_LENGTH(c.title), c.id LIMIT 1)"""
-
-  /** The file of `alias` is of the country. */
+  /** The file of `alias` (its page_id) is of the country: one of its files. */
   private def ofCountry(country: CountryFilter, alias: SQLSyntax): SQLSyntax =
-    sqls"${countryOf(alias, country.prefix)} = ${country.categoryId}"
+    if (country.pageIds.isEmpty) sqls"FALSE" else sqls"$alias.page_id IN (${country.pageIds})"
 
   /** The region of the monument id of `images`' file ([[ImageDbNew.regionOf]]). */
   private def regionOf(images: SQLSyntax): SQLSyntax =

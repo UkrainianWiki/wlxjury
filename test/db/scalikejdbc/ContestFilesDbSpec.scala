@@ -108,37 +108,33 @@ class ContestFilesDbSpec extends Specification with BeforeAll with TestDb {
       CategoryLinkJdbc.addCountries((1L to 6L).map(id => id -> (prefix + (if (id <= 4) "Armenia" else "Bénin"))))
       // file 13, of another category, in Armenia's too: not counted
       CategoryLinkJdbc.addCountries(Seq(13L -> (prefix + "Armenia")))
-      val counts = ImageJdbc.categoryCountryCounts(categoryId, prefix)
-      val armeniaId = counts.find(_.title == prefix + "Armenia").get.categoryId
-      val beninId = counts.find(_.title == prefix + "Bénin").get.categoryId
-      val armenia = FileList.Category(categoryId, deletedOnly = false, Some(ImageJdbc.CountryFilter(armeniaId, prefix)))
+      val links = ImageJdbc.categoryCountryLinks(categoryId, Seq(prefix))
+      val armenia = FileList.Category(categoryId, deletedOnly = false, Some(ImageJdbc.CountryFilter(Seq(1L, 2L, 3L, 4L))))
 
-      counts.map(c => c.title.stripPrefix(prefix) -> c.count).toMap === Map("Armenia" -> 4, "Bénin" -> 2)
-      ImageJdbc.categoryCountryCounts(categoryId, "Category:Images from Wiki Loves Earth 2025 in ") must beEmpty
+      links.map { case (pageId, _, title) => pageId -> title.stripPrefix(prefix) }.sorted ===
+        (1L to 6L).map(id => id -> (if (id <= 4) "Armenia" else "Bénin"))
+      ImageJdbc.categoryCountryLinks(categoryId, Seq("Category:Images from Wiki Loves Earth 2025 in ")) must beEmpty
       ids(ImageJdbc.listFiles(armenia, None, 3, 1)) === Seq(2L, 3L, 4L)
       ids(ImageJdbc.listFiles(armenia, Some("07"), 10, 0)) === Seq(1L, 3L)
       ImageJdbc.regionCounts(armenia) === Map("07" -> 2, "14" -> 2)
       ImageJdbc.fileRank(armenia, None, 4L) === 3
       ids(ImageJdbc.listFiles(armenia.copy(deletedOnly = true), None, 10, 0)) === Seq(3L, 2L)
-      ImageJdbc.categoryDeletedCount(categoryId, Some(ImageJdbc.CountryFilter(beninId, prefix))) === 1
+      ImageJdbc.categoryDeletedCount(categoryId, Some(ImageJdbc.CountryFilter(Seq(5L, 6L)))) === 1
+      ImageJdbc.listFiles(armenia.copy(country = Some(ImageJdbc.CountryFilter(Nil))), None, 10, 0) must beEmpty
       ImageJdbc.categoryDeletedCount(categoryId) === 3
     }
 
-    "count a file once, of its country's category, never taking it out of another's" in new AutoRollbackDb {
+    "list a file's links to the country categories of both prefixes, never taking it out of one" in new AutoRollbackDb {
       val categoryId = categoryFixture()
-      val prefix = "Category:Images from Wiki Loves Earth 2026 in "
-      // a Serbian contest's source category, and one of its own named after the country's
-      val detail = sql"INSERT INTO category (title) VALUES (${prefix + "Serbia - detail"})".updateAndReturnGeneratedKey()
+      val prefixes = Seq("Category:Images from Wiki Loves Earth 2026 in ", "Category:Wiki Loves Earth 2026 in ")
+      // a Serbian contest's source category, named after the country's
+      val detail = sql"INSERT INTO category (title) VALUES (${prefixes.head + "Serbia - detail"})".updateAndReturnGeneratedKey()
       sql"INSERT INTO category_members (category_id, page_id) VALUES ($detail, 1), ($detail, 2)".update()
-      CategoryLinkJdbc.addCountries(Seq(1L -> (prefix + "Serbia"), 3L -> (prefix + "Serbia")))
+      CategoryLinkJdbc.addCountries(Seq(1L -> (prefixes.head + "Serbia"), 3L -> (prefixes(1) + "Tanzania")))
 
-      val counts = ImageJdbc.categoryCountryCounts(categoryId, prefix)
-      counts.map(c => c.title.stripPrefix(prefix) -> c.count).toMap === Map("Serbia" -> 2, "Serbia - detail" -> 1)
-      val serbia = ImageJdbc.CountryFilter(counts.find(_.title.endsWith("in Serbia")).get.categoryId, prefix)
-      ids(ImageJdbc.listFiles(FileList.Category(categoryId, deletedOnly = false, Some(serbia)), None, 10, 0)) ===
-        Seq(1L, 3L)
-      ids(ImageJdbc.listFiles(FileList.Category(categoryId, deletedOnly = false,
-        Some(ImageJdbc.CountryFilter(detail, prefix))), None, 10, 0)) === Seq(2L)
+      ImageJdbc.categoryCountryLinks(categoryId, prefixes).map { case (pageId, _, title) => pageId -> title }.sorted ===
+        Seq(1L -> (prefixes.head + "Serbia"), 1L -> (prefixes.head + "Serbia - detail"),
+          2L -> (prefixes.head + "Serbia - detail"), 3L -> (prefixes(1) + "Tanzania")).sorted
       // the Serbian contest keeps its files
       sql"SELECT COUNT(*) FROM category_members WHERE category_id = $detail".map(_.int(1)).single() === Some(2)
       sql"SELECT COUNT(*) FROM category_members WHERE category_id = $categoryId".map(_.int(1)).single() === Some(12)

@@ -6,7 +6,7 @@ import org.scalawiki.dto.cmd.query.list.ListArgs
 import org.scalawiki.dto.cmd.query.prop.iiprop.{IiProp, IiPropArgs}
 import org.scalawiki.dto.cmd.query.prop.rvprop.RvProp
 import org.scalawiki.dto.cmd.query.prop.{Categories, CategoryInfo, ClLimit, ImageInfo, Prop, PropArg, Revisions, RvPropArgs}
-import org.scalawiki.dto.cmd.query.{Generator, PageIdsParam, Query, QueryParam, TitlesParam}
+import org.scalawiki.dto.cmd.query.{Generator, PageIdsParam, Query, QueryParam, RedirectsParam, TitlesParam}
 import org.scalawiki.dto.{MwException, Namespace, Page}
 import play.api.Logging
 import play.api.libs.json.JsObject
@@ -29,6 +29,7 @@ object ImportSource {
 
   /** The files used on the page, e.g. a list of winners: of a WLx contest, those in its
     * country categories only ([[ContestCountries]]), not the icons and logos it shows too.
+    * A file the page names by an old title is the file it redirects to.
     */
   final case class PageFiles(title: String) extends ImportSource
 
@@ -81,6 +82,11 @@ trait CommonsSource {
     * categories is left out.
     */
   def categories(pageIds: Seq[Long]): Map[Long, Seq[String]]
+
+  /** The categories of the pages (at most [[maxIdsPerRequest]]), by title: of a category,
+    * its parents. A page without categories is left out.
+    */
+  def categoriesByTitle(titles: Seq[String]): Map[String, Seq[String]]
 }
 
 /** [[CommonsSource]] over the API. A source's files are listed with a generator query
@@ -106,7 +112,8 @@ class MwCommonsSource @Inject() (bot: MwBot, login: CommonsLogin) extends Common
       case ImportSource.PageFiles(t) => ("images", None, Some(t))
     }
     val generator = ListArgs.toDsl(module, generatorTitle, None, Set(Namespace.FILE), Some(limit.toString)).get
-    val params: Seq[QueryParam[Any]] = pageTitle.map(t => TitlesParam(Seq(t))).toSeq :+ Generator(generator)
+    val params: Seq[QueryParam[Any]] =
+      pageTitle.toSeq.flatMap(t => Seq(TitlesParam(Seq(t)), RedirectsParam())) :+ Generator(generator)
     val (pages, next) = api.page(Action(Query(params: _*)), cursor)
     FilePage(pages.flatMap(_.id).sorted, next)
   }
@@ -138,6 +145,12 @@ class MwCommonsSource @Inject() (bot: MwBot, login: CommonsLogin) extends Common
   def categories(pageIds: Seq[Long]): Map[Long, Seq[String]] =
     batch(pageIds)(ids => api.run(Query(PageIdsParam(ids), Prop(Categories(ClLimit("max"))))))
       .flatMap(page => page.id.filter(_ => page.categories.nonEmpty).map(_ -> page.categories))
+      .toMap
+
+  def categoriesByTitle(titles: Seq[String]): Map[String, Seq[String]] =
+    batch(titles)(ts => api.run(Query(TitlesParam(ts), Prop(Categories(ClLimit("max"))))))
+      .filter(_.categories.nonEmpty)
+      .map(page => page.title -> page.categories)
       .toMap
 
   def categoryFileCount(category: String): Option[Long] =
