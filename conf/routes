@@ -8,8 +8,9 @@ GET         /                                                                   
 
 GET         /wikipedia/commons/thumb/*path                                          @controllers.ImageProxyController.serve(path: String)
 
-# Map static resources from the /public folder to the /assets URL path
-GET         /assets/*file                                                           @controllers.Assets.at(path="/public", file)
+# Map static resources from the /public folder to the /assets URL path; a fingerprinted name
+# (<md5>-<name>, from sbt-digest) is cached for a year, a plain name for an hour
+GET         /assets/*file                                                           @controllers.Assets.versioned(path="/public", file: Asset)
 
 GET         /logout                                                                 @controllers.LoginController.logoutPage(returnTo: Option[String] ?= None)
 POST        /logout                                                                 @controllers.LoginController.logout()
