@@ -9,7 +9,8 @@
         list: Option[RoundList] = None,
         pager: Html = Html(""),
         contestId: Option[Long] = None,
-        rates: RateDistribution = new RateDistribution(Map.empty))(implicit messages: Messages, request: RequestHeader)
+        rates: RateDistribution = new RateDistribution(Map.empty),
+        filters: Html = Html(""))(implicit messages: Messages, request: RequestHeader)
 
 @* The viewer's own gallery: the page's list if it is that, else where they start in its round *@
 @ownList(l: RoundList) = @{
@@ -167,6 +168,8 @@
                 } else {
                     <a class="brand" href="#">@Messages("application.name")</a>
                 }
+                @* the page's filters (its region or country menus), then its pager *@
+                @filters
                 @pager
             </ul>
             @logged(user)

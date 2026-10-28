@@ -32,6 +32,11 @@ class PagerSpec extends Specification {
       Pager(page = 1, count = 16).pages === 2
     }
 
+    "give a list's page URL with {page} in place of the number, for its page box" in {
+      Pager.urlTemplate(p => s"/gallery/round/7/user/3/page/$p?sort=file") === "/gallery/round/7/user/3/page/{page}?sort=file"
+      Pager.urlTemplate(p => s"/contest/7/files?page=$p&region=07") === "/contest/7/files?page={page}&region=07"
+    }
+
     "start a page at its first item" in {
       Pager(page = 1, count = 40).offset === 0
       Pager(page = 3, count = 40).offset === 30

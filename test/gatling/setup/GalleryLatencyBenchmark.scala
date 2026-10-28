@@ -66,8 +66,10 @@ object GalleryLatencyBenchmark {
     val start = Seq(page.indexOf("id=\"regionnav\""), page.indexOf("id=\"regionmenu\"")).filter(_ >= 0).minOption
     start.fold(0) { s =>
       val from = page.lastIndexOf("<", s)
-      val end = page.indexOf("</nav>", s)
-      page.substring(from, if (end < 0) page.length else end + 6).getBytes(UTF_8).length
+      // the old nav ends with its </nav>; the menu, in the navbar, with its list's </li>
+      val end = if (page.startsWith("id=\"regionnav\"", s)) page.indexOf("</nav>", s) + 6
+        else page.indexOf("</li>", page.indexOf("</ul>", s)) + 5
+      page.substring(from, if (end < 6) page.length else end).getBytes(UTF_8).length
     }
   }
 

@@ -11,7 +11,8 @@
         list: Option[RoundList] = None,
         pager: Html = Html(""),
         rates: RateDistribution = new RateDistribution(Map.empty),
-        contestId: Option[Long] = None)(content: Html)(implicit messages: Messages, request: RequestHeader)
+        contestId: Option[Long] = None,
+        filters: Html = Html(""))(content: Html)(implicit messages: Messages, request: RequestHeader)
 <!DOCTYPE html>
 
 <html lang="@messages.lang.language">
@@ -36,6 +37,7 @@
 
         <script type="text/javascript" src="@routes.Assets.at("javascripts/vote-errors.js")"></script>
         <script type="text/javascript" src="@routes.Assets.at("javascripts/region-menu.js")"></script>
+        <script type="text/javascript" src="@routes.Assets.at("javascripts/pager-jump.js")"></script>
         <script type="text/javascript" src="@routes.Assets.at("javascripts/ug-theme-tiles.js")"></script>
 
         <link rel="stylesheet" href="@routes.Assets.at("stylesheets/ug-theme-default.css")" type='text/css' />
@@ -63,7 +65,7 @@
     <body @if(gallery){class="gallery"}>
 
         @navbar(title, user, asUserId, selectedRound, rounds, list, pager,
-            contestId = contestId.orElse(selectedRound.map(_.contestId)), rates)
+            contestId = contestId.orElse(selectedRound.map(_.contestId)), rates, filters)
 
      <div class="container-fluid" style="margin-left: 0; margin-right :0;">
 
