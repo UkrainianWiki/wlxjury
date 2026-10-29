@@ -72,7 +72,9 @@ trait CommonsSource {
     */
   def missingFiles(pageIds: Seq[Long]): Seq[Long]
 
-  /** The files (at most [[maxIdsPerRequest]]) by title; a missing file comes back without an id. */
+  /** The files (at most [[maxIdsPerRequest]]) by title; a missing file comes back without an id.
+    * A title that redirects (a renamed file's old one) is the file it redirects to.
+    */
   def filesByTitles(titles: Seq[String], info: Boolean, text: Boolean): Seq[Page]
 
   /** The number of files in the category, if it is one. */
@@ -125,7 +127,7 @@ class MwCommonsSource @Inject() (bot: MwBot, login: CommonsLogin) extends Common
     batch(pageIds)(api.missingPageIds)
 
   def filesByTitles(titles: Seq[String], info: Boolean, text: Boolean): Seq[Page] =
-    batch(titles)(ts => api.run(Query(TitlesParam(ts), Prop(props(info, text): _*))))
+    batch(titles)(ts => api.run(Query(TitlesParam(ts), RedirectsParam(), Prop(props(info, text): _*))))
 
   /** One request of `values`. One the API refuses as too large for the session (it has
     * become anonymous) is fetched again [[CommonsLogin.Limit]] values per request, so the
