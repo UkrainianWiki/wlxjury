@@ -389,3 +389,30 @@ div.thumb_small.wlx-thumb-failed img {
     color: #fff;
     background-color: #337ab7;
 }
+
+/* A gallery's region or country menu in the navbar (regionMenu.scala.html): a long list scrolls */
+.region-menu .region-menu-list { min-width: 240px; max-height: 70vh; overflow-y: auto; }
+.region-menu-status { padding: 3px 20px; color: #777; white-space: normal; }
+.region-menu-status:empty { display: none; }
+
+/* The pager's page box (pageLinks.scala.html), in a dropdown of the items shown */
+/* floated as Bootstrap floats the pager's links, so it stays between them; the box opens under
+   it from its left edge, as wide as its contents (pager-jump.js opens it leftwards only if it
+   would leave the window) */
+.pagination > .pager-jump-menu { position: relative; float: left; }
+.dropdown-menu.pager-jump-box { padding: 8px 12px; min-width: 0; }
+.pager-jump { white-space: nowrap; }
+.pager-jump label { font-weight: normal; margin: 0 6px 0 0; }
+/* the number, as wide as its page's digits (pageLinks.scala.html), without the browser's up and
+   down arrows: Bootstrap stretches them past the box, which cut off the up one at some zooms;
+   the Up and Down keys still step it, and the pager's links step a page */
+.pager-jump input[type=number] { display: inline-block; height: 30px; padding: 2px 6px; margin: 0 4px;
+    -moz-appearance: textfield; appearance: textfield; }
+.pager-jump input[type=number]::-webkit-inner-spin-button,
+.pager-jump input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+
+/* A pager link with no page to go to: greyed out, not a link that only forbids the cursor
+   (li.disabled: above Bootstrap's .disabled, which loads after this file) */
+.pagination > li.disabled > span,
+.pagination > li.disabled > span:hover,
+.pagination > li.disabled > span:focus { color: #c8c8c8; background-color: #f7f7f7; cursor: default; }

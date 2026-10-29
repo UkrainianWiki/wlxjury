@@ -34,8 +34,11 @@ class ImagesFromListSpec extends Specification with JuryTestHelpers with TestDb
 
       val images = imageDao.findByCategory(dbCategories.last.id)
 
+      // a file renamed on Commons since the list was made: imported by the title it redirects to
+      val renamed = "File:-1 Բնություն S-N 01.jpg" -> "File:Մեծ Պառնի գյուղի շրջակայքը 16-05-2020.jpg"
       val missingImages = uniqueNormalizedNames.toSet -- images.map(_.title).toSet
-      missingImages === Set.empty
+      missingImages === Set(renamed._1)
+      images.map(_.title) must contain(renamed._2)
 
       images.size === uniqueNormalizedNames.length
     }

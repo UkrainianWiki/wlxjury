@@ -69,7 +69,6 @@ object ImportState {
   *
   * @param countries      the files' contest country categories ([[ContestCountries]]),
   *                       by page id
-  * @param countryPrefix  what the titles of the contest's country categories start with
   * @param notInCountries files of a page source left out, as in none of those categories
   */
 final case class ImportPage(
@@ -82,7 +81,6 @@ final case class ImportPage(
     last: Boolean,
     total: Option[Long],
     countries: Seq[(Long, String)] = Nil,
-    countryPrefix: String = "",
     byCountry: Option[Boolean] = None,
     notInCountries: Int = 0
 )
@@ -105,9 +103,9 @@ final case class ImportPage(
   *     import had, per page: a file not stored is inserted and put in the contest's
   *     category; a stored file of another contest is put in the category only; a file of
   *     the contest is updated if it changed ([[ImageService.changedImages]]), with its
-  *     selection rows' monument id; a file is put in its country category, and taken out
-  *     of the contest's other countries'. Mode `monument_ids` sets the stored files'
-  *     monument ids from their text, where they differ.
+  *     selection rows' monument id; a file is put in its country category (never taken
+  *     out of one). Mode `monument_ids` sets the stored files' monument ids from their
+  *     text, where they differ.
   *
   * Every write is idempotent (`INSERT IGNORE`, compare before update), so a page fetched
   * and written again after a crash or a Retry changes nothing. Held in memory: one page.
@@ -198,8 +196,7 @@ class ImageImportHandler @Inject() (source: CommonsSource, config: Configuration
         last = next >= p.titleCount,
         total = Some(p.titleCount.toLong),
         // a national contest's files are all of its country
-        countries = if (ContestCountries.ofManyCountries(contest)) countries(contest, found).toSeq else Nil,
-        countryPrefix = ContestCountries.prefix(contest)
+        countries = if (ContestCountries.ofManyCountries(contest)) countries(contest, found).toSeq else Nil
       )
     } else {
       val listed = source.listFiles(ImportSource(p.source), st.cursor, stepSize)
@@ -212,7 +209,6 @@ class ImageImportHandler @Inject() (source: CommonsSource, config: Configuration
       val kept = if (byCountry.contains(true)) pages.filter(_.id.exists(countryOf.contains)) else pages
       ImportPage(
         countries = countryOf.toSeq,
-        countryPrefix = ContestCountries.prefix(contest),
         byCountry = byCountry,
         notInCountries = pages.size - kept.size,
         listed = listed.pageIds.size,
@@ -227,14 +223,19 @@ class ImageImportHandler @Inject() (source: CommonsSource, config: Configuration
     }
   }
 
-  /** The files' contest country categories, by page id ([[ContestCountries]]). */
+  /** The files' contest country categories, by page id ([[ContestCountries.choose]]): of a
+    * file in several that don't overlap (`the United Kingdom`, `England`), by their parent
+    * categories, asked for those only.
+    */
   private def countries(contest: ContestJury, pages: Seq[Page]): Map[Long, String] = {
     val ids = pages.flatMap(_.id)
-    if (ids.isEmpty) Map.empty
-    else
-      ids.grouped(source.maxIdsPerRequest).flatMap(source.categories).flatMap { case (pageId, categories) =>
-        ContestCountries.category(contest, categories).map(pageId -> _)
-      }.toMap
+    val candidates = ids.grouped(source.maxIdsPerRequest).flatMap(source.categories)
+      .map { case (pageId, categories) => pageId -> ContestCountries.candidates(contest, categories) }
+      .filter(_._2.nonEmpty)
+      .toMap
+    val several = candidates.values.filter(_.size > 1).flatMap(_.map(_._2)).toSeq.distinct
+    val parents = several.grouped(source.maxIdsPerRequest).flatMap(source.categoriesByTitle).toMap
+    candidates.flatMap { case (pageId, cs) => ContestCountries.choose(cs, parents).map(pageId -> _) }
   }
 
   private def images(contest: ContestJury, p: ImportParams, pages: Seq[Page]): Seq[Image] =
@@ -258,7 +259,9 @@ class ImageImportHandler @Inject() (source: CommonsSource, config: Configuration
     val st = stateOf(job)
     val written =
       if (p.mode == Mode.MonumentIds) writeMonumentIds(page, st, ctx)
-      else writeImages(p.categoryId.getOrElse(throw new IllegalStateException("no category")), page, st, ctx)
+      else
+        writeImages(p.categoryId.getOrElse(throw new IllegalStateException("no category")), page, st, ctx,
+          withText = p.monumentIdTemplate.isDefined)
     val next = written.copy(
       cursor = page.nextCursor,
       index = page.nextIndex,
@@ -281,16 +284,26 @@ class ImageImportHandler @Inject() (source: CommonsSource, config: Configuration
     }
   }
 
-  private def writeImages(categoryId: Long, page: ImportPage, st: ImportState, ctx: StepContext)(implicit
-      session: DBSession
+  /** @param withText whether the files' text was fetched (the contest has a monument id
+    *                 template): without it a fetched file has no monument id nor description,
+    *                 so a stored file keeps those another contest's import set (its rounds'
+    *                 regions read them).
+    */
+  private def writeImages(categoryId: Long, page: ImportPage, st: ImportState, ctx: StepContext, withText: Boolean)(
+      implicit session: DBSession
   ): ImportState = {
     val stored = ImageJdbc
       .findWithCategoryLink(page.images.map(_.pageId), categoryId)
       .map { case (image, linked) => image.pageId -> (image, linked) }
       .toMap
-    val fresh = page.images.filterNot(i => stored.contains(i.pageId))
-    val unlinked = page.images.filterNot(i => stored.get(i.pageId).exists(_._2))
-    val changed = ImageService.changedImages(page.images, stored.values.collect { case (i, true) => i }.toSeq)
+    val fetched =
+      if (withText) page.images
+      else page.images.map(i => stored.get(i.pageId).fold(i) { case (s, _) =>
+        i.copy(monumentId = s.monumentId, description = s.description)
+      })
+    val fresh = fetched.filterNot(i => stored.contains(i.pageId))
+    val unlinked = fetched.filterNot(i => stored.get(i.pageId).exists(_._2))
+    val changed = ImageService.changedImages(fetched, stored.values.collect { case (i, true) => i }.toSeq)
     // Locks the restored files with those updated below, in page id order
     val restored = DeletedFiles.restore(stored.keys.toSeq, alsoLock = changed.map(_.pageId))
     if (restored.nonEmpty) ctx.afterCommit(RoundImageCounts.invalidate(restored: _*))
@@ -299,8 +312,8 @@ class ImageImportHandler @Inject() (source: CommonsSource, config: Configuration
     if (changed.nonEmpty) ctx.afterCommit(RegionCountCache.invalidateMonumentIds())
     ImageJdbc.insertIgnore(fresh)
     CategoryLinkJdbc.linkIgnore(categoryId, unlinked.map(_.pageId))
-    val countriesChanged = CategoryLinkJdbc.setCountries(page.countryPrefix, page.countries)
-    if (countriesChanged.nonEmpty) ctx.afterCommit(RegionCountCache.invalidateCategory(countriesChanged: _*))
+    val countriesJoined = CategoryLinkJdbc.addCountries(page.countries)
+    if (countriesJoined.nonEmpty) ctx.afterCommit(RegionCountCache.invalidateCategory(countriesJoined: _*))
     changed.foreach { image =>
       ImageJdbc.updateIn(image)
       stored.get(image.pageId).map(_._1.title).filter(_ != image.title).foreach(ImageJdbc.recordRename(_, image.pageId))
