@@ -459,15 +459,18 @@ object ImageJdbc extends CRUDMapper[Image]
     * each in its order: a category's files, all in page id order or only those deleted on
     * Commons, the latest deleted first; or a round's files deleted on Commons, likewise.
     * Each also in one region ([[ImageDbNew.regionOf]] of the file's monument id); a
-    * category's also of one country (those in its country category too, the id of which it
-    * has: services.imports.ContestCountries).
+    * category's also of one country ([[CountryFilter]]).
     */
   sealed trait FileList
+
+  /** The files of a country, by page id (services.imports.ContestCountries.fileCountries). */
+  final case class CountryFilter(pageIds: Seq[Long])
 
   object FileList {
 
     /** [[categoryFiles]] */
-    final case class Category(categoryId: Long, deletedOnly: Boolean, country: Option[Long] = None) extends FileList
+    final case class Category(categoryId: Long, deletedOnly: Boolean, country: Option[CountryFilter] = None)
+        extends FileList
 
     /** [[roundDeletedFiles]] */
     final case class RoundDeleted(roundId: Long) extends FileList
@@ -511,32 +514,30 @@ object ImageJdbc extends CRUDMapper[Image]
       rows.collect { case (None, n) => n }.sum)
   }
 
-  /** A country category of a category's files ([[categoryCountryCounts]]): its id, title, and
-    * how many of the files are in it.
+  /** The links of the category's files to the categories whose titles start with one of
+    * `prefixes` (a contest's country categories, services.imports.ContestCountries):
+    * `(page id, category id, title)`. From the category's members, each looking up its
+    * categories by the members' page_id index (FK_category_member_page_id): for a contest's
+    * few hundred files, not the countries' many.
     */
-  final case class CountryCount(categoryId: Long, title: String, count: Int)
-
-  /** The categories whose titles start with `prefix` (a contest's country categories,
-    * services.imports.ContestCountries) that the category's files are in, with how many of
-    * them each has. From the category's members, each joined to its categories by the
-    * members' page_id index (FK_category_member_page_id): for a contest's few hundred
-    * files, not the countries' many.
-    */
-  def categoryCountryCounts(categoryId: Long, prefix: String)(implicit
+  def categoryCountryLinks(categoryId: Long, prefixes: Seq[String])(implicit
       session: DBSession = AutoSession
-  ): Seq[CountryCount] =
-    sql"""SELECT c.id, c.title, COUNT(*) FROM category_members m
-            STRAIGHT_JOIN category_members cc ON cc.page_id = m.page_id AND cc.category_id <> m.category_id
-            STRAIGHT_JOIN category c ON c.id = cc.category_id
-          WHERE m.category_id = $categoryId AND LEFT(c.title, ${prefix.length}) = $prefix
-          GROUP BY c.id, c.title"""
-      .map(rs => CountryCount(rs.long(1), rs.string(2), rs.int(3)))
-      .list()
+  ): Seq[(Long, Long, String)] =
+    if (prefixes.isEmpty) Nil
+    else {
+      val titled = sqls.joinWithOr(prefixes.map(p => sqls"LEFT(c.title, ${p.length}) = $p"): _*)
+      sql"""SELECT cc.page_id, c.id, c.title FROM category_members m
+              STRAIGHT_JOIN category_members cc ON cc.page_id = m.page_id AND cc.category_id <> m.category_id
+              STRAIGHT_JOIN category c ON c.id = cc.category_id
+            WHERE m.category_id = $categoryId AND ($titled)"""
+        .map(rs => (rs.long(1), rs.long(2), rs.string(3)))
+        .list()
+    }
 
-  /** The number of the category's files deleted on Commons, of the country (its category) or
-    * all of them, from the files marked deleted (V64's index).
+  /** The number of the category's files deleted on Commons, of the country or all of them,
+    * from the files marked deleted (V64's index).
     */
-  def categoryDeletedCount(categoryId: Long, country: Option[Long] = None)(implicit
+  def categoryDeletedCount(categoryId: Long, country: Option[CountryFilter] = None)(implicit
       session: DBSession = AutoSession
   ): Int =
     sql"""SELECT COUNT(*) ${deletedFiles(FileList.Category(categoryId, deletedOnly = true, country))}"""
@@ -575,7 +576,7 @@ object ImageJdbc extends CRUDMapper[Image]
       limit: Int,
       offset: Int,
       region: Option[String] = None,
-      country: Option[Long] = None
+      country: Option[CountryFilter] = None
   )(implicit session: DBSession = AutoSession): Seq[StoredFile] =
     (if (deletedOnly)
        sql"""SELECT ${i.result.*}, i.deleted_at AS file_deleted_at
@@ -621,12 +622,13 @@ object ImageJdbc extends CRUDMapper[Image]
     * `images`, joined to their images as that alias for their monument ids, which the
     * images' (page_id, monument_id) index (V66) has: neither reads an image row.
     */
-  private def categoryMembers(categoryId: Long, images: Option[SQLSyntax], country: Option[Long] = None): SQLSyntax = {
+  private def categoryMembers(categoryId: Long, images: Option[SQLSyntax], country: Option[CountryFilter] = None)
+      : SQLSyntax = {
     val members = images.fold(sqls"category_members m WHERE m.category_id = $categoryId") { r =>
       sqls"""category_members m STRAIGHT_JOIN images $r FORCE INDEX ($PageMonumentIndex) ON $r.page_id = m.page_id
              WHERE m.category_id = $categoryId"""
     }
-    country.fold(members)(c => sqls"$members AND ${inCategory(c, sqls"m")}")
+    country.fold(members)(c => sqls"$members AND ${ofCountry(c, sqls"m")}")
   }
 
   /** The images' (page_id, monument_id) index (V66). */
@@ -638,16 +640,16 @@ object ImageJdbc extends CRUDMapper[Image]
   private def deletedFiles(list: FileList): SQLSyntax =
     list match {
       case FileList.Category(categoryId, _, country) =>
-        val ofCountry = country.fold(sqls"")(c => sqls"AND ${inCategory(c, sqls"i")}")
+        val inCountry = country.fold(sqls"")(c => sqls"AND ${ofCountry(c, sqls"i")}")
         sqls"""FROM images i STRAIGHT_JOIN category_members cm ON cm.category_id = $categoryId AND cm.page_id = i.page_id
-               WHERE i.deleted_at IS NOT NULL $ofCountry"""
+               WHERE i.deleted_at IS NOT NULL $inCountry"""
       case FileList.RoundDeleted(roundId) =>
         sqls"FROM images i WHERE i.deleted_at IS NOT NULL AND ${inRound(roundId)}"
     }
 
-  /** The file of `alias` (its page_id) is in the category too (cm_category_page). */
-  private def inCategory(categoryId: Long, alias: SQLSyntax): SQLSyntax =
-    sqls"EXISTS (SELECT 1 FROM category_members cc WHERE cc.category_id = $categoryId AND cc.page_id = $alias.page_id)"
+  /** The file of `alias` (its page_id) is of the country: one of its files. */
+  private def ofCountry(country: CountryFilter, alias: SQLSyntax): SQLSyntax =
+    if (country.pageIds.isEmpty) sqls"FALSE" else sqls"$alias.page_id IN (${country.pageIds})"
 
   /** The region of the monument id of `images`' file ([[ImageDbNew.regionOf]]). */
   private def regionOf(images: SQLSyntax): SQLSyntax =

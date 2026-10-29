@@ -56,6 +56,7 @@ class MwCommonsSourceSpec extends Specification with JuryTestHelpers {
       first("gcmlimit") === "2"
       first("continue") === ""
       first.contains("gcmcontinue") must beFalse
+      first.contains("redirects") must beFalse
       second("gcmcontinue") === "file|41|12"
       second("continue") === "gcmcontinue||"
     }
@@ -68,6 +69,8 @@ class MwCommonsSourceSpec extends Specification with JuryTestHelpers {
       val Seq(params) = postedParams(bot, 1)
       params("generator") === "images"
       params("titles") === "Commons:Wiki Loves Earth 2019/Winners"
+      // a renamed file the page names by its old title: the file
+      params("redirects") === ""
     }
 
     "list a template's embedding files" in {
@@ -108,6 +111,22 @@ class MwCommonsSourceSpec extends Specification with JuryTestHelpers {
         Future.successful(lastPage)
       source(bot).listFiles(ImportSource("Category:X"), Json.obj(), 50) === FilePage(Seq(13L), None)
       postedParams(bot, 2).size === 2
+    }
+  }
+
+  "filesByTitles" should {
+
+    "ask for the files that the titles redirect to: a renamed file by its old title" in {
+      val bot = mockBot()
+      val renamed = Seq(Page(13L, Some(6), "File:New name.jpg"))
+      bot.run(any[Action], any[Map[String, String]], any[Option[Long]]) returns Future.successful(renamed)
+      source(bot).filesByTitles(Seq("File:Old name.jpg"), info = true, text = false) === renamed
+
+      val captor = ArgumentCaptor.forClass(classOf[Action])
+      org.mockito.Mockito.verify(bot).run(captor.capture(), any[Map[String, String]], any[Option[Long]])
+      val params = captor.getValue.pairs.toMap
+      params("titles") === "File:Old name.jpg"
+      params("redirects") === ""
     }
   }
 

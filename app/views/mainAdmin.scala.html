@@ -19,22 +19,22 @@
         <meta http-equiv="X-UA-Compatible" content="IE=edge">
         <meta name="viewport" content="width=device-width, initial-scale=1">
 
-        <link rel="stylesheet" media="screen" href="@routes.Assets.at("stylesheets/main.css")">
+        <link rel="stylesheet" media="screen" href="@routes.Assets.versioned("stylesheets/main.css")">
 
             <!-- Latest compiled and minified CSS -->
         <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css">
-        <link rel="shortcut icon" type="image/png" href="@routes.Assets.at("images/favicon.png")">
+        <link rel="shortcut icon" type="image/png" href="@routes.Assets.versioned("images/favicon.png")">
 
         <script>
                 var contestId = @contestId.getOrElse(0L);
         </script>
         <script type="text/javascript" src="https://ajax.googleapis.com/ajax/libs/jquery/3.2.1/jquery.min.js"></script>
         <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/js/bootstrap.min.js"></script>
-        <script type="text/javascript" src="@routes.Assets.at("javascripts/bootstrap-typeahead.js")"></script>
-        <script type="text/javascript" src="@routes.Assets.at("javascripts/autocomplete.js")"></script>
+        <script type="text/javascript" src="@routes.Assets.versioned("javascripts/bootstrap-typeahead.js")"></script>
+        <script type="text/javascript" src="@routes.Assets.versioned("javascripts/autocomplete.js")"></script>
 
-        <script type="text/javascript" src="@routes.Assets.at("javascripts/bootstrap-multiselect.js")"></script>
-        <link rel="stylesheet" href="@routes.Assets.at("stylesheets/bootstrap-multiselect.css")" type="text/css"/>
+        <script type="text/javascript" src="@routes.Assets.versioned("javascripts/bootstrap-multiselect.js")"></script>
+        <link rel="stylesheet" href="@routes.Assets.versioned("stylesheets/bootstrap-multiselect.css")" type="text/css"/>
 
         <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.6.3/css/font-awesome.min.css">
 

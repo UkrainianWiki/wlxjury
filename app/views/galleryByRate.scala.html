@@ -35,11 +35,10 @@
     }
     }
 
-    @main("byrate", user, list.asUserId, Some(list.round), rounds, true, Some(list), pagerNav(pager, list.pageUrl), rates) {
+    @main("byrate", user, list.asUserId, Some(list.round), rounds, true, Some(list), pagerNav(pager, list.pageUrl), rates,
+        filters = views.html.regionMenu(regionMenu)) {
 
         @defining(list.round) { round =>
-
-                @views.html.regionMenu(regionMenu)
 
             @large.voteMoved(list)
 

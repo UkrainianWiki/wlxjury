@@ -8,8 +8,9 @@ GET         /                                                                   
 
 GET         /wikipedia/commons/thumb/*path                                          @controllers.ImageProxyController.serve(path: String)
 
-# Map static resources from the /public folder to the /assets URL path
-GET         /assets/*file                                                           @controllers.Assets.at(path="/public", file)
+# Map static resources from the /public folder to the /assets URL path; a fingerprinted name
+# (<md5>-<name>, from sbt-digest) is cached for a year, a plain name for an hour
+GET         /assets/*file                                                           @controllers.Assets.versioned(path="/public", file: Asset)
 
 GET         /logout                                                                 @controllers.LoginController.logoutPage(returnTo: Option[String] ?= None)
 POST        /logout                                                                 @controllers.LoginController.logout()
@@ -96,6 +97,8 @@ POST        /contests/save                                                      
 POST        /contests/import                                                        @controllers.ContestController.importContests()
 GET         /contest/:id/images                                                     @controllers.ImageController.images(id: Long)
 GET         /contest/:contestId/files                                               @controllers.GalleryController.contestFiles(contestId: Long, page: Int ?= 1, deleted: Boolean ?= false, round: Option[Long] ?= None, region: String ?= "all", country: Option[String] ?= None)
+GET         /contest/:contestId/files/regions                                       @controllers.GalleryController.contestFileRegions(contestId: Long, deleted: Boolean ?= false, round: Option[Long] ?= None, region: String ?= "all", country: Option[String] ?= None)
+GET         /contest/:contestId/files/countries                                     @controllers.GalleryController.contestFileCountries(contestId: Long, deleted: Boolean ?= false, round: Option[Long] ?= None, region: String ?= "all", country: Option[String] ?= None)
 GET         /contest/:contestId/files/:pageId                                       @controllers.GalleryController.contestFileLarge(contestId: Long, pageId: Long, deleted: Boolean ?= false, round: Option[Long] ?= None, region: String ?= "all", country: Option[String] ?= None)
 POST        /contest/:id/importimages                                               @controllers.ImageController.importImages(id: Long)
 POST        /contest/:id/images/cache/start                                         @controllers.ImageController.startImageCache(id: Long)

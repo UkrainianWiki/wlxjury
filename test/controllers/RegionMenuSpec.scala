@@ -107,7 +107,6 @@ class RegionMenuSpec extends PlaySpecification with PlayTestDb {
         in07 must contain("<b>Volyn O.</b>")
         in07 must contain(s"""<a href="/gallery/round/${f.binary.getId}/user/${f.juror.getId}/page/1?sort=file">All regions</a>""")
         in07 must contain(s"""<li class="active"><a href="/gallery/round/${f.binary.getId}/user/${f.juror.getId}/region/07/page/1?sort=file">Volyn O.</a>""")
-        in07 must contain("<noscript>")
       }
     }
 

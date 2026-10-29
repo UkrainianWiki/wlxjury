@@ -9,12 +9,13 @@
 @defining(list.round) { round =>
 @if(!round.isBinary) {
 
-    <script src="@routes.Assets.at("javascripts/jquery.raty.js")"></script>
-    <link rel="stylesheet" href="@routes.Assets.at("stylesheets/jquery.raty.css")">
+    <script src="@routes.Assets.versioned("javascripts/jquery.raty.js")"></script>
+    <link rel="stylesheet" href="@routes.Assets.versioned("stylesheets/jquery.raty.css")">
 
     <script>
     $(document).ready(function() {
-        $.fn.raty.defaults.path = '@routes.Assets.at("images")';
+        @* a directory has no digest: raty's star images keep plain, hour-cached names *@
+        $.fn.raty.defaults.path = '@routes.Assets.versioned("images")';
 
         @defining(if(round.rates.id <= 10) "-big.png" else ".png"){ sizeSuffix =>
 

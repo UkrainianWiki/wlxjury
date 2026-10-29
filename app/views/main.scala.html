@@ -11,7 +11,8 @@
         list: Option[RoundList] = None,
         pager: Html = Html(""),
         rates: RateDistribution = new RateDistribution(Map.empty),
-        contestId: Option[Long] = None)(content: Html)(implicit messages: Messages, request: RequestHeader)
+        contestId: Option[Long] = None,
+        filters: Html = Html(""))(content: Html)(implicit messages: Messages, request: RequestHeader)
 <!DOCTYPE html>
 
 <html lang="@messages.lang.language">
@@ -22,23 +23,24 @@
         <meta http-equiv="X-UA-Compatible" content="IE=edge">
         <meta name="viewport" content="width=device-width, initial-scale=1">
 
-        <link rel="stylesheet" media="screen" href="@routes.Assets.at("stylesheets/main.css")">
+        <link rel="stylesheet" media="screen" href="@routes.Assets.versioned("stylesheets/main.css")">
 
             <!-- Latest compiled and minified CSS -->
         <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css">
-        <link rel="shortcut icon" type="image/png" href="@routes.Assets.at("images/favicon.png")">
+        <link rel="shortcut icon" type="image/png" href="@routes.Assets.versioned("images/favicon.png")">
 
         <script type="text/javascript" src="https://ajax.googleapis.com/ajax/libs/jquery/3.2.1/jquery.min.js"></script>
         <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/js/bootstrap.min.js"></script>
 
-        <script type='text/javascript' src="@routes.Assets.at("javascripts/unitegallery.js")"></script>
-        <link rel="stylesheet" href="@routes.Assets.at("stylesheets/unite-gallery.css")" type='text/css' />
+        <script type='text/javascript' src="@routes.Assets.versioned("javascripts/unitegallery.js")"></script>
+        <link rel="stylesheet" href="@routes.Assets.versioned("stylesheets/unite-gallery.css")" type='text/css' />
 
-        <script type="text/javascript" src="@routes.Assets.at("javascripts/vote-errors.js")"></script>
-        <script type="text/javascript" src="@routes.Assets.at("javascripts/region-menu.js")"></script>
-        <script type="text/javascript" src="@routes.Assets.at("javascripts/ug-theme-tiles.js")"></script>
+        <script type="text/javascript" src="@routes.Assets.versioned("javascripts/vote-errors.js")"></script>
+        <script type="text/javascript" src="@routes.Assets.versioned("javascripts/region-menu.js")"></script>
+        <script type="text/javascript" src="@routes.Assets.versioned("javascripts/pager-jump.js")"></script>
+        <script type="text/javascript" src="@routes.Assets.versioned("javascripts/ug-theme-tiles.js")"></script>
 
-        <link rel="stylesheet" href="@routes.Assets.at("stylesheets/ug-theme-default.css")" type='text/css' />
+        <link rel="stylesheet" href="@routes.Assets.versioned("stylesheets/ug-theme-default.css")" type='text/css' />
 
         @if(user != null) {
         <script type="text/javascript">
@@ -63,7 +65,7 @@
     <body @if(gallery){class="gallery"}>
 
         @navbar(title, user, asUserId, selectedRound, rounds, list, pager,
-            contestId = contestId.orElse(selectedRound.map(_.contestId)), rates)
+            contestId = contestId.orElse(selectedRound.map(_.contestId)), rates, filters)
 
      <div class="container-fluid" style="margin-left: 0; margin-right :0;">
 

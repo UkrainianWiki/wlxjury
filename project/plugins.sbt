@@ -10,6 +10,9 @@ addSbtPlugin("org.playframework" % "sbt-plugin" % "3.0.7")
 
 addSbtPlugin("com.github.sbt" % "sbt-native-packager" % "1.10.0")
 
+// Fingerprints packaged assets (pipelineStages in build.sbt); 2.0.0 is the release built for sbt 1.9
+addSbtPlugin("com.github.sbt" % "sbt-digest" % "2.0.0")
+
 addSbtPlugin("org.scoverage" % "sbt-scoverage" % "2.1.0")
 
 addSbtPlugin("org.scoverage" % "sbt-coveralls" % "1.3.11")

@@ -14,11 +14,9 @@
 @import java.net.URLEncoder
 
     @main("gallery", user, list.asUserId, Some(list.round), rounds, gallery = true, Some(list),
-        pagerNav(pager, list.pageUrl), rates = rates) {
+        pagerNav(pager, list.pageUrl), rates = rates, filters = views.html.regionMenu(regionMenu)) {
 
         @defining(list.roundId) { roundId =>
-
-            @views.html.regionMenu(regionMenu)
 
             @large.voteMoved(list)
 

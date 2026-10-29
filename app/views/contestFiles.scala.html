@@ -6,10 +6,11 @@
         view: ContestFilesView)(implicit flash: Flash, messages: Messages, request: RequestHeader)
 
 @* The contest's files, or a round's deleted on Commons, laid out as a round's gallery
-   (gallery.scala.html): the pager in the navbar, the regions above, justified tiles. A tile
+   (gallery.scala.html): the country and region menus and the pager in the navbar, justified tiles. A tile
    opens the file's large view; a deleted file's mark (unitegallery.js, data-deleted) links
    its page on Commons. *@
-@main("contest.files", user, gallery = true, pager = pagerNav(pager, view.pageUrl), contestId = view.contest.id) {
+@main("contest.files", user, gallery = true, pager = pagerNav(pager, view.pageUrl), contestId = view.contest.id,
+    filters = regionMenu(view.countryMenu.toSeq ++ view.regionMenu)) {
 
     <div class="contest-files-head">
         <h4>@Messages("contest") @view.contest.fullName
@@ -40,16 +41,6 @@
             }
         }
     </div>
-
-    @* the countries of the contest's files (their Commons country categories), and their files *@
-    @if(view.countries.nonEmpty) {
-        @regionNav(view.countryUrl, view.country.getOrElse("all"),
-            view.countries.map { case (country, count) => org.intracer.wmua.Region(country, country, Some(count)) })
-    }
-
-    @if(view.regions.nonEmpty) {
-        @regionNav(view.regionUrl, view.region.getOrElse("all"), view.regions)
-    }
 
     @if(files.isEmpty) {
         <p class="contest-files-head text-muted">@Messages("no.files")</p>

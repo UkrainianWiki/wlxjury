@@ -14,11 +14,15 @@ final case class FakeFile(image: Image, text: Option[String] = None, categories:
   *
   * @param maxIdsPerRequest the batch size its account allows (500: `apihighlimits`)
   * @param categoryCounts   the file counts of categories; any other has all the files
+  * @param parents          the parent categories of categories, by title
+  * @param renamed          renamed files: their old titles, which redirect to their current ones
   */
 class FakeCommonsSource(
     files: Seq[FakeFile],
     val maxIdsPerRequest: Int = CommonsLogin.Limit,
-    categoryCounts: Map[String, Long] = Map.empty
+    categoryCounts: Map[String, Long] = Map.empty,
+    parents: Map[String, Seq[String]] = Map.empty,
+    renamed: Map[String, String] = Map.empty
 ) extends CommonsSource {
 
   private val sorted = files.sortBy(_.image.pageId)
@@ -59,7 +63,9 @@ class FakeCommonsSource(
 
   def filesByTitles(titles: Seq[String], info: Boolean, text: Boolean): Seq[Page] = {
     detail(titles.size)
-    titles.map(t => byTitle.get(t).map(page(_, info, text)).getOrElse(Page(None, Some(Namespace.FILE), t, missing = true)))
+    // as the API with redirects: an old title is the file it redirects to
+    titles.map(t => renamed.getOrElse(t, t)).map(t =>
+      byTitle.get(t).map(page(_, info, text)).getOrElse(Page(None, Some(Namespace.FILE), t, missing = true)))
   }
 
   /** Counts a details request, refusing one larger than the account allows, as the API does. */
@@ -70,7 +76,14 @@ class FakeCommonsSource(
 
   def categoryFileCount(category: String): Option[Long] = categoryCounts.get(category).orElse(Some(files.size.toLong))
 
-  /** Calls of [[categories]]: one API request each on the real Commons (not in [[detailCalls]]). */
+  def categoriesByTitle(titles: Seq[String]): Map[String, Seq[String]] = {
+    categoryCalls.incrementAndGet()
+    titles.flatMap(t => parents.get(t).map(t -> _)).toMap
+  }
+
+  /** Calls of [[categories]] and [[categoriesByTitle]]: one API request each on the real
+    * Commons (not in [[detailCalls]]).
+    */
   val categoryCalls = new AtomicInteger()
 
   def categories(pageIds: Seq[Long]): Map[Long, Seq[String]] = {

@@ -1,15 +1,31 @@
 @(pager: Pager, pageUrl: Int => String, style: String = "")(implicit messages: Messages)
-@* The pager's links: the previous page, the items shown ("46–60 of 5,712") and the next page *@
+@* The pager's links: the first and the previous page, the items shown ("46–60 of 5,712"), which
+   opens a box to go to a page by its number (pager-jump.js), and the next and the last page;
+   those with no page to go to (on the first or the last page) shown disabled (main.css) *@
+@link(enabled: Boolean, page: Int, rel: String, title: String, symbol: Html) = {
+    @if(enabled) {
+        <li><a href="@pageUrl(page)" rel="@rel" title="@Messages(title)">@symbol</a></li>
+    } else {
+        <li class="disabled"><span aria-disabled="true" title="@Messages(title)">@symbol</span></li>
+    }
+}
 <ul class="pagination" id="pagenav"@if(style.nonEmpty) { style="@style"}>
-    @if(pager.hasPrev) {
-        <li><a href="@pageUrl(pager.page - 1)" rel="prev" title="@Messages("pager.previous")">&laquo;</a></li>
-    } else {
-        <li class="disabled"><span>&laquo;</span></li>
-    }
-    <li class="disabled"><span class="pager-range">@Messages("pager.range", pager.first, pager.last, pager.count)</span></li>
-    @if(pager.hasNext) {
-        <li><a href="@pageUrl(pager.page + 1)" rel="next" title="@Messages("pager.next")">&raquo;</a></li>
-    } else {
-        <li class="disabled"><span>&raquo;</span></li>
-    }
+    @link(pager.hasPrev, 1, "first", "pager.first", Html("&laquo;"))
+    @link(pager.hasPrev, pager.page - 1, "prev", "pager.previous", Html("&lsaquo;"))
+    <li class="dropdown pager-jump-menu">
+        <a class="dropdown-toggle pager-range" href="#" data-toggle="dropdown" role="button" aria-haspopup="true"
+            aria-expanded="false" title="@Messages("pager.go.title")">@Messages("pager.range", pager.first, pager.last, pager.count) <span class="caret"></span></a>
+        <div class="dropdown-menu pager-jump-box">
+            <form class="pager-jump" action="@pageUrl(pager.page)" data-page-url="@Pager.urlTemplate(pageUrl)">
+                <label>@Messages("pager.page")
+                    @* as wide as the last page's digits, and one more *@
+                    <input type="number" name="page" class="form-control input-sm" min="1" max="@pager.pages"
+                        value="@pager.page" required style="width: calc(@(pager.pages.toString.length + 1)ch + 14px)">
+                    @Messages("pager.of", pager.pages)</label>
+                <button type="submit" class="btn btn-primary btn-sm">@Messages("pager.go")</button>
+            </form>
+        </div>
+    </li>
+    @link(pager.hasNext, pager.page + 1, "next", "pager.next", Html("&rsaquo;"))
+    @link(pager.hasNext, pager.pages, "last", "pager.last", Html("&raquo;"))
 </ul>

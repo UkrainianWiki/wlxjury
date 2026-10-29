@@ -197,6 +197,17 @@ After `backup-skipped`, `restore OPERATION` imports nothing and needs no `--acce
 
 It never restores config: if the release changed config, restore `config.tgz` by hand before reopening.
 
+### Static assets
+
+`sbt dist` fingerprints `/public` (sbt-digest): pages link `/assets/<md5>-<name>`, which the app serves with `Cache-Control: public, max-age=31536000, immutable`, so a release that changes a file changes its URL and browsers cannot run new pages with old scripts or styles. Plain names (raty's star images, which it finds by their directory, and old links) are still served, cached for an hour. Apache passes `/assets` through unchanged. To check a release:
+
+```bash
+curl -s http://127.0.0.1:9000/auth | grep -o '/assets/[^"]*main.css'   # /assets/<32 hex digits>-main.css
+curl -sI http://127.0.0.1:9000/assets/stylesheets/THAT_NAME | grep -i cache-control
+```
+
+`sbt run` and the tests serve plain names: the digests exist only in the packaged assets jar.
+
 ### Recovery runbook
 
 Maintenance is never cleared automatically. Read `OPERATION/milestones`, `record` and `operation.log`, then use the section for the last milestone. `previous` and `candidate` in `record` name the releases.

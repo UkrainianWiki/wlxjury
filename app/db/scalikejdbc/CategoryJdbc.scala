@@ -53,40 +53,24 @@ object CategoryLinkJdbc extends SQLSyntaxSupport[CategoryLink] {
           SELECT $to, page_id FROM category_members WHERE category_id = $from""".update.apply()
 
   /** Puts each page in its country category (`(page id, category title)`, a contest's,
-    * services.imports.ContestCountries), adding the category if there is none, and takes it
-    * out of the other categories whose titles start with `prefix` (the contest's other
-    * countries'), as Commons has moved it. Idempotent: an import page written again changes
-    * nothing.
-    * @return the categories whose pages changed
+    * services.imports.ContestCountries), adding the category if there is none. Never takes a
+    * page out of a category: a contest that ran in the jury tool may have a country's
+    * category, or one named after it, as its files. Idempotent.
+    * @return the categories of the pages, which may have joined them
     */
-  def setCountries(prefix: String, countries: Seq[(Long, String)])(implicit session: DBSession): Seq[Long] =
+  def addCountries(countries: Seq[(Long, String)])(implicit session: DBSession): Seq[Long] =
     if (countries.isEmpty) Nil
     else {
       val ids = countries.map(_._2).distinct.map { title =>
         sql"INSERT IGNORE INTO category (title) VALUES ($title)".update.apply()
         title -> sql"SELECT id FROM category WHERE title = $title".map(_.long(1)).single.apply().get
       }.toMap
-      val wanted = countries.map { case (pageId, title) => ids(title) -> pageId }.toSet
-      // the pages' links to the contest's countries, by the members' page_id index
-      val current = sql"""SELECT cm.category_id, cm.page_id FROM category_members cm
-                            JOIN category c ON c.id = cm.category_id
-                          WHERE cm.page_id IN (${countries.map(_._1)}) AND LEFT(c.title, ${prefix.length}) = $prefix"""
-        .map(rs => rs.long(1) -> rs.long(2)).list.apply().toSet
-      val removed = (current -- wanted).toSeq
-      val added = (wanted -- current).toSeq
-      if (removed.nonEmpty)
-        sql"DELETE FROM category_members WHERE category_id = ? AND page_id = ?"
-          .batch(removed.map { case (c, p) => Seq(c, p) }: _*).apply()
-      linkAllIgnore(added)
-      (removed ++ added).map(_._1).distinct
-    }
-
-  /** Adds the `(category id, page id)` links, skipping those that exist. */
-  private def linkAllIgnore(links: Seq[(Long, Long)])(implicit session: DBSession): Unit =
-    if (links.nonEmpty)
+      val links = countries.map { case (pageId, title) => ids(title) -> pageId }.distinct
       sql"INSERT IGNORE INTO category_members (category_id, page_id) VALUES (?, ?)"
         .batch(links.map { case (c, p) => Seq(c, p) }: _*)
         .apply()
+      ids.values.toSeq
+    }
 
   def batchInsert(links: Seq[CategoryLink])(implicit session: DBSession = AutoSession): Unit = {
     val column = CategoryLinkJdbc.column
