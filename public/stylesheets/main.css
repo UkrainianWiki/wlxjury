@@ -396,10 +396,11 @@ div.thumb_small.wlx-thumb-failed img {
 .region-menu-status:empty { display: none; }
 
 /* The pager's page box (pageLinks.scala.html), in a dropdown of the items shown */
-/* floated as Bootstrap floats the pager's links, so it stays between them; the box opens
-   leftwards from its right edge, inside the window */
+/* floated as Bootstrap floats the pager's links, so it stays between them; the box opens under
+   it from its left edge, as wide as its contents (pager-jump.js opens it leftwards only if it
+   would leave the window) */
 .pagination > .pager-jump-menu { position: relative; float: left; }
-.dropdown-menu.pager-jump-box { padding: 8px 12px; min-width: 280px; }
+.dropdown-menu.pager-jump-box { padding: 8px 12px; min-width: 0; }
 .pager-jump { white-space: nowrap; }
 .pager-jump label { font-weight: normal; margin: 0 6px 0 0; }
 /* the number's own height and padding, so the browser's up and down arrows fit in it */

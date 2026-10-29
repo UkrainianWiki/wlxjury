@@ -6,7 +6,7 @@
 // The pager's page box (pager-jump.js): the page typed, kept within the list's pages, by the
 // list's page URL with {page} in place of the number.
 
-const { pageUrl } = require("../public/javascripts/pager-jump");
+const { pageUrl, fitInWindow } = require("../public/javascripts/pager-jump");
 
 function form(value, max = "41", url = "/gallery/round/2/user/10/page/{page}?sort=file") {
     document.body.innerHTML = `
@@ -31,5 +31,35 @@ describe("pageUrl", () => {
 
     test("goes nowhere without a number", () => {
         expect(pageUrl(form(""))).toBeNull();
+    });
+});
+
+describe("fitInWindow", () => {
+
+    /** A box that ends at `right` when opened rightwards, and 280px further left when not. */
+    function box(right) {
+        document.body.innerHTML = `<div class="dropdown-menu pager-jump-box"></div>`;
+        const el = document.querySelector("div");
+        el.getBoundingClientRect = () => ({ right: el.classList.contains("dropdown-menu-right") ? right - 280 : right });
+        return el;
+    }
+
+    test("opens under the items shown, rightwards, when it fits in the window", () => {
+        const el = box(1200);
+        fitInWindow(el, 1300);
+        expect(el.classList.contains("dropdown-menu-right")).toBe(false);
+    });
+
+    test("opens leftwards only when rightwards would leave the window", () => {
+        const el = box(1350);
+        fitInWindow(el, 1300);
+        expect(el.classList.contains("dropdown-menu-right")).toBe(true);
+    });
+
+    test("decides again on every opening, as the window may have been resized", () => {
+        const el = box(1350);
+        el.classList.add("dropdown-menu-right");
+        fitInWindow(el, 1400);
+        expect(el.classList.contains("dropdown-menu-right")).toBe(false);
     });
 });
