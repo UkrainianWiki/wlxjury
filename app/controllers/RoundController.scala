@@ -77,7 +77,8 @@ class RoundController @Inject() (
       val round: Round = roundId
         .flatMap(id => rounds.find(_.id.contains(id)))
         .getOrElse(
-          new Round(id = None, contestId = contestId, number = rounds.size + 1)
+          // a new round leaves out conflicts of interest unless unticked
+          new Round(id = None, contestId = contestId, number = rounds.size + 1, excludeCoi = true)
         )
 
       val withTopImages = topImages.map(n => round.copy(topImages = Some(n))).getOrElse(round)
@@ -118,9 +119,45 @@ class RoundController @Inject() (
       contestsController.regions(contestId),
       contestSpecialNominations(contestId),
       submitToken,
-      round.id.flatMap(roundsService.distributionJob)
+      round.id.flatMap(roundsService.distributionJob),
+      Some(coiCounts(contestId))
     )
   }
+
+  /** The contest's files that are conflicts of interest, and those without a stored author,
+    * for the round form: one query of the category's files' authors.
+    */
+  private def coiCounts(contestId: Long): CoiCounts =
+    ContestJuryJdbc.findById(contestId).flatMap(_.categoryId).fold(CoiCounts(0, 0L)) { categoryId =>
+      CoiCounts(CoiMembers.files(categoryId, CoiMembers.forContest(contestId)).size,
+        CoiMembers.filesWithoutAuthor(categoryId))
+    }
+
+  /** "Leave out conflicts of interest now": takes the round's conflict-of-interest files
+    * out of it with their votes ([[RoundConflicts.removeFromRound]]), and leaves them out of
+    * its later distributions. A POST with the CSRF token, for the admins of the round's
+    * contest (checked in that contest; the session's stays), of a round open to its jurors
+    * and not being distributed.
+    */
+  def removeConflicts(roundId: Long): EssentialAction =
+    withAuthOn(blocking)(rolePermission(User.ADMIN_ROLES)) { user => implicit request =>
+      withAdminRound(user, roundId, NotFound(views.html.errorPage(Some(user), "error.title", "error.round.not.found")),
+        request) { round =>
+        val toRounds = Redirect(routes.RoundController.rounds(Some(round.contestId)))
+        val messages = request.messages
+        if (roundsService.distributionJob(roundId).exists(_.isActive))
+          toRounds.flashing("error" -> messages("coi.remove.distributing", round.number))
+        else
+          RoundConflicts.removeFromRound(roundId, user) match {
+            case RoundConflicts.Outcome.Removed(files) =>
+              toRounds.flashing("success" -> messages("coi.removed", files.size, round.number))
+            case RoundConflicts.Outcome.NotOpen =>
+              toRounds.flashing("error" -> messages("coi.remove.not.open", round.number))
+            case RoundConflicts.Outcome.NotFound =>
+              NotFound(views.html.errorPage(Some(user), "error.title", "error.round.not.found"))
+          }
+      }
+    }
 
   /** The number of files "Distribute new files" would add to the round, as JSON
     * `{"count": n}`: the distribution's own windows and filters, read only (which may
@@ -529,6 +566,15 @@ object RoundController {
       .flatMap(_.headOption)
       .map(_.trim)
       .filter(TokenPattern.matches)
+}
+
+/** The round form's conflict-of-interest counts: the contest's files that are conflicts of
+  * interest, and those without a stored author (imported before the author was).
+  */
+final case class CoiCounts(conflicts: Int, withoutAuthor: Long) {
+  def describe(implicit messages: play.api.i18n.Messages): String =
+    messages("coi.count", conflicts) +
+      (if (withoutAuthor > 0) " " + messages("coi.without.author", withoutAuthor) else "")
 }
 
 case class SelectRound(roundId: String, active: Boolean)

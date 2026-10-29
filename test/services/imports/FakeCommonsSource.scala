@@ -6,8 +6,11 @@ import play.api.libs.json.Json
 
 import java.util.concurrent.atomic.AtomicInteger
 
-/** A file on the fake Commons: its image info, its page text and its categories. */
-final case class FakeFile(image: Image, text: Option[String] = None, categories: Seq[String] = Nil)
+/** A file on the fake Commons: its image info, its page text, its categories and the users
+  * of its versions, the newest first (the last is its original uploader).
+  */
+final case class FakeFile(image: Image, text: Option[String] = None, categories: Seq[String] = Nil,
+    uploaders: Seq[String] = Nil)
 
 /** Commons for specs: the files of any source are `files`, listed by page id, `limit` at a
   * time with an offset as the cursor.
@@ -16,13 +19,15 @@ final case class FakeFile(image: Image, text: Option[String] = None, categories:
   * @param categoryCounts   the file counts of categories; any other has all the files
   * @param parents          the parent categories of categories, by title
   * @param renamed          renamed files: their old titles, which redirect to their current ones
+  * @param templates        the text of templates' pages, by name without the namespace
   */
 class FakeCommonsSource(
     files: Seq[FakeFile],
     val maxIdsPerRequest: Int = CommonsLogin.Limit,
     categoryCounts: Map[String, Long] = Map.empty,
     parents: Map[String, Seq[String]] = Map.empty,
-    renamed: Map[String, String] = Map.empty
+    renamed: Map[String, String] = Map.empty,
+    templates: Map[String, String] = Map.empty
 ) extends CommonsSource {
 
   private val sorted = files.sortBy(_.image.pageId)
@@ -91,6 +96,21 @@ class FakeCommonsSource(
     if (pageIds.size > maxIdsPerRequest)
       throw new IllegalArgumentException(s"${pageIds.size} files in one request, the limit is $maxIdsPerRequest")
     pageIds.flatMap(byId.get).filter(_.categories.nonEmpty).map(f => f.image.pageId -> f.categories).toMap
+  }
+
+  /** Calls of [[originalUploaders]] and [[creditTemplateUsers]]: one API request each per
+    * [[CommonsSource.AuthorBatch]] (not in [[detailCalls]]).
+    */
+  val authorCalls = new AtomicInteger()
+
+  def originalUploaders(pageIds: Seq[Long]): Map[Long, String] = {
+    authorCalls.addAndGet(pageIds.grouped(CommonsSource.AuthorBatch).size)
+    pageIds.flatMap(byId.get).flatMap(f => f.uploaders.lastOption.map(f.image.pageId -> _)).toMap
+  }
+
+  def creditTemplateUsers(names: Seq[String]): Map[String, String] = {
+    authorCalls.addAndGet(names.grouped(CommonsSource.AuthorBatch).size)
+    names.flatMap(n => templates.get(n).flatMap(org.scalawiki.dto.Image.userIn).map(n -> _)).toMap
   }
 
   private def page(f: FakeFile, info: Boolean, text: Boolean): Page = {

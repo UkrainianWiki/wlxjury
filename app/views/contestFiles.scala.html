@@ -31,11 +31,15 @@
             }
             case None => {
                 <ul class="nav nav-tabs" id="file-tabs">
-                    <li @if(!view.deletedOnly) {class="active"}>
+                    <li @if(!view.deletedOnly && !view.coi) {class="active"}>
                         <a href="@routes.GalleryController.contestFiles(view.contest.getId)">@Messages("files.all") (@view.allCount)</a>
                     </li>
-                    <li @if(view.deletedOnly) {class="active"}>
+                    <li @if(view.deletedOnly && !view.coi) {class="active"}>
                         <a href="@routes.GalleryController.contestFiles(view.contest.getId, deleted = true)">@Messages("files.deleted.on.commons") (@view.deletedCount)</a>
+                    </li>
+                    @* the files a round that leaves out conflicts of interest leaves out, and whose they are *@
+                    <li @if(view.coi) {class="active"}>
+                        <a id="coi-tab" href="@routes.GalleryController.contestFiles(view.contest.getId, coi = true)">@Messages("coi.files")@for(files <- view.coiFiles) { (@files.size)}</a>
                     </li>
                 </ul>
             }
@@ -55,7 +59,10 @@
                 data-image="@Global.largeImage(file.image).src"
                 data-width="@file.image.width"
                 data-height="@file.image.height"
-                data-description="<b>@file.image.title</b>"
+                data-description="<b>@file.image.title</b>@for(m <- view.coiFiles.flatMap(_.get(file.image.pageId))) {<br>@play.twirl.api.HtmlFormat.escape(m.describe).body}"
+                @for(m <- view.coiFiles.flatMap(_.get(file.image.pageId))) {
+                    data-coi="@m.describe"
+                }
                 data-pageId="@file.image.pageId"
                 data-largeUrl="@view.largeUrl(file.image.pageId)"
                 @for(at <- file.deletedAt) {

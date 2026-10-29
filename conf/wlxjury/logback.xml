@@ -13,5 +13,7 @@
         <encoder><pattern>%date [%level] %logger{36} - %message%n%xException</pattern></encoder>
     </appender>
     <logger name="application" level="INFO"/>
+    <!-- conflicts of interest removed from rounds (db.scalikejdbc.RoundConflicts): kept nowhere else -->
+    <logger name="coi" level="INFO"/>
     <root level="WARN"><appender-ref ref="STDOUT"/><appender-ref ref="FILE"/></root>
 </configuration>

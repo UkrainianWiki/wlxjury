@@ -99,10 +99,11 @@ object ImageService {
 
   /** The fetched images that are stored already but changed: those
     * [[db.scalikejdbc.ImageJdbc.update]] has something to write for. Compared on the fields
-    * it writes ([[ImageJdbc.fileInfo]], the monument id and the description).
+    * it writes ([[ImageJdbc.fileInfo]], the monument id, the description and the author).
     */
   def changedImages(fetched: Seq[Image], existing: Seq[Image]): Seq[Image] = {
-    def stored(i: Image) = ImageJdbc.fileInfo(i) ++ Seq("monumentId" -> i.monumentId, "description" -> i.description)
+    def stored(i: Image) = ImageJdbc.fileInfo(i) ++
+      Seq("monumentId" -> i.monumentId, "description" -> i.description, "author" -> i.author)
     val existingById = existing.map(i => i.pageId -> stored(i)).toMap
     fetched.filter(i => existingById.get(i.pageId).exists(_ != stored(i)))
   }

@@ -60,6 +60,14 @@ case class ExcludePageIds(pageIds: Set[Long]) extends ImageFilterGen {
   def apply(): ImageFilter = imageFilter(i => !pageIds.contains(i.pageId))
 }
 
+/** Leaves out the files whose author is one of `names` (normalized accounts,
+  * [[db.scalikejdbc.CoiMembers.authorKey]]): a round's conflicts of interest.
+  */
+case class ExcludeAuthors(names: Set[String]) extends ImageFilterGen {
+  def apply(): ImageFilter =
+    imageFilter(i => !i.author.flatMap(db.scalikejdbc.CoiMembers.authorKey).exists(names.contains))
+}
+
 case class IncludeTitles(titles: Set[String]) extends ImageFilterGen {
   def apply(): ImageFilter = imageFilter(i => titles.contains(i.title))
 }

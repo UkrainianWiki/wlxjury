@@ -325,6 +325,8 @@ class AppendImagesSpec extends Specification with JuryTestHelpers with TestDb wi
       width = 640,
       height = 480,
       monumentId = Some(s"12-345-$id"),
+      // every contest's files are fetched with their text (for their authors): its description
+      description = Some(""),
       size = Some(1234)
     )
 

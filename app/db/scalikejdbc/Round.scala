@@ -53,7 +53,8 @@ case class Round(
     mediaType: Option[String] = None,
     submitToken: Option[String] = None,
     distributing: Boolean = false,
-    freezeCount: Int = 0
+    freezeCount: Int = 0,
+    excludeCoi: Boolean = false
 ) extends HasId {
 
   /** Jurors may see and vote in the round: it is active, and not still being created
@@ -237,7 +238,8 @@ object Round extends RoundRepo with CRUDMapper[Round] {
       mediaType = rs.stringOpt(c.mediaType),
       submitToken = rs.stringOpt(c.submitToken),
       distributing = rs.booleanOpt(c.distributing).getOrElse(false),
-      freezeCount = rs.intOpt(c.freezeCount).getOrElse(0)
+      freezeCount = rs.intOpt(c.freezeCount).getOrElse(0),
+      excludeCoi = rs.booleanOpt(c.excludeCoi).getOrElse(false)
     ).withFixedCategories
 
   def create(round: Round)(implicit session: DBSession = AutoSession): Round = {
@@ -272,7 +274,8 @@ object Round extends RoundRepo with CRUDMapper[Round] {
           column.specialNomination -> round.specialNomination,
           column.mediaType -> round.mediaType,
           column.submitToken -> round.submitToken,
-          column.distributing -> round.distributing
+          column.distributing -> round.distributing,
+          column.excludeCoi -> round.excludeCoi
         )
     }.updateAndReturnGeneratedKey()
 

@@ -33,6 +33,10 @@ import scala.collection.mutable
   * @param missing        titles of the pasted list that neither the database nor Commons
   *                       has a file of
   * @param missingTitles  the first [[RoundDistributionHandler.MaxMissingTitles]] of them
+  * @param coiLeftOut     files of the pasted list left out as conflicts of interest
+  *                       ([[Round.excludeCoi]])
+  * @param coiTitles      the first [[RoundDistributionHandler.MaxMissingTitles]] of them, each
+  *                       with the person it is by and their role
   */
 final case class DistributionState(
     phase: String,
@@ -48,7 +52,9 @@ final case class DistributionState(
     verifyFailed: Boolean = false,
     listIndex: Int = 0,
     missing: Long = 0L,
-    missingTitles: Seq[String] = Nil
+    missingTitles: Seq[String] = Nil,
+    coiLeftOut: Long = 0L,
+    coiTitles: Seq[String] = Nil
 )
 
 object DistributionState {
@@ -75,8 +81,9 @@ object DistributionState {
   *
   * A job may carry a pasted list of files (`params.titles`, from the round form's "Add
   * files"): after the filtered candidates (or instead of them, with `params.listOnly`) its
-  * "list" phase adds the listed files to the round, whatever the round's filters; those in
-  * the round already or deleted on Commons are left out. Each step takes the next titles,
+  * "list" phase adds the listed files to the round, whatever the round's filters but one:
+  * those in the round already or deleted on Commons are left out, and, if the round leaves
+  * out conflicts of interest ([[Round.excludeCoi]]), those (reported in the job's details). Each step takes the next titles,
   * as many as one Commons request of their details takes, looked up in [[prepare]], outside
   * any transaction: by title among the stored images (usually the contest's), and on
   * Commons only those not stored; these are inserted, but not put in any category (they are
@@ -126,7 +133,8 @@ class RoundDistributionHandler @Inject() (
   override def details(job: Job): JsObject = {
     val st = stateOf(job)
     Json.obj("roundId" -> roundIdOf(job), "imagesAdded" -> st.imagesAdded, "rowsAdded" -> st.rowsAdded,
-      "phase" -> st.phase, "missing" -> st.missing, "missingTitles" -> st.missingTitles)
+      "phase" -> st.phase, "missing" -> st.missing, "missingTitles" -> st.missingTitles,
+      "coiLeftOut" -> st.coiLeftOut, "coiTitles" -> st.coiTitles)
   }
 
   override def prepare(job: Job): Unit = {
@@ -155,12 +163,15 @@ class RoundDistributionHandler @Inject() (
     val excludeFromCats = distributeImages.categoryFileIds(round.excludeCategory)
     val prev = prevRounds.headOption
     val perImage = if (round.distribution == 0) jurors.size else round.distribution
+    // read once per job run: a membership changed later applies to the next distribution
+    val coi = if (round.excludeCoi) CoiMembers.forContest(round.contestId) else Map.empty[String, CoiMembers.Member]
     Context(
       round = round,
       prevRounds = prevRounds,
       jurors = jurors,
       perImage = perImage,
-      filter = distributeImages.perImageFilters(round, prevRounds, includeFromCats, excludeFromCats),
+      filter = distributeImages.perImageFilters(round, prevRounds, includeFromCats, excludeFromCats, coi.keySet),
+      coi = coi,
       rated = prev.flatMap(_ => round.prevSelectedBy.map(_ > 0)),
       topN = prev.flatMap(_ => round.topImages),
       categoryId =
@@ -176,7 +187,8 @@ class RoundDistributionHandler @Inject() (
 
   /** The files of `titles`, the pasted list's from the `index`th: the stored images of
     * those titles, usually imported with the contest already, and the rest as Commons has
-    * them (one request, with their text when the contest has a monument id template).
+    * them (one request, with their text; their authors as an import gets them,
+    * [[ImageText.imagesWithAuthors]]).
     */
   private def listChunk(round: Round, index: Int, titles: Seq[String]): ListChunk = {
     val stored = ImageJdbc.findByTitles(titles)
@@ -189,8 +201,8 @@ class RoundDistributionHandler @Inject() (
           .findById(round.contestId)
           .getOrElse(throw new NoSuchElementException(s"Contest ${round.contestId} not found"))
         val template = ContestKind.monumentIdTemplate(contest)
-        val pages = commons.filesByTitles(notStored, info = true, text = template.isDefined)
-        val images = ImageText.images(pages, contest, template)
+        val pages = commons.filesByTitles(notStored, info = true, text = true)
+        val images = ImageText.imagesWithAuthors(pages, contest, template, commons)
         val found = images.map(_.pageId).toSet
         // a missing title, or a page that isn't a file
         (images, pages.filterNot(_.id.exists(found.contains)).map(_.title).distinct)
@@ -249,7 +261,7 @@ class RoundDistributionHandler @Inject() (
       else
         st.copy(phase = if (listOnly(job)) Phase.List else Phase.Distribute, cursor = 0L, candidatesSeen = 0L,
           imagesAdded = 0L, rowsAdded = 0L, imagesBefore = None, verifyFailed = false, listIndex = 0, missing = 0L,
-          missingTitles = Nil)
+          missingTitles = Nil, coiLeftOut = 0L, coiTitles = Nil)
     Json.toJsObject(resumed.copy(frozen = prevIds))
   }
 
@@ -307,8 +319,12 @@ class RoundDistributionHandler @Inject() (
             case Some(chunk) if chunk.titles == 0 => continue(st1.copy(phase = Phase.Verify))
             case Some(chunk) =>
               ImageJdbc.insertIgnore(chunk.fetched)
-              val passed =
+              val listed =
                 DistributionSource.imagesIn((chunk.stored ++ chunk.fetched).map(_.pageId).distinct.sorted, roundId)
+              // a round that leaves out conflicts of interest leaves them out of its list too
+              val conflicts = listed.flatMap(image => CoiMembers.matchOf(c.coi)(image.author).map(image -> _))
+              val conflictIds = conflicts.map(_._1.pageId).toSet
+              val passed = listed.filterNot(i => conflictIds.contains(i.pageId))
               val rows = DistributeImages.assign(c.round, passed, c.jurors, st1.position)
               beforeInsert(c.round, passed)
               DistributeImages.insertRows(c.round, rows)
@@ -322,7 +338,10 @@ class RoundDistributionHandler @Inject() (
                   imagesAdded = st1.imagesAdded + passed.size,
                   rowsAdded = st1.rowsAdded + rows.size,
                   missing = st1.missing + chunk.missingTitles.size,
-                  missingTitles = (st1.missingTitles ++ chunk.missingTitles).take(MaxMissingTitles)
+                  missingTitles = (st1.missingTitles ++ chunk.missingTitles).take(MaxMissingTitles),
+                  coiLeftOut = st1.coiLeftOut + conflicts.size,
+                  coiTitles = (st1.coiTitles ++ conflicts.map { case (i, m) => s"${i.title} (${m.describe})" })
+                    .take(MaxMissingTitles)
                 )
               )
           }
@@ -350,7 +369,9 @@ class RoundDistributionHandler @Inject() (
               (if (c.prevRounds.nonEmpty && !listOnly(job))
                  s" from previous rounds [${c.prevRounds.flatMap(_.id).mkString(", ")}]"
                else "") +
-              (if (titleCountOf(job) > 0) s", with a list of ${titleCountOf(job)} files (${st.missing} not found)"
+              (if (titleCountOf(job) > 0)
+                 s", with a list of ${titleCountOf(job)} files (${st.missing} not found" +
+                   (if (st.coiLeftOut > 0) s", ${st.coiLeftOut} left out as conflicts of interest" else "") + ")"
                else "")
           )
           StepResult.Done(Json.toJsObject(st.copy(frozen = Nil)), progress(st))
@@ -470,6 +491,7 @@ object RoundDistributionHandler {
       jurors: IndexedSeq[User],
       perImage: Int,
       filter: Seq[ImageWithRating] => Seq[ImageWithRating],
+      coi: Map[String, CoiMembers.Member],
       rated: Option[Boolean],
       topN: Option[Int],
       categoryId: Option[Long],

@@ -269,8 +269,8 @@ class UserController @Inject()(cc: ControllerComponents,
           .fold(
             formWithErrors => // binding failure, you retrieve the form containing errors,
               BadRequest(
-                views.html.importUsers(user, importUsersForm, contestId)),
-            formUsers => {
+                views.html.importUsers(user, formWithErrors, contestId)),
+            { case (formUsers, role) =>
               val contest = ContestJuryJdbc.findById(contestId)
               val parsed = User
                 .parseList(formUsers)
@@ -283,7 +283,7 @@ class UserController @Inject()(cc: ControllerComponents,
               val results = parsed.map(
                 pu =>
                   Try(userService
-                    .addToContest(user, pu.copy(roles = Set("jury")), contest)))
+                    .addToContest(user, pu.copy(roles = Set(role)), contest)))
 
               Redirect(routes.UserController.users(Some(contestId)))
                 .flashing("users-added" -> addedMessage(results.flatMap(_.toOption)))
@@ -362,9 +362,13 @@ class UserController @Inject()(cc: ControllerComponents,
     )(User.applyEdit)(User.unapplyEdit)
   )
 
-  val importUsersForm = Form(
-    single(
-      "userstoimport" -> nonEmptyText
+  /** "Import users": the people, and the role they join the contest with (jury by default;
+    * one of [[User.IMPORT_ROLES]]).
+    */
+  val importUsersForm: Form[(String, String)] = Form(
+    tuple(
+      "userstoimport" -> nonEmptyText,
+      "role" -> default(text, User.JURY_ROLE).verifying("error.invalid", User.IMPORT_ROLES.contains(_))
     )
   )
 
