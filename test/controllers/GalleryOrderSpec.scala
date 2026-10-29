@@ -74,6 +74,7 @@ class GalleryOrderSpec extends PlaySpecification with PlayTestDb {
         first must not contain "rel=\"first\""
         first must contain(s"""data-page-url="$pages/{page}?sort=file"""")
         first must contain("""max="2"""")
+        first must contain("""style="width: calc(2ch + 14px)"""") // the last page's one digit, and one more
         second must contain(s"""href="$pages/1?sort=file" rel="first"""")
         second must not contain "rel=\"last\""
         // the Rated tab's list: the files the filter lists, not all the juror's
