@@ -1,6 +1,7 @@
 // The pager's page box (pageLinks.scala.html), in a dropdown: goes to the page typed, kept
 // within the list's pages, by the list's page URL with {page} in place of the number
-// (data-page-url); focuses the number when the dropdown opens.
+// (data-page-url); focuses the number when the dropdown opens. The box opens under the items
+// shown, from their left edge; only if that would leave the window, from their right edge.
 (function () {
   'use strict';
 
@@ -22,12 +23,21 @@
     if (url) window.location.assign(url);
   });
 
+  /** Opens the box leftwards (Bootstrap's dropdown-menu-right) only if, opened rightwards, it
+    * would end past the window's right edge, `width` wide. */
+  function fitInWindow(box, width) {
+    box.classList.remove('dropdown-menu-right');
+    if (box.getBoundingClientRect().right > width) box.classList.add('dropdown-menu-right');
+  }
+
   if (window.jQuery) {
     window.jQuery(document).on('shown.bs.dropdown', '.pager-jump-menu', function () {
+      var box = this.querySelector('.pager-jump-box');
+      if (box) fitInWindow(box, document.documentElement.clientWidth);
       var input = this.querySelector('input[name=page]');
       if (input) { input.focus(); input.select(); }
     });
   }
 
-  if (typeof module !== 'undefined') module.exports = { pageUrl: pageUrl };
+  if (typeof module !== 'undefined') module.exports = { pageUrl: pageUrl, fitInWindow: fitInWindow };
 })();

@@ -15,7 +15,7 @@
     <li class="dropdown pager-jump-menu">
         <a class="dropdown-toggle pager-range" href="#" data-toggle="dropdown" role="button" aria-haspopup="true"
             aria-expanded="false" title="@Messages("pager.go.title")">@Messages("pager.range", pager.first, pager.last, pager.count) <span class="caret"></span></a>
-        <div class="dropdown-menu dropdown-menu-right pager-jump-box">
+        <div class="dropdown-menu pager-jump-box">
             <form class="pager-jump" action="@pageUrl(pager.page)" data-page-url="@Pager.urlTemplate(pageUrl)">
                 <label>@Messages("pager.page")
                     <input type="number" name="page" class="form-control input-sm" min="1" max="@pager.pages"
