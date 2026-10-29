@@ -119,6 +119,20 @@ class PageImportSpec extends Specification with TestDb with BeforeAll with Befor
       commons.categoryCalls.get === 0
     }
 
+    "keep a shared file's monument id and description, which its national contest set, when imported again" in {
+      val c = contest()
+      // stored by the Ukrainian contest, with its monument id and description
+      val lake = files.find(_.image.pageId == 11L).get
+      imageDao.batchInsert(Seq(lake.image.copy(monumentId = Some("05-101-0001"), description = Some("Озеро"))))
+      val commons = new FakeCommonsSource(files)
+      new TestImportServices(commons).imageService.importFiles(c, winners, "File:Lake.jpg")
+      new TestImportServices(commons).imageService.importFiles(c, winners, "File:Lake.jpg") // now the contest's
+
+      val stored = imageDao.findById(11L).get
+      stored.monumentId === Some("05-101-0001")
+      stored.description === Some("Озеро")
+    }
+
     "add a file's new country when imported again, never taking it out of a category" in {
       val c = contest()
       new TestImportServices(new FakeCommonsSource(files)).imageService.importFiles(c, winners, "File:Lake.jpg")
