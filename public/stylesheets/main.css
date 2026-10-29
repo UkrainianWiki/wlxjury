@@ -403,8 +403,13 @@ div.thumb_small.wlx-thumb-failed img {
 .dropdown-menu.pager-jump-box { padding: 8px 12px; min-width: 0; }
 .pager-jump { white-space: nowrap; }
 .pager-jump label { font-weight: normal; margin: 0 6px 0 0; }
-/* the number's own height and padding, so the browser's up and down arrows fit in it */
-.pager-jump input[type=number] { display: inline-block; width: 80px; height: 30px; padding: 2px 6px; margin: 0 4px; }
+/* the number, as wide as its page's digits (pageLinks.scala.html), without the browser's up and
+   down arrows: Bootstrap stretches them past the box, which cut off the up one at some zooms;
+   the Up and Down keys still step it, and the pager's links step a page */
+.pager-jump input[type=number] { display: inline-block; height: 30px; padding: 2px 6px; margin: 0 4px;
+    -moz-appearance: textfield; appearance: textfield; }
+.pager-jump input[type=number]::-webkit-inner-spin-button,
+.pager-jump input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
 
 /* A pager link with no page to go to: greyed out, not a link that only forbids the cursor
    (li.disabled: above Bootstrap's .disabled, which loads after this file) */
