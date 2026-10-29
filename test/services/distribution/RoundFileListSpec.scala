@@ -105,6 +105,21 @@ class RoundFileListSpec extends Specification with TestDb with BeforeAll with Be
       RoundDistributionHandler.stateOf(jobOf(round.getId)).imagesAdded === 1L
     }
 
+    "add a renamed file listed by its old title: the file it redirects to" in {
+      val (contest, jurors) = setUp()
+      val commons = new FakeCommonsSource(Seq(FakeFile(image(5)), FakeFile(onCommons)),
+        renamed = Map("File:Old 5.jpg" -> image(5).title, "File:Old 100.jpg" -> onCommons.title))
+      val svc = TestRoundServices.roundService(TestRoundServices.handler(commons = commons))
+      val round = svc.createNewRound(newRound(contest), jurors.map(_.getId))
+
+      // a stored file and one on Commons only, each by its old title
+      svc.distributeNewFiles(round.getId, titles = Seq("File:Old 5.jpg", "File:Old 100.jpg"), newFiles = false)
+
+      pageIds(round.getId) === Set(5L, 100L)
+      RoundDistributionHandler.stateOf(jobOf(round.getId)).missing === 0L
+      ImageJdbc.findByTitles(Seq(image(5).title)).map(_.pageId) === Seq(5L) // not stored again
+    }
+
     "tell stored titles apart by case, as Commons does" in {
       val (contest, jurors) = setUp()
       // another file than the stored File:Image 3.jpg

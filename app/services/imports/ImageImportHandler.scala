@@ -259,7 +259,9 @@ class ImageImportHandler @Inject() (source: CommonsSource, config: Configuration
     val st = stateOf(job)
     val written =
       if (p.mode == Mode.MonumentIds) writeMonumentIds(page, st, ctx)
-      else writeImages(p.categoryId.getOrElse(throw new IllegalStateException("no category")), page, st, ctx)
+      else
+        writeImages(p.categoryId.getOrElse(throw new IllegalStateException("no category")), page, st, ctx,
+          withText = p.monumentIdTemplate.isDefined)
     val next = written.copy(
       cursor = page.nextCursor,
       index = page.nextIndex,
@@ -282,16 +284,26 @@ class ImageImportHandler @Inject() (source: CommonsSource, config: Configuration
     }
   }
 
-  private def writeImages(categoryId: Long, page: ImportPage, st: ImportState, ctx: StepContext)(implicit
-      session: DBSession
+  /** @param withText whether the files' text was fetched (the contest has a monument id
+    *                 template): without it a fetched file has no monument id nor description,
+    *                 so a stored file keeps those another contest's import set (its rounds'
+    *                 regions read them).
+    */
+  private def writeImages(categoryId: Long, page: ImportPage, st: ImportState, ctx: StepContext, withText: Boolean)(
+      implicit session: DBSession
   ): ImportState = {
     val stored = ImageJdbc
       .findWithCategoryLink(page.images.map(_.pageId), categoryId)
       .map { case (image, linked) => image.pageId -> (image, linked) }
       .toMap
-    val fresh = page.images.filterNot(i => stored.contains(i.pageId))
-    val unlinked = page.images.filterNot(i => stored.get(i.pageId).exists(_._2))
-    val changed = ImageService.changedImages(page.images, stored.values.collect { case (i, true) => i }.toSeq)
+    val fetched =
+      if (withText) page.images
+      else page.images.map(i => stored.get(i.pageId).fold(i) { case (s, _) =>
+        i.copy(monumentId = s.monumentId, description = s.description)
+      })
+    val fresh = fetched.filterNot(i => stored.contains(i.pageId))
+    val unlinked = fetched.filterNot(i => stored.get(i.pageId).exists(_._2))
+    val changed = ImageService.changedImages(fetched, stored.values.collect { case (i, true) => i }.toSeq)
     // Locks the restored files with those updated below, in page id order
     val restored = DeletedFiles.restore(stored.keys.toSeq, alsoLock = changed.map(_.pageId))
     if (restored.nonEmpty) ctx.afterCommit(RoundImageCounts.invalidate(restored: _*))
