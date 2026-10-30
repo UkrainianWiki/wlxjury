@@ -212,8 +212,10 @@ class RoundDistributionHandler @Inject() (
     val storedTitles = stored.map(_.title).toSet
     // a missing title, or a page that isn't a file, unless stored
     val missing = pages.filterNot(_.id.exists(found.contains)).map(_.title).distinct.filterNot(storedTitles.contains)
-    ListChunk(index, titles.size, stored, images.filterNot(i => storedById.contains(i.pageId)),
-      ImageService.changedImages(refreshed, stored), missing)
+    // a stored title is the stored file, as before, also when Commons now has another file
+    // (another page id) of that name: the stored one was deleted there and a new one uploaded
+    val fresh = images.filterNot(i => storedById.contains(i.pageId) || storedTitles.contains(i.title))
+    ListChunk(index, titles.size, stored, fresh, ImageService.changedImages(refreshed, stored), missing)
   }
 
   // ── job creation, failure, cancel, retry ───────────────────────────────────

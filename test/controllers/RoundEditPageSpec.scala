@@ -2,9 +2,11 @@ package controllers
 
 import db.scalikejdbc.{PlayTestDb, Round, SelectionJdbc, User}
 import org.intracer.wmua.{ContestJury, Image}
+import play.api.inject.bind
 import play.api.libs.json.Json
 import play.api.test.CSRFTokenHelper._
 import play.api.test.{FakeRequest, PlaySpecification}
+import services.imports.{CommonsSource, FakeCommonsSource, FakeFile}
 
 /** The round edit page and the two fragments it loads on demand. */
 class RoundEditPageSpec extends PlaySpecification with PlayTestDb {
@@ -96,7 +98,9 @@ class RoundEditPageSpec extends PlaySpecification with PlayTestDb {
     }
 
     "add the pasted files to the round" in {
-      testDbApp { implicit app =>
+      // Commons as the files are stored; real Commons has other files of these names
+      testDbAppWith(bind[CommonsSource].toInstance(new FakeCommonsSource((1L to 4L).map(i => FakeFile(image(i)))))) {
+        implicit app =>
         val (contest, admin, round) = fixture()
         round.addUsers(User.findRoundJurors(round.getId).map(u => db.scalikejdbc.RoundUser(round.getId, u.getId, "jury", active = true)))
         val jurors = User.findRoundJurors(round.getId).map(_.getId)

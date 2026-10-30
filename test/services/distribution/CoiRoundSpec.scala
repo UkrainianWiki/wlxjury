@@ -149,6 +149,19 @@ class CoiRoundSpec extends Specification with TestDb with BeforeAll with BeforeE
         Seq("File:Image 2.jpg (Board_member — board)", "File:Image 8.jpg (Board_member — board)")
     }
 
+    "take a pasted list's stored file by its title when Commons has another file of that name" in {
+      val (contest, jurors, _) = setUp()
+      // file 3 deleted on Commons and another uploaded under its name
+      val svc = TestRoundServices.roundService(TestRoundServices.handler(commons = new FakeCommonsSource(Seq(
+        FakeFile(image(3).copy(pageId = 300))))))
+      val round = svc.createNewRound(newRound(contest, excludeCoi = true).copy(minMpx = Some(100)), jurors.map(_.getId))
+
+      svc.distributeNewFiles(round.getId, titles = Seq("File:Image 3.jpg"), newFiles = false)
+
+      pageIds(round.getId) === Set(3L)
+      ImageJdbc.findById(300L) must beNone
+    }
+
     "add a pasted list's conflicts of interest to a round without the flag" in {
       val (contest, jurors, _) = setUp()
       val svc = service
