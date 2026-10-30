@@ -3,9 +3,9 @@ package services.imports
 import org.scalawiki.MwBot
 import org.scalawiki.dto.cmd.Action
 import org.scalawiki.dto.cmd.query.list.ListArgs
-import org.scalawiki.dto.cmd.query.prop.iiprop.{IiProp, IiPropArgs}
-import org.scalawiki.dto.cmd.query.prop.rvprop.RvProp
-import org.scalawiki.dto.cmd.query.prop.{Categories, CategoryInfo, ClLimit, ImageInfo, Prop, PropArg, Revisions, RvPropArgs}
+import org.scalawiki.dto.cmd.query.prop.iiprop.{IiProp, IiPropArgs, User => IiUser}
+import org.scalawiki.dto.cmd.query.prop.rvprop.{RvProp, Content => RvContent}
+import org.scalawiki.dto.cmd.query.prop.{Categories, CategoryInfo, ClLimit, IiLimit, ImageInfo, Prop, PropArg, Revisions, RvPropArgs}
 import org.scalawiki.dto.cmd.query.{Generator, PageIdsParam, Query, QueryParam, RedirectsParam, TitlesParam}
 import org.scalawiki.dto.{MwException, Namespace, Page}
 import play.api.Logging
@@ -89,6 +89,28 @@ trait CommonsSource {
     * its parents. A page without categories is left out.
     */
   def categoriesByTitle(titles: Seq[String]): Map[String, Seq[String]]
+
+  /** The original uploader of each file (the user of its oldest version), by page id: the
+    * author of a file whose page names none ([[ImageText.withAuthors]]). A request per
+    * [[CommonsSource.AuthorBatch]] files, with their whole upload history.
+    */
+  def originalUploaders(pageIds: Seq[Long]): Map[Long, String]
+
+  /** The user each photographer's credit template (`{{Yuriy Kvach}}` as a whole author)
+    * links to on its page, by the template's name without its namespace, as the API names
+    * it. A request per [[CommonsSource.AuthorBatch]] templates; a template that links to
+    * nobody is left out.
+    */
+  def creditTemplateUsers(templates: Seq[String]): Map[String, String]
+}
+
+object CommonsSource {
+
+  /** Files or templates per request of [[CommonsSource.originalUploaders]] and
+    * [[CommonsSource.creditTemplateUsers]], as scalawiki's `ImageQueryApi` asks for them:
+    * a file's history (`iilimit=max`) or a template's text may be long.
+    */
+  val AuthorBatch = 50
 }
 
 /** [[CommonsSource]] over the API. A source's files are listed with a generator query
@@ -153,6 +175,22 @@ class MwCommonsSource @Inject() (bot: MwBot, login: CommonsLogin) extends Common
     batch(titles)(ts => api.run(Query(TitlesParam(ts), Prop(Categories(ClLimit("max"))))))
       .filter(_.categories.nonEmpty)
       .map(page => page.title -> page.categories)
+      .toMap
+
+  def originalUploaders(pageIds: Seq[Long]): Map[Long, String] =
+    pageIds
+      .grouped(CommonsSource.AuthorBatch)
+      .flatMap(ids => api.run(Query(PageIdsParam(ids), Prop(ImageInfo(IiProp(IiUser), IiLimit("max"))))))
+      // imageinfo lists the versions newest first; `bot.run` merges those an `iicontinue` splits
+      .flatMap(page => page.id.zip(page.images.lastOption.flatMap(_.uploader).flatMap(_.login)))
+      .toMap
+
+  def creditTemplateUsers(templates: Seq[String]): Map[String, String] =
+    templates
+      .grouped(CommonsSource.AuthorBatch)
+      .flatMap(ts => api.run(Query(TitlesParam(ts.map("Template:" + _)), Prop(Revisions(RvProp(RvContent))))))
+      // a redirect's text links to its target, which is the user's page all the same
+      .flatMap(page => page.text.flatMap(org.scalawiki.dto.Image.userIn).map(page.title.stripPrefix("Template:") -> _))
       .toMap
 
   def categoryFileCount(category: String): Option[Long] =

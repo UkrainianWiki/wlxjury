@@ -163,7 +163,8 @@ object ImageJdbc extends CRUDMapper[Image]
     * [[RegionCountCache.invalidateMonumentIds]] after it commits. */
   def updateIn(image: Image)(implicit session: DBSession): Unit = {
     updateById(image.pageId).withAttributes(
-      fileAttributes(image) ++ Seq("monumentId" -> image.monumentId, "description" -> image.description): _*
+      fileAttributes(image) ++
+        Seq("monumentId" -> image.monumentId, "description" -> image.description, "author" -> image.author): _*
     )
     syncSelectionMonumentId(image.pageId, image.monumentId)
   }

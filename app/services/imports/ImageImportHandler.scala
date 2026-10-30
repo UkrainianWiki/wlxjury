@@ -17,7 +17,7 @@ import javax.inject.{Inject, Singleton}
   * @param source             a category, a template or a page ([[ImportSource]])
   * @param titles             a pasted list of files, imported instead of the source's
   *                           (not read back by [[ImageImportHandler.paramsOf]]: it may be long)
-  * @param monumentIdTemplate the contest's: with it, the files' text is fetched too
+  * @param monumentIdTemplate the contest's: the files' monument ids come from their text with it
   * @param titleCount         the size of `titles` (set by [[ImageImportHandler.newJob]])
   */
 final case class ImportParams(
@@ -70,6 +70,8 @@ object ImportState {
   * @param countries      the files' contest country categories ([[ContestCountries]]),
   *                       by page id
   * @param notInCountries files of a page source left out, as in none of those categories
+  * @param textless       files fetched without their page text (none, normally): a stored
+  *                       one keeps its description and author
   */
 final case class ImportPage(
     listed: Int,
@@ -82,7 +84,8 @@ final case class ImportPage(
     total: Option[Long],
     countries: Seq[(Long, String)] = Nil,
     byCountry: Option[Boolean] = None,
-    notInCountries: Int = 0
+    notInCountries: Int = 0,
+    textless: Set[Long] = Set.empty
 )
 
 /** Imports a contest's files from Commons in the background, as a [[Job]] of kind
@@ -101,11 +104,10 @@ final case class ImportPage(
   *     contest has them on Commons (a WLx contest's winners page shows icons and logos too);
   *  2. written in one transaction with the next cursor, by the rules the whole-contest
   *     import had, per page: a file not stored is inserted and put in the contest's
-  *     category; a stored file of another contest is put in the category only; a file of
-  *     the contest is updated if it changed ([[ImageService.changedImages]]), with its
-  *     selection rows' monument id; a file is put in its country category (never taken
-  *     out of one). Mode `monument_ids` sets the stored files' monument ids from their
-  *     text, where they differ.
+  *     category; a stored file of another contest is put in the category; a stored file is
+  *     updated if it changed ([[ImageService.changedImages]]), with its selection rows'
+  *     monument id; a file is put in its country category (never taken out of one). Mode
+  *     `monument_ids` sets the stored files' monument ids from their text, where they differ.
   *
   * Every write is idempotent (`INSERT IGNORE`, compare before update), so a page fetched
   * and written again after a crash or a Retry changes nothing. Held in memory: one page.
@@ -173,7 +175,8 @@ class ImageImportHandler @Inject() (source: CommonsSource, config: Configuration
     val p = paramsOf(job)
     val st = stateOf(job)
     val monumentIds = p.mode == Mode.MonumentIds
-    val text = monumentIds || p.monumentIdTemplate.isDefined
+    // every contest's: the files' authors, for conflicts of interest (db.scalikejdbc.CoiMembers)
+    val text = true
     lazy val contest = ContestJuryJdbc
       .findById(p.contestId)
       .getOrElse(throw new NoSuchElementException(s"Contest ${p.contestId} not found"))
@@ -189,6 +192,7 @@ class ImageImportHandler @Inject() (source: CommonsSource, config: Configuration
       ImportPage(
         listed = batch.size,
         images = images(contest, p, found),
+        textless = textless(found),
         monumentIds = Nil,
         missingTitles = pages.filter(_.id.isEmpty).map(_.title),
         nextCursor = st.cursor,
@@ -213,6 +217,7 @@ class ImageImportHandler @Inject() (source: CommonsSource, config: Configuration
         notInCountries = pages.size - kept.size,
         listed = listed.pageIds.size,
         images = if (monumentIds) Nil else images(contest, p, kept),
+        textless = if (monumentIds) Set.empty else textless(kept),
         monumentIds = if (monumentIds) monumentIdsOf(p, pages) else Nil,
         missingTitles = Nil,
         nextCursor = listed.next.getOrElse(st.cursor),
@@ -239,7 +244,9 @@ class ImageImportHandler @Inject() (source: CommonsSource, config: Configuration
   }
 
   private def images(contest: ContestJury, p: ImportParams, pages: Seq[Page]): Seq[Image] =
-    ImageText.images(pages, contest, p.monumentIdTemplate)
+    ImageText.imagesWithAuthors(pages, contest, p.monumentIdTemplate, source)
+
+  private def textless(pages: Seq[Page]): Set[Long] = pages.filter(_.text.isEmpty).flatMap(_.id).toSet
 
   private def monumentIdsOf(p: ImportParams, pages: Seq[Page]): Seq[(Long, String)] = {
     val template = p.monumentIdTemplate.getOrElse(throw new IllegalStateException("no monument id template"))
@@ -261,7 +268,7 @@ class ImageImportHandler @Inject() (source: CommonsSource, config: Configuration
       if (p.mode == Mode.MonumentIds) writeMonumentIds(page, st, ctx)
       else
         writeImages(p.categoryId.getOrElse(throw new IllegalStateException("no category")), page, st, ctx,
-          withText = p.monumentIdTemplate.isDefined)
+          withMonumentIds = p.monumentIdTemplate.isDefined)
     val next = written.copy(
       cursor = page.nextCursor,
       index = page.nextIndex,
@@ -284,26 +291,27 @@ class ImageImportHandler @Inject() (source: CommonsSource, config: Configuration
     }
   }
 
-  /** @param withText whether the files' text was fetched (the contest has a monument id
-    *                 template): without it a fetched file has no monument id nor description,
-    *                 so a stored file keeps those another contest's import set (its rounds'
-    *                 regions read them).
+  /** @param withMonumentIds whether the contest has a monument id template: without it a
+    *                        fetched file has no monument id, so a stored file keeps the one
+    *                        another contest's import set (its rounds' regions read them). A
+    *                        file fetched without its text ([[ImportPage.textless]]) keeps its
+    *                        stored description and author too.
     */
-  private def writeImages(categoryId: Long, page: ImportPage, st: ImportState, ctx: StepContext, withText: Boolean)(
+  private def writeImages(categoryId: Long, page: ImportPage, st: ImportState, ctx: StepContext,
+      withMonumentIds: Boolean)(
       implicit session: DBSession
   ): ImportState = {
     val stored = ImageJdbc
       .findWithCategoryLink(page.images.map(_.pageId), categoryId)
       .map { case (image, linked) => image.pageId -> (image, linked) }
       .toMap
-    val fetched =
-      if (withText) page.images
-      else page.images.map(i => stored.get(i.pageId).fold(i) { case (s, _) =>
-        i.copy(monumentId = s.monumentId, description = s.description)
-      })
+    val fetched = page.images.map(i => stored.get(i.pageId).fold(i) { case (s, _) =>
+      ImageService.withStoredText(i, s, text = !page.textless.contains(i.pageId), withMonumentIds)
+    })
     val fresh = fetched.filterNot(i => stored.contains(i.pageId))
     val unlinked = fetched.filterNot(i => stored.get(i.pageId).exists(_._2))
-    val changed = ImageService.changedImages(fetched, stored.values.collect { case (i, true) => i }.toSeq)
+    // a stored file of another contest too: its author may be from before authors were resolved
+    val changed = ImageService.changedImages(fetched, stored.values.map(_._1).toSeq)
     // Locks the restored files with those updated below, in page id order
     val restored = DeletedFiles.restore(stored.keys.toSeq, alsoLock = changed.map(_.pageId))
     if (restored.nonEmpty) ctx.afterCommit(RoundImageCounts.invalidate(restored: _*))

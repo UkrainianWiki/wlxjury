@@ -38,7 +38,8 @@ var JOB_COUNTS = [
     ["updated", "updated"],
     ["monumentIdsChanged", "monument ids changed"],
     ["monuments", "monuments"],
-    ["missing", "not found"]
+    ["missing", "not found"],
+    ["coiLeftOut", "left out as conflicts of interest"]
 ];
 
 function formatJobCounts(details) {

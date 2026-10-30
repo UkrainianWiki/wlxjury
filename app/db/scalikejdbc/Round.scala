@@ -53,7 +53,8 @@ case class Round(
     mediaType: Option[String] = None,
     submitToken: Option[String] = None,
     distributing: Boolean = false,
-    freezeCount: Int = 0
+    freezeCount: Int = 0,
+    excludeCoi: Boolean = false
 ) extends HasId {
 
   /** Jurors may see and vote in the round: it is active, and not still being created
@@ -237,7 +238,8 @@ object Round extends RoundRepo with CRUDMapper[Round] {
       mediaType = rs.stringOpt(c.mediaType),
       submitToken = rs.stringOpt(c.submitToken),
       distributing = rs.booleanOpt(c.distributing).getOrElse(false),
-      freezeCount = rs.intOpt(c.freezeCount).getOrElse(0)
+      freezeCount = rs.intOpt(c.freezeCount).getOrElse(0),
+      excludeCoi = rs.booleanOpt(c.excludeCoi).getOrElse(false)
     ).withFixedCategories
 
   def create(round: Round)(implicit session: DBSession = AutoSession): Round = {
@@ -272,7 +274,8 @@ object Round extends RoundRepo with CRUDMapper[Round] {
           column.specialNomination -> round.specialNomination,
           column.mediaType -> round.mediaType,
           column.submitToken -> round.submitToken,
-          column.distributing -> round.distributing
+          column.distributing -> round.distributing,
+          column.excludeCoi -> round.excludeCoi
         )
     }.updateAndReturnGeneratedKey()
 
@@ -286,6 +289,13 @@ object Round extends RoundRepo with CRUDMapper[Round] {
     updateById(id).withAttributes("name" -> round.name)
     setActiveGuarded(id, round.active)
   }
+
+  /** The round form's "Leave out conflicts of interest", for a round with none of them to
+    * take out, or to stop leaving them out ([[RoundConflicts.removeFromRound]] sets it for
+    * one with some).
+    */
+  def setExcludeCoi(id: Long, excludeCoi: Boolean): Unit =
+    updateById(id).withAttributes("excludeCoi" -> excludeCoi): Unit
 
   def activeRounds(contestId: Long)(implicit session: DBSession = AutoSession): Seq[Round] =
     where(sqls.eq(r.contestId, contestId).and.eq(r.active, true).and.eq(r.distributing, false))
@@ -395,6 +405,13 @@ object Round extends RoundRepo with CRUDMapper[Round] {
       .map(_.booleanOpt(1).getOrElse(false))
       .single()
       .getOrElse(false)
+
+  /** Locks the rounds for update in id order, as [[services.imports.DeletedFiles]] locks
+    * them, before any of their updates.
+    */
+  def lock(ids: Seq[Long])(implicit session: DBSession): Unit =
+    if (ids.nonEmpty)
+      sql"SELECT id FROM rounds WHERE id IN (${ids.distinct}) ORDER BY id FOR UPDATE".map(_.long(1)).list(): Unit
 
   /** Freezes previous rounds for a distribution that reads their votes: they become
     * inactive (no votes) until [[release]]. The first freeze of a round saves its active

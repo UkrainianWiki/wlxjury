@@ -47,7 +47,7 @@ class UserService @Inject()(val sendMail: SMTPOrWikiMail,
       case Some(account) =>
         val added = contestId.exists(UserContestJdbc.createMembership(account.getId, _, role))
         val member = contestId.flatMap(User.findInContest(account.getId, _)).getOrElse(account)
-        for (contest <- contestOpt if added && contest.greeting.use)
+        for (contest <- contestOpt if added && contest.greeting.use && mayBeGreeted(role))
           sendMail(creator, member, contest, messages("password.existing"))
         if (added) JoinedContest(member) else AlreadyMember(member)
 
@@ -71,10 +71,15 @@ class UserService @Inject()(val sendMail: SMTPOrWikiMail,
       else formUser.copy(roles = formUser.roles - User.ROOT_ROLE, isRoot = false)
     val password = allowed.password.getOrElse(User.randomString(12))
     val createdUser = User.create(allowed.copy(password = Some(User.hash(allowed, password))))
-    for (contest <- contestOpt if contest.greeting.use)
+    for (contest <- contestOpt if contest.greeting.use && createdUser.contestRole.forall(mayBeGreeted))
       sendMail(creator, createdUser, contest, password)
     createdUser
   }
+
+  /** Whether a new member with the role gets the contest's greeting (with a password): not
+    * the board, auditors or staff, who have nothing to open ([[User.NON_ACCESS_ROLES]]).
+    */
+  private def mayBeGreeted(role: String): Boolean = !User.NON_ACCESS_ROLES.contains(role)
 
   /** The account a new user's email (or, without an email, wiki account) already has. */
   def existingAccount(formUser: User): Option[User] = {
