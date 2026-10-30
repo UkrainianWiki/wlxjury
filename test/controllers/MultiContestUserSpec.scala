@@ -368,5 +368,38 @@ class MultiContestUserSpec extends PlaySpecification with PlayTestDb with Mockit
         User.findById(mia.getId).flatMap(_.password) === Some("hash")
       }
     }
+
+    "let a contest admin change the role of a member added by wiki account only, and set it to no" in {
+      testDbApp { implicit app =>
+        createContests(10)
+        val admin = member("admin@example.com", 10L -> "admin")
+        val board = User.create(User("Board", "", None, Set("board"), Some("hash"), Some(10L),
+                                     wikiAccount = Some("BoardMember")))
+        val fields = form(board, 10, "staff") :+ ("wikiAccount" -> "BoardMember")
+
+        status(save(admin, 10, fields: _*)) === SEE_OTHER
+        UserContestJdbc.findByUser(board.getId) === Seq(UserContest(board.getId, 10, "staff"))
+
+        status(save(admin, 10, form(board, 10, "no") :+ ("wikiAccount" -> "BoardMember"): _*)) === SEE_OTHER
+        UserContestJdbc.findByUser(board.getId).map(_.role) === Seq("no")
+        User.findById(board.getId).map(u => (u.email, u.wikiAccount)) === Some(("", Some("BoardMember")))
+      }
+    }
+
+    "still refuse an invalid email, and a user with neither an email nor a wiki account" in {
+      testDbApp { implicit app =>
+        createContests(10)
+        val admin = member("admin@example.com", 10L -> "admin")
+        val erin = member("erin@example.com", 10L -> "jury")
+
+        status(save(admin, 10, form(erin.copy(email = "not-an-email"), 10, "jury"): _*)) === BAD_REQUEST
+        status(save(admin, 10, form(erin.copy(email = ""), 10, "jury"): _*)) === BAD_REQUEST
+        status(save(admin, 10, "id" -> "0", "fullname" -> "Nobody", "email" -> "",
+                    "roles" -> "jury", "contest" -> "10")) === BAD_REQUEST
+
+        User.findById(erin.getId).map(_.email) === Some("erin@example.com")
+        User.findByContest(10).map(_.fullname).toSet === Set("admin@example.com", "erin@example.com")
+      }
+    }
   }
 }

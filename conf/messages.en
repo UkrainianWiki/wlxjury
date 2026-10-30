@@ -328,6 +328,7 @@ job.status=Distribution
 password.existing=the password you already use in the jury tool
 contest.switch=Switch contest
 user.in.other.contests=This user is also in other contests. Only their role here can be changed; ask a root user or the user to change the rest.
+user.email.or.wiki.account=A user needs an email or a wiki account.
 signup.email.taken=An account with this email already exists. Log in, or ask an organizer to reset its password.
 users.added=New accounts: {0}. Existing accounts added to the contest: {1}. Already in the contest: {2}.
 
@@ -392,7 +393,7 @@ coi.no.wiki.account = no wiki account, can''t be checked for conflicts of intere
 coi.files = Conflicts of interest
 coi.exclude = Leave out conflicts of interest
 coi.count = {0} of the contest''s files are conflicts of interest (by its members or root users).
-coi.without.author = {0} files have no author stored: import the contest again.
+coi.without.author = {0} of the contest''s files have no author.
 coi.title = Conflicts of interest
 coi.remove = Leave out conflicts of interest now
 coi.remove.help = Removes from this round the files by the contest''s members and root users, with their votes, which are not kept, and leaves them out of its later distributions.

@@ -399,6 +399,13 @@ object Round extends RoundRepo with CRUDMapper[Round] {
       .single()
       .getOrElse(false)
 
+  /** Locks the rounds for update in id order, as [[services.imports.DeletedFiles]] locks
+    * them, before any of their updates.
+    */
+  def lock(ids: Seq[Long])(implicit session: DBSession): Unit =
+    if (ids.nonEmpty)
+      sql"SELECT id FROM rounds WHERE id IN (${ids.distinct}) ORDER BY id FOR UPDATE".map(_.long(1)).list(): Unit
+
   /** Freezes previous rounds for a distribution that reads their votes: they become
     * inactive (no votes) until [[release]]. The first freeze of a round saves its active
     * flag; nested freezes (several distributions from one round) only count. MariaDB

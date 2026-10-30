@@ -145,6 +145,9 @@ class RoundService @Inject() (
       titles: Seq[String] = Nil,
       listOnly: Boolean = false
   )(implicit session: DBSession): Job = {
+    // the round first, with the rounds it freezes: "Leave out conflicts of interest now"
+    // checks for its active job under the round's lock (RoundConflicts.removeFromRound)
+    Round.lock(round.previousIds :+ round.getId)
     val state = distribution.initialState(round, listOnly)
     jobs.enqueue(
       NewJob(

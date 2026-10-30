@@ -66,6 +66,9 @@ class CoiRoundSpec extends Specification with TestDb with BeforeAll with BeforeE
   private def newRound(contest: ContestJury, excludeCoi: Boolean, number: Long = 1) =
     Round(None, number, Some("R"), contest.getId, distribution = 0, active = true, excludeCoi = excludeCoi)
 
+  private def remove(roundId: Long, by: User) =
+    RoundConflicts.removeFromRound(roundId, by, RoundDistributionHandler.dedupeKey(roundId))
+
   private def pageIds(roundId: Long): Set[Long] = SelectionJdbc.byRound(roundId).map(_.pageId).toSet
 
   private def jobOf(roundId: Long) =
@@ -166,7 +169,7 @@ class CoiRoundSpec extends Specification with TestDb with BeforeAll with BeforeE
       RoundImageCounts.get(Seq(round.getId))(ImageJdbc.imageCountByRounds) === Map(round.getId -> 10)
 
       val admin = User.findByEmail("juror@example.com").head
-      val outcome = RoundConflicts.removeFromRound(round.getId, admin)
+      val outcome = remove(round.getId, admin)
 
       outcome must beLike { case RoundConflicts.Outcome.Removed(files) => files.map(_._1).toSet === conflicts }
       pageIds(round.getId) === (1L to 10L).toSet -- conflicts
@@ -187,18 +190,32 @@ class CoiRoundSpec extends Specification with TestDb with BeforeAll with BeforeE
       val round = svc.createNewRound(newRound(contest, excludeCoi = false), jurors.map(_.getId))
       val admin = jurors.head
       sql"UPDATE rounds SET active = 0 WHERE id = ${round.getId}".update()(AutoSession)
-      RoundConflicts.removeFromRound(round.getId, admin) === RoundConflicts.Outcome.NotOpen
+      remove(round.getId, admin) === RoundConflicts.Outcome.NotOpen
       sql"UPDATE rounds SET active = 1, distributing = 1 WHERE id = ${round.getId}".update()(AutoSession)
-      RoundConflicts.removeFromRound(round.getId, admin) === RoundConflicts.Outcome.NotOpen
+      remove(round.getId, admin) === RoundConflicts.Outcome.NotOpen
       pageIds(round.getId) === (1L to 10L).toSet
-      RoundConflicts.removeFromRound(12345L, admin) === RoundConflicts.Outcome.NotFound
+      remove(12345L, admin) === RoundConflicts.Outcome.NotFound
+    }
+
+    "be refused while a distribution of the round is queued or running" in {
+      val (contest, jurors, _) = setUp()
+      val round = service.createNewRound(newRound(contest, excludeCoi = false), jurors.map(_.getId))
+      // "Distribute new files", queued: it reads the round when it starts
+      DB.autoCommit { implicit s =>
+        JobJdbc.insert(services.jobs.NewJob(RoundDistributionHandler.Kind, Some(contest.getId),
+          Some(RoundDistributionHandler.SubjectType), round.id,
+          Some(RoundDistributionHandler.dedupeKey(round.getId))), owner = None)
+      }
+      remove(round.getId, jurors.head) === RoundConflicts.Outcome.Distributing
+      pageIds(round.getId) === (1L to 10L).toSet
+      roundDao.findById(round.getId).get.excludeCoi must beFalse
     }
 
     "let \"Distribute new files\" add a file again once its author's role is gone" in {
       val (contest, jurors, board) = setUp()
       val svc = service
       val round = svc.createNewRound(newRound(contest, excludeCoi = false), jurors.map(_.getId))
-      RoundConflicts.removeFromRound(round.getId, jurors.head)
+      remove(round.getId, jurors.head)
       pageIds(round.getId) must not(contain(2L))
 
       svc.distributeNewImages(round.getId) === 0 // the round now leaves them out

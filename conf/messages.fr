@@ -312,6 +312,7 @@ job.status=Distribution
 password.existing=le mot de passe que vous utilisez déjà dans l''outil du jury
 contest.switch=Changer de concours
 user.in.other.contests=Cet utilisateur participe aussi à d''autres concours. Seul son rôle ici peut être modifié ; pour le reste, demandez à un utilisateur root ou à l''utilisateur.
+user.email.or.wiki.account=Un utilisateur doit avoir une adresse e-mail ou un compte wiki.
 signup.email.taken=Un compte avec cet e-mail existe déjà. Connectez-vous, ou demandez à un organisateur de réinitialiser son mot de passe.
 users.added=Nouveaux comptes : {0}. Comptes existants ajoutés au concours : {1}. Déjà dans le concours : {2}.
 
@@ -376,7 +377,7 @@ coi.no.wiki.account = pas de compte wiki, les conflits d''intérêts ne peuvent 
 coi.files = Conflits d''intérêts
 coi.exclude = Exclure les conflits d''intérêts
 coi.count = {0} fichiers du concours sont des conflits d''intérêts (de ses membres ou des utilisateurs root).
-coi.without.author = {0} fichiers n''ont pas d''auteur enregistré : importez à nouveau le concours.
+coi.without.author = {0} fichiers du concours n''ont pas d''auteur.
 coi.title = Conflits d''intérêts
 coi.remove = Exclure les conflits d''intérêts maintenant
 coi.remove.help = Retire de ce tour les fichiers des membres du concours et des utilisateurs root, avec leurs votes, qui ne sont pas conservés, et les exclut de ses distributions suivantes.

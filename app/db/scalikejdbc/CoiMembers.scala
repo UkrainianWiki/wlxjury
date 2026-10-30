@@ -79,7 +79,8 @@ object CoiMembers {
         .toMap
 
   /** The files of the contest's category without a stored author: imported before the author
-    * was, or by a contest that fetched no page text; an import of the contest stores it.
+    * was, or by a contest that fetched no page text, which an import of the contest stores;
+    * or whose page names nobody (`{{unknown|author}}`, only a bot uploader), which stay so.
     */
   def filesWithoutAuthor(categoryId: Long)(implicit session: DBSession = AutoSession): Long =
     sql"""SELECT COUNT(*) FROM category_members cm JOIN images i ON i.page_id = cm.page_id

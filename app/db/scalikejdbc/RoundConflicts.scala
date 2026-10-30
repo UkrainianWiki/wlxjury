@@ -30,6 +30,11 @@ object RoundConflicts {
       */
     case object NotOpen extends Outcome
 
+    /** A distribution of the round is queued or running: it may have read the round before
+      * [[Round.excludeCoi]] was set, and add the files back.
+      */
+    case object Distributing extends Outcome
+
     case object NotFound extends Outcome
   }
 
@@ -37,9 +42,13 @@ object RoundConflicts {
     * with the round locked (rounds before votes, as [[services.imports.DeletedFiles]] locks
     * them), and sets the round's [[Round.excludeCoi]].
     *
-    * @param by the admin who asked, for the log line
+    * @param by              the admin who asked, for the log line
+    * @param distributionKey the dedupe key of the round's distribution jobs: one that is
+    *                        active refuses the removal. Creating or retrying such a job locks
+    *                        the round first too, so either the job sees the round's
+    *                        [[Round.excludeCoi]], or the removal sees the job.
     */
-  def removeFromRound(roundId: Long, by: User): Outcome = {
+  def removeFromRound(roundId: Long, by: User, distributionKey: String): Outcome = {
     val outcome = DB.localTx { implicit session =>
       sql"""SELECT contest_id, active = 1 AND distributing = 0 AND freeze_count = 0
             FROM rounds WHERE id = $roundId FOR UPDATE"""
@@ -47,6 +56,9 @@ object RoundConflicts {
         .single() match {
         case None                => Outcome.NotFound
         case Some((_, false))    => Outcome.NotOpen
+        case Some(_) if sql"SELECT 1 FROM job WHERE active_dedupe_key = $distributionKey"
+                          .map(_ => ()).single().isDefined =>
+          Outcome.Distributing
         case Some((contestId, _)) =>
           sql"UPDATE rounds SET exclude_coi = TRUE WHERE id = $roundId".update()
           val members = CoiMembers.forContest(contestId)

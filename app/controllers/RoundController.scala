@@ -145,17 +145,16 @@ class RoundController @Inject() (
         request) { round =>
         val toRounds = Redirect(routes.RoundController.rounds(Some(round.contestId)))
         val messages = request.messages
-        if (roundsService.distributionJob(roundId).exists(_.isActive))
-          toRounds.flashing("error" -> messages("coi.remove.distributing", round.number))
-        else
-          RoundConflicts.removeFromRound(roundId, user) match {
-            case RoundConflicts.Outcome.Removed(files) =>
-              toRounds.flashing("success" -> messages("coi.removed", files.size, round.number))
-            case RoundConflicts.Outcome.NotOpen =>
-              toRounds.flashing("error" -> messages("coi.remove.not.open", round.number))
-            case RoundConflicts.Outcome.NotFound =>
-              NotFound(views.html.errorPage(Some(user), "error.title", "error.round.not.found"))
-          }
+        RoundConflicts.removeFromRound(roundId, user, RoundDistributionHandler.dedupeKey(roundId)) match {
+          case RoundConflicts.Outcome.Removed(files) =>
+            toRounds.flashing("success" -> messages("coi.removed", files.size, round.number))
+          case RoundConflicts.Outcome.Distributing =>
+            toRounds.flashing("error" -> messages("coi.remove.distributing", round.number))
+          case RoundConflicts.Outcome.NotOpen =>
+            toRounds.flashing("error" -> messages("coi.remove.not.open", round.number))
+          case RoundConflicts.Outcome.NotFound =>
+            NotFound(views.html.errorPage(Some(user), "error.title", "error.round.not.found"))
+        }
       }
     }
 
@@ -569,7 +568,7 @@ object RoundController {
 }
 
 /** The round form's conflict-of-interest counts: the contest's files that are conflicts of
-  * interest, and those without a stored author (imported before the author was).
+  * interest, and those without a stored author.
   */
 final case class CoiCounts(conflicts: Int, withoutAuthor: Long) {
   def describe(implicit messages: play.api.i18n.Messages): String =

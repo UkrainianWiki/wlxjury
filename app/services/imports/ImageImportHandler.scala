@@ -104,11 +104,10 @@ final case class ImportPage(
   *     contest has them on Commons (a WLx contest's winners page shows icons and logos too);
   *  2. written in one transaction with the next cursor, by the rules the whole-contest
   *     import had, per page: a file not stored is inserted and put in the contest's
-  *     category; a stored file of another contest is put in the category only; a file of
-  *     the contest is updated if it changed ([[ImageService.changedImages]]), with its
-  *     selection rows' monument id; a file is put in its country category (never taken
-  *     out of one). Mode `monument_ids` sets the stored files' monument ids from their
-  *     text, where they differ.
+  *     category; a stored file of another contest is put in the category; a stored file is
+  *     updated if it changed ([[ImageService.changedImages]]), with its selection rows'
+  *     monument id; a file is put in its country category (never taken out of one). Mode
+  *     `monument_ids` sets the stored files' monument ids from their text, where they differ.
   *
   * Every write is idempotent (`INSERT IGNORE`, compare before update), so a page fetched
   * and written again after a crash or a Retry changes nothing. Held in memory: one page.
@@ -316,7 +315,8 @@ class ImageImportHandler @Inject() (source: CommonsSource, config: Configuration
     })
     val fresh = fetched.filterNot(i => stored.contains(i.pageId))
     val unlinked = fetched.filterNot(i => stored.get(i.pageId).exists(_._2))
-    val changed = ImageService.changedImages(fetched, stored.values.collect { case (i, true) => i }.toSeq)
+    // a stored file of another contest too: its author may be from before authors were resolved
+    val changed = ImageService.changedImages(fetched, stored.values.map(_._1).toSeq)
     // Locks the restored files with those updated below, in page id order
     val restored = DeletedFiles.restore(stored.keys.toSeq, alsoLock = changed.map(_.pageId))
     if (restored.nonEmpty) ctx.afterCommit(RoundImageCounts.invalidate(restored: _*))

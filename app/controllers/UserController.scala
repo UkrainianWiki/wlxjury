@@ -7,6 +7,7 @@ import org.scalawiki.dto.cmd.query.list._
 import play.api.Configuration
 import play.api.data.Form
 import play.api.data.Forms._
+import play.api.data.validation.{Constraint, Constraints, Valid}
 import play.api.i18n.{I18nSupport, Lang, Messages}
 import play.api.mvc.{Action, AnyContent, ControllerComponents, EssentialAction, Result}
 import services.UserService
@@ -192,7 +193,7 @@ class UserController @Inject()(cc: ControllerComponents,
         wikiAccount(formUser) != wikiAccount(editedUser) ||
         formUser.password.nonEmpty
 
-    if (User.countByEmail(userId, formUser.email) > 0) {
+    if (formUser.email.nonEmpty && User.countByEmail(userId, formUser.email) > 0) {
       badRequest(editUserForm.fill(formUser).withError("email", "email should be unique"))
     } else if (accountChanged && !canEditAccount(user, editedUser)) {
       badRequest(editUserForm.fill(formUser).withGlobalError("user.in.other.contests"))
@@ -348,18 +349,25 @@ class UserController @Inject()(cc: ControllerComponents,
       }
     }
 
+  /** A user added by wiki account only has no email: the email is optional, but a user needs
+    * an email or a wiki account.
+    */
   val editUserForm = Form(
     mapping(
       "id" -> longNumber,
       "fullname" -> nonEmptyText,
       "wikiAccount" -> optional(text),
-      "email" -> email,
+      "email" -> text.verifying(Constraint[String]("constraint.email") { e =>
+        if (e.trim.isEmpty) Valid else Constraints.emailAddress()(e)
+      }),
       "password" -> optional(text),
       "roles" -> optional(text),
       "contest" -> optional(longNumber),
       "lang" -> optional(text),
       "sort" -> optional(number)
     )(User.applyEdit)(User.unapplyEdit)
+      .verifying("user.email.or.wiki.account",
+                 u => u.email.trim.nonEmpty || u.wikiAccount.exists(_.trim.nonEmpty))
   )
 
   /** "Import users": the people, and the role they join the contest with (jury by default;

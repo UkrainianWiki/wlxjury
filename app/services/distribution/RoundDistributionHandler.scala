@@ -254,6 +254,8 @@ class RoundDistributionHandler @Inject() (
     val st = stateOf(job)
     val roundId = roundIdOf(job)
     val prevIds = if (listOnly(job)) Nil else Round.findById(roundId).map(_.previousIds).getOrElse(Nil)
+    // the round too, as creating the job locks it (RoundConflicts.removeFromRound)
+    Round.lock((st.frozen ++ prevIds) :+ roundId)
     Round.release(st.frozen, close = false) // nothing, normally: a failure released them
     Round.freeze(prevIds)
     val resumed =

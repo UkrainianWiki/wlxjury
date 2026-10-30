@@ -113,6 +113,19 @@ class FileAuthorSpec extends Specification with TestDb with BeforeAll with Befor
       stored.description === Some("d")
     }
 
+    "resolve the stale author of a file another contest stored, on this contest's first import" in {
+      val other = contestDao.create(Some(2), "Wiki Loves Earth", 2026, "Elsewhere", images = Some(category))
+      // stored by the other contest's import before authors were resolved
+      val shared = Seq(image(1).copy(author = Some("[[User:Ilya|Ilya]]")), image(2).copy(author = Some("Kept")))
+      imageDao.batchInsert(shared)
+      db.scalikejdbc.CategoryLinkJdbc.addToCategory(
+        db.scalikejdbc.CategoryJdbc.findOrInsert(services.ImageService.ownCategory(other.getId)), shared)
+
+      // file 2 comes back without its text: it keeps what is stored
+      importFiles(contest(), new FakeCommonsSource(Seq(file(1, info("[[User:Ilya|Ilya]]")), FakeFile(image(2)))))
+      authors === Map(1L -> Some("Ilya"), 2L -> Some("Kept"))
+    }
+
     "keep at most 255 characters of an author" in {
       importFiles(contest(), new FakeCommonsSource(Seq(file(1, info("x" * 300)))))
       ImageJdbc.findById(1L).flatMap(_.author).map(_.length) === Some(255)

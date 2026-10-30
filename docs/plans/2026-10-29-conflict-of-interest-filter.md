@@ -173,8 +173,9 @@ MariaDB 10.6 syntax, nothing that needs 10.8 or later.
   database finds them (`author IN (<accounts>)`), so a request reads only the matches, not
   every file's author.
 - The round form shows, with the new checkbox, "N of the contest's files are conflicts of
-  interest", and "M files have no author stored: import the contest again" while a contest
-  imported before this change has files not imported again since.
+  interest", and "M of the contest's files have no author": files imported before this
+  change and not imported again since, and those whose page names nobody
+  (`{{unknown|author}}`, only a bot uploader), which an import doesn't change.
 
 ### 4. Leaving them out of a round
 
