@@ -30,13 +30,6 @@ object CoiMembers {
     }
   }
 
-  /** The name a stored author compares by: the import stores the user's name, normalized; a
-    * row imported before it the author's wikitext, read as scalawiki reads it
-    * (`Image.parseUser` leaves a resolved name as it is). None for no author.
-    */
-  def authorKey(author: String): Option[String] =
-    Some(normalize(org.scalawiki.dto.Image.parseUser(author))).filter(_.nonEmpty)
-
   /** The contest's conflict-of-interest people by normalized wiki account: one query of its
     * members in [[User.COI_ROLES]] and the root users, not deleted, with a wiki account. A
     * root user who is also a member is reported with their contest role.
@@ -62,13 +55,16 @@ object CoiMembers {
       }
   }
 
-  /** The person an author is, if a conflict of interest. */
+  /** The person a stored author is, if a conflict of interest: the import stores the author
+    * normalized ([[normalize]]), as the keys are, so they compare as they are. A file imported
+    * before the author was resolved holds its wikitext and doesn't match until imported again.
+    */
   def matchOf(members: Map[String, Member])(author: Option[String]): Option[Member] =
-    if (members.isEmpty) None else author.flatMap(authorKey).flatMap(members.get)
+    if (members.isEmpty) None else author.flatMap(members.get)
 
   /** The files of the contest's category that are conflicts of interest, by page id, with
-    * the person each is by: one query of the category's files' authors, matched here (rows
-    * imported before the author was resolved are read through [[authorKey]]).
+    * the person each is by: the database finds the files by those authors (`IN`, in the
+    * column's case-insensitive collation), and [[matchOf]] keeps the exact matches.
     */
   def files(categoryId: Long, members: Map[String, Member])(implicit
       session: DBSession = AutoSession
@@ -76,7 +72,7 @@ object CoiMembers {
     if (members.isEmpty) Map.empty
     else
       sql"""SELECT i.page_id, i.author FROM category_members cm JOIN images i ON i.page_id = cm.page_id
-            WHERE cm.category_id = $categoryId AND i.author IS NOT NULL"""
+            WHERE cm.category_id = $categoryId AND i.author IN (${members.keys.toSeq})"""
         .map(rs => rs.long(1) -> rs.string(2))
         .list()
         .flatMap { case (pageId, author) => matchOf(members)(Some(author)).map(pageId -> _) }

@@ -34,7 +34,7 @@ class CoiAuthorizationSpec extends PlaySpecification with PlayTestDb with Mockit
     */
   private def setUp(): Round = {
     createContests(contestId, 20)
-    val images = Seq(image(1, Some("Board member")), image(2, Some("[[User:Board_member|B]]")), image(3))
+    val images = Seq(image(1, Some("Board member")), image(2, Some("Board member")), image(3))
     imageDao.batchInsert(images)
     CategoryLinkJdbc.addToCategory(contestDao.findById(contestId).get.categoryId.get, images)
     val juror = member("juror@example.com", "jury")

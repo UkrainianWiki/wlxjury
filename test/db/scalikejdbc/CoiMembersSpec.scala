@@ -32,12 +32,6 @@ class CoiMembersSpec extends Specification with TestDb with BeforeAll with Befor
       CoiMembers.normalize("ირაკლი") === "ირაკლი" // Georgian Mkhedruli stays as it is
       CoiMembers.normalize("ёлка") === "Ёлка"
     }
-
-    "read a stored author's wikitext as scalawiki reads it, and a resolved name as it is" in {
-      CoiMembers.authorKey("[[User:Ilya_K|Ilya]]") === Some("Ilya K")
-      CoiMembers.authorKey("Ilya K") === Some("Ilya K")
-      CoiMembers.authorKey("{{unknown|author}}") must beNone
-    }
   }
 
   "forContest" should {
@@ -79,20 +73,20 @@ class CoiMembersSpec extends Specification with TestDb with BeforeAll with Befor
   }
 
   "files" should {
-    "match the category's files by their stored author, old rows' wikitext too" in {
+    "match the category's files by their stored author, exactly" in {
       implicit val contest: org.intracer.wmua.ContestJury = createContests(10).head
       user("staff", Some("Staff_member"), Some(10L -> "staff"))
       val images = Seq(
         Image(1, "File:1.jpg", author = Some("Staff member")),
-        Image(2, "File:2.jpg", author = Some("[[User:Staff member|Staff]]")), // imported before
-        Image(3, "File:3.jpg", author = Some("Somebody else")),
+        Image(2, "File:2.jpg", author = Some("Staff Member")), // equal in the column's collation only
+        Image(3, "File:3.jpg", author = Some("[[User:Staff member|Staff]]")), // not imported again
         Image(4, "File:4.jpg")
       )
       imageDao.batchInsert(images)
       val categoryId = contestDao.findById(10).get.categoryId.get
       CategoryLinkJdbc.addToCategory(categoryId, images)
 
-      CoiMembers.files(categoryId, CoiMembers.forContest(10)).keySet === Set(1L, 2L)
+      CoiMembers.files(categoryId, CoiMembers.forContest(10)).keySet === Set(1L)
       CoiMembers.filesWithoutAuthor(categoryId) === 1L
     }
   }

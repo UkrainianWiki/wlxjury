@@ -86,11 +86,9 @@ parsed (`Image.parsedAuthor` in the large view and the organizers' file list;
 `GalleryController` only checks it is non-empty), and an import fetches it again if the parsing
 changes. `parsedAuthor` goes; the views show `author`.
 
-- **Rows imported before:** they keep the raw wikitext until the contest is imported again.
-  Until then the round filter and the preview read the author through `Image.parseUser`, which
-  leaves an already-resolved name as it is, so linked users in old rows match too; what old
-  rows lack is the original-uploader fallback (files with no author) and credit templates.
-  Deploy step: import the running contests again (WLM 2026), which fills both.
+- **Rows imported before:** they keep the raw wikitext until the contest is imported again,
+  and don't match until then: matching compares the stored, normalized author as it is, in SQL
+  (`author IN (…)`). Deploy step: import the running contests again (WLM 2026).
 - **Length:** the import keeps 256 characters (`take(256)`) of a `varchar(255)` column, which
   strict mode refuses for a 256-character author; keep 255.
 
@@ -171,7 +169,9 @@ MariaDB 10.6 syntax, nothing that needs 10.8 or later.
 - The contest files page (`GET /contest/:contestId/files`, `GalleryController.contestFiles`)
   gets a `coi` parameter next to `deleted`, `round`, `region` and `country`, with a menu entry
   "Conflicts of interest" (organizers and admins only): the contest's images whose `author`
-  matches, each labelled with the person and the reason ("X — board", "Y — root").
+  matches, each labelled with the person and the reason ("X — board", "Y — root"). The
+  database finds them (`author IN (<accounts>)`), so a request reads only the matches, not
+  every file's author.
 - The round form shows, with the new checkbox, "N of the contest's files are conflicts of
   interest", and "M files have no author stored: import the contest again" while a contest
   imported before this change has files not imported again since.
@@ -183,8 +183,7 @@ MariaDB 10.6 syntax, nothing that needs 10.8 or later.
   nomination for staff photos, or a contest whose rules allow organizers' photos, stays
   possible.
 - `RoundDistributionHandler.context` reads `CoiMembers.forContest`, and `perImageFilters` adds
-  an `ExcludeAuthors(names)` generator on `image.author` (through `Image.parseUser` for rows
-  not imported again). So it leaves out the files from a first round, a round from previous
+  an `ExcludeAuthors(names)` generator on `image.author`. So it leaves out the files from a first round, a round from previous
   rounds (catching members added after round 1), top-N (ranked
   after the filters, so the top 10 is ten eligible files), and "Distribute new files". No
   Commons request.

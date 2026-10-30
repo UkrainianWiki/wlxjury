@@ -21,12 +21,12 @@ class CoiRoundSpec extends Specification with TestDb with BeforeAll with BeforeE
   override def beforeAll(): Unit = SharedTestDb.init()
   override protected def before: Any = SharedTestDb.truncateAll()
 
-  /** Files 1-10: 2 by the board member, 4 by a juror (as wikitext, imported before authors
-    * were resolved), 6 by a root user, 8 by someone else, the rest without an author.
+  /** Files 1-10: 2 by the board member, 4 by a juror, 6 by a root user, 8 by someone else,
+    * the rest without an author.
     */
   private def author(id: Long): Option[String] = id match {
     case 2 => Some("Board member")
-    case 4 => Some("[[User:Juror_one|Juror]]")
+    case 4 => Some("Juror one")
     case 6 => Some("Root user")
     case 8 => Some("Somebody")
     case _ => None
