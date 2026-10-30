@@ -78,6 +78,24 @@ object CoiMembers {
         .flatMap { case (pageId, author) => matchOf(members)(Some(author)).map(pageId -> _) }
         .toMap
 
+  /** The round's files that are conflicts of interest, those with votes moved aside
+    * (`selection_deleted`) too: page id, title and the person each is by, as [[files]]
+    * finds them.
+    */
+  def roundFiles(roundId: Long, members: Map[String, Member])(implicit
+      session: DBSession = AutoSession
+  ): Seq[(Long, String, Member)] =
+    if (members.isEmpty) Nil
+    else
+      sql"""SELECT i.page_id, i.title, i.author FROM (
+              SELECT page_id FROM selection WHERE round_id = $roundId
+              UNION SELECT page_id FROM selection_deleted WHERE round_id = $roundId) p
+            JOIN images i ON i.page_id = p.page_id
+            WHERE i.author IN (${members.keys.toSeq}) ORDER BY i.page_id"""
+        .map(rs => (rs.long(1), rs.string(2), rs.string(3)))
+        .list()
+        .flatMap { case (pageId, title, author) => matchOf(members)(Some(author)).map((pageId, title, _)) }
+
   /** The files of the contest's category without a stored author: imported before the author
     * was, or by a contest that fetched no page text, which an import of the contest stores;
     * or whose page names nobody (`{{unknown|author}}`, only a bot uploader), which stay so.

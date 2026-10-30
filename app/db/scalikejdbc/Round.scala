@@ -290,6 +290,13 @@ object Round extends RoundRepo with CRUDMapper[Round] {
     setActiveGuarded(id, round.active)
   }
 
+  /** The round form's "Leave out conflicts of interest", for a round with none of them to
+    * take out, or to stop leaving them out ([[RoundConflicts.removeFromRound]] sets it for
+    * one with some).
+    */
+  def setExcludeCoi(id: Long, excludeCoi: Boolean): Unit =
+    updateById(id).withAttributes("excludeCoi" -> excludeCoi): Unit
+
   def activeRounds(contestId: Long)(implicit session: DBSession = AutoSession): Seq[Round] =
     where(sqls.eq(r.contestId, contestId).and.eq(r.active, true).and.eq(r.distributing, false))
       .orderBy(r.id)

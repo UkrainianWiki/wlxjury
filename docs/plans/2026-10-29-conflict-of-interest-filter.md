@@ -197,8 +197,12 @@ MariaDB 10.6 syntax, nothing that needs 10.8 or later.
 
 ### 5. A round that already has the files (second step)
 
-For rounds created before this, or after a member was added: "Leave out conflicts of
-interest now" on the round page, for open rounds that aren't distributing.
+For rounds created before this, or after a member was added: the round form's same
+checkbox, editable for an existing round. Its help gives the round's own count ("N of this
+round's files are conflicts of interest, M of the contest's"). Saved ticked, it takes the
+round's conflicts of interest out (the browser asks first when there are some); saved
+unticked, it stops leaving them out (files taken out don't come back; later distributions may
+add them). No separate button: one control, one place.
 
 - Deletes the files from the round with their votes: the rates of a conflict-of-interest file
   are not kept. `SelectionJdbc.removeImage(pageId, roundId)` does this already (no route today,

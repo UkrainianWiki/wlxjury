@@ -13,8 +13,8 @@ import services.{SMTPOrWikiMail, UserService}
 import scala.concurrent.Future
 
 /** Conflicts of interest and access: the board, auditors and staff (roles without access)
-  * get nothing, on any page; the files page's conflicts and the round's "Leave out
-  * conflicts of interest now" are for the contest's organizers / admins only.
+  * get nothing, on any page; the files page's conflicts are for the contest's organizers
+  * and admins, and taking them out of a round, by its form, for its contest's admins.
   */
 class CoiAuthorizationSpec extends PlaySpecification with PlayTestDb with Mockito {
 
@@ -143,32 +143,71 @@ class CoiAuthorizationSpec extends PlaySpecification with PlayTestDb with Mockit
     }
   }
 
-  "leaving out conflicts of interest now" should {
+  /** The round form of an existing round as the browser posts it, "Leave out conflicts of
+    * interest" ticked or not.
+    */
+  private def saveRound(round: Round, excludeCoi: Boolean): Seq[(String, String)] =
+    Seq("id" -> round.getId.toString, "number" -> round.number.toString, "name" -> "R",
+      "contest" -> round.contestId.toString, "roles" -> "jury", "distribution" -> "0", "rates" -> "1",
+      "minMpx" -> "", "minSize" -> "", "mediaType" -> "all") ++
+      User.findRoundJurors(round.getId).zipWithIndex.map { case (u, i) => s"jurors[$i]" -> u.getId.toString } ++
+      (if (excludeCoi) Seq("excludeCoi" -> "true") else Nil)
+
+  private def save(app: Application, email: String, body: Seq[(String, String)]): Future[Result] =
+    route(app, FakeRequest(POST, "/admin/rounds/save")
+      .withSession(Secured.UserName -> email, Secured.CurrentContestId -> contestId.toString)
+      .withFormUrlEncodedBody(body: _*)
+      .withCSRFToken).get
+
+  "the round form's \"Leave out conflicts of interest\" of an existing round" should {
+
+    "show the round's own count, and ask before taking them out" in {
+      testDbApp { app =>
+        val round = setUp()
+        val html = contentAsString(page(app, "admin@example.com", s"/admin/rounds/edit?id=${round.getId}&contestId=$contestId"))
+        html must contain("2 of this round")
+        html must contain("data-coi-round-files=\"2\"")
+        html must not(contain("remove-conflicts"))
+      }
+    }
 
     "be refused to a juror, an organizer, another contest's admin and the board" in {
       testDbApp { app =>
         val round = setUp()
         Seq("juror@example.com", "organizer@example.com", "other-admin@example.com", "board@example.com").map { email =>
-          status(page(app, email, s"/admin/rounds/${round.getId}/remove-conflicts", POST))
+          status(save(app, email, saveRound(round, excludeCoi = true)))
         } === Seq(FORBIDDEN, FORBIDDEN, FORBIDDEN, FORBIDDEN)
         SelectionJdbc.byRound(round.getId).map(_.pageId).toSet === Set(1L, 2L, 3L)
         roundDao.findById(round.getId).get.excludeCoi must beFalse
       }
     }
 
-    "remove the round's conflicts of interest for its contest's admin, and for root" in {
+    "take them out when its contest's admin saves it ticked, and for root" in {
       testDbApp { app =>
         val round = setUp()
-        val result = page(app, "admin@example.com", s"/admin/rounds/${round.getId}/remove-conflicts", POST)
+        val result = save(app, "admin@example.com", saveRound(round, excludeCoi = true))
         status(result) === SEE_OTHER
         flash(result).get("success") must beSome(contain("2"))
         SelectionJdbc.byRound(round.getId).map(_.pageId).toSet === Set(3L)
+        roundDao.findById(round.getId).get.excludeCoi must beTrue
 
         val other = roundDao.create(Round(None, 2, Some("R2"), contestId, active = true))
         SelectionJdbc.create(1L, 0, User.findByEmail("juror@example.com").head.getId, other.getId)
         User.create(User("root@example.com", "root@example.com", None, Set(User.ROOT_ROLE), Some("hash")))
-        status(page(app, "root@example.com", s"/admin/rounds/${other.getId}/remove-conflicts", POST)) === SEE_OTHER
+        status(save(app, "root@example.com", saveRound(other, excludeCoi = true))) === SEE_OTHER
         SelectionJdbc.byRound(other.getId) must beEmpty
+      }
+    }
+
+    "keep the files saved unticked, and stop leaving them out" in {
+      testDbApp { app =>
+        val round = setUp()
+        Round.setExcludeCoi(round.getId, excludeCoi = true)
+        val result = save(app, "admin@example.com", saveRound(round, excludeCoi = false))
+        status(result) === SEE_OTHER
+        flash(result).get("success") must beNone
+        SelectionJdbc.byRound(round.getId).map(_.pageId).toSet === Set(1L, 2L, 3L)
+        roundDao.findById(round.getId).get.excludeCoi must beFalse
       }
     }
 
@@ -177,14 +216,14 @@ class CoiAuthorizationSpec extends PlaySpecification with PlayTestDb with Mockit
         val round = setUp()
         val sessionToken = token(app)
         def post(body: (String, String)*) =
-          route(app, FakeRequest(POST, s"/admin/rounds/${round.getId}/remove-conflicts")
+          route(app, FakeRequest(POST, "/admin/rounds/save")
             .withHeaders(COOKIE -> "PLAY_SESSION=signed-in", ACCEPT -> "text/html")
             .withSession(Secured.UserName -> "admin@example.com", Secured.CurrentContestId -> contestId.toString,
               "csrfToken" -> sessionToken)
             .withFormUrlEncodedBody(body: _*)).get
-        status(post()) === FORBIDDEN
+        status(post(saveRound(round, excludeCoi = true): _*)) === FORBIDDEN
         SelectionJdbc.byRound(round.getId).size === 3
-        status(post("csrfToken" -> sessionToken)) === SEE_OTHER
+        status(post(saveRound(round, excludeCoi = true) :+ ("csrfToken" -> sessionToken): _*)) === SEE_OTHER
         SelectionJdbc.byRound(round.getId).map(_.pageId).toSet === Set(3L)
       }
     }

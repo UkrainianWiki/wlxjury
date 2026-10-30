@@ -61,20 +61,7 @@ object RoundConflicts {
           Outcome.Distributing
         case Some((contestId, _)) =>
           sql"UPDATE rounds SET exclude_coi = TRUE WHERE id = $roundId".update()
-          val members = CoiMembers.forContest(contestId)
-          val conflicts =
-            if (members.isEmpty) Nil
-            else
-              sql"""SELECT i.page_id, i.title, i.author FROM (
-                      SELECT page_id FROM selection WHERE round_id = $roundId
-                      UNION SELECT page_id FROM selection_deleted WHERE round_id = $roundId) p
-                    JOIN images i ON i.page_id = p.page_id
-                    WHERE i.author IN (${members.keys.toSeq}) ORDER BY i.page_id"""
-                .map(rs => (rs.long(1), rs.string(2), rs.string(3)))
-                .list()
-                .flatMap { case (pageId, title, author) =>
-                  CoiMembers.matchOf(members)(Some(author)).map((pageId, title, _))
-                }
+          val conflicts = CoiMembers.roundFiles(roundId, CoiMembers.forContest(contestId))
           val pageIds = conflicts.map(_._1)
           if (pageIds.nonEmpty) {
             Seq(sqls"selection", sqls"selection_deleted").foreach { table =>

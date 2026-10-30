@@ -76,7 +76,6 @@ GET         /admin/rounds                                                       
 GET         /admin/rounds/edit                                                      @controllers.RoundController.editRound(id: Option[Long] ?= None, contestId: Long, topImages: Option[Int] ?= None)
 POST        /admin/rounds/save                                                      @controllers.RoundController.saveRound()
 GET         /admin/rounds/newfiles                                                  @controllers.RoundController.newFilesCount(id: Long)
-POST        /admin/rounds/:round/remove-conflicts                                   @controllers.RoundController.removeConflicts(round: Long)
 GET         /admin/jobs/:id                                                         @controllers.JobController.status(id: Long)
 POST        /admin/jobs/:id/cancel                                                  @controllers.JobController.cancel(id: Long)
 POST        /admin/jobs/:id/retry                                                   @controllers.JobController.retry(id: Long)
