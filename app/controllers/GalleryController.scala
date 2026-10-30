@@ -393,9 +393,9 @@ class GalleryController @Inject() (
     * see the page; a script request, which never switches the session's contest.
     */
   def contestFileRegions(contestId: Long, deleted: Boolean, round: Option[Long], region: String,
-      country: Option[String]): EssentialAction =
+      country: Option[String], coi: Boolean = false): EssentialAction =
     withAuthJsonOn(blocking)(contestPermission(User.ADMIN_ROLES ++ User.ORG_COM_ROLES, Some(contestId))) { _ => implicit request =>
-      contestFilesView(contestId, deleted, round, region, country).fold(notFoundJson, { view =>
+      contestFilesView(contestId, deleted, round, region, country, coi).fold(notFoundJson, { view =>
         val messages = messagesApi.preferred(request)
         val regions =
           if (!view.byMonuments) Seq.empty[Region]
@@ -585,11 +585,13 @@ final case class ContestFilesView(
   /** A contest of monuments, whose files are in regions. */
   def byMonuments: Boolean = ContestKind.monumentIdTemplate(contest).isDefined
 
-  /** The region menu of a contest of monuments, in the navbar. */
+  /** The region menu of a contest of monuments, in the navbar: of the conflicts of interest
+    * too, their regions counted.
+    */
   def regionMenu(implicit messages: play.api.i18n.Messages): Option[RegionMenu] =
-    Option.when(byMonuments && !coi)(RegionMenu.regions(region.map(RegionScheme.of(contest).region(_, None).name),
+    Option.when(byMonuments)(RegionMenu.regions(region.map(RegionScheme.of(contest).region(_, None).name),
       regionUrl("all"), pageUrl(1),
-      routes.GalleryController.contestFileRegions(contest.getId, deletedOnly, roundId, "all", country).url))
+      routes.GalleryController.contestFileRegions(contest.getId, deletedOnly, roundId, "all", country, coi).url))
 
   /** The country menu of a contest of many countries (not of a round's files), in the navbar. */
   def countryMenu: Option[RegionMenu] =
