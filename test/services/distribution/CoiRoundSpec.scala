@@ -131,6 +131,24 @@ class CoiRoundSpec extends Specification with TestDb with BeforeAll with BeforeE
       ImageJdbc.findById(100L).flatMap(_.author) === Some("Staffer")
     }
 
+    "refresh a pasted list's stored files from Commons, their authors deciding" in {
+      val (contest, jurors, _) = setUp()
+      // 8 stored with an author Commons no longer names; 2 fetched without its text; 3 not on Commons
+      val svc = TestRoundServices.roundService(TestRoundServices.handler(commons = new FakeCommonsSource(Seq(
+        FakeFile(image(8), text = Some("{{Information|author=[[User:Board_member|B]]}}")),
+        FakeFile(image(2), text = None)))))
+      val round = svc.createNewRound(newRound(contest, excludeCoi = true).copy(minMpx = Some(100)), jurors.map(_.getId))
+
+      svc.distributeNewFiles(round.getId, titles = Seq("File:Image 8.jpg", "File:Image 2.jpg", "File:Image 3.jpg"),
+        newFiles = false)
+
+      ImageJdbc.findById(8L).flatMap(_.author) === Some("Board member")
+      ImageJdbc.findById(2L).flatMap(_.author) === Some("Board member") // kept: no text
+      pageIds(round.getId) === Set(3L)
+      RoundDistributionHandler.stateOf(jobOf(round.getId)).coiTitles ===
+        Seq("File:Image 2.jpg (Board_member — board)", "File:Image 8.jpg (Board_member — board)")
+    }
+
     "add a pasted list's conflicts of interest to a round without the flag" in {
       val (contest, jurors, _) = setUp()
       val svc = service

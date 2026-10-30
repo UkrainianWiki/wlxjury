@@ -190,7 +190,9 @@ MariaDB 10.6 syntax, nothing that needs 10.8 or later.
   Commons request.
 - A pasted list: the listed files that are conflicts of interest are left out too and reported
   in the job's details ("left out as conflicts of interest: …"), as missing titles are. The list
-  phase's freshly fetched files get their author the same way as an import's. An organizer who
+  phase fetches every listed file from Commons and stores what an import would: new files
+  inserted, stored ones (another contest's, possibly with an author from before) updated, so
+  their current author decides. An organizer who
   really wants them unticks the round's checkbox.
 
 ### 5. A round that already has the files (second step)

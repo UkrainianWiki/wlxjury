@@ -306,12 +306,7 @@ class ImageImportHandler @Inject() (source: CommonsSource, config: Configuration
       .map { case (image, linked) => image.pageId -> (image, linked) }
       .toMap
     val fetched = page.images.map(i => stored.get(i.pageId).fold(i) { case (s, _) =>
-      val text = !page.textless.contains(i.pageId)
-      i.copy(
-        monumentId = if (withMonumentIds && text) i.monumentId else s.monumentId,
-        description = if (text) i.description else s.description,
-        author = if (text) i.author else s.author
-      )
+      ImageService.withStoredText(i, s, text = !page.textless.contains(i.pageId), withMonumentIds)
     })
     val fresh = fetched.filterNot(i => stored.contains(i.pageId))
     val unlinked = fetched.filterNot(i => stored.get(i.pageId).exists(_._2))

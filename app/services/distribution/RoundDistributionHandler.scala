@@ -6,6 +6,7 @@ import org.intracer.wmua.{Image, ImageWithRating, Selection}
 import play.api.libs.json._
 import play.api.{Configuration, Logging}
 import scalikejdbc._
+import services.ImageService
 import services.imports.{CommonsSource, ImageText}
 import services.jobs._
 import services.regions.ContestKind
@@ -185,29 +186,34 @@ class RoundDistributionHandler @Inject() (
     )
   }
 
-  /** The files of `titles`, the pasted list's from the `index`th: the stored images of
-    * those titles, usually imported with the contest already, and the rest as Commons has
-    * them (one request, with their text; their authors as an import gets them,
-    * [[ImageText.imagesWithAuthors]]).
+  /** The files of `titles`, the pasted list's from the `index`th, as Commons has them (one
+    * request, with their text; their authors as an import gets them,
+    * [[ImageText.imagesWithAuthors]]): those not stored, to insert; the stored ones, usually
+    * imported with the contest already, and those of them Commons now has otherwise, to
+    * update as an import does ([[ImageService.withStoredText]]): a file another contest
+    * stored may have an author from before authors were resolved, and the round's conflicts
+    * of interest are read from it.
     */
   private def listChunk(round: Round, index: Int, titles: Seq[String]): ListChunk = {
-    val stored = ImageJdbc.findByTitles(titles)
+    val contest = ContestJuryJdbc
+      .findById(round.contestId)
+      .getOrElse(throw new NoSuchElementException(s"Contest ${round.contestId} not found"))
+    val template = ContestKind.monumentIdTemplate(contest)
+    val pages = commons.filesByTitles(titles, info = true, text = true)
+    val images = ImageText.imagesWithAuthors(pages, contest, template, commons)
+    val found = images.map(_.pageId).toSet
+    // by the listed titles and the fetched ones: a file renamed since is stored under either
+    val stored = ImageJdbc.findByTitles((titles ++ images.map(_.title)).distinct).distinctBy(_.pageId)
+    val storedById = stored.map(i => i.pageId -> i).toMap
+    val textless = pages.filter(_.text.isEmpty).flatMap(_.id).toSet
+    val refreshed = images.flatMap { i =>
+      storedById.get(i.pageId).map(ImageService.withStoredText(i, _, text = !textless.contains(i.pageId), template.isDefined))
+    }
     val storedTitles = stored.map(_.title).toSet
-    val notStored = titles.filterNot(storedTitles.contains)
-    val (fetched, missing) =
-      if (notStored.isEmpty) (Nil, Nil)
-      else {
-        val contest = ContestJuryJdbc
-          .findById(round.contestId)
-          .getOrElse(throw new NoSuchElementException(s"Contest ${round.contestId} not found"))
-        val template = ContestKind.monumentIdTemplate(contest)
-        val pages = commons.filesByTitles(notStored, info = true, text = true)
-        val images = ImageText.imagesWithAuthors(pages, contest, template, commons)
-        val found = images.map(_.pageId).toSet
-        // a missing title, or a page that isn't a file
-        (images, pages.filterNot(_.id.exists(found.contains)).map(_.title).distinct)
-      }
-    ListChunk(index, titles.size, stored, fetched, missing)
+    // a missing title, or a page that isn't a file, unless stored
+    val missing = pages.filterNot(_.id.exists(found.contains)).map(_.title).distinct.filterNot(storedTitles.contains)
+    ListChunk(index, titles.size, stored, images.filterNot(i => storedById.contains(i.pageId)),
+      ImageService.changedImages(refreshed, stored), missing)
   }
 
   // ── job creation, failure, cancel, retry ───────────────────────────────────
@@ -230,6 +236,17 @@ class RoundDistributionHandler @Inject() (
   override def onFailed(job: Job, ctx: StepContext): JsObject = end(job, ctx)
 
   override def onCancelled(job: Job, ctx: StepContext): JsObject = end(job, ctx)
+
+  /** Stores what Commons now has of the chunk's stored files that changed, as an import
+    * does, with a former title of a renamed one.
+    */
+  private def updateStored(chunk: ListChunk)(implicit session: DBSession): Unit = {
+    val storedTitles = chunk.stored.map(i => i.pageId -> i.title).toMap
+    chunk.changed.foreach { image =>
+      ImageJdbc.updateIn(image)
+      storedTitles.get(image.pageId).filter(_ != image.title).foreach(ImageJdbc.recordRename(_, image.pageId))
+    }
+  }
 
   /** Unfreezes the previous rounds, and moves aside the votes of deleted files that the job
     * added ([[settleFiles]]).
@@ -321,6 +338,8 @@ class RoundDistributionHandler @Inject() (
             case Some(chunk) if chunk.titles == 0 => continue(st1.copy(phase = Phase.Verify))
             case Some(chunk) =>
               ImageJdbc.insertIgnore(chunk.fetched)
+              updateStored(chunk)
+              if (chunk.changed.nonEmpty) ctx.afterCommit(RegionCountCache.invalidateMonumentIds())
               val listed =
                 DistributionSource.imagesIn((chunk.stored ++ chunk.fetched).map(_.pageId).distinct.sorted, roundId)
               // a round that leaves out conflicts of interest leaves them out of its list too
@@ -502,13 +521,15 @@ object RoundDistributionHandler {
   )
 
   /** The files of `titles` titles of a job's pasted list, from the `index`th: those stored,
-    * those fetched from Commons (to insert), and the titles found nowhere.
+    * those fetched from Commons (to insert), those stored that Commons has otherwise now (to
+    * update), and the titles found nowhere.
     */
   final case class ListChunk(
       index: Int,
       titles: Int,
       stored: Seq[Image],
       fetched: Seq[Image],
+      changed: Seq[Image],
       missingTitles: Seq[String]
   )
 
