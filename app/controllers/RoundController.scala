@@ -6,7 +6,7 @@ import org.scalawiki.wlx.dto.SpecialNomination
 import play.api.Logging
 import play.api.data.Form
 import play.api.data.Forms._
-import play.api.i18n.I18nSupport
+import play.api.i18n.{I18nSupport, Messages}
 import play.api.libs.json.Json
 import play.api.mvc.{AnyContent, ControllerComponents, EssentialAction, Request, RequestHeader, Result}
 import play.twirl.api.Html
@@ -77,7 +77,8 @@ class RoundController @Inject() (
       val round: Round = roundId
         .flatMap(id => rounds.find(_.id.contains(id)))
         .getOrElse(
-          new Round(id = None, contestId = contestId, number = rounds.size + 1)
+          // a new round leaves out conflicts of interest unless unticked
+          new Round(id = None, contestId = contestId, number = rounds.size + 1, excludeCoi = true)
         )
 
       val withTopImages = topImages.map(n => round.copy(topImages = Some(n))).getOrElse(round)
@@ -118,8 +119,53 @@ class RoundController @Inject() (
       contestsController.regions(contestId),
       contestSpecialNominations(contestId),
       submitToken,
-      round.id.flatMap(roundsService.distributionJob)
+      round.id.flatMap(roundsService.distributionJob),
+      Some(coiCounts(contestId, round.id))
     )
+  }
+
+  /** The round form's conflicts of interest: the contest's files that are, the round's too
+    * for an existing round, and the contest's files without a stored author.
+    */
+  private def coiCounts(contestId: Long, roundId: Option[Long]): CoiCounts = {
+    val members = CoiMembers.forContest(contestId)
+    ContestJuryJdbc.findById(contestId).flatMap(_.categoryId).fold(CoiCounts(0, None, 0L)) { categoryId =>
+      CoiCounts(CoiMembers.files(categoryId, members).size, roundId.map(CoiMembers.roundFiles(_, members).size),
+        CoiMembers.filesWithoutAuthor(categoryId))
+    }
+  }
+
+  /** The round form's "Leave out conflicts of interest" saved for an existing round: ticked,
+    * takes the round's conflict-of-interest files out with their votes, which are not kept,
+    * and leaves them out of its later distributions ([[RoundConflicts.removeFromRound]], which
+    * refuses while a distribution of the round is queued or running); a round that isn't open
+    * and has none just keeps them out. Unticked, stops leaving them out: files taken out
+    * don't come back, later distributions may add them.
+    *
+    * @return the flash messages to show
+    */
+  private def leaveOutConflicts(stored: Round, exclude: Boolean, user: User)(implicit
+      messages: Messages
+  ): Seq[(String, String)] = {
+    val roundId = stored.getId
+    if (!exclude) {
+      if (stored.excludeCoi) Round.setExcludeCoi(roundId, excludeCoi = false)
+      Nil
+    } else {
+      val inRound = CoiMembers.roundFiles(roundId, CoiMembers.forContest(stored.contestId))
+      if (inRound.isEmpty && stored.excludeCoi) Nil
+      else
+        RoundConflicts.removeFromRound(roundId, user, RoundDistributionHandler.dedupeKey(roundId)) match {
+          case RoundConflicts.Outcome.Removed(files) =>
+            if (files.isEmpty) Nil else Seq("success" -> messages("coi.removed", files.size, stored.number))
+          case RoundConflicts.Outcome.NotOpen if inRound.isEmpty =>
+            Round.setExcludeCoi(roundId, excludeCoi = true)
+            Nil
+          case RoundConflicts.Outcome.NotOpen      => Seq("error" -> messages("coi.remove.not.open", stored.number))
+          case RoundConflicts.Outcome.Distributing => Seq("error" -> messages("coi.remove.distributing", stored.number))
+          case RoundConflicts.Outcome.NotFound     => Nil
+        }
+    }
   }
 
   /** The number of files "Distribute new files" would add to the round, as JSON
@@ -286,20 +332,25 @@ class RoundController @Inject() (
                     val notStarted =
                       if (Round.updateRound(roundId, round)) Nil
                       else Seq("error" -> RoundController.stillDistributing(stored))
-                    if (!editForm.newImages && titles.isEmpty) toRoundsList.flashing(notStarted: _*)
+                    // before "Distribute new files", whose job then reads the round's flag
+                    val coi = leaveOutConflicts(stored, round.excludeCoi, user)(request.messages)
+                    // one message per kind: an error of the distribution wins over the removal's
+                    def flashing(errors: (String, String)*) =
+                      toRoundsList.flashing((coi ++ errors).toMap.toSeq: _*)
+                    if (!editForm.newImages && titles.isEmpty) flashing(notStarted: _*)
                     else
                       try {
                         roundsService.distributeNewFiles(roundId, user.id, titles, newFiles = editForm.newImages) match {
                           case RoundService.AlreadyRunning(_) =>
-                            toRoundsList.flashing(
+                            flashing(
                               "error" -> (s"Round ${stored.number}: its images are already being distributed." +
                                 (if (titles.nonEmpty) " The listed files were not added: add them again once it has finished."
                                  else "")))
                           case RoundService.Resumed(_) if titles.nonEmpty =>
-                            toRoundsList.flashing(
+                            flashing(
                               "error" -> (s"Round ${stored.number}: its failed distribution was resumed instead of " +
                                 "adding the listed files. Add them again once it has finished."))
-                          case _ => toRoundsList.flashing(notStarted: _*)
+                          case _ => flashing(notStarted: _*)
                         }
                       } catch {
                         case NonFatal(e) =>
@@ -529,6 +580,16 @@ object RoundController {
       .flatMap(_.headOption)
       .map(_.trim)
       .filter(TokenPattern.matches)
+}
+
+/** The round form's conflict-of-interest counts: the contest's files that are conflicts of
+  * interest, an existing round's (`inRound`), and the contest's files without a stored author.
+  */
+final case class CoiCounts(conflicts: Int, inRound: Option[Int], withoutAuthor: Long) {
+  def describe(implicit messages: play.api.i18n.Messages): String =
+    inRound.fold(messages("coi.count", conflicts))(n => messages("coi.count.round", n, conflicts) + " " +
+      messages("coi.exclude.edit")) +
+      (if (withoutAuthor > 0) " " + messages("coi.without.author", withoutAuthor) else "")
 }
 
 case class SelectRound(roundId: String, active: Boolean)

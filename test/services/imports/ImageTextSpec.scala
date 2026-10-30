@@ -24,6 +24,22 @@ class ImageTextSpec extends Specification {
     }
   }
 
+  "author" should {
+    "tell a named author, an unknown one and one left to the uploader" in {
+      ImageText.author("{{Information|author=[[User:Ilya|Ilya K]]}}") === ImageText.Author.Named("Ilya")
+      ImageText.author("{{Information|author={{Yuriy Kvach}}}}") === ImageText.Author.Named("{{Yuriy Kvach}}")
+      ImageText.author("{{Information|author={{unknown|author}}}}") === ImageText.Author.Unknown
+      ImageText.author("{{Information|description=d}}") === ImageText.Author.Uploader
+      ImageText.author("{{Зображення|Автор=Я}}") === ImageText.Author.Uploader
+    }
+
+    "store a name normalized, at most 255 characters" in {
+      ImageText.storedAuthor("some_user") === Some("Some user")
+      ImageText.storedAuthor("x" * 300).map(_.length) === Some(255)
+      ImageText.storedAuthor("  ") must beNone
+    }
+  }
+
   "validMonumentId" should {
     "be the template's first parameter, if it is a valid id" in {
       ImageText.validMonumentId("{{Monument Ukraine|12-345-0011}}", "Monument Ukraine") === Some("12-345-0011")

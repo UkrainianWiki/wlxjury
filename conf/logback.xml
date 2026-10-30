@@ -14,6 +14,8 @@
 
     <logger name="play" level="DEBUG" />
     <logger name="application" level="DEBUG" />
+    <!-- conflicts of interest removed from rounds (db.scalikejdbc.RoundConflicts): kept nowhere else -->
+    <logger name="coi" level="INFO" />
 
     <logger name="com.gargoylesoftware.htmlunit.javascript" level="OFF" />
 

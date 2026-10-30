@@ -230,7 +230,7 @@ class AppendImagesSpec extends Specification with JuryTestHelpers with TestDb wi
       ImageJdbc.findRenamed("Image11.jpg").map(_.title) must beSome("File:Renamed11.jpg")
     }
 
-    "link another contest's files without updating them" in {
+    "link another contest's files, and update those that changed" in {
       val images = (11 to 15).map(id => image(id).copy(description = Some(s"{{$idTemplate|12-345-$id}}")))
       val changed = images.map(i => i.copy(description = Some(s"{{$idTemplate|22-345-${i.pageId}}}")))
       val contest1 = createContest(id = Some(contestId + 1), images = Some(category + 1), monumentIdTemplate = Some(idTemplate))
@@ -239,10 +239,13 @@ class AppendImagesSpec extends Specification with JuryTestHelpers with TestDb wi
       importFiles(images, contest1, source = category + 1)
       val job = importFiles(changed, contest2, source = category + 2)
 
-      stored(contest1) === images
-      stored(contest2) === images // linked, not updated: as the whole-contest import did
+      // one row per file: what Commons has now, for both contests (e.g. an author resolved
+      // since the other contest's import)
+      val updated = changed.map(i => i.copy(monumentId = Some(s"22-345-${i.pageId}")))
+      stored(contest1) === updated
+      stored(contest2) === updated
       ImageImportHandler.stateOf(JobJdbc.findById(job.id).get) must beLike { case st: ImportState =>
-        (st.inserted, st.linked, st.updated) === ((0L, 5L, 0L))
+        (st.inserted, st.linked, st.updated) === ((0L, 5L, 5L))
       }
     }
 
@@ -325,6 +328,8 @@ class AppendImagesSpec extends Specification with JuryTestHelpers with TestDb wi
       width = 640,
       height = 480,
       monumentId = Some(s"12-345-$id"),
+      // every contest's files are fetched with their text (for their authors): its description
+      description = Some(""),
       size = Some(1234)
     )
 

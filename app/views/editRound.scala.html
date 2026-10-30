@@ -12,7 +12,8 @@
         regions: Map[String, String] = Map.empty,
         specialNominations: Seq[SpecialNomination] = Nil,
         submitToken: Option[String] = None,
-        distributionJob: Option[services.jobs.Job] = None
+        distributionJob: Option[services.jobs.Job] = None,
+        coi: Option[controllers.CoiCounts] = None
 )(implicit flash: Flash, messages: Messages, req: RequestHeader)
 
 @implicitFieldConstructor = @{
@@ -61,6 +62,24 @@
 
                     @defining(!newRound) { noEdit =>
                         @round.edit.imageFiltering(editRoundForm, rounds, regions, user, noEdit, specialNominations)
+
+                        @* for an existing round, saving it ticked takes its conflicts of interest out
+                           (RoundController.leaveOutConflicts): asked first when it has some *@
+                        @b3.checkbox(field = editRoundForm("excludeCoi"),
+                            Symbol("_label") -> Messages("coi.exclude"),
+                            Symbol("_help") -> coi.fold("")(c => c.describe),
+                            Symbol("data-coi-round-files") -> coi.flatMap(_.inRound).getOrElse(0),
+                            Symbol("data-coi-confirm") -> Messages("coi.exclude.confirm", coi.flatMap(_.inRound).getOrElse(0)))
+                        <script>
+                          (function () {
+                            var box = document.querySelector('[data-coi-round-files]');
+                            if (!box || !box.form) return;
+                            box.form.addEventListener('submit', function (e) {
+                              if (box.checked && Number(box.getAttribute('data-coi-round-files')) > 0 &&
+                                  !window.confirm(box.getAttribute('data-coi-confirm'))) e.preventDefault();
+                            });
+                          })();
+                        </script>
 
                         @* open when the form comes back with a list in it *@
                         @snippets.collapsible("add.files", "headingAddFiles", "collapseAddFiles",

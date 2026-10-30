@@ -312,6 +312,7 @@ job.status=Distribution
 password.existing=le mot de passe que vous utilisez déjà dans l''outil du jury
 contest.switch=Changer de concours
 user.in.other.contests=Cet utilisateur participe aussi à d''autres concours. Seul son rôle ici peut être modifié ; pour le reste, demandez à un utilisateur root ou à l''utilisateur.
+user.email.or.wiki.account=Un utilisateur doit avoir une adresse e-mail ou un compte wiki.
 signup.email.taken=Un compte avec cet e-mail existe déjà. Connectez-vous, ou demandez à un organisateur de réinitialiser son mot de passe.
 users.added=Nouveaux comptes : {0}. Comptes existants ajoutés au concours : {1}. Déjà dans le concours : {2}.
 
@@ -368,3 +369,18 @@ region.menu.loading = Chargement…
 region.menu.failed = La liste n’a pas pu être chargée. Rouvrez le menu ou rechargez la page.
 region.menu = Région
 country.all = Tous les pays
+# conflits d''intérêts
+board = Conseil d''administration
+auditor = Commission de contrôle
+staff = Personnel
+coi.no.wiki.account = pas de compte wiki, les conflits d''intérêts ne peuvent pas être vérifiés
+coi.files = Conflits d''intérêts
+coi.exclude = Exclure les conflits d''intérêts
+coi.count = {0} fichiers du concours sont des conflits d''intérêts (de ses membres ou des utilisateurs root).
+coi.count.round = {0} fichiers de ce tour sont des conflits d''intérêts, {1} du concours (de ses membres ou des utilisateurs root).
+coi.exclude.edit = Coché, l''enregistrement les retire du tour avec leurs votes, qui ne sont pas conservés, et les exclut de ses distributions suivantes. Décoché, les distributions suivantes peuvent les ajouter.
+coi.exclude.confirm = Retirer de ce tour les {0} fichiers qui sont des conflits d''intérêts ? Leurs votes sont supprimés et ne sont pas conservés.
+coi.without.author = {0} fichiers du concours n''ont pas d''auteur.
+coi.remove.distributing = Tour {0} : ses images sont en cours de distribution. Excluez les conflits d''intérêts une fois terminé.
+coi.remove.not.open = Le tour {0} n''est pas ouvert : les conflits d''intérêts ne sont exclus que d''un tour ouvert qui n''est pas en cours de distribution.
+coi.removed = Tour {1} : {0} fichiers retirés comme conflits d''intérêts.

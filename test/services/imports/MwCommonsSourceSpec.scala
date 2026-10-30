@@ -187,6 +187,50 @@ class MwCommonsSourceSpec extends Specification with JuryTestHelpers {
     }
   }
 
+  "the author lookups" should {
+
+    def version(user: String) =
+      org.scalawiki.dto.Image.basic("File:A.jpg", None, Some(user), None, None, None, None, None, Some(13L))
+
+    def captured(bot: MwBot, times: Int): Seq[Map[String, String]] = {
+      val captor = ArgumentCaptor.forClass(classOf[Action])
+      org.mockito.Mockito.verify(bot, org.mockito.Mockito.times(times))
+        .run(captor.capture(), any[Map[String, String]], any[Option[Long]])
+      captor.getAllValues.asScala.toSeq.map(_.pairs.toMap)
+    }
+
+    "credit a file to the user of its oldest version, asking for its whole history, 50 files a request" in {
+      val bot = mockBot()
+      // the versions newest first, as bot.run merges them across iicontinue
+      val history = Seq(Page(Some(13L), Some(6), "File:A.jpg", images = Seq(version("Retoucher"), version("Original"))))
+      bot.run(any[Action], any[Map[String, String]], any[Option[Long]]) returns Future.successful(history)
+
+      source(bot).originalUploaders(1L to 60L) === Map(13L -> "Original")
+
+      val Seq(first, second) = captured(bot, 2)
+      first("prop") === "imageinfo"
+      first("iiprop") === "user"
+      first("iilimit") === "max"
+      first("pageids").split('|').length === 50
+      second("pageids").split('|').length === 10
+    }
+
+    "credit a photographer's credit template to the user its page links to" in {
+      val bot = mockBot()
+      val templates = Seq(
+        Page(Some(1L), Some(10), "Template:Yuriy Kvach",
+          revisions = Page.revisionsFromText(Some("{{Creator|...}} [[User:Kvachyuriy|Yuriy Kvach]]"))),
+        Page(Some(2L), Some(10), "Template:Nobody", revisions = Page.revisionsFromText(Some("a photographer")))
+      )
+      bot.run(any[Action], any[Map[String, String]], any[Option[Long]]) returns Future.successful(templates)
+
+      source(bot).creditTemplateUsers(Seq("Yuriy Kvach", "Nobody")) === Map("Yuriy Kvach" -> "Kvachyuriy")
+      val Seq(params) = captured(bot, 1)
+      params("titles") === "Template:Yuriy Kvach|Template:Nobody"
+      params("prop") === "revisions"
+    }
+  }
+
   "ImportSource.titles" should {
     "normalize a pasted list" in {
       ImportSource.titles(

@@ -43,6 +43,9 @@ class GalleryService {
     val userContest = user.currentContest.getOrElse(0L)
     val isOrganizer = user.roles.intersect(Set("admin", "organizer", "root")).nonEmpty
     val notAuthorized = maybeRound.isEmpty ||
+      // no role that sees galleries: e.g. only the board, auditors or staff (User.NON_ACCESS_ROLES),
+      // whose membership is inactive anyway, so they are never in the round's contest
+      !user.hasAnyRole(User.ADMIN_ROLES ++ User.JURY_ROLES ++ User.ORG_COM_ROLES) ||
       // a round being created is hidden from its jurors until its distribution is complete
       (!isOrganizer && maybeRound.exists(_.distributing)) ||
       (!user.hasRole("root") && userContest != roundContest) ||
