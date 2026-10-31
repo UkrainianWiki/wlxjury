@@ -83,6 +83,73 @@ class RoundEditPageSpec extends PlaySpecification with PlayTestDb {
 
   "the round edit page" should {
 
+    "preserve every saved filter when the edit form omits read-only fields" in {
+      testDbApp { implicit app =>
+        val (contest, admin, previous) = fixture()
+        val jurors = User.findRoundJurors(previous.getId).map(_.getId)
+        val round = roundDao.create(Round(None, 2, Some("Filtered"), contest.getId,
+          minMpx = Some(4), previous = Some(previous.getId.toString), prevSelectedBy = Some(2),
+          prevMinAvgRate = Some(BigDecimal("3.5")), category = Some("Category:Included"),
+          excludeCategory = Some("Category:Excluded"), regions = Some("12,14"), minImageSize = Some(2),
+          monuments = Some("12-345-1"), topImages = Some(10), specialNomination = Some("Saved nomination"),
+          mediaType = Some("image"), active = true))
+        val before = roundDao.findById(round.getId).get
+        before.excludeCategory must beSome("Category:Excluded")
+        val save = FakeRequest(POST, "/admin/rounds/save")
+          .withSession(Secured.UserName -> admin.email)
+          .withFormUrlEncodedBody(
+            Seq("id" -> round.getId.toString, "number" -> "2", "name" -> "Renamed", "contest" -> contest.getId.toString,
+              "roles" -> "jury", "distribution" -> "0", "rates" -> "1", "minMpx" -> "", "minSize" -> "",
+              "mediaType" -> "all") ++
+              jurors.zipWithIndex.map { case (id, i) => s"jurors[$i]" -> id.toString }: _*)
+          .withCSRFToken
+        val result = route(app, save).get
+        status(result) must_== SEE_OTHER
+        flash(result).get("error") must beNone
+        // The legacy created_at column updates automatically on any save.
+        roundDao.findById(round.getId).map(_.copy(createdAt = before.createdAt)) must
+          beSome(before.copy(name = Some("Renamed")))
+      }
+    }
+
+    "redistribute with the saved minimum megapixels when the edit form submits an empty filter" in {
+      testDbApp { implicit app =>
+        val (contest, admin, previous) = fixture()
+        val jurors = User.findRoundJurors(previous.getId).map(_.getId)
+        val service = app.injector.instanceOf[services.RoundService]
+        val categoryId = contestDao.findById(contest.getId).get.categoryId.get
+        val initial = image(5).copy(width = 2000, height = 1000)
+        imageDao.batchInsert(Seq(initial))
+        db.scalikejdbc.CategoryLinkJdbc.addToCategory(categoryId, Seq(initial))
+        val round = service.createNewRound(
+          Round(None, 0, Some("Filtered"), contest.getId, minMpx = Some(1), active = true), jurors)
+        val added = Seq(image(6).copy(width = 2000, height = 1000), image(7))
+        imageDao.batchInsert(added)
+        db.scalikejdbc.CategoryLinkJdbc.addToCategory(categoryId, added)
+        val original = SelectionJdbc.byRound(round.getId).head
+        SelectionJdbc.rate(original.pageId, original.juryId, round.getId, 1)
+
+        val count = route(app, get(s"/admin/rounds/newfiles?id=${round.getId}", admin)).get
+        status(count) must_== OK
+        (contentAsJson(count) \ "count").as[Long] must_== 1L
+        val save = FakeRequest(POST, "/admin/rounds/save")
+          .withSession(Secured.UserName -> admin.email)
+          .withFormUrlEncodedBody(
+            Seq("id" -> round.getId.toString, "number" -> round.number.toString, "name" -> "Filtered",
+              "contest" -> contest.getId.toString, "roles" -> "jury", "distribution" -> "0", "rates" -> "1",
+              "minMpx" -> "", "minSize" -> "", "mediaType" -> "all", "newImages" -> "true") ++
+              jurors.zipWithIndex.map { case (id, i) => s"jurors[$i]" -> id.toString }: _*)
+          .withCSRFToken
+        val result = route(app, save).get
+        status(result) must_== SEE_OTHER
+        flash(result).get("error") must beNone
+        roundDao.findById(round.getId).flatMap(_.minMpx) must beSome(1)
+        val selections = SelectionJdbc.byRound(round.getId)
+        selections.map(_.pageId).toSet must_== Set(5L, 6L)
+        selections.find(s => s.pageId == original.pageId && s.juryId == original.juryId).map(_.rate) must beSome(1)
+      }
+    }
+
     "show the round without its stat table or new files count" in {
       testDbApp { implicit app =>
         val (contest, admin, round) = fixture()
