@@ -23,7 +23,7 @@ object WebJars {
   val Path = "/META-INF/resources/webjars"
 
   /** The webjars' names, the first segment of their files' paths. */
-  val Served: Set[String] = Set("bootstrap", "jquery", "font-awesome")
+  val Served: Set[String] = Set("bootstrap", "bootstrap-icons", "jquery", "tom-select")
 
   /** Whether `file` (as routed, maybe URL-encoded) is in a served webjar once decoded and
     * normalised, as Assets resolves it. */

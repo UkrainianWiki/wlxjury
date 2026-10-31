@@ -28,13 +28,13 @@ class LayoutSpec extends PlaySpecification {
       html must not(beMatching(external))
     }
 
-    "serve Bootstrap, Font Awesome and jQuery from their webjars on the classpath" in {
+    "serve Bootstrap, Bootstrap Icons and jQuery from their webjars on the classpath" in {
       val files = webjar.findAllMatchIn(html).map(_.group(1)).toList
       files must containAllOf(Seq(
-        "bootstrap/3.3.7-1/css/bootstrap.min.css",
-        "font-awesome/4.6.3/css/font-awesome.min.css",
-        "jquery/3.2.1/jquery.min.js",
-        "bootstrap/3.3.7-1/js/bootstrap.min.js"
+        "bootstrap/5.3.8/css/bootstrap.min.css",
+        "bootstrap-icons/1.13.1/font/bootstrap-icons.min.css",
+        "jquery/3.7.1/jquery.min.js",
+        "bootstrap/5.3.8/js/bootstrap.bundle.min.js"
       ))
       forall(files) { f =>
         getClass.getClassLoader.getResource("META-INF/resources/webjars/" + f) must not(beNull)
@@ -52,6 +52,12 @@ class LayoutSpec extends PlaySpecification {
 
     "show the title as given" in {
       html must contain("<title>A title</title>")
+    }
+
+    "set Bootstrap's colour mode: light by default, dark if asked" in {
+      html must contain("""data-bs-theme="light"""")
+      page(views.html.layout("t", theme = "dark")(Html(""))(Html(""))) must contain("""data-bs-theme="dark"""")
+      page(views.html.layout("t", theme = "\"><x")(Html(""))(Html(""))) must contain("""data-bs-theme="light"""")
     }
   }
 

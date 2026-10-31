@@ -168,9 +168,11 @@ libraryDependencySchemes += "org.scala-lang.modules" %% "scala-parser-combinator
 libraryDependencies ++= Seq(
   "org.webjars" %% "webjars-play" % "3.0.2",
   "com.adrianhurt" %% "play-bootstrap" % "1.6.1-P28-B3",
-  "org.webjars" % "bootstrap" % "3.3.7-1" exclude ("org.webjars", "jquery"),
-  "org.webjars" % "jquery" % "3.2.1",
-  "org.webjars" % "font-awesome" % "4.6.3",
+  "org.webjars" % "jquery" % "3.7.1",
+  // Bootstrap 5's bundle JS includes Popper; Tom Select's complete build includes its two deps
+  "org.webjars" % "bootstrap" % "5.3.8" exclude ("org.webjars", "popper.js"),
+  "org.webjars.npm" % "bootstrap-icons" % "1.13.1",
+  "org.webjars.npm" % "tom-select" % "2.6.2" excludeAll (ExclusionRule("org.webjars.npm")),
   "org.scalikejdbc" %% "scalikejdbc" % ScalikejdbcVersion,
   "org.scalikejdbc" %% "scalikejdbc-config" % ScalikejdbcVersion,
   "org.scalikejdbc" %% "scalikejdbc-orm" % ScalikejdbcVersion,
