@@ -55,6 +55,7 @@ def pages(s):
         ("gallery", "juror", f"/gallery/round/{rb}/user/{j}/page/1"),
         ("filelist", "juror", f"/filelist/round/{rb}/user/{j}/page/1"),
         ("large", "juror", f"/large/round/{rb}/user/{j}/pageid/{p}"),
+        ("large-rated", "juror", f"/large/round/{rr}/user/{j}/pageid/{s.get('ratedPageId', 0)}"),
         ("error404", "juror", "/no-such-page"),
         ("byrate", "organizer", f"/byrate/round/{rr}/user/0/page/1"),
         ("contestfiles", "organizer", f"/contest/{c}/files"),

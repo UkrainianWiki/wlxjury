@@ -12,8 +12,8 @@ import java.nio.file.Files
   *
   * When the app is up it writes `target/ui-shots/server.json`: the base URL, the contest and
   * round ids, a juror with images in both rounds (id, login, password), the organizer
-  * (an admin of the contest) and a page id of that juror's in the binary round. Then it
-  * serves until `target/ui-shots/server.stop` exists (or the process is killed) and exits,
+  * (an admin of the contest) and the juror's first page id in the binary and the rated round.
+  * Then it serves until `target/ui-shots/server.stop` exists (or the process is killed) and exits,
   * stopping the server and the container.
   *
   * {{{
@@ -59,6 +59,10 @@ object UiShotsServer {
     val pageId = sql"""SELECT MIN(page_id) FROM selection
                        WHERE jury_id = $jurorId AND round_id = ${f.roundBinaryId}"""
       .map(_.long(1)).single().getOrElse(sys.error("The juror has no images"))
+    // the juror's first file in the rated round, for the large view's stars (0 without one)
+    val ratedPageId = sql"""SELECT MIN(page_id) FROM selection
+                            WHERE jury_id = $jurorId AND round_id = ${f.roundRatingId}"""
+      .map(_.longOpt(1)).single().flatten.getOrElse(0L)
     val (_, orgEmail, orgPassword) = f.organizer
 
     val json =
@@ -69,7 +73,8 @@ object UiShotsServer {
          |  "roundRatingId": ${f.roundRatingId},
          |  "juror": {"id": $jurorId, "login": ${q(jurorEmail)}, "password": ${q(jurorPassword)}},
          |  "organizer": {"login": ${q(orgEmail)}, "password": ${q(orgPassword)}},
-         |  "pageId": $pageId
+         |  "pageId": $pageId,
+         |  "ratedPageId": $ratedPageId
          |}
          |""".stripMargin
     Files.write(readyFile.toPath, json.getBytes(UTF_8))
