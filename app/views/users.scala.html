@@ -34,7 +34,7 @@
             }
 
 
-            <table class="table table-striped table-sm" style="background-color: #CCCCCC ;">
+            <table class="table table-striped table-sm">
 
                 <thead>
                     <tr>
@@ -74,7 +74,7 @@
                                 }
                                 }
 
-                                <a href="https://commons.wikimedia.org/wiki/User:@user.wikiAccount" @if(!user.accountValid){style="color: red"}>
+                                <a href="https://commons.wikimedia.org/wiki/User:@user.wikiAccount" @if(!user.accountValid){class="text-danger"}>
                                     @user.wikiAccount
                                 </a>
                                 @* a member whose files are conflicts of interest, who can't be matched with them *@

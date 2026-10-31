@@ -20,14 +20,14 @@
             <h3>@Messages("campaign") @contest.fullName</h3>
 
             @flash.get("error").map { err =>
-                <div class="alert alert-danger" style="color:#a94442;background:#f2dede;border:1px solid #ebccd1;padding:10px;border-radius:4px;margin-bottom:10px">@err</div>
+                <div class="alert alert-danger">@err</div>
             }
             @flash.get("success").map { msg =>
                 <div class="alert alert-info" id="flash-success">@msg</div>
             }
 
             @if(rounds.nonEmpty) {
-                <table class="table table-striped table-sm" style="background-color: #CCCCCC ;">
+                <table class="table table-striped table-sm">
 
                     <thead>
                         <tr>

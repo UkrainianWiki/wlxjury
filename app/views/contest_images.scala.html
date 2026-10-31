@@ -12,7 +12,7 @@
         <p><a id="browse-files" href="@routes.GalleryController.contestFiles(contest.getId)">&larr; @Messages("contest.files")</a></p>
 
         @flash.get("error").map { err =>
-            <div class="alert alert-danger" style="color:#a94442;background:#f2dede;border:1px solid #ebccd1;padding:10px;border-radius:4px;margin-bottom:10px">@err</div>
+            <div class="alert alert-danger">@err</div>
         }
         @snippets.formError(importImagesForm)
 
