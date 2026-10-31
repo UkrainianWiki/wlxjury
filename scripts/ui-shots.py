@@ -91,7 +91,7 @@ def placeholder_png():
     return buf.getvalue()
 
 
-def start_server(log_path):
+def start_server(log_path, csp=False):
     SHOTS.mkdir(parents=True, exist_ok=True)
     for f in (SERVER_JSON, STOP_FILE):
         if f.exists():
@@ -100,8 +100,11 @@ def start_server(log_path):
            'set Test / javaOptions ++= Seq("-Xmx1g", "-Dfile.encoding=UTF-8")',
            # the test classpath has no public/ assets (Play's Assets serves them from the
            # classpath): add the packaged assets jar, as the production classpath has it
-           'set Test / unmanagedClasspath += Attributed.blank((Assets / packageBin).value)',
-           "Test/runMain gatling.setup.UiShotsServer"]
+           'set Test / unmanagedClasspath += Attributed.blank((Assets / packageBin).value)']
+    if csp:
+        # the production content security policy (GatlingTestFixture.cspConfig)
+        cmd.append('set Test / javaOptions += "-Dui.csp=production"')
+    cmd.append("Test/runMain gatling.setup.UiShotsServer")
     log = open(log_path, "w", encoding="utf-8")
     print(f"[ui-shots] starting the server, log: {log_path}")
     proc = subprocess.Popen(cmd, cwd=ROOT, stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL)
@@ -127,7 +130,7 @@ def stop_server(proc):
 
 def shoot(args):
     from playwright.sync_api import sync_playwright
-    proc = start_server(SHOTS / f"server-{args.label}.log") if args.start_server else None
+    proc = start_server(SHOTS / f"server-{args.label}.log", args.csp) if args.start_server else None
     try:
         s = json.loads(SERVER_JSON.read_text(encoding="utf-8"))
         base = s["baseUrl"]
@@ -160,6 +163,8 @@ def shoot(args):
                 ctx.route("**/*", route)
                 if user:
                     page = ctx.new_page()
+                    page.on("console", lambda m: print(f"    console {m.type} (sign-in): {m.text[:200]}")
+                            if m.type == "error" else None)
                     page.goto(base + "/auth")
                     page.fill("input[name=login]", s[user]["login"])
                     page.fill("input[name=password]", s[user]["password"])
@@ -177,6 +182,9 @@ def shoot(args):
                 page = context(user).new_page()
                 failed = []
                 page.on("requestfailed", lambda r: failed.append(f"{r.url[:120]} ({r.failure})"))
+                # console errors, CSP violations among them
+                page.on("console", lambda m: failed.append(f"console {m.type}: {m.text[:200]}")
+                        if m.type == "error" or "Content Security Policy" in m.text else None)
                 page.on("response", lambda r: failed.append(f"{r.url[:120]} ({r.status})")
                         if r.status >= 400 and r.url != base + path else None)
                 response = page.goto(base + path, wait_until="networkidle", timeout=120000)
@@ -190,7 +198,9 @@ def shoot(args):
                 page.screenshot(path=str(file), full_page=True,
                                 clip={"x": 0, "y": 0, "width": VIEWPORT["width"], "height": max(height, VIEWPORT["height"])})
                 print(f"{name:18} {response.status if response else '-'} {path} -> {file.relative_to(ROOT)}")
-                for f in failed[:5]:
+                if args.csp and response is not None and "content-security-policy" not in response.headers:
+                    print("    no Content-Security-Policy header")
+                for f in failed[:10]:
                     print(f"    failed: {f}")
                 page.close()
             browser.close()
@@ -244,6 +254,8 @@ def main():
     s.add_argument("--label", required=True)
     s.add_argument("--mode", default="light")
     s.add_argument("--start-server", action="store_true")
+    s.add_argument("--csp", action="store_true",
+                   help="with --start-server: the server sends the production content security policy")
     s.add_argument("--channel", default="chrome", help="chrome or msedge")
     s.add_argument("--only", help="comma-separated page names")
     d = sub.add_parser("diff")

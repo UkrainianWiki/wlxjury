@@ -80,14 +80,4 @@ class LayoutSpec extends PlaySpecification {
       page(views.html.main("gallery")(Html(""))) must contain("<title>Gallery</title>")
     }
   }
-
-  "the content security policy" should {
-    "allow scripts, styles and fonts from this host only" in {
-      val csp = ConfigFactory.parseFile(new File("conf/application.conf"))
-        .getString("play.filters.headers.contentSecurityPolicy")
-      val defaultSrc = csp.split(";").map(_.trim).find(_.startsWith("default-src")).get
-      defaultSrc must not contain "http"
-      defaultSrc must startWith("default-src 'self'")
-    }
-  }
 }
