@@ -60,8 +60,6 @@ class DistributeImages @Inject()(imageRepo: ImageRepo) extends Logging {
       selectedAtLeast = round.prevSelectedBy,
       selectMinAvgRating = round.prevMinAvgRate,
       selectTopByRating = round.topImages,
-      includeCategory = round.category,
-      excludeCategory = round.excludeCategory,
       includeRegionIds = round.regionIds.toSet,
       includeMonumentIds = round.monumentIds.toSet
     )
@@ -83,27 +81,28 @@ class DistributeImages @Inject()(imageRepo: ImageRepo) extends Logging {
   /** The round's per-image filters: every filter of [[imagesByRound]] except top-N by
     * rating (a global ranking) and the exclusion of the images already in the round. Each
     * decides per image, so applying them to any slice of the candidates (a chunk) selects
-    * exactly the images the whole list would. `includeFromCats` / `excludeFromCats` are
-    * the page ids of the round's Commons category filters ([[categoryFileIds]]);
+    * exactly the images the whole list would. The category id sets are the effective
+    * first and second operands of [[Round.categoryRule]] ([[categoryFileIds]]);
     * `excludeAuthors` the conflict-of-interest accounts of a round that leaves them out
     * ([[db.scalikejdbc.CoiMembers]]).
     */
   def perImageFilters(
       round: Round,
       prevRounds: Seq[Round],
-      includeFromCats: Iterable[Long],
-      excludeFromCats: Iterable[Long],
+      firstCategoryIds: Iterable[Long],
+      secondCategoryIds: Iterable[Long],
       excludeAuthors: Set[String] = Set.empty
   ): Seq[ImageWithRating] => Seq[ImageWithRating] = {
     val prevRound = prevRounds.headOption
+    val categoryRule = round.categoryRule
+    categoryRule.requireValid()
     ImageWithRatingSeqFilter.makeFunChain(
+      Seq(CategoryImages(categoryRule, firstCategoryIds.toSet, secondCategoryIds.toSet)) ++
       Option.when(excludeAuthors.nonEmpty)(ExcludeAuthors(excludeAuthors)).toSeq ++
       ImageWithRatingSeqFilter.funGenerators(
         prevRound,
         includeRegionIds = round.regionIds.toSet,
         includeMonumentIds = round.monumentIds.toSet,
-        includePageIds = includeFromCats.toSet,
-        excludePageIds = excludeFromCats.toSet,
         selectMinAvgRating =
           prevRound.flatMap(_ => round.prevMinAvgRate.filter(_ => !prevRound.exists(_.isBinary))),
         selectTopByRating = None,
@@ -130,9 +129,7 @@ class DistributeImages @Inject()(imageRepo: ImageRepo) extends Logging {
       selectTopByRating: Option[Int] = None,
       selectedAtLeast: Option[Int] = None,
       includeJurorId: Set[Long] = Set.empty,
-      excludeJurorId: Set[Long] = Set.empty,
-      includeCategory: Option[String] = None,
-      excludeCategory: Option[String] = None
+      excludeJurorId: Set[Long] = Set.empty
   ): Seq[Image] = {
 
     require(
@@ -141,8 +138,10 @@ class DistributeImages @Inject()(imageRepo: ImageRepo) extends Logging {
         "must all be of the same rate type (all binary or all rated)"
     )
 
-    val includeFromCats = categoryFileIds(includeCategory)
-    val excludeFromCats = categoryFileIds(excludeCategory)
+    val categoryRule = round.categoryRule
+    categoryRule.requireValid()
+    val firstCategoryIds = categoryFileIds(categoryRule.first).toSet
+    val secondCategoryIds = categoryFileIds(categoryRule.second).toSet
 
     val currentImages = imageRepo
       .byRoundMerged(round.getId)
@@ -170,13 +169,14 @@ class DistributeImages @Inject()(imageRepo: ImageRepo) extends Logging {
         )
     logger.debug("Total images: " + imagesAll.size)
 
-    val funGens = ImageWithRatingSeqFilter.funGenerators(
+    val funGens = Seq(CategoryImages(categoryRule, firstCategoryIds, secondCategoryIds)) ++
+      ImageWithRatingSeqFilter.funGenerators(
       prevRound,
       includeRegionIds = includeRegionIds,
       excludeRegionIds = excludeRegionIds,
       includeMonumentIds = includeMonumentIds,
-      includePageIds = includePageIds ++ includeFromCats.toSet,
-      excludePageIds = excludePageIds ++ existingImageIds ++ excludeFromCats.toSet,
+      includePageIds = includePageIds,
+      excludePageIds = excludePageIds ++ existingImageIds,
       includeTitles = includeTitles,
       excludeTitles = excludeTitles,
       includeJurorId = includeJurorId,

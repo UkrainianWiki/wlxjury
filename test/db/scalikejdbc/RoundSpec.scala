@@ -22,6 +22,11 @@ class RoundSpec extends Specification with BeforeAll {
       roundDao.findAll() === Seq(created)
     }
 
+    "persist and reload the category exclusion filter" in new AutoRollbackDb {
+      val created = roundDao.create(round.copy(excludeCategory = Some("Excluded files")))
+      roundDao.findById(created.getId).flatMap(_.excludeCategory) === Some("Category:Excluded files")
+    }
+
     "available jurors" in new AutoRollbackDb {
       implicit val contest: ContestJury = createContests(10).head
       createContests(20)  // Create contest 20 for users that should be filtered out
