@@ -150,7 +150,7 @@ class SecuredSpec extends PlaySpecification with Mockito with PlayTestDb
         html must not(contain("has been deactivated"))
         // nothing to suggest: signing out is all there is
         html must not(contain("btn-primary"))
-        html must contain("btn btn-default")
+        html must contain("Sign out and sign in with another account")
       }
     }
 

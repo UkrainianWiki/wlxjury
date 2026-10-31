@@ -6,35 +6,31 @@
 
 @main("gallery", null, 0, None, Seq.empty, gallery = false)  {
 
-    <script type="text/javascript" src="@routes.Assets.versioned("javascripts/bootstrap-multiselect.js")"></script>
-    <link rel="stylesheet" href="@routes.Assets.versioned("stylesheets/bootstrap-multiselect.css")" type="text/css"/>
+    <link rel="stylesheet" href="@routes.WebJars.at("tom-select/2.6.2/dist/css/tom-select.bootstrap5.min.css")">
+    <script src="@routes.WebJars.at("tom-select/2.6.2/dist/js/tom-select.complete.min.js")"></script>
+    <script type="text/javascript" src="@routes.Assets.versioned("javascripts/multi-select.js")"></script>
 
     <script type="text/javascript">
     $(document).ready(function() {
-        $('#regions-select').multiselect({
-            enableFiltering: true,
-            includeSelectAllOption: true
-        });
-        $('#regions-select').on('reset', function() {
-            $('#regions-select option').each(function() {
-                $(this).prop('selected', false);
-            })
-
-            $('#regions-select').multiselect('refresh');
+        var regions = wlxMultiSelect(document.getElementById('regions-select'), @views.JsTexts.multiSelect);
+        $('#example-reset-form').on('reset', function() {
+            if (regions) regions.clear();
         });
     });
     </script>
 
     <div class="row">
 
-        <form class="btn-group" id="example-reset-form">
-            <div class="btn-group">
+        <form class="d-flex gap-2 mb-2" id="example-reset-form">
+            <div class="flex-grow-1">
                 <select id="regions-select" multiple="multiple">
                     @for((id, name) <- KOATUU.regions.toSeq.sortBy(_._1)) {
                         <option value="@id">@name</option>
                     }
                 </select>
-                <button type="reset" id="regions-select-reset-button" class="btn btn-default">Reset</button>
+            </div>
+            <div>
+                <button type="reset" id="regions-select-reset-button" class="btn btn-outline-secondary">Reset</button>
             </div>
         </form>
     </div>

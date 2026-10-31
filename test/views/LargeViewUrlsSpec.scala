@@ -65,7 +65,7 @@ class LargeViewUrlsSpec extends Specification {
     * the pending example below.
     */
   private def isUpDownButton(a: Element) =
-    a.selectFirst("span.glyphicon-chevron-up, span.glyphicon-chevron-down") != null &&
+    (a.attr("data-nav") == "up" || a.attr("data-nav") == "down") &&
       a.parents().asScala.exists(_.hasClass("btn-group"))
 
   private def checkCommon(u: Urls, roundView: Boolean) = {

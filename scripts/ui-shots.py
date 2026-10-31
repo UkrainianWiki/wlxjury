@@ -47,7 +47,8 @@ MAX_HEIGHT = 4000
 
 
 def pages(s):
-    """(name, user, path): user is "juror", "organizer" or None (signed out)."""
+    """(name, user, path[, clicks]): user is "juror", "organizer" or None (signed out); clicks, CSS
+    selectors clicked in turn before the shot (a dropdown opened, say)."""
     c, rb, rr, j, p = s["contestId"], s["roundBinaryId"], s["roundRatingId"], s["juror"]["id"], s["pageId"]
     return [
         ("login", None, "/auth"),
@@ -65,6 +66,17 @@ def pages(s):
         ("editround", "organizer", f"/admin/rounds/edit?id={rb}&contestId={c}"),
         ("users", "organizer", f"/admin/users?contestId={c}"),
         ("edituser", "organizer", f"/users/edit/{j}"),
+        # menus and dropdowns opened
+        ("gallery-pagerbox", "juror", f"/gallery/round/{rb}/user/{j}/page/1", [".pager-range"]),
+        ("gallery-usermenu", "juror", f"/gallery/round/{rb}/user/{j}/page/1",
+         ["nav .navbar-nav:last-child > .dropdown:last-child > [data-bs-toggle=dropdown]"]),
+        ("byrate-viewmenu", "organizer", f"/byrate/round/{rr}/user/0/page/1",
+         ["a.dropdown-toggle:has(.bi-bar-chart-fill)"]),
+        ("contestfiles-regionmenu", "organizer", f"/contest/{c}/files", [".region-menu > [data-bs-toggle=dropdown]"]),
+        ("editround-new", "organizer", f"/admin/rounds/edit?contestId={c}"),
+        ("editround-new-jurors", "organizer", f"/admin/rounds/edit?contestId={c}", ["#jurors-ts-control"]),
+        ("editround-new-prevround", "organizer", f"/admin/rounds/edit?contestId={c}",
+         ["#headingImageFiltering a", "#previousRound-ts-control"]),
     ]
 
 
@@ -79,7 +91,7 @@ def placeholder_png():
     return buf.getvalue()
 
 
-def start_server(log_path):
+def start_server(log_path, csp=False):
     SHOTS.mkdir(parents=True, exist_ok=True)
     for f in (SERVER_JSON, STOP_FILE):
         if f.exists():
@@ -88,8 +100,11 @@ def start_server(log_path):
            'set Test / javaOptions ++= Seq("-Xmx1g", "-Dfile.encoding=UTF-8")',
            # the test classpath has no public/ assets (Play's Assets serves them from the
            # classpath): add the packaged assets jar, as the production classpath has it
-           'set Test / unmanagedClasspath += Attributed.blank((Assets / packageBin).value)',
-           "Test/runMain gatling.setup.UiShotsServer"]
+           'set Test / unmanagedClasspath += Attributed.blank((Assets / packageBin).value)']
+    if csp:
+        # the production content security policy (GatlingTestFixture.cspConfig)
+        cmd.append('set Test / javaOptions += "-Dui.csp=production"')
+    cmd.append("Test/runMain gatling.setup.UiShotsServer")
     log = open(log_path, "w", encoding="utf-8")
     print(f"[ui-shots] starting the server, log: {log_path}")
     proc = subprocess.Popen(cmd, cwd=ROOT, stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL)
@@ -115,7 +130,7 @@ def stop_server(proc):
 
 def shoot(args):
     from playwright.sync_api import sync_playwright
-    proc = start_server(SHOTS / f"server-{args.label}.log") if args.start_server else None
+    proc = start_server(SHOTS / f"server-{args.label}.log", args.csp) if args.start_server else None
     try:
         s = json.loads(SERVER_JSON.read_text(encoding="utf-8"))
         base = s["baseUrl"]
@@ -148,6 +163,8 @@ def shoot(args):
                 ctx.route("**/*", route)
                 if user:
                     page = ctx.new_page()
+                    page.on("console", lambda m: print(f"    console {m.type} (sign-in): {m.text[:200]}")
+                            if m.type == "error" else None)
                     page.goto(base + "/auth")
                     page.fill("input[name=login]", s[user]["login"])
                     page.fill("input[name=password]", s[user]["password"])
@@ -159,23 +176,31 @@ def shoot(args):
                 contexts[user] = ctx
                 return ctx
 
-            for name, user, path in pages(s):
+            for name, user, path, *rest in pages(s):
                 if selected and name not in selected:
                     continue
                 page = context(user).new_page()
                 failed = []
                 page.on("requestfailed", lambda r: failed.append(f"{r.url[:120]} ({r.failure})"))
+                # console errors, CSP violations among them
+                page.on("console", lambda m: failed.append(f"console {m.type}: {m.text[:200]}")
+                        if m.type == "error" or "Content Security Policy" in m.text else None)
                 page.on("response", lambda r: failed.append(f"{r.url[:120]} ({r.status})")
                         if r.status >= 400 and r.url != base + path else None)
                 response = page.goto(base + path, wait_until="networkidle", timeout=120000)
                 page.add_style_tag(content="*{caret-color:transparent !important}")
                 page.wait_for_timeout(1500)
+                for selector in (rest[0] if rest else []):
+                    page.click(selector)
+                    page.wait_for_timeout(700)
                 height = min(page.evaluate("document.documentElement.scrollHeight"), MAX_HEIGHT)
                 file = out / f"{name}.png"
                 page.screenshot(path=str(file), full_page=True,
                                 clip={"x": 0, "y": 0, "width": VIEWPORT["width"], "height": max(height, VIEWPORT["height"])})
                 print(f"{name:18} {response.status if response else '-'} {path} -> {file.relative_to(ROOT)}")
-                for f in failed[:5]:
+                if args.csp and response is not None and "content-security-policy" not in response.headers:
+                    print("    no Content-Security-Policy header")
+                for f in failed[:10]:
                     print(f"    failed: {f}")
                 page.close()
             browser.close()
@@ -229,6 +254,8 @@ def main():
     s.add_argument("--label", required=True)
     s.add_argument("--mode", default="light")
     s.add_argument("--start-server", action="store_true")
+    s.add_argument("--csp", action="store_true",
+                   help="with --start-server: the server sends the production content security policy")
     s.add_argument("--channel", default="chrome", help="chrome or msedge")
     s.add_argument("--only", help="comma-separated page names")
     d = sub.add_parser("diff")

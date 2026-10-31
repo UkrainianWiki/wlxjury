@@ -13,27 +13,27 @@
         <div class="btn-group">
             @if(round.isBinary || rate == 0) {
                 <a href="@RoundList(round, user.getId, filter = VoteFilter.ofRate(rate)).pageUrl(1)">
-                    <button type="button" class="btn btn-default btn-xs @if(count == 0) {disabled}">
-                        <span class="glyphicon glyphicon-th" aria-hidden="true"></span>
+                    <button type="button" class="btn btn-outline-secondary btn-sm py-0 px-1 @if(count == 0) {disabled}">
+                        <i class="bi bi-grid-3x3-gap-fill" aria-hidden="true"></i>
                     </button>
                 </a>
             } else {
                 <a href="@RoundList(round, user.getId, filter = VoteFilter.Rated, view = GalleryView.ByRate).pageUrl(1)">
-                    <button type="button" class="btn btn-default btn-xs @if(count == 0) {disabled}">
-                        <span class="glyphicon glyphicon-signal" aria-hidden="true"></span>
+                    <button type="button" class="btn btn-outline-secondary btn-sm py-0 px-1 @if(count == 0) {disabled}">
+                        <i class="bi bi-bar-chart-fill" aria-hidden="true"></i>
                     </button>
                 </a>
             }
             @if(round.isBinary || rate == 0) {
                 <a href="@RoundList(round, user.getId, filter = VoteFilter.ofRate(rate), view = GalleryView.FileList).pageUrl(1)">
-                    <button type="button" class="btn btn-default btn-xs @if(count == 0) {disabled}">
-                        <span class="glyphicon glyphicon-align-justify" aria-hidden="true"></span>
+                    <button type="button" class="btn btn-outline-secondary btn-sm py-0 px-1 @if(count == 0) {disabled}">
+                        <i class="bi bi-list-ul" aria-hidden="true"></i>
                     </button>
                 </a>
             } else {
                 <a href="@RoundList(round, user.getId, view = GalleryView.FileList).pageUrl(1)">
-                    <button type="button" class="btn btn-default btn-xs @if(count == 0) {disabled}">
-                        <span class="glyphicon glyphicon-align-justify" aria-hidden="true"></span>
+                    <button type="button" class="btn btn-outline-secondary btn-sm py-0 px-1 @if(count == 0) {disabled}">
+                        <i class="bi bi-list-ul" aria-hidden="true"></i>
                     </button>
                 </a>
             }

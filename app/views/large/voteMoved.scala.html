@@ -12,7 +12,7 @@
 
 @for(moved <- MovedVote.of(flash)) {
 <div class="alert alert-info alert-dismissible" role="status" id="vote-moved" style="margin-right: 5px;">
-    <button type="button" class="close" data-dismiss="alert"><span aria-hidden="true">&times;</span></button>
+    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="@Messages("close")"></button>
     @Messages(if (moved.out) "vote.moved.out" else "vote.moved", rateText(moved.rate))
     <a class="alert-link" href="@{(if (moved.out) list.withFilter(VoteFilter.All) else list).largeUrl(moved.pageId)}">@Messages("vote.moved.view")</a>
 </div>

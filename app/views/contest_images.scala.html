@@ -6,7 +6,6 @@
         importJobs: Seq[(services.jobs.Job, String)] = Nil
 )(implicit flash: Flash, messages: Messages, req: RequestHeader)
     @import helper._
-    @import b3.vertical.fieldConstructor
 
     @mainAdmin("contest.files", user, user.getId, contestId = contest.id) {
         <h3>@Messages("contest") @contest.fullName</h3>
@@ -19,7 +18,7 @@
 
         @* the imports run in the background: their progress, with Retry and Cancel *@
         @if(importJobs.nonEmpty) {
-            <div class="well well-sm" id="import-jobs">
+            <div class="card card-body p-2 mb-3" id="import-jobs">
                 @for((job, title) <- importJobs) {
                     <div>@title: @snippets.jobStatus(job, req.uri)</div>
                 }
@@ -27,15 +26,15 @@
             <script src="@routes.Assets.versioned("javascripts/job-status.js")"></script>
         }
 
-        @b3.vertical.form(routes.ImageController.importImages(contest.getId), Symbol("id") -> "import-images") { implicit vfc =>
+        @bs.form(routes.ImageController.importImages(contest.getId), Symbol("id") -> "import-images") {
             @helper.CSRF.formField
 
             <h4>@Messages("files.source")</h4>
 
-            @b3.text(importImagesForm("source"), Symbol("_label") -> "commons.category.or.page.with.files",
+            @bs.text(importImagesForm("source"), Symbol("_label") -> "commons.category.or.page.with.files",
                 Symbol("_help") -> Messages("import.files.help"))
 
-            @b3.textarea(importImagesForm("list"), Symbol("_label") -> "or.image.list", Symbol("_help") -> Messages("image.list.help"), Symbol("rows") -> 10 )
+            @bs.textarea(importImagesForm("list"), Symbol("_label") -> "or.image.list", Symbol("_help") -> Messages("image.list.help"), Symbol("rows") -> 10 )
 
             @if(contest.images.isDefined) {
                 @Messages("files.on.commons"):
@@ -64,7 +63,7 @@
         <div id="cache-status"></div>
         <form method="post" action="@routes.ImageController.startImageCache(contest.getId)">
             @helper.CSRF.formField
-            <button type="submit" class="btn btn-default">@Messages("download.images.locally")</button>
+            <button type="submit" class="btn btn-outline-secondary">@Messages("download.images.locally")</button>
         </form>
 
         <script src="@routes.Assets.versioned("javascripts/cache-status.js")"></script>

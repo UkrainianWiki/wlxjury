@@ -10833,7 +10833,7 @@ function UGTileDesign(){
 		//a new tab (onDeletedLabelClick keeps the click from the tile, which opens the large view)
 		if(objItem.deletedLabel){
 			objThumbWrapper.addClass("wlx-deleted");
-			var objLabel = jQuery("<a class='label label-danger wlx-deleted-label' target='_blank' rel='noopener'></a>");
+			var objLabel = jQuery("<a class='badge text-bg-danger wlx-deleted-label' target='_blank' rel='noopener'></a>");
 			objLabel.attr("href", objItem.commonsUrl).attr("title", objItem.deletedLabel).text(objItem.deletedLabel);
 			objThumbWrapper.append(objLabel);
 		}

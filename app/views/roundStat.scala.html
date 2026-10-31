@@ -5,18 +5,13 @@
     @main("statistics", user, user.getId, Some(round), stat.rounds, gallery = false) {
 
         @if(user.canViewOrgInfo(round)) {
-            <div class="row" >
-                <nav>
-                <div class="col-md-12 text-center">
-                    <ul class="pagination pagination-centered" style="margin-top: 10px; margin-bottom: 5px;">
-                    @for(r <- stat.rounds.filter(user.canViewOrgInfo)) {
-                        <li><a href="/roundstat/@r.id" @if(r.id == round.id){style="font-weight: bold"}> @r.description </a>
-                        </li>
-                    }
-                    </ul>
-                </div>
-                </nav>
-            </div>
+            <nav>
+                <ul class="pagination flex-wrap justify-content-center mt-2 mb-1" id="round-stat-rounds">
+                @for(r <- stat.rounds.filter(user.canViewOrgInfo)) {
+                    <li class="page-item@if(r.id == round.id){ active}"><a class="page-link" href="/roundstat/@r.id" @if(r.id == round.id){aria-current="page"}>@r.description</a></li>
+                }
+                </ul>
+            </nav>
         }
 
         <div class="row">

@@ -34,8 +34,11 @@ class WebJarsSpec extends Specification {
 
   "the pages' webjars" should {
     "be served and cached for a year" in {
-      forall(Seq("bootstrap/3.3.7-1/css/bootstrap.min.css", "bootstrap/3.3.7-1/js/bootstrap.min.js",
-          "jquery/3.2.1/jquery.min.js", "font-awesome/4.6.3/css/font-awesome.min.css")) { file =>
+      forall(Seq("bootstrap/5.3.8/css/bootstrap.min.css", "bootstrap/5.3.8/js/bootstrap.bundle.min.js",
+          "jquery/3.7.1/jquery.min.js", "bootstrap-icons/1.13.1/font/bootstrap-icons.min.css",
+          "bootstrap-icons/1.13.1/font/fonts/bootstrap-icons.woff2",
+          "tom-select/2.6.2/dist/js/tom-select.complete.min.js",
+          "tom-select/2.6.2/dist/css/tom-select.bootstrap5.min.css")) { file =>
         val result = get(file)
         result.header.status === 200
         result.header.headers.get("Cache-Control") must beSome("public, max-age=31536000, immutable")

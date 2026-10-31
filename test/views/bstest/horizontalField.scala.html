@@ -1,0 +1,4 @@
+@* A template with its own layout, for BsFormHelpersSpec: it takes precedence over the default *@
+@(field: Field)(implicit messages: Messages)
+@implicitLayout = @{ bs.Layout.horizontal("col-sm-3", "col-sm-9") }
+@bs.text(field, Symbol("_label") -> "Name")

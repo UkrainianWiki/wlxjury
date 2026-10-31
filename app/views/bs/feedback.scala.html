@@ -1,0 +1,4 @@
+@* A field's help and its errors; an error shows when its input has is-invalid *@
+@(f: FieldView)
+@for(h <- f.help) {<div class="form-text" id="@f.helpId">@h</div>}
+@for((errorId, error) <- f.errors) {<div class="invalid-feedback" id="@errorId">@error</div>}

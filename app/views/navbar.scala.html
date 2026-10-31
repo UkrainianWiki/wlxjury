@@ -35,8 +35,8 @@
             (if (l.round.isBinary) Seq((VoteFilter.Rate(1), "selected", rates.selected), (VoteFilter.Rate(-1), "rejected", rates.rejected))
              else Seq((VoteFilter.Rated, "rated", rates.rated)))) {
         @defining(l.asUserId == user.getId && l.filter == filter) { active =>
-        <li role="presentation" class="@if(active) {active}@if(filter.isInstanceOf[VoteFilter.Rate]) {@if(active) { active-}@name}">
-            <a href="@own.withFilter(filter).pageUrl(1)">@Messages(name) (@count)</a>
+        <li class="nav-item@if(filter.isInstanceOf[VoteFilter.Rate]) { vote-@name}">
+            <a class="nav-link@if(active) { active}" @if(active) {aria-current="page" }href="@own.withFilter(filter).pageUrl(1)">@Messages(name) (@count)</a>
         </li>
         }
     }
@@ -58,122 +58,110 @@
     }
 }
 
-<!-- Navigation bar on the top of the page -->
-<nav class="navbar navbar-inverse" role="navigation" style="margin-bottom: 10px;">
-    <div class="navbar-inner">
-        <div class="container-fluid" style="margin-left: 5px ;
-            margin-right: 5px">
-            <ul class="nav navbar-nav">
-                @if(user != null) {
+<!-- Navigation bar on the top of the page: dark in every colour mode -->
+<nav class="navbar navbar-expand bg-dark mb-2 py-1" data-bs-theme="dark">
+    <div class="container-fluid px-2">
+        <ul class="navbar-nav flex-wrap align-items-center me-auto">
+            @if(user != null) {
 
-                    @if(user.hasRole(User.ROOT_ROLE)) {
-                        <li role="presentation"><a class="brand" href="@routes.ContestController.list()">@Messages("Contests")</a>
+                @if(user.hasRole(User.ROOT_ROLE)) {
+                    <li class="nav-item"><a class="nav-link" href="@routes.ContestController.list()">@Messages("Contests")</a></li>
                     @if(contestId.isEmpty) {
-                        <li role="presentation"><a class="brand" href="@routes.UserController.allUsers()">@Messages("users")</a>
+                        <li class="nav-item"><a class="nav-link" href="@routes.UserController.allUsers()">@Messages("users")</a></li>
                     }
-                    }
-                        <!-- The contest's files: their gallery, which links their import for admins -->
-                    @for(cId <- contestId) {
-                        @if(user.canViewContestFiles(cId)) {
-                            <li role="presentation"><a class="brand" id="menu-contest-files" href="@routes.GalleryController.contestFiles(cId)">@Messages("contest.files")</a>
-                        }
-                    }
-                        <!-- Admin items: users and rounds setup -->
-                    @if(user.hasAnyRole(User.ADMIN_ROLES)) {
-                        @for(cId <- contestId) {
-                            <li role="presentation"><a class="brand" href="@routes.UserController.users(contestId)">@Messages("users")</a>
-                            <li role="presentation"><a class="brand" href="@routes.RoundController.rounds(contestId)">@Messages("rounds")</a>
-                        }
-                    }
-
-                        <!-- Link to statistics view, if user has rights -->
-                    @if(selectedRound.nonEmpty && user.canViewOrgInfo(selectedRound.get)) {
-                        <li role="presentation"><a class="brand" href="@routes.RoundController.roundStat(selectedRound.get.getId)">@Messages("statistics")</a>
-                    } else {
-                        @if(rounds.exists(round => user.canViewOrgInfo(round))) {
-                            <li role="presentation"><a class="brand" href="@routes.RoundController.currentRoundStat(contestId)">@Messages("statistics")</a>
-                        }
-                    }
-
-                    @for(round <- selectedRound.toSeq) {
-                    @* the list the page shows; on another page, the round's gallery as the viewer's *@
-                    @defining(list.getOrElse(if (asUserId == user.getId) RoundList.landing(round, user) else RoundList(round, asUserId))) { l =>
-
-                        @if(!(user.canViewOrgInfo(round) || rounds.size > 1)) {
-                            <li class="navbar-brand" style="margin-left: 10px">@Messages(round.description)</li>
-                        }
-
-                            <!-- If (viewing users summary or own gallery) and user is juror" -->
-                        @if((asUserId == 0 || asUserId == user.getId) && round.roles.intersect(user.roles).nonEmpty) {
-
-                            <!-- Show rounds dropdown -->
-                        @if(user.canViewOrgInfo(round) || (rounds.size > 1)) {
-                            <li role="presentation" class="brand" style="margin-left: 10px">
-                            @roundMenu(l)
-                            </li>
-                        }
-
-                            <!-- The viewer's own files by their votes, and their order -->
-                            @ownTabs(l)
-                            @sortMenu(l)
-                    }
-
-                        @if(user.getId != asUserId && user.canViewOrgInfo(round)) {
-                                <!-- Select round -->
-
-                            <li role="presentation" class="brand" >
-                            @roundMenu(l)
-                            </li>
-
-                                <!-- Select user -->
-
-                            <li role="presentation">
-                            @(new UiSelectionDto[Long](
-                                { userId: Long => Call("GET", l.withViewer(userId).pageUrl(1)) },
-                                asUserId,
-                                User.findRoundJurorsToView(round.getId).map(u => (u.getId, SelectionItem(u.fullname, localized = false))),
-                                Some(0L -> SelectionItem("all"))
-                            ).toDropDown())
-
-                            @(new UiSelectionDto[VoteFilter](
-                                { filter: VoteFilter => Call("GET", l.withFilter(filter).pageUrl(1)) },
-                                l.filter,
-                                if (round.isBinary) Seq(
-                                    VoteFilter.Rate(1) -> SelectionItem("selected"),
-                                    VoteFilter.Unrated -> SelectionItem("unrated"),
-                                    VoteFilter.Rate(-1) -> SelectionItem("rejected")
-                                ) else Seq(
-                                    VoteFilter.Rated -> SelectionItem("rated"),
-                                    VoteFilter.Unrated -> SelectionItem("unrated")
-                                ),
-                                Some(VoteFilter.All -> SelectionItem("all"))
-                            ).toDropDown())
-
-                            @ownTabs(l)
-
-                            @(new UiSelectionDto[GalleryView](
-                                { view: GalleryView => Call("GET", l.withView(view).pageUrl(1)) },
-                                l.view,
-                                Seq(
-                                    GalleryView.Gallery -> SelectionItem("gallery", Some("glyphicon glyphicon-th")),
-                                    GalleryView.ByRate -> SelectionItem("byrate", Some("glyphicon glyphicon-signal")),
-                                    GalleryView.FileList -> SelectionItem("file.list", Some("glyphicon glyphicon-align-justify")),
-                                    GalleryView.Csv -> SelectionItem("csv", Some("fa fa-file-text-o"))
-                                )
-                            ).toDropDown(iconOnly = true))
-                        </li>
-                        }
-                    }
-                    }
-                } else {
-                    <a class="brand" href="#">@Messages("application.name")</a>
                 }
-                @* the page's filters (its region or country menus), then its pager *@
-                @filters
-                @pager
-            </ul>
-            @logged(user)
+                <!-- The contest's files: their gallery, which links their import for admins -->
+                @for(cId <- contestId) {
+                    @if(user.canViewContestFiles(cId)) {
+                        <li class="nav-item"><a class="nav-link" id="menu-contest-files" href="@routes.GalleryController.contestFiles(cId)">@Messages("contest.files")</a></li>
+                    }
+                }
+                <!-- Admin items: users and rounds setup -->
+                @if(user.hasAnyRole(User.ADMIN_ROLES)) {
+                    @for(cId <- contestId) {
+                        <li class="nav-item"><a class="nav-link" href="@routes.UserController.users(contestId)">@Messages("users")</a></li>
+                        <li class="nav-item"><a class="nav-link" href="@routes.RoundController.rounds(contestId)">@Messages("rounds")</a></li>
+                    }
+                }
 
-        </div>
+                <!-- Link to statistics view, if user has rights -->
+                @if(selectedRound.nonEmpty && user.canViewOrgInfo(selectedRound.get)) {
+                    <li class="nav-item"><a class="nav-link" href="@routes.RoundController.roundStat(selectedRound.get.getId)">@Messages("statistics")</a></li>
+                } else {
+                    @if(rounds.exists(round => user.canViewOrgInfo(round))) {
+                        <li class="nav-item"><a class="nav-link" href="@routes.RoundController.currentRoundStat(contestId)">@Messages("statistics")</a></li>
+                    }
+                }
+
+                @for(round <- selectedRound.toSeq) {
+                @* the list the page shows; on another page, the round's gallery as the viewer's *@
+                @defining(list.getOrElse(if (asUserId == user.getId) RoundList.landing(round, user) else RoundList(round, asUserId))) { l =>
+
+                    @if(!(user.canViewOrgInfo(round) || rounds.size > 1)) {
+                        <li class="nav-item"><span class="navbar-text ms-2">@Messages(round.description)</span></li>
+                    }
+
+                    <!-- If (viewing users summary or own gallery) and user is juror" -->
+                    @if((asUserId == 0 || asUserId == user.getId) && round.roles.intersect(user.roles).nonEmpty) {
+
+                        <!-- Show rounds dropdown -->
+                        @if(user.canViewOrgInfo(round) || (rounds.size > 1)) {
+                            @roundMenu(l)
+                        }
+
+                        <!-- The viewer's own files by their votes, and their order -->
+                        @ownTabs(l)
+                        @sortMenu(l)
+                    }
+
+                    @if(user.getId != asUserId && user.canViewOrgInfo(round)) {
+                        <!-- Select round -->
+                        @roundMenu(l)
+
+                        <!-- Select user -->
+                        @(new UiSelectionDto[Long](
+                            { userId: Long => Call("GET", l.withViewer(userId).pageUrl(1)) },
+                            asUserId,
+                            User.findRoundJurorsToView(round.getId).map(u => (u.getId, SelectionItem(u.fullname, localized = false))),
+                            Some(0L -> SelectionItem("all"))
+                        ).toDropDown())
+
+                        @(new UiSelectionDto[VoteFilter](
+                            { filter: VoteFilter => Call("GET", l.withFilter(filter).pageUrl(1)) },
+                            l.filter,
+                            if (round.isBinary) Seq(
+                                VoteFilter.Rate(1) -> SelectionItem("selected"),
+                                VoteFilter.Unrated -> SelectionItem("unrated"),
+                                VoteFilter.Rate(-1) -> SelectionItem("rejected")
+                            ) else Seq(
+                                VoteFilter.Rated -> SelectionItem("rated"),
+                                VoteFilter.Unrated -> SelectionItem("unrated")
+                            ),
+                            Some(VoteFilter.All -> SelectionItem("all"))
+                        ).toDropDown())
+
+                        @ownTabs(l)
+
+                        @(new UiSelectionDto[GalleryView](
+                            { view: GalleryView => Call("GET", l.withView(view).pageUrl(1)) },
+                            l.view,
+                            Seq(
+                                GalleryView.Gallery -> SelectionItem("gallery", Some("bi bi-grid-3x3-gap-fill")),
+                                GalleryView.ByRate -> SelectionItem("byrate", Some("bi bi-bar-chart-fill")),
+                                GalleryView.FileList -> SelectionItem("file.list", Some("bi bi-list-ul")),
+                                GalleryView.Csv -> SelectionItem("csv", Some("bi bi-filetype-csv"))
+                            )
+                        ).toDropDown(iconOnly = true))
+                    }
+                }
+                }
+            } else {
+                <li class="nav-item"><span class="navbar-brand">@Messages("application.name")</span></li>
+            }
+            @* the page's filters (its region or country menus), then its pager *@
+            @filters
+            @pager
+        </ul>
+        @logged(user)
     </div>
 </nav>

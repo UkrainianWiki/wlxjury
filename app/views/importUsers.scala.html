@@ -20,26 +20,25 @@
         </div>
 
         @form(routes.UserController.importUsers(Some(contestId)), Symbol("id") -> "import-users") {
-            <div class="form-group">
+            <div class="mb-3">
                 @helper.CSRF.formField
 
-                @textarea(field = importUserForm("userstoimport"),
-                    args = Symbol("rows") -> 7, Symbol("cols") -> 50,
-                    Symbol("class") -> "form-control",
+                @bs.textarea(importUserForm("userstoimport"),
+                    Symbol("rows") -> 7, Symbol("cols") -> 50,
                     Symbol("id") -> "userstoimport",
                     Symbol("_label") -> Messages("mails.to.import")
                 )
 
                 @* the role they join with: the board, auditors and staff get no access, only
                    their files are conflicts of interest *@
-                @select(importUserForm("role"),
+                @bs.select(importUserForm("role"),
                     db.scalikejdbc.User.IMPORT_ROLES.map(r => (r, Messages(r))),
-                    Symbol("_label") -> Messages("role"), Symbol("_help") -> "", Symbol("class") -> "form-control",
+                    Symbol("_label") -> Messages("role"),
                     Symbol("id") -> "import-role")
 
                 <div class="form-actions">
                     @snippets.submit("import")
-                    <a href="@routes.UserController.users(Some(contestId))" class="btn btn-default">@Messages("cancel")</a>
+                    <a href="@routes.UserController.users(Some(contestId))" class="btn btn-outline-secondary">@Messages("cancel")</a>
                 </div>
 
             </div>

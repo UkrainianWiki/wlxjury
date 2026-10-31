@@ -27,7 +27,7 @@
             }
 
             @if(rounds.nonEmpty) {
-                <table class="table table-striped table-condensed" style="background-color: #CCCCCC ;">
+                <table class="table table-striped table-sm" style="background-color: #CCCCCC ;">
 
                     <thead>
                         <tr>
@@ -72,7 +72,7 @@
     }
 
         <div class="row" >
-            <div class="control-group">
+            <div class="mb-3">
                 <a href="@routes.RoundController.editRound(id = None, contestId = contest.getId)">
                     <div class="btn btn-primary" onClick="document.forms['add-user'].submit();">@Messages("add.round")</div>
                 </a>

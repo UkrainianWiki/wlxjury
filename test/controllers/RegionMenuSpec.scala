@@ -100,13 +100,13 @@ class RegionMenuSpec extends PlaySpecification with PlayTestDb {
           html must not contain "id=\"regionnav\""
           // neither regionCounts (a juror's or the round's) nor byRegionStat
           sqls.filter(s => s.contains("AS region, SUM(") || s.contains("SELECT DISTINCT NULLIF")) must beEmpty
-          html must contain(s"""<a href="${if (user == f.admin) s"/byrate/round/" else "/gallery/round/"}""")
+          html must beMatching(s"""(?s).*class="dropdown-item[^"]*" href="${if (user == f.admin) s"/byrate/round/" else "/gallery/round/"}.*""")
         }
         // the region shown, and all of them, without script
         val in07 = page(s"/gallery/round/${f.binary.getId}/user/${f.juror.getId}/region/07/page/1", f.juror)
         in07 must contain("<b>Volyn O.</b>")
-        in07 must contain(s"""<a href="/gallery/round/${f.binary.getId}/user/${f.juror.getId}/page/1?sort=file">All regions</a>""")
-        in07 must contain(s"""<li class="active"><a href="/gallery/round/${f.binary.getId}/user/${f.juror.getId}/region/07/page/1?sort=file">Volyn O.</a>""")
+        in07 must contain(s"""<a class="dropdown-item" href="/gallery/round/${f.binary.getId}/user/${f.juror.getId}/page/1?sort=file">All regions</a>""")
+        in07 must contain(s"""<a class="dropdown-item active" href="/gallery/round/${f.binary.getId}/user/${f.juror.getId}/region/07/page/1?sort=file">Volyn O.</a>""")
       }
     }
 

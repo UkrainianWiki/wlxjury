@@ -1,6 +1,6 @@
 @(image: org.intracer.wmua.Image, user: db.scalikejdbc.User)(implicit messages: Messages)
 @if(image.author.nonEmpty) {
-    <div id="author" class="well" style="margin-right: 5px; margin-top: 10px; padding: 5px;">
+    <div id="author" class="card card-body" style="margin-right: 5px; margin-top: 10px; padding: 5px;">
         @Messages("author"): @image.author.getOrElse("")
     </div>
 }

@@ -23,21 +23,23 @@
     if (url) window.location.assign(url);
   });
 
-  /** Opens the box leftwards (Bootstrap's dropdown-menu-right) only if, opened rightwards, it
-    * would end past the window's right edge, `width` wide. */
+  /** Opens the box leftwards (Bootstrap's dropdown-menu-end) only if, opened rightwards, it
+    * would end past the window's right edge, `width` wide. (In the navbar, Bootstrap 5 places
+    * dropdowns statically, without Popper.) */
   function fitInWindow(box, width) {
-    box.classList.remove('dropdown-menu-right');
-    if (box.getBoundingClientRect().right > width) box.classList.add('dropdown-menu-right');
+    box.classList.remove('dropdown-menu-end');
+    if (box.getBoundingClientRect().right > width) box.classList.add('dropdown-menu-end');
   }
 
-  if (window.jQuery) {
-    window.jQuery(document).on('shown.bs.dropdown', '.pager-jump-menu', function () {
-      var box = this.querySelector('.pager-jump-box');
-      if (box) fitInWindow(box, document.documentElement.clientWidth);
-      var input = this.querySelector('input[name=page]');
-      if (input) { input.focus(); input.select(); }
-    });
-  }
+  // Bootstrap 5 dispatches shown.bs.dropdown on the toggle; it bubbles
+  document.addEventListener('shown.bs.dropdown', function (e) {
+    var menu = e.target && e.target.closest ? e.target.closest('.pager-jump-menu') : null;
+    if (!menu) return;
+    var box = menu.querySelector('.pager-jump-box');
+    if (box) fitInWindow(box, document.documentElement.clientWidth);
+    var input = menu.querySelector('input[name=page]');
+    if (input) { input.focus(); input.select(); }
+  });
 
   if (typeof module !== 'undefined') module.exports = { pageUrl: pageUrl, fitInWindow: fitInWindow };
 })();

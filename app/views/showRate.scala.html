@@ -13,7 +13,7 @@
         <br/>
     <span style="margin-left: 5px; margin-right: 10px;">
         @if(round.isBinary) {
-            <span class="glyphicon glyphicon-ok icon-white" aria-hidden="true"></span>
+            <i class="bi bi-check-lg" aria-hidden="true"></i>
         } else {
             @defining(round.rates.id > 5 && round.halfStar) { halfStar =>
                 @for(i <- 1 to round.rates.id / (if (halfStar) 2 else 1)) {

@@ -383,3 +383,171 @@ large views' button groups, from Bootstrap 3.3.1 → 3.3.7:
   screenshot script blocks the old CDN hosts. `Test/compile` 0; `testOnly views.LayoutSpec
   controllers.AssetDigestSpec controllers.WebJarsSpec` 0 (14 passed); `views.*` 0 (45 passed);
   screenshots again 15 of 15 identical to `phase1`, no request to another host.
+
+## Step 2a results (form helpers)
+
+- Branch `ukwikidev/theme-forms` (commits `c07b4740`, `e3d8c8c8`, `41b8550c`, `5d452200`), merged into
+  `ukwikidev/theme-modes`. New files only: `app/views/bs/` (`Layout`, `FieldView`, `text`, `password`,
+  `textarea`, `select`, `checkbox`, `form` and the internal `inputType`, `fieldGroup`, `feedback`),
+  `test/views/BsFormHelpersSpec.scala`, `test/views/bstest/horizontalField.scala.html`.
+- Checks: `Test/compile` ok; `testOnly views.BsFormHelpersSpec` 30 passed, 0 failed.
+- Review: no XSS path, and no change to what current call sites submit. Six findings were fixed:
+  constraint attributes (`required`, `min`, `max`, `minlength`, `maxlength`, `pattern`) taken from
+  the field's constraints as b3 did; `aria-invalid`; `readonly` + `disabled`; the readonly
+  single-select fallback; `placeholder` translation; a caller's `aria-describedby` merged. A second
+  review found nothing material.
+- Decided: no `input-lg` → `form-control-lg` conversion. Phase 2 changes the login and sign-up call
+  sites to `form-control-lg`.
+- One intended difference from b3: a readonly single select whose value is not among its options
+  submits the first option, or the `_default` blank. Nothing saved changes, because editing a round
+  saves only its name, `excludeCoi` and `newImages`.
+- For Phase 2: run `RoundEditPageSpec` and `PrevRoundHiddenInputSpec` after the switch (a readonly
+  multiple select now submits one `name[]` per selected value). The templates compile into
+  `views.html.bs`, which play-bootstrap-core's package object shares until play-bootstrap is
+  removed.
+
+## Phase 2 results (Bootstrap 5.3)
+
+Commits `69204d7e..` on `ukwikidev/theme-modes` (after `c878a724`). Not yet reviewed.
+
+### What changed
+
+- **Assets:** Bootstrap 5.3.8 (`bootstrap.bundle.min.js`, Popper included; the webjar's
+  `popper.js` dependency excluded), Bootstrap Icons 1.13.1, Tom Select 2.6.2 (complete build,
+  its `@orchidjs` webjars excluded; `tom-select.bootstrap5.min.css`) and jQuery 3.7.1 as
+  webjars, served by `controllers.WebJars` (`Served` = bootstrap, bootstrap-icons, jquery,
+  tom-select). Removed: the Bootstrap 3 webjar, Font Awesome, `com.adrianhurt play-bootstrap`,
+  `views/bootstrap/{text,password}`, `bootstrap-multiselect` (js, css),
+  `bootstrap-typeahead.js`, `autocomplete.js`, `checkwidth.js`.
+- **Colour mode until Phase 3:** `layout(theme = "light" | "dark")` renders
+  `<html data-bs-theme>` (anything but `"dark"` is light). `main`/`mainAdmin` with
+  `gallery = true` and both large views pass dark; `body.gallery` keeps #303030 (also as
+  `--bs-body-bg`). The navbar is `bg-dark` with its own `data-bs-theme="dark"`. The 30 lines of
+  `.contest-files-head` overrides and the dropdown-form button rules are gone (BS5's dark mode
+  and `dropdown-item` cover them).
+- **Navbar and menus (items 3 and 9):** `navbar navbar-expand` with `nav-item`/`nav-link`,
+  closed `<li>`s, no `.navbar-inner`/`a.brand`; signed out, a `navbar-brand` span. The own-vote
+  tabs are `nav-item vote-selected|vote-rejected` with `nav-link active` + `aria-current`
+  (green/red and the dark active background kept in `main.css`). `dropDownSelection`: one
+  `bi bi-*` class string, `iconOnly` shows the icon with a visually hidden label and a title,
+  the current item `active`. `logged`: `dropdown-menu-end`; the contest switch and sign-out
+  stay CSRF POST forms whose buttons are `dropdown-item`s. Pager: `page-item`/`page-link`,
+  `pagination-sm`, the page box a `data-bs-auto-close="outside"` dropdown. `regionMenu`:
+  `dropdown-item`s; `regionNav` as BS5 pagination (unused: only `monuments` calls it, with no
+  regions).
+- **Dropdown events:** Bootstrap 5.3's `EventHandler.trigger` triggers a jQuery event on the
+  toggle when `window.jQuery` is present (unless `data-bs-no-jquery`), then dispatches a native
+  bubbling `show.bs.dropdown`; a jQuery `.on('show.bs.dropdown')` binds the type `show`, so it
+  sees only the jQuery one. `region-menu.js` now uses `menu.addEventListener('show.bs.dropdown')`
+  and `pager-jump.js` a delegated native `shown.bs.dropdown` listener on `document`
+  (`dropdown-menu-end` instead of `dropdown-menu-right`; in a navbar BS5 places dropdowns
+  statically, without Popper, so the fit check stays). Neither needs jQuery any more.
+- **Forms:** every `b3.*` call, and the Play `inputText`/`select`/`textarea` helpers, now call
+  `bs.*` (horizontal via `@implicitLayout`); `bootstrap.text` → `bs.text(f, '_label -> label,
+  'placeholder -> label)`; login/sign-up use `form-control-lg` and a `d-grid` button.
+  Hand-written form markup: `mb-3`, `form-label`, `d-inline` (start/stop, whose button also
+  lacked the `btn` class).
+- **Tom Select (`public/javascripts/multi-select.js`):** `#previousRound`, `#regions`, `#jurors`
+  (and the monuments page's region select) get checkboxes (`checkbox_options`), a "select all"
+  checkbox in a `dropdown_header`, no typing (`controlInput: null`, like the old button), and a
+  summary in the control computed as bootstrap-multiselect's `buttonText` (none selected; up to
+  three names; "4 Selected"; "All selected (5)"), from the same message keys. The original
+  `<select>` stays the field; Tom Select fires its native `change`, so the existing jQuery
+  handlers in `mainAdmin` (previous rounds → filter blocks, jurors → distribution) are
+  unchanged. A disabled select stays disabled. Fixed on the way: jQuery 3 returns `[]` for an
+  empty multiple select, so the jurors handler now checks `jurors.length`.
+- **The typeahead was not ported:** `autocomplete.js` queried `commons.wikimedia.org` from the
+  browser (XHR and JSONP), which the CSP (`default-src 'self'`, before Phase 1 too) already
+  blocked, so it had done nothing. Deleted; see open questions.
+- **Other templates:** panels/wells → `card`, `label label-*` → `badge text-bg-*`,
+  `btn-default` → `btn-outline-secondary`, `btn-xs` → `btn-sm` (`py-0 px-1` in the round stat
+  tables), `col-xs-*` → `col-*` (the large views' main column is `col`, which replaces
+  `checkwidth.js`), `data-bs-*`, `collapse show`, `btn-close` (new message key `close` in the
+  four languages), `table-sm`, glyphicons/Font Awesome → Bootstrap Icons, the add-user
+  button's image from upload.wikimedia.org → `bi-person-plus-fill`, the large views' buttons
+  `btn-secondary`/`btn-success`/`btn-danger` with `data-nav="gallery|up|down"` and
+  `aria-disabled`, the deleted-file mark in `unitegallery.js` a `badge text-bg-danger`, the
+  round stat page's round links a BS5 pagination.
+- **Tests:** `LayoutSpec` (served files; colour mode, including an unexpected value),
+  `WebJarsSpec` (the new files, the icon font and Tom Select), `ContestFilesPageSpec`,
+  `SecuredSpec`, `LargeViewUrlsSpec` (`data-nav`), `GalleryOrderSpec`, `RegionMenuSpec` now
+  assert ids, data attributes, text or `active`. Jest: `region-menu` and `pager-jump` open the
+  menus through Bootstrap 5's bundle (npm `bootstrap@5.3.8`), also without jQuery; new
+  `multi-select.test.js` (npm `tom-select@2.6.2`); jQuery 3.7.1; large-view fixtures
+  regenerated.
+- **Screenshot harness:** `pages()` entries may list selectors to click before the shot; added
+  `gallery-pagerbox`, `gallery-usermenu`, `byrate-viewmenu`, `contestfiles-regionmenu`,
+  `editround-new`, `editround-new-jurors`, `editround-new-prevround`.
+
+### Checks
+
+| Command | Exit | Result |
+|---|---|---|
+| `Test/compile` + `testOnly views.BsFormHelpersSpec` at `c878a724` | 0 | 30 passed |
+| `FIXTURES_UPDATE=true … testOnly views.LargeViewFixturesSpec` | 0 | 4 passed, fixtures rewritten |
+| `testOnly views.* controllers.*` (first) | 1 | 467 total, 3 failed: `GalleryOrderSpec`, `ContestFilesPageSpec`, `RegionMenuSpec` still asserted BS3 link markup; fixed |
+| `testOnly controllers.GalleryOrderSpec controllers.ContestFilesPageSpec controllers.RegionMenuSpec controllers.RoundEditPageSpec controllers.PrevRoundHiddenInputSpec` | 0 | 56 passed |
+| `Test/compile` + `testOnly views.* controllers.*` (final) | 0 | 467 passed, 0 failed |
+| `npm test` (javascript-test) | 0 | 8 suites, 110 tests passed |
+
+The full suite wasn't run (not required for this phase).
+
+### Screenshots
+
+`target/ui-shots/phase2/light/` (22 shots, no request to another host) against
+`phase1-followup` (`target/ui-shots/diff/phase1-followup-vs-phase2/light/`): all 15 common
+pages differ, as expected. Looked at every one; fixed during the pass: the round stat buttons
+(too large, underlined spaces between them inside their links), the large view's comment header
+text (light on grey), the users page's no-account note (`text-warning` too pale). The opened
+menus (pager box, user menu, view menu, region menu) and the new round form's Tom Selects
+(jurors, previous rounds) render correctly.
+
+Intended differences: Bootstrap 5's typography (system font stack, larger headings, underlined
+links), the BS5 dark navbar and its dark dropdowns, the pager and region menu dark on the dark
+pages (they were white), horizontal form labels left-aligned and not bold, checkboxes with
+their label to the right, the large views' buttons flat grey instead of BS3's pressed white,
+the `#CCCCCC` admin tables now white (BS5 paints cell backgrounds; Phase 3 removes the inline
+colour anyway), the users table's add row with visible labels (per the `bootstrap.text`
+mapping), the current round on the round stat page shown active instead of bold.
+
+### Open questions
+
+- The Commons category autocomplete (contests' and contest images' "source") was dead under
+  the CSP and is now removed. Reviving it needs a same-origin endpoint proxying Commons'
+  prefixsearch (Tom Select's `load` could use it); not done.
+- Commit hygiene: `69204d7e` also took deletions staged earlier (views/bootstrap, multiselect,
+  typeahead, autocomplete, checkwidth), so `69204d7e` and `6ecfc299` don't compile on their own
+  (editUser/users still call `views.html.bootstrap.text` until `96a89630`). HEAD compiles and
+  passes; history was not rewritten.
+- Pre-existing, unchanged: messages inside `'…'` JS strings in `mainAdmin`/`monuments` are
+  HTML-escaped by Twirl (an apostrophe would show as `&#x27;`).
+
+### Review follow-ups
+
+- **CSP (`6fcc9d9e`):** production `img-src` now allows `data:` (Bootstrap 5.3's and Tom Select's
+  select arrows, checkbox ticks and `btn-close` are data: SVGs; the tests' config has no CSP, so
+  only production would have lost them). `views.ContentSecurityPolicySpec` reads the policy from
+  `conf/application.conf`: `default-src` names no host and no `script-src`/`style-src`/`font-src`
+  widens it, `img-src` has `'self'` and `data:` (it replaces LayoutSpec's CSP example). The
+  harness's `--csp` (with `--start-server`) runs the server with that policy
+  (`-Dui.csp=production` → `GatlingTestFixture.cspConfig`), reports a page without the header and
+  logs console errors, CSP violations included. `target/ui-shots/phase2-csp/light/`: 22 of 22
+  identical to `phase2`, arrows and ticks drawn (the Tom Select and editround shots), no CSP
+  violation in the console (the only console errors are the two 404 pages' own status). No shot
+  shows a `btn-close` (it appears only after a vote moves a file); it uses the same data: mechanism.
+- **Translations (`517553bf`):** a script over the Messages keys on the lines Phase 2 added found,
+  besides keys meant as literal text (`Contests`, `Name`, `Reset password`): missing in ru `add`,
+  `select.all`, `none.selected`, `all.selected`, `cancel`, `check`, `full.name`, `id.template`,
+  `image.list.help`, `images`, `language`, `reset.password`, `role`, `round.name.optional`, `save`,
+  `send.greeting.to.new.users`, `source`, `wiki.account`, `year`; missing in all four `sort` and
+  `signin.repeat.your.password`. All added. messages.ru still lacks 62 more keys used by the
+  admin pages Phase 2 touched (on unchanged lines); a pre-existing gap, not filled here. The
+  add-user control is a `<button type="button">` with `aria-label`, submitting the form by name as
+  before.
+- **Script texts (`5ad491c8`):** `views.JsTexts` writes the multi-select and distribution texts
+  as a JSON object (`<` escaped) instead of HTML-escaped `'…'` literals (`JsTextsSpec`).
+- Checks: `Test/compile` 0; `testOnly views.JsTextsSpec views.ContentSecurityPolicySpec
+  views.LayoutSpec controllers.WebJarsSpec controllers.UserControllerSpec
+  controllers.RoundEditPageSpec controllers.PrevRoundHiddenInputSpec` 0 (28 passed);
+  `testOnly controllers.CoiAuthorizationSpec controllers.MultiContestUserSpec
+  controllers.SignOutAndSwitchSpec` 0 (39 passed). Jest not rerun (multi-select.js unchanged).
