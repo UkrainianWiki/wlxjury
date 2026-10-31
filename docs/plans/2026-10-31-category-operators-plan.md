@@ -69,3 +69,26 @@ form redisplay, normalization, immutable edits, both distribution paths, empty s
 eligibility, ranking, and persisted-job compatibility. The reviewer did not rerun tests.
 The original fix branch receives these commits by fast-forward after checking its
 branch, expected head, and tracked working-tree state; the managed checkout is retained.
+
+## Production follow-up: first-access initialization
+
+Production references 9381205c (Add round) and 67c1ad34 (Edit round), on build
+0.13-round-filters-122eed04b4c7, both showed a null operation in fromForm. A case
+object's constructor default arguments initialize its companion before the object's
+instance is ready. Eager values/legacy tables could therefore permanently retain null.
+The earlier suite initialized the companion first and concealed this ordering bug.
+
+The regression creates a separate child-first classloader for the operation class
+family per case, accessing each of the six case objects first and checking canonical
+and legacy lookups, plus a companion-first control. Before the fix, all six object-first
+cases failed; actual RoundEditPageSpec GET rendering also had three errors in a fresh
+test JVM. The fix defers both tables with lazy vals; category semantics and schema do
+not change.
+
+After Test/compile, RoundEditPageSpec passed all 11 examples in a fresh fork, then
+79 related examples passed across seven suites, including all seven initialization
+orders. Logs: target/checks/20261031-213248-20212.log (red) and
+target/checks/20261031-213437-10576.log (green). Independent read-only review found no
+actionable issues. These 90 focused checks validate this follow-up; the earlier full
+suite result above applies to the pre-hotfix source. Deployment remains a manual
+server action by the user.

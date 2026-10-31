@@ -18,8 +18,10 @@ object CategoryOperation {
   case object Union extends CategoryOperation("or", "category.union", requiresSecond = true)
   case object Minus extends CategoryOperation("minus", "category.minus", requiresSecond = true)
 
-  val values: Seq[CategoryOperation] = Seq(Unrestricted, Include, Exclude, And, Union, Minus)
-  private val legacy: Map[String, CategoryOperation] = Map("1" -> Include, "-1" -> Exclude, "0" -> Exclude)
+  // A case object's constructor defaults can initialize this companion first.
+  // Wait until that object has finished before retaining its instance in a table.
+  lazy val values: Seq[CategoryOperation] = Seq(Unrestricted, Include, Exclude, And, Union, Minus)
+  private lazy val legacy: Map[String, CategoryOperation] = Map("1" -> Include, "-1" -> Exclude, "0" -> Exclude)
   def fromForm(value: String): Option[CategoryOperation] =
     values.find(_.value == value).orElse(legacy.get(value).filter(_ => value != "0"))
   def fromStored(value: String): Option[CategoryOperation] =
