@@ -2,6 +2,7 @@ package controllers
 
 import db.scalikejdbc.{ContestJuryJdbc, MediaType, Round, RoundLimits}
 import org.scalawiki.wlx.dto.SpecialNomination
+import org.intracer.wmua.{CategoryOperation, CategoryRule}
 import play.api.data.{Form, Mapping}
 import play.api.data.Forms._
 import play.api.data.validation._
@@ -30,16 +31,49 @@ object EditRound {
   private val jurorsMappingKV = "jurors" -> seq(text).verifying(nonEmptySeq)
   val jurorsMapping: Mapping[Seq[String]] = single(jurorsMappingKV)
 
-  /** The round form: [[roundMapping]]'s fields (Play's mappings take at most 22) and
-    * "Leave out conflicts of interest" ([[Round.excludeCoi]]).
+  /** Extra fields live outside the 22-field mapping: category operation and conflicts of interest.
     */
+  private val categoryOperation = optional(text).verifying(
+    "error.category.operation", _.forall(value => CategoryOperation.fromForm(value).isDefined))
+
+  private val validCategories: Constraint[EditRound] = Constraint("constraint.category.rule") { edit =>
+    val errors = edit.round.categoryRule.validationErrors
+    if (errors.isEmpty) Valid else Invalid(errors.map(key => ValidationError(key)))
+  }
+
   val editRoundForm: Form[EditRound] = Form(
     mapping(
       "" -> roundMapping,
-      "excludeCoi" -> boolean
-    )((edit, excludeCoi) => edit.copy(round = edit.round.copy(excludeCoi = excludeCoi)))(edit =>
-      Some((edit, edit.round.excludeCoi)))
+      "excludeCoi" -> boolean,
+      "categoryClause" -> categoryOperation
+    )((edit, excludeCoi, selected) => {
+      val configured = selected match {
+        case None => edit.round // Older clients omitted the clause; retain their inference.
+        case Some(value) =>
+          val operation = CategoryOperation.fromForm(value).get
+          if (operation == CategoryOperation.Unrestricted)
+            edit.round.copy(category = None, excludeCategory = None, categoryClause = None)
+          else edit.round.copy(categoryClause = operation.storedValue,
+            excludeCategory = edit.round.excludeCategory.filter(_ => operation.requiresSecond))
+      }
+      edit.copy(round = configured.copy(excludeCoi = excludeCoi))
+    })(edit => Some((edit, edit.round.excludeCoi, Some(edit.round.categoryRule.operation.formValue))))
+      .verifying(validCategories)
   )
+
+  /** Keep older submissions meaningful on an error page, where the form has no value. */
+  def categoryDisplay(form: Form[EditRound]): Form[EditRound] = {
+    val selected = form("categoryClause").value.filter(_.nonEmpty)
+    selected.flatMap(CategoryOperation.fromForm) match {
+      case Some(operation) => form.copy(data = form.data.updated("categoryClause", operation.formValue))
+      case None if selected.isDefined => form // Preserve an invalid value and its error.
+      case None =>
+        val rule = CategoryRule.fromStored(form("source").value, form("excludeCategory").value, None)
+        form.copy(data = (form.data -- Seq("source", "excludeCategory")) ++
+          Map("categoryClause" -> rule.operation.formValue) ++
+          rule.first.map("source" -> _) ++ rule.second.map("excludeCategory" -> _))
+    }
+  }
 
   private def roundMapping: Mapping[EditRound] =
     mapping(
@@ -157,6 +191,7 @@ object EditRound {
     )
   ] = {
     val round = editRound.round.withFixedCategories
+    val categories = round.categoryRule
     Some(
       (
         round.id,
@@ -171,8 +206,8 @@ object EditRound {
         round.previousIds.map(_.toString),
         round.prevSelectedBy.map(_.toString),
         round.prevMinAvgRate.map(_.toString),
-        round.category,
-        round.excludeCategory,
+        categories.first,
+        categories.second,
         round.regionIds,
         round.minImageSize.fold("No")(_.toString),
         editRound.jurors.map(_.toString),
