@@ -20,8 +20,8 @@ Compare two labels (writes diff images to target/ui-shots/diff/<a>-vs-<b>/<mode>
 
 Images from Commons (thumbnails, the image proxy, and the "/<width>px-" URLs of the fixture's
 images, which have no URL) are replaced by one fixed placeholder, so
-the shots don't depend on the network; other external requests are allowed only to the CDN
-hosts the pages load frameworks from.
+the shots don't depend on the network; any other request to another host is blocked and
+listed (the pages load everything from this host since Phase 1).
 """
 import argparse
 import io
@@ -40,8 +40,8 @@ SERVER_JSON = SHOTS / "server.json"
 STOP_FILE = SHOTS / "server.stop"
 SBT_LAUNCHER = os.environ.get("SBT_LAUNCHER", "C:/Program Files (x86)/sbt/bin/sbt-launch.jar")
 
-# External hosts a page may still load from (frameworks before self-hosting).
-ALLOWED_HOSTS = {"localhost", "127.0.0.1", "maxcdn.bootstrapcdn.com", "ajax.googleapis.com", "cdnjs.cloudflare.com"}
+# The only hosts a page may load from: the app's own.
+ALLOWED_HOSTS = {"localhost", "127.0.0.1"}
 VIEWPORT = {"width": 1366, "height": 900}
 MAX_HEIGHT = 4000
 
@@ -134,8 +134,6 @@ def shoot(args):
                         or re.match(r"^/\d+px-", url.path)):
                     return r.fulfill(status=200, content_type="image/png", body=png)
                 if url.hostname in ALLOWED_HOSTS:
-                    if url.hostname not in ("localhost", "127.0.0.1"):
-                        external.append(url.hostname)
                     return r.continue_()
                 external.append(url.hostname + " (blocked)")
                 return r.abort()
