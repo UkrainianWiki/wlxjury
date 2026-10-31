@@ -8,7 +8,7 @@
     @import helper._
     @import b3.vertical.fieldConstructor
 
-    @mainAdmin(Messages("contest.files"), user, user.getId, contestId = contest.id) {
+    @mainAdmin("contest.files", user, user.getId, contestId = contest.id) {
         <h3>@Messages("contest") @contest.fullName</h3>
         <p><a id="browse-files" href="@routes.GalleryController.contestFiles(contest.getId)">&larr; @Messages("contest.files")</a></p>
 

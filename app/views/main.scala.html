@@ -13,25 +13,7 @@
         rates: RateDistribution = new RateDistribution(Map.empty),
         contestId: Option[Long] = None,
         filters: Html = Html(""))(content: Html)(implicit messages: Messages, request: RequestHeader)
-<!DOCTYPE html>
-
-<html lang="@messages.lang.language">
-    <head>
-        <title>@Messages(title)</title>
-        <meta charset="UTF-8">
-
-        <meta http-equiv="X-UA-Compatible" content="IE=edge">
-        <meta name="viewport" content="width=device-width, initial-scale=1">
-
-        <link rel="stylesheet" media="screen" href="@routes.Assets.versioned("stylesheets/main.css")">
-
-            <!-- Latest compiled and minified CSS -->
-        <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css">
-        <link rel="shortcut icon" type="image/png" href="@routes.Assets.versioned("images/favicon.png")">
-
-        <script type="text/javascript" src="https://ajax.googleapis.com/ajax/libs/jquery/3.2.1/jquery.min.js"></script>
-        <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/js/bootstrap.min.js"></script>
-
+@layout(Messages(title), bodyClass = if (gallery) "gallery" else "") {
         <script type='text/javascript' src="@routes.Assets.versioned("javascripts/unitegallery.js")"></script>
         <link rel="stylesheet" href="@routes.Assets.versioned("stylesheets/unite-gallery.css")" type='text/css' />
 
@@ -59,11 +41,7 @@
                 });
         </script>
         }
-
-    </head>
-
-    <body @if(gallery){class="gallery"}>
-
+} {
         @navbar(title, user, asUserId, selectedRound, rounds, list, pager,
             contestId = contestId.orElse(selectedRound.map(_.contestId)), rates, filters)
 
@@ -72,5 +50,4 @@
         @content
 
      </div>
-  </body>
-</html>
+}

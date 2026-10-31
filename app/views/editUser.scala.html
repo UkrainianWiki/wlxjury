@@ -9,7 +9,7 @@
 @import db.scalikejdbc.User
 
 
-@mainAdmin(Messages("edit.user"), user, user.getId, contestId = contestId) {
+@mainAdmin("edit.user", user, user.getId, contestId = contestId) {
     <div class="row" >
         <div class="col-md-4">
 

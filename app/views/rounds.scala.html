@@ -14,7 +14,7 @@
         contest: ContestJury
 )(implicit flash: Flash, messages: Messages, req: RequestHeader)
 
-    @mainAdmin(Messages("rounds"), adminUser, adminUser.getId,
+    @mainAdmin("rounds", adminUser, adminUser.getId,
         rounds = rounds, selectedRound = round, contestId = contest.id) {
         <div class="row" >
             <h3>@Messages("campaign") @contest.fullName</h3>

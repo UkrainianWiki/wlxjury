@@ -11,7 +11,7 @@
         b3.horizontal.fieldConstructor("col-md-4", "col-md-8")
     }
 
-    @mainAdmin(Messages("users"), adminUser, adminUser.getId, contestId = Some(contestId)) {
+    @mainAdmin("users", adminUser, adminUser.getId, contestId = Some(contestId)) {
         <div class="row" >
 
             <h3>@Messages("edit.greeting.template")</h3>

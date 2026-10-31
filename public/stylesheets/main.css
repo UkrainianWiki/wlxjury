@@ -1,5 +1,5 @@
+/* lists without the browser's indent (Bootstrap sets their margins) */
 ol, ul {
-    margin: 0;
     padding: 0;
 }
 
@@ -7,17 +7,9 @@ body.gallery{
     background-color: #303030;
 }
 
-.table-striped-dark tbody>tr:nth-child(odd)>td,.table-striped-dark tbody>tr:nth-child(odd)>th{background-color:#696969;}
-.table-striped-dark {color:#CCCCCC;}
-
-.navbar-inverse .nav .active .active-selected> a {
-    color : #5bf75b;
-}
+/* the navbar's selected and rejected tabs (navbar.scala.html ownTabs), when not the active one */
 .navbar-inverse .nav .selected> a {
     color : #5bc75b;
-}
-.navbar-inverse .nav .active .active-rejected> a {
-    color : #f75b5b;
 }
 .navbar-inverse .nav .rejected> a {
     color : #c75b5b;
@@ -53,13 +45,8 @@ ul.gallery {
     display: block;
 }
 
-ul.gallery, li.gallerybox {
-    zoom: 1;
-}
-
 li.gallerybox {
     vertical-align: top;
-    display: -moz-inline-box;
     display: inline-block;
 }
 
@@ -89,20 +76,6 @@ li.gallerybox div.thumb_small {
      background-color: #111
  }
 
-/*.selected {*/
-    /*border-style:solid;*/
-    /*border-color:#5bc75b;*/
-    /*border-width:5px;*/
-/*}*/
-
-div.img-container {
-    width: 390px;
-    height: 211px;
-    position: relative;
-    margin-left: auto;
-    margin-right: auto;
-    overflow: hidden;
-}
 img.cropped {
     position: absolute;
     margin: auto;
@@ -113,30 +86,10 @@ img.cropped {
 }
 
 
-body {
-    font-family: helvetica;
-    color: #333;
-    background: #CCC;
-}
-
 .msg {
     padding: 10px;
     width: 100%;
     background: #AAA;
-}
-
-.others {
-    background: #EEE;
-}
-
-.juliet {
-    background: #FF69B4;
-}
-
-#textField {
-    width: 800px;
-    position: relative;
-    top: 4px;
 }
 
 .imageComment {
@@ -152,21 +105,6 @@ body {
     outline: 0 none;
 }
 
-#userField {
-    width: 210px;
-    position: relative;
-    top: 1px;
-}
-
-#header {
-    color: #EEE;
-    width: 500px;
-    height: 40px;
-    font-weight: bold;
-    padding: 10px;
-    background: #303030;
-}
-
 .comment-header {
     width: 80px;
     padding: 3px 7px;
@@ -177,23 +115,6 @@ body {
     -webkit-border-radius: 4px 0 4px 0;
     -moz-border-radius: 4px 0 4px 0;
     border-radius: 4px 4px 0 0;}
-
-#footer {
-    color: #EEE;
-    width: 500px;
-    height: 60px;
-    font-weight: bold;
-    padding: 10px;
-    background: #303030;
-}
-
-#roomSelect {
-
-}
-
-.undo {
-    padding: 20px 0;
-}
 
 .bs-callout {
     padding: 20px;
@@ -208,42 +129,6 @@ body {
 }
 .bs-callout p:last-child {
     margin-bottom: 0;
-}
-.bs-callout code {
-    border-radius: 3px;
-}
-.bs-callout+.bs-callout {
-    margin-top: -5px;
-}
-.bs-callout-default {
-    border-left-color: #777;
-}
-.bs-callout-default h4 {
-    color: #777;
-}
-.bs-callout-primary {
-    border-left-color: #428bca;
-}
-.bs-callout-primary h4 {
-    color: #428bca;
-}
-.bs-callout-success {
-    border-left-color: #5cb85c;
-}
-.bs-callout-success h4 {
-    color: #5cb85c;
-}
-.bs-callout-danger {
-    border-left-color: #d9534f;
-}
-.bs-callout-danger h4 {
-    color: #d9534f;
-}
-.bs-callout-warning {
-    border-left-color: #f0ad4e;
-}
-.bs-callout-warning h4 {
-    color: #f0ad4e;
 }
 .bs-callout-info {
     border-left-color: #5bc0de;
@@ -284,6 +169,11 @@ a.wlx-large-failed img {
 }
 .contest-files-head a {
     color: #9cc9ff;
+}
+/* Bootstrap's a:hover / a:focus colour, which won over the rule above (the same specificity)
+   while main.css loaded before Bootstrap: :where() keeps this rule at that specificity */
+:where(.contest-files-head) a:hover, :where(.contest-files-head) a:focus {
+    color: #23527c;
 }
 .contest-files-head a.btn-default {
     color: #333;
@@ -411,8 +301,7 @@ div.thumb_small.wlx-thumb-failed img {
 .pager-jump input[type=number]::-webkit-inner-spin-button,
 .pager-jump input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
 
-/* A pager link with no page to go to: greyed out, not a link that only forbids the cursor
-   (li.disabled: above Bootstrap's .disabled, which loads after this file) */
-.pagination > li.disabled > span,
-.pagination > li.disabled > span:hover,
-.pagination > li.disabled > span:focus { color: #c8c8c8; background-color: #f7f7f7; cursor: default; }
+/* A pager link with no page to go to: greyed out, not a link that only forbids the cursor */
+.pagination > .disabled > span,
+.pagination > .disabled > span:hover,
+.pagination > .disabled > span:focus { color: #c8c8c8; background-color: #f7f7f7; cursor: default; }
