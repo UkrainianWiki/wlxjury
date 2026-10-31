@@ -11,22 +11,19 @@
         noEdit: Boolean,
         specialNominations: Seq[SpecialNomination] = Nil
 )(implicit messages: Messages)
-@implicitFieldConstructor = @{
-    b3.horizontal.fieldConstructor("col-md-4", "col-md-8")
-}
+@implicitLayout = @{ bs.Layout.horizontal("col-md-4", "col-md-8") }
 @snippets.collapsible("media.filtering", "headingImageFiltering", "collapseImageFiltering") {
     @if(rounds.nonEmpty) {
-        @* Use `disabled` rather than `readonly` for the multi-selects: play-bootstrap's
-           readonly wrapper adds a live hidden <input name="previousRound[]"> that, for a
+        @* Use `disabled` rather than `readonly` for the multi-selects: a readonly
+           select (play-bootstrap's then, bs.select's now) adds a live hidden <input name="previousRound[]"> that, for a
            repeated field with no scalar value, falls back to the FIRST option — which on
            the edit page submitted a wrong previous-round id and pulled images from it.
            A disabled select simply doesn't submit; the real value is read from the DB. *@
-        @b3.select(
+        @bs.select(
             editRoundForm("previousRound"),
             rounds.map(r => (r.id.map(_.toString).get, r.description)),
             Symbol("_label") -> Messages("previous.round"),
             Symbol("_help") -> "",
-            Symbol("class") -> "form-control",
             Symbol("multiple") -> true,
             Symbol("disabled") -> noEdit
         )
@@ -34,7 +31,7 @@
         <div id="prevRoundFilters" @if(editRoundForm("previousRound").indexes.isEmpty) {style="display: none"}>
             <div id="selectFilters"
             class="@rounds.filter(_.isBinary).map(r => "round" + r.getId).mkString(" ")">
-            @b3.select(
+            @bs.select(
                 editRoundForm("minJurors"),
                 Seq("", "0", "1", "2", "3", "4", "5", "6").map(x => (x, x)),
                 Symbol("value") -> "",
@@ -44,7 +41,7 @@
 
             <div id="rateFilters"
             class="@rounds.filterNot(_.isBinary).map(r => "round" + r.getId).mkString(" ")">
-            @b3.text(
+            @bs.text(
                 editRoundForm("minAvgRate"),
                 Symbol("_label") -> Messages("average.file.rating.is.at.least"),
                 Symbol("readonly") -> noEdit
@@ -52,7 +49,7 @@
             </div>
 
             @for(topImages <- editRoundForm("topImages").value) {
-                @b3.text(
+                @bs.text(
                     editRoundForm("topImages"),
                     Symbol("_label") -> Messages("top.images")
                 )
@@ -60,7 +57,7 @@
         </div>
     }
 
-    @b3.select(
+    @bs.select(
         editRoundForm("mediaType"),
         MediaType.mediaTypes.map(x => (x, Messages(x))),
         Symbol("_label") -> Messages("media.type"),
@@ -68,7 +65,7 @@
     )
 
     @defining(controllers.EditRound.categoryDisplay(editRoundForm)) { categoryForm =>
-    @b3.select(
+    @bs.select(
         categoryForm("categoryClause"),
         CategoryOperation.values.map(operation => (operation.formValue, Messages(operation.labelKey))),
         Symbol("_label") -> Messages("category.operation"),
@@ -76,7 +73,7 @@
     )
 
     <div id="category-first">
-    @b3.text(
+    @bs.text(
         categoryForm("source"),
         Symbol("_label") -> Messages("category.first"),
         Symbol("readonly") -> noEdit
@@ -84,7 +81,7 @@
     </div>
 
     <div id="category-second">
-    @b3.text(
+    @bs.text(
         categoryForm("excludeCategory"),
         Symbol("_label") -> Messages("category.second"),
         Symbol("readonly") -> noEdit
@@ -93,7 +90,7 @@
     }
 
     @if(regions.nonEmpty) {
-        @b3.select(
+        @bs.select(
             editRoundForm("regions"),
             regions.map { case (k, v) => (k, Messages(k)) }.toSeq.sortBy(_._1),
             Symbol("_label") -> Messages("regions"),
@@ -101,21 +98,21 @@
             Symbol("disabled") -> noEdit
         )
 
-        @b3.text(
+        @bs.text(
             editRoundForm("monumentIds"),
             Symbol("_label") -> Messages("monument.ids.comma.separated"),
             Symbol("readonly") -> noEdit
         )
     }
 
-    @b3.select(
+    @bs.select(
         editRoundForm("minMpx"),
         Seq("No", "1", "2", "3", "4").map(x => (x, Messages(x.toLowerCase))),
         Symbol("_label") -> Messages("minimum.megapixels"),
         Symbol("readonly") -> noEdit
     )
 
-    @b3.select(
+    @bs.select(
         editRoundForm("minSize"),
         Seq("No", "1", "2").map(x => (x, Messages(x.toLowerCase))),
         Symbol("_label") -> Messages("minimum.megabytes"),
@@ -123,7 +120,7 @@
     )
 
     @if(specialNominations.nonEmpty) {
-        @b3.select(
+        @bs.select(
             editRoundForm("specialNomination"),
             Seq(("no.filter", Messages("no.filter"))) ++ specialNominations.map(sn => (sn.name, Messages(sn.name))),
             Symbol("_label") -> Messages("special.nomination"),

@@ -10,25 +10,25 @@
         pager: Html = Html(""),
         contestId: Option[Long] = None)(content: Html)(implicit messages: Messages, request: RequestHeader)
 @* `title`: a message key, as main's *@
-@layout(Messages(title), bodyClass = if (gallery) "gallery" else "") {
+@layout(Messages(title), bodyClass = if (gallery) "gallery" else "", theme = if (gallery) "dark" else "light") {
         <script>
                 var contestId = @contestId.getOrElse(0L);
         </script>
-        <script type="text/javascript" src="@routes.Assets.versioned("javascripts/bootstrap-typeahead.js")"></script>
-        <script type="text/javascript" src="@routes.Assets.versioned("javascripts/autocomplete.js")"></script>
-
-        <script type="text/javascript" src="@routes.Assets.versioned("javascripts/bootstrap-multiselect.js")"></script>
-        <link rel="stylesheet" href="@routes.Assets.versioned("stylesheets/bootstrap-multiselect.css")" type="text/css"/>
+        @* the round form's multiple selects (editRound): Tom Select, see multi-select.js *@
+        <link rel="stylesheet" href="@routes.WebJars.at("tom-select/2.6.2/dist/css/tom-select.bootstrap5.min.css")">
+        <script src="@routes.WebJars.at("tom-select/2.6.2/dist/js/tom-select.complete.min.js")"></script>
+        <script type="text/javascript" src="@routes.Assets.versioned("javascripts/multi-select.js")"></script>
 
         <script type="text/javascript">
                 $(function () {
-                    $('#previousRound').multiselect({
-                        includeSelectAllOption: true,
-                        maxHeight: 400,
-                        selectAllText: '@Messages("select.all")',
-                        nonSelectedText: '@Messages("none.selected")',
-                        nSelectedText: '@Messages("selected")',
-                        allSelectedText: '@Messages("all.selected")'
+                    var multiSelectTexts = {
+                        selectAll: '@Messages("select.all")',
+                        none: '@Messages("none.selected")',
+                        n: '@Messages("selected")',
+                        all: '@Messages("all.selected")'
+                    };
+                    ['previousRound', 'regions', 'jurors'].forEach(function (id) {
+                        wlxMultiSelect(document.getElementById(id), multiSelectTexts);
                     });
 
                     $('#previousRound').change(function () {
@@ -47,28 +47,10 @@
                         }
                     });
 
-                    $('#regions').multiselect({
-                        includeSelectAllOption: true,
-                        maxHeight: 400,
-                        selectAllText: '@Messages("select.all")',
-                        nonSelectedText: '@Messages("none.selected")',
-                        nSelectedText: '@Messages("selected")',
-                        allSelectedText: '@Messages("all.selected")'
-                    });
-
-                    $('#jurors').multiselect({
-                        includeSelectAllOption: true,
-                        maxHeight: 400,
-                        selectAllText: '@Messages("select.all")',
-                        nonSelectedText: '@Messages("none.selected")',
-                        nSelectedText: '@Messages("selected")',
-                        allSelectedText: '@Messages("all.selected")'
-                    });
-
                     $('#jurors').change(function () {
                         var distribution = $('#distribution');
                         var jurors = $(this).val();
-                        if (jurors) {
+                        if (jurors && jurors.length) {
                             distribution.prop("disabled", false);
 
                             var selected = distribution.val();

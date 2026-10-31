@@ -167,7 +167,6 @@ libraryDependencySchemes += "org.scala-lang.modules" %% "scala-parser-combinator
 
 libraryDependencies ++= Seq(
   "org.webjars" %% "webjars-play" % "3.0.2",
-  "com.adrianhurt" %% "play-bootstrap" % "1.6.1-P28-B3",
   "org.webjars" % "jquery" % "3.7.1",
   // Bootstrap 5's bundle JS includes Popper; Tom Select's complete build includes its two deps
   "org.webjars" % "bootstrap" % "5.3.8" exclude ("org.webjars", "popper.js"),
