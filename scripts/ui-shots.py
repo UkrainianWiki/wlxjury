@@ -18,7 +18,8 @@ Compare two labels (writes diff images to target/ui-shots/diff/<a>-vs-<b>/<mode>
 
     target/ui-venv/Scripts/python scripts/ui-shots.py diff baseline phase1
 
-Images from Commons (thumbnails, the image proxy) are replaced by one fixed placeholder, so
+Images from Commons (thumbnails, the image proxy, and the "/<width>px-" URLs of the fixture's
+images, which have no URL) are replaced by one fixed placeholder, so
 the shots don't depend on the network; other external requests are allowed only to the CDN
 hosts the pages load frameworks from.
 """
@@ -26,6 +27,7 @@ import argparse
 import io
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -58,9 +60,9 @@ def pages(s):
         ("contestfiles", "organizer", f"/contest/{c}/files"),
         ("contestfile-large", "organizer", f"/contest/{c}/files/{p}"),
         ("roundstat", "organizer", f"/roundstat/{rb}"),
-        ("rounds", "organizer", "/admin/rounds"),
+        ("rounds", "organizer", f"/admin/rounds?contestId={c}"),
         ("editround", "organizer", f"/admin/rounds/edit?id={rb}&contestId={c}"),
-        ("users", "organizer", "/admin/users"),
+        ("users", "organizer", f"/admin/users?contestId={c}"),
         ("edituser", "organizer", f"/users/edit/{j}"),
     ]
 
@@ -83,6 +85,9 @@ def start_server(log_path):
             f.unlink()
     cmd = ["java", "-Xmx512m", "-Dfile.encoding=UTF-8", "-jar", SBT_LAUNCHER,
            'set Test / javaOptions ++= Seq("-Xmx1g", "-Dfile.encoding=UTF-8")',
+           # the test classpath has no public/ assets (Play's Assets serves them from the
+           # classpath): add the packaged assets jar, as the production classpath has it
+           'set Test / unmanagedClasspath += Attributed.blank((Assets / packageBin).value)',
            "Test/runMain gatling.setup.UiShotsServer"]
     log = open(log_path, "w", encoding="utf-8")
     print(f"[ui-shots] starting the server, log: {log_path}")
@@ -123,7 +128,9 @@ def shoot(args):
 
             def route(r):
                 url = urlparse(r.request.url)
-                if "/wikipedia/commons/" in url.path or url.hostname.endswith("wikimedia.org"):
+                # the fixture's images have no URL, so the pages ask for "/<width>px-"
+                if ("/wikipedia/commons/" in url.path or url.hostname.endswith("wikimedia.org")
+                        or re.match(r"^/\d+px-", url.path)):
                     return r.fulfill(status=200, content_type="image/png", body=png)
                 if url.hostname in ALLOWED_HOSTS:
                     if url.hostname not in ("localhost", "127.0.0.1"):
@@ -157,6 +164,10 @@ def shoot(args):
                 if selected and name not in selected:
                     continue
                 page = context(user).new_page()
+                failed = []
+                page.on("requestfailed", lambda r: failed.append(f"{r.url[:120]} ({r.failure})"))
+                page.on("response", lambda r: failed.append(f"{r.url[:120]} ({r.status})")
+                        if r.status >= 400 and r.url != base + path else None)
                 response = page.goto(base + path, wait_until="networkidle", timeout=120000)
                 page.add_style_tag(content="*{caret-color:transparent !important}")
                 page.wait_for_timeout(1500)
@@ -165,6 +176,8 @@ def shoot(args):
                 page.screenshot(path=str(file), full_page=True,
                                 clip={"x": 0, "y": 0, "width": VIEWPORT["width"], "height": max(height, VIEWPORT["height"])})
                 print(f"{name:18} {response.status if response else '-'} {path} -> {file.relative_to(ROOT)}")
+                for f in failed[:5]:
+                    print(f"    failed: {f}")
                 page.close()
             browser.close()
         if external:

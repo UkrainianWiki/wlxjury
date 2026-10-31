@@ -17,9 +17,10 @@ import java.nio.file.Files
   * stopping the server and the container.
   *
   * {{{
-  * java -jar sbt-launch.jar 'Test/runMain gatling.setup.UiShotsServer'
+  * java -jar sbt-launch.jar 'set Test / unmanagedClasspath += Attributed.blank((Assets / packageBin).value)' \
+  *     'Test/runMain gatling.setup.UiShotsServer'
   * }}}
-  * `scripts/ui-shots.py --start-server` runs it, waits for `server.json`, takes the
+  * `scripts/ui-shots.py shoot --start-server` runs it, waits for `server.json`, takes the
   * screenshots and stops it.
   */
 object UiShotsServer {
@@ -41,6 +42,12 @@ object UiShotsServer {
     dir.mkdirs()
     readyFile.delete()
     stopFile.delete()
+    // Play's Assets serves public/ from the classpath, which the test classpath lacks unless
+    // the run adds the packaged assets (scripts/ui-shots.py does): pages without their CSS
+    // and scripts are no use for screenshots
+    require(getClass.getClassLoader.getResource("public/stylesheets/main.css") != null,
+      "public/ assets aren't on the classpath: run with " +
+        "'set Test / unmanagedClasspath += Attributed.blank((Assets / packageBin).value)'")
 
     val f = GatlingTestFixture
     implicit val session: DBSession = AutoSession
