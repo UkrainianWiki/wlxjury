@@ -405,3 +405,119 @@ large views' button groups, from Bootstrap 3.3.1 → 3.3.7:
   multiple select now submits one `name[]` per selected value). The templates compile into
   `views.html.bs`, which play-bootstrap-core's package object shares until play-bootstrap is
   removed.
+
+## Phase 2 results (Bootstrap 5.3)
+
+Commits `69204d7e..` on `ukwikidev/theme-modes` (after `c878a724`). Not yet reviewed.
+
+### What changed
+
+- **Assets:** Bootstrap 5.3.8 (`bootstrap.bundle.min.js`, Popper included; the webjar's
+  `popper.js` dependency excluded), Bootstrap Icons 1.13.1, Tom Select 2.6.2 (complete build,
+  its `@orchidjs` webjars excluded; `tom-select.bootstrap5.min.css`) and jQuery 3.7.1 as
+  webjars, served by `controllers.WebJars` (`Served` = bootstrap, bootstrap-icons, jquery,
+  tom-select). Removed: the Bootstrap 3 webjar, Font Awesome, `com.adrianhurt play-bootstrap`,
+  `views/bootstrap/{text,password}`, `bootstrap-multiselect` (js, css),
+  `bootstrap-typeahead.js`, `autocomplete.js`, `checkwidth.js`.
+- **Colour mode until Phase 3:** `layout(theme = "light" | "dark")` renders
+  `<html data-bs-theme>` (anything but `"dark"` is light). `main`/`mainAdmin` with
+  `gallery = true` and both large views pass dark; `body.gallery` keeps #303030 (also as
+  `--bs-body-bg`). The navbar is `bg-dark` with its own `data-bs-theme="dark"`. The 30 lines of
+  `.contest-files-head` overrides and the dropdown-form button rules are gone (BS5's dark mode
+  and `dropdown-item` cover them).
+- **Navbar and menus (items 3 and 9):** `navbar navbar-expand` with `nav-item`/`nav-link`,
+  closed `<li>`s, no `.navbar-inner`/`a.brand`; signed out, a `navbar-brand` span. The own-vote
+  tabs are `nav-item vote-selected|vote-rejected` with `nav-link active` + `aria-current`
+  (green/red and the dark active background kept in `main.css`). `dropDownSelection`: one
+  `bi bi-*` class string, `iconOnly` shows the icon with a visually hidden label and a title,
+  the current item `active`. `logged`: `dropdown-menu-end`; the contest switch and sign-out
+  stay CSRF POST forms whose buttons are `dropdown-item`s. Pager: `page-item`/`page-link`,
+  `pagination-sm`, the page box a `data-bs-auto-close="outside"` dropdown. `regionMenu`:
+  `dropdown-item`s; `regionNav` as BS5 pagination (unused: only `monuments` calls it, with no
+  regions).
+- **Dropdown events:** Bootstrap 5.3's `EventHandler.trigger` triggers a jQuery event on the
+  toggle when `window.jQuery` is present (unless `data-bs-no-jquery`), then dispatches a native
+  bubbling `show.bs.dropdown`; a jQuery `.on('show.bs.dropdown')` binds the type `show`, so it
+  sees only the jQuery one. `region-menu.js` now uses `menu.addEventListener('show.bs.dropdown')`
+  and `pager-jump.js` a delegated native `shown.bs.dropdown` listener on `document`
+  (`dropdown-menu-end` instead of `dropdown-menu-right`; in a navbar BS5 places dropdowns
+  statically, without Popper, so the fit check stays). Neither needs jQuery any more.
+- **Forms:** every `b3.*` call, and the Play `inputText`/`select`/`textarea` helpers, now call
+  `bs.*` (horizontal via `@implicitLayout`); `bootstrap.text` → `bs.text(f, '_label -> label,
+  'placeholder -> label)`; login/sign-up use `form-control-lg` and a `d-grid` button.
+  Hand-written form markup: `mb-3`, `form-label`, `d-inline` (start/stop, whose button also
+  lacked the `btn` class).
+- **Tom Select (`public/javascripts/multi-select.js`):** `#previousRound`, `#regions`, `#jurors`
+  (and the monuments page's region select) get checkboxes (`checkbox_options`), a "select all"
+  checkbox in a `dropdown_header`, no typing (`controlInput: null`, like the old button), and a
+  summary in the control computed as bootstrap-multiselect's `buttonText` (none selected; up to
+  three names; "4 Selected"; "All selected (5)"), from the same message keys. The original
+  `<select>` stays the field; Tom Select fires its native `change`, so the existing jQuery
+  handlers in `mainAdmin` (previous rounds → filter blocks, jurors → distribution) are
+  unchanged. A disabled select stays disabled. Fixed on the way: jQuery 3 returns `[]` for an
+  empty multiple select, so the jurors handler now checks `jurors.length`.
+- **The typeahead was not ported:** `autocomplete.js` queried `commons.wikimedia.org` from the
+  browser (XHR and JSONP), which the CSP (`default-src 'self'`, before Phase 1 too) already
+  blocked, so it had done nothing. Deleted; see open questions.
+- **Other templates:** panels/wells → `card`, `label label-*` → `badge text-bg-*`,
+  `btn-default` → `btn-outline-secondary`, `btn-xs` → `btn-sm` (`py-0 px-1` in the round stat
+  tables), `col-xs-*` → `col-*` (the large views' main column is `col`, which replaces
+  `checkwidth.js`), `data-bs-*`, `collapse show`, `btn-close` (new message key `close` in the
+  four languages), `table-sm`, glyphicons/Font Awesome → Bootstrap Icons, the add-user
+  button's image from upload.wikimedia.org → `bi-person-plus-fill`, the large views' buttons
+  `btn-secondary`/`btn-success`/`btn-danger` with `data-nav="gallery|up|down"` and
+  `aria-disabled`, the deleted-file mark in `unitegallery.js` a `badge text-bg-danger`, the
+  round stat page's round links a BS5 pagination.
+- **Tests:** `LayoutSpec` (served files; colour mode, including an unexpected value),
+  `WebJarsSpec` (the new files, the icon font and Tom Select), `ContestFilesPageSpec`,
+  `SecuredSpec`, `LargeViewUrlsSpec` (`data-nav`), `GalleryOrderSpec`, `RegionMenuSpec` now
+  assert ids, data attributes, text or `active`. Jest: `region-menu` and `pager-jump` open the
+  menus through Bootstrap 5's bundle (npm `bootstrap@5.3.8`), also without jQuery; new
+  `multi-select.test.js` (npm `tom-select@2.6.2`); jQuery 3.7.1; large-view fixtures
+  regenerated.
+- **Screenshot harness:** `pages()` entries may list selectors to click before the shot; added
+  `gallery-pagerbox`, `gallery-usermenu`, `byrate-viewmenu`, `contestfiles-regionmenu`,
+  `editround-new`, `editround-new-jurors`, `editround-new-prevround`.
+
+### Checks
+
+| Command | Exit | Result |
+|---|---|---|
+| `Test/compile` + `testOnly views.BsFormHelpersSpec` at `c878a724` | 0 | 30 passed |
+| `FIXTURES_UPDATE=true … testOnly views.LargeViewFixturesSpec` | 0 | 4 passed, fixtures rewritten |
+| `testOnly views.* controllers.*` (first) | 1 | 467 total, 3 failed: `GalleryOrderSpec`, `ContestFilesPageSpec`, `RegionMenuSpec` still asserted BS3 link markup; fixed |
+| `testOnly controllers.GalleryOrderSpec controllers.ContestFilesPageSpec controllers.RegionMenuSpec controllers.RoundEditPageSpec controllers.PrevRoundHiddenInputSpec` | 0 | 56 passed |
+| `Test/compile` + `testOnly views.* controllers.*` (final) | 0 | 467 passed, 0 failed |
+| `npm test` (javascript-test) | 0 | 8 suites, 110 tests passed |
+
+The full suite wasn't run (not required for this phase).
+
+### Screenshots
+
+`target/ui-shots/phase2/light/` (22 shots, no request to another host) against
+`phase1-followup` (`target/ui-shots/diff/phase1-followup-vs-phase2/light/`): all 15 common
+pages differ, as expected. Looked at every one; fixed during the pass: the round stat buttons
+(too large, underlined spaces between them inside their links), the large view's comment header
+text (light on grey), the users page's no-account note (`text-warning` too pale). The opened
+menus (pager box, user menu, view menu, region menu) and the new round form's Tom Selects
+(jurors, previous rounds) render correctly.
+
+Intended differences: Bootstrap 5's typography (system font stack, larger headings, underlined
+links), the BS5 dark navbar and its dark dropdowns, the pager and region menu dark on the dark
+pages (they were white), horizontal form labels left-aligned and not bold, checkboxes with
+their label to the right, the large views' buttons flat grey instead of BS3's pressed white,
+the `#CCCCCC` admin tables now white (BS5 paints cell backgrounds; Phase 3 removes the inline
+colour anyway), the users table's add row with visible labels (per the `bootstrap.text`
+mapping), the current round on the round stat page shown active instead of bold.
+
+### Open questions
+
+- The Commons category autocomplete (contests' and contest images' "source") was dead under
+  the CSP and is now removed. Reviving it needs a same-origin endpoint proxying Commons'
+  prefixsearch (Tom Select's `load` could use it); not done.
+- Commit hygiene: `69204d7e` also took deletions staged earlier (views/bootstrap, multiselect,
+  typeahead, autocomplete, checkwidth), so `69204d7e` and `6ecfc299` don't compile on their own
+  (editUser/users still call `views.html.bootstrap.text` until `96a89630`). HEAD compiles and
+  passes; history was not rewritten.
+- Pre-existing, unchanged: messages inside `'…'` JS strings in `mainAdmin`/`monuments` are
+  HTML-escaped by Twirl (an apostrophe would show as `&#x27;`).
