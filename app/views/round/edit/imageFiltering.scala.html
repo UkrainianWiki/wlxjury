@@ -1,6 +1,7 @@
 @import db.scalikejdbc.Round
 @import db.scalikejdbc.User
 @import db.scalikejdbc.MediaType
+@import org.intracer.wmua.CategoryOperation
 @import org.scalawiki.wlx.dto.SpecialNomination
 @(
         editRoundForm: Form[controllers.EditRound],
@@ -66,21 +67,30 @@
         Symbol("readonly") -> noEdit
     )
 
-    <div id="includeCategoryDiv">
+    @defining(controllers.EditRound.categoryDisplay(editRoundForm)) { categoryForm =>
+    @b3.select(
+        categoryForm("categoryClause"),
+        CategoryOperation.values.map(operation => (operation.formValue, Messages(operation.labelKey))),
+        Symbol("_label") -> Messages("category.operation"),
+        Symbol("readonly") -> noEdit
+    )
+
+    <div id="category-first">
     @b3.text(
-        editRoundForm("source"),
-        Symbol("_label") -> Messages("files.should.be.IN.the.category"),
+        categoryForm("source"),
+        Symbol("_label") -> Messages("category.first"),
         Symbol("readonly") -> noEdit
     )
     </div>
 
-    <div id="excludeCategoryDiv">
+    <div id="category-second">
     @b3.text(
-        editRoundForm("excludeCategory"),
-        Symbol("_label") -> Messages("files.should.be.NOT.IN.the.category"),
+        categoryForm("excludeCategory"),
+        Symbol("_label") -> Messages("category.second"),
         Symbol("readonly") -> noEdit
     )
     </div>
+    }
 
     @if(regions.nonEmpty) {
         @b3.select(

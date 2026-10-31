@@ -1,7 +1,7 @@
 package db.scalikejdbc
 
 import db.RoundRepo
-import org.intracer.wmua.{HasId, ImageWithRating}
+import org.intracer.wmua.{CategoryRule, HasId, ImageWithRating}
 import scalikejdbc._
 import scalikejdbc.orm.{CRUDMapper, JoinTable}
 
@@ -40,7 +40,7 @@ case class Round(
     prevMinAvgRate: Option[BigDecimal] = None,
     category: Option[String] = None,
     excludeCategory: Option[String] = None,
-    categoryClause: Option[Int] = None,
+    categoryClause: Option[String] = None,
     regions: Option[String] = None,
     minImageSize: Option[Int] = None,
     hasCriteria: Boolean = false,
@@ -87,6 +87,15 @@ case class Round(
 
   def regionIds: Seq[String] = regions.map(_.split(",").toSeq).getOrElse(Nil)
 
+  def categoryRule: CategoryRule = CategoryRule.fromStored(category, excludeCategory, categoryClause)
+
+  /** Canonical named settings for a new submission; existing rounds are not rewritten. */
+  def withCanonicalCategoryRule: Round = {
+    val rule = categoryRule
+    rule.requireValid()
+    copy(category = rule.first, excludeCategory = rule.second, categoryClause = rule.operation.storedValue)
+  }
+
   /** Ids of the previous rounds this round draws its images from.
     * Stored as a comma-separated string in the `previous` column (like `regions`).
     */
@@ -108,8 +117,8 @@ case class Round(
 
   def withFixedCategories: Round = {
     copy(
-      category = category.map(fixCategory),
-      excludeCategory = excludeCategory.map(fixCategory)
+      category = category.map(_.trim).filter(_.nonEmpty).map(fixCategory),
+      excludeCategory = excludeCategory.map(_.trim).filter(_.nonEmpty).map(fixCategory)
     )
   }
 
@@ -228,7 +237,7 @@ object Round extends RoundRepo with CRUDMapper[Round] {
       prevMinAvgRate = rs.bigDecimalOpt(c.prevMinAvgRate).map(BigDecimal.apply),
       category = rs.stringOpt(c.category),
       excludeCategory = rs.stringOpt(c.excludeCategory),
-      categoryClause = rs.intOpt(c.categoryClause),
+      categoryClause = rs.stringOpt(c.categoryClause),
       regions = rs.stringOpt(c.regions),
       minImageSize = rs.intOpt(c.minImageSize),
       hasCriteria = rs.booleanOpt(c.hasCriteria).getOrElse(false),

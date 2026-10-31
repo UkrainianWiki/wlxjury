@@ -90,7 +90,8 @@ class RoundEditPageSpec extends PlaySpecification with PlayTestDb {
         val round = roundDao.create(Round(None, 2, Some("Filtered"), contest.getId,
           minMpx = Some(4), previous = Some(previous.getId.toString), prevSelectedBy = Some(2),
           prevMinAvgRate = Some(BigDecimal("3.5")), category = Some("Category:Included"),
-          excludeCategory = Some("Category:Excluded"), regions = Some("12,14"), minImageSize = Some(2),
+          excludeCategory = Some("Category:Excluded"), categoryClause = Some("or"),
+          regions = Some("12,14"), minImageSize = Some(2),
           monuments = Some("12-345-1"), topImages = Some(10), specialNomination = Some("Saved nomination"),
           mediaType = Some("image"), active = true))
         val before = roundDao.findById(round.getId).get

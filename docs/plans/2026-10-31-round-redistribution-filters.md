@@ -1,5 +1,9 @@
 # Round redistribution filters investigation and fix plan
 
+This records the initial persistence fix in 58efaeda. The follow-up investigation found
+that legacy category/category_clause rows already represented exclusion; see
+2026-10-31-category-operators-design.md for the shared operator model and compatibility fix.
+
 ## Scope and findings
 
 Investigate filters configured when creating a round, then reused by "Distribute new files".
@@ -15,10 +19,14 @@ Base: local `ukwikidev/conflict-of-interest` at `e59fb167`, on branch
 - Historical minimum-megapixel loss was fixed by `687e3501` (2026-10-07):
   `Round.create` omitted `min_mpx`. Earlier synchronous creation used the returned
   in-memory round, whereas redistribution loaded the incomplete database row.
-- Category exclusion remains absent from the schema, `Round.create` and `Round.extract`.
+- At the investigation base, the separate excludeCategory field was absent from the
+  schema, `Round.create` and `Round.extract`. Legacy category_clause storage did exist,
+  but its negative-clause meaning had been ignored by filtering since c660dddc (2018).
   Earlier synchronous creation could apply the in-memory value, but it was lost on reload.
   Current background creation also reloads the round, so this filter is lost immediately.
-- Values already lost from older rounds cannot be reconstructed from the round row.
+- Separate-field values lost from older submissions cannot be reconstructed from the
+  round row. Legacy negative-clause values can be read directly from category and
+  category_clause and do not require a job snapshot.
   Recent creation jobs may retain them in `params.settings.excludeCategory` (and
   `params.settings.minMpx` for the earlier megapixel bug). Before repairing a deployed
   round, inspect its original creation job; do not assume later redistribution jobs
@@ -55,7 +63,9 @@ would leave later jobs and count previews inconsistent and would allow editing f
 - One initial post-fix assertion compared the complete round including `created_at`, which
   the legacy schema changes on every update. The regression now normalizes that unrelated
   timestamp while comparing every other field; its rerun passed all 11 controller examples.
-- `Test/compile` and `git diff --check` pass. The full application suite was not run.
+- `Test/compile` and `git diff --check` passed. A subsequent full run of 58efaeda passed:
+  993 Scala tests, 6 skipped, 1 pending; 98 Jest tests. Its preserved log is
+  target/checks/20261031-full-suite-58efaeda.log in the original checkout.
 - Full logs: `target/checks/20261031-120453-16300.log` (before fix),
   `target/checks/20261031-121005-18404.log` (post-fix first run), and
   `target/checks/20261031-121324-27516.log` (corrected controller check and additional suites).
@@ -68,7 +78,9 @@ imports. Category lookup is stubbed in tests so checks need no real Commons requ
 
 ## Existing-round recovery check
 
-For a reported round, inspect its creation snapshot before proposing a data repair:
+First inspect category, category_clause, and the separate second-category field on the
+reported round. Legacy exclusion is represented there and does not need snapshot recovery.
+If a separate-field value was lost, inspect the original creation snapshot before repair:
 
 ```sql
 SELECT id, subject_id, created_at,

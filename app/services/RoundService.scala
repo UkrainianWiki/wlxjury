@@ -62,14 +62,15 @@ class RoundService @Inject() (
     submitToken.flatMap(submitted(_, round.contestId)) match {
       case Some(existing) => resubmitted(existing)
       case None =>
-        RoundDistributionHandler.previousRounds(round)
+        val configuredRound = round.withFixedCategories.withCanonicalCategoryRule
+        RoundDistributionHandler.previousRounds(configuredRound)
         val jurors = User.loadJurors(round.contestId, jurorIds).distinct
         require(jurors.nonEmpty, "no jurors selected for the round; nothing to distribute")
         require(
           round.distribution <= jurors.size,
           s"${round.distribution} jurors per image, but only ${jurors.size} jurors selected"
         )
-        insert(round, jurors, submitToken, createdBy, titles) match {
+        insert(configuredRound, jurors, submitToken, createdBy, titles) match {
           case Left(existing) => resubmitted(existing)
           case Right((created, job)) =>
             logger.info(
@@ -170,6 +171,7 @@ class RoundService @Inject() (
             "monuments" -> round.monuments,
             "category" -> round.category,
             "excludeCategory" -> round.excludeCategory,
+            "categoryClause" -> round.categoryClause,
             "minMpx" -> round.minMpx,
             "minImageSize" -> round.minImageSize,
             "mediaType" -> round.mediaType,
