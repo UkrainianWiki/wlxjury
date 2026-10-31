@@ -53,12 +53,6 @@ class LayoutSpec extends PlaySpecification {
     "show the title as given" in {
       html must contain("<title>A title</title>")
     }
-
-    "set Bootstrap's colour mode: light by default, dark if asked" in {
-      html must contain("""data-bs-theme="light"""")
-      page(views.html.layout("t", theme = "dark")(Html(""))(Html(""))) must contain("""data-bs-theme="dark"""")
-      page(views.html.layout("t", theme = "\"><x")(Html(""))(Html(""))) must contain("""data-bs-theme="light"""")
-    }
   }
 
   "the shells" should {

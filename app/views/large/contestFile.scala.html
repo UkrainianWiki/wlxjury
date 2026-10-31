@@ -24,7 +24,7 @@
 
 @defining(files(index)) { file =>
 @defining(file.image) { image =>
-@layout(image.title.stripPrefix("File:"), bodyClass = "gallery", fullHeight = true, theme = "dark") {
+@layout(image.title.stripPrefix("File:"), bodyClass = "gallery", fullHeight = true) {
 
         @fileKeyboardNav(index, files.size, urlAt, view.pageUrl(page))
 } {

@@ -1,19 +1,37 @@
 @(
         title: String,
         bodyClass: String = "",
-        fullHeight: Boolean = false,
-        theme: String = "light")(head: Html)(content: Html)(implicit messages: Messages, request: RequestHeader)
+        fullHeight: Boolean = false)(head: Html)(content: Html)(implicit messages: Messages, request: RequestHeader)
 @* The page shell of every page (main, mainAdmin, large/main_large, large/contestFile): the
    frameworks, self-hosted (webjars), then main.css, so that its rules win ties with
    Bootstrap's; a shell's own scripts and styles go in `head`, after them. `title` is shown
    as given: the shells localise their message keys. `fullHeight`: the page and its body fill
-   the window (the large views' columns). `theme`: Bootstrap's colour mode for the page,
-   "light" or "dark" (the galleries and the large views); the navbar sets its own. *@
+   the window (the large views' columns).
+   The colour mode (Bootstrap's data-bs-theme) is the user's, from the theme cookie
+   (controllers.Theme: light, dark, or auto for anything else): light or dark is rendered as
+   such; auto has no data-bs-theme, which the first script in <head> sets from the browser's
+   prefers-color-scheme before any stylesheet loads, so that the page never flashes in the
+   other mode, and again when that changes. data-theme-pref is the user's choice: the login
+   page's switch (theme-switch.js) changes it without a request. Only the three fixed
+   values are ever written here, never the cookie's text. *@
 <!DOCTYPE html>
 
-<html lang="@messages.lang.language" data-bs-theme="@if(theme == "dark"){dark}else{light}"@if(fullHeight){ style="height: 100%;"}>
+@defining(controllers.Theme.of(request)) { theme =>
+<html lang="@messages.lang.language"@theme match {
+    case controllers.Theme.Light => { data-bs-theme="light"}
+    case controllers.Theme.Dark => { data-bs-theme="dark"}
+    case controllers.Theme.Auto => {}
+} data-theme-pref="@theme.value"@if(fullHeight){ style="height: 100%;"}>
     <head>
         <meta charset="UTF-8">
+        <script>
+            (function () {
+                var root = document.documentElement, query = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)');
+                function apply() { if (root.getAttribute('data-theme-pref') === 'auto') root.setAttribute('data-bs-theme', query && query.matches ? 'dark' : 'light'); }
+                apply();
+                if (query) { if (query.addEventListener) query.addEventListener('change', apply); else if (query.addListener) query.addListener(apply); }
+            })();
+        </script>
         <meta http-equiv="X-UA-Compatible" content="IE=edge">
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <title>@title</title>
@@ -21,6 +39,7 @@
         <link rel="shortcut icon" type="image/png" href="@routes.Assets.versioned("images/favicon.png")">
         <link rel="stylesheet" href="@routes.WebJars.at("bootstrap/5.3.8/css/bootstrap.min.css")">
         <link rel="stylesheet" href="@routes.WebJars.at("bootstrap-icons/1.13.1/font/bootstrap-icons.min.css")">
+        <link rel="stylesheet" href="@routes.Assets.versioned("stylesheets/theme.css")">
         <link rel="stylesheet" media="screen" href="@routes.Assets.versioned("stylesheets/main.css")">
 
         <script type="text/javascript" src="@routes.WebJars.at("jquery/3.7.1/jquery.min.js")"></script>
@@ -31,3 +50,4 @@
         @content
     </body>
 </html>
+}
