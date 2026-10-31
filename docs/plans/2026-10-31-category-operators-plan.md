@@ -24,9 +24,9 @@ category names and assignment rows are unchanged.
   resolve legacy form display, normalize blank category names, add form/controller tests.
 - [x] Render neutral Category A/B and a read-only-on-edit selector; add translated labels
   and validation messages. Add small JS operand visibility/required-state behavior and tests.
-- [ ] Compile changed sources/tests first; run affected Scala and Jest suites through
+- [x] Compile changed sources/tests first; run affected Scala and Jest suites through
   agent-check.py. Run the full application suite once for the final shared-code change.
-- [ ] Commit, request an independent review follow-up, address material findings with
+- [x] Commit, request an independent review follow-up, address material findings with
   regression tests, and fast-forward the original fix branch only if its checkout is clean.
 
 ## Review focus
@@ -55,4 +55,17 @@ failed with int rather than varchar before V70. After named storage and form bin
 redisplay tests reproduced missing selected operations before the display normalization.
 The redisplay fix then passed 35 related tests. Latest per-suite results total 90
 affected Scala examples across nine suites, plus 100 Jest tests across seven suites.
-Full-suite validation and the final independent review are pending.
+Final validation of code commit 95093df2: Test/compile and the full application suite
+passed with exit 0 in 962 seconds. Scala: 1,041 passed, 6 skipped, 1 pending, no failures
+or errors (sbt Total 1,047). Jest: 100 passed across seven suites. Full output was
+captured by agent-check.py; only bounded summaries were read. A hash-verified log and
+fresh XML report archive are preserved in the original checkout:
+target/checks/category-operators/20261031-full-suite-95093df2.log and
+target/checks/category-operators/20261031-full-suite-95093df2-test-reports.zip.
+
+Independent read-only review of all 23 changed files in 95093df2 against 58efaeda
+completed with no actionable findings. It covered migration safety, legacy rules,
+form redisplay, normalization, immutable edits, both distribution paths, empty sets,
+eligibility, ranking, and persisted-job compatibility. The reviewer did not rerun tests.
+The original fix branch receives these commits by fast-forward after checking its
+branch, expected head, and tracked working-tree state; the managed checkout is retained.
