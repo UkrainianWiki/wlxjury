@@ -276,3 +276,97 @@ That makes about 5 implementer runs and 5 reviews, with up to 5 follow-up review
   the existing specs cover them.
 - **Tests:** they assert on ids, data attributes and text, not on styling classes, except where a
   class is the behaviour (`is-invalid`, `active`).
+
+## Phase 1 results
+
+Branch `ukwikidev/theme-modes`, commits `92859c75..` on top of `2ac84622` (the plan). Not yet
+reviewed.
+
+### Screenshot harness
+
+- `test/gatling/setup/UiShotsServer.scala`: starts `GatlingTestFixture` (MariaDB testcontainer
+  restored from `data/cache/`, the app in a TestServer), writes `target/ui-shots/server.json`
+  (base URL, contest and round ids, a juror with files in both rounds, the organizer, the
+  juror's first page id in each round) and serves until `target/ui-shots/server.stop` exists.
+  The test classpath has no `public/` assets, so the run adds the packaged assets jar
+  (`set Test / unmanagedClasspath += Attributed.blank((Assets / packageBin).value)`); the server
+  refuses to start without them.
+- `scripts/ui-shots.py` (Playwright 1.48 for Python 3.8 + Pillow, in a venv under
+  `target/ui-venv`, system Chrome, no browser download): `shoot --label L --start-server` runs
+  the server through the sbt launcher, signs in through the login form as the juror (gallery,
+  file list, large views, 404) or the organizer (byrate, contest files and file, round stat,
+  rounds, editRound, users, editUser), signed out for login and the anonymous 404, and saves
+  `target/ui-shots/<label>/light/<page>.png` (1366 px wide, full page up to 4000 px). Commons
+  images, and the fixture's URL-less `/<width>px-` images, get one fixed placeholder; other
+  external hosts are allowed only for the old CDNs and listed. `diff A B` writes red-marked diff
+  images to `target/ui-shots/diff/A-vs-B/light/`.
+- Two baseline runs at `f9c31ce5` were pixel-identical (14 of 14), so any difference is real.
+- In the fixture, `/admin/rounds` and `/admin/users` without `?contestId=` deny the contest's
+  admin (403, `permission_check_failed`, `targetContestId=unknown`) although the session's
+  contest is set; the navbar links pass the id, so the harness does too. Not investigated
+  further (outside this phase).
+
+### What changed
+
+- `app/views/layout.scala.html`: the one `<head>` (charset, X-UA-Compatible, viewport, title,
+  favicon, Bootstrap 3.3.7 CSS, Font Awesome 4.6.3 CSS, `main.css`, jQuery 3.2.1, Bootstrap JS,
+  then the shell's own `head` block) and the body (class, optional full height). `main`,
+  `mainAdmin`, `large/main_large` and `large/contestFile` wrap it; each keeps its own scripts
+  (unitegallery and its init, multiselect and its init, typeahead, raty, keyboard nav, vote form).
+  Plugin CSS (unite-gallery, multiselect, raty) still loads after `main.css`, as before.
+- Self-hosting: `/webjars/*file` → `controllers.Assets.at(path="/META-INF/resources/webjars")`,
+  the existing Bootstrap and jQuery webjars plus `org.webjars:font-awesome:4.6.3`. The CSP's
+  `default-src` is now `'self' 'unsafe-eval' 'unsafe-inline'` (the three CDN hosts removed; no
+  other config in the repo sets a CSP). Font Awesome now loads on `main` pages too (the navbar's
+  CSV icon, item 3).
+- The large views moved from Bootstrap 3.3.1 / jQuery 1.11.1 to 3.3.7 / 3.2.1. raty 2.7.1,
+  jquery.hotkeys and checkwidth.js work on jQuery 3 (Jest and the rated large view's shot).
+- `main.css` loads after Bootstrap (item 5). Removed: the `body` rule and the list margins that
+  Bootstrap always overrode (lists keep only `padding: 0`), the pager's `li.disabled` workaround,
+  the chat sample (`.others`, `.juliet`, `#textField`, `#userField`, `#header`, `#footer`,
+  `#roomSelect`), unused rules (`div.img-container`, `.undo`, `.table-striped-dark`, the nested
+  `.active .active-selected/-rejected` rules, which never matched, the `.bs-callout` variants
+  other than `-info`), the commented `.selected`, `zoom: 1` and `-moz-inline-box` (item 6).
+  Equal-specificity ties between `main.css` and Bootstrap were listed with a script (tinycss2 +
+  cssselect specificity); the only one whose winner flips on a real element is
+  `.contest-files-head a` against Bootstrap's `a:hover/a:focus`, kept as it was with
+  `:where(.contest-files-head) a:hover` (Bootstrap's specificity). Note for Phase 3: the plan
+  lists `.table-striped-dark` as something to replace; it was unused and is gone.
+- Titles (item 12): `mainAdmin` localises a message key as `main` does; its 12 callers and
+  `errorPage` pass keys, `roundStat` stopped localising twice. `main_large` keeps
+  `Messages(list.view.name)`, the contest file its file name.
+- Tests: `views.LayoutSpec` (no external `src`/`href`, every webjar file on the classpath and
+  routed, `main.css` after Bootstrap and before the shell's head, titles localised once, the
+  CSP's `default-src` has no host). `AssetDigestSpec`'s guard accepts `Assets.at` only for a
+  webjar path with a version. Jest: jQuery 3.2.1 (as the pages load), the large-view fixtures
+  regenerated (`FIXTURES_UPDATE=true … views.LargeViewFixturesSpec`), and `loadPage` waits for
+  jQuery 3's asynchronous ready handlers (otherwise a page's raty init ran in the next test).
+
+### Checks
+
+| Command | Exit | Result |
+|---|---|---|
+| `Test/compile` | 0 | |
+| `testOnly views.* controllers.ContestFilesPageSpec controllers.SecuredSpec ErrorHandlerSpec controllers.AssetDigestSpec controllers.LargeImageSpec controllers.LoginControllerSpec controllers.MissingResourceSpec controllers.MutationAuthorizationSpec controllers.RoundEditPageSpec controllers.SignOutAndSwitchSpec controllers.UserControllerSpec controllers.PagerSpec controllers.RegionMenuSpec controllers.ImportFilesPageSpec controllers.CategoryFormSpec controllers.OwnVotesSpec controllers.CsvSpec` | 0 | 252 passed, 0 failed |
+| `npm test` (javascript-test) | 0 | 7 suites, 100 tests passed |
+
+The full suite wasn't run (not required for this phase).
+
+### Screenshots
+
+`target/ui-shots/baseline/light/` (at `f9c31ce5`) against `target/ui-shots/phase1/light/`: 12 of
+15 pages identical, and no external host requested in phase 1. The three that differ are the
+large views' button groups, from Bootstrap 3.3.1 → 3.3.7:
+
+| Page | Pixels | Difference |
+|---|---|---|
+| `large` | 178, box (26,19)–(138,30) | glyphicons in the back/up/down/vote buttons drawn about 1 px apart (3.3.7's glyphicon font) |
+| `large-rated` | 137, box (26,19)–(105,30) | the same |
+| `contestfile-large` | 1066, box (26,10)–(105,40) | the same, and the disabled "previous" button (`active disabled`) a shade darker (3.3.7's disabled button colours) |
+
+### Open questions
+
+- `unitegallery.js` loads mediaelement from cdnjs for HTML5 video in its lightbox; the tiles
+  theme we use doesn't open it, but if it ever did, the CSP now blocks it.
+- The webjars are served with the plain-name cache time (an hour); their paths carry the
+  version, so a longer `Cache-Control` would be safe if wanted.
