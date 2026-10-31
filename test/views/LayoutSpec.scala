@@ -17,13 +17,15 @@ class LayoutSpec extends PlaySpecification {
     Helpers.stubMessagesApi(Map("en" -> Map("users" -> "Users", "gallery" -> "Gallery"))).preferred(Seq(Lang("en")))
 
   private def page(html: Html) = contentAsString(html)
+  // a script or stylesheet from another host (images and links to Commons are fine)
+  private val external = """(?s).*<(script|link)[^>]*(src|href)="(https?:)?//.*"""
   private val webjar = """(?:src|href)="/webjars/([^"]+)"""".r
 
   "the layout" should {
     val html = page(views.html.layout("A title")(Html("<script>var head;</script>"))(Html("<p>body</p>")))
 
-    "load nothing from another host" in {
-      html must not(beMatching("""(?s).*(src|href)="(https?:)?//.*"""))
+    "load no script or stylesheet from another host" in {
+      html must not(beMatching(external))
     }
 
     "serve Bootstrap, Font Awesome and jQuery from their webjars on the classpath" in {
@@ -36,7 +38,7 @@ class LayoutSpec extends PlaySpecification {
       ))
       forall(files) { f =>
         getClass.getClassLoader.getResource("META-INF/resources/webjars/" + f) must not(beNull)
-        AppRoutes.actionFor("GET", "/webjars/" + f) must beSome("controllers.Assets.at")
+        AppRoutes.actionFor("GET", "/webjars/" + f) must beSome("controllers.WebJars.at")
       }
     }
 
@@ -54,6 +56,19 @@ class LayoutSpec extends PlaySpecification {
   }
 
   "the shells" should {
+    "load no script or stylesheet from another host" in {
+      val pages = Seq(
+        page(views.html.main("gallery")(Html(""))),
+        page(views.html.mainAdmin("users")(Html(""))),
+        LargeViewRenders.large(LargeViewRenders.ratedRound, LargeViewRenders.middle),
+        LargeViewRenders.contestFile(LargeViewRenders.middle)
+      )
+      forall(pages) { p =>
+        p must contain("/webjars/jquery/")
+        p must not(beMatching(external))
+      }
+    }
+
     "localise their title key once" in {
       page(views.html.mainAdmin("users")(Html(""))) must contain("<title>Users</title>")
       page(views.html.main("gallery")(Html(""))) must contain("<title>Gallery</title>")
