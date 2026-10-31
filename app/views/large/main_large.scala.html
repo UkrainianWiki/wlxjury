@@ -7,22 +7,7 @@
         readOnly: Boolean = false,
         hood: Neighbourhood,
         byCriteria: Map[Int, Int] = Map.empty)(content: Html)(implicit request: Request[Any], messages: Messages)
-
-<!DOCTYPE html>
-
-<html lang="@messages.lang.language" style="height: 100%;">
-    <head>
-        <title>@Messages(list.view.name)</title>
-        <meta charset="UTF-8">
-
-        <meta http-equiv="X-UA-Compatible" content="IE=edge">
-        <meta name="viewport" content="width=device-width, initial-scale=1">
-
-        <link rel="shortcut icon" type="image/png" href="@routes.Assets.versioned("images/favicon.png")">
-        <link rel="stylesheet" media="screen" href="@routes.Assets.versioned("stylesheets/main.css")">
-        <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.1/css/bootstrap.min.css">
-        <script type="text/javascript" src="https://ajax.googleapis.com/ajax/libs/jquery/1.11.1/jquery.min.js"></script>
-        <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.1/js/bootstrap.min.js"></script>
+@layout(Messages(list.view.name), bodyClass = "gallery", fullHeight = true) {
         <script src="@routes.Assets.versioned("javascripts/checkwidth.js")"></script>
         <script>
             // A vote is a POST of the page's vote form, with its CSRF token: a GET changes nothing.
@@ -43,11 +28,9 @@
         @fileKeyboardNav(hood.index, hood.files.size, i => list.largeUrl(hood.files(i).pageId), list.atUrl(hood.file.pageId))
         @keyboardNav(user, list, hood.file)
 
-    </head>
-    <body class="gallery" style="height: 100%;">
+} {
         @if(!readOnly) {
             <form id="vote-form" method="post" style="display: none;">@helper.CSRF.formField</form>
         }
         @content
-    </body>
-</html>
+}

@@ -75,8 +75,10 @@ class AssetDigestSpec extends Specification {
       val templates = Files.walk(Paths.get("app", "views")).iterator().asScala
         .filter(_.toString.endsWith(".scala.html")).toSeq
       templates must not(beEmpty)
+      // a webjar's file (the /webjars route, Assets.at) has its version in its path
+      val webjar = """Assets\.at\("[\w.-]+/\d[\w.-]*/[^"]+"\)""".r
       val offending = templates.filter { t =>
-        val source = new String(Files.readAllBytes(t), UTF_8)
+        val source = webjar.replaceAllIn(new String(Files.readAllBytes(t), UTF_8), "")
         source.contains("Assets.at(") || source.contains("\"/assets/") || source.contains("{/assets/")
       }
       offending must beEmpty

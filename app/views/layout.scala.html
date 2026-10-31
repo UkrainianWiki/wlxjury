@@ -1,0 +1,31 @@
+@(
+        title: String,
+        bodyClass: String = "",
+        fullHeight: Boolean = false)(head: Html)(content: Html)(implicit messages: Messages, request: RequestHeader)
+@* The page shell of every page (main, mainAdmin, large/main_large, large/contestFile): the
+   frameworks, self-hosted (webjars), then main.css, so that its rules win ties with
+   Bootstrap's; a shell's own scripts and styles go in `head`, after them. `title` is shown
+   as given: the shells localise their message keys. `fullHeight`: the page and its body fill
+   the window (the large views' columns). *@
+<!DOCTYPE html>
+
+<html lang="@messages.lang.language"@if(fullHeight){ style="height: 100%;"}>
+    <head>
+        <meta charset="UTF-8">
+        <meta http-equiv="X-UA-Compatible" content="IE=edge">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title>@title</title>
+
+        <link rel="shortcut icon" type="image/png" href="@routes.Assets.versioned("images/favicon.png")">
+        <link rel="stylesheet" href="@routes.Assets.at("bootstrap/3.3.7-1/css/bootstrap.min.css")">
+        <link rel="stylesheet" href="@routes.Assets.at("font-awesome/4.6.3/css/font-awesome.min.css")">
+        <link rel="stylesheet" media="screen" href="@routes.Assets.versioned("stylesheets/main.css")">
+
+        <script type="text/javascript" src="@routes.Assets.at("jquery/3.2.1/jquery.min.js")"></script>
+        <script src="@routes.Assets.at("bootstrap/3.3.7-1/js/bootstrap.min.js")"></script>
+        @head
+    </head>
+    <body@if(bodyClass.nonEmpty){ class="@bodyClass"}@if(fullHeight){ style="height: 100%;"}>
+        @content
+    </body>
+</html>

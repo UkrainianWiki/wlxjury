@@ -90,7 +90,8 @@ GET         /roundstat/:round/table                                             
 GET         /monuments                                                              controllers.MonumentController.list()
 GET         /monuments/id/:id                                                       controllers.MonumentController.byId(id)
 
-# GET         /webjars/*file                                                          @controllers.Assets.at(file)
+# Bootstrap, jQuery and Font Awesome from their webjars (build.sbt), served from this host
+GET         /webjars/*file                                                          @controllers.Assets.at(path="/META-INF/resources/webjars", file)
 
 GET         /contests                                                               @controllers.ContestController.list(contestType: Option[String] ?= None, year: Option[Int] ?= None, country: Option[String] ?= None)
 POST        /contests/save                                                          @controllers.ContestController.saveContest()
