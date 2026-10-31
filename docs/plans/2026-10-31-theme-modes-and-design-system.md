@@ -521,3 +521,33 @@ mapping), the current round on the round stat page shown active instead of bold.
   passes; history was not rewritten.
 - Pre-existing, unchanged: messages inside `'…'` JS strings in `mainAdmin`/`monuments` are
   HTML-escaped by Twirl (an apostrophe would show as `&#x27;`).
+
+### Review follow-ups
+
+- **CSP (`6fcc9d9e`):** production `img-src` now allows `data:` (Bootstrap 5.3's and Tom Select's
+  select arrows, checkbox ticks and `btn-close` are data: SVGs; the tests' config has no CSP, so
+  only production would have lost them). `views.ContentSecurityPolicySpec` reads the policy from
+  `conf/application.conf`: `default-src` names no host and no `script-src`/`style-src`/`font-src`
+  widens it, `img-src` has `'self'` and `data:` (it replaces LayoutSpec's CSP example). The
+  harness's `--csp` (with `--start-server`) runs the server with that policy
+  (`-Dui.csp=production` → `GatlingTestFixture.cspConfig`), reports a page without the header and
+  logs console errors, CSP violations included. `target/ui-shots/phase2-csp/light/`: 22 of 22
+  identical to `phase2`, arrows and ticks drawn (the Tom Select and editround shots), no CSP
+  violation in the console (the only console errors are the two 404 pages' own status). No shot
+  shows a `btn-close` (it appears only after a vote moves a file); it uses the same data: mechanism.
+- **Translations (`517553bf`):** a script over the Messages keys on the lines Phase 2 added found,
+  besides keys meant as literal text (`Contests`, `Name`, `Reset password`): missing in ru `add`,
+  `select.all`, `none.selected`, `all.selected`, `cancel`, `check`, `full.name`, `id.template`,
+  `image.list.help`, `images`, `language`, `reset.password`, `role`, `round.name.optional`, `save`,
+  `send.greeting.to.new.users`, `source`, `wiki.account`, `year`; missing in all four `sort` and
+  `signin.repeat.your.password`. All added. messages.ru still lacks 62 more keys used by the
+  admin pages Phase 2 touched (on unchanged lines); a pre-existing gap, not filled here. The
+  add-user control is a `<button type="button">` with `aria-label`, submitting the form by name as
+  before.
+- **Script texts (`5ad491c8`):** `views.JsTexts` writes the multi-select and distribution texts
+  as a JSON object (`<` escaped) instead of HTML-escaped `'…'` literals (`JsTextsSpec`).
+- Checks: `Test/compile` 0; `testOnly views.JsTextsSpec views.ContentSecurityPolicySpec
+  views.LayoutSpec controllers.WebJarsSpec controllers.UserControllerSpec
+  controllers.RoundEditPageSpec controllers.PrevRoundHiddenInputSpec` 0 (28 passed);
+  `testOnly controllers.CoiAuthorizationSpec controllers.MultiContestUserSpec
+  controllers.SignOutAndSwitchSpec` 0 (39 passed). Jest not rerun (multi-select.js unchanged).
