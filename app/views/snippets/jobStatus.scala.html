@@ -10,12 +10,12 @@
           style="display: @if(job.isFailed) {inline} else {none}">
         @helper.CSRF.formField
         <input type="hidden" name="returnTo" value="@returnTo" />
-        <button type="submit" class="btn btn-default btn-xs">@Messages("job.retry")</button>
+        <button type="submit" class="btn btn-outline-secondary btn-sm">@Messages("job.retry")</button>
     </form>
     <form method="post" action="@routes.JobController.cancel(job.id)" class="job-cancel"
           style="display: @if(job.isActive || job.isFailed) {inline} else {none}">
         @helper.CSRF.formField
         <input type="hidden" name="returnTo" value="@returnTo" />
-        <button type="submit" class="btn btn-default btn-xs">@Messages("job.cancel")</button>
+        <button type="submit" class="btn btn-outline-secondary btn-sm">@Messages("job.cancel")</button>
     </form>
 </div>

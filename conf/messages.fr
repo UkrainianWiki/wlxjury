@@ -396,3 +396,7 @@ coi.without.author = {0} fichiers du concours n''ont pas d''auteur.
 coi.remove.distributing = Tour {0} : ses images sont en cours de distribution. Excluez les conflits d''intérêts une fois terminé.
 coi.remove.not.open = Le tour {0} n''est pas ouvert : les conflits d''intérêts ne sont exclus que d''un tour ouvert qui n''est pas en cours de distribution.
 coi.removed = Tour {1} : {0} fichiers retirés comme conflits d''intérêts.
+
+close = Fermer
+signin.repeat.your.password = Répétez votre mot de passe
+sort = Tri

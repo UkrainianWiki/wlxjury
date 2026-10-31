@@ -134,7 +134,7 @@ class ContestFilesPageSpec extends PlaySpecification with PlayTestDb {
         page must contain("tiles_justified_row_height: 200") // main.scala.html's unitegallery
         // the pager in the navbar, above the page's content
         page.indexOf("""id="pagenav"""") must be_>(page.indexOf("<nav class=\"navbar"))
-        page.indexOf("""id="pagenav"""") must be_<(page.indexOf("contest-files-head"))
+        page.indexOf("""id="pagenav"""") must be_<(page.indexOf("id=\"contest-files-head\""))
         page must contain(s"""data-largeUrl="/contest/${f.contest.getId}/files/1"""")
         page must not contain "data-rate=" // a tile opens its large view's url as it is
       }
@@ -163,7 +163,7 @@ class ContestFilesPageSpec extends PlaySpecification with PlayTestDb {
         first must contain("All files (18)")
         tiles(first) === (1L to 15L).toList
         tiles(second) === List(16L, 17L, 18L)
-        second must contain(s"""<li><a href="/contest/${f.contest.getId}/files" rel="prev"""") // to page 1
+        second must contain(s"""href="/contest/${f.contest.getId}/files" rel="prev"""") // to page 1
         first must contain("1–15 of 18")
         second must contain("16–18 of 18")
         first must contain(s"""data-page-url="/contest/${f.contest.getId}/files?page={page}"""")
@@ -391,13 +391,13 @@ class ContestFilesPageSpec extends PlaySpecification with PlayTestDb {
       testDbApp { implicit app =>
         val f = fixture()
         val id = f.contest.getId
-        val entry = s"""<a class="brand" id="menu-contest-files" href="/contest/$id/files">Contest files</a>"""
+        val entry = s"""<a class="nav-link" id="menu-contest-files" href="/contest/$id/files">Contest files</a>"""
         val importLink = s"""id="import-files"[^>]*href="/contest/$id/images"""".r
 
         val (_, admin) = get(s"/contest/$id/files", f.admin)
         admin must contain(entry)
         admin must not contain "Browse files"
-        admin must not contain s"""class="brand" href="/contest/$id/images""""
+        admin must not contain s"""class="nav-link" href="/contest/$id/images""""
         importLink.findFirstIn(admin) must beSome
 
         val (_, organizer) = get(s"/contest/$id/files", f.organizer)
@@ -492,7 +492,7 @@ class ContestFilesPageSpec extends PlaySpecification with PlayTestDb {
         page must contain(s"""href="$files/2" title="File:Gone.jpg"""")
 
         val (_, first) = get(s"$files/1", f.admin)
-        first must contain("""class="btn btn-default btn-sm active disabled" href="#" title="Previous image""")
+        first must beMatching("""(?s).*<a [^>]*class="[^"]*\bdisabled\b[^"]*" aria-disabled="true" data-nav="up" href="#" title="Previous image.*""")
         first must not contain "'up', function"
       }
     }

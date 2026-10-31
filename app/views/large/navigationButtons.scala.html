@@ -9,37 +9,37 @@
 @files = @{ hood.files }
 @index = @{ hood.index }
 
-@optionalButton(url: Option[String], icon: String, title: String) = {
-    <a role="button" class="btn btn-default btn-sm active@if(url.isEmpty) { disabled}" href="@url.getOrElse("#")" title="@Html(title)">
-        <span class="glyphicon glyphicon-@icon" aria-hidden="true"></span>
+@optionalButton(url: Option[String], nav: String, icon: String, title: String) = {
+    <a role="button" class="btn btn-secondary btn-sm@if(url.isEmpty) { disabled}" @if(url.isEmpty) {aria-disabled="true" }data-nav="@nav" href="@url.getOrElse("#")" title="@Html(title)">
+        <i class="bi bi-@icon" aria-hidden="true"></i>
     </a>
 }
 
 @buttonGallery() = {
-    <a role="button" class="btn btn-default btn-sm active" href="@list.atUrl(files(index).pageId)" title="@Messages("back.to.gallery") &lt;Esc&gt;">
-        <span class="glyphicon glyphicon-th" aria-hidden="true"></span>
+    <a role="button" class="btn btn-secondary btn-sm" data-nav="gallery" href="@list.atUrl(files(index).pageId)" title="@Messages("back.to.gallery") &lt;Esc&gt;">
+        <i class="bi bi-grid-3x3-gap-fill" aria-hidden="true"></i>
     </a>
 }
 
 @buttonUp() = {
     @optionalButton(Option.when(index > 0)(list.largeUrl(files(index - 1).pageId)),
-        "chevron-up", s"${Messages("previous.image")} &lt;${Messages("up.key")}&gt;")
+        "up", "chevron-up", s"${Messages("previous.image")} &lt;${Messages("up.key")}&gt;")
 }
 
 @buttonDown() = {
     @optionalButton(Option.when(index < files.size - 1)(list.largeUrl(files(index + 1).pageId)),
-        "chevron-down", s"${Messages("next.image")} &lt;${Messages("down.key")}&gt;")
+        "down", "chevron-down", s"${Messages("next.image")} &lt;${Messages("down.key")}&gt;")
 }
 
 @buttonSelect() = {
     @if(files(index).rate <=0 ) {
-        <a role="button" class="btn btn-default btn-sm active btn-success" href="#" data-vote-url="@list.voteUrl(files(index).pageId, 1)" title="@Messages("select.image") &lt;Space&gt;">
-            <span class="glyphicon glyphicon-thumbs-up icon-white" aria-hidden="true"></span>
+        <a role="button" class="btn btn-success btn-sm" href="#" data-vote-url="@list.voteUrl(files(index).pageId, 1)" title="@Messages("select.image") &lt;Space&gt;">
+            <i class="bi bi-hand-thumbs-up-fill" aria-hidden="true"></i>
         </a>
     }
     @if(files(index).rate >=0 ) {
-        <a role="button" class="btn btn-default btn-sm active btn-danger" href="#" data-vote-url="@list.voteUrl(files(index).pageId, -1)" title="@Messages("reject.image") &lt;Delete&gt;">
-            <span class="glyphicon glyphicon-thumbs-down icon-white" aria-hidden="true"></span>
+        <a role="button" class="btn btn-danger btn-sm" href="#" data-vote-url="@list.voteUrl(files(index).pageId, -1)" title="@Messages("reject.image") &lt;Delete&gt;">
+            <i class="bi bi-hand-thumbs-down-fill" aria-hidden="true"></i>
         </a>
     }
 }
@@ -58,7 +58,7 @@
         </div>
     @if(round.hasCriteria) {
        @round.criteriaNames.zipWithIndex.map { case (criteriaName, index) =>
-           <div style="color: white">@criteriaName</div>
+           <div>@criteriaName</div>
            <div id="rate-image@(index + 1)" style="margin-top:10px;"> </div>
        }
     } else if (round.rates.id > 0)  {

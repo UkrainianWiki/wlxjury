@@ -67,7 +67,7 @@ object GatlingTestFixture {
         "jobs.pollInterval"                      -> "2 seconds",
         // region counts: the contest files page's cache, and the round galleries' counts
         "regions.countCache"                     -> GatlingConfig.regionCountCache
-      ) ++ GatlingConfig.regionCounts.map("gallery.regionCounts" -> _) ++ timingConfig)
+      ) ++ GatlingConfig.regionCounts.map("gallery.regionCounts" -> _) ++ timingConfig ++ cspConfig)
       .build()
     localApplication = Some(app)
     val server = TestServer(port, app)
@@ -113,6 +113,17 @@ object GatlingTestFixture {
     println(s"[pool] at start: $started; for the run (gatling.pool=${GatlingConfig.pool}): " +
       scalikejdbc.ConnectionPool.get().dataSource.getClass.getName)
   }
+
+  /** With -Dui.csp=production (the screenshot harness's --csp), the production content security
+    * policy from conf/application.conf, which the tests' config doesn't include. */
+  private def cspConfig: Map[String, Any] =
+    if (!sys.props.get("ui.csp").contains("production")) Map.empty
+    else {
+      val csp = com.typesafe.config.ConfigFactory.parseFile(new java.io.File("conf/application.conf"))
+        .getString("play.filters.headers.contentSecurityPolicy")
+      println(s"[csp] $csp")
+      Map("play.filters.headers.contentSecurityPolicy" -> csp)
+    }
 
   /** The timing log (modules.RequestTimingFilter) after Play's default filters, if enabled. */
   private def timingConfig: Map[String, Any] =

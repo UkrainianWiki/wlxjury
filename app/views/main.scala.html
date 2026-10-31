@@ -13,7 +13,7 @@
         rates: RateDistribution = new RateDistribution(Map.empty),
         contestId: Option[Long] = None,
         filters: Html = Html(""))(content: Html)(implicit messages: Messages, request: RequestHeader)
-@layout(Messages(title), bodyClass = if (gallery) "gallery" else "") {
+@layout(Messages(title), bodyClass = if (gallery) "gallery" else "", theme = if (gallery) "dark" else "light") {
         <script type='text/javascript' src="@routes.Assets.versioned("javascripts/unitegallery.js")"></script>
         <link rel="stylesheet" href="@routes.Assets.versioned("stylesheets/unite-gallery.css")" type='text/css' />
 

@@ -51,7 +51,7 @@
                 @for(path <- returnTo) {
                     <input type="hidden" name="returnTo" value="@path"/>
                 }
-                <button type="submit" class="btn btn-default">@Messages("access.denied.switch.account")</button>
+                <button type="submit" class="btn btn-outline-secondary">@Messages("access.denied.switch.account")</button>
             </form>
         </p>
         <p class="text-muted"><small>@Messages("access.denied.reference", reference, time)</small></p>

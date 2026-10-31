@@ -1,16 +1,15 @@
 // A round gallery's region menu (regionMenu.scala.html), a Bootstrap dropdown: on its first
-// opening (Bootstrap's show.bs.dropdown, a jQuery event), the list's regions and their file
+// opening (Bootstrap 5's show.bs.dropdown, dispatched on the toggle, bubbling), the list's regions and their file
 // counts are read (GalleryController.regions) and listed, each linking its list's first page;
 // kept for the page. If that fails, the menu keeps "all" and the region shown, and says so;
 // opening it again tries again.
-(function ($) {
+(function () {
   'use strict';
-  if (!$) return;
 
   function item(text, url, active) {
     var li = document.createElement('li');
-    if (active) li.className = 'active';
     var a = document.createElement('a');
+    a.className = active ? 'dropdown-item active' : 'dropdown-item';
     a.href = url;
     a.textContent = text;
     li.appendChild(a);
@@ -25,21 +24,22 @@
       // regions, then special nominations, then the others
       if (previousKind !== null && region.kind !== previousKind) {
         var separator = document.createElement('li');
-        separator.className = 'divider';
-        separator.setAttribute('role', 'separator');
+        var hr = document.createElement('hr');
+        hr.className = 'dropdown-divider';
+        separator.appendChild(hr);
         list.appendChild(separator);
       }
       previousKind = region.kind;
       var text = region.count == null ? region.name : region.name + ' (' + region.count + ')';
       var li = item(text, region.url, region.id === data.current);
-      if (region.kind === 'Nomination') li.className += ' region-nomination';
+      if (region.kind === 'Nomination') li.className = 'region-nomination';
       list.appendChild(li);
     });
   }
 
   function init(menu) {
     var state = 'idle'; // idle, loading, done
-    $(menu).on('show.bs.dropdown', function () {
+    menu.addEventListener('show.bs.dropdown', function () {
       if (state !== 'idle') return;
       state = 'loading';
       var list = menu.querySelector('.region-menu-list');
@@ -67,4 +67,4 @@
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
   else start();
-})(window.jQuery);
+})();

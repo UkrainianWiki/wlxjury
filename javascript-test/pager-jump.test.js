@@ -40,26 +40,52 @@ describe("fitInWindow", () => {
     function box(right) {
         document.body.innerHTML = `<div class="dropdown-menu pager-jump-box"></div>`;
         const el = document.querySelector("div");
-        el.getBoundingClientRect = () => ({ right: el.classList.contains("dropdown-menu-right") ? right - 280 : right });
+        el.getBoundingClientRect = () => ({ right: el.classList.contains("dropdown-menu-end") ? right - 280 : right });
         return el;
     }
 
     test("opens under the items shown, rightwards, when it fits in the window", () => {
         const el = box(1200);
         fitInWindow(el, 1300);
-        expect(el.classList.contains("dropdown-menu-right")).toBe(false);
+        expect(el.classList.contains("dropdown-menu-end")).toBe(false);
     });
 
     test("opens leftwards only when rightwards would leave the window", () => {
         const el = box(1350);
         fitInWindow(el, 1300);
-        expect(el.classList.contains("dropdown-menu-right")).toBe(true);
+        expect(el.classList.contains("dropdown-menu-end")).toBe(true);
     });
 
     test("decides again on every opening, as the window may have been resized", () => {
         const el = box(1350);
-        el.classList.add("dropdown-menu-right");
+        el.classList.add("dropdown-menu-end");
         fitInWindow(el, 1400);
-        expect(el.classList.contains("dropdown-menu-right")).toBe(false);
+        expect(el.classList.contains("dropdown-menu-end")).toBe(false);
+    });
+});
+
+describe("opening the box", () => {
+
+    test("focuses and selects the number when Bootstrap shows the dropdown", () => {
+        const bootstrap = require("bootstrap/dist/js/bootstrap.bundle.js");
+        document.body.innerHTML = `
+            <nav class="navbar navbar-expand"><ul class="navbar-nav"><li class="nav-item">
+            <ul class="pagination" id="pagenav">
+                <li class="page-item dropdown pager-jump-menu">
+                    <a class="page-link dropdown-toggle pager-range" href="#" data-bs-toggle="dropdown"
+                        data-bs-auto-close="outside" aria-expanded="false">46–60 of 600</a>
+                    <div class="dropdown-menu pager-jump-box">
+                        <form class="pager-jump" data-page-url="/contest/5/files?page={page}">
+                            <input type="number" name="page" min="1" max="40" value="4">
+                        </form>
+                    </div>
+                </li>
+            </ul></li></ul></nav>`;
+        const toggle = document.querySelector(".pager-range");
+
+        toggle.click();
+
+        expect(document.querySelector(".pager-jump-box").classList.contains("show")).toBe(true);
+        expect(document.activeElement).toBe(document.querySelector("input[name=page]"));
     });
 });

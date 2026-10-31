@@ -20,10 +20,10 @@ const ORIGIN = "https://jury.example";
 
 /** The scripts a page loads, by src: the local file to run in its place, or null to skip. */
 function localScript(src) {
-    if (src === "/webjars/jquery/3.2.1/jquery.min.js") {
+    if (src === "/webjars/jquery/3.7.1/jquery.min.js") {
         return require.resolve("jquery/dist/jquery.min.js");
     }
-    if (src === "/webjars/bootstrap/3.3.7-1/js/bootstrap.min.js") {
+    if (src === "/webjars/bootstrap/5.3.8/js/bootstrap.bundle.min.js") {
         return null; // Bootstrap's widgets: no key handler uses them
     }
     const asset = /^\/assets\/(.+)$/.exec(src);
@@ -85,7 +85,7 @@ async function loadPage(name, transform = html => html) {
     const inline = scripts.filter(s => !s.src).map(s => s.textContent).join("\n;\n");
     new Function("window", inline).call(recordingWindow, recordingWindow);
 
-    // let $(document).ready handlers run (the stars, checkwidth.js), within this page's test:
+    // let $(document).ready handlers run (the stars), within this page's test:
     // jQuery 3 runs them asynchronously, in order, and reports their errors in a later task
     await new Promise(resolve => window.jQuery(() => setTimeout(resolve, 0)));
 }

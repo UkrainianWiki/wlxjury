@@ -9,7 +9,6 @@
         year: Option[Int] = None
 )(implicit flash: Flash, messages: Messages, req: RequestHeader)
 @import helper._
-@import b3.vertical.fieldConstructor
 
 @mainAdmin("campaigns", user, user.getId) {
     <div class="row" xmlns="http://www.w3.org/1999/html">
@@ -24,9 +23,9 @@
             <li>Commons:Wiki Loves Earth 2016
         </ul>
         </div>
-        @b3.vertical.form(routes.ContestController.importContests(), Symbol("id") -> "import-contests") { implicit vfc =>
+        @bs.form(routes.ContestController.importContests(), Symbol("id") -> "import-contests") {
             @helper.CSRF.formField
-            @b3.text(importForm("source"), Symbol("placeholder") -> Messages("source"), Symbol("_label") -> Messages("source"), Symbol("_help") -> "")
+            @bs.text(importForm("source"), Symbol("placeholder") -> Messages("source"), Symbol("_label") -> Messages("source"), Symbol("_help") -> "")
 
             <div class="btn btn-primary" onClick="document.forms['import-contests'].submit();">
             @Messages("import")
@@ -38,7 +37,7 @@
 
         @contestsTable(contests)
 
-        <table class="table table-striped table-condensed" style="background-color: #CCCCCC;">
+        <table class="table table-striped table-sm" style="background-color: #CCCCCC;">
 
             <thead>
                 <tr>
@@ -60,29 +59,29 @@
                         <tr>
                             @if(editContestForm.hasGlobalErrors) {
                                 <p class="error">
-                                    <span class="label important">@Messages(editContestForm.errors.head.message)</span>
+                                    <span class="badge text-bg-danger">@Messages(editContestForm.errors.head.message)</span>
                                 </p>
                             }
 
                             <td>
                                 <input type="hidden" name="id" id="id" value="0" />
-                                @inputText(editContestForm("name"), Symbol("placeholder") -> Messages("Name"), Symbol("_label") -> "", Symbol("_help") -> "")
+                                @bs.text(editContestForm("name"), Symbol("placeholder") -> Messages("Name"), Symbol("_hiddenLabel") -> Messages("Name"), Symbol("_help") -> "")
                             </td>
                             <td>
-                            @inputText(editContestForm("country"), Symbol("placeholder") -> Messages("country"), Symbol("_label") -> "", Symbol("_help") -> "")
+                            @bs.text(editContestForm("country"), Symbol("placeholder") -> Messages("country"), Symbol("_hiddenLabel") -> Messages("country"), Symbol("_help") -> "")
                             </td>
                             <td>
-                            @inputText(editContestForm("year"), Symbol("placeholder") -> Messages("year"), Symbol("_label") -> "", Symbol("_help") -> "")
+                            @bs.text(editContestForm("year"), Symbol("placeholder") -> Messages("year"), Symbol("_hiddenLabel") -> Messages("year"), Symbol("_help") -> "")
                             </td>
                             <td>
-                            @inputText(editContestForm("images"), Symbol("placeholder") -> Messages("images"), Symbol("_label") -> "", Symbol("_help") -> "")
+                            @bs.text(editContestForm("images"), Symbol("placeholder") -> Messages("images"), Symbol("_hiddenLabel") -> Messages("images"), Symbol("_help") -> "")
                             </td>
                             <td>
                             </td>
                             <td>
                             </td>
                             <td>
-                            @inputText(editContestForm("monumentIdTemplate"), Symbol("placeholder") -> Messages("id.template"), Symbol("_label") -> "", Symbol("_help") -> Messages("id.template.help"))
+                            @bs.text(editContestForm("monumentIdTemplate"), Symbol("placeholder") -> Messages("id.template"), Symbol("_hiddenLabel") -> Messages("id.template"), Symbol("_help") -> Messages("id.template.help"))
                             </td>
                             <td>
                                 <div class="btn btn-primary" onClick="document.forms['add-contest'].submit();">
@@ -103,15 +102,15 @@
                         </td>
                         <td>
                             <a href="@routes.UserController.users(contest.id)">
-                                <button type="button" class="btn btn-default btn-xs">
-                                    <span class="glyphicon glyphicon-edit" aria-hidden="true"></span>
+                                <button type="button" class="btn btn-outline-secondary btn-sm">
+                                    <i class="bi bi-pencil-square" aria-hidden="true"></i>
                                 </button>
                             </a>
                         </td>
                         <td>@contest.currentRound
                         <a href="@routes.RoundController.rounds(contest.id)">
-                            <button type="button" class="btn btn-default btn-xs">
-                                <span class="glyphicon glyphicon-edit" aria-hidden="true"></span>
+                            <button type="button" class="btn btn-outline-secondary btn-sm">
+                                <i class="bi bi-pencil-square" aria-hidden="true"></i>
                             </button>
                         </a>
                         </td>
