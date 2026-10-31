@@ -12,12 +12,7 @@
 
     <script type="text/javascript">
     $(document).ready(function() {
-        var regions = wlxMultiSelect(document.getElementById('regions-select'), {
-            selectAll: '@Messages("select.all")',
-            none: '@Messages("none.selected")',
-            n: '@Messages("selected")',
-            all: '@Messages("all.selected")'
-        });
+        var regions = wlxMultiSelect(document.getElementById('regions-select'), @views.JsTexts.multiSelect);
         $('#example-reset-form').on('reset', function() {
             if (regions) regions.clear();
         });

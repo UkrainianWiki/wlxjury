@@ -21,12 +21,10 @@
 
         <script type="text/javascript">
                 $(function () {
-                    var multiSelectTexts = {
-                        selectAll: '@Messages("select.all")',
-                        none: '@Messages("none.selected")',
-                        n: '@Messages("selected")',
-                        all: '@Messages("all.selected")'
-                    };
+                    var multiSelectTexts = @views.JsTexts.multiSelect;
+                    var distributionTexts = @views.JsTexts(
+                        "all" -> Messages("each.file.to.all.jurors"),
+                        "some" -> Messages("each.file.to.i.juror.s", "$X"));
                     ['previousRound', 'regions', 'jurors'].forEach(function (id) {
                         wlxMultiSelect(document.getElementById(id), multiSelectTexts);
                     });
@@ -57,10 +55,10 @@
 
                             var opts = distribution[0].options;
                             opts.length = 0;
-                            opts.add(new Option('@Messages("each.file.to.all.jurors")', "0", false, false));
+                            opts.add(new Option(distributionTexts.all, "0", false, false));
 
                             for (var i = 1; i <= jurors.length - 1; i++) {
-                                opts[i] = new Option('@Messages("each.file.to.i.juror.s", "$X")'.replace('$X', i), i, false, false)
+                                opts[i] = new Option(distributionTexts.some.replace('$X', i), i, false, false)
                             }
 
                             if (selected <= jurors.length - 1) {
@@ -69,7 +67,7 @@
                         } else {
                             distribution.prop("disabled", true);
                             distribution[0].options.length = 0;
-                            distribution[0].options.add(new Option('@Messages("each.file.to.all.jurors")', "0", false, false));
+                            distribution[0].options.add(new Option(distributionTexts.all, "0", false, false));
                         }
                     });
                 });
