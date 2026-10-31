@@ -1,0 +1,7 @@
+@* A form, as b3.form / b3.vertical.form: the fields inside take the template's layout
+   (vertical by default), so there's no `{ implicit vfc => ... }`. Add @@helper.CSRF.formField
+   inside, as before. Arguments are attributes, escaped. *@
+@(action: Call, args: (Symbol, Any)*)(body: => Html)
+<form action="@action.path" method="@action.method" @FieldView.attributes(args)>
+    @body
+</form>

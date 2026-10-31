@@ -1,0 +1,32 @@
+@* A checkbox, as b3.checkbox: the input before its label. The label is `_text`, else `_label`;
+   horizontally, with `_text` the `_label` goes in the label column, without it the checkbox
+   lines up with the fields. `readonly` renders it disabled, a hidden input submitting it if checked *@
+@(field: Field, args: (Symbol, Any)*)(implicit layout: Layout, messages: MessagesProvider)
+@f = @{ new FieldView(field, args, "form-check-input") }
+@check = {
+<div class="form-check">
+    <input type="checkbox" id="@f.id" name="@f.name" value="@f.boxValue" class="@f.inputClass"@if(f.checked) { checked}@if(f.readonly) { disabled}@for(d <- f.describedBy) { aria-describedby="@d"} @f.attrs("readonly", "checked")>
+    @for(t <- f.text.orElse(f.label)) {<label class="form-check-label@if(f.text.isEmpty && f.labelHidden){ visually-hidden}" for="@f.id">@t</label>}
+    @for((errorId, error) <- f.errors) {<div class="invalid-feedback" id="@errorId">@error</div>}
+</div>
+@if(f.readonly && f.checked) {<input type="hidden" name="@f.name" value="@f.boxValue">}
+@for(h <- f.help) {<div class="form-text" id="@f.helpId">@h</div>}
+}
+@layout.horizontal match {
+case Some(h) => {
+<div class="row mb-3" id="@f.wrapperId">
+    @if(f.text.isDefined && f.labelVisible) {
+    @for(l <- f.label) {<div class="@h.labelCol col-form-label pt-0">@l</div>}
+    <div class="@h.fieldCol">@check</div>
+    } else {
+    <div class="@h.offsetFieldCol">@check</div>
+    }
+</div>
+}
+case None => {
+<div class="mb-3" id="@f.wrapperId">
+    @if(f.text.isDefined) {@for(l <- f.label) {<div class="form-label@if(f.labelHidden){ visually-hidden}">@l</div>}}
+    @check
+</div>
+}
+}

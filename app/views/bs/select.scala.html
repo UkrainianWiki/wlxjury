@@ -1,0 +1,11 @@
+@* A select, as b3.select / helper.select: `multiple` submits name[] and selects field.indexes;
+   `readonly` renders it disabled with a hidden input per selected value *@
+@(field: Field, options: Seq[(String, String)], args: (Symbol, Any)*)(implicit layout: Layout, messages: MessagesProvider)
+@f = @{ new FieldView(field, args, "form-select") }
+@fieldGroup(f) {
+<select id="@f.id" name="@f.selectName" class="@f.inputClass"@if(f.readonly) { disabled}@for(d <- f.describedBy) { aria-describedby="@d"} @f.attrs("readonly")>
+    @for(d <- f.defaultOption) {<option class="blank" value="">@d</option>}
+    @for((value, text) <- options) {<option value="@value"@if(f.selectedValues.contains(value)) { selected}@if(f.disabledOptions(value)) { disabled}>@text</option>}
+</select>
+@if(f.readonly) {@for(v <- f.selectedValues) {<input type="hidden" name="@f.selectName" value="@v">}}
+}
