@@ -5,18 +5,18 @@
    (region-menu.js); until then, or if that fails, it lists all of them and the place shown.
    Without script its button goes to all of them. Its styles are in main.css. *@
 @for(m <- menus) {
-    <li class="dropdown region-menu" id="@m.id" data-regions-url="@m.optionsUrl"
+    <li class="nav-item dropdown region-menu" id="@m.id" data-regions-url="@m.optionsUrl"
         data-loading="@Messages("region.menu.loading")" data-failed="@Messages("region.menu.failed")">
-        <a class="dropdown-toggle" href="@m.allUrl" data-toggle="dropdown" role="button" aria-haspopup="true"
+        <a class="nav-link dropdown-toggle" href="@m.allUrl" data-bs-toggle="dropdown" role="button"
             aria-expanded="false">
-            @Messages(m.label): <b>@m.current.getOrElse(Messages(m.allLabel))</b> <span class="caret"></span>
+            @Messages(m.label): <b>@m.current.getOrElse(Messages(m.allLabel))</b>
         </a>
         <ul class="dropdown-menu region-menu-list">
-            <li @if(m.current.isEmpty) {class="active"}><a href="@m.allUrl">@Messages(m.allLabel)</a></li>
+            <li><a class="dropdown-item@if(m.current.isEmpty) { active}" href="@m.allUrl">@Messages(m.allLabel)</a></li>
             @for(name <- m.current) {
-                <li class="active"><a href="@m.currentUrl">@name</a></li>
+                <li><a class="dropdown-item active" href="@m.currentUrl">@name</a></li>
             }
-            <li class="region-menu-status"></li>
+            <li class="region-menu-status dropdown-item-text"></li>
         </ul>
     </li>
 }

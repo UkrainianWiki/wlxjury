@@ -3,23 +3,22 @@
 @(user: db.scalikejdbc.User)(implicit messages: Messages, request: RequestHeader)
 
 @if(user != null) {
-    <ul class="nav navbar-nav navbar-right" >
+    <ul class="navbar-nav">
         @defining(user.userContests.filter(_.active)) { memberships =>
         @if(memberships.size > 1) {
         @defining(ContestJuryJdbc.findAllBy(sqls.in(ContestJuryJdbc.defaultAlias.id, memberships.map(_.contestId)))) { contests =>
-        <li class="dropdown">
-            <a href="#" class="dropdown-toggle" data-toggle="dropdown" role="button" aria-expanded="false" title="@Messages("contest.switch")">
-                <span class="glyphicon glyphicon-random"></span>
+        <li class="nav-item dropdown">
+            <a href="#" class="nav-link dropdown-toggle" data-bs-toggle="dropdown" role="button" aria-expanded="false" title="@Messages("contest.switch")">
+                <i class="bi bi-shuffle" aria-hidden="true"></i>
                 @contests.find(_.id == user.contestId).fold(Messages("contest.switch"))(_.fullName)
-                <span class="caret"></span>
             </a>
-            <ul class="dropdown-menu">
+            <ul class="dropdown-menu dropdown-menu-end">
                 @for(uc <- memberships; contest <- contests.find(_.id.contains(uc.contestId))) {
-                    <li class="@if(user.contestId.contains(uc.contestId)){active}">
+                    <li>
                         @* a POST with the CSRF token: a link could switch it from another site *@
                         <form method="post" action="@routes.UserController.switchContest(uc.contestId)" class="navbar-menu-form">
                             @csrfField()
-                            <button type="submit" class="btn btn-link">@contest.fullName (@uc.roles.map(r => Messages(r)).mkString(", "))</button>
+                            <button type="submit" class="dropdown-item@if(user.contestId.contains(uc.contestId)){ active}">@contest.fullName (@uc.roles.map(r => Messages(r)).mkString(", "))</button>
                         </form>
                     </li>
                 }
@@ -28,25 +27,25 @@
         }
         }
         }
-        <li class="dropdown">
-            <a href="#" class="dropdown-toggle" data-toggle="dropdown" role="button" aria-expanded="false">
-                <span class="glyphicon glyphicon-user"></span> <span class="caret"></span>
+        <li class="nav-item dropdown">
+            <a href="#" class="nav-link dropdown-toggle" data-bs-toggle="dropdown" role="button" aria-expanded="false" title="@user.fullname">
+                <i class="bi bi-person-fill" aria-hidden="true"></i><span class="visually-hidden">@user.fullname</span>
             </a>
-        <ul class="dropdown-menu">
-            <li>
-                <a href="@routes.UserController.editUser(user.getId)">
-                    <span class="glyphicon glyphicon-user"></span> @Messages("profile")
-                </a>
-            </li>
-            <li>
-                <form method="post" action="@routes.LoginController.logout()" class="navbar-menu-form">
-                    @csrfField()
-                    <button type="submit" class="btn btn-link">
-                        <span class="glyphicon glyphicon-off"></span> @Messages("logout")
-                    </button>
-                </form>
-            </li>
-        </ul>
+            <ul class="dropdown-menu dropdown-menu-end">
+                <li>
+                    <a class="dropdown-item" href="@routes.UserController.editUser(user.getId)">
+                        <i class="bi bi-person" aria-hidden="true"></i> @Messages("profile")
+                    </a>
+                </li>
+                <li>
+                    <form method="post" action="@routes.LoginController.logout()" class="navbar-menu-form">
+                        @csrfField()
+                        <button type="submit" class="dropdown-item">
+                            <i class="bi bi-power" aria-hidden="true"></i> @Messages("logout")
+                        </button>
+                    </form>
+                </li>
+            </ul>
         </li>
     </ul>
 }
