@@ -414,3 +414,5 @@ coi.remove.not.open = Round {0} is not open: conflicts of interest are left out 
 coi.removed = Round {1}: {0} files removed as conflicts of interest.
 
 close = Close
+signin.repeat.your.password = Repeat your password
+sort = Sort
