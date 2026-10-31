@@ -370,3 +370,16 @@ large views' button groups, from Bootstrap 3.3.1 → 3.3.7:
   theme we use doesn't open it, but if it ever did, the CSP now blocks it.
 - The webjars are served with the plain-name cache time (an hour); their paths carry the
   version, so a longer `Cache-Control` would be safe if wanted.
+
+### Review follow-ups
+
+- `/webjars/*file` goes to `controllers.WebJars`, which serves only the webjars in
+  `WebJars.Served` (bootstrap, jquery, font-awesome; Phase 2 adds its own there) and answers 404
+  for any other (Tapir's Swagger UI is on the classpath), also through `../` or encoded paths.
+  `play.assets.cache."/META-INF/resources/webjars/" = "public, max-age=31536000, immutable"`
+  (Play 3.0.7 matches it as a prefix of `Assets.at`'s resource name, in every mode).
+  `controllers.WebJarsSpec` checks both; `LayoutSpec` now checks the rendered `main`,
+  `mainAdmin` and both large views for scripts or stylesheets from another host; the
+  screenshot script blocks the old CDN hosts. `Test/compile` 0; `testOnly views.LayoutSpec
+  controllers.AssetDigestSpec controllers.WebJarsSpec` 0 (14 passed); `views.*` 0 (45 passed);
+  screenshots again 15 of 15 identical to `phase1`, no request to another host.
