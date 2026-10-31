@@ -2,5 +2,5 @@
 @(inputType: String, field: Field, args: (Symbol, Any)*)(implicit layout: Layout, messages: MessagesProvider)
 @f = @{ new FieldView(field, args, "form-control") }
 @fieldGroup(f) {
-<input type="@inputType" id="@f.id" name="@f.name"@if(inputType != "password") {@for(v <- f.value) { value="@v"}} class="@f.inputClass"@for(d <- f.describedBy) { aria-describedby="@d"} @f.attrs()>
+<input type="@inputType" id="@f.id" name="@f.name"@if(inputType != "password") {@for(v <- f.value) { value="@v"}} class="@f.inputClass" @f.aria @f.attrs()>
 }

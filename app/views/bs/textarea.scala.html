@@ -2,5 +2,5 @@
 @(field: Field, args: (Symbol, Any)*)(implicit layout: Layout, messages: MessagesProvider)
 @f = @{ new FieldView(field, args, "form-control") }
 @fieldGroup(f) {
-<textarea id="@f.id" name="@f.name" class="@f.inputClass"@for(d <- f.describedBy) { aria-describedby="@d"} @f.attrs()>@f.value.getOrElse("")</textarea>
+<textarea id="@f.id" name="@f.name" class="@f.inputClass" @f.aria @f.attrs()>@f.value.getOrElse("")</textarea>
 }

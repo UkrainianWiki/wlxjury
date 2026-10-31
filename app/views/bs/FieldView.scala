@@ -13,20 +13,33 @@ import play.twirl.api.{Html, HtmlFormat}
   *  - `id` (the input's id, default the field's), `value` (the value when the field has none;
   *    for a checkbox, the value it submits, default `true`), `checked` (a checkbox's state
   *    instead of the field's), `readonly` (on a select or checkbox, which ignore it, renders
-  *    it disabled with hidden inputs submitting its value, as play-bootstrap did);
+  *    it disabled with hidden inputs submitting its value, as play-bootstrap did: a single
+  *    select's selected value, or the option the browser shows when none is selected, the
+  *    first one; a multiple select's selected values, none if none is. With `disabled` too,
+  *    nothing is submitted);
   *  - `class` is added to the helper's own class (`form-control`, `form-select`,
-  *    `form-check-input`), not replacing it. Bootstrap 3's `input-lg` / `input-sm` become
-  *    `form-control-lg` / `-sm` (or `form-select-*`) and a repeated base class is dropped;
+  *    `form-check-input`), not replacing it; a repeated base class is dropped;
+  *  - `aria-describedby` ids are added to those of the help and errors;
   *  - any other argument without a leading underscore is an attribute of the input: `true` is
   *    a bare attribute, `false` or `None` leaves it out, other values are escaped.
-  * Labels, help, `_text` and `_default` are translated if they are message keys, as
-  * play-bootstrap did; option texts are shown as given.
+  * The field's constraints add `required`, `min`, `max`, `minlength`, `maxlength` and `pattern`
+  * as play-bootstrap did, unless the arguments set them. Labels, help, `placeholder`, `_text`
+  * and `_default` are translated if they are message keys, as play-bootstrap did; option texts
+  * are shown as given.
   */
 final class FieldView(field: Field, args: Seq[(Symbol, Any)], baseClass: String)(implicit
     messages: MessagesProvider
 ) {
 
   private val argMap: Map[Symbol, Any] = args.filter(_._2 != None).toMap
+
+  /** The arguments after the constraints' attributes, which they override. */
+  private val inputArgs: Seq[(Symbol, Any)] =
+    FieldView.constraintArgs(field).filterNot { case (key, _) => argMap.contains(key) } ++
+      args.map {
+        case (key, v) if key.name == "placeholder" => (key, translate(v))
+        case other                                 => other
+      }
 
   private def arg(name: String): Option[Any] = argMap.get(Symbol(name))
 
@@ -62,22 +75,35 @@ final class FieldView(field: Field, args: Seq[(Symbol, Any)], baseClass: String)
 
   def hasErrors: Boolean = errors.nonEmpty
 
-  def describedBy: Option[String] =
-    Some((help.map(_ => helpId).toSeq ++ errors.map(_._1)).mkString(" ")).filter(_.nonEmpty)
+  def describedBy: Option[String] = {
+    val own = arg("aria-describedby").toSeq.flatMap(_.toString.split("\\s+")).filter(_.nonEmpty)
+    Some((own ++ help.map(_ => helpId) ++ errors.map(_._1)).distinct.mkString(" ")).filter(_.nonEmpty)
+  }
+
+  /** `aria-describedby` and, with errors, `aria-invalid`. */
+  def aria: Html = {
+    val describe = describedBy.map(d => "aria-describedby=\"" + HtmlFormat.escape(d).body + "\"")
+    Html((describe.toSeq ++ Option.when(hasErrors)("aria-invalid=\"true\"")).mkString(" "))
+  }
 
   val readonly: Boolean = isTrue("readonly")
+
+  val disabled: Boolean = isTrue("disabled")
+
+  /** A select or checkbox renders `disabled` for either. */
+  def shownDisabled: Boolean = readonly || disabled
+
+  /** A readonly select or checkbox submits its value in hidden inputs, unless disabled. */
+  def submitsHidden: Boolean = readonly && !disabled
 
   val multiple: Boolean = isTrue("multiple")
 
   val value: Option[String] = field.value.orElse(arg("value").map(_.toString))
 
   val inputClass: String = {
-    val sized = Set("form-control", "form-select")(baseClass)
-    val extra = arg("class").toSeq.flatMap(_.toString.split("\\s+")).filter(_.nonEmpty).collect {
-      case "input-lg" if sized => baseClass + "-lg"
-      case "input-sm" if sized => baseClass + "-sm"
-      case c if !FieldView.BaseClasses(c) => c
-    }
+    val extra = arg("class").toSeq
+      .flatMap(_.toString.split("\\s+"))
+      .filter(c => c.nonEmpty && !FieldView.BaseClasses(c))
     ((baseClass +: extra) ++ Option.when(hasErrors)("is-invalid")).distinct.mkString(" ")
   }
 
@@ -92,6 +118,15 @@ final class FieldView(field: Field, args: Seq[(Symbol, Any)], baseClass: String)
     else value.toSeq
 
   val defaultOption: Option[Any] = arg("_default").map(translate)
+
+  /** What a readonly select's hidden inputs submit: see the class comment. */
+  def hiddenValues(options: Seq[(String, String)]): Seq[String] =
+    if (!submitsHidden) Nil
+    else if (multiple) selectedValues
+    else {
+      val shown = defaultOption.map(_ => "").toSeq ++ options.map(_._1).filterNot(disabledOptions)
+      selectedValues.find(shown.contains).orElse(shown.headOption).toSeq
+    }
 
   val disabledOptions: Set[String] = arg("_disabled") match {
     case Some(values: Iterable[_]) => values.map(_.toString).toSet
@@ -108,7 +143,7 @@ final class FieldView(field: Field, args: Seq[(Symbol, Any)], baseClass: String)
   }
 
   /** The input's attributes from the arguments, except those the helper renders itself. */
-  def attrs(handled: String*): Html = FieldView.attributes(args, FieldView.Handled ++ handled)
+  def attrs(handled: String*): Html = FieldView.attributes(inputArgs, FieldView.Handled ++ handled)
 }
 
 object FieldView {
@@ -116,7 +151,24 @@ object FieldView {
   private val BaseClasses = Set("form-control", "form-select", "form-check-input")
 
   /** Rendered by every helper itself. */
-  private val Handled = Set("id", "name", "class", "value", "type")
+  private val Handled = Set("id", "name", "class", "value", "type", "aria-describedby", "aria-invalid")
+
+  /** Input attributes for the field's constraints, as play-bootstrap's `constraintsArgs`. */
+  def constraintArgs(field: Field)(implicit messages: MessagesProvider): Seq[(Symbol, Any)] =
+    field.constraints.flatMap {
+      case ("constraint.required", _)           => Some(Symbol("required") -> true)
+      case ("constraint.min", Seq(p, _*))       => Some(Symbol("min") -> messages.messages(p.toString))
+      case ("constraint.max", Seq(p, _*))       => Some(Symbol("max") -> messages.messages(p.toString))
+      case ("constraint.minLength", Seq(p, _*)) => Some(Symbol("minlength") -> messages.messages(p.toString))
+      case ("constraint.maxLength", Seq(p, _*)) => Some(Symbol("maxlength") -> messages.messages(p.toString))
+      case ("constraint.pattern", Seq(p, _*)) =>
+        p match {
+          case regex: String       => Some(Symbol("pattern") -> messages.messages(regex))
+          case regex: Function0[_] => Some(Symbol("pattern") -> regex().toString)
+          case _                   => None
+        }
+      case _ => None
+    }
 
   private val AttrName = "[a-zA-Z][a-zA-Z0-9_:.-]*".r
 
