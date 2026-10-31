@@ -383,3 +383,25 @@ large views' button groups, from Bootstrap 3.3.1 → 3.3.7:
   screenshot script blocks the old CDN hosts. `Test/compile` 0; `testOnly views.LayoutSpec
   controllers.AssetDigestSpec controllers.WebJarsSpec` 0 (14 passed); `views.*` 0 (45 passed);
   screenshots again 15 of 15 identical to `phase1`, no request to another host.
+
+## Step 2a results (form helpers)
+
+- Branch `ukwikidev/theme-forms` (commits `c07b4740`, `e3d8c8c8`, `41b8550c`, `5d452200`), merged into
+  `ukwikidev/theme-modes`. New files only: `app/views/bs/` (`Layout`, `FieldView`, `text`, `password`,
+  `textarea`, `select`, `checkbox`, `form` and the internal `inputType`, `fieldGroup`, `feedback`),
+  `test/views/BsFormHelpersSpec.scala`, `test/views/bstest/horizontalField.scala.html`.
+- Checks: `Test/compile` ok; `testOnly views.BsFormHelpersSpec` 30 passed, 0 failed.
+- Review: no XSS path, and no change to what current call sites submit. Six findings were fixed:
+  constraint attributes (`required`, `min`, `max`, `minlength`, `maxlength`, `pattern`) taken from
+  the field's constraints as b3 did; `aria-invalid`; `readonly` + `disabled`; the readonly
+  single-select fallback; `placeholder` translation; a caller's `aria-describedby` merged. A second
+  review found nothing material.
+- Decided: no `input-lg` → `form-control-lg` conversion. Phase 2 changes the login and sign-up call
+  sites to `form-control-lg`.
+- One intended difference from b3: a readonly single select whose value is not among its options
+  submits the first option, or the `_default` blank. Nothing saved changes, because editing a round
+  saves only its name, `excludeCoi` and `newImages`.
+- For Phase 2: run `RoundEditPageSpec` and `PrevRoundHiddenInputSpec` after the switch (a readonly
+  multiple select now submits one `name[]` per selected value). The templates compile into
+  `views.html.bs`, which play-bootstrap-core's package object shares until play-bootstrap is
+  removed.
