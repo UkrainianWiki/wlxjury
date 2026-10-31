@@ -12,13 +12,14 @@ import scala.concurrent.duration._
   * value, from the cookie, the database or a form, is [[Theme.Auto]]: only these three
   * fixed strings are ever written into a page.
   */
-sealed abstract class Theme(val value: String)
+sealed abstract class Theme(val value: String, val icon: String)
 
 object Theme {
-  case object Light extends Theme("light")
-  case object Dark  extends Theme("dark")
-  case object Auto  extends Theme("auto")
+  case object Light extends Theme("light", "sun-fill")
+  case object Dark  extends Theme("dark", "moon-stars-fill")
+  case object Auto  extends Theme("auto", "circle-half")
 
+  /** In the switches' order. `icon`: its Bootstrap Icons name. */
   val All: Seq[Theme] = Seq(Light, Dark, Auto)
 
   /** Not HttpOnly: the login page's switch (theme-switch.js) writes it. The server uses it

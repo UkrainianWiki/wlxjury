@@ -49,6 +49,12 @@
                     @bs.select(editUserForm("lang"), Seq("en", "fr", "ru", "uk").map(x => (x, User.LANGS(x))),
                         Symbol("_label") -> Messages("language"))
 
+                    @* the colour mode, on the user's own profile only *@
+                    @if(editUserForm("id").value.contains(user.getId.toString)) {
+                        @bs.select(editUserForm("theme"), controllers.Theme.All.map(t => (t.value, Messages("theme." + t.value))),
+                            Symbol("_label") -> Messages("theme"))
+                    }
+
                     @if(true || editUserForm("id").value.contains(user.id.toString)) {
                         <div class="mb-3">
                             <label for="password" class="form-label">@Messages("password")</label>

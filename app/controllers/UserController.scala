@@ -20,7 +20,8 @@ import scala.util.Try
   * Controller for admin views
   */
 class UserController @Inject()(cc: ControllerComponents,
-                               userService: UserService)
+                               userService: UserService,
+                               themeCookies: ThemeCookies = ThemeCookies.default)
     extends Secured(cc)
     with I18nSupport {
 
@@ -138,7 +139,12 @@ class UserController @Inject()(cc: ControllerComponents,
       Set(User.ADMIN_ROLE, User.ROOT_ROLE, s"USER_ID_$userId"))) {
       user => implicit request =>
         editableUser(user, userId, contestId).fold(Redirect(routes.LoginController.index)) { editedUser =>
-          val filledForm = editUserForm.fill(editedUser)
+          // the own profile's theme: the stored one, else the one this browser shows
+          val withTheme =
+            if (user.id.contains(userId) && editedUser.theme.flatMap(Theme.find).isEmpty)
+              editedUser.copy(theme = Some(Theme.of(request).value))
+            else editedUser
+          val filledForm = editUserForm.fill(withTheme)
           Ok(views.html.editUser(user, filledForm, editedUser.contestId.orElse(user.currentContest)))
         }
     }
@@ -230,10 +236,33 @@ class UserController @Inject()(cc: ControllerComponents,
       } else {
         Redirect(routes.LoginController.index)
       }
-      val lang = for (lang <- formUser.lang; if formUser.id == user.id)
+      val ownProfile = formUser.id == user.id
+      val lang = for (lang <- formUser.lang; if ownProfile)
         yield lang
 
-      lang.fold(result)(l => result.withLang(Lang(l)))
+      // the own profile's theme only (another user's form has none); a value that is not
+      // one of the three changes nothing
+      val theme = formUser.theme.flatMap(Theme.find).filter(_ => ownProfile)
+      for (t <- theme) User.updateTheme(userId, t)
+
+      val withLang = lang.fold(result)(l => result.withLang(Lang(l)))
+      theme.fold(withLang)(themeCookies.set(withLang, _))
+    }
+  }
+
+  /** The user menu's colour mode switch (logged.scala.html): a POST with the CSRF token
+    * that stores light, dark or auto in the signed-in user's own row and in the theme
+    * cookie, then goes back to `returnTo`, a local path ([[Secured.safeLocalPath]]), else
+    * the start page. Any signed-in user, root or without a contest too; the session's
+    * contest stays as it is. Another value changes nothing.
+    */
+  def setTheme(): EssentialAction = withAuth(_ => true) { user => request =>
+    val form = request.body.asFormUrlEncoded.getOrElse(Map.empty)
+    def field(name: String) = form.get(name).flatMap(_.headOption)
+    val back = Redirect(Secured.safeLocalPath(field("returnTo")).getOrElse(routes.LoginController.index.url))
+    field("theme").flatMap(Theme.find).fold(back) { theme =>
+      User.updateTheme(user.getId, theme)
+      themeCookies.set(back, theme)
     }
   }
 
@@ -364,7 +393,8 @@ class UserController @Inject()(cc: ControllerComponents,
       "roles" -> optional(text),
       "contest" -> optional(longNumber),
       "lang" -> optional(text),
-      "sort" -> optional(number)
+      "sort" -> optional(number),
+      "theme" -> optional(text)
     )(User.applyEdit)(User.unapplyEdit)
       .verifying("user.email.or.wiki.account",
                  u => u.email.trim.nonEmpty || u.wikiAccount.exists(_.trim.nonEmpty))

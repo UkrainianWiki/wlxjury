@@ -400,3 +400,7 @@ coi.removed = Tour {1} : {0} fichiers retirés comme conflits d''intérêts.
 close = Fermer
 signin.repeat.your.password = Répétez votre mot de passe
 sort = Tri
+theme = Thème
+theme.light = Clair
+theme.dark = Sombre
+theme.auto = Système

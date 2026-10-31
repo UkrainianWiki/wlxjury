@@ -37,6 +37,26 @@
                         <i class="bi bi-person" aria-hidden="true"></i> @Messages("profile")
                     </a>
                 </li>
+                <li><hr class="dropdown-divider"></li>
+                <li><h6 class="dropdown-header" id="theme-switch-label">@Messages("theme")</h6></li>
+                <li>
+                    @* the colour mode: a POST with the CSRF token that saves it in the user's row and
+                       the theme cookie, then comes back to this page (a GET's only) *@
+                    @defining(controllers.Theme.of(request)) { current =>
+                    <form method="post" action="@routes.UserController.setTheme()" class="navbar-menu-form" id="theme-switch" role="group" aria-labelledby="theme-switch-label">
+                        @csrfField()
+                        @for(back <- controllers.Secured.safeLocalPath(Option.when(request.method == "GET")(request.uri))) {
+                            <input type="hidden" name="returnTo" value="@back">
+                        }
+                        @for(theme <- controllers.Theme.All) {
+                            <button type="submit" name="theme" value="@theme.value" class="dropdown-item@if(theme == current){ active}" aria-pressed="@(theme == current)">
+                                <i class="bi bi-@theme.icon" aria-hidden="true"></i> @Messages("theme." + theme.value)
+                            </button>
+                        }
+                    </form>
+                    }
+                </li>
+                <li><hr class="dropdown-divider"></li>
                 <li>
                     <form method="post" action="@routes.LoginController.logout()" class="navbar-menu-form">
                         @csrfField()

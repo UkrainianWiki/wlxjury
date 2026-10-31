@@ -382,3 +382,7 @@ coi.removed = Раунд {1}: вилучено {0} файлів з конфлі�
 close = Закрити
 signin.repeat.your.password = Повторіть пароль
 sort = Сортування
+theme = Тема
+theme.light = Світла
+theme.dark = Темна
+theme.auto = Як у системі
