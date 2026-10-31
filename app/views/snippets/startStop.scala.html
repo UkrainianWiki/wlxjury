@@ -1,12 +1,12 @@
 @(active: Boolean, id: Long, parentId: Long, submit: () => Call, withText: Boolean = true)(implicit messages: Messages, req: RequestHeader)
 @import helper._
 @if(withText){@if(active) { @Messages("yes") } else { @Messages("no") }}
-@form(submit(), Symbol("class") -> "form-inline", Symbol("id") -> s"set-active-form-$id", Symbol("role") -> "form") {
+@form(submit(), Symbol("class") -> "d-inline", Symbol("id") -> s"set-active-form-$id", Symbol("role") -> "form") {
     @helper.CSRF.formField
     <input type="hidden" id="current-@id" name="currentId" value='@id' />
     <input type="hidden" id="parent-@id" name="parentId" value='@parentId' />
     <input type="hidden" id="setActive-@id" name="setActive" value='@{!active}' />
-    <button type="submit" class="btn-sm @if(active) {btn-danger} else {btn-success}">
-        <span class="glyphicon @if(active) { glyphicon-stop } else {  glyphicon-play }"></span>
+    <button type="submit" class="btn btn-sm @if(active) {btn-danger} else {btn-success}">
+        <i class="bi @if(active) {bi-stop-fill} else {bi-play-fill}" aria-hidden="true"></i>
     </button>
 }

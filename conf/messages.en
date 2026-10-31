@@ -412,3 +412,5 @@ coi.without.author = {0} of the contest''s files have no author.
 coi.remove.distributing = Round {0}: its images are being distributed. Leave out conflicts of interest once it has finished.
 coi.remove.not.open = Round {0} is not open: conflicts of interest are left out only of an open round that is not being distributed.
 coi.removed = Round {1}: {0} files removed as conflicts of interest.
+
+close = Close

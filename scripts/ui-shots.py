@@ -47,7 +47,8 @@ MAX_HEIGHT = 4000
 
 
 def pages(s):
-    """(name, user, path): user is "juror", "organizer" or None (signed out)."""
+    """(name, user, path[, clicks]): user is "juror", "organizer" or None (signed out); clicks, CSS
+    selectors clicked in turn before the shot (a dropdown opened, say)."""
     c, rb, rr, j, p = s["contestId"], s["roundBinaryId"], s["roundRatingId"], s["juror"]["id"], s["pageId"]
     return [
         ("login", None, "/auth"),
@@ -65,6 +66,17 @@ def pages(s):
         ("editround", "organizer", f"/admin/rounds/edit?id={rb}&contestId={c}"),
         ("users", "organizer", f"/admin/users?contestId={c}"),
         ("edituser", "organizer", f"/users/edit/{j}"),
+        # menus and dropdowns opened
+        ("gallery-pagerbox", "juror", f"/gallery/round/{rb}/user/{j}/page/1", [".pager-range"]),
+        ("gallery-usermenu", "juror", f"/gallery/round/{rb}/user/{j}/page/1",
+         ["nav .navbar-nav:last-child > .dropdown:last-child > [data-bs-toggle=dropdown]"]),
+        ("byrate-viewmenu", "organizer", f"/byrate/round/{rr}/user/0/page/1",
+         ["a.dropdown-toggle:has(.bi-bar-chart-fill)"]),
+        ("contestfiles-regionmenu", "organizer", f"/contest/{c}/files", [".region-menu > [data-bs-toggle=dropdown]"]),
+        ("editround-new", "organizer", f"/admin/rounds/edit?contestId={c}"),
+        ("editround-new-jurors", "organizer", f"/admin/rounds/edit?contestId={c}", ["#jurors-ts-control"]),
+        ("editround-new-prevround", "organizer", f"/admin/rounds/edit?contestId={c}",
+         ["#headingImageFiltering a", "#previousRound-ts-control"]),
     ]
 
 
@@ -159,7 +171,7 @@ def shoot(args):
                 contexts[user] = ctx
                 return ctx
 
-            for name, user, path in pages(s):
+            for name, user, path, *rest in pages(s):
                 if selected and name not in selected:
                     continue
                 page = context(user).new_page()
@@ -170,6 +182,9 @@ def shoot(args):
                 response = page.goto(base + path, wait_until="networkidle", timeout=120000)
                 page.add_style_tag(content="*{caret-color:transparent !important}")
                 page.wait_for_timeout(1500)
+                for selector in (rest[0] if rest else []):
+                    page.click(selector)
+                    page.wait_for_timeout(700)
                 height = min(page.evaluate("document.documentElement.scrollHeight"), MAX_HEIGHT)
                 file = out / f"{name}.png"
                 page.screenshot(path=str(file), full_page=True,

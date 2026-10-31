@@ -27,8 +27,8 @@
             @file.rateString(round)
         } else {
             @for(i <- 1 to file.totalRate(round).toInt) {
-                <button type="button" class="btn btn-default btn-sm active btn-success">
-                    <span class="glyphicon glyphicon-ok" aria-hidden="true"></span>
+                <button type="button" class="btn btn-success btn-sm">
+                    <i class="bi bi-check-lg" aria-hidden="true"></i>
                 </button>
             }
         }
@@ -46,7 +46,7 @@
             <div class="row">
 
                 @for(region <- regions) {
-                    <div class="well col-sm-1">
+                    <div class="card card-body p-2 col-sm-1">
                         <a href="@regionToUrl(region.id)">
                             @region.name @region.count.fold("")(count => s"($count)")
                         </a>
