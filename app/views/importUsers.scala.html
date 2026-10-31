@@ -4,7 +4,7 @@
         contestId: Long)(implicit flash: Flash, messages: Messages, req: RequestHeader)
 @import helper._
 
-@mainAdmin(Messages("users"), adminUser, adminUser.getId, contestId = Some(contestId)) {
+@mainAdmin("users", adminUser, adminUser.getId, contestId = Some(contestId)) {
     <div class="row" >
 
         <h3>@Messages("import")</h3>

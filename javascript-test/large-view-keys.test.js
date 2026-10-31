@@ -8,7 +8,7 @@
 // renders (javascript-test/fixtures/large, kept in step by views.LargeViewFixturesSpec), as
 // served over https://jury.example. A vote must post the vote form, with its CSRF token, to
 // this same origin: behind HTTPS a form posted to http:// is redirected as a GET and the
-// vote is lost (c4a6c6b1). Runs offline: the CDN's jQuery is the same version from
+// vote is lost (c4a6c6b1). Runs offline: the webjar's jQuery is the same version from
 // node_modules; Bootstrap's script, which no key uses, is left out.
 
 const fs = require("fs");
@@ -20,10 +20,10 @@ const ORIGIN = "https://jury.example";
 
 /** The scripts a page loads, by src: the local file to run in its place, or null to skip. */
 function localScript(src) {
-    if (src === "https://ajax.googleapis.com/ajax/libs/jquery/1.11.1/jquery.min.js") {
+    if (src === "/webjars/jquery/3.2.1/jquery.min.js") {
         return require.resolve("jquery/dist/jquery.min.js");
     }
-    if (src === "https://maxcdn.bootstrapcdn.com/bootstrap/3.3.1/js/bootstrap.min.js") {
+    if (src === "/webjars/bootstrap/3.3.7-1/js/bootstrap.min.js") {
         return null; // Bootstrap's widgets: no key handler uses them
     }
     const asset = /^\/assets\/(.+)$/.exec(src);
@@ -85,8 +85,9 @@ async function loadPage(name, transform = html => html) {
     const inline = scripts.filter(s => !s.src).map(s => s.textContent).join("\n;\n");
     new Function("window", inline).call(recordingWindow, recordingWindow);
 
-    // let $(document).ready handlers run (the stars, checkwidth.js)
-    await new Promise(resolve => setTimeout(resolve, 0));
+    // let $(document).ready handlers run (the stars, checkwidth.js), within this page's test:
+    // jQuery 3 runs them asynchronously, in order, and reports their errors in a later task
+    await new Promise(resolve => window.jQuery(() => setTimeout(resolve, 0)));
 }
 
 function press(key) {

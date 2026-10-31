@@ -10,7 +10,7 @@
     @import helper._
     @import views.html.bootstrap._
 
-    @mainAdmin(Messages("users"), adminUser, adminUser.getId, contestId = contestOpt.flatMap(_.id)) {
+    @mainAdmin("users", adminUser, adminUser.getId, contestId = contestOpt.flatMap(_.id)) {
         <div class="row">
 
             @if(contests.nonEmpty) {
