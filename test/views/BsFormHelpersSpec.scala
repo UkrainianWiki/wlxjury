@@ -5,6 +5,7 @@ import org.jsoup.nodes.{Document, Element}
 import org.specs2.mutable.Specification
 import play.api.data.Form
 import play.api.data.Forms._
+import play.api.data.validation.Constraints
 import play.api.i18n.{Lang, Messages, MessagesImpl}
 import play.api.mvc.Call
 import play.api.test.Helpers
@@ -51,6 +52,14 @@ class BsFormHelpersSpec extends Specification {
   )
 
   private val failed = form.bind(Map("name" -> ""))
+
+  private val constrained = Form(
+    tuple(
+      "name" -> nonEmptyText(maxLength = 20),
+      "age" -> number(min = 1, max = 9),
+      "code" -> text.verifying(Constraints.pattern("[a-z]+".r))
+    )
+  )
 
   private val options = Seq("a" -> "A", "b" -> "B", "c" -> "C")
 
@@ -105,7 +114,7 @@ class BsFormHelpersSpec extends Specification {
         Symbol("data-round") -> 5,
         Symbol("readonly") -> true,
         Symbol("disabled") -> false,
-        Symbol("class") -> "form-control input-lg"
+        Symbol("class") -> "form-control form-control-lg"
       )
       html.body must not(contain("<script>"))
       val input = one(doc(html), "input")
@@ -115,6 +124,43 @@ class BsFormHelpersSpec extends Specification {
       input.hasAttr("disabled") must beFalse
       input.hasAttr("_label") must beFalse
       input.attr("class") === "form-control form-control-lg"
+    }
+
+    "translate a placeholder that is a message key" in {
+      one(doc(bs.text(filled("name"), Symbol("placeholder") -> "name.label")), "input")
+        .attr("placeholder") === "Your name"
+    }
+
+    "add the field's constraints as attributes, which arguments override" in {
+      val d = doc(bs.text(constrained("name")))
+      val input = one(d, "input")
+      input.hasAttr("required") must beTrue
+      input.attr("maxlength") === "20"
+      val age = one(doc(bs.text(constrained("age"))), "input")
+      age.attr("min") === "1"
+      age.attr("max") === "9"
+      one(doc(bs.text(constrained("code"))), "input").attr("pattern") === "[a-z]+"
+
+      val overridden = one(
+        doc(bs.text(constrained("name"), Symbol("required") -> false, Symbol("maxlength") -> 5)),
+        "input"
+      )
+      overridden.hasAttr("required") must beFalse
+      overridden.attr("maxlength") === "5"
+      one(doc(bs.password(constrained("name"))), "input").hasAttr("required") must beTrue
+    }
+
+    "mark an invalid input with aria-invalid only when it has errors" in {
+      one(doc(bs.text(failed("name"))), "input").attr("aria-invalid") === "true"
+      one(doc(bs.text(filled("name"))), "input").hasAttr("aria-invalid") must beFalse
+      one(doc(bs.password(failed("name"))), "input").attr("aria-invalid") === "true"
+      one(doc(bs.textarea(failed("name"))), "textarea").attr("aria-invalid") === "true"
+    }
+
+    "add the caller's aria-describedby to the help's, in one attribute" in {
+      val html = bs.text(filled("name"), Symbol("_help") -> "Help", Symbol("aria-describedby") -> "extra")
+      "aria-describedby".r.findAllIn(html.body).size === 1
+      one(doc(html), "input").attr("aria-describedby") === "extra name_help"
     }
 
     "escape the label and help text" in {
@@ -146,6 +192,13 @@ class BsFormHelpersSpec extends Specification {
       val column = one(d, "div.col-md-8")
       column.select("input#name").size === 1
       column.select(".invalid-feedback").size === 1
+    }
+
+    "take a template's own implicitLayout over the default" in {
+      val d = doc(views.html.bstest.horizontalField(filled("name")))
+      classes(one(d, "div#name_field")) === Set("row", "mb-3")
+      classes(one(d, "label")) === Set("col-sm-3", "col-form-label")
+      one(d, "div.col-sm-9").select("input#name").size === 1
     }
 
     "move the field past the label column when the label is hidden" in {
@@ -225,9 +278,29 @@ class BsFormHelpersSpec extends Specification {
       d.select("input[type=hidden]").size === 0
     }
 
+    "render disabled once and submit nothing when readonly and disabled" in {
+      val html = bs.select(filled("choice"), options, Symbol("readonly") -> true, Symbol("disabled") -> true)
+      // the raw tag: Jsoup's parser would drop a repeated attribute
+      val tag = "<select[^>]*>".r.findFirstIn(html.body).getOrElse("")
+      """\bdisabled\b""".r.findAllIn(tag).size === 1
+      doc(html).select("input[type=hidden]").size === 0
+    }
+
+    "submit the option shown when readonly with no value" in {
+      def hidden(html: Html) = doc(html).select("input[type=hidden]").asScala.map(_.attr("value")).toSeq
+      hidden(bs.select(form("choice"), options, Symbol("readonly") -> true)) === Seq("a")
+      hidden(bs.select(form("choice"), options, Symbol("readonly") -> true, Symbol("_disabled") -> Seq("a"))) ===
+        Seq("b")
+      hidden(bs.select(form("choice"), options, Symbol("readonly") -> true, Symbol("_default") -> "None")) ===
+        Seq("")
+      hidden(bs.select(form("choice"), options, Symbol("readonly") -> true, Symbol("value") -> "x")) === Seq("a")
+      hidden(bs.select(form("many"), options, Symbol("multiple") -> true, Symbol("readonly") -> true)) === Nil
+    }
+
     "show errors" in {
       val d = doc(bs.select(failed("name"), options, Symbol("_label") -> "Name"))
       classes(one(d, "select")) must contain("is-invalid")
+      one(d, "select").attr("aria-invalid") === "true"
       one(d, ".invalid-feedback").text === "This field is required"
     }
   }
@@ -267,10 +340,18 @@ class BsFormHelpersSpec extends Specification {
       doc(bs.checkbox(off, Symbol("readonly") -> true)).select("input[type=hidden]").size === 0
     }
 
+    "render disabled once and submit nothing when readonly and disabled" in {
+      val html = bs.checkbox(filled("flag"), Symbol("readonly") -> true, Symbol("disabled") -> true)
+      val tag = "<input type=\"checkbox\"[^>]*>".r.findFirstIn(html.body).getOrElse("")
+      """\bdisabled\b""".r.findAllIn(tag).size === 1
+      doc(html).select("input[type=hidden]").size === 0
+    }
+
     "show help and errors" in {
       val d = doc(bs.checkbox(failed("name"), Symbol("_label") -> "Flag", Symbol("_help") -> "Why"))
       val input = one(d, "input")
       classes(input) must contain("is-invalid")
+      input.attr("aria-invalid") === "true"
       val error = one(d, "div.form-check .invalid-feedback")
       error.text === "This field is required"
       input.attr("aria-describedby").split(" ").toSet === Set(one(d, ".form-text").id, error.id)
