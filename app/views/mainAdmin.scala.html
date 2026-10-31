@@ -9,7 +9,8 @@
         gallery: Boolean = false,
         pager: Html = Html(""),
         contestId: Option[Long] = None)(content: Html)(implicit messages: Messages, request: RequestHeader)
-@layout(title, bodyClass = if (gallery) "gallery" else "") {
+@* `title`: a message key, as main's *@
+@layout(Messages(title), bodyClass = if (gallery) "gallery" else "") {
         <script>
                 var contestId = @contestId.getOrElse(0L);
         </script>

@@ -8,7 +8,7 @@ import play.twirl.api.Html
 import java.io.File
 
 /** The shared page shell (layout.scala.html): frameworks served from this host (webjars),
-  * main.css after them (every shell wraps it).
+  * main.css after them, and titles localised once, as every shell wraps it.
   */
 class LayoutSpec extends PlaySpecification {
 
@@ -50,6 +50,13 @@ class LayoutSpec extends PlaySpecification {
 
     "show the title as given" in {
       html must contain("<title>A title</title>")
+    }
+  }
+
+  "the shells" should {
+    "localise their title key once" in {
+      page(views.html.mainAdmin("users")(Html(""))) must contain("<title>Users</title>")
+      page(views.html.main("gallery")(Html(""))) must contain("<title>Gallery</title>")
     }
   }
 

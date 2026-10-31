@@ -2,7 +2,7 @@
 @import db.scalikejdbc.Round
 @(user: User, round: Round, stat: RoundStat)(implicit flash: Flash, messages: Messages, req: RequestHeader)
 
-    @main(Messages("statistics"), user, user.getId, Some(round), stat.rounds, gallery = false) {
+    @main("statistics", user, user.getId, Some(round), stat.rounds, gallery = false) {
 
         @if(user.canViewOrgInfo(round)) {
             <div class="row" >
