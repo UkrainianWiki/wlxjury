@@ -54,15 +54,24 @@
   }
 
   /** A binary round's tile as the page loads: its thumbs toggle buttons, named by the page's
-    * texts (data-vote-selected / -rejected), and the file's stored vote. */
+    * texts (data-vote-selected / -rejected), and the file's stored vote. The thumbs take the
+    * focus and vote with Enter or Space as with a click (ug-theme-tiles.js: the thumb of the
+    * file's vote undoes it), the key never reaching the tile, which opens the large view. */
   function addVote(tile, item) {
     var holder = document.querySelector('[data-csrf-token]');
-    [['.ug-icon-select', 'selected'], ['.ug-icon-reject', 'rejected']].forEach(function (thumb) {
+    [['.ug-icon-select', 'selected', 1], ['.ug-icon-reject', 'rejected', -1]].forEach(function (thumb) {
       var icon = tile.querySelector(thumb[0]);
       if (!icon) return;
       icon.setAttribute('role', 'button');
+      icon.setAttribute('tabindex', '0');
       var label = holder && holder.getAttribute('data-vote-' + thumb[1]);
       if (label) icon.setAttribute('aria-label', label);
+      icon.addEventListener('keydown', function (e) {
+        if (e.key !== 'Enter' && e.key !== ' ') return;
+        e.preventDefault(); // Space would scroll the page
+        e.stopPropagation();
+        vote(tile, item, +item.rate === thumb[2] ? 0 : thumb[2]);
+      });
     });
     showVote(tile, item.rate);
   }

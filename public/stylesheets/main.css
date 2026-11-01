@@ -211,6 +211,11 @@ a.wlx-large-failed img {
 .ug-thumb-wrapper.ug-tile .ug-tile-icon.ug-icon-reject[aria-pressed=true] {
     box-shadow: 0 0 0 3px var(--wlx-vote-rejected);
 }
+/* A thumb with the keyboard focus (tile-votes.js): the focus ring outside the pressed one. */
+.ug-thumb-wrapper.ug-tile .ug-tile-icon[tabindex]:focus-visible {
+    outline: var(--bs-focus-ring-width) solid var(--bs-focus-ring-color);
+    outline-offset: 4px;
+}
 /* The read-only large view's thumbnails (large/contestFile.scala.html): the link fills the
    box, so a thumbnail that failed to load, hidden, still opens its file; that one is the
    same grey box. */

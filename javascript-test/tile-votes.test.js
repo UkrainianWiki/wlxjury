@@ -225,6 +225,37 @@ describe("a binary round's tile", () => {
             expect(item.rate).toBe(rate);
         });
 
+    test("makes its thumbs focusable", () => {
+        binaryTile(0);
+        expect(tile().querySelector(".ug-icon-select").getAttribute("tabindex")).toBe("0");
+        expect(tile().querySelector(".ug-icon-reject").getAttribute("tabindex")).toBe("0");
+    });
+
+    test.each([["Enter", ".ug-icon-select", 0, 1], [" ", ".ug-icon-reject", 0, -1], ["Enter", ".ug-icon-select", 1, 0]])(
+        "votes with %j on a thumb, as a click does, without opening the tile", (key, thumb, stored, rate) => {
+            const opened = jest.fn();
+            $(document.body).on("click keydown", ".ug-tile", opened); // as unitegallery delegates its clicks
+            const item = binaryTile(stored);
+            const press = new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true });
+            tile().querySelector(thumb).dispatchEvent(press);
+            expect(press.defaultPrevented).toBe(true);
+            expect(requests).toHaveLength(1);
+            expect(requests[0].options.url).toBe("/rate/round/1/pageid/101/select/" + rate);
+            requests[0].answer.resolve("success");
+            expect(item.rate).toBe(rate);
+            expect(opened).not.toHaveBeenCalled();
+        });
+
+    test("ignores other keys on a thumb", () => {
+        binaryTile(0);
+        ["Tab", "a", "ArrowDown", "Escape"].forEach(key => {
+            const press = new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true });
+            tile().querySelector(".ug-icon-select").dispatchEvent(press);
+            expect(press.defaultPrevented).toBe(false);
+        });
+        expect(requests).toHaveLength(0);
+    });
+
     test("sends no second vote while one is pending", () => {
         const item = binaryTile(0);
         expect(vote(tile(), item, 1)).not.toBeNull();
