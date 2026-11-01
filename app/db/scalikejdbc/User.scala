@@ -6,9 +6,10 @@ import scalikejdbc.{DBSession, ResultName, WrappedResultSet, insert, select, sql
 
 import java.time.ZonedDateTime
 import play.api.data.validation.{Constraints, Invalid, Valid}
-import play.api.libs.Codecs
+import play.api.Logger
 import scalikejdbc._
 import scalikejdbc.orm.CRUDMapper
+import services.PasswordHasher
 
 import scala.util.Try
 
@@ -35,6 +36,10 @@ case class User(
     theme: Option[String] = None
 ) extends HasId
     with Ordered[User] {
+
+  /** Without the password hash, should a user ever be logged or shown in a test failure. */
+  override def toString: String =
+    scala.runtime.ScalaRunTime._toString(copy(password = password.map(_ => "***")))
 
   def emailLo: String = email.trim.toLowerCase
 
@@ -250,8 +255,12 @@ object User extends CRUDMapper[User] {
 
   def isNotDeleted = sqls.isNull(u.deletedAt)
 
+  private val passwordLogger = Logger("security.password")
+  private val secureRandom = new java.security.SecureRandom()
+
+  /** A generated password (a new user's, a reset's): letters and digits from a secure random. */
   def randomString(len: Int): String = {
-    val rand = new scala.util.Random(System.nanoTime)
+    val rand = secureRandom
     val sb = new StringBuilder(len)
     val ab = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
     for (i <- 0 until len) {
@@ -260,20 +269,32 @@ object User extends CRUDMapper[User] {
     sb.toString()
   }
 
-  def login(username: String, password: String): Option[User] = {
-    byUserName(username).filter(user => {
-      val passwordTrimmed = password.trim
-      val inputHash = hash(user, passwordTrimmed)
-      val dbHash = user.password.get
-      inputHash == dbHash
-    })
+  /** The user with the login (an email, else a wiki account) and password, if they match
+    * ([[PasswordHasher.check]]). A legacy SHA-1 hash, or a bcrypt hash of a lower cost, is
+    * replaced by a new bcrypt hash on success, unless the password was changed meanwhile.
+    * Throws [[PasswordHasher.Busy]] if no turn to check comes before `deadline`.
+    */
+  def login(username: String, password: String, deadline: Long = PasswordHasher.default.deadline()): Option[User] = {
+    val user = byUserName(username)
+    PasswordHasher.default.check(user.flatMap(_.password), password, deadline) match {
+      case PasswordHasher.Accepted(rehash) =>
+        for (u <- user; stored <- u.password) yield rehash.fold(u) { hash =>
+          if (replaceHash(u.getId, stored, hash)) {
+            passwordLogger.info(s"password hash upgraded: accountId=${u.getId}")
+            u.copy(password = Some(hash))
+          } else u
+        }
+      case PasswordHasher.Rejected => None
+    }
   }
 
-  def hash(user: User, password: String): String =
-    sha1(password)
+  /** Stores a new password's bcrypt hash. */
+  def setPassword(id: Long, password: String): Unit =
+    updateHash(id, PasswordHasher.default.hash(password))
 
-  def sha1(input: String): String =
-    Codecs.sha1(input.getBytes)
+  /** Replaces the stored hash `expected` (only it: not a password changed since it was read). */
+  private def replaceHash(id: Long, expected: String, hash: String): Boolean =
+    sql"UPDATE users SET password = $hash WHERE id = $id AND password = $expected".update.apply() == 1
 
   def byUserName(username: String): Option[User] = {
     val unameTrimmed = username.trim.toLowerCase
@@ -445,24 +466,24 @@ object User extends CRUDMapper[User] {
   def create(
       fullname: String,
       email: String,
-      password: String,
+      passwordHash: String,
       roles: Set[String],
       contestId: Option[Long]
-  ): User = create(fullname, email, password, roles, contestId, None, Some(ZonedDateTime.now))
+  ): User = create(fullname, email, passwordHash, roles, contestId, None, Some(ZonedDateTime.now))
 
   def create(
       fullname: String,
       email: String,
-      password: String,
+      passwordHash: String,
       roles: Set[String],
       contestId: Option[Long],
       lang: Option[String]
-  ): User = create(fullname, email, password, roles, contestId, lang, Some(ZonedDateTime.now))
+  ): User = create(fullname, email, passwordHash, roles, contestId, lang, Some(ZonedDateTime.now))
 
   def create(
       fullname: String,
       email: String,
-      password: String,
+      passwordHash: String,
       roles: Set[String],
       contestId: Option[Long],
       lang: Option[String],
@@ -472,7 +493,7 @@ object User extends CRUDMapper[User] {
       User(
         fullname = fullname,
         email = email,
-        password = Some(password),
+        password = Some(passwordHash),
         roles = roles,
         contestId = contestId,
         lang = lang,
@@ -538,7 +559,8 @@ object User extends CRUDMapper[User] {
     updateById(id)
       .withAttributes("isRoot" -> root)
 
-  def updateHash(id: Long, hash: String): Unit =
+  /** Stores a hash made by [[PasswordHasher.hash]]; see [[setPassword]]. */
+  private def updateHash(id: Long, hash: String): Unit =
     updateById(id)
       .withAttributes("password" -> hash)
 

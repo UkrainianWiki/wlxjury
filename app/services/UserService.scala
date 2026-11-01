@@ -70,7 +70,7 @@ class UserService @Inject()(val sendMail: SMTPOrWikiMail,
       if (creator.hasRole(User.ROOT_ROLE)) formUser
       else formUser.copy(roles = formUser.roles - User.ROOT_ROLE, isRoot = false)
     val password = allowed.password.getOrElse(User.randomString(12))
-    val createdUser = User.create(allowed.copy(password = Some(User.hash(allowed, password))))
+    val createdUser = User.create(allowed.copy(password = Some(PasswordHasher.default.hash(password))))
     for (contest <- contestOpt if contest.greeting.use && createdUser.contestRole.forall(mayBeGreeted))
       sendMail(creator, createdUser, contest, password)
     createdUser

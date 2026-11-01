@@ -10,7 +10,8 @@ import play.api.data.Forms._
 import play.api.data.validation.{Constraint, Constraints, Valid}
 import play.api.i18n.{I18nSupport, Lang, Messages}
 import play.api.mvc.{Action, AnyContent, ControllerComponents, EssentialAction, Result}
-import services.UserService
+import modules.BlockingExecutionContext
+import services.{PasswordHasher, UserService}
 import spray.util.pimpFuture
 
 import javax.inject.Inject
@@ -21,6 +22,7 @@ import scala.util.Try
   */
 class UserController @Inject()(cc: ControllerComponents,
                                userService: UserService,
+                               blocking: BlockingExecutionContext,
                                themeCookies: ThemeCookies = ThemeCookies.default)
     extends Secured(cc)
     with I18nSupport {
@@ -154,7 +156,7 @@ class UserController @Inject()(cc: ControllerComponents,
     *
     * @return list of users
     */
-  def saveUser(): EssentialAction = withAuth() { user => implicit request =>
+  def saveUser(): EssentialAction = withAuthOn(blocking)() { user => implicit request => // may hash a password
     editUserForm
       .bindFromRequest()
       .fold(
@@ -212,10 +214,8 @@ class UserController @Inject()(cc: ControllerComponents,
                         formUser.lang,
                         formUser.sort)
 
-        for (password <- formUser.password) {
-          val hash = User.hash(formUser, password)
-          User.updateHash(userId, hash)
-        }
+        for (password <- formUser.password)
+          User.setPassword(userId, password)
       }
 
       // only admins change roles, only root makes root, and only in editedUser's contest.
@@ -292,7 +292,8 @@ class UserController @Inject()(cc: ControllerComponents,
     }
 
   def importUsers(contestIdParam: Option[Long] = None): EssentialAction =
-    withAuth(contestPermission(User.ADMIN_ROLES, contestIdParam)) {
+    // a bcrypt hash per new account: off Play's default dispatcher
+    withAuthOn(blocking)(contestPermission(User.ADMIN_ROLES, contestIdParam)) {
       user => implicit request => withContestId(user, contestIdParam) { contestId =>
         importUsersForm
           .bindFromRequest()
@@ -389,7 +390,8 @@ class UserController @Inject()(cc: ControllerComponents,
       "email" -> text.verifying(Constraint[String]("constraint.email") { e =>
         if (e.trim.isEmpty) Valid else Constraints.emailAddress()(e)
       }),
-      "password" -> optional(text),
+      // a new password: not blank, at most 72 bytes (bcrypt's limit)
+      "password" -> optional(text.verifying(PasswordHasher.newPassword)),
       "roles" -> optional(text),
       "contest" -> optional(longNumber),
       "lang" -> optional(text),
@@ -438,7 +440,7 @@ class UserController @Inject()(cc: ControllerComponents,
   }
 
   def resetPassword(id: Long): EssentialAction =
-    withAuth(rolePermission(Set(User.ROOT_ROLE))) { user => implicit request =>
+    withAuthOn(blocking)(rolePermission(Set(User.ROOT_ROLE))) { user => implicit request =>
       User.findById(id).fold[Result](
         NotFound(views.html.errorPage(Some(user), "error.title", "error.user.not.found"))
       ) { found =>
@@ -448,9 +450,7 @@ class UserController @Inject()(cc: ControllerComponents,
         val contest: Option[ContestJury] =
           editedUser.currentContest.flatMap(ContestJuryJdbc.findById)
         val contestName = contest.fold("")(_.name)
-        val hash = User.hash(editedUser, password)
-
-        User.updateHash(editedUser.getId, hash)
+        User.setPassword(editedUser.getId, password)
 
         val juryhome = "http://localhost:9000"
         //        User.updateUser(formUser.fullname, formUser.email, hash, formUser.roles, formUser.contest)

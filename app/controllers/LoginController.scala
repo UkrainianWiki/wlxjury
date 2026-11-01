@@ -1,17 +1,23 @@
 package controllers
 
 import db.scalikejdbc.{Round, User}
+import modules.SignInExecutionContext
 import play.api.data.Forms._
 import play.api.data._
 import play.api.i18n.{I18nSupport, Lang}
 import play.api.mvc._
-import services.UserService
+import services.{PasswordHasher, UserService}
 
 import javax.inject.Inject
+import scala.concurrent.Future
 
+/** Sign-in and sign-up check or compute a bcrypt hash, and may wait for a turn to
+  * ([[PasswordHasher]]): they run on `signIn`, never on Play's default dispatcher.
+  */
 class LoginController @Inject() (
     val admin: UserService,
     cc: ControllerComponents,
+    signIn: SignInExecutionContext,
     themeCookies: ThemeCookies = ThemeCookies.default
 ) extends Secured(cc)
     with I18nSupport {
@@ -57,42 +63,62 @@ class LoginController @Inject() (
     noStore(result)
   }
 
-  def auth(): Action[AnyContent] = Action { implicit request =>
+  def auth(): Action[AnyContent] = Action.async { implicit request =>
+    // the wait for a turn to check the password counts from here, the time queued included
+    val deadline = PasswordHasher.default.deadline()
+    Future(signInResult(deadline))(signIn)
+  }
+
+  /** The sign-in's result; `deadline` ends the wait for a turn to check the password. */
+  private[controllers] def signInResult(deadline: Long)(implicit request: Request[AnyContent]): Result = {
     val returnTo = Secured.safeLocalPath(
       request.body.asFormUrlEncoded.flatMap(_.get("returnTo").flatMap(_.headOption))
     )
-    loginForm
-      .bindFromRequest()
-      .fold(
-        formWithErrors => noStore(BadRequest(views.html.index(formWithErrors, returnTo))),
-        { case (login, password) =>
+    val bound = loginForm.bindFromRequest()
+    bound.fold(
+      formWithErrors => noStore(BadRequest(views.html.index(formWithErrors, returnTo))),
+      { case (login, password) =>
+        try {
           User
-            .login(login, password)
-            .map { user =>
-              val latest = Secured.inCurrentContest(user, None)
-              // the latest contest where the user may see a page, else the latest one
-              // defensive: inCurrentContest already picks an active membership; kept should its rules change
-              val inContest = Secured.permitted(latest, _.hasAnyRole(Secured.ViewerRoles)).getOrElse(latest)
-              val sessionData = Seq(Secured.UserName -> login) ++
-                inContest.contestId.map(id => Secured.CurrentContestId -> id.toString)
-              val nextPage = returnTo.fold(indexRedirect(inContest))(url => Redirect(url))
-              val result = nextPage.withSession(sessionData: _*)
-              // the user's colour mode, if they chose one, follows them to this browser
-              val withTheme = themeCookies.setStored(result, user.theme)
-              user.lang.fold(withTheme)(l => withTheme.withLang(Lang(l)))
-            }
+            .login(login, password, deadline)
+            .map(signedIn(_, login, returnTo))
             .getOrElse(
-              noStore(BadRequest(views.html.index(loginForm.withGlobalError("invalid.user.or.password"), returnTo)))
+              noStore(BadRequest(views.html.index(bound.withGlobalError("invalid.user.or.password"), returnTo)))
             )
+        } catch {
+          // too many sign-ins at once: the page asks to try again
+          case _: PasswordHasher.Busy =>
+            noStore(ServiceUnavailable(views.html.index(bound.withGlobalError("signin.busy"), returnTo)))
+              .withHeaders(RETRY_AFTER -> "5")
         }
-      )
+      }
+    )
+  }
+
+  private def signedIn(user: User, login: String, returnTo: Option[String])(implicit request: RequestHeader): Result = {
+    val latest = Secured.inCurrentContest(user, None)
+    // the latest contest where the user may see a page, else the latest one
+    // defensive: inCurrentContest already picks an active membership; kept should its rules change
+    val inContest = Secured.permitted(latest, _.hasAnyRole(Secured.ViewerRoles)).getOrElse(latest)
+    val sessionData = Seq(Secured.UserName -> login) ++
+      inContest.contestId.map(id => Secured.CurrentContestId -> id.toString)
+    val nextPage = returnTo.fold(indexRedirect(inContest))(url => Redirect(url))
+    val result = nextPage.withSession(sessionData: _*)
+    // the user's colour mode, if they chose one, follows them to this browser
+    val withTheme = themeCookies.setStored(result, user.theme)
+    user.lang.fold(withTheme)(l => withTheme.withLang(Lang(l)))
   }
 
   def signUpView(): Action[AnyContent] = Action { implicit request =>
     noStore(Ok(views.html.signUp(signUpForm)))
   }
 
-  def signUp(): Action[AnyContent] = Action { implicit request =>
+  /** Creates the account (the first one is root), hashing its password: on `signIn`. */
+  def signUp(): Action[AnyContent] = Action.async { implicit request =>
+    Future(signUpResult)(signIn)
+  }
+
+  private def signUpResult(implicit request: Request[AnyContent]): Result = {
     signUpForm
       .bindFromRequest()
       .fold(
@@ -132,13 +158,12 @@ class LoginController @Inject() (
     Ok(views.html.errorPage(Some(user), "error.title", messageKey))
   }
 
+  /** The password is checked once, by [[auth]] ([[User.login]]), not by the form. */
   val loginForm: Form[(String, String)] = Form(
     tuple(
       "login" -> nonEmptyText,
       "password" -> nonEmptyText
-    ) verifying ("invalid.user.or.password", { case (l, p) =>
-      User.login(l, p).isDefined
-    })
+    )
   )
 
   /** The login is an email: a session's non-email login is read as a wiki account
@@ -147,7 +172,8 @@ class LoginController @Inject() (
   val signUpForm: Form[(String, String, String)] = Form(
     tuple(
       "login" -> email.transform[String](_.trim.toLowerCase, identity),
-      "password" -> nonEmptyText,
+      // not blank, at most 72 bytes (bcrypt's limit)
+      "password" -> nonEmptyText.verifying(PasswordHasher.newPassword),
       "repeat.password" -> nonEmptyText
     ) verifying ("invalid.user.or.password", fields =>
       fields match {
