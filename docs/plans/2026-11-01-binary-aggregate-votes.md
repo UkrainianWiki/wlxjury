@@ -170,6 +170,11 @@ It is from reading the code and the fixture DB (round 1: 20 jurors, 38,366 files
    form (e.g. "any number of approvals (no filter)") stored as NULL; 0 no longer means "has
    an unrated vote". Migrate stored 0 values to NULL only after checking existing rounds use
    it as "no filter" (a Flyway migration; Flyway stays 9.16.3).
+   Form part done (1a2564a9): no plain 0 among the choices, the empty one "Any number of
+   approvals (no filter)" (`selected.by.any.number`, stored as NULL), a stored 0 shown only for
+   a round that has it, as "0 (legacy: files with an unrated vote)", selected, so a resubmit
+   keeps it; a stored 0 behaves as before. The 0 → NULL migration still waits for the
+   production check.
 5. File list and CSV for all jurors: paged (the CSV streamed), as proposed.
 
 ## Order of work

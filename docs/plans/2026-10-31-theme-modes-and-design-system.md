@@ -1050,3 +1050,25 @@ Left for separate branches; none blocks merging this one.
     and label (an `<option>` can't hold an icon), sending the same `theme` field. Tests:
     `Theme` fallback, the layout without a cookie, the navbar switch's markup, the profile
     form's radios, plus the specs that assumed auto.
+
+**Review of follow-ups (36dd30f2..3915baae).** Five findings, fixed:
+- Overlapping star votes (`tile-votes.js`): each click sent at once, so votes could be
+  stored out of order and a failure restored the rate before the click. Done (2c188bcf): a
+  click while the tile's vote is pending is ignored (`aria-busy`), a failure restores the
+  last stored rate, the by-rate text follows each stored vote once; the binary thumbs too.
+- Half-star criteria truncated: the large view's criteria number and raty score divided as
+  Int (3 for a stored 7). Done (d2767358): a decimal division, `rateNumber`'s format.
+- 404 vote message: `{error: "not_found"}` showed the generic failure. Done (86d092da):
+  `vote.error.not.found`, `data-vote-not-found`, in all four files.
+- Old grouped-view URLs (`/byrate/.../region/grouped/...`) listed no files after
+  46017ee3. Done (798dd46b): `RoundList.of` reads `grouped` as all regions.
+- Binary gallery thumbs not reachable by keyboard. Done (6a7be552): `tabindex="0"`, Enter /
+  Space vote as a click (the key kept from the tile), a `--bs-focus-ring-*` outline. The tile
+  stars stay mouse-only: the large view's digit keys are the keyboard path.
+
+Also from the aggregate plan's decision 4 (1a2564a9): the round form's "selected by at least
+X jurors" without a plain 0, its empty choice named as no filter, a stored 0 kept as a legacy
+choice. And the size filters' labels made parallel, in the UI's units (6a5114c5): "Minimum
+resolution (Mpx)" / "Minimum file size (MB)". Left open: `LargeViewFixturesSpec` fails on all
+six fixtures since 17a4ea57 (they have `data-theme-pref="auto"`, the render is dark); they
+need regenerating (`FIXTURES_UPDATE=true`).
