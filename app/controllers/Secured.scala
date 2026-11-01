@@ -126,10 +126,10 @@ abstract class Secured(cc: ControllerComponents) extends AbstractController(cc) 
     Security.Authenticated(r => RequestTiming.within(r)(userFromRequest(r)), onUnAuthenticated) { user =>
       Action { request =>
         RequestTiming.within(request) {
-          permitted(user, permission).fold(onUnAuthorized(user, request, Secured.denialOf(permission))) {
-            permittedUser =>
-              Secured.switchingContest(user, permittedUser)(f(permittedUser)(request))(request)
-          }
+          checked(user, permission).fold(
+            onUnAuthorized(user, request, _),
+            permittedUser => Secured.switchingContest(user, permittedUser)(f(permittedUser)(request))(request)
+          )
         }
       }
     }
@@ -145,9 +145,7 @@ abstract class Secured(cc: ControllerComponents) extends AbstractController(cc) 
     Action { request =>
       RequestTiming.within(request) {
         userFromRequest(request).fold[Result](Results.Unauthorized(Json.obj("error" -> "unauthenticated"))) { user =>
-          permitted(user, permission).fold(onUnAuthorizedJson(user, request, Secured.denialOf(permission))) {
-            permittedUser => f(permittedUser)(request)
-          }
+          checked(user, permission).fold(onUnAuthorizedJson(user, request, _), permittedUser => f(permittedUser)(request))
         }
       }
     }
@@ -163,9 +161,7 @@ abstract class Secured(cc: ControllerComponents) extends AbstractController(cc) 
         RequestTiming.dequeued(request)
         RequestTiming.within(request) {
           userFromRequest(request).fold[Result](Results.Unauthorized(Json.obj("error" -> "unauthenticated"))) { user =>
-            permitted(user, permission).fold(onUnAuthorizedJson(user, request, Secured.denialOf(permission))) {
-              permittedUser => f(permittedUser)(request)
-            }
+            checked(user, permission).fold(onUnAuthorizedJson(user, request, _), permittedUser => f(permittedUser)(request))
           }
         }
       }(ec)
@@ -183,10 +179,10 @@ abstract class Secured(cc: ControllerComponents) extends AbstractController(cc) 
         RequestTiming.dequeued(request)
         RequestTiming.within(request) {
           userFromRequest(request).fold(onUnAuthenticated(request)) { user =>
-            permitted(user, permission).fold(onUnAuthorized(user, request, Secured.denialOf(permission))) {
-              permittedUser =>
-                Secured.switchingContest(user, permittedUser)(f(permittedUser)(request))(request)
-            }
+            checked(user, permission).fold(
+              onUnAuthorized(user, request, _),
+              permittedUser => Secured.switchingContest(user, permittedUser)(f(permittedUser)(request))(request)
+            )
           }
         }
       }(ec)
@@ -203,7 +199,13 @@ abstract class Secured(cc: ControllerComponents) extends AbstractController(cc) 
     action(request).map(_.withHeaders(CACHE_CONTROL -> "no-store"))(ExecutionContext.parasitic)
   }
 
-  private def permitted(user: User, permission: Permission): Option[User] = Secured.permitted(user, permission)
+  /** The permitted user ([[Secured.permitted]]), or the denial of the permission as checked
+    * for them ([[Secured.forUser]]).
+    */
+  private def checked(user: User, permission: Permission): Either[Secured.Denial, User] = {
+    val userPermission = Secured.forUser(user, permission)
+    Secured.permitted(user, userPermission).toRight(Secured.denialOf(userPermission))
+  }
 
   def rolePermission(roles: Set[String]): Secured.RolePermission = Secured.RolePermission(roles)
 
@@ -260,7 +262,9 @@ object Secured {
     def denial: Denial = Denial(requiredRoles = roles)
   }
 
-  /** Root, or one of the roles in the contest ([[User.hasContestRole]]). */
+  /** Root, or one of the roles in the contest ([[User.hasContestRole]]); a request's without
+    * a contest is checked in the session's current one ([[forUser]]).
+    */
   final case class ContestPermission(roles: Set[String], contestId: Option[Long]) extends DescribedPermission {
     def apply(user: User): Boolean = user.hasContestRole(roles, contestId)
     def denial: Denial = Denial.contest(contestId, roles)
@@ -381,6 +385,16 @@ object Secured {
     */
   def sessionUser(userName: String, currentContestId: Option[String]): Option[User] =
     User.byUserName(normalizeUserName(userName)).map(inCurrentContest(_, currentContestId))
+
+  /** `permission` as checked for the session's user: a [[ContestPermission]] without a
+    * contest (a page whose optional `contestId` is missing) in their current contest, the
+    * one such a page shows, and only there, as if the page named it; denied without a
+    * current contest, root aside.
+    */
+  def forUser(user: User, permission: User => Boolean): User => Boolean = permission match {
+    case ContestPermission(roles, None) => ContestPermission(roles, user.contestId)
+    case other                          => other
+  }
 
   /** The user if `permission` lets them in, in the session's current contest; else in
     * the first other of their contests where it does, so that a link into another of
