@@ -1,0 +1,92 @@
+@(card: controllers.ApiTokensCard)(implicit flash: Flash, messages: Messages, req: RequestHeader)
+@import helper._
+@import controllers.ApiTokensCard.date
+@* The own profile's personal API tokens (UserController): the list, each usable one with
+   Revoke, and the create form, both POST forms with the CSRF token. Right after creating
+   one, the new token, shown in that response only, with a button that copies it
+   (copy-field.js, which the page loads in its head: editUser). *@
+<section class="card" id="api-tokens" aria-labelledby="api-tokens-title">
+    <div class="card-body">
+        <h2 class="h5 card-title" id="api-tokens-title">@Messages("api.tokens")</h2>
+        <p class="text-body-secondary small">@Messages("api.tokens.help")</p>
+
+        @for(token <- card.newToken) {
+            <div class="alert alert-success" role="status">
+                <p class="mb-2">@Messages("api.token.created")</p>
+                <div class="input-group">
+                    <input type="text" class="form-control font-monospace" id="new-api-token" value="@token" readonly
+                           autocomplete="off" spellcheck="false" aria-label="@Messages("api.token.new")">
+                    <button type="button" class="btn btn-outline-secondary" data-copy-target="new-api-token"
+                            data-copied-text="@Messages("api.token.copied")">
+                        <i class="bi bi-clipboard" aria-hidden="true"></i> <span>@Messages("api.token.copy")</span>
+                    </button>
+                </div>
+            </div>
+        }
+        @for(notice <- card.notice) {
+            <div class="alert alert-warning" role="status">@Messages(notice, services.ApiTokenService.MaxActive)</div>
+        }
+        @if(flash.get("api-token-revoked").isDefined) {
+            <div class="alert alert-info" role="status">@Messages("api.token.revoked")</div>
+        }
+
+        @if(card.tokens.isEmpty) {
+            <p>@Messages("api.tokens.none")</p>
+        } else {
+            <div class="table-responsive">
+                <table class="table table-sm align-middle">
+                    <thead>
+                        <tr>
+                            <th scope="col">@Messages("api.token.name")</th>
+                            <th scope="col">@Messages("api.token.prefix")</th>
+                            <th scope="col">@Messages("api.token.created.at")</th>
+                            <th scope="col">@Messages("api.token.last.used")</th>
+                            <th scope="col">@Messages("api.token.expires")</th>
+                            <th scope="col"><span class="visually-hidden">@Messages("api.token.state")</span></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    @for(token <- card.tokens) {
+                        <tr>
+                            <td>@token.name</td>
+                            <td><code>@token.prefix…</code></td>
+                            <td>@date(token.createdAt)</td>
+                            <td>@token.lastUsedAt.fold(Messages("api.token.not.used"))(date)</td>
+                            <td>@token.expiresAt.fold(Messages("api.token.expiry.never"))(date)</td>
+                            <td class="text-end">
+                            @if(token.revoked) {
+                                <span class="badge text-bg-secondary">@Messages("api.token.state.revoked")</span>
+                            } else {
+                                @if(token.expired) {
+                                    <span class="badge text-bg-warning">@Messages("api.token.state.expired")</span>
+                                } else {
+                                    @form(routes.UserController.revokeApiToken(token.id), Symbol("class") -> "d-inline") {
+                                        @csrfField()
+                                        <button type="submit" class="btn btn-sm btn-outline-danger">@Messages("api.token.revoke")</button>
+                                    }
+                                }
+                            }
+                            </td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            </div>
+        }
+
+        <h3 class="h6 mt-3">@Messages("api.token.create")</h3>
+        @form(routes.UserController.createApiToken(), Symbol("class") -> "form-vertical", Symbol("id") -> "api-token-form") {
+            @csrfField()
+            <input type="hidden" name="@controllers.ApiTokensCard.NonceKey" value="@card.nonce">
+            @bs.text(card.form("name"), Symbol("_label") -> Messages("api.token.name"),
+                Symbol("maxlength") -> services.ApiTokenService.NameMaxLength)
+            @bs.select(card.form("expiry"), Seq(
+                    "30" -> Messages("api.token.expiry.30"),
+                    "90" -> Messages("api.token.expiry.90"),
+                    "365" -> Messages("api.token.expiry.365"),
+                    "never" -> Messages("api.token.expiry.never")),
+                Symbol("_label") -> Messages("api.token.expiry"))
+            <button type="submit" class="btn btn-primary">@Messages("api.token.create")</button>
+        }
+    </div>
+</section>

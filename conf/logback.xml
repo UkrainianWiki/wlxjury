@@ -16,6 +16,8 @@
     <logger name="application" level="DEBUG" />
     <!-- conflicts of interest removed from rounds (db.scalikejdbc.RoundConflicts): kept nowhere else -->
     <logger name="coi" level="INFO" />
+    <!-- refused personal API tokens (services.ApiTokenService): by id or prefix, never the token -->
+    <logger name="services.ApiTokenService" level="INFO" />
 
     <logger name="com.gargoylesoftware.htmlunit.javascript" level="OFF" />
 

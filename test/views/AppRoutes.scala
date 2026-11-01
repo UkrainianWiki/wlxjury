@@ -32,7 +32,17 @@ object AppRoutes {
     val ctor = classOf[router.Routes].getConstructors.maxBy(_.getParameterCount)
     val types = ctor.getParameterTypes
     require(types.last == classOf[String], s"router.Routes' last constructor parameter is not its prefix: ${types.toSeq}")
-    val args = types.indices.map(i => if (i == types.length - 1) "/" else null).toArray[AnyRef]
+    // an included router (`-> /api api.ApiRouter`) is prefixed when Routes is built: one without
+    // its dependencies, whose documentation is empty (the API's paths are not matched here)
+    def included(router: Class[_]): AnyRef = {
+      val routerCtor = router.getConstructors.head
+      routerCtor.newInstance(Array.fill[AnyRef](routerCtor.getParameterCount)(null): _*).asInstanceOf[AnyRef]
+    }
+    val args = types.indices.map { i =>
+      if (i == types.length - 1) "/"
+      else if (classOf[play.api.routing.Router].isAssignableFrom(types(i))) included(types(i))
+      else null
+    }.toArray[AnyRef]
     val routes = ctor.newInstance(args: _*).asInstanceOf[router.Routes]
     routes.documentation.map { case (m, p, c) => RouteDoc(m, p, c) }
   }

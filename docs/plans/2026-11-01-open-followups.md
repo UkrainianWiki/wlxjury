@@ -440,6 +440,29 @@ only if B6–B7 change shared code.
 - Messages exist in all four files with the same placeholders (`MessagesCompletenessSpec`).
 - Tests assert on ids, data attributes and text, not on styling classes.
 
+### Merged ukwikidev/api-auth
+
+2026-11-02, before B5: `git merge --no-ff ukwikidev/api-auth` (at `dd7c5d31`) into this
+branch, merge commit `992d8eb2`.
+
+- **Conflicts:** none textual; git auto-merged every file both sides changed. Checked by
+  hand: both `application.conf` files keep the `CsrfModule` swap with `PlayFixtureModule`
+  still removed; `build.sbt` has tapir-play-server (pekko-http testkit/play-json gone) and no
+  scalikejdbc play initializer/fixture; the four messages files hold the same 383 keys (the
+  API's keys added, B1–B3's deleted keys not back); `editUser` has the token card and the
+  reset `<button form=…>`; CLAUDE.md has both sides' sections; `V75__Api_tokens` is the only
+  V75.
+- **Post-merge fix** `6ee47529`: the token card's `copy-field.js` moves from a script tag
+  in `apiTokens.scala.html` to `editUser`'s `head`, loaded only with the card (the own
+  profile), as B3's pages do. The card has no inline code or `on…` handlers. Swagger
+  (`/api/docs`) is Tapir's page, not a template; left as is.
+- **Checks:** `Test/compile`, `Gatling/compile` and `ApiSpec`, `ApiTokenPageSpec`,
+  `ApiTokenJdbcSpec`, `ErrorHandlerSpec`, `UserControllerSpec`, `SecuredSpec`,
+  `LoginControllerSpec`, `MutationAuthorizationSpec`, `ConnectionPoolConfigSpec`,
+  `views.*`, `MigrationNamingSpec`: exit 0, 272 passed, 0 failed
+  (`target/checks/20261102-005007-23776.log`). Jest: exit 0, 18 suites, 240 tests
+  (`javascript-test/target/checks/20261102-004818-24892.log`). No full suite (after B5).
+
 ## Checked and already resolved (not part of this plan)
 
 Theme follow-ups 1–11 and the review fixes; Phase 2's ru keys; JS texts in `mainAdmin` (now

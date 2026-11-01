@@ -1,8 +1,10 @@
+import api.ApiFailure
 import controllers.Secured
 import db.scalikejdbc.User
 import play.api.http.DefaultHttpErrorHandler
 import play.api.http.Status.{BAD_REQUEST, NOT_FOUND}
 import play.api.i18n._
+import play.api.libs.json.Json
 import play.api.mvc.Results._
 import play.api.mvc._
 import play.api.{Configuration, Environment, Logging}
@@ -13,7 +15,8 @@ import scala.util.Try
 
 /** Errors outside the controllers' own pages: a page with a message from conf/messages,
   * never the error's text (a client error's message or an exception's), and for a server
-  * error the reference of its log line.
+  * error the reference of its log line. Under `/api/` the same as the API's JSON
+  * ([[ApiFailure]]): e.g. a body over the parser's limit, `{"error": "payload_too_large"}`.
   */
 class ErrorHandler @Inject() (
     environment: Environment,
@@ -39,7 +42,8 @@ class ErrorHandler @Inject() (
       case _           => "error.client"
     }
     Future.successful(
-      Status(statusCode)(views.html.errorPage(sessionUser(request), "error.title", messageKey, Seq(statusCode)))
+      if (ApiFailure.isApiRequest(request)) Status(statusCode)(Json.obj("error" -> ApiFailure.clientErrorBody(statusCode).error))
+      else Status(statusCode)(views.html.errorPage(sessionUser(request), "error.title", messageKey, Seq(statusCode)))
     )
   }
 
@@ -48,10 +52,13 @@ class ErrorHandler @Inject() (
     val reference = Secured.newReference()
     logger.error(s"server_error ref=$reference method=${request.method} path=${Secured.logValue(request.path)}", exception)
     Future.successful(
-      InternalServerError(
-        views.html.errorPage(sessionUser(request), "error.title", "error.server", Seq(reference),
-          Some(reference), Some(Secured.referenceTime()))
-      )
+      if (ApiFailure.isApiRequest(request))
+        InternalServerError(Json.obj("error" -> ApiFailure.serverError(reference).body.error, "reference" -> reference))
+      else
+        InternalServerError(
+          views.html.errorPage(sessionUser(request), "error.title", "error.server", Seq(reference),
+            Some(reference), Some(Secured.referenceTime()))
+        )
     )
   }
 
