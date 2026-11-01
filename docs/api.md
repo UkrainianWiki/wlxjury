@@ -18,14 +18,20 @@ So far the API has the contest endpoints, for root only, as the contest pages ar
   one on your profile page (your name in the navbar, then "API tokens"), with a name and an
   expiry of 30 days, 90 days, a year or never. The token is shown once, right after you
   create it: copy it then. Revoke it there when you no longer need it, or if it may have
-  leaked. A token acts as you, with your memberships and roles; it can't create or revoke
-  tokens. Keep it out of shell history and scripts you share (an environment variable or a
+  leaked. You can have at most 20 usable (not revoked, not expired) tokens. A token acts as
+  you, with your memberships and roles; it can't create or revoke tokens. Keep it out of shell history and scripts you share (an environment variable or a
   file only you can read).
 - **The session cookie**, for a page of the tool calling the API from the browser. A write
   (`POST`, `PUT`, `DELETE`) then needs the `Csrf-Token` header, as the gallery's votes send it.
 
 A request with an `Authorization` header is judged by that header alone: a bad token is
-refused even if the request also carries a signed-in session cookie.
+refused even if the request also carries a signed-in session cookie. A write with a token
+needs no CSRF token only when the request carries no session cookie: a tool's request.
+
+**Swagger UI's "Try it out"** works for reads (`GET`) in a signed-in browser, with the session.
+Writes from it fail with `{"error": "csrf"}`: the browser sends the session cookie, and Swagger
+UI sends no `Csrf-Token` header. This is on purpose (a request with the session cookie always
+needs the CSRF token, a Bearer header or not); make writes with `curl` or a tool and a token.
 
 ```bash
 export WLXJURY_TOKEN=wlxj_...   # from your profile page
@@ -44,18 +50,21 @@ Errors are JSON, with a fixed code and never the request's text:
 | Status | Body | When |
 |---|---|---|
 | 400 | `{"error": "bad_request"}` | a body or path that can't be read |
-| 401 | `{"error": "unauthorized"}`, `WWW-Authenticate: Bearer` | no credentials, or a token that is unknown, revoked, expired or malformed |
+| 401 | `{"error": "unauthenticated"}`, `WWW-Authenticate: Bearer` | no credentials, or a token that is unknown, revoked, expired or malformed |
 | 403 | `{"error": "forbidden", "reference": "1a2b3c4d"}` | signed in, but not allowed; the reference finds the log line |
 | 403 | `{"error": "csrf", "reference": "…"}` | a session's write without a valid `Csrf-Token` header |
 | 404 | `{"error": "not_found"}` | no such contest, or no such path under `/api` |
+| 413 | `{"error": "payload_too_large"}` | a body over Play's parser limit (`play.http.parser.maxMemoryBuffer`) |
 | 500 | `{"error": "server_error", "reference": "…"}` | a server error, logged with the reference |
 
 ## For operators
 
 - Tokens are stored as their SHA-256 only (`api_token`, migration V75), with a prefix
   (`wlxj_` and 6 characters) that names them in the profile list and in log lines.
-- A refused token is logged at WARN as `api_token_refused reason=… tokenId=…` (or the prefix
-  for an unknown one), never its value. A denial is logged on `security.authz` with its
+- A refused token is logged at INFO as `api_token_refused reason=… tokenId=…` (or the prefix
+  for an unknown one; logger `services.ApiTokenService`, at INFO in `conf/logback.xml`), never
+  its value; a malformed token or another `Authorization` scheme only at DEBUG, without a
+  database lookup. A denial is logged on `security.authz` with its
   reference and `auth=session` or `auth=token tokenId=…`.
 - Revoking a token for a user (root) is not in the UI yet: set `revoked_at` on their row,
   e.g. `UPDATE api_token SET revoked_at = NOW(3) WHERE user_id = … AND revoked_at IS NULL`.
