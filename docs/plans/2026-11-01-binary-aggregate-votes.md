@@ -319,11 +319,26 @@ An independent review of `a9f562a4..443ac143` found only low issues:
 
 - Migrate stored "selected by at least 0" to NULL (decision 4) once production rounds are
   checked to use it as "no filter".
-- Measure the all-jurors scans on the 38k-file fixture (review item 4), on a server running
-  this branch: `/byrate/round/1/user/0/page/1` unfiltered and with `filter=selected`,
-  `rejected`, `unrated`; `/filelist/round/1/user/0/page/1`; `/gallery/round/1/user/0/page/1`
-  (1 warm-up, 5 timed each, median and min/max). `EXPLAIN` a filtered page more than about
-  2x the unfiltered one, or any page over about 2 s.
+- Measured (review item 4) on 533c4b88, the UI fixture server (38,366 files, ~383k votes, 20
+  jurors; 1 GB heap, Windows, MariaDB 10.6 in Docker), organiser session, 1 warm-up then 5
+  timed GETs each (raw: `target/checks/aggregate-timing-533c4b88.json`):
+
+  | Page (round 1 yes/no unless noted) | Median | Min-max | Size |
+  |---|---|---|---|
+  | by-rate, all | 966 ms | 850-1160 | 48 KiB |
+  | by-rate, `filter=selected` | 950 ms | 926-1478 | 50 KiB |
+  | by-rate, `filter=rejected` | 1129 ms | 941-4920 | 57 KiB |
+  | by-rate, `filter=unrated` | 1099 ms | 970-2048 | 19 KiB |
+  | tile gallery, all | 1201 ms | 1080-1483 | 48 KiB |
+  | file list, page 1 (1000 files) | 1240 ms | 1082-1565 | 4.6 MiB |
+  | by-rate, round 2 (rated) | 1999 ms | 1768-5207 | 61 KiB |
+  | CSV, whole round | 4013 ms | 3558-5123 | 4.5 MiB |
+
+  The `HAVING` filters cost at most ~1.2x the unfiltered list, under the 2x threshold, so no
+  `EXPLAIN` or change. The rated round's by-rate page is at the 2 s mark; its query is the old
+  path (this plan changed binary rounds), and no earlier measurement of it on this fixture
+  exists to compare: a paired run against master would tell whether it regressed. Single
+  slow outliers (4.9 s, 5.2 s) appeared once each; not investigated.
 
 ## Follow-up: more ranking methods (STV, normalised ratings)
 
