@@ -156,11 +156,19 @@ class DistributeImages @Inject()(imageRepo: ImageRepo) extends Logging {
     // conditions, so any one of them is a valid context for rate scaling / gating.
     val prevRound = prevRounds.headOption
 
+    // a top-N from yes/no rounds is ranked by all their votes, whatever "selected by" reads
+    val binaryTop = prevRound.exists(_.isBinary) && selectTopByRating.isDefined
+
     val imagesAll: Seq[ImageWithRating] =
       if (prevRounds.isEmpty)
         imageRepo
           .findByContestId(round.contestId)
           .map(i => new ImageWithRating(i, Seq.empty))
+      else if (binaryTop)
+        DistributeImages.binaryCandidates(
+          mergeByPageId(prevRounds.flatMap(r => imageRepo.byRoundMerged(r.getId))),
+          rated = selectedAtLeast.map(_ > 0)
+        )
       else
         mergeByPageId(
           prevRounds.flatMap(r =>
@@ -184,6 +192,7 @@ class DistributeImages @Inject()(imageRepo: ImageRepo) extends Logging {
       selectMinAvgRating =
         prevRound.flatMap(_ => selectMinAvgRating.filter(_ => !prevRound.exists(_.isBinary))),
       selectTopByRating = prevRound.flatMap(_ => selectTopByRating),
+      topOrder = round.topOrder,
       selectedAtLeast = prevRound.flatMap(_ => selectedAtLeast),
       mpxAtLeast = mpxAtLeast,
       sizeAtLeast = sizeAtLeast,
@@ -213,7 +222,9 @@ class DistributeImages @Inject()(imageRepo: ImageRepo) extends Logging {
           Some(
             acc.copy(
               selection = acc.selection ++ iwr.selection,
-              countFromDb = acc.countFromDb + iwr.countFromDb
+              countFromDb = acc.countFromDb + iwr.countFromDb,
+              approvalsFromDb = sum(acc.approvalsFromDb, iwr.approvalsFromDb),
+              rejectionsFromDb = sum(acc.rejectionsFromDb, iwr.rejectionsFromDb)
             )
           )
         case None => Some(iwr)
@@ -221,6 +232,9 @@ class DistributeImages @Inject()(imageRepo: ImageRepo) extends Logging {
     }
     merged.values.toSeq
   }
+
+  private def sum(a: Option[Int], b: Option[Int]): Option[Int] =
+    if (a.isEmpty && b.isEmpty) None else Some(a.getOrElse(0) + b.getOrElse(0))
 
   def rebalanceImages(
       round: Round,
@@ -239,6 +253,16 @@ class DistributeImages @Inject()(imageRepo: ImageRepo) extends Logging {
 }
 
 object DistributeImages {
+
+  /** Yes/no previous rounds' images, grouped with all their votes, for a top-N: those that
+    * `rated` kept as it read the votes (an approval, or with a stored 0 an unrated vote),
+    * each with its approvals as its rate, so that "selected by at least" compares them, as
+    * [[services.distribution.DistributionSource.rank]] has them.
+    */
+  def binaryCandidates(images: Seq[ImageWithRating], rated: Option[Boolean]): Seq[ImageWithRating] =
+    images
+      .filter(i => rated.forall(r => if (r) i.approvals > 0 else i.countFromDb > i.approvals + i.rejections))
+      .map(i => i.copy(selection = Seq(Selection(i.pageId, juryId = 0, roundId = 0, rate = i.approvals))))
 
   /** Selection rows per insert batch: ~200 KB, well below any max_allowed_packet. */
   val InsertChunk = 5000

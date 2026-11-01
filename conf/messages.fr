@@ -280,6 +280,7 @@ selected.by.any.number=N''importe quel nombre d''approbations (sans filtre)
 selected.by.legacy.zero=0 (ancien : fichiers avec un vote non noté)
 average.file.rating.is.at.least=La note moyenne d''image est au moins
 top.images=Nombre de meilleures images des tours précédents
+top.images.binary.order=Meilleurs fichiers d''un tour oui/non par
 each.file.to.all.jurors=Chaque image à tous les jurés
 each.file.to.i.juror.s=Chaque image à {0} juré(s)
 category.filter=Filtre de catégorie

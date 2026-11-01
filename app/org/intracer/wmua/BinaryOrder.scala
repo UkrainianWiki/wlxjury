@@ -17,6 +17,10 @@ sealed abstract class BinaryOrder(val param: String) {
   /** The values of [[columns]] of a file with these approvals (rate 1) and rejections (-1). */
   def values(approvals: Int, rejections: Int): Seq[Int]
 
+  /** [[values]] to sort by ascending: the best first. */
+  def sortKey(approvals: Int, rejections: Int): Seq[Int] =
+    columns.map(_._2).zip(values(approvals, rejections)).map { case (dir, value) => dir * value }
+
   def messageKey: String = s"binary.order.$param"
 }
 

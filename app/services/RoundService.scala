@@ -167,6 +167,7 @@ class RoundService @Inject() (
             "prevSelectedBy" -> round.prevSelectedBy,
             "prevMinAvgRate" -> round.prevMinAvgRate,
             "topImages" -> round.topImages,
+            "topBinaryOrder" -> round.topBinaryOrder.map(_.param),
             "regions" -> round.regions,
             "monuments" -> round.monuments,
             "category" -> round.category,

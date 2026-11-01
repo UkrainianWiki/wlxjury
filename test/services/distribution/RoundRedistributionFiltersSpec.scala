@@ -1,7 +1,7 @@
 package services.distribution
 
 import db.scalikejdbc._
-import org.intracer.wmua.{ContestJury, Image}
+import org.intracer.wmua.{BinaryOrder, ContestJury, Image}
 import org.intracer.wmua.cmd.DistributeImages
 import org.specs2.mutable.Specification
 import org.specs2.specification.{BeforeAll, BeforeEach}
@@ -117,6 +117,47 @@ class RoundRedistributionFiltersSpec extends Specification with TestDb with Befo
         service.newFilesCount(round.getId) === expected.count(_ > 10).toLong
         service.distributeNewImages(round.getId) === expected.count(_ > 10)
         (pageIds(round.getId) === expected) and (service.newFilesCount(round.getId) === 0L)
+      }.reduce(_ and _)
+    }
+
+    "pick a yes/no round's top-N by the round's binary order, with and without \"selected by\"" in {
+      implicit val contest: ContestJury = createContests(1).head
+      val jurors = createUsers("jury", 1, 2, 3, 4, 5)
+      addImages(contest, 1 to 3)
+      val service = TestRoundServices.roundService(TestRoundServices.handler(chunkRows = 3))
+      val source = Round(None, 0, Some("Source"), contest.getId, active = true)
+      val binary = service.createNewRound(source, jurors.map(_.getId))
+      // A (1): 3 approvals, 2 rejections; B (2): 2 approvals, 3 unrated; C (3): 1 approval
+      val votes = Map(1L -> Seq(1, 1, 1, -1, -1), 2L -> Seq(1, 1, 0, 0, 0), 3L -> Seq(1, 0, 0, 0, 0))
+      for ((pageId, rates) <- votes; (juror, rate) <- jurors.zip(rates))
+        SelectionJdbc.rate(pageId, juror.getId, binary.getId, rate)
+
+      val top1 = source.copy(previous = Some(binary.getId.toString), topImages = Some(1))
+      def order(o: BinaryOrder) = Some(o)
+      val cases = Seq(
+        (top1, Set(1L)), // the default: approvals, then fewest rejections
+        (top1.copy(prevSelectedBy = Some(1)), Set(1L)),
+        (top1.copy(topBinaryOrder = order(BinaryOrder.Difference)), Set(2L)),
+        (top1.copy(topBinaryOrder = order(BinaryOrder.Difference), prevSelectedBy = Some(1)), Set(2L)),
+        (top1.copy(topBinaryOrder = order(BinaryOrder.ApprovalsOnly), topImages = Some(2)), Set(1L, 2L)),
+        // "selected by" leaves out the files before the ranking
+        (top1.copy(topBinaryOrder = order(BinaryOrder.Difference), prevSelectedBy = Some(3)), Set(1L)),
+        // no top-N: every file, whatever the order
+        (source.copy(previous = Some(binary.getId.toString), topBinaryOrder = order(BinaryOrder.Difference)),
+          Set(1L, 2L, 3L))
+      )
+      val inMemory = new DistributeImages(ImageJdbc)
+      cases.zipWithIndex.map { case ((settings, expected), i) =>
+        val reference = inMemory.imagesByRound(roundDao.create(settings.copy(number = 99)), Seq(binary)).map(_.pageId).toSet
+        Round.setActive(binary.getId, active = true)
+        val round = service.createNewRound(settings, jurors.map(_.getId))
+        Round.setActive(binary.getId, active = true)
+        val job = service.distributionJob(round.getId).get
+        ((i, pageIds(round.getId), reference) === ((i, expected, expected))) and
+          // stored with the round, recorded with its distribution
+          (roundDao.findById(round.getId).get.topBinaryOrder === settings.topBinaryOrder) and
+          ((job.params \ "settings" \ "topBinaryOrder").asOpt[String] === settings.topBinaryOrder.map(_.param)) and
+          (service.newFilesCount(round.getId) === 0L)
       }.reduce(_ and _)
     }
   }

@@ -2,7 +2,7 @@ package controllers
 
 import db.scalikejdbc.{ContestJuryJdbc, MediaType, Round, RoundLimits}
 import org.scalawiki.wlx.dto.SpecialNomination
-import org.intracer.wmua.{CategoryOperation, CategoryRule}
+import org.intracer.wmua.{BinaryOrder, CategoryOperation, CategoryRule}
 import play.api.data.{Form, Mapping}
 import play.api.data.Forms._
 import play.api.data.validation._
@@ -31,7 +31,9 @@ object EditRound {
   private val jurorsMappingKV = "jurors" -> seq(text).verifying(nonEmptySeq)
   val jurorsMapping: Mapping[Seq[String]] = single(jurorsMappingKV)
 
-  /** Extra fields live outside the 22-field mapping: category operation and conflicts of interest.
+  /** Extra fields live outside the 22-field mapping: category operation, conflicts of interest
+    * and the order of a top-N from a yes/no previous round, kept only with a top-N (an unknown
+    * order is the default).
     */
   private val categoryOperation = optional(text).verifying(
     "error.category.operation", _.forall(value => CategoryOperation.fromForm(value).isDefined))
@@ -45,8 +47,9 @@ object EditRound {
     mapping(
       "" -> roundMapping,
       "excludeCoi" -> boolean,
-      "categoryClause" -> categoryOperation
-    )((edit, excludeCoi, selected) => {
+      "categoryClause" -> categoryOperation,
+      "topBinaryOrder" -> optional(text)
+    )((edit, excludeCoi, selected, topOrder) => {
       val configured = selected match {
         case None => edit.round // Older clients omitted the clause; retain their inference.
         case Some(value) =>
@@ -56,8 +59,10 @@ object EditRound {
           else edit.round.copy(categoryClause = operation.storedValue,
             excludeCategory = edit.round.excludeCategory.filter(_ => operation.requiresSecond))
       }
-      edit.copy(round = configured.copy(excludeCoi = excludeCoi))
-    })(edit => Some((edit, edit.round.excludeCoi, Some(edit.round.categoryRule.operation.formValue))))
+      edit.copy(round = configured.copy(excludeCoi = excludeCoi,
+        topBinaryOrder = edit.round.topImages.flatMap(_ => topOrder.map(o => BinaryOrder.ofStored(Some(o))))))
+    })(edit => Some((edit, edit.round.excludeCoi, Some(edit.round.categoryRule.operation.formValue),
+      edit.round.topImages.map(_ => edit.round.topOrder.param))))
       .verifying(validCategories)
   )
 

@@ -37,6 +37,7 @@ selected.by.any.number=Любое количество одобрений (бе�
 selected.by.legacy.zero=0 (устаревшее: файлы с голосом без оценки)
 average.file.rating.is.at.least=Средняя оценка файла не меньше
 top.images=Количество лучших файлов из предыдущих раундов
+top.images.binary.order=Лучшие файлы раунда да/нет по
 each.file.to.all.jurors=Каждый файл всем членам жюри
 each.file.to.i.juror.s=Каждый файл {0} членам жюри
 category.filter=Фильтр категорий

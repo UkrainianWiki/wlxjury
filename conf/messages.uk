@@ -270,6 +270,7 @@ selected.by.any.number=Будь-яка кількість схвалень (бе
 selected.by.legacy.zero=0 (застаріле: файли з голосом без оцінки)
 average.file.rating.is.at.least=Середня оцінка файла принамні
 top.images=Кількість найкращих файлів із попередніх раундів
+top.images.binary.order=Найкращі файли раунду так/ні за
 each.file.to.all.jurors=Кожний файл всім членам журі
 each.file.to.i.juror.s=Кожний файл для {0} членів журі
 category.filter=Фільтр категорій

@@ -2,7 +2,7 @@ package services.distribution
 
 import db.scalikejdbc._
 import org.intracer.wmua.cmd.DistributeImages
-import org.intracer.wmua.{Image, ImageWithRating, Selection}
+import org.intracer.wmua.{BinaryOrder, Image, ImageWithRating, Selection}
 import play.api.libs.json._
 import play.api.{Configuration, Logging}
 import scalikejdbc._
@@ -177,6 +177,7 @@ class RoundDistributionHandler @Inject() (
       coi = coi,
       rated = prev.flatMap(_ => round.prevSelectedBy.map(_ > 0)),
       topN = prev.flatMap(_ => round.topImages),
+      topOrder = prev.filter(_.isBinary).map(_ => round.topOrder),
       categoryId =
         if (prevRounds.isEmpty) ContestJuryJdbc.findById(round.contestId).flatMap(_.categoryId) else None,
       denominator = prev match {
@@ -301,7 +302,7 @@ class RoundDistributionHandler @Inject() (
 
     st.phase match {
       case Phase.Rank =>
-        val ranked = DistributionSource.rank(c.prevRounds.flatMap(_.id), c.rated, c.denominator, c.topN.get, c.filter)
+        val ranked = DistributionSource.rank(c.prevRounds.flatMap(_.id), c.rated, c.denominator, c.topN.get, c.filter, c.topOrder)
         val next = st.copy(phase = Phase.Distribute, ranked = ranked.sorted,
           total = Some(ranked.size.toLong + titleCountOf(job)), cursor = 0L)
         continue(next)
@@ -475,7 +476,7 @@ class RoundDistributionHandler @Inject() (
   def countNew(roundId: Long): Long = DB.readOnly { implicit session =>
     val c = context(roundId)
     if (c.topN.isDefined) {
-      val ranked = DistributionSource.rank(c.prevRounds.flatMap(_.id), c.rated, c.denominator, c.topN.get, c.filter)
+      val ranked = DistributionSource.rank(c.prevRounds.flatMap(_.id), c.rated, c.denominator, c.topN.get, c.filter, c.topOrder)
       ranked.grouped(MaxWindow).map(ids => DistributionSource.imagesIn(ids, roundId).size.toLong).sum
     } else {
       var st = DistributionState(Phase.Distribute)
@@ -519,6 +520,7 @@ object RoundDistributionHandler {
       coi: Map[String, CoiMembers.Member],
       rated: Option[Boolean],
       topN: Option[Int],
+      topOrder: Option[BinaryOrder],
       categoryId: Option[Long],
       denominator: Denominator,
       windowSize: Int
@@ -703,7 +705,8 @@ object DistributionSource {
     * the images ordered by their average rating (`totalRate`: the sum of each round's
     * rate sum, negatives counted as 0, over the denominator), ties broken by that sum,
     * then by the raw sum (the in-memory input order of one previous round), then by
-    * page id. The per-image filters apply before ranking: the ranked pages are filtered
+    * page id. Yes/no previous rounds by `binaryOrder` instead ([[binaryPage]]). The per-image
+    * filters apply before ranking: the ranked pages are filtered
     * in order until `n` images pass. Pages grow (n, 2n, 4n, ...) while filters reject
     * images, so a selective filter costs a few queries, not one per image.
     *
@@ -715,38 +718,81 @@ object DistributionSource {
       rated: Option[Boolean],
       denominator: Denominator,
       n: Int,
-      filter: Seq[ImageWithRating] => Seq[ImageWithRating]
+      filter: Seq[ImageWithRating] => Seq[ImageWithRating],
+      binaryOrder: Option[BinaryOrder] = None
   )(implicit session: DBSession): Seq[Long] = {
-    val total = denominator match {
-      case Denominator.Const(d) => sqls"IF($d = 0, 0, SUM(GREATEST(t.rs, 0)) * 1e0 / $d)"
-      case Denominator.PerImage => sqls"IF(SUM(t.c) = 0, 0, SUM(GREATEST(t.rs, 0)) * 1e0 / SUM(t.c))"
-    }
     val picked = mutable.ArrayBuffer.empty[Long]
     var offset = 0
     var pageSize = math.max(n, 100)
     var exhausted = n <= 0
     while (!exhausted && picked.size < n) {
-      val page = sql"""SELECT t.page_id, SUM(GREATEST(t.rs, 0)) rate_sum, SUM(t.c) cnt FROM (
-                SELECT s.page_id, s.round_id, SUM(s.rate) rs, COUNT(s.rate) c FROM selection s
-                WHERE s.round_id IN ($prevIds) ${ratedCond(rated)}
-                GROUP BY s.page_id, s.round_id) t
-              GROUP BY t.page_id
-              ORDER BY $total DESC, SUM(GREATEST(t.rs, 0)) DESC, SUM(t.rs) DESC, t.page_id ASC
-              LIMIT $pageSize OFFSET $offset"""
-        .map(rs => (rs.long(1), rs.long(2), rs.long(3)))
-        .list()
+      val page = binaryOrder.fold(ratedPage(prevIds, rated, denominator, pageSize, offset))(
+        binaryPage(prevIds, rated, _, pageSize, offset))
       val images = if (page.isEmpty) Map.empty[Long, Image] else
         sql"SELECT ${i.result.*} FROM images i WHERE i.page_id IN (${page.map(_._1)}) AND i.deleted_at IS NULL"
           .map(rs => ImageJdbc(i)(rs)).list().map(img => img.pageId -> img).toMap
-      val candidates = page.flatMap { case (pageId, sum, count) =>
-        images.get(pageId).map(img =>
-          ImageWithRating(img, Seq(Selection(pageId, juryId = 0, roundId = 0, rate = sum.toInt)), count.toInt))
-      }
+      val candidates = page.flatMap { case (pageId, rating) => images.get(pageId).map(rating) }
       picked ++= filter(candidates).iterator.map(_.pageId).take(n - picked.size)
       exhausted = page.size < pageSize
       offset += page.size
       pageSize *= 2
     }
     picked.toSeq
+  }
+
+  /** A page of the previous rounds' images by average rating ([[rank]]): each page id, and
+    * its image's rating, one entry with the rate sum.
+    */
+  private def ratedPage(prevIds: Seq[Long], rated: Option[Boolean], denominator: Denominator, pageSize: Int,
+      offset: Int)(implicit session: DBSession): Seq[(Long, Image => ImageWithRating)] = {
+    val total = denominator match {
+      case Denominator.Const(d) => sqls"IF($d = 0, 0, SUM(GREATEST(t.rs, 0)) * 1e0 / $d)"
+      case Denominator.PerImage => sqls"IF(SUM(t.c) = 0, 0, SUM(GREATEST(t.rs, 0)) * 1e0 / SUM(t.c))"
+    }
+    sql"""SELECT t.page_id, SUM(GREATEST(t.rs, 0)) rate_sum, SUM(t.c) cnt FROM (
+            SELECT s.page_id, s.round_id, SUM(s.rate) rs, COUNT(s.rate) c FROM selection s
+            WHERE s.round_id IN ($prevIds) ${ratedCond(rated)}
+            GROUP BY s.page_id, s.round_id) t
+          GROUP BY t.page_id
+          ORDER BY $total DESC, SUM(GREATEST(t.rs, 0)) DESC, SUM(t.rs) DESC, t.page_id ASC
+          LIMIT $pageSize OFFSET $offset"""
+      .map { rs =>
+        val (pageId, sum, count) = (rs.long(1), rs.long(2), rs.long(3))
+        pageId -> ((img: Image) =>
+          ImageWithRating(img, Seq(Selection(pageId, juryId = 0, roundId = 0, rate = sum.toInt)), count.toInt))
+      }
+      .list()
+  }
+
+  /** A page of yes/no previous rounds' images by `order` over all their votes, approvals and
+    * rejections counted together across the rounds, ties by page id: the same rule whatever
+    * "selected by at least" is (docs/plans/2026-11-01-binary-aggregate-votes.md, issue 2).
+    * `rated` keeps the files it read before: those with an approval, or (a stored 0) an
+    * unrated vote. Each image's rating has its approvals as its rate, so "selected by at
+    * least" compares them.
+    */
+  private def binaryPage(prevIds: Seq[Long], rated: Option[Boolean], order: BinaryOrder, pageSize: Int,
+      offset: Int)(implicit session: DBSession): Seq[(Long, Image => ImageWithRating)] = {
+    val having = rated match {
+      case Some(true)  => sqls"HAVING SUM(s.rate > 0) > 0"
+      case Some(false) => sqls"HAVING SUM(s.rate = 0) > 0"
+      case None        => sqls""
+    }
+    val orderBy = SQLSyntax.createUnsafely(
+      (order.columns :+ ("s.page_id" -> 1)).map { case (column, dir) => column + (if (dir < 0) " DESC" else " ASC") }
+        .mkString(", "))
+    sql"""SELECT s.page_id, SUM(s.rate > 0) approvals, SUM(s.rate < 0) rejections, COUNT(s.rate) cnt
+          FROM selection s
+          WHERE s.round_id IN ($prevIds)
+          GROUP BY s.page_id $having
+          ORDER BY $orderBy
+          LIMIT $pageSize OFFSET $offset"""
+      .map { rs =>
+        val (pageId, approvals, rejections, count) = (rs.long(1), rs.int(2), rs.int(3), rs.int(4))
+        pageId -> ((img: Image) =>
+          ImageWithRating(img, Seq(Selection(pageId, juryId = 0, roundId = 0, rate = approvals)), count,
+            approvalsFromDb = Some(approvals), rejectionsFromDb = Some(rejections)))
+      }
+      .list()
   }
 }

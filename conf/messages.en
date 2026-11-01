@@ -281,6 +281,7 @@ selected.by.any.number=Any number of approvals (no filter)
 selected.by.legacy.zero=0 (legacy: files with an unrated vote)
 average.file.rating.is.at.least=Average file rating is at least
 top.images=Number of top files from the previous rounds
+top.images.binary.order=Top files of a yes/no round by
 each.file.to.all.jurors=Each file to all jurors
 each.file.to.i.juror.s=Each file to {0} juror(s)
 category.filter=Category Filter

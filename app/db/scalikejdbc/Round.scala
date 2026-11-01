@@ -1,7 +1,7 @@
 package db.scalikejdbc
 
 import db.RoundRepo
-import org.intracer.wmua.{CategoryRule, HasId, ImageWithRating}
+import org.intracer.wmua.{BinaryOrder, CategoryRule, HasId, ImageWithRating}
 import org.intracer.wmua.cmd.DistributeImages
 import scalikejdbc._
 import scalikejdbc.orm.{CRUDMapper, JoinTable}
@@ -56,6 +56,8 @@ case class Round(
     distributing: Boolean = false,
     freezeCount: Int = 0,
     excludeCoi: Boolean = false,
+    // the order of a top-N from a yes/no previous round; None: the default (V72)
+    topBinaryOrder: Option[BinaryOrder] = None,
     // a criteria round's criteria, read for its by-rate gallery (CriteriaRate.countOf);
     // otherwise those a distribution gives
     criteriaCount: Int = DistributeImages.CriteriaIds.size
@@ -110,6 +112,9 @@ case class Round(
      else rates.id / 2) * (if (hasCriteria) criteriaCount else 1)
 
   def regionIds: Seq[String] = regions.map(_.split(",").toSeq).getOrElse(Nil)
+
+  /** The order that picks a top-N from a yes/no previous round ([[topBinaryOrder]]). */
+  def topOrder: BinaryOrder = topBinaryOrder.getOrElse(BinaryOrder.Default)
 
   def categoryRule: CategoryRule = CategoryRule.fromStored(category, excludeCategory, categoryClause)
 
@@ -273,7 +278,8 @@ object Round extends RoundRepo with CRUDMapper[Round] {
       submitToken = rs.stringOpt(c.submitToken),
       distributing = rs.booleanOpt(c.distributing).getOrElse(false),
       freezeCount = rs.intOpt(c.freezeCount).getOrElse(0),
-      excludeCoi = rs.booleanOpt(c.excludeCoi).getOrElse(false)
+      excludeCoi = rs.booleanOpt(c.excludeCoi).getOrElse(false),
+      topBinaryOrder = rs.stringOpt(c.topBinaryOrder).flatMap(BinaryOrder.parse)
     ).withFixedCategories
 
   def create(round: Round)(implicit session: DBSession = AutoSession): Round = {
@@ -310,7 +316,8 @@ object Round extends RoundRepo with CRUDMapper[Round] {
           column.mediaType -> round.mediaType,
           column.submitToken -> round.submitToken,
           column.distributing -> round.distributing,
-          column.excludeCoi -> round.excludeCoi
+          column.excludeCoi -> round.excludeCoi,
+          column.topBinaryOrder -> round.topBinaryOrder.map(_.param)
         )
     }.updateAndReturnGeneratedKey()
 
