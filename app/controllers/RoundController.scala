@@ -263,7 +263,9 @@ class RoundController @Inject() (
               )
           },
           editForm => {
-            val round = editForm.round.copy(active = true)
+            // a new round starts once distributed; an edit leaves it started or stopped
+            // (setRound starts and stops it)
+            val round = editForm.round
             val contestId = round.contestId
             val toRoundsList = Redirect(routes.RoundController.rounds(Some(contestId)))
             // "Add files": added by the round's distribution job, after the files its filters choose
@@ -308,7 +310,7 @@ class RoundController @Inject() (
               case None if unreadable.nonEmpty => unreadableLines
               case None =>
                 try {
-                  roundsService.submit(round, editForm.jurors, RoundController.submitToken(request), user.id, titles) match {
+                  roundsService.submit(round.copy(active = true), editForm.jurors, RoundController.submitToken(request), user.id, titles) match {
                     // the distribution runs in the background: the rounds list shows its progress
                     case _: RoundService.Created => toRoundsList
                     // The same form submitted again (a double click, or Back and Submit):
@@ -331,15 +333,13 @@ class RoundController @Inject() (
                       Secured.Denial.round(stored, User.ADMIN_ROLES).copy(reason = Some("round_in_other_contest")))
                   case _ if unreadable.nonEmpty => unreadableLines
                   case stored =>
-                    val notStarted =
-                      if (Round.updateRound(roundId, round)) Nil
-                      else Seq("error" -> RoundController.stillDistributing(stored))
+                    Round.updateRound(roundId, round)
                     // before "Distribute new files", whose job then reads the round's flag
                     val coi = leaveOutConflicts(stored, round.excludeCoi, user)(request.messages)
                     // one message per kind: an error of the distribution wins over the removal's
                     def flashing(errors: (String, String)*) =
                       toRoundsList.flashing((coi ++ errors).toMap.toSeq: _*)
-                    if (!editForm.newImages && titles.isEmpty) flashing(notStarted: _*)
+                    if (!editForm.newImages && titles.isEmpty) flashing()
                     else
                       try {
                         roundsService.distributeNewFiles(roundId, user.id, titles, newFiles = editForm.newImages) match {
@@ -352,7 +352,7 @@ class RoundController @Inject() (
                             flashing(
                               "error" -> (s"Round ${stored.number}: its failed distribution was resumed instead of " +
                                 "adding the listed files. Add them again once it has finished."))
-                          case _ => flashing(notStarted: _*)
+                          case _ => flashing()
                         }
                       } catch {
                         case NonFatal(e) =>

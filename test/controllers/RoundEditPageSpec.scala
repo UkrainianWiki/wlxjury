@@ -163,6 +163,29 @@ class RoundEditPageSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
+    "keep a stopped round stopped and a started one started when the form is saved" in {
+      testDbApp { implicit app =>
+        val (contest, admin, started) = fixture()
+        val jurors = User.findRoundJurors(started.getId).map(_.getId)
+        val stopped = roundDao.create(Round(None, 2, Some("Stopped"), contest.getId, active = false))
+        def save(round: Round, name: String) = {
+          val request = FakeRequest(POST, "/admin/rounds/save")
+            .withSession(Secured.UserName -> admin.email)
+            .withFormUrlEncodedBody(
+              Seq("id" -> round.getId.toString, "number" -> round.number.toString, "name" -> name,
+                "contest" -> contest.getId.toString, "roles" -> "jury", "distribution" -> "0", "rates" -> "1",
+                "minMpx" -> "", "minSize" -> "", "mediaType" -> "all") ++
+                jurors.zipWithIndex.map { case (id, i) => s"jurors[$i]" -> id.toString }: _*)
+            .withCSRFToken
+          status(route(app, request).get) must_== SEE_OTHER
+        }
+        save(stopped, "Stopped, renamed")
+        save(started, "Started, renamed")
+        roundDao.findById(stopped.getId).map(r => (r.name, r.active)) must beSome((Some("Stopped, renamed"), false))
+        roundDao.findById(started.getId).map(r => (r.name, r.active)) must beSome((Some("Started, renamed"), true))
+      }
+    }
+
     "redistribute with the saved minimum megapixels when the edit form submits an empty filter" in {
       testDbApp { implicit app =>
         val (contest, admin, previous) = fixture()
