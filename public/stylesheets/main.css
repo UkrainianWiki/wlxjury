@@ -252,3 +252,7 @@ a:has(> .btn) { text-decoration: none; }
 
 /* unitegallery's tiles preloader is a dark grey spinner: light on the dark grey */
 [data-bs-theme=dark] .ug-gallery-wrapper .ug-preloader-trans { filter: invert(1); }
+
+/* a file's rank and rate above its thumbnail (galleryByRate, galleryByRateRegions, showRate),
+   in the page's text colour */
+.rank-line { margin-bottom: 10px; }

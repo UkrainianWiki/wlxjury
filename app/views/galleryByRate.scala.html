@@ -13,7 +13,7 @@
     @showRateGalery(file: ImageWithRating, index: Int) = {
     @defining(list.round) { round =>
         @if(round.rates.id > 0) {
-        "> <b>@file.rankStr</b>
+        <div class="rank-line"> <b>@file.rankStr</b>
             <span style="margin-left: 5px;
                 margin-right: 10px;">
             @if(round.rates.id != 2) {
