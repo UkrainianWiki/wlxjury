@@ -184,12 +184,14 @@ class ApiSpec extends PlaySpecification with PlayTestDb with JsonFormat {
         }
         contestNames === before
         Seq(revoked, expired, unknown, basic).exists(t => lines.exists(_.contains(t))) must beFalse
-        lines must contain("INFO api_token_refused reason=revoked tokenId=" + tokenId(revoked))
-        lines must contain("INFO api_token_refused reason=expired tokenId=" + tokenId(expired))
+        lines must contain("WARN api_token_refused reason=revoked tokenId=" + tokenId(revoked))
+        lines must contain("WARN api_token_refused reason=expired tokenId=" + tokenId(expired))
         lines must contain("INFO api_token_refused reason=unknown prefix=\"" + unknown.take(11) + "\"")
         lines must contain("DEBUG api_token_refused reason=malformed")
         lines must contain("DEBUG api_auth_refused reason=not_bearer")
-        lines.filter(line => line.startsWith("WARN") && line.contains("api_")) must beEmpty
+        // random input reaches neither WARN (it needs a real token's hash) nor the database
+        lines.filter(line => line.startsWith("WARN") && line.contains("api_")).map(_.split(" tokenId=").head)
+          .distinct.sorted === Seq("WARN api_token_refused reason=expired", "WARN api_token_refused reason=revoked")
         ApiTokenJdbc.findByUser(userId(rootEmail)).flatMap(_.lastUsedAt) must beEmpty
       }
     }
@@ -201,7 +203,9 @@ class ApiSpec extends PlaySpecification with PlayTestDb with JsonFormat {
         DB.autoCommit { implicit session =>
           sql"UPDATE users SET deleted_at = NOW() WHERE id = ${userId(rootEmail)}".update.apply()
         }
-        isUnauthorized(send(app, endpoints.head, Seq(bearer(token))))
+        val (result, lines) = withLog(done(send(app, endpoints.head, Seq(bearer(token)))))
+        isUnauthorized(result)
+        lines must contain(s"WARN api_token_refused reason=user_missing tokenId=${tokenId(token)}")
       }
     }
 
