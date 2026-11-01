@@ -122,7 +122,7 @@ function UGTheme_tiles(){
 		g_lightbox.putHtml();
 
 		//wlxjury: a binary round's votes on the juror's own tiles, from the files' stored ones,
-		//and a rated round's stars (main.scala.html's wlx_stars: their number and half stars),
+		//and a rated round's stars (gallery-init.js's wlx_stars: their number and half stars),
 		//tile-votes.js
 		if(g_options.jury && g_options.binary){
 			g_objTilesWrapper.find(".ug-tile").each(function(){
@@ -135,10 +135,13 @@ function UGTheme_tiles(){
 			});
 		}
 		//wlxjury: all the jurors' approvals and rejections on the organisers' tiles of a binary
-		//round, for the files that have them (data-tally)
-		g_objTilesWrapper.find(".ug-tile").each(function(){
-			wlxTileVotes.addTally(this, g_objTileDesign.getItemByTile(jQuery(this)));
-		});
+		//round, for the files that have them (data-tally); a page without votes (contestFiles)
+		//loads no tile-votes.js
+		if(window.wlxTileVotes){
+			g_objTilesWrapper.find(".ug-tile").each(function(){
+				wlxTileVotes.addTally(this, g_objTileDesign.getItemByTile(jQuery(this)));
+			});
+		}
 	}
 	
 	/**

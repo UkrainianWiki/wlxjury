@@ -20,7 +20,7 @@ import java.nio.file.Files
   *
   * It then writes `target/ui-shots/server.json`: the base URL, the contest and
   * round ids, a juror with images in both rounds (id, login, password), the organizer
-  * (an admin of the contest) and the juror's first page id in the binary and the rated round.
+  * (an admin of the contest), a root account (created here) and the juror's first page id in the binary and the rated round.
   * Then it serves until `target/ui-shots/server.stop` exists (or the process is killed) and exits,
   * stopping the server and the container.
   *
@@ -72,6 +72,11 @@ object UiShotsServer {
                             WHERE jury_id = $jurorId AND round_id = ${f.roundRatingId}"""
       .map(_.longOpt(1)).single().flatten.getOrElse(0L)
     val (_, orgEmail, orgPassword) = f.organizer
+    // a root account, in this run's container only, for the root-only pages (the campaigns page)
+    val (rootEmail, rootPassword) = ("root@ui-shots.test", "rootpass")
+    if (db.scalikejdbc.User.findByEmail(rootEmail).isEmpty)
+      db.scalikejdbc.User.create(fullname = "Root", email = rootEmail, password = db.scalikejdbc.User.sha1(rootPassword),
+        roles = Set(db.scalikejdbc.User.ROOT_ROLE), contestId = None)
     println(s"[ui-shots] set the Commons url of ${CommonsFileUrl.fillMissing()} images")
 
     val json =
@@ -82,6 +87,7 @@ object UiShotsServer {
          |  "roundRatingId": ${f.roundRatingId},
          |  "juror": {"id": $jurorId, "login": ${q(jurorEmail)}, "password": ${q(jurorPassword)}},
          |  "organizer": {"login": ${q(orgEmail)}, "password": ${q(orgPassword)}},
+         |  "root": {"login": ${q(rootEmail)}, "password": ${q(rootPassword)}},
          |  "pageId": $pageId,
          |  "ratedPageId": $ratedPageId
          |}

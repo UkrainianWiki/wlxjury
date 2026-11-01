@@ -167,12 +167,16 @@ class OwnVotesSpec extends PlaySpecification with PlayTestDb {
     "get no stars to vote with on a juror's gallery tiles, which the juror has (tile-votes.js)" in {
       testDbApp { app =>
         val f = fixture()
-        def stars(viewer: User, round: Round = f.roundA) =
-          "wlx_stars: ([^\\n]*)".r.findFirstMatchIn(contentAsString(
-            get(app, viewer, s"/gallery/round/${round.getId}/user/${f.juror1.getId}/page/1"))).map(_.group(1).trim)
-        stars(f.juror1) === Some("{number: 5, half: false}")
-        forall(Seq(f.organizer, f.admin, f.root)) { viewer => stars(viewer) === Some("null") }
-        stars(f.juror2, f.orgViewRound) === Some("null") // another juror's votes, open to its jurors
+        // a rated round's gallery is its list by rate: the stars' number on the list
+        // (data-stars-number, tile-votes.js addListStars), and raty only with it
+        def stars(viewer: User, round: Round = f.roundA) = {
+          val page = contentAsString(get(app, viewer, s"/gallery/round/${round.getId}/user/${f.juror1.getId}/page/1"))
+          val list = org.jsoup.Jsoup.parse(page).selectFirst("[data-stars-number]")
+          (Option(list).map(_.attr("data-stars-number")), page.contains("javascripts/jquery.raty.js"))
+        }
+        stars(f.juror1) === (Some("5"), true)
+        forall(Seq(f.organizer, f.admin, f.root)) { viewer => stars(viewer) === (None, false) }
+        stars(f.juror2, f.orgViewRound) === (None, false) // another juror's votes, open to its jurors
       }
     }
 

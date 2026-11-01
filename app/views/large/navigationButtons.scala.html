@@ -4,7 +4,8 @@
         list: RoundList,
         hood: Neighbourhood,
         score: Double = 0,
-        byCriteria: Map[Int, Int] = Map.empty)(
+        byCriteria: Map[Int, Int] = Map.empty,
+        readOnly: Boolean = true)(
         implicit flash: Flash, request: Request[Any], messages: Messages)
 
 @round = @{ list.round }
@@ -17,8 +18,15 @@
     </a>
 }
 
-@* the number above the stars `id`: their rate in stars (`score` and byCriteria's, as raty.scala.html
-   has them), 3.5 in a half-star round, an average to two decimals, "–" unrated; hovering a star
+@* the stars' attributes for large-stars.js: `score` in stars, the number's id, and the vote's
+   path prefix and query (the criterion's for `criterion`), unless `readOnly` *@
+@stars(id: String, numberId: String, score: Double, k: Int, criterion: Option[Int]) = {
+    <div id="@id" class="large-stars" data-number="@(round.rates.id / k)" data-half="@(k == 2)" data-score="@score"
+        data-rate-number="@numberId" data-readonly="@readOnly"@if(!readOnly) { data-vote-prefix="@list.votePrefix(hood.file.pageId)" data-vote-query="@list.voteQuery(criterion)"}></div>
+}
+
+@* the number above the stars `id`: their rate in stars (`score` and byCriteria's, as the stars'
+   data-score has them), 3.5 in a half-star round, an average to two decimals, "–" unrated; hovering a star
    shows the rate a click gives (large-rate.js). Screen readers read the text beside it. *@
 @rateNumber(id: String, stars: Double) = {
     @defining(BigDecimal(stars).setScale(2, BigDecimal.RoundingMode.HALF_UP).bigDecimal.stripTrailingZeros.toPlainString) { rate =>
@@ -75,11 +83,15 @@
        @round.criteriaNames.zipWithIndex.map { case (criteriaName, index) =>
            <div>@criteriaName</div>
            @rateNumber(s"rate-number${index + 1}", byCriteria.toSeq.sorted.lift(index).fold(0.0)(_._2.toDouble / k))
-           <div id="rate-image@(index + 1)" class="large-stars"></div>
+           @* stars for each criterion the file has a rate of *@
+           @byCriteria.keys.toSeq.sorted.lift(index) match {
+               case Some(rateId) => {@stars(s"rate-image${index + 1}", s"rate-number${index + 1}", byCriteria(rateId).toDouble / k, k, Some(rateId))}
+               case None => {<div id="rate-image@(index + 1)" class="large-stars"></div>}
+           }
        }
        }
     } else if (round.rates.id > 0)  {
         @rateNumber("rate-number", score)
-        <div id="rate-image" class="large-stars"></div>
+        @stars("rate-image", "rate-number", score, if (round.rates.id > 5 && round.halfStar) 2 else 1, None)
     }
     }

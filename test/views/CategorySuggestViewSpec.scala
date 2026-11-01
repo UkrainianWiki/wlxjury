@@ -23,6 +23,8 @@ class CategorySuggestViewSpec extends PlaySpecification {
   implicit val request: RequestHeader = FakeRequest("GET", "/").withCSRFToken
 
   private val script = "javascripts/category-suggest.js"
+  // category-suggest.js makes each field a Tom Select control: without Tom Select it does nothing
+  private val tomSelect = "tom-select/2.6.2/dist/js/tom-select.complete.min.js"
   private val contest = ContestJury(Some(1), "Wiki Loves Earth", 2025, "Ukraine", Some("Category:Images from Wiki Loves Earth 2025 in Ukraine"))
   private val admin = User("Admin", "admin@example.org", id = Some(1), roles = Set("admin"), contestId = Some(1))
   private val root = User("Root", "root@example.org", id = Some(2), roles = Set(User.ROOT_ROLE))
@@ -58,6 +60,7 @@ class CategorySuggestViewSpec extends PlaySpecification {
       val page = contentAsString(views.html.contest_images(
         Form(tuple("source" -> text, "list" -> text, "action" -> text)), contest, admin, 0, 0))
       page must contain(script)
+      page must contain(tomSelect)
       input(page, "source") must contain("""data-category-suggest="mixed"""")
     }
   }
@@ -67,9 +70,33 @@ class CategorySuggestViewSpec extends PlaySpecification {
       val page = contentAsString(views.html.contests(root, Seq(contest), Seq(contest),
         Form(ignored(contest)), Form(single("source" -> nonEmptyText))))
       page must contain(script)
+      page must contain(tomSelect)
       input(page, "source") must contain("""data-category-suggest="mixed"""")
       input(page, "images") must contain("""data-category-suggest="mixed"""")
       input(page, "name") must not contain "data-category-suggest"
+    }
+  }
+
+  "every page with a category field" should {
+    "load Tom Select in its head: each template with a data-category-suggest field, or the page that includes it" in {
+      import java.nio.file.{Files, Paths}
+      import scala.jdk.CollectionConverters._
+      // a template's text without its Twirl comments
+      def source(path: String) = new String(Files.readAllBytes(Paths.get(path)), java.nio.charset.StandardCharsets.UTF_8)
+        .replaceAll("""(?s)@\*.*?\*@""", "")
+      val walk = Files.walk(Paths.get("app", "views"))
+      val withField = try walk.iterator.asScala.map(_.toString.replace(java.io.File.separatorChar, '/'))
+          .filter(p => p.endsWith(".scala.html") && source(p).contains("data-category-suggest")).toList.sorted
+        finally walk.close()
+      // a partial's page: the round form's filters are in editRound
+      val pageOf = Map("app/views/round/edit/imageFiltering.scala.html" -> "app/views/editRound.scala.html")
+      withField must_== Seq("app/views/contest_images.scala.html", "app/views/contests.scala.html",
+        "app/views/round/edit/imageFiltering.scala.html")
+      forall(withField.map(f => pageOf.getOrElse(f, f))) { page =>
+        // the snippets that load Tom Select (multiSelectScripts includes tomSelectScripts)
+        Seq("snippets.tomSelectScripts()", "snippets.multiSelectScripts()").exists(source(page).contains) aka
+          s"$page loads Tom Select" must beTrue
+      }
     }
   }
 

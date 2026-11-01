@@ -3,36 +3,24 @@
 @(
         user: User = null,
         list: RoundList,
-        score: Double,
         readOnly: Boolean = false,
-        hood: Neighbourhood,
-        byCriteria: Map[Int, Int] = Map.empty)(content: Html)(implicit request: Request[Any], messages: Messages)
+        hood: Neighbourhood)(content: Html)(implicit request: Request[Any], messages: Messages)
+@* A round's large view's shell: its scripts (large-view.js: votes and image fallbacks, before
+   the body; the side sections; the stars; the keys), the vote form, unless read-only, and the
+   keys' paths (#large-keys) *@
 @layout(Messages(list.view.name), bodyClass = "gallery", fullHeight = true) {
-        <script>
-            // A vote is a POST of the page's vote form, with its CSRF token: a GET changes nothing.
-            // The keys, the stars and the buttons with a data-vote-url submit it.
-            function voteLarge(url) {
-                var form = document.getElementById('vote-form');
-                if (!form) return;
-                form.action = url;
-                form.submit();
-            }
-            $(document).on('click', '[data-vote-url]', function (e) {
-                e.preventDefault();
-                voteLarge($(this).attr('data-vote-url'));
-            });
-        </script>
-
+        <script src="@routes.Assets.versioned("javascripts/large-view.js")"></script>
         <script src="@routes.Assets.versioned("javascripts/large-sections.js")"></script>
-        @raty(score, readOnly, list, hood.file.pageId, byCriteria)
-        @fileKeyboardNav(hood.index, hood.files.size, i => list.largeUrl(hood.files(i).pageId), list.atUrl(hood.file.pageId))
-        @keyboardNav(user, list, hood.file)
-
+        @raty(list)
+        <script src="@routes.Assets.versioned("javascripts/jquery.hotkeys.js")"></script>
+        <script src="@routes.Assets.versioned("javascripts/large-keys.js")"></script>
 } {
         @* the page's title, for screen readers *@
         <h1 class="visually-hidden">@Messages(list.view.name)</h1>
         @if(!readOnly) {
             <form id="vote-form" method="post" class="d-none">@helper.CSRF.formField</form>
         }
+        @fileKeyboardNav(hood.index, hood.files.size, i => list.largeUrl(hood.files(i).pageId), list.atUrl(hood.file.pageId),
+            keyboardNav(user, list, hood.file))
         @content
 }

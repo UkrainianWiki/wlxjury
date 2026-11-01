@@ -12,7 +12,7 @@
 @* a tab's link: the page's own marked active *@
 @tab(active: Boolean) = @{ if (active) Html(""" class="nav-link active" aria-current="page"""") else Html(""" class="nav-link"""") }
 @main("contest.files", user, gallery = true, pager = pagerNav(pager, view.pageUrl), contestId = view.contest.id,
-    filters = regionMenu(view.countryMenu.toSeq ++ view.regionMenu)) {
+    filters = regionMenu(view.countryMenu.toSeq ++ view.regionMenu), head = snippets.galleryScripts()) {
 
     <div class="contest-files-head" id="contest-files-head">
         <h1 class="h4">@Messages("contest") @view.contest.fullName
@@ -53,7 +53,7 @@
     }
 
     <div class="row" >
-        <div id="gallery" class="gallery mw-gallery-traditional" style="display:none;">
+        <div id="gallery" class="gallery mw-gallery-traditional" style="display:none;" @views.GalleryTiles.attributes(user, user.getId, None)>
         @for(file <- files) {
             @* a deleted file's thumbnail from the cache: the gallery's size is one it keeps *@
             <img alt="@file.image.title"

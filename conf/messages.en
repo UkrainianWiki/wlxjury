@@ -34,82 +34,26 @@ rejected = Rejected
 binary.tally = {0,choice,0#0 approvals|1#1 approval|1<{0,number,integer} approvals}, {1,choice,0#0 rejections|1#1 rejection|1<{1,number,integer} rejections}
 rated = Rated
 all = All
-all.jury.rating = All jury rating
 
 statistics = Statistics
-thumbnails = Thumbnails
 file.list = File list
 
-top-x = Top {}
 regions = Regions
-
-wiki.loves.earth = Wiki Loves Earth {0}
-wiki.loves.earth.Ukraine = Wiki Loves Earth in Ukraine
-wiki.loves.monuments.Ukraine = Wiki Loves Monuments in Ukraine
-wiki.loves.earth.Russia = Wiki Loves Earth in Russia
 
 welcome.subject = Welcome to {0} jury
 
-error.technical=Technical Error, please Retry
-validate=Validate
 reset=Reset
 
-account.not.validated.check.mail=Account not validated. Check your emails.
-account.successfully.validated=Account successfully validated
-account.settings.email.successful=Email successfully validated ({0})
 invalid.user.or.password=Invalid user or password
-youve.been.logged.out=You''ve been logged out
-error.sending.email=Error sending email
-error.sending.confirm.email=Error while sending confirmation mail
 error.email.already.exist=This email is already used by another account.
-error.account.already.validated=Account already validated
-error.unknown.email=Unknown email
-error.confirm=Confirmation failed
-error.expiredresetlink=This password reset has expired.
-error.expiredmaillink=This mail change has expired.
 
 signin.signin=Sign In
-signin.your.email=Your email address
 signin.your.login=Your login
 signin.your.password=Your password
 
-forgot.password=Forgot password ?
-
 signup.signup=Sign Up
-signup.successfull=Sign Up - Successful !
-signup.new=New ?
-signup.reset.password=Reset your password
-signup.generate.password=Generate a password
-signup.msg.created=You will receive a confirmation email soon. Check your email to activate your account.
-signup.valid.email=Invalid Email
-signup.repeat.your.password=Repeat your password
 
 resetpassword=Reset Password
-resetpassword.mailsent=A mail has been sent, please check your mail.
-resetpassword.success=Your password has been reset.
-resetpassword.new.password=New password :
-
-changemail.mailsent=A mail has been sent, please check your mail.
-
-mail.confirm.subject=Welcome to Jury - Ask for confirmation
-mail.confirm.message=Welcome to Jury. <br> Click on this link : {0} to confirm your email.
-
-mail.welcome.subject=Welcome to Jury
-mail.welcome.message=Welcome to Jury. <br> Your account is validated. Enjoy !
-
-mail.reset.ask.subject=Jury - New password
-# Cannot use You've unescaped here, as the single quote stops the {0}
-mail.reset.ask.message=You asked for your password to be reset.  <br> Click on this link : {0} to change your password.
-
-mail.change.ask.subject=Jury - Validate email
-mail.change.ask.message=You asked for your email to be changed.  <br> Click on this link : {0} to validate your email.
-
-mail.reset.fail.subject=Account Access Attempted
-mail.reset.fail.message=You (or someone else) entered this email address when trying to change the password.  However, this email address is not on our list of registered users, and so the attempted password reset has failed.
-
-mail.reset.confirm.subject=Jury - New password
-mail.reset.confirm.message=Hello, <br><br> Your password has been reset.
-
 
 # Default messages
 
@@ -141,7 +85,6 @@ error.maxLength=Maximum length is {0}
 error.email=Valid email required
 error.pattern=Must satisfy {0}
 
-dates = Dates
 total = Total
 
 80=Kyiv
@@ -184,7 +127,6 @@ large.rate = Rating: {0}
 large.rate.none = Not rated
 select.image = Select image
 reject.image = Reject image
-remove.image = Remove image from the round
 up.key = Up
 down.key = Down
 format.boolean=
@@ -192,9 +134,7 @@ format.boolean=
 no.round.yet=No round configured yet. Please wait until contest admin configures the tool.
 
 not.a.member = Not a member?
-forgot.your.password = Forgot your password?
 sign.up.now = Sign up now
-or.use.social = Or use your existing account on MediaWiki site to sign in:
 
 edit.user = Edit user
 create.user = Create user
@@ -217,7 +157,6 @@ media.type = Media Type
 files = Files
 images = Images
 image = Image
-videos = Videos
 video = Video
 contest.files = Contest files
 files.source = Files source
@@ -245,7 +184,6 @@ root=Root
 no=No
 yes=Yes
 
-
 campaigns=Campaigns
 campaign=Campaign
 contests=Contests
@@ -264,16 +202,13 @@ add.round=Add round
 number = Number
 row.number = N
 file.distribution = File distribution
-selected.rated = Selected/Rated
 rating.type = Rating type
 
-set.current.round = Set current round
 edit.round = Edit round
 create.round= Create round
 round.name.optional=Round name (optional)
 previous.round = Previous rounds
 error.previous.rounds.mixed.type = All previous rounds must be of the same rating type (all binary or all rated)
-round.name = Round name
 jurors = Jurors
 juror.name=Juror name
 media.filtering = Media filtering
@@ -286,7 +221,6 @@ top.images=Number of top files from the previous rounds
 top.images.binary.order=Top files of a yes/no round by
 each.file.to.all.jurors=Each file to all jurors
 each.file.to.i.juror.s=Each file to {0} juror(s)
-category.filter=Category Filter
 category.operation=Category operation
 category.first=Category A
 category.second=Category B
@@ -300,9 +234,6 @@ error.category.operation=Choose a valid category operation.
 error.category.first.required=Enter category A for this operation.
 error.category.second.required=Enter category B for this operation.
 category=Category
-absent=Absent
-files.should.be.IN.the.category=Files should be IN the category
-files.should.be.NOT.IN.the.category=Files should be NOT IN the category
 monument.ids.comma.separated=Monument ids (comma separated)
 minimum.megapixels=Minimum resolution (Mpx)
 minimum.megabytes=Minimum file size (MB)

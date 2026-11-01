@@ -45,6 +45,12 @@ object SharedTestDb {
 
   private lazy val started: scala.util.Try[Boolean] = scala.util.Try(start())
 
+  @volatile private var _started = false
+
+  /** Whether the container has been started in this JVM, without starting it: a spec that runs
+    * its own Play app (and so closes the default pool) re-registers the pool only then. */
+  def isStarted: Boolean = _started
+
   private def start(): Boolean = {
     val container = MariaDBContainer(
       dockerImageName = DockerImageName.parse("mariadb:10.6.22"),
@@ -78,6 +84,7 @@ object SharedTestDb {
       container.stop()
     }))
 
+    _started = true
     true
   }
 

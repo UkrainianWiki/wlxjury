@@ -4,11 +4,15 @@
  * formatCacheStatus(p) – pure function: given a status object, returns the
  * text to display (or null when there is nothing to show yet).
  *
- * pollCacheStatus(statusUrl) – starts the fetch/poll loop, wiring the result
- * into the #cache-status element.  The URL is supplied by the Scala template
- * so that no server-side expression leaks into this file.  On 401 or 403
- * (signed out, or no longer an admin of the contest) it stops; on other
+ * pollCacheStatus(statusUrl, elementId) – starts the fetch/poll loop, wiring the
+ * result into the element with that id (#cache-status by default).  On 401 or
+ * 403 (signed out, or no longer an admin of the contest) it stops; on other
  * failures it retries, slower.
+ *
+ * initCacheStatuses(doc) – starts pollCacheStatus for each element with a
+ * data-cache-status-url (contest_images, editRound), the URL the template
+ * renders, so that no server-side expression is written into a script.  The
+ * file does it by itself once the page is parsed.
  */
 
 function formatCacheStatus(p) {
@@ -58,7 +62,27 @@ function pollCacheStatus(statusUrl, elementId) {
     return update();
 }
 
+function initCacheStatuses(doc) {
+    var els = doc.querySelectorAll("[data-cache-status-url][id]");
+    for (var i = 0; i < els.length; i++) {
+        pollCacheStatus(els[i].getAttribute("data-cache-status-url"), els[i].id);
+    }
+    return els.length;
+}
+
+if (typeof document !== "undefined" && typeof module === "undefined") {
+    if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", function () { initCacheStatuses(document); });
+    } else {
+        initCacheStatuses(document);
+    }
+}
+
 /* CommonJS export for Jest; ignored in the browser (no module object). */
 if (typeof module !== "undefined") {
-    module.exports = { formatCacheStatus: formatCacheStatus, pollCacheStatus: pollCacheStatus };
+    module.exports = {
+        formatCacheStatus: formatCacheStatus,
+        pollCacheStatus: pollCacheStatus,
+        initCacheStatuses: initCacheStatuses
+    };
 }

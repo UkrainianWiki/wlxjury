@@ -137,8 +137,9 @@
                                 Symbol("_hiddenLabel") -> Messages("role"))
                             </td>
                             <td>
-                                @* a button outside the form in the DOM (a form can't wrap a table row): submits it by name *@
-                                <button type="button" id="add-user-button" class="btn btn-primary" onclick="document.forms['add-user'].submit();"
+                                @* a button outside the form in the DOM (a form can't wrap a table row): its form attribute
+                                   submits it *@
+                                <button type="submit" form="add-user" id="add-user-button" class="btn btn-primary"
                                     title="@Messages("add")" aria-label="@Messages("add")">
                                     <i class="bi bi-person-plus-fill" aria-hidden="true"></i>
                                 </button>

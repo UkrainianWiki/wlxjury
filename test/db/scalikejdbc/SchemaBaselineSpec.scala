@@ -34,24 +34,30 @@ class SchemaBaselineSpec extends Specification {
           ))
           .build()
 
-        running(app) {
-          val result = container.container.execInContainer(
-            "mysqldump",
-            "--no-data",
-            "--skip-lock-tables",
-            "--skip-add-drop-table",
-            "--no-tablespaces",
-            "--ignore-table=wlxjury.flyway_schema_history",
-            "-u", "WLXJURY_DB_USER",
-            "-pWLXJURY_DB_PASSWORD",
-            "wlxjury"
-          )
+        // stopping the app closes its pool, which PlayDBApiAdapterModule made ScalikeJDBC's
+        // default: give the shared test database's back to the specs after this one
+        try {
+          running(app) {
+            val result = container.container.execInContainer(
+              "mysqldump",
+              "--no-data",
+              "--skip-lock-tables",
+              "--skip-add-drop-table",
+              "--no-tablespaces",
+              "--ignore-table=wlxjury.flyway_schema_history",
+              "-u", "WLXJURY_DB_USER",
+              "-pWLXJURY_DB_PASSWORD",
+              "wlxjury"
+            )
 
-          val sql = result.getStdout
-          val outputFile = new File("conf/db/migration/default/B44__Baseline.sql")
-          Files.writeString(outputFile.toPath, sql)
+            val sql = result.getStdout
+            val outputFile = new File("conf/db/migration/default/B44__Baseline.sql")
+            Files.writeString(outputFile.toPath, sql)
 
-          sql must not(beEmpty)
+            sql must not(beEmpty)
+          }
+        } finally {
+          if (SharedTestDb.isStarted) SharedTestDb.reregisterDefault()
         }
       } finally {
         container.stop()

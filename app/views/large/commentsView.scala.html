@@ -24,7 +24,7 @@
                 @helper.CSRF.formField
                 <input type="hidden" name="id" id="id" value="0" />
                 <textarea class="imageComment" id="text" name="text" rows="3" placeholder="@Messages("your.comment.here")"></textarea>
-                <input type="button" class="btn btn-primary" id="saySomething" value="@Messages("submit.comment")" onClick="document.forms[ 'addComment' ].submit ( ) ;" />
+                <input type="submit" class="btn btn-primary" id="saySomething" value="@Messages("submit.comment")" />
             }
             </div>
         }

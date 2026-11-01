@@ -17,9 +17,17 @@ uses a server that is already running):
 Colour modes (`--mode`, comma-separated, each saved in target/ui-shots/<label>/<mode>/):
 each sets the theme cookie in the browser (with none, the app shows dark, its default);
 `auto` also emulates the browser's prefers-color-scheme as `--scheme` (dark by default), so
-`auto` shows the dark mode the layout's script picks:
+`auto` shows the mode the layout's script picks; its shots go to `auto-<scheme>/`:
 
     target/ui-venv/Scripts/python scripts/ui-shots.py shoot --label phase3 --mode light,dark,auto --start-server --csp
+    target/ui-venv/Scripts/python scripts/ui-shots.py shoot --label phase3 --mode auto --scheme light --start-server
+
+Each mode's folder also gets `requests.json`: the scripts and stylesheets each page loaded
+from this host, by page name (which pages load unitegallery or Tom Select, say).
+
+`--checks` runs, after the shots (it votes, so the shots come first), the browser checks
+in `ui_checks.py`: a vote in the large view, then Back, shows the stored rate; and the large
+view's side sections are drawn in their stored state from the first frame.
 
 Compare two labels (writes diff images to target/ui-shots/diff/<a>-vs-<b>/<mode>/):
 
@@ -69,6 +77,18 @@ MARKS_JS = """
 """
 
 
+# A shot's script for the pages with category fields: logs how many of them category-suggest.js
+# made Tom Select controls, and a console error if one isn't (Tom Select not loaded, say).
+SUGGEST_JS = """
+(() => {
+  const fields = document.querySelectorAll('[data-category-suggest]').length;
+  const controls = document.querySelectorAll('.ts-wrapper.wlx-category-suggest').length;
+  console.log(`check: ${controls} of ${fields} category fields are Tom Select controls`);
+  if (controls < fields) console.error(`check: ${fields - controls} category fields without their Tom Select control`);
+})();
+"""
+
+
 def stars_js(number=None):
     """A large-rated shot's script: redraws raty with `number` stars (the fixture's round has
     ten; 20 is the most a round can have, a 1-20 round without half stars), then logs a
@@ -114,6 +134,9 @@ def pages(s):
         ("editround", "organizer", f"/admin/rounds/edit?id={rb}&contestId={c}"),
         ("users", "organizer", f"/admin/users?contestId={c}"),
         ("edituser", "organizer", f"/users/edit/{j}"),
+        # the category fields' suggestions (category-suggest.js, on Tom Select)
+        ("contests", "root", "/contests", [], SUGGEST_JS),
+        ("contest-images", "organizer", f"/contest/{c}/images", [], SUGGEST_JS),
         # menus and dropdowns opened
         ("gallery-pagerbox", "juror", f"/gallery/round/{rb}/user/{j}/page/1", [".pager-range"]),
         ("gallery-usermenu", "juror", f"/gallery/round/{rb}/user/{j}/page/1",
@@ -148,7 +171,7 @@ def placeholder_png():
     return buf.getvalue()
 
 
-def start_server(log_path, csp=False):
+def start_server(log_path, csp=None):
     SHOTS.mkdir(parents=True, exist_ok=True)
     for f in (SERVER_JSON, STOP_FILE):
         if f.exists():
@@ -159,8 +182,9 @@ def start_server(log_path, csp=False):
            # classpath): add the packaged assets jar, as the production classpath has it
            'set Test / unmanagedClasspath += Attributed.blank((Assets / packageBin).value)']
     if csp:
-        # the production content security policy (GatlingTestFixture.cspConfig)
-        cmd.append('set Test / javaOptions += "-Dui.csp=production"')
+        # the production content security policy, or it with no inline script allowed
+        # (GatlingTestFixture.cspConfig)
+        cmd.append(f'set Test / javaOptions += "-Dui.csp={csp}"')
     cmd.append("Test/runMain gatling.setup.UiShotsServer")
     log = open(log_path, "w", encoding="utf-8")
     print(f"[ui-shots] starting the server, log: {log_path}")
@@ -186,13 +210,19 @@ def stop_server(proc):
 
 
 def shoot(args):
-    proc = start_server(SHOTS / f"server-{args.label}.log", args.csp) if args.start_server else None
+    csp = "strict" if args.csp_strict else "production" if args.csp else None
+    proc = start_server(SHOTS / f"server-{args.label}.log", csp) if args.start_server else None
     try:
         for mode in args.mode.split(","):
             if mode not in ("light", "dark", "auto"):
                 raise SystemExit(f"unknown mode {mode}")
             print(f"[ui-shots] mode {mode}" + (f" (browser scheme {args.scheme})" if mode == "auto" else ""))
             shoot_mode(args, mode)
+        if args.checks:
+            import ui_checks
+            failures = ui_checks.run(json.loads(SERVER_JSON.read_text(encoding="utf-8")), args.channel)
+            if failures:
+                raise SystemExit(f"{failures} check(s) failed")
     finally:
         if proc:
             stop_server(proc)
@@ -202,11 +232,12 @@ def shoot_mode(args, mode):
     from playwright.sync_api import sync_playwright
     s = json.loads(SERVER_JSON.read_text(encoding="utf-8"))
     base = s["baseUrl"]
-    out = SHOTS / args.label / mode
+    out = SHOTS / args.label / (f"auto-{args.scheme}" if mode == "auto" else mode)
     out.mkdir(parents=True, exist_ok=True)
     png = placeholder_png()
     selected = set(args.only.split(",")) if args.only else None
     external = []
+    loaded = {}  # page name -> the scripts and stylesheets it loaded from this host
     with sync_playwright() as pw:
         browser = pw.chromium.launch(channel=args.channel, headless=True)
 
@@ -254,11 +285,17 @@ def shoot_mode(args, mode):
             failed, notes = [], []
             # a shot script's own summary (stars_js)
             page.on("console", lambda m: notes.append(m.text[:200])
-                    if m.type == "log" and m.text.startswith("stars:") else None)
+                    if m.type == "log" and m.text.startswith(("stars:", "check:")) else None)
+            assets = loaded.setdefault(name, [])
+            page.on("request", lambda r, assets=assets: assets.append(urlparse(r.url).path)
+                    if r.resource_type in ("script", "stylesheet") and urlparse(r.url).hostname in ALLOWED_HOSTS
+                    else None)
             page.on("requestfailed", lambda r: failed.append(f"{r.url[:120]} ({r.failure})"))
             # console errors, CSP violations among them
             page.on("console", lambda m: failed.append(f"console {m.type}: {m.text[:200]}")
                     if m.type == "error" or "Content Security Policy" in m.text else None)
+            # uncaught exceptions, which aren't console messages (unitegallery's .load(e) was one)
+            page.on("pageerror", lambda e: failed.append(f"page error: {str(e)[:200]}"))
             page.on("response", lambda r: failed.append(f"{r.url[:120]} ({r.status})")
                     if r.status >= 400 and r.url != base + path else None)
             response = page.goto(base + path, wait_until="networkidle", timeout=120000)
@@ -280,7 +317,7 @@ def shoot_mode(args, mode):
             expected = args.scheme if mode == "auto" else mode
             if shown[0] != expected or shown[1] != mode:
                 print(f"    mode shown {shown}, expected {expected}/{mode}")
-            if args.csp and response is not None and "content-security-policy" not in response.headers:
+            if (args.csp or args.csp_strict) and response is not None and "content-security-policy" not in response.headers:
                 print("    no Content-Security-Policy header")
             for n in notes:
                 print(f"    {n}")
@@ -288,6 +325,7 @@ def shoot_mode(args, mode):
                 print(f"    failed: {f}")
             page.close()
         browser.close()
+    (out / "requests.json").write_text(json.dumps(loaded, indent=1), encoding="utf-8")
     if external:
         print("external hosts requested:", ", ".join(sorted(set(external))))
 
@@ -339,12 +377,17 @@ def main():
     s.add_argument("--start-server", action="store_true")
     s.add_argument("--csp", action="store_true",
                    help="with --start-server: the server sends the production content security policy")
+    s.add_argument("--csp-strict", action="store_true",
+                   help="with --start-server: the production policy without inline scripts, so each one "
+                        "left is reported (auto mode's theme script among them: use light or dark)")
     s.add_argument("--channel", default="chrome", help="chrome or msedge")
     s.add_argument("--only", help="comma-separated page names")
+    s.add_argument("--checks", action="store_true",
+                   help="after the shots, the browser checks in ui_checks.py (they vote)")
     d = sub.add_parser("diff")
     d.add_argument("a")
     d.add_argument("b")
-    d.add_argument("--mode", default="light")
+    d.add_argument("--mode", default="light", help="light, dark, auto-light or auto-dark")
     args = ap.parse_args()
     shoot(args) if args.cmd == "shoot" else diff(args)
 

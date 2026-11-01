@@ -46,7 +46,7 @@
     }
 
     @main("byrate", user, list.asUserId, Some(list.round), rounds, true, Some(list), pagerNav(pager, list.pageUrl), rates,
-        filters = views.html.regionMenu(regionMenu)) {
+        filters = views.html.regionMenu(regionMenu), head = snippets.tileVoteScripts(starsRound.nonEmpty)) {
 
         @defining(list.round) { round =>
 

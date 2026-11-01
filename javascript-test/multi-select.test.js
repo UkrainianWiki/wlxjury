@@ -6,7 +6,7 @@
 // The round form's multiple selects (multi-select.js) on Tom Select, the build the pages load
 // (tom-select.complete): bootstrap-multiselect's summary texts, "select all", and the original
 // <select> kept as the form's field, with its change event for the page's own handlers
-// (previous rounds -> filters, jurors -> distribution, in mainAdmin.scala.html).
+// (previous rounds -> filters, jurors -> distribution, in round-form.js).
 
 const path = require("path");
 
@@ -115,5 +115,27 @@ describe("multiSelect", () => {
         const ts = window.TomSelect;
         delete window.TomSelect;
         try { expect(multiSelect(jurors(), TEXTS)).toBeNull(); } finally { window.TomSelect = ts; }
+    });
+});
+
+describe("initAll: the selects with data-multi-select (monuments.scala.html)", () => {
+    const { initAll } = require(SCRIPT);
+
+    test("starts each with its attribute's texts, and clears it when its form is reset", () => {
+        document.body.innerHTML = `<form id="f"><select id="regions-select" multiple data-multi-select='${JSON.stringify(TEXTS)}'>` +
+            `<option value="07" selected>Volyn</option><option value="12">Dnipro</option></select>` +
+            `<select id="plain" multiple><option>x</option></select></form>`;
+        const started = initAll(document);
+        expect(started).toHaveLength(1);
+        expect(summary()).toBe("Volyn");
+        document.getElementById("f").dispatchEvent(new Event("reset"));
+        expect(started[0].items).toEqual([]);
+        expect(summary()).toBe("None selected");
+        expect(document.getElementById("plain").tomselect).toBeUndefined();
+    });
+
+    test("leaves a select with broken texts a plain select", () => {
+        document.body.innerHTML = `<select multiple data-multi-select="{broken"><option>x</option></select>`;
+        expect(initAll(document)).toHaveLength(0);
     });
 });

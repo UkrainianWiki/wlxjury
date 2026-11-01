@@ -14,7 +14,9 @@
 @import java.net.URLEncoder
 
     @main("gallery", user, list.asUserId, Some(list.round), rounds, gallery = true, Some(list),
-        pagerNav(pager, list.pageUrl), rates = rates, filters = views.html.regionMenu(regionMenu)) {
+        pagerNav(pager, list.pageUrl), rates = rates, filters = views.html.regionMenu(regionMenu),
+        head = play.twirl.api.HtmlFormat.fill(List(snippets.galleryScripts(),
+            snippets.tileVoteScripts(views.TileStars.round(user, list.asUserId, Some(list.round)).nonEmpty)))) {
 
         @defining(list.roundId) { roundId =>
 
@@ -26,7 +28,7 @@
            why (voteTexts) *@
         <div class="row" @voteTexts()>
 
-            <div id="gallery" class="gallery mw-gallery-traditional" style="display:none;">
+            <div id="gallery" class="gallery mw-gallery-traditional" style="display:none;" @views.GalleryTiles.attributes(user, list.asUserId, Some(list.round))>
 
                     @for((file, index) <- pageFiles.view.zipWithIndex) {
 

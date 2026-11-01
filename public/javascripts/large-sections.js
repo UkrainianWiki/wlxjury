@@ -36,7 +36,7 @@
   }
 
   /** Space and Enter on a focused toggle open or close its section, and don't reach the page's
-    * keys (keyboardNav.scala.html), where Space votes in a binary round. Digits and arrows do:
+    * keys (large-keys.js), where Space votes in a binary round. Digits and arrows do:
     * the toggle has no use for them. */
   function keepKey(e) {
     if (e.key === ' ' || e.key === 'Enter' || e.keyCode === 32 || e.keyCode === 13) e.stopPropagation();

@@ -1,0 +1,10 @@
+@(stars: Boolean)
+@* Votes outside the large view (gallery, galleryByRate): tile-votes.js and the texts of a failed
+   vote (vote-errors.js), and with `stars` (views.TileStars) raty and the stars' number. Goes in
+   the shell's `head`. *@
+<script src="@routes.Assets.versioned("javascripts/vote-errors.js")"></script>
+<script src="@routes.Assets.versioned("javascripts/tile-votes.js")"></script>
+@if(stars) {
+<script src="@routes.Assets.versioned("javascripts/jquery.raty.js")"></script>
+<script src="@routes.Assets.versioned("javascripts/large-rate.js")"></script>
+}

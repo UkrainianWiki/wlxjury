@@ -628,3 +628,158 @@ had that maximum whenever it won the race.
 the two modules, and the spec's module check fails if one is enabled again.
 
 **What remains:** the B2 review, then B3.
+
+## Batch B3 results
+
+Branch `ukwikidev/followups`, from `faa5fb92`. Commits `b04a9670`..`ae248a6c`, then this one.
+
+**5.1** `main` and `mainAdmin` take `head: Html = Html("")`. Pages add what they use from three
+snippets: `snippets/galleryScripts` (unitegallery, its tiles theme and CSS, `gallery-init.js`)
+for `gallery` and `contestFiles`; `snippets/tileVoteScripts(stars)` (`vote-errors.js`,
+`tile-votes.js`, and raty with `large-rate.js` when there are stars) for `gallery` and
+`galleryByRate`; `snippets/multiSelectScripts` (Tom Select, `multi-select.js`) for `editRound`
+and `monuments`. `region-menu.js` and `pager-jump.js` stay in `main`. The global `contestId` is
+gone. `ug-theme-tiles.js` calls `wlxTileVotes.addTally` only when `tile-votes.js` is loaded:
+contestFiles has no votes and doesn't load it.
+
+**5.2** Every block in the table moved to a file that reads data attributes:
+- `gallery-init.js`: `#gallery`'s `data-jury`, `data-binary` and `data-stars` (JSON), rendered
+  by `views.GalleryTiles`.
+- `round-form.js` (editRound only): the multi-selects, the previous rounds' filters, the
+  distribution choices, the COI confirmation, the lazy jurors' table and Count new files. Its
+  texts are one `<script type="application/json" id="round-form-texts">` (`JsTexts`, `<`
+  escaped).
+- `large-view.js` (votes by the vote form, `[data-vote-url]` clicks, image fallbacks),
+  `large-keys.js` (`#large-keys`' `data-key-*` and `data-vote-key-*`, all paths) and
+  `large-stars.js` (each `.large-stars`' `data-number`, `-half`, `-score`, `-rate-number`,
+  `-readonly`, `-vote-prefix`, `-vote-query`). `main_large` lost its `score` and `byCriteria`
+  parameters; `navigationButtons` takes `readOnly`. A criteria round no longer sets up stars
+  on a `#rate-image` it doesn't render.
+- `cache-status.js` starts itself on `[data-cache-status-url]`; `multi-select.js` on
+  `select[data-multi-select]` (monuments; cleared when its form is reset).
+- `wlxLargeSections.restore` **stays inline** (large, contestFile), the one exception besides
+  the theme script. The new first-frame probe (`scripts/ui_checks.py`) saw Chrome paint frames
+  with the side column while `document.readyState` was still `loading` (baseline: 3 of 5 loads
+  of the large view; after B3, 5 of 5 of both views), so a restore at DOMContentLoaded would
+  show the default states first. With the inline restore every first frame had the stored
+  state. B5 can allow it by its hash.
+
+**5.3** The add-contest and add-user buttons are `<button type="submit" form=…>`; editUser's
+reset is `<button type="submit" form="reset-password">`. The new view spec also found the
+comment form's `onClick` (`commentsView`): it is a plain submit input now. The images'
+`onerror` handlers are `data-failed-mark="thumb|large"`, handled by one capture-phase `error`
+listener that `large-view.js` registers in `<head>`, with the same `data-fallback` logic.
+
+**1.6** `ismouseover`'s `.load(e)` is `.on("load", e)`. That error was an uncaught exception,
+not a console message, so the harness never showed it; it now reports page errors, and there
+are none on any page after B3.
+
+**4.4** 57 keys deleted from all four files (the sign-up and mail flow, `wiki.loves.*` and
+others nothing reads). Kept: Play's own `format.*`, `error.*` and `constraint.*` keys, the
+region names (`RegionScheme`), and the keys built at run time (`role.*`, `theme.*`,
+`binary.order.*`, `round.start`, …).
+
+**6.5** The two `.xcf` files are deleted.
+
+**3.1 / 3.3, the harness.** `ui-shots.py` saves auto shots in `auto-<scheme>/`, writes
+`requests.json` (each page's scripts and stylesheets), logs page errors, and with `--checks`
+runs `scripts/ui_checks.py` in Chrome: a key vote in the large view of the binary and of the
+rated round, then Back, must show what a fresh load shows; and the side sections' first frame.
+`--csp-strict` serves the production policy plus `script-src 'self' 'unsafe-eval'`
+(`GatlingTestFixture.cspConfig`), so each inline script left is reported.
+
+**Also:** `SchemaBaselineSpec` re-registers the shared pool in a `finally` after its own app,
+only if the shared container was started (`SharedTestDb.isStarted`, which doesn't start it).
+New `views.NoInlineScriptsSpec`: no template has a `<script>` without `src` other than the theme
+script, the two restores and JSON blocks, and no `on…=` attribute.
+
+**Checks** (through `scripts/agent-check.py`):
+- `Test/compile`: exit 0 (`20261101-232857-19092.log`).
+- `LargeViewFixturesSpec` with `FIXTURES_UPDATE=true`, twice (the second after the comment
+  button): exit 0, 6/6 (`20261101-234125-4092.log`).
+- `views.*` + `RoundEditPageSpec`, `ContestFilesPageSpec`, `GalleryOrderSpec`, `RegionMenuSpec`,
+  `ImportFilesPageSpec`, `UserControllerSpec`, `OwnVotesSpec`, `CoiAuthorizationSpec`,
+  `PrevRoundHiddenInputSpec`, `MonumentControllerSpec`, `AssetDigestSpec`, `ThemeSwitchSpec`,
+  `WebJarsSpec`, `LargeImageSpec`, `GalleryRegionsSpec`, `AllJurorsListSpec`,
+  `MultiContestUserSpec`, `ContestTemplateSpec`, `LoginControllerSpec`,
+  `CommentAuthorizationSpec`, `SchemaBaselineSpec` (`views.*` includes
+  `MessagesCompletenessSpec`, `LargeViewControllerSpec`, `LayoutSpec` and `LargeViewFixturesSpec`
+  without the update). First run: exit 1, 370 total, 5 failed (the comment's `onClick`; a
+  criteria-round count that included the dead `#rate-image` setup; `OwnVotesSpec` reading the
+  by-rate list's stars from main's old script; `20261101-233547-2500.log`). After the fixes:
+  exit 0, 375 total, 374 passed, 1 skipped (`20261101-234245-4000.log`).
+- Jest (local `npm ci` tree): exit 0, 17 suites, 237 tests
+  (`javascript-test/target/checks/20261101-234227-27020.log`). New: `gallery-init`,
+  `round-form`, `cache-status-init`, `large-view`, `large-keys-stars`, and `multi-select`'s
+  `initAll`. `large-view-keys` runs the files on the regenerated fixtures and asserts that the
+  only inline scripts are the theme script and the restore.
+- The full suite was not run (it comes after B5).
+
+**Screenshots** (Chrome, `--start-server --csp`; labels `b3-base` at `faa5fb92` and `b3`):
+- light, dark, auto (scheme dark): 0 of 28 shots differ from the baseline in each mode. The
+  only console errors, before and after: the 404 pages' own 404.
+- auto (scheme light): rendered light (the harness checks `data-bs-theme`). Against `b3` light,
+  21 shots differ only in the theme control (the navbar's icon, the login switch and the theme
+  menu show "System"); the other 7 are identical. The baseline has no auto shots with a light
+  scheme: by then the worktree held B3 code.
+- `--csp-strict`, light and dark: 0 of 28 differ from `b3`. The only violations are the theme
+  script (every page, and the sign-in page) and the restore (the four large-view shots): the
+  two exceptions above.
+- `requests.json`: `login` and `roundstat` load no unitegallery, Tom Select or tile votes.
+  Before, login loaded Tom Select and `multi-select.js`, and roundstat unitegallery and
+  `tile-votes.js`.
+- `--checks`: vote then Back passed in both rounds (binary: Del, and Back shows the select
+  button, as a fresh load does; rated: digit 3, and Back shows 3 instead of 7), each vote one
+  POST to a path on the app's host. The side sections' first frame passed on both large views
+  (5 loads each).
+
+**Open questions**
+- The restore stays inline, as measured and as the plan allows. B5 allows it and the theme
+  script by their hashes. A hash covers the exact text, line ends included (Twirl keeps CRLF
+  from a Windows checkout), so B5 should take it from a rendered page in the build, or use a
+  nonce.
+- 3.1 and 3.3 in Firefox remain the user's, by hand.
+
+**Intended behaviour change:** `<button form=…>` and the comment's submit input fire the submit
+event and the browser's form validation, which `form.submit()` skipped. `bs.FieldView` marks
+`nonEmptyText` fields `required` (a contest's name and country, a user's full name), so the
+browser now stops an empty add-contest or add-user row that the server would refuse anyway,
+and Enter in such a row submits it.
+
+### B3 review fixes
+
+- Medium-high, a regression: the category suggestions were gone on `/contests` and
+  `/contest/:id/images`, since `mainAdmin` stopped loading Tom Select and `category-suggest.js`
+  does nothing without it. `snippets.tomSelectScripts` (Tom Select's CSS and script, also
+  included by `multiSelectScripts`) is in both pages' `head`. The pages with a
+  `data-category-suggest` field are these two and editRound (its filters), which loads it with
+  `multiSelectScripts`. `CategorySuggestViewSpec` now asserts that both pages load
+  `tom-select.complete.min.js`, and that every template with such a field (or the page that
+  includes it) loads Tom Select. Commit `5219789c`.
+- Medium: `NoInlineScriptsSpec`'s handler pattern stopped at the first `>` in a tag, Twirl's
+  `=>` included, so it would have missed the old large image's `onerror`. It now strips the
+  scripts' bodies and searches the whole template for `(?<![\w-])on[a-z]+\s*=\s*["'@]`, also
+  for `javascript:`, and takes a script as having a src only from a `src=` attribute, not
+  `data-src=`. New examples run the checks on sample texts: the old large-image tag, an
+  `onClick`, a `javascript:` href, data attributes and script bodies that must not count, and
+  a `data-src` script. Commit `327c1a91`.
+- Low, wording: the submit buttons' validation is an intended behaviour change (see above),
+  not an open question.
+- Nit: `ui_checks.py` refuses requests to other hosts, as `ui-shots.py` does. The harness also
+  shoots `contests` (as a root account that `UiShotsServer` creates in its own container) and
+  `contest-images`, and logs how many category fields became Tom Select controls. Commit
+  `b4dba585`, plus this commit's change to count only Tom Select's wrappers.
+
+Checks:
+- `Test/compile`, `Gatling/compile`, `views.*` + `ContestFilesPageSpec`,
+  `ImportFilesPageSpec`, `ContestTemplateSpec`: exit 1, 191 total, 1 failed. The new
+  CategorySuggest example counted the snippet's own Twirl comment
+  (`20261102-002644-29220.log`). After stripping comments, `CategorySuggestViewSpec` +
+  `NoInlineScriptsSpec`: exit 0, 16/16 (`20261102-002854-27876.log`).
+- Harness, light, `--csp`, `--only contests,contest-images,login,editround`: exit 0, no
+  failures. Both new pages load `tom-select.complete.min.js` and `category-suggest.js`.
+  `contests` has 2 of 2 category fields as Tom Select controls and `contest-images` 1 of 1
+  (second run, after counting only the wrappers). `login` and `editround` are pixel-identical
+  to `b3`. No JS changed, so Jest wasn't rerun.
+
+**What remains:** a second review of the fixes if wanted, then B4.
