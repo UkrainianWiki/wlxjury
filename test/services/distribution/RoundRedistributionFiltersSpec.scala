@@ -215,5 +215,29 @@ class RoundRedistributionFiltersSpec extends Specification with TestDb with Befo
           (service.newFilesCount(round.getId) === 0L)
       }.reduce(_ and _)
     }
+
+    "ignore \"selected by at least 0\" in a round with no previous round" in {
+      // V73 sets such a 0 to NULL: it must distribute as no filter does, on every path
+      implicit val contest: ContestJury = createContests(1).head
+      val jurors = createUsers("jury", 1, 2)
+      addImages(contest, 1 to 10)
+      val service = TestRoundServices.roundService(TestRoundServices.handler(chunkRows = 3))
+      val source = Round(None, 0, Some("No previous"), contest.getId, distribution = 1, active = true)
+      val rounds = Seq(None, Some(0)).map(by => service.createNewRound(source.copy(prevSelectedBy = by), jurors.map(_.getId)))
+      def rows(round: Round) = SelectionJdbc.byRound(round.getId).map(s => (s.pageId, s.juryId)).toSet
+      val created = rounds.map(rows)
+      addImages(contest, 11 to 20)
+      val inMemory = new DistributeImages(ImageJdbc)
+      val reference = rounds.map(r => inMemory.imagesByRound(r, Nil).map(_.pageId).toSet)
+      val counts = rounds.map(r => service.newFilesCount(r.getId))
+      val added = rounds.map(r => service.distributeNewImages(r.getId))
+      (roundDao.findById(rounds(1).getId).get.prevSelectedBy must beSome(0)) and
+        (created.map(_.map(_._1)) === Seq.fill(2)((1L to 10L).toSet)) and
+        (created(1) === created(0)) and
+        (reference === Seq.fill(2)((11L to 20L).toSet)) and
+        (counts === Seq(10L, 10L)) and
+        (added === Seq(10, 10)) and
+        (rows(rounds(1)) === rows(rounds(0)))
+    }
   }
 }
