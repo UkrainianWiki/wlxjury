@@ -15,5 +15,7 @@
     <logger name="application" level="INFO"/>
     <!-- conflicts of interest removed from rounds (db.scalikejdbc.RoundConflicts): kept nowhere else -->
     <logger name="coi" level="INFO"/>
+    <!-- refused personal API tokens (services.ApiTokenService): unknown ones at INFO, by prefix -->
+    <logger name="services.ApiTokenService" level="INFO"/>
     <root level="WARN"><appender-ref ref="STDOUT"/><appender-ref ref="FILE"/></root>
 </configuration>
