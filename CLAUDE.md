@@ -162,7 +162,12 @@ One MariaDB Testcontainer per JVM, shared across all specs via `SharedTestDb` (l
 
 ### REST API
 
-Tapir endpoints are defined in `app/api/Api.scala` as Pekko HTTP routes (separate from Play routing), with a Swagger UI. They are **not served**: no route, binding or server uses `Api.routes` (only `test/api/ApiSpec`). They have **no authentication** (contests can be created and changed by anyone who reaches them), so they must get authentication and authorization before they are ever exposed. Play routes are in `conf/routes`.
+Tapir endpoints in `app/api/Api.scala`, served by Tapir's Play interpreter (`tapir-play-server`) under `/api` (`-> /api api.ApiRouter` in `conf/routes`), so through Play's filters and on the blocking dispatcher for JDBC. Swagger UI and the OpenAPI document are public at `/api/docs`. See `docs/api.md`.
+
+- **Who calls** (`api.ApiAuth.caller`): an `Authorization` header must be `Bearer <personal token>` and the token usable, else 401 (the session is then ignored, never mixed in); without the header, the session user as `Secured.userFromRequest` gives it. Permissions are the `Secured` ones (`Secured.checked`); the contest endpoints are root-only, as the contest pages.
+- **Errors** are JSON (`api.ApiFailure`): 401 `unauthorized` with `WWW-Authenticate: Bearer`, 403 `forbidden` with the reference of `Secured.logDenial`'s line (which adds `auth=session` or `auth=token tokenId=…`), 400 `bad_request` (decode failures, never the input), 404 `not_found` (also any other `/api` path), 500 `server_error` with a logged reference.
+- **Personal API tokens** (`api_token`, V75; `services.ApiTokenService`, `ApiTokenJdbc`): `wlxj_` + 32 random bytes base64url; only the SHA-256 is stored, the prefix (`wlxj_` + 6) names it in lists and logs. Shown once, in the response that creates it (`no-store`), never flashed, logged or put in a URL. `last_used_at` at most once a minute. Managed on the user's own profile (`UserController.createApiToken` / `revokeApiToken`, CSRF POST forms, session only); a user revokes only their own. Tokens are accepted only under `/api/`: the page routes read the session alone.
+- **CSRF:** session writes need the `Csrf-Token` header. `modules.CsrfModule` replaces Play's CSRF module (same filter class) so that only a request under `/api/` with a Bearer header and without the session cookie skips the check (`ApiAuth.bearerWithoutSession`).
 
 ### Wikimedia Commons Integration
 
