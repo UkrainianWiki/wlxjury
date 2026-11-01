@@ -293,7 +293,7 @@ a:has(> .btn) { text-decoration: none; }
 .wlx-vote-selected { color: var(--wlx-selected); }
 .wlx-vote-rejected { color: var(--wlx-rejected); }
 
-/* an empty anchor before a gallery tile (galleryByRate, galleryByRateRegions, monuments) */
+/* an empty anchor before a gallery tile (galleryByRate, monuments) */
 .tile-anchor { display: inline; }
 
 /* the round and user forms' Save and Cancel (snippets/submit, snippets/button) */

@@ -169,10 +169,8 @@ class GalleryController @Inject() (
     val pager = Pager(page, counts.fold(list.count())(_.total(list.filter, list.region)))
     val files = list.files(pager)
 
-    // the region menu, whose regions are read when it is opened (regions); the grouped view's
-    // regions, by which it shows the files
+    // the region menu, whose regions are read when it is opened (regions)
     val menu = regionMenu(list, contest)
-    val byReg = if (list.region.contains("grouped")) listRegions(list, contest, counts) else Nil
 
     // the viewer's own tabs: the counts above when the list is their own
     val rates = counts.filter(_ => user.id.contains(asUserId)).fold(galleryService.rateDistribution(user, round))(c =>
@@ -199,10 +197,7 @@ class GalleryController @Inject() (
           showAuthor))
 
       case GalleryView.Gallery | GalleryView.ByRate =>
-        if (list.region.contains("grouped"))
-          Ok(RequestTiming.render(views.html.galleryByRateRegions(user, list, files, pager, rounds, menu, byReg)))
-        else
-          Ok(RequestTiming.render(views.html.galleryByRate(user, list, files, pager, rounds, menu, rates)))
+        Ok(RequestTiming.render(views.html.galleryByRate(user, list, files, pager, rounds, menu, rates)))
     }
   }
 
@@ -212,7 +207,7 @@ class GalleryController @Inject() (
   private def regionMenu(list: RoundList, contest: ContestJury)(implicit messages: play.api.i18n.Messages)
       : Option[RegionMenu] =
     Option.when(ContestKind.monumentIdTemplate(contest).isDefined) {
-      val current = list.region.filter(_ != "grouped").map(RegionScheme.of(contest).region(_, None).name)
+      val current = list.region.map(RegionScheme.of(contest).region(_, None).name)
       RegionMenu.regions(current, list.withRegion("all").pageUrl(1), list.pageUrl(1), list.regionsUrl)
     }
 
@@ -261,7 +256,7 @@ class GalleryController @Inject() (
                 val view = request.getQueryString("module").flatMap(GalleryView.parse).getOrElse(GalleryView.ofPath(asUserId))
                 val list = RoundList.of(round, user, asUserId, region, view)
                 val regions = listRegions(list, contest, list.jurorCounts())
-                Ok(placesJson(list.region.filter(_ != "grouped"), messagesApi.preferred(request)("region.all"),
+                Ok(placesJson(list.region, messagesApi.preferred(request)("region.all"),
                   list.withRegion("all").pageUrl(1),
                   regions.map(r => Place(r.id, r.name, r.count, r.kind.toString, list.withRegion(r.id).pageUrl(1)))))
               }

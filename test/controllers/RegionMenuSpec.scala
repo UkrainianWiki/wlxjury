@@ -110,6 +110,20 @@ class RegionMenuSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
+    "show region grouped as any unknown region, in the by-rate gallery (the view grouped by region is gone)" in {
+      testDbApp { implicit app =>
+        val f = fixture()
+        def shown(region: String) = {
+          val html = page(s"/byrate/round/${f.rated.getId}/user/0/region/$region/page/1", f.admin)
+          html must not contain "col-sm-1" // the grouped view's region cards
+          """(?s)id="regionmenu".*?<b>([^<]*)</b>""".r.findFirstMatchIn(html).map(_.group(1))
+        }
+        // the menu names it as it names any other id it doesn't know
+        (shown("grouped") must beSome) and (shown("grouped") === shown("xyz").map(_.replace("xyz", "grouped")))
+        status(request(s"/regions/round/${f.rated.getId}/user/0/region/grouped", Some(f.admin), script = true)) === OK
+      }
+    }
+
     "list a list's regions with the counts the region nav had, for jurors and organisers, binary and rated, by filter" in {
       testDbApp { implicit app =>
         val f = fixture()

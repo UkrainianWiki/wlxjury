@@ -1,7 +1,7 @@
 package views
 
 import controllers.{GalleryView, Pager, RateDistribution, RoundList}
-import org.intracer.wmua.{Image, ImageWithRating, Region, Selection}
+import org.intracer.wmua.{Image, ImageWithRating, Selection}
 import org.jsoup.Jsoup
 import play.api.mvc.{Flash, RequestHeader}
 import play.api.test.CSRFTokenHelper._
@@ -9,10 +9,10 @@ import play.api.test.{FakeRequest, PlaySpecification}
 
 import scala.jdk.CollectionConverters._
 
-/** The by-rate galleries (galleryByRate, galleryByRateRegions) of a rated round: each file's
-  * rank and rate in its own block inside its tile, every tile inside the gallery list, and no
-  * stray markup text (a mangled tag once left `">` before each rank and closed the list after
-  * the first tile).
+/** The by-rate gallery of a rated round: each file's rank and rate in its own block inside its
+  * tile, every tile inside the gallery list, and no stray markup text (a mangled tag once left
+  * `">` before each rank and closed the list after the first tile); of a binary round, its
+  * approvals or a juror's votes, never stars.
   */
 class GalleryByRateViewSpec extends PlaySpecification {
 
@@ -93,14 +93,6 @@ class GalleryByRateViewSpec extends PlaySpecification {
       (marks(1) must_== ((1, 0, 0, "selected"))) and
         (marks(-1) must_== ((0, 1, 0, "rejected"))) and
         (marks(0) must_== ((0, 0, 0, "")))
-    }
-  }
-
-  "the by-rate gallery by regions" should {
-    "keep each tile, with its rank, inside its region's gallery list" in {
-      val html = contentAsString(views.html.galleryByRateRegions(
-        juror, list, files, Pager(1, files.size), Nil, None, Seq(Region("07", "Region 07", Some(files.size)))))
-      checkTiles(html, files.size)
     }
   }
 }
