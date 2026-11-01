@@ -23,9 +23,9 @@
     hood = hood,
     byCriteria = byCriteria) {
         @defining(hood.file.image) { image =>
-        <div class="container-fluid" style="padding-left:5px; margin-left:0px; margin-right:0px; height:100%">
-            <div class="row" style="height:100%">
-                <div class="col-1" style="margin-left:0px; min-width: 220px">
+        <div class="container-fluid large-view h-100">
+            <div class="row h-100">
+                <div class="col-1 large-side">
 
                     @navigationButtons(user, list, hood)
                     @thumbsBar(list, hood)
@@ -38,7 +38,7 @@
 
                </div>
 
-               <div id="mainContent" class="col" style="margin-left:5px; margin-top: 10px; height:100%">
+               <div id="mainContent" class="col large-main h-100">
 
                     @voteMoved(list)
 
@@ -48,7 +48,7 @@
                                finds a file renamed or deleted on Commons; if that fails too, a grey box *@
                             @defining(Global.largeImage(image)) { large =>
                             <img id="large_image" alt="@hood.file.title"
-                                src="@large.src" style="max-width:100%; max-height:100%;"
+                                src="@large.src" class="mw-100 mh-100"
                                 srcset="@large.srcset" @large.sizes.map { sizes => sizes="@sizes" }
                                 @large.fallback.map { fallback => data-fallback="@fallback" }
                                 onerror="var f = this.getAttribute('data-fallback');

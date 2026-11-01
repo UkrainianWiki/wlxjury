@@ -20,14 +20,14 @@
             <h3>@Messages("campaign") @contest.fullName</h3>
 
             @flash.get("error").map { err =>
-                <div class="alert alert-danger" style="color:#a94442;background:#f2dede;border:1px solid #ebccd1;padding:10px;border-radius:4px;margin-bottom:10px">@err</div>
+                <div class="alert alert-danger">@err</div>
             }
             @flash.get("success").map { msg =>
                 <div class="alert alert-info" id="flash-success">@msg</div>
             }
 
             @if(rounds.nonEmpty) {
-                <table class="table table-striped table-sm" style="background-color: #CCCCCC ;">
+                <table class="table table-striped table-sm">
 
                     <thead>
                         <tr>
@@ -68,14 +68,12 @@
 
                 </table>
                 <script src="@routes.Assets.versioned("javascripts/job-status.js")"></script>
-            </div>
-    }
+            }
+        </div>
 
         <div class="row" >
             <div class="mb-3">
-                <a href="@routes.RoundController.editRound(id = None, contestId = contest.getId)">
-                    <div class="btn btn-primary" onClick="document.forms['add-user'].submit();">@Messages("add.round")</div>
-                </a>
+                <a class="btn btn-primary" href="@routes.RoundController.editRound(id = None, contestId = contest.getId)">@Messages("add.round")</a>
 
             </div>
 

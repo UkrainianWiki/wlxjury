@@ -1,13 +1,10 @@
-@(star: Int, rate: Int, big: Boolean, half: Boolean)
-    @if(half) {
-        @defining(if(big) "-big.png" else ".png") { sizeSuffix =>
-            @if((rate / 2) >= star) {@routes.Assets.versioned("images/star-on" + sizeSuffix)}
-            @if(rate < star * 2 && rate > (star - 1) * 2) {@routes.Assets.versioned("images/star-half" + sizeSuffix)}
-            @if(rate <= (star - 1) * 2) {@routes.Assets.versioned("images/star-off" + sizeSuffix)}
-        }
-    } else {
-        @defining(if(big) "-big.png" else ".png") { sizeSuffix =>
-            @if(rate >= star) {@routes.Assets.versioned("images/star-on" + sizeSuffix)}
-            @if(rate <= star - 1) {@routes.Assets.versioned("images/star-off" + sizeSuffix)}
-        }
-    }
+@(star: Int, rate: Int, half: Boolean)
+@* the star-th of a rate's static stars: full, half (a half-star round's rate counts halves) or
+   empty, a Bootstrap Icon in the mode's star colour (main.css .wlx-star); the rate's number
+   follows the stars as text *@
+@defining(if (half) {
+    if (rate / 2 >= star) "bi-star-fill" else if (rate > (star - 1) * 2) "bi-star-half" else "bi-star"
+} else {
+    if (rate >= star) "bi-star-fill" else "bi-star"
+}) { icon =>
+<i class="bi @icon wlx-star" aria-hidden="true"></i>}

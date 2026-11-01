@@ -1,4 +1,4 @@
-@(pager: Pager, pageUrl: Int => String, style: String = "")(implicit messages: Messages)
+@(pager: Pager, pageUrl: Int => String)(implicit messages: Messages)
 @* The pager's links: the first and the previous page, the items shown ("46–60 of 5,712"), which
    opens a box to go to a page by its number (pager-jump.js), and the next and the last page;
    those with no page to go to (on the first or the last page) shown disabled *@
@@ -9,7 +9,7 @@
         <li class="page-item disabled"><span class="page-link" aria-disabled="true" title="@Messages(title)">@symbol</span></li>
     }
 }
-<ul class="pagination pagination-sm mb-0" id="pagenav"@if(style.nonEmpty) { style="@style"}>
+<ul class="pagination pagination-sm mb-0" id="pagenav">
     @link(pager.hasPrev, 1, "first", "pager.first", Html("&laquo;"))
     @link(pager.hasPrev, pager.page - 1, "prev", "pager.previous", Html("&lsaquo;"))
     <li class="page-item dropdown pager-jump-menu">

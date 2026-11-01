@@ -31,7 +31,7 @@
             }
 
             @flash.get("error").map { err =>
-                <div class="alert alert-danger" style="color:#a94442;background:#f2dede;border:1px solid #ebccd1;padding:10px;border-radius:4px;margin-bottom:10px">@err</div>
+                <div class="alert alert-danger">@err</div>
             }
 
             @for(job <- distributionJob if !job.isDone) {
@@ -88,7 +88,7 @@
                                 Symbol("rows") -> 8)
                         }
 
-                        <div @if(noEdit) {style="display: none"}>
+                        <div @if(noEdit) {class="d-none"}>
                             @bs.select(
                                 editRoundForm("jurors"),
                                 jurors.map(u => (u.getId.toString, u.description)),

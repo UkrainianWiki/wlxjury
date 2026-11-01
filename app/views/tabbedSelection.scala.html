@@ -1,7 +1,0 @@
-@(dto: UiSelectionDto[Any])(implicit messages: Messages)
-@for((id, value) <- dto.optValues) {
-    <li class="@if(dto.selectedItemId == id){active active-}@value.text">
-        <a style="margin-top: 5px" href="@dto.itemUrlFunction(id)">@Messages(value.localizedText)</a>
-    </li>
-    }
-

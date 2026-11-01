@@ -5,19 +5,24 @@
         byCriteria: Map[Int, Int] = Map.empty
 )(implicit messages: Messages)
 
-@* the stars' votes: the vote URL's start, the score, then the list's query string *@
+@* the stars' votes: the vote URL's start, the score, then the list's query string. The stars
+   are Bootstrap Icons (raty's starType 'i': an <i> with these classes for each), coloured and
+   sized by main.css's .wlx-star and .raty-cancel *@
 @defining(list.round) { round =>
 @if(!round.isBinary) {
 
     <script src="@routes.Assets.versioned("javascripts/jquery.raty.js")"></script>
-    <link rel="stylesheet" href="@routes.Assets.versioned("stylesheets/jquery.raty.css")">
 
     <script>
     $(document).ready(function() {
-        @* a directory has no digest: raty's star images keep plain, hour-cached names *@
-        $.fn.raty.defaults.path = '@routes.Assets.versioned("images")';
-
-        @defining(if(round.rates.id <= 10) "-big.png" else ".png"){ sizeSuffix =>
+        $.extend($.fn.raty.defaults, {
+            starType: 'i',
+            starOn: 'bi bi-star-fill wlx-star',
+            starHalf: 'bi bi-star-half wlx-star',
+            starOff: 'bi bi-star wlx-star',
+            cancelOn: 'bi bi-x-circle-fill',
+            cancelOff: 'bi bi-x-circle'
+        });
 
         @defining(if(round.rates.id > 5 && round.halfStar) 2 else 1) { k =>
 
@@ -25,11 +30,6 @@
                 score: @score,
                 half: @(k == 2),
                 cancel: true,
-                starHalf: 'star-half@sizeSuffix ',
-                starOff: 'star-off@sizeSuffix ',
-                starOn: 'star-on@sizeSuffix ',
-                cancelOff: 'cancel-off@sizeSuffix ',
-                cancelOn: 'cancel-on@sizeSuffix ',
                 number: @(round.rates.id / k),
                 precision: false,
                 space: false,
@@ -50,11 +50,6 @@
             score: @{byCriteria.getOrElse(rateId, 0)/k},
             half: @(k == 2),
             cancel: true,
-            starHalf: 'star-half@sizeSuffix ',
-            starOff: 'star-off@sizeSuffix ',
-            starOn: 'star-on@sizeSuffix ',
-            cancelOff: 'cancel-off@sizeSuffix ',
-            cancelOn: 'cancel-on@sizeSuffix ',
             number: @(round.rates.id / k),
             precision: false,
             space: false,
@@ -72,7 +67,6 @@
         }
 
 
-        }
         }
     })
     </script>

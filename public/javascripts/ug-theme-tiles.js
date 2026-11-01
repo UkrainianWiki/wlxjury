@@ -236,9 +236,10 @@ function UGTheme_tiles(){
 			var border = 3;
 			var color;
 
-			if (rate == 1) color = "limegreen";
-			else if (rate == -1) color = "brown";
-			else if (rate == 0) color = "white";
+			// the mode's colours (theme.css), readable on the light and the dark grey
+			if (rate == 1) color = "var(--wlx-selected)";
+			else if (rate == -1) color = "var(--wlx-rejected)";
+			else if (rate == 0) color = "var(--bs-secondary-color)";
 
 			objItem.rate = rate;
 

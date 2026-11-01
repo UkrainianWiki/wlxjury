@@ -461,7 +461,7 @@ class ContestFilesPageSpec extends PlaySpecification with PlayTestDb {
         val (code, page) = get(s"/contest/${f.contest.getId}/files/3", f.organizer)
 
         code === OK
-        page must contain("""<body class="gallery"""")
+        page must contain("""<body class="gallery h-100">""")
         page must contain("""id="large_image"""")
         page must contain("""href="https://commons.wikimedia.org/wiki/File%3AWho_is_this%3F.jpg" target="_blank"""")
         page must contain("Some Author")

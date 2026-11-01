@@ -216,6 +216,24 @@ describe("a rated round (1..5), the juror's own large view", () => {
         expect(submits).toHaveLength(0);
     });
 
+    test("the stars are Bootstrap Icons: five empty ones and the cancel icon", () => {
+        const stars = document.querySelectorAll("#rate-image i.wlx-star");
+        expect(stars).toHaveLength(5);
+        stars.forEach(star => expect(star.className).toBe("bi bi-star wlx-star"));
+        expect(document.querySelector("#rate-image i.raty-cancel").className).toBe("raty-cancel bi bi-x-circle");
+        expect(document.querySelectorAll("#rate-image img")).toHaveLength(0);
+    });
+
+    test.each([1, 3, 5])("clicking star %i rates the file, as its digit does", n => {
+        window.jQuery("#rate-image i.wlx-star").eq(n - 1).trigger("click");
+        expectVote(n);
+    });
+
+    test("clicking the cancel icon unrates the file", () => {
+        window.jQuery("#rate-image i.raty-cancel").trigger("click");
+        expectVote(0);
+    });
+
     test("Down moves to the next file on this origin", () => {
         press("down");
         expectNavigation("/large/round/1/user/1/pageid/108");

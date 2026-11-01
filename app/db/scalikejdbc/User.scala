@@ -28,7 +28,11 @@ case class User(
     sort: Option[Int] = None,
     active: Option[Boolean] = Some(true),
     isRoot: Boolean = false,
-    userContests: Seq[UserContest] = Nil
+    userContests: Seq[UserContest] = Nil,
+    /** users.theme (V71): light, dark or auto as chosen, None if never; read through
+      * [[controllers.Theme.find]], which takes nothing else.
+      */
+    theme: Option[String] = None
 ) extends HasId
     with Ordered[User] {
 
@@ -153,7 +157,8 @@ object User extends CRUDMapper[User] {
         Option[String],
         Option[Long],
         Option[String],
-        Option[Int]
+        Option[Int],
+        Option[String]
     )
   ] = {
     Some(
@@ -166,7 +171,8 @@ object User extends CRUDMapper[User] {
         if (user.hasRole(ROOT_ROLE)) Some(ROOT_ROLE) else user.contestRole,
         user.contestId,
         user.lang,
-        user.sort
+        user.sort,
+        user.theme
       )
     )
   }
@@ -180,7 +186,8 @@ object User extends CRUDMapper[User] {
       roles: Option[String],
       contest: Option[Long],
       lang: Option[String],
-      sort: Option[Int]
+      sort: Option[Int],
+      theme: Option[String]
   ): User = {
     new User(
       fullname,
@@ -191,7 +198,8 @@ object User extends CRUDMapper[User] {
       contest,
       lang,
       wikiAccount = wikiAccount,
-      sort = sort
+      sort = sort,
+      theme = theme
     )
   }
 
@@ -292,6 +300,7 @@ object User extends CRUDMapper[User] {
       isRoot      = root,
       password    = rs.stringOpt(c.password),
       lang        = rs.stringOpt(c.lang),
+      theme       = rs.stringOpt(c.theme),
       wikiAccount = rs.stringOpt(c.wikiAccount),
       sort        = rs.intOpt(c.sort),
       createdAt   = rs.timestampOpt(c.createdAt).map(_.toZonedDateTime),
@@ -486,6 +495,7 @@ object User extends CRUDMapper[User] {
           column.password    -> user.password,
           column.isRoot      -> root,
           column.lang        -> user.lang,
+          column.theme       -> user.theme.flatMap(controllers.Theme.find).map(_.value),
           column.sort        -> user.sort,
           column.createdAt   -> user.createdAt
         )
@@ -518,6 +528,11 @@ object User extends CRUDMapper[User] {
         "lang"        -> lang,
         "sort"        -> sort
       )
+
+  /** The user's colour mode ([[controllers.Theme]]): one of its three values only. */
+  def updateTheme(id: Long, theme: controllers.Theme)(implicit session: DBSession = autoSession): Unit =
+    updateById(id)
+      .withAttributes("theme" -> theme.value)
 
   def setRoot(id: Long, root: Boolean): Unit =
     updateById(id)

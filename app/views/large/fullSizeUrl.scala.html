@@ -2,7 +2,7 @@
 @import org.intracer.wmua.Image
 @(image: Image, round: Round)(implicit flash: Flash, request: Request[Any], messages: Messages)
 
-    <div style="margin-right: 5px; margin-top: 5px; padding: 5px;">
+    <div class="large-line">
         <a href="@image.url">@Html(Messages(
             "full.resolution",
             image.resolutionStr,

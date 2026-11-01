@@ -6,7 +6,7 @@ import org.intracer.wmua._
 import play.api.http.HeaderNames.HOST
 import play.api.i18n.{Lang, Messages}
 import play.api.mvc.request.RemoteConnection
-import play.api.mvc.{AnyContentAsEmpty, Flash, Request}
+import play.api.mvc.{AnyContentAsEmpty, Cookie, Flash, Request}
 import play.api.test.CSRFTokenHelper._
 import play.api.test.{FakeRequest, Helpers}
 
@@ -52,10 +52,11 @@ object LargeViewRenders {
       )
     }
 
-  /** A secure request for `path` on [[Host]], with a CSRF token. */
-  def request(path: String): Request[AnyContentAsEmpty.type] =
+  /** A secure request for `path` on [[Host]], with a CSRF token and `cookies`. */
+  def request(path: String, cookies: Seq[Cookie] = Nil): Request[AnyContentAsEmpty.type] =
     FakeRequest("GET", path)
       .withHeaders(HOST -> Host)
+      .withCookies(cookies: _*)
       .withConnection(RemoteConnection("203.0.113.7", secure = true, clientCertificateChain = None))
       .withCSRFToken
       .asInstanceOf[Request[AnyContentAsEmpty.type]]
@@ -73,11 +74,12 @@ object LargeViewRenders {
       user: User = juror,
       rated: Map[Int, Int] = Map.empty,
       module: String = "gallery",
-      rate: Option[Int] = None
+      rate: Option[Int] = None,
+      cookies: Seq[Cookie] = Nil
   ): String = {
     val fs = files(rated)
     implicit val req: Request[AnyContentAsEmpty.type] =
-      request(s"/large/round/${round.getId}/user/$asUserId/pageid/${fs(index).pageId}")
+      request(s"/large/round/${round.getId}/user/$asUserId/pageid/${fs(index).pageId}", cookies)
     implicit val msgs: Messages = messages
     implicit val flash: Flash = Flash()
     val byCriteria = if (round.hasCriteria) Map(1 -> 2, 2 -> 3) else Map.empty[Int, Int]
@@ -99,10 +101,10 @@ object LargeViewRenders {
       categoryId = Some(1))
 
   /** A contest files page's large view (GalleryController.contestFileLarge) of index `index`. */
-  def contestFile(index: Int): String = {
+  def contestFile(index: Int, cookies: Seq[Cookie] = Nil): String = {
     val view = ContestFilesView(contest, deletedOnly = false, round = None)
     val stored = files().map(f => ImageJdbc.StoredFile(f.image, deletedAt = None))
-    implicit val req: Request[AnyContentAsEmpty.type] = request(view.largeUrl(stored(index).image.pageId))
+    implicit val req: Request[AnyContentAsEmpty.type] = request(view.largeUrl(stored(index).image.pageId), cookies)
     implicit val msgs: Messages = messages
     implicit val flash: Flash = Flash()
     views.html.large.contestFile(organizer, view, stored, index, page = 1, monument = None).body

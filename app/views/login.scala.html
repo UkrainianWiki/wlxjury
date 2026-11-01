@@ -31,6 +31,22 @@
     <div>
         <p class="not-a-member">@Messages("not.a.member") <a href="/signup">@Messages("sign.up.now")</a>
     </div>
+
+    @* the colour mode, signed out: theme-switch.js sets the theme cookie in the browser and
+       the page's mode, with no request; signing in then takes the user's stored one *@
+    @defining(controllers.Theme.of(req)) { current =>
+    <div class="d-flex align-items-center gap-2">
+        <span id="theme-switch-label">@Messages("theme"):</span>
+        <div class="btn-group btn-group-sm" role="group" id="theme-switch" aria-labelledby="theme-switch-label">
+        @for(theme <- controllers.Theme.All) {
+            <button type="button" class="btn btn-outline-secondary@if(theme == current){ active}" data-theme-value="@theme.value" aria-pressed="@(theme == current)">
+                <i class="bi bi-@theme.icon" aria-hidden="true"></i> @Messages("theme." + theme.value)
+            </button>
+        }
+        </div>
+    </div>
+    }
+    <script src="@routes.Assets.versioned("javascripts/theme-switch.js")"></script>
 </fieldset>
 </div>
 }
