@@ -349,9 +349,6 @@ object Round extends RoundRepo with CRUDMapper[Round] {
     round.copy(id = Some(id))
   }
 
-  /** Saves the round form of an existing round: its name, and its active flag through
-    * [[setActiveGuarded]].
-    */
   /** The round form's edit: its name. Starting and stopping it is [[setActiveGuarded]]'s. */
   def updateRound(id: Long, round: Round): Unit =
     updateById(id).withAttributes("name" -> round.name): Unit
