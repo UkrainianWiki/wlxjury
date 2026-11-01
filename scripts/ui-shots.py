@@ -82,7 +82,7 @@ MARKS_JS = """
 SUGGEST_JS = """
 (() => {
   const fields = document.querySelectorAll('[data-category-suggest]').length;
-  const controls = document.querySelectorAll('.ts-wrapper.wlx-category-suggest, [data-category-suggest].tomselected').length;
+  const controls = document.querySelectorAll('.ts-wrapper.wlx-category-suggest').length;
   console.log(`check: ${controls} of ${fields} category fields are Tom Select controls`);
   if (controls < fields) console.error(`check: ${fields - controls} category fields without their Tom Select control`);
 })();

@@ -738,8 +738,48 @@ script, the two restores and JSON blocks, and no `on…=` attribute.
   script by their hashes. A hash covers the exact text, line ends included (Twirl keeps CRLF
   from a Windows checkout), so B5 should take it from a rendered page in the build, or use a
   nonce.
-- `<button form=…>` and the comment's submit input fire the submit event and the browser's form
-  validation, which `form.submit()` skipped. None of these forms has `required` fields today.
 - 3.1 and 3.3 in Firefox remain the user's, by hand.
 
-**What remains:** the B3 review, then B4.
+**Intended behaviour change:** `<button form=…>` and the comment's submit input fire the submit
+event and the browser's form validation, which `form.submit()` skipped. `bs.FieldView` marks
+`nonEmptyText` fields `required` (a contest's name and country, a user's full name), so the
+browser now stops an empty add-contest or add-user row that the server would refuse anyway,
+and Enter in such a row submits it.
+
+### B3 review fixes
+
+- Medium-high, a regression: the category suggestions were gone on `/contests` and
+  `/contest/:id/images`, since `mainAdmin` stopped loading Tom Select and `category-suggest.js`
+  does nothing without it. `snippets.tomSelectScripts` (Tom Select's CSS and script, also
+  included by `multiSelectScripts`) is in both pages' `head`. The pages with a
+  `data-category-suggest` field are these two and editRound (its filters), which loads it with
+  `multiSelectScripts`. `CategorySuggestViewSpec` now asserts that both pages load
+  `tom-select.complete.min.js`, and that every template with such a field (or the page that
+  includes it) loads Tom Select. Commit `5219789c`.
+- Medium: `NoInlineScriptsSpec`'s handler pattern stopped at the first `>` in a tag, Twirl's
+  `=>` included, so it would have missed the old large image's `onerror`. It now strips the
+  scripts' bodies and searches the whole template for `(?<![\w-])on[a-z]+\s*=\s*["'@]`, also
+  for `javascript:`, and takes a script as having a src only from a `src=` attribute, not
+  `data-src=`. New examples run the checks on sample texts: the old large-image tag, an
+  `onClick`, a `javascript:` href, data attributes and script bodies that must not count, and
+  a `data-src` script. Commit `327c1a91`.
+- Low, wording: the submit buttons' validation is an intended behaviour change (see above),
+  not an open question.
+- Nit: `ui_checks.py` refuses requests to other hosts, as `ui-shots.py` does. The harness also
+  shoots `contests` (as a root account that `UiShotsServer` creates in its own container) and
+  `contest-images`, and logs how many category fields became Tom Select controls. Commit
+  `b4dba585`, plus this commit's change to count only Tom Select's wrappers.
+
+Checks:
+- `Test/compile`, `Gatling/compile`, `views.*` + `ContestFilesPageSpec`,
+  `ImportFilesPageSpec`, `ContestTemplateSpec`: exit 1, 191 total, 1 failed. The new
+  CategorySuggest example counted the snippet's own Twirl comment
+  (`20261102-002644-29220.log`). After stripping comments, `CategorySuggestViewSpec` +
+  `NoInlineScriptsSpec`: exit 0, 16/16 (`20261102-002854-27876.log`).
+- Harness, light, `--csp`, `--only contests,contest-images,login,editround`: exit 0, no
+  failures. Both new pages load `tom-select.complete.min.js` and `category-suggest.js`.
+  `contests` has 2 of 2 category fields as Tom Select controls and `contest-images` 1 of 1
+  (second run, after counting only the wrappers). `login` and `editround` are pixel-identical
+  to `b3`. No JS changed, so Jest wasn't rerun.
+
+**What remains:** a second review of the fixes if wanted, then B4.
