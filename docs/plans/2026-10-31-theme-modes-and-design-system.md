@@ -1068,8 +1068,9 @@ Left for separate branches; none blocks merging this one.
 
 Also from the aggregate plan's decision 4 (1a2564a9): the round form's "selected by at least
 X jurors" without a plain 0, its empty choice named as no filter, a stored 0 kept as a legacy
-choice; since a86b97ac 0 is offered to every round as "Files with an unrated vote" (with a
-help), and V73 (20ec880b) clears a 0 on a round with no previous round. And the size filters' labels made parallel, in the UI's units (6a5114c5): "Minimum
+choice; since 719c8a46 the choices are "No filter (all files of the previous round)" or 1-6,
+0 is no filter everywhere (f3875cb9, a bug since 1cc47ee8 read it as unrated-only) and V73
+(d88ac28e) sets every stored 0 to NULL. And the size filters' labels made parallel, in the UI's units (6a5114c5): "Minimum
 resolution (Mpx)" / "Minimum file size (MB)". `LargeViewFixturesSpec` had failed on all
 six fixtures since 17a4ea57 (the dark default changed their `<html>` line); regenerated
 (9dcbd9e8), Jest 203/203.

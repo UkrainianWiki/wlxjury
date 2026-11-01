@@ -175,13 +175,17 @@ It is from reading the code and the fixture DB (round 1: 20 jurors, 38,366 files
    approvals (no filter)" (`selected.by.any.number`, stored as NULL), a stored 0 shown only for
    a round that has it, as "0 (legacy: files with an unrated vote)", selected, so a resubmit
    keeps it; a stored 0 behaves as before.
-   After the production check (see Left): 0 stays where it is read and is named as what it
-   does. V73 (20ec880b) sets it to NULL only on a round with no previous round, where no
-   distribution path reads it (`DistributeImages` in memory and per chunk, the streamed job's
-   `rated`, top-N and windows: all only with a previous round), so nothing changes. The form
-   (a86b97ac) offers, for every round, "" "Any number of approvals (no filter)", then 0 "Files
-   with an unrated vote (e.g. after a reject-only screening)" (`selected.by.unrated`), then
-   1-6, with a help saying 0 is not "no filter". Nothing left for decision 4.
+   The user's ruling (the app's author): 0 was always meant as no filter. The old form had no
+   empty choice, so 0 imitated "don't filter"; 1cc47ee8 (2018, "selectedAtLeast can be 0")
+   meant to allow that but changed `rated = selectedAtLeast.map(_ => true)` to `.map(_ > 0)`,
+   so 0 read only the unrated votes: a bug, never a feature. Done: 0 is no filter everywhere
+   (`Round.selectedByFilter`, f3875cb9: in memory, the streamed job, the top-N candidates, the
+   legacy top-N and the job settings); V73 (d88ac28e) sets every stored 0 to NULL; the form
+   (719c8a46) offers "No filter (all files of the previous round)" (`selected.by.no.filter`)
+   or 1-6, binds "0" as no filter, and shows a stored 0 as the empty choice. 20ec880b's V73
+   (only without a previous round) and a86b97ac's "Files with an unrated vote" choice are
+   reversed. A reject-only screening has its own filter now (below). Nothing left for
+   decision 4.
 5. File list and CSV for all jurors: paged (the CSV streamed), as proposed.
 
 ## Order of work
@@ -321,6 +325,20 @@ An independent review of `a9f562a4..443ac143` found only low issues:
 7. **Ranks out of order**: `user/0` by rate with `sort=file` showed binary-order ranks on a
    list in file order; no ranks in file order now (bee7b6bb).
 
+## Done: exclude files rejected by at least N (2026-11-01)
+
+For a reject-only screening: jurors mark only the few bad files, and the next round takes
+everything else. "Exclude files rejected by at least N jurors" (`rounds.prev_rejected_by`,
+V74; ec58531b) sits next to "selected by at least N" on the round form, for yes/no previous
+rounds: "No filter (keep rejected files)" or 1-6. It keeps the files with fewer than N
+rejections across the previous rounds' votes (summed, as a top-N sums approvals), ANDs with
+"selected by" and the other filters, and a top-N ranks among the files that remain.
+Streamed, a `NOT IN` on the per-file rejection count (windows, candidates, count, legacy
+ranking) and `HAVING SUM(s.rate < 0) < N` in the binary ranking; in memory,
+`RejectedByLessThan` before the top-N. Creation, resubmit, "Count new files" and
+"Distribute new files" all apply it; the job settings record it. Ignored without a
+previous yes/no round.
+
 ## Left
 
 - Stored "selected by at least 0" (decision 4), checked on production 2026-11-01: ~260
@@ -342,12 +360,12 @@ An independent review of `a9f562a4..443ac143` found only low issues:
     - Empty rounds otherwise (614, 619, 624, 627, 645, 957, 992, 1182); the previous round
       deleted (603, 605, 616, 669, 670, 1144); the same either way (593, 1052, 1615, 673);
       tests (815, 839, 840, 1009, 1260, 1728).
-  So 0 can't become NULL wholesale: 958 is a main round that relies on it. Done: V73
-  (20ec880b) sets NULL only without a previous round (no change in behaviour; a
-  distribution test shows such a round fills the same with 0 and NULL); 0 is kept for rounds
-  with a previous round and named in the form (a86b97ac) as "Files with an unrated vote
-  (e.g. after a reject-only screening)", a choice for new rounds too. Nothing left for
-  decision 4.
+  0 was meant as no filter; 1cc47ee8's `_ > 0` made it unrated-only, a bug. So some rounds
+  got only the unrated files or came out empty: 946, 1121 and 1670 were empty; 656, 896,
+  956, 958 and 1311 got only the unrated files. Done: 0 is treated as no filter
+  (f3875cb9), V73 (d88ac28e) sets every stored 0 to NULL, and the form offers no filter or
+  1-6 (719c8a46). On a rerun or "Distribute new files", those old rounds now take all of
+  the previous round's files. Nothing left for decision 4.
 - Measured (review item 4) on 533c4b88, the UI fixture server (38,366 files, ~383k votes, 20
   jurors; 1 GB heap, Windows, MariaDB 10.6 in Docker), organiser session, 1 warm-up then 5
   timed GETs each (raw: `target/checks/aggregate-timing-533c4b88.json`):
