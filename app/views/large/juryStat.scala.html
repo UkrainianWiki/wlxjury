@@ -6,7 +6,8 @@
 <div class="large-line">
     <ol>
         @for((selection, user) <- selections) {
-            @* each juror's vote, linking the file in that juror's gallery *@
+            @* each juror's vote, linking the file in that juror's gallery: the approvals, then the
+               rejections and the jurors yet to vote (SelectionJdbc.byRoundAndImageWithJury) *@
             <li>@showRate(selection, list.round, user.fullname,
                 list.withViewer(user.getId).withFilter(VoteFilter.All).atUrl(selection.pageId))
             }

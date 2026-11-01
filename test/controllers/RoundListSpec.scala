@@ -1,6 +1,7 @@
 package controllers
 
 import db.scalikejdbc.{Round, User}
+import org.intracer.wmua.BinaryOrder
 import org.specs2.mutable.Specification
 import play.api.mvc.Cookie
 import play.api.test.FakeRequest
@@ -185,6 +186,53 @@ class RoundListSpec extends Specification {
       (start.asUserId, start.filter, start.order, start.view) ===
         ((3L, VoteFilter.All, ListOrder.FileOrder, GalleryView.Gallery))
       RoundList.landing(round, juror)(request("/", Some("rate"))).order === ListOrder.ByRate
+    }
+  }
+
+  "the order of all the jurors' votes on a yes/no round" should {
+    val binary = round.copy(rates = Round.binaryRound)
+
+    def of(r: Round, uri: String, cookie: Option[String] = None, asUserId: Long = 0,
+           view: GalleryView = GalleryView.ByRate): RoundList = {
+      val req = cookie.fold(FakeRequest("GET", uri))(v => FakeRequest("GET", uri).withCookies(Cookie(RoundList.BinarySortCookie, v)))
+      RoundList.of(r, organizer, asUserId, "all", view)(req)
+    }
+
+    "be read from sort=, each written so it reads back" in {
+      BinaryOrder.all.map(b => ListOrder.parse(ListOrder.Binary(b).param)) === BinaryOrder.all.map(b => Some(ListOrder.Binary(b)))
+      of(binary, "/?sort=difference").order === ListOrder.Binary(BinaryOrder.Difference)
+      of(binary, "/?sort=approvals-only").pageUrl(1) === "/byrate/round/7/user/0/page/1?sort=approvals-only"
+    }
+
+    "be approvals then fewest rejections by default, by rate the one last chosen" in {
+      of(binary, "/").order === ListOrder.Binary(BinaryOrder.ApprovalsThenRejections)
+      of(binary, "/?sort=rate").order === ListOrder.Binary(BinaryOrder.ApprovalsThenRejections)
+      of(binary, "/", Some("difference")).order === ListOrder.Binary(BinaryOrder.Difference)
+      of(binary, "/?sort=rate", Some("approvals-only")).order === ListOrder.Binary(BinaryOrder.ApprovalsOnly)
+      of(binary, "/?sort=approvals", Some("difference")).order === ListOrder.Binary(BinaryOrder.ApprovalsThenRejections)
+      of(binary, "/", Some("nosuch"), view = GalleryView.FileList).order === ListOrder.Binary(BinaryOrder.Default)
+      // file order stays file order
+      of(binary, "/?sort=file", Some("difference")).order === ListOrder.FileOrder
+    }
+
+    "be by rate in a juror's list and in a rated round" in {
+      of(binary, "/?sort=difference", asUserId = 3).order === ListOrder.ByRate
+      of(round, "/?sort=difference").order === ListOrder.ByRate
+      of(round, "/", Some("difference")).order === ListOrder.ByRate
+    }
+
+    "be remembered when the URL names another" in {
+      def remembered(uri: String, cookie: Option[String], r: Round = binary) = {
+        val req = cookie.fold(FakeRequest("GET", uri))(v => FakeRequest("GET", uri).withCookies(Cookie(RoundList.BinarySortCookie, v)))
+        RoundList.remembered(RoundList.of(r, organizer, 0, "all", GalleryView.FileList)(req), organizer)(req)
+          .map(c => (c.name, c.value))
+      }
+      remembered("/?sort=difference", None) === Some((RoundList.BinarySortCookie, "difference"))
+      remembered("/?sort=approvals", Some("difference")) === Some((RoundList.BinarySortCookie, "approvals"))
+      remembered("/?sort=difference", Some("difference")) must beNone
+      remembered("/", None) must beNone
+      remembered("/?sort=rate", None) must beNone
+      remembered("/?sort=difference", None, r = round) must beNone
     }
   }
 }

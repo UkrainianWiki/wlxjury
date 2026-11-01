@@ -2,7 +2,7 @@ package controllers
 
 import db.scalikejdbc.{ContestJuryJdbc, MediaType, Round, RoundLimits}
 import org.scalawiki.wlx.dto.SpecialNomination
-import org.intracer.wmua.{CategoryOperation, CategoryRule}
+import org.intracer.wmua.{BinaryOrder, CategoryOperation, CategoryRule}
 import play.api.data.{Form, Mapping}
 import play.api.data.Forms._
 import play.api.data.validation._
@@ -31,7 +31,12 @@ object EditRound {
   private val jurorsMappingKV = "jurors" -> seq(text).verifying(nonEmptySeq)
   val jurorsMapping: Mapping[Seq[String]] = single(jurorsMappingKV)
 
-  /** Extra fields live outside the 22-field mapping: category operation and conflicts of interest.
+  /** Extra fields live outside the 22-field mapping: category operation, conflicts of interest,
+    * "exclude files rejected by at least N jurors" ("" and "0" are no filter, None) and the
+    * order of a top-N from a yes/no previous round, kept only with a top-N (an unknown
+    * order is the default; the legacy rule's value, shown for a round from before V72, is none,
+    * which a new round's submission from a yes/no round makes the default:
+    * [[Round.withExplicitTopOrder]]).
     */
   private val categoryOperation = optional(text).verifying(
     "error.category.operation", _.forall(value => CategoryOperation.fromForm(value).isDefined))
@@ -45,8 +50,10 @@ object EditRound {
     mapping(
       "" -> roundMapping,
       "excludeCoi" -> boolean,
-      "categoryClause" -> categoryOperation
-    )((edit, excludeCoi, selected) => {
+      "categoryClause" -> categoryOperation,
+      "topBinaryOrder" -> optional(text),
+      "rejectedBy" -> optional(text)
+    )((edit, excludeCoi, selected, topOrder, rejectedBy) => {
       val configured = selected match {
         case None => edit.round // Older clients omitted the clause; retain their inference.
         case Some(value) =>
@@ -56,8 +63,11 @@ object EditRound {
           else edit.round.copy(categoryClause = operation.storedValue,
             excludeCategory = edit.round.excludeCategory.filter(_ => operation.requiresSecond))
       }
-      edit.copy(round = configured.copy(excludeCoi = excludeCoi))
-    })(edit => Some((edit, edit.round.excludeCoi, Some(edit.round.categoryRule.operation.formValue))))
+      edit.copy(round = configured.copy(excludeCoi = excludeCoi,
+        topBinaryOrder = edit.round.topImages.flatMap(_ => BinaryOrder.ofForm(topOrder)),
+        prevRejectedBy = rejectedBy.flatMap(s => Try(s.toInt).toOption).filter(_ > 0)))
+    })(edit => Some((edit, edit.round.excludeCoi, Some(edit.round.categoryRule.operation.formValue),
+      edit.round.topImages.map(_ => edit.round.topOrderParam), edit.round.rejectedByFilter.map(_.toString))))
       .verifying(validCategories)
   )
 
@@ -145,7 +155,8 @@ object EditRound {
       limits = RoundLimits(),
       minMpx = Try(minMpx.toInt).toOption,
       previous = Option.when(previousRoundIds.nonEmpty)(previousRoundIds.mkString(",")),
-      prevSelectedBy = prevSelectedBy.flatMap(s => Try(s.toInt).toOption),
+      // "0", the old form's no filter (old bookmarks or forms), is no filter: None
+      prevSelectedBy = prevSelectedBy.flatMap(s => Try(s.toInt).toOption).filter(_ > 0),
       prevMinAvgRate = prevMinAvgRate.flatMap(s => Try(BigDecimal(s)).toOption),
       category = category,
       excludeCategory = excludeCategory,
@@ -204,7 +215,7 @@ object EditRound {
         editRound.fileList,
         round.minMpx.fold("No")(_.toString),
         round.previousIds.map(_.toString),
-        round.prevSelectedBy.map(_.toString),
+        round.selectedByFilter.map(_.toString),
         round.prevMinAvgRate.map(_.toString),
         categories.first,
         categories.second,

@@ -1,7 +1,7 @@
 package services.distribution
 
 import db.scalikejdbc._
-import org.intracer.wmua.{ContestJury, Image}
+import org.intracer.wmua.{BinaryOrder, ContestJury, Image}
 import org.intracer.wmua.cmd.DistributeImages
 import org.specs2.mutable.Specification
 import org.specs2.specification.{BeforeAll, BeforeEach}
@@ -118,6 +118,289 @@ class RoundRedistributionFiltersSpec extends Specification with TestDb with Befo
         service.distributeNewImages(round.getId) === expected.count(_ > 10)
         (pageIds(round.getId) === expected) and (service.newFilesCount(round.getId) === 0L)
       }.reduce(_ and _)
+    }
+
+    "pick a yes/no round's top-N by the round's binary order, with and without \"selected by\"" in {
+      implicit val contest: ContestJury = createContests(1).head
+      val jurors = createUsers("jury", 1, 2, 3, 4, 5)
+      addImages(contest, 1 to 3)
+      val service = TestRoundServices.roundService(TestRoundServices.handler(chunkRows = 3))
+      val source = Round(None, 0, Some("Source"), contest.getId, active = true)
+      val binary = service.createNewRound(source, jurors.map(_.getId))
+      // A (1): 3 approvals, 2 rejections; B (2): 2 approvals, 3 unrated; C (3): 1 approval
+      val votes = Map(1L -> Seq(1, 1, 1, -1, -1), 2L -> Seq(1, 1, 0, 0, 0), 3L -> Seq(1, 0, 0, 0, 0))
+      for ((pageId, rates) <- votes; (juror, rate) <- jurors.zip(rates))
+        SelectionJdbc.rate(pageId, juror.getId, binary.getId, rate)
+
+      val top1 = source.copy(previous = Some(binary.getId.toString), topImages = Some(1))
+      def order(o: BinaryOrder) = Some(o)
+      val cases = Seq(
+        (top1, Set(1L)), // the default: approvals, then fewest rejections
+        (top1.copy(prevSelectedBy = Some(1)), Set(1L)),
+        (top1.copy(topBinaryOrder = order(BinaryOrder.Difference)), Set(2L)),
+        (top1.copy(topBinaryOrder = order(BinaryOrder.Difference), prevSelectedBy = Some(1)), Set(2L)),
+        (top1.copy(topBinaryOrder = order(BinaryOrder.ApprovalsOnly), topImages = Some(2)), Set(1L, 2L)),
+        // "selected by" leaves out the files before the ranking
+        (top1.copy(topBinaryOrder = order(BinaryOrder.Difference), prevSelectedBy = Some(3)), Set(1L)),
+        // no top-N: every file, whatever the order
+        (source.copy(previous = Some(binary.getId.toString), topBinaryOrder = order(BinaryOrder.Difference)),
+          Set(1L, 2L, 3L))
+      )
+      val inMemory = new DistributeImages(ImageJdbc)
+      cases.zipWithIndex.map { case ((settings, expected), i) =>
+        // a new round's submission stores the default order unless another is chosen
+        val submitted = settings.withExplicitTopOrder(prevBinary = true)
+        val reference = inMemory.imagesByRound(roundDao.create(submitted.copy(number = 99)), Seq(binary)).map(_.pageId).toSet
+        Round.setActive(binary.getId, active = true)
+        val round = service.createNewRound(settings, jurors.map(_.getId))
+        Round.setActive(binary.getId, active = true)
+        val job = service.distributionJob(round.getId).get
+        ((i, pageIds(round.getId), reference) === ((i, expected, expected))) and
+          // stored with the round, recorded with its distribution
+          (roundDao.findById(round.getId).get.topBinaryOrder === submitted.topBinaryOrder) and
+          (submitted.topBinaryOrder.isDefined === settings.topImages.isDefined) and
+          ((job.params \ "settings" \ "topBinaryOrder").asOpt[String] === submitted.topBinaryOrder.map(_.param)) and
+          (service.newFilesCount(round.getId) === 0L)
+      }.reduce(_ and _)
+    }
+
+    "store and record no binary order for a top-N from a rated previous round" in {
+      implicit val contest: ContestJury = createContests(1).head
+      val jurors = createUsers("jury", 1, 2)
+      addImages(contest, 1 to 3)
+      val service = TestRoundServices.roundService(TestRoundServices.handler(chunkRows = 3))
+      val source = Round(None, 0, Some("Source"), contest.getId, active = true, rates = Round.ratesById(5))
+      val rated = service.createNewRound(source, jurors.map(_.getId))
+      for ((pageId, rate) <- Seq(1L -> 2, 2L -> 5, 3L -> 3); juror <- jurors)
+        SelectionJdbc.rate(pageId, juror.getId, rated.getId, rate)
+      Round.setActive(rated.getId, active = true)
+      val top = source.copy(previous = Some(rated.getId.toString), topImages = Some(1),
+        topBinaryOrder = Some(BinaryOrder.Difference))
+      val round = service.createNewRound(top, jurors.map(_.getId))
+      val job = service.distributionJob(round.getId).get
+      (pageIds(round.getId) === Set(2L)) and
+        (roundDao.findById(round.getId).get.topBinaryOrder must beNone) and
+        ((job.params \ "settings" \ "topBinaryOrder").asOpt[String] must beNone)
+    }
+
+    "pick the top-N of a round from before V72 (no order stored) by the legacy rate-sum rule" in {
+      implicit val contest: ContestJury = createContests(1).head
+      val jurors = createUsers("jury", 1, 2, 3, 4, 5)
+      addImages(contest, 1 to 3)
+      val service = TestRoundServices.roundService(TestRoundServices.handler(chunkRows = 3))
+      val source = Round(None, 0, Some("Source"), contest.getId, active = true)
+      val binary = service.createNewRound(source, jurors.map(_.getId))
+      // A (1): 3 approvals, 2 rejections (sum 1); B (2): 2 approvals (sum 2); C (3): 1 approval (sum 1)
+      val votes = Map(1L -> Seq(1, 1, 1, -1, -1), 2L -> Seq(1, 1, 0, 0, 0), 3L -> Seq(1, 0, 0, 0, 0))
+      for ((pageId, rates) <- votes; (juror, rate) <- jurors.zip(rates))
+        SelectionJdbc.rate(pageId, juror.getId, binary.getId, rate)
+
+      // as rounds stored before V72 are: a top-N and no order, filled by "Distribute new files"
+      val old = source.copy(previous = Some(binary.getId.toString), topImages = Some(1), number = 2)
+      val cases = Seq(
+        (old, Set(2L)), // the rate sum, where the default order picks A
+        (old.copy(prevSelectedBy = Some(1)), Set(1L)), // the approvals
+        (old.copy(topImages = Some(2)), Set(1L, 2L)) // ties (A, C: 1) by page id
+      )
+      val inMemory = new DistributeImages(ImageJdbc)
+      cases.zipWithIndex.map { case ((settings, expected), i) =>
+        val round = roundDao.create(settings)
+        round.addUsers(jurors.map(u => RoundUser(round.getId, u.getId, "jury", active = true)))
+        val reference = inMemory.imagesByRound(round, Seq(binary)).map(_.pageId).toSet
+        service.distributeNewImages(round.getId)
+        val job = service.distributionJob(round.getId).get
+        ((i, pageIds(round.getId), reference) === ((i, expected, expected))) and
+          (roundDao.findById(round.getId).get.topBinaryOrder must beNone) and
+          ((job.params \ "settings" \ "topBinaryOrder").asOpt[String] must beSome(BinaryOrder.LegacyParam)) and
+          (service.newFilesCount(round.getId) === 0L)
+      }.reduce(_ and _)
+    }
+
+    "read \"selected by at least 0\" as no filter: all files of a yes/no previous round" in {
+      // the old form's way of saying no filter (V73 sets it to NULL), never "unrated votes only"
+      implicit val contest: ContestJury = createContests(1).head
+      val jurors = createUsers("jury", 1, 2)
+      addImages(contest, 1 to 10)
+      val service = TestRoundServices.roundService(TestRoundServices.handler(chunkRows = 3))
+      val source = Round(None, 0, Some("Source"), contest.getId, active = true)
+      val binary = service.createNewRound(source, jurors.map(_.getId))
+      // approved (3, 6, 9), rejected (1, 4, 7, 10) and unrated (2, 5, 8) files
+      def vote(): Unit = SelectionJdbc.byRound(binary.getId).foreach { row =>
+        val rate = (row.pageId % 3).toInt match { case 0 => 1; case 1 => -1; case _ => 0 }
+        SelectionJdbc.rate(row.pageId, row.juryId, binary.getId, rate)
+      }
+      vote()
+      val next = source.copy(previous = Some(binary.getId.toString), distribution = 1)
+      val rounds = Seq(None, Some(0), Some(1)).map(by =>
+        service.createNewRound(next.copy(prevSelectedBy = by), jurors.map(_.getId)))
+      val created = rounds.map(r => pageIds(r.getId))
+      addImages(contest, 11 to 20)
+      service.distributeNewImages(binary.getId)
+      vote()
+      val inMemory = new DistributeImages(ImageJdbc)
+      val reference = rounds.map(r => inMemory.imagesByRound(r, Seq(binary)).map(_.pageId).toSet)
+      val counts = rounds.map(r => service.newFilesCount(r.getId))
+      val added = rounds.map(r => service.distributeNewImages(r.getId))
+      (created === Seq((1L to 10L).toSet, (1L to 10L).toSet, Set(3L, 6L, 9L))) and
+        (reference === Seq((11L to 20L).toSet, (11L to 20L).toSet, Set(12L, 15L, 18L))) and
+        (counts === Seq(10L, 10L, 3L)) and
+        (added === Seq(10, 10, 3)) and
+        (rounds.map(r => pageIds(r.getId)) ===
+          Seq((1L to 20L).toSet, (1L to 20L).toSet, Set(3L, 6L, 9L, 12L, 15L, 18L)))
+    }
+
+    "exclude the files rejected by at least N jurors, with \"selected by\" and a top-N, on every path" in {
+      implicit val contest: ContestJury = createContests(1).head
+      val jurors = createUsers("jury", 1, 2, 3, 4, 5)
+      addImages(contest, 1 to 10)
+      val service = TestRoundServices.roundService(TestRoundServices.handler(chunkRows = 3))
+      val source = Round(None, 0, Some("Source"), contest.getId, active = true)
+      val binary = service.createNewRound(source, jurors.map(_.getId))
+      // the five jurors' votes by page id modulo 10 (file 10 + n votes as file n)
+      val votes = Map(1 -> Seq(1, 1, 1, 0, 0), 2 -> Seq(1, -1, 0, 0, 0), 3 -> Seq(-1, -1, 0, 0, 0),
+        4 -> Seq(0, 0, 0, 0, 0), 5 -> Seq(1, 1, -1, -1, 0), 6 -> Seq(1, 1, 1, 1, -1), 7 -> Seq(-1, 0, 0, 0, 0),
+        8 -> Seq(1, 0, 0, 0, 0), 9 -> Seq(-1, -1, -1, 0, 0), 0 -> Seq(1, 1, 0, 0, 0))
+      def vote(): Unit =
+        for (row <- SelectionJdbc.byRound(binary.getId); (juror, rate) <- jurors.zip(votes((row.pageId % 10).toInt))
+             if juror.getId == row.juryId)
+          SelectionJdbc.rate(row.pageId, row.juryId, binary.getId, rate)
+      vote()
+
+      val next = source.copy(previous = Some(binary.getId.toString), distribution = 1, number = 2)
+      val top = next.copy(topBinaryOrder = Some(BinaryOrder.Default))
+      val cases = Seq(
+        (next.copy(prevRejectedBy = Some(1)), Set[Long](1, 4, 8, 10)), // unrated and approved files stay
+        (next.copy(prevRejectedBy = Some(2)), Set[Long](1, 2, 4, 6, 7, 8, 10)), // one rejection stays, two don't
+        (next.copy(prevRejectedBy = Some(1), prevSelectedBy = Some(1)), Set[Long](1, 8, 10)),
+        (next.copy(prevRejectedBy = Some(2), prevSelectedBy = Some(2)), Set[Long](1, 6, 10)),
+        (top.copy(topImages = Some(2)), Set[Long](1, 6)),
+        (top.copy(topImages = Some(2), prevRejectedBy = Some(1)), Set[Long](1, 10)), // ranked among those left
+        (top.copy(topImages = Some(2), prevRejectedBy = Some(1), prevSelectedBy = Some(2)), Set[Long](1, 10))
+      )
+      val inMemory = new DistributeImages(ImageJdbc)
+      val created = cases.zipWithIndex.map { case ((settings, expected), i) =>
+        val round = roundDao.create(settings)
+        round.addUsers(jurors.map(u => RoundUser(round.getId, u.getId, "jury", active = true)))
+        val reference = inMemory.imagesByRound(round, Seq(binary)).map(_.pageId).toSet
+        val count = service.newFilesCount(round.getId)
+        service.distributeNewImages(round.getId)
+        (round, (i, pageIds(round.getId), reference, count) === ((i, expected, expected, expected.size.toLong)))
+      }
+      val job = service.distributionJob(created.head._1.getId).get
+
+      addImages(contest, 11 to 20)
+      service.distributeNewImages(binary.getId)
+      vote()
+      val newFiles = cases.zip(created).filter(_._1._1.topImages.isEmpty).map { case ((_, expected), (round, _)) =>
+        val added = expected.map(_ + 10)
+        val reference = inMemory.imagesByRound(round, Seq(binary)).map(_.pageId).toSet
+        val count = service.newFilesCount(round.getId)
+        val distributed = service.distributeNewImages(round.getId)
+        (round.getId, reference, count, distributed, pageIds(round.getId)) ===
+          ((round.getId, added, added.size.toLong, added.size, expected ++ added))
+      }
+      created.map(_._2).reduce(_ and _) and newFiles.reduce(_ and _) and
+        ((job.params \ "settings" \ "prevRejectedBy").asOpt[Int] must beSome(1))
+    }
+
+    "ignore rejected-by from a rated previous round and with no previous round, on every path" in {
+      implicit val contest: ContestJury = createContests(1).head
+      val jurors = createUsers("jury", 1, 2)
+      addImages(contest, 1 to 10)
+      val service = TestRoundServices.roundService(TestRoundServices.handler(chunkRows = 3))
+      val source = Round(None, 0, Some("Source"), contest.getId, active = true)
+      val rated = service.createNewRound(source.copy(rates = Round.ratesById(5)), jurors.map(_.getId))
+      // rows with a negative rate, which rejected-by would count in a yes/no round
+      def vote(): Unit = SelectionJdbc.byRound(rated.getId).foreach { row =>
+        SelectionJdbc.rate(row.pageId, row.juryId, rated.getId, if (row.pageId % 2 == 0) -1 else 3)
+      }
+      vote()
+      val fromRated = source.copy(previous = Some(rated.getId.toString), distribution = 1)
+      val noPrevious = source.copy(distribution = 1)
+      val pairs = Seq(fromRated, noPrevious).map(settings =>
+        Seq(None, Some(1)).map(by => service.createNewRound(settings.copy(prevRejectedBy = by), jurors.map(_.getId))))
+      val created = pairs.map(_.map(r => pageIds(r.getId)))
+      val settings = pairs.map(_.map(r =>
+        (service.distributionJob(r.getId).get.params \ "settings" \ "prevRejectedBy").asOpt[Int]))
+      addImages(contest, 11 to 20)
+      service.distributeNewImages(rated.getId)
+      vote()
+      val inMemory = new DistributeImages(ImageJdbc)
+      val reference = pairs.map(_.map(r => inMemory.imagesByRound(r, RoundDistributionHandler.previousRounds(r))
+        .map(_.pageId).toSet))
+      val counts = pairs.map(_.map(r => service.newFilesCount(r.getId)))
+      val added = pairs.map(_.map(r => service.distributeNewImages(r.getId)))
+      (created === Seq.fill(2)(Seq.fill(2)((1L to 10L).toSet))) and
+        (settings === Seq.fill(2)(Seq(None, None))) and
+        (reference === Seq.fill(2)(Seq.fill(2)((11L to 20L).toSet))) and
+        (counts === Seq.fill(2)(Seq(10L, 10L))) and
+        (added === Seq.fill(2)(Seq(10, 10))) and
+        (pairs.map(_.map(r => pageIds(r.getId))) === Seq.fill(2)(Seq.fill(2)((1L to 20L).toSet)))
+    }
+
+    "sum the rejections of two yes/no previous rounds, on every path" in {
+      implicit val contest: ContestJury = createContests(1).head
+      val jurors = createUsers("jury", 1, 2)
+      addImages(contest, 1 to 10)
+      val service = TestRoundServices.roundService(TestRoundServices.handler(chunkRows = 3))
+      val source = Round(None, 0, Some("Source"), contest.getId, active = true)
+      val first = service.createNewRound(source, jurors.map(_.getId))
+      val second = service.createNewRound(source.copy(name = Some("Second")), jurors.map(_.getId))
+      // juror 1 rejects the even files in the first round and those divisible by 3 in the
+      // second: only 6, 12 and 18 have two rejections, one in each round
+      def vote(): Unit = Seq(first -> 2, second -> 3).foreach { case (round, divisor) =>
+        SelectionJdbc.byRound(round.getId).foreach { row =>
+          val rate = if (row.juryId == jurors.head.getId && row.pageId % divisor == 0) -1 else 1
+          SelectionJdbc.rate(row.pageId, row.juryId, round.getId, rate)
+        }
+      }
+      vote()
+      val next = source.copy(previous = Some(s"${first.getId},${second.getId}"), distribution = 1, number = 3)
+      val cases = Seq(
+        (next.copy(prevRejectedBy = Some(2)), (1L to 20L).toSet -- Set(6L, 12L, 18L)),
+        (next.copy(prevRejectedBy = Some(1)), Set[Long](1, 5, 7, 11, 13, 17, 19))
+      )
+      val inMemory = new DistributeImages(ImageJdbc)
+      val created = cases.map { case (settings, expected) =>
+        val round = service.createNewRound(settings, jurors.map(_.getId))
+        (round, expected, pageIds(round.getId), inMemory.imagesByRound(round, Seq(first, second)).map(_.pageId).toSet)
+      }
+      addImages(contest, 11 to 20)
+      Seq(first, second).foreach(r => service.distributeNewImages(r.getId))
+      vote()
+      created.map { case (round, expected, before, beforeReference) =>
+        val added = expected.filter(_ > 10)
+        val reference = inMemory.imagesByRound(round, Seq(first, second)).map(_.pageId).toSet
+        val count = service.newFilesCount(round.getId)
+        val distributed = service.distributeNewImages(round.getId)
+        (before === expected.filter(_ <= 10)) and (beforeReference === Set.empty[Long]) and
+          (reference === added) and (count === added.size.toLong) and (distributed === added.size) and
+          (pageIds(round.getId) === expected)
+      }.reduce(_ and _)
+    }
+
+    "ignore \"selected by at least 0\" in a round with no previous round" in {
+      // V73 sets such a 0 to NULL: it must distribute as no filter does, on every path
+      implicit val contest: ContestJury = createContests(1).head
+      val jurors = createUsers("jury", 1, 2)
+      addImages(contest, 1 to 10)
+      val service = TestRoundServices.roundService(TestRoundServices.handler(chunkRows = 3))
+      val source = Round(None, 0, Some("No previous"), contest.getId, distribution = 1, active = true)
+      val rounds = Seq(None, Some(0)).map(by => service.createNewRound(source.copy(prevSelectedBy = by), jurors.map(_.getId)))
+      def rows(round: Round) = SelectionJdbc.byRound(round.getId).map(s => (s.pageId, s.juryId)).toSet
+      val created = rounds.map(rows)
+      addImages(contest, 11 to 20)
+      val inMemory = new DistributeImages(ImageJdbc)
+      val reference = rounds.map(r => inMemory.imagesByRound(r, Nil).map(_.pageId).toSet)
+      val counts = rounds.map(r => service.newFilesCount(r.getId))
+      val added = rounds.map(r => service.distributeNewImages(r.getId))
+      (roundDao.findById(rounds(1).getId).get.prevSelectedBy must beSome(0)) and
+        (created.map(_.map(_._1)) === Seq.fill(2)((1L to 10L).toSet)) and
+        (created(1) === created(0)) and
+        (reference === Seq.fill(2)((11L to 20L).toSet)) and
+        (counts === Seq(10L, 10L)) and
+        (added === Seq(10, 10)) and
+        (rows(rounds(1)) === rows(rounds(0)))
     }
   }
 }

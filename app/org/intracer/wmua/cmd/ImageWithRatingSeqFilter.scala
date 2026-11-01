@@ -2,7 +2,7 @@ package org.intracer.wmua.cmd
 
 import db.scalikejdbc.{MediaType, Round}
 import org.intracer.wmua.cmd.ImageWithRatingSeqFilter.ImageFilter
-import org.intracer.wmua.{CategoryRule, Image, ImageWithRating}
+import org.intracer.wmua.{BinaryOrder, CategoryRule, Image, ImageWithRating}
 import org.scalawiki.wlx.{ImageDB, MonumentDB}
 import org.scalawiki.wlx.dto.{Contest, SpecialNomination}
 import org.scalawiki.wlx.query.MonumentQuery
@@ -91,9 +91,20 @@ case class ExcludeJurorId(jurors: Set[Long]) extends ImageFilterGen {
     imageRatingFilter(i => i.selection.map(_.juryId).toSet.intersect(jurors).isEmpty)
 }
 
-case class SelectTopByRating(topN: Int, round: Round) extends ImageFilterGen {
+/** The `topN` best rated images of the previous `round`; a yes/no round's by `order` of their
+  * approvals and rejections, ties by page id, as [[services.distribution.DistributionSource.rank]]
+  * ranks them; with no order (a round from before V72) by the legacy rule, the rate sum.
+  */
+case class SelectTopByRating(topN: Int, round: Round, order: Option[BinaryOrder] = Some(BinaryOrder.Default))
+    extends ImageFilterGen {
   def apply(): ImageFilter =
-    (images: Seq[ImageWithRating]) => images.sortBy(-_.totalRate(round)).take(topN)
+    (images: Seq[ImageWithRating]) =>
+      order.filter(_ => round.isBinary) match {
+        case Some(o) =>
+          import scala.math.Ordering.Implicits.seqOrdering
+          images.sortBy(i => (o.sortKey(i.approvals, i.rejections), i.pageId)).take(topN)
+        case None => images.sortBy(-_.totalRate(round)).take(topN)
+      }
 }
 
 case class SelectMinAvgRating(rate: BigDecimal, round: Round) extends ImageFilterGen {
@@ -102,6 +113,13 @@ case class SelectMinAvgRating(rate: BigDecimal, round: Round) extends ImageFilte
 
 case class SelectedAtLeast(by: Int) extends ImageFilterGen {
   def apply(): ImageFilter = imageRatingFilter(i => i.rateSum >= by)
+}
+
+/** "Exclude files rejected by at least `by` jurors": the files with fewer rejections, read
+  * from all the previous rounds' votes ([[ImageWithRating.rejections]]).
+  */
+case class RejectedByLessThan(by: Int) extends ImageFilterGen {
+  def apply(): ImageFilter = imageRatingFilter(i => i.rejections < by)
 }
 
 case class MegaPixelsAtLeast(mpx: Int) extends ImageFilterGen {
@@ -158,7 +176,9 @@ object ImageWithRatingSeqFilter {
       excludeJurorId: Set[Long] = Set.empty,
       selectMinAvgRating: Option[BigDecimal] = None,
       selectTopByRating: Option[Int] = None,
+      topOrder: Option[BinaryOrder] = Some(BinaryOrder.Default),
       selectedAtLeast: Option[Int] = None,
+      rejectedBy: Option[Int] = None,
       mpxAtLeast: Option[Int] = None,
       sizeAtLeast: Option[Int] = None,
       specialNomination: Option[String] = None,
@@ -181,17 +201,21 @@ object ImageWithRatingSeqFilter {
       selectMinAvgRating
         .map(top => SelectMinAvgRating(top, round.get)) -> selectMinAvgRating,
       selectTopByRating
-        .map(top => SelectTopByRating(top, round.get)) -> selectTopByRating,
+        .map(top => SelectTopByRating(top, round.get, topOrder)) -> selectTopByRating,
       selectedAtLeast.map(n => SelectedAtLeast(n)) -> selectedAtLeast,
+      rejectedBy.map(RejectedByLessThan) -> rejectedBy,
       mpxAtLeast.map(MegaPixelsAtLeast) -> mpxAtLeast,
       sizeAtLeast.map(SizeAtLeast) -> sizeAtLeast,
       specialNomination.map(SpecialNominationFilter) -> specialNomination,
       mediaType.map(MediaTypeIs) -> mediaType
     )
 
+    // the top-N last: it ranks the files the other filters leave, as the streamed
+    // distribution does (DistributionSource.rank), whatever the maps' order
     (setMap
       .filter(_._2.nonEmpty)
       .keys ++ optionMap.filter(_._2.nonEmpty).keys.flatten).toSeq
+      .sortBy(_.isInstanceOf[SelectTopByRating])
   }
 
   def makeFunChain(

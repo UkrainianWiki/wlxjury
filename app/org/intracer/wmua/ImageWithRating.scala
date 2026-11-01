@@ -10,9 +10,8 @@ case class ImageWithRating(
     image: Image,
     selection: Seq[Selection],
     countFromDb: Int = 0,
-    rank: Option[Int] = None,
-    rank2: Option[Int] = None,
-    approvalsFromDb: Option[Int] = None
+    approvalsFromDb: Option[Int] = None,
+    rejectionsFromDb: Option[Int] = None
 ) extends Ordered[ImageWithRating] {
 
   val ownJuryRating = new OwnRating(
@@ -37,14 +36,11 @@ case class ImageWithRating(
     ownJuryRating.rate = rate
   }
 
-  def rankStr: String = (
-    for (r1 <- rank; r2 <- rank2)
-      yield if (r1 != r2) s"$r1-$r2." else s"$r1."
-  ).orElse(
-    for (r1 <- rank)
-      yield s"$r1."
-  ).getOrElse("")
-
+  /** The file's average rate: a rated round's [[rateSum]] over its jurors. A binary round's is
+    * the legacy rule of a top-N from it (max(approvals − rejections, 0) over its assigned
+    * jurors, `SelectTopByRating` without an order); its lists read [[approvals]] and
+    * [[rejections]].
+    */
   def totalRate(round: Round): Double =
     if (selection.size == 1 && selection.head.juryId != 0)
       selection.head.rate
@@ -53,6 +49,12 @@ case class ImageWithRating(
     else
       rateSum.toDouble / ratedJurors(round)
 
+  /** A rated round's rate sum: its votes' rates, any below 0 as 0; of a grouped row (all the
+    * jurors' votes together, one selection with their sum) that sum. Binary code counts
+    * [[approvals]] and [[rejections]] instead: of a binary round's grouped row this is
+    * max(approvals − rejections, 0), of its vote rows the approvals, or of the rows a
+    * distribution's "selected by at least" reads (rate > 0, `SelectedAtLeast`) the approvals.
+    */
   def rateSum: Int =
     selection.foldLeft(0)((acc, s) => acc + Math.max(s.rate, 0))
 
@@ -60,6 +62,9 @@ case class ImageWithRating(
     * of a list of all the jurors' votes together, whose one selection per file has their sum.
     */
   def approvals: Int = approvalsFromDb.getOrElse(selection.count(_.rate > 0))
+
+  /** A binary round's rejections of the file (rate -1), counted as [[approvals]] are. */
+  def rejections: Int = rejectionsFromDb.getOrElse(selection.count(_.rate < 0))
 
   def jurors: Set[Long] = selection.map(s => s.juryId).toSet
 
@@ -100,28 +105,55 @@ case class ImageWithRating(
 
 object ImageWithRating {
 
-  def rankImages(
-      orderedImages: Seq[ImageWithRating],
-      round: Round
-  ): Seq[String] = {
-    rank(orderedImages.map(_.rateSum))
+  /** How a list of all of a round's votes (file list, CSV) orders and ranks its files: by
+    * aggregates of each file's votes, as SQL over the file's selection rows `s` with their
+    * directions (1 ascending, -1 descending), and their values of a file in memory. Files of
+    * the same values tie, and share a rank range.
+    */
+  final case class RankKey(columns: Seq[(String, Int)], values: ImageWithRating => Seq[Int])
+
+  object RankKey {
+
+    /** A binary round's by `order`, a rated round's by the sum of its rates. */
+    def of(round: Round, order: BinaryOrder = BinaryOrder.Default): RankKey =
+      if (round.isBinary) RankKey(order.columns, file => order.values(file.approvals, file.rejections))
+      else RankKey(Seq("sum(s.rate)" -> -1), file => Seq(file.rateSum))
   }
 
-  def rank(orderedRates: Seq[Int]): Seq[String] = {
+  /** The ranks of a list's files among all of them, from the number of its files of each key,
+    * in the list's order: "4" for a file of its own key, "4-9" for six files that tie. A page
+    * of the list is ranked without reading the rest.
+    */
+  final case class Ranks[K](counts: Seq[(K, Int)]) extends (K => String) {
 
-    val sizeByRate = orderedRates.groupBy(identity).view.mapValues(_.size)
-    val startByRate = sizeByRate.keys.map { rate =>
-      rate -> (orderedRates.indexOf(rate) + 1)
-    }.toMap
+    private val ranges: Map[K, (Int, Int)] =
+      counts.zip(counts.scanLeft(0)(_ + _._2)).map { case ((key, n), before) => key -> (before + 1, n) }.toMap
 
-    orderedRates.map { rate =>
-      val (start, size) = (startByRate(rate), sizeByRate(rate))
-      if (size == 1)
-        start.toString
-      else
-        start + "-" + (start + size - 1)
+    def apply(key: K): String = ranges.get(key).fold("") { case (start, n) =>
+      if (n == 1) start.toString else start + "-" + (start + n - 1)
     }
   }
+
+  object Ranks {
+
+    /** The ranks of the keys of all of a list's files, in its order. */
+    def of[K](orderedKeys: Seq[K]): Ranks[K] = {
+      val sizes = orderedKeys.groupMapReduce(identity)(_ => 1)(_ + _)
+      Ranks(orderedKeys.distinct.map(key => key -> sizes(key)))
+    }
+  }
+
+  /** The ranks of all of a list's files, in its order by the round's [[RankKey]]. */
+  def rankImages(
+      orderedImages: Seq[ImageWithRating],
+      round: Round,
+      order: BinaryOrder = BinaryOrder.Default
+  ): Seq[String] = {
+    val keys = orderedImages.map(RankKey.of(round, order).values)
+    keys.map(Ranks.of(keys))
+  }
+
+  def rank(orderedRates: Seq[Int]): Seq[String] = orderedRates.map(Ranks.of(orderedRates))
 }
 
 class Rating

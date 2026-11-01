@@ -2,7 +2,7 @@ package services.distribution
 
 import db.scalikejdbc._
 import org.intracer.wmua.cmd.DistributeImages
-import org.intracer.wmua.{Image, ImageWithRating, Selection}
+import org.intracer.wmua.{BinaryOrder, Image, ImageWithRating, Selection}
 import play.api.libs.json._
 import play.api.{Configuration, Logging}
 import scalikejdbc._
@@ -175,8 +175,12 @@ class RoundDistributionHandler @Inject() (
       perImage = perImage,
       filter = distributeImages.perImageFilters(round, prevRounds, firstCategoryIds, secondCategoryIds, coi.keySet),
       coi = coi,
-      rated = prev.flatMap(_ => round.prevSelectedBy.map(_ > 0)),
+      votes = PrevVotes(
+        rated = prev.isDefined && round.selectedByFilter.isDefined,
+        rejectedBy = prev.filter(_.isBinary).flatMap(_ => round.rejectedByFilter)),
       topN = prev.flatMap(_ => round.topImages),
+      // none for a round from before V72: the legacy rule, by the rate sum (ratedPage)
+      topOrder = prev.filter(_.isBinary).flatMap(_ => round.topBinaryOrder),
       categoryId =
         if (prevRounds.isEmpty) ContestJuryJdbc.findById(round.contestId).flatMap(_.categoryId) else None,
       denominator = prev match {
@@ -301,7 +305,7 @@ class RoundDistributionHandler @Inject() (
 
     st.phase match {
       case Phase.Rank =>
-        val ranked = DistributionSource.rank(c.prevRounds.flatMap(_.id), c.rated, c.denominator, c.topN.get, c.filter)
+        val ranked = DistributionSource.rank(c.prevRounds.flatMap(_.id), c.votes, c.denominator, c.topN.get, c.filter, c.topOrder)
         val next = st.copy(phase = Phase.Distribute, ranked = ranked.sorted,
           total = Some(ranked.size.toLong + titleCountOf(job)), cursor = 0L)
         continue(next)
@@ -452,7 +456,7 @@ class RoundDistributionHandler @Inject() (
 
   private def estimate(c: Context, st: DistributionState)(implicit session: DBSession): Long =
     if (c.topN.isDefined) st.ranked.size.toLong
-    else if (c.prevRounds.nonEmpty) DistributionSource.previousCount(c.prevRounds.flatMap(_.id), c.rated)
+    else if (c.prevRounds.nonEmpty) DistributionSource.previousCount(c.prevRounds.flatMap(_.id), c.votes)
     else c.categoryId.fold(0L)(DistributionSource.categoryCount)
 
   private def nextWindow(c: Context, st: DistributionState)(implicit session: DBSession): Window =
@@ -460,13 +464,13 @@ class RoundDistributionHandler @Inject() (
       val ids = st.ranked.iterator.filter(_ > st.cursor).take(c.windowSize).toSeq
       Window(ids.size, ids.lastOption.getOrElse(st.cursor), ids)
     } else if (c.prevRounds.nonEmpty)
-      DistributionSource.previousWindow(c.prevRounds.flatMap(_.id), c.rated, st.cursor, c.windowSize)
+      DistributionSource.previousWindow(c.prevRounds.flatMap(_.id), c.votes, st.cursor, c.windowSize)
     else c.categoryId.fold(Window.empty)(DistributionSource.categoryWindow(_, st.cursor, c.windowSize))
 
   private def candidates(c: Context, roundId: Long, from: Long, to: Long)(implicit
       session: DBSession
   ): Seq[ImageWithRating] =
-    if (c.prevRounds.nonEmpty) DistributionSource.previousCandidates(c.prevRounds.flatMap(_.id), c.rated, from, to, roundId)
+    if (c.prevRounds.nonEmpty) DistributionSource.previousCandidates(c.prevRounds.flatMap(_.id), c.votes, from, to, roundId)
     else c.categoryId.fold(Seq.empty[ImageWithRating])(DistributionSource.categoryCandidates(_, from, to, roundId))
 
   /** Whatever a distribution of the round would add now ("Count new files"), without
@@ -475,7 +479,7 @@ class RoundDistributionHandler @Inject() (
   def countNew(roundId: Long): Long = DB.readOnly { implicit session =>
     val c = context(roundId)
     if (c.topN.isDefined) {
-      val ranked = DistributionSource.rank(c.prevRounds.flatMap(_.id), c.rated, c.denominator, c.topN.get, c.filter)
+      val ranked = DistributionSource.rank(c.prevRounds.flatMap(_.id), c.votes, c.denominator, c.topN.get, c.filter, c.topOrder)
       ranked.grouped(MaxWindow).map(ids => DistributionSource.imagesIn(ids, roundId).size.toLong).sum
     } else {
       var st = DistributionState(Phase.Distribute)
@@ -509,6 +513,12 @@ object RoundDistributionHandler {
 
   val MaxMissingTitles = 100
 
+  /** Which votes of the previous rounds pick their files: with `rated` ("selected by at least"
+    * set) only approvals are read; with `rejectedBy` ("exclude files rejected by at least N",
+    * yes/no previous rounds) no file with N or more rejections across all their votes.
+    */
+  final case class PrevVotes(rated: Boolean = false, rejectedBy: Option[Int] = None)
+
   /** What the steps of one job need besides its state: built by `prepare`. */
   final case class Context(
       round: Round,
@@ -517,8 +527,9 @@ object RoundDistributionHandler {
       perImage: Int,
       filter: Seq[ImageWithRating] => Seq[ImageWithRating],
       coi: Map[String, CoiMembers.Member],
-      rated: Option[Boolean],
+      votes: PrevVotes,
       topN: Option[Int],
+      topOrder: Option[BinaryOrder],
       categoryId: Option[Long],
       denominator: Denominator,
       windowSize: Int
@@ -604,14 +615,24 @@ object Window {
 /** The streamed candidate queries of [[RoundDistributionHandler]]. */
 object DistributionSource {
 
-  import RoundDistributionHandler.Denominator
+  import RoundDistributionHandler.{Denominator, PrevVotes}
 
   private val i = ImageJdbc.syntax("i")
 
-  private def ratedCond(rated: Option[Boolean]): SQLSyntax = rated match {
-    case Some(true)  => sqls"AND s.rate > 0"
-    case Some(false) => sqls"AND s.rate = 0"
-    case None        => sqls""
+  /** With "selected by at least" set, only approvals (rated votes) are read; with "exclude
+    * files rejected by at least N", no file rejected N times or more in the previous rounds.
+    * The rejection check is correlated to the row's page id: NULL-safe (unlike `NOT IN`,
+    * where one NULL page id in the subquery would drop every row) and bounded to the
+    * window's own files by the `(round_id, page_id, rate)` index, rather than counting every
+    * previous-round rejection again in each window.
+    */
+  private def votesCond(prevIds: Seq[Long], votes: PrevVotes): SQLSyntax = {
+    val rated = if (votes.rated) sqls"AND s.rate > 0" else sqls""
+    val notRejected = votes.rejectedBy.fold(sqls"")(n =>
+      sqls"""AND NOT EXISTS (SELECT 1 FROM selection r
+             WHERE r.page_id = s.page_id AND r.round_id IN ($prevIds) AND r.rate < 0
+             HAVING COUNT(*) >= $n)""")
+    sqls"$rated $notRejected"
   }
 
   /** Images of the round never come back: the anti-join that makes a resume idempotent.
@@ -643,17 +664,17 @@ object DistributionSource {
       .map(rs => new ImageWithRating(ImageJdbc(i)(rs), Seq.empty))
       .list()
 
-  def previousCount(prevIds: Seq[Long], rated: Option[Boolean])(implicit session: DBSession): Long =
+  def previousCount(prevIds: Seq[Long], votes: PrevVotes)(implicit session: DBSession): Long =
     sql"""SELECT COUNT(DISTINCT s.page_id) FROM selection s
-          WHERE s.round_id IN ($prevIds) ${ratedCond(rated)}"""
+          WHERE s.round_id IN ($prevIds) ${votesCond(prevIds, votes)}"""
       .map(_.long(1)).single().getOrElse(0L)
 
-  def previousWindow(prevIds: Seq[Long], rated: Option[Boolean], cursor: Long, size: Int)(implicit
+  def previousWindow(prevIds: Seq[Long], votes: PrevVotes, cursor: Long, size: Int)(implicit
       session: DBSession
   ): Window =
     sql"""SELECT COUNT(*), MAX(page_id) FROM (
             SELECT DISTINCT s.page_id FROM selection s
-            WHERE s.round_id IN ($prevIds) ${ratedCond(rated)} AND s.page_id > $cursor
+            WHERE s.round_id IN ($prevIds) ${votesCond(prevIds, votes)} AND s.page_id > $cursor
             ORDER BY s.page_id LIMIT $size) w"""
       .map(rs => Window(rs.int(1), rs.longOpt(2).getOrElse(cursor)))
       .single()
@@ -664,12 +685,12 @@ object DistributionSource {
     * per image): one entry per previous round, juror 0, with the round's rate sum, and
     * the number of rated rows.
     */
-  def previousCandidates(prevIds: Seq[Long], rated: Option[Boolean], from: Long, to: Long, roundId: Long)(implicit
+  def previousCandidates(prevIds: Seq[Long], votes: PrevVotes, from: Long, to: Long, roundId: Long)(implicit
       session: DBSession
   ): Seq[ImageWithRating] = {
     val rows = sql"""SELECT g.page_id, g.rs, g.c, ${i.result.*} FROM (
               SELECT s.page_id, s.round_id, SUM(s.rate) rs, COUNT(s.rate) c FROM selection s
-              WHERE s.round_id IN ($prevIds) ${ratedCond(rated)} AND s.page_id > $from AND s.page_id <= $to
+              WHERE s.round_id IN ($prevIds) ${votesCond(prevIds, votes)} AND s.page_id > $from AND s.page_id <= $to
                 AND ${notInRound(roundId, sqls"s.page_id")}
               GROUP BY s.page_id, s.round_id) g
             JOIN images i ON i.page_id = g.page_id
@@ -703,7 +724,8 @@ object DistributionSource {
     * the images ordered by their average rating (`totalRate`: the sum of each round's
     * rate sum, negatives counted as 0, over the denominator), ties broken by that sum,
     * then by the raw sum (the in-memory input order of one previous round), then by
-    * page id. The per-image filters apply before ranking: the ranked pages are filtered
+    * page id. Yes/no previous rounds by `binaryOrder` instead ([[binaryPage]]). The per-image
+    * filters apply before ranking: the ranked pages are filtered
     * in order until `n` images pass. Pages grow (n, 2n, 4n, ...) while filters reject
     * images, so a selective filter costs a few queries, not one per image.
     *
@@ -712,41 +734,82 @@ object DistributionSource {
     */
   def rank(
       prevIds: Seq[Long],
-      rated: Option[Boolean],
+      votes: PrevVotes,
       denominator: Denominator,
       n: Int,
-      filter: Seq[ImageWithRating] => Seq[ImageWithRating]
+      filter: Seq[ImageWithRating] => Seq[ImageWithRating],
+      binaryOrder: Option[BinaryOrder] = None
   )(implicit session: DBSession): Seq[Long] = {
-    val total = denominator match {
-      case Denominator.Const(d) => sqls"IF($d = 0, 0, SUM(GREATEST(t.rs, 0)) * 1e0 / $d)"
-      case Denominator.PerImage => sqls"IF(SUM(t.c) = 0, 0, SUM(GREATEST(t.rs, 0)) * 1e0 / SUM(t.c))"
-    }
     val picked = mutable.ArrayBuffer.empty[Long]
     var offset = 0
     var pageSize = math.max(n, 100)
     var exhausted = n <= 0
     while (!exhausted && picked.size < n) {
-      val page = sql"""SELECT t.page_id, SUM(GREATEST(t.rs, 0)) rate_sum, SUM(t.c) cnt FROM (
-                SELECT s.page_id, s.round_id, SUM(s.rate) rs, COUNT(s.rate) c FROM selection s
-                WHERE s.round_id IN ($prevIds) ${ratedCond(rated)}
-                GROUP BY s.page_id, s.round_id) t
-              GROUP BY t.page_id
-              ORDER BY $total DESC, SUM(GREATEST(t.rs, 0)) DESC, SUM(t.rs) DESC, t.page_id ASC
-              LIMIT $pageSize OFFSET $offset"""
-        .map(rs => (rs.long(1), rs.long(2), rs.long(3)))
-        .list()
+      val page = binaryOrder.fold(ratedPage(prevIds, votes, denominator, pageSize, offset))(
+        binaryPage(prevIds, votes, _, pageSize, offset))
       val images = if (page.isEmpty) Map.empty[Long, Image] else
         sql"SELECT ${i.result.*} FROM images i WHERE i.page_id IN (${page.map(_._1)}) AND i.deleted_at IS NULL"
           .map(rs => ImageJdbc(i)(rs)).list().map(img => img.pageId -> img).toMap
-      val candidates = page.flatMap { case (pageId, sum, count) =>
-        images.get(pageId).map(img =>
-          ImageWithRating(img, Seq(Selection(pageId, juryId = 0, roundId = 0, rate = sum.toInt)), count.toInt))
-      }
+      val candidates = page.flatMap { case (pageId, rating) => images.get(pageId).map(rating) }
       picked ++= filter(candidates).iterator.map(_.pageId).take(n - picked.size)
       exhausted = page.size < pageSize
       offset += page.size
       pageSize *= 2
     }
     picked.toSeq
+  }
+
+  /** A page of the previous rounds' images by average rating ([[rank]]): each page id, and
+    * its image's rating, one entry with the rate sum.
+    */
+  private def ratedPage(prevIds: Seq[Long], votes: PrevVotes, denominator: Denominator, pageSize: Int,
+      offset: Int)(implicit session: DBSession): Seq[(Long, Image => ImageWithRating)] = {
+    val total = denominator match {
+      case Denominator.Const(d) => sqls"IF($d = 0, 0, SUM(GREATEST(t.rs, 0)) * 1e0 / $d)"
+      case Denominator.PerImage => sqls"IF(SUM(t.c) = 0, 0, SUM(GREATEST(t.rs, 0)) * 1e0 / SUM(t.c))"
+    }
+    sql"""SELECT t.page_id, SUM(GREATEST(t.rs, 0)) rate_sum, SUM(t.c) cnt FROM (
+            SELECT s.page_id, s.round_id, SUM(s.rate) rs, COUNT(s.rate) c FROM selection s
+            WHERE s.round_id IN ($prevIds) ${votesCond(prevIds, votes)}
+            GROUP BY s.page_id, s.round_id) t
+          GROUP BY t.page_id
+          ORDER BY $total DESC, SUM(GREATEST(t.rs, 0)) DESC, SUM(t.rs) DESC, t.page_id ASC
+          LIMIT $pageSize OFFSET $offset"""
+      .map { rs =>
+        val (pageId, sum, count) = (rs.long(1), rs.long(2), rs.long(3))
+        pageId -> ((img: Image) =>
+          ImageWithRating(img, Seq(Selection(pageId, juryId = 0, roundId = 0, rate = sum.toInt)), count.toInt))
+      }
+      .list()
+  }
+
+  /** A page of yes/no previous rounds' images by `order` over all their votes, approvals and
+    * rejections counted together across the rounds, ties by page id: the same rule whatever
+    * "selected by at least" is (docs/plans/2026-11-01-binary-aggregate-votes.md, issue 2).
+    * `votes` keeps the files with an approval ("selected by at least" set) and those with
+    * fewer rejections than "exclude files rejected by at least N". Each image's rating has its
+    * approvals as its rate, so "selected by at least" compares them.
+    */
+  private def binaryPage(prevIds: Seq[Long], votes: PrevVotes, order: BinaryOrder, pageSize: Int,
+      offset: Int)(implicit session: DBSession): Seq[(Long, Image => ImageWithRating)] = {
+    val conditions = Option.when(votes.rated)(sqls"SUM(s.rate > 0) > 0").toSeq ++
+      votes.rejectedBy.map(n => sqls"SUM(s.rate < 0) < $n")
+    val having = if (conditions.isEmpty) sqls"" else sqls"HAVING ${sqls.joinWithAnd(conditions: _*)}"
+    val orderBy = SQLSyntax.createUnsafely(
+      (order.columns :+ ("s.page_id" -> 1)).map { case (column, dir) => column + (if (dir < 0) " DESC" else " ASC") }
+        .mkString(", "))
+    sql"""SELECT s.page_id, SUM(s.rate > 0) approvals, SUM(s.rate < 0) rejections, COUNT(s.rate) cnt
+          FROM selection s
+          WHERE s.round_id IN ($prevIds)
+          GROUP BY s.page_id $having
+          ORDER BY $orderBy
+          LIMIT $pageSize OFFSET $offset"""
+      .map { rs =>
+        val (pageId, approvals, rejections, count) = (rs.long(1), rs.int(2), rs.int(3), rs.int(4))
+        pageId -> ((img: Image) =>
+          ImageWithRating(img, Seq(Selection(pageId, juryId = 0, roundId = 0, rate = approvals)), count,
+            approvalsFromDb = Some(approvals), rejectionsFromDb = Some(rejections)))
+      }
+      .list()
   }
 }

@@ -207,9 +207,36 @@
     });
   }
 
+  /** All the jurors' votes on a binary round's file, on its tile in the organisers' gallery of
+    * them (gallery.scala.html's data-approvals, -rejections and -tally): "✓ 3 ✗ 2" as
+    * binaryTally.scala.html has it, the marks and numbers hidden from screen readers, which read
+    * the text; none for a file without them. */
+  function addTally(tile, item) {
+    if (!item.tally) return null;
+    var badge = document.createElement('span');
+    badge.className = 'badge wlx-tile-tally';
+    badge.title = item.tally;
+    var shown = document.createElement('span');
+    shown.setAttribute('aria-hidden', 'true');
+    [['bi-check-lg wlx-vote-selected', item.approvals], ['bi-x-lg wlx-vote-rejected', item.rejections]]
+      .forEach(function (mark, i) {
+        var icon = document.createElement('i');
+        icon.className = 'bi ' + mark[0];
+        shown.appendChild(icon);
+        shown.appendChild(document.createTextNode(' ' + (+mark[1] || 0) + (i === 0 ? ' ' : '')));
+      });
+    var text = document.createElement('span');
+    text.className = 'visually-hidden';
+    text.textContent = item.tally;
+    badge.appendChild(shown);
+    badge.appendChild(text);
+    tile.appendChild(badge);
+    return badge;
+  }
+
   window.wlxTileVotes = {
     voteUrl: voteUrl, send: send, explain: explain, addVote: addVote, vote: vote, addStars: addStars,
-    addListStars: addListStars
+    addListStars: addListStars, addTally: addTally
   };
 
   // the by-rate list's stars, once the page is there (raty loaded only where it has them)

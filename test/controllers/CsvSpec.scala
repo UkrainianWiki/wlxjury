@@ -11,14 +11,16 @@ class CsvSpec extends Specification {
 
   "export rates" should {
     "export nothing" in {
-      Csv.exportRates(Seq.empty, Seq.empty, binaryRound) === Seq(Seq("Rank", "File", "Overall"))
+      Csv.exportRates(Seq.empty, Seq.empty, binaryRound) === Seq(Seq("Rank", "File", "Overall"), Csv.BinaryLegend)
+      Csv.exportRates(Seq.empty, Seq.empty, ratedRound(5)) === Seq(Seq("Rank", "File", "Overall"))
     }
 
     "export unrated file, no jurors" in {
       val file = ImageWithRating(Image(0, "File:1.jpg"), Seq.empty)
       Csv.exportRates(Seq(file), Seq.empty, binaryRound) === Seq(
         Seq("Rank", "File", "Overall"),
-        Seq("1", "File:1.jpg", "0")
+        Seq("1", "File:1.jpg", "0"),
+        Csv.BinaryLegend
       )
     }
 
@@ -27,7 +29,8 @@ class CsvSpec extends Specification {
       Csv.exportRates(files, Seq.empty, binaryRound) === Seq(
         Seq("Rank", "File", "Overall"),
         Seq("1-2", "File:1.jpg", "0"),
-        Seq("1-2", "File:2.jpg", "0")
+        Seq("1-2", "File:2.jpg", "0"),
+        Csv.BinaryLegend
       )
     }
 
@@ -35,8 +38,18 @@ class CsvSpec extends Specification {
       val files = Seq(ImageWithRating(Image(0, "File:a.jpg"), Seq(Selection(0, 9, 0, rate = 1))))
       Csv.exportRates(files, Seq(User("Juror1", "", Some(9))), binaryRound) === Seq(
         Seq("Rank", "File", "Overall", "Juror1"),
-        Seq("1", "File:a.jpg", "1", "1")
+        Seq("1", "File:a.jpg", "1", "1"),
+        Csv.BinaryLegend
       )
+    }
+
+    "keep a binary round's votes as stored, 1, -1 and 0, empty where not assigned, with a legend row" in {
+      val jurors = (1 to 4).map(i => User(s"Juror$i", "", Some(i.toLong)))
+      val file = ImageWithRating(Image(0, "File:a.jpg"),
+        Seq(Selection(0, 1, 0, rate = 1), Selection(0, 2, 0, rate = -1), Selection(0, 3, 0, rate = 0)))
+      val rows = Csv.exportRates(Seq(file), jurors, binaryRound)
+      (rows(1) === Seq("1", "File:a.jpg", "1", "1", "-1", "0", "")) and
+        (rows.last === Seq("", "Overall: approvals. Jurors: 1 selected, -1 rejected, 0 not voted yet, empty not assigned"))
     }
 
     "export 1 file, 1 juror, rated round" in {
