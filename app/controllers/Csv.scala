@@ -48,21 +48,23 @@
     }
 
     /** A list's files as [[exportRates]] has them, the header first with a BOM, streamed: the
-      * list's page ids read at once, then their votes a [[Chunk]] of files at a time, on `ec`,
-      * as the rows are sent; ranked among the whole list from its files per rank key, never
-      * holding the round's votes.
+      * list's page ids and rank keys read at once, then their votes a [[Chunk]] of files at a
+      * time, on `ec`, as the rows are sent, never holding the round's votes. The ranks come
+      * from that first read, so they follow the rows' order even if votes change mid-export
+      * (a row's votes are those when its chunk is read).
       */
     def rateRows(list: RoundList, jurors: Seq[User], chunk: Int = Chunk)(implicit
         ec: ExecutionContext
     ): Source[Seq[String], NotUsed] = {
       val query = list.query
       val key = list.rankKey
-      val ranks = Ranks(query.keyCounts(key.columns))
-      val pageIds = query.pageIds()
+      val pageKeys = query.pageKeys(key.columns.map(_._1))
+      val ranks = Ranks.of(pageKeys.map(_._2))
+      val rankOf = pageKeys.map { case (pageId, values) => pageId -> ranks(values) }.toMap
       Source.single(addBom(Seq(header(jurors))).head) ++
-        Source.fromIterator(() => pageIds.grouped(chunk))
+        Source.fromIterator(() => pageKeys.map(_._1).grouped(chunk))
           .mapAsync(1)(ids => Future(query.withVotes(ids)))
-          .mapConcat(_.map(file => row(file, ranks(key.values(file)), jurors, list.round))) ++
+          .mapConcat(_.map(file => row(file, rankOf.getOrElse(file.pageId, ""), jurors, list.round))) ++
         Source(legend(list.round).toList)
     }
 

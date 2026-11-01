@@ -68,13 +68,15 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
         idOnly: Boolean = false,
         noLimit: Boolean = false,
         byRegion: Boolean = false,
-        ranked: Boolean = false
+        ranked: Boolean = false,
+        keyColumns: Seq[String] = Nil
     ): SQLSyntax = {
 
       val columnsStr: String =
         "select  " +
           (if (count || idOnly) {
              "i.page_id as pi_on_i" +
+               keyColumns.zipWithIndex.map { case (expr, n) => s", $expr as k$n" }.mkString +
                (if (ranked)
                   s", ROW_NUMBER() over (${orderBy()}) ranked"
                 else "") +
@@ -172,11 +174,14 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
       */
     private def files: SelectionQuery = copy(grouped = true, groupWithDetails = false)
 
-    /** All the list's files' page ids, in its order: the CSV reads their votes a chunk at a
-      * time ([[withVotes]]).
+    /** All the list's files' page ids with their values of `columns` (aggregates of a file's
+      * votes, over `s`), in its order, from one read: the CSV ranks its files by these and
+      * reads their votes a chunk at a time ([[withVotes]]).
       */
-    def pageIds()(implicit session: DBSession = autoSession): Seq[Long] =
-      sql"${files.query(idOnly = true, noLimit = true)}".map(_.long(1)).list()
+    def pageKeys(columns: Seq[String])(implicit session: DBSession = autoSession): Seq[(Long, Seq[Int])] =
+      sql"${files.query(idOnly = true, noLimit = true, keyColumns = columns)}"
+        .map(rs => rs.long(1) -> columns.indices.map(n => rs.int(n + 2)))
+        .list()
 
     /** The files of `pageIds` with their votes the list has (its juror's, or all the jurors':
       * all their votes with [[filesByVotes]], else those of its vote filter), in the order of
