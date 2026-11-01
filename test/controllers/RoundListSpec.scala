@@ -113,6 +113,13 @@ class RoundListSpec extends Specification {
         .filterNot(u => u.startsWith("/") && !u.startsWith("//")) must beEmpty
     }
 
+    "read the removed grouped view's region as all regions, its URLs then those of all" in {
+      val grouped = RoundList.of(round, juror, 3, "grouped", GalleryView.ByRate)(request("/", None))
+      grouped.region must beNone
+      grouped.pageUrl(1) === RoundList.of(round, juror, 3, "all", GalleryView.ByRate)(request("/", None)).pageUrl(1)
+      RoundList.of(round, juror, 3, "80", GalleryView.ByRate)(request("/", None)).region must beSome("80")
+    }
+
     "change one part at a time" in {
       list.withRegion("all").region must beNone
       list.withRegion("80").withFilter(VoteFilter.All).pageUrl(1) === "/byrate/round/7/user/3/region/80/page/1?sort=rate"

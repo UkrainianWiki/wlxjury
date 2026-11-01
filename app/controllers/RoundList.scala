@@ -412,7 +412,13 @@ object RoundList {
     */
   val SortCookie = "gallerySort"
 
-  /** The list a request is for: the round, whose votes, the region from its path; the view
+  /** The region segment of the removed by-rate view grouped by region (46017ee3): its old URLs
+    * show all regions, not an unknown region with no files.
+    */
+  val GroupedRegion = "grouped"
+
+  /** The list a request is for: the round, whose votes, the region from its path ("all" or
+    * [[GroupedRegion]] for all of them); the view
     * from its path or, for a large view, its `module`; the filter and order from its query,
     * the filter all files if the round's kind hasn't it, the order [[defaultOrder]] if it
     * names none.
@@ -423,7 +429,7 @@ object RoundList {
     RoundList(
       round,
       asUserId,
-      Some(region).filter(_ != "all"),
+      Some(region).filterNot(r => r == "all" || r == GroupedRegion),
       VoteFilter.of(request).in(round),
       requestedOrder.getOrElse(defaultOrder(viewer, asUserId, view)),
       view

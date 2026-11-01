@@ -110,7 +110,7 @@ class RegionMenuSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
-    "show region grouped as any unknown region, in the by-rate gallery (the view grouped by region is gone)" in {
+    "show region grouped as all regions, in the by-rate gallery (the view grouped by region is gone)" in {
       testDbApp { implicit app =>
         val f = fixture()
         def shown(region: String) = {
@@ -118,8 +118,8 @@ class RegionMenuSpec extends PlaySpecification with PlayTestDb {
           html must not contain "col-sm-1" // the grouped view's region cards
           """(?s)id="regionmenu".*?<b>([^<]*)</b>""".r.findFirstMatchIn(html).map(_.group(1))
         }
-        // the menu names it as it names any other id it doesn't know
-        (shown("grouped") must beSome) and (shown("grouped") === shown("xyz").map(_.replace("xyz", "grouped")))
+        // an old link to the grouped view lists all the files, as region all does
+        (shown("grouped") must beSome) and (shown("grouped") === shown("all"))
         status(request(s"/regions/round/${f.rated.getId}/user/0/region/grouped", Some(f.admin), script = true)) === OK
       }
     }
