@@ -663,3 +663,29 @@ checked by `ThemeViewSpec` for every shell.
   session config; the server-set cookie follows the config.
 - `auto` is stored explicitly (not as NULL): choosing System on one device makes signing in on
   another use System too. NULL only for users who never chose.
+
+### Review follow-ups
+
+- **By-rate galleries (high, `5843872f`):** `1e026ddb` had replaced the rank block's opening
+  `<div style="margin-bottom: 10px;` in `galleryByRate` and `galleryByRateRegions` with a U+0001
+  control character (a script's `` replacement written as a literal byte; it was the `□`
+  glyph) and a stray `">`, so the block's `</div>` closed the gallery list after the first tile.
+  The block is `<div class="rank-line">` again (margin in `main.css`; `showRate` too). No other
+  file in the repo contains U+0001, and the commit's other template edits only dropped colour
+  attributes. `views.GalleryByRateViewSpec` renders both templates for a rated round and checks
+  with Jsoup that every `li.gallerybox` sits in `ul.gallery` with one `div.rank-line`, and that
+  there is no stray `">` text or control character.
+- **Theme on user creation (low, `36783bec`):** the edit form's `theme` keeps only light, dark or
+  auto (anything else becomes none), and `User.create` stores nothing else, so an admin-created
+  user with a bogus value gets `theme` NULL instead of a 500 (`ThemeSwitchSpec`). Decided: drop
+  the value, no form error (the add-user form has no theme field to show one on).
+- Checks: `Test/compile` + `testOnly views.GalleryByRateViewSpec controllers.ThemeSwitchSpec
+  views.ThemeViewSpec db.scalikejdbc.UserDbSpec controllers.UserControllerSpec
+  controllers.MultiContestUserSpec controllers.GalleryOrderSpec` 0 (60 passed). The full suite was
+  not rerun.
+- Screenshots: `shoot --label phase3-fix --mode light,dark --start-server --csp` (no other JVM
+  running), 25 shots per mode in `target/ui-shots/phase3-fix/`, no CSP violation, every page in
+  the mode asked for; the only console errors are the two 404 pages' own status. `byrate` and
+  `byrate-viewmenu` are a regular three-column grid in both modes, each tile with its stars and
+  rate below it and no stray text. The fixture's all-jurors by-rate view has no rank, so the
+  rank text itself is empty there.
