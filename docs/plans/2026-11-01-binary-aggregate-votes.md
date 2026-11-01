@@ -161,7 +161,8 @@ It is from reading the code and the fixture DB (round 1: 20 jurors, 38,366 files
    (remembered like the gallery's sort today); the round form's top-N from a previous yes/no
    round takes it from a field of its own, stored with the round, so a distribution is
    reproducible and shows which rule picked the files. Default for both: approvals then
-   fewest rejections.
+   fewest rejections. A round from before V72 (no order stored) keeps the old rate-sum rule,
+   shown on its form as "Legacy rule"; a new round always stores its order (a72ff4ea).
 2. Show rejections: "✓ 3 ✗ 2" in the gallery and file list, with a screen-reader text
    ("3 approvals, 2 rejections").
 3. Filters pick which files are listed; the counts and the order use all of a file's votes
@@ -187,10 +188,13 @@ It is from reading the code and the fixture DB (round 1: 20 jurors, 38,366 files
 3. Top-N and "selected by" for a binary previous round. `RoundDistributionJobSpec`,
    `RoundRedistributionFiltersSpec`, `DistributeImagesSpec`, `DistributeImagesBatchSpec`,
    `ImageWithRatingSeqFilterSpec`. **Done (3001d72d).**
+0. Old top-N rounds keep their rule (`rounds.top_binary_order` NULL). **Done (a72ff4ea).**
 4. File-level vote filters. `ImageDbNewDbSpec`, `GalleryRegionsSpec`, `RoundListDbSpec`.
+   **Done (19e6078c).**
 5. Show rejections and unrated votes: large view, stat footer, file list columns.
-   `LargeViewSideSpec`, `FileListViewSpec`, `GalleryByRateViewSpec`.
+   `LargeViewSideSpec`, `FileListViewSpec`, `GalleryByRateViewSpec`. **Done (e3d8c7d1).**
 6. Rank line, tile view, `rateSum` split. `GalleryByRateViewSpec`, `GalleryTileStarsViewSpec`.
+   **Done (95783736).**
 
 ## Done: steps 1-3 (2026-11-01)
 
@@ -226,3 +230,67 @@ It is from reading the code and the fixture DB (round 1: 20 jurors, 38,366 files
   value names it). Stored 0 not migrated (decision 4). Tests: `RoundRedistributionFiltersSpec`
   (top-1 per order, with and without "selected by", streamed equals in-memory),
   `ImageWithRatingSeqFilterSpec`, `TopBinaryOrderChoiceSpec`, `db.TopBinaryOrderMigrationSpec`.
+  Superseded by task 0 below: NULL is now the legacy rule.
+
+## Done: task 0 and steps 4-6 (2026-11-01)
+
+- **Task 0, old top-N rounds (a72ff4ea).** Before 3001d72d a top-N from a yes/no round was
+  ranked by `DistributionSource.ratedPage`: per previous round `SUM(s.rate)` with a clamp at 0
+  (`GREATEST(rs, 0)`), summed over the rounds, over the assigned jurors, then that sum, the raw
+  sum and page id; with "selected by at least N ≥ 1" only `rate > 0` rows, so the approvals.
+  None of the three orders is that (the clamp, and the field changing it), so it is a legacy
+  value: `rounds.top_binary_order` NULL = the legacy rule (`BinaryOrder.LegacyParam`
+  "legacy", `Round.topOrderParam`), no migration, V72 unchanged. The streamed distribution
+  (`binaryOrder` None → `ratedPage`) and the in-memory one (`SelectTopByRating` without an
+  order → `totalRate`) are the code of before. A new round's submission always stores an
+  order (`Round.withExplicitTopOrder` in `RoundService.submit`, the default unless chosen;
+  a missing or "legacy" form value is the default for it); the form preselects the default
+  for a new round (`RoundController.editRound`) and offers "Legacy rule: ..." only for a
+  round that has it, selected. An existing round's form never changes the stored order
+  (`Round.updateRound` saves the name only). The job settings record "legacy". Tests:
+  `RoundRedistributionFiltersSpec` (an old round filled by "Distribute new files": top-1 by
+  the rate sum, by the approvals with "selected by", ties by page id; streamed equals in
+  memory), `RoundEditPageSpec` (new form preselects and stores the default, also without the
+  field; an old round shows the legacy rule), `TopBinaryOrderChoiceSpec`.
+- **Step 4, file-level filters (19e6078c).** `SelectionQuery.filesByVotes` (set by
+  `RoundList.query` for `user/0` only): the vote filter goes to `HAVING sum(s.rate = r) > 0`
+  (or `> 0` / `= 0` for rated / unrated), with `withPageId` as `OR s.page_id = ...` there;
+  `where()` leaves it out, so the grouped columns, order, `ROW_NUMBER`, `keyCounts` (ranks)
+  and `withVotes` (file list, CSV: all the file's votes) use all of a file's votes. The count
+  keeps the row filter in `COUNT(DISTINCT s.page_id)` (the same number). A juror's lists and
+  `byRoundMerged` (the distribution's reads, `filesByVotes` false) still filter rows, so
+  "selected by at least" and the legacy top-N read what they did. Region counts were already
+  per file (`MAX(hit)`). A file list's `count()` now counts files with a region too (it was
+  the vote rows). Query cost: the filtered list scans the round's rows as "all" does (the
+  `rate` index range is given up); not measured on the 38k fixture.
+- **Step 5, rejections shown (e3d8c7d1).** `binaryTally` ("✓ 3 ✗ 2", screen-reader and title
+  text `binary.tally` "3 approvals, 2 rejections", a choice format in en/fr, "Схвалень: 3,
+  відхилень: 2" style in uk/ru) in the by-rate gallery and the file list (column
+  `overall.votes`); `binaryVote` lost its approvals mode and has `unrated` (a dot). File list
+  juror columns: ✓/✗/· (blank: not assigned) under a legend (`filelist.legend.not.assigned`).
+  CSV: 1/-1/0 kept, columns unchanged, one legend row last (English, as the header).
+  `byRoundAndImageWithJury`: every vote, approvals (by rate) then rejections then unrated, by
+  name; the vote list stays org-only (`canViewOrgInfo`), tested in `OwnVotesSpec`. Footer:
+  `Round.imageCountsByRate` (one grouped scan): files with ≥ 1 approval, ≥ 1 unrated vote,
+  ≥ 1 rejection, each with its by-rate and file list links (the filtered lists' totals, so
+  they overlap and need not add up to the total; noted under "Total",
+  `round.stat.total.note`), not "files with no vote yet" / "rejected by all".
+- **Step 6 (95783736).** By-rate gallery ranks: `RoundList.ranks` (one `keyCounts` query, as
+  the file list) only in the by-rate view, not a rated round's plain gallery; `rank`, `rank2`
+  and `rankStr` removed. Tile view of `user/0`: `data-approvals/-rejections/-tally` on the
+  items, `addTally` draws a badge at the tile's foot. `rateSum`: binary code already reads
+  `approvals`/`rejections` (rank keys, `rateString`, the tallies); `rateSum` and `totalRate`
+  are documented as the rated rounds' and the legacy top-N's; `SelectedAtLeast` keeps
+  `rateSum` (the rows it sees are `rate > 0` or carry the approvals, and a rated round's
+  stored "selected by" keeps its meaning).
+- **Open item verified.** A rated round's all-jurors large view: `ROW_NUMBER() OVER (ORDER BY
+  rate ...)` orders by the `sum(s.rate)` alias, not a row's `s.rate`; the position, previous
+  and next match the by-rate gallery (`RoundListDbSpec`, files whose first vote row orders
+  otherwise). No change.
+
+## Left
+
+- Migrate stored "selected by at least 0" to NULL (decision 4) once production rounds are
+  checked to use it as "no filter".
+- Measure the file-level filter (`HAVING`) on the 38k-file fixture if a filtered all-jurors
+  list is slow.
