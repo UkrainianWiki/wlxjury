@@ -384,9 +384,9 @@ independent review with its diff, as in the theme plan's cycle.
 | B1 | 1.1, 1.3, 1.4, 1.5 + 4.2, 1.7, 6.1, 6.2, 6.3 | medium | Bugs and server messages. 1.4: the export's host is a choice; default to absolute app URLs (`wlxjury.host`), and report it |
 | B2 | 1.2 | medium | Production config change; the release notes say so |
 | B3 | section 5 (5.1–5.3), 1.6, 4.4, 6.5; harness parts of 3.1 (auto shots) and 3.3 (vote then Back, by Playwright) | medium | Large and frontend-heavy: Jest, `LargeViewFixturesSpec` regenerated, screenshots in light, dark and auto |
-| B4 | 2.1 | high | **Blocked on the user:** whether `ukwikidev/oauth-login` replaces password sign-in. Otherwise bcrypt or Argon2id with rehash on login |
+| B4 | 2.1 | high | Password sign-in stays (decision 1): bcrypt or Argon2id, the legacy SHA-1 verified only to rehash on a successful sign-in |
 | B5 | 2.2, 2.3, 2.4 | high | After B3 and after merging `ukwikidev/api-auth`. The CSP without `'unsafe-inline'`; `/api/docs` must still work |
-| B6 | 2.5, 2.6, 2.7, 4.1, 4.8 | medium (docs low) | 2.6 after B3, which removes most of the `@Html` in JS strings. 4.1: delete the dead merge code unless the user wants merging |
+| B6 | 2.5, 2.6, 2.7, 2.8, 4.1, 4.8 | medium (docs low) | 2.6 after B3, which removes most of the `@Html` in JS strings. 2.8: the account id only (decision 3), CLAUDE.md updated. 4.1: delete the merge code (decision 2) |
 | B7 | 4.5 | medium | The repo half only. The `wlxjury-infra` half and the playbook run are the user's |
 | B8 | 3.5 | medium | A paired timing against the pre-branch base, after B1–B7, with no other DB work running. Report and stop |
 
@@ -394,7 +394,6 @@ The full suite runs once after B5 (shared layout, filters and config), and again
 only if B6–B7 change shared code.
 
 **Not for agents** (the user, or production access):
-- 2.8, whether to log only the account id: the user's call;
 - 3.2 against live Commons, and 3.1 and 3.3 in Firefox, by hand;
 - 3.4, the production data check;
 - 3.6, only before the next capacity measurement;
@@ -402,6 +401,16 @@ only if B6–B7 change shared code.
 - 4.7, the benchmark data, with the user's agreement;
 - 6.6, the alias accounts;
 - 6.7, a one-line `unzip -l` check, which the orchestrator does.
+
+### Decisions (the user's, 2026-11-01)
+
+1. Password sign-in stays for now, so 2.1 is done in full: a slow KDF, with rehashing on
+   sign-in.
+2. Round merging isn't wanted: delete `RoundController.mergeRounds`, `RoundService.mergeRounds`,
+   `SelectionJdbc.mergeRounds`, `Round.delete` if it stays unused, their tests, and the
+   `RoundImageCounts` / deleted-files hooks that only these call (4.1).
+3. The `security.authz` denial line logs the account id only, not the email (2.8). Support
+   looks the account up by id.
 
 ### Invariants that every reviewer checks
 
