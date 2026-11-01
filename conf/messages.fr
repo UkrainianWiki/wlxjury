@@ -477,3 +477,5 @@ api.token.copy = Copier
 api.token.copied = Copié
 error.api.token.not.found = Ce jeton d''API n''existe pas.
 error.api.token.expiry = Choisissez l''une des durées proposées.
+error.api.token.already.submitted = Ce formulaire a déjà été envoyé : aucun nouveau jeton n''a été créé. Créez-en un ci-dessous si besoin.
+error.api.token.limit = Vous avez déjà {0} jetons utilisables, le maximum. Révoquez-en un pour en créer un autre.

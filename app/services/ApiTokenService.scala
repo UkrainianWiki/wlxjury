@@ -25,6 +25,13 @@ object ApiTokenService extends Logging {
   val ExpiryDays: Seq[Option[Int]] = Seq(Some(30), Some(90), Some(365), None)
   val DefaultExpiryDays: Option[Int] = Some(90)
 
+  /** The most usable (neither revoked nor expired) tokens a user may have: a soft cap, checked
+    * before a create.
+    */
+  val MaxActive = 20
+
+  def activeCount(userId: Long): Int = ApiTokenJdbc.findByUser(userId).count(_.usable)
+
   private val random = new SecureRandom()
 
   /** [[Prefix]] and 32 random bytes, base64url without padding (43 characters). */

@@ -454,3 +454,5 @@ api.token.copy = Копировать
 api.token.copied = Скопировано
 error.api.token.not.found = Такого API-токена нет.
 error.api.token.expiry = Выберите один из предложенных сроков.
+error.api.token.already.submitted = Эта форма уже отправлена: новый токен не создан. Создайте его ниже, если нужно.
+error.api.token.limit = У вас уже {0} действующих токенов, это наибольшее допустимое. Отзовите один, чтобы создать новый.

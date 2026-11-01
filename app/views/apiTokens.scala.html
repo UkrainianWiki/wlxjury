@@ -23,6 +23,9 @@
                 </div>
             </div>
         }
+        @for(notice <- card.notice) {
+            <div class="alert alert-warning" role="status">@Messages(notice, services.ApiTokenService.MaxActive)</div>
+        }
         @if(flash.get("api-token-revoked").isDefined) {
             <div class="alert alert-info" role="status">@Messages("api.token.revoked")</div>
         }
@@ -74,6 +77,7 @@
         <h3 class="h6 mt-3">@Messages("api.token.create")</h3>
         @form(routes.UserController.createApiToken(), Symbol("class") -> "form-vertical", Symbol("id") -> "api-token-form") {
             @csrfField()
+            <input type="hidden" name="@controllers.ApiTokensCard.NonceKey" value="@card.nonce">
             @bs.text(card.form("name"), Symbol("_label") -> Messages("api.token.name"),
                 Symbol("maxlength") -> services.ApiTokenService.NameMaxLength)
             @bs.select(card.form("expiry"), Seq(

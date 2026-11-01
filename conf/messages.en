@@ -479,3 +479,5 @@ api.token.copy = Copy
 api.token.copied = Copied
 error.api.token.not.found = There is no such API token.
 error.api.token.expiry = Choose one of the expiries offered.
+error.api.token.already.submitted = This form was already submitted: no new token was created. Create one below if you need another.
+error.api.token.limit = You have {0} usable tokens already, the most allowed. Revoke one to create another.

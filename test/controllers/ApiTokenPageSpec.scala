@@ -33,15 +33,22 @@ class ApiTokenPageSpec extends PlaySpecification with PlayTestDb {
 
   private val tokenPattern = "wlxj_[A-Za-z0-9_-]{43}".r
 
+  /** The create form's nonce as the profile page gave it ([[ApiTokensCard.NonceKey]]). */
+  private val pageNonce = "page-nonce"
+
   /** A signed-in browser's POST: the session cookie (which makes the CSRF filter check it),
-    * the session with its CSRF token, and the form with that token if `withToken`.
+    * the session with its CSRF token and `sessionNonce`, and the form with that token if
+    * `withToken` and with `nonce`.
     */
   private def post(app: Application, path: String, sessionToken: String, body: Seq[(String, String)] = Nil,
-                   withToken: Boolean = true, as: String = email): Future[Result] =
+                   withToken: Boolean = true, as: String = email, nonce: Option[String] = Some(pageNonce),
+                   sessionNonce: Option[String] = Some(pageNonce)): Future[Result] =
     route(app, FakeRequest(POST, path)
       .withHeaders(COOKIE -> "PLAY_SESSION=signed-in", ACCEPT -> "text/html")
-      .withSession(Secured.UserName -> as, Secured.CurrentContestId -> "10", "csrfToken" -> sessionToken)
-      .withFormUrlEncodedBody(body ++ (if (withToken) Seq("csrfToken" -> sessionToken) else Nil): _*)).get
+      .withSession(Seq(Secured.UserName -> as, Secured.CurrentContestId -> "10", "csrfToken" -> sessionToken) ++
+        sessionNonce.map(ApiTokensCard.NonceKey -> _): _*)
+      .withFormUrlEncodedBody(body ++ (if (withToken) Seq("csrfToken" -> sessionToken) else Nil) ++
+        nonce.map(ApiTokensCard.NonceKey -> _): _*)).get
 
   private def profile(app: Application, as: String = email): Future[Result] =
     route(app, FakeRequest(GET, s"/users/edit/${userId(as)}")
@@ -103,6 +110,52 @@ class ApiTokenPageSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
+    "take a create once: reloading its response, or a form without the page's nonce, creates nothing" in {
+      withCsrfApp { app =>
+        setUp()
+        val sessionToken = token(app)
+        val first = post(app, "/users/tokens", sessionToken, create)
+        status(first) === OK
+        val nextNonce = session(first).get(ApiTokensCard.NonceKey)
+        nextNonce must beSome(not(be_==(pageNonce)))
+        contentAsString(first) must contain(s"""value="${nextNonce.get}"""")
+
+        // the browser re-posts the form, with the nonce it had, and the session the response set
+        val reload = post(app, "/users/tokens", sessionToken, create, sessionNonce = nextNonce)
+        status(reload) === CONFLICT
+        contentAsString(reload) must contain("This form was already submitted")
+        tokenPattern.findFirstIn(contentAsString(reload)) must beNone
+
+        status(post(app, "/users/tokens", sessionToken, create, nonce = None)) === CONFLICT
+        status(post(app, "/users/tokens", sessionToken, create, sessionNonce = None)) === CONFLICT
+        ApiTokenJdbc.findByUser(userId(email)) must haveSize(1)
+
+        // the refusal's page has a new nonce, which creates
+        val again = post(app, "/users/tokens", sessionToken, create, nonce = session(reload).get(ApiTokensCard.NonceKey),
+          sessionNonce = session(reload).get(ApiTokensCard.NonceKey))
+        status(again) === OK
+        ApiTokenJdbc.findByUser(userId(email)) must haveSize(2)
+      }
+    }
+
+    "refuse a token over the 20 usable ones, creating nothing" in {
+      withCsrfApp { app =>
+        setUp()
+        val id = userId(email)
+        val tokens = (1 to ApiTokenService.MaxActive).map(i => ApiTokenService.create(id, s"cli$i", Some(90)))
+        val sessionToken = token(app)
+        val refused = post(app, "/users/tokens", sessionToken, create)
+        status(refused) === CONFLICT
+        contentAsString(refused) must contain(s"You have ${ApiTokenService.MaxActive} usable tokens already")
+        ApiTokenJdbc.findByUser(id) must haveSize(ApiTokenService.MaxActive)
+
+        // a revoked one no longer counts
+        ApiTokenJdbc.revoke(ApiTokenJdbc.findByHash(ApiTokenService.hash(tokens.head)).get.id, id)
+        status(post(app, "/users/tokens", sessionToken, create)) === OK
+        ApiTokenService.activeCount(id) === ApiTokenService.MaxActive
+      }
+    }
+
     "refuse a missing name or an expiry not offered, creating nothing" in {
       withCsrfApp { app =>
         setUp()
@@ -131,6 +184,35 @@ class ApiTokenPageSpec extends PlaySpecification with PlayTestDb {
   }
 
   "the profile" should {
+    "give the create form a nonce, also in the session" in {
+      withCsrfApp { app =>
+        setUp()
+        val page = profile(app)
+        val nonce = session(page).get(ApiTokensCard.NonceKey)
+        nonce must beSome
+        contentAsString(page) must contain(s"""name="${ApiTokensCard.NonceKey}" value="${nonce.get}"""")
+      }
+    }
+
+    "keep the tokens card when saving the own profile fails" in {
+      withCsrfApp { app =>
+        setUp()
+        ApiTokenService.create(userId(email), "tina-cli", Some(90))
+        val sessionToken = token(app)
+        val base = Seq("id" -> userId(email).toString, "email" -> email, "contest" -> "10", "lang" -> "en")
+        forall(Seq(base :+ ("fullname" -> ""), base.map {
+          case ("email", _) => "email" -> otherEmail // another account's
+          case field        => field
+        } :+ ("fullname" -> "Tina"))) { body =>
+          val result = post(app, "/users/save", sessionToken, body, nonce = None, sessionNonce = None)
+          status(result) === BAD_REQUEST
+          contentAsString(result) must contain("api-tokens")
+          contentAsString(result) must contain("tina-cli")
+        }
+        User.findByEmail(email).head.fullname === email
+      }
+    }
+
     "show the tokens card on the user's own profile only" in {
       withCsrfApp { app =>
         setUp()
