@@ -879,7 +879,9 @@ Left for separate branches; none blocks merging this one.
    `MwBot`, with a short timeout, a small result limit and a cache; then Tom Select's `load` on
    the field. Tests: the endpoint's authorization (signed out 401, juror 403) and its handling of
    a Commons failure (an empty list, not a 500).
-3. **`/admin/rounds` and `/admin/users` without `?contestId=`.** In the screenshot fixture both
+3. **`/admin/rounds` and `/admin/users` without `?contestId=`.** Done (c2d220d7): a
+   `ContestPermission` without a contest is checked in the session's current contest
+   (`Secured.forUser`), for these and the import and greeting pages. In the screenshot fixture both
    deny the contest's admin (403, `permission_check_failed`, `targetContestId=unknown`) although
    the session's contest is set; the navbar links pass the id, so users rarely hit it. Likely a
    pre-existing bug in how these actions pick the contest when the parameter is missing (they
