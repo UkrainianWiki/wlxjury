@@ -384,7 +384,7 @@ independent review with its diff, as in the theme plan's cycle.
 | B1 | 1.1, 1.3, 1.4, 1.5 + 4.2, 1.7, 6.1, 6.2, 6.3 | medium | Bugs and server messages. 1.4: the export's host is a choice; default to absolute app URLs (`wlxjury.host`), and report it |
 | B2 | 1.2 | medium | Production config change; the release notes say so |
 | B3 | section 5 (5.1–5.3), 1.6, 4.4, 6.5; harness parts of 3.1 (auto shots) and 3.3 (vote then Back, by Playwright) | medium | Large and frontend-heavy: Jest, `LargeViewFixturesSpec` regenerated, screenshots in light, dark and auto |
-| B4 | 2.1 | high | Password sign-in stays (decision 1): bcrypt or Argon2id, the legacy SHA-1 verified only to rehash on a successful sign-in |
+| B4 | 2.1 | high | Password sign-in stays (decision 1): bcrypt, cost 12 (decision 4); the legacy SHA-1 verified only to rehash on a successful sign-in |
 | B5 | 2.2, 2.3, 2.4 | high | After B3 and after merging `ukwikidev/api-auth`. The CSP without `'unsafe-inline'`; `/api/docs` must still work |
 | B6 | 2.5, 2.6, 2.7, 2.8, 4.1, 4.8 | medium (docs low) | 2.6 after B3, which removes most of the `@Html` in JS strings. 2.8: the account id only (decision 3), CLAUDE.md updated. 4.1: delete the merge code (decision 2) |
 | B7 | 4.5 | medium | The repo half only. The `wlxjury-infra` half and the playbook run are the user's |
@@ -411,6 +411,15 @@ only if B6–B7 change shared code.
    `RoundImageCounts` / deleted-files hooks that only these call (4.1).
 3. The `security.authz` denial line logs the account id only, not the email (2.8). Support
    looks the account up by id.
+4. Password hash: bcrypt (`$2b$`, cost 12) from a maintained library (e.g.
+   `at.favre.lib:bcrypt`, or a current, explicit `bcprov-jdk18on`'s `OpenBSDBCrypt`; not the
+   transitive `bcprov-jdk15on` 1.64). It fits `users.password varchar(255)`, so no migration.
+   A legacy hash (40 hex characters) is checked once and replaced by a bcrypt hash on a
+   successful sign-in, and every new, reset or changed password is stored as bcrypt. A small
+   limit on concurrent hash checks (e.g. 4) keeps a flood of sign-ins from using up the CPU.
+   Passwords over 72 bytes: refuse them where they are set, or pre-hash them consistently;
+   the implementer picks one and tests it. The cost is read from the stored hash, so it can
+   be raised later by rehashing on sign-in.
 
 ### Invariants that every reviewer checks
 
