@@ -806,3 +806,145 @@ Checks:
   to `b3`. No JS changed, so Jest wasn't rerun.
 
 **What remains:** a second review of the fixes if wanted, then B4.
+
+## Batch B5 results
+
+Branch `ukwikidev/followups`, from `6c745bf5`. Commits `8fb9bbe2`, `ba4623fc`, `986cdf97`, then
+this one.
+
+**2.2, the allowed hosts.** `AllowedHostsFilter` is on (`application.conf` no longer disables
+it). Play's `AllowedHostsModule` is replaced by `modules.AllowedHostsModule` (as `CsrfModule`
+replaces the CSRF module). It adds the names in `wlxjury.allowedHosts`, one string split on
+commas and whitespace, because HOCON can't split an environment variable into a list. Each name
+must be a host name or a `.suffix`, with an optional port. `.`, `*`, URLs and the like stop the
+start. `production.conf`:
+
+```
+wlxjury.allowedHosts = ${WLXJURY_ALLOWED_HOSTS}
+play.filters.hosts.allowed = ["127.0.0.1", "localhost"]
+```
+
+So production allows the deployed names and loopback, not Play's `*.local`. The variable is
+required (an unresolved substitution). In Mode.Prod the module also refuses to start without a
+name. A runtime directory with an old `production.conf` therefore fails at the readiness check,
+with maintenance still on, instead of answering 400 to every public URL after `reopen`.
+- The deploy tools ask `http://127.0.0.1:$PORT/health/ready`, so curl and urllib send
+  `Host: 127.0.0.1:9000`. Play's matcher ignores the port when the pattern has none.
+- Apache's vhosts keep the client's Host (`ProxyPreserveHost On` in
+  `conf/apache/0002-wlxjury.conf`), so the check sees the real names.
+- A refused request gets `ErrorHandler`'s 400 page (`error.bad.request`, without echoing the
+  host). Under `/api/` it gets `{"error": "bad_request"}`.
+- `sbt run` and the tests keep Play's default list (`localhost`, `127.0.0.1`, `*.local`).
+  FakeRequest, Gatling and the harness all use one of these. `CsrfTestApp` still disables the
+  filter.
+- `docker-compose.yml` runs in Mode.Prod without `production.conf`, so it passes
+  `-Dwlxjury.allowedHosts=localhost`.
+- Documented in `runtime.env.example`, `docs/deployment.md` ("Host names and secure cookies")
+  and the 400 row of `docs/api.md`.
+- The packaged-release smoke test (`scripts/deployment/test_database_restore.py`) sets the
+  variable, and checks that a foreign Host gets 400 and a listed one 200. It runs only in the
+  Linux deployment container and was not run here.
+
+**2.3, Secure cookies.** `production.conf` sets `play.http.session.secure`,
+`play.http.flash.secure` and `play.i18n.langCookieSecure` (sign-in and the profile set
+`PLAY_LANG`).
+- The theme cookie follows the session's setting (`ThemeCookies`).
+- The CSRF token lives in the session, so there is no CSRF cookie.
+- The login page's `theme-switch.js` already sets `Secure` from the page's scheme.
+- Play needn't see the request as HTTPS to set the attribute. `play.http.forwarded.trustedProxies`
+  keeps Play's default (`127.0.0.1`, `::1`), so Play would believe an `X-Forwarded-Proto: https`
+  from Apache. Apache doesn't send one today (see the `absoluteURL` note in CLAUDE.md). Nothing
+  in production depends on `request.secure`: `GalleryController.thumbnailUrls` uses
+  `wlxjury.host`.
+
+**2.4, the CSP.** The policy (`conf/application.conf`):
+
+```
+default-src 'self'; script-src 'self' 'sha256-3mX0eBrNyY2mJrtf51OU6PnsrmuoX73+0Vh/ViinYqs=' 'sha256-JC+r7/1h2CV/BLGACtVSizzlXtFWiVQwoalmdJJrIY4='; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://*; media-src 'self' https://*; connect-src 'self' https://commons.wikimedia.org; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'
+```
+
+- **The two hashes** are the layout's theme script and the large views' restore (the same
+  text in `large` and `contestFile`). The new `views.InlineScriptHashesSpec` renders the layout,
+  the binary and rated large views and a contest file's large view. It hashes each inline
+  script (no `src`, not `application/json`) over its text, with CRLF and CR read as LF, as the
+  HTML parser gives it. It checks that each hash is in `script-src`, and that `script-src` has
+  no hash that no page renders. It also checks its hash function against the CSP spec's example.
+- **`.gitattributes`** has `app/views/** text eol=lf`. The index already held LF, so the commit
+  changes no template. The worktree's 80 templates were checked out again with LF.
+- **`'unsafe-eval'` is gone.** The harness found the one script that used it: unitegallery's
+  `initTheme` ran `eval("UGTheme_tiles")` to find its theme. Under the new policy that threw on
+  every gallery page (gallery, contestFiles). It now takes `window[name]`, and throws if the
+  theme isn't loaded (`986cdf97`). My first grep had missed it, because its pattern needed 50
+  characters before `eval` and the line is short. `ContentSecurityPolicySpec` now checks that no
+  file in `public/javascripts` calls `eval`, `new Function`/`Function(` or a timer with a
+  string. jQuery 3.7.1, Bootstrap 5.3.8's bundle and Tom Select 2.6.2 have none of these.
+  Swagger UI 5.18.3's bundles have only `Function("return this")()` fallbacks behind
+  `globalThis`/`self`, which a browser never reaches; the shots show no violation.
+- **`style-src 'self' 'unsafe-inline'` stays**, as the batch allows. unitegallery builds its
+  tiles' HTML with `style=` attributes (16 in `unitegallery.js`), and 6 template attributes
+  remain: the galleries' `display:none`, the pager's width, the previous-round filters and the
+  job status. Without `'unsafe-inline'` the browser would drop them, and `'unsafe-hashes'`
+  would need one hash per value.
+- **New directives:** `object-src 'none'`, `base-uri 'self'`, `form-action 'self'` and
+  `frame-ancestors 'none'` (matching Play's `X-Frame-Options: DENY`). `form-action 'self'` is
+  safe: every form posts to this host, there is no OAuth or Commons form, and every redirect
+  after a POST is local.
+- **Swagger UI at `/api/docs`:** Tapir's `index.html` (swagger-ui 5.18.3) has no inline script
+  or style. It loads `swagger-ui-bundle.js`, the preset and our `swagger-initializer.js` from
+  this host. The harness now shoots it (`api-docs`): the four operations and the schemas render
+  with no console error or violation.
+- **The harness's `--csp-strict`** used to append a second `script-src`, which a browser
+  ignores once the policy has its own. It now replaces `script-src` with `'self'`, so every
+  inline script is still reported.
+- **Deprecation:** Play logs that `play.filters.headers.contentSecurityPolicy` is deprecated in
+  favour of `play.filters.csp.CSPFilter`. Unchanged here; the policy is the same either way.
+
+**Checks** (through `scripts/agent-check.py`):
+- New and changed specs (`ContentSecurityPolicySpec`, `InlineScriptHashesSpec`,
+  `ProductionConfigSpec`, `AllowedHostsSpec`, `ReadinessControllerSpec`):
+  - first run: exit 1, a compile error (`NoMaterializer` is in
+    `org.apache.pekko.stream.testkit`; `20261102-011210-21772.log`);
+  - second run: 1 error, because the sign-in page needs a CSRF token in the request
+    (`20261102-011330-27856.log`);
+  - third run: exit 0, 35/35 (`20261102-011506-20260.log`).
+- After the unitegallery fix: `ContentSecurityPolicySpec` exit 0, 8/8
+  (`20261102-012709-23964.log`).
+- `Test/compile`, `Gatling/compile`, `views.*`, `ProductionConfigSpec`, `api.ApiSpec`,
+  `ReadinessControllerSpec`, `AllowedHostsSpec`, `LoginControllerSpec`, `ThemeSwitchSpec`,
+  `SecuredSpec`: exit 0, 259 passed (`20261102-013642-23032.log`).
+- Jest: exit 0, 18 suites, 240 tests (`javascript-test/target/checks/20261102-013853-14884.log`).
+- Full suite, the release boundary for B1–B5: `Test/compile` and `test` (Jest included): exit 0, Scala 1361 total, 1355 passed, 0 failed, 6 skipped, 1 pending; Jest 18 suites, 240 tests (`20261102-014027-14092.log`, 15 min).
+
+**Screenshots** (Chrome, `--start-server --csp`, light and dark, label `b5`):
+- First run: every gallery page had the page error "Evaluating a string as JavaScript violates
+  … 'unsafe-eval'". That covered the gallery with its pager and user menu, and contestFiles with
+  its region menu and marks. The cause was unitegallery's theme lookup, fixed above.
+- After the fix there is no CSP violation and no page error. The only console errors are the
+  404 pages' own 404.
+- Against `b3`, the 28 shared shots are identical in both modes. Against `b3-fix`, `contests`
+  and `contest-images` are identical (light).
+- `api-docs` is new. Swagger UI has no `data-bs-theme`, so the harness prints
+  "mode shown [None, None]" for it, as expected.
+
+**Deployment** (with this release):
+- Add `WLXJURY_ALLOWED_HOSTS` to `runtime.env` before installing the new `production.conf`. It
+  lists every jury `ServerName`, comma-separated. On WMUA's server that is the six in
+  `conf/apache/0002-wlxjury.conf`: `jury.wikilovesearth.org.ua`, `jury.wikilovesearth.org`,
+  `jury.wikilovesmonuments.org.ua`, `jury.wle.org.ua`, `jury.wlm.org.ua`,
+  `wlxjury.wikimedia.in.ua`.
+  - Without the variable the app doesn't start: readiness fails and maintenance stays on.
+  - A name left out answers 400 at its URLs, and `reopen`'s URL check names it.
+  - Older releases ignore the setting (their `application.conf` disables the filter), so a
+    restore to one works with the new file.
+- Cookies are `Secure`, so signing in over plain HTTP stops working. `jury.wikilovesearth.org`'s
+  HTTP vhost in `0002-wlxjury.conf` has no redirect to HTTPS. Check that it has an HTTPS vhost
+  and a redirect before this release.
+- `wlxjury-infra`'s templates (`production.conf.j2`, `runtime.env.j2`) need the same keys.
+  `wlxjury_hostnames` already lists the names.
+
+**Open questions**
+- `jury.wikilovesearth.org` over plain HTTP (above): for the user or `wlxjury-infra` to check.
+- Apache could send `X-Forwarded-Proto: https` from the HTTPS vhosts (infra), so that
+  `request.secure` and `absoluteURL` see HTTPS. This batch doesn't need it.
+- Left for later: moving the policy to `play.filters.csp` (the deprecation warning), and
+  dropping `'unsafe-inline'` from `style-src` (unitegallery's tiles).
