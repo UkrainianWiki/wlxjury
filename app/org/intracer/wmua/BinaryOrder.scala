@@ -53,8 +53,17 @@ object BinaryOrder {
 
   def parse(param: String): Option[BinaryOrder] = all.find(_.param == param)
 
-  /** The order stored with a round (`rounds.top_binary_order`): NULL, or a value no order has,
-    * is the default.
+  /** The round form's and the job settings' value for a top-N with no order stored
+    * (`rounds.top_binary_order` NULL: a round from before V72), picked by the rule of then: the
+    * rate sum of each previous round, below 0 as 0, over its jurors, or the approvals with
+    * "selected by at least" (`DistributionSource.ratedPage`). Shown for a round that has it,
+    * not offered for a new one.
     */
-  def ofStored(value: Option[String]): BinaryOrder = value.flatMap(parse).getOrElse(Default)
+  val LegacyParam = "legacy"
+
+  val LegacyMessageKey = s"binary.order.$LegacyParam"
+
+  /** The round form's top-N order: an order's value, else the default ([[LegacyParam]] is none). */
+  def ofForm(value: Option[String]): Option[BinaryOrder] =
+    if (value.contains(LegacyParam)) None else Some(value.flatMap(parse).getOrElse(Default))
 }

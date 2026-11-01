@@ -177,7 +177,8 @@ class RoundDistributionHandler @Inject() (
       coi = coi,
       rated = prev.flatMap(_ => round.prevSelectedBy.map(_ > 0)),
       topN = prev.flatMap(_ => round.topImages),
-      topOrder = prev.filter(_.isBinary).map(_ => round.topOrder),
+      // none for a round from before V72: the legacy rule, by the rate sum (ratedPage)
+      topOrder = prev.filter(_.isBinary).flatMap(_ => round.topBinaryOrder),
       categoryId =
         if (prevRounds.isEmpty) ContestJuryJdbc.findById(round.contestId).flatMap(_.categoryId) else None,
       denominator = prev match {

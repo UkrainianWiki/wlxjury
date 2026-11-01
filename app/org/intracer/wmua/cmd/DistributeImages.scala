@@ -156,8 +156,9 @@ class DistributeImages @Inject()(imageRepo: ImageRepo) extends Logging {
     // conditions, so any one of them is a valid context for rate scaling / gating.
     val prevRound = prevRounds.headOption
 
-    // a top-N from yes/no rounds is ranked by all their votes, whatever "selected by" reads
-    val binaryTop = prevRound.exists(_.isBinary) && selectTopByRating.isDefined
+    // a top-N from yes/no rounds is ranked by all their votes, whatever "selected by" reads;
+    // a round from before V72 (no order stored) by the legacy rule, the rate sum of the rows read
+    val binaryTop = prevRound.exists(_.isBinary) && selectTopByRating.isDefined && round.topBinaryOrder.isDefined
 
     val imagesAll: Seq[ImageWithRating] =
       if (prevRounds.isEmpty)
@@ -192,7 +193,7 @@ class DistributeImages @Inject()(imageRepo: ImageRepo) extends Logging {
       selectMinAvgRating =
         prevRound.flatMap(_ => selectMinAvgRating.filter(_ => !prevRound.exists(_.isBinary))),
       selectTopByRating = prevRound.flatMap(_ => selectTopByRating),
-      topOrder = round.topOrder,
+      topOrder = round.topBinaryOrder,
       selectedAtLeast = prevRound.flatMap(_ => selectedAtLeast),
       mpxAtLeast = mpxAtLeast,
       sizeAtLeast = sizeAtLeast,

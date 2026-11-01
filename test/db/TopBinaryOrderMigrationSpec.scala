@@ -8,7 +8,8 @@ import _root_.scalikejdbc._
 import java.nio.file.{Files, Paths}
 
 /** V72: the order of a round's top-N from a yes/no previous round, a nullable column added to
-  * the rounds, NULL the default order; additive, so rerunning it changes nothing.
+  * the rounds, NULL (a round from before it) the legacy rule; additive, so rerunning it changes
+  * nothing.
   */
 class TopBinaryOrderMigrationSpec extends Specification with TestDb with BeforeAll with BeforeEach {
   sequential
@@ -32,7 +33,7 @@ class TopBinaryOrderMigrationSpec extends Specification with TestDb with BeforeA
       } === Some(("varchar", "YES", None))
     }
 
-    "keep the rounds and their orders when run again, a round without one in the default order" in {
+    "keep the rounds and their orders when run again, a round without one by the legacy rule" in {
       implicit val contest: ContestJury = createContests(1).head
       val plain = roundDao.create(Round(None, 1, Some("Plain"), contest.getId, topImages = Some(5)))
       val chosen = roundDao.create(Round(None, 2, Some("Chosen"), contest.getId, topImages = Some(5),
@@ -40,7 +41,7 @@ class TopBinaryOrderMigrationSpec extends Specification with TestDb with BeforeA
       migrate()
       val stored = Seq(plain, chosen).map(r => roundDao.findById(r.getId).get)
       stored.map(_.topBinaryOrder) === Seq(None, Some(BinaryOrder.ApprovalsOnly))
-      stored.map(_.topOrder) === Seq(BinaryOrder.ApprovalsThenRejections, BinaryOrder.ApprovalsOnly)
+      stored.map(_.topOrderParam) === Seq(BinaryOrder.LegacyParam, BinaryOrder.ApprovalsOnly.param)
       stored.map(_.name) === Seq(Some("Plain"), Some("Chosen"))
     }
   }

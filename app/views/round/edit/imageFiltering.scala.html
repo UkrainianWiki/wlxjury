@@ -42,11 +42,14 @@
                 Symbol("_label") -> Messages("selected.by.at.least.x.jurors"),
                 Symbol("readonly") -> noEdit)
             @* the order that picks a top-N from a yes/no previous round, stored with the round, so
-               its page shows which rule picked its files and a later distribution picks the same *@
+               its page shows which rule picked its files and a later distribution picks the same;
+               the legacy rule only for a round from before V72 that has it *@
             @if(editRoundForm("topImages").value.exists(_.nonEmpty)) {
                 @bs.select(
                     editRoundForm("topBinaryOrder"),
-                    BinaryOrder.all.map(order => (order.param, Messages(order.messageKey))),
+                    BinaryOrder.all.map(order => (order.param, Messages(order.messageKey))) ++
+                        Option.when(editRoundForm("topBinaryOrder").value.contains(BinaryOrder.LegacyParam))(
+                            BinaryOrder.LegacyParam -> Messages(BinaryOrder.LegacyMessageKey)),
                     Symbol("_label") -> Messages("top.images.binary.order"),
                     Symbol("readonly") -> noEdit)
             }

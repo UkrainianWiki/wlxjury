@@ -62,7 +62,7 @@ class RoundService @Inject() (
     submitToken.flatMap(submitted(_, round.contestId)) match {
       case Some(existing) => resubmitted(existing)
       case None =>
-        val configuredRound = round.withFixedCategories.withCanonicalCategoryRule
+        val configuredRound = round.withFixedCategories.withCanonicalCategoryRule.withExplicitTopOrder
         RoundDistributionHandler.previousRounds(configuredRound)
         val jurors = User.loadJurors(round.contestId, jurorIds).distinct
         require(jurors.nonEmpty, "no jurors selected for the round; nothing to distribute")
@@ -167,7 +167,7 @@ class RoundService @Inject() (
             "prevSelectedBy" -> round.prevSelectedBy,
             "prevMinAvgRate" -> round.prevMinAvgRate,
             "topImages" -> round.topImages,
-            "topBinaryOrder" -> round.topBinaryOrder.map(_.param),
+            "topBinaryOrder" -> round.topImages.map(_ => round.topOrderParam),
             "regions" -> round.regions,
             "monuments" -> round.monuments,
             "category" -> round.category,

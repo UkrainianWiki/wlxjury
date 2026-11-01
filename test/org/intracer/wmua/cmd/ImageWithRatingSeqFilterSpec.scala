@@ -25,8 +25,8 @@ class ImageWithRatingSeqFilterSpec extends Specification {
       funGenerators(round, excludeJurorId = Set(4)) === Seq(ExcludeJurorId(Set(4)))
 
       funGenerators(round, selectTopByRating = Some(10)) === Seq(SelectTopByRating(10, round.get))
-      funGenerators(round, selectTopByRating = Some(10), topOrder = BinaryOrder.Difference) ===
-        Seq(SelectTopByRating(10, round.get, BinaryOrder.Difference))
+      funGenerators(round, selectTopByRating = Some(10), topOrder = Some(BinaryOrder.Difference)) ===
+        Seq(SelectTopByRating(10, round.get, Some(BinaryOrder.Difference)))
       funGenerators(round, selectedAtLeast = Some(2)) === Seq(SelectedAtLeast(2))
     }
 
@@ -49,7 +49,7 @@ class ImageWithRatingSeqFilterSpec extends Specification {
     val files = Seq(file(4, 2, 0), file(1, 3, 2), file(3, 3, 0), file(2, 2, 0))
 
     "be picked by the order, ties by page id, as the SQL ranking picks it" in {
-      def top(n: Int, order: BinaryOrder) = SelectTopByRating(n, binary, order)()(files).map(_.pageId)
+      def top(n: Int, order: BinaryOrder) = SelectTopByRating(n, binary, Some(order))()(files).map(_.pageId)
       top(4, BinaryOrder.ApprovalsThenRejections) === Seq(3, 1, 2, 4)
       top(4, BinaryOrder.Difference) === Seq(3, 2, 4, 1)
       top(4, BinaryOrder.ApprovalsOnly) === Seq(1, 3, 2, 4)

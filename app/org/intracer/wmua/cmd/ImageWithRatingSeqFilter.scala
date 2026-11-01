@@ -93,15 +93,18 @@ case class ExcludeJurorId(jurors: Set[Long]) extends ImageFilterGen {
 
 /** The `topN` best rated images of the previous `round`; a yes/no round's by `order` of their
   * approvals and rejections, ties by page id, as [[services.distribution.DistributionSource.rank]]
-  * ranks them.
+  * ranks them; with no order (a round from before V72) by the legacy rule, the rate sum.
   */
-case class SelectTopByRating(topN: Int, round: Round, order: BinaryOrder = BinaryOrder.Default) extends ImageFilterGen {
+case class SelectTopByRating(topN: Int, round: Round, order: Option[BinaryOrder] = Some(BinaryOrder.Default))
+    extends ImageFilterGen {
   def apply(): ImageFilter =
     (images: Seq[ImageWithRating]) =>
-      if (round.isBinary) {
-        import scala.math.Ordering.Implicits.seqOrdering
-        images.sortBy(i => (order.sortKey(i.approvals, i.rejections), i.pageId)).take(topN)
-      } else images.sortBy(-_.totalRate(round)).take(topN)
+      order.filter(_ => round.isBinary) match {
+        case Some(o) =>
+          import scala.math.Ordering.Implicits.seqOrdering
+          images.sortBy(i => (o.sortKey(i.approvals, i.rejections), i.pageId)).take(topN)
+        case None => images.sortBy(-_.totalRate(round)).take(topN)
+      }
 }
 
 case class SelectMinAvgRating(rate: BigDecimal, round: Round) extends ImageFilterGen {
@@ -166,7 +169,7 @@ object ImageWithRatingSeqFilter {
       excludeJurorId: Set[Long] = Set.empty,
       selectMinAvgRating: Option[BigDecimal] = None,
       selectTopByRating: Option[Int] = None,
-      topOrder: BinaryOrder = BinaryOrder.Default,
+      topOrder: Option[BinaryOrder] = Some(BinaryOrder.Default),
       selectedAtLeast: Option[Int] = None,
       mpxAtLeast: Option[Int] = None,
       sizeAtLeast: Option[Int] = None,

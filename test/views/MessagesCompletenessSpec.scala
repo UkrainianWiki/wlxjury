@@ -93,6 +93,7 @@ class MessagesCompletenessSpec extends Specification {
     MediaType.mediaTypes,
     CategoryOperation.values.map(_.labelKey),
     BinaryOrder.all.map(_.messageKey),                          // the navbar's and round form's binary orders
+    Seq(BinaryOrder.LegacyMessageKey),                          // the round form's top-N of a round from before V72
     LoginController.ErrorPageKeys.toSeq,
     Seq("round", "juror").flatMap(w => Seq(s"$w.start", s"$w.stop")), // snippets.startStop
     Seq("selected", "rejected", "unrated", "rated"),                   // voteMoved, navbar tabs

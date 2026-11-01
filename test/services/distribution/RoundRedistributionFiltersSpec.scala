@@ -148,15 +148,51 @@ class RoundRedistributionFiltersSpec extends Specification with TestDb with Befo
       )
       val inMemory = new DistributeImages(ImageJdbc)
       cases.zipWithIndex.map { case ((settings, expected), i) =>
-        val reference = inMemory.imagesByRound(roundDao.create(settings.copy(number = 99)), Seq(binary)).map(_.pageId).toSet
+        // a new round's submission stores the default order unless another is chosen
+        val submitted = settings.withExplicitTopOrder
+        val reference = inMemory.imagesByRound(roundDao.create(submitted.copy(number = 99)), Seq(binary)).map(_.pageId).toSet
         Round.setActive(binary.getId, active = true)
         val round = service.createNewRound(settings, jurors.map(_.getId))
         Round.setActive(binary.getId, active = true)
         val job = service.distributionJob(round.getId).get
         ((i, pageIds(round.getId), reference) === ((i, expected, expected))) and
           // stored with the round, recorded with its distribution
-          (roundDao.findById(round.getId).get.topBinaryOrder === settings.topBinaryOrder) and
-          ((job.params \ "settings" \ "topBinaryOrder").asOpt[String] === settings.topBinaryOrder.map(_.param)) and
+          (roundDao.findById(round.getId).get.topBinaryOrder === submitted.topBinaryOrder) and
+          (submitted.topBinaryOrder.isDefined === settings.topImages.isDefined) and
+          ((job.params \ "settings" \ "topBinaryOrder").asOpt[String] === submitted.topBinaryOrder.map(_.param)) and
+          (service.newFilesCount(round.getId) === 0L)
+      }.reduce(_ and _)
+    }
+
+    "pick the top-N of a round from before V72 (no order stored) by the legacy rate-sum rule" in {
+      implicit val contest: ContestJury = createContests(1).head
+      val jurors = createUsers("jury", 1, 2, 3, 4, 5)
+      addImages(contest, 1 to 3)
+      val service = TestRoundServices.roundService(TestRoundServices.handler(chunkRows = 3))
+      val source = Round(None, 0, Some("Source"), contest.getId, active = true)
+      val binary = service.createNewRound(source, jurors.map(_.getId))
+      // A (1): 3 approvals, 2 rejections (sum 1); B (2): 2 approvals (sum 2); C (3): 1 approval (sum 1)
+      val votes = Map(1L -> Seq(1, 1, 1, -1, -1), 2L -> Seq(1, 1, 0, 0, 0), 3L -> Seq(1, 0, 0, 0, 0))
+      for ((pageId, rates) <- votes; (juror, rate) <- jurors.zip(rates))
+        SelectionJdbc.rate(pageId, juror.getId, binary.getId, rate)
+
+      // as rounds stored before V72 are: a top-N and no order, filled by "Distribute new files"
+      val old = source.copy(previous = Some(binary.getId.toString), topImages = Some(1), number = 2)
+      val cases = Seq(
+        (old, Set(2L)), // the rate sum, where the default order picks A
+        (old.copy(prevSelectedBy = Some(1)), Set(1L)), // the approvals
+        (old.copy(topImages = Some(2)), Set(1L, 2L)) // ties (A, C: 1) by page id
+      )
+      val inMemory = new DistributeImages(ImageJdbc)
+      cases.zipWithIndex.map { case ((settings, expected), i) =>
+        val round = roundDao.create(settings)
+        round.addUsers(jurors.map(u => RoundUser(round.getId, u.getId, "jury", active = true)))
+        val reference = inMemory.imagesByRound(round, Seq(binary)).map(_.pageId).toSet
+        service.distributeNewImages(round.getId)
+        val job = service.distributionJob(round.getId).get
+        ((i, pageIds(round.getId), reference) === ((i, expected, expected))) and
+          (roundDao.findById(round.getId).get.topBinaryOrder must beNone) and
+          ((job.params \ "settings" \ "topBinaryOrder").asOpt[String] must beSome(BinaryOrder.LegacyParam)) and
           (service.newFilesCount(round.getId) === 0L)
       }.reduce(_ and _)
     }

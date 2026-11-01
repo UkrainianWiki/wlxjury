@@ -33,7 +33,8 @@ object EditRound {
 
   /** Extra fields live outside the 22-field mapping: category operation, conflicts of interest
     * and the order of a top-N from a yes/no previous round, kept only with a top-N (an unknown
-    * order is the default).
+    * order is the default; the legacy rule's value, shown for a round from before V72, is none,
+    * which a new round's submission makes the default: [[Round.withExplicitTopOrder]]).
     */
   private val categoryOperation = optional(text).verifying(
     "error.category.operation", _.forall(value => CategoryOperation.fromForm(value).isDefined))
@@ -60,9 +61,9 @@ object EditRound {
             excludeCategory = edit.round.excludeCategory.filter(_ => operation.requiresSecond))
       }
       edit.copy(round = configured.copy(excludeCoi = excludeCoi,
-        topBinaryOrder = edit.round.topImages.flatMap(_ => topOrder.map(o => BinaryOrder.ofStored(Some(o))))))
+        topBinaryOrder = edit.round.topImages.flatMap(_ => BinaryOrder.ofForm(topOrder))))
     })(edit => Some((edit, edit.round.excludeCoi, Some(edit.round.categoryRule.operation.formValue),
-      edit.round.topImages.map(_ => edit.round.topOrder.param))))
+      edit.round.topImages.map(_ => edit.round.topOrderParam))))
       .verifying(validCategories)
   )
 

@@ -56,7 +56,8 @@ case class Round(
     distributing: Boolean = false,
     freezeCount: Int = 0,
     excludeCoi: Boolean = false,
-    // the order of a top-N from a yes/no previous round; None: the default (V72)
+    // the order of a top-N from a yes/no previous round (V72); None (NULL, a round from before
+    // V72): the legacy rule (BinaryOrder.LegacyParam). A new round stores one (withExplicitTopOrder).
     topBinaryOrder: Option[BinaryOrder] = None,
     // a criteria round's criteria, read for its by-rate gallery (CriteriaRate.countOf);
     // otherwise those a distribution gives
@@ -113,8 +114,14 @@ case class Round(
 
   def regionIds: Seq[String] = regions.map(_.split(",").toSeq).getOrElse(Nil)
 
-  /** The order that picks a top-N from a yes/no previous round ([[topBinaryOrder]]). */
-  def topOrder: BinaryOrder = topBinaryOrder.getOrElse(BinaryOrder.Default)
+  /** [[topBinaryOrder]] as the round form and the job settings show it, the legacy rule's for none. */
+  def topOrderParam: String = topBinaryOrder.fold(BinaryOrder.LegacyParam)(_.param)
+
+  /** A new submission's top-N with an order stored, the default unless one was chosen: NULL is
+    * the legacy rule of the rounds from before V72. None without a top-N.
+    */
+  def withExplicitTopOrder: Round =
+    copy(topBinaryOrder = topImages.flatMap(_ => topBinaryOrder.orElse(Some(BinaryOrder.Default))))
 
   def categoryRule: CategoryRule = CategoryRule.fromStored(category, excludeCategory, categoryClause)
 

@@ -400,6 +400,7 @@ sort.rate=Par ma note
 binary.order.approvals=Approbations, puis le moins de rejets
 binary.order.difference=Approbations moins rejets
 binary.order.approvals-only=Approbations seulement
+binary.order.legacy=Ancienne règle : approbations moins rejets, sous 0 compté 0 (approbations seules avec « Sélectionné par au moins »)
 vote.moved=L''image notée ({0}) a changé de place selon sa note.
 vote.moved.out=L''image notée ({0}) n''est plus dans cette liste.
 vote.moved.view=La voir

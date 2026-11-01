@@ -402,6 +402,7 @@ sort.rate=By my rating
 binary.order.approvals=Approvals, then fewest rejections
 binary.order.difference=Approvals minus rejections
 binary.order.approvals-only=Approvals only
+binary.order.legacy=Legacy rule: approvals minus rejections, below 0 as 0 (approvals alone with “Selected by at least”)
 vote.moved=The image you rated ({0}) moved to its place by rating.
 vote.moved.out=The image you rated ({0}) is no longer in this list.
 vote.moved.view=View it

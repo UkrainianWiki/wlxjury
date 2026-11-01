@@ -8,7 +8,8 @@ import play.api.test.{Helpers, PlaySpecification}
 import scala.jdk.CollectionConverters._
 
 /** The round form's order of a top-N from a yes/no previous round (topBinaryOrder): offered with
-  * a top-N, the stored order selected (the default without one), and stored only with a top-N.
+  * a top-N, the stored order selected (the legacy rule, only for a round from before V72, without
+  * one), and stored only with a top-N.
   */
 class TopBinaryOrderChoiceSpec extends PlaySpecification {
   implicit val messages: play.api.i18n.Messages = Helpers.stubMessages()
@@ -36,10 +37,17 @@ class TopBinaryOrderChoiceSpec extends PlaySpecification {
 
   "the top-N order choices" should {
     "offer the three orders with a top-N, among the yes/no round's filters, the default selected" in {
-      val (options, selected) = choices(Some(10), None)
+      val (options, selected) = choices(Some(10), Some(BinaryOrder.Default))
       options === Seq("approvals" -> "binary.order.approvals", "difference" -> "binary.order.difference",
         "approvals-only" -> "binary.order.approvals-only")
       selected === Seq("approvals")
+    }
+
+    "show the legacy rule, selected, for a round from before V72 (no order stored)" in {
+      val (options, selected) = choices(Some(10), None)
+      options.map(_._1) === Seq("approvals", "difference", "approvals-only", "legacy")
+      options.last._2 === "binary.order.legacy"
+      selected === Seq("legacy")
     }
 
     "show the order a round's top-N was picked by" in {
@@ -52,11 +60,18 @@ class TopBinaryOrderChoiceSpec extends PlaySpecification {
   }
 
   "the top-N order field" should {
-    "store the chosen order with a top-N, none without one, the default for an unknown one" in {
+    "store the chosen order with a top-N, none without one, the default for a missing or unknown one" in {
       (bound("topImages" -> "5", "topBinaryOrder" -> "difference") must beSome(BinaryOrder.Difference: BinaryOrder)) and
-        (bound("topImages" -> "5") must beNone) and
+        (bound("topImages" -> "5") must beSome(BinaryOrder.Default)) and
         (bound("topBinaryOrder" -> "difference") must beNone) and
         (bound("topImages" -> "5", "topBinaryOrder" -> "nosuch") must beSome(BinaryOrder.Default))
+    }
+
+    "read the legacy rule as none, which a new round's submission makes the default" in {
+      val legacy = EditRound.editRoundForm.bind(base ++ Seq("topImages" -> "5", "topBinaryOrder" -> "legacy")).get.round
+      (legacy.topBinaryOrder must beNone) and
+        (legacy.withExplicitTopOrder.topBinaryOrder must beSome(BinaryOrder.Default)) and
+        (legacy.copy(topImages = None).withExplicitTopOrder.topBinaryOrder must beNone)
     }
   }
 }
