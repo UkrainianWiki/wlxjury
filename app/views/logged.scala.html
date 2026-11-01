@@ -1,6 +1,6 @@
 @import db.scalikejdbc.ContestJuryJdbc
 @import scalikejdbc.sqls
-@(user: db.scalikejdbc.User)(implicit messages: Messages, request: RequestHeader)
+@(user: db.scalikejdbc.User, backHere: Boolean = true)(implicit messages: Messages, request: RequestHeader)
 
 @if(user != null) {
     <ul class="navbar-nav">
@@ -41,11 +41,12 @@
                 <li><h6 class="dropdown-header" id="theme-switch-label">@Messages("theme")</h6></li>
                 <li>
                     @* the colour mode: a POST with the CSRF token that saves it in the user's row and
-                       the theme cookie, then comes back to this page (a GET's only) *@
+                       the theme cookie, then comes back to this page (a GET's only; not an error page,
+                       whose URL may carry text that must not show in it: the start page then) *@
                     @defining(controllers.Theme.of(request)) { current =>
                     <form method="post" action="@routes.UserController.setTheme()" class="navbar-menu-form" id="theme-switch" role="group" aria-labelledby="theme-switch-label">
                         @csrfField()
-                        @for(back <- controllers.Secured.safeLocalPath(Option.when(request.method == "GET")(request.uri))) {
+                        @for(back <- controllers.Secured.safeLocalPath(Option.when(backHere && request.method == "GET")(request.uri))) {
                             <input type="hidden" name="returnTo" value="@back">
                         }
                         @for(theme <- controllers.Theme.All) {

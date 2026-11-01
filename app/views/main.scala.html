@@ -12,7 +12,8 @@
         pager: Html = Html(""),
         rates: RateDistribution = new RateDistribution(Map.empty),
         contestId: Option[Long] = None,
-        filters: Html = Html(""))(content: Html)(implicit messages: Messages, request: RequestHeader)
+        filters: Html = Html(""),
+        backHere: Boolean = true)(content: Html)(implicit messages: Messages, request: RequestHeader)
 @layout(Messages(title), bodyClass = if (gallery) "gallery" else "") {
         <script type='text/javascript' src="@routes.Assets.versioned("javascripts/unitegallery.js")"></script>
         <link rel="stylesheet" href="@routes.Assets.versioned("stylesheets/unite-gallery.css")" type='text/css' />
@@ -46,7 +47,7 @@
         }
 } {
         @navbar(title, user, asUserId, selectedRound, rounds, list, pager,
-            contestId = contestId.orElse(selectedRound.map(_.contestId)), rates, filters)
+            contestId = contestId.orElse(selectedRound.map(_.contestId)), rates, filters, backHere)
 
      <div class="container-fluid" style="margin-left: 0; margin-right :0;">
 

@@ -1,13 +1,22 @@
 <!DOCTYPE html>
-<html lang="en" data-bs-theme="dark" style="height: 100%;">
+<html lang="en" data-theme-pref="auto" style="height: 100%;">
 <head>
 <meta charset="UTF-8">
+<script>
+(function () {
+var root = document.documentElement, query = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)');
+function apply() { if (root.getAttribute('data-theme-pref') === 'auto') root.setAttribute('data-bs-theme', query && query.matches ? 'dark' : 'light'); }
+apply();
+if (query) { if (query.addEventListener) query.addEventListener('change', apply); else if (query.addListener) query.addListener(apply); }
+})();
+</script>
 <meta http-equiv="X-UA-Compatible" content="IE=edge">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>gallery</title>
 <link rel="shortcut icon" type="image/png" href="/assets/images/favicon.png">
 <link rel="stylesheet" href="/webjars/bootstrap/5.3.8/css/bootstrap.min.css">
 <link rel="stylesheet" href="/webjars/bootstrap-icons/1.13.1/font/bootstrap-icons.min.css">
+<link rel="stylesheet" href="/assets/stylesheets/theme.css">
 <link rel="stylesheet" media="screen" href="/assets/stylesheets/main.css">
 <script type="text/javascript" src="/webjars/jquery/3.7.1/jquery.min.js"></script>
 <script src="/webjars/bootstrap/5.3.8/js/bootstrap.bundle.min.js"></script>

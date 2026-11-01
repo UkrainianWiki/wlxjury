@@ -87,6 +87,20 @@ class ThemeViewSpec extends PlaySpecification {
     }
   }
 
+  "the user menu's switch" should {
+    "come back to the page, but not to an error page's URL" in {
+      implicit val request: RequestHeader = FakeRequest("GET", "/gallery/round/1/user/1/page/2?sort=rate").withCSRFToken
+      contentAsString(views.html.main("gallery", juror, juror.getId)(Html(""))) must
+        contain("""name="returnTo" value="/gallery/round/1/user/1/page/2?sort=rate"""")
+
+      val errorRequest: RequestHeader = FakeRequest("GET", "/error?message=Account+suspended").withCSRFToken
+      val error = contentAsString(views.html.errorPage(Some(juror), "error.title", "error.unknown")(messages, errorRequest))
+      error must contain("""action="/theme"""")
+      error must not(contain("suspended"))
+      error must not(contain("""name="returnTo""""))
+    }
+  }
+
   "the parser" should {
     "take light, dark and auto only" in {
       Theme.parse("light") === Theme.Light

@@ -10,7 +10,8 @@
         pager: Html = Html(""),
         contestId: Option[Long] = None,
         rates: RateDistribution = new RateDistribution(Map.empty),
-        filters: Html = Html(""))(implicit messages: Messages, request: RequestHeader)
+        filters: Html = Html(""),
+        backHere: Boolean = true)(implicit messages: Messages, request: RequestHeader)
 
 @* The viewer's own gallery: the page's list if it is that, else where they start in its round *@
 @ownList(l: RoundList) = @{
@@ -162,6 +163,6 @@
             @filters
             @pager
         </ul>
-        @logged(user)
+        @logged(user, backHere)
     </div>
 </nav>
