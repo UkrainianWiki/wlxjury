@@ -198,7 +198,10 @@ class GalleryController @Inject() (
           showAuthor))
 
       case GalleryView.Gallery | GalleryView.ByRate =>
-        Ok(RequestTiming.render(views.html.galleryByRate(user, list, files, pager, rounds, menu, rates)))
+        // a criteria round's stars count its criteria: read once for the page
+        val shown = if (!round.hasCriteria) list
+          else list.withRound(round.copy(criteriaCount = CriteriaRate.countOf(round.getId).getOrElse(round.criteriaCount)))
+        Ok(RequestTiming.render(views.html.galleryByRate(user, shown, files, pager, rounds, menu, rates)))
     }
   }
 

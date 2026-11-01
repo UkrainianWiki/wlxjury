@@ -454,6 +454,28 @@ class LargeImageSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
+    "draw each file's stars in the by-rate gallery for the round's criteria: two of ten stars each" in {
+      testDbApp { app =>
+        val (mine, others, other) = setUpCriteria()
+        // the other juror's selection rated in both criteria too, as a distribution gives them
+        val othersSelection = SelectionJdbc.findBy(others.pageId, other.getId, round.getId).get
+        DB.autoCommit { implicit s =>
+          sql"INSERT INTO criteria_rate (id, selection, criteria, rate) VALUES (4, ${othersSelection.getId}, 2, 0)"
+            .update()
+        }
+        // the file's rate, the sum of its criteria's: 3 + 4
+        CriteriaRate.updateRate(SelectionJdbc.findBy(mine.pageId, user.getId, round.getId).get.getId, 1, 3)
+        val page = route(app, FakeRequest(GET, s"/byrate/round/${round.getId}/user/${user.getId}/page/1")
+          .withHeaders(ACCEPT -> "text/html")
+          .withSession(Secured.UserName -> email, Secured.CurrentContestId -> contest.getId.toString)).get
+        status(page) === OK
+        val tile = org.jsoup.Jsoup.parse(contentAsString(page)).getElementById(mine.pageId.toString)
+        tile.select(".rate-stars i.wlx-star").size === 20
+        // the rate as 7 of the 20 stars
+        tile.select(".rate-stars i.bi-star-fill").size === 7
+      }
+    }
+
     "show no criteria rates for a selection without them" in {
       testDbApp { app =>
         implicit val materializer: Materializer = app.materializer
