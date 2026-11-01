@@ -266,18 +266,23 @@ class GalleryController @Inject() (
     }
 
   def selectWS(roundId: Long, pageId: Long, select: Int): EssentialAction =
-    // a tile's vote, sent by script: JSON answers (401, 403 with the denial's reference, 409)
-    // that the gallery explains (vote-errors.js)
+    // a tile's vote, sent by script: JSON answers (401, 403 with the denial's reference, 409,
+    // 400 for a rate the round doesn't take) that the gallery explains (vote-errors.js). It
+    // changes only the juror's own selection of the file in the round (SelectionJdbc.rate), so
+    // a file not assigned to them changes nothing.
     withAuthJson(
       roundPermission(
         User.ADMIN_ROLES ++ User.JURY_ROLES ++ User.ORG_COM_ROLES,
         roundId
       )
     ) { user => implicit request =>
+    val round = Round.findById(roundId)
     // Votes only in a round open to its jurors: not in a stopped round, a previous round
     // frozen while a distribution reads its votes, or a round still being distributed.
-    if (!Round.findById(roundId).exists(_.openToJurors))
+    if (!round.exists(_.openToJurors))
       Conflict(play.api.libs.json.Json.obj("error" -> "round_closed"))
+    else if (!round.exists(_.acceptsRate(select)))
+      BadRequest(play.api.libs.json.Json.obj("error" -> "invalid_rate"))
     else {
       SelectionJdbc.rate(
         pageId = pageId,

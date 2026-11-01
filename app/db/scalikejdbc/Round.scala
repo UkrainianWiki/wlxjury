@@ -81,6 +81,23 @@ case class Round(
 
   def isBinary: Boolean = rates.id == Round.binaryRound.id
 
+  /** A rate's stored units per star: 2 in a half-star round (a half star is 1), else 1. */
+  def starUnits: Int = if (rates.id > 5 && halfStar) 2 else 1
+
+  /** The highest rate the stars give, in stored units: all of them (a half-star 1-7 round
+    * draws 3 stars, so 6).
+    */
+  def maxRate: Int = rates.id / starUnits * starUnits
+
+  /** A juror's vote the round takes, in its stored units: -1, 0 or 1 in a binary round; 0
+    * (unrated) or from a half star or a star up to [[maxRate]] in a rated one, also for each
+    * criterion; none in a comments-only round.
+    */
+  def acceptsRate(rate: Int): Boolean =
+    if (isBinary) rate >= -1 && rate <= 1
+    else if (rates.id == Round.commentsOnlyRound.id) false
+    else rate == 0 || (rate >= rates.minRate && rate <= maxRate)
+
   def numberOfStars: Int =
     (if (rates.id <= 5 || !halfStar) rates.id
      else rates.id / 2) * (if (hasCriteria) (if (!id.contains(1327)) 4 else 2) else 1)

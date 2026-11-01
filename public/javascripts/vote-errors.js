@@ -10,6 +10,8 @@
  *                                              token is stale, or the session is gone
  *     403 {error: "forbidden", reference}      a denial (Secured.onUnAuthorizedJson)
  *     409 {error: "round_closed"}              the round is not open for voting
+ *     400 {error: "invalid_rate"}              a rate the round doesn't take (a page from
+ *                                              before the round's rates changed)
  *   anything else is a generic failure, with the reference if the body has one.
  * voteErrorTexts(el) – the texts from the element's data attributes.
  */
@@ -21,6 +23,7 @@ function voteErrorMessage(status, body, texts) {
     // the filter's CSRF failure, also when the body is not JSON; a denial has a reference
     if (status === 403 && error !== "forbidden") return texts.expired;
     if (status === 409) return texts.closed;
+    if (status === 400 && error === "invalid_rate") return texts.invalidRate;
     return reference ? texts.failed + " " + texts.reference.replace("{0}", reference) : texts.failed;
 }
 
@@ -33,6 +36,7 @@ function voteErrorTexts(el) {
         signedOut: text("signed-out", "You have been signed out. Sign in again and reload the page."),
         expired: text("expired", "This page has expired. Reload it and vote again."),
         closed: text("closed", "This round is closed for voting."),
+        invalidRate: text("invalid-rate", "This round doesn't take that rate. Reload the page and vote again."),
         failed: text("failed", "Your vote could not be saved. Try again."),
         reference: text("reference", "Reference: {0}"),
         loginUrl: text("login-url", "")

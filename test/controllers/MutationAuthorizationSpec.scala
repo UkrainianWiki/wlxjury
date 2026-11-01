@@ -128,6 +128,160 @@ class MutationAuthorizationSpec extends PlaySpecification with PlayTestDb {
     }
   }
 
+  // A vote's rate and file, the gallery's (selectWS, JSON) and the large view's (rateByPageId, a
+  // page or a redirect): only a rate the round takes (Round.acceptsRate), stored in the
+  // juror's own selection of the file; a file not assigned to the juror changes nothing.
+  "a juror's vote, in the gallery and the large view" should {
+    val pageId = 1010L
+
+    /** A contest, its juror and a file. */
+    def setUp(): User = {
+      val contest = contestDao.create(None, "WLE", 2024, "Ukraine")
+      imageDao.batchInsert(Seq(image(pageId, "UA-1010")))
+      userDao.create(User("Juror", "juror@example.com", None, Set("jury"), contestId = contest.id))
+    }
+
+    /** A round of the juror's contest, of `rates` (half stars if `half`), the juror's selection
+      * of the file there rated `rate`. */
+    def roundOf(juror: User, rates: db.scalikejdbc.Rates, half: Boolean = false, active: Boolean = true,
+        rate: Int = 0): Round = {
+      val round = roundDao.create(
+        Round(None, 1, contestId = juror.contestId.get, rates = rates, halfStar = half, active = active))
+      round.addUsers(Seq(RoundUser(round.getId, juror.getId, "jury", active = true)))
+      SelectionJdbc.create(pageId, rate, juror.getId, round.getId)
+      round
+    }
+
+    def stored(round: Round, juror: User, file: Long = pageId) =
+      SelectionJdbc.findBy(file, juror.getId, round.getId).map(_.rate)
+
+    def gallery(app: Application, round: Round, juror: User, rate: Int, file: Long = pageId) = {
+      implicit val materializer: Materializer = app.materializer
+      galleryController(app).selectWS(round.getId, file, rate)
+        .apply(sessionRequest(POST, s"/rate/round/${round.getId}/pageid/$file/select/$rate", juror.email)).run()
+    }
+
+    def large(app: Application, round: Round, juror: User, rate: Int, file: Long = pageId,
+        criteria: Option[Int] = None) = {
+      implicit val materializer: Materializer = app.materializer
+      largeViewController.rateByPageId(round.getId, file, rate, criteria = criteria)
+        .apply(sessionRequest(POST, s"/large/round/${round.getId}/pageid/$file/select/$rate", juror.email)).run()
+    }
+
+    /** The gallery's answer to `rate` and the stored rate then; the same for the large view;
+      * the file unrated before each. */
+    def both(app: Application, round: Round, juror: User, rate: Int) = {
+      SelectionJdbc.rate(pageId, juror.getId, round.getId, 0)
+      val inGallery = status(gallery(app, round, juror, rate))
+      val afterGallery = stored(round, juror)
+      SelectionJdbc.rate(pageId, juror.getId, round.getId, 0)
+      val inLarge = status(large(app, round, juror, rate))
+      (inGallery, afterGallery, inLarge, stored(round, juror))
+    }
+
+    "take -1, 0 and 1 in a binary round, and refuse 2" in {
+      testDbApp { app =>
+        val juror = setUp()
+        val round = roundOf(juror, Round.binaryRound)
+        both(app, round, juror, 1) === ((OK, Some(1), SEE_OTHER, Some(1)))
+        both(app, round, juror, -1) === ((OK, Some(-1), SEE_OTHER, Some(-1)))
+        both(app, round, juror, 0) === ((OK, Some(0), SEE_OTHER, Some(0)))
+        both(app, round, juror, 2) === ((BAD_REQUEST, Some(0), BAD_REQUEST, Some(0)))
+        (contentAsJson(gallery(app, round, juror, 2)) \ "error").as[String] === "invalid_rate"
+        contentAsString(large(app, round, juror, 2)) must contain("vote.error.invalid.rate")
+      }
+    }
+
+    "take 0 and 1..5 in a 1-5 round, and refuse 6 and negative rates" in {
+      testDbApp { app =>
+        val juror = setUp()
+        val round = roundOf(juror, Round.ratesById(5))
+        both(app, round, juror, 0) === ((OK, Some(0), SEE_OTHER, Some(0)))
+        both(app, round, juror, 1) === ((OK, Some(1), SEE_OTHER, Some(1)))
+        both(app, round, juror, 5) === ((OK, Some(5), SEE_OTHER, Some(5)))
+        both(app, round, juror, 6) === ((BAD_REQUEST, Some(0), BAD_REQUEST, Some(0)))
+        both(app, round, juror, -1) === ((BAD_REQUEST, Some(0), BAD_REQUEST, Some(0)))
+        both(app, round, juror, 99) === ((BAD_REQUEST, Some(0), BAD_REQUEST, Some(0)))
+      }
+    }
+
+    "take half stars in a half-star round, in its stored units, up to all its stars" in {
+      testDbApp { app =>
+        val juror = setUp()
+        // 1-10 in half stars: five stars, a half star stored as 1, all five as 10
+        val round = roundOf(juror, Round.ratesById(10), half = true)
+        both(app, round, juror, 1) === ((OK, Some(1), SEE_OTHER, Some(1)))
+        both(app, round, juror, 10) === ((OK, Some(10), SEE_OTHER, Some(10)))
+        both(app, round, juror, 11) === ((BAD_REQUEST, Some(0), BAD_REQUEST, Some(0)))
+        // 1-7 in half stars draws three stars: 6 at most
+        val odd = roundOf(juror, Round.ratesById(7), half = true)
+        both(app, odd, juror, 6) === ((OK, Some(6), SEE_OTHER, Some(6)))
+        both(app, odd, juror, 7) === ((BAD_REQUEST, Some(0), BAD_REQUEST, Some(0)))
+      }
+    }
+
+    "take no votes in a comments-only round" in {
+      testDbApp { app =>
+        val juror = setUp()
+        val round = roundOf(juror, Round.commentsOnlyRound)
+        both(app, round, juror, 0) === ((BAD_REQUEST, Some(0), BAD_REQUEST, Some(0)))
+        both(app, round, juror, 1) === ((BAD_REQUEST, Some(0), BAD_REQUEST, Some(0)))
+      }
+    }
+
+    "check a criterion's rate as the file's" in {
+      testDbApp { app =>
+        val juror = setUp()
+        val round = roundOf(juror, Round.ratesById(10))
+        status(large(app, round, juror, 11, criteria = Some(1))) === BAD_REQUEST
+        status(large(app, round, juror, 10, criteria = Some(1))) === SEE_OTHER
+      }
+    }
+
+    "change nothing in a stopped round: 409 in the gallery, back to the gallery from the large view" in {
+      testDbApp { app =>
+        val juror = setUp()
+        val round = roundOf(juror, Round.ratesById(5), active = false, rate = 2)
+        status(gallery(app, round, juror, 4)) === CONFLICT
+        val fromLarge = large(app, round, juror, 4)
+        status(fromLarge) === SEE_OTHER
+        redirectLocation(fromLarge) must beSome.which(_.startsWith(s"/gallery/round/${round.getId}/"))
+        stored(round, juror) === Some(2)
+      }
+    }
+
+    "change only the juror's own selection: none for a file not assigned to them, another's kept" in {
+      testDbApp { app =>
+        val juror = setUp()
+        val round = roundOf(juror, Round.ratesById(5), rate = 2)
+        val other = userDao.create(User("Other", "other@example.com", None, Set("jury"), contestId = juror.contestId))
+        round.addUsers(Seq(RoundUser(round.getId, other.getId, "jury", active = true)))
+        imageDao.batchInsert(Seq(image(1011L, "UA-1011")))
+        SelectionJdbc.create(1011L, 3, other.getId, round.getId)
+
+        // answered as a vote, but stored nowhere: the juror has no selection of the file
+        status(gallery(app, round, juror, 5, file = 1011L)) === OK
+        status(large(app, round, juror, 4, file = 1011L)) === SEE_OTHER
+        stored(round, juror, 1011L) must beNone
+        stored(round, other, 1011L) === Some(3)
+        stored(round, juror) === Some(2)
+      }
+    }
+
+    "refuse another contest's juror, changing nothing" in {
+      testDbApp { app =>
+        val juror = setUp()
+        val round = roundOf(juror, Round.ratesById(5), rate = 2)
+        val foreign = contestDao.create(None, "WLM", 2024, "Poland")
+        val outsider = userDao.create(User("Outsider", "outsider@example.com", None, Set("jury"), contestId = foreign.id))
+        status(gallery(app, round, outsider, 4)) === FORBIDDEN
+        status(large(app, round, outsider, 4)) === FORBIDDEN
+        stored(round, juror) === Some(2)
+        stored(round, outsider) must beNone
+      }
+    }
+  }
+
   "JobController" should {
     "let only the admins of the job's contest see, cancel or retry it" in {
       testDbApp { app =>
