@@ -364,7 +364,7 @@ class ImageDistributorSpec extends Specification with TestDb with Mockito
         val gotPageIds =
           selectionDao.findAll().filter(_.roundId == created.getId).map(_.pageId).toSet
         gotPageIds === expected
-        SelectionJdbc.imageCountByRound(created.getId) === expected.size.toLong
+        ImageJdbc.imageCountByRounds(Seq(created.getId)).values.sum.toLong === expected.size.toLong
 
         roundDao.findById(r1.getId).get.active === false
         roundDao.findById(r2.getId).get.active === false
@@ -394,14 +394,14 @@ class ImageDistributorSpec extends Specification with TestDb with Mockito
           ),
           juryIds
         )
-        SelectionJdbc.imageCountByRound(created.getId) === 4L
+        ImageJdbc.imageCountByRounds(Seq(created.getId)).values.sum.toLong === 4L
         roundService.distributeNewImages(created.getId) === 0
 
         // a straggler is selected in the (now inactive) previous round
         SelectionJdbc.rate(images(4).pageId, juryIds.head, r1.getId, 1)
 
         roundService.distributeNewImages(created.getId) === 1
-        SelectionJdbc.imageCountByRound(created.getId) === 5L
+        ImageJdbc.imageCountByRounds(Seq(created.getId)).values.sum.toLong === 5L
         roundService.distributeNewImages(created.getId) === 0
       }
     }
