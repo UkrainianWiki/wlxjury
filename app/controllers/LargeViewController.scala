@@ -22,20 +22,21 @@ class LargeViewController @Inject() (
   implicit val iwrWrites: OWrites[ImageWithRating] =
     Json.writes[ImageWithRating]
 
+  /** A round's file in the large view; never cached, as it shows votes ([[noStore]]). */
   def large(asUserId: Long, pageId: Long, region: String = "all", roundId: Long): EssentialAction =
-    withAuth() { sessionUser => implicit request =>
+    noStore(withAuth() { sessionUser => implicit request =>
       val maybeRound =
         if (roundId == 0) Round.activeRounds(sessionUser).headOption
         else Round.findById(roundId)
       // a round of another of the user's contests opens in that contest
       val user = maybeRound.fold(sessionUser)(r => Secured.inContest(sessionUser, r.contestId))
       Secured.switchingContest(sessionUser, user)(show(pageId, user, asUserId, region, roundId, maybeRound))
-    }
+    })
 
   def largeCurrentUser(pageId: Long, region: String = "all"): EssentialAction =
-    withAuth() { user => implicit request =>
+    noStore(withAuth() { user => implicit request =>
       show(pageId, user, user.getId, region, 0, Round.activeRounds(user).headOption)
-    }
+    })
 
   /** A vote in the large view, going on in its list ([[RoundList.voteUrl]]): to the file after
     * this one (before the vote), or the one before at the list's end; to the same file in a

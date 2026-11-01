@@ -193,4 +193,32 @@ class GalleryOrderSpec extends PlaySpecification with PlayTestDb {
       }
     }
   }
+
+  "the pages with a juror's votes" should {
+    // Back after a vote loads them again instead of showing the old votes from a cache
+    "never be cached: the galleries, the file list and the large view" in {
+      testDbApp { implicit app =>
+        val f = fixture()
+        val (r, u, p) = (f.round.getId, f.juror.getId, f.pageIds.head)
+        val binary = {
+          val round = roundDao.create(Round(None, 2, None, f.contest.getId, rates = Round.binaryRound, active = true))
+          round.addUsers(Seq(RoundUser(round.getId, u, "jury", active = true)))
+          selectionDao.batchInsert(Seq(Selection(p, u, round.getId, 0)))
+          round.getId
+        }
+        Seq(
+          s"/gallery/round/$binary/user/$u/page/1",
+          s"/gallery/round/$r/user/$u/page/1",
+          s"/byrate/round/$r/user/$u/page/1",
+          s"/query?module=byrate&round=$r&user=$u",
+          s"/filelist/round/$r/user/$u/page/1",
+          s"/large/round/$r/user/$u/pageid/$p",
+          s"/large/round/$binary/user/$u/pageid/$p"
+        ).map { path =>
+          val result = get(path, f)
+          (path, status(result), header(CACHE_CONTROL, result)) === ((path, OK, Some("no-store")))
+        }.reduce(_ and _)
+      }
+    }
+  }
 }

@@ -95,7 +95,8 @@ class GalleryController @Inject() (
     }
 
   /** A round's list (the user's active round's for round 0) at a page, or at the page with a
-    * file; an unknown view (`/query?module=`) a page that does not exist.
+    * file; an unknown view (`/query?module=`) a page that does not exist. Never cached, as it
+    * shows votes ([[noStore]]).
     */
   def listGeneric(
       view: Option[GalleryView],
@@ -103,7 +104,7 @@ class GalleryController @Inject() (
       at: Either[Int, Long],
       region: String = "all",
       roundId: Long = 0
-  ): EssentialAction = withAuthOn(blocking)() { sessionUser => implicit request =>
+  ): EssentialAction = noStore(withAuthOn(blocking)() { sessionUser => implicit request =>
     val maybeRound =
       if (roundId == 0) Round.activeRounds(sessionUser).headOption
       else Round.findById(roundId)
@@ -117,7 +118,7 @@ class GalleryController @Inject() (
     } { round =>
       Secured.switchingContest(sessionUser, user)(gallery(user, view, asUserId, at, region, round))
     }
-  }
+  })
 
   private def gallery(
       user: User,

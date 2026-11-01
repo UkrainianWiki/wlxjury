@@ -192,6 +192,17 @@ abstract class Secured(cc: ControllerComponents) extends AbstractController(cc) 
       }(ec)
     }
 
+  /** `action` with `Cache-Control: no-store`, for the pages that show votes (the galleries and
+    * the large view): Back after a vote must load the page again, not bring it back with the
+    * votes it had from the back/forward cache, or from the HTTP cache, which Back uses even
+    * when stale. This keeps these pages out of the back/forward cache; reloading a page
+    * restored from it (`pageshow`) instead would flash the old votes first, and miss a page
+    * Back takes from the HTTP cache.
+    */
+  def noStore(action: EssentialAction): EssentialAction = EssentialAction { request =>
+    action(request).map(_.withHeaders(CACHE_CONTROL -> "no-store"))(ExecutionContext.parasitic)
+  }
+
   private def permitted(user: User, permission: Permission): Option[User] = Secured.permitted(user, permission)
 
   def rolePermission(roles: Set[String]): Secured.RolePermission = Secured.RolePermission(roles)
