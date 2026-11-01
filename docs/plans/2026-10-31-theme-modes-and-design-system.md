@@ -551,3 +551,115 @@ mapping), the current round on the round stat page shown active instead of bold.
   controllers.RoundEditPageSpec controllers.PrevRoundHiddenInputSpec` 0 (28 passed);
   `testOnly controllers.CoiAuthorizationSpec controllers.MultiContestUserSpec
   controllers.SignOutAndSwitchSpec` 0 (39 passed). Jest not rerun (multi-select.js unchanged).
+
+## Phase 3 results (light / dark / auto)
+
+Commits `0272bfc9..` on `ukwikidev/theme-modes` (after `1ddf679e`). Not yet reviewed.
+
+### What changed
+
+- **Mode resolution (`app/controllers/Theme.scala`):** `Theme` = `Light | Dark | Auto`
+  (`value`, a Bootstrap Icons `icon`); `Theme.parse` takes exactly `light`, `dark` and `auto`,
+  anything else (cookie, DB, form) is `Auto`; `Theme.of(request)` reads the `theme` cookie.
+  `ThemeCookies` (injected `SessionConfiguration`) writes it: `SameSite=Lax`, `Secure` when
+  `play.http.session.secure` is, path `/`, a year, not HttpOnly. `LoginController` and
+  `UserController` take it as a third constructor argument with a default
+  (`ThemeCookies.default`), so the specs that build them with `new` still compile.
+- **Every shell:** `layout.scala.html` has no `theme` parameter any more; it renders
+  `<html data-bs-theme="light|dark" data-theme-pref="light|dark">` for an explicit mode, and for
+  auto `data-theme-pref="auto"` without `data-bs-theme`. Right after `<meta charset>`, before
+  any stylesheet, a 5-line inline script sets `data-bs-theme` from
+  `matchMedia('(prefers-color-scheme: dark)')` while `data-theme-pref` is `auto` and follows its
+  `change` event (rendered on every page; it does nothing for an explicit mode). Only the fixed
+  strings reach the page. The gallery/large-view forced dark and the navbar's own dark are gone:
+  the navbar is `bg-body-tertiary border-bottom`.
+- **`public/stylesheets/theme.css`** (after Bootstrap, before `main.css`): per mode under
+  `:root, [data-bs-theme=light]` / `[data-bs-theme=dark]`: `--wlx-image-bg` (#e3e3e3 / #303030),
+  `--wlx-thumb-failed-bg` and `-mark`, `--wlx-current-bg` (the large view's current thumbnail),
+  `--wlx-deleted`, `--wlx-selected` / `--wlx-rejected` (#146c43 / #b02a37 light, #75b798 /
+  #ea868f dark, at least 4.5:1 on the navbar), `--wlx-nav-active-bg`. `main.css` has no hex
+  colour left: `body.gallery`, the vote tabs, the active tab, `.current`, the comments (`.msg`,
+  `.comment-header`, `.imageComment` now on `--bs-*` colours), `.bs-callout-info`, the failed and
+  deleted marks. Templates: the `#CCCCCC` table backgrounds (contests, rounds, users) and the four
+  inline `alert-danger` colours removed, `style="color: red"` → `text-danger`, the white rank
+  texts (galleryByRate, galleryByRateRegions, showRate) inherit the body colour. The gallery vote
+  frames (`ug-theme-tiles.js`) use `var(--wlx-selected)`, `var(--wlx-rejected)` and
+  `var(--bs-secondary-color)` instead of limegreen / brown / white; the gallery init sets
+  `tile_enable_background: false` (unitegallery wrote an inline `#F0F0F0`, which also beat
+  main.css's failed-thumbnail grey). Loaders: the only one shown, unitegallery's tiles preloader
+  (a dark grey spinner), is inverted in dark mode by CSS; the `loader-black/white` GIFs belong to
+  the slider and lightbox, which the tiles theme doesn't open. Vendor CSS untouched.
+- **Storage:** `V71__Users_add_theme.sql` adds `users.theme VARCHAR(8) NULL`. Decided: all three
+  values are stored as chosen, NULL means never chosen (auto); signing in sets the cookie from a
+  non-NULL value (`auto` too) and leaves the browser's cookie alone for NULL. `User.theme` (last
+  field, default None) is read and written by the mapper and `create`; `User.updateTheme(id,
+  Theme)` writes only one of the three values.
+- **Profile (`editUser`):** a `bs.select` of the three modes on the user's own profile only (an
+  empty column preselects the browser's current mode). `UserController.updateUser` stores it and
+  sets the cookie only for the own profile and only for one of the three values; another user's
+  form has no field, and an admin saving it changes neither that user's mode nor the admin's
+  cookie.
+- **Switch in the user menu (`logged.scala.html`):** a POST form to `/theme`
+  (`UserController.setTheme`, `withAuth(_ => true)`: any signed-in user, root or without a
+  contest) with `csrfField`, a hidden `returnTo` (a GET's own URI through
+  `Secured.safeLocalPath`) and three submit buttons as dropdown items, the current one `active`
+  with `aria-pressed`. The action stores the mode in the session user's row only, sets the
+  cookie, and redirects to `returnTo` if it passes `safeLocalPath`, else to the start page. An
+  invalid or missing value: a redirect, nothing stored, no cookie. It never touches the session
+  (no contest switch). On an error page the form has no `returnTo` (`main(backHere = false)` from
+  `errorPage`), because the error URL may carry text that must not appear in the page
+  (`LoginControllerSpec`'s "never the link's text" caught it); the switch then goes to the start
+  page.
+- **Login page switch:** a `btn-group` of three `type="button"` buttons (`data-theme-value`) and
+  `public/javascripts/theme-switch.js`: it sets the cookie in the browser (`Path=/`, `Max-Age` a
+  year, `SameSite=Lax`, `Secure` on an https page, since the browser can't see the server's
+  session config), `data-theme-pref` and `data-bs-theme` at once, and marks the pressed button.
+  It sends no request.
+- **Messages:** `theme`, `theme.light`, `theme.dark`, `theme.auto` (System / Système / Як у
+  системі / Как в системе) in en, fr, uk, ru. Fixed ru `all.selected = Выбраны все` and
+  `full.name = Полное имя` (`11df6a66`).
+- **Screenshot harness:** `--mode light,dark,auto` in one server run (light/dark: the `theme`
+  cookie in the browser context; auto: no cookie and Playwright's `color_scheme` = `--scheme`,
+  dark by default); each shot prints and checks the `data-bs-theme`/`data-theme-pref` it got. New
+  shots: `users-usermenu`, `contestfiles-marks`, `contestfile-large-marks` (a script marks tiles
+  and thumbnails deleted or failed, which the fixture has none of).
+
+### Checks
+
+| Command | Exit | Result |
+|---|---|---|
+| `Test/compile` after each code commit | 0 | |
+| `testOnly views.ThemeViewSpec views.LayoutSpec controllers.ThemeSwitchSpec db.scalikejdbc.UserDbSpec` (first) | 1 | 32 total: 3 mistakes in the new spec (DB read before awaiting a result, a GET without a CSRF token, a per-test app not truncated); fixed |
+| the same (final) | 0 | 32 passed |
+| `testOnly views.* controllers.* db.scalikejdbc.*` | 1 | 683 total, 5 failed: `LargeViewFixturesSpec` ×4 (fixtures stale after the `<head>` change; regenerated), `LoginControllerSpec` "never the link's text" (the theme form's `returnTo` on the error page; fixed, see above) |
+| `testOnly views.ThemeViewSpec controllers.LoginControllerSpec` | 0 | 23 passed |
+| `FIXTURES_UPDATE=true … testOnly views.LargeViewFixturesSpec` | 0 | 4 passed, fixtures rewritten (the head script, `data-theme-pref`, `theme.css`) |
+| `npm test` (javascript-test) | 0 | 9 suites, 119 tests (new `theme-switch.test.js`: the login switch and the layout's auto script, read from the template) |
+| **full suite**: `Test/compile` + `test` | 0 | **1119 total, 0 failed, 0 errors** (1113 passed, 6 skipped, 1 pending); Jest within it 119 passed |
+
+The DB specs ran V71 on the shared Testcontainer's fresh database. The screenshot server
+rebuilt the Gatling fixture cache (`data/cache/`, keyed by the migrations) because of V71.
+
+### Screenshots
+
+**Incomplete.** `shoot --label phase3 --mode light,dark,auto --start-server --csp` was stopped by
+Claude Code while the system was low on memory (sbt, the server JVM, MariaDB and Chrome at
+once), after three light shots (`target/ui-shots/phase3/light/login.png`, `error404-anon.png`,
+`gallery.png`). It was not restarted. Those three look right: the light navbar with readable
+vote tabs (selected green, rejected red, "All" active on a grey background), the pager, the
+photos on the light grey, the login page's switch with Light pressed. No dark or auto shot was
+taken, so the dark mode's contrast (tables, forms, dropdowns, Tom Select, the large view's
+buttons, raty stars, comments, thumbs bar, the marks) and a no-flash check in a real browser are
+still to do. The script order (the auto script first in `<head>`, before every `<link>`) is
+checked by `ThemeViewSpec` for every shell.
+
+### Open questions
+
+- Screenshots in dark and auto (and the rest of light) need a run when memory allows.
+- Where the switch lives: in the user menu (after Profile, before Sign out) as three menu items,
+  and under the login form as a small button group; the profile page has the select too. Not on
+  the sign-up page or the signed-out error pages.
+- The login page's script marks the cookie `Secure` by the page's scheme, not by the server's
+  session config; the server-set cookie follows the config.
+- `auto` is stored explicitly (not as NULL): choosing System on one device makes signing in on
+  another use System too. NULL only for users who never chose.
