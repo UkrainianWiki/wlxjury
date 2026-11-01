@@ -36,10 +36,16 @@ class StartStopViewSpec extends PlaySpecification {
       }
     }
 
-    "show the state by colour only where it has no text" in {
-      button(active = true, withText = false, "juror").hasClass("btn-outline-danger") must beTrue
-      button(active = false, withText = false, "juror").hasClass("btn-outline-success") must beTrue
-      button(active = true, withText = true, "round").hasClass("btn-outline-secondary") must beTrue
+    "be grey in both variants, the state shown by the icon and the name, not by colour" in {
+      for {
+        (what, withText) <- Seq("round" -> true, "juror" -> false)
+        active           <- Seq(true, false)
+      } yield {
+        val b = button(active, withText, what)
+        (b.hasClass("btn-outline-secondary") must beTrue) and
+          (b.className must not(contain("danger"))) and (b.className must not(contain("success"))) and
+          (b.select(if (active) "i.bi-stop-fill" else "i.bi-play-fill").size must_== 1)
+      }
     }
 
     "have its names in every language" in {
