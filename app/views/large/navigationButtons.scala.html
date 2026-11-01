@@ -74,7 +74,7 @@
        @defining(if (round.rates.id > 5 && round.halfStar) 2 else 1) { k =>
        @round.criteriaNames.zipWithIndex.map { case (criteriaName, index) =>
            <div>@criteriaName</div>
-           @rateNumber(s"rate-number${index + 1}", byCriteria.toSeq.sorted.lift(index).fold(0)(_._2 / k))
+           @rateNumber(s"rate-number${index + 1}", byCriteria.toSeq.sorted.lift(index).fold(0.0)(_._2.toDouble / k))
            <div id="rate-image@(index + 1)" class="large-stars"></div>
        }
        }

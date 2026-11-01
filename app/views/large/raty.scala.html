@@ -55,7 +55,7 @@
         @for((rateId, index) <- byCriteria.keys.toSeq.sorted.zipWithIndex) {
         var number@(index+1) = wlxLargeRate.number(document.getElementById('rate-number@(index+1)'), @(k == 2));
         $('#rate-image@(index+1)').raty({
-            score: @{byCriteria.getOrElse(rateId, 0)/k},
+            score: @{byCriteria.getOrElse(rateId, 0).toDouble / k},
             half: @(k == 2),
             cancel: true,
             number: @(round.rates.id / k),

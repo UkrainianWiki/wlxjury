@@ -31,6 +31,8 @@ object LargeViewRenders {
   val halfStarRound: Round = ratedRound.copy(rates = Round.ratesById(10), halfStar = true)
   val criteriaRound: Round =
     ratedRound.copy(hasCriteria = true, criteriaNames = Seq("Quality", "Composition"))
+  /** [[criteriaRound]] in half stars, rated 1..10 per criterion. */
+  val halfStarCriteriaRound: Round = criteriaRound.copy(rates = Round.ratesById(10), halfStar = true)
 
   /** 13 files, page ids 101..113: the middle index 6 has distinct Up / Down / Page Up /
     * Page Down / Home / End targets (102 and 111 for the pages, 101 and 113 for the ends).
@@ -77,14 +79,15 @@ object LargeViewRenders {
       rated: Map[Int, Int] = Map.empty,
       module: String = "gallery",
       rate: Option[Int] = None,
-      cookies: Seq[Cookie] = Nil
+      cookies: Seq[Cookie] = Nil,
+      criteriaRates: Option[Map[Int, Int]] = None
   ): String = {
     val fs = files(rated)
     implicit val req: Request[AnyContentAsEmpty.type] =
       request(s"/large/round/${round.getId}/user/$asUserId/pageid/${fs(index).pageId}", cookies)
     implicit val msgs: Messages = messages
     implicit val flash: Flash = Flash()
-    val byCriteria = if (round.hasCriteria) Map(1 -> 2, 2 -> 3) else Map.empty[Int, Int]
+    val byCriteria = criteriaRates.getOrElse(if (round.hasCriteria) Map(1 -> 2, 2 -> 3) else Map.empty[Int, Int])
     val list = RoundList(round, asUserId, filter = rate.fold[VoteFilter](VoteFilter.All)(VoteFilter.ofRate),
       view = GalleryView.parse(module).get)
     views.html.large.large(

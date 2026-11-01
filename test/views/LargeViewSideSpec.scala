@@ -120,6 +120,28 @@ class LargeViewSideSpec extends Specification {
     }
   }
 
+  "a criteria round's numbers above the stars" should {
+
+    /** Each criterion's number above its stars, and the score its stars are drawn from. */
+    def criteria(html: String): Seq[(String, String)] = {
+      val doc = Jsoup.parse(html)
+      (1 to 2).map { i =>
+        val score = raw"(?s)#rate-image$i'\)\.raty\(\{\s*score: ([0-9.]+),".r
+          .findFirstMatchIn(html).fold("")(_.group(1))
+        doc.getElementById(s"rate-number$i").text -> score
+      }
+    }
+
+    "show a half star's rate in half stars: 7 as 3.5, 6 as 3" in {
+      criteria(large(halfStarCriteriaRound, middle, criteriaRates = Some(Map(1 -> 7, 2 -> 6)))) ===
+        Seq("3.5" -> "3.5", "3" -> "3.0")
+    }
+
+    "show a whole-star round's rates as stored" in {
+      criteria(large(criteriaRound, middle)) === Seq("2" -> "2.0", "3" -> "3.0")
+    }
+  }
+
   "the side sections' headings" should {
 
     "be in every language" in {
