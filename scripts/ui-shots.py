@@ -25,10 +25,11 @@ Compare two labels (writes diff images to target/ui-shots/diff/<a>-vs-<b>/<mode>
 
     target/ui-venv/Scripts/python scripts/ui-shots.py diff baseline phase1
 
-Images from Commons (thumbnails, the image proxy, and the "/<width>px-" URLs of the fixture's
-images, which have no URL) are replaced by one fixed placeholder, so
-the shots don't depend on the network; any other request to another host is blocked and
-listed (the pages load everything from this host since Phase 1).
+Images from Commons (upload.wikimedia.org and the image proxy's /wikipedia/commons/thumb/...,
+which the fixture's images use since UiShotsServer sets their Commons URLs, and the
+"/<width>px-" URLs of images without one) are replaced by one fixed placeholder, so the shots
+don't depend on the network; any other request to another host is blocked and listed (the
+pages load everything from this host since Phase 1).
 """
 import argparse
 import io
@@ -210,7 +211,7 @@ def shoot_mode(args, mode):
 
         def route(r):
             url = urlparse(r.request.url)
-            # the fixture's images have no URL, so the pages ask for "/<width>px-"
+            # Commons and the image proxy; "/<width>px-": an image without a URL
             if ("/wikipedia/commons/" in url.path or url.hostname.endswith("wikimedia.org")
                     or re.match(r"^/\d+px-", url.path)):
                 return r.fulfill(status=200, content_type="image/png", body=png)

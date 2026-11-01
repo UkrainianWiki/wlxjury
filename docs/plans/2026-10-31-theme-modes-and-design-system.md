@@ -297,7 +297,8 @@ reviewed.
   file list, large views, 404) or the organizer (byrate, contest files and file, round stat,
   rounds, editRound, users, editUser), signed out for login and the anonymous 404, and saves
   `target/ui-shots/<label>/light/<page>.png` (1366 px wide, full page up to 4000 px). Commons
-  images, and the fixture's URL-less `/<width>px-` images, get one fixed placeholder; other
+  images (upload.wikimedia.org and the image proxy's `/wikipedia/commons/thumb/...`), and
+  `/<width>px-` images without a URL, get one fixed placeholder; other
   external hosts are allowed only for the old CDNs and listed. `diff A B` writes red-marked diff
   images to `target/ui-shots/diff/A-vs-B/light/`.
 - Two baseline runs at `f9c31ce5` were pixel-identical (14 of 14), so any difference is real.
@@ -305,6 +306,34 @@ reviewed.
   admin (403, `permission_check_failed`, `targetContestId=unknown`) although the session's
   contest is set; the navbar links pass the id, so the harness does too. Not investigated
   further (outside this phase).
+
+### Running the fixture locally
+
+The same server, to try the app by hand (Docker running; the first start restores the
+fixture from `data/cache/`, or builds it, which takes several minutes). From Git Bash:
+
+```bash
+java -Xmx512m -Dfile.encoding=UTF-8 -jar 'C:/Program Files (x86)/sbt/bin/sbt-launch.jar' \
+  'set Test / javaOptions ++= Seq("-Xmx1g", "-Dfile.encoding=UTF-8")' \
+  'set Test / unmanagedClasspath += Attributed.blank((Assets / packageBin).value)' \
+  'set Test / javaOptions += "-Dui.csp=production"' \
+  'Test/runMain gatling.setup.UiShotsServer'
+```
+
+The third `set` is optional: the production content security policy, as `ui-shots.py --csp`.
+When `target/ui-shots/server.json` appears, open its `baseUrl` (a free port) and sign in as
+`organizer@gatling.test` / `orgpass` (admin of contest 1) or a juror `jurorN@gatling.test` /
+`passN` (`server.json` names one with files in both rounds; round 1 is binary, round 2 rated).
+Create `target/ui-shots/server.stop` to stop it: it stops the app and the container and
+deletes both files. `ui-shots.py shoot --start-server` uses the same two files, so stop a
+server started by hand first, or shoot without `--start-server` against it. While that sbt
+runs, another sbt in the checkout needs `-Dsbt.server.forcestart=true`.
+
+The fixture's CSV has no file URLs, so the server first sets each image's URL from its title,
+as the Commons API gives it (`CommonsFileUrl`), in its own container only (the dump and the
+Gatling runs keep none). Thumbnails then come through the image proxy, and the large view from
+upload.wikimedia.org: they need the network. A file deleted on Commons since the CSV shows no
+thumbnail, and the proxy marks it deleted when asked for it, as in production.
 
 ### What changed
 
