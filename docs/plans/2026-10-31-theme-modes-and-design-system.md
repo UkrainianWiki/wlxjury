@@ -1069,6 +1069,6 @@ Left for separate branches; none blocks merging this one.
 Also from the aggregate plan's decision 4 (1a2564a9): the round form's "selected by at least
 X jurors" without a plain 0, its empty choice named as no filter, a stored 0 kept as a legacy
 choice. And the size filters' labels made parallel, in the UI's units (6a5114c5): "Minimum
-resolution (Mpx)" / "Minimum file size (MB)". Left open: `LargeViewFixturesSpec` fails on all
-six fixtures since 17a4ea57 (they have `data-theme-pref="auto"`, the render is dark); they
-need regenerating (`FIXTURES_UPDATE=true`).
+resolution (Mpx)" / "Minimum file size (MB)". `LargeViewFixturesSpec` had failed on all
+six fixtures since 17a4ea57 (the dark default changed their `<html>` line); regenerated
+(9dcbd9e8), Jest 203/203.
