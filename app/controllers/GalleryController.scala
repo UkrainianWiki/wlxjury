@@ -202,7 +202,9 @@ class GalleryController @Inject() (
         // a criteria round's stars count its criteria: read once for the page
         val shown = if (!round.hasCriteria) list
           else list.withRound(round.copy(criteriaCount = CriteriaRate.countOf(round.getId).getOrElse(round.criteriaCount)))
-        Ok(RequestTiming.render(views.html.galleryByRate(user, shown, files, pager, rounds, menu, rates)))
+        // the by-rate gallery's ranks among all the list's files, as a file list's (one grouped count)
+        val ranks = if (list.view == GalleryView.ByRate) list.ranks(files) else Nil
+        Ok(RequestTiming.render(views.html.galleryByRate(user, shown, files, pager, rounds, menu, rates, ranks)))
     }
   }
 

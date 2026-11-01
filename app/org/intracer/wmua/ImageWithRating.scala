@@ -10,8 +10,6 @@ case class ImageWithRating(
     image: Image,
     selection: Seq[Selection],
     countFromDb: Int = 0,
-    rank: Option[Int] = None,
-    rank2: Option[Int] = None,
     approvalsFromDb: Option[Int] = None,
     rejectionsFromDb: Option[Int] = None
 ) extends Ordered[ImageWithRating] {
@@ -38,14 +36,11 @@ case class ImageWithRating(
     ownJuryRating.rate = rate
   }
 
-  def rankStr: String = (
-    for (r1 <- rank; r2 <- rank2)
-      yield if (r1 != r2) s"$r1-$r2." else s"$r1."
-  ).orElse(
-    for (r1 <- rank)
-      yield s"$r1."
-  ).getOrElse("")
-
+  /** The file's average rate: a rated round's [[rateSum]] over its jurors. A binary round's is
+    * the legacy rule of a top-N from it (max(approvals − rejections, 0) over its assigned
+    * jurors, `SelectTopByRating` without an order); its lists read [[approvals]] and
+    * [[rejections]].
+    */
   def totalRate(round: Round): Double =
     if (selection.size == 1 && selection.head.juryId != 0)
       selection.head.rate
@@ -54,6 +49,12 @@ case class ImageWithRating(
     else
       rateSum.toDouble / ratedJurors(round)
 
+  /** A rated round's rate sum: its votes' rates, any below 0 as 0; of a grouped row (all the
+    * jurors' votes together, one selection with their sum) that sum. Binary code counts
+    * [[approvals]] and [[rejections]] instead: of a binary round's grouped row this is
+    * max(approvals − rejections, 0), of its vote rows the approvals, or of the rows a
+    * distribution's "selected by at least" reads (rate > 0, `SelectedAtLeast`) the approvals.
+    */
   def rateSum: Int =
     selection.foldLeft(0)((acc, s) => acc + Math.max(s.rate, 0))
 

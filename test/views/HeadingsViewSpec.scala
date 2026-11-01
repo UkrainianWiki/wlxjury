@@ -32,7 +32,7 @@ class HeadingsViewSpec extends PlaySpecification {
 
   private val files = (0 until 3).map { i =>
     ImageWithRating(Image(pageId = 201L + i, title = s"File:Image ${201 + i}.jpg"),
-      selection = Seq(Selection(201L + i, juror.getId, ratedRound.getId, i + 1)), rank = Some(i + 1))
+      selection = Seq(Selection(201L + i, juror.getId, ratedRound.getId, i + 1)))
   }
 
   "a page" should {

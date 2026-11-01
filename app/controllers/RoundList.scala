@@ -213,7 +213,7 @@ final case class RoundList(
   def files(pager: Pager): Seq[ImageWithRating] =
     query.copy(limit = Some(Limit(Some(pager.pageSize), Some(pager.offset)))).list()
 
-  /** The ranks of a page of a file list's files among all the list's files ([[rankKey]]). */
+  /** The ranks of a page of the list's files among all of them ([[rankKey]]): a file list's, a by-rate gallery's. */
   def ranks(files: Seq[ImageWithRating]): Seq[String] = {
     val ranks = Ranks(query.keyCounts(rankKey.columns))
     files.map(file => ranks(rankKey.values(file)))
