@@ -1,7 +1,9 @@
 // The votes on the juror's own gallery tiles (ug-theme-tiles.js), sent by script to
 // GalleryController.selectWS with the page's CSRF token; a failed one explained by
-// vote-errors.js. A rated round's tiles get stars (raty, as the large view's,
-// large/raty.scala.html), drawn from the file's stored rate (data-rate); a click votes, the
+// vote-errors.js. A binary round's tile shows the file's vote as a frame (main.css:
+// selected, rejected, none unrated) from its stored rate (data-rate) on, with the thumb of
+// that vote pressed, as a click on it undoes the vote. A rated round's tiles get stars (raty,
+// as the large view's, large/raty.scala.html), drawn from the stored rate; a click votes, the
 // stars showing the new rate at once and the previous one again if the vote fails. The tile
 // stays where it is, also in a gallery ordered by rate: only a reload orders it again.
 (function () {
@@ -32,6 +34,41 @@
     var texts = voteErrorTexts(document.querySelector('[data-csrf-token]'));
     window.alert(voteErrorMessage(jqXHR.status, jqXHR.responseJSON || null, texts));
     if (jqXHR.status === 401 && texts.loginUrl) window.location.href = texts.loginUrl;
+  }
+
+  /** A binary round's `rate` on the tile: its frame, and its thumbs pressed or not. */
+  function showVote(tile, rate) {
+    rate = +rate || 0;
+    tile.classList.toggle('wlx-tile-selected', rate === 1);
+    tile.classList.toggle('wlx-tile-rejected', rate === -1);
+    pressed(tile.querySelector('.ug-icon-select'), rate === 1);
+    pressed(tile.querySelector('.ug-icon-reject'), rate === -1);
+  }
+
+  function pressed(icon, on) {
+    if (icon) icon.setAttribute('aria-pressed', String(on));
+  }
+
+  /** A binary round's tile as the page loads: its thumbs toggle buttons, named by the page's
+    * texts (data-vote-selected / -rejected), and the file's stored vote. */
+  function addVote(tile, item) {
+    var holder = document.querySelector('[data-csrf-token]');
+    [['.ug-icon-select', 'selected'], ['.ug-icon-reject', 'rejected']].forEach(function (thumb) {
+      var icon = tile.querySelector(thumb[0]);
+      if (!icon) return;
+      icon.setAttribute('role', 'button');
+      var label = holder && holder.getAttribute('data-vote-' + thumb[1]);
+      if (label) icon.setAttribute('aria-label', label);
+    });
+    showVote(tile, item.rate);
+  }
+
+  /** A binary round's vote: shown once stored, explained if it fails. */
+  function vote(tile, item, rate) {
+    return send(item, rate).done(function () {
+      item.rate = rate;
+      showVote(tile, rate);
+    }).fail(explain);
   }
 
   /** Draws `stars` (0: none) on raty's element `el`. */
@@ -92,7 +129,9 @@
     return el;
   }
 
-  window.wlxTileVotes = { voteUrl: voteUrl, send: send, explain: explain, addStars: addStars };
+  window.wlxTileVotes = {
+    voteUrl: voteUrl, send: send, explain: explain, addVote: addVote, vote: vote, addStars: addStars
+  };
 
   if (typeof module !== 'undefined') module.exports = window.wlxTileVotes;
 })();

@@ -183,6 +183,34 @@ a.wlx-large-failed img {
     white-space: nowrap;
     cursor: pointer;
 }
+/* A binary round's vote on the juror's own gallery tiles (tile-votes.js), from the file's
+   stored vote at load: a frame over the tile's edge, so that no tile or image moves when a
+   vote changes it; none unrated. Saturated colours (theme.css --wlx-vote-*) with an inner line
+   that parts the frame from a photo as dark or as bright as it is. The thumb of the vote the
+   file has (aria-pressed) is ringed in its colour: a click on it undoes the vote. */
+.ug-thumb-wrapper.ug-tile.wlx-tile-selected::before, .ug-thumb-wrapper.ug-tile.wlx-tile-rejected::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    border: 4px solid var(--wlx-vote-selected);
+    box-shadow: inset 0 0 0 1px var(--wlx-vote-line);
+    z-index: 4;
+    pointer-events: none;
+}
+.ug-thumb-wrapper.ug-tile.wlx-tile-rejected::before {
+    border-color: var(--wlx-vote-rejected);
+}
+.ug-thumb-wrapper.ug-tile .ug-tile-icon[aria-pressed=true] {
+    border-radius: 6px;
+    background-color: rgba(var(--bs-body-bg-rgb), .85);
+    box-shadow: 0 0 0 3px var(--wlx-vote-selected);
+}
+.ug-thumb-wrapper.ug-tile .ug-tile-icon.ug-icon-reject[aria-pressed=true] {
+    box-shadow: 0 0 0 3px var(--wlx-vote-rejected);
+}
 /* The read-only large view's thumbnails (large/contestFile.scala.html): the link fills the
    box, so a thumbnail that failed to load, hidden, still opens its file; that one is the
    same grey box. */

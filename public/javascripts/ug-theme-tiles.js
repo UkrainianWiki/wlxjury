@@ -121,8 +121,14 @@ function UGTheme_tiles(){
 		g_tiles.setHtml(g_objTilesWrapper);
 		g_lightbox.putHtml();
 
-		//wlxjury: a rated round's stars on the juror's own tiles (main.scala.html's wlx_stars:
-		//their number and half stars), tile-votes.js
+		//wlxjury: a binary round's votes on the juror's own tiles, from the files' stored ones,
+		//and a rated round's stars (main.scala.html's wlx_stars: their number and half stars),
+		//tile-votes.js
+		if(g_options.jury && g_options.binary){
+			g_objTilesWrapper.find(".ug-tile").each(function(){
+				wlxTileVotes.addVote(this, g_objTileDesign.getItemByTile(jQuery(this)));
+			});
+		}
 		if(g_options.wlx_stars){
 			g_objTilesWrapper.find(".ug-tile").each(function(){
 				wlxTileVotes.addStars(this, g_objTileDesign.getItemByTile(jQuery(this)), g_options.wlx_stars);
@@ -224,30 +230,9 @@ function UGTheme_tiles(){
 		}
 	}
 
-	//a binary round's vote, sent by tile-votes.js
+	//a binary round's vote, shown on the tile once stored (tile-votes.js)
 	function serviceCall(objItem, rate, objTile) {
-
-		wlxTileVotes.send(objItem, rate).done(function() {
-
-			var border = 3;
-			var color;
-
-			// the mode's colours (theme.css), readable on the light and the dark grey
-			if (rate == 1) color = "var(--wlx-selected)";
-			else if (rate == -1) color = "var(--wlx-rejected)";
-			else if (rate == 0) color = "var(--bs-secondary-color)";
-
-			objItem.rate = rate;
-
-			var objCss = {};
-
-			objCss["border-width"] = border + "px";
-			objCss["border-style"] = "solid";
-			objCss["border-color"] = color;
-
-			objTile.css(objCss);
-
-		}).fail(wlxTileVotes.explain);
+		wlxTileVotes.vote(objTile[0], objItem, rate);
 	}
 
 
