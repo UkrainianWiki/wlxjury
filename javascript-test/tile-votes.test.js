@@ -6,8 +6,8 @@
 // The stars on a rated round's gallery tiles (tile-votes.js, raty as the pages load it): drawn
 // from the file's stored rate, a click voting by script (the vote URL, the rate in stored
 // units, the CSRF header) and showing the new stars at once; a failed vote showing the
-// previous stars again and explained (vote-errors.js); a click on them never reaching the tile,
-// which opens the large view. Which galleries get stars at all: views.GalleryTileStarsViewSpec.
+// last stored stars again and explained (vote-errors.js); a click while a vote is pending
+// sending nothing; a click on them never reaching the tile, which opens the large view. Which galleries get stars at all: views.GalleryTileStarsViewSpec.
 // A binary round's tiles: their frames and pressed thumbs from the stored vote at load, and
 // after a vote. The juror's own by-rate list: the same stars per file in place of the static
 // ones, a vote updating the rate text in place and marking the file changed (its place and
@@ -136,6 +136,34 @@ describe("a rated round's tile stars", () => {
         expect(drawn(el)).toBe(".....");
     });
 
+    test("ignore a second click while a vote is pending, showing the pending stars", () => {
+        const { el, item } = stars(1);
+        star(el, 3).trigger("click");
+        expect(el.getAttribute("aria-busy")).toBe("true");
+        star(el, 5).trigger("click");
+        expect(requests).toHaveLength(1);
+        expect(drawn(el)).toBe("***..");
+
+        requests[0].answer.resolve("success");
+        expect(el.hasAttribute("aria-busy")).toBe(false);
+        expect(item.rate).toBe(3);
+        star(el, 5).trigger("click");
+        expect(requests).toHaveLength(2);
+        expect(requests[1].options.url).toBe("/rate/round/2/pageid/101/select/5");
+    });
+
+    test("show the last stored stars again if a later vote fails, not those at load", () => {
+        const { el, item } = stars(1);
+        star(el, 3).trigger("click");
+        requests[0].answer.resolve("success");
+        star(el, 5).trigger("click");
+        requests[1].answer.reject({ status: 500 });
+        $(el).trigger("mouseleave");
+        expect(drawn(el)).toBe("***..");
+        expect(item.rate).toBe(3);
+        expect(el.hasAttribute("aria-busy")).toBe(false);
+    });
+
     test("keep their clicks from the tile, which opens the large view", () => {
         const opened = jest.fn();
         $(document.body).on("click", ".ug-tile", opened); // as unitegallery delegates it
@@ -196,6 +224,19 @@ describe("a binary round's tile", () => {
             expect(shown()).toEqual([frame, up, down]);
             expect(item.rate).toBe(rate);
         });
+
+    test("sends no second vote while one is pending", () => {
+        const item = binaryTile(0);
+        expect(vote(tile(), item, 1)).not.toBeNull();
+        expect(tile().getAttribute("aria-busy")).toBe("true");
+        expect(vote(tile(), item, -1)).toBeNull();
+        expect(requests).toHaveLength(1);
+        requests[0].answer.resolve("success");
+        expect(tile().hasAttribute("aria-busy")).toBe(false);
+        expect(shown()).toEqual(["selected", "true", "false"]);
+        vote(tile(), item, -1);
+        expect(requests).toHaveLength(2);
+    });
 
     test("keeps the stored vote shown if a vote fails, and says why", () => {
         const item = binaryTile(1);
@@ -290,6 +331,22 @@ describe("the juror's by-rate list", () => {
         expect(boxes[0].classList.contains("wlx-rate-changed")).toBe(false);
         expect(boxes[0].hasAttribute("title")).toBe(false);
         expect(hint().hidden).toBe(false);
+    });
+
+    test("updates the text once per stored vote, a click while one is pending sending nothing", () => {
+        const boxes = byRateList([3]);
+        const el = listStars(boxes[0]);
+        star(el, 5).trigger("click");
+        star(el, 1).trigger("click");
+        expect(requests).toHaveLength(1);
+        requests[0].answer.resolve("success");
+        expect(rateText(boxes[0])).toBe("5");
+        star(el, 1).trigger("click");
+        requests[1].answer.reject({ status: 500 });
+        $(el).trigger("mouseleave");
+        expect(rateText(boxes[0])).toBe("5");
+        expect(drawn(el)).toBe("*****");
+        expect(boxes[0].classList.contains("wlx-rate-changed")).toBe(true);
     });
 
     test("keeps the text, the mark and the stars if a vote fails, and says why", () => {

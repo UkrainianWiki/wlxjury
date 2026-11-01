@@ -4,7 +4,9 @@
 // selected, rejected, none unrated) from its stored rate (data-rate) on, with the thumb of
 // that vote pressed, as a click on it undoes the vote. A rated round's tiles get stars (raty,
 // as the large view's, large/raty.scala.html), drawn from the stored rate; a click votes, the
-// stars showing the new rate at once and the previous one again if the vote fails. The tile
+// stars showing the new rate at once and the last stored one again if the vote fails. While a
+// tile's vote is pending (aria-busy) its further clicks are ignored, so the votes on a file are
+// sent one at a time and stored in the order shown. The tile
 // stays where it is, also in a gallery ordered by rate: only a reload orders it again. The
 // juror's own by-rate list (galleryByRate.scala.html) gets the same stars per file, its rate
 // text following the vote and the file marked changed, as its rank and place are stale.
@@ -65,12 +67,29 @@
     showVote(tile, item.rate);
   }
 
-  /** A binary round's vote: shown once stored, explained if it fails. */
+  /** Marks `el` busy while its vote is pending, or not. */
+  function busy(el, on) {
+    if (on) el.setAttribute('aria-busy', 'true');
+    else el.removeAttribute('aria-busy');
+  }
+
+  function isBusy(el) {
+    return el.getAttribute('aria-busy') === 'true';
+  }
+
+  /** A binary round's vote: shown once stored, explained if it fails; none sent while one on
+    * the tile is pending (null then). */
   function vote(tile, item, rate) {
+    if (isBusy(tile)) return null;
+    busy(tile, true);
     return send(item, rate).done(function () {
+      busy(tile, false);
       item.rate = rate;
       showVote(tile, rate);
-    }).fail(explain);
+    }).fail(function (jqXHR) {
+      busy(tile, false);
+      explain(jqXHR);
+    });
   }
 
   /** Draws `stars` (0: none) on raty's element `el`. */
@@ -84,12 +103,14 @@
    * half star stored as 1), with raty's cancel icon to unrate. The same icons as the large
    * view's, without tooltips; each star 1em wide (main.css .wlx-tile-stars), the width raty
    * finds the half by. A click on them never reaches the tile, which opens the large view.
-   * `voted`, if given, is called with the rate once it is stored.
+   * `voted`, if given, is called with the rate once it is stored. While a vote is pending the
+   * stars show its rate and ignore clicks; a failed one shows the last stored rate again.
    */
   function addStars(tile, item, options, voted) {
     var $ = window.jQuery;
     var units = options.half ? 2 : 1;
     var current = (+item.rate || 0) / units;
+    var stored = current; // the stars of the rate the server last confirmed
     var el = $('<div class="wlx-tile-stars"></div>')
       .css('--wlx-tile-stars', options.number + 1)
       .on('click', function (e) { e.stopPropagation(); })
@@ -113,18 +134,25 @@
       score: current,
       click: function (score) {
         // the stars drawn under the pointer, as the large view gives them (large-rate.js)
+        if (isBusy(el)) {
+          show(el, current); // the pending vote's stars
+          return false;
+        }
         var stars = window.wlxLargeRate.clicked(score, options.half);
-        var previous = current;
         var rate = Math.round(stars * units);
         current = stars;
         show(el, stars);
+        busy(el, true);
         send(item, rate).done(function () {
+          busy(el, false);
+          stored = stars;
           item.rate = rate;
           tile.setAttribute('data-rate', rate);
           if (voted) voted(rate);
         }).fail(function (jqXHR) {
-          current = previous;
-          show(el, previous);
+          busy(el, false);
+          current = stored;
+          show(el, stored);
           explain(jqXHR);
         });
         return false; // drawn above, not by raty's own rounding
