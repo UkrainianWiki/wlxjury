@@ -165,18 +165,18 @@ class GalleryController @Inject() (
 
     lazy val asUser = galleryService.getAsUser(asUserId, user)
 
-    // a juror's list: its total, region counts and tabs from one query over the juror's files
-    val counts = list.jurorCounts()
+    // a juror's list: its total, region counts and tabs from one query over the juror's files.
+    // Lazy, as the pager, menu and tabs: a CSV streams all the list's files without them
+    lazy val counts = list.jurorCounts()
 
-    val pager = Pager(page, counts.fold(list.count())(_.total(list.filter, list.region)), list.pageSize)
-    // a CSV streams all the list's files instead
+    lazy val pager = Pager(page, counts.fold(list.count())(_.total(list.filter, list.region)), list.pageSize)
     lazy val files = list.files(pager)
 
     // the region menu, whose regions are read when it is opened (regions)
-    val menu = regionMenu(list, contest)
+    lazy val menu = regionMenu(list, contest)
 
     // the viewer's own tabs: the counts above when the list is their own
-    val rates = counts.filter(_ => user.id.contains(asUserId)).fold(galleryService.rateDistribution(user, round))(c =>
+    lazy val rates = counts.filter(_ => user.id.contains(asUserId)).fold(galleryService.rateDistribution(user, round))(c =>
       new RateDistribution(c.rates))
 
     lazy val jurors =
