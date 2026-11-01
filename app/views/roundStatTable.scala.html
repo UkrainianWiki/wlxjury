@@ -27,7 +27,7 @@
             <td> @{index + 1} </td>
             <td> @user.fullname </td>
             <td> @user.email </td>
-            <td>@snippets.startStop(user.active.getOrElse(true), user.getId, round.getId, routes.RoundController.setRoundUser, false)</td>
+            <td>@snippets.startStop(user.active.getOrElse(true), user.getId, round.getId, routes.RoundController.setRoundUser, withText = false, what = "juror")</td>
             <td>
             @defining(stat.byUserCount.getOrElse(user.getId, 0)) { count =>
 
@@ -109,7 +109,7 @@
                         @stat.totalByRate.getOrElse(1, 0)
                     }
                 </th>
-                <th style="text-align: center">
+                <th class="text-center">
                         <!-- <a href="/gallery/user/0/rate/0/page/1"> -->
                     @if(round.isBinary) {
                         @{

@@ -11,7 +11,8 @@ import javax.inject.Inject
 
 class LoginController @Inject() (
     val admin: UserService,
-    cc: ControllerComponents
+    cc: ControllerComponents,
+    themeCookies: ThemeCookies = ThemeCookies.default
 ) extends Secured(cc)
     with I18nSupport {
 
@@ -76,7 +77,9 @@ class LoginController @Inject() (
                 inContest.contestId.map(id => Secured.CurrentContestId -> id.toString)
               val nextPage = returnTo.fold(indexRedirect(inContest))(url => Redirect(url))
               val result = nextPage.withSession(sessionData: _*)
-              user.lang.fold(result)(l => result.withLang(Lang(l)))
+              // the user's colour mode, if they chose one, follows them to this browser
+              val withTheme = themeCookies.setStored(result, user.theme)
+              user.lang.fold(withTheme)(l => withTheme.withLang(Lang(l)))
             }
             .getOrElse(
               noStore(BadRequest(views.html.index(loginForm.withGlobalError("invalid.user.or.password"), returnTo)))

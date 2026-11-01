@@ -551,3 +551,317 @@ mapping), the current round on the round stat page shown active instead of bold.
   controllers.RoundEditPageSpec controllers.PrevRoundHiddenInputSpec` 0 (28 passed);
   `testOnly controllers.CoiAuthorizationSpec controllers.MultiContestUserSpec
   controllers.SignOutAndSwitchSpec` 0 (39 passed). Jest not rerun (multi-select.js unchanged).
+
+## Phase 3 results (light / dark / auto)
+
+Commits `0272bfc9..` on `ukwikidev/theme-modes` (after `1ddf679e`). Not yet reviewed.
+
+### What changed
+
+- **Mode resolution (`app/controllers/Theme.scala`):** `Theme` = `Light | Dark | Auto`
+  (`value`, a Bootstrap Icons `icon`); `Theme.parse` takes exactly `light`, `dark` and `auto`,
+  anything else (cookie, DB, form) is `Auto`; `Theme.of(request)` reads the `theme` cookie.
+  `ThemeCookies` (injected `SessionConfiguration`) writes it: `SameSite=Lax`, `Secure` when
+  `play.http.session.secure` is, path `/`, a year, not HttpOnly. `LoginController` and
+  `UserController` take it as a third constructor argument with a default
+  (`ThemeCookies.default`), so the specs that build them with `new` still compile.
+- **Every shell:** `layout.scala.html` has no `theme` parameter any more; it renders
+  `<html data-bs-theme="light|dark" data-theme-pref="light|dark">` for an explicit mode, and for
+  auto `data-theme-pref="auto"` without `data-bs-theme`. Right after `<meta charset>`, before
+  any stylesheet, a 5-line inline script sets `data-bs-theme` from
+  `matchMedia('(prefers-color-scheme: dark)')` while `data-theme-pref` is `auto` and follows its
+  `change` event (rendered on every page; it does nothing for an explicit mode). Only the fixed
+  strings reach the page. The gallery/large-view forced dark and the navbar's own dark are gone:
+  the navbar is `bg-body-tertiary border-bottom`.
+- **`public/stylesheets/theme.css`** (after Bootstrap, before `main.css`): per mode under
+  `:root, [data-bs-theme=light]` / `[data-bs-theme=dark]`: `--wlx-image-bg` (#e3e3e3 / #303030),
+  `--wlx-thumb-failed-bg` and `-mark`, `--wlx-current-bg` (the large view's current thumbnail),
+  `--wlx-deleted`, `--wlx-selected` / `--wlx-rejected` (#146c43 / #b02a37 light, #75b798 /
+  #ea868f dark, at least 4.5:1 on the navbar), `--wlx-nav-active-bg`. `main.css` has no hex
+  colour left: `body.gallery`, the vote tabs, the active tab, `.current`, the comments (`.msg`,
+  `.comment-header`, `.imageComment` now on `--bs-*` colours), `.bs-callout-info`, the failed and
+  deleted marks. Templates: the `#CCCCCC` table backgrounds (contests, rounds, users) and the four
+  inline `alert-danger` colours removed, `style="color: red"` → `text-danger`, the white rank
+  texts (galleryByRate, galleryByRateRegions, showRate) inherit the body colour. The gallery vote
+  frames (`ug-theme-tiles.js`) use `var(--wlx-selected)`, `var(--wlx-rejected)` and
+  `var(--bs-secondary-color)` instead of limegreen / brown / white; the gallery init sets
+  `tile_enable_background: false` (unitegallery wrote an inline `#F0F0F0`, which also beat
+  main.css's failed-thumbnail grey). Loaders: the only one shown, unitegallery's tiles preloader
+  (a dark grey spinner), is inverted in dark mode by CSS; the `loader-black/white` GIFs belong to
+  the slider and lightbox, which the tiles theme doesn't open. Vendor CSS untouched.
+- **Storage:** `V71__Users_add_theme.sql` adds `users.theme VARCHAR(8) NULL`. Decided: all three
+  values are stored as chosen, NULL means never chosen (auto); signing in sets the cookie from a
+  non-NULL value (`auto` too) and leaves the browser's cookie alone for NULL. `User.theme` (last
+  field, default None) is read and written by the mapper and `create`; `User.updateTheme(id,
+  Theme)` writes only one of the three values.
+- **Profile (`editUser`):** a `bs.select` of the three modes on the user's own profile only (an
+  empty column preselects the browser's current mode). `UserController.updateUser` stores it and
+  sets the cookie only for the own profile and only for one of the three values; another user's
+  form has no field, and an admin saving it changes neither that user's mode nor the admin's
+  cookie.
+- **Switch in the user menu (`logged.scala.html`):** a POST form to `/theme`
+  (`UserController.setTheme`, `withAuth(_ => true)`: any signed-in user, root or without a
+  contest) with `csrfField`, a hidden `returnTo` (a GET's own URI through
+  `Secured.safeLocalPath`) and three submit buttons as dropdown items, the current one `active`
+  with `aria-pressed`. The action stores the mode in the session user's row only, sets the
+  cookie, and redirects to `returnTo` if it passes `safeLocalPath`, else to the start page. An
+  invalid or missing value: a redirect, nothing stored, no cookie. It never touches the session
+  (no contest switch). On an error page the form has no `returnTo` (`main(backHere = false)` from
+  `errorPage`), because the error URL may carry text that must not appear in the page
+  (`LoginControllerSpec`'s "never the link's text" caught it); the switch then goes to the start
+  page.
+- **Login page switch:** a `btn-group` of three `type="button"` buttons (`data-theme-value`) and
+  `public/javascripts/theme-switch.js`: it sets the cookie in the browser (`Path=/`, `Max-Age` a
+  year, `SameSite=Lax`, `Secure` on an https page, since the browser can't see the server's
+  session config), `data-theme-pref` and `data-bs-theme` at once, and marks the pressed button.
+  It sends no request.
+- **Messages:** `theme`, `theme.light`, `theme.dark`, `theme.auto` (System / Système / Як у
+  системі / Как в системе) in en, fr, uk, ru. Fixed ru `all.selected = Выбраны все` and
+  `full.name = Полное имя` (`11df6a66`).
+- **Screenshot harness:** `--mode light,dark,auto` in one server run (light/dark: the `theme`
+  cookie in the browser context; auto: no cookie and Playwright's `color_scheme` = `--scheme`,
+  dark by default); each shot prints and checks the `data-bs-theme`/`data-theme-pref` it got. New
+  shots: `users-usermenu`, `contestfiles-marks`, `contestfile-large-marks` (a script marks tiles
+  and thumbnails deleted or failed, which the fixture has none of).
+
+### Checks
+
+| Command | Exit | Result |
+|---|---|---|
+| `Test/compile` after each code commit | 0 | |
+| `testOnly views.ThemeViewSpec views.LayoutSpec controllers.ThemeSwitchSpec db.scalikejdbc.UserDbSpec` (first) | 1 | 32 total: 3 mistakes in the new spec (DB read before awaiting a result, a GET without a CSRF token, a per-test app not truncated); fixed |
+| the same (final) | 0 | 32 passed |
+| `testOnly views.* controllers.* db.scalikejdbc.*` | 1 | 683 total, 5 failed: `LargeViewFixturesSpec` ×4 (fixtures stale after the `<head>` change; regenerated), `LoginControllerSpec` "never the link's text" (the theme form's `returnTo` on the error page; fixed, see above) |
+| `testOnly views.ThemeViewSpec controllers.LoginControllerSpec` | 0 | 23 passed |
+| `FIXTURES_UPDATE=true … testOnly views.LargeViewFixturesSpec` | 0 | 4 passed, fixtures rewritten (the head script, `data-theme-pref`, `theme.css`) |
+| `npm test` (javascript-test) | 0 | 9 suites, 119 tests (new `theme-switch.test.js`: the login switch and the layout's auto script, read from the template) |
+| **full suite**: `Test/compile` + `test` | 0 | **1119 total, 0 failed, 0 errors** (1113 passed, 6 skipped, 1 pending); Jest within it 119 passed |
+
+The DB specs ran V71 on the shared Testcontainer's fresh database. The screenshot server
+rebuilt the Gatling fixture cache (`data/cache/`, keyed by the migrations) because of V71.
+
+### Screenshots
+
+**Incomplete.** `shoot --label phase3 --mode light,dark,auto --start-server --csp` was stopped by
+Claude Code while the system was low on memory (sbt, the server JVM, MariaDB and Chrome at
+once), after three light shots (`target/ui-shots/phase3/light/login.png`, `error404-anon.png`,
+`gallery.png`). It was not restarted. Those three look right: the light navbar with readable
+vote tabs (selected green, rejected red, "All" active on a grey background), the pager, the
+photos on the light grey, the login page's switch with Light pressed. No dark or auto shot was
+taken, so the dark mode's contrast (tables, forms, dropdowns, Tom Select, the large view's
+buttons, raty stars, comments, thumbs bar, the marks) and a no-flash check in a real browser are
+still to do. The script order (the auto script first in `<head>`, before every `<link>`) is
+checked by `ThemeViewSpec` for every shell.
+
+### Open questions
+
+- Screenshots in dark and auto (and the rest of light) need a run when memory allows.
+- Where the switch lives: in the user menu (after Profile, before Sign out) as three menu items,
+  and under the login form as a small button group; the profile page has the select too. Not on
+  the sign-up page or the signed-out error pages.
+- The login page's script marks the cookie `Secure` by the page's scheme, not by the server's
+  session config; the server-set cookie follows the config.
+- `auto` is stored explicitly (not as NULL): choosing System on one device makes signing in on
+  another use System too. NULL only for users who never chose.
+
+### Review follow-ups
+
+- **By-rate galleries (high, `5843872f`):** `1e026ddb` had replaced the rank block's opening
+  `<div style="margin-bottom: 10px;` in `galleryByRate` and `galleryByRateRegions` with a U+0001
+  control character (a script's `\1` replacement written as a literal byte; it was the `□`
+  glyph) and a stray `">`, so the block's `</div>` closed the gallery list after the first tile.
+  The block is `<div class="rank-line">` again (margin in `main.css`; `showRate` too). No other
+  file in the repo contains U+0001, and the commit's other template edits only dropped colour
+  attributes. `views.GalleryByRateViewSpec` renders both templates for a rated round and checks
+  with Jsoup that every `li.gallerybox` sits in `ul.gallery` with one `div.rank-line`, and that
+  there is no stray `">` text or control character.
+- **Theme on user creation (low, `36783bec`):** the edit form's `theme` keeps only light, dark or
+  auto (anything else becomes none), and `User.create` stores nothing else, so an admin-created
+  user with a bogus value gets `theme` NULL instead of a 500 (`ThemeSwitchSpec`). Decided: drop
+  the value, no form error (the add-user form has no theme field to show one on).
+- Checks: `Test/compile` + `testOnly views.GalleryByRateViewSpec controllers.ThemeSwitchSpec
+  views.ThemeViewSpec db.scalikejdbc.UserDbSpec controllers.UserControllerSpec
+  controllers.MultiContestUserSpec controllers.GalleryOrderSpec` 0 (60 passed). The full suite was
+  not rerun.
+- Screenshots: `shoot --label phase3-fix --mode light,dark --start-server --csp` (no other JVM
+  running), 25 shots per mode in `target/ui-shots/phase3-fix/`, no CSP violation, every page in
+  the mode asked for; the only console errors are the two 404 pages' own status. `byrate` and
+  `byrate-viewmenu` are a regular three-column grid in both modes, each tile with its stars and
+  rate below it and no stray text. The fixture's all-jurors by-rate view has no rank, so the
+  rank text itself is empty there.
+
+## Phase 4 results (cleanup)
+
+Commits `4760b4b7..` on `ukwikidev/theme-modes` (after `7b9c0776`). Not yet reviewed.
+
+### What changed
+
+- **Inline styles (item 8):** 51 `style="..."` attributes in `app/views` before, 6 after. The
+  large views' layout is `main.css` classes (`.large-view`, `.large-side` = the 220px column,
+  `.large-main`, `.large-nav`, `.large-box` / `.large-line` for the side column's boxes and
+  lines) and Bootstrap utilities (`h-100`, `mw-100 mh-100` for the image, `d-none` for the
+  vote form, `me-1`, `mt-1`, `my-1 mx-auto`); `layout` puts `h-100` on `<html>` and `<body>`
+  instead of `height: 100%`. Elsewhere: `d-inline`, `d-none` (editRound's hidden jurors
+  select, editUser's hidden reset form; no script shows either), `text-center`, `.rate-stars`,
+  `.tile-anchor`, `.form-action-wide` (the 25% Save/Cancel), `mb-2`. `main`'s `margin: 0` on
+  `container-fluid` was a no-op and is gone; `pageLinks`' unused `style` parameter is gone.
+  **Kept, on purpose:** the two `#gallery` `display:none` (unitegallery builds from the hidden
+  list; `ContestFilesPageSpec` checks it), `jobStatus`' two forms (`job-status.js` toggles
+  `style.display`, its Jest test reads it), `#prevRoundFilters` (jQuery `show()`/`hide()`,
+  which `d-none`'s `!important` would defeat), and the pager box's width computed from the
+  page count (`GalleryOrderSpec`). Margins of 5px became 4px utilities in three places
+  (`mt-1`, `me-1`, `my-1`), not visible; 10px ones kept their value in classes.
+- **Stars:** raty uses `starType: 'i'` with Bootstrap Icons (`bi-star-fill`, `bi-star-half`,
+  `bi-star`, cancel `bi-x-circle` / `bi-x-circle-fill`), set once as raty defaults in
+  `large/raty.scala.html`; the per-star image options and the images path are gone, the vote
+  callbacks (`voteLarge(prefix + score + query)`) are unchanged. New theme variable
+  `--wlx-star` (#a36a00 light: 4.5:1 on white, 3.5:1 on the image grey; #ffc107 dark: 8:1 on
+  the image grey); `.wlx-star` is 1rem, so ten stars and the cancel icon fit the side column
+  on one line (`.large-stars { white-space: nowrap }`); a round with more than ten stars
+  (1-11 .. 1-20 without half stars) gets `.many-stars` (0.6875rem). The cancel icon is the
+  secondary text colour, red while hovered. `showStar` renders the `<i>` itself (full / half /
+  empty, the same arithmetic as before) for `showRate` and both by-rate galleries. Removed:
+  the ten `star-*`/`cancel-*` PNGs and `jquery.raty.css` (its raty font files were never in
+  the repo). `AssetDigestSpec`'s `images/star.png` is its own temp file, not the asset.
+- **Buttons (item 11):** the large views' navigation buttons `btn-secondary` →
+  `btn-outline-secondary` (select/reject keep green/red: vote semantics); contests' import and
+  add were `<div class="btn btn-primary" onClick>` → real buttons (import a submit, add a
+  `type="button"` submitting the form by name, as add-user does, since that form can't wrap a
+  table row); rounds' "Add round" was a link around a div whose `onClick` submitted a form
+  that isn't on the page → `<a class="btn btn-primary">`; users' "Mass import" and "Edit
+  greeting message" (primary divs inside links) → `a.btn-outline-secondary`; contest images'
+  "Update monuments" (a second primary in the import form) → outline-secondary; the greeting
+  template's "Check" `btn-info` → outline-secondary; start/stop of a round or juror
+  `btn-danger`/`btn-success` → `btn-outline-secondary` (stopping is reversible, not
+  destructive; the icon and the Yes/No text show the state); `snippets/button` was a
+  `<button>` inside an `<a>` → one `a.btn`. Left as they are: one primary per form (sign in,
+  sign up, sign out, save, import, add user, submit comment, the pager's Go, access denied's
+  suggestion, the error page's sign in); the by-rate galleries' green check buttons of a 1-2
+  round (they show a rate, see open questions). No JS builds button markup.
+- **Widths (item 13):** `mainAdmin`'s content is `container-xxl` (full width up to 1400px,
+  then 1320px) for every admin page. Forms keep their own column widths (`col-md-4`,
+  `col-md-6 offset-md-3`, the horizontal layout's columns), so `container-lg` wasn't needed to
+  keep them readable, and one container class keeps the rule simple. Galleries, by-rate, file
+  list, contest files, round statistics and both large views stay full width; fileList's
+  nested `.container` is gone. A table placed directly in a `.row` (contests, rounds, users,
+  round statistics) sat at the page's edge (the row's negative margin; Bootstrap's gutter
+  padding doesn't apply to a collapsed-border table): `.row > .table` gets the gutter as
+  margin, so it lines up with the heading above it.
+- **Small fixes:** rounds' first `.row` was closed only when there were rounds; the unused
+  `tabbedSelection.scala.html` is deleted.
+
+### Checks
+
+| Command | Exit | Result |
+|---|---|---|
+| `Test/compile` | 0 | |
+| `FIXTURES_UPDATE=true … testOnly views.LargeViewFixturesSpec` | 0 | 4 passed; the four large-view fixtures rewritten (classes, raty options, no `jquery.raty.css`) |
+| `npm test` (javascript-test) | 0 | 9 suites, 124 tests (5 new in `large-view-keys.test.js`: raty draws five `bi-star` icons and the cancel icon, no `<img>`; clicking stars 1, 3, 5 posts the vote form with that score; the cancel icon posts 0) |
+| `testOnly views.* controllers.*` | 1 | 493 total, 1 failed: `ContestFilesPageSpec` looked for `<body class="gallery"` (now `gallery h-100`); assertion updated |
+| `testOnly controllers.ContestFilesPageSpec` | 0 | 26 passed |
+| **full suite**: `Test/compile` + `test` (branch gate) | 0 | **1122 total, 0 failed, 0 errors** (1116 passed, 6 skipped, 1 pending); Jest within it 124 passed |
+
+The `.row > .table` rule (CSS only, added after the full suite) was checked by screenshots,
+not by a test run.
+
+### Screenshots
+
+`shoot --label phase4 --mode light,dark --start-server --csp` (no other JVM), 25 shots per
+mode, every page in the mode asked for, no CSP violation; the only console errors are the two
+404 pages' own status. `diff phase3-fix phase4`: 18 of 25 differ in each mode, all explained:
+
+- `large`, `large-rated`, `contestfile-large(-marks)`: the outlined navigation buttons;
+  `large-rated`: ten icon stars and the cancel icon on one line in both modes (were two lines
+  of PNGs, the "off" ones solid white in dark); the thumbnails start higher by the saved line.
+- `byrate`, `byrate-viewmenu`: icon stars (amber on the light grey, yellow on the dark), the
+  "off" ones outlined. The rank line is narrower than with the old 24px PNGs, so a tile is as
+  wide as its thumbnail and the grid has four columns instead of three (page 1320 → 1061px).
+- `users(-usermenu)`, `rounds`, `editround*`, `edituser`, `login`, `error404-anon`
+  (mainAdmin): full width at 1366px (`container-xxl`) instead of 1140px; tables aligned with
+  their headings; users' two outlined buttons; rounds' outlined start/stop; forms keep their
+  column widths (editround's help text wraps less, so `editround-new-prevround` is 24px
+  shorter).
+- `roundstat`: the table inside the page's gutter; outlined start/stop.
+- `filelist`: full width without the nested container.
+- identical: `gallery*`, `contestfiles*`, `error404`.
+
+### Open questions
+
+- Icon-only buttons without a text label: start/stop (rounds, round statistics) has no
+  `title` or `aria-label`; adding them needs message keys.
+- The by-rate galleries of a 1-2 round show the rate as green `<button>`s that do nothing; an
+  icon would be more honest, but it is a rate display, left alone here.
+- `galleryByRateRegions` draws `rates.id / 2` stars whatever the half-star setting, and
+  `galleryByRate` uses `numberOfStars`, which multiplies by the criteria count; both predate
+  this phase.
+- Page titles: admin pages use `h3`, the error page `h4`, galleries none; one level (e.g.
+  `h1.h3`) would be a template-wide change.
+- fileList's content (inside its `.row`) starts at the page's edge, and it prints its HTML
+  comment line (`<!-- Round … -->`) as visible text in the `contenteditable` block meant for
+  copying into a wiki page; both unchanged.
+
+### Review follow-ups
+
+- **Stars overflowing (medium, `77ede2af`):** `.many-stars` (0.6875rem on one `nowrap` line)
+  still ran 16 to 20 stars past the 196px side column over the image. Rating types are 1-3 ..
+  1-20, so raty draws up to ten stars with half stars and up to 20 without; a criteria round
+  draws the same count for each criterion. `.large-stars` is now a wrapping flex row (raty
+  adds no spaces to break at) at the normal 1rem: ten and the cancel icon stay on one line,
+  more take a second; `.many-stars` is gone. Check chosen: jsdom has no layout, so a Jest case
+  could only assert the CSS text; instead the screenshot harness measures it in Chrome.
+  `stars_js` (`scripts/ui-shots.py`) logs a console error, which fails the shot, if any star
+  or the cancel icon lies outside the side column's content box, or if ten or fewer take more
+  than one line. `large-rated-stars` checks the fixture's ten; `large-rated-20` redraws raty
+  with 20 stars (`raty('set', {number: 20})`, the same options otherwise). Run
+  `--label phase4-fix --mode light,dark --csp`: "10 stars on 1 line(s), 0 outside" and "20
+  stars on 2 line(s), 0 outside" in both modes. A temporary third shot with the old
+  `nowrap` rule failed with "10 of 21 icons outside the side column", so the check catches
+  the bug; that shot was then removed.
+- **Start/stop name (low, a11y):** `snippets/startStop` takes `what` ("round" or "juror")
+  and gives the button `title` and `aria-label` from `round.start` / `round.stop` /
+  `juror.start` / `juror.stop`, in en, fr, uk and ru (a juror's: resume or pause the juror's
+  voting in the round). The icon-only variant (round statistics, `withText = false`) is
+  `btn-outline-danger` while running and `btn-outline-success` while stopped, which reads in
+  both modes (`phase4-fix/*/roundstat.png`); the rounds page keeps outline-secondary next to
+  its Yes/No text. `views.StartStopViewSpec` checks the names, the colours and that all four
+  messages files define the keys.
+- Checks: `Test/compile` + `testOnly views.* controllers.RoundControllerSpec
+  controllers.RoundEditPageSpec controllers.ContestFilesPageSpec
+  controllers.MutationAuthorizationSpec controllers.CoiAuthorizationSpec
+  controllers.SecuredSpec`: exit 0, 188 passed, including `LargeViewFixturesSpec` (fixtures
+  unchanged: a 1-10 round's markup is the same) and the new `StartStopViewSpec`. No JS or Jest
+  test changed. The full suite was not rerun.
+
+## Follow-ups
+
+Left for separate branches; none blocks merging this one.
+
+1. **Russian translations.** `messages.ru` lacks 62 keys used by the admin pages (a gap that
+   predates this branch; Phase 2 filled only the keys on the lines it added). List them with a
+   script over the `Messages("…")` keys in `app/views` against each messages file, fill ru, and
+   add a spec that every key used by the views exists in all four files (as `StartStopViewSpec`
+   does for its own keys), so the gap can't reopen.
+2. **Commons category autocomplete.** The contests' and contest images' "source" field had a
+   typeahead calling Commons from the browser; the CSP blocked it, and Phase 2 removed it. To
+   bring it back: a same-origin JSON endpoint (signed in, admin or organizer of the current
+   contest, `withAuthJson`) that forwards a prefix search for Category: titles to Commons through
+   `MwBot`, with a short timeout, a small result limit and a cache; then Tom Select's `load` on
+   the field. Tests: the endpoint's authorization (signed out 401, juror 403) and its handling of
+   a Commons failure (an empty list, not a 500).
+3. **`/admin/rounds` and `/admin/users` without `?contestId=`.** In the screenshot fixture both
+   deny the contest's admin (403, `permission_check_failed`, `targetContestId=unknown`) although
+   the session's contest is set; the navbar links pass the id, so users rarely hit it. Likely a
+   pre-existing bug in how these actions pick the contest when the parameter is missing (they
+   should fall back to the session's contest, as `Secured.inCurrentContest` does). Confirm the
+   account and contest first, reproduce in a controller spec, and keep the negative cases (a
+   member of another contest, a juror) denied.
+4. **Smaller quirks, all predating this branch:**
+   - The by-rate galleries of a binary (1-2) round show the rate as green `<button>`s that do
+     nothing; show it as a label or icon instead.
+   - Star counts: `galleryByRateRegions` draws `rates.id / 2` stars whatever the half-star
+     setting, and `galleryByRate` uses `numberOfStars`, which multiplies by the criteria count.
+     Use one helper for both.
+   - Page titles: admin pages use `h3`, the error page `h4`, galleries none. Pick one level
+     (e.g. `h1` styled as `.h3`) for every page title.
+   - `fileList` prints its `<!-- Round … -->` comment as visible text in the block meant for
+     copying into a wiki page, and its content starts at the page's edge.

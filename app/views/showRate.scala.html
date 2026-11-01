@@ -5,19 +5,19 @@
         title: String,
         url: String)
 
-<div style="margin-bottom: 10px; color: #ffffff;">
+<div class="rank-line">
 
     <a href="@url">
         @title
     </a>
         <br/>
-    <span style="margin-left: 5px; margin-right: 10px;">
+    <span class="rate-stars">
         @if(round.isBinary) {
             <i class="bi bi-check-lg" aria-hidden="true"></i>
         } else {
             @defining(round.rates.id > 5 && round.halfStar) { halfStar =>
                 @for(i <- 1 to round.rates.id / (if (halfStar) 2 else 1)) {
-                    <img alt="@i" src="@showStar(i, selection.rate, round.rates.id <= 10, halfStar)">
+                    @showStar(i, selection.rate, halfStar)
                     }
                 @selection.rate
             }
