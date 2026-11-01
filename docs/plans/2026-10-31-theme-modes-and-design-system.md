@@ -1013,3 +1013,24 @@ Left for separate branches; none blocks merging this one.
    Update the rate text after the stars (`rateString`) in place too. Tests: a view spec for
    when the stars are interactive here and when not; Jest for the in-place update and the
    changed mark; the rank/order unchanged until reload.
+10. **A round switch keeps the other kind's vote filter (pre-existing).** The navbar's round
+    menu (`navbar.scala.html` `roundMenu`) links each round as `l.withRound(r).pageUrl(1)`,
+    and `RoundList.withRound` replaces only the round: a binary round's `selected` /
+    `rejected` (`VoteFilter.Rate(1)` / `Rate(-1)`) go into a rated round and `rated` into a
+    binary one, where no tab matches, so none is shown active (and in a rated round
+    `Rate(1)` silently means "rated 1"). Fix: on a switch keep `All` and `Unrated`, and reset a
+    filter of the other kind to `All` (by the round's kind, not by whether the value is a
+    possible rate); apply the same rule when a list is read from a URL (`?filter=selected` on
+    a rated round). Tests: `withRound` both ways, the URL case, and a navbar view check that
+    exactly one tab is active after a switch each way.
+11. **Dark by default, a visible switch.** The default is auto, which for most users means
+    light; jurors had always-dark galleries before this branch, and few will find the switch
+    in the profile menu. (a) A user with no choice (no cookie, `users.theme` NULL) gets dark:
+    `Theme.parse`'s fallback; an explicit choice, auto included, is stored and kept. No
+    migration. (b) The switch moves from the profile dropdown to an icon button in the navbar,
+    left of the profile menu: the current mode's icon, opening light / dark / auto (Bootstrap
+    docs' pattern), with an accessible label; the login page keeps its switch. (c) The
+    profile form's theme `<select>` becomes a `btn-check` radio group with each mode's icon
+    and label (an `<option>` can't hold an icon), sending the same `theme` field. Tests:
+    `Theme` fallback, the layout without a cookie, the navbar switch's markup, the profile
+    form's radios, plus the specs that assumed auto.
