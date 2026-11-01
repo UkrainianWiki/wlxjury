@@ -288,12 +288,42 @@ It is from reading the code and the fixture DB (round 1: 20 jurors, 38,366 files
   and next match the by-rate gallery (`RoundListDbSpec`, files whose first vote row orders
   otherwise). No change.
 
+## Review (a9f562a4..bee7b6bb)
+
+An independent review of `a9f562a4..443ac143` found only low issues:
+
+1. **V72's comment** called NULL the default; it is the legacy rule of a round from before
+   V72 (a72ff4ea). Reworded (2dab5252). V72 is only on this branch and no spec pins its
+   checksum; a dev DB that already applied it needs `flyway repair` or a rebuild.
+2. **CSV ranks vs votes**: the rank counts and page ids were two reads, the votes later, so a
+   vote between them could rank rows out of order. One read now gives each file's page id
+   and rank-key values (`SelectionQuery.pageKeys`), and the ranks come from it; a row's votes
+   are those when its chunk is read, with no transaction held over the stream (ae47ad52).
+3. **A CSV counted the list** for a pager it doesn't use: the counts, pager, region menu and
+   tabs are lazy and a CSV reads none of them (f30c2827).
+4. **Measure the all-jurors scans**: not done. The fixture server runs 9dcbd9e8 (before the
+   aggregate steps), and restarting it on this branch was refused by the session's
+   permission check, so there is no measurement yet (see "Left").
+5. **The tiles' footer note** read as "files with every kind of vote": now "Each column:
+   files with at least one such vote (a file can be in several)", in en/fr/uk/ru (5bf1d4f7).
+6. **An order where it plays no part**: a new top-N stored 'approvals' and its job recorded
+   an order over a rated previous round too. Both now only with a yes/no previous round
+   (`withExplicitTopOrder(prevBinary)`, the job's `topBinaryOrder`), else NULL and nothing
+   recorded; the round form shows the order, and the legacy rule, only until previous rounds
+   are chosen or when one is yes/no, so an old top-N over a rated round shows none
+   (dbe3a4b8).
+7. **Ranks out of order**: `user/0` by rate with `sort=file` showed binary-order ranks on a
+   list in file order; no ranks in file order now (bee7b6bb).
+
 ## Left
 
 - Migrate stored "selected by at least 0" to NULL (decision 4) once production rounds are
   checked to use it as "no filter".
-- Measure the file-level filter (`HAVING`) on the 38k-file fixture if a filtered all-jurors
-  list is slow.
+- Measure the all-jurors scans on the 38k-file fixture (review item 4), on a server running
+  this branch: `/byrate/round/1/user/0/page/1` unfiltered and with `filter=selected`,
+  `rejected`, `unrated`; `/filelist/round/1/user/0/page/1`; `/gallery/round/1/user/0/page/1`
+  (1 warm-up, 5 timed each, median and min/max). `EXPLAIN` a filtered page more than about
+  2x the unfiltered one, or any page over about 2 s.
 
 ## Follow-up: more ranking methods (STV, normalised ratings)
 
