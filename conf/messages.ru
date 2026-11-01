@@ -57,8 +57,8 @@ absent=Нет
 files.should.be.IN.the.category=Файлы должны быть В категории
 files.should.be.NOT.IN.the.category=Файлы должны быть НЕ В категории
 monument.ids.comma.separated=Идентификаторы памятников (через запятую)
-minimum.megapixels=Минимум мегапикселей
-minimum.megabytes=Минимум мегабайт
+minimum.megapixels=Минимальное разрешение (Мпкс)
+minimum.megabytes=Минимальный размер файла (МБ)
 distribute.x.new.files=Распределить {0} новых файлов
 
 unrated = Без оценки
