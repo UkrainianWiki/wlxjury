@@ -269,6 +269,17 @@ div.thumb_small.wlx-thumb-failed img {
 .wlx-multi .ts-control { min-height: calc(1.5em + .75rem + 2px); }
 .wlx-multi .wlx-select-all { padding: .375rem .75rem; }
 .wlx-multi .ts-dropdown .option .tomselect-checkbox { margin-right: .5rem; }
+/* Tom Select's Bootstrap 5 theme takes its backgrounds from Bootstrap's variables but keeps a
+   few light mode colours (text, the typed text's row, the match highlight, the spinner): the
+   mode's own. :root outweighs its rules, which the admin pages load after this file */
+:root .ts-dropdown, :root .ts-control, :root .ts-control input { color: var(--bs-body-color); }
+:root .ts-dropdown .create { color: var(--bs-secondary-color); }
+:root .ts-dropdown .active.create { color: var(--bs-body-color); }
+:root .ts-dropdown [data-selectable] .highlight { background: var(--bs-warning-bg-subtle); }
+:root .ts-dropdown .spinner::after { border-color: var(--bs-border-color) transparent; }
+/* the category fields (category-suggest.js): a text field, without a select's arrow and its room */
+:root .wlx-category-suggest.single { --ts-pr-caret: 0px; }
+:root .wlx-category-suggest.single .ts-control, :root .wlx-category-suggest.single .ts-control input { cursor: text; }
 
 /* a button inside a link (round stat tables): no underline under the spaces around it */
 a:has(> .btn) { text-decoration: none; }

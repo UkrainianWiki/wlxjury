@@ -31,8 +31,9 @@
 
             <h2 class="h4">@Messages("files.source")</h2>
 
+            @* a category or a page: Commons' categories suggested once it starts with Category: *@
             @bs.text(importImagesForm("source"), Symbol("_label") -> "commons.category.or.page.with.files",
-                Symbol("_help") -> Messages("import.files.help"))
+                Symbol("_help") -> Messages("import.files.help"), Symbol("data-category-suggest") -> "mixed")
 
             @bs.textarea(importImagesForm("list"), Symbol("_label") -> "or.image.list", Symbol("_help") -> Messages("image.list.help"), Symbol("rows") -> 10 )
 
@@ -57,6 +58,7 @@
                 }
             </div>
         }
+        <script src="@routes.Assets.versioned("javascripts/category-suggest.js")"></script>
 
         <hr/>
         <h2 class="h4">@Messages("local.image.cache")</h2>

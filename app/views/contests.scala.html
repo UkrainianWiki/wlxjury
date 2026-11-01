@@ -26,7 +26,9 @@
         </div>
         @bs.form(routes.ContestController.importContests(), Symbol("id") -> "import-contests") {
             @helper.CSRF.formField
-            @bs.text(importForm("source"), Symbol("placeholder") -> Messages("source"), Symbol("_label") -> Messages("source"), Symbol("_help") -> "")
+            @* a category or a list page: Commons' categories suggested once it starts with Category: *@
+            @bs.text(importForm("source"), Symbol("placeholder") -> Messages("source"), Symbol("_label") -> Messages("source"), Symbol("_help") -> "",
+                Symbol("data-category-suggest") -> "mixed")
 
             <button type="submit" class="btn btn-primary">@Messages("import")</button>
         }
@@ -73,7 +75,8 @@
                             @bs.text(editContestForm("year"), Symbol("placeholder") -> Messages("year"), Symbol("_hiddenLabel") -> Messages("year"), Symbol("_help") -> "")
                             </td>
                             <td>
-                            @bs.text(editContestForm("images"), Symbol("placeholder") -> Messages("images"), Symbol("_hiddenLabel") -> Messages("images"), Symbol("_help") -> "")
+                            @bs.text(editContestForm("images"), Symbol("placeholder") -> Messages("images"), Symbol("_hiddenLabel") -> Messages("images"), Symbol("_help") -> "",
+                                Symbol("data-category-suggest") -> "mixed")
                             </td>
                             <td>
                             </td>
@@ -124,6 +127,7 @@
             </tbody>
         </table>
     </div>
+    <script src="@routes.Assets.versioned("javascripts/category-suggest.js")"></script>
 }
 
 
