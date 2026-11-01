@@ -120,6 +120,14 @@ function UGTheme_tiles(){
 		
 		g_tiles.setHtml(g_objTilesWrapper);
 		g_lightbox.putHtml();
+
+		//wlxjury: a rated round's stars on the juror's own tiles (main.scala.html's wlx_stars:
+		//their number and half stars), tile-votes.js
+		if(g_options.wlx_stars){
+			g_objTilesWrapper.find(".ug-tile").each(function(){
+				wlxTileVotes.addStars(this, g_objTileDesign.getItemByTile(jQuery(this)), g_options.wlx_stars);
+			});
+		}
 	}
 	
 	/**
@@ -216,22 +224,10 @@ function UGTheme_tiles(){
 		}
 	}
 
-	/**
-	 * the session's CSRF token, which the gallery page renders (data-csrf-token)
-	 */
-	function csrfToken() {
-		var holder = document.querySelector("[data-csrf-token]");
-		return holder ? holder.getAttribute("data-csrf-token") : "";
-	}
-
+	//a binary round's vote, sent by tile-votes.js
 	function serviceCall(objItem, rate, objTile) {
 
-		//a vote is a POST with the page's CSRF token in Play's header (play.filters.csrf.header.name)
-		var jqxhr = $.ajax({
-			type: "POST",
-			url: "/rate/round/" + objItem.roundId +"/pageid/" + objItem.pageId + "/select/" + rate,
-			headers: { "Csrf-Token": csrfToken() }
-		}).done(function() {
+		wlxTileVotes.send(objItem, rate).done(function() {
 
 			var border = 3;
 			var color;
@@ -251,12 +247,7 @@ function UGTheme_tiles(){
 
 			objTile.css(objCss);
 
-		}).fail(function(jqXHR) {
-			// why, in the page's language (vote-errors.js); signed out, on to the login page
-			var texts = voteErrorTexts(document.querySelector("[data-csrf-token]"));
-			alert(voteErrorMessage(jqXHR.status, jqXHR.responseJSON || null, texts));
-			if (jqXHR.status === 401 && texts.loginUrl) window.location.href = texts.loginUrl;
-		});
+		}).fail(wlxTileVotes.explain);
 	}
 
 

@@ -294,6 +294,37 @@ a:has(> .btn) { text-decoration: none; }
 .large-rate + .large-stars { margin-top: 2px; }
 .large-rate-number { display: inline-block; min-width: 4ch; font-weight: 600; font-variant-numeric: tabular-nums; }
 .rate-stars { margin-left: 5px; margin-right: 10px; }
+/* a rated round's stars on the juror's own gallery tiles (tile-votes.js): a strip at the
+   tile's foot in the page's colour, so the stars read on any photo and in both modes. Each
+   star and the cancel icon is 1em wide (raty finds a half star by the icon's font size): as
+   large as one line of them fits the tile (--wlx-tile-stars: the stars and the cancel icon),
+   from 11px to 16px; on a narrower tile they wrap onto a second line. Above the tile's hover
+   overlay and its zoom icon. */
+.ug-thumb-wrapper.ug-tile .wlx-tile-stars {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 7;
+    container-type: inline-size;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    align-items: center;
+    padding: 3px 4px;
+    background-color: rgba(var(--bs-body-bg-rgb), .85);
+    cursor: default;
+}
+.wlx-tile-stars .wlx-star, .wlx-tile-stars .raty-cancel {
+    width: 1em;
+    font-size: 14px;
+    font-size: clamp(11px, calc((100cqw - 8px) / var(--wlx-tile-stars, 11)), 16px);
+    line-height: 1.2;
+    text-align: center;
+    cursor: pointer;
+}
+.wlx-tile-stars .raty-cancel { color: var(--bs-secondary-color); }
+.wlx-tile-stars .raty-cancel.bi-x-circle-fill { color: var(--bs-danger); }
 /* a binary round's result (binaryVote): approvals or a juror's vote, in the colours of the
    navbar's selected and rejected tabs */
 .wlx-vote-selected { color: var(--wlx-selected); }

@@ -3,7 +3,7 @@
 // the pointer is over a star, the rate a click on it gives; the rendered one again when the
 // pointer leaves the stars. Only the visible number changes: screen readers read the stored
 // rate from the text beside it, not each hover. A read-only view binds no hover, so its
-// number stays.
+// number stays. The gallery's tile stars (tile-votes.js) vote the stars `clicked` gives.
 (function () {
   'use strict';
 
@@ -34,7 +34,7 @@
     };
   }
 
-  window.wlxLargeRate = { number: number };
+  window.wlxLargeRate = { number: number, clicked: clicked };
 
   if (typeof module !== 'undefined') module.exports = { clicked: clicked, text: text, number: number };
 })();
