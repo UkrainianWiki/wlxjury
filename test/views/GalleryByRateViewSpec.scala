@@ -59,6 +59,43 @@ class GalleryByRateViewSpec extends PlaySpecification {
     }
   }
 
+  "a binary round's by-rate gallery" should {
+    val binary = LargeViewRenders.binaryRound
+
+    def tile(file: ImageWithRating, asUserId: Long) = {
+      val html = contentAsString(views.html.galleryByRate(juror, RoundList(binary, asUserId, view = GalleryView.ByRate),
+        Seq(file), Pager(1, 1), Nil, None, new RateDistribution(Map.empty)))
+      Jsoup.parse(html).selectFirst("li.gallerybox .rate-stars")
+    }
+
+    def file(rates: Int*) = ImageWithRating(Image(pageId = 301L, title = "File:Binary.jpg"),
+      selection = rates.zipWithIndex.map { case (rate, i) => Selection(301L, i + 1L, binary.getId, rate) })
+
+    "show all the jurors' approvals as a check and their number, without stars" in {
+      // as the query of all the jurors' votes has them: one row per file, their rates' sum
+      // (2 approvals and a rejection give 1) and the approvals counted apart
+      val grouped = ImageWithRating(Image(pageId = 301L, title = "File:Binary.jpg"),
+        selection = Seq(Selection(301L, 0, 0, 1)), countFromDb = 3, approvalsFromDb = Some(2))
+      val rate = tile(grouped, asUserId = 0)
+      (rate.select(".bi-check-lg[aria-hidden=true]").size must_== 1) and
+        (rate.select("[class*=bi-star]").size must_== 0) and
+        (rate.select("button").size must_== 0) and
+        (rate.select(".visually-hidden").text must_== "approvals") and
+        (rate.text must contain("2"))
+    }
+
+    "show a juror's vote: a check if selected, a cross if rejected, nothing if unrated" in {
+      def marks(rate: Int) = {
+        val r = tile(file(rate), asUserId = 1)
+        (r.select(".bi-check-lg").size, r.select(".bi-x-lg").size, r.select("[class*=bi-star]").size,
+          r.select(".visually-hidden").text)
+      }
+      (marks(1) must_== ((1, 0, 0, "selected"))) and
+        (marks(-1) must_== ((0, 1, 0, "rejected"))) and
+        (marks(0) must_== ((0, 0, 0, "")))
+    }
+  }
+
   "the by-rate gallery by regions" should {
     "keep each tile, with its rank, inside its region's gallery list" in {
       val html = contentAsString(views.html.galleryByRateRegions(

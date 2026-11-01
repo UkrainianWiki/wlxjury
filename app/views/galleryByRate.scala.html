@@ -10,22 +10,20 @@
         regionMenu: Option[RegionMenu],
         rates: RateDistribution)(implicit flash: Flash, messages: Messages, request: RequestHeader)
 
+    @* a file's rank and result: a binary round's approvals by all the jurors, or one juror's
+       vote; a rated round's stars and rate *@
     @showRateGalery(file: ImageWithRating, index: Int) = {
     @defining(list.round) { round =>
         @if(round.rates.id > 0) {
         <div class="rank-line"> <b>@file.rankStr</b>
             <span class="rate-stars">
-            @if(round.rates.id != 2) {
+            @if(round.isBinary) {
+                @if(list.asUserId == 0) { @binaryVote(file.approvals, approvals = true) } else { @binaryVote(file.rate) }
+            } else {
                 @for(i <- 1 to round.numberOfStars) {
                     @showStar(i, file.totalRate(round).toInt, round.rates.id > 5 && round.halfStar)
                 }
                 @file.rateString(round)
-            } else {
-                @for(i <- 1 to file.totalRate(round).toInt) {
-                    <button type="button" class="btn btn-success btn-sm">
-                        <i class="bi bi-check-lg" aria-hidden="true"></i>
-                    </button>
-                }
             }
             </span>
         </div>

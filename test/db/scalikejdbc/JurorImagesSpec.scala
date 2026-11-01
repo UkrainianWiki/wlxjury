@@ -287,6 +287,24 @@ class JurorImagesSpec extends Specification with BeforeAll with TestDb {
       result.map(_.rate) === Seq(1, 0)
     }
 
+    "see approvals apart from rejections" in new AutoRollbackDb {
+      val (contest, round, _) = setUp(rates = Round.binaryRound)
+      implicit val implicitContest: ContestJury = contest
+      val images = createImages(2, contest.getId)
+      val jurors = (1 to 3).map(contestUser(_)).map(userDao.create)
+
+      selectionDao.batchInsert(
+        Seq(1, 1, -1).zip(jurors).map { case (r, j) => Selection(images(0), j, round, r) } ++
+          Seq(1, 0, 0).zip(jurors).map { case (r, j) => Selection(images(1), j, round, r) })
+
+      val result = ImageDbNew.SelectionQuery(roundId = round.id, grouped = true, order = Seq("s.page_id" -> 1)).list()
+
+      // the rates' sum (the order by rate) counts a rejection against the approvals
+      result.map(_.rate) === Seq(1, 1)
+      result.map(_.approvals) === Seq(2, 1)
+      result.map(_.rateString(round)) === Seq("2", "1")
+    }
+
     "see details by selection" in new AutoRollbackDb {
       val (contest, round, user) = setUp(rates = Round.binaryRound)
       implicit val implicitContest: ContestJury = contest

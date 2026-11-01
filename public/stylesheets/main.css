@@ -288,6 +288,10 @@ a:has(> .btn) { text-decoration: none; }
 .large-stars .raty-cancel { color: var(--bs-secondary-color); font-size: 1rem; line-height: 1; margin-right: 2px; }
 .large-stars .raty-cancel.bi-x-circle-fill { color: var(--bs-danger); }
 .rate-stars { margin-left: 5px; margin-right: 10px; }
+/* a binary round's result (binaryVote): approvals or a juror's vote, in the colours of the
+   navbar's selected and rejected tabs */
+.wlx-vote-selected { color: var(--wlx-selected); }
+.wlx-vote-rejected { color: var(--wlx-rejected); }
 
 /* an empty anchor before a gallery tile (galleryByRate, galleryByRateRegions, monuments) */
 .tile-anchor { display: inline; }

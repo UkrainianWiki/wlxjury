@@ -32,6 +32,7 @@ error.previous.rounds.mixed.type = Все предыдущие раунды до
 unrated = Без оценки
 selected = Выбранные
 rejected = Отброшенные
+approvals = Одобрений: {0}
 rated = С оценкой
 all = Все
 all.jury.rating = Суммарный выбор жюри

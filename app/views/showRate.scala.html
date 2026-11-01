@@ -3,7 +3,7 @@
 @(selection: Selection,
         round: Round,
         title: String,
-        url: String)
+        url: String)(implicit messages: Messages)
 
 <div class="rank-line">
 
@@ -13,7 +13,7 @@
         <br/>
     <span class="rate-stars">
         @if(round.isBinary) {
-            <i class="bi bi-check-lg" aria-hidden="true"></i>
+            @binaryVote(selection.rate)
         } else {
             @defining(round.rates.id > 5 && round.halfStar) { halfStar =>
                 @for(i <- 1 to round.rates.id / (if (halfStar) 2 else 1)) {

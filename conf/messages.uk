@@ -30,6 +30,7 @@ rounds = Раунди
 unrated = Без оцінки
 selected = Вибрані
 rejected = Відкинуті
+approvals = Схвалень: {0}
 rated = Оцінені
 all = Всі
 all.jury.rating = Сумарний вибір журі

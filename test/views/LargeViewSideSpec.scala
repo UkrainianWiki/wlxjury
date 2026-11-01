@@ -90,6 +90,21 @@ class LargeViewSideSpec extends Specification {
     }
   }
 
+  "the jurors' votes in a binary round" should {
+
+    "show a check for a selection, a cross for a rejection and nothing for no vote" in {
+      implicit val msgs: play.api.i18n.Messages = messages(request("/"))
+      val list = controllers.RoundList(binaryRound, 0, view = controllers.GalleryView.ByRate)
+      val votes = Seq(1 -> 1, 2 -> -1, 3 -> 0).map { case (id, rate) =>
+        (org.intracer.wmua.Selection(101L, id.toLong, binaryRound.getId, rate),
+          db.scalikejdbc.User(s"Juror $id", s"j$id@example.org", id = Some(id.toLong)))
+      }
+      val items = Jsoup.parse(views.html.large.juryStat(votes, list).body).select(".large-line li").asScala
+      items.map(li => (li.select(".bi-check-lg").size, li.select(".bi-x-lg").size, li.select(".visually-hidden").text)) must_==
+        Seq((1, 0, "selected"), (0, 1, "rejected"), (0, 0, ""))
+    }
+  }
+
   "a contest file's large view" should {
 
     "show the file's details under its buttons, then the files after it" in {

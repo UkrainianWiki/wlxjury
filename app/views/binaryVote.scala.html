@@ -1,0 +1,13 @@
+@(rate: Int, approvals: Boolean = false)(implicit messages: Messages)
+@* A binary round's result, never stars: with `approvals`, how many jurors selected the file
+   (rate: ImageWithRating.approvals), a check and that number; else one juror's vote, a check
+   if selected, a cross if rejected, nothing if unrated. The icons (theme.css's selected and
+   rejected colours, main.css .wlx-vote-*) are hidden from screen readers, which read the
+   text instead *@
+@if(approvals) {
+<span class="wlx-approvals" title="@Messages("approvals", rate)"><i class="bi bi-check-lg wlx-vote-selected" aria-hidden="true"></i> <span aria-hidden="true">@rate</span><span class="visually-hidden">@Messages("approvals", rate)</span></span>
+} else if (rate > 0) {
+<i class="bi bi-check-lg wlx-vote-selected" aria-hidden="true"></i><span class="visually-hidden">@Messages("selected")</span>
+} else if (rate < 0) {
+<i class="bi bi-x-lg wlx-vote-rejected" aria-hidden="true"></i><span class="visually-hidden">@Messages("rejected")</span>
+}

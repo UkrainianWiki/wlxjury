@@ -90,7 +90,7 @@ class ImagesSqlSpec extends FunSuite with AutoRollbackMunitDb {
   dbTest("grouped - group by page list by round") { implicit session =>
     check(
       SelectionQuery(roundId = Some(3), grouped = true),
-      s"""select sum(s.rate) as rate, count(s.rate) as rate_count, $imageFields from selection s
+      s"""select sum(s.rate) as rate, count(s.rate) as rate_count, sum(s.rate > 0) as approvals, $imageFields from selection s
           STRAIGHT_JOIN images i
           on i.page_id = s.page_id
           where
@@ -204,7 +204,7 @@ class ImagesSqlSpec extends FunSuite with AutoRollbackMunitDb {
         grouped = true,
         limit = Some(Limit(pageSize = Some(5), offset = Some(10)))
       ),
-      s"""select sum(s.rate) as rate, count(s.rate) as rate_count, $imageFields from selection s
+      s"""select sum(s.rate) as rate, count(s.rate) as rate_count, sum(s.rate > 0) as approvals, $imageFields from selection s
           STRAIGHT_JOIN images i
           on i.page_id = s.page_id
           where s.round_id = ?

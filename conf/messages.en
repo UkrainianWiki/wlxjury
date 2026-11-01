@@ -31,6 +31,7 @@ rounds = Rounds
 unrated = Unrated
 selected = Selected
 rejected = Rejected
+approvals = Approvals: {0}
 rated = Rated
 all = All
 all.jury.rating = All jury rating

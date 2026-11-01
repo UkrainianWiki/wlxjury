@@ -31,6 +31,7 @@ rounds = Tours
 unrated = Pas notées
 selected = Sélectionnés
 rejected = Rejetées
+approvals = Approbations : {0}
 rated = Notées
 all = Toutes
 all.jury.rating = Toutes les notes du jury
