@@ -89,7 +89,7 @@
             <div class="d-none">
             @form(routes.UserController.resetPassword(editUserForm("id").value.map(_.toLong).get),
                 Symbol("class") -> "form-vertical", Symbol("id") -> "reset-password") {
-                <input type="submit" class="btn btn-outline-secondary" value="@Messages("Reset password")">
+                <input type="submit" class="btn btn-outline-secondary" value="@Messages("resetpassword")">
                 }
             </div>
         </div>

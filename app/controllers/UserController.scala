@@ -200,7 +200,7 @@ class UserController @Inject()(cc: ControllerComponents,
         formUser.password.nonEmpty
 
     if (formUser.email.nonEmpty && User.countByEmail(userId, formUser.email) > 0) {
-      badRequest(editUserForm.fill(formUser).withError("email", "email should be unique"))
+      badRequest(editUserForm.fill(formUser).withError("email", "error.email.already.exist"))
     } else if (accountChanged && !canEditAccount(user, editedUser)) {
       badRequest(editUserForm.fill(formUser).withGlobalError("user.in.other.contests"))
     } else {

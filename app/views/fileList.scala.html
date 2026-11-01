@@ -52,7 +52,7 @@
         @defining(s"<!-- " +
                 s"${Messages("round")} ${round.fold(Messages("no"))(_.description)}, " +
                 s"${Messages("juror")}: ${Option(asUser).fold(Messages("all"))(u => u.fullname)} " +
-                s"${KOATUU.regions.get(region).fold("")(name => s", ${Messages("region")} $name")}. --> ") { t => @t <br/> }
+                s"${KOATUU.regions.get(region).fold("")(name => s", ${Messages("region.menu")} $name")}. --> ") { t => @t <br/> }
 
         @if(wrapInTable) {
             <table class="table table-striped table-sm">
