@@ -867,11 +867,14 @@ mode, every page in the mode asked for, no CSP violation; the only console error
 
 Left for separate branches; none blocks merging this one.
 
-1. **Russian translations.** `messages.ru` lacks 62 keys used by the admin pages (a gap that
-   predates this branch; Phase 2 filled only the keys on the lines it added). List them with a
-   script over the `Messages("…")` keys in `app/views` against each messages file, fill ru, and
-   add a spec that every key used by the views exists in all four files (as `StartStopViewSpec`
-   does for its own keys), so the gap can't reopen.
+1. **Russian translations.** Done (6f5244f8): ru lacked 129 keys, uk 24, fr 14; all four files
+   now have the same keys. A few texts used as keys got keys (`contests`, `row.number`, `name`,
+   `resetpassword`, `region.menu`, `error.email.already.exist`), and keys used but in no file got
+   added (`root`, `role.board`/`auditor`/`staff`, `top.images`). `MessagesCompletenessSpec`
+   checks the keys used in `app/` (literal lookups, helpers taking a key, run-time keys listed in
+   the spec) against all four files, which must share keys and placeholders. Left: the
+   `/monuments` headers (field names, allowlisted), 57 unused keys (mostly the old sign-up and
+   mail flow) kept, and English values in uk/ru for those unused keys.
 2. **Commons category autocomplete.** Done (94348f92, planned in a6402282): `category-suggest.js`
    on the round form's two categories ("category") and the import sources on the contest files
    and campaigns pages plus a new contest's images ("mixed"); the CSP's `connect-src`. Not
