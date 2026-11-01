@@ -151,10 +151,12 @@ class RoundService @Inject() (
     // checks for its active job under the round's lock (RoundConflicts.removeFromRound)
     Round.lock(round.previousIds :+ round.getId)
     val state = distribution.initialState(round, listOnly)
-    // the top-N's order only where it picks the files, from a yes/no previous round
-    val topOrder = round.topImages
-      .filter(_ => round.previousIds.nonEmpty && Round.findByIds(round.contestId, round.previousIds).exists(_.isBinary))
-      .map(_ => round.topOrderParam)
+    // the top-N's order and the rejected-by filter only where they apply: from a yes/no
+    // previous round
+    val binaryPrevious =
+      round.previousIds.nonEmpty && Round.findByIds(round.contestId, round.previousIds).exists(_.isBinary)
+    val topOrder = round.topImages.filter(_ => binaryPrevious).map(_ => round.topOrderParam)
+    val rejectedBy = round.rejectedByFilter.filter(_ => binaryPrevious)
     jobs.enqueue(
       NewJob(
         kind = RoundDistributionHandler.Kind,
@@ -170,7 +172,7 @@ class RoundService @Inject() (
             "previous" -> round.previous,
             "distribution" -> round.distribution,
             "prevSelectedBy" -> round.selectedByFilter,
-            "prevRejectedBy" -> round.rejectedByFilter,
+            "prevRejectedBy" -> rejectedBy,
             "prevMinAvgRate" -> round.prevMinAvgRate,
             "topImages" -> round.topImages,
             "topBinaryOrder" -> topOrder,

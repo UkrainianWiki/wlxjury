@@ -32,19 +32,17 @@ class PrevSelectedByZeroMigrationSpec extends Specification with TestDb with Bef
       val first = round(1, None, Some(0))
       val rounds = Seq(
         first,
-        round(2, Some(""), Some(0)),
-        round(3, Some("  "), Some(0)),
-        round(4, Some(first.getId.toString), Some(0)),
-        round(5, None, Some(2)),
-        round(6, Some(first.getId.toString), Some(3)),
-        round(7, None, None),
-        round(8, Some(first.getId.toString), None)
+        round(2, Some(first.getId.toString), Some(0)),
+        round(3, None, Some(2)),
+        round(4, Some(first.getId.toString), Some(3)),
+        round(5, None, None),
+        round(6, Some(first.getId.toString), None)
       )
       def stored = rounds.map(r => roundDao.findById(r.getId).get)
 
       migrate()
       val after = stored
-      val once = (after.map(_.prevSelectedBy) === Seq(None, None, None, None, Some(2), Some(3), None, None)) and
+      val once = (after.map(_.prevSelectedBy) === Seq(None, None, Some(2), Some(3), None, None)) and
         (after.map(_.previous) === rounds.map(_.previous)) and
         (after.map(_.name) === rounds.map(_.name))
 

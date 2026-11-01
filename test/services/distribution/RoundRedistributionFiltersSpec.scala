@@ -303,6 +303,82 @@ class RoundRedistributionFiltersSpec extends Specification with TestDb with Befo
         ((job.params \ "settings" \ "prevRejectedBy").asOpt[Int] must beSome(1))
     }
 
+    "ignore rejected-by from a rated previous round and with no previous round, on every path" in {
+      implicit val contest: ContestJury = createContests(1).head
+      val jurors = createUsers("jury", 1, 2)
+      addImages(contest, 1 to 10)
+      val service = TestRoundServices.roundService(TestRoundServices.handler(chunkRows = 3))
+      val source = Round(None, 0, Some("Source"), contest.getId, active = true)
+      val rated = service.createNewRound(source.copy(rates = Round.ratesById(5)), jurors.map(_.getId))
+      // rows with a negative rate, which rejected-by would count in a yes/no round
+      def vote(): Unit = SelectionJdbc.byRound(rated.getId).foreach { row =>
+        SelectionJdbc.rate(row.pageId, row.juryId, rated.getId, if (row.pageId % 2 == 0) -1 else 3)
+      }
+      vote()
+      val fromRated = source.copy(previous = Some(rated.getId.toString), distribution = 1)
+      val noPrevious = source.copy(distribution = 1)
+      val pairs = Seq(fromRated, noPrevious).map(settings =>
+        Seq(None, Some(1)).map(by => service.createNewRound(settings.copy(prevRejectedBy = by), jurors.map(_.getId))))
+      val created = pairs.map(_.map(r => pageIds(r.getId)))
+      val settings = pairs.map(_.map(r =>
+        (service.distributionJob(r.getId).get.params \ "settings" \ "prevRejectedBy").asOpt[Int]))
+      addImages(contest, 11 to 20)
+      service.distributeNewImages(rated.getId)
+      vote()
+      val inMemory = new DistributeImages(ImageJdbc)
+      val reference = pairs.map(_.map(r => inMemory.imagesByRound(r, RoundDistributionHandler.previousRounds(r))
+        .map(_.pageId).toSet))
+      val counts = pairs.map(_.map(r => service.newFilesCount(r.getId)))
+      val added = pairs.map(_.map(r => service.distributeNewImages(r.getId)))
+      (created === Seq.fill(2)(Seq.fill(2)((1L to 10L).toSet))) and
+        (settings === Seq.fill(2)(Seq(None, None))) and
+        (reference === Seq.fill(2)(Seq.fill(2)((11L to 20L).toSet))) and
+        (counts === Seq.fill(2)(Seq(10L, 10L))) and
+        (added === Seq.fill(2)(Seq(10, 10))) and
+        (pairs.map(_.map(r => pageIds(r.getId))) === Seq.fill(2)(Seq.fill(2)((1L to 20L).toSet)))
+    }
+
+    "sum the rejections of two yes/no previous rounds, on every path" in {
+      implicit val contest: ContestJury = createContests(1).head
+      val jurors = createUsers("jury", 1, 2)
+      addImages(contest, 1 to 10)
+      val service = TestRoundServices.roundService(TestRoundServices.handler(chunkRows = 3))
+      val source = Round(None, 0, Some("Source"), contest.getId, active = true)
+      val first = service.createNewRound(source, jurors.map(_.getId))
+      val second = service.createNewRound(source.copy(name = Some("Second")), jurors.map(_.getId))
+      // juror 1 rejects the even files in the first round and those divisible by 3 in the
+      // second: only 6, 12 and 18 have two rejections, one in each round
+      def vote(): Unit = Seq(first -> 2, second -> 3).foreach { case (round, divisor) =>
+        SelectionJdbc.byRound(round.getId).foreach { row =>
+          val rate = if (row.juryId == jurors.head.getId && row.pageId % divisor == 0) -1 else 1
+          SelectionJdbc.rate(row.pageId, row.juryId, round.getId, rate)
+        }
+      }
+      vote()
+      val next = source.copy(previous = Some(s"${first.getId},${second.getId}"), distribution = 1, number = 3)
+      val cases = Seq(
+        (next.copy(prevRejectedBy = Some(2)), (1L to 20L).toSet -- Set(6L, 12L, 18L)),
+        (next.copy(prevRejectedBy = Some(1)), Set[Long](1, 5, 7, 11, 13, 17, 19))
+      )
+      val inMemory = new DistributeImages(ImageJdbc)
+      val created = cases.map { case (settings, expected) =>
+        val round = service.createNewRound(settings, jurors.map(_.getId))
+        (round, expected, pageIds(round.getId), inMemory.imagesByRound(round, Seq(first, second)).map(_.pageId).toSet)
+      }
+      addImages(contest, 11 to 20)
+      Seq(first, second).foreach(r => service.distributeNewImages(r.getId))
+      vote()
+      created.map { case (round, expected, before, beforeReference) =>
+        val added = expected.filter(_ > 10)
+        val reference = inMemory.imagesByRound(round, Seq(first, second)).map(_.pageId).toSet
+        val count = service.newFilesCount(round.getId)
+        val distributed = service.distributeNewImages(round.getId)
+        (before === expected.filter(_ <= 10)) and (beforeReference === Set.empty[Long]) and
+          (reference === added) and (count === added.size.toLong) and (distributed === added.size) and
+          (pageIds(round.getId) === expected)
+      }.reduce(_ and _)
+    }
+
     "ignore \"selected by at least 0\" in a round with no previous round" in {
       // V73 sets such a 0 to NULL: it must distribute as no filter does, on every path
       implicit val contest: ContestJury = createContests(1).head

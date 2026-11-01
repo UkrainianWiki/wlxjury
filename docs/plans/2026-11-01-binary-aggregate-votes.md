@@ -339,7 +339,7 @@ ranking) and `HAVING SUM(s.rate < 0) < N` in the binary ranking; in memory,
 "Distribute new files" all apply it; the job settings record it. Ignored without a
 previous yes/no round.
 
-## Left
+## Done: stored "selected by at least 0" (decision 4)
 
 - Stored "selected by at least 0" (decision 4), checked on production 2026-11-01: ~260
   rounds. Its meaning changed in 1cc47ee8 (2018-11-17): before, 0 read the previous round's
@@ -349,7 +349,7 @@ previous yes/no round.
   - ~45% have no previous round: the value is unused there (the old form's default; they
     also have `prev_min_avg_rate` 0.00). NULL changes nothing.
   - Ids < 588 with a previous round: distributed under the old meaning, which today's 0
-    doesn't reproduce either; finished contests. Leave as 0.
+    didn't reproduce either; finished contests. V73 sets them to NULL like every stored 0.
   - Ids >= 588 with a previous round (34), files vs the previous round's:
     - Used as "has an unrated vote", round files = unrated files < previous files: 656
       (45 of 91), 896 (51 of 132), 956 and 958 "Основна номінація: Перший раунд" (480 of
@@ -366,6 +366,9 @@ previous yes/no round.
   (f3875cb9), V73 (d88ac28e) sets every stored 0 to NULL, and the form offers no filter or
   1-6 (719c8a46). On a rerun or "Distribute new files", those old rounds now take all of
   the previous round's files. Nothing left for decision 4.
+
+## Left
+
 - Measured (review item 4) on 533c4b88, the UI fixture server (38,366 files, ~383k votes, 20
   jurors; 1 GB heap, Windows, MariaDB 10.6 in Docker), organiser session, 1 warm-up then 5
   timed GETs each (raw: `target/checks/aggregate-timing-533c4b88.json`):

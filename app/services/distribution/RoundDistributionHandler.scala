@@ -621,12 +621,17 @@ object DistributionSource {
 
   /** With "selected by at least" set, only approvals (rated votes) are read; with "exclude
     * files rejected by at least N", no file rejected N times or more in the previous rounds.
+    * The rejection check is correlated to the row's page id: NULL-safe (unlike `NOT IN`,
+    * where one NULL page id in the subquery would drop every row) and bounded to the
+    * window's own files by the `(round_id, page_id, rate)` index, rather than counting every
+    * previous-round rejection again in each window.
     */
   private def votesCond(prevIds: Seq[Long], votes: PrevVotes): SQLSyntax = {
     val rated = if (votes.rated) sqls"AND s.rate > 0" else sqls""
     val notRejected = votes.rejectedBy.fold(sqls"")(n =>
-      sqls"""AND s.page_id NOT IN (SELECT r.page_id FROM selection r WHERE r.round_id IN ($prevIds) AND r.rate < 0
-             GROUP BY r.page_id HAVING COUNT(*) >= $n)""")
+      sqls"""AND NOT EXISTS (SELECT 1 FROM selection r
+             WHERE r.page_id = s.page_id AND r.round_id IN ($prevIds) AND r.rate < 0
+             HAVING COUNT(*) >= $n)""")
     sqls"$rated $notRejected"
   }
 
