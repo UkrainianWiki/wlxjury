@@ -547,6 +547,34 @@ after it say so.
 
 **What remains:** the B1 review, then B2.
 
+### B1 review fixes
+
+The review found nothing material. These were fixed:
+
+- Low, 1.3 by another path: a download still in flight when the stream failed finished after
+  the `recover` and wrote `running = true` again, and a late write could overwrite a newer
+  run's progress. Each run now writes through `tracker.compute`, and only while it hasn't ended
+  and nothing else has written the progress since its last write. Two specs: an element that
+  finishes after the failure leaves `running = false, failed = true`, and a late update leaves
+  a newer run's progress alone. Commit `2e6bc247`.
+- Low: the `LoginControllerSpec` sign-up links example couldn't fail (the block was inside
+  `@if(false)`). Dropped in `4247b4d2`.
+- Decided open question: `cmd/AddRound` and `cmd/AddNextRound` are deleted. Nothing else used
+  only them. The deletion went into `2e6bc247` by mistake (a staged `git rm`), not into a
+  commit of its own.
+- Decided open question: `RegionCountPairedBenchmark` now requires `id="regionmenu"`
+  (`44406d50`). Its next check, `Volyn O. (` in the HTML, likely fails too: the region menu
+  loads its counts from `data-regions-url`. That benchmark needs rework before its next run.
+- Decided open question: the export stays on the app's proxy. Both links (`contest_images`
+  and `roundStatTable`) now have a title, `thumbnail.urls.help` in all four files, saying that
+  wget or a script must send the session cookie (`217b2291`, asserted in `RoundEditPageSpec`).
+- 6.8 was added to this plan: localize job titles and statuses (`40711640`).
+
+Checks: `Test/compile`, `Gatling/compile`, then `services.LocalImageCache*`,
+`LoginControllerSpec`, `ThumbnailUrlsExportSpec`, `RoundEditPageSpec` and
+`MessagesCompletenessSpec`. Exit 0: 121 total, 117 passed, 4 skipped
+(`target/checks/20261101-230714-20536.log`).
+
 ## Batch B2 results
 
 Branch `ukwikidev/followups`, from `79512eb5`. Commit `e1713e84`.
