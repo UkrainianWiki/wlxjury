@@ -20,6 +20,29 @@ class ErrorHandlerSpec extends PlaySpecification with PlayTestDb {
     }
   }
 
+  "an error under /api" should {
+    "be the API's JSON: a server error with a logged reference, a client error by its status" in {
+      testDbApp { implicit app =>
+        val handler = app.injector.instanceOf[ErrorHandler]
+        val server = handler.onServerError(FakeRequest(GET, "/api/contests"), new RuntimeException("jdbc:mariadb://secret-host"))
+        status(server) === INTERNAL_SERVER_ERROR
+        contentType(server) === Some("application/json")
+        (contentAsJson(server) \ "error").as[String] === "server_error"
+        (contentAsJson(server) \ "reference").as[String] must beMatching("[0-9a-f]{8}")
+        contentAsString(server) must not(contain("secret-host"))
+
+        val tooLarge = handler.onClientError(FakeRequest(POST, "/api/contests"), REQUEST_ENTITY_TOO_LARGE, "<b>raw</b>")
+        status(tooLarge) === REQUEST_ENTITY_TOO_LARGE
+        contentAsJson(tooLarge) === play.api.libs.json.Json.obj("error" -> "payload_too_large")
+        val badRequest = handler.onClientError(FakeRequest(GET, "/api/x"), BAD_REQUEST, "For input string: \"abc\"")
+        contentAsJson(badRequest) === play.api.libs.json.Json.obj("error" -> "bad_request")
+
+        // /apidocs is not under /api/
+        contentType(handler.onClientError(FakeRequest(GET, "/apidocs"), NOT_FOUND, "")) === Some("text/html")
+      }
+    }
+  }
+
   "a client error" should {
     "show the status's message, not the error's text" in {
       testDbApp { implicit app =>

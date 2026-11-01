@@ -28,4 +28,19 @@ object ApiFailure {
     case StatusCode.UnsupportedMediaType => ApiFailure(status, None, ApiError("unsupported_media_type"))
     case _                               => BadRequest
   }
+
+  /** The body of an error Play answers before or around Tapir ([[ErrorHandler]]): a body over
+    * the parser's limit (413), and the other client errors by their status.
+    */
+  def clientErrorBody(status: Int): ApiError = status match {
+    case 404 => ApiError("not_found")
+    case 413 => ApiError("payload_too_large")
+    case 415 => ApiError("unsupported_media_type")
+    case _   => ApiError("bad_request")
+  }
+
+  /** The API's answers to a request under `/api/` ([[ApiAuth.PathPrefix]]) are JSON, also those
+    * of Play's error handlers (CSRF, client and server errors).
+    */
+  def isApiRequest(request: play.api.mvc.RequestHeader): Boolean = request.path.startsWith(ApiAuth.PathPrefix)
 }

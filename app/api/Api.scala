@@ -6,7 +6,7 @@ import org.apache.pekko.stream.Materializer
 import org.intracer.wmua.ContestJury
 import play.api.Logging
 import play.api.http.HttpConfiguration
-import play.api.mvc.RequestHeader
+import play.api.mvc.{PlayBodyParsers, RequestHeader}
 import play.api.routing.Router.Routes
 import services.ContestService
 import sttp.apispec.SecurityScheme
@@ -34,7 +34,12 @@ import scala.concurrent.{ExecutionContext, Future}
   * are JSON ([[ApiFailure]]); Swagger UI and the OpenAPI document are public at `/api/docs`.
   */
 @Singleton
-class Api @Inject() (contestService: ContestService, actorSystem: ActorSystem, httpConfiguration: HttpConfiguration)(
+class Api @Inject() (
+    contestService: ContestService,
+    actorSystem: ActorSystem,
+    httpConfiguration: HttpConfiguration,
+    bodyParsers: PlayBodyParsers
+)(
     implicit mat: Materializer, ec: ExecutionContext
 ) extends JsonFormat
     with Logging {
@@ -156,7 +161,10 @@ class Api @Inject() (contestService: ContestService, actorSystem: ActorSystem, h
         Some(failure(ApiFailure.serverError(reference)))
       })
       .options
+      // the app's parsers, whose limits answer through its error handler (JSON under /api)
+      .copy(playBodyParsers = bodyParsers)
 
   /** The docs, the API, and [[notFound]] for any other path. */
   val routes: Routes = PlayServerInterpreter(serverOptions).toRoutes(docs ++ apiEndpoints :+ notFound)
 }
+
