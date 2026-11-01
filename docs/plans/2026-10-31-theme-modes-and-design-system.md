@@ -886,7 +886,12 @@ Left for separate branches; none blocks merging this one.
    should fall back to the session's contest, as `Secured.inCurrentContest` does). Confirm the
    account and contest first, reproduce in a controller spec, and keep the negative cases (a
    member of another contest, a juror) denied.
-4. **Smaller quirks, all predating this branch:**
+4. **Smaller quirks, all predating this branch.** Fixed: a binary round's result as approvals
+   ("✓ n", a juror's vote as a check or a cross) in the by-rate gallery and the large view's
+   votes, the grouped query counting the approvals apart (79f5c51e, 97f4c1fb); the grouped
+   view removed, so its star counts with it (46017ee3); one `h1` per page and tile ids
+   instead of the empty `h1`s (08876d66); `fileList`'s comment inside the copy block, in a
+   column (739a2e49). Left: `numberOfStars`' hard-coded criteria count (`id.contains(1327)`).
    - Dead branch in the by-rate galleries: `galleryByRate` and `galleryByRateRegions` draw
      green check `<button>`s instead of stars when `round.rates.id == 2`, but no round has
      that id (binary is 1 since 2014, ratings 3 to 20, `Rates` in Round.scala), so it never
