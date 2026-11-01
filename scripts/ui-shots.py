@@ -68,6 +68,30 @@ MARKS_JS = """
 """
 
 
+def stars_js(number=None):
+    """A large-rated shot's script: redraws raty with `number` stars (the fixture's round has
+    ten; 20 is the most a round can have, a 1-20 round without half stars), then logs a
+    console error, which the shot reports as failed, if a star or the cancel icon lies outside
+    the side column's content box, or if ten or fewer are not on one line."""
+    redraw = f"$('#rate-image').raty('set', {{ number: {number}, score: {number - 3} }});" if number else ""
+    return """
+(() => {
+  %s
+  const side = document.querySelector('.large-side'), style = getComputedStyle(side), box = side.getBoundingClientRect();
+  const left = box.left + parseFloat(style.paddingLeft), right = box.right - parseFloat(style.paddingRight);
+  const icons = [...document.querySelectorAll('#rate-image i')];
+  const rects = icons.map(i => i.getBoundingClientRect());
+  const out = rects.filter(r => r.left < left - 0.5 || r.right > right + 0.5).length;
+  const lines = new Set(rects.map(r => Math.round(r.top))).size;
+  const stars = icons.length - 1;
+  if (!stars) console.error('stars: none drawn');
+  if (out) console.error(`stars: ${out} of ${icons.length} icons outside the side column (${left}..${right})`);
+  if (stars <= 10 && lines !== 1) console.error(`stars: ${stars} stars on ${lines} lines, expected one`);
+  console.log(`stars: ${stars} stars on ${lines} line(s), ${out} outside`);
+})();
+""" % redraw
+
+
 def pages(s):
     """(name, user, path[, clicks[, script]]): user is "juror", "organizer" or None (signed
     out); clicks, CSS selectors clicked in turn before the shot (a dropdown opened, say);
@@ -105,6 +129,9 @@ def pages(s):
          ["nav .navbar-nav:last-child > .dropdown:last-child > [data-bs-toggle=dropdown]"]),
         ("contestfiles-marks", "organizer", f"/contest/{c}/files", [], MARKS_JS),
         ("contestfile-large-marks", "organizer", f"/contest/{c}/files/{p}", [], MARKS_JS),
+        # the stars stay inside the side column: the fixture's ten on one line, and 20
+        ("large-rated-stars", "juror", f"/large/round/{rr}/user/{j}/pageid/{s.get('ratedPageId', 0)}", [], stars_js()),
+        ("large-rated-20", "juror", f"/large/round/{rr}/user/{j}/pageid/{s.get('ratedPageId', 0)}", [], stars_js(20)),
     ]
 
 
@@ -223,7 +250,10 @@ def shoot_mode(args, mode):
             if selected and name not in selected:
                 continue
             page = context(user).new_page()
-            failed = []
+            failed, notes = [], []
+            # a shot script's own summary (stars_js)
+            page.on("console", lambda m: notes.append(m.text[:200])
+                    if m.type == "log" and m.text.startswith("stars:") else None)
             page.on("requestfailed", lambda r: failed.append(f"{r.url[:120]} ({r.failure})"))
             # console errors, CSP violations among them
             page.on("console", lambda m: failed.append(f"console {m.type}: {m.text[:200]}")
@@ -251,6 +281,8 @@ def shoot_mode(args, mode):
                 print(f"    mode shown {shown}, expected {expected}/{mode}")
             if args.csp and response is not None and "content-security-policy" not in response.headers:
                 print("    no Content-Security-Policy header")
+            for n in notes:
+                print(f"    {n}")
             for f in failed[:10]:
                 print(f"    failed: {f}")
             page.close()
