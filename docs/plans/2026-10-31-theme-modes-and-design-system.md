@@ -991,3 +991,17 @@ Left for separate branches; none blocks merging this one.
    lacks the same check. Tests: the endpoint's range validation and authorization (another
    juror's round, a stopped round: 409), a Jest case for the tile's stars (click sends the
    rate, the shown stars update, a failure restores them), LargeViewFixturesSpec unaffected.
+9. **Re-rating in the by-rate gallery.** Item 8 gave a rated round's tile gallery interactive
+   stars (`public/javascripts/tile-votes.js`, `main.scala.html`'s `wlx_stars`) but left the
+   by-rate gallery's stars static (`galleryByRate.scala.html`, `showStar`), because a new rate
+   makes the rank and order shown stale until a reload. The user wants it anyway: in the
+   juror's own by-rate view of an active rated round (same condition as the tile stars; not
+   binary, criteria or comments-only, not the all-jurors view), make each file's stars
+   interactive with the same script and rules (half stars, cancel, failure restores, CSRF
+   header, `vote-errors.js`). After a vote the file keeps its place; mark it as changed (e.g.
+   the rank greyed with a small "re-sorted after reload" note, or a tooltip/`title` on the
+   stars and a one-line hint above the list: "Changed rates are re-sorted when the page is
+   reloaded"), with message keys in all four files (MessagesCompletenessSpec checks them).
+   Update the rate text after the stars (`rateString`) in place too. Tests: a view spec for
+   when the stars are interactive here and when not; Jest for the in-place update and the
+   changed mark; the rank/order unchanged until reload.
