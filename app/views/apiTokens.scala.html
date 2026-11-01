@@ -4,7 +4,7 @@
 @* The own profile's personal API tokens (UserController): the list, each usable one with
    Revoke, and the create form, both POST forms with the CSRF token. Right after creating
    one, the new token, shown in that response only, with a button that copies it
-   (copy-field.js). *@
+   (copy-field.js, which the page loads in its head: editUser). *@
 <section class="card" id="api-tokens" aria-labelledby="api-tokens-title">
     <div class="card-body">
         <h2 class="h5 card-title" id="api-tokens-title">@Messages("api.tokens")</h2>
@@ -90,4 +90,3 @@
         }
     </div>
 </section>
-<script src="@routes.Assets.versioned("javascripts/copy-field.js")"></script>

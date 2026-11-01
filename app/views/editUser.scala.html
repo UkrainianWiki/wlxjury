@@ -9,7 +9,14 @@
 @import db.scalikejdbc.User
 
 
-@mainAdmin("edit.user", user, user.getId, contestId = contestId) {
+@* the token card's copy button (copy-field.js): only on the own profile, which has the card *@
+@pageScripts = {
+    @if(tokensCard.nonEmpty) {
+        <script src="@routes.Assets.versioned("javascripts/copy-field.js")"></script>
+    }
+}
+
+@mainAdmin("edit.user", user, user.getId, contestId = contestId, head = pageScripts) {
     <div class="row" >
         <div class="col-md-4">
 
