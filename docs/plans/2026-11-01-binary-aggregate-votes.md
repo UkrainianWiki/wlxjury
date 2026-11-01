@@ -294,3 +294,39 @@ It is from reading the code and the fixture DB (round 1: 20 jurors, 38,366 files
   checked to use it as "no filter".
 - Measure the file-level filter (`HAVING`) on the 38k-file fixture if a filtered all-jurors
   list is slow.
+
+## Follow-up: more ranking methods (STV, normalised ratings)
+
+The user asked whether the order can grow to other methods, for rated rounds too, e.g. the
+single transferable vote. `BinaryOrder` is a closed list of per-file scores, each an SQL
+`ORDER BY` over a file's grouped votes plus the same values in Scala for the in-memory
+distribution; the galleries' paging, the large view's `ROW_NUMBER` position, the file list,
+CSV and top-N rely on that. Two kinds of method:
+
+1. **A score per file** fits as it is: another case with its SQL and a message key. Yes/no:
+   approval share (approvals / assigned jurors), a smoothed share. Rated: mean, sum, share of
+   jurors rating at least k. **Per-juror normalisation** (each juror's ratings as z-scores or
+   percentiles before averaging, against strict and lenient jurors) is still one score per
+   file, written with window functions over each juror's votes. Rated rounds need the type
+   generalised to a round order with the options each kind allows (`top_binary_order` renamed
+   or a new column, by a new migration), and their by-rate order (today a fixed `rate` sort)
+   taking it.
+2. **Methods over ballots**, not scores: STV, Schulze/Condorcet, Borda, Kemeny. A file's result
+   depends on the other files (STV transfers surpluses and eliminated candidates' votes), so
+   it can't be an `ORDER BY`. STV elects N (the seats); the order of election and elimination
+   ranks only partly. Ballots would come from each juror's ratings sorted, with frequent ties
+   on 1-10 stars (a rule: page id, random, or a variant with equal preferences); a yes/no
+   round gives approvals only, which suits approval voting more than STV. Each juror sees
+   only the files distributed to them, while these methods assume ballots over all candidates
+   (or need a rule for the missing ones).
+
+Design for the second kind: the round's order names a method with its parameters (`stv`,
+seats N); a background job (`job` table, `JobScheduler`) reads all the votes, runs the method
+in Scala and stores each file's rank, e.g. `round_result(round_id, page_id, rank, method,
+params, computed_at)`; the galleries, file list, CSV and top-N order by that rank, keeping
+paging and the large view's position cheap. The result is marked stale when votes change and
+recomputed on request or when the round stops; never per page view (the fixture round has
+~383k votes). The stored string, form field and sort menu stay: a method either gives SQL
+columns, as now, or orders by the stored rank. First candidates: per-juror normalisation, then
+STV. Decide first: tie rule for ballots, partial ballots, and what an all-jurors gallery shows
+for files STV didn't elect.
