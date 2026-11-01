@@ -47,6 +47,10 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
       withPageId: Option[Long] = None,
       // only the files before, or from, a file's place in the order (the large view's neighbours)
       keyset: Option[Keyset] = None,
+      // the vote filter picks files, those with a matching vote, and their counts and order
+      // still use all their votes (HAVING on the grouped query): all the jurors' lists
+      // (docs/plans/2026-11-01-binary-aggregate-votes.md, decision 3); else it picks vote rows
+      filesByVotes: Boolean = false,
       driver: String = "mysql"
   ) {
 
@@ -92,6 +96,7 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
       } else if (grouped) {
         " group by s.page_id"
       } else ""
+      val havingSql = if (grouped && !byRegion) having else sqls""
 
       // SQL clause order: FROM/JOIN → WHERE → GROUP BY → ORDER BY
       val needsMonumentJoin = monumentJoin || byRegion
@@ -100,7 +105,7 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
           join(monuments = needsMonumentJoin)
 
       val mainSql =
-        sqls"${SQLSyntax.createUnsafely(structureStr)} ${where(count)} ${SQLSyntax.createUnsafely(groupByStr + (if (!(count || byRegion)) orderBy() else ""))}"
+        sqls"${SQLSyntax.createUnsafely(structureStr)} ${where(count)} ${SQLSyntax.createUnsafely(groupByStr)} $havingSql ${SQLSyntax.createUnsafely(if (!(count || byRegion)) orderBy() else "")}"
 
       // A juror has at most one row per image in a round (unique page_id, jury_id,
       // round_id): with both fixed, the rows are the images.
@@ -116,7 +121,8 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
         val countExpr = SQLSyntax.createUnsafely(
           if (oneRowPerImage) "COUNT(*)" else "COUNT(DISTINCT s.page_id)"
         )
-        sqls"select $countExpr from selection s ${where()}"
+        // the files with a matching vote: the same number with the filter on the rows
+        sqls"select $countExpr from selection s ${where(votes = true)}"
       } else if (count) {
         sqls"select count(t.pi_on_i) from ($mainSql) t"
       } else if (noLimit || byRegion) {
@@ -172,9 +178,9 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
     def pageIds()(implicit session: DBSession = autoSession): Seq[Long] =
       sql"${files.query(idOnly = true, noLimit = true)}".map(_.long(1)).list()
 
-    /** The files of `pageIds` with their votes the list has (its juror's, or all the jurors',
-      * by its vote filter), in the order of `pageIds`: two queries by page id, whatever the
-      * round's size.
+    /** The files of `pageIds` with their votes the list has (its juror's, or all the jurors':
+      * all their votes with [[filesByVotes]], else those of its vote filter), in the order of
+      * `pageIds`: two queries by page id, whatever the round's size.
       */
     def withVotes(pageIds: Seq[Long])(implicit session: DBSession = autoSession): Seq[ImageWithRating] =
       if (pageIds.isEmpty) Nil
@@ -196,7 +202,7 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
       val keys = columns.indices.map(n => s"k$n")
       val select = columns.zip(keys).map { case ((expr, _), k) => s"$expr as $k" }.mkString(", ")
       val from = if (monumentJoin) join(monuments = true) else " from selection s"
-      val inner = sqls"${SQLSyntax.createUnsafely(s"select $select $from")} ${where()} group by s.page_id"
+      val inner = sqls"${SQLSyntax.createUnsafely(s"select $select $from")} ${where()} group by s.page_id $having"
       val outer = SQLSyntax.createUnsafely(
         s"select ${keys.mkString(", ")}, count(*) from (") +
         inner +
@@ -204,8 +210,10 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
       sql"$outer".map(rs => (keys.indices.map(n => rs.int(n + 1)), rs.int(keys.size + 1))).list()
     }
 
+    /** The list's files: a file list's or CSV's too, one per file whatever its votes. */
     def count()(implicit session: DBSession = autoSession): Int = {
-      sql"${query(count = true)}".map(_.int(1)).single().getOrElse(0)
+      val counted = if (groupWithDetails) files else this
+      sql"${counted.query(count = true)}".map(_.int(1)).single().getOrElse(0)
     }
 
     def imageRank(pageId: Long)(implicit session: DBSession = autoSession): Int = {
@@ -350,23 +358,35 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
                              else "")
     }
 
-    def where(count: Boolean = false): SQLSyntax = {
-      val col = SQLSyntax.createUnsafely(s"m.$regionColumn")
-
-      // the votes the list has; and the file `withPageId` too, whatever its vote
+    /** The vote filter's condition, over a vote row or (`perFile`) over a file's grouped rows:
+      * one matching vote; and the file `withPageId` too, whatever its votes.
+      */
+    private def voteFilter(perFile: Boolean): Option[SQLSyntax] = {
+      def matching(cond: SQLSyntax) = if (perFile) sqls"sum($cond) > 0" else cond
       val votes: Seq[SQLSyntax] = Seq(
-        rate.map(r => sqls"s.rate = $r"),
-        rated.map(r => if (r) sqls"s.rate > 0" else sqls"s.rate = 0")
+        rate.map(r => matching(sqls"s.rate = $r")),
+        rated.map(r => matching(if (r) sqls"s.rate > 0" else sqls"s.rate = 0"))
       ).flatten
-      val voteFilter = votes.headOption.map { _ =>
+      votes.headOption.map { _ =>
         val cond = SQLSyntax.join(votes, sqls"and")
         withPageId.fold(cond)(pageId => sqls"($cond or s.page_id = $pageId)")
       }
+    }
+
+    /** A grouped query's HAVING: with [[filesByVotes]], the files of the vote filter. */
+    private def having: SQLSyntax =
+      voteFilter(perFile = true).filter(_ => filesByVotes).fold(sqls"")(cond => sqls"having $cond")
+
+    /** @param votes with the vote filter on the rows: without it for [[filesByVotes]], whose
+      *              HAVING has it ([[having]])
+      */
+    def where(count: Boolean = false, votes: Boolean = !filesByVotes): SQLSyntax = {
+      val col = SQLSyntax.createUnsafely(s"m.$regionColumn")
 
       val conditions: Seq[SQLSyntax] = Seq(
         userId.map(id => sqls"s.jury_id = $id"),
         roundId.map(id => sqls"s.round_id = $id"),
-        voteFilter,
+        voteFilter(perFile = false).filter(_ => votes),
         keyset.map(k => if (k.before) orderedBefore(k.values) else sqls"not ${orderedBefore(k.values)}"),
         regions.headOption.map { _ =>
           if (subRegionFilter) {

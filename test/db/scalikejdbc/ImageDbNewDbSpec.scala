@@ -267,4 +267,56 @@ class ImageDbNewDbSpec extends Specification with BeforeAll with TestDb {
       q.count() === q.list().size
     }
   }
+
+  "a vote filter of all the jurors' votes (filesByVotes)" should {
+
+    val round = 9102L
+
+    /** Three jurors' votes: A (61) 2 approvals and a rejection, B (62) an approval and 2
+      * unrated, C (63) 3 unrated.
+      */
+    def votes(): Unit = {
+      imageDao.batchInsert(Seq(img(61L, "13-001"), img(62L, "13-002"), img(63L, "13-003")))
+      val rates = Map(61L -> Seq(1, 1, -1), 62L -> Seq(0, 0, 1), 63L -> Seq(0, 0, 0))
+      selectionDao.batchInsert(rates.toSeq.flatMap { case (pageId, rs) =>
+        rs.zipWithIndex.map { case (rate, j) =>
+          Selection(pageId = pageId, juryId = 9100L + j, roundId = round, rate = rate)
+        }
+      })
+    }
+
+    def query(rate: Option[Int] = None, rated: Option[Boolean] = None) =
+      SelectionQuery(roundId = Some(round), rate = rate, rated = rated, grouped = true, filesByVotes = true,
+        order = Seq("sum(s.rate > 0)" -> -1, "sum(s.rate < 0)" -> 1, "s.page_id" -> 1))
+
+    "list the files with a matching vote, counted by all their votes" in new AutoRollbackDb {
+      votes()
+      def listed(q: SelectionQuery) = q.list().map(f => (f.pageId, f.approvals, f.rejections, f.countFromDb))
+      (listed(query(rate = Some(-1))) === Seq((61L, 2, 1, 3))) and
+        (listed(query(rate = Some(0))) === Seq((62L, 1, 0, 3), (63L, 0, 0, 3))) and
+        (listed(query(rated = Some(true))) === Seq((61L, 2, 1, 3), (62L, 1, 0, 3))) and
+        (query(rate = Some(-1)).count() === 1) and
+        (query(rate = Some(0)).count() === 2) and
+        // a file the filter leaves out, listed for the large view, in its place
+        (query(rate = Some(-1)).copy(withPageId = Some(62L)).list().map(_.pageId) === Seq(61L, 62L))
+    }
+
+    "rank and position the listed files among themselves" in new AutoRollbackDb {
+      votes()
+      (query(rate = Some(0)).keyCounts(Seq("sum(s.rate > 0)" -> -1)) === Seq((Seq(1), 1), (Seq(0), 1))) and
+        (query(rate = Some(0)).copy(withPageId = Some(63L)).imageRank(63L) === 2)
+    }
+
+    "give a file list's files all their votes" in new AutoRollbackDb {
+      votes()
+      val files = query(rate = Some(-1)).copy(grouped = false, groupWithDetails = true).list()
+      (files.map(_.pageId) === Seq(61L)) and (files.head.selection.map(_.rate).sorted === Seq(-1, 1, 1))
+    }
+
+    "pick vote rows without it, as a distribution reads the votes (byRoundMerged)" in new AutoRollbackDb {
+      votes()
+      query(rate = Some(-1)).copy(filesByVotes = false).list().map(f => (f.pageId, f.approvals, f.rejections)) ===
+        Seq((61L, 0, 1))
+    }
+  }
 }

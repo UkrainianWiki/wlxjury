@@ -113,6 +113,22 @@ class GalleryRegionsSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
+    "list as many files as an organiser region count, each counted by all its votes" in {
+      implicit val cfg: Map[String, String] = Map("gallery.regionCounts" -> "all")
+      testDbApp { implicit app =>
+        SharedTestDb.truncateAll()
+        val f = fixture("Wiki Loves Monuments", "Ukraine", 2025, None,
+          Seq("07-101-0001", "07-101-0002", "14-101-0001"))
+        val second = userDao.create(User("Second", "second@example.com", None, Set("jury"), contestId = f.contest.id))
+        selectionDao.batchInsert(Seq(Selection(imageDao.findById(1L).get, second, f.round, 1)))
+        val url = s"/byrate/round/${f.round.getId}/user/0/page/1?filter=unrated"
+        regionNames(url, f.admin) === List("Volyn O. (2)", "Donetsk O. (1)")
+        val volyn = get(s"/byrate/round/${f.round.getId}/user/0/region/07/page/1?filter=unrated", f.admin)
+        // file 1 first, by its approval, which a vote of the unrated alone would not count
+        tiles(volyn) === List(1L, 2L)
+      }
+    }
+
     "keep the vote filter when following a counted region link" in {
       testDbApp { implicit app =>
         val f = fixture("Wiki Loves Monuments", "Ukraine", 2025, None,
