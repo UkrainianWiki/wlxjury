@@ -458,3 +458,83 @@ trial and Codex colours (theme decision 2). Keyset paging of galleries. A design
 organisers' all-jurors views. "Count new files" as a job. Moving local image downloads to the
 job table. Prefetching import pages. The import's open questions (unifying the monument
 template, WLE nominations). The Debian package and Ansible deployment options.
+
+## Batch B1 results
+
+Branch `ukwikidev/followups`, from `fde91fb4`. Commits `20f3ebb3`..`7cd965bc`.
+
+**1.1** A failing spec came first (`RoundEditPageSpec` "keep a stopped round stopped…": the stopped
+round came back `active = true`, exit 1, `target/checks/20261101-221305-18664.log`). Now
+`Round.updateRound` saves only the name, and only a new round is submitted with `active = true`.
+Starting and stopping go through `setRound` alone. Because of that, the edit form no longer
+flashes "still distributing".
+
+**1.3** `startDownload` runs the contest's image query (`contestImages`) inside a `Try`, as the
+round variant does. `runDownloadImpl` recovers from a failure of the registry, the scan or the
+stream. On any failure the error is logged and the progress is set to `running = false` with a
+new flag, `failed = true` (no exception text). `cache-status.js` then shows "Download failed" or
+"… – failed" and stops polling. Specs: the image query throws, and the download itself fails.
+Jest covers the new texts.
+
+**1.4** Nothing in the code or the docs says the export is for upload.wikimedia.org: its only
+documented use is wget or a script that pre-warms or fetches the thumbnails. So the thumbnails
+are absolute URLs on the app's own proxy, with `wlxjury.host` as the host (falling back to the
+request's host). Lines that are already absolute (the file itself on Wikimedia, when it is no
+wider) stay as they are. The proxy needs a signed-in session, so wget must send the session
+cookie. New spec: `ThumbnailUrlsExportSpec`.
+
+**1.5 + 4.2** `Tools`, `GlobalRefactor`, `cmd/AddUsers` and `cmd/ConnectDb` are unreachable:
+no route, no `mainClass` in `build.sbt`, nothing under `scripts/`, and no mention in the docs
+except the reviews. Their only user is `scripts/GreeceESPC` (a `main` of its own, contest 78,
+also unused). All five are deleted, together with `Selection.apply(Page, …)` and
+`SelectionJdbc.destroyAll`. So `ConnectDb` isn't fixed: it's gone.
+
+**1.7** `saveRound`, `setRound` and `setRoundUser` answer a missing round with `errorPage` and
+`error.round.not.found`. Spec: all three give 404 with the message, and the id doesn't appear.
+
+**6.1** These are now message keys with arguments in all four files: resubmitted round (3
+variants), still distributing, "Distribute new files" already running or resumed (3),
+`JobScheduler.retry`'s refusals (now `RetryRefused(key, args)`, 4 keys), and import already
+running. Failures on the round form: an `IllegalArgumentException` from our own `require`
+checks is shown without its "requirement failed: " prefix. Any other failure shows only a
+reference (`Secured.newReference`), logged with its stack trace at ERROR, the way
+`ErrorHandler` does (`round.creation.failed.reference`, `round.distribute.failed.reference`).
+This path never has a job's stored reason: it fails before a job runs. The keys looked up from
+values are listed in `MessagesCompletenessSpec.dynamicKeys`. Specs: a refusal is shown, a
+mocked DB-style failure shows a reference without its text, and a job retry is refused with the
+message.
+
+**6.2** The `@if(false)` block with the three `href=""` links is removed from `signUp`. The keys
+stay: `login` uses them. Spec: the sign-up page has no `href=""`.
+
+**6.3** `SelectionJdbc.imageCountByRound` is deleted. The specs that used it count with
+`ImageJdbc.imageCountByRounds`. `destroyAll` went with 4.2. `regionNav.scala.html`, its dead
+call in `monuments` and its `#regionnav` CSS are deleted.
+
+**Checks** (all through `scripts/agent-check.py`):
+- The 1.1 spec before the fix: exit 1 (`20261101-221305-18664.log`), as intended.
+- `Test/compile` + 35 specs (the A and A2 rows, the image cache specs, the specs of the
+  changed files, `views.*`): 399 total, 394 passed, 4 skipped, 1 pending, 1 failed. The failure
+  was in my new refusal test (duplicate form field), fixed in the helper
+  (`20261101-222839-28188.log`).
+- `RoundEditPageSpec` again: exit 0, 18/18 (`20261101-223414-14016.log`).
+- Jest after a local `npm ci`: exit 0, 12 suites, 206 tests.
+- The full suite was not run (it comes after B5).
+
+**Slip:** commit `56635f0a` (the export) also took the deletions already staged with `git rm`
+(the four tools, `GreeceESPC`, `regionNav.scala.html`), so that commit alone doesn't compile
+(`monuments` still called `regionNav` until `931d966c`). History wasn't rewritten. The commits
+after it say so.
+
+**Open questions**
+- 1.4: if the export is meant for upload.wikimedia.org (no session needed), the host is a
+  one-line change.
+- After `GreeceESPC`'s removal, `cmd/AddRound` and `cmd/AddNextRound` have no callers. They were
+  left in place, as they aren't in the plan.
+- `test/gatling/setup/RegionCountPairedBenchmark` and `GalleryLatencyBenchmark` still look for
+  `id="regionnav"`, which the galleries haven't rendered since the region menu (before this
+  batch). They were left as they are.
+- Job titles (`JobHandler.title`) and the job status in "the job is {0}" are still English
+  values inside the localized messages.
+
+**What remains:** the B1 review, then B2.
