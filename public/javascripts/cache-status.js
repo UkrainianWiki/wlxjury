@@ -25,9 +25,11 @@ function formatCacheStatus(p) {
                 : " \u2013 ETA " + p.etaSeconds + "s";
         }
         return p.done + " / " + p.total + " downloaded (" + pct + "%" + errStr + ")"
-            + rate + eta + (p.running ? " \u2013 running\u2026" : " \u2013 done");
+            + rate + eta + (p.running ? " \u2013 running\u2026" : p.failed ? " \u2013 failed" : " \u2013 done");
     } else if (p.running) {
         return "Starting\u2026";
+    } else if (p.failed) {
+        return "Download failed";
     }
     return null;
 }

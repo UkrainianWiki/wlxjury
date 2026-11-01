@@ -31,9 +31,12 @@ class LocalImageCacheServiceSpec extends Specification {
 
   // ── helpers ──────────────────────────────────────────────────────────────
 
-  def mkService(dir: File, maxAttempts: Int = 3, serverPort: Option[Int] = None): LocalImageCacheService = {
+  def mkService(dir: File, maxAttempts: Int = 3, serverPort: Option[Int] = None): LocalImageCacheService =
+    new LocalImageCacheService(mkConfig(dir, maxAttempts, serverPort), system)
+
+  def mkConfig(dir: File, maxAttempts: Int = 3, serverPort: Option[Int] = None): Configuration = {
     val wikiBase = serverPort.map(p => s"http://localhost:$p").getOrElse("https://upload.wikimedia.org")
-    val config = Configuration(
+    Configuration(
       ConfigFactory.parseString(
         s"""wlxjury.thumbs.local-path = "${dir.getAbsolutePath.replace("\\", "/")}"
            |wlxjury.thumbs.parallelism = 2
@@ -43,7 +46,6 @@ class LocalImageCacheServiceSpec extends Specification {
            |""".stripMargin
       )
     )
-    new LocalImageCacheService(config, system)
   }
 
   def mkTempDir(): File = {
@@ -528,6 +530,37 @@ class LocalImageCacheServiceSpec extends Specification {
       svc.progressForRound(8L).total mustEqual 42
       svc.progressForRound(8L).running must beTrue
 
+      tmpDir.delete()
+      ok
+    }
+  }
+
+  "startDownload" should {
+
+    "stop running, as failed, when the image query throws" in {
+      val tmpDir = Files.createTempDirectory("contest-cache-query").toFile
+      val svc = new LocalImageCacheService(mkConfig(tmpDir), system) {
+        override private[services] def contestImages(contestId: Long) = throw new IllegalStateException("no db")
+      }
+
+      svc.startDownload(contestId = 5L)
+
+      svc.progress(5L).running must beFalse
+      svc.progress(5L).failed must beTrue
+      tmpDir.delete()
+      ok
+    }
+
+    "stop running, as failed, when the download itself fails" in {
+      val tmpDir = Files.createTempDirectory("contest-cache-fail").toFile
+      val svc = mkService(tmpDir)
+      svc.progressMap.put(6L, CacheProgress(0, 0, 0, running = true))
+
+      // a null image fails the scan before the stream starts
+      Await.result(svc.runDownload(6L, Seq(null)), 30.seconds)
+
+      svc.progress(6L).running must beFalse
+      svc.progress(6L).failed must beTrue
       tmpDir.delete()
       ok
     }

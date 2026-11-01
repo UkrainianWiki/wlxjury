@@ -24,7 +24,8 @@ import javax.imageio.ImageIO
 import javax.inject.{Inject, Singleton}
 import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Future}
-import scala.util.{Random, Try}
+import scala.util.control.NonFatal
+import scala.util.{Failure, Random, Success, Try}
 
 case class CacheProgress(
     done: Int,
@@ -36,7 +37,8 @@ case class CacheProgress(
     ratePerSec: Double = 0.0,
     etaSeconds: Long   = 0L,
     renamed: Int       = 0, // renamed on Commons, downloaded under the new name (in done)
-    deleted: Int       = 0  // deleted on Commons (in done, not in errors)
+    deleted: Int       = 0, // deleted on Commons (in done, not in errors)
+    failed: Boolean    = false // stopped by an error (logged), not finished
 )
 
 /** Wikimedia has no file at `url` (HTTP 404): perhaps the file was renamed or deleted on
@@ -83,7 +85,7 @@ class LocalImageCacheService(
     config.getOptional[String]("wlxjury.thumbs.wiki-base-url")
       .getOrElse("https://upload.wikimedia.org")
 
-  private val progressMap = new ConcurrentHashMap[Long, CacheProgress]()
+  private[services] val progressMap = new ConcurrentHashMap[Long, CacheProgress]()
   private[services] val roundProgressMap = new ConcurrentHashMap[Long, CacheProgress]()
 
   private val registry = new ConcurrentHashMap[String, Unit]()
@@ -310,10 +312,12 @@ class LocalImageCacheService(
       if (cur.running) cur else { shouldStart.set(true); cur.copy(running = true) }
     })
     if (!shouldStart.get()) return
-    val images = ImageJdbc
-      .findByContestId(contestId)
-      .filter(img => img.isImage && img.url.isDefined && img.width > 0 && img.height > 0)
-    runDownload(contestId, images)
+    Try(contestImages(contestId)) match {
+      case Success(images) => runDownload(contestId, images.filter(downloadable))
+      case Failure(ex) =>
+        logger.warn(s"Failed to load images for contest $contestId", ex)
+        progressMap.put(contestId, CacheProgress(0, 0, 0, running = false, failed = true))
+    }
   }
 
   def startDownloadForRound(contestId: Long, roundId: Long): Unit = {
@@ -323,19 +327,21 @@ class LocalImageCacheService(
       if (cur.running) cur else { shouldStart.set(true); cur.copy(running = true) }
     })
     if (!shouldStart.get()) return
-    val images = scala.util.Try(ImageJdbc.byRound(roundId)) match {
-      case scala.util.Success(imgs) => imgs
-      case scala.util.Failure(ex) =>
-        logger.warn(s"Failed to load images for round $roundId: ${ex.getMessage}")
-        Seq.empty
+    Try(ImageJdbc.byRound(roundId)) match {
+      case Success(images) =>
+        val filtered = images.filter(downloadable)
+        if (filtered.isEmpty) roundProgressMap.put(roundId, CacheProgress(0, 0, 0, running = false))
+        else runDownloadForRound(contestId, roundId, filtered)
+      case Failure(ex) =>
+        logger.warn(s"Failed to load images for round $roundId", ex)
+        roundProgressMap.put(roundId, CacheProgress(0, 0, 0, running = false, failed = true))
     }
-    val filtered = images.filter(img => img.isImage && img.url.isDefined && img.width > 0 && img.height > 0)
-    if (filtered.isEmpty) {
-      roundProgressMap.put(roundId, CacheProgress(0, 0, 0, running = false))
-      return
-    }
-    runDownloadForRound(contestId, roundId, filtered)
   }
+
+  private[services] def contestImages(contestId: Long): Seq[Image] = ImageJdbc.findByContestId(contestId)
+
+  private def downloadable(img: Image): Boolean =
+    img.isImage && img.url.isDefined && img.width > 0 && img.height > 0
 
   private[services] def runDownload(contestId: Long, images: Seq[Image]): Future[Unit] = {
     logger.info(s"Download config: localPath=$localPath, parallelism=$parallelism, ratePerSec=$ratePerSec, maxAttempts=$maxAttempts")
@@ -386,7 +392,14 @@ class LocalImageCacheService(
       .runWith(Sink.ignore)
       .map { _ =>
         tracker.put(key, mkProgress(done.get, running = false))
+        ()
       }
+  }.recover { case NonFatal(ex) =>
+    // the registry, the scan or the stream failed: stop showing it as running
+    logger.error(s"$logLabel: download failed", ex)
+    tracker.compute(key, (_, prev) =>
+      Option(prev).getOrElse(CacheProgress(0, 0, 0, running = false)).copy(running = false, failed = true))
+    ()
   }
 
   private final class FailureCounts {
