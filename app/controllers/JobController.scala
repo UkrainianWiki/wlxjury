@@ -39,7 +39,8 @@ class JobController @Inject() (cc: ControllerComponents, jobs: JobScheduler, blo
       withJob(user, id, request) { job =>
         jobs.retry(job.id) match {
           case Right(_)     => back(request, job)
-          case Left(reason) => back(request, job).flashing("error" -> s"Can't retry: $reason")
+          case Left(refused) =>
+            back(request, job).flashing("error" -> messagesApi.preferred(request)(refused.messageKey, refused.args: _*))
         }
       }
     }

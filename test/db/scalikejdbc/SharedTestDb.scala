@@ -86,8 +86,8 @@ object SharedTestDb {
   }
 
   /** Re-registers the default ScalikeJDBC pool using the shared container's
-   *  JDBC URL.  Call this after stopping a Play application that uses
-   *  PlayDBApiAdapterModule, which closes all pools on shutdown. */
+   *  JDBC URL.  Call this after stopping a Play application: PlayDBApiAdapterModule
+   *  made Play's HikariCP pool the default, and stopping the app closes it. */
   def reregisterDefault(): Unit = {
     require(initialized, "SharedTestDb must be initialized before reregisterDefault()")
     registerPools()

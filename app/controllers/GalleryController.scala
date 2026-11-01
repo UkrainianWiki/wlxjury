@@ -315,9 +315,14 @@ class GalleryController @Inject() (
     )
   }
 
+  /** The thumbnails of the contest's or the round's files, as absolute URLs for wget or a
+    * script: those served by this server's proxy under `host` (`wlxjury.host`), the files
+    * themselves on Wikimedia.
+    */
   def resizedImagesUrls(
       contestId: Long,
-      roundId: Option[Long]
+      roundId: Option[Long],
+      host: String
   ): List[String] = {
     val images =
       roundId.fold(ImageJdbc.findByContestId(contestId))(ImageJdbc.byRound)
@@ -326,7 +331,10 @@ class GalleryController @Inject() (
         image <- images;
         px <- Global.thumbnailWidths(image.width, image.height)
       )
-        yield Global.resizeToPx(image, px)
+        yield Global.resizeToPx(image, px) match {
+          case path if path.startsWith("/") && !path.startsWith("//") => host.stripSuffix("/") + path
+          case url => url
+        }
 
     urls.sorted.distinct
   }
@@ -524,7 +532,9 @@ class GalleryController @Inject() (
         NotFound(views.html.errorPage(Some(user), "error.title",
           if (contest.isEmpty) "error.contest.not.found" else "error.round.not.found"))
       ) { contest =>
-        val urls = resizedImagesUrls(contestId, roundId)
+        val host = config.getOptional[String]("wlxjury.host")
+          .getOrElse((if (request.secure) "https://" else "http://") + request.host)
+        val urls = resizedImagesUrls(contestId, roundId, host)
         val name =
           "WLXJury_Round_Thumb_Urls" + contest.fullName.replaceAll(" ", "_")
         urlsStream(urls, name)

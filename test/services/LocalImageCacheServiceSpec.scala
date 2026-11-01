@@ -31,9 +31,12 @@ class LocalImageCacheServiceSpec extends Specification {
 
   // ── helpers ──────────────────────────────────────────────────────────────
 
-  def mkService(dir: File, maxAttempts: Int = 3, serverPort: Option[Int] = None): LocalImageCacheService = {
+  def mkService(dir: File, maxAttempts: Int = 3, serverPort: Option[Int] = None): LocalImageCacheService =
+    new LocalImageCacheService(mkConfig(dir, maxAttempts, serverPort), system)
+
+  def mkConfig(dir: File, maxAttempts: Int = 3, serverPort: Option[Int] = None): Configuration = {
     val wikiBase = serverPort.map(p => s"http://localhost:$p").getOrElse("https://upload.wikimedia.org")
-    val config = Configuration(
+    Configuration(
       ConfigFactory.parseString(
         s"""wlxjury.thumbs.local-path = "${dir.getAbsolutePath.replace("\\", "/")}"
            |wlxjury.thumbs.parallelism = 2
@@ -43,7 +46,6 @@ class LocalImageCacheServiceSpec extends Specification {
            |""".stripMargin
       )
     )
-    new LocalImageCacheService(config, system)
   }
 
   def mkTempDir(): File = {
@@ -528,6 +530,80 @@ class LocalImageCacheServiceSpec extends Specification {
       svc.progressForRound(8L).total mustEqual 42
       svc.progressForRound(8L).running must beTrue
 
+      tmpDir.delete()
+      ok
+    }
+  }
+
+  "startDownload" should {
+
+    "stop running, as failed, when the image query throws" in {
+      val tmpDir = Files.createTempDirectory("contest-cache-query").toFile
+      val svc = new LocalImageCacheService(mkConfig(tmpDir), system) {
+        override private[services] def contestImages(contestId: Long) = throw new IllegalStateException("no db")
+      }
+
+      svc.startDownload(contestId = 5L)
+
+      svc.progress(5L).running must beFalse
+      svc.progress(5L).failed must beTrue
+      tmpDir.delete()
+      ok
+    }
+
+    "stop running, as failed, when the download itself fails" in {
+      val tmpDir = Files.createTempDirectory("contest-cache-fail").toFile
+      val svc = mkService(tmpDir)
+      svc.progressMap.put(6L, CacheProgress(0, 0, 0, running = true))
+
+      // a null image fails the scan before the stream starts
+      Await.result(svc.runDownload(6L, Seq(null)), 30.seconds)
+
+      svc.progress(6L).running must beFalse
+      svc.progress(6L).failed must beTrue
+      tmpDir.delete()
+      ok
+    }
+
+    "stay stopped when a download in flight finishes after the stream failed" in {
+      val tmpDir = Files.createTempDirectory("contest-cache-late").toFile
+      val slow = scala.concurrent.Promise[Unit]()
+      val svc = new LocalImageCacheService(mkConfig(tmpDir), system) {
+        override private[services] def downloadAndResize(image: Image) =
+          if (image.pageId == 1L) slow.future else throw new IllegalStateException("fails the stream")
+      }
+
+      // the first is in flight when the second fails the stream
+      Await.result(svc.runDownload(7L, Seq(mkImage(1, filename = "Slow.jpg"), mkImage(2, filename = "Fails.jpg"))),
+        30.seconds)
+      svc.progress(7L).running must beFalse
+      slow.success(())
+      Thread.sleep(200)
+
+      svc.progress(7L).running must beFalse
+      svc.progress(7L).failed must beTrue
+      svc.progress(7L).done === 0
+      tmpDir.delete()
+      ok
+    }
+
+    "not overwrite a newer run's progress with a late update" in {
+      val tmpDir = Files.createTempDirectory("contest-cache-newer").toFile
+      val slow = scala.concurrent.Promise[Unit]()
+      val svc = new LocalImageCacheService(mkConfig(tmpDir), system) {
+        override private[services] def downloadAndResize(image: Image) = slow.future
+      }
+
+      val run = svc.runDownload(8L, Seq(mkImage(1, filename = "Slow.jpg")))
+      val deadline = System.currentTimeMillis() + 5000L
+      while (!svc.progress(8L).running && System.currentTimeMillis() < deadline) Thread.sleep(20)
+      // a newer run's start, as startDownload writes it
+      val newer = CacheProgress(0, 42, 0, running = true)
+      svc.progressMap.put(8L, newer)
+      slow.success(())
+      Await.result(run, 30.seconds)
+
+      svc.progress(8L) === newer
       tmpDir.delete()
       ok
     }

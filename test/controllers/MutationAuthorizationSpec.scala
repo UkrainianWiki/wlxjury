@@ -321,6 +321,11 @@ class MutationAuthorizationSpec extends PlaySpecification with PlayTestDb {
         val ok = controller.status(job.id).apply(sessionRequest(GET, s"/admin/jobs/${job.id}", own.email)).run()
         status(ok) === OK
         (contentAsJson(ok) \ "status").as[String] === "running"
+
+        // a job that hasn't failed isn't retried; the admin is told why, in a message
+        val retried = controller.retry(job.id).apply(sessionRequest(POST, s"/admin/jobs/${job.id}/retry", own.email)).run()
+        status(retried) === SEE_OTHER
+        flash(retried).get("error") must beSome("Can't retry: the job is running, not failed.")
       }
     }
 

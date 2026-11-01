@@ -219,17 +219,6 @@ object SelectionJdbc extends CRUDMapper[Selection] {
     where("roundId" -> roundId)
       .distinctCount("juryId")
 
-  /** Number of distinct images that have at least one selection row in the round.
-    * Used to verify that image distribution for a freshly created round is complete.
-    */
-  def imageCountByRound(roundId: Long): Long =
-    where("roundId" -> roundId)
-      .distinctCount("pageId")
-
-  def destroyAll(pageId: Long): Unit =
-    updateBy(sqls.eq(s.pageId, pageId))
-      .withAttributes("deletedAt" -> ZonedDateTime.now)
-
   /** Removes the image from the round, also its votes moved aside (V63): restoring its file
     * on Commons must not bring them back.
     */

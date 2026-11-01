@@ -379,6 +379,12 @@ object RoundService {
         (if (resumed) ". Its distribution was resumed."
          else if (job.exists(_.isActive)) ". Its images are still being distributed."
          else ".")
+
+    /** [[message]] for the admin, with the round's number and description as arguments. */
+    def messageKey: String =
+      if (resumed) "round.resubmitted.resumed"
+      else if (job.exists(_.isActive)) "round.resubmitted.distributing"
+      else "round.resubmitted"
   }
 
   /** What "Distribute new files" did. */

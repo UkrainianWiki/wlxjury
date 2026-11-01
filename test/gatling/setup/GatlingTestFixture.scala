@@ -90,25 +90,19 @@ object GatlingTestFixture {
     }
   }
 
-  /** ScalikeJDBC's default pool for the run (`-Dgatling.pool`). Two eager modules register it
-    * at start, whichever runs last winning: scalikejdbc.PlayDBApiAdapterModule with Play's
-    * HikariCP pool (db.default.hikaricp, 30 connections), and scalikejdbc.PlayFixtureModule's
-    * PlayInitializer with a commons-dbcp2 pool of ScalikeJDBC's defaults (8 connections). So
-    * that runs compare, "hikari" (the default) registers Play's pool again after the start,
-    * "dbcp" a dbcp2 pool as PlayInitializer makes it, "as-started" leaves whichever won.
+  /** ScalikeJDBC's default pool for the run (`-Dgatling.pool`). At start it is always Play's
+    * HikariCP pool (db.default.hikaricp, 30 connections), which scalikejdbc.PlayDBApiAdapterModule
+    * registers. "dbcp" replaces it with a commons-dbcp2 pool of ScalikeJDBC's defaults (8
+    * connections), as scalikejdbc.PlayFixtureModule's PlayInitializer registered it until it
+    * was dropped from play.modules.enabled: it raced the HikariCP pool, so earlier runs may
+    * have used either. Any other value ("hikari", the default) keeps Play's pool.
     */
   private def choosePool(app: _root_.play.api.Application): Unit = {
     val started = scalikejdbc.ConnectionPool.get().dataSource.getClass.getName
-    GatlingConfig.pool match {
-      case "hikari" =>
-        val ds = app.injector.instanceOf[_root_.play.api.db.DBApi].database("default").dataSource
-        if (scalikejdbc.ConnectionPool.get().dataSource ne ds)
-          scalikejdbc.ConnectionPool.add(scalikejdbc.ConnectionPool.DEFAULT_NAME, new scalikejdbc.DataSourceConnectionPool(ds))
-      case "dbcp" =>
-        val c = app.configuration
-        scalikejdbc.ConnectionPool.add(scalikejdbc.ConnectionPool.DEFAULT_NAME, c.get[String]("db.default.url"),
-          c.get[String]("db.default.username"), c.get[String]("db.default.password"), scalikejdbc.ConnectionPoolSettings())
-      case _ =>
+    if (GatlingConfig.pool == "dbcp") {
+      val c = app.configuration
+      scalikejdbc.ConnectionPool.add(scalikejdbc.ConnectionPool.DEFAULT_NAME, c.get[String]("db.default.url"),
+        c.get[String]("db.default.username"), c.get[String]("db.default.password"), scalikejdbc.ConnectionPoolSettings())
     }
     println(s"[pool] at start: $started; for the run (gatling.pool=${GatlingConfig.pool}): " +
       scalikejdbc.ConnectionPool.get().dataSource.getClass.getName)

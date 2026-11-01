@@ -76,8 +76,9 @@ trait PlayTestDb extends TestDb {
       body(perTestApp)
     } finally {
       Await.result(perTestApp.stop(), 30.seconds)
-      // PlayDBApiAdapterModule closes ALL ScalikeJDBC pools on stop().
-      // Restore the shared container's pool so other tests can still connect.
+      // Stopping the app closes Play's HikariCP pool, which PlayDBApiAdapterModule made
+      // ScalikeJDBC's default pool. Restore the shared container's pool so other tests can
+      // still connect.
       SharedTestDb.reregisterDefault()
     }
   }

@@ -151,7 +151,7 @@ One MariaDB Testcontainer per JVM, shared across all specs via `SharedTestDb` (l
 
 **Keyboard voting:** the large view's key handlers vote and move by paths, never `http://` URLs (`Call.absoluteURL` behind the HTTPS proxy redirected the POST to a GET and lost the vote); `views.LargeViewControllerSpec` guards it.
 
-**Pool lifecycle:** `running(app)` (Play test helper) stops Play and calls `ConnectionPool.closeAll()`. Any spec that uses `running(app)` must call `SharedTestDb.reregisterDefault()` in a `finally` block afterward.
+**Pool lifecycle:** a Play app's start makes Play's HikariCP pool ScalikeJDBC's default (`PlayDBApiAdapterModule`, the only module that registers one; `ConnectionPoolConfigSpec`), and `running(app)` (Play test helper) or `app.stop()` closes it. Any spec that uses `running(app)` must call `SharedTestDb.reregisterDefault()` in a `finally` block afterward.
 
 ### ScalikeJDBC Patterns
 

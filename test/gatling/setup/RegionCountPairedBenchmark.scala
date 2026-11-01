@@ -91,7 +91,7 @@ object RegionCountPairedBenchmark {
           Secured.UserName -> email, Secured.CurrentContestId -> f.contestId.toString))
         require(Helpers.status(result) == 200, s"$kind did not return a gallery")
         val html = Helpers.contentAsString(result)
-        require(html.contains("id=\"regionnav\""), s"$kind has no region navigation")
+        require(html.contains("id=\"regionmenu\""), s"$kind has no region menu")
         require(html.contains("Volyn O. (") == enabled, s"$kind did not apply region counts=$enabled")
       }
     }

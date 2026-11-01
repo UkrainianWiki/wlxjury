@@ -6,6 +6,7 @@ import db.scalikejdbc.SharedTestDb
 import org.specs2.mutable.Specification
 import play.api.db.DBApi
 import play.api.inject.guice.GuiceApplicationBuilder
+import _root_.scalikejdbc.ConnectionPool
 
 import java.io.File
 import scala.concurrent.Await
@@ -14,10 +15,13 @@ import scala.jdk.CollectionConverters._
 
 /** The production config (conf/application.conf) gives ScalikeJDBC one pool: Play's
   * HikariCP pool with the configured size. The old BoneCP-style keys were silently
-  * ignored, and a second module (scalikejdbc.PlayModule) built a pool only to have it
-  * replaced.
+  * ignored, and scalikejdbc.PlayModule and then scalikejdbc.PlayFixtureModule started
+  * PlayInitializer, which registered a commons-dbcp2 pool of 8 connections as "default"
+  * too: whichever module started last won.
   */
 class ConnectionPoolConfigSpec extends Specification {
+  // the second example changes ScalikeJDBC's global default pool
+  sequential
 
   private val prod = ConfigFactory
     .parseFile(new File("conf/application.conf"))
@@ -26,9 +30,11 @@ class ConnectionPoolConfigSpec extends Specification {
 
   "conf/application.conf" should {
 
-    "not enable ScalikeJDBC's own pool module" in {
-      prod.getStringList("play.modules.enabled").asScala must contain("scalikejdbc.PlayDBApiAdapterModule")
-      prod.getStringList("play.modules.enabled").asScala must not(contain("scalikejdbc.PlayModule"))
+    "not enable the modules that start ScalikeJDBC's own pool (PlayInitializer)" in {
+      val modules = prod.getStringList("play.modules.enabled").asScala
+      (modules must contain("scalikejdbc.PlayDBApiAdapterModule")) and
+        (modules must not(contain("scalikejdbc.PlayModule"))) and
+        (modules must not(contain("scalikejdbc.PlayFixtureModule")))
     }
 
     "give Play's HikariCP pool, ScalikeJDBC's default pool, the configured size" in {
@@ -44,13 +50,15 @@ class ConnectionPoolConfigSpec extends Specification {
         ) ++ hikari.entrySet().asScala.map(e => s"db.default.hikaricp.${e.getKey}" -> e.getValue.unwrapped()))
         .build()
       try {
-        // the pool PlayDBApiAdapterModule registers as ScalikeJDBC's default pool (read
-        // through DBApi: other specs re-register the global default pool meanwhile)
-        app.injector.instanceOf[DBApi].database("default").dataSource must beLike {
+        // the pool ScalikeJDBC code uses (DB.readOnly, autoSession, ...), right after the
+        // start: Play's HikariCP pool itself, as PlayDBApiAdapterModule registers it
+        val default = ConnectionPool.get().dataSource
+        val play    = app.injector.instanceOf[DBApi].database("default").dataSource
+        (default must beTheSameAs(play)) and (default must beLike {
           case ds: HikariDataSource =>
             (ds.getMaximumPoolSize must_== 30) and (ds.getMinimumIdle must_== 10) and
               (ds.getConnectionTimeout must_== 30000L)
-        }
+        })
       } finally {
         Await.result(app.stop(), 30.seconds)
         SharedTestDb.reregisterDefault()
