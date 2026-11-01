@@ -917,7 +917,9 @@ Left for separate branches; none blocks merging this one.
      `contenteditable` block meant for copying, so it isn't copied with the list; it was
      probably meant as the wiki comment heading the pasted list. Put it inside the block (or
      drop it), and wrap the `.row` content in a column so it doesn't start at the page edge.
-5. **Old votes after the browser's Back (pre-existing).** After voting in the large view, Back
+5. **Old votes after the browser's Back (pre-existing).** Done (52da9ad9): `Cache-Control:
+   no-store` on the galleries, file list and large view (`Secured.noStore`); a `pageshow`
+   reload would flash the old page and miss a Back from the HTTP cache. After voting in the large view, Back
    brings the previous file's page back from the browser's cache with the stars it had before
    the vote (seen while testing the fixture: 7 shown, 6 stored; 3 shown, 4 stored). The
    gallery and large-view pages send no `Cache-Control`. Fix: `Cache-Control: no-store` on the
@@ -925,7 +927,9 @@ Left for separate branches; none blocks merging this one.
    back/forward cache (`pageshow` with `event.persisted`); `no-store` is simpler but also
    turns off the back/forward cache for these pages. Tests: a header check on both actions,
    and a manual check of vote, Back, in Chrome and Firefox.
-6. **Rate number by the large view's stars.** The stars (`large/raty.scala.html`, `#rate-image`
+6. **Rate number by the large view's stars.** Done (a02739ed): the number on its own line
+   above the stars (ten and the cancel icon fill the column's line), `large-rate.js`; a
+   half-star click now gives the half the stars draw. The stars (`large/raty.scala.html`, `#rate-image`
    and `#rate-image1..n` for criteria) show no number: the juror can't read the current
    file's rate at a glance (with 10 to 20 stars, or half stars, counting is slow), nor which
    rate a click will give while hovering. Show a number next to the stars: the current rate
