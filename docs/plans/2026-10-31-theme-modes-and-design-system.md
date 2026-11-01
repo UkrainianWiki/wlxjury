@@ -920,3 +920,16 @@ Left for separate branches; none blocks merging this one.
    back/forward cache (`pageshow` with `event.persisted`); `no-store` is simpler but also
    turns off the back/forward cache for these pages. Tests: a header check on both actions,
    and a manual check of vote, Back, in Chrome and Firefox.
+6. **Rate number by the large view's stars.** The stars (`large/raty.scala.html`, `#rate-image`
+   and `#rate-image1..n` for criteria) show no number: the juror can't read the current
+   file's rate at a glance (with 10 to 20 stars, or half stars, counting is slow), nor which
+   rate a click will give while hovering. Show a number next to the stars: the current rate
+   (half-star rounds as e.g. 3.5; "–" when unrated), and while the mouse is over a star the
+   rate that star would give, back to the current rate on mouse-out. raty can do this with
+   `target` / `targetType: 'score'` / `targetKeep: true` and `mouseover` / `mouseout`
+   callbacks; keep the number's width fixed so the stars don't shift, announce it with
+   `aria-live="polite"` only for the stored rate (not on every hover), and keep keyboard
+   voting (digits) updating it. Also: `hints` lists 10 empty strings, so with 11 to 20 stars
+   the higher stars get raty's default number tooltips while the first ten get none; make
+   them consistent (all empty once the number is shown). Tests: a Jest case on the hover and
+   mouse-out number and the half-star display; LargeViewFixturesSpec for the markup.
