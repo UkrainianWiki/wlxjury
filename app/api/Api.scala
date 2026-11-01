@@ -136,6 +136,16 @@ class Api @Inject() (
       )
       .security(List(ListMap("bearerToken" -> Vector.empty), ListMap("sessionCookie" -> Vector.empty)))
 
+  /** Swagger UI's initializer, served ahead of the stock one ([[docs]]): the same settings
+    * (Tapir's), and `validatorUrl: null`, so that the page loads no badge from
+    * validator.swagger.io with the document's URL.
+    */
+  private val swaggerInitializer: ServerEndpoint[Any, Future] =
+    endpoint.get
+      .in("docs" / "swagger-initializer.js")
+      .out(stringBodyUtf8AnyFormat(Codec.string.format(CodecFormat.TextJavascript())))
+      .serverLogicSuccessPure[Future](_ => Api.SwaggerInitializer)
+
   private val docs: List[ServerEndpoint[Any, Future]] =
     SwaggerInterpreter(
       customiseDocsModel = withSecuritySchemes,
@@ -164,7 +174,33 @@ class Api @Inject() (
       // the app's parsers, whose limits answer through its error handler (JSON under /api)
       .copy(playBodyParsers = bodyParsers)
 
-  /** The docs, the API, and [[notFound]] for any other path. */
-  val routes: Routes = PlayServerInterpreter(serverOptions).toRoutes(docs ++ apiEndpoints :+ notFound)
+  /** The docs, the API, and [[notFound]] for any other path; tried in this order. */
+  val routes: Routes =
+    PlayServerInterpreter(serverOptions).toRoutes((swaggerInitializer +: docs) ++ apiEndpoints :+ notFound)
 }
 
+object Api {
+
+  /** Swagger UI's `swagger-initializer.js` as Tapir serves it (relative paths, no extensions
+    * shown), with the validator badge off.
+    */
+  val SwaggerInitializer: String =
+    """window.onload = function() {
+      |  window.ui = SwaggerUIBundle({
+      |    url: "./docs.yaml",
+      |    dom_id: '#swagger-ui',
+      |    deepLinking: true,
+      |    presets: [
+      |      SwaggerUIBundle.presets.apis,
+      |      SwaggerUIStandalonePreset
+      |    ],
+      |    plugins: [
+      |      SwaggerUIBundle.plugins.DownloadUrl
+      |    ],
+      |    layout: "StandaloneLayout",
+      |    showExtensions: false,
+      |    validatorUrl: null
+      |  });
+      |};
+      |""".stripMargin
+}

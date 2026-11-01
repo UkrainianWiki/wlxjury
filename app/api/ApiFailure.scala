@@ -11,7 +11,8 @@ final case class ApiError(error: String, reference: Option[String] = None)
 final case class ApiFailure(status: StatusCode, challenge: Option[String], body: ApiError)
 
 object ApiFailure {
-  val Unauthorized: ApiFailure = ApiFailure(StatusCode.Unauthorized, Some("Bearer"), ApiError("unauthorized"))
+  /** `unauthenticated`, the code the JSON endpoints' 401 has (`Secured.withAuthJson`). */
+  val Unauthorized: ApiFailure = ApiFailure(StatusCode.Unauthorized, Some("Bearer"), ApiError("unauthenticated"))
   val NotFound: ApiFailure = ApiFailure(StatusCode.NotFound, None, ApiError("not_found"))
   val BadRequest: ApiFailure = ApiFailure(StatusCode.BadRequest, None, ApiError("bad_request"))
 

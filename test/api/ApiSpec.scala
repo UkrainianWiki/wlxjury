@@ -6,7 +6,7 @@ import db.scalikejdbc.{ApiTokenJdbc, ContestJuryJdbc, PlayTestDb, User, UserCont
 import org.intracer.wmua.ContestJury
 import play.api.Application
 import play.api.libs.json.{JsValue, Json}
-import play.api.mvc.Result
+import play.api.mvc.{Cookie, Result}
 import play.api.test.{FakeRequest, PlaySpecification}
 import scalikejdbc._
 import services.ApiTokenService
@@ -62,11 +62,15 @@ class ApiSpec extends PlaySpecification with PlayTestDb with JsonFormat {
     Req(PUT, "/api/contests", Some(Json.toJson(ContestJury(Some(10), "renamed", 2026, "Ukraine", images = None))))
   )
 
-  /** `req` with the headers, signed in as `as` (in contest 10) if given, with `session` too. */
+  /** `req` with the headers and cookies, signed in as `as` (in contest 10) if given, with
+    * `session` too. A FakeRequest's session and cookies are attributes: a `Cookie` header
+    * alone is not read as cookies.
+    */
   private def send(app: Application, req: Req, headers: Seq[(String, String)] = Nil, as: Option[String] = None,
-                   session: Seq[(String, String)] = Nil): Future[Result] = {
+                   session: Seq[(String, String)] = Nil, cookies: Seq[Cookie] = Nil): Future[Result] = {
     val signedIn = as.toSeq.flatMap(email => Seq(Secured.UserName -> email, Secured.CurrentContestId -> "10"))
     val request = FakeRequest(req.method, req.path).withHeaders(headers: _*).withSession(signedIn ++ session: _*)
+      .withCookies(cookies: _*)
     req.body.fold(route(app, request).get)(body => route(app, request.withJsonBody(body)).get)
   }
 
@@ -75,7 +79,7 @@ class ApiSpec extends PlaySpecification with PlayTestDb with JsonFormat {
   private def isUnauthorized(result: Future[Result]) = {
     status(result) === UNAUTHORIZED
     header(WWW_AUTHENTICATE, result) === Some("Bearer")
-    json(result) === Json.obj("error" -> "unauthorized")
+    json(result) === Json.obj("error" -> "unauthenticated")
   }
 
   /** The result, done, so that the lines it logs are captured. */
@@ -84,16 +88,27 @@ class ApiSpec extends PlaySpecification with PlayTestDb with JsonFormat {
     result
   }
 
-  /** `f`'s result and the lines logged meanwhile, at any logger. */
+  private def logger(name: String) =
+    org.slf4j.LoggerFactory.getLogger(name).asInstanceOf[ch.qos.logback.classic.Logger]
+
+  /** `f`'s result and the lines logged meanwhile, at any logger, the API's and the tokens'
+    * DEBUG lines included.
+    */
   private def withLog[T](f: => T): (T, Seq[String]) = {
-    val root = org.slf4j.LoggerFactory.getLogger(org.slf4j.Logger.ROOT_LOGGER_NAME).asInstanceOf[ch.qos.logback.classic.Logger]
+    val root = logger(org.slf4j.Logger.ROOT_LOGGER_NAME)
+    val verbose = Seq("api", "services.ApiTokenService").map(logger)
+    val levels = verbose.map(_.getLevel)
+    verbose.foreach(_.setLevel(ch.qos.logback.classic.Level.DEBUG))
     val appender = new ch.qos.logback.core.read.ListAppender[ch.qos.logback.classic.spi.ILoggingEvent]
     appender.start()
     root.addAppender(appender)
     try {
       val result = f
-      (result, appender.list.asScala.toSeq.map(_.getFormattedMessage))
-    } finally root.detachAppender(appender)
+      (result, appender.list.asScala.toSeq.map(e => s"${e.getLevel} ${e.getFormattedMessage}"))
+    } finally {
+      root.detachAppender(appender)
+      verbose.zip(levels).foreach { case (l, level) => l.setLevel(level) }
+    }
   }
 
   "the API without credentials" should {
@@ -120,7 +135,7 @@ class ApiSpec extends PlaySpecification with PlayTestDb with JsonFormat {
             status(result) === FORBIDDEN
             val reference = (json(result) \ "reference").as[String]
             (json(result) \ "error").as[String] === "forbidden"
-            lines.count(line => line.startsWith("authorization_denied") && line.contains(s"ref=$reference") &&
+            lines.count(line => line.startsWith("WARN authorization_denied") && line.contains(s"ref=$reference") &&
               line.contains("auth=session") && line.contains("requiredRoles=\"root\"")) === 1
           }
         }
@@ -169,9 +184,24 @@ class ApiSpec extends PlaySpecification with PlayTestDb with JsonFormat {
         }
         contestNames === before
         Seq(revoked, expired, unknown, basic).exists(t => lines.exists(_.contains(t))) must beFalse
-        lines.exists(_.contains("api_token_refused reason=revoked")) must beTrue
-        lines.exists(_.contains("api_token_refused reason=expired")) must beTrue
+        lines must contain("INFO api_token_refused reason=revoked tokenId=" + tokenId(revoked))
+        lines must contain("INFO api_token_refused reason=expired tokenId=" + tokenId(expired))
+        lines must contain("INFO api_token_refused reason=unknown prefix=\"" + unknown.take(11) + "\"")
+        lines must contain("DEBUG api_token_refused reason=malformed")
+        lines must contain("DEBUG api_auth_refused reason=not_bearer")
+        lines.filter(line => line.startsWith("WARN") && line.contains("api_")) must beEmpty
         ApiTokenJdbc.findByUser(userId(rootEmail)).flatMap(_.lastUsedAt) must beEmpty
+      }
+    }
+
+    "answer 401 for a deleted user's token" in {
+      testDbApp { app =>
+        setUp()
+        val token = tokenOf(rootEmail)
+        DB.autoCommit { implicit session =>
+          sql"UPDATE users SET deleted_at = NOW() WHERE id = ${userId(rootEmail)}".update.apply()
+        }
+        isUnauthorized(send(app, endpoints.head, Seq(bearer(token))))
       }
     }
 
@@ -188,12 +218,17 @@ class ApiSpec extends PlaySpecification with PlayTestDb with JsonFormat {
   }
 
   "the API for root" should {
-    "answer root's session" in {
+    "answer root's session on each endpoint" in {
       testDbApp { app =>
         setUp()
-        val result = send(app, endpoints.head, as = Some(rootEmail))
-        status(result) === OK
-        json(result).as[List[ContestJury]].map(_.name) === Seq("contest10", "contest20")
+        val list = send(app, endpoints.head, as = Some(rootEmail))
+        status(list) === OK
+        json(list).as[List[ContestJury]].map(_.name) === Seq("contest10", "contest20")
+        forall(endpoints.tail) { request =>
+          status(send(app, request, as = Some(rootEmail))) === OK
+        }
+        ContestJuryJdbc.findById(10).map(_.name) === Some("renamed")
+        contestNames must contain(newContest.name)
       }
     }
 
@@ -201,8 +236,9 @@ class ApiSpec extends PlaySpecification with PlayTestDb with JsonFormat {
       testDbApp { app =>
         setUp()
         val token = tokenOf(rootEmail)
-        val list = send(app, endpoints.head, Seq(bearer(token)))
+        val (list, lines) = withLog(done(send(app, endpoints.head, Seq(bearer(token)))))
         status(list) === OK
+        lines.exists(_.contains(token)) must beFalse
         json(list).as[List[ContestJury]].map(_.id) === Seq(Some(10L), Some(20L))
         ApiTokenJdbc.find(tokenId(token)).get.lastUsedAt must beSome
 
@@ -262,6 +298,13 @@ class ApiSpec extends PlaySpecification with PlayTestDb with JsonFormat {
         status(updateWithoutId) === BAD_REQUEST
         contestNames must not(contain(newContest.name))
 
+        // over the parser's limit (play.http.parser.maxMemoryBuffer, 100 KB): Play answers,
+        // through the app's error handler
+        val oversized = send(app, Req(POST, "/api/contests",
+          Some(Json.toJson(newContest.copy(images = Some("x" * 200000))))), Seq(bearer(token)))
+        status(oversized) === REQUEST_ENTITY_TOO_LARGE
+        json(oversized) === Json.obj("error" -> "payload_too_large")
+
         val otherPath = send(app, Req(GET, "/api/marker-7f3a"))
         status(otherPath) === NOT_FOUND
         json(otherPath) === Json.obj("error" -> "not_found")
@@ -288,7 +331,9 @@ class ApiSpec extends PlaySpecification with PlayTestDb with JsonFormat {
 
         val initializer = send(app, Req(GET, "/api/docs/swagger-initializer.js"))
         status(initializer) === OK
-        contentAsString(initializer) must contain("./docs.yaml")
+        contentAsString(initializer) must contain("url: \"./docs.yaml\"")
+        contentAsString(initializer) must contain("validatorUrl: null")
+        """https?://""".r.findFirstIn(contentAsString(initializer)) must beNone
 
         val yaml = send(app, Req(GET, "/api/docs/docs.yaml"))
         status(yaml) === OK
@@ -324,13 +369,27 @@ class ApiSpec extends PlaySpecification with PlayTestDb with JsonFormat {
       }
     }
 
-    "let a session's write in with the Csrf-Token header" in {
+    "answer a refusal as JSON under /api, also to a request not sent by script" in {
+      withCsrfApp { app =>
+        setUp()
+        val result = send(app, endpoints(2), Seq(COOKIE -> "PLAY_SESSION=signed-in"), as = Some(rootEmail),
+          session = Seq("csrfToken" -> csrfToken(app)))
+        status(result) === FORBIDDEN
+        (json(result) \ "error").as[String] === "csrf"
+        (json(result) \ "reference").as[String] must beMatching("[0-9a-f]{8}")
+      }
+    }
+
+    "let a session's writes in with the Csrf-Token header" in {
       withCsrfApp { app =>
         setUp()
         val sessionToken = csrfToken(app)
-        val result = browser(app, endpoints(2), sessionToken, "Csrf-Token" -> sessionToken)
-        status(result) === OK
+        val created = browser(app, endpoints(2), sessionToken, "Csrf-Token" -> sessionToken)
+        status(created) === OK
         contestNames must contain(newContest.name)
+        val updated = browser(app, endpoints(3), sessionToken, "Csrf-Token" -> sessionToken)
+        status(updated) === OK
+        ContestJuryJdbc.findById(10).map(_.name) === Some("renamed")
       }
     }
 
@@ -347,6 +406,21 @@ class ApiSpec extends PlaySpecification with PlayTestDb with JsonFormat {
         status(withCookie) === FORBIDDEN
         (json(withCookie) \ "error").as[String] === "csrf"
         contestNames must not(contain("second"))
+
+        // the session cookie, even invalid or empty, makes a Bearer write need the CSRF token
+        forall(Seq("not-a-signed-session", "")) { value =>
+          val result = send(app, Req(POST, "/api/contests", Some(Json.toJson(newContest.copy(name = "third")))),
+            Seq(bearer(token)), cookies = Seq(Cookie("PLAY_SESSION", value)))
+          status(result) === FORBIDDEN
+          (json(result) \ "error").as[String] === "csrf"
+        }
+        contestNames must not(contain("third"))
+
+        // another cookie (the theme's) does not
+        val withTheme = send(app, Req(POST, "/api/contests", Some(Json.toJson(newContest.copy(name = "fourth")))),
+          Seq(bearer(token)), cookies = Seq(Cookie(controllers.Theme.CookieName, "dark")))
+        status(withTheme) === OK
+        contestNames must contain("fourth")
 
         // a Bearer POST outside /api is checked as any other
         val page = route(app, FakeRequest(POST, "/theme").withHeaders(bearer(token))
