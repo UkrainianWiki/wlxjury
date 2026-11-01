@@ -4,6 +4,7 @@ import db.scalikejdbc.{Round, User}
 import db.scalikejdbc.rewrite.ImageDbNew
 import db.scalikejdbc.rewrite.ImageDbNew.{Limit, SelectionQuery}
 import org.intracer.wmua.ImageWithRating
+import org.intracer.wmua.ImageWithRating.{RankKey, Ranks}
 import play.api.mvc.{Cookie, Flash, RequestHeader}
 
 import java.net.URLEncoder
@@ -148,8 +149,14 @@ final case class RoundList(
   /** The region of a URL's path: "all" for all of them. */
   def regionParam: String = region.getOrElse("all")
 
-  /** Files with their jurors' votes, one row each (file list, CSV): all of them, not a page. */
+  /** Files with their jurors' votes, one row each (file list, CSV). */
   private def withDetails: Boolean = view == GalleryView.FileList || view == GalleryView.Csv
+
+  /** The order and ranks of a file list or CSV, whatever the list's order. */
+  def rankKey: RankKey = RankKey.of(round)
+
+  /** Files to a page: a file list's are rows of a table. */
+  def pageSize: Int = if (view == GalleryView.FileList) RoundList.FileListPageSize else Pager.pageSize
 
   def query: SelectionQuery =
     SelectionQuery(
@@ -158,7 +165,7 @@ final case class RoundList(
       rate = filter.rate,
       rated = filter.rated,
       regions = region.toSet,
-      order = order.columns,
+      order = if (withDetails) rankKey.columns ++ Seq("s.monument_id" -> 1, "s.page_id" -> 1) else order.columns,
       grouped = asUserId == 0 && !withDetails,
       groupWithDetails = withDetails,
       subRegions = round.specialNomination.contains("Віа Регіа")
@@ -173,10 +180,15 @@ final case class RoundList(
   def jurorCounts(): Option[JurorCounts] =
     Option.when(asUserId != 0 && !query.subRegions)(JurorCounts(query.regionRateCounts()))
 
-  /** The pager's page of files; all of them for a file list or CSV. */
+  /** The pager's page of files. */
   def files(pager: Pager): Seq[ImageWithRating] =
-    if (withDetails) query.list()
-    else query.copy(limit = Some(Limit(Some(pager.pageSize), Some(pager.offset)))).list()
+    query.copy(limit = Some(Limit(Some(pager.pageSize), Some(pager.offset)))).list()
+
+  /** The ranks of a page of a file list's files among all the list's files ([[rankKey]]). */
+  def ranks(files: Seq[ImageWithRating]): Seq[String] = {
+    val ranks = Ranks(query.keyCounts(rankKey.columns))
+    files.map(file => ranks(rankKey.values(file)))
+  }
 
   /** The file's index in the list, from 0. For a file of the viewer's round that the filter
     * leaves out (one just voted on), where it would be: the number of the list's files before
@@ -406,6 +418,11 @@ object Neighbourhood {
 }
 
 object RoundList {
+
+  /** A file list's files to a page: all the jurors' votes on 38,366 files at once ran a 1 GB
+    * server out of memory (docs/plans/2026-11-01-binary-aggregate-votes.md, issue 4).
+    */
+  val FileListPageSize = 1000
 
   /** The cookie with the order a juror last chose for their own gallery, in this browser: kept
     * after signing out, unlike the session.

@@ -1,6 +1,6 @@
 package views
 
-import controllers.{GalleryView, RateDistribution, RoundList}
+import controllers.{GalleryView, Pager, RateDistribution, RoundList}
 import db.scalikejdbc.User
 import org.intracer.wmua.{Image, ImageWithRating, Selection}
 import org.jsoup.Jsoup
@@ -30,10 +30,11 @@ class FileListViewSpec extends PlaySpecification {
       selection = jurors.map(j => Selection(pageId, j.getId, round.getId, if (pageId == 301L) 1 else -1)))
   }
 
-  private def render(asUser: User, wrapInTable: Boolean, region: String = "all"): Document = Jsoup.parse(contentAsString(
+  private def render(asUser: User, wrapInTable: Boolean, region: String = "all",
+                     pager: Pager = Pager(1, 2, RoundList.FileListPageSize)): Document = Jsoup.parse(contentAsString(
     views.html.fileList(juror, RoundList(round, Option(asUser).fold(0L)(_.getId), view = GalleryView.FileList)
       .withRegion(region), asUser,
-      files, Seq("1", "2"), jurors, Nil, None, "wiki", wrapInTable, new RateDistribution(Map.empty))))
+      files, Seq("1", "2"), jurors, Nil, None, pager, "wiki", wrapInTable, new RateDistribution(Map.empty))))
 
   private def block(doc: Document) = doc.selectFirst("[contenteditable=true]")
 
@@ -67,6 +68,15 @@ class FileListViewSpec extends PlaySpecification {
       val widths = (table.select("thead th").size, table.select("tfoot th").size,
         table.select("tbody tr").asScala.map(_.select("td").size).distinct.toList)
       widths must_== ((6, 6, List(6)))
+    }
+
+    "be a page of the list, with the pager in the navbar, linking the file list's pages" in {
+      val doc = render(null, wrapInTable = true, pager = Pager(2, 2500, RoundList.FileListPageSize))
+      val links = doc.select("nav #pagenav a[rel]").asScala.map(a => a.attr("rel") -> a.attr("href")).toMap
+      (links("prev") must_== "/filelist/round/1/user/0/page/1?sort=rate") and
+        (links("next") must_== "/filelist/round/1/user/0/page/3?sort=rate") and
+        // a list of one page has none
+        (render(null, wrapInTable = true).select("#pagenav").size must_== 0)
     }
 
     "show only the files, one per line, without the table" in {

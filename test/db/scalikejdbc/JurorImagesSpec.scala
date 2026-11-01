@@ -278,7 +278,8 @@ class JurorImagesSpec extends Specification with BeforeAll with TestDb {
       selectionDao.batchInsert(selections)
 
       val query =
-        ImageDbNew.SelectionQuery(roundId = round.id, groupWithDetails = true)
+        ImageDbNew.SelectionQuery(roundId = round.id, groupWithDetails = true,
+          order = Seq("sum(s.rate > 0)" -> -1, "s.page_id" -> 1))
       val result = query.list()
 
       result.size === 2
@@ -330,7 +331,8 @@ class JurorImagesSpec extends Specification with BeforeAll with TestDb {
       selectionDao.batchInsert(selectedByX)
 
       val query =
-        ImageDbNew.SelectionQuery(roundId = round.id, groupWithDetails = true)
+        ImageDbNew.SelectionQuery(roundId = round.id, groupWithDetails = true,
+          order = Seq("sum(s.rate > 0)" -> -1, "s.page_id" -> 1))
       val result = query.list()
 
       result.size === 4

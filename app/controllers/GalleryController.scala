@@ -145,7 +145,8 @@ class GalleryController @Inject() (
             at.fold(
               page => galleryOf(user, list, page, rounds, contest).withCookies(RoundList.remembered(list, user).toSeq: _*),
               // the page with the file, or where it would be if the filter now leaves it out
-              pageId => Redirect(list.position(pageId).fold(list.pageUrl(1))(p => list.pageUrl(Pager.pageOf(p)) + "#" + pageId))
+              pageId => Redirect(list.position(pageId).fold(list.pageUrl(1))(p =>
+                list.pageUrl(Pager.pageOf(p, list.pageSize)) + "#" + pageId))
             )
           }
         }
@@ -167,8 +168,9 @@ class GalleryController @Inject() (
     // a juror's list: its total, region counts and tabs from one query over the juror's files
     val counts = list.jurorCounts()
 
-    val pager = Pager(page, counts.fold(list.count())(_.total(list.filter, list.region)))
-    val files = list.files(pager)
+    val pager = Pager(page, counts.fold(list.count())(_.total(list.filter, list.region)), list.pageSize)
+    // a CSV streams all the list's files instead
+    lazy val files = list.files(pager)
 
     // the region menu, whose regions are read when it is opened (regions)
     val menu = regionMenu(list, contest)
@@ -186,15 +188,14 @@ class GalleryController @Inject() (
         Ok(RequestTiming.render(views.html.gallery(user, list, files, pager, rounds, menu, rates)))
 
       case GalleryView.Csv =>
-        val data = Csv.exportRates(files, jurors, round)
         val name = "WLXJury_Round_" + round.description
-        csvStream(data, name)
+        csvStream(Csv.rateRows(list, jurors)(blocking), name)
 
       case GalleryView.FileList =>
-        val ranks = ImageWithRating.rankImages(files, round)
+        val ranks = list.ranks(files)
         val useTable = !round.isBinary || asUserId == 0
         val showAuthor = user.canViewOrgInfo(round) && files.exists(_.image.author.nonEmpty)
-        Ok(views.html.fileList(user, list, asUser, files, ranks, jurors, rounds, menu, "wiki", useTable, rates,
+        Ok(views.html.fileList(user, list, asUser, files, ranks, jurors, rounds, menu, pager, "wiki", useTable, rates,
           showAuthor))
 
       case GalleryView.Gallery | GalleryView.ByRate =>
@@ -292,11 +293,9 @@ class GalleryController @Inject() (
       Ok("success")
   }
 
-  def csvStream(lines: Seq[Seq[String]], filename: String): Result = {
-    val withBom = Csv.addBom(lines).toList
-    val source = Source[Seq[String]](withBom).map { line =>
-      ByteString(Csv.writeRow(line))
-    }
+  /** CSV rows as a download, sent as they are read ([[Csv.rateRows]]). */
+  def csvStream(lines: Source[Seq[String], _], filename: String): Result = {
+    val source = lines.map(line => ByteString(Csv.writeRow(line)))
     Result(
       ResponseHeader(
         OK,

@@ -12,6 +12,7 @@
         jurors: Seq[User],
         rounds: Seq[Round],
         regionMenu: Option[RegionMenu],
+        pager: Pager,
         outputFormat: String = "wiki",
         wrapInTable: Boolean,
         rates: RateDistribution,
@@ -32,8 +33,10 @@
     }
 }
 
+@* a page of the list, its pager in the navbar: a round's 38k files with all the jurors' votes
+   at once ran a 1 GB server out of memory *@
 @main("filelist", user, list.asUserId, Some(list.round), rounds, gallery = false, Some(list),
-    filters = views.html.regionMenu(regionMenu)) {
+    pager = pagerNav(pager, list.pageUrl), filters = views.html.regionMenu(regionMenu)) {
 
     @defining(Some(list.round)) { round =>
     @defining(list.asUserId) { asUserId =>

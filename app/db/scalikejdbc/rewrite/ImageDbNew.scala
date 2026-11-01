@@ -93,9 +93,7 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
       } else ""
 
       // SQL clause order: FROM/JOIN → WHERE → GROUP BY → ORDER BY
-      // Monument join needed when: multiple regions (IN clause on m.adm0),
-      // byRegion stats, or a single sub-region (adm1, longer than a region's two characters)
-      val needsMonumentJoin = regions.size > 1 || byRegion || subRegionFilter
+      val needsMonumentJoin = monumentJoin || byRegion
       val structureStr =
         columnsStr +
           join(monuments = needsMonumentJoin)
@@ -158,8 +156,51 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
         sqls" STRAIGHT_JOIN images i on i.page_id = s.page_id $outerOrder"
     }
 
-    def list()(implicit session: DBSession = autoSession): Seq[ImageWithRating] = {
-      postProcessor(sql"${query()}".map(reader).list())
+    def list()(implicit session: DBSession = autoSession): Seq[ImageWithRating] =
+      if (groupWithDetails) withVotes(sql"${files.query(idOnly = true)}".map(_.long(1)).list())
+      else sql"${query()}".map(reader).list()
+
+    /** The files of a list with their votes (a file list, CSV), as the list's grouped query
+      * orders and pages them: one row per file.
+      */
+    private def files: SelectionQuery = copy(grouped = true, groupWithDetails = false)
+
+    /** All the list's files' page ids, in its order: the CSV reads their votes a chunk at a
+      * time ([[withVotes]]).
+      */
+    def pageIds()(implicit session: DBSession = autoSession): Seq[Long] =
+      sql"${files.query(idOnly = true, noLimit = true)}".map(_.long(1)).list()
+
+    /** The files of `pageIds` with their votes the list has (its juror's, or all the jurors',
+      * by its vote filter), in the order of `pageIds`: two queries by page id, whatever the
+      * round's size.
+      */
+    def withVotes(pageIds: Seq[Long])(implicit session: DBSession = autoSession): Seq[ImageWithRating] =
+      if (pageIds.isEmpty) Nil
+      else {
+        val images = sql"select ${i.result.*} from images i where i.page_id in ($pageIds)"
+          .map(ImageJdbc(i)(_)).list().map(image => image.pageId -> image).toMap
+        val conditions = copy(regions = Set.empty, keyset = None, withPageId = None).where()
+        val inPage = if (conditions.value.isEmpty) sqls"where" else sqls"$conditions and"
+        val votes = sql"select ${s.result.*} from selection s $inPage s.page_id in ($pageIds) order by s.id"
+          .map(SelectionJdbc(s)(_)).list().groupBy(_.pageId)
+        pageIds.flatMap(id => images.get(id).map(ImageWithRating(_, votes.getOrElse(id, Nil))))
+      }
+
+    /** The number of the list's files per value of `columns`, aggregates of a file's votes
+      * (over `s`), in the order of the columns' directions: what a page's ranks are counted
+      * from among the whole list ([[org.intracer.wmua.ImageWithRating.Ranks]]).
+      */
+    def keyCounts(columns: Seq[(String, Int)])(implicit session: DBSession = autoSession): Seq[(Seq[Int], Int)] = {
+      val keys = columns.indices.map(n => s"k$n")
+      val select = columns.zip(keys).map { case ((expr, _), k) => s"$expr as $k" }.mkString(", ")
+      val from = if (monumentJoin) join(monuments = true) else " from selection s"
+      val inner = sqls"${SQLSyntax.createUnsafely(s"select $select $from")} ${where()} group by s.page_id"
+      val outer = SQLSyntax.createUnsafely(
+        s"select ${keys.mkString(", ")}, count(*) from (") +
+        inner +
+        SQLSyntax.createUnsafely(s") t group by ${keys.mkString(", ")}${orderSql(keys.zip(columns.map(_._2)))}")
+      sql"$outer".map(rs => (keys.indices.map(n => rs.int(n + 1)), rs.int(keys.size + 1))).list()
     }
 
     def count()(implicit session: DBSession = autoSession): Int = {
@@ -175,8 +216,7 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
       * the selection rows alone (no grouping, no monument table).
       */
     def keyed: Boolean =
-      userId.isDefined && roundId.isDefined && !grouped && !groupWithDetails && order.nonEmpty &&
-        !(regions.size > 1 || subRegionFilter)
+      userId.isDefined && roundId.isDefined && !grouped && !groupWithDetails && order.nonEmpty && !monumentJoin
 
     /** The file's values of the list's order columns, from the juror's row of it in the round
       * (in the list's region), whatever the vote filter: None if the juror has no such file.
@@ -293,6 +333,11 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
     /** A single sub-region (adm1) filter, which the monument table has. */
     private def subRegionFilter: Boolean = subRegions && regions.size == 1 && regions.head.length > 2
 
+    /** The region filter needs the monument table: several regions (an IN on m.adm0), or a
+      * single sub-region (adm1, longer than a region's two characters).
+      */
+    private def monumentJoin: Boolean = regions.size > 1 || subRegionFilter
+
     private val imagesJoinSelection =
       """ from selection s
         |STRAIGHT_JOIN images i
@@ -366,21 +411,6 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
         s" LIMIT ${l.pageSize.getOrElse(0)} OFFSET ${l.offset.getOrElse(0)}"
       }
       .getOrElse("")
-
-    val postProcessor: Seq[ImageWithRating] => Seq[ImageWithRating] =
-      if (groupWithDetails) groupedWithDetails else identity
-
-    private def groupedWithDetails(images: Seq[ImageWithRating]): Seq[ImageWithRating] =
-      images
-        .groupBy(_.image.pageId)
-        .map { case (id, imagesWithId) =>
-          new ImageWithRating(
-            imagesWithId.head.image,
-            imagesWithId.flatMap(_.selection)
-          )
-        }
-        .toSeq
-        .sortBy(-_.selection.map(_.rate).filter(_ > 0).sum)
 
     def imageRankSql(pageId: Long, innerSql: SQLSyntax): SQLSyntax = {
       if (driver == "mysql") {

@@ -100,28 +100,51 @@ case class ImageWithRating(
 
 object ImageWithRating {
 
-  def rankImages(
-      orderedImages: Seq[ImageWithRating],
-      round: Round
-  ): Seq[String] = {
-    rank(orderedImages.map(_.rateSum))
+  /** How a list of all of a round's votes (file list, CSV) orders and ranks its files: by
+    * aggregates of each file's votes, as SQL over the file's selection rows `s` with their
+    * directions (1 ascending, -1 descending), and their values of a file in memory. Files of
+    * the same values tie, and share a rank range.
+    */
+  final case class RankKey(columns: Seq[(String, Int)], values: ImageWithRating => Seq[Int])
+
+  object RankKey {
+
+    /** A binary round's by approvals, a rated round's by the sum of its rates. */
+    def of(round: Round): RankKey =
+      if (round.isBinary) RankKey(Seq("sum(s.rate > 0)" -> -1), file => Seq(file.approvals))
+      else RankKey(Seq("sum(s.rate)" -> -1), file => Seq(file.rateSum))
   }
 
-  def rank(orderedRates: Seq[Int]): Seq[String] = {
+  /** The ranks of a list's files among all of them, from the number of its files of each key,
+    * in the list's order: "4" for a file of its own key, "4-9" for six files that tie. A page
+    * of the list is ranked without reading the rest.
+    */
+  final case class Ranks[K](counts: Seq[(K, Int)]) extends (K => String) {
 
-    val sizeByRate = orderedRates.groupBy(identity).view.mapValues(_.size)
-    val startByRate = sizeByRate.keys.map { rate =>
-      rate -> (orderedRates.indexOf(rate) + 1)
-    }.toMap
+    private val ranges: Map[K, (Int, Int)] =
+      counts.zip(counts.scanLeft(0)(_ + _._2)).map { case ((key, n), before) => key -> (before + 1, n) }.toMap
 
-    orderedRates.map { rate =>
-      val (start, size) = (startByRate(rate), sizeByRate(rate))
-      if (size == 1)
-        start.toString
-      else
-        start + "-" + (start + size - 1)
+    def apply(key: K): String = ranges.get(key).fold("") { case (start, n) =>
+      if (n == 1) start.toString else start + "-" + (start + n - 1)
     }
   }
+
+  object Ranks {
+
+    /** The ranks of the keys of all of a list's files, in its order. */
+    def of[K](orderedKeys: Seq[K]): Ranks[K] = {
+      val sizes = orderedKeys.groupMapReduce(identity)(_ => 1)(_ + _)
+      Ranks(orderedKeys.distinct.map(key => key -> sizes(key)))
+    }
+  }
+
+  /** The ranks of all of a list's files, in its order by the round's [[RankKey]]. */
+  def rankImages(orderedImages: Seq[ImageWithRating], round: Round): Seq[String] = {
+    val keys = orderedImages.map(RankKey.of(round).values)
+    keys.map(Ranks.of(keys))
+  }
+
+  def rank(orderedRates: Seq[Int]): Seq[String] = orderedRates.map(Ranks.of(orderedRates))
 }
 
 class Rating
