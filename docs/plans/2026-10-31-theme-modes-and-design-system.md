@@ -873,12 +873,16 @@ Left for separate branches; none blocks merging this one.
    add a spec that every key used by the views exists in all four files (as `StartStopViewSpec`
    does for its own keys), so the gap can't reopen.
 2. **Commons category autocomplete.** The contests' and contest images' "source" field had a
-   typeahead calling Commons from the browser; the CSP blocked it, and Phase 2 removed it. To
-   bring it back: a same-origin JSON endpoint (signed in, admin or organizer of the current
-   contest, `withAuthJson`) that forwards a prefix search for Category: titles to Commons through
-   `MwBot`, with a short timeout, a small result limit and a cache; then Tom Select's `load` on
-   the field. Tests: the endpoint's authorization (signed out 401, juror 403) and its handling of
-   a Commons failure (an empty list, not a 500).
+   typeahead calling Commons from the browser; the CSP blocked it (JSONP, a script from
+   commons.wikimedia.org), and Phase 2 removed it. To bring it back, fetch from Commons in the
+   browser, not through a server proxy: the MediaWiki API answers anonymous CORS requests with
+   `origin=*`, so the CSP only needs `connect-src 'self' https://commons.wikimedia.org` (scripts
+   stay this host's only). A script gives each category field a Tom Select with a `load` that
+   asks `list=prefixsearch` in the Category namespace (a short delay, a minimum length, stale
+   answers dropped), stores the full `Category:` title, and keeps free text: a field that also
+   takes a page (the import sources) suggests only once the text starts with `Category:`, and a
+   failing or slow Commons leaves a plain text field. Tests: Jest with `fetch` mocked, the
+   script and its hook on the pages with such a field, and the CSP spec.
 3. **`/admin/rounds` and `/admin/users` without `?contestId=`.** Done (c2d220d7): a
    `ContestPermission` without a contest is checked in the session's current contest
    (`Secured.forUser`), for these and the import and greeting pages. In the screenshot fixture both
