@@ -410,6 +410,7 @@ theme = Тема
 theme.light = Светлая
 theme.dark = Тёмная
 theme.auto = Как в системе
+theme.switch = Тема: {0}
 round.start = Запустить тур
 round.stop = Остановить тур
 juror.start = Возобновить голосование члена жюри

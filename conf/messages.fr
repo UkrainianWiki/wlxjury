@@ -433,6 +433,7 @@ theme = Thème
 theme.light = Clair
 theme.dark = Sombre
 theme.auto = Système
+theme.switch = Thème : {0}
 round.start = Démarrer le tour
 round.stop = Arrêter le tour
 juror.start = Reprendre les votes du juré

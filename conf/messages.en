@@ -435,6 +435,7 @@ theme = Theme
 theme.light = Light
 theme.dark = Dark
 theme.auto = System
+theme.switch = Theme: {0}
 round.start = Start the round
 round.stop = Stop the round
 juror.start = Resume the juror''s voting

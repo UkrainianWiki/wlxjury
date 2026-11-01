@@ -27,6 +27,34 @@
         }
         }
         }
+        @* the colour mode: the current one's icon, opening light, dark and auto. A POST with the
+           CSRF token that saves it in the user's row and the theme cookie, then comes back to
+           this page (a GET's only; not an error page, whose URL may carry text that must not
+           show in it: the start page then); for auto, the layout's first script picks the
+           browser's scheme *@
+        @defining(controllers.Theme.of(request)) { current =>
+        <li class="nav-item dropdown">
+            <a href="#" class="nav-link dropdown-toggle" id="theme-menu" data-bs-toggle="dropdown" role="button" aria-expanded="false" title="@Messages("theme.switch", Messages("theme." + current.value))">
+                <i class="bi bi-@current.icon" aria-hidden="true"></i><span class="visually-hidden">@Messages("theme.switch", Messages("theme." + current.value))</span>
+            </a>
+            <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="theme-menu">
+                <li><h6 class="dropdown-header" id="theme-switch-label">@Messages("theme")</h6></li>
+                <li>
+                    <form method="post" action="@routes.UserController.setTheme()" class="navbar-menu-form" id="theme-switch" role="group" aria-labelledby="theme-switch-label">
+                        @csrfField()
+                        @for(back <- controllers.Secured.safeLocalPath(Option.when(backHere && request.method == "GET")(request.uri))) {
+                            <input type="hidden" name="returnTo" value="@back">
+                        }
+                        @for(theme <- controllers.Theme.All) {
+                            <button type="submit" name="theme" value="@theme.value" class="dropdown-item@if(theme == current){ active}"@if(theme == current){ aria-current="true"}>
+                                <i class="bi bi-@theme.icon" aria-hidden="true"></i> @Messages("theme." + theme.value)
+                            </button>
+                        }
+                    </form>
+                </li>
+            </ul>
+        </li>
+        }
         <li class="nav-item dropdown">
             <a href="#" class="nav-link dropdown-toggle" data-bs-toggle="dropdown" role="button" aria-expanded="false" title="@user.fullname">
                 <i class="bi bi-person-fill" aria-hidden="true"></i><span class="visually-hidden">@user.fullname</span>
@@ -36,26 +64,6 @@
                     <a class="dropdown-item" href="@routes.UserController.editUser(user.getId)">
                         <i class="bi bi-person" aria-hidden="true"></i> @Messages("profile")
                     </a>
-                </li>
-                <li><hr class="dropdown-divider"></li>
-                <li><h6 class="dropdown-header" id="theme-switch-label">@Messages("theme")</h6></li>
-                <li>
-                    @* the colour mode: a POST with the CSRF token that saves it in the user's row and
-                       the theme cookie, then comes back to this page (a GET's only; not an error page,
-                       whose URL may carry text that must not show in it: the start page then) *@
-                    @defining(controllers.Theme.of(request)) { current =>
-                    <form method="post" action="@routes.UserController.setTheme()" class="navbar-menu-form" id="theme-switch" role="group" aria-labelledby="theme-switch-label">
-                        @csrfField()
-                        @for(back <- controllers.Secured.safeLocalPath(Option.when(backHere && request.method == "GET")(request.uri))) {
-                            <input type="hidden" name="returnTo" value="@back">
-                        }
-                        @for(theme <- controllers.Theme.All) {
-                            <button type="submit" name="theme" value="@theme.value" class="dropdown-item@if(theme == current){ active}" aria-pressed="@(theme == current)">
-                                <i class="bi bi-@theme.icon" aria-hidden="true"></i> @Messages("theme." + theme.value)
-                            </button>
-                        }
-                    </form>
-                    }
                 </li>
                 <li><hr class="dropdown-divider"></li>
                 <li>

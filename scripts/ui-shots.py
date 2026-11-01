@@ -15,9 +15,9 @@ uses a server that is already running):
     target/ui-venv/Scripts/python scripts/ui-shots.py shoot --label baseline --start-server
 
 Colour modes (`--mode`, comma-separated, each saved in target/ui-shots/<label>/<mode>/):
-`light` and `dark` set the theme cookie in the browser; `auto` sets none and emulates the
-browser's prefers-color-scheme as `--scheme` (dark by default), so `auto` shows the dark
-mode the layout's script picks:
+each sets the theme cookie in the browser (with none, the app shows dark, its default);
+`auto` also emulates the browser's prefers-color-scheme as `--scheme` (dark by default), so
+`auto` shows the dark mode the layout's script picks:
 
     target/ui-venv/Scripts/python scripts/ui-shots.py shoot --label phase3 --mode light,dark,auto --start-server --csp
 
@@ -125,7 +125,8 @@ def pages(s):
         ("editround-new-jurors", "organizer", f"/admin/rounds/edit?contestId={c}", ["#jurors-ts-control"]),
         ("editround-new-prevround", "organizer", f"/admin/rounds/edit?contestId={c}",
          ["#headingImageFiltering a", "#previousRound-ts-control"]),
-        # the theme switches, and the deleted / failed marks
+        # the navbar's theme switch, the user menu, and the deleted / failed marks
+        ("users-thememenu", "organizer", f"/admin/users?contestId={c}", ["#theme-menu"]),
         ("users-usermenu", "organizer", f"/admin/users?contestId={c}",
          ["nav .navbar-nav:last-child > .dropdown:last-child > [data-bs-toggle=dropdown]"]),
         ("contestfiles-marks", "organizer", f"/contest/{c}/files", [], MARKS_JS),
@@ -225,12 +226,11 @@ def shoot_mode(args, mode):
         def context(user):
             if user in contexts:
                 return contexts[user]
-            # light and dark: the theme cookie; auto: none, and the browser's scheme
+            # the theme cookie, explicit for auto too (none is dark); auto: the browser's scheme
             ctx = browser.new_context(viewport=VIEWPORT, device_scale_factor=1, locale="en-US",
                                       reduced_motion="reduce",
                                       color_scheme=args.scheme if mode == "auto" else "light")
-            if mode != "auto":
-                ctx.add_cookies([{"name": "theme", "value": mode, "url": base}])
+            ctx.add_cookies([{"name": "theme", "value": mode, "url": base}])
             ctx.route("**/*", route)
             if user:
                 page = ctx.new_page()

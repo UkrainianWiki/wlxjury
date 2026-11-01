@@ -250,7 +250,7 @@ class UserController @Inject()(cc: ControllerComponents,
     }
   }
 
-  /** The user menu's colour mode switch (logged.scala.html): a POST with the CSRF token
+  /** The navbar's colour mode switch (logged.scala.html): a POST with the CSRF token
     * that stores light, dark or auto in the signed-in user's own row and in the theme
     * cookie, then goes back to `returnTo`, a local path ([[Secured.safeLocalPath]]), else
     * the start page. Any signed-in user, root or without a contest too; the session's
