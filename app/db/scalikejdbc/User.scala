@@ -530,7 +530,7 @@ object User extends CRUDMapper[User] {
       )
 
   /** The user's colour mode ([[controllers.Theme]]): one of its three values only. */
-  def updateTheme(id: Long, theme: controllers.Theme): Unit =
+  def updateTheme(id: Long, theme: controllers.Theme)(implicit session: DBSession = autoSession): Unit =
     updateById(id)
       .withAttributes("theme" -> theme.value)
 
