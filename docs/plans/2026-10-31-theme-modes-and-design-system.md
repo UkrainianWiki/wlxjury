@@ -855,7 +855,8 @@ mode, every page in the mode asked for, no CSP violation; the only console error
   `btn-outline-danger` while running and `btn-outline-success` while stopped, which reads in
   both modes (`phase4-fix/*/roundstat.png`); the rounds page keeps outline-secondary next to
   its Yes/No text. `views.StartStopViewSpec` checks the names, the colours and that all four
-  messages files define the keys.
+  messages files define the keys. Later both grey (61d8d508): red and green stood out too
+  much for something rarely used; the play/stop icon and the name show the state.
 - Checks: `Test/compile` + `testOnly views.* controllers.RoundControllerSpec
   controllers.RoundEditPageSpec controllers.ContestFilesPageSpec
   controllers.MutationAuthorizationSpec controllers.CoiAuthorizationSpec
@@ -906,7 +907,12 @@ Left for separate branches; none blocks merging this one.
    instead of the empty `h1`s (08876d66); `fileList`'s comment inside the copy block, in a
    column (739a2e49); `numberOfStars`' criteria count from the round's criteria rates, read
    once per by-rate page (3b3564b8, `CriteriaRate.countOf`, 4 by default; round 1327's 2 not
-   checked against the production data).
+   checked against the production data). The copy block's escaped `<!-- … -->` line, which
+   looked like a bug, is an `h2.h5` heading inside it: round · juror (all) · region if any
+   (2e9ad206). The round statistics' files column links each juror's gallery and file list
+   in every round, not only a yes/no one, built with `RoundList`; the stat icon links are one
+   `<a class="btn">` each (`snippets.iconLink`, labelled, disabled with no files) instead of a
+   `<button>` inside an `<a>` (ec724817, `views.RoundStatTableViewSpec`).
    - Dead branch in the by-rate galleries: `galleryByRate` and `galleryByRateRegions` draw
      green check `<button>`s instead of stars when `round.rates.id == 2`, but no round has
      that id (binary is 1 since 2014, ratings 3 to 20, `Rates` in Round.scala), so it never
@@ -1013,7 +1019,11 @@ Left for separate branches; none blocks merging this one.
    Update the rate text after the stars (`rateString`) in place too. Tests: a view spec for
    when the stars are interactive here and when not; Jest for the in-place update and the
    changed mark; the rank/order unchanged until reload.
-10. **A round switch keeps the other kind's vote filter (pre-existing).** The navbar's round
+10. **A round switch keeps the other kind's vote filter (pre-existing).** Done (15b34bb1):
+    `VoteFilter.in(round)` keeps all, unrated and the round kind's filters
+    (`VoteFilter.ofRound`), else all files; `withRound` and `RoundList.of` (filter=, older
+    rate=/rated=) apply it. No link names one rate of a rated round (only hand-made URLs), so
+    a rated round's `Rate(n)` is all files too. The navbar's round
     menu (`navbar.scala.html` `roundMenu`) links each round as `l.withRound(r).pageUrl(1)`,
     and `RoundList.withRound` replaces only the round: a binary round's `selected` /
     `rejected` (`VoteFilter.Rate(1)` / `Rate(-1)`) go into a rated round and `rated` into a
@@ -1023,7 +1033,13 @@ Left for separate branches; none blocks merging this one.
     possible rate); apply the same rule when a list is read from a URL (`?filter=selected` on
     a rated round). Tests: `withRound` both ways, the URL case, and a navbar view check that
     exactly one tab is active after a switch each way.
-11. **Dark by default, a visible switch.** The default is auto, which for most users means
+11. **Dark by default, a visible switch.** Done (17a4ea57): `Theme.Default` dark, also for
+    an invalid cookie (theme-switch.js likewise); the navbar's own dropdown (`#theme-menu`,
+    "Theme: <mode>", `theme.switch` in all four files) posts to `/theme` as before, the
+    current one `active` with `aria-current`; the profile's radios checked from the stored
+    mode, else the cookie's, else dark. ui-shots.py sets the cookie for auto too (none is now
+    dark) and adds `users-thememenu`. V71's comment ("NULL … is auto") left as applied. The
+    default was auto, which for most users means
     light; jurors had always-dark galleries before this branch, and few will find the switch
     in the profile menu. (a) A user with no choice (no cookie, `users.theme` NULL) gets dark:
     `Theme.parse`'s fallback; an explicit choice, auto included, is stored and kept. No
