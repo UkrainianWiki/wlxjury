@@ -180,14 +180,49 @@ It is from reading the code and the fixture DB (round 1: 20 jurors, 38,366 files
 ## Order of work
 
 1. Page the all-jurors file list and stream the CSV (issue 4). `RoundFileListSpec`, `CsvSpec`,
-   `FileListViewSpec`.
+   `FileListViewSpec`. **Done (5fc1a909).**
 2. One binary order: SQL order and `ROW_NUMBER`, `groupedWithDetails`, `rankImages`.
    `GalleryOrderSpec`, `RoundListDbSpec`, `RoundListSpec`, `RoundFileListSpec`, `CsvSpec`,
-   `LargeViewControllerSpec`.
+   `LargeViewControllerSpec`. **Done (6f435660).**
 3. Top-N and "selected by" for a binary previous round. `RoundDistributionJobSpec`,
    `RoundRedistributionFiltersSpec`, `DistributeImagesSpec`, `DistributeImagesBatchSpec`,
-   `ImageWithRatingSeqFilterSpec`.
+   `ImageWithRatingSeqFilterSpec`. **Done (3001d72d).**
 4. File-level vote filters. `ImageDbNewDbSpec`, `GalleryRegionsSpec`, `RoundListDbSpec`.
 5. Show rejections and unrated votes: large view, stat footer, file list columns.
    `LargeViewSideSpec`, `FileListViewSpec`, `GalleryByRateViewSpec`.
 6. Rank line, tile view, `rateSum` split. `GalleryByRateViewSpec`, `GalleryTileStarsViewSpec`.
+
+## Done: steps 1-3 (2026-11-01)
+
+- **Step 1.** File list: 1000 files to a page (`RoundList.FileListPageSize`), the navbar's pager.
+  A page is the grouped query's page ids (`SelectionQuery.list` with `groupWithDetails`), then
+  their images and votes by page id (`withVotes`, votes in `s.id` order); `groupedWithDetails`
+  is gone. Ranks among the whole list from its files per rank key (`keyCounts`, one grouped
+  count; `ImageWithRating.Ranks`). CSV (`Csv.rateRows`): the list's page ids read at once (38k
+  longs), then votes 1000 files at a time, `mapAsync(1)` on the blocking pool; header and
+  columns unchanged. File list and CSV are by rate whatever the list's order (`sort=file`
+  ignored there, as before). Tests in `controllers.AllJurorsListSpec` (paging, streamed CSV
+  equals `exportRates` of the whole list): `RoundFileListSpec` is "Add files", not this list.
+- **Step 2.** `org.intracer.wmua.BinaryOrder`: `approvals` (default), `difference`,
+  `approvals-only`; ties by page id everywhere (not monument then page: the distribution
+  already tied by page id). Columns are aggregate expressions (`sum(s.rate > 0)`, ...), not
+  aliases, so `ORDER BY` and `ROW_NUMBER` agree. `ListOrder.Binary(order)`, URL `sort=`; only
+  for `user/0` of a yes/no round (`RoundList.aggregateBinary`), else by rate. Remembered in
+  cookie `binarySort`; `sort=rate` on such a list (the statistics page's links) opens the
+  remembered order. Navbar menu in the organisers' block only. Grouped rows read
+  `rejections`; `rankImages` / `RankKey` take the order. Vote filters still count rows (step 4).
+- **Step 3.** V72 `rounds.top_binary_order VARCHAR(16) NULL` (NULL: the default). Stored only
+  with a top-N; the form's select sits in `#selectFilters` (yes/no previous rounds) with the
+  top-N, so an existing round's page shows its rule; the job's `settings` record it.
+  `DistributionSource.rank` for a yes/no previous round (`binaryPage`): all the previous
+  rounds' rows together (approvals and rejections summed across rounds, not per round),
+  ordered by the round's order, then page id; `rated` kept as `HAVING` (an approval; a stored
+  0: an unrated vote), so the candidates are as before and only the order changed. A
+  candidate's rate is its approvals, so "selected by at least" compares them. In memory:
+  `DistributeImages.binaryCandidates`, `SelectTopByRating` by the order. `funGenerators` now
+  puts the top-N last: it ran in hash-map order, so the in-memory top-N could rank before
+  "selected by" filtered. Existing rounds have NULL: a retry or "Distribute new files" of an
+  old top-N from a yes/no round uses the new default, not the old rate-sum rule (no stored
+  value names it). Stored 0 not migrated (decision 4). Tests: `RoundRedistributionFiltersSpec`
+  (top-1 per order, with and without "selected by", streamed equals in-memory),
+  `ImageWithRatingSeqFilterSpec`, `TopBinaryOrderChoiceSpec`, `db.TopBinaryOrderMigrationSpec`.
