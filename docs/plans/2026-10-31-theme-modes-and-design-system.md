@@ -933,3 +933,19 @@ Left for separate branches; none blocks merging this one.
    the higher stars get raty's default number tooltips while the first ten get none; make
    them consistent (all empty once the number is shown). Tests: a Jest case on the hover and
    mouse-out number and the half-star display; LargeViewFixturesSpec for the markup.
+7. **Gallery vote borders.** In a binary round's gallery, thumbs up sometimes gives the tile a
+   (dark) grey border instead of the selected colour. Two causes, both in
+   `public/javascripts/ug-theme-tiles.js` (`onSelectClick` / `onRejectClick` / `serviceCall`):
+   - The vote buttons toggle: thumbs up on a file already selected sends 0 (unrated), thumbs
+     down on one already rejected likewise. But a tile is drawn with no border at load
+     (`gallery.scala.html` passes `data-rate`, which only the click handlers read), so a file
+     voted earlier looks unvoted, and thumbs up on it un-selects it: the "sometimes".
+   - The unrated border is `var(--bs-secondary-color)`: 75% of the body colour, dark grey on
+     the light page and light grey on the dark one. Before this branch it was `white`
+     (on the then always dark gallery), i.e. a light frame meaning "no vote".
+   Fix: draw each tile's border from `data-rate` at load (selected / rejected / none), so the
+   toggle is visible before the click; show unrated as no border, or a light neutral that
+   reads in both modes (a `--wlx-unrated` variable, e.g. `--bs-border-color`), and consider a
+   distinct "undo" state on the button (pressed `aria-pressed`) so the toggle is expected.
+   Tests: Jest on `serviceCall`'s colours for 1 / -1 / 0 and on the initial borders from
+   `data-rate`; a screenshot of a gallery with voted files in light and dark.
