@@ -896,3 +896,11 @@ Left for separate branches; none blocks merging this one.
      (e.g. `h1` styled as `.h3`) for every page title.
    - `fileList` prints its `<!-- Round … -->` comment as visible text in the block meant for
      copying into a wiki page, and its content starts at the page's edge.
+5. **Old votes after the browser's Back (pre-existing).** After voting in the large view, Back
+   brings the previous file's page back from the browser's cache with the stars it had before
+   the vote (seen while testing the fixture: 7 shown, 6 stored; 3 shown, 4 stored). The
+   gallery and large-view pages send no `Cache-Control`. Fix: `Cache-Control: no-store` on the
+   large view and the galleries (the pages with votes), or reload a page restored from the
+   back/forward cache (`pageshow` with `event.persisted`); `no-store` is simpler but also
+   turns off the back/forward cache for these pages. Tests: a header check on both actions,
+   and a manual check of vote, Back, in Chrome and Firefox.
