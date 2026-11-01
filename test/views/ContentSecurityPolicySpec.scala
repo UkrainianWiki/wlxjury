@@ -44,6 +44,19 @@ class ContentSecurityPolicySpec extends Specification {
       csp must not(contain("unsafe-eval"))
     }
 
+    "need no 'unsafe-eval' for this app's scripts: none calls eval, new Function or a string timer" in {
+      // unitegallery looked its theme up with eval(name) until B5 (now window[name]); the
+      // webjars' and Swagger UI's bundles are checked by the screenshots (--csp), which log
+      // any violation
+      val evalLike = """(?<![\w$.])eval\s*\(|\bnew\s+Function\b|(?<![\w$.])Function\s*\(|set(Timeout|Interval)\s*\(\s*["'`]""".r
+      val files = new File("public/javascripts").listFiles().toSeq.filter(_.getName.endsWith(".js"))
+      files must not(beEmpty)
+      forall(files) { f =>
+        val text = new String(java.nio.file.Files.readAllBytes(f.toPath), java.nio.charset.StandardCharsets.UTF_8)
+        evalLike.findFirstIn(text).aka(f.getName) must beNone
+      }
+    }
+
     "allow styles from this host and inline (style attributes in unitegallery's markup)" in {
       directive("style-src") must containTheSameElementsAs(Seq("'self'", "'unsafe-inline'"))
     }
