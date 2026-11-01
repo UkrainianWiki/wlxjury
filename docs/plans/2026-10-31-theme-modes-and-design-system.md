@@ -872,8 +872,12 @@ Left for separate branches; none blocks merging this one.
    script over the `Messages("…")` keys in `app/views` against each messages file, fill ru, and
    add a spec that every key used by the views exists in all four files (as `StartStopViewSpec`
    does for its own keys), so the gap can't reopen.
-2. **Commons category autocomplete.** The contests' and contest images' "source" field had a
-   typeahead calling Commons from the browser; the CSP blocked it (JSONP, a script from
+2. **Commons category autocomplete.** Done (94348f92, planned in a6402282): `category-suggest.js`
+   on the round form's two categories ("category") and the import sources on the contest files
+   and campaigns pages plus a new contest's images ("mixed"); the CSP's `connect-src`. Not
+   checked in a browser against live Commons, nor in dark mode. The contests' and contest
+   images' "source" field had a typeahead calling Commons from the browser; the CSP blocked it
+   (JSONP, a script from
    commons.wikimedia.org), and Phase 2 removed it. To bring it back, fetch from Commons in the
    browser, not through a server proxy: the MediaWiki API answers anonymous CORS requests with
    `origin=*`, so the CSP only needs `connect-src 'self' https://commons.wikimedia.org` (scripts
