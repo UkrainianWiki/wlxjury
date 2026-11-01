@@ -394,7 +394,8 @@ class UserController @Inject()(cc: ControllerComponents,
       "contest" -> optional(longNumber),
       "lang" -> optional(text),
       "sort" -> optional(number),
-      "theme" -> optional(text)
+      // light, dark or auto; any other value is dropped (no change, or none for a new user)
+      "theme" -> optional(text).transform[Option[String]](_.flatMap(Theme.find).map(_.value), identity)
     )(User.applyEdit)(User.unapplyEdit)
       .verifying("user.email.or.wiki.account",
                  u => u.email.trim.nonEmpty || u.wikiAccount.exists(_.trim.nonEmpty))

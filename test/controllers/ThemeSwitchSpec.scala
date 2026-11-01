@@ -3,9 +3,12 @@ package controllers
 import controllers.CsrfTestApp.{token, withCsrfApp}
 import db.scalikejdbc.{PlayTestDb, SharedTestDb, User, UserContestJdbc}
 import play.api.Application
-import play.api.mvc.{Cookie, Result}
+import org.specs2.mock.Mockito
+import play.api.mvc.{ControllerComponents, Cookie, Result}
 import play.api.test.CSRFTokenHelper._
 import play.api.test.{FakeRequest, PlaySpecification}
+
+import services.{SMTPOrWikiMail, UserService}
 
 import scala.concurrent.Future
 
@@ -14,7 +17,7 @@ import scala.concurrent.Future
   * auto in the signed-in user's own row and in the theme cookie, and goes back to a local
   * page. Signing in and saving the own profile set the cookie from the user's row.
   */
-class ThemeSwitchSpec extends PlaySpecification with PlayTestDb {
+class ThemeSwitchSpec extends PlaySpecification with PlayTestDb with Mockito {
 
   sequential
 
@@ -251,6 +254,25 @@ class ThemeSwitchSpec extends PlaySpecification with PlayTestDb {
         status(result) === SEE_OTHER
         themeOf(otherEmail) must beNone
         themeOf(admin.email) must beNone
+        themeCookie(result) must beNone
+      }
+    }
+
+    "drop another value when an admin creates a user, with no error" in {
+      testDbApp { implicit app =>
+        setUp()
+        val admin = User.create(User("admin@example.com", "admin@example.com", None, Set("admin"), Some("hash"), Some(10L)))
+        implicit val mat: org.apache.pekko.stream.Materializer = app.materializer
+        // a mailer that sends nothing: a new member may get the contest's greeting
+        val controller = new UserController(app.injector.instanceOf[ControllerComponents],
+          new UserService(mock[SMTPOrWikiMail], app.configuration))
+        val result = call(controller.saveUser(), FakeRequest(POST, "/users/save")
+          .withSession(Secured.UserName -> admin.email, Secured.CurrentContestId -> "10")
+          .withFormUrlEncodedBody(
+            "id" -> "0", "fullname" -> "New Juror", "email" -> "new@example.com", "roles" -> "jury",
+            "contest" -> "10", "theme" -> "a-much-too-long-bogus-theme").withCSRFToken)
+        status(result) === SEE_OTHER
+        User.findByEmail("new@example.com").map(_.theme) === Seq(None)
         themeCookie(result) must beNone
       }
     }

@@ -495,7 +495,7 @@ object User extends CRUDMapper[User] {
           column.password    -> user.password,
           column.isRoot      -> root,
           column.lang        -> user.lang,
-          column.theme       -> user.theme,
+          column.theme       -> user.theme.flatMap(controllers.Theme.find).map(_.value),
           column.sort        -> user.sort,
           column.createdAt   -> user.createdAt
         )
