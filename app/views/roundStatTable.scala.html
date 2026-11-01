@@ -31,18 +31,9 @@
             <td>
             @defining(stat.byUserCount.getOrElse(user.getId, 0)) { count =>
 
-                @if(round.isBinary) {
-                    <a href="/gallery/round/@round.id/user/@user.id/page/1">
-                        <button type="button" class="btn btn-outline-secondary btn-sm py-0 px-1 @if(count == 0) {disabled}">
-                            <i class="bi bi-grid-3x3-gap-fill" aria-hidden="true"></i>
-                        </button>
-                    </a>
-                    <a href="/filelist/round/@round.id/user/@user.id/page/1">
-                        <button type="button" class="btn btn-outline-secondary btn-sm py-0 px-1 @if(count == 0) {disabled}">
-                            <i class="bi bi-list-ul" aria-hidden="true"></i>
-                        </button>
-                    </a>
-                }
+                @* the juror's gallery and file list, in any round *@
+                @snippets.iconLink(RoundList(round, user.getId, view = GalleryView.Gallery).pageUrl(1), "grid-3x3-gap-fill", Messages("gallery"), count != 0)
+                @snippets.iconLink(RoundList(round, user.getId, view = GalleryView.FileList).pageUrl(1), "list-ul", Messages("filelist"), count != 0)
                 @count
             }
             </td>
@@ -74,16 +65,8 @@
                     @Messages("total")
                 </th>
                 <th>
-                        <a href="@RoundList(round, 0, view = GalleryView.ByRate).pageUrl(1)">
-                            <button type="button" class="btn btn-outline-secondary btn-sm py-0 px-1 @if(total == 0) {disabled}">
-                                <i class="bi bi-bar-chart-fill" aria-hidden="true"></i>
-                            </button>
-                        </a>
-                        <a href="@RoundList(round, 0, view = GalleryView.FileList).pageUrl(1)">
-                            <button type="button" class="btn btn-outline-secondary btn-sm py-0 px-1 @if(total == 0) {disabled}">
-                                <i class="bi bi-list-ul" aria-hidden="true"></i>
-                            </button>
-                        </a>
+                        @snippets.iconLink(RoundList(round, 0, view = GalleryView.ByRate).pageUrl(1), "bar-chart-fill", Messages("byrate"), total != 0)
+                        @snippets.iconLink(RoundList(round, 0, view = GalleryView.FileList).pageUrl(1), "list-ul", Messages("filelist"), total != 0)
                     @total
                     @if(user.isAdmin(Some(round.contestId))) {
                         <br>
@@ -93,16 +76,8 @@
                 <th>
                     <div class="btn-group">
                     @if(round.isBinary) {
-                        <a href="@RoundList(round, 0, filter = VoteFilter.Rate(1), view = GalleryView.ByRate).pageUrl(1)">
-                            <button type="button" class="btn btn-outline-secondary btn-sm py-0 px-1 @if(total == 0) {disabled}">
-                                <i class="bi bi-bar-chart-fill" aria-hidden="true"></i>
-                            </button>
-                        </a>
-                        <a href="@RoundList(round, 0, filter = VoteFilter.Rate(1), view = GalleryView.FileList).pageUrl(1)">
-                            <button type="button" class="btn btn-outline-secondary btn-sm py-0 px-1 @if(total == 0) {disabled}">
-                                <i class="bi bi-list-ul" aria-hidden="true"></i>
-                            </button>
-                        </a>
+                        @snippets.iconLink(RoundList(round, 0, filter = VoteFilter.Rate(1), view = GalleryView.ByRate).pageUrl(1), "bar-chart-fill", Messages("byrate"), total != 0)
+                        @snippets.iconLink(RoundList(round, 0, filter = VoteFilter.Rate(1), view = GalleryView.FileList).pageUrl(1), "list-ul", Messages("filelist"), total != 0)
                     }
                     </div>
                     @if(round.isBinary) {
