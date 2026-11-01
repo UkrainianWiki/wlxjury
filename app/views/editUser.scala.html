@@ -76,7 +76,8 @@
                                 <div class="alert alert-success">@msg</div>
                             }
 
-                            <a href="#" class="btn btn-outline-secondary" onclick="document.forms['reset-password'].submit();">@Messages("reset.password")</a>
+                            @* the reset form is after this one (forms don't nest): the form attribute submits it *@
+                            <button type="submit" form="reset-password" class="btn btn-outline-secondary">@Messages("reset.password")</button>
                         }
                     }
 

@@ -48,10 +48,13 @@ const KEY_CODES = {
 let submits; // the vote form's submissions: { form, action }
 let navigations; // window.location assignments
 
+/** The app's own scripts, run with the recording `window` (they move by `window.location`). */
+const RECORDED = new Set(["large-view.js", "large-keys.js", "large-stars.js", "large-rate.js", "large-sections.js"]);
+
 /**
- * Loads a fixture into the document and runs its scripts: the local ones first, as the
- * page's inline scripts only use them once they run, then the inline ones, in order, with
- * a `window` whose `location` assignments are recorded (jsdom doesn't navigate).
+ * Loads a fixture into the document and runs its scripts, in order: the local ones, the app's
+ * own (RECORDED) with a `window` whose `location` assignments are recorded (jsdom doesn't
+ * navigate), then the inline ones (the side sections' restore) with it too.
  */
 async function loadPage(name, transform = html => html) {
     if (window.jQuery) window.jQuery(document).off();
@@ -63,16 +66,13 @@ async function loadPage(name, transform = html => html) {
     if (!inner) throw new Error(name + " has no <html> element");
     document.documentElement.innerHTML = inner[1]; // scripts added so don't run
 
-    const scripts = Array.from(document.querySelectorAll("script"));
-    for (const script of scripts.filter(s => s.src)) {
-        const file = localScript(script.getAttribute("src"));
-        if (file) (0, eval)(fs.readFileSync(file, "utf8"));
-    }
-
     const recordingWindow = new Proxy(window, {
         get(target, prop) {
             const value = Reflect.get(target, prop);
-            return typeof value === "function" ? value.bind(target) : value;
+            // the browser's own functions need the real window as `this`; jQuery keeps its
+            // properties ($.fn) only unbound
+            return typeof value === "function" && /\[native code\]/.test(Function.prototype.toString.call(value))
+                ? value.bind(target) : value;
         },
         set(target, prop, value) {
             if (prop === "location") {
@@ -82,8 +82,22 @@ async function loadPage(name, transform = html => html) {
             return Reflect.set(target, prop, value);
         }
     });
-    const inline = scripts.filter(s => !s.src).map(s => s.textContent).join("\n;\n");
-    new Function("window", inline).call(recordingWindow, recordingWindow);
+
+    const scripts = Array.from(document.querySelectorAll("script"));
+    for (const script of scripts.filter(s => s.src)) {
+        const file = localScript(script.getAttribute("src"));
+        if (!file) continue;
+        const code = fs.readFileSync(file, "utf8");
+        if (RECORDED.has(path.basename(file))) new Function("window", code).call(recordingWindow, recordingWindow);
+        else (0, eval)(code);
+    }
+
+    // the only inline scripts, JSON data aside: the layout's theme script and the side
+    // sections' restore; no vote or move is in a script
+    const inline = scripts.filter(s => !s.src && s.type !== "application/json").map(s => s.textContent);
+    expect(inline.filter(s => !s.includes("prefers-color-scheme")).map(s => s.trim()))
+        .toEqual(["if (window.wlxLargeSections) wlxLargeSections.restore(document);"]);
+    new Function("window", inline.join(";")).call(recordingWindow, recordingWindow);
 
     // let $(document).ready handlers run (the stars), within this page's test:
     // jQuery 3 runs them asynchronously, in order, and reports their errors in a later task
@@ -136,7 +150,7 @@ describe("the same-origin guard", () => {
 
     test("fails a key vote of a page whose vote URL is http://, as the keys' were before c4a6c6b1", async () => {
         await loadPage("binary-own.html",
-            html => html.split('voteLarge("/large/').join('voteLarge("http://jury.example/large/'));
+            html => html.split('data-vote-key-space="/large/').join('data-vote-key-space="http://jury.example/large/'));
         press("space");
         expect(submits).toHaveLength(1);
         expect(() => sameOriginUrl(submits[0].action)).toThrow(/not this page's https:\/\/jury\.example/);
@@ -319,8 +333,7 @@ describe("the number by a rated round's stars (1..5), the juror's own view of an
     });
 
     test("gives none to stars 11 to 20 either, in a round of 20", async () => {
-        await loadPage("rated-own.html", html => html.split("number: 5,").join("number: 20,")
-            .split("Array(5)").join("Array(20)"));
+        await loadPage("rated-own.html", html => html.split('data-number="5"').join('data-number="20"'));
         const stars = document.querySelectorAll("#rate-image i.wlx-star");
         expect(stars).toHaveLength(20);
         stars.forEach(s => expect(s.title).toBe(""));

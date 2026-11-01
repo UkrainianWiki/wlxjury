@@ -1,0 +1,9 @@
+@()
+@* A page's justified tiles (gallery, contestFiles): unitegallery with its tiles theme and their
+   CSS, and gallery-init.js, which starts them on the page's #gallery with its data-jury,
+   data-binary and data-stars (views.GalleryTiles). Goes in the shell's `head`. *@
+<script src="@routes.Assets.versioned("javascripts/unitegallery.js")"></script>
+<link rel="stylesheet" href="@routes.Assets.versioned("stylesheets/unite-gallery.css")">
+<script src="@routes.Assets.versioned("javascripts/ug-theme-tiles.js")"></script>
+<link rel="stylesheet" href="@routes.Assets.versioned("stylesheets/ug-theme-default.css")">
+<script src="@routes.Assets.versioned("javascripts/gallery-init.js")"></script>

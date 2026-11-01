@@ -1,24 +1,14 @@
-@(index: Int, size: Int, urlAt: Int => String, backUrl: String)
-@* A large view's moves, a contest file's and a round's (keyboardNav.scala.html adds a round's
-   vote keys): Up and Down to the previous and next file, Page Up / Page Down five files back or
-   on (or the first / last shown), Home and End to the first and last shown, Esc back to the
-   gallery. *@
-<script src="@routes.Assets.versioned("javascripts/jquery.hotkeys.js")"></script>
-<script>
-    function wlxGo(e, url) {
-        e.preventDefault();
-        window.location = url;
-        return false;
-    }
-    @if(index < size - 1) {
-    $(document).on('keydown', null, 'down', function (e) { return wlxGo(e, "@Html(urlAt(index + 1))"); });
-    }
-    @if(index > 0) {
-    $(document).on('keydown', null, 'up', function (e) { return wlxGo(e, "@Html(urlAt(index - 1))"); });
-    }
-    $(document).on('keydown', null, 'esc', function (e) { return wlxGo(e, "@Html(backUrl)"); });
-    $(document).on('keydown', null, 'pagedown', function (e) { return wlxGo(e, "@Html(urlAt(math.min(index + 5, size - 1)))"); });
-    $(document).on('keydown', null, 'pageup', function (e) { return wlxGo(e, "@Html(urlAt(math.max(index - 5, 0)))"); });
-    $(document).on('keydown', null, 'home', function (e) { return wlxGo(e, "@Html(urlAt(0))"); });
-    $(document).on('keydown', null, 'end', function (e) { return wlxGo(e, "@Html(urlAt(size - 1))"); });
-</script>
+@(index: Int, size: Int, urlAt: Int => String, backUrl: String, votes: Html = Html(""))
+@* A large view's keys (large-keys.js, with jquery.hotkeys.js), a contest file's and a round's
+   (`votes`: keyboardNav.scala.html's vote keys), as attributes, each a path: Up and Down to the
+   previous and next file, Page Up / Page Down five files back or on (or the first / last
+   shown), Home and End to the first and last shown, Esc back to the gallery. *@
+<div id="large-keys" hidden
+    @if(index < size - 1) { data-key-down="@urlAt(index + 1)"}
+    @if(index > 0) { data-key-up="@urlAt(index - 1)"}
+    data-key-esc="@backUrl"
+    data-key-pagedown="@urlAt(math.min(index + 5, size - 1))"
+    data-key-pageup="@urlAt(math.max(index - 5, 0))"
+    data-key-home="@urlAt(0)"
+    data-key-end="@urlAt(size - 1)"
+    @votes></div>

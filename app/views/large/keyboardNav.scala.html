@@ -3,37 +3,18 @@
 
 @(user: User,
   list: RoundList,
-  file: ImageWithRating)(implicit request: Request[Any], messages: Messages)
-@* A round's large view's vote keys, for the juror's own view of an open round: Space to select
-   and Del to reject in a binary round, a digit to rate in a rated one. Its moves are
-   fileKeyboardNav.scala.html's, which loads jquery.hotkeys.js. *@
+  file: ImageWithRating)
+@* A round's large view's vote keys, as fileKeyboardNav.scala.html's #large-keys attributes
+   (large-keys.js), for the juror's own view of an open round: Space to select and Del to reject
+   in a binary round, a digit to rate in a rated one; each a path, never an http:// URL. Its
+   moves are fileKeyboardNav's. *@
 @defining(list.round) { round =>
 @if(user.getId == list.asUserId && round.active && user.roles.contains("jury")) {
-<script>
-        @if(round.isBinary) {
-            @if(file.rate <= 0) {
-                $(document).on('keydown', null, 'space', function (e) {
-                    e.preventDefault() ;
-                    voteLarge("@Html(list.voteUrl(file.pageId, 1))");
-                    return false ;
-                });
-            }
-            @if(file.rate >= 0) {
-                $(document).on('keydown', null, 'del', function (e) {
-                    e.preventDefault() ;
-                    voteLarge("@Html(list.voteUrl(file.pageId, -1))");
-                    return false ;
-                });
-            }
-        } else {
-            @for(i <- 0 to Math.min(round.maxRate, 9)) {
-                $(document).on('keydown', null, '@i', function (e) {
-                    e.preventDefault() ;
-                    voteLarge("@Html(list.voteUrl(file.pageId, i))");
-                    return false ;
-                });
-            }
-        }
-</script>
+    @if(round.isBinary) {
+        @if(file.rate <= 0) { data-vote-key-space="@list.voteUrl(file.pageId, 1)"}
+        @if(file.rate >= 0) { data-vote-key-del="@list.voteUrl(file.pageId, -1)"}
+    } else {
+        @for(i <- 0 to Math.min(round.maxRate, 9)) { data-vote-key-@i="@list.voteUrl(file.pageId, i)"}
+    }
 }
 }

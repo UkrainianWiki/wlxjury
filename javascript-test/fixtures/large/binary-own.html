@@ -20,52 +20,25 @@ if (query) { if (query.addEventListener) query.addEventListener('change', apply)
 <link rel="stylesheet" media="screen" href="/assets/stylesheets/main.css">
 <script type="text/javascript" src="/webjars/jquery/3.7.1/jquery.min.js"></script>
 <script src="/webjars/bootstrap/5.3.8/js/bootstrap.bundle.min.js"></script>
-<script>
-// A vote is a POST of the page's vote form, with its CSRF token: a GET changes nothing.
-// The keys, the stars and the buttons with a data-vote-url submit it.
-function voteLarge(url) {
-var form = document.getElementById('vote-form');
-if (!form) return;
-form.action = url;
-form.submit();
-}
-$(document).on('click', '[data-vote-url]', function (e) {
-e.preventDefault();
-voteLarge($(this).attr('data-vote-url'));
-});
-</script>
+<script src="/assets/javascripts/large-view.js"></script>
 <script src="/assets/javascripts/large-sections.js"></script>
 <script src="/assets/javascripts/jquery.hotkeys.js"></script>
-<script>
-function wlxGo(e, url) {
-e.preventDefault();
-window.location = url;
-return false;
-}
-$(document).on('keydown', null, 'down', function (e) { return wlxGo(e, "/large/round/1/user/1/pageid/108?sort=rate"); });
-$(document).on('keydown', null, 'up', function (e) { return wlxGo(e, "/large/round/1/user/1/pageid/106?sort=rate"); });
-$(document).on('keydown', null, 'esc', function (e) { return wlxGo(e, "/gallery/round/1/user/1/region/all/pageid/107?sort=rate#107"); });
-$(document).on('keydown', null, 'pagedown', function (e) { return wlxGo(e, "/large/round/1/user/1/pageid/112?sort=rate"); });
-$(document).on('keydown', null, 'pageup', function (e) { return wlxGo(e, "/large/round/1/user/1/pageid/102?sort=rate"); });
-$(document).on('keydown', null, 'home', function (e) { return wlxGo(e, "/large/round/1/user/1/pageid/101?sort=rate"); });
-$(document).on('keydown', null, 'end', function (e) { return wlxGo(e, "/large/round/1/user/1/pageid/113?sort=rate"); });
-</script>
-<script>
-$(document).on('keydown', null, 'space', function (e) {
-e.preventDefault() ;
-voteLarge("/large/round/1/pageid/107/select/1?sort=rate");
-return false ;
-});
-$(document).on('keydown', null, 'del', function (e) {
-e.preventDefault() ;
-voteLarge("/large/round/1/pageid/107/select/-1?sort=rate");
-return false ;
-});
-</script>
+<script src="/assets/javascripts/large-keys.js"></script>
 </head>
 <body class="gallery h-100">
 <h1 class="visually-hidden">gallery</h1>
 <form id="vote-form" method="post" class="d-none"><input type="hidden" name="csrfToken" value="fixture-csrf-token"/></form>
+<div id="large-keys" hidden
+data-key-down="/large/round/1/user/1/pageid/108?sort=rate"
+data-key-up="/large/round/1/user/1/pageid/106?sort=rate"
+data-key-esc="/gallery/round/1/user/1/region/all/pageid/107?sort=rate#107"
+data-key-pagedown="/large/round/1/user/1/pageid/112?sort=rate"
+data-key-pageup="/large/round/1/user/1/pageid/102?sort=rate"
+data-key-home="/large/round/1/user/1/pageid/101?sort=rate"
+data-key-end="/large/round/1/user/1/pageid/113?sort=rate"
+data-vote-key-space="/large/round/1/pageid/107/select/1?sort=rate"
+data-vote-key-del="/large/round/1/pageid/107/select/-1?sort=rate"
+></div>
 <div class="container-fluid large-view h-100">
 <div class="row h-100">
 <div class="col-1 large-side">
@@ -175,9 +148,7 @@ srcset="https://upload.wikimedia.org/wikipedia/commons/a/ab/Image_112.jpg 1.5x, 
 <img id="large_image" alt="File:Image 107.jpg"
 src="https://upload.wikimedia.org/wikipedia/commons/a/ab/Image_107.jpg" class="mw-100 mh-100"
 srcset="https://upload.wikimedia.org/wikipedia/commons/a/ab/Image_107.jpg 1.5x, https://upload.wikimedia.org/wikipedia/commons/a/ab/Image_107.jpg 2x"
-onerror="var f = this.getAttribute('data-fallback');
-if (f) { this.removeAttribute('data-fallback'); this.removeAttribute('srcset'); this.removeAttribute('sizes'); this.src = f; }
-else this.parentNode.classList.add('wlx-large-failed');">
+data-failed-mark="large">
 </a>
 <div class="large-box">
 <div id="comments" name="comments" class="comment-header msg">
@@ -188,7 +159,7 @@ else this.parentNode.classList.add('wlx-large-failed');">
 <input type="hidden" name="csrfToken" value="fixture-csrf-token"/>
 <input type="hidden" name="id" id="id" value="0" />
 <textarea class="imageComment" id="text" name="text" rows="3" placeholder="your.comment.here"></textarea>
-<input type="button" class="btn btn-primary" id="saySomething" value="submit.comment" onClick="document.forms[ 'addComment' ].submit ( ) ;" />
+<input type="submit" class="btn btn-primary" id="saySomething" value="submit.comment" />
 </form>
 </div>
 </div>
