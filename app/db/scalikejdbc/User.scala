@@ -12,6 +12,7 @@ import scalikejdbc.orm.CRUDMapper
 import services.PasswordHasher
 
 import scala.util.Try
+import scala.util.control.NonFatal
 
 case class User(
     fullname: String,
@@ -278,23 +279,35 @@ object User extends CRUDMapper[User] {
     val user = byUserName(username)
     PasswordHasher.default.check(user.flatMap(_.password), password, deadline) match {
       case PasswordHasher.Accepted(rehash) =>
-        for (u <- user; stored <- u.password) yield rehash.fold(u) { hash =>
-          if (replaceHash(u.getId, stored, hash)) {
-            passwordLogger.info(s"password hash upgraded: accountId=${u.getId}")
-            u.copy(password = Some(hash))
-          } else u
-        }
+        for (u <- user; stored <- u.password) yield rehash.fold(u)(upgradeHash(u, stored, _)())
       case PasswordHasher.Rejected => None
     }
   }
 
   /** Stores a new password's bcrypt hash. */
   def setPassword(id: Long, password: String): Unit =
-    updateHash(id, PasswordHasher.default.hash(password))
+    setPasswordHash(id, PasswordHasher.default.hash(password))
 
   /** Replaces the stored hash `expected` (only it: not a password changed since it was read). */
-  private def replaceHash(id: Long, expected: String, hash: String): Boolean =
-    sql"UPDATE users SET password = $hash WHERE id = $id AND password = $expected".update.apply() == 1
+  private[db] def replaceHash(id: Long, expected: String, hash: String): Boolean =
+    quietly(s => sql"UPDATE users SET password = $hash WHERE id = $id AND password = $expected".update.apply()(s) == 1)
+
+  /** The signed-in user after storing `hash` in place of `stored`; a failure to store it
+    * (a lock timeout, a read-only database) doesn't fail the sign-in: the next one tries again.
+    */
+  private[db] def upgradeHash(user: User, stored: String, hash: String)(
+      replace: (Long, String, String) => Boolean = replaceHash): User =
+    try {
+      if (replace(user.getId, stored, hash)) {
+        passwordLogger.info(s"password hash upgraded: accountId=${user.getId}")
+        user.copy(password = Some(hash))
+      } else user
+    } catch {
+      case NonFatal(e) =>
+        // the exception's text could hold the statement: only its class
+        passwordLogger.warn(s"password hash not upgraded: accountId=${user.getId} error=${e.getClass.getName}")
+        user
+    }
 
   def byUserName(username: String): Option[User] = {
     val unameTrimmed = username.trim.toLowerCase
@@ -506,7 +519,7 @@ object User extends CRUDMapper[User] {
     */
   def create(user: User)(implicit session: DBSession = AutoSession): User = {
     val root = user.isRoot || user.hasRole(ROOT_ROLE)
-    val id = withSQL {
+    val insertUser = withSQL {
       insert
         .into(User)
         .namedValues(
@@ -520,7 +533,12 @@ object User extends CRUDMapper[User] {
           column.sort        -> user.sort,
           column.createdAt   -> user.createdAt
         )
-    }.updateAndReturnGeneratedKey()
+    }.updateAndReturnGeneratedKey
+    // it binds the hash: never logged, unless a caller's own session (a test's) runs it
+    val id = session match {
+      case AutoSession => quietly(insertUser.apply()(_))
+      case own         => insertUser.apply()(own)
+    }
 
     for (contestId <- user.contestId; role <- user.contestRole)
       UserContestJdbc.createMembership(id, contestId, role)
@@ -559,10 +577,24 @@ object User extends CRUDMapper[User] {
     updateById(id)
       .withAttributes("isRoot" -> root)
 
-  /** Stores a hash made by [[PasswordHasher.hash]]; see [[setPassword]]. */
-  private def updateHash(id: Long, hash: String): Unit =
-    updateById(id)
-      .withAttributes("password" -> hash)
+  /** Stores a hash made by [[PasswordHasher.hash]] (to hash before writing anything else);
+    * [[setPassword]] hashes and stores.
+    */
+  def setPasswordHash(id: Long, hash: String): Unit =
+    quietly(s => sql"UPDATE users SET password = $hash WHERE id = $id".update.apply()(s))
+
+  /** ScalikeJDBC's settings for a statement that binds a password hash: it logs neither the
+    * statement (`loggingSQLAndTime`, including the slow-statement warning) nor its failure
+    * (`loggingSQLErrors`), both of which print the bound values.
+    */
+  private val quietSettings: SettingsProvider = SettingsProvider.default.copy(
+    loggingSQLAndTime = _.copy(enabled = false, warningEnabled = false),
+    loggingSQLErrors = _ => false
+  )
+
+  /** `f` in its own auto-commit session with [[quietSettings]]. */
+  private[db] def quietly[A](f: DBSession => A): A =
+    DB.autoCommit(f)(NoConnectionPoolContext, quietSettings)
 
   def loadJurors(contestId: Long)(implicit session: DBSession = autoSession): Seq[User] =
     contestMembers(contestId, roles = Some(Seq(JURY_ROLE)))
