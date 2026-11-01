@@ -1,7 +1,8 @@
 @(
         user: db.scalikejdbc.User,
         editUserForm: Form[db.scalikejdbc.User],
-        contestId: Option[Long] = None
+        contestId: Option[Long] = None,
+        tokensCard: Option[controllers.ApiTokensCard] = None
 )(implicit flash: Flash, messages: Messages, req: RequestHeader)
 
 @import helper._
@@ -103,5 +104,11 @@
                 }
             </div>
         </div>
+        @* the own profile only: the user's personal API tokens *@
+        @for(card <- tokensCard) {
+            <div class="col-md-8 col-xl-7 mt-4 mt-md-0">
+                @apiTokens(card)
+            </div>
+        }
     </div>
 }

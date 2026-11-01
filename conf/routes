@@ -68,6 +68,9 @@ POST        /admin/greeting                                                     
 GET         /users/edit/:id                                                         @controllers.UserController.editUser(id: Long, contestId: Option[Long] ?= None)
 POST        /users/save                                                             @controllers.UserController.saveUser()
 POST        /users/resetpasswd/:id                                                  @controllers.UserController.resetPassword(id: Long)
+# the own profile's personal API tokens (POST forms with the CSRF token; the session only)
+POST        /users/tokens                                                           @controllers.UserController.createApiToken()
+POST        /users/tokens/:id/revoke                                                @controllers.UserController.revokeApiToken(id: Long)
 POST        /switch-contest/:contestId                                              @controllers.UserController.switchContest(contestId: Long)
 # an old link: the contest is switched by the navbar's menu (POST) only
 GET         /switch-contest/:contestId                                              @controllers.UserController.switchContestLink(contestId: Long)

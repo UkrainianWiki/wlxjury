@@ -1,6 +1,6 @@
 package controllers
 
-import db.scalikejdbc.{ContestJuryJdbc, User, UserContestJdbc}
+import db.scalikejdbc.{ApiTokenJdbc, ContestJuryJdbc, User, UserContestJdbc}
 import org.intracer.wmua._
 import org.scalawiki.dto.cmd.query.Query
 import org.scalawiki.dto.cmd.query.list._
@@ -10,7 +10,7 @@ import play.api.data.Forms._
 import play.api.data.validation.{Constraint, Constraints, Valid}
 import play.api.i18n.{I18nSupport, Lang, Messages}
 import play.api.mvc.{Action, AnyContent, ControllerComponents, EssentialAction, Result}
-import services.UserService
+import services.{ApiTokenService, UserService}
 import spray.util.pimpFuture
 
 import javax.inject.Inject
@@ -139,15 +139,52 @@ class UserController @Inject()(cc: ControllerComponents,
       Set(User.ADMIN_ROLE, User.ROOT_ROLE, s"USER_ID_$userId"))) {
       user => implicit request =>
         editableUser(user, userId, contestId).fold(Redirect(routes.LoginController.index)) { editedUser =>
-          // the own profile's theme: the stored one, else the one this browser shows
-          val withTheme =
-            if (user.id.contains(userId) && editedUser.theme.flatMap(Theme.find).isEmpty)
-              editedUser.copy(theme = Some(Theme.of(request).value))
-            else editedUser
-          val filledForm = editUserForm.fill(withTheme)
-          Ok(views.html.editUser(user, filledForm, editedUser.contestId.orElse(user.currentContest)))
+          if (user.id.contains(userId)) Ok(ownProfile(user))
+          else Ok(views.html.editUser(user, editUserForm.fill(editedUser), editedUser.contestId.orElse(user.currentContest)))
         }
     }
+
+  /** The own profile: the form, its theme the stored one, else the one this browser shows, and
+    * the API tokens card ([[ApiTokensCard]]) with `tokenForm` and, right after creating one,
+    * `newToken`.
+    */
+  private def ownProfile(
+      user: User,
+      tokenForm: Form[(String, Option[Int])] = ApiTokensCard.form,
+      newToken: Option[String] = None
+  )(implicit request: play.api.mvc.Request[_]) = {
+    val withTheme =
+      if (user.theme.flatMap(Theme.find).isEmpty) user.copy(theme = Some(Theme.of(request).value)) else user
+    views.html.editUser(user, editUserForm.fill(withTheme), user.currentContest,
+      Some(ApiTokensCard(ApiTokenJdbc.findByUser(user.getId), tokenForm, newToken)))
+  }
+
+  /** Creates a personal API token of the signed-in user (a POST of their profile's form, with
+    * the CSRF token) and shows it on the profile, in this response only (`no-store`), never in
+    * the flash or a URL. The session only: page routes take no token, so a token can't make
+    * or revoke tokens.
+    */
+  def createApiToken(): EssentialAction = withAuth(_ => true) { user => implicit request =>
+    ApiTokensCard.form
+      .bindFromRequest()
+      .fold(
+        formWithErrors => BadRequest(ownProfile(user, formWithErrors)),
+        { case (name, expiresInDays) =>
+          val token = ApiTokenService.create(user.getId, name, expiresInDays)
+          Ok(ownProfile(user, newToken = Some(token))).withHeaders(CACHE_CONTROL -> "no-store")
+        }
+      )
+  }
+
+  /** Revokes one of the signed-in user's own tokens; another user's, or none, is not found. */
+  def revokeApiToken(id: Long): EssentialAction = withAuth(_ => true) { user => implicit request =>
+    ApiTokenJdbc.find(id).filter(_.userId == user.getId).fold[Result](
+      NotFound(views.html.errorPage(Some(user), "error.title", "error.api.token.not.found"))
+    ) { token =>
+      ApiTokenJdbc.revoke(token.id, user.getId)
+      Redirect(routes.UserController.editUser(user.getId)).flashing("api-token-revoked" -> "1")
+    }
+  }
 
   /**
     * Saves user on user editing form submitting
