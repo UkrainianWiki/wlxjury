@@ -261,6 +261,14 @@ class LoginControllerSpec extends PlaySpecification with Results with PlayTestDb
   }
 
   "signUp" should {
+    "have no links that lead nowhere" in {
+      testDbApp { implicit app =>
+        val page = route(app, FakeRequest(GET, "/signup").withCSRFToken).get
+        status(page) === OK
+        contentAsString(page) must not(contain("href=\"\""))
+      }
+    }
+
     "log in as the new user, not as the user named by the password" in {
       testDbApp { implicit app =>
         implicit val mat: Materializer = app.materializer
