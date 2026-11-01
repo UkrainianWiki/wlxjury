@@ -887,15 +887,31 @@ Left for separate branches; none blocks merging this one.
    account and contest first, reproduce in a controller spec, and keep the negative cases (a
    member of another contest, a juror) denied.
 4. **Smaller quirks, all predating this branch:**
-   - The by-rate galleries of a binary (1-2) round show the rate as green `<button>`s that do
-     nothing; show it as a label or icon instead.
-   - Star counts: `galleryByRateRegions` draws `rates.id / 2` stars whatever the half-star
-     setting, and `galleryByRate` uses `numberOfStars`, which multiplies by the criteria count.
-     Use one helper for both.
-   - Page titles: admin pages use `h3`, the error page `h4`, galleries none. Pick one level
-     (e.g. `h1` styled as `.h3`) for every page title.
-   - `fileList` prints its `<!-- Round … -->` comment as visible text in the block meant for
-     copying into a wiki page, and its content starts at the page's edge.
+   - Dead branch in the by-rate galleries: `galleryByRate` and `galleryByRateRegions` draw
+     green check `<button>`s instead of stars when `round.rates.id == 2`, but no round has
+     that id (binary is 1 since 2014, ratings 3 to 20, `Rates` in Round.scala), so it never
+     renders. A binary round takes the star branch instead: one star (`numberOfStars` = 1),
+     filled only when the average is at least 1, i.e. when every assigned juror selected the
+     file (2 of 3 is 0.67, drawn empty), followed by the count of selections. Remove the
+     dead branch and show a binary round as "✓ n" (or n of m) without the star.
+   - Star counts in `galleryByRateRegions` (the by-rate gallery grouped by region,
+     `region=grouped`): it draws `rates.id / 2` stars whatever the half-star setting, while
+     `showStar` halves the rate only for half-star rounds. A 1-10 round without half stars
+     gets 5 stars filled up to the rate, so 5 to 10 all look like 5 full stars; a 1-5 round
+     gets 2 stars (4 and 5 look the same); a 1-3 round 1; a binary round none. `galleryByRate`
+     uses `Round.numberOfStars`, which is right but multiplies by the criteria count with a
+     hard-coded exception (`id.contains(1327)`: 2 criteria instead of 4, from bddd46f7). Use
+     `numberOfStars` in both, and take the criteria count from the round's criteria.
+   - Headings: admin pages title themselves with `h3`, the error and access-denied pages with
+     `h4`, the galleries have none, and `galleryByRate` / `galleryByRateRegions` put an empty
+     `<h1 id=pageId class="tile-anchor">` in every tile as a scroll target (dozens of empty
+     `h1`s per page for screen readers). Use one title level (e.g. `h1` styled as `.h3`) and a
+     non-heading anchor (an `id` on the tile).
+   - `fileList` prints a line `<!-- Round …, Juror: …, Region … -->` as visible text above the
+     list (a Twirl-escaped string, so a wiki comment shown as text). It sits outside the
+     `contenteditable` block meant for copying, so it isn't copied with the list; it was
+     probably meant as the wiki comment heading the pasted list. Put it inside the block (or
+     drop it), and wrap the `.row` content in a column so it doesn't start at the page edge.
 5. **Old votes after the browser's Back (pre-existing).** After voting in the large view, Back
    brings the previous file's page back from the browser's cache with the stars it had before
    the vote (seen while testing the fixture: 7 shown, 6 stored; 3 shown, 4 stored). The
