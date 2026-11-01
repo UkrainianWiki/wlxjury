@@ -420,3 +420,7 @@ theme = Theme
 theme.light = Light
 theme.dark = Dark
 theme.auto = System
+round.start = Start the round
+round.stop = Stop the round
+juror.start = Resume the juror''s voting
+juror.stop = Pause the juror''s voting

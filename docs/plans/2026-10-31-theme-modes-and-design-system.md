@@ -799,3 +799,35 @@ mode, every page in the mode asked for, no CSP violation; the only console error
 - fileList's content (inside its `.row`) starts at the page's edge, and it prints its HTML
   comment line (`<!-- Round … -->`) as visible text in the `contenteditable` block meant for
   copying into a wiki page; both unchanged.
+
+### Review follow-ups
+
+- **Stars overflowing (medium, `77ede2af`):** `.many-stars` (0.6875rem on one `nowrap` line)
+  still ran 16 to 20 stars past the 196px side column over the image. Rating types are 1-3 ..
+  1-20, so raty draws up to ten stars with half stars and up to 20 without; a criteria round
+  draws the same count for each criterion. `.large-stars` is now a wrapping flex row (raty
+  adds no spaces to break at) at the normal 1rem: ten and the cancel icon stay on one line,
+  more take a second; `.many-stars` is gone. Check chosen: jsdom has no layout, so a Jest case
+  could only assert the CSS text; instead the screenshot harness measures it in Chrome.
+  `stars_js` (`scripts/ui-shots.py`) logs a console error, which fails the shot, if any star
+  or the cancel icon lies outside the side column's content box, or if ten or fewer take more
+  than one line. `large-rated-stars` checks the fixture's ten; `large-rated-20` redraws raty
+  with 20 stars (`raty('set', {number: 20})`, the same options otherwise). Run
+  `--label phase4-fix --mode light,dark --csp`: "10 stars on 1 line(s), 0 outside" and "20
+  stars on 2 line(s), 0 outside" in both modes. A temporary third shot with the old
+  `nowrap` rule failed with "10 of 21 icons outside the side column", so the check catches
+  the bug; that shot was then removed.
+- **Start/stop name (low, a11y):** `snippets/startStop` takes `what` ("round" or "juror")
+  and gives the button `title` and `aria-label` from `round.start` / `round.stop` /
+  `juror.start` / `juror.stop`, in en, fr, uk and ru (a juror's: resume or pause the juror's
+  voting in the round). The icon-only variant (round statistics, `withText = false`) is
+  `btn-outline-danger` while running and `btn-outline-success` while stopped, which reads in
+  both modes (`phase4-fix/*/roundstat.png`); the rounds page keeps outline-secondary next to
+  its Yes/No text. `views.StartStopViewSpec` checks the names, the colours and that all four
+  messages files define the keys.
+- Checks: `Test/compile` + `testOnly views.* controllers.RoundControllerSpec
+  controllers.RoundEditPageSpec controllers.ContestFilesPageSpec
+  controllers.MutationAuthorizationSpec controllers.CoiAuthorizationSpec
+  controllers.SecuredSpec`: exit 0, 188 passed, including `LargeViewFixturesSpec` (fixtures
+  unchanged: a 1-10 round's markup is the same) and the new `StartStopViewSpec`. No JS or Jest
+  test changed. The full suite was not rerun.

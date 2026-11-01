@@ -27,7 +27,7 @@
             <td> @{index + 1} </td>
             <td> @user.fullname </td>
             <td> @user.email </td>
-            <td>@snippets.startStop(user.active.getOrElse(true), user.getId, round.getId, routes.RoundController.setRoundUser, false)</td>
+            <td>@snippets.startStop(user.active.getOrElse(true), user.getId, round.getId, routes.RoundController.setRoundUser, withText = false, what = "juror")</td>
             <td>
             @defining(stat.byUserCount.getOrElse(user.getId, 0)) { count =>
 
