@@ -127,6 +127,17 @@ class AllJurorsListSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
+    "rank the by-rate gallery in a binary order, not in file order, which the ranks would not follow" in {
+      testDbApp { implicit app =>
+        val f = fixture(files = 3, firstSelects = 2)
+        def ranks(query: String) = Jsoup.parse(contentAsString(
+          get(s"/byrate/round/${f.round.getId}/user/0/page/1$query", f.organizer)))
+          .select("div.rank-line b").asScala.map(_.text).toList
+        (ranks("?sort=approvals") === List("1-2.", "1-2.", "3.")) and
+          (ranks("?sort=file").distinct === List(""))
+      }
+    }
+
     "not be offered in a juror's own gallery" in {
       testDbApp { implicit app =>
         val f = fixture(files = 3, firstSelects = 2)
