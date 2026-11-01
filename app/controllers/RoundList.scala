@@ -23,6 +23,14 @@ sealed abstract class VoteFilter(val param: String) {
 
   /** Whether a file of this rate is in the list, as the query's `rate` and `rated` have it. */
   def matches(rate: Int): Boolean = this.rate.forall(_ == rate) && rated.forall(r => if (r) rate > 0 else rate == 0)
+
+  /** The filter in a round: itself if a round of its kind has it ([[VoteFilter.ofRound]]),
+    * else all files. A binary round's selected (`Rate(1)`) is not a rated round's "rated 1",
+    * nor the rated a binary round's selected: each goes by the round's kind, so a list
+    * switched to a round of the other kind, or a URL of the other kind's filter, shows one of
+    * the round's tabs.
+    */
+  def in(round: Round): VoteFilter = if (VoteFilter.ofRound(round).contains(this)) this else VoteFilter.All
 }
 
 object VoteFilter {
@@ -47,6 +55,12 @@ object VoteFilter {
   }
 
   def ofRate(rate: Int): VoteFilter = if (rate == 0) Unrated else Rate(rate)
+
+  /** A round's filters, as its tabs have them: all files and the unrated, and the selected and
+    * rejected (a binary round) or the rated: no link names one rate of a rated round.
+    */
+  def ofRound(round: Round): Seq[VoteFilter] =
+    Seq(All, Unrated) ++ (if (round.isBinary) Seq(Rate(1), Rate(-1)) else Seq(Rated))
 
   def parse(param: String): Option[VoteFilter] = param match {
     case "all"      => Some(All)
@@ -252,7 +266,8 @@ final case class RoundList(
 
   def withView(view: GalleryView): RoundList = copy(view = view)
 
-  def withRound(round: Round): RoundList = copy(round = round)
+  /** The list in another round, its filter all files if that round's kind hasn't it. */
+  def withRound(round: Round): RoundList = copy(round = round, filter = filter.in(round))
 
   /** The list's query string: its view (`module`, for a large view's way back), filter and
     * order.
@@ -399,7 +414,8 @@ object RoundList {
 
   /** The list a request is for: the round, whose votes, the region from its path; the view
     * from its path or, for a large view, its `module`; the filter and order from its query,
-    * the order [[defaultOrder]] if it names none.
+    * the filter all files if the round's kind hasn't it, the order [[defaultOrder]] if it
+    * names none.
     */
   def of(round: Round, viewer: User, asUserId: Long, region: String, view: GalleryView)(implicit
       request: RequestHeader
@@ -408,7 +424,7 @@ object RoundList {
       round,
       asUserId,
       Some(region).filter(_ != "all"),
-      VoteFilter.of(request),
+      VoteFilter.of(request).in(round),
       requestedOrder.getOrElse(defaultOrder(viewer, asUserId, view)),
       view
     )

@@ -133,8 +133,10 @@ class RegionMenuSpec extends PlaySpecification with PlayTestDb {
           f.admin -> 0L, f.admin -> f.other.getId); filter <- filters) yield {
           val query = if (filter == VoteFilter.All) "" else s"?filter=${filter.param}"
           val json = counts(regions(s"/regions/round/${round.getId}/user/$asUserId/region/all$query", viewer))
-          val before = SelectionQuery(userId = Some(asUserId).filter(_ != 0), roundId = round.id, rate = filter.rate,
-            rated = filter.rated).regionCounts()
+          // the other kind's filter lists all files
+          val listed = filter.in(round)
+          val before = SelectionQuery(userId = Some(asUserId).filter(_ != 0), roundId = round.id, rate = listed.rate,
+            rated = listed.rated).regionCounts()
           (round.getId, asUserId, filter, json) -> (round.getId, asUserId, filter, before.map { case (k, v) => k -> Option(v) })
         }
         cases.map(_._1) === cases.map(_._2)

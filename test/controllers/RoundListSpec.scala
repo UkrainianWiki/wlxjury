@@ -52,6 +52,29 @@ class RoundListSpec extends Specification {
     }
   }
 
+  "a round switch" should {
+    val binary = Round(id = Some(8), number = 2, contestId = 1, active = true, rates = Round.binaryRound)
+    val rated = round.copy(id = Some(9))
+
+    "keep all files and the unrated, each kind's filters in a round of that kind" in {
+      Seq(VoteFilter.All, VoteFilter.Unrated, VoteFilter.Rate(1), VoteFilter.Rate(-1))
+        .map(f => RoundList(binary, 3, filter = f).withRound(binary.copy(id = Some(10))).filter) ===
+        Seq(VoteFilter.All, VoteFilter.Unrated, VoteFilter.Rate(1), VoteFilter.Rate(-1))
+      Seq(VoteFilter.All, VoteFilter.Unrated, VoteFilter.Rated)
+        .map(f => RoundList(round, 3, filter = f).withRound(rated).filter) ===
+        Seq(VoteFilter.All, VoteFilter.Unrated, VoteFilter.Rated)
+      RoundList(binary, 3, filter = VoteFilter.Unrated).withRound(rated).filter === VoteFilter.Unrated
+    }
+
+    "make the other kind's filter all files, by the round's kind, not the value's" in {
+      // a binary round's selected is not a rated round's "rated 1"
+      RoundList(binary, 3, filter = VoteFilter.Rate(1)).withRound(rated).filter === VoteFilter.All
+      RoundList(binary, 3, filter = VoteFilter.Rate(-1)).withRound(rated).filter === VoteFilter.All
+      RoundList(rated, 3, filter = VoteFilter.Rated).withRound(binary).filter === VoteFilter.All
+      RoundList(binary, 3, filter = VoteFilter.Rate(1)).withRound(rated).pageUrl(1) === "/gallery/round/9/user/3/page/1?sort=rate"
+    }
+  }
+
   "a large view's way back" should {
     "be its module=, a gallery or by rate, else the gallery" in {
       GalleryView.of(FakeRequest("GET", "/?module=byrate")) === GalleryView.ByRate
@@ -106,6 +129,18 @@ class RoundListSpec extends Specification {
       list.order === ListOrder.ByRate
       list.view === GalleryView.ByRate
       list.region must beNone
+    }
+
+    "have all files for the other kind's filter, older URLs' too" in {
+      val binary = round.copy(rates = Round.binaryRound)
+      def filter(r: Round, query: String) = RoundList.of(r, juror, 3, "all", GalleryView.Gallery)(request(s"/$query", None)).filter
+      Seq("?filter=selected", "?filter=rejected", "?filter=1", "?filter=4", "?rate=1", "?rate=-1").map(filter(round, _)) ===
+        Seq.fill(6)(VoteFilter.All)
+      Seq("?filter=rated", "?rated=true", "?filter=4", "?rate=2").map(filter(binary, _)) === Seq.fill(4)(VoteFilter.All)
+      Seq("?filter=rated", "?rated=true", "?filter=unrated", "?rate=0").map(filter(round, _)) ===
+        Seq(VoteFilter.Rated, VoteFilter.Rated, VoteFilter.Unrated, VoteFilter.Unrated)
+      Seq("?filter=selected", "?rate=1", "?rate=-1", "?rated=false").map(filter(binary, _)) ===
+        Seq(VoteFilter.Rate(1), VoteFilter.Rate(1), VoteFilter.Rate(-1), VoteFilter.Unrated)
     }
   }
 
