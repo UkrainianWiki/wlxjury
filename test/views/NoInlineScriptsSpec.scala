@@ -34,25 +34,73 @@ class NoInlineScriptsSpec extends Specification {
     finally walk.close()
   }
 
-  private val Script     = "(?s)<script\\b([^>]*)>(.*?)</script>".r
-  private val Restore    = "if (window.wlxLargeSections) wlxLargeSections.restore(document);"
-  private val RestoreIn  = Set("app/views/large/large.scala.html", "app/views/large/contestFile.scala.html")
-  private val Handler    = "(?i)<[a-z][^>]*?\\son[a-z]+\\s*=".r
+  private val Script    = """(?is)<script\b(.*?)>(.*?)</script>""".r
+  /** A src attribute, not data-src. */
+  private val Src       = """(?i)(?<![\w-])src\s*=""".r
+  private val Json      = """(?i)(?<![\w-])type\s*=\s*["']application/json["']""".r
+  /** An inline handler anywhere in the markup (outside script bodies): onerror="…", onClick='…',
+    * onload=@…; the whole template is searched, as a tag may hold Twirl's `=>` or `>` before it. */
+  private val Handler   = """(?i)(?<![\w-])on[a-z]+\s*=\s*["'@]""".r
+  private val JsUrl     = """(?i)javascript:""".r
+  private val Restore   = "if (window.wlxLargeSections) wlxLargeSections.restore(document);"
+  private val RestoreIn = Set("app/views/large/large.scala.html", "app/views/large/contestFile.scala.html")
 
-  /** (file, kind) of each script element without a src: "theme", "restore", "json" or "code". */
-  private lazy val inlineScripts: Seq[(String, String)] =
+  /** The kind of each script element without a src in `text`: "theme", "restore", "json" or
+    * "code". */
+  def scriptKinds(file: String, text: String): Seq[String] =
     for {
-      (file, text) <- templates
-      m            <- Script.findAllMatchIn(text).toSeq
+      m <- Script.findAllMatchIn(text).toSeq
       attrs = m.group(1)
-      if !attrs.contains("src=")
-    } yield file -> {
+      if Src.findFirstIn(attrs).isEmpty
+    } yield {
       val body = m.group(2).trim
-      if (attrs.contains("type=\"application/json\"")) "json"
+      if (Json.findFirstIn(attrs).nonEmpty) "json"
       else if (file == "app/views/layout.scala.html" && body.contains("prefers-color-scheme")) "theme"
       else if (RestoreIn(file) && body == Restore) "restore"
       else "code"
     }
+
+  /** The inline handlers and javascript: URLs in `text`'s markup, its scripts' bodies left out. */
+  def inlineCode(text: String): Seq[String] = {
+    val markup = Script.replaceAllIn(text, m => scala.util.matching.Regex.quoteReplacement(s"<script${m.group(1)}></script>"))
+    (Handler.findAllIn(markup) ++ JsUrl.findAllIn(markup)).toSeq
+  }
+
+  /** (file, kind) of each script element without a src in the templates. */
+  private lazy val inlineScripts: Seq[(String, String)] =
+    templates.flatMap { case (file, text) => scriptKinds(file, text).map(file -> _) }
+
+  "the checks themselves" should {
+
+    "find the large image's onerror after Twirl's => in its tag, as before B3" in {
+      val oldTag =
+        """<img id="large_image" alt="@hood.file.title"
+          |    src="@large.src" class="mw-100 mh-100"
+          |    srcset="@large.srcset" @large.sizes.map { sizes => sizes="@sizes" }
+          |    @large.fallback.map { fallback => data-fallback="@fallback" }
+          |    onerror="var f = this.getAttribute('data-fallback'); if (f) { this.src = f; }">""".stripMargin
+      (inlineCode(oldTag) must haveSize(1)) and
+        (inlineCode("""<input type="button" onClick="document.forms['x'].submit();" />""") must haveSize(1)) and
+        (inlineCode("""<body onload=@x>""") must haveSize(1))
+    }
+
+    "find a javascript: URL" in {
+      inlineCode("""<a href="JavaScript:void(0)">x</a>""") must haveSize(1)
+    }
+
+    "not take data attributes, words or a script's body for handlers" in {
+      inlineCode(
+        """<img data-on-fail="x" data-failed-mark="large"><p>Done on time = yes</p>
+          |<script src="/a.js"></script><script>el.onclick = f; x.onerror="y"</script>""".stripMargin) must beEmpty
+    }
+
+    "count a script with only a data-src as inline, and one with a src or JSON type as not" in {
+      (scriptKinds("x", """<script data-src="/a.js">go()</script>""") must_== Seq("code")) and
+        (scriptKinds("x", """<script src="/a.js"></script><script type="application/json">{}</script>""") must_==
+          Seq("json")) and
+        (scriptKinds("x", """<script SRC='/a.js' defer></script>""") must beEmpty)
+    }
+  }
 
   "the templates" should {
 
@@ -73,8 +121,8 @@ class NoInlineScriptsSpec extends Specification {
       inlineScripts must contain("app/views/editRound.scala.html" -> "json")
     }
 
-    "have no inline event handler" in {
-      templates.flatMap { case (file, text) => Handler.findAllIn(text).map(h => s"$file: $h") } must beEmpty
+    "have no inline event handler and no javascript: URL" in {
+      templates.flatMap { case (file, text) => inlineCode(text).map(h => s"$file: $h") } must beEmpty
     }
 
     "load no script that is gone, and no setup the shells used to hold" in {
