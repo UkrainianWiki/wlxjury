@@ -332,8 +332,10 @@ runs, another sbt in the checkout needs `-Dsbt.server.forcestart=true`.
 The fixture's CSV has no file URLs, so the server first sets each image's URL from its title,
 as the Commons API gives it (`CommonsFileUrl`), in its own container only (the dump and the
 Gatling runs keep none). Thumbnails then come through the image proxy, and the large view from
-upload.wikimedia.org: they need the network. A file deleted on Commons since the CSV shows no
-thumbnail, and the proxy marks it deleted when asked for it, as in production.
+upload.wikimedia.org: they need the network. Files deleted (124) or renamed (18) on Commons
+since the CSV (of 38,367, November 2026) fail to load from Wikimedia; asked for one, the
+proxy checks it on Commons as in production: it stores a renamed file's new name and URL
+and serves that, and marks a deleted one deleted.
 
 ### What changed
 
