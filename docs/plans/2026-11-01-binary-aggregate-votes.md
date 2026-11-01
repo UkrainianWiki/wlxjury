@@ -339,6 +339,29 @@ ranking) and `HAVING SUM(s.rate < 0) < N` in the binary ranking; in memory,
 "Distribute new files" all apply it; the job settings record it. Ignored without a
 previous yes/no round.
 
+The review (533c4b88..5a2b3969) found the `NOT IN` not NULL-safe (a NULL page id in the
+subquery would empty the round) and rerun over all previous votes in every window; 1f86cfd6
+made it a per-file `NOT EXISTS (... HAVING COUNT(*) >= n)`, recorded it in the job settings
+only with a yes/no previous round, and added the missing tests (rated or no previous round,
+rejections summed over two rounds, `RejectedByLessThan` before the top-N).
+
+Timed on 1f86cfd6, the UI fixture server (38,365 files in round 1, ~10 votes each, 20
+jurors): new rounds over round 1 through the round form, each file to one juror, submit to
+the job's end, one run each in order (raw: `target/checks/rejby-timing-1f86cfd6.json`):
+
+| Filter | Files | Time |
+|---|---|---|
+| none (first run, cold) | 38,365 | 3951 ms |
+| none | 38,365 | 2986 ms |
+| rejected by >= 6 | 24,012 | 3056, 2751 ms |
+| selected by >= 1 | 38,325 | 2679 ms |
+| selected by >= 1 and rejected by >= 6 | 24,012 | 2645 ms |
+| rejected by >= 1 | 31 | 1293 ms |
+
+No measurable cost: with fewer files to insert, a filtered round is done sooner, and the
+rejected-by >= 1 run (every window checked, 31 files kept) bounds the filter's whole cost at
+~1.3 s with the job's overhead included. Single runs, so ~0.3 s differences are noise.
+
 ## Done: stored "selected by at least 0" (decision 4)
 
 - Stored "selected by at least 0" (decision 4), checked on production 2026-11-01: ~260
