@@ -332,6 +332,8 @@ overall.selected = Globalement sélectionné
 total.rating = Note totale
 rating = Évaluation
 byrate = Par note
+byrate.changed.hint = Les notes modifiées sont triées à nouveau au rechargement de la page
+byrate.changed.title = Note modifiée : le fichier sera trié à nouveau au rechargement de la page
 csv=CSV
 
 edit.greeting.template=Modifier le modèle de message d''accueil

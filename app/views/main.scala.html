@@ -18,7 +18,7 @@
    with thumbs up and down, a rated one's (without criteria, which the large view rates) with
    stars (tile-votes.js) *@
 @jury = @{ user != null && user.getId == asUserId && selectedRound.exists(_.active) && user.roles.contains("jury") }
-@starsRound = @{ selectedRound.filter(r => jury && !r.isBinary && !r.hasCriteria && r.acceptsRate(1)) }
+@starsRound = @{ views.TileStars.round(user, asUserId, selectedRound) }
 @layout(Messages(title), bodyClass = if (gallery) "gallery" else "") {
         <script type='text/javascript' src="@routes.Assets.versioned("javascripts/unitegallery.js")"></script>
         <link rel="stylesheet" href="@routes.Assets.versioned("stylesheets/unite-gallery.css")" type='text/css' />

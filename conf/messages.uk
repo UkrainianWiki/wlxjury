@@ -323,6 +323,8 @@ overall.selected = Загалом вибрано
 total.rating = Загальна оцінка
 rating = Оцінка
 byrate = За рейтингом
+byrate.changed.hint = Змінені оцінки буде пересортовано після перезавантаження сторінки
+byrate.changed.title = Оцінку змінено: файл буде пересортовано після перезавантаження сторінки
 csv=CSV
 
 edit.greeting.template=Редагувати шаблон привітання

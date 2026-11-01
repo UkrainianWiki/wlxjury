@@ -334,6 +334,8 @@ overall.selected = Overall selected
 total.rating = Total rating
 rating = Rating
 byrate = By rate
+byrate.changed.hint = Changed rates are re-sorted when the page is reloaded
+byrate.changed.title = Rate changed: the file is re-sorted when the page is reloaded
 csv=CSV
 
 edit.greeting.template=Edit greeting template

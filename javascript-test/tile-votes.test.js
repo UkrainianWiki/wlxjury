@@ -9,7 +9,9 @@
 // previous stars again and explained (vote-errors.js); a click on them never reaching the tile,
 // which opens the large view. Which galleries get stars at all: views.GalleryTileStarsViewSpec.
 // A binary round's tiles: their frames and pressed thumbs from the stored vote at load, and
-// after a vote.
+// after a vote. The juror's own by-rate list: the same stars per file in place of the static
+// ones, a vote updating the rate text in place and marking the file changed (its place and
+// rank kept until a reload), the hint above the list shown from the first change on.
 
 const $ = require("jquery");
 window.jQuery = window.$ = $;
@@ -18,7 +20,7 @@ require("../public/javascripts/large-rate.js");
 const { voteErrorMessage, voteErrorTexts } = require("../public/javascripts/vote-errors.js");
 window.voteErrorMessage = voteErrorMessage;
 window.voteErrorTexts = voteErrorTexts;
-const { addStars, addVote, vote } = require("../public/javascripts/tile-votes.js");
+const { addStars, addVote, vote, addListStars } = require("../public/javascripts/tile-votes.js");
 
 let requests; // the votes sent: { options, answer (a Deferred) }
 
@@ -201,6 +203,104 @@ describe("a binary round's tile", () => {
         requests[0].answer.reject({ status: 409, responseJSON: { error: "round_closed" } });
         expect(shown()).toEqual(["selected", "true", "false"]);
         expect(item.rate).toBe("1");
+        expect(window.alert).toHaveBeenCalledWith("Closed.");
+    });
+});
+
+/** The by-rate list as galleryByRate renders it for the juror: files rated `rates`, ranked in
+ * that order, each with its static stars, and the hidden hint above the list. */
+function byRateList(rates, options = { number: 5, half: false }) {
+    const files = rates.map((rate, i) =>
+        '<li class="gallerybox" id="' + (201 + i) + '"><div class="rank-line"> <b>' + (i + 1) + '.</b>' +
+        '<span class="rate-stars"><span class="wlx-byrate-stars" data-round-id="2" data-page-id="' + (201 + i) +
+        '" data-rate="' + rate + '"><i class="bi bi-star wlx-star"></i></span>' +
+        '<span class="wlx-rate-text">' + rate + '</span></span></div></li>').join("");
+    document.body.innerHTML =
+        '<p class="wlx-byrate-hint" hidden>Changed rates are re-sorted when the page is reloaded</p>' +
+        '<div class="row" data-csrf-token="token-1" data-vote-closed="Closed." data-stars-number="' + options.number +
+        '" data-stars-half="' + options.half + '" data-changed-title="Rate changed">' +
+        '<ul class="gallery">' + files + '</ul></div>';
+    addListStars(document.querySelector("[data-stars-number]"));
+    return Array.from(document.querySelectorAll("li.gallerybox"));
+}
+
+const hint = () => document.querySelector(".wlx-byrate-hint");
+const listStars = box => box.querySelector(".wlx-tile-stars");
+const rateText = box => box.querySelector(".wlx-rate-text").textContent;
+const order = () => Array.from(document.querySelectorAll("li.gallerybox"))
+    .map(b => b.id + ":" + b.querySelector(".rank-line b").textContent);
+
+describe("the juror's by-rate list", () => {
+
+    test("puts stars from each file's stored rate in place of the static ones", () => {
+        const boxes = byRateList([5, 3, 0]);
+        expect(boxes.map(b => drawn(listStars(b)))).toEqual(["*****", "***..", "....."]);
+        boxes.forEach(b => expect(b.querySelectorAll(".wlx-byrate-stars > i.wlx-star")).toHaveLength(0));
+        expect(hint().hidden).toBe(true);
+        boxes.forEach(b => expect(b.classList.contains("wlx-rate-changed")).toBe(false));
+    });
+
+    test("shows a stored vote in the rate text and marks the file changed, keeping its place and rank", () => {
+        const boxes = byRateList([5, 3, 1]);
+        star(listStars(boxes[2]), 4).trigger("click");
+        expect(requests[0].options).toEqual({
+            type: "POST", url: "/rate/round/2/pageid/203/select/4", headers: { "Csrf-Token": "token-1" }
+        });
+        // shown at once in the stars, the text and the mark only once stored
+        expect(drawn(listStars(boxes[2]))).toBe("****.");
+        expect(rateText(boxes[2])).toBe("1");
+        expect(hint().hidden).toBe(true);
+
+        requests[0].answer.resolve("success");
+        expect(rateText(boxes[2])).toBe("4");
+        expect(boxes[2].classList.contains("wlx-rate-changed")).toBe(true);
+        expect(boxes[2].getAttribute("title")).toBe("Rate changed");
+        expect(hint().hidden).toBe(false);
+        expect(order()).toEqual(["201:1.", "202:2.", "203:3."]);
+        [boxes[0], boxes[1]].forEach(b => {
+            expect(b.classList.contains("wlx-rate-changed")).toBe(false);
+            expect(b.hasAttribute("title")).toBe(false);
+        });
+    });
+
+    test("unrates with the cancel icon: the text 0", () => {
+        const boxes = byRateList([3]);
+        $(listStars(boxes[0])).find("i.raty-cancel").trigger("click");
+        expect(requests[0].options.url).toBe("/rate/round/2/pageid/201/select/0");
+        requests[0].answer.resolve("success");
+        expect(rateText(boxes[0])).toBe("0");
+        expect(boxes[0].classList.contains("wlx-rate-changed")).toBe(true);
+    });
+
+    test("shows a half-star round's rate text in stored units: star 4's left half gives 7", () => {
+        const boxes = byRateList([10], { number: 5, half: true });
+        expect(drawn(listStars(boxes[0]))).toBe("*****");
+        clickHalf(listStars(boxes[0]), 4, "left");
+        requests[0].answer.resolve("success");
+        expect(rateText(boxes[0])).toBe("7");
+    });
+
+    test("drops the mark when the file is back at its rate at load, keeping the hint", () => {
+        const boxes = byRateList([3]);
+        star(listStars(boxes[0]), 5).trigger("click");
+        requests[0].answer.resolve("success");
+        star(listStars(boxes[0]), 3).trigger("click");
+        requests[1].answer.resolve("success");
+        expect(rateText(boxes[0])).toBe("3");
+        expect(boxes[0].classList.contains("wlx-rate-changed")).toBe(false);
+        expect(boxes[0].hasAttribute("title")).toBe(false);
+        expect(hint().hidden).toBe(false);
+    });
+
+    test("keeps the text, the mark and the stars if a vote fails, and says why", () => {
+        const boxes = byRateList([3]);
+        star(listStars(boxes[0]), 5).trigger("click");
+        requests[0].answer.reject({ status: 409, responseJSON: { error: "round_closed" } });
+        $(listStars(boxes[0])).trigger("mouseleave");
+        expect(drawn(listStars(boxes[0]))).toBe("***..");
+        expect(rateText(boxes[0])).toBe("3");
+        expect(boxes[0].classList.contains("wlx-rate-changed")).toBe(false);
+        expect(hint().hidden).toBe(true);
         expect(window.alert).toHaveBeenCalledWith("Closed.");
     });
 });

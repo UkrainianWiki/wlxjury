@@ -364,6 +364,16 @@ a:has(> .btn) { text-decoration: none; }
 }
 .wlx-tile-stars .raty-cancel { color: var(--bs-secondary-color); }
 .wlx-tile-stars .raty-cancel.bi-x-circle-fill { color: var(--bs-danger); }
+/* the same stars in the juror's own by-rate list (galleryByRate.scala.html), in the line of
+   the rank and the rate text, at the static stars' size; a file whose rate changed keeps its
+   place until a reload, its rank greyed and dotted (its title says why) */
+.wlx-byrate-stars .wlx-tile-stars { display: inline-flex; vertical-align: text-bottom; }
+.wlx-byrate-stars .wlx-tile-stars .wlx-star,
+.wlx-byrate-stars .wlx-tile-stars .raty-cancel { font-size: 1rem; }
+.wlx-rate-changed .rank-line b {
+    color: var(--bs-secondary-color);
+    text-decoration: underline dotted;
+}
 /* a binary round's result (binaryVote): approvals or a juror's vote, in the colours of the
    navbar's selected and rejected tabs */
 .wlx-vote-selected { color: var(--wlx-selected); }

@@ -5,7 +5,9 @@
 // that vote pressed, as a click on it undoes the vote. A rated round's tiles get stars (raty,
 // as the large view's, large/raty.scala.html), drawn from the stored rate; a click votes, the
 // stars showing the new rate at once and the previous one again if the vote fails. The tile
-// stays where it is, also in a gallery ordered by rate: only a reload orders it again.
+// stays where it is, also in a gallery ordered by rate: only a reload orders it again. The
+// juror's own by-rate list (galleryByRate.scala.html) gets the same stars per file, its rate
+// text following the vote and the file marked changed, as its rank and place are stale.
 (function () {
   'use strict';
 
@@ -82,8 +84,9 @@
    * half star stored as 1), with raty's cancel icon to unrate. The same icons as the large
    * view's, without tooltips; each star 1em wide (main.css .wlx-tile-stars), the width raty
    * finds the half by. A click on them never reaches the tile, which opens the large view.
+   * `voted`, if given, is called with the rate once it is stored.
    */
-  function addStars(tile, item, options) {
+  function addStars(tile, item, options, voted) {
     var $ = window.jQuery;
     var units = options.half ? 2 : 1;
     var current = (+item.rate || 0) / units;
@@ -118,6 +121,7 @@
         send(item, rate).done(function () {
           item.rate = rate;
           tile.setAttribute('data-rate', rate);
+          if (voted) voted(rate);
         }).fail(function (jqXHR) {
           current = previous;
           show(el, previous);
@@ -129,9 +133,53 @@
     return el;
   }
 
+  /**
+   * The stars of the juror's own by-rate list (`list`: its data-stars-number / -half), in
+   * place of each file's static ones (.wlx-byrate-stars, with its data-round-id / -page-id /
+   * -rate). A stored vote shows the new rate in the text after the stars (.wlx-rate-text: the
+   * juror's rate in stored units, as ImageWithRating.rateString) and leaves the file where it
+   * is, with its rank: the file marked changed (.wlx-rate-changed, titled with the list's
+   * data-changed-title) unless back at its rate at load, and the hint above the list
+   * (.wlx-byrate-hint) shown from the first change on.
+   */
+  function addListStars(list) {
+    var options = {
+      number: +list.getAttribute('data-stars-number'),
+      half: list.getAttribute('data-stars-half') === 'true'
+    };
+    var hint = document.querySelector('.wlx-byrate-hint');
+    var title = list.getAttribute('data-changed-title') || '';
+    Array.prototype.forEach.call(list.querySelectorAll('.wlx-byrate-stars'), function (holder) {
+      var box = holder.closest('.gallerybox') || holder;
+      var text = box.querySelector('.wlx-rate-text');
+      var item = {
+        roundId: holder.getAttribute('data-round-id'),
+        pageId: holder.getAttribute('data-page-id'),
+        rate: holder.getAttribute('data-rate')
+      };
+      var atLoad = +item.rate || 0;
+      holder.textContent = '';
+      addStars(holder, item, options, function (rate) {
+        var changed = rate !== atLoad;
+        if (text) text.textContent = String(Math.max(rate, 0));
+        box.classList.toggle('wlx-rate-changed', changed);
+        if (changed) box.setAttribute('title', title);
+        else box.removeAttribute('title');
+        if (hint) hint.hidden = false;
+      });
+    });
+  }
+
   window.wlxTileVotes = {
-    voteUrl: voteUrl, send: send, explain: explain, addVote: addVote, vote: vote, addStars: addStars
+    voteUrl: voteUrl, send: send, explain: explain, addVote: addVote, vote: vote, addStars: addStars,
+    addListStars: addListStars
   };
+
+  // the by-rate list's stars, once the page is there (raty loaded only where it has them)
+  document.addEventListener('DOMContentLoaded', function () {
+    var list = document.querySelector('[data-stars-number]');
+    if (list && window.jQuery && window.jQuery.fn.raty) addListStars(list);
+  });
 
   if (typeof module !== 'undefined') module.exports = window.wlxTileVotes;
 })();
