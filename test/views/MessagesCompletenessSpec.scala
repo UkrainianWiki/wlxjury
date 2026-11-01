@@ -2,7 +2,7 @@ package views
 
 import controllers.{LoginController, Theme}
 import db.scalikejdbc.{MediaType, User}
-import org.intracer.wmua.CategoryOperation
+import org.intracer.wmua.{BinaryOrder, CategoryOperation}
 import org.specs2.mutable.Specification
 import play.api.i18n.Messages.{parse, UrlMessageSource}
 
@@ -92,6 +92,7 @@ class MessagesCompletenessSpec extends Specification {
     Seq(User.ROOT_ROLE),                                        // editUser offers root to root
     MediaType.mediaTypes,
     CategoryOperation.values.map(_.labelKey),
+    BinaryOrder.all.map(_.messageKey),                          // the navbar's and round form's binary orders
     LoginController.ErrorPageKeys.toSeq,
     Seq("round", "juror").flatMap(w => Seq(s"$w.start", s"$w.stop")), // snippets.startStop
     Seq("selected", "rejected", "unrated", "rated"),                   // voteMoved, navbar tabs

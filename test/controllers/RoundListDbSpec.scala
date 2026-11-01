@@ -203,6 +203,64 @@ class RoundListDbSpec extends Specification with TestDb with BeforeAll with Befo
     }
   }
 
+  "all the jurors' votes on a yes/no round" should {
+
+    /** Five jurors' votes: A (page 0) 3 approvals and 2 rejections, B (1) 2 approvals and 3
+      * unrated, C (2) 3 approvals and 2 unrated, D (3) 2 approvals and 3 unrated, as B.
+      */
+    def setUpABCD(): (Round, Seq[Long]) = {
+      val (contest, round, user) = setUp(Round.binaryRound)
+      val images = createImages(4)
+      val jurors = user +: (1 to 4).map(i =>
+        userDao.create(User(s"fullname$i", s"email$i", None, Set("jury"), contestId = contest.id)))
+      val votes = Seq(Seq(1, 1, 1, -1, -1), Seq(1, 1, 0, 0, 0), Seq(1, 1, 1, 0, 0), Seq(0, 0, 0, 1, 1))
+      selectionDao.batchInsert(images.zip(votes).flatMap { case (image, rates) =>
+        jurors.zip(rates).map { case (j, r) => Selection(image, j, round, r) }
+      })
+      (round, images.map(_.pageId))
+    }
+
+    def list(round: Round, order: BinaryOrder, view: GalleryView = GalleryView.ByRate) =
+      RoundList(round, 0, order = ListOrder.Binary(order), view = view)
+
+    // A, B, C, D
+    val expected = Seq(
+      BinaryOrder.ApprovalsThenRejections -> Seq(2, 0, 1, 3), // C(3,0) A(3,2) B(2,0) D(2,0)
+      BinaryOrder.Difference -> Seq(2, 1, 3, 0),              // C 3, B 2, D 2, A 1
+      BinaryOrder.ApprovalsOnly -> Seq(0, 2, 1, 3)            // A 3, C 3, B 2, D 2
+    )
+
+    "list the files in each order, ties by page id, in the gallery, file list and large view" in {
+      val (round, ids) = setUpABCD()
+      forall(expected) { case (order, indices) =>
+        val ordered = indices.map(ids)
+        val byRate = list(round, order)
+        (byRate.files(Pager(1, 4)).map(_.pageId) must_== ordered) and
+          (ordered.map(byRate.position) must_== ordered.indices.map(Some(_))) and
+          (list(round, order, GalleryView.FileList).files(Pager(1, 4, 1000)).map(_.pageId) must_== ordered)
+      }
+    }
+
+    "rank a page of the file list among all the files, by the order's values" in {
+      val (round, ids) = setUpABCD()
+      def ranks(order: BinaryOrder, page: Int) = {
+        val l = list(round, order, GalleryView.FileList)
+        l.ranks(l.files(Pager(page, 4, 2)))
+      }
+      (ranks(BinaryOrder.ApprovalsThenRejections, 1) ++ ranks(BinaryOrder.ApprovalsThenRejections, 2)) ===
+        Seq("1", "2", "3-4", "3-4")
+      ranks(BinaryOrder.Difference, 2) === Seq("2-3", "4")
+      ranks(BinaryOrder.ApprovalsOnly, 1) === Seq("1-2", "1-2")
+    }
+
+    "give the files their approvals and rejections" in {
+      val (round, ids) = setUpABCD()
+      val files = list(round, BinaryOrder.Default).files(Pager(1, 4))
+      files.map(f => (f.pageId, f.approvals, f.rejections)) ===
+        Seq((ids(2), 3, 0), (ids(0), 3, 2), (ids(1), 2, 0), (ids(3), 2, 0))
+    }
+  }
+
   "a file's place in a juror's list" should {
 
     /** A binary round with 20 of the juror's files, unrated but `selected`. */

@@ -83,7 +83,8 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
              else if (!grouped)
                sqls"""${i.result.*}, ${s.result.*} """.value
              else
-               sqls"""sum(s.rate) as rate, count(s.rate) as rate_count, sum(s.rate > 0) as approvals, ${i.result.*} """.value
+               sqls"""sum(s.rate) as rate, count(s.rate) as rate_count, sum(s.rate > 0) as approvals,
+                       sum(s.rate < 0) as rejections, ${i.result.*} """.value
            })
 
       val groupByStr = if (byRegion) {
@@ -436,7 +437,8 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
           image,
           selection = Seq(Selection(image.pageId, juryId = 0, roundId = 0, rate = sum)),
           count,
-          approvalsFromDb = rs.intOpt(3)
+          approvalsFromDb = rs.intOpt(3),
+          rejectionsFromDb = rs.intOpt(4)
         )
       }
 

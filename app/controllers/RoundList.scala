@@ -3,7 +3,7 @@ package controllers
 import db.scalikejdbc.{Round, User}
 import db.scalikejdbc.rewrite.ImageDbNew
 import db.scalikejdbc.rewrite.ImageDbNew.{Limit, SelectionQuery}
-import org.intracer.wmua.ImageWithRating
+import org.intracer.wmua.{BinaryOrder, ImageWithRating}
 import org.intracer.wmua.ImageWithRating.{RankKey, Ranks}
 import play.api.mvc.{Cookie, Flash, RequestHeader}
 
@@ -95,7 +95,12 @@ object ListOrder {
   /** The highest rated first; files of a rate in file order. */
   case object ByRate extends ListOrder("rate", Seq("rate" -> -1, "s.monument_id" -> 1, "s.page_id" -> 1))
 
-  val all: Seq[ListOrder] = Seq(FileOrder, ByRate)
+  /** A yes/no round's files by all the jurors' votes together, ties by page id: a list of
+    * them all ([[RoundList.aggregateBinary]]); by rate in any other list.
+    */
+  final case class Binary(order: BinaryOrder) extends ListOrder(order.param, order.columns :+ ("s.page_id" -> 1))
+
+  val all: Seq[ListOrder] = Seq(FileOrder, ByRate) ++ BinaryOrder.all.map(Binary)
 
   def parse(param: String): Option[ListOrder] = all.find(_.param == param)
 }
@@ -152,8 +157,29 @@ final case class RoundList(
   /** Files with their jurors' votes, one row each (file list, CSV). */
   private def withDetails: Boolean = view == GalleryView.FileList || view == GalleryView.Csv
 
-  /** The order and ranks of a file list or CSV, whatever the list's order. */
-  def rankKey: RankKey = RankKey.of(round)
+  /** All the jurors' votes on a yes/no round's files together: ordered by a [[BinaryOrder]]. */
+  def aggregateBinary: Boolean = asUserId == 0 && round.isBinary
+
+  /** The list's [[BinaryOrder]]: its own, else the default. */
+  def binaryOrder: BinaryOrder = order match {
+    case ListOrder.Binary(b) => b
+    case _                   => BinaryOrder.Default
+  }
+
+  /** The order and ranks of a file list or CSV, by rate whatever the list's order. */
+  def rankKey: RankKey = RankKey.of(round, binaryOrder)
+
+  /** The ORDER BY of the list's query: a file list or CSV by its [[rankKey]]; a binary order
+    * only for all the jurors' votes on a yes/no round, by rate in a juror's list (a file of
+    * theirs has one vote).
+    */
+  private def orderColumns: Seq[(String, Int)] =
+    if (withDetails) rankKey.columns ++ (if (round.isBinary) Seq("s.page_id" -> 1) else ListOrder.FileOrder.columns)
+    else if (aggregateBinary && order != ListOrder.FileOrder) ListOrder.Binary(binaryOrder).columns
+    else order match {
+      case ListOrder.Binary(_) => ListOrder.ByRate.columns
+      case o                   => o.columns
+    }
 
   /** Files to a page: a file list's are rows of a table. */
   def pageSize: Int = if (view == GalleryView.FileList) RoundList.FileListPageSize else Pager.pageSize
@@ -165,7 +191,7 @@ final case class RoundList(
       rate = filter.rate,
       rated = filter.rated,
       regions = region.toSet,
-      order = if (withDetails) rankKey.columns ++ Seq("s.monument_id" -> 1, "s.page_id" -> 1) else order.columns,
+      order = orderColumns,
       grouped = asUserId == 0 && !withDetails,
       groupWithDetails = withDetails,
       subRegions = round.specialNomination.contains("Віа Регіа")
@@ -434,16 +460,23 @@ object RoundList {
     */
   val GroupedRegion = "grouped"
 
+  /** The cookie with the order of a yes/no round's files by all the jurors' votes an
+    * organiser last chose ([[BinaryOrder]]), in this browser.
+    */
+  val BinarySortCookie = "binarySort"
+
   /** The list a request is for: the round, whose votes, the region from its path ("all" or
     * [[GroupedRegion]] for all of them); the view
     * from its path or, for a large view, its `module`; the filter and order from its query,
     * the filter all files if the round's kind hasn't it, the order [[defaultOrder]] if it
-    * names none.
+    * names none. All the jurors' votes on a yes/no round by rate are in the binary order
+    * last chosen ([[BinarySortCookie]]), else the default; any other list's binary order is
+    * by rate.
     */
   def of(round: Round, viewer: User, asUserId: Long, region: String, view: GalleryView)(implicit
       request: RequestHeader
-  ): RoundList =
-    RoundList(
+  ): RoundList = {
+    val list = RoundList(
       round,
       asUserId,
       Some(region).filterNot(r => r == "all" || r == GroupedRegion),
@@ -451,6 +484,15 @@ object RoundList {
       requestedOrder.getOrElse(defaultOrder(viewer, asUserId, view)),
       view
     )
+    list.order match {
+      case ListOrder.ByRate if list.aggregateBinary => list.withOrder(ListOrder.Binary(rememberedBinary))
+      case ListOrder.Binary(_) if !list.aggregateBinary => list.withOrder(ListOrder.ByRate)
+      case _ => list
+    }
+  }
+
+  private def rememberedBinary(implicit request: RequestHeader): BinaryOrder =
+    request.cookies.get(BinarySortCookie).flatMap(c => BinaryOrder.parse(c.value)).getOrElse(BinaryOrder.Default)
 
   /** Where a juror starts in a round: all their files, in their order. */
   def landing(round: Round, juror: User)(implicit request: RequestHeader): RoundList =
@@ -465,14 +507,18 @@ object RoundList {
       request.cookies.get(SortCookie).flatMap(c => ListOrder.parse(c.value)).getOrElse(ListOrder.FileOrder)
     else ListOrder.ByRate
 
-  /** The cookie remembering the order of the viewer's own gallery, if the request names
-    * another than the one remembered.
+  /** The cookie remembering the order of the viewer's own gallery, or of all the jurors'
+    * votes on a yes/no round ([[BinarySortCookie]]), if the request names another than the
+    * one remembered.
     */
-  def remembered(list: RoundList, viewer: User)(implicit request: RequestHeader): Option[Cookie] =
-    Option.when(
-      ownGallery(viewer, list.asUserId, list.view) && requestedOrder.contains(list.order) &&
-        !request.cookies.get(SortCookie).exists(_.value == list.order.param)
-    )(Cookie(SortCookie, list.order.param, maxAge = Some(SortCookieAge), sameSite = Some(Cookie.SameSite.Lax)))
+  def remembered(list: RoundList, viewer: User)(implicit request: RequestHeader): Option[Cookie] = {
+    val cookie =
+      if (ownGallery(viewer, list.asUserId, list.view)) Some(SortCookie)
+      else Option.when(list.aggregateBinary && list.order.isInstanceOf[ListOrder.Binary])(BinarySortCookie)
+    cookie.filter(name =>
+      requestedOrder.contains(list.order) && !request.cookies.get(name).exists(_.value == list.order.param)
+    ).map(Cookie(_, list.order.param, maxAge = Some(SortCookieAge), sameSite = Some(Cookie.SameSite.Lax)))
+  }
 
   private val SortCookieAge = 365 * 24 * 60 * 60
 

@@ -12,7 +12,8 @@ case class ImageWithRating(
     countFromDb: Int = 0,
     rank: Option[Int] = None,
     rank2: Option[Int] = None,
-    approvalsFromDb: Option[Int] = None
+    approvalsFromDb: Option[Int] = None,
+    rejectionsFromDb: Option[Int] = None
 ) extends Ordered[ImageWithRating] {
 
   val ownJuryRating = new OwnRating(
@@ -60,6 +61,9 @@ case class ImageWithRating(
     * of a list of all the jurors' votes together, whose one selection per file has their sum.
     */
   def approvals: Int = approvalsFromDb.getOrElse(selection.count(_.rate > 0))
+
+  /** A binary round's rejections of the file (rate -1), counted as [[approvals]] are. */
+  def rejections: Int = rejectionsFromDb.getOrElse(selection.count(_.rate < 0))
 
   def jurors: Set[Long] = selection.map(s => s.juryId).toSet
 
@@ -109,9 +113,9 @@ object ImageWithRating {
 
   object RankKey {
 
-    /** A binary round's by approvals, a rated round's by the sum of its rates. */
-    def of(round: Round): RankKey =
-      if (round.isBinary) RankKey(Seq("sum(s.rate > 0)" -> -1), file => Seq(file.approvals))
+    /** A binary round's by `order`, a rated round's by the sum of its rates. */
+    def of(round: Round, order: BinaryOrder = BinaryOrder.Default): RankKey =
+      if (round.isBinary) RankKey(order.columns, file => order.values(file.approvals, file.rejections))
       else RankKey(Seq("sum(s.rate)" -> -1), file => Seq(file.rateSum))
   }
 
@@ -139,8 +143,12 @@ object ImageWithRating {
   }
 
   /** The ranks of all of a list's files, in its order by the round's [[RankKey]]. */
-  def rankImages(orderedImages: Seq[ImageWithRating], round: Round): Seq[String] = {
-    val keys = orderedImages.map(RankKey.of(round).values)
+  def rankImages(
+      orderedImages: Seq[ImageWithRating],
+      round: Round,
+      order: BinaryOrder = BinaryOrder.Default
+  ): Seq[String] = {
+    val keys = orderedImages.map(RankKey.of(round, order).values)
     keys.map(Ranks.of(keys))
   }
 

@@ -6,7 +6,7 @@
   import db.scalikejdbc.{Round, User}
   import org.apache.pekko.NotUsed
   import org.apache.pekko.stream.scaladsl.Source
-  import org.intracer.wmua.ImageWithRating
+  import org.intracer.wmua.{BinaryOrder, ImageWithRating}
   import org.intracer.wmua.ImageWithRating.Ranks
 
   import scala.concurrent.{ExecutionContext, Future}
@@ -36,8 +36,13 @@
       csv.close()
     }
 
-    def exportRates(files: Seq[ImageWithRating], jurors: Seq[User], round: Round): Seq[Seq[String]] = {
-      val ranks = ImageWithRating.rankImages(files, round)
+    def exportRates(
+        files: Seq[ImageWithRating],
+        jurors: Seq[User],
+        round: Round,
+        order: BinaryOrder = BinaryOrder.Default
+    ): Seq[Seq[String]] = {
+      val ranks = ImageWithRating.rankImages(files, round, order)
       header(jurors) +: files.zip(ranks).map { case (file, rank) => row(file, rank, jurors, round) }
     }
 

@@ -2,7 +2,7 @@ package controllers
 
 import db.scalikejdbc._
 import org.apache.pekko.stream.scaladsl.Sink
-import org.intracer.wmua.{ContestJury, Image, ImageWithRating, Selection}
+import org.intracer.wmua.{BinaryOrder, ContestJury, Image, ImageWithRating, Selection}
 import org.jsoup.Jsoup
 import play.api.Application
 import play.api.mvc.{Cookie, Result}
@@ -58,8 +58,8 @@ class AllJurorsListSpec extends PlaySpecification with PlayTestDb {
     }
 
   /** The whole list as the old file list read it, all its files at once. */
-  private def wholeList(f: Fixture): Seq[ImageWithRating] =
-    RoundList(f.round, 0, view = GalleryView.FileList).query.list()
+  private def wholeList(f: Fixture, order: BinaryOrder = BinaryOrder.Default): Seq[ImageWithRating] =
+    RoundList(f.round, 0, order = ListOrder.Binary(order), view = GalleryView.FileList).query.list()
 
   "an organiser's file list of all the jurors' votes" should {
 
@@ -80,7 +80,38 @@ class AllJurorsListSpec extends PlaySpecification with PlayTestDb {
         page2.map(_._1).distinct === List("501-1003")
         page1.head._1 === "1-2"
         contentAsString(first) must contain("1–1,000 of 1,003")
-        second must contain(s"""href="${fileList(f, 1)}?sort=rate" rel="prev"""")
+        second must contain(s"""href="${fileList(f, 1)}?sort=approvals" rel="prev"""")
+      }
+    }
+  }
+
+  "the order of all the jurors' votes" should {
+
+    "be offered in the navbar, and the one chosen remembered for the next list" in {
+      testDbApp { implicit app =>
+        val f = fixture(files = 3, firstSelects = 2)
+        val chosen = get(fileList(f, 1, "?sort=difference"), f.organizer)
+        val html = contentAsString(chosen).replace("&amp;", "&")
+        forall(Seq("approvals", "difference", "approvals-only")) { param =>
+          html must contain(s"""href="${fileList(f, 1)}?sort=$param"""")
+        }
+        html must contain("Approvals minus rejections")
+        // the CSV of the list in the view menu, in its order
+        html must beMatching("""(?s).*"/query\?module=csv[^"]*&sort=difference".*""")
+        val cookie = cookies(chosen).get(RoundList.BinarySortCookie)
+        cookie.map(_.value) === Some("difference")
+
+        // a list linked by rate, as the statistics page links it, in the remembered order
+        val next = contentAsString(get(s"/byrate/round/${f.round.getId}/user/0/page/1?sort=rate", f.organizer, cookie.get))
+        next.replace("&amp;", "&") must contain(s"/filelist/round/${f.round.getId}/user/0/page/1?sort=difference")
+      }
+    }
+
+    "not be offered in a juror's own gallery" in {
+      testDbApp { implicit app =>
+        val f = fixture(files = 3, firstSelects = 2)
+        val html = contentAsString(get(s"/gallery/round/${f.round.getId}/user/${f.jurors.head.getId}/page/1", f.jurors.head))
+        html must not(contain("Approvals minus rejections"))
       }
     }
   }
@@ -90,16 +121,19 @@ class AllJurorsListSpec extends PlaySpecification with PlayTestDb {
     "stream the rows the whole list gives, its votes read a chunk of files at a time" in {
       testDbApp { implicit app =>
         val f = fixture(files = 7, firstSelects = 4)
-        val list = RoundList(f.round, 0, view = GalleryView.Csv)
         val jurors = User.findByRoundSelection(f.round.getId)
-        val streamed = Await.result(
-          Csv.rateRows(list, jurors, chunk = 2)(ExecutionContext.global).runWith(Sink.seq)(app.materializer), 10.seconds)
-        streamed === Csv.addBom(Csv.exportRates(wholeList(f), jurors, f.round))
-        streamed.size === 8
+        def streamed(order: BinaryOrder) = Await.result(
+          Csv.rateRows(RoundList(f.round, 0, order = ListOrder.Binary(order), view = GalleryView.Csv), jurors, chunk = 2)(
+            ExecutionContext.global).runWith(Sink.seq)(app.materializer), 10.seconds)
+        forall(BinaryOrder.all) { order =>
+          streamed(order) === Csv.addBom(Csv.exportRates(wholeList(f, order), jurors, f.round, order))
+        }
+        val rows = streamed(BinaryOrder.Default)
+        rows.size === 8
 
         val result = get(s"/query?module=csv&round=${f.round.getId}&user=0", f.organizer)
         status(result) === OK
-        contentAsString(result)(defaultAwaitTimeout, app.materializer) === streamed.map(Csv.writeRow).mkString
+        contentAsString(result)(defaultAwaitTimeout, app.materializer) === rows.map(Csv.writeRow).mkString
       }
     }
   }
