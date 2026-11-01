@@ -36,6 +36,10 @@ class ErrorHandlerSpec extends PlaySpecification with PlayTestDb {
         contentAsJson(tooLarge) === play.api.libs.json.Json.obj("error" -> "payload_too_large")
         val badRequest = handler.onClientError(FakeRequest(GET, "/api/x"), BAD_REQUEST, "For input string: \"abc\"")
         contentAsJson(badRequest) === play.api.libs.json.Json.obj("error" -> "bad_request")
+        val codes = Seq(UNAUTHORIZED, FORBIDDEN, METHOD_NOT_ALLOWED, IM_A_TEAPOT).map { code =>
+          (contentAsJson(handler.onClientError(FakeRequest(GET, "/api/x"), code, "")) \ "error").as[String]
+        }
+        codes === Seq("unauthenticated", "forbidden", "method_not_allowed", "client_error")
 
         // /apidocs is not under /api/
         contentType(handler.onClientError(FakeRequest(GET, "/apidocs"), NOT_FOUND, "")) === Some("text/html")

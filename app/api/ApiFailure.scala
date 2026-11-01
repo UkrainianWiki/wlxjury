@@ -31,13 +31,18 @@ object ApiFailure {
   }
 
   /** The body of an error Play answers before or around Tapir ([[ErrorHandler]]): a body over
-    * the parser's limit (413), and the other client errors by their status.
+    * the parser's limit (413), and the other client errors by their status, `client_error`
+    * for one without its own code.
     */
   def clientErrorBody(status: Int): ApiError = status match {
+    case 400 => ApiError("bad_request")
+    case 401 => ApiError("unauthenticated")
+    case 403 => ApiError("forbidden")
     case 404 => ApiError("not_found")
+    case 405 => ApiError("method_not_allowed")
     case 413 => ApiError("payload_too_large")
     case 415 => ApiError("unsupported_media_type")
-    case _   => ApiError("bad_request")
+    case _   => ApiError("client_error")
   }
 
   /** The API's answers to a request under `/api/` ([[ApiAuth.PathPrefix]]) are JSON, also those
