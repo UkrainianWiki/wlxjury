@@ -309,6 +309,14 @@ the repo changes.
 `unzip -l` on the release ZIP, then grep for `openhft`. If it does, that is a scalawiki
 upgrade (see the scalawiki memory: wlxjury builds with `origin/page-categories`).
 
+6.8 **Job titles and statuses inside localized messages** (found in batch B1's review). Since
+B1, "Already running: {0}." (`import.already.running`) and "Can't retry: the job is {0}, not
+failed." (`job.retry.not.failed`) are message keys. Their arguments are still English: the
+job's title from `JobHandler.title` (e.g. "Importing files from …") and the raw status
+(`running`, `done`, …). The job status panel (`snippets/jobStatus`, `JobController.json`) shows
+the same titles. Fix: give each handler a title key with arguments, and add one key per
+`JobStatus`, in all four files. This is a follow-up, not part of B1.
+
 ## Order and checks
 
 | Step | Items | Checks |
