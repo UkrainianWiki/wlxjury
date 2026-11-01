@@ -23,6 +23,14 @@ sealed abstract class VoteFilter(val param: String) {
 
   /** Whether a file of this rate is in the list, as the query's `rate` and `rated` have it. */
   def matches(rate: Int): Boolean = this.rate.forall(_ == rate) && rated.forall(r => if (r) rate > 0 else rate == 0)
+
+  /** The filter in a round: itself if a round of its kind has it ([[VoteFilter.ofRound]]),
+    * else all files. A binary round's selected (`Rate(1)`) is not a rated round's "rated 1",
+    * nor the rated a binary round's selected: each goes by the round's kind, so a list
+    * switched to a round of the other kind, or a URL of the other kind's filter, shows one of
+    * the round's tabs.
+    */
+  def in(round: Round): VoteFilter = if (VoteFilter.ofRound(round).contains(this)) this else VoteFilter.All
 }
 
 object VoteFilter {
@@ -47,6 +55,12 @@ object VoteFilter {
   }
 
   def ofRate(rate: Int): VoteFilter = if (rate == 0) Unrated else Rate(rate)
+
+  /** A round's filters, as its tabs have them: all files and the unrated, and the selected and
+    * rejected (a binary round) or the rated: no link names one rate of a rated round.
+    */
+  def ofRound(round: Round): Seq[VoteFilter] =
+    Seq(All, Unrated) ++ (if (round.isBinary) Seq(Rate(1), Rate(-1)) else Seq(Rated))
 
   def parse(param: String): Option[VoteFilter] = param match {
     case "all"      => Some(All)
@@ -182,9 +196,10 @@ final case class RoundList(
     Option.when(rank > 0)(rank - 1)
   }
 
-  /** The file among the list's files around it, as its large view shows them: up to two
-    * before it, and five in all where the list has them. The file too if the filter now leaves
-    * it out, in its place. None for a file not in the viewer's round (or region).
+  /** The file among the list's files around it, as its large view moves among them: up to two
+    * before it, and five in all where the list has them; and the files after those that its
+    * strip of following files shows (`ahead`). The file too if the filter now leaves it out, in
+    * its place. None for a file not in the viewer's round (or region).
     *
     * A juror's list: the files before it, nearest first, and the file with those after it,
     * each read from its place in the order ([[ImageDbNew.Keyset]]), not at an offset.
@@ -195,25 +210,32 @@ final case class RoundList(
       query.orderKey(pageId).flatMap { key =>
         val position = query.countBefore(key)
         val side = math.min(Neighbourhood.Side, position)
-        val all = 2 * Neighbourhood.Side + 1
+        val all = Neighbourhood.Window
         val before =
           if (side == 0) Nil
           else query.copy(keyset = Some(key.copy(before = true)), limit = Some(Limit(Some(side), Some(0)))).list().reverse
+        // the file and those after it in the window, and on to the strip's last one
         val from = query
-          .copy(withPageId = Some(pageId), keyset = Some(key.copy(before = false)), limit = Some(Limit(Some(all - side), Some(0))))
+          .copy(withPageId = Some(pageId), keyset = Some(key.copy(before = false)),
+            limit = Some(Limit(Some(math.max(all - side, 1 + Neighbourhood.Following)), Some(0))))
           .list()
-        val files = before ++ from
-        Some(files.indexWhere(_.pageId == pageId)).filter(_ >= 0).map(Neighbourhood(files, _, position))
+        val files = before ++ from.take(all - side)
+        Some(files.indexWhere(_.pageId == pageId)).filter(_ >= 0)
+          .map(Neighbourhood(files, _, position, ahead = from.drop(all - side)))
       }
 
   /** [[around]] by the file's position and the list's files at an offset from it. */
   private[controllers] def aroundAtOffset(pageId: Long): Option[Neighbourhood] =
     rankPosition(pageId).flatMap { position =>
       val offset = math.max(0, position - Neighbourhood.Side)
-      val files = query
-        .copy(withPageId = Some(pageId), limit = Some(Limit(Some(2 * Neighbourhood.Side + 1), Some(offset))))
+      val all = Neighbourhood.Window
+      val read = query
+        .copy(withPageId = Some(pageId),
+          limit = Some(Limit(Some(math.max(all, position - offset + 1 + Neighbourhood.Following)), Some(offset))))
         .list()
-      Some(files.indexWhere(_.pageId == pageId)).filter(_ >= 0).map(Neighbourhood(files, _, position))
+      val files = read.take(all)
+      Some(files.indexWhere(_.pageId == pageId)).filter(_ >= 0)
+        .map(Neighbourhood(files, _, position, ahead = read.drop(all)))
     }
 
   /** How a vote for the file, at `before` in the list before the vote, changed its place:
@@ -244,7 +266,8 @@ final case class RoundList(
 
   def withView(view: GalleryView): RoundList = copy(view = view)
 
-  def withRound(round: Round): RoundList = copy(round = round)
+  /** The list in another round, its filter all files if that round's kind hasn't it. */
+  def withRound(round: Round): RoundList = copy(round = round, filter = filter.in(round))
 
   /** The list's query string: its view (`module`, for a large view's way back), filter and
     * order.
@@ -330,10 +353,21 @@ final case class JurorCounts(byRegionRate: Map[(Option[String], Int), Int]) {
     }.sum
 }
 
-/** A large view's file (`files(index)`, at `position` in its list) and the files around it. */
-final case class Neighbourhood(files: Seq[ImageWithRating], index: Int, position: Int) {
+/** A large view's file (`files(index)`, at `position` in its list) and the files around it,
+  * which its keys and buttons move among; `ahead`, the list's files after those, which only
+  * its strip of following files shows.
+  */
+final case class Neighbourhood(
+    files: Seq[ImageWithRating],
+    index: Int,
+    position: Int,
+    ahead: Seq[ImageWithRating] = Nil
+) {
 
   def file: ImageWithRating = files(index)
+
+  /** The files after it, as its strip shows them: up to [[Neighbourhood.Following]]. */
+  def following: Seq[ImageWithRating] = (files.drop(index + 1) ++ ahead).take(Neighbourhood.Following)
 
   /** Where a vote for the file goes on to: the file after it, or before it at the list's end. */
   def next: Option[ImageWithRating] = files.lift(index + 1).orElse(files.lift(index - 1))
@@ -362,8 +396,13 @@ object MovedVote {
 
 object Neighbourhood {
 
-  /** The files a large view shows before its file; it shows `2 * Side + 1` in all. */
+  /** The files a large view moves among before its file; [[Window]] in all. */
   val Side = 2
+
+  val Window: Int = 2 * Side + 1
+
+  /** The files a large view's strip shows after its file. */
+  val Following = 5
 }
 
 object RoundList {
@@ -373,9 +412,16 @@ object RoundList {
     */
   val SortCookie = "gallerySort"
 
-  /** The list a request is for: the round, whose votes, the region from its path; the view
+  /** The region segment of the removed by-rate view grouped by region (46017ee3): its old URLs
+    * show all regions, not an unknown region with no files.
+    */
+  val GroupedRegion = "grouped"
+
+  /** The list a request is for: the round, whose votes, the region from its path ("all" or
+    * [[GroupedRegion]] for all of them); the view
     * from its path or, for a large view, its `module`; the filter and order from its query,
-    * the order [[defaultOrder]] if it names none.
+    * the filter all files if the round's kind hasn't it, the order [[defaultOrder]] if it
+    * names none.
     */
   def of(round: Round, viewer: User, asUserId: Long, region: String, view: GalleryView)(implicit
       request: RequestHeader
@@ -383,8 +429,8 @@ object RoundList {
     RoundList(
       round,
       asUserId,
-      Some(region).filter(_ != "all"),
-      VoteFilter.of(request),
+      Some(region).filterNot(r => r == "all" || r == GroupedRegion),
+      VoteFilter.of(request).in(round),
       requestedOrder.getOrElse(defaultOrder(viewer, asUserId, view)),
       view
     )

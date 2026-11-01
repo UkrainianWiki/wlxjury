@@ -1,7 +1,7 @@
 @import org.intracer.wmua.Selection
 @import db.scalikejdbc.User
 @(selections: Seq[(Selection, User)],
-        list: RoundList)
+        list: RoundList)(implicit messages: Messages)
 
 <div class="large-line">
     <ol>

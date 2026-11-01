@@ -31,9 +31,13 @@
         <div id="prevRoundFilters" @if(editRoundForm("previousRound").indexes.isEmpty) {style="display: none"}>
             <div id="selectFilters"
             class="@rounds.filter(_.isBinary).map(r => "round" + r.getId).mkString(" ")">
+            @* the empty choice is stored as no filter (NULL); a stored 0 (an unrated vote counted as
+               a selection) is no longer offered, only kept for a round that has it *@
             @bs.select(
                 editRoundForm("minJurors"),
-                Seq("", "0", "1", "2", "3", "4", "5", "6").map(x => (x, x)),
+                Seq("" -> Messages("selected.by.any.number")) ++
+                    Option.when(editRoundForm("minJurors").value.contains("0"))("0" -> Messages("selected.by.legacy.zero")) ++
+                    Seq("1", "2", "3", "4", "5", "6").map(x => (x, x)),
                 Symbol("value") -> "",
                 Symbol("_label") -> Messages("selected.by.at.least.x.jurors"),
                 Symbol("readonly") -> noEdit)
@@ -76,6 +80,7 @@
     @bs.text(
         categoryForm("source"),
         Symbol("_label") -> Messages("category.first"),
+        Symbol("data-category-suggest") -> "category",
         Symbol("readonly") -> noEdit
     )
     </div>
@@ -84,6 +89,7 @@
     @bs.text(
         categoryForm("excludeCategory"),
         Symbol("_label") -> Messages("category.second"),
+        Symbol("data-category-suggest") -> "category",
         Symbol("readonly") -> noEdit
     )
     </div>

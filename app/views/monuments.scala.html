@@ -19,6 +19,7 @@
     });
     </script>
 
+    <h1 class="visually-hidden">@Messages("gallery")</h1>
     <div class="row">
 
         <form class="d-flex gap-2 mb-2" id="example-reset-form">
@@ -85,8 +86,7 @@
                         <ul class="gallery mw-gallery-traditional">
 
                         @for((file, index) <- ImageJdbc.findByMonumentId(monument.id).zipWithIndex) {
-                            <li class="gallerybox">
-                                <h1 id="@file.pageId" class="tile-anchor"></h1>
+                            <li class="gallerybox" id="@file.pageId">
 
                                 <div class="thumb">
                                     <a href="" >

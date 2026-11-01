@@ -63,7 +63,7 @@ class GalleryRegionsSpec extends PlaySpecification with PlayTestDb {
     }.toList
 
   private def tiles(page: String): List[Long] =
-    """(?:data-pageId|<h1 id)="(\d+)"""".r.findAllMatchIn(page).map(_.group(1).toLong).toList
+    """(?:data-pageId|class="gallerybox" id)="(\d+)"""".r.findAllMatchIn(page).map(_.group(1).toLong).toList
 
   "a round's gallery" should {
 
@@ -108,23 +108,24 @@ class GalleryRegionsSpec extends PlaySpecification with PlayTestDb {
         selectionDao.batchInsert(Seq(Selection(image, second, f.round, 1)))
         val url = s"/byrate/round/${f.round.getId}/user/0/page/1"
         regionNames(url, f.admin) === List("Volyn O. (2)", "Donetsk O. (1)")
-        regionNames(url + "?rated=true", f.admin) === List("Volyn O. (1)", "Donetsk O. (0)")
+        // a binary round's own filter: `rated` is a rated round's, read there as all files
+        regionNames(url + "?filter=selected", f.admin) === List("Volyn O. (1)", "Donetsk O. (0)")
       }
     }
 
-    "keep the rated filter when following a counted region link" in {
+    "keep the vote filter when following a counted region link" in {
       testDbApp { implicit app =>
         val f = fixture("Wiki Loves Monuments", "Ukraine", 2025, None,
           Seq("07-101-0001", "07-101-0002", "14-101-0001"))
         DB.autoCommit { implicit session => sql"UPDATE selection SET rate = 1 WHERE page_id = 1".update() }
         val paths = Seq(
-          s"/byrate/round/${f.round.getId}/user/${f.juror.getId}/page/1?rated=true",
-          s"/query?module=gallery&round=${f.round.getId}&user=${f.juror.getId}&rated=true")
+          s"/byrate/round/${f.round.getId}/user/${f.juror.getId}/page/1?filter=selected",
+          s"/query?module=gallery&round=${f.round.getId}&user=${f.juror.getId}&rate=1")
         forall(paths) { path =>
           val volyn = regions(path, f.admin).find(r => (r \ "name").as[String] == "Volyn O.").get
           (volyn \ "count").as[Int] === 1
           val link = (volyn \ "url").as[String]
-          link must contain("filter=rated")
+          link must contain("filter=selected")
           tiles(get(link, f.admin)) === List(1L)
         }
       }

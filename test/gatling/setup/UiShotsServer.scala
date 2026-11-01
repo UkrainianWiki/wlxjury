@@ -8,9 +8,17 @@ import java.nio.file.Files
 
 /** Serves the Gatling fixture (GatlingTestFixture: a MariaDB testcontainer restored from
   * `data/cache/`, the app in a TestServer) for UI screenshots
-  * (docs/plans/2026-10-31-theme-modes-and-design-system.md, "Screenshots").
+  * (docs/plans/2026-10-31-theme-modes-and-design-system.md, "Screenshots") and for trying the
+  * app locally ("Running the fixture locally" there).
   *
-  * When the app is up it writes `target/ui-shots/server.json`: the base URL, the contest and
+  * The fixture's images have titles but no url ([[GatlingDbSetup]] loads them from a CSV), so it
+  * first sets each missing url to the file's on Commons ([[CommonsFileUrl]]), in this run's
+  * container only, never in the cached dump the Gatling runs restore: the pages then show
+  * thumbnails, through the image proxy or from upload.wikimedia.org (network needed).
+  * `scripts/ui-shots.py` answers those requests with a placeholder, so its shots don't depend
+  * on the network.
+  *
+  * It then writes `target/ui-shots/server.json`: the base URL, the contest and
   * round ids, a juror with images in both rounds (id, login, password), the organizer
   * (an admin of the contest) and the juror's first page id in the binary and the rated round.
   * Then it serves until `target/ui-shots/server.stop` exists (or the process is killed) and exits,
@@ -64,6 +72,7 @@ object UiShotsServer {
                             WHERE jury_id = $jurorId AND round_id = ${f.roundRatingId}"""
       .map(_.longOpt(1)).single().flatten.getOrElse(0L)
     val (_, orgEmail, orgPassword) = f.organizer
+    println(s"[ui-shots] set the Commons url of ${CommonsFileUrl.fillMissing()} images")
 
     val json =
       s"""{

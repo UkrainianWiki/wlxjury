@@ -1,7 +1,8 @@
 @(active: Boolean, id: Long, parentId: Long, submit: () => Call, withText: Boolean = true, what: String = "round")(implicit messages: Messages, req: RequestHeader)
 @* starts or stops a round (`what` "round") or a juror in a round ("juror"); its name says
-   which (round.start, round.stop, juror.start, juror.stop). Without the Yes/No text, the
-   outline's colour shows the state: red to stop a running one, green to start it again. *@
+   which (round.start, round.stop, juror.start, juror.stop). Grey with or without the Yes/No
+   text: the play or stop icon and the name show the state, red and green stood out too much
+   for something rarely used. *@
 @import helper._
 @label = @{ Messages(s"$what.${if (active) "stop" else "start"}") }
 @if(withText){@if(active) { @Messages("yes") } else { @Messages("no") }}
@@ -10,7 +11,7 @@
     <input type="hidden" id="current-@id" name="currentId" value='@id' />
     <input type="hidden" id="parent-@id" name="parentId" value='@parentId' />
     <input type="hidden" id="setActive-@id" name="setActive" value='@{!active}' />
-    <button type="submit" class="btn btn-sm @if(withText) {btn-outline-secondary} else {@if(active) {btn-outline-danger} else {btn-outline-success}}"
+    <button type="submit" class="btn btn-sm btn-outline-secondary"
         title="@label" aria-label="@label">
         <i class="bi @if(active) {bi-stop-fill} else {bi-play-fill}" aria-hidden="true"></i>
     </button>

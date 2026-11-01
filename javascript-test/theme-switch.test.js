@@ -106,17 +106,18 @@ describe("the login page's switch", () => {
         document.querySelector(`[data-theme-value="${value}"]`).click();
     }
 
-    test("takes light, dark and auto only", () => {
-        expect(themeSwitch.parse("dark")).toBe("dark");
-        expect(themeSwitch.parse("Dark")).toBe("auto");
-        expect(themeSwitch.parse("x\"; Path=/evil")).toBe("auto");
-        expect(themeSwitch.parse(null)).toBe("auto");
+    test("takes light, dark and auto only, else the default, dark", () => {
+        expect(themeSwitch.parse("light")).toBe("light");
+        expect(themeSwitch.parse("auto")).toBe("auto");
+        expect(themeSwitch.parse("Light")).toBe("dark");
+        expect(themeSwitch.parse("x\"; Path=/evil")).toBe("dark");
+        expect(themeSwitch.parse(null)).toBe("dark");
     });
 
     test("writes a Lax cookie for the whole site for a year, Secure on https", () => {
         expect(themeSwitch.cookieFor("dark", false)).toBe("theme=dark; Path=/; Max-Age=31536000; SameSite=Lax");
         expect(themeSwitch.cookieFor("light", true)).toBe("theme=light; Path=/; Max-Age=31536000; SameSite=Lax; Secure");
-        expect(themeSwitch.cookieFor("<x>", false)).toMatch(/^theme=auto;/);
+        expect(themeSwitch.cookieFor("<x>", false)).toMatch(/^theme=dark;/);
     });
 
     test("sets the cookie and the page's mode, and marks the button, with no request", () => {
@@ -146,11 +147,13 @@ describe("the login page's switch", () => {
         expect(document.documentElement.getAttribute("data-bs-theme")).toBe("dark");
     });
 
-    test("ignores a button with another value", () => {
+    test("takes a button with another value as the default, never writing its value", () => {
+        click("light");
         document.getElementById("theme-switch").insertAdjacentHTML("beforeend",
             '<button type="button" data-theme-value="purple">x</button>');
         click("purple");
-        expect(document.cookie).toContain("theme=auto");
-        expect(document.documentElement.getAttribute("data-bs-theme")).toBe("light");
+        expect(document.cookie).toContain("theme=dark");
+        expect(document.cookie).not.toContain("purple");
+        expect(document.documentElement.getAttribute("data-bs-theme")).toBe("dark");
     });
 });

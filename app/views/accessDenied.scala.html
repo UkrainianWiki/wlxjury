@@ -28,7 +28,7 @@
     contestId = suggestion.flatMap(_.contestId)
 ) {
     <div class="alert alert-danger" role="alert">
-        <h4>@Messages("access.denied.title")</h4>
+        <h1 class="h4">@Messages("access.denied.title")</h1>
         <p>@Messages("access.denied.account", user.emailLo)</p>
         <p>@Messages("access.denied.explanation")</p>
         @if(requiredRoles.nonEmpty) {

@@ -15,9 +15,9 @@ uses a server that is already running):
     target/ui-venv/Scripts/python scripts/ui-shots.py shoot --label baseline --start-server
 
 Colour modes (`--mode`, comma-separated, each saved in target/ui-shots/<label>/<mode>/):
-`light` and `dark` set the theme cookie in the browser; `auto` sets none and emulates the
-browser's prefers-color-scheme as `--scheme` (dark by default), so `auto` shows the dark
-mode the layout's script picks:
+each sets the theme cookie in the browser (with none, the app shows dark, its default);
+`auto` also emulates the browser's prefers-color-scheme as `--scheme` (dark by default), so
+`auto` shows the dark mode the layout's script picks:
 
     target/ui-venv/Scripts/python scripts/ui-shots.py shoot --label phase3 --mode light,dark,auto --start-server --csp
 
@@ -25,10 +25,11 @@ Compare two labels (writes diff images to target/ui-shots/diff/<a>-vs-<b>/<mode>
 
     target/ui-venv/Scripts/python scripts/ui-shots.py diff baseline phase1
 
-Images from Commons (thumbnails, the image proxy, and the "/<width>px-" URLs of the fixture's
-images, which have no URL) are replaced by one fixed placeholder, so
-the shots don't depend on the network; any other request to another host is blocked and
-listed (the pages load everything from this host since Phase 1).
+Images from Commons (upload.wikimedia.org and the image proxy's /wikipedia/commons/thumb/...,
+which the fixture's images use since UiShotsServer sets their Commons URLs, and the
+"/<width>px-" URLs of images without one) are replaced by one fixed placeholder, so the shots
+don't depend on the network; any other request to another host is blocked and listed (the
+pages load everything from this host since Phase 1).
 """
 import argparse
 import io
@@ -124,7 +125,8 @@ def pages(s):
         ("editround-new-jurors", "organizer", f"/admin/rounds/edit?contestId={c}", ["#jurors-ts-control"]),
         ("editround-new-prevround", "organizer", f"/admin/rounds/edit?contestId={c}",
          ["#headingImageFiltering a", "#previousRound-ts-control"]),
-        # the theme switches, and the deleted / failed marks
+        # the navbar's theme switch, the user menu, and the deleted / failed marks
+        ("users-thememenu", "organizer", f"/admin/users?contestId={c}", ["#theme-menu"]),
         ("users-usermenu", "organizer", f"/admin/users?contestId={c}",
          ["nav .navbar-nav:last-child > .dropdown:last-child > [data-bs-toggle=dropdown]"]),
         ("contestfiles-marks", "organizer", f"/contest/{c}/files", [], MARKS_JS),
@@ -210,7 +212,7 @@ def shoot_mode(args, mode):
 
         def route(r):
             url = urlparse(r.request.url)
-            # the fixture's images have no URL, so the pages ask for "/<width>px-"
+            # Commons and the image proxy; "/<width>px-": an image without a URL
             if ("/wikipedia/commons/" in url.path or url.hostname.endswith("wikimedia.org")
                     or re.match(r"^/\d+px-", url.path)):
                 return r.fulfill(status=200, content_type="image/png", body=png)
@@ -224,12 +226,11 @@ def shoot_mode(args, mode):
         def context(user):
             if user in contexts:
                 return contexts[user]
-            # light and dark: the theme cookie; auto: none, and the browser's scheme
+            # the theme cookie, explicit for auto too (none is dark); auto: the browser's scheme
             ctx = browser.new_context(viewport=VIEWPORT, device_scale_factor=1, locale="en-US",
                                       reduced_motion="reduce",
                                       color_scheme=args.scheme if mode == "auto" else "light")
-            if mode != "auto":
-                ctx.add_cookies([{"name": "theme", "value": mode, "url": base}])
+            ctx.add_cookies([{"name": "theme", "value": mode, "url": base}])
             ctx.route("**/*", route)
             if user:
                 page = ctx.new_page()

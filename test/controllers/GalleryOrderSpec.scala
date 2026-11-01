@@ -42,7 +42,7 @@ class GalleryOrderSpec extends PlaySpecification with PlayTestDb {
   }
 
   private def tiles(page: String): List[Long] =
-    """(?:data-pageId|<h1 id)="(\d+)"""".r.findAllMatchIn(page).map(_.group(1).toLong).toList
+    """(?:data-pageId|class="gallerybox" id)="(\d+)"""".r.findAllMatchIn(page).map(_.group(1).toLong).toList
 
   private def gallery(f: Fixture, query: String = "") = s"/gallery/round/${f.round.getId}/user/${f.juror.getId}/page/1$query"
 
@@ -142,6 +142,38 @@ class GalleryOrderSpec extends PlaySpecification with PlayTestDb {
         html must contain(s"""href="$base?filter=rejected&sort=file">Rejected (1)</a>""")
       }
     }
+
+    "switch rounds of the other kind with one of the round's tabs active, all files for the other kind's filter" in {
+      testDbApp { implicit app =>
+        val f = fixture()
+        val binary = roundDao.create(Round(None, 2, None, f.contest.getId, rates = Round.binaryRound, active = true))
+        binary.addUsers(Seq(RoundUser(binary.getId, f.juror.getId, "jury", active = true)))
+        selectionDao.batchInsert(f.pageIds.map(id => Selection(id, f.juror.getId, binary.getId)))
+        SelectionJdbc.rate(f.pageIds(0), f.juror.getId, binary.getId, 1)
+        SelectionJdbc.rate(f.pageIds(0), f.juror.getId, f.round.getId, 5)
+        def base(r: Round) = s"/gallery/round/${r.getId}/user/${f.juror.getId}/page/1"
+        // the own tabs shown active: their names
+        def activeTabs(html: String) =
+          """<a class="nav-link active" aria-current="page" href="[^"]*">(\w+) \(""".r.findAllMatchIn(html).map(_.group(1)).toList
+        // the round menu's link to the round
+        def menuLink(html: String, r: Round) =
+          s"""href="(${base(r)}[^"]*)"""".r.findAllMatchIn(html).map(_.group(1)).toList
+
+        val fromBinary = page(base(binary) + "?filter=selected", f).replace("&amp;", "&")
+        activeTabs(fromBinary) === List("Selected")
+        menuLink(fromBinary, f.round) === List(base(f.round) + "?sort=file")
+        activeTabs(page(base(f.round) + "?sort=file", f)) === List("All")
+
+        val fromRated = page(base(f.round) + "?filter=rated", f).replace("&amp;", "&")
+        activeTabs(fromRated) === List("Rated")
+        menuLink(fromRated, binary) === List(base(binary) + "?sort=file")
+        activeTabs(page(base(binary) + "?sort=file", f)) === List("All")
+
+        // a URL with the other kind's filter
+        activeTabs(page(base(f.round) + "?filter=selected", f)) === List("All")
+        activeTabs(page(base(binary) + "?filter=rated", f)) === List("All")
+      }
+    }
   }
 
   "an organiser who has no files in the round" should {
@@ -190,6 +222,34 @@ class GalleryOrderSpec extends PlaySpecification with PlayTestDb {
         html.replace("&amp;", "&") must contain(
           s"""href="/large/round/${f.round.getId}/user/${f.juror.getId}/pageid/${f.pageIds(9)}?sort=rate">View it</a>""")
         html must not(contain("modal"))
+      }
+    }
+  }
+
+  "the pages with a juror's votes" should {
+    // Back after a vote loads them again instead of showing the old votes from a cache
+    "never be cached: the galleries, the file list and the large view" in {
+      testDbApp { implicit app =>
+        val f = fixture()
+        val (r, u, p) = (f.round.getId, f.juror.getId, f.pageIds.head)
+        val binary = {
+          val round = roundDao.create(Round(None, 2, None, f.contest.getId, rates = Round.binaryRound, active = true))
+          round.addUsers(Seq(RoundUser(round.getId, u, "jury", active = true)))
+          selectionDao.batchInsert(Seq(Selection(p, u, round.getId, 0)))
+          round.getId
+        }
+        Seq(
+          s"/gallery/round/$binary/user/$u/page/1",
+          s"/gallery/round/$r/user/$u/page/1",
+          s"/byrate/round/$r/user/$u/page/1",
+          s"/query?module=byrate&round=$r&user=$u",
+          s"/filelist/round/$r/user/$u/page/1",
+          s"/large/round/$r/user/$u/pageid/$p",
+          s"/large/round/$binary/user/$u/pageid/$p"
+        ).map { path =>
+          val result = get(path, f)
+          (path, status(result), header(CACHE_CONTROL, result)) === ((path, OK, Some("no-store")))
+        }.reduce(_ and _)
       }
     }
   }

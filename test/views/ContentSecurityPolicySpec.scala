@@ -7,7 +7,8 @@ import java.io.File
 
 /** The production content security policy (conf/application.conf; the tests' own config runs
   * without one): scripts, styles and fonts from this host only, and images also as data: URIs,
-  * which Bootstrap 5's and Tom Select's CSS use for select arrows, checkbox ticks and btn-close.
+  * which Bootstrap 5's and Tom Select's CSS use for select arrows, checkbox ticks and btn-close;
+  * requests to this host and the Commons API, for the category fields' suggestions.
   */
 class ContentSecurityPolicySpec extends Specification {
 
@@ -30,6 +31,11 @@ class ContentSecurityPolicySpec extends Specification {
     "allow images from data: URIs (Bootstrap's and Tom Select's inline SVGs)" in {
       directive("img-src") must contain("data:")
       directive("img-src") must contain("'self'")
+    }
+
+    "allow requests to this host and the Commons API only (category-suggest.js)" in {
+      directive("connect-src") must containTheSameElementsAs(Seq("'self'", "https://commons.wikimedia.org"))
+      directive("script-src") must beEmpty
     }
   }
 }

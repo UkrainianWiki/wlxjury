@@ -297,7 +297,8 @@ reviewed.
   file list, large views, 404) or the organizer (byrate, contest files and file, round stat,
   rounds, editRound, users, editUser), signed out for login and the anonymous 404, and saves
   `target/ui-shots/<label>/light/<page>.png` (1366 px wide, full page up to 4000 px). Commons
-  images, and the fixture's URL-less `/<width>px-` images, get one fixed placeholder; other
+  images (upload.wikimedia.org and the image proxy's `/wikipedia/commons/thumb/...`), and
+  `/<width>px-` images without a URL, get one fixed placeholder; other
   external hosts are allowed only for the old CDNs and listed. `diff A B` writes red-marked diff
   images to `target/ui-shots/diff/A-vs-B/light/`.
 - Two baseline runs at `f9c31ce5` were pixel-identical (14 of 14), so any difference is real.
@@ -305,6 +306,36 @@ reviewed.
   admin (403, `permission_check_failed`, `targetContestId=unknown`) although the session's
   contest is set; the navbar links pass the id, so the harness does too. Not investigated
   further (outside this phase).
+
+### Running the fixture locally
+
+The same server, to try the app by hand (Docker running; the first start restores the
+fixture from `data/cache/`, or builds it, which takes several minutes). From Git Bash:
+
+```bash
+java -Xmx512m -Dfile.encoding=UTF-8 -jar 'C:/Program Files (x86)/sbt/bin/sbt-launch.jar' \
+  'set Test / javaOptions ++= Seq("-Xmx1g", "-Dfile.encoding=UTF-8")' \
+  'set Test / unmanagedClasspath += Attributed.blank((Assets / packageBin).value)' \
+  'set Test / javaOptions += "-Dui.csp=production"' \
+  'Test/runMain gatling.setup.UiShotsServer'
+```
+
+The third `set` is optional: the production content security policy, as `ui-shots.py --csp`.
+When `target/ui-shots/server.json` appears, open its `baseUrl` (a free port) and sign in as
+`organizer@gatling.test` / `orgpass` (admin of contest 1) or a juror `jurorN@gatling.test` /
+`passN` (`server.json` names one with files in both rounds; round 1 is binary, round 2 rated).
+Create `target/ui-shots/server.stop` to stop it: it stops the app and the container and
+deletes both files. `ui-shots.py shoot --start-server` uses the same two files, so stop a
+server started by hand first, or shoot without `--start-server` against it. While that sbt
+runs, another sbt in the checkout needs `-Dsbt.server.forcestart=true`.
+
+The fixture's CSV has no file URLs, so the server first sets each image's URL from its title,
+as the Commons API gives it (`CommonsFileUrl`), in its own container only (the dump and the
+Gatling runs keep none). Thumbnails then come through the image proxy, and the large view from
+upload.wikimedia.org: they need the network. Files deleted (124) or renamed (18) on Commons
+since the CSV (of 38,367, November 2026) fail to load from Wikimedia; asked for one, the
+proxy checks it on Commons as in production: it stores a renamed file's new name and URL
+and serves that, and marks a deleted one deleted.
 
 ### What changed
 
@@ -824,7 +855,8 @@ mode, every page in the mode asked for, no CSP violation; the only console error
   `btn-outline-danger` while running and `btn-outline-success` while stopped, which reads in
   both modes (`phase4-fix/*/roundstat.png`); the rounds page keeps outline-secondary next to
   its Yes/No text. `views.StartStopViewSpec` checks the names, the colours and that all four
-  messages files define the keys.
+  messages files define the keys. Later both grey (61d8d508): red and green stood out too
+  much for something rarely used; the play/stop icon and the name show the state.
 - Checks: `Test/compile` + `testOnly views.* controllers.RoundControllerSpec
   controllers.RoundEditPageSpec controllers.ContestFilesPageSpec
   controllers.MutationAuthorizationSpec controllers.CoiAuthorizationSpec
@@ -836,32 +868,207 @@ mode, every page in the mode asked for, no CSP violation; the only console error
 
 Left for separate branches; none blocks merging this one.
 
-1. **Russian translations.** `messages.ru` lacks 62 keys used by the admin pages (a gap that
-   predates this branch; Phase 2 filled only the keys on the lines it added). List them with a
-   script over the `Messages("…")` keys in `app/views` against each messages file, fill ru, and
-   add a spec that every key used by the views exists in all four files (as `StartStopViewSpec`
-   does for its own keys), so the gap can't reopen.
-2. **Commons category autocomplete.** The contests' and contest images' "source" field had a
-   typeahead calling Commons from the browser; the CSP blocked it, and Phase 2 removed it. To
-   bring it back: a same-origin JSON endpoint (signed in, admin or organizer of the current
-   contest, `withAuthJson`) that forwards a prefix search for Category: titles to Commons through
-   `MwBot`, with a short timeout, a small result limit and a cache; then Tom Select's `load` on
-   the field. Tests: the endpoint's authorization (signed out 401, juror 403) and its handling of
-   a Commons failure (an empty list, not a 500).
-3. **`/admin/rounds` and `/admin/users` without `?contestId=`.** In the screenshot fixture both
+1. **Russian translations.** Done (6f5244f8): ru lacked 129 keys, uk 24, fr 14; all four files
+   now have the same keys. A few texts used as keys got keys (`contests`, `row.number`, `name`,
+   `resetpassword`, `region.menu`, `error.email.already.exist`), and keys used but in no file got
+   added (`root`, `role.board`/`auditor`/`staff`, `top.images`). `MessagesCompletenessSpec`
+   checks the keys used in `app/` (literal lookups, helpers taking a key, run-time keys listed in
+   the spec) against all four files, which must share keys and placeholders. Left: the
+   `/monuments` headers (field names, allowlisted), 57 unused keys (mostly the old sign-up and
+   mail flow) kept, and English values in uk/ru for those unused keys.
+2. **Commons category autocomplete.** Done (94348f92, planned in a6402282): `category-suggest.js`
+   on the round form's two categories ("category") and the import sources on the contest files
+   and campaigns pages plus a new contest's images ("mixed"); the CSP's `connect-src`. Not
+   checked in a browser against live Commons, nor in dark mode. The contests' and contest
+   images' "source" field had a typeahead calling Commons from the browser; the CSP blocked it
+   (JSONP, a script from
+   commons.wikimedia.org), and Phase 2 removed it. To bring it back, fetch from Commons in the
+   browser, not through a server proxy: the MediaWiki API answers anonymous CORS requests with
+   `origin=*`, so the CSP only needs `connect-src 'self' https://commons.wikimedia.org` (scripts
+   stay this host's only). A script gives each category field a Tom Select with a `load` that
+   asks `list=prefixsearch` in the Category namespace (a short delay, a minimum length, stale
+   answers dropped), stores the full `Category:` title, and keeps free text: a field that also
+   takes a page (the import sources) suggests only once the text starts with `Category:`, and a
+   failing or slow Commons leaves a plain text field. Tests: Jest with `fetch` mocked, the
+   script and its hook on the pages with such a field, and the CSP spec.
+3. **`/admin/rounds` and `/admin/users` without `?contestId=`.** Done (c2d220d7): a
+   `ContestPermission` without a contest is checked in the session's current contest
+   (`Secured.forUser`), for these and the import and greeting pages. In the screenshot fixture both
    deny the contest's admin (403, `permission_check_failed`, `targetContestId=unknown`) although
    the session's contest is set; the navbar links pass the id, so users rarely hit it. Likely a
    pre-existing bug in how these actions pick the contest when the parameter is missing (they
    should fall back to the session's contest, as `Secured.inCurrentContest` does). Confirm the
    account and contest first, reproduce in a controller spec, and keep the negative cases (a
    member of another contest, a juror) denied.
-4. **Smaller quirks, all predating this branch:**
-   - The by-rate galleries of a binary (1-2) round show the rate as green `<button>`s that do
-     nothing; show it as a label or icon instead.
-   - Star counts: `galleryByRateRegions` draws `rates.id / 2` stars whatever the half-star
-     setting, and `galleryByRate` uses `numberOfStars`, which multiplies by the criteria count.
-     Use one helper for both.
-   - Page titles: admin pages use `h3`, the error page `h4`, galleries none. Pick one level
-     (e.g. `h1` styled as `.h3`) for every page title.
-   - `fileList` prints its `<!-- Round … -->` comment as visible text in the block meant for
-     copying into a wiki page, and its content starts at the page's edge.
+4. **Smaller quirks, all predating this branch.** Fixed: a binary round's result as approvals
+   ("✓ n", a juror's vote as a check or a cross) in the by-rate gallery and the large view's
+   votes, the grouped query counting the approvals apart (79f5c51e, 97f4c1fb); the grouped
+   view removed, so its star counts with it (46017ee3); one `h1` per page and tile ids
+   instead of the empty `h1`s (08876d66); `fileList`'s comment inside the copy block, in a
+   column (739a2e49); `numberOfStars`' criteria count from the round's criteria rates, read
+   once per by-rate page (3b3564b8, `CriteriaRate.countOf`, 4 by default; round 1327's 2 not
+   checked against the production data). The copy block's escaped `<!-- … -->` line, which
+   looked like a bug, is an `h2.h5` heading inside it: round · juror (all) · region if any
+   (2e9ad206). The round statistics' files column links each juror's gallery and file list
+   in every round, not only a yes/no one, built with `RoundList`; the stat icon links are one
+   `<a class="btn">` each (`snippets.iconLink`, labelled, disabled with no files) instead of a
+   `<button>` inside an `<a>` (ec724817, `views.RoundStatTableViewSpec`).
+   - Dead branch in the by-rate galleries: `galleryByRate` and `galleryByRateRegions` draw
+     green check `<button>`s instead of stars when `round.rates.id == 2`, but no round has
+     that id (binary is 1 since 2014, ratings 3 to 20, `Rates` in Round.scala), so it never
+     renders. A binary round takes the star branch instead: one star (`numberOfStars` = 1),
+     filled only when the average is at least 1, i.e. when every assigned juror selected the
+     file (2 of 3 is 0.67, drawn empty), followed by the count of selections. Remove the
+     dead branch and show a binary round as "✓ n" (or n of m) without the star.
+   - Star counts in `galleryByRateRegions` (the by-rate gallery grouped by region,
+     `region=grouped`): it draws `rates.id / 2` stars whatever the half-star setting, while
+     `showStar` halves the rate only for half-star rounds. A 1-10 round without half stars
+     gets 5 stars filled up to the rate, so 5 to 10 all look like 5 full stars; a 1-5 round
+     gets 2 stars (4 and 5 look the same); a 1-3 round 1; a binary round none. `galleryByRate`
+     uses `Round.numberOfStars`, which is right but multiplies by the criteria count with a
+     hard-coded exception (`id.contains(1327)`: 2 criteria instead of 4, from bddd46f7). Use
+     `numberOfStars` in both, and take the criteria count from the round's criteria.
+   - Headings: admin pages title themselves with `h3`, the error and access-denied pages with
+     `h4`, the galleries have none, and `galleryByRate` / `galleryByRateRegions` put an empty
+     `<h1 id=pageId class="tile-anchor">` in every tile as a scroll target (dozens of empty
+     `h1`s per page for screen readers). Use one title level (e.g. `h1` styled as `.h3`) and a
+     non-heading anchor (an `id` on the tile).
+   - `fileList` prints a line `<!-- Round …, Juror: …, Region … -->` as visible text above the
+     list (a Twirl-escaped string, so a wiki comment shown as text). It sits outside the
+     `contenteditable` block meant for copying, so it isn't copied with the list; it was
+     probably meant as the wiki comment heading the pasted list. Put it inside the block (or
+     drop it), and wrap the `.row` content in a column so it doesn't start at the page edge.
+5. **Old votes after the browser's Back (pre-existing).** Done (52da9ad9): `Cache-Control:
+   no-store` on the galleries, file list and large view (`Secured.noStore`); a `pageshow`
+   reload would flash the old page and miss a Back from the HTTP cache. After voting in the large view, Back
+   brings the previous file's page back from the browser's cache with the stars it had before
+   the vote (seen while testing the fixture: 7 shown, 6 stored; 3 shown, 4 stored). The
+   gallery and large-view pages send no `Cache-Control`. Fix: `Cache-Control: no-store` on the
+   large view and the galleries (the pages with votes), or reload a page restored from the
+   back/forward cache (`pageshow` with `event.persisted`); `no-store` is simpler but also
+   turns off the back/forward cache for these pages. Tests: a header check on both actions,
+   and a manual check of vote, Back, in Chrome and Firefox.
+6. **Rate number by the large view's stars.** Done (a02739ed): the number on its own line
+   above the stars (ten and the cancel icon fill the column's line), `large-rate.js`; a
+   half-star click now gives the half the stars draw. The stars (`large/raty.scala.html`, `#rate-image`
+   and `#rate-image1..n` for criteria) show no number: the juror can't read the current
+   file's rate at a glance (with 10 to 20 stars, or half stars, counting is slow), nor which
+   rate a click will give while hovering. Show a number next to the stars: the current rate
+   (half-star rounds as e.g. 3.5; "–" when unrated), and while the mouse is over a star the
+   rate that star would give, back to the current rate on mouse-out. raty can do this with
+   `target` / `targetType: 'score'` / `targetKeep: true` and `mouseover` / `mouseout`
+   callbacks; keep the number's width fixed so the stars don't shift, announce it with
+   `aria-live="polite"` only for the stored rate (not on every hover), and keep keyboard
+   voting (digits) updating it. Also: `hints` lists 10 empty strings, so with 11 to 20 stars
+   the higher stars get raty's default number tooltips while the first ten get none; make
+   them consistent (all empty once the number is shown). Tests: a Jest case on the hover and
+   mouse-out number and the half-star display; LargeViewFixturesSpec for the markup.
+7. **Gallery vote borders.** Done (13c5ff45): the frame from `data-rate` at load, none
+   unrated, 4px over the tile's edge with an inner line in stronger colours (`--wlx-vote-*`),
+   the pressed thumb `aria-pressed`. In a binary round's gallery, thumbs up sometimes gives the tile a
+   (dark) grey border instead of the selected colour. Two causes, both in
+   `public/javascripts/ug-theme-tiles.js` (`onSelectClick` / `onRejectClick` / `serviceCall`):
+   - The vote buttons toggle: thumbs up on a file already selected sends 0 (unrated), thumbs
+     down on one already rejected likewise. But a tile is drawn with no border at load
+     (`gallery.scala.html` passes `data-rate`, which only the click handlers read), so a file
+     voted earlier looks unvoted, and thumbs up on it un-selects it: the "sometimes".
+   - The unrated border is `var(--bs-secondary-color)`: 75% of the body colour, dark grey on
+     the light page and light grey on the dark one. Before this branch it was `white`
+     (on the then always dark gallery), i.e. a light frame meaning "no vote".
+   Fix: draw each tile's border from `data-rate` at load (selected / rejected / none), so the
+   toggle is visible before the click; show unrated as no border, or a light neutral that
+   reads in both modes (a `--wlx-unrated` variable, e.g. `--bs-border-color`), and consider a
+   distinct "undo" state on the button (pressed `aria-pressed`) so the toggle is expected.
+   Tests: Jest on `serviceCall`'s colours for 1 / -1 / 0 and on the initial borders from
+   `data-rate`; a screenshot of a gallery with voted files in light and dark.
+8. **Re-rating in a rated round's gallery.** Done: the vote's range checked in `selectWS`
+   and `rateByPageId` (ee0971b3, `Round.acceptsRate`); stars on the juror's own tiles
+   (92750bbc, `tile-votes.js`); the by-rate gallery's in item 9. A vote on a file the juror
+   has no selection for in the round answered success (an update of no rows): now 404, JSON
+   `not_found` / the error page, nothing created (ecb1504c). A juror can vote in the gallery only in a binary
+   round: unitegallery adds the select / reject icons only when `binary` is set
+   (`unitegallery.js` ~10689, options from `main.scala.html` ~42), and the by-rate gallery
+   draws static stars (`showStar`). In a rated round a juror who wants to change a rate must
+   open each file's large view. Proposal: in the juror's own gallery of an active round
+   (the same condition as `jury` today), interactive stars per tile (raty, as in the large
+   view, with the round's star count and half stars; criteria rounds stay large-view only),
+   sending the vote by script to the existing `POST /rate/round/:round/pageid/:pageId/select/:rate`
+   (`GalleryController.selectWS`) with the CSRF header, updating the tile in place without
+   moving it (the gallery's order may be by rate: re-sort only on reload), errors through
+   `vote-errors.js`. Check first: `selectWS` stores any integer as the rate, with no check
+   against the round's range (e.g. 99 in a 1-10 round, or 5 in a binary one); validate it
+   there (400 outside `minRate..maxRate` or 0), and in `LargeViewController.rateByPageId` if it
+   lacks the same check. Tests: the endpoint's range validation and authorization (another
+   juror's round, a stopped round: 409), a Jest case for the tile's stars (click sends the
+   rate, the shown stars update, a failure restores them), LargeViewFixturesSpec unaffected.
+9. **Re-rating in the by-rate gallery.** Done (fff6c1a8): the tile stars' condition shared
+   (`views.TileStars`), `tile-votes.js`'s `addListStars` in place of the static stars; a vote
+   updates `.wlx-rate-text`, marks the file `.wlx-rate-changed` (rank greyed, a `title`) unless
+   back at its rate at load, and shows the hint above the list (hidden until the first
+   change); `voteTexts` holds the vote attributes for both galleries. Item 8 gave a rated round's tile gallery interactive
+   stars (`public/javascripts/tile-votes.js`, `main.scala.html`'s `wlx_stars`) but left the
+   by-rate gallery's stars static (`galleryByRate.scala.html`, `showStar`), because a new rate
+   makes the rank and order shown stale until a reload. The user wants it anyway: in the
+   juror's own by-rate view of an active rated round (same condition as the tile stars; not
+   binary, criteria or comments-only, not the all-jurors view), make each file's stars
+   interactive with the same script and rules (half stars, cancel, failure restores, CSRF
+   header, `vote-errors.js`). After a vote the file keeps its place; mark it as changed (e.g.
+   the rank greyed with a small "re-sorted after reload" note, or a tooltip/`title` on the
+   stars and a one-line hint above the list: "Changed rates are re-sorted when the page is
+   reloaded"), with message keys in all four files (MessagesCompletenessSpec checks them).
+   Update the rate text after the stars (`rateString`) in place too. Tests: a view spec for
+   when the stars are interactive here and when not; Jest for the in-place update and the
+   changed mark; the rank/order unchanged until reload.
+10. **A round switch keeps the other kind's vote filter (pre-existing).** Done (15b34bb1):
+    `VoteFilter.in(round)` keeps all, unrated and the round kind's filters
+    (`VoteFilter.ofRound`), else all files; `withRound` and `RoundList.of` (filter=, older
+    rate=/rated=) apply it. No link names one rate of a rated round (only hand-made URLs), so
+    a rated round's `Rate(n)` is all files too. The navbar's round
+    menu (`navbar.scala.html` `roundMenu`) links each round as `l.withRound(r).pageUrl(1)`,
+    and `RoundList.withRound` replaces only the round: a binary round's `selected` /
+    `rejected` (`VoteFilter.Rate(1)` / `Rate(-1)`) go into a rated round and `rated` into a
+    binary one, where no tab matches, so none is shown active (and in a rated round
+    `Rate(1)` silently means "rated 1"). Fix: on a switch keep `All` and `Unrated`, and reset a
+    filter of the other kind to `All` (by the round's kind, not by whether the value is a
+    possible rate); apply the same rule when a list is read from a URL (`?filter=selected` on
+    a rated round). Tests: `withRound` both ways, the URL case, and a navbar view check that
+    exactly one tab is active after a switch each way.
+11. **Dark by default, a visible switch.** Done (17a4ea57): `Theme.Default` dark, also for
+    an invalid cookie (theme-switch.js likewise); the navbar's own dropdown (`#theme-menu`,
+    "Theme: <mode>", `theme.switch` in all four files) posts to `/theme` as before, the
+    current one `active` with `aria-current`; the profile's radios checked from the stored
+    mode, else the cookie's, else dark. ui-shots.py sets the cookie for auto too (none is now
+    dark) and adds `users-thememenu`. V71's comment ("NULL … is auto") left as applied. The
+    default was auto, which for most users means
+    light; jurors had always-dark galleries before this branch, and few will find the switch
+    in the profile menu. (a) A user with no choice (no cookie, `users.theme` NULL) gets dark:
+    `Theme.parse`'s fallback; an explicit choice, auto included, is stored and kept. No
+    migration. (b) The switch moves from the profile dropdown to an icon button in the navbar,
+    left of the profile menu: the current mode's icon, opening light / dark / auto (Bootstrap
+    docs' pattern), with an accessible label; the login page keeps its switch. (c) The
+    profile form's theme `<select>` becomes a `btn-check` radio group with each mode's icon
+    and label (an `<option>` can't hold an icon), sending the same `theme` field. Tests:
+    `Theme` fallback, the layout without a cookie, the navbar switch's markup, the profile
+    form's radios, plus the specs that assumed auto.
+
+**Review of follow-ups (36dd30f2..3915baae).** Five findings, fixed:
+- Overlapping star votes (`tile-votes.js`): each click sent at once, so votes could be
+  stored out of order and a failure restored the rate before the click. Done (2c188bcf): a
+  click while the tile's vote is pending is ignored (`aria-busy`), a failure restores the
+  last stored rate, the by-rate text follows each stored vote once; the binary thumbs too.
+- Half-star criteria truncated: the large view's criteria number and raty score divided as
+  Int (3 for a stored 7). Done (d2767358): a decimal division, `rateNumber`'s format.
+- 404 vote message: `{error: "not_found"}` showed the generic failure. Done (86d092da):
+  `vote.error.not.found`, `data-vote-not-found`, in all four files.
+- Old grouped-view URLs (`/byrate/.../region/grouped/...`) listed no files after
+  46017ee3. Done (798dd46b): `RoundList.of` reads `grouped` as all regions.
+- Binary gallery thumbs not reachable by keyboard. Done (6a7be552): `tabindex="0"`, Enter /
+  Space vote as a click (the key kept from the tile), a `--bs-focus-ring-*` outline. The tile
+  stars stay mouse-only: the large view's digit keys are the keyboard path.
+
+Also from the aggregate plan's decision 4 (1a2564a9): the round form's "selected by at least
+X jurors" without a plain 0, its empty choice named as no filter, a stored 0 kept as a legacy
+choice. And the size filters' labels made parallel, in the UI's units (6a5114c5): "Minimum
+resolution (Mpx)" / "Minimum file size (MB)". `LargeViewFixturesSpec` had failed on all
+six fixtures since 17a4ea57 (the dark default changed their `<html>` line); regenerated
+(9dcbd9e8), Jest 203/203.

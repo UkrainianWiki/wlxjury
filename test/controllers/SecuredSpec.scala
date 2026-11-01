@@ -227,6 +227,16 @@ class SecuredSpec extends PlaySpecification with Mockito with PlayTestDb
         Secured.Denial(Some(5L), Some("contest:5"), Set("jury"))
       Secured.denialOf((_: User) => false) === Secured.Denial.empty
     }
+
+    "be logged with the session's contest for a contest permission without one" in {
+      val inFive = User("Ann", "ann@example.com", Some(1L), Set("admin"), contestId = Some(5L))
+      Secured.forUser(inFive, Secured.ContestPermission(Set("admin"), None)) ===
+        Secured.ContestPermission(Set("admin"), Some(5L))
+      Secured.forUser(inFive, Secured.ContestPermission(Set("admin"), Some(7L))) ===
+        Secured.ContestPermission(Set("admin"), Some(7L))
+      Secured.forUser(inFive.copy(contestId = None), Secured.ContestPermission(Set("admin"), None)) ===
+        Secured.ContestPermission(Set("admin"), None)
+    }
   }
 
   def mockRequest(username: String, contestId: Option[Long] = None): RequestHeader = {

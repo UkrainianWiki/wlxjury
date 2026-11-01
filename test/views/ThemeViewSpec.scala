@@ -11,8 +11,8 @@ import play.api.test.{FakeRequest, Helpers, PlaySpecification}
 import play.twirl.api.Html
 
 /** The colour mode on every shell (layout.scala.html): `data-bs-theme` light or dark from
-  * the theme cookie; with no cookie or any other value, auto: no data-bs-theme, the auto
-  * marker and the script that sets it from prefers-color-scheme, first in <head>. The
+  * the theme cookie, dark with no cookie or any other value; auto: no data-bs-theme, the
+  * auto marker and the script that sets it from prefers-color-scheme, first in <head>. The
   * cookie's own text never reaches the page.
   */
 class ThemeViewSpec extends PlaySpecification {
@@ -58,8 +58,16 @@ class ThemeViewSpec extends PlaySpecification {
       }
     }
 
-    "render auto without a cookie: the marker, no data-bs-theme, and the script first in <head>" in {
+    "render dark without a cookie, with no script needed" in {
       forall(shells(None)) { case (name, page) =>
+        val tag = s"$name: ${htmlTag(page)}"
+        tag must contain("""data-bs-theme="dark"""")
+        tag must contain("""data-theme-pref="dark"""")
+      }
+    }
+
+    "render an explicit auto as the marker, no data-bs-theme, and the script first in <head>" in {
+      forall(shells(Some("auto"))) { case (name, page) =>
         val tag = s"$name: ${htmlTag(page)}"
         tag must contain("""data-theme-pref="auto"""")
         tag must not(contain("data-bs-theme"))
@@ -72,13 +80,13 @@ class ThemeViewSpec extends PlaySpecification {
       }
     }
 
-    "render auto for any other value, never echoing the cookie" in {
+    "render dark for any other value, never echoing the cookie" in {
       val garbage = Seq("\"><script>alert(1)</script>", "dark\" onload=\"x", "DARK", "auto ", "<b>light</b>", "")
       forall(garbage) { value =>
         forall(shells(Some(value))) { case (name, page) =>
           val tag = s"$name: ${htmlTag(page)}"
-          tag must contain("""data-theme-pref="auto"""")
-          tag must not(contain("data-bs-theme"))
+          tag must contain("""data-theme-pref="dark"""")
+          tag must contain("""data-bs-theme="dark"""")
           if (value.nonEmpty && value != "DARK" && value != "auto ") page must not(contain(value))
           page must not(contain("alert(1)"))
           page must not(contain("onload=\"x"))
@@ -87,7 +95,7 @@ class ThemeViewSpec extends PlaySpecification {
     }
   }
 
-  "the user menu's switch" should {
+  "the navbar's switch" should {
     "come back to the page, but not to an error page's URL" in {
       implicit val request: RequestHeader = FakeRequest("GET", "/gallery/round/1/user/1/page/2?sort=rate").withCSRFToken
       contentAsString(views.html.main("gallery", juror, juror.getId)(Html(""))) must
@@ -102,13 +110,15 @@ class ThemeViewSpec extends PlaySpecification {
   }
 
   "the parser" should {
-    "take light, dark and auto only" in {
+    "take light, dark and auto only, else the default, dark" in {
+      Theme.Default === Theme.Dark
       Theme.parse("light") === Theme.Light
       Theme.parse("dark") === Theme.Dark
       Theme.parse("auto") === Theme.Auto
-      Theme.parse("Dark") === Theme.Auto
-      Theme.parse(" dark") === Theme.Auto
-      Theme.parse(Option.empty[String]) === Theme.Auto
+      Theme.parse("Light") === Theme.Dark
+      Theme.parse(" auto") === Theme.Dark
+      Theme.parse(Option.empty[String]) === Theme.Dark
+      Theme.parse(Some("auto")) === Theme.Auto
       Theme.find("purple") must beNone
     }
   }
@@ -127,10 +137,12 @@ class ThemeViewSpec extends PlaySpecification {
       page must not(contain("""action="/theme""""))
     }
 
-    "mark auto for no cookie" in {
-      implicit val request: RequestHeader = requestWith(None)
-      val page = contentAsString(views.html.login(form))
-      page must contain("""data-theme-value="auto" aria-pressed="true"""")
+    "mark dark for no cookie, auto for an explicit auto" in {
+      val none = contentAsString(views.html.login(form)(implicitly, implicitly, requestWith(None)))
+      none must contain("""data-theme-value="dark" aria-pressed="true"""")
+      none must contain("""data-theme-value="auto" aria-pressed="false"""")
+      val auto = contentAsString(views.html.login(form)(implicitly, implicitly, requestWith(Some("auto"))))
+      auto must contain("""data-theme-value="auto" aria-pressed="true"""")
     }
   }
 }

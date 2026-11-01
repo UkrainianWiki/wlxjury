@@ -1,0 +1,4 @@
+@(url: String, icon: String, label: String, enabled: Boolean = true)
+@* an icon-only link drawn as a small grey button (Bootstrap Icons' `icon`), named by `label`
+   (title and aria-label); not `enabled`: disabled, with no href and out of the tab order *@
+@if(enabled) {<a class="btn btn-outline-secondary btn-sm py-0 px-1" href="@url" title="@label" aria-label="@label">} else {<a class="btn btn-outline-secondary btn-sm py-0 px-1 disabled" aria-disabled="true" tabindex="-1" title="@label" aria-label="@label">}<i class="bi bi-@icon" aria-hidden="true"></i></a>

@@ -23,11 +23,14 @@
             });
         </script>
 
+        <script src="@routes.Assets.versioned("javascripts/large-sections.js")"></script>
         @raty(score, readOnly, list, hood.file.pageId, byCriteria)
         @fileKeyboardNav(hood.index, hood.files.size, i => list.largeUrl(hood.files(i).pageId), list.atUrl(hood.file.pageId))
         @keyboardNav(user, list, hood.file)
 
 } {
+        @* the page's title, for screen readers *@
+        <h1 class="visually-hidden">@Messages(list.view.name)</h1>
         @if(!readOnly) {
             <form id="vote-form" method="post" class="d-none">@helper.CSRF.formField</form>
         }

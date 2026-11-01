@@ -17,7 +17,7 @@
     @mainAdmin("rounds", adminUser, adminUser.getId,
         rounds = rounds, selectedRound = round, contestId = contest.id) {
         <div class="row" >
-            <h3>@Messages("campaign") @contest.fullName</h3>
+            <h1 class="h3">@Messages("campaign") @contest.fullName</h1>
 
             @flash.get("error").map { err =>
                 <div class="alert alert-danger">@err</div>

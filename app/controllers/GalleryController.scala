@@ -95,7 +95,8 @@ class GalleryController @Inject() (
     }
 
   /** A round's list (the user's active round's for round 0) at a page, or at the page with a
-    * file; an unknown view (`/query?module=`) a page that does not exist.
+    * file; an unknown view (`/query?module=`) a page that does not exist. Never cached, as it
+    * shows votes ([[noStore]]).
     */
   def listGeneric(
       view: Option[GalleryView],
@@ -103,7 +104,7 @@ class GalleryController @Inject() (
       at: Either[Int, Long],
       region: String = "all",
       roundId: Long = 0
-  ): EssentialAction = withAuthOn(blocking)() { sessionUser => implicit request =>
+  ): EssentialAction = noStore(withAuthOn(blocking)() { sessionUser => implicit request =>
     val maybeRound =
       if (roundId == 0) Round.activeRounds(sessionUser).headOption
       else Round.findById(roundId)
@@ -117,7 +118,7 @@ class GalleryController @Inject() (
     } { round =>
       Secured.switchingContest(sessionUser, user)(gallery(user, view, asUserId, at, region, round))
     }
-  }
+  })
 
   private def gallery(
       user: User,
@@ -169,10 +170,8 @@ class GalleryController @Inject() (
     val pager = Pager(page, counts.fold(list.count())(_.total(list.filter, list.region)))
     val files = list.files(pager)
 
-    // the region menu, whose regions are read when it is opened (regions); the grouped view's
-    // regions, by which it shows the files
+    // the region menu, whose regions are read when it is opened (regions)
     val menu = regionMenu(list, contest)
-    val byReg = if (list.region.contains("grouped")) listRegions(list, contest, counts) else Nil
 
     // the viewer's own tabs: the counts above when the list is their own
     val rates = counts.filter(_ => user.id.contains(asUserId)).fold(galleryService.rateDistribution(user, round))(c =>
@@ -199,10 +198,10 @@ class GalleryController @Inject() (
           showAuthor))
 
       case GalleryView.Gallery | GalleryView.ByRate =>
-        if (list.region.contains("grouped"))
-          Ok(RequestTiming.render(views.html.galleryByRateRegions(user, list, files, pager, rounds, menu, byReg)))
-        else
-          Ok(RequestTiming.render(views.html.galleryByRate(user, list, files, pager, rounds, menu, rates)))
+        // a criteria round's stars count its criteria: read once for the page
+        val shown = if (!round.hasCriteria) list
+          else list.withRound(round.copy(criteriaCount = CriteriaRate.countOf(round.getId).getOrElse(round.criteriaCount)))
+        Ok(RequestTiming.render(views.html.galleryByRate(user, shown, files, pager, rounds, menu, rates)))
     }
   }
 
@@ -212,7 +211,7 @@ class GalleryController @Inject() (
   private def regionMenu(list: RoundList, contest: ContestJury)(implicit messages: play.api.i18n.Messages)
       : Option[RegionMenu] =
     Option.when(ContestKind.monumentIdTemplate(contest).isDefined) {
-      val current = list.region.filter(_ != "grouped").map(RegionScheme.of(contest).region(_, None).name)
+      val current = list.region.map(RegionScheme.of(contest).region(_, None).name)
       RegionMenu.regions(current, list.withRegion("all").pageUrl(1), list.pageUrl(1), list.regionsUrl)
     }
 
@@ -261,7 +260,7 @@ class GalleryController @Inject() (
                 val view = request.getQueryString("module").flatMap(GalleryView.parse).getOrElse(GalleryView.ofPath(asUserId))
                 val list = RoundList.of(round, user, asUserId, region, view)
                 val regions = listRegions(list, contest, list.jurorCounts())
-                Ok(placesJson(list.region.filter(_ != "grouped"), messagesApi.preferred(request)("region.all"),
+                Ok(placesJson(list.region, messagesApi.preferred(request)("region.all"),
                   list.withRegion("all").pageUrl(1),
                   regions.map(r => Place(r.id, r.name, r.count, r.kind.toString, list.withRegion(r.id).pageUrl(1)))))
               }
@@ -270,27 +269,27 @@ class GalleryController @Inject() (
     }
 
   def selectWS(roundId: Long, pageId: Long, select: Int): EssentialAction =
-    // a tile's vote, sent by script: JSON answers (401, 403 with the denial's reference, 409)
-    // that the gallery explains (vote-errors.js)
+    // a tile's vote, sent by script: JSON answers (401, 403 with the denial's reference, 409,
+    // 400 for a rate the round doesn't take) that the gallery explains (vote-errors.js). It
+    // changes only the juror's own selection of the file in the round (SelectionJdbc.rate): a
+    // file not assigned to them changes nothing and is a 404.
     withAuthJson(
       roundPermission(
         User.ADMIN_ROLES ++ User.JURY_ROLES ++ User.ORG_COM_ROLES,
         roundId
       )
     ) { user => implicit request =>
+    val round = Round.findById(roundId)
     // Votes only in a round open to its jurors: not in a stopped round, a previous round
     // frozen while a distribution reads its votes, or a round still being distributed.
-    if (!Round.findById(roundId).exists(_.openToJurors))
+    if (!round.exists(_.openToJurors))
       Conflict(play.api.libs.json.Json.obj("error" -> "round_closed"))
-    else {
-      SelectionJdbc.rate(
-        pageId = pageId,
-        juryId = user.getId,
-        roundId = roundId,
-        rate = select
-      )
+    else if (!round.exists(_.acceptsRate(select)))
+      BadRequest(play.api.libs.json.Json.obj("error" -> "invalid_rate"))
+    else if (SelectionJdbc.rate(pageId = pageId, juryId = user.getId, roundId = roundId, rate = select) == 0)
+      NotFound(play.api.libs.json.Json.obj("error" -> "not_found"))
+    else
       Ok("success")
-    }
   }
 
   def csvStream(lines: Seq[Seq[String]], filename: String): Result = {
@@ -447,16 +446,19 @@ class GalleryController @Inject() (
       country: Option[String], coi: Boolean = false): EssentialAction =
     withAuthOn(blocking)(contestPermission(User.ADMIN_ROLES ++ User.ORG_COM_ROLES, Some(contestId))) { user => implicit request =>
       contestFilesView(contestId, deleted, round, region, country, coi).fold(notFoundPage(user, _), { view =>
-        // two files before it, as a round's large view has them
-        val (files, offset) = view.list.fold((Seq.empty[ImageJdbc.StoredFile], 0)) { list =>
-          val offset = math.max(0, ImageJdbc.fileRank(list, view.region, pageId) - 2)
-          (ImageJdbc.listFiles(list, view.region, 5, offset), offset)
+        // two files before it and five in all to move among, as a round's large view has them,
+        // and on to the last one its strip of following files shows
+        val (read, offset) = view.list.fold((Seq.empty[ImageJdbc.StoredFile], 0)) { list =>
+          val offset = math.max(0, ImageJdbc.fileRank(list, view.region, pageId) - Neighbourhood.Side)
+          (ImageJdbc.listFiles(list, view.region, Neighbourhood.Side + 1 + Neighbourhood.Following, offset), offset)
         }
+        val files = read.take(Neighbourhood.Window)
         val index = files.indexWhere(_.image.pageId == pageId)
         if (index < 0) Redirect(view.pageUrl(1))
         else {
           val monument = files(index).image.monumentId.filter(_.trim.nonEmpty).flatMap(MonumentJdbc.find(_))
-          Ok(views.html.large.contestFile(user, view, files, index, Pager.pageOf(offset + index), monument))
+          val following = read.drop(index + 1).take(Neighbourhood.Following)
+          Ok(views.html.large.contestFile(user, view, files, index, following, Pager.pageOf(offset + index), monument))
         }
       })
     }

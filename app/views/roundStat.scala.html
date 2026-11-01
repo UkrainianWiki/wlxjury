@@ -3,6 +3,8 @@
 @(user: User, round: Round, stat: RoundStat)(implicit flash: Flash, messages: Messages, req: RequestHeader)
 
     @main("statistics", user, user.getId, Some(round), stat.rounds, gallery = false) {
+        @* the page's title, for screen readers: the navbar shows where it is *@
+        <h1 class="visually-hidden">@Messages("statistics")</h1>
 
         @if(user.canViewOrgInfo(round)) {
             <nav>

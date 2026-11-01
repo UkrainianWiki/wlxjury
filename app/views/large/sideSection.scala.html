@@ -1,0 +1,15 @@
+@(id: String, label: String, open: Boolean)(content: Html)(implicit messages: Messages)
+@* A collapsible section of a large view's side column (large.scala.html, contestFile.scala.html):
+   its heading is the button that shows and hides it (Bootstrap's collapse), open or not by
+   default as `open` says. large-sections.js keeps each section's state per viewer in the
+   browser, and the column's last script applies it before the column is painted. *@
+<section class="large-section">
+    <button type="button" class="large-section-toggle@if(!open) { collapsed}" data-bs-toggle="collapse"
+        data-bs-target="#@id" aria-expanded="@open" aria-controls="@id" data-large-section="@id">
+        <i class="bi bi-chevron-down" aria-hidden="true"></i>
+        @Messages(label)
+    </button>
+    <div id="@id" class="collapse@if(open) { show}">
+        @content
+    </div>
+</section>

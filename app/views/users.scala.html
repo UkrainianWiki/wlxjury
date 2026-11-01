@@ -12,12 +12,16 @@
     @mainAdmin("users", adminUser, adminUser.getId, contestId = contestOpt.flatMap(_.id)) {
         <div class="row">
 
+            @* the page's title: the contest's name, or for all the contests the page's *@
+            @if(contestOpt.isEmpty) {
+                <h1 class="visually-hidden">@Messages("users")</h1>
+            }
             @if(contests.nonEmpty) {
                 @contestsTable(contests)
             }
 
             @for(contest <- contestOpt) {
-                <h3>@Messages("contest") @contest.fullName</h3>
+                <h1 class="h3">@Messages("contest") @contest.fullName</h1>
 
                 @flash.get("users-added").map { msg =>
                     <div class="alert alert-info">@msg</div>
@@ -34,7 +38,7 @@
 
                 <thead>
                     <tr>
-                        <th width="5%">@Messages("N")</th>
+                        <th width="5%">@Messages("row.number")</th>
                         <th>@Messages("full.name")</th>
                         <th>@Messages("wiki.account")</th>
                         <th>@Messages("email")</th>

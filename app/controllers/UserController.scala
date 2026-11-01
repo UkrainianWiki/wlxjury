@@ -200,7 +200,7 @@ class UserController @Inject()(cc: ControllerComponents,
         formUser.password.nonEmpty
 
     if (formUser.email.nonEmpty && User.countByEmail(userId, formUser.email) > 0) {
-      badRequest(editUserForm.fill(formUser).withError("email", "email should be unique"))
+      badRequest(editUserForm.fill(formUser).withError("email", "error.email.already.exist"))
     } else if (accountChanged && !canEditAccount(user, editedUser)) {
       badRequest(editUserForm.fill(formUser).withGlobalError("user.in.other.contests"))
     } else {
@@ -250,7 +250,7 @@ class UserController @Inject()(cc: ControllerComponents,
     }
   }
 
-  /** The user menu's colour mode switch (logged.scala.html): a POST with the CSRF token
+  /** The navbar's colour mode switch (logged.scala.html): a POST with the CSRF token
     * that stores light, dark or auto in the signed-in user's own row and in the theme
     * cookie, then goes back to `returnTo`, a local path ([[Secured.safeLocalPath]]), else
     * the start page. Any signed-in user, root or without a contest too; the session's

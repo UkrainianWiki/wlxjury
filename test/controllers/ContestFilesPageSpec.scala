@@ -486,10 +486,10 @@ class ContestFilesPageSpec extends PlaySpecification with PlayTestDb {
         page must contain(s"""'down', function (e) { return wlxGo(e, "$files/5"); }""")
         page must contain(s"""'up', function (e) { return wlxGo(e, "$files/3"); }""")
         page must contain(s"""'esc', function (e) { return wlxGo(e, "$files"); }""")
-        // the files around it: 2 (Gone.jpg) to 6
+        // the strip: the files after it, 5 to 8; not it, nor those before it (2, Gone.jpg, and 3)
         """href="([^"]*)" title="File:File\d\.jpg"""".r.findAllMatchIn(page).map(_.group(1)).toList ===
-          List(3L, 4L, 5L, 6L).map(id => s"$files/$id")
-        page must contain(s"""href="$files/2" title="File:Gone.jpg"""")
+          List(5L, 6L, 7L, 8L).map(id => s"$files/$id")
+        page must not contain s"""href="$files/2" title="File:Gone.jpg""""
 
         val (_, first) = get(s"$files/1", f.admin)
         first must beMatching("""(?s).*<a [^>]*class="[^"]*\bdisabled\b[^"]*" aria-disabled="true" data-nav="up" href="#" title="Previous image.*""")
@@ -524,6 +524,9 @@ class ContestFilesPageSpec extends PlaySpecification with PlayTestDb {
         val (_, deleted) = get(s"$files/6?deleted=true", f.admin)
         button(deleted, "Previous image") must beSome(s"$files/5?deleted=true")
         button(deleted, "Next image") must beSome(s"$files/2?deleted=true")
+        // the deleted file after it, in the strip, marked so
+        deleted must contain("""class="thumb_small wlx-deleted"""")
+        deleted must contain(s"""href="$files/2?deleted=true" title="File:Gone.jpg"""")
       }
     }
 
@@ -539,7 +542,8 @@ class ContestFilesPageSpec extends PlaySpecification with PlayTestDb {
         // from the cache, not from Wikimedia, which no longer has it
         page must contain("""src="/wikipedia/commons/thumb/a/ab/Gone.jpg/""")
         page must not contain "upload.wikimedia.org/wikipedia/commons/thumb/a/ab/Gone.jpg"
-        page must contain("wlx-deleted")
+        // the only deleted file: none after it
+        page must not contain "thumb_small"
       }
     }
 

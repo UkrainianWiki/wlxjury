@@ -31,7 +31,7 @@ NAMES = [
     (r"^select count\(\*\) from selection", "list.count (COUNT(*))"),
     (r"^select COUNT\(DISTINCT s\.page_id\) from selection", "organiser list.count (COUNT DISTINCT)"),
     (r"select count\(t\.pi_on_i\)", "list.count (subquery)"),
-    (r"^select sum\(s\.rate\) as rate, count\(s\.rate\) as rate_count, i\.", "organiser files (grouped)"),
+    (r"^select sum\(s\.rate\) as rate, count\(s\.rate\) as rate_count, sum\(s\.rate > 0\) as approvals, i\.", "organiser files (grouped)"),
     (r"AS region, s\.rate, COUNT", "jurorCounts (region, rate)"),
     (r"AS region, SUM\(p\.hit\)", "organiser regionCounts"),
     (r"AS region, SUM\(", "regionCounts"),
