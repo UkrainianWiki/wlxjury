@@ -149,7 +149,7 @@ class RoundRedistributionFiltersSpec extends Specification with TestDb with Befo
       val inMemory = new DistributeImages(ImageJdbc)
       cases.zipWithIndex.map { case ((settings, expected), i) =>
         // a new round's submission stores the default order unless another is chosen
-        val submitted = settings.withExplicitTopOrder
+        val submitted = settings.withExplicitTopOrder(prevBinary = true)
         val reference = inMemory.imagesByRound(roundDao.create(submitted.copy(number = 99)), Seq(binary)).map(_.pageId).toSet
         Round.setActive(binary.getId, active = true)
         val round = service.createNewRound(settings, jurors.map(_.getId))
@@ -162,6 +162,25 @@ class RoundRedistributionFiltersSpec extends Specification with TestDb with Befo
           ((job.params \ "settings" \ "topBinaryOrder").asOpt[String] === submitted.topBinaryOrder.map(_.param)) and
           (service.newFilesCount(round.getId) === 0L)
       }.reduce(_ and _)
+    }
+
+    "store and record no binary order for a top-N from a rated previous round" in {
+      implicit val contest: ContestJury = createContests(1).head
+      val jurors = createUsers("jury", 1, 2)
+      addImages(contest, 1 to 3)
+      val service = TestRoundServices.roundService(TestRoundServices.handler(chunkRows = 3))
+      val source = Round(None, 0, Some("Source"), contest.getId, active = true, rates = Round.ratesById(5))
+      val rated = service.createNewRound(source, jurors.map(_.getId))
+      for ((pageId, rate) <- Seq(1L -> 2, 2L -> 5, 3L -> 3); juror <- jurors)
+        SelectionJdbc.rate(pageId, juror.getId, rated.getId, rate)
+      Round.setActive(rated.getId, active = true)
+      val top = source.copy(previous = Some(rated.getId.toString), topImages = Some(1),
+        topBinaryOrder = Some(BinaryOrder.Difference))
+      val round = service.createNewRound(top, jurors.map(_.getId))
+      val job = service.distributionJob(round.getId).get
+      (pageIds(round.getId) === Set(2L)) and
+        (roundDao.findById(round.getId).get.topBinaryOrder must beNone) and
+        ((job.params \ "settings" \ "topBinaryOrder").asOpt[String] must beNone)
     }
 
     "pick the top-N of a round from before V72 (no order stored) by the legacy rate-sum rule" in {

@@ -62,8 +62,9 @@ class RoundService @Inject() (
     submitToken.flatMap(submitted(_, round.contestId)) match {
       case Some(existing) => resubmitted(existing)
       case None =>
-        val configuredRound = round.withFixedCategories.withCanonicalCategoryRule.withExplicitTopOrder
-        RoundDistributionHandler.previousRounds(configuredRound)
+        val canonical = round.withFixedCategories.withCanonicalCategoryRule
+        val prevRounds = RoundDistributionHandler.previousRounds(canonical)
+        val configuredRound = canonical.withExplicitTopOrder(prevRounds.exists(_.isBinary))
         val jurors = User.loadJurors(round.contestId, jurorIds).distinct
         require(jurors.nonEmpty, "no jurors selected for the round; nothing to distribute")
         require(
@@ -150,6 +151,10 @@ class RoundService @Inject() (
     // checks for its active job under the round's lock (RoundConflicts.removeFromRound)
     Round.lock(round.previousIds :+ round.getId)
     val state = distribution.initialState(round, listOnly)
+    // the top-N's order only where it picks the files, from a yes/no previous round
+    val topOrder = round.topImages
+      .filter(_ => round.previousIds.nonEmpty && Round.findByIds(round.contestId, round.previousIds).exists(_.isBinary))
+      .map(_ => round.topOrderParam)
     jobs.enqueue(
       NewJob(
         kind = RoundDistributionHandler.Kind,
@@ -167,7 +172,7 @@ class RoundService @Inject() (
             "prevSelectedBy" -> round.prevSelectedBy,
             "prevMinAvgRate" -> round.prevMinAvgRate,
             "topImages" -> round.topImages,
-            "topBinaryOrder" -> round.topImages.map(_ => round.topOrderParam),
+            "topBinaryOrder" -> topOrder,
             "regions" -> round.regions,
             "monuments" -> round.monuments,
             "category" -> round.category,

@@ -34,7 +34,8 @@ object EditRound {
   /** Extra fields live outside the 22-field mapping: category operation, conflicts of interest
     * and the order of a top-N from a yes/no previous round, kept only with a top-N (an unknown
     * order is the default; the legacy rule's value, shown for a round from before V72, is none,
-    * which a new round's submission makes the default: [[Round.withExplicitTopOrder]]).
+    * which a new round's submission from a yes/no round makes the default:
+    * [[Round.withExplicitTopOrder]]).
     */
   private val categoryOperation = optional(text).verifying(
     "error.category.operation", _.forall(value => CategoryOperation.fromForm(value).isDefined))

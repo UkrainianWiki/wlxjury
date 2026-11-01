@@ -12,6 +12,10 @@
         specialNominations: Seq[SpecialNomination] = Nil
 )(implicit messages: Messages)
 @implicitLayout = @{ bs.Layout.horizontal("col-md-4", "col-md-8") }
+@prevIds = @{ editRoundForm("previousRound").indexes.flatMap(i => editRoundForm(s"previousRound[$i]").value) }
+@* a top-N's order picks files only from a yes/no previous round: offered until previous rounds
+   are chosen, then only with a yes/no one *@
+@topOrderApplies = @{ prevIds.isEmpty || rounds.exists(r => r.isBinary && r.id.exists(id => prevIds.contains(id.toString))) }
 @snippets.collapsible("media.filtering", "headingImageFiltering", "collapseImageFiltering") {
     @if(rounds.nonEmpty) {
         @* Use `disabled` rather than `readonly` for the multi-selects: a readonly
@@ -44,7 +48,7 @@
             @* the order that picks a top-N from a yes/no previous round, stored with the round, so
                its page shows which rule picked its files and a later distribution picks the same;
                the legacy rule only for a round from before V72 that has it *@
-            @if(editRoundForm("topImages").value.exists(_.nonEmpty)) {
+            @if(editRoundForm("topImages").value.exists(_.nonEmpty) && topOrderApplies) {
                 @bs.select(
                     editRoundForm("topBinaryOrder"),
                     BinaryOrder.all.map(order => (order.param, Messages(order.messageKey))) ++

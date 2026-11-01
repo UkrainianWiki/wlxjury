@@ -1,6 +1,6 @@
 package controllers
 
-import db.scalikejdbc.{Round, User}
+import db.scalikejdbc.{Rates, Round, User}
 import org.intracer.wmua.BinaryOrder
 import org.jsoup.Jsoup
 import play.api.test.{Helpers, PlaySpecification}
@@ -23,13 +23,17 @@ class TopBinaryOrderChoiceSpec extends PlaySpecification {
     EditRound.editRoundForm.bind(base ++ fields).get.round.topBinaryOrder
 
   /** The choices (value, text) and the selected value, for a round stored with these. */
-  private def choices(topImages: Option[Int], order: Option[BinaryOrder]): (Seq[(String, String)], Seq[String]) = {
+  private def choices(
+      topImages: Option[Int],
+      order: Option[BinaryOrder],
+      previousRates: Rates = Round.binaryRound
+  ): (Seq[(String, String)], Seq[String]) = {
     val round = new Round(id = Some(2), number = 2, name = Some("Final"), contestId = 1, rates = Round.binaryRound,
       previous = Some("1"), topImages = topImages, topBinaryOrder = order)
     val form = EditRound.editRoundForm.fill(EditRound(round, Seq(1L), None))
+    val previous = round.copy(id = Some(1), previous = None, rates = previousRates)
     val html = views.html.round.edit
-      .imageFiltering(form, Seq(round.copy(id = Some(1), previous = None)), Map.empty, User("u", "e@e", Some(1L)),
-        noEdit = true)
+      .imageFiltering(form, Seq(previous), Map.empty, User("u", "e@e", Some(1L)), noEdit = true)
       .body
     val options = Jsoup.parse(html).select("#selectFilters select#topBinaryOrder option").asScala.toSeq
     (options.map(o => o.attr("value") -> o.text), options.filter(_.hasAttr("selected")).map(_.attr("value")))
@@ -57,6 +61,10 @@ class TopBinaryOrderChoiceSpec extends PlaySpecification {
     "not be offered without a top-N" in {
       choices(None, None)._1 must beEmpty
     }
+
+    "not be shown for a top-N from a rated previous round, where no order picks the files" in {
+      choices(Some(10), None, previousRates = Round.ratesById(5))._1 must beEmpty
+    }
   }
 
   "the top-N order field" should {
@@ -67,11 +75,12 @@ class TopBinaryOrderChoiceSpec extends PlaySpecification {
         (bound("topImages" -> "5", "topBinaryOrder" -> "nosuch") must beSome(BinaryOrder.Default))
     }
 
-    "read the legacy rule as none, which a new round's submission makes the default" in {
+    "read the legacy rule as none, which a new round's submission from a yes/no round makes the default" in {
       val legacy = EditRound.editRoundForm.bind(base ++ Seq("topImages" -> "5", "topBinaryOrder" -> "legacy")).get.round
       (legacy.topBinaryOrder must beNone) and
-        (legacy.withExplicitTopOrder.topBinaryOrder must beSome(BinaryOrder.Default)) and
-        (legacy.copy(topImages = None).withExplicitTopOrder.topBinaryOrder must beNone)
+        (legacy.withExplicitTopOrder(prevBinary = true).topBinaryOrder must beSome(BinaryOrder.Default)) and
+        (legacy.copy(topImages = None).withExplicitTopOrder(prevBinary = true).topBinaryOrder must beNone) and
+        (legacy.withExplicitTopOrder(prevBinary = false).topBinaryOrder must beNone)
     }
   }
 }
