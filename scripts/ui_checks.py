@@ -70,9 +70,16 @@ PIXEL = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQV
 
 
 def block_commons(ctx):
-    ctx.route("**/*", lambda r: r.fulfill(status=200, content_type="image/png", body=PIXEL)
-              if ("/wikipedia/commons/" in r.request.url or "wikimedia.org" in r.request.url)
-              else r.continue_())
+    """Images from Commons and the image proxy get the pixel; any other host is refused, as in
+    ui-shots.py: the pages load everything from the app's own host."""
+    def route(r):
+        url = urlparse(r.request.url)
+        if "/wikipedia/commons/" in url.path or (url.hostname or "").endswith("wikimedia.org"):
+            return r.fulfill(status=200, content_type="image/png", body=PIXEL)
+        if url.hostname in ("localhost", "127.0.0.1"):
+            return r.continue_()
+        return r.abort()
+    ctx.route("**/*", route)
 
 
 def vote_then_back(ctx, base, path, keys):

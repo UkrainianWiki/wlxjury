@@ -77,6 +77,18 @@ MARKS_JS = """
 """
 
 
+# A shot's script for the pages with category fields: logs how many of them category-suggest.js
+# made Tom Select controls, and a console error if one isn't (Tom Select not loaded, say).
+SUGGEST_JS = """
+(() => {
+  const fields = document.querySelectorAll('[data-category-suggest]').length;
+  const controls = document.querySelectorAll('.ts-wrapper.wlx-category-suggest, [data-category-suggest].tomselected').length;
+  console.log(`check: ${controls} of ${fields} category fields are Tom Select controls`);
+  if (controls < fields) console.error(`check: ${fields - controls} category fields without their Tom Select control`);
+})();
+"""
+
+
 def stars_js(number=None):
     """A large-rated shot's script: redraws raty with `number` stars (the fixture's round has
     ten; 20 is the most a round can have, a 1-20 round without half stars), then logs a
@@ -122,6 +134,9 @@ def pages(s):
         ("editround", "organizer", f"/admin/rounds/edit?id={rb}&contestId={c}"),
         ("users", "organizer", f"/admin/users?contestId={c}"),
         ("edituser", "organizer", f"/users/edit/{j}"),
+        # the category fields' suggestions (category-suggest.js, on Tom Select)
+        ("contests", "root", "/contests", [], SUGGEST_JS),
+        ("contest-images", "organizer", f"/contest/{c}/images", [], SUGGEST_JS),
         # menus and dropdowns opened
         ("gallery-pagerbox", "juror", f"/gallery/round/{rb}/user/{j}/page/1", [".pager-range"]),
         ("gallery-usermenu", "juror", f"/gallery/round/{rb}/user/{j}/page/1",
@@ -270,7 +285,7 @@ def shoot_mode(args, mode):
             failed, notes = [], []
             # a shot script's own summary (stars_js)
             page.on("console", lambda m: notes.append(m.text[:200])
-                    if m.type == "log" and m.text.startswith("stars:") else None)
+                    if m.type == "log" and m.text.startswith(("stars:", "check:")) else None)
             assets = loaded.setdefault(name, [])
             page.on("request", lambda r, assets=assets: assets.append(urlparse(r.url).path)
                     if r.resource_type in ("script", "stylesheet") and urlparse(r.url).hostname in ALLOWED_HOSTS
