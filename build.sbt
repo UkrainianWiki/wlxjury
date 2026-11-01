@@ -191,6 +191,8 @@ libraryDependencies ++= Seq(
   // ImageIO needs a WebP reader to resize Commons images for the thumbnail cache.
   "com.twelvemonkeys.imageio" % "imageio-webp" % "3.15.0",
   "uk.org.lidalia" % "sysout-over-slf4j" % "1.0.2",
+  // Password hashes (services.PasswordHasher): bcrypt $2b$, cost from password.bcrypt.cost
+  "at.favre.lib" % "bcrypt" % "0.10.2",
   "javax.xml.bind" % "jaxb-api" % "2.3.1",
   "com.softwaremill.sttp.tapir" %% "tapir-core" % TapirVersion,
   "com.softwaremill.sttp.tapir" %% "tapir-pekko-http-server" % TapirVersion excludeAll (
