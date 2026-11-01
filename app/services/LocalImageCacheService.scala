@@ -19,7 +19,7 @@ import java.nio.charset.StandardCharsets.UTF_8
 import java.nio.file.{Files, Path, StandardCopyOption}
 import scala.jdk.CollectionConverters._
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.{AtomicBoolean, AtomicInteger, AtomicReference}
 import javax.imageio.ImageIO
 import javax.inject.{Inject, Singleton}
 import scala.concurrent.duration._
@@ -356,50 +356,63 @@ class LocalImageCacheService(
       tracker: ConcurrentHashMap[Long, CacheProgress],
       key: Long,
       logLabel: String
-  ): Future[Unit] = registryReady.flatMap { _ =>
-    val toDownload = images.filterNot(allSizesCached)
-    logger.info(s"$logLabel: ${images.size} images total, ${images.size - toDownload.size} already cached, ${toDownload.size} to download")
+  ): Future[Unit] = {
+    // This run's progress is written only while the run goes on and no other run has
+    // written it since (a newer run's start): a download still in flight when the stream
+    // failed, finishing after it, leaves the progress stopped.
+    val last  = new AtomicReference[CacheProgress](tracker.get(key))
+    val ended = new AtomicBoolean(false)
+    def update(next: CacheProgress => CacheProgress, end: Boolean = false): Unit =
+      tracker.compute(key, (_, prev) =>
+        if (ended.get || (prev ne last.get)) prev
+        else {
+          val progress = next(prev)
+          last.set(progress)
+          if (end) ended.set(true)
+          progress
+        })
 
-    // Start the clock only after the scan, so elapsed/rate/ETA reflect download time only.
-    val startMs = System.currentTimeMillis()
-    val total   = toDownload.size
-    val done    = new AtomicInteger(0)
-    val counts  = new FailureCounts
+    registryReady.flatMap { _ =>
+      val toDownload = images.filterNot(allSizesCached)
+      logger.info(s"$logLabel: ${images.size} images total, ${images.size - toDownload.size} already cached, ${toDownload.size} to download")
 
-    def mkProgress(d: Int, running: Boolean): CacheProgress = {
-      val elapsed = System.currentTimeMillis() - startMs
-      val rate    = if (elapsed > 0) d * 1000.0 / elapsed else 0.0
-      val eta     = if (rate > 0) ((total - d) / rate).toLong else 0L
-      CacheProgress(d, total, counts.errors.get, running,
-        startedAtMs = startMs, elapsedMs = elapsed, ratePerSec = rate, etaSeconds = eta,
-        renamed = counts.renamed.get, deleted = counts.deleted.get)
+      // Start the clock only after the scan, so elapsed/rate/ETA reflect download time only.
+      val startMs = System.currentTimeMillis()
+      val total   = toDownload.size
+      val done    = new AtomicInteger(0)
+      val counts  = new FailureCounts
+
+      def mkProgress(d: Int, running: Boolean): CacheProgress = {
+        val elapsed = System.currentTimeMillis() - startMs
+        val rate    = if (elapsed > 0) d * 1000.0 / elapsed else 0.0
+        val eta     = if (rate > 0) ((total - d) / rate).toLong else 0L
+        CacheProgress(d, total, counts.errors.get, running,
+          startedAtMs = startMs, elapsedMs = elapsed, ratePerSec = rate, etaSeconds = eta,
+          renamed = counts.renamed.get, deleted = counts.deleted.get)
+      }
+
+      update(_ => mkProgress(0, running = true))
+
+      // Those scaled from a cached size don't ask Wikimedia: first, and not throttled.
+      val (local, remote) = toDownload.partition(image => localSourceFile(image).isDefined)
+      Source(local)
+        .concat(Source(remote).throttle(ratePerSec, 1.second))
+        .mapAsyncUnordered(parallelism) { image =>
+          downloadAndResize(image)
+            .recoverWith { case ex => afterFailedDownload(image, ex, counts) }
+            .map { _ =>
+              val d = done.incrementAndGet()
+              update(_ => mkProgress(d, running = true))
+            }
+        }
+        .runWith(Sink.ignore)
+        .map(_ => update(_ => mkProgress(done.get, running = false), end = true))
+    }.recover { case NonFatal(ex) =>
+      // the registry, the scan or the stream failed: stop showing it as running
+      logger.error(s"$logLabel: download failed", ex)
+      update(prev => Option(prev).getOrElse(CacheProgress(0, 0, 0, running = false)).copy(running = false, failed = true),
+        end = true)
     }
-
-    tracker.put(key, mkProgress(0, running = true))
-
-    // Those scaled from a cached size don't ask Wikimedia: first, and not throttled.
-    val (local, remote) = toDownload.partition(image => localSourceFile(image).isDefined)
-    Source(local)
-      .concat(Source(remote).throttle(ratePerSec, 1.second))
-      .mapAsyncUnordered(parallelism) { image =>
-        downloadAndResize(image)
-          .recoverWith { case ex => afterFailedDownload(image, ex, counts) }
-          .map { _ =>
-            val d = done.incrementAndGet()
-            tracker.put(key, mkProgress(d, running = true))
-          }
-      }
-      .runWith(Sink.ignore)
-      .map { _ =>
-        tracker.put(key, mkProgress(done.get, running = false))
-        ()
-      }
-  }.recover { case NonFatal(ex) =>
-    // the registry, the scan or the stream failed: stop showing it as running
-    logger.error(s"$logLabel: download failed", ex)
-    tracker.compute(key, (_, prev) =>
-      Option(prev).getOrElse(CacheProgress(0, 0, 0, running = false)).copy(running = false, failed = true))
-    ()
   }
 
   private final class FailureCounts {
@@ -508,7 +521,7 @@ class LocalImageCacheService(
   /** Caches the target sizes of the image: scaled from a cached one if it can be
     * ([[localSource]]), else downloaded from Wikimedia.
     */
-  private def downloadAndResize(image: Image): Future[Unit] =
+  private[services] def downloadAndResize(image: Image): Future[Unit] =
     Future(localSource(image)).flatMap {
       case Some((localPx, localImg)) =>
         saveResized(image, localImg, localPx)

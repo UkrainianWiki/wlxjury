@@ -564,6 +564,49 @@ class LocalImageCacheServiceSpec extends Specification {
       tmpDir.delete()
       ok
     }
+
+    "stay stopped when a download in flight finishes after the stream failed" in {
+      val tmpDir = Files.createTempDirectory("contest-cache-late").toFile
+      val slow = scala.concurrent.Promise[Unit]()
+      val svc = new LocalImageCacheService(mkConfig(tmpDir), system) {
+        override private[services] def downloadAndResize(image: Image) =
+          if (image.pageId == 1L) slow.future else throw new IllegalStateException("fails the stream")
+      }
+
+      // the first is in flight when the second fails the stream
+      Await.result(svc.runDownload(7L, Seq(mkImage(1, filename = "Slow.jpg"), mkImage(2, filename = "Fails.jpg"))),
+        30.seconds)
+      svc.progress(7L).running must beFalse
+      slow.success(())
+      Thread.sleep(200)
+
+      svc.progress(7L).running must beFalse
+      svc.progress(7L).failed must beTrue
+      svc.progress(7L).done === 0
+      tmpDir.delete()
+      ok
+    }
+
+    "not overwrite a newer run's progress with a late update" in {
+      val tmpDir = Files.createTempDirectory("contest-cache-newer").toFile
+      val slow = scala.concurrent.Promise[Unit]()
+      val svc = new LocalImageCacheService(mkConfig(tmpDir), system) {
+        override private[services] def downloadAndResize(image: Image) = slow.future
+      }
+
+      val run = svc.runDownload(8L, Seq(mkImage(1, filename = "Slow.jpg")))
+      val deadline = System.currentTimeMillis() + 5000L
+      while (!svc.progress(8L).running && System.currentTimeMillis() < deadline) Thread.sleep(20)
+      // a newer run's start, as startDownload writes it
+      val newer = CacheProgress(0, 42, 0, running = true)
+      svc.progressMap.put(8L, newer)
+      slow.success(())
+      Await.result(run, 30.seconds)
+
+      svc.progress(8L) === newer
+      tmpDir.delete()
+      ok
+    }
   }
 
   // ── registry ─────────────────────────────────────────────────────────────
