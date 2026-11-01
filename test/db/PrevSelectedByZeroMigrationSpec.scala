@@ -7,9 +7,8 @@ import org.specs2.specification.{BeforeAll, BeforeEach}
 import _root_.scalikejdbc._
 import java.nio.file.{Files, Paths}
 
-/** V73: "selected by at least 0" on a round with no previous round, never read there, becomes
-  * NULL (no filter); a 0 with a previous round (files with an unrated vote) and every other
-  * value stay. Rerunning it changes nothing.
+/** V73: "selected by at least 0", the old form's way of saying no filter, becomes NULL, with
+  * or without a previous round; every other value stays. Rerunning it changes nothing.
   */
 class PrevSelectedByZeroMigrationSpec extends Specification with TestDb with BeforeAll with BeforeEach {
   sequential
@@ -18,14 +17,14 @@ class PrevSelectedByZeroMigrationSpec extends Specification with TestDb with Bef
 
   private def migrate(): Unit = {
     val sql = new String(Files.readAllBytes(Paths.get(
-      "conf/db/migration/default/V73__Rounds_prev_selected_by_zero_without_previous.sql")), "UTF-8")
+      "conf/db/migration/default/V73__Rounds_prev_selected_by_zero_to_null.sql")), "UTF-8")
     val statements = sql.linesIterator.filterNot(_.trim.startsWith("--")).mkString("\n")
       .split(";").map(_.trim).filter(_.nonEmpty)
     DB.autoCommit { implicit session => statements.foreach(statement => SQL(statement).execute.apply()) }
   }
 
   "the migration" should {
-    "set 0 to NULL only without a previous round, and change nothing when run again" in {
+    "set every 0 to NULL, and change nothing when run again" in {
       implicit val contest: ContestJury = createContests(1).head
       def round(n: Long, previous: Option[String], selectedBy: Option[Int]) =
         roundDao.create(Round(None, n, Some(s"Round $n"), contest.getId, previous = previous,
@@ -45,12 +44,12 @@ class PrevSelectedByZeroMigrationSpec extends Specification with TestDb with Bef
 
       migrate()
       val after = stored
-      after.map(_.prevSelectedBy) === Seq(None, None, None, Some(0), Some(2), Some(3), None, None)
-      after.map(_.previous) === rounds.map(_.previous)
-      after.map(_.name) === rounds.map(_.name)
+      val once = (after.map(_.prevSelectedBy) === Seq(None, None, None, None, Some(2), Some(3), None, None)) and
+        (after.map(_.previous) === rounds.map(_.previous)) and
+        (after.map(_.name) === rounds.map(_.name))
 
       migrate()
-      stored.map(_.prevSelectedBy) === after.map(_.prevSelectedBy)
+      once and (stored.map(_.prevSelectedBy) === after.map(_.prevSelectedBy))
     }
   }
 }
