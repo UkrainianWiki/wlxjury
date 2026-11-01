@@ -195,15 +195,13 @@ libraryDependencies ++= Seq(
   "uk.org.lidalia" % "sysout-over-slf4j" % "1.0.2",
   "javax.xml.bind" % "jaxb-api" % "2.3.1",
   "com.softwaremill.sttp.tapir" %% "tapir-core" % TapirVersion,
-  "com.softwaremill.sttp.tapir" %% "tapir-pekko-http-server" % TapirVersion excludeAll (
-    ExclusionRule("org.apache.pekko", "pekko-stream_2.13"),
-    ExclusionRule("org.apache.pekko", "pekko-slf4j_2.13"),
-    ExclusionRule("org.apache.pekko", "pekko-http_2.13"),
-    ExclusionRule("org.apache.pekko", "pekko-http-caching_2.13")
+  // the REST API (api.ApiRouter) on Play's own server, through its filters; Play's Pekko
+  // HTTP server stays out (the app runs on Netty)
+  "com.softwaremill.sttp.tapir" %% "tapir-play-server" % TapirVersion excludeAll (
+    ExclusionRule("org.playframework", "play-pekko-http-server_2.13")
   ),
   "com.softwaremill.sttp.tapir" %% "tapir-json-play" % TapirVersion,
   "com.softwaremill.sttp.tapir" %% "tapir-swagger-ui-bundle" % TapirVersion,
-  "com.github.pjfanning" %% "pekko-http-play-json" % "2.0.0",
   guice,
   filters,
   specs2 % Test,
@@ -217,7 +215,6 @@ libraryDependencies ++= Seq(
   "net.java.dev.jna" % "jna" % "4.5.0" % Test,
   "net.java.dev.jna" % "jna-platform" % "4.5.0" % Test,
   "com.lihaoyi" %% "os-lib" % "0.11.4" % Test,
-  "org.apache.pekko" %% "pekko-http-testkit" % PekkoHttpVersion % Test,
   "org.apache.pekko" %% "pekko-stream-testkit" % PekkoVersion % Test,
   "org.scalameta" %% "munit" % MunitVersion % Test,
   "io.gatling.highcharts" % "gatling-charts-highcharts" % GatlingVersion % Test,

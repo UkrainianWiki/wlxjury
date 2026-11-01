@@ -112,6 +112,9 @@ GET         /contest/:id/round/:rid/images/cache/status                         
 
 GET         /thumb_urls/:contestId                                                  controllers.GalleryController.thumbnailUrls(contestId: Long, roundId: Option[Long] ?= None)
 
+# The REST API (api.Api): personal API tokens (Authorization: Bearer) or the session; Swagger UI at /api/docs
+->          /api                                                                    api.ApiRouter
+
 #GET         /round/:round/:region                                controllers.Gallery.round2(region: String, round:Int)
 #GET         /largeRound/:round/:region/:pageid                    controllers.Gallery.largeRound2(region: String, pageid:Int, round:Int)
 #GET         /selectRound/:round/:region/:pageId                  controllers.Gallery.selectRound2(region: String, pageId:Long, round:Int)
