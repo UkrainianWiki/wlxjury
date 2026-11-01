@@ -174,8 +174,14 @@ It is from reading the code and the fixture DB (round 1: 20 jurors, 38,366 files
    Form part done (1a2564a9): no plain 0 among the choices, the empty one "Any number of
    approvals (no filter)" (`selected.by.any.number`, stored as NULL), a stored 0 shown only for
    a round that has it, as "0 (legacy: files with an unrated vote)", selected, so a resubmit
-   keeps it; a stored 0 behaves as before. The 0 → NULL migration still waits for the
-   production check.
+   keeps it; a stored 0 behaves as before.
+   After the production check (see Left): 0 stays where it is read and is named as what it
+   does. V73 (20ec880b) sets it to NULL only on a round with no previous round, where no
+   distribution path reads it (`DistributeImages` in memory and per chunk, the streamed job's
+   `rated`, top-N and windows: all only with a previous round), so nothing changes. The form
+   (a86b97ac) offers, for every round, "" "Any number of approvals (no filter)", then 0 "Files
+   with an unrated vote (e.g. after a reject-only screening)" (`selected.by.unrated`), then
+   1-6, with a help saying 0 is not "no filter". Nothing left for decision 4.
 5. File list and CSV for all jurors: paged (the CSV streamed), as proposed.
 
 ## Order of work
@@ -336,10 +342,12 @@ An independent review of `a9f562a4..443ac143` found only low issues:
     - Empty rounds otherwise (614, 619, 624, 627, 645, 957, 992, 1182); the previous round
       deleted (603, 605, 616, 669, 670, 1144); the same either way (593, 1052, 1615, 673);
       tests (815, 839, 840, 1009, 1260, 1728).
-  So 0 can't become NULL wholesale: 958 is a main round that relies on it. Proposed: a V73
-  setting NULL only without a previous round (no change in behaviour); keep 0 elsewhere,
-  and name it in the form as what it does (files with an unrated vote, e.g. after a
-  reject-only screening) rather than "legacy", possibly as a choice for new rounds too.
+  So 0 can't become NULL wholesale: 958 is a main round that relies on it. Done: V73
+  (20ec880b) sets NULL only without a previous round (no change in behaviour; a
+  distribution test shows such a round fills the same with 0 and NULL); 0 is kept for rounds
+  with a previous round and named in the form (a86b97ac) as "Files with an unrated vote
+  (e.g. after a reject-only screening)", a choice for new rounds too. Nothing left for
+  decision 4.
 - Measured (review item 4) on 533c4b88, the UI fixture server (38,366 files, ~383k votes, 20
   jurors; 1 GB heap, Windows, MariaDB 10.6 in Docker), organiser session, 1 warm-up then 5
   timed GETs each (raw: `target/checks/aggregate-timing-533c4b88.json`):
