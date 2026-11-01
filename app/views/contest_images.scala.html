@@ -7,7 +7,8 @@
 )(implicit flash: Flash, messages: Messages, req: RequestHeader)
     @import helper._
 
-    @mainAdmin("contest.files", user, user.getId, contestId = contest.id) {
+    @* the source's Commons suggestions (category-suggest.js) are a Tom Select control *@
+    @mainAdmin("contest.files", user, user.getId, contestId = contest.id, head = snippets.tomSelectScripts()) {
         <h1 class="h3">@Messages("contest") @contest.fullName</h1>
         <p><a id="browse-files" href="@routes.GalleryController.contestFiles(contest.getId)">&larr; @Messages("contest.files")</a></p>
 

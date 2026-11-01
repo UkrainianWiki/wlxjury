@@ -1,6 +1,5 @@
 @()
 @* Tom Select and multi-select.js, for the multiple selects of editRound and monuments. Goes in
    the shell's `head`. *@
-<link rel="stylesheet" href="@routes.WebJars.at("tom-select/2.6.2/dist/css/tom-select.bootstrap5.min.css")">
-<script src="@routes.WebJars.at("tom-select/2.6.2/dist/js/tom-select.complete.min.js")"></script>
+@tomSelectScripts()
 <script src="@routes.Assets.versioned("javascripts/multi-select.js")"></script>
