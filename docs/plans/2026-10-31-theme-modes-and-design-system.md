@@ -689,3 +689,113 @@ checked by `ThemeViewSpec` for every shell.
   `byrate-viewmenu` are a regular three-column grid in both modes, each tile with its stars and
   rate below it and no stray text. The fixture's all-jurors by-rate view has no rank, so the
   rank text itself is empty there.
+
+## Phase 4 results (cleanup)
+
+Commits `4760b4b7..` on `ukwikidev/theme-modes` (after `7b9c0776`). Not yet reviewed.
+
+### What changed
+
+- **Inline styles (item 8):** 51 `style="..."` attributes in `app/views` before, 6 after. The
+  large views' layout is `main.css` classes (`.large-view`, `.large-side` = the 220px column,
+  `.large-main`, `.large-nav`, `.large-box` / `.large-line` for the side column's boxes and
+  lines) and Bootstrap utilities (`h-100`, `mw-100 mh-100` for the image, `d-none` for the
+  vote form, `me-1`, `mt-1`, `my-1 mx-auto`); `layout` puts `h-100` on `<html>` and `<body>`
+  instead of `height: 100%`. Elsewhere: `d-inline`, `d-none` (editRound's hidden jurors
+  select, editUser's hidden reset form; no script shows either), `text-center`, `.rate-stars`,
+  `.tile-anchor`, `.form-action-wide` (the 25% Save/Cancel), `mb-2`. `main`'s `margin: 0` on
+  `container-fluid` was a no-op and is gone; `pageLinks`' unused `style` parameter is gone.
+  **Kept, on purpose:** the two `#gallery` `display:none` (unitegallery builds from the hidden
+  list; `ContestFilesPageSpec` checks it), `jobStatus`' two forms (`job-status.js` toggles
+  `style.display`, its Jest test reads it), `#prevRoundFilters` (jQuery `show()`/`hide()`,
+  which `d-none`'s `!important` would defeat), and the pager box's width computed from the
+  page count (`GalleryOrderSpec`). Margins of 5px became 4px utilities in three places
+  (`mt-1`, `me-1`, `my-1`), not visible; 10px ones kept their value in classes.
+- **Stars:** raty uses `starType: 'i'` with Bootstrap Icons (`bi-star-fill`, `bi-star-half`,
+  `bi-star`, cancel `bi-x-circle` / `bi-x-circle-fill`), set once as raty defaults in
+  `large/raty.scala.html`; the per-star image options and the images path are gone, the vote
+  callbacks (`voteLarge(prefix + score + query)`) are unchanged. New theme variable
+  `--wlx-star` (#a36a00 light: 4.5:1 on white, 3.5:1 on the image grey; #ffc107 dark: 8:1 on
+  the image grey); `.wlx-star` is 1rem, so ten stars and the cancel icon fit the side column
+  on one line (`.large-stars { white-space: nowrap }`); a round with more than ten stars
+  (1-11 .. 1-20 without half stars) gets `.many-stars` (0.6875rem). The cancel icon is the
+  secondary text colour, red while hovered. `showStar` renders the `<i>` itself (full / half /
+  empty, the same arithmetic as before) for `showRate` and both by-rate galleries. Removed:
+  the ten `star-*`/`cancel-*` PNGs and `jquery.raty.css` (its raty font files were never in
+  the repo). `AssetDigestSpec`'s `images/star.png` is its own temp file, not the asset.
+- **Buttons (item 11):** the large views' navigation buttons `btn-secondary` →
+  `btn-outline-secondary` (select/reject keep green/red: vote semantics); contests' import and
+  add were `<div class="btn btn-primary" onClick>` → real buttons (import a submit, add a
+  `type="button"` submitting the form by name, as add-user does, since that form can't wrap a
+  table row); rounds' "Add round" was a link around a div whose `onClick` submitted a form
+  that isn't on the page → `<a class="btn btn-primary">`; users' "Mass import" and "Edit
+  greeting message" (primary divs inside links) → `a.btn-outline-secondary`; contest images'
+  "Update monuments" (a second primary in the import form) → outline-secondary; the greeting
+  template's "Check" `btn-info` → outline-secondary; start/stop of a round or juror
+  `btn-danger`/`btn-success` → `btn-outline-secondary` (stopping is reversible, not
+  destructive; the icon and the Yes/No text show the state); `snippets/button` was a
+  `<button>` inside an `<a>` → one `a.btn`. Left as they are: one primary per form (sign in,
+  sign up, sign out, save, import, add user, submit comment, the pager's Go, access denied's
+  suggestion, the error page's sign in); the by-rate galleries' green check buttons of a 1-2
+  round (they show a rate, see open questions). No JS builds button markup.
+- **Widths (item 13):** `mainAdmin`'s content is `container-xxl` (full width up to 1400px,
+  then 1320px) for every admin page. Forms keep their own column widths (`col-md-4`,
+  `col-md-6 offset-md-3`, the horizontal layout's columns), so `container-lg` wasn't needed to
+  keep them readable, and one container class keeps the rule simple. Galleries, by-rate, file
+  list, contest files, round statistics and both large views stay full width; fileList's
+  nested `.container` is gone. A table placed directly in a `.row` (contests, rounds, users,
+  round statistics) sat at the page's edge (the row's negative margin; Bootstrap's gutter
+  padding doesn't apply to a collapsed-border table): `.row > .table` gets the gutter as
+  margin, so it lines up with the heading above it.
+- **Small fixes:** rounds' first `.row` was closed only when there were rounds; the unused
+  `tabbedSelection.scala.html` is deleted.
+
+### Checks
+
+| Command | Exit | Result |
+|---|---|---|
+| `Test/compile` | 0 | |
+| `FIXTURES_UPDATE=true … testOnly views.LargeViewFixturesSpec` | 0 | 4 passed; the four large-view fixtures rewritten (classes, raty options, no `jquery.raty.css`) |
+| `npm test` (javascript-test) | 0 | 9 suites, 124 tests (5 new in `large-view-keys.test.js`: raty draws five `bi-star` icons and the cancel icon, no `<img>`; clicking stars 1, 3, 5 posts the vote form with that score; the cancel icon posts 0) |
+| `testOnly views.* controllers.*` | 1 | 493 total, 1 failed: `ContestFilesPageSpec` looked for `<body class="gallery"` (now `gallery h-100`); assertion updated |
+| `testOnly controllers.ContestFilesPageSpec` | 0 | 26 passed |
+| **full suite**: `Test/compile` + `test` (branch gate) | 0 | **1122 total, 0 failed, 0 errors** (1116 passed, 6 skipped, 1 pending); Jest within it 124 passed |
+
+The `.row > .table` rule (CSS only, added after the full suite) was checked by screenshots,
+not by a test run.
+
+### Screenshots
+
+`shoot --label phase4 --mode light,dark --start-server --csp` (no other JVM), 25 shots per
+mode, every page in the mode asked for, no CSP violation; the only console errors are the two
+404 pages' own status. `diff phase3-fix phase4`: 18 of 25 differ in each mode, all explained:
+
+- `large`, `large-rated`, `contestfile-large(-marks)`: the outlined navigation buttons;
+  `large-rated`: ten icon stars and the cancel icon on one line in both modes (were two lines
+  of PNGs, the "off" ones solid white in dark); the thumbnails start higher by the saved line.
+- `byrate`, `byrate-viewmenu`: icon stars (amber on the light grey, yellow on the dark), the
+  "off" ones outlined. The rank line is narrower than with the old 24px PNGs, so a tile is as
+  wide as its thumbnail and the grid has four columns instead of three (page 1320 → 1061px).
+- `users(-usermenu)`, `rounds`, `editround*`, `edituser`, `login`, `error404-anon`
+  (mainAdmin): full width at 1366px (`container-xxl`) instead of 1140px; tables aligned with
+  their headings; users' two outlined buttons; rounds' outlined start/stop; forms keep their
+  column widths (editround's help text wraps less, so `editround-new-prevround` is 24px
+  shorter).
+- `roundstat`: the table inside the page's gutter; outlined start/stop.
+- `filelist`: full width without the nested container.
+- identical: `gallery*`, `contestfiles*`, `error404`.
+
+### Open questions
+
+- Icon-only buttons without a text label: start/stop (rounds, round statistics) has no
+  `title` or `aria-label`; adding them needs message keys.
+- The by-rate galleries of a 1-2 round show the rate as green `<button>`s that do nothing; an
+  icon would be more honest, but it is a rate display, left alone here.
+- `galleryByRateRegions` draws `rates.id / 2` stars whatever the half-star setting, and
+  `galleryByRate` uses `numberOfStars`, which multiplies by the criteria count; both predate
+  this phase.
+- Page titles: admin pages use `h3`, the error page `h4`, galleries none; one level (e.g.
+  `h1.h3`) would be a template-wide change.
+- fileList's content (inside its `.row`) starts at the page's edge, and it prints its HTML
+  comment line (`<!-- Round … -->`) as visible text in the `contenteditable` block meant for
+  copying into a wiki page; both unchanged.

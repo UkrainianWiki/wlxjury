@@ -285,3 +285,12 @@ a:has(> .btn) { text-decoration: none; }
 
 /* the round and user forms' Save and Cancel (snippets/submit, snippets/button) */
 .form-action-wide { width: 25%; }
+
+/* a table directly in a .row (admin pages, round statistics): in line with the headings above
+   it. Bootstrap's gutter padding for a row's children doesn't apply to a table with collapsed
+   borders, so the row's negative margin took it to the page's edge */
+.row > .table {
+    margin-left: calc(var(--bs-gutter-x) * .5);
+    margin-right: calc(var(--bs-gutter-x) * .5);
+    width: calc(100% - var(--bs-gutter-x));
+}
