@@ -26,6 +26,7 @@ function voteErrorMessage(status, body, texts) {
     if (status === 403 && error !== "forbidden") return texts.expired;
     if (status === 409) return texts.closed;
     if (status === 400 && error === "invalid_rate") return texts.invalidRate;
+    if (status === 404 && error === "not_found") return texts.notFound;
     return reference ? texts.failed + " " + texts.reference.replace("{0}", reference) : texts.failed;
 }
 
@@ -39,6 +40,7 @@ function voteErrorTexts(el) {
         expired: text("expired", "This page has expired. Reload it and vote again."),
         closed: text("closed", "This round is closed for voting."),
         invalidRate: text("invalid-rate", "This round doesn't take that rate. Reload the page and vote again."),
+        notFound: text("not-found", "This file is no longer assigned to you. Reload the page."),
         failed: text("failed", "Your vote could not be saved. Try again."),
         reference: text("reference", "Reference: {0}"),
         loginUrl: text("login-url", "")

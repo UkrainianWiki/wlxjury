@@ -391,6 +391,7 @@ vote.error.closed=This round is closed for voting.
 vote.error.failed=Your vote could not be saved. Try again.
 vote.error.reference=Reference: {0}
 vote.error.invalid.rate=This round doesn''t take that rate. Reload the page and vote again.
+vote.error.not.found=This file is no longer assigned to you. Reload the page.
 job.status.denied=No access to this job''s status.
 round.stat.table.failed=The jurors'' table could not be loaded: you may have been signed out or lost access to this contest. Reload the page to try again.
 sort.file=In file order

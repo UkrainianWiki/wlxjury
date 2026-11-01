@@ -389,6 +389,7 @@ vote.error.closed=Ce tour n''est plus ouvert au vote.
 vote.error.failed=Votre vote n''a pas pu être enregistré. Réessayez.
 vote.error.reference=Référence : {0}
 vote.error.invalid.rate=Ce tour n''accepte pas cette note. Rechargez la page et votez à nouveau.
+vote.error.not.found=Ce fichier ne vous est plus attribué. Rechargez la page.
 job.status.denied=Pas d’accès à l’état de cette tâche.
 round.stat.table.failed=Le tableau du jury n''a pas pu être chargé : vous avez peut-être été déconnecté ou perdu l''accès à ce concours. Rechargez la page pour réessayer.
 sort.file=Dans l''ordre des fichiers
