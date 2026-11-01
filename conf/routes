@@ -71,7 +71,7 @@ POST        /users/resetpasswd/:id                                              
 POST        /switch-contest/:contestId                                              @controllers.UserController.switchContest(contestId: Long)
 # an old link: the contest is switched by the navbar's menu (POST) only
 GET         /switch-contest/:contestId                                              @controllers.UserController.switchContestLink(contestId: Long)
-# the user menu's colour mode switch (light, dark, auto): the user's row and the theme cookie
+# the navbar's colour mode switch (light, dark, auto): the user's row and the theme cookie
 POST        /theme                                                                  @controllers.UserController.setTheme()
 
 GET         /admin/rounds                                                           @controllers.RoundController.rounds(contestId: Option[Long] ?= None)

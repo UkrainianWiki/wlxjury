@@ -10,21 +10,31 @@
         regionMenu: Option[RegionMenu],
         rates: RateDistribution)(implicit flash: Flash, messages: Messages, request: RequestHeader)
 
+    @* the juror rates their own files here with stars as on the gallery's tiles (TileStars) *@
+    @starsRound = @{ views.TileStars.round(user, list.asUserId, Some(list.round)) }
+
+    @* a file's rank and result: a binary round's approvals by all the jurors, or one juror's
+       vote; a rated round's stars and rate, the juror's own to click (tile-votes.js, which
+       puts its stars in place of the static ones and keeps the rate text after them) *@
     @showRateGalery(file: ImageWithRating, index: Int) = {
     @defining(list.round) { round =>
         @if(round.rates.id > 0) {
         <div class="rank-line"> <b>@file.rankStr</b>
             <span class="rate-stars">
-            @if(round.rates.id != 2) {
+            @if(round.isBinary) {
+                @if(list.asUserId == 0) { @binaryVote(file.approvals, approvals = true) } else { @binaryVote(file.rate) }
+            } else {
+                @if(starsRound.nonEmpty) {
+                <span class="wlx-byrate-stars" data-round-id="@round.getId" data-page-id="@file.pageId" data-rate="@file.rate">
+                }
                 @for(i <- 1 to round.numberOfStars) {
                     @showStar(i, file.totalRate(round).toInt, round.rates.id > 5 && round.halfStar)
                 }
+                @if(starsRound.nonEmpty) {
+                </span>
+                <span class="wlx-rate-text">@file.rateString(round)</span>
+                } else {
                 @file.rateString(round)
-            } else {
-                @for(i <- 1 to file.totalRate(round).toInt) {
-                    <button type="button" class="btn btn-success btn-sm">
-                        <i class="bi bi-check-lg" aria-hidden="true"></i>
-                    </button>
                 }
             }
             </span>
@@ -38,14 +48,29 @@
 
         @defining(list.round) { round =>
 
+            @* the page's title, for screen readers: the navbar shows where it is *@
+            <h1 class="visually-hidden">@Messages("byrate")</h1>
             @large.voteMoved(list)
 
+            @* a changed rate keeps the file's place and rank until a reload orders the list again:
+               said once above it, and on the file (tile-votes.js) *@
+            @if(starsRound.nonEmpty) {
+            <p class="wlx-byrate-hint small text-body-secondary mb-2" role="status" hidden>
+                <i class="bi bi-info-circle" aria-hidden="true"></i> @Messages("byrate.changed.hint")</p>
+            }
+
+            @if(starsRound.isEmpty) {
             <div class="row" >
+            }
+            @for(r <- starsRound) {
+            <div class="row" @voteTexts() data-stars-number="@{r.rates.id / r.starUnits}"
+                data-stars-half="@{r.starUnits == 2}" data-changed-title="@Messages("byrate.changed.title")">
+            }
 
                 <ul class="gallery mw-gallery-traditional">
                 @for((file, index) <- files.view.zipWithIndex) {
-                    <li class="gallerybox">
-                        <h1 id="@file.pageId" class="tile-anchor"></h1>
+                    @* its id: where a list's link to the file (byRateAt, #pageId) scrolls *@
+                    <li class="gallerybox" id="@file.pageId">
 
                         <div class="thumb">
                             <a href="@list.largeUrl(file.pageId)" >

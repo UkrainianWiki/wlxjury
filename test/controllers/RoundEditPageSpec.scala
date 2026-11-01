@@ -62,6 +62,17 @@ class RoundEditPageSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
+    "suggest Commons categories on both category fields (category-suggest.js)" in {
+      testDbApp { implicit app =>
+        val (contest, admin, _) = fixture()
+        val html = contentAsString(route(app, get(s"/admin/rounds/edit?contestId=${contest.getId}", admin)).get)
+        html must contain("javascripts/category-suggest.js")
+        forall(Seq("source", "excludeCategory")) { id =>
+          s"""<input[^>]*id="$id"[^>]*>""".r.findFirstIn(html) must beSome.which(_.contains("""data-category-suggest="category""""))
+        }
+      }
+    }
+
     "create one round when saved twice" in {
       testDbApp { implicit app =>
         val (contest, admin, round) = fixture()

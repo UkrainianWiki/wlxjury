@@ -110,6 +110,20 @@ class RegionMenuSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
+    "show region grouped as all regions, in the by-rate gallery (the view grouped by region is gone)" in {
+      testDbApp { implicit app =>
+        val f = fixture()
+        def shown(region: String) = {
+          val html = page(s"/byrate/round/${f.rated.getId}/user/0/region/$region/page/1", f.admin)
+          html must not contain "col-sm-1" // the grouped view's region cards
+          """(?s)id="regionmenu".*?<b>([^<]*)</b>""".r.findFirstMatchIn(html).map(_.group(1))
+        }
+        // an old link to the grouped view lists all the files, as region all does
+        (shown("grouped") must beSome) and (shown("grouped") === shown("all"))
+        status(request(s"/regions/round/${f.rated.getId}/user/0/region/grouped", Some(f.admin), script = true)) === OK
+      }
+    }
+
     "list a list's regions with the counts the region nav had, for jurors and organisers, binary and rated, by filter" in {
       testDbApp { implicit app =>
         val f = fixture()
@@ -119,8 +133,10 @@ class RegionMenuSpec extends PlaySpecification with PlayTestDb {
           f.admin -> 0L, f.admin -> f.other.getId); filter <- filters) yield {
           val query = if (filter == VoteFilter.All) "" else s"?filter=${filter.param}"
           val json = counts(regions(s"/regions/round/${round.getId}/user/$asUserId/region/all$query", viewer))
-          val before = SelectionQuery(userId = Some(asUserId).filter(_ != 0), roundId = round.id, rate = filter.rate,
-            rated = filter.rated).regionCounts()
+          // the other kind's filter lists all files
+          val listed = filter.in(round)
+          val before = SelectionQuery(userId = Some(asUserId).filter(_ != 0), roundId = round.id, rate = listed.rate,
+            rated = listed.rated).regionCounts()
           (round.getId, asUserId, filter, json) -> (round.getId, asUserId, filter, before.map { case (k, v) => k -> Option(v) })
         }
         cases.map(_._1) === cases.map(_._2)

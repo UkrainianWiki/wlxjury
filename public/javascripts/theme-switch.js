@@ -1,6 +1,6 @@
 // The login page's colour mode switch (login.scala.html, signed out): a button per mode
 // (data-theme-value: light, dark or auto) sets the theme cookie in the browser and the page's
-// mode at once, with no request. Signed in, the user menu's switch is a POST instead
+// mode at once, with no request. Signed in, the navbar's switch is a POST instead
 // (UserController.setTheme), which also stores the mode for the account. For auto, the
 // layout's first script follows the browser's prefers-color-scheme while data-theme-pref is
 // "auto"; this one sets the mode once when switching to it.
@@ -10,9 +10,9 @@
   var MODES = ['light', 'dark', 'auto'];
   var MAX_AGE = 365 * 24 * 60 * 60;
 
-  /** One of the three modes, else auto (as controllers.Theme reads the cookie). */
+  /** One of the three modes, else dark, the default (as controllers.Theme reads the cookie). */
   function parse(value) {
-    return MODES.indexOf(value) >= 0 ? value : 'auto';
+    return MODES.indexOf(value) >= 0 ? value : 'dark';
   }
 
   /** The cookie for `mode`: a year, the whole site, Lax; Secure on an https page. */

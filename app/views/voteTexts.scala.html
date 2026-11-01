@@ -1,0 +1,16 @@
+@()(implicit messages: Messages, request: RequestHeader)
+@* the attributes of the element holding a page's votes by script (tile-votes.js): the session's
+   CSRF token, sent as the Csrf-Token header (empty if the request has none, as without the
+   CSRF filter), and the texts saying why a vote failed (vote-errors.js), signed out going on
+   to the login page, back here after it *@
+data-csrf-token="@play.filters.csrf.CSRF.getToken.fold("")(_.value)"
+            data-vote-signed-out="@Messages("vote.error.signed.out")"
+            data-vote-expired="@Messages("vote.error.expired")"
+            data-vote-closed="@Messages("vote.error.closed")"
+            data-vote-invalid-rate="@Messages("vote.error.invalid.rate")"
+            data-vote-not-found="@Messages("vote.error.not.found")"
+            data-vote-selected="@Messages("selected")"
+            data-vote-rejected="@Messages("rejected")"
+            data-vote-failed="@Messages("vote.error.failed")"
+            data-vote-reference="@Messages("vote.error.reference", "{0}")"
+            data-vote-login-url="@routes.LoginController.login(controllers.Secured.safeLocalPath(Some(request.uri)))"

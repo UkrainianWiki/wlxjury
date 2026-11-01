@@ -120,6 +120,20 @@ function UGTheme_tiles(){
 		
 		g_tiles.setHtml(g_objTilesWrapper);
 		g_lightbox.putHtml();
+
+		//wlxjury: a binary round's votes on the juror's own tiles, from the files' stored ones,
+		//and a rated round's stars (main.scala.html's wlx_stars: their number and half stars),
+		//tile-votes.js
+		if(g_options.jury && g_options.binary){
+			g_objTilesWrapper.find(".ug-tile").each(function(){
+				wlxTileVotes.addVote(this, g_objTileDesign.getItemByTile(jQuery(this)));
+			});
+		}
+		if(g_options.wlx_stars){
+			g_objTilesWrapper.find(".ug-tile").each(function(){
+				wlxTileVotes.addStars(this, g_objTileDesign.getItemByTile(jQuery(this)), g_options.wlx_stars);
+			});
+		}
 	}
 	
 	/**
@@ -216,47 +230,9 @@ function UGTheme_tiles(){
 		}
 	}
 
-	/**
-	 * the session's CSRF token, which the gallery page renders (data-csrf-token)
-	 */
-	function csrfToken() {
-		var holder = document.querySelector("[data-csrf-token]");
-		return holder ? holder.getAttribute("data-csrf-token") : "";
-	}
-
+	//a binary round's vote, shown on the tile once stored (tile-votes.js)
 	function serviceCall(objItem, rate, objTile) {
-
-		//a vote is a POST with the page's CSRF token in Play's header (play.filters.csrf.header.name)
-		var jqxhr = $.ajax({
-			type: "POST",
-			url: "/rate/round/" + objItem.roundId +"/pageid/" + objItem.pageId + "/select/" + rate,
-			headers: { "Csrf-Token": csrfToken() }
-		}).done(function() {
-
-			var border = 3;
-			var color;
-
-			// the mode's colours (theme.css), readable on the light and the dark grey
-			if (rate == 1) color = "var(--wlx-selected)";
-			else if (rate == -1) color = "var(--wlx-rejected)";
-			else if (rate == 0) color = "var(--bs-secondary-color)";
-
-			objItem.rate = rate;
-
-			var objCss = {};
-
-			objCss["border-width"] = border + "px";
-			objCss["border-style"] = "solid";
-			objCss["border-color"] = color;
-
-			objTile.css(objCss);
-
-		}).fail(function(jqXHR) {
-			// why, in the page's language (vote-errors.js); signed out, on to the login page
-			var texts = voteErrorTexts(document.querySelector("[data-csrf-token]"));
-			alert(voteErrorMessage(jqXHR.status, jqXHR.responseJSON || null, texts));
-			if (jqXHR.status === 401 && texts.loginUrl) window.location.href = texts.loginUrl;
-		});
+		wlxTileVotes.vote(objTile[0], objItem, rate);
 	}
 
 

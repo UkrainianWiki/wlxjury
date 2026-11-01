@@ -7,11 +7,14 @@
 
 @* the stars' votes: the vote URL's start, the score, then the list's query string. The stars
    are Bootstrap Icons (raty's starType 'i': an <i> with these classes for each), coloured and
-   sized by main.css's .wlx-star and .raty-cancel *@
+   sized by main.css's .wlx-star and .raty-cancel. The number above them (navigationButtons,
+   large-rate.js) shows the rate a click on a star gives while hovering, so the stars have no
+   tooltips. *@
 @defining(list.round) { round =>
 @if(!round.isBinary) {
 
     <script src="@routes.Assets.versioned("javascripts/jquery.raty.js")"></script>
+    <script src="@routes.Assets.versioned("javascripts/large-rate.js")"></script>
 
     <script>
     $(document).ready(function() {
@@ -21,11 +24,13 @@
             starHalf: 'bi bi-star-half wlx-star',
             starOff: 'bi bi-star wlx-star',
             cancelOn: 'bi bi-x-circle-fill',
-            cancelOff: 'bi bi-x-circle'
+            cancelOff: 'bi bi-x-circle',
+            noRatedMsg: ''
         });
 
         @defining(if(round.rates.id > 5 && round.halfStar) 2 else 1) { k =>
 
+            var number = wlxLargeRate.number(document.getElementById('rate-number'), @(k == 2));
             $('#rate-image').raty({
                 score: @score,
                 half: @(k == 2),
@@ -33,12 +38,14 @@
                 number: @(round.rates.id / k),
                 precision: false,
                 space: false,
-                hints:[ '', '', '', '', '', '', '', '', '', '' ],
+                hints: Array(@(round.rates.id / k)).fill(''),
                 @if(readOnly) {
                     readOnly : 'true'
                 } else {
+                    mouseover: number.mouseover,
+                    mouseout: number.mouseout,
                     click : function(score, evt) {
-                        voteLarge('@Html(list.votePrefix(pageId))' + Math.round(score*@k) + '@Html(list.voteQuery())');
+                        voteLarge('@Html(list.votePrefix(pageId))' + Math.round(number.clicked(score)*@k) + '@Html(list.voteQuery())');
                         return false;
                     }
                 }
@@ -46,19 +53,22 @@
 
     @if(round.hasCriteria) {
         @for((rateId, index) <- byCriteria.keys.toSeq.sorted.zipWithIndex) {
+        var number@(index+1) = wlxLargeRate.number(document.getElementById('rate-number@(index+1)'), @(k == 2));
         $('#rate-image@(index+1)').raty({
-            score: @{byCriteria.getOrElse(rateId, 0)/k},
+            score: @{byCriteria.getOrElse(rateId, 0).toDouble / k},
             half: @(k == 2),
             cancel: true,
             number: @(round.rates.id / k),
             precision: false,
             space: false,
-            hints:[ '', '', '', '', '', '', '', '', '', '' ],
+            hints: Array(@(round.rates.id / k)).fill(''),
             @if(readOnly) {
             readOnly : 'true'
             } else {
+            mouseover: number@(index+1).mouseover,
+            mouseout: number@(index+1).mouseout,
             click : function(score, evt) {
-                voteLarge('@Html(list.votePrefix(pageId))' + Math.round(score*@k) + '@Html(list.voteQuery(Some(rateId)))');
+                voteLarge('@Html(list.votePrefix(pageId))' + Math.round(number@(index+1).clicked(score)*@k) + '@Html(list.voteQuery(Some(rateId)))');
                 return false;
             }
             }

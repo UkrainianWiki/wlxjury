@@ -8,10 +8,11 @@
    as given: the shells localise their message keys. `fullHeight`: the page and its body fill
    the window (the large views' columns).
    The colour mode (Bootstrap's data-bs-theme) is the user's, from the theme cookie
-   (controllers.Theme: light, dark, or auto for anything else): light or dark is rendered as
-   such; auto has no data-bs-theme, which the first script in <head> sets from the browser's
-   prefers-color-scheme before any stylesheet loads, so that the page never flashes in the
-   other mode, and again when that changes. data-theme-pref is the user's choice: the login
+   (controllers.Theme: light, dark or auto; dark with no cookie or any other value): light or
+   dark is rendered as such, so the default needs no script; auto has no data-bs-theme, which
+   the first script in <head> sets from the browser's prefers-color-scheme before any
+   stylesheet loads, so that the page never flashes in the other mode, and again when that
+   changes. data-theme-pref is the user's choice: the login
    page's switch (theme-switch.js) changes it without a request. Only the three fixed
    values are ever written here, never the cookie's text. *@
 <!DOCTYPE html>

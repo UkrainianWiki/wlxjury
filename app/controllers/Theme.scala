@@ -8,9 +8,10 @@ import scala.concurrent.duration._
 
 /** The colour mode a user picks: light, dark, or auto (the browser's `prefers-color-scheme`).
   * Read from the [[Theme.CookieName]] cookie on every page (layout.scala.html) and kept in
-  * `users.theme` so that it follows the user to another browser (set on sign-in). Any other
-  * value, from the cookie, the database or a form, is [[Theme.Auto]]: only these three
-  * fixed strings are ever written into a page.
+  * `users.theme` so that it follows the user to another browser (set on sign-in). A user
+  * who never chose one (no cookie, `users.theme` NULL) gets [[Theme.Default]], dark; so
+  * does any other value of the cookie. A form's or the database's other value changes
+  * nothing ([[Theme.find]]). Only these three fixed strings are ever written into a page.
   */
 sealed abstract class Theme(val value: String, val icon: String)
 
@@ -30,9 +31,15 @@ object Theme {
   /** One of the three values, else none. */
   def find(value: String): Option[Theme] = All.find(_.value == value)
 
-  def parse(value: String): Theme = find(value).getOrElse(Auto)
+  /** The mode of a user who never chose one: dark, as the galleries always were. An explicit
+    * choice, auto included, is kept.
+    */
+  val Default: Theme = Dark
 
-  def parse(value: Option[String]): Theme = value.fold[Theme](Auto)(parse)
+  /** One of the three values, else [[Default]]. */
+  def parse(value: String): Theme = find(value).getOrElse(Default)
+
+  def parse(value: Option[String]): Theme = value.fold(Default)(parse)
 
   /** The request's mode, from its cookie. */
   def of(request: RequestHeader): Theme = parse(request.cookies.get(CookieName).map(_.value))

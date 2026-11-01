@@ -164,7 +164,7 @@ class ThemeSwitchSpec extends PlaySpecification with PlayTestDb with Mockito {
       }
     }
 
-    "be offered by the user menu as a POST form with the token and this page to come back to" in {
+    "be offered by the navbar as a POST form with the token and this page to come back to" in {
       withCsrfApp { app =>
         setUp()
         val page = route(app, FakeRequest(GET, "/users/edit/" + User.findByEmail(email).head.getId)
@@ -177,9 +177,33 @@ class ThemeSwitchSpec extends PlaySpecification with PlayTestDb with Mockito {
         html must contain("""<form method="post" action="/theme"""")
         form must contain("""name="csrfToken"""")
         form must contain("""name="returnTo" value="/users/edit/""")
-        form must contain("""name="theme" value="light"""")
-        form must contain("""name="theme" value="dark" class="dropdown-item active" aria-pressed="true"""")
-        form must contain("""name="theme" value="auto"""")
+        form must contain("""name="theme" value="light" class="dropdown-item">""")
+        form must contain("""name="theme" value="dark" class="dropdown-item active" aria-current="true">""")
+        form must contain("""name="theme" value="auto" class="dropdown-item">""")
+        html.split("""name="theme" value=""").length === 4
+      }
+    }
+
+    "be an icon button left of the profile menu, the current mode's, not in the profile menu" in {
+      withCsrfApp { app =>
+        setUp()
+        forall(Seq("light" -> "sun-fill", "dark" -> "moon-stars-fill", "auto" -> "circle-half")) { case (mode, icon) =>
+          val page = route(app, FakeRequest(GET, "/users/edit/" + User.findByEmail(email).head.getId)
+            .withHeaders(COOKIE -> "PLAY_SESSION=signed-in", ACCEPT -> "text/html")
+            .withSession(Secured.UserName -> email, Secured.CurrentContestId -> "10", "csrfToken" -> token(app))
+            .withCookies(Cookie(Theme.CookieName, mode))).get
+          val html = contentAsString(page)
+          val toggle = html.substring(html.indexOf("""id="theme-menu""""), html.indexOf("</a>", html.indexOf("""id="theme-menu"""")))
+          val label = "Theme: " + Map("light" -> "Light", "dark" -> "Dark", "auto" -> "System")(mode)
+          toggle must contain(s"""title="$label"""")
+          toggle must contain(s"""<i class="bi bi-$icon" aria-hidden="true"></i><span class="visually-hidden">$label</span>""")
+          html must contain("""<ul class="dropdown-menu dropdown-menu-end" aria-labelledby="theme-menu">""")
+          // the switch, then the profile menu with the profile link and signing out only
+          val profileMenu = html.substring(html.indexOf("bi-person-fill"))
+          html.indexOf("""id="theme-switch"""") must be_<(html.indexOf("bi-person-fill"))
+          profileMenu must contain("/logout")
+          profileMenu must not(contain("""action="/theme""""))
+        }
       }
     }
   }
@@ -277,7 +301,7 @@ class ThemeSwitchSpec extends PlaySpecification with PlayTestDb with Mockito {
       }
     }
 
-    "show the own profile's mode in its select, and none on another user's" in {
+    "show the own profile's mode in its radio buttons, the default with none, and none on another user's" in {
       testDbApp { implicit app =>
         setUp()
         val tina = User.findByEmail(email).head
@@ -286,15 +310,28 @@ class ThemeSwitchSpec extends PlaySpecification with PlayTestDb with Mockito {
           .withCookies(Cookie(Theme.CookieName, "dark")).withCSRFToken).get
         status(own) === OK
         val html = contentAsString(own)
-        html must contain("""<select id="theme" name="theme"""")
-        html must contain("""<option value="dark" selected>""")
+        html must contain("""<div class="btn-group" role="group" aria-labelledby="theme-label">""")
+        html must contain("""<legend class="form-label fs-6" id="theme-label">Theme</legend>""")
+        html must contain("""<input type="radio" class="btn-check" name="theme" id="theme-light" value="light" autocomplete="off">""")
+        html must contain("""<input type="radio" class="btn-check" name="theme" id="theme-dark" value="dark" autocomplete="off" checked>""")
+        html must contain("""<input type="radio" class="btn-check" name="theme" id="theme-auto" value="auto" autocomplete="off">""")
+        html must contain("""<label class="btn btn-outline-secondary" for="theme-auto"><i class="bi bi-circle-half" aria-hidden="true"></i> System</label>""")
+        html must not(contain("""<select id="theme""""))
+
+        // none stored and no cookie: the default, dark; the stored mode over the cookie
+        def ownPage(cookies: Cookie*) = contentAsString(route(app, FakeRequest(GET, "/users/edit/" + tina.getId)
+          .withSession(Secured.UserName -> email, Secured.CurrentContestId -> "10")
+          .withCookies(cookies: _*).withCSRFToken).get)
+        ownPage() must contain("""id="theme-dark" value="dark" autocomplete="off" checked>""")
+        User.updateTheme(tina.getId, Theme.Auto)
+        ownPage(Cookie(Theme.CookieName, "light")) must contain("""id="theme-auto" value="auto" autocomplete="off" checked>""")
 
         val admin = User.create(User("admin@example.com", "admin@example.com", None, Set("admin"), Some("hash"), Some(10L)))
         val other = route(app, FakeRequest(GET, "/users/edit/" + tina.getId)
           .withSession(Secured.UserName -> admin.email, Secured.CurrentContestId -> "10").withCSRFToken).get
         status(other) === OK
         // (the admin's own user menu still has its switch)
-        contentAsString(other) must not(contain("""<select id="theme""""))
+        contentAsString(other) must not(contain("""class="btn-check" name="theme""""))
       }
     }
   }

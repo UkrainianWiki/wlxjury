@@ -2,7 +2,9 @@
 @(
         user: User,
         list: RoundList,
-        hood: Neighbourhood)(
+        hood: Neighbourhood,
+        score: Double = 0,
+        byCriteria: Map[Int, Int] = Map.empty)(
         implicit flash: Flash, request: Request[Any], messages: Messages)
 
 @round = @{ list.round }
@@ -13,6 +15,18 @@
     <a role="button" class="btn btn-outline-secondary btn-sm@if(url.isEmpty) { disabled}" @if(url.isEmpty) {aria-disabled="true" }data-nav="@nav" href="@url.getOrElse("#")" title="@Html(title)">
         <i class="bi bi-@icon" aria-hidden="true"></i>
     </a>
+}
+
+@* the number above the stars `id`: their rate in stars (`score` and byCriteria's, as raty.scala.html
+   has them), 3.5 in a half-star round, an average to two decimals, "–" unrated; hovering a star
+   shows the rate a click gives (large-rate.js). Screen readers read the text beside it. *@
+@rateNumber(id: String, stars: Double) = {
+    @defining(BigDecimal(stars).setScale(2, BigDecimal.RoundingMode.HALF_UP).bigDecimal.stripTrailingZeros.toPlainString) { rate =>
+    <div class="large-rate">
+        <span id="@id" class="large-rate-number" aria-hidden="true">@if(stars > 0) {@rate} else {&ndash;}</span>
+        <span class="visually-hidden">@if(stars > 0) {@Messages("large.rate", rate)} else {@Messages("large.rate.none")}</span>
+    </div>
+    }
 }
 
 @buttonGallery() = {
@@ -57,11 +71,15 @@
     } else {
         </div>
     @if(round.hasCriteria) {
+       @defining(if (round.rates.id > 5 && round.halfStar) 2 else 1) { k =>
        @round.criteriaNames.zipWithIndex.map { case (criteriaName, index) =>
            <div>@criteriaName</div>
+           @rateNumber(s"rate-number${index + 1}", byCriteria.toSeq.sorted.lift(index).fold(0.0)(_._2.toDouble / k))
            <div id="rate-image@(index + 1)" class="large-stars"></div>
        }
+       }
     } else if (round.rates.id > 0)  {
+        @rateNumber("rate-number", score)
         <div id="rate-image" class="large-stars"></div>
     }
     }

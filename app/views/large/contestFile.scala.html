@@ -6,13 +6,15 @@
         view: ContestFilesView,
         files: Seq[ImageJdbc.StoredFile],
         index: Int,
+        following: Seq[ImageJdbc.StoredFile],
         page: Int,
         monument: Option[Monument])(implicit flash: Flash, request: Request[Any], messages: Messages)
 
 @* The large view of a contest files page's file (GalleryController.contestFileLarge), laid out
-   as a round's (large.scala.html), read-only: the files around it in the same list, its
-   author and monument, and its page on Commons. A deleted file shows its cached thumbnail,
-   or a grey box, and links its page and its undeletion on Commons. *@
+   as a round's (large.scala.html), read-only: its details (author, monument, its page on
+   Commons), then the files after it in the same list (`following`, closed by default), and
+   it moves among `files`, around it. A deleted file shows its cached thumbnail, or a grey
+   box, and links its page and its undeletion on Commons. *@
 
 @urlAt(i: Int) = @{ view.largeUrl(files(i).image.pageId) }
 
@@ -26,8 +28,11 @@
 @defining(file.image) { image =>
 @layout(image.title.stripPrefix("File:"), bodyClass = "gallery", fullHeight = true) {
 
+        <script src="@routes.Assets.versioned("javascripts/large-sections.js")"></script>
         @fileKeyboardNav(index, files.size, urlAt, view.pageUrl(page))
 } {
+        @* the page's title, for screen readers *@
+        <h1 class="visually-hidden">@image.title.stripPrefix("File:")</h1>
         <div class="container-fluid large-view h-100">
             <div class="row h-100">
                 <div class="col-1 contest-file-info large-side">
@@ -38,53 +43,60 @@
                         @navButton(Option.when(index < files.size - 1)(urlAt(index + 1)), "down", "chevron-down", s"${Messages("next.image")} <${Messages("down.key")}>")
                     </div>
 
-                    <ul class="gallery mw-gallery-traditional">
-                    @for((thumb, i) <- files.zipWithIndex) {
-                        <li class="gallerybox">
-                            <div class="thumb_small@if(i == index) { current}@if(thumb.deletedAt.isDefined) { wlx-deleted}">
-                                @* the link fills the box: a thumbnail that failed to load, hidden, takes no clicks *@
-                                <a class="wlx-box-link" href="@urlAt(i)" title="@thumb.image.title">
-                                    @if(thumb.image.isImage) {
-                                        @defining(if (thumb.deletedAt.isDefined) Global.cachedSrcSet(thumb.image, Global.thumbSizeX, Global.thumbSizeY)
-                                                  else Global.srcSet(thumb.image, Global.thumbSizeX, Global.thumbSizeY)) { srcset =>
-                                        <img class="cropped" alt="@thumb.image.title"
-                                            src="@Global.resizeTo(thumb.image, Global.thumbSizeX, Global.thumbSizeY)"
-                                            @if(srcset.nonEmpty) {srcset="@srcset"}
-                                            onerror="this.parentNode.parentNode.classList.add('wlx-thumb-failed')">
-                                        }
-                                    }
-                                    @if(thumb.image.isVideo) {
-                                        <video width="100%" height="100%" muted>
-                                            <source src="@thumb.image.url" type="video/webm">
-                                        </video>
-                                    }
-                                </a>
+                    @* under the buttons, the file's details, then the files after it *@
+                    @sideSection("large-info", "large.file.info", open = true) {
+                        @for(at <- file.deletedAt) {
+                            <div id="deleted-file" class="card card-body large-box">
+                                <span class="badge text-bg-danger">@Messages("deleted.on.commons", at.toLocalDate)</span>
+                                <div class="mt-1">
+                                    <a href="@Global.commonsPageUrl(image)" target="_blank" rel="noopener">@Messages("files.open.on.commons")</a>
+                                </div>
+                                <div>
+                                    <a href="@Global.commonsUndeleteUrl(image)" target="_blank" rel="noopener">@Messages("files.undelete.on.commons")</a>
+                                </div>
                             </div>
-                        </li>
-                    }
-                    </ul>
+                        }
 
-                    @for(at <- file.deletedAt) {
-                        <div id="deleted-file" class="card card-body large-box">
-                            <span class="badge text-bg-danger">@Messages("deleted.on.commons", at.toLocalDate)</span>
-                            <div class="mt-1">
-                                <a href="@Global.commonsPageUrl(image)" target="_blank" rel="noopener">@Messages("files.open.on.commons")</a>
-                            </div>
-                            <div>
-                                <a href="@Global.commonsUndeleteUrl(image)" target="_blank" rel="noopener">@Messages("files.undelete.on.commons")</a>
-                            </div>
+                        @authorInfo(image, user)
+                        @monumentInfo(image, monument)
+
+                        <div class="file-title large-line">
+                            <a href="@Global.commonsPageUrl(image)" target="_blank" rel="noopener">@image.title</a>
+                            @if(file.deletedAt.isEmpty) {
+                                <br><a href="@image.url">@Html(Messages("full.resolution", image.resolutionStr, image.mpxStr))</a>
+                            }
                         </div>
                     }
-
-                    @authorInfo(image, user)
-                    @monumentInfo(image, monument)
-
-                    <div class="file-title large-line">
-                        <a href="@Global.commonsPageUrl(image)" target="_blank" rel="noopener">@image.title</a>
-                        @if(file.deletedAt.isEmpty) {
-                            <br><a href="@image.url">@Html(Messages("full.resolution", image.resolutionStr, image.mpxStr))</a>
+                    @if(following.nonEmpty) {
+                    @sideSection("large-next", "large.next.files", open = false) {
+                        <ul class="gallery mw-gallery-traditional">
+                        @for(thumb <- following) {
+                            <li class="gallerybox">
+                                <div class="thumb_small@if(thumb.deletedAt.isDefined) { wlx-deleted}">
+                                    @* the link fills the box: a thumbnail that failed to load, hidden, takes no clicks *@
+                                    <a class="wlx-box-link" href="@view.largeUrl(thumb.image.pageId)" title="@thumb.image.title">
+                                        @if(thumb.image.isImage) {
+                                            @defining(if (thumb.deletedAt.isDefined) Global.cachedSrcSet(thumb.image, Global.thumbSizeX, Global.thumbSizeY)
+                                                      else Global.srcSet(thumb.image, Global.thumbSizeX, Global.thumbSizeY)) { srcset =>
+                                            <img class="cropped" alt="@thumb.image.title"
+                                                src="@Global.resizeTo(thumb.image, Global.thumbSizeX, Global.thumbSizeY)"
+                                                @if(srcset.nonEmpty) {srcset="@srcset"}
+                                                onerror="this.parentNode.parentNode.classList.add('wlx-thumb-failed')">
+                                            }
+                                        }
+                                        @if(thumb.image.isVideo) {
+                                            <video width="100%" height="100%" muted>
+                                                <source src="@thumb.image.url" type="video/webm">
+                                            </video>
+                                        }
+                                    </a>
+                                </div>
+                            </li>
                         }
-                    </div>
+                        </ul>
+                    }
+                    }
+                    <script>if (window.wlxLargeSections) wlxLargeSections.restore(document);</script>
                 </div>
 
                 <div id="mainContent" class="col large-main h-100">

@@ -6,6 +6,8 @@ const texts = {
     signedOut: "SIGNED OUT",
     expired: "EXPIRED",
     closed: "CLOSED",
+    invalidRate: "INVALID RATE",
+    notFound: "NOT FOUND",
     failed: "FAILED",
     reference: "Ref {0}",
     loginUrl: "/login?returnTo=%2Fgallery"
@@ -31,6 +33,17 @@ describe("voteErrorMessage", () => {
         expect(voteErrorMessage(409, { error: "round_closed" }, texts)).toBe("CLOSED");
     });
 
+    test("says the round doesn't take the rate", () => {
+        expect(voteErrorMessage(400, { error: "invalid_rate" }, texts)).toBe("INVALID RATE");
+        // another bad request: generic
+        expect(voteErrorMessage(400, null, texts)).toBe("FAILED");
+    });
+
+    test("says the file is no longer the juror's", () => {
+        expect(voteErrorMessage(404, { error: "not_found" }, texts)).toBe("NOT FOUND");
+        expect(voteErrorMessage(404, null, texts)).toBe("FAILED");
+    });
+
     test("is generic for any other failure, with the reference if the body has one", () => {
         expect(voteErrorMessage(500, null, texts)).toBe("FAILED");
         expect(voteErrorMessage(0, undefined, texts)).toBe("FAILED");
@@ -50,12 +63,15 @@ describe("voteErrorTexts", () => {
             "data-vote-signed-out": "Déconnecté",
             "data-vote-expired": "Expirée",
             "data-vote-closed": "Fermé",
+            "data-vote-invalid-rate": "Note refusée",
+            "data-vote-not-found": "Plus attribué",
             "data-vote-failed": "Échec",
             "data-vote-reference": "Référence : {0}",
             "data-vote-login-url": "/login"
         }));
         expect(read).toEqual({
-            signedOut: "Déconnecté", expired: "Expirée", closed: "Fermé", failed: "Échec",
+            signedOut: "Déconnecté", expired: "Expirée", closed: "Fermé", invalidRate: "Note refusée", notFound: "Plus attribué",
+            failed: "Échec",
             reference: "Référence : {0}", loginUrl: "/login"
         });
         expect(voteErrorMessage(403, { error: "forbidden", reference: "0a1b2c3d" }, read))

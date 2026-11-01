@@ -139,8 +139,9 @@ class GatlingSmokeSpec extends Specification {
   }
 
   "Voting smoke" in {
-    val (cl, _) = jurorClient()
-    val (_, pageId, roundId, rate) = f.votingPairs.head
+    val (cl, jurorId) = jurorClient()
+    // one of this juror's own files: a vote on another's is a 404
+    val (pageId, roundId, rate) = f.nextVote(jurorId)
     val r = doPost(cl, s"/rate/round/$roundId/pageid/$pageId/select/$rate", "")
     (r.status == 200 || r.status == 303) must beTrue
     r.ms must be_<=(MaxMs)
