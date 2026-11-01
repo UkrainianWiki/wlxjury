@@ -9,8 +9,8 @@ import java.nio.charset.StandardCharsets.UTF_8
 import java.nio.file.{Files, Paths}
 
 /** The start/stop button of a round (rounds page) or of a juror in a round (round statistics,
-  * icon only): its accessible name says what it does, and without the Yes/No text the
-  * outline's colour shows the state.
+  * icon only): its accessible name says what it does; grey either way, the icon showing the
+  * state.
   */
 class StartStopViewSpec extends PlaySpecification {
 
