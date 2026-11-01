@@ -216,6 +216,39 @@ class RoundRedistributionFiltersSpec extends Specification with TestDb with Befo
       }.reduce(_ and _)
     }
 
+    "read \"selected by at least 0\" as no filter: all files of a yes/no previous round" in {
+      // the old form's way of saying no filter (V73 sets it to NULL), never "unrated votes only"
+      implicit val contest: ContestJury = createContests(1).head
+      val jurors = createUsers("jury", 1, 2)
+      addImages(contest, 1 to 10)
+      val service = TestRoundServices.roundService(TestRoundServices.handler(chunkRows = 3))
+      val source = Round(None, 0, Some("Source"), contest.getId, active = true)
+      val binary = service.createNewRound(source, jurors.map(_.getId))
+      // approved (3, 6, 9), rejected (1, 4, 7, 10) and unrated (2, 5, 8) files
+      def vote(): Unit = SelectionJdbc.byRound(binary.getId).foreach { row =>
+        val rate = (row.pageId % 3).toInt match { case 0 => 1; case 1 => -1; case _ => 0 }
+        SelectionJdbc.rate(row.pageId, row.juryId, binary.getId, rate)
+      }
+      vote()
+      val next = source.copy(previous = Some(binary.getId.toString), distribution = 1)
+      val rounds = Seq(None, Some(0), Some(1)).map(by =>
+        service.createNewRound(next.copy(prevSelectedBy = by), jurors.map(_.getId)))
+      val created = rounds.map(r => pageIds(r.getId))
+      addImages(contest, 11 to 20)
+      service.distributeNewImages(binary.getId)
+      vote()
+      val inMemory = new DistributeImages(ImageJdbc)
+      val reference = rounds.map(r => inMemory.imagesByRound(r, Seq(binary)).map(_.pageId).toSet)
+      val counts = rounds.map(r => service.newFilesCount(r.getId))
+      val added = rounds.map(r => service.distributeNewImages(r.getId))
+      (created === Seq((1L to 10L).toSet, (1L to 10L).toSet, Set(3L, 6L, 9L))) and
+        (reference === Seq((11L to 20L).toSet, (11L to 20L).toSet, Set(12L, 15L, 18L))) and
+        (counts === Seq(10L, 10L, 3L)) and
+        (added === Seq(10, 10, 3)) and
+        (rounds.map(r => pageIds(r.getId)) ===
+          Seq((1L to 20L).toSet, (1L to 20L).toSet, Set(3L, 6L, 9L, 12L, 15L, 18L)))
+    }
+
     "ignore \"selected by at least 0\" in a round with no previous round" in {
       // V73 sets such a 0 to NULL: it must distribute as no filter does, on every path
       implicit val contest: ContestJury = createContests(1).head

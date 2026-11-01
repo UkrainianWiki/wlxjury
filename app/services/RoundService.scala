@@ -169,7 +169,7 @@ class RoundService @Inject() (
           "settings" -> Json.obj(
             "previous" -> round.previous,
             "distribution" -> round.distribution,
-            "prevSelectedBy" -> round.prevSelectedBy,
+            "prevSelectedBy" -> round.selectedByFilter,
             "prevMinAvgRate" -> round.prevMinAvgRate,
             "topImages" -> round.topImages,
             "topBinaryOrder" -> topOrder,

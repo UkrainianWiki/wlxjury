@@ -57,7 +57,7 @@ class DistributeImages @Inject()(imageRepo: ImageRepo) extends Logging {
     getFilteredImages(
       round,
       prevRounds,
-      selectedAtLeast = round.prevSelectedBy,
+      selectedAtLeast = round.selectedByFilter,
       selectMinAvgRating = round.prevMinAvgRate,
       selectTopByRating = round.topImages,
       includeRegionIds = round.regionIds.toSet,
@@ -106,7 +106,7 @@ class DistributeImages @Inject()(imageRepo: ImageRepo) extends Logging {
         selectMinAvgRating =
           prevRound.flatMap(_ => round.prevMinAvgRate.filter(_ => !prevRound.exists(_.isBinary))),
         selectTopByRating = None,
-        selectedAtLeast = prevRound.flatMap(_ => round.prevSelectedBy),
+        selectedAtLeast = prevRound.flatMap(_ => round.selectedByFilter),
         mpxAtLeast = round.minMpx,
         sizeAtLeast = round.minImageSize.map(_ * 1024 * 1024),
         specialNomination = round.specialNomination,
@@ -168,12 +168,12 @@ class DistributeImages @Inject()(imageRepo: ImageRepo) extends Logging {
       else if (binaryTop)
         DistributeImages.binaryCandidates(
           mergeByPageId(prevRounds.flatMap(r => imageRepo.byRoundMerged(r.getId))),
-          rated = selectedAtLeast.map(_ > 0)
+          rated = selectedAtLeast.isDefined
         )
       else
         mergeByPageId(
           prevRounds.flatMap(r =>
-            imageRepo.byRoundMerged(r.getId, rated = selectedAtLeast.map(_ > 0))
+            imageRepo.byRoundMerged(r.getId, rated = Option.when(selectedAtLeast.isDefined)(true))
           )
         )
     logger.debug("Total images: " + imagesAll.size)
@@ -255,14 +255,14 @@ class DistributeImages @Inject()(imageRepo: ImageRepo) extends Logging {
 
 object DistributeImages {
 
-  /** Yes/no previous rounds' images, grouped with all their votes, for a top-N: those that
-    * `rated` kept as it read the votes (an approval, or with a stored 0 an unrated vote),
-    * each with its approvals as its rate, so that "selected by at least" compares them, as
+  /** Yes/no previous rounds' images, grouped with all their votes, for a top-N: with `rated`
+    * ("selected by at least" set) those with an approval, else all, each with its approvals as
+    * its rate, so that "selected by at least" compares them, as
     * [[services.distribution.DistributionSource.rank]] has them.
     */
-  def binaryCandidates(images: Seq[ImageWithRating], rated: Option[Boolean]): Seq[ImageWithRating] =
+  def binaryCandidates(images: Seq[ImageWithRating], rated: Boolean): Seq[ImageWithRating] =
     images
-      .filter(i => rated.forall(r => if (r) i.approvals > 0 else i.countFromDb > i.approvals + i.rejections))
+      .filter(i => !rated || i.approvals > 0)
       .map(i => i.copy(selection = Seq(Selection(i.pageId, juryId = 0, roundId = 0, rate = i.approvals))))
 
   /** Selection rows per insert batch: ~200 KB, well below any max_allowed_packet. */

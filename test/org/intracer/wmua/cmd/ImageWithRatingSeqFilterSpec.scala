@@ -58,11 +58,9 @@ class ImageWithRatingSeqFilterSpec extends Specification {
 
     "be from the candidates \"selected by\" read, each with its approvals as its rate" in {
       val candidates = Seq(file(1, 3, 2), file(2, 0, 1), file(3, 0, 5))
-      DistributeImages.binaryCandidates(candidates, None).map(i => (i.pageId, i.rateSum)) === Seq((1, 3), (2, 0), (3, 0))
-      DistributeImages.binaryCandidates(candidates, Some(true)).map(_.pageId) === Seq(1)
-      // a stored 0: the files with an unrated vote
-      DistributeImages.binaryCandidates(candidates, Some(false)).map(_.pageId) === Seq(2)
-      SelectedAtLeast(3)()(DistributeImages.binaryCandidates(candidates, Some(true))).map(_.pageId) === Seq(1)
+      DistributeImages.binaryCandidates(candidates, rated = false).map(i => (i.pageId, i.rateSum)) === Seq((1, 3), (2, 0), (3, 0))
+      DistributeImages.binaryCandidates(candidates, rated = true).map(_.pageId) === Seq(1)
+      SelectedAtLeast(3)()(DistributeImages.binaryCandidates(candidates, rated = true)).map(_.pageId) === Seq(1)
     }
   }
 }

@@ -56,7 +56,7 @@ object BinaryOrder {
   /** The round form's and the job settings' value for a top-N with no order stored
     * (`rounds.top_binary_order` NULL: a round from before V72), picked by the rule of then: the
     * rate sum of each previous round, below 0 as 0, over its jurors, or the approvals with
-    * "selected by at least" (`DistributionSource.ratedPage`). Shown for a round that has it,
+    * "selected by at least" N >= 1 (`DistributionSource.ratedPage`; a stored 0 is no filter). Shown for a round that has it,
     * not offered for a new one.
     */
   val LegacyParam = "legacy"

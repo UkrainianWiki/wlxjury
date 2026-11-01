@@ -211,7 +211,7 @@ object EditRound {
         editRound.fileList,
         round.minMpx.fold("No")(_.toString),
         round.previousIds.map(_.toString),
-        round.prevSelectedBy.map(_.toString),
+        round.selectedByFilter.map(_.toString),
         round.prevMinAvgRate.map(_.toString),
         categories.first,
         categories.second,

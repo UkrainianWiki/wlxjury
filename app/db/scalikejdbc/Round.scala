@@ -115,6 +115,12 @@ case class Round(
 
   def regionIds: Seq[String] = regions.map(_.split(",").toSeq).getOrElse(Nil)
 
+  /** "Selected by at least N jurors" as the distribution reads it: N >= 1 approvals (rated
+    * votes) in the previous round(s), or no filter. A stored 0 is no filter, as NULL is: the
+    * old round form's way of saying it (V73 clears them); every reader goes through this.
+    */
+  def selectedByFilter: Option[Int] = prevSelectedBy.filter(_ > 0)
+
   /** [[topBinaryOrder]] as the round form and the job settings show it, the legacy rule's for none. */
   def topOrderParam: String = topBinaryOrder.fold(BinaryOrder.LegacyParam)(_.param)
 

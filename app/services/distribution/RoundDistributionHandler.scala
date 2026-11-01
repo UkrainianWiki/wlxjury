@@ -175,7 +175,7 @@ class RoundDistributionHandler @Inject() (
       perImage = perImage,
       filter = distributeImages.perImageFilters(round, prevRounds, firstCategoryIds, secondCategoryIds, coi.keySet),
       coi = coi,
-      rated = prev.flatMap(_ => round.prevSelectedBy.map(_ > 0)),
+      rated = prev.isDefined && round.selectedByFilter.isDefined,
       topN = prev.flatMap(_ => round.topImages),
       // none for a round from before V72: the legacy rule, by the rate sum (ratedPage)
       topOrder = prev.filter(_.isBinary).flatMap(_ => round.topBinaryOrder),
@@ -519,7 +519,7 @@ object RoundDistributionHandler {
       perImage: Int,
       filter: Seq[ImageWithRating] => Seq[ImageWithRating],
       coi: Map[String, CoiMembers.Member],
-      rated: Option[Boolean],
+      rated: Boolean,
       topN: Option[Int],
       topOrder: Option[BinaryOrder],
       categoryId: Option[Long],
@@ -611,11 +611,8 @@ object DistributionSource {
 
   private val i = ImageJdbc.syntax("i")
 
-  private def ratedCond(rated: Option[Boolean]): SQLSyntax = rated match {
-    case Some(true)  => sqls"AND s.rate > 0"
-    case Some(false) => sqls"AND s.rate = 0"
-    case None        => sqls""
-  }
+  /** With "selected by at least" set, only approvals (rated votes) are read. */
+  private def ratedCond(rated: Boolean): SQLSyntax = if (rated) sqls"AND s.rate > 0" else sqls""
 
   /** Images of the round never come back: the anti-join that makes a resume idempotent.
     * Nor do those with votes of the round moved aside (V63): they are in the round's count
@@ -646,12 +643,12 @@ object DistributionSource {
       .map(rs => new ImageWithRating(ImageJdbc(i)(rs), Seq.empty))
       .list()
 
-  def previousCount(prevIds: Seq[Long], rated: Option[Boolean])(implicit session: DBSession): Long =
+  def previousCount(prevIds: Seq[Long], rated: Boolean)(implicit session: DBSession): Long =
     sql"""SELECT COUNT(DISTINCT s.page_id) FROM selection s
           WHERE s.round_id IN ($prevIds) ${ratedCond(rated)}"""
       .map(_.long(1)).single().getOrElse(0L)
 
-  def previousWindow(prevIds: Seq[Long], rated: Option[Boolean], cursor: Long, size: Int)(implicit
+  def previousWindow(prevIds: Seq[Long], rated: Boolean, cursor: Long, size: Int)(implicit
       session: DBSession
   ): Window =
     sql"""SELECT COUNT(*), MAX(page_id) FROM (
@@ -667,7 +664,7 @@ object DistributionSource {
     * per image): one entry per previous round, juror 0, with the round's rate sum, and
     * the number of rated rows.
     */
-  def previousCandidates(prevIds: Seq[Long], rated: Option[Boolean], from: Long, to: Long, roundId: Long)(implicit
+  def previousCandidates(prevIds: Seq[Long], rated: Boolean, from: Long, to: Long, roundId: Long)(implicit
       session: DBSession
   ): Seq[ImageWithRating] = {
     val rows = sql"""SELECT g.page_id, g.rs, g.c, ${i.result.*} FROM (
@@ -716,7 +713,7 @@ object DistributionSource {
     */
   def rank(
       prevIds: Seq[Long],
-      rated: Option[Boolean],
+      rated: Boolean,
       denominator: Denominator,
       n: Int,
       filter: Seq[ImageWithRating] => Seq[ImageWithRating],
@@ -744,7 +741,7 @@ object DistributionSource {
   /** A page of the previous rounds' images by average rating ([[rank]]): each page id, and
     * its image's rating, one entry with the rate sum.
     */
-  private def ratedPage(prevIds: Seq[Long], rated: Option[Boolean], denominator: Denominator, pageSize: Int,
+  private def ratedPage(prevIds: Seq[Long], rated: Boolean, denominator: Denominator, pageSize: Int,
       offset: Int)(implicit session: DBSession): Seq[(Long, Image => ImageWithRating)] = {
     val total = denominator match {
       case Denominator.Const(d) => sqls"IF($d = 0, 0, SUM(GREATEST(t.rs, 0)) * 1e0 / $d)"
@@ -768,17 +765,12 @@ object DistributionSource {
   /** A page of yes/no previous rounds' images by `order` over all their votes, approvals and
     * rejections counted together across the rounds, ties by page id: the same rule whatever
     * "selected by at least" is (docs/plans/2026-11-01-binary-aggregate-votes.md, issue 2).
-    * `rated` keeps the files it read before: those with an approval, or (a stored 0) an
-    * unrated vote. Each image's rating has its approvals as its rate, so "selected by at
-    * least" compares them.
+    * `rated` ("selected by at least" set) keeps the files with an approval. Each image's
+    * rating has its approvals as its rate, so "selected by at least" compares them.
     */
-  private def binaryPage(prevIds: Seq[Long], rated: Option[Boolean], order: BinaryOrder, pageSize: Int,
+  private def binaryPage(prevIds: Seq[Long], rated: Boolean, order: BinaryOrder, pageSize: Int,
       offset: Int)(implicit session: DBSession): Seq[(Long, Image => ImageWithRating)] = {
-    val having = rated match {
-      case Some(true)  => sqls"HAVING SUM(s.rate > 0) > 0"
-      case Some(false) => sqls"HAVING SUM(s.rate = 0) > 0"
-      case None        => sqls""
-    }
+    val having = if (rated) sqls"HAVING SUM(s.rate > 0) > 0" else sqls""
     val orderBy = SQLSyntax.createUnsafely(
       (order.columns :+ ("s.page_id" -> 1)).map { case (column, dir) => column + (if (dir < 0) " DESC" else " ASC") }
         .mkString(", "))
