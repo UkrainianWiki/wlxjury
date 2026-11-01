@@ -1,4 +1,4 @@
-// The number by the large view's stars (large/navigationButtons.scala.html, raty.scala.html):
+// The number by the large view's stars (large/navigationButtons.scala.html, large-stars.js):
 // the file's rate, as the page renders it ("–" unrated, 3.5 in a half-star round), and while
 // the pointer is over a star, the rate a click on it gives; the rendered one again when the
 // pointer leaves the stars. Only the visible number changes: screen readers read the stored

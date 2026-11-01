@@ -28,11 +28,14 @@
 @defining(file.image) { image =>
 @layout(image.title.stripPrefix("File:"), bodyClass = "gallery", fullHeight = true) {
 
+        <script src="@routes.Assets.versioned("javascripts/large-view.js")"></script>
         <script src="@routes.Assets.versioned("javascripts/large-sections.js")"></script>
-        @fileKeyboardNav(index, files.size, urlAt, view.pageUrl(page))
+        <script src="@routes.Assets.versioned("javascripts/jquery.hotkeys.js")"></script>
+        <script src="@routes.Assets.versioned("javascripts/large-keys.js")"></script>
 } {
         @* the page's title, for screen readers *@
         <h1 class="visually-hidden">@image.title.stripPrefix("File:")</h1>
+        @fileKeyboardNav(index, files.size, urlAt, view.pageUrl(page))
         <div class="container-fluid large-view h-100">
             <div class="row h-100">
                 <div class="col-1 contest-file-info large-side">
@@ -81,7 +84,7 @@
                                             <img class="cropped" alt="@thumb.image.title"
                                                 src="@Global.resizeTo(thumb.image, Global.thumbSizeX, Global.thumbSizeY)"
                                                 @if(srcset.nonEmpty) {srcset="@srcset"}
-                                                onerror="this.parentNode.parentNode.classList.add('wlx-thumb-failed')">
+                                                data-failed-mark="thumb">
                                             }
                                         }
                                         @if(thumb.image.isVideo) {
@@ -96,6 +99,7 @@
                         </ul>
                     }
                     }
+                    @* the sections' stored states, before the column is painted: as large.scala.html's *@
                     <script>if (window.wlxLargeSections) wlxLargeSections.restore(document);</script>
                 </div>
 
@@ -110,7 +114,7 @@
                         @if(image.isImage && file.deletedAt.isDefined) {
                             @for(src <- cached) {
                                 <img id="large_image" alt="@image.title" src="@src" class="mw-100 mh-100"
-                                    onerror="this.parentNode.classList.add('wlx-large-failed');">
+                                    data-failed-mark="large">
                             }
                         }
                         @if(image.isImage && file.deletedAt.isEmpty) {
@@ -119,9 +123,7 @@
                                 src="@large.src" class="mw-100 mh-100"
                                 srcset="@large.srcset" @large.sizes.map { sizes => sizes="@sizes" }
                                 @large.fallback.map { fallback => data-fallback="@fallback" }
-                                onerror="var f = this.getAttribute('data-fallback');
-                                         if (f) { this.removeAttribute('data-fallback'); this.removeAttribute('srcset'); this.removeAttribute('sizes'); this.src = f; }
-                                         else this.parentNode.classList.add('wlx-large-failed');">
+                                data-failed-mark="large">
                             }
                         }
                         @if(image.isVideo) {

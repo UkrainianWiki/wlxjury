@@ -3,7 +3,7 @@
 // vote-errors.js. A binary round's tile shows the file's vote as a frame (main.css:
 // selected, rejected, none unrated) from its stored rate (data-rate) on, with the thumb of
 // that vote pressed, as a click on it undoes the vote. A rated round's tiles get stars (raty,
-// as the large view's, large/raty.scala.html), drawn from the stored rate; a click votes, the
+// as the large view's, large-stars.js), drawn from the stored rate; a click votes, the
 // stars showing the new rate at once and the last stored one again if the vote fails. While a
 // tile's vote is pending (aria-busy) its further clicks are ignored, so the votes on a file are
 // sent one at a time and stored in the order shown. The tile
