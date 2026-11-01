@@ -170,6 +170,7 @@ class RoundService @Inject() (
             "previous" -> round.previous,
             "distribution" -> round.distribution,
             "prevSelectedBy" -> round.selectedByFilter,
+            "prevRejectedBy" -> round.rejectedByFilter,
             "prevMinAvgRate" -> round.prevMinAvgRate,
             "topImages" -> round.topImages,
             "topBinaryOrder" -> topOrder,

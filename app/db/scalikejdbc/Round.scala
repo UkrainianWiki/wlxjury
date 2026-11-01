@@ -38,6 +38,8 @@ case class Round(
     minMpx: Option[Int] = None,
     previous: Option[String] = None,
     prevSelectedBy: Option[Int] = None,
+    // "exclude files rejected by at least N jurors" of a yes/no previous round (V74); None: no filter
+    prevRejectedBy: Option[Int] = None,
     prevMinAvgRate: Option[BigDecimal] = None,
     category: Option[String] = None,
     excludeCategory: Option[String] = None,
@@ -120,6 +122,11 @@ case class Round(
     * old round form's way of saying it (V73 clears them); every reader goes through this.
     */
   def selectedByFilter: Option[Int] = prevSelectedBy.filter(_ > 0)
+
+  /** "Exclude files rejected by at least N jurors" as the distribution reads it: N >= 1, or no
+    * filter. It drops the files with N or more rejections across the previous rounds' votes.
+    */
+  def rejectedByFilter: Option[Int] = prevRejectedBy.filter(_ > 0)
 
   /** [[topBinaryOrder]] as the round form and the job settings show it, the legacy rule's for none. */
   def topOrderParam: String = topBinaryOrder.fold(BinaryOrder.LegacyParam)(_.param)
@@ -279,6 +286,7 @@ object Round extends RoundRepo with CRUDMapper[Round] {
       minMpx = rs.intOpt(c.minMpx),
       previous = rs.stringOpt(c.previous),
       prevSelectedBy = rs.intOpt(c.prevSelectedBy),
+      prevRejectedBy = rs.intOpt(c.prevRejectedBy),
       prevMinAvgRate = rs.bigDecimalOpt(c.prevMinAvgRate).map(BigDecimal.apply),
       category = rs.stringOpt(c.category),
       excludeCategory = rs.stringOpt(c.excludeCategory),
@@ -319,6 +327,7 @@ object Round extends RoundRepo with CRUDMapper[Round] {
           column.minMpx -> round.minMpx,
           column.previous -> round.previous,
           column.prevSelectedBy -> round.prevSelectedBy,
+          column.prevRejectedBy -> round.prevRejectedBy,
           column.prevMinAvgRate -> round.prevMinAvgRate,
           column.category -> round.category,
           column.excludeCategory -> round.excludeCategory,

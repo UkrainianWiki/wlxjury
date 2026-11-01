@@ -115,6 +115,13 @@ case class SelectedAtLeast(by: Int) extends ImageFilterGen {
   def apply(): ImageFilter = imageRatingFilter(i => i.rateSum >= by)
 }
 
+/** "Exclude files rejected by at least `by` jurors": the files with fewer rejections, read
+  * from all the previous rounds' votes ([[ImageWithRating.rejections]]).
+  */
+case class RejectedByLessThan(by: Int) extends ImageFilterGen {
+  def apply(): ImageFilter = imageRatingFilter(i => i.rejections < by)
+}
+
 case class MegaPixelsAtLeast(mpx: Int) extends ImageFilterGen {
   def apply(): ImageFilter = imageFilter(_.mpx >= mpx)
 }
@@ -171,6 +178,7 @@ object ImageWithRatingSeqFilter {
       selectTopByRating: Option[Int] = None,
       topOrder: Option[BinaryOrder] = Some(BinaryOrder.Default),
       selectedAtLeast: Option[Int] = None,
+      rejectedBy: Option[Int] = None,
       mpxAtLeast: Option[Int] = None,
       sizeAtLeast: Option[Int] = None,
       specialNomination: Option[String] = None,
@@ -195,6 +203,7 @@ object ImageWithRatingSeqFilter {
       selectTopByRating
         .map(top => SelectTopByRating(top, round.get, topOrder)) -> selectTopByRating,
       selectedAtLeast.map(n => SelectedAtLeast(n)) -> selectedAtLeast,
+      rejectedBy.map(RejectedByLessThan) -> rejectedBy,
       mpxAtLeast.map(MegaPixelsAtLeast) -> mpxAtLeast,
       sizeAtLeast.map(SizeAtLeast) -> sizeAtLeast,
       specialNomination.map(SpecialNominationFilter) -> specialNomination,

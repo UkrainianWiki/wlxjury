@@ -249,6 +249,60 @@ class RoundRedistributionFiltersSpec extends Specification with TestDb with Befo
           Seq((1L to 20L).toSet, (1L to 20L).toSet, Set(3L, 6L, 9L, 12L, 15L, 18L)))
     }
 
+    "exclude the files rejected by at least N jurors, with \"selected by\" and a top-N, on every path" in {
+      implicit val contest: ContestJury = createContests(1).head
+      val jurors = createUsers("jury", 1, 2, 3, 4, 5)
+      addImages(contest, 1 to 10)
+      val service = TestRoundServices.roundService(TestRoundServices.handler(chunkRows = 3))
+      val source = Round(None, 0, Some("Source"), contest.getId, active = true)
+      val binary = service.createNewRound(source, jurors.map(_.getId))
+      // the five jurors' votes by page id modulo 10 (file 10 + n votes as file n)
+      val votes = Map(1 -> Seq(1, 1, 1, 0, 0), 2 -> Seq(1, -1, 0, 0, 0), 3 -> Seq(-1, -1, 0, 0, 0),
+        4 -> Seq(0, 0, 0, 0, 0), 5 -> Seq(1, 1, -1, -1, 0), 6 -> Seq(1, 1, 1, 1, -1), 7 -> Seq(-1, 0, 0, 0, 0),
+        8 -> Seq(1, 0, 0, 0, 0), 9 -> Seq(-1, -1, -1, 0, 0), 0 -> Seq(1, 1, 0, 0, 0))
+      def vote(): Unit =
+        for (row <- SelectionJdbc.byRound(binary.getId); (juror, rate) <- jurors.zip(votes((row.pageId % 10).toInt))
+             if juror.getId == row.juryId)
+          SelectionJdbc.rate(row.pageId, row.juryId, binary.getId, rate)
+      vote()
+
+      val next = source.copy(previous = Some(binary.getId.toString), distribution = 1, number = 2)
+      val top = next.copy(topBinaryOrder = Some(BinaryOrder.Default))
+      val cases = Seq(
+        (next.copy(prevRejectedBy = Some(1)), Set[Long](1, 4, 8, 10)), // unrated and approved files stay
+        (next.copy(prevRejectedBy = Some(2)), Set[Long](1, 2, 4, 6, 7, 8, 10)), // one rejection stays, two don't
+        (next.copy(prevRejectedBy = Some(1), prevSelectedBy = Some(1)), Set[Long](1, 8, 10)),
+        (next.copy(prevRejectedBy = Some(2), prevSelectedBy = Some(2)), Set[Long](1, 6, 10)),
+        (top.copy(topImages = Some(2)), Set[Long](1, 6)),
+        (top.copy(topImages = Some(2), prevRejectedBy = Some(1)), Set[Long](1, 10)), // ranked among those left
+        (top.copy(topImages = Some(2), prevRejectedBy = Some(1), prevSelectedBy = Some(2)), Set[Long](1, 10))
+      )
+      val inMemory = new DistributeImages(ImageJdbc)
+      val created = cases.zipWithIndex.map { case ((settings, expected), i) =>
+        val round = roundDao.create(settings)
+        round.addUsers(jurors.map(u => RoundUser(round.getId, u.getId, "jury", active = true)))
+        val reference = inMemory.imagesByRound(round, Seq(binary)).map(_.pageId).toSet
+        val count = service.newFilesCount(round.getId)
+        service.distributeNewImages(round.getId)
+        (round, (i, pageIds(round.getId), reference, count) === ((i, expected, expected, expected.size.toLong)))
+      }
+      val job = service.distributionJob(created.head._1.getId).get
+
+      addImages(contest, 11 to 20)
+      service.distributeNewImages(binary.getId)
+      vote()
+      val newFiles = cases.zip(created).filter(_._1._1.topImages.isEmpty).map { case ((_, expected), (round, _)) =>
+        val added = expected.map(_ + 10)
+        val reference = inMemory.imagesByRound(round, Seq(binary)).map(_.pageId).toSet
+        val count = service.newFilesCount(round.getId)
+        val distributed = service.distributeNewImages(round.getId)
+        (round.getId, reference, count, distributed, pageIds(round.getId)) ===
+          ((round.getId, added, added.size.toLong, added.size, expected ++ added))
+      }
+      created.map(_._2).reduce(_ and _) and newFiles.reduce(_ and _) and
+        ((job.params \ "settings" \ "prevRejectedBy").asOpt[Int] must beSome(1))
+    }
+
     "ignore \"selected by at least 0\" in a round with no previous round" in {
       // V73 sets such a 0 to NULL: it must distribute as no filter does, on every path
       implicit val contest: ContestJury = createContests(1).head

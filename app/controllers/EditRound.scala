@@ -31,8 +31,9 @@ object EditRound {
   private val jurorsMappingKV = "jurors" -> seq(text).verifying(nonEmptySeq)
   val jurorsMapping: Mapping[Seq[String]] = single(jurorsMappingKV)
 
-  /** Extra fields live outside the 22-field mapping: category operation, conflicts of interest
-    * and the order of a top-N from a yes/no previous round, kept only with a top-N (an unknown
+  /** Extra fields live outside the 22-field mapping: category operation, conflicts of interest,
+    * "exclude files rejected by at least N jurors" ("" and "0" are no filter, None) and the
+    * order of a top-N from a yes/no previous round, kept only with a top-N (an unknown
     * order is the default; the legacy rule's value, shown for a round from before V72, is none,
     * which a new round's submission from a yes/no round makes the default:
     * [[Round.withExplicitTopOrder]]).
@@ -50,8 +51,9 @@ object EditRound {
       "" -> roundMapping,
       "excludeCoi" -> boolean,
       "categoryClause" -> categoryOperation,
-      "topBinaryOrder" -> optional(text)
-    )((edit, excludeCoi, selected, topOrder) => {
+      "topBinaryOrder" -> optional(text),
+      "rejectedBy" -> optional(text)
+    )((edit, excludeCoi, selected, topOrder, rejectedBy) => {
       val configured = selected match {
         case None => edit.round // Older clients omitted the clause; retain their inference.
         case Some(value) =>
@@ -62,9 +64,10 @@ object EditRound {
             excludeCategory = edit.round.excludeCategory.filter(_ => operation.requiresSecond))
       }
       edit.copy(round = configured.copy(excludeCoi = excludeCoi,
-        topBinaryOrder = edit.round.topImages.flatMap(_ => BinaryOrder.ofForm(topOrder))))
+        topBinaryOrder = edit.round.topImages.flatMap(_ => BinaryOrder.ofForm(topOrder)),
+        prevRejectedBy = rejectedBy.flatMap(s => Try(s.toInt).toOption).filter(_ > 0)))
     })(edit => Some((edit, edit.round.excludeCoi, Some(edit.round.categoryRule.operation.formValue),
-      edit.round.topImages.map(_ => edit.round.topOrderParam))))
+      edit.round.topImages.map(_ => edit.round.topOrderParam), edit.round.rejectedByFilter.map(_.toString))))
       .verifying(validCategories)
   )
 
