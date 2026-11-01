@@ -35,15 +35,15 @@
         <div id="prevRoundFilters" @if(editRoundForm("previousRound").indexes.isEmpty) {style="display: none"}>
             <div id="selectFilters"
             class="@rounds.filter(_.isBinary).map(r => "round" + r.getId).mkString(" ")">
-            @* the empty choice is stored as no filter (NULL); a stored 0 (an unrated vote counted as
-               a selection) is no longer offered, only kept for a round that has it *@
+            @* the empty choice is stored as no filter (NULL); 0 picks the files with an unrated vote
+               in the previous rounds (e.g. after a screening that only rejects, unrated = kept) *@
             @bs.select(
                 editRoundForm("minJurors"),
-                Seq("" -> Messages("selected.by.any.number")) ++
-                    Option.when(editRoundForm("minJurors").value.contains("0"))("0" -> Messages("selected.by.legacy.zero")) ++
+                Seq("" -> Messages("selected.by.any.number"), "0" -> Messages("selected.by.unrated")) ++
                     Seq("1", "2", "3", "4", "5", "6").map(x => (x, x)),
                 Symbol("value") -> "",
                 Symbol("_label") -> Messages("selected.by.at.least.x.jurors"),
+                Symbol("_help") -> Messages("selected.by.help"),
                 Symbol("readonly") -> noEdit)
             @* the order that picks a top-N from a yes/no previous round, stored with the round, so
                its page shows which rule picked its files and a later distribution picks the same;
