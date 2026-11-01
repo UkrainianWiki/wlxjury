@@ -62,6 +62,13 @@ describe("formatCacheStatus", () => {
         })).toBe("10 / 10 downloaded (100%) – done");
     });
 
+    test("says a download stopped by an error failed, not done", () => {
+        expect(formatCacheStatus({ total: 0, done: 0, errors: 0, running: false, failed: true, ratePerSec: 0, etaSeconds: 0 }))
+            .toBe("Download failed");
+        expect(formatCacheStatus({ total: 10, done: 4, errors: 0, running: false, failed: true, ratePerSec: 0, etaSeconds: 0 }))
+            .toBe("4 / 10 downloaded (40%) \u2013 failed");
+    });
+
     test("omits error string when errors is 0", () => {
         const result = formatCacheStatus({
             total: 100, done: 50, errors: 0, running: false, ratePerSec: 0, etaSeconds: 0

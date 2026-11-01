@@ -32,7 +32,7 @@ class DistributeImagesBatchSpec extends Specification with TestDb with BeforeAll
       imageDao.batchInsert(images)
 
       distributor.distributeImages(round, images, jurors) === 40000
-      SelectionJdbc.imageCountByRound(round.getId) === 4000
+      ImageJdbc.imageCountByRounds(Seq(round.getId)).values.sum === 4000
       DB.readOnly(implicit s =>
         sql"SELECT COUNT(*) FROM selection WHERE round_id = ${round.getId}".map(_.int(1)).single().get) === 40000
       packet must be_<=(1024L * 1024) // the container's limit the batch must fit

@@ -26,13 +26,8 @@ body.gallery {
     color: var(--wlx-rejected);
 }
 
-#regionnav>li.region-nomination>a, .region-menu-list>li.region-nomination>a {
+.region-menu-list>li.region-nomination>a {
     font-style: italic;
-}
-
-#regionnav>li.region-separator>span {
-    border: none;
-    background: none;
 }
 
 
