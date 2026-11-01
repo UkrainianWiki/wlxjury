@@ -97,7 +97,12 @@ class MessagesCompletenessSpec extends Specification {
     LoginController.ErrorPageKeys.toSeq,
     Seq("round", "juror").flatMap(w => Seq(s"$w.start", s"$w.stop")), // snippets.startStop
     Seq("selected", "rejected", "unrated", "rated"),                   // voteMoved, navbar tabs
-    Seq("no")                                                          // imageFiltering: "No".toLowerCase
+    Seq("no"),                                                         // imageFiltering: "No".toLowerCase
+    Seq("", ".resumed", ".distributing").map("round.resubmitted" + _), // RoundService.Resubmitted.messageKey
+    Seq("round.distribute.running", "round.distribute.running.files", "round.distribute.resumed.files",
+      "round.still.distributing", "import.already.running"),        // flashed by RoundController, ImageController
+    Seq("creation", "distribute").map(w => s"round.$w.failed.reference"), // RoundController.saveRound
+    Seq("missing", "not.failed", "no.handler", "duplicate").map("job.retry." + _) // JobScheduler.retry
   ).flatten
 
   /** Texts in a key's place that are shown as they are, not keys, each with its reason. */

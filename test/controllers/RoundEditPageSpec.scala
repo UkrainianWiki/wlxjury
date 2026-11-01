@@ -45,7 +45,7 @@ class RoundEditPageSpec extends PlaySpecification with PlayTestDb {
       .withFormUrlEncodedBody(
         Seq("number" -> "0", "name" -> "Round 2", "contest" -> contestId.toString, "roles" -> "jury",
           "distribution" -> "1", "rates" -> "1", "minMpx" -> "", "minSize" -> "", "mediaType" -> "all",
-          "submitToken" -> token) ++ extra ++
+          "submitToken" -> token).filterNot(f => extra.exists(_._1 == f._1)) ++ extra ++
           jurors.zipWithIndex.map { case (id, i) => s"jurors[$i]" -> id.toString }: _*)
       .withCSRFToken
 
@@ -96,6 +96,35 @@ class RoundEditPageSpec extends PlaySpecification with PlayTestDb {
         flash(second).get("error") must beSome.which(_.contains("already created from this form"))
 
         roundDao.findByContest(contest.getId).count(_.name.contains("Round 2")) === 1
+      }
+    }
+
+    "show our own check's refusal of the settings" in {
+      testDbApp { implicit app =>
+        val (contest, admin, round) = fixture()
+        val jurors = User.findRoundJurors(round.getId).map(_.getId)
+        val token = java.util.UUID.randomUUID().toString
+        // three jurors per image, of two
+        val result = route(app, saveNewRound(contest.getId, jurors, token, admin, Seq("distribution" -> "3"))).get
+        status(result) must_== BAD_REQUEST
+        contentAsString(result) must contain("Could not create the round: 3 jurors per image, but only 2 jurors selected")
+        contentAsString(result) must not(contain("requirement failed"))
+      }
+    }
+
+    "show any other failure of the creation as a reference, not its text" in {
+      val failing = org.mockito.Mockito.mock(classOf[services.RoundService])
+      import org.mockito.ArgumentMatchers.any
+      org.mockito.Mockito.when(failing.submit(any(), any(), any(), any(), any()))
+        .thenThrow(new IllegalStateException("Duplicate entry 'secret' for key 'rounds.name'"))
+      testDbAppWith(bind[services.RoundService].toInstance(failing)) { implicit app =>
+        val (contest, admin, round) = fixture()
+        val jurors = User.findRoundJurors(round.getId).map(_.getId)
+        val result = route(app, saveNewRound(contest.getId, jurors, java.util.UUID.randomUUID().toString, admin)).get
+        status(result) must_== BAD_REQUEST
+        val html = contentAsString(result)
+        html must contain("Could not create the round. If it happens again, tell the organizers this reference:")
+        html must not(contain("Duplicate entry"))
       }
     }
 
@@ -272,6 +301,27 @@ class RoundEditPageSpec extends PlaySpecification with PlayTestDb {
         val html = contentAsString(page)
         html must not(contain("Round 1"))
         html must not(contain(s"/roundstat/${round.getId}/table"))
+      }
+    }
+
+    "answer a round that doesn't exist with the error page, not its id" in {
+      testDbApp { implicit app =>
+        val (contest, admin, round) = fixture()
+        val missing = (round.getId + 987654).toString
+        val jurors = User.findRoundJurors(round.getId).map(_.getId)
+        def post(url: String, form: (String, String)*) =
+          route(app, FakeRequest(POST, url).withSession(Secured.UserName -> admin.email)
+            .withFormUrlEncodedBody(form: _*).withCSRFToken).get
+        val results = Seq(
+          post("/admin/rounds/save", "id" -> missing, "number" -> "1", "name" -> "Round 1",
+            "contest" -> contest.getId.toString, "roles" -> "jury", "distribution" -> "0", "rates" -> "1",
+            "minMpx" -> "", "minSize" -> "", "mediaType" -> "all", "jurors[0]" -> jurors.head.toString),
+          post("/admin/setround", "currentId" -> missing, "setActive" -> "false"),
+          post("/round/setrounduser", "parentId" -> missing, "currentId" -> admin.getId.toString, "setActive" -> "false")
+        )
+        results.map(status(_)) must_== Seq(NOT_FOUND, NOT_FOUND, NOT_FOUND)
+        results.map(contentAsString(_)) must contain(not(contain(missing))).forall
+        results.map(contentAsString(_)) must contain(contain("There is no such round.")).forall
       }
     }
   }

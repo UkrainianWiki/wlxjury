@@ -219,6 +219,9 @@ class RoundController @Inject() (
       case Some(round)                              => onUnAuthorized(user, request, Secured.Denial.round(round, User.ADMIN_ROLES))
     }
 
+  private def roundNotFound(user: User)(implicit request: Request[AnyContent]): Result =
+    NotFound(views.html.errorPage(Some(user), "error.title", "error.round.not.found"))
+
   /** Whether `user` administers the round's contest, as an active member of it. */
   private def adminOfRound(user: User, round: Round): Boolean =
     contestPermission(User.ADMIN_ROLES, Some(round.contestId))(Secured.inContest(user, round.contestId))
@@ -287,15 +290,18 @@ class RoundController @Inject() (
                 )
               )
 
-            def detail(e: Throwable): String =
-              Option(e.getMessage)
-                .filter(_.nonEmpty)
-                .getOrElse(e.toString)
-                // keep MessageFormat (used by Messages(key, args)) from choking on the text
-                .replace("'", "''")
-                .replace("{", "(")
-                .replace("}", ")")
-                .take(500)
+            // Our own checks' refusal of the settings is shown as it is; any other failure,
+            // whose text may be the database's, only as a logged reference.
+            def failed(r: Round, key: String, referenceKey: String, e: Throwable, what: String): Result =
+              RoundController.refusal(e) match {
+                case Some(text) =>
+                  logger.warn(s"$what: $text")
+                  reRender(r, key, text)
+                case None =>
+                  val reference = Secured.newReference()
+                  logger.error(s"$what ref=$reference", e)
+                  reRender(r, referenceKey, reference)
+              }
 
             // "Add files": lines that name no file are shown, not dropped
             val unreadable = FileTitles.unreadable(editForm.fileList.getOrElse(""))
@@ -317,17 +323,19 @@ class RoundController @Inject() (
                     // no second round; a failed distribution of the first was resumed.
                     case resubmitted: RoundService.Resubmitted =>
                       logger.warn(s"Contest $contestId: ${resubmitted.message}")
-                      toRoundsList.flashing("error" -> resubmitted.message)
+                      toRoundsList.flashing(
+                        "error" -> messagesApi.preferred(request)(
+                          resubmitted.messageKey, resubmitted.round.number, resubmitted.round.description))
                   }
                 } catch {
                   // Rejected before anything was created (bad input): keep the form.
                   case NonFatal(e) =>
-                    logger.warn(s"Rejected round creation for contest $contestId: ${detail(e)}")
-                    reRender(round, "round.creation.failed", detail(e))
+                    failed(round, "round.creation.failed", "round.creation.failed.reference", e,
+                      s"Rejected round creation for contest $contestId")
                 }
 
               case Some(roundId) =>
-                withAdminRound(user, roundId, NotFound(s"Round $roundId not found"), request) {
+                withAdminRound(user, roundId, roundNotFound(user), request) {
                   case stored if stored.contestId != contestId =>
                     onUnAuthorized(user, request,
                       Secured.Denial.round(stored, User.ADMIN_ROLES).copy(reason = Some("round_in_other_contest")))
@@ -344,20 +352,17 @@ class RoundController @Inject() (
                       try {
                         roundsService.distributeNewFiles(roundId, user.id, titles, newFiles = editForm.newImages) match {
                           case RoundService.AlreadyRunning(_) =>
-                            flashing(
-                              "error" -> (s"Round ${stored.number}: its images are already being distributed." +
-                                (if (titles.nonEmpty) " The listed files were not added: add them again once it has finished."
-                                 else "")))
+                            flashing("error" -> messagesApi.preferred(request)(
+                              if (titles.nonEmpty) "round.distribute.running.files" else "round.distribute.running",
+                              stored.number))
                           case RoundService.Resumed(_) if titles.nonEmpty =>
-                            flashing(
-                              "error" -> (s"Round ${stored.number}: its failed distribution was resumed instead of " +
-                                "adding the listed files. Add them again once it has finished."))
+                            flashing("error" -> messagesApi.preferred(request)("round.distribute.resumed.files", stored.number))
                           case _ => flashing()
                         }
                       } catch {
                         case NonFatal(e) =>
-                          logger.warn(s"Round $roundId: could not start distributing new files: ${detail(e)}")
-                          reRender(Round.findById(roundId).getOrElse(round), "round.distribute.failed", detail(e))
+                          failed(Round.findById(roundId).getOrElse(round), "round.distribute.failed",
+                            "round.distribute.failed.reference", e, s"Round $roundId: could not start distributing new files")
                       }
                 }
             }
@@ -374,10 +379,11 @@ class RoundController @Inject() (
           _ => BadRequest,
           selectRound =>
             selectRound.roundId.toLongOption.fold[Result](BadRequest) { id =>
-              withAdminRound(user, id, NotFound(s"Round $id not found"), request) { round =>
+              withAdminRound(user, id, roundNotFound(user), request) { round =>
                 val toList = Redirect(routes.RoundController.rounds(Some(round.contestId)))
                 if (roundsService.setCurrentRound(Nil, round.copy(active = selectRound.active))) toList
-                else toList.flashing("error" -> RoundController.stillDistributing(round))
+                else toList.flashing(
+                  "error" -> messagesApi.preferred(request)("round.still.distributing", round.number, round.description))
               }
             }
         )
@@ -395,7 +401,7 @@ class RoundController @Inject() (
           setRoundUser =>
             (setRoundUser.roundId.toLongOption, setRoundUser.userId.toLongOption) match {
               case (Some(roundId), Some(userId)) =>
-                withAdminRound(user, roundId, NotFound(s"Round $roundId not found"), request) { _ =>
+                withAdminRound(user, roundId, roundNotFound(user), request) { _ =>
                   RoundUser.setActive(roundId, userId, setRoundUser.active)
                   Redirect(routes.RoundController.roundStat(roundId))
                 }
@@ -566,9 +572,16 @@ object RoundController {
       t
     })
 
-  def stillDistributing(round: Round): String =
-    s"Round ${round.number} (${round.description}) can't be started yet: its images are still being " +
-      "distributed. It starts by itself once its distribution has finished."
+  /** The text of a refusal by our own checks of a round's settings (`require`, in
+    * [[RoundService]] and the distribution), without its prefix; None for any other failure.
+    */
+  def refusal(e: Throwable): Option[String] = e match {
+    case e: IllegalArgumentException =>
+      Option(e.getMessage).filter(_.startsWith(RequirementFailed)).map(_.stripPrefix(RequirementFailed).take(500))
+    case _ => None
+  }
+
+  private val RequirementFailed = "requirement failed: "
 
   private val TokenPattern = "[0-9a-fA-F-]{36}".r
 
