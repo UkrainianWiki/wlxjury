@@ -942,7 +942,9 @@ Left for separate branches; none blocks merging this one.
    the higher stars get raty's default number tooltips while the first ten get none; make
    them consistent (all empty once the number is shown). Tests: a Jest case on the hover and
    mouse-out number and the half-star display; LargeViewFixturesSpec for the markup.
-7. **Gallery vote borders.** In a binary round's gallery, thumbs up sometimes gives the tile a
+7. **Gallery vote borders.** Done (13c5ff45): the frame from `data-rate` at load, none
+   unrated, 4px over the tile's edge with an inner line in stronger colours (`--wlx-vote-*`),
+   the pressed thumb `aria-pressed`. In a binary round's gallery, thumbs up sometimes gives the tile a
    (dark) grey border instead of the selected colour. Two causes, both in
    `public/javascripts/ug-theme-tiles.js` (`onSelectClick` / `onRejectClick` / `serviceCall`):
    - The vote buttons toggle: thumbs up on a file already selected sends 0 (unrated), thumbs
@@ -958,7 +960,9 @@ Left for separate branches; none blocks merging this one.
    distinct "undo" state on the button (pressed `aria-pressed`) so the toggle is expected.
    Tests: Jest on `serviceCall`'s colours for 1 / -1 / 0 and on the initial borders from
    `data-rate`; a screenshot of a gallery with voted files in light and dark.
-8. **Re-rating in a rated round's gallery.** A juror can vote in the gallery only in a binary
+8. **Re-rating in a rated round's gallery.** Done: the vote's range checked in `selectWS`
+   and `rateByPageId` (ee0971b3, `Round.acceptsRate`); stars on the juror's own tiles
+   (92750bbc, `tile-votes.js`); the by-rate gallery keeps its static stars. A juror can vote in the gallery only in a binary
    round: unitegallery adds the select / reject icons only when `binary` is set
    (`unitegallery.js` ~10689, options from `main.scala.html` ~42), and the by-rate gallery
    draws static stars (`showStar`). In a rated round a juror who wants to change a rate must
