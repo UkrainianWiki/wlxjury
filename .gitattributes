@@ -11,3 +11,8 @@ bin/wlxjury-*.sh text eol=lf
 conf/systemd/** text eol=lf
 conf/wlxjury/** text eol=lf
 conf/apache/wlxjury-maintenance.conf text eol=lf
+
+# Twirl renders a template's text as it is checked out. The inline scripts are allowed by their
+# SHA-256 in the content security policy (conf/application.conf), so every checkout, Windows
+# (core.autocrlf) included, must render the same bytes (views.InlineScriptHashesSpec).
+app/views/** text eol=lf
