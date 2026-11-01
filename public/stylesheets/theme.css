@@ -10,8 +10,6 @@
     /* a thumbnail or image that failed to load, and its mark */
     --wlx-thumb-failed-bg: #c6c6c6;
     --wlx-thumb-failed-mark: #6e6e6e;
-    /* the large view's current thumbnail */
-    --wlx-current-bg: #a9a9a9;
     /* a file deleted on Commons: its red frame */
     --wlx-deleted: #dc3545;
     /* the navbar's selected and rejected tabs (own votes), and the active tab's background */
@@ -26,7 +24,6 @@
     --wlx-image-bg: #303030;
     --wlx-thumb-failed-bg: #4a4a4a;
     --wlx-thumb-failed-mark: #a0a0a0;
-    --wlx-current-bg: #111111;
     --wlx-deleted: #e35d6a;
     --wlx-selected: #75b798;
     --wlx-rejected: #ea868f;

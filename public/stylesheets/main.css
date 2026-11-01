@@ -69,10 +69,6 @@ li.gallerybox div.thumb_small {
       overflow: hidden;
   }
 
-.current {
-     background-color: var(--wlx-current-bg);
- }
-
 img.cropped {
     position: absolute;
     margin: auto;
@@ -258,7 +254,7 @@ a:has(> .btn) { text-decoration: none; }
 .rank-line { margin-bottom: 10px; }
 
 /* the large views (large/large.scala.html, large/contestFile.scala.html): a side column with
-   the buttons, stars, thumbnails and the file's details, and the image beside it */
+   the buttons, stars, the file's details and the files after it, and the image beside it */
 .large-view { padding-left: 5px; }
 .large-side { min-width: 220px; }
 .large-main { margin-left: 5px; margin-top: 10px; }
@@ -268,6 +264,19 @@ a:has(> .btn) { text-decoration: none; }
 .large-box, .large-line { margin-right: 5px; padding: 5px; }
 .large-box { margin-top: 10px; }
 .large-line { margin-top: 5px; }
+/* a collapsible section of the side column (large/sideSection.scala.html): its heading, a
+   button in the page's text colour, its chevron turned while the section is closed */
+.large-section { margin-top: 10px; }
+.large-section-toggle {
+    display: flex; align-items: center; gap: 4px; width: calc(100% - 5px); padding: 2px 5px;
+    border: 0; border-radius: var(--bs-border-radius-sm); background: none;
+    color: var(--bs-body-color); font-size: .875rem; font-weight: 600; text-align: start;
+}
+.large-section-toggle:hover { background-color: var(--wlx-nav-active-bg); }
+.large-section-toggle:focus-visible { outline: 2px solid var(--bs-focus-ring-color); outline-offset: 1px; }
+.large-section-toggle .bi { transition: transform .2s; }
+.large-section-toggle.collapsed .bi { transform: rotate(-90deg); }
+@media (prefers-reduced-motion: reduce) { .large-section-toggle .bi { transition: none; } }
 
 /* raty's stars (large/raty.scala.html) and the static ones (showStar): Bootstrap Icons in the
    mode's star colour. Ten and the cancel icon fit one line of the side column; more (a 1-11 ..

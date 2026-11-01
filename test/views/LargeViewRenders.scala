@@ -107,7 +107,8 @@ object LargeViewRenders {
     implicit val req: Request[AnyContentAsEmpty.type] = request(view.largeUrl(stored(index).image.pageId), cookies)
     implicit val msgs: Messages = messages
     implicit val flash: Flash = Flash()
-    views.html.large.contestFile(organizer, view, stored, index, page = 1, monument = None).body
+    views.html.large.contestFile(organizer, view, stored, index,
+      following = stored.drop(index + 1).take(Neighbourhood.Following), page = 1, monument = None).body
   }
 
   val organizer: User = User("Organizer", "org@example.org", id = Some(3), roles = Set("organizer"), contestId = Some(1))

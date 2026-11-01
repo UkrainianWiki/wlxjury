@@ -447,16 +447,19 @@ class GalleryController @Inject() (
       country: Option[String], coi: Boolean = false): EssentialAction =
     withAuthOn(blocking)(contestPermission(User.ADMIN_ROLES ++ User.ORG_COM_ROLES, Some(contestId))) { user => implicit request =>
       contestFilesView(contestId, deleted, round, region, country, coi).fold(notFoundPage(user, _), { view =>
-        // two files before it, as a round's large view has them
-        val (files, offset) = view.list.fold((Seq.empty[ImageJdbc.StoredFile], 0)) { list =>
-          val offset = math.max(0, ImageJdbc.fileRank(list, view.region, pageId) - 2)
-          (ImageJdbc.listFiles(list, view.region, 5, offset), offset)
+        // two files before it and five in all to move among, as a round's large view has them,
+        // and on to the last one its strip of following files shows
+        val (read, offset) = view.list.fold((Seq.empty[ImageJdbc.StoredFile], 0)) { list =>
+          val offset = math.max(0, ImageJdbc.fileRank(list, view.region, pageId) - Neighbourhood.Side)
+          (ImageJdbc.listFiles(list, view.region, Neighbourhood.Side + 1 + Neighbourhood.Following, offset), offset)
         }
+        val files = read.take(Neighbourhood.Window)
         val index = files.indexWhere(_.image.pageId == pageId)
         if (index < 0) Redirect(view.pageUrl(1))
         else {
           val monument = files(index).image.monumentId.filter(_.trim.nonEmpty).flatMap(MonumentJdbc.find(_))
-          Ok(views.html.large.contestFile(user, view, files, index, Pager.pageOf(offset + index), monument))
+          val following = read.drop(index + 1).take(Neighbourhood.Following)
+          Ok(views.html.large.contestFile(user, view, files, index, following, Pager.pageOf(offset + index), monument))
         }
       })
     }

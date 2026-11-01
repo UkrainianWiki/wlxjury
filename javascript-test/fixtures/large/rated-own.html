@@ -34,6 +34,7 @@ e.preventDefault();
 voteLarge($(this).attr('data-vote-url'));
 });
 </script>
+<script src="/assets/javascripts/large-sections.js"></script>
 <script src="/assets/javascripts/jquery.raty.js"></script>
 <script>
 $(document).ready(function() {
@@ -125,84 +126,30 @@ return false ;
 </a>
 </div>
 <div id="rate-image" class="large-stars"></div>
+<section class="large-section">
+<button type="button" class="large-section-toggle" data-bs-toggle="collapse"
+data-bs-target="#large-info" aria-expanded="true" aria-controls="large-info" data-large-section="large-info">
+<i class="bi bi-chevron-down" aria-hidden="true"></i>
+large.file.info
+</button>
+<div id="large-info" class="collapse show">
+<div class="large-line">
+<a href="https://upload.wikimedia.org/wikipedia/commons/a/ab/Image_107.jpg">full.resolution</a>
+</div>
+<div class="large-line">
+<ol>
+</ol>
+</div>
+</div>
+</section>
+<section class="large-section">
+<button type="button" class="large-section-toggle collapsed" data-bs-toggle="collapse"
+data-bs-target="#large-next" aria-expanded="false" aria-controls="large-next" data-large-section="large-next">
+<i class="bi bi-chevron-down" aria-hidden="true"></i>
+large.next.files
+</button>
+<div id="large-next" class="collapse">
 <ul class="gallery mw-gallery-traditional">
-<li class="gallerybox">
-<div class="thumb_small">
-<div class="my-1 mx-auto">
-<a href="/large/round/1/user/1/pageid/101?sort=rate">
-<img class="cropped" alt="File:Image 101.jpg"
-src="https://upload.wikimedia.org/wikipedia/commons/a/ab/Image_101.jpg"
-srcset="https://upload.wikimedia.org/wikipedia/commons/a/ab/Image_101.jpg 1.5x, https://upload.wikimedia.org/wikipedia/commons/a/ab/Image_101.jpg 2x">
-</a>
-</div>
-</div>
-</li>
-<li class="gallerybox">
-<div class="thumb_small">
-<div class="my-1 mx-auto">
-<a href="/large/round/1/user/1/pageid/102?sort=rate">
-<img class="cropped" alt="File:Image 102.jpg"
-src="https://upload.wikimedia.org/wikipedia/commons/a/ab/Image_102.jpg"
-srcset="https://upload.wikimedia.org/wikipedia/commons/a/ab/Image_102.jpg 1.5x, https://upload.wikimedia.org/wikipedia/commons/a/ab/Image_102.jpg 2x">
-</a>
-</div>
-</div>
-</li>
-<li class="gallerybox">
-<div class="thumb_small">
-<div class="my-1 mx-auto">
-<a href="/large/round/1/user/1/pageid/103?sort=rate">
-<img class="cropped" alt="File:Image 103.jpg"
-src="https://upload.wikimedia.org/wikipedia/commons/a/ab/Image_103.jpg"
-srcset="https://upload.wikimedia.org/wikipedia/commons/a/ab/Image_103.jpg 1.5x, https://upload.wikimedia.org/wikipedia/commons/a/ab/Image_103.jpg 2x">
-</a>
-</div>
-</div>
-</li>
-<li class="gallerybox">
-<div class="thumb_small">
-<div class="my-1 mx-auto">
-<a href="/large/round/1/user/1/pageid/104?sort=rate">
-<img class="cropped" alt="File:Image 104.jpg"
-src="https://upload.wikimedia.org/wikipedia/commons/a/ab/Image_104.jpg"
-srcset="https://upload.wikimedia.org/wikipedia/commons/a/ab/Image_104.jpg 1.5x, https://upload.wikimedia.org/wikipedia/commons/a/ab/Image_104.jpg 2x">
-</a>
-</div>
-</div>
-</li>
-<li class="gallerybox">
-<div class="thumb_small">
-<div class="my-1 mx-auto">
-<a href="/large/round/1/user/1/pageid/105?sort=rate">
-<img class="cropped" alt="File:Image 105.jpg"
-src="https://upload.wikimedia.org/wikipedia/commons/a/ab/Image_105.jpg"
-srcset="https://upload.wikimedia.org/wikipedia/commons/a/ab/Image_105.jpg 1.5x, https://upload.wikimedia.org/wikipedia/commons/a/ab/Image_105.jpg 2x">
-</a>
-</div>
-</div>
-</li>
-<li class="gallerybox">
-<div class="thumb_small">
-<div class="my-1 mx-auto">
-<a href="/large/round/1/user/1/pageid/106?sort=rate">
-<img class="cropped" alt="File:Image 106.jpg"
-src="https://upload.wikimedia.org/wikipedia/commons/a/ab/Image_106.jpg"
-srcset="https://upload.wikimedia.org/wikipedia/commons/a/ab/Image_106.jpg 1.5x, https://upload.wikimedia.org/wikipedia/commons/a/ab/Image_106.jpg 2x">
-</a>
-</div>
-</div>
-</li>
-<li class="gallerybox">
-<div class="thumb_small current">
-<div class="my-1 mx-auto">
-<a href="/large/round/1/user/1/pageid/107?sort=rate">
-<img class="cropped" alt="File:Image 107.jpg"
-src="https://upload.wikimedia.org/wikipedia/commons/a/ab/Image_107.jpg"
-srcset="https://upload.wikimedia.org/wikipedia/commons/a/ab/Image_107.jpg 1.5x, https://upload.wikimedia.org/wikipedia/commons/a/ab/Image_107.jpg 2x">
-</a>
-</div>
-</div>
-</li>
 <li class="gallerybox">
 <div class="thumb_small">
 <div class="my-1 mx-auto">
@@ -258,25 +205,10 @@ srcset="https://upload.wikimedia.org/wikipedia/commons/a/ab/Image_112.jpg 1.5x, 
 </div>
 </div>
 </li>
-<li class="gallerybox">
-<div class="thumb_small">
-<div class="my-1 mx-auto">
-<a href="/large/round/1/user/1/pageid/113?sort=rate">
-<img class="cropped" alt="File:Image 113.jpg"
-src="https://upload.wikimedia.org/wikipedia/commons/a/ab/Image_113.jpg"
-srcset="https://upload.wikimedia.org/wikipedia/commons/a/ab/Image_113.jpg 1.5x, https://upload.wikimedia.org/wikipedia/commons/a/ab/Image_113.jpg 2x">
-</a>
-</div>
-</div>
-</li>
 </ul>
-<div class="large-line">
-<a href="https://upload.wikimedia.org/wikipedia/commons/a/ab/Image_107.jpg">full.resolution</a>
 </div>
-<div class="large-line">
-<ol>
-</ol>
-</div>
+</section>
+<script>if (window.wlxLargeSections) wlxLargeSections.restore(document);</script>
 </div>
 <div id="mainContent" class="col large-main h-100">
 <a href="https://commons.wikimedia.org/wiki/File:Image 107.jpg" target="_blank">

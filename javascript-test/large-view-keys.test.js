@@ -90,12 +90,20 @@ async function loadPage(name, transform = html => html) {
     await new Promise(resolve => window.jQuery(() => setTimeout(resolve, 0)));
 }
 
-function press(key) {
+/** Presses `key` on `target`: the page's body, or an element with the focus. */
+function press(key, target = document.body) {
     const keyCode = typeof key === "number" ? key : KEY_CODES[key];
     if (keyCode === undefined) throw new Error("No key code for " + key);
-    document.body.dispatchEvent(new KeyboardEvent("keydown", {
+    target.dispatchEvent(new KeyboardEvent("keydown", {
         keyCode, which: keyCode, charCode: 0, bubbles: true, cancelable: true
     }));
+}
+
+/** A side section's toggle (large-sections.js), focused. */
+function focusedToggle(id) {
+    const toggle = document.querySelector(`button[aria-controls=${id}]`);
+    toggle.focus();
+    return toggle;
 }
 
 const digit = n => 48 + n;
@@ -188,6 +196,23 @@ describe("a binary round, the juror's own large view of an unrated file", () => 
         expectNavigation("/gallery/round/1/user/1/region/all/pageid/107", "#107");
     });
 
+    test.each(["large-info", "large-next"])("Space and Enter on the %s toggle open or close it, and don't vote", id => {
+        const toggle = focusedToggle(id);
+        press("space", toggle);
+        press(13, toggle);
+        expect(submits).toHaveLength(0);
+        expect(navigations).toHaveLength(0);
+    });
+
+    test("Del and Down still vote and move with the focus on a toggle", () => {
+        const toggle = focusedToggle("large-info");
+        press("del", toggle);
+        expectVote(-1);
+        press("down", toggle);
+        expect(navigations).toHaveLength(1);
+        expect(sameOriginUrl(navigations[0]).pathname).toBe("/large/round/1/user/1/pageid/108");
+    });
+
     test("a digit does nothing in a binary round", () => {
         press(digit(1));
         expect(submits).toHaveLength(0);
@@ -237,6 +262,11 @@ describe("a rated round (1..5), the juror's own large view", () => {
     test("Down moves to the next file on this origin", () => {
         press("down");
         expectNavigation("/large/round/1/user/1/pageid/108");
+    });
+
+    test("a digit still rates the file with the focus on a toggle", () => {
+        press(digit(3), focusedToggle("large-next"));
+        expectVote(3);
     });
 });
 

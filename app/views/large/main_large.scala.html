@@ -23,6 +23,7 @@
             });
         </script>
 
+        <script src="@routes.Assets.versioned("javascripts/large-sections.js")"></script>
         @raty(score, readOnly, list, hood.file.pageId, byCriteria)
         @fileKeyboardNav(hood.index, hood.files.size, i => list.largeUrl(hood.files(i).pageId), list.atUrl(hood.file.pageId))
         @keyboardNav(user, list, hood.file)

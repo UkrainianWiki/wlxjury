@@ -28,13 +28,17 @@
                 <div class="col-1 large-side">
 
                     @navigationButtons(user, list, hood)
-                    @thumbsBar(list, hood)
-                    @if(user.canViewOrgInfo(round)){
-                        @authorInfo(image, user)
+                    @* under the stars, what they rate: the file's details, then the files after it *@
+                    @sideSection("large-info", "large.file.info", open = true) {
+                        @if(user.canViewOrgInfo(round)){
+                            @authorInfo(image, user)
+                        }
+                        @monumentInfo(image, monument)
+                        @fullSizeUrl(image, round)
+                        @juryStat(selection, list)
                     }
-                    @monumentInfo(image, monument)
-                    @fullSizeUrl(image, round)
-                    @juryStat(selection, list)
+                    @thumbsBar(list, hood)
+                    <script>if (window.wlxLargeSections) wlxLargeSections.restore(document);</script>
 
                </div>
 
