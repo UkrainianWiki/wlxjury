@@ -668,7 +668,7 @@ checked by `ThemeViewSpec` for every shell.
 
 - **By-rate galleries (high, `5843872f`):** `1e026ddb` had replaced the rank block's opening
   `<div style="margin-bottom: 10px;` in `galleryByRate` and `galleryByRateRegions` with a U+0001
-  control character (a script's `` replacement written as a literal byte; it was the `□`
+  control character (a script's `\1` replacement written as a literal byte; it was the `□`
   glyph) and a stray `">`, so the block's `</div>` closed the gallery list after the first tile.
   The block is `<div class="rank-line">` again (margin in `main.css`; `showRate` too). No other
   file in the repo contains U+0001, and the commit's other template edits only dropped colour
