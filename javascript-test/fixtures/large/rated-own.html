@@ -36,6 +36,7 @@ voteLarge($(this).attr('data-vote-url'));
 </script>
 <script src="/assets/javascripts/large-sections.js"></script>
 <script src="/assets/javascripts/jquery.raty.js"></script>
+<script src="/assets/javascripts/large-rate.js"></script>
 <script>
 $(document).ready(function() {
 $.extend($.fn.raty.defaults, {
@@ -44,8 +45,10 @@ starOn: 'bi bi-star-fill wlx-star',
 starHalf: 'bi bi-star-half wlx-star',
 starOff: 'bi bi-star wlx-star',
 cancelOn: 'bi bi-x-circle-fill',
-cancelOff: 'bi bi-x-circle'
+cancelOff: 'bi bi-x-circle',
+noRatedMsg: ''
 });
+var number = wlxLargeRate.number(document.getElementById('rate-number'), false);
 $('#rate-image').raty({
 score: 0.0,
 half: false,
@@ -53,9 +56,11 @@ cancel: true,
 number: 5,
 precision: false,
 space: false,
-hints:[ '', '', '', '', '', '', '', '', '', '' ],
+hints: Array(5).fill(''),
+mouseover: number.mouseover,
+mouseout: number.mouseout,
 click : function(score, evt) {
-voteLarge('/large/round/1/pageid/107/select/' + Math.round(score*1) + '?sort=rate');
+voteLarge('/large/round/1/pageid/107/select/' + Math.round(number.clicked(score)*1) + '?sort=rate');
 return false;
 }
 });
@@ -125,6 +130,10 @@ return false ;
 <a role="button" class="btn btn-outline-secondary btn-sm" data-nav="down" href="/large/round/1/user/1/pageid/108?sort=rate" title="next.image &lt;down.key&gt;">
 <i class="bi bi-chevron-down" aria-hidden="true"></i>
 </a>
+</div>
+<div class="large-rate">
+<span id="rate-number" class="large-rate-number" aria-hidden="true">&ndash;</span>
+<span class="visually-hidden">large.rate.none</span>
 </div>
 <div id="rate-image" class="large-stars"></div>
 <section class="large-section">

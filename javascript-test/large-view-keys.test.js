@@ -4,11 +4,11 @@
  */
 "use strict";
 
-// Keyboard voting and moving in the large views, pressed in jsdom on the pages the app
-// renders (javascript-test/fixtures/large, kept in step by views.LargeViewFixturesSpec), as
-// served over https://jury.example. A vote must post the vote form, with its CSRF token, to
-// this same origin: behind HTTPS a form posted to http:// is redirected as a GET and the
-// vote is lost (c4a6c6b1). Runs offline: the webjar's jQuery is the same version from
+// Keyboard voting and moving in the large views, and the number by their stars, in jsdom on
+// the pages the app renders (javascript-test/fixtures/large, kept in step by
+// views.LargeViewFixturesSpec), as served over https://jury.example. A vote must post the
+// vote form, with its CSRF token, to this same origin: behind HTTPS a form posted to http://
+// is redirected as a GET and the vote is lost (c4a6c6b1). Runs offline: the webjar's jQuery is the same version from
 // node_modules; Bootstrap's script, which no key uses, is left out.
 
 const fs = require("fs");
@@ -267,6 +267,109 @@ describe("a rated round (1..5), the juror's own large view", () => {
     test("a digit still rates the file with the focus on a toggle", () => {
         press(digit(3), focusedToggle("large-next"));
         expectVote(3);
+    });
+});
+
+// The number above the stars (large-rate.js): the stored rate as rendered, the rate a click on
+// a hovered star gives, and the stored one again when the pointer leaves the stars.
+
+const number = (id = "rate-number") => document.getElementById(id).textContent;
+const star = n => window.jQuery("#rate-image i.wlx-star").eq(n - 1);
+const leave = () => window.jQuery("#rate-image").trigger("mouseleave");
+
+/** The pointer over a half-star round's star `n`, in its left or right half: near the star's
+ * left edge, or just right of its middle, where the score rounded to the nearest half (as the
+ * click did) is a half star less than drawn. raty finds the half by the pointer's offset in
+ * the star, 1em wide: jsdom lays nothing out, so each star is at 0 and the font size is set
+ * here. */
+function moveOver(n, half) {
+    star(1)[0].style.fontSize = "16px";
+    star(n).trigger(window.jQuery.Event("mousemove", { pageX: half === "left" ? 1 : 10 }));
+}
+
+describe("the number by a rated round's stars (1..5), the juror's own view of an unrated file", () => {
+
+    beforeEach(() => loadPage("rated-own.html"));
+
+    test("shows – for unrated, and tells screen readers so, not the hovered rates", () => {
+        expect(number()).toBe("–");
+        const shown = document.getElementById("rate-number");
+        expect(shown.getAttribute("aria-hidden")).toBe("true");
+        expect(shown.nextElementSibling.className).toBe("visually-hidden");
+        expect(shown.nextElementSibling.textContent).toBe("large.rate.none");
+    });
+
+    test("shows the hovered star's rate, and – again when the pointer leaves the stars", () => {
+        star(3).trigger("mouseover");
+        expect(number()).toBe("3");
+        star(5).trigger("mouseover");
+        expect(number()).toBe("5");
+        leave();
+        expect(number()).toBe("–");
+    });
+
+    test("shows – over the cancel icon, which unrates", () => {
+        star(4).trigger("mouseover");
+        window.jQuery("#rate-image i.raty-cancel").trigger("mouseover");
+        expect(number()).toBe("–");
+    });
+
+    test("gives the stars no tooltips, the number shows the rate", () => {
+        document.querySelectorAll("#rate-image i.wlx-star").forEach(s => expect(s.title).toBe(""));
+    });
+
+    test("gives none to stars 11 to 20 either, in a round of 20", async () => {
+        await loadPage("rated-own.html", html => html.split("number: 5,").join("number: 20,")
+            .split("Array(5)").join("Array(20)"));
+        const stars = document.querySelectorAll("#rate-image i.wlx-star");
+        expect(stars).toHaveLength(20);
+        stars.forEach(s => expect(s.title).toBe(""));
+        star(15).trigger("mouseover");
+        expect(number()).toBe("15");
+    });
+});
+
+describe("the number by a half-star round's stars (1..10 as five), the juror's own view of a file rated 7", () => {
+
+    beforeEach(() => loadPage("rated-half-own.html"));
+
+    test("shows 3.5, as the stars do", () => {
+        expect(number()).toBe("3.5");
+        expect(document.getElementById("rate-number").nextElementSibling.textContent).toBe("large.rate");
+        const classes = Array.from(document.querySelectorAll("#rate-image i.wlx-star"), s => s.className);
+        expect(classes).toEqual(["bi bi-star-fill wlx-star", "bi bi-star-fill wlx-star", "bi bi-star-fill wlx-star",
+            "bi bi-star-half wlx-star", "bi bi-star wlx-star"]);
+    });
+
+    test("shows a half star over a star's left half and the whole star over its right half, as drawn", () => {
+        moveOver(2, "left");
+        expect(number()).toBe("1.5");
+        expect(star(2)[0].className).toBe("bi bi-star-half wlx-star");
+        moveOver(4, "right");
+        expect(number()).toBe("4");
+        expect(star(4)[0].className).toBe("bi bi-star-fill wlx-star");
+        leave();
+        expect(number()).toBe("3.5");
+    });
+
+    test.each([["left", 7], ["right", 8]])("a click on star 4's %s half gives the rate shown, %i of 10", (half, rate) => {
+        moveOver(4, half);
+        star(4).trigger("click");
+        expectVote(rate);
+    });
+});
+
+describe("the number by the stars in another juror's view of the rated round: read-only", () => {
+
+    beforeEach(() => loadPage("rated-readonly.html"));
+
+    test("shows the juror's rate, 4, and no hover changes it", () => {
+        expect(number()).toBe("4");
+        star(2).trigger("mouseover");
+        expect(number()).toBe("4");
+        star(2).trigger("click");
+        expect(submits).toHaveLength(0);
+        expect(document.getElementById("vote-form")).toBeNull();
     });
 });
 

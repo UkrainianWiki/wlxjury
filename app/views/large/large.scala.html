@@ -15,10 +15,11 @@
         implicit flash: Flash, request: Request[Any], messages: Messages)
 
     @defining(list.round) { round =>
+    @defining(hood.file.totalRate(round) / (if (round.rates.id > 5 && round.halfStar) 2.0 else 1.0)) { score =>
     @main_large(
     user,
     list,
-    hood.file.totalRate(round) / (if (round.rates.id > 5 && round.halfStar) 2.0 else 1.0),
+    score,
     readOnly = !user.roles.contains("jury") || !round.active || user.getId != list.asUserId,
     hood = hood,
     byCriteria = byCriteria) {
@@ -27,7 +28,7 @@
             <div class="row h-100">
                 <div class="col-1 large-side">
 
-                    @navigationButtons(user, list, hood)
+                    @navigationButtons(user, list, hood, score, byCriteria)
                     @* under the stars, what they rate: the file's details, then the files after it *@
                     @sideSection("large-info", "large.file.info", open = true) {
                         @if(user.canViewOrgInfo(round)){
@@ -75,4 +76,5 @@
     </div>
     }
 }
+    }
     }

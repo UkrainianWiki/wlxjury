@@ -287,6 +287,12 @@ a:has(> .btn) { text-decoration: none; }
 .large-stars .wlx-star { margin-right: 1px; }
 .large-stars .raty-cancel { color: var(--bs-secondary-color); font-size: 1rem; line-height: 1; margin-right: 2px; }
 .large-stars .raty-cancel.bi-x-circle-fill { color: var(--bs-danger); }
+/* the number above the stars (large/navigationButtons): the rate, or a hovered star's. On a line
+   of its own, as ten stars and the cancel icon fill the column's line; a fixed width, so that a
+   longer number while hovering moves nothing. */
+.large-rate { margin-top: 10px; line-height: 1.2; }
+.large-rate + .large-stars { margin-top: 2px; }
+.large-rate-number { display: inline-block; min-width: 4ch; font-weight: 600; font-variant-numeric: tabular-nums; }
 .rate-stars { margin-left: 5px; margin-right: 10px; }
 /* a binary round's result (binaryVote): approvals or a juror's vote, in the colours of the
    navbar's selected and rejected tabs */

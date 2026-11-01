@@ -27,6 +27,8 @@ object LargeViewRenders {
     Round(id = Some(1), number = 1, contestId = 1, active = true, rates = Round.binaryRound)
   val ratedRound: Round =
     Round(id = Some(1), number = 1, contestId = 1, active = true, rates = Round.ratesById(5))
+  /** Rated 1..10 in half stars: five stars, a rate of 7 drawn as 3.5. */
+  val halfStarRound: Round = ratedRound.copy(rates = Round.ratesById(10), halfStar = true)
   val criteriaRound: Round =
     ratedRound.copy(hasCriteria = true, criteriaNames = Seq("Quality", "Composition"))
 
