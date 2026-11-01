@@ -152,7 +152,8 @@ object EditRound {
       limits = RoundLimits(),
       minMpx = Try(minMpx.toInt).toOption,
       previous = Option.when(previousRoundIds.nonEmpty)(previousRoundIds.mkString(",")),
-      prevSelectedBy = prevSelectedBy.flatMap(s => Try(s.toInt).toOption),
+      // "0", the old form's no filter (old bookmarks or forms), is no filter: None
+      prevSelectedBy = prevSelectedBy.flatMap(s => Try(s.toInt).toOption).filter(_ > 0),
       prevMinAvgRate = prevMinAvgRate.flatMap(s => Try(BigDecimal(s)).toOption),
       category = category,
       excludeCategory = excludeCategory,

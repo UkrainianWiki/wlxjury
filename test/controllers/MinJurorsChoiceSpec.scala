@@ -7,9 +7,8 @@ import play.api.test.{Helpers, PlaySpecification}
 import scala.jdk.CollectionConverters._
 
 /** The round form's "selected by at least X jurors" (minJurors, stored as prevSelectedBy): the
-  * empty choice named as no filter and stored as None, then 0 named as what it picks (files with
-  * an unrated vote) for every round, then 1-6; a help saying 0 is not "no filter"; the stored
-  * value selected.
+  * empty choice named as no filter and stored as None, then 1-6; a 0 (the old form's no filter,
+  * V73) is no filter too, bound as None and shown as the empty choice; the stored value selected.
   */
 class MinJurorsChoiceSpec extends PlaySpecification {
   implicit val messages: play.api.i18n.Messages = Helpers.stubMessages()
@@ -41,33 +40,30 @@ class MinJurorsChoiceSpec extends PlaySpecification {
   }
 
   "the minimum jurors choices" should {
-    "name the empty choice as no filter, then 0 as files with an unrated vote, for every round" in {
+    "name the empty choice as no filter, then 1-6, with no 0" in {
       val (options, selected) = choices(None)
-      options.take(2) === Seq("" -> "selected.by.any.number", "0" -> "selected.by.unrated")
-      options.map(_._1) === Seq("", "0", "1", "2", "3", "4", "5", "6")
-      selected === Seq("")
+      (options.head === ("" -> "selected.by.no.filter")) and
+        (options.map(_._1) === Seq("", "1", "2", "3", "4", "5", "6")) and
+        (selected === Seq(""))
     }
 
-    "say in its help that 0 is not \"no filter\"" in {
-      val doc = page(None)
-      (doc.select("#minJurors_help").text === "selected.by.help") and
-        (doc.select("select#minJurors").attr("aria-describedby") must contain("minJurors_help"))
+    "have no help" in {
+      page(None).select("#minJurors_help").isEmpty must beTrue
     }
 
     "select a stored value" in {
       choices(Some(2))._2 === Seq("2")
     }
 
-    "select a stored 0, with the same choices" in {
+    "show a stored 0 as no filter, with the same choices" in {
       val (options, selected) = choices(Some(0))
-      options === choices(None)._1
-      selected === Seq("0")
+      (options === choices(None)._1) and (selected === Seq(""))
     }
   }
 
   "the minimum jurors field" should {
-    "store the empty choice as no filter, a number as itself" in {
-      (bound("") must beNone) and (bound("2") must beSome(2)) and (bound("0") must beSome(0))
+    "store the empty choice and 0 as no filter, a number as itself" in {
+      (bound("") must beNone) and (bound("0") must beNone) and (bound("2") must beSome(2))
     }
   }
 }
