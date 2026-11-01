@@ -743,3 +743,92 @@ script, the two restores and JSON blocks, and no `on…=` attribute.
 - 3.1 and 3.3 in Firefox remain the user's, by hand.
 
 **What remains:** the B3 review, then B4.
+
+## Batch B4 results
+
+Branch `ukwikidev/followups-b4`, from `2b92947e`. Commits `a1648e48` (the hasher), `49fea433`
+(every password path), `9ec7a4ab` (Gatling fixture), `6748a3c4` (docs).
+
+**2.1** Passwords are bcrypt `$2b$` (`at.favre.lib:bcrypt` 0.10.2, the latest release on Maven
+Central; its only dependency is `at.favre.lib:bytes` 1.5.0), in `services.PasswordHasher`.
+`users.password varchar(255)` holds the 60-character hash: no migration.
+- **Sign-in** (`User.login`): a `$2a$`/`$2b$` hash (cost 4–16) is checked at its own cost; one
+  below the configured cost is rehashed. A legacy hash (exactly 40 lowercase hex characters)
+  is compared with `MessageDigest.isEqual` against the SHA-1 of the trimmed password, as
+  before, and on success replaced by a bcrypt hash with a conditional `UPDATE … WHERE
+  password = <the legacy hash>`, so a password changed meanwhile is never overwritten. Any
+  other value, no value, an unknown login or a blank password never matches; those paths
+  run a dummy bcrypt check, so a sign-in takes about as long whatever the account. The login
+  form no longer checks the password itself (it was checked twice per sign-in).
+- **Setting a password** stores only bcrypt: sign-up (the first account, root, included),
+  `UserService.createAccount` (organizer's new user, import, generated greeting passwords),
+  the edit form (an admin's change and the own profile) and root's reset all go through
+  `PasswordHasher.default.hash` / `User.setPassword`. `User.hash`, `User.sha1` and the public
+  `User.updateHash` are gone; `User.create(fullname, email, passwordHash, …)` takes a hash
+  (renamed parameter). Generated passwords now use `SecureRandom`. `User.toString` hides the
+  hash.
+- **Trimming:** a password is trimmed both when set and when checked. Before, sign-in trimmed
+  but setting didn't, so a password set with surrounding spaces could never be used.
+- **72 bytes:** a new password is refused over 72 UTF-8 bytes after trimming, or when blank
+  (`password.too.long`, `password.empty`, on the sign-up and edit forms; the edit form now shows
+  its password error). A legacy password over 72 bytes still signs in: such input is pre-hashed
+  with SHA-512 before bcrypt (the library's `hashSha512` strategy), the same way when hashing
+  and checking, so it is rehashed and only the whole password matches (not its first 72
+  bytes). Refusing alone would have left those accounts on SHA-1.
+- **Config** `bcrypt.*` (not `password.*`: the deployment script's credential scan reads any
+  key containing "password" as a literal credential): `cost = 12`, `maxConcurrent = 2` (the
+  server has 2 CPUs shared with MariaDB; the plan's example was 4), `maxWait = 10 seconds`. A
+  cost below 10 is raised to 10 (with a warning) unless `bcrypt.allowLowCost`, which only
+  `test/resources/application.conf` sets (cost 4). `PasswordHasher.default` reads the config
+  the app is started with (`-Dconfig.file`).
+- **Concurrency:** a fair semaphore of `maxConcurrent` turns around every bcrypt computation.
+  A sign-in waits for a turn until its deadline (`maxWait` from when the request arrived,
+  the time queued included), then gets 503 with `signin.busy` and `Retry-After: 5`. Sign-in
+  and sign-up run on a new `sign-in-dispatcher` (4 threads, `modules.SignInExecutionContext`);
+  saving a user, import and reset moved to the blocking dispatcher (`withAuthOn`), so no
+  hash runs on Play's default dispatcher. An admin path that gets no turn in time fails with
+  the server error page.
+- Nothing logs a password or a hash; a rehash logs `password hash upgraded: accountId=<id>`
+  on `security.password`.
+- The Gatling fixture hashes with the tests' cost (`FixtureVersion` v4). `bench/scripts/
+  anonymise.sql` still writes SHA-1 (MariaDB has no bcrypt): the benchmark's first sign-in per
+  account rehashes, its comment says so.
+
+**Tests:** `services.PasswordHasherSpec` (18: format and salt, trimming, cost upgrade, `$2a$`,
+legacy match/mismatch/format, garbage and a cost-31 hash, blank, the 72-byte rule and the long
+legacy password, settings and the shipped config's cost 12, the semaphore's peak and Busy at
+the deadline). `controllers.PasswordStorageSpec` (10: legacy wrong password keeps the row;
+legacy success rewrites the row and the second sign-in uses bcrypt; a changed password isn't
+overwritten; wrong bcrypt password; garbage, missing and unknown; 503 when every turn is taken;
+sign-up, given and generated passwords, profile, reset, import and a legacy sign-in, then a
+scan of `users.password`: all `$2b$04$`, none 40-hex; the 72-byte and blank rules on sign-up
+and the profile; a long legacy password).
+
+**Checks** (all through `scripts/agent-check.py`):
+- `Test/compile` + `Gatling/compile` + `PasswordStorageSpec`, `UserControllerSpec`,
+  `UserDbSpec`, `MultiContestUserSpec`, `SecuredSpec`, `CoiAuthorizationSpec`, `ThemeSwitchSpec`,
+  `MessagesCompletenessSpec`, `SignOutAndSwitchSpec`, `AdminPagesCurrentContestSpec`,
+  `MutationAuthorizationSpec`: 145/146, the one failure a test-only mistake in
+  `PasswordStorageSpec` (`20261102-005612-28624.log`).
+- `PasswordHasherSpec` 18/18, `LoginControllerSpec` 16/16 (`20261102-010106-28376.log`);
+  `PasswordStorageSpec` after the fix: exit 0, 10/10 (`20261102-010320-10416.log`).
+- One fixture start (rebuilt, v4), `gatling.GatlingSmokeSpec`: exit 0, 7/7, signing in as the
+  fixture's jurors and organizer (`20261102-010537-19228.log`).
+- Not run: `LocalImageCacheServiceDockerSpec` (Docker-gated; compiled), the full suite (after
+  B5).
+
+**Deployment:** users notice nothing. Each account's first sign-in after the release replaces
+its SHA-1 hash; a sign-in costs about 0.25 s of CPU at cost 12. Accounts that never sign in
+keep their legacy hash (count them with `SELECT COUNT(*) FROM users WHERE password REGEXP
+'^[0-9a-f]{40}$'`). No config change is needed: `production.conf` includes `application.conf`.
+
+**Merge note:** `ukwikidev/followups` `b4dba585` adds `test/gatling/setup/UiShotsServer.scala`
+with `User.sha1(...)`: replace it with `services.PasswordHasher.default.hash(...)` (the stored
+value for `User(..., password = Some(...))`).
+
+**Open questions**
+- `maxConcurrent = 2` rather than 4, for the 2-CPU server; raise it in config if sign-in
+  bursts queue.
+- Whether to invalidate legacy hashes of accounts that never sign in again, on a schedule.
+
+**What remains:** the B4 review, then B5.
