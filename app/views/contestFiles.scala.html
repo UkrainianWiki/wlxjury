@@ -15,17 +15,17 @@
     filters = regionMenu(view.countryMenu.toSeq ++ view.regionMenu)) {
 
     <div class="contest-files-head" id="contest-files-head">
-        <h4>@Messages("contest") @view.contest.fullName
+        <h1 class="h4">@Messages("contest") @view.contest.fullName
             @* the files' import and local cache, for the contest's admins *@
             @if(user.canManageContestFiles(view.contest.getId)) {
                 <a id="import-files" class="btn btn-outline-secondary btn-sm ms-2"
                    href="@routes.ImageController.images(view.contest.getId)">@Messages("files.import.cache")</a>
             }
-        </h4>
+        </h1>
 
         @view.round match {
             case Some(round) => {
-                <h4>@Messages("round") @round.description: @Messages("files.deleted.on.commons") (@view.deletedCount)</h4>
+                <h2 class="h4">@Messages("round") @round.description: @Messages("files.deleted.on.commons") (@view.deletedCount)</h2>
                 @if(view.countedInRound > 0) {
                     <p class="text-muted">@Messages("files.deleted.still.counted", view.countedInRound)</p>
                 }

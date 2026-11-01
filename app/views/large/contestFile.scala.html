@@ -31,6 +31,8 @@
         <script src="@routes.Assets.versioned("javascripts/large-sections.js")"></script>
         @fileKeyboardNav(index, files.size, urlAt, view.pageUrl(page))
 } {
+        @* the page's title, for screen readers *@
+        <h1 class="visually-hidden">@image.title.stripPrefix("File:")</h1>
         <div class="container-fluid large-view h-100">
             <div class="row h-100">
                 <div class="col-1 contest-file-info large-side">

@@ -63,7 +63,7 @@ class GalleryRegionsSpec extends PlaySpecification with PlayTestDb {
     }.toList
 
   private def tiles(page: String): List[Long] =
-    """(?:data-pageId|<h1 id)="(\d+)"""".r.findAllMatchIn(page).map(_.group(1).toLong).toList
+    """(?:data-pageId|class="gallerybox" id)="(\d+)"""".r.findAllMatchIn(page).map(_.group(1).toLong).toList
 
   "a round's gallery" should {
 

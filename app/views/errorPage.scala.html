@@ -13,7 +13,7 @@
    never text from the request or an exception, and the reference of its log line. *@
 @content = {
     <div class="alert alert-danger" role="alert">
-        <h4>@Messages(titleKey)</h4>
+        <h1 class="h4">@Messages(titleKey)</h1>
         <p>@Messages(messageKey, args: _*)</p>
         @if(signIn) {
             <p><a class="btn btn-primary" href="@routes.LoginController.login()">@Messages("signin.signin")</a></p>

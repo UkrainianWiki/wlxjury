@@ -25,9 +25,9 @@
 
 
             @if(newRound) {
-                <h3>@Messages("create.round")</h3>
+                <h1 class="h3">@Messages("create.round")</h1>
             } else {
-                <h3>@Messages("edit.round")</h3>
+                <h1 class="h3">@Messages("edit.round")</h1>
             }
 
             @flash.get("error").map { err =>
@@ -170,7 +170,7 @@
               rid    <- scala.util.Try(ridStr.toLong).toOption
             ) {
               <hr/>
-              <h4>@Messages("local.image.cache")</h4>
+              <h2 class="h4">@Messages("local.image.cache")</h2>
               <div id="round-cache-status"></div>
               <form method="post" action="@routes.ImageController.startRoundImageCache(cid, rid)">
                 @helper.CSRF.formField

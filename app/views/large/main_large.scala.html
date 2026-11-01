@@ -29,6 +29,8 @@
         @keyboardNav(user, list, hood.file)
 
 } {
+        @* the page's title, for screen readers *@
+        <h1 class="visually-hidden">@Messages(list.view.name)</h1>
         @if(!readOnly) {
             <form id="vote-form" method="post" class="d-none">@helper.CSRF.formField</form>
         }

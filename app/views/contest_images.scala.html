@@ -8,7 +8,7 @@
     @import helper._
 
     @mainAdmin("contest.files", user, user.getId, contestId = contest.id) {
-        <h3>@Messages("contest") @contest.fullName</h3>
+        <h1 class="h3">@Messages("contest") @contest.fullName</h1>
         <p><a id="browse-files" href="@routes.GalleryController.contestFiles(contest.getId)">&larr; @Messages("contest.files")</a></p>
 
         @flash.get("error").map { err =>
@@ -29,7 +29,7 @@
         @bs.form(routes.ImageController.importImages(contest.getId), Symbol("id") -> "import-images") {
             @helper.CSRF.formField
 
-            <h4>@Messages("files.source")</h4>
+            <h2 class="h4">@Messages("files.source")</h2>
 
             @bs.text(importImagesForm("source"), Symbol("_label") -> "commons.category.or.page.with.files",
                 Symbol("_help") -> Messages("import.files.help"))
@@ -59,7 +59,7 @@
         }
 
         <hr/>
-        <h4>@Messages("local.image.cache")</h4>
+        <h2 class="h4">@Messages("local.image.cache")</h2>
         <div id="cache-status"></div>
         <form method="post" action="@routes.ImageController.startImageCache(contest.getId)">
             @helper.CSRF.formField

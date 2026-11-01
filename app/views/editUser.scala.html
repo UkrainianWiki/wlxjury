@@ -14,9 +14,9 @@
 
 
             @if(!editUserForm("id").value.contains("0")) {
-                <h3>@Messages("edit.user")</h3>
+                <h1 class="h3">@Messages("edit.user")</h1>
             } else {
-                <h3>@Messages("create.user")</h3>
+                <h1 class="h3">@Messages("create.user")</h1>
             }
 
             @form(routes.UserController.saveUser(), Symbol("class") -> "form-vertical") {

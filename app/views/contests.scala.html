@@ -11,11 +11,12 @@
 @import helper._
 
 @mainAdmin("campaigns", user, user.getId) {
+    <h1 class="visually-hidden">@Messages("campaigns")</h1>
     <div class="row" xmlns="http://www.w3.org/1999/html">
 
-        <h3>@Messages("import.from.list.page.images.category")</h3>
+        <h2 class="h3">@Messages("import.from.list.page.images.category")</h2>
         <div class="bs-callout bs-callout-info">
-            <h4>@Messages("examples.of.inputs")</h4>
+            <h3 class="h4">@Messages("examples.of.inputs")</h3>
             <p>
         <ul>
             <li>Category:Images from Wiki Loves Earth 2016
@@ -31,7 +32,7 @@
         }
     </div>
     <div class="row" >
-        <h3>@Messages("campaigns")</h3>
+        <h2 class="h3">@Messages("campaigns")</h2>
 
         @contestsTable(contests)
 

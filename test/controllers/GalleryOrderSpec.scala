@@ -42,7 +42,7 @@ class GalleryOrderSpec extends PlaySpecification with PlayTestDb {
   }
 
   private def tiles(page: String): List[Long] =
-    """(?:data-pageId|<h1 id)="(\d+)"""".r.findAllMatchIn(page).map(_.group(1).toLong).toList
+    """(?:data-pageId|class="gallerybox" id)="(\d+)"""".r.findAllMatchIn(page).map(_.group(1).toLong).toList
 
   private def gallery(f: Fixture, query: String = "") = s"/gallery/round/${f.round.getId}/user/${f.juror.getId}/page/1$query"
 

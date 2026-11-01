@@ -122,7 +122,7 @@ img.cropped {
     border-left-width: 5px;
     border-radius: 3px;
 }
-.bs-callout h4 {
+.bs-callout .h4 {
     margin-top: 0;
     margin-bottom: 5px;
 }
@@ -132,7 +132,7 @@ img.cropped {
 .bs-callout-info {
     border-left-color: var(--bs-info);
 }
-.bs-callout-info h4 {
+.bs-callout-info .h4 {
     color: var(--bs-info-text-emphasis);
 }
 
@@ -292,9 +292,6 @@ a:has(> .btn) { text-decoration: none; }
    navbar's selected and rejected tabs */
 .wlx-vote-selected { color: var(--wlx-selected); }
 .wlx-vote-rejected { color: var(--wlx-rejected); }
-
-/* an empty anchor before a gallery tile (galleryByRate, monuments) */
-.tile-anchor { display: inline; }
 
 /* the round and user forms' Save and Cancel (snippets/submit, snippets/button) */
 .form-action-wide { width: 25%; }
