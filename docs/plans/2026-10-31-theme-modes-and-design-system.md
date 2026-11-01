@@ -904,7 +904,9 @@ Left for separate branches; none blocks merging this one.
    votes, the grouped query counting the approvals apart (79f5c51e, 97f4c1fb); the grouped
    view removed, so its star counts with it (46017ee3); one `h1` per page and tile ids
    instead of the empty `h1`s (08876d66); `fileList`'s comment inside the copy block, in a
-   column (739a2e49). Left: `numberOfStars`' hard-coded criteria count (`id.contains(1327)`).
+   column (739a2e49); `numberOfStars`' criteria count from the round's criteria rates, read
+   once per by-rate page (3b3564b8, `CriteriaRate.countOf`, 4 by default; round 1327's 2 not
+   checked against the production data).
    - Dead branch in the by-rate galleries: `galleryByRate` and `galleryByRateRegions` draw
      green check `<button>`s instead of stars when `round.rates.id == 2`, but no round has
      that id (binary is 1 since 2014, ratings 3 to 20, `Rates` in Round.scala), so it never
@@ -975,7 +977,9 @@ Left for separate branches; none blocks merging this one.
    `data-rate`; a screenshot of a gallery with voted files in light and dark.
 8. **Re-rating in a rated round's gallery.** Done: the vote's range checked in `selectWS`
    and `rateByPageId` (ee0971b3, `Round.acceptsRate`); stars on the juror's own tiles
-   (92750bbc, `tile-votes.js`); the by-rate gallery keeps its static stars. A juror can vote in the gallery only in a binary
+   (92750bbc, `tile-votes.js`); the by-rate gallery's in item 9. A vote on a file the juror
+   has no selection for in the round answered success (an update of no rows): now 404, JSON
+   `not_found` / the error page, nothing created (ecb1504c). A juror can vote in the gallery only in a binary
    round: unitegallery adds the select / reject icons only when `binary` is set
    (`unitegallery.js` ~10689, options from `main.scala.html` ~42), and the by-rate gallery
    draws static stars (`showStar`). In a rated round a juror who wants to change a rate must
@@ -991,7 +995,11 @@ Left for separate branches; none blocks merging this one.
    lacks the same check. Tests: the endpoint's range validation and authorization (another
    juror's round, a stopped round: 409), a Jest case for the tile's stars (click sends the
    rate, the shown stars update, a failure restores them), LargeViewFixturesSpec unaffected.
-9. **Re-rating in the by-rate gallery.** Item 8 gave a rated round's tile gallery interactive
+9. **Re-rating in the by-rate gallery.** Done (fff6c1a8): the tile stars' condition shared
+   (`views.TileStars`), `tile-votes.js`'s `addListStars` in place of the static stars; a vote
+   updates `.wlx-rate-text`, marks the file `.wlx-rate-changed` (rank greyed, a `title`) unless
+   back at its rate at load, and shows the hint above the list (hidden until the first
+   change); `voteTexts` holds the vote attributes for both galleries. Item 8 gave a rated round's tile gallery interactive
    stars (`public/javascripts/tile-votes.js`, `main.scala.html`'s `wlx_stars`) but left the
    by-rate gallery's stars static (`galleryByRate.scala.html`, `showStar`), because a new rate
    makes the rank and order shown stale until a reload. The user wants it anyway: in the
