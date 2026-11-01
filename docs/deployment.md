@@ -208,6 +208,14 @@ curl -sI http://127.0.0.1:9000/assets/stylesheets/THAT_NAME | grep -i cache-cont
 
 `sbt run` and the tests serve plain names: the digests exist only in the packaged assets jar.
 
+### Host names and secure cookies
+
+The app answers only requests whose `Host` names it (Play's `AllowedHostsFilter`); any other gets a 400 page. The names come from `WLXJURY_ALLOWED_HOSTS` in `runtime.env`: every `ServerName` of the jury vhosts, comma-separated, for example `"jury.wle.org.ua,jury.wlm.org.ua"`. The vhosts keep the client's `Host` (`ProxyPreserveHost On`). `production.conf` adds `127.0.0.1` and `localhost`, for the readiness checks (`http://127.0.0.1:9000/health/ready`) and local smoke tests. `production.conf` requires the variable, and a production start (Mode.Prod) without a name fails, so a missing variable stops the deployment at the readiness check, with maintenance still on. A host name missing from the list answers 400 at that URL, and `reopen`'s URL check names it: add it to `runtime.env`, restart the app, and run `reopen` again. Add the variable to `runtime.env` before installing a `production.conf` that refers to it; older releases ignore it, so a restore to one keeps working with the new file.
+
+`production.conf` also marks the session, flash, language and theme cookies `Secure`, so browsers send them over HTTPS only. Every jury URL must therefore redirect HTTP to HTTPS: signing in over plain HTTP no longer works. Play needn't see the request as HTTPS for this. If an HTTPS vhost sends `RequestHeader set X-Forwarded-Proto "https"`, Play (which trusts the proxy on loopback, `play.http.forwarded.trustedProxies`) also sees the request as secure.
+
+`sbt run` and the tests allow Play's default names (`localhost`, `127.0.0.1`, `*.local`) and send cookies without `Secure`.
+
 ### Recovery runbook
 
 Maintenance is never cleared automatically. Read `OPERATION/milestones`, `record` and `operation.log`, then use the section for the last milestone. `previous` and `candidate` in `record` name the releases.

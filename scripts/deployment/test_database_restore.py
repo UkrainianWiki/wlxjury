@@ -217,6 +217,8 @@ class PackagedReleaseTest(DatabaseFixture):
         environment = os.environ.copy()
         environment.update(env)
         environment['JAVA_OPTS'] = '-Xmx512m -Dfile.encoding=UTF-8'
+        # production.conf requires the jury's host names (AllowedHostsFilter)
+        environment['WLXJURY_ALLOWED_HOSTS'] = 'jury.example.org'
         command = [str(release / 'bin' / 'wlxjury'),
                    '-Dconfig.file=/workspace/conf/wlxjury/production.conf',
                    '-Dlogger.file=/workspace/conf/wlxjury/logback.xml',
@@ -247,6 +249,14 @@ class PackagedReleaseTest(DatabaseFixture):
                         with self.assertRaises(urllib.error.HTTPError) as remote:
                             self.tool.http.open(proxied, timeout=5)
                         self.assertEqual(remote.exception.code, 404)
+                        # A Host that isn't one of the jury's names is refused; a listed one passes.
+                        foreign = urllib.request.Request('http://127.0.0.1:9000/auth', headers={'Host': 'other.example'})
+                        with self.assertRaises(urllib.error.HTTPError) as refused:
+                            self.tool.http.open(foreign, timeout=5)
+                        self.assertEqual(refused.exception.code, 400)
+                        listed = urllib.request.Request('http://127.0.0.1:9000/auth', headers={'Host': 'jury.example.org'})
+                        with self.tool.http.open(listed, timeout=5) as page:
+                            self.assertEqual(page.status, 200)
                         break
                     time.sleep(1)
                 else:
