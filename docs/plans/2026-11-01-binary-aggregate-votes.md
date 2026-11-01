@@ -317,8 +317,29 @@ An independent review of `a9f562a4..443ac143` found only low issues:
 
 ## Left
 
-- Migrate stored "selected by at least 0" to NULL (decision 4) once production rounds are
-  checked to use it as "no filter".
+- Stored "selected by at least 0" (decision 4), checked on production 2026-11-01: ~260
+  rounds. Its meaning changed in 1cc47ee8 (2018-11-17): before, 0 read the previous round's
+  rated rows (at least one approval, nearly no filter); since, its unrated rows ("has an
+  unrated vote"). `rounds.created_at` is `ON UPDATE current_timestamp()`, the last change,
+  not the creation; ids date them (~588 in Nov 2018).
+  - ~45% have no previous round: the value is unused there (the old form's default; they
+    also have `prev_min_avg_rate` 0.00). NULL changes nothing.
+  - Ids < 588 with a previous round: distributed under the old meaning, which today's 0
+    doesn't reproduce either; finished contests. Leave as 0.
+  - Ids >= 588 with a previous round (34), files vs the previous round's:
+    - Used as "has an unrated vote", round files = unrated files < previous files: 656
+      (45 of 91), 896 (51 of 132), 956 and 958 "Основна номінація: Перший раунд" (480 of
+      1757, the previous round with no approvals: a reject-only screening, unrated = kept),
+      1311 (70 of 166, 60 unrated + 10 approved now; votes changed since). A real use.
+    - Meant as no filter and got an empty round, the previous round having no unrated vote:
+      946, 1121, 1670 "Втрати природи: оцінювання" (and 1616 "Catch 22.1", a test of it).
+    - Empty rounds otherwise (614, 619, 624, 627, 645, 957, 992, 1182); the previous round
+      deleted (603, 605, 616, 669, 670, 1144); the same either way (593, 1052, 1615, 673);
+      tests (815, 839, 840, 1009, 1260, 1728).
+  So 0 can't become NULL wholesale: 958 is a main round that relies on it. Proposed: a V73
+  setting NULL only without a previous round (no change in behaviour); keep 0 elsewhere,
+  and name it in the form as what it does (files with an unrated vote, e.g. after a
+  reject-only screening) rather than "legacy", possibly as a choice for new rounds too.
 - Measured (review item 4) on 533c4b88, the UI fixture server (38,366 files, ~383k votes, 20
   jurors; 1 GB heap, Windows, MariaDB 10.6 in Docker), organiser session, 1 warm-up then 5
   timed GETs each (raw: `target/checks/aggregate-timing-533c4b88.json`):
