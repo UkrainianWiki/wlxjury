@@ -12,6 +12,8 @@
  *     409 {error: "round_closed"}              the round is not open for voting
  *     400 {error: "invalid_rate"}              a rate the round doesn't take (a page from
  *                                              before the round's rates changed)
+ *     404 {error: "not_found"}                 a file the juror has no selection for in the
+ *                                              round (no longer assigned to them)
  *   anything else is a generic failure, with the reference if the body has one.
  * voteErrorTexts(el) – the texts from the element's data attributes.
  */

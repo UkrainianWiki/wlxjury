@@ -130,7 +130,7 @@ class MutationAuthorizationSpec extends PlaySpecification with PlayTestDb {
 
   // A vote's rate and file, the gallery's (selectWS, JSON) and the large view's (rateByPageId, a
   // page or a redirect): only a rate the round takes (Round.acceptsRate), stored in the
-  // juror's own selection of the file; a file not assigned to the juror changes nothing.
+  // juror's own selection of the file; a file not assigned to the juror changes nothing (404).
   "a juror's vote, in the gallery and the large view" should {
     val pageId = 1010L
 
@@ -250,7 +250,7 @@ class MutationAuthorizationSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
-    "change only the juror's own selection: none for a file not assigned to them, another's kept" in {
+    "change only the juror's own selection: a 404 for a file not assigned to them, another's kept" in {
       testDbApp { app =>
         val juror = setUp()
         val round = roundOf(juror, Round.ratesById(5), rate = 2)
@@ -259,12 +259,24 @@ class MutationAuthorizationSpec extends PlaySpecification with PlayTestDb {
         imageDao.batchInsert(Seq(image(1011L, "UA-1011")))
         SelectionJdbc.create(1011L, 3, other.getId, round.getId)
 
-        // answered as a vote, but stored nowhere: the juror has no selection of the file
-        status(gallery(app, round, juror, 5, file = 1011L)) === OK
-        status(large(app, round, juror, 4, file = 1011L)) === SEE_OTHER
+        // the juror has no selection of the file: not found, and none created
+        val inGallery = gallery(app, round, juror, 5, file = 1011L)
+        status(inGallery) === NOT_FOUND
+        (contentAsJson(inGallery) \ "error").as[String] === "not_found"
+        val inLarge = large(app, round, juror, 4, file = 1011L)
+        status(inLarge) === NOT_FOUND
+        contentAsString(inLarge) must contain("error.not.found")
+        status(large(app, round, juror, 4, file = 1011L, criteria = Some(1))) === NOT_FOUND
+        // nor a file not in the round at all
+        status(gallery(app, round, juror, 5, file = 9999L)) === NOT_FOUND
+        status(large(app, round, juror, 4, file = 9999L)) === NOT_FOUND
         stored(round, juror, 1011L) must beNone
+        stored(round, juror, 9999L) must beNone
         stored(round, other, 1011L) === Some(3)
         stored(round, juror) === Some(2)
+        // the juror's own file, voted again with its stored rate: found, not a 404
+        status(gallery(app, round, juror, 2)) === OK
+        status(large(app, round, juror, 2)) === SEE_OTHER
       }
     }
 

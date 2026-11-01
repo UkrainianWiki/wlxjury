@@ -268,8 +268,8 @@ class GalleryController @Inject() (
   def selectWS(roundId: Long, pageId: Long, select: Int): EssentialAction =
     // a tile's vote, sent by script: JSON answers (401, 403 with the denial's reference, 409,
     // 400 for a rate the round doesn't take) that the gallery explains (vote-errors.js). It
-    // changes only the juror's own selection of the file in the round (SelectionJdbc.rate), so
-    // a file not assigned to them changes nothing.
+    // changes only the juror's own selection of the file in the round (SelectionJdbc.rate): a
+    // file not assigned to them changes nothing and is a 404.
     withAuthJson(
       roundPermission(
         User.ADMIN_ROLES ++ User.JURY_ROLES ++ User.ORG_COM_ROLES,
@@ -283,15 +283,10 @@ class GalleryController @Inject() (
       Conflict(play.api.libs.json.Json.obj("error" -> "round_closed"))
     else if (!round.exists(_.acceptsRate(select)))
       BadRequest(play.api.libs.json.Json.obj("error" -> "invalid_rate"))
-    else {
-      SelectionJdbc.rate(
-        pageId = pageId,
-        juryId = user.getId,
-        roundId = roundId,
-        rate = select
-      )
+    else if (SelectionJdbc.rate(pageId = pageId, juryId = user.getId, roundId = roundId, rate = select) == 0)
+      NotFound(play.api.libs.json.Json.obj("error" -> "not_found"))
+    else
       Ok("success")
-    }
   }
 
   def csvStream(lines: Seq[Seq[String]], filename: String): Result = {

@@ -66,28 +66,26 @@ class LargeViewController @Inject() (
         // the file's place, and where the vote goes on to, before the vote changes the list
         val hood = list.around(pageId)
 
-        criteria match {
+        // the juror's own selection of the file in the round, or of one of its criteria; a
+        // file the juror has no selection for in the round changes nothing and is a 404
+        val voted = criteria match {
           case None =>
-            // the juror's own selection of the file in the round, if any (SelectionJdbc.rate)
-            SelectionJdbc.rate(
-              pageId = pageId,
-              juryId = user.getId,
-              roundId = round.getId,
-              rate = select
-            )
+            SelectionJdbc.rate(pageId = pageId, juryId = user.getId, roundId = round.getId, rate = select) > 0
           case Some(criterion) =>
-            // as a vote above (and the gallery's), a file the juror has no selection for in the
-            // round changes nothing
             SelectionJdbc
               .findBy(pageId, user.getId, round.getId)
-              .foreach(selection => CriteriaRate.updateRate(selection.getId, criterion, select))
+              .map(selection => CriteriaRate.updateRate(selection.getId, criterion, select))
+              .isDefined
         }
 
-        // the file itself in a round with criteria, voted for one by one; the list's first page
-        // if it has no other
-        val next = hood.flatMap(h => if (round.hasCriteria) Some(h.file) else h.next)
-        val moved = hood.filter(_ => criteria.isEmpty).flatMap(h => list.voteMoved(pageId, h.position, select))
-        Redirect(next.fold(list.pageUrl(1))(file => list.largeUrl(file.pageId))).flashing(moved.map(_.flash).toSeq: _*)
+        if (!voted) NotFound(views.html.errorPage(Some(user), "error.title", "error.not.found"))
+        else {
+          // the file itself in a round with criteria, voted for one by one; the list's first
+          // page if it has no other
+          val next = hood.flatMap(h => if (round.hasCriteria) Some(h.file) else h.next)
+          val moved = hood.filter(_ => criteria.isEmpty).flatMap(h => list.voteMoved(pageId, h.position, select))
+          Redirect(next.fold(list.pageUrl(1))(file => list.largeUrl(file.pageId))).flashing(moved.map(_.flash).toSeq: _*)
+        }
     }
   }
 

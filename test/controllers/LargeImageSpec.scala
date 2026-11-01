@@ -482,7 +482,7 @@ class LargeImageSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
-    "change nothing for a file the juror has no selection for, which failed before" in {
+    "change nothing for a file the juror has no selection for (404), which failed before" in {
       testDbApp { app =>
         implicit val materializer: Materializer = app.materializer
         val (_, others, other) = setUpCriteria()
@@ -491,7 +491,7 @@ class LargeImageSpec extends PlaySpecification with PlayTestDb {
           .apply(voteRequest(s"/large/round/${round.getId}/pageid/${others.pageId}/select/1?criteria=1"))
           .run()
 
-        status(result) === SEE_OTHER
+        status(result) === NOT_FOUND
         criteriaRates(others.pageId, other) === Map(1L -> 5)
         SelectionJdbc.findBy(others.pageId, user.getId, round.getId) must beNone
       }
