@@ -256,3 +256,32 @@ a:has(> .btn) { text-decoration: none; }
 /* a file's rank and rate above its thumbnail (galleryByRate, galleryByRateRegions, showRate),
    in the page's text colour */
 .rank-line { margin-bottom: 10px; }
+
+/* the large views (large/large.scala.html, large/contestFile.scala.html): a side column with
+   the buttons, stars, thumbnails and the file's details, and the image beside it */
+.large-view { padding-left: 5px; }
+.large-side { min-width: 220px; }
+.large-main { margin-left: 5px; margin-top: 10px; }
+.large-nav { margin: 10px; }
+/* a box in the side column (author, monument, deleted file, comments), and a line (full
+   resolution, the jurors' votes, the file's title) */
+.large-box, .large-line { margin-right: 5px; padding: 5px; }
+.large-box { margin-top: 10px; }
+.large-line { margin-top: 5px; }
+
+/* raty's stars (large/raty.scala.html) and the static ones (showStar): Bootstrap Icons in the
+   mode's star colour, ten and the cancel icon on one line of the side column */
+.large-stars { margin-top: 10px; white-space: nowrap; }
+.wlx-star { color: var(--wlx-star); font-size: 1rem; line-height: 1; }
+.large-stars .wlx-star { margin-right: 1px; }
+.large-stars .raty-cancel { color: var(--bs-secondary-color); font-size: 1rem; line-height: 1; margin-right: 2px; }
+.large-stars .raty-cancel.bi-x-circle-fill { color: var(--bs-danger); }
+/* more than ten stars (a 1-11 .. 1-20 round without half stars): smaller, so that they fit too */
+.large-stars.many-stars .wlx-star, .large-stars.many-stars .raty-cancel { font-size: .6875rem; }
+.rate-stars { margin-left: 5px; margin-right: 10px; }
+
+/* an empty anchor before a gallery tile (galleryByRate, galleryByRateRegions, monuments) */
+.tile-anchor { display: inline; }
+
+/* the round and user forms' Save and Cancel (snippets/submit, snippets/button) */
+.form-action-wide { width: 25%; }

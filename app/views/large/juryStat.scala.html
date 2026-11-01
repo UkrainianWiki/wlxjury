@@ -3,9 +3,7 @@
 @(selections: Seq[(Selection, User)],
         list: RoundList)
 
-<div style="margin-right: 5px;
-    margin-top: 5px;
-    padding: 5px;">
+<div class="large-line">
     <ol>
         @for((selection, user) <- selections) {
             @* each juror's vote, linking the file in that juror's gallery *@

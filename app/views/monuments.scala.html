@@ -86,7 +86,7 @@
 
                         @for((file, index) <- ImageJdbc.findByMonumentId(monument.id).zipWithIndex) {
                             <li class="gallerybox">
-                                <h1 id="@file.pageId" style="display: inline; width: 1px; height: 1px"></h1>
+                                <h1 id="@file.pageId" class="tile-anchor"></h1>
 
                                 <div class="thumb">
                                     <a href="" >

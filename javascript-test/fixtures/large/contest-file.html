@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" data-theme-pref="auto" style="height: 100%;">
+<html lang="en" data-theme-pref="auto" class="h-100">
 <head>
 <meta charset="UTF-8">
 <script>
@@ -36,18 +36,18 @@ $(document).on('keydown', null, 'home', function (e) { return wlxGo(e, "/contest
 $(document).on('keydown', null, 'end', function (e) { return wlxGo(e, "/contest/1/files/113"); });
 </script>
 </head>
-<body class="gallery" style="height: 100%;">
-<div class="container-fluid" style="padding-left:5px; margin-left:0px; margin-right:0px; height:100%">
-<div class="row" style="height:100%">
-<div class="col-1 contest-file-info" style="margin-left:0px; min-width: 220px">
-<div class="btn-group" role="group" style="margin:10px;">
-<a role="button" class="btn btn-secondary btn-sm" data-nav="gallery" href="/contest/1/files" title="back.to.gallery &lt;Esc&gt;">
+<body class="gallery h-100">
+<div class="container-fluid large-view h-100">
+<div class="row h-100">
+<div class="col-1 contest-file-info large-side">
+<div class="btn-group large-nav" role="group">
+<a role="button" class="btn btn-outline-secondary btn-sm" data-nav="gallery" href="/contest/1/files" title="back.to.gallery &lt;Esc&gt;">
 <i class="bi bi-grid-3x3-gap-fill" aria-hidden="true"></i>
 </a>
-<a role="button" class="btn btn-secondary btn-sm" data-nav="up" href="/contest/1/files/106" title="previous.image &lt;up.key&gt;">
+<a role="button" class="btn btn-outline-secondary btn-sm" data-nav="up" href="/contest/1/files/106" title="previous.image &lt;up.key&gt;">
 <i class="bi bi-chevron-up" aria-hidden="true"></i>
 </a>
-<a role="button" class="btn btn-secondary btn-sm" data-nav="down" href="/contest/1/files/108" title="next.image &lt;down.key&gt;">
+<a role="button" class="btn btn-outline-secondary btn-sm" data-nav="down" href="/contest/1/files/108" title="next.image &lt;down.key&gt;">
 <i class="bi bi-chevron-down" aria-hidden="true"></i>
 </a>
 </div>
@@ -183,16 +183,16 @@ onerror="this.parentNode.parentNode.classList.add('wlx-thumb-failed')">
 </div>
 </li>
 </ul>
-<div class="file-title" style="margin-right: 5px; margin-top: 5px; padding: 5px;">
+<div class="file-title large-line">
 <a href="https://commons.wikimedia.org/wiki/File%3AImage_107.jpg" target="_blank" rel="noopener">File:Image 107.jpg</a>
 <br><a href="https://upload.wikimedia.org/wikipedia/commons/a/ab/Image_107.jpg">full.resolution</a>
 </div>
 </div>
-<div id="mainContent" class="col" style="margin-left:5px; margin-top: 10px; height:100%">
+<div id="mainContent" class="col large-main h-100">
 <a id="commons-link" href="https://commons.wikimedia.org/wiki/File%3AImage_107.jpg" target="_blank" rel="noopener" title="File:Image 107.jpg"
 >
 <img id="large_image" alt="File:Image 107.jpg"
-src="https://upload.wikimedia.org/wikipedia/commons/a/ab/Image_107.jpg" style="max-width:100%; max-height:100%;"
+src="https://upload.wikimedia.org/wikipedia/commons/a/ab/Image_107.jpg" class="mw-100 mh-100"
 srcset="https://upload.wikimedia.org/wikipedia/commons/a/ab/Image_107.jpg 1.5x, https://upload.wikimedia.org/wikipedia/commons/a/ab/Image_107.jpg 2x"
 onerror="var f = this.getAttribute('data-fallback');
 if (f) { this.removeAttribute('data-fallback'); this.removeAttribute('srcset'); this.removeAttribute('sizes'); this.src = f; }

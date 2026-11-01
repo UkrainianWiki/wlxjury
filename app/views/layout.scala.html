@@ -21,7 +21,7 @@
     case controllers.Theme.Light => { data-bs-theme="light"}
     case controllers.Theme.Dark => { data-bs-theme="dark"}
     case controllers.Theme.Auto => {}
-} data-theme-pref="@theme.value"@if(fullHeight){ style="height: 100%;"}>
+} data-theme-pref="@theme.value"@if(fullHeight){ class="h-100"}>
     <head>
         <meta charset="UTF-8">
         <script>
@@ -46,7 +46,7 @@
         <script src="@routes.WebJars.at("bootstrap/5.3.8/js/bootstrap.bundle.min.js")"></script>
         @head
     </head>
-    <body@if(bodyClass.nonEmpty){ class="@bodyClass"}@if(fullHeight){ style="height: 100%;"}>
+    <body@defining((bodyClass +: (if (fullHeight) Seq("h-100") else Nil)).filter(_.nonEmpty).mkString(" ")) { classes =>@if(classes.nonEmpty){ class="@classes"}}>
         @content
     </body>
 </html>

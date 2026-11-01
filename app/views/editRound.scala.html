@@ -88,7 +88,7 @@
                                 Symbol("rows") -> 8)
                         }
 
-                        <div @if(noEdit) {style="display: none"}>
+                        <div @if(noEdit) {class="d-none"}>
                             @bs.select(
                                 editRoundForm("jurors"),
                                 jurors.map(u => (u.getId.toString, u.description)),

@@ -6,7 +6,7 @@
     <input type="hidden" id="current-@id" name="currentId" value='@id' />
     <input type="hidden" id="parent-@id" name="parentId" value='@parentId' />
     <input type="hidden" id="setActive-@id" name="setActive" value='@{!active}' />
-    <button type="submit" class="btn btn-sm @if(active) {btn-danger} else {btn-success}">
+    <button type="submit" class="btn btn-sm btn-outline-secondary">
         <i class="bi @if(active) {bi-stop-fill} else {bi-play-fill}" aria-hidden="true"></i>
     </button>
 }

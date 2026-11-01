@@ -14,11 +14,10 @@
     @defining(list.round) { round =>
         @if(round.rates.id > 0) {
         <div class="rank-line"> <b>@file.rankStr</b>
-            <span style="margin-left: 5px;
-                margin-right: 10px;">
+            <span class="rate-stars">
             @if(round.rates.id != 2) {
                 @for(i <- 1 to round.numberOfStars) {
-                    <img alt="@i" src="@showStar(i, file.totalRate(round).toInt, round.numberOfStars <= 10, round.rates.id > 5 && round.halfStar)">
+                    @showStar(i, file.totalRate(round).toInt, round.rates.id > 5 && round.halfStar)
                 }
                 @file.rateString(round)
             } else {
@@ -46,9 +45,7 @@
                 <ul class="gallery mw-gallery-traditional">
                 @for((file, index) <- files.view.zipWithIndex) {
                     <li class="gallerybox">
-                        <h1 id="@file.pageId" style="display: inline;
-                            width: 1px;
-                            height: 1px"></h1>
+                        <h1 id="@file.pageId" class="tile-anchor"></h1>
 
                         <div class="thumb">
                             <a href="@list.largeUrl(file.pageId)" >

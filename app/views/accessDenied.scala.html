@@ -46,7 +46,7 @@
                 <a class="btn btn-primary" href="@destination.url">@Messages(destination.labelKey)</a>
             }
             @* a POST with the CSRF token, back here (a local path only) after signing in again *@
-            <form method="post" action="@routes.LoginController.logout()" style="display: inline">
+            <form method="post" action="@routes.LoginController.logout()" class="d-inline">
                 @csrfField()
                 @for(path <- returnTo) {
                     <input type="hidden" name="returnTo" value="@path"/>

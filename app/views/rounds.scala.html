@@ -68,14 +68,12 @@
 
                 </table>
                 <script src="@routes.Assets.versioned("javascripts/job-status.js")"></script>
-            </div>
-    }
+            }
+        </div>
 
         <div class="row" >
             <div class="mb-3">
-                <a href="@routes.RoundController.editRound(id = None, contestId = contest.getId)">
-                    <div class="btn btn-primary" onClick="document.forms['add-user'].submit();">@Messages("add.round")</div>
-                </a>
+                <a class="btn btn-primary" href="@routes.RoundController.editRound(id = None, contestId = contest.getId)">@Messages("add.round")</a>
 
             </div>
 

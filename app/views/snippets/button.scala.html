@@ -1,6 +1,2 @@
 @(href: Call, messageKey: String)(implicit messages: Messages)
-<a href="@href">
-    <button type="button" class="btn btn-outline-secondary" style="width: 25%;">
-    @Messages(messageKey)
-    </button>
-</a>
+<a href="@href" class="btn btn-outline-secondary form-action-wide">@Messages(messageKey)</a>

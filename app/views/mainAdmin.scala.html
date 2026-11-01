@@ -75,7 +75,9 @@
 } {
         @navbar(title, user, asUserId, selectedRound, rounds, pager = pager, contestId = contestId)
 
-        <div class="container">
+        @* admin pages and their tables: up to the xxl container's width; forms narrow
+           themselves with their own columns *@
+        <div class="container-xxl">
 
         @content
 

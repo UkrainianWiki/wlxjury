@@ -23,13 +23,9 @@
                     <div class="alert alert-info">@msg</div>
                 }
 
-                <div style="margin-bottom: 10px">
-                    <a href="@routes.UserController.importUsers(contest.id)" style="margin-right: 5px">
-                        <div class="btn btn-primary">@Messages("mass.import")</div>
-                    </a>
-                    <a href="@routes.UserController.editGreeting(contest.id)">
-                        <div class="btn btn-primary">@Messages("edit.greeting.message")</div>
-                    </a>
+                <div class="mb-2">
+                    <a href="@routes.UserController.importUsers(contest.id)" class="btn btn-outline-secondary me-1">@Messages("mass.import")</a>
+                    <a href="@routes.UserController.editGreeting(contest.id)" class="btn btn-outline-secondary">@Messages("edit.greeting.message")</a>
                 </div>
             }
 
