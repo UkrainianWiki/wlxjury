@@ -153,15 +153,24 @@ It is from reading the code and the fixture DB (round 1: 20 jurors, 38,366 files
 - The navbar tabs for all jurors are the viewer's own counts (labelled as such). `voteMoved`
   names selected/rejected/unrated. Both fine.
 
-## Decisions for the user
+## Decisions (the user's, 2026-11-01)
 
-1. Ordering rule for a yes/no round: approvals first, then fewest rejections (proposed); or
-   approvals − rejections, as the gallery does now. The top-N selection should use the same rule.
-2. How to show rejections: "✓ 3 ✗ 2" in the gallery and file list, or approvals only with
-   rejections in the large view and file list.
-3. Filtered counts: count all the file's votes (`HAVING`, proposed) or only the filtered ones.
-4. "Selected by at least 0 jurors": mean "no filter", or remove it.
-5. File list for all jurors: page it (proposed), or keep one page with a hard limit.
+1. Ordering: selectable, not one fixed rule. The orders on offer for a yes/no round:
+   approvals then fewest rejections; approvals − rejections; approvals only (ties always in a
+   stable id order). The galleries, file list and CSV take the order from a sort control
+   (remembered like the gallery's sort today); the round form's top-N from a previous yes/no
+   round takes it from a field of its own, stored with the round, so a distribution is
+   reproducible and shows which rule picked the files. Default for both: approvals then
+   fewest rejections.
+2. Show rejections: "✓ 3 ✗ 2" in the gallery and file list, with a screen-reader text
+   ("3 approvals, 2 rejections").
+3. Filters pick which files are listed; the counts and the order use all of a file's votes
+   (`HAVING` on the per-file aggregate).
+4. "Selected by at least N jurors": the filter can be skipped, with explicit wording in the
+   form (e.g. "any number of approvals (no filter)") stored as NULL; 0 no longer means "has
+   an unrated vote". Migrate stored 0 values to NULL only after checking existing rounds use
+   it as "no filter" (a Flyway migration; Flyway stays 9.16.3).
+5. File list and CSV for all jurors: paged (the CSV streamed), as proposed.
 
 ## Order of work
 
