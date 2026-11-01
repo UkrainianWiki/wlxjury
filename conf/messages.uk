@@ -217,6 +217,7 @@ files.in.database = Файлів на базі даних
 import.files = Імпортувати файли
 update.monuments = Оновити пам''ятки
 thumbnail.urls = адреси мініатюр
+thumbnail.urls.help = Адреси мініатюр на цьому сервері, по одній у рядку. Щоб завантажити їх через wget чи скрипт, передайте cookie вашої сесії.
 local.image.cache = Локальний кеш зображень
 download.images.locally = Завантажити зображення локально
 contest = Конкурс

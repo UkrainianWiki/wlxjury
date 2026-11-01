@@ -263,6 +263,7 @@ files.in.database = Файлов в базе данных
 import.files = Импортировать файлы
 update.monuments = Обновить памятники
 thumbnail.urls = адреса миниатюр
+thumbnail.urls.help = Адреса миниатюр на этом сервере, по одному в строке. Чтобы скачать их через wget или скрипт, передайте cookie вашей сессии.
 files.import.cache = Импорт и кеш
 files.all = Все файлы
 files.deleted.on.commons = Удалённые с Викисклада

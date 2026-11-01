@@ -334,6 +334,7 @@ class RoundEditPageSpec extends PlaySpecification with PlayTestDb {
         status(table) must_== OK
         contentAsString(table) must contain("juror1@example.com")
         contentAsString(table) must contain("/thumb_urls/")
+        contentAsString(table) must contain("To download them with wget or a script, send your session cookie.")
         contentAsString(table) must not(contain("<html"))
       }
     }

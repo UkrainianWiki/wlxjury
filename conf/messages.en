@@ -228,6 +228,7 @@ files.in.database = Files in database
 import.files = Import files
 update.monuments = Update monuments
 thumbnail.urls = thumbnail urls
+thumbnail.urls.help = URLs of the thumbnails on this server, one per line. To download them with wget or a script, send your session cookie.
 local.image.cache = Local image cache
 download.images.locally = Download images locally
 contest = Contest

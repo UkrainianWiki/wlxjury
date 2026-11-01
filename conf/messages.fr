@@ -228,6 +228,7 @@ files.in.database = Images dans la base de données
 import.files = Importer les images
 update.monuments = Mettre à jour les monuments
 thumbnail.urls = urls des vignettes
+thumbnail.urls.help = URL des vignettes sur ce serveur, une par ligne. Pour les télécharger avec wget ou un script, envoyez votre cookie de session.
 local.image.cache = Cache d''images local
 download.images.locally = Télécharger les images localement
 contest = Concours
