@@ -831,3 +831,37 @@ mode, every page in the mode asked for, no CSP violation; the only console error
   controllers.SecuredSpec`: exit 0, 188 passed, including `LargeViewFixturesSpec` (fixtures
   unchanged: a 1-10 round's markup is the same) and the new `StartStopViewSpec`. No JS or Jest
   test changed. The full suite was not rerun.
+
+## Follow-ups
+
+Left for separate branches; none blocks merging this one.
+
+1. **Russian translations.** `messages.ru` lacks 62 keys used by the admin pages (a gap that
+   predates this branch; Phase 2 filled only the keys on the lines it added). List them with a
+   script over the `Messages("…")` keys in `app/views` against each messages file, fill ru, and
+   add a spec that every key used by the views exists in all four files (as `StartStopViewSpec`
+   does for its own keys), so the gap can't reopen.
+2. **Commons category autocomplete.** The contests' and contest images' "source" field had a
+   typeahead calling Commons from the browser; the CSP blocked it, and Phase 2 removed it. To
+   bring it back: a same-origin JSON endpoint (signed in, admin or organizer of the current
+   contest, `withAuthJson`) that forwards a prefix search for Category: titles to Commons through
+   `MwBot`, with a short timeout, a small result limit and a cache; then Tom Select's `load` on
+   the field. Tests: the endpoint's authorization (signed out 401, juror 403) and its handling of
+   a Commons failure (an empty list, not a 500).
+3. **`/admin/rounds` and `/admin/users` without `?contestId=`.** In the screenshot fixture both
+   deny the contest's admin (403, `permission_check_failed`, `targetContestId=unknown`) although
+   the session's contest is set; the navbar links pass the id, so users rarely hit it. Likely a
+   pre-existing bug in how these actions pick the contest when the parameter is missing (they
+   should fall back to the session's contest, as `Secured.inCurrentContest` does). Confirm the
+   account and contest first, reproduce in a controller spec, and keep the negative cases (a
+   member of another contest, a juror) denied.
+4. **Smaller quirks, all predating this branch:**
+   - The by-rate galleries of a binary (1-2) round show the rate as green `<button>`s that do
+     nothing; show it as a label or icon instead.
+   - Star counts: `galleryByRateRegions` draws `rates.id / 2` stars whatever the half-star
+     setting, and `galleryByRate` uses `numberOfStars`, which multiplies by the criteria count.
+     Use one helper for both.
+   - Page titles: admin pages use `h3`, the error page `h4`, galleries none. Pick one level
+     (e.g. `h1` styled as `.h3`) for every page title.
+   - `fileList` prints its `<!-- Round … -->` comment as visible text in the block meant for
+     copying into a wiki page, and its content starts at the page's edge.
