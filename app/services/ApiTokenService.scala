@@ -53,15 +53,19 @@ object ApiTokenService extends Logging {
   /** The token's record and its user, in their latest contest ([[Secured.inCurrentContest]],
     * as a session without a current contest), if the token is usable: well-formed, known,
     * neither revoked nor expired, and its user not deleted. Records the use. A refused token
-    * is logged at WARN with its id (an unknown one with its prefix), never its value.
+    * is logged with its id (an unknown one with its prefix), never its value: at INFO, and a
+    * malformed one, checked before any lookup, at DEBUG, so that a client sending garbage
+    * neither floods the log nor queries the database.
     */
   def authenticate(token: String): Option[(ApiToken, User)] =
-    if (!Format.matches(token)) refused("malformed")
-    else
+    if (!Format.matches(token)) {
+      logger.debug("api_token_refused reason=malformed")
+      None
+    } else
       ApiTokenJdbc.findByHash(hash(token)) match {
-        case None                       => refused("unknown", s"prefix=${Secured.logValue(displayPrefix(token))}")
-        case Some(found) if found.revoked => refused("revoked", s"tokenId=${found.id}")
-        case Some(found) if found.expired => refused("expired", s"tokenId=${found.id}")
+        case None                         => refused("unknown", s"prefix=${Secured.logValue(displayPrefix(token))}")
+        case Some(found) if found.revoked   => refused("revoked", s"tokenId=${found.id}")
+        case Some(found) if found.expired   => refused("expired", s"tokenId=${found.id}")
         case Some(found) =>
           User.findById(found.userId).filter(_.deletedAt.isEmpty) match {
             case None => refused("user_missing", s"tokenId=${found.id}")
@@ -72,7 +76,7 @@ object ApiTokenService extends Logging {
       }
 
   private def refused(reason: String, fields: String*): Option[Nothing] = {
-    logger.warn((s"api_token_refused reason=$reason" +: fields).mkString(" "))
+    logger.info((s"api_token_refused reason=$reason" +: fields).mkString(" "))
     None
   }
 }

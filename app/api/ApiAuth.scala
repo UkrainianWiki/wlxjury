@@ -41,7 +41,7 @@ object ApiAuth extends Logging {
   /** The caller: with an `Authorization` header, only a usable token of the Bearer scheme
     * ([[ApiTokenService.authenticate]]), the session ignored, so that a request never mixes
     * the two; without one, the session user in the session's current contest. None (401)
-    * otherwise.
+    * otherwise; another scheme is logged at DEBUG only.
     */
   def caller(request: RequestHeader): Option[Caller] =
     request.headers.getAll(HeaderNames.AUTHORIZATION) match {
@@ -49,13 +49,13 @@ object ApiAuth extends Logging {
       case Seq(authorization) =>
         bearerToken(authorization) match {
           case None =>
-            logger.warn("api_auth_refused reason=not_bearer")
+            logger.debug("api_auth_refused reason=not_bearer")
             None
           case Some(token) =>
             ApiTokenService.authenticate(token).map { case (found, user) => Caller(user, ByToken(found.id)) }
         }
       case _ =>
-        logger.warn("api_auth_refused reason=several_authorization_headers")
+        logger.debug("api_auth_refused reason=several_authorization_headers")
         None
     }
 
