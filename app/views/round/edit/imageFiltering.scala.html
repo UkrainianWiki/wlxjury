@@ -1,7 +1,7 @@
 @import db.scalikejdbc.Round
 @import db.scalikejdbc.User
 @import db.scalikejdbc.MediaType
-@import org.intracer.wmua.CategoryOperation
+@import org.intracer.wmua.{BinaryOrder, CategoryOperation}
 @import org.scalawiki.wlx.dto.SpecialNomination
 @(
         editRoundForm: Form[controllers.EditRound],
@@ -12,6 +12,10 @@
         specialNominations: Seq[SpecialNomination] = Nil
 )(implicit messages: Messages)
 @implicitLayout = @{ bs.Layout.horizontal("col-md-4", "col-md-8") }
+@prevIds = @{ editRoundForm("previousRound").indexes.flatMap(i => editRoundForm(s"previousRound[$i]").value) }
+@* a top-N's order picks files only from a yes/no previous round: offered until previous rounds
+   are chosen, then only with a yes/no one *@
+@topOrderApplies = @{ prevIds.isEmpty || rounds.exists(r => r.isBinary && r.id.exists(id => prevIds.contains(id.toString))) }
 @snippets.collapsible("media.filtering", "headingImageFiltering", "collapseImageFiltering") {
     @if(rounds.nonEmpty) {
         @* Use `disabled` rather than `readonly` for the multi-selects: a readonly
@@ -31,16 +35,36 @@
         <div id="prevRoundFilters" @if(editRoundForm("previousRound").indexes.isEmpty) {style="display: none"}>
             <div id="selectFilters"
             class="@rounds.filter(_.isBinary).map(r => "round" + r.getId).mkString(" ")">
-            @* the empty choice is stored as no filter (NULL); a stored 0 (an unrated vote counted as
-               a selection) is no longer offered, only kept for a round that has it *@
+            @* the empty choice is stored as no filter (NULL); a stored 0 means the same (the old
+               form's way of saying it, V73) and shows the empty choice *@
             @bs.select(
                 editRoundForm("minJurors"),
-                Seq("" -> Messages("selected.by.any.number")) ++
-                    Option.when(editRoundForm("minJurors").value.contains("0"))("0" -> Messages("selected.by.legacy.zero")) ++
+                Seq("" -> Messages("selected.by.no.filter")) ++
                     Seq("1", "2", "3", "4", "5", "6").map(x => (x, x)),
                 Symbol("value") -> "",
                 Symbol("_label") -> Messages("selected.by.at.least.x.jurors"),
                 Symbol("readonly") -> noEdit)
+            @* the files with fewer rejections across the previous rounds' votes (e.g. after a
+               screening where jurors only reject the few bad files); empty: no filter (NULL) *@
+            @bs.select(
+                editRoundForm("rejectedBy"),
+                Seq("" -> Messages("rejected.by.no.filter")) ++
+                    Seq("1", "2", "3", "4", "5", "6").map(x => (x, x)),
+                Symbol("value") -> "",
+                Symbol("_label") -> Messages("rejected.by.at.least.x.jurors"),
+                Symbol("readonly") -> noEdit)
+            @* the order that picks a top-N from a yes/no previous round, stored with the round, so
+               its page shows which rule picked its files and a later distribution picks the same;
+               the legacy rule only for a round from before V72 that has it *@
+            @if(editRoundForm("topImages").value.exists(_.nonEmpty) && topOrderApplies) {
+                @bs.select(
+                    editRoundForm("topBinaryOrder"),
+                    BinaryOrder.all.map(order => (order.param, Messages(order.messageKey))) ++
+                        Option.when(editRoundForm("topBinaryOrder").value.contains(BinaryOrder.LegacyParam))(
+                            BinaryOrder.LegacyParam -> Messages(BinaryOrder.LegacyMessageKey)),
+                    Symbol("_label") -> Messages("top.images.binary.order"),
+                    Symbol("readonly") -> noEdit)
+            }
             </div>
 
             <div id="rateFilters"

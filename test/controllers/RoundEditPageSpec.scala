@@ -38,15 +38,23 @@ class RoundEditPageSpec extends PlaySpecification with PlayTestDb {
     FakeRequest(GET, url).withSession(Secured.UserName -> user.email).withCSRFToken
 
   /** The new-round form as the browser submits it, with its submission token. */
-  private def saveNewRound(contestId: Long, jurors: Seq[Long], token: String, user: User) =
+  private def saveNewRound(contestId: Long, jurors: Seq[Long], token: String, user: User,
+      extra: Seq[(String, String)] = Nil) =
     FakeRequest(POST, "/admin/rounds/save")
       .withSession(Secured.UserName -> user.email)
       .withFormUrlEncodedBody(
         Seq("number" -> "0", "name" -> "Round 2", "contest" -> contestId.toString, "roles" -> "jury",
           "distribution" -> "1", "rates" -> "1", "minMpx" -> "", "minSize" -> "", "mediaType" -> "all",
-          "submitToken" -> token) ++
+          "submitToken" -> token) ++ extra ++
           jurors.zipWithIndex.map { case (id, i) => s"jurors[$i]" -> id.toString }: _*)
       .withCSRFToken
+
+  /** The top-N order select's option values and the selected ones. */
+  private def topOrderChoices(html: String): (Seq[String], Seq[String]) = {
+    import scala.jdk.CollectionConverters._
+    val options = org.jsoup.Jsoup.parse(html).select("select#topBinaryOrder option").asScala.toSeq
+    (options.map(_.attr("value")), options.filter(_.hasAttr("selected")).map(_.attr("value")))
+  }
 
   "the new-round form" should {
 
@@ -90,9 +98,40 @@ class RoundEditPageSpec extends PlaySpecification with PlayTestDb {
         roundDao.findByContest(contest.getId).count(_.name.contains("Round 2")) === 1
       }
     }
+
+    "preselect the default order of a top-N and store it, not the legacy rule's NULL" in {
+      testDbApp { implicit app =>
+        val (contest, admin, round) = fixture()
+        val html = contentAsString(route(app,
+          get(s"/admin/rounds/edit?contestId=${contest.getId}&topImages=1", admin)).get)
+        topOrderChoices(html) === ((Seq("approvals", "difference", "approvals-only"), Seq("approvals")))
+
+        val jurors = User.findRoundJurors(round.getId).map(_.getId)
+        val saved = route(app, saveNewRound(contest.getId, jurors, java.util.UUID.randomUUID().toString, admin,
+          Seq("previousRound[0]" -> round.getId.toString, "topImages" -> "1", "topBinaryOrder" -> "approvals"))).get
+        status(saved) must_== SEE_OTHER
+        // a form without the field (an older page) stores the default too
+        val omitted = route(app, saveNewRound(contest.getId, jurors, java.util.UUID.randomUUID().toString, admin,
+          Seq("previousRound[0]" -> round.getId.toString, "topImages" -> "1"))).get
+        status(omitted) must_== SEE_OTHER
+        roundDao.findByContest(contest.getId).filter(_.name.contains("Round 2")).map(_.topBinaryOrder) ===
+          Seq(Some(org.intracer.wmua.BinaryOrder.Default), Some(org.intracer.wmua.BinaryOrder.Default))
+      }
+    }
   }
 
   "the round edit page" should {
+
+    "show the legacy rule of a top-N from before V72 (no order stored), selected" in {
+      testDbApp { implicit app =>
+        val (contest, admin, previous) = fixture()
+        val round = roundDao.create(Round(None, 2, Some("Old top"), contest.getId,
+          previous = Some(previous.getId.toString), topImages = Some(1), active = true))
+        val html = contentAsString(route(app,
+          get(s"/admin/rounds/edit?id=${round.getId}&contestId=${contest.getId}", admin)).get)
+        topOrderChoices(html) === ((Seq("approvals", "difference", "approvals-only", "legacy"), Seq("legacy")))
+      }
+    }
 
     "preserve every saved filter when the edit form omits read-only fields" in {
       testDbApp { implicit app =>

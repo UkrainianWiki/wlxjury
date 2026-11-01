@@ -19854,6 +19854,12 @@ function UniteGalleryMain(){
 				objItem.deletedLabel = objChild.attr("data-deleted");
 				objItem.commonsUrl = objChild.attr("data-commonsUrl");
 
+				//wlxjury: all the jurors' votes on a binary round's file (the organisers' gallery of
+				//them): its approvals, rejections and their text (tile-votes.js addTally)
+				objItem.approvals = objChild.attr("data-approvals");
+				objItem.rejections = objChild.attr("data-rejections");
+				objItem.tally = objChild.attr("data-tally");
+
 				//always set thumb image to object
 				objItem.objThumbImage = objChild;
 			}else{

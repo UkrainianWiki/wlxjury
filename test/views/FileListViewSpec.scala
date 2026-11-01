@@ -1,6 +1,6 @@
 package views
 
-import controllers.{GalleryView, RateDistribution, RoundList}
+import controllers.{GalleryView, Pager, RateDistribution, RoundList}
 import db.scalikejdbc.User
 import org.intracer.wmua.{Image, ImageWithRating, Selection}
 import org.jsoup.Jsoup
@@ -30,10 +30,13 @@ class FileListViewSpec extends PlaySpecification {
       selection = jurors.map(j => Selection(pageId, j.getId, round.getId, if (pageId == 301L) 1 else -1)))
   }
 
-  private def render(asUser: User, wrapInTable: Boolean, region: String = "all"): Document = Jsoup.parse(contentAsString(
+  private def render(asUser: User, wrapInTable: Boolean, region: String = "all",
+                     pager: Pager = Pager(1, 2, RoundList.FileListPageSize), files: Seq[ImageWithRating] = files,
+                     jurors: Seq[User] = jurors): Document = Jsoup.parse(contentAsString(
     views.html.fileList(juror, RoundList(round, Option(asUser).fold(0L)(_.getId), view = GalleryView.FileList)
       .withRegion(region), asUser,
-      files, Seq("1", "2"), jurors, Nil, None, "wiki", wrapInTable, new RateDistribution(Map.empty))))
+      files, files.indices.map(i => (i + 1).toString), jurors, Nil, None, pager, "wiki", wrapInTable,
+      new RateDistribution(Map.empty))))
 
   private def block(doc: Document) = doc.selectFirst("[contenteditable=true]")
 
@@ -67,6 +70,45 @@ class FileListViewSpec extends PlaySpecification {
       val widths = (table.select("thead th").size, table.select("tfoot th").size,
         table.select("tbody tr").asScala.map(_.select("td").size).distinct.toList)
       widths must_== ((6, 6, List(6)))
+    }
+
+    "show each juror's vote as a check, a cross or a dot, blank where not theirs, under a legend" in {
+      val third = User("Juror 3", "j3@example.org", id = Some(3L))
+      // juror 1 selected, juror 2 rejected, juror 3 yet to vote; juror 4 not assigned the file
+      val file = ImageWithRating(Image(pageId = 303L, title = "File:Image 303.jpg", width = 2000, height = 1000),
+        selection = Seq(Selection(303L, 1, round.getId, 1), Selection(303L, 2, round.getId, -1),
+          Selection(303L, 3, round.getId, 0)))
+      val copy = block(render(null, wrapInTable = true, files = Seq(file),
+        jurors = jurors :+ third :+ User("Juror 4", "j4@example.org", id = Some(4L))))
+      val cells = copy.select("tbody tr td").asScala.toList
+      val votes = cells.takeRight(4)
+      (votes.map(_.select(".visually-hidden").text) must_== List("selected", "rejected", "unrated", "")) and
+        (votes.map(_.select("[aria-hidden=true]").size) must_== List(1, 1, 1, 0)) and
+        (votes(0).select("i.bi-check-lg.wlx-vote-selected").size must_== 1) and
+        (votes(1).select("i.bi-x-lg.wlx-vote-rejected").size must_== 1) and
+        (votes(2).select(".wlx-vote-unrated").text must_== "·") and
+        (votes(3).text must_== "") and
+        // all the jurors' votes together: a check and a cross with their numbers, read as text
+        (cells(2).selectFirst("[aria-hidden=true]").text must_== "1 1") and
+        (cells(2).select(".visually-hidden").text must_== "binary.tally") and
+        (copy.select("thead th").get(2).text must_== "overall.votes") and
+        // the legend before the table, after the heading
+        (copy.child(1).hasClass("wlx-votes-legend") must beTrue) and
+        (copy.child(1).text must_== "selected rejected · unrated filelist.legend.not.assigned") and
+        (copy.child(1).select("[aria-hidden=true]").size must_== 3)
+    }
+
+    "show a juror's own list without the legend" in {
+      block(render(juror, wrapInTable = false)).select(".wlx-votes-legend").size must_== 0
+    }
+
+    "be a page of the list, with the pager in the navbar, linking the file list's pages" in {
+      val doc = render(null, wrapInTable = true, pager = Pager(2, 2500, RoundList.FileListPageSize))
+      val links = doc.select("nav #pagenav a[rel]").asScala.map(a => a.attr("rel") -> a.attr("href")).toMap
+      (links("prev") must_== "/filelist/round/1/user/0/page/1?sort=rate") and
+        (links("next") must_== "/filelist/round/1/user/0/page/3?sort=rate") and
+        // a list of one page has none
+        (render(null, wrapInTable = true).select("#pagenav").size must_== 0)
     }
 
     "show only the files, one per line, without the table" in {

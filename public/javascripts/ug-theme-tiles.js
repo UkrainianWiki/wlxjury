@@ -134,6 +134,11 @@ function UGTheme_tiles(){
 				wlxTileVotes.addStars(this, g_objTileDesign.getItemByTile(jQuery(this)), g_options.wlx_stars);
 			});
 		}
+		//wlxjury: all the jurors' approvals and rejections on the organisers' tiles of a binary
+		//round, for the files that have them (data-tally)
+		g_objTilesWrapper.find(".ug-tile").each(function(){
+			wlxTileVotes.addTally(this, g_objTileDesign.getItemByTile(jQuery(this)));
+		});
 	}
 	
 	/**

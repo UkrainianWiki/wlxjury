@@ -57,7 +57,8 @@ class DistributeImages @Inject()(imageRepo: ImageRepo) extends Logging {
     getFilteredImages(
       round,
       prevRounds,
-      selectedAtLeast = round.prevSelectedBy,
+      selectedAtLeast = round.selectedByFilter,
+      rejectedBy = round.rejectedByFilter,
       selectMinAvgRating = round.prevMinAvgRate,
       selectTopByRating = round.topImages,
       includeRegionIds = round.regionIds.toSet,
@@ -79,7 +80,9 @@ class DistributeImages @Inject()(imageRepo: ImageRepo) extends Logging {
   }
 
   /** The round's per-image filters: every filter of [[imagesByRound]] except top-N by
-    * rating (a global ranking) and the exclusion of the images already in the round. Each
+    * rating (a global ranking), the exclusion of the images already in the round and
+    * "exclude files rejected by at least N" (the streamed queries apply it,
+    * `DistributionSource.PrevVotes`). Each
     * decides per image, so applying them to any slice of the candidates (a chunk) selects
     * exactly the images the whole list would. The category id sets are the effective
     * first and second operands of [[Round.categoryRule]] ([[categoryFileIds]]);
@@ -106,7 +109,7 @@ class DistributeImages @Inject()(imageRepo: ImageRepo) extends Logging {
         selectMinAvgRating =
           prevRound.flatMap(_ => round.prevMinAvgRate.filter(_ => !prevRound.exists(_.isBinary))),
         selectTopByRating = None,
-        selectedAtLeast = prevRound.flatMap(_ => round.prevSelectedBy),
+        selectedAtLeast = prevRound.flatMap(_ => round.selectedByFilter),
         mpxAtLeast = round.minMpx,
         sizeAtLeast = round.minImageSize.map(_ * 1024 * 1024),
         specialNomination = round.specialNomination,
@@ -128,6 +131,7 @@ class DistributeImages @Inject()(imageRepo: ImageRepo) extends Logging {
       selectMinAvgRating: Option[BigDecimal] = None,
       selectTopByRating: Option[Int] = None,
       selectedAtLeast: Option[Int] = None,
+      rejectedBy: Option[Int] = None,
       includeJurorId: Set[Long] = Set.empty,
       excludeJurorId: Set[Long] = Set.empty
   ): Seq[Image] = {
@@ -156,18 +160,35 @@ class DistributeImages @Inject()(imageRepo: ImageRepo) extends Logging {
     // conditions, so any one of them is a valid context for rate scaling / gating.
     val prevRound = prevRounds.headOption
 
+    // a top-N from yes/no rounds is ranked by all their votes, whatever "selected by" reads;
+    // a round from before V72 (no order stored) by the legacy rule, the rate sum of the rows read
+    val binaryTop = prevRound.exists(_.isBinary) && selectTopByRating.isDefined && round.topBinaryOrder.isDefined
+
     val imagesAll: Seq[ImageWithRating] =
       if (prevRounds.isEmpty)
         imageRepo
           .findByContestId(round.contestId)
           .map(i => new ImageWithRating(i, Seq.empty))
+      else if (binaryTop)
+        DistributeImages.binaryCandidates(
+          mergeByPageId(prevRounds.flatMap(r => imageRepo.byRoundMerged(r.getId))),
+          rated = selectedAtLeast.isDefined
+        )
       else
         mergeByPageId(
           prevRounds.flatMap(r =>
-            imageRepo.byRoundMerged(r.getId, rated = selectedAtLeast.map(_ > 0))
+            imageRepo.byRoundMerged(r.getId, rated = Option.when(selectedAtLeast.isDefined)(true))
           )
         )
     logger.debug("Total images: " + imagesAll.size)
+
+    // "exclude files rejected by at least N" counts the rejections of all the votes of yes/no
+    // previous rounds, whatever "selected by" reads (its rows are the approvals only)
+    val notRejected = prevRound.filter(_.isBinary).flatMap(_ => rejectedBy)
+    val rejections: Map[Long, Int] = notRejected.fold(Map.empty[Long, Int])(_ =>
+      mergeByPageId(prevRounds.flatMap(r => imageRepo.byRoundMerged(r.getId))).map(i => i.pageId -> i.rejections).toMap)
+    val candidates = if (notRejected.isEmpty) imagesAll
+      else imagesAll.map(i => i.copy(rejectionsFromDb = Some(rejections.getOrElse(i.pageId, 0))))
 
     val funGens = Seq(CategoryImages(categoryRule, firstCategoryIds, secondCategoryIds)) ++
       ImageWithRatingSeqFilter.funGenerators(
@@ -184,7 +205,9 @@ class DistributeImages @Inject()(imageRepo: ImageRepo) extends Logging {
       selectMinAvgRating =
         prevRound.flatMap(_ => selectMinAvgRating.filter(_ => !prevRound.exists(_.isBinary))),
       selectTopByRating = prevRound.flatMap(_ => selectTopByRating),
+      topOrder = round.topBinaryOrder,
       selectedAtLeast = prevRound.flatMap(_ => selectedAtLeast),
+      rejectedBy = notRejected,
       mpxAtLeast = mpxAtLeast,
       sizeAtLeast = sizeAtLeast,
       specialNomination = round.specialNomination,
@@ -193,7 +216,7 @@ class DistributeImages @Inject()(imageRepo: ImageRepo) extends Logging {
 
     val filterChain = ImageWithRatingSeqFilter.makeFunChain(funGens)
 
-    val images = filterChain(imagesAll).map(_.image)
+    val images = filterChain(candidates).map(_.image)
     logger.debug("Images after filtering: " + images.size)
 
     images
@@ -213,7 +236,9 @@ class DistributeImages @Inject()(imageRepo: ImageRepo) extends Logging {
           Some(
             acc.copy(
               selection = acc.selection ++ iwr.selection,
-              countFromDb = acc.countFromDb + iwr.countFromDb
+              countFromDb = acc.countFromDb + iwr.countFromDb,
+              approvalsFromDb = sum(acc.approvalsFromDb, iwr.approvalsFromDb),
+              rejectionsFromDb = sum(acc.rejectionsFromDb, iwr.rejectionsFromDb)
             )
           )
         case None => Some(iwr)
@@ -221,6 +246,9 @@ class DistributeImages @Inject()(imageRepo: ImageRepo) extends Logging {
     }
     merged.values.toSeq
   }
+
+  private def sum(a: Option[Int], b: Option[Int]): Option[Int] =
+    if (a.isEmpty && b.isEmpty) None else Some(a.getOrElse(0) + b.getOrElse(0))
 
   def rebalanceImages(
       round: Round,
@@ -239,6 +267,16 @@ class DistributeImages @Inject()(imageRepo: ImageRepo) extends Logging {
 }
 
 object DistributeImages {
+
+  /** Yes/no previous rounds' images, grouped with all their votes, for a top-N: with `rated`
+    * ("selected by at least" set) those with an approval, else all, each with its approvals as
+    * its rate, so that "selected by at least" compares them, as
+    * [[services.distribution.DistributionSource.rank]] has them.
+    */
+  def binaryCandidates(images: Seq[ImageWithRating], rated: Boolean): Seq[ImageWithRating] =
+    images
+      .filter(i => !rated || i.approvals > 0)
+      .map(i => i.copy(selection = Seq(Selection(i.pageId, juryId = 0, roundId = 0, rate = i.approvals))))
 
   /** Selection rows per insert batch: ~200 KB, well below any max_allowed_packet. */
   val InsertChunk = 5000

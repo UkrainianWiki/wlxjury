@@ -62,4 +62,29 @@ class GalleryTileStarsViewSpec extends PlaySpecification {
       html must contain("binary: true")
     }
   }
+
+  "the organisers' tiles of all the jurors' votes on a binary round" should {
+
+    /** The tiles' data, as unitegallery reads the items (data-*), of the gallery of `files`. */
+    def tiles(asUserId: Long, files: Seq[org.intracer.wmua.ImageWithRating]) =
+      org.jsoup.Jsoup.parse(contentAsString(views.html.gallery(juror, RoundList(LargeViewRenders.binaryRound, asUserId),
+        files, Pager(1, files.size), Nil, None, new RateDistribution(Map.empty)))).select("#gallery img")
+
+    "carry each file's approvals and rejections and their text for its tile (tile-votes.js addTally)" in {
+      // as the grouped query of all the jurors' votes has them
+      val grouped = LargeViewRenders.files().take(2).zipWithIndex.map { case (f, i) =>
+        f.copy(approvalsFromDb = Some(3 - i), rejectionsFromDb = Some(i + 1))
+      }
+      val imgs = tiles(0L, grouped)
+      (imgs.size === 2) and
+        (imgs.eachAttr("data-approvals") === java.util.List.of("3", "2")) and
+        (imgs.eachAttr("data-rejections") === java.util.List.of("1", "2")) and
+        // its words (stub messages: the key), which screen readers read
+        (imgs.eachAttr("data-tally") === java.util.List.of("binary.tally", "binary.tally"))
+    }
+
+    "carry none on a juror's own tiles, which show their vote" in {
+      tiles(juror.getId, LargeViewRenders.files().take(2)).eachAttr("data-tally").size === 0
+    }
+  }
 }

@@ -63,6 +63,9 @@
             <tr>
                 <th colspan="4">
                     @Messages("total")
+                    @if(round.isBinary) {
+                        <small class="d-block fw-normal text-body-secondary">@Messages("round.stat.total.note")</small>
+                    }
                 </th>
                 <th>
                         @snippets.iconLink(RoundList(round, 0, view = GalleryView.ByRate).pageUrl(1), "bar-chart-fill", Messages("byrate"), total != 0)
@@ -73,26 +76,25 @@
                         <a href="/thumb_urls/@round.contestId?roundId=@round.getId">@Messages("thumbnail.urls")</a>
                     }
                 </th>
-                <th>
-                    <div class="btn-group">
-                    @if(round.isBinary) {
-                        @snippets.iconLink(RoundList(round, 0, filter = VoteFilter.Rate(1), view = GalleryView.ByRate).pageUrl(1), "bar-chart-fill", Messages("byrate"), total != 0)
-                        @snippets.iconLink(RoundList(round, 0, filter = VoteFilter.Rate(1), view = GalleryView.FileList).pageUrl(1), "list-ul", Messages("filelist"), total != 0)
-                    }
-                    </div>
-                    @if(round.isBinary) {
-                        @stat.totalByRate.getOrElse(1, 0)
-                    }
-                </th>
-                <th class="text-center">
-                        <!-- <a href="/gallery/user/0/rate/0/page/1"> -->
-                    @if(round.isBinary) {
-                        @{
-                            total - stat.totalByRate.getOrElse(1, 0)
+                @* a binary round's files with at least one vote of each kind, as the lists of all
+                   the jurors' votes filtered by it list them (a file with votes of two kinds is
+                   in both): selected, unrated, rejected, the jurors' columns' order *@
+                @if(round.isBinary) {
+                    @for(rate <- Seq(1, 0, -1)) {
+                        @defining(stat.totalByRate.getOrElse(rate, 0)) { count =>
+                        <th>
+                            <div class="btn-group">
+                                @snippets.iconLink(RoundList(round, 0, filter = VoteFilter.ofRate(rate), view = GalleryView.ByRate).pageUrl(1), "bar-chart-fill", Messages("byrate"), count != 0)
+                                @snippets.iconLink(RoundList(round, 0, filter = VoteFilter.ofRate(rate), view = GalleryView.FileList).pageUrl(1), "list-ul", Messages("filelist"), count != 0)
+                            </div>
+                            @count
+                        </th>
                         }
                     }
-                        <!-- </a> -->
-                </th>
+                } else {
+                    <th></th>
+                    <th></th>
+                }
             </tr>
         </tfoot>
     }

@@ -1,7 +1,7 @@
 package db.scalikejdbc
 
 import db.RoundRepo
-import org.intracer.wmua.{CategoryRule, HasId, ImageWithRating}
+import org.intracer.wmua.{BinaryOrder, CategoryRule, HasId, ImageWithRating}
 import org.intracer.wmua.cmd.DistributeImages
 import scalikejdbc._
 import scalikejdbc.orm.{CRUDMapper, JoinTable}
@@ -38,6 +38,8 @@ case class Round(
     minMpx: Option[Int] = None,
     previous: Option[String] = None,
     prevSelectedBy: Option[Int] = None,
+    // "exclude files rejected by at least N jurors" of a yes/no previous round (V74); None: no filter
+    prevRejectedBy: Option[Int] = None,
     prevMinAvgRate: Option[BigDecimal] = None,
     category: Option[String] = None,
     excludeCategory: Option[String] = None,
@@ -56,6 +58,10 @@ case class Round(
     distributing: Boolean = false,
     freezeCount: Int = 0,
     excludeCoi: Boolean = false,
+    // the order of a top-N from a yes/no previous round (V72); None (NULL, a round from before
+    // V72): the legacy rule (BinaryOrder.LegacyParam). A new round from a yes/no round stores
+    // one (withExplicitTopOrder); over rated previous rounds it plays no part, and is NULL.
+    topBinaryOrder: Option[BinaryOrder] = None,
     // a criteria round's criteria, read for its by-rate gallery (CriteriaRate.countOf);
     // otherwise those a distribution gives
     criteriaCount: Int = DistributeImages.CriteriaIds.size
@@ -110,6 +116,28 @@ case class Round(
      else rates.id / 2) * (if (hasCriteria) criteriaCount else 1)
 
   def regionIds: Seq[String] = regions.map(_.split(",").toSeq).getOrElse(Nil)
+
+  /** "Selected by at least N jurors" as the distribution reads it: N >= 1 approvals (rated
+    * votes) in the previous round(s), or no filter. A stored 0 is no filter, as NULL is: the
+    * old round form's way of saying it (V73 clears them); every reader goes through this.
+    */
+  def selectedByFilter: Option[Int] = prevSelectedBy.filter(_ > 0)
+
+  /** "Exclude files rejected by at least N jurors" as the distribution reads it: N >= 1, or no
+    * filter. It drops the files with N or more rejections across the previous rounds' votes.
+    */
+  def rejectedByFilter: Option[Int] = prevRejectedBy.filter(_ > 0)
+
+  /** [[topBinaryOrder]] as the round form and the job settings show it, the legacy rule's for none. */
+  def topOrderParam: String = topBinaryOrder.fold(BinaryOrder.LegacyParam)(_.param)
+
+  /** A new submission's top-N with an order stored where it picks the files, from a yes/no
+    * previous round (`prevBinary`): the default unless one was chosen. NULL there is the legacy
+    * rule of the rounds from before V72. None without a top-N or over rated previous rounds.
+    */
+  def withExplicitTopOrder(prevBinary: Boolean): Round =
+    copy(topBinaryOrder =
+      topImages.filter(_ => prevBinary).flatMap(_ => topBinaryOrder.orElse(Some(BinaryOrder.Default))))
 
   def categoryRule: CategoryRule = CategoryRule.fromStored(category, excludeCategory, categoryClause)
 
@@ -258,6 +286,7 @@ object Round extends RoundRepo with CRUDMapper[Round] {
       minMpx = rs.intOpt(c.minMpx),
       previous = rs.stringOpt(c.previous),
       prevSelectedBy = rs.intOpt(c.prevSelectedBy),
+      prevRejectedBy = rs.intOpt(c.prevRejectedBy),
       prevMinAvgRate = rs.bigDecimalOpt(c.prevMinAvgRate).map(BigDecimal.apply),
       category = rs.stringOpt(c.category),
       excludeCategory = rs.stringOpt(c.excludeCategory),
@@ -273,7 +302,8 @@ object Round extends RoundRepo with CRUDMapper[Round] {
       submitToken = rs.stringOpt(c.submitToken),
       distributing = rs.booleanOpt(c.distributing).getOrElse(false),
       freezeCount = rs.intOpt(c.freezeCount).getOrElse(0),
-      excludeCoi = rs.booleanOpt(c.excludeCoi).getOrElse(false)
+      excludeCoi = rs.booleanOpt(c.excludeCoi).getOrElse(false),
+      topBinaryOrder = rs.stringOpt(c.topBinaryOrder).flatMap(BinaryOrder.parse)
     ).withFixedCategories
 
   def create(round: Round)(implicit session: DBSession = AutoSession): Round = {
@@ -297,6 +327,7 @@ object Round extends RoundRepo with CRUDMapper[Round] {
           column.minMpx -> round.minMpx,
           column.previous -> round.previous,
           column.prevSelectedBy -> round.prevSelectedBy,
+          column.prevRejectedBy -> round.prevRejectedBy,
           column.prevMinAvgRate -> round.prevMinAvgRate,
           column.category -> round.category,
           column.excludeCategory -> round.excludeCategory,
@@ -310,7 +341,8 @@ object Round extends RoundRepo with CRUDMapper[Round] {
           column.mediaType -> round.mediaType,
           column.submitToken -> round.submitToken,
           column.distributing -> round.distributing,
-          column.excludeCoi -> round.excludeCoi
+          column.excludeCoi -> round.excludeCoi,
+          column.topBinaryOrder -> round.topBinaryOrder.map(_.param)
         )
     }.updateAndReturnGeneratedKey()
 
@@ -520,6 +552,20 @@ object Round extends RoundRepo with CRUDMapper[Round] {
       .map(_.int(1))
       .single()
       .getOrElse(0)
+
+  /** A binary round's files with at least one approval (1), one vote yet to come (0) and one
+    * rejection (-1): what its lists of all the jurors' votes filtered by each list
+    * (docs/plans/2026-11-01-binary-aggregate-votes.md, decision 3), a file in as many of them
+    * as its votes are of kinds. One scan of the round's entries in
+    * idx_selection_round_page_rate, without reading the rows.
+    */
+  def imageCountsByRate(roundId: Long): Map[Int, Int] =
+    sql"""SELECT COALESCE(SUM(t.a > 0), 0), COALESCE(SUM(t.u > 0), 0), COALESCE(SUM(t.r > 0), 0) FROM (
+            SELECT SUM(s.rate > 0) a, SUM(s.rate = 0) u, SUM(s.rate < 0) r FROM selection s
+            WHERE s.round_id = $roundId GROUP BY s.page_id) t"""
+      .map(rs => Map(1 -> rs.int(1), 0 -> rs.int(2), -1 -> rs.int(3)))
+      .single()
+      .getOrElse(Map.empty)
 
 }
 

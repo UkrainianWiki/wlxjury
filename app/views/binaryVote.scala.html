@@ -1,13 +1,12 @@
-@(rate: Int, approvals: Boolean = false)(implicit messages: Messages)
-@* A binary round's result, never stars: with `approvals`, how many jurors selected the file
-   (rate: ImageWithRating.approvals), a check and that number; else one juror's vote, a check
-   if selected, a cross if rejected, nothing if unrated. The icons (theme.css's selected and
-   rejected colours, main.css .wlx-vote-*) are hidden from screen readers, which read the
-   text instead *@
-@if(approvals) {
-<span class="wlx-approvals" title="@Messages("approvals", rate)"><i class="bi bi-check-lg wlx-vote-selected" aria-hidden="true"></i> <span aria-hidden="true">@rate</span><span class="visually-hidden">@Messages("approvals", rate)</span></span>
-} else if (rate > 0) {
+@(rate: Int, unrated: Boolean = false)(implicit messages: Messages)
+@* One juror's vote in a binary round, never stars: a check if selected, a cross if rejected;
+   unrated, nothing, or with `unrated` a dot (the organisers' lists of every juror's vote). All
+   the jurors' votes together: binaryTally. The icons (theme.css's selected and rejected
+   colours, main.css .wlx-vote-*) are hidden from screen readers, which read the text instead *@
+@if(rate > 0) {
 <i class="bi bi-check-lg wlx-vote-selected" aria-hidden="true"></i><span class="visually-hidden">@Messages("selected")</span>
 } else if (rate < 0) {
 <i class="bi bi-x-lg wlx-vote-rejected" aria-hidden="true"></i><span class="visually-hidden">@Messages("rejected")</span>
+} else if (unrated) {
+<span class="wlx-vote-unrated" aria-hidden="true">·</span><span class="visually-hidden">@Messages("unrated")</span>
 }

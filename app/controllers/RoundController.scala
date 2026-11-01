@@ -77,8 +77,10 @@ class RoundController @Inject() (
       val round: Round = roundId
         .flatMap(id => rounds.find(_.id.contains(id)))
         .getOrElse(
-          // a new round leaves out conflicts of interest unless unticked
-          new Round(id = None, contestId = contestId, number = rounds.size + 1, excludeCoi = true)
+          // a new round leaves out conflicts of interest unless unticked, and picks a top-N by
+          // the default order unless another is chosen
+          new Round(id = None, contestId = contestId, number = rounds.size + 1, excludeCoi = true,
+            topBinaryOrder = Some(org.intracer.wmua.BinaryOrder.Default))
         )
 
       val withTopImages = topImages.map(n => round.copy(topImages = Some(n))).getOrElse(round)

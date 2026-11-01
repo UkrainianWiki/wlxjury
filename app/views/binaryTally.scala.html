@@ -1,0 +1,8 @@
+@(approvals: Int, rejections: Int)(implicit messages: Messages)
+@* All the jurors' votes on a binary round's file together (ImageWithRating.approvals and
+   rejections): "✓ 3 ✗ 2", a check and a cross each with its number. The marks and numbers are
+   hidden from screen readers, which read the text ("3 approvals, 2 rejections"); the same text
+   is the tooltip. One juror's vote: binaryVote *@
+@defining(Messages("binary.tally", approvals, rejections)) { text =>
+<span class="wlx-approvals" title="@text"><span aria-hidden="true"><i class="bi bi-check-lg wlx-vote-selected"></i> @approvals <i class="bi bi-x-lg wlx-vote-rejected"></i> @rejections</span><span class="visually-hidden">@text</span></span>
+}

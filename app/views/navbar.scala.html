@@ -1,5 +1,6 @@
 @import db.scalikejdbc.User
 @import db.scalikejdbc.Round
+@import org.intracer.wmua.BinaryOrder
 @(
         title: String,
         user: User = null,
@@ -56,6 +57,18 @@
         Seq(ListOrder.FileOrder -> SelectionItem("sort.file"), ListOrder.ByRate -> SelectionItem("sort.rate"))
     ).toDropDown())
     }
+    }
+}
+
+@* The order of all the jurors' votes on a yes/no round's files together, remembered for the
+   next list of them (RoundList.BinarySortCookie) *@
+@binaryOrderMenu(l: RoundList) = {
+    @if(l.aggregateBinary) {
+    @(new UiSelectionDto[ListOrder](
+        (order: ListOrder) => Call("GET", l.withOrder(order).pageUrl(1)),
+        l.order,
+        BinaryOrder.all.map(order => ListOrder.Binary(order) -> SelectionItem(order.messageKey))
+    ).toDropDown())
     }
 }
 
@@ -140,6 +153,8 @@
                             ),
                             Some(VoteFilter.All -> SelectionItem("all"))
                         ).toDropDown())
+
+                        @binaryOrderMenu(l)
 
                         @ownTabs(l)
 

@@ -20,7 +20,7 @@ require("../public/javascripts/large-rate.js");
 const { voteErrorMessage, voteErrorTexts } = require("../public/javascripts/vote-errors.js");
 window.voteErrorMessage = voteErrorMessage;
 window.voteErrorTexts = voteErrorTexts;
-const { addStars, addVote, vote, addListStars } = require("../public/javascripts/tile-votes.js");
+const { addStars, addVote, vote, addListStars, addTally } = require("../public/javascripts/tile-votes.js");
 
 let requests; // the votes sent: { options, answer (a Deferred) }
 
@@ -390,5 +390,25 @@ describe("the juror's by-rate list", () => {
         expect(boxes[0].classList.contains("wlx-rate-changed")).toBe(false);
         expect(hint().hidden).toBe(true);
         expect(window.alert).toHaveBeenCalledWith("Closed.");
+    });
+});
+
+// All the jurors' votes on a binary round's tiles in the organisers' gallery (addTally): a check
+// and a cross with their numbers, read by screen readers as the page's text, none without it.
+describe("a tile's approvals and rejections", () => {
+    test("show a check and a cross with their numbers, the text for screen readers", () => {
+        const badge = addTally(tile(), { approvals: "3", rejections: "2", tally: "3 approvals, 2 rejections" });
+        expect(tile().querySelector(".wlx-tile-tally")).toBe(badge);
+        const shown = badge.querySelector("[aria-hidden=true]");
+        expect(shown.textContent.trim().split(/\s+/)).toEqual(["3", "2"]);
+        expect(shown.querySelector("i.bi-check-lg.wlx-vote-selected")).not.toBeNull();
+        expect(shown.querySelector("i.bi-x-lg.wlx-vote-rejected")).not.toBeNull();
+        expect(badge.querySelector(".visually-hidden").textContent).toBe("3 approvals, 2 rejections");
+        expect(badge.title).toBe("3 approvals, 2 rejections");
+    });
+
+    test("add nothing to a tile without them, as a juror's own", () => {
+        expect(addTally(tile(), { rate: "1" })).toBeNull();
+        expect(tile().querySelector(".wlx-tile-tally")).toBeNull();
     });
 });

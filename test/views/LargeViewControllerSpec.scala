@@ -1,6 +1,6 @@
 package views
 
-import controllers.{GalleryView, Neighbourhood, RoundList, VoteFilter}
+import controllers.{GalleryView, ListOrder, Neighbourhood, RoundList, VoteFilter}
 import db.scalikejdbc.{Round, User}
 import org.intracer.wmua._
 import play.api.test.CSRFTokenHelper._
@@ -44,6 +44,24 @@ class LargeViewControllerSpec extends PlaySpecification {
       view must contain("voteLarge(\"/large/round/1/pageid/1/select/1")
       view must contain("wlxGo(e, \"/large/")
       view must not(beMatching("(?s).*(voteLarge\\(|wlxGo\\(e, )\"https?://.*"))
+    }
+
+    "keep the binary order of all the jurors' votes in its links" in {
+      implicit val request = play.api.test.FakeRequest("GET", "/").withCSRFToken
+      implicit val messages = Helpers.stubMessagesApi().preferred(request)
+
+      val files = Seq(1L, 2L).map(id => ImageWithRating(Image(pageId = id, title = s"File:$id.jpg"), selection = Nil))
+      val round = Round(id = Some(1), number = 1, contestId = 1, active = true, rates = Round.binaryRound)
+      val html = views.html.large.main_large(
+        user = User("name", "email", id = Some(1), roles = Set("jury"), contestId = Some(1)),
+        list = RoundList(round, asUserId = 0, order = ListOrder.Binary(BinaryOrder.Difference), view = GalleryView.ByRate),
+        score = 0.0,
+        readOnly = true,
+        hood = Neighbourhood(files, 0, 0))(Html("html"))
+
+      val view = contentAsString(html).replace("&amp;", "&")
+      view must contain("/large/round/1/user/0/pageid/2?module=byrate&sort=difference")
+      view must not contain "sort=rate"
     }
   }
 

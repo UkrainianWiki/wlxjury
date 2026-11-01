@@ -70,6 +70,13 @@ object LargeViewRenders {
     Helpers.stubMessagesApi().preferred(request)
   }
 
+  /** The English texts of conf/messages.en, formatted as the app formats them, without an app. */
+  lazy val realMessages: Messages = {
+    val source = play.api.i18n.Messages.UrlMessageSource(new java.io.File("conf/messages.en").toURI.toURL)
+    val en = play.api.i18n.Messages.parse(source, "messages.en").fold(e => throw e, identity)
+    new play.api.i18n.DefaultMessagesApi(Map("default" -> en)).preferred(Seq(Lang("en")))
+  }
+
   /** The round's large view (LargeViewController.large) of index `index`, as `asUserId`'s. */
   def large(
       round: Round,

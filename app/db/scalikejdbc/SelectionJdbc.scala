@@ -109,6 +109,10 @@ object SelectionJdbc extends CRUDMapper[Selection] {
   def byUserNotSelected(user: User, roundId: Long): Seq[Selection] =
     where("juryId" -> user.id, "roundId" -> roundId, "rate" -> 0).apply()
 
+  /** Every juror's vote on the file in the round, with the juror, for the organisers' large
+    * view: the highest rates first (a binary round's approvals), then the rejections, then the
+    * jurors yet to vote; jurors of a rate by name. One query.
+    */
   def byRoundAndImageWithJury(roundId: Long, imageId: Long): Seq[(Selection, User)] =
     withSQL {
       select
@@ -120,12 +124,11 @@ object SelectionJdbc extends CRUDMapper[Selection] {
         .and
         .eq(s.pageId, imageId)
         .and
-        .gt(s.rate, 0)
-        .and
         .append(isNotDeleted)
-        .orderBy(s.rate)
-        .desc
     }.map(rs => (SelectionJdbc(s)(rs), User(u)(rs))).list()
+      .sortBy { case (vote, juror) =>
+        (if (vote.rate > 0) 0 else if (vote.rate < 0) 1 else 2, -vote.rate, juror.fullname, juror.getId)
+      }
 
   /** Whether the file is in the round: has a selection row in it, `juryId`'s if given.
     * As the galleries and large view list a round's files, deleted rows count too.

@@ -12,6 +12,7 @@
         jurors: Seq[User],
         rounds: Seq[Round],
         regionMenu: Option[RegionMenu],
+        pager: Pager,
         outputFormat: String = "wiki",
         wrapInTable: Boolean,
         rates: RateDistribution,
@@ -26,14 +27,21 @@
 
 @ratedOrSelected(round: Round, asUserId: Long) = {
 @if(asUserId==0) {
-        @if(round.isBinary) { @Messages("overall.selected")} else {@Messages("total.rating")}
+        @if(round.isBinary) { @Messages("overall.votes")} else {@Messages("total.rating")}
     } else {
         @if(round.isBinary) { @Messages("selected")} else {@Messages("rating")}
     }
 }
 
+@* all the jurors' votes on a binary round's files: each juror's as a check, a cross or a dot
+   (binaryVote), blank where the file is not the juror's; their approvals and rejections
+   together as binaryTally. A rated round's: the rates *@
+@binaryVotes = @{ list.round.isBinary && list.asUserId == 0 }
+
+@* a page of the list, its pager in the navbar: a round's 38k files with all the jurors' votes
+   at once ran a 1 GB server out of memory *@
 @main("filelist", user, list.asUserId, Some(list.round), rounds, gallery = false, Some(list),
-    filters = views.html.regionMenu(regionMenu)) {
+    pager = pagerNav(pager, list.pageUrl), filters = views.html.regionMenu(regionMenu)) {
 
     @defining(Some(list.round)) { round =>
     @defining(list.asUserId) { asUserId =>
@@ -55,6 +63,16 @@
             Some(s"${Messages("juror")}: ${Option(asUser).fold(Messages("all"))(_.fullname)}"),
             KOATUU.regions.get(region).map(name => s"${Messages("region.menu")}: $name")
         ).flatten.mkString(" · ")}</h2>
+
+        @if(wrapInTable && binaryVotes) {
+            @* the juror columns' marks, each with its word *@
+            <p class="small wlx-votes-legend">
+                <span class="text-nowrap"><i class="bi bi-check-lg wlx-vote-selected" aria-hidden="true"></i> @Messages("selected")</span>
+                <span class="text-nowrap"><i class="bi bi-x-lg wlx-vote-rejected" aria-hidden="true"></i> @Messages("rejected")</span>
+                <span class="text-nowrap"><span class="wlx-vote-unrated" aria-hidden="true">·</span> @Messages("unrated")</span>
+                <span class="text-nowrap">@Messages("filelist.legend.not.assigned")</span>
+            </p>
+        }
 
         @if(wrapInTable) {
             <table class="table table-striped table-sm">
@@ -102,10 +120,18 @@
 
                 @* the table's other columns; the list without the table has only the files *@
                 @if(wrapInTable) {
-                    <td>@file.rateString(round.get)</td>
+                    @if(binaryVotes) {
+                        <td class="text-nowrap">@binaryTally(file.approvals, file.rejections)</td>
+                    } else {
+                        <td>@file.rateString(round.get)</td>
+                    }
                     <td>@file.image.mpxStr</td>
                     @for(juror <- jurors) {
-                        <td> @file.jurorRateStr(juror) </td>
+                        @if(binaryVotes) {
+                            <td class="text-center">@file.jurorRate(juror).map(rate => binaryVote(rate, unrated = true))</td>
+                        } else {
+                            <td> @file.jurorRateStr(juror) </td>
+                        }
                     }
                 }
             }
