@@ -949,3 +949,19 @@ Left for separate branches; none blocks merging this one.
    distinct "undo" state on the button (pressed `aria-pressed`) so the toggle is expected.
    Tests: Jest on `serviceCall`'s colours for 1 / -1 / 0 and on the initial borders from
    `data-rate`; a screenshot of a gallery with voted files in light and dark.
+8. **Re-rating in a rated round's gallery.** A juror can vote in the gallery only in a binary
+   round: unitegallery adds the select / reject icons only when `binary` is set
+   (`unitegallery.js` ~10689, options from `main.scala.html` ~42), and the by-rate gallery
+   draws static stars (`showStar`). In a rated round a juror who wants to change a rate must
+   open each file's large view. Proposal: in the juror's own gallery of an active round
+   (the same condition as `jury` today), interactive stars per tile (raty, as in the large
+   view, with the round's star count and half stars; criteria rounds stay large-view only),
+   sending the vote by script to the existing `POST /rate/round/:round/pageid/:pageId/select/:rate`
+   (`GalleryController.selectWS`) with the CSRF header, updating the tile in place without
+   moving it (the gallery's order may be by rate: re-sort only on reload), errors through
+   `vote-errors.js`. Check first: `selectWS` stores any integer as the rate, with no check
+   against the round's range (e.g. 99 in a 1-10 round, or 5 in a binary one); validate it
+   there (400 outside `minRate..maxRate` or 0), and in `LargeViewController.rateByPageId` if it
+   lacks the same check. Tests: the endpoint's range validation and authorization (another
+   juror's round, a stopped round: 409), a Jest case for the tile's stars (click sends the
+   rate, the shown stars update, a failure restores them), LargeViewFixturesSpec unaffected.
