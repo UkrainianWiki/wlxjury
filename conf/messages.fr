@@ -309,6 +309,8 @@ signup.email.taken=Un compte avec cet e-mail existe déjà. Connectez-vous, ou d
 password.too.long=Le mot de passe est trop long : au plus {0} octets (les lettres latines et les chiffres comptent 1 octet chacun, la plupart des autres lettres 2 ou plus).
 password.empty=Le mot de passe ne peut pas être vide.
 signin.busy=Trop de connexions en même temps. Veuillez réessayer dans quelques secondes.
+password.busy=Le serveur est occupé à vérifier des mots de passe. Veuillez réessayer dans quelques secondes.
+users.not.added={0} n''ont pas pu être ajoutés. Veuillez les importer à nouveau.
 users.added=Nouveaux comptes : {0}. Comptes existants ajoutés au concours : {1}. Déjà dans le concours : {2}.
 
 files.import.cache = Import et cache

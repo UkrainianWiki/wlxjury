@@ -10,6 +10,7 @@ import services.{PasswordHasher, UserService}
 
 import javax.inject.Inject
 import scala.concurrent.Future
+import scala.util.control.NonFatal
 
 /** Sign-in and sign-up check or compute a bcrypt hash, and may wait for a turn to
   * ([[PasswordHasher]]): they run on `signIn`, never on Play's default dispatcher.
@@ -66,14 +67,32 @@ class LoginController @Inject() (
   def auth(): Action[AnyContent] = Action.async { implicit request =>
     // the wait for a turn to check the password counts from here, the time queued included
     val deadline = PasswordHasher.default.deadline()
-    Future(signInResult(deadline))(signIn)
+    admitted(busy(views.html.index(loginForm.bindFromRequest().withGlobalError("signin.busy"), returnTo)))(
+      signInResult(deadline))
+  }
+
+  private def returnTo(implicit request: Request[AnyContent]): Option[String] =
+    Secured.safeLocalPath(request.body.asFormUrlEncoded.flatMap(_.get("returnTo").flatMap(_.headOption)))
+
+  /** 503 with the page, asking to try again: too many sign-ins or sign-ups at once. */
+  private def busy(page: play.twirl.api.Html): Result =
+    noStore(ServiceUnavailable(page)).withHeaders(RETRY_AFTER -> "5")
+
+  /** `result` on `signIn`, unless [[PasswordHasher.Settings.maxQueued]] sign-ins and
+    * sign-ups are already in flight: then `busyResult` at once, so that a flood never builds
+    * a queue that outlasts it.
+    */
+  private def admitted(busyResult: => Result)(result: => Result): Future[Result] = {
+    val hasher = PasswordHasher.default
+    if (!hasher.admit()) Future.successful(busyResult)
+    else
+      try Future(try result finally hasher.leave())(signIn)
+      catch { case NonFatal(e) => hasher.leave(); Future.failed(e) }
   }
 
   /** The sign-in's result; `deadline` ends the wait for a turn to check the password. */
   private[controllers] def signInResult(deadline: Long)(implicit request: Request[AnyContent]): Result = {
-    val returnTo = Secured.safeLocalPath(
-      request.body.asFormUrlEncoded.flatMap(_.get("returnTo").flatMap(_.headOption))
-    )
+    val returnTo = this.returnTo
     val bound = loginForm.bindFromRequest()
     bound.fold(
       formWithErrors => noStore(BadRequest(views.html.index(formWithErrors, returnTo))),
@@ -87,9 +106,7 @@ class LoginController @Inject() (
             )
         } catch {
           // too many sign-ins at once: the page asks to try again
-          case _: PasswordHasher.Busy =>
-            noStore(ServiceUnavailable(views.html.index(bound.withGlobalError("signin.busy"), returnTo)))
-              .withHeaders(RETRY_AFTER -> "5")
+          case _: PasswordHasher.Busy => busy(views.html.index(bound.withGlobalError("signin.busy"), returnTo))
         }
       }
     )
@@ -115,12 +132,16 @@ class LoginController @Inject() (
 
   /** Creates the account (the first one is root), hashing its password: on `signIn`. */
   def signUp(): Action[AnyContent] = Action.async { implicit request =>
-    Future(signUpResult)(signIn)
+    val deadline = PasswordHasher.default.deadline()
+    admitted(busy(views.html.signUp(signUpForm.withGlobalError("signin.busy"))))(signUpResult(deadline))
   }
 
-  private def signUpResult(implicit request: Request[AnyContent]): Result = {
-    signUpForm
-      .bindFromRequest()
+  /** The sign-up's result; `deadline` ends the wait for a turn to hash the password, and
+    * no account is created without one.
+    */
+  private[controllers] def signUpResult(deadline: Long)(implicit request: Request[AnyContent]): Result = {
+    val bound = signUpForm.bindFromRequest()
+    bound
       .fold(
         formWithErrors => noStore(BadRequest(views.html.signUp(formWithErrors))),
         { case (login, password, _) =>
@@ -128,9 +149,13 @@ class LoginController @Inject() (
           val newUser =
             new User(fullname = "", email = login, password = Some(password), roles = roles)
           // always a new account: signing up never hands out an existing one
-          val user = admin.createAccount(newUser, newUser, None)
-          val result = indexRedirect(user).withSession(Secured.UserName -> user.emailLo)
-          user.lang.fold(result)(l => result.withLang(Lang(l)))
+          try {
+            val user = admin.createAccount(newUser, newUser, None, deadline)
+            val result = indexRedirect(user).withSession(Secured.UserName -> user.emailLo)
+            user.lang.fold(result)(l => result.withLang(Lang(l)))
+          } catch {
+            case _: PasswordHasher.Busy => busy(views.html.signUp(bound.withGlobalError("signin.busy")))
+          }
         }
       )
   }

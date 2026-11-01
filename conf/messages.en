@@ -308,6 +308,8 @@ signup.email.taken=An account with this email already exists. Log in, or ask an 
 password.too.long=The password is too long: at most {0} bytes (Latin letters and digits take 1 byte each, most other letters 2 or more).
 password.empty=The password must not be blank.
 signin.busy=Too many sign-ins at once. Please try again in a few seconds.
+password.busy=The server is busy checking passwords. Please try again in a few seconds.
+users.not.added={0} could not be added. Please import them again.
 users.added=New accounts: {0}. Existing accounts added to the contest: {1}. Already in the contest: {2}.
 
 files.import.cache = Import and cache

@@ -8,6 +8,7 @@ import play.api.data.validation.{Constraint, Invalid, Valid, ValidationError, Va
 import java.nio.charset.StandardCharsets.{US_ASCII, UTF_8}
 import java.security.{MessageDigest, SecureRandom}
 import java.util.Arrays
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.{Semaphore, TimeUnit}
 import scala.concurrent.duration._
 
@@ -34,6 +35,7 @@ class PasswordHasher(val settings: PasswordHasher.Settings) {
   import PasswordHasher._
 
   private val permits = new Semaphore(settings.maxConcurrent, true)
+  private val inFlight = new AtomicInteger
   private val random = new SecureRandom()
   private val longPasswords = LongPasswordStrategies.hashSha512(BCrypt.Version.VERSION_2B)
   private val hasher = BCrypt.`with`(BCrypt.Version.VERSION_2B, random, longPasswords)
@@ -84,6 +86,18 @@ class PasswordHasher(val settings: PasswordHasher.Settings) {
           withPermit(deadline)(dummy(bytes))
       }
     }
+
+  /** Whether one more sign-in or sign-up may start ([[Settings.maxQueued]] at most in
+    * flight); each admitted one calls [[leave]] when done.
+    */
+  def admit(): Boolean =
+    if (inFlight.incrementAndGet() <= settings.maxQueued) true
+    else {
+      inFlight.decrementAndGet()
+      false
+    }
+
+  def leave(): Unit = inFlight.decrementAndGet()
 
   /** The number of bcrypt computations that may start now (for tests). */
   def availablePermits: Int = permits.availablePermits()
@@ -169,12 +183,14 @@ object PasswordHasher {
   /** @param cost          the bcrypt cost of new hashes (2^cost rounds)
     * @param maxConcurrent bcrypt computations at once
     * @param maxWait       how long a sign-in waits for its turn
+    * @param maxQueued     sign-ins and sign-ups in flight (queued or running) at most; more
+    *                      get 503 at once
     */
-  final case class Settings(cost: Int, maxConcurrent: Int, maxWait: FiniteDuration)
+  final case class Settings(cost: Int, maxConcurrent: Int, maxWait: FiniteDuration, maxQueued: Int = 50)
 
   object Settings {
 
-    /** `bcrypt.{cost, maxConcurrent, maxWait}`; a cost below [[MinCost]] is raised to
+    /** `bcrypt.{cost, maxConcurrent, maxWait, maxQueued}`; a cost below [[MinCost]] is raised to
       * it unless `bcrypt.allowLowCost` is true.
       */
     def from(config: Config): Settings = {
@@ -194,7 +210,9 @@ object PasswordHasher {
       val maxConcurrent = opt("maxConcurrent")(config.getInt).getOrElse(2)
       require(maxConcurrent >= 1, s"bcrypt.maxConcurrent must be at least 1, was $maxConcurrent")
       val maxWait = opt("maxWait")(p => config.getDuration(p).toMillis.millis).getOrElse(10.seconds)
-      Settings(cost, maxConcurrent, maxWait)
+      val maxQueued = opt("maxQueued")(config.getInt).getOrElse(50)
+      require(maxQueued >= 1, s"bcrypt.maxQueued must be at least 1, was $maxQueued")
+      Settings(cost, maxConcurrent, maxWait, maxQueued)
     }
   }
 

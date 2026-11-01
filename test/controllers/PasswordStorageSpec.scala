@@ -139,17 +139,7 @@ class PasswordStorageSpec extends PlaySpecification with PlayTestDb with Mockito
     "ask to try again when no turn to check the password comes in time" in {
       testDbApp { implicit app =>
         val user = root()
-        val hasher = PasswordHasher.default
-        // every turn taken until the request's deadline has passed
-        val permits = hasher.settings.maxConcurrent
-        val holding = new java.util.concurrent.CountDownLatch(permits)
-        val release = new java.util.concurrent.CountDownLatch(1)
-        val holders = (1 to permits).map { _ =>
-          val t = new Thread(() => hasher.withPermit(hasher.deadline())({ holding.countDown(); release.await() }))
-          t.start(); t
-        }
-        try {
-          holding.await()
+        withEveryTurnTaken {
           // a deadline already past: as a sign-in that waited its whole maxWait
           val request = FakeRequest(POST, "/auth")
             .withFormUrlEncodedBody("login" -> user.email, "password" -> "strong").withCSRFToken
@@ -157,11 +147,113 @@ class PasswordStorageSpec extends PlaySpecification with PlayTestDb with Mockito
           status(result) === SERVICE_UNAVAILABLE
           contentAsString(result) must contain("Too many sign-ins at once")
           signedIn(result) must beFalse
-        } finally {
-          release.countDown()
-          holders.foreach(_.join())
         }
         signedIn(signIn(user.email, "strong")) must beTrue
+      }
+    }
+  }
+
+  /** `body` while a thread holds each of the hasher's turns. */
+  private def withEveryTurnTaken[A](body: => A): A = {
+    val hasher = PasswordHasher.default
+    val permits = hasher.settings.maxConcurrent
+    val holding = new java.util.concurrent.CountDownLatch(permits)
+    val release = new java.util.concurrent.CountDownLatch(1)
+    val holders = (1 to permits).map { _ =>
+      val t = new Thread(() => hasher.withPermit(hasher.deadline())({ holding.countDown(); release.await() }))
+      t.start(); t
+    }
+    try {
+      holding.await()
+      body
+    } finally {
+      release.countDown()
+      holders.foreach(_.join())
+    }
+  }
+
+  "with no turn to hash a password, or too many sign-ins in flight" should {
+    "a sign-up get 503 and create nothing" in {
+      testDbApp { implicit app =>
+        withEveryTurnTaken {
+          val request = FakeRequest(POST, "/signup").withFormUrlEncodedBody(
+            "login" -> "late@example.com", "password" -> "late-password", "repeat.password" -> "late-password"
+          ).withCSRFToken
+          val result = Future.successful(loginController.signUpResult(System.nanoTime() - 1)(request))
+          status(result) === SERVICE_UNAVAILABLE
+          contentAsString(result) must contain("Too many sign-ins at once")
+          signedIn(result) must beFalse
+        }
+        User.findByEmail("late@example.com") must beEmpty
+        User.count() === 0L
+      }
+    }
+
+    "a sign-in and a sign-up past the in-flight limit get 503 at once" in {
+      testDbApp { implicit app =>
+        val user = root()
+        val hasher = PasswordHasher.default
+        val limit = hasher.settings.maxQueued
+        (1 to limit).map(_ => hasher.admit()).forall(identity) must beTrue
+        try {
+          val started = System.nanoTime()
+          val refused = signIn(user.email, "strong")
+          status(refused) === SERVICE_UNAVAILABLE
+          header(RETRY_AFTER, refused) === Some("5")
+          contentAsString(refused) must contain("Too many sign-ins at once")
+          status(signUp("flood@example.com", "flood-password")) === SERVICE_UNAVAILABLE
+          (System.nanoTime() - started) must be_<(1000000000L) // no wait for a turn
+          User.findByEmail("flood@example.com") must beEmpty
+        } finally (1 to limit).foreach(_ => hasher.leave())
+        signedIn(signIn(user.email, "strong")) must beTrue
+      }
+    }
+
+    "the edit form change nothing and say so" in {
+      testDbApp { implicit app =>
+        val user = root()
+        val before = stored(user.getId)
+        val result = withEveryTurnTaken {
+          implicit val mat: Materializer = app.materializer
+          val r = call(userController.saveUser(),
+            as(user)(FakeRequest(POST, "/users/save")).withFormUrlEncodedBody(
+              "id" -> user.getId.toString, "fullname" -> "Renamed", "email" -> user.email, "password" -> "new-password"
+            ).withCSRFToken)
+          status(r) // completes while the turns are taken
+          r
+        }
+        status(result) === SERVICE_UNAVAILABLE
+        contentAsString(result) must contain("The server is busy checking passwords")
+        User.findById(user.getId).map(_.fullname) === Some("Root")
+        stored(user.getId) === before
+      }
+    }
+
+    "an import report those not added, and a reset keep the password" in {
+      testDbApp { implicit app =>
+        implicit val mat: Materializer = app.materializer
+        createContests(10)
+        val admin = root()
+        val juror = User.create(User("Juror", "juror@example.com", roles = Set("jury"),
+          password = Some(PasswordHasher.default.hash("juror-password")), contestId = Some(10L)))
+        val before = stored(juror.getId)
+        val (imported, reset) = withEveryTurnTaken {
+          val i = call(userController.importUsers(Some(10L)),
+            as(admin, Some(10L))(FakeRequest(POST, "/admin/importusers?contestId=10"))
+              .withFormUrlEncodedBody("userstoimport" -> "a1@example.com\na2@example.com\na3@example.com", "role" -> "jury")
+              .withCSRFToken)
+          status(i)
+          val r = call(userController.resetPassword(juror.getId),
+            as(admin)(FakeRequest(POST, s"/users/resetpasswd/${juror.getId}")).withCSRFToken)
+          status(r)
+          (i, r)
+        }
+        status(imported) === SEE_OTHER
+        flash(imported).get("users-added") must beSome(contain("3 could not be added"))
+        Seq("a1@example.com", "a2@example.com", "a3@example.com").flatMap(User.findByEmail) must beEmpty
+        status(reset) === SEE_OTHER
+        flash(reset).get("password-reset") must beSome(contain("The server is busy checking passwords"))
+        stored(juror.getId) === before
       }
     }
   }

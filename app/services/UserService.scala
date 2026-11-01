@@ -60,17 +60,20 @@ class UserService @Inject()(val sendMail: SMTPOrWikiMail,
 
   /** Creates the account, with a membership in [[User.contestId]] if set, and sends the
     * contest's greeting if it uses one. Fails on an email that already has an account.
-    * Only a root creator makes a root user.
+    * Only a root creator makes a root user. Throws [[PasswordHasher.Busy]] if no turn to
+    * hash the password comes before `deadline`.
     */
   def createAccount(
       creator: User,
       formUser: User,
-      contestOpt: Option[ContestJury])(implicit messages: Messages): User = {
+      contestOpt: Option[ContestJury],
+      deadline: Long = PasswordHasher.default.deadline())(implicit messages: Messages): User = {
     val allowed =
       if (creator.hasRole(User.ROOT_ROLE)) formUser
       else formUser.copy(roles = formUser.roles - User.ROOT_ROLE, isRoot = false)
     val password = allowed.password.getOrElse(User.randomString(12))
-    val createdUser = User.create(allowed.copy(password = Some(PasswordHasher.default.hash(password))))
+    // hashed first: no account without its hash ([[PasswordHasher.Busy]] creates nothing)
+    val createdUser = User.create(allowed.copy(password = Some(PasswordHasher.default.hash(password, deadline))))
     for (contest <- contestOpt if contest.greeting.use && createdUser.contestRole.forall(mayBeGreeted))
       sendMail(creator, createdUser, contest, password)
     createdUser
