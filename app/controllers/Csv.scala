@@ -43,7 +43,8 @@
         order: BinaryOrder = BinaryOrder.Default
     ): Seq[Seq[String]] = {
       val ranks = ImageWithRating.rankImages(files, round, order)
-      header(jurors) +: files.zip(ranks).map { case (file, rank) => row(file, rank, jurors, round) }
+      header(jurors) +: files.zip(ranks).map { case (file, rank) => row(file, rank, jurors, round) } ++:
+        legend(round).toSeq
     }
 
     /** A list's files as [[exportRates]] has them, the header first with a BOM, streamed: the
@@ -61,8 +62,18 @@
       Source.single(addBom(Seq(header(jurors))).head) ++
         Source.fromIterator(() => pageIds.grouped(chunk))
           .mapAsync(1)(ids => Future(query.withVotes(ids)))
-          .mapConcat(_.map(file => row(file, ranks(key.values(file)), jurors, list.round)))
+          .mapConcat(_.map(file => row(file, ranks(key.values(file)), jurors, list.round))) ++
+        Source(legend(list.round).toList)
     }
+
+    /** A binary round's last row, after the files: what its "Overall" and juror columns hold,
+      * the votes as they are stored (1, -1, 0), the column of a juror the file isn't assigned
+      * to empty. In English, as the header is.
+      */
+    private def legend(round: Round): Option[Seq[String]] = Option.when(round.isBinary)(BinaryLegend)
+
+    val BinaryLegend: Seq[String] =
+      Seq("", "Overall: approvals. Jurors: 1 selected, -1 rejected, 0 not voted yet, empty not assigned")
 
     private def header(jurors: Seq[User]): Seq[String] = Seq("Rank", "File", "Overall") ++ jurors.map(_.fullname)
 

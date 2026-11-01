@@ -26,10 +26,12 @@ class GalleryByRateViewSpec extends PlaySpecification {
       Image(pageId = pageId, title = s"File:Image $pageId.jpg",
         url = Some(s"https://upload.wikimedia.org/wikipedia/commons/a/ab/Image_$pageId.jpg"),
         monumentId = Some(s"07-101-000$i")),
-      selection = Seq(Selection(pageId, juror.getId, round.getId, i + 1)),
-      rank = Some(i + 1)
+      selection = Seq(Selection(pageId, juror.getId, round.getId, i + 1))
     )
   }
+
+  /** The files' ranks, as RoundList.ranks gives them: the last two tie. */
+  private val ranks = Seq("4", "3", "1-2", "1-2")
 
   implicit val request: RequestHeader = FakeRequest("GET", "/byrate/round/1/user/1/page/1").withCSRFToken
   implicit val flash: Flash = Flash()
@@ -47,6 +49,8 @@ class GalleryByRateViewSpec extends PlaySpecification {
       box.select("div.rank-line").size() === 1
       box.select("div.rank-line b").text() must not(beEmpty)
     }
+    // each file's rank, a range for files that tie
+    doc.select("div.rank-line b").asScala.map(_.text) === Seq("4.", "3.", "1-2.", "1-2.")
     // no markup shown as text, nor control characters
     doc.body().text() must not(contain("\">"))
     html must not(contain("\u0001"))
@@ -55,8 +59,15 @@ class GalleryByRateViewSpec extends PlaySpecification {
   "the by-rate gallery" should {
     "keep each tile, with its rank, inside the gallery list" in {
       val html = contentAsString(views.html.galleryByRate(
-        juror, list, files, Pager(1, files.size), Nil, None, new RateDistribution(Map.empty)))
+        juror, list, files, Pager(1, files.size), Nil, None, new RateDistribution(Map.empty), ranks))
       checkTiles(html, files.size)
+    }
+
+    "show no rank without ranks (a rated round's gallery in file order)" in {
+      val html = contentAsString(views.html.galleryByRate(
+        juror, list.withView(GalleryView.Gallery), files, Pager(1, files.size), Nil, None,
+        new RateDistribution(Map.empty)))
+      Jsoup.parse(html).select("div.rank-line b").asScala.map(_.text).distinct === Seq("")
     }
   }
 
@@ -72,17 +83,29 @@ class GalleryByRateViewSpec extends PlaySpecification {
     def file(rates: Int*) = ImageWithRating(Image(pageId = 301L, title = "File:Binary.jpg"),
       selection = rates.zipWithIndex.map { case (rate, i) => Selection(301L, i + 1L, binary.getId, rate) })
 
-    "show all the jurors' approvals as a check and their number, without stars" in {
+    "show all the jurors' approvals and rejections as a check and a cross with their numbers" in {
       // as the query of all the jurors' votes has them: one row per file, their rates' sum
-      // (2 approvals and a rejection give 1) and the approvals counted apart
+      // (2 approvals and a rejection give 1) and the approvals and rejections counted apart
       val grouped = ImageWithRating(Image(pageId = 301L, title = "File:Binary.jpg"),
-        selection = Seq(Selection(301L, 0, 0, 1)), countFromDb = 3, approvalsFromDb = Some(2))
+        selection = Seq(Selection(301L, 0, 0, 1)), countFromDb = 3, approvalsFromDb = Some(2),
+        rejectionsFromDb = Some(1))
       val rate = tile(grouped, asUserId = 0)
-      (rate.select(".bi-check-lg[aria-hidden=true]").size must_== 1) and
+      val shown = rate.selectFirst("[aria-hidden=true]")
+      (shown.select("i.bi-check-lg.wlx-vote-selected").size must_== 1) and
+        (shown.select("i.bi-x-lg.wlx-vote-rejected").size must_== 1) and
+        (shown.text must_== "2 1") and
         (rate.select("[class*=bi-star]").size must_== 0) and
         (rate.select("button").size must_== 0) and
-        (rate.select(".visually-hidden").text must_== "approvals") and
-        (rate.text must contain("2"))
+        // screen readers read the text in its place (stub messages: the key)
+        (rate.select(".visually-hidden").text must_== "binary.tally") and
+        (rate.selectFirst(".wlx-approvals").attr("title") must_== "binary.tally")
+    }
+
+    "say the approvals and rejections in words" in {
+      val en = LargeViewRenders.realMessages
+      (en("binary.tally", 3, 2) must_== "3 approvals, 2 rejections") and
+        (en("binary.tally", 1, 0) must_== "1 approval, 0 rejections") and
+        (en("binary.tally", 1200, 1) must_== "1,200 approvals, 1 rejection")
     }
 
     "show a juror's vote: a check if selected, a cross if rejected, nothing if unrated" in {
@@ -102,7 +125,7 @@ class GalleryByRateViewSpec extends PlaySpecification {
 
     def page(round: Round, asUserId: Long = juror.getId) = Jsoup.parse(contentAsString(views.html.galleryByRate(
       juror, RoundList(round, asUserId, view = GalleryView.ByRate), files, Pager(1, files.size), Nil, None,
-      new RateDistribution(Map.empty))))
+      new RateDistribution(Map.empty), ranks)))
 
     "be the juror's to click in their own list of an active rated round" in {
       val doc = page(round)

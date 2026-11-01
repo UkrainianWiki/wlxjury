@@ -54,6 +54,23 @@ class RoundStatTableViewSpec extends PlaySpecification {
           l.attr("tabindex") == "-1") must beTrue)
     }
 
+    "count a binary round's files with an approval, a vote yet to come and a rejection, linking each list" in {
+      val doc = Jsoup.parse(contentAsString(views.html.roundStatTable(admin, binaryRound,
+        RoundStat(Seq(juror), binaryRound, Seq(binaryRound), Map(juror.getId -> 3),
+          Map(juror.getId -> Map(1 -> 2, 0 -> 1)), 4, Map(1 -> 2, 0 -> 3, -1 -> 1)))))
+      val footer = doc.select("tfoot th").asScala.toList
+      val byRate = footer.drop(2)
+      (footer.size must_== 5) and
+        // as wide as the rows: the total's four columns, the files, selected, unrated, rejected
+        (doc.select("thead th").size must_== 8) and
+        (footer.head.attr("colspan") must_== "4") and
+        (footer.head.select("small").text must_== "round.stat.total.note") and
+        (byRate.map(_.ownText) must_== List("2", "3", "1")) and
+        (byRate.map(_.select("a").asScala.toList.map(_.attr("href"))) must_== List("selected", "unrated", "rejected")
+          .map(filter => List(s"/byrate/round/${binaryRound.getId}/user/0/page/1?filter=$filter&sort=rate",
+            s"/filelist/round/${binaryRound.getId}/user/0/page/1?filter=$filter&sort=rate")))
+    }
+
     "have no button inside a link" in {
       forall(Seq(ratedRound, binaryRound)) { round =>
         render(round).select("a button").size must_== 0

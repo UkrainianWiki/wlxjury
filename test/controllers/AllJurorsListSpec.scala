@@ -85,6 +85,26 @@ class AllJurorsListSpec extends PlaySpecification with PlayTestDb {
     }
   }
 
+  "a vote filter of all the jurors' votes" should {
+
+    "list the files with a matching vote, each with all its votes, in the file list and CSV" in {
+      testDbApp { implicit app =>
+        // files 4 and 5: rejected by juror 1, unrated by juror 2
+        val f = fixture(files = 5, firstSelects = 3)
+        val page = contentAsString(get(fileList(f, 1, "?filter=rejected"), f.organizer))
+        rows(page).map(_._2) === List("File:Image4.jpg", "File:Image5.jpg")
+        // the juror columns: juror 2's unrated votes too, not left blank
+        Jsoup.parse(page).select("table tbody tr").asScala.toList.map(_.select("td").asScala.takeRight(2)
+          .map(_.select(".visually-hidden").text).toList) === List.fill(2)(List("Rejected", "Unrated"))
+
+        val csv = contentAsString(get(s"/query?module=csv&round=${f.round.getId}&user=0&filter=rejected", f.organizer))(
+          defaultAwaitTimeout, app.materializer)
+        val lines = csv.linesIterator.toList
+        lines.slice(1, 3).map(_.split(",").toList.takeRight(2)) === List(List("-1", "0"), List("-1", "0"))
+      }
+    }
+  }
+
   "the order of all the jurors' votes" should {
 
     "be offered in the navbar, and the one chosen remembered for the next list" in {
@@ -129,7 +149,7 @@ class AllJurorsListSpec extends PlaySpecification with PlayTestDb {
           streamed(order) === Csv.addBom(Csv.exportRates(wholeList(f, order), jurors, f.round, order))
         }
         val rows = streamed(BinaryOrder.Default)
-        rows.size === 8
+        rows.size === 9 // the header, 7 files and the legend
 
         val result = get(s"/query?module=csv&round=${f.round.getId}&user=0", f.organizer)
         status(result) === OK

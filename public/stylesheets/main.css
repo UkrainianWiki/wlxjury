@@ -379,10 +379,24 @@ a:has(> .btn) { text-decoration: none; }
     color: var(--bs-secondary-color);
     text-decoration: underline dotted;
 }
-/* a binary round's result (binaryVote): approvals or a juror's vote, in the colours of the
-   navbar's selected and rejected tabs */
+/* a binary round's result (binaryVote, binaryTally): a juror's vote, or all the jurors'
+   approvals and rejections, in the colours of the navbar's selected and rejected tabs; a vote
+   yet to come as a dot in the secondary text colour */
 .wlx-vote-selected { color: var(--wlx-selected); }
 .wlx-vote-rejected { color: var(--wlx-rejected); }
+.wlx-vote-unrated { color: var(--bs-secondary-color); font-weight: bold; }
+/* all the jurors' votes on an organiser's tile (tile-votes.js addTally): on the page's colours
+   over the photo, at the tile's foot, under the tile's click, which opens the large view */
+.ug-thumb-wrapper.ug-tile .wlx-tile-tally {
+    position: absolute;
+    left: 6px;
+    bottom: 6px;
+    z-index: 6;
+    color: var(--bs-body-color);
+    background-color: rgba(var(--bs-body-bg-rgb), .85);
+    font-weight: normal;
+    pointer-events: none;
+}
 
 /* the round and user forms' Save and Cancel (snippets/submit, snippets/button) */
 .form-action-wide { width: 25%; }

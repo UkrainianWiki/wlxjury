@@ -535,6 +535,20 @@ object Round extends RoundRepo with CRUDMapper[Round] {
       .single()
       .getOrElse(0)
 
+  /** A binary round's files with at least one approval (1), one vote yet to come (0) and one
+    * rejection (-1): what its lists of all the jurors' votes filtered by each list
+    * (docs/plans/2026-11-01-binary-aggregate-votes.md, decision 3), a file in as many of them
+    * as its votes are of kinds. One scan of the round's entries in
+    * idx_selection_round_page_rate, without reading the rows.
+    */
+  def imageCountsByRate(roundId: Long): Map[Int, Int] =
+    sql"""SELECT COALESCE(SUM(t.a > 0), 0), COALESCE(SUM(t.u > 0), 0), COALESCE(SUM(t.r > 0), 0) FROM (
+            SELECT SUM(s.rate > 0) a, SUM(s.rate = 0) u, SUM(s.rate < 0) r FROM selection s
+            WHERE s.round_id = $roundId GROUP BY s.page_id) t"""
+      .map(rs => Map(1 -> rs.int(1), 0 -> rs.int(2), -1 -> rs.int(3)))
+      .single()
+      .getOrElse(Map.empty)
+
 }
 
 object RoundUser extends JoinTable[RoundUser] {

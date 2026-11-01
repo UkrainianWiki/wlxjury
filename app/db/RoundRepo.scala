@@ -21,4 +21,6 @@ trait RoundRepo {
 
   def selectedImageCount(roundId: Long): Int
 
+  def imageCountsByRate(roundId: Long): Map[Int, Int]
+
 }
