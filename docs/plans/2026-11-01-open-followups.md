@@ -538,3 +538,57 @@ after it say so.
   values inside the localized messages.
 
 **What remains:** the B1 review, then B2.
+
+## Batch B2 results
+
+Branch `ukwikidev/followups`, from `79512eb5`. Commit `e1713e84`.
+
+**1.2** The library sources (`scalikejdbc-play-*` 3.0.1-scalikejdbc-4.3) show where the two
+pools come from. `PlayFixtureModule` binds `PlayInitializer` and `PlayFixture` eagerly.
+`PlayInitializer.onStart` runs `DBs.setupAll()`, which builds a commons-dbcp2 pool from each
+`db.*` block (ScalikeJDBC's defaults, 8 connections). `PlayDBApiAdapter`, bound eagerly by
+`PlayDBApiAdapterModule`, wraps each of Play's `DBApi` data sources (HikariCP) and calls
+`ConnectionPool.add`. Both register "default", and `add` replaces the existing pool, so the
+module whose eager singleton Guice built last won. `PlayFixture` loads `db.<name>.fixtures.dev`
+or `.test` scripts from `db/fixtures` in Dev and Test only. There are none (no such config and
+no `conf/db/fixtures`), and nothing imports `scalikejdbc.play.*`. `PlayDBApiAdapter` also does
+what `PlayInitializer` did besides the pool: it loads the global settings (SQL logging) and
+`loggingSQLErrors`.
+
+The fix drops `PlayFixtureModule` from `play.modules.enabled` in `conf/application.conf` and
+in `test/resources/application.conf`. It also removes the now unused
+`scalikejdbc-play-initializer` and `scalikejdbc-play-fixture` libraries, and the
+`scalikejdbc.play.closeAllOnStop.enabled` key. Only `PlayInitializer` read that key, and
+`PlayDBApiAdapter` only logged a warning that it ignores it. `db.default.poolMaxSize` was the
+wrong fix: it would only have resized the pool that shouldn't exist. The comments in
+`PlayTestDb`, `SharedTestDb` and CLAUDE.md ("Pool lifecycle") now say what closes the pool:
+stopping the Play app closes its HikariCP pool. Nothing calls `ConnectionPool.closeAll()`.
+
+`ConnectionPoolConfigSpec` (now `sequential`) checks that neither `PlayModule` nor
+`PlayFixtureModule` is enabled. Then, in an app started with the production module list and
+pool keys, it checks that `ConnectionPool.get().dataSource` is the same object as Play's
+`DBApi` data source: a `HikariDataSource` with maximum 30, minimum idle 10 and a 30 s timeout.
+The Gatling fixture's `-Dgatling.pool` no longer re-registers Play's pool: the pool at start is
+always HikariCP. `dbcp` stays, to compare with runs made before this change. `as-started` is
+gone (it now means the same as `hikari`).
+
+**Deployment:** on the next release, ScalikeJDBC always uses Play's HikariCP pool: 30
+connections at most, 10 idle, a 30 s connection timeout. Until now, depending on the start,
+it was HikariCP (30) or a dbcp2 pool (8). The release ships two fewer jars, and the
+`closeAllOnStop is ignored` warning goes away at start. `conf/wlxjury/production.conf`
+needs no change: it includes `application.conf` and sets only the URL, credentials and
+migration keys. MariaDB's `max_connections` must allow 30 from the app; HikariCP already
+had that maximum whenever it won the race.
+
+**Checks** (all through `scripts/agent-check.py`):
+- `Test/compile` + `ConnectionPoolConfigSpec`, `ReadinessControllerSpec`,
+  `ReadinessDatabaseSpec`, `SecuredSpec`, `LoginControllerSpec`, `ContestFilesPageSpec`:
+  exit 0, 73/73 (`20261101-224235-5836.log`).
+- One fixture start, `gatling.GatlingSmokeSpec`: exit 0, 7/7. It logged `[pool] at start:
+  com.zaxxer.hikari.HikariDataSource` (`20261101-224524-27148.log`). The specs that mention
+  "fixture" use test data, not `PlayFixture`.
+
+**Open questions:** none. Only one start was observed. The race can't come back without one of
+the two modules, and the spec's module check fails if one is enabled again.
+
+**What remains:** the B2 review, then B3.
