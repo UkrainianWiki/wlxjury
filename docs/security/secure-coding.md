@@ -85,12 +85,16 @@ the infra plan).
 
 **Rule.** Passwords are hashed only by `services.PasswordHasher` (bcrypt `$2b$`, cost 12, at
 most 72 bytes); no other digest of a password. Statements that write a hash are not logged
-(`User.quietTx`). A legacy SHA-1 hash is only checked at sign-in and replaced.
+(`User.quietTx`). A legacy SHA-1 hash is only checked at sign-in and replaced; after its grace
+period (V81, 3 months from the S6 deploy) it no longer signs in and is replaced by an unusable
+value (`PasswordHasher.RetiredLegacy`, `LegacyPasswordRetirementJdbc.retire`), the account
+recorded in `legacy_password_retired` for root to send a password link.
 
 **Example.** `PasswordHasher.hash` / `PasswordHasher.check` (constant time, a dummy hash for
 unknown accounts, `bcrypt.maxConcurrent` turns).
 
-**Guards.** `PasswordHasherSpec`, `PasswordStorageSpec` (never SHA-1);
+**Guards.** `PasswordHasherSpec`, `PasswordStorageSpec` (never SHA-1; P8 grace period and
+retirement), `db.LegacyPasswordRetirementMigrationSpec`;
 `security.RawSqlSpec` G4b (`MessageDigest` only in listed files, SHA-1 only in `PasswordHasher`).
 
 **Exceptions** (`RawSqlSpec.Digests`): `ApiTokenService.hash`, SHA-256 of random 256-bit
@@ -196,6 +200,8 @@ Editing another account checks the editor's admin or root role in that account's
 (`UserController.saveUser` through `editableUser`: an admin only for members of their
 current contest; root any account).
 A juror sees only their own votes (`GalleryService.viewerRounds`, `mayViewRound`, `viewAs`).
+A vote needs the round open to its jurors and the juror not stopped on it (`RoundUser.isStopped`:
+an inactive `round_user` row, P6); otherwise the answer of a stopped round, nothing written.
 Denials go through `onUnAuthorized`/`onUnAuthorizedJson` with a `Secured.Denial`.
 
 **Example.** `GalleryController.selectWS`: `withAuthJson(roundPermission(..., roundId))`,
@@ -350,30 +356,36 @@ request. Remote and local paths are parsed strictly; the image proxy rebuilds th
 database entry.
 
 **Example.** `LocalImageCacheService` (base `https://upload.wikimedia.org`, Commons thumbnail
-paths only); `ImageProxyController.serve` (path → database file, width capped at 3840);
+paths only; `downloadWithRetry` fetches only from `wiki-base-url`'s scheme, host and port, and an
+original only for a url `CommonsFileCheck.isCommonsUrl` accepts, a prefix match: P9; redirects
+are never followed); `ImageProxyController.serve` (path → database file, width capped at 3840);
 `MwBot.fromHost` in `AppModule.bot`; Apache `conf/apache/jury-images.conf` proxies misses only
 to `upload.wikimedia.org`.
 
-**Guards.** `LocalImageCacheServiceSpec`, `ImageProxyFileCheckSpec`, `LargeViewUrlsSpec`.
-Planned: G10 `OutboundHostsSpec` (call sites of `singleRequest`, `ws.url`, `MwBot`, `new URL(`
-match a list; S6), and S6's host check on original-file URLs (P9).
+**Guards.** `LocalImageCacheServiceSpec` ("a fetch": another host, scheme, port, userinfo,
+a redirect, a stored foreign url), `ImageProxyFileCheckSpec`, `LargeViewUrlsSpec`. Planned: G10
+`OutboundHostsSpec` (call sites of `singleRequest`, `ws.url`, `MwBot`, `new URL(` match a list;
+not done in S6).
 
 **Exceptions.** `MonumentListSource` uses `contest.listsHost` (root-set configuration).
 
 ## 18. Limits
 
 **Rule.** Authentication attempts and costly per-request work are bounded per address,
-account or globally; a new unauthenticated or expensive endpoint gets a limit.
+account or globally; a new unauthenticated or expensive endpoint gets a limit. The image proxy
+serves a stored file only at the widths the pages ask for (`LocalImageCacheService.servedWidths`);
+another is a 302 to the nearest (P5).
 
 **Example.** `PasswordHasher` (`bcrypt.maxConcurrent`, `maxWait`, `maxQueued`; 503
 `signin.busy` when full); `ApiTokenService.MaxActive` (20 tokens per account, checked under the
 account's row lock); `ImageProxyController` (`MaxAllowedPx`, `MaxViewers`); the email-change
 request (one live link, one per 60 s).
 
-**Guards.** `PasswordHasherSpec`, `ApiTokenPageSpec`, `AccountReviewFixesSpec` (L5). Planned:
-fail2ban on sign-in failures (S4, infra plan), S6's proxy widths (P5).
+**Guards.** `PasswordHasherSpec`, `ApiTokenPageSpec`, `AccountReviewFixesSpec` (L5),
+`ImageProxyWidthSpec` (P5). Planned: fail2ban on sign-in failures (S4, infra plan).
 
-**Exceptions.** No per-address sign-in throttling in the app (P1; fail2ban, infra plan). The
+**Exceptions.** No per-address sign-in throttling in the app (P1; fail2ban, infra plan); no
+per-user count of image proxy misses (P5's rate limit: not done). The
 in-memory limits assume one app instance (`docs/deployment.md`).
 
 ## 19. Dependencies

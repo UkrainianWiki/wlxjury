@@ -8,7 +8,7 @@ snapshots: their tables are not updated, this one is. Rules: [secure-coding.md](
 reviews: [review-checklist.md](review-checklist.md).
 
 State on `ukwikidev/followups` at `58c5a2b8` (2026-11-02): S1, S2, S5, S10 and C1 merged; S3
-in progress; S6 and S7 queued; S4 and S8 folded into the (postponed) infra plan; S9 skipped.
+in progress; S6 on `ukwikidev/security-s6` (not merged); S7 queued; S4 and S8 folded into the (postponed) infra plan; S9 skipped.
 
 ## Open and in progress
 
@@ -28,10 +28,8 @@ in progress; S6 and S7 queued; S4 and S8 folded into the (postponed) infra plan;
 | P11 | CSP set through the deprecated key | Info | Queued | app | S7 | `ContentSecurityPolicySpec` | 2026-11-02 |
 | P17 | `/api/docs` under the production CSP not checked in a browser | Info | Queued | app | S7 | — | 2026-11-02 |
 | P3 | `style-src 'unsafe-inline'`; broad `img-src`/`media-src` | Low | Later (user decision) | app | S7 (later) | `ContentSecurityPolicySpec` | 2026-11-02 |
-| P5 | Image proxy: off-set widths rescaled per request, no rate limit | Low | Partial; queued (after B10's benchmark) | app | S6 | planned with S6 | 2026-11-02 |
-| P6 | A juror deactivated in a round can still vote | Low | Queued (decided: both vote actions check `round_user.active`, 409) | app | S6 | `MutationAuthorizationSpec` (to extend) | 2026-11-02 |
-| P8 | Dormant legacy SHA-1 hashes | Low | Queued: replaced after a 3-month grace period; the production count (S9) skipped | app + ops | S6, S9 | `PasswordStorageSpec` | 2026-11-02 |
-| P9 | Original-file fetch has no host allowlist | Low | Partial; queued | app | S6 | planned G10 | 2026-11-02 |
+| P5 | Image proxy: off-set widths rescaled per request, no rate limit | Low | Partial: S6 serves a stored file only at the widths the pages ask for (`servedWidths`), others 302 to the nearest; no per-user miss limit (not done) | app | S6 | `ImageProxyWidthSpec` | 2026-11-02 |
+| P8 | Dormant legacy SHA-1 hashes | Low | Code done (S6, V81): no sign-in after the 3-month grace from the S6 deploy, then replaced by an unusable value (accounts in `legacy_password_retired`, root sends links); the production count (S9) skipped | app + ops | S6, S9 | `PasswordStorageSpec`, `LegacyPasswordRetirementMigrationSpec` | 2026-11-02 |
 | N5 | Greeting/invitation mail "From" the inviter | Low | Postponed (user decision) | app | — | — | 2026-11-02 |
 | P10 | Production dump and bench volumes on the workstation | Low | Open; S9 skipped for now | ops | S9 | — | 2026-11-02 |
 | P19 | No audit log of admin actions | Info | Scheduled with the rounds-parity plan's audit log | app | parity plan | — | 2026-11-02 |
@@ -54,6 +52,8 @@ in progress; S6 and S7 queued; S4 and S8 folded into the (postponed) infra plan;
 | N9 | Job status JSON shows the exception message | Info | Fixed (`JobError` key + reference) | app | S5 | `ErrorTextSpec` (G13), `JobControllerSpec` | 2026-11-02 |
 | N10 | Unused pac4j; `pekko-http` 1.0.1; vendored JS | Info | Fixed (pac4j removed, vendored JS listed); `pekko-http` deferred to a scalawiki-first bump | app | S10 | planned G11 | 2026-11-02 |
 | C1 | Criteria votes: misplaced votes accepted, unlocked sums, orphan rates | — (integrity) | Fixed (refused, locked, orphans removed; V78) | app | criteria C1 | `LargeImageSpec`, `MutationAuthorizationSpec` | 2026-11-02 |
+| P6 | A juror deactivated in a round can still vote | Low | Fixed (both vote actions check `round_user.active`: the stopped round's answer, nothing written) | app | S6 | `MutationAuthorizationSpec`, `LargeImageSpec` (CSRF router) | 2026-11-02 |
+| P9 | Original-file fetch has no host allowlist | Low | Fixed (only `wiki-base-url`'s host; originals only for Commons urls, a prefix match; redirects not followed) | app | S6 | `LocalImageCacheServiceSpec` ("a fetch") | 2026-11-02 |
 
 Fixed before the re-review and still guarded (2026-11-02 re-check, no regression): SQL
 injection in `ImageDbNew` (Vuln 1; `RawSqlSpec`, `SelectionQuerySpec`); the committed secret

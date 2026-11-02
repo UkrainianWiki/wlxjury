@@ -727,6 +727,62 @@ can't sign in).
 `round_user.active`; 409 like a stopped round). P7: option (a), a single-use password-set link reusing S2's invitation token; done in S2.
 P8: grace period 3 months for legacy SHA-1 hashes, then they are replaced by an unusable value and the user sets a password through S2's link.
 
+### S6 results (2026-11-02)
+
+**Branch** `ukwikidev/security-s6` (from `ukwikidev/followups` at 60e77c0f). **Migration V81.**
+
+- **P5 (partial).** The proxy serves a stored file only at the widths the pages ask for
+  (`LocalImageCacheService.servedWidths`): the thumbnail boxes' widths (`Global.thumbnailWidths`),
+  the large view's fallback (`Global.largeFallbackPx`, now also used by `largeImage`) and
+  Wikimedia's sizes wider than every cached one (passed on unscaled: a page rendered before a
+  file's size changed). Any other width, after the sign-in check and the file lookup, is a 302 to
+  the same thumbnail at the nearest served width (ties to the wider; a page's `page1-`/`lossy-`
+  prefix kept), nothing fetched or scaled; `MaxAllowedPx` kept. A file of unknown size: Wikimedia's
+  sizes. The pages and their scripts build no thumbnail url themselves (the JavaScript only takes
+  the rendered `src`/`data-thumb`): no Jest change; `ImageProxyWidthSpec` checks that every width
+  the views render for a range of sizes (photos, PDFs, a panorama) is served. **Not done:** the
+  per-user miss limit (the plan's "count misses per user"). Residual: the large view's fallback of
+  a panorama (narrower than its widest cached thumbnail) and a thumbnail-only file narrower than
+  its box are still scaled per request, one width each.
+- **P6.** Both vote actions (`GalleryController.selectWS`, `LargeViewController.rateByPageId`, which
+  also takes criterion votes) refuse a juror whose `round_user` row is inactive
+  (`RoundUser.isStopped`) with the stopped round's answer: 409 `round_closed` in the gallery, the
+  redirect to the gallery from the large view (a stopped round's large-view answer is that redirect,
+  not a 409); nothing written. A juror without a row (a legacy round's) still votes.
+- **P8 (code).** V81 records the end of the grace period, `NOW(3) + INTERVAL 3 MONTH` at the deploy
+  (`legacy_password_retirement`, one row, `INSERT IGNORE`: never moved by a restart, a redeploy or
+  a rerun), and `legacy_password_retired` (account id, time; no hash). After the end a legacy hash
+  no longer signs in (`User.login` reads the end at each legacy sign-in; unreadable: refused), and
+  `modules.LegacyPasswordRetirementTask` (eager; 1 minute after the start, then every 6 hours;
+  `wlxjury.legacyPasswords.*`, off in the tests' config) replaces every legacy hash left with
+  `PasswordHasher.RetiredLegacy` (never matches), recording the accounts, in one quiet transaction
+  with the rows locked, and logs `legacy_passwords_retired count=N` at WARN. Sessions are kept (an
+  active session proves nothing about the hash). Every refused sign-in now shows a generic hint
+  ("haven't signed in for a long time? ask the organizers for a link"): no account enumeration.
+  The owner sets a password through root's existing "reset password" link (S2), or an
+  organizer's invitation (the marker counts as a password, so an add is an invitation unless the
+  email is verified). Undo: `DROP TABLE legacy_password_retirement` (nothing retired); a replaced
+  hash is not restored, by design. Production count still unknown (S9).
+- **P9.** `downloadWithRetry` fetches only from `wlxjury.thumbs.wiki-base-url`'s scheme, host and
+  port (no userinfo), refusing anything else unsent (`image_fetch_refused host=...`); an original
+  is fetched only for a url `CommonsFileCheck.isCommonsUrl` accepts, now a prefix match
+  (`(https:)//upload.wikimedia.org/wikipedia/commons/...`, not a substring: a foreign url with the
+  path in its query was accepted); redirects are not followed (Pekko's `singleRequest`).
+
+**Specs** (log `target/checks/20261102-174414-25260.log`: 279 passed, 0 failed): new
+`ImageProxyWidthSpec`, `db.LegacyPasswordRetirementMigrationSpec`; extended
+`LocalImageCacheServiceSpec` ("a fetch"; its `downloadWithRetry` cases now fetch from the
+configured base), `MutationAuthorizationSpec` and `LargeImageSpec` (CSRF router, gallery and large
+view), `PasswordStorageSpec`; plus `ImageProxyControllerSpec`, `ImageProxyFileCheckSpec`,
+`Global*Spec`, `ThumbnailUrlsExportSpec`, `ContestFilesPageSpec`, `MigrationNamingSpec`, `security.*`.
+Second batch (`target/checks/20261102-175622-16592.log`: 148, 147 passed): `MessagesCompletenessSpec`,
+`LargeViewUrlsSpec`, `LoginControllerSpec`, `SessionsSpec`, `AccountInvitationSpec`, `OwnAccountSpec`,
+`SetupSpec`, `LocalImageCacheFileCheckSpec`, `CommonsFileCheckSpec`, `RoundDistributionJobSpec`. The
+one failure, `SetupSpec` "create root once", fails the same on `ukwikidev/followups` at 60e77c0f
+(`target/checks/20261102-185635-5928.log` in a temporary worktree): since S3 a "keep me signed in"
+session leaves as the filter's persistent cookie, not Play's `newSession`, which the spec read.
+Fixed in the spec (reads the cookie): `SetupSpec`, `MessagesCompletenessSpec` 10 passed (`target/checks/20261102-190223-24892.log`).
+
 ## S7: Headers and CSP
 
 **Items:** P4, P11, P3, P17.
