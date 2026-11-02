@@ -332,6 +332,29 @@ class RoundListDbSpec extends Specification with TestDb with BeforeAll with Befo
       (round, jurors, images.map(_.pageId))
     }
 
+    "leave a juror's vote without a page id out of their pages, counts and places" in {
+      val (round, jurors, ids) = setUpRated()
+      val juror = jurors.head
+      // `selection.page_id` is nullable: such a vote, the juror's highest rate, in region 12
+      scalikejdbc.DB.autoCommit { implicit s =>
+        scalikejdbc.SQL("INSERT INTO selection (page_id, rate, jury_id, round_id, monument_id) VALUES (NULL, 5, ?, ?, '12-345-99')")
+          .bind(juror.getId, round.getId).update()
+      }
+      // the juror's rates 1, 5, 2, 3, -1, 2: F1, F3, F2 and F5 (in file order), F0, F4
+      val ordered = Seq(1, 3, 2, 5, 0, 4).map(ids)
+      forall(Seq(None -> ordered, Some("12") -> Seq(ids(1), ids(0)))) { case (region, expected) =>
+        forall(Seq(GalleryView.Gallery, GalleryView.ByRate)) { view =>
+          val list = RoundList(round, juror.getId, region, view = view)
+          val pages = (1 to 4).map(p => list.files(Pager(p, expected.size, 2)))
+          (pages.flatten.map(_.pageId) must_== expected) and
+            (list.count() must_== expected.size) and
+            (list.jurorCounts().map(_.total(list.filter, list.region)) must_== Some(expected.size)) and
+            (list.rankCounts().map(_._2).sum must_== expected.size) and
+            (expected.map(list.position) must_== expected.indices.map(Some(_)))
+        }
+      }
+    }
+
     "be a file list, or by rate in any order but file order" in {
       val (round, _, _) = setUpRated()
       (Seq(GalleryView.FileList, GalleryView.ByRate, GalleryView.Gallery, GalleryView.Csv)

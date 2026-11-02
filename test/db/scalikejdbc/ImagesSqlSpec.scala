@@ -149,13 +149,11 @@ class ImagesSqlSpec extends FunSuite with AutoRollbackMunitDb {
 
   // ---- uncovered branches ----
 
-  dbTest("idOnly=true selects only i.page_id") { implicit session =>
+  dbTest("idOnly=true selects only the page id, from selection alone") { implicit session =>
     check(
       SelectionQuery(roundId = Some(3L)),
-      s"""select  i.page_id as pi_on_i from selection s
-          STRAIGHT_JOIN images i
-          on i.page_id = s.page_id
-          where s.round_id = ?""",
+      s"""select  s.page_id as pi_on_i from selection s
+          where s.round_id = ? and s.page_id is not null""",
       expectedParams = Seq(3L),
       f = _.query(idOnly = true)
     )
@@ -164,10 +162,8 @@ class ImagesSqlSpec extends FunSuite with AutoRollbackMunitDb {
   dbTest("ranked=true emits ROW_NUMBER() over orderBy in column list") { implicit session =>
     check(
       SelectionQuery(userId = Some(1L), roundId = Some(2L), order = Seq("rate" -> -1)),
-      s"""select  i.page_id as pi_on_i, ROW_NUMBER() over ( order by rate desc) ranked from selection s
-          STRAIGHT_JOIN images i
-          on i.page_id = s.page_id
-          where s.jury_id = ? and s.round_id = ?
+      s"""select  s.page_id as pi_on_i, ROW_NUMBER() over ( order by rate desc) ranked from selection s
+          where s.jury_id = ? and s.round_id = ? and s.page_id is not null
           order by rate desc""",
       expectedParams = Seq(1L, 2L),
       f = _.query(ranked = true, idOnly = true, noLimit = true)
@@ -177,7 +173,7 @@ class ImagesSqlSpec extends FunSuite with AutoRollbackMunitDb {
   dbTest("count - optimised path when regions empty and not byRegion") { implicit session =>
     check(
       SelectionQuery(roundId = Some(5L)),
-      "select COUNT(DISTINCT s.page_id) from selection s where s.round_id = ?",
+      "select COUNT(DISTINCT s.page_id) from selection s where s.round_id = ? and s.page_id is not null",
       expectedParams = Seq(5L),
       f = _.query(count = true)
     )
@@ -198,7 +194,7 @@ class ImagesSqlSpec extends FunSuite with AutoRollbackMunitDb {
   dbTest("count - a juror's region on selection alone, without DISTINCT") { implicit session =>
     check(
       SelectionQuery(userId = Some(4L), roundId = Some(5L), regions = Set("12")),
-      "select COUNT(*) from selection s where s.jury_id = ? and s.round_id = ? and s.monument_id like ? and NULLIF(LEFT(SUBSTRING_INDEX(s.monument_id, '-', 1), 3), '') = ?",
+      "select COUNT(*) from selection s where s.jury_id = ? and s.round_id = ? and s.monument_id like ? and NULLIF(LEFT(SUBSTRING_INDEX(s.monument_id, '-', 1), 3), '') = ? and s.page_id is not null",
       expectedParams = Seq(4L, 5L, "12%", "12"),
       f = _.query(count = true)
     )
@@ -211,25 +207,24 @@ class ImagesSqlSpec extends FunSuite with AutoRollbackMunitDb {
         limit = Some(Limit(pageSize = Some(5), offset = Some(10)))
       ),
       s"""select  $allFields from (select s.id from selection s
-          where s.round_id = ? LIMIT 5 OFFSET 10) k
+          where s.round_id = ? and s.page_id is not null LIMIT 5 OFFSET 10) k
           STRAIGHT_JOIN selection s on s.id = k.id
           STRAIGHT_JOIN images i on i.page_id = s.page_id""",
       expectedParams = Seq(3L)
     )
   }
 
-  dbTest("limit appends LIMIT N OFFSET M to a grouped query") { implicit session =>
+  dbTest("a grouped page groups and pages selection alone, then joins the page's images") { implicit session =>
     check(
       SelectionQuery(
         roundId = Some(3L),
         grouped = true,
         limit = Some(Limit(pageSize = Some(5), offset = Some(10)))
       ),
-      s"""select sum(s.rate) as rate, count(s.rate) as rate_count, $imageFields from selection s
-          STRAIGHT_JOIN images i
-          on i.page_id = s.page_id
-          where s.round_id = ?
-        group by s.page_id LIMIT 5 OFFSET 10""",
+      s"""select k.rate, k.rate_count, $imageFields from (select s.page_id as pid, sum(s.rate) as rate,
+          count(s.rate) as rate_count from selection s where s.round_id = ? and s.page_id is not null
+          group by s.page_id LIMIT 5 OFFSET 10) k
+          STRAIGHT_JOIN images i on i.page_id = k.pid""",
       expectedParams = Seq(3L)
     )
   }
