@@ -1412,7 +1412,8 @@ sum(s.rate < 0) as rejections` to a grouped select and has `Readers.groupedReade
 them; otherwise `approvalsFromDb`/`rejectionsFromDb` stay `None`. Set by `RoundList.query` as
 `aggregateBinary && !withDetails` (all jurors on a yes/no round; a file list's and CSV's tallies
 count their vote rows, and their grouped `idOnly` query never had the sums), and by
-`DistributeImages` through `byRoundMerged(..., tally = true)` on its two yes/no-only reads.
+`DistributeImages` through `byRoundMerged(..., tally = true)` on its two yes/no-only reads
+(both derived from the round's kind since the review fixes below).
 Counts, `idOnly`, `keyCounts`, `pageKeys` and a juror's rows are unchanged. No view changed: the
 rated pages already showed no tally; specs now pin it.
 
@@ -1472,3 +1473,22 @@ the sums. Not expanded further: the change only removes work, so more runs could
 **Open**
 - A same-JVM SQL pair (the grouped page with and without the sums, alternated) would size the
   aggregates' own cost if that ever matters; not run.
+
+The large view's JSON (`LargeViewController`, `Json.writes[ImageWithRating]`, the `Accepts.Json`
+branch) writes the case class's fields, so a rated round's grouped rows there no longer carry
+`approvalsFromDb`/`rejectionsFromDb` (they were the rated round's `sum(rate > 0)` and 0); a
+yes/no round's still do. Nothing in `public/javascripts` reads either field.
+
+### B9 review fixes
+
+| Finding | Fix | Commit |
+|---|---|---|
+| Medium: `tally` opt-in, so a new grouped reader of a yes/no round would silently count the one synthetic selection | `RoundList.query` sets `tally = round.isBinary` (only a grouped query reads it); `byRoundMerged`'s `tally` has no default and `DistributeImages` passes the round's `isBinary` on every read (current and previous rounds); unused `Round.allImages` deleted. `byRoundMerged` keeps a round id, not a `Round`: `DistributeImagesSpec`'s mock is stubbed by id and its calls pass `round.copy(...)`. Guard: `ImageWithRating.approvals`/`rejections` `require` the count from the query on a grouped row (a selection of juror 0). Checked the juror-0 rows without sums: `RoundDistributionHandler.previousCandidates`/`ratedPage` feed only `perImageFilters` (no top-N, no rejected-by: `SelectedAtLeast` reads `rateSum`, min average `totalRate`); `binaryPage` sets both; `DistributeImages`' rows now have them for a yes/no round, and a rated round's are read by `totalRate`/`rateSum` only; view fixtures with juror-0 rows set them or are rated (not read). `JurorImagesSpec` asserts the failure | `166e8082` |
+| Low: `approvals` scaladoc | says the grouped row's counts come only with `tally`, and that without it reading fails | `166e8082` |
+| Low: the large view's JSON | recorded above | this commit |
+| Nit: two view test names said "whose query has no tally" | renamed/commented: they pin the view's gate with hand-built rows | `166e8082` |
+
+Checks: `Test/compile`, `Gatling/compile`, `testOnly db.scalikejdbc.{ImagesSqlSpec,
+ImageDbNewDbSpec,JurorImagesSpec} controllers.{RoundListSpec,RoundListDbSpec,AllJurorsListSpec,
+CsvSpec} views.* org.intracer.wmua.* services.distribution.*`: 447 passed, 0 failed, 1 pending
+(`target/checks/20261102-122135-19824.log`). No benchmark rerun.
