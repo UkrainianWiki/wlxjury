@@ -90,18 +90,6 @@ class RoundImageCountsDbSpec extends Specification with TestDb with BeforeAll wi
       count(other.getId) === 1
     }
 
-    "follow merging rounds" in {
-      val (contest, round, images, jurors) = setUp(3)
-      val other = roundDao.create(Round(None, 2, None, contest.getId, createdAt = now))
-      distributor.distributeImages(round, images.take(1), jurors)
-      distributor.distributeImages(other, images.drop(1), jurors)
-      count(round.getId) === 1
-      count(other.getId) === 2
-      roundService.mergeRounds(contest.getId, targetRoundId = round.getId, sourceRoundId = other.getId)
-      count(round.getId) === 3
-      count(other.getId) === 0
-    }
-
     "not change on a vote" in {
       val (_, round, images, jurors) = setUp(2)
       distributor.distributeImages(round, images, jurors)

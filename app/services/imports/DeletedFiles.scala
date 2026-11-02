@@ -33,7 +33,7 @@ object DeletedFiles {
   /** After [[markDeleted]] committed, in a transaction of its own: moves aside the votes of
     * those of `pageIds` still marked deleted in the rounds open now. [[markDeleted]] reads
     * the rounds from its snapshot, so it misses votes another transaction moved into an open
-    * round ([[db.scalikejdbc.SelectionJdbc.mergeRounds]]) and committed meanwhile; one that
+    * round ([[db.scalikejdbc.SelectionJdbc.setRound]]) and committed meanwhile; one that
     * commits after [[markDeleted]] moves them itself ([[Round.settleDeletedFiles]]).
     *
     * @return the rounds that lost rows

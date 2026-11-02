@@ -222,6 +222,18 @@ curl -s -H 'Host: jury.wle.org.ua' http://127.0.0.1:9000/auth | head
 
 `sbt run` and the tests allow Play's default names (`localhost`, `127.0.0.1`, `*.local`) and send cookies without `Secure`.
 
+### One app instance
+
+The app assumes that one instance serves a database at a time. Some state lives in the JVM:
+`RoundImageCounts` caches each round's image count and is invalidated only in the process that
+wrote (another instance's counts stay stale for up to the cache's TTL, 10 minutes); the job
+scheduler's per-kind limits and turn-taking, the bcrypt sign-in limits (`bcrypt.*`), local image
+download progress and the distribution's cached chunks are per process too. Rounds are locked
+in the database (`SELECT … FOR UPDATE`) and jobs hold a lease in the `job` table, but running two
+instances against one database was never designed for or tested. The release tools stop the old
+service before starting the new one; keep it that way (the blue/green slots, which could run two
+at once, are disabled).
+
 ### Recovery runbook
 
 Maintenance is never cleared automatically. Read `OPERATION/milestones`, `record` and `operation.log`, then use the section for the last milestone. `previous` and `candidate` in `record` name the releases.

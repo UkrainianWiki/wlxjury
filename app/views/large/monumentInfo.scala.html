@@ -2,14 +2,12 @@
         image: org.intracer.wmua.Image,
         monument: Option[org.scalawiki.wlx.dto.Monument]
         )(implicit flash: Flash, request: play.api.mvc.Request[Any], messages: Messages)
-@import org.scalawiki.wlx.dto.Monument
 
 @for(m <- monument) {
     <div class="card card-body large-box">
-        @Messages(image.region.getOrElse("")), @Html(Monument.wikiLinkToUrl(m.city.getOrElse(""), "uk.wikipedia.org")) <br>
-        <!--                        @Html(m.typ.getOrElse("") + " " + m.subType.getOrElse("")) <br> -->
-        @Html(Monument.wikiLinkToUrl(m.name, "uk.wikipedia.org")) <br>
-        @Html(Monument.wikiLinkToUrl(m.place.getOrElse(""), "uk.wikipedia.org"))
+        @Messages(image.region.getOrElse("")), @views.WikiLinks(m.city, "uk.wikipedia.org") <br>
+        @views.WikiLinks(m.name, "uk.wikipedia.org") <br>
+        @views.WikiLinks(m.place, "uk.wikipedia.org")
 
         @if(false){  <a href="@routes.MonumentController.byId(m.id)"><i class="icon-forward"></i></a> }
 

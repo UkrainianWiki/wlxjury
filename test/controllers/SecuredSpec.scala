@@ -191,7 +191,7 @@ class SecuredSpec extends PlaySpecification with Mockito with PlayTestDb
 
     "have the request's, the account's and the target's fields, untrusted text quoted" in {
       val line = Secured.denialLogLine(user, request, Secured.Denial(Some(30L), Some("job:5"), User.ADMIN_ROLES), "0a1b2c3d")
-      line === "authorization_denied ref=0a1b2c3d accountId=7 account=\"ann\\\"x\\n@server.com\" method=GET " +
+      line === "authorization_denied ref=0a1b2c3d accountId=7 method=GET " +
         "path=\"/admin/jobs/5\" currentContestId=10 targetContestId=30 resource=\"job:5\" " +
         "requiredRoles=\"admin,root\" accountRoles=\"admin\" targetContestMembershipState=missing " +
         "targetContestRoles=\"none\" reason=not_member"
@@ -209,6 +209,14 @@ class SecuredSpec extends PlaySpecification with Mockito with PlayTestDb
       val formerOnly = user.copy(roles = Set("USER_ID_7"), contestId = None,
         userContests = Seq(UserContest(7L, 20L, User.NO_ROLE)))
       Secured.denialReason(formerOnly, Secured.Denial(requiredRoles = Secured.ViewerRoles)) === "membership_inactive"
+    }
+
+    "identify the account by its id only, without its email or name" in {
+      val line = Secured.denialLogLine(user, request, Secured.Denial(Some(30L), Some("job:5"), User.ADMIN_ROLES), "0a1b2c3d")
+      line must contain("accountId=7 ")
+      line.toLowerCase must not(contain("server.com"))
+      line must not(contain("Ann"))
+      line must not(contain("account="))
     }
 
     "say what is unknown" in {

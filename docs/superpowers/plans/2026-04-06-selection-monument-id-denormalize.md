@@ -1,5 +1,7 @@
 # Selection `monument_id` Denormalization Implementation Plan
 
+> **Status:** shipped (`4a2ff9fd` V48, `f4ec8447` reads and writes). The task boxes below were never ticked.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Eliminate the 38 k-row nested-loop join in the juror gallery list query (~1.8 s cold) by denormalizing `monument_id` into `selection` and flipping the join order, achieving ~4× cold speedup.
