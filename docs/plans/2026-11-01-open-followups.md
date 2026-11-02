@@ -2129,3 +2129,119 @@ The suite grew since the last run (1598 → 1661: S6 and S7). App starts: 87 →
 the four new specs took 29 s. So the attributable saving is the paired 50 s above, about 4 % of
 the suite, within this host's run-to-run spread; it shows in the specs that start apps, not in
 the total.
+
+### Database-heavy specs
+
+Measured on `ukwikidev/test-db-timing` (base `5e6a0fb6`) with a temporary instrumentation, not
+committed (`target/checks/dbtiming-instrumentation.diff` in that worktree): per example, the
+statements by phase (truncate, fixture, test) from a ScalikeJDBC completion listener, MariaDB's
+`SHOW GLOBAL STATUS` deltas (commits, fsyncs, opened tables), `truncateAll` timed, specs2
+`showtimes`. Runs, one sbt JVM at a time: default settings (`target/checks/20261102-212028-4640.log`),
+the container pilot (`…-213408-25544.log`: default, durability, sizing, both; both on the top
+specs), tmpfs on the top specs twice (`…-215941-19012.log`, `…-220352-6636.log`). All passed.
+
+**Where the time goes.** Two causes cover most of it:
+
+- **`truncateAll` costs 0.44–1.16 s per call** (19 `TRUNCATE TABLE`, each a drop and re-create
+  of the table's file, about 25–60 ms; 1.08 s per call in `RoundDistributionJobSpec`, whose
+  examples dirty more pages). It runs before almost every example: `BeforeEach`,
+  `testDbApp` (`SharedPlayApp.truncateAll`, the same 19 tables), `AutoRollbackDb`, `dbTest`,
+  `withSharedApp`; a static count gives about 1000 calls per suite, so about 8–9 min of the
+  21-min suite (estimate).
+- **The container runs Testcontainers' bundled my.cnf** (`mariadb-default-conf` in the
+  `org.testcontainers:mariadb` jar): `innodb_buffer_pool_size = 16M`,
+  `innodb_log_file_size = 5M`, `table_open_cache = 4` (the server raises it to its minimum, 10),
+  `sort_buffer_size = 64K`. Binlog is off already; durability is the default
+  (`innodb_flush_log_at_trx_commit = 1`, doublewrite on).
+
+The rest is statement count at about 0.9 ms a round trip through Docker Desktop's port
+forwarding, and the distribution job's many small transactions.
+
+| Spec | Examples | Default | Truncate | The rest | Fast¹ | tmpfs² |
+|---|---|---|---|---|---|---|
+| RoundDistributionJobSpec | 22 | 69.5 s | 23.8 s | `ratedRound` 9.1 s (1423 one-row `rate` UPDATEs, autocommit each); `setUp` 4.5 s; job code 24 s of SQL (5673 statements, 665 commits); the cancel example's sleeps about 1 s | 41.4 s | 32.8 / 32.6 s |
+| ListPositionSpec | 5 | 53.3 s | 2.8 s | 49 669 SELECTs, 0.9 ms each: 120 lists (8 filters × 5 orders × 3 regions) × 15 files × `position`/`around` (about 6 queries, the code under test) and `rankPosition`/`aroundAtOffset` (about 3, the oracle) | 55.2 s | 43.5 / 43.5 s |
+| RoundRedistributionFiltersSpec | 10 | 39.1 s | 4.4 s | about 60 round creations and redistributions: 25.8 s of SQL (9370 statements, 917 commits) | 37.6 s | 30.4 / 29.9 s |
+| CategoryClauseSpec | 23 | 35.2 s | 13.2 s | round creation and redistribution, 16.6 s of SQL | 28.3 s | 16.6 / 16.1 s |
+| ConvertToInnoDbMigrationSpec | 10 | 32.6 s | — | its own container 9.6 s; replaying the post-V53 scripts by hand (5 replays) 13.8 s; Flyway B44 → V64 5.0 s | 31.9 s | 11.5 / 12.6 s (5.1 + 1.0 + 1.2 s) |
+| AppendImagesSpec | 21 | 30.0 s | 11.7 s | "get international images": 13–14 s on live Commons (network, not DB) | 31.4 s | 19.2 / 23.8 s |
+| ImageDbNewDbSpec | 28 | 19.8 s | about 18 s | tiny inserts; `AutoRollbackDb` truncates before each example | 12.8 s | 3.5 / 3.7 s |
+| SecuredSpec | 24 | 16.5 s | about 0.5 s × 30 | 6 examples truncate twice (`before` and `testDbApp`) | 20.6 s | 4.8 / 4.9 s |
+| PasswordStorageSpec | 23 | 13.5 s | `SharedPlayApp` truncate × 21 | bcrypt is at cost 4 already; the 8.9 s / 25.0 s of the two full suites is host noise and truncation | 14.6 s | 4.2 / 4.9 s |
+| GalleryOrderSpec | 12 | 62.3 s, first | 7 truncates 8.2 s | the first spec of the JVM (also in both full suites): container start 14.6 s, Flyway 13.5 s, the shared app's start | 11.6 s, not first | 4.9 / 5.1 s, not first |
+| **The 9 specs above GalleryOrderSpec** | | **309.5 s** | | | | **166.5 / 172.0 s (−45 %)** |
+
+¹ Sizing and durability flags (below). ² The same on a tmpfs data directory, two runs.
+`UserContestRoleMigrationSpec` (6 examples, 10.4 s) is mostly truncation and V76's `ALTER`
+per example; `LocalImageCacheServiceSpec` (24–29 s) and `JobSchedulerSpec` (24 s: sleeps,
+`await` polls at 50 ms) are not database-bound; `ImagesFromListSpec` (9–15 s) is one live
+Commons import.
+
+**Container settings pilot.** One JVM per variant, `MigrationTimingSpec` (temporary) and
+`ImageDbNewDbSpec`:
+
+| Variant | `truncateAll` after a small fixture³ | ImageDbNewDbSpec | Fresh migrate: B44, then the 37 after it |
+|---|---|---|---|
+| Default | 807 ms | 19.8 s | 3.8–5.4 s + 3.8–4.1 s |
+| Durability: `innodb_flush_log_at_trx_commit=0`, `innodb_doublewrite=0` | 688 ms | 21.1 s | 4.7–5.2 s + 3.6–3.8 s |
+| Sizing: `table_open_cache=2000`, `table_definition_cache=1000`, buffer pool 256M, redo log 128M, `sort_buffer_size=2M` | 515 ms | 13.3 s | 3.5–3.7 s + 2.5–3.0 s |
+| Both | 507 ms | 12.8 s | 2.9–3.0 s + 2.3–3.1 s |
+| Both on tmpfs (`/var/lib/mysql`, `innodb_flush_method=fsync`) | 90–125 ms | 3.5–5.2 s | 1.5–1.7 s + 1.7–1.8 s |
+
+³ Median of 6, after 1 contest, 20 images, 3 jurors, 60 votes; inside the specs, on tmpfs, it
+is 32–40 ms per call.
+
+Durability alone changes nothing measurable (Docker Desktop's fsync is cheap); the small
+caches and redo log cost about a third; the rest is file creation and removal, which tmpfs
+makes nearly free. Cheaper truncation, same fixture, default settings: `DELETE` from the 19
+tables in one transaction 71 ms; truncating only the non-empty ones (one `EXISTS` union, 4 ms)
+315 ms; `DELETE` and `ALTER TABLE … AUTO_INCREMENT = 1` of the non-empty ones 301 ms. On
+tmpfs, 68 / 65 / 69 ms against 90 ms for the 19 `TRUNCATE`s: no reason to change it there.
+
+**Migrations.**
+
+1. *Fresh migrate.* The shared container's migrate (once per test JVM): 13.5 s in the default
+   run, 6.5–7.6 s in the pilot's default variants, 2.3 s on tmpfs; container start 7.5–14.6 s.
+   In a warm JVM, B44 alone (with Flyway's schema-history setup) is 3.8–5.4 s and the 37
+   migrations after it 3.8–4.1 s; the current schema (25 tables) as one `CREATE TABLE` script
+   0.8–1.9 s (0.05–0.1 s on tmpfs). Each Gatling simulation forks a JVM with a fresh container
+   and a Play app in Test mode, whose flyway-play runs a full migrate before the dump is
+   restored: the same 7–13 s per simulation (8 in `gatlingAll`), and once per suite for
+   `GatlingSmokeSpec`.
+2. *Per app start.* flyway-play's `PlayInitializer` runs `migrate` on every app start in
+   `Mode.Test`. On the up-to-date database: 0.10–0.26 s (validate alone 0.08–0.27 s). 22 app
+   starts per suite: 2–6 s. A new baseline doesn't change this: the V files stay (production's
+   history validates against them).
+3. *Migration specs.* `ConvertToInnoDbMigrationSpec`: 13.8 s replaying scripts, 5.0 s Flyway,
+   9.6 s its container (1.0 / 1.2 / 5.1 s on tmpfs). `UserContestRoleMigrationSpec` reruns
+   V76. They test old migrations on old schemas (production's V53, B44): a new baseline
+   removes none of it.
+
+*A new baseline (B82, generated like B44 by `SchemaBaselineSpec -Dgenerate.baseline=true`)*
+replaces B44 and 37 migrations with one script: about 3–4 s per fresh migrate (1.5 s on
+tmpfs). Per suite: the shared container and the Gatling smoke fixture, 6–8 s (0.5 %); per
+`gatlingAll`, about 30 s. Risks: it must equal V1..V82 exactly (a diff of `SHOW CREATE TABLE`
+between a migrated database and the baseline, and the rows migrations insert: V58, V62, V65,
+V78, V80 `session_upgrade_window`, V81 `legacy_password_retirement`); production keeps its
+history and is unaffected (a baseline applies only to an empty schema); Flyway stays at 9.16.3
+(9.22.3 skips the B44 baseline); the old V files and B44 stay (the V53 replays of
+`ConvertToInnoDbMigrationSpec`, its "V65 a no-op on the B44 baseline"); P0's V82
+(`selection` → `vote`) is still on its branch, so a baseline made now would have to be made
+again. Not worth it now; after P0 and P1 at most, and tmpfs halves what it saves.
+
+**Recommendations, ranked by saving ÷ risk:**
+
+| # | Change | Spec(s) | Saving | Risk | Effort |
+|---|---|---|---|---|---|
+| 1 | The shared test container on a tmpfs data directory, with the sizing flags (a smaller redo log, 32–48M, and buffer pool, 128M, to keep the Docker VM's RAM down: not measured at those sizes) and `innodb_flush_method=fsync`; the same for the migration specs' own containers. Gatling's container stays as it is (production-like) | every DB spec | Measured: 9 specs 309.5 → 166.5 / 172.0 s (−45 %); `truncateAll` 0.44–1.16 s → 32–40 ms per call. Estimate: 7–9 min of the 21-min suite; confirm with one full run | Low: test-server settings only, the same SQL semantics and isolation; the data directory (a few hundred MB with a 128M redo log) lives in the Docker VM's memory | About 10 lines in `SharedTestDb` and two specs |
+| 2 | Run the two live-Commons examples only with `-Dintegration=true` (as `LocalImageCacheServiceIntegrationSpec`) | AppendImagesSpec "get international images", ImagesFromListSpec "import from list" | 22–28 s per suite, and no network flakiness | Low: the default suite no longer reaches the real Commons API; the integration run still does | Minutes |
+| 3 | Rate `ratedRound`'s votes in one batch, not one autocommit UPDATE per row | RoundDistributionJobSpec | 9.1 s → under 1 s (2.3 s on tmpfs) | None to coverage: fixture only | Small |
+| 4 | Run `ConvertToInnoDbMigrationSpec` on the shared container (it creates a database per example already) instead of its own; give the shared one `--max-allowed-packet=16M` | ConvertToInnoDbMigrationSpec | 9.6 s (5.1 s on tmpfs) | Low: separate databases on one server | Small |
+| 5 | `ListPositionSpec`: the oracle from one read of each list (rank and offset window in Scala) instead of `rankPosition`/`aroundAtOffset` per file | ListPositionSpec | About a third of 49 669 queries: 15–18 s (about 14 s on tmpfs), estimate | Low: the oracle is still the plain ordered list, independent of the keyset code; a new oracle could have its own bug | 1–2 h |
+| 6 | No `before` truncate in `SecuredSpec`'s `testDbApp` examples | SecuredSpec | 3–6 s; 0.2 s on tmpfs | None | Minutes; only without 1 |
+| 7 | If 1 is not taken: `truncateAll` as `DELETE` in one transaction (807 → 71 ms), or `TRUNCATE` of the non-empty tables only (315 ms) | every DB spec | Estimate 6–9 min (`DELETE`), 4–5 min (non-empty only) | `DELETE` keeps `AUTO_INCREMENT`: specs that assume ids from 1 would fail (not checked: needs a full run); the non-empty variant keeps the reset | Small; none with 1 |
+| 8 | A new baseline, B82 | fresh migrates, Gatling | 6–8 s per suite, about 30 s per `gatlingAll` | Medium: needs an exact-equality check; P0's V82 in flight | Half a day, after P0/P1 |
+
+Not recommended: durability flags alone (no measurable effect); turning off flyway-play's
+migrate on app start in tests (2–6 s per suite; `SchemaBaselineSpec` and the Gatling fixture
+migrate through it).
