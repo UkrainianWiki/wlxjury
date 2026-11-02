@@ -1,18 +1,17 @@
 package views
 
-import com.typesafe.config.ConfigFactory
 import play.api.i18n.{Lang, Messages}
 import play.api.test.{FakeRequest, Helpers, PlaySpecification}
 import play.twirl.api.Html
 
-import java.io.File
 import java.nio.charset.StandardCharsets.UTF_8
 import java.security.MessageDigest
 import java.util.Base64
 
 /** The inline scripts that the content security policy allows by their SHA-256
-  * (conf/application.conf's `script-src`): the layout's theme script and the large views'
-  * section restore (views.NoInlineScriptsSpec lists why they stay inline). This renders the
+  * (conf/application.conf's `play.filters.csp.directives.script-src`): the layout's theme script
+  * and the large views' section restore (views.NoInlineScriptsSpec lists why they stay inline).
+  * This renders the
   * pages that hold them, hashes each inline script as a browser does and checks that its hash
   * is in the policy, and that the policy has no hash that no page renders. Any change to a
   * script's text fails here until its new hash replaces the old one.
@@ -23,12 +22,7 @@ import java.util.Base64
   */
 class InlineScriptHashesSpec extends PlaySpecification {
 
-  private val scriptSrc: Seq[String] = {
-    val csp = ConfigFactory.parseFile(new File("conf/application.conf"))
-      .getString("play.filters.headers.contentSecurityPolicy")
-    csp.split(";").map(_.trim.split("\\s+").toSeq).find(_.headOption.contains("script-src"))
-      .map(_.tail).getOrElse(Nil)
-  }
+  private val scriptSrc: Seq[String] = security.ProductionFilters.cspDirectives.getOrElse("script-src", Nil)
 
   private val Script = """(?is)<script\b([^>]*)>(.*?)</script>""".r
   private val Src    = """(?i)(?<![\w-])src\s*=""".r

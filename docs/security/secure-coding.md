@@ -122,29 +122,44 @@ and `--password=` in `scripts/`.
 under `public/javascripts/` reading `data-*` attributes. The two inline scripts (the theme
 script, the large views' restore) are allowed by their hashes. The CSP never gets wider.
 
-**Example.** `play.filters.headers.contentSecurityPolicy` in `conf/application.conf`:
-`script-src 'self'` and two hashes, `object-src 'none'`, `base-uri 'self'`,
-`form-action 'self'`, `frame-ancestors 'none'`. `submit-once.js` is a served file, not inline.
+**Example.** `play.filters.csp.directives` in `conf/application.conf` (Play's `CSPFilter`; S7
+moved it from the deprecated `play.filters.headers.contentSecurityPolicy`, P11): every directive
+set there, none of Play's own, no nonce; `script-src 'self'` and two hashes, `object-src 'none'`,
+`base-uri 'self'`, `form-action 'self'`, `frame-ancestors 'none'`. `submit-once.js` is a served
+file, not inline. Swagger UI (`/api/docs`) runs under the same policy (no inline script; P17).
+No route has the `nocsp` modifier.
 
 **Guards.** `views.NoInlineScriptsSpec`, `views.InlineScriptHashesSpec`,
-`views.ContentSecurityPolicySpec`.
+`views.ContentSecurityPolicySpec` (exact directive set, no wider than before S7),
+`security.SecurityHeadersSpec` (the header on real responses, Swagger UI's included),
+`ProductionConfigSpec` (production.conf changes none of it).
 
 **Exceptions.** `style-src 'unsafe-inline'` and `img-src`/`media-src https://*` (P3: later,
-user decision); the deprecated config key (P11, S7).
+user decision).
 
 ## 6. Cookies and security headers
 
 **Rule.** In production the session, flash, language, theme and gallery-sort cookies are
 `Secure`; a new cookie follows `play.http.session.secure` and is `HttpOnly` unless script
-must read it. Every response carries the CSP, `X-Frame-Options`, `X-Content-Type-Options`
-and `Referrer-Policy`.
+must read it. Every response that passes the filters carries the CSP, `X-Frame-Options: DENY`,
+`X-Content-Type-Options: nosniff`, `Referrer-Policy: same-origin`, `X-XSS-Protection: 0`,
+`X-Permitted-Cross-Domain-Policies: master-only` and a `Permissions-Policy` that turns unused
+browser features off (camera, microphone, geolocation, payment, ...). The header filters run
+first (`play.filters.enabled`), so a CSRF refusal or a bad Host's 400 has them too; the allowed
+hosts come next, so a foreign Host gets its 400 before any session or database work. Play's
+server answers a server error, and a request it can't parse, outside the filters: `ErrorHandler`
+adds the same headers to those (`modules.ResponseSecurityHeaders`, from the same configuration
+and code). A page whose URL holds a secret (a mailed link's token) sends `no-referrer`; it is the
+only header an action may set in place of the filter's (`modules.AppSecurityHeadersFilter`).
 
 **Example.** `ThemeCookies` (`controllers/Theme.scala`) and `RoundList.remembered` take
 `secure` from the session's setting; `production.conf` sets `play.http.session.secure`,
 `play.http.flash.secure`, `play.i18n.langCookieSecure`.
 
-**Guards.** `ProductionConfigSpec` ("the cookies in production"), `GalleryOrderSpec`.
-Planned: G6 `SecurityHeadersSpec` on real responses, with a `Permissions-Policy` (S7, P4).
+**Guards.** `ProductionConfigSpec` ("the cookies in production", "the security headers and
+CSRF in production"), `GalleryOrderSpec`, G6 `security.SecurityHeadersSpec` (S7, P4: a page, a
+token page, a redirect, JSON errors, Swagger UI, a webjar, a CSRF refusal, a bad Host; through a
+running server, a server error and an unparsable request).
 
 **Exceptions.** None.
 
@@ -260,12 +275,16 @@ only redirects), the theme switch, votes, API token management.
 
 **Guards.** `SignOutAndSwitchSpec`, `ThemeSwitchSpec`, router tests under
 `controllers.CsrfTestApp.withCsrfApp` (tests otherwise run with the filter off). Planned: G3
-`CsrfCoverageSpec` (every POST route refused without a token) and G3b (no `nocsrf`; GET actions
-with mutating names allowlisted), with N6 (login CSRF, S3 or S7).
+`CsrfCoverageSpec` (every POST route refused without a token) and G3b (GET actions with
+mutating names allowlisted). `controllers.LoginCsrfSpec` (N6, S7): a cookieless `POST /auth`,
+`/setup`, `/invitation` or `/email/confirm` without the token is refused, the sign-in page sets
+the token; `SecurityHeadersSpec` checks that no route has `nocsrf`.
 
-**Exceptions.** A Bearer-token `/api/` request without a session needs no CSRF token. N6:
-Play checks CSRF only with a `Cookie` or `Authorization` header, so `POST /auth` from a
-cookieless browser is unchecked (open, register).
+**Exceptions.** A Bearer-token `/api/` request without a session needs no CSRF token. Every
+other POST needs it, cookies or not (`play.filters.csrf.header.protectHeaders = null`, S7, N6):
+a cookieless API POST with no credentials gets the JSON CSRF refusal (403, with a `hint` to send
+`Authorization: Bearer <token>`), not a 401. A sign-in form left open after its session cookie
+is gone gets the CSRF page asking to reload.
 
 ## 12. Errors shown to users
 

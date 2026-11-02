@@ -269,10 +269,12 @@ class SessionsSpec extends PlaySpecification with PlayTestDb with AccountTestSup
       withCsrfApp { implicit app =>
         createContests(10)
         val juror = contestMember("juror@example.com")
+        // the sign-in page's token: every POST needs it, cookies or not (S7, N6)
+        val csrf = token(app)
         def signIn(fields: (String, String)*) =
-          route(app, FakeRequest(POST, "/auth")
+          route(app, FakeRequest(POST, "/auth").withSession("csrfToken" -> csrf)
             .withFormUrlEncodedBody(Seq("login" -> juror.email, "password" -> "secret",
-              "returnTo" -> s"/users/edit/${juror.getId}") ++ fields: _*)).get
+              "returnTo" -> s"/users/edit/${juror.getId}", "csrfToken" -> csrf) ++ fields: _*)).get
 
         val kept = signIn("remember" -> "true")
         status(kept) === SEE_OTHER
