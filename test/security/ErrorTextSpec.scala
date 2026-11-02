@@ -13,7 +13,8 @@ class ErrorTextSpec extends Specification {
     "app/controllers/RoundController.scala" ->
       (1 -> "refusal: the text of our own `require` on the round's settings (no driver text), shown on the form"),
     "app/services/jobs/Job.scala" -> (1 -> "isDuplicateActive: tests for the dedupe index's name"),
-    "app/services/jobs/JobScheduler.scala" -> (1 -> "isTransient: tests for a deadlock or lock wait timeout"),
+    "app/db/scalikejdbc/DbErrors.scala" ->
+      (1 -> "isDeadlock / lock wait timeout: tests the driver's text, for JobScheduler.isTransient and CriteriaRate"),
     "app/services/RoundService.scala" -> (1 -> "submit: tests for the submit token's unique index")
   )
 

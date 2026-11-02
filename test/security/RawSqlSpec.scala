@@ -20,7 +20,9 @@ class RawSqlSpec extends Specification {
 
   private val Digests: Map[String, String] = Map(
     "app/services/PasswordHasher.scala" -> "bcrypt, and checking a legacy SHA-1 hash",
-    "app/services/ApiTokenService.scala" -> "SHA-256 of a random 256-bit token (stored hash only)"
+    "app/services/ApiTokenService.scala" -> "SHA-256 of a random 256-bit token (stored hash only)",
+    "app/controllers/LoginController.scala" ->
+      "the setup token (P20): SHA-256 of both sides, compared in constant time; nothing stored"
   )
 
   "unbound SQL text" should {
