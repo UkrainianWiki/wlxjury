@@ -268,6 +268,27 @@ SELECT s.round_id, COUNT(*) FROM selection s JOIN (SELECT selection, SUM(IF(rate
 
 ### Decisions for the user
 
+**Decided by the user (2026-11-02):**
+- **U1:** criteria rounds stay and become creatable.
+- **U2:** the overall rate is the sum of the criteria, stored in `vote.rate`; no weights. (How it is
+  shown, sum or per-criterion average, follows from U2 in C3 and is still a design choice.)
+- **U3:** global criteria templates: admins can add criteria and choose them for a round; a
+  round's criteria are copied to the next round. Table name `criterion` (singular). C2 changes
+  from "criteria per round" to a global `criterion` catalogue plus a per-round link
+  (`round_criterion`, with its position), copied on round creation from the previous round.
+- **U7:** the "min average rate" threshold from a criteria previous round is read in sums, not in
+  per-criterion stars. C3's "read in per-criterion stars" item is dropped; the form must say the
+  value is a sum.
+- **Names:** message keys, not free text. Later, translatewiki integration will let translations
+  be edited. Implication for C2: an admin-added criterion needs a key that exists in
+  `conf/messages.*`; until translatewiki, either adding a criterion needs a messages change and a
+  deploy, or the `criterion` row keeps a fallback text shown when the key has no translation
+  (`MessagesCompletenessSpec` must cover the shipped keys). Choose in C2's design.
+
+Still open: U4, U5, U6, U8, U9, U10, U11, U12.
+
+The options as first written:
+
 - **U1** Keep criteria rounds and make them creatable (this plan assumes yes), or freeze them as
   legacy read-only.
 - **U2** Overall rate: sum of criteria stored in `vote.rate` and shown as the per-criterion
