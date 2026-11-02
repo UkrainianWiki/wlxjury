@@ -238,6 +238,13 @@ Every new feature or refactor should satisfy these rules:
 - Use CSRF protection on all browser mutations.
 - Use POST for state change.
 - Keep Twirl escaping as the default.
+- Vendored scripts, kept as copied and unmaintained upstream: `public/javascripts/unitegallery.js`
+  (Unite Gallery 1.7.28) and `jquery.raty.js` (jQuery Raty 2.7.1). Both insert what they are
+  given with jQuery's `.html()`, so text passed to them is escaped for that sink: a tile's
+  `alt` caption and `data-description` are escaped once more inside the attribute
+  (`gallery.scala.html`, `GalleryDescriptionViewSpec`); raty gets numbers and empty hints only
+  (`large-stars.js`). Replace them rather than patch them; `security.RawHtmlSinksSpec` lists
+  the app's own raw HTML sinks.
 
 5. Secrets and credentials
 - Keep secrets out of committed config.
@@ -247,6 +254,12 @@ Every new feature or refactor should satisfy these rules:
 6. Error handling and logging
 - Show generic error pages to users.
 - Log structured details server-side.
+- Show message keys and a logged reference, never an exception's text (job status included:
+  `services.jobs.JobError`); `security.ErrorTextSpec`.
+- Log accounts by id; no bound SQL values in production logs (`db.scalikejdbc.SqlLogging`);
+  `security.LogHygieneSpec`.
+- Exports write user text through `controllers.Csv.text` (spreadsheet formulas neutralised);
+  `security.ExportsSpec`.
 
 7. External I/O
 - Restrict outbound fetches to explicit allowlists.

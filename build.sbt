@@ -141,9 +141,9 @@ val ScalikejdbcPlayVersion = "3.0.1-scalikejdbc-4.3"
 val ScalawikiVersion = "0.7.0-SNAPSHOT"
 val PlayMailerVersion = "9.0.0"
 val MockServerVersion = "5.7.0"
-val PlayPac4jVersion = "12.0.0-PLAY3.0"
-val pac4jVersion = "6.0.4.1"
 val playVersion = "3.0.7"
+// Pekko and Pekko HTTP must match scalawiki's (project/Dependencies.scala, Library.Pekko: PekkoV,
+// PekkoHttpV), which brings them too: update them there first, then here.
 val PekkoVersion = "1.0.3"
 val PekkoHttpVersion = "1.0.1"
 val ScalaTestVersion = "3.2.9"
@@ -184,7 +184,6 @@ libraryDependencies ++= Seq(
   "org.scalawiki" %% "scalawiki-wlx" % ScalawikiVersion,
   "org.apache.pekko" %% "pekko-stream" % PekkoVersion,
   "org.apache.pekko" %% "pekko-http" % PekkoHttpVersion,
-  "org.pac4j" %% "play-pac4j" % PlayPac4jVersion,
   "com.typesafe.play" %% "play-mailer" % PlayMailerVersion,
   "com.typesafe.play" %% "play-mailer-guice" % PlayMailerVersion,
   "com.github.tototoshi" %% "scala-csv" % "1.4.1",

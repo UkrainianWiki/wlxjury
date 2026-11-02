@@ -470,6 +470,56 @@ traceable).
 parity plan's first gap (audit log, `docs/plans/2026-11-02-montage-rounds-parity.md`), one table
 for role, account, contest and round events.
 
+### S10 results (2026-11-02)
+
+- **N10:** `play-pac4j` (and the unused `pac4jVersion`) removed from `build.sbt`; nothing in
+  `app/`, `test/` or `conf/` referred to it, and the app and tests compile without it. CLAUDE.md's
+  "pac4j via play-pac4j" line now says authentication is the app's own. **`pekko-http` is not
+  updated (user, 2026-11-02):** Pekko and Pekko HTTP must stay in step with scalawiki
+  (`project/Dependencies.scala`, `Library.Pekko`: `PekkoV = 1.0.3`, `PekkoHttpV = 1.0.1` on
+  `origin/page-categories`, the same as here); a comment next to `PekkoVersion`/`PekkoHttpVersion`
+  says so. The update is deferred to a coordinated bump, scalawiki first, then wlxjury (then rerun
+  the image cache specs). unitegallery 1.7.28 and jQuery Raty 2.7.1 are listed as vendored, with
+  the escaping rule, in `incident-prevention-guidelines.md` ("Browser safety"); raty gets numbers
+  and empty hints only.
+- **P13 (root revocation, double click):** `ApiTokenService.createOnce` runs a create in one
+  transaction with the user's row locked (`ApiTokenJdbc.lockOwner`): a token named as one the
+  user created less than `DedupeSeconds` (30) ago is the same submit (`Duplicate`, the "already
+  submitted" notice, 409), and the 20-token cap is checked in the same transaction. Root has
+  `GET /admin/users/:userId/tokens` (the list, linked from another account's edit page), `POST
+  .../tokens/:id/revoke` and `POST .../tokens/revoke` (all), root only, CSRF by the global filter;
+  `ApiTokenService.revokeByRoot` logs `api_token_revoked by=root rootId userId tokenIds` at INFO
+  (ids only). New controller `ApiTokenAdminController` and view `userApiTokens` (kept out of
+  `UserController`, which S2 changes; S2's `ApiTokenJdbc.revokeAll` is not duplicated). Keys in
+  all four languages. `ApiTokenPageSpec`: a double click (sequential, and five at once) makes one
+  token; root lists, revokes one (log line with ids, no email, name or prefix) and all; a contest
+  admin, a juror and the owner get 403, signed out a redirect, root without the CSRF token 403, a
+  token under another user's id or an unknown one 404, nothing revoked. The failed-token limit
+  stays with S4.
+- **P16:** checked against the code and fixed: the api-auth plan's denial line (it logs
+  `accountId` only, `Secured.denialLogLine`); `application.conf`'s host comment (production has no
+  loopback names; `/health/ready` is `+ anyhost`); `production.conf`'s `request.secure` comment
+  (read only by `thumbnailUrls`' fallback, which production never takes: `wlxjury.host` is set);
+  `local-images-review-followups.md`'s table (#3, #7, #8 fixed; #9, P2 deleted; #4 partial, P3
+  documented) with a dated status note. The secret-rotation procedure stays with S3/S9.
+- **Not done:** P19 (audit log; scheduled with the rounds-parity plan). G11 (dependency report)
+  and G12 (secret scan) are not added: G11 is a release-gate task, not a spec, and G12 waits for
+  the infra plan's `check-no-secrets.sh`.
+- The consolidated report's status column is updated for N3, N8, N9, N10, N11/P12, P13, P16.
+
+**Checks (S5 and S10, one run each; from Git Bash through `scripts/agent-check.py`, under the
+shared sbt lock):** `Test/compile`, `Gatling/compile` and `testOnly controllers.CsvSpec
+controllers.JobControllerSpec db.scalikejdbc.SqlLoggingSpec security.* services.jobs.JobSchedulerSpec
+services.distribution.RoundDistributionJobSpec controllers.AppendImagesSpec
+services.imports.MonumentListImportSpec controllers.ApiTokenPageSpec api.ApiSpec
+controllers.MutationAuthorizationSpec views.*`: 343 tests, 342 passed, 1 failed
+(`target/checks/20261102-145020-28696.log`): `SqlLoggingSpec` expected the class name to contain
+`SQLException` (it is `SQLSyntaxErrorException`), and left the slow threshold at 0 for later specs;
+both fixed. Rerun of `SqlLoggingSpec deployment.ProductionConfigSpec security.*
+controllers.JobControllerSpec`: 31 passed (`target/checks/20261102-145709-28552.log`). No
+JavaScript changed, so no Jest run. No full suite. The image cache specs were not rerun: no
+dependency they use changed (`pekko-http` deferred).
+
 ## Running the batches
 
 As in the follow-ups plan ("Setup", "Roles", "The cycle for each batch"), with these differences:

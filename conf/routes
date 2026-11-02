@@ -89,6 +89,10 @@ GET         /admin/rounds/newfiles                                              
 GET         /admin/jobs/:id                                                         @controllers.JobController.status(id: Long)
 POST        /admin/jobs/:id/cancel                                                  @controllers.JobController.cancel(id: Long)
 POST        /admin/jobs/:id/retry                                                   @controllers.JobController.retry(id: Long)
+# root: another user's API tokens, and revoking them
+GET         /admin/users/:userId/tokens                                             @controllers.ApiTokenAdminController.tokens(userId: Long)
+POST        /admin/users/:userId/tokens/revoke                                      @controllers.ApiTokenAdminController.revokeAll(userId: Long)
+POST        /admin/users/:userId/tokens/:id/revoke                                  @controllers.ApiTokenAdminController.revoke(userId: Long, id: Long)
 POST        /admin/setimages                                                        @controllers.RoundController.setImages(contestId: Option[Long] ?= None)
 POST        /admin/setround                                                         @controllers.RoundController.setRound()
 POST        /round/setrounduser                                                     @controllers.RoundController.setRoundUser()

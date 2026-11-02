@@ -121,5 +121,11 @@
                 @apiTokens(card)
             </div>
         }
+        @* root, on another account: a link to its API tokens, to revoke them (ApiTokenAdminController) *@
+        @if(tokensCard.isEmpty && user.hasRole(User.ROOT_ROLE)) {
+            @for(id <- editUserForm("id").value.flatMap(_.toLongOption).filter(id => id != 0 && !user.id.contains(id))) {
+                <p class="col-12 mt-3"><a href="@routes.ApiTokenAdminController.tokens(id)">@Messages("api.tokens")</a></p>
+            }
+        }
     </div>
 }
