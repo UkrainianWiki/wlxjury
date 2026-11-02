@@ -1997,3 +1997,18 @@ Checks: `Test/compile`, `Gatling/compile`, `testOnly controllers.{GroupedListPar
 RoundListDbSpec, CsvSpec, AllJurorsListSpec, LargeImageSpec, ListPositionSpec}
 db.scalikejdbc.ImageDbNewDbSpec`: 128 passed, 0 failed (`target/checks/20261102-142314-7560.log`). No benchmark rerun: the added condition is on
 `page_id`, which the indexes these queries read include; not measured.
+
+### B12 follow-up review
+
+Clean (static). Docs checked against the raw ANALYZE and pilot files; `s.page_id is not null` is
+always in WHERE (inner queries), and the juror paths keep their index-only plans (V48's
+`idx_selection_jury_round_rate_mon_page` ends in `page_id`). Left for later:
+- **Watch:** on the round index (round_id, page_id, rate) the optimizer may turn the `round_id`
+  lookup into a two-part range; rows still come in page_id order, so no new temporary table is
+  expected. Confirm with one `ANALYZE` of the rated page and `keyCounts` at the next benchmark run
+  that touches these queries.
+- **Nit:** `byRegionStat` and the juror branch of `regionCounts` read `selection` without the
+  filter; a NULL-page vote could add an empty region link. Moot once `selection.page_id` is
+  NOT NULL (the planned migration), or add `AND s.page_id IS NOT NULL` to both.
+
+Merged into `ukwikidev/followups` as `ef78bbaf`.
