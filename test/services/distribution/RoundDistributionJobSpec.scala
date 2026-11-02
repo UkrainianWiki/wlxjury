@@ -557,7 +557,9 @@ class RoundDistributionJobSpec extends Specification with TestDb with BeforeAll 
         */
       def reference(prev: Round, template: Round, n: Int): Set[Long] = {
         val probe = roundDao.create(template.copy(number = 99))
-        val candidates = ImageJdbc.byRoundMerged(prev.getId, rated = Option.when(template.selectedByFilter.isDefined)(true))
+        // a yes/no round's top-N reads the approvals and rejections, as DistributeImages asks for them
+        val candidates = ImageJdbc.byRoundMerged(prev.getId, rated = Option.when(template.selectedByFilter.isDefined)(true),
+            tally = prev.isBinary)
           .sortBy(i => (-i.selection.head.rate, i.pageId))
         val filtered = di.perImageFilters(probe, Seq(prev), Nil, Nil)(candidates)
         SelectTopByRating(n, prev)().apply(filtered).map(_.pageId).toSet

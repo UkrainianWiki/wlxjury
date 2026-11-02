@@ -150,6 +150,18 @@ class GalleryByRateViewSpec extends PlaySpecification {
       checkTiles(doc.outerHtml, files.size)
     }
 
+    "show a rated round's result to an organiser as stars and the rate, without a tally" in {
+      // all the jurors' grouped rows of a rated round: their rates' sum, no approvals counted
+      val grouped = files.map(f => f.copy(selection = Seq(Selection(f.pageId, 0, 0, f.rate * 3)), countFromDb = 3))
+      val doc = Jsoup.parse(contentAsString(views.html.galleryByRate(
+        juror, RoundList(round, 0, view = GalleryView.ByRate), grouped, Pager(1, grouped.size), Nil, None,
+        new RateDistribution(Map.empty), ranks)))
+      (doc.select(".wlx-approvals").size === 0) and
+        (doc.select("[data-tally]").size === 0) and
+        (doc.select(".rate-stars i.bi-check-lg, .rate-stars i.bi-x-lg").size === 0) and
+        (doc.select(".rate-stars").asScala.map(_.text) === Seq("1.00 (3 / 3)", "2.00 (6 / 3)", "3.00 (9 / 3)", "4.00 (12 / 3)"))
+    }
+
     "be in half stars in a half-star round" in {
       val list = page(LargeViewRenders.halfStarRound).selectFirst("[data-stars-number]")
       (list.attr("data-stars-number"), list.attr("data-stars-half")) === (("5", "true"))

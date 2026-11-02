@@ -11,6 +11,7 @@ trait ImageRepo {
       roundId: Long,
       pageSize: Int = Int.MaxValue,
       offset: Int = 0,
-      rated: Option[Boolean] = None
+      rated: Option[Boolean] = None,
+      tally: Boolean = false
   ): Seq[ImageWithRating]
 }

@@ -215,6 +215,16 @@ class RoundListSpec extends Specification {
       of(binary, "/?sort=file", Some("difference")).order === ListOrder.FileOrder
     }
 
+    "be the only list whose query counts the approvals and rejections apart (tally)" in {
+      (of(binary, "/").query.tally must beTrue) and
+        (of(binary, "/", view = GalleryView.Gallery).query.tally must beTrue) and
+        (of(binary, "/", asUserId = 3).query.tally must beFalse) and
+        // a file list's and CSV's tallies count their vote rows
+        (of(binary, "/", view = GalleryView.FileList).query.tally must beFalse) and
+        (of(round, "/").query.tally must beFalse) and
+        (of(round, "/", view = GalleryView.Gallery).query.tally must beFalse)
+    }
+
     "be by rate in a juror's list and in a rated round" in {
       of(binary, "/?sort=difference", asUserId = 3).order === ListOrder.ByRate
       of(round, "/?sort=difference").order === ListOrder.ByRate
