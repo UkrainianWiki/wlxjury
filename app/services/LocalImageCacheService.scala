@@ -460,12 +460,10 @@ class LocalImageCacheService(
       case _                                   => Future.successful(FileCheck.Unknown)
     }
 
-  /** The widths cached: those the views show the image at ([[Global.thumbnailWidths]]), if
-    * narrower than the file, narrowest first. The large view's sizes are not cached: they
-    * would take most of the disk.
+  /** The widths cached ([[LocalImageCacheService.cachedWidths]]). The large view's sizes are
+    * not cached: they would take most of the disk.
     */
-  private def targetWidths(image: Image): Seq[Int] =
-    Global.thumbnailWidths(image.width, image.height).filter(px => px > 0 && px < image.width)
+  private def targetWidths(image: Image): Seq[Int] = cachedWidths(image)
 
   /** The Wikimedia image to scale down to `px`: the thumbnail of the nearest of its sizes
     * no narrower ([[Global.wikimediaSteps]]), or the file itself if that is no wider, unless
@@ -474,7 +472,9 @@ class LocalImageCacheService(
   private def source(image: Image, px: Int): WikimediaSource = {
     val step = Global.wikimediaSteps.find(_ >= px)
     if (!image.thumbnailOnly && step.forall(_ >= image.width))
-      WikimediaSource(image.width, image.url.map(_.replaceFirst("https?://upload\\.wikimedia\\.org", wikiBaseUrl)), original = true)
+      // only a Commons file's url, on Wikimedia's upload host (P9: not one stored from elsewhere)
+      WikimediaSource(image.width, image.url.map(CommonsFileCheck.withScheme).filter(CommonsFileCheck.isCommonsUrl)
+        .map(_.replaceFirst("^https?://upload\\.wikimedia\\.org", wikiBaseUrl)), original = true)
     else {
       val sourcePx = step.getOrElse(Global.wikimediaSteps.last)
       WikimediaSource(sourcePx, wikiThumbUrl(image, sourcePx), original = false)
@@ -496,7 +496,7 @@ class LocalImageCacheService(
   // Mirrors the URL construction in Global.legacyThumbUlr, using wikiBaseUrl as host
   private[services] def wikiThumbUrl(image: Image, px: Int): Option[String] =
     image.url.filter(CommonsFileCheck.isCommonsUrl).map { rawUrl =>
-      val url    = CommonsFileCheck.withoutQuery(rawUrl)
+      val url    = CommonsFileCheck.withoutQuery(CommonsFileCheck.withScheme(rawUrl))
       val scheme = wikiBaseUrl.takeWhile(_ != ':')
       val host   = wikiBaseUrl.replaceFirst("https?://", "")
       url.replaceFirst("https?://upload\\.wikimedia\\.org/wikipedia/commons/",
@@ -559,7 +559,13 @@ class LocalImageCacheService(
     * None on another failed status, but a 404: [[ThumbnailNotFound]].
     */
   private[services] def downloadWithRetry(url: String, attempt: Int): Future[Option[Array[Byte]]] =
+    if (!fetchable(url)) {
+      // P9: only from Wikimedia's upload host (wikiBaseUrl); the url is not logged, only its host
+      logger.warn(s"image_fetch_refused host=${Try(Uri(url).authority.host.address()).getOrElse("?")}")
+      Future.failed(new IllegalArgumentException("Not a Wikimedia upload url"))
+    } else
     Http()
+      // a redirect is not followed (singleRequest never does): another host's answer is a failure
       .singleRequest(HttpRequest(uri = url, headers = List(userAgent)))
       .flatMap {
         case HttpResponse(StatusCodes.OK, _, entity, _) =>
@@ -588,6 +594,17 @@ class LocalImageCacheService(
           logger.warn(s"HTTP ${resp.status} for $url")
           Future.successful(None)
       }
+
+  /** Whether `url` is on [[wikiBaseUrl]]'s host (scheme, host and port the same), where every
+    * thumbnail and original is fetched from: `https://upload.wikimedia.org` (P9). A url stored
+    * from elsewhere is never fetched.
+    */
+  private[services] def fetchable(url: String): Boolean =
+    Try {
+      val (base, uri) = (Uri(wikiBaseUrl), Uri(url))
+      uri.isAbsolute && uri.scheme == base.scheme && uri.authority.host == base.authority.host &&
+        uri.effectivePort == base.effectivePort && uri.authority.userinfo.isEmpty
+    }.getOrElse(false)
 
   /** Delay before next retry: Retry-After header value if present, otherwise
     * exponential backoff (2^attempt seconds) capped at 5 minutes, with jitter.
@@ -722,6 +739,39 @@ object LocalImageCacheService {
       case pxPattern(n) => n.toIntOption.filter(_ > 0)
       case _            => None
     }
+
+  private val pxInName = """^((?:lossy-)?page\d+-)?\d+(px-.*)$""".r
+
+  /** The thumbnail's file name `fileName` (as [[thumbnailPx]] reads it) at the width `px`. */
+  def withThumbnailPx(fileName: String, px: Int): Option[String] =
+    fileName match {
+      case pxInName(page, rest) => Some(Option(page).getOrElse("") + px + rest)
+      case _                    => None
+    }
+
+  /** The widths cached: those the views show the image at ([[Global.thumbnailWidths]]), if
+    * narrower than the file, narrowest first.
+    */
+  def cachedWidths(image: Image): Seq[Int] =
+    Global.thumbnailWidths(image.width, image.height).filter(px => px > 0 && px < image.width)
+
+  /** The widths the image proxy serves the image at ([[controllers.ImageProxyController]]), the
+    * widths the pages ask for, narrowest first: the thumbnails' ([[Global.thumbnailWidths]],
+    * [[cachedWidths]] those narrower than the file) and the large view's fallback
+    * ([[Global.largeFallbackPx]]). None for a file of unknown width: the pages ask the proxy for
+    * none of its widths (they show the file itself); one of unknown height gets those the pages
+    * compute from its width, as they do. Any other width would be scaled again, or
+    * fetched from Wikimedia, on every request (P5): the proxy redirects it to the nearest of
+    * these ([[nearestWidth]]).
+    */
+  def servedWidths(image: Image): Seq[Int] =
+    if (image.width <= 0) Nil
+    else
+      (Global.thumbnailWidths(image.width, image.height).filter(_ > 0) :+ Global.largeFallbackPx(image)).distinct.sorted
+
+  /** Of `widths`, the nearest to `px`; of two as near, the wider. None if there are none. */
+  def nearestWidth(widths: Seq[Int], px: Int): Option[Int] =
+    widths.sortBy(w => (math.abs(w - px), -w)).headOption
 
   /** The type of image `bytes` are, by their first bytes: Wikimedia sends a PNG, GIF or
     * WebP file's thumbnails as PNG, GIF or WebP, a JPEG otherwise.

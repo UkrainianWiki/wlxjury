@@ -137,7 +137,7 @@ object Global {
       LargeImage(resizeTo(image, largeSizeX, largeSizeY), srcSet(image, largeSizeX, largeSizeY), None, None)
     else {
       val px = image.resizeTo(largeSizeX, largeSizeY)
-      val (from, to) = (wikimediaStep(px), wikimediaStep(2 * px))
+      val (from, to) = (largeFallbackPx(image), wikimediaStep(2 * px))
       val candidates = wikimediaSteps
         .filter(step => step >= from && step <= to)
         .map { step =>
@@ -152,6 +152,11 @@ object Global {
         fallback = Some(legacyThumbUrl(image, from))
       )
     }
+
+  /** The width of the large view's [[LargeImage.fallback]], on this server: the narrowest of
+    * Wikimedia's sizes the large box needs.
+    */
+  def largeFallbackPx(image: Image): Int = wikimediaStep(image.resizeTo(largeSizeX, largeSizeY))
 
   def thumbPhpUrl(info: Image, px: Int, resizeToHeight: Int): String = {
     val file = URLEncoder.encode(

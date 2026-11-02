@@ -21,6 +21,8 @@ import scala.concurrent.duration._
   *  - A legacy hash (40 lowercase hex characters: the unsalted SHA-1 of the password, which
   *    the app stored before) is checked once, and rehashed with bcrypt after a successful
   *    check ([[PasswordHasher.Accepted.rehash]]); it is never written for a new password.
+  *    After the grace period (P8, V81) a legacy hash no longer signs in and is replaced by
+  *    [[PasswordHasher.RetiredLegacy]] ([[db.scalikejdbc.LegacyPasswordRetirementJdbc]]).
   *  - Anything else never matches.
   *  - A new password is at most 72 UTF-8 bytes, bcrypt's limit ([[PasswordHasher.newPassword]]).
   *    A longer one (a legacy password only) is pre-hashed with SHA-512 before bcrypt, the
@@ -148,6 +150,14 @@ object PasswordHasher {
 
   private val BcryptHash = """\$2[ab]\$(\d\d)\$[./A-Za-z0-9]{53}""".r
   private val LegacyHash = "[0-9a-f]{40}".r
+
+  /** Whether `stored` is a legacy hash (the unsalted SHA-1 of the password, as hex). */
+  def isLegacy(stored: String): Boolean = LegacyHash.matches(stored)
+
+  /** What replaces a legacy hash after its grace period (P8, V81): neither bcrypt nor SHA-1, so
+    * it never matches ([[PasswordHasher.check]]); the owner sets a new password through a link.
+    */
+  val RetiredLegacy = "!retired-legacy-sha1"
 
   /** How a password is compared and stored: without surrounding spaces. */
   def normalize(password: String): String = password.trim
