@@ -34,7 +34,17 @@ case class User(
     /** users.theme (V71): light, dark or auto as chosen, None if never; read through
       * [[controllers.Theme.find]], which takes nothing else.
       */
-    theme: Option[String] = None
+    theme: Option[String] = None,
+    /** users.email_verified_at (V77): when the email was proven (an accepted invitation or
+      * password link, a confirmed email change); None: unverified.
+      */
+    emailVerifiedAt: Option[ZonedDateTime] = None,
+    /** users.wiki_account_verified_at (V77): None, unverified, for every account until the
+      * Commons OAuth login verifies one.
+      */
+    wikiAccountVerifiedAt: Option[ZonedDateTime] = None,
+    /** users.auth_version (V77): a session signed in with another version is refused. */
+    authVersion: Int = 0
 ) extends HasId
     with Ordered[User] {
 
@@ -43,6 +53,19 @@ case class User(
     scala.runtime.ScalaRunTime._toString(copy(password = password.map(_ => "***")))
 
   def emailLo: String = email.trim.toLowerCase
+
+  def emailVerified: Boolean = emailVerifiedAt.isDefined
+
+  def wikiAccountVerified: Boolean = wikiAccountVerifiedAt.isDefined
+
+  /** Whether an access role ([[User.ACCESS_ROLES]]) may be given to this account directly:
+    * only if nobody but its email's owner can sign in to it. Root; a proven email; or no
+    * password at all (an invitee who hasn't accepted yet, a wiki-only placeholder), which only
+    * an accepted link sets. Otherwise whoever registered the email, or set the wiki account,
+    * without owning it would get the role: the role goes through an invitation instead
+    * ([[services.UserService.addToContest]]).
+    */
+  def mayTakeAccessRole: Boolean = isRoot || hasRole(User.ROOT_ROLE) || emailVerified || password.isEmpty
 
   def currentContest: Option[Long] = contestId
 
@@ -162,6 +185,11 @@ object User extends CRUDMapper[User] {
     */
   def mayAssignRoles(editor: User, roles: Set[String]): Boolean =
     roles.forall(r => isContestRole(r) || r == ROOT_ROLE && editor.hasRole(ROOT_ROLE))
+
+  /** The contest roles that let a member in: an account gets one only if
+    * [[User.mayTakeAccessRole]], else through an invitation.
+    */
+  val ACCESS_ROLES: Set[String] = ContestRoles -- INACTIVE_ROLES
 
   /** The roles "Import users" adds people with: all of [[FORM_ROLES]] but "no". */
   val IMPORT_ROLES: Seq[String] = FORM_ROLES.filterNot(_ == NO_ROLE)
@@ -328,13 +356,21 @@ object User extends CRUDMapper[User] {
         user
     }
 
+  /** The account a login (a session's, or the sign-in form's) names: by email, trimmed and
+    * lowercased (P18), else by wiki account, which must name exactly one account (N4: the
+    * name is not unique; an ambiguous one names no one, rather than the oldest account with
+    * it). Deleted accounts are never found (P14).
+    */
   def byUserName(username: String): Option[User] = {
     val unameTrimmed = username.trim.toLowerCase
     val users = Constraints.emailAddress()(unameTrimmed) match {
-      case Valid           => findByEmail(username)
-      case Invalid(errors) => findByAccount(unameTrimmed)
+      case Valid      => findByEmail(unameTrimmed)
+      case Invalid(_) => findByAccount(unameTrimmed)
     }
-    users.headOption
+    users.filter(_.deletedAt.isEmpty) match {
+      case Seq(one) => Some(one)
+      case _        => None
+    }
   }
 
   override lazy val defaultAlias = createAlias("u")
@@ -357,7 +393,10 @@ object User extends CRUDMapper[User] {
       wikiAccount = rs.stringOpt(c.wikiAccount),
       sort        = rs.intOpt(c.sort),
       createdAt   = rs.timestampOpt(c.createdAt).map(_.toZonedDateTime),
-      deletedAt   = rs.timestampOpt(c.deletedAt).map(_.toZonedDateTime)
+      deletedAt   = rs.timestampOpt(c.deletedAt).map(_.toZonedDateTime),
+      emailVerifiedAt       = rs.timestampOpt(c.emailVerifiedAt).map(_.toZonedDateTime),
+      wikiAccountVerifiedAt = rs.timestampOpt(c.wikiAccountVerifiedAt).map(_.toZonedDateTime),
+      authVersion = rs.int(c.authVersion)
     )
   }
 
@@ -554,7 +593,8 @@ object User extends CRUDMapper[User] {
           column.lang        -> user.lang,
           column.theme       -> user.theme.flatMap(controllers.Theme.find).map(_.value),
           column.sort        -> user.sort,
-          column.createdAt   -> user.createdAt
+          column.createdAt   -> user.createdAt,
+          column.emailVerifiedAt -> user.emailVerifiedAt
         )
     }.updateAndReturnGeneratedKey
     // it binds the hash: never logged, unless a caller's own session (a test's) runs it
@@ -573,23 +613,72 @@ object User extends CRUDMapper[User] {
     )
   }
 
-  /** Updates the account; roles are per contest, set with [[UserContestJdbc.updateRole]]. */
+  /** Updates the account's name, language and order; roles are per contest, set with
+    * [[UserContestJdbc.updateRole]], the email with [[setEmail]], the wiki account with
+    * [[setWikiAccount]].
+    */
   def updateUser(
       id: Long,
       fullname: String,
-      wikiAccount: Option[String],
-      email: String,
       lang: Option[String],
       sort: Option[Int]
   ): Unit =
     updateById(id)
       .withAttributes(
-        "fullname"    -> fullname,
-        "email"       -> storedEmail(email),
-        "wikiAccount" -> wikiAccount,
-        "lang"        -> lang,
-        "sort"        -> sort
+        "fullname" -> fullname,
+        "lang"     -> lang,
+        "sort"     -> sort
       )
+
+  /** Sets the wiki account (None: none); a changed one is unverified. */
+  def setWikiAccount(id: Long, wikiAccount: Option[String])(implicit session: DBSession = autoSession): Unit =
+    sql"""UPDATE users SET
+            wiki_account_verified_at = IF(wiki_account <=> $wikiAccount, wiki_account_verified_at, NULL),
+            wiki_account = $wikiAccount
+          WHERE id = $id""".update.apply()
+
+  /** Sets the email (blank: none), verified now if `verified`, else unverified. Only an
+    * accepted link proves an address ([[services.AccountTokenService]]); an admin's fix of an
+    * invitee's address leaves it unverified.
+    */
+  def setEmail(id: Long, email: String, verified: Boolean)(implicit session: DBSession = autoSession): Unit = {
+    val stored = storedEmail(email)
+    sql"""UPDATE users SET email = $stored, email_verified_at = IF($verified, NOW(3), NULL)
+          WHERE id = $id""".update.apply()
+  }
+
+  /** The other non-deleted accounts with the wiki account (compared as the column's
+    * collation does: case-insensitively).
+    */
+  def otherAccountsWithWikiAccount(id: Long, wikiAccount: String): Seq[User] =
+    findByAccount(wikiAccount).filter(u => u.deletedAt.isEmpty && !u.id.contains(id))
+
+  /** The longest user name MediaWiki takes. */
+  val WikiAccountMaxLength = 85
+
+  /** Characters MediaWiki refuses in a user name: those no title may hold, its
+    * `$wgInvalidUsernameCharacters` (`@`, `:`, `=`), and `/` (a subpage).
+    */
+  private val InvalidWikiAccountChars: Set[Char] = "#<>[]|{}/@:=".toSet
+
+  /** A wiki account name as MediaWiki stores it (N4): without a `User:` prefix, underscores as
+    * spaces, runs of spaces as one, trimmed, the first letter upper case. Left: a message key
+    * (an invalid character, a control character, too long). Right(None): blank.
+    */
+  def normalizeWikiAccount(input: String): Either[String, Option[String]] = {
+    val withoutPrefix = input.trim.replaceFirst("(?i)^user:", "")
+    val spaced = withoutPrefix.replace('_', ' ').replaceAll("\\s+", " ").trim
+    if (spaced.isEmpty) Right(None)
+    else if (spaced.exists(c => InvalidWikiAccountChars.contains(c) || Character.isISOControl(c)))
+      Left("wiki.account.invalid")
+    else if (spaced.codePointCount(0, spaced.length) > WikiAccountMaxLength) Left("wiki.account.invalid")
+    else {
+      val first = spaced.codePointAt(0)
+      val capitalized = new String(Character.toChars(Character.toUpperCase(first))) +
+        spaced.substring(Character.charCount(first))
+      Right(Some(capitalized))
+    }
+  }
 
   /** The user's colour mode ([[controllers.Theme]]): one of its three values only. */
   def updateTheme(id: Long, theme: controllers.Theme)(implicit session: DBSession = autoSession): Unit =
@@ -614,6 +703,31 @@ object User extends CRUDMapper[User] {
     loggingSQLAndTime = _.copy(enabled = false, warningEnabled = false),
     loggingSQLErrors = _ => false
   )
+
+  /** The first account of an empty installation (P20, [[controllers.LoginController.setup]]): root,
+    * its email taken as verified (the operator's). None, creating nothing, if any account exists.
+    * Under a named lock, in auto-commit (the insert is committed before the lock is released):
+    * of two concurrent setups, the second sees the first's account.
+    */
+  def createFirstRoot(email: String, passwordHash: String): Option[User] =
+    quietly { s =>
+      // named as the object's implicit autoSession, which it shadows here
+      implicit val session: DBSession = s
+      val locked = sql"SELECT GET_LOCK('wlxjury.setup', 10)".map(_.intOpt(1)).single.apply().flatten.contains(1)
+      try {
+        val empty = locked && sql"SELECT COUNT(*) FROM users".map(_.long(1)).single.apply().contains(0L)
+        if (!empty) None
+        else
+          Some(create(User(fullname = "", email = email, password = Some(passwordHash), isRoot = true,
+            createdAt = Some(ZonedDateTime.now), emailVerifiedAt = Some(ZonedDateTime.now)))(s))
+      } finally if (locked) sql"SELECT RELEASE_LOCK('wlxjury.setup')".map(_.intOpt(1)).single.apply()
+    }
+
+  /** `f` in a transaction with [[quietSettings]]: for statements that bind a password hash. */
+  def quietTx[A](f: DBSession => A): A = {
+    implicit val settings: SettingsProvider = quietSettings
+    DB.localTx(f)
+  }
 
   /** `f` in its own auto-commit session with [[quietSettings]]. */
   private[db] def quietly[A](f: DBSession => A): A =

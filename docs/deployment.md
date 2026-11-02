@@ -222,6 +222,25 @@ curl -s -H 'Host: jury.wle.org.ua' http://127.0.0.1:9000/auth | head
 
 `sbt run` and the tests allow Play's default names (`localhost`, `127.0.0.1`, `*.local`) and send cookies without `Secure`.
 
+### Accounts, invitations and the first account
+
+There is no sign-up. An organizer's add (the users page, "Import users") creates an account
+without a password and mails an invitation link; following it sets the password and proves the
+email. Root's "reset password" mails a link the same way. These mails go through `play.mailer`:
+the server's SMTP settings must work, or nobody new can sign in (a failed mail is counted on the
+users page and logged on `security.account` with account ids; the invitation can be sent again).
+Links point at `wlxjury.host`, never at the request's host.
+
+A new, empty database has no account. To create the first one (root), set a setup token of at
+least 32 characters for the install only, e.g. `WLXJURY_SETUP_TOKEN=$(openssl rand -hex 32)` in
+`runtime.env` (read as `wlxjury.setup.token`), restart, open `/setup`, enter the token, an email
+and a password, then remove the variable and restart. `/setup` is a 404 whenever an account
+exists or no token is set; the token is never logged.
+
+Before deploying the release that carries V77 (S2), run the read-only count of duplicate wiki
+accounts in the S2 section of `docs/plans/2026-11-02-security-resolution.md`: a wiki account
+that several accounts share no longer signs anyone in (they sign in by email).
+
 ### One app instance
 
 The app assumes that one instance serves a database at a time. Some state lives in the JVM:

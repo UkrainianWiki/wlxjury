@@ -64,7 +64,7 @@ class ErrorHandler @Inject() (
 
   /** The signed-in user for the page's navigation, if the database can tell. */
   private def sessionUser(request: RequestHeader): Option[User] =
-    Try(request.session.get(Secured.UserName).flatMap(Secured.sessionUser(_, request.session.get(Secured.CurrentContestId))))
+    Try(Secured.sessionUserOf(request))
       .toOption
       .flatten
 }

@@ -1,6 +1,6 @@
 package controllers
 
-import db.scalikejdbc.{ApiTokenJdbc, ContestJuryJdbc, User, UserContestJdbc}
+import db.scalikejdbc.{AccountTokenJdbc, ApiTokenJdbc, ContestJuryJdbc, User, UserContestJdbc}
 import org.intracer.wmua._
 import org.scalawiki.dto.cmd.query.Query
 import org.scalawiki.dto.cmd.query.list._
@@ -46,7 +46,8 @@ class UserController @Inject()(cc: ControllerComponents,
             views.html.users(user,
                              withWiki,
                              editUserForm.copy(data = Map("roles" -> "jury")),
-                             Some(contest)))
+                             Some(contest),
+                             pending = AccountTokenJdbc.pendingInvitations(contestId)))
         }).getOrElse(Redirect(routes.LoginController.index)) // TODO message
     }
 
@@ -243,16 +244,16 @@ class UserController @Inject()(cc: ControllerComponents,
             roleRefused(formUser)
           } else if (userId == 0) {
             if (user.isAdmin(formUser.contestId)) {
-              // an existing email joins the contest with its account
+              // an existing email joins the contest with its account, or is invited
               try {
                 val added = userService.createNewUser(user, formUser)
                 Redirect(routes.UserController.users(formUser.contestId))
                   .flashing("users-added" -> addedMessage(Seq(added)))
               } catch {
-                // no turn to hash the password: nothing created
-                case _: PasswordHasher.Busy => passwordBusy(user, editUserForm.fill(formUser), formUser.contestId)
                 // a role the service refuses ([[UserService.addToContest]]): nothing created
                 case _: UserService.RoleNotAssignable => roleRefused(formUser)
+                case _: UserService.InvalidWikiAccount =>
+                  formErrors(editUserForm.bindFromRequest().withError("wikiAccount", "wiki.account.invalid"))
               }
             } else {
               Redirect(routes.LoginController.index) // TODO message
@@ -266,30 +267,86 @@ class UserController @Inject()(cc: ControllerComponents,
       )
   }
 
+  /** The current password the own profile's form sends with a new password or email (N2). */
+  private def currentPassword(implicit request: play.api.mvc.Request[_]): Option[String] =
+    request.body match {
+      case body: AnyContent => body.asFormUrlEncoded.flatMap(_.get("currentPassword")).flatMap(_.headOption)
+      case _                => None
+    }
+
+  /** Saves the edit form of `editedUser`, `user`'s own or another's. Everything is checked before
+    * anything is written:
+    *
+    *  - one's own new password or email needs the current password (N2); a new email of one's
+    *    own is not written but confirmed by a link mailed to it; one's own wiki account can't
+    *    change (until the Commons OAuth login verifies it);
+    *  - another account's password is never set (root mails a link, [[resetPassword]]); its
+    *    email changes at once only for an invitee without a password (and a new invitation
+    *    goes to it), else root's change is confirmed by a link and an admin's refused; its
+    *    wiki account must be valid and no other account's, and is unverified;
+    *  - an access role for an account that may not take one directly
+    *    ([[User.mayTakeAccessRole]]) becomes an invitation.
+    */
   private def updateUser(user: User, editedUser: User, formUser: User)(
-      implicit request: play.api.mvc.Request[_]): Result = {
+      implicit request: play.api.mvc.Request[AnyContent]): Result = {
+    val own = editedUser.id == user.id
     def badRequest(form: Form[User]) =
-      if (editedUser.id == user.id) ownProfile(BadRequest, user, userForm = Some(form))
+      if (own) ownProfile(BadRequest, user, userForm = Some(form))
       else BadRequest(views.html.editUser(user, form, contestId = editedUser.contestId))
+    def refused(field: Option[String], key: String) = {
+      val form = editUserForm.fill(formUser.copy(password = None))
+      badRequest(field.fold(form.withGlobalError(key))(form.withError(_, key)))
+    }
 
     val userId = editedUser.getId
     def wikiAccount(u: User) = u.wikiAccount.map(_.trim).filter(_.nonEmpty)
+    val wikiChanged = wikiAccount(formUser) != wikiAccount(editedUser)
+    val newWiki = wikiAccount(formUser).fold[Either[String, Option[String]]](Right(None))(User.normalizeWikiAccount)
+    val emailChanged = formUser.email != editedUser.emailLo
     val accountChanged =
-      formUser.fullname.trim != editedUser.fullname.trim ||
-        formUser.email != editedUser.emailLo ||
-        wikiAccount(formUser) != wikiAccount(editedUser) ||
-        formUser.password.nonEmpty
+      formUser.fullname.trim != editedUser.fullname.trim || emailChanged || wikiChanged || formUser.password.nonEmpty
+    // an access role the account can't take directly: an invitation, if it has an email
+    val newRole = formUser.roles.headOption
+      .filter(r => User.isContestRole(r) && user.hasAnyRole(User.ADMIN_ROLES))
+      .filter(_ => user.hasRole(User.ROOT_ROLE) || !editedUser.hasRole(User.ROOT_ROLE))
+      .filterNot(r => editedUser.contestRole.contains(r))
+    val roleNeedsInvitation =
+      newRole.exists(User.ACCESS_ROLES.contains) && editedUser.contestId.isDefined && !editedUser.mayTakeAccessRole
 
-    if (formUser.email.nonEmpty && User.countByEmail(userId, formUser.email) > 0) {
-      badRequest(editUserForm.fill(formUser).withError("email", "error.email.already.exist"))
-    } else if (accountChanged && !canEditAccount(user, editedUser)) {
+    if (accountChanged && !canEditAccount(user, editedUser)) {
       badRequest(editUserForm.fill(formUser).withGlobalError("user.in.other.contests"))
+    } else if (own && wikiChanged) {
+      refused(Some("wikiAccount"), "wiki.account.own.readonly")
+    } else if (!own && formUser.password.nonEmpty) {
+      refused(Some("password"), "password.others.not.allowed")
+    } else if (own && emailChanged && formUser.email.trim.isEmpty) {
+      refused(Some("email"), "error.required")
+    } else if (wikiChanged && newWiki.isLeft) {
+      refused(Some("wikiAccount"), "wiki.account.invalid")
+    } else if (wikiChanged && newWiki.toOption.flatten.exists(User.otherAccountsWithWikiAccount(userId, _).nonEmpty)) {
+      refused(Some("wikiAccount"), "wiki.account.taken")
+    } else if (!own && emailChanged && editedUser.password.nonEmpty && !user.hasRole(User.ROOT_ROLE)) {
+      refused(Some("email"), "user.email.change.ask.user")
+    } else if (!own && emailChanged && editedUser.password.isEmpty && formUser.email.nonEmpty &&
+      User.countByEmail(userId, formUser.email) > 0) {
+      refused(Some("email"), "error.email.already.exist")
+    } else if (roleNeedsInvitation && (editedUser.emailLo.isEmpty || editedUser.isRoot)) {
+      refused(Some("roles"), "role.needs.invitation.email")
     } else {
-      // hashed before anything is written: no turn to hash it changes nothing
-      val newHash =
-        try Right(formUser.password.filter(_ => canEditAccount(user, editedUser)).map(PasswordHasher.default.hash(_)))
-        catch { case _: PasswordHasher.Busy => Left(passwordBusy(user, editUserForm.fill(formUser), editedUser.contestId)) }
-      newHash.fold(identity, updateAccount(user, editedUser, formUser, _))
+      // one's own new password or email: the current password first (N2); then the new hash,
+      // before anything is written: no turn to hash it changes nothing
+      val needsCurrent = own && (formUser.password.nonEmpty || emailChanged)
+      val checked: Either[Result, Option[String]] =
+        try {
+          if (needsCurrent && !currentPassword.exists(p =>
+              PasswordHasher.default.check(user.password, p) != PasswordHasher.Rejected))
+            Left(refused(Some("currentPassword"), "password.current.wrong"))
+          else Right(formUser.password.filter(_ => own).map(PasswordHasher.default.hash(_)))
+        } catch {
+          case _: PasswordHasher.Busy => Left(passwordBusy(user, editUserForm.fill(formUser), editedUser.contestId))
+        }
+      checked.fold(identity,
+        updateAccount(user, editedUser, formUser, _, newWiki.toOption.flatten, roleNeedsInvitation))
     }
   }
 
@@ -299,52 +356,79 @@ class UserController @Inject()(cc: ControllerComponents,
     ServiceUnavailable(views.html.editUser(user, form.withGlobalError("password.busy"), contestId = contestId))
       .withHeaders(RETRY_AFTER -> "5")
 
-  private def updateAccount(user: User, editedUser: User, formUser: User, newHash: Option[String])(
+  private def updateAccount(user: User, editedUser: User, formUser: User, newHash: Option[String],
+                            newWiki: Option[String], roleNeedsInvitation: Boolean)(
       implicit request: play.api.mvc.Request[_]): Result = {
     val userId = editedUser.getId
-    locally {
-      if (canEditAccount(user, editedUser)) {
-        User.updateUser(userId,
-                        formUser.fullname,
-                        formUser.wikiAccount,
-                        formUser.email,
-                        formUser.lang,
-                        formUser.sort)
+    val own = formUser.id == user.id
+    val contest = editedUser.contestId.flatMap(ContestJuryJdbc.findById)
+    val notices = Seq.newBuilder[String]
 
-        for (hash <- newHash)
-          User.setPasswordHash(userId, hash)
+    if (canEditAccount(user, editedUser)) {
+      User.updateUser(userId, formUser.fullname, formUser.lang, formUser.sort)
+      if (!own && formUser.wikiAccount.map(_.trim).filter(_.nonEmpty) != editedUser.wikiAccount.map(_.trim).filter(_.nonEmpty))
+        User.setWikiAccount(userId, newWiki)
+      for (hash <- newHash) User.setPasswordHash(userId, hash)
+
+      if (formUser.email != editedUser.emailLo) {
+        if (own || editedUser.password.nonEmpty) {
+          // confirmed by a link mailed to the new address; the same answer if it is taken (N7)
+          userService.requestEmailChange(user, editedUser, formUser.email)
+          notices += Messages("email.change.sent")
+        } else {
+          // an invitee who has not set a password: a fixed address, still unverified, and a
+          // new invitation to it (the old one was bound to the old address)
+          User.setEmail(userId, formUser.email, verified = false)
+          val updated = User.findById(userId).map(u => editedUser.copy(email = u.email, emailVerifiedAt = None))
+          for (u <- updated if u.emailLo.nonEmpty && !u.isRoot && u.contestRole.exists(User.ACCESS_ROLES.contains))
+            notices += Messages(if (userService.invite(user, u, contest, None)) "invitation.sent" else "invitation.not.sent")
+        }
       }
-
-      // only admins change roles, only root makes root (users.is_root, never a contest
-      // role), and only in editedUser's contest. A root user's form shows root, which an
-      // admin's role list lacks: an admin leaves a root user's role alone.
-      val newRole = formUser.roles.headOption
-      if (user.hasRole(User.ROOT_ROLE) && !user.id.contains(userId)) {
-        User.setRoot(userId, newRole.contains(User.ROOT_ROLE))
-      }
-      for {
-        role <- newRole if User.isContestRole(role) && user.hasAnyRole(User.ADMIN_ROLES)
-        if user.hasRole(User.ROOT_ROLE) || !editedUser.hasRole(User.ROOT_ROLE)
-        contestId <- editedUser.contestId
-      } UserContestJdbc.updateRole(userId, contestId, role)
-
-      val result = if (user.hasAnyRole(User.ADMIN_ROLES)) {
-        Redirect(routes.UserController.users(editedUser.contestId))
-      } else {
-        Redirect(routes.LoginController.index)
-      }
-      val ownProfile = formUser.id == user.id
-      val lang = for (lang <- formUser.lang; if ownProfile)
-        yield lang
-
-      // the own profile's theme only (another user's form has none); a value that is not
-      // one of the three changes nothing
-      val theme = formUser.theme.flatMap(Theme.find).filter(_ => ownProfile)
-      for (t <- theme) User.updateTheme(userId, t)
-
-      val withLang = lang.fold(result)(l => result.withLang(Lang(l)))
-      theme.fold(withLang)(themeCookies.set(withLang, _))
     }
+
+    // only admins change roles, only root makes root (users.is_root, never a contest
+    // role), and only in editedUser's contest. A root user's form shows root, which an
+    // admin's role list lacks: an admin leaves a root user's role alone.
+    val newRole = formUser.roles.headOption
+    if (user.hasRole(User.ROOT_ROLE) && !user.id.contains(userId)) {
+      User.setRoot(userId, newRole.contains(User.ROOT_ROLE))
+    }
+    for {
+      role <- newRole if User.isContestRole(role) && user.hasAnyRole(User.ADMIN_ROLES)
+      if user.hasRole(User.ROOT_ROLE) || !editedUser.hasRole(User.ROOT_ROLE)
+      contestId <- editedUser.contestId
+      if !editedUser.contestRole.contains(role)
+    } {
+      if (roleNeedsInvitation) {
+        // O2: the role waits for the account's owner to accept an invitation
+        notices += Messages(if (userService.invite(user, editedUser, contest, Some(role))) "invitation.sent" else "invitation.not.sent")
+      } else {
+        UserContestJdbc.updateRole(userId, contestId, role)
+        // a pending invitation's role must not come back when it is accepted
+        AccountTokenJdbc.revokePendingRoles(userId, contestId)
+      }
+    }
+
+    val notice = notices.result().mkString(" ")
+    // one's own profile with a notice (an email change's link sent) shows it there
+    val result = if (own && notice.nonEmpty) {
+      Redirect(routes.UserController.editUser(userId))
+    } else if (user.hasAnyRole(User.ADMIN_ROLES)) {
+      Redirect(routes.UserController.users(editedUser.contestId))
+    } else {
+      Redirect(routes.LoginController.index)
+    }
+    val withNotice = if (notice.isEmpty) result else result.flashing((if (own) "account-notice" else "users-added") -> notice)
+    val lang = for (lang <- formUser.lang; if own)
+      yield lang
+
+    // the own profile's theme only (another user's form has none); a value that is not
+    // one of the three changes nothing
+    val theme = formUser.theme.flatMap(Theme.find).filter(_ => own)
+    for (t <- theme) User.updateTheme(userId, t)
+
+    val withLang = lang.fold(withNotice)(l => withNotice.withLang(Lang(l)))
+    theme.fold(withLang)(themeCookies.set(withLang, _))
   }
 
   /** The navbar's colour mode switch (logged.scala.html): a POST with the CSRF token
@@ -374,10 +458,19 @@ class UserController @Inject()(cc: ControllerComponents,
     */
   private def addedMessage(added: Seq[UserService.Added])(implicit messages: Messages): String = {
     import UserService._
-    messages("users.added",
-             added.count(_.isInstanceOf[NewAccount]),
-             added.count(_.isInstanceOf[JoinedContest]),
-             added.count(_.isInstanceOf[AlreadyMember]))
+    val invited = added.count(_.isInstanceOf[Invited])
+    val unverifiedWiki = added.count(_.isInstanceOf[WikiAccountUnverified])
+    val notSent = added.count {
+      case NewAccount(_, Some(false)) | Invited(_, false) => true
+      case _                                              => false
+    }
+    (Seq(messages("users.added",
+                  added.count(_.isInstanceOf[NewAccount]),
+                  added.count(_.isInstanceOf[JoinedContest]),
+                  added.count(_.isInstanceOf[AlreadyMember]))) ++
+      (if (invited > 0) Seq(messages("users.invited", invited)) else Nil) ++
+      (if (unverifiedWiki > 0) Seq(messages("users.not.added.wiki.unverified", unverifiedWiki)) else Nil) ++
+      (if (notSent > 0) Seq(messages("users.invitations.not.sent", notSent)) else Nil)).mkString(" ")
   }
 
   def showImportUsers(contestIdParam: Option[Long]): EssentialAction =
@@ -548,33 +641,46 @@ class UserController @Inject()(cc: ControllerComponents,
     Redirect(routes.LoginController.index)
   }
 
+  /** Root's "reset password" (P7): mails the account a link that sets a new password
+    * ([[UserService.sendPasswordLink]]). The old password works until the link is used; nobody
+    * but the email's owner sees the new one. Root only; contest admins re-send an invitation
+    * to an unverified member of their contest instead ([[reinvite]]), which does the same.
+    */
   def resetPassword(id: Long): EssentialAction =
+    // sends mail (SMTP blocks): off Play's default dispatcher
     withAuthOn(blocking)(rolePermission(Set(User.ROOT_ROLE))) { user => implicit request =>
-      User.findById(id).fold[Result](
+      User.findById(id).filter(_.deletedAt.isEmpty).fold[Result](
         NotFound(views.html.errorPage(Some(user), "error.title", "error.user.not.found"))
       ) { found =>
-        val editedUser = Secured.inCurrentContest(found, None)
+        val message =
+          if (found.emailLo.isEmpty) "password.link.no.email"
+          else if (userService.sendPasswordLink(user, found)) "password.link.sent"
+          else "password.link.not.sent"
+        Redirect(routes.UserController.editUser(id)).flashing("password-reset" -> Messages(message))
+      }
+    }
 
-        val password = User.randomString(8)
-        val contest: Option[ContestJury] =
-          editedUser.currentContest.flatMap(ContestJuryJdbc.findById)
-        val contestName = contest.fold("")(_.name)
-        // no turn to hash it: the password stays, and the page says to try again
-        val stored =
-          try { User.setPassword(editedUser.getId, password); true }
-          catch { case _: PasswordHasher.Busy => false }
-
-        val juryhome = "http://localhost:9000"
-        //        User.updateUser(formUser.fullname, formUser.email, hash, formUser.roles, formUser.contest)
-        val subject: String = s"Password changed for $contestName jury"
-        val message: String = s"Password changed for $contestName jury\n" +
-          s" Please login to our jury tool $juryhome \nwith login: ${editedUser.email} and password: $password\n" +
-          s"Regards, ${user.fullname}"
-        // sendMail.sendMail(from = (user.fullname, user.email), to = Seq(user.email), bcc = Seq(user.email), subject = subject, message = message)
-
-        Redirect(routes.UserController.editUser(id)).flashing(
-          "password-reset" ->
-            (if (stored) s"Password reset. New Password sent to ${editedUser.email}" else Messages("password.busy")))
+  /** Sends a member (or a pending invitee) of the contest a new invitation: an admin of that
+    * contest (root too), for an account whose email is unverified; never a root account, nor
+    * one without an email. A person not in the contest, or invited into it, is not found.
+    */
+  def reinvite(id: Long, contestId: Long): EssentialAction =
+    withAuthOn(blocking)(contestPermission(User.ADMIN_ROLES, Some(contestId))) { user => implicit request =>
+      val inContest = User.findInContest(id, contestId).orElse {
+        val pending = AccountTokenJdbc.findByUser(id)
+          .exists(t => t.live && t.purpose == AccountTokenJdbc.Invitation && t.contestId.contains(contestId))
+        if (pending) User.findById(id) else None
+      }.filter(_.deletedAt.isEmpty)
+      (inContest, ContestJuryJdbc.findById(contestId)) match {
+        case (Some(account), Some(contest)) =>
+          if (account.isRoot || account.emailVerified || account.emailLo.isEmpty) {
+            BadRequest(views.html.errorPage(Some(user), "error.title", "invitation.not.possible"))
+          } else {
+            val sent = userService.reinvite(user, account, contest)
+            Redirect(routes.UserController.users(Some(contestId)))
+              .flashing("users-added" -> Messages(if (sent) "invitation.sent" else "invitation.not.sent"))
+          }
+        case _ => NotFound(views.html.errorPage(Some(user), "error.title", "error.user.not.found"))
       }
     }
 }

@@ -16,7 +16,8 @@ import scala.util.Try
 /** Thumbnails, for signed-in users only: only they see the galleries.
   *
   * @param now           milliseconds
-  * @param viewerMayView whether the session's user may see the galleries ([[Secured.mayView]])
+  * @param viewerMayView whether the session's user (a [[ImageProxyController.viewerKey]]) may see the galleries
+  *                      ([[Secured.mayView]])
   */
 @Singleton
 class ImageProxyController(
@@ -27,7 +28,7 @@ class ImageProxyController(
 )(implicit ec: ExecutionContext) extends AbstractController(cc) {
 
   @Inject() def this(cc: ControllerComponents, cache: LocalImageCacheService)(implicit ec: ExecutionContext) =
-    this(cc, cache, () => System.currentTimeMillis(), Secured.mayView)
+    this(cc, cache, () => System.currentTimeMillis(), ImageProxyController.sessionMayView)
 
   import ImageProxyController._
 
@@ -52,7 +53,7 @@ class ImageProxyController(
     request.session.get(Secured.UserName) match {
       case None       => Future.successful(Unauthorized)
       case Some(name) =>
-        mayView(name).flatMap(allowed => if (allowed) serveThumbnail(path) else Future.successful(Unauthorized))
+        mayView(viewerKey(name, request.session.get(Secured.AuthVersion))).flatMap(allowed => if (allowed) serveThumbnail(path) else Future.successful(Unauthorized))
     }
   }
 
@@ -60,8 +61,7 @@ class ImageProxyController(
     * failed lookup is forgotten; a refusal is kept only [[RefusedTtl]], so a user just
     * added to a contest sees the thumbnails at once.
     */
-  private def mayView(name: String): Future[Boolean] = {
-    val user = Secured.normalizeUserName(name)
+  private def mayView(user: String): Future[Boolean] = {
     val at = now()
     if (viewers.size >= MaxViewers) viewers.clear()
     def ttl(allowed: Future[Boolean]) =
@@ -183,6 +183,18 @@ class ImageProxyController(
 }
 
 object ImageProxyController {
+
+  /** The viewer cache's key: the session's user name, normalised, and its auth version (a
+    * session of an old version must not reuse a newer one's answer).
+    */
+  def viewerKey(name: String, authVersion: Option[String]): String =
+    Secured.normalizeUserName(name) + "\n" + authVersion.getOrElse("")
+
+  /** [[Secured.mayView]] for a [[viewerKey]]. */
+  def sessionMayView(key: String): Boolean = {
+    val (name, version) = key.splitAt(key.lastIndexOf('\n'))
+    Secured.mayView(name, Some(version.drop(1)).filter(_.nonEmpty))
+  }
 
   /** How long a user's access to the thumbnails is taken as read: a removed juror loses it within that. */
   val ViewerTtl: FiniteDuration = 1.minute

@@ -51,7 +51,6 @@ signin.signin=Se connecter
 signin.your.login=Votre identifiant
 signin.your.password=Votre mot de passe
 
-signup.signup=S''inscrire
 
 resetpassword=Réinitialiser le mot de passe
 
@@ -135,8 +134,6 @@ format.boolean=
 
 no.round.yet=Aucun tour configuré pour le moment. Veuillez attendre que l''administrateur du concours configure l''outil.
 
-not.a.member = Pas un membre ?
-sign.up.now = S''inscrire maintenant
 
 edit.user = Modifier l''utilisateur
 create.user = Créer un utilisateur
@@ -305,7 +302,6 @@ password.existing=le mot de passe que vous utilisez déjà dans l''outil du jury
 contest.switch=Changer de concours
 user.in.other.contests=Cet utilisateur participe aussi à d''autres concours. Seul son rôle ici peut être modifié ; pour le reste, demandez à un utilisateur root ou à l''utilisateur.
 user.email.or.wiki.account=Un utilisateur doit avoir une adresse e-mail ou un compte wiki.
-signup.email.taken=Un compte avec cet e-mail existe déjà. Connectez-vous, ou demandez à un organisateur de réinitialiser son mot de passe.
 password.too.long=Le mot de passe est trop long : au plus {0} octets (les lettres latines et les chiffres comptent 1 octet chacun, la plupart des autres lettres 2 ou plus).
 password.empty=Le mot de passe ne peut pas être vide.
 signin.busy=Trop de connexions en même temps. Veuillez réessayer dans quelques secondes.
@@ -433,3 +429,60 @@ error.api.token.not.found = Ce jeton d''API n''existe pas.
 error.api.token.expiry = Choisissez l''une des durées proposées.
 error.api.token.already.submitted = Ce formulaire a déjà été envoyé : aucun nouveau jeton n''a été créé. Créez-en un ci-dessous si besoin.
 error.api.token.limit = Vous avez déjà {0} jetons utilisables, le maximum. Révoquez-en un pour en créer un autre.
+
+# comptes : invitations, liens de mot de passe, changements d'adresse, installation (lot de sécurité S2)
+not.a.member.invitation = Pas encore de compte ? Les comptes sont créés par les organisateurs du concours, qui vous envoient une invitation par courriel.
+setup.needed = Cette installation n''a encore aucun compte. L''administrateur crée le premier sur la page d''installation (voir le guide de déploiement).
+account.link.invalid.title = Ce lien ne peut pas être utilisé
+account.link.invalid = Le lien n''est pas valide, a expiré ou a déjà été utilisé. Demandez à l''organisateur de votre concours de vous en envoyer un nouveau.
+invitation.title = Choisissez votre mot de passe
+invitation.reset.title = Choisissez un nouveau mot de passe
+invitation.set.password = Choisissez un mot de passe pour vous connecter à l''outil du jury. Votre adresse courriel est votre identifiant.
+invitation.replaces.password = Choisissez un nouveau mot de passe. Il remplace l''ancien mot de passe de ce compte et ferme toutes ses autres sessions.
+invitation.submit = Enregistrer le mot de passe et se connecter
+new.password = Nouveau mot de passe
+current.password = Mot de passe actuel
+current.password.explain = Nécessaire pour changer votre mot de passe ou votre adresse courriel.
+passwords.differ = Les mots de passe ne correspondent pas.
+password.current.wrong = Le mot de passe actuel n''est pas correct.
+password.others.not.allowed = Seule la personne peut choisir son mot de passe. Root peut lui envoyer un lien pour en choisir un nouveau.
+email.change.title = Nouvelle adresse courriel
+email.change.confirm = Faire de {0} l''adresse courriel de votre compte de l''outil du jury ?
+email.change.confirm.button = Confirmer la nouvelle adresse
+email.change.done = Votre adresse courriel est désormais {0}. Connectez-vous avec elle.
+email.change.explain = Une nouvelle adresse prend effet une fois le lien qui lui est envoyé suivi.
+email.change.sent = Un lien de confirmation a été envoyé à la nouvelle adresse. Elle prend effet une fois le lien suivi.
+email.change.subject = Confirmez votre nouvelle adresse courriel pour l''outil du jury
+email.change.body = Suivez ce lien dans les {1} heures pour faire de cette adresse celle de votre compte de l''outil du jury :\n{0}\n\nSi vous n''avez rien demandé, ignorez ce message.
+user.email.change.ask.user = L''adresse d''un compte qui a un mot de passe ne peut être changée que par son titulaire (ou par root).
+setup.title = Installer l''outil du jury
+setup.explain = Créez le premier compte, l''administrateur (root), avec le jeton d''installation de la configuration du serveur.
+setup.token = Jeton d''installation
+setup.submit = Créer le compte
+setup.token.invalid = Le jeton d''installation n''est pas correct.
+invitation.subject = Invitation au jury {0}
+invitation.body = Bonjour,\n\n{1} vous invite au jury de {0}.\nSuivez ce lien dans les {3} jours pour choisir votre mot de passe et vous connecter :\n{2}\n\nVotre adresse courriel est votre identifiant.
+invitation.subject.tool = Invitation à l''outil du jury
+invitation.body.tool = Bonjour,\n\nSuivez ce lien dans les {1} jours pour choisir votre mot de passe et vous connecter à l''outil du jury :\n{0}\n\nVotre adresse courriel est votre identifiant.
+invitation.link = Suivez ce lien dans les {1} jours pour choisir votre mot de passe et vous connecter :\n{0}
+password.link.subject = Choisissez un nouveau mot de passe pour l''outil du jury
+password.link.body = Bonjour,\n\nSuivez ce lien dans les {1} jours pour choisir un nouveau mot de passe pour l''outil du jury :\n{0}\n\nVotre mot de passe actuel fonctionne jusque-là. Si vous ne vous y attendiez pas, ignorez ce message.
+password.link.sent = Un lien pour choisir un nouveau mot de passe a été envoyé au compte. Le mot de passe actuel fonctionne jusqu''à son utilisation.
+password.link.not.sent = Le lien n''a pas pu être envoyé. Réessayez plus tard.
+password.link.no.email = Le compte n''a pas d''adresse courriel : aucun lien ne peut être envoyé.
+wiki.account.invalid = Ce n''est pas un nom d''utilisateur wiki valide.
+wiki.account.taken = Un autre compte a déjà ce compte wiki.
+wiki.account.own.readonly = Votre compte wiki ne peut pas encore être modifié ici ; demandez à un administrateur du concours.
+wiki.account.unverified.hint = Non vérifié : n''importe qui a pu saisir ce compte wiki.
+email.unverified.hint = Non vérifiée : le titulaire de cette adresse n''a pas encore accepté d''invitation. Un rôle pour ce compte attend qu''il le fasse.
+unverified = non vérifié
+role.needs.invitation.email = Ce compte n''a pas vérifié son adresse et n''en a aucune pour l''inviter : le rôle ne peut pas être donné.
+invitation.send = Renvoyer l''invitation
+invitation.sent = Une invitation a été envoyée. Le rôle s''applique une fois qu''elle est acceptée.
+invitation.not.sent = L''invitation n''a pas pu être envoyée. Réessayez plus tard.
+invitation.not.possible = Aucune invitation ne peut être envoyée à ce compte.
+invitations.pending = Invitations pas encore acceptées
+invitation.expires = Expire
+users.invited = Invités (le rôle est donné une fois l''invitation acceptée) : {0}.
+users.not.added.wiki.unverified = Non ajoutés, car le compte wiki appartient à un compte qui ne l''a pas vérifié : {0}. Ajoutez-les par courriel.
+users.invitations.not.sent = Invitations qui n''ont pas pu être envoyées : {0}.

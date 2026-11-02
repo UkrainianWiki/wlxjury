@@ -71,6 +71,10 @@ object ApiTokenJdbc {
     sql"""UPDATE api_token SET revoked_at = NOW(3)
           WHERE id = $id AND user_id = $userId AND revoked_at IS NULL""".update.apply() > 0
 
+  /** Revokes every unrevoked token of the user (an account taken over by an accepted link); how many. */
+  def revokeAll(userId: Long)(implicit session: DBSession = AutoSession): Int =
+    sql"""UPDATE api_token SET revoked_at = NOW(3) WHERE user_id = $userId AND revoked_at IS NULL""".update.apply()
+
   /** Records a use: sets `last_used_at` unless it was set less than a minute ago, so that a
     * busy tool writes the row at most once a minute.
     */

@@ -5,7 +5,8 @@
         users: Seq[db.scalikejdbc.User],
         editUserForm: Form[db.scalikejdbc.User],
         contestOpt: Option[ContestJury],
-        contests: List[ContestJury] = Nil
+        contests: List[ContestJury] = Nil,
+        pending: Seq[db.scalikejdbc.AccountToken] = Nil
 )(implicit flash: Flash, messages: Messages, req: RequestHeader)
     @import helper._
 
@@ -55,16 +56,18 @@
                             <td> @user.fullname </td>
                             <td>
                                 @for(contest <- contestOpt) {
-                                @if(user.wikiAccount.nonEmpty && user.accountValid) {
-                                    <a href="https://commons.wikimedia.org/w/index.php?title=User_talk:@user.wikiAccount&action=edit&section=new&preload=&preloadtitle=@contest.name%20Jury">
+                                @* the name URL-encoded (N4): a & or ? in it must not add parameters *@
+                                @for(name <- user.wikiAccount.map(views.WikiLinks.encodedUserName)) {
+                                @if(user.accountValid) {
+                                    <a href="https://commons.wikimedia.org/w/index.php?title=User_talk:@name&action=edit&section=new&preload=&preloadtitle=@{java.net.URLEncoder.encode(contest.name + " Jury", "UTF-8")}">
                                         <button type="button" class="btn btn-outline-secondary btn-sm">
                                             <i class="bi bi-chat-text" aria-hidden="true"></i>
                                         </button>
 
                                     <a href= @if(user.hasWikiEmail) {
-                                            "https://commons.wikimedia.org/wiki/Special:EmailUser/@user.wikiAccount?wpSubject=@contest.name%20Jury&wpText=Hi%20@user.wikiAccount,%0ARegards,%20@adminUser.fullname"
+                                            "https://commons.wikimedia.org/wiki/Special:EmailUser/@name?wpSubject=@{java.net.URLEncoder.encode(contest.name + " Jury", "UTF-8")}&wpText=@{java.net.URLEncoder.encode("Hi " + user.wikiAccount.getOrElse("") + ",\nRegards, " + adminUser.fullname, "UTF-8")}"
                                         } else {
-                                            "https://commons.wikimedia.org/w/index.php?title=User_talk:@user.wikiAccount&action=edit&section=new&preload=User:Ilya/enableEmailText&preloadtitle=Please%20enable%20wiki%20email"
+                                            "https://commons.wikimedia.org/w/index.php?title=User_talk:@name&action=edit&section=new&preload=User:Ilya/enableEmailText&preloadtitle=Please%20enable%20wiki%20email"
                                         } >
 
                                         <button type="button" class="btn btn-outline-secondary btn-sm">
@@ -73,10 +76,16 @@
                                     </a>
                                 }
                                 }
+                                }
 
-                                <a href="https://commons.wikimedia.org/wiki/User:@user.wikiAccount" @if(!user.accountValid){class="text-danger"}>
-                                    @user.wikiAccount
+                                @for(name <- user.wikiAccount) {
+                                <a href="https://commons.wikimedia.org/wiki/User:@views.WikiLinks.encodedUserName(name)" @if(!user.accountValid){class="text-danger"}>
+                                    @name
                                 </a>
+                                @if(!user.wikiAccountVerified) {
+                                    <span class="badge text-bg-secondary wiki-unverified" title="@Messages("wiki.account.unverified.hint")">@Messages("unverified")</span>
+                                }
+                                }
                                 @* a member whose files are conflicts of interest, who can't be matched with them *@
                                 @if(contestOpt.nonEmpty && user.wikiAccount.forall(_.trim.isEmpty) &&
                                         user.contestRoles.exists(db.scalikejdbc.User.COI_ROLES.contains)) {
@@ -86,6 +95,19 @@
                             </td>
                             <td>
                                 @user.email
+                                @* unverified: the account's owner has not proven the address; an access role for it
+                                   waits for an invitation to be accepted *@
+                                @if(user.email.nonEmpty && !user.emailVerified) {
+                                    <span class="badge text-bg-warning email-unverified" title="@Messages("email.unverified.hint")">@Messages("unverified")</span>
+                                    @for(contest <- contestOpt; contestId <- contest.id; if !user.isRoot) {
+                                        <form action="@routes.UserController.reinvite(user.getId, contestId)" method="post" class="d-inline">
+                                            @helper.CSRF.formField
+                                            <button type="submit" class="btn btn-outline-secondary btn-sm reinvite" title="@Messages("invitation.send")" aria-label="@Messages("invitation.send")">
+                                                <i class="bi bi-envelope-arrow-up" aria-hidden="true"></i>
+                                            </button>
+                                        </form>
+                                    }
+                                }
                             </td>
                             @if(contestOpt.nonEmpty) {
                                 <td>@user.contestRoles.toSeq.sorted.map(r => Messages(r)).mkString(", ") </td>
@@ -150,6 +172,37 @@
                 </tbody>
 
             </table>
+
+            @* invitations into the contest that wait to give a role: the account's owner must accept
+               one before the role applies (O2) *@
+            @for(contest <- contestOpt; contestId <- contest.id; if pending.nonEmpty) {
+                <h2 class="h5">@Messages("invitations.pending")</h2>
+                <table class="table table-sm pending-invitations">
+                    <thead>
+                        <tr>
+                            <th>@Messages("email")</th>
+                            <th>@Messages("role")</th>
+                            <th>@Messages("invitation.expires")</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    @for(invitation <- pending) {
+                        <tr>
+                            <td>@invitation.email</td>
+                            <td>@invitation.role.map(r => Messages(r))</td>
+                            <td>@invitation.expiresAt.toString.take(16).replace('T', ' ') UTC</td>
+                            <td>
+                                <form action="@routes.UserController.reinvite(invitation.userId, contestId)" method="post" class="d-inline">
+                                    @helper.CSRF.formField
+                                    <button type="submit" class="btn btn-outline-secondary btn-sm reinvite">@Messages("invitation.send")</button>
+                                </form>
+                            </td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            }
         </div>
     }
 

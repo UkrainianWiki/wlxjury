@@ -42,7 +42,9 @@ class RoleAssignmentSpec extends PlaySpecification with PlayTestDb with Mockito 
   )
 
   private def member(email: String, memberships: (Long, String)*): User = {
-    val created = User.create(User(email, email, None, Set.empty, Some("hash")))
+    // verified: a role is saved directly (an unverified account's goes through an invitation, S2)
+    val created = User.create(User(email, email, None, Set.empty, Some("hash"),
+      emailVerifiedAt = Some(java.time.ZonedDateTime.now)))
     memberships.foreach { case (contest, role) => UserContestJdbc.createMembership(created.getId, contest, role) }
     created
   }
