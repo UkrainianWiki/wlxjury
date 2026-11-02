@@ -121,7 +121,8 @@ class Api @Inject() (
             SecurityScheme(
               `type` = "http",
               scheme = Some("bearer"),
-              description = Some("A personal API token (wlxj_...), created on your profile page.")
+              description = Some("A personal API token (wlxj_...), created on your profile page. A write " +
+                "with neither it nor the session gets 403 {\"error\": \"csrf\"}.")
             )
           )
           .addSecurityScheme(

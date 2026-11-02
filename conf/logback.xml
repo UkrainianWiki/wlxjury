@@ -21,6 +21,9 @@
     <!-- a request for another host (AllowedHostsFilter): ErrorHandler logs it once as client_error;
          the filter's own WARN would double every scanner's request -->
     <logger name="play.filters.hosts.AllowedHostsFilter" level="ERROR" />
+    <!-- a refused CSRF token: CsrfErrorHandler logs it once as csrf_failure (with a reference and
+         the path only); Play's own WARN would double every bot's token-less POST and quote the URI -->
+    <logger name="play.filters.CSRF" level="ERROR" />
 
     <logger name="com.gargoylesoftware.htmlunit.javascript" level="OFF" />
 

@@ -147,6 +147,28 @@ class ProductionConfigSpec extends Specification {
     }
   }
 
+  "the security headers and CSRF in production (security batch S7)" should {
+    "be the release's: production.conf changes none of the filters' settings" in {
+      val release = security.ProductionFilters.release
+      // play.filters.csrf as a whole differs: its cookie follows play.http.session.secure
+      forall(Seq("play.filters.enabled", "play.filters.disabled", "play.filters.csp", "play.filters.headers",
+          "play.filters.csrf.header", "wlxjury.headers")) { path =>
+        releaseConfig().getValue(path).unwrapped() must_== release.getValue(path).unwrapped()
+      }
+    }
+
+    "send the content security policy through Play's CSPFilter, not the deprecated key" in {
+      releaseConfig().getIsNull("play.filters.headers.contentSecurityPolicy") must beTrue
+      releaseConfig().getStringList("play.filters.enabled").asScala must contain("play.filters.csp.CSPFilter")
+      play.filters.csp.CSPConfig.fromConfiguration(Configuration(releaseConfig())).directives
+        .map(d => s"${d.name} ${d.value}").mkString("; ") must_== security.ProductionFilters.cspHeader
+    }
+
+    "check the CSRF token of every POST, with cookies or without (N6)" in {
+      releaseConfig().getIsNull("play.filters.csrf.header.protectHeaders") must beTrue
+    }
+  }
+
   "modules.AllowedHosts" should {
     def config(entries: (String, Any)*) = Configuration(ConfigFactory.parseMap((Map[String, Any](
       "play.filters.hosts.allowed"                  -> List("127.0.0.1").asJava,
