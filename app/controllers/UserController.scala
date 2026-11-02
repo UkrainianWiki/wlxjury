@@ -209,6 +209,14 @@ class UserController @Inject()(cc: ControllerComponents,
         )
   }
 
+  /** Revokes every token of the signed-in user (a POST with the CSRF token, from their profile):
+    * a password change leaves them (the user's decision), this ends them.
+    */
+  def revokeAllApiTokens(): EssentialAction = withAuth(_ => true) { user => implicit request =>
+    val revoked = ApiTokenService.revokeAllOwn(user.getId)
+    Redirect(routes.UserController.editUser(user.getId)).flashing("api-tokens-revoked-all" -> revoked.toString)
+  }
+
   /** Revokes one of the signed-in user's own tokens; another user's, or none, is not found. */
   def revokeApiToken(id: Long): EssentialAction = withAuth(_ => true) { user => implicit request =>
     ApiTokenJdbc.find(id).filter(_.userId == user.getId).fold[Result](
@@ -381,12 +389,16 @@ class UserController @Inject()(cc: ControllerComponents,
     val own = formUser.id == user.id
     val contest = editedUser.contestId.flatMap(ContestJuryJdbc.findById)
     val notices = Seq.newBuilder[String]
+    var newVersion: Option[Int] = None
 
     if (canEditAccount(user, editedUser)) {
       User.updateUser(userId, formUser.fullname, formUser.lang, formUser.sort)
       if (!own && formUser.wikiAccount.map(_.trim).filter(_.nonEmpty) != editedUser.wikiAccount.map(_.trim).filter(_.nonEmpty))
         User.setWikiAccount(userId, newWiki)
-      for (hash <- newHash) User.setPasswordHash(userId, hash)
+      // a new password ends the account's other sessions; this one stays, with the new version
+      newVersion = newHash.flatMap(User.setPasswordHash(userId, _))
+      for (_ <- newVersion)
+        play.api.Logger("security.account").info(s"password_changed accountId=$userId by=self sessionsEnded=true")
 
       if (formUser.email != editedUser.emailLo) {
         if (own || editedUser.password.nonEmpty) {
@@ -445,7 +457,10 @@ class UserController @Inject()(cc: ControllerComponents,
     val theme = formUser.theme.flatMap(Theme.find).filter(_ => own)
     for (t <- theme) User.updateTheme(userId, t)
 
-    val withLang = lang.fold(withNotice)(l => withNotice.withLang(Lang(l)))
+    // the own new password: this session goes on with the account's new version
+    val withVersion = newVersion.filter(_ => own).fold(withNotice)(v =>
+      withNotice.addingToSession(Secured.AuthVersion -> v.toString))
+    val withLang = lang.fold(withVersion)(l => withVersion.withLang(Lang(l)))
     theme.fold(withLang)(themeCookies.set(withLang, _))
   }
 
@@ -675,6 +690,20 @@ class UserController @Inject()(cc: ControllerComponents,
           else if (userService.sendPasswordLink(user, found)) "password.link.sent"
           else "password.link.not.sent"
         Redirect(routes.UserController.editUser(id)).flashing("password-reset" -> Messages(message))
+      }
+    }
+
+  /** Root's "end sessions" of an account (S3; a POST with the CSRF token, from its edit page):
+    * its session version goes up, so every session of it ends (root's own too, if it is root's
+    * account). API tokens stay: root revokes them on the account's tokens page.
+    */
+  def endSessions(id: Long): EssentialAction =
+    withAuth(rolePermission(Set(User.ROOT_ROLE))) { user => implicit request =>
+      User.findById(id).filter(_.deletedAt.isEmpty).flatMap(_ => User.endSessions(id)).fold[Result](
+        NotFound(views.html.errorPage(Some(user), "error.title", "error.user.not.found"))
+      ) { _ =>
+        play.api.Logger("security.account").info(s"sessions_ended accountId=$id byAccountId=${user.getId}")
+        Redirect(routes.UserController.editUser(id)).flashing("sessions-ended" -> Messages("sessions.ended"))
       }
     }
 

@@ -82,10 +82,15 @@ class CriteriaRateSpec extends Specification with TestDb with BeforeAll with Bef
   /** Waits, 20 seconds at most, until a transaction waits for a lock (the specs run one at
     * a time on their own database): "LOCK WAIT", or what happened instead (`waiter` done, or
     * the transactions then). INNODB_TRX needs the PROCESS privilege, which the app's user
-    * hasn't: read as the container's root (Testcontainers gives it the same password).
+    * hasn't: read as the container's root (Testcontainers gives it the same password), on the
+    * server of the pool the transactions use: in the full suite that was once another one
+    * (GatlingSmokeSpec's fixture app had made its pool ScalikeJDBC's default), whose
+    * INNODB_TRX was empty.
     */
   private def lockWait(waiter: Future[_]): String = {
-    val root = java.sql.DriverManager.getConnection(SharedTestDb.jdbcUrl, "root", SharedTestDb.password)
+    // the pool's URL without its options: they name the pool's user
+    val url = DB.readOnly(implicit s => s.connection.getMetaData.getURL).takeWhile(_ != '?')
+    val root = java.sql.DriverManager.getConnection(url, "root", SharedTestDb.password)
     try {
       def transactions = {
         val rs = root.createStatement().executeQuery(

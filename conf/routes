@@ -19,6 +19,8 @@ GET         /assets/*file                                                       
 
 GET         /logout                                                                 @controllers.LoginController.logoutPage(returnTo: Option[String] ?= None)
 POST        /logout                                                                 @controllers.LoginController.logout()
+# every session of the account, this one included (the own profile; a POST with the CSRF token)
+POST        /logout/everywhere                                                      @controllers.LoginController.logoutEverywhere()
 
 POST        /auth                                                                   @controllers.LoginController.auth()
 
@@ -81,11 +83,14 @@ GET         /users/edit/:id                                                     
 POST        /users/save                                                             @controllers.UserController.saveUser()
 # root: mails the account a link that sets a new password (P7)
 POST        /users/resetpasswd/:id                                                  @controllers.UserController.resetPassword(id: Long)
+# root: ends every session of the account (its session version goes up)
+POST        /users/:id/sessions/end                                                 @controllers.UserController.endSessions(id: Long)
 # an admin of the contest: a new invitation for a member or pending invitee with an unverified email
 POST        /users/:id/invite                                                       @controllers.UserController.reinvite(id: Long, contestId: Long)
 POST        /users/:id/invitation/cancel                                            @controllers.UserController.cancelInvitation(id: Long, contestId: Long)
 # the own profile's personal API tokens (POST forms with the CSRF token; the session only)
 POST        /users/tokens                                                           @controllers.UserController.createApiToken()
+POST        /users/tokens/revoke-all                                                @controllers.UserController.revokeAllApiTokens()
 POST        /users/tokens/:id/revoke                                                @controllers.UserController.revokeApiToken(id: Long)
 POST        /switch-contest/:contestId                                              @controllers.UserController.switchContest(contestId: Long)
 # an old link: the contest is switched by the navbar's menu (POST) only
