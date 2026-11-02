@@ -1,6 +1,6 @@
 package controllers
 
-import db.scalikejdbc.{ContestJuryJdbc, MediaType, Round, RoundLimits}
+import db.scalikejdbc.{ContestJuryJdbc, MediaType, Round, RoundLimits, User}
 import org.scalawiki.wlx.dto.SpecialNomination
 import org.intracer.wmua.{BinaryOrder, CategoryOperation, CategoryRule}
 import play.api.data.{Form, Mapping}
@@ -91,7 +91,8 @@ object EditRound {
       "number" -> longNumber,
       "name" -> optional(text),
       "contest" -> longNumber,
-      "roles" -> text,
+      // the hidden field is always "jury" (editRound.scala.html); a contest role, never root or a list (G1)
+      "roles" -> text.verifying("error.invalid", User.isContestRole(_)),
       "distribution" -> number,
       "rates" -> number,
       "fileList" -> optional(text),
