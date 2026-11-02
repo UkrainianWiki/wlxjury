@@ -401,8 +401,9 @@ class SessionsSpec extends PlaySpecification with PlayTestDb with AccountTestSup
         status(send(app, GET, s"/users/edit/${juror.getId}", old)) === OK
         status(send(app, GET, s"/users/edit/${juror.getId}", old)) === OK
       }
-      // after the window (a fresh app reads it): the old cookie is signed out, an S3 one is not
-      withCsrfApp { implicit app =>
+      // after the window (a fresh app reads it, not the shared one, which has read it open): the
+      // old cookie is signed out, an S3 one is not
+      security.ProductionFilters.withApp { implicit app =>
         createContests(10)
         val juror = contestMember("juror@example.com")
         setWindow(-1)

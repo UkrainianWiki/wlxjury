@@ -2035,3 +2035,97 @@ repeated.
   `ba77b314` (the dump uses `INSERT IGNORE`; fixture-v5), then `GatlingSmokeSpec`,
   `CriteriaRateSpec` and `SetupSpec` in one JVM, in the full suite's order: 26 passed
   (`…-193801-23864.log`). No other spec failed, so the full suite was not repeated.
+
+## Test-suite runtime
+
+Measured from the last full suite (`target/checks/20261102-190955-5108.log`, 20.9 min, 174 specs
+and munit suites, 19.3 min of spec time; S7's `SecurityHeadersSpec` and `LoginCsrfSpec` came
+later). "Apps" counts the Play apps a spec starts (`Creating Pool for datasource` between its
+header and its total); the shared `SharedPlayApp` starts once, in the first spec that uses it.
+
+| Spec | Time | Apps | Examples |
+|---|---|---|---|
+| RoundDistributionJobSpec | 61.8s | 0 | 22 |
+| ListPositionSpec | 59.8s | 0 | 5 |
+| LargeImageSpec | 55.8s | 10 | 46 |
+| RoundRedistributionFiltersSpec | 46.0s | 0 | 10 |
+| GalleryOrderSpec | 40.3s | 2 | 12 |
+| AppendImagesSpec | 36.1s | 0 | 21 |
+| ConvertToInnoDbMigrationSpec | 33.1s | 0 | 10 |
+| SecuredSpec | 29.0s | 0 | 24 |
+| CategoryClauseSpec | 28.9s | 0 | 23 |
+| ApiTokenPageSpec | 27.4s | 17 | 18 |
+| ImageDbNewDbSpec | 24.7s | 0 | 28 |
+| LocalImageCacheServiceSpec | 23.9s | 0 | 73 |
+| JobSchedulerSpec | 23.6s | 0 | 19 |
+| ContestFilesPageSpec | 22.6s | 1 | 27 |
+| ThemeSwitchSpec | 21.9s | 9 | 16 |
+| MutationAuthorizationSpec | 21.2s | 0 | 38 |
+| RoundListDbSpec | 21.0s | 0 | 31 |
+| MultiContestUserSpec | 20.9s | 0 | 20 |
+| SessionsSpec | 20.8s | 20 | 19 |
+| AccountInvitationSpec | 18.8s | 2 | 17 |
+| UserContestRoleMigrationSpec | 17.7s | 0 | 6 |
+| CommonsFileCheckSpec | 16.0s | 0 | 16 |
+| ImageProxyFileCheckSpec | 15.9s | 0 | 15 |
+| CoiAuthorizationSpec | 15.4s | 1 | 12 |
+| RoundEditPageSpec | 15.1s | 2 | 18 |
+
+87 app starts in the whole suite; about 70 of them, and S7's 18, came from the CSRF router specs
+(`CsrfTestApp.withCsrfApp`, one fresh app per example) and the release-filter specs
+(`ProductionFilters.withApp`). Estimated saving from one shared production-filter app: about
+0.6 s per app start (below), so about 50–55 s of the suite (4 %). The slowest specs start no
+app: their time is database work (distribution jobs, list positions, migrations), out of scope
+here.
+
+**Done (`ukwikidev/test-shared-prod-app`):** `ProductionFilters.withSharedApp`, one JVM-wide app
+with the release's filters and settings (the same build as `withApp`), started at first use on
+the shared database, truncated per call, never stopped by a spec. `CsrfTestApp.withCsrfApp` uses
+it, so the CSRF router specs now run through the release's filters (CSP and allowed hosts too,
+not the test config plus CSRF). Apps of their own: `SessionsSpec`'s closed-window block (the
+shared app reads the pre-S3 upgrade window, `SessionUpgradeWindow`, once; the block moves the
+row and needs a fresh app), `SecurityHeadersSpec`'s two served examples (the server's stop stops
+the app it serves; one binds its own router); `LoginCsrfSpec`'s three setup-token examples share
+one per-spec app (`ProductionFilters.OwnApp`, stopped in `afterAll`). `SignedOutSpec` stays on
+`SharedPlayApp` (CSRF off: its signed-out POSTs must reach the actions, not a CSRF 403);
+`RouteAuthSpec` starts no app.
+
+The 11 specs, same set before (base `dad6ae55`) and after, one run each:
+
+| Spec | Examples | Apps | Before | After |
+|---|---|---|---|---|
+| SecurityHeadersSpec | 16 | 11 → 3 | 46.0 s | 36.7 s |
+| LargeImageSpec | 48 | 12 → 0 | 37.6 s | 31.9 s |
+| SessionsSpec | 19 | 20 → 1 | 25.2 s | 12.0 s |
+| ApiTokenPageSpec | 18 | 17 → 0 | 17.8 s | 10.3 s |
+| ThemeSwitchSpec | 16 | 10 → 2 | 14.6 s | 11.5 s |
+| AccountReviewFixesSpec | 22 | 2 → 1 | 13.1 s | 12.0 s |
+| CoiAuthorizationSpec | 12 | 1 → 0 | 12.0 s | 12.4 s |
+| AccountInvitationSpec | 18 | 2 → 0 | 10.9 s | 10.2 s |
+| ApiSpec | 15 | 4 → 0 | 10.3 s | 9.2 s |
+| LoginCsrfSpec | 7 | 7 → 1 | 10.1 s | 5.2 s |
+| SignOutAndSwitchSpec | 7 | 7 → 0 | 7.6 s | 3.4 s |
+| **Total** | **198 passed / 198 passed** | **93 → 8** | **205 s** | **155 s** |
+
+`testOnly` of the 11: 219 s → 164 s (`target/checks/20261102-195933-20588.log`,
+`…-200740-7124.log`). The first spec carries the container's start and the first app's in both
+runs; the apps counted after include the `SharedPlayApp` and per-config apps that stay.
+
+**Deferred:** `GalleryRegionsSpec` starts five `testDbApp` apps with an `implicit cfg` for three
+configs (`gallery.regionCounts`); grouping them per spec saves two app starts (about 1 s) but
+needs a per-spec app cache in `PlayTestDb` whose per-config apps, unlike today's, would have to
+truncate: not worth the change on its own.
+
+**Full suite on the branch** (`99990767`, `target/checks/20261102-201448-24480.log`): Scala 1661
+total, 1654 passed, 0 failed, 1 error, 6 skipped, 1 pending; Jest 20 suites, 251 passed. The
+error is `GatlingSmokeSpec` (NPE: S7's `filtersConfig` read `GatlingTestFixture.cspMode` before
+its initialiser ran), pre-existing on `dad6ae55` and fixed on followups in `8c2b3d67`, merged
+here (`ef924d9c`). Rerun after the merge with the specs that follow it in the suite and a
+shared-app spec after it (`GatlingSmokeSpec`, `UserDbSpec`, `CriteriaRateSpec`, `SetupSpec`,
+`LoginCsrfSpec`, one JVM): 39 passed, `GatlingSmokeSpec` 7 (`…-205144-17580.log`).
+The suite grew since the last run (1598 → 1661: S6 and S7). App starts: 87 → 22. Wall time 22:19 against 20:54, not a like-for-like comparison: the 174 specs both runs share took
+1156 s → 1224 s, the nine moved CSRF router specs 193 s → 174 s and the other 165 963 s → 1050 s
+(+9 %, unchanged code: run-to-run and host-load variation, `PasswordStorageSpec` +16 s from S6);
+the four new specs took 29 s. So the attributable saving is the paired 50 s above, about 4 % of
+the suite, within this host's run-to-run spread; it shows in the specs that start apps, not in
+the total.
