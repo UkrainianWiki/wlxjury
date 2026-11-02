@@ -1373,3 +1373,75 @@ changed).
 - The 2 s of the aggregate plan came from the UI fixture server at 533c4b88; it wasn't re-run
   here (HEAD measures 1.13 s on the Gatling fixture). The single 4.9 s and 5.2 s outliers there
   did not recur in 60 samples per variant (max 1351 ms).
+
+## Batch B10: RegionCountPairedBenchmark restored
+
+Branch `ukwikidev/followups-bench` (from `9e3bc9ec`). The user wants the paired benchmark back,
+working and measuring something, rather than deleted (`ea575a59`).
+
+**What it measured** (`ea575a59^`): alternating AB/BA pairs on identical inputs in one warmed
+fixture JVM, 3 blocks at 1 and 5 workers, every pair in `region-pairs-<stamp>.csv`, per block
+p50/p95/mean of each variant and the mean/median paired delta. A = `gallery.regionCounts=off`,
+B = `all`. Six cases: `sql-juror` (a juror's `byRegionStat` vs `regionCounts`, every juror and
+filter), `sql-round` / `sql-round-rated` (the whole round's, unfiltered / `rated=true`), and
+`page-juror` / `page-round` / `page-round-rated` (the gallery and by-rate pages from two
+`GalleryController`s with the two settings, through `Helpers.call`, requiring a 200, the region
+menu and `Volyn O. (` in the HTML exactly when counts were on).
+
+**What is obsolete, checked against `9e3bc9ec`:**
+- The page pairs. The gallery and by-rate pages render only the region menu's button and its
+  `data-regions-url` (`GalleryController.regionMenu`); no counts, so `Volyn O. (` never appears
+  and the check fails, and an off/on page pair would time identical work.
+- `sql-juror` as an off/on pair. A juror's regions now come from `RoundList.jurorCounts()`
+  (`SelectionQuery.regionRateCounts`, one scan that also gives the tabs and the total) whatever
+  the setting; `gallery.regionCounts` only drops the numbers. A juror's `regionCounts()` and
+  `byRegionStat()` are no longer on any juror path (`byRegionStat` is left for the whole round
+  with counts off, and sub-regions).
+- The SQL pairs had no correctness check: a wrong count would have been timed without notice.
+- Still current: `gallery.regionCounts` (`off`/`juror`/`all`, default `all`), the
+  `GalleryController(galleryService, cc, blocking, config)` constructor,
+  `SelectionQuery.byRegionStat`/`regionCounts`, `GatlingTestFixture.application`, the session
+  keys `Secured.UserName`/`CurrentContestId`. The fixture (`GatlingDbSetup`/`GatlingDbCache`) is
+  unchanged in shape; the filters are now `VoteFilter`s (`filter=` in a list URL; a rated
+  round's unrated is `rate = 0`).
+
+**What it pairs now** (A first in the file, B second; the order alternates by pair and block):
+
+| Case | A | B | Inputs |
+|---|---|---|---|
+| `sql-round` | whole round `byRegionStat` (counts off) | whole round `regionCounts` (counts on) | both rounds, each tab's filter |
+| `sql-juror` | a juror's `regionCounts` (one filter) | `regionRateCounts` + `JurorCounts.regions` (what the menu runs) | every juror, both rounds, each filter |
+| `menu-round` | `GET /regions/round/R/user/0/...?module=byrate&filter=F`, `gallery.regionCounts=off` | the same, `all` | organizer, both rounds, each filter |
+| `menu-juror` | `GET /regions/round/R/user/J/...?filter=F`, `off` | the same, `all` | every juror's own, both rounds, each filter |
+
+`menu-*` call `GalleryController.regions` (the region menu's endpoint) of two controllers built
+from the app's injector, as the page pairs did: authentication, the gallery's permission checks,
+`RoundList`, the queries and the JSON, without filters, socket or client. `menu-juror` runs the
+same query in both variants (only the numbers differ), so it is the control: its paired delta
+should be ~0 and shows the method's order bias and noise floor next to `menu-round`'s.
+
+**Correctness checks** (once per distinct input, outside the timed pairs, failing the run):
+`sql-round`: `byRegionStat`'s regions are `regionCounts`' keys, and `regionCounts` equals an
+independent literal (`COUNT(DISTINCT IF(hit, page_id, NULL))` per region from `selection`);
+`sql-juror`: the two counts are equal; `menu-*`: both 200, the same region ids and URLs, no counts
+with `off`, and with `all` exactly the SQL's counts (`regionCounts` for the round,
+`JurorCounts.regions` for a juror). Each timed call also requires a 200.
+
+**Overlap.** `RegionCountBenchmark` times the SQL alone, each query separately (quantiles of
+independent runs, plus `ANALYZE` and handler counts); `GalleryLatencyBenchmark`'s
+`regions-<round>-juror|organizer` time the unfiltered menu over HTTP with the one setting the JVM
+started with. Neither gives a paired off/on difference: the 2026-10-25 run showed block-to-block
+spread (6.8 ms on a 25 ms query; a 26 s pause in one block) larger than the effect, which
+independent quantiles can't separate and AB/BA pairs on the same input can. This is the
+evidence behind `gallery.regionCounts = all`, and the way to recheck it after a change to the
+count queries, indexes or the menu endpoint, without a second fixture.
+
+**Run** (one JVM, no other sbt/DB work; SQL logging off for both variants):
+```bash
+python scripts/agent-check.py -- java -Xmx1536m -Dfile.encoding=UTF-8 -jar 'C:/Program Files (x86)/sbt/bin/sbt-launch.jar' \
+  'set Test / javaOptions ++= Seq("-Xmx768m", "-Dfile.encoding=UTF-8", "-Dscalikejdbc.global.loggingSQLAndTime.enabled=false")' \
+  'Test/runMain gatling.setup.RegionCountPairedBenchmark'
+```
+Options (`-Dbench.*`): `blocks` (3), `pairs` (100, juror cases), `roundPairs` (40, round
+cases), `warmup` (20), `threads` (`1,5`), `cases` (all four). Output:
+`target/gatling/region-pairs-<stamp>.{csv,txt}`. A pilot with small counts checks that it runs.
