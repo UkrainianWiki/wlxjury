@@ -291,7 +291,7 @@ SELECT s.round_id, COUNT(*) FROM selection s JOIN (SELECT selection, SUM(IF(rate
   and `criteria.contest` after C0; repair votes whose rate differs from their criteria sum by
   migration if C0 finds any.
 
-Still open: U4 (the C4 keyboard model, explained to the user).
+- **U4:** the C4 keyboard model, accepted.
 
 The options as first written:
 

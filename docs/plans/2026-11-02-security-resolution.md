@@ -340,7 +340,7 @@ can't sign in).
 **Dependencies:** P5 after B10's benchmark run (do not change the proxy while it measures).
 
 **Decided (user, 2026-11-02):** P6: a deactivated juror must not vote (both vote actions check
-`round_user.active`; 409 like a stopped round). P7: pending clarification.
+`round_user.active`; 409 like a stopped round). P7: option (a), a single-use password-set link reusing S2's invitation token; done in S2.
 
 ## S7: Headers and CSP
 
