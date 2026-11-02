@@ -117,7 +117,7 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
           (if (idsOnSelection) " from selection s" else join(monuments = needsMonumentJoin))
 
       val mainSql =
-        sqls"${SQLSyntax.createUnsafely(structureStr)} ${where(count)} ${SQLSyntax.createUnsafely(groupByStr)} $havingSql ${SQLSyntax.createUnsafely(if (!(count || byRegion)) orderBy() else "")}"
+        sqls"${SQLSyntax.createUnsafely(structureStr)} ${where(count, withPage = idsOnSelection)} ${SQLSyntax.createUnsafely(groupByStr)} $havingSql ${SQLSyntax.createUnsafely(if (!(count || byRegion)) orderBy() else "")}"
 
       // A juror has at most one row per image in a round (unique page_id, jury_id,
       // round_id): with both fixed, the rows are the images.
@@ -134,7 +134,7 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
           if (oneRowPerImage) "COUNT(*)" else "COUNT(DISTINCT s.page_id)"
         )
         // the files with a matching vote: the same number with the filter on the rows
-        sqls"select $countExpr from selection s ${where(votes = true)}"
+        sqls"select $countExpr from selection s ${where(votes = true, withPage = true)}"
       } else if (count) {
         sqls"select count(t.pi_on_i) from ($mainSql) t"
       } else if (noLimit || byRegion) {
@@ -156,8 +156,8 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
       * mixed-direction ORDER BY (rate DESC, monument_id ASC, ...) can't be read from the
       * ascending index.
       *
-      * The inner query reads selection alone: every selection row has its image (foreign
-      * key FK_selection_page_id, V58), so it pages the same rows the plain query and
+      * The inner query reads selection alone, its rows with a page id: those have their image
+      * (foreign key FK_selection_page_id, V58), so it pages the same rows the plain query and
       * [[imageRank]] see when joining images.
       *
       * The inner query also returns the ORDER BY columns (as o0, o1, ...; from the same
@@ -172,7 +172,7 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
       val outerOrder = SQLSyntax.createUnsafely(orderSql(keys.map { case (_, alias, dir) => s"k.$alias" -> dir }))
       val page = SQLSyntax.createUnsafely(limitSql())
       val columns = SQLSyntax.createUnsafely(columnsStr)
-      sqls"$columns from (select s.id$keyColumns from selection s ${where()} $innerOrder $page) k" +
+      sqls"$columns from (select s.id$keyColumns from selection s ${where(withPage = true)} $innerOrder $page) k" +
         sqls" STRAIGHT_JOIN selection s on s.id = k.id" +
         sqls" STRAIGHT_JOIN images i on i.page_id = s.page_id $outerOrder"
     }
@@ -185,8 +185,9 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
       * Grouping the round's votes with every image column, as one query did before B12,
       * carried them all through the temporary table and its sort.
       *
-      * Every selection row has its image (FK_selection_page_id, V58), so it pages the files
-      * the one query paged. The aggregates come first, in the grouped reader's order.
+      * A selection row with a page id has its image (FK_selection_page_id, V58); one without
+      * (`page_id` is nullable) is left out, as the join left it out, so it pages the files the
+      * one query paged. The aggregates come first, in the grouped reader's order.
       */
     private def deferredGroupedPage(): SQLSyntax = {
       // the select's alias `rate` isn't a column of the inner select list: its sum
@@ -204,7 +205,7 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
       val page = SQLSyntax.createUnsafely(s"${orderBy()} ${limitSql()}")
       val outer = SQLSyntax.createUnsafely(s"select ${aggregates.map("k." + _).mkString(", ")}, ")
       val outerOrder = SQLSyntax.createUnsafely(orderSql(keys.map { case (_, alias, dir) => s"k.$alias" -> dir }))
-      sqls"$outer ${i.result.*} from ($inner ${where()} $groupBy $having $page) k" +
+      sqls"$outer ${i.result.*} from ($inner ${where(withPage = true)} $groupBy $having $page) k" +
         sqls" STRAIGHT_JOIN images i on i.page_id = k.pid $outerOrder"
     }
 
@@ -250,7 +251,7 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
       val keys = columns.indices.map(n => s"k$n")
       val select = columns.zip(keys).map { case ((expr, _), k) => s"$expr as $k" }.mkString(", ")
       val from = if (monumentJoin) join(monuments = true) else " from selection s"
-      val inner = sqls"${SQLSyntax.createUnsafely(s"select $select $from")} ${where()} group by s.page_id $having"
+      val inner = sqls"${SQLSyntax.createUnsafely(s"select $select $from")} ${where(withPage = true)} group by s.page_id $having"
       val outer = SQLSyntax.createUnsafely(
         s"select ${keys.mkString(", ")}, count(*) from (") +
         inner +
@@ -291,7 +292,7 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
       * or where it would be if the filter leaves it out. One count over the juror's rows.
       */
     def countBefore(key: Keyset)(implicit session: DBSession = autoSession): Int =
-      sql"select count(*) from selection s ${copy(withPageId = None, keyset = Some(key.copy(before = true))).where()}"
+      sql"select count(*) from selection s ${copy(withPageId = None, keyset = Some(key.copy(before = true))).where(withPage = true)}"
         .map(_.int(1)).single().getOrElse(0)
 
     /** The rows ordered before a file's values of the order columns: on each column in turn,
@@ -380,7 +381,7 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
     def regionRateCounts()(implicit session: DBSession = autoSession): Map[(Option[String], Int), Int] = {
       require(userId.isDefined && roundId.isDefined, "a juror's counts in a round")
       SQL(s"""SELECT ${regionOf("s.monument_id")} AS region, s.rate, COUNT(*) FROM selection s
-             |WHERE s.jury_id = ${userId.get.toLong} AND s.round_id = ${roundId.get.toLong}
+             |WHERE s.jury_id = ${userId.get.toLong} AND s.round_id = ${roundId.get.toLong} AND s.page_id IS NOT NULL
              |GROUP BY region, s.rate ORDER BY NULL""".stripMargin)
         .map(rs => (rs.stringOpt(1), rs.int(2)) -> rs.int(3))
         .list()
@@ -427,8 +428,10 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
 
     /** @param votes with the vote filter on the rows: without it for [[filesByVotes]], whose
       *              HAVING has it ([[having]])
+      * @param withPage only rows with a page id: a query on selection alone, without the join
+      *              to images that leaves out the rest (`selection.page_id` is nullable)
       */
-    def where(count: Boolean = false, votes: Boolean = !filesByVotes): SQLSyntax = {
+    def where(count: Boolean = false, votes: Boolean = !filesByVotes, withPage: Boolean = false): SQLSyntax = {
       val col = SQLSyntax.createUnsafely(s"m.$regionColumn")
 
       val conditions: Seq[SQLSyntax] = Seq(
@@ -451,7 +454,8 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
             if (subRegions) sqls"s.monument_id like $likeParam"
             else sqls"s.monument_id like $likeParam and ${SQLSyntax.createUnsafely(regionOf("s.monument_id"))} = $region"
           }
-        }
+        },
+        Option.when(withPage)(sqls"s.page_id is not null")
       ).flatten
 
       conditions.headOption.fold(sqls"") { _ =>

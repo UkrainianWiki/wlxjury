@@ -30,7 +30,8 @@ class GroupedListParitySpec extends Specification with TestDb with BeforeAll wit
   private val PageSize = 3
 
   /** 40 files in regions 07 (sub-regions 07-101, 07-102) and 14, every 10th without a
-    * monument id; 4 jurors, each file voted on by 2-4 of them with `rate`'s rates.
+    * monument id; 4 jurors, each file voted on by 2-4 of them with `rate`'s rates; and two
+    * votes without a page id, which no list has.
     */
   private def setUp(rates: Rates, rate: scala.util.Random => Int, hasCriteria: Boolean = false,
       specialNomination: Option[String] = None): (Round, Seq[File]) = {
@@ -57,6 +58,14 @@ class GroupedListParitySpec extends Specification with TestDb with BeforeAll wit
       image -> voters.map(j => Selection(image, j, round, rate(random)))
     }
     selectionDao.batchInsert(votes.flatMap(_._2))
+    // two votes without a page id (`selection.page_id` is nullable), in region 07-101 and
+    // matching every filter but the unrated: no list has them
+    scalikejdbc.DB.autoCommit { implicit s =>
+      jurors.take(2).foreach { j =>
+        scalikejdbc.SQL("INSERT INTO selection (page_id, rate, jury_id, round_id, monument_id) VALUES (NULL, 1, ?, ?, '07-101-9999')")
+          .bind(j.getId, round.getId).update()
+      }
+    }
     (round, votes.map { case (image, s) => File(image.pageId, image.monumentId, s.map(_.rate)) })
   }
 
