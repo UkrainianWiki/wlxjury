@@ -111,6 +111,9 @@ class ImageProxyController(
             .getOrElse(None)
         ))
           .flatMap {
+            case Some((image, _)) if !LocalImageCacheService.servedWidths(image).contains(px) =>
+              Future.successful(atServedWidth(image, px, path))
+
             case Some((image, direct)) =>
               serveImage(image, px, path) { ex =>
                 if (direct) afterFailedFetch(image, ex, px, path) else Future.successful(wikimedia(path))
@@ -121,6 +124,20 @@ class ImageProxyController(
               Future.successful(wikimedia(path))
           }
     }
+  }
+
+  /** A width the pages don't ask for the image at (an old page's, or made up): a redirect to
+    * the same thumbnail at the nearest one they do ([[LocalImageCacheService.servedWidths]]),
+    * so that no other width is scaled here on every request (P5). Nothing is fetched or
+    * scaled for this request; 404 if there is no such width within [[MaxAllowedPx]].
+    */
+  private def atServedWidth(image: Image, px: Int, path: String): Result = {
+    val slash = path.lastIndexOf('/')
+    val redirect = for {
+      width <- LocalImageCacheService.nearestWidth(LocalImageCacheService.servedWidths(image).filter(_ <= MaxAllowedPx), px)
+      name  <- LocalImageCacheService.withThumbnailPx(path.substring(slash + 1), width)
+    } yield Redirect(ThumbPrefix + path.substring(0, slash + 1) + name, FOUND)
+    redirect.getOrElse(NotFound)
   }
 
   /** The thumbnail from the local cache, else fetched from Wikimedia and cached; else what
@@ -197,6 +214,9 @@ object ImageProxyController {
     val (name, Seq(version, accountId)) = parts.splitAt(parts.size - 2)
     Secured.mayView(name.mkString("\n"), Some(version).filter(_.nonEmpty), Some(accountId).filter(_.nonEmpty))
   }
+
+  /** The proxy's path on this server ([[serve]]'s route), where its redirects to another width go. */
+  val ThumbPrefix = "/wikipedia/commons/thumb/"
 
   /** How long a user's access to the thumbnails is taken as read: a removed juror loses it within that. */
   val ViewerTtl: FiniteDuration = 1.minute
