@@ -58,11 +58,12 @@ In the jury (`services.regions.RegionScheme`), a prefix is named from the nomina
 - **D2 (optional):** a category of three copies of D1's files (~115k).
 - D3 and D4 (prod-like server) are not run: the review's measurements settle the criteria, and the laptop lacks the RAM D4 needs (bench/README.md §2).
 - Tools: `RegionCountBenchmark` (literal SQL plus the application query methods) and `RegionCountPairedBenchmark` (repeated alternating SQL/controller comparisons). No Gatling HTTP A/B for the round galleries.
-  `RegionCountPairedBenchmark` was deleted later (open-followups batch B8): the galleries no longer
-  render the counts, which the region menu loads from its regions URL; `RegionCountBenchmark`
-  (the SQL) and `GalleryLatencyBenchmark` (`regions-*` cases, the menu's endpoint over HTTP) cover
-  what is left. The commands below are kept as the record of the run; repeating the paired one
-  needs a commit before B8.
+  Since the region menu the galleries no longer render the counts (the menu loads them from its
+  regions URL), so `RegionCountPairedBenchmark`'s page pairs were obsolete; it was deleted in
+  open-followups batch B8 and restored in B10, pairing the menu's endpoint (`menu-round`,
+  `menu-juror`) and the SQL (`sql-round`, `sql-juror`) instead, with its counts checked. The
+  results below are from the 2026-10-25 version (`sql-*`, `page-*` cases); its command still runs
+  the restored one, whose cases differ (open-followups, "Batch B10").
 
 ### Original decision criteria (written before the measured runs)
 
