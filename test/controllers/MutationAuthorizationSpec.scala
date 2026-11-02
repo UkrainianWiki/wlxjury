@@ -338,6 +338,63 @@ class MutationAuthorizationSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
+    "change nothing for a juror stopped on the round (P6): 409 in the gallery, back to the gallery from the large view" in {
+      testDbApp { app =>
+        val juror = setUp()
+        val round = roundOf(juror, Round.ratesById(5), rate = 2)
+        val other = userDao.create(User("Other", "other@example.com", None, Set("jury"), contestId = juror.contestId))
+        round.addUsers(Seq(RoundUser(round.getId, other.getId, "jury", active = true)))
+        SelectionJdbc.create(pageId, 3, other.getId, round.getId)
+        RoundUser.setActive(round.getId, juror.getId, active = false)
+
+        val inGallery = gallery(app, round, juror, 4)
+        status(inGallery) === CONFLICT
+        (contentAsJson(inGallery) \ "error").as[String] === "round_closed"
+        val fromLarge = large(app, round, juror, 4)
+        status(fromLarge) === SEE_OTHER
+        redirectLocation(fromLarge) must beSome.which(_.startsWith(s"/gallery/round/${round.getId}/"))
+        stored(round, juror) === Some(2)
+
+        // only the stopped juror: another juror of the round still votes
+        status(gallery(app, round, other, 5)) === OK
+        stored(round, other) === Some(5)
+
+        // active again: the juror votes
+        RoundUser.setActive(round.getId, juror.getId, active = true)
+        status(gallery(app, round, juror, 4)) === OK
+        stored(round, juror) === Some(4)
+      }
+    }
+
+    "change no criterion for a juror stopped on a criteria round (P6)" in {
+      testDbApp { app =>
+        val juror = setUp()
+        val round = criteriaRoundOf(juror)
+        RoundUser.setActive(round.getId, juror.getId, active = false)
+
+        val result = large(app, round, juror, 10, criteria = Some(1))
+        status(result) === SEE_OTHER
+        redirectLocation(result) must beSome.which(_.startsWith(s"/gallery/round/${round.getId}/"))
+        criteriaOf(round, juror) === Map(1L -> 3, 2L -> 4)
+        stored(round, juror) === Some(7)
+      }
+    }
+
+    "still take the votes of a juror with no round_user row (a legacy round's)" in {
+      testDbApp { app =>
+        val juror = setUp()
+        val round = roundOf(juror, Round.ratesById(5), rate = 2)
+        scalikejdbc.DB.autoCommit { implicit s =>
+          import scalikejdbc._
+          sql"DELETE FROM round_user WHERE round_id = ${round.getId}".update()
+        }
+        status(gallery(app, round, juror, 4)) === OK
+        stored(round, juror) === Some(4)
+        status(large(app, round, juror, 5)) === SEE_OTHER
+        stored(round, juror) === Some(5)
+      }
+    }
+
     "change only the juror's own selection: a 404 for a file not assigned to them, another's kept" in {
       testDbApp { app =>
         val juror = setUp()

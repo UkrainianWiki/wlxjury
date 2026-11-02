@@ -296,8 +296,9 @@ class GalleryController @Inject() (
     ) { user => implicit request =>
     val round = Round.findById(roundId)
     // Votes only in a round open to its jurors: not in a stopped round, a previous round
-    // frozen while a distribution reads its votes, or a round still being distributed.
-    if (!round.exists(_.openToJurors))
+    // frozen while a distribution reads its votes, or a round still being distributed; and only
+    // by a juror not stopped on the round (P6: as if the round were stopped for them).
+    if (!round.exists(_.openToJurors) || RoundUser.isStopped(roundId, user.getId))
       Conflict(play.api.libs.json.Json.obj("error" -> "round_closed"))
     // a criteria round's votes are per criterion, in the large view: a file's own rate would
     // overwrite the sum of its criteria (its tiles have no stars)
