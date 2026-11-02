@@ -130,7 +130,7 @@ object AccountTokenService {
               if (!AccountTokenJdbc.markUsed(link.id)) refused(NotLive, Some(link))
               else {
                 sql"""UPDATE users SET password = $passwordHash, email_verified_at = NOW(3),
-                        auth_version = auth_version + 1
+                        auth_version = ${User.BumpAuthVersion}
                       WHERE id = ${user.getId}""".update.apply()
                 val revokedApiTokens = ApiTokenJdbc.revokeAll(user.getId)
                 val roles = pending.flatMap { p =>

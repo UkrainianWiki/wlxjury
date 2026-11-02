@@ -234,13 +234,31 @@ class UserService @Inject()(val sendMail: SMTPOrWikiMail,
       val subject = messages("email.changed.subject")
       val body = messages("email.changed.body", UserService.maskEmail(account.emailLo))
       mailInBackground {
-        try sendMail.sendMail(account, account.copy(email = oldEmail.trim.toLowerCase), subject, body)
+        // from the tool's own sender: the account's From would carry the new address
+        try sendMail.sendMail(systemSender, account.copy(email = oldEmail.trim.toLowerCase), subject, body)
         catch {
           case NonFatal(e) =>
             accountLogger.warn(s"account_mail_failed purpose=email_changed accountId=${account.getId} error=${e.getClass.getName}")
         }
       }
     }
+
+  /** The tool's own sender, for mail no person sends (the old address's notice):
+    * `wlxjury.mail.from`, else the SMTP user if it is an address, else `no-reply@` the host of
+    * `wlxjury.host`.
+    */
+  def systemSender: User = {
+    def address(v: String) = Some(v.trim).filter(a => play.api.data.validation.Constraints.emailAddress()(a) ==
+      play.api.data.validation.Valid)
+    val email = configuration.getOptional[String]("wlxjury.mail.from").flatMap(address)
+      .orElse(configuration.getOptional[String]("play.mailer.user").flatMap(address))
+      .getOrElse {
+        val host = scala.util.Try(new java.net.URI(configuration.get[String]("wlxjury.host")).getHost).toOption
+          .flatMap(Option(_)).getOrElse("localhost")
+        s"no-reply@$host"
+      }
+    User(fullname = "Jury tool", email = email)
+  }
 
   /** Runs `send` after the request's answer (the mail server's time not in it). */
   protected def mailInBackground(send: => Unit): Unit =

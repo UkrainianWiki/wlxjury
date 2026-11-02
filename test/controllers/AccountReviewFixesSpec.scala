@@ -272,6 +272,9 @@ class AccountReviewFixesSpec extends PlaySpecification with PlayTestDb with Acco
           FakeRequest(POST, "/email/confirm").withFormUrlEncodedBody("token" -> token).withCSRFToken)) === OK
 
         mail.recipients === Seq("user@example.com")
+        // from the tool's sender, never the account (whose From would be the new address)
+        mail.sent.last._1.email === "no-reply@jury.wle.org.ua"
+        mail.sent.last._1.email must not(contain("newaddress"))
         val body = mail.sent.last._4
         body must contain("n***@example.org")
         body must not(contain("newaddress"))
@@ -321,6 +324,43 @@ class AccountReviewFixesSpec extends PlaySpecification with PlayTestDb with Acco
         RecordingMail.Link.findFirstMatchIn(mail.sent.last._4).get.matched must startWith("https://jury.wlm.org.ua/")
         addVia("attacker.example", "forged@example.com") === SEE_OTHER
         RecordingMail.Link.findFirstMatchIn(mail.sent.last._4).get.matched must startWith("https://jury.wle.org.ua/")
+      }
+    }
+  }
+
+  "the follow-up review" should {
+    "resolve a session by its exact wiki name: renaming a near-duplicate never moves an old cookie to another account" in {
+      testDbApp { implicit app =>
+        val a = account("a@example.com", None, "no", verified = true, wikiAccount = Some("Foo_bar"))
+        val b = account("b@example.com", None, "no", verified = true, wikiAccount = Some("Foo bar"))
+        Secured.sessionUser("Foo_bar", None, None, None).flatMap(_.id) === a.id
+        User.setWikiAccount(a.getId, Some("Renamed"))
+        Secured.sessionUser("Foo_bar", None, None, None) must beNone
+        Secured.sessionUser("Foo bar", None, None, None).flatMap(_.id) === b.id
+      }
+    }
+
+    "give the first root a non-zero auth version, and keep versions within an Int" in {
+      testDbApp { implicit app =>
+        User.createFirstRoot("first@example.com", hash("root-password")).map(_.authVersion) must beSome(be_>(0))
+        (1 to 1000).map(_ => User.newAuthVersion()).forall(v => v > 0 && v <= (1 << 30)) must beTrue
+        val user = account("user@example.com", None, "no")
+        DB.autoCommit(implicit s => sql"UPDATE users SET auth_version = 2147483646 WHERE id = ${user.getId}".update.apply())
+        User.setEmail(user.getId, "moved@example.com", verified = false)
+        User.findById(user.getId).map(_.authVersion) === Some(1)
+      }
+    }
+
+    "let an admin send the invitation again to a verified member without a password" in {
+      testDbApp { implicit app =>
+        implicit val mat: Materializer = app.materializer
+        createContests(10)
+        val admin = account("admin@example.com", Some(10), "admin", verified = true)
+        val member = account("member@example.com", Some(10), "jury", password = None, verified = true)
+        val mail = new RecordingMail
+        status(call(userController(mail).reinvite(member.getId, 10),
+          as(admin, Some(10))(FakeRequest(POST, s"/users/${member.getId}/invite?contestId=10")).withCSRFToken)) === SEE_OTHER
+        mail.recipients === Seq("member@example.com")
       }
     }
   }

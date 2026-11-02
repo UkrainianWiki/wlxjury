@@ -449,6 +449,10 @@ later decisions (above) in the same pass:
 | User decision 1 | V77 marks used accounts verified | `AccountVerificationMigrationSpec` (membership, round only, votes, old votes, board only, neither, deleted, root) |
 | User decision 3 | `UserService.notifyEmailChanged`: the former address gets a short mail, no link, the new address masked | `AccountReviewFixesSpec` |
 | User decision 7 (link host) | `LinkHost` / `UserService.linkUrl` | `AccountReviewFixesSpec` (allowed, upper case, forged, suffix pattern, port, no request; through the controller) |
+| Follow-up Low 1: the old address's notice was sent "From" the account, i.e. the new address | Sent from `UserService.systemSender`: `wlxjury.mail.from` (`WLXJURY_MAIL_FROM`), else the SMTP user if an address, else `no-reply@` the host of `wlxjury.host` (documented in `docs/deployment.md`) | `AccountReviewFixesSpec` (From is the system sender, never the new address) |
+| Follow-up Low 2: the underscore variant also resolved sessions, so an id-less old cookie could move to another account after a near-duplicate rename | `byUserName(..., underscoresAsSpaces)` only in `User.login`; sessions resolve the exact name | `AccountReviewFixesSpec` (rename scenario) |
+| Follow-up nits | `createFirstRoot` takes `newAuthVersion()`; versions drawn from `1 + nextInt(1 << 30)`, bumps through `User.BumpAuthVersion` (back to 1 at Int's maximum); `reinvite` allowed for a verified account without a password | `AccountReviewFixesSpec` |
+| Follow-up: residual risk | Old sessions keep resolving by name to version-0 accounts until their version changes: recorded in S3 as an accepted risk for the user's decision | — |
 
 **Specs after the fixes** (no full suite): the four S2 specs, the new `controllers.AccountReviewFixesSpec`
 (19) and every affected spec of the first run: 502, 497 passed, `target/checks/20261102-153155-13372.log`;
@@ -456,7 +460,12 @@ the 5 others were test-side (`SecuredSpec`'s mocked session lacked `account_id`:
 `AccountInvitationSpec` counted the verified member's greeting as an invitation mail); after those
 fixes `SecuredSpec` + `AccountInvitationSpec`: 40 passed, `target/checks/20261102-154448-14592.log`.
 An earlier run of the account specs alone: `target/checks/20261102-145950-15336.log` (2 expectations
-updated for the random auth version and the passwordless account's invitation).
+updated for the random auth version and the passwordless account's invitation). After the follow-up review's fixes: the S2 specs and the affected ones (`AccountReviewFixesSpec`,
+`AccountInvitationSpec`, `OwnAccountSpec`, `SetupSpec`, `AccountVerificationMigrationSpec`,
+`LoginControllerSpec`, `SecuredSpec`, `PasswordStorageSpec`, `MultiContestUserSpec`,
+`RoleAssignmentSpec`, `ApiTokenPageSpec`, `MutationAuthorizationSpec`, `CoiAuthorizationSpec`,
+`ImageProxyFileCheckSpec`, `MessagesCompletenessSpec`, `ProductionConfigSpec`, `UserDbSpec`): 251
+passed, `target/checks/20261102-155941-28536.log`.
 
 ## S3: Sessions
 
@@ -481,6 +490,14 @@ CSRF-enabled router tests stay green.
 **Decisions (user):** (1) absolute lifetime (e.g. 30 days, or 12 hours during judging); (2) idle
 timeout (e.g. 8 hours); (3) revoke API tokens on password change, or only offer; (4) old cookies at
 deploy.
+
+**Accepted risk from S2 (for the user's decision):** a session from before S2 has no `account_id`
+and no `auth_version`; it still resolves by its login name, but only to an account of version 0.
+Every account created since (a random non-zero version) or whose email or wiki account changed
+since (a bump) is out of its reach, so a stale cookie can't move to another account; but it keeps
+acting as the version-0 account it names until that account's version changes. S3's in-place
+upgrade of old cookies keeps this until the upgrade stamps an id; rotating the session key (P16)
+would end every old session at once.
 
 **Dependencies:** after S2. Gatling simulations sign in through the form; check that
 `test/gatling` still signs in (no run unless the session code changes per-request cost).

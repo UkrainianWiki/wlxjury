@@ -323,7 +323,7 @@ object User extends CRUDMapper[User] {
     * Throws [[PasswordHasher.Busy]] if no turn to check comes before `deadline`.
     */
   def login(username: String, password: String, deadline: Long = PasswordHasher.default.deadline()): Option[User] = {
-    val user = byUserName(username)
+    val user = byUserName(username, underscoresAsSpaces = true)
     PasswordHasher.default.check(user.flatMap(_.password), password, deadline) match {
       case PasswordHasher.Accepted(rehash) =>
         for (u <- user; stored <- u.password) yield rehash.fold(u)(upgradeHash(u, stored, _)())
@@ -361,12 +361,16 @@ object User extends CRUDMapper[User] {
     * name is not unique; an ambiguous one names no one, rather than the oldest account with
     * it). Deleted accounts are never found (P14).
     */
-  def byUserName(username: String): Option[User] = {
+  def byUserName(username: String, underscoresAsSpaces: Boolean = false): Option[User] = {
     val unameTrimmed = username.trim.toLowerCase
     val users = Constraints.emailAddress()(unameTrimmed) match {
-      case Valid      => findByEmail(unameTrimmed)
-      // as typed, and with underscores as spaces (how names are stored since S2)
-      case Invalid(_) => Seq(unameTrimmed, unameTrimmed.replace('_', ' ')).distinct.flatMap(findByAccount)
+      case Valid => findByEmail(unameTrimmed)
+      // sign-in only: as typed, and with underscores as spaces (how names are stored since S2).
+      // A session resolves the name exactly: an id-less session from before S2 must not start
+      // naming another account once a near-duplicate name is renamed (S2 follow-up review)
+      case Invalid(_) =>
+        (if (underscoresAsSpaces) Seq(unameTrimmed, unameTrimmed.replace('_', ' ')).distinct else Seq(unameTrimmed))
+          .flatMap(findByAccount)
     }
     users.filter(_.deletedAt.isEmpty).distinctBy(_.id) match {
       case Seq(one) => Some(one)
@@ -635,7 +639,12 @@ object User extends CRUDMapper[User] {
   /** A new account's auth version: random and non-zero, so that no session from before S2
     * (version 0) resolves to it, nor, most likely, any other stale one (H2).
     */
-  def newAuthVersion(): Int = 1 + secureRandom.nextInt(Int.MaxValue - 1)
+  def newAuthVersion(): Int = 1 + secureRandom.nextInt(1 << 30)
+
+  /** The SQL that adds one to users.auth_version, back to 1 at Int's maximum (read as an Int;
+    * never reached in practice, a bump a sign-in at most).
+    */
+  val BumpAuthVersion: SQLSyntax = sqls"IF(auth_version >= 2147483646, 1, auth_version + 1)"
 
   /** Sets the wiki account (None: none); a changed one is unverified, and the account's
     * sessions end (auth_version + 1): one signed in by the old name, or one from before S2 that
@@ -644,7 +653,7 @@ object User extends CRUDMapper[User] {
   def setWikiAccount(id: Long, wikiAccount: Option[String])(implicit session: DBSession = autoSession): Unit =
     sql"""UPDATE users SET
             wiki_account_verified_at = IF(wiki_account <=> $wikiAccount, wiki_account_verified_at, NULL),
-            auth_version = IF(wiki_account <=> $wikiAccount, auth_version, auth_version + 1),
+            auth_version = IF(wiki_account <=> $wikiAccount, auth_version, $BumpAuthVersion),
             wiki_account = $wikiAccount
           WHERE id = $id""".update.apply()
 
@@ -656,7 +665,7 @@ object User extends CRUDMapper[User] {
     val stored = storedEmail(email)
     // a changed address ends the account's sessions (auth_version + 1): see setWikiAccount
     sql"""UPDATE users SET
-            auth_version = IF(email <=> $stored, auth_version, auth_version + 1),
+            auth_version = IF(email <=> $stored, auth_version, $BumpAuthVersion),
             email = $stored, email_verified_at = IF($verified, NOW(3), NULL)
           WHERE id = $id""".update.apply()
   }
@@ -733,7 +742,8 @@ object User extends CRUDMapper[User] {
         if (!empty) None
         else
           Some(create(User(fullname = "", email = email, password = Some(passwordHash), isRoot = true,
-            createdAt = Some(ZonedDateTime.now), emailVerifiedAt = Some(ZonedDateTime.now)))(s))
+            createdAt = Some(ZonedDateTime.now), emailVerifiedAt = Some(ZonedDateTime.now),
+            authVersion = newAuthVersion()))(s))
       } finally if (locked) sql"SELECT RELEASE_LOCK('wlxjury.setup')".map(_.intOpt(1)).single.apply()
     }
 

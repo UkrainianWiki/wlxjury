@@ -233,7 +233,10 @@ A link points at the host the request that sent it came to (so a WLM juror gets 
 `jury.wlm.org.ua` link) only if that host is named exactly in `WLXJURY_ALLOWED_HOSTS` (a suffix
 pattern such as `.wle.org.ua` never counts); otherwise, and for mail sent without a request, at
 `wlxjury.host`, whose scheme every link uses. A forged `Host` header can therefore never choose
-where a password link points. The old address of a changed email gets a short notice (no link).
+where a password link points. The old address of a changed email gets a short notice (no link),
+sent from `wlxjury.mail.from` (`WLXJURY_MAIL_FROM`; unset: the SMTP user if it is an address, else
+`no-reply@` the host of `wlxjury.host`), never from the account, whose address is the new one.
+Set it to an address the mail server may send from.
 
 The link's token is in the URL path (`/invitation/<token>`, `/email/confirm/<token>`), so the
 Apache access log records it. A link is single use and expires (7 days, 24 hours for an email

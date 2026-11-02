@@ -702,7 +702,8 @@ class UserController @Inject()(cc: ControllerComponents,
       }.filter(_.deletedAt.isEmpty)
       (inContest, ContestJuryJdbc.findById(contestId)) match {
         case (Some(account), Some(contest)) =>
-          if (account.isRoot || account.emailVerified || account.emailLo.isEmpty) {
+          // a verified account without a password (none set yet) may still need its invitation
+          if (account.isRoot || account.emailVerified && account.password.nonEmpty || account.emailLo.isEmpty) {
             BadRequest(views.html.errorPage(Some(user), "error.title", "invitation.not.possible"))
           } else {
             val sent = userService.reinvite(user, account, contest)
