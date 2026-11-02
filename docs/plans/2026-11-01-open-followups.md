@@ -1995,5 +1995,5 @@ migration making `selection.page_id NOT NULL` once production has no such rows, 
 
 Checks: `Test/compile`, `Gatling/compile`, `testOnly controllers.{GroupedListParitySpec,
 RoundListDbSpec, CsvSpec, AllJurorsListSpec, LargeImageSpec, ListPositionSpec}
-db.scalikejdbc.ImageDbNewDbSpec`: 128 passed, 0 failed (``). No benchmark rerun: the added condition is on
+db.scalikejdbc.ImageDbNewDbSpec`: 128 passed, 0 failed (`target/checks/20261102-142314-7560.log`). No benchmark rerun: the added condition is on
 `page_id`, which the indexes these queries read include; not measured.
