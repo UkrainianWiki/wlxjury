@@ -154,6 +154,7 @@ One MariaDB Testcontainer per JVM, shared across all specs via `SharedTestDb` (l
 | Service/controller tests (`autoSession` internally) | `BeforeAll` + `BeforeEach(SharedTestDb.truncateAll())` |
 | Tests needing a running Play app | extend `PlayTestDb`, call `testDbApp { implicit app => }` |
 | Tests needing custom Play config | add `implicit val cfg: Map[String, String] = Map(...)` before `testDbApp` call — starts a fresh per-test app |
+| Tests through the release's filters (CSP, allowed hosts, CSRF on) | `ProductionFilters.withSharedApp { app => }` (or `CsrfTestApp.withCsrfApp`): one JVM-wide app, truncated per call, never stopped by a spec (no `running`, no `TestServer`); an example that moves app-level state (the pre-S3 upgrade window), binds modules or serves the app uses `ProductionFilters.withApp` / `withAppWith`; one config shared by a spec's examples: `ProductionFilters.OwnApp`, stopped in `afterAll` |
 
 `autoSession` bypasses any outer AutoRollback transaction and reads only committed data — this is why service-layer tests (`Secured.userFromRequest`, `GalleryService`, `Round.addUsers`) must use truncation not AutoRollback.
 

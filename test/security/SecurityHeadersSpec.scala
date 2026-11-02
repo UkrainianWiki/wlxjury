@@ -106,7 +106,7 @@ class SecurityHeadersSpec extends PlaySpecification with PlayTestDb {
 
   "a response through the release's filters" should {
     "carry the headers: a page" in {
-      ProductionFilters.withApp { app =>
+      ProductionFilters.withSharedApp { app =>
         val page = get(app, "/auth")
         status(page) === OK
         contentType(page) must beSome("text/html")
@@ -115,7 +115,7 @@ class SecurityHeadersSpec extends PlaySpecification with PlayTestDb {
     }
 
     "carry the headers, with its own no-referrer: a mailed link's page, whose URL holds the token" in {
-      ProductionFilters.withApp { app =>
+      ProductionFilters.withSharedApp { app =>
         val page = get(app, "/invitation/not-a-token")
         status(page) === NOT_FOUND
         secured(page, referrer = "no-referrer")
@@ -123,7 +123,7 @@ class SecurityHeadersSpec extends PlaySpecification with PlayTestDb {
     }
 
     "carry the headers: a redirect" in {
-      ProductionFilters.withApp { app =>
+      ProductionFilters.withSharedApp { app =>
         val result = get(app, "/")
         status(result) / 100 === 3
         secured(result)
@@ -131,7 +131,7 @@ class SecurityHeadersSpec extends PlaySpecification with PlayTestDb {
     }
 
     "carry the headers: JSON errors" in {
-      ProductionFilters.withApp { app =>
+      ProductionFilters.withSharedApp { app =>
         val api = route(app, FakeRequest(GET, "/api/contests")).get
         status(api) === UNAUTHORIZED
         contentType(api) must beSome("application/json")
@@ -145,7 +145,7 @@ class SecurityHeadersSpec extends PlaySpecification with PlayTestDb {
     }
 
     "carry the headers: Swagger UI's page, its scripts, styles and image (P17)" in {
-      ProductionFilters.withApp { app =>
+      ProductionFilters.withSharedApp { app =>
         // Tapir streams the files
         implicit val materializer: org.apache.pekko.stream.Materializer = app.materializer
         val (path, page) = follow(app, "/api/docs")
@@ -183,7 +183,7 @@ class SecurityHeadersSpec extends PlaySpecification with PlayTestDb {
     }
 
     "carry the headers: a webjar's file" in {
-      ProductionFilters.withApp { app =>
+      ProductionFilters.withSharedApp { app =>
         val result = file(app, "/webjars/jquery/3.7.1/jquery.min.js")
         status(result) === OK
         secured(result)
@@ -191,7 +191,7 @@ class SecurityHeadersSpec extends PlaySpecification with PlayTestDb {
     }
 
     "carry the headers: a CSRF refusal (a cookieless sign-in without the token, N6)" in {
-      ProductionFilters.withApp { app =>
+      ProductionFilters.withSharedApp { app =>
         val result = route(app, FakeRequest(POST, "/auth").withHeaders(ACCEPT -> "text/html")
           .withFormUrlEncodedBody("login" -> "a@example.com", "password" -> "x")).get
         status(result) === FORBIDDEN
@@ -200,7 +200,7 @@ class SecurityHeadersSpec extends PlaySpecification with PlayTestDb {
     }
 
     "carry the headers: a request for another host" in {
-      ProductionFilters.withApp { app =>
+      ProductionFilters.withSharedApp { app =>
         val result = get(app, "/auth", HOST -> "evil.example.com")
         status(result) === BAD_REQUEST
         secured(result)
@@ -210,7 +210,7 @@ class SecurityHeadersSpec extends PlaySpecification with PlayTestDb {
 
   "a request for another host" should {
     "get its 400 before any session work, with an old or an expired session cookie" in {
-      ProductionFilters.withApp { app =>
+      ProductionFilters.withSharedApp { app =>
         // a session from before S3 (its upgrade reads the database) and one past its absolute limit
         val old = Seq(controllers.Secured.UserName -> "juror@example.com")
         val expired = Seq(controllers.Secured.UserName -> "juror@example.com", controllers.Secured.AccountId -> "1",
@@ -256,6 +256,7 @@ class SecurityHeadersSpec extends PlaySpecification with PlayTestDb {
     }
 
     "carry the headers: a request Play can't parse" in {
+      // an app of its own: the server's stop stops the app it serves
       ProductionFilters.withApp { app =>
         served(app) { port =>
           val (code, headers) = raw(port, "GET /%zz HTTP/1.1")
