@@ -319,22 +319,6 @@ class RoundService @Inject() (
     RoundStat(jurors, round, rounds, byUserCount, byUserRateCount, total, totalByRate, deletedFiles, deletedCounted)
   }
 
-  def mergeRounds(contestId: Long, targetRoundId: Long, sourceRoundId: Long): Unit = {
-    val rounds = dao.findByIds(contestId, Seq(targetRoundId, sourceRoundId))
-    assert(rounds.size == 2)
-    for {
-      targetId <- rounds.find(_.id.contains(targetRoundId)).flatMap(_.id)
-      sourceId <- rounds.find(_.id.contains(sourceRoundId)).flatMap(_.id)
-    } {
-      DB.localTx { implicit session =>
-        SelectionJdbc.mergeRounds(targetRoundId = targetId, sourceRoundId = sourceId)
-      }
-      RoundImageCounts.invalidate(targetId, sourceId)
-      Round.settleDeletedFiles(targetId) // a finished round keeps a deleted file's votes
-
-    }
-  }
-
   /** Starts or stops a round (and stops `prevRoundIds`). A frozen round takes the change
     * when its distribution ends; a round still being created can't be started.
     *

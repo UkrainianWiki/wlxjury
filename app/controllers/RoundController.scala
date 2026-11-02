@@ -422,14 +422,6 @@ class RoundController @Inject() (
           for (contest <- contestId.flatMap(ContestJuryJdbc.findById)) {
             // the source only: the contest's files stay those of its imports
             ContestJuryJdbc.setImagesSource(contest.getId, imagesSource, contest.categoryId)
-
-            // val images: Seq[Page] = Await.result(Global.commons.categoryMembers(PageQuery.byTitle(imagesSource.get)), 1.minute)
-
-            //          for (contestId <- contest.id;
-            //               currentRoundId <- ContestJuryJdbc.currentRound(contestId);
-            //               round <- RoundJdbc.find(currentRoundId)) {
-            //            Tools.distributeImages(round, round.jurors, None)
-            //          }
           }
 
           Redirect(routes.RoundController.rounds(contestId))
@@ -495,27 +487,6 @@ class RoundController @Inject() (
           }
     }
 
-  /** Merges two rounds of the target round's contest (RoundService checks the source is
-    * in it too).
-    */
-  def mergeRounds(): EssentialAction =
-    withAuth(rolePermission(User.ADMIN_ROLES)) { user => implicit request =>
-      val mergeRounds = mergeRoundsForm.bindFromRequest().get
-      Round.findById(mergeRounds.targetRoundId) match {
-        case Some(target) if contestPermission(User.ADMIN_ROLES, Some(target.contestId))(user) =>
-          roundsService.mergeRounds(
-            target.contestId,
-            mergeRounds.targetRoundId,
-            mergeRounds.sourceRoundId
-          )
-          Redirect(routes.RoundController.rounds(Some(target.contestId)))
-        case Some(target) => onUnAuthorized(user, request, Secured.Denial.round(target, User.ADMIN_ROLES))
-        case None =>
-          onUnAuthorized(user, request,
-            Secured.Denial(resource = Some(s"round:${mergeRounds.targetRoundId}"), requiredRoles = User.ADMIN_ROLES))
-      }
-    }
-
   //  def byRate(roundId: Int) = withAuth({
   //    user =>
   //      implicit request =>
@@ -552,13 +523,6 @@ class RoundController @Inject() (
     )(SetRoundUser.apply)(SetRoundUser.unapply)
   )
 
-  val mergeRoundsForm = Form(
-    mapping(
-      "targetRoundId" -> longNumber,
-      "sourceRoundId" -> longNumber
-    )(MergeRoundsForm.apply)(MergeRoundsForm.unapply)
-  )
-  case class MergeRoundsForm(targetRoundId: Long, sourceRoundId: Long)
 
 }
 
