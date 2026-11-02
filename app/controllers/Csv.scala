@@ -77,10 +77,21 @@
     val BinaryLegend: Seq[String] =
       Seq("", "Overall: approvals. Jurors: 1 selected, -1 rejected, 0 not voted yet, empty not assigned")
 
-    private def header(jurors: Seq[User]): Seq[String] = Seq("Rank", "File", "Overall") ++ jurors.map(_.fullname)
+    private def header(jurors: Seq[User]): Seq[String] =
+      Seq("Rank", "File", "Overall") ++ jurors.map(juror => text(juror.fullname))
 
     private def row(file: ImageWithRating, rank: String, jurors: Seq[User], round: Round): Seq[String] =
-      Seq(rank, file.image.title, file.rateString(round)) ++ jurors.map(file.jurorRateStr)
+      Seq(rank, text(file.image.title), file.rateString(round)) ++ jurors.map(file.jurorRateStr)
+
+    /** Characters that make a spreadsheet read a cell as a formula (OWASP "CSV injection"). */
+    val FormulaStarts: Set[Char] = Set('=', '+', '-', '@', '\t', '\r')
+
+    /** A cell of user text (a juror's name, a file title) as text to a spreadsheet: one that
+      * starts with a formula character gets a leading `'`. Numbers the app writes (ranks, rates,
+      * a binary round's `-1`) are not passed through it.
+      */
+    def text(cell: String): String =
+      if (cell.nonEmpty && FormulaStarts.contains(cell.head)) "'" + cell else cell
 
     def addBom(data: Seq[Seq[String]]): Seq[Seq[String]] = {
       val BOM = "\ufeff"

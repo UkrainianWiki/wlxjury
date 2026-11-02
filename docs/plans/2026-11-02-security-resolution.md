@@ -333,6 +333,48 @@ logs no bound value).
 merges (it touches `RoundList`/`ImageDbNew`, not these files, but avoid parallel `Test/compile`
 on one branch).
 
+### S5 results (2026-11-02)
+
+Branch `ukwikidev/security-s5-s10` (from `ukwikidev/followups` 57aa8434).
+
+- **N3:** `Csv.text` prefixes a cell starting with `= + - @`, tab or CR with `'`; the header's
+  juror names and each row's file title go through it, the app's numbers (ranks, rates, a binary
+  round's `-1`) don't. Streamed and in-memory exports share `header`/`row`. `CsvSpec`: each
+  character in the header and in rows, other text and `-1` unchanged.
+- **N8:** the tile caption's link text is `HtmlFormat.escape(file.title)` inside the `alt`
+  attribute, as `data-description` was, so unitegallery's `.html()` shows it as text.
+  `GalleryDescriptionViewSpec`: a title with `&` and `<i>` is one link whose text is the title.
+  No JS changed.
+- **N9:** `job.error` holds a `services.jobs.JobError` (JSON: message key, numeric arguments, log
+  reference). A crash stores `job.error.reference` with the reference of its ERROR log line
+  (which has the exception); the distribution's count check stores `job.error.count.mismatch`
+  with the round and counts. A row from before (free text) reads as `job.error.unknown`, so old
+  exception texts are not shown either. The status JSON has `error` (the localised message),
+  `errorKey` and `errorReference`; the status snippet shows the message. Keys in all four
+  languages. `JobControllerSpec` (a job crashing with a driver-like message: JSON and snippet show
+  the key's text and the reference, never the message; the log line has both); the specs that
+  checked the exception text in `job.error` (`JobSchedulerSpec`, `RoundDistributionJobSpec`,
+  `AppendImagesSpec`, `MonumentListImportSpec`) check the key and reference instead.
+- **N11/P12:** `scalikejdbc.global.loggingSQLAndTime.warningEnabled = false` and
+  `loggingSQLErrors = false`; `db.scalikejdbc.SqlLogging` (installed by `AppModule`, threshold
+  `wlxjury.sql.slowStatementMillis = 1000`) logs a slow statement at WARN and a failed one at
+  ERROR on `db.sql`, as the statement's template (bound values are `?`, quoted literals `'?'`)
+  and, for a failure, the exception's class, SQLState and code, not its message. It uses
+  ScalikeJDBC's tagged listeners, which nothing else sets (`RequestTimingFilter` keeps the
+  untagged one). The INFO line per statement (with values, for `sbt run`) is unchanged;
+  production's logback writes WARN and up only. A failure's exception still reaches its handler
+  (`ErrorHandler` logs it with a reference). `SqlLoggingSpec` (list appender on the root logger:
+  a slow and a failed statement with an email bound log the template and no value at WARN+, even
+  with ScalikeJDBC's warnings switched on first; the shipped configs turn them off). `useSSL`
+  stays with S8.
+- **Guards (practices plan):** `security.ExportsSpec` (G8), `security.LogHygieneSpec` (G9),
+  `security.ErrorTextSpec` (G13), `security.RawHtmlSinksSpec` (G5), `security.RawSqlSpec`
+  (G4, G4b), on `security.SourceScan`. Allowlists are per file with a reason, and check only
+  that no file outside them has a hit (so concurrent branches that remove a use don't break
+  them); G13 also caps each listed file's count.
+- **Checks:** one run for S5 and S10, recorded under "S10 results": the S5 specs above, the
+  four job specs, `views.*` and `security.*` pass.
+
 ## S6: App hardening leftovers
 
 **Items:** P5, P6, P7, P8 (code), P9.

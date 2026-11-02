@@ -239,7 +239,7 @@ class RoundDistributionJobSpec extends Specification with TestDb with BeforeAll 
       pageIds(roundId) === (2L to 6L).toSet
 
       service.distributeNewImages(roundId) must throwA[RoundService.RoundDistributionFailed]
-      jobOf(roundId).error must beSome(contain("19 of 20"))
+      jobOf(roundId).failure must beSome(_root_.services.jobs.JobError(_root_.services.jobs.JobError.CountMismatchKey, Seq(roundId.toString, "19", "20")))
       service.distributeNewImages(roundId) // the retry after a failed count check rescans
       jobOf(roundId).status === JobStatus.Done
       pageIds(roundId) === imgs.map(_.pageId).toSet
@@ -281,7 +281,9 @@ class RoundDistributionJobSpec extends Specification with TestDb with BeforeAll 
       SelectionJdbc.byRound(roundId).size === 6
       stateOf(roundId).cursor === 6L
       stateOf(roundId).position === 6L
-      jobOf(roundId).error must beSome(contain("simulated failure in chunk 3"))
+      val failed = jobOf(roundId)
+      (failed.failure.map(_.key) must beSome(_root_.services.jobs.JobError.CrashedKey)) and
+        (failed.failure.flatMap(_.reference) must beSome) and (failed.error must not(beSome(contain("simulated failure"))))
 
       service.distributeNewImages(roundId) === 20 // resumes the failed job: 6 + 14 by it
       SelectionJdbc.byRound(roundId).size === 20

@@ -33,7 +33,7 @@ object StepResult {
   /** Finished with a failure the step detected itself (e.g. a count check). Its state and
     * the handler's [[JobHandler.onFailed]] are committed with it; a Retry resumes it.
     */
-  final case class Failed(error: String, state: JsObject, progress: Progress) extends StepResult
+  final case class Failed(error: JobError, state: JsObject, progress: Progress) extends StepResult
 }
 
 /** Does the work of one kind of [[Job]], one bounded step at a time.

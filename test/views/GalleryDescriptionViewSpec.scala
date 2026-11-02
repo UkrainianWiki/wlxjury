@@ -29,4 +29,21 @@ class GalleryDescriptionViewSpec extends PlaySpecification {
       org.jsoup.Jsoup.parse(description).select("i").size === 0
     }
   }
+
+  "a gallery tile's caption" should {
+    "hold the title as escaped HTML in its link, so markup in it is text" in {
+      val files = LargeViewRenders.files().take(1).map { f =>
+        f.copy(image = f.image.copy(title = "File:A & <i>b</i>.jpg"))
+      }
+      val html = contentAsString(views.html.gallery(juror, RoundList(LargeViewRenders.ratedRound, juror.getId),
+        files, Pager(1, 1), Nil, None, new RateDistribution(Map.empty)))
+      // what unitegallery inserts with `.html()`: the attribute as the browser decodes it
+      val caption = org.jsoup.Jsoup.parse(html).select("#gallery img").first().attr("alt")
+      val link = org.jsoup.Jsoup.parseBodyFragment(caption).select("a")
+      (caption must contain(">File:A &amp; &lt;i&gt;b&lt;/i&gt;.jpg</a>")) and
+        (link.size === 1) and (link.select("i").size === 0) and
+        (link.text === "File:A & <i>b</i>.jpg") and
+        (link.attr("href") === "https://commons.wikimedia.org/wiki/File%3AA_%26_%3Ci%3Eb%3C%2Fi%3E.jpg")
+    }
+  }
 }

@@ -156,7 +156,7 @@ class JobScheduler(handlerList: Seq[JobHandler], val settings: JobScheduler.Sett
           val now = System.currentTimeMillis()
           if (now - lastPollWarning > 60000) {
             lastPollWarning = now
-            logger.warn(s"Job scheduler $instanceId: poll failed: ${describe(e)}")
+            logger.warn(s"Job scheduler $instanceId: poll failed: ${Option(e.getMessage).getOrElse(e.getClass.getSimpleName)}")
           }
       }
 
@@ -371,8 +371,9 @@ class JobScheduler(handlerList: Seq[JobHandler], val settings: JobScheduler.Sett
             h.forget(jobId)
             None
           case NonFatal(e) =>
-            logger.error(s"Job $jobId (${job.kind}): preparing failed", e)
-            fail(jobId, describe(e))
+            val reference = controllers.Secured.newReference()
+            logger.error(s"Job $jobId (${job.kind}): preparing failed ref=$reference", e)
+            fail(jobId, JobError.crashed(reference))
             h.forget(jobId)
             None
         }
@@ -409,7 +410,7 @@ class JobScheduler(handlerList: Seq[JobHandler], val settings: JobScheduler.Sett
               case StepResult.Done(state, p)     => JobJdbc.update(jobId, JobStatus.Done, state, p, None)
               case StepResult.Failed(error, state, p) =>
                 val after = h.onFailed(j.copy(state = state), ctx)
-                JobJdbc.update(jobId, JobStatus.Failed, after, p, Some(error))
+                JobJdbc.update(jobId, JobStatus.Failed, after, p, Some(error.encode))
             }
             (result, ctx)
           }
@@ -423,7 +424,7 @@ class JobScheduler(handlerList: Seq[JobHandler], val settings: JobScheduler.Sett
             result match {
               case _: StepResult.Continue => return true
               case f: StepResult.Failed =>
-                logger.warn(s"Job $jobId (${job.kind}) failed: ${f.error}")
+                logger.warn(s"Job $jobId (${job.kind}) failed: ${f.error.describe}")
                 h.forget(jobId)
                 return false
               case _ =>
@@ -437,8 +438,9 @@ class JobScheduler(handlerList: Seq[JobHandler], val settings: JobScheduler.Sett
           logger.warn(s"Job $jobId (${job.kind}): transient error, retrying the step ($attempt): ${e.getMessage}")
           Thread.sleep(100L * attempt)
         case NonFatal(e) =>
-          logger.error(s"Job $jobId (${job.kind}): step failed", e)
-          fail(jobId, describe(e))
+          val reference = controllers.Secured.newReference()
+          logger.error(s"Job $jobId (${job.kind}): step failed ref=$reference", e)
+          fail(jobId, JobError.crashed(reference))
           h.forget(jobId)
           return false
       }
@@ -447,19 +449,19 @@ class JobScheduler(handlerList: Seq[JobHandler], val settings: JobScheduler.Sett
   }
 
   /** Marks a job this instance runs as failed, with its handler's cleanup. */
-  private def fail(jobId: Long, error: String): Unit =
+  private def fail(jobId: Long, error: JobError): Unit =
     try {
       val ctx = DB.localTx { implicit s =>
         JobJdbc.lock(jobId).filter(j => j.status == JobStatus.Running && j.owner.contains(instanceId)).map { j =>
           val ctx = new StepContext(s)
           val state = handlers.get(j.kind).fold(j.state)(_.onFailed(j, ctx))
-          JobJdbc.update(jobId, JobStatus.Failed, state, progressOf(j), Some(error.take(2000)))
+          JobJdbc.update(jobId, JobStatus.Failed, state, progressOf(j), Some(error.encode))
           ctx
         }
       }
       ctx.foreach(runAfterCommit)
     } catch {
-      case NonFatal(e) => logger.error(s"Job $jobId: could not record its failure ($error)", e)
+      case NonFatal(e) => logger.error(s"Job $jobId: could not record its failure (${error.describe})", e)
     }
 
   private def runAfterCommit(ctx: StepContext): Unit =
@@ -519,9 +521,6 @@ object JobScheduler {
   }
 
   def progressOf(j: Job): Progress = Progress(j.progressDone, j.progressTotal, j.progressUnit)
-
-  def describe(e: Throwable): String =
-    Option(e.getMessage).filter(_.nonEmpty).getOrElse(e.getClass.getSimpleName)
 
   /** A database error worth retrying the step for: a deadlock or a lock wait timeout. */
   def isTransient(e: Throwable): Boolean =

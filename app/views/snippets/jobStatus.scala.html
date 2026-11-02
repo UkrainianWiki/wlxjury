@@ -5,7 +5,7 @@
 <div class="job-status" data-src="@routes.JobController.status(job.id)" data-status="@job.status"
      data-denied-text="@Messages("job.status.denied")"
      @if(reloadOnDone) {data-reload-on-done="true"}>
-    <span class="job-status-text">@job.status@for(done <- job.progressDone; total <- job.progressTotal) { (@done / @total @job.progressUnit.getOrElse(""))}@for(e <- job.error) {: @e}</span>
+    <span class="job-status-text">@job.status@for(done <- job.progressDone; total <- job.progressTotal) { (@done / @total @job.progressUnit.getOrElse(""))}@for(e <- job.failure) {: @e.message}</span>
     <form method="post" action="@routes.JobController.retry(job.id)" class="job-retry"
           style="display: @if(job.isFailed) {inline} else {none}">
         @helper.CSRF.formField

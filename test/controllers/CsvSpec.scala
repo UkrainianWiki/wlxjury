@@ -61,6 +61,35 @@ class CsvSpec extends Specification {
     }
   }
 
+  "formula injection" should {
+    val starts = Seq("=", "+", "-", "@", "\t", "\r")
+
+    "prefix a juror's name starting with a formula character in the header" in {
+      val jurors = starts.zipWithIndex.map { case (c, i) => User(s"${c}HYPERLINK(1)", "", Some(i.toLong + 1)) }
+      Csv.exportRates(Seq.empty, jurors, ratedRound(5)).head ===
+        Seq("Rank", "File", "Overall") ++ starts.map(c => s"'${c}HYPERLINK(1)")
+    }
+
+    "prefix a file title starting with a formula character in its row" in {
+      val files = starts.map(c => ImageWithRating(Image(0, s"${c}cmd|' /C calc'!A0"), Seq.empty))
+      Csv.exportRates(files, Seq.empty, ratedRound(5)).tail.map(_(1)) ===
+        starts.map(c => s"'${c}cmd|' /C calc'!A0")
+    }
+
+    "leave other text and the app's numbers, a binary round's -1 included, as they are" in {
+      val jurors = Seq(User("Juror =1", "", Some(1)), User("Juror2", "", Some(2)))
+      val file = ImageWithRating(Image(0, "File:a=b.jpg"), Seq(Selection(0, 1, 0, rate = -1)))
+      Csv.exportRates(Seq(file), jurors, binaryRound).take(2) === Seq(
+        Seq("Rank", "File", "Overall", "Juror =1", "Juror2"),
+        Seq("1", "File:a=b.jpg", "0", "-1", "")
+      )
+    }
+
+    "neutralise only a leading formula character" in {
+      (Csv.text("") === "") and (Csv.text("a-b") === "a-b") and (Csv.text("-5") === "'-5")
+    }
+  }
+
   "add bom" should {
     val BOM = "\ufeff"
     "header" in {

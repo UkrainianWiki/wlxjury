@@ -259,7 +259,8 @@ class AppendImagesSpec extends Specification with JuryTestHelpers with TestDb wi
 
       val failed = JobJdbc.findById(job.id).get
       failed.status === JobStatus.Failed
-      failed.error must beSome(contain("Commons is down"))
+      (failed.failure.map(_.key) must beSome(_root_.services.jobs.JobError.CrashedKey)) and
+        (failed.failure.flatMap(_.reference) must beSome) and (failed.error must not(beSome(contain("Commons is down"))))
       ImageImportHandler.stateOf(failed).seen === 4L
       stored(contest).size === 4
 

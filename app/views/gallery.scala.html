@@ -31,8 +31,11 @@
             <div id="gallery" class="gallery mw-gallery-traditional" style="display:none;" @views.GalleryTiles.attributes(user, list.asUserId, Some(list.round))>
 
                     @for((file, index) <- pageFiles.view.zipWithIndex) {
+                        @* unitegallery shows `alt` (the caption) and `data-description` with jQuery's
+                           `.html()`, after the browser decodes the attribute: the title in them is
+                           escaped once more, so `.html()` shows it as text *@
 
-                        <img alt="<a href='https://commons.wikimedia.org/wiki/@URLEncoder.encode(file.title.replace(" ", "_"), "UTF8")' target='_blank'>@file.title</a>"
+                        <img alt="<a href='https://commons.wikimedia.org/wiki/@URLEncoder.encode(file.title.replace(" ", "_"), "UTF8")' target='_blank'>@play.twirl.api.HtmlFormat.escape(file.title).body</a>"
                         src="@controllers.Global.resizeTo(file.image, controllers.Global.gallerySizeY)"
                         srcset="@controllers.Global.resizeTo(file.image, (controllers.Global.gallerySizeY*1.5).toInt) 1.5x, @controllers.Global.resizeTo(file.image, controllers.Global.gallerySizeY*2) 2x"
                         data-image="@controllers.Global.largeImage(file.image).src"
