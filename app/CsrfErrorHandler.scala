@@ -24,7 +24,7 @@ class CsrfErrorHandler @Inject() (val messagesApi: MessagesApi) extends CSRF.Err
     implicit val impReq: RequestHeader = request
     val reference = Secured.newReference()
     val user = sessionUser(request)
-    logger.warn(s"csrf_failure ref=$reference method=${request.method} path=${Secured.logValue(request.path)} " +
+    logger.warn(s"csrf_failure ref=$reference method=${request.method} path=${Secured.logPath(request.path)} " +
       s"signedIn=${user.isDefined} message=${Secured.logValue(msg)}")
     Future.successful(
       if (Secured.isScriptRequest(request) || ApiFailure.isApiRequest(request)) Forbidden(Json.obj("error" -> "csrf", "reference" -> reference))
@@ -36,6 +36,6 @@ class CsrfErrorHandler @Inject() (val messagesApi: MessagesApi) extends CSRF.Err
 
   /** The signed-in user for the page's navigation, if the database can tell. */
   private def sessionUser(request: RequestHeader): Option[User] =
-    Try(request.session.get(Secured.UserName).flatMap(Secured.sessionUser(_, request.session.get(Secured.CurrentContestId))))
+    Try(Secured.sessionUserOf(request))
       .toOption.flatten
 }
