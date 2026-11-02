@@ -11,6 +11,8 @@ trait ImageRepo {
       roundId: Long,
       pageSize: Int = Int.MaxValue,
       offset: Int = 0,
-      rated: Option[Boolean] = None
+      rated: Option[Boolean] = None,
+      // the round's `isBinary`: a yes/no round's rows count their approvals and rejections
+      tally: Boolean
   ): Seq[ImageWithRating]
 }

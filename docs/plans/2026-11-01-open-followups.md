@@ -509,6 +509,9 @@ branch, merge commit `d9dbe0ed`.
   `70d48397` with nothing else running: exit 0 in 14 min, Scala **1404 total, 0 failed,
   0 errors** (1398 passed, 6 skipped, 1 pending); Jest 18 suites, 240 passed
   (`target/checks/20261102-023459-13464.log`).
+- **Final full suite** (the release check after B6 and B8) at `3f98b77a`: exit 0 in 15 min,
+  Scala **1412 total, 0 failed, 0 errors** (1406 passed, 6 skipped, 1 pending); Jest 18 suites,
+  240 passed (`target/checks/20261102-083340-18164.log`).
 
 ## Checked and already resolved (not part of this plan)
 
@@ -1370,3 +1373,505 @@ changed).
 - The 2 s of the aggregate plan came from the UI fixture server at 533c4b88; it wasn't re-run
   here (HEAD measures 1.13 s on the Gatling fixture). The single 4.9 s and 5.2 s outliers there
   did not recur in 60 samples per variant (max 1351 ms).
+
+## Batch B9: the approval sums only for a yes/no round
+
+Branch `ukwikidev/followups`, base `9e3bc9ec`. B8's open question: the grouped select
+(`ImageDbNew.SelectionQuery.query`, `grouped = true`) always adds `sum(s.rate > 0) as approvals,
+sum(s.rate < 0) as rejections`, read into `ImageWithRating.approvalsFromDb`/`rejectionsFromDb`.
+
+**Readers** (`rg -n "approvals|rejections|approvalsFromDb|grouped\s*=" app test public/javascripts`):
+
+| Reader | Query | Yes/no round | Rated round |
+|---|---|---|---|
+| `RoundList.query` (all jurors, not file list/CSV): gallery tiles, by-rate gallery, large view neighbours | grouped | gallery's `data-approvals/-rejections/-tally` and by-rate `binaryTally` only under `list.aggregateBinary` / `round.isBinary && asUserId == 0`; the large view reads neither | never read: by-rate shows stars and `rateString` (rate sum) |
+| `RoundList.query` of a juror (`asUserId != 0`) | vote rows | `binaryVote(file.rate)` | stars |
+| file list, CSV (`groupWithDetails`) | grouped `idOnly` for order/page (never had the sums), then `withVotes` rows | `binaryTally`/`rateString` count from the vote rows | `rateString` from the rows |
+| `keyCounts`, `pageKeys`, `imageRank`, `count` | own selects (order expressions `sum(s.rate > 0)` etc.) | unaffected | unaffected |
+| `ImageJdbc.byRoundMerged` → `DistributeImages` | grouped | binary top-N (`binaryCandidates`, `SelectTopByRating` with an order) and "exclude rejected by at least" read them, only for yes/no previous rounds; the current round's rows and the other previous-round reads don't | never read (`totalRate`, `rateSum`) |
+| `RoundDistributionHandler` (job path) | its own SQL with the two sums | unaffected | unaffected |
+| `tile-votes.js addTally`, `ug-theme-tiles.js`, `unitegallery.js` | `data-tally` attributes | tally where the attribute is | none emitted (gated above) |
+
+Without the columns, `approvals`/`rejections` fall back to counting the selection rows, which
+for a grouped row (one synthetic selection with the sum) would be wrong, so every yes/no reader
+of a grouped row must ask for them.
+
+**Design.** An explicit flag, `SelectionQuery.tally: Boolean = false`: with `grouped`, the select
+adds the two sums and the grouped reader reads them; without it neither (the fields stay
+`None`). Callers that know the round set it: `RoundList.query` with `tally = aggregateBinary`
+(all jurors on a yes/no round), `byRoundMerged(..., tally)` (`ImageRepo` too) with `tally = true`
+only on `DistributeImages`' two yes/no-only reads. No guessing from the rate filter or round id.
+Rated pages already never show a tally (gated on `isBinary`); specs pin that.
+
+### B9 results
+
+Commits `a62a286f` (the plan above), `a004dac8` (the change), then this one.
+
+**Change.** `SelectionQuery.tally` (default false) adds `sum(s.rate > 0) as approvals,
+sum(s.rate < 0) as rejections` to a grouped select and has `Readers.groupedReader(tally)` read
+them; otherwise `approvalsFromDb`/`rejectionsFromDb` stay `None`. Set by `RoundList.query` as
+`aggregateBinary && !withDetails` (all jurors on a yes/no round; a file list's and CSV's tallies
+count their vote rows, and their grouped `idOnly` query never had the sums), and by
+`DistributeImages` through `byRoundMerged(..., tally = true)` on its two yes/no-only reads
+(both derived from the round's kind since the review fixes below).
+Counts, `idOnly`, `keyCounts`, `pageKeys` and a juror's rows are unchanged. No view changed: the
+rated pages already showed no tally; specs now pin it.
+
+**Specs.** `ImagesSqlSpec` (grouped SQL without the sums; with `tally`; count/idOnly/juror SQL
+the same either way), `ImageDbNewDbSpec` (the sums `None` without `tally`, sum and count still
+there), `JurorImagesSpec` (approvals and rejections with `tally`, `None` without),
+`RoundListSpec` (`tally` only for all jurors on a yes/no round's gallery/by-rate list),
+`GalleryTileStarsViewSpec` (a rated round's organiser tiles carry no `data-approvals`,
+`-rejections`, `-tally`), `GalleryByRateViewSpec` (a rated round's organiser by-rate page: stars
+and `rateString`, no `.wlx-approvals`); `RoundDistributionJobSpec`'s binary top-N reference
+reads with `tally = prev.isBinary`, as `DistributeImages` does. Runs: `Test/compile`,
+`Gatling/compile` and DB/controller/view/distribution specs (`db.scalikejdbc.{ImagesSqlSpec,
+ImageDbNewDbSpec,JurorImagesSpec}`, `controllers.{RoundListSpec,RoundListDbSpec,
+AllJurorsListSpec,CsvSpec,OwnVotesSpec,GalleryOrderSpec,LargeImageSpec,
+TopBinaryOrderChoiceSpec}`, `views.*`, `org.intracer.wmua.cmd.*`,
+`services.distribution.{RoundRedistributionFiltersSpec,RoundDistributionJobSpec}`): 422 tests,
+1 failure (`target/checks/20261102-104458-26564.log`), the new `RoundListSpec` case expecting no
+`tally` on a file list, fixed by `&& !withDetails`; rerun of `controllers.{RoundListSpec,
+RoundListDbSpec,AllJurorsListSpec,CsvSpec}`, `views.{FileListViewSpec,LargeViewControllerSpec}`:
+71 passed (`target/checks/20261102-110006-10192.log`). No full suite.
+
+**Benchmark, method.** As B8: one fork of `Test/runMain gatling.setup.GalleryLatencyBenchmark`
+per run, `-Dbench.cases=^organizer-(binary|rated)-byrate-p1$ -Dbench.warmup=1
+-Dbench.samples=15`, fork `-Xmx1024m -Dfile.encoding=UTF-8 -Dgatling.timing=true
+-Dscalikejdbc.global.loggingSQLAndTime.enabled=false` (SQL logging off in both), HikariCP in
+both, one JVM at a time (shared lock with the other worktree's agent). A = `9e3bc9ec` in a
+detached worktree with its own `data/cache` (removed afterwards), B = `a004dac8`. The timing
+logs confirm the variants: the rated page's grouped query has `as approvals` in all A samples
+and none of B's; the yes/no page's in both (the control: same SQL). Pilot A, B, B, A was
+ambiguous for the rated page (block deltas -139 to +215 ms), so it was expanded once with
+B, A, A, B. Raw: `target/checks/b9-byrate-paired.json` (summary, every sample),
+`target/checks/b9-byrate-paired/{A1..A4,B1..B4}-{client.csv,timing.jsonl,sbt.log}`. Paired
+deltas: B run k minus A run k, sample by sample and per block of 5.
+
+| Page (client ms) | Base median (min-max) | HEAD median (min-max) | Paired delta, median (min-max) | Block median deltas |
+|---|---|---|---|---|
+| by-rate, round 2 (rated), all jurors | 1220 (1060-1841) | 1229 (1074-2703) | **-18** (-531 to +1520) | -139 to +1051; 5 of 12 positive |
+| by-rate, round 1 (yes/no, control), all jurors | 827 (714-1243) | 802 (710-1204) | -32 (-472 to +307) | -137 to +56 |
+
+Run medians, rated: A 1191, 1284, 1203, 1223; B 1343, 1110, 1608, 1202 (B3 slow throughout:
+its count and `keyCounts` were slower too). Server-side median per query (timing log, n = 60):
+
+| Query | Rated A | Rated B | Yes/no A | Yes/no B |
+|---|---|---|---|---|
+| grouped page (`GROUP BY s.page_id … LIMIT`) | 900 | 908 | 475 | 456 |
+| `COUNT(DISTINCT page_id)` | 139 | 152 | 145 | 138 |
+| `keyCounts` | 121 | 125 | 160 | 152 |
+
+Per run, the rated grouped query: A 888, 917, 892, 926; B 961, 811, 1220, 880.
+
+**Decision.** The change stays: the rated round no longer computes two sums nothing reads, and
+every yes/no display is as before. Its time saving isn't measurable on this fixture: run-to-run
+variation (~±100 ms on the grouped query, the unchanged yes/no control moving 20-30 ms) is
+larger than any effect, and B8's ~70 ms came from comparing commits that differ in more than
+the sums. Not expanded further: the change only removes work, so more runs couldn't change it.
+
+**Open**
+- A same-JVM SQL pair (the grouped page with and without the sums, alternated) would size the
+  aggregates' own cost if that ever matters; not run.
+
+The large view's JSON (`LargeViewController`, `Json.writes[ImageWithRating]`, the `Accepts.Json`
+branch) writes the case class's fields, so a rated round's grouped rows there no longer carry
+`approvalsFromDb`/`rejectionsFromDb` (they were the rated round's `sum(rate > 0)` and 0); a
+yes/no round's still do. Nothing in `public/javascripts` reads either field.
+
+### B9 review fixes
+
+| Finding | Fix | Commit |
+|---|---|---|
+| Medium: `tally` opt-in, so a new grouped reader of a yes/no round would silently count the one synthetic selection | `RoundList.query` sets `tally = round.isBinary` (only a grouped query reads it); `byRoundMerged`'s `tally` has no default and `DistributeImages` passes the round's `isBinary` on every read (current and previous rounds); unused `Round.allImages` deleted. `byRoundMerged` keeps a round id, not a `Round`: `DistributeImagesSpec`'s mock is stubbed by id and its calls pass `round.copy(...)`. Guard: `ImageWithRating.approvals`/`rejections` `require` the count from the query on a grouped row (a selection of juror 0). Checked the juror-0 rows without sums: `RoundDistributionHandler.previousCandidates`/`ratedPage` feed only `perImageFilters` (no top-N, no rejected-by: `SelectedAtLeast` reads `rateSum`, min average `totalRate`); `binaryPage` sets both; `DistributeImages`' rows now have them for a yes/no round, and a rated round's are read by `totalRate`/`rateSum` only; view fixtures with juror-0 rows set them or are rated (not read). `JurorImagesSpec` asserts the failure | `166e8082` |
+| Low: `approvals` scaladoc | says the grouped row's counts come only with `tally`, and that without it reading fails | `166e8082` |
+| Low: the large view's JSON | recorded above | this commit |
+| Nit: two view test names said "whose query has no tally" | renamed/commented: they pin the view's gate with hand-built rows | `166e8082` |
+
+Checks: `Test/compile`, `Gatling/compile`, `testOnly db.scalikejdbc.{ImagesSqlSpec,
+ImageDbNewDbSpec,JurorImagesSpec} controllers.{RoundListSpec,RoundListDbSpec,AllJurorsListSpec,
+CsvSpec} views.* org.intracer.wmua.* services.distribution.*`: 447 passed, 0 failed, 1 pending
+(`target/checks/20261102-122135-19824.log`). No benchmark rerun.
+
+## Batch B10: RegionCountPairedBenchmark restored
+
+Branch `ukwikidev/followups-bench` (from `9e3bc9ec`). The user wants the paired benchmark back,
+working and measuring something, rather than deleted (`ea575a59`).
+
+**What it measured** (`ea575a59^`): alternating AB/BA pairs on identical inputs in one warmed
+fixture JVM, 3 blocks at 1 and 5 workers, every pair in `region-pairs-<stamp>.csv`, per block
+p50/p95/mean of each variant and the mean/median paired delta. A = `gallery.regionCounts=off`,
+B = `all`. Six cases: `sql-juror` (a juror's `byRegionStat` vs `regionCounts`, every juror and
+filter), `sql-round` / `sql-round-rated` (the whole round's, unfiltered / `rated=true`), and
+`page-juror` / `page-round` / `page-round-rated` (the gallery and by-rate pages from two
+`GalleryController`s with the two settings, through `Helpers.call`, requiring a 200, the region
+menu and `Volyn O. (` in the HTML exactly when counts were on).
+
+**What is obsolete, checked against `9e3bc9ec`:**
+- The page pairs. The gallery and by-rate pages render only the region menu's button and its
+  `data-regions-url` (`GalleryController.regionMenu`); no counts, so `Volyn O. (` never appears
+  and the check fails, and an off/on page pair would time identical work.
+- `sql-juror` as an off/on pair. A juror's regions now come from `RoundList.jurorCounts()`
+  (`SelectionQuery.regionRateCounts`, one scan that also gives the tabs and the total) whatever
+  the setting; `gallery.regionCounts` only drops the numbers. A juror's `regionCounts()` and
+  `byRegionStat()` are no longer on any juror path (`byRegionStat` is left for the whole round
+  with counts off, and sub-regions).
+- The SQL pairs had no correctness check: a wrong count would have been timed without notice.
+- Still current: `gallery.regionCounts` (`off`/`juror`/`all`, default `all`), the
+  `GalleryController(galleryService, cc, blocking, config)` constructor,
+  `SelectionQuery.byRegionStat`/`regionCounts`, `GatlingTestFixture.application`, the session
+  keys `Secured.UserName`/`CurrentContestId`. The fixture (`GatlingDbSetup`/`GatlingDbCache`) is
+  unchanged in shape; the filters are now `VoteFilter`s (`filter=` in a list URL; a rated
+  round's unrated is `rate = 0`).
+
+**What it pairs now** (A first in the file, B second). Each case walks the product of its inputs
+(7 whole-round, 140 juror: 20 jurors x 7 round filters) with a stride coprime to its size (37),
+the blocks continuing the walk, so `blocks x pairs` >= the inputs' number times each one; an
+input's order alternates (AB, BA, ...) at each occurrence, and a block's pairs are half BA:
+
+| Case | A | B | Inputs |
+|---|---|---|---|
+| `sql-round` | whole round `byRegionStat` (counts off) | whole round `regionCounts` (counts on) | both rounds, each tab's filter |
+| `sql-juror` | a juror's `regionCounts` (one filter) | `regionRateCounts` + `JurorCounts.regions` (what the menu runs) | every juror, both rounds, each filter |
+| `menu-round` | `GET /regions/round/R/user/0/...?module=byrate&filter=F`, `gallery.regionCounts=off` | the same, `all` | organizer, both rounds, each filter |
+| `menu-juror` | `GET /regions/round/R/user/J/...?filter=F`, `off` | the same, `all` | every juror's own, both rounds, each filter |
+
+`menu-*` call `GalleryController.regions` (the region menu's endpoint) of two controllers built
+from the app's injector, as the page pairs did: authentication, the gallery's permission checks,
+`RoundList`, the queries and the JSON, without filters, socket or client. `menu-juror` runs the
+same query in both variants (only the numbers differ), so it is the control: its paired delta
+should be ~0 and shows the method's order bias and noise floor next to `menu-round`'s.
+
+**Correctness checks** (once per input, outside the timed pairs, failing the run). The
+literal is an independent query, `COUNT(DISTINCT IF(hit, page_id, NULL))` per region from
+`selection` (the juror's rows, or the round's). `sql-round`: `byRegionStat`'s regions are
+`regionCounts`' keys, and `regionCounts` equals the literal; `sql-juror`: `regionCounts` equals
+`JurorCounts.regions`, which equals the literal; `menu-*`: both 200, the same region ids and
+URLs, no counts with `off`, and with `all` the literal's counts. Every input must have regions,
+and every filter but the unrated must count some files. Each timed menu call also requires a 200.
+
+Fixture limit: `GatlingDbSetup` votes on every file (yes/no ±1, rated 1..max; never 0), so the
+unrated inputs' counts are all 0 (logged, not an error), and in the whole round the selected and
+rejected filters each cover nearly all files. Those inputs check zeros and near-totals only; the
+timing of their queries is still the menu's.
+
+**Overlap.** `RegionCountBenchmark` times the SQL alone, each query separately (quantiles of
+independent runs, plus `ANALYZE` and handler counts); `GalleryLatencyBenchmark`'s
+`regions-<round>-juror|organizer` time the unfiltered menu over HTTP with the one setting the JVM
+started with. Neither gives a paired off/on difference: the 2026-10-25 run showed block-to-block
+spread (6.8 ms on a 25 ms query; a 26 s pause in one block) larger than the effect, which
+independent quantiles can't separate and AB/BA pairs on the same input can. This is the
+evidence behind `gallery.regionCounts = all`, and the way to recheck it after a change to the
+count queries, indexes or the menu endpoint, without a second fixture.
+
+**Run** (one JVM, no other sbt/DB work; SQL logging off for both variants):
+```bash
+python scripts/agent-check.py -- java -Xmx1536m -Dfile.encoding=UTF-8 -jar 'C:/Program Files (x86)/sbt/bin/sbt-launch.jar' \
+  'set Test / javaOptions ++= Seq("-Xmx768m", "-Dfile.encoding=UTF-8", "-Dscalikejdbc.global.loggingSQLAndTime.enabled=false")' \
+  'Test/runMain gatling.setup.RegionCountPairedBenchmark'
+```
+Options (`-Dbench.*`), which reach the forked JVM only inside the `set Test / javaOptions ++=
+Seq(...)` as above (`build.sbt` forwards a fixed list of keys, no `bench.*`, from sbt's own `-D`):
+`blocks` (3), `pairs` (100 a block, juror cases), `roundPairs` (40, round cases), `warmup` (20),
+`threads` (`1,5`), `cases` (all four). Output: `target/gatling/region-pairs-<stamp>.csv` (every
+pair with its input index and order) and `.txt` (per block and pooled per case and worker count:
+true medians, nearest-rank p95, min-max, paired sd, B faster, AB/BA split, inputs timed and in
+both orders). A pilot with small counts checks that it runs.
+
+### B10 results
+
+Commits: `bef6b6e1` (the plan above), `ca9f158d` (the benchmark restored and reworked, and the
+region-improvements plan's note), then this one. The file as planned: four cases, `Input`s built
+as the app builds them (`RoundList(...).query` / `.jurorCounts()`, `regionsUrl` for the menu's
+URL, the menu's `X-Requested-With`), `VoteFilter.ofRound` for each round's tabs, and `verify`
+before any timing. The region-improvements plan's "deleted" note now says it was restored, and
+that its recorded results are of the 2026-10-25 cases. CLAUDE.md is unchanged (it lists no
+comparable benchmark).
+
+Checks: `Test/compile` + `Gatling/compile` exit 0 (`target/checks/20261102-115849-15500.log`;
+the first attempt, `…-105020-18640.log`, failed on a missing `Writeable` import and an implicit
+session, both fixed before the commit). No specs (no app code changed).
+
+**Pilot before the review fixes** (`ca9f158d`; one JVM, the lock held, no other sbt/DB work; this worktree's own fixture, built and
+cached on this run: `data/cache/gatling-2cf3c48ea8cf278c.sql.gz`, 38,367 files, 20 jurors,
+rounds 1 (yes/no) and 2 (rated); HikariCP; MariaDB 10.6.22; 206 s in all):
+```bash
+python scripts/agent-check.py -- java -Xmx1536m -Dfile.encoding=UTF-8 -jar 'C:/Program Files (x86)/sbt/bin/sbt-launch.jar' \
+  'set Test / javaOptions ++= Seq("-Xmx768m", "-Dfile.encoding=UTF-8", "-Dscalikejdbc.global.loggingSQLAndTime.enabled=false", "-Dbench.blocks=2", "-Dbench.pairs=40", "-Dbench.roundPairs=14", "-Dbench.warmup=5", "-Dbench.threads=1")' \
+  'Test/runMain gatling.setup.RegionCountPairedBenchmark'
+```
+Exit 0. The checks passed for every input (7 whole-round, 140 juror inputs per case): the
+variants agree, and agree with the literal counts from `selection`. Log
+`target/checks/20261102-121804-26120.log`; pairs and blocks
+`target/gatling/region-pairs-20261102-122008.{csv,txt}` (216 pairs). One worker only. Its juror
+cases timed only 20 of the 140 inputs (each juror on one round and filter) in a fixed order per
+input (review M1, fixed below); the whole-round cases covered all 7.
+
+| Case (A → B) | n | A median (min-max) | B median (min-max) | Paired B-A median (min..max) | Block means of B-A | B faster |
+|---|---|---|---|---|---|---|
+| `sql-round` (`byRegionStat` → `regionCounts`) | 28 | 251.8 ms (227.7-311.7) | 150.2 ms (128.9-186.6) | **-105.2 ms** (-182.8..-80.6) | -114.4, -102.3 | 28/28 |
+| `menu-round` (off → all) | 28 | 252.8 ms (236.9-353.5) | 148.5 ms (138.8-260.2) | **-104.5 ms** (-204.7..-87.2) | -105.8, -113.3 | 28/28 |
+| `sql-juror` (`regionCounts` → `regionRateCounts`) | 80 | 15.6 ms (14.6-20.9) | 13.8 ms (12.9-17.1) | **-1.9 ms** (-7.1..+1.7) | -1.9, -1.8 | 75/80 |
+| `menu-juror` (off → all, the control) | 80 | 22.5 ms (20.2-34.3) | 22.8 ms (20.1-33.4) | **+0.2 ms** (-10.2..+7.7) | +0.1, +0.4 | 33/80 |
+
+The same order of size as 2026-10-25 (whole-round SQL 296-303 ms (A) and 172-181 ms (B) means
+at one worker, a -122 ms paired mean; here 255-261 / 147-152, about -108), but not a like-for-like
+comparison: that run's inputs were the unfiltered and `rated` whole round, these are every tab's
+filter, and `regionCounts` has since gained the V66 `(page_id, monument_id)` index and its
+`FORCE INDEX`. The menu's paired delta matches `sql-round`'s; its overhead over the SQL is within
+the cross-case noise (-2 to +8 ms). The control's block means are within ±0.5 ms. A juror's menu
+runs `regionRateCounts` (one scan, all rates), ~1.9 ms faster than the one filter's
+`regionCounts`. The pilot is small (one worker); it shows the harness works, not a new decision.
+The full default run (3 blocks, 100/40 pairs, 1 and 5 workers) wasn't made: it would not change
+`gallery.regionCounts = all`.
+
+**Open**
+- The 5-worker run (contention) only when the count queries or the menu change.
+
+**Pilot after the review fixes** (`bbddb076`; same conditions, the cached fixture restored;
+`Test/compile` + `Gatling/compile` and the run in one sbt call, exit 0, 236 s). The juror pairs
+are 140 a block, the smallest size that times all 140 juror inputs in both orders over 2 blocks:
+```bash
+python scripts/agent-check.py -- java -Xmx1536m -Dfile.encoding=UTF-8 -jar 'C:/Program Files (x86)/sbt/bin/sbt-launch.jar' \
+  'set Test / javaOptions ++= Seq("-Xmx768m", "-Dfile.encoding=UTF-8", "-Dscalikejdbc.global.loggingSQLAndTime.enabled=false", "-Dbench.blocks=2", "-Dbench.pairs=140", "-Dbench.roundPairs=14", "-Dbench.warmup=5", "-Dbench.threads=1")' \
+  'Test/compile' 'Gatling/compile' 'Test/runMain gatling.setup.RegionCountPairedBenchmark'
+```
+Log `target/checks/20261102-123334-1680.log`; pairs and summary
+`target/gatling/region-pairs-20261102-123547.{csv,txt}` (616 pairs). Checks passed for all
+inputs; all-zero (unrated) inputs: 2 of 7 whole-round, 40 of 140 juror, as the fixture predicts.
+Coverage: every case timed all its inputs (7/7, 140/140), each in both orders; AB/BA 7/7 per
+round block, 70/70 per juror block. Pooled (true medians; one worker):
+
+| Case (A → B) | n | A median (min-max) | B median (min-max) | Paired B-A median (min..max), sd | Block medians of B-A | B faster |
+|---|---|---|---|---|---|---|
+| `sql-round` | 28 | 250.2 ms (234.7-348.6) | 145.8 ms (130.8-232.0) | **-107.4 ms** (-189.8..-17.9), 34.2 | -107.0, -109.8 | 28/28 |
+| `menu-round` | 28 | 260.6 ms (237.6-410.7) | 154.6 ms (141.3-199.7) | **-105.4 ms** (-256.1..-84.1), 32.2 | -105.4, -106.5 | 28/28 |
+| `sql-juror` | 280 | 15.4 ms (13.9-28.9) | 13.9 ms (12.7-31.2) | **-1.4 ms** (-8.4..+14.5), 1.8 | -1.5, -1.4 | 247/280 |
+| `menu-juror` (control) | 280 | 28.7 ms (23.8-70.5) | 28.6 ms (24.0-54.9) | **-0.1 ms** (-30.8..+13.7), 4.8 | -0.1, -0.1 | 147/280 |
+
+The conclusions of the first pilot hold. The control's paired mean is -0.6 ms with sd 4.8 ms,
+so a standard error of ~0.3 ms at n = 280 (~0.4 ms a block of 140; the first pilot's was sd
+2.6 ms, SE ~0.4 ms at n = 40): the method resolves about a millisecond and shows no order bias.
+The juror menu's absolute time is higher than in the first pilot (28.7 vs 22.5 ms median), which
+timed only 20 inputs; it is not a paired quantity and does not affect the deltas.
+
+### B10 review fixes
+
+| Finding | Fix | Commit |
+|---|---|---|
+| M1: the juror walk timed 20 of 140 inputs, each in a fixed AB/BA order a block | each case walks all its inputs with a coprime stride (37), blocks continue the walk; an input's order alternates at each occurrence, a block's pairs are half BA; the txt logs the AB/BA split and the inputs timed and in both orders; scaladoc and plan say so; pilot shows 140/140, both orders | `bbddb076` |
+| L1: unrated inputs compare all-zero maps | every filter but the unrated must count some files; all-zero inputs are counted in the check line; the plan states the fixture limit (no rate 0, ±1 cover nearly all files) | `bbddb076` |
+| L2: `-Dbench.*` reach the fork only inside `set Test / javaOptions` | stated in the scaladoc and the plan's options paragraph | `bbddb076` |
+| L3: "the menu costs the SQL plus ~1 ms" | reworded: the menu's delta matches `sql-round`'s, its overhead is within cross-case noise (-2 to +8 ms); the 2026-10-25 comparison's different inputs and the V66 index / `FORCE INDEX` are noted | `bbddb076` |
+| Nit: control resolution | stated above (sd, SE) | this commit |
+| Nit: the checks' description | the plan says `sql-juror` and `menu-*` compare against the literal query, as the code does | `bbddb076` |
+| Nit: txt output | per block and pooled: true medians, nearest-rank p95, min-max, paired sd, B faster, AB/BA split | `bbddb076` |
+| Nit: the 2026-10-25 claim "every juror and every rate filter is sampled" | footnote in `2026-10-25-region-improvements.md`: subject to M1 | `bbddb076` |
+
+## Batch B11: ranks in the page query
+
+Branch `ukwikidev/followups-ranks` (from `9e3bc9ec`). Commits `504e1a09` (the benchmark), then
+this one. Phase 1: measured and selected; the change waits for B9, which changes the same
+grouped select.
+
+**Method.** `test/gatling/setup/RankQueryBenchmark` (new), one `Test/runMain` fork
+(`-Xmx1024m`, `-Dscalikejdbc.global.loggingSQLAndTime.enabled=false`, and
+`GlobalSettings.loggingSQLAndTime` off in code), on the Gatling fixture this tree built
+(`GatlingDbSetup`: 38,367 files, 20 jurors, 383,670 votes a round; rated round 2, rates 1-10,
+69 distinct rate sums; binary round 1, 11 distinct approval/rejection pairs), MariaDB 10.6.22
+container, HikariCP, Windows, no other JVM. The queries are the app's own
+(`SelectionQuery.query`/`list`/`count`/`keyCounts`/`withVotes`), the window columns inserted
+into their SQL. A sample is a whole page view's queries, one after another, each on its own
+autoSession as the app runs them. Per case: 2 warm-up views of each variant, then 15 rounds of
+all the variants in an order rotated each round; deltas are each round's variant minus its A.
+Run 1: the by-rate gallery of all the jurors' votes, page 1 and page 1279 (offset 19,170), both
+rounds. Run 2: page 1 again with DK, the file list's page 1 (1,000 rows), a juror's by-rate page
+1, and `ANALYZE FORMAT=JSON`. Run 2's rated cases had outliers of 3-7 s (the machine was short of
+memory; that run's compile took 16 minutes), so its rated rows have a wide spread; its binary and
+juror rows are as steady as run 1's.
+
+| Variant | Queries of a page view |
+|---|---|
+| A (today) | pager `COUNT(DISTINCT s.page_id)`, the grouped page, `keyCounts` |
+| K | the page, `keyCounts`; the total is the sum of `keyCounts`' counts |
+| W | the count, the page with `rank() over (order by <rank key>)` and `count(*) over (partition by <rank key>)` |
+| WC | W with `count(*) over ()` as the total, no count (one when the page is empty) |
+| D (for information) | a narrow grouped page from `selection` alone (ids, sums, the windows, the total), then the page's 15 images by id |
+| DK (for information) | D without the windows; ranks and total from `keyCounts` |
+| WCn (file list, for information) | WC's id query without the join to `images` |
+
+By-rate gallery of all the jurors' votes, ms: A's median (p25-p75); the others' paired delta
+median (p25 to p75) and the rounds of 15 in which they were faster than A.
+
+| Case | A | K | W | WC | D | DK |
+|---|---|---|---|---|---|---|
+| rated p1 (run 1) | 1261 (1126-1392) | **-235** (-408 to -107), 13 | +313 (+52 to +401), 3 | +66 (-64 to +364), 4 | -256 (-441 to -169), 15 | |
+| rated p1279 (run 1) | 1230 (1127-1313) | **-177** (-231 to -51), 13 | +197 (+126 to +317), 1 | +76 (-4 to +196), 5 | -335 (-383 to -259), 15 | |
+| binary p1 (run 1) | 779 (712-841) | **-163** (-200 to -92), 14 | +268 (+188 to +407), 0 | +20 (-23 to +109), 6 | -353 (-416 to -317), 15 | |
+| binary p1279 (run 1) | 804 (730-829) | **-135** (-183 to -93), 12 | +267 (+196 to +330), 1 | +49 (-61 to +121), 5 | -364 (-428 to -347), 15 | |
+| rated p1 (run 2, noisy) | 1300 (1170-3004) | +54 (-185 to +171), 7 | +174 (-39 to +286), 4 | -46 (-286 to +61), 8 | -307 (-560 to -128), 12 | -408 (-881 to -309), 15 |
+| binary p1 (run 2) | 739 (719-773) | **-104** (-185 to -75), 14 | +248 (+216 to +311), 1 | +80 (+23 to +119), 2 | -357 (-391 to -323), 15 | -335 (-371 to -291), 15 |
+
+File list of all the jurors' votes, page 1 (run 2), same columns:
+
+| Case | A | K | W | WC | WCn |
+|---|---|---|---|---|---|
+| rated (noisy) | 1146 (1071-2812) | **-161** (-910 to -78), 14 | +16 (-84 to +110), 6 | -93 (-674 to -1), 12 | -186 (-308 to -134), 12 |
+| binary | 672 (618-769) | **-129** (-210 to -106), 14 | -17 (-80 to +54), 8 | -213 (-271 to -135), 14 | -299 (-329 to -237), 15 |
+
+A juror's by-rate page 1 (A: the deferred-join page and `keyCounts`; W: the windows in the
+deferred join's inner query; the pager's total comes from `JurorCounts` in both): rated 38 ms,
+W -3 (14 of 15); binary 42 ms, W -1 (11 of 15).
+
+Per query, medians (run 1, page 1): rated count 138, page 1002, `keyCounts` 125, W's page 1416;
+binary count 148, page 464, `keyCounts` 154, W's page 936. The windows add 400-470 ms to the
+page query, three times what `keyCounts` costs by itself.
+
+**EXPLAIN** (`ANALYZE FORMAT=JSON`, rated round page 1 unless named; full JSON in
+`analyze.json.txt`):
+- Today's page: 383,670 rows from `idx_selection_round_page_rate` with the images' primary
+  key, one temporary table (the GROUP BY), one filesort with a priority queue (LIMIT 15):
+  1001 ms. The deep page sorts without a priority queue: 1026 ms.
+- W: the same, plus two more filesorts of all 38,367 grouped rows (one per window spec, no
+  priority queue, 4 sort passes in a 64 KB buffer) and `window_functions_computation`: 1309 ms;
+  WC 1146 ms; binary WC 777 ms against 438. The windows are computed over every grouped row of the
+  temporary table, which carries the images' columns too, before the LIMIT applies.
+- `keyCounts`: the same index read into a temporary table of one integer per file and a sort of
+  69 rows: 134 ms. The count: index only, 167 ms.
+- DK, the narrow page without the images join: rated 711 ms, binary 295 ms (today's 1001 and
+  438). The rated page costs more than twice the binary one even without the join; not
+  investigated.
+- The file list's id query: one sort of all 38,367 rows (no priority queue at LIMIT 1000, 6
+  passes): 768 ms; WC 1325, WCn 1019.
+- A juror's page: 13.6 ms today, 34.4 ms with the windows (two more sorts of the juror's ~19k rows).
+
+**Correctness.** W's ranks equal today's (`Ranks(keyCounts)`) everywhere checked, as do WC's,
+D's, DK's and K's ranks and totals (`MISMATCH` count 0): whole lists, and pages 1, 2, the
+middle, the last and past the end (with 69 or 11 keys among 38k files, page 2 and the middle
+page start inside a tie). Lists: rated all, rated "rated", rated unrated (empty), region 80, rated
++ region; two regions (the monument join; adm0 01 and 51, 105 files; whole list only); binary in
+each `BinaryOrder`, selected, rejected, unrated (empty), a region; jurors' lists (rated, rated
+"rated", binary; the deferred join); file lists rated, rated "rated" + region, binary, binary
+difference selected, a juror's. In the timing runs every variant's page equalled A's in every
+round (ids, ranks, total). The fixture's rated round has no rate 0 or below, so some of these
+checks couldn't fail on it: its unrated lists are empty, its "rated" lists are its whole lists
+("rated rated" = "rated all"), and the "ranks all set" check couldn't catch the in-memory
+`rateSum` (rates below 0 as 0) against SQL `sum(s.rate)` in `RankKey`, which no file of it
+tells apart. `RoundListDbSpec` guards that (phase 2).
+
+**Decision: K.** The pager's total of a ranked list is the sum of `keyCounts`' counts; the ranks
+stay as they are.
+- W is slower in every organiser case: +174 to +313 ms median, faster in at most 4 of 15 rounds.
+  MariaDB 10.6 computes the two windows by sorting every grouped row twice more, without the
+  LIMIT's priority queue, which costs more than `keyCounts`' separate narrow aggregation
+  (125-160 ms).
+- WC is at best even on gallery pages (-46 to +80 ms) and saves 93-213 ms on a file list, less
+  than K, and needs a count query anyway for an empty page or one past the end.
+- K drops the pager's `COUNT(DISTINCT s.page_id)` (130-150 ms) in every organiser case:
+  -104 to -235 ms median, 12-14 of 15 rounds faster; the exception is run 2's noisy rated page 1
+  (+54, 7 of 15). It changes no SQL, so it doesn't touch B9's select; the ranks are today's by
+  construction, and the sum is right for an empty list and past the end without a fallback.
+- Jurors' lists: W saves 1-3 ms of ~40 and their totals already come from `JurorCounts`; they
+  keep `keyCounts`, so `keyCounts` stays (not dead code).
+- Not a rank change, for a later batch after B9: the narrow grouped page (DK: the page's ids and
+  sums from `selection` alone, then the page's images, as the deferred join does for a juror's
+  page) saves a further ~150-250 ms over K on these pages (DK -335 to -408 against K -104 to
+  -235 on page 1), and the file list's id query needs no join to `images` either (WCn). Both change
+  the grouped select that B9 changes.
+
+**Implementation plan (phase 2, on B9).**
+- `RoundList`: `ranked` (the file list, or by rate in any order but file order: the controller's
+  conditions today), `rankCounts()` = `query.keyCounts(rankKey.columns)` and `ranks(files,
+  counts)`; the CSV doesn't use them.
+- `GalleryController.galleryOf`: a lazy `rankCounts` when `list.ranked`; the pager's total from
+  the juror's counts first, then the sum of `rankCounts`, else `list.count()`; the ranks from the
+  same counts, so a page view runs `keyCounts` once and no count.
+- Specs: `RoundListDbSpec`: the sum of the rank counts equals `count()` for rated and binary
+  lists (each `BinaryOrder`), each vote filter (an empty one too), a region and two regions (the
+  monument join), by-rate and file list; ranks of pages that split a tie unchanged (the existing
+  file list test); a page past the end with the right total and no ranks. `AllJurorsListSpec`
+  (the file list's "1–1,000 of 1,003" and its ranks, the by-rate gallery's ranks) and
+  `GalleryOrderSpec` as they are; the CSV specs unaffected. Then the paired `GalleryLatencyBenchmark`
+  pilot (A, B, B, A) as planned.
+
+Raw data (in the worktree): run 1 `target/checks/b11-ranks/run1/{summary.txt,samples.csv}`, log
+`target/checks/20261102-110214-23108.log` (it stopped after the by-rate timings on a benchmark
+bug in WCn's SQL; the file list and juror rows are run 2's); run 2
+`target/checks/b11-ranks/run2/{summary.txt,samples.csv,analyze.json.txt}`, log
+`target/checks/20261102-112302-8200.log`. A first attempt (`…-105343-9556.log`) stopped on a page
+0 of an empty list, a benchmark bug. No specs (no app code changed).
+
+### B11 phase 2: K implemented
+
+After B9 (`ukwikidev/followups` at `b641c78d`, merged as `9bb607a6`; the plan file's conflict
+kept both sections). Commit `aaad3662`.
+
+- `RoundList.ranked` (a file list, or by rate in any order but file order), `rankCounts()`
+  (`query.keyCounts(rankKey.columns)`) and `ranks(files, counts)`; `ranks(files)` reads the
+  counts itself.
+- `GalleryController.galleryOf`: a lazy `rankCounts` for a ranked list; the pager's total from
+  the juror's counts, else the sum of `rankCounts`, else `list.count()`; the file list's and the
+  by-rate gallery's ranks from the same counts. A page view of all the jurors' votes runs
+  `keyCounts` once and no `COUNT(DISTINCT s.page_id)`.
+- `RankKey.of` for a rated round: the file's rates summed as they are (`selection.map(_.rate).sum`),
+  not `rateSum` (rates below 0 as 0), so the key read in memory is SQL's `sum(s.rate)`. Before,
+  in the by-rate gallery a file whose votes summed below 0 took the rank of the files summing to
+  exactly 0 if there were any (a wrong rank), else none; in the file list (whose rows have each
+  vote) a file with a rate below 0 took the rank of its positive rates' sum, if some file had
+  that sum, else none. The fixture has no such
+  votes; the new spec has.
+- `RankQueryBenchmark`: `groupedReader(q.tally)` for B9's reader; it compiles (`Test/compile`).
+- `keyCounts` stays (the ranks, now the totals too).
+
+Specs (new): `RoundListDbSpec` "a ranked list (a file list, by rate)": which lists are ranked;
+the sum of the rank counts equals `count()` for a rated round (all the jurors and each juror;
+each filter and `Rate(5)`; no region, regions 12 and 14, an empty region 99; by rate and file
+list: 128 lists) and a yes/no round (each `BinaryOrder` and filter, the unrated empty; by rate
+and file list), and in two regions through the monument table; a rated round with rates below 0
+(sums 6, 5, 3, 2, 2, -1) ranked "1", "2", "3", "4-5", "4-5", "6" over pages of 2, a page past
+the end empty, in the by-rate gallery and the file list; a yes/no round's last page ranked "4"
+in each order and the page past it empty. `AllJurorsListSpec`: the by-rate gallery's page 2 of
+20 files says "16–20 of 20" ranked "11-20." in a binary order, and "16–20 of 20" in file order
+(its count). Checks: `Test/compile`, `Gatling/compile`, `testOnly controllers.{RoundListDbSpec,
+RoundListSpec, AllJurorsListSpec, CsvSpec, GalleryOrderSpec, OwnVotesSpec, GalleryRegionsSpec,
+CoiAuthorizationSpec, RegionMenuSpec} org.intracer.wmua.RankSpec db.scalikejdbc.ImageDbNewDbSpec
+views.{FileListViewSpec, GalleryByRateViewSpec}`: 172 passed, 0 failed
+(`target/checks/20261102-124103-27020.log`).
+
+**Pilot.** `GalleryLatencyBenchmark` as B8's (`-Dbench.cases=^organizer-(binary|rated)-byrate-p1$
+-Dbench.warmup=1 -Dbench.samples=15`, fork `-Xmx1024m -Dgatling.timing=true`, SQL logging off),
+order A, B, B, A; A the merged base `9bb607a6` in a detached worktree (its own fixture dump;
+removed afterwards; the benchmark's one-line `groupedReader` fix applied there uncommitted, as
+its tests didn't compile without it), B `aaad3662`. Client times, n = 30 a cell; paired deltas B
+run k minus A run k, sample by sample, and per block of 5.
+
+| Page | A median (min-max) | B median (min-max) | Paired delta, median (min-max) | B faster | Per block of 5: median(B) − median(A) |
+|---|---|---|---|---|---|
+| by-rate, round 2 (rated), all jurors | 1136 ms (1032-1512) | 1005 ms (912-1804) | **-122 ms** (-514 to +707) | 25 of 30 | -89, -119, -133, +25, -153, -130 |
+| by-rate, round 1 (yes/no), all jurors | 803 ms (711-2289) | 667 ms (612-977) | **-134 ms** (-1588 to +231) | 27 of 30 | -147, +34, -127, -204, -399, -131 |
+
+The server's timing log: B runs no `COUNT(DISTINCT s.page_id)` (A's median 130-146 ms rated,
+133-152 ms binary); the grouped page (830-850 rated, 444-477 binary) and `keyCounts` (113-132,
+160-166) are as they were; all the page's queries 1082-1129 → 969-1001 ms rated, 743-816 →
+615-634 ms binary. The per-run medians drifted (A2 was the slowest run of each page), less than
+the delta; the pilot settles it and was not expanded. Raw: `target/checks/b11-pilot/`
+(`{A1,B1,B2,A2}-{client.csv,timing.jsonl}`, `summary.txt`, `b11-pilot-summary.json`); logs
+`target/checks/20261102-125306-6136.log`, `…-125524-17100.log` (B), A's in the removed worktree.
+
+
+### B11 review fixes
+
+The independent review found no High or Medium issues. Merged `ukwikidev/followups` at
+`fd6d1966` (B10) first (`72b41f3e`; the plan file keeps both sections, B10 then B11).
+
+| # | Finding | Fix |
+|---|---|---|
+| 1 | Low: no spec of the lists that newly take their total from `rankCounts` through the monument join with sub-regions (a juror's list in a Віа Регіа round has no `jurorCounts`) | `RoundListDbSpec` "have as many files as count() has in a Віа Регіа sub-region": adm1 monuments, sub-region 07-101; a juror's and all the jurors' lists, all and "rated", by rate and file list: the sum of the rank counts equals `count()` (2, or 1 for the juror's rated), juror counts none |
+| 2 | Low: `rateString`/`totalRate` (the gallery's rate label, the CSV's "Overall") still read `rateSum` (rates below 0 as 0), while the order and ranks read the SQL sum: votes 3, -1, 0 show "3" and rank as 2 | Not changed (display, and the order did this before B11). Follow-up: show a grouped row's SQL sum, and decide what a rated round's vote below 0 means |
+| 3 | Nit: `RankQueryBenchmark` didn't close its writers on failure, and exited 0 with mismatches | Writers closed in `finally`; exit 2 when a check found a mismatch (1 on an exception) |
+| 4 | Nit: some benchmark checks can't fail on the fixture | Said in the phase 1 correctness paragraph: no rate 0 or below, so the unrated lists are empty, "rated rated" = "rated all", and "ranks all set" couldn't catch `rateSum`; `RoundListDbSpec` guards it |
+| 5 | Nit: wording | The pilot's block column is named for what it is (per block of 5: median(B) − median(A)); the `RankKey` note says a file summing below 0 took the rank of the files summing to 0 (a wrong rank) if any, else none |
+
+Checks: `Test/compile`, `Gatling/compile`, `testOnly controllers.{RoundListDbSpec, RoundListSpec,
+AllJurorsListSpec, CsvSpec}`: 69 passed, 0 failed (`target/checks/20261102-130742-6824.log`). No
+display change, so no `views.*`; no benchmark rerun.

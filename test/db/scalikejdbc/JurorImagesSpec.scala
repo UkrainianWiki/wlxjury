@@ -298,12 +298,21 @@ class JurorImagesSpec extends Specification with BeforeAll with TestDb {
         Seq(1, 1, -1).zip(jurors).map { case (r, j) => Selection(images(0), j, round, r) } ++
           Seq(1, 0, 0).zip(jurors).map { case (r, j) => Selection(images(1), j, round, r) })
 
-      val result = ImageDbNew.SelectionQuery(roundId = round.id, grouped = true, order = Seq("s.page_id" -> 1)).list()
+      val query = ImageDbNew.SelectionQuery(roundId = round.id, grouped = true, order = Seq("s.page_id" -> 1), tally = true)
+      val result = query.list()
 
       // the rates' sum (the order by rate) counts a rejection against the approvals
       result.map(_.rate) === Seq(1, 1)
       result.map(_.approvals) === Seq(2, 1)
+      result.map(_.rejections) === Seq(1, 0)
       result.map(_.rateString(round)) === Seq("2", "1")
+      // without tally (a rated round's lists) the sums aren't counted, the rate sum is
+      val untallied = query.copy(tally = false).list()
+      untallied.map(_.rate) === Seq(1, 1)
+      untallied.map(f => (f.approvalsFromDb, f.rejectionsFromDb)) === Seq((None, None), (None, None))
+      // and reading them fails, rather than count the row's one selection (its sum)
+      untallied.head.approvals must throwAn[IllegalArgumentException](message = "grouped row without tally")
+      untallied.head.rejections must throwAn[IllegalArgumentException](message = "grouped row without tally")
     }
 
     "see details by selection" in new AutoRollbackDb {

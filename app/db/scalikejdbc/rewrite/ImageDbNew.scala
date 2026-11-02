@@ -51,11 +51,14 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
       // still use all their votes (HAVING on the grouped query): all the jurors' lists
       // (docs/plans/2026-11-01-binary-aggregate-votes.md, decision 3); else it picks vote rows
       filesByVotes: Boolean = false,
+      // a grouped query also counts each file's approvals and rejections apart: a yes/no
+      // round's tally (ImageWithRating.approvals), which no rated round's page reads
+      tally: Boolean = false,
       driver: String = "mysql"
   ) {
 
     private val reader: WrappedResultSet => ImageWithRating =
-      if (grouped) Readers.groupedReader else Readers.rowReader
+      if (grouped) Readers.groupedReader(tally) else Readers.rowReader
 
     private val regionColumn = if (subRegions) "adm1" else "adm0"
 
@@ -88,9 +91,11 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
                s"m.$regionColumn, count(DISTINCT i.page_id)"
              else if (!grouped)
                sqls"""${i.result.*}, ${s.result.*} """.value
-             else
+             else if (tally)
                sqls"""sum(s.rate) as rate, count(s.rate) as rate_count, sum(s.rate > 0) as approvals,
                        sum(s.rate < 0) as rejections, ${i.result.*} """.value
+             else
+               sqls"""sum(s.rate) as rate, count(s.rate) as rate_count, ${i.result.*} """.value
            })
 
       val groupByStr = if (byRegion) {
@@ -454,7 +459,10 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
           selection = Seq(SelectionJdbc(s)(rs))
         )
 
-      def groupedReader(rs: WrappedResultSet): ImageWithRating = {
+      /** A grouped row: the file, its rates' sum and count, and with `tally` its approvals and
+        * rejections (columns 3 and 4).
+        */
+      def groupedReader(tally: Boolean)(rs: WrappedResultSet): ImageWithRating = {
         val image = ImageJdbc(i)(rs)
         val sum = rs.intOpt(1).getOrElse(0)
         val count = rs.intOpt(2).getOrElse(0)
@@ -462,8 +470,8 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
           image,
           selection = Seq(Selection(image.pageId, juryId = 0, roundId = 0, rate = sum)),
           count,
-          approvalsFromDb = rs.intOpt(3),
-          rejectionsFromDb = rs.intOpt(4)
+          approvalsFromDb = if (tally) rs.intOpt(3) else None,
+          rejectionsFromDb = if (tally) rs.intOpt(4) else None
         )
       }
 

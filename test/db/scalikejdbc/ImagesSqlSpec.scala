@@ -87,9 +87,22 @@ class ImagesSqlSpec extends FunSuite with AutoRollbackMunitDb {
     )
   }
 
-  dbTest("grouped - group by page list by round") { implicit session =>
+  dbTest("grouped - group by page list by round, without a yes/no round's tally") { implicit session =>
     check(
       SelectionQuery(roundId = Some(3), grouped = true),
+      s"""select sum(s.rate) as rate, count(s.rate) as rate_count, $imageFields from selection s
+          STRAIGHT_JOIN images i
+          on i.page_id = s.page_id
+          where
+          s.round_id = ?
+        group by s.page_id""",
+      expectedParams = Seq(3L)
+    )
+  }
+
+  dbTest("grouped with tally - a yes/no round's approvals and rejections apart") { implicit session =>
+    check(
+      SelectionQuery(roundId = Some(3), grouped = true, tally = true),
       s"""select sum(s.rate) as rate, count(s.rate) as rate_count, sum(s.rate > 0) as approvals, sum(s.rate < 0) as rejections, $imageFields from selection s
           STRAIGHT_JOIN images i
           on i.page_id = s.page_id
@@ -98,6 +111,14 @@ class ImagesSqlSpec extends FunSuite with AutoRollbackMunitDb {
         group by s.page_id""",
       expectedParams = Seq(3L)
     )
+  }
+
+  dbTest("tally - only a grouped list's rows: a count, a juror's rows unchanged") { implicit session =>
+    val grouped = SelectionQuery(roundId = Some(3), grouped = true)
+    assertEquals(grouped.copy(tally = true).query(count = true).value, grouped.query(count = true).value)
+    assertEquals(grouped.copy(tally = true).query(idOnly = true).value, grouped.query(idOnly = true).value)
+    val juror = SelectionQuery(userId = Some(2), roundId = Some(3))
+    assertEquals(juror.copy(tally = true).query().value, juror.query().value)
   }
 
   dbTest("by region - list uses bind parameter not raw string") { implicit session =>
@@ -204,7 +225,7 @@ class ImagesSqlSpec extends FunSuite with AutoRollbackMunitDb {
         grouped = true,
         limit = Some(Limit(pageSize = Some(5), offset = Some(10)))
       ),
-      s"""select sum(s.rate) as rate, count(s.rate) as rate_count, sum(s.rate > 0) as approvals, sum(s.rate < 0) as rejections, $imageFields from selection s
+      s"""select sum(s.rate) as rate, count(s.rate) as rate_count, $imageFields from selection s
           STRAIGHT_JOIN images i
           on i.page_id = s.page_id
           where s.round_id = ?

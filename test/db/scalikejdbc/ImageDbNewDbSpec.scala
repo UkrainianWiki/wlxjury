@@ -286,7 +286,7 @@ class ImageDbNewDbSpec extends Specification with BeforeAll with TestDb {
     }
 
     def query(rate: Option[Int] = None, rated: Option[Boolean] = None) =
-      SelectionQuery(roundId = Some(round), rate = rate, rated = rated, grouped = true, filesByVotes = true,
+      SelectionQuery(roundId = Some(round), rate = rate, rated = rated, grouped = true, filesByVotes = true, tally = true,
         order = Seq("sum(s.rate > 0)" -> -1, "sum(s.rate < 0)" -> 1, "s.page_id" -> 1))
 
     "list the files with a matching vote, counted by all their votes" in new AutoRollbackDb {
@@ -311,6 +311,15 @@ class ImageDbNewDbSpec extends Specification with BeforeAll with TestDb {
       votes()
       val files = query(rate = Some(-1)).copy(grouped = false, groupWithDetails = true).list()
       (files.map(_.pageId) === Seq(61L)) and (files.head.selection.map(_.rate).sorted === Seq(-1, 1, 1))
+    }
+
+    "count the approvals and rejections only with tally (a yes/no round's), the sum and count always" in new AutoRollbackDb {
+      votes()
+      val untallied = query().copy(tally = false).list()
+      (untallied.map(f => (f.pageId, f.rate, f.countFromDb)) === Seq((61L, 1, 3), (62L, 1, 3), (63L, 0, 3))) and
+        (untallied.map(f => (f.approvalsFromDb, f.rejectionsFromDb)).distinct === Seq((None, None))) and
+        (query().list().map(f => (f.approvalsFromDb, f.rejectionsFromDb)) ===
+          Seq((Some(2), Some(1)), (Some(1), Some(0)), (Some(0), Some(0))))
     }
 
     "pick vote rows without it, as a distribution reads the votes (byRoundMerged)" in new AutoRollbackDb {
