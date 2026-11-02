@@ -130,8 +130,7 @@ class ApiTokenPageSpec extends PlaySpecification with PlayTestDb {
         status(post(app, "/users/tokens", sessionToken, create, sessionNonce = None)) === CONFLICT
         ApiTokenJdbc.findByUser(userId(email)) must haveSize(1)
 
-        // the refusal's page has a new nonce, which creates (another name: the same one moments
-        // later would replace the first, unused, as a repeated submit)
+        // the refusal's page has a new nonce, which creates
         val again = post(app, "/users/tokens", sessionToken, Seq("name" -> "desktop", "expiry" -> "90"),
           nonce = session(reload).get(ApiTokensCard.NonceKey),
           sessionNonce = session(reload).get(ApiTokensCard.NonceKey))
@@ -149,8 +148,8 @@ class ApiTokenPageSpec extends PlaySpecification with PlayTestDb {
 
         val first = post(app, "/users/tokens", sessionToken, create)
         status(first) === OK
-        // the second click's request: the same session (its nonce unchanged) and form; the
-        // browser shows its response, and the first token, which nobody saw, is revoked
+        // the second click's request: the same session (its nonce unchanged) and form, the same
+        // submit; the browser shows its response, and the first token, which nobody saw, is revoked
         val second = post(app, "/users/tokens", sessionToken, create)
         status(second) === OK
         val token2 = shown(second).get
@@ -158,7 +157,7 @@ class ApiTokenPageSpec extends PlaySpecification with PlayTestDb {
         ApiTokenService.authenticate(shown(first).get) must beNone
         ApiTokenService.authenticate(token2) must beSome // and now it is used
 
-        // a used token is kept: the same name moments later is another token
+        // a used token is kept, even by a repeat of its submit
         status(post(app, "/users/tokens", sessionToken, create)) === OK
         usable("laptop") must haveSize(2)
 
@@ -169,6 +168,23 @@ class ApiTokenPageSpec extends PlaySpecification with PlayTestDb {
         burst must haveSize(1)
         clicks.flatMap(shown).flatMap(t => ApiTokenJdbc.findByHash(ApiTokenService.hash(t))).filter(_.usable).map(_.id) ===
           burst.map(_.id)
+      }
+    }
+
+    "keep a token copied from a create when another of the same name follows from the new page" in {
+      withCsrfApp { app =>
+        setUp()
+        val sessionToken = token(app)
+        val first = post(app, "/users/tokens", sessionToken, create)
+        status(first) === OK
+        val copied = tokenPattern.findFirstIn(contentAsString(first)).get
+        // the response page's create form: its new nonce, in the form and the session
+        val next = session(first).get(ApiTokensCard.NonceKey)
+        val second = post(app, "/users/tokens", sessionToken, create, nonce = next, sessionNonce = next)
+        status(second) === OK
+        val other = tokenPattern.findFirstIn(contentAsString(second)).get
+        (ApiTokenService.authenticate(copied) must beSome) and (ApiTokenService.authenticate(other) must beSome) and
+          (ApiTokenJdbc.findByUser(userId(email)).count(t => t.usable && t.name == "laptop") === 2)
       }
     }
 

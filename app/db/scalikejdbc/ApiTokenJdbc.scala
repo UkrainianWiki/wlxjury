@@ -48,11 +48,10 @@ object ApiTokenJdbc {
     )
 
   /** A new token of the user, expiring in `expiresInDays` (never without), by its hash; its id. */
-  def create(userId: Long, name: String, tokenHash: String, prefix: String, expiresInDays: Option[Int])(implicit
-      session: DBSession = AutoSession
-  ): Long =
-    sql"""INSERT INTO api_token (user_id, name, token_hash, prefix, created_at, expires_at)
-          VALUES ($userId, $name, $tokenHash, $prefix, NOW(3),
+  def create(userId: Long, name: String, tokenHash: String, prefix: String, expiresInDays: Option[Int],
+      createNonce: Option[String] = None)(implicit session: DBSession = AutoSession): Long =
+    sql"""INSERT INTO api_token (user_id, name, token_hash, prefix, create_nonce, created_at, expires_at)
+          VALUES ($userId, $name, $tokenHash, $prefix, $createNonce, NOW(3),
                   IF(${expiresInDays.isDefined}, NOW(3) + INTERVAL ${expiresInDays.getOrElse(0)} DAY, NULL))"""
       .updateAndReturnGeneratedKey.apply()
 
@@ -85,13 +84,13 @@ object ApiTokenJdbc {
     val _ = sql"SELECT id FROM users WHERE id = $userId FOR UPDATE".map(_.long(1)).single.apply()
   }
 
-  /** The user's unrevoked, never used tokens named `name`, created less than `seconds` ago by
-    * the database clock: a double click's earlier creates. A locking read: after [[lockOwner]] it
-    * sees a create that committed while it waited.
+  /** The user's unrevoked, never used tokens created by the form submit of `createNonce` (its
+    * hash, V79): a double click's earlier creates. A locking read: after [[lockOwner]] it sees a
+    * create that committed while it waited.
     */
-  def unusedSince(userId: Long, name: String, seconds: Int)(implicit session: DBSession): Seq[Long] =
+  def unusedOfSubmit(userId: Long, createNonce: String)(implicit session: DBSession): Seq[Long] =
     sql"""SELECT id FROM api_token
-          WHERE user_id = $userId AND name = $name AND created_at > NOW(3) - INTERVAL $seconds SECOND
+          WHERE user_id = $userId AND create_nonce = $createNonce
             AND last_used_at IS NULL AND revoked_at IS NULL
           FOR UPDATE""".map(_.long(1)).list.apply()
 }

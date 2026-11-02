@@ -9,10 +9,11 @@
 @import db.scalikejdbc.User
 
 
-@* the token card's copy button (copy-field.js): only on the own profile, which has the card *@
+@* the token card's scripts (copy-field.js, submit-once.js): only on the own profile, which has the card *@
 @pageScripts = {
     @if(tokensCard.nonEmpty) {
         <script src="@routes.Assets.versioned("javascripts/copy-field.js")"></script>
+        <script src="@routes.Assets.versioned("javascripts/submit-once.js")"></script>
     }
 }
 

@@ -483,10 +483,9 @@ for role, account, contest and round events.
   the escaping rule, in `incident-prevention-guidelines.md` ("Browser safety"); raty gets numbers
   and empty hints only.
 - **P13 (root revocation, double click):** `ApiTokenService.createOnce` runs a create in one
-  transaction with the user's row locked (`ApiTokenJdbc.lockOwner`): a token named as one the
-  user created less than `DedupeSeconds` (30) ago is the same submit, and the 20-token cap is
-  checked in the same transaction (after the review: the last submit wins, see the review fixes
-  below). Root has
+  transaction with the user's row locked (`ApiTokenJdbc.lockOwner`), and the 20-token cap is
+  checked in the same transaction; a repeated submit of the same form is handled as the review
+  fixes below describe (the form's nonce on the token, V79; the button disabled). Root has
   `GET /admin/users/:userId/tokens` (the list, linked from another account's edit page), `POST
   .../tokens/:id/revoke` and `POST .../tokens/revoke` (all), root only, CSRF by the global filter;
   `ApiTokenService.revokeByRoot` logs `api_token_revoked by=root rootId userId tokenIds` at INFO
@@ -534,6 +533,8 @@ The independent review found the branch safe to merge, with these fixes before r
 | L4 (nit) | `revokeByRoot` read then revoked outside a transaction and logged even when nothing was revoked | One transaction with the user's row locked; no log line if nothing was revoked. S2's `ApiTokenJdbc.revokeAll` arrives at the merge: `revokeByRoot` could use it for "all" then | `ApiTokenPageSpec` (root revokes one, all) |
 | Nit | `createOnce` duplicated `create` | `create` takes an implicit session (default `AutoSession`); `createOnce` calls it in its transaction | `ApiTokenPageSpec`, `ApiSpec` |
 | Nit | pac4j removal might evict or downgrade transitive libraries | `sbt dist` builds (205 jars in `lib/`: the runtime classpath's 203 and the app's two). `Runtime/managedClasspath` against the base's `build.sbt` (57aa8434): only `play-pac4j_2.13` 12.0.0-PLAY3.0, `pac4j-core` 6.0.0, `lombok` 1.18.30 and `findbugs-annotations` 3.0.1 are gone; no other library is added, evicted or changes version | `sbt dist` |
+| L-a (follow-up review) | Replacing by name within 30 s could revoke a token the user had copied and deliberately followed with another of the same name | The replacement is keyed on the submit: `api_token.create_nonce` (V79, the SHA-256 of the form's one-time nonce); `createOnce` revokes only unused tokens created with the same nonce (a double click repeats it; a create from the response page or another tab has a new one). The name/30 s rule is gone. **Merge:** V79 is numbered after S2's V77 and C1's V78; merge those first or renumber (production validates without ignoring out-of-order migrations). Undo: drop the column | `ApiTokenPageSpec`: a same-nonce double click leaves one usable token, the one shown; a second create of the same name from the new page (fresh nonce) leaves both usable |
+| L-b (follow-up review) | Under concurrency the last request sent may commit first, so the shown token could be the revoked one | `submit-once.js` (served from `'self'`, no inline script): a `data-submit-once` form's first submit disables its submit buttons and drops further submits; a page restored by Back gets them back (`pageshow`). The API token create form uses it; the server-side replacement stays as the backstop | Jest `submit-once.test.js`; `NoInlineScriptsSpec`, `InlineScriptHashesSpec` (`views.*`) |
 | L3 | `createOnce` should re-check the session's `auth_version` (S3) inside its transaction | **Merge note for S2/S3:** not implemented here; at the S2 merge, check `auth_version` in `createOnce`'s transaction (and in `revokeByRoot` for root's) so a request of a session invalidated meanwhile creates nothing | — |
 
 **Review fix checks:** Jest, whole suite in this tree (`npm ci` in `javascript-test/`, own
@@ -542,6 +543,16 @@ lock): `Test/compile`, `Gatling/compile`, `testOnly controllers.ApiTokenPageSpec
 controllers.ContestFilesPageSpec api.ApiSpec security.* views.*`: 261 passed
 (`target/checks/20261102-153956-15200.log`), then `dist` and `export Runtime/managedClasspath`;
 the base's classpath in `target/checks/20261102-154639-17516.log`.
+
+**Follow-up review fix checks (L-a, L-b):** Jest, full suite in this tree with its output kept
+(`target/checks/jest-20261102-155157.log`, `npx jest --verbose`): 20 suites, 251 tests pass,
+`unitegallery-alt.test.js` (7) and `submit-once.test.js` (4) among them. sbt (under the lock):
+`Test/compile`, `Gatling/compile`, `testOnly controllers.ApiTokenPageSpec api.ApiSpec
+db.scalikejdbc.ApiTokenJdbcSpec security.* views.*`: 230 tests, 229 passed
+(`target/checks/20261102-160406-11052.log`); the one failure, `ApiTokenJdbcSpec`'s column list
+without V79's `create_nonce`, is updated and passes with `db.MigrationNamingSpec` (8 passed,
+`target/checks/20261102-161423-10624.log`). (The earlier Jest runs were in this tree too, outside
+sbt, so no sbt log holds them.)
 
 ## Running the batches
 

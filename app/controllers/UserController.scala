@@ -189,7 +189,7 @@ class UserController @Inject()(cc: ControllerComponents,
         .fold(
           formWithErrors => ownProfile(BadRequest, user, tokenForm = formWithErrors),
           { case (name, expiresInDays) =>
-            ApiTokenService.createOnce(user.getId, name, expiresInDays) match {
+            ApiTokenService.createOnce(user.getId, name, expiresInDays, nonce.get) match {
               case ApiTokenService.CreateOutcome.Created(token) =>
                 ownProfile(Ok, user, newToken = Some(token)).withHeaders(CACHE_CONTROL -> "no-store")
               case ApiTokenService.CreateOutcome.LimitReached =>

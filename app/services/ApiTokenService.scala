@@ -52,11 +52,12 @@ object ApiTokenService extends Logging {
   def displayPrefix(token: String): String = token.take(Prefix.length + 6)
 
   /** A new token of the user; its value, to be shown once. */
-  def create(userId: Long, name: String, expiresInDays: Option[Int])(implicit
+  def create(userId: Long, name: String, expiresInDays: Option[Int], createNonce: Option[String] = None)(implicit
       session: DBSession = AutoSession
   ): String = {
     val token = generate()
-    ApiTokenJdbc.create(userId, name.trim.take(NameMaxLength), hash(token), displayPrefix(token), expiresInDays)
+    ApiTokenJdbc.create(userId, name.trim.take(NameMaxLength), hash(token), displayPrefix(token), expiresInDays,
+      createNonce.map(hash))
     token
   }
 
@@ -98,27 +99,24 @@ object ApiTokenService extends Logging {
     case object LimitReached extends CreateOutcome
   }
 
-  /** A create of a token named as one the user created less than this many seconds ago, and
-    * never used, repeats that submit (P13: a double click sends the page's nonce twice before
-    * either response replaces it). The browser shows only the last response, so the last
-    * create wins: the earlier token, whose value nobody saw, is revoked.
+  /** A new token of the user, created by the profile form's submit with `nonce` (its one-time
+    * nonce, [[controllers.ApiTokensCard]]), unless the user has [[MaxActive]] usable tokens.
+    *
+    * The same form sent again (P13: a double click sends the page's nonce twice before either
+    * response replaces it) replaces its earlier tokens if they were never used: the browser shows
+    * only the last response, so that token is the one usable. A deliberate second create comes
+    * from a new page, with a new nonce, and leaves the first alone (its hash is on the token,
+    * V79). One create of a user's at a time (their row locked).
     */
-  val DedupeSeconds = 30
-
-  /** A new token of the user, unless the user has [[MaxActive]] usable tokens; a repeated submit
-    * (see [[DedupeSeconds]]) replaces its earlier unused tokens. One create of a user's at a time
-    * (their row locked), so concurrent requests leave one usable token of the name.
-    */
-  def createOnce(userId: Long, name: String, expiresInDays: Option[Int]): CreateOutcome =
+  def createOnce(userId: Long, name: String, expiresInDays: Option[Int], nonce: String): CreateOutcome =
     DB.localTx { implicit s =>
       ApiTokenJdbc.lockOwner(userId)
-      val trimmed = name.trim.take(NameMaxLength)
-      val replaced = ApiTokenJdbc.unusedSince(userId, trimmed, DedupeSeconds)
+      val replaced = ApiTokenJdbc.unusedOfSubmit(userId, hash(nonce))
       replaced.foreach(ApiTokenJdbc.revoke(_, userId))
       if (replaced.nonEmpty)
         logger.info(s"api_token_replaced userId=$userId tokenIds=${replaced.mkString(",")} reason=repeated_submit")
       if (ApiTokenJdbc.findByUser(userId).count(_.usable) >= MaxActive) CreateOutcome.LimitReached
-      else CreateOutcome.Created(create(userId, trimmed, expiresInDays))
+      else CreateOutcome.Created(create(userId, name, expiresInDays, Some(nonce)))
     }
 
   /** Root revokes another user's unrevoked tokens (`tokenId`, else all of them), in one
