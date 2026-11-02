@@ -9,16 +9,19 @@ import play.api.test.{FakeRequest, PlaySpecification}
 import java.io.File
 import java.nio.charset.StandardCharsets.UTF_8
 import java.nio.file.Files
-import scala.concurrent.Future
+import scala.concurrent.duration.Duration
+import scala.concurrent.{Await, Future}
 import scala.jdk.CollectionConverters._
 
 /** G6 (security batch S7, P4, P17): real responses through the router and the release's filters
   * (`conf/application.conf`, [[ProductionFilters]]) carry the security headers: the content
   * security policy (Play's CSPFilter, exactly the configured one), `X-Frame-Options`,
-  * `X-Content-Type-Options`, `Referrer-Policy` and `Permissions-Policy`. A page, a token link's
-  * page (which keeps its `no-referrer`), a redirect, JSON errors, Swagger UI (`/api/docs`) with its
-  * scripts and image, a webjar, a CSRF refusal and a bad Host's 400 all have them: the header
-  * filters run outermost.
+  * `X-Content-Type-Options`, `Referrer-Policy`, `Permissions-Policy`, `X-XSS-Protection` and
+  * `X-Permitted-Cross-Domain-Policies`. A page, a token link's page (which keeps its
+  * `no-referrer`), a redirect, JSON errors, Swagger UI (`/api/docs`) with its scripts and image, a
+  * webjar, a CSRF refusal and a bad Host's 400 all have them: the header filters run outermost.
+  * A server error and a request Play can't parse, which Play's server answers outside the filters
+  * (through the error handler), have them too: checked through a running server.
   */
 class SecurityHeadersSpec extends PlaySpecification with PlayTestDb {
 
@@ -46,6 +49,8 @@ class SecurityHeadersSpec extends PlaySpecification with PlayTestDb {
     header("X-Content-Type-Options", result) must beSome("nosniff")
     header("Referrer-Policy", result) must beSome(referrer)
     header("Permissions-Policy", result) must beSome(permissionsPolicy)
+    header("X-XSS-Protection", result) must beSome("0")
+    header("X-Permitted-Cross-Domain-Policies", result) must beSome("master-only")
   }
 
   /** `path`, following redirects (at most three), and the path it ends at. */
@@ -62,10 +67,10 @@ class SecurityHeadersSpec extends PlaySpecification with PlayTestDb {
   }
 
   "the release's header settings" should {
-    "run the header filters first, then the sessions, CSRF and allowed hosts" in {
+    "run the header filters first, then the allowed hosts, the sessions and CSRF" in {
       release.getStringList("play.filters.enabled").asScala.toSeq === Seq(
-        "modules.AppSecurityHeadersFilter", "play.filters.csp.CSPFilter", "modules.SessionLifetimeFilter",
-        "play.filters.csrf.CSRFFilter", "play.filters.hosts.AllowedHostsFilter")
+        "modules.AppSecurityHeadersFilter", "play.filters.csp.CSPFilter", "play.filters.hosts.AllowedHostsFilter",
+        "modules.SessionLifetimeFilter", "play.filters.csrf.CSRFFilter")
       release.getStringList("play.filters.disabled").isEmpty must beTrue
     }
 
@@ -88,6 +93,7 @@ class SecurityHeadersSpec extends PlaySpecification with PlayTestDb {
       val tests = ConfigFactory.parseFile(new File("test/resources/application.conf"))
       tests.getString("play.filters.headers.referrerPolicy") === release.getString("play.filters.headers.referrerPolicy")
       tests.getString("wlxjury.headers.permissionsPolicy") === permissionsPolicy
+      tests.getString("play.filters.headers.xssProtection") === release.getString("play.filters.headers.xssProtection")
       tests.getStringList("play.filters.enabled").asScala.toSeq ===
         release.getStringList("play.filters.enabled").asScala.toSeq.filterNot(_ == "play.filters.csp.CSPFilter")
     }
@@ -200,5 +206,120 @@ class SecurityHeadersSpec extends PlaySpecification with PlayTestDb {
         secured(result)
       }
     }
+  }
+
+  "a request for another host" should {
+    "get its 400 before any session work, with an old or an expired session cookie" in {
+      ProductionFilters.withApp { app =>
+        // a session from before S3 (its upgrade reads the database) and one past its absolute limit
+        val old = Seq(controllers.Secured.UserName -> "juror@example.com")
+        val expired = Seq(controllers.Secured.UserName -> "juror@example.com", controllers.Secured.AccountId -> "1",
+          controllers.Secured.AuthVersion -> "0", controllers.SessionLifetime.IssuedAt -> "1",
+          controllers.SessionLifetime.LastSeen -> "1")
+        val (results, lines) = authLog {
+          Seq(old, expired).map { session =>
+            val result = route(app, FakeRequest(POST, "/auth")
+              .withHeaders(HOST -> "evil.example.com", ACCEPT -> BrowserAccept)
+              .withSession(session: _*).withFormUrlEncodedBody("login" -> "x", "password" -> "y")).get
+            Await.result(result, Duration(10, "seconds"))
+          }
+        }
+        forall(results) { result =>
+          result.header.status === BAD_REQUEST
+          result.newSession must beNone
+          result.newCookies must beEmpty
+        }
+        lines must beEmpty
+        // the same expired session for this host is signed out: the sessions' filter runs and logs it
+        val (_, here) = authLog {
+          status(route(app, FakeRequest(GET, "/auth").withHeaders(ACCEPT -> BrowserAccept).withSession(expired: _*)).get)
+        }
+        here must contain(startWith("session_expired"))
+      }
+    }
+  }
+
+  "a response Play's server makes outside the filters" should {
+    "carry the headers: a server error" in {
+      import play.api.routing.sird.{GET => Get, _}
+      val action = play.api.test.Helpers.stubControllerComponents().actionBuilder { _ =>
+        throw new IllegalStateException("a failure the error handler answers")
+      }
+      val boom = play.api.routing.Router.from { case Get(p"/boom") => action }
+      ProductionFilters.withAppWith(Map.empty, play.api.inject.bind[play.api.routing.Router].toInstance(boom)) { app =>
+        served(app) { port =>
+          val (code, headers) = raw(port, "GET /boom HTTP/1.1")
+          code === INTERNAL_SERVER_ERROR
+          securedRaw(headers)
+        }
+      }
+    }
+
+    "carry the headers: a request Play can't parse" in {
+      ProductionFilters.withApp { app =>
+        served(app) { port =>
+          val (code, headers) = raw(port, "GET /%zz HTTP/1.1")
+          code === BAD_REQUEST
+          securedRaw(headers)
+        }
+      }
+    }
+  }
+
+  /** The lines the `security.auth` logger (the sessions' filter) writes while `f` runs. */
+  private def authLog[T](f: => T): (T, Seq[String]) = {
+    val logger = org.slf4j.LoggerFactory.getLogger("security.auth").asInstanceOf[ch.qos.logback.classic.Logger]
+    val appender = new ch.qos.logback.core.read.ListAppender[ch.qos.logback.classic.spi.ILoggingEvent]
+    val level = logger.getLevel
+    logger.setLevel(ch.qos.logback.classic.Level.DEBUG)
+    appender.start()
+    logger.addAppender(appender)
+    try {
+      val result = f
+      (result, appender.list.asScala.toSeq.map(_.getFormattedMessage))
+    } finally {
+      logger.detachAppender(appender)
+      logger.setLevel(level)
+    }
+  }
+
+  /** `body` with `app` served by Play's server (Netty) on a free port. */
+  private def served[T](app: Application)(body: Int => T): T = {
+    val port = { val s = new java.net.ServerSocket(0); try s.getLocalPort finally s.close() }
+    val server = play.api.test.TestServer(port, app)
+    server.start()
+    try body(port)
+    finally server.stop()
+  }
+
+  /** The status and headers (names in lower case) of `requestLine` sent as raw HTTP/1.1. */
+  private def raw(port: Int, requestLine: String): (Int, Map[String, String]) = {
+    val socket = new java.net.Socket("localhost", port)
+    try {
+      socket.setSoTimeout(30000)
+      val out = socket.getOutputStream
+      val crlf = "\r\n"
+      out.write((requestLine + crlf + s"Host: localhost:$port" + crlf + s"Accept: $BrowserAccept" + crlf +
+        "Connection: close" + crlf + crlf).getBytes(UTF_8))
+      out.flush()
+      val lines = scala.io.Source.fromInputStream(socket.getInputStream, "UTF-8").getLines().takeWhile(_.nonEmpty).toList
+      val code = lines.head.split(" ")(1).toInt
+      val headers = lines.tail.map { l =>
+        val i = l.indexOf(':')
+        l.take(i).trim.toLowerCase -> l.drop(i + 1).trim
+      }.toMap
+      (code, headers)
+    } finally socket.close()
+  }
+
+  /** [[secured]] for a raw response's headers. */
+  private def securedRaw(headers: Map[String, String]) = {
+    headers.get("content-security-policy") must beSome(ProductionFilters.cspHeader)
+    headers.get("x-frame-options") must beSome("DENY")
+    headers.get("x-content-type-options") must beSome("nosniff")
+    headers.get("referrer-policy") must beSome("same-origin")
+    headers.get("permissions-policy") must beSome(permissionsPolicy)
+    headers.get("x-xss-protection") must beSome("0")
+    headers.get("x-permitted-cross-domain-policies") must beSome("master-only")
   }
 }

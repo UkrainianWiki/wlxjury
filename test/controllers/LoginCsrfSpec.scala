@@ -23,6 +23,9 @@ class LoginCsrfSpec extends PlaySpecification with PlayTestDb with AccountTestSu
 
   private val email = "juror@example.com"
 
+  /** A setup token (at least 32 characters), configured where /setup is tested. */
+  private val SetupToken = "s" * 40
+
   private val TokenField = """name="csrfToken" value="([^"]+)"""".r
 
   /** A POST with a form and no cookie, as a forged form on another site sends it from a browser
@@ -45,9 +48,11 @@ class LoginCsrfSpec extends PlaySpecification with PlayTestDb with AccountTestSu
     }
 
     "be refused for the setup, invitation and email-confirmation forms" in {
-      ProductionFilters.withApp { implicit app =>
+      // the setup form as it would pass (the configured token, an empty installation): refused only for CSRF
+      ProductionFilters.withAppWith(Map("wlxjury.setup.token" -> SetupToken)) { implicit app =>
         forall(Seq(
-          "/setup" -> Seq("token" -> "t", "login" -> "root@example.com", "password" -> "a-long-password"),
+          "/setup" -> Seq("token" -> SetupToken, "login" -> "root@example.com", "password" -> "root-password",
+            "repeat.password" -> "root-password"),
           "/invitation" -> Seq("token" -> "t", "password" -> "a-long-password"),
           "/email/confirm" -> Seq("token" -> "t")
         )) { case (path, form) =>
@@ -93,14 +98,28 @@ class LoginCsrfSpec extends PlaySpecification with PlayTestDb with AccountTestSu
     }
 
     "set the token for a browser with no cookie at all, the setup page too" in {
-      ProductionFilters.withApp { implicit app =>
+      ProductionFilters.withAppWith(Map("wlxjury.setup.token" -> SetupToken)) { implicit app =>
         forall(Seq("/auth", "/setup")) { path =>
           val page = route(app, FakeRequest(GET, path).withHeaders(ACCEPT -> "text/html")).get
-          if (status(page) == OK) {
-            session(page).get("csrfToken") aka path must beSome
-            TokenField.findFirstMatchIn(contentAsString(page)) aka path must beSome
-          } else status(page) aka path must_== NOT_FOUND // /setup without the configured setup token
+          status(page) aka path must_== OK
+          session(page).get("csrfToken") aka path must beSome
+          TokenField.findFirstMatchIn(contentAsString(page)) aka path must beSome
         }
+      }
+    }
+
+    "let the setup in with the token its page set" in {
+      ProductionFilters.withAppWith(Map("wlxjury.setup.token" -> SetupToken)) { implicit app =>
+        val page = route(app, FakeRequest(GET, "/setup").withHeaders(ACCEPT -> "text/html")).get
+        val inSession = session(page).get("csrfToken").get
+        val inForm = TokenField.findFirstMatchIn(contentAsString(page)).map(_.group(1)).get
+        val created = route(app, FakeRequest(POST, "/setup")
+          .withHeaders(ACCEPT -> "text/html", COOKIE -> "PLAY_SESSION=from-the-page")
+          .withSession("csrfToken" -> inSession)
+          .withFormUrlEncodedBody("token" -> SetupToken, "login" -> "root@example.com", "password" -> "root-password",
+            "repeat.password" -> "root-password", "csrfToken" -> inForm)).get
+        status(created) === SEE_OTHER
+        User.count() === 1
       }
     }
   }
@@ -121,6 +140,8 @@ class LoginCsrfSpec extends PlaySpecification with PlayTestDb with AccountTestSu
         val anonymous = route(app, FakeRequest(POST, "/api/contests").withJsonBody(contest)).get
         status(anonymous) === FORBIDDEN
         (contentAsJson(anonymous) \ "error").as[String] === "csrf"
+        // what csrf means here for a tool: send the token
+        (contentAsJson(anonymous) \ "hint").as[String] must contain("Authorization: Bearer")
         ContestJuryJdbc.findAll().count(_.name == "created by a tool") === 1
       }
     }

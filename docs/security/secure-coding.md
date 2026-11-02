@@ -135,11 +135,15 @@ user decision).
 
 **Rule.** In production the session, flash, language, theme and gallery-sort cookies are
 `Secure`; a new cookie follows `play.http.session.secure` and is `HttpOnly` unless script
-must read it. Every response carries the CSP, `X-Frame-Options: DENY`,
-`X-Content-Type-Options: nosniff`, `Referrer-Policy: same-origin` and a `Permissions-Policy`
-that turns unused browser features off (camera, microphone, geolocation, payment, ...). The
-header filters run first (`play.filters.enabled`), so a CSRF refusal or a bad Host's 400 has
-them too. A page whose URL holds a secret (a mailed link's token) sends `no-referrer`; it is the
+must read it. Every response that passes the filters carries the CSP, `X-Frame-Options: DENY`,
+`X-Content-Type-Options: nosniff`, `Referrer-Policy: same-origin`, `X-XSS-Protection: 0`,
+`X-Permitted-Cross-Domain-Policies: master-only` and a `Permissions-Policy` that turns unused
+browser features off (camera, microphone, geolocation, payment, ...). The header filters run
+first (`play.filters.enabled`), so a CSRF refusal or a bad Host's 400 has them too; the allowed
+hosts come next, so a foreign Host gets its 400 before any session or database work. Play's
+server answers a server error, and a request it can't parse, outside the filters: `ErrorHandler`
+adds the same headers to those (`modules.ResponseSecurityHeaders`, from the same configuration
+and code). A page whose URL holds a secret (a mailed link's token) sends `no-referrer`; it is the
 only header an action may set in place of the filter's (`modules.AppSecurityHeadersFilter`).
 
 **Example.** `ThemeCookies` (`controllers/Theme.scala`) and `RoundList.remembered` take
@@ -148,7 +152,8 @@ only header an action may set in place of the filter's (`modules.AppSecurityHead
 
 **Guards.** `ProductionConfigSpec` ("the cookies in production", "the security headers and
 CSRF in production"), `GalleryOrderSpec`, G6 `security.SecurityHeadersSpec` (S7, P4: a page, a
-token page, a redirect, JSON errors, Swagger UI, a webjar, a CSRF refusal, a bad Host).
+token page, a redirect, JSON errors, Swagger UI, a webjar, a CSRF refusal, a bad Host; through a
+running server, a server error and an unparsable request).
 
 **Exceptions.** None.
 
@@ -268,7 +273,9 @@ the token; `SecurityHeadersSpec` checks that no route has `nocsrf`.
 
 **Exceptions.** A Bearer-token `/api/` request without a session needs no CSRF token. Every
 other POST needs it, cookies or not (`play.filters.csrf.header.protectHeaders = null`, S7, N6):
-a cookieless API POST with no credentials gets the JSON CSRF refusal (403), not a 401.
+a cookieless API POST with no credentials gets the JSON CSRF refusal (403, with a `hint` to send
+`Authorization: Bearer <token>`), not a 401. A sign-in form left open after its session cookie
+is gone gets the CSRF page asking to reload.
 
 ## 12. Errors shown to users
 

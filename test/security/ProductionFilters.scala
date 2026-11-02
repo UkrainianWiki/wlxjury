@@ -2,7 +2,7 @@ package security
 
 import com.typesafe.config.{Config, ConfigFactory, ConfigResolveOptions}
 import db.scalikejdbc.SharedTestDb
-import play.api.inject.guice.GuiceApplicationBuilder
+import play.api.inject.guice.{GuiceApplicationBuilder, GuiceableModule}
 import play.api.{Application, Configuration}
 import play.filters.csp.CSPConfig
 
@@ -47,17 +47,21 @@ object ProductionFilters {
 
   /** `body` with an app that has the release's filters and their settings (CSRF on), on the
     * shared, truncated database. */
-  def withApp[T](body: Application => T): T = {
+  def withApp[T](body: Application => T): T = withAppWith(Map.empty)(body)
+
+  /** [[withApp]] with more `config` and binding `overrides`. */
+  def withAppWith[T](config: Map[String, Any], overrides: GuiceableModule*)(body: Application => T): T = {
     SharedTestDb.init()
     SharedTestDb.truncateAll()
     val app = new GuiceApplicationBuilder()
       .configure(settings)
-      .configure(
+      .configure(config ++ Map(
         "db.default.driver"   -> SharedTestDb.driverClassName,
         "db.default.username" -> SharedTestDb.username,
         "db.default.password" -> SharedTestDb.password,
         "db.default.url"      -> SharedTestDb.jdbcUrl
-      )
+      ))
+      .overrides(overrides: _*)
       .build()
     try body(app)
     finally {

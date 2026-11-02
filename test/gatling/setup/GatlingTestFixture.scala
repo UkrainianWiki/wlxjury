@@ -125,15 +125,17 @@ object GatlingTestFixture {
         directives.map { case (name, value) => s"play.filters.csp.directives.$name" -> value }
     }
 
-  /** The filters as the tests' config lists them (production's order), with the content
-    * security policy's after the security headers if -Dui.csp is set, and the timing log
+  /** The release's filters in its order (security.ProductionFilters), without the content
+    * security policy's unless -Dui.csp is set, and with the timing log
     * (modules.RequestTimingFilter) after the sessions' limits if enabled. */
-  private def filtersConfig: Map[String, Any] =
-    if (cspMode.isEmpty && !GatlingConfig.timing) Map.empty
-    else Map("play.filters.enabled" -> (
-      Seq("modules.AppSecurityHeadersFilter") ++ cspMode.map(_ => "play.filters.csp.CSPFilter") ++
-        Seq("modules.SessionLifetimeFilter") ++ Seq("modules.RequestTimingFilter").filter(_ => GatlingConfig.timing) ++
-        Seq("play.filters.csrf.CSRFFilter", "play.filters.hosts.AllowedHostsFilter")))
+  private def filtersConfig: Map[String, Any] = {
+    import scala.jdk.CollectionConverters._
+    val release = security.ProductionFilters.release.getStringList("play.filters.enabled").asScala.toSeq
+      .filter(f => cspMode.isDefined || f != "play.filters.csp.CSPFilter")
+    Map("play.filters.enabled" -> release.flatMap { f =>
+      if (f == "modules.SessionLifetimeFilter" && GatlingConfig.timing) Seq(f, "modules.RequestTimingFilter") else Seq(f)
+    })
+  }
 
   /** The timing log's file, if enabled. */
   private def timingConfig: Map[String, Any] =

@@ -806,6 +806,39 @@ decision); N6 came over from S3/S4.
   37 passed (`20261102-190021-19092.log`), then `SecurityHeadersSpec` 13/13
   (`20261102-190624-3656.log`). No JS changed (no Jest).
 
+**Decided (user, 2026-11-02):** a cookieless `/api/` POST with no credentials keeps the CSRF 403
+(not a 401), and its JSON says what to send instead (`hint`: `Authorization: Bearer <token>`, or
+the `Csrf-Token` header with the session); the OpenAPI description of `bearerToken` says so too.
+
+**Release note:** a sign-in form left open after its session cookie is gone (the browser closed
+it, the cookie expired) now gets the CSRF page asking to reload, as every other form already did;
+reloading the sign-in page sets a new token.
+
+### S7 review fixes (2026-11-02)
+
+One independent review: safe to merge (the CSP equivalent value for value, N6 sound,
+`Referrer-Policy` fine). Merged `ukwikidev/followups` (22e5d8b2) first; then:
+
+| Finding | Fix | Guard |
+|---|---|---|
+| Low 1: a 500 (and a request Play can't parse) is answered by Play's server outside the filters, without the headers | `ErrorHandler.onServerError`/`onClientError` add them through `modules.ResponseSecurityHeaders`: the same `AppSecurityHeadersFilter` code and the same `CSPProcessor` from the same configuration, each only if its filter is enabled (the tests' config has no CSP). **Found by the new spec:** for an unparsable request (`GET /%zz`) `onClientError` itself failed (no cookies attribute: `request2Messages` threw) and the client got no answer at all; `ErrorHandler.withCookieCells` gives such a request empty cookies, session and flash. The "every response" wording in `secure-coding.md` §6 and the filter's scaladoc now say "that passes the filters", plus the error handler | `SecurityHeadersSpec`: a 500 from a throwing route and a `GET /%zz` 400, both through a running Netty server, raw HTTP |
+| Low 2: `AllowedHostsFilter` ran after the sessions' filter and CSRF | Order now: headers, CSP, allowed hosts, sessions, CSRF (application.conf, the tests' config; the Gatling list is derived from the release's) | `SecurityHeadersSpec`: the order; a foreign Host with a pre-S3 cookie and with an expired one gets 400, no session or cookie written, no `security.auth` line (the same expired cookie for this host logs `session_expired`) |
+| Low 3: sign-in form open after the cookie is gone | Recorded (release note above, `secure-coding.md` §11, `application.conf`) | — |
+| Nit: `/setup` tested vacuously (404) | `LoginCsrfSpec` configures `wlxjury.setup.token`: a cookieless setup POST with the right setup token is refused; the page sets the token, which lets the setup in | `LoginCsrfSpec` |
+| Nit: pin `X-XSS-Protection`, `X-Permitted-Cross-Domain-Policies` | `X-XSS-Protection: 0` (agreed: OWASP's current advice; the auditor could leak content, no current browser has it, the CSP protects); `X-Permitted-Cross-Domain-Policies` stays Play's `master-only` | `SecurityHeadersSpec` (every checked response) |
+| Nit: Gatling filter list could drift | `GatlingTestFixture.filtersConfig` takes the release's list, drops `CSPFilter` without `--csp`, inserts the timing filter after the sessions' | `Gatling/compile` |
+| Nit: double WARN on a bot's token-less POST | `play.filters.CSRF` at ERROR in `conf/wlxjury/logback.xml` and `conf/logback.xml`; `CsrfErrorHandler`'s `csrf_failure` (reference, sanitised path) stays. The infra repo's logback needs the same line (S8) | — |
+| Open question 1 | Kept, with the hint (user decision above) | `LoginCsrfSpec` (`hint`) |
+
+**Checks:** `Test/compile`, `Gatling/compile`, `testOnly security.* views.ContentSecurityPolicySpec
+views.InlineScriptHashesSpec controllers.LoginCsrfSpec controllers.SetupSpec controllers.SessionsSpec`
++ the CSRF router specs (`SignOutAndSwitchSpec`, `ThemeSwitchSpec`, `AccountInvitationSpec`,
+`AccountReviewFixesSpec`, `ApiTokenPageSpec`, `CoiAuthorizationSpec`, `LargeImageSpec`),
+`AllowedHostsSpec`, `LoginControllerSpec`, `deployment.ProductionConfigSpec`, `api.ApiSpec`: 275
+tests, 274 passed, `SetupSpec` included (`target/checks/20261102-194046-27788.log`); the error was
+the unparsable request above, fixed: `SecurityHeadersSpec`, `ErrorHandlerSpec`,
+`MissingResourceSpec` 21/21 (`20261102-194738-6060.log`).
+
 ## S8: Infra (for the infra plan)
 
 **Items:** O1, P2 (HSTS), P15 (logback), `useSSL` if the DB is ever remote.
