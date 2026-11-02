@@ -27,6 +27,12 @@ class UserController @Inject()(cc: ControllerComponents,
     extends Secured(cc)
     with I18nSupport {
 
+  /** Links mailed while serving a request point at its host, if it is a configured one
+    * ([[UserService.linkUrl]]).
+    */
+  private implicit def linkHostOf(implicit request: play.api.mvc.RequestHeader): services.LinkHost =
+    services.LinkHost.of(request)
+
   /** A refused role value: the editor's and the target's account ids, never the value. */
   private val rolesLogger = play.api.Logger("security.roles")
 
@@ -191,8 +197,10 @@ class UserController @Inject()(cc: ControllerComponents,
             if (ApiTokenService.activeCount(user.getId) >= ApiTokenService.MaxActive)
               ownProfile(Conflict, user, notice = Some("error.api.token.limit"))
             else {
-              val token = ApiTokenService.create(user.getId, name, expiresInDays)
-              ownProfile(Ok, user, newToken = Some(token)).withHeaders(CACHE_CONTROL -> "no-store")
+              ApiTokenService.createFor(user, name, expiresInDays).fold(
+                // the account's sessions ended meanwhile (an accepted link): no token
+                Redirect(routes.LoginController.login(None)).withNewSession
+              )(token => ownProfile(Ok, user, newToken = Some(token)).withHeaders(CACHE_CONTROL -> "no-store"))
             }
           }
         )
@@ -327,6 +335,13 @@ class UserController @Inject()(cc: ControllerComponents,
       refused(Some("wikiAccount"), "wiki.account.taken")
     } else if (!own && emailChanged && editedUser.password.nonEmpty && !user.hasRole(User.ROOT_ROLE)) {
       refused(Some("email"), "user.email.change.ask.user")
+    } else if (!own && emailChanged && editedUser.password.nonEmpty && formUser.email.trim.isEmpty) {
+      // root's change of an account with a password goes through a link to the new address: none
+      refused(Some("email"), "error.required")
+    } else if (!own && user.hasRole(User.ROOT_ROLE) && formUser.roles.contains(User.ROOT_ROLE) &&
+      !editedUser.isRoot && editedUser.password.nonEmpty && !editedUser.emailVerified) {
+      // L2: root only for an account whose holder proved its email (an invitation, a password link)
+      refused(Some("roles"), "root.needs.verified.email")
     } else if (!own && emailChanged && editedUser.password.isEmpty && formUser.email.nonEmpty &&
       User.countByEmail(userId, formUser.email) > 0) {
       refused(Some("email"), "error.email.already.exist")
@@ -657,6 +672,20 @@ class UserController @Inject()(cc: ControllerComponents,
           else if (userService.sendPasswordLink(user, found)) "password.link.sent"
           else "password.link.not.sent"
         Redirect(routes.UserController.editUser(id)).flashing("password-reset" -> Messages(message))
+      }
+    }
+
+  /** Cancels the account's unused invitations into the contest (L4): an admin of that contest
+    * (root too). Nothing to cancel is not found.
+    */
+  def cancelInvitation(id: Long, contestId: Long): EssentialAction =
+    withAuth(contestPermission(User.ADMIN_ROLES, Some(contestId))) { user => implicit request =>
+      if (AccountTokenJdbc.revokeInvitations(id, contestId) == 0)
+        NotFound(views.html.errorPage(Some(user), "error.title", "error.user.not.found"))
+      else {
+        play.api.Logger("security.account").info(
+          s"invitation_cancelled accountId=$id byAccountId=${user.getId} contestId=$contestId")
+        Redirect(routes.UserController.users(Some(contestId))).flashing("users-added" -> Messages("invitation.cancelled"))
       }
     }
 

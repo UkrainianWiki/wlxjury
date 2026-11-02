@@ -239,6 +239,22 @@ object Secured {
   def authVersionMatches(user: User, sessionVersion: Option[String]): Boolean =
     sessionVersion.fold(user.authVersion == 0)(_.toIntOption.contains(user.authVersion))
 
+  /** The id of the account the session was signed in to (since S2). A session's login name
+    * could later name another account (an address freed by an email change, a recreated
+    * account): such a session is refused. A session from before S2 has none; it still resolves
+    * by name, but only to an account of auth version 0, which no account created or re-addressed
+    * since has ([[services.UserService.createAccount]], [[User.setEmail]], [[User.setWikiAccount]]).
+    */
+  val AccountId        = "account_id"
+
+  /** Whether a session with this [[AuthVersion]] and [[AccountId]] may act as `user`. */
+  def sessionMatches(user: User, sessionVersion: Option[String], sessionAccountId: Option[String]): Boolean =
+    authVersionMatches(user, sessionVersion) && sessionAccountId.forall(_.toLongOption == user.id)
+
+  /** The session keys of a new sign-in of `user`: its name as typed, account id and version. */
+  def signedInSession(user: User, login: String): Seq[(String, String)] =
+    Seq(UserName -> login, AccountId -> user.getId.toString, AuthVersion -> user.authVersion.toString)
+
   /** What a denied request asked for, as far as its call site knows: the contest of the
     * resource (`round:123`, `job:45`, `contest:603`), the roles that would have let the
     * user in, and a reason more specific than the one [[denialReason]] derives.
@@ -362,7 +378,7 @@ object Secured {
         case _                         => ifNone
       }
     s"authorization_denied ref=$reference accountId=${user.getId} " +
-      s"method=${request.method} path=${logValue(request.path)} " +
+      s"method=${request.method} path=${logPath(request.path)} " +
       s"currentContestId=${user.contestId.getOrElse("none")} " +
       s"targetContestId=${denial.contestId.getOrElse("unknown")} " +
       s"resource=${denial.resource.fold("unknown")(logValue)} " +
@@ -374,6 +390,12 @@ object Secured {
   }
 
   /** Escape untrusted text so log fields stay single-line and key-value parseable. */
+  /** A request path for a log line: [[logValue]], with the token of a mailed link
+    * (`/invitation/<token>`, `/email/confirm/<token>`) masked.
+    */
+  def logPath(path: String): String =
+    logValue(path.replaceAll("^/(invitation|email/confirm)/[^/]+", "/$1/***"))
+
   def logValue(value: String): String =
     "\"" + value.flatMap {
       case '\\' => "\\\\"
@@ -407,15 +429,19 @@ object Secured {
     */
   def sessionUserOf(request: RequestHeader): Option[User] =
     request.session.get(UserName).flatMap(
-      sessionUser(_, request.session.get(CurrentContestId), request.session.get(AuthVersion)))
+      sessionUser(_, request.session.get(CurrentContestId), request.session.get(AuthVersion),
+        request.session.get(AccountId)))
 
   /** The session's user ([[Secured.userFromRequest]]), in `currentContestId` as
     * [[inCurrentContest]] picks it; none if the session's `authVersion` is not the account's
-    * ([[authVersionMatches]]: an accepted password link or an email change ended it).
+    * ([[authVersionMatches]]: an accepted password link or an email change ended it), or if
+    * it was signed in to another account ([[AccountId]]). Both values are the session's, None
+    * when it has none: no default, so that no caller forgets them.
     */
-  def sessionUser(userName: String, currentContestId: Option[String], authVersion: Option[String] = None): Option[User] =
+  def sessionUser(userName: String, currentContestId: Option[String], authVersion: Option[String],
+                  accountId: Option[String]): Option[User] =
     User.byUserName(normalizeUserName(userName))
-      .filter(authVersionMatches(_, authVersion))
+      .filter(sessionMatches(_, authVersion, accountId))
       .map(inCurrentContest(_, currentContestId))
 
   /** `permission` as checked for the session's user: a [[ContestPermission]] without a
@@ -444,8 +470,8 @@ object Secured {
   /** Whether the session's user may see a page of [[Secured.withAuth]]'s default
     * permission, in any of their contests.
     */
-  def mayView(userName: String, authVersion: Option[String] = None): Boolean =
-    sessionUser(userName, None, authVersion).exists(permitted(_, _.hasAnyRole(ViewerRoles)).isDefined)
+  def mayView(userName: String, authVersion: Option[String], accountId: Option[String]): Boolean =
+    sessionUser(userName, None, authVersion, accountId).exists(permitted(_, _.hasAnyRole(ViewerRoles)).isDefined)
 
   /** The user with their memberships, in `currentContestId` (the session's) if they are an
     * active member of it, else in their latest contest where they are. A root user needs

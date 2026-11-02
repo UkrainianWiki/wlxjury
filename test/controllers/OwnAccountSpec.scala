@@ -114,7 +114,7 @@ class OwnAccountSpec extends PlaySpecification with PlayTestDb with AccountTestS
         after.email === "new@example.com"
         after.emailVerified must beTrue
         after.authVersion === 1
-        Secured.sessionUser("new@example.com", None, Some("0")) must beNone
+        Secured.sessionUser("new@example.com", None, Some("0"), None) must beNone
         User.login("new@example.com", "pw-juror") must beSome
 
         status(confirm(token)) === NOT_FOUND
@@ -124,16 +124,18 @@ class OwnAccountSpec extends PlaySpecification with PlayTestDb with AccountTestS
     "answer the same whether another account has the new address, sending nothing then (N7)" in {
       testDbApp { implicit app =>
         createContests(10)
+        // two accounts: one change a minute per account (L5)
         val juror = account("juror@example.com", Some(10), "jury", password = Some("pw-juror"), verified = true)
+        val other = account("other@example.com", Some(10), "jury", password = Some("pw-other"), verified = true)
         account("taken@example.com", Some(10), "jury")
         val mail = new RecordingMail
 
         val taken = save(mail, juror, Some(10), own(juror, "email" -> "taken@example.com", "currentPassword" -> "pw-juror"): _*)
-        val free = save(mail, juror, Some(10), own(juror, "email" -> "free@example.com", "currentPassword" -> "pw-juror"): _*)
+        val free = save(mail, other, Some(10), own(other, "email" -> "free@example.com", "currentPassword" -> "pw-other"): _*)
 
         status(taken) === status(free)
         flash(taken) === flash(free)
-        redirectLocation(taken) === redirectLocation(free)
+        redirectLocation(taken).map(_.replaceAll("[0-9]+", "N")) === redirectLocation(free).map(_.replaceAll("[0-9]+", "N"))
         mail.recipients === Seq("free@example.com")
         reloaded(juror).email === "juror@example.com"
       }
@@ -275,12 +277,12 @@ class OwnAccountSpec extends PlaySpecification with PlayTestDb with AccountTestS
       testDbApp { implicit app =>
         createContests(10)
         val juror = account("juror@example.com", Some(10), "jury", verified = true)
-        Secured.sessionUser(juror.email, None) must beSome
+        Secured.sessionUser(juror.email, None, None, None) must beSome
         DB.autoCommit(implicit s => sql"UPDATE users SET auth_version = 2 WHERE id = ${juror.getId}".update.apply())
-        Secured.sessionUser(juror.email, None) must beNone
-        Secured.sessionUser(juror.email, None, Some("1")) must beNone
-        Secured.sessionUser(juror.email, None, Some("garbage")) must beNone
-        Secured.sessionUser(juror.email, None, Some("2")) must beSome
+        Secured.sessionUser(juror.email, None, None, None) must beNone
+        Secured.sessionUser(juror.email, None, Some("1"), None) must beNone
+        Secured.sessionUser(juror.email, None, Some("garbage"), None) must beNone
+        Secured.sessionUser(juror.email, None, Some("2"), None) must beSome
         status(route(app, FakeRequest(GET, "/").withSession(Secured.UserName -> juror.email)).get) === SEE_OTHER
       }
     }

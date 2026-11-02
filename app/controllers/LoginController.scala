@@ -140,7 +140,7 @@ class LoginController @Inject() (
     val latest = Secured.inCurrentContest(user, contestId.map(_.toString))
     // defensive: inCurrentContest already picks an active membership; kept should its rules change
     val inContest = Secured.permitted(latest, _.hasAnyRole(Secured.ViewerRoles)).getOrElse(latest)
-    val sessionData = Seq(Secured.UserName -> login, Secured.AuthVersion -> user.authVersion.toString) ++
+    val sessionData = Secured.signedInSession(user, login) ++
       inContest.contestId.map(id => Secured.CurrentContestId -> id.toString)
     val nextPage = returnTo.fold(indexRedirect(inContest))(url => Redirect(url))
     val result = nextPage.withSession(sessionData: _*)
@@ -216,7 +216,10 @@ class LoginController @Inject() (
   def emailConfirm(): Action[AnyContent] = Action { implicit request =>
     val token = request.body.asFormUrlEncoded.flatMap(_.get("token")).flatMap(_.headOption).getOrElse("")
     AccountTokenService.confirmEmailChange(token) match {
-      case Right(user) => linkPage(Ok(views.html.emailConfirm(None, user.emailLo)).withNewSession)
+      case Right((oldEmail, user)) =>
+        // the former address hears of it (user decision): no link, the new address masked
+        admin.notifyEmailChanged(user, oldEmail)
+        linkPage(Ok(views.html.emailConfirm(None, user.emailLo)).withNewSession)
       case Left(_)     => linkInvalid
     }
   }

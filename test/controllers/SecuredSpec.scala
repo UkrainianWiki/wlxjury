@@ -253,6 +253,7 @@ class SecuredSpec extends PlaySpecification with Mockito with PlayTestDb
     session.get(Secured.UserName) returns Some(username)
     session.get(Secured.CurrentContestId) returns contestId.map(_.toString)
     session.get(Secured.AuthVersion) returns None // a session from before V77: version 0
+    session.get(Secured.AccountId) returns None
     request.session returns session
     request
   }

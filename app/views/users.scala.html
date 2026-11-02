@@ -197,6 +197,10 @@
                                     @helper.CSRF.formField
                                     <button type="submit" class="btn btn-outline-secondary btn-sm reinvite">@Messages("invitation.send")</button>
                                 </form>
+                                <form action="@routes.UserController.cancelInvitation(invitation.userId, contestId)" method="post" class="d-inline">
+                                    @helper.CSRF.formField
+                                    <button type="submit" class="btn btn-outline-danger btn-sm cancel-invitation">@Messages("invitation.cancel")</button>
+                                </form>
                             </td>
                         </tr>
                     }

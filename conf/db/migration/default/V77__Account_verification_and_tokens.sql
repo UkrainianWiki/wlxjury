@@ -13,9 +13,14 @@
 --    refused once it differs (controllers.Secured.sessionUser). Accepting a link that sets the
 --    password, and an email change, add one: every session of the account ends.
 --
--- Existing accounts: root accounts with an email are marked verified (the operators); every
--- other account stays unverified (the safer default: its owner accepts an invitation the first
--- time it is given an access role again). No wiki account is verified.
+-- Existing accounts (user decision, 2026-11-02): marked verified if they have an email and are
+-- root (the operators), or, not deleted, have a membership with an access role (jury,
+-- organizer, admin), a round assignment (round_user) or a vote (selection, selection_deleted):
+-- accounts organizers added and people used. The user accepted that a past pre-claim on such an
+-- account is taken as genuine (the S1 role audit found nothing suspicious). Memberships with
+-- only no, board, auditor or staff do not count: they grant nothing, and board members are
+-- often placeholders added by wiki account for conflicts of interest, never signed in. Every
+-- other account stays unverified. No wiki account is verified.
 ALTER TABLE users
   ADD COLUMN IF NOT EXISTS email_verified_at        TIMESTAMP(3) NULL DEFAULT NULL,
   ADD COLUMN IF NOT EXISTS wiki_account_verified_at TIMESTAMP(3) NULL DEFAULT NULL,
@@ -23,6 +28,14 @@ ALTER TABLE users
 
 UPDATE users SET email_verified_at = NOW(3)
 WHERE is_root = 1 AND email IS NOT NULL AND email_verified_at IS NULL;
+
+UPDATE users u SET u.email_verified_at = NOW(3)
+WHERE u.email IS NOT NULL AND u.deleted_at IS NULL AND u.email_verified_at IS NULL AND (
+  EXISTS (SELECT 1 FROM user_contest uc
+          WHERE uc.user_id = u.id AND BINARY uc.role IN ('jury', 'organizer', 'admin'))
+  OR EXISTS (SELECT 1 FROM round_user ru WHERE ru.user_id = u.id)
+  OR EXISTS (SELECT 1 FROM selection s WHERE s.jury_id = u.id)
+  OR EXISTS (SELECT 1 FROM selection_deleted sd WHERE sd.jury_id = u.id));
 
 -- A link mailed to an account (db.scalikejdbc.AccountTokenJdbc):
 --  * purpose: 'invitation' (an organizer's add; sets the password), 'password_reset' (root's

@@ -83,6 +83,7 @@ POST        /users/save                                                         
 POST        /users/resetpasswd/:id                                                  @controllers.UserController.resetPassword(id: Long)
 # an admin of the contest: a new invitation for a member or pending invitee with an unverified email
 POST        /users/:id/invite                                                       @controllers.UserController.reinvite(id: Long, contestId: Long)
+POST        /users/:id/invitation/cancel                                            @controllers.UserController.cancelInvitation(id: Long, contestId: Long)
 # the own profile's personal API tokens (POST forms with the CSRF token; the session only)
 POST        /users/tokens                                                           @controllers.UserController.createApiToken()
 POST        /users/tokens/:id/revoke                                                @controllers.UserController.revokeApiToken(id: Long)

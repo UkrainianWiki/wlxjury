@@ -244,7 +244,8 @@ class RoleAssignmentSpec extends PlaySpecification with PlayTestDb with Mockito 
         createContests(10)
         val admin = member("admin@example.com", 10L -> "admin")
         val failing = new UserService(mailer, app.configuration) {
-          override def createNewUser(user: User, formUser: User)(implicit messages: play.api.i18n.Messages) =
+          override def createNewUser(user: User, formUser: User)(implicit messages: play.api.i18n.Messages,
+                                                                linkHost: services.LinkHost) =
             throw new IllegalArgumentException("something else")
         }
         val controller = new UserController(app.injector.instanceOf[ControllerComponents], failing,
@@ -267,7 +268,7 @@ class RoleAssignmentSpec extends PlaySpecification with PlayTestDb with Mockito 
         val eve = member("eve@example.com", 20L -> "jury")
         try {
           RoleAllowlistMigration.insertRaw(eve.getId, 10, "jury,root")
-          val inSession = Secured.sessionUser(eve.email, Some("10")).get
+          val inSession = Secured.sessionUser(eve.email, Some("10"), None, None).get
           val in10 = User.findInContest(eve.getId, 10).get
           implicit val mat: Materializer = app.materializer
           val page = call(controller.users(Some(10L)),

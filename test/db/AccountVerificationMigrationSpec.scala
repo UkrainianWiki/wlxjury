@@ -39,17 +39,47 @@ class AccountVerificationMigrationSpec extends Specification with TestDb with Be
     }
 
   "the migration" should {
-    "mark root accounts with an email verified, and no other account or wiki account, rerunnable" in {
-      val root = User.create(User("Root", "root@example.com", isRoot = true))
-      val rootNoEmail = User.create(User("Root2", "", isRoot = true, wikiAccount = Some("Root two")))
-      val juror = User.create(User("Juror", "juror@example.com", password = Some("hash"), wikiAccount = Some("Juror")))
+    "mark verified root accounts with an email, and used accounts: an access membership, a round, a vote" in {
+      createContests(10)
+      def user(email: String, root: Boolean = false, wiki: Option[String] = None) =
+        User.create(User(email, email, isRoot = root, password = Some("hash"), wikiAccount = wiki)).getId
+      val root = user("root@example.com", root = true)
+      val rootNoEmail = User.create(User("Root2", "", isRoot = true, wikiAccount = Some("Root two"))).getId
+      val juror = user("juror@example.com", wiki = Some("Juror"))
+      val organizer = user("organizer@example.com")
+      val boardOnly = user("board@example.com")
+      val assigned = user("assigned@example.com")
+      val voter = user("voter@example.com")
+      val deletedVoter = user("deleted-voter@example.com")
+      val oldVoter = user("old-voter@example.com")
+      val unused = user("unused@example.com")
+      val deletedMember = user("deleted@example.com")
+      DB.autoCommit { implicit s =>
+        sql"SET FOREIGN_KEY_CHECKS=0".execute.apply()
+        sql"""INSERT INTO user_contest (user_id, contest_id, role) VALUES
+              ($juror, 10, 'jury'), ($organizer, 10, 'organizer'), ($boardOnly, 10, 'board'), ($deletedMember, 10, 'admin')"""
+          .update.apply()
+        sql"INSERT INTO round_user (user_id, round_id, role, active) VALUES ($assigned, 1, 'jury', 0)".update.apply()
+        sql"INSERT INTO selection (jury_id, round_id, page_id, rate) VALUES ($voter, 1, 1, 1), ($deletedVoter, 1, 2, 1)"
+          .update.apply()
+        sql"INSERT INTO selection_deleted (jury_id, round_id, page_id, rate) VALUES ($oldVoter, 1, 3, 1)".update.apply()
+        sql"SET FOREIGN_KEY_CHECKS=1".execute.apply()
+        sql"UPDATE users SET deleted_at = NOW() WHERE id IN ($deletedVoter, $deletedMember)".update.apply()
+      }
 
-      run()
-      run()
+      try {
+        run()
+        run()
 
-      (verified(root.getId) must beTrue) and (verified(rootNoEmail.getId) must beFalse) and
-        (verified(juror.getId) must beFalse) and
-        (User.findAll().forall(u => !u.wikiAccountVerified && u.authVersion == 0) must beTrue)
+        val verifiedIds = Seq(root, juror, organizer, assigned, voter, oldVoter)
+        val unverifiedIds = Seq(rootNoEmail, boardOnly, unused, deletedVoter, deletedMember)
+        (verifiedIds.filterNot(verified) must beEmpty) and (unverifiedIds.filter(verified) must beEmpty) and
+          (User.findAll().forall(u => !u.wikiAccountVerified && u.authVersion == 0) must beTrue)
+      } finally DB.autoCommit { implicit s =>
+        sql"DELETE FROM round_user".update.apply()
+        sql"DELETE FROM selection".update.apply()
+        sql"DELETE FROM selection_deleted".update.apply()
+      }
     }
 
     "leave account_token refusing unknown purposes and roles that are not contest roles" in {

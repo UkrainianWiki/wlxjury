@@ -53,7 +53,7 @@ class ImageProxyController(
     request.session.get(Secured.UserName) match {
       case None       => Future.successful(Unauthorized)
       case Some(name) =>
-        mayView(viewerKey(name, request.session.get(Secured.AuthVersion))).flatMap(allowed => if (allowed) serveThumbnail(path) else Future.successful(Unauthorized))
+        mayView(viewerKey(name, request.session.get(Secured.AuthVersion), request.session.get(Secured.AccountId))).flatMap(allowed => if (allowed) serveThumbnail(path) else Future.successful(Unauthorized))
     }
   }
 
@@ -184,16 +184,17 @@ class ImageProxyController(
 
 object ImageProxyController {
 
-  /** The viewer cache's key: the session's user name, normalised, and its auth version (a
-    * session of an old version must not reuse a newer one's answer).
+  /** The viewer cache's key: the session's user name, normalised, its auth version and account
+    * id (a session of an old version, or of another account, must not reuse another's answer).
     */
-  def viewerKey(name: String, authVersion: Option[String]): String =
-    Secured.normalizeUserName(name) + "\n" + authVersion.getOrElse("")
+  def viewerKey(name: String, authVersion: Option[String], accountId: Option[String]): String =
+    Seq(Secured.normalizeUserName(name), authVersion.getOrElse(""), accountId.getOrElse("")).mkString("\n")
 
   /** [[Secured.mayView]] for a [[viewerKey]]. */
   def sessionMayView(key: String): Boolean = {
-    val (name, version) = key.splitAt(key.lastIndexOf('\n'))
-    Secured.mayView(name, Some(version.drop(1)).filter(_.nonEmpty))
+    val parts = key.split("\n", -1).toSeq
+    val (name, Seq(version, accountId)) = parts.splitAt(parts.size - 2)
+    Secured.mayView(name.mkString("\n"), Some(version).filter(_.nonEmpty), Some(accountId).filter(_.nonEmpty))
   }
 
   /** How long a user's access to the thumbnails is taken as read: a removed juror loses it within that. */

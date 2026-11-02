@@ -365,9 +365,10 @@ object User extends CRUDMapper[User] {
     val unameTrimmed = username.trim.toLowerCase
     val users = Constraints.emailAddress()(unameTrimmed) match {
       case Valid      => findByEmail(unameTrimmed)
-      case Invalid(_) => findByAccount(unameTrimmed)
+      // as typed, and with underscores as spaces (how names are stored since S2)
+      case Invalid(_) => Seq(unameTrimmed, unameTrimmed.replace('_', ' ')).distinct.flatMap(findByAccount)
     }
-    users.filter(_.deletedAt.isEmpty) match {
+    users.filter(_.deletedAt.isEmpty).distinctBy(_.id) match {
       case Seq(one) => Some(one)
       case _        => None
     }
@@ -594,7 +595,8 @@ object User extends CRUDMapper[User] {
           column.theme       -> user.theme.flatMap(controllers.Theme.find).map(_.value),
           column.sort        -> user.sort,
           column.createdAt   -> user.createdAt,
-          column.emailVerifiedAt -> user.emailVerifiedAt
+          column.emailVerifiedAt -> user.emailVerifiedAt,
+          column.authVersion -> user.authVersion
         )
     }.updateAndReturnGeneratedKey
     // it binds the hash: never logged, unless a caller's own session (a test's) runs it
@@ -630,10 +632,19 @@ object User extends CRUDMapper[User] {
         "sort"     -> sort
       )
 
-  /** Sets the wiki account (None: none); a changed one is unverified. */
+  /** A new account's auth version: random and non-zero, so that no session from before S2
+    * (version 0) resolves to it, nor, most likely, any other stale one (H2).
+    */
+  def newAuthVersion(): Int = 1 + secureRandom.nextInt(Int.MaxValue - 1)
+
+  /** Sets the wiki account (None: none); a changed one is unverified, and the account's
+    * sessions end (auth_version + 1): one signed in by the old name, or one from before S2 that
+    * named the new one, must not act as this account (H2).
+    */
   def setWikiAccount(id: Long, wikiAccount: Option[String])(implicit session: DBSession = autoSession): Unit =
     sql"""UPDATE users SET
             wiki_account_verified_at = IF(wiki_account <=> $wikiAccount, wiki_account_verified_at, NULL),
+            auth_version = IF(wiki_account <=> $wikiAccount, auth_version, auth_version + 1),
             wiki_account = $wikiAccount
           WHERE id = $id""".update.apply()
 
@@ -643,7 +654,10 @@ object User extends CRUDMapper[User] {
     */
   def setEmail(id: Long, email: String, verified: Boolean)(implicit session: DBSession = autoSession): Unit = {
     val stored = storedEmail(email)
-    sql"""UPDATE users SET email = $stored, email_verified_at = IF($verified, NOW(3), NULL)
+    // a changed address ends the account's sessions (auth_version + 1): see setWikiAccount
+    sql"""UPDATE users SET
+            auth_version = IF(email <=> $stored, auth_version, auth_version + 1),
+            email = $stored, email_verified_at = IF($verified, NOW(3), NULL)
           WHERE id = $id""".update.apply()
   }
 

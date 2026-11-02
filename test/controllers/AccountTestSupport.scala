@@ -38,7 +38,14 @@ trait AccountTestSupport {
   def messagesOf(implicit app: Application): MessagesImpl =
     MessagesImpl(Lang("en"), app.injector.instanceOf[MessagesApi])
 
-  def userService(mail: RecordingMail)(implicit app: Application) = new UserService(mail, app.configuration)
+  /** With the mails that go out after the answer sent at once, for the specs to read. */
+  def userService(mail: RecordingMail)(implicit app: Application): UserService =
+    userServiceWith(mail, app.configuration)
+
+  def userServiceWith(mail: RecordingMail, configuration: play.api.Configuration): UserService =
+    new UserService(mail, configuration) {
+      override protected def mailInBackground(send: => Unit): Unit = send
+    }
 
   def userController(mail: RecordingMail)(implicit app: Application) =
     new UserController(app.injector.instanceOf[ControllerComponents], userService(mail),

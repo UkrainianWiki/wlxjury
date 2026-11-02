@@ -108,7 +108,7 @@ class CoiAuthorizationSpec extends PlaySpecification with PlayTestDb with Mockit
     "not be in the contest: no current contest, nothing to switch to" in {
       testDbApp { app =>
         setUp()
-        val board = Secured.sessionUser("board@example.com", Some(contestId.toString)).get
+        val board = Secured.sessionUser("board@example.com", Some(contestId.toString), None, None).get
         board.contestId must beNone
         Secured.inContest(board, contestId).contestId must beNone
         status(page(app, "board@example.com", s"/switch-contest/$contestId", POST)) === FORBIDDEN

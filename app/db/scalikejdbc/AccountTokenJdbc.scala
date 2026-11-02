@@ -90,12 +90,30 @@ object AccountTokenJdbc {
   def findByUser(userId: Long)(implicit session: DBSession = AutoSession): Seq[AccountToken] =
     sql"SELECT $columns FROM account_token WHERE user_id = $userId ORDER BY id DESC".map(extract).list.apply()
 
-  /** The live invitations into the contest that wait to give a role, the latest first. */
+  /** The live invitations into the contest that wait to give a role and were sent to the
+    * account's current address (one sent before an email change can't be accepted), the latest
+    * first.
+    */
   def pendingInvitations(contestId: Long)(implicit session: DBSession = AutoSession): Seq[AccountToken] =
-    sql"""SELECT $columns FROM account_token
+    sql"""SELECT ${columns} FROM account_token
           WHERE contest_id = $contestId AND purpose = $Invitation AND role IS NOT NULL
             AND used_at IS NULL AND revoked_at IS NULL AND expires_at > NOW(3)
+            AND EXISTS (SELECT 1 FROM users u WHERE u.id = account_token.user_id AND u.email = account_token.email)
           ORDER BY id DESC""".map(extract).list.apply()
+
+  /** Whether the account has a link of the purpose created less than `seconds` ago. */
+  def createdSince(userId: Long, purpose: String, seconds: Long)(implicit session: DBSession = AutoSession): Boolean =
+    sql"""SELECT EXISTS(SELECT 1 FROM account_token WHERE user_id = $userId AND purpose = $purpose
+            AND created_at > NOW(3) - INTERVAL $seconds SECOND)""".map(_.boolean(1)).single.apply().contains(true)
+
+  /** Revokes the account's unused invitations into the contest (an admin's cancel); how many. */
+  def revokeInvitations(userId: Long, contestId: Long)(implicit session: DBSession = AutoSession): Int =
+    sql"""UPDATE account_token SET revoked_at = NOW(3)
+          WHERE user_id = $userId AND purpose = $Invitation AND contest_id = $contestId
+            AND used_at IS NULL AND revoked_at IS NULL""".update.apply()
+
+  /** Every purpose. */
+  val AllPurposes: Seq[String] = Seq(Invitation, PasswordReset, EmailChange)
 
   /** The account's live invitations sent to `email` that wait to give a role. */
   def pendingInvitationsOf(userId: Long, email: String)(implicit session: DBSession = AutoSession): Seq[AccountToken] =

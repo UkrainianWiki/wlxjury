@@ -149,9 +149,11 @@ class AccountInvitationSpec extends PlaySpecification with PlayTestDb with Accou
         val accepted = accept(token, "new-password")
         status(accepted) === SEE_OTHER
         session(accepted).get(Secured.UserName) === Some("new@example.com")
-        session(accepted).get(Secured.AuthVersion) === Some("1")
         session(accepted).get(Secured.CurrentContestId) === Some("10")
         val user = User.findByEmail("new@example.com").head
+        // the account's version after the acceptance, and its id (H2)
+        session(accepted).get(Secured.AuthVersion) === Some(user.authVersion.toString)
+        session(accepted).get(Secured.AccountId) === user.id.map(_.toString)
         user.emailVerified must beTrue
         User.login("new@example.com", "new-password").flatMap(_.id) === user.id
 
@@ -240,8 +242,8 @@ class AccountInvitationSpec extends PlaySpecification with PlayTestDb with Accou
         User.login("victim@example.com", "claimer-password") must beNone
         User.login("victim@example.com", "owner-password") must beSome
         // the claimer's session (version 0) and API token end
-        Secured.sessionUser("victim@example.com", Some("10")) must beNone
-        Secured.sessionUser("victim@example.com", Some("10"), Some("1")).map(_.contestRole) === Some(Some("jury"))
+        Secured.sessionUser("victim@example.com", Some("10"), None, None) must beNone
+        Secured.sessionUser("victim@example.com", Some("10"), Some("1"), None).map(_.contestRole) === Some(Some("jury"))
         ApiTokenService.authenticate(claimersToken) must beNone
         status(route(app, FakeRequest(GET, "/").withSession(Secured.UserName -> "victim@example.com")).get) === SEE_OTHER
       }
@@ -261,7 +263,9 @@ class AccountInvitationSpec extends PlaySpecification with PlayTestDb with Accou
         roles(verified.getId) === Seq(UserContest(verified.getId, 10, "jury"))
         roles(placeholder.getId) === Seq(UserContest(placeholder.getId, 10, "organizer"))
         reloaded(verified).password === verified.password
-        tokenRows must beEmpty
+        // the passwordless account joins at once, and gets an invitation to set its password
+        tokenRows.map(r => (r._2, r._3)) === List((AccountTokenJdbc.Invitation, None))
+        mail.sent.filter(_._4.contains("/invitation/")).map(_._2.email).toSeq === Seq("placeholder@example.com")
       }
     }
 

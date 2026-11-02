@@ -311,13 +311,17 @@ who adds it by email).
 **Migration V77** (the highest on this branch is V76; take the next free number at merge time):
 `users.email_verified_at`, `users.wiki_account_verified_at` (TIMESTAMP(3) NULL),
 `users.auth_version` (INT UNSIGNED NOT NULL DEFAULT 0); table `account_token`. **Existing
-accounts:** root accounts with an email get `email_verified_at = NOW(3)` (the operators); every
-other account stays unverified, and no wiki account is verified (nothing has verified one).
-This is the safer default: the first time an existing account gets an access role in a contest
-(added again next year, or a role change), its owner accepts an invitation (one click, a new
-password) before the role applies; its current memberships keep working meanwhile. The
-alternative (open decision 1 below) would mark accounts with memberships or votes as verified.
-Reversal: the columns and the table can be dropped; nothing existing is rewritten.
+accounts (user decision 1, after the review):** `email_verified_at = NOW(3)` for root accounts
+with an email (the operators) and for every non-deleted account with an email that has a
+membership with an access role (jury, organizer, admin), a round assignment (`round_user`) or a
+vote (`selection`, `selection_deleted`): accounts organizers added and people used. Memberships
+with only `no`, `board`, `auditor` or `staff` do not count: they grant nothing, and board members
+are often placeholders added by wiki account for conflicts of interest, never signed in. Every
+other account stays unverified; no wiki account is verified (H1's fix refuses wiki-only matches
+for access roles anyway). **The user accepted the risk that a past pre-claim on such an account is
+taken as genuine** (the S1 role audit found nothing suspicious). Returning jurors added by email
+join new contests directly, as before; unverified ones get an invitation first. Reversal: the
+columns and the table can be dropped; nothing existing is rewritten.
 
 **Files:** `LoginController`, `UserController`, `UserService`, `AccountTokenService` (new),
 `AccountTokenJdbc` (new), `User`, `Secured`, `ImageProxyController`, `ErrorHandler`,
@@ -336,17 +340,24 @@ changes), `SetupSpec` (new: P20), `db.AccountVerificationMigrationSpec` (new), p
 `MultiContestUserSpec`, `RoleAssignmentSpec`, `SecuredSpec`, `MutationAuthorizationSpec`,
 `ApiTokenPageSpec`, `ProductionConfigSpec`, `views.*`.
 
-**Open decisions (user):**
+**Decisions (user, answered after the review):**
 
-1. Existing accounts: keep all non-root accounts unverified (implemented), or mark those with
-   memberships or votes as verified, so that returning jurors join new contests without an
-   invitation (accepts any past pre-claim as genuine).
-2. Ambiguous wiki-account sign-in: refused (implemented); run the read-only count
-   `SELECT wiki_account, COUNT(*) FROM users WHERE deleted_at IS NULL AND wiki_account IS NOT
-   NULL GROUP BY wiki_account HAVING COUNT(*) > 1` on production before the deploy to see who
-   would have to sign in by email.
-3. Notify the old address of an email change (not done).
-4. Invitation and link lifetimes (7 days / 24 hours, constants).
+1. Existing accounts with memberships or votes are verified (see the migration above).
+2. Ambiguous wiki-account sign-in stays refused. **Pre-deploy checklist item** (production
+   queries are deferred by the user): the read-only count `SELECT wiki_account, COUNT(*) FROM
+   users WHERE deleted_at IS NULL AND wiki_account IS NOT NULL GROUP BY wiki_account HAVING
+   COUNT(*) > 1`, to see who will have to sign in by email.
+3. The old address is told of an email change: a short mail, no link, the new address masked
+   (`n***@example.org`), "contact an organizer if this was not you".
+4. Link lifetimes stay 7 days (invitation, password link) and 24 hours (email change).
+5. Root's "reset password" stays root-only.
+6. SMTP is required (`docs/deployment.md`, "Accounts, invitations and the first account").
+7. **Link host:** mailed links use the host the request came to (a WLM juror gets a
+   `jury.wlm.org.ua` link), safely: `request.host` (Apache's `ProxyPreserveHost On` passes the
+   client's `Host`; no forwarded-host header is read) is used only if it is named exactly in
+   `wlxjury.allowedHosts` (no suffix pattern, no port); otherwise, and for mail sent without a
+   request (a job), `wlxjury.host`. The scheme is always `wlxjury.host`'s (https in production).
+   `services.LinkHost`, an implicit the controllers supply; `UserService.linkUrl`.
 
 **Dependencies:** after S1 (same files). Mail delivery needs the server's SMTP settings (ops);
 the invitations make it necessary for every new juror.
@@ -390,8 +401,8 @@ next free number at merge time). Not reviewed yet (S2 gets a fresh independent r
 - Tests: `play.mailer.mock = yes` in `test/resources/application.conf`; specs read links from
   `controllers.RecordingMail` (a recording `SMTPOrWikiMail`); `account_token` is in the truncated
   tables.
-- Not done (deviations): no notice to the old address on an email change (open decision 3); own
-  password change does not bump `auth_version` (S3); unused message keys of the old sign-up
+- Not done (deviations): own password change does not bump `auth_version` (S3); (the notice to the
+  old address was added in the review fixes below); unused message keys of the old sign-up
   (`signup.signup`, `signup.email.taken`, `sign.up.now`, `not.a.member`) are removed from all four
   files.
 
@@ -410,11 +421,42 @@ New specs: `controllers.AccountInvitationSpec` (17), `controllers.OwnAccountSpec
 password), `MultiContestUserSpec` and `RoleAssignmentSpec` (members verified; an admin can no longer
 set another's password), `SecuredSpec`, `CoiAuthorizationSpec`.
 
-**Open decisions (user):** as listed above: (1) how existing accounts are marked (all non-root
-unverified, implemented); (2) ambiguous wiki sign-in refused (run the duplicate count before the
-deploy); (3) notice to the old address; (4) link lifetimes. Plus: (5) whether contest admins should
-also get a "reset password" for verified members of their own contest (now root only; admins have
-"send the invitation again" for unverified members, which is equivalent there).
+**Open decisions (user):** none left (answered after the review: see "Decisions (user, answered
+after the review)" above).
+
+### S2 review fixes (2026-11-02)
+
+Independent review: "safe to merge after H1, H2, M1, M2". All findings fixed, with the user's
+later decisions (above) in the same pass:
+
+| Finding | Fix | Spec |
+|---|---|---|
+| H1: a wiki-account match still joined verified-email or passwordless accounts with an access role | A wiki-only match joins with an access role only if `wikiAccountVerified` (never yet); otherwise `WikiAccountUnverified`, whatever the account's email or password | `AccountReviewFixesSpec` H1 |
+| H2: a stale session (by login name) could resolve to another account later given that address | The session carries `account_id` (sign-in, acceptance, setup); a session of another id is refused. Sessions from before S2 have none and resolve only to version 0: new accounts get a random non-zero `auth_version` (`User.newAuthVersion`), and `setEmail` / `setWikiAccount` bump it on a change. Chosen over a migration-time id cutoff, which would refuse every test session and need a stored cutoff; this way existing accounts keep their sessions and only re-addressed or new accounts are out of an old cookie's reach | `AccountReviewFixesSpec` H2 (old cookie and a recreated address; a signed-in session and a later account with its old address; bumps) |
+| M1: acceptance left other purposes' links live | Acceptance revokes every unused link of the account, every purpose (`AllPurposes`), after applying the pending invitations | `AccountReviewFixesSpec` M1 |
+| M2: the link was substituted into admin-editable greeting text | `{{Password}}` becomes a fixed text (`invitation.password.placeholder`); the link is only in the app's `invitation.link` paragraph after the greeting | `AccountReviewFixesSpec` M2 |
+| L1: an API token created while acceptance ends the session | `ApiTokenJdbc.createIfVersion`: inserted only while `users.auth_version` is the session's; otherwise the session is ended | `AccountReviewFixesSpec` L1 |
+| L2: root's form made an unverified account with a password root | 400 `root.needs.verified.email` | `AccountReviewFixesSpec` L2 |
+| L3: tokens in URL paths reach log lines | `Secured.logPath` masks `/invitation/*` and `/email/confirm/*` in `ErrorHandler`, `CsrfErrorHandler` and denial lines; `docs/deployment.md` names the Apache access-log exposure | `AccountReviewFixesSpec` L3 |
+| L4: no cancel; acceptance applied roles of an inviter since removed | `POST /users/:id/invitation/cancel?contestId=` (an admin of that contest, CSRF), a button on the pending list; at acceptance each pending role is applied only if its sender is root or still an admin of that contest (an invitation is the sender's act; adding people is admins' only) | `AccountReviewFixesSpec` L4 (router with CSRF; another contest's admin; demoted inviter) |
+| L5: email-change requests not throttled; the taken-address path was faster | One live link per account, a new one at most every 60 s; the same work for a free and a taken address (a token is created either way; only a free one is mailed, after the answer, `mailInBackground`) | `AccountReviewFixesSpec` L5, `OwnAccountSpec` N7 |
+| Nit: `markUsed`'s result | Acceptance and confirmation refuse if it marks nothing; a pending invitation not marked gives no role | covered |
+| Nit: `authVersion` optional in `sessionUser` / `mayView` | Both now take the session's version and account id, no defaults | compile |
+| Nit: root's empty email for an account with a password created an empty-address link | 400 `error.required` | `AccountReviewFixesSpec` L2 |
+| Nit: pending list showed invitations to a former address | Only those sent to the account's current address | `AccountReviewFixesSpec` nits |
+| Nit: wiki sign-in with underscores | Looked up as typed and with underscores as spaces (ambiguity still refused) | `AccountReviewFixesSpec` nits |
+| Nit: a passwordless account joined by email got "use your existing password" | It gets an invitation (`Invited`) | `AccountReviewFixesSpec` nits, `AccountInvitationSpec` |
+| User decision 1 | V77 marks used accounts verified | `AccountVerificationMigrationSpec` (membership, round only, votes, old votes, board only, neither, deleted, root) |
+| User decision 3 | `UserService.notifyEmailChanged`: the former address gets a short mail, no link, the new address masked | `AccountReviewFixesSpec` |
+| User decision 7 (link host) | `LinkHost` / `UserService.linkUrl` | `AccountReviewFixesSpec` (allowed, upper case, forged, suffix pattern, port, no request; through the controller) |
+
+**Specs after the fixes** (no full suite): the four S2 specs, the new `controllers.AccountReviewFixesSpec`
+(19) and every affected spec of the first run: 502, 497 passed, `target/checks/20261102-153155-13372.log`;
+the 5 others were test-side (`SecuredSpec`'s mocked session lacked `account_id`: 4 errors;
+`AccountInvitationSpec` counted the verified member's greeting as an invitation mail); after those
+fixes `SecuredSpec` + `AccountInvitationSpec`: 40 passed, `target/checks/20261102-154448-14592.log`.
+An earlier run of the account specs alone: `target/checks/20261102-145950-15336.log` (2 expectations
+updated for the random auth version and the passwordless account's invitation).
 
 ## S3: Sessions
 

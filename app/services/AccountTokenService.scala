@@ -112,8 +112,9 @@ object AccountTokenService {
     * the password becomes `passwordHash` (the old one stops working), the email is verified,
     * `auth_version` goes up (every session of the account ends), every API token of the
     * account is revoked, the account's pending invitations sent to this address give their
-    * roles, and its other unused links that set the password are revoked. The account, as
-    * stored now.
+    * roles if whoever sent each may still give it in that contest ([[mayStillGrant]]), and every
+    * other unused link of the account, of any purpose (an email change a former holder of the
+    * password asked for included, M1), is revoked. The account, as stored now.
     */
   def acceptPasswordLink(token: String, passwordHash: String): Either[Refusal, (AccountToken, User)] =
     if (!Format.matches(token)) Left(Malformed)
@@ -124,34 +125,53 @@ object AccountTokenService {
           case None                                                         => refused(Unknown, None)
           case Some(t) if !AccountTokenJdbc.SetsPassword.contains(t.purpose) => refused(WrongPurpose, Some(t))
           case Some(t) =>
-            checked(t).map { case (link, user) =>
+            checked(t).flatMap { case (link, user) =>
               val pending = AccountTokenJdbc.pendingInvitationsOf(user.getId, link.email)
-              AccountTokenJdbc.markUsed(link.id)
-              sql"""UPDATE users SET password = $passwordHash, email_verified_at = NOW(3),
-                      auth_version = auth_version + 1
-                    WHERE id = ${user.getId}""".update.apply()
-              val revokedApiTokens = ApiTokenJdbc.revokeAll(user.getId)
-              val roles = pending.flatMap { p =>
-                if (p.id != link.id) AccountTokenJdbc.markUsed(p.id)
-                for (contestId <- p.contestId; role <- p.role) yield {
-                  UserContestJdbc.setMembership(user.getId, contestId, role)
-                  s"$contestId:$role"
+              if (!AccountTokenJdbc.markUsed(link.id)) refused(NotLive, Some(link))
+              else {
+                sql"""UPDATE users SET password = $passwordHash, email_verified_at = NOW(3),
+                        auth_version = auth_version + 1
+                      WHERE id = ${user.getId}""".update.apply()
+                val revokedApiTokens = ApiTokenJdbc.revokeAll(user.getId)
+                val roles = pending.flatMap { p =>
+                  val used = p.id == link.id || AccountTokenJdbc.markUsed(p.id)
+                  for {
+                    contestId <- p.contestId
+                    role <- p.role
+                    if used
+                    if mayStillGrant(p, contestId) || { logger.warn(
+                      s"invitation_role_dropped reason=inviter_no_longer_admin tokenId=${p.id} accountId=${user.getId} " +
+                        s"contestId=$contestId"); false }
+                  } yield {
+                    UserContestJdbc.setMembership(user.getId, contestId, role)
+                    s"$contestId:$role"
+                  }
                 }
+                val revokedLinks = AccountTokenJdbc.revokeUnused(user.getId, AccountTokenJdbc.AllPurposes)
+                logger.info(
+                  s"account_link_accepted purpose=${link.purpose} tokenId=${link.id} accountId=${user.getId} " +
+                    s"apiTokensRevoked=$revokedApiTokens linksRevoked=$revokedLinks memberships=${roles.mkString(",")}")
+                Right(link -> User.findById(user.getId)(session).get)
               }
-              val revokedLinks = AccountTokenJdbc.revokeUnused(user.getId, AccountTokenJdbc.SetsPassword)
-              logger.info(
-                s"account_link_accepted purpose=${link.purpose} tokenId=${link.id} accountId=${user.getId} " +
-                  s"apiTokensRevoked=$revokedApiTokens linksRevoked=$revokedLinks memberships=${roles.mkString(",")}")
-              link -> User.findById(user.getId)(session).get
             }
         }
       }
+
+  /** Whether the invitation's sender may still give its role in the contest (L4): root, or an
+    * admin of that contest now (adding people is theirs: [[controllers.UserController]]'s add
+    * row and import). An invitation is the sender's act, not the contest's: one sent by an admin
+    * who has been removed since gives no role.
+    */
+  private def mayStillGrant(invitation: AccountToken, contestId: Long)(implicit session: DBSession): Boolean =
+    invitation.createdBy.flatMap(id => User.findById(id)(session)).filter(_.deletedAt.isEmpty).exists { sender =>
+      sender.isRoot || UserContestJdbc.find(sender.getId, contestId).exists(_.role == User.ADMIN_ROLE)
+    }
 
   /** Confirms an email change: the account's email becomes the link's address, verified, and
     * `auth_version` goes up. Refused, changing nothing, if another account has that address
     * now.
     */
-  def confirmEmailChange(token: String): Either[Refusal, User] =
+  def confirmEmailChange(token: String): Either[Refusal, (String, User)] =
     if (!Format.matches(token)) Left(Malformed)
     else
       try
@@ -164,14 +184,14 @@ object AccountTokenService {
                 val taken = sql"SELECT COUNT(*) FROM users WHERE email = ${link.email} AND id <> ${user.getId}"
                   .map(_.long(1)).single.apply().getOrElse(0L) > 0
                 if (taken) refused(AddressTaken, Some(link))
+                else if (!AccountTokenJdbc.markUsed(link.id)) refused(NotLive, Some(link))
                 else {
-                  AccountTokenJdbc.markUsed(link.id)
+                  // a new address: auth_version + 1, every session of the account ends
                   User.setEmail(user.getId, link.email, verified = true)
-                  sql"UPDATE users SET auth_version = auth_version + 1 WHERE id = ${user.getId}".update.apply()
                   // a password link sent to the old address must not set the password any more
                   AccountTokenJdbc.revokeUnused(user.getId, AccountTokenJdbc.SetsPassword :+ AccountTokenJdbc.EmailChange)
                   logger.info(s"email_change_confirmed tokenId=${link.id} accountId=${user.getId}")
-                  Right(User.findById(user.getId)(session).get)
+                  Right(user.email -> User.findById(user.getId)(session).get)
                 }
               }
           }

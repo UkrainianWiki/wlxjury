@@ -287,8 +287,8 @@ class LoginControllerSpec extends PlaySpecification with Results with PlayTestDb
         val result = login.auth().apply(
           FakeRequest().withFormUrlEncodedBody("login" -> "versioned@dot.com", "password" -> "strong").withCSRFToken)
         session(result).get(Secured.AuthVersion) === Some("3")
-        Secured.sessionUser("versioned@dot.com", None, Some("3")) must beSome
-        Secured.sessionUser("versioned@dot.com", None, None) must beNone
+        Secured.sessionUser("versioned@dot.com", None, Some("3"), None) must beSome
+        Secured.sessionUser("versioned@dot.com", None, None, None) must beNone
       }
     }
   }

@@ -229,7 +229,16 @@ without a password and mails an invitation link; following it sets the password 
 email. Root's "reset password" mails a link the same way. These mails go through `play.mailer`:
 the server's SMTP settings must work, or nobody new can sign in (a failed mail is counted on the
 users page and logged on `security.account` with account ids; the invitation can be sent again).
-Links point at `wlxjury.host`, never at the request's host.
+A link points at the host the request that sent it came to (so a WLM juror gets a
+`jury.wlm.org.ua` link) only if that host is named exactly in `WLXJURY_ALLOWED_HOSTS` (a suffix
+pattern such as `.wle.org.ua` never counts); otherwise, and for mail sent without a request, at
+`wlxjury.host`, whose scheme every link uses. A forged `Host` header can therefore never choose
+where a password link points. The old address of a changed email gets a short notice (no link).
+
+The link's token is in the URL path (`/invitation/<token>`, `/email/confirm/<token>`), so the
+Apache access log records it. A link is single use and expires (7 days, 24 hours for an email
+change), and the app's own log lines mask it (`/invitation/***`), but treat the access logs
+as sensitive while links are live, or exclude those paths from them.
 
 A new, empty database has no account. To create the first one (root), set a setup token of at
 least 32 characters for the install only, e.g. `WLXJURY_SETUP_TOKEN=$(openssl rand -hex 32)` in
