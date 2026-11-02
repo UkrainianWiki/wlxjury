@@ -33,10 +33,10 @@ class ApiSpec extends PlaySpecification with PlayTestDb with JsonFormat {
   /** Contests 10 and 20; root (no contest), an admin of 10 who is not root and a juror of 10. */
   private def setUp(): Unit = {
     createContests(10, 20)
-    User.create(User(rootEmail, rootEmail, password = Some(User.sha1("secret")), isRoot = true))
-    val admin = User.create(User(adminEmail, adminEmail, password = Some(User.sha1("secret"))))
+    User.create(User(rootEmail, rootEmail, password = Some(services.PasswordHasher.default.hash("secret")), isRoot = true))
+    val admin = User.create(User(adminEmail, adminEmail, password = Some(services.PasswordHasher.default.hash("secret"))))
     UserContestJdbc.createMembership(admin.getId, 10, User.ADMIN_ROLE)
-    val juror = User.create(User(jurorEmail, jurorEmail, password = Some(User.sha1("secret"))))
+    val juror = User.create(User(jurorEmail, jurorEmail, password = Some(services.PasswordHasher.default.hash("secret"))))
     UserContestJdbc.createMembership(juror.getId, 10, User.JURY_ROLE)
   }
 

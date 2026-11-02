@@ -5,6 +5,7 @@ import db.scalikejdbc._
 import org.intracer.wmua.{Image, Selection}
 import org.scalawiki.wlx.dto.Monument
 import scalikejdbc._
+import services.PasswordHasher
 
 import java.io.File
 import scala.util.Random
@@ -98,7 +99,7 @@ object GatlingDbSetup {
       val email = s"organizer$i@gatling.test"
       val pass  = s"orgpass$i"
       val user = User.findByEmail(email).headOption.getOrElse(
-        User.create(fullname = s"Organizer $i", email = email, password = User.sha1(pass),
+        User.create(fullname = s"Organizer $i", email = email, passwordHash = PasswordHasher.default.hash(pass),
                     roles = Set("admin"), contestId = Some(contestId)))
       (user.id.get, email, pass)
     }
@@ -160,7 +161,7 @@ object GatlingDbSetup {
       val email    = s"juror$i@gatling.test"
       val password = s"pass$i"
       val user     = User.create(fullname = s"Juror $i", email = email,
-                                 password = User.sha1(password), roles = Set("jury"),
+                                 passwordHash = PasswordHasher.default.hash(password), roles = Set("jury"),
                                  contestId = Some(contestId))
       (user.id.get, email, password)
     }
@@ -168,7 +169,7 @@ object GatlingDbSetup {
     val orgEmail    = "organizer@gatling.test"
     val orgPassword = "orgpass"
     val orgUser     = User.create(fullname = "Organizer", email = orgEmail,
-                                  password = User.sha1(orgPassword), roles = Set("admin"),
+                                  passwordHash = PasswordHasher.default.hash(orgPassword), roles = Set("admin"),
                                   contestId = Some(contestId))
     val organizer   = (orgUser.id.get, orgEmail, orgPassword)
 

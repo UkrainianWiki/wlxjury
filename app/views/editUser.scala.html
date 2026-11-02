@@ -76,7 +76,10 @@
                     @if(true || editUserForm("id").value.contains(user.id.toString)) {
                         <div class="mb-3">
                             <label for="password" class="form-label">@Messages("password")</label>
-                            <input type="password" class="form-control" id="password" name="password" placeholder="Password" value="">
+                            @defining(editUserForm("password").errors) { passwordErrors =>
+                            <input type="password" class="form-control @if(passwordErrors.nonEmpty){is-invalid}" id="password" name="password" placeholder="Password" value="" @if(passwordErrors.nonEmpty){aria-invalid="true" aria-describedby="password_error"}>
+                            @for(error <- passwordErrors.headOption) {<div class="invalid-feedback" id="password_error">@Messages(error.message, error.args: _*)</div>}
+                            }
                         </div>
                     } else {
                         @if(!editUserForm("id").value.contains("0")) {

@@ -172,13 +172,14 @@ Required standard:
 - the Play secret must come from deployment-time configuration
 - the committed config must not contain a reusable secret value
 
-### 2. Password storage is not compliant
+### 2. Password storage (done)
 
-`db.scalikejdbc.User.hash` still uses unsalted SHA-1.
+Fixed in follow-ups batch B4 (2026-11-02): passwords are stored as bcrypt (`$2b$`, cost 12)
+by `services.PasswordHasher`. A legacy unsalted SHA-1 hash is checked only on sign-in and is
+replaced by a bcrypt hash on success; nothing writes SHA-1 any more. Accounts that never sign
+in again keep their legacy hash: invalidate those on a controlled schedule if needed.
 
-This does not meet modern password-storage requirements.
-
-Required standard:
+Required standard (kept):
 
 - passwords must use a slow password KDF such as Argon2id or bcrypt
 - legacy hashes must be migrated transparently or invalidated on a controlled schedule

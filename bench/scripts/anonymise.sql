@@ -3,9 +3,11 @@
 -- stay as they are; personal data becomes synthetic, with the same shape (non-null stays
 -- non-null, free text keeps its length), so the data size doesn't change.
 --
--- Every account's password becomes 'bench<id>', hashed as the app hashes it
--- (User.hash: hex SHA-1 of the password), so the benchmark logs in as real jurors and
--- organizers. Login is by email: juror<id>@bench.test, org<id>@bench.test, root<id>@bench.test.
+-- Every account's password becomes 'bench<id>', as a legacy hash (hex SHA-1 of the
+-- password; MariaDB has no bcrypt), so the benchmark logs in as real jurors and organizers.
+-- The app accepts a legacy hash once and replaces it with bcrypt (services.PasswordHasher):
+-- a benchmark's first sign-in per account also computes that hash.
+-- Login is by email: juror<id>@bench.test, org<id>@bench.test, root<id>@bench.test.
 --
 -- Kept as is (public Commons / Wikipedia data): images (titles, authors, descriptions),
 -- monument, monuments_all, category.
