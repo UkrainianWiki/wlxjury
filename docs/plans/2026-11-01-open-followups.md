@@ -463,6 +463,30 @@ branch, merge commit `992d8eb2`.
   (`target/checks/20261102-005007-23776.log`). Jest: exit 0, 18 suites, 240 tests
   (`javascript-test/target/checks/20261102-004818-24892.log`). No full suite (after B5).
 
+### Merged ukwikidev/followups-b4
+
+2026-11-02, after B5: `git merge --no-ff ukwikidev/followups-b4` (at `4f263e0f`) into this
+branch, merge commit `d9dbe0ed`.
+
+- **Conflicts:** `UserController`'s imports (kept api-auth's `ApiTokenService` and B4's
+  `BlockingExecutionContext`, `PasswordHasher`); this plan (the B3 review fixes and B5
+  results, then the B4 results without B4's stale "What remains" line). Auto-merged and
+  checked by hand: both `application.conf` files have `sign-in-dispatcher` and `bcrypt.*`
+  beside B5's and api-auth's changes; the four messages files hold the same 388 keys;
+  `build.sbt` has bcrypt 0.10.2; CLAUDE.md has the Passwords line; `UserController` keeps the
+  token endpoints, `ownProfile` and the nonce with B4's `withAuthOn(blocking)` password paths.
+- **Post-merge fix** `1381c88d`: `ApiSpec`, `ApiTokenPageSpec`, `ApiTokenJdbcSpec` and
+  `UiShotsServer` used the removed `User.sha1`; they store `PasswordHasher.default.hash(...)`
+  (`UiShotsServer` with the renamed `passwordHash` parameter).
+- **Checks:** `Test/compile`, `Gatling/compile` and `PasswordStorageSpec`,
+  `PasswordHasherSpec`, `UserPasswordSpec`, `LoginControllerSpec`, `UserControllerSpec`,
+  `UserDbSpec`, `MultiContestUserSpec`, `SecuredSpec`, `ApiSpec`, `ApiTokenPageSpec`,
+  `ApiTokenJdbcSpec`, `ProductionConfigSpec`, `AllowedHostsSpec`, `views.*`
+  (`MessagesCompletenessSpec` included): exit 0, 327 passed, 0 failed
+  (`target/checks/20261102-021714-452.log`). The full suite (`20261102-022113-17192.log`) was
+  stopped by the host for low system memory before it finished, with no failure until then;
+  it still has to run.
+
 ## Checked and already resolved (not part of this plan)
 
 Theme follow-ups 1–11 and the review fixes; Phase 2's ru keys; JS texts in `mainAdmin` (now
