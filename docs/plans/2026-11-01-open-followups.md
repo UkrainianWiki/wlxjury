@@ -102,6 +102,25 @@ harness with `--csp` in both modes.
 each use, record where its markup comes from. Wrap or remove any use that can receive request
 or Commons text.
 
+Audit (batch B6, after B3; `rg -n 'Html\(|HtmlFormat\.raw' app`, with `Accepts.Html()` left
+out: it is content negotiation, not markup). There is no `HtmlFormat.raw` in `app/`.
+
+| File:line | Source of the markup | Verdict |
+|---|---|---|
+| `monuments.scala.html:52,54,55` (was `@Html(Monument.wikiLinkToUrl(…))`) | the monument's name, place and city from the DB, imported from the wiki lists that anyone can edit; scalawiki's `wikiLinkToUrl` turns `[[…]]` into links but leaves the text around them and the labels unescaped | **Changed:** `@views.WikiLinks(…)`, which escapes everything but the links it builds (`WikiLinksSpec`) |
+| `large/monumentInfo.scala.html:8,9,10` (the same: city, name, place) | as above, in both large views | **Changed:** `@views.WikiLinks(…)` |
+| `large/monumentInfo.scala.html` (was line 10, `<!-- @Html(m.typ … m.subType) -->`) | the monument's type and subtype from the wiki lists; Twirl renders `@` inside an HTML comment, so a `-->` in them ended the comment | **Removed** (a dead line) |
+| `views/WikiLinks.scala:32` | its own output: escaped text, escaped labels, escaped URL-encoded hrefs | trusted |
+| `contestFiles.scala.html:13` | two constant attribute strings | trusted |
+| `bs/FieldView.scala:86` | `aria-describedby` ids escaped with `HtmlFormat.escape`, a constant `aria-invalid` | trusted |
+| `bs/FieldView.scala:193` | attribute names checked against `[a-zA-Z][a-zA-Z0-9_:.-]*`, values escaped | trusted |
+| `views/GalleryTiles.scala:19` | booleans and numbers; the stars JSON escaped | trusted |
+| `views/JsTexts.scala:18` | message texts as JSON, `<` written as `\u003c`, in a `type="application/json"` block; in the monuments' attribute as a String (`.body`), which Twirl escapes | trusted |
+| `large/contestFile.scala.html:69`, `large/fullSizeUrl.scala.html:6` | `full.resolution`'s message text (with `<nobr>`) and two numbers (`width x height`, megapixels) | trusted (message files and integers) |
+| `large/navigationButtons.scala.html:16` (`title="@Html(title)"`) | the `previous.image`, `next.image`, `up.key`, `down.key` messages and a constant `&lt;…&gt;` | trusted (message files only) |
+| `pageLinks.scala.html:13,14,29,30` | constant entities (`&laquo;` …) | trusted |
+| `main`, `mainAdmin`, `navbar` (`pager`, `filters`, `head` defaults), `large/fileKeyboardNav.scala.html:1` (`votes`) | empty `Html("")` defaults; callers pass rendered templates, which escape | trusted |
+
 2.7 **Docs:** the guidelines' "Practices Not Followed Consistently Today" still lists the
 secret, GET votes, `nocsrf`, mutation authorization, SQL and error leaks as open, but all of
 them are fixed. Update that section to what is still open (2.1–2.6), and add the README's
@@ -396,7 +415,7 @@ independent review with its diff, as in the theme plan's cycle.
 | B5 | 2.2, 2.3, 2.4 | high | After B3 and after merging `ukwikidev/api-auth`. The CSP without `'unsafe-inline'`; `/api/docs` must still work |
 | B6 | 2.5, 2.6, 2.7, 2.8, 4.1, 4.8 | medium (docs low) | 2.6 after B3, which removes most of the `@Html` in JS strings. 2.8: the account id only (decision 3), CLAUDE.md updated. 4.1: delete the merge code (decision 2) |
 | B7 | 4.5 | medium | The repo half only. The `wlxjury-infra` half and the playbook run are the user's |
-| B8 | 3.5 | medium | A paired timing against the pre-branch base, after B1–B7, with no other DB work running. Report and stop |
+| B8 | 3.5 | medium | A paired timing against the pre-branch base, after B1–B7, with no other DB work running. Report and stop. Also: `RegionCountPairedBenchmark` still checks for region counts in the gallery HTML (`Volyn O. (`), which the region menu now loads from `data-regions-url` (the B1 second review): delete it or rework it to read that URL |
 
 The full suite runs once after B5 (shared layout, filters and config), and again at the end
 only if B6–B7 change shared code.
@@ -1144,3 +1163,119 @@ JVM ran):
 
 **What remains:** merging into `ukwikidev/followups` (and fixing `UiShotsServer`'s `User.sha1`,
 see the merge note).
+
+## Batch B6 results
+
+Branch `ukwikidev/followups`, from `87953e66`. Commits `2a1600a7` (4.1), `73680fca` (2.8),
+`2cd09112` (2.5), `173fb89d` (2.6), `05778356` (2.7), `ed9094d8` (4.8), then this one.
+
+**2.5** `scripts/run-with-prod-dump.sh` passes no password on a command line:
+- The prod `mysqldump` reads a `[client]` option file (user and password, quoted and escaped),
+  mode 600 in a `mktemp -d` directory of mode 700. It is mounted read-only into the `--rm`
+  client container and given as `--defaults-extra-file` (the first option), and removed as soon
+  as the dump ends.
+- The local container takes its four `MARIADB_*` values from an `--env-file` in the same
+  directory, removed right after `docker run -d`.
+- The local root client (`docker exec … mysql`, three places) reads `/root/.my.cnf` (mode 600),
+  written inside the container from the container's own `MARIADB_ROOT_PASSWORD`. The
+  `--reuse-container` path writes it too, so containers made by the old script work.
+- `trap cleanup EXIT` removes the directory on every path; `HUP`, `INT` and `TERM` exit through
+  it. Under Git Bash the dump's `docker run` gets `MSYS_NO_PATHCONV=1` and a `cygpath -m` host
+  path: without them MSYS rewrote `/etc/wlxjury-dump/client.cnf` as a Windows path.
+- Checked with `bash -n` (no shellcheck on this machine), and end to end with a fake `docker` on
+  `PATH` (`--dump-only`): the dump container got only the mount and `--defaults-extra-file`; the
+  option file held `password="p\"a\\ss w$rd"` for `p"a\ss w$rd`; the local container got only
+  `--env-file`; no argument held a password; and the temporary directory was gone after a
+  success, after a failing `docker` (exit 3) and after `kill -TERM` (exit 143). Not run against
+  real data. My first attempt had a Windows-style `PATH`, so the real `docker` ran the
+  `mariadb:10.6` client once with a dummy host and password; it stopped at the option file's
+  path, before connecting. That is how the MSYS rewrite was found. On Windows (NTFS) the files
+  show mode 644; on Linux they are 600 and 700.
+
+**2.6** The audit table is under item 2.6. One use was unsafe: the monuments' wiki text (the
+monuments page and both large views), now `views.WikiLinks`. The commented-out type line inside
+`<!-- -->` is deleted. New `views.WikiLinksSpec` (5 examples): links and labels, the target's
+encoding, escaping of the text, labels and quotes, an unclosed link, and the large view's
+monument box rendered with `<script>`, `<img onerror>`, `<b>` and `-->` in its fields.
+
+**2.7**
+- `incident-prevention-guidelines.md`, "Practices Not Followed Consistently Today", now has
+  "Still open": no per-IP or per-account sign-in throttling (only the bcrypt semaphore);
+  `style-src 'unsafe-inline'`; the deprecated CSP key; Play's default headers untested, no
+  `Permissions-Policy`, HSTS in `wlxjury-infra`; the legacy hashes of accounts that never sign
+  in. And "Done": the secret, passwords, CSRF and POST, mutation authorization, SQL, errors,
+  hosts, Secure cookies, the CSP, the API with authentication, the dump script, the `Html`
+  audit.
+- The implementation plan has a status at the top and a **Done** line under each of items 1–11
+  and the README deliverable. Item 7 notes that `jury-canary.wle.org.ua` is no longer in the
+  host list.
+- `review.md` has a status table for every finding and step (the `preloadImages` injection: the
+  template is gone).
+- README: a short "Security Controls" section linking the four security docs, CLAUDE.md and
+  docs/deployment.md.
+
+**2.8** `Secured.denialLogLine` writes `accountId=<id>` and no `account=<email>`. I checked the
+other log lines that could name the signed-in user (`rg -n -i 'email|emailLo|username|fullname'`
+near logger calls, and every logger call in `app/controllers`, `ErrorHandler`,
+`CsrfErrorHandler`, `api/`, `ApiTokenService`, `User` and `RoundConflicts`). None writes an email
+or a name: `security.password` and the `coi` logger already log ids, and `CommonsLogin` logs the
+configured Commons bot account, not a signed-in user (left as is). CLAUDE.md's sentence now says
+the line has the account id only. `SecuredSpec`'s exact line drops the `account=` field, and a
+new example checks that neither the email nor the name appears. `LoginControllerSpec` asserts
+only the reason. The error-handling plan (`2026-10-27-error-handling.md`) still describes the
+old field; it is history and not changed.
+
+**4.1** Deleted: `RoundController.mergeRounds` (no route) with `mergeRoundsForm` and
+`MergeRoundsForm`, `RoundService.mergeRounds`, `SelectionJdbc.mergeRounds` and `Round.delete` (no
+caller in `app/` or `test/`), and the commented-out `Tools.distributeImages` block in
+`RoundController.setImages`. Kept, because `SelectionJdbc.setRound` (moving one file to another
+round) uses them: `moveVotes`, `Round.settleDeletedFiles` and the `RoundImageCounts`
+invalidations. Tests: `SelectionSpec`'s "mergeRounds" (2 examples) and `RoundImageCountsDbSpec`'s
+"follow merging rounds" are deleted. In `DeletedFilesSpec`, "be moved aside there when a deleted
+file's are merged in" is deleted (the `setRound` example next to it covers the same path), and
+"bring the votes of a merged round back" now moves the file with `setRound`. The doc comments
+that named `mergeRounds` (`DeletedFiles`, `Round`, `SelectionJdbc`, `RoundImageCounts`) are
+updated.
+
+**4.8**
+- Theme plan: the header says done (Phases 1–4, step 2a and the follow-ups on
+  `ukwikidev/theme-modes` up to `cb103b24`; that branch is not in `master` yet). Phases 2, 3
+  and 4's "Not yet reviewed" now say "Reviewed: see Review follow-ups"; each phase has that
+  section.
+- `docs/superpowers/plans/*`: a status line under each title with the commits that
+  `git log --grep` found: saveResized `09ce2d84`, `b9f7e773`, `f88e0a10`; AutoRollback
+  `2596e074`, `7f2a870a`, `45a81e9e`; Flyway baseline `a330d903`, `8b93ca4b`; Gatling from
+  `83aef073`; monument_id `4a2ff9fd`, `f4ec8447`; SQL injection `b403abc7`, `5d63fa10`,
+  `d2b93cdb`. The multi-contest plan already had its status. The blue/green plan and both
+  blue/green designs say "superseded: the blue/green scripts are disabled …, see
+  docs/deployment.md".
+- Deleted the empty `docs/dbperf/{explain.txt,last-agent-message.json,last-agent-message.md}`
+  and `docs/queries-improvement.txt`. `AGENTS.md` (it held only the text `CLAUDE.md`) is kept,
+  with one sentence pointing to CLAUDE.md.
+- `DEV.md`: "Creating the root admin" (the first sign-up on an empty database becomes root,
+  `users.is_root`; an `UPDATE` makes an existing account root); Play 3.0.x and sbt 1.x links;
+  the Activator note, Scala IDE, NetBeans and ENSIME replaced by Metals.
+- docs/deployment.md, "One app instance": what lives in each JVM (`RoundImageCounts` with its
+  10-minute TTL, the job scheduler's limits, the bcrypt limits, the download progress, the
+  distribution's caches). Rounds are locked in the database and jobs hold leases, but two
+  instances on one database were never designed for. The "in-JVM round locks" this plan names
+  no longer exist: rounds are locked with `FOR UPDATE`.
+- Skipped: the COI comparison rows (WJ-F4.9, WJ-F5.7, WJ-F6.2, eligibility).
+  `docs/comparison/` is not in this repo; it exists only untracked in the main checkout.
+- B8's row now says to delete or rework `RegionCountPairedBenchmark`.
+
+**Checks** (through `scripts/agent-check.py`, no other JVM running):
+- `Test/compile`, `Gatling/compile` and `SecuredSpec`, `MutationAuthorizationSpec`,
+  `CoiAuthorizationSpec`, `LoginControllerSpec`, `AdminPagesCurrentContestSpec` (the specs that
+  read `security.authz`), `RoundControllerSpec`, `RoundImageCountsDbSpec`, `SelectionSpec`,
+  `DeletedFilesSpec`, `MonumentControllerSpec` and `views.*` (with the new `WikiLinksSpec`):
+  exit 0, 304 passed, 0 failed (`target/checks/20261102-025815-14360.log`).
+- The script: `bash -n` and the fake-`docker` runs above.
+- No full suite. The shared code that changed is `Secured.denialLogLine` (one log field, covered
+  by the authorization specs) and deleted dead code.
+
+**Open questions**
+- Sign-in throttling per client address or per account is not in any batch. The guidelines
+  list it as open.
+- `CommonsLogin` logs the Commons bot account's user name. That is config, not a signed-in
+  user's personal data, so it is left as is.
