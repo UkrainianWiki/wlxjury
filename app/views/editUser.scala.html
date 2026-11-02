@@ -121,8 +121,14 @@
                                 <div class="alert alert-success" role="status">@msg</div>
                             }
 
-                            @* the reset form is after this one (forms do not nest): the form attribute submits it *@
-                            <p><button type="submit" form="reset-password" class="btn btn-outline-secondary">@Messages("reset.password")</button></p>
+                            @flash.get("sessions-ended").map { msg =>
+                                <div class="alert alert-success" role="status">@msg</div>
+                            }
+
+                            @* the reset and end-sessions forms are after this one (forms do not nest): the form
+                               attribute submits them *@
+                            <p><button type="submit" form="reset-password" class="btn btn-outline-secondary">@Messages("reset.password")</button>
+                               <button type="submit" form="end-sessions" class="btn btn-outline-danger">@Messages("sessions.end")</button></p>
                         }
                     }
 
@@ -149,7 +155,25 @@
                 @helper.CSRF.formField
                 <input type="submit" class="btn btn-outline-secondary" value="@Messages("resetpassword")">
                 }
+            @* root's "end sessions" of this account (S3): its session version goes up *@
+            @form(routes.UserController.endSessions(editUserForm("id").value.map(_.toLong).get),
+                Symbol("class") -> "form-vertical", Symbol("id") -> "end-sessions") {
+                @csrfField()
+                <input type="submit" class="btn btn-outline-danger" value="@Messages("sessions.end")">
+                }
             </div>
+            }
+
+            @* the own profile: sign out on every device (S3), this one included *@
+            @if(ownProfile) {
+            <section class="mt-4" id="sessions" aria-labelledby="sessions-title">
+                <h2 class="h5" id="sessions-title">@Messages("sessions.title")</h2>
+                <p class="text-body-secondary small">@Messages("sessions.help")</p>
+                @form(routes.LoginController.logoutEverywhere(), Symbol("class") -> "d-inline") {
+                    @csrfField()
+                    <button type="submit" class="btn btn-outline-danger">@Messages("sessions.signout.everywhere")</button>
+                }
+            </section>
             }
         </div>
         @* the own profile only: the user's personal API tokens *@

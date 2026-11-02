@@ -50,7 +50,8 @@ class ImageProxyController(
     * as a gallery asks for hundreds of thumbnails at once.
     */
   def serve(path: String): Action[AnyContent] = Action.async { request =>
-    request.session.get(Secured.UserName) match {
+    // a session past its limits is signed out (SessionLifetime; the filter also takes it out)
+    request.session.get(Secured.UserName).filter(_ => SessionLifetime.live(request.session)) match {
       case None       => Future.successful(Unauthorized)
       case Some(name) =>
         mayView(viewerKey(name, request.session.get(Secured.AuthVersion), request.session.get(Secured.AccountId))).flatMap(allowed => if (allowed) serveThumbnail(path) else Future.successful(Unauthorized))

@@ -254,6 +254,9 @@ class SecuredSpec extends PlaySpecification with Mockito with PlayTestDb
     session.get(Secured.CurrentContestId) returns contestId.map(_.toString)
     session.get(Secured.AuthVersion) returns None // a session from before V77: version 0
     session.get(Secured.AccountId) returns None
+    // a session from before S3: no times, counted as now (SessionLifetime)
+    session.get(SessionLifetime.IssuedAt) returns None
+    session.get(SessionLifetime.LastSeen) returns None
     request.session returns session
     request
   }
@@ -309,6 +312,36 @@ class SecuredSpec extends PlaySpecification with Mockito with PlayTestDb
       root.isRoot === true
       root.hasRole(User.ROOT_ROLE) === true
       root.contestId === None
+    }
+
+    "be None for a session of an older version, another account, or past its limits (S3)" in {
+      createContests(10L)
+      val created = User.create(User("fullname", "sess@server.com", None, Set("jury"), Some("hash"), Some(10L),
+        authVersion = 7))
+      val now = SessionLifetime.nowSeconds()
+      def request(changes: (String, String)*) = FakeRequest().withSession((Map(
+        Secured.UserName -> "sess@server.com", Secured.AccountId -> created.getId.toString,
+        Secured.AuthVersion -> "7", SessionLifetime.IssuedAt -> (now - 3600).toString,
+        SessionLifetime.LastSeen -> (now - 60).toString) ++ changes).toSeq: _*)
+      val secured = new SecuredWithCc()
+      val day = 24 * 3600L
+
+      secured.userFromRequest(request()).map(_.getId) === created.id
+      // a stale version: a password change, a sign-out everywhere, root's "end sessions"
+      secured.userFromRequest(request(Secured.AuthVersion -> "6")) === None
+      // signed in to another account
+      secured.userFromRequest(request(Secured.AccountId -> (created.getId + 1).toString)) === None
+      // past the absolute limit (a year from sign-in), however recent its last request
+      secured.userFromRequest(request(SessionLifetime.IssuedAt -> (now - 366 * day).toString)) === None
+      secured.userFromRequest(request(SessionLifetime.IssuedAt -> (now - 364 * day).toString)).map(_.getId) === created.id
+      // idle past the limit (a month)
+      secured.userFromRequest(request(SessionLifetime.LastSeen -> (now - 31 * day).toString)) === None
+      secured.userFromRequest(request(SessionLifetime.LastSeen -> (now - 29 * day).toString)).map(_.getId) === created.id
+      // a malformed time never passes
+      secured.userFromRequest(request(SessionLifetime.LastSeen -> "soon")) === None
+      // a session from before S3 (no times) counts as now: the filter stamps them
+      secured.userFromRequest(FakeRequest().withSession(Secured.UserName -> "sess@server.com",
+        Secured.AccountId -> created.getId.toString, Secured.AuthVersion -> "7")).map(_.getId) === created.id
     }
 
     "be None if not in db" in {

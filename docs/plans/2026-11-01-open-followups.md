@@ -2022,3 +2022,16 @@ updated to B12's reviewed shapes (selection-only id and count queries with
 `s.page_id is not null`, the deferred grouped page) and the spec rerun: 20 passed
 (`target/checks/20261102-154732-20884.log`). No other spec failed, so the full suite was not
 repeated.
+
+### Full suite after S1–S3, S5/S10, C1 and the practices (release check)
+
+- `60e77c0f`: Scala 1604 total, 9 failed (session assertions broken by S3's filter: fixed in
+  `ukwikidev/s3-spec-fixes`, merged as `074314c7`; C1's lock specs: `GatlingSmokeSpec` left the
+  default pool on the Gatling fixture's container for every later spec, fixed in
+  `ukwikidev/c1-lockspec-fix`, merged as `22e5d8b2`); Jest 251 passed
+  (`target/checks/20261102-172037-25452.log`).
+- `22e5d8b2`: Scala 1598 total, 0 failed, 1 error (`GatlingSmokeSpec`: the fixture dump's rows
+  clashed with V80's seeded row on restore); Jest 251 passed (`…-190955-5108.log`). Fixed in
+  `ba77b314` (the dump uses `INSERT IGNORE`; fixture-v5), then `GatlingSmokeSpec`,
+  `CriteriaRateSpec` and `SetupSpec` in one JVM, in the full suite's order: 26 passed
+  (`…-193801-23864.log`). No other spec failed, so the full suite was not repeated.

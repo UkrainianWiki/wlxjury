@@ -131,7 +131,7 @@ object GatlingTestFixture {
     else {
       println(s"[timing] logging requests to ${GatlingConfig.timingFile}")
       Map(
-        "play.filters.enabled" -> Seq("modules.RequestTimingFilter", "play.filters.csrf.CSRFFilter",
+        "play.filters.enabled" -> Seq("modules.SessionLifetimeFilter", "modules.RequestTimingFilter", "play.filters.csrf.CSRFFilter",
           "play.filters.headers.SecurityHeadersFilter", "play.filters.hosts.AllowedHostsFilter"),
         "timing.file" -> GatlingConfig.timingFile
       )

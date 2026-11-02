@@ -24,8 +24,10 @@ object GatlingDbCache {
 
   /** v2: the contest has an image category holding every fixture image.
     * v3: the contest is "Wiki Loves Monuments" 2025 in "Ukraine", as production's are.
-    * v4: the users' passwords are bcrypt hashes (the tests' cost, 4), not SHA-1. */
-  val FixtureVersion = "fixture-v4"
+    * v4: the users' passwords are bcrypt hashes (the tests' cost, 4), not SHA-1.
+    * v5: the dump's rows are INSERT IGNORE, so rows a migration seeds itself (V80's
+    *     session_upgrade_window) don't clash on restore after the migrations ran. */
+  val FixtureVersion = "fixture-v5"
 
   // ── Cache key ──────────────────────────────────────────────────────────────
 
@@ -95,7 +97,7 @@ object GatlingDbCache {
     val result = container.container.execInContainer("sh", "-c",
       s"MYSQL_PWD=${container.password} mysqldump" +
       s" -u${container.username}" +
-      s" --no-create-info --single-transaction --skip-triggers --no-tablespaces --skip-lock-tables" +
+      s" --no-create-info --insert-ignore --single-transaction --skip-triggers --no-tablespaces --skip-lock-tables" +
       s" --ignore-table=${container.databaseName}.flyway_schema_history" +
       s" ${container.databaseName}" +
       s" | gzip > /tmp/gatling-fixture.sql.gz"

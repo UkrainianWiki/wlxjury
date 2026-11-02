@@ -332,8 +332,10 @@ object User extends CRUDMapper[User] {
   }
 
   /** Stores a new password's bcrypt hash. */
-  def setPassword(id: Long, password: String): Unit =
+  def setPassword(id: Long, password: String): Unit = {
     setPasswordHash(id, PasswordHasher.default.hash(password))
+    ()
+  }
 
   /** Replaces the stored hash `expected` (only it: not a password changed since it was read). */
   private[db] def replaceHash(id: Long, expected: String, hash: String): Boolean =
@@ -713,10 +715,31 @@ object User extends CRUDMapper[User] {
       .withAttributes("isRoot" -> root)
 
   /** Stores a hash made by [[PasswordHasher.hash]] (to hash before writing anything else);
-    * [[setPassword]] hashes and stores.
+    * [[setPassword]] hashes and stores. A new password ends every session of the account
+    * (auth_version + 1, S3); the new version (None: no such account), for the session that
+    * changed it to stay signed in with. API tokens stay (the user's decision: like MediaWiki's
+    * bot passwords). A hash upgrade of the same password ([[replaceHash]]) ends none.
     */
-  def setPasswordHash(id: Long, hash: String): Unit =
-    quietly(s => sql"UPDATE users SET password = $hash WHERE id = $id".update.apply()(s))
+  def setPasswordHash(id: Long, hash: String): Option[Int] =
+    quietTx { s =>
+      // named as the object's implicit autoSession, which it shadows here
+      implicit val session: DBSession = s
+      sql"UPDATE users SET password = $hash, auth_version = $BumpAuthVersion WHERE id = $id".update.apply()
+      authVersionOf(id)
+    }
+
+  /** Ends every session of the account (auth_version + 1): "sign out everywhere", root's "end
+    * sessions" (S3). The new version; None if there is no such account.
+    */
+  def endSessions(id: Long): Option[Int] =
+    DB.localTx { s =>
+      implicit val session: DBSession = s
+      sql"UPDATE users SET auth_version = $BumpAuthVersion WHERE id = $id".update.apply()
+      authVersionOf(id)
+    }
+
+  private def authVersionOf(id: Long)(implicit session: DBSession): Option[Int] =
+    sql"SELECT auth_version FROM users WHERE id = $id".map(_.int(1)).single.apply()
 
   /** ScalikeJDBC's settings for a statement that binds a password hash: it logs neither the
     * statement (`loggingSQLAndTime`, including the slow-statement warning) nor its failure

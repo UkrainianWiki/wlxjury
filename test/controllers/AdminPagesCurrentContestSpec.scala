@@ -66,7 +66,9 @@ class AdminPagesCurrentContestSpec extends PlaySpecification with PlayTestDb {
         result
       }
       status(result) aka path mustEqual FORBIDDEN
-      session(result).get(Secured.CurrentContestId) aka path must beNone
+      // not switched: the session's contest stays (a page response may write the session back,
+      // upgraded or refreshed by modules.SessionLifetimeFilter, with the same contest)
+      session(result).get(Secured.CurrentContestId) aka path must beNone.or(beSome(currentContest.toString))
       lines(log, s"currentContestId=$currentContest targetContestId=$currentContest resource=\"contest:$currentContest\"",
         s"reason=$reason") aka path mustEqual 1
     }
@@ -197,7 +199,8 @@ class AdminPagesCurrentContestSpec extends PlaySpecification with PlayTestDb {
             result
           }
           status(result) aka path mustEqual FORBIDDEN
-          session(result).get(Secured.CurrentContestId) aka path must beNone
+          // not switched to 30: the session's contest stays 10 (written back by the session filter)
+          session(result).get(Secured.CurrentContestId) aka path must beNone.or(beSome("10"))
           lines(log, "currentContestId=10 targetContestId=30", "reason=not_member") aka path mustEqual 1
         }
         ok

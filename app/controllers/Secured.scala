@@ -228,7 +228,9 @@ object Secured {
   val CurrentContestId = "current_contest_id"
 
   /** The account's users.auth_version when the session was signed in (absent: 0, a session from
-    * before V77): a session of another version is refused ([[sessionUser]]).
+    * before V77): a session of another version is refused ([[sessionUser]]). It goes up, ending
+    * every session of the account, on a password change or link, an email change, "sign out
+    * everywhere" and root's "end sessions" (S3, [[User.endSessions]]).
     */
   val AuthVersion      = "auth_version"
 
@@ -251,9 +253,12 @@ object Secured {
   def sessionMatches(user: User, sessionVersion: Option[String], sessionAccountId: Option[String]): Boolean =
     authVersionMatches(user, sessionVersion) && sessionAccountId.forall(_.toLongOption == user.id)
 
-  /** The session keys of a new sign-in of `user`: its name as typed, account id and version. */
-  def signedInSession(user: User, login: String): Seq[(String, String)] =
-    Seq(UserName -> login, AccountId -> user.getId.toString, AuthVersion -> user.authVersion.toString)
+  /** The session keys of a new sign-in of `user`: its name as typed, account id and version, and
+    * the sign-in's times ([[SessionLifetime.signedIn]]), with a persistent cookie if `keep`.
+    */
+  def signedInSession(user: User, login: String, keep: Boolean): Seq[(String, String)] =
+    Seq(UserName -> login, AccountId -> user.getId.toString, AuthVersion -> user.authVersion.toString) ++
+      SessionLifetime.signedIn(keep)
 
   /** What a denied request asked for, as far as its call site knows: the contest of the
     * resource (`round:123`, `job:45`, `contest:603`), the roles that would have let the
@@ -425,10 +430,12 @@ object Secured {
   def normalizeUserName(userName: String): String = userName.trim.toLowerCase
 
   /** The request's session user, in the session's current contest
-    * ([[Secured.userFromRequest]]).
+    * ([[Secured.userFromRequest]]); none if the session is past its absolute or idle limit
+    * ([[SessionLifetime.live]]; [[modules.SessionLifetimeFilter]] also takes such a session's
+    * sign-in out of the request and the browser).
     */
   def sessionUserOf(request: RequestHeader): Option[User] =
-    request.session.get(UserName).flatMap(
+    request.session.get(UserName).filter(_ => SessionLifetime.live(request.session)).flatMap(
       sessionUser(_, request.session.get(CurrentContestId), request.session.get(AuthVersion),
         request.session.get(AccountId)))
 

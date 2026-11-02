@@ -91,7 +91,8 @@ class CommentAuthorizationSpec extends PlaySpecification with PlayTestDb {
         val result = comment(app, f.both, f, sessionContest = f.b.id)
         status(result) === SEE_OTHER
         commented(f.both) must beTrue
-        session(result).get(Secured.CurrentContestId) must beNone
+        // not switched to the round's contest: the session's stays (the session filter may write it back)
+        session(result).get(Secured.CurrentContestId) must beNone.or(beSome(f.b.getId.toString))
       }
     }
 
