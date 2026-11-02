@@ -341,6 +341,7 @@ can't sign in).
 
 **Decided (user, 2026-11-02):** P6: a deactivated juror must not vote (both vote actions check
 `round_user.active`; 409 like a stopped round). P7: option (a), a single-use password-set link reusing S2's invitation token; done in S2.
+P8: grace period 3 months for legacy SHA-1 hashes, then they are replaced by an unusable value and the user sets a password through S2's link.
 
 ## S7: Headers and CSP
 
@@ -355,6 +356,8 @@ drop `'unsafe-inline'` from `style-src`; narrow `img-src` to the Commons hosts i
 and proxy allow. P17: `scripts/ui-shots.py shoot --start-server --csp` on `/api/docs` once.
 
 **Decisions (user):** whether to take P3 now (screenshots in light, dark, auto) or later.
+
+**Decided (user, 2026-11-02):** P3 (`style-src 'unsafe-inline'`) later; the rest of S7 now.
 
 **Dependencies:** the CSP never gets wider (invariant). Screenshots need Chrome; one heavy run at a
 time.
@@ -380,6 +383,10 @@ Not done here: they belong to `docs/plans/2026-11-01-infra-in-repo.md` (branch
 **Decision (user):** patch `wlxjury-infra` now for O1/P2, or wait for the infra plan's Steps 2–4
 (then the followups branch waits too).
 
+**Decided (user, 2026-11-02):** folded into the infra plan (section "Security items folded in" on
+`ukwikidev/infra-in-repo`, 088b76e9), together with S4's fail2ban throttling. The followups branch
+is not deployed before O1 is in place.
+
 ## S9: Ops
 
 **Items:** P10, P8 (count), key rotation, the S1 data check.
@@ -392,6 +399,8 @@ Not done here: they belong to `docs/plans/2026-11-01-infra-in-repo.md` (branch
   (decision).
 - S1's queries, and again after S1's migration runs.
 
+**Decided (user, 2026-11-02):** S9 skipped for now.
+
 ## S10: Info and dependencies
 
 **Items:** N10, P13 (root revocation, duplicate token), P16 (stale texts), P19.
@@ -402,6 +411,10 @@ escaped (S5); fix the stale texts listed in the previous doc's item 16 and mark 
 `local-images-review-followups.md` table; P19 (an append-only `audit_event` table for role,
 account and contest changes) is a feature: decide whether to schedule it (it would have made N1
 traceable).
+
+**Decided (user, 2026-11-02):** S10 yes. P19's audit log is scheduled together with the rounds
+parity plan's first gap (audit log, `docs/plans/2026-11-02-montage-rounds-parity.md`), one table
+for role, account, contest and round events.
 
 ## Running the batches
 
