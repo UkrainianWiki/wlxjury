@@ -280,8 +280,10 @@ and checked by default: a persistent cookie, absolute lifetime 1 year from sign-
 1 month. Unchecked: a browser-session cookie with the same server-side limits. API tokens survive
 a password change (like MediaWiki's bot passwords), with a "revoke all tokens" action; an admin
 forcing a reset revokes both. Ordinary redeploys keep sessions (same `PLAY_HTTP_SECRET_KEY`);
-only S3's own release changes the cookie format: (4) still open (sign everyone out once, or
-upgrade old cookies in place).
+only S3's own release changes the cookie format: (4) old cookies are upgraded in place (user):
+the first request with a cookie lacking the new fields stamps the current session version and the
+sign-in time as now, so nobody is signed out. Accepted risk: a leaked pre-S3 cookie gets a fresh
+lifetime; "sign out everywhere", a password change or a key rotation ends it.
 
 **Dependencies:** after S2. Gatling simulations sign in through the form; check that
 `test/gatling` still signs in (no run unless the session code changes per-request cost).
