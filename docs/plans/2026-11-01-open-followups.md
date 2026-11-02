@@ -509,6 +509,9 @@ branch, merge commit `d9dbe0ed`.
   `70d48397` with nothing else running: exit 0 in 14 min, Scala **1404 total, 0 failed,
   0 errors** (1398 passed, 6 skipped, 1 pending); Jest 18 suites, 240 passed
   (`target/checks/20261102-023459-13464.log`).
+- **Final full suite** (the release check after B6 and B8) at `3f98b77a`: exit 0 in 15 min,
+  Scala **1412 total, 0 failed, 0 errors** (1406 passed, 6 skipped, 1 pending); Jest 18 suites,
+  240 passed (`target/checks/20261102-083340-18164.log`).
 
 ## Checked and already resolved (not part of this plan)
 
