@@ -41,13 +41,14 @@ object WikiLinks {
   private def escaped(wikiText: String): String = HtmlFormat.escape(plainText(wikiText)).body
 
   private val Comment = """(?s)<!--.*?(?:-->|\z)""".r
-  private val Ref = """(?is)<ref\b[^>]*/>|<ref\b[^>]*>.*?</ref\s*>""".r
-  private val NoWrap = """\{\{\s*(?:s|nowrap)\s*\|([^{}|]*)\}\}""".r
+  private val Ref = """(?is)<ref\b[^>]*/>|<ref\b[^>]*>.*?</ref\s*>|\{\{\s*ref\+[^{}]*\}\}""".r
+  private val NoWrap = """\{\{\s*(?:s|nowrap|comment)\s*\|([^{}|]*)(?:\|[^{}]*)?\}\}""".r
   private val NoWiki = """(?is)<nowiki\s*>(.*?)</nowiki\s*>|<nowiki\s*/>""".r
 
-  /** Without what the wiki doesn't show in place: comments and references (`<ref>`), with
-    * their content. `{{s|…}}` and `{{nowrap|…}}` become their text, and so does `<nowiki>…</nowiki>`,
-    * its brackets as references, so they make no link.
+  /** Without what the wiki doesn't show in place: comments and references (`<ref>`,
+    * `{{ref+|…}}`), with their content. `{{s|…}}`, `{{nowrap|…}}` and `{{comment|text|…}}`
+    * become their (first) text, and so does `<nowiki>…</nowiki>`, its brackets as references,
+    * so they make no link.
     */
   private def withoutHidden(wikiText: String): String = {
     val shown = Ref.replaceAllIn(Comment.replaceAllIn(wikiText, ""), "")

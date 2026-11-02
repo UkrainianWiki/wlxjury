@@ -63,10 +63,12 @@ class WikiLinksSpec extends Specification {
         "Ко, а1, x [[y]] &lt;"
       WikiLinks("''Дорошівка'' '''b'''", host).body === "Дорошівка b"
       WikiLinks("{{s|19-й км}} дороги", host).body === "19-й км дороги"
+      WikiLinks("{{comment|Рудня|кол. Червона}}", host).body === "Рудня"
     }
 
     "drop references and comments with their content" in {
       WikiLinks("Будинок<ref>В аварійному стані.</ref>", host).body === "Будинок"
+      WikiLinks("Село{{ref+|ліквідоване 1983 року|К|лік}}", host).body === "Село"
       WikiLinks("""87<!--<ref name="zh107">Колишня адреса</ref>--> x<ref name="a"/>""", host).body === "87 x"
       WikiLinks("a <!-- [[Hidden]] -->b", host).body === "a b"
     }
