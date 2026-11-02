@@ -207,47 +207,142 @@ tree; the backport code is safe to deploy as is):
 
 ## S2: Account integrity
 
-**Items:** O2, N2 (current password), N4, N7, N5, P14, P18, P20.
+**Items:** O2, N2 (current password), N4, N7, N5, P14, P18, P20; and the reviewer's out-of-scope
+note (an account with no memberships and no work history becomes password-editable by any admin
+who adds it by email).
+
+**Decisions (user, 2026-11-02):**
+
+1. **Invitations only.** Open sign-up ends (`/signup` is gone: 404). Accounts are created by an
+   admin/organizer adding a person (or by root); a new account gets no password and an invitation
+   link by mail; following it proves the email and sets the password. An empty database is set
+   up without a public form (P20).
+2. **Email verification.** Email ownership is proven by accepting an invitation or a password
+   link, and on any email change: the new address must confirm a link before it takes effect.
+   Changing one's own email or password needs the current password (N2).
+3. **Unverified flags.** `users.email_verified_at` and `users.wiki_account_verified_at` (NULL =
+   unverified). How existing accounts are marked: see the migration below.
+4. **O2.** An organizer's add of an email that matches an existing unverified account does not
+   hand the role to whoever holds that account's password: it sends an invitation; accepting it
+   sets a new password and invalidates the old one, the account's sessions and its API tokens.
+   A match by wiki account never attaches a role to an account whose wiki account is unverified.
+   Admins see the unverified state in the users list and the edit page.
+5. **Postponed (not in S2):** resolving duplicate wiki accounts (a later contests rework with an
+   admin UI for merging accounts); users editing their own wiki account (the WIP OAuth login,
+   which will verify it; until then users can't change their own wiki account; admins can, and it
+   stays unverified); the mail sender address and a greeting cap (N5): only the existing mail path
+   is kept working, for invitations.
+6. **N7.** With sign-up gone, invitation acceptance, the password link and the email change must
+   not reveal whether an email has an account.
 
 **Design:**
 
-- **O2 / N7 / P20.** Depends on decision 1. Recommended: no public sign-up once an installation
-  has a root (the first-run sign-up stays, behind a one-time setup token printed to the log, which
-  also ends P20's race); people join only through an organizer's invitation, which sets the
-  password through a single-use link. If sign-up stays: `users.email_verified_at` (migration),
-  sign-up sends a verification link; `addToContest` never joins an unverified self-registered
-  account (it refuses with a message, or resets it and sends an invitation, decision 2); the same
-  answer for taken and new emails (N7).
-- **N2 (first half).** The own profile asks for the current password to change the email or the
-  password (not when an admin or root changes another account).
-- **N4.** Validate wiki account names (MediaWiki user-name rules, first letter upper case,
-  underscores as spaces), a unique key (migration; the user resolves duplicates first, decision 3),
-  and whether a user may set their own (decision 4: read-only on the own profile, or only via
-  Commons OAuth later). URL-encode them in `users.scala.html` (as `monuments.scala.html`). The
-  session part (store the account id) is in S3.
-- **N5.** `From` is the configured tool address (`play.mailer` / `wlxjury.mail.from`), the admin in
-  `Reply-To`; the display name is sanitised; a cap on greetings per import and per hour
-  (decision 5).
-- **P14 / P18.** `byUserName` ignores `deleted_at IS NOT NULL` accounts and looks up the trimmed,
-  lowercased name.
+- **Access roles need a proven holder.** An access role (`jury`, `organizer`, `admin`) is attached
+  to an existing account directly only if nobody but the email's owner can sign in to it:
+  `User.mayTakeAccessRole` = root, or `email_verified_at` set, or no password at all (an invitee
+  who hasn't accepted yet, a wiki-only placeholder). Otherwise:
+  - an add by email (the users page, "Import users") records a **pending invitation**: no
+    membership yet; the invitation (an `account_token` row with the contest and role) is mailed
+    to the account's address; the users page lists pending invitations; accepting it creates the
+    membership;
+  - an add by wiki account only is **not added** (counted and said so: add the person by email);
+  - a role change in the edit form to an access role becomes a pending invitation (the old role
+    stays until it is accepted); without an email it is refused.
+  Roles without access (`no`, `board`, `auditor`, `staff`) join directly: they hand out nothing.
+- **New accounts** (an add whose email or wiki account matches nobody): created with the
+  membership as before, **without a password** (`users.password` NULL: nobody can sign in), and,
+  for an access role and an email, an invitation. The contest's greeting, when on, is the
+  invitation's text, with the link in place of `{{Password}}` (appended if the template lacks
+  it); otherwise a standard invitation text. A verified account joining gets the greeting as
+  before ("use your existing password").
+- **Tokens** (`account_token`, V77): purposes `invitation`, `password_reset`, `email_change`;
+  32 random bytes base64url, stored only as SHA-256 (as API tokens), single use (`used_at`),
+  revocable (`revoked_at`), expiring (invitation and password link 7 days, email change 24
+  hours), bound to the account and to the address it was sent to (refused if the account's email
+  changed since). Never logged: log lines name a token by id, an account by id.
+- **Acceptance** (`GET /invitation/:token` shows the form, `POST /invitation` with the CSRF
+  token): one transaction, the token row locked: new bcrypt hash, `email_verified_at` set,
+  `auth_version` + 1 (every session of the account ends), all its API tokens revoked, the
+  account's live invitations sent to the same address applied (memberships) and marked used,
+  other unused links revoked. The browser is then signed in. Any refused link (unknown, used,
+  expired, revoked, another address, a deleted account) shows the same page, 404, no-store,
+  `Referrer-Policy: no-referrer`.
+- **Sessions:** `users.auth_version` (V77, default 0); a session carries `authVersion` (absent =
+  0, for sessions from before the deploy) and `Secured.sessionUser` refuses a mismatch. This is the
+  part of S3's design S2 needs (acceptance, email change); S3 adds `accountId`, `issuedAt`, the
+  idle limit and bumps on password changes.
+- **Own profile (N2):** a new password or a new email needs the current password (400, nothing
+  changed, otherwise). A new email is not written: a confirmation link goes to it
+  (`/email/confirm/:token`, a page with a POST button); confirming sets it, verified, and bumps
+  `auth_version`. The answer is the same whether the address is taken or not (no mail is sent
+  if it is; N7). One's own wiki account is read-only (decision 5).
+- **Other accounts:** nobody sets another account's password any more (admins and root: 400);
+  root's "reset password" mails a password link instead (it used to set a random password and
+  say it was mailed, which it never was). An email change of another account: immediate (and a
+  new invitation) for an invitee without a password; otherwise root's goes through the
+  confirmation link and an admin's is refused (ask the person; this also closes the reviewer's
+  note: an admin can no longer take over an account added by email). A wiki account set by an
+  admin is validated, normalised (MediaWiki rules: `User:` prefix dropped, underscores as
+  spaces, first letter upper case, no `#<>[]|{}/@:=`, at most 85 characters), refused if another
+  account has it, and unverified.
+- **Re-sending an invitation** (`POST /users/:id/invite?contestId=`): an admin of that contest,
+  for a member or a pending invitee of it with an unverified email; never a root account; the
+  previous unused invitations into that contest are revoked, the pending role carried over.
+- **Bootstrap (P20):** `/setup` exists only while `users` is empty and `wlxjury.setup.token`
+  (`WLXJURY_SETUP_TOKEN`, at least 32 characters) is set; otherwise 404. Its form takes the token
+  (compared in constant time), an email and a password; the first root is created under a
+  database lock (`GET_LOCK`), so of two concurrent submits one creates it and the other gets the
+  404. The token is never logged. The login page of an empty database says to use the setup.
+- **N4:** links to Commons on the users page URL-encode the wiki account; sign-in and sessions by
+  wiki account need exactly one (non-deleted) account with it (an ambiguous name signs in no one:
+  use the email). **P14/P18:** `byUserName` ignores deleted accounts and looks up the trimmed,
+  lowercased email.
+- **N5:** unchanged (postponed): invitation mails go through the existing `SendMail` path,
+  `From` the inviter as before. A mail that fails is logged (account id) and counted in the
+  page's message; the invitation can be sent again.
 
-**Files:** `LoginController`, `UserController`, `UserService`, `SendMail`, `User`,
-`signUp`/`editUser`/`users` views, messages (four files), a migration.
+**Migration V77** (the highest on this branch is V76; take the next free number at merge time):
+`users.email_verified_at`, `users.wiki_account_verified_at` (TIMESTAMP(3) NULL),
+`users.auth_version` (INT UNSIGNED NOT NULL DEFAULT 0); table `account_token`. **Existing
+accounts:** root accounts with an email get `email_verified_at = NOW(3)` (the operators); every
+other account stays unverified, and no wiki account is verified (nothing has verified one).
+This is the safer default: the first time an existing account gets an access role in a contest
+(added again next year, or a role change), its owner accepts an invitation (one click, a new
+password) before the role applies; its current memberships keep working meanwhile. The
+alternative (open decision 1 below) would mark accounts with memberships or votes as verified.
+Reversal: the columns and the table can be dropped; nothing existing is rewritten.
 
-**Specs:** `LoginControllerSpec` (sign-up closed or verified; same answer for taken emails);
-`MultiContestUserSpec` (an unverified self-registered account is never joined; a wiki-account
-match never joins an account whose wiki name was self-set); `UserControllerSpec` (own email or
-password change without or with a wrong current password: 400, nothing changed; a wiki account
-another account has: refused; links encode `&`, `?`, `#`); `UserServiceSpec` (`Email.from` is the
-configured sender whatever the creator's profile says); `PasswordStorageSpec` (deleted account
-can't sign in). `MessagesCompletenessSpec`.
+**Files:** `LoginController`, `UserController`, `UserService`, `AccountTokenService` (new),
+`AccountTokenJdbc` (new), `User`, `Secured`, `ImageProxyController`, `ErrorHandler`,
+`CsrfErrorHandler`, views (`login`, `editUser`, `users`, new `invitation`, `emailConfirm`,
+`setup`, `accountLinkInvalid`), messages (four files), routes, V77, `CLAUDE.md`,
+`docs/deployment.md`.
 
-**Decisions (user):** (1) invitations only vs. email verification vs. sign-up as is plus no
-joining of unverified accounts; (2) what an organizer's add does with an unverified account;
-(3) duplicates of `wiki_account` in production (a read-only count query is part of the batch);
-(4) wiki account self-editable or not; (5) the sender address and the greeting cap.
+**Specs:** `AccountInvitationSpec` (new: sign-up gone; tokens hashed, single use, expiring,
+bound to account and address; acceptance takes an unverified account over: old password,
+sessions and API tokens end; pending roles applied; same page for every refused link; the
+O2 cases by email and by wiki account; role edits; re-send scoped to the admin's contest, never
+root; mail failure counted; log lines without emails or tokens), `OwnAccountSpec` (new: N2,
+email confirmation, N7, own wiki account read-only, others' passwords refused, admins' email
+changes), `SetupSpec` (new: P20), `db.AccountVerificationMigrationSpec` (new), plus
+`LoginControllerSpec`, `PasswordStorageSpec`, `UserControllerSpec`, `UserDbSpec`,
+`MultiContestUserSpec`, `RoleAssignmentSpec`, `SecuredSpec`, `MutationAuthorizationSpec`,
+`ApiTokenPageSpec`, `ProductionConfigSpec`, `views.*`.
 
-**Dependencies:** after S1 (same files). Mail delivery needs the server's SMTP settings (ops).
+**Open decisions (user):**
+
+1. Existing accounts: keep all non-root accounts unverified (implemented), or mark those with
+   memberships or votes as verified, so that returning jurors join new contests without an
+   invitation (accepts any past pre-claim as genuine).
+2. Ambiguous wiki-account sign-in: refused (implemented); run the read-only count
+   `SELECT wiki_account, COUNT(*) FROM users WHERE deleted_at IS NULL AND wiki_account IS NOT
+   NULL GROUP BY wiki_account HAVING COUNT(*) > 1` on production before the deploy to see who
+   would have to sign in by email.
+3. Notify the old address of an email change (not done).
+4. Invitation and link lifetimes (7 days / 24 hours, constants).
+
+**Dependencies:** after S1 (same files). Mail delivery needs the server's SMTP settings (ops);
+the invitations make it necessary for every new juror.
 
 ## S3: Sessions
 
