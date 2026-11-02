@@ -20,5 +20,9 @@
     <!-- a request for another host (AllowedHostsFilter): ErrorHandler logs it once as client_error;
          the filter's own WARN would double every scanner's request -->
     <logger name="play.filters.hosts.AllowedHostsFilter" level="ERROR"/>
+    <!-- the MariaDB driver logs every server error at WARN with its message, bound values
+         included (e.g. "Duplicate entry '<email>'"); the app logs failures itself without them
+         (db.scalikejdbc.SqlLogging, ErrorHandler) -->
+    <logger name="org.mariadb.jdbc" level="ERROR"/>
     <root level="WARN"><appender-ref ref="STDOUT"/><appender-ref ref="FILE"/></root>
 </configuration>
