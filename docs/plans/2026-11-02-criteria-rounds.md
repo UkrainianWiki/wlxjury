@@ -322,7 +322,8 @@ PageImportSpec, AppendImagesSpec, ImportFilesPageSpec): all passed but one examp
 (`target/checks/20261102-150736-24412.log`): the first lock spec saw no `LOCK WAIT` in 20 s, once,
 unexplained (it passed in every other run, before and after). Its helper now reports what
 happened instead (the waiter done, or `INNODB_TRX`'s rows); CriteriaRateSpec then passed 3 runs of
-3 (`target/checks/20261102-153722-29680.log`). Final run on the commit: below.
+3 (`target/checks/20261102-153722-29680.log`). Final run of that set on 5eef2db7: 263 passed, 0
+failed (`target/checks/20261102-155458-22196.log`).
 
 ### C2: criteria defined per round (after P0)
 
