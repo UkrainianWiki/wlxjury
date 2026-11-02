@@ -361,6 +361,34 @@ class RoundListDbSpec extends Specification with TestDb with BeforeAll with Befo
       }
     }
 
+    "have as many files as count() has in a Віа Регіа sub-region, a juror's without juror counts" in {
+      val (contest, _, user) = setUp(Round.ratesById(5))
+      val round = roundDao.create(Round(None, 2, contestId = contest.getId, rates = Round.ratesById(5), active = true,
+        specialNomination = Some("Віа Регіа")))
+      val images = Seq("07-101-0001", "07-101-0002", "07-102-0003", "14-101-0004").zipWithIndex.map { case (id, n) =>
+        Image(n.toLong, s"File:Image$n.jpg", None, None, 640, 480, Some(id))
+      }
+      imageDao.batchInsert(images)
+      monumentDao.batchInsert(images.flatMap(_.monumentId).map(id =>
+        new org.scalawiki.wlx.dto.Monument(id = id, name = s"Monument $id", page = "Test")))
+      scalikejdbc.DB.autoCommit { implicit s => scalikejdbc.SQL("UPDATE monument SET adm1 = SUBSTR(id, 1, 6)").update() }
+      val other = userDao.create(User("fullname1", "email1", None, Set("jury"), contestId = contest.id))
+      val votes = Seq(Seq(3, 0), Seq(0, 2), Seq(5, 5), Seq(1, 1))
+      selectionDao.batchInsert(images.zip(votes).flatMap { case (image, rates) =>
+        Seq(user, other).zip(rates).map { case (j, r) => Selection(image, j, round, r) }
+      })
+      val lists = for {
+        asUserId <- Seq(0L, user.getId)
+        filter <- Seq(VoteFilter.All, VoteFilter.Rated)
+        view <- Seq(GalleryView.ByRate, GalleryView.FileList)
+      } yield RoundList(round, asUserId, Some("07-101"), filter, view = view)
+      (lists.map(_.query.subRegions).distinct must_== Seq(true)) and
+        (lists.filter(_.asUserId != 0).map(_.jurorCounts()).distinct must_== Seq(None)) and
+        (lists.map(_.rankCounts().map(_._2).sum) must_== lists.map(_.count())) and
+        // the sub-region's two files; the juror's rated one, and both of all the jurors'
+        (lists.map(_.count()) must_== Seq(2, 2, 2, 2, 2, 2, 1, 1))
+    }
+
     "rank a rated round's files by their rate sums, rates below 0 too, across pages and past the end" in {
       val (round, _, ids) = setUpRated()
       // F2 6, F1 5, F0 3, F3 and F5 2 (in file order), F4 -1

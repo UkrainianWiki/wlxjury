@@ -1753,8 +1753,11 @@ page start inside a tie). Lists: rated all, rated "rated", rated unrated (empty)
 each `BinaryOrder`, selected, rejected, unrated (empty), a region; jurors' lists (rated, rated
 "rated", binary; the deferred join); file lists rated, rated "rated" + region, binary, binary
 difference selected, a juror's. In the timing runs every variant's page equalled A's in every
-round (ids, ranks, total). The fixture's rated round has no rate 0 or below, so the in-memory
-`rateSum` (rates below 0 as 0) against SQL `sum(s.rate)` in `RankKey` wasn't exercised.
+round (ids, ranks, total). The fixture's rated round has no rate 0 or below, so some of these
+checks couldn't fail on it: its unrated lists are empty, its "rated" lists are its whole lists
+("rated rated" = "rated all"), and the "ranks all set" check couldn't catch the in-memory
+`rateSum` (rates below 0 as 0) against SQL `sum(s.rate)` in `RankKey`, which no file of it
+tells apart. `RoundListDbSpec` guards that (phase 2).
 
 **Decision: K.** The pager's total of a ranked list is the sum of `keyCounts`' counts; the ranks
 stay as they are.
@@ -1812,8 +1815,10 @@ kept both sections). Commit `aaad3662`.
   `keyCounts` once and no `COUNT(DISTINCT s.page_id)`.
 - `RankKey.of` for a rated round: the file's rates summed as they are (`selection.map(_.rate).sum`),
   not `rateSum` (rates below 0 as 0), so the key read in memory is SQL's `sum(s.rate)`. Before,
-  a file with a rate below 0 got no rank in the by-rate gallery if its sum was below 0, and in the
-  file list (whose rows have each vote) the rank of its positive rates' sum, or none. The fixture has no such
+  in the by-rate gallery a file whose votes summed below 0 took the rank of the files summing to
+  exactly 0 if there were any (a wrong rank), else none; in the file list (whose rows have each
+  vote) a file with a rate below 0 took the rank of its positive rates' sum, if some file had
+  that sum, else none. The fixture has no such
   votes; the new spec has.
 - `RankQueryBenchmark`: `groupedReader(q.tally)` for B9's reader; it compiles (`Test/compile`).
 - `keyCounts` stays (the ranks, now the totals too).
@@ -1840,7 +1845,7 @@ removed afterwards; the benchmark's one-line `groupedReader` fix applied there u
 its tests didn't compile without it), B `aaad3662`. Client times, n = 30 a cell; paired deltas B
 run k minus A run k, sample by sample, and per block of 5.
 
-| Page | A median (min-max) | B median (min-max) | Paired delta, median (min-max) | B faster | Block median deltas |
+| Page | A median (min-max) | B median (min-max) | Paired delta, median (min-max) | B faster | Per block of 5: median(B) − median(A) |
 |---|---|---|---|---|---|
 | by-rate, round 2 (rated), all jurors | 1136 ms (1032-1512) | 1005 ms (912-1804) | **-122 ms** (-514 to +707) | 25 of 30 | -89, -119, -133, +25, -153, -130 |
 | by-rate, round 1 (yes/no), all jurors | 803 ms (711-2289) | 667 ms (612-977) | **-134 ms** (-1588 to +231) | 27 of 30 | -147, +34, -127, -204, -399, -131 |
@@ -1853,3 +1858,20 @@ the delta; the pilot settles it and was not expanded. Raw: `target/checks/b11-pi
 (`{A1,B1,B2,A2}-{client.csv,timing.jsonl}`, `summary.txt`, `b11-pilot-summary.json`); logs
 `target/checks/20261102-125306-6136.log`, `…-125524-17100.log` (B), A's in the removed worktree.
 
+
+### B11 review fixes
+
+The independent review found no High or Medium issues. Merged `ukwikidev/followups` at
+`fd6d1966` (B10) first (`72b41f3e`; the plan file keeps both sections, B10 then B11).
+
+| # | Finding | Fix |
+|---|---|---|
+| 1 | Low: no spec of the lists that newly take their total from `rankCounts` through the monument join with sub-regions (a juror's list in a Віа Регіа round has no `jurorCounts`) | `RoundListDbSpec` "have as many files as count() has in a Віа Регіа sub-region": adm1 monuments, sub-region 07-101; a juror's and all the jurors' lists, all and "rated", by rate and file list: the sum of the rank counts equals `count()` (2, or 1 for the juror's rated), juror counts none |
+| 2 | Low: `rateString`/`totalRate` (the gallery's rate label, the CSV's "Overall") still read `rateSum` (rates below 0 as 0), while the order and ranks read the SQL sum: votes 3, -1, 0 show "3" and rank as 2 | Not changed (display, and the order did this before B11). Follow-up: show a grouped row's SQL sum, and decide what a rated round's vote below 0 means |
+| 3 | Nit: `RankQueryBenchmark` didn't close its writers on failure, and exited 0 with mismatches | Writers closed in `finally`; exit 2 when a check found a mismatch (1 on an exception) |
+| 4 | Nit: some benchmark checks can't fail on the fixture | Said in the phase 1 correctness paragraph: no rate 0 or below, so the unrated lists are empty, "rated rated" = "rated all", and "ranks all set" couldn't catch `rateSum`; `RoundListDbSpec` guards it |
+| 5 | Nit: wording | The pilot's block column is named for what it is (per block of 5: median(B) − median(A)); the `RankKey` note says a file summing below 0 took the rank of the files summing to 0 (a wrong rank) if any, else none |
+
+Checks: `Test/compile`, `Gatling/compile`, `testOnly controllers.{RoundListDbSpec, RoundListSpec,
+AllJurorsListSpec, CsvSpec}`: 69 passed, 0 failed (`target/checks/20261102-130742-6824.log`). No
+display change, so no `views.*`; no benchmark rerun.

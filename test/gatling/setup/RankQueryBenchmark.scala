@@ -375,7 +375,8 @@ object RankQueryBenchmark {
   }
 
   def main(args: Array[String]): Unit = {
-    val status = try { body(); 0 } catch { case e: Throwable => e.printStackTrace(); 1 }
+    // 2: a variant ranked or counted a list otherwise than today's queries
+    val status = try { body(); if (problems.isEmpty) 0 else 2 } catch { case e: Throwable => e.printStackTrace(); 1 }
     sys.exit(status)
   }
 
@@ -386,171 +387,173 @@ object RankQueryBenchmark {
     outDir.mkdirs()
     val log = new PrintWriter(new File(outDir, "summary.txt"), "UTF-8")
     def say(line: String): Unit = { println(s"[ranks] $line"); log.println(line); log.flush() }
+    try {
+      val rated = Round.findById(f.roundRatingId).get
+      val binary = Round.findById(f.roundBinaryId).get
+      val version = sql"select version()".map(_.string(1)).single().get
+      val regions = sql"""select ${SQLSyntax.createUnsafely(db.scalikejdbc.rewrite.ImageDbNew.regionOf("s.monument_id"))} r,
+                          count(distinct s.page_id) n from selection s where s.round_id = ${rated.getId}
+                          group by r having r is not null order by n desc limit 2""".map(_.string(1)).list()
+      val juror = f.jurors.map(_._1).maxBy(j =>
+        sql"select count(*) from selection where jury_id = $j and round_id = ${rated.getId}".map(_.int(1)).single().get)
+      val bJuror = f.jurors.map(_._1).maxBy(j =>
+        sql"select count(*) from selection where jury_id = $j and round_id = ${binary.getId}".map(_.int(1)).single().get)
+      say(s"RankQueryBenchmark $stamp: MariaDB $version, rated round ${rated.getId}, binary round ${binary.getId}, " +
+        s"selection ${sql"select count(*) from selection".map(_.long(1)).single().get} rows, regions ${regions.mkString(",")}, " +
+        s"jurors $juror (rated), $bJuror (binary); warmup $warmup, samples $samples; SQL logging off")
+      val rateVals = sql"select rate, count(*) from selection where round_id = ${rated.getId} group by rate"
+        .map(rs => rs.int(1) -> rs.int(2)).list()
+      say(s"rated round's votes by rate: ${rateVals.mkString(", ")}")
 
-    val rated = Round.findById(f.roundRatingId).get
-    val binary = Round.findById(f.roundBinaryId).get
-    val version = sql"select version()".map(_.string(1)).single().get
-    val regions = sql"""select ${SQLSyntax.createUnsafely(db.scalikejdbc.rewrite.ImageDbNew.regionOf("s.monument_id"))} r,
-                        count(distinct s.page_id) n from selection s where s.round_id = ${rated.getId}
-                        group by r having r is not null order by n desc limit 2""".map(_.string(1)).list()
-    val juror = f.jurors.map(_._1).maxBy(j =>
-      sql"select count(*) from selection where jury_id = $j and round_id = ${rated.getId}".map(_.int(1)).single().get)
-    val bJuror = f.jurors.map(_._1).maxBy(j =>
-      sql"select count(*) from selection where jury_id = $j and round_id = ${binary.getId}".map(_.int(1)).single().get)
-    say(s"RankQueryBenchmark $stamp: MariaDB $version, rated round ${rated.getId}, binary round ${binary.getId}, " +
-      s"selection ${sql"select count(*) from selection".map(_.long(1)).single().get} rows, regions ${regions.mkString(",")}, " +
-      s"jurors $juror (rated), $bJuror (binary); warmup $warmup, samples $samples; SQL logging off")
-    val rateVals = sql"select rate, count(*) from selection where round_id = ${rated.getId} group by rate"
-      .map(rs => rs.int(1) -> rs.int(2)).list()
-    say(s"rated round's votes by rate: ${rateVals.mkString(", ")}")
+      def byRate(round: Round, order: ListOrder = ListOrder.ByRate, filter: VoteFilter = VoteFilter.All,
+          region: Option[String] = None, user: Long = 0) =
+        RoundList(round, user, region, filter, if (round.isBinary && order == ListOrder.ByRate && user == 0)
+          ListOrder.Binary(BinaryOrder.Default) else order, GalleryView.ByRate)
+      def fileList(round: Round, order: ListOrder = ListOrder.ByRate, filter: VoteFilter = VoteFilter.All,
+          region: Option[String] = None, user: Long = 0) =
+        RoundList(round, user, region, filter, order, GalleryView.FileList)
 
-    def byRate(round: Round, order: ListOrder = ListOrder.ByRate, filter: VoteFilter = VoteFilter.All,
-        region: Option[String] = None, user: Long = 0) =
-      RoundList(round, user, region, filter, if (round.isBinary && order == ListOrder.ByRate && user == 0)
-        ListOrder.Binary(BinaryOrder.Default) else order, GalleryView.ByRate)
-    def fileList(round: Round, order: ListOrder = ListOrder.ByRate, filter: VoteFilter = VoteFilter.All,
-        region: Option[String] = None, user: Long = 0) =
-      RoundList(round, user, region, filter, order, GalleryView.FileList)
-
-    // 1. the ranks
-    if (prop("check", "true").toBoolean) {
-      val checks: Seq[(String, RoundList)] = Seq(
-        "rated all" -> byRate(rated),
-        "rated rated" -> byRate(rated, filter = VoteFilter.Rated),
-        "rated unrated" -> byRate(rated, filter = VoteFilter.Unrated),
-        "rated region" -> byRate(rated, region = regions.headOption),
-        "rated rated region" -> byRate(rated, filter = VoteFilter.Rated, region = regions.headOption),
-        "binary approvals" -> byRate(binary),
-        "binary difference" -> byRate(binary, ListOrder.Binary(BinaryOrder.Difference)),
-        "binary approvals-only" -> byRate(binary, ListOrder.Binary(BinaryOrder.ApprovalsOnly)),
-        "binary selected" -> byRate(binary, filter = VoteFilter.Rate(1)),
-        "binary rejected" -> byRate(binary, filter = VoteFilter.Rate(-1)),
-        "binary unrated" -> byRate(binary, filter = VoteFilter.Unrated),
-        "binary region" -> byRate(binary, region = regions.headOption),
-        "juror rated" -> byRate(rated, user = juror),
-        "juror rated rated" -> byRate(rated, filter = VoteFilter.Rated, user = juror),
-        "juror binary" -> byRate(binary, ListOrder.Binary(BinaryOrder.Default), user = bJuror)
-      )
-      checks.foreach { case (label, list) => guarded(label)(checkByRate(label, list)) }
-      // several regions need the monument join, which a RoundList's one region doesn't have
-      if (regions.size == 2) guarded("rated two regions") {
-        val list = byRate(rated)
-        val adm0 = sql"""select m.adm0 from selection s join monument m on m.id = s.monument_id
-                          where s.round_id = ${rated.getId} group by m.adm0 order by count(*) desc limit 2"""
-          .map(_.string(1)).list()
-        println(s"[ranks] two regions: adm0 ${adm0.mkString(",")}")
-        val q = list.query.copy(regions = adm0.toSet)
-        val kc = Ranks(q.keyCounts(list.rankKey.columns))
-        val expected = q.list().map(f => f.pageId -> kc(list.rankKey.values(f)))
-        val got = readW(wPageSql(list, q, total = false), total = false)(rs => rs.long(i.resultName.pageId.value))
-          .map(r => r._1 -> r._2)
-        check("rated two regions (monument join) whole list", got == expected && expected.nonEmpty, firstDiff(got, expected))
-        println(s"[ranks] rated two regions: ${expected.size} files")
+      // 1. the ranks
+      if (prop("check", "true").toBoolean) {
+        val checks: Seq[(String, RoundList)] = Seq(
+          "rated all" -> byRate(rated),
+          "rated rated" -> byRate(rated, filter = VoteFilter.Rated),
+          "rated unrated" -> byRate(rated, filter = VoteFilter.Unrated),
+          "rated region" -> byRate(rated, region = regions.headOption),
+          "rated rated region" -> byRate(rated, filter = VoteFilter.Rated, region = regions.headOption),
+          "binary approvals" -> byRate(binary),
+          "binary difference" -> byRate(binary, ListOrder.Binary(BinaryOrder.Difference)),
+          "binary approvals-only" -> byRate(binary, ListOrder.Binary(BinaryOrder.ApprovalsOnly)),
+          "binary selected" -> byRate(binary, filter = VoteFilter.Rate(1)),
+          "binary rejected" -> byRate(binary, filter = VoteFilter.Rate(-1)),
+          "binary unrated" -> byRate(binary, filter = VoteFilter.Unrated),
+          "binary region" -> byRate(binary, region = regions.headOption),
+          "juror rated" -> byRate(rated, user = juror),
+          "juror rated rated" -> byRate(rated, filter = VoteFilter.Rated, user = juror),
+          "juror binary" -> byRate(binary, ListOrder.Binary(BinaryOrder.Default), user = bJuror)
+        )
+        checks.foreach { case (label, list) => guarded(label)(checkByRate(label, list)) }
+        // several regions need the monument join, which a RoundList's one region doesn't have
+        if (regions.size == 2) guarded("rated two regions") {
+          val list = byRate(rated)
+          val adm0 = sql"""select m.adm0 from selection s join monument m on m.id = s.monument_id
+                            where s.round_id = ${rated.getId} group by m.adm0 order by count(*) desc limit 2"""
+            .map(_.string(1)).list()
+          println(s"[ranks] two regions: adm0 ${adm0.mkString(",")}")
+          val q = list.query.copy(regions = adm0.toSet)
+          val kc = Ranks(q.keyCounts(list.rankKey.columns))
+          val expected = q.list().map(f => f.pageId -> kc(list.rankKey.values(f)))
+          val got = readW(wPageSql(list, q, total = false), total = false)(rs => rs.long(i.resultName.pageId.value))
+            .map(r => r._1 -> r._2)
+          check("rated two regions (monument join) whole list", got == expected && expected.nonEmpty, firstDiff(got, expected))
+          println(s"[ranks] rated two regions: ${expected.size} files")
+        }
+        Seq(
+          "file list rated" -> fileList(rated),
+          "file list rated rated region" -> fileList(rated, filter = VoteFilter.Rated, region = regions.headOption),
+          "file list binary" -> fileList(binary),
+          "file list binary difference selected" ->
+            fileList(binary, ListOrder.Binary(BinaryOrder.Difference), VoteFilter.Rate(1)),
+          "file list juror rated" -> fileList(rated, user = juror)
+        ).foreach { case (label, list) => guarded(label)(checkFileList(label, list)) }
+        say(s"rank checks: ${if (problems.isEmpty) "all equal" else s"${problems.size} mismatches"}")
+        problems.take(30).foreach(p => say(s"  $p"))
       }
-      Seq(
-        "file list rated" -> fileList(rated),
-        "file list rated rated region" -> fileList(rated, filter = VoteFilter.Rated, region = regions.headOption),
-        "file list binary" -> fileList(binary),
-        "file list binary difference selected" ->
-          fileList(binary, ListOrder.Binary(BinaryOrder.Difference), VoteFilter.Rate(1)),
-        "file list juror rated" -> fileList(rated, user = juror)
-      ).foreach { case (label, list) => guarded(label)(checkFileList(label, list)) }
-      say(s"rank checks: ${if (problems.isEmpty) "all equal" else s"${problems.size} mismatches"}")
-      problems.take(30).foreach(p => say(s"  $p"))
-    }
 
-    // 2. the timings
-    val r2 = byRate(rated)
-    val b1 = byRate(binary)
-    val deep = (r2.query.count() + r2.pageSize - 1) / r2.pageSize / 2
-    def byRateCase(label: String, list: RoundList, page: Int) = Case(label, Seq(
-      "A" -> (() => byRateA(list, page)),
-      "K" -> (() => byRateK(list, page)),
-      "W" -> (() => byRateW(list, page, total = false)),
-      "WC" -> (() => byRateW(list, page, total = true)),
-      "D" -> (() => byRateD(list, page)),
-      "DK" -> (() => byRateDK(list, page))
-    ))
-    def fileListCase(label: String, list: RoundList) = Case(label, Seq(
-      "A" -> (() => fileListA(list, 1, withCount = true)),
-      "K" -> (() => fileListA(list, 1, withCount = false)),
-      "W" -> (() => fileListW(list, 1, total = false)),
-      "WC" -> (() => fileListW(list, 1, total = true)),
-      "WCn" -> (() => fileListW(list, 1, total = true, narrow = true))
-    ))
-    def jurorCase(label: String, list: RoundList) = Case(label, Seq(
-      "A" -> (() => byRateA(list, 1, withCount = false)),
-      "W" -> (() => jurorW(list, 1))
-    ))
-    val jr = byRate(rated, user = juror)
-    val jb = byRate(binary, ListOrder.Binary(BinaryOrder.Default), user = bJuror)
-    val all = Seq(
-      byRateCase("rated-byrate-p1", r2, 1),
-      byRateCase(s"rated-byrate-p$deep", r2, deep),
-      byRateCase("binary-byrate-p1", b1, 1),
-      byRateCase(s"binary-byrate-p$deep", b1, deep),
-      fileListCase("rated-filelist-p1", fileList(rated)),
-      fileListCase("binary-filelist-p1", fileList(binary)),
-      jurorCase("juror-rated-byrate-p1", jr),
-      jurorCase("juror-binary-byrate-p1", jb)
-    ).filter(c => cases.findFirstIn(c.label).isDefined)
+      // 2. the timings
+      val r2 = byRate(rated)
+      val b1 = byRate(binary)
+      val deep = (r2.query.count() + r2.pageSize - 1) / r2.pageSize / 2
+      def byRateCase(label: String, list: RoundList, page: Int) = Case(label, Seq(
+        "A" -> (() => byRateA(list, page)),
+        "K" -> (() => byRateK(list, page)),
+        "W" -> (() => byRateW(list, page, total = false)),
+        "WC" -> (() => byRateW(list, page, total = true)),
+        "D" -> (() => byRateD(list, page)),
+        "DK" -> (() => byRateDK(list, page))
+      ))
+      def fileListCase(label: String, list: RoundList) = Case(label, Seq(
+        "A" -> (() => fileListA(list, 1, withCount = true)),
+        "K" -> (() => fileListA(list, 1, withCount = false)),
+        "W" -> (() => fileListW(list, 1, total = false)),
+        "WC" -> (() => fileListW(list, 1, total = true)),
+        "WCn" -> (() => fileListW(list, 1, total = true, narrow = true))
+      ))
+      def jurorCase(label: String, list: RoundList) = Case(label, Seq(
+        "A" -> (() => byRateA(list, 1, withCount = false)),
+        "W" -> (() => jurorW(list, 1))
+      ))
+      val jr = byRate(rated, user = juror)
+      val jb = byRate(binary, ListOrder.Binary(BinaryOrder.Default), user = bJuror)
+      val all = Seq(
+        byRateCase("rated-byrate-p1", r2, 1),
+        byRateCase(s"rated-byrate-p$deep", r2, deep),
+        byRateCase("binary-byrate-p1", b1, 1),
+        byRateCase(s"binary-byrate-p$deep", b1, deep),
+        fileListCase("rated-filelist-p1", fileList(rated)),
+        fileListCase("binary-filelist-p1", fileList(binary)),
+        jurorCase("juror-rated-byrate-p1", jr),
+        jurorCase("juror-binary-byrate-p1", jb)
+      ).filter(c => cases.findFirstIn(c.label).isDefined)
 
-    val csv = new PrintWriter(new File(outDir, "samples.csv"), "UTF-8")
-    csv.println("case,variant,sample,position,ms,parts")
-    say("")
-    say(f"${"case"}%-26s ${"var"}%-4s ${"median"}%8s ${"min"}%8s ${"max"}%8s ${"Δ vs A med"}%11s ${"Δ min"}%8s ${"Δ max"}%8s  per-query medians")
-    all.foreach { c =>
-      val ss = run(c)
-      ss.foreach(s => csv.println(f"${s.label},${s.variant},${s.sample},${s.position},${s.view.ms}%.2f," +
-        s.view.parts.map { case (k, v) => f"$k=$v%.2f" }.mkString(";")))
-      csv.flush()
-      val a = ss.filter(_.variant == "A").sortBy(_.sample).map(_.view.ms)
-      c.variants.map(_._1).foreach { v =>
-        val xs = ss.filter(_.variant == v).sortBy(_.sample)
-        val ms = xs.map(_.view.ms)
-        val deltas = ms.zip(a).map { case (x, y) => x - y }
-        val parts = xs.flatMap(_.view.parts).groupBy(_._1).map { case (k, p) => k -> median(p.map(_._2)) }
-        val order = xs.head.view.parts.map(_._1).distinct
-        say(f"${c.label}%-26s $v%-4s ${median(ms)}%8.1f ${ms.min}%8.1f ${ms.max}%8.1f ${median(deltas)}%+11.1f " +
-          f"${deltas.min}%+8.1f ${deltas.max}%+8.1f  " + order.map(k => f"$k ${parts(k)}%.1f").mkString(", "))
+      val csv = new PrintWriter(new File(outDir, "samples.csv"), "UTF-8")
+      try {
+        csv.println("case,variant,sample,position,ms,parts")
+        say("")
+        say(f"${"case"}%-26s ${"var"}%-4s ${"median"}%8s ${"min"}%8s ${"max"}%8s ${"Δ vs A med"}%11s ${"Δ min"}%8s ${"Δ max"}%8s  per-query medians")
+        all.foreach { c =>
+          val ss = run(c)
+          ss.foreach(s => csv.println(f"${s.label},${s.variant},${s.sample},${s.position},${s.view.ms}%.2f," +
+            s.view.parts.map { case (k, v) => f"$k=$v%.2f" }.mkString(";")))
+          csv.flush()
+          val a = ss.filter(_.variant == "A").sortBy(_.sample).map(_.view.ms)
+          c.variants.map(_._1).foreach { v =>
+            val xs = ss.filter(_.variant == v).sortBy(_.sample)
+            val ms = xs.map(_.view.ms)
+            val deltas = ms.zip(a).map { case (x, y) => x - y }
+            val parts = xs.flatMap(_.view.parts).groupBy(_._1).map { case (k, p) => k -> median(p.map(_._2)) }
+            val order = xs.head.view.parts.map(_._1).distinct
+            say(f"${c.label}%-26s $v%-4s ${median(ms)}%8.1f ${ms.min}%8.1f ${ms.max}%8.1f ${median(deltas)}%+11.1f " +
+              f"${deltas.min}%+8.1f ${deltas.max}%+8.1f  " + order.map(k => f"$k ${parts(k)}%.1f").mkString(", "))
+          }
+        }
+      } finally csv.close()
+
+      // 3. the plans
+      if (prop("explain", "true").toBoolean) {
+        val json = new PrintWriter(new File(outDir, "analyze.json.txt"), "UTF-8")
+        try {
+          say("")
+          val p1 = paged(r2, 1)
+          val b = paged(b1, 1)
+          val fl = fileList(rated)
+          val flq = paged(fl, 1)
+          val plans = Seq(
+            "rated count" -> r2.query.query(count = true),
+            "rated page (A)" -> p1.query(),
+            "rated page W" -> wPageSql(r2, p1, total = false),
+            "rated page WC" -> wPageSql(r2, p1, total = true),
+            "rated page D" -> dPageSql(r2, p1),
+            "rated page DK (no windows)" -> dPageSql(r2, p1, ranked = false),
+            "binary page D" -> dPageSql(b1, b),
+            "binary page DK (no windows)" -> dPageSql(b1, b, ranked = false),
+            "rated deep page (A)" -> paged(r2, deep).query(),
+            "rated deep page WC" -> wPageSql(r2, paged(r2, deep), total = true),
+            "binary page (A)" -> b.query(),
+            "binary page WC" -> wPageSql(b1, b, total = true),
+            "file list ids (A)" -> idQuery(flq).query(idOnly = true),
+            "file list ids WC" -> wIdSql(fl, flq, total = true),
+            "file list ids WCn" -> wIdNarrowSql(fl, flq),
+            "juror page (A)" -> paged(jr, 1).query(),
+            "juror page W" -> wJurorSql(jr, paged(jr, 1))
+          )
+          // keyCounts' SQL isn't exposed: the same text as SelectionQuery.keyCounts builds
+          val kcSql = SQLSyntax.createUnsafely("select k0, count(*) from (select sum(s.rate) as k0 from selection s") +
+            r2.query.where() + SQLSyntax.createUnsafely(" group by s.page_id ) t group by k0 order by k0 desc")
+          (plans :+ ("rated keyCounts" -> kcSql)).foreach { case (n, s) => say(analyze(n, s, json)) }
+        } finally json.close()
       }
-    }
-    csv.close()
-
-    // 3. the plans
-    if (prop("explain", "true").toBoolean) {
-      val json = new PrintWriter(new File(outDir, "analyze.json.txt"), "UTF-8")
-      say("")
-      val p1 = paged(r2, 1)
-      val b = paged(b1, 1)
-      val fl = fileList(rated)
-      val flq = paged(fl, 1)
-      val plans = Seq(
-        "rated count" -> r2.query.query(count = true),
-        "rated page (A)" -> p1.query(),
-        "rated page W" -> wPageSql(r2, p1, total = false),
-        "rated page WC" -> wPageSql(r2, p1, total = true),
-        "rated page D" -> dPageSql(r2, p1),
-        "rated page DK (no windows)" -> dPageSql(r2, p1, ranked = false),
-        "binary page D" -> dPageSql(b1, b),
-        "binary page DK (no windows)" -> dPageSql(b1, b, ranked = false),
-        "rated deep page (A)" -> paged(r2, deep).query(),
-        "rated deep page WC" -> wPageSql(r2, paged(r2, deep), total = true),
-        "binary page (A)" -> b.query(),
-        "binary page WC" -> wPageSql(b1, b, total = true),
-        "file list ids (A)" -> idQuery(flq).query(idOnly = true),
-        "file list ids WC" -> wIdSql(fl, flq, total = true),
-        "file list ids WCn" -> wIdNarrowSql(fl, flq),
-        "juror page (A)" -> paged(jr, 1).query(),
-        "juror page W" -> wJurorSql(jr, paged(jr, 1))
-      )
-      // keyCounts' SQL isn't exposed: the same text as SelectionQuery.keyCounts builds
-      val kcSql = SQLSyntax.createUnsafely("select k0, count(*) from (select sum(s.rate) as k0 from selection s") +
-        r2.query.where() + SQLSyntax.createUnsafely(" group by s.page_id ) t group by k0 order by k0 desc")
-      (plans :+ ("rated keyCounts" -> kcSql)).foreach { case (n, s) => say(analyze(n, s, json)) }
-      json.close()
-    }
-    log.close()
+    } finally log.close()
     println(s"[ranks] written $outDir")
   }
 }
