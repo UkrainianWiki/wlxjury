@@ -1292,3 +1292,81 @@ updated.
 Checks:
 - No other JVM running. `Test/compile` + `controllers.MonumentControllerSpec` and `views.*` (with `WikiLinksSpec`, now 10 examples, `GalleryDescriptionViewSpec` and `LargeViewFixturesSpec`): exit 0, 179 passed, 0 failed (`target/checks/20261102-032030-13844.log`); again after the `{{ref+}}`/`{{comment}}` handling: exit 0, 179 passed (`target/checks/20261102-032344-23792.log`).
 - The script: `bash -n` passed. A fake-`docker` run (`--dump-only`, the fake first on `PATH`; it logged all 7 calls) showed `WLXJURY_DB_PASSWORD` unset in every `docker` call's environment, the option file as before, and the temporary directory gone afterwards. The real `docker` was not run.
+
+## Batch B8 results
+
+Branch `ukwikidev/followups`. Commits `ea575a59` (the benchmark), then this one.
+
+**3.5, method.** Base `f9c31ce5` (the commit `ukwikidev/theme-modes` was branched from), in a
+detached worktree removed afterwards; variant `a4692f16` (this branch's HEAD before B8). Not
+`master`: it is from 2024-11 and predates most of the schema (the multi-contest migrations
+V61/V62, the `job` table), so the fixture and pages don't exist there. Both commits have the
+same `GalleryLatencyBenchmark` and the same fixture data (`GatlingDbSetup`: 38,366 files, 20
+jurors, 383,670 votes a round; v4 differs only in the password hashes), each tree its own
+`data/cache` dump (the base built its own). The UI fixture server was not used: the base lacks
+it. Each run: one fork of `Test/runMain gatling.setup.GalleryLatencyBenchmark` with
+`-Dbench.cases=^organizer-(binary|rated)-byrate-p1$ -Dbench.warmup=1 -Dbench.samples=15`
+(organiser session over HTTP, `/byrate/round/{1,2}/user/0/page/1`, 1 warm-up then 15 GETs, taken
+as 3 blocks of 5), fork `-Xmx1024m -Dfile.encoding=UTF-8 -Dgatling.timing=true
+-Dscalikejdbc.global.loggingSQLAndTime.enabled=false` (SQL logging off in both; root logger
+WARN), HikariCP pool in both (`[pool]` line), MariaDB 10.6.22 container per run, Windows, no
+other JVM. Order A, B, B, A (4 runs, ~2.5 min each). Round 1 (yes/no) is the control. Raw:
+`target/checks/b8-byrate-paired.json` (summary and every sample),
+`target/checks/b8-byrate-paired/{A1,B1,B2,A2}-{client.csv,timing.jsonl}` (client times and
+the server's per-query timing log). Paired deltas: B run k minus A run k, sample by sample, and
+per block of 5.
+
+| Page | Base median (min-max) | HEAD median (min-max) | Paired delta, median (min-max) | Block median deltas |
+|---|---|---|---|---|
+| by-rate, round 2 (rated), all jurors | 946 ms (874-1239) | 1132 ms (1059-1351) | **+196 ms** (-155 to +427) | +103 to +306 (6 of 6 positive) |
+| by-rate, round 1 (yes/no), all jurors | 945 ms (879-1152) | 745 ms (697-845) | **-206 ms** (-431 to -101) | -131 to -274 (6 of 6 negative) |
+
+n = 30 a cell. Block medians varied by 61 ms (base, rated) and 127 ms (HEAD, rated) between
+blocks, smaller than the delta, so the pilot settles it and was not expanded.
+
+**Decision.** Neither commit takes ~2 s on this fixture: the 1999 ms of the aggregate plan
+(533c4b88, UI fixture server) isn't reproduced at HEAD (1.13 s here). The rated round's page did
+get slower on these branches, by ~0.19 s (+20%); the yes/no round's got faster by ~0.21 s (the
+binary-aggregate work). From the timing log (median ms per query, rated page):
+
+| Query | Base | HEAD |
+|---|---|---|
+| `COUNT(DISTINCT page_id)` of the round (the pager) | 125 | 130 |
+| the grouped page (`sum(rate)`, `count(rate)`, … `GROUP BY s.page_id ORDER BY rate desc LIMIT`) | 772 | 841 |
+| `keyCounts` (files per summed rate, over the whole round) | none | 113 |
+
+Two commits:
+- `95783736` "Rank the by-rate gallery and tally the organisers' tiles": `RoundList.ranks` runs
+  `SelectionQuery.keyCounts` for the tiles' ranks, one more `GROUP BY s.page_id` over the
+  round's 383k votes (~113 ms). This is the feature's cost; it isn't redundant.
+- `79f5c51e` "Show a binary round's result as approvals, not stars": the grouped select now
+  always adds `sum(s.rate > 0) as approvals, sum(s.rate < 0) as rejections`
+  (`ImageDbNew.scala:92`), rated rounds too (~+70 ms on the page query). A rated round's
+  by-rate page shows the rate sum, not approvals; whether anything else reads the two sums for
+  a rated round wasn't checked. Not fixed here (the select is shared with the file list, CSV and large view,
+  so it needs those specs); the change, adding the two sums only for a binary round, is a
+  candidate for a later batch. No `EXPLAIN` was run: the per-query timings name the queries,
+  and neither changed plan (both are the round's `GROUP BY s.page_id`).
+
+**`RegionCountPairedBenchmark`: deleted** (`ea575a59`), not reworked. It compared
+`gallery.regionCounts` off and on (the 2026-10-25 decision, made since) with SQL pairs
+(`regionCounts` vs `byRegionStat`) and controller pairs that checked the counts in the gallery
+HTML. Since the region menu the gallery page renders no counts, so its page pairs measure
+nothing; the endpoint that does is timed by `GalleryLatencyBenchmark`'s `regions-<round>-juror`
+and `regions-<round>-organizer` cases (over HTTP, separately from the gallery pages), and the
+SQL by `RegionCountBenchmark` (`Q4j`/`Q4r` `byRegionStat`, `Q5app`/`Q6*` `regionCounts`). No
+sbt task referred to it; the region-improvements plan now says it was removed and keeps its
+recorded commands.
+
+Checks: `Test/compile` + `Gatling/compile` after the deletion: exit 0
+(`target/checks/20261102-034540-19504.log`). Runs: base `target/checks/20261102-033439-8788.log`
+and `…-034206-28872.log` (in the removed base worktree, summarised here), HEAD
+`target/checks/20261102-033721-24660.log` and `…-033958-24388.log`. No specs (no app code
+changed).
+
+**Open questions**
+- Drop the two sums for rated rounds (~70 ms a rated by-rate page)? It needs the file list, CSV
+  and large view specs.
+- The 2 s of the aggregate plan came from the UI fixture server at 533c4b88; it wasn't re-run
+  here (HEAD measures 1.13 s on the Gatling fixture). The single 4.9 s and 5.2 s outliers there
+  did not recur in 60 samples per variant (max 1351 ms).
