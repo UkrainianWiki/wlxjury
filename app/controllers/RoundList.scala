@@ -512,15 +512,17 @@ object RoundList {
 
   /** The cookie remembering the order of the viewer's own gallery, or of all the jurors'
     * votes on a yes/no round ([[BinarySortCookie]]), if the request names another than the
-    * one remembered.
+    * one remembered. `secure`: as the session cookie (`play.http.session.secure`), as
+    * [[ThemeCookies]] does.
     */
-  def remembered(list: RoundList, viewer: User)(implicit request: RequestHeader): Option[Cookie] = {
+  def remembered(list: RoundList, viewer: User, secure: Boolean)(implicit request: RequestHeader): Option[Cookie] = {
     val cookie =
       if (ownGallery(viewer, list.asUserId, list.view)) Some(SortCookie)
       else Option.when(list.aggregateBinary && list.order.isInstanceOf[ListOrder.Binary])(BinarySortCookie)
     cookie.filter(name =>
       requestedOrder.contains(list.order) && !request.cookies.get(name).exists(_.value == list.order.param)
-    ).map(Cookie(_, list.order.param, maxAge = Some(SortCookieAge), sameSite = Some(Cookie.SameSite.Lax)))
+    ).map(Cookie(_, list.order.param, maxAge = Some(SortCookieAge), secure = secure,
+      sameSite = Some(Cookie.SameSite.Lax)))
   }
 
   private val SortCookieAge = 365 * 24 * 60 * 60

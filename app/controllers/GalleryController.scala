@@ -27,6 +27,9 @@ class GalleryController @Inject() (
 ) extends Secured(cc)
     with I18nSupport {
 
+  /** Whether the session cookie is Secure (production.conf): the sort cookies follow it. */
+  private val sessionSecure = config.getOptional[Boolean]("play.http.session.secure").getOrElse(false)
+
   val Selected = "selected"
 
   val Filter = "filter"
@@ -143,7 +146,7 @@ class GalleryController @Inject() (
           ) { contest =>
             val list = RoundList.of(round, user, asUserId, region, view)
             at.fold(
-              page => galleryOf(user, list, page, rounds, contest).withCookies(RoundList.remembered(list, user).toSeq: _*),
+              page => galleryOf(user, list, page, rounds, contest).withCookies(RoundList.remembered(list, user, sessionSecure).toSeq: _*),
               // the page with the file, or where it would be if the filter now leaves it out
               pageId => Redirect(list.position(pageId).fold(list.pageUrl(1))(p =>
                 list.pageUrl(Pager.pageOf(p, list.pageSize)) + "#" + pageId))

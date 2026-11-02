@@ -18,6 +18,9 @@
     <logger name="coi" level="INFO" />
     <!-- refused personal API tokens (services.ApiTokenService): by id or prefix, never the token -->
     <logger name="services.ApiTokenService" level="INFO" />
+    <!-- a request for another host (AllowedHostsFilter): ErrorHandler logs it once as client_error;
+         the filter's own WARN would double every scanner's request -->
+    <logger name="play.filters.hosts.AllowedHostsFilter" level="ERROR" />
 
     <logger name="com.gargoylesoftware.htmlunit.javascript" level="OFF" />
 
