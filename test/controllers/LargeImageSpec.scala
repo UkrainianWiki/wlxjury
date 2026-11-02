@@ -777,6 +777,18 @@ class LargeImageSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
+    "be refused, as in a stopped round, to a juror stopped on the round, with the token (P6)" in {
+      withCsrfApp { app =>
+        setUpVote(app)
+        RoundUser.setActive(round.getId, user.getId, active = false)
+
+        val result = send(app, POST, "csrfToken" -> token)
+        status(result) === SEE_OTHER
+        redirectLocation(result) must beSome.which(_.startsWith(s"/gallery/round/${round.getId}/"))
+        rate() === Some(0)
+      }
+    }
+
     "be cast by a POST with the token, going on to the next file" in {
       withCsrfApp { app =>
         setUpVote(app)
@@ -844,6 +856,23 @@ class LargeImageSpec extends PlaySpecification with PlayTestDb {
         status(signedOut) === UNAUTHORIZED
         (contentAsJson(signedOut) \ "error").as[String] === "unauthenticated"
         rate() === Some(0)
+      }
+    }
+
+    "be refused as JSON, as in a closed round, to a juror stopped on the round, with the token (P6)" in {
+      withCsrfApp { app =>
+        setUpTile()
+        val sessionToken = CsrfTestApp.token(app)
+        RoundUser.setActive(round.getId, user.getId, active = false)
+        val stopped = vote(app, sessionToken, "Csrf-Token" -> sessionToken)
+        status(stopped) === CONFLICT
+        (contentAsJson(stopped) \ "error").as[String] === "round_closed"
+        rate() === Some(0)
+
+        // active again: the vote is taken
+        RoundUser.setActive(round.getId, user.getId, active = true)
+        status(vote(app, sessionToken, "Csrf-Token" -> sessionToken)) === OK
+        rate() === Some(1)
       }
     }
 
