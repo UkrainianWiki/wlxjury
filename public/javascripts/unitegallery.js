@@ -19420,13 +19420,11 @@ function UniteGalleryMain(){
 
 		var themeFunction = getThemeFunction(g_options.gallery_theme);
 
-		try{
-			g_options.gallery_theme = eval(themeFunction);
-		}catch(e){
-			//check registered themes
-		};
-
-		g_options.gallery_theme = eval(themeFunction);
+		// wlxjury: the theme's constructor is a global function (ug-theme-tiles.js), looked up by
+		// name rather than with eval, which the content security policy refuses (no 'unsafe-eval')
+		g_options.gallery_theme = window[themeFunction];
+		if(typeof g_options.gallery_theme != "function")
+			throw new Error("unite gallery: the theme " + themeFunction + " isn't loaded");
 
 		//init the theme
 		g_objTheme = new g_options.gallery_theme();

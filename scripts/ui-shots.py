@@ -121,6 +121,8 @@ def pages(s):
     return [
         ("login", None, "/auth"),
         ("error404-anon", None, "/no-such-page"),
+        # Swagger UI (Tapir's page and our swagger-initializer.js) under the production policy
+        ("api-docs", None, "/api/docs"),
         ("gallery", "juror", f"/gallery/round/{rb}/user/{j}/page/1"),
         ("filelist", "juror", f"/filelist/round/{rb}/user/{j}/page/1"),
         ("large", "juror", f"/large/round/{rb}/user/{j}/pageid/{p}"),

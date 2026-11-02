@@ -110,13 +110,17 @@ object GatlingTestFixture {
 
   /** With -Dui.csp=production (the screenshot harness's --csp), the production content security
     * policy from conf/application.conf, which the tests' config doesn't include. With
-    * -Dui.csp=strict (--csp-strict), that policy with scripts from this host only, no inline
-    * script or handler: the browser then reports each inline one left as a violation. */
+    * -Dui.csp=strict (--csp-strict), that policy with its script-src replaced by this host's
+    * files only, without the inline scripts' hashes: the browser then reports each inline script
+    * as a violation, which lists them. */
   private def cspConfig: Map[String, Any] =
     sys.props.get("ui.csp").filter(Set("production", "strict")).fold(Map.empty[String, Any]) { mode =>
       val production = com.typesafe.config.ConfigFactory.parseFile(new java.io.File("conf/application.conf"))
         .getString("play.filters.headers.contentSecurityPolicy")
-      val csp = if (mode == "strict") production + "; script-src 'self' 'unsafe-eval'" else production
+      val csp =
+        if (mode != "strict") production
+        else production.split(";").map(_.trim).map(d => if (d.startsWith("script-src")) "script-src 'self'" else d)
+          .mkString("; ")
       println(s"[csp] $csp")
       Map("play.filters.headers.contentSecurityPolicy" -> csp)
     }
