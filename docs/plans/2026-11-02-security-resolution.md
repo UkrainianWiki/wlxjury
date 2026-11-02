@@ -514,6 +514,84 @@ would end every old session at once.
 **Dependencies:** after S2. Gatling simulations sign in through the form; check that
 `test/gatling` still signs in (no run unless the session code changes per-request cost).
 
+### S3 results (2026-11-02)
+
+**Branch** `ukwikidev/security-s3` (from `ukwikidev/followups` at 58c5a2b8). **No migration:** S2's
+`users.auth_version` (V77) suffices; the times live in the signed cookie. Not reviewed yet (S3 gets a
+fresh independent reviewer).
+
+**As implemented** (the user's decisions above):
+
+- **Session fields:** a sign-in stores `username`, `account_id`, `auth_version` (S2), `issued_at`,
+  `last_seen` (epoch seconds) and, if "Keep me signed in" was checked, `keep=1`
+  (`Secured.signedInSession`, `SessionLifetime.signedIn`). The login name stays in the session (S2's
+  lookup by name plus the id check); dropping it is left for a later change.
+- **Limits:** `controllers.SessionLifetime` with `wlxjury.session.absoluteDays = 365`, `idleDays = 30`,
+  `touchMinutes = 5` (read once from the config, as `PasswordHasher.default`; validated: positive,
+  touch shorter than idle). `Secured.sessionUserOf` refuses a session past either limit or with a
+  malformed time; a missing time counts as now (the in-place upgrade). The thumbnail proxy checks the
+  same (`ImageProxyController.serve`).
+- **`modules.SessionLifetimeFilter`**, first in `play.filters.enabled` (prepended in
+  `conf/application.conf`, the test config and the Gatling timing list), so the CSRF filter and the
+  actions see its session: an expired session's sign-in keys (`SessionLifetime.SignInKeys`, the
+  session's contest included) are taken out of the request and the browser, other keys (the CSRF
+  token) kept, logged `session_expired reason=absolute|idle|malformed|old_cookie_unmatched accountId=`
+  on `security.auth` (INFO); a pre-S3 cookie is upgraded in place (one lookup by its exact name, S2's
+  `sessionMatches`; then `account_id`, `auth_version`, `issued_at = last_seen = now` stamped, logged
+  `session_upgraded accountId=`), or signed out if it no longer resolves; `last_seen` is refreshed once
+  it is 5 minutes old. Only upgrades query the database; the version check stays in `sessionUserOf`
+  (one lookup per request, as before), so no per-request query was added and no Gatling pilot was run
+  (`Gatling/compile` passes; the simulations sign in through the form, without the checkbox field).
+- **Cookies:** Play's `session.maxAge` stays unset (a browser-session cookie). For a kept session the
+  filter writes the session cookie itself, `SessionCookieBaker.encodeAsCookie` with Max-Age = the idle
+  limit, capped at what is left of the absolute one; it clears the result's `newSession` so only one
+  `PLAY_SESSION` cookie leaves (through the router, specs read a kept session from `cookies(result)`).
+  A signed-out request goes through it too (a sign-in's new session). No session cookie is added to a
+  response a shared cache may keep (Play's CSRF rule: a Cache-Control without no-store, no-cache or
+  private). Upgraded pre-S3 cookies get no `keep` (they were browser-session cookies before).
+- **Ending sessions** (`users.auth_version` + 1): "Sign out everywhere" (`POST /logout/everywhere`, the
+  own profile's "Sessions" card, CSRF) ends every session **including this one** (the button says
+  "everywhere"; it redirects to the login page); root's "End sessions" (`POST /users/:id/sessions/end`,
+  root only, CSRF, a button next to "Reset password" on another account's edit page; 404 for no
+  account) ends the account's sessions, root's own only if it is root's account; one's own password
+  change (`User.setPasswordHash` now bumps and returns the version, in one quiet transaction) ends
+  every other session and **keeps this browser signed in** with the new version (`addingToSession`).
+  Logged `sessions_ended accountId= by=self|byAccountId=` and `password_changed accountId= by=self
+  sessionsEnded=true` (ids only). Accepted links and email changes bump as in S2.
+- **API tokens:** survive one's own password change; "Revoke all tokens" (`POST /users/tokens/revoke-all`,
+  CSRF, shown in the tokens card when one is unrevoked; `ApiTokenService.revokeAllOwn`, the user's row
+  locked, `api_token_revoked by=self userId tokenIds`, sharing `revokeByRoot`'s transaction). An
+  accepted password link or invitation still revokes them (S2).
+- **Login form:** the "Keep me signed in" checkbox (`remember`), checked on a new form, as sent on a
+  re-render; a form without it (unchecked, the Gatling simulations, scripts) gets a browser-session
+  cookie. Invitation acceptance and `/setup`, which have no checkbox, keep the session (the default).
+- **Accepted risks (recorded):** a leaked pre-S3 cookie gets a fresh lifetime at its first request
+  (user decision; "sign out everywhere", a password change or a key rotation ends it); the thumbnail
+  proxy's per-viewer cache (`ViewerTtl`, 1 minute) may serve thumbnails to a just-ended session for up
+  to that minute; `last_seen` is refreshed at most every 5 minutes, so the idle limit is exact to that.
+- **Docs:** `docs/deployment.md` "Sessions and the signing key" (limits, what ends sessions, key
+  rotation: what it ends, when, how: `runtime.env`, then the next `wlxjury-release deploy` or
+  `systemctl restart wlxjury`; no secrets); `CLAUDE.md` auth section; messages in all four languages.
+- **Not done here:** N6 (login CSRF, moved to "S3 or S7") is left for S7; L3's root-side check (root's
+  own `auth_version` in `revokeByRoot`) is not added: revoking only reduces access.
+
+**Specs** (one sbt JVM at a time, through `scripts/agent-check.py`; no full suite):
+
+| Run | Specs | Result | Log |
+|---|---|---|---|
+| 1 | `SessionLifetimeSpec`, `SessionsSpec`, `SecuredSpec` (with `Test/compile`, `Gatling/compile`) | 4 failures in the new `SessionsSpec`, test-side (log read before the action ran; form markup; the juror's start page is a 200) | `target/checks/20261102-164204-19128.log` |
+| 2 | the S3 specs and the affected ones: `LoginControllerSpec`, `ApiTokenPageSpec`, `SignOutAndSwitchSpec`, `PasswordStorageSpec`, `OwnAccountSpec`, `AccountInvitationSpec`, `AccountReviewFixesSpec`, `SetupSpec`, `ImageProxyControllerSpec`, `ImageProxyFileCheckSpec`, `MutationAuthorizationSpec`, `ThemeSwitchSpec`, `CoiAuthorizationSpec`, `LargeImageSpec`, `MultiContestUserSpec`, `RoleAssignmentSpec`, `UserControllerSpec`, `ErrorHandlerSpec`, `UserPasswordSpec`, `ApiTokenJdbcSpec`, `api.ApiSpec`, `ProductionConfigSpec`, `security.*`, `views.*` | 564: 561 passed. Fixed: a sign-in from a signed-out request did not get the persistent cookie (the filter skipped requests without a session user); a duplicate message key. Not S3: `UserPasswordSpec`'s control check (an ordinary failing statement logs its value, line 91) fails since S5 turned `scalikejdbc.global.loggingSQLErrors` off | `target/checks/20261102-164610-1804.log` |
+| 3 | `SessionsSpec`, `LoginControllerSpec`, `SignOutAndSwitchSpec`, `ApiTokenPageSpec`, `MessagesCompletenessSpec` (with `Test/compile`, `Gatling/compile`) | 62 passed | `target/checks/20261102-165449-23052.log` |
+
+New specs: `controllers.SessionLifetimeSpec` (6, no database), `controllers.SessionsSpec` (17, router
+with the CSRF filter: sign out everywhere ends a second browser's session and needs the token; root's
+end sessions, refused to an admin and a juror (403) and without the token; the own password change
+ends the other sessions, keeps this one with the new version and the API tokens; revoke all tokens
+(only the user's, CSRF); the checkbox, and Max-Age set or omitted; absolute and idle expiry, keeping the
+CSRF token; refresh only after 5 minutes; a persistent cookie's Max-Age capped by the absolute limit; a
+pre-S3 cookie upgraded in place; a pre-S3 cookie of another account id or an older version refused).
+`SecuredSpec`: one new example (stale version, other account, absolute, idle, malformed, pre-S3 times).
+
 ## S4: Throttling
 
 **Items:** P1, N6, P13 (failed tokens).

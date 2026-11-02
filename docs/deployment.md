@@ -253,6 +253,37 @@ Before deploying the release that carries V77 (S2), run the read-only count of d
 accounts in the S2 section of `docs/plans/2026-11-02-security-resolution.md`: a wiki account
 that several accounts share no longer signs anyone in (they sign in by email).
 
+### Sessions and the signing key
+
+A signed-in session lasts at most a year from sign-in and a month without a request
+(`wlxjury.session.absoluteDays`, `idleDays`; security batch S3). "Keep me signed in" (checked by
+default) keeps the cookie across browser restarts; unchecked, it ends with the browser. Every
+account has a session version (`users.auth_version`) that each request checks: "Sign out
+everywhere" on the profile, a password change or a password link, a confirmed email change and
+root's "End sessions" on an account's edit page end every session of that account (the password
+change keeps the browser that made it). API tokens are not sessions: a user's own password change
+leaves them (the profile's "Revoke all tokens" ends them); an accepted password link or
+invitation revokes them. Ordinary releases keep everyone signed in: the cookies are signed with
+`PLAY_HTTP_SECRET_KEY`, which a release does not change.
+
+**Rotating the signing key** (`PLAY_HTTP_SECRET_KEY` in `runtime.env`) ends every session at once,
+for every account: everyone signs in again. It also invalidates the flash and the CSRF tokens of
+open pages (a form sent from a page loaded before the restart shows the "reload the page" page
+once). API tokens and mailed links are not affected (they are checked against the database). Do
+it when the key may have leaked (a copy of `runtime.env`, a backup or a log that held it), when
+someone who could read it leaves, or to end every session without touching accounts (sessions
+from before S3 included: the in-place upgrade of those cookies gives them a fresh lifetime, an
+accepted risk). For one account, use "End sessions" instead. To rotate:
+
+1. Generate a new random key of at least 32 bytes on the server, e.g. `openssl rand -base64 48`,
+   and write it as the `PLAY_HTTP_SECRET_KEY` value in `runtime.env` (one double-quoted value,
+   the file stays root-only `0600`). Don't print it into a shared terminal log, a ticket or a
+   document, and don't keep the old value.
+2. Restart the app so it reads the new key: either with the next release
+   (`sudo wlxjury-release deploy ...`, which stops and starts it) or at once with
+   `sudo systemctl restart wlxjury`, at a quiet time (votes in flight are retried by the user).
+3. Check `/health/ready` and sign in once.
+
 ### One app instance
 
 The app assumes that one instance serves a database at a time. Some state lives in the JVM:
