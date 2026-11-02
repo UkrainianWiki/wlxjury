@@ -285,7 +285,13 @@ SELECT s.round_id, COUNT(*) FROM selection s JOIN (SELECT selection, SUM(IF(rate
   deploy, or the `criterion` row keeps a fallback text shown when the key has no translation
   (`MessagesCompletenessSpec` must cover the shipped keys). Choose in C2's design.
 
-Still open: U4, U5, U6, U8, U9, U10, U11, U12.
+- **U5, U6, U8–U12:** as recommended: a criteria vote counts as rated only when all criteria are
+  rated; rates are written on vote (upsert); the CSV has per-criterion averages only; no sorting by
+  one criterion for now; after the first vote only names can change; drop `selection.criteria_id`
+  and `criteria.contest` after C0; repair votes whose rate differs from their criteria sum by
+  migration if C0 finds any.
+
+Still open: U4 (the C4 keyboard model, explained to the user).
 
 The options as first written:
 

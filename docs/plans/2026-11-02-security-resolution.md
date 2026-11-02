@@ -295,6 +295,10 @@ tokens limited); `CsrfTestApp` router spec: a cookieless `POST /auth` without a 
 **Decisions (user):** (1) app vs. fail2ban; (2) limits (e.g. 10 failures per 15 minutes per
 address, 5 per account).
 
+**Decided (user, 2026-11-02):** fail2ban, not in the app; S4 is skipped here and goes to the
+infra plan (`security.auth` log line it can match, limits set there). N6 (login CSRF) is not
+throttling and moves to S3 or S7.
+
 **Dependencies:** after S3 if both touch `LoginController` in the same week; otherwise free.
 
 ## S5: Output and log hygiene
@@ -334,6 +338,9 @@ refused); `MutationAuthorizationSpec` (deactivated juror's vote refused, if deci
 can't sign in).
 
 **Dependencies:** P5 after B10's benchmark run (do not change the proxy while it measures).
+
+**Decided (user, 2026-11-02):** P6: a deactivated juror must not vote (both vote actions check
+`round_user.active`; 409 like a stopped round). P7: pending clarification.
 
 ## S7: Headers and CSP
 
