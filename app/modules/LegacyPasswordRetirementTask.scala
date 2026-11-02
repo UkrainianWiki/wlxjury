@@ -1,9 +1,11 @@
 package modules
 
 import db.scalikejdbc.LegacyPasswordRetirementJdbc
+import db.scalikejdbc.LegacyPasswordRetirementJdbc.RetireFailed
 import play.api.inject.ApplicationLifecycle
 import play.api.{Configuration, Logger}
 
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.{Executors, ScheduledExecutorService, TimeUnit}
 import javax.inject.{Inject, Singleton}
 import scala.concurrent.Future
@@ -17,22 +19,38 @@ import scala.util.control.NonFatal
   * legacy hash stops signing in at the end of the grace period whether this has run or not
   * ([[db.scalikejdbc.User.login]]). Logs the number replaced, never a hash or an account.
   *
-  * @param retire replaces the hashes if it is time; the number replaced
+  * @param retire    replaces the hashes if it is time; the number replaced
+  * @param graceLeft the grace period's time left ([[LegacyPasswordRetirementJdbc.secondsLeft]]):
+  *                  None without its table or row, said once (`legacy_password_grace_missing`):
+  *                  nothing is ever retired then, which an operator should know
   */
-class LegacyPasswordRetirement(retire: () => Int = () => LegacyPasswordRetirementJdbc.retire()) {
+class LegacyPasswordRetirement(
+    retire: () => Int = () => LegacyPasswordRetirementJdbc.retire(),
+    graceLeft: () => Option[Long] = () => LegacyPasswordRetirementJdbc.secondsLeft()
+) {
 
   private val logger = Logger("security.password")
+  private val missingSaid = new AtomicBoolean(false)
 
-  /** One check: the number of hashes replaced (0 on a failure, logged by its class only). */
+  /** One check: the number of hashes replaced; on a failure those replaced before it (a chunk's
+    * [[RetireFailed]]), logged with the error's class only. WARN: production logs WARN and up.
+    */
   def runOnce(): Int =
     try {
-      val replaced = retire()
-      // WARN: production logs WARN and up, and the replacement is to be seen there
-      if (replaced > 0) logger.warn(s"legacy_passwords_retired count=$replaced")
-      replaced
+      if (graceLeft().isEmpty) {
+        if (missingSaid.compareAndSet(false, true)) logger.warn("legacy_password_grace_missing")
+        0
+      } else {
+        val replaced = retire()
+        if (replaced > 0) logger.warn(s"legacy_passwords_retired count=$replaced")
+        replaced
+      }
     } catch {
+      case e: RetireFailed =>
+        logger.warn(s"legacy_passwords_retire_failed replaced=${e.replaced} error=${e.getCause.getClass.getSimpleName}")
+        e.replaced
       case NonFatal(e) =>
-        logger.warn(s"legacy_passwords_retire_failed error=${e.getClass.getSimpleName}")
+        logger.warn(s"legacy_passwords_retire_failed replaced=0 error=${e.getClass.getSimpleName}")
         0
     }
 }

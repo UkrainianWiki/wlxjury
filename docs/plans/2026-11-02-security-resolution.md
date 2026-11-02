@@ -797,6 +797,9 @@ the grace period ends. Merged `ukwikidev/followups` (22e5d8b2) first.
 | Low: P5 fetch amplification: Wikimedia's sizes above the widest cached one were each fetched from Wikimedia on every request | `servedWidths` is the thumbnail widths and the large view's fallback only; a file of unknown size has none (redirected to Wikimedia, nothing fetched here). The per-user miss limit stays a tracked residual (register P5) | `ImageProxyWidthSpec`: 1280/1920/3840 go to the 960 fallback, nothing cached; unknown size goes to Wikimedia; `ImageProxyFileCheckSpec`'s renamed-file case uses the stored file's fallback (960) |
 | Low: P6 race: a vote racing a deactivation could land | The rate update (`SelectionJdbc.rate`) and the criterion update (`CriteriaRate.updateRateIn`'s locking read) carry `NOT EXISTS (... round_user ... active = FALSE)`; the action's check stays for the stopped round's answer | `MutationAuthorizationSpec`: both statements refuse a stopped juror's vote, nothing written |
 | Nit: the retirement locked every row of `users` | A plain read of the ids, then per chunk of 500 `UPDATE ... WHERE id IN (...) AND password REGEXP ...` and the record of exactly those rows | `PasswordStorageSpec` (retirement cases) |
+| Follow-up review: a vanished grace table or row was silent (nothing ever retired) | `LegacyPasswordRetirement.runOnce` reads the time left first and logs `legacy_password_grace_missing` once (WARN) when there is none | `PasswordStorageSpec` ("the retirement task") |
+| Follow-up review: a failing chunk hid the hashes replaced by the chunks before it | `retire` throws `RetireFailed(replaced, cause)`; the task logs `legacy_passwords_retire_failed replaced=N error=<class>` and returns N | `PasswordStorageSpec` ("the retirement task") |
+| Follow-up review: a stored file of known width but unknown height got no served widths (its thumbnails redirected to Wikimedia) | `servedWidths` is empty only for an unknown width; for an unknown height it is what the pages compute from the width | `ImageProxyWidthSpec` (800 × 0 and 4000 × 0 among the rendered sizes) |
 | Nit: a protocol-relative `//upload.wikimedia.org/...` url | `CommonsFileCheck.withScheme` (https) before `isCommonsUrl` in `source()` and in `wikiThumbUrl` | `LocalImageCacheServiceSpec` |
 
 **Review fix checks** (under the lock): `Test/compile`, `Gatling/compile`, `testOnly` of the specs
@@ -804,7 +807,9 @@ above and `ImageProxyControllerSpec`, `LocalImageCacheFileCheckSpec`, `CommonsFi
 `LargeImageSpec`, `OwnAccountSpec`, `UserControllerSpec`, `LoginControllerSpec`, `SetupSpec`,
 `GalleryOrderSpec`, `CriteriaRateSpec`, `LegacyPasswordRetirementMigrationSpec`, `MigrationNamingSpec`,
 `MessagesCompletenessSpec`, `GlobalLargeImageSpec`, `ThumbnailUrlsExportSpec`, `security.*`: 358 passed,
-0 failed (`target/checks/20261102-193255-18272.log`).
+0 failed (`target/checks/20261102-193255-18272.log`). Follow-up review rows: `Test/compile`,
+`ImageProxyWidthSpec`, `PasswordStorageSpec`, `LocalImageCacheServiceSpec`, `security.*`: 129 passed,
+0 failed (`target/checks/20261102-194520-1204.log`).
 
 **Decided (user, 2026-11-02),** as the reviewer and the orchestrator recommended (no code change):
 P6, keep the large view's redirect to the gallery for a stopped juror (as for a stopped

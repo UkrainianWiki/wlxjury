@@ -57,7 +57,9 @@ class ImageProxyWidthSpec
 
     "include every width the pages ask the proxy for" in {
       val files = for {
-        (w, h) <- Seq((800, 600), (4000, 3000), (3000, 4000), (640, 480), (10000, 1000), (200, 150), (300, 400))
+        // of unknown height too: the pages still compute widths from the width (review follow-up)
+        (w, h) <- Seq((800, 600), (4000, 3000), (3000, 4000), (640, 480), (10000, 1000), (200, 150), (300, 400),
+          (800, 0), (4000, 0))
         name   <- Seq("Photo.jpg", "Doc.pdf")
       } yield Image(1L, s"File:$name", Some(s"https://upload.wikimedia.org/wikipedia/commons/a/ab/$name"), None, w, h)
       def proxied(url: String) =

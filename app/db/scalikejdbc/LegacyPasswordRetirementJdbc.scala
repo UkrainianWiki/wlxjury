@@ -4,6 +4,7 @@ import scalikejdbc._
 import services.PasswordHasher
 
 import java.sql.SQLException
+import scala.util.control.NonFatal
 
 /** The grace period of legacy SHA-1 password hashes (P8, V81: `legacy_password_retirement`, 3
   * months from the S6 deploy) and their replacement after it.
@@ -12,6 +13,11 @@ object LegacyPasswordRetirementJdbc {
 
   /** A legacy hash as stored ([[PasswordHasher.isLegacy]]; any case, as MariaDB compares here). */
   private val LegacyPattern = "^[0-9a-f]{40}$"
+
+  /** A chunk of [[retire]] failed after `replaced` hashes were replaced (and recorded) by the
+    * chunks before it; the cause is the chunk's error.
+    */
+  final class RetireFailed(val replaced: Int, cause: Throwable) extends Exception(cause)
 
   /** Seconds from now (the database clock) to the end of the grace period, negative once it has
     * passed; None without the row or the table (V81 undone by `DROP TABLE` or `DELETE`: never
@@ -44,8 +50,8 @@ object LegacyPasswordRetirementJdbc {
     else {
       val ids = User.quietTx(implicit s =>
         sql"SELECT id FROM users WHERE password REGEXP $LegacyPattern".map(_.long(1)).list.apply())
-      ids.grouped(500).map { chunk =>
-        User.quietTx { implicit session =>
+      ids.grouped(500).foldLeft(0) { (done, chunk) =>
+        done + (try User.quietTx { implicit session =>
           val replaced = sql"""UPDATE users SET password = ${PasswordHasher.RetiredLegacy}
                                 WHERE id IN ($chunk) AND password REGEXP $LegacyPattern""".update.apply()
           if (replaced > 0)
@@ -53,8 +59,8 @@ object LegacyPasswordRetirementJdbc {
                   SELECT id, NOW(3) FROM users WHERE id IN ($chunk) AND password = ${PasswordHasher.RetiredLegacy}"""
               .update.apply()
           replaced
-        }
-      }.sum
+        } catch { case NonFatal(e) => throw new RetireFailed(done, e) })
+      }
     }
 
   /** The accounts whose legacy hash was replaced ([[retire]]), by id. */

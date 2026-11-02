@@ -758,13 +758,14 @@ object LocalImageCacheService {
   /** The widths the image proxy serves the image at ([[controllers.ImageProxyController]]), the
     * widths the pages ask for, narrowest first: the thumbnails' ([[Global.thumbnailWidths]],
     * [[cachedWidths]] those narrower than the file) and the large view's fallback
-    * ([[Global.largeFallbackPx]]). None for a file of unknown size: the pages ask the proxy for
-    * none of its widths (they show the file itself). Any other width would be scaled again, or
+    * ([[Global.largeFallbackPx]]). None for a file of unknown width: the pages ask the proxy for
+    * none of its widths (they show the file itself); one of unknown height gets those the pages
+    * compute from its width, as they do. Any other width would be scaled again, or
     * fetched from Wikimedia, on every request (P5): the proxy redirects it to the nearest of
     * these ([[nearestWidth]]).
     */
   def servedWidths(image: Image): Seq[Int] =
-    if (image.width <= 0 || image.height <= 0) Nil
+    if (image.width <= 0) Nil
     else
       (Global.thumbnailWidths(image.width, image.height).filter(_ > 0) :+ Global.largeFallbackPx(image)).distinct.sorted
 

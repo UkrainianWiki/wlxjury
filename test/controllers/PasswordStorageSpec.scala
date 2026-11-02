@@ -194,6 +194,26 @@ class PasswordStorageSpec extends PlaySpecification with PlayTestDb with Mockito
     }
   }
 
+  "the retirement task" should {
+    "say once that the grace period's table or row is gone, and retire nothing" in {
+      var calls = 0
+      val task = new modules.LegacyPasswordRetirement(() => { calls += 1; 5 }, () => None)
+      val (results, log) = withPasswordLog(Seq(task.runOnce(), task.runOnce()))
+      results === Seq(0, 0)
+      calls === 0
+      log === Seq("legacy_password_grace_missing")
+    }
+
+    "report the hashes replaced before a chunk failed" in {
+      val task = new modules.LegacyPasswordRetirement(
+        () => throw new db.scalikejdbc.LegacyPasswordRetirementJdbc.RetireFailed(500, new java.sql.SQLTransientException("x")),
+        () => Some(-1L))
+      val (replaced, log) = withPasswordLog(task.runOnce())
+      replaced === 500
+      log === Seq("legacy_passwords_retire_failed replaced=500 error=SQLTransientException")
+    }
+  }
+
   "a legacy SHA-1 hash, after its grace period (P8)" should {
     "not sign in even before it is replaced, the page pointing to a password link" in {
       testDbApp { implicit app =>
