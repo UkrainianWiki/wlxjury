@@ -8,7 +8,8 @@ import scalikejdbc._
   * round form's checkbox, or after a member was added. The rates of such a file are not
   * kept: its `selection` rows, those moved aside to `selection_deleted` (so that restoring
   * the file on Commons brings nothing back, as [[SelectionJdbc.removeImage]]) and their
-  * `criteria_rate` rows (which reference `selection.id` without a foreign key) are deleted.
+  * `criteria_rate` rows (which reference `selection.id` without a foreign key) are deleted
+  * ([[SelectionJdbc.deleteVotes]]).
   * The round then leaves them out of its later distributions too ([[Round.excludeCoi]]).
   *
   * Nothing is kept to show it later, so each removal is a log line on the `coi` logger,
@@ -63,14 +64,8 @@ object RoundConflicts {
           sql"UPDATE rounds SET exclude_coi = TRUE WHERE id = $roundId".update()
           val conflicts = CoiMembers.roundFiles(roundId, CoiMembers.forContest(contestId))
           val pageIds = conflicts.map(_._1)
-          if (pageIds.nonEmpty) {
-            Seq(sqls"selection", sqls"selection_deleted").foreach { table =>
-              sql"""DELETE cr FROM criteria_rate cr JOIN $table s ON s.id = cr.selection
-                    WHERE s.round_id = $roundId AND s.page_id IN ($pageIds)""".update()
-            }
-            sql"DELETE FROM selection WHERE round_id = $roundId AND page_id IN ($pageIds)".update()
-            sql"DELETE FROM selection_deleted WHERE round_id = $roundId AND page_id IN ($pageIds)".update()
-          }
+          // the votes locked before their criteria rates are deleted, as every vote delete
+          if (pageIds.nonEmpty) SelectionJdbc.deleteVotes(sqls"v.round_id = $roundId AND v.page_id IN ($pageIds)")
           Outcome.Removed(conflicts)
       }
     }

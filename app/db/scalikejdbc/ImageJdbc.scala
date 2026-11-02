@@ -368,7 +368,9 @@ object ImageJdbc extends CRUDMapper[Image]
     pageIds
   }
 
-  /** Moves the selection rows `where` selects to selection_deleted.
+  /** Moves the selection rows `where` selects to selection_deleted. They keep their ids, so
+    * their criteria rates follow them; those of an older row of the same vote that the move
+    * replaces are deleted with it.
     *
     * @return their rounds
     */
@@ -378,6 +380,14 @@ object ImageJdbc extends CRUDMapper[Image]
     val roundIds = sql"SELECT DISTINCT round_id FROM selection WHERE $where FOR UPDATE"
       .map(_.long(1))
       .list()
+    // the rows aside that REPLACE drops: the same vote (page, juror, round) under another id,
+    // moved aside before the file was distributed to the juror again; locked, then their rates
+    // deleted (selection, then selection_deleted, then criteria_rate, as SelectionJdbc.deleteVotes)
+    // (`where` on v: those rows have the moved rows' page and round, so its index is used)
+    val replaced = sqls"""$where AND EXISTS (SELECT 1 FROM selection s WHERE s.id <> v.id
+                            AND s.page_id = v.page_id AND s.jury_id = v.jury_id AND s.round_id = v.round_id)"""
+    sql"SELECT COUNT(*) FROM selection_deleted v WHERE $replaced FOR UPDATE".map(_.int(1)).single()
+    sql"DELETE cr FROM criteria_rate cr JOIN selection_deleted v ON v.id = cr.selection WHERE $replaced".update()
     sql"REPLACE INTO selection_deleted SELECT * FROM selection WHERE $where".update()
     sql"DELETE FROM selection WHERE $where".update()
     roundIds
@@ -406,10 +416,18 @@ object ImageJdbc extends CRUDMapper[Image]
     val roundIds = sql"SELECT DISTINCT d.round_id FROM selection_deleted d WHERE $where FOR UPDATE"
       .map(_.long(1))
       .list()
-    sql"""DELETE s FROM selection s JOIN selection_deleted d ON $sameVote
-          WHERE $where AND COALESCE(s.rate, 0) = 0 AND COALESCE(d.rate, 0) <> 0""".update()
+    // the new rows the moved ones replace, and the moved rows dropped, go with their
+    // criteria rates; the moved rows keep their ids and so their rates
+    val replacedNew = sqls"$where AND COALESCE(s.rate, 0) = 0 AND COALESCE(d.rate, 0) <> 0"
+    sql"SELECT COUNT(*) FROM selection s JOIN selection_deleted d ON $sameVote WHERE $replacedNew FOR UPDATE"
+      .map(_.int(1)).single()
+    sql"""DELETE cr FROM criteria_rate cr JOIN selection s ON s.id = cr.selection
+          JOIN selection_deleted d ON $sameVote WHERE $replacedNew""".update()
+    sql"DELETE s FROM selection s JOIN selection_deleted d ON $sameVote WHERE $replacedNew".update()
     sql"""INSERT INTO selection SELECT d.* FROM selection_deleted d
           WHERE $where AND $roundExists AND NOT EXISTS (SELECT 1 FROM selection s WHERE $sameVote)""".update()
+    sql"""DELETE cr FROM criteria_rate cr JOIN selection_deleted d ON d.id = cr.selection
+          WHERE $where AND NOT EXISTS (SELECT 1 FROM selection s WHERE s.id = d.id)""".update()
     sql"DELETE d FROM selection_deleted d WHERE $where".update()
     roundIds
   }

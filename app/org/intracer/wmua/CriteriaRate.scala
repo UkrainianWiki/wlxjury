@@ -20,24 +20,47 @@ object CriteriaRate extends SQLSyntaxSupport[CriteriaRate] {
       rate = rs.int(c.rate)
     )
 
-  def updateRate(selection: Long, criteria: Long, rate: Int)(implicit
-      session: DBSession = autoSession
-  ): Unit = {
-    withSQL {
-      update(CriteriaRate)
-        .set(column.rate -> rate)
-        .where
-        .eq(column.selection, selection)
-        .and
-        .eq(column.criteria, criteria)
-    }.update()
+  /** Rates one criterion of a vote and sets the vote's rate to the sum of its criteria's
+    * positive rates, in one transaction: the vote row is locked first (`FOR UPDATE`), so
+    * votes on two criteria of one vote follow each other and the second sums both. Lock
+    * order: selection, then criteria_rate (the rates of a vote are written only while it is
+    * locked, also when votes are deleted: [[db.scalikejdbc.SelectionJdbc.deleteVotes]]).
+    * Retried once if the database picked it as a deadlock's victim.
+    *
+    * @return whether the vote has that criterion: false for a vote gone or a criterion it
+    *         hasn't, which changes nothing
+    */
+  def updateRate(selection: Long, criteria: Long, rate: Int): Boolean =
+    retryOnDeadlock(DB.localTx { implicit session => updateRateIn(selection, criteria, rate) })
 
-    sql"""UPDATE selection s
-          SET rate =
-          IFNULL((SELECT sum(rate) FROM criteria_rate WHERE selection = $selection AND rate>0), 0)
-         WHERE s.id = $selection"""
-      .update()
-  }
+  /** [[updateRate]] in the caller's transaction. */
+  def updateRateIn(selection: Long, criteria: Long, rate: Int)(implicit session: DBSession): Boolean =
+    sql"SELECT id FROM selection WHERE id = $selection FOR UPDATE".map(_.long(1)).single().isDefined && {
+      // the driver counts the rows matched, not changed (useAffectedRows off): a vote of the
+      // stored rate counts too
+      val matched = sql"""UPDATE criteria_rate SET rate = $rate
+                          WHERE selection = $selection AND criteria = $criteria""".update()
+      matched > 0 && {
+        val sum = sql"""SELECT COALESCE(SUM(IF(rate > 0, rate, 0)), 0) FROM criteria_rate
+                        WHERE selection = $selection FOR UPDATE""".map(_.int(1)).single().getOrElse(0)
+        sql"UPDATE selection SET rate = $sum WHERE id = $selection".update()
+        true
+      }
+    }
+
+  /** MariaDB's error for a transaction rolled back as a deadlock's victim. */
+  private val DeadlockErrorCode = 1213
+
+  private[wmua] def isDeadlock(e: Throwable): Boolean =
+    Iterator.iterate(e)(_.getCause).takeWhile(_ != null).take(10).exists {
+      case sql: java.sql.SQLException => sql.getErrorCode == DeadlockErrorCode || sql.getSQLState == "40001"
+      case _                          => false
+    }
+
+  /** `tx` again once if the database rolled it back as a deadlock's victim. */
+  private[wmua] def retryOnDeadlock[T](tx: => T): T =
+    try tx
+    catch { case e: Throwable if isDeadlock(e) => tx }
 
   /** The number of criteria of a criteria round: those rated in one of its selections, as a
     * distribution gives each of them a rate per criterion (DistributeImages.addCriteriaRates);
@@ -54,21 +77,4 @@ object CriteriaRate extends SQLSyntaxSupport[CriteriaRate] {
   )(implicit session: DBSession = autoSession): Seq[CriteriaRate] = withSQL {
     select.from(CriteriaRate as c).where.eq(column.selection, selection)
   }.map(CriteriaRate(c)).list()
-
-  def batchInsert(rates: Seq[CriteriaRate]): Unit = {
-    val column = CriteriaRate.column
-    DB localTx { implicit session =>
-      val batchParams: Seq[Seq[Any]] =
-        rates.map(i => Seq(i.selection, i.criteria, i.rate))
-      withSQL {
-        insert
-          .into(CriteriaRate)
-          .namedValues(
-            column.selection -> sqls.?,
-            column.criteria -> sqls.?,
-            column.rate -> sqls.?
-          )
-      }.batch(batchParams: _*).apply()
-    }
-  }
 }

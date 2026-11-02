@@ -1,7 +1,7 @@
 package db.scalikejdbc
 
 import java.time.ZonedDateTime
-import org.intracer.wmua.{CriteriaRate, Selection}
+import org.intracer.wmua.Selection
 import scalikejdbc._
 import scalikejdbc.orm.CRUDMapper
 
@@ -13,7 +13,6 @@ object SelectionJdbc extends CRUDMapper[Selection] {
 
   val s = SelectionJdbc.syntax("s")
   val u = User.u
-  val c = CriteriaRate.c
 
   private def isNotDeleted = sqls.isNull(s.deletedAt)
 
@@ -144,24 +143,6 @@ object SelectionJdbc extends CRUDMapper[Selection] {
       .apply()
       .headOption
 
-  def byRoundWithCriteria(roundId: Long): Seq[Selection] =
-    withSQL {
-      select(SQLSyntax.sum(c.rate), SQLSyntax.count(c.rate), s.result.*)
-        .from(SelectionJdbc as s)
-        .leftJoin(CriteriaRate as c)
-        .on(s.id, c.selection)
-        .where
-        .eq(s.roundId, roundId)
-        .and
-        .append(isNotDeleted)
-        .groupBy(s.id)
-    }.map(rs => (SelectionJdbc(s)(rs), rs.intOpt(1).getOrElse(0), rs.intOpt(2).getOrElse(0)))
-      .list()
-      .map { case (selection, sum, criterias) =>
-        if (criterias > 0) selection.copy(rate = sum / criterias)
-        else selection
-      }
-
   def destroy(pageId: Long, juryId: Long, roundId: Long): Unit =
     updateBy(
       sqls
@@ -220,18 +201,11 @@ object SelectionJdbc extends CRUDMapper[Selection] {
       .distinctCount("juryId")
 
   /** Removes the image from the round, also its votes moved aside (V63): restoring its file
-    * on Commons must not bring them back.
+    * on Commons must not bring them back. Their criteria rates go with them ([[deleteVotes]]).
     */
   def removeImage(pageId: Long, roundId: Long): Unit = {
     DB.localTx { implicit session =>
-      // unaliased columns: a DELETE has no "s" alias ("Unknown column 's.page_id'")
-      deleteBy(
-        sqls
-          .eq(column.pageId, pageId)
-          .and
-          .eq(column.roundId, roundId)
-      )
-      sql"DELETE FROM selection_deleted WHERE page_id = $pageId AND round_id = $roundId".update()
+      deleteVotes(sqls"v.page_id = $pageId AND v.round_id = $roundId")
     }
     RoundImageCounts.invalidate(roundId)
   }
@@ -239,33 +213,53 @@ object SelectionJdbc extends CRUDMapper[Selection] {
   /** Removes the round's unrated votes, also those moved aside (V63), as [[removeImage]]. */
   def removeUnrated(roundId: Long): Unit = {
     DB.localTx { implicit session =>
-      deleteBy(
-        sqls
-          .eq(column.rate, 0)
-          .and
-          .eq(column.roundId, roundId)
-      )
-      sql"DELETE FROM selection_deleted WHERE rate = 0 AND round_id = $roundId".update()
+      deleteVotes(sqls"v.rate = 0 AND v.round_id = $roundId")
     }
     RoundImageCounts.invalidate(roundId)
   }
 
+  /** Deletes the votes `where` selects (on alias `v`), in selection and in selection_deleted,
+    * with their criteria rates (criteria_rate.selection has no foreign key, and a cascade
+    * would not do: moving a vote aside deletes it from selection). Per table, the votes are
+    * locked first (`FOR UPDATE`: a shared lock taken by the joins below would deadlock, on
+    * its upgrade, with a juror voting on one of them), then their rates and they are deleted:
+    * rates are written only while their vote is locked ([[org.intracer.wmua.CriteriaRate.updateRate]]).
+    *
+    * @return the votes deleted
+    */
+  def deleteVotes(where: SQLSyntax)(implicit session: DBSession): Int =
+    Seq(sqls"selection", sqls"selection_deleted").map { table =>
+      lockVotes(table, where)
+      sql"DELETE cr FROM criteria_rate cr JOIN $table v ON v.id = cr.selection WHERE $where".update()
+      sql"DELETE v FROM $table v WHERE $where".update()
+    }.sum
+
+  /** Locks the votes `where` selects (on alias `v`) in `table` for an update: `COUNT(*)`
+    * locks every row it reads and sends none.
+    */
+  private[scalikejdbc] def lockVotes(table: SQLSyntax, where: SQLSyntax)(implicit session: DBSession): Unit =
+    sql"SELECT COUNT(*) FROM $table v WHERE $where FOR UPDATE".map(_.int(1)).single(): Unit
+
   /** Moves the source round's votes `andWhere` selects (on `src`) to the target round, in
     * selection and in selection_deleted, but those of a juror who has the image in the
-    * target round already: they are dropped.
+    * target round already: they are dropped, with their criteria rates. The moved votes keep
+    * their ids, so their criteria rates follow them.
     */
   private def moveVotes(targetRoundId: Long, sourceRoundId: Long, andWhere: SQLSyntax)(implicit
       session: DBSession
   ): Unit =
     Seq(sqls"selection", sqls"selection_deleted").foreach { table =>
-      sql"""DELETE src FROM $table src
-            JOIN $table tgt
+      val source = sqls"src.round_id = $sourceRoundId $andWhere"
+      val inTarget = sqls"""JOIN $table tgt
               ON tgt.round_id = $targetRoundId
              AND tgt.page_id = src.page_id
-             AND tgt.jury_id = src.jury_id
-            WHERE src.round_id = $sourceRoundId $andWhere""".update()
+             AND tgt.jury_id = src.jury_id"""
+      sql"SELECT COUNT(*) FROM $table src WHERE $source FOR UPDATE".map(_.int(1)).single()
+      sql"""DELETE cr FROM criteria_rate cr JOIN $table src ON src.id = cr.selection $inTarget
+            WHERE $source""".update()
+      sql"DELETE src FROM $table src $inTarget WHERE $source".update()
 
-      sql"UPDATE $table src SET src.round_id = $targetRoundId WHERE src.round_id = $sourceRoundId $andWhere".update()
+      sql"UPDATE $table src SET src.round_id = $targetRoundId WHERE $source".update()
     }
 
 }
