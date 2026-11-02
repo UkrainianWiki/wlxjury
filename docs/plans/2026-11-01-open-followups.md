@@ -1875,3 +1875,125 @@ The independent review found no High or Medium issues. Merged `ukwikidev/followu
 Checks: `Test/compile`, `Gatling/compile`, `testOnly controllers.{RoundListDbSpec, RoundListSpec,
 AllJurorsListSpec, CsvSpec}`: 69 passed, 0 failed (`target/checks/20261102-130742-6824.log`). No
 display change, so no `views.*`; no benchmark rerun.
+
+## Batch B12: the grouped page from selection, then its images
+
+Branch `ukwikidev/followups-b12` from `b52d120f` (B11 merged). Commit `6a8b06bc`, then this one.
+`docs/plans/2026-11-02-round-images-two-step.md` P2b will later read these lists from
+`round_image`; `GroupedListParitySpec` is written for it to reuse.
+
+**Plan (from B11's phase 1: DK and WCn).**
+1. The grouped page of all the jurors' votes, the by-rate gallery and the large view's files
+   around one (`aroundAtOffset`, the same `SelectionQuery.list()` with a limit), and
+   `ImageJdbc.byRoundMerged` (with `Limit(Int.MaxValue, 0)`; only the in-memory
+   `DistributeImages` path reads it, which tests use as the oracle: production distribution,
+   `RoundDistributionHandler`, has its own SQL): a
+   deferred join, `ImageDbNew.SelectionQuery.deferredGroupedPage`. The inner query groups,
+   orders and pages the votes on `selection` alone (`s.page_id`, `sum(s.rate)`, `count(s.rate)`,
+   with B9's `tally` the approvals and rejections, and the ORDER BY columns as `o0`, `o1`, ...;
+   the WHERE, HAVING and ORDER BY as before), joined to `images` (and `monument`) only for the
+   monument table's regions (several regions, a Віа Регіа sub-region); the outer reads the page's
+   images and puts the page back in order by `k.o*`. The aggregates come first, so the grouped
+   reader is unchanged. Every selection row has its image (FK, V58), so it pages the same files.
+2. Page id queries (`query(idOnly = true)`: the file list's page, the CSV's `pageKeys`, a file's
+   `imageRank` in the large view) read `s.page_id` from `selection` without the images join,
+   unless the monument table's region needs them.
+3. Item 3 of the batch, why a rated page costs more than a yes/no one: `ANALYZE` probes only.
+
+**Specs.** New `controllers.GroupedListParitySpec`: the lists of all the jurors' votes against a
+model computed from the votes in memory (`GroupedListModel`: which files, in what order, with
+what sums, counts, tallies, ranks). 40 files in regions 07 (sub-regions 07-101, 07-102) and 14,
+every 10th without a monument id; 4 jurors, 2-4 votes a file, rates with many ties; pages of 3
+(ties span pages), every page and the one past the end; the count, the rank counts' sum, ranks;
+positions and the large view's files around every 5th file; a rated round (each filter and
+`Rate(2)`, regions none/07/14/99 (empty), by rate in rate and file order, the file list), a yes/no
+round (each filter, each `BinaryOrder` and file order, regions none/07/99, the file lists), the
+large view's file the filter leaves out (`withPageId`), a criteria round, two regions through the
+monument table, and a Віа Регіа sub-region. The spec passes on the old path too (`b52d120f`, run
+in the pilot's base worktree), so the model is the old lists'; P2b can run it with its flag on.
+It doesn't cover the CSV's `pageKeys` or `byRoundMerged` (`CsvSpec` and the distribution
+specs do).
+
+**Pilot.** `GalleryLatencyBenchmark` (a case added: `organizer-<kind>-filelist-p1`, the file
+list of all the jurors' votes, page 1 of 1000 rows), `-Dbench.cases=^organizer-(binary|rated)-(byrate-p1|large-middle|filelist-p1)$
+-Dbench.warmup=1 -Dbench.samples=15`, fork `-Xmx1024m -Dgatling.timing=true`, SQL logging off,
+order A, B, B, A; A `b52d120f` in a detached worktree (its own fixture dump; the file list case
+and the spec added uncommitted; removed afterwards), B `6a8b06bc`. Client ms, n = 30 a cell;
+paired deltas B run k minus A run k, sample by sample; per block of 5, median(B) − median(A).
+
+| Page (all jurors) | A median (min-max) | B median (min-max) | Paired delta, median (min-max) | B faster | Per block of 5: median(B) − median(A) |
+|---|---|---|---|---|---|
+| by-rate p1, rated | 991 (919-2011) | 819 (759-1153) | **-159** (-1215 to +133) | 25 of 30 | -29, -355, -167, -111, -232, -162 |
+| by-rate p1, yes/no | 659 (600-953) | 545 (446-845) | **-148** (-335 to +220) | 27 of 30 | -157, -169, -115, -215, -30, -110 |
+| large view, middle file, rated | 1954 (1635-5890) | 1525 (1358-2107) | **-337** (-4382 to +278) | 24 of 30 | -919, -453, -298, -292, -143, +33 |
+| large view, middle file, yes/no | 873 (769-1079) | 610 (551-771) | **-266** (-436 to -82) | 30 of 30 | -197, -236, -279, -322, -300, -249 |
+| file list p1, rated | 1150 (939-1517) | 991 (873-1268) | **-103** (-410 to +281) | 23 of 30 | -108, -143, -111, -213, -329, -20 |
+| file list p1, yes/no | 679 (537-1007) | 760 (524-1739) | +73 (-313 to +1170) | 11 of 30 | +193, +10, +456, +726, -8, -2 |
+
+From the server's timing log, medians per run (A1, A2 / B1, B2), ms:
+- by-rate: the grouped page rated 846, 823 / 670, 656; yes/no 448, 488 / 284, 339. `keyCounts`
+  unchanged (122, 121 / 128, 123 rated).
+- large view: the grouped page rated 1003, 912 / 662, 746, yes/no 481, 477 / 319, 296; the file's
+  rank (`ROW_NUMBER`, now without the images join) rated 1039, 880 / 781, 887, yes/no 346, 355 /
+  267, 258.
+- file list: the page's ids rated 872, 822 / 759, 691, yes/no 270, 300 / 224, 234; its votes and
+  images (~40 ms) unchanged. The yes/no file list (+73 ms client, 11 of 30 faster) is not noise
+  by the A, B, B, A order: its server total rose 500 → 536 and 598 → 617 ms, a +20-35 ms
+  increase, from `keyCounts`, the same SQL in A and B (179, 213 / 270, 318), in both B runs,
+  while its id query got 46-66 ms faster. Not explained; whether `keyCounts` after the narrow id
+  query reads the same index differently wasn't checked. The rated file list: -103.
+
+`ANALYZE FORMAT=JSON` on B (`RankQueryBenchmark`, explain only): the rated page 731 ms (B11
+measured the one query at 1001), the yes/no page 277 (438), the file list's ids 654 (768); the
+deferred page's outer sort is of the page's 15 rows.
+
+**Why a rated page costs more than a yes/no one (item 3).** The rated order's `s.monument_id`
+(files of a rate sum in file order) is not in the covering index: `idx_selection_round_page_rate`
+(V56) has (round_id, page_id, rate), so a query that needs `s.monument_id` reads each of the
+round's ~384k rows from the clustered index instead of the index alone. The narrow grouped page
+alone (`ANALYZE`): rated in its order 820 ms, its table read 664 ms and not index-only; without
+`s.monument_id` 180 ms, index-only, table read 88 ms; rated with the yes/no sums and order 258,
+index-only; yes/no in its order 238, index-only, table read 80; yes/no in the rated order 642,
+not index-only, table read 517; grouping alone 140-155, index-only. The rated page (731 ms, table
+read 592) and the rated file list's id query (654 ms, 530) pay it; the yes/no page doesn't (277,
+78). Follow-up to measure: extend V56's index to (round_id, page_id, rate, monument_id), weighing
+the larger index (every vote row's monument id, ~384k rows a round on the fixture) and its cost
+on votes and distribution, with the same probes (`RankQueryBenchmark`'s "narrow" plans).
+
+`RankQueryBenchmark` follows the new page: its A is B12's page and id query, W puts the windows
+into the deferred page's inner query, D is A with the windows; DK and WCn, now today's queries,
+are gone.
+
+Checks: `Test/compile`, `Gatling/compile`, `testOnly controllers.{GroupedListParitySpec,
+RoundListDbSpec, RoundListSpec, AllJurorsListSpec, CsvSpec, GalleryOrderSpec, GalleryRegionsSpec,
+ListPositionSpec, LargeImageSpec, GlobalLargeImageSpec, RoundControllerSpec}
+db.scalikejdbc.{ImageDbNewDbSpec, RoundImageCountsDbSpec} org.intracer.wmua.cmd.*
+org.intracer.wmua.{ImageDistributorSpec, RebalanceSpec} services.distribution.*`: 291 passed, 0
+failed, 1 pending (`target/checks/20261102-133618-21208.log`; the `[error]` lines there are the
+distribution specs' failure paths). `GroupedListParitySpec` on `b52d120f`: 6 passed. No full
+suite. Raw: `target/checks/b12-pilot/` (`{A1,B1,B2,A2}-{client.csv,timing.jsonl}`,
+`summary.txt`, `b12-pilot-summary.json`, A's logs `20261102-134746-4692.log` and
+`…-140110-14152.log`, `pilot12.sh`, `analyze/{summary.txt,analyze.json.txt}`); B's logs
+`target/checks/20261102-135424-10004.log`, `…-135742-17568.log`, ANALYZE `…-140520-1760.log`.
+
+### B12 review fixes
+
+The independent review found no High or Medium issues. Merged `ukwikidev/followups` at
+`6d1e49f6` (S1, the security and criteria plans, the roadmap) first (`88e1c38f`; no conflicts).
+
+| # | Finding | Fix |
+|---|---|---|
+| L1 | Item 3 named the wrong cause (grouping with a varchar) | Reworded above: the rated order's `s.monument_id` isn't in V56's covering index (round_id, page_id, rate), so each of the round's ~384k rows is read from the clustered index (table read 664 ms against 88 index-only). Follow-up: measure V56's index extended to (round_id, page_id, rate, monument_id), with the larger index's cost. The `MIN(s.monument_id)` idea dropped |
+| L2 | The yes/no file list's +73 ms isn't noise by the A, B, B, A order | Reworded above: a +20-35 ms server-side increase, from `keyCounts` (the same SQL) in both B runs, not explained; the id query 46-66 ms faster. Not rerun |
+| L3 | `selection.page_id` is nullable (B44 `DEFAULT NULL`; V58's FK allows NULL): without the images join a vote without a page id took a LIMIT slot in the deferred page, read as page 0 in the id query, and counted in `imageRank` but not the pager | `SelectionQuery.where(withPage = true)` adds `s.page_id is not null`, on every query on selection alone: the deferred grouped page, the id queries without the images join (`idsOnSelection`: file list, `pageKeys`, `imageRank`), `keyCounts`, the count on selection (a juror's `COUNT(*)` counted such a vote), the juror's deferred page (its inner query paged it, the join then dropped it), `countBefore`; and `regionRateCounts` (a juror's totals). The images join already left them out. Specs: `GroupedListParitySpec`'s fixture has two such votes (every list as the model, which has none); `RoundListDbSpec` "leave a juror's vote without a page id out of their pages, counts and places" (pages, `count()`, `JurorCounts`, rank counts, positions; all and region 12). Comments at the deferred pages fixed |
+| N1 | `byRoundMerged` isn't production distribution | Corrected above: only the in-memory `DistributeImages` path (tests' oracle) reads it; `RoundDistributionHandler` has its own SQL; it takes the deferred page through `Limit(Int.MaxValue, 0)` |
+| N2 | The parity spec doesn't cover `pageKeys` or `byRoundMerged` | Said above (`CsvSpec`, the distribution specs) |
+
+Later, after a production check (deferred: the user skipped production queries for now): a
+migration making `selection.page_id NOT NULL` once production has no such rows, after which
+`withPage` can go.
+
+Checks: `Test/compile`, `Gatling/compile`, `testOnly controllers.{GroupedListParitySpec,
+RoundListDbSpec, CsvSpec, AllJurorsListSpec, LargeImageSpec, ListPositionSpec}
+db.scalikejdbc.ImageDbNewDbSpec`: 128 passed, 0 failed (`target/checks/20261102-142314-7560.log`). No benchmark rerun: the added condition is on
+`page_id`, which the indexes these queries read include; not measured.
