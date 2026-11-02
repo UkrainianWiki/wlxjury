@@ -793,8 +793,9 @@ As in the follow-ups plan ("Setup", "Roles", "The cycle for each batch"), with t
   material. S4–S7: one review.
 - **One sbt JVM at a time** across agents (the `/c/scala/.sbt-jvm.lock` directory convention);
   no tests while B10's benchmark runs.
-- **Results:** each batch appends "Batch Sn results" here and updates the status column of the
-  consolidated report's table (see the practices plan's maintenance section).
+- **Results:** each batch appends "Batch Sn results" here and updates its rows in
+  `docs/security/register.md` (since 2026-11-02; the report's table is a snapshot; see the practices
+  plan's maintenance section).
 
 **Invariants every reviewer checks** (the follow-ups plan's list, plus):
 
