@@ -1,7 +1,8 @@
 package deployment
 
 import com.typesafe.config.{Config, ConfigException, ConfigFactory, ConfigParseOptions, ConfigResolveOptions}
-import controllers.{Theme, ThemeCookies}
+import controllers.{GalleryView, RoundList, Theme, ThemeCookies}
+import db.scalikejdbc.{Round, User}
 import modules.AllowedHosts
 import org.specs2.mutable.Specification
 import play.api.http.{HttpConfiguration, HttpErrorHandler}
@@ -92,18 +93,19 @@ class ProductionConfigSpec extends Specification {
       config.getStringList("play.modules.disabled").asScala must contain("play.filters.hosts.AllowedHostsModule")
     }
 
-    "allow the configured names and loopback only (not Play's *.local)" in {
+    "allow the configured names only (no loopback names, not Play's *.local)" in {
       AllowedHosts.config(Configuration(releaseConfig()), Mode.Prod).allowed must_==
-        Seq("127.0.0.1", "localhost", "jury.example.org", "jury.example.net")
+        Seq("jury.example.org", "jury.example.net")
     }
 
-    "refuse an unknown Host with a 400, and pass a configured one and the readiness check's" in {
+    "refuse an unknown or loopback Host with a 400 and pass a configured one, on a route without anyhost" in {
       val config = releaseConfig()
       hostStatus(config, "jury.example.org") must_== 200
       hostStatus(config, "JURY.example.net:443") must_== 200
-      // the deploy tools: curl http://127.0.0.1:9000/health/ready
-      hostStatus(config, "127.0.0.1:9000", "/health/ready") must_== 200
-      hostStatus(config, "localhost:9000", "/health/ready") must_== 200
+      // Apache's default vhost passes these through: only the readiness route (+ anyhost,
+      // controllers.AllowedHostsSpec) answers them
+      hostStatus(config, "127.0.0.1:9000") must_== 400
+      hostStatus(config, "localhost") must_== 400
       hostStatus(config, "other.example") must_== 400
       hostStatus(config, "jury.example.org.evil.example") must_== 400
       hostStatus(config, "printer.local") must_== 400
@@ -125,6 +127,18 @@ class ProductionConfigSpec extends Specification {
 
     "be Secure: the theme cookie, which follows the session cookie" in {
       new ThemeCookies(http.session).cookie(Theme.Dark).secure must beTrue
+    }
+
+    "be Secure: the galleries' sort cookies, which follow the session cookie" in {
+      // GalleryController passes play.http.session.secure to RoundList.remembered
+      val secure = releaseConfig().getBoolean("play.http.session.secure")
+      val juror  = User("Juror", "juror@example.org", id = Some(3), roles = Set("jury"), contestId = Some(1))
+      val rated  = Round(id = Some(8), number = 1, contestId = 1, active = true, rates = Round.ratesById(5))
+      // the juror's own gallery, in an order the URL names (SortCookie)
+      implicit val request: RequestHeader = FakeRequest("GET", "/gallery/round/8/user/3/page/1?sort=rate")
+      val cookie = RoundList.remembered(RoundList.of(rated, juror, 3, "all", GalleryView.Gallery), juror, secure)
+      cookie.map(_.name) must beSome(RoundList.SortCookie)
+      cookie.map(_.secure) must beSome(true)
     }
 
     "trust X-Forwarded-Proto from Apache on loopback only" in {
@@ -158,6 +172,20 @@ class ProductionConfigSpec extends Specification {
     "refuse what isn't a host name, the match-all \".\" included" in {
       forall(Seq(".", "*", "jury.example.org/", "https://jury.example.org", "a..b", "-a.example", "a.example:x")) { bad =>
         AllowedHosts.parse("jury.example.org," + bad) must throwA[IllegalArgumentException]
+      }
+    }
+
+    "refuse a suffix of one label, which would allow a whole top-level domain" in {
+      AllowedHosts.parse(".wle.example") must_== Seq(".wle.example")
+      forall(Seq(".org", ".ua", ".localhost")) { bad =>
+        AllowedHosts.parse("jury.example.org," + bad) must throwA[IllegalArgumentException](message = "suffix of one label")
+      }
+    }
+
+    "refuse a default port, which browsers leave out of Host, so the name would never match" in {
+      AllowedHosts.parse("jury.example.org:8443") must_== Seq("jury.example.org:8443")
+      forall(Seq("jury.example.org:443", "jury.example.org:80", ".example.org:443")) { bad =>
+        AllowedHosts.parse(bad) must throwA[IllegalArgumentException](message = "default port")
       }
     }
   }

@@ -254,6 +254,11 @@ class PackagedReleaseTest(DatabaseFixture):
                         with self.assertRaises(urllib.error.HTTPError) as refused:
                             self.tool.http.open(foreign, timeout=5)
                         self.assertEqual(refused.exception.code, 400)
+                        # Loopback names are not jury names: only readiness (+ anyhost) answers them.
+                        loopback = urllib.request.Request('http://127.0.0.1:9000/auth')
+                        with self.assertRaises(urllib.error.HTTPError) as local:
+                            self.tool.http.open(loopback, timeout=5)
+                        self.assertEqual(local.exception.code, 400)
                         listed = urllib.request.Request('http://127.0.0.1:9000/auth', headers={'Host': 'jury.example.org'})
                         with self.tool.http.open(listed, timeout=5) as page:
                             self.assertEqual(page.status, 200)
