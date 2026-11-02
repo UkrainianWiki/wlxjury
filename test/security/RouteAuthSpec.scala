@@ -12,12 +12,19 @@ import views.AppRoutes
 class RouteAuthSpec extends Specification {
   import RouteAuthSpec._
 
-  private val Builder = """\b(?:withAuthJsonOn|withAuthJson|withAuthOn|withAuth)\(|\bAction\b""".r
+  /** A Secured builder, or an unchecked way to build an action (`Action`, `EssentialAction {…}`,
+    * `actionBuilder`).
+    */
+  private val Builder =
+    """\b(?:withAuthJsonOn|withAuthJson|withAuthOn|withAuth)\(|\bAction\b|\bEssentialAction\s*[{(]|\bactionBuilder\b""".r
   private val Call = """\b(\w+)\(""".r
   private val NextMember =
     """\n\s*(?:(?:private|protected|override|final|implicit)(?:\[\w+\])?\s+)*(?:def|val|var|lazy\s+val|object|class|trait)\s""".r
 
-  /** The body of `def name` in `text` (after its signature's `=`, to the next member), if any. */
+  /** The body of `def name` in `text` (after its signature's `=`, to the next member), if any.
+    * It stops at the first inner `val`/`def` too, so a builder after one is missed: the check
+    * then reports the action (it errs toward reporting).
+    */
   private def body(text: String, name: String): Option[String] =
     s"""\\bdef $name\\b""".r.findFirstMatchIn(text).map { m =>
       var depth = 0
@@ -71,6 +78,16 @@ class RouteAuthSpec extends Specification {
         if how != "builder"
       } yield s"${route.method} ${route.pattern} -> $action: $how"
       unchecked.distinct must beEmpty
+    }
+
+    "be classified by the scan as built (it is not vacuous)" in {
+      val bare = "def a(): EssentialAction = Action { request => Ok }\n"
+      val wrapped = "def b(): EssentialAction = EssentialAction { r => c()(r) }\n" +
+        "  def c(): EssentialAction = withAuth() { u => r => Ok }\n"
+      val delegated = "def d(page: Int = 1): EssentialAction =\n    listGeneric(Some(page), page)\n" +
+        "  def listGeneric(v: Option[Int], p: Int): EssentialAction = noStore(withAuthOn(blocking)() { u => r => Ok })\n"
+      (builtWith(bare, "a") === "Action") and (builtWith(wrapped, "b") !== "builder") and
+        (builtWith(delegated, "d") === "builder") and (builtWith(bare, "missing") === "none")
     }
 
     "have no stale entry in the lists" in {

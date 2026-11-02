@@ -147,17 +147,18 @@ Branch `ukwikidev/security-practices` (from `ukwikidev/followups` e02a86de, merg
 
 **Guards added** (`test/security/`):
 
-- G1 `RoleValuesSpec`: no `.split(` on a `role…` value in `app/`; every form field named
-  `role`/`roles` in `app/controllers` has a `verifying` (allowlisted: `EditRound`'s round role
-  label, which only picks members of the round's own contest as jurors); `ContestRoles` is
-  exactly `FORM_ROLES` without root or markers; `isContestRole` refuses list, space, case,
+- G1 `RoleValuesSpec`: no `.split(` on a value whose name contains `role` (`userRole`,
+  `contestRoles`, ...) or on a `role` column read, in `app/`; every form field named
+  `role`/`roles` in `app/controllers` has a `verifying` on its line (a heuristic; allowlist
+  empty); `ContestRoles` is exactly the seven literal roles, without root or markers; `isContestRole` refuses list, space, case,
   root and marker values; `mayAssignRoles` gives root only to a root editor. The DAO writers'
   refusals are not repeated (`UserContestSpec` has them since S1).
 - G2 `RouteAuthSpec`: every routed action's body (or a helper of the same file it calls first,
   e.g. `GalleryController.listGeneric`) uses `withAuth`, `withAuthOn`, `withAuthJson` or
   `withAuthJsonOn`; else it is in `Public` (14, with reasons) or `ChecksSessionItself`
   (`ImageProxyController.serve`, `RoundController.newFilesCount`, `JobController.status`). No
-  stale entries. The API include is not in the router's documentation (`ApiSpec` covers it).
+  stale entries; self-tests of the classification (a bare `Action`, an `EssentialAction {…}`
+  wrapper, a `listGeneric`-style delegation). The API include is not in the router's documentation (`ApiSpec` covers it).
 - G2b `SignedOutSpec`: every non-public route (placeholder ids, required query parameters from
   the route's documentation) without a session: as a page, a login redirect or 401; by script,
   401. It starts the shared test app, so `security.*` now needs Docker.
@@ -169,3 +170,22 @@ manual report. G4, G5, G8, G9, G13 came with S5.
 
 **Checks:** from Git Bash under the shared lock, `Test/compile` and `testOnly security.*`:
 18 passed (`target/checks/20261102-163308-28616.log`).
+
+**Review fixes** (independent review: safe to merge after these):
+
+| Item | Fix |
+|---|---|
+| M1 | G1's split pattern without the leading word boundary (catches `userRole.split`, `contestRoles.split`), plus `string("role").split`; examples extended |
+| L1 | The round form's `"roles"` (a hidden field, always `jury`; `rounds.roles` read only by the navbar; jurors come from the juror list, not `Round.availableJurors`) now verifies `User.isContestRole`; G1's exception removed; §10 updated |
+| L2 | `RouteAuthSpec`: self-tests of `builtWith`; `EssentialAction {…}` and `actionBuilder` count as unchecked; a comment that body extraction stops at an inner member and errs toward reporting |
+| L3 | README's "Security Controls" points to the three documents |
+| L4 | §19: the Pekko versions are scalawiki's (`Library.Pekko` in its `project/Dependencies.scala`) |
+| L5 | §9: editing another account checks admin/root in that account's contest (`UserController.saveUser`, `editableUser`) |
+| L6 | Register: the hotfix runbook linked; the schema-66 ZIP superseded |
+| Nits | literal role set; `RoleField` called a heuristic; "file (or action)" wording in the PR template, CLAUDE.md and checklist; plain paths in the PR template; the Docker-free guard subset named in the checklist |
+
+Checks after the fixes (Git Bash, shared lock): `Test/compile`, `testOnly security.*` and the round
+form specs (`RoundControllerSpec`, `CategoryFormSpec`, `RoundEditPageSpec`, `MinJurorsChoiceSpec`,
+`RejectedByChoiceSpec`, `TopBinaryOrderChoiceSpec`, `PrevRoundHiddenInputSpec`, `CoiAuthorizationSpec`,
+`MutationAuthorizationSpec`, `views.BsFormHelpersSpec`): 152 passed
+(`target/checks/20261102-165229-27972.log`).

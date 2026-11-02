@@ -10,16 +10,19 @@ import org.specs2.mutable.Specification
   */
 class RoleValuesSpec extends Specification {
 
-  /** Form fields named `role`/`roles` without an allowlist `verifying`, with why that is fine. */
-  private val UncheckedRoleFields: Map[String, String] = Map(
-    "app/controllers/EditRound.scala" ->
-      "a round's juror role label (rounds.roles): picks which members of the round's own contest are offered as jurors; grants nothing"
-  )
+  /** Files whose form fields named `role`/`roles` have no allowlist `verifying`, with why that
+    * is fine. Empty: every one is checked.
+    */
+  private val UncheckedRoleFields: Map[String, String] = Map.empty
 
-  /** A `role…` value (or a field of one) that is split. */
-  private val SplitRole = """(?i)\brole\w*(?:\.\w+|\(\))*\.split\(""".r
+  /** A value whose name contains `role` (`role`, `userRole`, `contestRoles`, a field or a call of
+    * one) that is split, or a `role`/`roles` column read and split.
+    */
+  private val SplitRole = """(?i)role\w*(?:\.\w+|\(\))*\.split\(|string\("roles?"\)\.split\(""".r
 
-  /** A Play form mapping's field named `role` or `roles`. */
+  /** A Play form mapping's field named `role` or `roles`. A heuristic: the field name exactly,
+    * with its `verifying` on the same line.
+    */
   private val RoleField = """"roles?"\s*->\s*(?:optional|default|text|nonEmptyText|seq|list|set)\b[^\n]*""".r
 
   "role values in app/" should {
@@ -28,8 +31,10 @@ class RoleValuesSpec extends Specification {
     }
 
     "be found when split (the scan is not vacuous)" in {
-      (SplitRole.findFirstIn("""uc.role.split(",")""") must beSome) and
-        (SplitRole.findFirstIn("""roles.split(",").map(_.trim)""") must beSome) and
+      val split = Seq("""uc.role.split(",")""", """roles.split(",").map(_.trim)""", """uc.contestRole.split(",")""",
+        """userRole.split(",")""", """contestRoles.split(",")""", """membershipRole.split(",")""",
+        """rs.string("role").split(",")""")
+      (split.filter(SplitRole.findFirstIn(_).isEmpty) must beEmpty) and
         (SplitRole.findFirstIn("""Set(role)""") must beNone)
     }
 
@@ -45,7 +50,7 @@ class RoleValuesSpec extends Specification {
 
   "the contest role allowlist" should {
     "hold exactly the form's roles, never root or a marker" in {
-      (User.ContestRoles === User.FORM_ROLES.toSet) and
+      (User.ContestRoles === Set("no", "jury", "organizer", "admin", "board", "auditor", "staff")) and
         (User.ContestRoles must not(contain(User.ROOT_ROLE))) and
         (User.ContestRoles.exists(_.startsWith("USER_ID_")) must beFalse)
     }

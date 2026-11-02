@@ -11,10 +11,11 @@ no database, `SignedOutSpec` starts the test app) and the named specs elsewhere.
 names a guard of the [practices plan](../plans/2026-11-02-security-practices.md) and the batch
 it lands with.
 
-**Allowlists.** A guard's allowlist is a small map in the spec: one entry per file (or action),
-each with a one-line reason. Adding an entry is a review item. When a guard fails, including
-after a merge, review the hit: fix the code, or allowlist that one file with its reason. Never
-widen a pattern, drop a check or allowlist a directory to make a guard pass.
+**Allowlists.** A guard's allowlist is a small map in the spec: one entry per file (or, for
+`RouteAuthSpec`, per action), each with a one-line reason. Adding an entry is a review item.
+When a guard fails, including after a merge, review the hit: fix the code, or allowlist that
+one file (or action) with its reason. Never widen a pattern, drop a check or allowlist a
+directory to make a guard pass.
 
 ## Threat model
 
@@ -191,6 +192,9 @@ the file is replaced, and prefer replacing the library to patching more of it.
 the public list. A resource (round, job, comment, file) is checked in its own contest as the
 user's membership there (`Secured.inContest`), never by switching the session's contest on a
 POST or poll. A request-supplied id is looked up with `fold`/`getOrElse` to a 404, never `.get`.
+Editing another account checks the editor's admin or root role in that account's contest
+(`UserController.saveUser` through `editableUser`: an admin only for members of their
+current contest; root any account).
 A juror sees only their own votes (`GalleryService.viewerRounds`, `mayViewRound`, `viewAs`).
 Denials go through `onUnAuthorized`/`onUnAuthorizedJson` with a `Secured.Denial`.
 
@@ -231,9 +235,10 @@ field split on commas made any contest admin root.)
 allowlisted; the allowlist is exact), `RoleAssignmentSpec`, `UserContestSpec`,
 `UserContestRolesSpec`, `db.UserContestRoleMigrationSpec` (the constraint).
 
-**Exceptions** (`RoleValuesSpec.UncheckedRoleFields`): `EditRound`'s `"roles"`, a round's
-juror role label that only picks which members of the round's own contest are offered as
-jurors.
+The round form's hidden `"roles"` (always `jury`, `editRound.scala.html`; `rounds.roles` is
+read only by the navbar) verifies `User.isContestRole` too.
+
+**Exceptions** (`RoleValuesSpec.UncheckedRoleFields`): none.
 
 ## 11. CSRF and mutating GETs
 
@@ -374,8 +379,9 @@ in-memory limits assume one app instance (`docs/deployment.md`).
 ## 19. Dependencies
 
 **Rule.** No unused dependency; versions pinned; a new dependency is used, maintained and
-reviewed. Pekko and Pekko HTTP stay in step with scalawiki (`project/Dependencies.scala`,
-`Library.Pekko`): bump scalawiki first, then `PekkoVersion`/`PekkoHttpVersion` in `build.sbt`,
+reviewed. Pekko and Pekko HTTP stay in step with scalawiki, whose versions are in its own
+`project/Dependencies.scala` (`Library.Pekko`: `PekkoV`, `PekkoHttpV`): bump scalawiki first,
+then wlxjury's `PekkoVersion`/`PekkoHttpVersion` in `build.sbt`,
 then rerun the image cache specs. Vendored JavaScript is listed with its version (§8).
 
 **Example.** S10 removed `play-pac4j` (nothing used it) and checked the runtime classpath

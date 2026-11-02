@@ -35,7 +35,7 @@ in progress; S6 and S7 queued; S4 and S8 folded into the (postponed) infra plan;
 | N5 | Greeting/invitation mail "From" the inviter | Low | Postponed (user decision) | app | — | — | 2026-11-02 |
 | P10 | Production dump and bench volumes on the workstation | Low | Open; S9 skipped for now | ops | S9 | — | 2026-11-02 |
 | P19 | No audit log of admin actions | Info | Scheduled with the rounds-parity plan's audit log | app | parity plan | — | 2026-11-02 |
-| N1 (production) | The role-allowlist hotfix on the server | High | Hotfix deployed 2026-11-02 (`0.13-round-filters-rolefix-f3f2c73617de`), `jury1`/`jury-` rows reset; open: the user's `roles=root` browser check and the leftover query | ops | S1 | — | 2026-11-02 |
+| N1 (production) | The role-allowlist hotfix on the server | High | Hotfix deployed 2026-11-02 as `0.13-round-filters-rolefix-f3f2c73617de` (branch `ukwikidev/hotfix-role-allowlist-f9c31ce5`, runbook [2026-11-02-role-allowlist-hotfix.md](2026-11-02-role-allowlist-hotfix.md) on that branch); the schema-66 ZIP from `ukwikidev/hotfix-role-allowlist` is superseded and must not be deployed; `jury1`/`jury-` rows reset; open: the user's `roles=root` browser check and the leftover query | ops | S1 | — | 2026-11-02 |
 
 ## Fixed
 

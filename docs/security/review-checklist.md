@@ -68,8 +68,12 @@ same commit as the fix.
 ## Guards
 
 - [ ] `testOnly security.*` passes. A guard hit (also one appearing after a merge) is reviewed:
-  the code is fixed, or that one file is allowlisted with a one-line reason; patterns are never
-  widened or checks dropped to make it pass.
+  the code is fixed, or that one file (or action) is allowlisted with a one-line reason; patterns
+  are never widened or checks dropped to make it pass.
+- Quick per-change run without Docker (source scans only): `testOnly security.RawSqlSpec
+  security.RawHtmlSinksSpec security.ExportsSpec security.LogHygieneSpec security.ErrorTextSpec
+  security.RoleValuesSpec security.RouteAuthSpec`; `security.SignedOutSpec` starts the test app
+  (Docker) and runs with the full `security.*`.
 
 ## Release gate
 
