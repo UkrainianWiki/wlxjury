@@ -416,6 +416,39 @@ class SessionsSpec extends PlaySpecification with PlayTestDb with AccountTestSup
       }
     }
 
+    "leave a pre-S3 cookie as sent while the window can't be read, and upgrade it once it can" in {
+      withCsrfApp { implicit app =>
+        createContests(10)
+        val juror = contestMember("juror@example.com")
+        @volatile var down = true
+        val window = new modules.SessionUpgradeWindow(
+          () => if (down) throw new java.sql.SQLTransientConnectionException("pool warming up") else Some(3600L))
+        implicit val mat: org.apache.pekko.stream.Materializer = app.materializer
+        import scala.concurrent.ExecutionContext.Implicits.global
+        val filter = new modules.SessionLifetimeFilter(app.injector.instanceOf[SessionCookieBaker],
+          SessionLifetime.default, () => SessionLifetime.nowSeconds(), window)
+        // the session the action sees, and whether it is signed in by Secured's rules
+        val actions = app.injector.instanceOf[play.api.mvc.DefaultActionBuilder]
+        val echo = filter(actions { request =>
+            play.api.mvc.Results.Ok(Seq(request.session.get(Secured.UserName).getOrElse("-"),
+              request.session.get(SessionLifetime.IssuedAt).fold("no-times")(_ => "times"),
+              Secured.sessionUserOf(request).fold("signed-out")(_ => "signed-in")).mkString(" "))
+        })
+        val old = FakeRequest(GET, "/").withSession(Secured.UserName -> juror.email)
+
+        val (during, lines) = authLog { val r: Future[Result] = call(echo, old); status(r); r }
+        contentAsString(during) === s"${juror.email} no-times signed-in"
+        Await.result(during, 10.seconds).newSession must beNone
+        cookies(during).get("PLAY_SESSION") must beNone
+        lines.exists(_.contains("session_expired")) must beFalse
+
+        down = false
+        val after = call(echo, old)
+        contentAsString(after) === s"${juror.email} times signed-in"
+        session(after).get(Secured.AccountId) === Some(juror.getId.toString)
+      }
+    }
+
     "write an upgrade or a refresh only from a page or a POST, not a script's request (L1)" in {
       withCsrfApp { implicit app =>
         createContests(10)

@@ -65,18 +65,26 @@ class SessionLifetimeFilter(
     else {
       // an upgrade or a refresh goes to the browser only from a page or a POST
       val writes = Secured.isPageRequest(request) || request.method == "POST"
-      val checked: Either[String, Session] =
-        SessionLifetime.expiry(session, at, settings).toLeft(session).flatMap { live =>
-          if (!SessionLifetime.needsUpgrade(live)) Right(live)
-          else if (!upgradeWindow.open(at)) Left("old_cookie_expired")
-          else upgraded(live, at, writes).toRight("old_cookie_unmatched")
+      // None: a pre-S3 cookie while the window can't be read (a database hiccup): run the request
+      // with the session as sent, neither upgraded nor signed out (sessionUserOf still checks it)
+      val checked: Option[Either[String, Session]] =
+        SessionLifetime.expiry(session, at, settings) match {
+          case Some(reason)                                   => Some(Left(reason))
+          case None if !SessionLifetime.needsUpgrade(session) => Some(Right(session))
+          case None =>
+            upgradeWindow.state(at) match {
+              case SessionUpgradeWindow.Unknown => None
+              case SessionUpgradeWindow.Closed  => Some(Left("old_cookie_expired"))
+              case SessionUpgradeWindow.Open    => Some(upgraded(session, at, writes).toRight("old_cookie_unmatched"))
+            }
         }
       checked match {
-        case Left(reason) =>
+        case None => next(request).map(respond(_, None, at))
+        case Some(Left(reason)) =>
           logger.info(s"session_expired reason=$reason accountId=${session.get(Secured.AccountId).getOrElse("none")}")
           val signedOut = session -- SessionLifetime.SignInKeys
           next(withSession(request, signedOut)).map(respond(_, Some(signedOut), at))
-        case Right(live) =>
+        case Some(Right(live)) =>
           val touched =
             if (SessionLifetime.needsTouch(live, at, settings)) live + (SessionLifetime.LastSeen -> at.toString) else live
           // a script's request runs with the session as the browser has it (which still passes
