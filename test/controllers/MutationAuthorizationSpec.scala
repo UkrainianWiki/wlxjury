@@ -229,12 +229,100 @@ class MutationAuthorizationSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
+    /** [[roundOf]] with criteria 1 and 2, the juror's selection's rates of them 3 and 4. */
+    def criteriaRoundOf(juror: User): Round = {
+      val round = roundOf(juror, Round.ratesById(10), rate = 7)
+      scalikejdbc.DB.autoCommit { implicit s =>
+        import scalikejdbc._
+        sql"UPDATE rounds SET has_criteria = 1 WHERE id = ${round.getId}".update()
+        val id = SelectionJdbc.findBy(pageId, juror.getId, round.getId).get.getId
+        sql"INSERT INTO criteria_rate (id, selection, criteria, rate) VALUES (${id * 10 + 1}, $id, 1, 3), (${id * 10 + 2}, $id, 2, 4)"
+          .update()
+      }
+      roundDao.findById(round.getId).get
+    }
+
+    def criteriaOf(round: Round, juror: User, file: Long = pageId): Map[Long, Int] =
+      SelectionJdbc.findBy(file, juror.getId, round.getId).toSeq
+        .flatMap(s => org.intracer.wmua.CriteriaRate.getRates(s.getId)).map(c => c.criteria -> c.rate).toMap
+
     "check a criterion's rate as the file's" in {
       testDbApp { app =>
         val juror = setUp()
-        val round = roundOf(juror, Round.ratesById(10))
+        val round = criteriaRoundOf(juror)
         status(large(app, round, juror, 11, criteria = Some(1))) === BAD_REQUEST
+        criteriaOf(round, juror) === Map(1L -> 3, 2L -> 4)
         status(large(app, round, juror, 10, criteria = Some(1))) === SEE_OTHER
+        criteriaOf(round, juror) === Map(1L -> 10, 2L -> 4)
+        stored(round, juror) === Some(14)
+      }
+    }
+
+    "take only criterion votes in a criteria round: 400 for the file's own rate, 404 for a criterion it hasn't" in {
+      testDbApp { app =>
+        val juror = setUp()
+        val round = criteriaRoundOf(juror)
+        // the file's own rate would overwrite the sum of its criteria: refused in both views
+        val inGallery = gallery(app, round, juror, 5)
+        status(inGallery) === BAD_REQUEST
+        (contentAsJson(inGallery) \ "error").as[String] === "invalid_rate"
+        val inLarge = large(app, round, juror, 5)
+        status(inLarge) === BAD_REQUEST
+        contentAsString(inLarge) must contain("vote.error.invalid.rate")
+        // a criterion the juror's selection hasn't: not found, not a success
+        val unknown = large(app, round, juror, 5, criteria = Some(3))
+        status(unknown) === NOT_FOUND
+        contentAsString(unknown) must contain("error.not.found")
+        stored(round, juror) === Some(7)
+        criteriaOf(round, juror) === Map(1L -> 3, 2L -> 4)
+      }
+    }
+
+    "refuse a criterion in a round without criteria, changing nothing" in {
+      testDbApp { app =>
+        val juror = setUp()
+        val round = roundOf(juror, Round.ratesById(10), rate = 2)
+        val result = large(app, round, juror, 5, criteria = Some(1))
+        status(result) === BAD_REQUEST
+        contentAsString(result) must contain("vote.error.invalid.rate")
+        stored(round, juror) === Some(2)
+      }
+    }
+
+    "change only the juror's own criteria: 404 for another's file and for an organiser not a juror, 403 for another contest's juror" in {
+      testDbApp { app =>
+        val juror = setUp()
+        val round = criteriaRoundOf(juror)
+        val other = userDao.create(User("Other", "other@example.com", None, Set("jury"), contestId = juror.contestId))
+        round.addUsers(Seq(RoundUser(round.getId, other.getId, "jury", active = true)))
+        imageDao.batchInsert(Seq(image(1011L, "UA-1011")))
+        val othersVote = SelectionJdbc.create(1011L, 5, other.getId, round.getId)
+        scalikejdbc.DB.autoCommit { implicit s =>
+          import scalikejdbc._
+          sql"INSERT INTO criteria_rate (id, selection, criteria, rate) VALUES (${othersVote.getId * 10 + 1}, ${othersVote.getId}, 1, 5)"
+            .update()
+        }
+        val organizer = userDao.create(User("Organizer", "organizer@example.com", None, Set("organizer"), contestId = juror.contestId))
+        val foreign = contestDao.create(None, "WLM", 2024, "Poland")
+        val outsider = userDao.create(User("Outsider", "outsider@example.com", None, Set("jury"), contestId = foreign.id))
+
+        // another juror's file: the juror has no selection of it
+        status(large(app, round, juror, 1, file = 1011L, criteria = Some(1))) === NOT_FOUND
+        // the organiser has no selection of their own in the round
+        status(large(app, round, organizer, 1, criteria = Some(1))) === NOT_FOUND
+        status(large(app, round, organizer, 1, file = 1011L, criteria = Some(1))) === NOT_FOUND
+        status(large(app, round, outsider, 1, criteria = Some(1))) === FORBIDDEN
+        // signed out: to the login page
+        implicit val materializer: Materializer = app.materializer
+        val signedOut = largeViewController.rateByPageId(round.getId, pageId, 1, criteria = Some(1))
+          .apply(FakeRequest(POST, s"/large/round/${round.getId}/pageid/$pageId/select/1?criteria=1").withCSRFToken).run()
+        status(signedOut) === SEE_OTHER
+        redirectLocation(signedOut) must beSome.which(_.startsWith(routes.LoginController.login(None).url))
+
+        criteriaOf(round, juror) === Map(1L -> 3, 2L -> 4)
+        criteriaOf(round, other, 1011L) === Map(1L -> 5)
+        stored(round, juror) === Some(7)
+        stored(round, other, 1011L) === Some(5)
       }
     }
 
@@ -266,7 +354,6 @@ class MutationAuthorizationSpec extends PlaySpecification with PlayTestDb {
         val inLarge = large(app, round, juror, 4, file = 1011L)
         status(inLarge) === NOT_FOUND
         contentAsString(inLarge) must contain("error.not.found")
-        status(large(app, round, juror, 4, file = 1011L, criteria = Some(1))) === NOT_FOUND
         // nor a file not in the round at all
         status(gallery(app, round, juror, 5, file = 9999L)) === NOT_FOUND
         status(large(app, round, juror, 4, file = 9999L)) === NOT_FOUND

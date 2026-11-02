@@ -524,12 +524,7 @@ object JobScheduler {
     Option(e.getMessage).filter(_.nonEmpty).getOrElse(e.getClass.getSimpleName)
 
   /** A database error worth retrying the step for: a deadlock or a lock wait timeout. */
-  def isTransient(e: Throwable): Boolean =
-    Iterator.iterate(e)(_.getCause).takeWhile(_ != null).take(10).exists {
-      case _: java.sql.SQLTransactionRollbackException => true
-      case t =>
-        Option(t.getMessage).exists(m => m.contains("Deadlock found") || m.contains("Lock wait timeout"))
-    }
+  def isTransient(e: Throwable): Boolean = db.scalikejdbc.DbErrors.isTransient(e, lockWaitTimeout = true)
 
   private def threadFactory(prefix: String): ThreadFactory = {
     val n = new AtomicInteger()
