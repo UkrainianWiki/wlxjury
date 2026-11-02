@@ -319,17 +319,31 @@ object User extends CRUDMapper[User] {
 
   /** The user with the login (an email, else a wiki account) and password, if they match
     * ([[PasswordHasher.check]]). A legacy SHA-1 hash, or a bcrypt hash of a lower cost, is
-    * replaced by a new bcrypt hash on success, unless the password was changed meanwhile.
+    * replaced by a new bcrypt hash on success, unless the password was changed meanwhile. A
+    * legacy hash never matches after its grace period (P8, [[legacyGraceOver]]).
     * Throws [[PasswordHasher.Busy]] if no turn to check comes before `deadline`.
     */
   def login(username: String, password: String, deadline: Long = PasswordHasher.default.deadline()): Option[User] = {
     val user = byUserName(username, underscoresAsSpaces = true)
-    PasswordHasher.default.check(user.flatMap(_.password), password, deadline) match {
+    val hash = user.flatMap(_.password).filterNot(h => PasswordHasher.isLegacy(h) && legacyGraceOver())
+    PasswordHasher.default.check(hash, password, deadline) match {
       case PasswordHasher.Accepted(rehash) =>
-        for (u <- user; stored <- u.password) yield rehash.fold(u)(upgradeHash(u, stored, _)())
+        for (u <- user; stored <- hash) yield rehash.fold(u)(upgradeHash(u, stored, _)())
       case PasswordHasher.Rejected => None
     }
   }
+
+  /** Whether legacy hashes no longer sign in ([[LegacyPasswordRetirementJdbc.over]]): read at
+    * each legacy sign-in (rare: each one replaces its hash). Over if it can't be read: such a
+    * sign-in fails, as it would after the grace period.
+    */
+  def legacyGraceOver(): Boolean =
+    try LegacyPasswordRetirementJdbc.over()
+    catch {
+      case NonFatal(e) =>
+        passwordLogger.warn(s"legacy_password_grace_unreadable error=${e.getClass.getSimpleName}")
+        true
+    }
 
   /** Stores a new password's bcrypt hash. */
   def setPassword(id: Long, password: String): Unit = {

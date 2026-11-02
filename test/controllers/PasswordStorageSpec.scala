@@ -117,6 +117,127 @@ class PasswordStorageSpec extends PlaySpecification with PlayTestDb with Mockito
     }
   }
 
+  /** Sets the end of the legacy grace period (V81) `days` from now; back to V81's 3 months after `f`. */
+  private def withGraceEnd[T](days: Int)(f: => T): T = {
+    def set(interval: String) = DB.autoCommit { implicit s =>
+      SQL(s"UPDATE legacy_password_retirement SET retire_at = NOW(3) + INTERVAL $interval WHERE id = 1").update.apply()
+    }
+    set(s"$days DAY")
+    try f
+    finally set("3 MONTH")
+  }
+
+  /** `f`'s result and the lines logged on security.password meanwhile. */
+  private def withPasswordLog[T](f: => T): (T, Seq[String]) = {
+    val logger = org.slf4j.LoggerFactory.getLogger("security.password").asInstanceOf[ch.qos.logback.classic.Logger]
+    val appender = new ch.qos.logback.core.read.ListAppender[ch.qos.logback.classic.spi.ILoggingEvent]
+    val level = logger.getLevel
+    logger.setLevel(ch.qos.logback.classic.Level.INFO)
+    appender.start()
+    logger.addAppender(appender)
+    try {
+      val result = f
+      import scala.jdk.CollectionConverters._
+      (result, appender.list.asScala.toSeq.map(_.getFormattedMessage))
+    } finally {
+      logger.detachAppender(appender)
+      logger.setLevel(level)
+    }
+  }
+
+  private def retireNow(): Int = new modules.LegacyPasswordRetirement().runOnce()
+
+  "a legacy SHA-1 hash, during its grace period (P8)" should {
+    "still sign in, and not be replaced by the retirement" in {
+      testDbApp { implicit app =>
+        val user = root(hash = legacy("strong"))
+        db.scalikejdbc.LegacyPasswordRetirementJdbc.over() must beFalse
+        retireNow() === 0
+        stored(user.getId) === Some(legacy("strong"))
+        signedIn(signIn(user.email, "strong")) must beTrue
+      }
+    }
+
+    "never be retired without the grace period's row (V81 undone)" in {
+      testDbApp { implicit app =>
+        val user = root(hash = legacy("strong"))
+        val saved = DB.autoCommit { implicit s =>
+          val at = sql"SELECT retire_at FROM legacy_password_retirement WHERE id = 1".map(_.string(1)).single.apply()
+          sql"DELETE FROM legacy_password_retirement".update.apply()
+          at
+        }
+        try {
+          retireNow() === 0
+          stored(user.getId) === Some(legacy("strong"))
+          signedIn(signIn(user.email, "strong")) must beTrue
+        } finally DB.autoCommit { implicit s =>
+          sql"INSERT INTO legacy_password_retirement (id, retire_at) VALUES (1, ${saved.get})".update.apply()
+        }
+      }
+    }
+  }
+
+  "a legacy SHA-1 hash, after its grace period (P8)" should {
+    "not sign in even before it is replaced, the page pointing to a password link" in {
+      testDbApp { implicit app =>
+        val user = root(hash = legacy("strong"))
+        withGraceEnd(-1) {
+          val result = signIn(user.email, "strong")
+          status(result) === BAD_REQUEST
+          signedIn(result) must beFalse
+          contentAsString(result) must contain("ask the contest&#x27;s organizers for a link to set a new one")
+          stored(user.getId) === Some(legacy("strong")) // not rehashed
+        }
+      }
+    }
+
+    "be replaced by an unusable value, the account recorded, other passwords untouched, quietly" in {
+      testDbApp { implicit app =>
+        val user = root(hash = legacy("strong"))
+        val upper = root("upper@example.com", legacy("other").toUpperCase)
+        val current = root("bcrypt@example.com")
+        val currentHash = stored(current.getId)
+        val invited = User.create(User("", "invited@example.com", password = None, roles = Set(User.ROOT_ROLE)))
+        withGraceEnd(-1) {
+          val (replaced, log) = withPasswordLog(retireNow())
+          replaced === 2
+          log === Seq("legacy_passwords_retired count=2")
+          stored(user.getId) === Some(PasswordHasher.RetiredLegacy)
+          stored(upper.getId) === Some(PasswordHasher.RetiredLegacy)
+          db.scalikejdbc.LegacyPasswordRetirementJdbc.retiredAccounts() === Seq(user.getId, upper.getId).sorted
+          stored(current.getId) === currentHash
+          stored(invited.getId) === None
+
+          // nothing signs in with the replaced value, not even the value itself
+          signedIn(signIn(user.email, "strong")) must beFalse
+          signedIn(signIn(user.email, PasswordHasher.RetiredLegacy)) must beFalse
+          signedIn(signIn(current.email, "strong")) must beTrue
+
+          // again: nothing left to replace
+          retireNow() === 0
+          db.scalikejdbc.LegacyPasswordRetirementJdbc.retiredAccounts() must haveSize(2)
+        }
+      }
+    }
+
+    "be set again through a password link, as root's button sends" in {
+      testDbApp { implicit app =>
+        implicit val mat: Materializer = app.materializer
+        val user = root(hash = legacy("strong"))
+        withGraceEnd(-1) {
+          retireNow() === 1
+          val (_, token) = services.AccountTokenService.create(user.getId, db.scalikejdbc.AccountTokenJdbc.PasswordReset, user.email)
+          val accepted = call(loginController.acceptInvitation(),
+            FakeRequest(POST, "/invitation").withFormUrlEncodedBody(
+              "token" -> token, "password" -> "new password", "repeat.password" -> "new password").withCSRFToken)
+          status(accepted) === SEE_OTHER
+          stored(user.getId) must beSome(beMatching(Bcrypt4))
+          signedIn(signIn(user.email, "new password")) must beTrue
+        }
+      }
+    }
+  }
+
   "signing in" should {
     "fail with a wrong password for a bcrypt hash" in {
       testDbApp { implicit app =>

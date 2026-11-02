@@ -439,6 +439,7 @@ error.api.token.limit = Vous avez déjà {0} jetons utilisables, le maximum. Ré
 
 # comptes : invitations, liens de mot de passe, changements d'adresse, installation (lot de sécurité S2)
 not.a.member.invitation = Pas encore de compte ? Les comptes sont créés par les organisateurs du concours, qui vous envoient une invitation par courriel.
+signin.password.link.hint = Mot de passe oublié, ou pas de connexion depuis longtemps ? Les anciens mots de passe expirent : demandez aux organisateurs du concours un lien pour en choisir un nouveau.
 setup.needed = Cette installation n''a encore aucun compte. L''administrateur crée le premier sur la page d''installation (voir le guide de déploiement).
 account.link.invalid.title = Ce lien ne peut pas être utilisé
 account.link.invalid = Le lien n''est pas valide, a expiré ou a déjà été utilisé. Demandez à l''organisateur de votre concours de vous en envoyer un nouveau.
