@@ -1492,3 +1492,178 @@ Checks: `Test/compile`, `Gatling/compile`, `testOnly db.scalikejdbc.{ImagesSqlSp
 ImageDbNewDbSpec,JurorImagesSpec} controllers.{RoundListSpec,RoundListDbSpec,AllJurorsListSpec,
 CsvSpec} views.* org.intracer.wmua.* services.distribution.*`: 447 passed, 0 failed, 1 pending
 (`target/checks/20261102-122135-19824.log`). No benchmark rerun.
+
+## Batch B10: RegionCountPairedBenchmark restored
+
+Branch `ukwikidev/followups-bench` (from `9e3bc9ec`). The user wants the paired benchmark back,
+working and measuring something, rather than deleted (`ea575a59`).
+
+**What it measured** (`ea575a59^`): alternating AB/BA pairs on identical inputs in one warmed
+fixture JVM, 3 blocks at 1 and 5 workers, every pair in `region-pairs-<stamp>.csv`, per block
+p50/p95/mean of each variant and the mean/median paired delta. A = `gallery.regionCounts=off`,
+B = `all`. Six cases: `sql-juror` (a juror's `byRegionStat` vs `regionCounts`, every juror and
+filter), `sql-round` / `sql-round-rated` (the whole round's, unfiltered / `rated=true`), and
+`page-juror` / `page-round` / `page-round-rated` (the gallery and by-rate pages from two
+`GalleryController`s with the two settings, through `Helpers.call`, requiring a 200, the region
+menu and `Volyn O. (` in the HTML exactly when counts were on).
+
+**What is obsolete, checked against `9e3bc9ec`:**
+- The page pairs. The gallery and by-rate pages render only the region menu's button and its
+  `data-regions-url` (`GalleryController.regionMenu`); no counts, so `Volyn O. (` never appears
+  and the check fails, and an off/on page pair would time identical work.
+- `sql-juror` as an off/on pair. A juror's regions now come from `RoundList.jurorCounts()`
+  (`SelectionQuery.regionRateCounts`, one scan that also gives the tabs and the total) whatever
+  the setting; `gallery.regionCounts` only drops the numbers. A juror's `regionCounts()` and
+  `byRegionStat()` are no longer on any juror path (`byRegionStat` is left for the whole round
+  with counts off, and sub-regions).
+- The SQL pairs had no correctness check: a wrong count would have been timed without notice.
+- Still current: `gallery.regionCounts` (`off`/`juror`/`all`, default `all`), the
+  `GalleryController(galleryService, cc, blocking, config)` constructor,
+  `SelectionQuery.byRegionStat`/`regionCounts`, `GatlingTestFixture.application`, the session
+  keys `Secured.UserName`/`CurrentContestId`. The fixture (`GatlingDbSetup`/`GatlingDbCache`) is
+  unchanged in shape; the filters are now `VoteFilter`s (`filter=` in a list URL; a rated
+  round's unrated is `rate = 0`).
+
+**What it pairs now** (A first in the file, B second). Each case walks the product of its inputs
+(7 whole-round, 140 juror: 20 jurors x 7 round filters) with a stride coprime to its size (37),
+the blocks continuing the walk, so `blocks x pairs` >= the inputs' number times each one; an
+input's order alternates (AB, BA, ...) at each occurrence, and a block's pairs are half BA:
+
+| Case | A | B | Inputs |
+|---|---|---|---|
+| `sql-round` | whole round `byRegionStat` (counts off) | whole round `regionCounts` (counts on) | both rounds, each tab's filter |
+| `sql-juror` | a juror's `regionCounts` (one filter) | `regionRateCounts` + `JurorCounts.regions` (what the menu runs) | every juror, both rounds, each filter |
+| `menu-round` | `GET /regions/round/R/user/0/...?module=byrate&filter=F`, `gallery.regionCounts=off` | the same, `all` | organizer, both rounds, each filter |
+| `menu-juror` | `GET /regions/round/R/user/J/...?filter=F`, `off` | the same, `all` | every juror's own, both rounds, each filter |
+
+`menu-*` call `GalleryController.regions` (the region menu's endpoint) of two controllers built
+from the app's injector, as the page pairs did: authentication, the gallery's permission checks,
+`RoundList`, the queries and the JSON, without filters, socket or client. `menu-juror` runs the
+same query in both variants (only the numbers differ), so it is the control: its paired delta
+should be ~0 and shows the method's order bias and noise floor next to `menu-round`'s.
+
+**Correctness checks** (once per input, outside the timed pairs, failing the run). The
+literal is an independent query, `COUNT(DISTINCT IF(hit, page_id, NULL))` per region from
+`selection` (the juror's rows, or the round's). `sql-round`: `byRegionStat`'s regions are
+`regionCounts`' keys, and `regionCounts` equals the literal; `sql-juror`: `regionCounts` equals
+`JurorCounts.regions`, which equals the literal; `menu-*`: both 200, the same region ids and
+URLs, no counts with `off`, and with `all` the literal's counts. Every input must have regions,
+and every filter but the unrated must count some files. Each timed menu call also requires a 200.
+
+Fixture limit: `GatlingDbSetup` votes on every file (yes/no ±1, rated 1..max; never 0), so the
+unrated inputs' counts are all 0 (logged, not an error), and in the whole round the selected and
+rejected filters each cover nearly all files. Those inputs check zeros and near-totals only; the
+timing of their queries is still the menu's.
+
+**Overlap.** `RegionCountBenchmark` times the SQL alone, each query separately (quantiles of
+independent runs, plus `ANALYZE` and handler counts); `GalleryLatencyBenchmark`'s
+`regions-<round>-juror|organizer` time the unfiltered menu over HTTP with the one setting the JVM
+started with. Neither gives a paired off/on difference: the 2026-10-25 run showed block-to-block
+spread (6.8 ms on a 25 ms query; a 26 s pause in one block) larger than the effect, which
+independent quantiles can't separate and AB/BA pairs on the same input can. This is the
+evidence behind `gallery.regionCounts = all`, and the way to recheck it after a change to the
+count queries, indexes or the menu endpoint, without a second fixture.
+
+**Run** (one JVM, no other sbt/DB work; SQL logging off for both variants):
+```bash
+python scripts/agent-check.py -- java -Xmx1536m -Dfile.encoding=UTF-8 -jar 'C:/Program Files (x86)/sbt/bin/sbt-launch.jar' \
+  'set Test / javaOptions ++= Seq("-Xmx768m", "-Dfile.encoding=UTF-8", "-Dscalikejdbc.global.loggingSQLAndTime.enabled=false")' \
+  'Test/runMain gatling.setup.RegionCountPairedBenchmark'
+```
+Options (`-Dbench.*`), which reach the forked JVM only inside the `set Test / javaOptions ++=
+Seq(...)` as above (`build.sbt` forwards a fixed list of keys, no `bench.*`, from sbt's own `-D`):
+`blocks` (3), `pairs` (100 a block, juror cases), `roundPairs` (40, round cases), `warmup` (20),
+`threads` (`1,5`), `cases` (all four). Output: `target/gatling/region-pairs-<stamp>.csv` (every
+pair with its input index and order) and `.txt` (per block and pooled per case and worker count:
+true medians, nearest-rank p95, min-max, paired sd, B faster, AB/BA split, inputs timed and in
+both orders). A pilot with small counts checks that it runs.
+
+### B10 results
+
+Commits: `bef6b6e1` (the plan above), `ca9f158d` (the benchmark restored and reworked, and the
+region-improvements plan's note), then this one. The file as planned: four cases, `Input`s built
+as the app builds them (`RoundList(...).query` / `.jurorCounts()`, `regionsUrl` for the menu's
+URL, the menu's `X-Requested-With`), `VoteFilter.ofRound` for each round's tabs, and `verify`
+before any timing. The region-improvements plan's "deleted" note now says it was restored, and
+that its recorded results are of the 2026-10-25 cases. CLAUDE.md is unchanged (it lists no
+comparable benchmark).
+
+Checks: `Test/compile` + `Gatling/compile` exit 0 (`target/checks/20261102-115849-15500.log`;
+the first attempt, `…-105020-18640.log`, failed on a missing `Writeable` import and an implicit
+session, both fixed before the commit). No specs (no app code changed).
+
+**Pilot before the review fixes** (`ca9f158d`; one JVM, the lock held, no other sbt/DB work; this worktree's own fixture, built and
+cached on this run: `data/cache/gatling-2cf3c48ea8cf278c.sql.gz`, 38,367 files, 20 jurors,
+rounds 1 (yes/no) and 2 (rated); HikariCP; MariaDB 10.6.22; 206 s in all):
+```bash
+python scripts/agent-check.py -- java -Xmx1536m -Dfile.encoding=UTF-8 -jar 'C:/Program Files (x86)/sbt/bin/sbt-launch.jar' \
+  'set Test / javaOptions ++= Seq("-Xmx768m", "-Dfile.encoding=UTF-8", "-Dscalikejdbc.global.loggingSQLAndTime.enabled=false", "-Dbench.blocks=2", "-Dbench.pairs=40", "-Dbench.roundPairs=14", "-Dbench.warmup=5", "-Dbench.threads=1")' \
+  'Test/runMain gatling.setup.RegionCountPairedBenchmark'
+```
+Exit 0. The checks passed for every input (7 whole-round, 140 juror inputs per case): the
+variants agree, and agree with the literal counts from `selection`. Log
+`target/checks/20261102-121804-26120.log`; pairs and blocks
+`target/gatling/region-pairs-20261102-122008.{csv,txt}` (216 pairs). One worker only. Its juror
+cases timed only 20 of the 140 inputs (each juror on one round and filter) in a fixed order per
+input (review M1, fixed below); the whole-round cases covered all 7.
+
+| Case (A → B) | n | A median (min-max) | B median (min-max) | Paired B-A median (min..max) | Block means of B-A | B faster |
+|---|---|---|---|---|---|---|
+| `sql-round` (`byRegionStat` → `regionCounts`) | 28 | 251.8 ms (227.7-311.7) | 150.2 ms (128.9-186.6) | **-105.2 ms** (-182.8..-80.6) | -114.4, -102.3 | 28/28 |
+| `menu-round` (off → all) | 28 | 252.8 ms (236.9-353.5) | 148.5 ms (138.8-260.2) | **-104.5 ms** (-204.7..-87.2) | -105.8, -113.3 | 28/28 |
+| `sql-juror` (`regionCounts` → `regionRateCounts`) | 80 | 15.6 ms (14.6-20.9) | 13.8 ms (12.9-17.1) | **-1.9 ms** (-7.1..+1.7) | -1.9, -1.8 | 75/80 |
+| `menu-juror` (off → all, the control) | 80 | 22.5 ms (20.2-34.3) | 22.8 ms (20.1-33.4) | **+0.2 ms** (-10.2..+7.7) | +0.1, +0.4 | 33/80 |
+
+The same order of size as 2026-10-25 (whole-round SQL 296-303 ms (A) and 172-181 ms (B) means
+at one worker, a -122 ms paired mean; here 255-261 / 147-152, about -108), but not a like-for-like
+comparison: that run's inputs were the unfiltered and `rated` whole round, these are every tab's
+filter, and `regionCounts` has since gained the V66 `(page_id, monument_id)` index and its
+`FORCE INDEX`. The menu's paired delta matches `sql-round`'s; its overhead over the SQL is within
+the cross-case noise (-2 to +8 ms). The control's block means are within ±0.5 ms. A juror's menu
+runs `regionRateCounts` (one scan, all rates), ~1.9 ms faster than the one filter's
+`regionCounts`. The pilot is small (one worker); it shows the harness works, not a new decision.
+The full default run (3 blocks, 100/40 pairs, 1 and 5 workers) wasn't made: it would not change
+`gallery.regionCounts = all`.
+
+**Open**
+- The 5-worker run (contention) only when the count queries or the menu change.
+
+**Pilot after the review fixes** (`bbddb076`; same conditions, the cached fixture restored;
+`Test/compile` + `Gatling/compile` and the run in one sbt call, exit 0, 236 s). The juror pairs
+are 140 a block, the smallest size that times all 140 juror inputs in both orders over 2 blocks:
+```bash
+python scripts/agent-check.py -- java -Xmx1536m -Dfile.encoding=UTF-8 -jar 'C:/Program Files (x86)/sbt/bin/sbt-launch.jar' \
+  'set Test / javaOptions ++= Seq("-Xmx768m", "-Dfile.encoding=UTF-8", "-Dscalikejdbc.global.loggingSQLAndTime.enabled=false", "-Dbench.blocks=2", "-Dbench.pairs=140", "-Dbench.roundPairs=14", "-Dbench.warmup=5", "-Dbench.threads=1")' \
+  'Test/compile' 'Gatling/compile' 'Test/runMain gatling.setup.RegionCountPairedBenchmark'
+```
+Log `target/checks/20261102-123334-1680.log`; pairs and summary
+`target/gatling/region-pairs-20261102-123547.{csv,txt}` (616 pairs). Checks passed for all
+inputs; all-zero (unrated) inputs: 2 of 7 whole-round, 40 of 140 juror, as the fixture predicts.
+Coverage: every case timed all its inputs (7/7, 140/140), each in both orders; AB/BA 7/7 per
+round block, 70/70 per juror block. Pooled (true medians; one worker):
+
+| Case (A → B) | n | A median (min-max) | B median (min-max) | Paired B-A median (min..max), sd | Block medians of B-A | B faster |
+|---|---|---|---|---|---|---|
+| `sql-round` | 28 | 250.2 ms (234.7-348.6) | 145.8 ms (130.8-232.0) | **-107.4 ms** (-189.8..-17.9), 34.2 | -107.0, -109.8 | 28/28 |
+| `menu-round` | 28 | 260.6 ms (237.6-410.7) | 154.6 ms (141.3-199.7) | **-105.4 ms** (-256.1..-84.1), 32.2 | -105.4, -106.5 | 28/28 |
+| `sql-juror` | 280 | 15.4 ms (13.9-28.9) | 13.9 ms (12.7-31.2) | **-1.4 ms** (-8.4..+14.5), 1.8 | -1.5, -1.4 | 247/280 |
+| `menu-juror` (control) | 280 | 28.7 ms (23.8-70.5) | 28.6 ms (24.0-54.9) | **-0.1 ms** (-30.8..+13.7), 4.8 | -0.1, -0.1 | 147/280 |
+
+The conclusions of the first pilot hold. The control's paired mean is -0.6 ms with sd 4.8 ms,
+so a standard error of ~0.3 ms at n = 280 (~0.4 ms a block of 140; the first pilot's was sd
+2.6 ms, SE ~0.4 ms at n = 40): the method resolves about a millisecond and shows no order bias.
+The juror menu's absolute time is higher than in the first pilot (28.7 vs 22.5 ms median), which
+timed only 20 inputs; it is not a paired quantity and does not affect the deltas.
+
+### B10 review fixes
+
+| Finding | Fix | Commit |
+|---|---|---|
+| M1: the juror walk timed 20 of 140 inputs, each in a fixed AB/BA order a block | each case walks all its inputs with a coprime stride (37), blocks continue the walk; an input's order alternates at each occurrence, a block's pairs are half BA; the txt logs the AB/BA split and the inputs timed and in both orders; scaladoc and plan say so; pilot shows 140/140, both orders | `bbddb076` |
+| L1: unrated inputs compare all-zero maps | every filter but the unrated must count some files; all-zero inputs are counted in the check line; the plan states the fixture limit (no rate 0, ±1 cover nearly all files) | `bbddb076` |
+| L2: `-Dbench.*` reach the fork only inside `set Test / javaOptions` | stated in the scaladoc and the plan's options paragraph | `bbddb076` |
+| L3: "the menu costs the SQL plus ~1 ms" | reworded: the menu's delta matches `sql-round`'s, its overhead is within cross-case noise (-2 to +8 ms); the 2026-10-25 comparison's different inputs and the V66 index / `FORCE INDEX` are noted | `bbddb076` |
+| Nit: control resolution | stated above (sd, SE) | this commit |
+| Nit: the checks' description | the plan says `sql-juror` and `menu-*` compare against the literal query, as the code does | `bbddb076` |
+| Nit: txt output | per block and pooled: true medians, nearest-rank p95, min-max, paired sd, B faster, AB/BA split | `bbddb076` |
+| Nit: the 2026-10-25 claim "every juror and every rate filter is sampled" | footnote in `2026-10-25-region-improvements.md`: subject to M1 | `bbddb076` |

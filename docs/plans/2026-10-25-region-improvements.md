@@ -58,11 +58,12 @@ In the jury (`services.regions.RegionScheme`), a prefix is named from the nomina
 - **D2 (optional):** a category of three copies of D1's files (~115k).
 - D3 and D4 (prod-like server) are not run: the review's measurements settle the criteria, and the laptop lacks the RAM D4 needs (bench/README.md §2).
 - Tools: `RegionCountBenchmark` (literal SQL plus the application query methods) and `RegionCountPairedBenchmark` (repeated alternating SQL/controller comparisons). No Gatling HTTP A/B for the round galleries.
-  `RegionCountPairedBenchmark` was deleted later (open-followups batch B8): the galleries no longer
-  render the counts, which the region menu loads from its regions URL; `RegionCountBenchmark`
-  (the SQL) and `GalleryLatencyBenchmark` (`regions-*` cases, the menu's endpoint over HTTP) cover
-  what is left. The commands below are kept as the record of the run; repeating the paired one
-  needs a commit before B8.
+  Since the region menu the galleries no longer render the counts (the menu loads them from its
+  regions URL), so `RegionCountPairedBenchmark`'s page pairs were obsolete; it was deleted in
+  open-followups batch B8 and restored in B10, pairing the menu's endpoint (`menu-round`,
+  `menu-juror`) and the SQL (`sql-round`, `sql-juror`) instead, with its counts checked. The
+  results below are from the 2026-10-25 version (`sql-*`, `page-*` cases); its command still runs
+  the restored one, whose cases differ (open-followups, "Batch B10").
 
 ### Original decision criteria (written before the measured runs)
 
@@ -91,7 +92,7 @@ The three saved repeat runs ending `100135`, `100451`, and `100806` illustrate t
 
 The baseline's 6.8 ms range is larger than the original 5 ms allowance. With five workers the same baseline ranges 43.0–48.2 ms, counts 40.8–63.4 ms: load-tail variability is larger still. These are independently measured quantiles, not paired effects or confidence intervals. The older Q5 literal also computes five aggregates, whereas the actual page computes one aggregate for the active filter; decisions should use the application method.
 
-`RegionCountPairedBenchmark` therefore alternates AB/BA on identical inputs within one warmed disposable D1 fixture, in three blocks at one and five workers. It records each pair and reports baseline/count p50, p95 and mean plus the mean and median paired difference. Juror blocks have 100 pairs; whole-round blocks have 40 (their p95 estimates are consequently less precise). Every juror and every rate filter is sampled, including empty/unrated views. The page experiment executes the actual controller with its normal dependency graph, authentication, DB queries and rendered HTML. It bypasses HTTP filters, sockets and browser assets; it is an application response measurement, not a claim about browser load time. Response status, the region nav and the count setting are checked to avoid timing a redirect or an unintended configuration.
+`RegionCountPairedBenchmark` therefore alternates AB/BA on identical inputs within one warmed disposable D1 fixture, in three blocks at one and five workers. It records each pair and reports baseline/count p50, p95 and mean plus the mean and median paired difference. Juror blocks have 100 pairs; whole-round blocks have 40 (their p95 estimates are consequently less precise). Every juror and every rate filter is sampled, including empty/unrated views. (Later found not quite so, open-followups B10 review M1: with 20 jurors and 7 filters, the juror walk gave each juror a single round and filter, 20 of the 140 juror inputs, each in a fixed AB/BA order within a block; the whole-round cases covered all their inputs. Fixed in B10.) The page experiment executes the actual controller with its normal dependency graph, authentication, DB queries and rendered HTML. It bypasses HTTP filters, sockets and browser assets; it is an application response measurement, not a claim about browser load time. Response status, the region nav and the count setting are checked to avoid timing a redirect or an unintended configuration.
 
 The follow-up decision uses absolute application response costs and their repeatability, rather than treating a query percentage or a single noisy p95 as a binary UX test. It retains the one/five-worker comparison to expose contention. These local fixture results do not establish production capacity or a universal human-perception threshold. Unlike the category-query experiment, the paired experiment leaves the restored fixture's deleted marks unchanged; neither round query excludes deleted files, and the selection population is identical.
 
