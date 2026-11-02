@@ -252,7 +252,7 @@ class UserController @Inject()(cc: ControllerComponents,
                 // no turn to hash the password: nothing created
                 case _: PasswordHasher.Busy => passwordBusy(user, editUserForm.fill(formUser), formUser.contestId)
                 // a role the service refuses ([[UserService.addToContest]]): nothing created
-                case _: IllegalArgumentException => roleRefused(formUser)
+                case _: UserService.RoleNotAssignable => roleRefused(formUser)
               }
             } else {
               Redirect(routes.LoginController.index) // TODO message

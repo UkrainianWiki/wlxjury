@@ -229,9 +229,31 @@ class RoleAssignmentSpec extends PlaySpecification with PlayTestDb with Mockito 
           role <- badRoles
           email <- Seq("new@example.com", carol.email)
           if scala.util.Try(userService.addToContest(admin, User("", email, roles = Set(role)), Some(c10))(messages))
-            .failed.toOption.forall(!_.isInstanceOf[IllegalArgumentException])
+            .failed.toOption.forall(!_.isInstanceOf[UserService.RoleNotAssignable])
         } yield (role, email)
         (notRefused === Nil) and (state() === before)
+      }
+    }
+  }
+
+  "saveUser for a new user" should {
+    "not report another IllegalArgumentException as a refused role" in {
+      testDbApp { implicit app =>
+        createContests(10)
+        val admin = member("admin@example.com", 10L -> "admin")
+        val failing = new UserService(mailer, app.configuration) {
+          override def createNewUser(user: User, formUser: User)(implicit messages: play.api.i18n.Messages) =
+            throw new IllegalArgumentException("something else")
+        }
+        val controller = new UserController(app.injector.instanceOf[ControllerComponents], failing,
+          app.injector.instanceOf[modules.BlockingExecutionContext])
+        implicit val mat: Materializer = app.materializer
+        val result = call(controller.saveUser(),
+          FakeRequest(POST, "/users/save")
+            .withSession(Secured.UserName -> admin.email, Secured.CurrentContestId -> "10")
+            .withFormUrlEncodedBody(form(0, "new@example.com", 10, "jury"): _*)
+            .withCSRFToken)
+        status(result) must throwA[IllegalArgumentException](message = "something else")
       }
     }
   }
