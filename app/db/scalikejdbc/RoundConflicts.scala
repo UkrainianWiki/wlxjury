@@ -64,7 +64,10 @@ object RoundConflicts {
           sql"UPDATE rounds SET exclude_coi = TRUE WHERE id = $roundId".update()
           val conflicts = CoiMembers.roundFiles(roundId, CoiMembers.forContest(contestId))
           val pageIds = conflicts.map(_._1)
-          // the votes locked before their criteria rates are deleted, as every vote delete
+          // the votes locked before their criteria rates are deleted, as every vote delete.
+          // Lock order: the round, then the votes, as a restore of deleted files locks them
+          // (CriteriaRateSpec "lock the rounds before the files' votes when restoring them"):
+          // a change here must keep it
           if (pageIds.nonEmpty) SelectionJdbc.deleteVotes(sqls"v.round_id = $roundId AND v.page_id IN ($pageIds)")
           Outcome.Removed(conflicts)
       }

@@ -100,7 +100,9 @@ class CriteriaRateSpec extends Specification with TestDb with BeforeAll with Bef
         if (now.exists(_.contains(" LOCK WAIT "))) outcome = Some("LOCK WAIT")
         else if (waiter.isCompleted) outcome = Some(s"done without waiting: ${waiter.value}")
         else if (deadline.isOverdue()) outcome = Some(s"no lock wait in 20 s: $now")
-        else Thread.sleep(20)
+        // InnoDB refreshes INNODB_TRX's cache only when it wasn't read for 100 ms: polled more
+        // often, it shows the rows of the first read for good (a lock wait never seen)
+        else Thread.sleep(200)
       }
       outcome.get
     } finally root.close()
