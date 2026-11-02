@@ -1373,3 +1373,32 @@ changed).
 - The 2 s of the aggregate plan came from the UI fixture server at 533c4b88; it wasn't re-run
   here (HEAD measures 1.13 s on the Gatling fixture). The single 4.9 s and 5.2 s outliers there
   did not recur in 60 samples per variant (max 1351 ms).
+
+## Batch B9: the approval sums only for a yes/no round
+
+Branch `ukwikidev/followups`, base `9e3bc9ec`. B8's open question: the grouped select
+(`ImageDbNew.SelectionQuery.query`, `grouped = true`) always adds `sum(s.rate > 0) as approvals,
+sum(s.rate < 0) as rejections`, read into `ImageWithRating.approvalsFromDb`/`rejectionsFromDb`.
+
+**Readers** (`rg -n "approvals|rejections|approvalsFromDb|grouped\s*=" app test public/javascripts`):
+
+| Reader | Query | Yes/no round | Rated round |
+|---|---|---|---|
+| `RoundList.query` (all jurors, not file list/CSV): gallery tiles, by-rate gallery, large view neighbours | grouped | gallery's `data-approvals/-rejections/-tally` and by-rate `binaryTally` only under `list.aggregateBinary` / `round.isBinary && asUserId == 0`; the large view reads neither | never read: by-rate shows stars and `rateString` (rate sum) |
+| `RoundList.query` of a juror (`asUserId != 0`) | vote rows | `binaryVote(file.rate)` | stars |
+| file list, CSV (`groupWithDetails`) | grouped `idOnly` for order/page (never had the sums), then `withVotes` rows | `binaryTally`/`rateString` count from the vote rows | `rateString` from the rows |
+| `keyCounts`, `pageKeys`, `imageRank`, `count` | own selects (order expressions `sum(s.rate > 0)` etc.) | unaffected | unaffected |
+| `ImageJdbc.byRoundMerged` → `DistributeImages` | grouped | binary top-N (`binaryCandidates`, `SelectTopByRating` with an order) and "exclude rejected by at least" read them, only for yes/no previous rounds; the current round's rows and the other previous-round reads don't | never read (`totalRate`, `rateSum`) |
+| `RoundDistributionHandler` (job path) | its own SQL with the two sums | unaffected | unaffected |
+| `tile-votes.js addTally`, `ug-theme-tiles.js`, `unitegallery.js` | `data-tally` attributes | tally where the attribute is | none emitted (gated above) |
+
+Without the columns, `approvals`/`rejections` fall back to counting the selection rows, which
+for a grouped row (one synthetic selection with the sum) would be wrong, so every yes/no reader
+of a grouped row must ask for them.
+
+**Design.** An explicit flag, `SelectionQuery.tally: Boolean = false`: with `grouped`, the select
+adds the two sums and the grouped reader reads them; without it neither (the fields stay
+`None`). Callers that know the round set it: `RoundList.query` with `tally = aggregateBinary`
+(all jurors on a yes/no round), `byRoundMerged(..., tally)` (`ImageRepo` too) with `tally = true`
+only on `DistributeImages`' two yes/no-only reads. No guessing from the rate filter or round id.
+Rated pages already never show a tally (gated on `isBinary`); specs pin that.
