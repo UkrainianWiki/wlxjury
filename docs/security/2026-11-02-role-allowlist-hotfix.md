@@ -69,7 +69,7 @@ lost after `backup-skipped`).
   throwaway member is not root and its role is still `jury`; then delete it or set it to `no`.
 - A juror signs in, sees their rounds and votes once (reversible).
 - `journalctl -u wlxjury --since "10 min ago" | grep -E 'ERROR|security.roles'`: no errors; a
-  `security.roles` "ignored a membership role" WARN appears for each of the 22 legacy rows read
+  `security.roles` "ignored a membership role" WARN appears for each of the 23 legacy rows read
   until step 4 runs.
 
 ## 4. Data and root audit (after the deploy; the user runs it)
@@ -83,9 +83,9 @@ check of the count):
    an incident**: keep it as it is, record it, and look for `POST /users/save` around its
    `created_at` / since 0.13 in the Apache access logs of every jury vhost (they give only time
    and client IP, no request body or account), then take root away.
-2. the rows that are not exactly one role (expected: 19 × `jury1`, 3 × `jury-`);
+2. the rows that are not exactly one role (expected: 20 × `jury1`, 3 × `jury-`);
 3. `START TRANSACTION;` then the `UPDATE` of the `jury1` / `jury-` rows: check that it reports
-   **22 rows affected**; only then, as a separate step, `COMMIT;` (else `ROLLBACK;` and look
+   **23 rows affected**; only then, as a separate step, `COMMIT;` (else `ROLLBACK;` and look
    at step 2's rows first);
 4. what is left (expected: nothing). Anything left is unexpected: record it and look for that
    account's `POST /users/save` before changing it.

@@ -20,7 +20,7 @@
 SELECT id, created_at, is_root FROM users WHERE is_root = 1 ORDER BY id;
 
 -- 2. Before: the rows that are not exactly one contest role. Expected on 2026-11-02:
---    19 x 'jury1' (contests 16, 23, 27, 36) and 3 x 'jury-' (contest 64), nothing else.
+--    20 x 'jury1' (contests 16, 23, 27, 36) and 3 x 'jury-' (contest 64), nothing else.
 SELECT user_id, contest_id, role, HEX(role) AS role_hex
 FROM user_contest
 WHERE BINARY role NOT IN ('no', 'jury', 'organizer', 'admin', 'board', 'auditor', 'staff')
@@ -30,9 +30,9 @@ ORDER BY contest_id, user_id;
 --    the users page disables a member.
 -- 3a.
 START TRANSACTION;
--- 3b. Expected: "Query OK, 22 rows affected".
+-- 3b. Expected: "Query OK, 23 rows affected".
 UPDATE user_contest SET role = 'no' WHERE BINARY role IN ('jury1', 'jury-');
--- 3c. ONLY if 3b reported 22 rows affected:
+-- 3c. ONLY if 3b reported 23 rows affected:
 COMMIT;
 --     Otherwise, instead of COMMIT:  ROLLBACK;  and look at step 2's rows first.
 

@@ -51,21 +51,25 @@ class PasswordStorageSpec extends PlaySpecification with PlayTestDb with Mockito
   private def as[A](user: User, contestId: Option[Long] = None)(request: FakeRequest[A]): FakeRequest[A] =
     request.withSession(Seq(Secured.UserName -> user.email) ++ contestId.map(Secured.CurrentContestId -> _.toString): _*)
 
-  private def saveProfile(user: User, password: String)(implicit app: Application): Future[Result] = {
+  /** The own profile with a new password, and the current one (N2: needed for it). */
+  private def saveProfile(user: User, password: String, current: String = "strong")(implicit app: Application): Future[Result] = {
     implicit val mat: Materializer = app.materializer
     call(userController.saveUser(),
       as(user)(FakeRequest(POST, "/users/save")).withFormUrlEncodedBody(
         "id" -> user.getId.toString,
-        // a signed-up account has no name yet; the form needs one
-        "fullname" -> Some(user.fullname).filter(_.nonEmpty).getOrElse("Name"), "email" -> user.email, "password" -> password
+        // an invited account has no name yet; the form needs one
+        "fullname" -> Some(user.fullname).filter(_.nonEmpty).getOrElse("Name"), "email" -> user.email, "password" -> password,
+        "currentPassword" -> current
       ).withCSRFToken)
   }
 
-  private def signUp(login: String, password: String)(implicit app: Application): Future[Result] = {
+  /** Accepts an invitation (or a password link: the same form) for the account with `password`. */
+  private def acceptLink(user: User, password: String)(implicit app: Application): Future[Result] = {
     implicit val mat: Materializer = app.materializer
-    call(loginController.signUp(),
-      FakeRequest(POST, "/signup").withFormUrlEncodedBody(
-        "login" -> login, "password" -> password, "repeat.password" -> password).withCSRFToken)
+    val (_, token) = services.AccountTokenService.create(user.getId, db.scalikejdbc.AccountTokenJdbc.Invitation, user.email)
+    call(loginController.acceptInvitation(),
+      FakeRequest(POST, "/invitation").withFormUrlEncodedBody(
+        "token" -> token, "password" -> password, "repeat.password" -> password).withCSRFToken)
   }
 
   private def root(email: String = "root@example.com", hash: String = PasswordHasher.default.hash("strong")) =
@@ -173,23 +177,26 @@ class PasswordStorageSpec extends PlaySpecification with PlayTestDb with Mockito
   }
 
   "with no turn to hash a password, or too many sign-ins in flight" should {
-    "a sign-up get 503 and create nothing" in {
+    "an invitation's acceptance get 503 and change nothing" in {
       testDbApp { implicit app =>
+        val invitee = User.create(User("Late", "late@example.com"))
+        val (_, token) = services.AccountTokenService.create(invitee.getId, db.scalikejdbc.AccountTokenJdbc.Invitation,
+          invitee.email)
         withEveryTurnTaken {
-          val request = FakeRequest(POST, "/signup").withFormUrlEncodedBody(
-            "login" -> "late@example.com", "password" -> "late-password", "repeat.password" -> "late-password"
+          val request = FakeRequest(POST, "/invitation").withFormUrlEncodedBody(
+            "token" -> token, "password" -> "late-password", "repeat.password" -> "late-password"
           ).withCSRFToken
-          val result = Future.successful(loginController.signUpResult(System.nanoTime() - 1)(request))
+          val result = Future.successful(loginController.acceptInvitationResult(System.nanoTime() - 1)(request))
           status(result) === SERVICE_UNAVAILABLE
           contentAsString(result) must contain("Too many sign-ins at once")
           signedIn(result) must beFalse
         }
-        User.findByEmail("late@example.com") must beEmpty
-        User.count() === 0L
+        stored(invitee.getId) must beNone
+        services.AccountTokenService.check(token, db.scalikejdbc.AccountTokenJdbc.SetsPassword) must beRight
       }
     }
 
-    "a sign-in and a sign-up past the in-flight limit get 503 at once" in {
+    "a sign-in past the in-flight limit get 503 at once" in {
       testDbApp { implicit app =>
         val user = root()
         val hasher = PasswordHasher.default
@@ -201,9 +208,7 @@ class PasswordStorageSpec extends PlaySpecification with PlayTestDb with Mockito
           status(refused) === SERVICE_UNAVAILABLE
           header(RETRY_AFTER, refused) === Some("5")
           contentAsString(refused) must contain("Too many sign-ins at once")
-          status(signUp("flood@example.com", "flood-password")) === SERVICE_UNAVAILABLE
           (System.nanoTime() - started) must be_<(1000000000L) // no wait for a turn
-          User.findByEmail("flood@example.com") must beEmpty
         } finally (1 to limit).foreach(_ => hasher.leave())
         signedIn(signIn(user.email, "strong")) must beTrue
       }
@@ -217,7 +222,8 @@ class PasswordStorageSpec extends PlaySpecification with PlayTestDb with Mockito
           implicit val mat: Materializer = app.materializer
           val r = call(userController.saveUser(),
             as(user)(FakeRequest(POST, "/users/save")).withFormUrlEncodedBody(
-              "id" -> user.getId.toString, "fullname" -> "Renamed", "email" -> user.email, "password" -> "new-password"
+              "id" -> user.getId.toString, "fullname" -> "Renamed", "email" -> user.email, "password" -> "new-password",
+              "currentPassword" -> "strong"
             ).withCSRFToken)
           status(r) // completes while the turns are taken
           r
@@ -229,7 +235,7 @@ class PasswordStorageSpec extends PlaySpecification with PlayTestDb with Mockito
       }
     }
 
-    "an import report those not added, and a reset keep the password" in {
+    "not hold up an import or root's reset, which hash nothing (S2: invitations and links)" in {
       testDbApp { implicit app =>
         implicit val mat: Materializer = app.materializer
         createContests(10)
@@ -249,10 +255,10 @@ class PasswordStorageSpec extends PlaySpecification with PlayTestDb with Mockito
           (i, r)
         }
         status(imported) === SEE_OTHER
-        flash(imported).get("users-added") must beSome(contain("3 could not be added"))
-        Seq("a1@example.com", "a2@example.com", "a3@example.com").flatMap(User.findByEmail) must beEmpty
+        flash(imported).get("users-added") must beSome(contain("New accounts: 3."))
+        Seq("a1@example.com", "a2@example.com", "a3@example.com").flatMap(User.findByEmail).map(_.password) ===
+          Seq(None, None, None)
         status(reset) === SEE_OTHER
-        flash(reset).get("password-reset") must beSome(contain("The server is busy checking passwords"))
         stored(juror.getId) === before
       }
     }
@@ -261,49 +267,31 @@ class PasswordStorageSpec extends PlaySpecification with PlayTestDb with Mockito
   "every way of setting a password" should {
     "store a bcrypt hash at the configured cost, never SHA-1" in {
       testDbApp { implicit app =>
-        implicit val mat: Materializer = app.materializer
         val messages = MessagesImpl(Lang("en"), Helpers.stubMessagesApi())
         val Seq(contest) = createContests(10)
+        val first = root("first@example.com")
 
-        // sign-up: the first account, root
-        val signedUp = signUp("first@example.com", "first-password")
-        status(signedUp) === SEE_OTHER
-        val first = User.findByEmail("first@example.com").head
-        first.password must beSome(beMatching(Bcrypt4))
-        User.login("first@example.com", "first-password").flatMap(_.id) === first.id
-
-        // an organizer's new user: given and generated passwords
+        // an organizer's new user: no password until the invitation is accepted, whatever the form said
         val givenUser = userService.createUser(first,
           User("Given", "given@example.com", roles = Set("jury"), password = Some("given-password")), Some(contest))(messages)
+        stored(givenUser.getId) must beNone
+        User.login("given@example.com", "given-password") must beNone
+        status(acceptLink(givenUser, "accepted-password")) === SEE_OTHER
         stored(givenUser.getId) must beSome(beMatching(Bcrypt4))
-        User.login("given@example.com", "given-password").flatMap(_.id) === givenUser.id
-        val generated = userService.createUser(first, User("Generated", "generated@example.com", roles = Set("jury")),
-          Some(contest))(messages)
-        stored(generated.getId) must beSome(beMatching(Bcrypt4))
+        User.login("given@example.com", "accepted-password").flatMap(_.id) === givenUser.id
 
         // the own profile
         status(saveProfile(first, "changed-password")) === SEE_OTHER
         stored(first.getId) must beSome(beMatching(Bcrypt4))
         User.login("first@example.com", "changed-password").flatMap(_.id) === first.id
-        User.login("first@example.com", "first-password") must beNone
+        User.login("first@example.com", "strong") must beNone
 
-        // root's reset
+        // root's password link
         val before = stored(givenUser.getId)
-        val reset = call(userController.resetPassword(givenUser.getId),
-          as(first)(FakeRequest(POST, s"/users/resetpasswd/${givenUser.getId}")).withCSRFToken)
-        status(reset) === SEE_OTHER
+        status(acceptLink(givenUser, "reset-password")) === SEE_OTHER
         stored(givenUser.getId) must beSome(beMatching(Bcrypt4))
         stored(givenUser.getId) !== before
-        User.login("given@example.com", "given-password") must beNone
-
-        // import
-        val imported = call(userController.importUsers(Some(10L)),
-          as(first, Some(10L))(FakeRequest(POST, "/admin/importusers?contestId=10"))
-            .withFormUrlEncodedBody("userstoimport" -> "imported1@example.com\nimported2@example.com", "role" -> "jury")
-            .withCSRFToken)
-        status(imported) === SEE_OTHER
-        Seq("imported1@example.com", "imported2@example.com")
-          .map(e => User.findByEmail(e).headOption.flatMap(_.password)) must contain(beSome(beMatching(Bcrypt4))).forall
+        User.login("given@example.com", "accepted-password") must beNone
 
         // a legacy hash, rehashed by signing in
         val old = root("legacy@example.com", legacy("legacy-password"))
@@ -312,7 +300,7 @@ class PasswordStorageSpec extends PlaySpecification with PlayTestDb with Mockito
         val passwords = DB.readOnly { implicit s =>
           sql"SELECT email, password FROM users".map(rs => rs.string(1) -> rs.stringOpt(2)).list.apply()
         }
-        passwords.size === 6 // first, given, generated, two imported, legacy
+        passwords.size === 3 // first, given, legacy
         passwords.collect { case (email, Some(p)) if p.matches(Legacy) => email } must beEmpty
         passwords.collect { case (email, p) if !p.exists(_.matches(Bcrypt4)) => email } must beEmpty
       }
@@ -320,18 +308,19 @@ class PasswordStorageSpec extends PlaySpecification with PlayTestDb with Mockito
   }
 
   "a new password" should {
-    "be refused over 72 bytes, or blank, on sign-up" in {
+    "be refused over 72 bytes, or blank, when an invitation is accepted" in {
       testDbApp { implicit app =>
-        val result = signUp("long@example.com", "a" * 73)
+        val invitee = User.create(User("Invitee", "invitee@example.com"))
+        val result = acceptLink(invitee, "a" * 73)
         status(result) === BAD_REQUEST
         contentAsString(result) must contain("The password is too long: at most 72 bytes")
-        User.findByEmail("long@example.com") must beEmpty
+        stored(invitee.getId) must beNone
 
-        status(signUp("blank@example.com", "   ")) === BAD_REQUEST
-        User.findByEmail("blank@example.com") must beEmpty
+        status(acceptLink(invitee, "   ")) === BAD_REQUEST
+        stored(invitee.getId) must beNone
 
-        status(signUp("max@example.com", "a" * 72)) === SEE_OTHER
-        User.login("max@example.com", "a" * 72) must beSome
+        status(acceptLink(invitee, "a" * 72)) === SEE_OTHER
+        User.login("invitee@example.com", "a" * 72) must beSome
       }
     }
 

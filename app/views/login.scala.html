@@ -1,4 +1,4 @@
-@(loginForm: Form[(String, String)], returnTo: Option[String] = None)(implicit flash: Flash, messages: Messages, req: RequestHeader)
+@(loginForm: Form[(String, String)], returnTo: Option[String] = None, noAccounts: Boolean = false)(implicit flash: Flash, messages: Messages, req: RequestHeader)
 
 @mainAdmin("application.name") {
 
@@ -29,8 +29,13 @@
         </div>
     }
 
+    @* no sign-up: accounts come from an organizer's invitation; an empty installation is set up
+       with its setup token (docs/deployment.md) *@
     <div>
-        <p class="not-a-member">@Messages("not.a.member") <a href="/signup">@Messages("sign.up.now")</a>
+        <p class="not-a-member">@Messages("not.a.member.invitation")</p>
+        @if(noAccounts) {
+            <p class="alert alert-info" role="status">@Messages("setup.needed")</p>
+        }
     </div>
 
     @* the colour mode, signed out: theme-switch.js sets the theme cookie in the browser and

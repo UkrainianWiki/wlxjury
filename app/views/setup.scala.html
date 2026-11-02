@@ -1,0 +1,33 @@
+@(setupForm: Form[(String, String, String, String)])(implicit flash: Flash, messages: Messages, req: RequestHeader)
+@* the first account of an empty installation (P20): only while no account exists and a setup
+   token is configured (LoginController.setupView) *@
+@mainAdmin("application.name") {
+<h1 class="visually-hidden">@Messages("application.name")</h1>
+<div class="row">
+<fieldset class="col-md-6 offset-md-3">
+
+    <legend>@Messages("setup.title")</legend>
+    <p>@Messages("setup.explain")</p>
+
+    @bs.form(routes.LoginController.setup()) {
+
+        @if(setupForm.hasGlobalErrors) {
+            <div class="alert alert-danger" role="alert">
+            @Messages(setupForm.globalErrors.head.message)
+            </div>
+        }
+
+        @bs.password(setupForm("token"), Symbol("_label") -> Messages("setup.token"), Symbol("autocomplete") -> "off")
+        @bs.text(setupForm("login"), Symbol("_label") -> Messages("email"), Symbol("autocomplete") -> "email")
+        @bs.password(setupForm("password"), Symbol("_label") -> Messages("new.password"), Symbol("autocomplete") -> "new-password")
+        @bs.password(setupForm("repeat.password"), Symbol("_label") -> Messages("signin.repeat.your.password"), Symbol("autocomplete") -> "new-password")
+        @helper.CSRF.formField
+
+        <div class="d-grid mb-3">
+            <button id="submit" type="submit" class="btn btn-lg btn-primary">@Messages("setup.submit")</button>
+        </div>
+    }
+
+</fieldset>
+</div>
+}

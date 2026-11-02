@@ -1,0 +1,12 @@
+@()(implicit flash: Flash, messages: Messages, req: RequestHeader)
+@* every refused link (unknown, used, expired, revoked, sent to another address): one page, so
+   that it tells nothing about the account or the address (N7) *@
+@mainAdmin("application.name") {
+<div class="row">
+<div class="col-md-6 offset-md-3">
+    <h1 class="h3">@Messages("account.link.invalid.title")</h1>
+    <p>@Messages("account.link.invalid")</p>
+    <p><a href="@routes.LoginController.login()">@Messages("signin.signin")</a></p>
+</div>
+</div>
+}
