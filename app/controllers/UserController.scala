@@ -10,17 +10,19 @@ import play.api.data.Forms._
 import play.api.data.validation.{Constraint, Constraints, Valid}
 import play.api.i18n.{I18nSupport, Lang, Messages}
 import play.api.mvc.{Action, AnyContent, ControllerComponents, EssentialAction, Result}
-import services.{ApiTokenService, UserService}
+import modules.BlockingExecutionContext
+import services.{ApiTokenService, PasswordHasher, UserService}
 import spray.util.pimpFuture
 
 import javax.inject.Inject
-import scala.util.Try
+import scala.util.{Failure, Success, Try}
 
 /**
   * Controller for admin views
   */
 class UserController @Inject()(cc: ControllerComponents,
                                userService: UserService,
+                               blocking: BlockingExecutionContext,
                                themeCookies: ThemeCookies = ThemeCookies.default)
     extends Secured(cc)
     with I18nSupport {
@@ -207,7 +209,7 @@ class UserController @Inject()(cc: ControllerComponents,
     *
     * @return list of users
     */
-  def saveUser(): EssentialAction = withAuth() { user => implicit request =>
+  def saveUser(): EssentialAction = withAuthOn(blocking)() { user => implicit request => // may hash a password
     editUserForm
       .bindFromRequest()
       .fold(
@@ -227,9 +229,14 @@ class UserController @Inject()(cc: ControllerComponents,
           if (userId == 0) {
             if (user.isAdmin(formUser.contestId)) {
               // an existing email joins the contest with its account
-              val added = userService.createNewUser(user, formUser)
-              Redirect(routes.UserController.users(formUser.contestId))
-                .flashing("users-added" -> addedMessage(Seq(added)))
+              try {
+                val added = userService.createNewUser(user, formUser)
+                Redirect(routes.UserController.users(formUser.contestId))
+                  .flashing("users-added" -> addedMessage(Seq(added)))
+              } catch {
+                // no turn to hash the password: nothing created
+                case _: PasswordHasher.Busy => passwordBusy(user, editUserForm.fill(formUser), formUser.contestId)
+              }
             } else {
               Redirect(routes.LoginController.index) // TODO message
             }
@@ -261,6 +268,24 @@ class UserController @Inject()(cc: ControllerComponents,
     } else if (accountChanged && !canEditAccount(user, editedUser)) {
       badRequest(editUserForm.fill(formUser).withGlobalError("user.in.other.contests"))
     } else {
+      // hashed before anything is written: no turn to hash it changes nothing
+      val newHash =
+        try Right(formUser.password.filter(_ => canEditAccount(user, editedUser)).map(PasswordHasher.default.hash(_)))
+        catch { case _: PasswordHasher.Busy => Left(passwordBusy(user, editUserForm.fill(formUser), editedUser.contestId)) }
+      newHash.fold(identity, updateAccount(user, editedUser, formUser, _))
+    }
+  }
+
+  /** 503 with the form: no turn to hash the password came in time. */
+  private def passwordBusy(user: User, form: Form[User], contestId: Option[Long])(
+      implicit request: play.api.mvc.Request[_]): Result =
+    ServiceUnavailable(views.html.editUser(user, form.withGlobalError("password.busy"), contestId = contestId))
+      .withHeaders(RETRY_AFTER -> "5")
+
+  private def updateAccount(user: User, editedUser: User, formUser: User, newHash: Option[String])(
+      implicit request: play.api.mvc.Request[_]): Result = {
+    val userId = editedUser.getId
+    locally {
       if (canEditAccount(user, editedUser)) {
         User.updateUser(userId,
                         formUser.fullname,
@@ -269,10 +294,8 @@ class UserController @Inject()(cc: ControllerComponents,
                         formUser.lang,
                         formUser.sort)
 
-        for (password <- formUser.password) {
-          val hash = User.hash(formUser, password)
-          User.updateHash(userId, hash)
-        }
+        for (hash <- newHash)
+          User.setPasswordHash(userId, hash)
       }
 
       // only admins change roles, only root makes root, and only in editedUser's contest.
@@ -349,7 +372,8 @@ class UserController @Inject()(cc: ControllerComponents,
     }
 
   def importUsers(contestIdParam: Option[Long] = None): EssentialAction =
-    withAuth(contestPermission(User.ADMIN_ROLES, contestIdParam)) {
+    // a bcrypt hash per new account: off Play's default dispatcher
+    withAuthOn(blocking)(contestPermission(User.ADMIN_ROLES, contestIdParam)) {
       user => implicit request => withContestId(user, contestIdParam) { contestId =>
         importUsersForm
           .bindFromRequest()
@@ -367,13 +391,23 @@ class UserController @Inject()(cc: ControllerComponents,
                     contestId = Some(contestId)
                   ))
 
-              val results = parsed.map(
-                pu =>
-                  Try(userService
-                    .addToContest(user, pu.copy(roles = Set(role)), contest)))
+              // one at a time; after a password that got no turn to be hashed, the rest
+              // aren't tried (each would wait as long), and all those not added are counted
+              val (added, notAdded, _) =
+                parsed.foldLeft((Vector.empty[UserService.Added], 0, false)) {
+                  case ((done, failed, true), _) => (done, failed + 1, true)
+                  case ((done, failed, false), pu) =>
+                    Try(userService.addToContest(user, pu.copy(roles = Set(role)), contest)) match {
+                      case Success(a)                       => (done :+ a, failed, false)
+                      case Failure(_: PasswordHasher.Busy) => (done, failed + 1, true)
+                      case Failure(_)                       => (done, failed + 1, false)
+                    }
+                }
+              val message = addedMessage(added) +
+                (if (notAdded > 0) " " + Messages("users.not.added", notAdded) else "")
 
               Redirect(routes.UserController.users(Some(contestId)))
-                .flashing("users-added" -> addedMessage(results.flatMap(_.toOption)))
+                .flashing("users-added" -> message)
             }
           )
       }
@@ -446,7 +480,8 @@ class UserController @Inject()(cc: ControllerComponents,
       "email" -> text.verifying(Constraint[String]("constraint.email") { e =>
         if (e.trim.isEmpty) Valid else Constraints.emailAddress()(e)
       }),
-      "password" -> optional(text),
+      // a new password: not blank, at most 72 bytes (bcrypt's limit)
+      "password" -> optional(text.verifying(PasswordHasher.newPassword)),
       "roles" -> optional(text),
       "contest" -> optional(longNumber),
       "lang" -> optional(text),
@@ -495,7 +530,7 @@ class UserController @Inject()(cc: ControllerComponents,
   }
 
   def resetPassword(id: Long): EssentialAction =
-    withAuth(rolePermission(Set(User.ROOT_ROLE))) { user => implicit request =>
+    withAuthOn(blocking)(rolePermission(Set(User.ROOT_ROLE))) { user => implicit request =>
       User.findById(id).fold[Result](
         NotFound(views.html.errorPage(Some(user), "error.title", "error.user.not.found"))
       ) { found =>
@@ -505,9 +540,10 @@ class UserController @Inject()(cc: ControllerComponents,
         val contest: Option[ContestJury] =
           editedUser.currentContest.flatMap(ContestJuryJdbc.findById)
         val contestName = contest.fold("")(_.name)
-        val hash = User.hash(editedUser, password)
-
-        User.updateHash(editedUser.getId, hash)
+        // no turn to hash it: the password stays, and the page says to try again
+        val stored =
+          try { User.setPassword(editedUser.getId, password); true }
+          catch { case _: PasswordHasher.Busy => false }
 
         val juryhome = "http://localhost:9000"
         //        User.updateUser(formUser.fullname, formUser.email, hash, formUser.roles, formUser.contest)
@@ -518,7 +554,8 @@ class UserController @Inject()(cc: ControllerComponents,
         // sendMail.sendMail(from = (user.fullname, user.email), to = Seq(user.email), bcc = Seq(user.email), subject = subject, message = message)
 
         Redirect(routes.UserController.editUser(id)).flashing(
-          "password-reset" -> s"Password reset. New Password sent to ${editedUser.email}")
+          "password-reset" ->
+            (if (stored) s"Password reset. New Password sent to ${editedUser.email}" else Messages("password.busy")))
       }
     }
 }
