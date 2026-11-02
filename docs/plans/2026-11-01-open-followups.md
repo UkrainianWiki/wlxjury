@@ -1508,3 +1508,43 @@ The full default run (3 blocks, 100/40 pairs, 1 and 5 workers) wasn't made: it w
 
 **Open**
 - The 5-worker run (contention) only when the count queries or the menu change.
+
+**Pilot after the review fixes** (`bbddb076`; same conditions, the cached fixture restored;
+`Test/compile` + `Gatling/compile` and the run in one sbt call, exit 0, 236 s). The juror pairs
+are 140 a block, the smallest size that times all 140 juror inputs in both orders over 2 blocks:
+```bash
+python scripts/agent-check.py -- java -Xmx1536m -Dfile.encoding=UTF-8 -jar 'C:/Program Files (x86)/sbt/bin/sbt-launch.jar' \
+  'set Test / javaOptions ++= Seq("-Xmx768m", "-Dfile.encoding=UTF-8", "-Dscalikejdbc.global.loggingSQLAndTime.enabled=false", "-Dbench.blocks=2", "-Dbench.pairs=140", "-Dbench.roundPairs=14", "-Dbench.warmup=5", "-Dbench.threads=1")' \
+  'Test/compile' 'Gatling/compile' 'Test/runMain gatling.setup.RegionCountPairedBenchmark'
+```
+Log `target/checks/20261102-123334-1680.log`; pairs and summary
+`target/gatling/region-pairs-20261102-123547.{csv,txt}` (616 pairs). Checks passed for all
+inputs; all-zero (unrated) inputs: 2 of 7 whole-round, 40 of 140 juror, as the fixture predicts.
+Coverage: every case timed all its inputs (7/7, 140/140), each in both orders; AB/BA 7/7 per
+round block, 70/70 per juror block. Pooled (true medians; one worker):
+
+| Case (A → B) | n | A median (min-max) | B median (min-max) | Paired B-A median (min..max), sd | Block medians of B-A | B faster |
+|---|---|---|---|---|---|---|
+| `sql-round` | 28 | 250.2 ms (234.7-348.6) | 145.8 ms (130.8-232.0) | **-107.4 ms** (-189.8..-17.9), 34.2 | -107.0, -109.8 | 28/28 |
+| `menu-round` | 28 | 260.6 ms (237.6-410.7) | 154.6 ms (141.3-199.7) | **-105.4 ms** (-256.1..-84.1), 32.2 | -105.4, -106.5 | 28/28 |
+| `sql-juror` | 280 | 15.4 ms (13.9-28.9) | 13.9 ms (12.7-31.2) | **-1.4 ms** (-8.4..+14.5), 1.8 | -1.5, -1.4 | 247/280 |
+| `menu-juror` (control) | 280 | 28.7 ms (23.8-70.5) | 28.6 ms (24.0-54.9) | **-0.1 ms** (-30.8..+13.7), 4.8 | -0.1, -0.1 | 147/280 |
+
+The conclusions of the first pilot hold. The control's paired mean is -0.6 ms with sd 4.8 ms,
+so a standard error of ~0.3 ms at n = 280 (~0.4 ms a block of 140; the first pilot's was sd
+2.6 ms, SE ~0.4 ms at n = 40): the method resolves about a millisecond and shows no order bias.
+The juror menu's absolute time is higher than in the first pilot (28.7 vs 22.5 ms median), which
+timed only 20 inputs; it is not a paired quantity and does not affect the deltas.
+
+### B10 review fixes
+
+| Finding | Fix | Commit |
+|---|---|---|
+| M1: the juror walk timed 20 of 140 inputs, each in a fixed AB/BA order a block | each case walks all its inputs with a coprime stride (37), blocks continue the walk; an input's order alternates at each occurrence, a block's pairs are half BA; the txt logs the AB/BA split and the inputs timed and in both orders; scaladoc and plan say so; pilot shows 140/140, both orders | `bbddb076` |
+| L1: unrated inputs compare all-zero maps | every filter but the unrated must count some files; all-zero inputs are counted in the check line; the plan states the fixture limit (no rate 0, ±1 cover nearly all files) | `bbddb076` |
+| L2: `-Dbench.*` reach the fork only inside `set Test / javaOptions` | stated in the scaladoc and the plan's options paragraph | `bbddb076` |
+| L3: "the menu costs the SQL plus ~1 ms" | reworded: the menu's delta matches `sql-round`'s, its overhead is within cross-case noise (-2 to +8 ms); the 2026-10-25 comparison's different inputs and the V66 index / `FORCE INDEX` are noted | `bbddb076` |
+| Nit: control resolution | stated above (sd, SE) | this commit |
+| Nit: the checks' description | the plan says `sql-juror` and `menu-*` compare against the literal query, as the code does | `bbddb076` |
+| Nit: txt output | per block and pooled: true medians, nearest-rank p95, min-max, paired sd, B faster, AB/BA split | `bbddb076` |
+| Nit: the 2026-10-25 claim "every juror and every rate filter is sampled" | footnote in `2026-10-25-region-improvements.md`: subject to M1 | `bbddb076` |
