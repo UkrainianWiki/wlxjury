@@ -1,5 +1,7 @@
 # Review follow-ups: `ukwikidev/security-local_images`
 
+**Status is tracked in [register.md](register.md)** (2026-11-02); the status tables below are snapshots.
+
 Findings from the code review of `ukwikidev/security-local_images` against `master` (2026-10-06).
 The signup session bug (the session got `username -> password`) is fixed on the branch in `2cbe3b9`, with a test in `LoginControllerSpec`.
 

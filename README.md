@@ -4,10 +4,12 @@ Deployment: [single-service procedure and recovery](docs/deployment.md).
 
 ## Security Controls
 
-- [Incident prevention guidelines](docs/security/incident-prevention-guidelines.md): the
-  standards new code follows, and what is still open.
-- [Implementation plan](docs/security/incident-prevention-implementation-plan.md): each
-  hardening item and its status.
+- [Secure coding rules](docs/security/secure-coding.md): the rules new code follows, one per
+  past issue class, with the guard specs (`testOnly security.*`).
+- [Review checklist](docs/security/review-checklist.md), including the release gate.
+- [Security register](docs/security/register.md): the status of every security item.
+- [Implementation plan](docs/security/incident-prevention-implementation-plan.md): the
+  2026 hardening items (history).
 - [XSS and header review](docs/security/review.md) and the
   [local images review follow-ups](docs/security/local-images-review-followups.md).
 - Authentication, authorization, CSRF and error handling in the app: [CLAUDE.md](CLAUDE.md),
