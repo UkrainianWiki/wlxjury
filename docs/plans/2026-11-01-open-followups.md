@@ -484,8 +484,11 @@ branch, merge commit `d9dbe0ed`.
   `ApiTokenJdbcSpec`, `ProductionConfigSpec`, `AllowedHostsSpec`, `views.*`
   (`MessagesCompletenessSpec` included): exit 0, 327 passed, 0 failed
   (`target/checks/20261102-021714-452.log`). The full suite (`20261102-022113-17192.log`) was
-  stopped by the host for low system memory before it finished, with no failure until then;
-  it still has to run.
+  stopped by the host for low system memory before it finished, with no failure until then.
+- **Full suite** (the release check for B1–B5, api-auth and B4), rerun by the orchestrator at
+  `70d48397` with nothing else running: exit 0 in 14 min, Scala **1404 total, 0 failed,
+  0 errors** (1398 passed, 6 skipped, 1 pending); Jest 18 suites, 240 passed
+  (`target/checks/20261102-023459-13464.log`).
 
 ## Checked and already resolved (not part of this plan)
 
