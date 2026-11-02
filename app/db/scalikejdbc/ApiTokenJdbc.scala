@@ -85,11 +85,13 @@ object ApiTokenJdbc {
     val _ = sql"SELECT id FROM users WHERE id = $userId FOR UPDATE".map(_.long(1)).single.apply()
   }
 
-  /** Whether the user created a token named `name` less than `seconds` ago, by the database
-    * clock. A locking read: after [[lockOwner]] it sees a create that committed while it waited.
+  /** The user's unrevoked, never used tokens named `name`, created less than `seconds` ago by
+    * the database clock: a double click's earlier creates. A locking read: after [[lockOwner]] it
+    * sees a create that committed while it waited.
     */
-  def createdWithin(userId: Long, name: String, seconds: Int)(implicit session: DBSession): Boolean =
-    sql"""SELECT COUNT(*) FROM api_token
+  def unusedSince(userId: Long, name: String, seconds: Int)(implicit session: DBSession): Seq[Long] =
+    sql"""SELECT id FROM api_token
           WHERE user_id = $userId AND name = $name AND created_at > NOW(3) - INTERVAL $seconds SECOND
-          LOCK IN SHARE MODE""".map(_.long(1)).single.apply().exists(_ > 0)
+            AND last_used_at IS NULL AND revoked_at IS NULL
+          FOR UPDATE""".map(_.long(1)).list.apply()
 }

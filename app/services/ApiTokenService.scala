@@ -3,7 +3,7 @@ package services
 import controllers.Secured
 import db.scalikejdbc.{ApiToken, ApiTokenJdbc, User}
 import play.api.Logging
-import scalikejdbc.DB
+import scalikejdbc.{AutoSession, DB, DBSession}
 
 import java.nio.charset.StandardCharsets.UTF_8
 import java.security.{MessageDigest, SecureRandom}
@@ -52,7 +52,9 @@ object ApiTokenService extends Logging {
   def displayPrefix(token: String): String = token.take(Prefix.length + 6)
 
   /** A new token of the user; its value, to be shown once. */
-  def create(userId: Long, name: String, expiresInDays: Option[Int]): String = {
+  def create(userId: Long, name: String, expiresInDays: Option[Int])(implicit
+      session: DBSession = AutoSession
+  ): String = {
     val token = generate()
     ApiTokenJdbc.create(userId, name.trim.take(NameMaxLength), hash(token), displayPrefix(token), expiresInDays)
     token
@@ -92,47 +94,47 @@ object ApiTokenService extends Logging {
     /** The new token's value, to be shown once. */
     final case class Created(token: String) extends CreateOutcome
 
-    /** The user created a token of that name less than [[DedupeSeconds]] ago: the same
-      * submit again (a double click), no second token.
-      */
-    case object Duplicate extends CreateOutcome
-
     /** [[MaxActive]] usable tokens already. */
     case object LimitReached extends CreateOutcome
   }
 
-  /** A create of a token named as one the user created less than this many seconds ago is
-    * taken as the same submit (P13): a double click, which sends the page's nonce twice
-    * before either response replaces it, makes one token.
+  /** A create of a token named as one the user created less than this many seconds ago, and
+    * never used, repeats that submit (P13: a double click sends the page's nonce twice before
+    * either response replaces it). The browser shows only the last response, so the last
+    * create wins: the earlier token, whose value nobody saw, is revoked.
     */
   val DedupeSeconds = 30
 
-  /** A new token of the user, unless it repeats a create of the last [[DedupeSeconds]] or
-    * the user has [[MaxActive]] usable tokens. One create of a user's at a time (their row
-    * locked), so two concurrent requests can't both pass these checks.
+  /** A new token of the user, unless the user has [[MaxActive]] usable tokens; a repeated submit
+    * (see [[DedupeSeconds]]) replaces its earlier unused tokens. One create of a user's at a time
+    * (their row locked), so concurrent requests leave one usable token of the name.
     */
   def createOnce(userId: Long, name: String, expiresInDays: Option[Int]): CreateOutcome =
     DB.localTx { implicit s =>
       ApiTokenJdbc.lockOwner(userId)
       val trimmed = name.trim.take(NameMaxLength)
-      if (ApiTokenJdbc.createdWithin(userId, trimmed, DedupeSeconds)) CreateOutcome.Duplicate
-      else if (ApiTokenJdbc.findByUser(userId).count(_.usable) >= MaxActive) CreateOutcome.LimitReached
-      else {
-        val token = generate()
-        ApiTokenJdbc.create(userId, trimmed, hash(token), displayPrefix(token), expiresInDays)
-        CreateOutcome.Created(token)
-      }
+      val replaced = ApiTokenJdbc.unusedSince(userId, trimmed, DedupeSeconds)
+      replaced.foreach(ApiTokenJdbc.revoke(_, userId))
+      if (replaced.nonEmpty)
+        logger.info(s"api_token_replaced userId=$userId tokenIds=${replaced.mkString(",")} reason=repeated_submit")
+      if (ApiTokenJdbc.findByUser(userId).count(_.usable) >= MaxActive) CreateOutcome.LimitReached
+      else CreateOutcome.Created(create(userId, trimmed, expiresInDays))
     }
 
-  /** Root revokes another user's unrevoked tokens (`tokenId`, else all of them): logged at
-    * INFO with ids only; how many were revoked.
+  /** Root revokes another user's unrevoked tokens (`tokenId`, else all of them), in one
+    * transaction with the user's row locked; logged at INFO with ids only if any was revoked.
+    * How many were revoked.
     */
   def revokeByRoot(rootId: Long, userId: Long, tokenId: Option[Long] = None): Int = {
-    val revoked = ApiTokenJdbc.findByUser(userId)
-      .filter(t => !t.revoked && tokenId.forall(_ == t.id))
-      .filter(t => ApiTokenJdbc.revoke(t.id, userId))
-      .map(_.id)
-    logger.info(s"api_token_revoked by=root rootId=$rootId userId=$userId tokenIds=${revoked.mkString(",")}")
+    val revoked = DB.localTx { implicit s =>
+      ApiTokenJdbc.lockOwner(userId)
+      ApiTokenJdbc.findByUser(userId)
+        .filter(t => !t.revoked && tokenId.forall(_ == t.id))
+        .filter(t => ApiTokenJdbc.revoke(t.id, userId))
+        .map(_.id)
+    }
+    if (revoked.nonEmpty)
+      logger.info(s"api_token_revoked by=root rootId=$rootId userId=$userId tokenIds=${revoked.mkString(",")}")
     revoked.size
   }
 

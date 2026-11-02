@@ -16,6 +16,9 @@ class LogHygieneSpec extends Specification {
   private val Concatenated = """\+\s*([A-Za-z_][A-Za-z0-9_.]*)|([A-Za-z_][A-Za-z0-9_.]*)\s*\+""".r
   private val Sensitive = """(?i)email|fullname|password|token|secret""".r
 
+  /** A whole account (its toString has the email and name), not one of its fields. */
+  private val WholeUser = """(?i)(?:\w*user|juror|owner|admin|account|member)""".r
+
   /** The text of the call starting at `from` (after its opening parenthesis). */
   private def callText(text: String, from: Int): String = {
     var depth = 1
@@ -42,19 +45,20 @@ class LogHygieneSpec extends Specification {
   }
 
   "logger calls in app/" should {
-    "not put an email, a name, a password, a token or a secret into the line" in {
+    "not put an email, a name, a password, a token, a secret or a whole account into the line" in {
       val found = for {
         source <- SourceScan.files("app", ".scala")
         call <- Call.findAllMatchIn(source.text).toList
         where = s"${source.path}:${source.lineOf(call.start)}"
         expr <- expressions(callText(source.text, call.end))
-        if Sensitive.findFirstIn(expr).nonEmpty && !Allowed.contains(where)
+        if (Sensitive.findFirstIn(expr).nonEmpty || WholeUser.matches(expr.trim)) && !Allowed.contains(where)
       } yield s"$where: $expr"
       found must beEmpty
     }
 
     "be found by the scan (it is not vacuous)" in {
-      expressions("""s"user ${user.email} at $time" + other.fullname""") must contain(allOf("user.email", "other.fullname"))
+      (expressions("""s"user ${user.email} at $time" + other.fullname""") must contain(allOf("user.email", "other.fullname"))) and
+        (expressions("""s"by $user and ${editedUser}"""").filter(e => WholeUser.matches(e.trim)) === Seq("user", "editedUser"))
     }
   }
 }

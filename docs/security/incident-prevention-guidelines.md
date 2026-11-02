@@ -242,9 +242,14 @@ Every new feature or refactor should satisfy these rules:
   (Unite Gallery 1.7.28) and `jquery.raty.js` (jQuery Raty 2.7.1). Both insert what they are
   given with jQuery's `.html()`, so text passed to them is escaped for that sink: a tile's
   `alt` caption and `data-description` are escaped once more inside the attribute
-  (`gallery.scala.html`, `GalleryDescriptionViewSpec`); raty gets numbers and empty hints only
-  (`large-stars.js`). Replace them rather than patch them; `security.RawHtmlSinksSpec` lists
-  the app's own raw HTML sinks.
+  (`gallery.scala.html`, `contestFiles.scala.html`, `GalleryDescriptionViewSpec`); raty gets
+  numbers and empty hints only (`large-stars.js`). Local patch to unitegallery (S5 review): the
+  tile thumbnails' `alt` (`setHtmlThumb` and the image-effect overlay) is the text of the item's
+  title (`htmlToText`, an inert DOMParser) escaped for the quoted attribute (`escapeAttr`, quotes
+  included), and `urlThumb` is escaped too; upstream's `htmlentitles` left `'` unescaped
+  (`javascript-test/unitegallery-alt.test.js`). Keep that patch if the file is ever replaced by
+  another copy; prefer replacing the library to patching more of it. `security.RawHtmlSinksSpec`
+  lists the app's own raw HTML sinks.
 
 5. Secrets and credentials
 - Keep secrets out of committed config.

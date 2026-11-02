@@ -484,8 +484,9 @@ for role, account, contest and round events.
   and empty hints only.
 - **P13 (root revocation, double click):** `ApiTokenService.createOnce` runs a create in one
   transaction with the user's row locked (`ApiTokenJdbc.lockOwner`): a token named as one the
-  user created less than `DedupeSeconds` (30) ago is the same submit (`Duplicate`, the "already
-  submitted" notice, 409), and the 20-token cap is checked in the same transaction. Root has
+  user created less than `DedupeSeconds` (30) ago is the same submit, and the 20-token cap is
+  checked in the same transaction (after the review: the last submit wins, see the review fixes
+  below). Root has
   `GET /admin/users/:userId/tokens` (the list, linked from another account's edit page), `POST
   .../tokens/:id/revoke` and `POST .../tokens/revoke` (all), root only, CSRF by the global filter;
   `ApiTokenService.revokeByRoot` logs `api_token_revoked by=root rootId userId tokenIds` at INFO
@@ -519,6 +520,28 @@ both fixed. Rerun of `SqlLoggingSpec deployment.ProductionConfigSpec security.*
 controllers.JobControllerSpec`: 31 passed (`target/checks/20261102-145709-28552.log`). No
 JavaScript changed, so no Jest run. No full suite. The image cache specs were not rerun: no
 dependency they use changed (`pekko-http` deferred).
+
+### S5/S10 review fixes (2026-11-02)
+
+The independent review found the branch safe to merge, with these fixes before release:
+
+| Item | Finding | Fix | Check |
+|---|---|---|---|
+| M1 (P13) | A double click's second POST answered 409 "no token created" while the first had made one whose value nobody saw | `createOnce` revokes the user's same-name tokens created less than 30 s ago and never used (`ApiTokenJdbc.unusedSince`, locking read after the user-row lock), then creates and shows a new one: the last submit wins, one usable token, the one the browser shows. A used token is kept. Logged as `api_token_replaced userId tokenIds` (ids only). No submit-button script (optional, not done) | `ApiTokenPageSpec`: sequential double click shows a token, the only usable one, the first revoked; a used one is kept; five at once leave one usable token, shown by a response |
+| L1/L2 (N8) | unitegallery's thumbnail `alt` (`setHtmlThumb`) used `htmlentitles`, which leaves `'` unescaped (a title with `'` broke out of the attribute), and with the title escaped once more showed entities (`&#x27;`, `&amp;`); the image-effect overlay inserted the title raw; `contestFiles.scala.html` gave unitegallery the raw title | Vendored patch: both sinks set `alt` to `escapeAttr(htmlToText(title))` (inert DOMParser text, quotes escaped) and escape `urlThumb`. The extra escaping in `gallery.scala.html` stays: the text panels insert the title with `.html()`. `contestFiles.scala.html` escapes the title once more too. Listed in `incident-prevention-guidelines.md` (vendored libraries) | Jest `unitegallery-alt.test.js` (`'`, `&`, `<i>`, a quote breakout, inert parsing, both sinks); `GalleryDescriptionViewSpec` (quote in the title); `ContestFilesPageSpec` (alt is html whose text is the title) |
+| L5 (N3) | Neutralising only named fields left a new export to remember it | `Csv.writeRow`/`Csv.write` pass every cell through `Csv.cell`: a number (by type, or `-?\d+(\.\d+)?`) as it is, any other string through `Csv.text`, which also catches whitespace then `= + - @`. Rank ranges (`1-2`) start with a digit and are unchanged | `CsvSpec` reads the written lines back: names and titles prefixed (including leading whitespace), `-1`, `-2.5`, `1-2` unchanged, `-x`, `+1`, `@a` prefixed |
+| L5 (optional) | Whole-account interpolation in log lines | `LogHygieneSpec` also flags `$user`, `${editedUser}` and the like (whole-account names) | `security.LogHygieneSpec` |
+| L4 (nit) | `revokeByRoot` read then revoked outside a transaction and logged even when nothing was revoked | One transaction with the user's row locked; no log line if nothing was revoked. S2's `ApiTokenJdbc.revokeAll` arrives at the merge: `revokeByRoot` could use it for "all" then | `ApiTokenPageSpec` (root revokes one, all) |
+| Nit | `createOnce` duplicated `create` | `create` takes an implicit session (default `AutoSession`); `createOnce` calls it in its transaction | `ApiTokenPageSpec`, `ApiSpec` |
+| Nit | pac4j removal might evict or downgrade transitive libraries | `sbt dist` builds (205 jars in `lib/`: the runtime classpath's 203 and the app's two). `Runtime/managedClasspath` against the base's `build.sbt` (57aa8434): only `play-pac4j_2.13` 12.0.0-PLAY3.0, `pac4j-core` 6.0.0, `lombok` 1.18.30 and `findbugs-annotations` 3.0.1 are gone; no other library is added, evicted or changes version | `sbt dist` |
+| L3 | `createOnce` should re-check the session's `auth_version` (S3) inside its transaction | **Merge note for S2/S3:** not implemented here; at the S2 merge, check `auth_version` in `createOnce`'s transaction (and in `revokeByRoot` for root's) so a request of a session invalidated meanwhile creates nothing | — |
+
+**Review fix checks:** Jest, whole suite in this tree (`npm ci` in `javascript-test/`, own
+`node_modules`): 19 suites, 247 tests pass, `unitegallery-alt.test.js` included. sbt (under the
+lock): `Test/compile`, `Gatling/compile`, `testOnly controllers.ApiTokenPageSpec controllers.CsvSpec
+controllers.ContestFilesPageSpec api.ApiSpec security.* views.*`: 261 passed
+(`target/checks/20261102-153956-15200.log`), then `dist` and `export Runtime/managedClasspath`;
+the base's classpath in `target/checks/20261102-154639-17516.log`.
 
 ## Running the batches
 

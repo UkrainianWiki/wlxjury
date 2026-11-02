@@ -131,7 +131,7 @@ class ApiTokenPageSpec extends PlaySpecification with PlayTestDb {
         ApiTokenJdbc.findByUser(userId(email)) must haveSize(1)
 
         // the refusal's page has a new nonce, which creates (another name: the same one moments
-        // later is taken as the same submit)
+        // later would replace the first, unused, as a repeated submit)
         val again = post(app, "/users/tokens", sessionToken, Seq("name" -> "desktop", "expiry" -> "90"),
           nonce = session(reload).get(ApiTokensCard.NonceKey),
           sessionNonce = session(reload).get(ApiTokensCard.NonceKey))
@@ -140,22 +140,35 @@ class ApiTokenPageSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
-    "make one token of a double click: both requests with the page's nonce, before either answers" in {
+    "leave one usable token of a double click, the one the last response shows" in {
       withCsrfApp { app =>
         setUp()
         val sessionToken = token(app)
-        // the second click's request carries the same session (its nonce unchanged) and form
-        val first = post(app, "/users/tokens", sessionToken, create)
-        val second = post(app, "/users/tokens", sessionToken, create)
-        status(first) === OK
-        status(second) === CONFLICT
-        contentAsString(second) must contain("This form was already submitted")
-        tokenPattern.findFirstIn(contentAsString(second)) must beNone
+        def shown(result: Future[Result]): Option[String] = tokenPattern.findFirstIn(contentAsString(result))
+        def usable(name: String) = ApiTokenJdbc.findByUser(userId(email)).filter(t => t.usable && t.name == name)
 
-        // at once: one is created
+        val first = post(app, "/users/tokens", sessionToken, create)
+        status(first) === OK
+        // the second click's request: the same session (its nonce unchanged) and form; the
+        // browser shows its response, and the first token, which nobody saw, is revoked
+        val second = post(app, "/users/tokens", sessionToken, create)
+        status(second) === OK
+        val token2 = shown(second).get
+        usable("laptop").map(_.id) === ApiTokenJdbc.findByHash(ApiTokenService.hash(token2)).map(_.id).toSeq
+        ApiTokenService.authenticate(shown(first).get) must beNone
+        ApiTokenService.authenticate(token2) must beSome // and now it is used
+
+        // a used token is kept: the same name moments later is another token
+        status(post(app, "/users/tokens", sessionToken, create)) === OK
+        usable("laptop") must haveSize(2)
+
+        // five at once: each answers with a token, one of them usable
         val clicks = (1 to 5).map(_ => post(app, "/users/tokens", sessionToken, Seq("name" -> "burst", "expiry" -> "90")))
-        clicks.map(status(_)).count(_ == OK) === 1
-        ApiTokenJdbc.findByUser(userId(email)).map(_.name).sorted === Seq("burst", "laptop")
+        clicks.map(status(_)).distinct === Seq(OK)
+        val burst = usable("burst")
+        burst must haveSize(1)
+        clicks.flatMap(shown).flatMap(t => ApiTokenJdbc.findByHash(ApiTokenService.hash(t))).filter(_.usable).map(_.id) ===
+          burst.map(_.id)
       }
     }
 

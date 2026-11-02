@@ -22,19 +22,31 @@
       writer.getBuffer
     }
 
+    /** One CSV line; every cell through [[cell]], so no export can write a formula. */
     def writeRow(data: Seq[Any]): String = {
       val writer = new StringWriter()
       val csv = CSVWriter.open(writer)
-      csv.writeRow(data)
+      csv.writeRow(data.map(cell))
       csv.close()
       writer.getBuffer.toString
     }
 
+    /** CSV lines; every cell through [[cell]], so no export can write a formula. */
     def write(data: Seq[Seq[Any]], writer: Writer): Unit = {
       val csv = CSVWriter.open(writer)
-      csv.writeAll(data)
+      csv.writeAll(data.map(_.map(cell)))
       csv.close()
     }
+
+    /** A cell as written: a number (by type, or a string such as `-1` or `2.5`) as it is, any
+      * other string through [[text]].
+      */
+    def cell(value: Any): Any = value match {
+      case s: String if !Number.matches(s) => text(s)
+      case other                           => other
+    }
+
+    private val Number = """-?\d+(\.\d+)?""".r
 
     def exportRates(
         files: Seq[ImageWithRating],
@@ -77,21 +89,24 @@
     val BinaryLegend: Seq[String] =
       Seq("", "Overall: approvals. Jurors: 1 selected, -1 rejected, 0 not voted yet, empty not assigned")
 
-    private def header(jurors: Seq[User]): Seq[String] =
-      Seq("Rank", "File", "Overall") ++ jurors.map(juror => text(juror.fullname))
+    /** The juror names and file titles here are user text: [[writeRow]] neutralises them. */
+    private def header(jurors: Seq[User]): Seq[String] = Seq("Rank", "File", "Overall") ++ jurors.map(_.fullname)
 
     private def row(file: ImageWithRating, rank: String, jurors: Seq[User], round: Round): Seq[String] =
-      Seq(rank, text(file.image.title), file.rateString(round)) ++ jurors.map(file.jurorRateStr)
+      Seq(rank, file.image.title, file.rateString(round)) ++ jurors.map(file.jurorRateStr)
 
     /** Characters that make a spreadsheet read a cell as a formula (OWASP "CSV injection"). */
     val FormulaStarts: Set[Char] = Set('=', '+', '-', '@', '\t', '\r')
 
-    /** A cell of user text (a juror's name, a file title) as text to a spreadsheet: one that
-      * starts with a formula character gets a leading `'`. Numbers the app writes (ranks, rates,
-      * a binary round's `-1`) are not passed through it.
+    /** Text as text to a spreadsheet: one that starts with a formula character, or with
+      * whitespace and then `= + - @`, gets a leading `'`. [[writeRow]] and [[write]] pass every
+      * non-numeric cell through it.
       */
-    def text(cell: String): String =
-      if (cell.nonEmpty && FormulaStarts.contains(cell.head)) "'" + cell else cell
+    def text(cell: String): String = {
+      val formula = cell.headOption.exists(FormulaStarts.contains) ||
+        cell.headOption.exists(_.isWhitespace) && cell.dropWhile(_.isWhitespace).headOption.exists("=+-@".contains(_))
+      if (formula) "'" + cell else cell
+    }
 
     def addBom(data: Seq[Seq[String]]): Seq[Seq[String]] = {
       val BOM = "\ufeff"

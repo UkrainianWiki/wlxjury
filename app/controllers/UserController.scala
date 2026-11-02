@@ -175,8 +175,9 @@ class UserController @Inject()(cc: ControllerComponents,
     * the CSRF token and the page's nonce) and shows it on the profile, in this response only
     * (`no-store`), never in the flash or a URL. The session only: page routes take no token,
     * so a token can't make or revoke tokens. A used or missing nonce (the response reloaded),
-    * a token of the same name created moments ago (a double click: [[ApiTokenService.createOnce]])
-    * or [[ApiTokenService.MaxActive]] usable tokens already create nothing.
+    * or [[ApiTokenService.MaxActive]] usable tokens already create nothing. A double click
+    * (both requests with the page's nonce) leaves one usable token, the last response's
+    * ([[ApiTokenService.createOnce]]).
     */
   def createApiToken(): EssentialAction = withAuth(_ => true) { user => implicit request =>
     val nonce = request.body.asFormUrlEncoded.flatMap(_.get(ApiTokensCard.NonceKey)).flatMap(_.headOption)
@@ -191,8 +192,6 @@ class UserController @Inject()(cc: ControllerComponents,
             ApiTokenService.createOnce(user.getId, name, expiresInDays) match {
               case ApiTokenService.CreateOutcome.Created(token) =>
                 ownProfile(Ok, user, newToken = Some(token)).withHeaders(CACHE_CONTROL -> "no-store")
-              case ApiTokenService.CreateOutcome.Duplicate =>
-                ownProfile(Conflict, user, notice = Some("error.api.token.already.submitted"))
               case ApiTokenService.CreateOutcome.LimitReached =>
                 ownProfile(Conflict, user, notice = Some("error.api.token.limit"))
             }
