@@ -88,7 +88,9 @@ most 72 bytes); no other digest of a password. Statements that write a hash are 
 (`User.quietTx`). A legacy SHA-1 hash is only checked at sign-in and replaced; after its grace
 period (V81, 3 months from the S6 deploy) it no longer signs in and is replaced by an unusable
 value (`PasswordHasher.RetiredLegacy`, `LegacyPasswordRetirementJdbc.retire`), the account
-recorded in `legacy_password_retired` for root to send a password link.
+recorded in `legacy_password_retired`. A password is checked against `User.usableHash` (sign-in,
+the current password of one's own change); "has a password" for invitations means
+`User.hasUsablePassword` (a retired hash is none).
 
 **Example.** `PasswordHasher.hash` / `PasswordHasher.check` (constant time, a dummy hash for
 unknown accounts, `bcrypt.maxConcurrent` turns).
@@ -201,7 +203,8 @@ Editing another account checks the editor's admin or root role in that account's
 current contest; root any account).
 A juror sees only their own votes (`GalleryService.viewerRounds`, `mayViewRound`, `viewAs`).
 A vote needs the round open to its jurors and the juror not stopped on it (`RoundUser.isStopped`:
-an inactive `round_user` row, P6); otherwise the answer of a stopped round, nothing written.
+an inactive `round_user` row, P6); otherwise the answer of a stopped round, nothing written. The
+vote's update statements check the same, so a stop racing a vote wins.
 Denials go through `onUnAuthorized`/`onUnAuthorizedJson` with a `Secured.Denial`.
 
 **Example.** `GalleryController.selectWS`: `withAuthJson(roundPermission(..., roundId))`,

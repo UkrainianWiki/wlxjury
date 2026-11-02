@@ -175,6 +175,23 @@ class PasswordStorageSpec extends PlaySpecification with PlayTestDb with Mockito
         }
       }
     }
+
+    "never be retired without the grace period's table (V81's undo, DROP TABLE)" in {
+      testDbApp { implicit app =>
+        val user = root(hash = legacy("strong"))
+        withGraceEnd(-1) {
+          DB.autoCommit(implicit s => sql"RENAME TABLE legacy_password_retirement TO legacy_password_retirement_saved".update.apply())
+          try {
+            db.scalikejdbc.LegacyPasswordRetirementJdbc.over() must beFalse
+            retireNow() === 0
+            stored(user.getId) === Some(legacy("strong"))
+            signedIn(signIn(user.email, "strong")) must beTrue
+          } finally DB.autoCommit { implicit s =>
+            sql"RENAME TABLE legacy_password_retirement_saved TO legacy_password_retirement".update.apply()
+          }
+        }
+      }
+    }
   }
 
   "a legacy SHA-1 hash, after its grace period (P8)" should {
@@ -216,6 +233,16 @@ class PasswordStorageSpec extends PlaySpecification with PlayTestDb with Mockito
           // again: nothing left to replace
           retireNow() === 0
           db.scalikejdbc.LegacyPasswordRetirementJdbc.retiredAccounts() must haveSize(2)
+        }
+      }
+    }
+
+    "not count as the current password for one's own password change, even before it is replaced" in {
+      testDbApp { implicit app =>
+        val user = root(hash = legacy("strong"))
+        withGraceEnd(-1) {
+          status(saveProfile(user, "new password", current = "strong")) === BAD_REQUEST
+          stored(user.getId) === Some(legacy("strong"))
         }
       }
     }

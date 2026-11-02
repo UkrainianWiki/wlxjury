@@ -366,6 +366,29 @@ class MutationAuthorizationSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
+    "be refused by the vote's statement itself for a stopped juror (a stop racing the vote, P6)" in {
+      testDbApp { app =>
+        val juror = setUp()
+        val round = roundOf(juror, Round.ratesById(5), rate = 2)
+        RoundUser.setActive(round.getId, juror.getId, active = false)
+        SelectionJdbc.rate(pageId, juror.getId, round.getId, 4) === 0
+        stored(round, juror) === Some(2)
+
+      }
+    }
+
+    "be refused by the criterion vote's statement itself for a stopped juror (P6)" in {
+      testDbApp { app =>
+        val juror = setUp()
+        val round = criteriaRoundOf(juror)
+        RoundUser.setActive(round.getId, juror.getId, active = false)
+        val selection = SelectionJdbc.findBy(pageId, juror.getId, round.getId).get
+        org.intracer.wmua.CriteriaRate.updateRate(selection.getId, 1, 10) must beFalse
+        criteriaOf(round, juror) === Map(1L -> 3, 2L -> 4)
+        stored(round, juror) === Some(7)
+      }
+    }
+
     "change no criterion for a juror stopped on a criteria round (P6)" in {
       testDbApp { app =>
         val juror = setUp()

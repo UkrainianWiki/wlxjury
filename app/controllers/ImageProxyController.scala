@@ -129,7 +129,8 @@ class ImageProxyController(
   /** A width the pages don't ask for the image at (an old page's, or made up): a redirect to
     * the same thumbnail at the nearest one they do ([[LocalImageCacheService.servedWidths]]),
     * so that no other width is scaled here on every request (P5). Nothing is fetched or
-    * scaled for this request; 404 if there is no such width within [[MaxAllowedPx]].
+    * scaled for this request; a file of unknown size (the pages ask for none of its widths)
+    * goes to Wikimedia; 404 if there is no such width within [[MaxAllowedPx]].
     */
   private def atServedWidth(image: Image, px: Int, path: String): Result = {
     val slash = path.lastIndexOf('/')
@@ -137,7 +138,7 @@ class ImageProxyController(
       width <- LocalImageCacheService.nearestWidth(LocalImageCacheService.servedWidths(image).filter(_ <= MaxAllowedPx), px)
       name  <- LocalImageCacheService.withThumbnailPx(path.substring(slash + 1), width)
     } yield Redirect(ThumbPrefix + path.substring(0, slash + 1) + name, FOUND)
-    redirect.getOrElse(NotFound)
+    if (LocalImageCacheService.servedWidths(image).isEmpty) wikimedia(path) else redirect.getOrElse(NotFound)
   }
 
   /** The thumbnail from the local cache, else fetched from Wikimedia and cached; else what

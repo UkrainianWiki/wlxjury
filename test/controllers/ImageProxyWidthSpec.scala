@@ -42,18 +42,17 @@ class ImageProxyWidthSpec
     (new ImageProxyController(stubControllerComponents(), cache), cache)
   }
 
-  // an 800 × 600 file: shown at 150, 225, 300, 333, 450, 500, 600 and 666 (cached), its large
-  // view's fallback 960, and Wikimedia's sizes wider than the cached ones
-  private val ShownAt = Seq(150, 225, 300, 333, 450, 500, 600, 666, 960, 1280, 1920, 3840)
+  // an 800 × 600 file: shown at 150, 225, 300, 333, 450, 500, 600 and 666 (cached) and at its
+  // large view's fallback, 960
+  private val ShownAt = Seq(150, 225, 300, 333, 450, 500, 600, 666, 960)
 
   "the widths served" should {
-    "be the thumbnails', the large view's fallback and Wikimedia's wider sizes" in {
+    "be the thumbnails' and the large view's fallback, no other of Wikimedia's sizes" in {
       LocalImageCacheService.servedWidths(commonsImage(1L, "New_file")) === ShownAt
     }
 
-    "be Wikimedia's sizes for a file of unknown size" in {
-      LocalImageCacheService.servedWidths(commonsImage(1L, "New_file").copy(width = 0, height = 0)) ===
-        Global.wikimediaSteps
+    "be none for a file of unknown size: the pages show the file itself" in {
+      LocalImageCacheService.servedWidths(commonsImage(1L, "New_file").copy(width = 0, height = 0)) === Nil
     }
 
     "include every width the pages ask the proxy for" in {
@@ -105,20 +104,35 @@ class ImageProxyWidthSpec
       redirectLocation(result) must beSome("/wikipedia/commons/thumb/a/ab/New_doc.pdf/page1-450px-New_doc.pdf.jpg")
     }
 
-    "serve a width the pages ask for: a cached one and a wider Wikimedia size, as they are" in {
+    "serve a width the pages ask for: a cached one and the large view's fallback" in {
       store(commonsImage(1L, "New_file"))
       val (controller, _) = proxy()
 
       status(controller.serve("a/ab/New_file.jpg/333px-New_file.jpg")(signedIn)) === OK
-      status(controller.serve("a/ab/New_file.jpg/1280px-New_file.jpg")(signedIn)) === OK
+      status(controller.serve("a/ab/New_file.jpg/960px-New_file.jpg")(signedIn)) === OK
     }
 
-    "be redirected to the nearest of Wikimedia's sizes for a file of unknown size" in {
+    "send a wider Wikimedia size than the fallback to the fallback, nothing fetched (no amplification)" in {
+      val image = commonsImage(1L, "New_file")
+      store(image)
+      val (controller, cache) = proxy()
+
+      forall(Seq(1280, 1920, 3840)) { px =>
+        val result = controller.serve(s"a/ab/New_file.jpg/${px}px-New_file.jpg")(signedIn)
+        status(result) === FOUND
+        redirectLocation(result) must beSome("/wikipedia/commons/thumb/a/ab/New_file.jpg/960px-New_file.jpg")
+      }
+      forall(ShownAt)(px => cache.fileIfCached(image, px) must beNone)
+    }
+
+    "send a file of unknown size to Wikimedia, nothing fetched here" in {
       store(commonsImage(1L, "New_file").copy(width = 0, height = 0))
       val (controller, _) = proxy()
 
-      redirectLocation(controller.serve("a/ab/New_file.jpg/400px-New_file.jpg")(signedIn)) must
-        beSome("/wikipedia/commons/thumb/a/ab/New_file.jpg/330px-New_file.jpg")
+      val result = controller.serve("a/ab/New_file.jpg/400px-New_file.jpg")(signedIn)
+      status(result) === SEE_OTHER
+      redirectLocation(result) must
+        beSome("https://upload.wikimedia.org/wikipedia/commons/thumb/a/ab/New_file.jpg/400px-New_file.jpg")
     }
 
     "not be redirected for a file not stored, nor signed out: Wikimedia's, and 401" in {

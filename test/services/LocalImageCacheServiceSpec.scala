@@ -522,6 +522,17 @@ class LocalImageCacheServiceSpec extends Specification {
       }
     }
 
+    "fetch a protocol-relative Commons url's original from the configured host, as https's" in {
+      val requests = new AtomicInteger(0)
+      withServer { n => requests.set(n); ok } { wikimedia =>
+        val svc = mkService(mkTempDir(), serverPort = Some(wikimedia))
+        val small = Image(pageId = 8, title = "File:Small.jpg",
+          url = Some("//upload.wikimedia.org/wikipedia/commons/a/ab/Small.jpg"), width = 100, height = 75)
+        Await.result(svc.fetchAndCacheAll(small, 100), 10.seconds) must not(beEmpty)
+        requests.get === 1
+      }
+    }
+
     "take only Commons urls on Wikimedia's upload host as Commons files" in {
       import services.imports.CommonsFileCheck.isCommonsUrl
       isCommonsUrl("https://upload.wikimedia.org/wikipedia/commons/a/ab/X.jpg") must beTrue

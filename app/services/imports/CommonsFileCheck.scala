@@ -301,6 +301,9 @@ object CommonsFileCheck {
     */
   def isCommonsUrl(url: String): Boolean = CommonsUrl.matches(url)
 
+  /** A protocol-relative url (`//upload.wikimedia.org/...`) as https: fetched only from there. */
+  def withScheme(url: String): String = if (url.startsWith("//")) "https:" + url else url
+
   /** The url without the tracking parameters the API adds ("?utm_source=..."): the file's
     * name is its last segment.
     */

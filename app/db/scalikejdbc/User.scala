@@ -67,6 +67,15 @@ case class User(
     */
   def mayTakeAccessRole: Boolean = isRoot || hasRole(User.ROOT_ROLE) || emailVerified || password.isEmpty
 
+  /** Whether the account has a password its owner can sign in with: not none, and not a legacy
+    * hash retired after its grace period ([[PasswordHasher.RetiredLegacy]], P8), which only a
+    * link (an invitation, root's password link) replaces.
+    */
+  def hasUsablePassword: Boolean = password.exists(_ != PasswordHasher.RetiredLegacy)
+
+  /** Whether the account's legacy hash was retired after its grace period (P8). */
+  def passwordRetired: Boolean = password.contains(PasswordHasher.RetiredLegacy)
+
   def currentContest: Option[Long] = contestId
 
   /** The user's roles in [[contestId]]: [[roles]] without root and the USER_ID_ marker. */
@@ -325,7 +334,7 @@ object User extends CRUDMapper[User] {
     */
   def login(username: String, password: String, deadline: Long = PasswordHasher.default.deadline()): Option[User] = {
     val user = byUserName(username, underscoresAsSpaces = true)
-    val hash = user.flatMap(_.password).filterNot(h => PasswordHasher.isLegacy(h) && legacyGraceOver())
+    val hash = user.flatMap(usableHash)
     PasswordHasher.default.check(hash, password, deadline) match {
       case PasswordHasher.Accepted(rehash) =>
         for (u <- user; stored <- hash) yield rehash.fold(u)(upgradeHash(u, stored, _)())
@@ -333,9 +342,17 @@ object User extends CRUDMapper[User] {
     }
   }
 
+  /** The account's stored hash to check a password against (a sign-in, the current password of
+    * one's own change): none after the grace period if it is a legacy one (P8), whether or not
+    * the retirement has replaced it yet.
+    */
+  def usableHash(user: User): Option[String] =
+    user.password.filterNot(h => PasswordHasher.isLegacy(h) && legacyGraceOver())
+
   /** Whether legacy hashes no longer sign in ([[LegacyPasswordRetirementJdbc.over]]): read at
-    * each legacy sign-in (rare: each one replaces its hash). Over if it can't be read: such a
-    * sign-in fails, as it would after the grace period.
+    * each legacy sign-in (rare: each one replaces its hash). Never without the grace period's
+    * table or row (V81 undone); over if it can't be read otherwise: such a sign-in fails, as it
+    * would after the grace period.
     */
   def legacyGraceOver(): Boolean =
     try LegacyPasswordRetirementJdbc.over()

@@ -365,7 +365,8 @@ class UserController @Inject()(cc: ControllerComponents,
       val checked: Either[Result, Option[String]] =
         try {
           if (needsCurrent && !currentPassword.exists(p =>
-              PasswordHasher.default.check(user.password, p) != PasswordHasher.Rejected))
+              // a legacy hash past its grace period counts as none (P8), replaced yet or not
+              PasswordHasher.default.check(User.usableHash(user), p) != PasswordHasher.Rejected))
             Left(refused(Some("currentPassword"), "password.current.wrong"))
           else Right(formUser.password.filter(_ => own).map(PasswordHasher.default.hash(_)))
         } catch {
@@ -735,7 +736,8 @@ class UserController @Inject()(cc: ControllerComponents,
       (inContest, ContestJuryJdbc.findById(contestId)) match {
         case (Some(account), Some(contest)) =>
           // a verified account without a password (none set yet) may still need its invitation
-          if (account.isRoot || account.emailVerified && account.password.nonEmpty || account.emailLo.isEmpty) {
+          // nor one with a usable password: a retired legacy one (P8) needs the invitation to set one
+          if (account.isRoot || account.emailVerified && account.hasUsablePassword || account.emailLo.isEmpty) {
             BadRequest(views.html.errorPage(Some(user), "error.title", "invitation.not.possible"))
           } else {
             val sent = userService.reinvite(user, account, contest)

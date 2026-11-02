@@ -473,7 +473,7 @@ class LocalImageCacheService(
     val step = Global.wikimediaSteps.find(_ >= px)
     if (!image.thumbnailOnly && step.forall(_ >= image.width))
       // only a Commons file's url, on Wikimedia's upload host (P9: not one stored from elsewhere)
-      WikimediaSource(image.width, image.url.filter(CommonsFileCheck.isCommonsUrl)
+      WikimediaSource(image.width, image.url.map(CommonsFileCheck.withScheme).filter(CommonsFileCheck.isCommonsUrl)
         .map(_.replaceFirst("^https?://upload\\.wikimedia\\.org", wikiBaseUrl)), original = true)
     else {
       val sourcePx = step.getOrElse(Global.wikimediaSteps.last)
@@ -496,7 +496,7 @@ class LocalImageCacheService(
   // Mirrors the URL construction in Global.legacyThumbUlr, using wikiBaseUrl as host
   private[services] def wikiThumbUrl(image: Image, px: Int): Option[String] =
     image.url.filter(CommonsFileCheck.isCommonsUrl).map { rawUrl =>
-      val url    = CommonsFileCheck.withoutQuery(rawUrl)
+      val url    = CommonsFileCheck.withoutQuery(CommonsFileCheck.withScheme(rawUrl))
       val scheme = wikiBaseUrl.takeWhile(_ != ':')
       val host   = wikiBaseUrl.replaceFirst("https?://", "")
       url.replaceFirst("https?://upload\\.wikimedia\\.org/wikipedia/commons/",
@@ -757,19 +757,16 @@ object LocalImageCacheService {
 
   /** The widths the image proxy serves the image at ([[controllers.ImageProxyController]]), the
     * widths the pages ask for, narrowest first: the thumbnails' ([[Global.thumbnailWidths]],
-    * [[cachedWidths]] those narrower than the file), the large view's fallback
-    * ([[Global.largeFallbackPx]]), and Wikimedia's sizes wider than every cached one, passed on
-    * as Wikimedia sends them, not scaled (a page rendered before the file's size changed). Of a
-    * file of unknown size, Wikimedia's sizes. Any other width would be scaled again on every
-    * request (P5): the proxy redirects it to the nearest of these ([[nearestWidth]]).
+    * [[cachedWidths]] those narrower than the file) and the large view's fallback
+    * ([[Global.largeFallbackPx]]). None for a file of unknown size: the pages ask the proxy for
+    * none of its widths (they show the file itself). Any other width would be scaled again, or
+    * fetched from Wikimedia, on every request (P5): the proxy redirects it to the nearest of
+    * these ([[nearestWidth]]).
     */
   def servedWidths(image: Image): Seq[Int] =
-    if (image.width <= 0 || image.height <= 0) Global.wikimediaSteps
-    else {
-      val widestCached = cachedWidths(image).lastOption.getOrElse(0)
-      (Global.thumbnailWidths(image.width, image.height).filter(_ > 0) ++
-        Global.wikimediaSteps.filter(_ > widestCached) :+ Global.largeFallbackPx(image)).distinct.sorted
-    }
+    if (image.width <= 0 || image.height <= 0) Nil
+    else
+      (Global.thumbnailWidths(image.width, image.height).filter(_ > 0) :+ Global.largeFallbackPx(image)).distinct.sorted
 
   /** Of `widths`, the nearest to `px`; of two as near, the wider. None if there are none. */
   def nearestWidth(widths: Seq[Int], px: Int): Option[Int] =

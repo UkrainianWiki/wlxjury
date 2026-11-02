@@ -439,6 +439,8 @@ error.api.token.limit = You have {0} usable tokens already, the most allowed. Re
 # accounts: invitations, password links, email changes, setup (security batch S2)
 not.a.member.invitation = No account yet? Accounts are created by contest organizers, who send you an invitation by email.
 signin.password.link.hint = Forgot your password, or haven''t signed in for a long time? Old passwords expire: ask the contest''s organizers for a link to set a new one.
+password.retired = password expired
+password.retired.hint = The account''s old password expired unused: send an invitation to set a new one.
 setup.needed = This installation has no accounts yet. The administrator creates the first one on the setup page (see the deployment guide).
 account.link.invalid.title = This link cannot be used
 account.link.invalid = The link is invalid, has expired or has been used already. Ask your contest organizer to send you a new one.

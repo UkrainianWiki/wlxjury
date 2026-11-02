@@ -97,8 +97,14 @@
                                 @user.email
                                 @* unverified: the account's owner has not proven the address; an access role for it
                                    waits for an invitation to be accepted *@
-                                @if(user.email.nonEmpty && !user.emailVerified) {
-                                    <span class="badge text-bg-warning email-unverified" title="@Messages("email.unverified.hint")">@Messages("unverified")</span>
+                                @* a legacy password retired after its grace period (P8): an invitation sets a new one *@
+                                @if(user.email.nonEmpty && (!user.emailVerified || user.passwordRetired)) {
+                                    @if(!user.emailVerified) {
+                                        <span class="badge text-bg-warning email-unverified" title="@Messages("email.unverified.hint")">@Messages("unverified")</span>
+                                    }
+                                    @if(user.passwordRetired) {
+                                        <span class="badge text-bg-warning password-retired" title="@Messages("password.retired.hint")">@Messages("password.retired")</span>
+                                    }
                                     @for(contest <- contestOpt; contestId <- contest.id; if !user.isRoot) {
                                         <form action="@routes.UserController.reinvite(user.getId, contestId)" method="post" class="d-inline">
                                             @helper.CSRF.formField
