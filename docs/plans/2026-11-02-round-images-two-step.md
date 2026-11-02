@@ -22,28 +22,30 @@ Marks: **[user]** decided by the user; **[rec]** recommendation, not yet confirm
 
 ## 2. Decisions
 
+All D1–D20 decided by the user (the last recommendations confirmed 2026-11-02).
+
 | # | Decision | |
 |---|---|---|
 | D1 | Add `round_image` (round membership plus per-image vote counts) | [user] |
 | D2 | Every round has two steps: fill (and review), then distribute; no one-pass mode. Skipping review = distributing straight away | [user] |
 | D3 | "Create and review images" is the round form's main button | [user] |
-| D4 | A "Distribute as soon as the images are ready" checkbox (off by default) queues distribution after the fill | [rec] |
+| D4 | A "Distribute as soon as the images are ready" checkbox (off by default) queues distribution after the fill | [user] |
 | D5 | Disqualified votes reuse the existing aside table (today `selection_deleted`); `round_image.status` says why they are aside. No new `selection_dq` | [user] |
-| D6 | No single "source" per image (an image passes several filters, can come from several previous rounds and categories). Store only how the row was added (`added_how`) and by which job (`added_by_job_id`); why it qualifies is computed on demand | [user], storage [rec] |
+| D6 | No single "source" per image (an image passes several filters, can come from several previous rounds and categories). Store only how the row was added (`added_how`) and by which job (`added_by_job_id`); why it qualifies is computed on demand | [user] |
 | D7 | Removing a file for a conflict of interest (CoI) disqualifies it and keeps its votes; today's "leave out now" deletes them | [user] |
 | D8 | Requalifying (a mistaken match or an ended conflict) is a manual admin action with a reason; no stored override for now. "Re-check conflicts" and "Disqualify new matches" are admin-driven, never automatic | [user] |
 | D9 | "Leave out now" stays as it is (deleting votes) until CoI disqualification ships; accepted | [user] |
 | D10 | Rename `selection` → `vote` | [user] |
 | D11 | New tables: singular snake_case (rule in CLAUDE.md) | [user] |
-| D12 | Rename as its own step with no behaviour change, after the open branches merge; Scala rename in a separate commit | [rec] |
-| D13 | Counts kept by same-transaction deltas in the DAO, plus a repair job; no triggers | [rec] |
-| D14 | Phases P0 rename → P1 membership → P1b CoI disqualification → P2a counts in shadow → P2b reads behind a flag → P3 two-step flow | [rec]; P1b right after P1 [user] |
-| D15 | A general `rounds.status` (draft / paused / active / finalized / cancelled) instead of a review flag | [rec] |
-| D16 | Rows are never deleted, except: a re-apply in review, before any vote exists in the round, deletes the `fill` rows that no longer pass | [rec] |
-| D17 | Top-N on re-apply: re-ranked from scratch, disqualified files skipped; already distributed files count toward N (today's rule) | [rec] |
-| D18 | Previous rounds are not frozen during review; the review page warns if their votes changed since the fill | [rec] |
-| D19 | Filter edits after distribution only add files | [rec] |
-| D20 | Organizers may view the review page; admins and root re-apply, distribute, disqualify, requalify | [rec] |
+| D12 | Rename as its own step with no behaviour change, after the open branches merge; Scala rename in a separate commit | [user] |
+| D13 | Counts kept by same-transaction deltas in the DAO, plus a repair job; no triggers | [user] |
+| D14 | Phases P0 rename → P1 membership → P1b CoI disqualification → P2a counts in shadow → P2b reads behind a flag → P3 two-step flow | [user] |
+| D15 | A general `rounds.status` (draft / paused / active / finalized / cancelled) instead of a review flag | [user] |
+| D16 | Rows are never deleted, except: a re-apply in review, before any vote exists in the round, deletes the `fill` rows that no longer pass | [user] |
+| D17 | Top-N on re-apply: re-ranked from scratch, disqualified files skipped; already distributed files count toward N (today's rule) | [user] |
+| D18 | Previous rounds are not frozen during review; the review page warns if their votes changed since the fill | [user] |
+| D19 | Filter edits after distribution only add files | [user] |
+| D20 | Organizers may view the review page; admins and root re-apply, distribute, disqualify, requalify | [user] |
 
 Migration numbers below are placeholders: they are assigned at merge time (V76 is taken by S1's
 role allowlist on `ukwikidev/security-s1`).

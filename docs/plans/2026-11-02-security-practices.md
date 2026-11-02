@@ -101,6 +101,10 @@ is itself a review item.
 4. Whether to add a CI workflow for `security.*` (there is no working CI today; `appveyor.yml`
    is obsolete), or keep the guards in the release gate only.
 
+**Decided (user, 2026-11-02), as recommended:** (1) fold the guidelines into `secure-coding.md`;
+(2) re-review each contest season and after any change to authentication, roles or sessions;
+(3) G11 reports, it does not fail the gate; (4) guards in the release gate, no CI for now.
+
 ## Order
 
 1. With S1: G1, CLAUDE.md role rule, `register.md` seeded.

@@ -273,6 +273,18 @@ CSRF-enabled router tests stay green.
 timeout (e.g. 8 hours); (3) revoke API tokens on password change, or only offer; (4) old cookies at
 deploy.
 
+**Decided (user, 2026-11-02):** MediaWiki's model. A per-account session version (`users`
+column) carried in the cookie and checked on every request; a password or email change, "sign out
+everywhere" or an admin action bumps it and ends every other session. "Keep me signed in" is kept
+and checked by default: a persistent cookie, absolute lifetime 1 year from sign-in, idle timeout
+1 month. Unchecked: a browser-session cookie with the same server-side limits. API tokens survive
+a password change (like MediaWiki's bot passwords), with a "revoke all tokens" action; an admin
+forcing a reset revokes both. Ordinary redeploys keep sessions (same `PLAY_HTTP_SECRET_KEY`);
+only S3's own release changes the cookie format: (4) old cookies are upgraded in place (user):
+the first request with a cookie lacking the new fields stamps the current session version and the
+sign-in time as now, so nobody is signed out. Accepted risk: a leaked pre-S3 cookie gets a fresh
+lifetime; "sign out everywhere", a password change or a key rotation ends it.
+
 **Dependencies:** after S2. Gatling simulations sign in through the form; check that
 `test/gatling` still signs in (no run unless the session code changes per-request cost).
 
@@ -294,6 +306,10 @@ tokens limited); `CsrfTestApp` router spec: a cookieless `POST /auth` without a 
 
 **Decisions (user):** (1) app vs. fail2ban; (2) limits (e.g. 10 failures per 15 minutes per
 address, 5 per account).
+
+**Decided (user, 2026-11-02):** fail2ban, not in the app; S4 is skipped here and goes to the
+infra plan (`security.auth` log line it can match, limits set there). N6 (login CSRF) is not
+throttling and moves to S3 or S7.
 
 **Dependencies:** after S3 if both touch `LoginController` in the same week; otherwise free.
 
@@ -335,6 +351,10 @@ can't sign in).
 
 **Dependencies:** P5 after B10's benchmark run (do not change the proxy while it measures).
 
+**Decided (user, 2026-11-02):** P6: a deactivated juror must not vote (both vote actions check
+`round_user.active`; 409 like a stopped round). P7: option (a), a single-use password-set link reusing S2's invitation token; done in S2.
+P8: grace period 3 months for legacy SHA-1 hashes, then they are replaced by an unusable value and the user sets a password through S2's link.
+
 ## S7: Headers and CSP
 
 **Items:** P4, P11, P3, P17.
@@ -348,6 +368,8 @@ drop `'unsafe-inline'` from `style-src`; narrow `img-src` to the Commons hosts i
 and proxy allow. P17: `scripts/ui-shots.py shoot --start-server --csp` on `/api/docs` once.
 
 **Decisions (user):** whether to take P3 now (screenshots in light, dark, auto) or later.
+
+**Decided (user, 2026-11-02):** P3 (`style-src 'unsafe-inline'`) later; the rest of S7 now.
 
 **Dependencies:** the CSP never gets wider (invariant). Screenshots need Chrome; one heavy run at a
 time.
@@ -373,6 +395,10 @@ Not done here: they belong to `docs/plans/2026-11-01-infra-in-repo.md` (branch
 **Decision (user):** patch `wlxjury-infra` now for O1/P2, or wait for the infra plan's Steps 2–4
 (then the followups branch waits too).
 
+**Decided (user, 2026-11-02):** folded into the infra plan (section "Security items folded in" on
+`ukwikidev/infra-in-repo`, 088b76e9), together with S4's fail2ban throttling. The followups branch
+is not deployed before O1 is in place.
+
 ## S9: Ops
 
 **Items:** P10, P8 (count), key rotation, the S1 data check.
@@ -385,6 +411,8 @@ Not done here: they belong to `docs/plans/2026-11-01-infra-in-repo.md` (branch
   (decision).
 - S1's queries, and again after S1's migration runs.
 
+**Decided (user, 2026-11-02):** S9 skipped for now.
+
 ## S10: Info and dependencies
 
 **Items:** N10, P13 (root revocation, duplicate token), P16 (stale texts), P19.
@@ -395,6 +423,10 @@ escaped (S5); fix the stale texts listed in the previous doc's item 16 and mark 
 `local-images-review-followups.md` table; P19 (an append-only `audit_event` table for role,
 account and contest changes) is a feature: decide whether to schedule it (it would have made N1
 traceable).
+
+**Decided (user, 2026-11-02):** S10 yes. P19's audit log is scheduled together with the rounds
+parity plan's first gap (audit log, `docs/plans/2026-11-02-montage-rounds-parity.md`), one table
+for role, account, contest and round events.
 
 ## Running the batches
 
