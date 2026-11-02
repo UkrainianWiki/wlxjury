@@ -40,7 +40,6 @@ class CoiMembersSpec extends Specification with TestDb with BeforeAll with Befor
       createContests(10, 20)
       val roles = Seq("admin", "organizer", "jury", "board", "auditor", "staff")
       val members = roles.map(r => r -> user(r, Some(s"${r}_account"), Some(10L -> r))).toMap
-      user("prejury", Some("prejury account"), Some(10L -> "prejury"))
       user("no", Some("no account"), Some(10L -> User.NO_ROLE))
       user("other", Some("Other contest"), Some(20L -> "jury"))
       user("noaccount", None, Some(10L -> "board"))
