@@ -143,6 +143,8 @@ object GalleryLatencyBenchmark {
           s"/gallery/round/$roundId/user/$jurorId/region/all/pageid/${files(1)._2}?sort=$order")
       }
       measure(organizer, s"organizer-$kind-byrate-p1")(_ => s"/byrate/round/$roundId/user/0/page/1")
+      // the file list of all the jurors' votes, a page of 1000 files with all their votes
+      measure(organizer, s"organizer-$kind-filelist-p1")(_ => s"/filelist/round/$roundId/user/0/page/1")
       // the region menu's regions, read when it is opened
       measure(juror, s"regions-$kind-juror")(_ => s"/regions/round/$roundId/user/$jurorId/region/all?sort=file")
       measure(organizer, s"regions-$kind-organizer")(_ => s"/regions/round/$roundId/user/0/region/all?module=byrate&sort=rate")

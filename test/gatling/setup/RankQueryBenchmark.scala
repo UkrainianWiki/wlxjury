@@ -16,9 +16,10 @@ import scala.collection.mutable.ListBuffer
   * batch B11) on the Gatling fixture DB: the queries of a whole page view with today's
   * [[SelectionQuery.keyCounts]] (A), with the pager's total taken from its counts (K), with the
   * ranks as window functions in the page query (W), and W with the list's total as one more
-  * window (WC); for information, a narrow grouped page (D: the page's ids, aggregates and
-  * ranks without the images join, then the page's images; DK: the same without the windows,
-  * ranked and counted by keyCounts) and a file list id query without the images join (WCn).
+  * window (WC); for information, D: the page's ids, aggregates and the windows from selection
+  * alone, then the page's images. Since B12 today's page (A) is itself narrow: the grouped
+  * page's deferred join and the file list's id query on selection alone
+  * (`SelectionQuery.query`); D is A with the windows.
   *
   * First it checks that W's ranks are today's on whole lists and on pages (ties spanning
   * pages, the last page, past the end), filters, regions, binary orders and jurors' lists.
@@ -90,9 +91,15 @@ object RankQueryBenchmark {
 
   // ---- the variants' SQL
 
-  /** A grouped by-rate page with its ranks. */
-  private def wPageSql(list: RoundList, q: SelectionQuery, total: Boolean): SQLSyntax =
-    insertAt(q.query(), From, windows(list.rankKey.columns, total))
+  /** A grouped by-rate page with its ranks: in the deferred page's inner query (B12), read by
+    * its outer one; in the one query of a whole list.
+    */
+  private def wPageSql(list: RoundList, q: SelectionQuery, total: Boolean): SQLSyntax = {
+    val sql = insertAt(q.query(), From, windows(list.rankKey.columns, total))
+    val outer = " from (select s.page_id as pid"
+    if (!sql.value.contains(outer)) sql
+    else insertAt(sql, outer, ", k.rank_start, k.rank_n" + (if (total) ", k.list_total" else ""))
+  }
 
   /** A juror's by-rate page (the deferred join) with its ranks, from the inner query. */
   private def wJurorSql(list: RoundList, q: SelectionQuery): SQLSyntax = {
@@ -104,21 +111,13 @@ object RankQueryBenchmark {
   private def wIdSql(list: RoundList, q: SelectionQuery, total: Boolean): SQLSyntax =
     insertAt(idQuery(q).query(idOnly = true), From, windows(list.rankKey.columns, total))
 
-  /** [[wIdSql]] without the images join (no monument join only). */
-  private def wIdNarrowSql(list: RoundList, q: SelectionQuery): SQLSyntax = {
-    val sql = wIdSql(list, q, total = true)
-    val join = """\s+STRAIGHT_JOIN images i\s+on i.page_id = s.page_id""".r
-    require(join.findFirstIn(sql.value).isDefined && !sql.value.contains("join monument"), sql.value)
-    SQLSyntax.createUnsafely(join.replaceFirstIn(sql.value, "").replace("i.page_id as pi_on_i", "s.page_id as pi_on_i"),
-      sql.parameters)
-  }
 
   /** A narrow grouped by-rate page: aggregates and ranks from selection alone (filter All, no
     * monument join), the page's images read after.
     */
-  private def dPageSql(list: RoundList, q: SelectionQuery, ranked: Boolean = true): SQLSyntax = {
+  private def dPageSql(list: RoundList, q: SelectionQuery): SQLSyntax = {
     require(list.filter == VoteFilter.All && list.region.isEmpty)
-    val w = if (ranked) windows(list.rankKey.columns, total = true) else ""
+    val w = windows(list.rankKey.columns, total = true)
     SQLSyntax.createUnsafely(
       s"select s.page_id, sum(s.rate) as rate, count(s.rate) as rate_count, sum(s.rate > 0) as approvals, " +
         s"sum(s.rate < 0) as rejections$w from selection s"
@@ -161,23 +160,6 @@ object RankQueryBenchmark {
     View(n, rows.map(_._1.pageId), rows.map(_._2), c.parts.toSeq)
   }
 
-  /** D without the windows: the narrow page, its images, and the ranks and total from keyCounts. */
-  private def byRateDK(list: RoundList, page: Int): View = {
-    val c = new Clock
-    val q = paged(list, page)
-    val rows = c("ids")(sql"${dPageSql(list, q, ranked = false)}".map { rs =>
-      (rs.long(1), rs.int(2), rs.int(3), rs.int(4), rs.int(5))
-    }.list())
-    val ids = rows.map(_._1)
-    val images = c("images")(if (ids.isEmpty) Map.empty[Long, org.intracer.wmua.Image]
-      else sql"select ${i.result.*} from images i where i.page_id in ($ids)".map(ImageJdbc(i)(_)).list()
-        .map(im => im.pageId -> im).toMap)
-    val files = rows.flatMap { case (id, sum, n, a, r) =>
-      images.get(id).map(im => ImageWithRating(im, Seq(Selection(id, juryId = 0, roundId = 0, rate = sum)), n, Some(a), Some(r)))
-    }
-    val ranks = keyCountRanks(list, c)
-    View(ranks.counts.map(_._2).sum, files.map(_.pageId), files.map(f => ranks(list.rankKey.values(f))), c.parts.toSeq)
-  }
 
   private def byRateD(list: RoundList, page: Int): View = {
     val c = new Clock
@@ -217,11 +199,11 @@ object RankQueryBenchmark {
     View(n, files.map(_.pageId), files.map(f => ranks(list.rankKey.values(f))), c.parts.toSeq)
   }
 
-  private def fileListW(list: RoundList, page: Int, total: Boolean, narrow: Boolean = false): View = {
+  private def fileListW(list: RoundList, page: Int, total: Boolean): View = {
     val c = new Clock
     val q = paged(list, page)
     val count = if (total) 0 else c("count")(list.query.count())
-    val sql = if (narrow) wIdNarrowSql(list, q) else wIdSql(list, q, total)
+    val sql = wIdSql(list, q, total)
     val rows = c("ids+w")(readW(sql, total)(_.long(1)))
     val files = c("withVotes")(q.withVotes(rows.map(_._1)))
     val n = if (!total) count else rows.headOption.flatMap(_._3).getOrElse(c("count")(list.query.count()))
@@ -281,9 +263,6 @@ object RankQueryBenchmark {
         val d = byRateD(list, p)
         check(s"$label page $p D", d.ids.zip(d.ranks) == slice && d.total == expected.size,
           firstDiff(d.ids.zip(d.ranks), slice) + s" total ${d.total}")
-        val dk = byRateDK(list, p)
-        check(s"$label page $p DK", dk.ids.zip(dk.ranks) == slice && dk.total == expected.size,
-          firstDiff(dk.ids.zip(dk.ranks), slice) + s" total ${dk.total}")
       }
       if (!juror) {
         val k = byRateK(list, p)
@@ -309,11 +288,6 @@ object RankQueryBenchmark {
       val w = fileListW(list, p, total = true)
       check(s"$label page $p W", w.ids.zip(w.ranks) == slice && w.total == expected.size,
         firstDiff(w.ids.zip(w.ranks), slice) + s" total ${w.total}")
-      locally {
-        val n = fileListW(list, p, total = true, narrow = true)
-        check(s"$label page $p WCn", n.ids.zip(n.ranks) == slice && n.total == expected.size,
-          firstDiff(n.ids.zip(n.ranks), slice) + s" total ${n.total}")
-      }
     }
     println(s"[ranks] $label: ${expected.size} files, ${kc.counts.size} keys, pages ${pages.mkString(",")}")
     expected.size
@@ -469,15 +443,13 @@ object RankQueryBenchmark {
         "K" -> (() => byRateK(list, page)),
         "W" -> (() => byRateW(list, page, total = false)),
         "WC" -> (() => byRateW(list, page, total = true)),
-        "D" -> (() => byRateD(list, page)),
-        "DK" -> (() => byRateDK(list, page))
+        "D" -> (() => byRateD(list, page))
       ))
       def fileListCase(label: String, list: RoundList) = Case(label, Seq(
         "A" -> (() => fileListA(list, 1, withCount = true)),
         "K" -> (() => fileListA(list, 1, withCount = false)),
         "W" -> (() => fileListW(list, 1, total = false)),
-        "WC" -> (() => fileListW(list, 1, total = true)),
-        "WCn" -> (() => fileListW(list, 1, total = true, narrow = true))
+        "WC" -> (() => fileListW(list, 1, total = true))
       ))
       def jurorCase(label: String, list: RoundList) = Case(label, Seq(
         "A" -> (() => byRateA(list, 1, withCount = false)),
@@ -534,19 +506,37 @@ object RankQueryBenchmark {
             "rated page W" -> wPageSql(r2, p1, total = false),
             "rated page WC" -> wPageSql(r2, p1, total = true),
             "rated page D" -> dPageSql(r2, p1),
-            "rated page DK (no windows)" -> dPageSql(r2, p1, ranked = false),
             "binary page D" -> dPageSql(b1, b),
-            "binary page DK (no windows)" -> dPageSql(b1, b, ranked = false),
             "rated deep page (A)" -> paged(r2, deep).query(),
             "rated deep page WC" -> wPageSql(r2, paged(r2, deep), total = true),
             "binary page (A)" -> b.query(),
             "binary page WC" -> wPageSql(b1, b, total = true),
             "file list ids (A)" -> idQuery(flq).query(idOnly = true),
             "file list ids WC" -> wIdSql(fl, flq, total = true),
-            "file list ids WCn" -> wIdNarrowSql(fl, flq),
             "juror page (A)" -> paged(jr, 1).query(),
             "juror page W" -> wJurorSql(jr, paged(jr, 1))
-          )
+          ) ++ {
+            // why a rated page costs more than a yes/no one (B12 item 3): the narrow grouped
+            // page in each round, with and without the monument id in its order, and with the
+            // other round's sums and order
+            def narrow(round: Round, order: String, tally: Boolean) = SQLSyntax.createUnsafely(
+              "select s.page_id, sum(s.rate) as rate, count(s.rate) as rate_count" +
+                (if (tally) ", sum(s.rate > 0) as approvals, sum(s.rate < 0) as rejections" else "") +
+                s" from selection s where s.round_id = ${round.getId} group by s.page_id" +
+                (if (order.isEmpty) "" else s" order by $order limit 15"))
+            val byRate = "sum(s.rate) desc, s.monument_id asc, s.page_id asc"
+            val byRateNoMonument = "sum(s.rate) desc, s.page_id asc"
+            val byApprovals = "sum(s.rate > 0) desc, sum(s.rate < 0) asc, s.page_id asc"
+            Seq(
+              "narrow rated, A's order" -> narrow(rated, byRate, tally = false),
+              "narrow rated, no monument id" -> narrow(rated, byRateNoMonument, tally = false),
+              "narrow rated, binary's sums+order" -> narrow(rated, byApprovals, tally = true),
+              "narrow rated, grouped only" -> narrow(rated, "", tally = false),
+              "narrow binary, A's order" -> narrow(binary, byApprovals, tally = true),
+              "narrow binary, rated's order" -> narrow(binary, byRate, tally = false),
+              "narrow binary, grouped only" -> narrow(binary, "", tally = false)
+            )
+          }
           // keyCounts' SQL isn't exposed: the same text as SelectionQuery.keyCounts builds
           val kcSql = SQLSyntax.createUnsafely("select k0, count(*) from (select sum(s.rate) as k0 from selection s") +
             r2.query.where() + SQLSyntax.createUnsafely(" group by s.page_id ) t group by k0 order by k0 desc")
