@@ -2,6 +2,7 @@ package gatling
 
 import gatling.setup.GatlingTestFixture
 import org.specs2.mutable.Specification
+import org.specs2.specification.AfterAll
 
 import java.net.http.HttpRequest.BodyPublishers
 import java.net.http.HttpResponse.BodyHandlers
@@ -17,8 +18,16 @@ import java.net.{CookieManager, CookiePolicy, URI}
  *  NOTE: First run triggers GatlingTestFixture initialisation (Docker + data load),
  *  which takes several minutes. Subsequent runs in the same JVM are instant.
  */
-class GatlingSmokeSpec extends Specification {
+class GatlingSmokeSpec extends Specification with AfterAll {
   sequential
+
+  /** The fixture's app (TestServer) stays up for the JVM, and PlayDBApiAdapterModule made its
+    * pool, on the fixture's own container, ScalikeJDBC's default: the specs after this one in
+    * the same JVM ran on that database (truncating it, and CriteriaRateSpec's lock specs
+    * reading another server's INNODB_TRX). Give them the shared test database's pool back.
+    */
+  override def afterAll(): Unit =
+    if (db.scalikejdbc.SharedTestDb.isStarted) db.scalikejdbc.SharedTestDb.reregisterDefault()
 
   private val MaxMs     = 1000L
   private lazy val base = s"http://localhost:${GatlingTestFixture.port}"
