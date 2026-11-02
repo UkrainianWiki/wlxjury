@@ -75,10 +75,16 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
         keyColumns: Seq[String] = Nil
     ): SQLSyntax = {
 
+      val needsMonumentJoin = monumentJoin || byRegion
+
+      // page ids alone (a file list's page, the CSV's keys, a file's rank): from selection,
+      // without the images, unless the monument table's region needs them
+      val idsOnSelection = idOnly && !count && !needsMonumentJoin
+
       val columnsStr: String =
         "select  " +
           (if (count || idOnly) {
-             "i.page_id as pi_on_i" +
+             (if (idsOnSelection) "s.page_id as pi_on_i" else "i.page_id as pi_on_i") +
                keyColumns.zipWithIndex.map { case (expr, n) => s", $expr as k$n" }.mkString +
                (if (ranked)
                   s", ROW_NUMBER() over (${orderBy()}) ranked"
@@ -106,10 +112,9 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
       val havingSql = if (grouped && !byRegion) having else sqls""
 
       // SQL clause order: FROM/JOIN → WHERE → GROUP BY → ORDER BY
-      val needsMonumentJoin = monumentJoin || byRegion
       val structureStr =
         columnsStr +
-          join(monuments = needsMonumentJoin)
+          (if (idsOnSelection) " from selection s" else join(monuments = needsMonumentJoin))
 
       val mainSql =
         sqls"${SQLSyntax.createUnsafely(structureStr)} ${where(count)} ${SQLSyntax.createUnsafely(groupByStr)} $havingSql ${SQLSyntax.createUnsafely(if (!(count || byRegion)) orderBy() else "")}"
@@ -136,6 +141,8 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
         mainSql
       } else if (!idOnly && !grouped && limit.isDefined && !needsMonumentJoin) {
         deferredJoinPage(columnsStr)
+      } else if (!idOnly && grouped && limit.isDefined) {
+        deferredGroupedPage()
       } else {
         sqls"$mainSql ${SQLSyntax.createUnsafely(limitSql())}"
       }
@@ -168,6 +175,37 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
       sqls"$columns from (select s.id$keyColumns from selection s ${where()} $innerOrder $page) k" +
         sqls" STRAIGHT_JOIN selection s on s.id = k.id" +
         sqls" STRAIGHT_JOIN images i on i.page_id = s.page_id $outerOrder"
+    }
+
+    /** One page of grouped rows (all the jurors' votes on each file: the by-rate gallery, the
+      * large view's files around one) as a deferred join: the inner query groups, orders and
+      * pages the files' votes on selection alone (joined to the images only for the monument
+      * table's regions), with their aggregates and the ORDER BY columns (o0, o1, ...); only
+      * the page's images are then read, and the page put back in order by those columns.
+      * Grouping the round's votes with every image column, as one query did before B12,
+      * carried them all through the temporary table and its sort.
+      *
+      * Every selection row has its image (FK_selection_page_id, V58), so it pages the files
+      * the one query paged. The aggregates come first, in the grouped reader's order.
+      */
+    private def deferredGroupedPage(): SQLSyntax = {
+      // the select's alias `rate` isn't a column of the inner select list: its sum
+      val keys = sortOrder.zipWithIndex.map { case ((name, dir), n) =>
+        (if (name == "rate") "sum(s.rate)" else name, s"o$n", dir)
+      }
+      val aggregates = Seq("rate", "rate_count") ++ (if (tally) Seq("approvals", "rejections") else Nil)
+      val inner = SQLSyntax.createUnsafely(
+        "select s.page_id as pid, sum(s.rate) as rate, count(s.rate) as rate_count" +
+          (if (tally) ", sum(s.rate > 0) as approvals, sum(s.rate < 0) as rejections" else "") +
+          keys.map { case (expr, alias, _) => s", $expr as $alias" }.mkString +
+          (if (monumentJoin) join(monuments = true) else " from selection s")
+      )
+      val groupBy = SQLSyntax.createUnsafely(" group by s.page_id")
+      val page = SQLSyntax.createUnsafely(s"${orderBy()} ${limitSql()}")
+      val outer = SQLSyntax.createUnsafely(s"select ${aggregates.map("k." + _).mkString(", ")}, ")
+      val outerOrder = SQLSyntax.createUnsafely(orderSql(keys.map { case (_, alias, dir) => s"k.$alias" -> dir }))
+      sqls"$outer ${i.result.*} from ($inner ${where()} $groupBy $having $page) k" +
+        sqls" STRAIGHT_JOIN images i on i.page_id = k.pid $outerOrder"
     }
 
     def list()(implicit session: DBSession = autoSession): Seq[ImageWithRating] =
