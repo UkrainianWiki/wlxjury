@@ -78,7 +78,7 @@ workstation). Batch: the resolution plan's batch.
 | O1 | Infra `production.conf.j2` lacks B5's allowed hosts and Secure-cookie lines | Medium | CONFIRMED | infra `roles/wlxjury_app/templates/production.conf.j2` | Open | infra | S8 |
 | P1 | No sign-in throttling (per address, per account) | Medium | Open (re-checked) | `LoginController.auth`/`signUp` | Open | app or infra | S4 |
 | N2 | Own password and email change without the current password; API tokens survive a password change | Low | CONFIRMED | `UserController.scala:212-311,484`; `ApiTokenJdbc` | Half fixed in S2 (current password); invalidation in S3 | app | S2, S3 |
-| N3 | CSV export open to spreadsheet formula injection (juror names, titles) | Low | CONFIRMED | `Csv.scala:81-85`, `GalleryController.csvStream:304-319` | Open | app | S5 |
+| N3 | CSV export open to spreadsheet formula injection (juror names, titles) | Low | CONFIRMED | `Csv.scala:81-85`, `GalleryController.csvStream:304-319` | Fixed (S5): `Csv.text`, `CsvSpec`, G8 | app | S5 |
 | N4 | Wiki account names not validated or unique; session resolves the name to the lowest id; unencoded in Commons links | Low | CONFIRMED | `User.scala:312-319,474-477`; `users.scala.html:59,64,74`; no unique key (V55) | Fixed in S2 (validation, encoding, ambiguous names refused; duplicates postponed) | app | S2 |
 | N5 | Greeting mail sent "From" the admin's unverified name and address, to any address | Low | CONFIRMED (delivery depends on the forged domain's SPF/DMARC; the new-findings doc's "passes SPF" is overstated) | `SendMail.scala:27-39` | Open (postponed by the user) | app | S2 |
 | P2 | No HSTS on the HTTPS vhosts | Low | Open (re-checked) | infra `wlxjury-ssl.conf.j2` | Open | infra | S8 |
@@ -92,15 +92,15 @@ workstation). Batch: the resolution plan's batch.
 | P10 | Production dump with personal data and bench volumes on the workstation | Low | Open | `C:\scala\wlxjury-bench-work\proddata\`, `wlxjury-bench-*` volumes | Open | ops | S9 |
 | N6 | Login CSRF from a browser with no cookie for the site | Info | CONFIRMED | Play `csrf.header.protectHeaders` default; `POST /auth`, `/signup` | Open | app | S4 |
 | N7 | Sign-up tells whether an email has an account | Info | CONFIRMED | `LoginController.scala:216-218` | Fixed in S2 (sign-up gone) | app | S2 |
-| N8 | Tile caption is HTML inserted with `.html()`, the title escaped once | Info | CONFIRMED (not exploitable with Commons titles) | `gallery.scala.html:35`; `unitegallery.js` | Open | app | S5 |
-| N9 | Job status JSON shows the raw exception message | Info | CONFIRMED | `JobScheduler.scala:375,441,523`; `JobController.scala:91`; `job-status.js:64` | Open | app | S5 |
-| N10 | Unused pac4j on the classpath; `pekko-http` 1.0.1; vendored unitegallery and raty | Info | CONFIRMED (no CVE database queried) | `build.sbt:145,186-187` | Open | app | S10 |
-| N11 / P12 | Slow and failing SQL logged with bound values; JDBC `useSSL=false` | Info | CONFIRMED | `application.conf:116-120`; `production.conf:6` | Open | app (+infra if the DB is remote) | S5, S8 |
+| N8 | Tile caption is HTML inserted with `.html()`, the title escaped once | Info | CONFIRMED (not exploitable with Commons titles) | `gallery.scala.html:35`; `unitegallery.js` | Fixed (S5): caption escaped once more, `GalleryDescriptionViewSpec`, G5 | app | S5 |
+| N9 | Job status JSON shows the raw exception message | Info | CONFIRMED | `JobScheduler.scala:375,441,523`; `JobController.scala:91`; `job-status.js:64` | Fixed (S5): `JobError` key + reference, `JobControllerSpec`, G13 | app | S5 |
+| N10 | Unused pac4j on the classpath; `pekko-http` 1.0.1; vendored unitegallery and raty | Info | CONFIRMED (no CVE database queried) | `build.sbt:145,186-187` | Fixed (S10): pac4j removed, vendored JS noted; `pekko-http` deferred to a scalawiki-first bump | app | S10 |
+| N11 / P12 | Slow and failing SQL logged with bound values; JDBC `useSSL=false` | Info | CONFIRMED | `application.conf:116-120`; `production.conf:6` | App part fixed (S5): `SqlLogging`, `SqlLoggingSpec`, G9; `useSSL` open (S8) | app (+infra if the DB is remote) | S5, S8 |
 | P11 | CSP set through the deprecated key | Info | Open | `application.conf:105` | Open | app | S7 |
-| P13 | API: no limit on failed tokens; root can't revoke others' tokens; double click makes two | Info | Open | `ApiTokenService`, `UserController.revokeApiToken` | Open | app | S4, S10 |
+| P13 | API: no limit on failed tokens; root can't revoke others' tokens; double click makes two | Info | Open | `ApiTokenService`, `UserController.revokeApiToken` | Root revocation and double click fixed (S10); failed-token limit open (S4) | app | S4, S10 |
 | P14 | Sign-in and sessions ignore `users.deleted_at` | Info | Open | `User.byUserName` | Fixed in S2 | app | S2 |
 | P15 | Infra logback lacks `ApiTokenService`/`coi` at INFO | Info | Open | infra `logback.xml.j2` | Open | infra | S8 |
-| P16 | Stale docs and comments; no secret-rotation procedure | Info | Open | see previous doc item 16 | Open | app (docs) + ops | S9, S10 |
+| P16 | Stale docs and comments; no secret-rotation procedure | Info | Open | see previous doc item 16 | Texts fixed (S10); rotation procedure open (S3/S9) | app (docs) + ops | S9, S10 |
 | P17 | `/api/docs` under the production CSP never checked in a browser | Info | Cannot verify | `/api/docs` | Open | app | S7 |
 | P18 | `byUserName` validates the trimmed name but looks up the untrimmed one | Info | Open | `User.scala:312-319` | Fixed in S2 | app | S2 |
 | P19 | No audit log of admin actions (role and account changes) | Info (feature; matters for N1 forensics) | Open | — | Open | app | S10 |

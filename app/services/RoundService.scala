@@ -260,7 +260,7 @@ class RoundService @Inject() (
 
   private def checkFinished(roundId: Long, job: Job): Unit =
     if (!job.isDone)
-      throw RoundDistributionFailed(roundId, job.error.getOrElse(s"the distribution is ${job.status}"))
+      throw RoundDistributionFailed(roundId, job.failure.fold(s"the distribution is ${job.status}")(_.describe))
 
   /** "Count new files": the number of images [[distributeNewFiles]] would add now. */
   def newFilesCount(roundId: Long): Long = distribution.countNew(roundId)
