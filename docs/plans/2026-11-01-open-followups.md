@@ -821,15 +821,17 @@ start. `production.conf`:
 
 ```
 wlxjury.allowedHosts = ${WLXJURY_ALLOWED_HOSTS}
-play.filters.hosts.allowed = ["127.0.0.1", "localhost"]
+play.filters.hosts.allowed = []
 ```
 
-So production allows the deployed names and loopback, not Play's `*.local`. The variable is
+So production allows only the deployed names: no loopback names (they were allowed at first;
+see the review fixes) and not Play's `*.local`. The variable is
 required (an unresolved substitution). In Mode.Prod the module also refuses to start without a
 name. A runtime directory with an old `production.conf` therefore fails at the readiness check,
 with maintenance still on, instead of answering 400 to every public URL after `reopen`.
 - The deploy tools ask `http://127.0.0.1:$PORT/health/ready`, so curl and urllib send
-  `Host: 127.0.0.1:9000`. Play's matcher ignores the port when the pattern has none.
+  `Host: 127.0.0.1:9000`. That route is tagged `+ anyhost` (review fixes), so it answers any
+  Host, and still only loopback clients.
 - Apache's vhosts keep the client's Host (`ProxyPreserveHost On` in
   `conf/apache/0002-wlxjury.conf`), so the check sees the real names.
 - A refused request gets `ErrorHandler`'s 400 page (`error.bad.request`, without echoing the
@@ -937,14 +939,40 @@ default-src 'self'; script-src 'self' 'sha256-3mX0eBrNyY2mJrtf51OU6PnsrmuoX73+0V
   - Older releases ignore the setting (their `application.conf` disables the filter), so a
     restore to one works with the new file.
 - Cookies are `Secure`, so signing in over plain HTTP stops working. `jury.wikilovesearth.org`'s
-  HTTP vhost in `0002-wlxjury.conf` has no redirect to HTTPS. Check that it has an HTTPS vhost
-  and a redirect before this release.
+  HTTP vhost in `0002-wlxjury.conf` had no redirect to HTTPS; it has one now (review fixes).
+  The production vhosts from `wlxjury-infra` need it too, with or before this release, and an
+  HTTPS vhost for that name.
 - `wlxjury-infra`'s templates (`production.conf.j2`, `runtime.env.j2`) need the same keys.
   `wlxjury_hostnames` already lists the names.
 
 **Open questions**
-- `jury.wikilovesearth.org` over plain HTTP (above): for the user or `wlxjury-infra` to check.
-- Apache could send `X-Forwarded-Proto: https` from the HTTPS vhosts (infra), so that
-  `request.secure` and `absoluteURL` see HTTPS. This batch doesn't need it.
+- `jury.wikilovesearth.org` over plain HTTP: `0002-wlxjury.conf` now redirects it (review
+  fixes); the production vhosts from `wlxjury-infra` need the same, with or before this release.
+- `X-Forwarded-Proto`: not needed (nothing reads `request.secure`); if it is ever added, it must
+  be set on every vhost, or a client could send its own (review fixes).
 - Left for later: moving the policy to `play.filters.csp` (the deprecation warning), and
   dropping `'unsafe-inline'` from `style-src` (unitegallery's tiles).
+
+### B5 review fixes
+
+The independent review found nothing blocking. Fixes:
+
+| Finding | Fix | Commit |
+|---|---|---|
+| Medium: `0002-wlxjury.conf`'s HTTP vhost for `jury.wikilovesearth.org` proxied to the app without the HTTPS redirect, so with Secure cookies signing in there would lose the session (CSRF 403) | The same `RewriteCond %{SERVER_NAME}` / `RewriteRule ^ https://… [END,NE,R=permanent]` as the other vhosts (`RewriteEngine On` comes from the maintenance include). `docs/deployment.md`: `wlxjury-infra`'s vhost templates need the redirect for every name with or before this release, and HSTS on the HTTPS vhosts is recommended | `e6d3c2aa` |
+| Low: the sort cookies (`gallerySort`, `binarySort`) weren't Secure | `RoundList.remembered` takes `secure`; `GalleryController` passes `play.http.session.secure`, as `ThemeCookies` follows it. `GalleryOrderSpec`: not Secure in the tests, Secure with the setting on; `ProductionConfigSpec` checks the cookie with the production config | `5bbd0072` |
+| Low: production allowed `127.0.0.1`/`localhost`, which Apache's default vhost would pass through with `ProxyPreserveHost On` | `/health/ready` (the only health route; the deploy tools call nothing else on loopback, `reopen` checks the public URLs) is tagged `+ anyhost` in `conf/routes`, which Play's `routeModifiers.whiteList = ["anyhost"]` exempts; `production.conf` sets `play.filters.hosts.allowed = []`. Readiness still answers only loopback clients (404 otherwise, no build details). `AllowedHostsSpec` now builds an app configured as production: loopback names get 400 on `/auth`, readiness answers any Host for a local client and 404 for a remote one. The local smoke-test commands in `docs/deployment.md` send a jury name (`curl -H 'Host: …'`); the packaged smoke test checks `/auth` on loopback gets 400 (Linux container only, not run) | `db2ea456` |
+| Low (docs): the `X-Forwarded-Proto` advice could be spoofed | Dropped as advice: nothing reads `request.secure`; if a header is ever added, it must be set on every vhost (`https` on 443, `http` on 80) | `db2ea456` |
+| Low: `AllowedHosts.parse` accepted a one-label suffix (`.org`) and default ports (`:443`, which browsers leave out, so the name would never match) | A suffix needs two labels; `:80`/`:443` stop the start with "leave out the default port". `ProductionConfigSpec` tests both | `db2ea456` |
+| Info: the filter's WARN doubled `ErrorHandler`'s `client_error` line for each scanner request | `play.filters.hosts.AllowedHostsFilter` at ERROR in `conf/logback.xml` and `conf/wlxjury/logback.xml` | `db2ea456` |
+
+Changed deploy test script: `scripts/deployment/test_database_restore.py` (runs only in the Linux
+deployment container; not run here).
+
+Checks: `Test/compile`, `Gatling/compile`, `ProductionConfigSpec`, `AllowedHostsSpec`, `views.*`
+(with `ContentSecurityPolicySpec` and `InlineScriptHashesSpec`), `ReadinessControllerSpec`,
+`GalleryOrderSpec`, `AllJurorsListSpec`, `RoundListSpec`, `LargeImageSpec`,
+`MutationAuthorizationSpec`. The first run failed to compile, because `RoundListSpec` still
+called `remembered` without the new parameter (`20261102-021016-7888.log`). After fixing that:
+exit 0, 314 passed (`20261102-021101-1696.log`). No full suite: it passed at `bc70ff44`, and the
+orchestrator runs it after merging B4.
