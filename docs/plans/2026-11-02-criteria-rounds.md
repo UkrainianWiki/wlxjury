@@ -209,12 +209,16 @@ Implemented as planned, with the deviations noted. No schema change but V78.
   `SELECT id FROM selection WHERE id = ? FOR UPDATE`, `UPDATE criteria_rate` (rows matched, as
   `SelectionJdbc.rate` counts them), `SELECT SUM(IF(rate > 0, rate, 0)) … FOR UPDATE` (a locking
   read: the latest rates, not a snapshot), `UPDATE selection SET rate`. Retried once on a
-  deadlock (error 1213 / SQLState 40001 in the cause chain; a lock wait timeout is not retried).
+  deadlock (`DbErrors.isDeadlock`: error 1213 / SQLState 40001 in the cause chain; a lock wait
+  timeout is not retried; `JobScheduler.isTransient` uses the same classifier, with lock wait
+  timeouts).
   `updateRateIn` is the same in the caller's transaction (used by the lock spec). Still an update
   of pre-created rows: the upsert is C2's (U6).
 - **Every vote delete deletes its rates**, after locking the votes:
   `SelectionJdbc.deleteVotes(where on alias v)`, per table (selection, then selection_deleted):
-  `SELECT COUNT(*) … FOR UPDATE` (locks without sending rows), `DELETE cr … JOIN`, `DELETE v`.
+  `SELECT COUNT(*) … FOR UPDATE` (locks without sending rows), `DELETE cr FROM v STRAIGHT_JOIN
+  criteria_rate cr` (from the votes to their rates by `criteria_selection_index`, so only their
+  rates are locked, not every rate scanned), `DELETE v`.
   Used by `removeImage`, `removeUnrated` and `RoundConflicts.removeFromRound` (which now locks the
   votes before deleting their rates). `moveVotes` (`setRound`) locks the source votes and deletes
   the rates of the duplicates it drops; moved votes keep their ids and rates.
@@ -226,18 +230,22 @@ Implemented as planned, with the deviations noted. No schema change but V78.
   images are never deleted, V63; rounds are deleted only by hand, which `moveVotesBack` covers).
 - **Lock order, deviation:** §3 recommends `rounds → images → selection → criteria_rate →
   selection_deleted` with "rates written only while their vote is locked". For a vote moved aside
-  the vote row *is* the selection_deleted row, so both rules can't hold; as implemented:
-  `rounds → images → selection → criteria_rate (of live votes) → selection_deleted →
-  criteria_rate (of aside votes)`. No path locks `criteria_rate` and then waits for
-  `selection_deleted` rows, so there is no cycle. `moveVotesBack` locks `selection_deleted` before
-  `selection` as before C1; it runs under the files' locks (`DeletedFiles`), as does every archive.
-- **V78 `Criteria_rate_orphans`** (provisional number: followups is at V76 and S2 takes V77;
-  **renumber at merge time**): archives the orphans to `criteria_rate_orphans` (`LIKE
-  criteria_rate`, `INSERT IGNORE`, as V58 did with `selection_orphans`), then deletes them.
-  Idempotent: a rerun archives and deletes nothing. On the test and Gatling fixtures it deletes
-  0 rows (neither has criteria rates); the production count is C0's orphans query (not run: C0
-  skipped). P0's renames should include `criteria_rate_orphans` if it renames
-  `selection_orphans`.
+  the vote row *is* the selection_deleted row, so both can't hold literally. As implemented,
+  every vote delete or move locks `rounds → images → selection → selection_deleted`, and a
+  `criteria_rate` row only ever while its vote row (in selection or selection_deleted) is held.
+  Gap locks don't conflict with each other and these deletes take no insert intention on
+  `criteria_rate`, so a lock cycle can only come from `selection`/`selection_deleted`; review
+  M1 found one there (below), now fixed: `moveVotesBack` locks the files' `selection` rows (and
+  gaps) first.
+- **V78 `Criteria_rate_orphans`** (provisional number): archives the orphans to
+  `criteria_rate_orphan` (singular, CLAUDE.md table names; criteria_rate's columns under an
+  `archive_id` key of its own, `archived_at`, plain `INSERT`, so a reused criteria_rate id
+  archived later keeps both rows), then deletes them. It also archives the rates of the votes V58
+  moved to `selection_orphans`. Idempotent: a rerun archives and deletes nothing. On the test and
+  Gatling fixtures it deletes 0 rows (neither has criteria rates); the production count is C0's
+  orphans query (not run: C0 skipped).
+- **Recommendation for P0 (merge into the round-images plan):** add `criteria_rate_orphan` to
+  P0's rename list next to `selection_orphans` (its `selection` column → `vote_id`).
 - **Removed:** `CriteriaRate.batchInsert` and `SelectionJdbc.byRoundWithCriteria` (no callers),
   and `SelectionJdbc.c`.
 - Not done (as scoped): U12 repair of S4 damage, U5 (C3), upsert (C2).
@@ -245,8 +253,8 @@ Implemented as planned, with the deviations noted. No schema change but V78.
 Specs:
 - `org.intracer.wmua.CriteriaRateSpec` (new): sum and 0-reset; unknown criterion and vote gone
   false, nothing written; a second criterion vote waits for the first's uncommitted transaction
-  and then sums both (the old two autocommit statements took no lock on the vote, so the second
-  ran at once and summed without the first's rate); 20 votes × 3 criteria voted at once
+  and then sums both (this passes on the old code too: its `UPDATE criteria_rate` locked the
+  vote's rate rows by index, so it does not prove the vote-row lock; the review-fix spec does); 20 votes × 3 criteria voted at once
   on 6 threads, three passes, every sum right; retry once on deadlock only; no orphans after
   `removeImage`, `removeUnrated`, `setRound`, delete + restore on Commons (rates kept), restore
   replacing / dropping rows, restore of a deleted round's votes, and moving aside again.
@@ -261,6 +269,10 @@ Specs:
   token, voted with it.
 - `LargeViewUrlsSpec`: no key votes in a criteria round. `CoiRoundSpec`: no orphans after the
   removal.
+- After review (below): a criterion vote waits for its vote row held by a delete, then writes
+  nothing (old code wrote the rate of a vote being deleted); a restore waits at the file's
+  `selection` rows while another transaction locks its aside rows (old order deadlocked); both
+  wait on `information_schema.INNODB_TRX` `LOCK WAIT` (20 s at most), no sleeps.
 
 Checks (Git Bash, `scripts/agent-check.py`, sbt launcher, one JVM): `Test/compile`,
 `Gatling/compile`, and `testOnly` of CriteriaRateSpec, CriteriaRateOrphansMigrationSpec,
@@ -271,9 +283,35 @@ pending (ImageDistributorSpec's existing "Pending until fixed"); log
 `target/checks/20261102-141447-24852.log` in the C1 worktree. No full suite (not a release
 boundary); no Jest run (no JS changed).
 
+**Merge checklist (C1):**
+- Renumber V78 to the next free version at merge time: after S2's V77 if S2 merges first (production
+  runs Flyway with `validateOnMigrate = true` and no `outOfOrder`, so a version below one already
+  applied would fail). Rename the file and its path in `CriteriaRateOrphansMigrationSpec`.
+- Put the production orphan count (C0's query) in the commit message or here.
+
 Open: the production orphan count (C0's query) for V78's commit message; whether `removeUnrated`
 should treat a partly rated criteria vote as unrated once U5 lands (C3: today `rate = 0`, i.e. no
 criterion rated).
+
+#### C1 review fixes
+
+| # | Finding | Fix |
+|---|---|---|
+| M1 | `moveVotesBack` locked `selection_deleted` before `selection`; `RoundConflicts`, `archiveDeletedVotesInRound` and `moveVotesAside` go the other way, without a file lock (restore vs. "leave out now" or opening a round: deadlock 1213, not retried) | `moveVotesBack(pageIds)` first locks `selection WHERE page_id IN (…) FOR UPDATE`; every path is now selection → selection_deleted → criteria_rate. Spec: restore waits at `selection` while another transaction locks the aside rows. |
+| M2 | The concurrency specs pass on the old code too | New spec: vote row held `FOR UPDATE` by a delete; `updateRate` waits (`LOCK WAIT` in `INNODB_TRX`), `criteria_rate` unchanged meanwhile, then returns false and writes nothing. Sleeps replaced by the bounded `LOCK WAIT` poll; "which failed before" dropped. |
+| M1/M2 check | | With the two locks removed by hand (`moveVotesBack`'s first `selection` lock, `updateRateIn`'s `FOR UPDATE`), all three lock specs fail (1 failure, 2 errors, log `target/checks/20261102-145527-26248.log`); with them, all pass. `INNODB_TRX` needs PROCESS: the spec reads it as the container's root. |
+| L1 | Rate deletes driven from `criteria_rate` could lock (and scan) every rate | `DELETE cr FROM <votes> STRAIGHT_JOIN criteria_rate cr ON cr.selection = v.id` in `deleteVotes`, `moveVotes`, `moveVotesAside`, `moveVotesBack`. |
+| L2 | Lock-order argument | Reworded above. |
+| L3 | Archive table name; numbering | `criteria_rate_orphan`; P0 rename recommendation; merge checklist item. |
+| L4 | Legacy criteria rounds without `criteria_rate` rows | Noted in C2 (votes). |
+| Nits | `where` unqualified in `moveVotesAside`; V78 comment; `INSERT IGNORE`; two deadlock classifiers; Space/Del in a binary round with `has_criteria = 1` | `moveVotesAside` takes the alias (`s`/`v`); comment names `selection_orphans`; own archive key, plain INSERT; `DbErrors` shared with `JobScheduler`; `keyboardNav` renders no vote keys at all when `hasCriteria`. |
+
+Review-fix checks: `Test/compile`, `Gatling/compile`, `testOnly` of CriteriaRateSpec,
+CriteriaRateOrphansMigrationSpec, DeletedFilesSpec, CoiRoundSpec, MutationAuthorizationSpec,
+LargeImageSpec, LargeViewUrlsSpec, RoundDistributionJobSpec, MigrationNamingSpec,
+JobSchedulerSpec, RoundImageCountsDbSpec: 208 passed and the 3 new lock specs erred on the
+PROCESS privilege (`target/checks/20261102-144106-26384.log`); after reading `INNODB_TRX` as root,
+CriteriaRateSpec 14/14 (`target/checks/20261102-144904-8148.log`).
 
 ### C2: criteria defined per round (after P0)
 
@@ -292,7 +330,10 @@ criterion rated).
   map; `Round.create` writes `has_criteria`.
 - Votes: `updateRate` upserts (`INSERT … ON DUPLICATE KEY UPDATE`) if U6 = on vote, and the
   distribution stops writing rows (`addCriteriaRates` and its `MAX(id) FOR UPDATE` go); missing
-  rows read as 0. Otherwise keep pre-creation with the round's ids.
+  rows read as 0. Otherwise keep pre-creation with the round's ids. Since C1, a legacy criteria
+  round whose votes have no `criteria_rate` rows (`has_criteria` set after the distribution, e.g.
+  round 1327 if it was set by hand) answers 404 to every criterion vote and has no digit keys,
+  so its jurors can't vote until this upsert (U6) ships.
 - Round form (rated rates only): "Rate on several criteria" checkbox and a list of names (add,
   remove, reorder, up to 10), prefilled from the previous round's criteria when it has some.
   Before any vote (and in P3's draft/paused state): full edit. After votes: names only; the

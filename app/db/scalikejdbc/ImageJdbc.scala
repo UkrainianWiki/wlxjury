@@ -348,7 +348,7 @@ object ImageJdbc extends CRUDMapper[Image]
     */
   def archiveVotes(pageIds: Seq[Long], roundIds: Set[Long])(implicit session: DBSession): Seq[Long] =
     if (pageIds.isEmpty || roundIds.isEmpty) Nil
-    else moveVotesAside(sqls"page_id IN ($pageIds) AND round_id IN ($roundIds)")
+    else moveVotesAside(t => sqls"$t.page_id IN ($pageIds) AND $t.round_id IN ($roundIds)")
 
   /** [[archiveVotes]] of the files in the round that were deleted on Commons: when the round
     * opens ([[Round.setActiveGuarded]]), or those a distribution added to it as they were
@@ -364,32 +364,37 @@ object ImageJdbc extends CRUDMapper[Image]
                         WHERE i.deleted_at IS NOT NULL AND s.round_id = $roundId"""
       .map(_.long(1))
       .list()
-    if (pageIds.nonEmpty) moveVotesAside(sqls"round_id = $roundId AND page_id IN ($pageIds)")
+    if (pageIds.nonEmpty) moveVotesAside(t => sqls"$t.round_id = $roundId AND $t.page_id IN ($pageIds)")
     pageIds
   }
 
-  /** Moves the selection rows `where` selects to selection_deleted. They keep their ids, so
-    * their criteria rates follow them; those of an older row of the same vote that the move
-    * replaces are deleted with it.
+  /** Moves the selection rows `where` selects (on the alias it is given) to selection_deleted.
+    * They keep their ids, so their criteria rates follow them; those of an older row of the
+    * same vote that the move replaces are deleted with it.
+    *
+    * Lock order, as every vote delete or move: selection, then selection_deleted, then
+    * criteria_rate ([[SelectionJdbc.deleteVotes]], [[moveVotesBack]]).
     *
     * @return their rounds
     */
-  private def moveVotesAside(where: SQLSyntax)(implicit session: DBSession): Seq[Long] = {
+  private def moveVotesAside(where: SQLSyntax => SQLSyntax)(implicit session: DBSession): Seq[Long] = {
+    val s = sqls"s"
+    val v = sqls"v"
     // The latest rows, not the snapshot's, locked as the DELETE locks them: a shared lock
     // first would deadlock, on its upgrade, with a juror voting on one of them
-    val roundIds = sql"SELECT DISTINCT round_id FROM selection WHERE $where FOR UPDATE"
+    val roundIds = sql"SELECT DISTINCT s.round_id FROM selection s WHERE ${where(s)} FOR UPDATE"
       .map(_.long(1))
       .list()
     // the rows aside that REPLACE drops: the same vote (page, juror, round) under another id,
-    // moved aside before the file was distributed to the juror again; locked, then their rates
-    // deleted (selection, then selection_deleted, then criteria_rate, as SelectionJdbc.deleteVotes)
-    // (`where` on v: those rows have the moved rows' page and round, so its index is used)
-    val replaced = sqls"""$where AND EXISTS (SELECT 1 FROM selection s WHERE s.id <> v.id
+    // moved aside before the file was distributed to the juror again; locked, then their
+    // rates deleted. `where` on v: those rows have the moved rows' pages and rounds.
+    val replaced = sqls"""${where(v)} AND EXISTS (SELECT 1 FROM selection s WHERE s.id <> v.id
                             AND s.page_id = v.page_id AND s.jury_id = v.jury_id AND s.round_id = v.round_id)"""
     sql"SELECT COUNT(*) FROM selection_deleted v WHERE $replaced FOR UPDATE".map(_.int(1)).single()
-    sql"DELETE cr FROM criteria_rate cr JOIN selection_deleted v ON v.id = cr.selection WHERE $replaced".update()
-    sql"REPLACE INTO selection_deleted SELECT * FROM selection WHERE $where".update()
-    sql"DELETE FROM selection WHERE $where".update()
+    sql"DELETE cr FROM selection_deleted v STRAIGHT_JOIN criteria_rate cr ON cr.selection = v.id WHERE $replaced"
+      .update()
+    sql"REPLACE INTO selection_deleted SELECT s.* FROM selection s WHERE ${where(s)}".update()
+    sql"DELETE s FROM selection s WHERE ${where(s)}".update()
     roundIds
   }
 
@@ -400,33 +405,38 @@ object ImageJdbc extends CRUDMapper[Image]
     */
   def restoreVotes(pageIds: Seq[Long])(implicit session: DBSession): Seq[Long] =
     if (pageIds.isEmpty) Nil
-    else moveVotesBack(sqls"d.page_id IN ($pageIds)")
+    else moveVotesBack(pageIds)
 
-  /** Moves the selection_deleted rows `where` selects (on `d`) back to selection, but those
-    * of rounds deleted meanwhile, which are dropped. Where the file was distributed again to
-    * the same juror in the round meanwhile, the juror's vote wins: the moved row replaces an
-    * unrated new one, and gives way to a rated one (the juror voted again). Nothing `where`
-    * selects stays aside.
+  /** Moves the files' selection_deleted rows back to selection, but those of rounds deleted
+    * meanwhile, which are dropped. Where the file was distributed again to the same juror in
+    * the round meanwhile, the juror's vote wins: the moved row replaces an unrated new one,
+    * and gives way to a rated one (the juror voted again). Nothing of the files stays aside.
+    * Criteria rates follow their votes: the moved rows keep their ids and so their rates; the
+    * rates of the rows replaced or dropped are deleted.
+    *
+    * Lock order: the files' selection rows (and the gaps where theirs would go) first, then
+    * selection_deleted, then criteria_rate, as [[moveVotesAside]], [[SelectionJdbc.deleteVotes]]
+    * and [[RoundConflicts]]: locking selection_deleted first deadlocked with them.
     *
     * @return the rounds that gained rows
     */
-  private def moveVotesBack(where: SQLSyntax)(implicit session: DBSession): Seq[Long] = {
+  private def moveVotesBack(pageIds: Seq[Long])(implicit session: DBSession): Seq[Long] = {
+    val where = sqls"d.page_id IN ($pageIds)"
     val sameVote = sqls"s.page_id = d.page_id AND s.jury_id = d.jury_id AND s.round_id = d.round_id"
     val roundExists = sqls"EXISTS (SELECT 1 FROM rounds r WHERE r.id = d.round_id)"
+    sql"SELECT COUNT(*) FROM selection WHERE page_id IN ($pageIds) FOR UPDATE".map(_.int(1)).single()
     val roundIds = sql"SELECT DISTINCT d.round_id FROM selection_deleted d WHERE $where FOR UPDATE"
       .map(_.long(1))
       .list()
-    // the new rows the moved ones replace, and the moved rows dropped, go with their
-    // criteria rates; the moved rows keep their ids and so their rates
+    // the new unrated rows a rated moved one replaces, with their criteria rates
     val replacedNew = sqls"$where AND COALESCE(s.rate, 0) = 0 AND COALESCE(d.rate, 0) <> 0"
-    sql"SELECT COUNT(*) FROM selection s JOIN selection_deleted d ON $sameVote WHERE $replacedNew FOR UPDATE"
-      .map(_.int(1)).single()
-    sql"""DELETE cr FROM criteria_rate cr JOIN selection s ON s.id = cr.selection
-          JOIN selection_deleted d ON $sameVote WHERE $replacedNew""".update()
+    sql"""DELETE cr FROM selection_deleted d JOIN selection s ON $sameVote
+          STRAIGHT_JOIN criteria_rate cr ON cr.selection = s.id WHERE $replacedNew""".update()
     sql"DELETE s FROM selection s JOIN selection_deleted d ON $sameVote WHERE $replacedNew".update()
     sql"""INSERT INTO selection SELECT d.* FROM selection_deleted d
           WHERE $where AND $roundExists AND NOT EXISTS (SELECT 1 FROM selection s WHERE $sameVote)""".update()
-    sql"""DELETE cr FROM criteria_rate cr JOIN selection_deleted d ON d.id = cr.selection
+    // the rows not moved back, with their criteria rates
+    sql"""DELETE cr FROM selection_deleted d STRAIGHT_JOIN criteria_rate cr ON cr.selection = d.id
           WHERE $where AND NOT EXISTS (SELECT 1 FROM selection s WHERE s.id = d.id)""".update()
     sql"DELETE d FROM selection_deleted d WHERE $where".update()
     roundIds

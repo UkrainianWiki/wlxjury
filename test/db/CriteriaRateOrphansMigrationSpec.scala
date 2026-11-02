@@ -7,7 +7,7 @@ import org.specs2.specification.{BeforeAll, BeforeEach}
 
 import java.nio.file.{Files, Paths}
 
-/** V78 archives (criteria_rate_orphans) and deletes the criteria rates whose vote is in
+/** V78 archives (criteria_rate_orphan) and deletes the criteria rates whose vote is in
   * neither selection nor selection_deleted.
   */
 class CriteriaRateOrphansMigrationSpec extends Specification with TestDb with BeforeAll with BeforeEach {
@@ -25,11 +25,11 @@ class CriteriaRateOrphansMigrationSpec extends Specification with TestDb with Be
       Files.readAllBytes(Paths.get("conf/db/migration/default/V78__Criteria_rate_orphans.sql")), "UTF-8")
     text.linesIterator.filterNot(_.trim.startsWith("--")).mkString("\n")
       .split(";\\s*\n").map(_.trim).filter(_.nonEmpty).toSeq
-      .map(_.replaceAll("\\b(FROM|JOIN|EXISTS|LIKE|INTO)(\\s+)(criteria_rate_orphans|criteria_rate|selection_deleted|selection)\\b",
+      .map(_.replaceAll("\\b(FROM|JOIN|EXISTS|LIKE|INTO)(\\s+)(criteria_rate_orphan|criteria_rate|selection_deleted|selection)\\b",
         "$1$2t_$3"))
   }
 
-  private val copies = Seq("t_criteria_rate_orphans", "t_criteria_rate", "t_selection", "t_selection_deleted")
+  private val copies = Seq("t_criteria_rate_orphan", "t_criteria_rate", "t_selection", "t_selection_deleted")
 
   private def dropCopies(): Unit = DB.autoCommit { implicit s =>
     copies.foreach(t => SQL(s"DROP TABLE IF EXISTS $t").execute.apply())
@@ -37,8 +37,8 @@ class CriteriaRateOrphansMigrationSpec extends Specification with TestDb with Be
 
   private def runV78(): Unit = DB.autoCommit { implicit s => v78.foreach(st => SQL(st).execute.apply()) }
 
-  private def rows(table: String): List[(Long, Long, Long, Int)] = DB.readOnly { implicit s =>
-    SQL(s"SELECT id, selection, criteria, rate FROM $table ORDER BY id")
+  private def rows(table: String, order: String = "id"): List[(Long, Long, Long, Int)] = DB.readOnly { implicit s =>
+    SQL(s"SELECT id, selection, criteria, rate FROM $table ORDER BY $order")
       .map(rs => (rs.long(1), rs.long(2), rs.long(3), rs.int(4))).list()
   }
 
@@ -70,18 +70,26 @@ class CriteriaRateOrphansMigrationSpec extends Specification with TestDb with Be
 
         val kept = List((1L, 1L, 6L, 3), (2L, 1L, 7L, 4), (3L, 2L, 6L, 0), (4L, 3L, 6L, 5))
         val archived = List((5L, 99L, 6L, 2), (6L, 100L, 7L, 0))
+        def archive = rows("t_criteria_rate_orphan", order = "archive_id")
         rows("t_criteria_rate") === kept
-        rows("t_criteria_rate_orphans") === archived
+        archive === archived
 
         // idempotent: a second run finds none, archives nothing twice
         runV78()
         rows("t_criteria_rate") === kept
-        rows("t_criteria_rate_orphans") === archived
+        archive === archived
+
+        // an orphan under an id archived before (criteria_rate ids are reused) is archived too
+        DB.autoCommit(implicit s => sql"INSERT INTO t_criteria_rate (id, selection, criteria, rate) VALUES (5, 101, 6, 1)"
+          .execute.apply())
+        runV78()
+        rows("t_criteria_rate") === kept
+        archive === archived :+ ((5L, 101L, 6L, 1))
       } finally dropCopies()
     }
 
     "have left the migrated database with its archive table" in {
-      DB.readOnly(implicit s => sql"SELECT COUNT(*) FROM criteria_rate_orphans".map(_.long(1)).single()) === Some(0L)
+      DB.readOnly(implicit s => sql"SELECT COUNT(*) FROM criteria_rate_orphan".map(_.long(1)).single()) === Some(0L)
     }
   }
 }

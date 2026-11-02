@@ -6,15 +6,15 @@
   file: ImageWithRating)
 @* A round's large view's vote keys, as fileKeyboardNav.scala.html's #large-keys attributes
    (large-keys.js), for the juror's own view of an open round: Space to select and Del to reject
-   in a binary round, a digit to rate in a rated one, none in a criteria round (its votes are
+   in a binary round, a digit to rate in a rated one, none in a round with criteria (its votes are
    per criterion, by the stars; a digit would vote the file's own rate, which the server
    refuses); each a path, never an http:// URL. Its moves are fileKeyboardNav's. *@
 @defining(list.round) { round =>
-@if(user.getId == list.asUserId && round.active && user.roles.contains("jury")) {
+@if(user.getId == list.asUserId && round.active && user.roles.contains("jury") && !round.hasCriteria) {
     @if(round.isBinary) {
         @if(file.rate <= 0) { data-vote-key-space="@list.voteUrl(file.pageId, 1)"}
         @if(file.rate >= 0) { data-vote-key-del="@list.voteUrl(file.pageId, -1)"}
-    } else if(!round.hasCriteria) {
+    } else {
         @for(i <- 0 to Math.min(round.maxRate, 9)) { data-vote-key-@i="@list.voteUrl(file.pageId, i)"}
     }
 }

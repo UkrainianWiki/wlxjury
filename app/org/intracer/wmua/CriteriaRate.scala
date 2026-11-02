@@ -31,7 +31,7 @@ object CriteriaRate extends SQLSyntaxSupport[CriteriaRate] {
     *         hasn't, which changes nothing
     */
   def updateRate(selection: Long, criteria: Long, rate: Int): Boolean =
-    retryOnDeadlock(DB.localTx { implicit session => updateRateIn(selection, criteria, rate) })
+    db.scalikejdbc.DbErrors.retryOnDeadlock(DB.localTx { implicit session => updateRateIn(selection, criteria, rate) })
 
   /** [[updateRate]] in the caller's transaction. */
   def updateRateIn(selection: Long, criteria: Long, rate: Int)(implicit session: DBSession): Boolean =
@@ -47,20 +47,6 @@ object CriteriaRate extends SQLSyntaxSupport[CriteriaRate] {
         true
       }
     }
-
-  /** MariaDB's error for a transaction rolled back as a deadlock's victim. */
-  private val DeadlockErrorCode = 1213
-
-  private[wmua] def isDeadlock(e: Throwable): Boolean =
-    Iterator.iterate(e)(_.getCause).takeWhile(_ != null).take(10).exists {
-      case sql: java.sql.SQLException => sql.getErrorCode == DeadlockErrorCode || sql.getSQLState == "40001"
-      case _                          => false
-    }
-
-  /** `tx` again once if the database rolled it back as a deadlock's victim. */
-  private[wmua] def retryOnDeadlock[T](tx: => T): T =
-    try tx
-    catch { case e: Throwable if isDeadlock(e) => tx }
 
   /** The number of criteria of a criteria round: those rated in one of its selections, as a
     * distribution gives each of them a rate per criterion (DistributeImages.addCriteriaRates);

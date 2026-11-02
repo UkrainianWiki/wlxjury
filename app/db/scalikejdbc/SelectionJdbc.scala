@@ -230,7 +230,9 @@ object SelectionJdbc extends CRUDMapper[Selection] {
   def deleteVotes(where: SQLSyntax)(implicit session: DBSession): Int =
     Seq(sqls"selection", sqls"selection_deleted").map { table =>
       lockVotes(table, where)
-      sql"DELETE cr FROM criteria_rate cr JOIN $table v ON v.id = cr.selection WHERE $where".update()
+      // from the votes to their rates by criteria_selection_index: from criteria_rate, the
+      // statement would lock (and scan) every rate
+      sql"DELETE cr FROM $table v STRAIGHT_JOIN criteria_rate cr ON cr.selection = v.id WHERE $where".update()
       sql"DELETE v FROM $table v WHERE $where".update()
     }.sum
 
@@ -255,7 +257,7 @@ object SelectionJdbc extends CRUDMapper[Selection] {
              AND tgt.page_id = src.page_id
              AND tgt.jury_id = src.jury_id"""
       sql"SELECT COUNT(*) FROM $table src WHERE $source FOR UPDATE".map(_.int(1)).single()
-      sql"""DELETE cr FROM criteria_rate cr JOIN $table src ON src.id = cr.selection $inTarget
+      sql"""DELETE cr FROM $table src $inTarget STRAIGHT_JOIN criteria_rate cr ON cr.selection = src.id
             WHERE $source""".update()
       sql"DELETE src FROM $table src $inTarget WHERE $source".update()
 
