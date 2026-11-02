@@ -2012,3 +2012,13 @@ always in WHERE (inner queries), and the juror paths keep their index-only plans
   NOT NULL (the planned migration), or add `AND s.page_id IS NOT NULL` to both.
 
 Merged into `ukwikidev/followups` as `ef78bbaf`.
+
+### Full suite after B9–B12 and S1 (release check)
+
+At `4a8c0aa5`: Scala 1459 total, 1447 passed, **6 failed** (all in `db.scalikejdbc.ImagesSqlSpec`,
+which compares exact SQL text and still expected the pre-B12 query shapes), 6 skipped, 1 pending;
+Jest 18 suites, 240 passed (`target/checks/20261102-151401-8316.log`). The six expectations were
+updated to B12's reviewed shapes (selection-only id and count queries with
+`s.page_id is not null`, the deferred grouped page) and the spec rerun: 20 passed
+(`target/checks/20261102-154732-20884.log`). No other spec failed, so the full suite was not
+repeated.
