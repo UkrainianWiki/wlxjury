@@ -51,7 +51,9 @@ class SetupSpec extends PlaySpecification with PlayTestDb with AccountTestSuppor
 
         val created = post(form(): _*)
         status(created) === SEE_OTHER
-        session(created).get(Secured.UserName) === Some("root@example.com")
+        // "keep me signed in": the session is the filter's persistent cookie (S3), not Play's
+        val baker = app.injector.instanceOf[play.api.mvc.SessionCookieBaker]
+        baker.decodeFromCookie(cookies(created).get(baker.COOKIE_NAME)).get(Secured.UserName) === Some("root@example.com")
         val root = User.findByEmail("root@example.com").head
         root.isRoot must beTrue
         root.emailVerified must beTrue
