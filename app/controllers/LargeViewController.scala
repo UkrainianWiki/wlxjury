@@ -58,8 +58,11 @@ class LargeViewController @Inject() (
     Round.findById(roundId).filter(_.openToJurors).fold(
       Redirect(routes.GalleryController.list(user.getId, 1, region, roundId))
     ) {
-      // a rate the round doesn't take (the stars and keys give none): a page saying so
-      case round if !round.acceptsRate(select) =>
+      // a rate the round doesn't take (the stars and keys give none), or a vote the round
+      // doesn't take: a criteria round's votes are per criterion (a vote of the file's own
+      // rate would overwrite the sum of its criteria), another round's are of the file: a page
+      // saying so
+      case round if !round.acceptsRate(select) || criteria.isDefined != round.hasCriteria =>
         BadRequest(views.html.errorPage(Some(user), "error.title", "vote.error.invalid.rate"))
       case round =>
         val list = RoundList.of(round, user, user.getId, region, GalleryView.of(request))
@@ -67,15 +70,15 @@ class LargeViewController @Inject() (
         val hood = list.around(pageId)
 
         // the juror's own selection of the file in the round, or of one of its criteria; a
-        // file the juror has no selection for in the round changes nothing and is a 404
+        // file the juror has no selection for in the round, or a criterion their selection
+        // hasn't, changes nothing and is a 404
         val voted = criteria match {
           case None =>
             SelectionJdbc.rate(pageId = pageId, juryId = user.getId, roundId = round.getId, rate = select) > 0
           case Some(criterion) =>
             SelectionJdbc
               .findBy(pageId, user.getId, round.getId)
-              .map(selection => CriteriaRate.updateRate(selection.getId, criterion, select))
-              .isDefined
+              .exists(selection => CriteriaRate.updateRate(selection.getId, criterion, select))
         }
 
         if (!voted) NotFound(views.html.errorPage(Some(user), "error.title", "error.not.found"))
