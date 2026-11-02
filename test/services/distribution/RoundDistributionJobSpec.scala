@@ -557,7 +557,7 @@ class RoundDistributionJobSpec extends Specification with TestDb with BeforeAll 
         */
       def reference(prev: Round, template: Round, n: Int): Set[Long] = {
         val probe = roundDao.create(template.copy(number = 99))
-        // a yes/no round's top-N reads the approvals and rejections, as DistributeImages asks for them
+        // a yes/no round's top-N reads the approvals and rejections, which tally counts
         val candidates = ImageJdbc.byRoundMerged(prev.getId, rated = Option.when(template.selectedByFilter.isDefined)(true),
             tally = prev.isBinary)
           .sortBy(i => (-i.selection.head.rate, i.pageId))
@@ -566,7 +566,7 @@ class RoundDistributionJobSpec extends Specification with TestDb with BeforeAll 
       }
 
       def ties(prev: Round, n: Int): Boolean = { // the data must have ties at the cut
-        val totals = ImageJdbc.byRoundMerged(prev.getId).map(_.totalRate(prev)).sorted(Ordering[Double].reverse)
+        val totals = ImageJdbc.byRoundMerged(prev.getId, tally = prev.isBinary).map(_.totalRate(prev)).sorted(Ordering[Double].reverse)
         totals.lift(n - 1) == totals.lift(n)
       }
 

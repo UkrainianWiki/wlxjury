@@ -91,8 +91,8 @@ class GalleryTileStarsViewSpec extends PlaySpecification {
       tiles(juror.getId, LargeViewRenders.files().take(2)).eachAttr("data-tally").size === 0
     }
 
-    "carry none on a rated round's tiles of all the jurors' votes, whose query has no tally" in {
-      // the grouped rows of a rated round: no approvals or rejections read (approvalsFromDb None)
+    "carry none on a rated round's tiles of all the jurors' votes" in {
+      // the view's gate (list.aggregateBinary): no approvals or rejections read of a rated round's files
       val imgs = tiles(0L, LargeViewRenders.files().take(2), LargeViewRenders.ratedRound)
       (imgs.size === 2) and
         (Seq("data-approvals", "data-rejections", "data-tally").map(a => imgs.eachAttr(a).size) === Seq(0, 0, 0))

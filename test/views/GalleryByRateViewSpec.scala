@@ -151,7 +151,8 @@ class GalleryByRateViewSpec extends PlaySpecification {
     }
 
     "show a rated round's result to an organiser as stars and the rate, without a tally" in {
-      // all the jurors' grouped rows of a rated round: their rates' sum, no approvals counted
+      // grouped rows as all the jurors' list of a rated round has them: their rates' sum, no
+      // approvals or rejections (reading them would fail: no tally)
       val grouped = files.map(f => f.copy(selection = Seq(Selection(f.pageId, 0, 0, f.rate * 3)), countFromDb = 3))
       val doc = Jsoup.parse(contentAsString(views.html.galleryByRate(
         juror, RoundList(round, 0, view = GalleryView.ByRate), grouped, Pager(1, grouped.size), Nil, None,

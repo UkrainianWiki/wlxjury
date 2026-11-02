@@ -148,7 +148,7 @@ class DistributeImages @Inject()(imageRepo: ImageRepo) extends Logging {
     val secondCategoryIds = categoryFileIds(categoryRule.second).toSet
 
     val currentImages = imageRepo
-      .byRoundMerged(round.getId)
+      .byRoundMerged(round.getId, tally = round.isBinary)
       .filter(iwr => iwr.selection.nonEmpty)
       .toSet
     val existingImageIds = currentImages.map(_.pageId)
@@ -171,13 +171,13 @@ class DistributeImages @Inject()(imageRepo: ImageRepo) extends Logging {
           .map(i => new ImageWithRating(i, Seq.empty))
       else if (binaryTop)
         DistributeImages.binaryCandidates(
-          mergeByPageId(prevRounds.flatMap(r => imageRepo.byRoundMerged(r.getId, tally = true))),
+          mergeByPageId(prevRounds.flatMap(r => imageRepo.byRoundMerged(r.getId, tally = r.isBinary))),
           rated = selectedAtLeast.isDefined
         )
       else
         mergeByPageId(
           prevRounds.flatMap(r =>
-            imageRepo.byRoundMerged(r.getId, rated = Option.when(selectedAtLeast.isDefined)(true))
+            imageRepo.byRoundMerged(r.getId, rated = Option.when(selectedAtLeast.isDefined)(true), tally = r.isBinary)
           )
         )
     logger.debug("Total images: " + imagesAll.size)
@@ -186,7 +186,7 @@ class DistributeImages @Inject()(imageRepo: ImageRepo) extends Logging {
     // previous rounds, whatever "selected by" reads (its rows are the approvals only)
     val notRejected = prevRound.filter(_.isBinary).flatMap(_ => rejectedBy)
     val rejections: Map[Long, Int] = notRejected.fold(Map.empty[Long, Int])(_ =>
-      mergeByPageId(prevRounds.flatMap(r => imageRepo.byRoundMerged(r.getId, tally = true)))
+      mergeByPageId(prevRounds.flatMap(r => imageRepo.byRoundMerged(r.getId, tally = r.isBinary)))
         .map(i => i.pageId -> i.rejections).toMap)
     val candidates = if (notRejected.isEmpty) imagesAll
       else imagesAll.map(i => i.copy(rejectionsFromDb = Some(rejections.getOrElse(i.pageId, 0))))

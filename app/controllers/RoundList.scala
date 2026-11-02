@@ -197,9 +197,8 @@ final case class RoundList(
       // all the jurors' votes: the files with a vote the filter matches, counted and ordered
       // by all their votes; a juror's: their one vote on each file
       filesByVotes = asUserId == 0,
-      // the approvals and rejections apart, which only a yes/no round's tally reads (a file
-      // list's and CSV's count their vote rows)
-      tally = aggregateBinary && !withDetails,
+      // a yes/no round's grouped rows count their approvals and rejections (its tally)
+      tally = round.isBinary,
       subRegions = round.specialNomination.contains("Віа Регіа")
     )
 
