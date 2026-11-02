@@ -10,11 +10,11 @@ listed under "Running the batches".
 | Batch | Items | Risk | Effort | Owner |
 |---|---|---|---|---|
 | S1 | N1 hotfix, backport, production data check | High | high | app + ops |
-| S2 | Account integrity: O2, N2 (current password), N4, N7, N5, P14, P18, P20 | Medium | high | app |
+| S2 | Account integrity: O2, N2 (current password), N4, N7, N5, P14, P18, P20, P7 | Medium | high | app |
 | S3 | Sessions: O3, N2 (invalidation, tokens), P16 rotation procedure | Medium | high | app |
 | S4 | Throttling: P1, N6, P13 (failed tokens) | Medium | medium | app (or infra) |
 | S5 | Output and log hygiene: N3, N8, N9, N11/P12 | Low | medium | app |
-| S6 | App hardening leftovers: P5, P6, P7, P8 (code part), P9 | Low | medium | app |
+| S6 | App hardening leftovers: P5, P6, P8 (code part), P9 (P7 done in S2) | Low | medium | app |
 | S7 | Headers and CSP: P4, P11, P3, P17 | Low | medium | app |
 | S8 | Infra: O1, P2, P15, `useSSL` | Medium (O1) | — (infra plan) | infra |
 | S9 | Ops: P10, P8 count, secret rotation run, production checks | Low | — (user) | ops |
@@ -207,7 +207,7 @@ tree; the backport code is safe to deploy as is):
 
 ## S2: Account integrity
 
-**Items:** O2, N2 (current password), N4, N7, N5, P14, P18, P20; and the reviewer's out-of-scope
+**Items:** O2, N2 (current password), N4, N7, N5, P14, P18, P20, P7 (added by the user); and the reviewer's out-of-scope
 note (an account with no memberships and no work history becomes password-editable by any admin
 who adds it by email).
 
@@ -285,6 +285,13 @@ who adds it by email).
   admin is validated, normalised (MediaWiki rules: `User:` prefix dropped, underscores as
   spaces, first letter upper case, no `#<>[]|{}/@:=`, at most 85 characters), refused if another
   account has it, and unverified.
+- **P7 (added to S2 by the user, option (a)):** root's "Reset password" on the edit page (it
+  stored a random password, mailed nothing and said it had, locking the user out) mails a
+  single-use, expiring "set your password" link (purpose `password_reset`, the same tokens and
+  page as invitations, CSRF on the form); the old password works until the link is used; root never
+  sees a password; the flash says a link was sent; log lines carry account ids only. It stays
+  root-only; contest admins get the equivalent, scoped like invitations, only as "send the
+  invitation again" for an unverified member or pending invitee of their own contest.
 - **Re-sending an invitation** (`POST /users/:id/invite?contestId=`): an admin of that contest,
   for a member or a pending invitee of it with an unverified email; never a root account; the
   previous unused invitations into that contest are revoked, the pending role carried over.
@@ -343,6 +350,71 @@ changes), `SetupSpec` (new: P20), `db.AccountVerificationMigrationSpec` (new), p
 
 **Dependencies:** after S1 (same files). Mail delivery needs the server's SMTP settings (ops);
 the invitations make it necessary for every new juror.
+
+### Batch S2 results (2026-11-02)
+
+**Branch** `ukwikidev/security-s2` (from `ukwikidev/security-s1`): plan `56119b64`, implementation
+`fd0fa793`, these results. Migration **V77** (`V77__Account_verification_and_tokens.sql`; take the
+next free number at merge time). Not reviewed yet (S2 gets a fresh independent reviewer).
+
+**As implemented:** the design above, with these details and deviations:
+
+- `User.mayTakeAccessRole` (root, verified email, or no password) gates every way an access role
+  reaches an existing account: `UserService.addToContest` (add row, import) and the edit form's
+  role change. Results: `NewAccount(user, invitationSent)`, `JoinedContest`, `AlreadyMember`,
+  `Invited(user, sent)` (pending), `WikiAccountUnverified` (not added); the users page's flash
+  counts each, and invitations that could not be mailed.
+- A pending invitation is an `account_token` row with `contest_id` and `role`; no membership exists
+  until acceptance (`UserContestJdbc.setMembership`, an upsert, so a role-change invitation updates
+  the existing membership). A direct role change revokes pending role invitations into that contest
+  (`AccountTokenJdbc.revokePendingRoles`), so an old link cannot bring back a replaced role.
+- New accounts are created without a password even if the form or a caller passes one (the old
+  `createAccount` honoured an organizer-chosen password). A new root account made by root's form
+  gets a password link (root accounts are never invited).
+- The greeting: when a contest uses one, the invitation is the greeting with the link in place of
+  `{{Password}}` (appended if missing); otherwise a standard invitation text (`invitation.body`).
+- Sessions: `Secured.AuthVersion` (`auth_version`) in the session, checked in `sessionUser` (also
+  `ErrorHandler`/`CsrfErrorHandler` now go through `sessionUserOf`); the thumbnail proxy's viewer
+  cache is keyed by name and version (`ImageProxyController.viewerKey`). Sign-in, acceptance and
+  setup redirect to `/` (POST-redirect-GET) with the new version.
+- Acceptance, root's password link and the email confirmation run their statements in one
+  transaction with the token row locked (`SELECT ... FOR UPDATE`); the acceptance transaction uses
+  `User.quietTx` (no SQL log of the password hash).
+- `/setup`: `User.createFirstRoot` runs `GET_LOCK` / count / insert / `RELEASE_LOCK` on one
+  auto-commit connection (the insert is committed before the lock is released; a transaction
+  would release it before commit).
+- `resetPassword` (P7) and `reinvite` run on the blocking pool (they send mail).
+- Wiki account names: validated and normalised on every admin change and on adds/imports, so an
+  import of `User:Board_two` now stores `Board two` (`CoiAuthorizationSpec` updated); stored legacy
+  values are left as they are. Ambiguity uses the column's case-insensitive collation.
+- Tests: `play.mailer.mock = yes` in `test/resources/application.conf`; specs read links from
+  `controllers.RecordingMail` (a recording `SMTPOrWikiMail`); `account_token` is in the truncated
+  tables.
+- Not done (deviations): no notice to the old address on an email change (open decision 3); own
+  password change does not bump `auth_version` (S3); unused message keys of the old sign-up
+  (`signup.signup`, `signup.email.taken`, `sign.up.now`, `not.a.member`) are removed from all four
+  files.
+
+**Specs** (one sbt JVM at a time, through `scripts/agent-check.py`; no full suite):
+
+| Run | Specs | Result | Log |
+|---|---|---|---|
+| 1 | the four new specs | 37: 6 failed (login page in tests without a CSRF token; acceptance answered the start page, 200/403, instead of a redirect; per-test app not truncated in `SetupSpec`), fixed | `target/checks/20261102-142756-27208.log` |
+| 2 | new specs, `LoginControllerSpec`, `UserControllerSpec`, `UserDbSpec`, `MultiContestUserSpec`, `RoleAssignmentSpec`, `SecuredSpec`, `MutationAuthorizationSpec`, `PasswordStorageSpec`, `ApiTokenPageSpec`, `ProductionConfigSpec`, `views.*` (incl. `MessagesCompletenessSpec`), `UserContestRoleMigrationSpec`, `MigrationNamingSpec`, `ConvertToInnoDbMigrationSpec`, `ThemeSwitchSpec`, `SignOutAndSwitchSpec`, `ImageProxyFileCheckSpec`, `ApiSpec`, `CoiAuthorizationSpec`, `ErrorHandlerSpec`, `ApiTokenJdbcSpec`, `UserPasswordSpec`, `UserContestSpec`, `UserContestRolesSpec` | 483: 478 passed; `SecuredSpec` 4 errors (its mocked session had no `auth_version` stub) and `CoiAuthorizationSpec` 1 failure (the normalised wiki name), both test-only fixes | `target/checks/20261102-143104-17144.log` |
+| 3 | `SecuredSpec`, `CoiAuthorizationSpec` | 35 passed | `target/checks/20261102-143701-15928.log` |
+
+New specs: `controllers.AccountInvitationSpec` (17), `controllers.OwnAccountSpec` (13),
+`controllers.SetupSpec` (4), `db.AccountVerificationMigrationSpec` (3). Updated:
+`LoginControllerSpec` (sign-up tests replaced: empty-DB login page, auth version in the session),
+`PasswordStorageSpec` (sign-up paths replaced by invitation acceptance; own changes with the current
+password), `MultiContestUserSpec` and `RoleAssignmentSpec` (members verified; an admin can no longer
+set another's password), `SecuredSpec`, `CoiAuthorizationSpec`.
+
+**Open decisions (user):** as listed above: (1) how existing accounts are marked (all non-root
+unverified, implemented); (2) ambiguous wiki sign-in refused (run the duplicate count before the
+deploy); (3) notice to the old address; (4) link lifetimes. Plus: (5) whether contest admins should
+also get a "reset password" for verified members of their own contest (now root only; admins have
+"send the invitation again" for unverified members, which is equivalent there).
 
 ## S3: Sessions
 
@@ -414,12 +486,12 @@ on one branch).
 
 ## S6: App hardening leftovers
 
-**Items:** P5, P6, P7, P8 (code), P9.
+**Items:** P5, P6, P8 (code), P9. (P7 is done in S2: see below.)
 
 **Design:** P5: snap `px` to the configured thumbnail widths (redirect others) and count misses
 per user. P6: decision 1 (should round deactivation stop voting?); if yes, both vote actions check
-`round_user.active`. P7: decision 2 (show the new password to root once / send it / remove the
-action). P8: after a grace period (decision 3), a migration replaces 40-hex hashes with an
+`round_user.active`. P7: **done in S2** (user decision (a)): root's button mails a single-use,
+expiring set-password link (S2's tokens); the old password works until it is used. P8: after a grace period (decision 3), a migration replaces 40-hex hashes with an
 unusable value; affected users reset through S2's invitation path. P9: refuse an original-file URL
 whose host isn't `upload.wikimedia.org` (or `wikiBaseUrl`'s) before fetching.
 
