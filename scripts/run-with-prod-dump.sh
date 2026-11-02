@@ -86,9 +86,65 @@ LOCAL_ROOT_PASSWORD="wlxjury_rootpass"
 DUMP_FILE="/tmp/wlxjury-prod.sql.gz"
 CONTAINER_STARTED=false
 
-# ── Cleanup hint on exit ───────────────────────────────────────────────────────
+# ── Credentials files ──────────────────────────────────────────────────────────
+# No password goes on a command line (`docker -e NAME=value` shows it in the
+# process list). The prod client reads a temporary option file, mode 600, mounted
+# read-only into its container; the local container gets its passwords from an
+# --env-file, and its root client reads /root/.my.cnf inside the container. The
+# host files live in SECRETS_DIR (mode 700), removed as soon as they are used and
+# by the EXIT trap on every other path.
+SECRETS_DIR=""
+
+remove_secrets() {
+  if [[ -n "$SECRETS_DIR" ]]; then
+    rm -rf "$SECRETS_DIR" 2>/dev/null || true
+    SECRETS_DIR=""
+  fi
+}
+
+make_secrets_dir() {
+  if [[ -z "$SECRETS_DIR" ]]; then
+    SECRETS_DIR="$(umask 077 && mktemp -d "${TMPDIR:-/tmp}/wlxjury-dump.XXXXXX")"
+    chmod 700 "$SECRETS_DIR"
+  fi
+}
+
+# A host path as Docker takes it: C:/... under Git Bash (MSYS), else unchanged.
+host_path() {
+  if command -v cygpath >/dev/null 2>&1; then cygpath -m "$1"; else printf '%s' "$1"; fi
+}
+
+# An option file value in double quotes, its backslashes and double quotes escaped.
+cnf_value() {
+  local v=$1
+  v=${v//\\/\\\\}
+  v=${v//\"/\\\"}
+  printf '"%s"' "$v"
+}
+
+# Writes a [client] option file with the user and the password to $1, mode 600.
+write_client_cnf() {
+  local file=$1 user=$2 password=$3
+  (
+    umask 077
+    printf '[client]\nuser=%s\npassword=%s\n' "$(cnf_value "$user")" "$(cnf_value "$password")" > "$file"
+  )
+  chmod 600 "$file"
+}
+
+# The local container's root client: /root/.my.cnf (mode 600) inside the container,
+# written there from the container's own MARIADB_ROOT_PASSWORD. Idempotent.
+ensure_local_root_cnf() {
+  # single quotes: the container's shell expands the variable, not this one
+  # shellcheck disable=SC2016
+  docker exec "$CONTAINER_NAME" sh -c \
+    'umask 077; printf "[client]\nuser=root\npassword=\"%s\"\n" "$MARIADB_ROOT_PASSWORD" > /root/.my.cnf'
+}
+
+# ── Cleanup on exit ────────────────────────────────────────────────────────────
 cleanup() {
   local exit_code=$?
+  remove_secrets
   rm -f "${DUMP_FILE}.tmp" 2>/dev/null || true
   if [[ $exit_code -ne 0 ]]; then
     echo ""
@@ -96,12 +152,16 @@ cleanup() {
     if [[ "$CONTAINER_STARTED" == true ]]; then
       echo ""
       echo "Container '$CONTAINER_NAME' may still be running on port $LOCAL_PORT."
-      echo "  Inspect : docker exec -it $CONTAINER_NAME mysql -u $LOCAL_USER -p$LOCAL_PASSWORD $LOCAL_DB"
+      echo "  Inspect : docker exec -it $CONTAINER_NAME mysql $LOCAL_DB"
       echo "  Remove  : docker rm -f $CONTAINER_NAME"
     fi
   fi
 }
 trap cleanup EXIT
+# A signal ends the script through exit, so the EXIT trap still removes the files.
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 echo "==> Config"
 echo "    Prod host       : $WLXJURY_DB_HOST"
@@ -121,10 +181,10 @@ if [[ "$REUSE_CONTAINER" == true ]]; then
     exit 1
   fi
   CONTAINER_STARTED=true
+  ensure_local_root_cnf
   reuse_db_size=$(docker exec \
-    -e MYSQL_PWD="$LOCAL_ROOT_PASSWORD" \
     "$CONTAINER_NAME" \
-    mysql -u root -sNe \
+    mysql -sNe \
       "SELECT CONCAT(ROUND(SUM(data_length + index_length) / 1024 / 1024, 1), ' MB') FROM information_schema.tables WHERE table_schema = '$LOCAL_DB';" \
     2>/dev/null) || reuse_db_size="unknown"
   echo "    DB size: $reuse_db_size"
@@ -135,18 +195,23 @@ else
     local tmp_file="${DUMP_FILE}.tmp"
     local start=$SECONDS
     echo "==> Dumping prod DB (via docker mariadb:10.6 client)..."
-    docker run --rm \
-      -e MYSQL_PWD="$WLXJURY_DB_PASSWORD" \
+    make_secrets_dir
+    write_client_cnf "$SECRETS_DIR/prod.cnf" "$WLXJURY_DB_USER" "$WLXJURY_DB_PASSWORD"
+    # --defaults-extra-file must be the client's first option. MSYS_NO_PATHCONV:
+    # Git Bash would rewrite the container paths as Windows ones.
+    MSYS_NO_PATHCONV=1 docker run --rm \
+      -v "$(host_path "$SECRETS_DIR/prod.cnf"):/etc/wlxjury-dump/client.cnf:ro" \
       mariadb:10.6 \
       mysqldump \
+        --defaults-extra-file=/etc/wlxjury-dump/client.cnf \
         -h "$WLXJURY_DB_HOST" \
-        -u "$WLXJURY_DB_USER" \
         --single-transaction \
         --quick \
         --triggers \
         --routines \
         "$WLXJURY_DB" \
     | gzip > "$tmp_file"
+    remove_secrets
     mv "$tmp_file" "$DUMP_FILE"
     echo "    Dump written to $DUMP_FILE  $(du -sh "$DUMP_FILE" | cut -f1)  (took $(format_duration "$((SECONDS - start))"))"
   }
@@ -177,12 +242,15 @@ else
   #    up front skips that code path entirely.
   #  * The remaining flags just make the multi-GB dump restore faster; this
   #    is a throwaway dev container, so durability settings are safe to relax.
+  make_secrets_dir
+  (
+    umask 077
+    printf 'MARIADB_DATABASE=%s\nMARIADB_USER=%s\nMARIADB_PASSWORD=%s\nMARIADB_ROOT_PASSWORD=%s\n' \
+      "$LOCAL_DB" "$LOCAL_USER" "$LOCAL_PASSWORD" "$LOCAL_ROOT_PASSWORD" > "$SECRETS_DIR/local.env"
+  )
   docker run -d \
     --name "$CONTAINER_NAME" \
-    -e MARIADB_DATABASE="$LOCAL_DB" \
-    -e MARIADB_USER="$LOCAL_USER" \
-    -e MARIADB_PASSWORD="$LOCAL_PASSWORD" \
-    -e MARIADB_ROOT_PASSWORD="$LOCAL_ROOT_PASSWORD" \
+    --env-file "$SECRETS_DIR/local.env" \
     -p "${LOCAL_PORT}:3306" \
     mariadb:10.6 \
     --innodb-use-native-aio=0 \
@@ -192,6 +260,7 @@ else
     --skip-innodb-buffer-pool-dump-at-shutdown \
     --skip-innodb-buffer-pool-load-at-startup
   CONTAINER_STARTED=true
+  remove_secrets
 
   echo -n "    Waiting for MariaDB to accept connections"
   retries=60
@@ -208,22 +277,21 @@ else
     sleep 1
   done
   echo " ready"
+  ensure_local_root_cnf
 
   # ── Phase 3: Restore dump ───────────────────────────────────────────────────
   echo "==> Restoring dump into local container..."
   restore_start=$SECONDS
   zcat < "$DUMP_FILE" \
     | docker exec -i \
-        -e MYSQL_PWD="$LOCAL_ROOT_PASSWORD" \
         "$CONTAINER_NAME" \
-        mysql -u root \
+        mysql \
           --init-command="SET SESSION unique_checks=0, foreign_key_checks=0" \
           "$LOCAL_DB"
   restore_elapsed=$((SECONDS - restore_start))
   db_size=$(docker exec \
-    -e MYSQL_PWD="$LOCAL_ROOT_PASSWORD" \
     "$CONTAINER_NAME" \
-    mysql -u root -sNe \
+    mysql -sNe \
       "SELECT CONCAT(ROUND(SUM(data_length + index_length) / 1024 / 1024, 1), ' MB') FROM information_schema.tables WHERE table_schema = '$LOCAL_DB';" \
     2>/dev/null) || db_size="unknown"
   echo "    Restore complete  (took $(format_duration "$restore_elapsed"))  |  DB size: $db_size"
