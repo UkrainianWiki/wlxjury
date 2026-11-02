@@ -113,7 +113,8 @@ object GatlingTestFixture {
     * tests' config doesn't include. With -Dui.csp=strict (--csp-strict), that policy with its
     * script-src replaced by this host's files only, without the inline scripts' hashes: the
     * browser then reports each inline script as a violation, which lists them. */
-  private val cspMode: Option[String] = sys.props.get("ui.csp").filter(Set("production", "strict"))
+  // lazy: `data` (above) builds the app with filtersConfig, which reads it during initialisation
+  private lazy val cspMode: Option[String] = sys.props.get("ui.csp").filter(Set("production", "strict"))
 
   private def cspConfig: Map[String, Any] =
     cspMode.fold(Map.empty[String, Any]) { mode =>
