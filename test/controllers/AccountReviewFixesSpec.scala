@@ -163,8 +163,9 @@ class AccountReviewFixesSpec extends PlaySpecification with PlayTestDb with Acco
       testDbApp { implicit app =>
         val user = account("user@example.com", None, "no", verified = true)
         DB.autoCommit(implicit s => sql"UPDATE users SET auth_version = 5 WHERE id = ${user.getId}".update.apply())
-        ApiTokenService.createFor(user, "stale", Some(30)) must beNone
-        ApiTokenService.createFor(user.copy(authVersion = 5), "fresh", Some(30)) must beSome
+        ApiTokenService.createOnce(user, "stale", Some(30), "nonce-1") === ApiTokenService.CreateOutcome.SessionEnded
+        ApiTokenService.createOnce(user.copy(authVersion = 5), "fresh", Some(30), "nonce-2") must
+          beAnInstanceOf[ApiTokenService.CreateOutcome.Created]
         ApiTokenJdbc.findByUser(user.getId).map(_.name) === Seq("fresh")
       }
     }

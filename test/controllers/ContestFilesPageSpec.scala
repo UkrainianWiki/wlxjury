@@ -156,6 +156,21 @@ class ContestFilesPageSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
+    "give unitegallery a tile's title as html, so markup and quotes in it stay text" in {
+      testDbApp { implicit app =>
+        val f = fixture()
+        addFiles(f.contest, Seq(image(3L, "St Andrew's & <i>b</i>")))
+        val (_, page) = get(s"/contest/${f.contest.getId}/files", f.admin)
+
+        // the alt as the browser decodes it is html (the text panels insert it with .html());
+        // its text, which the thumbnail's alt gets (unitegallery.js htmlToText), is the title
+        val alt = org.jsoup.Jsoup.parse(page).select("#gallery img[data-pageId=3]").attr("alt")
+        alt === "File:St Andrew&#x27;s &amp; &lt;i&gt;b&lt;/i&gt;.jpg"
+        org.jsoup.Jsoup.parseBodyFragment(alt).body.text === "File:St Andrew's & <i>b</i>.jpg"
+        org.jsoup.Jsoup.parseBodyFragment(alt).select("i").size === 0
+      }
+    }
+
     "page the files in page id order" in {
       testDbApp { implicit app =>
         val f = fixture()

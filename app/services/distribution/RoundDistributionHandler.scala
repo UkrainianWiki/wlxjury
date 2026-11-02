@@ -380,7 +380,7 @@ class RoundDistributionHandler @Inject() (
         val expected = st.imagesBefore.getOrElse(0L) + st.imagesAdded
         if (count != expected)
           StepResult.Failed(
-            s"Round $roundId has $count of $expected images after the distribution. Retry to add the missing ones.",
+            JobError(JobError.CountMismatchKey, Seq(roundId, count, expected).map(_.toString)),
             Json.toJsObject(st.copy(verifyFailed = true)),
             progress(st)
           )

@@ -181,8 +181,10 @@ class UserController @Inject()(cc: ControllerComponents,
   /** Creates a personal API token of the signed-in user (a POST of their profile's form, with
     * the CSRF token and the page's nonce) and shows it on the profile, in this response only
     * (`no-store`), never in the flash or a URL. The session only: page routes take no token,
-    * so a token can't make or revoke tokens. A used or missing nonce (the response reloaded)
-    * or [[ApiTokenService.MaxActive]] usable tokens already create nothing.
+    * so a token can't make or revoke tokens. A used or missing nonce (the response reloaded),
+    * or [[ApiTokenService.MaxActive]] usable tokens already create nothing. A double click
+    * (both requests with the page's nonce) leaves one usable token, the last response's
+    * ([[ApiTokenService.createOnce]]).
     */
   def createApiToken(): EssentialAction = withAuth(_ => true) { user => implicit request =>
     val nonce = request.body.asFormUrlEncoded.flatMap(_.get(ApiTokensCard.NonceKey)).flatMap(_.headOption)
@@ -194,13 +196,14 @@ class UserController @Inject()(cc: ControllerComponents,
         .fold(
           formWithErrors => ownProfile(BadRequest, user, tokenForm = formWithErrors),
           { case (name, expiresInDays) =>
-            if (ApiTokenService.activeCount(user.getId) >= ApiTokenService.MaxActive)
-              ownProfile(Conflict, user, notice = Some("error.api.token.limit"))
-            else {
-              ApiTokenService.createFor(user, name, expiresInDays).fold(
-                // the account's sessions ended meanwhile (an accepted link): no token
+            ApiTokenService.createOnce(user, name, expiresInDays, nonce.get) match {
+              case ApiTokenService.CreateOutcome.Created(token) =>
+                ownProfile(Ok, user, newToken = Some(token)).withHeaders(CACHE_CONTROL -> "no-store")
+              case ApiTokenService.CreateOutcome.LimitReached =>
+                ownProfile(Conflict, user, notice = Some("error.api.token.limit"))
+              // the account's sessions ended meanwhile (an accepted link): no token
+              case ApiTokenService.CreateOutcome.SessionEnded =>
                 Redirect(routes.LoginController.login(None)).withNewSession
-              )(token => ownProfile(Ok, user, newToken = Some(token)).withHeaders(CACHE_CONTROL -> "no-store"))
             }
           }
         )

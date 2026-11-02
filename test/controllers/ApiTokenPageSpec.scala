@@ -131,10 +131,60 @@ class ApiTokenPageSpec extends PlaySpecification with PlayTestDb {
         ApiTokenJdbc.findByUser(userId(email)) must haveSize(1)
 
         // the refusal's page has a new nonce, which creates
-        val again = post(app, "/users/tokens", sessionToken, create, nonce = session(reload).get(ApiTokensCard.NonceKey),
+        val again = post(app, "/users/tokens", sessionToken, Seq("name" -> "desktop", "expiry" -> "90"),
+          nonce = session(reload).get(ApiTokensCard.NonceKey),
           sessionNonce = session(reload).get(ApiTokensCard.NonceKey))
         status(again) === OK
         ApiTokenJdbc.findByUser(userId(email)) must haveSize(2)
+      }
+    }
+
+    "leave one usable token of a double click, the one the last response shows" in {
+      withCsrfApp { app =>
+        setUp()
+        val sessionToken = token(app)
+        def shown(result: Future[Result]): Option[String] = tokenPattern.findFirstIn(contentAsString(result))
+        def usable(name: String) = ApiTokenJdbc.findByUser(userId(email)).filter(t => t.usable && t.name == name)
+
+        val first = post(app, "/users/tokens", sessionToken, create)
+        status(first) === OK
+        // the second click's request: the same session (its nonce unchanged) and form, the same
+        // submit; the browser shows its response, and the first token, which nobody saw, is revoked
+        val second = post(app, "/users/tokens", sessionToken, create)
+        status(second) === OK
+        val token2 = shown(second).get
+        usable("laptop").map(_.id) === ApiTokenJdbc.findByHash(ApiTokenService.hash(token2)).map(_.id).toSeq
+        ApiTokenService.authenticate(shown(first).get) must beNone
+        ApiTokenService.authenticate(token2) must beSome // and now it is used
+
+        // a used token is kept, even by a repeat of its submit
+        status(post(app, "/users/tokens", sessionToken, create)) === OK
+        usable("laptop") must haveSize(2)
+
+        // five at once: each answers with a token, one of them usable
+        val clicks = (1 to 5).map(_ => post(app, "/users/tokens", sessionToken, Seq("name" -> "burst", "expiry" -> "90")))
+        clicks.map(status(_)).distinct === Seq(OK)
+        val burst = usable("burst")
+        burst must haveSize(1)
+        clicks.flatMap(shown).flatMap(t => ApiTokenJdbc.findByHash(ApiTokenService.hash(t))).filter(_.usable).map(_.id) ===
+          burst.map(_.id)
+      }
+    }
+
+    "keep a token copied from a create when another of the same name follows from the new page" in {
+      withCsrfApp { app =>
+        setUp()
+        val sessionToken = token(app)
+        val first = post(app, "/users/tokens", sessionToken, create)
+        status(first) === OK
+        val copied = tokenPattern.findFirstIn(contentAsString(first)).get
+        // the response page's create form: its new nonce, in the form and the session
+        val next = session(first).get(ApiTokensCard.NonceKey)
+        val second = post(app, "/users/tokens", sessionToken, create, nonce = next, sessionNonce = next)
+        status(second) === OK
+        val other = tokenPattern.findFirstIn(contentAsString(second)).get
+        (ApiTokenService.authenticate(copied) must beSome) and (ApiTokenService.authenticate(other) must beSome) and
+          (ApiTokenJdbc.findByUser(userId(email)).count(t => t.usable && t.name == "laptop") === 2)
       }
     }
 
@@ -227,6 +277,96 @@ class ApiTokenPageSpec extends PlaySpecification with PlayTestDb {
         status(asRoot) === OK
         contentAsString(asRoot) must not(contain("api-tokens"))
         contentAsString(asRoot) must not(contain("omar-cli"))
+      }
+    }
+  }
+
+  "root revoking another user's API tokens" should {
+    val rootEmail = "root@example.com"
+    val adminEmail = "adam@example.com"
+
+    def setUpWithRoot(): Unit = {
+      setUp()
+      User.create(User(rootEmail, rootEmail, password = Some(services.PasswordHasher.default.hash("secret")), isRoot = true))
+      val admin = User.create(User(adminEmail, adminEmail, password = Some(services.PasswordHasher.default.hash("secret"))))
+      UserContestJdbc.createMembership(admin.getId, 10, User.ADMIN_ROLE)
+    }
+
+    def page(app: Application, ownerId: Long, as: String): Future[Result] =
+      route(app, FakeRequest(GET, s"/admin/users/$ownerId/tokens")
+        .withSession(Secured.UserName -> as, Secured.CurrentContestId -> "10")).get
+
+    def tokenLog[T](f: => T): (T, Seq[String]) = {
+      val logger = org.slf4j.LoggerFactory.getLogger("services.ApiTokenService").asInstanceOf[ch.qos.logback.classic.Logger]
+      val appender = new ch.qos.logback.core.read.ListAppender[ch.qos.logback.classic.spi.ILoggingEvent]
+      appender.start()
+      logger.addAppender(appender)
+      import scala.jdk.CollectionConverters._
+      try (f, appender.list.asScala.toList.map(_.getFormattedMessage))
+      finally logger.detachAppender(appender)
+    }
+
+    "list them for root, linked from their account, and revoke one, logged with ids only" in {
+      withCsrfApp { app =>
+        setUpWithRoot()
+        val omar = userId(otherEmail)
+        val plain = ApiTokenService.create(omar, "omar-cli", Some(90))
+        val kept = ApiTokenService.create(omar, "omar-ci", Some(90))
+        val id = ApiTokenJdbc.findByHash(ApiTokenService.hash(plain)).get.id
+
+        val edit = route(app, FakeRequest(GET, s"/users/edit/$omar").withSession(Secured.UserName -> rootEmail)).get
+        contentAsString(edit) must contain(routes.ApiTokenAdminController.tokens(omar).url)
+        val listed = page(app, omar, rootEmail)
+        status(listed) === OK
+        contentAsString(listed) must contain("omar-cli")
+        contentAsString(listed) must contain(routes.ApiTokenAdminController.revoke(omar, id).url)
+
+        val (result, lines) = tokenLog { val r = post(app, s"/admin/users/$omar/tokens/$id/revoke", token(app), as = rootEmail); status(r); r }
+        status(result) === SEE_OTHER
+        redirectLocation(result) === Some(routes.ApiTokenAdminController.tokens(omar).url)
+        ApiTokenService.authenticate(plain) must beNone
+        ApiTokenService.authenticate(kept) must beSome
+        val line = lines.find(_.startsWith("api_token_revoked")).getOrElse("")
+        line must contain(s"userId=$omar")
+        line must contain(s"tokenIds=$id")
+        Seq(rootEmail, otherEmail, "omar-cli", plain.take(11)).filter(line.contains) must beEmpty
+      }
+    }
+
+    "revoke all of them" in {
+      withCsrfApp { app =>
+        setUpWithRoot()
+        val omar = userId(otherEmail)
+        val plains = Seq("a", "b", "c").map(n => ApiTokenService.create(omar, n, Some(90)))
+        val tina = ApiTokenService.create(userId(email), "tina-cli", Some(90))
+        val result = post(app, s"/admin/users/$omar/tokens/revoke", token(app), as = rootEmail)
+        status(result) === SEE_OTHER
+        flash(result).get("api-tokens-revoked") === Some("3")
+        plains.flatMap(ApiTokenService.authenticate) must beEmpty
+        ApiTokenService.authenticate(tina) must beSome
+      }
+    }
+
+    "refuse anyone but root, a contest admin and the owner included, changing nothing" in {
+      withCsrfApp { app =>
+        setUpWithRoot()
+        val omar = userId(otherEmail)
+        val plain = ApiTokenService.create(omar, "omar-cli", Some(90))
+        val id = ApiTokenJdbc.findByHash(ApiTokenService.hash(plain)).get.id
+        forall(Seq(adminEmail, email, otherEmail)) { as =>
+          status(page(app, omar, as)) === FORBIDDEN
+          status(post(app, s"/admin/users/$omar/tokens/$id/revoke", token(app), as = as)) === FORBIDDEN
+          status(post(app, s"/admin/users/$omar/tokens/revoke", token(app), as = as)) === FORBIDDEN
+        }
+        // signed out: to the sign-in page; root without the CSRF token: refused
+        val signedOut = route(app, FakeRequest(GET, s"/admin/users/$omar/tokens").withHeaders(ACCEPT -> "text/html")).get
+        status(signedOut) === SEE_OTHER
+        status(post(app, s"/admin/users/$omar/tokens/revoke", token(app), as = rootEmail, withToken = false)) === FORBIDDEN
+        // a token under another user's id, or none: not found
+        status(post(app, s"/admin/users/${userId(email)}/tokens/$id/revoke", token(app), as = rootEmail)) === NOT_FOUND
+        status(post(app, s"/admin/users/$omar/tokens/9999/revoke", token(app), as = rootEmail)) === NOT_FOUND
+        status(page(app, 9999, rootEmail)) === NOT_FOUND
+        ApiTokenService.authenticate(plain) must beSome
       }
     }
   }

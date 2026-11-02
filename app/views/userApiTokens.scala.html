@@ -1,0 +1,67 @@
+@(user: db.scalikejdbc.User, owner: db.scalikejdbc.User, tokens: Seq[db.scalikejdbc.ApiToken])(implicit flash: Flash, messages: Messages, req: RequestHeader)
+@import helper._
+@import controllers.ApiTokensCard.date
+@* Root's view of another user's API tokens (ApiTokenAdminController): the list, each usable
+   one with Revoke, and Revoke all, POST forms with the CSRF token. No create: a user makes
+   their own on their profile (apiTokens.scala.html). *@
+@mainAdmin("api.tokens", user, user.getId) {
+    <section class="card" id="user-api-tokens" aria-labelledby="user-api-tokens-title">
+        <div class="card-body">
+            <h1 class="h5 card-title" id="user-api-tokens-title">@Messages("api.tokens.of", owner.fullname)</h1>
+
+            @for(n <- flash.get("api-tokens-revoked").flatMap(_.toIntOption)) {
+                <div class="alert alert-info" role="status">@Messages("api.tokens.revoked.count", n)</div>
+            }
+
+            @if(tokens.isEmpty) {
+                <p>@Messages("api.tokens.user.none")</p>
+            } else {
+                <div class="table-responsive">
+                    <table class="table table-sm align-middle">
+                        <thead>
+                            <tr>
+                                <th scope="col">@Messages("api.token.name")</th>
+                                <th scope="col">@Messages("api.token.prefix")</th>
+                                <th scope="col">@Messages("api.token.created.at")</th>
+                                <th scope="col">@Messages("api.token.last.used")</th>
+                                <th scope="col">@Messages("api.token.expires")</th>
+                                <th scope="col"><span class="visually-hidden">@Messages("api.token.state")</span></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                        @for(token <- tokens) {
+                            <tr>
+                                <td>@token.name</td>
+                                <td><code>@token.prefix…</code></td>
+                                <td>@date(token.createdAt)</td>
+                                <td>@token.lastUsedAt.fold(Messages("api.token.not.used"))(date)</td>
+                                <td>@token.expiresAt.fold(Messages("api.token.expiry.never"))(date)</td>
+                                <td class="text-end">
+                                @if(token.revoked) {
+                                    <span class="badge text-bg-secondary">@Messages("api.token.state.revoked")</span>
+                                } else {
+                                    @if(token.expired) {
+                                        <span class="badge text-bg-warning">@Messages("api.token.state.expired")</span>
+                                    }
+                                    @form(routes.ApiTokenAdminController.revoke(owner.getId, token.id), Symbol("class") -> "d-inline") {
+                                        @csrfField()
+                                        <button type="submit" class="btn btn-sm btn-outline-danger">@Messages("api.token.revoke")</button>
+                                    }
+                                }
+                                </td>
+                            </tr>
+                        }
+                        </tbody>
+                    </table>
+                </div>
+                @if(tokens.exists(!_.revoked)) {
+                    @form(routes.ApiTokenAdminController.revokeAll(owner.getId), Symbol("class") -> "d-inline") {
+                        @csrfField()
+                        <button type="submit" class="btn btn-outline-danger">@Messages("api.tokens.revoke.all")</button>
+                    }
+                }
+            }
+            <p class="mt-3"><a href="@routes.UserController.editUser(owner.getId)">@Messages("edit.user")</a></p>
+        </div>
+    </section>
+}
