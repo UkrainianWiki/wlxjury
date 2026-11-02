@@ -38,7 +38,7 @@
                         data-image="@controllers.Global.largeImage(file.image).src"
                         data-width="@file.image.width"
                         data-height="@file.image.height"
-                        data-description="<b>@file.title</b>"
+                        data-description="<b>@play.twirl.api.HtmlFormat.escape(file.title).body</b>"
                         data-pageId="@file.pageId"
                         data-roundId="@roundId"
                         data-rate="@file.rate"
