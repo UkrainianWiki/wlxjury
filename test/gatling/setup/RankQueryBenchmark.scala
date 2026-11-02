@@ -17,8 +17,8 @@ import scala.collection.mutable.ListBuffer
   * [[SelectionQuery.keyCounts]] (A), with the pager's total taken from its counts (K), with the
   * ranks as window functions in the page query (W), and W with the list's total as one more
   * window (WC); for information, a narrow grouped page (D: the page's ids, aggregates and
-  * ranks without the images join, then the page's images) and a file list id query without
-  * the images join (WCn).
+  * ranks without the images join, then the page's images; DK: the same without the windows,
+  * ranked and counted by keyCounts) and a file list id query without the images join (WCn).
   *
   * First it checks that W's ranks are today's on whole lists and on pages (ties spanning
   * pages, the last page, past the end), filters, regions, binary orders and jurors' lists.

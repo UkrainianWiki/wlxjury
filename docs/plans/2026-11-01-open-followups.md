@@ -1373,3 +1373,133 @@ changed).
 - The 2 s of the aggregate plan came from the UI fixture server at 533c4b88; it wasn't re-run
   here (HEAD measures 1.13 s on the Gatling fixture). The single 4.9 s and 5.2 s outliers there
   did not recur in 60 samples per variant (max 1351 ms).
+
+## Batch B11: ranks in the page query
+
+Branch `ukwikidev/followups-ranks` (from `9e3bc9ec`). Commits `504e1a09` (the benchmark), then
+this one. Phase 1: measured and selected; the change waits for B9, which changes the same
+grouped select.
+
+**Method.** `test/gatling/setup/RankQueryBenchmark` (new), one `Test/runMain` fork
+(`-Xmx1024m`, `-Dscalikejdbc.global.loggingSQLAndTime.enabled=false`, and
+`GlobalSettings.loggingSQLAndTime` off in code), on the Gatling fixture this tree built
+(`GatlingDbSetup`: 38,367 files, 20 jurors, 383,670 votes a round; rated round 2, rates 1-10,
+69 distinct rate sums; binary round 1, 11 distinct approval/rejection pairs), MariaDB 10.6.22
+container, HikariCP, Windows, no other JVM. The queries are the app's own
+(`SelectionQuery.query`/`list`/`count`/`keyCounts`/`withVotes`), the window columns inserted
+into their SQL. A sample is a whole page view's queries, one after another, each on its own
+autoSession as the app runs them. Per case: 2 warm-up views of each variant, then 15 rounds of
+all the variants in an order rotated each round; deltas are each round's variant minus its A.
+Run 1: the by-rate gallery of all the jurors' votes, page 1 and page 1279 (offset 19,170), both
+rounds. Run 2: page 1 again with DK, the file list's page 1 (1,000 rows), a juror's by-rate page
+1, and `ANALYZE FORMAT=JSON`. Run 2's rated cases had outliers of 3-7 s (the machine was short of
+memory; that run's compile took 16 minutes), so its rated rows have a wide spread; its binary and
+juror rows are as steady as run 1's.
+
+| Variant | Queries of a page view |
+|---|---|
+| A (today) | pager `COUNT(DISTINCT s.page_id)`, the grouped page, `keyCounts` |
+| K | the page, `keyCounts`; the total is the sum of `keyCounts`' counts |
+| W | the count, the page with `rank() over (order by <rank key>)` and `count(*) over (partition by <rank key>)` |
+| WC | W with `count(*) over ()` as the total, no count (one when the page is empty) |
+| D (for information) | a narrow grouped page from `selection` alone (ids, sums, the windows, the total), then the page's 15 images by id |
+| DK (for information) | D without the windows; ranks and total from `keyCounts` |
+| WCn (file list, for information) | WC's id query without the join to `images` |
+
+By-rate gallery of all the jurors' votes, ms: A's median (p25-p75); the others' paired delta
+median (p25 to p75) and the rounds of 15 in which they were faster than A.
+
+| Case | A | K | W | WC | D | DK |
+|---|---|---|---|---|---|---|
+| rated p1 (run 1) | 1261 (1126-1392) | **-235** (-408 to -107), 13 | +313 (+52 to +401), 3 | +66 (-64 to +364), 4 | -256 (-441 to -169), 15 | |
+| rated p1279 (run 1) | 1230 (1127-1313) | **-177** (-231 to -51), 13 | +197 (+126 to +317), 1 | +76 (-4 to +196), 5 | -335 (-383 to -259), 15 | |
+| binary p1 (run 1) | 779 (712-841) | **-163** (-200 to -92), 14 | +268 (+188 to +407), 0 | +20 (-23 to +109), 6 | -353 (-416 to -317), 15 | |
+| binary p1279 (run 1) | 804 (730-829) | **-135** (-183 to -93), 12 | +267 (+196 to +330), 1 | +49 (-61 to +121), 5 | -364 (-428 to -347), 15 | |
+| rated p1 (run 2, noisy) | 1300 (1170-3004) | +54 (-185 to +171), 7 | +174 (-39 to +286), 4 | -46 (-286 to +61), 8 | -307 (-560 to -128), 12 | -408 (-881 to -309), 15 |
+| binary p1 (run 2) | 739 (719-773) | **-104** (-185 to -75), 14 | +248 (+216 to +311), 1 | +80 (+23 to +119), 2 | -357 (-391 to -323), 15 | -335 (-371 to -291), 15 |
+
+File list of all the jurors' votes, page 1 (run 2), same columns:
+
+| Case | A | K | W | WC | WCn |
+|---|---|---|---|---|---|
+| rated (noisy) | 1146 (1071-2812) | **-161** (-910 to -78), 14 | +16 (-84 to +110), 6 | -93 (-674 to -1), 12 | -186 (-308 to -134), 12 |
+| binary | 672 (618-769) | **-129** (-210 to -106), 14 | -17 (-80 to +54), 8 | -213 (-271 to -135), 14 | -299 (-329 to -237), 15 |
+
+A juror's by-rate page 1 (A: the deferred-join page and `keyCounts`; W: the windows in the
+deferred join's inner query; the pager's total comes from `JurorCounts` in both): rated 38 ms,
+W -3 (14 of 15); binary 42 ms, W -1 (11 of 15).
+
+Per query, medians (run 1, page 1): rated count 138, page 1002, `keyCounts` 125, W's page 1416;
+binary count 148, page 464, `keyCounts` 154, W's page 936. The windows add 400-470 ms to the
+page query, three times what `keyCounts` costs by itself.
+
+**EXPLAIN** (`ANALYZE FORMAT=JSON`, rated round page 1 unless named; full JSON in
+`analyze.json.txt`):
+- Today's page: 383,670 rows from `idx_selection_round_page_rate` with the images' primary
+  key, one temporary table (the GROUP BY), one filesort with a priority queue (LIMIT 15):
+  1001 ms. The deep page sorts without a priority queue: 1026 ms.
+- W: the same, plus two more filesorts of all 38,367 grouped rows (one per window spec, no
+  priority queue, 4 sort passes in a 64 KB buffer) and `window_functions_computation`: 1309 ms;
+  WC 1146 ms; binary WC 777 ms against 438. The windows are computed over every grouped row of the
+  temporary table, which carries the images' columns too, before the LIMIT applies.
+- `keyCounts`: the same index read into a temporary table of one integer per file and a sort of
+  69 rows: 134 ms. The count: index only, 167 ms.
+- DK, the narrow page without the images join: rated 711 ms, binary 295 ms (today's 1001 and
+  438). The rated page costs more than twice the binary one even without the join; not
+  investigated.
+- The file list's id query: one sort of all 38,367 rows (no priority queue at LIMIT 1000, 6
+  passes): 768 ms; WC 1325, WCn 1019.
+- A juror's page: 13.6 ms today, 34.4 ms with the windows (two more sorts of the juror's ~19k rows).
+
+**Correctness.** W's ranks equal today's (`Ranks(keyCounts)`) everywhere checked, as do WC's,
+D's, DK's and K's ranks and totals (`MISMATCH` count 0): whole lists, and pages 1, 2, the
+middle, the last and past the end (with 69 or 11 keys among 38k files, page 2 and the middle
+page start inside a tie). Lists: rated all, rated "rated", rated unrated (empty), region 80, rated
++ region; two regions (the monument join; adm0 01 and 51, 105 files; whole list only); binary in
+each `BinaryOrder`, selected, rejected, unrated (empty), a region; jurors' lists (rated, rated
+"rated", binary; the deferred join); file lists rated, rated "rated" + region, binary, binary
+difference selected, a juror's. In the timing runs every variant's page equalled A's in every
+round (ids, ranks, total). The fixture's rated round has no rate 0 or below, so the in-memory
+`rateSum` (rates below 0 as 0) against SQL `sum(s.rate)` in `RankKey` wasn't exercised.
+
+**Decision: K.** The pager's total of a ranked list is the sum of `keyCounts`' counts; the ranks
+stay as they are.
+- W is slower in every organiser case: +174 to +313 ms median, faster in at most 4 of 15 rounds.
+  MariaDB 10.6 computes the two windows by sorting every grouped row twice more, without the
+  LIMIT's priority queue, which costs more than `keyCounts`' separate narrow aggregation
+  (125-160 ms).
+- WC is at best even on gallery pages (-46 to +80 ms) and saves 93-213 ms on a file list, less
+  than K, and needs a count query anyway for an empty page or one past the end.
+- K drops the pager's `COUNT(DISTINCT s.page_id)` (130-150 ms) in every organiser case:
+  -104 to -235 ms median, 12-14 of 15 rounds faster; the exception is run 2's noisy rated page 1
+  (+54, 7 of 15). It changes no SQL, so it doesn't touch B9's select; the ranks are today's by
+  construction, and the sum is right for an empty list and past the end without a fallback.
+- Jurors' lists: W saves 1-3 ms of ~40 and their totals already come from `JurorCounts`; they
+  keep `keyCounts`, so `keyCounts` stays (not dead code).
+- Not a rank change, for a later batch after B9: the narrow grouped page (DK: the page's ids and
+  sums from `selection` alone, then the page's images, as the deferred join does for a juror's
+  page) saves a further ~150-250 ms over K on these pages (DK -335 to -408 against K -104 to
+  -235 on page 1), and the file list's id query needs no join to `images` either (WCn). Both change
+  the grouped select that B9 changes.
+
+**Implementation plan (phase 2, on B9).**
+- `RoundList`: `ranked` (the file list, or by rate in any order but file order: the controller's
+  conditions today), `rankCounts()` = `query.keyCounts(rankKey.columns)` and `ranks(files,
+  counts)`; the CSV doesn't use them.
+- `GalleryController.galleryOf`: a lazy `rankCounts` when `list.ranked`; the pager's total from
+  the juror's counts first, then the sum of `rankCounts`, else `list.count()`; the ranks from the
+  same counts, so a page view runs `keyCounts` once and no count.
+- Specs: `RoundListDbSpec`: the sum of the rank counts equals `count()` for rated and binary
+  lists (each `BinaryOrder`), each vote filter (an empty one too), a region and two regions (the
+  monument join), by-rate and file list; ranks of pages that split a tie unchanged (the existing
+  file list test); a page past the end with the right total and no ranks. `AllJurorsListSpec`
+  (the file list's "1–1,000 of 1,003" and its ranks, the by-rate gallery's ranks) and
+  `GalleryOrderSpec` as they are; the CSV specs unaffected. Then the paired `GalleryLatencyBenchmark`
+  pilot (A, B, B, A) as planned.
+
+Raw data (in the worktree): run 1 `target/checks/b11-ranks/run1/{summary.txt,samples.csv}`, log
+`target/checks/20261102-110214-23108.log` (it stopped after the by-rate timings on a benchmark
+bug in WCn's SQL; the file list and juror rows are run 2's); run 2
+`target/checks/b11-ranks/run2/{summary.txt,samples.csv,analyze.json.txt}`, log
+`target/checks/20261102-112302-8200.log`. A first attempt (`…-105343-9556.log`) stopped on a page
+0 of an empty list, a benchmark bug. No specs (no app code changed).
