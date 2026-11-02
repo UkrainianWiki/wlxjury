@@ -51,9 +51,12 @@ class SetupSpec extends PlaySpecification with PlayTestDb with AccountTestSuppor
 
         val created = post(form(): _*)
         status(created) === SEE_OTHER
-        // "keep me signed in": the session is the filter's persistent cookie (S3), not Play's
+        // kept signed in (no checkbox here): modules.SessionLifetimeFilter sends the session as its own
+        // persistent cookie, so it is read from the cookie, not session(created)
         val baker = app.injector.instanceOf[play.api.mvc.SessionCookieBaker]
-        baker.decodeFromCookie(cookies(created).get(baker.COOKIE_NAME)).get(Secured.UserName) === Some("root@example.com")
+        val createdSession = baker.decodeFromCookie(cookies(created).get(baker.COOKIE_NAME))
+        createdSession.get(Secured.UserName) === Some("root@example.com")
+        createdSession.get(controllers.SessionLifetime.Keep) === Some("1")
         val root = User.findByEmail("root@example.com").head
         root.isRoot must beTrue
         root.emailVerified must beTrue
