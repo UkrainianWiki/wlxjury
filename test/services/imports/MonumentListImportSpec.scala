@@ -80,7 +80,8 @@ class MonumentListImportSpec extends Specification with TestDb with BeforeAll wi
 
       val failed = JobJdbc.findById(id).get
       failed.status === JobStatus.Failed
-      failed.error must beSome(contain("Wikipedia is down"))
+      (failed.failure.map(_.key) must beSome(_root_.services.jobs.JobError.CrashedKey)) and
+        (failed.failure.flatMap(_.reference) must beSome) and (failed.error must not(beSome(contain("Wikipedia is down"))))
       name("01-101-0001") === Some("Castle, as in the lists") // no nomination's data while the lists are unfinished
       name("01-101-0002") === Some("Church")
       name("01-101-0003") must beNone

@@ -28,6 +28,11 @@ class AppModule(environment: Environment, configuration: Configuration)
 
     KOATUU.load()
 
+    // slow and failed statements logged without their bound values
+    db.scalikejdbc.SqlLogging.install(
+      configuration.getOptional[Long](db.scalikejdbc.SqlLogging.SlowMillisKey)
+        .getOrElse(db.scalikejdbc.SqlLogging.DefaultSlowMillis))
+
     // an invalid bcrypt.* setting fails the start, not the first sign-in
     services.PasswordHasher.Settings.from(configuration.underlying)
     services.PasswordHasher.default

@@ -559,6 +559,48 @@ logs no bound value).
 merges (it touches `RoundList`/`ImageDbNew`, not these files, but avoid parallel `Test/compile`
 on one branch).
 
+### S5 results (2026-11-02)
+
+Branch `ukwikidev/security-s5-s10` (from `ukwikidev/followups` 57aa8434).
+
+- **N3:** `Csv.text` prefixes a cell starting with `= + - @`, tab or CR with `'`; the header's
+  juror names and each row's file title go through it, the app's numbers (ranks, rates, a binary
+  round's `-1`) don't. Streamed and in-memory exports share `header`/`row`. `CsvSpec`: each
+  character in the header and in rows, other text and `-1` unchanged.
+- **N8:** the tile caption's link text is `HtmlFormat.escape(file.title)` inside the `alt`
+  attribute, as `data-description` was, so unitegallery's `.html()` shows it as text.
+  `GalleryDescriptionViewSpec`: a title with `&` and `<i>` is one link whose text is the title.
+  No JS changed.
+- **N9:** `job.error` holds a `services.jobs.JobError` (JSON: message key, numeric arguments, log
+  reference). A crash stores `job.error.reference` with the reference of its ERROR log line
+  (which has the exception); the distribution's count check stores `job.error.count.mismatch`
+  with the round and counts. A row from before (free text) reads as `job.error.unknown`, so old
+  exception texts are not shown either. The status JSON has `error` (the localised message),
+  `errorKey` and `errorReference`; the status snippet shows the message. Keys in all four
+  languages. `JobControllerSpec` (a job crashing with a driver-like message: JSON and snippet show
+  the key's text and the reference, never the message; the log line has both); the specs that
+  checked the exception text in `job.error` (`JobSchedulerSpec`, `RoundDistributionJobSpec`,
+  `AppendImagesSpec`, `MonumentListImportSpec`) check the key and reference instead.
+- **N11/P12:** `scalikejdbc.global.loggingSQLAndTime.warningEnabled = false` and
+  `loggingSQLErrors = false`; `db.scalikejdbc.SqlLogging` (installed by `AppModule`, threshold
+  `wlxjury.sql.slowStatementMillis = 1000`) logs a slow statement at WARN and a failed one at
+  ERROR on `db.sql`, as the statement's template (bound values are `?`, quoted literals `'?'`)
+  and, for a failure, the exception's class, SQLState and code, not its message. It uses
+  ScalikeJDBC's tagged listeners, which nothing else sets (`RequestTimingFilter` keeps the
+  untagged one). The INFO line per statement (with values, for `sbt run`) is unchanged;
+  production's logback writes WARN and up only. A failure's exception still reaches its handler
+  (`ErrorHandler` logs it with a reference). `SqlLoggingSpec` (list appender on the root logger:
+  a slow and a failed statement with an email bound log the template and no value at WARN+, even
+  with ScalikeJDBC's warnings switched on first; the shipped configs turn them off). `useSSL`
+  stays with S8.
+- **Guards (practices plan):** `security.ExportsSpec` (G8), `security.LogHygieneSpec` (G9),
+  `security.ErrorTextSpec` (G13), `security.RawHtmlSinksSpec` (G5), `security.RawSqlSpec`
+  (G4, G4b), on `security.SourceScan`. Allowlists are per file with a reason, and check only
+  that no file outside them has a hit (so concurrent branches that remove a use don't break
+  them); G13 also caps each listed file's count.
+- **Checks:** one run for S5 and S10, recorded under "S10 results": the S5 specs above, the
+  four job specs, `views.*` and `security.*` pass.
+
 ## S6: App hardening leftovers
 
 **Items:** P5, P6, P8 (code), P9. (P7 is done in S2: see below.)
@@ -653,6 +695,90 @@ traceable).
 **Decided (user, 2026-11-02):** S10 yes. P19's audit log is scheduled together with the rounds
 parity plan's first gap (audit log, `docs/plans/2026-11-02-montage-rounds-parity.md`), one table
 for role, account, contest and round events.
+
+### S10 results (2026-11-02)
+
+- **N10:** `play-pac4j` (and the unused `pac4jVersion`) removed from `build.sbt`; nothing in
+  `app/`, `test/` or `conf/` referred to it, and the app and tests compile without it. CLAUDE.md's
+  "pac4j via play-pac4j" line now says authentication is the app's own. **`pekko-http` is not
+  updated (user, 2026-11-02):** Pekko and Pekko HTTP must stay in step with scalawiki
+  (`project/Dependencies.scala`, `Library.Pekko`: `PekkoV = 1.0.3`, `PekkoHttpV = 1.0.1` on
+  `origin/page-categories`, the same as here); a comment next to `PekkoVersion`/`PekkoHttpVersion`
+  says so. The update is deferred to a coordinated bump, scalawiki first, then wlxjury (then rerun
+  the image cache specs). unitegallery 1.7.28 and jQuery Raty 2.7.1 are listed as vendored, with
+  the escaping rule, in `incident-prevention-guidelines.md` ("Browser safety"); raty gets numbers
+  and empty hints only.
+- **P13 (root revocation, double click):** `ApiTokenService.createOnce` runs a create in one
+  transaction with the user's row locked (`ApiTokenJdbc.lockOwner`), and the 20-token cap is
+  checked in the same transaction; a repeated submit of the same form is handled as the review
+  fixes below describe (the form's nonce on the token, V79; the button disabled). Root has
+  `GET /admin/users/:userId/tokens` (the list, linked from another account's edit page), `POST
+  .../tokens/:id/revoke` and `POST .../tokens/revoke` (all), root only, CSRF by the global filter;
+  `ApiTokenService.revokeByRoot` logs `api_token_revoked by=root rootId userId tokenIds` at INFO
+  (ids only). New controller `ApiTokenAdminController` and view `userApiTokens` (kept out of
+  `UserController`, which S2 changes; S2's `ApiTokenJdbc.revokeAll` is not duplicated). Keys in
+  all four languages. `ApiTokenPageSpec`: a double click (sequential, and five at once) makes one
+  token; root lists, revokes one (log line with ids, no email, name or prefix) and all; a contest
+  admin, a juror and the owner get 403, signed out a redirect, root without the CSRF token 403, a
+  token under another user's id or an unknown one 404, nothing revoked. The failed-token limit
+  stays with S4.
+- **P16:** checked against the code and fixed: the api-auth plan's denial line (it logs
+  `accountId` only, `Secured.denialLogLine`); `application.conf`'s host comment (production has no
+  loopback names; `/health/ready` is `+ anyhost`); `production.conf`'s `request.secure` comment
+  (read only by `thumbnailUrls`' fallback, which production never takes: `wlxjury.host` is set);
+  `local-images-review-followups.md`'s table (#3, #7, #8 fixed; #9, P2 deleted; #4 partial, P3
+  documented) with a dated status note. The secret-rotation procedure stays with S3/S9.
+- **Not done:** P19 (audit log; scheduled with the rounds-parity plan). G11 (dependency report)
+  and G12 (secret scan) are not added: G11 is a release-gate task, not a spec, and G12 waits for
+  the infra plan's `check-no-secrets.sh`.
+- The consolidated report's status column is updated for N3, N8, N9, N10, N11/P12, P13, P16.
+
+**Checks (S5 and S10, one run each; from Git Bash through `scripts/agent-check.py`, under the
+shared sbt lock):** `Test/compile`, `Gatling/compile` and `testOnly controllers.CsvSpec
+controllers.JobControllerSpec db.scalikejdbc.SqlLoggingSpec security.* services.jobs.JobSchedulerSpec
+services.distribution.RoundDistributionJobSpec controllers.AppendImagesSpec
+services.imports.MonumentListImportSpec controllers.ApiTokenPageSpec api.ApiSpec
+controllers.MutationAuthorizationSpec views.*`: 343 tests, 342 passed, 1 failed
+(`target/checks/20261102-145020-28696.log`): `SqlLoggingSpec` expected the class name to contain
+`SQLException` (it is `SQLSyntaxErrorException`), and left the slow threshold at 0 for later specs;
+both fixed. Rerun of `SqlLoggingSpec deployment.ProductionConfigSpec security.*
+controllers.JobControllerSpec`: 31 passed (`target/checks/20261102-145709-28552.log`). No
+JavaScript changed, so no Jest run. No full suite. The image cache specs were not rerun: no
+dependency they use changed (`pekko-http` deferred).
+
+### S5/S10 review fixes (2026-11-02)
+
+The independent review found the branch safe to merge, with these fixes before release:
+
+| Item | Finding | Fix | Check |
+|---|---|---|---|
+| M1 (P13) | A double click's second POST answered 409 "no token created" while the first had made one whose value nobody saw | `createOnce` revokes the user's same-name tokens created less than 30 s ago and never used (`ApiTokenJdbc.unusedSince`, locking read after the user-row lock), then creates and shows a new one: the last submit wins, one usable token, the one the browser shows. A used token is kept. Logged as `api_token_replaced userId tokenIds` (ids only). No submit-button script (optional, not done) | `ApiTokenPageSpec`: sequential double click shows a token, the only usable one, the first revoked; a used one is kept; five at once leave one usable token, shown by a response |
+| L1/L2 (N8) | unitegallery's thumbnail `alt` (`setHtmlThumb`) used `htmlentitles`, which leaves `'` unescaped (a title with `'` broke out of the attribute), and with the title escaped once more showed entities (`&#x27;`, `&amp;`); the image-effect overlay inserted the title raw; `contestFiles.scala.html` gave unitegallery the raw title | Vendored patch: both sinks set `alt` to `escapeAttr(htmlToText(title))` (inert DOMParser text, quotes escaped) and escape `urlThumb`. The extra escaping in `gallery.scala.html` stays: the text panels insert the title with `.html()`. `contestFiles.scala.html` escapes the title once more too. Listed in `incident-prevention-guidelines.md` (vendored libraries) | Jest `unitegallery-alt.test.js` (`'`, `&`, `<i>`, a quote breakout, inert parsing, both sinks); `GalleryDescriptionViewSpec` (quote in the title); `ContestFilesPageSpec` (alt is html whose text is the title) |
+| L5 (N3) | Neutralising only named fields left a new export to remember it | `Csv.writeRow`/`Csv.write` pass every cell through `Csv.cell`: a number (by type, or `-?\d+(\.\d+)?`) as it is, any other string through `Csv.text`, which also catches whitespace then `= + - @`. Rank ranges (`1-2`) start with a digit and are unchanged | `CsvSpec` reads the written lines back: names and titles prefixed (including leading whitespace), `-1`, `-2.5`, `1-2` unchanged, `-x`, `+1`, `@a` prefixed |
+| L5 (optional) | Whole-account interpolation in log lines | `LogHygieneSpec` also flags `$user`, `${editedUser}` and the like (whole-account names) | `security.LogHygieneSpec` |
+| L4 (nit) | `revokeByRoot` read then revoked outside a transaction and logged even when nothing was revoked | One transaction with the user's row locked; no log line if nothing was revoked. S2's `ApiTokenJdbc.revokeAll` arrives at the merge: `revokeByRoot` could use it for "all" then | `ApiTokenPageSpec` (root revokes one, all) |
+| Nit | `createOnce` duplicated `create` | `create` takes an implicit session (default `AutoSession`); `createOnce` calls it in its transaction | `ApiTokenPageSpec`, `ApiSpec` |
+| Nit | pac4j removal might evict or downgrade transitive libraries | `sbt dist` builds (205 jars in `lib/`: the runtime classpath's 203 and the app's two). `Runtime/managedClasspath` against the base's `build.sbt` (57aa8434): only `play-pac4j_2.13` 12.0.0-PLAY3.0, `pac4j-core` 6.0.0, `lombok` 1.18.30 and `findbugs-annotations` 3.0.1 are gone; no other library is added, evicted or changes version | `sbt dist` |
+| L-a (follow-up review) | Replacing by name within 30 s could revoke a token the user had copied and deliberately followed with another of the same name | The replacement is keyed on the submit: `api_token.create_nonce` (V79, the SHA-256 of the form's one-time nonce); `createOnce` revokes only unused tokens created with the same nonce (a double click repeats it; a create from the response page or another tab has a new one). The name/30 s rule is gone. **Merge:** V79 is numbered after S2's V77 and C1's V78; merge those first or renumber (production validates without ignoring out-of-order migrations). Undo: drop the column | `ApiTokenPageSpec`: a same-nonce double click leaves one usable token, the one shown; a second create of the same name from the new page (fresh nonce) leaves both usable |
+| L-b (follow-up review) | Under concurrency the last request sent may commit first, so the shown token could be the revoked one | `submit-once.js` (served from `'self'`, no inline script): a `data-submit-once` form's first submit disables its submit buttons and drops further submits; a page restored by Back gets them back (`pageshow`). The API token create form uses it; the server-side replacement stays as the backstop | Jest `submit-once.test.js`; `NoInlineScriptsSpec`, `InlineScriptHashesSpec` (`views.*`) |
+| L3 | `createOnce` should re-check the session's `auth_version` (S3) inside its transaction | **Merge note for S2/S3:** not implemented here; at the S2 merge, check `auth_version` in `createOnce`'s transaction (and in `revokeByRoot` for root's) so a request of a session invalidated meanwhile creates nothing | — |
+
+**Review fix checks:** Jest, whole suite in this tree (`npm ci` in `javascript-test/`, own
+`node_modules`): 19 suites, 247 tests pass, `unitegallery-alt.test.js` included. sbt (under the
+lock): `Test/compile`, `Gatling/compile`, `testOnly controllers.ApiTokenPageSpec controllers.CsvSpec
+controllers.ContestFilesPageSpec api.ApiSpec security.* views.*`: 261 passed
+(`target/checks/20261102-153956-15200.log`), then `dist` and `export Runtime/managedClasspath`;
+the base's classpath in `target/checks/20261102-154639-17516.log`.
+
+**Follow-up review fix checks (L-a, L-b):** Jest, full suite in this tree with its output kept
+(`target/checks/jest-20261102-155157.log`, `npx jest --verbose`): 20 suites, 251 tests pass,
+`unitegallery-alt.test.js` (7) and `submit-once.test.js` (4) among them. sbt (under the lock):
+`Test/compile`, `Gatling/compile`, `testOnly controllers.ApiTokenPageSpec api.ApiSpec
+db.scalikejdbc.ApiTokenJdbcSpec security.* views.*`: 230 tests, 229 passed
+(`target/checks/20261102-160406-11052.log`); the one failure, `ApiTokenJdbcSpec`'s column list
+without V79's `create_nonce`, is updated and passes with `db.MigrationNamingSpec` (8 passed,
+`target/checks/20261102-161423-10624.log`). (The earlier Jest runs were in this tree too, outside
+sbt, so no sbt log holds them.)
 
 ## Running the batches
 

@@ -38,6 +38,9 @@ final case class Job(
   def isActive: Boolean = JobStatus.active.contains(status)
   def isFailed: Boolean = status == JobStatus.Failed
   def isDone: Boolean = status == JobStatus.Done
+
+  /** Why it failed (`error`): a message key and a log reference, never an exception's text. */
+  def failure: Option[JobError] = error.map(JobError.decode)
 }
 
 object JobStatus {

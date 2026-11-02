@@ -93,7 +93,7 @@ sbt packageAll           # All package variants
 - **ScalikeJDBC 4.3** with ORM (`CRUDMapper`) for database access
 - **MariaDB** as the database with **Flyway** migrations (`conf/db/migration/default/`)
 - **Tapir 1.11** + Pekko HTTP for the REST API layer
-- **pac4j** via play-pac4j for authentication
+- **Authentication** is the app's own: session cookie and `Secured` (no pac4j)
 - **scalawiki** (internal library) for Wikimedia Commons integration
 
 ### Layer Structure

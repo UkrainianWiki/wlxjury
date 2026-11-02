@@ -2265,6 +2265,25 @@ function UGFunctions(){
 	}
 
 
+	/**
+	 * wlxjury: the text of an html fragment (an item's title is html: the caption's link),
+	 * parsed inert by DOMParser (no scripts run, no images load), entities decoded
+	 */
+	this.htmlToText = function(html){
+		var doc = new DOMParser().parseFromString(String(html == null ? "" : html), "text/html");
+		return(doc.body ? doc.body.textContent : "");
+	}
+
+
+	/**
+	 * wlxjury: text escaped for an attribute value in single or double quotes
+	 */
+	this.escapeAttr = function(text){
+		return String(text).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+			.replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+	}
+
+
 	this.z_________END_GENERAL_FUNCTIONS_______ = function(){}
 
 }
@@ -10620,10 +10639,10 @@ function UGTileDesign(){
 		if(g_options.tile_enable_image_effect == false || g_options.tile_image_effect_reverse == true)
 			classImage += " ug-trans-enabled";
 
-		var imageAlt = g_functions.stripTags(objItem.title);
-		imageAlt = g_functions.htmlentitles(imageAlt);
+		// wlxjury: the title's text, escaped for the quoted attribute (htmlentitles left ' as it is)
+		var imageAlt = g_functions.escapeAttr(g_functions.htmlToText(objItem.title));
 
-		html += "<img src='"+objItem.urlThumb+"' alt='"+imageAlt+"' class='"+classImage+"'>";
+		html += "<img src='"+g_functions.escapeAttr(objItem.urlThumb)+"' alt='"+imageAlt+"' class='"+classImage+"'>";
 
 		if(g_temp.hasImageContainer == true){
 			html += "</div>";
@@ -10757,7 +10776,8 @@ function UGTileDesign(){
 			var imageOverlayHtml = "<div class='ug-tile-image-overlay"+imageEffectClassAdd+"' >";
 			var imageEffectClass = " ug-"+g_options.tile_image_effect_type+"-effect";
 
-			imageOverlayHtml += "<img src='"+objItem.urlThumb+"' alt='"+objItem.title+"' class='"+imageEffectClass + imageEffectClassAdd+"'>";
+			// wlxjury: the title's text, escaped for the quoted attribute (it was inserted as it was)
+			imageOverlayHtml += "<img src='"+g_functions.escapeAttr(objItem.urlThumb)+"' alt='"+g_functions.escapeAttr(g_functions.htmlToText(objItem.title))+"' class='"+imageEffectClass + imageEffectClassAdd+"'>";
 			imageOverlayHtml += "</div>";
 
 			objThumbWrapper.append(imageOverlayHtml);

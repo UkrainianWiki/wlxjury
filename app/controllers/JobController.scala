@@ -2,6 +2,7 @@ package controllers
 
 import db.scalikejdbc.User
 import modules.BlockingExecutionContext
+import play.api.i18n.Messages
 import play.api.libs.json.{JsObject, Json}
 import play.api.mvc.{AnyContent, ControllerComponents, EssentialAction, Request, RequestHeader, Result}
 import services.jobs.{Job, JobJdbc, JobScheduler, JobStatus}
@@ -22,7 +23,7 @@ class JobController @Inject() (cc: ControllerComponents, jobs: JobScheduler, blo
   def status(id: Long): EssentialAction =
     Action { request =>
       userFromRequest(request).fold[Result](Unauthorized(Json.obj("error" -> "unauthenticated"))) { user =>
-        withJob(user, id, request, json = true)(job => Ok(JobController.json(job, jobs)))
+        withJob(user, id, request, json = true)(job => Ok(JobController.json(job, jobs)(cc.messagesApi.preferred(request))))
       }
     }
 
@@ -78,7 +79,10 @@ class JobController @Inject() (cc: ControllerComponents, jobs: JobScheduler, blo
 
 object JobController {
 
-  def json(job: Job, jobs: JobScheduler): JsObject =
+  /** `error` is the failure's message (a key and a log reference: [[services.jobs.JobError]]),
+    * `errorKey` and `errorReference` the same as data; never an exception's text.
+    */
+  def json(job: Job, jobs: JobScheduler)(implicit messages: Messages): JsObject =
     Json.obj(
       "id" -> job.id,
       "kind" -> job.kind,
@@ -88,7 +92,9 @@ object JobController {
       "progressDone" -> job.progressDone,
       "progressTotal" -> job.progressTotal,
       "progressUnit" -> job.progressUnit,
-      "error" -> job.error,
+      "error" -> job.failure.map(_.message),
+      "errorKey" -> job.failure.map(_.key),
+      "errorReference" -> job.failure.flatMap(_.reference),
       "queuePosition" -> (if (job.status == JobStatus.Queued) Some(JobJdbc.queuePosition(job.id)) else None),
       "subjectType" -> job.subjectType,
       "subjectId" -> job.subjectId,

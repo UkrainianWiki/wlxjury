@@ -75,7 +75,9 @@
         }
 
         <h3 class="h6 mt-3">@Messages("api.token.create")</h3>
-        @form(routes.UserController.createApiToken(), Symbol("class") -> "form-vertical", Symbol("id") -> "api-token-form") {
+        @* sent once (submit-once.js): a double click makes one request *@
+        @form(routes.UserController.createApiToken(), Symbol("class") -> "form-vertical", Symbol("id") -> "api-token-form",
+            Symbol("data-submit-once") -> "true") {
             @csrfField()
             <input type="hidden" name="@controllers.ApiTokensCard.NonceKey" value="@card.nonce">
             @bs.text(card.form("name"), Symbol("_label") -> Messages("api.token.name"),

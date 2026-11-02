@@ -48,23 +48,12 @@ object ApiTokenJdbc {
     )
 
   /** A new token of the user, expiring in `expiresInDays` (never without), by its hash; its id. */
-  def create(userId: Long, name: String, tokenHash: String, prefix: String, expiresInDays: Option[Int])(implicit
-      session: DBSession = AutoSession
-  ): Long =
-    sql"""INSERT INTO api_token (user_id, name, token_hash, prefix, created_at, expires_at)
-          VALUES ($userId, $name, $tokenHash, $prefix, NOW(3),
+  def create(userId: Long, name: String, tokenHash: String, prefix: String, expiresInDays: Option[Int],
+      createNonce: Option[String] = None)(implicit session: DBSession = AutoSession): Long =
+    sql"""INSERT INTO api_token (user_id, name, token_hash, prefix, create_nonce, created_at, expires_at)
+          VALUES ($userId, $name, $tokenHash, $prefix, $createNonce, NOW(3),
                   IF(${expiresInDays.isDefined}, NOW(3) + INTERVAL ${expiresInDays.getOrElse(0)} DAY, NULL))"""
       .updateAndReturnGeneratedKey.apply()
-
-  /** As [[create]], but only while the user's auth_version is still `authVersion` (L1): a token
-    * created by a session that an accepted link has just ended is not inserted. Whether it was.
-    */
-  def createIfVersion(userId: Long, authVersion: Int, name: String, tokenHash: String, prefix: String,
-                      expiresInDays: Option[Int])(implicit session: DBSession = AutoSession): Boolean =
-    sql"""INSERT INTO api_token (user_id, name, token_hash, prefix, created_at, expires_at)
-          SELECT id, $name, $tokenHash, $prefix, NOW(3),
-                 IF(${expiresInDays.isDefined}, NOW(3) + INTERVAL ${expiresInDays.getOrElse(0)} DAY, NULL)
-          FROM users WHERE id = $userId AND auth_version = $authVersion""".update.apply() > 0
 
   def findByHash(tokenHash: String)(implicit session: DBSession = AutoSession): Option[ApiToken] =
     sql"SELECT $columns FROM api_token WHERE token_hash = $tokenHash".map(extract).single.apply()
@@ -91,4 +80,21 @@ object ApiTokenJdbc {
   def touch(id: Long)(implicit session: DBSession = AutoSession): Unit =
     sql"""UPDATE api_token SET last_used_at = NOW(3)
           WHERE id = $id AND (last_used_at IS NULL OR last_used_at < NOW(3) - INTERVAL 1 MINUTE)""".update.apply()
+
+  /** Locks the user's row until the transaction ends: one token create of a user at a time
+    * ([[services.ApiTokenService.createOnce]]). The account's auth version, read under the lock
+    * (None for no such user), so a create can check its session against it (L1).
+    */
+  def lockOwner(userId: Long)(implicit session: DBSession): Option[Int] =
+    sql"SELECT auth_version FROM users WHERE id = $userId FOR UPDATE".map(_.int(1)).single.apply()
+
+  /** The user's unrevoked, never used tokens created by the form submit of `createNonce` (its
+    * hash, V79): a double click's earlier creates. A locking read: after [[lockOwner]] it sees a
+    * create that committed while it waited.
+    */
+  def unusedOfSubmit(userId: Long, createNonce: String)(implicit session: DBSession): Seq[Long] =
+    sql"""SELECT id FROM api_token
+          WHERE user_id = $userId AND create_nonce = $createNonce
+            AND last_used_at IS NULL AND revoked_at IS NULL
+          FOR UPDATE""".map(_.long(1)).list.apply()
 }
