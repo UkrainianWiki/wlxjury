@@ -1341,9 +1341,9 @@ Two commits:
   round's 383k votes (~113 ms). This is the feature's cost; it isn't redundant.
 - `79f5c51e` "Show a binary round's result as approvals, not stars": the grouped select now
   always adds `sum(s.rate > 0) as approvals, sum(s.rate < 0) as rejections`
-  (`ImageDbNew.scala:92`), rated rounds too (~+70 ms on the page query). A rated round's rates
-  are 0 or more, so `rejections` is always 0 there, and it shows stars, not approvals: only a yes/no
-  round needs them. Not fixed here (the select is shared with the file list, CSV and large view,
+  (`ImageDbNew.scala:92`), rated rounds too (~+70 ms on the page query). A rated round's
+  by-rate page shows the rate sum, not approvals; whether anything else reads the two sums for
+  a rated round wasn't checked. Not fixed here (the select is shared with the file list, CSV and large view,
   so it needs those specs); the change, adding the two sums only for a binary round, is a
   candidate for a later batch. No `EXPLAIN` was run: the per-query timings name the queries,
   and neither changed plan (both are the round's `GROUP BY s.page_id`).
