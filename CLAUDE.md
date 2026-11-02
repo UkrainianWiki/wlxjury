@@ -161,6 +161,8 @@ One MariaDB Testcontainer per JVM, shared across all specs via `SharedTestDb` (l
 - **`hasManyThrough`**: Lazy val on the companion object (e.g., `Round.usersRef`) — must be accessed once before `round.users` is populated. `SharedTestDb.initialized` does this automatically.
 - **Source:** GitHub: https://github.com/scalikejdbc/scalikejdbc — local jars: `~/.ivy2/cache/org.scalikejdbc/scalikejdbc_2.13/srcs/`
 
+**Table names:** new tables are singular snake_case (`job`, `round_image`); a link table is `<owner>_<thing>` (`round_user`, `user_contest`); a foreign key column is `<table>_id`; index and constraint names start with the table name. The old plural tables (`images`, `rounds`, `users`, …) keep their names.
+
 ### REST API
 
 Tapir endpoints in `app/api/Api.scala`, served by Tapir's Play interpreter (`tapir-play-server`) under `/api` (`-> /api api.ApiRouter` in `conf/routes`), so through Play's filters and on the blocking dispatcher for JDBC. Swagger UI and the OpenAPI document are public at `/api/docs`. See `docs/api.md`.
