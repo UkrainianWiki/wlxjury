@@ -463,6 +463,33 @@ branch, merge commit `992d8eb2`.
   (`target/checks/20261102-005007-23776.log`). Jest: exit 0, 18 suites, 240 tests
   (`javascript-test/target/checks/20261102-004818-24892.log`). No full suite (after B5).
 
+### Merged ukwikidev/followups-b4
+
+2026-11-02, after B5: `git merge --no-ff ukwikidev/followups-b4` (at `4f263e0f`) into this
+branch, merge commit `d9dbe0ed`.
+
+- **Conflicts:** `UserController`'s imports (kept api-auth's `ApiTokenService` and B4's
+  `BlockingExecutionContext`, `PasswordHasher`); this plan (the B3 review fixes and B5
+  results, then the B4 results without B4's stale "What remains" line). Auto-merged and
+  checked by hand: both `application.conf` files have `sign-in-dispatcher` and `bcrypt.*`
+  beside B5's and api-auth's changes; the four messages files hold the same 388 keys;
+  `build.sbt` has bcrypt 0.10.2; CLAUDE.md has the Passwords line; `UserController` keeps the
+  token endpoints, `ownProfile` and the nonce with B4's `withAuthOn(blocking)` password paths.
+- **Post-merge fix** `1381c88d`: `ApiSpec`, `ApiTokenPageSpec`, `ApiTokenJdbcSpec` and
+  `UiShotsServer` used the removed `User.sha1`; they store `PasswordHasher.default.hash(...)`
+  (`UiShotsServer` with the renamed `passwordHash` parameter).
+- **Checks:** `Test/compile`, `Gatling/compile` and `PasswordStorageSpec`,
+  `PasswordHasherSpec`, `UserPasswordSpec`, `LoginControllerSpec`, `UserControllerSpec`,
+  `UserDbSpec`, `MultiContestUserSpec`, `SecuredSpec`, `ApiSpec`, `ApiTokenPageSpec`,
+  `ApiTokenJdbcSpec`, `ProductionConfigSpec`, `AllowedHostsSpec`, `views.*`
+  (`MessagesCompletenessSpec` included): exit 0, 327 passed, 0 failed
+  (`target/checks/20261102-021714-452.log`). The full suite (`20261102-022113-17192.log`) was
+  stopped by the host for low system memory before it finished, with no failure until then.
+- **Full suite** (the release check for B1–B5, api-auth and B4), rerun by the orchestrator at
+  `70d48397` with nothing else running: exit 0 in 14 min, Scala **1404 total, 0 failed,
+  0 errors** (1398 passed, 6 skipped, 1 pending); Jest 18 suites, 240 passed
+  (`target/checks/20261102-023459-13464.log`).
+
 ## Checked and already resolved (not part of this plan)
 
 Theme follow-ups 1–11 and the review fixes; Phase 2's ru keys; JS texts in `mainAdmin` (now
@@ -976,3 +1003,144 @@ Checks: `Test/compile`, `Gatling/compile`, `ProductionConfigSpec`, `AllowedHosts
 called `remembered` without the new parameter (`20261102-021016-7888.log`). After fixing that:
 exit 0, 314 passed (`20261102-021101-1696.log`). No full suite: it passed at `bc70ff44`, and the
 orchestrator runs it after merging B4.
+
+## Batch B4 results
+
+Branch `ukwikidev/followups-b4`, from `2b92947e`. Commits `a1648e48` (the hasher), `49fea433`
+(every password path), `9ec7a4ab` (Gatling fixture), `6748a3c4` (docs).
+
+**2.1** Passwords are bcrypt `$2b$` (`at.favre.lib:bcrypt` 0.10.2, the latest release on Maven
+Central; its only dependency is `at.favre.lib:bytes` 1.5.0), in `services.PasswordHasher`.
+`users.password varchar(255)` holds the 60-character hash: no migration.
+- **Sign-in** (`User.login`): a `$2a$`/`$2b$` hash (cost 4–16) is checked at its own cost; one
+  below the configured cost is rehashed. A legacy hash (exactly 40 lowercase hex characters)
+  is compared with `MessageDigest.isEqual` against the SHA-1 of the trimmed password, as
+  before, and on success replaced by a bcrypt hash with a conditional `UPDATE … WHERE
+  password = <the legacy hash>`, so a password changed meanwhile is never overwritten. Any
+  other value, no value, an unknown login or a blank password never matches; those paths
+  run a dummy bcrypt check, so a sign-in takes about as long whatever the account. The login
+  form no longer checks the password itself (it was checked twice per sign-in).
+- **Setting a password** stores only bcrypt: sign-up (the first account, root, included),
+  `UserService.createAccount` (organizer's new user, import, generated greeting passwords),
+  the edit form (an admin's change and the own profile) and root's reset all go through
+  `PasswordHasher.default.hash` / `User.setPassword`. `User.hash`, `User.sha1` and the public
+  `User.updateHash` are gone; `User.create(fullname, email, passwordHash, …)` takes a hash
+  (renamed parameter). Generated passwords now use `SecureRandom`. `User.toString` hides the
+  hash.
+- **Trimming:** a password is trimmed both when set and when checked. Before, sign-in trimmed
+  but setting didn't, so a password set with surrounding spaces could never be used.
+- **72 bytes:** a new password is refused over 72 UTF-8 bytes after trimming, or when blank
+  (`password.too.long`, `password.empty`, on the sign-up and edit forms; the edit form now shows
+  its password error). A legacy password over 72 bytes still signs in: such input is pre-hashed
+  with SHA-512 before bcrypt (the library's `hashSha512` strategy), the same way when hashing
+  and checking, so it is rehashed and only the whole password matches (not its first 72
+  bytes). Refusing alone would have left those accounts on SHA-1.
+- **Config** `bcrypt.*` (not `password.*`: the deployment script's credential scan reads any
+  key containing "password" as a literal credential): `cost = 12`, `maxConcurrent = 2` (the
+  server has 2 CPUs shared with MariaDB; the plan's example was 4), `maxWait = 10 seconds`. A
+  cost below 10 is raised to 10 (with a warning) unless `bcrypt.allowLowCost`, which only
+  `test/resources/application.conf` sets (cost 4). `PasswordHasher.default` reads the config
+  the app is started with (`-Dconfig.file`).
+- **Concurrency:** a fair semaphore of `maxConcurrent` turns around every bcrypt computation.
+  A sign-in waits for a turn until its deadline (`maxWait` from when the request arrived,
+  the time queued included), then gets 503 with `signin.busy` and `Retry-After: 5`. Sign-in
+  and sign-up run on a new `sign-in-dispatcher` (4 threads, `modules.SignInExecutionContext`);
+  saving a user, import and reset moved to the blocking dispatcher (`withAuthOn`), so no
+  hash runs on Play's default dispatcher. An admin path that gets no turn in time fails with
+  the server error page.
+- Nothing logs a password or a hash; a rehash logs `password hash upgraded: accountId=<id>`
+  on `security.password`.
+- The Gatling fixture hashes with the tests' cost (`FixtureVersion` v4). `bench/scripts/
+  anonymise.sql` still writes SHA-1 (MariaDB has no bcrypt): the benchmark's first sign-in per
+  account rehashes, its comment says so.
+
+**Tests:** `services.PasswordHasherSpec` (18: format and salt, trimming, cost upgrade, `$2a$`,
+legacy match/mismatch/format, garbage and a cost-31 hash, blank, the 72-byte rule and the long
+legacy password, settings and the shipped config's cost 12, the semaphore's peak and Busy at
+the deadline). `controllers.PasswordStorageSpec` (10: legacy wrong password keeps the row;
+legacy success rewrites the row and the second sign-in uses bcrypt; a changed password isn't
+overwritten; wrong bcrypt password; garbage, missing and unknown; 503 when every turn is taken;
+sign-up, given and generated passwords, profile, reset, import and a legacy sign-in, then a
+scan of `users.password`: all `$2b$04$`, none 40-hex; the 72-byte and blank rules on sign-up
+and the profile; a long legacy password).
+
+**Checks** (all through `scripts/agent-check.py`):
+- `Test/compile` + `Gatling/compile` + `PasswordStorageSpec`, `UserControllerSpec`,
+  `UserDbSpec`, `MultiContestUserSpec`, `SecuredSpec`, `CoiAuthorizationSpec`, `ThemeSwitchSpec`,
+  `MessagesCompletenessSpec`, `SignOutAndSwitchSpec`, `AdminPagesCurrentContestSpec`,
+  `MutationAuthorizationSpec`: 145/146, the one failure a test-only mistake in
+  `PasswordStorageSpec` (`20261102-005612-28624.log`).
+- `PasswordHasherSpec` 18/18, `LoginControllerSpec` 16/16 (`20261102-010106-28376.log`);
+  `PasswordStorageSpec` after the fix: exit 0, 10/10 (`20261102-010320-10416.log`).
+- One fixture start (rebuilt, v4), `gatling.GatlingSmokeSpec`: exit 0, 7/7, signing in as the
+  fixture's jurors and organizer (`20261102-010537-19228.log`).
+- Not run: `LocalImageCacheServiceDockerSpec` (Docker-gated; compiled), the full suite (after
+  B5).
+
+**Deployment:** users notice nothing. Each account's first sign-in after the release replaces
+its SHA-1 hash; a sign-in costs about 0.25 s of CPU at cost 12. Accounts that never sign in
+keep their legacy hash. No config change is needed: `production.conf` includes
+`application.conf`. Before the release, two case-sensitive counts (run on the tests' MariaDB
+by `db.scalikejdbc.UserPasswordSpec`):
+- values that will never match, neither legacy nor bcrypt (such an account can't sign in by
+  password, before or after): `SELECT COUNT(*) FROM users WHERE password IS NOT NULL AND
+  password NOT REGEXP BINARY '^([0-9a-f]{40}|\\$2[ab]\\$[0-9]{2}\\$[./A-Za-z0-9]{53})$'`;
+- legacy hashes still stored: `SELECT COUNT(*) FROM users WHERE password REGEXP BINARY
+  '^[0-9a-f]{40}$'`.
+
+**Merge note:** `ukwikidev/followups` `b4dba585` adds `test/gatling/setup/UiShotsServer.scala`
+with `User.sha1(...)`: replace it with `services.PasswordHasher.default.hash(...)` (the stored
+value for `User(..., password = Some(...))`).
+
+**Open questions**
+- `maxConcurrent = 2` rather than 4, for the 2-CPU server; raise it in config if sign-in
+  bursts queue.
+- Whether to invalidate legacy hashes of accounts that never sign in again, on a schedule.
+
+**B4 review fixes** (the review found nothing blocking):
+1. *Sign-up never shed load* → `a0f7c97d`. Sign-up takes its deadline on arrival and passes
+   it through `UserService.createAccount` to `hash`; a `Busy` is a 503 with `signin.busy`
+   (nothing created). Sign-ins and sign-ups in flight are capped by an atomic counter
+   (`bcrypt.maxQueued`, 50; 500 in the tests' config for Gatling's stress runs): over it, 503
+   at once, without queueing. The Pekko queue isn't bounded.
+2. *Hashes could reach logs through ScalikeJDBC* (slow statements at warn, failures at error,
+   both with the bound values) → `f9a5f8e4`. The statements that bind a hash (`setPasswordHash`,
+   `replaceHash`, the `create` insert in its own session) run through `User.quietly`: an
+   auto-commit session with `SettingsProvider` turning off `loggingSQLAndTime` (warning
+   included) and `loggingSQLErrors`; checked in `StatementExecutor` 4.3.2. `UserPasswordSpec`
+   forces failing writes (a value too long for the column) and captures the logs: the control
+   statement logs the value, the three password writes don't, nor does the exception's text.
+3. *A failed rehash failed the sign-in* → `f9a5f8e4`. `User.upgradeHash` logs
+   `password hash not upgraded: accountId=… error=<class>` and returns the user.
+4. *The conditional UPDATE wasn't exercised* → `f9a5f8e4`. `UserPasswordSpec` reads the
+   legacy hash, changes the password, and runs `replaceHash` with the old value: false, the new
+   hash kept; with the current value: true.
+5. *Busy left a partial edit; an import dropped it silently* → `a0f7c97d`. The edit form hashes
+   before writing anything (`User.setPasswordHash`); a `Busy` is a 503 with the form and
+   `password.busy`, nothing changed (also for a new user from the form). An import stops trying
+   after one got no turn, and the message adds `users.not.added` with the count of those not
+   added (any failure). A reset without a turn keeps the password and flashes `password.busy`.
+6. *The legacy count wasn't case-sensitive* → this commit: the deployment note's two counts
+   above (`REGEXP BINARY`), run on the tests' MariaDB (10.6) by `UserPasswordSpec`.
+7. *An invalid cost failed only the first sign-in* → `f9a5f8e4`: `AppModule` reads the
+   settings and creates `PasswordHasher.default` at start (`UserPasswordSpec`: cost 99 fails
+   the start with `bcrypt.cost must be between 4 and 16, was 99`).
+
+The tests' `bcrypt.maxWait` is now 2 seconds, so the specs that take every turn wait less.
+
+Not fixed, noted: a large import is N × 0.25 s in one request (300 users ≈ 75 s, which may
+reach Apache's proxy timeout); the first-account-is-root race in sign-up is wider now (the
+hash takes longer between the count and the insert), on a fresh database only.
+`maxConcurrent` stays 2, the user's call pending; the reviewer suggests 1 or 2, measured on
+the production CPU.
+
+**Checks after the fixes** (all through `scripts/agent-check.py`, each started when no other
+JVM ran):
+- `Test/compile` + `Gatling/compile` + `UserPasswordSpec` (5), `PasswordStorageSpec` (14),
+  `PasswordHasherSpec` (18): exit 0, 37/37 (`20261102-015649-19240.log`).
+- `Test/compile` + `LoginControllerSpec`, `UserControllerSpec`, `UserDbSpec`,
+  `MultiContestUserSpec`, `SecuredSpec`, `MessagesCompletenessSpec`, `CoiAuthorizationSpec`,
+  `ThemeSwitchSpec`: exit 0, 99/99 (`20261102-015918-21780.log`).
+
+**What remains:** merging into `ukwikidev/followups` (and fixing `UiShotsServer`'s `User.sha1`,
+see the merge note).

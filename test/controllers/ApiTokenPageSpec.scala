@@ -24,7 +24,7 @@ class ApiTokenPageSpec extends PlaySpecification with PlayTestDb {
   private def setUp(): Unit = {
     createContests(10)
     for (e <- Seq(email, otherEmail)) {
-      val user = User.create(User(e, e, password = Some(User.sha1("secret"))))
+      val user = User.create(User(e, e, password = Some(services.PasswordHasher.default.hash("secret"))))
       UserContestJdbc.createMembership(user.getId, 10, User.JURY_ROLE)
     }
   }
@@ -221,7 +221,7 @@ class ApiTokenPageSpec extends PlaySpecification with PlayTestDb {
         contentAsString(profile(app)) must not(contain("omar-cli"))
 
         // root editing Omar's account sees no tokens card, Omar's or theirs
-        User.create(User("root@example.com", "root@example.com", password = Some(User.sha1("secret")), isRoot = true))
+        User.create(User("root@example.com", "root@example.com", password = Some(services.PasswordHasher.default.hash("secret")), isRoot = true))
         val asRoot = route(app, FakeRequest(GET, s"/users/edit/${userId(otherEmail)}")
           .withSession(Secured.UserName -> "root@example.com")).get
         status(asRoot) === OK

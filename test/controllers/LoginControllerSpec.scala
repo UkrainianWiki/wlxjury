@@ -16,12 +16,14 @@ class LoginControllerSpec extends PlaySpecification with Results with PlayTestDb
 
   def userService(implicit app: Application) =
     new UserService(mock[SMTPOrWikiMail], app.configuration)
+  private def signIn(implicit app: Application) = app.injector.instanceOf[modules.SignInExecutionContext]
+
   def login(implicit app: Application) =
-    new LoginController(userService, Helpers.stubControllerComponents())
+    new LoginController(userService, Helpers.stubControllerComponents(), signIn)
 
   /** With the app's messages, for the pages' text. */
   def appLogin(implicit app: Application) =
-    new LoginController(userService, app.injector.instanceOf[ControllerComponents])
+    new LoginController(userService, app.injector.instanceOf[ControllerComponents], signIn)
 
   "auth" should {
     "fail empty request" in {
@@ -72,7 +74,7 @@ class LoginControllerSpec extends PlaySpecification with Results with PlayTestDb
       testDbApp { implicit app =>
         implicit val mat: Materializer = app.materializer
         User.create(
-          User("name", "qwerty@dot.com", password = Some(User.sha1("strong"))))
+          User("name", "qwerty@dot.com", password = Some(services.PasswordHasher.default.hash("strong"))))
         val result = appLogin
           .auth()
           .apply(
@@ -96,7 +98,7 @@ class LoginControllerSpec extends PlaySpecification with Results with PlayTestDb
         User.create(
           User("name",
                "qwerty@dot.com",
-               password = Some(User.sha1("strong")),
+               password = Some(services.PasswordHasher.default.hash("strong")),
                isRoot = true)
         )
         val result = login
@@ -117,7 +119,7 @@ class LoginControllerSpec extends PlaySpecification with Results with PlayTestDb
     "return to the requested local page after signing in" in {
       testDbApp { implicit app =>
         implicit val mat: Materializer = app.materializer
-        User.create(User("name", "return@dot.com", password = Some(User.sha1("strong"))))
+        User.create(User("name", "return@dot.com", password = Some(services.PasswordHasher.default.hash("strong"))))
 
         val result = login.auth().apply(
           FakeRequest()
@@ -141,7 +143,7 @@ class LoginControllerSpec extends PlaySpecification with Results with PlayTestDb
       testDbApp { implicit app =>
         implicit val mat: Materializer = app.materializer
         createContests(10, 20)
-        val juror = User.create(User("Juror", "juror@dot.com", None, Set("jury"), Some(User.sha1("strong")), Some(10L)))
+        val juror = User.create(User("Juror", "juror@dot.com", None, Set("jury"), Some(services.PasswordHasher.default.hash("strong")), Some(10L)))
         UserContestJdbc.createMembership(juror.getId, 20L, User.NO_ROLE)
 
         val result = appLogin.auth().apply(
@@ -159,7 +161,7 @@ class LoginControllerSpec extends PlaySpecification with Results with PlayTestDb
       testDbApp { implicit app =>
         implicit val mat: Materializer = app.materializer
         createContests(10, 20)
-        val former = User.create(User("Former", "former@dot.com", None, Set(User.NO_ROLE), Some(User.sha1("strong")), Some(10L)))
+        val former = User.create(User("Former", "former@dot.com", None, Set(User.NO_ROLE), Some(services.PasswordHasher.default.hash("strong")), Some(10L)))
         UserContestJdbc.createMembership(former.getId, 20L, User.NO_ROLE)
 
         val result = appLogin.auth().apply(
@@ -182,7 +184,7 @@ class LoginControllerSpec extends PlaySpecification with Results with PlayTestDb
           User(
             "root",
             "root-return@dot.com",
-            password = Some(User.sha1("strong")),
+            password = Some(services.PasswordHasher.default.hash("strong")),
             roles = Set(User.ROOT_ROLE)
           )
         )
@@ -267,7 +269,7 @@ class LoginControllerSpec extends PlaySpecification with Results with PlayTestDb
         User.create(
           User("root",
                "root@dot.com",
-               password = Some(User.sha1("strong")),
+               password = Some(services.PasswordHasher.default.hash("strong")),
                roles = Set(User.ROOT_ROLE))
         )
         val result = login
@@ -304,14 +306,14 @@ class LoginControllerSpec extends PlaySpecification with Results with PlayTestDb
     "not log in as an existing account with the email" in {
       testDbApp { implicit app =>
         val root = User.create(
-          User("root", "root@dot.com", password = Some(User.sha1("strong")), roles = Set(User.ROOT_ROLE))
+          User("root", "root@dot.com", password = Some(services.PasswordHasher.default.hash("strong")), roles = Set(User.ROOT_ROLE))
         )
         val result = signUp("Root@Dot.com")
 
         status(result) === BAD_REQUEST
         session(result).get(Secured.UserName) must beNone
         User.findAll().map(_.id) === Seq(root.id)
-        User.findById(root.getId).flatMap(_.password) === Some(User.sha1("strong"))
+        User.findById(root.getId).flatMap(_.password) === root.password
       }
     }
 

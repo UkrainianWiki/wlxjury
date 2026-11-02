@@ -27,6 +27,10 @@ class AppModule(environment: Environment, configuration: Configuration)
     bind(classOf[JobScheduler]).toProvider(classOf[JobSchedulerProvider]).asEagerSingleton()
 
     KOATUU.load()
+
+    // an invalid bcrypt.* setting fails the start, not the first sign-in
+    services.PasswordHasher.Settings.from(configuration.underlying)
+    services.PasswordHasher.default
   }
 
   /** The Commons bot. `MwBot.fromHost` keeps one per host, so the session [[CommonsLogin]]

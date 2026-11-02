@@ -31,11 +31,11 @@ class ThemeSwitchSpec extends PlaySpecification with PlayTestDb with Mockito {
     */
   private def setUp(): Unit = {
     createContests(10, 20)
-    val tina = User.create(User(email, email, None, Set("jury"), Some(User.sha1("secret")), Some(10L)))
+    val tina = User.create(User(email, email, None, Set("jury"), Some(services.PasswordHasher.default.hash("secret")), Some(10L)))
     UserContestJdbc.createMembership(tina.getId, 20, "organizer")
-    User.create(User(otherEmail, otherEmail, None, Set("jury"), Some(User.sha1("secret")), Some(10L)))
-    User.create(User(rootEmail, rootEmail, password = Some(User.sha1("secret")), isRoot = true))
-    User.create(User(loneEmail, loneEmail, password = Some(User.sha1("secret"))))
+    User.create(User(otherEmail, otherEmail, None, Set("jury"), Some(services.PasswordHasher.default.hash("secret")), Some(10L)))
+    User.create(User(rootEmail, rootEmail, password = Some(services.PasswordHasher.default.hash("secret")), isRoot = true))
+    User.create(User(loneEmail, loneEmail, password = Some(services.PasswordHasher.default.hash("secret"))))
   }
 
   private def themeOf(userEmail: String): Option[String] = User.findByEmail(userEmail).head.theme
@@ -289,7 +289,7 @@ class ThemeSwitchSpec extends PlaySpecification with PlayTestDb with Mockito {
         implicit val mat: org.apache.pekko.stream.Materializer = app.materializer
         // a mailer that sends nothing: a new member may get the contest's greeting
         val controller = new UserController(app.injector.instanceOf[ControllerComponents],
-          new UserService(mock[SMTPOrWikiMail], app.configuration))
+          new UserService(mock[SMTPOrWikiMail], app.configuration), app.injector.instanceOf[modules.BlockingExecutionContext])
         val result = call(controller.saveUser(), FakeRequest(POST, "/users/save")
           .withSession(Secured.UserName -> admin.email, Secured.CurrentContestId -> "10")
           .withFormUrlEncodedBody(

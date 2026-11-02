@@ -21,7 +21,7 @@ class ApiTokenJdbcSpec extends Specification with BeforeAll with BeforeEach with
   override protected def before: Any = SharedTestDb.truncateAll()
 
   private def newUser(email: String): User =
-    User.create(User(email, email, password = Some(User.sha1("secret"))))
+    User.create(User(email, email, password = Some(services.PasswordHasher.default.hash("secret"))))
 
   private def setColumn(id: Long, column: String, value: SQLSyntax): Unit =
     DB.autoCommit { implicit session =>

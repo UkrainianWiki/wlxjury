@@ -20,6 +20,12 @@ Bring the codebase into consistent compliance with the practices in `docs/securi
 - Re-hash on successful login and store the modern hash.
 - Add tests for legacy login migration and new-user password creation.
 - Acceptance: no newly created or updated password uses SHA-1.
+- **Done** (follow-ups batch B4, 2026-11-02): bcrypt `$2b$`, cost 12, in
+  `services.PasswordHasher` (`at.favre.lib:bcrypt` 0.10.2). A legacy SHA-1 hash is checked
+  only to sign in, then replaced by a bcrypt hash; every new, reset, changed or imported
+  password is stored as bcrypt; new passwords are at most 72 bytes; at most
+  `bcrypt.maxConcurrent` hash computations at once. Tests: `services.PasswordHasherSpec`,
+  `controllers.PasswordStorageSpec`.
 
 3. Fix authorization on selection/comment mutations
 - Update `GalleryController.selectWS(...)` to require round-scoped permission.

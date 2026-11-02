@@ -24,7 +24,8 @@ class MultiContestUserSpec extends PlaySpecification with PlayTestDb with Mockit
     new UserService(mail, app.configuration)
 
   private def controller(implicit app: Application) =
-    new UserController(app.injector.instanceOf[ControllerComponents], userService(mailer))
+    new UserController(app.injector.instanceOf[ControllerComponents], userService(mailer),
+      app.injector.instanceOf[modules.BlockingExecutionContext])
 
   private def messages(implicit app: Application) =
     MessagesImpl(Lang("en"), Helpers.stubMessagesApi(Map("en" -> Map("password.existing" -> "EXISTING"))))
@@ -142,7 +143,9 @@ class MultiContestUserSpec extends PlaySpecification with PlayTestDb with Mockit
 
         status(save(admin, 10, form(erin, 10, "jury", Some("new")): _*)) === SEE_OTHER
 
-        User.findById(erin.getId).flatMap(_.password) === Some(User.sha1("new"))
+        val stored = User.findById(erin.getId).flatMap(_.password)
+        stored must beSome(startWith("$2b$04$"))
+        services.PasswordHasher.default.check(stored, "new") === services.PasswordHasher.Accepted(None)
       }
     }
 

@@ -75,7 +75,7 @@ object UiShotsServer {
     // a root account, in this run's container only, for the root-only pages (the campaigns page)
     val (rootEmail, rootPassword) = ("root@ui-shots.test", "rootpass")
     if (db.scalikejdbc.User.findByEmail(rootEmail).isEmpty)
-      db.scalikejdbc.User.create(fullname = "Root", email = rootEmail, password = db.scalikejdbc.User.sha1(rootPassword),
+      db.scalikejdbc.User.create(fullname = "Root", email = rootEmail, passwordHash = services.PasswordHasher.default.hash(rootPassword),
         roles = Set(db.scalikejdbc.User.ROOT_ROLE), contestId = None)
     println(s"[ui-shots] set the Commons url of ${CommonsFileUrl.fillMissing()} images")
 

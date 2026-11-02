@@ -26,7 +26,7 @@ class CoiAuthorizationSpec extends PlaySpecification with PlayTestDb with Mockit
     Image(id, s"File:Image$id.jpg", Some(s"url$id"), None, 640, 480, Some(s"12-345-$id"), author = author)
 
   private def member(email: String, role: String, contest: Long = contestId, account: Option[String] = None): User =
-    User.create(User(email, email, None, Set(role), Some(User.sha1("secret")), Some(contest), wikiAccount = account))
+    User.create(User(email, email, None, Set(role), Some(services.PasswordHasher.default.hash("secret")), Some(contest), wikiAccount = account))
 
   /** Contest 10 with a category of 3 files (2 by its board member), a round of them shown to
     * its jurors' organizer views too (`juryOrgView`), a juror, an organizer and an admin;
@@ -239,7 +239,7 @@ class CoiAuthorizationSpec extends PlaySpecification with PlayTestDb with Mockit
         val admin = member("admin@example.com", "admin")
         val mail = mock[SMTPOrWikiMail]
         val controller = new UserController(app.injector.instanceOf[ControllerComponents],
-          new UserService(mail, app.configuration))
+          new UserService(mail, app.configuration), app.injector.instanceOf[modules.BlockingExecutionContext])
 
         val result = call(controller.importUsers(Some(contestId)),
           FakeRequest(POST, s"/admin/importusers?contestId=$contestId")
@@ -261,7 +261,7 @@ class CoiAuthorizationSpec extends PlaySpecification with PlayTestDb with Mockit
         createContests(contestId)
         val admin = member("admin@example.com", "admin")
         val controller = new UserController(app.injector.instanceOf[ControllerComponents],
-          new UserService(mock[SMTPOrWikiMail], app.configuration))
+          new UserService(mock[SMTPOrWikiMail], app.configuration), app.injector.instanceOf[modules.BlockingExecutionContext])
         val result = call(controller.importUsers(Some(contestId)),
           FakeRequest(POST, s"/admin/importusers?contestId=$contestId")
             .withSession(Secured.UserName -> admin.email, Secured.CurrentContestId -> contestId.toString)
