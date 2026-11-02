@@ -60,7 +60,7 @@ object DistributeImagesSpec {
 
   def mockRepo(images: List[Image]): ImageRepo = {
     val repo = mock[ImageRepo]
-    repo.byRoundMerged(roundId).returns(Nil)
+    repo.byRoundMerged(roundId, tally = round.isBinary).returns(Nil)
     repo.findByContestId(contestId).returns(images)
     repo
   }

@@ -1374,6 +1374,125 @@ changed).
   here (HEAD measures 1.13 s on the Gatling fixture). The single 4.9 s and 5.2 s outliers there
   did not recur in 60 samples per variant (max 1351 ms).
 
+## Batch B9: the approval sums only for a yes/no round
+
+Branch `ukwikidev/followups`, base `9e3bc9ec`. B8's open question: the grouped select
+(`ImageDbNew.SelectionQuery.query`, `grouped = true`) always adds `sum(s.rate > 0) as approvals,
+sum(s.rate < 0) as rejections`, read into `ImageWithRating.approvalsFromDb`/`rejectionsFromDb`.
+
+**Readers** (`rg -n "approvals|rejections|approvalsFromDb|grouped\s*=" app test public/javascripts`):
+
+| Reader | Query | Yes/no round | Rated round |
+|---|---|---|---|
+| `RoundList.query` (all jurors, not file list/CSV): gallery tiles, by-rate gallery, large view neighbours | grouped | gallery's `data-approvals/-rejections/-tally` and by-rate `binaryTally` only under `list.aggregateBinary` / `round.isBinary && asUserId == 0`; the large view reads neither | never read: by-rate shows stars and `rateString` (rate sum) |
+| `RoundList.query` of a juror (`asUserId != 0`) | vote rows | `binaryVote(file.rate)` | stars |
+| file list, CSV (`groupWithDetails`) | grouped `idOnly` for order/page (never had the sums), then `withVotes` rows | `binaryTally`/`rateString` count from the vote rows | `rateString` from the rows |
+| `keyCounts`, `pageKeys`, `imageRank`, `count` | own selects (order expressions `sum(s.rate > 0)` etc.) | unaffected | unaffected |
+| `ImageJdbc.byRoundMerged` → `DistributeImages` | grouped | binary top-N (`binaryCandidates`, `SelectTopByRating` with an order) and "exclude rejected by at least" read them, only for yes/no previous rounds; the current round's rows and the other previous-round reads don't | never read (`totalRate`, `rateSum`) |
+| `RoundDistributionHandler` (job path) | its own SQL with the two sums | unaffected | unaffected |
+| `tile-votes.js addTally`, `ug-theme-tiles.js`, `unitegallery.js` | `data-tally` attributes | tally where the attribute is | none emitted (gated above) |
+
+Without the columns, `approvals`/`rejections` fall back to counting the selection rows, which
+for a grouped row (one synthetic selection with the sum) would be wrong, so every yes/no reader
+of a grouped row must ask for them.
+
+**Design.** An explicit flag, `SelectionQuery.tally: Boolean = false`: with `grouped`, the select
+adds the two sums and the grouped reader reads them; without it neither (the fields stay
+`None`). Callers that know the round set it: `RoundList.query` with `tally = aggregateBinary`
+(all jurors on a yes/no round), `byRoundMerged(..., tally)` (`ImageRepo` too) with `tally = true`
+only on `DistributeImages`' two yes/no-only reads. No guessing from the rate filter or round id.
+Rated pages already never show a tally (gated on `isBinary`); specs pin that.
+
+### B9 results
+
+Commits `a62a286f` (the plan above), `a004dac8` (the change), then this one.
+
+**Change.** `SelectionQuery.tally` (default false) adds `sum(s.rate > 0) as approvals,
+sum(s.rate < 0) as rejections` to a grouped select and has `Readers.groupedReader(tally)` read
+them; otherwise `approvalsFromDb`/`rejectionsFromDb` stay `None`. Set by `RoundList.query` as
+`aggregateBinary && !withDetails` (all jurors on a yes/no round; a file list's and CSV's tallies
+count their vote rows, and their grouped `idOnly` query never had the sums), and by
+`DistributeImages` through `byRoundMerged(..., tally = true)` on its two yes/no-only reads
+(both derived from the round's kind since the review fixes below).
+Counts, `idOnly`, `keyCounts`, `pageKeys` and a juror's rows are unchanged. No view changed: the
+rated pages already showed no tally; specs now pin it.
+
+**Specs.** `ImagesSqlSpec` (grouped SQL without the sums; with `tally`; count/idOnly/juror SQL
+the same either way), `ImageDbNewDbSpec` (the sums `None` without `tally`, sum and count still
+there), `JurorImagesSpec` (approvals and rejections with `tally`, `None` without),
+`RoundListSpec` (`tally` only for all jurors on a yes/no round's gallery/by-rate list),
+`GalleryTileStarsViewSpec` (a rated round's organiser tiles carry no `data-approvals`,
+`-rejections`, `-tally`), `GalleryByRateViewSpec` (a rated round's organiser by-rate page: stars
+and `rateString`, no `.wlx-approvals`); `RoundDistributionJobSpec`'s binary top-N reference
+reads with `tally = prev.isBinary`, as `DistributeImages` does. Runs: `Test/compile`,
+`Gatling/compile` and DB/controller/view/distribution specs (`db.scalikejdbc.{ImagesSqlSpec,
+ImageDbNewDbSpec,JurorImagesSpec}`, `controllers.{RoundListSpec,RoundListDbSpec,
+AllJurorsListSpec,CsvSpec,OwnVotesSpec,GalleryOrderSpec,LargeImageSpec,
+TopBinaryOrderChoiceSpec}`, `views.*`, `org.intracer.wmua.cmd.*`,
+`services.distribution.{RoundRedistributionFiltersSpec,RoundDistributionJobSpec}`): 422 tests,
+1 failure (`target/checks/20261102-104458-26564.log`), the new `RoundListSpec` case expecting no
+`tally` on a file list, fixed by `&& !withDetails`; rerun of `controllers.{RoundListSpec,
+RoundListDbSpec,AllJurorsListSpec,CsvSpec}`, `views.{FileListViewSpec,LargeViewControllerSpec}`:
+71 passed (`target/checks/20261102-110006-10192.log`). No full suite.
+
+**Benchmark, method.** As B8: one fork of `Test/runMain gatling.setup.GalleryLatencyBenchmark`
+per run, `-Dbench.cases=^organizer-(binary|rated)-byrate-p1$ -Dbench.warmup=1
+-Dbench.samples=15`, fork `-Xmx1024m -Dfile.encoding=UTF-8 -Dgatling.timing=true
+-Dscalikejdbc.global.loggingSQLAndTime.enabled=false` (SQL logging off in both), HikariCP in
+both, one JVM at a time (shared lock with the other worktree's agent). A = `9e3bc9ec` in a
+detached worktree with its own `data/cache` (removed afterwards), B = `a004dac8`. The timing
+logs confirm the variants: the rated page's grouped query has `as approvals` in all A samples
+and none of B's; the yes/no page's in both (the control: same SQL). Pilot A, B, B, A was
+ambiguous for the rated page (block deltas -139 to +215 ms), so it was expanded once with
+B, A, A, B. Raw: `target/checks/b9-byrate-paired.json` (summary, every sample),
+`target/checks/b9-byrate-paired/{A1..A4,B1..B4}-{client.csv,timing.jsonl,sbt.log}`. Paired
+deltas: B run k minus A run k, sample by sample and per block of 5.
+
+| Page (client ms) | Base median (min-max) | HEAD median (min-max) | Paired delta, median (min-max) | Block median deltas |
+|---|---|---|---|---|
+| by-rate, round 2 (rated), all jurors | 1220 (1060-1841) | 1229 (1074-2703) | **-18** (-531 to +1520) | -139 to +1051; 5 of 12 positive |
+| by-rate, round 1 (yes/no, control), all jurors | 827 (714-1243) | 802 (710-1204) | -32 (-472 to +307) | -137 to +56 |
+
+Run medians, rated: A 1191, 1284, 1203, 1223; B 1343, 1110, 1608, 1202 (B3 slow throughout:
+its count and `keyCounts` were slower too). Server-side median per query (timing log, n = 60):
+
+| Query | Rated A | Rated B | Yes/no A | Yes/no B |
+|---|---|---|---|---|
+| grouped page (`GROUP BY s.page_id … LIMIT`) | 900 | 908 | 475 | 456 |
+| `COUNT(DISTINCT page_id)` | 139 | 152 | 145 | 138 |
+| `keyCounts` | 121 | 125 | 160 | 152 |
+
+Per run, the rated grouped query: A 888, 917, 892, 926; B 961, 811, 1220, 880.
+
+**Decision.** The change stays: the rated round no longer computes two sums nothing reads, and
+every yes/no display is as before. Its time saving isn't measurable on this fixture: run-to-run
+variation (~±100 ms on the grouped query, the unchanged yes/no control moving 20-30 ms) is
+larger than any effect, and B8's ~70 ms came from comparing commits that differ in more than
+the sums. Not expanded further: the change only removes work, so more runs couldn't change it.
+
+**Open**
+- A same-JVM SQL pair (the grouped page with and without the sums, alternated) would size the
+  aggregates' own cost if that ever matters; not run.
+
+The large view's JSON (`LargeViewController`, `Json.writes[ImageWithRating]`, the `Accepts.Json`
+branch) writes the case class's fields, so a rated round's grouped rows there no longer carry
+`approvalsFromDb`/`rejectionsFromDb` (they were the rated round's `sum(rate > 0)` and 0); a
+yes/no round's still do. Nothing in `public/javascripts` reads either field.
+
+### B9 review fixes
+
+| Finding | Fix | Commit |
+|---|---|---|
+| Medium: `tally` opt-in, so a new grouped reader of a yes/no round would silently count the one synthetic selection | `RoundList.query` sets `tally = round.isBinary` (only a grouped query reads it); `byRoundMerged`'s `tally` has no default and `DistributeImages` passes the round's `isBinary` on every read (current and previous rounds); unused `Round.allImages` deleted. `byRoundMerged` keeps a round id, not a `Round`: `DistributeImagesSpec`'s mock is stubbed by id and its calls pass `round.copy(...)`. Guard: `ImageWithRating.approvals`/`rejections` `require` the count from the query on a grouped row (a selection of juror 0). Checked the juror-0 rows without sums: `RoundDistributionHandler.previousCandidates`/`ratedPage` feed only `perImageFilters` (no top-N, no rejected-by: `SelectedAtLeast` reads `rateSum`, min average `totalRate`); `binaryPage` sets both; `DistributeImages`' rows now have them for a yes/no round, and a rated round's are read by `totalRate`/`rateSum` only; view fixtures with juror-0 rows set them or are rated (not read). `JurorImagesSpec` asserts the failure | `166e8082` |
+| Low: `approvals` scaladoc | says the grouped row's counts come only with `tally`, and that without it reading fails | `166e8082` |
+| Low: the large view's JSON | recorded above | this commit |
+| Nit: two view test names said "whose query has no tally" | renamed/commented: they pin the view's gate with hand-built rows | `166e8082` |
+
+Checks: `Test/compile`, `Gatling/compile`, `testOnly db.scalikejdbc.{ImagesSqlSpec,
+ImageDbNewDbSpec,JurorImagesSpec} controllers.{RoundListSpec,RoundListDbSpec,AllJurorsListSpec,
+CsvSpec} views.* org.intracer.wmua.* services.distribution.*`: 447 passed, 0 failed, 1 pending
+(`target/checks/20261102-122135-19824.log`). No benchmark rerun.
+
 ## Batch B11: ranks in the page query
 
 Branch `ukwikidev/followups-ranks` (from `9e3bc9ec`). Commits `504e1a09` (the benchmark), then
