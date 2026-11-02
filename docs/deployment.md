@@ -263,17 +263,26 @@ everywhere" on the profile, a password change or a password link, a confirmed em
 root's "End sessions" on an account's edit page end every session of that account (the password
 change keeps the browser that made it). API tokens are not sessions: a user's own password change
 leaves them (the profile's "Revoke all tokens" ends them); an accepted password link or
-invitation revokes them. Ordinary releases keep everyone signed in: the cookies are signed with
-`PLAY_HTTP_SECRET_KEY`, which a release does not change.
+invitation revokes them. Root's "Reset password" only mails a link: the account's sessions and
+tokens end when the link is used. For an account that may be compromised, root also uses "End
+sessions" on its edit page and revokes its API tokens (the "API tokens" link there) at once.
+Ordinary releases keep everyone signed in: the cookies are signed with `PLAY_HTTP_SECRET_KEY`,
+which a release does not change.
+
+Cookies from before S3 (without the sign-in times) are upgraded in place on their first request
+for 30 days after the S3 deploy (V80 records the end, `session_upgrade_window`; a restart or a
+later deploy does not move it), so nobody is signed out by the release. After that window such a
+cookie is signed out (`old_cookie_expired` on `security.auth`): a copy of an old cookie that never
+took the upgraded value (a replay) ends with it.
 
 **Rotating the signing key** (`PLAY_HTTP_SECRET_KEY` in `runtime.env`) ends every session at once,
 for every account: everyone signs in again. It also invalidates the flash and the CSRF tokens of
 open pages (a form sent from a page loaded before the restart shows the "reload the page" page
 once). API tokens and mailed links are not affected (they are checked against the database). Do
 it when the key may have leaked (a copy of `runtime.env`, a backup or a log that held it), when
-someone who could read it leaves, or to end every session without touching accounts (sessions
-from before S3 included: the in-place upgrade of those cookies gives them a fresh lifetime, an
-accepted risk). For one account, use "End sessions" instead. To rotate:
+someone who could read it leaves, or to end every session without touching accounts (cookies from
+before S3 included, which until the upgrade window ends are otherwise upgraded to a new session).
+For one account, use "End sessions" instead. To rotate:
 
 1. Generate a new random key of at least 32 bytes on the server, e.g. `openssl rand -base64 48`,
    and write it as the `PLAY_HTTP_SECRET_KEY` value in `runtime.env` (one double-quoted value,
@@ -283,6 +292,12 @@ accepted risk). For one account, use "End sessions" instead. To rotate:
    (`sudo wlxjury-release deploy ...`, which stops and starts it) or at once with
    `sudo systemctl restart wlxjury`, at a quiet time (votes in flight are retried by the user).
 3. Check `/health/ready` and sign in once.
+4. Old copies of the key: every `wlxjury-deploy` backup keeps the `runtime.env` of its time
+   (`<backup_root>/<id>/config/runtime.env`, root-only), and its `restore` writes that file back,
+   old key included. After a rotation, replace the `PLAY_HTTP_SECRET_KEY` line in those copies with
+   the new value (or delete backups that are no longer needed), so that a later restore cannot
+   bring back the rotated key. After any restore, check that `runtime.env` holds the current key
+   (compare it on the server, e.g. with `sha256sum` of the line, without printing it).
 
 ### One app instance
 

@@ -11,8 +11,12 @@ import scala.concurrent.duration._
   * at most every [[Settings.touchEvery]], so that not every response sets a cookie). The account's
   * session version ([[Secured.AuthVersion]]) ends every session at once; this ends one.
   *
-  * A session from before S3 has neither time: it counts as signed in now, and the filter stamps
-  * both on its first request (the in-place upgrade; the user's decision).
+  * A session from before S3 has neither time: here it counts as signed in now; the filter stamps
+  * both on its first request (the in-place upgrade; the user's decision), but only within the
+  * upgrade window (V80: 30 days from the S3 deploy, [[modules.SessionUpgradeWindow]]). After the
+  * window the filter signs such a cookie out, so a replayed copy of an old cookie, upgraded afresh
+  * on every request, ends with it. Every request passes the filter; only a controller called
+  * directly (a spec) sees such a session here.
   */
 object SessionLifetime {
 
@@ -65,7 +69,7 @@ object SessionLifetime {
 
   /** Why a session's times end it, if they do: `absolute`, `idle`, or `malformed` (a value that
     * is not a number, which a cookie of this app never has). A missing time counts as now (a
-    * session from before S3, upgraded in place).
+    * session from before S3, which the filter upgrades within its window or signs out).
     */
   def expiry(session: Session, now: Long = nowSeconds(), settings: Settings = default): Option[String] = {
     def time(key: String): Either[Unit, Long] =

@@ -75,6 +75,31 @@ class SessionsSpec extends PlaySpecification with PlayTestDb with AccountTestSup
     cookies(result).get(baker.COOKIE_NAME).fold(session(result).data)(c => baker.decodeFromCookie(Some(c)).data)
   }
 
+  /** Moves the pre-S3 upgrade window's end (V80) to `days` from now. */
+  private def setWindow(days: Int): Unit =
+    scalikejdbc.DB.autoCommit { implicit s =>
+      scalikejdbc.SQL(s"UPDATE session_upgrade_window SET until_at = NOW(3) + INTERVAL $days DAY WHERE id = 1")
+        .update.apply()
+    }
+
+  /** The lines a `security.auth` logger wrote while `f` ran. */
+  private def authLog[T](f: => T): (T, Seq[String]) = {
+    import scala.jdk.CollectionConverters._
+    val logger = org.slf4j.LoggerFactory.getLogger("security.auth").asInstanceOf[ch.qos.logback.classic.Logger]
+    val appender = new ch.qos.logback.core.read.ListAppender[ch.qos.logback.classic.spi.ILoggingEvent]
+    val level = logger.getLevel
+    logger.setLevel(ch.qos.logback.classic.Level.DEBUG)
+    appender.start()
+    logger.addAppender(appender)
+    try {
+      val result = f
+      (result, appender.list.asScala.toSeq.map(_.getFormattedMessage))
+    } finally {
+      logger.detachAppender(appender)
+      logger.setLevel(level)
+    }
+  }
+
   "sign out everywhere" should {
 
     "end every session of the account, this one and a second browser's" in {
@@ -362,6 +387,65 @@ class SessionsSpec extends PlaySpecification with PlayTestDb with AccountTestSup
 
         User.endSessions(juror.getId)
         signedInAs(app, juror, Seq(Secured.UserName -> juror.email)) must beFalse
+      }
+    }
+
+    "upgrade the same pre-S3 cookie again when it is replayed, but only within the window (M1)" in {
+      withCsrfApp { implicit app =>
+        createContests(10)
+        val juror = contestMember("juror@example.com")
+        val old = Seq(Secured.UserName -> juror.email, Secured.CurrentContestId -> "10")
+        // the cookie as the browser had it before S3, sent twice (never the upgraded value)
+        status(send(app, GET, s"/users/edit/${juror.getId}", old)) === OK
+        status(send(app, GET, s"/users/edit/${juror.getId}", old)) === OK
+      }
+      // after the window (a fresh app reads it): the old cookie is signed out, an S3 one is not
+      withCsrfApp { implicit app =>
+        createContests(10)
+        val juror = contestMember("juror@example.com")
+        setWindow(-1)
+        try {
+          val old = Seq(Secured.UserName -> juror.email, Secured.CurrentContestId -> "10", "csrfToken" -> token(app))
+          val (refused, lines) = authLog { val r = send(app, GET, s"/users/edit/${juror.getId}", old); status(r); r }
+          status(refused) === SEE_OTHER
+          redirectLocation(refused).get must startWith("/auth")
+          session(refused).get(Secured.UserName) must beNone
+          lines must contain("session_expired reason=old_cookie_expired accountId=none")
+          signedInAs(app, juror, signedIn(juror)) must beTrue
+        } finally setWindow(30)
+      }
+    }
+
+    "write an upgrade or a refresh only from a page or a POST, not a script's request (L1)" in {
+      withCsrfApp { implicit app =>
+        createContests(10)
+        val juror = contestMember("juror@example.com")
+        def script(session: Seq[(String, String)]) =
+          route(app, FakeRequest(GET, s"/users/edit/${juror.getId}")
+            .withHeaders(COOKIE -> "PLAY_SESSION=signed-in", "X-Requested-With" -> "XMLHttpRequest")
+            .withSession(session: _*)).get
+
+        // the profile itself puts its form's nonce in the session: that write keeps last_seen as sent
+        val staleSession = withToken(signedIn(juror, seenAgo = 600), token(app))
+        val stale = script(staleSession)
+        status(stale) === OK
+        sessionCookie(app, stale).get(SessionLifetime.LastSeen) must
+          beNone.or(beSome(staleSession.toMap.apply(SessionLifetime.LastSeen)))
+
+        val keptSession = withToken(signedIn(juror, seenAgo = 600, keep = true), token(app))
+        val kept = script(keptSession)
+        status(kept) === OK
+        sessionCookie(app, kept).get(SessionLifetime.LastSeen) must
+          beNone.or(beSome(keptSession.toMap.apply(SessionLifetime.LastSeen)))
+
+        val old = script(Seq(Secured.UserName -> juror.email, "csrfToken" -> token(app)))
+        status(old) === OK
+        session(old).get(SessionLifetime.IssuedAt) must beNone
+
+        // a sign-out for the limits is written by any response
+        val expired = script(withToken(signedIn(juror, issuedAgo = 400 * day), token(app)))
+        status(expired) === UNAUTHORIZED
+        session(expired).get(Secured.UserName) must beNone
       }
     }
 
