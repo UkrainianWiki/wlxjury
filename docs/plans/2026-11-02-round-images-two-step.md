@@ -37,7 +37,7 @@ Marks: **[user]** decided by the user; **[rec]** recommendation, not yet confirm
 | D11 | New tables: singular snake_case (rule in CLAUDE.md) | [user] |
 | D12 | Rename as its own step with no behaviour change, after the open branches merge; Scala rename in a separate commit | [rec] |
 | D13 | Counts kept by same-transaction deltas in the DAO, plus a repair job; no triggers | [rec] |
-| D14 | Phases P0 rename → P1 membership → P1b CoI disqualification → P2a counts in shadow → P2b reads behind a flag → P3 two-step flow | [rec] |
+| D14 | Phases P0 rename → P1 membership → P1b CoI disqualification → P2a counts in shadow → P2b reads behind a flag → P3 two-step flow | [rec]; P1b right after P1 [user] |
 | D15 | A general `rounds.status` (draft / paused / active / finalized / cancelled) instead of a review flag | [rec] |
 | D16 | Rows are never deleted, except: a re-apply in review, before any vote exists in the round, deletes the `fill` rows that no longer pass | [rec] |
 | D17 | Top-N on re-apply: re-ranked from scratch, disqualified files skipped; already distributed files count toward N (today's rule) | [rec] |
