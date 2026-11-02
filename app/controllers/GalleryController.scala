@@ -285,9 +285,9 @@ class GalleryController @Inject() (
 
   def selectWS(roundId: Long, pageId: Long, select: Int): EssentialAction =
     // a tile's vote, sent by script: JSON answers (401, 403 with the denial's reference, 409,
-    // 400 for a rate the round doesn't take) that the gallery explains (vote-errors.js). It
-    // changes only the juror's own selection of the file in the round (SelectionJdbc.rate): a
-    // file not assigned to them changes nothing and is a 404.
+    // 400 for a rate the round doesn't take or any rate in a criteria round) that the gallery
+    // explains (vote-errors.js). It changes only the juror's own selection of the file in the
+    // round (SelectionJdbc.rate): a file not assigned to them changes nothing and is a 404.
     withAuthJson(
       roundPermission(
         User.ADMIN_ROLES ++ User.JURY_ROLES ++ User.ORG_COM_ROLES,
@@ -299,7 +299,9 @@ class GalleryController @Inject() (
     // frozen while a distribution reads its votes, or a round still being distributed.
     if (!round.exists(_.openToJurors))
       Conflict(play.api.libs.json.Json.obj("error" -> "round_closed"))
-    else if (!round.exists(_.acceptsRate(select)))
+    // a criteria round's votes are per criterion, in the large view: a file's own rate would
+    // overwrite the sum of its criteria (its tiles have no stars)
+    else if (!round.exists(r => r.acceptsRate(select) && !r.hasCriteria))
       BadRequest(play.api.libs.json.Json.obj("error" -> "invalid_rate"))
     else if (SelectionJdbc.rate(pageId = pageId, juryId = user.getId, roundId = roundId, rate = select) == 0)
       NotFound(play.api.libs.json.Json.obj("error" -> "not_found"))

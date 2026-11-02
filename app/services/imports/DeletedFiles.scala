@@ -57,6 +57,7 @@ object DeletedFiles {
     val deleted = ImageJdbc.deletedOrArchived(pageIds)
     if (deleted.isEmpty) Nil
     else {
+      ImageJdbc.lockRoundsOfArchived(deleted) // first: rounds before files and votes, as markDeleted
       ImageJdbc.lockFiles(deleted ++ alsoLock)
       ImageJdbc.clearDeleted(deleted)
       ImageJdbc.restoreVotes(deleted)
