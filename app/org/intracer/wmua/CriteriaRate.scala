@@ -35,7 +35,11 @@ object CriteriaRate extends SQLSyntaxSupport[CriteriaRate] {
 
   /** [[updateRate]] in the caller's transaction. */
   def updateRateIn(selection: Long, criteria: Long, rate: Int)(implicit session: DBSession): Boolean =
-    sql"SELECT id FROM selection WHERE id = $selection FOR UPDATE".map(_.long(1)).single().isDefined && {
+    // not the vote of a juror stopped on the round (P6), also when the stop races the vote
+    sql"""SELECT s.id FROM selection s WHERE s.id = $selection
+            AND NOT EXISTS (SELECT 1 FROM round_user ru
+                            WHERE ru.round_id = s.round_id AND ru.user_id = s.jury_id AND ru.active = FALSE)
+          FOR UPDATE""".map(_.long(1)).single().isDefined && {
       // the driver counts the rows matched, not changed (useAffectedRows off): a vote of the
       // stored rate counts too
       val matched = sql"""UPDATE criteria_rate SET rate = $rate

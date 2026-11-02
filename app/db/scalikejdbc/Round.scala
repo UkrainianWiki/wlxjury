@@ -581,6 +581,14 @@ object RoundUser extends JoinTable[RoundUser] {
   def byRoundId(roundId: Long): List[RoundUser] =
     where("roundId" -> roundId).apply()
 
+  /** Whether the user is stopped on the round: their round_user row is inactive (P6). They
+    * get no new images ([[User.distributionJurors]]) and may not vote; a juror without a row (a
+    * legacy round's) is not stopped.
+    */
+  def isStopped(roundId: Long, userId: Long)(implicit session: DBSession = AutoSession): Boolean =
+    sql"""SELECT 1 FROM round_user WHERE round_id = $roundId AND user_id = $userId AND active = FALSE"""
+      .map(_.int(1)).single.apply().isDefined
+
   def setActive(roundId: Long, userId: Long, active: Boolean): Int =
     updateBy(sqls.eq(ru.roundId, roundId).and.eq(ru.userId, userId))
       .withAttributes("active" -> active)

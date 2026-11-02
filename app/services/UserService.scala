@@ -80,7 +80,8 @@ class UserService @Inject()(val sendMail: SMTPOrWikiMail,
             case None if !access || (if (byEmail) account.mayTakeAccessRole else account.wikiAccountVerified) =>
               val added = UserContestJdbc.createMembership(account.getId, cId, role)
               val member = User.findInContest(account.getId, cId).getOrElse(account)
-              val needsPassword = added && access && byEmail && account.password.isEmpty &&
+              // no password, or a retired legacy one (P8): only an invitation lets its owner in
+              val needsPassword = added && access && byEmail && !account.hasUsablePassword &&
                 !account.isRoot && account.emailLo.nonEmpty
               if (needsPassword)
                 // no password to "use as before": the invitation sets one

@@ -142,10 +142,11 @@ class ImageProxyFileCheckSpec
       // New_ files are on this Wikimedia: the redirect is not for a failed fetch
       val (proxy, _, check) = controller(Seq(renamed(old, "New_name").copy(width = 4000, height = 3000)))
 
-      val result = proxy.serve("a/ab/Old_name.jpg/1280px-Old_name.jpg")(signedIn)
+      // the stored 800-wide file's large view fallback (P5: the only wide size served)
+      val result = proxy.serve("a/ab/Old_name.jpg/960px-Old_name.jpg")(signedIn)
       status(result) === SEE_OTHER
       check.stop()
-      redirectLocation(result) must beSome(endWith("/wikipedia/commons/thumb/c/cd/New_name.jpg/1280px-New_name.jpg"))
+      redirectLocation(result) must beSome(endWith("/wikipedia/commons/thumb/c/cd/New_name.jpg/960px-New_name.jpg"))
     }
 
     "be no wider than the file now is when it was uploaded again smaller" in {

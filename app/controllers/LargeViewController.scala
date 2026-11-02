@@ -1,6 +1,6 @@
 package controllers
 
-import db.scalikejdbc.{MonumentJdbc, Round, SelectionJdbc, User}
+import db.scalikejdbc.{MonumentJdbc, Round, RoundUser, SelectionJdbc, User}
 import modules.RequestTiming
 import org.intracer.wmua._
 import play.api.i18n.I18nSupport
@@ -55,7 +55,8 @@ class LargeViewController @Inject() (
         roundId
       )
     ) { user => implicit request =>
-    Round.findById(roundId).filter(_.openToJurors).fold(
+    // a round open to its jurors, and the juror not stopped on it (P6): else as a stopped round
+    Round.findById(roundId).filter(_.openToJurors).filterNot(_ => RoundUser.isStopped(roundId, user.getId)).fold(
       Redirect(routes.GalleryController.list(user.getId, 1, region, roundId))
     ) {
       // a rate the round doesn't take (the stars and keys give none), or a vote the round

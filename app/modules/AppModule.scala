@@ -25,6 +25,8 @@ class AppModule(environment: Environment, configuration: Configuration)
     bind(classOf[MonumentListSource]).to(classOf[MwMonumentListSource])
     // eager: started with the app, it takes over the jobs a previous run left
     bind(classOf[JobScheduler]).toProvider(classOf[JobSchedulerProvider]).asEagerSingleton()
+    // eager: replaces the legacy password hashes left after their grace period (P8, V81)
+    bind(classOf[LegacyPasswordRetirementTask]).asEagerSingleton()
 
     KOATUU.load()
 

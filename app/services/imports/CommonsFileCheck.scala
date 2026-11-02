@@ -294,8 +294,15 @@ object CommonsFileCheck {
   /** Only these urls' page ids are Commons page ids. */
   def isCommonsFile(image: Image): Boolean = image.url.exists(isCommonsUrl)
 
-  /** A file uploaded to Commons, not to another wiki. */
-  def isCommonsUrl(url: String): Boolean = url.contains("//upload.wikimedia.org/wikipedia/commons/")
+  private val CommonsUrl = """(?:https?:)?//upload\.wikimedia\.org/wikipedia/commons/.*""".r
+
+  /** A file uploaded to Commons, not to another wiki: a url on Wikimedia's upload host, its
+    * path under Commons' files (P9: no other host, nor the path in another url's query).
+    */
+  def isCommonsUrl(url: String): Boolean = CommonsUrl.matches(url)
+
+  /** A protocol-relative url (`//upload.wikimedia.org/...`) as https: fetched only from there. */
+  def withScheme(url: String): String = if (url.startsWith("//")) "https:" + url else url
 
   /** The url without the tracking parameters the API adds ("?utm_source=..."): the file's
     * name is its last segment.

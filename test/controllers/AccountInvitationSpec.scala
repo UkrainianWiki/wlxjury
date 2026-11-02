@@ -373,6 +373,42 @@ class AccountInvitationSpec extends PlaySpecification with PlayTestDb with Accou
       }
     }
 
+    "reach a verified member whose legacy password was retired (P8), and an add of such an account invite it" in {
+      testDbApp { implicit app =>
+        implicit val mat: Materializer = app.materializer
+        createContests(10, 20)
+        val admin10 = account("admin10@example.com", Some(10), "admin", verified = true)
+        val retired = account("retired@example.com", Some(10), "jury", verified = true)
+        val elsewhere = account("elsewhere@example.com", Some(20), "jury", verified = true)
+        val withPassword = account("current@example.com", Some(10), "jury", verified = true)
+        DB.autoCommit { implicit s =>
+          sql"UPDATE users SET password = ${PasswordHasher.RetiredLegacy} WHERE id IN (${retired.getId}, ${elsewhere.getId})"
+            .update.apply()
+        }
+        val mail = new RecordingMail
+        def reinvite(id: Long) =
+          call(userController(mail).reinvite(id, 10),
+            as(admin10, Some(10L))(FakeRequest(POST, s"/users/$id/invite?contestId=10")).withCSRFToken)
+
+        // a verified member with a usable password still needs none
+        status(reinvite(withPassword.getId)) === BAD_REQUEST
+        mail.sent must beEmpty
+
+        status(reinvite(retired.getId)) === SEE_OTHER
+        mail.recipients === Seq("retired@example.com")
+        status(accept(mail.lastToken, "new-password")) === SEE_OTHER
+        User.login("retired@example.com", "new-password").flatMap(_.id) === retired.id
+
+        // added to another contest: an invitation, not the "use your password" greeting
+        status(add(mail, admin10, 10, "elsewhere@example.com")) === SEE_OTHER
+        mail.recipients.last === "elsewhere@example.com"
+        AccountTokenJdbc.findByUser(elsewhere.getId).map(t => (t.purpose, t.contestId)) ===
+          Seq((AccountTokenJdbc.Invitation, Some(10L)))
+        status(accept(mail.lastToken, "elsewhere-password")) === SEE_OTHER
+        User.login("elsewhere@example.com", "elsewhere-password").flatMap(_.id) === elsewhere.id
+      }
+    }
+
     "count the invitations that could not be mailed, and log account ids only" in {
       testDbApp { implicit app =>
         createContests(10)

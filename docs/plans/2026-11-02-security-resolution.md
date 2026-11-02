@@ -727,6 +727,96 @@ can't sign in).
 `round_user.active`; 409 like a stopped round). P7: option (a), a single-use password-set link reusing S2's invitation token; done in S2.
 P8: grace period 3 months for legacy SHA-1 hashes, then they are replaced by an unusable value and the user sets a password through S2's link.
 
+### S6 results (2026-11-02)
+
+**Branch** `ukwikidev/security-s6` (from `ukwikidev/followups` at 60e77c0f). **Migration V81.**
+
+- **P5 (partial).** The proxy serves a stored file only at the widths the pages ask for
+  (`LocalImageCacheService.servedWidths`): the thumbnail boxes' widths (`Global.thumbnailWidths`),
+  and the large view's fallback (`Global.largeFallbackPx`, now also used by `largeImage`); no
+  other of Wikimedia's sizes (review fix). Any other width, after the sign-in check and the file
+  lookup, is a 302 to the same thumbnail at the nearest served width (ties to the wider; a page's
+  `page1-`/`lossy-` prefix kept), nothing fetched or scaled; `MaxAllowedPx` kept. A file of
+  unknown size (the pages show the file itself, never a proxied width) goes to Wikimedia. The pages and their scripts build no thumbnail url themselves (the JavaScript only takes
+  the rendered `src`/`data-thumb`): no Jest change; `ImageProxyWidthSpec` checks that every width
+  the views render for a range of sizes (photos, PDFs, a panorama) is served. **Not done:** the
+  per-user miss limit (the plan's "count misses per user"). Residual: the large view's fallback of
+  a panorama (narrower than its widest cached thumbnail) and a thumbnail-only file narrower than
+  its box are still scaled per request, one width each.
+- **P6.** Both vote actions (`GalleryController.selectWS`, `LargeViewController.rateByPageId`, which
+  also takes criterion votes) refuse a juror whose `round_user` row is inactive
+  (`RoundUser.isStopped`) with the stopped round's answer: 409 `round_closed` in the gallery, the
+  redirect to the gallery from the large view (a stopped round's large-view answer is that redirect,
+  not a 409); nothing written. A juror without a row (a legacy round's) still votes.
+- **P8 (code).** V81 records the end of the grace period, `NOW(3) + INTERVAL 3 MONTH` at the deploy
+  (`legacy_password_retirement`, one row, `INSERT IGNORE`: never moved by a restart, a redeploy or
+  a rerun), and `legacy_password_retired` (account id, time; no hash). After the end a legacy hash
+  no longer signs in (`User.login` reads the end at each legacy sign-in; unreadable: refused), and
+  `modules.LegacyPasswordRetirementTask` (eager; 1 minute after the start, then every 6 hours;
+  `wlxjury.legacyPasswords.*`, off in the tests' config) replaces every legacy hash left with
+  `PasswordHasher.RetiredLegacy` (never matches), recording the accounts (quiet; chunks of 500,
+  each its own transaction, see the review fixes), and logs `legacy_passwords_retired count=N` at
+  WARN. Sessions are kept (an active session proves nothing about the hash). Every refused sign-in
+  shows a generic hint ("haven't signed in for a long time? ask the contest's organizers for a
+  link"): no account enumeration. The owner sets a password through an organizer's invitation (the
+  users list marks the account "password expired" with the re-invite button; an add to another
+  contest invites it: `User.hasUsablePassword`, review fix) or root's "reset password" link (S2).
+  Undo: `DROP TABLE legacy_password_retirement` or `DELETE ... WHERE id = 1` (never over, nothing
+  retired; review fix); a replaced hash is not restored, by design. Production count still unknown
+  (S9).
+- **P9.** `downloadWithRetry` fetches only from `wlxjury.thumbs.wiki-base-url`'s scheme, host and
+  port (no userinfo), refusing anything else unsent (`image_fetch_refused host=...`); an original
+  is fetched only for a url `CommonsFileCheck.isCommonsUrl` accepts, now a prefix match
+  (`(https:)//upload.wikimedia.org/wikipedia/commons/...`, not a substring: a foreign url with the
+  path in its query was accepted); redirects are not followed (Pekko's `singleRequest`).
+
+**Specs** (log `target/checks/20261102-174414-25260.log`: 279 passed, 0 failed): new
+`ImageProxyWidthSpec`, `db.LegacyPasswordRetirementMigrationSpec`; extended
+`LocalImageCacheServiceSpec` ("a fetch"; its `downloadWithRetry` cases now fetch from the
+configured base), `MutationAuthorizationSpec` and `LargeImageSpec` (CSRF router, gallery and large
+view), `PasswordStorageSpec`; plus `ImageProxyControllerSpec`, `ImageProxyFileCheckSpec`,
+`Global*Spec`, `ThumbnailUrlsExportSpec`, `ContestFilesPageSpec`, `MigrationNamingSpec`, `security.*`.
+Second batch (`target/checks/20261102-175622-16592.log`: 148, 147 passed): `MessagesCompletenessSpec`,
+`LargeViewUrlsSpec`, `LoginControllerSpec`, `SessionsSpec`, `AccountInvitationSpec`, `OwnAccountSpec`,
+`SetupSpec`, `LocalImageCacheFileCheckSpec`, `CommonsFileCheckSpec`, `RoundDistributionJobSpec`. The
+one failure, `SetupSpec` "create root once", also failed on `ukwikidev/followups` at 60e77c0f (since
+S3 a "keep me signed in" session leaves as the filter's persistent cookie, not Play's `newSession`,
+which the spec read); followups has since fixed the spec (074314c7, also asserting
+`SessionLifetime.Keep`), and S6 merged followups at 22e5d8b2 and took that version.
+
+### S6 review fixes (2026-11-02)
+
+Independent review: safe to merge (no SSRF, redirect or authorization bypass); fixes wanted before
+the grace period ends. Merged `ukwikidev/followups` (22e5d8b2) first.
+
+| Finding | Fix | Spec |
+|---|---|---|
+| Medium: organizers could not send a recovery link to most retired accounts: V77 marked most used accounts verified, and the retired marker counted as a password, so `reinvite` refused (`emailVerified && password.nonEmpty`) and an add to another contest gave the "use your password" greeting | `User.hasUsablePassword` (a password that is not `RetiredLegacy`) in the `reinvite` guard and `UserService.addToContest`'s `needsPassword` (`mayTakeAccessRole` unchanged); the users list marks such an account "password expired" with the re-invite button (the small view of who was retired; `legacy_password_retired` keeps the full list) | `AccountInvitationSpec`: a verified retired member is re-invited and sets a password; one added to another contest gets an invitation and sets a password; a verified member with a usable password still can't be re-invited |
+| Low: the documented undo was wrong: after `DROP TABLE`, the failed read counted as "over", refusing every legacy sign-in | `LegacyPasswordRetirementJdbc.secondsLeft` maps a missing table (1146 / 42S02) to None, as a missing row: never over. V81's header comment, which already says so, is unchanged (an edit would change its Flyway checksum; V81 is not on followups or production yet, so either way is safe now) | `PasswordStorageSpec`: with the table renamed away (after the end), nothing is retired and the legacy password signs in |
+| Low: one's own password or email change checked the current password against a legacy hash past its grace period until the task ran | `User.usableHash` (drops a legacy hash after the grace period), used by `login` and `UserController.saveUser`'s current-password check | `PasswordStorageSpec`: after the end, the legacy password is not taken as the current one |
+| Low: P5 fetch amplification: Wikimedia's sizes above the widest cached one were each fetched from Wikimedia on every request | `servedWidths` is the thumbnail widths and the large view's fallback only; a file of unknown size has none (redirected to Wikimedia, nothing fetched here). The per-user miss limit stays a tracked residual (register P5) | `ImageProxyWidthSpec`: 1280/1920/3840 go to the 960 fallback, nothing cached; unknown size goes to Wikimedia; `ImageProxyFileCheckSpec`'s renamed-file case uses the stored file's fallback (960) |
+| Low: P6 race: a vote racing a deactivation could land | The rate update (`SelectionJdbc.rate`) and the criterion update (`CriteriaRate.updateRateIn`'s locking read) carry `NOT EXISTS (... round_user ... active = FALSE)`; the action's check stays for the stopped round's answer | `MutationAuthorizationSpec`: both statements refuse a stopped juror's vote, nothing written |
+| Nit: the retirement locked every row of `users` | A plain read of the ids, then per chunk of 500 `UPDATE ... WHERE id IN (...) AND password REGEXP ...` and the record of exactly those rows | `PasswordStorageSpec` (retirement cases) |
+| Follow-up review: a vanished grace table or row was silent (nothing ever retired) | `LegacyPasswordRetirement.runOnce` reads the time left first and logs `legacy_password_grace_missing` once (WARN) when there is none | `PasswordStorageSpec` ("the retirement task") |
+| Follow-up review: a failing chunk hid the hashes replaced by the chunks before it | `retire` throws `RetireFailed(replaced, cause)`; the task logs `legacy_passwords_retire_failed replaced=N error=<class>` and returns N | `PasswordStorageSpec` ("the retirement task") |
+| Follow-up review: a stored file of known width but unknown height got no served widths (its thumbnails redirected to Wikimedia) | `servedWidths` is empty only for an unknown width; for an unknown height it is what the pages compute from the width | `ImageProxyWidthSpec` (800 × 0 and 4000 × 0 among the rendered sizes) |
+| Nit: a protocol-relative `//upload.wikimedia.org/...` url | `CommonsFileCheck.withScheme` (https) before `isCommonsUrl` in `source()` and in `wikiThumbUrl` | `LocalImageCacheServiceSpec` |
+
+**Review fix checks** (under the lock): `Test/compile`, `Gatling/compile`, `testOnly` of the specs
+above and `ImageProxyControllerSpec`, `LocalImageCacheFileCheckSpec`, `CommonsFileCheckSpec`,
+`LargeImageSpec`, `OwnAccountSpec`, `UserControllerSpec`, `LoginControllerSpec`, `SetupSpec`,
+`GalleryOrderSpec`, `CriteriaRateSpec`, `LegacyPasswordRetirementMigrationSpec`, `MigrationNamingSpec`,
+`MessagesCompletenessSpec`, `GlobalLargeImageSpec`, `ThumbnailUrlsExportSpec`, `security.*`: 358 passed,
+0 failed (`target/checks/20261102-193255-18272.log`). Follow-up review rows: `Test/compile`,
+`ImageProxyWidthSpec`, `PasswordStorageSpec`, `LocalImageCacheServiceSpec`, `security.*`: 129 passed,
+0 failed (`target/checks/20261102-194520-1204.log`).
+
+**Decided (user, 2026-11-02),** as the reviewer and the orchestrator recommended (no code change):
+P6, keep the large view's redirect to the gallery for a stopped juror (as for a stopped
+round); P8, do not end sessions on retirement: an active session proves nothing about the hash, its
+owner sets a password through a link when it ends, and ending it would lock out an active user
+without improving the hash's protection.
+
 ## S7: Headers and CSP
 
 **Items:** P4, P11, P3, P17.
