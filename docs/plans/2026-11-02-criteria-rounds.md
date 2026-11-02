@@ -191,6 +191,90 @@ SELECT s.round_id, COUNT(*) FROM selection s JOIN (SELECT selection, SUM(IF(rate
   without a vote after each path), a concurrency spec (two criteria of one vote in parallel
   futures, sum correct).
 
+#### C1 results (branch `ukwikidev/criteria-c1`, from `ukwikidev/followups` 1d4020b0)
+
+Implemented as planned, with the deviations noted. No schema change but V78.
+
+- **Votes refused** (`LargeViewController.rateByPageId`): in a criteria round a vote without
+  `criteria` is 400 (`vote.error.invalid.rate`, the page the out-of-range rate gets); `criteria` on
+  a round without criteria is 400; a `criteria` the juror's vote hasn't is 404 (`updateRate`
+  returns false), as a vote that isn't the juror's. The gallery's tile vote (`selectWS`) answers
+  400 `invalid_rate` for any rate in a criteria round (its tiles have no stars; vote-errors.js
+  already explains `invalid_rate`). Checks keep their order: permission (403), round open
+  (redirect/409), rate and criteria (400), own vote (404). CSRF unchanged (the filter, before the
+  action).
+- **Keys:** `keyboardNav.scala.html` renders no `data-vote-key-<digit>` in a criteria round;
+  large-keys.js binds only the keys it finds, so no JS change (Jest not rerun for it).
+- **`CriteriaRate.updateRate(selection, criteria, rate): Boolean`**: one `DB.localTx`:
+  `SELECT id FROM selection WHERE id = ? FOR UPDATE`, `UPDATE criteria_rate` (rows matched, as
+  `SelectionJdbc.rate` counts them), `SELECT SUM(IF(rate > 0, rate, 0)) … FOR UPDATE` (a locking
+  read: the latest rates, not a snapshot), `UPDATE selection SET rate`. Retried once on a
+  deadlock (error 1213 / SQLState 40001 in the cause chain; a lock wait timeout is not retried).
+  `updateRateIn` is the same in the caller's transaction (used by the lock spec). Still an update
+  of pre-created rows: the upsert is C2's (U6).
+- **Every vote delete deletes its rates**, after locking the votes:
+  `SelectionJdbc.deleteVotes(where on alias v)`, per table (selection, then selection_deleted):
+  `SELECT COUNT(*) … FOR UPDATE` (locks without sending rows), `DELETE cr … JOIN`, `DELETE v`.
+  Used by `removeImage`, `removeUnrated` and `RoundConflicts.removeFromRound` (which now locks the
+  votes before deleting their rates). `moveVotes` (`setRound`) locks the source votes and deletes
+  the rates of the duplicates it drops; moved votes keep their ids and rates.
+  `ImageJdbc.moveVotesAside` deletes the rates of an older aside row that its `REPLACE` drops
+  (same vote under another id: a file deleted, distributed again, deleted again).
+  `moveVotesBack` deletes the rates of the new unrated rows a moved-back rated row replaces and of
+  the aside rows it drops (round gone, or a new rated vote won); rows moved back keep theirs.
+  No other path deletes votes in app code (`rg` over `app/`: `Selection.destroy` sets rate -1;
+  images are never deleted, V63; rounds are deleted only by hand, which `moveVotesBack` covers).
+- **Lock order, deviation:** §3 recommends `rounds → images → selection → criteria_rate →
+  selection_deleted` with "rates written only while their vote is locked". For a vote moved aside
+  the vote row *is* the selection_deleted row, so both rules can't hold; as implemented:
+  `rounds → images → selection → criteria_rate (of live votes) → selection_deleted →
+  criteria_rate (of aside votes)`. No path locks `criteria_rate` and then waits for
+  `selection_deleted` rows, so there is no cycle. `moveVotesBack` locks `selection_deleted` before
+  `selection` as before C1; it runs under the files' locks (`DeletedFiles`), as does every archive.
+- **V78 `Criteria_rate_orphans`** (provisional number: followups is at V76 and S2 takes V77;
+  **renumber at merge time**): archives the orphans to `criteria_rate_orphans` (`LIKE
+  criteria_rate`, `INSERT IGNORE`, as V58 did with `selection_orphans`), then deletes them.
+  Idempotent: a rerun archives and deletes nothing. On the test and Gatling fixtures it deletes
+  0 rows (neither has criteria rates); the production count is C0's orphans query (not run: C0
+  skipped). P0's renames should include `criteria_rate_orphans` if it renames
+  `selection_orphans`.
+- **Removed:** `CriteriaRate.batchInsert` and `SelectionJdbc.byRoundWithCriteria` (no callers),
+  and `SelectionJdbc.c`.
+- Not done (as scoped): U12 repair of S4 damage, U5 (C3), upsert (C2).
+
+Specs:
+- `org.intracer.wmua.CriteriaRateSpec` (new): sum and 0-reset; unknown criterion and vote gone
+  false, nothing written; a second criterion vote waits for the first's uncommitted transaction
+  and then sums both (the old two autocommit statements took no lock on the vote, so the second
+  ran at once and summed without the first's rate); 20 votes × 3 criteria voted at once
+  on 6 threads, three passes, every sum right; retry once on deadlock only; no orphans after
+  `removeImage`, `removeUnrated`, `setRound`, delete + restore on Commons (rates kept), restore
+  replacing / dropping rows, restore of a deleted round's votes, and moving aside again.
+- `db.CriteriaRateOrphansMigrationSpec` (new): V78 on table copies, orphans archived and deleted,
+  rates of votes and of aside votes kept, rerun no-op; the migrated DB has the archive table.
+- `MutationAuthorizationSpec`: criterion rate range in a criteria round; 400 for the file's own
+  rate (gallery and large view) and 404 for an unknown criterion; 400 for a criterion on a plain
+  round; another juror's file 404, an organiser who isn't a juror 404, another contest's juror
+  403, signed out to the login page, nothing changed.
+- `LargeImageSpec`: own-rate vote 400 with rates and sum unchanged; unknown criterion 404; a
+  criterion vote through the router with the CSRF filter: refused without or with a forged
+  token, voted with it.
+- `LargeViewUrlsSpec`: no key votes in a criteria round. `CoiRoundSpec`: no orphans after the
+  removal.
+
+Checks (Git Bash, `scripts/agent-check.py`, sbt launcher, one JVM): `Test/compile`,
+`Gatling/compile`, and `testOnly` of CriteriaRateSpec, CriteriaRateOrphansMigrationSpec,
+MutationAuthorizationSpec, LargeImageSpec, LargeViewUrlsSpec, LargeViewControllerSpec,
+LargeViewSideSpec, CoiRoundSpec, RoundDistributionJobSpec, DeletedFilesSpec, ImageDistributorSpec,
+RoundImageCountsDbSpec, RoundCriteriaStarsSpec, MigrationNamingSpec: 219 passed, 0 failed, 1
+pending (ImageDistributorSpec's existing "Pending until fixed"); log
+`target/checks/20261102-141447-24852.log` in the C1 worktree. No full suite (not a release
+boundary); no Jest run (no JS changed).
+
+Open: the production orphan count (C0's query) for V78's commit message; whether `removeUnrated`
+should treat a partly rated criteria vote as unrated once U5 lands (C3: today `rate = 0`, i.e. no
+criterion rated).
+
 ### C2: criteria defined per round (after P0)
 
 - Schema (one migration, `criteria` is unused today, so it is reshaped in place; table keeps its
