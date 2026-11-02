@@ -33,7 +33,9 @@ class MultiContestUserSpec extends PlaySpecification with PlayTestDb with Mockit
   private def member(email: String, memberships: (Long, String)*): User = {
     val (firstContest, firstRole) = memberships.head
     val created = User.create(
-      User(email, email, None, Set(firstRole), Some("hash"), Some(firstContest))
+      // verified: an organizer's add joins it directly (an unverified one is invited, AccountInvitationSpec)
+      User(email, email, None, Set(firstRole), Some("hash"), Some(firstContest),
+           emailVerifiedAt = Some(java.time.ZonedDateTime.now))
     )
     memberships.tail.foreach { case (contest, role) => UserContestJdbc.createMembership(created.getId, contest, role) }
     created
@@ -135,17 +137,15 @@ class MultiContestUserSpec extends PlaySpecification with PlayTestDb with Mockit
       }
     }
 
-    "let a contest admin change the password of a user only in their contest" in {
+    "not let a contest admin set the password of a user only in their contest either (S2: root mails a link)" in {
       testDbApp { implicit app =>
         createContests(10)
         val admin = member("admin@example.com", 10L -> "admin")
         val erin = member("erin@example.com", 10L -> "jury")
 
-        status(save(admin, 10, form(erin, 10, "jury", Some("new")): _*)) === SEE_OTHER
+        status(save(admin, 10, form(erin, 10, "jury", Some("new")): _*)) === BAD_REQUEST
 
-        val stored = User.findById(erin.getId).flatMap(_.password)
-        stored must beSome(startWith("$2b$04$"))
-        services.PasswordHasher.default.check(stored, "new") === services.PasswordHasher.Accepted(None)
+        User.findById(erin.getId).flatMap(_.password) === Some("hash")
       }
     }
 

@@ -56,6 +56,16 @@ object ApiTokenJdbc {
                   IF(${expiresInDays.isDefined}, NOW(3) + INTERVAL ${expiresInDays.getOrElse(0)} DAY, NULL))"""
       .updateAndReturnGeneratedKey.apply()
 
+  /** As [[create]], but only while the user's auth_version is still `authVersion` (L1): a token
+    * created by a session that an accepted link has just ended is not inserted. Whether it was.
+    */
+  def createIfVersion(userId: Long, authVersion: Int, name: String, tokenHash: String, prefix: String,
+                      expiresInDays: Option[Int])(implicit session: DBSession = AutoSession): Boolean =
+    sql"""INSERT INTO api_token (user_id, name, token_hash, prefix, created_at, expires_at)
+          SELECT id, $name, $tokenHash, $prefix, NOW(3),
+                 IF(${expiresInDays.isDefined}, NOW(3) + INTERVAL ${expiresInDays.getOrElse(0)} DAY, NULL)
+          FROM users WHERE id = $userId AND auth_version = $authVersion""".update.apply() > 0
+
   def findByHash(tokenHash: String)(implicit session: DBSession = AutoSession): Option[ApiToken] =
     sql"SELECT $columns FROM api_token WHERE token_hash = $tokenHash".map(extract).single.apply()
 
@@ -70,6 +80,10 @@ object ApiTokenJdbc {
   def revoke(id: Long, userId: Long)(implicit session: DBSession = AutoSession): Boolean =
     sql"""UPDATE api_token SET revoked_at = NOW(3)
           WHERE id = $id AND user_id = $userId AND revoked_at IS NULL""".update.apply() > 0
+
+  /** Revokes every unrevoked token of the user (an account taken over by an accepted link); how many. */
+  def revokeAll(userId: Long)(implicit session: DBSession = AutoSession): Int =
+    sql"""UPDATE api_token SET revoked_at = NOW(3) WHERE user_id = $userId AND revoked_at IS NULL""".update.apply()
 
   /** Records a use: sets `last_used_at` unless it was set less than a minute ago, so that a
     * busy tool writes the row at most once a minute.

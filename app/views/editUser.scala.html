@@ -8,6 +8,10 @@
 @import helper._
 @import db.scalikejdbc.User
 
+@* the user's own profile, else another account's (shown with its verified state) *@
+@ownProfile = @{ editUserForm("id").value.contains(user.getId.toString) }
+@editedAccount = @{ editUserForm("id").value.flatMap(_.toLongOption).filter(_ != 0).flatMap(id => User.findById(id)) }
+
 
 @* the token card's copy button (copy-field.js): only on the own profile, which has the card *@
 @pageScripts = {
@@ -30,6 +34,10 @@
             @form(routes.UserController.saveUser(), Symbol("class") -> "form-vertical") {
                 @helper.CSRF.formField
 
+                @flash.get("account-notice").map { msg =>
+                    <div class="alert alert-info" role="status">@msg</div>
+                }
+
                 @if(editUserForm.hasGlobalErrors) {
                     <div class="alert alert-danger" role="alert">
                     @Messages(editUserForm.errors.head.message)
@@ -42,9 +50,24 @@
 
                     @bs.text(editUserForm("fullname"), Symbol("_label") -> Messages("full.name"), Symbol("placeholder") -> Messages("full.name"))
 
-                    @bs.text(editUserForm("wikiAccount"), Symbol("_label") -> Messages("wiki.account"), Symbol("placeholder") -> Messages("wiki.account"))
+                    @* one's own wiki account is read-only until the Commons OAuth login verifies it; an
+                       admin's change of another's leaves it unverified *@
+                    @if(ownProfile) {
+                        @bs.text(editUserForm("wikiAccount"), Symbol("_label") -> Messages("wiki.account"), Symbol("readonly") -> true, Symbol("_help") -> Messages("wiki.account.own.readonly"))
+                    } else {
+                        @bs.text(editUserForm("wikiAccount"), Symbol("_label") -> Messages("wiki.account"), Symbol("placeholder") -> Messages("wiki.account"))
+                    }
+                    @for(edited <- editedAccount; if edited.wikiAccount.exists(_.trim.nonEmpty) && !edited.wikiAccountVerified) {
+                        <p class="form-text wiki-unverified"><span class="badge text-bg-secondary">@Messages("unverified")</span> @Messages("wiki.account.unverified.hint")</p>
+                    }
 
                     @bs.text(editUserForm("email"), Symbol("_label") -> Messages("email"), Symbol("placeholder") -> Messages("email"))
+                    @for(edited <- editedAccount; if edited.email.nonEmpty && !edited.emailVerified) {
+                        <p class="form-text email-unverified"><span class="badge text-bg-warning">@Messages("unverified")</span> @Messages("email.unverified.hint")</p>
+                    }
+                    @if(ownProfile) {
+                        <p class="form-text">@Messages("email.change.explain")</p>
+                    }
 
                     @if(user.hasAnyRole(User.ADMIN_ROLES)) {
                         @bs.select(editUserForm("roles"),
@@ -73,22 +96,32 @@
                         }
                     }
 
-                    @if(true || editUserForm("id").value.contains(user.id.toString)) {
+                    @* one's own password: a new one, and the current one for it or for a new email (N2).
+                       Another account's password is never set here: root mails a link (reset password) *@
+                    @if(ownProfile) {
                         <div class="mb-3">
-                            <label for="password" class="form-label">@Messages("password")</label>
+                            <label for="password" class="form-label">@Messages("new.password")</label>
                             @defining(editUserForm("password").errors) { passwordErrors =>
-                            <input type="password" class="form-control @if(passwordErrors.nonEmpty){is-invalid}" id="password" name="password" placeholder="Password" value="" @if(passwordErrors.nonEmpty){aria-invalid="true" aria-describedby="password_error"}>
+                            <input type="password" class="form-control @if(passwordErrors.nonEmpty){is-invalid}" id="password" name="password" autocomplete="new-password" value="" @if(passwordErrors.nonEmpty){aria-invalid="true" aria-describedby="password_error"}>
                             @for(error <- passwordErrors.headOption) {<div class="invalid-feedback" id="password_error">@Messages(error.message, error.args: _*)</div>}
                             }
                         </div>
+                        <div class="mb-3">
+                            <label for="currentPassword" class="form-label">@Messages("current.password")</label>
+                            @defining(editUserForm("currentPassword").errors) { currentErrors =>
+                            <input type="password" class="form-control @if(currentErrors.nonEmpty){is-invalid}" id="currentPassword" name="currentPassword" autocomplete="current-password" value="" aria-describedby="currentPassword_help@if(currentErrors.nonEmpty){ currentPassword_error}" @if(currentErrors.nonEmpty){aria-invalid="true"}>
+                            <div class="form-text" id="currentPassword_help">@Messages("current.password.explain")</div>
+                            @for(error <- currentErrors.headOption) {<div class="invalid-feedback" id="currentPassword_error">@Messages(error.message, error.args: _*)</div>}
+                            }
+                        </div>
                     } else {
-                        @if(!editUserForm("id").value.contains("0")) {
+                        @if(user.hasRole(User.ROOT_ROLE) && !editUserForm("id").value.contains("0")) {
                             @flash.get("password-reset").map { msg =>
-                                <div class="alert alert-success">@msg</div>
+                                <div class="alert alert-success" role="status">@msg</div>
                             }
 
-                            @* the reset form is after this one (forms don't nest): the form attribute submits it *@
-                            <button type="submit" form="reset-password" class="btn btn-outline-secondary">@Messages("reset.password")</button>
+                            @* the reset form is after this one (forms do not nest): the form attribute submits it *@
+                            <p><button type="submit" form="reset-password" class="btn btn-outline-secondary">@Messages("reset.password")</button></p>
                         }
                     }
 
@@ -108,12 +141,15 @@
                 </div>
             }
 
+            @if(user.hasRole(User.ROOT_ROLE) && !ownProfile) {
             <div class="d-none">
             @form(routes.UserController.resetPassword(editUserForm("id").value.map(_.toLong).get),
                 Symbol("class") -> "form-vertical", Symbol("id") -> "reset-password") {
+                @helper.CSRF.formField
                 <input type="submit" class="btn btn-outline-secondary" value="@Messages("resetpassword")">
                 }
             </div>
+            }
         </div>
         @* the own profile only: the user's personal API tokens *@
         @for(card <- tokensCard) {
