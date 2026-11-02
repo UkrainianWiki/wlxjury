@@ -1,5 +1,7 @@
 # Security re-review: consolidated report (2026-11-02)
 
+**Status is tracked in [register.md](register.md)** (2026-11-02); the status tables below are snapshots.
+
 For the team. Detailed evidence is in the two working documents:
 
 - [Previous reviews re-checked](2026-11-02-rereview-previous.md) (item by item, `a1883256`);

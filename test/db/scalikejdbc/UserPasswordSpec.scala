@@ -83,9 +83,13 @@ class UserPasswordSpec extends PlaySpecification with PlayTestDb {
       testDbApp { _ =>
         val user = User.create(User("A", "a@example.com", password = Some("hash")))
 
-        // the check itself: an ordinary statement that fails logs the value
+        // the check itself: with ScalikeJDBC's error logging on (S5 turns it off in the app's
+        // config), an ordinary statement that fails logs the value
         val (control, controlLines) = logged {
-          Try(sql"UPDATE users SET password = $marker WHERE id = ${user.getId}".update.apply()(AutoSession))
+          val before = GlobalSettings.loggingSQLErrors
+          GlobalSettings.loggingSQLErrors = true
+          try Try(sql"UPDATE users SET password = $marker WHERE id = ${user.getId}".update.apply()(AutoSession))
+          finally GlobalSettings.loggingSQLErrors = before
         }
         control.isFailure must beTrue
         controlLines.exists(_.contains("MARKER-")) must beTrue

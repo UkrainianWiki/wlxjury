@@ -1,3 +1,5 @@
+**Status is tracked in [register.md](register.md)** (2026-11-02); the status tables below are snapshots.
+
 Security Review: XSS Prevention Mechanisms & Vulnerabilities
 
 **Status on 2026-11-02** (`ukwikidev/followups`, batches B1–B6). The findings below are kept
