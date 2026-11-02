@@ -136,9 +136,9 @@ directly, **no audit table**; any other bad value fails the migration for a pers
 2. Form: `"roles" -> optional(text.verifying("error.invalid", isContestRole || == root))`.
 3. Controller: `saveUser` refuses (400 with the form, WARN `security.roles` with account and
    target id, no value) any role `mayAssignRoles` rejects before any branch writes; the `id = 0`
-   branch also maps the service's `IllegalArgumentException` to that 400; `updateAccount` writes
+   branch also maps the service's `RoleNotAssignable` (only it) to that 400; `updateAccount` writes
    `user_contest` only for `isContestRole`. Root still goes only through `User.setRoot`.
-   `UserService.addToContest` `require`s `mayAssignRoles(creator, formUser.roles)`.
+   `UserService.addToContest` throws `UserService.RoleNotAssignable` unless `mayAssignRoles(creator, formUser.roles)`.
 4. DAO: `createMembership`, `updateRole` and `User.create` (before inserting the user) `require`
    an allowlisted role.
 5. Reader: `UserContest.roles` is `Set(role)` if allowlisted, else empty (inactive membership,
@@ -174,7 +174,36 @@ plus `UserControllerSpec`, `UserDbSpec`, `MultiContestUserSpec`, `SecuredSpec`,
 `ukwikidev/hotfix-role-allowlist` (from `6fa5b56f`): items 1–5 with the deployed form's four
 roles (`no`, `jury`, `organizer`, `admin`; a subset of V76's list), no migration; the data
 script `docs/security/2026-11-02-role-allowlist-data.sql` there does V76's `UPDATE` by hand.
-When merging the hotfix into the forward branch, keep this branch's `FORM_ROLES` (seven roles).
+
+**Merging the hotfix into the main line** (reviewer's recommendation; not done yet): S1 is a
+superset of the hotfix, and a plain merge conflicts (and duplicates `object UserContest`), so
+```bash
+git merge -s ours ukwikidev/hotfix-role-allowlist
+git checkout ukwikidev/hotfix-role-allowlist -- docs/security/2026-11-02-role-allowlist-*
+git commit
+```
+keeping this branch's code (`FORM_ROLES` with seven roles) and taking the hotfix's runbook docs.
+
+**V76 release runbook:** before deploying the release that carries V76, run query 3 above, or
+the hotfix data script's final SELECT (`docs/security/2026-11-02-role-allowlist-data.sql`, step
+4): it must list nothing (it catches e.g. `prejury`, which query 1 did not report). V76's
+`UPDATE` commits before the `CHECK` is added, so a bad row fails the migration after that
+commit: Flyway records a failed V76, the app does not start, and readiness stays down. Then run
+`sudo wlxjury-release restore OPERATION` (the release changes the schema, so a dump was taken),
+fix the rows by hand, and deploy again.
+
+**S1 review fixes** (independent review: no path to root or an un-allowlisted role in either
+tree; the backport code is safe to deploy as is):
+
+| Finding | Fix | Commit |
+|---|---|---|
+| Medium: the runbook lacked the `is_root` audit; role queries alone don't prove N1 unused (an exploiter can reset their own membership; Apache logs give only time and IP of `POST /users/save`) | Data script step 1 and deploy note step 4: `SELECT id, created_at, is_root FROM users WHERE is_root = 1`, compared with the known ids 3, 651, 1167, 1307, 1752; any other id is an incident | hotfix `729e0cf5` |
+| Low: `COMMIT` could run unchecked if the file were piped into `mysql` | One statement at a time, never piped; `COMMIT` a separate step after "22 rows affected", else `ROLLBACK` | hotfix `729e0cf5` |
+| Low: smoke test used a real member and `jury,root` first | A throwaway member; `roles=root` first (expect 400 and a `security.roles` "refused a role that is not assignable" line), `jury,root` only then; check its `is_root` and role afterwards | hotfix `729e0cf5` |
+| Nit: deploy note's file names differed from the built ZIP | Uses `wlxjury-0.13-authz-rolefix-303c80e0a6cb.zip` and its SHA-256; says the ZIP is built from `303c80e0` and later docs commits don't change it | hotfix `729e0cf5` |
+| Nit: `saveUser` mapped every `IllegalArgumentException` from `createNewUser` to a role refusal | `UserService.RoleNotAssignable` (an `IllegalArgumentException`) thrown by `addToContest`, the only one caught; `RoleAssignmentSpec` checks another one reaches the error handler (`RoleAssignmentSpec`, `UserControllerSpec`, `MultiContestUserSpec`: 37 passed) | `10bb190d` |
+| Low: no V76 release runbook | "V76 release runbook" above | this commit |
+| Merge advice | "Merging the hotfix into the main line" above (`-s ours`, then the hotfix's docs) | this commit |
 
 ## S2: Account integrity
 
