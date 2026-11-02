@@ -112,3 +112,60 @@ is itself a review item.
    tests).
 3. Each remaining guard with its batch (table above); G2/G2b may go early since they only assert
    the current state.
+
+## Results (2026-11-02)
+
+Branch `ukwikidev/security-practices` (from `ukwikidev/followups` e02a86de, merged up to
+58c5a2b8, which allowlisted S2's and C1's guard hits). Order steps 1 and 2, and G2/G2b of step 3.
+
+**Documents:**
+
+- `docs/security/secure-coding.md` (new): threat model, the allowlist rule (a guard hit, also
+  after a merge, is fixed or allowlisted per file with a reason; patterns never widened), and
+  sections 1–20: SQL, secrets in config, password storage, secrets in scripts, CSP/inline JS,
+  cookies and headers, host header and absolute URLs, raw HTML and DOM sinks (vendored
+  libraries), authorization and contest scoping, roles (N1), CSRF, errors, logs, accounts (S2),
+  sessions (S2/S3), exports, outbound requests, limits, dependencies (Pekko with scalawiki),
+  deployment config (O1). Each: rule, example (file and function, checked on this branch),
+  guard (spec or "planned: G<n>" with its batch), exceptions with their allowlist entries.
+  Absorbs `incident-prevention-guidelines.md`'s practices, standards and checklist; that file
+  is now a pointer (decision 1).
+- `docs/security/review-checklist.md` (new): lines by change type pointing to the sections,
+  a guards line, and the release gate (`security.*` and the authorization specs, full suite and
+  Jest, the G11 report, the roadmap's pre-deploy items, template parity).
+- `docs/security/register.md` (new): open/in-progress and fixed tables (ID, title, severity,
+  status, owner, batch, guard, last checked) with the state on followups, C1 and the production
+  hotfix included; maintenance rules (who, new items, cadence per decision 2, release gate).
+- `.github/pull_request_template.md` (new): the "Touches" boxes and the four checks.
+- CLAUDE.md: a "Security" section after the overview (not in "Authentication & Authorization",
+  which S3 edits). The role rule and the pac4j line were already done by S1 and S10. AGENTS.md:
+  one pointer paragraph.
+- Pointer lines "Status is tracked in register.md" on `review.md`,
+  `local-images-review-followups.md`, `incident-prevention-implementation-plan.md` and the
+  consolidated report (P16); the resolution plan's "Results" rule and the roadmap point to the
+  register.
+
+**Guards added** (`test/security/`):
+
+- G1 `RoleValuesSpec`: no `.split(` on a `role…` value in `app/`; every form field named
+  `role`/`roles` in `app/controllers` has a `verifying` (allowlisted: `EditRound`'s round role
+  label, which only picks members of the round's own contest as jurors); `ContestRoles` is
+  exactly `FORM_ROLES` without root or markers; `isContestRole` refuses list, space, case,
+  root and marker values; `mayAssignRoles` gives root only to a root editor. The DAO writers'
+  refusals are not repeated (`UserContestSpec` has them since S1).
+- G2 `RouteAuthSpec`: every routed action's body (or a helper of the same file it calls first,
+  e.g. `GalleryController.listGeneric`) uses `withAuth`, `withAuthOn`, `withAuthJson` or
+  `withAuthJsonOn`; else it is in `Public` (14, with reasons) or `ChecksSessionItself`
+  (`ImageProxyController.serve`, `RoundController.newFilesCount`, `JobController.status`). No
+  stale entries. The API include is not in the router's documentation (`ApiSpec` covers it).
+- G2b `SignedOutSpec`: every non-public route (placeholder ids, required query parameters from
+  the route's documentation) without a session: as a page, a login redirect or 401; by script,
+  401. It starts the shared test app, so `security.*` now needs Docker.
+
+**Not added (with their batches):** G3/G3b (with N6, S3 or S7), G6 (S7), G7 (S3), G10/G10b
+(S6), G12 (infra plan's secret scan), G14 (S8). G11 is not automated (no update or
+vulnerability plugin in `project/plugins.sbt`); the checklist's release gate describes the
+manual report. G4, G5, G8, G9, G13 came with S5.
+
+**Checks:** from Git Bash under the shared lock, `Test/compile` and `testOnly security.*`:
+18 passed (`target/checks/20261102-163308-28616.log`).
