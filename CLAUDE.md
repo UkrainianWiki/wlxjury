@@ -146,6 +146,8 @@ Session-based auth via Play session cookie (username stored as `"username"` key,
 
 One MariaDB Testcontainer per JVM, shared across all specs via `SharedTestDb` (lazy singleton). One Play app per JVM via `SharedPlayApp` (reuses the same container). DAOs available as `contestDao`, `imageDao`, `roundDao`, `selectionDao`, `userDao`.
 
+The test server (`SharedTestDb.forTests`, also `ConvertToInnoDbMigrationSpec`'s databases on it and `SchemaBaselineSpec`'s container; not the Gatling fixture's, which stays production-like) keeps its data directory on tmpfs (1 GB cap) with sized caches (128M buffer pool, 48M redo log, 2000 open tables): `TRUNCATE` re-creates table files, 0.5–1 s per `truncateAll` on disk against 30–40 ms on tmpfs. The data lives in the Docker VM's memory (about 350 MB). Specs that read the live Wikimedia Commons (`AppendImagesSpec` "get international images", `ImagesFromListSpec`, `LocalImageCacheServiceIntegrationSpec`) are skipped unless run with `-Dintegration=true`: `sbt -Dintegration=true "testOnly controllers.AppendImagesSpec controllers.ImagesFromListSpec services.LocalImageCacheServiceIntegrationSpec"` (with the direct launcher on Windows the `-D` goes before `-jar`; `build.sbt` forwards it to the forked JVM).
+
 **Isolation strategy — choose based on whether service code uses `autoSession`:**
 
 | Scenario | Approach |

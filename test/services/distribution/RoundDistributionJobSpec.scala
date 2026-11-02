@@ -103,9 +103,17 @@ class RoundDistributionJobSpec extends Specification with TestDb with BeforeAll 
     round.addUsers(jurors.map(u => RoundUser(round.getId, u.getId, "jury", active = true)))
     di.distributeImages(round, jurors, Nil)
     val random = new Random(seed)
-    VoteJdbc.byRound(round.getId).foreach { s =>
+    val votes = VoteJdbc.byRound(round.getId).map { s =>
       val rate = if (rates == Round.binaryRound) random.nextInt(3) - 1 else random.nextInt(rates.maxRate + 1)
-      VoteJdbc.rate(s.pageId, s.juryId, round.getId, rate)
+      Seq(rate, s.pageId, s.juryId, round.getId)
+    }
+    // one batch in one transaction: VoteJdbc.rate per vote was ~1400 autocommits (9 s)
+    val c = VoteJdbc.column
+    DB.localTx { implicit session =>
+      withSQL {
+        update(VoteJdbc).set(c.rate -> sqls.?)
+          .where.eq(c.pageId, sqls.?).and.eq(c.juryId, sqls.?).and.eq(c.roundId, sqls.?)
+      }.batch(votes: _*).apply()
     }
     round
   }
