@@ -34,7 +34,7 @@ class ImageDistributorSpec extends Specification with TestDb with Mockito
     val jurors = (start until jurorsNum + start).map(contestUser(_))
     val dbJurors = jurors.map(userDao.create)
 
-    val preJurors = (start until jurorsNum + start).map(i => contestUser(i + 100, "prejury"))
+    val preJurors = (start until jurorsNum + start).map(i => contestUser(i + 100, User.NO_ROLE)) // members, not jurors
     preJurors.foreach(userDao.create)
 
     if (start == 1) {
