@@ -29,6 +29,9 @@
         @if(flash.get("api-token-revoked").isDefined) {
             <div class="alert alert-info" role="status">@Messages("api.token.revoked")</div>
         }
+        @for(count <- flash.get("api-tokens-revoked-all").flatMap(_.toIntOption)) {
+            <div class="alert alert-info" role="status">@Messages("api.tokens.revoked.all", count)</div>
+        }
 
         @if(card.tokens.isEmpty) {
             <p>@Messages("api.tokens.none")</p>
@@ -72,6 +75,13 @@
                     </tbody>
                 </table>
             </div>
+            @* every token at once (S3): a password change leaves them *@
+            @if(card.tokens.exists(!_.revoked)) {
+                @form(routes.UserController.revokeAllApiTokens(), Symbol("class") -> "mb-3", Symbol("id") -> "api-tokens-revoke-all") {
+                    @csrfField()
+                    <button type="submit" class="btn btn-sm btn-outline-danger">@Messages("api.tokens.revoke.all.mine")</button>
+                }
+            }
         }
 
         <h3 class="h6 mt-3">@Messages("api.token.create")</h3>
