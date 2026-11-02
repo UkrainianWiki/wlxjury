@@ -339,6 +339,21 @@ object ImageJdbc extends CRUDMapper[Image]
           .toSet
     }
 
+  /** Locks, shared and in id order, the rounds of the files' votes moved aside, before the
+    * files and their votes: [[restoreVotes]] reads them (a vote goes back only to a round that
+    * still exists), and a shared lock taken there, after the votes, deadlocked with the paths
+    * that lock a round first (leaving out conflicts of interest, a distribution's chunk). Read
+    * from the snapshot, as [[lockOpenRoundsOf]] reads the open rounds.
+    */
+  def lockRoundsOfArchived(pageIds: Seq[Long])(implicit session: DBSession): Unit =
+    if (pageIds.nonEmpty) {
+      val roundIds = sql"SELECT DISTINCT round_id FROM selection_deleted WHERE page_id IN ($pageIds)"
+        .map(_.long(1))
+        .list()
+      if (roundIds.nonEmpty)
+        sql"SELECT id FROM rounds WHERE id IN ($roundIds) ORDER BY id LOCK IN SHARE MODE".map(_.long(1)).list(): Unit
+    }
+
   /** Moves the selection rows of `pageIds` in the `roundIds` rounds to selection_deleted
     * (V63): every gallery, count and result reads selection, so they no longer show the
     * files. A row moved before (a file deleted, restored and deleted again) is replaced by
@@ -414,9 +429,11 @@ object ImageJdbc extends CRUDMapper[Image]
     * Criteria rates follow their votes: the moved rows keep their ids and so their rates; the
     * rates of the rows replaced or dropped are deleted.
     *
-    * Lock order: the files' selection rows (and the gaps where theirs would go) first, then
-    * selection_deleted, then criteria_rate, as [[moveVotesAside]], [[SelectionJdbc.deleteVotes]]
-    * and [[RoundConflicts]]: locking selection_deleted first deadlocked with them.
+    * Lock order: the rounds ([[lockRoundsOfArchived]], by the caller: the `rounds` subquery
+    * below reads them with a shared lock) and the files before, then the files' selection rows
+    * (and the gaps where theirs would go), then selection_deleted, then criteria_rate, as
+    * [[moveVotesAside]], [[SelectionJdbc.deleteVotes]] and [[RoundConflicts]]: locking
+    * selection_deleted first deadlocked with them.
     *
     * @return the rounds that gained rows
     */

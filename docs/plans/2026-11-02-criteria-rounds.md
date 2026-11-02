@@ -299,6 +299,7 @@ criterion rated).
 |---|---|---|
 | M1 | `moveVotesBack` locked `selection_deleted` before `selection`; `RoundConflicts`, `archiveDeletedVotesInRound` and `moveVotesAside` go the other way, without a file lock (restore vs. "leave out now" or opening a round: deadlock 1213, not retried) | `moveVotesBack(pageIds)` first locks `selection WHERE page_id IN (…) FOR UPDATE`; every path is now selection → selection_deleted → criteria_rate. Spec: restore waits at `selection` while another transaction locks the aside rows. |
 | M2 | The concurrency specs pass on the old code too | New spec: vote row held `FOR UPDATE` by a delete; `updateRate` waits (`LOCK WAIT` in `INNODB_TRX`), `criteria_rate` unchanged meanwhile, then returns false and writes nothing. Sleeps replaced by the bounded `LOCK WAIT` poll; "which failed before" dropped. |
+| M3 (follow-up review) | After M1, `DeletedFiles.restore` locked images → selection → selection_deleted and only then read `rounds` with a shared lock (the `INSERT … WHERE EXISTS (SELECT 1 FROM rounds …)` in `moveVotesBack`, REPEATABLE READ), while "leave out now" and a distribution chunk lock the round first: restore vs. either deadlocked | `DeletedFiles.restore` first takes shared locks on the rounds of the files' aside votes, in id order (`ImageJdbc.lockRoundsOfArchived`, read from the snapshot as `markDeleted`'s `lockOpenRoundsOf`), then the files. Chosen over reading round ids without a lock and using `d.round_id IN (…)`: a round missed by that read would drop its votes, a round missed here only risks a retried deadlock. Spec: the round held `FOR UPDATE` as `RoundConflicts` holds it; the restore waits at the round; the holder then deletes the file's votes (aside) without waiting. |
 | M1/M2 check | | With the two locks removed by hand (`moveVotesBack`'s first `selection` lock, `updateRateIn`'s `FOR UPDATE`), all three lock specs fail (1 failure, 2 errors, log `target/checks/20261102-145527-26248.log`); with them, all pass. `INNODB_TRX` needs PROCESS: the spec reads it as the container's root. |
 | L1 | Rate deletes driven from `criteria_rate` could lock (and scan) every rate | `DELETE cr FROM <votes> STRAIGHT_JOIN criteria_rate cr ON cr.selection = v.id` in `deleteVotes`, `moveVotes`, `moveVotesAside`, `moveVotesBack`. |
 | L2 | Lock-order argument | Reworded above. |
@@ -312,6 +313,16 @@ LargeImageSpec, LargeViewUrlsSpec, RoundDistributionJobSpec, MigrationNamingSpec
 JobSchedulerSpec, RoundImageCountsDbSpec: 208 passed and the 3 new lock specs erred on the
 PROCESS privilege (`target/checks/20261102-144106-26384.log`); after reading `INNODB_TRX` as root,
 CriteriaRateSpec 14/14 (`target/checks/20261102-144904-8148.log`).
+
+Follow-up checks (M3): the affected set with the import specs (CriteriaRateSpec,
+CriteriaRateOrphansMigrationSpec, DeletedFilesSpec, CoiRoundSpec, MutationAuthorizationSpec,
+LargeImageSpec, LargeViewUrlsSpec, RoundDistributionJobSpec, MigrationNamingSpec,
+JobSchedulerSpec, RoundImageCountsDbSpec, CommonsFileCheckSpec, RegionCountInvalidationSpec,
+PageImportSpec, AppendImagesSpec, ImportFilesPageSpec): all passed but one example
+(`target/checks/20261102-150736-24412.log`): the first lock spec saw no `LOCK WAIT` in 20 s, once,
+unexplained (it passed in every other run, before and after). Its helper now reports what
+happened instead (the waiter done, or `INNODB_TRX`'s rows); CriteriaRateSpec then passed 3 runs of
+3 (`target/checks/20261102-153722-29680.log`). Final run on the commit: below.
 
 ### C2: criteria defined per round (after P0)
 

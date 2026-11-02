@@ -80,20 +80,29 @@ class CriteriaRateSpec extends Specification with TestDb with BeforeAll with Bef
   }
 
   /** Waits, 20 seconds at most, until a transaction waits for a lock (the specs run one at
-    * a time on their own database). INNODB_TRX needs the PROCESS privilege, which the app's
-    * user hasn't: read as the container's root (Testcontainers gives it the same password).
+    * a time on their own database): "LOCK WAIT", or what happened instead (`waiter` done, or
+    * the transactions then). INNODB_TRX needs the PROCESS privilege, which the app's user
+    * hasn't: read as the container's root (Testcontainers gives it the same password).
     */
-  private def awaitLockWait(): Boolean = {
+  private def lockWait(waiter: Future[_]): String = {
     val root = java.sql.DriverManager.getConnection(SharedTestDb.jdbcUrl, "root", SharedTestDb.password)
     try {
-      val deadline = 20.seconds.fromNow
-      def waiting = {
+      def transactions = {
         val rs = root.createStatement().executeQuery(
-          "SELECT COUNT(*) FROM information_schema.INNODB_TRX WHERE trx_state = 'LOCK WAIT'")
-        rs.next() && rs.getLong(1) > 0
+          "SELECT trx_mysql_thread_id, trx_state, trx_query FROM information_schema.INNODB_TRX")
+        Iterator.continually(rs).takeWhile(_.next())
+          .map(r => s"${r.getLong(1)} ${r.getString(2)} ${r.getString(3)}").toList
       }
-      while (!waiting && deadline.hasTimeLeft()) Thread.sleep(20)
-      waiting
+      val deadline = 20.seconds.fromNow
+      var outcome = Option.empty[String]
+      while (outcome.isEmpty) {
+        val now = transactions
+        if (now.exists(_.contains(" LOCK WAIT "))) outcome = Some("LOCK WAIT")
+        else if (waiter.isCompleted) outcome = Some(s"done without waiting: ${waiter.value}")
+        else if (deadline.isOverdue()) outcome = Some(s"no lock wait in 20 s: $now")
+        else Thread.sleep(20)
+      }
+      outcome.get
     } finally root.close()
   }
 
@@ -151,7 +160,7 @@ class CriteriaRateSpec extends Specification with TestDb with BeforeAll with Bef
         })
         firstVoted.await(30, TimeUnit.SECONDS) must beTrue
         val second = Future(CriteriaRate.updateRate(id, 2, 4))
-        awaitLockWait() must beTrue
+        lockWait(second) === "LOCK WAIT"
         commitFirst.countDown()
         Await.result(first, 30.seconds) must beTrue
         Await.result(second, 30.seconds) must beTrue
@@ -180,7 +189,7 @@ class CriteriaRateSpec extends Specification with TestDb with BeforeAll with Bef
         val voting = Future(CriteriaRate.updateRate(id, 1, 9))
         // the vote waits for the vote row, before writing its criterion: the old code's
         // UPDATE criteria_rate didn't wait for it, and wrote a rate of a vote being deleted
-        awaitLockWait() must beTrue
+        lockWait(voting) === "LOCK WAIT"
         ratesOf(id) === Map(1L -> 3, 2L -> 4)
         delete.countDown()
         Await.result(holder, 30.seconds) === 1
@@ -380,7 +389,7 @@ class CriteriaRateSpec extends Specification with TestDb with BeforeAll with Bef
         val restore = Future(DB.localTx(implicit s => ImageJdbc.restoreVotes(Seq(1L))))
         // the restore waits at the file's votes, holding nothing aside: the holder locks those
         // next without waiting (the restore that locked selection_deleted first deadlocked here)
-        awaitLockWait() must beTrue
+        lockWait(restore) === "LOCK WAIT"
         lockAside.countDown()
         Await.result(holder, 30.seconds) === 1
         Await.result(restore, 30.seconds) === Seq(round.getId)
@@ -388,6 +397,40 @@ class CriteriaRateSpec extends Specification with TestDb with BeforeAll with Bef
         ids("selection_deleted") must beEmpty
         ratesOf(aside) === Map(1L -> 3, 2L -> 4)
         ratesOf(live) === Map(1L -> 1, 2L -> 1)
+        orphans === 0
+      } finally pool.shutdownNow(): Unit
+    }
+
+    "lock the rounds before the files' votes when restoring them, as leaving out conflicts of interest" in {
+      val (_, round, Seq(juror, _)) = setUp()
+      val aside = vote(1, juror, round, Seq(3, 4), table = "selection_deleted")
+      val pool = Executors.newFixedThreadPool(2)
+      implicit val ec: ExecutionContext = ExecutionContext.fromExecutor(pool)
+      try {
+        val held = new CountDownLatch(1)
+        val removeVotes = new CountDownLatch(1)
+        // RoundConflicts.removeFromRound's locks: the round, then the file's votes, deleted
+        val holder = Future(DB.localTx { implicit s =>
+          sql"SET SESSION innodb_lock_wait_timeout = 10".execute.apply()
+          try {
+            sql"SELECT id FROM rounds WHERE id = ${round.getId} FOR UPDATE".map(_.long(1)).single()
+            held.countDown()
+            removeVotes.await(30, TimeUnit.SECONDS)
+            SelectionJdbc.deleteVotes(sqls"v.round_id = ${round.getId} AND v.page_id IN (${Seq(1L)})")
+          } finally sql"SET SESSION innodb_lock_wait_timeout = DEFAULT".execute.apply(): Unit
+        })
+        held.await(30, TimeUnit.SECONDS) must beTrue
+        val restore = Future(DB.localTx(implicit s => DeletedFiles.restore(Seq(1L))))
+        // the restore waits at the round, holding none of the file's votes: the removal takes
+        // them without waiting (the restore that read the round last, after locking the votes,
+        // deadlocked here)
+        lockWait(restore) === "LOCK WAIT"
+        removeVotes.countDown()
+        Await.result(holder, 30.seconds) === 1
+        Await.result(restore, 30.seconds) must beEmpty
+        ids("selection") must beEmpty
+        ids("selection_deleted") must beEmpty
+        ratesOf(aside) must beEmpty
         orphans === 0
       } finally pool.shutdownNow(): Unit
     }
