@@ -40,6 +40,40 @@ class WikiLinksSpec extends Specification {
       WikiLinks(Some("plain"), host).body === "plain"
       WikiLinks("[[open <b>", host).body === "[[open &lt;b&gt;"
     }
+
+    "show character references as their characters" in {
+      WikiLinks("О.&nbsp;П.&nbsp;Ляшка", host).body === "О. П. Ляшка"
+      WikiLinks("А&sup1;, 1941&ndash;1945, &#8470;&#x20;5", host).body === "А¹, 1941–1945, № 5"
+      WikiLinks("[[A&nbsp;B|вул. Ю.&nbsp;Здановської]]", host).body ===
+        "<a href=\"https://uk.wikipedia.org/wiki/A_B\">вул. Ю. Здановської</a>"
+      WikiLinks("&unknown; &#0; & co", host).body === "&amp;unknown; &amp;#0; &amp; co"
+    }
+
+    "keep an encoded tag escaped: it is text, not markup" in {
+      val body = WikiLinks("&lt;script&gt;alert(1)&lt;/script&gt; [[A|&lt;img src=x onerror=y()&gt;]]", host).body
+      body must not(contain("<script"))
+      body must not(contain("<img"))
+      body === "&lt;script&gt;alert(1)&lt;/script&gt; " +
+        "<a href=\"https://uk.wikipedia.org/wiki/A\">&lt;img src=x onerror=y()&gt;</a>"
+    }
+
+    "show a line break as a space and drop the formatting tags, keeping their text" in {
+      WikiLinks("a<br>b<BR/>c<br />d", host).body === "a b c d"
+      WikiLinks("К<sup>о</sup>, а<sub>1</sub>, <small>x</small> <nowiki>[[y]] &lt;</nowiki><nowiki/>", host).body ===
+        "Ко, а1, x [[y]] &lt;"
+      WikiLinks("''Дорошівка'' '''b'''", host).body === "Дорошівка b"
+      WikiLinks("{{s|19-й км}} дороги", host).body === "19-й км дороги"
+    }
+
+    "drop references and comments with their content" in {
+      WikiLinks("Будинок<ref>В аварійному стані.</ref>", host).body === "Будинок"
+      WikiLinks("""87<!--<ref name="zh107">Колишня адреса</ref>--> x<ref name="a"/>""", host).body === "87 x"
+      WikiLinks("a <!-- [[Hidden]] -->b", host).body === "a b"
+    }
+
+    "keep other tags as escaped text" in {
+      WikiLinks("<div>x</div><iframe src=y>", host).body === "&lt;div&gt;x&lt;/div&gt;&lt;iframe src=y&gt;"
+    }
   }
 
   "the large view's monument box" should {
