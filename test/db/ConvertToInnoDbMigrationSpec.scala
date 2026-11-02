@@ -1,14 +1,14 @@
 package db
 
-import com.dimafeng.testcontainers.MariaDBContainer
+import db.scalikejdbc.SharedTestDb
 import org.flywaydb.core.Flyway
 import org.specs2.mutable.Specification
-import org.specs2.specification.AfterAll
-import org.testcontainers.utility.DockerImageName
+import org.specs2.specification.{AfterAll, BeforeAll}
 
 import java.io.File
 import java.nio.file.{Files, Paths}
 import java.sql.{Connection, DriverManager, SQLException}
+import scala.collection.mutable
 import scala.util.Using
 
 /** V55.1 converts production's MyISAM tables to InnoDB.
@@ -17,7 +17,9 @@ import scala.util.Using
   * it can't show what production does: production's jury tables are still MyISAM until
   * V55.1 runs (they were created before InnoDB became the default). This spec starts from
   * production's schema at V53 (test/resources/db/prod-v53-myisam-schema.sql, MyISAM,
-  * utf8mb3 / utf8mb4_unicode_ci) in a MariaDB of its own, and checks that:
+  * utf8mb3 / utf8mb4_unicode_ci), in databases of its own on the shared test server
+  * (SharedTestDb's, whose wlxjury database it leaves alone; dropped after the spec), and
+  * checks that:
   *  - V56 (ALGORITHM = INPLACE, LOCK = NONE) fails on MyISAM, as a deploy without V55.1 would;
   *  - V55.1 converts every live table (InnoDB, DYNAMIC, utf8mb4_general_ci), keeping the
   *    rows, the AUTO_INCREMENT counters and the unique keys, and leaves legacy tables alone;
@@ -28,37 +30,32 @@ import scala.util.Using
   *    V24's), after archiving the members whose image or category is gone, and is a no-op
   *    on a second run and on the B44 baseline, which has the keys.
   */
-class ConvertToInnoDbMigrationSpec extends Specification with AfterAll {
+class ConvertToInnoDbMigrationSpec extends Specification with BeforeAll with AfterAll {
 
   sequential
 
   private val migrations = Paths.get("conf/db/migration/default")
 
-  // afterAll stops the container only if it started: evaluating `container` after a failed
-  // start would start it again
-  @volatile private var started = false
+  override def beforeAll(): Unit = SharedTestDb.init()
 
-  private lazy val container = {
-    val c = MariaDBContainer(
-      dockerImageName = DockerImageName.parse("mariadb:10.6.22"),
-      dbName = "wlxjury", dbUsername = "wlxjury", dbPassword = "wlxjury")
-    c.container.withCommand("--max-allowed-packet=16M")
-    db.TestDocker.start("the migration database", c)
-    started = true
-    c
+  /** The databases the examples made, dropped after the spec. */
+  private val databases = mutable.LinkedHashSet.empty[String]
+
+  override def afterAll(): Unit = if (databases.nonEmpty) Using.resource(connect("")) { c =>
+    run(c, databases.toSeq.map(name => s"DROP DATABASE IF EXISTS $name"))
   }
 
-  override def afterAll(): Unit = if (started) container.stop()
-
-  /** Root, so each example can have a database of its own. */
+  /** Root (Testcontainers gives root the user's password), so each example can have a
+    * database of its own.
+    */
   private def connect(db: String): Connection =
-    DriverManager.getConnection(jdbcUrl(db), "root", container.password)
+    DriverManager.getConnection(jdbcUrl(db), "root", SharedTestDb.password)
 
-  private def jdbcUrl(db: String): String = container.jdbcUrl.replaceFirst("/wlxjury(\\?|$)", s"/$db$$1")
+  private def jdbcUrl(db: String): String = SharedTestDb.jdbcUrl.replaceFirst("/wlxjury(\\?|$)", s"/$db$$1")
 
   /** Flyway on a database, as a deploy runs it, up to a version. */
   private def flywayTo(db: String, version: String): Unit =
-    Flyway.configure().dataSource(jdbcUrl(db), "root", container.password)
+    Flyway.configure().dataSource(jdbcUrl(db), "root", SharedTestDb.password)
       .locations("filesystem:conf/db/migration/default").target(version).load().migrate()
 
   private def statements(sql: String): Seq[String] =
@@ -111,6 +108,8 @@ class ConvertToInnoDbMigrationSpec extends Specification with AfterAll {
     rows(c, s"SHOW CREATE TABLE $table")(_.getString(2)).head
 
   private def emptyDb(name: String): Connection = {
+    require(name != "wlxjury", "the shared test database")
+    databases += name
     Using.resource(connect("")) { c =>
       run(c, Seq(s"DROP DATABASE IF EXISTS $name", s"CREATE DATABASE $name"))
     }

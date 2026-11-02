@@ -51,15 +51,48 @@ object SharedTestDb {
     * its own Play app (and so closes the default pool) re-registers the pool only then. */
   def isStarted: Boolean = _started
 
+  /** The test server's settings, for the shared container and the specs that start a
+    * MariaDB of their own (not the Gatling fixture's, which stays production-like): the
+    * data directory on tmpfs (TRUNCATE drops and re-creates each table's file: 0.5-1 s per
+    * `truncateAll` on disk, 30-40 ms on tmpfs; docs/plans/2026-11-01-open-followups.md,
+    * "Database-heavy specs"), capped at 1 GB so a runaway spec fails ("table is full")
+    * instead of filling the Docker VM's memory; and caches sized for the suite instead of
+    * Testcontainers' my.cnf (a 16M buffer pool, a 5M redo log, 4 open tables). The pool
+    * (128M) and the redo log (48M) are below the measured 256M / 128M to keep the
+    * container's memory, tmpfs included, around 350 MB. O_DIRECT doesn't work on tmpfs:
+    * fsync. Durability is moot on tmpfs. max_allowed_packet stays at Testcontainers' 1M:
+    * DistributeImagesBatchSpec checks that a distribution's batch fits it.
+    */
+  private[db] def forTests(container: MariaDBContainer): MariaDBContainer = {
+    container.container.withTmpFs(java.util.Map.of("/var/lib/mysql", "rw,size=1g"))
+    container.container.withCommand(
+      "--innodb-flush-method=fsync",
+      "--innodb-buffer-pool-size=128M",
+      "--innodb-log-file-size=48M",
+      "--table-open-cache=2000",
+      "--table-definition-cache=1000",
+      "--sort-buffer-size=2M",
+      "--innodb-flush-log-at-trx-commit=0",
+      "--innodb-doublewrite=0"
+    )
+    container
+  }
+
   private def start(): Boolean = {
-    val container = MariaDBContainer(
+    val container = forTests(MariaDBContainer(
       dockerImageName = DockerImageName.parse("mariadb:10.6.22"),
       dbName         = "wlxjury",
       dbUsername     = "WLXJURY_DB_USER",
       dbPassword     = "WLXJURY_DB_PASSWORD"
-    )
+    ))
     db.TestDocker.start("the test database", container)
+    // a failure after the start (Flyway, the pool) stops the container: `started` keeps the
+    // failure, so no later spec starts another
+    try configure(container)
+    catch { case e: Throwable => scala.util.Try(container.stop()); throw e }
+  }
 
+  private def configure(container: MariaDBContainer): Boolean = {
     _url             = container.jdbcUrl
     _user            = container.username
     _password        = container.password

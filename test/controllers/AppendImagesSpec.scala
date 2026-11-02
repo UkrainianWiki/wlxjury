@@ -10,7 +10,7 @@ import services.imports.{CommonsLogin, DeletedFiles, FakeCommonsSource, FakeFile
 import services.jobs.{Job, JobJdbc, JobStatus}
 
 /** "Import files" and the files' half of "Update monuments", as background jobs run
-  * inline, over a fake Commons (and once over the real one).
+  * inline, over a fake Commons (and once over the real one, with -Dintegration=true).
   */
 class AppendImagesSpec extends Specification with JuryTestHelpers with TestDb with BeforeAll with BeforeEach {
 
@@ -312,6 +312,8 @@ class AppendImagesSpec extends Specification with JuryTestHelpers with TestDb wi
 
   "importFiles over Commons" should {
     "get international images" in {
+      if (!sys.props.get("integration").contains("true"))
+        skipped("reads the live Wikimedia Commons: run with -Dintegration=true")
       val page = "Commons:Wiki Loves Earth 2019/Winners"
       val contest = createContest()
       val commons = new MwCommonsSource(Global.commons, CommonsLogin.anonymous(Global.commons))
