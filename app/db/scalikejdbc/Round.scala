@@ -1,7 +1,7 @@
 package db.scalikejdbc
 
 import db.RoundRepo
-import org.intracer.wmua.{BinaryOrder, CategoryRule, HasId, ImageWithRating}
+import org.intracer.wmua.{BinaryOrder, CategoryRule, HasId}
 import org.intracer.wmua.cmd.DistributeImages
 import scalikejdbc._
 import scalikejdbc.orm.{CRUDMapper, JoinTable}
@@ -81,8 +81,6 @@ case class Round(
 
   def numberOfJurorsForAverageRate: Long =
     if (!optionalRate) numberOfAssignedJurors else numberOfActiveJurors
-
-  def allImages: Seq[ImageWithRating] = ImageJdbc.byRoundMerged(id.get)
 
   def description: String =
     name

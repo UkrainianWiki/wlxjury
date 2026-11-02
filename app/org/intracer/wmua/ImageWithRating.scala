@@ -58,13 +58,26 @@ case class ImageWithRating(
   def rateSum: Int =
     selection.foldLeft(0)((acc, s) => acc + Math.max(s.rate, 0))
 
-  /** A binary round's approvals of the file: its selections (rate 1), counted by the query
-    * of a list of all the jurors' votes together, whose one selection per file has their sum.
+  /** A binary round's approvals of the file: its selections (rate 1). A grouped row (all the
+    * jurors' votes together, one selection of juror 0 with their sum) has them only from a
+    * query with `tally` (`SelectionQuery.tally`, a yes/no round's); one without fails here
+    * rather than count its one selection. Vote rows are counted.
     */
-  def approvals: Int = approvalsFromDb.getOrElse(selection.count(_.rate > 0))
+  def approvals: Int = {
+    require(approvalsFromDb.isDefined || !grouped, "grouped row without tally")
+    approvalsFromDb.getOrElse(selection.count(_.rate > 0))
+  }
 
-  /** A binary round's rejections of the file (rate -1), counted as [[approvals]] are. */
-  def rejections: Int = rejectionsFromDb.getOrElse(selection.count(_.rate < 0))
+  /** A binary round's rejections of the file (rate -1), from the query or counted as
+    * [[approvals]] are.
+    */
+  def rejections: Int = {
+    require(rejectionsFromDb.isDefined || !grouped, "grouped row without tally")
+    rejectionsFromDb.getOrElse(selection.count(_.rate < 0))
+  }
+
+  /** A row of all the jurors' votes together: a selection of juror 0 holds their sum. */
+  private def grouped: Boolean = selection.exists(_.juryId == 0)
 
   def jurors: Set[Long] = selection.map(s => s.juryId).toSet
 
@@ -114,10 +127,14 @@ object ImageWithRating {
 
   object RankKey {
 
-    /** A binary round's by `order`, a rated round's by the sum of its rates. */
+    /** A binary round's by `order`, a rated round's by the sum of its rates as SQL has it: a
+      * rate below 0 counted as it is, not as 0 as [[ImageWithRating.rateSum]] counts it, so a
+      * file with one has its rank (of a grouped row, its one selection's sum; of a file's votes
+      * read one by one, their sum).
+      */
     def of(round: Round, order: BinaryOrder = BinaryOrder.Default): RankKey =
       if (round.isBinary) RankKey(order.columns, file => order.values(file.approvals, file.rejections))
-      else RankKey(Seq("sum(s.rate)" -> -1), file => Seq(file.rateSum))
+      else RankKey(Seq("sum(s.rate)" -> -1), file => Seq(file.selection.map(_.rate).sum))
   }
 
   /** The ranks of a list's files among all of them, from the number of its files of each key,

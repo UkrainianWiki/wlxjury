@@ -719,17 +719,22 @@ object ImageJdbc extends CRUDMapper[Image]
     ImageJdbc(i)(rs)
   }.list()
 
+  /** The round's files, one row each with all their votes' sum and count; with `tally`, the
+    * round's `isBinary`, their approvals and rejections apart too (a yes/no round's rows).
+    */
   def byRoundMerged(
       roundId: Long,
       pageSize: Int = Int.MaxValue,
       offset: Int = 0,
-      rated: Option[Boolean] = None
+      rated: Option[Boolean] = None,
+      tally: Boolean
   ): Seq[ImageWithRating] =
     SelectionQuery(
       roundId = Some(roundId),
       grouped = true,
       order = Seq("rate" -> -1),
       rated = rated,
+      tally = tally,
       limit = Some(Limit(pageSize = Some(pageSize), offset = Some(offset)))
     ).list()
 
