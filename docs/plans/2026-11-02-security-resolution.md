@@ -273,6 +273,16 @@ CSRF-enabled router tests stay green.
 timeout (e.g. 8 hours); (3) revoke API tokens on password change, or only offer; (4) old cookies at
 deploy.
 
+**Decided (user, 2026-11-02):** MediaWiki's model. A per-account session version (`users`
+column) carried in the cookie and checked on every request; a password or email change, "sign out
+everywhere" or an admin action bumps it and ends every other session. "Keep me signed in" is kept
+and checked by default: a persistent cookie, absolute lifetime 1 year from sign-in, idle timeout
+1 month. Unchecked: a browser-session cookie with the same server-side limits. API tokens survive
+a password change (like MediaWiki's bot passwords), with a "revoke all tokens" action; an admin
+forcing a reset revokes both. Ordinary redeploys keep sessions (same `PLAY_HTTP_SECRET_KEY`);
+only S3's own release changes the cookie format: (4) still open (sign everyone out once, or
+upgrade old cookies in place).
+
 **Dependencies:** after S2. Gatling simulations sign in through the form; check that
 `test/gatling` still signs in (no run unless the session code changes per-request cost).
 
