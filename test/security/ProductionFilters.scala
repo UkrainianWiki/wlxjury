@@ -56,6 +56,8 @@ object ProductionFilters {
     */
   def withSharedApp[T](body: Application => T): T = {
     val app = shared
+    require(!app.actorSystem.whenTerminated.isCompleted,
+      "the shared production-filter app was stopped by a spec: never use running(app), TestServer or app.stop() on it")
     SharedTestDb.truncateAll()
     body(app)
   }
