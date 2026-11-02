@@ -32,7 +32,7 @@ class RoundSpec extends Specification with BeforeAll {
       createContests(20)  // Create contest 20 for users that should be filtered out
       val created = roundDao.create(round)
       val jurors = createUsers(1 to 3).map(u => u.copy(roles = u.roles + s"USER_ID_${u.getId}"))
-      createUsers("prejury", 11 to 13)
+      createUsers(User.NO_ROLE, 11 to 13) // members without a juror role
       createUsers("organizer", 20)
       createUsers(31 to 33)(contest.copy(id = Some(20)), session, implicitly)
       created.availableJurors === jurors

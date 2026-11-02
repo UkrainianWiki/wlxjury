@@ -49,14 +49,39 @@ class UserContestSpec extends Specification with BeforeAll with TestDb {
       UserContestJdbc.find(userId, 5L).map(_.role) === Some("admin")
     }
 
-    "find the latest contest first, and split a role list" in new AutoRollbackDb {
+    "find the latest contest first" in new AutoRollbackDb {
       createContests(6L, 7L)
       val userId = insertUser("Gina", "gina@example.com")
       UserContestJdbc.createMembership(userId, 6L, "jury")
-      UserContestJdbc.createMembership(userId, 7L, "jury, organizer")
+      UserContestJdbc.createMembership(userId, 7L, "organizer")
 
       UserContestJdbc.findByUser(userId).map(m => (m.contestId, m.roles)) ===
-        Seq((7L, Set("jury", "organizer")), (6L, Set("jury")))
+        Seq((7L, Set("organizer")), (6L, Set("jury")))
+    }
+
+    "refuse to store anything but one contest role" in new AutoRollbackDb {
+      createContests(8L)
+      val userId = insertUser("Hal", "hal@example.com")
+      UserContestSpec.badRoles.foreach { role =>
+        UserContestJdbc.createMembership(userId, 8L, role) must throwA[IllegalArgumentException]
+      }
+      UserContestJdbc.findByUser(userId) === Nil
+
+      UserContestJdbc.createMembership(userId, 8L, "jury")
+      UserContestSpec.badRoles.foreach { role =>
+        UserContestJdbc.updateRole(userId, 8L, role) must throwA[IllegalArgumentException]
+      }
+      UserContestJdbc.find(userId, 8L).map(_.role) === Some("jury")
+    }
+
+    "not create a user with a membership role that is not a contest role" in new AutoRollbackDb {
+      createContests(9L)
+      UserContestSpec.badRoles.filterNot(r => r == User.ROOT_ROLE || r.startsWith(User.USER_ID_PREFIX)).foreach { role =>
+        userDao.create(User("Ivy", "ivy@example.com", None, Set(role), Some("hash"), Some(9L))) must
+          throwA[IllegalArgumentException]
+      }
+      userDao.findByEmail("ivy@example.com") === Nil
+      UserContestJdbc.findByContest(9L) === Nil
     }
 
     "update role" in new AutoRollbackDb {
@@ -79,4 +104,37 @@ class UserContestSpec extends Specification with BeforeAll with TestDb {
       UserContestJdbc.findByUser(userId) === Nil
     }
   }
+}
+
+/** The membership reader: one allowlisted role, compared exactly; anything else grants nothing. */
+class UserContestRolesSpec extends Specification {
+
+  "UserContest.roles" should {
+    "be the role for each contest role" in {
+      User.ContestRoles.toSeq.map(r => UserContest(1, 2, r).roles) === User.ContestRoles.toSeq.map(Set(_))
+    }
+
+    "be empty, and the membership inactive, for anything else" in {
+      UserContestSpec.badRoles.map(r => r -> UserContest(1, 2, r).roles).filter(_._2.nonEmpty) === Nil
+      UserContestSpec.badRoles.filter(r => UserContest(1, 2, r).active) === Nil
+    }
+  }
+
+  "User.inContest" should {
+    "never take root or a USER_ID_ marker from a membership" in {
+      val user = User("Kim", "kim@example.com", Some(5), roles = Set("USER_ID_5"))
+      UserContestSpec.badRoles.map { r =>
+        r -> user.inContest(UserContest(5, 2, r)).roles
+      }.filterNot(_._2 == Set("USER_ID_5")) === Nil
+      user.inContest(UserContest(5, 2, "jury")).roles === Set("USER_ID_5", "jury")
+    }
+  }
+}
+
+object UserContestSpec {
+  /** Values that are not exactly one contest role: N1's root via a list, a marker, variants. */
+  val badRoles: Seq[String] = Seq(
+    "root", "jury,root", "jury, root", "admin,root", " root", "root ", "Root", "ROOT", "USER_ID_1",
+    "jury1", "jury-", "Jury", "jury ", " jury", "admin ", "prejury", "superuser", ""
+  )
 }

@@ -266,12 +266,11 @@ class MultiContestUserSpec extends PlaySpecification with PlayTestDb with Mockit
         createContests(10)
         val admin = member("admin@example.com", 10L -> "admin")
 
-        status(save(admin, 10, "id" -> "0", "fullname" -> "Mallory", "email" -> "mallory@example.com",
-                    "roles" -> User.ROOT_ROLE, "contest" -> "10")) === SEE_OTHER
-
-        val mallory = User.findByEmail("mallory@example.com").head
-        mallory.isRoot === false
-        UserContestJdbc.findByUser(mallory.getId) === Seq(UserContest(mallory.getId, 10, "jury"))
+        // refused before anything is written (N1: root only from root, RoleAssignmentSpec)
+        (status(save(admin, 10, "id" -> "0", "fullname" -> "Mallory", "email" -> "mallory@example.com",
+                     "roles" -> User.ROOT_ROLE, "contest" -> "10")) === BAD_REQUEST) and
+          (User.findByEmail("mallory@example.com") === Nil) and
+          (User.findAll().count(_.isRoot) === 0)
       }
     }
 
