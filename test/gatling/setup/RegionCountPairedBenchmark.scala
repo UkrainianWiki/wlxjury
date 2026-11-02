@@ -26,8 +26,8 @@ import scala.concurrent.duration._
   *  - `sql-round`: the whole round's regions, `byRegionStat` (A, `gallery.regionCounts=off`)
   *    against `regionCounts` (B, `all`), both rounds, each of their tabs' filters.
   *  - `sql-juror`: a juror's counts, the one filter's `regionCounts` (A) against
-  *    `regionRateCounts` and [[controllers.JurorCounts.regions]] (B, what the menu runs), every
-  *    juror, both rounds, each filter.
+  *    `regionRateCounts` and [[controllers.JurorCounts.regions]] (B, what the menu runs), each
+  *    juror in both rounds with each filter.
   *  - `menu-round`: the organisers' region menu (`GalleryController.regions`, user 0, by rate)
   *    from a controller with counts off (A) and one with `all` (B).
   *  - `menu-juror`: a juror's own region menu, off (A) and `all` (B). Both run the same query
@@ -40,14 +40,25 @@ import scala.concurrent.duration._
   * answer, an error page or an unintended setting. Each timed menu call must return 200.
   * Writes every pair; timings are evidence, never a CI assertion.
   *
+  * Each case walks all its inputs (7 for the whole round, 140 for the jurors: 20 jurors x 7
+  * round filters) with a stride coprime to their number, the blocks continuing the walk, so
+  * `blocks x pairs` at least the number of inputs times each one. An input's order alternates
+  * (AB, BA, ...) at each of its occurrences, and about half of a block's pairs are BA. The
+  * fixture votes on every file (no rate 0), so the unrated filter's counts are all 0; every
+  * other filter must count some files, or the check fails.
+  *
   * {{{
   * sbt 'set Test / javaOptions ++= Seq("-Xmx768m", "-Dfile.encoding=UTF-8",
   *       "-Dscalikejdbc.global.loggingSQLAndTime.enabled=false")' \
   *     'Test/runMain gatling.setup.RegionCountPairedBenchmark'
   * }}}
-  * `-Dbench.blocks` (3), `-Dbench.pairs` (100, juror cases), `-Dbench.roundPairs` (40, round
-  * cases), `-Dbench.warmup` (20), `-Dbench.threads` (1,5), `-Dbench.cases` (all four).
-  * Writes target/gatling/region-pairs-<timestamp>.csv (every pair) and .txt (per block).
+  * Options, which reach the forked JVM only inside `set Test / javaOptions ++= Seq(...)` as
+  * above (build.sbt forwards no `bench.*` from sbt's own `-D`): `-Dbench.blocks` (3),
+  * `-Dbench.pairs` (100 a block, juror cases), `-Dbench.roundPairs` (40, round cases),
+  * `-Dbench.warmup` (20), `-Dbench.threads` (1,5), `-Dbench.cases` (all four).
+  * Writes target/gatling/region-pairs-<timestamp>.csv (every pair, with its input) and .txt
+  * (per block, and pooled per case and worker count: medians, min-max, how often B was
+  * faster, the AB/BA split and the inputs timed).
   */
 object RegionCountPairedBenchmark {
   private def prop(key: String, default: String) = sys.props.getOrElse(s"bench.$key", default)
@@ -111,15 +122,8 @@ object RegionCountPairedBenchmark {
     val roundFilters = for (round <- rounds; filter <- VoteFilter.ofRound(round)) yield (round, filter)
     val jurors = f.jurors.map(j => (j._1, j._2)).toIndexedSeq
     val wholeRound = roundFilters.map { case (round, filter) => Input(round, filter, None) }
-    // all jurors and all filters occur in a block of 100: juror n, the filter shifted each lap
-    def input(kind: String, n: Int): Input =
-      if (kind.endsWith("round")) wholeRound(n % wholeRound.size)
-      else {
-        val (round, filter) = roundFilters((n + n / jurors.size) % roundFilters.size)
-        Input(round, filter, Some(jurors(n % jurors.size)))
-      }
-    def inputs(kind: String): Seq[Input] =
-      if (kind.endsWith("round")) wholeRound
+    def inputs(kind: String): IndexedSeq[Input] =
+      if (kind.endsWith("round")) wholeRound.toIndexedSeq
       else for (j <- jurors; (round, filter) <- roundFilters) yield Input(round, filter, Some(j))
 
     /** The region menu's JSON for the input from the controller, at the URL its page has. */
@@ -163,9 +167,12 @@ object RegionCountPairedBenchmark {
         .map(rs => rs.string(1) -> rs.int(2)).list().toMap
     }
 
-    def verify(kind: String, in: Input): Unit = {
+    /** Checks the input; true if its counts are all 0 (the unrated filter on this fixture). */
+    def verify(kind: String, in: Input): Boolean = {
       val expected = literalCounts(in)
       require(expected.nonEmpty, s"$kind: $in has no regions, so it would time nothing")
+      require(in.filter == VoteFilter.Unrated || expected.values.exists(_ > 0),
+        s"$kind: $in counts no files, so its counts are checked only as zeros")
       def same[A](what: String, a: A, b: A): Unit = require(a == b, s"$kind: $in: $what differ:\n  $a\n  $b")
       kind match {
         case "sql-round" =>
@@ -185,6 +192,7 @@ object RegionCountPairedBenchmark {
           same("the menu's counts and the literal counts", b.map(p => p.id -> p.count).toMap,
             expected.map { case (id, n) => id -> Option(n) })
       }
+      expected.values.forall(_ == 0)
     }
 
     val stamp = LocalDateTime.now.format(DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss"))
@@ -193,57 +201,94 @@ object RegionCountPairedBenchmark {
     val raw = new PrintWriter(new File(dir, s"region-pairs-$stamp.csv"), "UTF-8")
     val summary = new PrintWriter(new File(dir, s"region-pairs-$stamp.txt"), "UTF-8")
     def log(s: String): Unit = { println(s"[pairs] $s"); summary.println(s); summary.flush() }
-    raw.println("case,threads,block,pair,order,a_ms,b_ms")
+    raw.println("case,threads,block,pair,input,order,a_ms,b_ms")
     log(s"$stamp blocks=$blocks pairs=$samples roundPairs=$roundSamples warmup=$warmup threads=${threads.mkString(",")} " +
       s"cases=${cases.mkString(",")} files=${f.imagePageIds.size} jurors=${jurors.size} " +
       s"rounds=${rounds.map(_.getId).mkString(",")}; menu pairs include auth, queries and JSON, exclude HTTP filters/network")
     cases.foreach(kind => log(s"$kind: A = ${variants(kind)._1}, B = ${variants(kind)._2}"))
 
     def elapsed(body: => Unit): Double = { val t = System.nanoTime(); body; (System.nanoTime() - t) / 1e6 }
+    /** The nearest-rank percentile (p95). */
     def pct(xs: Seq[Double], p: Double): Double = {
       val sorted = xs.sorted
       sorted(math.max(0, math.ceil(p * sorted.size).toInt - 1))
     }
+    def median(xs: Seq[Double]): Double = {
+      val s = xs.sorted
+      if (s.size % 2 == 1) s(s.size / 2) else (s(s.size / 2 - 1) + s(s.size / 2)) / 2
+    }
+    def mean(xs: Seq[Double]): Double = xs.sum / xs.size
+    def sd(xs: Seq[Double]): Double =
+      if (xs.size < 2) 0 else { val m = mean(xs); math.sqrt(xs.map(x => (x - m) * (x - m)).sum / (xs.size - 1)) }
+
+    /** A timed pair: its place in the walk, its input's index, B first, A and B in ms. */
+    final case class Pair(g: Int, input: Int, bFirst: Boolean, a: Double, b: Double) {
+      def delta: Double = b - a
+    }
+    def describe(rows: Seq[Pair]): String = {
+      val (a, b, d) = (rows.map(_.a), rows.map(_.b), rows.map(_.delta))
+      f"A median=${median(a)}%.2f p95=${pct(a, .95)}%.2f mean=${mean(a)}%.2f (${a.min}%.1f-${a.max}%.1f); " +
+        f"B median=${median(b)}%.2f p95=${pct(b, .95)}%.2f mean=${mean(b)}%.2f (${b.min}%.1f-${b.max}%.1f); " +
+        f"paired B-A median=${median(d)}%.2f mean=${mean(d)}%.2f sd=${sd(d)}%.2f (${d.min}%.1f..${d.max}%.1f) ms; " +
+        s"B faster ${d.count(_ < 0)}/${d.size}; AB/BA ${rows.count(!_.bFirst)}/${rows.count(_.bFirst)}"
+    }
+
     try {
       for (kind <- cases) {
         val all = inputs(kind)
-        val ms = elapsed(all.foreach(verify(kind, _)))
-        log(f"$kind%-10s checked ${all.size} inputs in ${ms / 1000}%.1f s: the variants agree with each other and a literal count")
+        var zeros = 0
+        val ms = elapsed(all.foreach(in => if (verify(kind, in)) zeros += 1))
+        log(f"$kind%-10s checked ${all.size} inputs in ${ms / 1000}%.1f s: the variants agree with each other and " +
+          s"a literal count; $zeros all 0 (unrated: the fixture has no rate 0)")
       }
       for (kind <- cases; workers <- threads) {
+        val all = inputs(kind)
+        val size = all.size
+        // the walk: a stride coprime to the inputs' number visits each once a lap
+        val stride = Iterator.from(37).find(s => BigInt(s).gcd(BigInt(size)) == 1).get
+        // the g-th pair's input, and whether B runs first: by the position's and the lap's
+        // parity, so an input alternates from lap to lap and a block's pairs alternate
+        def step(g: Int): (Int, Boolean) = {
+          val (position, lap) = (g % size, g / size)
+          ((position.toLong * stride % size).toInt, (position + lap) % 2 == 1)
+        }
         val sampleCount = if (kind.endsWith("round")) roundSamples else samples
         val pool = Executors.newFixedThreadPool(workers)
+        val pooled = Seq.newBuilder[Pair]
         try {
-          (0 until warmup).foreach { n => run(kind, false, input(kind, n)); run(kind, true, input(kind, n)) }
+          (0 until warmup).foreach { g => val in = all(step(g)._1); run(kind, false, in); run(kind, true, in) }
           for (block <- 1 to blocks) {
             val next = new java.util.concurrent.atomic.AtomicInteger
-            val tasks = (0 until workers).map { _ => new Callable[Seq[(Int, Double, Double)]] {
-              def call(): Seq[(Int, Double, Double)] = {
-                val rows = Seq.newBuilder[(Int, Double, Double)]
+            val start = (block - 1) * sampleCount
+            val tasks = (0 until workers).map { _ => new Callable[Seq[Pair]] {
+              def call(): Seq[Pair] = {
+                val rows = Seq.newBuilder[Pair]
                 var n = next.getAndIncrement()
                 while (n < sampleCount) {
-                  val in = input(kind, n)
-                  val bFirst = (n + block) % 2 == 0
+                  val g = start + n
+                  val (index, bFirst) = step(g)
+                  val in = all(index)
                   val first = elapsed(run(kind, bFirst, in))
                   val second = elapsed(run(kind, !bFirst, in))
-                  rows += ((n, if (bFirst) second else first, if (bFirst) first else second))
+                  rows += Pair(g, index, bFirst, if (bFirst) second else first, if (bFirst) first else second)
                   n = next.getAndIncrement()
                 }
                 rows.result()
               }
             }}
-            val rows = pool.invokeAll(tasks.asJava).asScala.toSeq.flatMap(_.get()).sortBy(_._1)
-            rows.foreach { case (n, a, b) =>
-              raw.println(s"$kind,$workers,$block,$n,${if ((n + block) % 2 == 0) "BA" else "AB"},$a,$b")
+            val rows = pool.invokeAll(tasks.asJava).asScala.toSeq.flatMap(_.get()).sortBy(_.g)
+            rows.foreach { p =>
+              raw.println(s"$kind,$workers,$block,${p.g},${p.input},${if (p.bFirst) "BA" else "AB"},${p.a},${p.b}")
             }
             raw.flush()
-            val a = rows.map(_._2); val b = rows.map(_._3); val delta = rows.map(r => r._3 - r._2)
-            log(f"$kind%-10s threads=$workers block=$block n=${rows.size} " +
-              f"A p50=${pct(a, .5)}%.2f p95=${pct(a, .95)}%.2f mean=${a.sum / a.size}%.2f; " +
-              f"B p50=${pct(b, .5)}%.2f p95=${pct(b, .95)}%.2f mean=${b.sum / b.size}%.2f; " +
-              f"paired B-A mean=${delta.sum / delta.size}%.2f median=${pct(delta, .5)}%.2f ms")
+            pooled ++= rows
+            log(f"$kind%-10s threads=$workers block=$block n=${rows.size} ${describe(rows)}")
           }
         } finally pool.shutdown()
+        val rows = pooled.result()
+        val byInput = rows.groupBy(_.input)
+        log(f"$kind%-10s threads=$workers pooled n=${rows.size} ${describe(rows)}; inputs timed ${byInput.size}/$size, " +
+          s"${byInput.count(_._2.map(_.bFirst).distinct.size == 2)} of them in both orders (stride $stride)")
       }
     } finally { raw.close(); summary.close() }
   }
