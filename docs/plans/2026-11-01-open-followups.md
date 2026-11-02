@@ -1445,3 +1445,50 @@ python scripts/agent-check.py -- java -Xmx1536m -Dfile.encoding=UTF-8 -jar 'C:/P
 Options (`-Dbench.*`): `blocks` (3), `pairs` (100, juror cases), `roundPairs` (40, round
 cases), `warmup` (20), `threads` (`1,5`), `cases` (all four). Output:
 `target/gatling/region-pairs-<stamp>.{csv,txt}`. A pilot with small counts checks that it runs.
+
+### B10 results
+
+Commits: `bef6b6e1` (the plan above), `ca9f158d` (the benchmark restored and reworked, and the
+region-improvements plan's note), then this one. The file as planned: four cases, `Input`s built
+as the app builds them (`RoundList(...).query` / `.jurorCounts()`, `regionsUrl` for the menu's
+URL, the menu's `X-Requested-With`), `VoteFilter.ofRound` for each round's tabs, and `verify`
+before any timing. The region-improvements plan's "deleted" note now says it was restored, and
+that its recorded results are of the 2026-10-25 cases. CLAUDE.md is unchanged (it lists no
+comparable benchmark).
+
+Checks: `Test/compile` + `Gatling/compile` exit 0 (`target/checks/20261102-115849-15500.log`;
+the first attempt, `…-105020-18640.log`, failed on a missing `Writeable` import and an implicit
+session, both fixed before the commit). No specs (no app code changed).
+
+**Pilot** (one JVM, the lock held, no other sbt/DB work; this worktree's own fixture, built and
+cached on this run: `data/cache/gatling-2cf3c48ea8cf278c.sql.gz`, 38,367 files, 20 jurors,
+rounds 1 (yes/no) and 2 (rated); HikariCP; MariaDB 10.6.22; 206 s in all):
+```bash
+python scripts/agent-check.py -- java -Xmx1536m -Dfile.encoding=UTF-8 -jar 'C:/Program Files (x86)/sbt/bin/sbt-launch.jar' \
+  'set Test / javaOptions ++= Seq("-Xmx768m", "-Dfile.encoding=UTF-8", "-Dscalikejdbc.global.loggingSQLAndTime.enabled=false", "-Dbench.blocks=2", "-Dbench.pairs=40", "-Dbench.roundPairs=14", "-Dbench.warmup=5", "-Dbench.threads=1")' \
+  'Test/runMain gatling.setup.RegionCountPairedBenchmark'
+```
+Exit 0. The checks passed for every input (7 whole-round, 140 juror inputs per case): the
+variants agree, and agree with the literal counts from `selection`. Log
+`target/checks/20261102-121804-26120.log`; pairs and blocks
+`target/gatling/region-pairs-20261102-122008.{csv,txt}` (216 pairs). One worker only.
+
+| Case (A → B) | n | A median (min-max) | B median (min-max) | Paired B-A median (min..max) | Block means of B-A | B faster |
+|---|---|---|---|---|---|---|
+| `sql-round` (`byRegionStat` → `regionCounts`) | 28 | 251.8 ms (227.7-311.7) | 150.2 ms (128.9-186.6) | **-105.2 ms** (-182.8..-80.6) | -114.4, -102.3 | 28/28 |
+| `menu-round` (off → all) | 28 | 252.8 ms (236.9-353.5) | 148.5 ms (138.8-260.2) | **-104.5 ms** (-204.7..-87.2) | -105.8, -113.3 | 28/28 |
+| `sql-juror` (`regionCounts` → `regionRateCounts`) | 80 | 15.6 ms (14.6-20.9) | 13.8 ms (12.9-17.1) | **-1.9 ms** (-7.1..+1.7) | -1.9, -1.8 | 75/80 |
+| `menu-juror` (off → all, the control) | 80 | 22.5 ms (20.2-34.3) | 22.8 ms (20.1-33.4) | **+0.2 ms** (-10.2..+7.7) | +0.1, +0.4 | 33/80 |
+
+Plausible and consistent with 2026-10-25: there the whole round's SQL was 296-303 ms (A) and
+172-181 ms (B) means at one worker, a -122 ms paired mean; now 255-261 / 147-152, about -108.
+The organisers' menu costs the SQL plus ~1 ms (its delta equals `sql-round`'s), so counts on
+make the menu ~105 ms faster. The control's delta is within ±0.5 ms in both blocks, so the method
+shows no order bias at this size. A juror's menu runs `regionRateCounts` (one scan, all rates),
+which is ~1.9 ms faster than the one filter's `regionCounts` it replaced: no reason to go back.
+The pilot is small (14 whole-round pairs a block, one worker); it shows the harness works, not a
+new decision. The full default run (3 blocks, 100/40 pairs, 1 and 5 workers) wasn't made: it
+would not change `gallery.regionCounts = all`.
+
+**Open**
+- The 5-worker run (contention) only when the count queries or the menu change.
