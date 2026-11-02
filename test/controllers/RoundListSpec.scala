@@ -172,7 +172,7 @@ class RoundListSpec extends Specification {
     "be remembered when the juror's own gallery names another" in {
       def remembered(uri: String, cookie: Option[String], viewer: User = juror) = {
         implicit val req: play.api.mvc.RequestHeader = request(uri, cookie)
-        RoundList.remembered(RoundList.of(round, viewer, 3, "all", GalleryView.Gallery), viewer).map(_.value)
+        RoundList.remembered(RoundList.of(round, viewer, 3, "all", GalleryView.Gallery), viewer, secure = false).map(_.value)
       }
       remembered("/?sort=rate", None) === Some("rate")
       remembered("/?sort=file", Some("rate")) === Some("file")
@@ -224,7 +224,7 @@ class RoundListSpec extends Specification {
     "be remembered when the URL names another" in {
       def remembered(uri: String, cookie: Option[String], r: Round = binary) = {
         val req = cookie.fold(FakeRequest("GET", uri))(v => FakeRequest("GET", uri).withCookies(Cookie(RoundList.BinarySortCookie, v)))
-        RoundList.remembered(RoundList.of(r, organizer, 0, "all", GalleryView.FileList)(req), organizer)(req)
+        RoundList.remembered(RoundList.of(r, organizer, 0, "all", GalleryView.FileList)(req), organizer, secure = false)(req)
           .map(c => (c.name, c.value))
       }
       remembered("/?sort=difference", None) === Some((RoundList.BinarySortCookie, "difference"))
