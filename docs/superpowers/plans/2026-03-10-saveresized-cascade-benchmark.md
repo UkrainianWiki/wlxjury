@@ -1,5 +1,7 @@
 # saveResized Cascade Optimization & JMH Benchmarks — Implementation Plan
 
+> **Status:** shipped (`09ce2d84` benchmarks, `b9f7e773` cascade, `f88e0a10` fetchAndCacheAll reuse). The task boxes below were never ticked.
+
 > **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Benchmark `LocalImageCacheService#saveResized` and `fetchAndCacheAll` with JMH, optimize both by cascading downscale steps (each size from the previous larger output), and re-run benchmarks to prove improvement.

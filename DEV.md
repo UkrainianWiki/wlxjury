@@ -31,7 +31,13 @@ vagrant@vagrant-ubuntu-trusty-64:/vagrant$ sbt run
 
 Now open [http://localhost:9000](http://localhost:9000)
 
-### TODO creating root admin
+### Creating the root admin
+
+The first account signed up on an empty database becomes root (`users.is_root`): open
+[http://localhost:9000/signup](http://localhost:9000/signup) and sign up with an email and a
+password. Later sign-ups get no role; root (or a contest's admin) adds them to contests. On a
+database that already has users, make an existing account root with
+`UPDATE users SET is_root = TRUE WHERE email = '...';`.
 
 ## Development
 
@@ -39,20 +45,18 @@ Now open [http://localhost:9000](http://localhost:9000)
 Interpreted languages like Python or PHP always run the latest source code that was modified by developer. That is not the case for compiled language like Java or Scala. However Play Framework supports auto-reloading if the source code changes and you try to open some web-page again. On new http request if source code is modified, changed files will be recompiled and the application will be reloaded.
 
 ### sbt Triggered compilation
-The drawback of autoreloading is that recompilation will only happen on new page request. Using [Triggered compilation](http://www.scala-sbt.org/0.13/docs/Howto-Triggered.html) sbt can automatically recompile in the background the moment you save updated source code. To do that run sbt with command `~run`
+The drawback of autoreloading is that recompilation will only happen on new page request. Using [triggered execution](https://www.scala-sbt.org/1.x/docs/Triggered-Execution.html) sbt can automatically recompile in the background the moment you save updated source code. To do that run sbt with command `~run`
 
 `sbt ~run`
 
 Application will start and will compile the changes in the background.
 
-You can read more on sbt commands in [sbt](http://www.scala-sbt.org/0.13/docs/Running.html) and [Play](https://www.playframework.com/documentation/2.4.x/PlayConsole) documentations. Note that Play documentation uses the command `activator` for Lightbend Activator that comes with full Play distribution or can be downloaded separately, but Activator is build on sbt and you can should run `sbt` instead of `activator` (unless you decide to install Activator too)
+You can read more on sbt commands in the [sbt](https://www.scala-sbt.org/1.x/docs/Running.html) and [Play](https://www.playframework.com/documentation/3.0.x/PlayConsole) documentation. The app uses Play 3.0 and sbt 1.x.
 
 ### IDEs
-One of the best IDEs for Scala is [Intellij IDEA](https://en.wikipedia.org/wiki/IntelliJ_IDEA). It has free and open-source Community edition and Scala plugin. Paid (or [available for free for open-source project communities like Wikimedia](https://lists.wikimedia.org/pipermail/wikitech-l/2016-May/085558.html)) Ultimate edition also provides additional support for Play Framework features like [template](https://www.playframework.com/documentation/2.4.x/ScalaTemplates) and [route](https://www.playframework.com/documentation/2.4.x/ScalaRouting) files.
+One of the best IDEs for Scala is [Intellij IDEA](https://en.wikipedia.org/wiki/IntelliJ_IDEA). It has free and open-source Community edition and Scala plugin. Paid (or [available for free for open-source project communities like Wikimedia](https://lists.wikimedia.org/pipermail/wikitech-l/2016-May/085558.html)) Ultimate edition also provides additional support for Play Framework features like [template](https://www.playframework.com/documentation/3.0.x/ScalaTemplates) and [route](https://www.playframework.com/documentation/3.0.x/ScalaRouting) files.
 
-There are Scala plugins for [Eclipse](http://scala-ide.org/) and [NetBeans](https://en.wikipedia.org/wiki/NetBeans) IDEs. 
+[Metals](https://scalameta.org/metals/) brings Scala IDE features to VS Code, Vim, Emacs and other editors through the language server protocol.
 
-There is also ENSIME project that "brings Scala and Java IDE-like features to your favourite text editor". See the [supported features in different text editors](http://ensime.github.io/editors/) like Emacs, Vim or Sublime.
-
-Read more in [Play](https://www.playframework.com/documentation/2.4.x/IDE) and [IntelliJ IDEA](https://www.jetbrains.com/help/idea/2016.2/getting-started-with-play-2-x.html) documentation. Note that JetBrains IDE documentation on Play support assumes Ultimate edition, but parts of it related to Scala and Sbt features apply also for Community edition.
+Read more in the [Play](https://www.playframework.com/documentation/3.0.x/IDE) and [IntelliJ IDEA](https://www.jetbrains.com/help/idea/getting-started-with-play-2-x.html) documentation. Note that JetBrains IDE documentation on Play support assumes Ultimate edition, but parts of it related to Scala and Sbt features apply also for Community edition.
 

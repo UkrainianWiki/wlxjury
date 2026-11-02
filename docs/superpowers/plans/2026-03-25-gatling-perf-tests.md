@@ -1,5 +1,7 @@
 # Gatling DB Performance Tests Implementation Plan
 
+> **Status:** shipped (from `83aef073`; the suite has grown since, see CLAUDE.md "Performance tests"). The task boxes below were never ticked.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Wire up five Gatling simulations that spin up a MariaDB testcontainer + Play TestServer, load real contest data from CSVs, and produce HTML reports proving that V45 indexes improve performance.
