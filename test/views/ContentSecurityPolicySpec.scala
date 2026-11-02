@@ -1,13 +1,15 @@
 package views
 
-import com.typesafe.config.ConfigFactory
 import org.specs2.mutable.Specification
+import security.ProductionFilters
 
 import java.io.File
+import scala.jdk.CollectionConverters._
 
-/** The production content security policy (conf/application.conf; the tests' own config runs
-  * without one): scripts from this host and the inline ones by hash (InlineScriptHashesSpec),
-  * never 'unsafe-inline' or 'unsafe-eval'; styles from this host and inline (unitegallery's
+/** The production content security policy (conf/application.conf's `play.filters.csp`, as Play's
+  * CSPFilter builds the header; the tests' own config runs without one): scripts from this host
+  * and the inline ones by hash (InlineScriptHashesSpec), never 'unsafe-inline' or 'unsafe-eval';
+  * styles from this host and inline (unitegallery's
   * markup has style attributes); fonts from this host only, and images also as data: URIs,
   * which Bootstrap 5's and Tom Select's CSS use for select arrows, checkbox ticks and btn-close;
   * requests to this host and the Commons API, for the category fields' suggestions; no
@@ -15,8 +17,7 @@ import java.io.File
   */
 class ContentSecurityPolicySpec extends Specification {
 
-  private val csp = ConfigFactory.parseFile(new File("conf/application.conf"))
-    .getString("play.filters.headers.contentSecurityPolicy")
+  private val csp = ProductionFilters.cspHeader
 
   private def directives: Seq[Seq[String]] = csp.split(";").toSeq.map(_.trim.split("\\s+").toSeq)
 
@@ -27,6 +28,40 @@ class ContentSecurityPolicySpec extends Specification {
     "name each directive once (a browser ignores a repeated one)" in {
       val names = directives.map(_.head)
       names.distinct must_== names
+    }
+
+    "have exactly these directives: none of Play's own (reference.conf), none added unnoticed" in {
+      directives.map(_.head) must containTheSameElementsAs(Seq("default-src", "script-src", "style-src", "img-src",
+        "media-src", "connect-src", "object-src", "base-uri", "form-action", "frame-ancestors"))
+    }
+
+    "be sent by Play's CSPFilter, not the deprecated key, and use no nonce" in {
+      val release = ProductionFilters.release
+      release.getIsNull("play.filters.headers.contentSecurityPolicy") must beTrue
+      release.getStringList("play.filters.enabled").asScala must contain("play.filters.csp.CSPFilter")
+      release.getBoolean("play.filters.csp.reportOnly") must beFalse
+      release.getBoolean("play.filters.csp.nonce.enabled") must beFalse
+      csp must not(contain("nonce"))
+      csp must not(contain("strict-dynamic"))
+    }
+
+    "be no wider than the policy before it moved to play.filters.csp (S7, P11)" in {
+      // the policy as play.filters.headers.contentSecurityPolicy had it (B5); script-src's hashes
+      // follow the inline scripts (InlineScriptHashesSpec)
+      val before = Map(
+        "default-src" -> Seq("'self'"),
+        "style-src" -> Seq("'self'", "'unsafe-inline'"),
+        "img-src" -> Seq("'self'", "data:", "https://*"),
+        "media-src" -> Seq("'self'", "https://*"),
+        "connect-src" -> Seq("'self'", "https://commons.wikimedia.org"),
+        "object-src" -> Seq("'none'"),
+        "base-uri" -> Seq("'self'"),
+        "form-action" -> Seq("'self'"),
+        "frame-ancestors" -> Seq("'none'")
+      )
+      forall(before.toSeq) { case (name, sources) =>
+        directive(name).aka(name) must containTheSameElementsAs(sources)
+      }
     }
 
     "default to this host only" in {
@@ -64,6 +99,7 @@ class ContentSecurityPolicySpec extends Specification {
     "allow images from data: URIs (Bootstrap's and Tom Select's inline SVGs)" in {
       directive("img-src") must contain("data:")
       directive("img-src") must contain("'self'")
+      directive("img-src") must not(contain("blob:"))
     }
 
     "allow requests to this host and the Commons API only (category-suggest.js)" in {

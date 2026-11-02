@@ -23,10 +23,6 @@ in progress; S6 and S7 queued; S4 and S8 folded into the (postponed) infra plan;
 | P15 | Infra logback lacks `ApiTokenService`/`coi` at INFO (and `org.mariadb.jdbc` at ERROR) | Info | Open; pre-deploy item (the repo's `conf/wlxjury/logback.xml` has all three) | infra | S8 | — | 2026-11-02 |
 | N11 / P12 | SQL logged with bound values; JDBC `useSSL=false` | Info | App part fixed (S5, driver logger `e02a86de`); `useSSL` open (only if the DB is remote) | app + infra | S5, S8 | `LogHygieneSpec` (G9), `SqlLoggingSpec` | 2026-11-02 |
 | P13 | API: failed tokens unlimited; root revocation; double click | Info | Root revocation and double click fixed (S10); failed-token limit open | app / infra | S4, S10 | `ApiTokenPageSpec` | 2026-11-02 |
-| N6 | Login CSRF from a browser with no cookie for the site | Info | Open; moved out of S4 to S3 or S7 | app | S3 or S7 | planned G3 | 2026-11-02 |
-| P4 | Security headers never asserted; no `Permissions-Policy` | Low | Queued | app | S7 | planned G6 | 2026-11-02 |
-| P11 | CSP set through the deprecated key | Info | Queued | app | S7 | `ContentSecurityPolicySpec` | 2026-11-02 |
-| P17 | `/api/docs` under the production CSP not checked in a browser | Info | Queued | app | S7 | — | 2026-11-02 |
 | P3 | `style-src 'unsafe-inline'`; broad `img-src`/`media-src` | Low | Later (user decision) | app | S7 (later) | `ContentSecurityPolicySpec` | 2026-11-02 |
 | P5 | Image proxy: off-set widths rescaled per request, no rate limit | Low | Partial; queued (after B10's benchmark) | app | S6 | planned with S6 | 2026-11-02 |
 | P6 | A juror deactivated in a round can still vote | Low | Queued (decided: both vote actions check `round_user.active`, 409) | app | S6 | `MutationAuthorizationSpec` (to extend) | 2026-11-02 |
@@ -54,6 +50,11 @@ in progress; S6 and S7 queued; S4 and S8 folded into the (postponed) infra plan;
 | N9 | Job status JSON shows the exception message | Info | Fixed (`JobError` key + reference) | app | S5 | `ErrorTextSpec` (G13), `JobControllerSpec` | 2026-11-02 |
 | N10 | Unused pac4j; `pekko-http` 1.0.1; vendored JS | Info | Fixed (pac4j removed, vendored JS listed); `pekko-http` deferred to a scalawiki-first bump | app | S10 | planned G11 | 2026-11-02 |
 | C1 | Criteria votes: misplaced votes accepted, unlocked sums, orphan rates | — (integrity) | Fixed (refused, locked, orphans removed; V78) | app | criteria C1 | `LargeImageSpec`, `MutationAuthorizationSpec` | 2026-11-02 |
+| N6 | Login CSRF from a browser with no cookie for the site | Info | Fixed (every POST needs the token, cookies or not: `protectHeaders = null`; the sign-in, setup and link pages set it) | app | S7 | `LoginCsrfSpec`, `ProductionConfigSpec`, `SecurityHeadersSpec` (no `nocsrf`) | 2026-11-02 |
+| P4 | Security headers never asserted; no `Permissions-Policy` | Low | Fixed (G6 on real responses; `Permissions-Policy`; `Referrer-Policy: same-origin`; header filters first) | app | S7 | `SecurityHeadersSpec` (G6) | 2026-11-02 |
+| P11 | CSP set through the deprecated key | Info | Fixed (`play.filters.csp`, the same policy, no nonce; no deprecation warning) | app | S7 | `ContentSecurityPolicySpec`, `ProductionConfigSpec` | 2026-11-02 |
+| P17 | `/api/docs` under the production CSP not checked in a browser | Info | Fixed without a relaxation (static check of Swagger UI 5.18.3: no inline script or handler, files from this host, `data:` images, no eval reached; router check of its responses); no browser run (no Chrome harness fixture in the worktree) | app | S7 | `SecurityHeadersSpec` | 2026-11-02 |
+| N12 | The token pages' `Referrer-Policy: no-referrer` (S2) replaced by Play's filter value in production | Low | Fixed (found in S7: Play's `SecurityHeadersFilter` overwrote it; `AppSecurityHeadersFilter` keeps it) | app | S7 | `SecurityHeadersSpec` (token page) | 2026-11-02 |
 
 Fixed before the re-review and still guarded (2026-11-02 re-check, no regression): SQL
 injection in `ImageDbNew` (Vuln 1; `RawSqlSpec`, `SelectionQuerySpec`); the committed secret

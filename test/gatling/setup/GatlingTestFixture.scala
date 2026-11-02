@@ -67,7 +67,7 @@ object GatlingTestFixture {
         "jobs.pollInterval"                      -> "2 seconds",
         // region counts: the contest files page's cache, and the round galleries' counts
         "regions.countCache"                     -> GatlingConfig.regionCountCache
-      ) ++ GatlingConfig.regionCounts.map("gallery.regionCounts" -> _) ++ timingConfig ++ cspConfig)
+      ) ++ GatlingConfig.regionCounts.map("gallery.regionCounts" -> _) ++ timingConfig ++ cspConfig ++ filtersConfig)
       .build()
     localApplication = Some(app)
     val server = TestServer(port, app)
@@ -109,32 +109,38 @@ object GatlingTestFixture {
   }
 
   /** With -Dui.csp=production (the screenshot harness's --csp), the production content security
-    * policy from conf/application.conf, which the tests' config doesn't include. With
-    * -Dui.csp=strict (--csp-strict), that policy with its script-src replaced by this host's
-    * files only, without the inline scripts' hashes: the browser then reports each inline script
-    * as a violation, which lists them. */
+    * policy (play.filters.csp from conf/application.conf, security.ProductionFilters), which the
+    * tests' config doesn't include. With -Dui.csp=strict (--csp-strict), that policy with its
+    * script-src replaced by this host's files only, without the inline scripts' hashes: the
+    * browser then reports each inline script as a violation, which lists them. */
+  private val cspMode: Option[String] = sys.props.get("ui.csp").filter(Set("production", "strict"))
+
   private def cspConfig: Map[String, Any] =
-    sys.props.get("ui.csp").filter(Set("production", "strict")).fold(Map.empty[String, Any]) { mode =>
-      val production = com.typesafe.config.ConfigFactory.parseFile(new java.io.File("conf/application.conf"))
-        .getString("play.filters.headers.contentSecurityPolicy")
-      val csp =
-        if (mode != "strict") production
-        else production.split(";").map(_.trim).map(d => if (d.startsWith("script-src")) "script-src 'self'" else d)
-          .mkString("; ")
-      println(s"[csp] $csp")
-      Map("play.filters.headers.contentSecurityPolicy" -> csp)
+    cspMode.fold(Map.empty[String, Any]) { mode =>
+      val directives = security.ProductionFilters.cspDirectives.map { case (name, values) =>
+        name -> (if (mode == "strict" && name == "script-src") "'self'" else values.mkString(" "))
+      }
+      println(s"[csp] " + directives.map { case (n, v) => s"$n $v" }.mkString("; "))
+      Map("play.filters.csp.nonce.enabled" -> false) ++
+        directives.map { case (name, value) => s"play.filters.csp.directives.$name" -> value }
     }
 
-  /** The timing log (modules.RequestTimingFilter) after Play's default filters, if enabled. */
+  /** The filters as the tests' config lists them (production's order), with the content
+    * security policy's after the security headers if -Dui.csp is set, and the timing log
+    * (modules.RequestTimingFilter) after the sessions' limits if enabled. */
+  private def filtersConfig: Map[String, Any] =
+    if (cspMode.isEmpty && !GatlingConfig.timing) Map.empty
+    else Map("play.filters.enabled" -> (
+      Seq("modules.AppSecurityHeadersFilter") ++ cspMode.map(_ => "play.filters.csp.CSPFilter") ++
+        Seq("modules.SessionLifetimeFilter") ++ Seq("modules.RequestTimingFilter").filter(_ => GatlingConfig.timing) ++
+        Seq("play.filters.csrf.CSRFFilter", "play.filters.hosts.AllowedHostsFilter")))
+
+  /** The timing log's file, if enabled. */
   private def timingConfig: Map[String, Any] =
     if (!GatlingConfig.timing) Map.empty
     else {
       println(s"[timing] logging requests to ${GatlingConfig.timingFile}")
-      Map(
-        "play.filters.enabled" -> Seq("modules.SessionLifetimeFilter", "modules.RequestTimingFilter", "play.filters.csrf.CSRFFilter",
-          "play.filters.headers.SecurityHeadersFilter", "play.filters.hosts.AllowedHostsFilter"),
-        "timing.file" -> GatlingConfig.timingFile
-      )
+      Map("timing.file" -> GatlingConfig.timingFile)
     }
 
   private def freePort(): Int = {
