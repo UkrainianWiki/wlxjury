@@ -1622,3 +1622,58 @@ bug in WCn's SQL; the file list and juror rows are run 2's); run 2
 `target/checks/b11-ranks/run2/{summary.txt,samples.csv,analyze.json.txt}`, log
 `target/checks/20261102-112302-8200.log`. A first attempt (`…-105343-9556.log`) stopped on a page
 0 of an empty list, a benchmark bug. No specs (no app code changed).
+
+### B11 phase 2: K implemented
+
+After B9 (`ukwikidev/followups` at `b641c78d`, merged as `9bb607a6`; the plan file's conflict
+kept both sections). Commit `aaad3662`.
+
+- `RoundList.ranked` (a file list, or by rate in any order but file order), `rankCounts()`
+  (`query.keyCounts(rankKey.columns)`) and `ranks(files, counts)`; `ranks(files)` reads the
+  counts itself.
+- `GalleryController.galleryOf`: a lazy `rankCounts` for a ranked list; the pager's total from
+  the juror's counts, else the sum of `rankCounts`, else `list.count()`; the file list's and the
+  by-rate gallery's ranks from the same counts. A page view of all the jurors' votes runs
+  `keyCounts` once and no `COUNT(DISTINCT s.page_id)`.
+- `RankKey.of` for a rated round: the file's rates summed as they are (`selection.map(_.rate).sum`),
+  not `rateSum` (rates below 0 as 0), so the key read in memory is SQL's `sum(s.rate)`. Before,
+  a file with a rate below 0 got no rank in the by-rate gallery if its sum was below 0, and in the
+  file list (whose rows have each vote) the rank of its positive rates' sum, or none. The fixture has no such
+  votes; the new spec has.
+- `RankQueryBenchmark`: `groupedReader(q.tally)` for B9's reader; it compiles (`Test/compile`).
+- `keyCounts` stays (the ranks, now the totals too).
+
+Specs (new): `RoundListDbSpec` "a ranked list (a file list, by rate)": which lists are ranked;
+the sum of the rank counts equals `count()` for a rated round (all the jurors and each juror;
+each filter and `Rate(5)`; no region, regions 12 and 14, an empty region 99; by rate and file
+list: 128 lists) and a yes/no round (each `BinaryOrder` and filter, the unrated empty; by rate
+and file list), and in two regions through the monument table; a rated round with rates below 0
+(sums 6, 5, 3, 2, 2, -1) ranked "1", "2", "3", "4-5", "4-5", "6" over pages of 2, a page past
+the end empty, in the by-rate gallery and the file list; a yes/no round's last page ranked "4"
+in each order and the page past it empty. `AllJurorsListSpec`: the by-rate gallery's page 2 of
+20 files says "16–20 of 20" ranked "11-20." in a binary order, and "16–20 of 20" in file order
+(its count). Checks: `Test/compile`, `Gatling/compile`, `testOnly controllers.{RoundListDbSpec,
+RoundListSpec, AllJurorsListSpec, CsvSpec, GalleryOrderSpec, OwnVotesSpec, GalleryRegionsSpec,
+CoiAuthorizationSpec, RegionMenuSpec} org.intracer.wmua.RankSpec db.scalikejdbc.ImageDbNewDbSpec
+views.{FileListViewSpec, GalleryByRateViewSpec}`: 172 passed, 0 failed
+(`target/checks/20261102-124103-27020.log`).
+
+**Pilot.** `GalleryLatencyBenchmark` as B8's (`-Dbench.cases=^organizer-(binary|rated)-byrate-p1$
+-Dbench.warmup=1 -Dbench.samples=15`, fork `-Xmx1024m -Dgatling.timing=true`, SQL logging off),
+order A, B, B, A; A the merged base `9bb607a6` in a detached worktree (its own fixture dump;
+removed afterwards; the benchmark's one-line `groupedReader` fix applied there uncommitted, as
+its tests didn't compile without it), B `aaad3662`. Client times, n = 30 a cell; paired deltas B
+run k minus A run k, sample by sample, and per block of 5.
+
+| Page | A median (min-max) | B median (min-max) | Paired delta, median (min-max) | B faster | Block median deltas |
+|---|---|---|---|---|---|
+| by-rate, round 2 (rated), all jurors | 1136 ms (1032-1512) | 1005 ms (912-1804) | **-122 ms** (-514 to +707) | 25 of 30 | -89, -119, -133, +25, -153, -130 |
+| by-rate, round 1 (yes/no), all jurors | 803 ms (711-2289) | 667 ms (612-977) | **-134 ms** (-1588 to +231) | 27 of 30 | -147, +34, -127, -204, -399, -131 |
+
+The server's timing log: B runs no `COUNT(DISTINCT s.page_id)` (A's median 130-146 ms rated,
+133-152 ms binary); the grouped page (830-850 rated, 444-477 binary) and `keyCounts` (113-132,
+160-166) are as they were; all the page's queries 1082-1129 → 969-1001 ms rated, 743-816 →
+615-634 ms binary. The per-run medians drifted (A2 was the slowest run of each page), less than
+the delta; the pilot settles it and was not expanded. Raw: `target/checks/b11-pilot/`
+(`{A1,B1,B2,A2}-{client.csv,timing.jsonl}`, `summary.txt`, `b11-pilot-summary.json`); logs
+`target/checks/20261102-125306-6136.log`, `…-125524-17100.log` (B), A's in the removed worktree.
