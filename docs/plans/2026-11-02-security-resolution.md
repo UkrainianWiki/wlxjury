@@ -122,6 +122,60 @@ used until this is resolved (that code is vulnerable too).
 **Dependencies:** none on B9 (ImageDbNew), B10 (benchmark) or B11 (ranks); none of them touches
 these files. Take the migration number at merge time.
 
+### Batch S1 results (2026-11-02)
+
+**Decisions taken (user):** allowlist = `FORM_ROLES` only (`prejury` is read nowhere in the
+code, only in tests, which now use `no`); a binary-exact `CHECK` constraint; hotfix now; the
+legacy `jury1` / `jury-` rows (production: 19 + 3, jurors disabled by hand) become `no`
+directly, **no audit table**; any other bad value fails the migration for a person to look at.
+
+**As implemented** (branch `ukwikidev/security-s1`, from `ukwikidev/security-rereview`):
+
+1. `User.ContestRoles = FORM_ROLES.toSet`, `User.isContestRole`, and
+   `User.mayAssignRoles(editor, roles)` (each a contest role, or root from a root editor).
+2. Form: `"roles" -> optional(text.verifying("error.invalid", isContestRole || == root))`.
+3. Controller: `saveUser` refuses (400 with the form, WARN `security.roles` with account and
+   target id, no value) any role `mayAssignRoles` rejects before any branch writes; the `id = 0`
+   branch also maps the service's `IllegalArgumentException` to that 400; `updateAccount` writes
+   `user_contest` only for `isContestRole`. Root still goes only through `User.setRoot`.
+   `UserService.addToContest` `require`s `mayAssignRoles(creator, formUser.roles)`.
+4. DAO: `createMembership`, `updateRole` and `User.create` (before inserting the user) `require`
+   an allowlisted role.
+5. Reader: `UserContest.roles` is `Set(role)` if allowlisted, else empty (inactive membership,
+   one WARN on `security.roles` per row read, ids only); `User.inContest` intersects with
+   `ContestRoles`; `User.contestMembers` with a role filter also keeps only exact matches (the
+   SQL `IN` is case- and trailing-space-insensitive).
+6. `V76__User_contest_role_allowlist.sql`: `UPDATE user_contest SET role = 'no' WHERE BINARY
+   role IN ('jury1', 'jury-')`, then `DROP CONSTRAINT IF EXISTS` +
+   `ADD CONSTRAINT chk_user_contest_role CHECK (BINARY role IN ('no', 'jury', 'organizer',
+   'admin', 'board', 'auditor', 'staff'))`. Verified on the Testcontainers MariaDB 10.6:
+   the constraint refuses `root`, `Root`, `root `, ` root`, `jury,root`, `Jury`, `jury `,
+   `admin `, `USER_ID_1`, `jury1`, `jury-`, `prejury`, `superuser` and `''` on insert and on
+   update; MariaDB validates existing rows on `ADD CONSTRAINT` (error 4025), so any other
+   value fails the migration and stays as it was (no explicit guard needed).
+
+**Deviation:** an empty `roles` value is "no role given" (Play's `optional` cannot tell it from
+the absent field a non-admin's form sends), not a 400; it writes nothing for an admin (spec'd).
+Behaviour change: an admin's `id = 0` save with `root` used to create a juror silently; it is
+now a 400 creating nothing (`MultiContestUserSpec` updated).
+
+**Specs:** `controllers.RoleAssignmentSpec` (15: admin's own id, another member, `id = 0` new
+and existing email, a root user's form, empty role, each allowlisted role, another contest,
+organizer/juror, root sets `is_root` without a membership, root refused non-roles,
+`addToContest`, a stored `jury,root` row: no root, inactive, 403), `UserContestSpec` (+DAO
+`require`s, `User.create`), `UserContestRolesSpec` (reader, `inContest`),
+`db.UserContestRoleMigrationSpec` (constraint, reset, failure on other values, rerun),
+plus `UserControllerSpec`, `UserDbSpec`, `MultiContestUserSpec`, `SecuredSpec`,
+`MutationAuthorizationSpec`, `LoginControllerSpec`, `PasswordStorageSpec`,
+`ConvertToInnoDbMigrationSpec` (runs V76 after V53), `ProductionConfigSpec`, `RoundSpec`,
+`CoiMembersSpec`, `ImageDistributorSpec`, `MigrationNamingSpec`.
+
+**Backport:** see `docs/security/2026-11-02-role-allowlist-hotfix.md` on
+`ukwikidev/hotfix-role-allowlist` (from `6fa5b56f`): items 1–5 with the deployed form's four
+roles (`no`, `jury`, `organizer`, `admin`; a subset of V76's list), no migration; the data
+script `docs/security/2026-11-02-role-allowlist-data.sql` there does V76's `UPDATE` by hand.
+When merging the hotfix into the forward branch, keep this branch's `FORM_ROLES` (seven roles).
+
 ## S2: Account integrity
 
 **Items:** O2, N2 (current password), N4, N7, N5, P14, P18, P20.
