@@ -23,6 +23,9 @@ class UserController @Inject()(cc: ControllerComponents,
     extends Secured(cc)
     with I18nSupport {
 
+  /** A refused role value: the editor's and the target's account ids, never the value. */
+  private val rolesLogger = play.api.Logger("security.roles")
+
   /**
     * @param contestIdParam optional contest Id. If not set, contest of the admin user is used
     * @return List of users in admin view
@@ -148,25 +151,42 @@ class UserController @Inject()(cc: ControllerComponents,
     * @return list of users
     */
   def saveUser(): EssentialAction = withAuth() { user => implicit request =>
+    def formErrors(formWithErrors: Form[User]): Result =
+      BadRequest(
+        views.html.editUser(
+          user,
+          formWithErrors,
+          contestId = Try(formWithErrors.data("contest").toLong).toOption
+        )
+      )
+
+    /** A role that is not a contest role, or root from anyone but root: refused before
+      * anything is written ([[User.mayAssignRoles]]).
+      */
+    def roleRefused(formUser: User): Result = {
+      rolesLogger.warn(s"refused a role that is not assignable accountId=${user.getId} targetId=${formUser.getId}")
+      formErrors(editUserForm.bindFromRequest().withError("roles", "error.invalid"))
+    }
+
     editUserForm
       .bindFromRequest()
       .fold(
-        formWithErrors => // binding failure, you retrieve the form containing errors,
-          BadRequest(
-            views.html.editUser(
-              user,
-              formWithErrors,
-              contestId = Try(formWithErrors.data("contest").toLong).toOption
-            )
-        ),
+        formWithErrors => formErrors(formWithErrors), // binding failure
         formUser => {
           val userId = formUser.getId
-          if (userId == 0) {
+          if (!User.mayAssignRoles(user, formUser.roles)) {
+            roleRefused(formUser)
+          } else if (userId == 0) {
             if (user.isAdmin(formUser.contestId)) {
               // an existing email joins the contest with its account
-              val added = userService.createNewUser(user, formUser)
-              Redirect(routes.UserController.users(formUser.contestId))
-                .flashing("users-added" -> addedMessage(Seq(added)))
+              try {
+                val added = userService.createNewUser(user, formUser)
+                Redirect(routes.UserController.users(formUser.contestId))
+                  .flashing("users-added" -> addedMessage(Seq(added)))
+              } catch {
+                // a role the service refuses ([[UserService.addToContest]]): nothing created
+                case _: IllegalArgumentException => roleRefused(formUser)
+              }
             } else {
               Redirect(routes.LoginController.index) // TODO message
             }
@@ -211,15 +231,15 @@ class UserController @Inject()(cc: ControllerComponents,
         }
       }
 
-      // only admins change roles, only root makes root, and only in editedUser's contest.
-      // A root user's form shows root, which an admin's role list lacks: an admin leaves a
-      // root user's role alone.
+      // only admins change roles, only root makes root (users.is_root, never a contest
+      // role), and only in editedUser's contest. A root user's form shows root, which an
+      // admin's role list lacks: an admin leaves a root user's role alone.
       val newRole = formUser.roles.headOption
       if (user.hasRole(User.ROOT_ROLE) && !user.id.contains(userId)) {
         User.setRoot(userId, newRole.contains(User.ROOT_ROLE))
       }
       for {
-        role <- newRole if role != User.ROOT_ROLE && user.hasAnyRole(User.ADMIN_ROLES)
+        role <- newRole if User.isContestRole(role) && user.hasAnyRole(User.ADMIN_ROLES)
         if user.hasRole(User.ROOT_ROLE) || !editedUser.hasRole(User.ROOT_ROLE)
         contestId <- editedUser.contestId
       } UserContestJdbc.updateRole(userId, contestId, role)
@@ -355,7 +375,9 @@ class UserController @Inject()(cc: ControllerComponents,
       "wikiAccount" -> optional(text),
       "email" -> email,
       "password" -> optional(text),
-      "roles" -> optional(text),
+      // exactly one contest role, or root (only root may submit it: [[User.mayAssignRoles]]);
+      // no trimming, case folding or lists. Empty or absent: no role given
+      "roles" -> optional(text.verifying("error.invalid", r => User.isContestRole(r) || r == User.ROOT_ROLE)),
       "contest" -> optional(longNumber),
       "lang" -> optional(text),
       "sort" -> optional(number)

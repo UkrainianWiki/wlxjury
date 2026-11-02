@@ -34,12 +34,16 @@ class UserService @Inject()(val sendMail: SMTPOrWikiMail,
     *
     * For an organizer adding people only: it hands out existing accounts. Sign-up creates
     * its account with [[createAccount]].
+    *
+    * Throws `IllegalArgumentException`, changing nothing, if `formUser`'s roles are not
+    * each a contest role ([[User.ContestRoles]]), or root from a root creator.
     */
   def addToContest(
       creator: User,
       formUser: User,
       contestOpt: Option[ContestJury])(implicit messages: Messages): UserService.Added = {
     import UserService._
+    require(User.mayAssignRoles(creator, formUser.roles), "not a contest role")
     val contestId = contestOpt.flatMap(_.id).orElse(creator.contestId)
     val role = formUser.contestRole.getOrElse(User.JURY_ROLE)
 

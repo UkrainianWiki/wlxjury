@@ -43,11 +43,14 @@ case class User(
   /** The role for a round_user row or the edit form; contestRoles normally has one. */
   def contestRole: Option[String] = contestRoles.toSeq.sorted.headOption
 
-  /** This user as a member of the membership's contest, with their role there. */
+  /** This user as a member of the membership's contest, with their role there: only an
+    * allowlisted one ([[User.ContestRoles]]), never root or a USER_ID_ marker, which come
+    * only from the users row ([[User.extract]]).
+    */
   def inContest(membership: UserContest): User =
     copy(
       contestId = Some(membership.contestId),
-      roles = roles -- contestRoles ++ membership.roles
+      roles = roles -- contestRoles ++ (membership.roles & User.ContestRoles)
     )
 
   def hasRole(role: String): Boolean = roles.contains(role)
@@ -112,6 +115,24 @@ object User extends CRUDMapper[User] {
   val USER_ID_PREFIX = "USER_ID_"
   /** The edit form's "no role": a member of the contest without access to it. */
   val NO_ROLE = "no"
+
+  /** The roles the users page and its edit form offer, in their order. */
+  val FORM_ROLES: Seq[String] = Seq(NO_ROLE, JURY_ROLE, "organizer", ADMIN_ROLE)
+
+  /** Every role a contest membership (user_contest.role) may hold: exactly [[FORM_ROLES]],
+    * compared exactly (no trimming, no case folding, no lists). Root is not one (it is
+    * users.is_root, set by root only), nor a USER_ID_ marker.
+    */
+  val ContestRoles: Set[String] = FORM_ROLES.toSet
+
+  /** Whether `role` may be stored as a contest membership's role ([[ContestRoles]]). */
+  def isContestRole(role: String): Boolean = ContestRoles.contains(role)
+
+  /** Whether `editor` may submit `roles` for a user (the edit form's, the add-user row's):
+    * each one a contest role, or root from a root editor only.
+    */
+  def mayAssignRoles(editor: User, roles: Set[String]): Boolean =
+    roles.forall(r => isContestRole(r) || r == ROOT_ROLE && editor.hasRole(ROOT_ROLE))
   val LANGS = Map("en" -> "English", "fr" -> "Français", "ru" -> "Русский", "uk" -> "Українська")
 
   def unapplyEdit(user: User): Option[
@@ -298,6 +319,8 @@ object User extends CRUDMapper[User] {
       }.map { rs =>
         User(u.resultName)(rs).inContest(UserContestJdbc.extract(rs, uc.resultName))
       }.list()
+        // the column compares case- and trailing-space-insensitively: keep exact matches only
+        .filter(member => roles.forall(_.exists(member.contestRoles.contains)))
     }
 
   def findByContest(contestId: Long)(implicit session: DBSession = autoSession): Seq[User] =
@@ -446,6 +469,8 @@ object User extends CRUDMapper[User] {
     * membership in that contest. A root role sets users.is_root.
     */
   def create(user: User)(implicit session: DBSession = AutoSession): User = {
+    // before anything is written: a contest role is an allowlisted one, nothing else
+    require(user.contestRoles.forall(isContestRole), "not a contest role")
     val root = user.isRoot || user.hasRole(ROOT_ROLE)
     val id = withSQL {
       insert
