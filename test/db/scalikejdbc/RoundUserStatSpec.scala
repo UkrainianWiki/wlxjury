@@ -26,7 +26,7 @@ class RoundUserStatSpec extends Specification with BeforeAll with TestDb {
   private def withCleanDb[A](body: DBSession => A): A = {
     SharedTestDb.truncateAll()
     DB.autoCommit { implicit session =>
-      insertImagesFor(1L to 99L: _*) // the images of the tests' selection rows (page ids < 100)
+      insertImagesFor(1L to 99L: _*) // the images of the tests' vote rows (page ids < 100)
       body(session)
     }
   }

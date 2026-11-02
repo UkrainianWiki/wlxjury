@@ -86,6 +86,12 @@ class ConvertToInnoDbMigrationSpec extends Specification with AfterAll {
     .map(n => (n.drop(1).takeWhile(_ != '_' ).toInt, n.drop(1).split("__").head.split("_").drop(1).headOption.map(_.toInt).getOrElse(0), n))
     .filter(_._1 > 53).sortBy(m => (m._1, m._2)).map(_._3).toSeq
 
+  /** V82 renames selection and rounds, which V62 reads: the V62 examples, which run V62 after the
+    * others, stop before it.
+    */
+  private val v82 = "V82__Rename_selection_to_vote.sql"
+  private lazy val beforeVoteRename: Seq[String] = afterV53.takeWhile(_ != v82)
+
   private val v65 = "V65__Category_members_foreign_keys.sql"
 
   /** category_members' foreign keys: name -> (referenced table, delete rule). */
@@ -198,10 +204,32 @@ class ConvertToInnoDbMigrationSpec extends Specification with AfterAll {
     "every migration after V53 then run in Flyway's order" in {
       afterV53 must contain(v55_1)
       Using.resource(prodLikeDb("chain")) { c =>
+        afterV53 must contain(v82)
         afterV53.foreach(m => run(c, script(m)))
-        tableStatus(c)("selection")._1 === "InnoDB"
-        rows(c, """SELECT COUNT(*) FROM information_schema.REFERENTIAL_CONSTRAINTS
-                   WHERE CONSTRAINT_SCHEMA = DATABASE() AND CONSTRAINT_NAME = 'FK_selection_page_id'""")(_.getInt(1)) === List(1)
+        val status = tableStatus(c)
+        status("vote")._1 === "InnoDB"
+        Seq("selection", "selection_deleted", "selection_orphans", "rounds").filter(status.contains) must beEmpty
+        Seq("vote_aside", "vote_orphan", "round").filterNot(status.contains) must beEmpty
+        rows(c, "SELECT id, name FROM round")(rs => (rs.getLong(1), rs.getString(2))) === List((40L, "Відбір"))
+        // V58's foreign key under V82's name, still to images and cascading
+        rows(c, """SELECT CONSTRAINT_NAME, TABLE_NAME, REFERENCED_TABLE_NAME, DELETE_RULE
+                   FROM information_schema.REFERENTIAL_CONSTRAINTS
+                   WHERE CONSTRAINT_SCHEMA = DATABASE() AND REFERENCED_TABLE_NAME = 'images'
+                     AND TABLE_NAME <> 'category_members'""")(rs =>
+          (rs.getString(1), rs.getString(2), rs.getString(3), rs.getString(4))) ===
+          List(("vote_page_id_fk", "vote", "images", "CASCADE"))
+        // the rows, the counter and production's id key (UNIQUE `id`, not PRIMARY) kept
+        rows(c, "SELECT id, rate FROM vote ORDER BY id")(rs => (rs.getLong(1), rs.getInt(2))) === List((10L, 1), (11L, -1))
+        rows(c, "SELECT AUTO_INCREMENT FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'vote'")(
+          _.getLong(1)) === List(5000L)
+        rows(c, "SELECT vote_id, criteria, rate FROM criteria_rate")(rs => (rs.getLong(1), rs.getLong(2), rs.getInt(3))) ===
+          List((10L, 1L, 5))
+        // every index and key of the renamed tables starts with its table's name, but the id keys
+        rows(c, """SELECT DISTINCT TABLE_NAME, INDEX_NAME FROM information_schema.STATISTICS
+                   WHERE TABLE_SCHEMA = DATABASE()
+                     AND TABLE_NAME IN ('vote', 'vote_aside', 'vote_orphan', 'criteria_rate', 'criteria_rate_orphan', 'round')
+                     AND INDEX_NAME NOT IN ('PRIMARY', 'id') AND INDEX_NAME NOT LIKE CONCAT(TABLE_NAME, '\\_%')""")(rs =>
+          (rs.getString(1), rs.getString(2))) must beEmpty
         memberKeys(c) === cascadingMemberKeys
       }
     }
@@ -306,7 +334,7 @@ class ConvertToInnoDbMigrationSpec extends Specification with AfterAll {
           // a legacy round: a vote, no round_user row
           "INSERT INTO selection (id, page_id, rate, round_id, jury_id) VALUES (12, 100, 1, 46, 17)"
         ))
-        afterV53.filterNot(_.startsWith("V62")).foreach(m => run(c, script(m)))
+        beforeVoteRename.filterNot(_.startsWith("V62")).foreach(m => run(c, script(m)))
         // a previous round of a running distribution: frozen, with its saved flag on
         run(c, Seq("UPDATE rounds SET freeze_count = 1, active_before_freeze = 1 WHERE id = 44"))
         run(c, script("V62__Migrate_roles_to_user_contest.sql"))
@@ -327,7 +355,7 @@ class ConvertToInnoDbMigrationSpec extends Specification with AfterAll {
     "V62 stopped before its ALTER, run again, keep the round flags the first run saw" in {
       Using.resource(prodLikeDb("rerun")) { c =>
         run(c, Seq("INSERT INTO contest_jury (id, name, country, year) VALUES (9, 'Wiki Loves Monuments', 'Ukraine', 2026)"))
-        afterV53.filterNot(_.startsWith("V62")).foreach(m => run(c, script(m)))
+        beforeVoteRename.filterNot(_.startsWith("V62")).foreach(m => run(c, script(m)))
         val v62 = script("V62__Migrate_roles_to_user_contest.sql")
         run(c, v62.filterNot(_.startsWith("ALTER TABLE users")))
         run(c, v62)

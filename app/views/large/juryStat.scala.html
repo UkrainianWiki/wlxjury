@@ -1,15 +1,15 @@
-@import org.intracer.wmua.Selection
+@import org.intracer.wmua.Vote
 @import db.scalikejdbc.User
-@(selections: Seq[(Selection, User)],
+@(votes: Seq[(Vote, User)],
         list: RoundList)(implicit messages: Messages)
 
 <div class="large-line">
     <ol>
-        @for((selection, user) <- selections) {
+        @for((vote, user) <- votes) {
             @* each juror's vote, linking the file in that juror's gallery: the approvals, then the
-               rejections and the jurors yet to vote (SelectionJdbc.byRoundAndImageWithJury) *@
-            <li>@showRate(selection, list.round, user.fullname,
-                list.withViewer(user.getId).withFilter(VoteFilter.All).atUrl(selection.pageId))
+               rejections and the jurors yet to vote (VoteJdbc.byRoundAndImageWithJury) *@
+            <li>@showRate(vote, list.round, user.fullname,
+                list.withViewer(user.getId).withFilter(VoteFilter.All).atUrl(vote.pageId))
             }
     </ol>
 </div>

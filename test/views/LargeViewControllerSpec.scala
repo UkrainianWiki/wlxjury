@@ -25,7 +25,7 @@ class LargeViewControllerSpec extends PlaySpecification {
       val files = Seq(
         ImageWithRating(
           Image(pageId = 1, title = "File:1.jpg"),
-          selection = Nil)
+          votes = Nil)
       )
 
       val round = Round(id = Some(1), number = 1, contestId = 1, active = true, rates = Round.ratesById(5))
@@ -65,7 +65,7 @@ class LargeViewControllerSpec extends PlaySpecification {
       implicit val request = play.api.test.FakeRequest("GET", "/").withCSRFToken
       implicit val messages = Helpers.stubMessagesApi().preferred(request)
 
-      val files = Seq(1L, 2L).map(id => ImageWithRating(Image(pageId = id, title = s"File:$id.jpg"), selection = Nil))
+      val files = Seq(1L, 2L).map(id => ImageWithRating(Image(pageId = id, title = s"File:$id.jpg"), votes = Nil))
       val round = Round(id = Some(1), number = 1, contestId = 1, active = true, rates = Round.binaryRound)
       val html = views.html.large.main_large(
         user = User("name", "email", id = Some(1), roles = Set("jury"), contestId = Some(1)),

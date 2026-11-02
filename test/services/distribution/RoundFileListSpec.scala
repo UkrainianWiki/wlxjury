@@ -42,7 +42,7 @@ class RoundFileListSpec extends Specification with TestDb with BeforeAll with Be
     Round(None, 0, Some("R"), contest.getId, distribution = 0, active = true,
       minMpx = if (filtered) Some(100) else None)
 
-  private def pageIds(roundId: Long): Set[Long] = SelectionJdbc.byRound(roundId).map(_.pageId).toSet
+  private def pageIds(roundId: Long): Set[Long] = VoteJdbc.byRound(roundId).map(_.pageId).toSet
 
   private def jobOf(roundId: Long) = {
     val latest = JobJdbc.latestBySubjects(RoundDistributionHandler.Kind, RoundDistributionHandler.SubjectType, Seq(roundId))
@@ -67,7 +67,7 @@ class RoundFileListSpec extends Specification with TestDb with BeforeAll with Be
       svc.distributeNewFiles(round.getId, titles = ImportSource.titles(list), newFiles = false)
 
       pageIds(round.getId) === Set(3L, 4L, 100L)
-      SelectionJdbc.byRound(round.getId).size === 6 // to both jurors
+      VoteJdbc.byRound(round.getId).size === 6 // to both jurors
       ImageJdbc.findByTitles(Seq(onCommons.title)).map(_.pageId) === Seq(100L)
       // the round's, not the contest's
       imageDao.findByContest(contestDao.findById(contest.getId).get).map(_.pageId) must not(contain(100L))
@@ -90,7 +90,7 @@ class RoundFileListSpec extends Specification with TestDb with BeforeAll with Be
       svc.distributeNewFiles(round.getId, titles = ImportSource.titles(list), newFiles = false)
 
       pageIds(round.getId) === Set(3L, 4L, 100L)
-      SelectionJdbc.byRound(round.getId).size === 6
+      VoteJdbc.byRound(round.getId).size === 6
       RoundDistributionHandler.stateOf(jobOf(round.getId)).imagesAdded === 2L
     }
 

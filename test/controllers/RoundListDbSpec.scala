@@ -43,8 +43,8 @@ class RoundListDbSpec extends Specification with TestDb with BeforeAll with Befo
       rate: Int,
       user: User,
       round: Round
-  ): Seq[Selection] = {
-    val selections = images.map(img => Selection(img, user, round, rate))
+  ): Seq[Vote] = {
+    val selections = images.map(img => Vote(img, user, round, rate))
     selectionDao.batchInsert(selections)
     selections
   }
@@ -59,7 +59,7 @@ class RoundListDbSpec extends Specification with TestDb with BeforeAll with Befo
 
       result.size === 3
       result.map(_.image) === images.slice(0, 3)
-      result.map(_.selection.size) === Seq(1, 1, 1)
+      result.map(_.votes.size) === Seq(1, 1, 1)
       result.map(_.rate) === Seq(0, 0, 0)
     }
 
@@ -79,7 +79,7 @@ class RoundListDbSpec extends Specification with TestDb with BeforeAll with Befo
 
         result.size === 2
         result.map(_.image) === slice(rate)
-        result.map(_.selection.size) === Seq(1, 1)
+        result.map(_.votes.size) === Seq(1, 1)
         result.map(_.rate) === Seq(rate, rate)
       }
     }
@@ -99,7 +99,7 @@ class RoundListDbSpec extends Specification with TestDb with BeforeAll with Befo
 
       result.size === 6
       result.map(_.image) === slice(1) ++ slice(0) ++ slice(-1)
-      result.map(_.selection.size) === Seq.fill(6)(1)
+      result.map(_.votes.size) === Seq.fill(6)(1)
       result.map(_.rate) === Seq(1, 1, 0, 0, -1, -1)
     }
 
@@ -108,7 +108,7 @@ class RoundListDbSpec extends Specification with TestDb with BeforeAll with Befo
       val images = createImages(6)
 
       val selections = images.zipWithIndex.map { case (image, rate) =>
-        Selection(image, user, round, rate)
+        Vote(image, user, round, rate)
       }
       selectionDao.batchInsert(selections)
 
@@ -116,7 +116,7 @@ class RoundListDbSpec extends Specification with TestDb with BeforeAll with Befo
 
       result.size === 6
       result.map(_.image) === images.reverse
-      result.map(_.selection.size) === Seq.fill(6)(1)
+      result.map(_.votes.size) === Seq.fill(6)(1)
       result.map(_.rate) === (0 to 5).reverse
     }
   }
@@ -130,9 +130,9 @@ class RoundListDbSpec extends Specification with TestDb with BeforeAll with Befo
         userDao.create(User(s"fullname$i", s"email$i", None, Set("jury"), contestId = contest.id))
       )
 
-      def selectedBy(n: Int, image: Image, otherRate: Int = 0): Seq[Selection] = {
-        jurors.slice(0, n).map(j => Selection(image, j, round, rate = 1)) ++
-          jurors.slice(n, jurors.size).map(j => Selection(image, j, round, otherRate))
+      def selectedBy(n: Int, image: Image, otherRate: Int = 0): Seq[Vote] = {
+        jurors.slice(0, n).map(j => Vote(image, j, round, rate = 1)) ++
+          jurors.slice(n, jurors.size).map(j => Vote(image, j, round, otherRate))
       }
 
       val selectedByX = (0 to 3).flatMap(x => selectedBy(x, images(x)))
@@ -142,7 +142,7 @@ class RoundListDbSpec extends Specification with TestDb with BeforeAll with Befo
 
       result.size === 4
       result.map(_.image) === Seq(images(3), images(2), images(1), images(0))
-      result.map(_.selection.size) === Seq(1, 1, 1, 1)
+      result.map(_.votes.size) === Seq(1, 1, 1, 1)
       result.map(_.rate) === Seq(3, 2, 1, 0)
     }
 
@@ -156,7 +156,7 @@ class RoundListDbSpec extends Specification with TestDb with BeforeAll with Befo
 
       def rateN(imageIndex: Int, rates: Seq[Int]) =
         (0 until rates.size).zip(rates).map { case (j, r) =>
-          Selection(images(imageIndex), jurors(j), round, r)
+          Vote(images(imageIndex), jurors(j), round, r)
         }
 
       val selections =
@@ -168,7 +168,7 @@ class RoundListDbSpec extends Specification with TestDb with BeforeAll with Befo
 
       result.size === 2
       result.map(_.image) === Seq(images(0), images(1))
-      result.map(_.selection.size) === Seq(3, 3)
+      result.map(_.votes.size) === Seq(3, 3)
       result.map(_.rate) === Seq(1, 0)
     }
 
@@ -180,9 +180,9 @@ class RoundListDbSpec extends Specification with TestDb with BeforeAll with Befo
         userDao.create(User(s"fullname$i", s"email$i", None, Set("jury"), contestId = contest.id))
       )
 
-      def selectedBy(n: Int, image: Image, otherRate: Int = 0): Seq[Selection] = {
-        jurors.slice(0, n).map(j => Selection(image, j, round, rate = 1)) ++
-          jurors.slice(n, jurors.size).map(j => Selection(image, j, round, otherRate))
+      def selectedBy(n: Int, image: Image, otherRate: Int = 0): Seq[Vote] = {
+        jurors.slice(0, n).map(j => Vote(image, j, round, rate = 1)) ++
+          jurors.slice(n, jurors.size).map(j => Vote(image, j, round, otherRate))
       }
 
       val selectedByX = (0 to 3).flatMap(x => selectedBy(x, images(x)))
@@ -193,8 +193,8 @@ class RoundListDbSpec extends Specification with TestDb with BeforeAll with Befo
       result.size === 4
       result.map(_.image) === Seq(images(3), images(2), images(1), images(0))
       result.map(_.rate) === Seq(1, 1, 1, 0)
-      result.map(_.selection.size) === Seq(4, 4, 4, 4)
-      result.map(_.selection.map(_.rate)) === Seq(
+      result.map(_.votes.size) === Seq(4, 4, 4, 4)
+      result.map(_.votes.map(_.rate)) === Seq(
         Seq(1, 1, 1, 0),
         Seq(1, 1, 0, 0),
         Seq(1, 0, 0, 0),
@@ -215,7 +215,7 @@ class RoundListDbSpec extends Specification with TestDb with BeforeAll with Befo
         userDao.create(User(s"fullname$i", s"email$i", None, Set("jury"), contestId = contest.id)))
       val votes = Seq(Seq(1, 1, 1, -1, -1), Seq(1, 1, 0, 0, 0), Seq(1, 1, 1, 0, 0), Seq(0, 0, 0, 1, 1))
       selectionDao.batchInsert(images.zip(votes).flatMap { case (image, rates) =>
-        jurors.zip(rates).map { case (j, r) => Selection(image, j, round, r) }
+        jurors.zip(rates).map { case (j, r) => Vote(image, j, round, r) }
       })
       (round, images.map(_.pageId))
     }
@@ -277,7 +277,7 @@ class RoundListDbSpec extends Specification with TestDb with BeforeAll with Befo
         // the selected: every file, in the order of all of them
         (shown(filtered(VoteFilter.Rate(1))).map(_._1) must_== Seq(2, 0, 1, 3).map(ids)) and
         // the file list: the same files, each with all its votes, ranked among the listed ones
-        (filtered(VoteFilter.Rate(-1), GalleryView.FileList).files(Pager(1, 1, 1000)).map(_.selection.size)
+        (filtered(VoteFilter.Rate(-1), GalleryView.FileList).files(Pager(1, 1, 1000)).map(_.votes.size)
           must_== Seq(5)) and
         (filtered(VoteFilter.Unrated, GalleryView.FileList).ranks(
           filtered(VoteFilter.Unrated, GalleryView.FileList).files(Pager(1, 3, 1000))) must_== Seq("1", "2-3", "2-3"))
@@ -295,7 +295,7 @@ class RoundListDbSpec extends Specification with TestDb with BeforeAll with Befo
       // selection column `rate` would order them in place of the sum
       val votes = Seq(Seq(1, 1, 1), Seq(5, 0, 0), Seq(2, 2, 2), Seq(4, 0, 0))
       selectionDao.batchInsert(images.zip(votes).flatMap { case (image, rates) =>
-        jurors.zip(rates).map { case (j, r) => Selection(image, j, round, r) }
+        jurors.zip(rates).map { case (j, r) => Vote(image, j, round, r) }
       })
       val byRate = RoundList(round, 0, view = GalleryView.ByRate)
       val ordered = Seq(2, 1, 3, 0).map(images(_).pageId)
@@ -327,7 +327,7 @@ class RoundListDbSpec extends Specification with TestDb with BeforeAll with Befo
         userDao.create(User(s"fullname$i", s"email$i", None, Set("jury"), contestId = contest.id)))
       val votes = Seq(Seq(1, 1, 1), Seq(5, 0, 0), Seq(2, 2, 2), Seq(3, -1, 0), Seq(-1, 0, 0), Seq(2, 0, 0))
       selectionDao.batchInsert(images.zip(votes).flatMap { case (image, rates) =>
-        jurors.zip(rates).map { case (j, r) => Selection(image, j, round, r) }
+        jurors.zip(rates).map { case (j, r) => Vote(image, j, round, r) }
       })
       (round, jurors, images.map(_.pageId))
     }
@@ -335,9 +335,9 @@ class RoundListDbSpec extends Specification with TestDb with BeforeAll with Befo
     "leave a juror's vote without a page id out of their pages, counts and places" in {
       val (round, jurors, ids) = setUpRated()
       val juror = jurors.head
-      // `selection.page_id` is nullable: such a vote, the juror's highest rate, in region 12
+      // `vote.page_id` is nullable: such a vote, the juror's highest rate, in region 12
       scalikejdbc.DB.autoCommit { implicit s =>
-        scalikejdbc.SQL("INSERT INTO selection (page_id, rate, jury_id, round_id, monument_id) VALUES (NULL, 5, ?, ?, '12-345-99')")
+        scalikejdbc.SQL("INSERT INTO vote (page_id, rate, jury_id, round_id, monument_id) VALUES (NULL, 5, ?, ?, '12-345-99')")
           .bind(juror.getId, round.getId).update()
       }
       // the juror's rates 1, 5, 2, 3, -1, 2: F1, F3, F2 and F5 (in file order), F0, F4
@@ -398,7 +398,7 @@ class RoundListDbSpec extends Specification with TestDb with BeforeAll with Befo
       val other = userDao.create(User("fullname1", "email1", None, Set("jury"), contestId = contest.id))
       val votes = Seq(Seq(3, 0), Seq(0, 2), Seq(5, 5), Seq(1, 1))
       selectionDao.batchInsert(images.zip(votes).flatMap { case (image, rates) =>
-        Seq(user, other).zip(rates).map { case (j, r) => Selection(image, j, round, r) }
+        Seq(user, other).zip(rates).map { case (j, r) => Vote(image, j, round, r) }
       })
       val lists = for {
         asUserId <- Seq(0L, user.getId)
@@ -434,7 +434,7 @@ class RoundListDbSpec extends Specification with TestDb with BeforeAll with Befo
       // approvals and rejections 2 1, 1 2, 0 3, 3 0; no unrated vote, so that filter lists none
       val votes = Seq(Seq(1, 1, -1), Seq(1, -1, -1), Seq(-1, -1, -1), Seq(1, 1, 1))
       selectionDao.batchInsert(images.zip(votes).flatMap { case (image, rates) =>
-        jurors.zip(rates).map { case (j, r) => Selection(image, j, round, r) }
+        jurors.zip(rates).map { case (j, r) => Vote(image, j, round, r) }
       })
       val lists = for {
         order <- BinaryOrder.all
@@ -524,7 +524,7 @@ class RoundListDbSpec extends Specification with TestDb with BeforeAll with Befo
 
     "keep a file the filter now leaves out, where its new rate puts it" in {
       val (round, user, order) = setUpN(10)
-      SelectionJdbc.rate(order(5), user.getId, round.getId, 4)
+      VoteJdbc.rate(order(5), user.getId, round.getId, 4)
       val hood = RoundList(round, user.getId, filter = VoteFilter.Unrated).around(order(5)).get
       // by rate, first: the unrated files after it
       hood.file.pageId === order(5)
@@ -543,7 +543,7 @@ class RoundListDbSpec extends Specification with TestDb with BeforeAll with Befo
 
     "show in the strip the files after one the filter now leaves out" in {
       val (round, user, order) = setUpN(10)
-      SelectionJdbc.rate(order(5), user.getId, round.getId, 4)
+      VoteJdbc.rate(order(5), user.getId, round.getId, 4)
       val hood = RoundList(round, user.getId, filter = VoteFilter.Unrated).around(order(5)).get
       hood.following.map(_.pageId) === order.filterNot(_ == order(5)).take(5)
     }
@@ -560,7 +560,7 @@ class RoundListDbSpec extends Specification with TestDb with BeforeAll with Befo
     /** The vote for the file, as the large view casts it: its place first, then the vote. */
     def vote(list: RoundList, pageId: Long, rate: Int): Option[MovedVote] = {
       val before = list.position(pageId).get
-      SelectionJdbc.rate(pageId, list.asUserId, list.roundId, rate)
+      VoteJdbc.rate(pageId, list.asUserId, list.roundId, rate)
       list.voteMoved(pageId, before, rate)
     }
 

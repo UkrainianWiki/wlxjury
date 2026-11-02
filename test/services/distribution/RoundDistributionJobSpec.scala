@@ -2,7 +2,7 @@ package services.distribution
 
 import db.scalikejdbc._
 import org.intracer.wmua.cmd.{DistributeImages, SelectTopByRating}
-import org.intracer.wmua.{ContestJury, Image, ImageWithRating, Selection}
+import org.intracer.wmua.{ContestJury, Image, ImageWithRating, Vote}
 import org.specs2.mutable.Specification
 import org.specs2.specification.{AfterEach, BeforeAll, BeforeEach}
 import scalikejdbc._
@@ -56,7 +56,7 @@ class RoundDistributionJobSpec extends Specification with TestDb with BeforeAll 
       if (failBeforeChunk.contains(n)) { failBeforeChunk = None; throw new RuntimeException(s"simulated failure in chunk $n") }
     }
 
-    override protected def afterInsert(round: Round, rows: Seq[Selection])(implicit session: DBSession): Unit =
+    override protected def afterInsert(round: Round, rows: Seq[Vote])(implicit session: DBSession): Unit =
       if (failAfterInsertOfChunk.contains(chunks.get)) {
         failAfterInsertOfChunk = None
         throw new RuntimeException(s"simulated failure after the inserts of chunk ${chunks.get}")
@@ -103,14 +103,14 @@ class RoundDistributionJobSpec extends Specification with TestDb with BeforeAll 
     round.addUsers(jurors.map(u => RoundUser(round.getId, u.getId, "jury", active = true)))
     di.distributeImages(round, jurors, Nil)
     val random = new Random(seed)
-    SelectionJdbc.byRound(round.getId).foreach { s =>
+    VoteJdbc.byRound(round.getId).foreach { s =>
       val rate = if (rates == Round.binaryRound) random.nextInt(3) - 1 else random.nextInt(rates.maxRate + 1)
-      SelectionJdbc.rate(s.pageId, s.juryId, round.getId, rate)
+      VoteJdbc.rate(s.pageId, s.juryId, round.getId, rate)
     }
     round
   }
 
-  private def pageIds(roundId: Long): Set[Long] = SelectionJdbc.byRound(roundId).map(_.pageId).toSet
+  private def pageIds(roundId: Long): Set[Long] = VoteJdbc.byRound(roundId).map(_.pageId).toSet
 
   private def jobOf(roundId: Long) = {
     val latest = JobJdbc.latestBySubjects(RoundDistributionHandler.Kind, RoundDistributionHandler.SubjectType, Seq(roundId))
@@ -121,7 +121,7 @@ class RoundDistributionJobSpec extends Specification with TestDb with BeforeAll 
 
   /** For distribution x: the image at position i (by page id) has jurors (i + j) % n. */
   private def rotationHolds(roundId: Long, jurors: Seq[User], x: Int) = {
-    val rows = SelectionJdbc.byRound(roundId)
+    val rows = VoteJdbc.byRound(roundId)
     val byImage = rows.groupBy(_.pageId).toSeq.sortBy(_._1)
     byImage.zipWithIndex.forall { case ((_, sel), i) =>
       sel.map(_.juryId).toSet == (0 until x).map(j => jurors((i + j) % jurors.size).getId).toSet
@@ -137,7 +137,7 @@ class RoundDistributionJobSpec extends Specification with TestDb with BeforeAll 
       val created = inlineService(new TestHandler(chunkRows = 4)).createNewRound(newRound(contest, "R1"), jurors.map(_.getId))
       created.active must beTrue
       created.distributing must beFalse
-      SelectionJdbc.byRound(created.getId).size === 20
+      VoteJdbc.byRound(created.getId).size === 20
       pageIds(created.getId) === imgs.map(_.pageId).toSet
       val job = jobOf(created.getId)
       job.status === JobStatus.Done
@@ -163,7 +163,7 @@ class RoundDistributionJobSpec extends Specification with TestDb with BeforeAll 
       jobOf(created.getId).status === JobStatus.Done
       created.active must beTrue
       pageIds(created.getId) === imgs.map(_.pageId).toSet - 1L
-      DB.readOnly(implicit s => sql"SELECT COUNT(*) FROM selection_deleted WHERE page_id = 1".map(_.int(1)).single()) ===
+      DB.readOnly(implicit s => sql"SELECT COUNT(*) FROM vote_aside WHERE page_id = 1".map(_.int(1)).single()) ===
         Some(1)
       RoundImageCounts.get(Seq(created.getId))(ImageJdbc.imageCountByRounds)(created.getId) === 19
     }
@@ -179,7 +179,7 @@ class RoundDistributionJobSpec extends Specification with TestDb with BeforeAll 
 
       jobOf(created.getId).status === JobStatus.Done
       pageIds(created.getId) === imgs.map(_.pageId).toSet - 1L
-      DB.readOnly(implicit s => sql"SELECT COUNT(*) FROM selection_deleted WHERE page_id = 1".map(_.int(1)).single()) ===
+      DB.readOnly(implicit s => sql"SELECT COUNT(*) FROM vote_aside WHERE page_id = 1".map(_.int(1)).single()) ===
         Some(1)
       RoundImageCounts.get(Seq(created.getId))(ImageJdbc.imageCountByRounds)(created.getId) === 19
     }
@@ -204,8 +204,8 @@ class RoundDistributionJobSpec extends Specification with TestDb with BeforeAll 
     "give a file restored on Commons while it ran its votes back, not new jurors" in {
       val (contest, imgs, jurors) = setUp(20, 3)
       val roundId = inlineService(new TestHandler(chunkRows = 4)).createNewRound(newRound(contest, "R1"), jurors.map(_.getId)).getId
-      val voted = SelectionJdbc.byRound(roundId).find(_.pageId == 20L).get
-      SelectionJdbc.rate(20L, voted.juryId, roundId, 1)
+      val voted = VoteJdbc.byRound(roundId).find(_.pageId == 20L).get
+      VoteJdbc.rate(20L, voted.juryId, roundId, 1)
       DB.localTx(implicit s => DeletedFiles.markDeleted(Seq(20L)))
       val extra = images(26).drop(20)
       imageDao.batchInsert(extra)
@@ -222,8 +222,8 @@ class RoundDistributionJobSpec extends Specification with TestDb with BeforeAll 
 
       jobOf(roundId).status === JobStatus.Done
       pageIds(roundId) === (imgs ++ extra).map(_.pageId).toSet
-      SelectionJdbc.byRound(roundId).filter(_.pageId == 20L).map(s => (s.juryId, s.rate)) === Seq((voted.juryId, 1))
-      DB.readOnly(implicit s => sql"SELECT COUNT(*) FROM selection_deleted".map(_.int(1)).single()) === Some(0)
+      VoteJdbc.byRound(roundId).filter(_.pageId == 20L).map(s => (s.juryId, s.rate)) === Seq((voted.juryId, 1))
+      DB.readOnly(implicit s => sql"SELECT COUNT(*) FROM vote_aside".map(_.int(1)).single()) === Some(0)
       RoundImageCounts.get(Seq(roundId))(ImageJdbc.imageCountByRounds)(roundId) === 26
     }
 
@@ -231,7 +231,7 @@ class RoundDistributionJobSpec extends Specification with TestDb with BeforeAll 
       val (contest, imgs, jurors) = setUp(20, 3)
       val h = new TestHandler(chunkRows = 3)
       // Committed with chunk 2: an image chunk 1 added goes missing
-      h.atChunk = Some(2 -> (() => DB.autoCommit(implicit s => sql"DELETE FROM selection WHERE page_id = 1".update())))
+      h.atChunk = Some(2 -> (() => DB.autoCommit(implicit s => sql"DELETE FROM vote WHERE page_id = 1".update())))
       h.failBeforeChunk = Some(3)
       val service = inlineService(h)
       val roundId = service.submit(newRound(contest, "R1"), jurors.map(_.getId), None).round.getId
@@ -278,7 +278,7 @@ class RoundDistributionJobSpec extends Specification with TestDb with BeforeAll 
       val submitted = service.submit(newRound(contest, "R1"), jurors.map(_.getId), Some(java.util.UUID.randomUUID().toString))
       submitted.job.map(_.status) === Some(JobStatus.Failed)
       val roundId = submitted.round.getId
-      SelectionJdbc.byRound(roundId).size === 6
+      VoteJdbc.byRound(roundId).size === 6
       stateOf(roundId).cursor === 6L
       stateOf(roundId).position === 6L
       val failed = jobOf(roundId)
@@ -286,8 +286,8 @@ class RoundDistributionJobSpec extends Specification with TestDb with BeforeAll 
         (failed.failure.flatMap(_.reference) must beSome) and (failed.error must not(beSome(contain("simulated failure"))))
 
       service.distributeNewImages(roundId) === 20 // resumes the failed job: 6 + 14 by it
-      SelectionJdbc.byRound(roundId).size === 20
-      SelectionJdbc.byRound(roundId).map(s => (s.pageId, s.juryId)).distinct.size === 20
+      VoteJdbc.byRound(roundId).size === 20
+      VoteJdbc.byRound(roundId).map(s => (s.pageId, s.juryId)).distinct.size === 20
       rotationHolds(roundId, jurors, 1) must beTrue // the rotation went on across the failure
       roundDao.findById(roundId).get.active must beTrue
     }
@@ -296,20 +296,20 @@ class RoundDistributionJobSpec extends Specification with TestDb with BeforeAll 
       val (c, _, jurors) = setUp(12, 2)
       implicit val contest: ContestJury = c
       val round = roundDao.create(newRound(contest, "Criteria", distribution = 2).copy(number = 1))
-      sql"UPDATE rounds SET has_criteria = 1 WHERE id = ${round.getId}".update()(AutoSession)
+      sql"UPDATE round SET has_criteria = 1 WHERE id = ${round.getId}".update()(AutoSession)
       round.addUsers(jurors.map(u => RoundUser(round.getId, u.getId, "jury", active = true)))
       val h = new TestHandler(chunkRows = 8) // 4 images, 8 rows per chunk
       h.failAfterInsertOfChunk = Some(2)
       val service = inlineService(h)
       service.distributeNewImages(round.getId) must throwA[RoundService.RoundDistributionFailed]
 
-      def criteriaRows = DB.readOnly(implicit s => sql"""SELECT COUNT(*) FROM criteria_rate c JOIN selection s ON s.id = c.selection
+      def criteriaRows = DB.readOnly(implicit s => sql"""SELECT COUNT(*) FROM criteria_rate c JOIN vote s ON s.id = c.vote_id
                                 WHERE s.round_id = ${round.getId}""".map(_.int(1)).single().get)
-      SelectionJdbc.byRound(round.getId).size === 8 // chunk 1 only
+      VoteJdbc.byRound(round.getId).size === 8 // chunk 1 only
       criteriaRows === 8 * DistributeImages.CriteriaIds.size // chunk 2's rolled back with its rows
 
       service.distributeNewImages(round.getId) === 12
-      SelectionJdbc.byRound(round.getId).size === 24
+      VoteJdbc.byRound(round.getId).size === 24
       criteriaRows === 24 * DistributeImages.CriteriaIds.size
       DB.readOnly(implicit s => sql"SELECT COUNT(DISTINCT id) = COUNT(*) FROM criteria_rate".map(_.boolean(1)).single()) ===
         Some(true)
@@ -323,7 +323,7 @@ class RoundDistributionJobSpec extends Specification with TestDb with BeforeAll 
       val roundId = service.submit(newRound(contest, "R1"), jurors.map(_.getId), None).round.getId
       RoundUser.setActive(roundId, jurors.last.getId, active = false)
       service.distributeNewImages(roundId)
-      SelectionJdbc.byRound(roundId).filter(_.pageId > 3).map(_.juryId).toSet === jurors.init.map(_.getId).toSet
+      VoteJdbc.byRound(roundId).filter(_.pageId > 3).map(_.juryId).toSet === jurors.init.map(_.getId).toSet
     }
   }
 
@@ -415,7 +415,7 @@ class RoundDistributionJobSpec extends Specification with TestDb with BeforeAll 
     "stop between chunks when cancelled, keep its rows, stay hidden and restore the previous rounds" in {
       val (contest, _, jurors) = setUp(30, 2)
       val prev = ratedRound(contest, jurors, Round.binaryRound, seed = 3, "Prev")
-      SelectionJdbc.byRound(prev.getId).foreach(s => SelectionJdbc.rate(s.pageId, s.juryId, prev.getId, 1))
+      VoteJdbc.byRound(prev.getId).foreach(s => VoteJdbc.rate(s.pageId, s.juryId, prev.getId, 1))
       val h = new TestHandler(chunkRows = 2) // 2 images per chunk
       h.sleepMs = 100
       val (service, scheduler) = backgroundService(h)
@@ -430,7 +430,7 @@ class RoundDistributionJobSpec extends Specification with TestDb with BeforeAll 
       Thread.sleep(400)
       val added = RoundDistributionHandler.imagesAdded(cancelled)
       added must beLessThan(30L)
-      SelectionJdbc.byRound(roundId).map(_.pageId).distinct.size.toLong === added // kept, no more after
+      VoteJdbc.byRound(roundId).map(_.pageId).distinct.size.toLong === added // kept, no more after
       roundDao.findById(roundId).get.distributing must beTrue // a partial round is never shown
       roundDao.findById(roundId).get.active must beFalse
       roundDao.findById(prev.getId).get.active must beTrue
@@ -444,14 +444,14 @@ class RoundDistributionJobSpec extends Specification with TestDb with BeforeAll 
     "be resumed by a scheduler after its instance died mid-job, from its committed chunks" in {
       val (contest, _, jurors) = setUp(20, 3)
       val prev = ratedRound(contest, jurors, Round.binaryRound, seed = 4, "Prev")
-      SelectionJdbc.byRound(prev.getId).foreach(s => SelectionJdbc.rate(s.pageId, s.juryId, prev.getId, 1))
+      VoteJdbc.byRound(prev.getId).foreach(s => VoteJdbc.rate(s.pageId, s.juryId, prev.getId, 1))
       val dying = new TestHandler(chunkRows = 3)
       dying.crashAtChunk = Some(3)
       val next = newRound(contest, "Next").copy(previous = Some(prev.getId.toString), prevSelectedBy = Some(1))
       inlineService(dying).submit(next, jurors.map(_.getId), None) must throwA[InterruptedException]
       val roundId = roundDao.findByContest(contest.getId).find(_.name.contains("Next")).get.getId
       jobOf(roundId).status === JobStatus.Running // its instance "died" holding it
-      SelectionJdbc.byRound(roundId).size === 6
+      VoteJdbc.byRound(roundId).size === 6
       roundDao.findById(prev.getId).get.active must beFalse // still frozen
       sql"UPDATE job SET heartbeat_at = NOW(3) - INTERVAL 5 MINUTE".update()(AutoSession)
 
@@ -460,8 +460,8 @@ class RoundDistributionJobSpec extends Specification with TestDb with BeforeAll 
       done.status === JobStatus.Done
       done.owner must beNone
       done.attempts === 2
-      SelectionJdbc.byRound(roundId).size === 20
-      SelectionJdbc.byRound(roundId).map(_.pageId).distinct.size === 20
+      VoteJdbc.byRound(roundId).size === 20
+      VoteJdbc.byRound(roundId).map(_.pageId).distinct.size === 20
       rotationHolds(roundId, jurors, 1) must beTrue
       roundDao.findById(roundId).get.openToJurors must beTrue
       roundDao.findById(prev.getId).get.active must beFalse
@@ -479,12 +479,12 @@ class RoundDistributionJobSpec extends Specification with TestDb with BeforeAll 
       ).map(r => service.submit(r, jurors.map(_.getId), None))
       submitted.map(s => scheduler.await(s.job.get.id, 30.seconds).status).toSet === Set(JobStatus.Done)
       val ids = submitted.map(_.round.getId)
-      SelectionJdbc.byRound(ids(0)).size === 80
+      VoteJdbc.byRound(ids(0)).size === 80
       pageIds(ids(1)) === imgs.filter(_.monumentId.exists(_.startsWith("12"))).map(_.pageId).toSet
-      SelectionJdbc.byRound(ids(2)).size === 160
+      VoteJdbc.byRound(ids(2)).size === 160
       pageIds(ids(3)) === imgs.filter(_.isVideo).map(_.pageId).toSet
       // balanced: per-juror counts differ by at most one
-      val perJuror = SelectionJdbc.byRound(ids(0)).groupBy(_.juryId).values.map(_.size)
+      val perJuror = VoteJdbc.byRound(ids(0)).groupBy(_.juryId).values.map(_.size)
       (perJuror.max - perJuror.min) must beLessThanOrEqualTo(1)
     }
   }
@@ -530,7 +530,7 @@ class RoundDistributionJobSpec extends Specification with TestDb with BeforeAll 
       val binary2 = ratedRound(contest, jurors, Round.binaryRound, seed = 12, "Binary 2")
       val rated = ratedRound(contest, jurors, Round.ratesById(10), seed = 13, "Rated")
       val optional = ratedRound(contest, jurors, Round.ratesById(10), seed = 14, "Optional")
-      sql"UPDATE rounds SET optional_rate = 1 WHERE id = ${optional.getId}".update()(AutoSession)
+      sql"UPDATE round SET optional_rate = 1 WHERE id = ${optional.getId}".update()(AutoSession)
       def from(rounds: Round*) = newRound(contest, "Next").copy(previous = Some(rounds.map(_.getId).mkString(",")))
       val cases = Seq(
         from(binary).copy(prevSelectedBy = Some(1)),
@@ -562,7 +562,7 @@ class RoundDistributionJobSpec extends Specification with TestDb with BeforeAll 
         // a yes/no round's top-N reads the approvals and rejections, which tally counts
         val candidates = ImageJdbc.byRoundMerged(prev.getId, rated = Option.when(template.selectedByFilter.isDefined)(true),
             tally = prev.isBinary)
-          .sortBy(i => (-i.selection.head.rate, i.pageId))
+          .sortBy(i => (-i.votes.head.rate, i.pageId))
         val filtered = di.perImageFilters(probe, Seq(prev), Nil, Nil)(candidates)
         SelectTopByRating(n, prev)().apply(filtered).map(_.pageId).toSet
       }

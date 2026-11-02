@@ -62,7 +62,9 @@ docker exec wlxjury-bench mariadb -N -e \
   "SELECT installed_rank, version, description, execution_time, success FROM wlxjury.flyway_schema_history ORDER BY installed_rank" \
   > "$out/flyway.txt" || true
 docker inspect wlxjury-bench > "$out/container-start.json"
-docker exec wlxjury-bench mariadb -N -e "SELECT id, active, category FROM wlxjury.rounds WHERE id IN (1721,1775); SELECT round_id, SUM(active), COUNT(*) FROM wlxjury.round_user WHERE round_id IN (1721,1775) GROUP BY round_id; SELECT TABLE_NAME, ENGINE, TABLE_ROWS, DATA_LENGTH, INDEX_LENGTH FROM information_schema.tables WHERE table_schema='wlxjury' ORDER BY TABLE_NAME; SELECT COUNT(*) AS unexpected_emails FROM wlxjury.users WHERE email NOT LIKE '%@bench.test'" > "$out/snapshot-checks.txt"
+# the app has migrated the snapshot: rounds is round from V82 on
+rounds_table=$(docker exec wlxjury-bench mariadb -N -e "SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA = 'wlxjury' AND TABLE_NAME IN ('round', 'rounds') ORDER BY TABLE_NAME = 'round' DESC LIMIT 1")
+docker exec wlxjury-bench mariadb -N -e "SELECT id, active, category FROM wlxjury.${rounds_table:-round} WHERE id IN (1721,1775); SELECT round_id, SUM(active), COUNT(*) FROM wlxjury.round_user WHERE round_id IN (1721,1775) GROUP BY round_id; SELECT TABLE_NAME, ENGINE, TABLE_ROWS, DATA_LENGTH, INDEX_LENGTH FROM information_schema.tables WHERE table_schema='wlxjury' ORDER BY TABLE_NAME; SELECT COUNT(*) AS unexpected_emails FROM wlxjury.users WHERE email NOT LIKE '%@bench.test'" > "$out/snapshot-checks.txt"
 if [[ "$(tail -1 "$out/snapshot-checks.txt")" != "0" ]] ||
    ! grep -Fxq $'1721\t1\tNULL' "$out/snapshot-checks.txt" ||
    ! grep -Fxq $'1775\t1\tNULL' "$out/snapshot-checks.txt" ||

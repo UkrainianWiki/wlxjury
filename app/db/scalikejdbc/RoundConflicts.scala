@@ -6,10 +6,10 @@ import scalikejdbc._
 /** "Leave out conflicts of interest now": takes out of a round the files that are
   * conflicts of interest ([[CoiMembers]]) with their votes, for a round created before the
   * round form's checkbox, or after a member was added. The rates of such a file are not
-  * kept: its `selection` rows, those moved aside to `selection_deleted` (so that restoring
-  * the file on Commons brings nothing back, as [[SelectionJdbc.removeImage]]) and their
-  * `criteria_rate` rows (which reference `selection.id` without a foreign key) are deleted
-  * ([[SelectionJdbc.deleteVotes]]).
+  * kept: its `vote` rows, those moved aside to `vote_aside` (so that restoring
+  * the file on Commons brings nothing back, as [[VoteJdbc.removeImage]]) and their
+  * `criteria_rate` rows (which reference `vote.id` without a foreign key) are deleted
+  * ([[VoteJdbc.deleteVotes]]).
   * The round then leaves them out of its later distributions too ([[Round.excludeCoi]]).
   *
   * Nothing is kept to show it later, so each removal is a log line on the `coi` logger,
@@ -52,7 +52,7 @@ object RoundConflicts {
   def removeFromRound(roundId: Long, by: User, distributionKey: String): Outcome = {
     val outcome = DB.localTx { implicit session =>
       sql"""SELECT contest_id, active = 1 AND distributing = 0 AND freeze_count = 0
-            FROM rounds WHERE id = $roundId FOR UPDATE"""
+            FROM round WHERE id = $roundId FOR UPDATE"""
         .map(rs => rs.long(1) -> rs.boolean(2))
         .single() match {
         case None                => Outcome.NotFound
@@ -61,14 +61,14 @@ object RoundConflicts {
                           .map(_ => ()).single().isDefined =>
           Outcome.Distributing
         case Some((contestId, _)) =>
-          sql"UPDATE rounds SET exclude_coi = TRUE WHERE id = $roundId".update()
+          sql"UPDATE round SET exclude_coi = TRUE WHERE id = $roundId".update()
           val conflicts = CoiMembers.roundFiles(roundId, CoiMembers.forContest(contestId))
           val pageIds = conflicts.map(_._1)
           // the votes locked before their criteria rates are deleted, as every vote delete.
           // Lock order: the round, then the votes, as a restore of deleted files locks them
           // (CriteriaRateSpec "lock the rounds before the files' votes when restoring them"):
           // a change here must keep it
-          if (pageIds.nonEmpty) SelectionJdbc.deleteVotes(sqls"v.round_id = $roundId AND v.page_id IN ($pageIds)")
+          if (pageIds.nonEmpty) VoteJdbc.deleteVotes(sqls"v.round_id = $roundId AND v.page_id IN ($pageIds)")
           Outcome.Removed(conflicts)
       }
     }

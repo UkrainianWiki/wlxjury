@@ -102,6 +102,8 @@ $B stop && $B save v53-innodb
 ```
 Do the same for every snapshot you create.
 
+**Table names.** `scripts/convert.sh`, `scripts/trim-old-years.sql` and `scripts/reopen-contest.sql` run on the snapshots before the app migrates them (V53 and earlier), so they use the old names (`rounds`, `selection`, `criteria_rate.selection`), which are right there. V82 (P0) renames them to `round`, `vote` and `vote_id`: a query on a snapshot the app has migrated past V82 uses the new names (`scripts/run.sh` picks `round` or `rounds` by what exists).
+
 ## 4. Rebuilding (only what's missing)
 
 **Image:** `$B image`

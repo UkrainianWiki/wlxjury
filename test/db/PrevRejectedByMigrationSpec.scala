@@ -20,6 +20,7 @@ class PrevRejectedByMigrationSpec extends Specification with TestDb with BeforeA
       "conf/db/migration/default/V74__Rounds_prev_rejected_by.sql")), "UTF-8")
     val statements = sql.linesIterator.filterNot(_.trim.startsWith("--")).mkString("\n")
       .split(";").map(_.trim).filter(_.nonEmpty)
+      .map(_.replaceAll("\\brounds\\b", "round")) // the table as V82 renamed it
     DB.autoCommit { implicit session => statements.foreach(statement => SQL(statement).execute.apply()) }
   }
 
@@ -27,7 +28,7 @@ class PrevRejectedByMigrationSpec extends Specification with TestDb with BeforeA
     "be a nullable integer column, NULL for a round that has none" in {
       DB.readOnly { implicit session =>
         sql"""SELECT DATA_TYPE, IS_NULLABLE, COLUMN_DEFAULT FROM information_schema.columns
-              WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'rounds' AND COLUMN_NAME = 'prev_rejected_by'"""
+              WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'round' AND COLUMN_NAME = 'prev_rejected_by'"""
           .map(rs => (rs.string(1), rs.string(2), rs.stringOpt(3).filterNot(_ == "NULL"))).single()
       } === Some(("int", "YES", None))
     }

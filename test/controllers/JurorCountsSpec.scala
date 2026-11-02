@@ -37,7 +37,7 @@ class JurorCountsSpec extends Specification with TestDb with BeforeAll with Befo
     })
     val possible = if (rates == Round.binaryRound) Seq(-1, 0, 1) else 0 to rates.maxRate
     def vote(juror: User, page: Int, i: Int) =
-      Selection(page.toLong, juror.getId, round.getId, possible(i % possible.size), monumentId = monuments(page))
+      Vote(page.toLong, juror.getId, round.getId, possible(i % possible.size), monumentId = monuments(page))
     selectionDao.batchInsert((1 to 12).map(p => vote(jurors(0), p, p)) ++ (1 to 9).map(p => vote(jurors(1), p, p * 7 + 1)))
     (round, jurors)
   }

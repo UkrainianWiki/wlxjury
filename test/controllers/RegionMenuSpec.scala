@@ -2,7 +2,7 @@ package controllers
 
 import db.scalikejdbc._
 import db.scalikejdbc.rewrite.ImageDbNew.SelectionQuery
-import org.intracer.wmua.{ContestJury, Image, Selection}
+import org.intracer.wmua.{ContestJury, Image, Vote}
 import org.scalawiki.wlx.dto.Monument
 import play.api.Application
 import play.api.libs.json.JsObject
@@ -45,7 +45,7 @@ class RegionMenuSpec extends PlaySpecification with PlayTestDb {
     imageDao.batchInsert(images)
     def votes(r: Round, u: User, shift: Int) = images.zipWithIndex.map { case (image, i) =>
       val rate = if (r.isBinary) Seq(-1, 0, 1)((i + shift) % 3) else (i + shift) % 6
-      Selection(image.pageId, u.getId, r.getId, rate, monumentId = image.monumentId)
+      Vote(image.pageId, u.getId, r.getId, rate, monumentId = image.monumentId)
     }
     selectionDao.batchInsert(Seq(binary, rated).flatMap(r => votes(r, juror, 0) ++ votes(r, other, 1).take(5)))
     Fixture(contest, admin, juror, other, binary, rated)

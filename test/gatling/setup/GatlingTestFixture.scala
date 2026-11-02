@@ -33,13 +33,13 @@ object GatlingTestFixture {
       dbUsername      = "WLXJURY_DB_USER",
       dbPassword      = "WLXJURY_DB_PASSWORD"
     )
-    // The fixture's selection table and indexes (~370 MB) don't fit the default
+    // The fixture's vote table and indexes (~370 MB) don't fit the default
     // 128 MB buffer pool, so the smoke queries would read them from disk on every
     // request. Server options rather than a my.cnf override: MariaDB ignores a
     // world-writable config file, as a file bind-mounted from Windows is.
     // max_allowed_packet: MariaDB's own default (16M), as on a production server;
     // testcontainers' config lowers it to 1M, and the driver doesn't split a batch
-    // insert to fit it, so distributing a round of more than ~25k selection rows
+    // insert to fit it, so distributing a round of more than ~25k vote rows
     // (RoundDistributionSimulation) fails with a "Socket error".
     container.container.withCommand(
       "--innodb-buffer-pool-size=512M",
@@ -177,7 +177,7 @@ object GatlingTestFixture {
   val managedRounds: Seq[(Long, Int, String, Int)] = {
     implicit val s: DBSession = AutoSession
     val ids = Seq(roundBinaryId, roundRatingId)
-    val byId = sql"SELECT id, number, name, rates FROM rounds WHERE id IN ($ids)"
+    val byId = sql"SELECT id, number, name, rates FROM round WHERE id IN ($ids)"
       .map(rs => rs.long(1) -> ((rs.long(1), rs.int(2), rs.stringOpt(3).getOrElse(""), rs.int(4)))).list().toMap
     ids.map(byId)
   }

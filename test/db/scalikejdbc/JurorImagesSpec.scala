@@ -2,7 +2,7 @@ package db.scalikejdbc
 
 import db.scalikejdbc.rewrite.ImageDbNew
 import db.scalikejdbc.rewrite.ImageDbNew.SelectionQuery
-import org.intracer.wmua.{Selection, _}
+import org.intracer.wmua.{Vote, _}
 import org.specs2.mutable.Specification
 import org.specs2.specification.BeforeAll
 import scalikejdbc.DBSession
@@ -41,9 +41,9 @@ class JurorImagesSpec extends Specification with BeforeAll with TestDb {
       user: User,
       round: Round,
       rate: Int = 0
-  )(implicit session: DBSession): Seq[Selection] = {
+  )(implicit session: DBSession): Seq[Vote] = {
     val selections = images.zipWithIndex.map { case (image, _) =>
-      Selection(image, user, round, rate)
+      Vote(image, user, round, rate)
     }
     selectionDao.batchInsert(selections)
     selections
@@ -104,7 +104,7 @@ class JurorImagesSpec extends Specification with BeforeAll with TestDb {
 
       result.size === 3
       result.map(_.image) === slice
-      result.map(_.selection.size) === Seq(1, 1, 1)
+      result.map(_.votes.size) === Seq(1, 1, 1)
       result.map(_.rate) === Seq(0, 0, 0)
 
       slice.zipWithIndex.map { case (image, index) =>
@@ -133,7 +133,7 @@ class JurorImagesSpec extends Specification with BeforeAll with TestDb {
 
         result.size === 2
         result.map(_.image) === slice(rate)
-        result.map(_.selection.size) === Seq(1, 1)
+        result.map(_.votes.size) === Seq(1, 1)
         result.map(_.rate) === Seq(rate, rate)
       }
 
@@ -170,7 +170,7 @@ class JurorImagesSpec extends Specification with BeforeAll with TestDb {
 
       result.size === 3
       result.map(_.image) === slice(1) ++ slice(0) ++ slice(-1)
-      result.map(_.selection.size) === Seq.fill(3)(1)
+      result.map(_.votes.size) === Seq.fill(3)(1)
       result.map(_.rate) === Seq(1, 0, -1)
 
       images.zip(Seq(3, 2, 1)).map { case (image, index) =>
@@ -183,7 +183,7 @@ class JurorImagesSpec extends Specification with BeforeAll with TestDb {
       val images = createImages(6, contest.getId)
 
       val selections = images.zipWithIndex.map { case (image, rate) =>
-        Selection(image, user, round, rate)
+        Vote(image, user, round, rate)
       }
       selectionDao.batchInsert(selections)
 
@@ -196,7 +196,7 @@ class JurorImagesSpec extends Specification with BeforeAll with TestDb {
 
       result.size === 6
       result.map(_.image) === images.reverse
-      result.map(_.selection.size) === Seq.fill(6)(1)
+      result.map(_.votes.size) === Seq.fill(6)(1)
       result.map(_.rate) === (0 to 5).reverse
 
       images.zip((1 to 6).reverse).map { case (image, index) =>
@@ -218,12 +218,12 @@ class JurorImagesSpec extends Specification with BeforeAll with TestDb {
           n: Int,
           image: Image,
           otherRate: Int = 0
-      ): Seq[Selection] = {
+      ): Seq[Vote] = {
         jurors.slice(0, n).map { juror =>
-          Selection(image, juror, round, 1)
+          Vote(image, juror, round, 1)
         } ++
           jurors.slice(n, jurors.size).map { juror =>
-            Selection(image, juror, round, otherRate)
+            Vote(image, juror, round, otherRate)
           }
       }
 
@@ -246,7 +246,7 @@ class JurorImagesSpec extends Specification with BeforeAll with TestDb {
         images(0)
       )
       actual === expected
-      result.map(_.selection.size) === Seq(1, 1, 1, 1)
+      result.map(_.votes.size) === Seq(1, 1, 1, 1)
       result.map(_.rate) === Seq(3, 2, 1, 0)
 
       images.slice(0, 4).zip((1 to 4).reverse).map { case (image, index) =>
@@ -262,7 +262,7 @@ class JurorImagesSpec extends Specification with BeforeAll with TestDb {
       val jurors = (1 to 3).map(contestUser(_)).map(userDao.create)
 
       def rate(imageIndex: Int, jurorIndex: Int, r: Int) =
-        Selection(images(imageIndex), jurors(jurorIndex), round, r)
+        Vote(images(imageIndex), jurors(jurorIndex), round, r)
 
       def rateN(imageIndex: Int, rates: Seq[Int]) =
         (0 to jurors.size - 1)
@@ -284,7 +284,7 @@ class JurorImagesSpec extends Specification with BeforeAll with TestDb {
 
       result.size === 2
       result.map(_.image) === Seq(images(0), images(1))
-      result.map(_.selection.size) === Seq(3, 3)
+      result.map(_.votes.size) === Seq(3, 3)
       result.map(_.rate) === Seq(1, 0)
     }
 
@@ -295,8 +295,8 @@ class JurorImagesSpec extends Specification with BeforeAll with TestDb {
       val jurors = (1 to 3).map(contestUser(_)).map(userDao.create)
 
       selectionDao.batchInsert(
-        Seq(1, 1, -1).zip(jurors).map { case (r, j) => Selection(images(0), j, round, r) } ++
-          Seq(1, 0, 0).zip(jurors).map { case (r, j) => Selection(images(1), j, round, r) })
+        Seq(1, 1, -1).zip(jurors).map { case (r, j) => Vote(images(0), j, round, r) } ++
+          Seq(1, 0, 0).zip(jurors).map { case (r, j) => Vote(images(1), j, round, r) })
 
       val query = ImageDbNew.SelectionQuery(roundId = round.id, grouped = true, order = Seq("s.page_id" -> 1), tally = true)
       val result = query.list()
@@ -327,12 +327,12 @@ class JurorImagesSpec extends Specification with BeforeAll with TestDb {
           n: Int,
           image: Image,
           otherRate: Int = 0
-      ): Seq[Selection] = {
+      ): Seq[Vote] = {
         jurors.slice(0, n).map { juror =>
-          Selection(image, juror, round, 1)
+          Vote(image, juror, round, 1)
         } ++
           jurors.slice(n, jurors.size).map { juror =>
-            Selection(image, juror, round, otherRate)
+            Vote(image, juror, round, otherRate)
           }
       }
 
@@ -352,8 +352,8 @@ class JurorImagesSpec extends Specification with BeforeAll with TestDb {
         images(0)
       )
       result.map(_.rate) === Seq(1, 1, 1, 0)
-      result.map(_.selection.size) === Seq(4, 4, 4, 4)
-      result.map(_.selection.map(_.rate)) === Seq(
+      result.map(_.votes.size) === Seq(4, 4, 4, 4)
+      result.map(_.votes.map(_.rate)) === Seq(
         Seq(1, 1, 1, 0),
         Seq(1, 1, 0, 0),
         Seq(1, 0, 0, 0),

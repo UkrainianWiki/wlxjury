@@ -1990,7 +1990,7 @@ The independent review found no High or Medium issues. Merged `ukwikidev/followu
 | N2 | The parity spec doesn't cover `pageKeys` or `byRoundMerged` | Said above (`CsvSpec`, the distribution specs) |
 
 Later, after a production check (deferred: the user skipped production queries for now): a
-migration making `selection.page_id NOT NULL` once production has no such rows, after which
+migration making `vote.page_id NOT NULL` (`selection` before P0) once production has no such rows, after which
 `withPage` can go.
 
 Checks: `Test/compile`, `Gatling/compile`, `testOnly controllers.{GroupedListParitySpec,

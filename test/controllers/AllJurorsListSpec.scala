@@ -2,7 +2,7 @@ package controllers
 
 import db.scalikejdbc._
 import org.apache.pekko.stream.scaladsl.Sink
-import org.intracer.wmua.{BinaryOrder, ContestJury, Image, ImageWithRating, Selection}
+import org.intracer.wmua.{BinaryOrder, ContestJury, Image, ImageWithRating, Vote}
 import org.jsoup.Jsoup
 import play.api.Application
 import play.api.mvc.{Cookie, Result}
@@ -38,8 +38,8 @@ class AllJurorsListSpec extends PlaySpecification with PlayTestDb {
     imageDao.batchInsert(images)
     selectionDao.batchInsert(images.flatMap { image =>
       val i = image.pageId
-      Seq(Selection(image, jurors(0), round, if (i <= firstSelects) 1 else -1),
-        Selection(image, jurors(1), round, if (i <= 2) 1 else 0))
+      Seq(Vote(image, jurors(0), round, if (i <= firstSelects) 1 else -1),
+        Vote(image, jurors(1), round, if (i <= 2) 1 else 0))
     })
     Fixture(contest, round, organizer, jurors)
   }

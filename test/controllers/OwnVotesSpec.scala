@@ -59,7 +59,7 @@ class OwnVotesSpec extends PlaySpecification with PlayTestDb {
       case (r, jurors) =>
         r.addUsers(jurors.map(j => RoundUser(r.getId, j.getId, "jury", active = true)))
         selectionDao.batchInsert(for (j <- jurors; (image, i) <- images.zipWithIndex)
-          yield Selection(image, j, r, rate = i + 3))
+          yield Vote(image, j, r, rate = i + 3))
     }
     Fixture(roundA, orgViewRound, juror1, juror2, member, jurorB, organizer, admin, root, images)
   }
@@ -140,7 +140,7 @@ class OwnVotesSpec extends PlaySpecification with PlayTestDb {
           rates = Round.binaryRound, active = true))
         binary.addUsers(Seq(f.juror1, f.juror2).map(j => RoundUser(binary.getId, j.getId, "jury", active = true)))
         val image = f.images.head
-        selectionDao.batchInsert(Seq(Selection(image, f.juror1, binary, rate = -1), Selection(image, f.juror2, binary, rate = 0)))
+        selectionDao.batchInsert(Seq(Vote(image, f.juror1, binary, rate = -1), Vote(image, f.juror2, binary, rate = 0)))
         def votes(viewer: User, asUserId: Long) =
           org.jsoup.Jsoup.parse(contentAsString(get(app, viewer, largePath(binary, asUserId, image.pageId))))
             .select(".large-line li").asScala.toList.map(li => (li.select("a").text, li.select(".visually-hidden").text))

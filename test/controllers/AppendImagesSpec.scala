@@ -218,7 +218,7 @@ class AppendImagesSpec extends Specification with JuryTestHelpers with TestDb wi
 
       stored(contest).map(_.pageId) === Seq(11L, 12L, 13L)
       selectionDao.byRound(round).map(_.pageId) === Seq(11L)
-      DB.readOnly(implicit s => sql"SELECT COUNT(*) FROM selection_deleted".map(_.int(1)).single()) === Some(0)
+      DB.readOnly(implicit s => sql"SELECT COUNT(*) FROM vote_aside".map(_.int(1)).single()) === Some(0)
     }
 
     "remember the former title of a file renamed on Commons" in {

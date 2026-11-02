@@ -1,7 +1,7 @@
 package org.intracer.wmua.cmd
 
 import db.scalikejdbc.Round
-import org.intracer.wmua.{BinaryOrder, Image, ImageWithRating, Selection}
+import org.intracer.wmua.{BinaryOrder, Image, ImageWithRating, Vote}
 import org.specs2.mutable.Specification
 
 class ImageWithRatingSeqFilterSpec extends Specification {
@@ -43,7 +43,7 @@ class ImageWithRatingSeqFilterSpec extends Specification {
 
     /** A file of five jurors' votes, as the grouped query reads it. */
     def file(pageId: Long, approvals: Int, rejections: Int) =
-      ImageWithRating(Image(pageId, s"File:$pageId.jpg"), Seq(Selection(pageId, 0, 0, approvals - rejections)), 5,
+      ImageWithRating(Image(pageId, s"File:$pageId.jpg"), Seq(Vote(pageId, 0, 0, approvals - rejections)), 5,
         approvalsFromDb = Some(approvals), rejectionsFromDb = Some(rejections))
 
     // A: 3 approvals, 2 rejections; B: 2 and 0; C: 3 and 0; D as B

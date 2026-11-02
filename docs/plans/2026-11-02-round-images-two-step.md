@@ -35,12 +35,12 @@ All D1–D20 decided by the user (the last recommendations confirmed 2026-11-02)
 | D7 | Removing a file for a conflict of interest (CoI) disqualifies it and keeps its votes; today's "leave out now" deletes them | [user] |
 | D8 | Requalifying (a mistaken match or an ended conflict) is a manual admin action with a reason; no stored override for now. "Re-check conflicts" and "Disqualify new matches" are admin-driven, never automatic | [user] |
 | D9 | "Leave out now" stays as it is (deleting votes) until CoI disqualification ships; accepted | [user] |
-| D10 | Rename `selection` → `vote` | [user] |
+| D10 | Rename `selection` → `vote`; also `rounds` → `round` (user decision 2026-11-02, folded into P0; `users`, `images`, `category_members` keep their names) | [user] |
 | D11 | New tables: singular snake_case (rule in CLAUDE.md) | [user] |
 | D12 | Rename as its own step with no behaviour change, after the open branches merge; Scala rename in a separate commit | [user] |
 | D13 | Counts kept by same-transaction deltas in the DAO, plus a repair job; no triggers | [user] |
 | D14 | Phases P0 rename → P1 membership → P1b CoI disqualification → P2a counts in shadow → P2b reads behind a flag → P3 two-step flow | [user] |
-| D15 | A general `rounds.status` (draft / paused / active / finalized / cancelled) instead of a review flag | [user] |
+| D15 | A general `round.status` (draft / paused / active / finalized / cancelled) instead of a review flag | [user] |
 | D16 | Rows are never deleted, except: a re-apply in review, before any vote exists in the round, deletes the `fill` rows that no longer pass | [user] |
 | D17 | Top-N on re-apply: re-ranked from scratch, disqualified files skipped; already distributed files count toward N (today's rule) | [user] |
 | D18 | Previous rounds are not frozen during review; the review page warns if their votes changed since the fill | [user] |
@@ -54,8 +54,11 @@ role allowlist on `ukwikidev/security-s1`).
 
 - One migration: `RENAME TABLE selection TO vote, selection_deleted TO vote_aside,
   selection_orphans TO vote_orphan`; `ALTER TABLE criteria_rate RENAME COLUMN selection TO
-  vote_id`; `ALTER TABLE … RENAME INDEX` so index names start with the table name. All are
-  metadata-only in InnoDB (MariaDB 10.5+), instant at 3M rows; foreign keys follow the table.
+  vote_id`, and `criteria_rate_orphan`'s (C1's V78 archive) likewise; `ALTER TABLE … RENAME
+  INDEX` so index names start with the table name. All are metadata-only in InnoDB (MariaDB
+  10.5+), instant at 3M rows; foreign keys follow the table. Done as V82: see §12.
+- Also `rounds` → `round` (D10, user decision 2026-11-02), in the same `RENAME TABLE`, with its
+  indexes; SQL in its own commit. Scala names (`Round`, …), routes/URLs and JSON stay.
 - Commit 1, SQL: raw SQL in ~15 app files (`ImageJdbc`, `ImageDbNew`, `RoundDistributionHandler`,
   `DistributeImages`, `CriteriaRate`, `SelectionJdbc.tableName`, `User`, `LargeViewController`,
   `RoundConflicts`, `CoiMembers`, `Round`, …), the specs' raw SQL, the migration specs,
@@ -65,9 +68,9 @@ role allowlist on `ukwikidev/security-s1`).
 - No behaviour change: the full suite once; the Gatling fixture cache rebuilds (the migration
   changes its key).
 - When: right after the open branches merge (every raw SQL line conflicts otherwise).
-- Rollback: old code fails on the renamed tables. Reverse `RENAME TABLE` by hand (instant) and
-  remove the migration's row from `flyway_schema_history`; write this into the deploy notes. No
-  compatibility view.
+- Rollback: old code fails on the renamed tables. Up to `reopen`, `wlxjury-release restore`
+  (its pre-migration dump); after it, the reverse SQL by hand (instant) and removing the
+  migration's row from `flyway_schema_history`. No compatibility view. See §12, "Deploy note".
 
 The rest of this plan uses the new names.
 
@@ -110,7 +113,7 @@ CREATE TABLE IF NOT EXISTS round_image (
   `ImageFilterGen`, `CategoryRule.accepts`) for one file, and lists its previous rounds
   (`round_image` with status `in`) and categories (`category_members`).
 - Backfill: the distinct (round, page) pairs of `vote` (an ordered scan of V56's
-  `(round_id, page_id, rate)` index) joined to `rounds` and `images`, status `in`, `legacy`;
+  `(round_id, page_id, rate)` index) joined to `round` and `images`, status `in`, `legacy`;
   then the `vote_aside`-only pairs as `deleted`; `INSERT IGNORE` throughout. Production had 3.0M
   vote rows (V55_1's header): ~0.3–1M rows, ~30–100 MB, an estimated 10–60 s per statement. Time
   it on a production copy (`2026-10-07-prod-like-benchmark.md`) before deploying.
@@ -130,7 +133,7 @@ Backfilled by one `UPDATE … JOIN (GROUP BY round_id, page_id)`.
   optional_rate's denominator stays round-level (`numberOfActiveJurors`), computed when read.
 - Votes with a NULL rate: see open items.
 
-### `rounds.status` (P3)
+### `round.status` (P3)
 
 `draft | paused | active | finalized | cancelled`, NULL for existing rounds until the backfill
 sets it from `active`/`distributing`. `active` and `distributing` stay written in step during
@@ -182,7 +185,7 @@ Checked by `RoundImageInvariants.violations(roundId)`; specs assert it empty aft
 
 ### Lock order
 
-`rounds` → `images` → `vote` → `vote_aside` → `round_image` → `criteria_rate`. It extends
+`round` → `images` → `vote` → `vote_aside` → `round_image` → `criteria_rate`. It extends
 today's rounds → files → votes (`DeletedFiles`). Two jurors voting on one image each hold their
 own vote row and queue on the one `round_image` row: no cycle. Never recompute from a
 non-locking snapshot (a concurrent delta would be lost).
@@ -266,7 +269,7 @@ not reassigned (as now).
 - GET the review page: the round's contest's admins and organizers (as `contestFiles`), the
   round in that contest or 404.
 - POST re-apply, distribute, disqualify, requalify: `withAdminRound` (`Secured.inContest`, no
-  contest switch), each with `csrfField`, guarded by `rounds.status` and the active job.
+  contest switch), each with `csrfField`, guarded by `round.status` and the active job.
 - Specs (MutationAuthorizationSpec style, `CsrfTestApp.withCsrfApp`): a juror of the round 403;
   an organizer GET 200, POST 403; an admin of another contest 403/404 (also another contest's
   round id under one's own contest); signed out → login page / JSON 401; no CSRF token refused;
@@ -385,7 +388,7 @@ to recompute. It ends the vote deletion of D9 early.
 
 ### P3: two-step flow
 
-- Work: `rounds.status` and its backfill, job modes, Prune, the form, the review page, re-apply,
+- Work: `round.status` and its backfill, job modes, Prune, the form, the review page, re-apply,
   the threshold preview, POST routes.
 - Risk: rounds left paused at a rollback; finish or cancel them first.
 - Specs: `RoundEditPageSpec`, `RoundControllerSpec`, `RoundCreationResubmitSpec`, a new
@@ -414,3 +417,274 @@ to recompute. It ends the vote deletion of D9 early.
   `in` rows with `assigned < round.distribution`, moved-aside votes in `vote_aside` with a
   reason); finalize locking votes; a `round_event` audit table written with status changes and
   disqualifications. None is blocked by this schema.
+
+## 12. P0 results
+
+Branch `ukwikidev/p0-vote-rename` (from `ukwikidev/followups` 18c6f704, `ukwikidev/followups`
+8c2b3d67 merged before the gate), 2026-11-02. Commits: A `e8a97f31` (vote SQL and V82), B
+`617f3bf2` (Scala names), C `f460673a` (`rounds` → `round`), then these notes.
+
+### Migration V82 (`V82__Rename_selection_to_vote.sql`)
+
+| Step | Statement | How MariaDB does it |
+|---|---|---|
+| 1 | On the old table names: `ALTER TABLE selection / selection_deleted / selection_orphans RENAME INDEX …` (10 each, to `vote_…`, `vote_aside_…`, `vote_orphan_…`); `rounds`: `rounds_submit_token_uidx` → `round_submit_token_uidx`, `idx_rounds_contest_active` → `round_contest_active_idx`; `ALGORITHM=INSTANT` | instant |
+| 2 | `FK_selection_page_id` → `vote_page_id_fk` on `selection`: `DROP FOREIGN KEY` + `ADD CONSTRAINT` in one `ALTER`, `foreign_key_checks = 0`, `ALGORITHM=NOCOPY` | no copy, no row check (MariaDB 10.6 can't rename a constraint; with checks on, adding a key needs `ALGORITHM=COPY`: verified, it refuses NOCOPY) |
+| 3 | `ALTER TABLE criteria_rate RENAME COLUMN selection TO vote_id, RENAME INDEX criteria_selection_index TO criteria_rate_vote_id_idx, ALGORITHM=INSTANT`; the same on `criteria_rate_orphan` (index `criteria_rate_orphan_vote_id_idx`) | instant |
+| 4 | Last: `RENAME TABLE selection TO vote, selection_deleted TO vote_aside, selection_orphans TO vote_orphan, rounds TO round` | atomic, metadata only; V58's foreign key moves with the table, and `round_user`'s `FK_round_user_round_id` now references `round` (on the test schema; production's dump has no such key) |
+
+Steps 1–2 change only names old code never reads, except `RoundService`'s duplicate-submit check,
+which now matches `submit_token_uidx` under either name. A run that stops before step 4 leaves
+the old table names; only step 3 affects old code (criteria rounds' rates).
+
+`ALGORITHM=INSTANT`/`NOCOPY` make a statement fail rather than copy a table. Index names:
+`vote_page_jury_round_uidx`, `vote_rate_idx`, `vote_round_idx`, `vote_jury_id_idx`,
+`vote_page_id_idx`, `vote_round_rate_idx`, `vote_jury_round_rate_mon_page_idx`,
+`vote_round_jury_rate_idx`, `vote_round_monument_id_idx`, `vote_round_page_rate_idx` (the same
+with `vote_aside_`/`vote_orphan_`). The id keys keep their names (`PRIMARY` on the test schema,
+`UNIQUE KEY id` on production, the V53 dump; production's `rounds` has both). No foreign key or
+check constraint name mentions `rounds`; only `round_user` references it. `criteria_rate_orphan` keeps its name (already
+singular, CLAUDE.md rules). `selection_backup` (a legacy production table no code reads) is left.
+
+Checked on a scratch MariaDB 10.6.28 container (the `mariadb:10.6` image): the selection-family
+index names are identical on the three schema paths (B44 + V46–V81, V1–V81, and production's
+V53 dump + V54–V81); V82 ran on all three. With 1M `vote` rows (100k aside, 200k criteria
+rates) every statement took ≤ 0.034 s and the InnoDB table ids stayed the same (no rebuild).
+The foreign key still refuses a vote of a missing image and cascades a deleted image's votes.
+Forward + rollback on a fresh B44 schema gave a `SHOW CREATE TABLE` of every table identical
+to the schema before V82 (rerun after `rounds` was added, `round_user`'s key included). `rounds`'
+index names are the same on the three paths too; its rename and index renames took 0.03–0.07 s. `ConvertToInnoDbMigrationSpec`'s chain example now runs V82 on the
+production-like schema and checks the names, the foreign key, rows, `AUTO_INCREMENT` and that
+every index of the renamed tables starts with its table's name.
+
+### Deploy note
+
+- **Order.** `ukwikidev/followups` (V71–V81, V78 creating `criteria_rate_orphan`) deploys as a
+  release of its own **before** P0, and is reopened and checked. P0 is then the only migration of
+  its release, from schema V81. (V82 also runs if both land together, since V78 runs first, but
+  then the recovery below restores both releases' migrations at once.)
+- **Before** (read-only, as the admin user, on production; any unexpected row stops the deploy):
+  ```sql
+  SELECT VERSION();
+  SELECT version, success FROM flyway_schema_history ORDER BY installed_rank DESC LIMIT 1;
+  SELECT TABLE_NAME, INDEX_NAME FROM information_schema.STATISTICS
+  WHERE TABLE_SCHEMA = DATABASE()
+    AND TABLE_NAME IN ('selection', 'selection_deleted', 'selection_orphans',
+                       'criteria_rate', 'criteria_rate_orphan', 'rounds')
+  GROUP BY TABLE_NAME, INDEX_NAME ORDER BY 1, 2;
+  SELECT COUNT(*) AS fk_selection_page_id FROM information_schema.REFERENTIAL_CONSTRAINTS
+  WHERE CONSTRAINT_SCHEMA = DATABASE() AND CONSTRAINT_NAME = 'FK_selection_page_id'
+    AND TABLE_NAME = 'selection';
+  SELECT TABLE_NAME AS already_there FROM information_schema.TABLES
+  WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME IN ('vote', 'vote_aside', 'vote_orphan', 'round');
+  SELECT 'view' AS kind, TABLE_NAME AS name,
+         VIEW_DEFINITION REGEXP '[[:<:]](selection|selection_deleted|selection_orphans|rounds)[[:>:]]' AS names_old_table
+  FROM information_schema.VIEWS WHERE TABLE_SCHEMA = DATABASE()
+  UNION ALL
+  SELECT 'trigger', TRIGGER_NAME,
+         EVENT_OBJECT_TABLE IN ('selection', 'selection_deleted', 'selection_orphans', 'rounds', 'criteria_rate')
+           OR ACTION_STATEMENT REGEXP '[[:<:]](selection|selection_deleted|selection_orphans|rounds)[[:>:]]'
+  FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA = DATABASE()
+  UNION ALL
+  SELECT 'routine', ROUTINE_NAME,
+         ROUTINE_DEFINITION REGEXP '[[:<:]](selection|selection_deleted|selection_orphans|rounds)[[:>:]]'
+  FROM information_schema.ROUTINES WHERE ROUTINE_SCHEMA = DATABASE();
+  SELECT GRANTEE, TABLE_NAME, PRIVILEGE_TYPE FROM information_schema.TABLE_PRIVILEGES
+  WHERE TABLE_SCHEMA = DATABASE()
+    AND TABLE_NAME IN ('selection', 'selection_deleted', 'selection_orphans', 'rounds',
+                       'criteria_rate', 'criteria_rate_orphan');
+  SELECT GRANTEE, TABLE_NAME, COLUMN_NAME, PRIVILEGE_TYPE FROM information_schema.COLUMN_PRIVILEGES
+  WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME IN ('criteria_rate', 'criteria_rate_orphan');
+  ```
+  Expected: MariaDB 10.6+ (`RENAME INDEX`/`RENAME COLUMN` need 10.5.2); the last Flyway row
+  `81`, success 1; per selection table: `id` and/or `PRIMARY`, `idx_selection_jury_round_rate_mon_page`,
+  `idx_selection_round_jury_rate`, `idx_selection_round_monument_id`,
+  `idx_selection_round_page_rate`, `idx_selection_round_rate`, `selection_jury_id_index`,
+  `selection_page_id_index`, `selection_page_jury_round_uidx`, `selection_rate_index`,
+  `selection_round_index`; `criteria_rate`: `criteria_selection_index`, `id`;
+  `criteria_rate_orphan` (exists only once V78 has run): `PRIMARY`,
+  `criteria_rate_orphan_selection`; `rounds`: `id` and/or `PRIMARY`, `idx_rounds_contest_active`,
+  `rounds_submit_token_uidx`; `fk_selection_page_id` = 1; no `already_there` rows; no
+  views, triggers or routines naming the old tables (a view would break: it is not rewritten);
+  no table- or column-level grants on them (`RENAME TABLE` doesn't carry those; database-level
+  grants are unaffected).
+- **Deploy** with `wlxjury-release deploy` as usual: the release has a new migration, so the tool
+  dumps the database before Flyway runs (`database.sql.gz` in the operation directory) and
+  stops at "Ready under maintenance". Smoke-test locally, then `wlxjury-release reopen OPERATION`.
+- **Recovery up to `reopen`, the primary path:** `wlxjury-release restore OPERATION`. It
+  restores the pre-migration dump and switches back to the previous release under maintenance,
+  also when V82 failed part-way (Flyway marks it failed; the tool refuses any later deploy until
+  then). Then `wlxjury-release reopen OPERATION`. No SQL by hand.
+- **After `reopen`** (writes since then would be lost by `restore`, which wants
+  `--accept-data-loss` and a reconciliation decision): the manual reverse SQL below, then deploy
+  the previous release. It works only when the previous release is at schema V81 (the
+  followups release): it gives back V81's names exactly and deletes V82's history row, so
+  Flyway sees V81. All its statements are instant; no compatibility view.
+- The Gatling fixture cache rebuilds (the migration is in its key).
+
+### Rollback SQL after reopen (tested: forward + this gives back the pre-V82 schema exactly)
+
+Only with the app stopped and the previous release at V81. It reverses V82 in the opposite
+order: table names first, then the column, the foreign key, the index names.
+
+```sql
+RENAME TABLE vote TO selection,
+             vote_aside TO selection_deleted,
+             vote_orphan TO selection_orphans,
+             round TO rounds;
+
+ALTER TABLE criteria_rate_orphan
+  RENAME COLUMN vote_id TO selection,
+  RENAME INDEX criteria_rate_orphan_vote_id_idx TO criteria_rate_orphan_selection,
+  ALGORITHM=INSTANT;
+
+ALTER TABLE criteria_rate
+  RENAME COLUMN vote_id TO selection,
+  RENAME INDEX criteria_rate_vote_id_idx TO criteria_selection_index,
+  ALGORITHM=INSTANT;
+
+SET @saved_fk_checks = @@foreign_key_checks;
+SET foreign_key_checks = 0;
+ALTER TABLE selection
+  DROP FOREIGN KEY vote_page_id_fk,
+  ADD CONSTRAINT FK_selection_page_id FOREIGN KEY (page_id) REFERENCES images (page_id) ON DELETE CASCADE,
+  ALGORITHM=NOCOPY;
+SET foreign_key_checks = @saved_fk_checks;
+
+ALTER TABLE rounds
+  RENAME INDEX round_submit_token_uidx TO rounds_submit_token_uidx,
+  RENAME INDEX round_contest_active_idx TO idx_rounds_contest_active,
+  ALGORITHM=INSTANT;
+
+ALTER TABLE selection_orphans
+  RENAME INDEX vote_orphan_page_jury_round_uidx TO selection_page_jury_round_uidx,
+  RENAME INDEX vote_orphan_rate_idx TO selection_rate_index,
+  RENAME INDEX vote_orphan_round_idx TO selection_round_index,
+  RENAME INDEX vote_orphan_jury_id_idx TO selection_jury_id_index,
+  RENAME INDEX vote_orphan_page_id_idx TO selection_page_id_index,
+  RENAME INDEX vote_orphan_round_rate_idx TO idx_selection_round_rate,
+  RENAME INDEX vote_orphan_jury_round_rate_mon_page_idx TO idx_selection_jury_round_rate_mon_page,
+  RENAME INDEX vote_orphan_round_jury_rate_idx TO idx_selection_round_jury_rate,
+  RENAME INDEX vote_orphan_round_monument_id_idx TO idx_selection_round_monument_id,
+  RENAME INDEX vote_orphan_round_page_rate_idx TO idx_selection_round_page_rate,
+  ALGORITHM=INSTANT;
+
+ALTER TABLE selection_deleted
+  RENAME INDEX vote_aside_page_jury_round_uidx TO selection_page_jury_round_uidx,
+  RENAME INDEX vote_aside_rate_idx TO selection_rate_index,
+  RENAME INDEX vote_aside_round_idx TO selection_round_index,
+  RENAME INDEX vote_aside_jury_id_idx TO selection_jury_id_index,
+  RENAME INDEX vote_aside_page_id_idx TO selection_page_id_index,
+  RENAME INDEX vote_aside_round_rate_idx TO idx_selection_round_rate,
+  RENAME INDEX vote_aside_jury_round_rate_mon_page_idx TO idx_selection_jury_round_rate_mon_page,
+  RENAME INDEX vote_aside_round_jury_rate_idx TO idx_selection_round_jury_rate,
+  RENAME INDEX vote_aside_round_monument_id_idx TO idx_selection_round_monument_id,
+  RENAME INDEX vote_aside_round_page_rate_idx TO idx_selection_round_page_rate,
+  ALGORITHM=INSTANT;
+
+ALTER TABLE selection
+  RENAME INDEX vote_page_jury_round_uidx TO selection_page_jury_round_uidx,
+  RENAME INDEX vote_rate_idx TO selection_rate_index,
+  RENAME INDEX vote_round_idx TO selection_round_index,
+  RENAME INDEX vote_jury_id_idx TO selection_jury_id_index,
+  RENAME INDEX vote_page_id_idx TO selection_page_id_index,
+  RENAME INDEX vote_round_rate_idx TO idx_selection_round_rate,
+  RENAME INDEX vote_jury_round_rate_mon_page_idx TO idx_selection_jury_round_rate_mon_page,
+  RENAME INDEX vote_round_jury_rate_idx TO idx_selection_round_jury_rate,
+  RENAME INDEX vote_round_monument_id_idx TO idx_selection_round_monument_id,
+  RENAME INDEX vote_round_page_rate_idx TO idx_selection_round_page_rate,
+  ALGORITHM=INSTANT;
+
+DELETE FROM flyway_schema_history WHERE version = '82';
+```
+
+### Code
+
+- Commit A (SQL): every raw SQL string, `VoteJdbc.tableName` (then `SelectionJdbc`),
+  `CriteriaRate`'s column (a `nameConverters` entry until commit B renamed the field), the specs'
+  SQL and table-name strings, `SharedTestDb`/`SharedPlayApp` table lists, Gatling setup and
+  benchmarks (`ExplainQueries`, `ANALYZE TABLE` in `GatlingDbSetup`/`GatlingDbCache`),
+  `scripts/timing-summary.py`'s log patterns, comments naming the tables or their indexes,
+  CLAUDE.md. Specs that run an old migration's text on the shared (renamed) database replace the
+  names first (V57, V77) or copy the renamed tables back to their old shape (V58: `t_selection
+  LIKE vote`; V78: `t_criteria_rate` with `vote_id` renamed back); `ConvertToInnoDbMigrationSpec`'s
+  V62 examples stop before V82 (V62 reads `selection`).
+- Commit C (`rounds` → `round`, SQL, after B): V82's extra rename and indexes, `Round.tableName`,
+  every raw SQL `rounds` in `app/` and `test/`, `round.<column>` in SQL, the truncation lists,
+  `ANALYZE TABLE` lists, `timing-summary.py`'s pattern; specs that run V70/V72/V73/V74's text on
+  the shared database rename the table in it first (and their `information_schema` checks read
+  `round`); `ConvertToInnoDbMigrationSpec`'s chain also checks `round`. One string named an
+  index: `RoundService.submit` recognises a concurrent identical submit by the duplicate-key
+  message naming `rounds_submit_token_uidx`; it now looks for `submit_token_uidx` (either name; review L3)
+  (`RoundCreationResubmitSpec` "concurrent identical submits" failed until then). The other
+  such matches name unrenamed keys (`job_active_dedupe_uidx`, `images_page_monument_idx`).
+- Commit B (Scala, mechanical): `Selection` → `Vote`, `SelectionJdbc` → `VoteJdbc` (files
+  moved), `ImageWithRating.selection` → `votes`, `CriteriaRate.selection` → `voteId` (the
+  converter goes), the templates' parameters (`showRate`, `juryStat`, `large`) and the large
+  view's locals. The large view's JSON (`Accepts.Json`) keeps the key `"selection"` for the votes
+  (`iwrWrites` renames the field back), so its output is unchanged.
+- Not renamed (names, not tables; follow-ups if wanted): `TestDb.selectionDao` (126 uses in 31
+  specs, left to keep the concurrent test-spec refactor's merge mechanical),
+  `ImageDbNew.SelectionQuery` (named in `secure-coding.md`), spec file and class names
+  (`SelectionSpec`, `SelectionFactorySpec`, `FindByRoundSelectionSpec`, …), `insertSelections`,
+  `DistributeImages`' local `selection` and its debug log text, and English uses of
+  "selection" for a juror's vote in comments and spec titles.
+- Left as they are (history): migrations V1–V81 and B44, `test/resources/db/prod-v53-myisam-schema.sql`,
+  `scripts/report-alias-accounts.sql` (run before V62 only), the V45 file names in
+  `GatlingCompare`, and earlier plans' results.
+- `GatlingDbCache.FixtureVersion` not bumped: the cache key already includes the migrations, and
+  the loader writes through the DAOs and `vote` SQL.
+
+### Rebasing the open branches onto P0
+
+- **`ukwikidev/mariadb-10.11`:** its `V61__Selection_gallery_index_rate_desc.sql` must be
+  renumbered (V83 or later: V61 is taken, and it must run after V82), target `vote`, drop
+  `vote_jury_round_rate_mon_page_idx` (V82's name for `idx_selection_jury_round_rate_mon_page`)
+  and name the new index `vote_jury_round_ratedesc_mon_page_idx`. Otherwise its
+  `DROP INDEX IF EXISTS idx_selection_…` silently does nothing and `vote` keeps two gallery
+  indexes. Decide whether `vote_aside`/`vote_orphan` get the same index (nothing pages them
+  today). Update `SelectionGalleryIndexSpec` (`FROM selection s FORCE INDEX (…)`,
+  `INSERT INTO selection`, `TABLE_NAME = 'selection'`, the two index names), and the specs and
+  comments naming the old gallery index (`RegionCountsSpec`'s plan check of
+  `vote_jury_round_rate_mon_page_idx`, `User.contestsWorkedIn`'s comment).
+- **`ukwikidev/oauth-login`:** a trivial conflict in `SharedTestDb.dataTables` and
+  `SharedPlayApp`'s list: it adds `"user_identity"` on the line where P0 renamed `"rounds"` to
+  `"round"`; keep both. Its own SQL must use `round`/`vote` if it touches them.
+
+### Checks
+
+Logs under `target/checks/` of the worktree.
+
+| Step | Specs | Result | Log |
+|---|---|---|---|
+| Commit A | `Test/compile`, `Gatling/compile` | ok | `20261102-201120-13972.log` |
+| Commit A | `db.*`, `security.*`, `org.intracer.wmua.*`, `services.imports.*`, `services.distribution.*`, `RoundCreationResubmitSpec`, 7 controller specs | 766 passed, 1 error: `AccountVerificationMigrationSpec` ran V77's text (`selection`) on the renamed DB; fixed like V57 | `20261102-203748-27212.log` |
+| Commit A | that spec and `CriteriaRateOrphansMigrationSpec` | 6 passed | `20261102-205456-15412.log` |
+| Commit B | `Test/compile`, `Gatling/compile`; the set above plus `OwnVotesSpec`, `views.*` | 963 passed, 0 failed (2 skipped, 1 pending, as before) | `20261102-205823-25368.log`, `20261102-210222-6472.log` |
+| Commit C | `Test/compile`, `Gatling/compile`; `db.*`, `security.*`, `org.intracer.wmua.*`, `services.*`, 7 controller specs | 929 passed, 1 failed: the concurrent-submit example (the index name in `RoundService`), fixed | `20261102-214547-7536.log` |
+| Commit C | `RoundCreationResubmitSpec`, `RoundEditPageSpec` | 30 passed | `20261102-220756-14888.log` |
+| Gate | full suite (`Test/compile`, `test`), after merging `ukwikidev/followups` 8c2b3d67 | **1667: 1661 passed, 0 failed, 0 errors, 6 skipped, 1 pending** | `20261102-220955-27740.log` |
+
+`rg -n -i '\bselection(_deleted|_orphans)?\b' app conf test` leaves: migrations V1–V81 and B44
+(history), V82 itself, `test/resources/db/prod-v53-myisam-schema.sql`, the old-migration specs
+(V57, V58, V77, V78 and `ConvertToInnoDbMigrationSpec`'s pre-V82 inserts and checks), the large
+view's JSON key `"selection"`, and English uses ("the juror's own selection", spec titles, local
+names such as `DistributeImages`' `selection`, `RebalanceSpec`'s `val selection`).
+`rg -n -i '\brounds\b' app conf test` leaves (besides migrations and the V53 dump): English
+("the rounds of a contest"), Scala collections named `rounds`, routes and URLs (`/admin/rounds`,
+`RoundController.rounds`, `rounds.scala.html`), message keys (`rounds`,
+`error.previous.rounds.mixed.type`), and the pre-V82 SQL of `ConvertToInnoDbMigrationSpec`.
+
+### P0 review fixes
+
+The independent review found no Critical or High issue; these were fixed before merging.
+
+| # | Finding | Fix |
+|---|---|---|
+| M1 | Deploy and recovery relied on hand-written SQL | "Deploy note": followups (V71–V81) deploys first as its own release; `wlxjury-release restore OPERATION` (the tool's pre-migration dump) is the recovery up to `reopen`, a part-way V82 failure included; the reverse SQL only after `reopen`, and only from a previous release at V81 |
+| M2 | `ukwikidev/mariadb-10.11`'s gallery index migration would no-op after P0 | "Rebasing the open branches onto P0" and the roadmap: renumber to V83+, target `vote`, drop `vote_jury_round_rate_mon_page_idx`, new `vote_jury_round_ratedesc_mon_page_idx`, update `SelectionGalleryIndexSpec` |
+| L1 | `bench/scripts/run.sh` read `wlxjury.rounds` after the app migrated | it picks `round` or `rounds` from `information_schema`; `bench/README.md` says `convert.sh`, `trim-old-years.sql`, `reopen-contest.sql` run on pre-migration snapshots, so their old names are right |
+| L2 | The pre-deploy check was incomplete | adds the version and last Flyway row, the foreign key (`FK_selection_page_id` on `selection`), views/triggers/routines naming the old tables, table- and column-level grants, the new names not existing yet; notes `criteria_rate_orphan` exists only after V78. Checked on a scratch MariaDB: it flags a view on `selection` and a grant on `rounds` |
+| L3 | A part-way V82 left new table names with old indexes | V82 reordered: index renames and the foreign key swap on the old table names, then the column, the atomic `RENAME TABLE` last. `RoundService` matches `submit_token_uidx`, true under both names. Re-verified on a scratch `mariadb:10.6` (10.6.28): forward on the three schema paths gives identical names (34 indexes) and the foreign keys (`vote_page_id_fk`; `FK_round_user_round_id` → `round` where it exists); forward + the reverse SQL gives back every table's pre-V82 `SHOW CREATE TABLE` (367 lines, identical) |
+| L4 | `criteria-rounds.md` C0 queries named the old tables | marked "before V82", with an "after V82" block (`round`, `vote`, `vote_aside`, `cr.vote_id`) |
+| Nits | rollback written as a template; `secure-coding.md` `rounds.roles`; `oauth-login`'s rebase | rollback written out in full; `round.roles`; the `SharedTestDb`/`SharedPlayApp` conflict noted |

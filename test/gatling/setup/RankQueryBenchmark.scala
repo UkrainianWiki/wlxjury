@@ -3,7 +3,7 @@ package gatling.setup
 import controllers.{GalleryView, ListOrder, RoundList, VoteFilter}
 import db.scalikejdbc.{ImageJdbc, Round}
 import db.scalikejdbc.rewrite.ImageDbNew.{Limit, SelectionQuery}
-import org.intracer.wmua.{BinaryOrder, ImageWithRating, Selection}
+import org.intracer.wmua.{BinaryOrder, ImageWithRating, Vote}
 import org.intracer.wmua.ImageWithRating.Ranks
 import scalikejdbc._
 
@@ -16,9 +16,9 @@ import scala.collection.mutable.ListBuffer
   * batch B11) on the Gatling fixture DB: the queries of a whole page view with today's
   * [[SelectionQuery.keyCounts]] (A), with the pager's total taken from its counts (K), with the
   * ranks as window functions in the page query (W), and W with the list's total as one more
-  * window (WC); for information, D: the page's ids, aggregates and the windows from selection
+  * window (WC); for information, D: the page's ids, aggregates and the windows from vote
   * alone, then the page's images. Since B12 today's page (A) is itself narrow: the grouped
-  * page's deferred join and the file list's id query on selection alone
+  * page's deferred join and the file list's id query on vote alone
   * (`SelectionQuery.query`); D is A with the windows.
   *
   * First it checks that W's ranks are today's on whole lists and on pages (ties spanning
@@ -74,7 +74,7 @@ object RankQueryBenchmark {
       (if (total) ", count(*) over () as list_total" else "")
   }
 
-  private val From = " from selection s"
+  private val From = " from vote s"
 
   private def insertAt(sql: SQLSyntax, marker: String, text: String): SQLSyntax = {
     val at = sql.value.indexOf(marker)
@@ -112,7 +112,7 @@ object RankQueryBenchmark {
     insertAt(idQuery(q).query(idOnly = true), From, windows(list.rankKey.columns, total))
 
 
-  /** A narrow grouped by-rate page: aggregates and ranks from selection alone (filter All, no
+  /** A narrow grouped by-rate page: aggregates and ranks from vote alone (filter All, no
     * monument join), the page's images read after.
     */
   private def dPageSql(list: RoundList, q: SelectionQuery): SQLSyntax = {
@@ -120,7 +120,7 @@ object RankQueryBenchmark {
     val w = windows(list.rankKey.columns, total = true)
     SQLSyntax.createUnsafely(
       s"select s.page_id, sum(s.rate) as rate, count(s.rate) as rate_count, sum(s.rate > 0) as approvals, " +
-        s"sum(s.rate < 0) as rejections$w from selection s"
+        s"sum(s.rate < 0) as rejections$w from vote s"
     ) + q.where() + SQLSyntax.createUnsafely(s" group by s.page_id ${q.orderBy()} ${q.limitSql()}")
   }
 
@@ -173,7 +173,7 @@ object RankQueryBenchmark {
       else sql"select ${i.result.*} from images i where i.page_id in ($ids)".map(ImageJdbc(i)(_)).list()
         .map(im => im.pageId -> im).toMap)
     val files = rows.flatMap { case (id, sum, n, a, r, _, _) =>
-      images.get(id).map(im => ImageWithRating(im, Seq(Selection(id, juryId = 0, roundId = 0, rate = sum)), n, Some(a), Some(r)))
+      images.get(id).map(im => ImageWithRating(im, Seq(Vote(id, juryId = 0, roundId = 0, rate = sum)), n, Some(a), Some(r)))
     }
     val total = rows.headOption.map(_._7).getOrElse(c("count")(list.query.count()))
     View(total, files.map(_.pageId), rows.map(_._6), c.parts.toSeq)
@@ -366,16 +366,16 @@ object RankQueryBenchmark {
       val binary = Round.findById(f.roundBinaryId).get
       val version = sql"select version()".map(_.string(1)).single().get
       val regions = sql"""select ${SQLSyntax.createUnsafely(db.scalikejdbc.rewrite.ImageDbNew.regionOf("s.monument_id"))} r,
-                          count(distinct s.page_id) n from selection s where s.round_id = ${rated.getId}
+                          count(distinct s.page_id) n from vote s where s.round_id = ${rated.getId}
                           group by r having r is not null order by n desc limit 2""".map(_.string(1)).list()
       val juror = f.jurors.map(_._1).maxBy(j =>
-        sql"select count(*) from selection where jury_id = $j and round_id = ${rated.getId}".map(_.int(1)).single().get)
+        sql"select count(*) from vote where jury_id = $j and round_id = ${rated.getId}".map(_.int(1)).single().get)
       val bJuror = f.jurors.map(_._1).maxBy(j =>
-        sql"select count(*) from selection where jury_id = $j and round_id = ${binary.getId}".map(_.int(1)).single().get)
+        sql"select count(*) from vote where jury_id = $j and round_id = ${binary.getId}".map(_.int(1)).single().get)
       say(s"RankQueryBenchmark $stamp: MariaDB $version, rated round ${rated.getId}, binary round ${binary.getId}, " +
-        s"selection ${sql"select count(*) from selection".map(_.long(1)).single().get} rows, regions ${regions.mkString(",")}, " +
+        s"vote ${sql"select count(*) from vote".map(_.long(1)).single().get} rows, regions ${regions.mkString(",")}, " +
         s"jurors $juror (rated), $bJuror (binary); warmup $warmup, samples $samples; SQL logging off")
-      val rateVals = sql"select rate, count(*) from selection where round_id = ${rated.getId} group by rate"
+      val rateVals = sql"select rate, count(*) from vote where round_id = ${rated.getId} group by rate"
         .map(rs => rs.int(1) -> rs.int(2)).list()
       say(s"rated round's votes by rate: ${rateVals.mkString(", ")}")
 
@@ -410,7 +410,7 @@ object RankQueryBenchmark {
         // several regions need the monument join, which a RoundList's one region doesn't have
         if (regions.size == 2) guarded("rated two regions") {
           val list = byRate(rated)
-          val adm0 = sql"""select m.adm0 from selection s join monument m on m.id = s.monument_id
+          val adm0 = sql"""select m.adm0 from vote s join monument m on m.id = s.monument_id
                             where s.round_id = ${rated.getId} group by m.adm0 order by count(*) desc limit 2"""
             .map(_.string(1)).list()
           println(s"[ranks] two regions: adm0 ${adm0.mkString(",")}")
@@ -522,7 +522,7 @@ object RankQueryBenchmark {
             def narrow(round: Round, order: String, tally: Boolean) = SQLSyntax.createUnsafely(
               "select s.page_id, sum(s.rate) as rate, count(s.rate) as rate_count" +
                 (if (tally) ", sum(s.rate > 0) as approvals, sum(s.rate < 0) as rejections" else "") +
-                s" from selection s where s.round_id = ${round.getId} group by s.page_id" +
+                s" from vote s where s.round_id = ${round.getId} group by s.page_id" +
                 (if (order.isEmpty) "" else s" order by $order limit 15"))
             val byRate = "sum(s.rate) desc, s.monument_id asc, s.page_id asc"
             val byRateNoMonument = "sum(s.rate) desc, s.page_id asc"
@@ -538,7 +538,7 @@ object RankQueryBenchmark {
             )
           }
           // keyCounts' SQL isn't exposed: the same text as SelectionQuery.keyCounts builds
-          val kcSql = SQLSyntax.createUnsafely("select k0, count(*) from (select sum(s.rate) as k0 from selection s") +
+          val kcSql = SQLSyntax.createUnsafely("select k0, count(*) from (select sum(s.rate) as k0 from vote s") +
             r2.query.where() + SQLSyntax.createUnsafely(" group by s.page_id ) t group by k0 order by k0 desc")
           (plans :+ ("rated keyCounts" -> kcSql)).foreach { case (n, s) => say(analyze(n, s, json)) }
         } finally json.close()

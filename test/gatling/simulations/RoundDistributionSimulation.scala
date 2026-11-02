@@ -14,7 +14,7 @@ import scala.concurrent.duration._
   * admin action, so what matters is its latency and memory, not throughput. Each step is
   * a real POST /admin/rounds/save as the round form submits it, which starts the round's
   * distribution as a background job and returns at once; the step then polls the job's
-  * status until it ends, checks the new round's selection rows (read from the DB: the
+  * status until it ends, checks the new round's vote rows (read from the DB: the
   * simulation runs in the app's JVM) and GETs its /roundstat page. A step's time is from
   * the submit to the job's end.
   *
@@ -50,18 +50,18 @@ class RoundDistributionSimulation extends Simulation {
           WHERE c.id = $contestId""".map(_.int(1)).single().getOrElse(0)
 
   private def selectedImageCount(roundId: Long): Int =
-    sql"""SELECT COUNT(DISTINCT page_id) FROM selection
+    sql"""SELECT COUNT(DISTINCT page_id) FROM vote
           WHERE round_id = $roundId AND rate > 0""".map(_.int(1)).single().getOrElse(0)
 
   private def imageCount(roundId: Long): Int =
-    sql"SELECT COUNT(DISTINCT page_id) FROM selection WHERE round_id = $roundId"
+    sql"SELECT COUNT(DISTINCT page_id) FROM vote WHERE round_id = $roundId"
       .map(_.int(1)).single().getOrElse(0)
 
   private def rowCount(roundId: Long): Int =
-    sql"SELECT COUNT(*) FROM selection WHERE round_id = $roundId".map(_.int(1)).single().getOrElse(0)
+    sql"SELECT COUNT(*) FROM vote WHERE round_id = $roundId".map(_.int(1)).single().getOrElse(0)
 
   private def roundIdByName(name: String): Option[Long] =
-    sql"SELECT MAX(id) FROM rounds WHERE contest_id = $contestId AND name = $name"
+    sql"SELECT MAX(id) FROM round WHERE contest_id = $contestId AND name = $name"
       .map(_.longOpt(1)).single().flatten
 
   // ── requests ──────────────────────────────────────────────────────────────
@@ -94,7 +94,7 @@ class RoundDistributionSimulation extends Simulation {
 
   /** One distribution step: POST the form (it returns at once: the distribution is a
     * background job), poll the job's status (GET /admin/jobs/:id) until it ends, then
-    * check the round's selection rows. The step's time is from the submit to the job's end.
+    * check the round's vote rows. The step's time is from the submit to the job's end.
     *
     * @param roundName  the name of the round the step creates or saves
     * @param expected   (images, rows) the round should have afterwards

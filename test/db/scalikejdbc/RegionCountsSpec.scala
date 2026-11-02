@@ -1,7 +1,7 @@
 package db.scalikejdbc
 
 import db.scalikejdbc.rewrite.ImageDbNew.SelectionQuery
-import org.intracer.wmua.{Image, Selection}
+import org.intracer.wmua.{Image, Vote}
 import org.specs2.mutable.Specification
 import org.specs2.specification.BeforeAll
 import scalikejdbc._
@@ -25,7 +25,7 @@ class RegionCountsSpec extends Specification with BeforeAll with TestDb {
     val ids = Map(1L -> Some("07-101-0001"), 2L -> Some("07-101-0002"), 3L -> Some("14-101-0003"),
       4L -> Some("99-141-2306"), 5L -> None)
     imageDao.batchInsert(ids.toSeq.sortBy(_._1).map { case (id, m) => Image(id, s"File:Image$id.jpg", None, None, 640, 480, m) })
-    def vote(page: Long, juror: Long, rate: Int) = Selection(page, juror, round, rate, monumentId = ids(page))
+    def vote(page: Long, juror: Long, rate: Int) = Vote(page, juror, round, rate, monumentId = ids(page))
     selectionDao.batchInsert(Seq(vote(1, juror1, 1), vote(2, juror1, -1), vote(3, juror1, 1), vote(4, juror1, 0),
       vote(5, juror1, 1), vote(1, juror2, 1), vote(3, juror2, -1)))
   }
@@ -61,10 +61,10 @@ class RegionCountsSpec extends Specification with BeforeAll with TestDb {
     "be read from the juror's index alone" in new AutoRollbackDb {
       votes()
       val plan = sql"""EXPLAIN SELECT LEFT(SUBSTRING_INDEX(s.monument_id, '-', 1), 3) AS region, SUM(s.rate = 1)
-                       FROM selection s WHERE s.jury_id = $juror1 AND s.round_id = $round
+                       FROM vote s WHERE s.jury_id = $juror1 AND s.round_id = $round
                        GROUP BY region ORDER BY NULL"""
         .map(rs => (rs.stringOpt("key"), rs.stringOpt("Extra").getOrElse(""))).list()
-      plan.map(_._1) === Seq(Some("idx_selection_jury_round_rate_mon_page"))
+      plan.map(_._1) === Seq(Some("vote_jury_round_rate_mon_page_idx"))
       plan.head._2 must contain("Using index")
     }
   }

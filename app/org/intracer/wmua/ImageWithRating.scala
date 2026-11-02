@@ -8,14 +8,14 @@ import db.scalikejdbc.{Round, User}
 
 case class ImageWithRating(
     image: Image,
-    selection: Seq[Selection],
+    votes: Seq[Vote],
     countFromDb: Int = 0,
     approvalsFromDb: Option[Int] = None,
     rejectionsFromDb: Option[Int] = None
 ) extends Ordered[ImageWithRating] {
 
   val ownJuryRating = new OwnRating(
-    selection.headOption.getOrElse(Selection(image.pageId, 0, 0, 0))
+    votes.headOption.getOrElse(Vote(image.pageId, 0, 0, 0))
   )
 
   def unSelect(): Unit =
@@ -42,30 +42,30 @@ case class ImageWithRating(
     * [[rejections]].
     */
   def totalRate(round: Round): Double =
-    if (selection.size == 1 && selection.head.juryId != 0)
-      selection.head.rate
+    if (votes.size == 1 && votes.head.juryId != 0)
+      votes.head.rate
     else if (ratedJurors(round) == 0)
       0.0
     else
       rateSum.toDouble / ratedJurors(round)
 
   /** A rated round's rate sum: its votes' rates, any below 0 as 0; of a grouped row (all the
-    * jurors' votes together, one selection with their sum) that sum. Binary code counts
+    * jurors' votes together, one vote with their sum) that sum. Binary code counts
     * [[approvals]] and [[rejections]] instead: of a binary round's grouped row this is
     * max(approvals − rejections, 0), of its vote rows the approvals, or of the rows a
     * distribution's "selected by at least" reads (rate > 0, `SelectedAtLeast`) the approvals.
     */
   def rateSum: Int =
-    selection.foldLeft(0)((acc, s) => acc + Math.max(s.rate, 0))
+    votes.foldLeft(0)((acc, s) => acc + Math.max(s.rate, 0))
 
   /** A binary round's approvals of the file: its selections (rate 1). A grouped row (all the
-    * jurors' votes together, one selection of juror 0 with their sum) has them only from a
+    * jurors' votes together, one vote of juror 0 with their sum) has them only from a
     * query with `tally` (`SelectionQuery.tally`, a yes/no round's); one without fails here
-    * rather than count its one selection. Vote rows are counted.
+    * rather than count its one vote. Vote rows are counted.
     */
   def approvals: Int = {
     require(approvalsFromDb.isDefined || !grouped, "grouped row without tally")
-    approvalsFromDb.getOrElse(selection.count(_.rate > 0))
+    approvalsFromDb.getOrElse(votes.count(_.rate > 0))
   }
 
   /** A binary round's rejections of the file (rate -1), from the query or counted as
@@ -73,16 +73,16 @@ case class ImageWithRating(
     */
   def rejections: Int = {
     require(rejectionsFromDb.isDefined || !grouped, "grouped row without tally")
-    rejectionsFromDb.getOrElse(selection.count(_.rate < 0))
+    rejectionsFromDb.getOrElse(votes.count(_.rate < 0))
   }
 
-  /** A row of all the jurors' votes together: a selection of juror 0 holds their sum. */
-  private def grouped: Boolean = selection.exists(_.juryId == 0)
+  /** A row of all the jurors' votes together: a vote of juror 0 holds their sum. */
+  private def grouped: Boolean = votes.exists(_.juryId == 0)
 
-  def jurors: Set[Long] = selection.map(s => s.juryId).toSet
+  def jurors: Set[Long] = votes.map(s => s.juryId).toSet
 
   def jurorRate(juror: User): Option[Int] =
-    selection.find(_.juryId == juror.getId).map(_.rate)
+    votes.find(_.juryId == juror.getId).map(_.rate)
 
   def jurorRateStr(juror: User): String = jurorRate(juror).fold("")(_.toString)
 
@@ -90,14 +90,14 @@ case class ImageWithRating(
     if (round.isBinary) {
       round.numberOfAssignedJurors
     } else if (
-      selection.headOption.exists(_.juryId == 0) && !round.optionalRate
+      votes.headOption.exists(_.juryId == 0) && !round.optionalRate
     )
       countFromDb
-    else if (selection.size == 1 && selection.headOption.exists(_.juryId != 0))
+    else if (votes.size == 1 && votes.headOption.exists(_.juryId != 0))
       1
     else if (round.optionalRate)
       round.numberOfJurorsForAverageRate
-    else selection.count(_.rate > 0)
+    else votes.count(_.rate > 0)
 
   def rateString(round: Round): String = {
     if (round.isBinary) {
@@ -119,7 +119,7 @@ case class ImageWithRating(
 object ImageWithRating {
 
   /** How a list of all of a round's votes (file list, CSV) orders and ranks its files: by
-    * aggregates of each file's votes, as SQL over the file's selection rows `s` with their
+    * aggregates of each file's votes, as SQL over the file's vote rows `s` with their
     * directions (1 ascending, -1 descending), and their values of a file in memory. Files of
     * the same values tie, and share a rank range.
     */
@@ -129,12 +129,12 @@ object ImageWithRating {
 
     /** A binary round's by `order`, a rated round's by the sum of its rates as SQL has it: a
       * rate below 0 counted as it is, not as 0 as [[ImageWithRating.rateSum]] counts it, so a
-      * file with one has its rank (of a grouped row, its one selection's sum; of a file's votes
+      * file with one has its rank (of a grouped row, its one vote's sum; of a file's votes
       * read one by one, their sum).
       */
     def of(round: Round, order: BinaryOrder = BinaryOrder.Default): RankKey =
       if (round.isBinary) RankKey(order.columns, file => order.values(file.approvals, file.rejections))
-      else RankKey(Seq("sum(s.rate)" -> -1), file => Seq(file.selection.map(_.rate).sum))
+      else RankKey(Seq("sum(s.rate)" -> -1), file => Seq(file.votes.map(_.rate).sum))
   }
 
   /** The ranks of a list's files among all of them, from the number of its files of each key,
@@ -175,28 +175,28 @@ object ImageWithRating {
 
 class Rating
 
-class OneJuryRating(val selection: Selection) extends Rating {
-  def isSelected: Boolean = selection.rate > 0
+class OneJuryRating(val vote: Vote) extends Rating {
+  def isSelected: Boolean = vote.rate > 0
 
-  def isRejected: Boolean = selection.rate < 0
+  def isRejected: Boolean = vote.rate < 0
 
-  def isUnrated: Boolean = selection.rate == 0
+  def isUnrated: Boolean = vote.rate == 0
 
-  def rate: Int = selection.rate
+  def rate: Int = vote.rate
 }
 
-class OwnRating(selection: Selection) extends OneJuryRating(selection) {
+class OwnRating(vote: Vote) extends OneJuryRating(vote) {
 
   def unSelect(): Unit = {
-    selection.rate = -1
+    vote.rate = -1
   }
 
   def select(): Unit = {
-    selection.rate = 1
+    vote.rate = 1
   }
 
   def rate_=(rate: Int): Unit = {
-    selection.rate = rate
+    vote.rate = rate
   }
 
 }

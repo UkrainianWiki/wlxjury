@@ -105,7 +105,7 @@ final case class ImportPage(
   *  2. written in one transaction with the next cursor, by the rules the whole-contest
   *     import had, per page: a file not stored is inserted and put in the contest's
   *     category; a stored file of another contest is put in the category; a stored file is
-  *     updated if it changed ([[ImageService.changedImages]]), with its selection rows'
+  *     updated if it changed ([[ImageService.changedImages]]), with its vote rows'
   *     monument id; a file is put in its country category (never taken out of one). Mode
   *     `monument_ids` sets the stored files' monument ids from their text, where they differ.
   *

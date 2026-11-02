@@ -1,6 +1,6 @@
 @import db.scalikejdbc.Round
-@import org.intracer.wmua.Selection
-@(selection: Selection,
+@import org.intracer.wmua.Vote
+@(vote: Vote,
         round: Round,
         title: String,
         url: String)(implicit messages: Messages)
@@ -13,13 +13,13 @@
         <br/>
     <span class="rate-stars">
         @if(round.isBinary) {
-            @binaryVote(selection.rate, unrated = true)
+            @binaryVote(vote.rate, unrated = true)
         } else {
             @defining(round.rates.id > 5 && round.halfStar) { halfStar =>
                 @for(i <- 1 to round.rates.id / (if (halfStar) 2 else 1)) {
-                    @showStar(i, selection.rate, halfStar)
+                    @showStar(i, vote.rate, halfStar)
                     }
-                @selection.rate
+                @vote.rate
             }
         }
     </span>

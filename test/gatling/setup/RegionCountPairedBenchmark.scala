@@ -162,7 +162,7 @@ object RegionCountPairedBenchmark {
       val juror = in.juror.fold("")(j => s"AND s.jury_id = ${j._1}")
       val region = regionOf("s.monument_id")
       implicit val session: DBSession = AutoSession
-      SQL(s"""SELECT $region, COUNT(DISTINCT IF($hit, s.page_id, NULL)) FROM selection s
+      SQL(s"""SELECT $region, COUNT(DISTINCT IF($hit, s.page_id, NULL)) FROM vote s
              |WHERE s.round_id = ${in.round.getId} $juror AND $region IS NOT NULL GROUP BY 1""".stripMargin)
         .map(rs => rs.string(1) -> rs.int(2)).list().toMap
     }

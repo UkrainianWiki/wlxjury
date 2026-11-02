@@ -20,6 +20,7 @@ class PrevSelectedByZeroMigrationSpec extends Specification with TestDb with Bef
       "conf/db/migration/default/V73__Rounds_prev_selected_by_zero_to_null.sql")), "UTF-8")
     val statements = sql.linesIterator.filterNot(_.trim.startsWith("--")).mkString("\n")
       .split(";").map(_.trim).filter(_.nonEmpty)
+      .map(_.replaceAll("\\brounds\\b", "round")) // the table as V82 renamed it
     DB.autoCommit { implicit session => statements.foreach(statement => SQL(statement).execute.apply()) }
   }
 

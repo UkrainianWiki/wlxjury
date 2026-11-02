@@ -1,6 +1,6 @@
 package controllers
 
-import db.scalikejdbc.{MonumentJdbc, Round, RoundUser, SelectionJdbc, User}
+import db.scalikejdbc.{MonumentJdbc, Round, RoundUser, VoteJdbc, User}
 import modules.RequestTiming
 import org.intracer.wmua._
 import play.api.i18n.I18nSupport
@@ -17,10 +17,13 @@ class LargeViewController @Inject() (
 
   import play.api.libs.json._
 
-  implicit val selectionWrites: OWrites[Selection] = Json.writes[Selection]
+  implicit val voteWrites: OWrites[Vote] = Json.writes[Vote]
   implicit val imageWrites: OWrites[Image] = Json.writes[Image]
+  /** The votes keep their JSON name, "selection", from before the rename to `votes`. */
   implicit val iwrWrites: OWrites[ImageWithRating] =
-    Json.writes[ImageWithRating]
+    Json.writes[ImageWithRating].transform { (o: JsObject) =>
+      JsObject(o.fields.map { case ("votes", v) => "selection" -> v; case f => f })
+    }
 
   /** A round's file in the large view; never cached, as it shows votes ([[noStore]]). */
   def large(asUserId: Long, pageId: Long, region: String = "all", roundId: Long): EssentialAction =
@@ -75,11 +78,11 @@ class LargeViewController @Inject() (
         // hasn't, changes nothing and is a 404
         val voted = criteria match {
           case None =>
-            SelectionJdbc.rate(pageId = pageId, juryId = user.getId, roundId = round.getId, rate = select) > 0
+            VoteJdbc.rate(pageId = pageId, juryId = user.getId, roundId = round.getId, rate = select) > 0
           case Some(criterion) =>
-            SelectionJdbc
+            VoteJdbc
               .findBy(pageId, user.getId, round.getId)
-              .exists(selection => CriteriaRate.updateRate(selection.getId, criterion, select))
+              .exists(vote => CriteriaRate.updateRate(vote.getId, criterion, select))
         }
 
         if (!voted) NotFound(views.html.errorPage(Some(user), "error.title", "error.not.found"))
@@ -145,15 +148,15 @@ class LargeViewController @Inject() (
     val asUserId = list.asUserId
     val pageId = hood.file.pageId
 
-    val selection = if (user.canViewOrgInfo(round)) {
-      SelectionJdbc.byRoundAndImageWithJury(round.getId, pageId)
+    val votes = if (user.canViewOrgInfo(round)) {
+      VoteJdbc.byRoundAndImageWithJury(round.getId, pageId)
     } else Seq.empty
 
     // the round's, also when it is the current one (roundId 0); none without a selection
     val byCriteria = if (round.hasCriteria && asUserId != 0) {
-      SelectionJdbc
+      VoteJdbc
         .findBy(pageId, asUserId, round.getId)
-        .fold(Seq.empty[CriteriaRate])(selection => CriteriaRate.getRates(selection.getId))
+        .fold(Seq.empty[CriteriaRate])(vote => CriteriaRate.getRates(vote.getId))
         .map(c => c.criteria.toInt -> c.rate)
         .toMap
     } else Map.empty[Int, Int]
@@ -187,7 +190,7 @@ class LargeViewController @Inject() (
               hood,
               monument,
               comments,
-              selection,
+              votes,
               byCriteria
             )
           )
@@ -195,7 +198,7 @@ class LargeViewController @Inject() (
       case Accepts.Json() =>
         Ok(
           Json.toJson(
-            hood.files.map(file => file.copy(selection = file.selection.map(_.copy(createdAt = None))))
+            hood.files.map(file => file.copy(votes = file.votes.map(_.copy(createdAt = None))))
           )
         )
     }

@@ -2,7 +2,7 @@ package services.distribution
 
 import db.scalikejdbc._
 import org.intracer.wmua.cmd.DistributeImages
-import org.intracer.wmua.{BinaryOrder, Image, ImageWithRating, Selection}
+import org.intracer.wmua.{BinaryOrder, Image, ImageWithRating, Vote}
 import play.api.libs.json._
 import play.api.{Configuration, Logging}
 import scalikejdbc._
@@ -73,12 +73,12 @@ object DistributionState {
   *     SQL, otherwise; for top-N the ranked images (ranked once, by the first step);
   *  2. leave out the images already in the round (`NOT EXISTS`): a resumed or repeated
   *     job never adds an image twice, nor one whose votes of the round were moved aside
-  *     (`selection_deleted`); and those deleted on Commons (`images.deleted_at`, V63, set
+  *     (`vote_aside`); and those deleted on Commons (`images.deleted_at`, V63, set
   *     by [[services.imports.CommonsFileCheck]]);
   *  3. apply the round's per-image filters ([[DistributeImages.perImageFilters]], the
   *     same chain as the in-memory path);
   *  4. assign jurors from the job's running position ([[DistributeImages.assign]]) and
-  *     insert the selection rows, and criteria rates in a criteria round.
+  *     insert the vote rows, and criteria rates in a criteria round.
   *
   * A job may carry a pasted list of files (`params.titles`, from the round form's "Add
   * files"): after the filtered candidates (or instead of them, with `params.listOnly`) its
@@ -92,7 +92,7 @@ object DistributionState {
   *
   * The last step checks the round's distinct-image count against the images added
   * (exact, as `distributeAndVerify` did) and, for a creation, shows the round to its
-  * jurors. The count includes the round's votes moved aside (`selection_deleted`), so files
+  * jurors. The count includes the round's votes moved aside (`vote_aside`), so files
   * deleted or restored on Commons meanwhile ([[services.imports.DeletedFiles]]) don't
   * change it. The previous rounds stay frozen ([[Round.freeze]]) from the job's creation
   * until it ends; a creation then closes them, anything else restores them.
@@ -113,7 +113,7 @@ class RoundDistributionHandler @Inject() (
 
   val kind: String = Kind
 
-  /** Selection rows per chunk: the chunk's window holds rows / jurors-per-image images. */
+  /** Vote rows per chunk: the chunk's window holds rows / jurors-per-image images. */
   val chunkRows: Int =
     config.getOptional[Int]("jobs.roundDistribution.chunkRows").getOrElse(DefaultChunkRows)
 
@@ -152,7 +152,7 @@ class RoundDistributionHandler @Inject() (
 
   /** Hooks for tests: run in a chunk's transaction before and after its rows are inserted. */
   protected def beforeInsert(round: Round, images: Seq[Image])(implicit session: DBSession): Unit = ()
-  protected def afterInsert(round: Round, rows: Seq[Selection])(implicit session: DBSession): Unit = ()
+  protected def afterInsert(round: Round, rows: Seq[Vote])(implicit session: DBSession): Unit = ()
 
   /** What the steps need. */
   private def context(roundId: Long): Context = {
@@ -393,7 +393,7 @@ class RoundDistributionHandler @Inject() (
           val visible = visibleImageCount(roundId)
           ctx.afterCommit(RoundImageCounts.refresh(roundId)(visible.toInt))
           logger.info(
-            s"Round $roundId: distributed ${st.imagesAdded} images (${st.rowsAdded} selection rows) " +
+            s"Round $roundId: distributed ${st.imagesAdded} images (${st.rowsAdded} vote rows) " +
               s"to ${c.jurors.size} jurors" +
               (if (c.prevRounds.nonEmpty && !listOnly(job))
                  s" from previous rounds [${c.prevRounds.flatMap(_.id).mkString(", ")}]"
@@ -429,7 +429,7 @@ class RoundDistributionHandler @Inject() (
     * @return whether each is being created (`distributing`)
     */
   private def lockRounds(ids: Seq[Long])(implicit session: DBSession): Map[Long, Boolean] =
-    sql"SELECT id, distributing FROM rounds WHERE id IN (${ids.distinct}) ORDER BY id FOR UPDATE"
+    sql"SELECT id, distributing FROM round WHERE id IN (${ids.distinct}) ORDER BY id FOR UPDATE"
       .map(rs => rs.long(1) -> rs.boolean(2))
       .list()
       .toMap
@@ -445,14 +445,14 @@ class RoundDistributionHandler @Inject() (
     */
   private def imageCount(roundId: Long)(implicit session: DBSession): Long =
     visibleImageCount(roundId) +
-      sql"""SELECT COUNT(DISTINCT d.page_id) FROM selection_deleted d
+      sql"""SELECT COUNT(DISTINCT d.page_id) FROM vote_aside d
             WHERE d.round_id = $roundId
-              AND NOT EXISTS (SELECT 1 FROM selection s WHERE s.round_id = $roundId AND s.page_id = d.page_id)"""
+              AND NOT EXISTS (SELECT 1 FROM vote s WHERE s.round_id = $roundId AND s.page_id = d.page_id)"""
         .map(_.long(1)).single().getOrElse(0L)
 
   /** The round's images the galleries show. */
   private def visibleImageCount(roundId: Long)(implicit session: DBSession): Long =
-    sql"SELECT COUNT(DISTINCT page_id) FROM selection WHERE round_id = $roundId".map(_.long(1)).single().getOrElse(0L)
+    sql"SELECT COUNT(DISTINCT page_id) FROM vote WHERE round_id = $roundId".map(_.long(1)).single().getOrElse(0L)
 
   private def estimate(c: Context, st: DistributionState)(implicit session: DBSession): Long =
     if (c.topN.isDefined) st.ranked.size.toLong
@@ -629,7 +629,7 @@ object DistributionSource {
   private def votesCond(prevIds: Seq[Long], votes: PrevVotes): SQLSyntax = {
     val rated = if (votes.rated) sqls"AND s.rate > 0" else sqls""
     val notRejected = votes.rejectedBy.fold(sqls"")(n =>
-      sqls"""AND NOT EXISTS (SELECT 1 FROM selection r
+      sqls"""AND NOT EXISTS (SELECT 1 FROM vote r
              WHERE r.page_id = s.page_id AND r.round_id IN ($prevIds) AND r.rate < 0
              HAVING COUNT(*) >= $n)""")
     sqls"$rated $notRejected"
@@ -640,8 +640,8 @@ object DistributionSource {
     * already, and get their votes back if the file is restored.
     */
   private def notInRound(roundId: Long, pageId: SQLSyntax): SQLSyntax =
-    sqls"""NOT EXISTS (SELECT 1 FROM selection x WHERE x.round_id = $roundId AND x.page_id = $pageId)
-           AND NOT EXISTS (SELECT 1 FROM selection_deleted xd WHERE xd.round_id = $roundId AND xd.page_id = $pageId)"""
+    sqls"""NOT EXISTS (SELECT 1 FROM vote x WHERE x.round_id = $roundId AND x.page_id = $pageId)
+           AND NOT EXISTS (SELECT 1 FROM vote_aside xd WHERE xd.round_id = $roundId AND xd.page_id = $pageId)"""
 
   def categoryCount(categoryId: Long)(implicit session: DBSession): Long =
     sql"SELECT COUNT(*) FROM category_members WHERE category_id = $categoryId".map(_.long(1)).single().getOrElse(0L)
@@ -665,7 +665,7 @@ object DistributionSource {
       .list()
 
   def previousCount(prevIds: Seq[Long], votes: PrevVotes)(implicit session: DBSession): Long =
-    sql"""SELECT COUNT(DISTINCT s.page_id) FROM selection s
+    sql"""SELECT COUNT(DISTINCT s.page_id) FROM vote s
           WHERE s.round_id IN ($prevIds) ${votesCond(prevIds, votes)}"""
       .map(_.long(1)).single().getOrElse(0L)
 
@@ -673,7 +673,7 @@ object DistributionSource {
       session: DBSession
   ): Window =
     sql"""SELECT COUNT(*), MAX(page_id) FROM (
-            SELECT DISTINCT s.page_id FROM selection s
+            SELECT DISTINCT s.page_id FROM vote s
             WHERE s.round_id IN ($prevIds) ${votesCond(prevIds, votes)} AND s.page_id > $cursor
             ORDER BY s.page_id LIMIT $size) w"""
       .map(rs => Window(rs.int(1), rs.longOpt(2).getOrElse(cursor)))
@@ -689,7 +689,7 @@ object DistributionSource {
       session: DBSession
   ): Seq[ImageWithRating] = {
     val rows = sql"""SELECT g.page_id, g.rs, g.c, ${i.result.*} FROM (
-              SELECT s.page_id, s.round_id, SUM(s.rate) rs, COUNT(s.rate) c FROM selection s
+              SELECT s.page_id, s.round_id, SUM(s.rate) rs, COUNT(s.rate) c FROM vote s
               WHERE s.round_id IN ($prevIds) ${votesCond(prevIds, votes)} AND s.page_id > $from AND s.page_id <= $to
                 AND ${notInRound(roundId, sqls"s.page_id")}
               GROUP BY s.page_id, s.round_id) g
@@ -700,9 +700,9 @@ object DistributionSource {
       .list()
     val merged = mutable.LinkedHashMap.empty[Long, ImageWithRating]
     rows.foreach { case (image, sum, count) =>
-      val entry = Selection(image.pageId, juryId = 0, roundId = 0, rate = sum)
+      val entry = Vote(image.pageId, juryId = 0, roundId = 0, rate = sum)
       merged.updateWith(image.pageId) {
-        case Some(acc) => Some(acc.copy(selection = acc.selection :+ entry, countFromDb = acc.countFromDb + count))
+        case Some(acc) => Some(acc.copy(votes = acc.votes :+ entry, countFromDb = acc.countFromDb + count))
         case None      => Some(ImageWithRating(image, Seq(entry), count))
       }
     }
@@ -769,7 +769,7 @@ object DistributionSource {
       case Denominator.PerImage => sqls"IF(SUM(t.c) = 0, 0, SUM(GREATEST(t.rs, 0)) * 1e0 / SUM(t.c))"
     }
     sql"""SELECT t.page_id, SUM(GREATEST(t.rs, 0)) rate_sum, SUM(t.c) cnt FROM (
-            SELECT s.page_id, s.round_id, SUM(s.rate) rs, COUNT(s.rate) c FROM selection s
+            SELECT s.page_id, s.round_id, SUM(s.rate) rs, COUNT(s.rate) c FROM vote s
             WHERE s.round_id IN ($prevIds) ${votesCond(prevIds, votes)}
             GROUP BY s.page_id, s.round_id) t
           GROUP BY t.page_id
@@ -778,7 +778,7 @@ object DistributionSource {
       .map { rs =>
         val (pageId, sum, count) = (rs.long(1), rs.long(2), rs.long(3))
         pageId -> ((img: Image) =>
-          ImageWithRating(img, Seq(Selection(pageId, juryId = 0, roundId = 0, rate = sum.toInt)), count.toInt))
+          ImageWithRating(img, Seq(Vote(pageId, juryId = 0, roundId = 0, rate = sum.toInt)), count.toInt))
       }
       .list()
   }
@@ -799,7 +799,7 @@ object DistributionSource {
       (order.columns :+ ("s.page_id" -> 1)).map { case (column, dir) => column + (if (dir < 0) " DESC" else " ASC") }
         .mkString(", "))
     sql"""SELECT s.page_id, SUM(s.rate > 0) approvals, SUM(s.rate < 0) rejections, COUNT(s.rate) cnt
-          FROM selection s
+          FROM vote s
           WHERE s.round_id IN ($prevIds)
           GROUP BY s.page_id $having
           ORDER BY $orderBy
@@ -807,7 +807,7 @@ object DistributionSource {
       .map { rs =>
         val (pageId, approvals, rejections, count) = (rs.long(1), rs.int(2), rs.int(3), rs.int(4))
         pageId -> ((img: Image) =>
-          ImageWithRating(img, Seq(Selection(pageId, juryId = 0, roundId = 0, rate = approvals)), count,
+          ImageWithRating(img, Seq(Vote(pageId, juryId = 0, roundId = 0, rate = approvals)), count,
             approvalsFromDb = Some(approvals), rejectionsFromDb = Some(rejections)))
       }
       .list()

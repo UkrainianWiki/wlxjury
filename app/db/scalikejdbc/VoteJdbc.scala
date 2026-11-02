@@ -1,24 +1,24 @@
 package db.scalikejdbc
 
 import java.time.ZonedDateTime
-import org.intracer.wmua.Selection
+import org.intracer.wmua.Vote
 import scalikejdbc._
 import scalikejdbc.orm.CRUDMapper
 
-object SelectionJdbc extends CRUDMapper[Selection] {
+object VoteJdbc extends CRUDMapper[Vote] {
 
   implicit def session: DBSession = autoSession
 
-  override val tableName = "selection"
+  override val tableName = "vote"
 
-  val s = SelectionJdbc.syntax("s")
+  val s = VoteJdbc.syntax("s")
   val u = User.u
 
   private def isNotDeleted = sqls.isNull(s.deletedAt)
 
   override lazy val defaultAlias = createAlias("s")
 
-  override def extract(rs: WrappedResultSet, c: ResultName[Selection]): Selection = Selection(
+  override def extract(rs: WrappedResultSet, c: ResultName[Vote]): Vote = Vote(
     pageId     = rs.long(c.pageId),
     juryId     = rs.long(c.juryId),
     roundId    = rs.long(c.roundId),
@@ -29,8 +29,8 @@ object SelectionJdbc extends CRUDMapper[Selection] {
     monumentId = rs.stringOpt(c.monumentId)
   )
 
-  def apply(c: ResultName[Selection])(rs: WrappedResultSet): Selection =
-    Selection(
+  def apply(c: ResultName[Vote])(rs: WrappedResultSet): Vote =
+    Vote(
       pageId     = rs.long(c.pageId),
       juryId     = rs.long(c.juryId),
       roundId    = rs.long(c.roundId),
@@ -48,10 +48,10 @@ object SelectionJdbc extends CRUDMapper[Selection] {
       roundId: Long,
       createdAt: Option[ZonedDateTime] = None,
       monumentId: Option[String] = None
-  )(implicit session: DBSession = AutoSession): Selection = {
+  )(implicit session: DBSession = AutoSession): Vote = {
     val id = withSQL {
       insert
-        .into(SelectionJdbc)
+        .into(VoteJdbc)
         .namedValues(
           column.pageId     -> pageId,
           column.rate       -> rate,
@@ -61,7 +61,7 @@ object SelectionJdbc extends CRUDMapper[Selection] {
         )
     }.updateAndReturnGeneratedKey()
 
-    Selection(
+    Vote(
       pageId     = pageId,
       juryId     = juryId,
       roundId    = roundId,
@@ -72,13 +72,13 @@ object SelectionJdbc extends CRUDMapper[Selection] {
     )
   }
 
-  def batchInsert(selections: Iterable[Selection])(implicit session: DBSession = AutoSession): Unit = {
-    val column = SelectionJdbc.column
+  def batchInsert(selections: Iterable[Vote])(implicit session: DBSession = AutoSession): Unit = {
+    val column = VoteJdbc.column
     val batchParams: Seq[Seq[Any]] =
       selections.map(i => Seq(i.pageId, i.rate, i.juryId, i.roundId, i.monumentId.orNull)).toSeq
     withSQL {
       insert
-        .into(SelectionJdbc)
+        .into(VoteJdbc)
         .namedValues(
           column.pageId     -> sqls.?,
           column.rate       -> sqls.?,
@@ -89,33 +89,33 @@ object SelectionJdbc extends CRUDMapper[Selection] {
     }.batch(batchParams: _*).apply()
   }
 
-  def byRound(roundId: Long): Seq[Selection] =
+  def byRound(roundId: Long): Seq[Vote] =
     where("roundId" -> roundId).apply()
 
-  def byRoundSelected(roundId: Long): Seq[Selection] =
+  def byRoundSelected(roundId: Long): Seq[Vote] =
     where("roundId" -> roundId)
       .where(sqls.ne(s.rate, 0))
       .apply()
 
-  def byUser(user: User, roundId: Long): Seq[Selection] =
+  def byUser(user: User, roundId: Long): Seq[Vote] =
     where("juryId" -> user.id, "roundId" -> roundId).apply()
 
-  def byUserSelected(user: User, roundId: Long): Seq[Selection] =
+  def byUserSelected(user: User, roundId: Long): Seq[Vote] =
     where("juryId" -> user.id, "roundId" -> roundId)
       .where(sqls.ne(s.rate, 0))
       .apply()
 
-  def byUserNotSelected(user: User, roundId: Long): Seq[Selection] =
+  def byUserNotSelected(user: User, roundId: Long): Seq[Vote] =
     where("juryId" -> user.id, "roundId" -> roundId, "rate" -> 0).apply()
 
   /** Every juror's vote on the file in the round, with the juror, for the organisers' large
     * view: the highest rates first (a binary round's approvals), then the rejections, then the
     * jurors yet to vote; jurors of a rate by name. One query.
     */
-  def byRoundAndImageWithJury(roundId: Long, imageId: Long): Seq[(Selection, User)] =
+  def byRoundAndImageWithJury(roundId: Long, imageId: Long): Seq[(Vote, User)] =
     withSQL {
       select
-        .from(SelectionJdbc as s)
+        .from(VoteJdbc as s)
         .innerJoin(User as u)
         .on(u.id, s.juryId)
         .where
@@ -124,21 +124,21 @@ object SelectionJdbc extends CRUDMapper[Selection] {
         .eq(s.pageId, imageId)
         .and
         .append(isNotDeleted)
-    }.map(rs => (SelectionJdbc(s)(rs), User(u)(rs))).list()
+    }.map(rs => (VoteJdbc(s)(rs), User(u)(rs))).list()
       .sortBy { case (vote, juror) =>
         (if (vote.rate > 0) 0 else if (vote.rate < 0) 1 else 2, -vote.rate, juror.fullname, juror.getId)
       }
 
-  /** Whether the file is in the round: has a selection row in it, `juryId`'s if given.
+  /** Whether the file is in the round: has a vote row in it, `juryId`'s if given.
     * As the galleries and large view list a round's files, deleted rows count too.
     */
   def inRound(roundId: Long, pageId: Long, juryId: Option[Long]): Boolean = {
     val ofJuror = juryId.fold(sqls"")(id => sqls"AND jury_id = $id")
-    sql"""SELECT EXISTS(SELECT 1 FROM selection WHERE round_id = $roundId AND page_id = $pageId $ofJuror)"""
+    sql"""SELECT EXISTS(SELECT 1 FROM vote WHERE round_id = $roundId AND page_id = $pageId $ofJuror)"""
       .map(_.boolean(1)).single().getOrElse(false)
   }
 
-  def findBy(pageId: Long, juryId: Long, roundId: Long): Option[Selection] =
+  def findBy(pageId: Long, juryId: Long, roundId: Long): Option[Vote] =
     where("pageId" -> pageId, "juryId" -> juryId, "roundId" -> roundId)
       .apply()
       .headOption
@@ -160,7 +160,7 @@ object SelectionJdbc extends CRUDMapper[Selection] {
     * the vote ([[RoundUser.isStopped]] is checked before, for the stopped round's answer).
     */
   def rate(pageId: Long, juryId: Long, roundId: Long, rate: Int = 1)(implicit session: DBSession = AutoSession): Int =
-    sql"""UPDATE selection SET rate = $rate
+    sql"""UPDATE vote SET rate = $rate
           WHERE page_id = $pageId AND jury_id = $juryId AND round_id = $roundId
             AND NOT EXISTS (SELECT 1 FROM round_user ru
                             WHERE ru.round_id = $roundId AND ru.user_id = $juryId AND ru.active = FALSE)"""
@@ -184,7 +184,7 @@ object SelectionJdbc extends CRUDMapper[Selection] {
     FROM (
 
       SELECT s.jury_id
-    FROM selection s
+    FROM vote s
     WHERE s.round_id = $roundId AND s.deleted_at IS NULL
     GROUP BY s.jury_id
     HAVING sum(s.rate) > 0
@@ -215,9 +215,9 @@ object SelectionJdbc extends CRUDMapper[Selection] {
     RoundImageCounts.invalidate(roundId)
   }
 
-  /** Deletes the votes `where` selects (on alias `v`), in selection and in selection_deleted,
-    * with their criteria rates (criteria_rate.selection has no foreign key, and a cascade
-    * would not do: moving a vote aside deletes it from selection). Per table, the votes are
+  /** Deletes the votes `where` selects (on alias `v`), in vote and in vote_aside,
+    * with their criteria rates (criteria_rate.vote_id has no foreign key, and a cascade
+    * would not do: moving a vote aside deletes it from vote). Per table, the votes are
     * locked first (`FOR UPDATE`: a shared lock taken by the joins below would deadlock, on
     * its upgrade, with a juror voting on one of them), then their rates and they are deleted:
     * rates are written only while their vote is locked ([[org.intracer.wmua.CriteriaRate.updateRate]]).
@@ -225,11 +225,11 @@ object SelectionJdbc extends CRUDMapper[Selection] {
     * @return the votes deleted
     */
   def deleteVotes(where: SQLSyntax)(implicit session: DBSession): Int =
-    Seq(sqls"selection", sqls"selection_deleted").map { table =>
+    Seq(sqls"vote", sqls"vote_aside").map { table =>
       lockVotes(table, where)
-      // from the votes to their rates by criteria_selection_index: from criteria_rate, the
+      // from the votes to their rates by criteria_rate_vote_id_idx: from criteria_rate, the
       // statement would lock (and scan) every rate
-      sql"DELETE cr FROM $table v STRAIGHT_JOIN criteria_rate cr ON cr.selection = v.id WHERE $where".update()
+      sql"DELETE cr FROM $table v STRAIGHT_JOIN criteria_rate cr ON cr.vote_id = v.id WHERE $where".update()
       sql"DELETE v FROM $table v WHERE $where".update()
     }.sum
 
@@ -240,21 +240,21 @@ object SelectionJdbc extends CRUDMapper[Selection] {
     sql"SELECT COUNT(*) FROM $table v WHERE $where FOR UPDATE".map(_.int(1)).single(): Unit
 
   /** Moves the source round's votes `andWhere` selects (on `src`) to the target round, in
-    * selection and in selection_deleted, but those of a juror who has the image in the
+    * vote and in vote_aside, but those of a juror who has the image in the
     * target round already: they are dropped, with their criteria rates. The moved votes keep
     * their ids, so their criteria rates follow them.
     */
   private def moveVotes(targetRoundId: Long, sourceRoundId: Long, andWhere: SQLSyntax)(implicit
       session: DBSession
   ): Unit =
-    Seq(sqls"selection", sqls"selection_deleted").foreach { table =>
+    Seq(sqls"vote", sqls"vote_aside").foreach { table =>
       val source = sqls"src.round_id = $sourceRoundId $andWhere"
       val inTarget = sqls"""JOIN $table tgt
               ON tgt.round_id = $targetRoundId
              AND tgt.page_id = src.page_id
              AND tgt.jury_id = src.jury_id"""
       sql"SELECT COUNT(*) FROM $table src WHERE $source FOR UPDATE".map(_.int(1)).single()
-      sql"""DELETE cr FROM $table src $inTarget STRAIGHT_JOIN criteria_rate cr ON cr.selection = src.id
+      sql"""DELETE cr FROM $table src $inTarget STRAIGHT_JOIN criteria_rate cr ON cr.vote_id = src.id
             WHERE $source""".update()
       sql"DELETE src FROM $table src $inTarget WHERE $source".update()
 

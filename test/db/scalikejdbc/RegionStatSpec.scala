@@ -1,7 +1,7 @@
 package db.scalikejdbc
 
 import db.scalikejdbc.rewrite.ImageDbNew.SelectionQuery
-import org.intracer.wmua.{Image, Selection}
+import org.intracer.wmua.{Image, Vote}
 import org.scalawiki.wlx.dto.Monument
 import org.specs2.mutable.Specification
 import org.specs2.specification.BeforeAll
@@ -23,11 +23,11 @@ class RegionStatSpec extends Specification with BeforeAll with TestDb {
   private def insertMonuments(monuments: Seq[Monument])(implicit session: DBSession): Unit =
     monumentDao.batchInsert(monuments)
 
-  private def insertSelections(selections: Seq[Selection])(implicit session: DBSession): Unit =
+  private def insertSelections(selections: Seq[Vote])(implicit session: DBSession): Unit =
     selectionDao.batchInsert(selections)
 
-  private def selection(pageId: Long, userId: Long, roundId: Long, monumentId: Option[String] = None): Selection =
-    Selection(pageId = pageId, juryId = userId, roundId = roundId, rate = 1, monumentId = monumentId)
+  private def selection(pageId: Long, userId: Long, roundId: Long, monumentId: Option[String] = None): Vote =
+    Vote(pageId = pageId, juryId = userId, roundId = roundId, rate = 1, monumentId = monumentId)
 
   "byRegionStat" should {
 
@@ -74,7 +74,7 @@ class RegionStatSpec extends Specification with BeforeAll with TestDb {
         image(251L, "07-123-0001"),
         image(252L, "14-456-0002")
       )
-      // and an image without a monument id (a selection row needs its image)
+      // and an image without a monument id (a vote row needs its image)
       insertImages(imgs :+ image(253L, "").copy(monumentId = None))
       insertSelections(imgs.map(i => selection(i.pageId, userId, roundId, i.monumentId)) :+
         selection(253L, userId, roundId, None))

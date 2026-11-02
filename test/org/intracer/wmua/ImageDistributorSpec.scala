@@ -206,8 +206,8 @@ class ImageDistributorSpec extends Specification with TestDb with Mockito
 
         di.distributeImages(dbRound, firstJuror, Nil)
 
-        SelectionJdbc.rate(images(0).pageId, juryIds1(0), dbRound.getId, 1)
-        SelectionJdbc.rate(images(1).pageId, juryIds1(0), dbRound.getId, -1)
+        VoteJdbc.rate(images(0).pageId, juryIds1(0), dbRound.getId, 1)
+        VoteJdbc.rate(images(1).pageId, juryIds1(0), dbRound.getId, -1)
 
         val moreJurors = createJurors(2, start = 2)
 
@@ -301,7 +301,7 @@ class ImageDistributorSpec extends Specification with TestDb with Mockito
           i <- 0 until numSelected
         ) yield {
           val pageId = byJuror(juryId)(i).pageId
-          SelectionJdbc.rate(pageId, juryId, dbRound.getId, 1)
+          VoteJdbc.rate(pageId, juryId, dbRound.getId, 1)
           pageId
         }).toSet
 
@@ -349,8 +349,8 @@ class ImageDistributorSpec extends Specification with TestDb with Mockito
         di.distributeImages(r2, dbJurors, Nil)
 
         // r1 selects images 0..3, r2 selects images 3..7 (image 3 advances from both)
-        (0 to 3).foreach(i => SelectionJdbc.rate(images(i).pageId, juryIds.head, r1.getId, 1))
-        (3 to 7).foreach(i => SelectionJdbc.rate(images(i).pageId, juryIds.head, r2.getId, 1))
+        (0 to 3).foreach(i => VoteJdbc.rate(images(i).pageId, juryIds.head, r1.getId, 1))
+        (3 to 7).foreach(i => VoteJdbc.rate(images(i).pageId, juryIds.head, r2.getId, 1))
         val expected = (0 to 7).map(images(_).pageId).toSet
 
         val created = roundService.createNewRound(
@@ -385,7 +385,7 @@ class ImageDistributorSpec extends Specification with TestDb with Mockito
           Round(None, 1, Some("R1"), contest1, Set("jury"), 0, Round.binaryRound, active = true)
         )
         di.distributeImages(r1, dbJurors, Nil)
-        (0 to 3).foreach(i => SelectionJdbc.rate(images(i).pageId, juryIds.head, r1.getId, 1))
+        (0 to 3).foreach(i => VoteJdbc.rate(images(i).pageId, juryIds.head, r1.getId, 1))
 
         val created = roundService.createNewRound(
           Round(
@@ -398,7 +398,7 @@ class ImageDistributorSpec extends Specification with TestDb with Mockito
         roundService.distributeNewImages(created.getId) === 0
 
         // a straggler is selected in the (now inactive) previous round
-        SelectionJdbc.rate(images(4).pageId, juryIds.head, r1.getId, 1)
+        VoteJdbc.rate(images(4).pageId, juryIds.head, r1.getId, 1)
 
         roundService.distributeNewImages(created.getId) === 1
         ImageJdbc.imageCountByRounds(Seq(created.getId)).values.sum.toLong === 5L
@@ -443,11 +443,11 @@ class ImageDistributorSpec extends Specification with TestDb with Mockito
 
         di.distributeImages(dbRound, dbJurors, Nil)
 
-        SelectionJdbc.rate(images(0).pageId, juryIds(0), dbRound.getId, 1)
-        SelectionJdbc.rate(images(0).pageId, juryIds(1), dbRound.getId, -1)
+        VoteJdbc.rate(images(0).pageId, juryIds(0), dbRound.getId, 1)
+        VoteJdbc.rate(images(0).pageId, juryIds(1), dbRound.getId, -1)
 
-        SelectionJdbc.rate(images(1).pageId, juryIds(0), dbRound.getId, 0)
-        SelectionJdbc.rate(images(1).pageId, juryIds(1), dbRound.getId, -1)
+        VoteJdbc.rate(images(1).pageId, juryIds(0), dbRound.getId, 0)
+        VoteJdbc.rate(images(1).pageId, juryIds(1), dbRound.getId, -1)
 
         val round2 = Round(
           None,
@@ -501,8 +501,8 @@ class ImageDistributorSpec extends Specification with TestDb with Mockito
         di.distributeImages(dbRoundB, dbJurors, Nil)
 
         // image 0 is selected only in round A, image 2 only in round B
-        SelectionJdbc.rate(images(0).pageId, juryIds(0), dbRoundA.getId, 1)
-        SelectionJdbc.rate(images(2).pageId, juryIds(0), dbRoundB.getId, 1)
+        VoteJdbc.rate(images(0).pageId, juryIds(0), dbRoundA.getId, 1)
+        VoteJdbc.rate(images(2).pageId, juryIds(0), dbRoundB.getId, 1)
 
         val dbRound3 = roundDao.create(
           Round(
@@ -559,10 +559,10 @@ class ImageDistributorSpec extends Specification with TestDb with Mockito
         di.distributeImages(dbRoundB, dbJurors, Nil)
 
         // image 0: selected by one juror in round A and by another juror in round B
-        SelectionJdbc.rate(images(0).pageId, juryIds(0), dbRoundA.getId, 1)
-        SelectionJdbc.rate(images(0).pageId, juryIds(1), dbRoundB.getId, 1)
+        VoteJdbc.rate(images(0).pageId, juryIds(0), dbRoundA.getId, 1)
+        VoteJdbc.rate(images(0).pageId, juryIds(1), dbRoundB.getId, 1)
         // image 1: selected once, only in round A
-        SelectionJdbc.rate(images(1).pageId, juryIds(0), dbRoundA.getId, 1)
+        VoteJdbc.rate(images(1).pageId, juryIds(0), dbRoundA.getId, 1)
 
         val dbRound3 = roundDao.create(
           Round(

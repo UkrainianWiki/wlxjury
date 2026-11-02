@@ -8,7 +8,7 @@ import _root_.scalikejdbc._
 
 import java.nio.file.{Files, Paths}
 
-/** V57 copies images.monument_id into the selection rows that drifted from it. */
+/** V57 copies images.monument_id into the selection rows (vote since V82) that drifted from it. */
 class MonumentIdResyncMigrationSpec extends Specification with TestDb with BeforeAll with BeforeEach {
 
   sequential
@@ -19,10 +19,12 @@ class MonumentIdResyncMigrationSpec extends Specification with TestDb with Befor
   private val v57 = new String(
     Files.readAllBytes(Paths.get("conf/db/migration/default/V57__Resync_selection_monument_id.sql")),
     "UTF-8")
+  // run on the table as V82 renamed it
   private val statement = v57.linesIterator.filterNot(_.trim.startsWith("--")).mkString("\n").trim.stripSuffix(";")
+    .replaceAll("\\bselection\\b", "vote")
 
   "V57" should {
-    "copy the image's monument id into drifted selection rows only" in {
+    "copy the image's monument id into drifted vote rows only" in {
       implicit val contest: ContestJury = createContests(10).head
       val juror = createUsers("jury", 1).head
       imageDao.batchInsert(Seq(

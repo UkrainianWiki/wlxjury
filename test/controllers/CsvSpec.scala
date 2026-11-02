@@ -35,7 +35,7 @@ class CsvSpec extends Specification {
     }
 
     "export 1 file, 1 juror, binary round" in {
-      val files = Seq(ImageWithRating(Image(0, "File:a.jpg"), Seq(Selection(0, 9, 0, rate = 1))))
+      val files = Seq(ImageWithRating(Image(0, "File:a.jpg"), Seq(Vote(0, 9, 0, rate = 1))))
       Csv.exportRates(files, Seq(User("Juror1", "", Some(9))), binaryRound) === Seq(
         Seq("Rank", "File", "Overall", "Juror1"),
         Seq("1", "File:a.jpg", "1", "1"),
@@ -46,14 +46,14 @@ class CsvSpec extends Specification {
     "keep a binary round's votes as stored, 1, -1 and 0, empty where not assigned, with a legend row" in {
       val jurors = (1 to 4).map(i => User(s"Juror$i", "", Some(i.toLong)))
       val file = ImageWithRating(Image(0, "File:a.jpg"),
-        Seq(Selection(0, 1, 0, rate = 1), Selection(0, 2, 0, rate = -1), Selection(0, 3, 0, rate = 0)))
+        Seq(Vote(0, 1, 0, rate = 1), Vote(0, 2, 0, rate = -1), Vote(0, 3, 0, rate = 0)))
       val rows = Csv.exportRates(Seq(file), jurors, binaryRound)
       (rows(1) === Seq("1", "File:a.jpg", "1", "1", "-1", "0", "")) and
         (rows.last === Seq("", "Overall: approvals. Jurors: 1 selected, -1 rejected, 0 not voted yet, empty not assigned"))
     }
 
     "export 1 file, 1 juror, rated round" in {
-      val files = Seq(ImageWithRating(Image(0, "File:a.jpg"), Seq(Selection(0, 9, 0, rate = 5))))
+      val files = Seq(ImageWithRating(Image(0, "File:a.jpg"), Seq(Vote(0, 9, 0, rate = 5))))
       Csv.exportRates(files, Seq(User("Juror1", "", Some(9))), ratedRound(10)) should_===  Seq(
         Seq("Rank", "File", "Overall", "Juror1"),
         Seq("1", "File:a.jpg", "5", "5")
@@ -82,7 +82,7 @@ class CsvSpec extends Specification {
 
     "leave other text and the app's numbers, a binary round's -1 and rank ranges included, as they are" in {
       val jurors = Seq(User("Juror =1", "", Some(1)), User("Juror2", "", Some(2)))
-      val files = Seq("File:a=b.jpg", "File:c.jpg").map(t => ImageWithRating(Image(0, t), Seq(Selection(0, 1, 0, rate = -1))))
+      val files = Seq("File:a=b.jpg", "File:c.jpg").map(t => ImageWithRating(Image(0, t), Seq(Vote(0, 1, 0, rate = -1))))
       written(Csv.exportRates(files, jurors, binaryRound)).take(3) === Seq(
         Seq("Rank", "File", "Overall", "Juror =1", "Juror2"),
         Seq("1-2", "File:a=b.jpg", "0", "-1", ""),

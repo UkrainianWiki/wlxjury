@@ -15,16 +15,16 @@ import scala.concurrent.duration._
 
 class DistributeImages @Inject()(imageRepo: ImageRepo) extends Logging {
 
-  /** Builds and persists the selection rows for `images` in `round`, in one transaction
+  /** Builds and persists the vote rows for `images` in `round`, in one transaction
     * (all chunks or none): the old in-memory path, kept for scripts, tests and as the
     * reference the streamed background distribution
     * ([[services.distribution.RoundDistributionHandler]]) is checked against.
     *
-    * @return the number of selection rows written
+    * @return the number of vote rows written
     */
   def distributeImages(round: Round, images: Seq[Image], jurors: Seq[User]): Int = {
     DistributeImages.checkJury(round, jurors)
-    val selection: Seq[Selection] = newSelection(round, images, jurors)
+    val selection: Seq[Vote] = newSelection(round, images, jurors)
     logger.debug("saving selection: " + selection.size)
     DB.localTx { implicit session =>
       // in batches, with the criteria rates: see DistributeImages.insertRows
@@ -35,7 +35,7 @@ class DistributeImages @Inject()(imageRepo: ImageRepo) extends Logging {
     selection.size
   }
 
-  def newSelection(round: Round, images: Seq[Image], jurors: Seq[User]): Seq[Selection] =
+  def newSelection(round: Round, images: Seq[Image], jurors: Seq[User]): Seq[Vote] =
     DistributeImages.assign(round, images, jurors.sorted.toIndexedSeq, startPosition = 0L)
 
   def distributeImages(
@@ -45,7 +45,7 @@ class DistributeImages @Inject()(imageRepo: ImageRepo) extends Logging {
       removeUnrated: Boolean = false
   ): Int = {
     if (removeUnrated) {
-      SelectionJdbc.removeUnrated(round.getId)
+      VoteJdbc.removeUnrated(round.getId)
     }
 
     val images = imagesByRound(round, prevRounds)
@@ -149,7 +149,7 @@ class DistributeImages @Inject()(imageRepo: ImageRepo) extends Logging {
 
     val currentImages = imageRepo
       .byRoundMerged(round.getId, tally = round.isBinary)
-      .filter(iwr => iwr.selection.nonEmpty)
+      .filter(iwr => iwr.votes.nonEmpty)
       .toSet
     val existingImageIds = currentImages.map(_.pageId)
     val existingJurorIds = currentImages.flatMap(_.jurors)
@@ -236,7 +236,7 @@ class DistributeImages @Inject()(imageRepo: ImageRepo) extends Logging {
         case Some(acc) =>
           Some(
             acc.copy(
-              selection = acc.selection ++ iwr.selection,
+              votes = acc.votes ++ iwr.votes,
               countFromDb = acc.countFromDb + iwr.countFromDb,
               approvalsFromDb = sum(acc.approvalsFromDb, iwr.approvalsFromDb),
               rejectionsFromDb = sum(acc.rejectionsFromDb, iwr.rejectionsFromDb)
@@ -255,7 +255,7 @@ class DistributeImages @Inject()(imageRepo: ImageRepo) extends Logging {
       round: Round,
       jurors: Seq[User],
       images: Seq[Image],
-      currentSelection: Seq[Selection]
+      currentSelection: Seq[Vote]
   ): Rebalance = {
 
     if (currentSelection == Nil) {
@@ -277,13 +277,13 @@ object DistributeImages {
   def binaryCandidates(images: Seq[ImageWithRating], rated: Boolean): Seq[ImageWithRating] =
     images
       .filter(i => !rated || i.approvals > 0)
-      .map(i => i.copy(selection = Seq(Selection(i.pageId, juryId = 0, roundId = 0, rate = i.approvals))))
+      .map(i => i.copy(votes = Seq(Vote(i.pageId, juryId = 0, roundId = 0, rate = i.approvals))))
 
-  /** Selection rows per insert batch: ~200 KB, well below any max_allowed_packet. */
+  /** Vote rows per insert batch: ~200 KB, well below any max_allowed_packet. */
   val InsertChunk = 5000
 
   /** The criteria of a criteria round (legacy rounds only: the round form can't create
-    * one): every selection row gets a criteria_rate row per criterion.
+    * one): every vote row gets a criteria_rate row per criterion.
     */
   val CriteriaIds: Seq[Int] = Seq(6, 7, 8, 9) // TODO load from DB
 
@@ -304,24 +304,24 @@ object DistributeImages {
     )
   }
 
-  /** The selection rows for `images`, the first of them being the `startPosition`-th
+  /** The vote rows for `images`, the first of them being the `startPosition`-th
     * image the distribution assigns: with `distribution = x`, image i gets the jurors
     * (i + j) % n, j < x, of the jurors in their order (by id); with 0, every juror gets
     * every image. Carrying the position over chunks continues the rotation.
     */
-  def assign(round: Round, images: Seq[Image], jurors: IndexedSeq[User], startPosition: Long): Seq[Selection] =
+  def assign(round: Round, images: Seq[Image], jurors: IndexedSeq[User], startPosition: Long): Seq[Vote] =
     round.distribution match {
       case 0 =>
-        jurors.flatMap(juror => images.map(img => Selection(img, juror, round)))
+        jurors.flatMap(juror => images.map(img => Vote(img, juror, round)))
       case x =>
         val n = jurors.size
         images.zipWithIndex.flatMap { case (img, k) =>
           val i = startPosition + k
-          (0 until x).map(j => Selection(img, jurors(((i + j) % n).toInt), round))
+          (0 until x).map(j => Vote(img, jurors(((i + j) % n).toInt), round))
         }
     }
 
-  /** Inserts selection rows, and their criteria rates in a criteria round, in the caller's
+  /** Inserts vote rows, and their criteria rates in a criteria round, in the caller's
     * transaction, in batches: the driver sends one batch without splitting it to fit
     * the server's max_allowed_packet, so a batch of a whole distribution (images x jurors
     * rows, ~40 bytes each) fails with "Socket error" once it outgrows it (16M by default).
@@ -329,9 +329,9 @@ object DistributeImages {
     * The rows' images must be new to the round (the distribution excludes the round's
     * images): the criteria rates are added for every row of those images.
     */
-  def insertRows(round: Round, rows: Seq[Selection])(implicit session: DBSession): Unit =
+  def insertRows(round: Round, rows: Seq[Vote])(implicit session: DBSession): Unit =
     if (rows.nonEmpty) {
-      rows.grouped(InsertChunk).foreach(SelectionJdbc.batchInsert(_))
+      rows.grouped(InsertChunk).foreach(VoteJdbc.batchInsert(_))
       if (round.hasCriteria) addCriteriaRates(round.getId, rows.map(_.pageId).distinct)
     }
 
@@ -343,15 +343,15 @@ object DistributeImages {
     val base = sql"SELECT COALESCE(MAX(id), 0) FROM criteria_rate FOR UPDATE".map(_.long(1)).single().getOrElse(0L)
     val criteria = SQLSyntax.createUnsafely(CriteriaIds.map(id => s"SELECT $id AS cid").mkString(" UNION ALL "))
     pageIds.grouped(InsertChunk).foldLeft(base) { (from, ids) =>
-      val added = sql"""INSERT INTO criteria_rate (id, selection, criteria, rate)
+      val added = sql"""INSERT INTO criteria_rate (id, vote_id, criteria, rate)
             SELECT $from + ROW_NUMBER() OVER (ORDER BY s.id, c.cid), s.id, c.cid, 0
-            FROM selection s JOIN ($criteria) c
+            FROM vote s JOIN ($criteria) c
             WHERE s.round_id = $roundId AND s.page_id IN ($ids)""".update()
       from + added
     }
   }
 
-  case class Rebalance(newSelections: Seq[Selection], removedSelections: Seq[Selection])
+  case class Rebalance(newSelections: Seq[Vote], removedSelections: Seq[Vote])
 
   val NoRebalance = Rebalance(Nil, Nil)
 

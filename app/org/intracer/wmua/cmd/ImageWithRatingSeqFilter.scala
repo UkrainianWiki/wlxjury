@@ -83,12 +83,12 @@ case class ExcludeTitles(titles: Set[String]) extends ImageFilterGen {
 
 case class IncludeJurorId(jurors: Set[Long]) extends ImageFilterGen {
   def apply(): ImageFilter =
-    imageRatingFilter(i => i.selection.map(_.juryId).toSet.intersect(jurors).nonEmpty)
+    imageRatingFilter(i => i.votes.map(_.juryId).toSet.intersect(jurors).nonEmpty)
 }
 
 case class ExcludeJurorId(jurors: Set[Long]) extends ImageFilterGen {
   def apply(): ImageFilter =
-    imageRatingFilter(i => i.selection.map(_.juryId).toSet.intersect(jurors).isEmpty)
+    imageRatingFilter(i => i.votes.map(_.juryId).toSet.intersect(jurors).isEmpty)
 }
 
 /** The `topN` best rated images of the previous `round`; a yes/no round's by `order` of their

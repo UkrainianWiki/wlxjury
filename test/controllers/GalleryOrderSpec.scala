@@ -1,7 +1,7 @@
 package controllers
 
 import db.scalikejdbc._
-import org.intracer.wmua.{ContestJury, Image, Selection}
+import org.intracer.wmua.{ContestJury, Image, Vote}
 import play.api.Application
 import play.api.mvc.{Cookie, Result}
 import play.api.test.CSRFTokenHelper._
@@ -27,7 +27,7 @@ class GalleryOrderSpec extends PlaySpecification with PlayTestDb {
     round.addUsers(Seq(RoundUser(round.getId, juror.getId, "jury", active = true)))
     val images = (1 to 20).map(i => Image(i.toLong, s"File:Image$i.jpg", None, None, 640, 480, Some(f"80-361-$i%04d")))
     imageDao.batchInsert(images)
-    selectionDao.batchInsert(images.map(image => Selection(image, juror, round, 0)))
+    selectionDao.batchInsert(images.map(image => Vote(image, juror, round, 0)))
     Fixture(contest, juror, round, images.map(_.pageId))
   }
 
@@ -59,7 +59,7 @@ class GalleryOrderSpec extends PlaySpecification with PlayTestDb {
     "page through their files by previous and next, with the files shown of how many" in {
       testDbApp { implicit app =>
         val f = fixture()
-        SelectionJdbc.rate(f.pageIds(0), f.juror.getId, f.round.getId, 5)
+        VoteJdbc.rate(f.pageIds(0), f.juror.getId, f.round.getId, 5)
         val first = page(gallery(f), f)
         first must contain("1–15 of 20")
         first must contain(s"""href="/gallery/round/${f.round.getId}/user/${f.juror.getId}/page/2?sort=file" rel="next"""")
@@ -86,7 +86,7 @@ class GalleryOrderSpec extends PlaySpecification with PlayTestDb {
     "see a file they rate keep its place, which by rate moved to the top" in {
       testDbApp { implicit app =>
         val f = fixture()
-        SelectionJdbc.rate(f.pageIds(9), f.juror.getId, f.round.getId, 5)
+        VoteJdbc.rate(f.pageIds(9), f.juror.getId, f.round.getId, 5)
 
         tiles(page(gallery(f), f)) === f.pageIds.take(15).toList
         tiles(page(gallery(f, "?sort=rate"), f)).head === f.pageIds(9)
@@ -96,7 +96,7 @@ class GalleryOrderSpec extends PlaySpecification with PlayTestDb {
     "have their chosen order remembered, and kept when the URL names none" in {
       testDbApp { implicit app =>
         val f = fixture()
-        SelectionJdbc.rate(f.pageIds(9), f.juror.getId, f.round.getId, 5)
+        VoteJdbc.rate(f.pageIds(9), f.juror.getId, f.round.getId, 5)
 
         val chosen = get(gallery(f, "?sort=rate"), f)
         val cookie = cookies(chosen).get(RoundList.SortCookie)
@@ -128,7 +128,7 @@ class GalleryOrderSpec extends PlaySpecification with PlayTestDb {
     "have tabs for all, unrated and rated files, and a choice of order, keeping the order" in {
       testDbApp { implicit app =>
         val f = fixture()
-        SelectionJdbc.rate(f.pageIds(9), f.juror.getId, f.round.getId, 5)
+        VoteJdbc.rate(f.pageIds(9), f.juror.getId, f.round.getId, 5)
         val html = page(gallery(f, "?filter=unrated"), f).replace("&amp;", "&")
         val base = s"/gallery/round/${f.round.getId}/user/${f.juror.getId}/page/1"
 
@@ -144,8 +144,8 @@ class GalleryOrderSpec extends PlaySpecification with PlayTestDb {
     "have a binary round's tabs: all, unrated, selected and rejected" in {
       testDbApp { implicit app =>
         val f = fixture(Round.binaryRound)
-        SelectionJdbc.rate(f.pageIds(0), f.juror.getId, f.round.getId, 1)
-        SelectionJdbc.rate(f.pageIds(1), f.juror.getId, f.round.getId, -1)
+        VoteJdbc.rate(f.pageIds(0), f.juror.getId, f.round.getId, 1)
+        VoteJdbc.rate(f.pageIds(1), f.juror.getId, f.round.getId, -1)
         val html = page(gallery(f), f).replace("&amp;", "&")
         val base = s"/gallery/round/${f.round.getId}/user/${f.juror.getId}/page/1"
 
@@ -161,9 +161,9 @@ class GalleryOrderSpec extends PlaySpecification with PlayTestDb {
         val f = fixture()
         val binary = roundDao.create(Round(None, 2, None, f.contest.getId, rates = Round.binaryRound, active = true))
         binary.addUsers(Seq(RoundUser(binary.getId, f.juror.getId, "jury", active = true)))
-        selectionDao.batchInsert(f.pageIds.map(id => Selection(id, f.juror.getId, binary.getId)))
-        SelectionJdbc.rate(f.pageIds(0), f.juror.getId, binary.getId, 1)
-        SelectionJdbc.rate(f.pageIds(0), f.juror.getId, f.round.getId, 5)
+        selectionDao.batchInsert(f.pageIds.map(id => Vote(id, f.juror.getId, binary.getId)))
+        VoteJdbc.rate(f.pageIds(0), f.juror.getId, binary.getId, 1)
+        VoteJdbc.rate(f.pageIds(0), f.juror.getId, f.round.getId, 5)
         def base(r: Round) = s"/gallery/round/${r.getId}/user/${f.juror.getId}/page/1"
         // the own tabs shown active: their names
         def activeTabs(html: String) =
@@ -248,7 +248,7 @@ class GalleryOrderSpec extends PlaySpecification with PlayTestDb {
         val binary = {
           val round = roundDao.create(Round(None, 2, None, f.contest.getId, rates = Round.binaryRound, active = true))
           round.addUsers(Seq(RoundUser(round.getId, u, "jury", active = true)))
-          selectionDao.batchInsert(Seq(Selection(p, u, round.getId, 0)))
+          selectionDao.batchInsert(Seq(Vote(p, u, round.getId, 0)))
           round.getId
         }
         Seq(

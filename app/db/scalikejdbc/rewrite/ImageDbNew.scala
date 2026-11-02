@@ -1,7 +1,7 @@
 package db.scalikejdbc.rewrite
 
-import db.scalikejdbc.{ImageJdbc, SelectionJdbc}
-import org.intracer.wmua.{Image, ImageWithRating, Selection}
+import db.scalikejdbc.{ImageJdbc, VoteJdbc}
+import org.intracer.wmua.{Image, ImageWithRating, Vote}
 import scalikejdbc.{DBSession, _}
 
 object ImageDbNew extends SQLSyntaxSupport[Image] {
@@ -11,8 +11,8 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
   override val tableName = "images"
 
   private val i = ImageJdbc.syntax("i")
-  private val s = SelectionJdbc.s
-  private val s1 = SelectionJdbc.syntax("s1")
+  private val s = VoteJdbc.s
+  private val s1 = VoteJdbc.syntax("s1")
 
   /** A file's top-level region: its monument id's prefix, as monument.adm0 is (MonumentJdbc)
     * and as a gallery's single-region filter matches it; NULL without a monument id.
@@ -77,7 +77,7 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
 
       val needsMonumentJoin = monumentJoin || byRegion
 
-      // page ids alone (a file list's page, the CSV's keys, a file's rank): from selection,
+      // page ids alone (a file list's page, the CSV's keys, a file's rank): from vote,
       // without the images, unless the monument table's region needs them
       val idsOnSelection = idOnly && !count && !needsMonumentJoin
 
@@ -114,7 +114,7 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
       // SQL clause order: FROM/JOIN → WHERE → GROUP BY → ORDER BY
       val structureStr =
         columnsStr +
-          (if (idsOnSelection) " from selection s" else join(monuments = needsMonumentJoin))
+          (if (idsOnSelection) " from vote s" else join(monuments = needsMonumentJoin))
 
       val mainSql =
         sqls"${SQLSyntax.createUnsafely(structureStr)} ${where(count, withPage = idsOnSelection)} ${SQLSyntax.createUnsafely(groupByStr)} $havingSql ${SQLSyntax.createUnsafely(if (!(count || byRegion)) orderBy() else "")}"
@@ -123,7 +123,7 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
       // round_id): with both fixed, the rows are the images.
       val oneRowPerImage = userId.isDefined && roundId.isDefined
 
-      // Without a monument join every condition is on selection's own columns, so the
+      // Without a monument join every condition is on vote's own columns, so the
       // count needs no join to images. A region filter alone keeps the old row count
       // unless the rows are one per image anyway (a juror's in a round, or grouped).
       val countOnSelection =
@@ -134,7 +134,7 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
           if (oneRowPerImage) "COUNT(*)" else "COUNT(DISTINCT s.page_id)"
         )
         // the files with a matching vote: the same number with the filter on the rows
-        sqls"select $countExpr from selection s ${where(votes = true, withPage = true)}"
+        sqls"select $countExpr from vote s ${where(votes = true, withPage = true)}"
       } else if (count) {
         sqls"select count(t.pi_on_i) from ($mainSql) t"
       } else if (noLimit || byRegion) {
@@ -148,16 +148,16 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
       }
     }
 
-    /** One page of per-selection rows (a juror's gallery) as a deferred join: the inner
-      * query sorts and pages selection ids alone, which an index on (jury_id, round_id,
+    /** One page of per-vote rows (a juror's gallery) as a deferred join: the inner
+      * query sorts and pages vote ids alone, which an index on (jury_id, round_id,
       * ...) covers, since every secondary index includes the primary key; only the page's
       * rows are then read in full. Sorting the whole juror's rows with every column, as
       * the plain query does, costs a filesort of full rows: on MariaDB 10.6 the
       * mixed-direction ORDER BY (rate DESC, monument_id ASC, ...) can't be read from the
       * ascending index.
       *
-      * The inner query reads selection alone, its rows with a page id: those have their image
-      * (foreign key FK_selection_page_id, V58), so it pages the same rows the plain query and
+      * The inner query reads vote alone, its rows with a page id: those have their image
+      * (foreign key vote_page_id_fk, V58), so it pages the same rows the plain query and
       * [[imageRank]] see when joining images.
       *
       * The inner query also returns the ORDER BY columns (as o0, o1, ...; from the same
@@ -172,20 +172,20 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
       val outerOrder = SQLSyntax.createUnsafely(orderSql(keys.map { case (_, alias, dir) => s"k.$alias" -> dir }))
       val page = SQLSyntax.createUnsafely(limitSql())
       val columns = SQLSyntax.createUnsafely(columnsStr)
-      sqls"$columns from (select s.id$keyColumns from selection s ${where(withPage = true)} $innerOrder $page) k" +
-        sqls" STRAIGHT_JOIN selection s on s.id = k.id" +
+      sqls"$columns from (select s.id$keyColumns from vote s ${where(withPage = true)} $innerOrder $page) k" +
+        sqls" STRAIGHT_JOIN vote s on s.id = k.id" +
         sqls" STRAIGHT_JOIN images i on i.page_id = s.page_id $outerOrder"
     }
 
     /** One page of grouped rows (all the jurors' votes on each file: the by-rate gallery, the
       * large view's files around one) as a deferred join: the inner query groups, orders and
-      * pages the files' votes on selection alone (joined to the images only for the monument
+      * pages the files' votes on vote alone (joined to the images only for the monument
       * table's regions), with their aggregates and the ORDER BY columns (o0, o1, ...); only
       * the page's images are then read, and the page put back in order by those columns.
       * Grouping the round's votes with every image column, as one query did before B12,
       * carried them all through the temporary table and its sort.
       *
-      * A selection row with a page id has its image (FK_selection_page_id, V58); one without
+      * A vote row with a page id has its image (vote_page_id_fk, V58); one without
       * (`page_id` is nullable) is left out, as the join left it out, so it pages the files the
       * one query paged. The aggregates come first, in the grouped reader's order.
       */
@@ -199,7 +199,7 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
         "select s.page_id as pid, sum(s.rate) as rate, count(s.rate) as rate_count" +
           (if (tally) ", sum(s.rate > 0) as approvals, sum(s.rate < 0) as rejections" else "") +
           keys.map { case (expr, alias, _) => s", $expr as $alias" }.mkString +
-          (if (monumentJoin) join(monuments = true) else " from selection s")
+          (if (monumentJoin) join(monuments = true) else " from vote s")
       )
       val groupBy = SQLSyntax.createUnsafely(" group by s.page_id")
       val page = SQLSyntax.createUnsafely(s"${orderBy()} ${limitSql()}")
@@ -238,8 +238,8 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
           .map(ImageJdbc(i)(_)).list().map(image => image.pageId -> image).toMap
         val conditions = copy(regions = Set.empty, keyset = None, withPageId = None).where()
         val inPage = if (conditions.value.isEmpty) sqls"where" else sqls"$conditions and"
-        val votes = sql"select ${s.result.*} from selection s $inPage s.page_id in ($pageIds) order by s.id"
-          .map(SelectionJdbc(s)(_)).list().groupBy(_.pageId)
+        val votes = sql"select ${s.result.*} from vote s $inPage s.page_id in ($pageIds) order by s.id"
+          .map(VoteJdbc(s)(_)).list().groupBy(_.pageId)
         pageIds.flatMap(id => images.get(id).map(ImageWithRating(_, votes.getOrElse(id, Nil))))
       }
 
@@ -250,7 +250,7 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
     def keyCounts(columns: Seq[(String, Int)])(implicit session: DBSession = autoSession): Seq[(Seq[Int], Int)] = {
       val keys = columns.indices.map(n => s"k$n")
       val select = columns.zip(keys).map { case ((expr, _), k) => s"$expr as $k" }.mkString(", ")
-      val from = if (monumentJoin) join(monuments = true) else " from selection s"
+      val from = if (monumentJoin) join(monuments = true) else " from vote s"
       val inner = sqls"${SQLSyntax.createUnsafely(s"select $select $from")} ${where(withPage = true)} group by s.page_id $having"
       val outer = SQLSyntax.createUnsafely(
         s"select ${keys.mkString(", ")}, count(*) from (") +
@@ -271,7 +271,7 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
     }
 
     /** Whether [[orderKey]] and [[countBefore]] place a file: a juror's list in a round, on
-      * the selection rows alone (no grouping, no monument table).
+      * the vote rows alone (no grouping, no monument table).
       */
     def keyed: Boolean =
       userId.isDefined && roundId.isDefined && !grouped && !groupWithDetails && order.nonEmpty && !monumentJoin
@@ -283,7 +283,7 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
       require(keyed, "a juror's list in a round")
       val columns = SQLSyntax.createUnsafely(order.map(_._1).mkString(", "))
       val conditions = copy(rate = None, rated = None, withPageId = None).where()
-      sql"select $columns from selection s $conditions and s.page_id = $pageId"
+      sql"select $columns from vote s $conditions and s.page_id = $pageId"
         .map(rs => Keyset((1 to order.size).map(i => Option(rs.any(i))), before = true))
         .single()
     }
@@ -292,7 +292,7 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
       * or where it would be if the filter leaves it out. One count over the juror's rows.
       */
     def countBefore(key: Keyset)(implicit session: DBSession = autoSession): Int =
-      sql"select count(*) from selection s ${copy(withPageId = None, keyset = Some(key.copy(before = true))).where(withPage = true)}"
+      sql"select count(*) from vote s ${copy(withPageId = None, keyset = Some(key.copy(before = true))).where(withPage = true)}"
         .map(_.int(1)).single().getOrElse(0)
 
     /** The rows ordered before a file's values of the order columns: on each column in turn,
@@ -323,7 +323,7 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
     /** The regions of the round's (or the juror's) images, by id, without counts (the
       * contest's [[services.regions.RegionScheme]] names them). A top-level region is the
       * monument id's prefix, as monument.adm0 is (MonumentJdbc) and as the single-region
-      * filter matches it (`s.monument_id like 'XX%'`): read from the selection rows
+      * filter matches it (`s.monument_id like 'XX%'`): read from the vote rows
       * alone, so the regions show even when the monument list was never loaded. Only
       * sub-regions (adm1) need the monument table.
       */
@@ -332,7 +332,7 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
         if (subRegions) (s"m.$regionColumn", "JOIN monument m ON m.id = s.monument_id")
         else (regionOf("s.monument_id"), "")
       val map = SQL(s"""SELECT DISTINCT $region
-                       |FROM selection s
+                       |FROM vote s
                        |$monumentJoin
                        |WHERE $region IS NOT NULL
                        |  ${userId.fold("") { id => s"AND s.jury_id = $id" }}
@@ -350,7 +350,7 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
       *
       * A juror's: one scan of the juror's rows on (jury_id, round_id, rate, monument_id,
       * page_id) (V48), the juror having one row per image. The whole round's: its images
-      * once each, from selection's (round_id, page_id, rate) index, joined to the images'
+      * once each, from vote's (round_id, page_id, rate) index, joined to the images'
       * (page_id, monument_id) index (V66) for their regions.
       */
     def regionCounts()(implicit session: DBSession = autoSession): Map[String, Int] = {
@@ -359,12 +359,12 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
       val hit = if (conditions.isEmpty) "1" else conditions.mkString("(", " AND ", ")")
       val sql = userId match {
         case Some(juror) =>
-          s"""SELECT ${regionOf("s.monument_id")} AS region, SUM($hit) FROM selection s
+          s"""SELECT ${regionOf("s.monument_id")} AS region, SUM($hit) FROM vote s
              |WHERE s.jury_id = ${juror.toLong} AND s.round_id = ${roundId.get.toLong}
              |GROUP BY region ORDER BY NULL""".stripMargin
         case None =>
           s"""SELECT ${regionOf("i.monument_id")} AS region, SUM(p.hit)
-             |FROM (SELECT s.page_id, MAX($hit) AS hit FROM selection s WHERE s.round_id = ${roundId.get.toLong}
+             |FROM (SELECT s.page_id, MAX($hit) AS hit FROM vote s WHERE s.round_id = ${roundId.get.toLong}
              |      GROUP BY s.page_id) p
              |JOIN images i FORCE INDEX (images_page_monument_idx) ON i.page_id = p.page_id
              |GROUP BY region ORDER BY NULL""".stripMargin
@@ -380,7 +380,7 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
       */
     def regionRateCounts()(implicit session: DBSession = autoSession): Map[(Option[String], Int), Int] = {
       require(userId.isDefined && roundId.isDefined, "a juror's counts in a round")
-      SQL(s"""SELECT ${regionOf("s.monument_id")} AS region, s.rate, COUNT(*) FROM selection s
+      SQL(s"""SELECT ${regionOf("s.monument_id")} AS region, s.rate, COUNT(*) FROM vote s
              |WHERE s.jury_id = ${userId.get.toLong} AND s.round_id = ${roundId.get.toLong} AND s.page_id IS NOT NULL
              |GROUP BY region, s.rate ORDER BY NULL""".stripMargin)
         .map(rs => (rs.stringOpt(1), rs.int(2)) -> rs.int(3))
@@ -397,7 +397,7 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
     private def monumentJoin: Boolean = regions.size > 1 || subRegionFilter
 
     private val imagesJoinSelection =
-      """ from selection s
+      """ from vote s
         |STRAIGHT_JOIN images i
         |on i.page_id = s.page_id""".stripMargin
 
@@ -428,8 +428,8 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
 
     /** @param votes with the vote filter on the rows: without it for [[filesByVotes]], whose
       *              HAVING has it ([[having]])
-      * @param withPage only rows with a page id: a query on selection alone, without the join
-      *              to images that leaves out the rest (`selection.page_id` is nullable)
+      * @param withPage only rows with a page id: a query on vote alone, without the join
+      *              to images that leaves out the rest (`vote.page_id` is nullable)
       */
     def where(count: Boolean = false, votes: Boolean = !filesByVotes, withPage: Boolean = false): SQLSyntax = {
       val col = SQLSyntax.createUnsafely(s"m.$regionColumn")
@@ -445,8 +445,8 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
           } else if (regions.size > 1) {
             sqls.in(SQLSyntax.createUnsafely("m.adm0"), regions.toSeq)
           } else {
-            // selection's denormalized copy of images.monument_id (V48), so a juror's
-            // region gallery filters on the selection rows alone: the LIKE reads the index
+            // vote's denormalized copy of images.monument_id (V48), so a juror's
+            // region gallery filters on the vote rows alone: the LIKE reads the index
             // range, regionOf makes it the region the counts and the nav have (`7` isn't
             // `71-...`, a three-character prefix such as WLE's free text lists its files)
             val region = regions.head
@@ -498,7 +498,7 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
       def rowReader(rs: WrappedResultSet): ImageWithRating =
         ImageWithRating(
           image = ImageJdbc(i)(rs),
-          selection = Seq(SelectionJdbc(s)(rs))
+          votes = Seq(VoteJdbc(s)(rs))
         )
 
       /** A grouped row: the file, its rates' sum and count, and with `tally` its approvals and
@@ -510,7 +510,7 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
         val count = rs.intOpt(2).getOrElse(0)
         ImageWithRating(
           image,
-          selection = Seq(Selection(image.pageId, juryId = 0, roundId = 0, rate = sum)),
+          votes = Seq(Vote(image.pageId, juryId = 0, roundId = 0, rate = sum)),
           count,
           approvalsFromDb = if (tally) rs.intOpt(3) else None,
           rejectionsFromDb = if (tally) rs.intOpt(4) else None

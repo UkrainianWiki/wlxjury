@@ -206,8 +206,8 @@ class ImageProxyFileCheckSpec
       status(proxy.serve(thumb("Gone"))(signedIn)) === NOT_FOUND
       check.stop()
       count("SELECT COUNT(*) FROM images WHERE page_id = 1 AND deleted_at IS NOT NULL") === 1
-      count("SELECT COUNT(*) FROM selection WHERE page_id = 1") === 0
-      count("SELECT COUNT(*) FROM selection_deleted WHERE page_id = 1") === 1
+      count("SELECT COUNT(*) FROM vote WHERE page_id = 1") === 0
+      count("SELECT COUNT(*) FROM vote_aside WHERE page_id = 1") === 1
     }
 
     "redirect to Wikimedia as before when Commons has the file as stored" in {
@@ -220,7 +220,7 @@ class ImageProxyFileCheckSpec
       redirectLocation(result) must beSome(s"https://upload.wikimedia.org/wikipedia/commons/thumb/${thumb("Same")}")
       check.stop()
       count("SELECT COUNT(*) FROM images WHERE page_id = 1 AND deleted_at IS NULL") === 1
-      count("SELECT COUNT(*) FROM selection WHERE page_id = 1") === 1
+      count("SELECT COUNT(*) FROM vote WHERE page_id = 1") === 1
     }
   }
 
