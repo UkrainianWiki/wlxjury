@@ -70,6 +70,9 @@ set -a
 # shellcheck source=/dev/null
 source "$ENV_FILE"
 set +a
+# Not in the environment of the commands below (docker, gzip, zcat): the password goes
+# only into the option file, and phase 4 passes sbt the local values explicitly.
+export -n WLXJURY_DB_PASSWORD
 
 : "${WLXJURY_DB_HOST:?WLXJURY_DB_HOST must be set in .env}"
 : "${WLXJURY_DB:?WLXJURY_DB must be set in .env}"
@@ -299,7 +302,7 @@ else
   if [[ "$DUMP_ONLY" == true ]]; then
     echo "==> --dump-only set; skipping sbt run."
     echo "    Container '$CONTAINER_NAME' left running on port $LOCAL_PORT."
-    echo "    Connect: mysql -h 127.0.0.1 -P $LOCAL_PORT -u $LOCAL_USER -p$LOCAL_PASSWORD $LOCAL_DB"
+    echo "    Connect: mysql -h 127.0.0.1 -P $LOCAL_PORT -u $LOCAL_USER -p $LOCAL_DB  (the password is LOCAL_PASSWORD in this script)"
     exit 0
   fi
 
