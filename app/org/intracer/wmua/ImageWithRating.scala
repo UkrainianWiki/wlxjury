@@ -127,10 +127,14 @@ object ImageWithRating {
 
   object RankKey {
 
-    /** A binary round's by `order`, a rated round's by the sum of its rates. */
+    /** A binary round's by `order`, a rated round's by the sum of its rates as SQL has it: a
+      * rate below 0 counted as it is, not as 0 as [[ImageWithRating.rateSum]] counts it, so a
+      * file with one has its rank (of a grouped row, its one selection's sum; of a file's votes
+      * read one by one, their sum).
+      */
     def of(round: Round, order: BinaryOrder = BinaryOrder.Default): RankKey =
       if (round.isBinary) RankKey(order.columns, file => order.values(file.approvals, file.rejections))
-      else RankKey(Seq("sum(s.rate)" -> -1), file => Seq(file.rateSum))
+      else RankKey(Seq("sum(s.rate)" -> -1), file => Seq(file.selection.map(_.rate).sum))
   }
 
   /** The ranks of a list's files among all of them, from the number of its files of each key,

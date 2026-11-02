@@ -311,6 +311,97 @@ class RoundListDbSpec extends Specification with TestDb with BeforeAll with Befo
     }
   }
 
+  "a ranked list (a file list, by rate)" should {
+
+    /** Three jurors' votes on six files of a rated round, F0 and F1 in region 12, the others in
+      * 14, with rates below 0: sums 3, 5, 6, 2 (3, -1 and 0), -1 and 2; F3 and F5 tie.
+      */
+    def setUpRated(): (Round, Seq[User], Seq[Long]) = {
+      val (contest, round, user) = setUp(Round.ratesById(5))
+      val images = (0 until 6).map(id =>
+        Image(id.toLong, s"File:Image$id.jpg", None, None, 640, 480, Some(s"${if (id < 2) 12 else 14}-345-$id")))
+      imageDao.batchInsert(images)
+      monumentDao.batchInsert(images.flatMap(_.monumentId).map(id =>
+        new org.scalawiki.wlx.dto.Monument(id = id, name = s"Monument $id", page = "Test")))
+      val jurors = user +: (1 to 2).map(i =>
+        userDao.create(User(s"fullname$i", s"email$i", None, Set("jury"), contestId = contest.id)))
+      val votes = Seq(Seq(1, 1, 1), Seq(5, 0, 0), Seq(2, 2, 2), Seq(3, -1, 0), Seq(-1, 0, 0), Seq(2, 0, 0))
+      selectionDao.batchInsert(images.zip(votes).flatMap { case (image, rates) =>
+        jurors.zip(rates).map { case (j, r) => Selection(image, j, round, r) }
+      })
+      (round, jurors, images.map(_.pageId))
+    }
+
+    "be a file list, or by rate in any order but file order" in {
+      val (round, _, _) = setUpRated()
+      (Seq(GalleryView.FileList, GalleryView.ByRate, GalleryView.Gallery, GalleryView.Csv)
+        .map(v => RoundList(round, 0, view = v).ranked) must_== Seq(true, true, false, false)) and
+        (RoundList(round, 0, order = ListOrder.FileOrder, view = GalleryView.ByRate).ranked must beFalse)
+    }
+
+    "have as many files as count() has, in a rated round: each viewer, filter, region and view" in {
+      val (round, jurors, _) = setUpRated()
+      val lists = for {
+        asUserId <- 0L +: jurors.map(_.getId)
+        filter <- VoteFilter.ofRound(round) :+ VoteFilter.Rate(5)
+        region <- Seq(None, Some("12"), Some("14"), Some("99"))
+        view <- Seq(GalleryView.ByRate, GalleryView.FileList)
+      } yield RoundList(round, asUserId, region, filter, view = view)
+      (lists.map(_.rankCounts().map(_._2).sum) must_== lists.map(_.count())) and
+        // empty lists among them (region 99)
+        (lists.count(_.count() == 0) must be_>(0))
+    }
+
+    "have as many files as count() has in two regions, through the monument table" in {
+      val (round, _, _) = setUpRated()
+      forall(Seq(GalleryView.ByRate, GalleryView.FileList)) { view =>
+        val list = RoundList(round, 0, view = view)
+        val two = list.query.copy(regions = Set("12", "14"))
+        (two.keyCounts(list.rankKey.columns).map(_._2).sum must_== two.count()) and (two.count() must_== 6)
+      }
+    }
+
+    "rank a rated round's files by their rate sums, rates below 0 too, across pages and past the end" in {
+      val (round, _, ids) = setUpRated()
+      // F2 6, F1 5, F0 3, F3 and F5 2 (in file order), F4 -1
+      val ordered = Seq(2, 1, 0, 3, 5, 4).map(ids)
+      forall(Seq(GalleryView.ByRate, GalleryView.FileList)) { view =>
+        val list = RoundList(round, 0, view = view)
+        val counts = list.rankCounts()
+        val pages = (1 to 4).map(p => list.files(Pager(p, 6, 2)))
+        (pages.flatten.map(_.pageId) must_== ordered) and
+          (pages.flatMap(list.ranks(_, counts)) must_== Seq("1", "2", "3", "4-5", "4-5", "6")) and
+          (pages(3) must beEmpty) and (counts.map(_._2).sum must_== 6)
+      }
+    }
+
+    "have as many files as count() has, in a yes/no round: each order, filter and view" in {
+      val (contest, round, user) = setUp(Round.binaryRound)
+      val images = createImages(4)
+      val jurors = user +: (1 to 2).map(i =>
+        userDao.create(User(s"fullname$i", s"email$i", None, Set("jury"), contestId = contest.id)))
+      // approvals and rejections 2 1, 1 2, 0 3, 3 0; no unrated vote, so that filter lists none
+      val votes = Seq(Seq(1, 1, -1), Seq(1, -1, -1), Seq(-1, -1, -1), Seq(1, 1, 1))
+      selectionDao.batchInsert(images.zip(votes).flatMap { case (image, rates) =>
+        jurors.zip(rates).map { case (j, r) => Selection(image, j, round, r) }
+      })
+      val lists = for {
+        order <- BinaryOrder.all
+        filter <- VoteFilter.ofRound(round)
+        view <- Seq(GalleryView.ByRate, GalleryView.FileList)
+      } yield RoundList(round, 0, filter = filter, order = ListOrder.Binary(order), view = view)
+      (lists.map(_.rankCounts().map(_._2).sum) must_== lists.map(_.count())) and
+        (lists.filter(_.filter == VoteFilter.Unrated).map(_.count()).distinct must_== Seq(0)) and
+        // the last page, F2 last in each order, and past it
+        forall(lists.filter(_.filter == VoteFilter.All)) { l =>
+          val last = l.files(Pager(2, 4, 3))
+          (last.map(_.pageId) must_== Seq(images(2).pageId)) and
+            (l.ranks(last, l.rankCounts()) must_== Seq("4")) and
+            (l.files(Pager(3, 4, 3)) must beEmpty)
+        }
+    }
+  }
+
   "a file's place in a juror's list" should {
 
     /** A binary round with 20 of the juror's files, unrated but `selected`. */

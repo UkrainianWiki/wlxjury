@@ -215,11 +215,26 @@ final case class RoundList(
   def files(pager: Pager): Seq[ImageWithRating] =
     query.copy(limit = Some(Limit(Some(pager.pageSize), Some(pager.offset)))).list()
 
-  /** The ranks of a page of the list's files among all of them ([[rankKey]]): a file list's, a by-rate gallery's. */
-  def ranks(files: Seq[ImageWithRating]): Seq[String] = {
-    val ranks = Ranks(query.keyCounts(rankKey.columns))
+  /** Whether a page of the list shows its files' ranks among all of them: a file list, or the
+    * by-rate gallery in any order but file order, which the ranks would not follow.
+    */
+  def ranked: Boolean = view == GalleryView.FileList || (view == GalleryView.ByRate && order != ListOrder.FileOrder)
+
+  /** The number of the list's files of each value of its [[rankKey]], in its order: what a
+    * page's [[ranks]] are counted from, and the list's total (their sum, which [[count]] has
+    * too), from one grouped query.
+    */
+  def rankCounts(): Seq[(Seq[Int], Int)] = query.keyCounts(rankKey.columns)
+
+  /** The ranks of a page of the list's files among all of them ([[rankKey]]): a file list's, a
+    * by-rate gallery's, from the list's [[rankCounts]].
+    */
+  def ranks(files: Seq[ImageWithRating], counts: Seq[(Seq[Int], Int)]): Seq[String] = {
+    val ranks = Ranks(counts)
     files.map(file => ranks(rankKey.values(file)))
   }
+
+  def ranks(files: Seq[ImageWithRating]): Seq[String] = ranks(files, rankCounts())
 
   /** The file's index in the list, from 0. For a file of the viewer's round that the filter
     * leaves out (one just voted on), where it would be: the number of the list's files before

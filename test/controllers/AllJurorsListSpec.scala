@@ -138,6 +138,19 @@ class AllJurorsListSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
+    "count the by-rate gallery's files from its ranks, and in file order without them" in {
+      testDbApp { implicit app =>
+        // files 1-2 approved twice, 3-10 once, 11-20 rejected once
+        val f = fixture(files = 20, firstSelects = 10)
+        def page(query: String) = Jsoup.parse(contentAsString(
+          get(s"/byrate/round/${f.round.getId}/user/0/page/2$query", f.organizer)))
+        val ranked = page("?sort=approvals")
+        (ranked.text must contain("16–20 of 20")) and
+          (ranked.select("div.rank-line b").asScala.map(_.text).distinct.toList === List("11-20.")) and
+          (page("?sort=file").text must contain("16–20 of 20"))
+      }
+    }
+
     "not be offered in a juror's own gallery" in {
       testDbApp { implicit app =>
         val f = fixture(files = 3, firstSelects = 2)

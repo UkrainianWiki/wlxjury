@@ -154,7 +154,7 @@ object RankQueryBenchmark {
     val q = paged(list, page)
     val count = if (total) 0 else c("count")(list.query.count())
     val rows = c("page+w")(sql"${wPageSql(list, q, total)}".map { rs =>
-      (q.Readers.groupedReader(rs), rankString(rs.int("rank_start"), rs.int("rank_n")),
+      (q.Readers.groupedReader(q.tally)(rs), rankString(rs.int("rank_start"), rs.int("rank_n")),
         if (total) rs.int("list_total") else count)
     }.list())
     val n = rows.headOption.map(_._3).getOrElse(if (total) c("count")(list.query.count()) else count)
