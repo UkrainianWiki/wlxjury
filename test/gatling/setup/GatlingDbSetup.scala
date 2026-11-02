@@ -2,7 +2,7 @@ package gatling.setup
 
 import com.github.tototoshi.csv.CSVReader
 import db.scalikejdbc._
-import org.intracer.wmua.{Image, Selection}
+import org.intracer.wmua.{Image, Vote}
 import org.scalawiki.wlx.dto.Monument
 import scalikejdbc._
 import services.PasswordHasher
@@ -75,11 +75,11 @@ object GatlingDbSetup {
 
     // Split 50k evenly across both rounds so both are represented in votingPairs
     val votingPairs =
-      (sql"""SELECT jury_id, page_id, round_id, rate FROM selection
+      (sql"""SELECT jury_id, page_id, round_id, rate FROM vote
              WHERE round_id = ${binaryRound.id.get} LIMIT 25000"""
         .map(rs => (rs.long("jury_id"), rs.long("page_id"), rs.long("round_id"), rs.int("rate")))
         .list() ++
-       sql"""SELECT jury_id, page_id, round_id, rate FROM selection
+       sql"""SELECT jury_id, page_id, round_id, rate FROM vote
              WHERE round_id = ${ratingRound.id.get} LIMIT 25000"""
         .map(rs => (rs.long("jury_id"), rs.long("page_id"), rs.long("round_id"), rs.int("rate")))
         .list())
@@ -195,7 +195,7 @@ object GatlingDbSetup {
       pageId <- imagePageIds
       chosen  = rng.shuffle(jurorIds.toVector).take(math.round(numJurors * fraction).toInt)
       juryId <- chosen
-    } yield Selection(pageId = pageId, juryId = juryId, roundId = binaryRound.id.get,
+    } yield Vote(pageId = pageId, juryId = juryId, roundId = binaryRound.id.get,
                       rate = if (rng.nextBoolean()) 1 else -1,
                       monumentId = imageMonumentMap.getOrElse(pageId, None))
 
@@ -203,7 +203,7 @@ object GatlingDbSetup {
       pageId <- imagePageIds
       chosen  = rng.shuffle(jurorIds.toVector).take(math.round(numJurors * fraction).toInt)
       juryId <- chosen
-    } yield Selection(pageId = pageId, juryId = juryId, roundId = ratingRound.id.get,
+    } yield Vote(pageId = pageId, juryId = juryId, roundId = ratingRound.id.get,
                       rate = rng.nextInt(maxRate) + 1,
                       monumentId = imageMonumentMap.getOrElse(pageId, None))
 
@@ -214,7 +214,7 @@ object GatlingDbSetup {
       monuments.grouped(1000).foreach(batch => MonumentJdbc.batchInsertFresh(batch.toSeq))
       images.grouped(1000).foreach(batch => ImageJdbc.batchInsert(batch.toSeq))
       images.grouped(5000).foreach(batch => CategoryLinkJdbc.addToCategory(categoryId, batch.toSeq))
-      (binarySelections ++ ratingSelections).grouped(5000).foreach(batch => SelectionJdbc.batchInsert(batch.toSeq))
+      (binarySelections ++ ratingSelections).grouped(5000).foreach(batch => VoteJdbc.batchInsert(batch.toSeq))
 
       SQL("SET foreign_key_checks = 1").execute.apply()
       SQL("SET unique_checks = 1").execute.apply()
@@ -222,7 +222,7 @@ object GatlingDbSetup {
 
     // Refresh optimizer statistics after bulk load so the first query uses correct plans.
     DB autoCommit { implicit session =>
-      SQL("ANALYZE TABLE images, selection, monument, users, rounds, round_user").execute.apply()
+      SQL("ANALYZE TABLE images, vote, monument, users, round, round_user").execute.apply()
     }
 
     val interleavedSelections = binarySelections.zip(ratingSelections).flatMap { case (b, r) => Seq(b, r) }

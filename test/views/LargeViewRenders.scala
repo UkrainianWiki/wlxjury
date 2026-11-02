@@ -52,7 +52,7 @@ object LargeViewRenders {
           url = Some(s"https://upload.wikimedia.org/wikipedia/commons/a/ab/Image_$pageId.jpg")
         ),
         // a juror's view has the juror's row for each file, rated or not
-        selection = Seq(Selection(pageId, juror.getId, 1, rated.getOrElse(i, 0)))
+        votes = Seq(Vote(pageId, juror.getId, 1, rated.getOrElse(i, 0)))
       )
     }
 
@@ -103,7 +103,7 @@ object LargeViewRenders {
         hood = Neighbourhood(fs, index, index),
         monument = None,
         comments = Nil,
-        selection = Nil,
+        votes = Nil,
         byCriteria = byCriteria
       ).body
   }

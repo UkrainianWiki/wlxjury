@@ -91,7 +91,7 @@ class ConcurrentRoundCreationSimulation extends Simulation {
   // ── DB lookups (the simulation runs in the app's JVM) ──────────────────────
 
   private def roundIdByName(name: String): Option[Long] =
-    sql"SELECT MAX(id) FROM rounds WHERE contest_id = $contestId AND name = $name".map(_.longOpt(1)).single().flatten
+    sql"SELECT MAX(id) FROM round WHERE contest_id = $contestId AND name = $name".map(_.longOpt(1)).single().flatten
 
   /** None on the code before background jobs (no job table): the submit itself distributed. */
   private def latestJobId(roundId: Long): Option[Long] =
@@ -99,7 +99,7 @@ class ConcurrentRoundCreationSimulation extends Simulation {
           AND subject_id = $roundId""".map(_.longOpt(1)).single().flatten).toOption.flatten
 
   private def roundFigures(roundId: Long): String =
-    sql"""SELECT COUNT(DISTINCT page_id), COUNT(*) FROM selection WHERE round_id = $roundId"""
+    sql"""SELECT COUNT(DISTINCT page_id), COUNT(*) FROM vote WHERE round_id = $roundId"""
       .map(rs => s"in-request images=${rs.long(1)} rows=${rs.long(2)}").single().getOrElse("")
 
   private def jobFigures(jobId: Long): String =

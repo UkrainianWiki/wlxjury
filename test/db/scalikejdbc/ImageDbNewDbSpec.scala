@@ -1,7 +1,7 @@
 package db.scalikejdbc
 
 import db.scalikejdbc.rewrite.ImageDbNew.{Limit, SelectionQuery}
-import org.intracer.wmua.{Image, Selection}
+import org.intracer.wmua.{Image, Vote}
 import org.specs2.mutable.Specification
 import org.specs2.specification.BeforeAll
 
@@ -16,8 +16,8 @@ class ImageDbNewDbSpec extends Specification with BeforeAll with TestDb {
   private def img(pageId: Long, monumentId: String): Image =
     Image(pageId, s"File:Image$pageId.jpg", None, None, 640, 480, Some(monumentId))
 
-  private def sel(pageId: Long, rate: Int, monumentId: String): Selection =
-    Selection(pageId = pageId, juryId = userId, roundId = roundId, rate = rate,
+  private def sel(pageId: Long, rate: Int, monumentId: String): Vote =
+    Vote(pageId = pageId, juryId = userId, roundId = roundId, rate = rate,
               monumentId = Some(monumentId))
 
   // "rate" (unqualified): in grouped queries refers to the sum(s.rate) alias;
@@ -178,9 +178,9 @@ class ImageDbNewDbSpec extends Specification with BeforeAll with TestDb {
       order = galleryOrder, limit = Some(Limit(pageSize = Some(size), offset = Some(offset)))
     )
 
-    "page ids through the selection rows alone, then join the page's rows" in {
+    "page ids through the vote rows alone, then join the page's rows" in {
       val sql = page(3, 0).query().value
-      sql must contain("from (select s.id, rate as o0, s.monument_id as o1, s.page_id as o2 from selection s")
+      sql must contain("from (select s.id, rate as o0, s.monument_id as o1, s.page_id as o2 from vote s")
       sql must contain("STRAIGHT_JOIN images i")
       sql must endWith("order by k.o0 desc, k.o1 asc, k.o2 asc")
     }
@@ -199,7 +199,7 @@ class ImageDbNewDbSpec extends Specification with BeforeAll with TestDb {
       all.map(_.image.pageId) === expectedOrder
     }
 
-    "filter a region by selection's monument id" in new AutoRollbackDb {
+    "filter a region by vote's monument id" in new AutoRollbackDb {
       insertRows()
       page(2, 0, Set("13")).list().map(_.image.pageId) === Seq(302L, 304L)
       page(2, 2, Set("13")).list().map(_.image.pageId) === Seq(300L)
@@ -234,7 +234,7 @@ class ImageDbNewDbSpec extends Specification with BeforeAll with TestDb {
     "not apply to the organizer's grouped view" in {
       val sql = SelectionQuery(roundId = Some(roundId), grouped = true, order = galleryOrder,
         limit = Some(Limit(pageSize = Some(3), offset = Some(0)))).query().value
-      sql must not(contain("select s.id from selection s"))
+      sql must not(contain("select s.id from vote s"))
     }
   }
 
@@ -258,7 +258,7 @@ class ImageDbNewDbSpec extends Specification with BeforeAll with TestDb {
       SelectionQuery(userId = Some(userId), regions = Set("07")).count() === 3 // row count, as before
     }
 
-    "count a region on selection alone, matching the list" in new AutoRollbackDb {
+    "count a region on vote alone, matching the list" in new AutoRollbackDb {
       imageDao.batchInsert(Seq(img(400L, "07-001"), img(401L, "07-002"), img(402L, "08-001")))
       selectionDao.batchInsert(Seq(sel(400L, 1, "07-001"), sel(401L, 0, "07-002"), sel(402L, 1, "08-001")))
       val q = SelectionQuery(userId = Some(userId), roundId = Some(roundId), regions = Set("07"))
@@ -280,7 +280,7 @@ class ImageDbNewDbSpec extends Specification with BeforeAll with TestDb {
       val rates = Map(61L -> Seq(1, 1, -1), 62L -> Seq(0, 0, 1), 63L -> Seq(0, 0, 0))
       selectionDao.batchInsert(rates.toSeq.flatMap { case (pageId, rs) =>
         rs.zipWithIndex.map { case (rate, j) =>
-          Selection(pageId = pageId, juryId = 9100L + j, roundId = round, rate = rate)
+          Vote(pageId = pageId, juryId = 9100L + j, roundId = round, rate = rate)
         }
       })
     }
@@ -310,7 +310,7 @@ class ImageDbNewDbSpec extends Specification with BeforeAll with TestDb {
     "give a file list's files all their votes" in new AutoRollbackDb {
       votes()
       val files = query(rate = Some(-1)).copy(grouped = false, groupWithDetails = true).list()
-      (files.map(_.pageId) === Seq(61L)) and (files.head.selection.map(_.rate).sorted === Seq(-1, 1, 1))
+      (files.map(_.pageId) === Seq(61L)) and (files.head.votes.map(_.rate).sorted === Seq(-1, 1, 1))
     }
 
     "count the approvals and rejections only with tally (a yes/no round's), the sum and count always" in new AutoRollbackDb {

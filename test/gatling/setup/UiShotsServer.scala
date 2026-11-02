@@ -64,11 +64,11 @@ object UiShotsServer {
       .find(j => f.roundsOf(j._1).contains(f.roundRatingId))
       .orElse(f.jurorsIn(Some(f.roundBinaryId)).headOption)
       .getOrElse(sys.error("No juror with images in the binary round"))
-    val pageId = sql"""SELECT MIN(page_id) FROM selection
+    val pageId = sql"""SELECT MIN(page_id) FROM vote
                        WHERE jury_id = $jurorId AND round_id = ${f.roundBinaryId}"""
       .map(_.long(1)).single().getOrElse(sys.error("The juror has no images"))
     // the juror's first file in the rated round, for the large view's stars (0 without one)
-    val ratedPageId = sql"""SELECT MIN(page_id) FROM selection
+    val ratedPageId = sql"""SELECT MIN(page_id) FROM vote
                             WHERE jury_id = $jurorId AND round_id = ${f.roundRatingId}"""
       .map(_.longOpt(1)).single().flatten.getOrElse(0L)
     val (_, orgEmail, orgPassword) = f.organizer

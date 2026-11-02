@@ -1,7 +1,7 @@
 package controllers
 
 import db.scalikejdbc._
-import org.intracer.wmua.{ContestJury, Image, Selection}
+import org.intracer.wmua.{ContestJury, Image, Vote}
 import play.api.Application
 import play.api.libs.json.JsObject
 import play.api.test.CSRFTokenHelper._
@@ -30,7 +30,7 @@ class GalleryRegionsSpec extends PlaySpecification with PlayTestDb {
       Image(i + 1L, s"File:Image${i + 1}.jpg", None, None, 640, 480, Some(id))
     }
     imageDao.batchInsert(images)
-    selectionDao.batchInsert(images.map(image => Selection(image, juror, round, 0)))
+    selectionDao.batchInsert(images.map(image => Vote(image, juror, round, 0)))
     Fixture(contest, admin, juror, round)
   }
 
@@ -91,7 +91,7 @@ class GalleryRegionsSpec extends PlaySpecification with PlayTestDb {
         val f = fixture("Wiki Loves Monuments", "Ukraine", 2025, None, Seq("07-101-0001", "07-101-0002", "14-101-0001"))
         regionNames(gallery(f), f.admin) === List("Volyn O. (2)", "Donetsk O. (1)")
         DB.autoCommit { implicit s =>
-          sql"UPDATE selection SET rate = 1 WHERE page_id = 1".update()
+          sql"UPDATE vote SET rate = 1 WHERE page_id = 1".update()
         }
         regionNames(gallery(f) + "?rate=1", f.admin) === List("Volyn O. (1)", "Donetsk O. (0)")
       }
@@ -105,7 +105,7 @@ class GalleryRegionsSpec extends PlaySpecification with PlayTestDb {
           Seq("07-101-0001", "07-101-0002", "14-101-0001"))
         val second = userDao.create(User("Second", "second@example.com", None, Set("jury"), contestId = f.contest.id))
         val image = imageDao.findById(1L).get
-        selectionDao.batchInsert(Seq(Selection(image, second, f.round, 1)))
+        selectionDao.batchInsert(Seq(Vote(image, second, f.round, 1)))
         val url = s"/byrate/round/${f.round.getId}/user/0/page/1"
         regionNames(url, f.admin) === List("Volyn O. (2)", "Donetsk O. (1)")
         // a binary round's own filter: `rated` is a rated round's, read there as all files
@@ -120,7 +120,7 @@ class GalleryRegionsSpec extends PlaySpecification with PlayTestDb {
         val f = fixture("Wiki Loves Monuments", "Ukraine", 2025, None,
           Seq("07-101-0001", "07-101-0002", "14-101-0001"))
         val second = userDao.create(User("Second", "second@example.com", None, Set("jury"), contestId = f.contest.id))
-        selectionDao.batchInsert(Seq(Selection(imageDao.findById(1L).get, second, f.round, 1)))
+        selectionDao.batchInsert(Seq(Vote(imageDao.findById(1L).get, second, f.round, 1)))
         val url = s"/byrate/round/${f.round.getId}/user/0/page/1?filter=unrated"
         regionNames(url, f.admin) === List("Volyn O. (2)", "Donetsk O. (1)")
         val volyn = get(s"/byrate/round/${f.round.getId}/user/0/region/07/page/1?filter=unrated", f.admin)
@@ -133,7 +133,7 @@ class GalleryRegionsSpec extends PlaySpecification with PlayTestDb {
       testDbApp { implicit app =>
         val f = fixture("Wiki Loves Monuments", "Ukraine", 2025, None,
           Seq("07-101-0001", "07-101-0002", "14-101-0001"))
-        DB.autoCommit { implicit session => sql"UPDATE selection SET rate = 1 WHERE page_id = 1".update() }
+        DB.autoCommit { implicit session => sql"UPDATE vote SET rate = 1 WHERE page_id = 1".update() }
         val paths = Seq(
           s"/byrate/round/${f.round.getId}/user/${f.juror.getId}/page/1?filter=selected",
           s"/query?module=gallery&round=${f.round.getId}&user=${f.juror.getId}&rate=1")

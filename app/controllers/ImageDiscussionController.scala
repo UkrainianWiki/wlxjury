@@ -1,6 +1,6 @@
 package controllers
 
-import db.scalikejdbc.{Round, SelectionJdbc, User}
+import db.scalikejdbc.{Round, VoteJdbc, User}
 import org.intracer.wmua.CommentJdbc
 import play.api.data.Form
 import play.api.data.Forms._
@@ -52,7 +52,7 @@ class ImageDiscussionController @Inject()(cc: ControllerComponents, galleryServi
   private def mayComment(user: User, round: Round, pageId: Long, roles: Set[String]): Boolean =
     contestPermission(roles, Some(round.contestId))(user) &&
       galleryService.mayViewRound(user, round) &&
-      SelectionJdbc.inRound(round.getId, pageId, Option.unless(user.canViewOrgInfo(round))(user.getId))
+      VoteJdbc.inRound(round.getId, pageId, Option.unless(user.canViewOrgInfo(round))(user.getId))
 
   /** Adds the comment, then goes back to the file's large view in the user's list it was
     * made in ([[RoundList.commentUrl]]).

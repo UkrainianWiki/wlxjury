@@ -79,7 +79,7 @@ object CoiMembers {
         .toMap
 
   /** The round's files that are conflicts of interest, those with votes moved aside
-    * (`selection_deleted`) too: page id, title and the person each is by, as [[files]]
+    * (`vote_aside`) too: page id, title and the person each is by, as [[files]]
     * finds them.
     */
   def roundFiles(roundId: Long, members: Map[String, Member])(implicit
@@ -88,8 +88,8 @@ object CoiMembers {
     if (members.isEmpty) Nil
     else
       sql"""SELECT i.page_id, i.title, i.author FROM (
-              SELECT page_id FROM selection WHERE round_id = $roundId
-              UNION SELECT page_id FROM selection_deleted WHERE round_id = $roundId) p
+              SELECT page_id FROM vote WHERE round_id = $roundId
+              UNION SELECT page_id FROM vote_aside WHERE round_id = $roundId) p
             JOIN images i ON i.page_id = p.page_id
             WHERE i.author IN (${members.keys.toSeq}) ORDER BY i.page_id"""
         .map(rs => (rs.long(1), rs.string(2), rs.string(3)))

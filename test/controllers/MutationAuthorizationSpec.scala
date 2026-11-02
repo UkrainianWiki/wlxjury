@@ -1,6 +1,6 @@
 package controllers
 
-import db.scalikejdbc.{ImageJdbc, PlayTestDb, Round, RoundUser, SelectionJdbc, User, UserContestJdbc}
+import db.scalikejdbc.{ImageJdbc, PlayTestDb, Round, RoundUser, VoteJdbc, User, UserContestJdbc}
 import modules.BlockingExecutionContext
 import org.apache.pekko.stream.Materializer
 import play.api.Application
@@ -95,7 +95,7 @@ class MutationAuthorizationSpec extends PlaySpecification with PlayTestDb {
           .run()
 
         expectUnauthorized(result)
-        SelectionJdbc.findAll() must beEmpty
+        VoteJdbc.findAll() must beEmpty
       }
     }
   }
@@ -109,12 +109,12 @@ class MutationAuthorizationSpec extends PlaySpecification with PlayTestDb {
         imageDao.batchInsert(Seq(image(1004L, "UA-1004")))
 
         def vote(round: Round) = {
-          SelectionJdbc.create(1004L, 0, juror.getId, round.getId)
+          VoteJdbc.create(1004L, 0, juror.getId, round.getId)
           val result = galleryController(app)
             .selectWS(round.getId, 1004L, select = 1)
             .apply(sessionRequest(POST, s"/rate/round/${round.getId}/pageid/1004/select/1?rate=0", juror.email))
             .run()
-          (status(result), SelectionJdbc.findBy(1004L, juror.getId, round.getId).map(_.rate))
+          (status(result), VoteJdbc.findBy(1004L, juror.getId, round.getId).map(_.rate))
         }
 
         val open = roundDao.create(Round(None, 1, contestId = contest.getId, active = true))
@@ -148,12 +148,12 @@ class MutationAuthorizationSpec extends PlaySpecification with PlayTestDb {
       val round = roundDao.create(
         Round(None, 1, contestId = juror.contestId.get, rates = rates, halfStar = half, active = active))
       round.addUsers(Seq(RoundUser(round.getId, juror.getId, "jury", active = true)))
-      SelectionJdbc.create(pageId, rate, juror.getId, round.getId)
+      VoteJdbc.create(pageId, rate, juror.getId, round.getId)
       round
     }
 
     def stored(round: Round, juror: User, file: Long = pageId) =
-      SelectionJdbc.findBy(file, juror.getId, round.getId).map(_.rate)
+      VoteJdbc.findBy(file, juror.getId, round.getId).map(_.rate)
 
     def gallery(app: Application, round: Round, juror: User, rate: Int, file: Long = pageId) = {
       implicit val materializer: Materializer = app.materializer
@@ -171,10 +171,10 @@ class MutationAuthorizationSpec extends PlaySpecification with PlayTestDb {
     /** The gallery's answer to `rate` and the stored rate then; the same for the large view;
       * the file unrated before each. */
     def both(app: Application, round: Round, juror: User, rate: Int) = {
-      SelectionJdbc.rate(pageId, juror.getId, round.getId, 0)
+      VoteJdbc.rate(pageId, juror.getId, round.getId, 0)
       val inGallery = status(gallery(app, round, juror, rate))
       val afterGallery = stored(round, juror)
-      SelectionJdbc.rate(pageId, juror.getId, round.getId, 0)
+      VoteJdbc.rate(pageId, juror.getId, round.getId, 0)
       val inLarge = status(large(app, round, juror, rate))
       (inGallery, afterGallery, inLarge, stored(round, juror))
     }
@@ -229,21 +229,21 @@ class MutationAuthorizationSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
-    /** [[roundOf]] with criteria 1 and 2, the juror's selection's rates of them 3 and 4. */
+    /** [[roundOf]] with criteria 1 and 2, the juror's vote's rates of them 3 and 4. */
     def criteriaRoundOf(juror: User): Round = {
       val round = roundOf(juror, Round.ratesById(10), rate = 7)
       scalikejdbc.DB.autoCommit { implicit s =>
         import scalikejdbc._
-        sql"UPDATE rounds SET has_criteria = 1 WHERE id = ${round.getId}".update()
-        val id = SelectionJdbc.findBy(pageId, juror.getId, round.getId).get.getId
-        sql"INSERT INTO criteria_rate (id, selection, criteria, rate) VALUES (${id * 10 + 1}, $id, 1, 3), (${id * 10 + 2}, $id, 2, 4)"
+        sql"UPDATE round SET has_criteria = 1 WHERE id = ${round.getId}".update()
+        val id = VoteJdbc.findBy(pageId, juror.getId, round.getId).get.getId
+        sql"INSERT INTO criteria_rate (id, vote_id, criteria, rate) VALUES (${id * 10 + 1}, $id, 1, 3), (${id * 10 + 2}, $id, 2, 4)"
           .update()
       }
       roundDao.findById(round.getId).get
     }
 
     def criteriaOf(round: Round, juror: User, file: Long = pageId): Map[Long, Int] =
-      SelectionJdbc.findBy(file, juror.getId, round.getId).toSeq
+      VoteJdbc.findBy(file, juror.getId, round.getId).toSeq
         .flatMap(s => org.intracer.wmua.CriteriaRate.getRates(s.getId)).map(c => c.criteria -> c.rate).toMap
 
     "check a criterion's rate as the file's" in {
@@ -296,10 +296,10 @@ class MutationAuthorizationSpec extends PlaySpecification with PlayTestDb {
         val other = userDao.create(User("Other", "other@example.com", None, Set("jury"), contestId = juror.contestId))
         round.addUsers(Seq(RoundUser(round.getId, other.getId, "jury", active = true)))
         imageDao.batchInsert(Seq(image(1011L, "UA-1011")))
-        val othersVote = SelectionJdbc.create(1011L, 5, other.getId, round.getId)
+        val othersVote = VoteJdbc.create(1011L, 5, other.getId, round.getId)
         scalikejdbc.DB.autoCommit { implicit s =>
           import scalikejdbc._
-          sql"INSERT INTO criteria_rate (id, selection, criteria, rate) VALUES (${othersVote.getId * 10 + 1}, ${othersVote.getId}, 1, 5)"
+          sql"INSERT INTO criteria_rate (id, vote_id, criteria, rate) VALUES (${othersVote.getId * 10 + 1}, ${othersVote.getId}, 1, 5)"
             .update()
         }
         val organizer = userDao.create(User("Organizer", "organizer@example.com", None, Set("organizer"), contestId = juror.contestId))
@@ -344,7 +344,7 @@ class MutationAuthorizationSpec extends PlaySpecification with PlayTestDb {
         val round = roundOf(juror, Round.ratesById(5), rate = 2)
         val other = userDao.create(User("Other", "other@example.com", None, Set("jury"), contestId = juror.contestId))
         round.addUsers(Seq(RoundUser(round.getId, other.getId, "jury", active = true)))
-        SelectionJdbc.create(pageId, 3, other.getId, round.getId)
+        VoteJdbc.create(pageId, 3, other.getId, round.getId)
         RoundUser.setActive(round.getId, juror.getId, active = false)
 
         val inGallery = gallery(app, round, juror, 4)
@@ -371,7 +371,7 @@ class MutationAuthorizationSpec extends PlaySpecification with PlayTestDb {
         val juror = setUp()
         val round = roundOf(juror, Round.ratesById(5), rate = 2)
         RoundUser.setActive(round.getId, juror.getId, active = false)
-        SelectionJdbc.rate(pageId, juror.getId, round.getId, 4) === 0
+        VoteJdbc.rate(pageId, juror.getId, round.getId, 4) === 0
         stored(round, juror) === Some(2)
 
       }
@@ -382,7 +382,7 @@ class MutationAuthorizationSpec extends PlaySpecification with PlayTestDb {
         val juror = setUp()
         val round = criteriaRoundOf(juror)
         RoundUser.setActive(round.getId, juror.getId, active = false)
-        val selection = SelectionJdbc.findBy(pageId, juror.getId, round.getId).get
+        val selection = VoteJdbc.findBy(pageId, juror.getId, round.getId).get
         org.intracer.wmua.CriteriaRate.updateRate(selection.getId, 1, 10) must beFalse
         criteriaOf(round, juror) === Map(1L -> 3, 2L -> 4)
         stored(round, juror) === Some(7)
@@ -425,7 +425,7 @@ class MutationAuthorizationSpec extends PlaySpecification with PlayTestDb {
         val other = userDao.create(User("Other", "other@example.com", None, Set("jury"), contestId = juror.contestId))
         round.addUsers(Seq(RoundUser(round.getId, other.getId, "jury", active = true)))
         imageDao.batchInsert(Seq(image(1011L, "UA-1011")))
-        SelectionJdbc.create(1011L, 3, other.getId, round.getId)
+        VoteJdbc.create(1011L, 3, other.getId, round.getId)
 
         // the juror has no selection of the file: not found, and none created
         val inGallery = gallery(app, round, juror, 5, file = 1011L)
@@ -971,7 +971,7 @@ class MutationAuthorizationSpec extends PlaySpecification with PlayTestDb {
           .run()
 
         expectUnauthorized(result)
-        SelectionJdbc.findAll() must beEmpty
+        VoteJdbc.findAll() must beEmpty
       }
     }
   }

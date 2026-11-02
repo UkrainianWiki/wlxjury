@@ -1,6 +1,6 @@
 package db.scalikejdbc
 
-import org.intracer.wmua.Selection
+import org.intracer.wmua.Vote
 import org.specs2.mutable.Specification
 import org.specs2.specification.BeforeAll
 
@@ -12,8 +12,8 @@ class SelectionSpec extends Specification with BeforeAll {
 
   private val time: ZonedDateTime = TestDb.now
 
-  private def sameTime(s: Seq[Selection]): Seq[Selection] = s.map(_.copy(createdAt = Some(time)))
-  private def noIds(s: Seq[Selection]): Seq[Selection] = s.map(_.copy(id = None))
+  private def sameTime(s: Seq[Vote]): Seq[Vote] = s.map(_.copy(createdAt = Some(time)))
+  private def noIds(s: Seq[Vote]): Seq[Vote] = s.map(_.copy(id = None))
 
   "fresh database" should {
     "be empty" in new AutoRollbackDb {
@@ -21,7 +21,7 @@ class SelectionSpec extends Specification with BeforeAll {
     }
 
     "insert selection" in new AutoRollbackDb {
-      val s = Selection(pageId = -1, juryId = 20, roundId = 0, rate = 30, id = Some(40))
+      val s = Vote(pageId = -1, juryId = 20, roundId = 0, rate = 30, id = Some(40))
 
       insertImagesFor(s.pageId)
       val created = selectionDao.create(s.pageId, s.rate, s.juryId, s.roundId)
@@ -33,9 +33,9 @@ class SelectionSpec extends Specification with BeforeAll {
 
     "batch insert selections" in new AutoRollbackDb {
       val s = sameTime(Seq(
-        Selection(pageId = 20, juryId = 1, roundId = 0, rate = 10),
-        Selection(pageId = 21, juryId = 2, roundId = 1, rate = 11),
-        Selection(pageId = 22, juryId = 3, roundId = -1, rate = 12)
+        Vote(pageId = 20, juryId = 1, roundId = 0, rate = 10),
+        Vote(pageId = 21, juryId = 2, roundId = 1, rate = 11),
+        Vote(pageId = 22, juryId = 3, roundId = -1, rate = 12)
       ))
 
       insertImagesFor(s.map(_.pageId): _*)
@@ -48,9 +48,9 @@ class SelectionSpec extends Specification with BeforeAll {
       noIds(selections) === s
     }
 
-    "reject a selection row whose image doesn't exist" in new AutoRollbackDb {
+    "reject a vote row whose image doesn't exist" in new AutoRollbackDb {
       selectionDao.create(pageId = 404, rate = 0, juryId = 10, roundId = 1) must throwA[java.sql.SQLException].like {
-        case e => e.getMessage must contain("FK_selection_page_id")
+        case e => e.getMessage must contain("vote_page_id_fk")
       }
     }
 
@@ -62,11 +62,11 @@ class SelectionSpec extends Specification with BeforeAll {
 
     "rate selections" in new AutoRollbackDb {
       val s = sameTime(Seq(
-        Selection(pageId = 1, roundId = 20, juryId = 10),
-        Selection(pageId = 1, roundId = 20, juryId = 11),
-        Selection(pageId = 2, roundId = 20, juryId = 10),
-        Selection(pageId = 2, roundId = 20, juryId = 11),
-        Selection(pageId = 1, roundId = 21, juryId = 10)
+        Vote(pageId = 1, roundId = 20, juryId = 10),
+        Vote(pageId = 1, roundId = 20, juryId = 11),
+        Vote(pageId = 2, roundId = 20, juryId = 10),
+        Vote(pageId = 2, roundId = 20, juryId = 11),
+        Vote(pageId = 1, roundId = 21, juryId = 10)
       ))
 
       insertImagesFor(s.map(_.pageId): _*)
@@ -106,9 +106,9 @@ class SelectionSpec extends Specification with BeforeAll {
 
     "batchInsert preserves monumentId per row" in new AutoRollbackDb {
       val selections = Seq(
-        Selection(pageId = 1L, juryId = 1L, roundId = 1L, rate = 1, monumentId = Some("13-001")),
-        Selection(pageId = 2L, juryId = 1L, roundId = 1L, rate = 0, monumentId = Some("07-101")),
-        Selection(pageId = 3L, juryId = 1L, roundId = 1L, rate = 1, monumentId = None)
+        Vote(pageId = 1L, juryId = 1L, roundId = 1L, rate = 1, monumentId = Some("13-001")),
+        Vote(pageId = 2L, juryId = 1L, roundId = 1L, rate = 0, monumentId = Some("07-101")),
+        Vote(pageId = 3L, juryId = 1L, roundId = 1L, rate = 1, monumentId = None)
       )
       insertImagesFor(selections.map(_.pageId): _*)
       selectionDao.batchInsert(selections)

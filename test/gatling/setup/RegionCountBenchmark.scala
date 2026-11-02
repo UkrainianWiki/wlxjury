@@ -99,27 +99,27 @@ object RegionCountBenchmark {
 
     val selectionSql: Seq[Bench] = Seq(
       literal("Q4j", "D1", "today's byRegionStat DISTINCT, a juror (every juror, both rounds)") { n =>
-        s"SELECT DISTINCT $r FROM selection s WHERE $r IS NOT NULL AND s.jury_id = ${juror(n)} AND s.round_id = ${round(n)}"
+        s"SELECT DISTINCT $r FROM vote s WHERE $r IS NOT NULL AND s.jury_id = ${juror(n)} AND s.round_id = ${round(n)}"
       },
       literal("Q5", "D1", "juror region counts, every rate filter in one scan") { n =>
         s"""SELECT $r AS region, COUNT(*), SUM(s.rate = 1), SUM(s.rate = -1), SUM(s.rate = 0), SUM(s.rate > 0)
-            FROM selection s WHERE s.jury_id = ${juror(n)} AND s.round_id = ${round(n)} GROUP BY region"""
+            FROM vote s WHERE s.jury_id = ${juror(n)} AND s.round_id = ${round(n)} GROUP BY region"""
       },
       literal("Q4r", "D1", "today's byRegionStat DISTINCT, the whole round (binary, rated)") { n =>
-        s"SELECT DISTINCT $r FROM selection s WHERE $r IS NOT NULL AND s.round_id = ${if (n % 2 == 0) binary else rated}"
+        s"SELECT DISTINCT $r FROM vote s WHERE $r IS NOT NULL AND s.round_id = ${if (n % 2 == 0) binary else rated}"
       },
-      literal("Q6a", "D1", "whole round, COUNT(DISTINCT page_id) on selection") { n =>
-        s"""SELECT $r AS region, COUNT(DISTINCT s.page_id) FROM selection s
+      literal("Q6a", "D1", "whole round, COUNT(DISTINCT page_id) on vote") { n =>
+        s"""SELECT $r AS region, COUNT(DISTINCT s.page_id) FROM vote s
             WHERE s.round_id = ${if (n % 2 == 0) binary else rated} GROUP BY region"""
       },
       literal("Q6b", "D1", "whole round, distinct pages joined to images (page_id, monument_id)") { n =>
         s"""SELECT ${regionOf("i.monument_id")} AS region, COUNT(*)
-            FROM (SELECT DISTINCT page_id FROM selection WHERE round_id = ${if (n % 2 == 0) binary else rated}) p
+            FROM (SELECT DISTINCT page_id FROM vote WHERE round_id = ${if (n % 2 == 0) binary else rated}) p
             JOIN images i FORCE INDEX (images_page_monument_idx) ON i.page_id = p.page_id GROUP BY region"""
       },
       literal("Q6b+", "D1", "Q6b with rate > 0 (organiser's rated filter)") { n =>
         s"""SELECT ${regionOf("i.monument_id")} AS region, COUNT(*)
-            FROM (SELECT DISTINCT page_id FROM selection WHERE round_id = ${if (n % 2 == 0) binary else rated}
+            FROM (SELECT DISTINCT page_id FROM vote WHERE round_id = ${if (n % 2 == 0) binary else rated}
                   AND rate > 0) p
             JOIN images i FORCE INDEX (images_page_monument_idx) ON i.page_id = p.page_id GROUP BY region"""
       }
@@ -135,7 +135,7 @@ object RegionCountBenchmark {
     log(s"RegionCountBenchmark ${LocalDateTime.now}: warmup $warmup, runs $runs (max ${maxSeconds}s), threads " +
       s"${threadCounts.mkString(",")}; category $categoryId (${count(s"SELECT COUNT(*) FROM category_members WHERE category_id = $categoryId")} files)" +
       d2Category.fold("")(c => s", D2 category $c (${count(s"SELECT COUNT(*) FROM category_members WHERE category_id = $c")} files)") +
-      s"; selection ${count("SELECT COUNT(*) FROM selection")} rows; rounds binary $binary, rated $rated; ${jurors.size} jurors")
+      s"; vote ${count("SELECT COUNT(*) FROM vote")} rows; rounds binary $binary, rated $rated; ${jurors.size} jurors")
     log(f"${"id"}%-5s ${"ds"}%-3s ${"thr"}%3s ${"n"}%5s ${"p50"}%8s ${"p95"}%8s ${"p99"}%8s ${"max"}%8s ${"mean"}%8s  title")
 
     val timings = for {

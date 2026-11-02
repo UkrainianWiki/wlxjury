@@ -259,7 +259,7 @@ field split on commas made any contest admin root.)
 allowlisted; the allowlist is exact), `RoleAssignmentSpec`, `UserContestSpec`,
 `UserContestRolesSpec`, `db.UserContestRoleMigrationSpec` (the constraint).
 
-The round form's hidden `"roles"` (always `jury`, `editRound.scala.html`; `rounds.roles` is
+The round form's hidden `"roles"` (always `jury`, `editRound.scala.html`; `round.roles` is
 read only by the navbar) verifies `User.isContestRole` too.
 
 **Exceptions** (`RoleValuesSpec.UncheckedRoleFields`): none.

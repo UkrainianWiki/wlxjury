@@ -6,7 +6,7 @@ import org.specs2.mutable.Specification
 import org.specs2.specification.{BeforeAll, BeforeEach}
 import scalikejdbc._
 
-/** A distribution writes images x jurors selection rows. The driver doesn't split one
+/** A distribution writes images x jurors vote rows. The driver doesn't split one
   * JDBC batch to fit the server's max_allowed_packet, so a single batch of them fails
   * with "Socket error" once it outgrows it. The test container keeps testcontainers'
   * max_allowed_packet of 1M, where that happens between 20k and 30k rows (production's
@@ -34,7 +34,7 @@ class DistributeImagesBatchSpec extends Specification with TestDb with BeforeAll
       distributor.distributeImages(round, images, jurors) === 40000
       ImageJdbc.imageCountByRounds(Seq(round.getId)).values.sum === 4000
       DB.readOnly(implicit s =>
-        sql"SELECT COUNT(*) FROM selection WHERE round_id = ${round.getId}".map(_.int(1)).single().get) === 40000
+        sql"SELECT COUNT(*) FROM vote WHERE round_id = ${round.getId}".map(_.int(1)).single().get) === 40000
       packet must be_<=(1024L * 1024) // the container's limit the batch must fit
     }
 
@@ -49,7 +49,7 @@ class DistributeImagesBatchSpec extends Specification with TestDb with BeforeAll
 
       distributor.distributeImages(round, images, jurors) must throwA[Exception]
       DB.readOnly(implicit s =>
-        sql"SELECT COUNT(*) FROM selection WHERE round_id = ${round.getId}".map(_.int(1)).single().get) === 1
+        sql"SELECT COUNT(*) FROM vote WHERE round_id = ${round.getId}".map(_.int(1)).single().get) === 1
     }
   }
 }

@@ -81,7 +81,7 @@ object GatlingDbCache {
     // Refresh optimizer statistics after restore so queries use correct execution plans.
     val analyzeResult = container.container.execInContainer("sh", "-c",
       s"mysql -u${container.username} -p${container.password} ${container.databaseName}" +
-      s" -e 'ANALYZE TABLE images, selection, monument, users, rounds, round_user;'"
+      s" -e 'ANALYZE TABLE images, vote, monument, users, round, round_user;'"
     )
     if (analyzeResult.getExitCode != 0)
       println(s"[GatlingDbCache] ANALYZE TABLE warning: ${analyzeResult.getStderr}")

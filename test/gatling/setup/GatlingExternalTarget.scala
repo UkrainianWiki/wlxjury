@@ -10,7 +10,7 @@ import scalikejdbc._
   * (`gatling.external.db.*`) for the contest and rounds named in `gatling.external`.
   *
   * Accounts: the anonymised copy gives every user the password `<passwordPrefix><id>`
-  * (bench/scripts/anonymise.sql). Jurors are those with selection rows in the two rounds;
+  * (bench/scripts/anonymise.sql). Jurors are those with vote rows in the two rounds;
   * organizers are the contest's own admin accounts.
   */
 object GatlingExternalTarget {
@@ -28,14 +28,14 @@ object GatlingExternalTarget {
     val ratedId   = cfg.ratedRoundId
     val rounds    = Seq(binaryId, ratedId)
 
-    val roundContests = sql"SELECT id, contest_id FROM rounds WHERE id IN ($rounds)"
+    val roundContests = sql"SELECT id, contest_id FROM round WHERE id IN ($rounds)"
       .map(rs => rs.long(1) -> rs.long(2)).list().toMap
     require(rounds.forall(roundContests.get(_).contains(contestId)),
       s"rounds $rounds must exist and belong to contest $contestId: $roundContests")
 
     def password(id: Long) = s"${cfg.passwordPrefix}$id"
 
-    val jurors = sql"""SELECT DISTINCT u.id, u.email FROM selection s JOIN users u ON u.id = s.jury_id
+    val jurors = sql"""SELECT DISTINCT u.id, u.email FROM vote s JOIN users u ON u.id = s.jury_id
                        WHERE s.round_id IN ($rounds) ORDER BY u.id"""
       .map(rs => (rs.long(1), rs.string(2), password(rs.long(1)))).list()
 
@@ -53,12 +53,12 @@ object GatlingExternalTarget {
     // Region codes as the gallery's region filter takes them (adm0: the monument id's
     // first part), of the binary round's images.
     val regions = sql"""SELECT DISTINCT LEFT(SUBSTRING_INDEX(i.monument_id, '-', 1), 3) r
-                        FROM selection s JOIN images i ON i.page_id = s.page_id
+                        FROM vote s JOIN images i ON i.page_id = s.page_id
                         WHERE s.round_id = $binaryId AND i.monument_id IS NOT NULL AND i.monument_id <> ''
                         ORDER BY r"""
       .map(_.string(1)).list()
 
-    val votingPairs = sql"""SELECT jury_id, page_id, round_id, COALESCE(rate, 0) FROM selection
+    val votingPairs = sql"""SELECT jury_id, page_id, round_id, COALESCE(rate, 0) FROM vote
                             WHERE round_id IN ($rounds) AND deleted_at IS NULL"""
       .map(rs => (rs.long(1), rs.long(2), rs.long(3), rs.int(4))).list()
 

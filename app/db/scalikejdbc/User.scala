@@ -484,23 +484,23 @@ object User extends CRUDMapper[User] {
   }
 
   /** The contests the user has a past in: a round they are or were assigned to
-    * (round_user), or voted in (selection, for legacy rounds without round_user rows).
-    * DISTINCT round_id over idx_selection_jury_round_rate_mon_page is a loose index scan.
+    * (round_user), or voted in (vote, for legacy rounds without round_user rows).
+    * DISTINCT round_id over vote_jury_round_rate_mon_page_idx is a loose index scan.
     */
   def contestsWorkedIn(userId: Long)(implicit session: DBSession = autoSession): Seq[Long] =
-    sql"""SELECT r.contest_id FROM round_user ru JOIN rounds r ON r.id = ru.round_id
+    sql"""SELECT r.contest_id FROM round_user ru JOIN round r ON r.id = ru.round_id
           WHERE ru.user_id = $userId
           UNION
-          SELECT r.contest_id FROM (SELECT DISTINCT round_id FROM selection WHERE jury_id = $userId) s
-          JOIN rounds r ON r.id = s.round_id""".map(_.long(1)).list()
+          SELECT r.contest_id FROM (SELECT DISTINCT round_id FROM vote WHERE jury_id = $userId) s
+          JOIN round r ON r.id = s.round_id""".map(_.long(1)).list()
 
-  /** Whether the user is a juror of the round: with votes in it (selection, as
+  /** Whether the user is a juror of the round: with votes in it (vote, as
     * [[findByRoundSelection]] lists them, for legacy rounds without round_user rows) or
     * assigned to it (round_user, active or not).
     */
   def isRoundJuror(roundId: Long, userId: Long)(implicit session: DBSession = autoSession): Boolean =
     sql"""SELECT EXISTS(SELECT 1 FROM users u WHERE u.id = $userId AND (
-            EXISTS(SELECT 1 FROM selection s WHERE s.round_id = $roundId AND s.jury_id = $userId) OR
+            EXISTS(SELECT 1 FROM vote s WHERE s.round_id = $roundId AND s.jury_id = $userId) OR
             EXISTS(SELECT 1 FROM round_user ru WHERE ru.round_id = $roundId AND ru.user_id = $userId)))"""
       .map(_.boolean(1)).single().getOrElse(false)
 
@@ -509,7 +509,7 @@ object User extends CRUDMapper[User] {
     * lists every juror an organiser may view the round as, also one without votes yet.
     */
   def findRoundJurorsToView(roundId: Long)(implicit session: DBSession = autoSession): Seq[User] = {
-    val ids = sql"""SELECT DISTINCT jury_id FROM selection WHERE round_id = $roundId
+    val ids = sql"""SELECT DISTINCT jury_id FROM vote WHERE round_id = $roundId
                     UNION
                     SELECT user_id FROM round_user WHERE round_id = $roundId"""
       .map(_.long(1))
@@ -517,23 +517,23 @@ object User extends CRUDMapper[User] {
     if (ids.isEmpty) Nil else findAllBy(sqls.in(u.id, ids)).sortBy(_.id)
   }
 
-  /** The users with selection rows in the round (its jurors), ordered by id.
+  /** The users with vote rows in the round (its jurors), ordered by id.
     *
-    * DISTINCT jury_id over idx_selection_round_jury_rate is a loose index scan, one
-    * index dive per juror, instead of joining every selection row of the round (a few
+    * DISTINCT jury_id over vote_round_jury_rate_idx is a loose index scan, one
+    * index dive per juror, instead of joining every vote row of the round (a few
     * hundred thousand in a large contest) to users. Not filtered by users.contest_id: a
     * user's contest can move on to a later contest. Not round_user either: for legacy
-    * rounds it doesn't always match the selection rows.
+    * rounds it doesn't always match the vote rows.
     */
   def findByRoundSelection(roundId: Long): Seq[User] = {
-    val ids = sql"SELECT DISTINCT jury_id FROM selection WHERE round_id = $roundId"
+    val ids = sql"SELECT DISTINCT jury_id FROM vote WHERE round_id = $roundId"
       .map(_.long(1))
       .list()
     if (ids.isEmpty) Nil else findAllBy(sqls.in(u.id, ids)).sortBy(_.id)
   }
 
   /** The round's jurors, ordered by id, for its edit page: [[findByRoundSelection]],
-    * or, for a round without selection rows (its first distribution failed and was
+    * or, for a round without vote rows (its first distribution failed and was
     * rolled back), its active jurors in round_user.
     */
   def findRoundJurors(roundId: Long): Seq[User] =
@@ -545,7 +545,7 @@ object User extends CRUDMapper[User] {
   /** The jurors a distribution to the round gives images to, ordered by id: its active
     * jurors in round_user, so a juror stopped on the round gets no new images. Rounds
     * without round_user rows (created before round_user was filled) fall back to the
-    * jurors with selection rows in the round.
+    * jurors with vote rows in the round.
     */
   def distributionJurors(roundId: Long): Seq[User] =
     if (RoundUser.byRoundId(roundId).isEmpty) findByRoundSelection(roundId)

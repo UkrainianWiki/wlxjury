@@ -1,7 +1,7 @@
 package views
 
 import controllers.{GalleryView, Pager, RateDistribution, RoundList}
-import org.intracer.wmua.{Image, ImageWithRating, Selection}
+import org.intracer.wmua.{Image, ImageWithRating, Vote}
 import org.jsoup.Jsoup
 import play.api.mvc.{Flash, RequestHeader}
 import play.api.test.CSRFTokenHelper._
@@ -26,7 +26,7 @@ class GalleryByRateViewSpec extends PlaySpecification {
       Image(pageId = pageId, title = s"File:Image $pageId.jpg",
         url = Some(s"https://upload.wikimedia.org/wikipedia/commons/a/ab/Image_$pageId.jpg"),
         monumentId = Some(s"07-101-000$i")),
-      selection = Seq(Selection(pageId, juror.getId, round.getId, i + 1))
+      votes = Seq(Vote(pageId, juror.getId, round.getId, i + 1))
     )
   }
 
@@ -81,13 +81,13 @@ class GalleryByRateViewSpec extends PlaySpecification {
     }
 
     def file(rates: Int*) = ImageWithRating(Image(pageId = 301L, title = "File:Binary.jpg"),
-      selection = rates.zipWithIndex.map { case (rate, i) => Selection(301L, i + 1L, binary.getId, rate) })
+      votes = rates.zipWithIndex.map { case (rate, i) => Vote(301L, i + 1L, binary.getId, rate) })
 
     "show all the jurors' approvals and rejections as a check and a cross with their numbers" in {
       // as the query of all the jurors' votes has them: one row per file, their rates' sum
       // (2 approvals and a rejection give 1) and the approvals and rejections counted apart
       val grouped = ImageWithRating(Image(pageId = 301L, title = "File:Binary.jpg"),
-        selection = Seq(Selection(301L, 0, 0, 1)), countFromDb = 3, approvalsFromDb = Some(2),
+        votes = Seq(Vote(301L, 0, 0, 1)), countFromDb = 3, approvalsFromDb = Some(2),
         rejectionsFromDb = Some(1))
       val rate = tile(grouped, asUserId = 0)
       val shown = rate.selectFirst("[aria-hidden=true]")
@@ -153,7 +153,7 @@ class GalleryByRateViewSpec extends PlaySpecification {
     "show a rated round's result to an organiser as stars and the rate, without a tally" in {
       // grouped rows as all the jurors' list of a rated round has them: their rates' sum, no
       // approvals or rejections (reading them would fail: no tally)
-      val grouped = files.map(f => f.copy(selection = Seq(Selection(f.pageId, 0, 0, f.rate * 3)), countFromDb = 3))
+      val grouped = files.map(f => f.copy(votes = Seq(Vote(f.pageId, 0, 0, f.rate * 3)), countFromDb = 3))
       val doc = Jsoup.parse(contentAsString(views.html.galleryByRate(
         juror, RoundList(round, 0, view = GalleryView.ByRate), grouped, Pager(1, grouped.size), Nil, None,
         new RateDistribution(Map.empty), ranks)))

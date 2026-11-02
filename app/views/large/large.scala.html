@@ -1,6 +1,6 @@
 @import controllers.Global
 @import db.scalikejdbc.User
-@import org.intracer.wmua.Selection
+@import org.intracer.wmua.Vote
 @import org.intracer.wmua.Comment
 @import org.scalawiki.wlx.dto.Monument
 @import db.scalikejdbc.Round
@@ -10,7 +10,7 @@
         hood: Neighbourhood,
         monument: Option[Monument],
         comments: Seq[Comment],
-        selection: Seq[(Selection, User)],
+        votes: Seq[(Vote, User)],
         byCriteria: Map[Int, Int] = Map.empty)(
         implicit flash: Flash, request: Request[Any], messages: Messages)
 
@@ -31,7 +31,7 @@
                         }
                         @monumentInfo(image, monument)
                         @fullSizeUrl(image, round)
-                        @juryStat(selection, list)
+                        @juryStat(votes, list)
                     }
                     @thumbsBar(list, hood)
                     @* the sections' stored states, before the column is painted (large-sections.js): the one
