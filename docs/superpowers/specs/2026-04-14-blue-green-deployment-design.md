@@ -1,5 +1,7 @@
 # Blue-Green Deployment Design
 
+> **Status:** superseded: the blue/green scripts are disabled and their slot files removed; see docs/deployment.md.
+
 **Date:** 2026-04-14
 **Status:** Approved
 

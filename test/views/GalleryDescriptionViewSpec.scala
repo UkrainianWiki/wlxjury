@@ -1,0 +1,32 @@
+package views
+
+import controllers.{Pager, RateDistribution, RoundList}
+import play.api.mvc.{Flash, RequestHeader}
+import play.api.test.CSRFTokenHelper._
+import play.api.test.{FakeRequest, PlaySpecification}
+
+/** unitegallery shows a tile's `data-description` with jQuery's `.html()`, so the attribute
+  * holds HTML: the file's title in it is escaped once more, and `.html()` shows it as text.
+  */
+class GalleryDescriptionViewSpec extends PlaySpecification {
+
+  private val juror = LargeViewRenders.juror
+
+  implicit val request: RequestHeader = FakeRequest("GET", "/gallery/round/1/user/1/page/1").withCSRFToken
+  implicit val flash: Flash = Flash()
+  implicit val messages: play.api.i18n.Messages =
+    LargeViewRenders.messages(request.asInstanceOf[play.api.mvc.Request[_]])
+
+  "a gallery tile's description" should {
+    "hold the title as escaped HTML, so markup in it is text" in {
+      val files = LargeViewRenders.files().take(1).map { f =>
+        f.copy(image = f.image.copy(title = "File:A & <i>b</i>.jpg"))
+      }
+      val html = contentAsString(views.html.gallery(juror, RoundList(LargeViewRenders.ratedRound, juror.getId),
+        files, Pager(1, 1), Nil, None, new RateDistribution(Map.empty)))
+      val description = org.jsoup.Jsoup.parse(html).select("[data-description]").first().attr("data-description")
+      description === "<b>File:A &amp; &lt;i&gt;b&lt;/i&gt;.jpg</b>"
+      org.jsoup.Jsoup.parse(description).select("i").size === 0
+    }
+  }
+}

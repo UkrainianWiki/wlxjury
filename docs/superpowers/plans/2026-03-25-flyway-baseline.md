@@ -1,5 +1,7 @@
 # Flyway Schema Baseline Implementation Plan
 
+> **Status:** shipped (`a330d903` `SchemaBaselineSpec`, `8b93ca4b` the B44 baseline). The task boxes below were never ticked.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add a `SchemaBaselineSpec` test that applies all 44 Flyway migrations and dumps the resulting DDL to `conf/db/migration/default/B44__Baseline.sql`.

@@ -49,10 +49,10 @@
                     <td>@monument.photo.map{ photo =>
                       <a href="https://commons.wikimedia.org/wiki/File:@URLEncoder.encode(photo.replace(" ", "_"), "UTF8")">photo</a>
                     }</td>
-                    <td>@Html(Monument.wikiLinkToUrl(monument.name, "uk.wikipedia.org")) </td>
+                    <td>@views.WikiLinks(monument.name, "uk.wikipedia.org") </td>
                     <td>@monument.year.getOrElse("")</td>
-                    <td>@Html(Monument.wikiLinkToUrl(monument.place, "uk.wikipedia.org"))</td>
-                    <td>@Html(Monument.wikiLinkToUrl(monument.city, "uk.wikipedia.org"))</td>
+                    <td>@views.WikiLinks(monument.place, "uk.wikipedia.org")</td>
+                    <td>@views.WikiLinks(monument.city, "uk.wikipedia.org")</td>
                     <td>@monument.user</td>
                     <td>@monument.lat, @monument.lon</td>
                     <td><a href="https://uk.wikipedia.org/wiki/@monument.page">@monument.page</a></td>

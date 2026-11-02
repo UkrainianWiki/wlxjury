@@ -124,19 +124,6 @@ class DeletedFilesSpec extends Specification with TestDb with BeforeAll with Bef
 
   "votes moved into an open round" should {
 
-    "be moved aside there when a deleted file's are merged in from a finished round" in {
-      val (Seq(r1, r2), _) = setUp()
-      setRound(r2, sqls"active = 0") // finished: keeps the deleted file's votes
-      DB.localTx(implicit s => DeletedFiles.markDeleted(Seq(1L)))
-      rows("selection", 1L, r2) === Seq(1, 1)
-
-      DB.localTx(implicit s => SelectionJdbc.mergeRounds(targetRoundId = r1, sourceRoundId = r2))
-      Round.settleDeletedFiles(r1) // as RoundService.mergeRounds does
-      rows("selection", 1L, r1) must beEmpty
-      rows("selection_deleted", 1L, r1) === Seq(1, 1)
-      rows("selection", 2L, r1) === Seq(1, 1)
-    }
-
     "be moved aside there when a deleted file's are set to it from a finished round" in {
       val (Seq(_, r2), _) = setUp()
       setRound(r2, sqls"active = 0")
@@ -238,13 +225,13 @@ class DeletedFilesSpec extends Specification with TestDb with BeforeAll with Bef
       rows("selection_deleted", 1L, r2) must beEmpty
     }
 
-    "bring the votes of a merged round back into the round it was merged into" in {
+    "bring the votes of a file moved to another round back into that round" in {
       val (Seq(r1, r2), _) = setUp()
       implicit val contest: ContestJury = ContestJuryJdbc.findAll().head
       val j3 = createUsers("jury", 3).head.getId
       selectionDao.create(1L, rate = 3, juryId = j3, roundId = r2)
       DB.localTx(implicit s => DeletedFiles.markDeleted(Seq(1L)))
-      DB.localTx(implicit s => SelectionJdbc.mergeRounds(targetRoundId = r1, sourceRoundId = r2))
+      SelectionJdbc.setRound(1L, r2, r1)
 
       DB.localTx(implicit s => DeletedFiles.restore(Seq(1L)))
       rows("selection", 1L, r1) === Seq(1, 1, 3) // j1 and j2 of r1 win over theirs of r2

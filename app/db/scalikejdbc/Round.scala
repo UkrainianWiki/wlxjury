@@ -439,9 +439,9 @@ object Round extends RoundRepo with CRUDMapper[Round] {
     !refused
   }
 
-  /** After votes were moved into the round ([[SelectionJdbc.mergeRounds]],
-    * [[SelectionJdbc.setRound]]) and committed: if it is open, moves aside its votes of
-    * files deleted on Commons, in a transaction of its own. One marked deleted after this
+  /** After votes were moved into the round ([[SelectionJdbc.setRound]]) and committed: if
+    * it is open, moves aside its votes of files deleted on Commons, in a transaction of its
+    * own. One marked deleted after this
     * reads them moves them itself ([[services.imports.DeletedFiles.settle]]).
     */
   def settleDeletedFiles(id: Long): Unit = {
@@ -523,12 +523,6 @@ object Round extends RoundRepo with CRUDMapper[Round] {
 
   def countByContest(contestId: Long): Long =
     countBy(sqls.eq(r.contestId, contestId))
-
-  def delete(roundIds: Seq[Long]): Int = {
-    val deleted = deleteBy(sqls.in(r.id, roundIds))
-    RoundImageCounts.invalidate(roundIds: _*)
-    deleted
-  }
 
   case class RoundStatRow(juror: Long, rate: Int, count: Int)
 

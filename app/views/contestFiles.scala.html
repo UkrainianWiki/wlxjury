@@ -61,7 +61,7 @@
                 data-image="@Global.largeImage(file.image).src"
                 data-width="@file.image.width"
                 data-height="@file.image.height"
-                data-description="<b>@file.image.title</b>@for(m <- view.coiFiles.flatMap(_.get(file.image.pageId))) {<br>@play.twirl.api.HtmlFormat.escape(m.describe).body}"
+                data-description="<b>@play.twirl.api.HtmlFormat.escape(file.image.title).body</b>@for(m <- view.coiFiles.flatMap(_.get(file.image.pageId))) {<br>@play.twirl.api.HtmlFormat.escape(m.describe).body}"
                 @for(m <- view.coiFiles.flatMap(_.get(file.image.pageId))) {
                     data-coi="@m.describe"
                 }

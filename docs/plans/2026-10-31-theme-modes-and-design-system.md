@@ -1,6 +1,8 @@
 # Light / dark / auto modes and a consistent design system
 
-Status: investigation and plan, nothing implemented yet.
+Status: done. Phases 1–4, step 2a and the follow-ups are implemented and reviewed on
+`ukwikidev/theme-modes` (up to `cb103b24`); see each phase's results and review follow-ups
+below. What was still open went to `docs/plans/2026-11-01-open-followups.md`.
 
 ## Why pages are white or black today
 
@@ -439,7 +441,7 @@ large views' button groups, from Bootstrap 3.3.1 → 3.3.7:
 
 ## Phase 2 results (Bootstrap 5.3)
 
-Commits `69204d7e..` on `ukwikidev/theme-modes` (after `c878a724`). Not yet reviewed.
+Commits `69204d7e..` on `ukwikidev/theme-modes` (after `c878a724`). Reviewed: see "Review follow-ups" below.
 
 ### What changed
 
@@ -585,7 +587,7 @@ mapping), the current round on the round stat page shown active instead of bold.
 
 ## Phase 3 results (light / dark / auto)
 
-Commits `0272bfc9..` on `ukwikidev/theme-modes` (after `1ddf679e`). Not yet reviewed.
+Commits `0272bfc9..` on `ukwikidev/theme-modes` (after `1ddf679e`). Reviewed: see "Review follow-ups" below.
 
 ### What changed
 
@@ -723,7 +725,7 @@ checked by `ThemeViewSpec` for every shell.
 
 ## Phase 4 results (cleanup)
 
-Commits `4760b4b7..` on `ukwikidev/theme-modes` (after `7b9c0776`). Not yet reviewed.
+Commits `4760b4b7..` on `ukwikidev/theme-modes` (after `7b9c0776`). Reviewed: see "Review follow-ups" below.
 
 ### What changed
 

@@ -349,7 +349,7 @@ object Secured {
         case sorted if sorted.nonEmpty => sorted.mkString(",")
         case _                         => ifNone
       }
-    s"authorization_denied ref=$reference accountId=${user.getId} account=${logValue(user.emailLo)} " +
+    s"authorization_denied ref=$reference accountId=${user.getId} " +
       s"method=${request.method} path=${logValue(request.path)} " +
       s"currentContestId=${user.contestId.getOrElse("none")} " +
       s"targetContestId=${denial.contestId.getOrElse("unknown")} " +

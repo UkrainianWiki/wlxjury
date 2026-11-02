@@ -1,5 +1,7 @@
 # SQL Injection Fix: ImageDbNew.scala `where()` Region Parameter Implementation Plan
 
+> **Status:** shipped (`b403abc7`, `5d63fa10` the proof tests, `d2b93cdb` the fix). The task boxes below were never ticked.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Eliminate SQL injection in `SelectionQuery.where()` by replacing raw string interpolation of the `regions: Set[String]` parameter with ScalikeJDBC's `sqls""` parameterised interpolator, and add tests that prove the vulnerability exists before the fix and is gone after it.
