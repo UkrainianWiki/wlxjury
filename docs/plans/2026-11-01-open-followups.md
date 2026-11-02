@@ -119,6 +119,7 @@ out: it is content negotiation, not markup). There is no `HtmlFormat.raw` in `ap
 | `large/contestFile.scala.html:69`, `large/fullSizeUrl.scala.html:6` | `full.resolution`'s message text (with `<nobr>`) and two numbers (`width x height`, megapixels) | trusted (message files and integers) |
 | `large/navigationButtons.scala.html:16` (`title="@Html(title)"`) | the `previous.image`, `next.image`, `up.key`, `down.key` messages and a constant `&lt;…&gt;` | trusted (message files only) |
 | `pageLinks.scala.html:13,14,29,30` | constant entities (`&laquo;` …) | trusted |
+| `contestFiles.scala.html:64`, `gallery.scala.html:41` (`data-description="<b>@title</b>…"`, a DOM sink, not `Html(...)`) | the file's Commons title, escaped once by Twirl; unitegallery shows the attribute with jQuery's `.html()`, so the title was parsed as HTML. Not exploitable with Commons titles (MediaWiki forbids `<` and `>` in titles), but a character reference in one would be decoded | **Changed** (review fixes): the title is escaped twice (`HtmlFormat.escape(…).body`), so `.html()` shows it as text; the COI lines were already escaped twice (`GalleryDescriptionViewSpec`) |
 | `main`, `mainAdmin`, `navbar` (`pager`, `filters`, `head` defaults), `large/fileKeyboardNav.scala.html:1` (`votes`) | empty `Html("")` defaults; callers pass rendered templates, which escape | trusted |
 
 2.7 **Docs:** the guidelines' "Practices Not Followed Consistently Today" still lists the
@@ -1279,3 +1280,15 @@ updated.
   list it as open.
 - `CommonsLogin` logs the Commons bot account's user name. That is config, not a signed-in
   user's personal data, so it is left as is.
+
+### B6 review fixes
+
+| Finding | Fix | Commit |
+|---|---|---|
+| Medium, display: `WikiLinks` escaped `&`, so the lists' markup showed as text. Counts in `data/wlm-ua-monuments.csv`'s name, address and municipality columns: 5,505 `&nbsp;`, 91 `<br>`, 7 `<ref>` (one inside `<!-- -->`), 29 `{{ref+\|…}}`, 31 `{{s\|…}}`, 5 `{{comment\|…}}`, 18 `<nowiki>`, 16 `<sup>`, 10 `<sub>`, 1 `<small>`, 2 `&supN;`, 359 `''`/`'''` | Before escaping: `<!-- … -->`, `<ref …>…</ref>`, `<ref …/>` and `{{ref+\|…}}` are dropped with their content; `{{s\|…}}`, `{{nowrap\|…}}` and `{{comment\|text\|…}}` become their (first) text; `<nowiki>…</nowiki>` becomes its text, its brackets made references so they build no link; `<br>` (any form or case) is a space; the `<small>`, `<sup>`, `<sub>`, `<s>`, `<u>`, `<big>`, `<span>` tags are dropped (text kept); `''`/`'''` are dropped; then character references are decoded (decimal, hex, and 34 names: `nbsp`, `amp`, `lt`, `gt`, `quot`, `apos`, the dashes and quotes, `sup1`–`sup3`, `deg`, `times`, `numero`, …; an unknown name or an invalid code point stays as written). The result is escaped as before, so a decoded `&lt;script&gt;` is text, and other tags stay escaped text. `WikiLinksSpec` +5 examples (references, an encoded script and img, `<br>`, the formatting tags, `''`, `{{s\|}}` and `{{comment\|}}`, `<nowiki>`, `<ref>`, `{{ref+\|}}` and comments, unknown tags); the `<script>`, `<img onerror>` and `-->` examples are kept | `aecc9b9d`, `23948b4d` |
+| Low: `set -a; source .env` exported `WLXJURY_DB_PASSWORD` to every child (docker, gzip, zcat) | `export -n WLXJURY_DB_PASSWORD` after `set +a`; phase 4 already passes sbt the local values explicitly. The `--dump-only` hint prints `-p` (prompt) instead of the password | `6350feec` |
+| Audit: the gallery descriptions' DOM sink | Recorded in the 2.6 table; the title is escaped twice (harmless to the display: `.html()` shows the same text). New `GalleryDescriptionViewSpec` | `ff2c2664` |
+
+Checks:
+- No other JVM running. `Test/compile` + `controllers.MonumentControllerSpec` and `views.*` (with `WikiLinksSpec`, now 10 examples, `GalleryDescriptionViewSpec` and `LargeViewFixturesSpec`): exit 0, 179 passed, 0 failed (`target/checks/20261102-032030-13844.log`); again after the `{{ref+}}`/`{{comment}}` handling: exit 0, 179 passed (`target/checks/20261102-032344-23792.log`).
+- The script: `bash -n` passed. A fake-`docker` run (`--dump-only`, the fake first on `PATH`; it logged all 7 calls) showed `WLXJURY_DB_PASSWORD` unset in every `docker` call's environment, the option file as before, and the temporary directory gone afterwards. The real `docker` was not run.
