@@ -61,10 +61,8 @@ abstract class Secured(cc: ControllerComponents) extends AbstractController(cc) 
 
   def isRoot(user: User): Boolean = rolePermission(Set(User.ROOT_ROLE))(user)
 
-  def contestPermission(roles: Set[String], contestId: Option[Long])(user: User): Boolean = {
-    isRoot(user) ||
-    (user.hasAnyRole(roles) && user.isInContest(contestId))
-  }
+  def contestPermission(roles: Set[String], contestId: Option[Long])(user: User): Boolean =
+    user.hasContestRole(roles, contestId)
 
   def roundPermission(roles: Set[String], roundId: Long)(user: User): Boolean =
     Round.findById(roundId).exists { round =>

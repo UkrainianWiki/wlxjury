@@ -12,7 +12,8 @@
 //        menu: Html = Html.empty,
         pager: Html = Html(""),
         rates: RateDistribution = new RateDistribution(Map.empty),
-        rated: Option[Boolean] = None)(content: Html)(implicit messages: Messages)
+        rated: Option[Boolean] = None,
+        contestId: Option[Long] = None)(content: Html)(implicit messages: Messages)
 <!DOCTYPE html>
 
 <html lang="@messages.lang.language">
@@ -62,7 +63,7 @@
     <body @if(gallery){class="gallery"}>
 
         @navbar(title, user, asUserId, selectedRound, rounds, gallery, rate, region, pager,
-            contestId = selectedRound.map(_.contestId), rates, rated)
+            contestId = contestId.orElse(selectedRound.map(_.contestId)), rates, rated)
 
      <div class="container-fluid" style="margin-left: 0; margin-right :0;">
 

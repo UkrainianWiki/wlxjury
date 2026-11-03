@@ -60,9 +60,25 @@ case class User(
     (for (c <- contestId; oc <- refContestId) yield c == oc)
       .getOrElse(false)
 
+  /** Root, or one of `otherRoles` in the contest ([[controllers.Secured.contestPermission]]). */
+  def hasContestRole(otherRoles: Set[String], refContestId: Option[Long]): Boolean =
+    hasRole(User.ROOT_ROLE) || hasAnyRole(otherRoles) && isInContest(refContestId)
+
   def isAdmin(refContestId: Option[Long]): Boolean =
     hasRole(User.ADMIN_ROLE) && isInContest(refContestId) ||
       hasRole(User.ROOT_ROLE)
+
+  /** Whether the user may browse the contest's files, those deleted on Commons too
+    * ([[controllers.GalleryController.contestFiles]]): its admins and organizers.
+    */
+  def canViewContestFiles(refContestId: Long): Boolean =
+    hasContestRole(User.ADMIN_ROLES ++ User.ORG_COM_ROLES, Some(refContestId))
+
+  /** Whether the user may import the contest's files and cache them locally
+    * ([[controllers.ImageController.images]]): its admins.
+    */
+  def canManageContestFiles(refContestId: Long): Boolean =
+    hasContestRole(User.ADMIN_ROLES, Some(refContestId))
 
   def canViewOrgInfo(round: Round): Boolean =
     hasRole("root") ||

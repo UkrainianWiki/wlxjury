@@ -1,0 +1,23 @@
+@(index: Int, size: Int, urlAt: Int => String, backUrl: String)
+@* A read-only large view's keys, as keyboardNav.scala.html's in a round: Up and Down to the
+   previous and next file, Page Up / Page Down five files back or on (or the first / last
+   shown), Home and End to the first and last shown, Esc back to the gallery. *@
+<script src="@routes.Assets.at("javascripts/jquery.hotkeys.js")"></script>
+<script>
+    function wlxGo(e, url) {
+        e.preventDefault();
+        window.location = url;
+        return false;
+    }
+    @if(index < size - 1) {
+    $(document).on('keydown', null, 'down', function (e) { return wlxGo(e, "@Html(urlAt(index + 1))"); });
+    }
+    @if(index > 0) {
+    $(document).on('keydown', null, 'up', function (e) { return wlxGo(e, "@Html(urlAt(index - 1))"); });
+    }
+    $(document).on('keydown', null, 'esc', function (e) { return wlxGo(e, "@Html(backUrl)"); });
+    $(document).on('keydown', null, 'pagedown', function (e) { return wlxGo(e, "@Html(urlAt(math.min(index + 5, size - 1)))"); });
+    $(document).on('keydown', null, 'pageup', function (e) { return wlxGo(e, "@Html(urlAt(math.max(index - 5, 0)))"); });
+    $(document).on('keydown', null, 'home', function (e) { return wlxGo(e, "@Html(urlAt(0))"); });
+    $(document).on('keydown', null, 'end', function (e) { return wlxGo(e, "@Html(urlAt(size - 1))"); });
+</script>
