@@ -174,28 +174,62 @@ def externalize_legacy(text):
     return text
 
 
-CREDENTIAL_NAME = re.compile(r'password|passwd|secret', re.I)
-# Shipped settings whose names hold a credential word but whose values are not credentials
-# (the legacy-password retirement schedule). Exact paths only: anything else stays refused.
-NONSECRET_SETTINGS = frozenset(('wlxjury.legacyPasswords.retire', 'wlxjury.legacyPasswords.firstCheck',
-                                'wlxjury.legacyPasswords.checkEvery'))
+# A credential is named by its leaf key, the last path segment. Password,
+# passwd and secret count anywhere in it (DBPASSWORD, SMTPPassword, passwordHash,
+# password1), as they always did. Token and key are common inside other words
+# (monkey), so they count only as the whole leaf or after "_", "-" or a
+# camel-case hump (api_key, apiKey, JWTToken). Only the leaf counts: a parent
+# segment such as password.policy or wlxjury.legacyPasswords.retire names a
+# group of settings, not a credential; the trade-off is that a credential
+# stored under an unrelated leaf below it (password.value) is not found.
+# Comments are scanned for password, passwd and secret only, so prose and
+# examples that mention a token or key (WLXJURY_SETUP_TOKEN=$(...)) are neither
+# dropped from the copy nor refused. A whole-line comment that mentions a
+# password like a setting ("LegacyPasswordRetirementTask: ...") is still
+# dropped, as before: that loses only comment text in the copy, while a
+# looser rule would let a commented-out old password reach the readable copy.
+# A trailing comment that does so still refuses, and is fixed in a reviewed copy.
+OLD_CREDENTIAL_WORD = r'(?:password|passwd|secret)'
+NEW_CREDENTIAL_WORD = r'(?:token|key)s?'
+CREDENTIAL_ANYWHERE = re.compile(OLD_CREDENTIAL_WORD, re.I)
+CREDENTIAL_SUFFIX = re.compile(r'(?:.*[_-])?' + NEW_CREDENTIAL_WORD, re.I)
+CREDENTIAL_HUMP = re.compile(r'.*[A-Za-z0-9](?:Token|Key)s?')
+# Values no credential has: booleans and durations (Typesafe Config's units).
+NOT_A_CREDENTIAL = re.compile(r'(?:true|false|yes|no|on|off|[0-9]+(?:\.[0-9]+)?\s*(?:ns|nanos?|nanoseconds?|'
+                              r'us|micros?|microseconds?|ms|millis?|milliseconds?|s|seconds?|m|minutes?|'
+                              r'h|hours?|d|days?|w|weeks?))', re.I)
+
+
+def credential_name(name, comment=False):
+    """Whether a setting name, a full HOCON path or a line format's key, names a credential."""
+    leaf = re.split(r'[.]', name.replace('"', ''))[-1]
+    leaf = re.sub(r'^-+(?:J-+)?D', '', leaf) if name.startswith('-') and '.' not in name else leaf
+    if CREDENTIAL_ANYWHERE.search(leaf):
+        return True
+    return not comment and bool(CREDENTIAL_SUFFIX.fullmatch(leaf) or CREDENTIAL_HUMP.fullmatch(leaf))
+
+
 # A credential as a URL query parameter, such as "...?user=a&password=b".
 QUERY_CREDENTIAL = re.compile(r'[?&;][^=&;]*(?:password|passwd|secret)[^=&;]*=[^&;]', re.I)
 # Line formats (.ini, .cnf, .env, .properties, JVM options) and comment text.
-SECRET_SETTING = re.compile(r'([A-Za-z0-9_."-]*(?:password|passwd|secret)[A-Za-z0-9_."-]*)\s*[=:]\s*(.*)', re.I)
+# The name holds an old credential word or ends with a new one; credential_name
+# then checks the leaf.
+SETTING_NAME = (r'([A-Za-z0-9_."-]*(?:' + OLD_CREDENTIAL_WORD + r'[A-Za-z0-9_."-]*|'
+                + NEW_CREDENTIAL_WORD + r'"?))')
+SECRET_SETTING = re.compile(SETTING_NAME + r'\s*[=:]\s*(.*)', re.I)
 # Java properties may also separate the key from its value with whitespace alone.
-SPACED_SECRET_SETTING = re.compile(r'([A-Za-z0-9_."-]*(?:password|passwd|secret)[A-Za-z0-9_."-]*)'
-                                   r'(?:\s*[=:]\s*|\s+)(.*)', re.I)
+SPACED_SECRET_SETTING = re.compile(SETTING_NAME + r'(?:\s*[=:]\s*|\s+)(.*)', re.I)
 LINE_COMMENT = ('#', '//', ';', '!')
 SCANNED_CONFIG = ('.conf', '.ini', '.properties', '.cnf', '.env')
 
 
-def literal_secret(line, spaced=False):
+def literal_secret(line, spaced=False, comment=False):
     """The name of a credential setting this line-format line gives a literal value, or None."""
     for match in (SPACED_SECRET_SETTING if spaced else SECRET_SETTING).finditer(line):
-        value = match.group(2).strip()
-        if value and not value.startswith('${') and value not in ('""', "''", 'null'):
-            return match.group(1).strip('"')
+        value, name = match.group(2).strip(), match.group(1).strip('"')
+        if (value and not value.startswith('${') and value not in ('""', "''", 'null')
+                and not NOT_A_CREDENTIAL.fullmatch(value) and credential_name(name, comment)):
+            return name
     if QUERY_CREDENTIAL.search(line):
         return 'query parameter'
     return None
@@ -317,7 +351,8 @@ class HoconScan:
         literal = [part for part in parts if part[0] != 'sub']
         if not literal or [part[:2] for part in parts] in ([('str', '')], [('word', 'null')]):
             return
-        if CREDENTIAL_NAME.search(path) and path not in NONSECRET_SETTINGS:
+        unquoted = ' '.join(part[1] for part in parts) if all(part[0] == 'word' for part in parts) else None
+        if credential_name(path) and not (unquoted and NOT_A_CREDENTIAL.fullmatch(unquoted)):
             self.found.append((parts[0][2], path))
         elif QUERY_CREDENTIAL.search(''.join(part[1] for part in literal)):
             self.found.append((parts[0][2], path + ' query parameter'))
@@ -347,15 +382,16 @@ def config_credentials(text, suffix):
         found, dropped = [], set()
         # Split on newlines only, like the HOCON reader, so line numbers agree.
         for number, line in enumerate(text.split('\n'), 1):
-            key = literal_secret(line, spaced=suffix == '.properties')
-            if key and line.lstrip().startswith(LINE_COMMENT):
+            commented = line.lstrip().startswith(LINE_COMMENT)
+            key = literal_secret(line, spaced=suffix == '.properties', comment=commented)
+            if key and commented:
                 dropped.add(number)
             elif key:
                 found.append((number, key))
         return found, dropped
     dropped = set()
     for number, comment, whole_line in scan.comments:
-        key = literal_secret(comment)
+        key = literal_secret(comment, comment=True)
         if key and whole_line:
             dropped.add(number)
         elif key:

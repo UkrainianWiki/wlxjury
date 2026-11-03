@@ -5,6 +5,7 @@ import importlib.util
 import io
 import json
 import os
+import re
 from pathlib import Path
 import shutil
 import signal
@@ -754,6 +755,21 @@ class LegacyAdoptionTest(Fixture):
         self.assertIn('play.http.secret.key = ${PLAY_HTTP_SECRET_KEY}', copied)
         self.assertNotIn('changeme', copied)
 
+    def test_adoption_accepts_the_legacy_password_settings(self):
+        settings = CredentialScanTest.S6 + '\n'
+        source = self.legacy_package(self.LEGACY + settings)
+        self.tool.adopt_legacy(source, 'legacy-0.12-v53')
+        copied = (self.tool.current.resolve() / 'conf' / 'application.conf').read_text(encoding='utf-8')
+        self.assertIn(settings, copied)
+
+    def test_adoption_refuses_a_literal_db_password_it_cannot_externalize(self):
+        source = self.legacy_package(self.LEGACY + 'db { default { password = "x-private" } }\n')
+        with self.assertRaises(deploy.DeploymentError) as error:
+            self.tool.adopt_legacy(source, 'legacy-0.12-v53')
+        self.assertIn('db.default.password', str(error.exception))
+        self.assertNotIn('x-private', str(error.exception))
+        self.assertEqual(list(self.tool.releases.iterdir()), [])
+
     def test_adoption_refuses_quoted_credentials_before_publishing_the_copy(self):
         setting = 'play.mailer { "password": "quoted-private" }'
         source = self.legacy_package(self.LEGACY + setting + '\n')
@@ -765,9 +781,9 @@ class LegacyAdoptionTest(Fixture):
         self.assertFalse(self.tool.current.is_symlink())
         self.assertIn(setting, (source / 'conf' / 'application.conf').read_text())
 
-    def test_adoption_allows_only_the_listed_settings_with_credential_words(self):
-        # wlxjury.legacyPasswords.retire etc. are a schedule, not credentials; another key under
-        # the same object is still refused.
+    def test_adoption_refuses_a_credential_leaf_under_the_legacy_password_schedule(self):
+        # Only the leaf key names a credential: wlxjury.legacyPasswords.retire is a schedule and
+        # passes, while a token leaf under the same object is still refused.
         setting = 'wlxjury.legacyPasswords { retire = true, token = "listed-private" }'
         source = self.legacy_package(self.LEGACY + setting + '\n')
         with self.assertRaises(deploy.DeploymentError) as error:
@@ -903,6 +919,66 @@ class CredentialScanTest(unittest.TestCase):
                      '# The secret key is used to secure cryptographics functions.',
                      'db.default.username = "app"', 'play.filters.csrf.token.name = "csrfToken"'):
             self.assertEqual(self.hocon(text), ([], set()), text)
+
+    S6 = ('wlxjury.legacyPasswords.retire = true\nwlxjury.legacyPasswords.firstCheck = 1 minute\n'
+          'wlxjury.legacyPasswords.checkEvery = 6 hours')
+
+    def test_only_a_leaf_key_names_a_credential(self):
+        # S6's settings have "password" inside a key, not as one; their values are a flag and durations.
+        self.assertEqual(self.hocon(self.S6), ([], set()))
+        self.assertEqual(self.hocon('wlxjury { legacyPasswords { checkEvery = 6h } }'), ([], set()))
+        for text in ('monkey = "banana"', 'password.policy = "strict"', 'secret.santa = "on"',
+                     'db.default.password = ${?WLXJURY_DB_PASSWORD}', 'mail.password = true',
+                     'cache.token.ttl = 10 minutes', 'play.http.secret.key = ${?PLAY_HTTP_SECRET_KEY}'):
+            self.assertEqual(self.hocon(text), ([], set()), text)
+        for text, key in (('db.default.password = "x"', 'db.default.password'),
+                          ('db.default.password = 123456', 'db.default.password'),
+                          ('db.default.password = 6 hours later', 'db.default.password'),
+                          ('mail.apiKey = "k"', 'mail.apiKey'), ('oauth.access_token = "t"', 'oauth.access_token'),
+                          ('smtp.PASSWORD = "p"', 'smtp.PASSWORD'), ('wiki { botPassword = "b" }', 'wiki.botPassword')):
+            self.assertEqual(self.hocon(text), ([(1, key)], set()), text)
+
+    def test_password_and_secret_count_anywhere_in_the_leaf(self):
+        for text in ('DBPASSWORD = "x"', 'dbpassword = "x"', 'mail.mailpassword = "x"', 'SMTPPassword = "x"',
+                     'JWTSecret = "x"', 'password1 = "x"', 'password_old = "x"', 'user.passwordHash = "x"',
+                     'my password = "x"', 'JWTToken = "x"', 'API_KEY = "x"'):
+            found, _ = self.hocon(text)
+            self.assertEqual(len(found), 1, text)
+        self.assertEqual(deploy.config_credentials('DBPASSWORD=x\nSMTPPassword=x\n', '.env'),
+                         ([(1, 'DBPASSWORD'), (2, 'SMTPPassword')], set()))
+        # A parent segment names a group of settings, not a credential.
+        for text in ('monkey = "x"', 'password.policy = "strict"', self.S6):
+            self.assertEqual(self.hocon(text), ([], set()), text)
+
+    def test_comments_mentioning_a_token_or_key_are_kept(self):
+        for text in ('# e.g. WLXJURY_SETUP_TOKEN=$(openssl rand -hex 32),', 'x = 1 // token: abc',
+                     '# api_key = "old"'):
+            self.assertEqual(self.hocon(text), ([], set()), text)
+        self.assertEqual(deploy.config_credentials('# API_KEY=old\nAPI_KEY=${X}\n', '.env'), ([], set()))
+        # A commented-out password is still dropped, as before.
+        self.assertEqual(deploy.config_credentials('# DB_PASSWORD=old\n', '.env'), ([], {1}))
+
+    def test_the_shipped_application_conf_keeps_its_token_comments(self):
+        shipped = Path(__file__).resolve().parents[2] / 'conf' / 'application.conf'
+        found, dropped = deploy.config_credentials(shipped.read_text(encoding='utf-8'), '.conf')
+        # Its placeholder signing key is externalized by adoption before the scan.
+        self.assertEqual([key for _, key in found], ['play.http.secret.key'])
+        # Only comment lines that mention a password or secret are dropped from the copy, never
+        # prose about a token or key, such as the setup token's example.
+        lines = shipped.read_text(encoding='utf-8').split(chr(10))
+        self.assertTrue(all(re.search('password|passwd|secret', lines[n - 1], re.I) for n in dropped), dropped)
+        self.assertFalse([n for n in dropped if 'WLXJURY_SETUP_TOKEN' in lines[n - 1]])
+
+    def test_line_formats_name_credentials_by_leaf_key_too(self):
+        self.assertEqual(deploy.config_credentials('-Dwlxjury.legacyPasswords.retire=false\n'
+                                                   '-Dwlxjury.legacyPasswords.checkEvery=6h\n', '.ini'), ([], set()))
+        self.assertEqual(deploy.config_credentials('-Dpassword=abc\n-Dmonkey=abc\n', '.ini'),
+                         ([(1, '-Dpassword')], set()))
+        self.assertEqual(deploy.config_credentials('wlxjury.legacyPasswords.firstCheck 1 minute\n'
+                                                   'mail.smtp.token abc\n', '.properties'),
+                         ([(2, 'mail.smtp.token')], set()))
+        self.assertEqual(deploy.config_credentials('WLXJURY_DB_PASSWORD=${?WLXJURY_DB_PASSWORD}\nAPI_KEY=k\n', '.env'),
+                         ([(2, 'API_KEY')], set()))
 
     def test_strings_with_raw_tabs_are_still_read_as_hocon(self):
         self.assertEqual(self.hocon('greeting = "login:\t{{Login}}, password:\t{{Password}}"'), ([], set()))
