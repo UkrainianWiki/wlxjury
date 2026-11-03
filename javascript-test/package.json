@@ -10,5 +10,16 @@
     "jest-environment-jsdom": "^29.7.0",
     "jquery": "3.7.1",
     "tom-select": "2.6.2"
+  },
+  "jest": {
+    "rootDir": "..",
+    "roots": ["<rootDir>/javascript-test", "<rootDir>/public/javascripts"],
+    "coverageProvider": "v8",
+    "collectCoverageFrom": [
+      "public/javascripts/*.js",
+      "!public/javascripts/{jquery.hotkeys,jquery.raty,unitegallery,ug-theme-tiles}.js"
+    ],
+    "coverageDirectory": "<rootDir>/target/jest-coverage",
+    "coverageReporters": ["lcov", "text-summary", "json-summary"]
   }
 }
