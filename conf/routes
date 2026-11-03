@@ -5,6 +5,8 @@
 # Home page
 GET         /                                                                       @controllers.LoginController.index
 
+GET         /wikipedia/commons/thumb/*path                                          @controllers.ImageProxyController.serve(path: String)
+
 # Map static resources from the /public folder to the /assets URL path
 GET         /assets/*file                                                           @controllers.Assets.at(path="/public", file)
 
