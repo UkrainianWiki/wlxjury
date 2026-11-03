@@ -639,6 +639,165 @@ the merged branch: 1719 total, 1710 passed, 9 skipped, 1 pending, 0 failed; Jest
   criteria round), `OwnVotesSpec` (a juror still sees only own rates per criterion; another
   juror's per-criterion rates 404 as today's `viewAs`).
 
+#### C3 results (branch `ukwikidev/c3-criteria-results`, from stack `7f88363c`)
+
+Implemented with U2, U5, U7, U8, U9 as decided. No migration and no schema change: every read is
+on demand from `vote` joined with `criteria_rate` and `round_criterion`. It keeps no counts, so
+P2b's `round_image` source can sit under it unchanged (§3, round-images §8).
+
+**Design choices.**
+- **Display (U2) [open: user].** `vote.rate` stays the sum. Stars show **one criterion's
+  scale**: the round's own stars (`Round.numberOfStars` no longer multiplies by the criteria),
+  filled to `sum / n` (`Round.perCriterion`). Before, 2 criteria of 10 stars drew 20 stars.
+  Numbers that are sums stay sums and are labelled: the file list's rate column reads "Total
+  rating (sum of the criteria)", and the by-rate text and the CSV's "Overall" keep today's
+  `average (sum / jurors)`. These are the scale the rank, the top-N and the U7 threshold use.
+  Each criterion's average sits next to it. The large view for all the jurors shows the rate per
+  criterion (stars and number) under "Overall, per criterion". The alternative is to print the
+  per-criterion average as the overall number too (e.g. `7.25 (Σ 14.50)`). That is a smaller
+  change if the user prefers it.
+- **Averages:** `CriteriaRate.averages(roundId, pageIds, juror)`. It returns `AVG(cr.rate)` per
+  file and criterion, from these rows only:
+  - votes rated in every criterion (`vote.rate > 0`, U5);
+  - of those, criteria rated (`cr.rate > 0`). A partly rated vote from before U5 keeps its sum
+    (C2 Q2), and its pre-created rows of 0 are not averaged in;
+  - criteria of the round only (`STRAIGHT_JOIN round_criterion`). A vote moved by `setRound`
+    keeps the other round's rates.
+
+  The read takes one query per 1,000 files, either for one page or for one CSV chunk. A juror's
+  list reads only that juror's votes (`juror`). The large view's per-juror list uses
+  `CriteriaRate.ratesOfFile(roundId, pageId)` (same joins, a partly rated vote's rated criteria
+  included). Only organisers see it: `votes` is empty otherwise.
+- **Denominators.** The overall rate keeps each view's existing rule. The file list and the CSV
+  read each vote (`withVotes`) and average over the jurors with a rate (> 0). That is also the
+  criteria averages' set (fully rated votes), so they agree there: `14.50 (29 / 2)` with 7 and
+  7.5. The by-rate gallery and the all-jurors large view read grouped rows (`count(s.rate)`) and
+  average over the assigned jurors, with unrated and partly rated votes as 0, as in a plain
+  rated round. With an unrated juror their rate per criterion is lower: the spec's file shows
+  4.83 against 7 and 7.5. This is today's inconsistency between grouped and per-vote rows, and
+  C3 doesn't change it. [open: user] P2b will choose one rule for the grouped source.
+- **Where:** the by-rate gallery puts each file's averages under its stars (`criteriaAverages`).
+  The file list adds one column per criterion after the rate. The CSV has one average column per
+  criterion after "Overall", and the juror columns stay the sums (U8). The large view for all
+  the jurors shows each criterion's average, read-only. In the organisers' list of votes, each
+  juror's stars are per criterion and show that juror's rates (S8 fixed). The juror's own large
+  view is unchanged. Not done: round statistics, and sorting by one criterion (U9).
+- **Names:** `Criterion.name` (message key, else the fallback text) in the viewer's language. The
+  CSV uses the request's language, and its header is otherwise English. Names are escaped by
+  Twirl everywhere (no raw sink added) and pass through `Csv.writeRow` (formula-safe).
+- **U7:** `SelectMinAvgRating` and the top-N already compare the per-juror sums (`totalRate`), so
+  the code is unchanged. The round form's "Average file rating is at least" gets the help "From
+  a round with criteria: a sum of the criteria rates, averaged over the jurors …" when a rated
+  round the form offers has criteria. It is static and server-side, with no JS. Partly rated
+  votes count 0 there, as unrated ones do.
+- **Authorization:** unchanged gates. `GalleryService.viewAs` decides the list's juror (0 only
+  for organisers, admins, root and `juryOrgView`), and the averages read only that juror's
+  votes. The large view's all-jurors averages and per-juror rates are read only when the
+  viewer may see them.
+
+**Files.** New: `org.intracer.wmua.CriteriaResults` (with `JurorCriteria`),
+`views/criteriaAverages.scala.html`, `test/gatling/setup/CriteriaResultsBenchmark.scala`.
+Changed: `CriteriaRate` (`averages`, `ratesOfFile`), `Round` (`numberOfStars`, `perCriterion`),
+`Csv`, `GalleryController`, `LargeViewController`, `galleryByRate`, `fileList`, `showRate`,
+`large/large`, `large/navigationButtons`, `large/juryStat`, `round/edit/imageFiltering`,
+`conf/messages.{en,fr,uk,ru}` (`criteria.overall`, `criteria.sum`,
+`average.file.rating.criteria.sum`).
+
+**Benchmarks** (`gatling.setup.CriteriaResultsBenchmark`, a paired pilot; SQL debug logging
+off; MariaDB 10.6.22 in the test container; 20 pairs after 3 warm-ups, interleaved, order
+alternating; two runs: `target/gatling/criteria-results-bench-20261103-164510` and
+`-165355` in the C3 worktree). The Gatling fixture has no criteria round, so the harness seeds
+one. It has 5,000 files × 10 jurors × 4 criteria (90% of the votes fully rated, 5% partly, 5%
+not: 185k `criteria_rate` rows, more than production's 166k in all rounds), beside a plain
+round of 20,000 × 5 votes. A is what the page already reads, and B is C3's addition. Medians
+from the second run (first run in brackets), with p10–p90:
+
+| Path | A (before C3) | B (C3's addition) |
+|---|---|---|
+| File list page, 1,000 files, all jurors | 144 ms (150), 123–162 | +138 ms (140), 116–168 |
+| By-rate page, 15 files | 79 ms (74) | +4.9 ms (4.7) |
+| CSV, 5,000 files by 1,000 | 265 ms (272) | +671 ms (720) |
+| Large view, all jurors, 1 file | 1.9 ms (2.2) | +2.2 ms (2.9): averages and each juror's rates |
+
+Variants, paired against the query as built:
+- `ORDER BY NULL` (no filesort): 124 against 129 ms, within the variation.
+- One query by round for the CSV, instead of five chunks of 1,000: 620 against 687 ms.
+- The 1,000 files' rate rows alone, without aggregation: 73 ms, against 7 ms for counting their
+  votes.
+
+So the cost is the `criteria_rate` lookups, a secondary-index probe and then the row for
+`rate`. The grouping and the IN list barely matter. EXPLAIN:
+- `vote` by `vote_round_page_rate_idx` (ref, `Using index`), or for one juror's 15 files by
+  `vote_page_jury_round_uidx` (range);
+- `criteria_rate` by `criteria_rate_vote_criterion_uidx` (ref on `v.id`, one row);
+- `round_criterion` by its PRIMARY (`round_id`, 4 rows);
+- a temporary table and filesort for the GROUP BY. The 1,000-id list becomes MariaDB's
+  materialised IN subquery.
+
+No per-row query. **Decision:** kept as built. On a round larger than any in production, an
+organiser's 1,000-file list page takes about 0.14 s more, and the whole round's CSV about
+0.7 s. Jurors' pages (15 files) take about 5 ms more. If a real round turns out slow, the next
+step is a covering `criteria_rate (vote_id, criterion_id, rate)` index (a migration, V89 or
+later). `round_image_criterion` (§3) is not needed.
+
+**Specs.**
+
+New:
+- `org.intracer.wmua.CriteriaResultsSpec` (truncation; votes written by `updateRate`):
+  - partly rated votes left out (U5);
+  - a pre-U5 partial vote counted by its rated criteria only;
+  - rates carried by `setRound` left out through `round_criterion`;
+  - one juror's votes only;
+  - chunks of 1,000 and none for no files;
+  - none without criteria;
+  - `ratesOfFile` with a partial vote;
+  - the number format.
+- `views.CriteriaResultsViewSpec`:
+  - the by-rate gallery: 10 stars and not 20, 7 filled, averages and dashes;
+  - the file list: columns, the "sum of the criteria" label, none without criteria;
+  - the all-jurors large view: the rate per criterion, the averages, read-only;
+  - the per-juror list: stars per criterion, rates, a partial vote;
+  - each with a `<script>`/`onerror` fallback name escaped.
+- `controllers.CriteriaResultsPageSpec` (through the router):
+  - the file list, the by-rate gallery, the CSV and the large view for an organiser or admin;
+  - names in en/uk/ru/fr, and an admin's by its fallback text in each;
+  - the CSV header formula-safe (`'=HYPERLINK…`);
+  - a juror's file list and CSV averaging only their own votes, and their large view without
+    others' or averages;
+  - 403 for a juror asking for all jurors or another juror, and for another contest's juror,
+    on the file list, by-rate, CSV and large view;
+  - signed out to the login page;
+  - the round form's U7 help shown only when a criteria round is offered.
+
+Changed:
+- `CsvSpec`: criteria columns, none without criteria, formula-safe names.
+- `RoundCriteriaStarsSpec`: `numberOfStars`, `perCriterion`.
+- `LargeImageSpec`: the by-rate stars, 10 with 3 filled.
+- `RoundDistributionJobSpec`: from a criteria round, "min average rate" 11 read as a sum picks
+  files 1 and 2 (no file reaches 11 per criterion), and 6 adds the file whose partly rated vote
+  counts 0; top-2 and top-3 by the sums.
+- `LargeViewRenders`: the criteria's type.
+
+**Checks** (Git Bash, `scripts/agent-check.py`, the sbt launcher, one JVM at a time under the
+shared lock, Commons variables unset):
+- Affected specs (the above, `CriteriaRateSpec`, `MessagesCompletenessSpec`, `OwnVotesSpec`,
+  `GalleryByRateViewSpec`, `FileListViewSpec`, the large view specs, `GalleryTileStarsViewSpec`,
+  `RoundStatTableViewSpec`, `RoundCriteriaSpec`, `AllJurorsListSpec`, `GroupedListParitySpec`,
+  `MutationAuthorizationSpec`, the guards `db.MigrationNamingSpec`, `db.MigrationSchemaSpec`,
+  `db.VoteRowLockSpec`, and `security.*`): 379 passed, 0 failed
+  (`target/checks/20261103-163545-15284.log`). An earlier run (52 examples) failed on three
+  expectations of the spec itself: the file list's rate over its rated jurors (see
+  "Denominators") and a selector for the votes' list.
+- Full suite (`sbt test`, Jest included): 1934 total, 1924 passed, 10 skipped, 1 pending, 0
+  failed; Jest 253/253; exit 0, 15:47 (`target/checks/20261103-165606-24316.log`).
+
+**Open [user].**
+1. The overall's number, kept as the sum (see "Display"), or the per-criterion average too.
+2. The grouped views' and the per-vote views' denominators for the overall (see
+   "Denominators"). This predates C3; P2b is the place to unify them.
+3. A covering `criteria_rate` index, only if a real round is slower than the pilot.
+
+
 ### C4: juror UX (after C2)
 
 - Large view keyboard (U4, recommended): Left/Right (or Tab) select a criterion, digits rate the
