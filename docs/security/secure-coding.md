@@ -47,6 +47,7 @@ abuse.
 19. [Dependencies](#19-dependencies)
 20. [Deployment configuration](#20-deployment-configuration)
 21. [Guards](#21-guards)
+22. [Privacy](#22-privacy)
 
 ## 1. SQL
 
@@ -499,7 +500,55 @@ deploy (register). `useSSL=false` for a local DB (S8).
 | G13 §12 no exception text in responses or user-visible persisted fields | `security.ErrorTextSpec` | built (S5) |
 | G14 §20 B5's keys in the deployed config template | `deployment.ProductionConfigParitySpec` | planned (S8, infra plan) |
 | §7.2 of db practices: raw structural writes listed with their lock | `security.StructuralWritesSpec` | built |
+| §22 juror confidentiality, conflicts of interest | `OwnVotesSpec`, `CoiAuthorizationSpec` | built |
+| §22 dumps anonymised, never committed | review | planned: none (a scan for dump-shaped files in tracked paths is possible) |
 
 Each planned guard lands with the batch named; until then the checklist line is the check.
 *Source:* the security practices plan (`98a8a79e:docs/plans/2026-11-02-security-practices.md`,
 "Guard specs to add"), deleted after this table.
+
+## 22. Privacy
+
+**Rule: personal data.** The app holds jurors' and organizers' emails, names, wiki accounts,
+password hashes, votes, comments and, in the one sign-in failure line that has one
+(`oauth_choose_proof_failed`, operations §1.3), a client address. Collect only what a feature
+needs; never put personal data in a log line (§13), a URL, a shared cache or a test fixture taken
+from production. **Emails** are shown to the account itself and on the contest's users page,
+which is for admins and root only (`UserController.users`, `User.ADMIN_ROLES`). **Names** of a
+round's jurors (the galleries' juror menu, `User.findRoundJurorsToView` in `navbar.scala.html`;
+exports, §16) go to those who may see the round's organizer views, `User.canViewOrgInfo`: root,
+the contest's admins and organizers, and the round's jurors when the round has `juryOrgView` on.
+
+**Rule: juror confidentiality.** Unless the round shares its organizer views with its jurors
+(`juryOrgView`), a juror sees only their own votes. Other jurors' votes, the all-jurors views
+and the juror list are for `canViewOrgInfo`, and only of jurors of that round
+(`GalleryService.viewerRounds` / `mayViewRound` / `viewAs`, otherwise 404; CLAUDE.md "Own
+votes"). File authors are shown under the same condition (`GalleryController`'s `showAuthor`,
+`large.scala.html`). *Why:* votes and authors are the organizers' information; a round shares
+them with its jurors only when its organizers choose to (`juryOrgView`).
+
+**Rule: conflicts of interest and lobbying.** The tool shows a round's jurors and votes only
+under the rules above, never to a participant without a role in the contest, so an author can't
+find and lobby a juror through it. Files by a contest member or root (`CoiMembers`: the file's
+author matched to their wiki accounts) are left out of that contest's rounds when the round's
+conflict-of-interest option is on. The matches, with whose they are, are listed to the contest's
+organizers and admins on the contest files page (`CoiAuthorizationSpec`); taking them out of a
+round from the round form is admin-only. Each removal is a line on the `coi` logger, its only
+record until P1b keeps them as `dq` rows. *Why:* a juror judging a member's file, or a
+participant knowing whom to approach, undermines the result.
+
+**Rule: dumps are anonymised at once.** A production dump lives outside every repository, is
+restored only into an isolated database and anonymised there right after the restore
+(`bench/scripts/anonymise.sql`: synthetic emails, names and passwords, same shapes); never commit
+a dump, a restored or derived copy, or query output with personal data, and never put one under
+`data/cache` (performance §2.7). *Why:* a committed copy can't be recalled.
+
+**Guards.** `OwnVotesSpec`, `CoiAuthorizationSpec`, `security.LogHygieneSpec` (§13); dumps:
+review only.
+
+**Exceptions.** `scripts/run-with-prod-dump.sh` restores a production dump into a local
+container without anonymising it (the dump stays in `/tmp/wlxjury-prod.sql.gz`), for a
+developer's own check against real data: a triage item (anonymise after the restore, or retire
+the script). The production dump in `C:\scala\wlxjury-bench-work\` (register P10) waits for the
+user's agreement to delete. *Source:* user, 2026-11-03 (docs phase); `bench/README.md` §1
+"Personal data".
