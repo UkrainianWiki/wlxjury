@@ -212,8 +212,8 @@ class LocalImageCacheService(
 
   /** The file in the cache's root naming the sizes cached ([[cachedSizes]]) once the files of
     * other sizes are deleted ([[cleanUpUnusedSizes]]). In the cache, not in the config or the
-    * database, it goes with the files: blue/green slots share it, a restored or new cache
-    * has its own.
+    * database, it goes with the files: a copied or restored cache keeps it, a new cache has
+    * its own.
     */
   private[services] val SizesMarker = ".cache-sizes"
 
@@ -254,7 +254,7 @@ class LocalImageCacheService(
       }.sum
       val tmp = File.createTempFile(".tmp-", ".marker", root)
       Files.write(tmp.toPath, cachedSizes.getBytes(UTF_8))
-      // A failed move (on Windows, when another instance replaces the marker at once) leaves no temp file
+      // A failed move (e.g. on Windows, if the marker is being replaced at the same moment) leaves no temp file
       try Files.move(tmp.toPath, marker.toPath, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
       finally Files.deleteIfExists(tmp.toPath)
       logger.info(
@@ -648,8 +648,8 @@ class LocalImageCacheService(
         registry.put(filePath, ())   // claim before async write
         file.getParentFile.mkdirs()
         Future {
-          // Write to a temp file then atomically rename, so a reader (Apache or the
-          // sibling blue/green instance sharing this directory) never sees a partial JPEG.
+          // Write to a temp file then atomically rename, so a reader (Apache serving the
+          // cache directory, or this instance's own lookups) never sees a partial JPEG.
           val tmp = File.createTempFile(".tmp-", ".jpg", file.getParentFile)
           try {
             ImageIO.write(img, "JPEG", tmp)

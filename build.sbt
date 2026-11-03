@@ -109,7 +109,13 @@ name := "wlxjury"
 
 organization := "org.intracer"
 
-version := "0.13"
+// Calendar version YY.MM (.N for an extra deploy in the same month); the snapshot carries the
+// next release. Release steps: docs/workflow/practices.md §7.4.
+version := "26.11-SNAPSHOT"
+// Package versions: Debian sorts `~` before anything, so 26.11~SNAPSHOT < 26.11 < 26.11.1 (and
+// 26.11 > 0.13); rpmbuild refuses `-` in a version, and rpmRelease is already SNAPSHOT for one.
+Debian / version := version.value.replace("-SNAPSHOT", "~SNAPSHOT")
+Rpm / version := version.value.stripSuffix("-SNAPSHOT")
 
 // The same identity is embedded in the app and placed at the ZIP root. The
 // deployment tool compares readiness with this manifest before opening traffic.

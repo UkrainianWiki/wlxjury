@@ -1,5 +1,9 @@
 # scripts/
 
+Other folders: [`deployment/`](deployment/) (the release tools and their tests,
+[deployment.md](../docs/deployment.md)) and [`review/`](review/README.md) (CodeRabbit requests and
+review triage).
+
 ## run-with-prod-dump.sh
 
 Dumps the production DB, restores it into a local MariaDB 10.6 Docker container on port 3307, and starts the sbt dev server against it — so you can test the current branch against real production data without touching the live database.

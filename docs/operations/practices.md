@@ -179,3 +179,11 @@ secure-coding §18. A new pool, worker count or limit is checked against those b
 - **OP4 (1.3, 5.3):** the password sign-in form (`LoginController`) logs no failure line: a
   wrong password only re-renders the form with `invalid.user.or.password`. fail2ban (S4) needs a
   `security.auth` line with the client's `ip=` (and the account id, if any) there first.
+- **OP5 (2, 6; low to medium, pre-existing; found in #250's review):** the image cache's start-up
+  walk (`LocalImageCacheService.initRegistry`, `Files.walk`) throws `NoSuchFileException` if an
+  entry disappears mid-walk, and deletes every `.tmp-` file, in-flight writes included. Across
+  instances it can't happen now (blue/green was dropped); within one instance it can: the walk
+  races the thumbnail writes of the first requests (`saveResized` writes `.tmp-` then moves). A
+  failed walk leaves `registryReady` failed for good, so local image downloads fail until a
+  restart, and the unused-sizes cleanup is skipped. Suggested fix: `Files.walkFileTree` with
+  `visitFileFailed` returning `CONTINUE`, and delete only `.tmp-` files older than about an hour.

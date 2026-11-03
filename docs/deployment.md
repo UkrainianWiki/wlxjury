@@ -84,11 +84,11 @@ Use the printed record ID. `scrub-legacy` requires an accepted rollout and verif
 
 ```bash
 sbt test
-sbt -Dwlxjury.buildId=0.13-reviewed dist
-sha256sum target/universal/wlxjury-0.13.zip
+sbt -Dwlxjury.buildId=26.11 dist
+sha256sum target/universal/wlxjury-26.11.zip
 ```
 
-Use a reviewed build name and the final ZIP hash. A requested build ID is refused if `app`, `conf`, `public`, `project` or `build.sbt` has uncommitted **or untracked** changes (untracked Twirl templates are compiled too), and the short commit is appended unless the name already contains it, e.g. `0.13-reviewed-dbedca565807`. Without `-Dwlxjury.buildId` the ID is version and commit, with `-dirty` for any such change. The rules are in `project/BuildIdentity.scala`, tested by `deployment.BuildIdentitySpec`. Server setup files (`conf/wlxjury`, `conf/apache`, `conf/systemd`) are installed from the checkout and are not in the ZIP. `wlxjury-build.json` is both at the release root and embedded in the app; it contains build, version and the latest numerically ordered migration, including 55.1. Artifact hashes distinguish packages even when version/build names repeat.
+Versions are calendar-based, `YY.MM` with `.N` for an extra deploy in the same month; the release commit sets `version := "26.11"` in `build.sbt` (between releases it is the next one's snapshot, `26.11-SNAPSHOT`, whose ZIP is `wlxjury-26.11-SNAPSHOT.zip`). The steps are in [workflow practices](workflow/practices.md) §7.4. Builds before this scheme are named `0.13-…`. Use a reviewed build name and the final ZIP hash. A requested build ID is refused if `app`, `conf`, `public`, `project` or `build.sbt` has uncommitted **or untracked** changes (untracked Twirl templates are compiled too), and the short commit is appended unless the name already contains it, e.g. `26.11-dbedca565807`; the release directory on the server is that ID plus the ZIP hash's first 12 characters. Without `-Dwlxjury.buildId` the ID is version and commit, with `-dirty` for any such change. The rules are in `project/BuildIdentity.scala`, tested by `deployment.BuildIdentitySpec`. Server setup files (`conf/wlxjury`, `conf/apache`, `conf/systemd`) are installed from the checkout and are not in the ZIP. `wlxjury-build.json` is both at the release root and embedded in the app; it contains build, version and the latest numerically ordered migration, including 55.1. Artifact hashes distinguish packages even when version/build names repeat.
 
 Rehearse the **exact ZIP** against a consistent isolated production copy on production's MariaDB (10.6 until the move to Ubuntu 24.04's 10.11, `docs/plans/2026-10-19-mariadb-10.11.md`), including Flyway history. Production MyISAM needs locking or stopped writers; `--single-transaction` alone is insufficient. Disable real email, isolate access and staging cache, and prevent copied jobs from contacting production services. Measure migration, startup, backup, restore and peak space; review V58 orphans, V65 orphans (the count of `category_members` rows whose image or category is gone, which V65 archives into `category_members_orphans` and deletes; the check query is in its header) and V60 job recovery. Test restoring the backup and old release too.
 
@@ -96,10 +96,10 @@ From V53, this release applies V54, V55, V55.1 and V56–V60. V55.1 rebuilds tab
 
 ## Cutover deployment with wlxjury-deploy
 
-Use this for the cutover release. Upload the reviewed ZIP:
+Use this for the cutover release (release 1, `26.11`; the ZIP built above). Upload the reviewed ZIP:
 
 ```bash
-sudo wlxjury-deploy prepare /srv/releases/wlxjury-0.13.zip --sha256 FULL_LOWERCASE_SHA256
+sudo wlxjury-deploy prepare /srv/releases/wlxjury-26.11.zip --sha256 FULL_LOWERCASE_SHA256
 sudo wlxjury-deploy deploy /opt/wlxjury/releases/PRINTED_RELEASE_NAME --writers-reviewed
 ```
 
@@ -170,7 +170,7 @@ sudo install -o root -g root -m 0755 scripts/deployment/wlxjury-release.sh /usr/
 Run it inside `tmux`, with the reviewed ZIP from `sbt dist` and its full SHA-256:
 
 ```bash
-sudo wlxjury-release deploy /srv/releases/wlxjury-0.14.zip FULL_LOWERCASE_SHA256
+sudo wlxjury-release deploy /srv/releases/wlxjury-26.11.zip FULL_LOWERCASE_SHA256
 # Smoke-test http://127.0.0.1:9000/ locally with a jury name (curl -H 'Host: jury.example.org'), as for the cutover. Then:
 sudo wlxjury-release reopen OPERATION
 ```
