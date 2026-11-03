@@ -143,17 +143,22 @@ class RoundController @Inject() (
   private def coiCounts(contestId: Long, roundId: Option[Long]): CoiCounts = {
     val members = CoiMembers.forContest(contestId)
     ContestJuryJdbc.findById(contestId).flatMap(_.categoryId).fold(CoiCounts(0, None, 0L)) { categoryId =>
+      val round = roundId.flatMap(Round.findById)
       CoiCounts(CoiMembers.files(categoryId, members).size, roundId.map(CoiMembers.roundFiles(_, members).size),
-        CoiMembers.filesWithoutAuthor(categoryId))
+        CoiMembers.filesWithoutAuthor(categoryId), excluded = round.exists(_.excludeCoi),
+        open = round.exists(r => r.active || r.distributing || r.freezeCount > 0))
     }
   }
 
-  /** The round form's "Leave out conflicts of interest" saved for an existing round: ticked,
-    * takes the round's conflict-of-interest files out with their votes, which are not kept,
-    * and leaves them out of its later distributions ([[RoundConflicts.removeFromRound]], which
-    * refuses while a distribution of the round is queued or running); a round that isn't open
-    * and has none just keeps them out. Unticked, stops leaving them out: files taken out
-    * don't come back, later distributions may add them.
+  /** The round form's "Leave out conflicts of interest" saved for an existing round. Ticked on
+    * a round that didn't leave them out: disqualifies its conflict-of-interest files, keeping
+    * their votes aside, and leaves them out of its later distributions
+    * ([[RoundConflicts.disqualify]]: only while the round is not open to its jurors, W7, and no
+    * distribution of it is queued or running; on an open or frozen round only the flag is set).
+    * Ticked on a round that already leaves them out: nothing, so a file requalified on the
+    * round's conflicts page stays (review finding 2); later matches are disqualified there.
+    * Unticked: stops leaving them out; files disqualified stay so, later distributions may add
+    * the others.
     *
     * @return the flash messages to show
     */
@@ -164,20 +169,24 @@ class RoundController @Inject() (
     if (!exclude) {
       if (stored.excludeCoi) Round.setExcludeCoi(roundId, excludeCoi = false)
       Nil
-    } else {
+    } else if (stored.excludeCoi) Nil
+    else {
       val inRound = CoiMembers.roundFiles(roundId, CoiMembers.forContest(stored.contestId))
-      if (inRound.isEmpty && stored.excludeCoi) Nil
-      else
-        RoundConflicts.removeFromRound(roundId, user, RoundDistributionHandler.dedupeKey(roundId)) match {
-          case RoundConflicts.Outcome.Removed(files) =>
-            if (files.isEmpty) Nil else Seq("success" -> messages("coi.removed", files.size, stored.number))
-          case RoundConflicts.Outcome.NotOpen if inRound.isEmpty =>
-            Round.setExcludeCoi(roundId, excludeCoi = true)
-            Nil
-          case RoundConflicts.Outcome.NotOpen      => Seq("error" -> messages("coi.remove.not.open", stored.number))
-          case RoundConflicts.Outcome.Distributing => Seq("error" -> messages("coi.remove.distributing", stored.number))
-          case RoundConflicts.Outcome.NotFound     => Nil
-        }
+      // the flag is set under the round's lock, also when the round is open or frozen
+      RoundConflicts.disqualify(roundId, user, RoundDistributionHandler.dedupeKey(roundId), excludeCoi = true) match {
+        case RoundConflicts.Outcome.Disqualified(files) =>
+          if (files.isEmpty) Nil else Seq("success" -> messages("coi.disqualified", files.size, stored.number))
+        // refused before the flag was set: said whether or not the round has conflicts
+        case RoundConflicts.Outcome.Distributing => Seq("error" -> messages("coi.remove.distributing", stored.number))
+        case _ if inRound.isEmpty                => Nil
+        // the flag is set, and a later save changes nothing: the round's conflicts page, linked
+        // on the rounds list (`coiRound`), disqualifies them once the round is stopped
+        case RoundConflicts.Outcome.Open =>
+          Seq("error" -> messages("coi.disqualify.open", stored.number, inRound.size), "coiRound" -> roundId.toString)
+        case RoundConflicts.Outcome.Frozen =>
+          Seq("error" -> messages("coi.disqualify.frozen", stored.number), "coiRound" -> roundId.toString)
+        case _ => Nil
+      }
     }
   }
 
@@ -591,7 +600,16 @@ object RoundController {
 /** The round form's conflict-of-interest counts: the contest's files that are conflicts of
   * interest, an existing round's (`inRound`), and the contest's files without a stored author.
   */
-final case class CoiCounts(conflicts: Int, inRound: Option[Int], withoutAuthor: Long) {
+/** The round form's conflicts of interest ([[RoundController]]): the contest's, the round's,
+  * those without an author; whether the round leaves them out already (saving it ticked then
+  * changes nothing, so nothing is confirmed) and is open or frozen (saving only sets the flag).
+  */
+final case class CoiCounts(conflicts: Int, inRound: Option[Int], withoutAuthor: Long, excluded: Boolean = false,
+    open: Boolean = false) {
+
+  /** The files a save of the ticked box would disqualify, for the browser's confirm. */
+  def toConfirm: Int = if (excluded || open) 0 else inRound.getOrElse(0)
+
   def describe(implicit messages: play.api.i18n.Messages): String =
     inRound.fold(messages("coi.count", conflicts))(n => messages("coi.count.round", n, conflicts) + " " +
       messages("coi.exclude.edit")) +

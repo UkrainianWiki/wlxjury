@@ -10,6 +10,8 @@ import play.api.test.CSRFTokenHelper._
 import play.api.test.{FakeRequest, PlaySpecification}
 import services.{SMTPOrWikiMail, UserService}
 
+import scalikejdbc._
+
 import scala.concurrent.Future
 
 /** Conflicts of interest and access: the board, auditors and staff (roles without access)
@@ -161,11 +163,14 @@ class CoiAuthorizationSpec extends PlaySpecification with PlayTestDb with Mockit
 
   "the round form's \"Leave out conflicts of interest\" of an existing round" should {
 
-    "show the round's own count, and ask before taking them out" in {
+    "show the round's own count, and ask before disqualifying them: on a stopped round only" in {
       testDbApp { app =>
         val round = setUp()
-        val html = contentAsString(page(app, "admin@example.com", s"/admin/rounds/edit?id=${round.getId}&contestId=$contestId"))
+        def html = contentAsString(page(app, "admin@example.com", s"/admin/rounds/edit?id=${round.getId}&contestId=$contestId"))
+        // open: saving only sets the flag, nothing to confirm
         html must contain("2 of this round")
+        html must contain("data-coi-round-files=\"0\"")
+        Round.setActive(round.getId, active = false)
         html must contain("data-coi-round-files=\"2\"")
         html must not(contain("remove-conflicts"))
       }
@@ -182,20 +187,81 @@ class CoiAuthorizationSpec extends PlaySpecification with PlayTestDb with Mockit
       }
     }
 
-    "take them out when its contest's admin saves it ticked, and for root" in {
+    "only set the flag of an open round, saying to stop it first (W7)" in {
       testDbApp { app =>
         val round = setUp()
         val result = save(app, "admin@example.com", saveRound(round, excludeCoi = true))
         status(result) === SEE_OTHER
+        flash(result).get("error") must beSome(contain("stop the round"))
+        // a later save does nothing: the rounds list links the round's conflicts page
+        flash(result).get("coiRound") must beSome(round.getId.toString)
+        contentAsString(route(app, FakeRequest(GET, s"/admin/rounds?contestId=$contestId")
+          .withSession(Secured.UserName -> "admin@example.com", Secured.CurrentContestId -> contestId.toString)
+          .withFlash("error" -> "x", "coiRound" -> round.getId.toString).withCSRFToken).get) must
+          contain(s"/admin/rounds/${round.getId}/conflicts")
+        VoteJdbc.byRound(round.getId).map(_.pageId).toSet === Set(1L, 2L, 3L)
+        RoundImageJdbc.disqualified(round.getId) must beEmpty
+        roundDao.findById(round.getId).get.excludeCoi must beTrue
+      }
+    }
+
+    "disqualify them, keeping their votes, when its contest's admin saves a stopped round ticked, and for root" in {
+      testDbApp { app =>
+        val round = setUp()
+        Round.setActive(round.getId, active = false)
+        val result = save(app, "admin@example.com", saveRound(round, excludeCoi = true))
+        status(result) === SEE_OTHER
         flash(result).get("success") must beSome(contain("2"))
         VoteJdbc.byRound(round.getId).map(_.pageId).toSet === Set(3L)
+        RoundImageJdbc.disqualified(round.getId).map(_.pageId) === Seq(1L, 2L)
+        DB.readOnly(implicit s => sql"SELECT page_id FROM vote_aside WHERE round_id = ${round.getId}".map(_.long(1)).list())
+          .toSet === Set(1L, 2L)
         roundDao.findById(round.getId).get.excludeCoi must beTrue
 
-        val other = roundDao.create(Round(None, 2, Some("R2"), contestId, active = true))
+        val other = roundDao.create(Round(None, 2, Some("R2"), contestId, active = false))
         VoteJdbc.create(1L, 0, User.findByEmail("juror@example.com").head.getId, other.getId)
         User.create(User("root@example.com", "root@example.com", None, Set(User.ROOT_ROLE), Some("hash")))
         status(save(app, "root@example.com", saveRound(other, excludeCoi = true))) === SEE_OTHER
         VoteJdbc.byRound(other.getId) must beEmpty
+        RoundImageJdbc.disqualified(other.getId).map(_.pageId) === Seq(1L)
+      }
+    }
+
+    "not disqualify again on a later save, so a requalified file stays in (review finding 2)" in {
+      testDbApp { app =>
+        val round = setUp()
+        val r = round.getId
+        Round.setActive(r, active = false)
+        status(save(app, "admin@example.com", saveRound(round, excludeCoi = true))) === SEE_OTHER
+        RoundImageJdbc.disqualified(r).map(_.pageId) === Seq(1L, 2L)
+        val admin = User.findByEmail("admin@example.com").head
+        RoundConflicts.requalify(r, Seq(1L), RoundConflicts.RequalifyReason.MistakenMatch, admin,
+          services.distribution.RoundDistributionHandler.dedupeKey(r)) === RoundConflicts.Outcome.Requalified(Seq(1L))
+        // the form, the flag set: no confirm, and a save changes nothing
+        contentAsString(page(app, "admin@example.com", s"/admin/rounds/edit?id=$r&contestId=$contestId")) must
+          contain("data-coi-round-files=\"0\"")
+        val again = save(app, "admin@example.com", saveRound(round, excludeCoi = true))
+        status(again) === SEE_OTHER
+        flash(again).get("success") must beNone
+        RoundImageJdbc.disqualified(r).map(_.pageId) === Seq(2L)
+        VoteJdbc.byRound(r).map(_.pageId).toSet === Set(1L, 3L)
+      }
+    }
+
+    "say the round is being distributed, also when it has no conflicts, and not set the flag" in {
+      testDbApp { app =>
+        setUp()
+        val juror = User.findByEmail("juror@example.com").head
+        val clean = roundDao.create(Round(None, 2, Some("R2"), contestId, active = false))
+        VoteJdbc.create(3L, 0, juror.getId, clean.getId)
+        DB.autoCommit { implicit s =>
+          services.jobs.JobJdbc.insert(services.jobs.NewJob(services.distribution.RoundDistributionHandler.Kind,
+            Some(contestId), Some(services.distribution.RoundDistributionHandler.SubjectType), clean.id,
+            Some(services.distribution.RoundDistributionHandler.dedupeKey(clean.getId))), owner = None)
+        }
+        val result = save(app, "admin@example.com", saveRound(clean, excludeCoi = true))
+        (status(result) === SEE_OTHER) and (flash(result).get("error") must beSome(contain("distributed"))) and
+          (roundDao.findById(clean.getId).get.excludeCoi must beFalse)
       }
     }
 
@@ -214,6 +280,7 @@ class CoiAuthorizationSpec extends PlaySpecification with PlayTestDb with Mockit
     "need the CSRF token" in {
       withCsrfApp { app =>
         val round = setUp()
+        Round.setActive(round.getId, active = false)
         val sessionToken = token(app)
         def post(body: (String, String)*) =
           route(app, FakeRequest(POST, "/admin/rounds/save")
