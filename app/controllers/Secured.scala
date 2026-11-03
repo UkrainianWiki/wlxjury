@@ -26,8 +26,7 @@ abstract class Secured(cc: ControllerComponents) extends AbstractController(cc) 
     * @return
     *   optional user from database, in the session's current contest
     */
-  def userFromRequest(request: RequestHeader): Option[User] =
-    request.session.get(UserName).flatMap(Secured.sessionUser(_, request.session.get(CurrentContestId)))
+  def userFromRequest(request: RequestHeader): Option[User] = Secured.sessionUserOf(request)
 
   /** To the login page, which comes back here after signing in: a GET's page only. A
     * request sent by script ([[Secured.isScriptRequest]]) gets a JSON 401 instead, so that
@@ -202,10 +201,8 @@ abstract class Secured(cc: ControllerComponents) extends AbstractController(cc) 
   /** The permitted user ([[Secured.permitted]]), or the denial of the permission as checked
     * for them ([[Secured.forUser]]).
     */
-  private def checked(user: User, permission: Permission): Either[Secured.Denial, User] = {
-    val userPermission = Secured.forUser(user, permission)
-    Secured.permitted(user, userPermission).toRight(Secured.denialOf(userPermission))
-  }
+  private def checked(user: User, permission: Permission): Either[Secured.Denial, User] =
+    Secured.checked(user, permission)
 
   def rolePermission(roles: Set[String]): Secured.RolePermission = Secured.RolePermission(roles)
 
@@ -285,10 +282,21 @@ object Secured {
 
   private val authzLogger = play.api.Logger("security.authz")
 
-  /** Logs the denial at WARN and returns the line's reference, for the page to show. */
-  def logDenial(user: User, request: RequestHeader, denial: Denial): String = {
+  /** The permitted user ([[permitted]]), or the denial of the permission as checked for
+    * them ([[forUser]]): the check of every action, the API's ([[api.ApiAuth]]) included.
+    */
+  def checked(user: User, permission: User => Boolean): Either[Denial, User] = {
+    val userPermission = forUser(user, permission)
+    permitted(user, userPermission).toRight(denialOf(userPermission))
+  }
+
+  /** Logs the denial at WARN and returns the line's reference, for the page to show.
+    * `fields`: trusted key-value fields appended to the line (the API's `auth=token
+    * tokenId=12`).
+    */
+  def logDenial(user: User, request: RequestHeader, denial: Denial, fields: Seq[(String, String)] = Nil): String = {
     val reference = newReference()
-    authzLogger.warn(denialLogLine(user, request, denial, reference))
+    authzLogger.warn(denialLogLine(user, request, denial, reference, fields))
     reference
   }
 
@@ -325,7 +333,8 @@ object Secured {
     }
 
   /** The denial's log line: key-value fields, untrusted text quoted ([[logValue]]). */
-  def denialLogLine(user: User, request: RequestHeader, denial: Denial, reference: String): String = {
+  def denialLogLine(user: User, request: RequestHeader, denial: Denial, reference: String,
+                    fields: Seq[(String, String)] = Nil): String = {
     val targetMembership = denial.contestId.flatMap(id => user.userContests.find(_.contestId == id))
     val targetMembershipState = denial.contestId match {
       case None    => "not_applicable"
@@ -348,7 +357,8 @@ object Secured {
       s"requiredRoles=${logValue(roleList(denial.requiredRoles, "unknown"))} " +
       s"accountRoles=${logValue(roleList(user.roles, "none"))} " +
       s"targetContestMembershipState=$targetMembershipState " +
-      s"targetContestRoles=${logValue(targetContestRoles)} reason=${denialReason(user, denial)}"
+      s"targetContestRoles=${logValue(targetContestRoles)} reason=${denialReason(user, denial)}" +
+      fields.map { case (key, value) => s" $key=$value" }.mkString
   }
 
   /** Escape untrusted text so log fields stay single-line and key-value parseable. */
@@ -379,6 +389,12 @@ object Secured {
 
   /** The session's user name as users are looked up by: the login stores it as typed. */
   def normalizeUserName(userName: String): String = userName.trim.toLowerCase
+
+  /** The request's session user, in the session's current contest
+    * ([[Secured.userFromRequest]]).
+    */
+  def sessionUserOf(request: RequestHeader): Option[User] =
+    request.session.get(UserName).flatMap(sessionUser(_, request.session.get(CurrentContestId)))
 
   /** The session's user ([[Secured.userFromRequest]]), in `currentContestId` as
     * [[inCurrentContest]] picks it.
