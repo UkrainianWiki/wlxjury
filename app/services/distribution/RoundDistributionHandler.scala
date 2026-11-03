@@ -281,7 +281,7 @@ class RoundDistributionHandler @Inject() (
     val st = stateOf(job)
     val roundId = roundIdOf(job)
     val prevIds = if (listOnly(job)) Nil else Round.findById(roundId).map(_.previousIds).getOrElse(Nil)
-    // the round too, as creating the job locks it (RoundConflicts.removeFromRound)
+    // the round too, as creating the job locks it (RoundConflicts.disqualify)
     Round.lock((st.frozen ++ prevIds) :+ roundId)
     Round.release(st.frozen, close = false) // nothing, normally: a failure released them
     Round.freeze(prevIds)
@@ -846,7 +846,7 @@ object DistributionSource {
 
   /** A page of yes/no previous rounds' images by `order` over all their votes, approvals and
     * rejections counted together across the rounds, ties by page id: the same rule whatever
-    * "selected by at least" is (docs/plans/2026-11-01-binary-aggregate-votes.md, issue 2).
+    * "selected by at least" is (docs/history/2026-11-01-binary-aggregate-votes.md, issue 2).
     * `votes` keeps the files with an approval ("selected by at least" set) and those with
     * fewer rejections than "exclude files rejected by at least N". Each image's rating has its
     * approvals as its rate, so "selected by at least" compares them.

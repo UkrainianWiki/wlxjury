@@ -14,7 +14,7 @@ import scala.jdk.CollectionConverters._
 /** The app's DB pool and this JVM's GC pauses during a simulation (the app runs in the Gatling
   * JVM): every 100 ms the pool's active and idle connections and the threads waiting for one,
   * and every GC's pause. [[stop]] writes a summary next to the timing log
-  * (docs/plans/2026-10-28-gallery-latency.md).
+  * (98a8a79e:docs/plans/2026-10-28-gallery-latency.md).
   */
 object PoolWatcher {
 

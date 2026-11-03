@@ -1,7 +1,7 @@
 # Security register
 
 The one live status table of security items. IDs are the [consolidated
-report](2026-11-02-rereview-report.md)'s (N* new findings, O* open from the previous review,
+report](../history/security/2026-11-02-rereview-report.md)'s (N* new findings, O* open from the previous review,
 P* its remaining items); batches are the [resolution
 plan](../plans/2026-11-02-security-resolution.md)'s (S1–S10). Dated reviews and plans are
 snapshots: their tables are not updated, this one is. Rules: [secure-coding.md](secure-coding.md);
@@ -30,7 +30,7 @@ in progress; S6 on `ukwikidev/security-s6` (not merged); S7 queued; S4 and S8 fo
 | OA1 | Sign-in with Google/Wikimedia (the ported `oauth-login`): new public endpoints, first-sign-in account linking, own wiki account set by a Wikimedia link | Medium | Review fixes done on `ukwikidev/oauth-login-rebased` (B1–B5, M1–M4, L1–L6; the user's decisions; an account chooser), awaiting the follow-up review; off without config; pre-deploy audit (M2) in [the port note](../plans/2026-11-03-oauth-login-port.md) | app | — | `OAuthControllerSpec`, `OAuthRouterSpec`, `OAuthChooserSpec`, `IdentityLinkerSpec`, `ProvidersSpec`, `RouteAuthSpec` | 2026-11-03 |
 | P10 | Production dump and bench volumes on the workstation | Low | Open; S9 skipped for now | ops | S9 | — | 2026-11-02 |
 | P19 | No audit log of admin actions | Info | Scheduled with the rounds-parity plan's audit log | app | parity plan | — | 2026-11-02 |
-| N1 (production) | The role-allowlist hotfix on the server | High | Hotfix deployed 2026-11-02 as `0.13-round-filters-rolefix-f3f2c73617de` (branch `ukwikidev/hotfix-role-allowlist-f9c31ce5`, runbook [2026-11-02-role-allowlist-hotfix.md](2026-11-02-role-allowlist-hotfix.md) on that branch); the schema-66 ZIP from `ukwikidev/hotfix-role-allowlist` is superseded and must not be deployed; `jury1`/`jury-` rows reset; open: the user's `roles=root` browser check and the leftover query | ops | S1 | — | 2026-11-02 |
+| N1 (production) | The role-allowlist hotfix on the server | High | Hotfix deployed 2026-11-02 as `0.13-round-filters-rolefix-f3f2c73617de` (branch `ukwikidev/hotfix-role-allowlist-f9c31ce5`, runbook [2026-11-02-role-allowlist-hotfix.md](../history/security/2026-11-02-role-allowlist-hotfix.md) on that branch); the schema-66 ZIP from `ukwikidev/hotfix-role-allowlist` is superseded and must not be deployed; `jury1`/`jury-` rows reset; open: the user's `roles=root` browser check and the leftover query | ops | S1 | — | 2026-11-02 |
 
 ## Fixed
 
@@ -68,7 +68,7 @@ POST (`SignOutAndSwitchSpec`, `ThemeSwitchSpec`); mutation and view authorizatio
 (`MutationAuthorizationSpec`, `CommentAuthorizationSpec`, `OwnVotesSpec`,
 `CoiAuthorizationSpec`; G2 `RouteAuthSpec`, G2b `SignedOutSpec`); error pages with keys only
 (`ErrorHandlerSpec`); denial logs by account id (`SecuredSpec`). Details:
-[2026-11-02-rereview-previous.md](2026-11-02-rereview-previous.md).
+[2026-11-02-rereview-previous.md](../history/security/2026-11-02-rereview-previous.md).
 
 ## Updating this register
 

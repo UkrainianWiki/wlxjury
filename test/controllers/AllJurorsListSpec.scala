@@ -15,7 +15,7 @@ import scala.jdk.CollectionConverters._
 
 /** A binary round's file list and CSV of all the jurors' votes (`user/0`), the organisers':
   * a page at a time, the CSV streamed, both ranked among all the round's files
-  * (docs/plans/2026-11-01-binary-aggregate-votes.md, issue 4). Through the router.
+  * (docs/history/2026-11-01-binary-aggregate-votes.md, issue 4). Through the router.
   */
 class AllJurorsListSpec extends PlaySpecification with PlayTestDb {
 

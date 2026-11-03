@@ -373,7 +373,7 @@ object Round extends RoundRepo with CRUDMapper[Round] {
     updateById(id).withAttributes("name" -> round.name): Unit
 
   /** The round form's "Leave out conflicts of interest", for a round with none of them to
-    * take out, or to stop leaving them out ([[RoundConflicts.removeFromRound]] sets it for
+    * take out, or to stop leaving them out ([[RoundConflicts.disqualify]] sets it for
     * one with some).
     */
   def setExcludeCoi(id: Long, excludeCoi: Boolean): Unit =
@@ -565,7 +565,7 @@ object Round extends RoundRepo with CRUDMapper[Round] {
 
   /** A binary round's files with at least one approval (1), one vote yet to come (0) and one
     * rejection (-1): what its lists of all the jurors' votes filtered by each list
-    * (docs/plans/2026-11-01-binary-aggregate-votes.md, decision 3), a file in as many of them
+    * (docs/history/2026-11-01-binary-aggregate-votes.md, decision 3), a file in as many of them
     * as its votes are of kinds. One scan of the round's entries in
     * vote_round_page_rate_idx, without reading the rows.
     */

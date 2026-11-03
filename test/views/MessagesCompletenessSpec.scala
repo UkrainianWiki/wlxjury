@@ -83,7 +83,9 @@ class MessagesCompletenessSpec extends Specification {
   /** Keys built from a prefix and a value: the values each prefix takes. */
   private val prefixes: Map[String, Seq[String]] = Map(
     "role."  -> (User.FORM_ROLES.filterNot(_ == User.NO_ROLE) :+ User.ROOT_ROLE), // accessDenied
-    "theme." -> Theme.All.map(_.value)
+    "theme." -> Theme.All.map(_.value),
+    "coi.requalify.reason." -> db.scalikejdbc.RoundConflicts.RequalifyReason.All, // round/conflicts.scala.html
+    "coi.code." -> db.scalikejdbc.RoundImageJdbc.DqCode.All                         // round/conflicts.scala.html
   )
 
   /** Keys looked up from a value rather than a literal. */

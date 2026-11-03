@@ -42,12 +42,32 @@ jsTest := {
     val installed = scala.sys.process.Process(Seq(npm, "ci"), jsDir).!
     if (installed != 0) throw new MessageOnlyException("npm ci failed")
   }
-  val result = scala.sys.process.Process(Seq(npm, "test", "--", "--no-coverage"), jsDir).!
+  // `sbt coverage test` (the CI job "coverage") measures the JS too, into target/jest-coverage/
+  // (javascript-test/package.json, "jest"). A plain `sbt test` runs without it.
+  val coverageArgs = if (coverageEnabled.value) Seq("--coverage") else Seq("--no-coverage")
+  val result = scala.sys.process.Process(Seq(npm, "test", "--") ++ coverageArgs, jsDir).!
   if (result != 0) throw new MessageOnlyException("Jest tests failed")
 }
 
 // Wire jsTest into the normal `sbt test` run.
 Test / test := (Test / test).dependsOn(jsTest).value
+
+// Scala coverage (sbt-scoverage), measured only by `sbt coverage test coverageReport` in the CI
+// job "coverage" (plan: docs/plans/2026-11-03-ci-and-scalawiki-packages.md, "Test coverage").
+// Not measured: generated code, i.e. the Twirl templates and the routes and reverse routes.
+// The templates go by file only (below): views.html.bs also holds hand-written FieldView and
+// Layout (app/views/bs/), which are measured.
+coverageExcludedPackages := Seq(
+  "router\\..*",
+  "controllers\\.javascript\\..*",
+  "controllers\\.Reverse.*",
+  ".*BuildInfo.*"
+).mkString(";")
+// The same by file: every managed (generated) source under target/ (sbt-scoverage turns the `/`
+// into Windows' separator there)
+coverageExcludedFiles := ".*/target/.*"
+// Report only: no build fails on coverage yet
+coverageFailOnMinimum := false
 
 lazy val root =
   (project in file("."))
@@ -119,6 +139,15 @@ Universal / mappings ~= (_.filterNot { case (_, path) =>
   // Mapping paths use the build machine's separator.
   Seq("conf/wlxjury/", "conf/apache/", "conf/systemd/").exists(path.replace('\\', '/').startsWith)
 })
+// Instrumented classes call the scoverage runtime and write measurement files: never package them.
+// `sbt coverage ...` keeps coverage on for the rest of that sbt session; `coverageOff`, or a new
+// session, recompiles without it.
+Universal / mappings := {
+  val packaged = (Universal / mappings).value
+  if (coverageEnabled.value)
+    throw new MessageOnlyException("Coverage instrumentation is on: run `coverageOff`, or start a new sbt session, before packaging")
+  packaged
+}
 Test / unmanagedSources += baseDirectory.value / "project" / "BuildIdentity.scala"
 
 // Packaged assets get <md5>-<name> copies and <name>.md5 files, which routes.Assets.versioned

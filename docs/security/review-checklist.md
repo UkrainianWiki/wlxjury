@@ -12,11 +12,16 @@ same commit as the fix.
   `RouteAuthSpec.Public` with a reason; no new public route without one (§9).
 - [ ] A resource is checked in its own contest (`Secured.inContest`), never by switching the
   session on a POST or poll; request ids never `.get` (§9).
+- [ ] Only a page GET switches the session's contest (`Secured.isPageRequest`) (§9).
 - [ ] Negative tests: another contest's admin, an organizer, a juror, an inactive membership,
   signed out (§9).
 - [ ] A credential or email change bumps `auth_version`; a session check uses
   `Secured.sessionUser` (§15).
 - [ ] `returnTo` and other redirects pass `Secured.safeLocalPath` (§7).
+- [ ] An API change authorizes through `Secured`/`User` checks (no second role model); tokens
+  only under `/api/`, never logged, flashed or in a URL (§9).
+- [ ] JSON endpoints answer errors in JSON; signed out, a script request gets a JSON 401 and a page GET keeps
+  `returnTo` (§12).
 
 ## Roles and accounts
 
@@ -36,7 +41,9 @@ same commit as the fix.
 
 ## Views and JavaScript
 
-- [ ] No inline script, handler or `javascript:` URL; the CSP unchanged or narrower (§5).
+- [ ] No inline script, handler or `javascript:` URL; the CSP unchanged or narrower; no script,
+  style or font from another host (§5).
+- [ ] A cookie's value is parsed into its enumerated set, never written into a page as given (§6).
 - [ ] No new raw HTML sink (`Html(`, `HtmlFormat.raw`, `.html(`, `innerHTML`); values passed to
   vendored widgets escaped for their sink (§8).
 - [ ] Every state change is a POST with the CSRF token (`@csrfField()` or the `Csrf-Token`
@@ -59,6 +66,10 @@ same commit as the fix.
 - [ ] A new export writes through `Csv.writeRow`/`Csv.write` (§16).
 - [ ] New log lines carry ids only: no email, name, password, token or whole account; no bound
   SQL values (§13).
+- [ ] Emails only to the account and on the admins' users page; jurors' names, others' votes
+  and file authors only for `canViewOrgInfo` (root, admins, organizers; jurors only with the
+  round's `juryOrgView`); conflict-of-interest matches only to organizers and admins; no
+  production dump or derived data in the diff (§22).
 
 ## Dependencies
 

@@ -7,7 +7,7 @@ import java.nio.file.{Files, Path, Paths}
 import scala.jdk.CollectionConverters._
 
 /** The templates hold no script code, so that the content security policy can do without
-  * 'unsafe-inline' (docs/plans/2026-11-01-open-followups.md, section 5 and 2.4): every
+  * 'unsafe-inline' (98a8a79e:docs/plans/2026-11-01-open-followups.md, section 5 and 2.4): every
   * `<script>` has a `src` (public/javascripts, reading the page's data-* attributes) or is a
   * JSON data block (`type="application/json"`, which no browser runs), and no element has an
   * inline `on…=` handler. The only inline scripts are:
