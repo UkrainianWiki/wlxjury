@@ -169,6 +169,11 @@ thumbnail.urls = urls des vignettes
 thumbnail.urls.help = URL des vignettes sur ce serveur, une par ligne. Pour les télécharger avec wget ou un script, envoyez votre cookie de session.
 local.image.cache = Cache d''images local
 download.images.locally = Télécharger les images localement
+round.images.check.title = Images du tour
+round.images.check = Vérifier les images du tour
+round.images.check.all = Vérifier les images de tous les tours
+round.images.check.queued = Vérification des images mise en file (tâche {0})
+round.images.check.running = Une vérification des images est déjà en file ou en cours (tâche {0})
 contest = Concours
 
 mass.import = Importer massivement

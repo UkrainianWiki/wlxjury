@@ -26,8 +26,9 @@ object GatlingDbCache {
     * v3: the contest is "Wiki Loves Monuments" 2025 in "Ukraine", as production's are.
     * v4: the users' passwords are bcrypt hashes (the tests' cost, 4), not SHA-1.
     * v5: the dump's rows are INSERT IGNORE, so rows a migration seeds itself (V80's
-    *     session_upgrade_window) don't clash on restore after the migrations ran. */
-  val FixtureVersion = "fixture-v5"
+    *     session_upgrade_window) don't clash on restore after the migrations ran.
+    * v6: round_image (V84) rows, written by VoteJdbc.batchInsert with the votes. */
+  val FixtureVersion = "fixture-v6"
 
   // ── Cache key ──────────────────────────────────────────────────────────────
 
@@ -81,7 +82,7 @@ object GatlingDbCache {
     // Refresh optimizer statistics after restore so queries use correct execution plans.
     val analyzeResult = container.container.execInContainer("sh", "-c",
       s"mysql -u${container.username} -p${container.password} ${container.databaseName}" +
-      s" -e 'ANALYZE TABLE images, vote, monument, users, round, round_user;'"
+      s" -e 'ANALYZE TABLE images, vote, round_image, monument, users, round, round_user;'"
     )
     if (analyzeResult.getExitCode != 0)
       println(s"[GatlingDbCache] ANALYZE TABLE warning: ${analyzeResult.getStderr}")

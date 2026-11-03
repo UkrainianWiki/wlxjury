@@ -51,6 +51,8 @@ class CriteriaRateSpec extends Specification with TestDb with BeforeAll with Bef
         nextAsideId
       }
     }
+    // the file's row in the round (round_image, V84), as the app's writers keep it
+    DB.localTx(implicit s => db.scalikejdbc.RoundImageJdbc.sync(round.getId, Seq(pageId)))
     addRates(id, rates)
     id
   }

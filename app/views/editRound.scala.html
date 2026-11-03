@@ -186,5 +186,12 @@
               </form>
 
               <script src="@routes.Assets.versioned("javascripts/cache-status.js")"></script>
+
+              <hr/>
+              <h2 class="h4">@Messages("round.images.check.title")</h2>
+              <form method="post" action="@routes.RoundImageCheckController.checkRound(rid)">
+                @helper.CSRF.formField
+                <button type="submit" class="btn btn-outline-secondary">@Messages("round.images.check")</button>
+              </form>
             }
 }

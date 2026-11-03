@@ -75,6 +75,8 @@ object DistributionState {
   *     job never adds an image twice, nor one whose votes of the round were moved aside
   *     (`vote_aside`); and those deleted on Commons (`images.deleted_at`, V63, set
   *     by [[services.imports.CommonsFileCheck]]);
+  *     the round's files are its `round_image` rows (V84), written with the chunk's votes
+  *     ([[RoundImageJdbc.addVoted]], `added_how` `fill`, `list` or `new_files`, the job's id);
   *  3. apply the round's per-image filters ([[DistributeImages.perImageFilters]], the
   *     same chain as the in-memory path);
   *  4. assign jurors from the job's running position ([[DistributeImages.assign]]) and
@@ -321,7 +323,7 @@ class RoundDistributionHandler @Inject() (
             else c.filter(candidates(c, roundId, st1.cursor, window.last)).map(_.image)
           val rows = DistributeImages.assign(c.round, passed, c.jurors, st1.position)
           beforeInsert(c.round, passed)
-          DistributeImages.insertRows(rows)
+          DistributeImages.insertRows(rows, origin(job, listed = false))
           afterInsert(c.round, rows)
           if (rows.nonEmpty) ctx.afterCommit(RoundImageCounts.invalidate(roundId))
           continue(
@@ -345,6 +347,11 @@ class RoundDistributionHandler @Inject() (
             // the params have fewer titles than they count
             case Some(chunk) if chunk.titles == 0 => continue(st1.copy(phase = Phase.Verify))
             case Some(chunk) =>
+              // the round first (share mode), the lock order: updateStored locks the stored
+              // files' images and their votes (monument ids), some in this round, before the
+              // chunk's insert would lock the round; a criteria change (the round for update,
+              // then its votes) deadlocked with that
+              RoundImageJdbc.lockRounds(Seq(roundId))
               ImageJdbc.insertIgnore(chunk.fetched)
               updateStored(chunk)
               if (chunk.changed.nonEmpty) ctx.afterCommit(RegionCountCache.invalidateMonumentIds())
@@ -356,7 +363,7 @@ class RoundDistributionHandler @Inject() (
               val passed = listed.filterNot(i => conflictIds.contains(i.pageId))
               val rows = DistributeImages.assign(c.round, passed, c.jurors, st1.position)
               beforeInsert(c.round, passed)
-              DistributeImages.insertRows(rows)
+              DistributeImages.insertRows(rows, origin(job, listed = true))
               afterInsert(c.round, rows)
               if (rows.nonEmpty) ctx.afterCommit(RoundImageCounts.invalidate(roundId))
               continue(
@@ -440,19 +447,26 @@ class RoundDistributionHandler @Inject() (
     Progress(done = Some(st.candidatesSeen), total = st.total, unit = Some("images"))
 
   /** The round's images for the count check: also those with votes moved aside (V63), so
-    * moving votes aside or back doesn't change it: the visible ones, counted on the
-    * (round_id, page_id) index, and the few aside that have no visible vote in the round.
+    * moving votes aside or back doesn't change it: its rows in round_image (V84), whatever
+    * their status, one primary key range.
     */
-  private def imageCount(roundId: Long)(implicit session: DBSession): Long =
-    visibleImageCount(roundId) +
-      sql"""SELECT COUNT(DISTINCT d.page_id) FROM vote_aside d
-            WHERE d.round_id = $roundId
-              AND NOT EXISTS (SELECT 1 FROM vote s WHERE s.round_id = $roundId AND s.page_id = d.page_id)"""
-        .map(_.long(1)).single().getOrElse(0L)
+  private def imageCount(roundId: Long)(implicit session: DBSession): Long = RoundImageJdbc.countAll(roundId)
 
-  /** The round's images the galleries show. */
-  private def visibleImageCount(roundId: Long)(implicit session: DBSession): Long =
-    sql"SELECT COUNT(DISTINCT page_id) FROM vote WHERE round_id = $roundId".map(_.long(1)).single().getOrElse(0L)
+  /** The round's images the galleries show: those `in` it. */
+  private def visibleImageCount(roundId: Long)(implicit session: DBSession): Long = RoundImageJdbc.countIn(roundId)
+
+  /** How this job adds files to the round ([[RoundImageJdbc.Origin]]): a creation's by its
+    * filters (`fill`) or its pasted list (`list`); "Distribute new files" on a round created
+    * before (`new_files`, its list `list`).
+    */
+  private def origin(job: Job, listed: Boolean): RoundImageJdbc.Origin = {
+    val creating = (job.params \ "completingCreation").asOpt[Boolean].getOrElse(false)
+    val how =
+      if (listed) RoundImageJdbc.AddedHow.List
+      else if (creating) RoundImageJdbc.AddedHow.Fill
+      else RoundImageJdbc.AddedHow.NewFiles
+    RoundImageJdbc.Origin(how, Some(job.id))
+  }
 
   private def estimate(c: Context, st: DistributionState)(implicit session: DBSession): Long =
     if (c.topN.isDefined) st.ranked.size.toLong
@@ -637,11 +651,19 @@ object DistributionSource {
 
   /** Images of the round never come back: the anti-join that makes a resume idempotent.
     * Nor do those with votes of the round moved aside (V63): they are in the round's count
-    * already, and get their votes back if the file is restored.
+    * already, and get their votes back if the file is restored. A file with a row in the
+    * round (round_image, V84), whatever its status, is in it; the vote and vote_aside checks
+    * stay until the round_image_check job has shown no drift on production (plan §6, P1).
     */
   private def notInRound(roundId: Long, pageId: SQLSyntax): SQLSyntax =
-    sqls"""NOT EXISTS (SELECT 1 FROM vote x WHERE x.round_id = $roundId AND x.page_id = $pageId)
+    sqls"""NOT EXISTS (SELECT 1 FROM round_image xr WHERE xr.round_id = $roundId AND xr.page_id = $pageId)
+           AND NOT EXISTS (SELECT 1 FROM vote x WHERE x.round_id = $roundId AND x.page_id = $pageId)
            AND NOT EXISTS (SELECT 1 FROM vote_aside xd WHERE xd.round_id = $roundId AND xd.page_id = $pageId)"""
+
+  /** No vote filter: the previous rounds' files are those `in` them (round_image), read
+    * one row per file instead of per vote.
+    */
+  private def unfiltered(votes: PrevVotes): Boolean = !votes.rated && votes.rejectedBy.isEmpty
 
   def categoryCount(categoryId: Long)(implicit session: DBSession): Long =
     sql"SELECT COUNT(*) FROM category_members WHERE category_id = $categoryId".map(_.long(1)).single().getOrElse(0L)
@@ -665,20 +687,31 @@ object DistributionSource {
       .list()
 
   def previousCount(prevIds: Seq[Long], votes: PrevVotes)(implicit session: DBSession): Long =
-    sql"""SELECT COUNT(DISTINCT s.page_id) FROM vote s
-          WHERE s.round_id IN ($prevIds) ${votesCond(prevIds, votes)}"""
+    (if (unfiltered(votes))
+       sql"""SELECT COUNT(DISTINCT ri.page_id) FROM round_image ri
+             WHERE ri.round_id IN ($prevIds) AND ri.status = ${RoundImageJdbc.Status.In}"""
+     else
+       sql"""SELECT COUNT(DISTINCT s.page_id) FROM vote s
+             WHERE s.round_id IN ($prevIds) ${votesCond(prevIds, votes)}""")
       .map(_.long(1)).single().getOrElse(0L)
 
   def previousWindow(prevIds: Seq[Long], votes: PrevVotes, cursor: Long, size: Int)(implicit
       session: DBSession
-  ): Window =
-    sql"""SELECT COUNT(*), MAX(page_id) FROM (
-            SELECT DISTINCT s.page_id FROM vote s
-            WHERE s.round_id IN ($prevIds) ${votesCond(prevIds, votes)} AND s.page_id > $cursor
-            ORDER BY s.page_id LIMIT $size) w"""
+  ): Window = {
+    val pages =
+      if (unfiltered(votes))
+        sqls"""SELECT DISTINCT ri.page_id FROM round_image ri
+               WHERE ri.round_id IN ($prevIds) AND ri.status = ${RoundImageJdbc.Status.In} AND ri.page_id > $cursor
+               ORDER BY ri.page_id LIMIT $size"""
+      else
+        sqls"""SELECT DISTINCT s.page_id FROM vote s
+               WHERE s.round_id IN ($prevIds) ${votesCond(prevIds, votes)} AND s.page_id > $cursor
+               ORDER BY s.page_id LIMIT $size"""
+    sql"SELECT COUNT(*), MAX(page_id) FROM ($pages) w"
       .map(rs => Window(rs.int(1), rs.longOpt(2).getOrElse(cursor)))
       .single()
       .getOrElse(Window.empty)
+  }
 
   /** The window's images not yet in the round, each with its ratings in the previous
     * rounds as the in-memory path builds them (`byRoundMerged` per round, then merged

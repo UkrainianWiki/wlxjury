@@ -209,16 +209,19 @@ object ImageJdbc extends CRUDMapper[Image]
 
   /** vote.monument_id (V48) is a copy of images.monument_id that the galleries
     * sort and filter by regions on; it must follow the image, also in the votes moved
-    * aside (V63), which may come back. A page_id lookup on the unique
-    * (page_id, jury_id, round_id) index; rows already right aren't rewritten.
+    * aside (V63), which may come back, and in the file's rows in its rounds (round_image,
+    * V84, last: the lock order). A page_id lookup on the unique (page_id, jury_id, round_id)
+    * index (round_image_page_id_idx); rows already right aren't rewritten.
     */
   private def syncSelectionMonumentId(pageId: Long, monumentId: Option[String])(implicit
       session: DBSession
-  ): Unit =
+  ): Unit = {
     Seq(sqls"vote", sqls"vote_aside").foreach { table =>
       sql"""UPDATE $table SET monument_id = $monumentId
             WHERE page_id = $pageId AND NOT (monument_id <=> $monumentId)""".update()
     }
+    RoundImageJdbc.syncMonumentId(pageId, monumentId)
+  }
 
   /** The stored file of that name, unless it was deleted on Commons (V63): a new upload
     * under the same name is another file, with another page id. Compared case-sensitively,
@@ -328,7 +331,10 @@ object ImageJdbc extends CRUDMapper[Image]
   def lockOpenRoundsOf(pageIds: Seq[Long])(implicit session: DBSession): Set[Long] =
     if (pageIds.isEmpty) Set.empty
     else {
-      val roundIds = sql"SELECT DISTINCT round_id FROM vote WHERE page_id IN ($pageIds)".map(_.long(1)).list()
+      // the rounds the files are in (round_image_page_id_idx), not their every vote row
+      val roundIds = sql"""SELECT DISTINCT round_id FROM round_image
+                           WHERE page_id IN ($pageIds) AND status = ${RoundImageJdbc.Status.In}"""
+        .map(_.long(1)).list()
       if (roundIds.isEmpty) Set.empty
       else
         sql"""SELECT id, ${Round.openCond(sqls"round")} FROM round WHERE id IN ($roundIds)
@@ -388,7 +394,8 @@ object ImageJdbc extends CRUDMapper[Image]
     * same vote that the move replaces are deleted with it.
     *
     * Lock order, as every vote delete or move: vote, then vote_aside, then
-    * criteria_rate ([[VoteJdbc.deleteVotes]], [[moveVotesBack]]).
+    * criteria_rate ([[VoteJdbc.deleteVotes]], [[moveVotesBack]]), then the files' rows in
+    * their rounds, `deleted` now ([[RoundImageJdbc.sync]]).
     *
     * @return their rounds
     */
@@ -397,9 +404,10 @@ object ImageJdbc extends CRUDMapper[Image]
     val v = sqls"v"
     // The latest rows, not the snapshot's, locked as the DELETE locks them: a shared lock
     // first would deadlock, on its upgrade, with a juror voting on one of them
-    val roundIds = sql"SELECT DISTINCT s.round_id FROM vote s WHERE ${where(s)} FOR UPDATE"
-      .map(_.long(1))
+    val pairs = sql"SELECT DISTINCT s.round_id, s.page_id FROM vote s WHERE ${where(s)} FOR UPDATE"
+      .map(rs => rs.long(1) -> rs.long(2))
       .list()
+    val roundIds = pairs.map(_._1).distinct
     // the rows aside that REPLACE drops: the same vote (page, juror, round) under another id,
     // moved aside before the file was distributed to the juror again; locked, then their
     // rates deleted. `where` on v: those rows have the moved rows' pages and rounds.
@@ -410,6 +418,7 @@ object ImageJdbc extends CRUDMapper[Image]
       .update()
     sql"REPLACE INTO vote_aside SELECT s.* FROM vote s WHERE ${where(s)}".update()
     sql"DELETE s FROM vote s WHERE ${where(s)}".update()
+    RoundImageJdbc.syncPairs(pairs)
     roundIds
   }
 
@@ -433,7 +442,9 @@ object ImageJdbc extends CRUDMapper[Image]
     * below reads them with a shared lock) and the files before, then the files' vote rows
     * (and the gaps where theirs would go), then vote_aside, then criteria_rate, as
     * [[moveVotesAside]], [[VoteJdbc.deleteVotes]] and [[RoundConflicts]]: locking
-    * vote_aside first deadlocked with them.
+    * vote_aside first deadlocked with them. Last, the files' rows in those rounds: `in` again
+    * ([[RoundImageJdbc.sync]]). P1b: a disqualified file's votes stay aside (a condition on
+    * its `round_image` status here).
     *
     * @return the rounds that gained rows
     */
@@ -442,9 +453,10 @@ object ImageJdbc extends CRUDMapper[Image]
     val sameVote = sqls"s.page_id = d.page_id AND s.jury_id = d.jury_id AND s.round_id = d.round_id"
     val roundExists = sqls"EXISTS (SELECT 1 FROM round r WHERE r.id = d.round_id)"
     sql"SELECT COUNT(*) FROM vote WHERE page_id IN ($pageIds) FOR UPDATE".map(_.int(1)).single()
-    val roundIds = sql"SELECT DISTINCT d.round_id FROM vote_aside d WHERE $where FOR UPDATE"
-      .map(_.long(1))
+    val moved = sql"SELECT DISTINCT d.round_id, d.page_id FROM vote_aside d WHERE $where FOR UPDATE"
+      .map(rs => rs.long(1) -> rs.long(2))
       .list()
+    val roundIds = moved.map(_._1).distinct
     // the new unrated rows a rated moved one replaces, with their criteria rates: rated is a
     // rate other than 0, or in a criteria round a criterion rated (a partly rated vote's rate
     // is 0, U5, but it holds the juror's work)
@@ -465,6 +477,7 @@ object ImageJdbc extends CRUDMapper[Image]
     sql"""DELETE cr FROM vote_aside d STRAIGHT_JOIN criteria_rate cr ON cr.vote_id = d.id
           WHERE $where AND NOT EXISTS (SELECT 1 FROM vote s WHERE s.id = d.id)""".update()
     sql"DELETE d FROM vote_aside d WHERE $where".update()
+    RoundImageJdbc.syncPairs(moved)
     roundIds
   }
 
@@ -666,7 +679,7 @@ object ImageJdbc extends CRUDMapper[Image]
     * votes in vote, which its galleries and results read.
     */
   def roundDeletedFileCounts(roundId: Long)(implicit session: DBSession = AutoSession): (Int, Int) =
-    sql"""SELECT COUNT(*), COALESCE(SUM(${hasVotes(sqls"vote", roundId)}), 0) FROM images i
+    sql"""SELECT COUNT(*), COALESCE(SUM(${countedIn(roundId)}), 0) FROM images i
           WHERE i.deleted_at IS NOT NULL AND ${inRound(roundId)}"""
       .map(rs => rs.int(1) -> rs.int(2))
       .single()
@@ -717,12 +730,16 @@ object ImageJdbc extends CRUDMapper[Image]
       case _                       => sqls""
     }
 
-  /** The file `i` has votes in the round, counted or moved aside. */
+  /** The file `i` is in the round, its votes counted or moved aside: a row of it there
+    * (round_image, V84), whatever its status. A primary key lookup per file.
+    */
   private def inRound(roundId: Long): SQLSyntax =
-    sqls"(${hasVotes(sqls"vote", roundId)} OR ${hasVotes(sqls"vote_aside", roundId)})"
+    sqls"EXISTS (SELECT 1 FROM round_image ri WHERE ri.round_id = $roundId AND ri.page_id = i.page_id)"
 
-  private def hasVotes(table: SQLSyntax, roundId: Long): SQLSyntax =
-    sqls"EXISTS (SELECT 1 FROM $table v WHERE v.round_id = $roundId AND v.page_id = i.page_id)"
+  /** The file `i` is counted in the round: `in` it (its votes in vote). */
+  private def countedIn(roundId: Long): SQLSyntax =
+    sqls"""EXISTS (SELECT 1 FROM round_image ri WHERE ri.round_id = $roundId AND ri.page_id = i.page_id
+                   AND ri.status = ${RoundImageJdbc.Status.In})"""
 
   private val LatestDeletedFirst = sqls"i.deleted_at DESC, i.page_id"
 
@@ -750,28 +767,18 @@ object ImageJdbc extends CRUDMapper[Image]
   GROUP BY rate""".map(rs => rs.int(1) -> rs.int(2)).list().toMap
 
   /** Distinct images per round, for the given rounds (rounds without images are left
-    * out). A loose scan of vote_round_page_rate_idx: no join through rounds, which
-    * prevented it. Callers go through [[RoundImageCounts]].
+    * out): the files `in` each (round_image, V84), one primary key range per round rather
+    * than a loose scan of the round's votes. Callers go through [[RoundImageCounts]].
     */
-  def imageCountByRounds(roundIds: Seq[Long]): Map[Long, Int] =
-    if (roundIds.isEmpty) Map.empty
-    else
-      sql"""SELECT s.round_id, COUNT(DISTINCT s.page_id) FROM vote s
-            WHERE s.round_id IN ($roundIds) GROUP BY s.round_id"""
-        .map(rs => rs.long(1) -> rs.int(2))
-        .list()
-        .toMap
+  def imageCountByRounds(roundIds: Seq[Long]): Map[Long, Int] = RoundImageJdbc.countsIn(roundIds)
 
-  def byRound(roundId: Long): List[Image] = withSQL {
-    select(distinct(i.result.*))
-      .from(ImageJdbc as i)
-      .innerJoin(VoteJdbc as s)
-      .on(i.pageId, s.pageId)
-      .where
-      .eq(s.roundId, roundId)
-  }.map { rs =>
-    ImageJdbc(i)(rs)
-  }.list()
+  /** The round's images (those with votes there: `in` it), by page id. */
+  def byRound(roundId: Long): List[Image] =
+    sql"""SELECT ${i.result.*} FROM round_image ri STRAIGHT_JOIN images i ON i.page_id = ri.page_id
+          WHERE ri.round_id = $roundId AND ri.status = ${RoundImageJdbc.Status.In}
+          ORDER BY ri.page_id"""
+      .map(ImageJdbc(i))
+      .list()
 
   /** The round's files, one row each with all their votes' sum and count; with `tally`, the
     * round's `isBinary`, their approvals and rejections apart too (a yes/no round's rows).

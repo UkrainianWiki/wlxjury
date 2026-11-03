@@ -214,7 +214,7 @@ class ConvertToInnoDbMigrationSpec extends Specification with BeforeAll with Aft
         rows(c, """SELECT CONSTRAINT_NAME, TABLE_NAME, REFERENCED_TABLE_NAME, DELETE_RULE
                    FROM information_schema.REFERENTIAL_CONSTRAINTS
                    WHERE CONSTRAINT_SCHEMA = DATABASE() AND REFERENCED_TABLE_NAME = 'images'
-                     AND TABLE_NAME <> 'category_members'""")(rs =>
+                     AND TABLE_NAME NOT IN ('category_members', 'round_image')""")(rs =>
           (rs.getString(1), rs.getString(2), rs.getString(3), rs.getString(4))) ===
           List(("vote_page_id_fk", "vote", "images", "CASCADE"))
         // the rows, the counter and production's id key (UNIQUE `id`, not PRIMARY) kept
@@ -225,12 +225,27 @@ class ConvertToInnoDbMigrationSpec extends Specification with BeforeAll with Aft
         rows(c, "SELECT vote_id, criterion_id, rate FROM criteria_rate")(rs => (rs.getLong(1), rs.getLong(2), rs.getInt(3))) ===
           List((10L, 1L, 5))
         rows(c, "SELECT COUNT(*) FROM criterion")(_.getInt(1)) === List(9)
+        // V84: the round's two files, from its votes, with their monument ids and regions; its
+        // keys to round and images (production's round_user lacks FK_round_user_round_id: V84
+        // doesn't need it)
+        rows(c, "SELECT round_id, page_id, status, added_how, monument_id, region FROM round_image ORDER BY 1, 2")(rs =>
+          (rs.getLong(1), rs.getLong(2), rs.getString(3), rs.getString(4), rs.getString(5), rs.getString(6))) === List(
+          (40L, 100L, "in", "legacy", "80-361-0001", "80"), (40L, 101L, "in", "legacy", "46-101-0002", "46"))
+        rows(c, """SELECT CONSTRAINT_NAME, REFERENCED_TABLE_NAME, DELETE_RULE FROM information_schema.REFERENTIAL_CONSTRAINTS
+                   WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'round_image' ORDER BY 1""")(rs =>
+          (rs.getString(1), rs.getString(2), rs.getString(3))) === List(
+          ("round_image_page_id_fk", "images", "CASCADE"), ("round_image_round_id_fk", "round", "CASCADE"))
+        // the copy of the image's monument id in the image's collation (V55.1's)
+        rows(c, """SELECT TABLE_NAME, COLLATION_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE()
+                   AND COLUMN_NAME = 'monument_id' AND TABLE_NAME IN ('images', 'round_image') ORDER BY 1""")(rs =>
+          rs.getString(1) -> rs.getString(2)) === List("images" -> "utf8mb4_general_ci", "round_image" -> "utf8mb4_general_ci")
         rows(c, """SELECT INDEX_NAME FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE()
                    AND TABLE_NAME = 'criteria_rate' AND COLUMN_NAME = 'id'""")(_.getString(1)) === List("PRIMARY")
         // every index and key of the renamed tables starts with its table's name, but the id keys
         rows(c, """SELECT DISTINCT TABLE_NAME, INDEX_NAME FROM information_schema.STATISTICS
                    WHERE TABLE_SCHEMA = DATABASE()
-                     AND TABLE_NAME IN ('vote', 'vote_aside', 'vote_orphan', 'criteria_rate', 'criteria_rate_orphan', 'round')
+                     AND TABLE_NAME IN ('vote', 'vote_aside', 'vote_orphan', 'criteria_rate', 'criteria_rate_orphan', 'round',
+                                        'round_image')
                      AND INDEX_NAME NOT IN ('PRIMARY', 'id') AND INDEX_NAME NOT LIKE CONCAT(TABLE_NAME, '\\_%')""")(rs =>
           (rs.getString(1), rs.getString(2))) must beEmpty
         memberKeys(c) === cascadingMemberKeys

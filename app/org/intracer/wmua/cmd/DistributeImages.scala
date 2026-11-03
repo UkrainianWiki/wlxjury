@@ -320,10 +320,13 @@ object DistributeImages {
     * without splitting it to fit the server's max_allowed_packet, so a batch of a whole
     * distribution (images x jurors rows, ~40 bytes each) fails with "Socket error" once it
     * outgrows it (16M by default). A criteria round's rates are written by its votes
-    * ([[org.intracer.wmua.CriteriaRate.updateRate]]), none here.
+    * ([[org.intracer.wmua.CriteriaRate.updateRate]]), none here. Each batch adds its files to
+    * the round (round_image, V84) as `origin` says.
     */
-  def insertRows(rows: Seq[Vote])(implicit session: DBSession): Unit =
-    rows.grouped(InsertChunk).foreach(VoteJdbc.batchInsert(_))
+  def insertRows(rows: Seq[Vote], origin: RoundImageJdbc.Origin = RoundImageJdbc.Origin.Manual)(implicit
+      session: DBSession
+  ): Unit =
+    rows.grouped(InsertChunk).foreach(VoteJdbc.batchInsert(_, origin))
 
   case class Rebalance(newSelections: Seq[Vote], removedSelections: Seq[Vote])
 
