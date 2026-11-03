@@ -37,6 +37,10 @@ for _ in $(seq 1 600); do
 done
 log "MariaDB up"
 
+# As Ubuntu's debian-start does on every start: a datadir from an older server (a 10.6
+# snapshot on the 10.11 image) gets its system tables upgraded; otherwise a no-op.
+mariadb-upgrade --silent >/dev/null
+
 # Accounts. The app's, as on production: privileges on its own database only. (With more,
 # e.g. SELECT on *.*, ScalikeJDBC's column discovery for `users` also finds
 # performance_schema.users, and every user query fails.) 'bench' is for checks from the host.

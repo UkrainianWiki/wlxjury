@@ -115,5 +115,38 @@ object Migrations {
           throw new PendingMigrations(pending.map(m => s"${Option(m.getVersion).getOrElse("R")} (${m.getScript})"))
         if (settings.validateOnStart) fw.validate()
       }
+      warnIfGalleryIndexAscending(url, user, password)
+    }
+
+  private val logger = play.api.Logger(getClass)
+
+  /** Whether the server stores descending index keys (MariaDB 10.8+) while vote's gallery index
+    * still has `rate` ascending: V85 ran before 10.8, and its ALTER wasn't run again after the
+    * move (docs/deployment.md, "MariaDB 10.11: V85's gallery index"). False when there is no
+    * `vote` table yet.
+    */
+  def galleryIndexLeftAscending(url: String, user: String, password: String): Boolean =
+    scala.util.Using.resource(java.sql.DriverManager.getConnection(url, user, password)) { c =>
+      scala.util.Using.resource(c.createStatement()) { st =>
+        scala.util.Using.resource(st.executeQuery(
+          """SELECT VERSION(), (SELECT COUNT(*) FROM information_schema.STATISTICS
+               WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'vote' AND COLUMN_NAME = 'rate'
+                 AND INDEX_NAME IN ('vote_jury_round_rate_mon_page_idx', 'vote_jury_round_ratedesc_mon_page_idx')
+                 AND COLLATION = 'A')""")) { rs =>
+          rs.next()
+          val version = rs.getString(1).split("[.-]").take(2).map(_.toInt)
+          version(0) * 1000 + version(1) >= 10008 && rs.getInt(2) > 0
+        }
+      }
+    }
+
+  /** The start's backstop for V85's re-run: a WARN, never a failed start. */
+  private def warnIfGalleryIndexAscending(url: String, user: String, password: String): Unit =
+    scala.util.Try(galleryIndexLeftAscending(url, user, password)) match {
+      case scala.util.Success(true) =>
+        logger.warn("vote's gallery index has rate ascending on a server with descending index keys: " +
+          "run V85's ALTER again (docs/deployment.md, \"MariaDB 10.11: V85's gallery index\")")
+      case scala.util.Success(false) => ()
+      case scala.util.Failure(e) => logger.warn(s"Could not check vote's gallery index: ${e.getClass.getSimpleName}")
     }
 }

@@ -28,7 +28,7 @@ object GatlingTestFixture {
     * this JVM (TestServer). */
   private def init(): GatlingFixtureData = {
     val container = MariaDBContainer(
-      dockerImageName = DockerImageName.parse("mariadb:10.6.22"),
+      dockerImageName = DockerImageName.parse(db.scalikejdbc.SharedTestDb.Image),
       dbName          = "wlxjury",
       dbUsername      = "WLXJURY_DB_USER",
       dbPassword      = "WLXJURY_DB_PASSWORD"

@@ -55,6 +55,10 @@ object GatlingDbCache {
     // GatlingDbSetup.load changes what it writes.
     md.update(FixtureVersion.getBytes("UTF-8"))
 
+    // The server the dump was made on (-Dwlxjury.test.mariadb-image): a 10.6 dump restored on
+    // 10.11 would carry 10.6's index and column definitions (V85, V86).
+    md.update(db.scalikejdbc.SharedTestDb.Image.getBytes("UTF-8"))
+
     md.digest().map("%02x".format(_)).mkString.take(16)
   }
 
