@@ -1,6 +1,6 @@
 package controllers
 
-import db.scalikejdbc.{MonumentJdbc, Round, RoundUser, VoteJdbc, User}
+import db.scalikejdbc.{MonumentJdbc, Round, RoundCriterion, RoundUser, VoteJdbc, User}
 import modules.RequestTiming
 import org.intracer.wmua._
 import play.api.i18n.I18nSupport
@@ -50,7 +50,7 @@ class LargeViewController @Inject() (
       pageId: Long,
       select: Int,
       region: String = "all",
-      criteria: Option[Int] = None
+      criteria: Option[Long] = None
   ): EssentialAction =
     withAuth(
       roundPermission(
@@ -73,9 +73,9 @@ class LargeViewController @Inject() (
         // the file's place, and where the vote goes on to, before the vote changes the list
         val hood = list.around(pageId)
 
-        // the juror's own selection of the file in the round, or of one of its criteria; a
-        // file the juror has no selection for in the round, or a criterion their selection
-        // hasn't, changes nothing and is a 404
+        // the juror's own vote of the file in the round, or of one of the round's criteria; a
+        // file the juror has no vote for in the round, or a criterion the round hasn't,
+        // changes nothing and is a 404
         val voted = criteria match {
           case None =>
             VoteJdbc.rate(pageId = pageId, juryId = user.getId, roundId = round.getId, rate = select) > 0
@@ -152,28 +152,14 @@ class LargeViewController @Inject() (
       VoteJdbc.byRoundAndImageWithJury(round.getId, pageId)
     } else Seq.empty
 
-    // the round's, also when it is the current one (roundId 0); none without a selection
-    val byCriteria = if (round.hasCriteria && asUserId != 0) {
-      VoteJdbc
-        .findBy(pageId, asUserId, round.getId)
-        .fold(Seq.empty[CriteriaRate])(vote => CriteriaRate.getRates(vote.getId))
-        .map(c => c.criteria.toInt -> c.rate)
-        .toMap
-    } else Map.empty[Int, Int]
-
-    val criteriaNames = if (round.hasCriteria) {
-      Map(
-        1 -> "Науковість",
-        2 -> "Підпис",
-        3 -> "Корисність",
-        4 -> "Естетика",
-        5 -> "Унікальність",
-        6 -> "Технічна якість",
-        7 -> "Корисність для Вікіпедії",
-        8 -> "Оригінальність фото",
-        9 -> "Додаткові бали"
-      ).collect { case (k, v) if byCriteria.keySet.contains(k) => v }.toSeq
-
+    // the round's criteria in their order, each with the viewed juror's rate (0 without one:
+    // rates are written by votes), also when it is the current round (roundId 0); none
+    // without a vote, nor for all the jurors together (C3)
+    val criteria: Seq[(Criterion, Int)] = if (round.hasCriteria && asUserId != 0) {
+      VoteJdbc.findBy(pageId, asUserId, round.getId).fold(Seq.empty[(Criterion, Int)]) { vote =>
+        val rates = CriteriaRate.getRates(vote.getId).map(c => c.criterionId -> c.rate).toMap
+        RoundCriterion.ofRound(round.getId).map(c => c -> rates.getOrElse(c.id, 0))
+      }
     } else Nil
 
     val monument = hood.file.image.monumentId.flatMap(id => if (id.trim.nonEmpty) MonumentJdbc.find(id) else None)
@@ -186,12 +172,12 @@ class LargeViewController @Inject() (
           RequestTiming.render(
             views.html.large.large(
               user,
-              list.withRound(round.copy(criteriaNames = criteriaNames)),
+              list,
               hood,
               monument,
               comments,
               votes,
-              byCriteria
+              criteria
             )
           )
         )

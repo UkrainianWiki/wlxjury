@@ -2,7 +2,6 @@ package db.scalikejdbc
 
 import db.RoundRepo
 import org.intracer.wmua.{BinaryOrder, CategoryRule, HasId}
-import org.intracer.wmua.cmd.DistributeImages
 import scalikejdbc._
 import scalikejdbc.orm.{CRUDMapper, JoinTable}
 
@@ -52,7 +51,6 @@ case class Round(
     topImages: Option[Int] = None,
     specialNomination: Option[String] = None,
     users: Seq[User] = Nil,
-    criteriaNames: Seq[String] = Nil,
     mediaType: Option[String] = None,
     submitToken: Option[String] = None,
     distributing: Boolean = false,
@@ -62,9 +60,12 @@ case class Round(
     // V72): the legacy rule (BinaryOrder.LegacyParam). A new round from a yes/no round stores
     // one (withExplicitTopOrder); over rated previous rounds it plays no part, and is NULL.
     topBinaryOrder: Option[BinaryOrder] = None,
-    // a criteria round's criteria, read for its by-rate gallery (CriteriaRate.countOf);
-    // otherwise those a distribution gives
-    criteriaCount: Int = DistributeImages.CriteriaIds.size
+    // the number of a criteria round's criteria, read for its by-rate gallery
+    // (RoundCriterion.countOf); not loaded with the round
+    criteriaCount: Int = 1,
+    // the round form's criteria, by position: a new round's are written with it (create);
+    // not loaded with the round (RoundCriterion.idsOf)
+    criterionIds: Seq[Long] = Nil
 ) extends HasId {
 
   /** Jurors may see and vote in the round: it is active, and not still being created
@@ -88,6 +89,9 @@ case class Round(
       .getOrElse(number.toString)
 
   def isBinary: Boolean = rates.id == Round.binaryRound.id
+
+  /** Rated on stars (1-N): neither binary nor comments only. Only such a round has criteria. */
+  def isRated: Boolean = !isBinary && rates.id != Round.commentsOnlyRound.id
 
   /** A rate's stored units per star: 2 in a half-star round (a half star is 1), else 1. */
   def starUnits: Int = if (rates.id > 5 && halfStar) 2 else 1
@@ -340,11 +344,14 @@ object Round extends RoundRepo with CRUDMapper[Round] {
           column.submitToken -> round.submitToken,
           column.distributing -> round.distributing,
           column.excludeCoi -> round.excludeCoi,
-          column.topBinaryOrder -> round.topBinaryOrder.map(_.param)
+          column.topBinaryOrder -> round.topBinaryOrder.map(_.param),
+          column.hasCriteria -> round.criterionIds.nonEmpty
         )
     }.updateAndReturnGeneratedKey()
 
-    round.copy(id = Some(id))
+    // its criteria, in the caller's session (RoundService.insert: the round's transaction)
+    RoundCriterion.insert(id, round.criterionIds)
+    round.copy(id = Some(id), hasCriteria = round.criterionIds.nonEmpty)
   }
 
   /** The round form's edit: its name. Starting and stopping it is [[setActiveGuarded]]'s. */

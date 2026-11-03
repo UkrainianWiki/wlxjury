@@ -141,6 +141,18 @@ class LargeViewSideSpec extends Specification {
     "show a whole-star round's rates as stored" in {
       criteria(large(criteriaRound, middle)) === Seq("2" -> "2.0", "3" -> "3.0")
     }
+
+    "show the round's criteria in their order by name, one not rated yet with its stars at 0" in {
+      val html = large(criteriaRound, middle, criteriaRates = Some(Map(2 -> 4)))
+      val doc = Jsoup.parse(html)
+      // the names: fallback texts, their keys having no messages
+      doc.select(".large-side .large-rate").size === 2
+      html.indexOf(">Quality<") must be_>(0)
+      html.indexOf(">Quality<") must be_<(html.indexOf(">Composition<"))
+      criteria(html) === Seq("–" -> "0.0", "4" -> "4.0")
+      doc.getElementById("rate-image1").attr("data-vote-query") must contain("criteria=1")
+      doc.getElementById("rate-image2").attr("data-vote-query") must contain("criteria=2")
+    }
   }
 
   "the side sections' headings" should {

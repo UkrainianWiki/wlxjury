@@ -27,8 +27,8 @@ class DistributeImages @Inject()(imageRepo: ImageRepo) extends Logging {
     val selection: Seq[Vote] = newSelection(round, images, jurors)
     logger.debug("saving selection: " + selection.size)
     DB.localTx { implicit session =>
-      // in batches, with the criteria rates: see DistributeImages.insertRows
-      DistributeImages.insertRows(round, selection)
+      // in batches: see DistributeImages.insertRows
+      DistributeImages.insertRows(selection)
     }
     round.id.foreach(RoundImageCounts.invalidate(_)) // after the commit
     logger.debug("saved selection")
@@ -282,11 +282,6 @@ object DistributeImages {
   /** Vote rows per insert batch: ~200 KB, well below any max_allowed_packet. */
   val InsertChunk = 5000
 
-  /** The criteria of a criteria round (legacy rounds only: the round form can't create
-    * one): every vote row gets a criteria_rate row per criterion.
-    */
-  val CriteriaIds: Seq[Int] = Seq(6, 7, 8, 9) // TODO load from DB
-
   /** A distribution needs jurors, each once: a juror listed twice would get duplicate
     * (page_id, jury_id, round_id) rows, which the unique index rejects mid-insert; and
     * no more jurors per image than there are jurors.
@@ -321,35 +316,14 @@ object DistributeImages {
         }
     }
 
-  /** Inserts vote rows, and their criteria rates in a criteria round, in the caller's
-    * transaction, in batches: the driver sends one batch without splitting it to fit
-    * the server's max_allowed_packet, so a batch of a whole distribution (images x jurors
-    * rows, ~40 bytes each) fails with "Socket error" once it outgrows it (16M by default).
-    *
-    * The rows' images must be new to the round (the distribution excludes the round's
-    * images): the criteria rates are added for every row of those images.
+  /** Inserts vote rows in the caller's transaction, in batches: the driver sends one batch
+    * without splitting it to fit the server's max_allowed_packet, so a batch of a whole
+    * distribution (images x jurors rows, ~40 bytes each) fails with "Socket error" once it
+    * outgrows it (16M by default). A criteria round's rates are written by its votes
+    * ([[org.intracer.wmua.CriteriaRate.updateRate]]), none here.
     */
-  def insertRows(round: Round, rows: Seq[Vote])(implicit session: DBSession): Unit =
-    if (rows.nonEmpty) {
-      rows.grouped(InsertChunk).foreach(VoteJdbc.batchInsert(_))
-      if (round.hasCriteria) addCriteriaRates(round.getId, rows.map(_.pageId).distinct)
-    }
-
-  /** criteria_rate.id is unique but not auto-increment: the new ids continue from the
-    * largest, read with a lock on the end of its index so two transactions can't take
-    * the same ones.
-    */
-  def addCriteriaRates(roundId: Long, pageIds: Seq[Long])(implicit session: DBSession): Unit = {
-    val base = sql"SELECT COALESCE(MAX(id), 0) FROM criteria_rate FOR UPDATE".map(_.long(1)).single().getOrElse(0L)
-    val criteria = SQLSyntax.createUnsafely(CriteriaIds.map(id => s"SELECT $id AS cid").mkString(" UNION ALL "))
-    pageIds.grouped(InsertChunk).foldLeft(base) { (from, ids) =>
-      val added = sql"""INSERT INTO criteria_rate (id, vote_id, criteria, rate)
-            SELECT $from + ROW_NUMBER() OVER (ORDER BY s.id, c.cid), s.id, c.cid, 0
-            FROM vote s JOIN ($criteria) c
-            WHERE s.round_id = $roundId AND s.page_id IN ($ids)""".update()
-      from + added
-    }
-  }
+  def insertRows(rows: Seq[Vote])(implicit session: DBSession): Unit =
+    rows.grouped(InsertChunk).foreach(VoteJdbc.batchInsert(_))
 
   case class Rebalance(newSelections: Seq[Vote], removedSelections: Seq[Vote])
 

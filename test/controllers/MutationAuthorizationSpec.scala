@@ -1,6 +1,6 @@
 package controllers
 
-import db.scalikejdbc.{ImageJdbc, PlayTestDb, Round, RoundUser, VoteJdbc, User, UserContestJdbc}
+import db.scalikejdbc.{ImageJdbc, PlayTestDb, Round, RoundCriterion, RoundUser, VoteJdbc, User, UserContestJdbc}
 import modules.BlockingExecutionContext
 import org.apache.pekko.stream.Materializer
 import play.api.Application
@@ -162,7 +162,7 @@ class MutationAuthorizationSpec extends PlaySpecification with PlayTestDb {
     }
 
     def large(app: Application, round: Round, juror: User, rate: Int, file: Long = pageId,
-        criteria: Option[Int] = None) = {
+        criteria: Option[Long] = None) = {
       implicit val materializer: Materializer = app.materializer
       largeViewController.rateByPageId(round.getId, file, rate, criteria = criteria)
         .apply(sessionRequest(POST, s"/large/round/${round.getId}/pageid/$file/select/$rate", juror.email)).run()
@@ -234,25 +234,24 @@ class MutationAuthorizationSpec extends PlaySpecification with PlayTestDb {
       val round = roundOf(juror, Round.ratesById(10), rate = 7)
       scalikejdbc.DB.autoCommit { implicit s =>
         import scalikejdbc._
-        sql"UPDATE round SET has_criteria = 1 WHERE id = ${round.getId}".update()
+        RoundCriterion.insert(round.getId, Seq(1L, 2L))
         val id = VoteJdbc.findBy(pageId, juror.getId, round.getId).get.getId
-        sql"INSERT INTO criteria_rate (id, vote_id, criteria, rate) VALUES (${id * 10 + 1}, $id, 1, 3), (${id * 10 + 2}, $id, 2, 4)"
-          .update()
+        sql"INSERT INTO criteria_rate (vote_id, criterion_id, rate) VALUES ($id, 1, 3), ($id, 2, 4)".update()
       }
       roundDao.findById(round.getId).get
     }
 
     def criteriaOf(round: Round, juror: User, file: Long = pageId): Map[Long, Int] =
       VoteJdbc.findBy(file, juror.getId, round.getId).toSeq
-        .flatMap(s => org.intracer.wmua.CriteriaRate.getRates(s.getId)).map(c => c.criteria -> c.rate).toMap
+        .flatMap(s => org.intracer.wmua.CriteriaRate.getRates(s.getId)).map(c => c.criterionId -> c.rate).toMap
 
     "check a criterion's rate as the file's" in {
       testDbApp { app =>
         val juror = setUp()
         val round = criteriaRoundOf(juror)
-        status(large(app, round, juror, 11, criteria = Some(1))) === BAD_REQUEST
+        status(large(app, round, juror, 11, criteria = Some(1L))) === BAD_REQUEST
         criteriaOf(round, juror) === Map(1L -> 3, 2L -> 4)
-        status(large(app, round, juror, 10, criteria = Some(1))) === SEE_OTHER
+        status(large(app, round, juror, 10, criteria = Some(1L))) === SEE_OTHER
         criteriaOf(round, juror) === Map(1L -> 10, 2L -> 4)
         stored(round, juror) === Some(14)
       }
@@ -269,8 +268,8 @@ class MutationAuthorizationSpec extends PlaySpecification with PlayTestDb {
         val inLarge = large(app, round, juror, 5)
         status(inLarge) === BAD_REQUEST
         contentAsString(inLarge) must contain("vote.error.invalid.rate")
-        // a criterion the juror's selection hasn't: not found, not a success
-        val unknown = large(app, round, juror, 5, criteria = Some(3))
+        // a criterion the round hasn't: not found, not a success
+        val unknown = large(app, round, juror, 5, criteria = Some(3L))
         status(unknown) === NOT_FOUND
         contentAsString(unknown) must contain("error.not.found")
         stored(round, juror) === Some(7)
@@ -282,7 +281,7 @@ class MutationAuthorizationSpec extends PlaySpecification with PlayTestDb {
       testDbApp { app =>
         val juror = setUp()
         val round = roundOf(juror, Round.ratesById(10), rate = 2)
-        val result = large(app, round, juror, 5, criteria = Some(1))
+        val result = large(app, round, juror, 5, criteria = Some(1L))
         status(result) === BAD_REQUEST
         contentAsString(result) must contain("vote.error.invalid.rate")
         stored(round, juror) === Some(2)
@@ -299,22 +298,21 @@ class MutationAuthorizationSpec extends PlaySpecification with PlayTestDb {
         val othersVote = VoteJdbc.create(1011L, 5, other.getId, round.getId)
         scalikejdbc.DB.autoCommit { implicit s =>
           import scalikejdbc._
-          sql"INSERT INTO criteria_rate (id, vote_id, criteria, rate) VALUES (${othersVote.getId * 10 + 1}, ${othersVote.getId}, 1, 5)"
-            .update()
+          sql"INSERT INTO criteria_rate (vote_id, criterion_id, rate) VALUES (${othersVote.getId}, 1, 5)".update()
         }
         val organizer = userDao.create(User("Organizer", "organizer@example.com", None, Set("organizer"), contestId = juror.contestId))
         val foreign = contestDao.create(None, "WLM", 2024, "Poland")
         val outsider = userDao.create(User("Outsider", "outsider@example.com", None, Set("jury"), contestId = foreign.id))
 
         // another juror's file: the juror has no selection of it
-        status(large(app, round, juror, 1, file = 1011L, criteria = Some(1))) === NOT_FOUND
+        status(large(app, round, juror, 1, file = 1011L, criteria = Some(1L))) === NOT_FOUND
         // the organiser has no selection of their own in the round
-        status(large(app, round, organizer, 1, criteria = Some(1))) === NOT_FOUND
-        status(large(app, round, organizer, 1, file = 1011L, criteria = Some(1))) === NOT_FOUND
-        status(large(app, round, outsider, 1, criteria = Some(1))) === FORBIDDEN
+        status(large(app, round, organizer, 1, criteria = Some(1L))) === NOT_FOUND
+        status(large(app, round, organizer, 1, file = 1011L, criteria = Some(1L))) === NOT_FOUND
+        status(large(app, round, outsider, 1, criteria = Some(1L))) === FORBIDDEN
         // signed out: to the login page
         implicit val materializer: Materializer = app.materializer
-        val signedOut = largeViewController.rateByPageId(round.getId, pageId, 1, criteria = Some(1))
+        val signedOut = largeViewController.rateByPageId(round.getId, pageId, 1, criteria = Some(1L))
           .apply(FakeRequest(POST, s"/large/round/${round.getId}/pageid/$pageId/select/1?criteria=1").withCSRFToken).run()
         status(signedOut) === SEE_OTHER
         redirectLocation(signedOut) must beSome.which(_.startsWith(routes.LoginController.login(None).url))
@@ -395,7 +393,7 @@ class MutationAuthorizationSpec extends PlaySpecification with PlayTestDb {
         val round = criteriaRoundOf(juror)
         RoundUser.setActive(round.getId, juror.getId, active = false)
 
-        val result = large(app, round, juror, 10, criteria = Some(1))
+        val result = large(app, round, juror, 10, criteria = Some(1L))
         status(result) === SEE_OTHER
         redirectLocation(result) must beSome.which(_.startsWith(s"/gallery/round/${round.getId}/"))
         criteriaOf(round, juror) === Map(1L -> 3, 2L -> 4)

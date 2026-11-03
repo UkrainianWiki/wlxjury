@@ -183,8 +183,8 @@ class CoiRoundSpec extends Specification with TestDb with BeforeAll with BeforeE
     }
 
     def addCriteria(roundId: Long): Unit = DB.autoCommit { implicit s =>
-      sql"""INSERT INTO criteria_rate (id, vote_id, criteria, rate)
-            SELECT s.id, s.id, 1, 1 FROM vote s WHERE s.round_id = $roundId""".update()
+      sql"""INSERT INTO criteria_rate (vote_id, criterion_id, rate)
+            SELECT s.id, 1, 1 FROM vote s WHERE s.round_id = $roundId""".update()
     }
 
     "remove the files with their votes, those moved aside and criteria rates, and nothing else" in {

@@ -83,7 +83,17 @@ class RoundController @Inject() (
             topBinaryOrder = Some(org.intracer.wmua.BinaryOrder.Default))
         )
 
-      val withTopImages = topImages.map(n => round.copy(topImages = Some(n))).getOrElse(round)
+      // a round's criteria; a new round's are those of the contest's latest round, if it has
+      // some (U3), with its rating and half stars
+      val withCriteria = round.id match {
+        case Some(id) => round.copy(criterionIds = RoundCriterion.idsOf(id))
+        case None =>
+          rounds.lastOption.filter(_.hasCriteria).fold(round) { previous =>
+            round.copy(criterionIds = RoundCriterion.idsOf(previous.getId), rates = previous.rates,
+              halfStar = previous.halfStar)
+          }
+      }
+      val withTopImages = topImages.map(n => withCriteria.copy(topImages = Some(n))).getOrElse(withCriteria)
 
       val jurors = withTopImages.id.fold(User.loadJurors(contestId))(User.findRoundJurors).sorted
       val filledRound = editRoundForm.fill(EditRound(withTopImages, jurors.flatMap(_.id), None))
@@ -122,7 +132,8 @@ class RoundController @Inject() (
       contestSpecialNominations(contestId),
       submitToken,
       round.id.flatMap(roundsService.distributionJob),
-      Some(coiCounts(contestId, round.id))
+      Some(coiCounts(contestId, round.id)),
+      CriterionJdbc.all()
     )
   }
 
@@ -261,7 +272,8 @@ class RoundController @Inject() (
                   jurors = contestId.map(User.loadJurors).getOrElse(Nil),
                   jurorsMapping = jurorsMapping,
                   // keep the form's token: nothing was created from this submission
-                  submitToken = RoundController.submitToken(request)
+                  submitToken = RoundController.submitToken(request),
+                  criteria = CriterionJdbc.all()
                 )
               )
           },
@@ -283,7 +295,7 @@ class RoundController @Inject() (
                   user,
                   r,
                   editRoundForm
-                    .fill(EditRound(r, editForm.jurors, editForm.fileList, editForm.newImages))
+                    .fill(EditRound(r, editForm.jurors, editForm.fileList, editForm.newImages, editForm.criteriaShown))
                     .withGlobalError(message, args: _*),
                   // a creation rejected before anything was created keeps the form's token
                   submitToken = RoundController.submitToken(request).filter(_ => r.id.isEmpty)
@@ -307,6 +319,34 @@ class RoundController @Inject() (
             val unreadable = FileTitles.unreadable(editForm.fileList.getOrElse(""))
             def unreadableLines: Result =
               reRender(round, "files.list.unreadable", unreadable.size, unreadable.take(5).mkString(" · "))
+
+            // the edit of an existing round, its criteria saved
+            def saveEdit(stored: Round): Result = {
+              val roundId = stored.getId
+              Round.updateRound(roundId, round)
+              // before "Distribute new files", whose job then reads the round's flag
+              val coi = leaveOutConflicts(stored, round.excludeCoi, user)(request.messages)
+              // one message per kind: an error of the distribution wins over the removal's
+              def flashing(errors: (String, String)*) =
+                toRoundsList.flashing((coi ++ errors).toMap.toSeq: _*)
+              if (!editForm.newImages && titles.isEmpty) flashing()
+              else
+                try {
+                  roundsService.distributeNewFiles(roundId, user.id, titles, newFiles = editForm.newImages) match {
+                    case RoundService.AlreadyRunning(_) =>
+                      flashing("error" -> messagesApi.preferred(request)(
+                        if (titles.nonEmpty) "round.distribute.running.files" else "round.distribute.running",
+                        stored.number))
+                    case RoundService.Resumed(_) if titles.nonEmpty =>
+                      flashing("error" -> messagesApi.preferred(request)("round.distribute.resumed.files", stored.number))
+                    case _ => flashing()
+                  }
+                } catch {
+                  case NonFatal(e) =>
+                    failed(Round.findById(roundId).getOrElse(round), "round.distribute.failed",
+                      "round.distribute.failed.reference", e, s"Round $roundId: could not start distributing new files")
+                }
+            }
 
             // the submitted contest must be one the user administers; an edited round
             // must belong to it (checked below)
@@ -340,30 +380,17 @@ class RoundController @Inject() (
                     onUnAuthorized(user, request,
                       Secured.Denial.round(stored, User.ADMIN_ROLES).copy(reason = Some("round_in_other_contest")))
                   case _ if unreadable.nonEmpty => unreadableLines
+                  // the stored round's rating decides (the form's is not editable), for criteria
+                  // changed: those posted as stored stay, whatever they are (legacy rounds)
+                  case stored if editForm.criteriaShown && round.criterionIds.nonEmpty && !stored.isRated &&
+                      round.criterionIds != RoundCriterion.idsOf(roundId) =>
+                    reRender(round, "error.criteria.rated.only")
                   case stored =>
-                    Round.updateRound(roundId, round)
-                    // before "Distribute new files", whose job then reads the round's flag
-                    val coi = leaveOutConflicts(stored, round.excludeCoi, user)(request.messages)
-                    // one message per kind: an error of the distribution wins over the removal's
-                    def flashing(errors: (String, String)*) =
-                      toRoundsList.flashing((coi ++ errors).toMap.toSeq: _*)
-                    if (!editForm.newImages && titles.isEmpty) flashing()
-                    else
-                      try {
-                        roundsService.distributeNewFiles(roundId, user.id, titles, newFiles = editForm.newImages) match {
-                          case RoundService.AlreadyRunning(_) =>
-                            flashing("error" -> messagesApi.preferred(request)(
-                              if (titles.nonEmpty) "round.distribute.running.files" else "round.distribute.running",
-                              stored.number))
-                          case RoundService.Resumed(_) if titles.nonEmpty =>
-                            flashing("error" -> messagesApi.preferred(request)("round.distribute.resumed.files", stored.number))
-                          case _ => flashing()
-                        }
-                      } catch {
-                        case NonFatal(e) =>
-                          failed(Round.findById(roundId).getOrElse(round), "round.distribute.failed",
-                            "round.distribute.failed.reference", e, s"Round $roundId: could not start distributing new files")
-                      }
+                    // first: after the first vote criteria are only replaced in their places
+                    // (U10), and a refused change saves nothing of the form
+                    val criteria =
+                      if (editForm.criteriaShown) RoundCriterion.update(roundId, round.criterionIds) else Right(false)
+                    criteria.fold(refused => reRender(round, refused.messageKey), _ => saveEdit(stored))
                 }
             }
           }

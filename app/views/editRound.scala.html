@@ -13,7 +13,8 @@
         specialNominations: Seq[SpecialNomination] = Nil,
         submitToken: Option[String] = None,
         distributionJob: Option[services.jobs.Job] = None,
-        coi: Option[controllers.CoiCounts] = None
+        coi: Option[controllers.CoiCounts] = None,
+        criteria: Seq[org.intracer.wmua.Criterion] = Nil
 )(implicit flash: Flash, messages: Messages, req: RequestHeader)
 
 @implicitLayout = @{ bs.Layout.horizontal("col-md-4", "col-md-8") }
@@ -115,6 +116,33 @@
                             editRoundForm("rates"),
                             Round.rates.map(x => (x.id.toString, if(x.id == 1) x.name else Messages("1-x.rating", x.id))),
                             Symbol("_label") -> Messages("rating.type"), Symbol("readonly") -> noEdit)
+
+                        @* a rated round's criteria, from the catalogue, by position: the empty
+                           selects left out (EditRound.criterionIdsOf); after the round's first
+                           vote only replaced in their places (RoundCriterion.update) *@
+                        <input type="hidden" name="criteriaShown" value="true" />
+                        @* half stars: not in the form, but a new round prefilled from a criteria
+                           round takes its (RoundController.editRound) *@
+                        <input type="hidden" name="halfStar" value="@editRoundForm("halfStar").value.getOrElse("false")" />
+                        @defining(editRoundForm("criteria").indexes.flatMap(i => editRoundForm(s"criteria[$i]").value).exists(_.nonEmpty)) { chosen =>
+                        @* one select per criterion: 10, or a legacy round's more (V83), kept as they are *@
+                        @defining((org.intracer.wmua.Criterion.MaxPerRound +: editRoundForm("criteria").indexes.map(_ + 1)).max) { selects =>
+                        @* hidden and not sent for a yes/no or comments-only rating of a new round (round-form.js) *@
+                        <div id="round-criteria">
+                        @snippets.collapsible("criteria", "headingCriteria", "collapseCriteria",
+                            open = chosen || editRoundForm.errors.exists(e => org.intracer.wmua.Criterion.ErrorKeys(e.message))) {
+                            <p class="form-text">@Messages("criteria.help", org.intracer.wmua.Criterion.MinPerRound, org.intracer.wmua.Criterion.MaxPerRound)
+                                <a href="@routes.CriteriaController.list(contestId)">@Messages("criteria.catalogue")</a></p>
+                            @for(i <- 0 until selects) {
+                                @bs.select(editRoundForm(s"criteria[$i]"),
+                                    criteria.map(c => (c.id.toString, c.name)),
+                                    Symbol("_label") -> Messages("criteria.position", i + 1),
+                                    Symbol("_default") -> "")
+                            }
+                        }
+                        </div>
+                        }
+                        }
 
                         @if(!newRound) {
                             @bs.checkbox(field = editRoundForm("newImages"),

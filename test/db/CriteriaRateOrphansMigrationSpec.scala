@@ -53,9 +53,10 @@ class CriteriaRateOrphansMigrationSpec extends Specification with TestDb with Be
       dropCopies()
       try {
         DB.autoCommit { implicit s =>
-          // the tables as V78 found them: V82 renamed them and criteria_rate's column
-          sql"CREATE TABLE t_criteria_rate LIKE criteria_rate".execute.apply()
-          sql"ALTER TABLE t_criteria_rate RENAME COLUMN vote_id TO selection".execute.apply()
+          // the tables as V78 found them: V82 renamed them and criteria_rate's column, V83 its keys
+          sql"""CREATE TABLE t_criteria_rate (
+                  id BIGINT UNSIGNED NOT NULL, selection INT NOT NULL, criteria INT NOT NULL, rate INT NOT NULL,
+                  UNIQUE KEY id (id), KEY criteria_selection_index (selection))""".execute.apply()
           sql"CREATE TABLE t_selection LIKE vote".execute.apply()
           sql"CREATE TABLE t_selection_deleted LIKE vote_aside".execute.apply()
           sql"""INSERT INTO t_selection (id, jury_id, round_id, page_id, rate) VALUES

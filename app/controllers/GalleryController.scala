@@ -213,7 +213,7 @@ class GalleryController @Inject() (
       case GalleryView.Gallery | GalleryView.ByRate =>
         // a criteria round's stars count its criteria: read once for the page
         val shown = if (!round.hasCriteria) list
-          else list.withRound(round.copy(criteriaCount = CriteriaRate.countOf(round.getId).getOrElse(round.criteriaCount)))
+          else list.withRound(round.copy(criteriaCount = RoundCriterion.countOf(round.getId).max(1)))
         // the by-rate gallery's ranks among all the list's files, as a file list's; none in file
         // order, which they would not follow (RoundList.ranked)
         Ok(RequestTiming.render(views.html.galleryByRate(user, shown, files, pager, rounds, menu, rates, ranks(files))))

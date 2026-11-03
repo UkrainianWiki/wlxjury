@@ -157,13 +157,18 @@ object VoteJdbc extends CRUDMapper[Vote] {
     * (0 or 1): MariaDB's driver counts the rows matched, not only those changed
     * (`useAffectedRows` off, its default), so a vote of the stored rate counts too. None if the
     * juror is stopped on the round (an inactive round_user row, P6), also when the stop races
-    * the vote ([[RoundUser.isStopped]] is checked before, for the stopped round's answer).
+    * the vote ([[RoundUser.isStopped]] is checked before, for the stopped round's answer); and
+    * none in a criteria round, whose votes are per criterion
+    * ([[org.intracer.wmua.CriteriaRate.updateRate]]), also when its criteria were added after
+    * the caller read the round: the change locks the round's votes first
+    * ([[RoundCriterion.update]]), and this statement's subquery then reads the committed rows.
     */
   def rate(pageId: Long, juryId: Long, roundId: Long, rate: Int = 1)(implicit session: DBSession = AutoSession): Int =
     sql"""UPDATE vote SET rate = $rate
           WHERE page_id = $pageId AND jury_id = $juryId AND round_id = $roundId
             AND NOT EXISTS (SELECT 1 FROM round_user ru
-                            WHERE ru.round_id = $roundId AND ru.user_id = $juryId AND ru.active = FALSE)"""
+                            WHERE ru.round_id = $roundId AND ru.user_id = $juryId AND ru.active = FALSE)
+            AND NOT EXISTS (SELECT 1 FROM round_criterion rc WHERE rc.round_id = $roundId)"""
       .update()
 
   /** Moves the image's votes to another round, also those moved aside (V63): a juror's
@@ -207,13 +212,33 @@ object VoteJdbc extends CRUDMapper[Vote] {
     RoundImageCounts.invalidate(roundId)
   }
 
-  /** Removes the round's unrated votes, also those moved aside (V63), as [[removeImage]]. */
+  /** Removes the round's unrated votes, also those moved aside (V63), as [[removeImage]]. A
+    * partly rated criteria vote (its rate 0 until every criterion is rated, U5) is kept: it has
+    * a juror's work ([[votedByCriteria]]).
+    */
   def removeUnrated(roundId: Long): Unit = {
     DB.localTx { implicit session =>
-      deleteVotes(sqls"v.rate = 0 AND v.round_id = $roundId")
+      val unrated = sqls"v.rate = 0 AND v.round_id = $roundId"
+      val tables = Seq(sqls"vote", sqls"vote_aside")
+      tables.foreach(lockVotes(_, unrated))
+      val ids = tables.flatMap(t => sql"SELECT v.id FROM $t v WHERE $unrated FOR UPDATE".map(_.long(1)).list())
+      val partial = votedByCriteria(ids)
+      ids.filterNot(partial).grouped(DeleteChunk).foreach(chunk => deleteVotes(sqls"v.id IN ($chunk)"))
     }
     RoundImageCounts.invalidate(roundId)
   }
+
+  private val DeleteChunk = 5000
+
+  /** Those of the votes `ids` with a criterion rated (a rate above 0), read with a shared
+    * lock: votes whose rate is 0 but that hold a juror's work, in a criteria round (U5). The
+    * caller has locked the votes (their rates are written only then).
+    */
+  private[scalikejdbc] def votedByCriteria(ids: Seq[Long])(implicit session: DBSession): Set[Long] =
+    ids.grouped(DeleteChunk).flatMap { chunk =>
+      sql"SELECT DISTINCT vote_id FROM criteria_rate WHERE vote_id IN ($chunk) AND rate > 0 LOCK IN SHARE MODE"
+        .map(_.long(1)).list()
+    }.toSet
 
   /** Deletes the votes `where` selects (on alias `v`), in vote and in vote_aside,
     * with their criteria rates (criteria_rate.vote_id has no foreign key, and a cascade

@@ -2,7 +2,7 @@ package views
 
 import controllers.{LoginController, Theme}
 import db.scalikejdbc.{MediaType, User}
-import org.intracer.wmua.{BinaryOrder, CategoryOperation}
+import org.intracer.wmua.{BinaryOrder, CategoryOperation, Criterion}
 import org.specs2.mutable.Specification
 import play.api.i18n.Messages.{parse, UrlMessageSource}
 
@@ -102,7 +102,9 @@ class MessagesCompletenessSpec extends Specification {
     Seq("round.distribute.running", "round.distribute.running.files", "round.distribute.resumed.files",
       "round.still.distributing", "import.already.running"),        // flashed by RoundController, ImageController
     Seq("creation", "distribute").map(w => s"round.$w.failed.reference"), // RoundController.saveRound
-    Seq("missing", "not.failed", "no.handler", "duplicate").map("job.retry." + _) // JobScheduler.retry
+    Seq("missing", "not.failed", "no.handler", "duplicate").map("job.retry." + _), // JobScheduler.retry
+    Criterion.ShippedKeys,                                                 // V83's criteria, Criterion.name
+    Seq("full", "exists").map("criteria.catalogue." + _)                   // CriterionJdbc.AddRefusal
   ).flatten
 
   /** Texts in a key's place that are shown as they are, not keys, each with its reason. */

@@ -37,7 +37,7 @@ class GroupedListParitySpec extends Specification with TestDb with BeforeAll wit
       specialNomination: Option[String] = None): (Round, Seq[File]) = {
     val contest = contestDao.create(None, "WLM", 2026, "Ukraine")
     val round = roundDao.create(Round(None, 1, contestId = contest.getId, rates = rates, active = true,
-      hasCriteria = hasCriteria, specialNomination = specialNomination))
+      criterionIds = if (hasCriteria) Seq(1L, 2L) else Nil, specialNomination = specialNomination))
     val jurors = (1 to 4).map(n =>
       userDao.create(User(s"Juror $n", s"juror$n@example.com", None, Set("jury"), contestId = contest.id)))
     val images = (1 to 40).map { n =>

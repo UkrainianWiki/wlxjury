@@ -383,6 +383,230 @@ failed (`target/checks/20261102-155458-22196.log`).
   `LargeImageSpec` (names in order, custom ids), negative authorization: organizer, juror, an admin
   of another contest cannot save criteria (403, nothing written); CSRF missing on the form → refused.
 
+#### C2 results (branch `ukwikidev/criteria-c2`, from `ukwikidev/followups` 82cfba45)
+
+Implemented with the decided U1–U12 (U11/U12 deferred: C0 not run). Migration **V83**
+(`V83__Criteria_catalogue.sql`).
+
+**Schema (V83).**
+
+| Object | Change |
+|---|---|
+| `criterion` (new) | `id` BIGINT UNSIGNED AUTO_INCREMENT PK, `message_key` VARCHAR(100) UNIQUE, `fallback_name` VARCHAR(255) UNIQUE (case-insensitive by its collation), `created_by` (user id, no FK), `created_at`. Rows 1–9: today's criteria under their ids (`criterion.science` … `criterion.extra.points`, the old map's Ukrainian names as fallback texts). |
+| `round_criterion` (new) | `(round_id, position)` PK, UNIQUE `(round_id, criterion_id)`, FK `round_id` → `round` ON DELETE CASCADE, FK `criterion_id` → `criterion` (RESTRICT). `round.has_criteria` stays, kept equal to "has rows here" (`Round.create`, `RoundCriterion.insert`/`update`). |
+| `criteria_rate` | `id` AUTO_INCREMENT PRIMARY KEY (the `UNIQUE id` key dropped); `criteria` → `criterion_id` BIGINT UNSIGNED, FK → `criterion`; `vote_id` BIGINT UNSIGNED (vote.id's type); UNIQUE `criteria_rate_vote_criterion_uidx (vote_id, criterion_id)` (replaces `criteria_rate_vote_id_idx`, its prefix); KEY `criteria_rate_criterion_id_idx`. No FK on `vote_id` (a vote moved aside leaves `vote`). One table copy (~166k rows in January 2026). |
+| `criteria_rate_orphan` | `reason` VARCHAR(32) NULL: `duplicate` for V83's archived duplicates, NULL for V78's orphans. |
+| left as they are | the legacy `criteria` table and `vote.criteria_id` (U11: drop after C0); `Vote.criteriaId` still mapped. |
+
+**Backfill, and unknown production data** (C0 not run: V83 is safe on any data, or stops before
+changing anything):
+- Criterion ids 1–9 keep their ids, so existing rates need no rewrite. Any other positive id in
+  `criteria_rate` gets a catalogue row under the same id (`criterion.legacy.<id>`, "Criterion
+  <id>"), so the foreign key holds for unexpected ids and for rates of orphan votes too.
+- A criteria or vote id ≤ 0, or `criteria_rate` keys other than every known schema's (a PRIMARY
+  KEY, no `UNIQUE id`, no `criteria_rate_vote_id_idx`), stop V83 at its first statements
+  (`SIGNAL`: "V83 stopped, nothing changed: criteria_rate has …" with the counts), before any
+  change: then a decision for the user (review fix F5).
+- `round_criterion`: per round with `has_criteria = 1`, the distinct criteria of its votes' rates
+  (`vote` and `vote_aside`), positions in id order (the large view's order until now); such a
+  round without rates gets 6, 7, 8, 9 (what its distribution would have written). A round with
+  rates but not `has_criteria = 1` gets none (no criteria round; its rates stay, read by nothing,
+  as before).
+- Duplicate `(vote_id, criteria)` rows: archived in `criteria_rate_orphan` (reason `duplicate`),
+  the row with the highest rate kept (then the lowest id), and those votes' rate recomputed as the
+  sum of the positive rates left (the rule they were written by; the old code counted duplicates
+  twice). No other vote's rate changes (U12 stays open).
+- Every statement but the final `ALTER` runs again unchanged after a failure part-way (`IF NOT
+  EXISTS`, `ON DUPLICATE KEY UPDATE id = id`, `NOT EXISTS` guards; spec'd).
+
+**Design choices.**
+- **Names: a message key plus a fallback text** (the plan's lean). `Criterion.name`: the
+  message of `message_key` in the viewer's language if defined, else `fallback_name`. Shipped
+  keys have messages in en/fr/uk/ru (`MessagesCompletenessSpec` lists `Criterion.ShippedKeys`);
+  a criterion an admin adds gets the key `criterion.custom.<id>`, which no messages file has until
+  translatewiki (or a messages change) adds it, and shows its fallback text meanwhile. Adding a
+  criterion needs no deploy.
+- **Catalogue authorization: global; root and contest admins.** `GET/POST /admin/criteria`
+  (`CriteriaController`) with `contestPermission(ADMIN_ROLES, contestId)`: root, or the admin role
+  in the session's contest (or in `contestId` when given). Any contest's admin may add: the
+  catalogue belongs to no contest (U3). Nobody edits or deletes an entry in the app: rounds of
+  every contest and their rates refer to it, and one contest's admin would rename other contests'
+  criteria. Bounds: name 1–255 characters, trimmed; refused if an entry has that name as shown in
+  the viewer's language or as fallback text (any case); at most 500 entries
+  (`Criterion.MaxEntries`, counted without a lock: adds at the same moment may pass it by one
+  each; a lock would hold up every criterion vote's FK check). `created_by` records who added it;
+  the add is logged with ids only.
+- **Round form:** a "Criteria" section with ten selects of the catalogue (`criteria[0..9]`, the
+  empty ones left out, by position); no JS (`round-form.js` unchanged, so no Jest run).
+  Validation (`Criterion.validationError`): none, or 2–10, each once, all in the catalogue, in a
+  rated round (`error.criteria.*`). For an existing round its stored rating decides (the form's
+  is read-only). A hidden `criteriaShown` marks a form with the selects: a client without them (a
+  script, an older page) leaves an existing round's criteria as they are.
+- **Prefill (U3):** a new round's form takes the criteria (and the rating) of the contest's
+  latest round, if that one has criteria; none otherwise. Written with the round in
+  `RoundService.insert`'s transaction (`Round.create` → `RoundCriterion.insert`).
+- **Edits (U10), `RoundCriterion.update`:** before the round's first vote (a vote rate ≠ 0 or any
+  `criteria_rate` row, in `vote` or `vote_aside`), any change, also to none (`has_criteria = 0`).
+  After it, only a criterion replaced in its place by one the round hasn't (the catalogue's
+  "renaming"), whose rates in `vote` and `vote_aside` move to the new criterion; adding, removing,
+  moving or reusing one is refused (`error.criteria.voted`, 400, nothing of the form saved).
+- **Votes (U6):** `CriteriaRate.updateRate` upserts (`INSERT … ON DUPLICATE KEY UPDATE`) a
+  criterion of the vote's round (`round_criterion`; another is false → 404); the distribution
+  writes no rates (`addCriteriaRates`, its `MAX(id) FOR UPDATE` and `CriteriaIds` gone;
+  `DistributeImages` left `RawSqlSpec`'s allowlist); a missing row reads as 0 (the large view
+  draws every criterion's stars). Legacy rounds whose votes have no rows (L4) can be voted now.
+- **U5 on the write side:** `vote.rate` = the sum of the criteria's rates once every criterion of
+  the round is rated (> 0), else 0. A partly rated vote is so unrated wherever `rate` is read
+  (Unrated filter, `ratedJurors`, "selected by", `activeJurors`, results, top-N, P2a's
+  `rate <> 0` delta) with no read-side change, and C3 needs no `rated_criteria` count. A
+  deviation from §3's "vote.rate stays the sum" for partial votes (U2 holds for rated ones).
+  `removeUnrated` (no production caller) removes partly rated votes with their rates (C1's open
+  question, answered by U5).
+- **Lock order:** C1's `round → images → vote → vote_aside → criteria_rate`, `round_criterion`
+  after the votes: a criterion vote locks its `vote` row, reads `round_criterion` (shared), writes
+  `criteria_rate`; a criteria change locks `round`, the round's `vote` and `vote_aside` rows, then
+  writes `round_criterion` and `criteria_rate`. A change never holds `round_criterion` while it
+  waits for a vote row: no cycle. Spec: a change waits (`INNODB_TRX` `LOCK WAIT`) for a first vote
+  in progress, then refuses. Change from C1: the vote's rates are summed by a plain read (the
+  transaction's first; its vote row is held, and its rates are written only then), no longer
+  `FOR UPDATE`: with inserts, that range read locked past the vote's last rate into the next
+  vote's and deadlocked with its upsert (once in `CriteriaRateSpec`'s concurrent spec, retried;
+  none in three reruns after the change).
+- **Large view:** the round's criteria in order with the viewed juror's rates (0 when absent),
+  names by `Criterion.name`; the all-jurors view still shows none (C3). `criteriaNames` and the
+  hard-coded id → name map are gone. By-rate stars: `criteriaCount` from `RoundCriterion.countOf`
+  (`CriteriaRate.countOf` gone; its default is now 1, set where read).
+- Not done (C3/C4): per-criterion results, the all-jurors view, keyboard.
+
+**Decided by the user (2026-11-03): keep the design as implemented, improve later.**
+1. Q1/F6: contest admins (and root) add catalogue entries, as implemented. Editing and retiring
+   entries is left for later; the recommendation on record: a root-only `retired` flag and a
+   root-only correction of a fallback text (also the remedy if one admin fills the catalogue).
+2. Q2: existing partial sums (partly rated criteria votes written under the old rule) are not
+   zeroed by migration.
+3. Q3: the U5 approach stands: `vote.rate` stays 0 until every criterion of the round is rated,
+   a departure from §3's "vote.rate stays the sum" for partial votes (also recorded in the
+   round-images plan, §4 "Counts").
+
+**Pre-deploy (read-only, production, before the release with V83):** the C0 queries "after
+V82" (above), plus:
+```sql
+SELECT COUNT(*) FROM criteria_rate WHERE criteria <= 0;                         -- must be 0 (else V83 stops)
+SELECT DISTINCT criteria FROM criteria_rate WHERE criteria NOT BETWEEN 1 AND 9; -- legacy catalogue rows V83 adds
+SELECT r.id FROM round r WHERE r.has_criteria = 1 AND NOT EXISTS
+  (SELECT 1 FROM vote v JOIN criteria_rate cr ON cr.vote_id = v.id WHERE v.round_id = r.id);  -- get 6-9
+SHOW CREATE TABLE criteria_rate;   -- UNIQUE KEY `id`, KEY `criteria_rate_vote_id_idx`, no PRIMARY KEY
+SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE()
+  AND TABLE_NAME IN ('criterion', 'round_criterion');                          -- none
+SELECT @@log_bin, @@binlog_format;  -- 0, or MIXED/ROW: criterion votes run at READ COMMITTED,
+                                    -- which InnoDB refuses to write with STATEMENT binlogging (error 1665)
+```
+The C0 duplicates query's rows are what V83 archives (`criteria_rate_orphan.reason =
+'duplicate'`), and their votes the ones whose rate it recomputes. Deploy with `wlxjury-release
+deploy` (dump before Flyway; `restore` is the recovery up to `reopen`).
+
+**Rollback SQL after reopen** (app stopped, previous release at V82; spec'd: V83 then this gives
+the pre-V83 test-schema tables' `SHOW CREATE TABLE`). Criteria rounds created or changed under C2
+lose their criteria; rates written by votes since have no pre-created siblings, so the old
+release answers 404 to a criterion a vote has no row for; custom criteria (id > 9) have no name
+there. Rounds created under C2 keep `has_criteria = 1`, so the old code pre-creates rates of
+criteria 6–9 for their votes at their next distribution, whatever criteria they had. Production's `criteria_rate.id` had AUTO_INCREMENT (its MyISAM-era schema); the old code
+always gives ids, so it is not restored. Archived duplicates stay archived.
+
+```sql
+ALTER TABLE criteria_rate
+  DROP FOREIGN KEY criteria_rate_criterion_id_fk,
+  DROP INDEX criteria_rate_criterion_id_idx,
+  DROP INDEX criteria_rate_vote_criterion_uidx,
+  ADD KEY criteria_rate_vote_id_idx (vote_id),
+  CHANGE COLUMN criterion_id criteria INT NOT NULL,
+  MODIFY vote_id INT NOT NULL,
+  MODIFY id BIGINT UNSIGNED NOT NULL,
+  DROP PRIMARY KEY,
+  ADD UNIQUE KEY id (id);
+DROP TABLE round_criterion;
+DROP TABLE criterion;
+ALTER TABLE criteria_rate_orphan DROP COLUMN reason;
+DELETE FROM flyway_schema_history WHERE version = '83';
+```
+
+**Files.** `V83__Criteria_catalogue.sql`; new `org.intracer.wmua.Criterion`,
+`db.scalikejdbc.CriterionJdbc` (with `RoundCriterion`), `controllers.CriteriaController`,
+`views/criteriaCatalogue.scala.html`, routes `/admin/criteria`; changed `CriteriaRate`, `Round`
+(`criterionIds`, `isRated`, `create`), `EditRound`, `RoundController`, `editRound.scala.html`,
+`DistributeImages`, `RoundDistributionHandler` (doc), `LargeViewController`,
+`large/large.scala.html`, `large/navigationButtons.scala.html`, `GalleryController`,
+`conf/messages.{en,fr,uk,ru}`, `docs/security/secure-coding.md` (RawSql and ErrorText
+exceptions).
+
+**Specs.** New: `db.CriteriaCatalogueMigrationSpec` (backfill of ids and names, legacy id 12,
+rounds' criteria with the 6–9 default and a round without `has_criteria`, duplicates archived and
+votes recomputed, keys and FK, a rerun after stopping before the last statement, the stop with
+nothing changed, the rollback SQL, the migrated DB), `db.scalikejdbc.CriterionJdbcSpec`
+(AutoRollback: catalogue, add, duplicate names, limit, round criteria, edits before and after
+votes, renaming moves rates in vote and vote_aside), `controllers.RoundCriteriaSpec` (create with
+criteria, no rates written; refusals; prefill; edits before and after votes; `criteriaShown`; a
+binary round; juror, organizer, another contest's admin and a juror who is another contest's
+admin 403 with nothing written, root allowed; CSRF; the catalogue: list, add, duplicates,
+limits, 403s, signed out, CSRF). Changed: `CriteriaRateSpec` (U5, upsert, custom ids, the lock
+spec), `LargeImageSpec` (names in order and language, custom ids, missing → 0),
+`LargeViewSideSpec`, `LargeViewRenders`, `MutationAuthorizationSpec`, `RoundDistributionJobSpec`
+(no rates written), `RoundCriteriaStarsSpec`, `CoiRoundSpec`, `CriteriaRateOrphansMigrationSpec`,
+`ConvertToInnoDbMigrationSpec` (V83 on the production-like schema), `MessagesCompletenessSpec`,
+`RawSqlSpec` (`DistributeImages` removed), `ErrorTextSpec` (`CriterionJdbc`, 1).
+
+**Checks** (Git Bash, `scripts/agent-check.py`, sbt launcher, one JVM at a time):
+- Affected specs (the new ones, the changed ones above, `RoundEditPageSpec`,
+  `CoiAuthorizationSpec`, `MigrationNamingSpec`, `security.*`): 304 run, 303 passed, 1 failed
+  (`MessagesCompletenessSpec`: a literal `"error.criteria"` prefix read as a key; now
+  `Criterion.ErrorKeys`), `target/checks/20261103-040405-16276.log`; after the fix and the
+  sum-read change, CriteriaRateSpec, MessagesCompletenessSpec, RoundCriteriaSpec, LargeImageSpec,
+  CriterionJdbcSpec: 94/94 (`20261103-040757-9500.log`); CriteriaRateSpec three times, 18/18
+  each, no deadlock logged (`20261103-040938-28744.log`).
+- Full suite (`sbt test`, Jest included): 1699 total, 1691 passed, 8 skipped, 1 pending, 0
+  failed; Jest 251/251; exit 0, 8:12 (`target/checks/20261103-041119-19132.log`).
+
+#### C2 review fixes
+
+| # | Finding | Fix |
+|---|---|---|
+| F1 | A legacy criteria round (V83's backfill: one criterion, more than 10, or a rating that isn't rated) could no longer be saved: the form validated its stored criteria on every submit, posted only 10 of 11, and refused criteria of a yes/no round | Criteria posted as stored are not validated (`EditRound.validCriteria`, `RoundController`'s rating check) and stay as they are; the form shows one select per stored criterion (10, or more). Specs: one criterion, eleven, a yes/no round with `has_criteria = 1`, each saved with a new name and its criteria kept. Pre-deploy query below. |
+| F2 | A plain vote (`VoteJdbc.rate`, gallery and large view) checked `hasCriteria` on a round read before a criteria change | Its `UPDATE` refuses a round with `round_criterion` rows (0 rows: 404). The change locks the round's votes first, so the waiting `UPDATE` then reads the committed criteria (its subquery is a locking read). Spec: criteria given while a plain vote waits: refused, `vote.rate` stays 0. |
+| F3 | The sum's plain read was right only while nothing in the transaction read before the vote lock | `updateRate` runs at READ COMMITTED (`db.scalikejdbc.ReadCommitted`: the pool's connection given back at its level; neither ScalikeJDBC's `isolationLevel` nor the pool resets it). The other reads there are locking (`vote FOR UPDATE`, `round_criterion LOCK IN SHARE MODE`), so their meaning stays; at READ COMMITTED they lock no gaps. C1's lock specs pass. Spec: a read sees a rate committed after the transaction's first read, and the connections are back at REPEATABLE READ. Rule for P2a in the round-images plan, §5. |
+| F4 | U5 made partial work look unrated where a delete tests `rate = 0` | `moveVotesBack` and `removeUnrated` count a vote with a criterion rated (`criteria_rate.rate > 0`, read with a shared lock after the votes, `VoteJdbc.votedByCriteria`) as rated: a partly rated new vote is kept over one aside, a partly rated one aside replaces an unrated new one, `removeUnrated` keeps them. Specs: the restore with partial votes both ways, `removeUnrated` keeping one. |
+| F5 | V83's final `ALTER` could fail after the other steps on unexpected keys | Step 0 also stops at `vote_id <= 0`, a PRIMARY KEY on `criteria_rate`, or no `UNIQUE id` / `criteria_rate_vote_id_idx` (`information_schema.STATISTICS`): one `SIGNAL` with the counts. Specs: each of the four, nothing changed. |
+| F7 | Nits | The prefill copies `halfStar` (a hidden field: the form has none); `round-form.js` hides and disables (so doesn't send) a new round's criteria for a yes/no or comments-only rating (Jest: `round-form.test.js`); `Round.create` returns `hasCriteria` as written; criterion ids are `Long` through the vote route and `RoundList` (no `toInt`); the rollback text below. Left as a limitation: a round edit saves its criteria in a transaction of its own before the name (`updateRound`) and the rest; a failure after it leaves the criteria saved. |
+| Gaps | | Specs: a criterion replaced while a vote of it waits (the vote refused, the rates under the new criterion); a partly rated vote stays in the juror's Unrated list and out of `activeJurors` until every criterion is rated. |
+
+Pre-deploy, added for F1 (the legacy rounds the form keeps as they are; to know them):
+```sql
+SELECT r.id, r.rates, COUNT(DISTINCT x.criteria) AS criteria
+FROM round r
+LEFT JOIN (SELECT v.round_id, cr.criteria FROM criteria_rate cr JOIN vote v ON v.id = cr.vote_id
+           UNION SELECT d.round_id, cr.criteria FROM criteria_rate cr JOIN vote_aside d ON d.id = cr.vote_id) x
+  ON x.round_id = r.id
+WHERE r.has_criteria = 1
+GROUP BY r.id, r.rates
+HAVING COUNT(DISTINCT x.criteria) NOT BETWEEN 2 AND 10 OR r.rates <= 1;
+```
+(A round without rates gets 6–9 and shows here only for a rating that isn't rated.)
+
+Review-fix checks: the criteria specs, `RoundCriteriaSpec`, `CriterionJdbcSpec`,
+`CriteriaCatalogueMigrationSpec`, `ConvertToInnoDbMigrationSpec`, `LargeImageSpec`,
+`MutationAuthorizationSpec`, `LargeViewControllerSpec`, `DeletedFilesSpec`,
+`ImageDistributorSpec`, `RoundImageCountsDbSpec`, the round form's and views' specs and
+`security.*`: 378 passed, 1 pending (ImageDistributorSpec's), then `CriteriaRateSpec` again
+21/21, no deadlock logged, exit 0 (`target/checks/20261103-044633-18548.log`); Jest
+`round-form.test.js` 10/10.
+
+After merging `ukwikidev/followups` `ec3aef58` (Flyway 13.12.0, `db.Migrations`, no B44; merge
+`b1045063`, no conflicts): `FlywayUpgradeSpec` (V83 on a fresh database from V1, and on the
+Flyway 9.16.3 V70 and fresh-V82 fixtures), `MigrationNamingSpec`, `MigrationsSettingsSpec`,
+`MigrationOrderSpec`, the migration and criteria specs and `security.*`: 222 passed, 1 skipped
+(the fixture regeneration), exit 0 (`target/checks/20261103-045054-20444.log`). Full suite on
+the merged branch: 1719 total, 1710 passed, 9 skipped, 1 pending, 0 failed; Jest 253/253; exit
+0, 7:25 (`target/checks/20261103-045338-20528.log`).
+
 ### C3: results for criteria rounds (after C2)
 
 - Overall per U2 (recommended: `vote.rate` stays the sum; shown as the average per criterion,
@@ -394,6 +618,10 @@ failed (`target/checks/20261102-155458-22196.log`).
   juror × criterion columns). File list: per-criterion averages in the all-jurors table.
 - Read: `CriteriaRate.averages(roundId, pageIds)` (GROUP BY page, criterion over `criteria_rate
   JOIN vote`), one query per page or CSV chunk.
+- From the C2 review: per-criterion averages use only votes with `vote.rate > 0` (rated, U5)
+  and join `round_criterion` (the round's criteria): `VoteJdbc.setRound` (moving a file's votes
+  to another round) can carry another round's rates. P2a's `round_image` delta stays inside
+  `updateRateIn`, after the vote lock.
 - Partial votes (U5, recommended "rated only when every criterion is rated"): the juror's
   Unrated filter and tabs, `ratedJurors`, "selected by", `activeJurors` read a vote as rated when
   its rated criteria = n. Today's SQL tests `rate > 0`; for criteria rounds the query adds
