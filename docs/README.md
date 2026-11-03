@@ -91,7 +91,11 @@ The rule is in workflow §8: the update is in the same PR, and the reviewer chec
 
 ## 5. User docs
 
-`docs/user/`, planned: an English juror guide, then organizer and admin guides after P3. The
+`docs/user/`: the English [juror guide](user/juror-guide.md) exists (written from the tool on
+`ukwikidev/juror-guide`, 2026-11-03; **unpublished**); organizer and admin guides follow after P3.
+It is written for the Translate extension: short paragraphs, headings that stand alone, no
+relative links, screenshots as `[Screenshot: …]` placeholders, the interface's labels from
+`conf/messages.en`. A change to a label, key or juror-visible behaviour updates it. The
 English source lives in the repository and is reviewed with the code. A release step publishes it
 to a wiki page and marks it for translation, and translations happen there with the Translate
 extension. Interface messages are to go through translatewiki (planned; [UI](ui/practices.md) §1.4).
