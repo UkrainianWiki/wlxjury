@@ -132,7 +132,7 @@ On Windows with the direct launcher, put `-Dscalawiki.version=…` before `-jar`
   - Public-repository runners have 4 vCPUs and 16 GB.
 - **Setup:**
   - Temurin 17 with `cache: sbt`, which covers `~/.ivy2/cache`, `~/.sbt` and Coursier, keyed on the build files.
-  - `sbt/setup-sbt`.
+  - `sbt/setup-sbt`, pinned by commit (`ecad189d…`, v1.5.12).
   - Node 20 with an npm cache keyed on `javascript-test/package-lock.json`. `jsTest` runs `npm ci` itself.
 - **scalawiki:** a composite action, `.github/actions/scalawiki`. See "Interim path".
 - **Testcontainers:**
@@ -141,20 +141,23 @@ On Windows with the direct launcher, put `-Dscalawiki.version=…` before `-jar`
   - `docker pull` of the matrix image is its own step, so its time doesn't count as test time.
 - **Commands:** `python3 scripts/agent-check.py -- sbt -J-Xmx2g -J-Dfile.encoding=UTF-8 "-Dwlxjury.test.mariadb-image=$MARIADB_IMAGE" 'set Test / javaOptions ++= Seq("-Xmx768m", "-Dfile.encoding=UTF-8")' Test/compile test`. This uses CLAUDE.md's JVM options and order in one sbt session, except for sbt's 2 GB heap (see Risks). The first failing command stops it, so a compile error ends the run without testing.
   - The script prints only a summary. On failure the next step prints the last 400 lines of the log.
-  - `target/test-reports/` (JUnit XML), `target/checks/` and any `hs_err_pid*.log` are uploaded with `if: always()` and kept 14 days.
+  - `target/test-reports/` (JUnit XML), `target/checks/` and any `hs_err_pid*.log` in the project root (where the forked test JVM runs; no `**` glob, so `node_modules` isn't walked) are uploaded with `if: always()` and kept 14 days.
 - **Permissions and concurrency:**
   - Permissions are `contents: read`; add `packages: read` with the package switch.
-  - Concurrency is one group per PR number (or per ref for pushes). A new push cancels a PR's older run; pushes to master and followups queue rather than cancel.
+  - **Concurrency:**
+    - PRs: one group per PR, and a new push cancels the PR's older run.
+    - Pushes, the weekly schedule and manual runs: a group per event, ref and commit (`github.sha`). GitHub keeps only one pending run per group, so a shared group would drop runs of merged commits.
 - **Timeout:** 45 minutes.
 
 **Deployment tests (`.github/workflows/deployment.yml`):**
 
-- **Job `scripts`:** the Python 3.8 unit tests (`test_deployment`) and shellcheck, each in its stock image with `--network none` as in `docs/deployment.md`. About 1 minute.
+- **Job `scripts`:** the Python unit tests (`test_deployment`) in `python:3.8.20-slim` and shellcheck in `koalaman/shellcheck:v0.11.0` (exact versions), each with `--network none` as in `docs/deployment.md`. About 1 minute.
 - **Job `release`:**
   - `sbt dist`, then `docker build` of `Dockerfile.test` (Ubuntu 22.04, MariaDB 10.6, OpenJDK 17), then `test_database_restore` and `test_release_script` against the ZIP.
   - Estimate: 4–6 min for `dist` cold, 2–3 min for the image, and 3–6 min for the tests (not measured), so **10–15 minutes**.
   - `test_database_restore` skips its packaged-release test if the ZIP is missing, so the job builds it first.
-- **Triggers:** PRs that touch `scripts/deployment/**`, `conf/**`, `project/**`, `build.sbt`, `ReadinessController` or the workflow; all pushes to master and followups. Running it on every stacked PR would double the job count against the 20-job concurrency limit for little gain.
+- **Triggers:** every PR, and pushes to master and followups. (The first version filtered PRs by path. The release test starts the packaged app, though, so any startup code matters, and an always-run check can be made required without staying pending. The job takes about 4.5 minutes.)
+- **The packaged-release test** finds the ZIP by `wlxjury-*.zip`, the newest one. With `CI` set (passed into the container) it fails, instead of skipping, when the ZIP is missing.
 - The sbt specs in that runbook list (`deployment.*`, `ReadinessControllerSpec`, …) already run in ci.yml's full suite.
 
 **Live Commons specs (`.github/workflows/integration.yml`):**
@@ -173,6 +176,8 @@ On Windows with the direct launcher, put `-Dscalawiki.version=…` before `-jar`
 | **CI run** | **about 20–28 min, so 25 min for planning** |
 | Deployment `release` job, when triggered | 10–15 min |
 
+*These are the planning estimates. The measured figures (a CI run takes 5–7 min; the deployment job, now on every PR, about 4.5 min) are under "Validation of PR [55]".*
+
 **Assumptions:** each of the 54 stacked PRs gets about 3 runs (open, review fixes, rebase after the PR below merges), and about a fifth trigger the deployment job.
 
 - **Runner time:** about 54 × 3 × 25 ≈ **4,050 min**, plus about 30 × 12 ≈ 360 min, plus pushes to followups and master (about 40 × 25 = 1,000 min). That is **about 5,400 runner-minutes (90 h) in the month of the series**, and about 1,000–1,500 min/month after it.
@@ -187,7 +192,7 @@ On Windows with the direct launcher, put `-Dscalawiki.version=…` before `-jar`
 
 **Recommendation: build scalawiki from source in CI now, then switch to the published package.**
 
-- **What the composite action does:** it fetches the pinned commit `SCALAWIKI_SHA` (public, no token) into `$RUNNER_TEMP` and runs `http-extensions/publishLocal scalawiki-core/publishLocal scalawiki-wlx/publishLocal` without Scaladoc. It caches `~/.ivy2/local/org.scalawiki` keyed on the SHA, so only the first run per SHA pays the 2–3 minutes.
+- **What the composite action does:** it fetches the pinned commit `SCALAWIKI_SHA` (public, no token) into `$RUNNER_TEMP` and runs `http-extensions/publishLocal scalawiki-core/publishLocal scalawiki-wlx/publishLocal` without Scaladoc. It caches `~/.ivy2/local/org.scalawiki` keyed on the SHA, the JDK and a version (`<sha>-jdk17-v1`), so only the first run per SHA pays the 2–3 minutes.
   - At `25951dbe` the build still says `0.7.0-SNAPSHOT`, which is exactly what wlxjury's `build.sbt` asks for today. So the workflows need **no change to `build.sbt`**, and CI can start before any scalawiki change.
 - **Why not a hand-published first package:**
   - It needs a classic PAT with `write:packages` on someone's machine, and the publishing settings merged into scalawiki first.
@@ -229,8 +234,17 @@ Drafts:
 **wlxjury (PR [55]):**
 
 - **Test config:** `commons.user = ""`, `commons.password = ""`, with no environment substitution, and a comment saying why. `CommonsLogin.credentials` drops empty values.
-- **Test-mode rule:** `CommonsLogin.credentials(config, mode)` gives no account in Mode.Test unless `-Dcommons.allowTestLogin=true`; it logs a warning instead. No spec or CI job sets the flag.
-- **Bot creation:** wlxjury creates its bots with `loginInfo = None` (`AppModule.bot`, `Global.commons`, `MonumentListSource`, and the test helper `CommonsImageFetcher`). scalawiki's environment login is never used; production's only account is `commons.user`, through `CommonsLogin`.
+- **Test-mode rule:** `CommonsLogin.credentials(config, mode)` gives no account in Mode.Test unless `commons.allowTestLogin` is true, and logs a warning instead. No spec or CI job sets it, and `build.sbt` doesn't forward it from sbt's command line. The only opt-in is a deliberate manual one, all three in the forked JVM: `set Test / javaOptions ++= Seq("-Dcommons.allowTestLogin=true", "-Dcommons.user=…", "-Dcommons.password=…")`.
+- **Bot creation, and scalawiki's default bots:**
+  - scalawiki's `MwBot.fromHost` / `fromSite` default to `LoginInfo.fromEnv()`, and `MwBot.cache` keeps one bot per domain.
+  - wlxjury creates its bots through `services.imports.AnonymousBots` (`loginInfo = None`): `AppModule.bot`, `Global.commons`, `MonumentListSource`, `SpecialNominationFilter`'s monument query, and the test helper `CommonsImageFetcher`.
+  - `AppModule` seeds the anonymous commons and uk.wikipedia bots at startup, so scalawiki's own default calls get them from the cache:
+    - `SpecialNomination.getNominationMonuments`, whose `MonumentQuery.create` takes `MwBot.fromHost(MwBot.ukWiki)`;
+    - `CampaignList` (`WithBot`, commons).
+  - `SpecialNominationFilter` and `ContestController.fetchContests` also seed before those calls, for JVMs without the app.
+  - **Covered:** every wlxjury path to commons and uk.wikipedia, and every bot wlxjury creates.
+  - **Not covered:** a scalawiki default call for another domain, in a JVM where neither the app nor `AnonymousBots` created that domain's bot first. wlxjury makes none.
+  - `AnonymousBotsSpec` checks that the test app seeds the bots, that the default `fromHost` then returns them, and that `app/` creates no bot or `MonumentQuery` with scalawiki's default login.
 - **`TestConfigAnonymousSpec` checks four things:**
   - the test config resolves to an empty account even with `COMMONS_USER` etc. supplied;
   - it has no `${?COMMONS_*}` / `${?SCALAWIKI_*}` substitution;
@@ -321,7 +335,7 @@ The two scalawiki diffs (`publishing.diff`, `anonymous-tests.diff`) both change 
 
 ## Open questions
 
-1. **Which commit gets the first tag?** *Recommendation:* `0.7.0-M1` on `25951dbe` (page-categories head, the code wlxjury runs against now). Then merge page-categories into scalawiki `master` and cut later releases from `master`. A tag doesn't need its commit on `master`.
+1. **Which commit gets the first tag?** *Recommendation:* `0.7.0-M1` on `25951dbe` (page-categories head, the code wlxjury runs against now). Then merge page-categories into scalawiki `master` and cut later releases from `master`. A tag doesn't need its commit on `master`. Until then, CI depends on `25951dbe` staying reachable on GitHub (fetched by SHA). Tag it (`0.7.0-M1`, or a plain `wlxjury-ci-pin` tag), so a force-push or branch deletion in scalawiki can't break wlxjury's CI.
 2. ~~Should the CI file go at the bottom of the stack?~~ **Decided:** on top, as PR [55]. #184–#237 get no CI.
 3. **Rerun PRs when their base changes (`pull_request` type `edited`)?** *Recommendation:* no. The rebase push after a lower PR merges reruns it anyway, and `edited` also fires on title and description edits.
 4. ~~MariaDB 10.11 in CI?~~ **Decided:** only on pushes to master and weekly, until the move to 24.04 makes it the default.
