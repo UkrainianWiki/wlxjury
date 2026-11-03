@@ -1,5 +1,7 @@
 # Blue-Green Deployment Implementation Plan
 
+> **Status:** superseded: the blue/green scripts are disabled and their slot files removed; see docs/deployment.md.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Enable two simultaneous instances of the WLX Jury Tool (blue on port 9000, green on port 9001) for canary validation and staggered deployments, with shared disk cache protected by atomic rename.

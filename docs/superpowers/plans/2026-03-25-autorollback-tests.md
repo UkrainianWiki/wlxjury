@@ -1,5 +1,7 @@
 # AutoRollback DB Test Refactor Implementation Plan
 
+> **Status:** shipped (`2596e074`, `7f2a870a`, `45a81e9e`; `SharedTestDb`, `AutoRollbackDb`, `AutoRollbackMunitDb`). The task boxes below were never ticked.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Replace per-test container+app startup in DB integration tests with a shared container (started once per JVM) and ScalikeJDBC `AutoRollback` for per-test transaction isolation, dramatically reducing test suite runtime.

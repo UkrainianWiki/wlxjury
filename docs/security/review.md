@@ -1,5 +1,24 @@
 Security Review: XSS Prevention Mechanisms & Vulnerabilities
 
+**Status on 2026-11-02** (`ukwikidev/followups`, batches B1–B6). The findings below are kept
+as they were written; this table says what became of each.
+
+| Finding | Status |
+|---|---|
+| Vuln 1, SQL injection in `ImageDbNew` | Fixed: `SQLSyntax` with bound values |
+| Vuln 2, hard-coded secret key | Fixed: `production.conf` requires `PLAY_HTTP_SECRET_KEY` |
+| Vuln 3, unsalted SHA-1 passwords | Fixed (B4): bcrypt cost 12, legacy hashes rehashed on sign-in |
+| Vuln 4, `MYSQL_PWD` in `run-with-prod-dump.sh` | Fixed (B6): temporary option file mounted read-only, `--env-file`, trap |
+| Mechanism 5 / E, permissive CSP | Fixed for scripts (B5): no `'unsafe-inline'` or `'unsafe-eval'` in `script-src`, two hashes. Open: `style-src 'unsafe-inline'` |
+| A, `X-Content-Type-Options` | Sent: Play's `SecurityHeadersFilter` default (`nosniff`); no test asserts it |
+| B, `X-Frame-Options` | Sent: Play's default `DENY`, and `frame-ancestors 'none'` in the CSP |
+| C, `X-XSS-Protection` | Sent: Play's default |
+| D, session cookie `secure` | Fixed (B5): session, flash, language, theme and gallery-order cookies are `Secure` in production |
+| JS string injection in `preloadImages` (Step 1) | Gone: the template was deleted; B3 moved every inline script to files that read `data-*` attributes |
+| Step 2, security headers | See A–C and E; no `Permissions-Policy` |
+| Step 4, `@Html(...)` audit | Done (B6): the monuments' wiki text was not safe (any wiki editor's markup reached the page) and now goes through `views.WikiLinks`; audit table in `docs/plans/2026-11-01-open-followups.md`, item 2.6 |
+| Step 5, HSTS in Apache | Open: belongs to `wlxjury-infra`'s vhosts (docs/deployment.md) |
+
 Vuln 1: SQL Injection — app/db/scalikejdbc/rewrite/ImageDbNew.scala
 
 - Severity: High
@@ -83,6 +102,7 @@ Vuln 4 (Medium): Production Credentials Exposed via MYSQL_PWD Environment Variab
 - **Where:** `app/controllers/ImageProxyController.scala:53,61` — always responds `.as("image/jpeg")`. No MIME-sniffing risk.
 
 #### 5. Content Security Policy Header
+- **Status (2026-11-02):** fixed for scripts; `style-src 'unsafe-inline'` remains. The rest of this entry is the original finding.
 - **Status:** Partial — **severely weakened**
 - **Where:** `conf/application.conf:96`
 - **Current value:** `default-src 'self' 'unsafe-eval' 'unsafe-inline' https://maxcdn.bootstrapcdn.com ...; img-src 'self' https://*; media-src 'self' https://*`
@@ -219,7 +239,7 @@ Review each occurrence and verify:
 - The content is HTML-escaped before being wrapped in `Html()`
 
 Current known `@Html(...)` usages with trusted data (safe):
-- `monuments.scala.html` / `monumentInfo.scala.html`: monument wiki links (data from Wikipedia — not direct user HTTP input; acceptable risk)
+- `monuments.scala.html` / `monumentInfo.scala.html`: monument wiki links (data from Wikipedia — not direct user HTTP input; acceptable risk). **Revised in B6:** not acceptable, since the text around the links and their labels was unescaped; now `views.WikiLinks`.
 - `preloadImages.scala.html:4`: **fix required** (Step 1)
 - Pagination helpers: typically safe (numeric/encoded URLs)
 

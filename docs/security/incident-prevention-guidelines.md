@@ -159,114 +159,64 @@ Standard:
 
 ## Practices Not Followed Consistently Today
 
-### 1. Session secret management is not compliant
+State on 2026-11-02 (`ukwikidev/followups`, batches B1–B6, with `ukwikidev/api-auth` merged).
+The findings this section listed before are fixed; what is still open comes first.
 
-`conf/application.conf` still contains:
+### Still open
 
-- `play.http.secret.key = "changeme"`
+1. **No per-IP or per-account sign-in throttling.** Sign-in and sign-up are bounded only by
+   the bcrypt semaphore (`bcrypt.maxConcurrent`, `bcrypt.maxQueued`, 503 `signin.busy` when
+   full), which protects the CPU, not the accounts: password guessing is limited only by
+   bcrypt's cost. Required standard: throttle failed sign-ins per client address and per
+   account (in the app or at Apache, e.g. `mod_evasive`/fail2ban on the `/auth` log).
+2. **`style-src 'unsafe-inline'`.** unitegallery builds its tiles with `style=` attributes,
+   and six template attributes remain (the galleries' `display:none`, the pager's width, the
+   previous-round filters, the job status). `script-src` has no `'unsafe-inline'` or
+   `'unsafe-eval'` any more. Required standard: move the template styles to classes, then
+   drop `'unsafe-inline'` from `style-src` once unitegallery is patched or replaced.
+3. **The CSP is set through the deprecated `play.filters.headers.contentSecurityPolicy`**
+   (Play logs a deprecation warning). Moving it to `play.filters.csp.CSPFilter` keeps the
+   same policy.
+4. **Headers left at Play's defaults.** `SecurityHeadersFilter` sends `X-Frame-Options: DENY`,
+   `X-Content-Type-Options: nosniff`, `X-XSS-Protection` and a `Referrer-Policy` with its
+   defaults, and the CSP has `frame-ancestors 'none'`; no `Permissions-Policy` is set, and no
+   test asserts these headers. `img-src`/`media-src https://*` stay broad (Commons and its
+   thumbnails). HSTS belongs to the Apache vhosts in `wlxjury-infra` and is recommended there
+   (docs/deployment.md, "Host names and secure cookies").
+5. **Legacy SHA-1 hashes of accounts that never sign in again** stay until invalidated on a
+   controlled schedule (see Done, passwords).
 
-This breaks the “no committed secrets / strong session integrity” standard and makes session forgery plausible.
+### Done
 
-Required standard:
-
-- the Play secret must come from deployment-time configuration
-- the committed config must not contain a reusable secret value
-
-### 2. Password storage (done)
-
-Fixed in follow-ups batch B4 (2026-11-02): passwords are stored as bcrypt (`$2b$`, cost 12)
-by `services.PasswordHasher`. A legacy unsalted SHA-1 hash is checked only on sign-in and is
-replaced by a bcrypt hash on success; nothing writes SHA-1 any more. Accounts that never sign
-in again keep their legacy hash: invalidate those on a controlled schedule if needed.
-
-Required standard (kept):
-
-- passwords must use a slow password KDF such as Argon2id or bcrypt
-- legacy hashes must be migrated transparently or invalidated on a controlled schedule
-
-### 3. State-changing routes are not consistently protected by CSRF-safe HTTP semantics
-
-The codebase mixes good CSRF form usage with unsafe exceptions:
-
-- `conf/routes` disables CSRF on `/auth`
-- `conf/routes` disables CSRF on `/rate/round/:round/pageid/:pageId/select/:select`
-- `LargeViewController.rateByPageId(...)` performs a state change through `GET`
-
-Required standard:
-
-- no mutating endpoint may use `GET`
-- no browser-facing state-changing route should carry `+ nocsrf` unless there is a documented non-browser API use case and compensating controls
-
-### 4. Authorization is not enforced consistently on mutation endpoints
-
-Some mutating endpoints only require authentication, not round-specific authorization:
-
-- `GalleryController.selectWS(...)`
-- `LargeViewController.rateByPageId(...)`
-- `ImageDiscussionController.addComment(...)`
-
-Required standard:
-
-- any route that changes selections, comments, or round state must verify that the acting user is allowed to access the target round and contest
-
-### 5. Safe SQL construction is not followed everywhere
-
-`app/db/scalikejdbc/rewrite/ImageDbNew.scala` constructs SQL with string interpolation for `regions`, `withPageId`, and related filters.
-
-This breaks the repository’s otherwise good parameterized SQL pattern.
-
-Required standard:
-
-- rewrite `SelectionQuery` to produce `SQLSyntax` or parameterized SQL fragments
-- prohibit request-derived raw SQL construction
-
-### 6. Error handling leaks internal details
-
-`app/ErrorHandler.scala` logs exceptions and also returns exception messages to the user.
-
-Required standard:
-
-- user-facing errors must be generic
-- detailed exception text belongs in logs, not HTML responses
-
-### 7. Host-header protection is explicitly disabled
-
-`conf/application.conf` disables:
-
-- `play.filters.hosts.AllowedHostsFilter`
-
-Required standard:
-
-- enable host allowlisting for all deployed hostnames
-- document how local development and tests opt into safe overrides
-
-### 8. Browser hardening headers are incomplete or too permissive
-
-Current config has a CSP, but it is permissive:
-
-- `unsafe-inline`
-- `unsafe-eval`
-- broad `img-src https://*`
-
-The repo also does not define an application-level policy for headers such as:
-
-- `X-Frame-Options` / `frame-ancestors`
-- `X-Content-Type-Options`
-- `Referrer-Policy`
-- `Permissions-Policy`
-
-Required standard:
-
-- tighten CSP toward a minimal allowlist
-- define a documented baseline for security headers
-
-### 9. Sensitive operational scripts still expose credentials unsafely
-
-`scripts/run-with-prod-dump.sh` passes database passwords through `MYSQL_PWD`.
-
-Required standard:
-
-- operational scripts must avoid putting sensitive passwords in process environments when safer alternatives exist
+- **Session secret.** `production.conf` requires `PLAY_HTTP_SECRET_KEY`; the `"changeme"`
+  in `application.conf` is for development and tests only.
+- **Password storage.** Follow-ups batch B4: bcrypt (`$2b$`, cost 12) in
+  `services.PasswordHasher`. A legacy unsalted SHA-1 hash is checked only on sign-in and
+  replaced by a bcrypt hash on success; nothing writes SHA-1 any more. New passwords are at
+  most 72 bytes; hash computations are bounded (`bcrypt.*`).
+- **CSRF-safe HTTP semantics.** Votes, sign-out, contest switching, the theme switch and API
+  token management are POSTs with the CSRF token; no `+ nocsrf` route is left.
+- **Authorization on mutations.** Gallery and large-view votes and comments check the round
+  and its contest (`MutationAuthorizationSpec`, `CommentAuthorizationSpec`); a denial is
+  logged on `security.authz` with a reference and the account id only (no email).
+- **SQL construction.** `ImageDbNew`'s filters are `SQLSyntax` with bound values.
+- **Error handling.** One error page with message keys (`views.html.errorPage`); a server
+  error shows only a logged reference; `{error, reference}` JSON for scripts and the API.
+- **Host-header protection.** `AllowedHostsFilter` is on; production allows only
+  `WLXJURY_ALLOWED_HOSTS` (batch B5).
+- **Secure cookies.** Production marks the session, flash, language, theme and gallery-order
+  cookies `Secure` (batch B5).
+- **CSP.** No inline scripts but two, allowed by their hashes (the theme script and the large
+  views' restore); no `'unsafe-eval'`; `object-src 'none'`, `base-uri 'self'`,
+  `form-action 'self'`, `frame-ancestors 'none'` (batch B5).
+- **The REST API** (`/api/...`) is served with authentication: the session cookie or a
+  personal token, root-only contest endpoints (`ukwikidev/api-auth`).
+- **Operational scripts.** `scripts/run-with-prod-dump.sh` passes no password on a command
+  line: a temporary client option file (mode 600, mounted read-only) and an `--env-file`,
+  removed by a trap on every exit path (batch B6).
+- **Unescaped HTML.** Every `Html(...)` in `app/` has a trusted source; the monuments' wiki
+  text from the lists goes through `views.WikiLinks`, which escapes it (batch B6; the audit
+  is in `docs/plans/2026-11-01-open-followups.md`, item 2.6).
 
 ## Repository Security Standards Going Forward
 

@@ -1,5 +1,7 @@
 # Blue-Green Promotion DB Sync — Revised Design
 
+> **Status:** superseded: the blue/green scripts are disabled and their slot files removed; see docs/deployment.md.
+
 **Date:** 2026-04-14
 **Status:** Approved
 **Amends:** `2026-04-14-blue-green-deployment-design.md` (replaces Section 4 and Section 5)
