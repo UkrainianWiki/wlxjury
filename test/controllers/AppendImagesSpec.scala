@@ -258,7 +258,7 @@ class AppendImagesSpec extends Specification with Mockito with JuryTestHelpers w
       generator = "categorymembers",
       generatorPrefix = "cm",
       namespaces = Set(Namespace.FILE),
-      props = Set("timestamp", "user", "size", "url", "mime"),
+      props = Set("timestamp", "user", "size", "url", "mime", "mediatype"),
       titlePrefix = None
     ) returns Future.successful(imageInfos)
   }

@@ -11,7 +11,7 @@ trait CommonsImageFetcher {
 
   implicit def ec: ExecutionContext
 
-  private val imageInfoProps = Set("size", "url", "mime")
+  private val imageInfoProps = Set("size", "url", "mime", "mediatype")
 
   /** Fetch up to `limit` eligible images from a Commons category via scalawiki. */
   def fetchImagesFromCommons(category: String, limit: Int): Seq[Image] = {
@@ -37,7 +37,7 @@ trait CommonsImageFetcher {
             url <- ii.url
             w   <- ii.width
             h   <- ii.height
-          } yield Image(id, page.title, Some(url), ii.pageUrl, w, h, mime = ii.mime)
+          } yield Image(id, page.title, Some(url), ii.pageUrl, w, h, mime = ii.mime, mediaType = ii.mediaType)
         }
       }
       .filter(img => img.isImage && img.url.isDefined && img.width > 0 && img.height > 0)

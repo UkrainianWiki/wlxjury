@@ -14,6 +14,7 @@ import play.api.{Logger, Play}
 import scalikejdbc.{ConnectionPool, GlobalSettings, LoggingSQLAndTimeSettings}
 
 import scala.concurrent.{Await, Future}
+import scala.concurrent.duration.DurationInt
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.io.Source
 
@@ -196,7 +197,9 @@ object Tools {
     val newImagesById = newImages.groupBy(_.monumentId.getOrElse(""))
 
     val monumentQuery = MonumentQuery.create(contest1)
-    val monuments = monumentQuery.byMonumentTemplate().filter(m => newImagesById.keySet.contains(m.id))
+    val monuments = Await
+      .result(monumentQuery.byMonumentTemplate(), 30.minutes)
+      .filter(m => newImagesById.keySet.contains(m.id))
 
 
     val galleries = monuments.map {
