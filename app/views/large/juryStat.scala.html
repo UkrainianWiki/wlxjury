@@ -1,7 +1,8 @@
 @import org.intracer.wmua.Vote
 @import db.scalikejdbc.User
 @(votes: Seq[(Vote, User)],
-        list: RoundList)(implicit messages: Messages)
+        list: RoundList,
+        jurorCriteria: org.intracer.wmua.JurorCriteria = org.intracer.wmua.JurorCriteria.empty)(implicit messages: Messages)
 
 <div class="large-line">
     <ol>
@@ -9,7 +10,8 @@
             @* each juror's vote, linking the file in that juror's gallery: the approvals, then the
                rejections and the jurors yet to vote (VoteJdbc.byRoundAndImageWithJury) *@
             <li>@showRate(vote, list.round, user.fullname,
-                list.withViewer(user.getId).withFilter(VoteFilter.All).atUrl(vote.pageId))
+                list.withViewer(user.getId).withFilter(VoteFilter.All).atUrl(vote.pageId),
+                if (jurorCriteria.nonEmpty) jurorCriteria.of(vote.getId) else Nil)
             }
     </ol>
 </div>

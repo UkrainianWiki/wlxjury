@@ -202,23 +202,39 @@ class GalleryController @Inject() (
 
       case GalleryView.Csv =>
         val name = "WLXJury_Round_" + round.description
-        csvStream(Csv.rateRows(list, jurors)(blocking), name)
+        // a criteria round's average columns, named in the viewer's language (U8)
+        val criteria = if (round.hasCriteria) RoundCriterion.ofRound(round.getId).map(c => c.id -> c.name) else Nil
+        csvStream(Csv.rateRows(list, jurors, criteria)(blocking), name)
 
       case GalleryView.FileList =>
         val useTable = !round.isBinary || asUserId == 0
         val showAuthor = user.canViewOrgInfo(round) && files.exists(_.image.author.nonEmpty)
-        Ok(views.html.fileList(user, list, asUser, files, ranks(files), jurors, rounds, menu, pager, "wiki", useTable, rates,
-          showAuthor))
+        val criteria = criteriaResults(list, files)
+        Ok(views.html.fileList(user, withCriteria(list, criteria), asUser, files, ranks(files), jurors, rounds, menu, pager,
+          "wiki", useTable, rates, showAuthor, criteria))
 
       case GalleryView.Gallery | GalleryView.ByRate =>
-        // a criteria round's stars count its criteria: read once for the page
-        val shown = if (!round.hasCriteria) list
-          else list.withRound(round.copy(criteriaCount = RoundCriterion.countOf(round.getId).max(1)))
+        // a criteria round's stars are per criterion, and its files' criteria averages: read
+        // once for the page
+        val criteria = criteriaResults(list, files)
         // the by-rate gallery's ranks among all the list's files, as a file list's; none in file
         // order, which they would not follow (RoundList.ranked)
-        Ok(RequestTiming.render(views.html.galleryByRate(user, shown, files, pager, rounds, menu, rates, ranks(files))))
+        Ok(RequestTiming.render(views.html.galleryByRate(user, withCriteria(list, criteria), files, pager, rounds, menu,
+          rates, ranks(files), criteria)))
     }
   }
+
+  /** A criteria round's results of a page of its list's files: the averages of the list's
+    * juror (all of them for `asUserId` 0), whose votes the viewer may see ([[gallery]]'s
+    * `viewAs`); none in a round without criteria.
+    */
+  private def criteriaResults(list: RoundList, files: Seq[ImageWithRating]): CriteriaResults =
+    CriteriaResults.of(list.round, files.map(_.pageId), list.asUserId)
+
+  /** The list with its round's number of criteria, which draws its stars per criterion. */
+  private def withCriteria(list: RoundList, criteria: CriteriaResults): RoundList =
+    if (!list.round.hasCriteria) list
+    else list.withRound(list.round.copy(criteriaCount = criteria.criteria.size.max(1)))
 
   /** The region menu of a round's list in a contest of monuments: the region shown, and the
     * URL of its regions ([[regions]]); None in a contest whose files have no monument ids.

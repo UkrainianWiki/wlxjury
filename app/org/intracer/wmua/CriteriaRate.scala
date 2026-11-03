@@ -74,6 +74,53 @@ object CriteriaRate extends SQLSyntaxSupport[CriteriaRate] {
       }
     }
 
+  /** Files per [[averages]] query. */
+  val AveragesChunk = 1000
+
+  /** The per-criterion averages of the files `pageIds` in the round, in stored units (half
+    * stars in a half-star round), by page id, then criterion id: all the jurors' votes, or
+    * `juror`'s only (a juror's own list: never the others'). Read on demand from the votes,
+    * no maintained count (C3; also with round_image as the list's source, P2b):
+    *  - only votes rated in every criterion (`vote.rate > 0`: U5 keeps a partly rated vote's
+    *    rate at 0), and of those only criteria rated (`rate > 0`: a partly rated vote from
+    *    before U5 keeps its sum, and its pre-created rows of 0 are not rates);
+    *  - only the round's criteria (`round_criterion`): a vote moved from another round
+    *    ([[db.scalikejdbc.VoteJdbc.setRound]]) keeps that round's rates.
+    * A file without such a vote, or a criterion none rated, has no entry. One query per
+    * [[AveragesChunk]] files, from the votes by `vote_round_page_rate_idx`, then each one's
+    * rates by `criteria_rate_vote_criterion_uidx`.
+    */
+  def averages(roundId: Long, pageIds: Seq[Long], juror: Option[Long] = None)(implicit
+      session: DBSession = autoSession
+  ): Map[Long, Map[Long, BigDecimal]] = {
+    val ofJuror = juror.fold(sqls"")(id => sqls"AND v.jury_id = $id")
+    pageIds.distinct.grouped(AveragesChunk).flatMap { chunk =>
+      sql"""SELECT v.page_id, cr.criterion_id, AVG(cr.rate) FROM vote v
+            STRAIGHT_JOIN criteria_rate cr ON cr.vote_id = v.id
+            STRAIGHT_JOIN round_criterion rc ON rc.round_id = v.round_id AND rc.criterion_id = cr.criterion_id
+            WHERE v.round_id = $roundId AND v.page_id IN ($chunk) AND v.rate > 0 $ofJuror AND cr.rate > 0
+            GROUP BY v.page_id, cr.criterion_id"""
+        .map(rs => (rs.long(1), rs.long(2), BigDecimal(rs.bigDecimal(3))))
+        .list()
+    }.toSeq.groupMap(_._1)(r => r._2 -> r._3).view.mapValues(_.toMap).toMap
+  }
+
+  /** The rates of the round's criteria of each vote of one file in the round, by vote id,
+    * then criterion id, the criteria rated only (`rate > 0`), also of a partly rated vote:
+    * the large view's list of each juror's vote, which only organisers see. A criterion of
+    * another round (a vote moved by [[db.scalikejdbc.VoteJdbc.setRound]]) is left out.
+    */
+  def ratesOfFile(roundId: Long, pageId: Long)(implicit
+      session: DBSession = autoSession
+  ): Map[Long, Map[Long, Int]] =
+    sql"""SELECT v.id, cr.criterion_id, cr.rate FROM vote v
+          STRAIGHT_JOIN criteria_rate cr ON cr.vote_id = v.id
+          STRAIGHT_JOIN round_criterion rc ON rc.round_id = v.round_id AND rc.criterion_id = cr.criterion_id
+          WHERE v.round_id = $roundId AND v.page_id = $pageId AND cr.rate > 0"""
+      .map(rs => (rs.long(1), rs.long(2), rs.int(3)))
+      .list()
+      .groupMap(_._1)(r => r._2 -> r._3).view.mapValues(_.toMap).toMap
+
   /** The vote's rates, by criterion; a criterion without a row is unrated (0). */
   def getRates(
       voteId: Long

@@ -60,8 +60,8 @@ case class Round(
     // V72): the legacy rule (BinaryOrder.LegacyParam). A new round from a yes/no round stores
     // one (withExplicitTopOrder); over rated previous rounds it plays no part, and is NULL.
     topBinaryOrder: Option[BinaryOrder] = None,
-    // the number of a criteria round's criteria, read for its by-rate gallery
-    // (RoundCriterion.countOf); not loaded with the round
+    // the number of a criteria round's criteria, read where its results are drawn
+    // (perCriterion: the galleries, the large view); not loaded with the round
     criteriaCount: Int = 1,
     // the round form's criteria, by position: a new round's are written with it (create);
     // not loaded with the round (RoundCriterion.idsOf)
@@ -110,12 +110,24 @@ case class Round(
     else if (rates.id == Round.commentsOnlyRound.id) false
     else rate == 0 || (rate >= rates.minRate && rate <= maxRate)
 
-  /** The stars of a file's result: a criteria round's for all its criteria together, as the
-    * file's rate is the sum of theirs (CriteriaRate.updateRate).
+  /** The stars of a file's result: the round's, also in a criteria round, whose result is
+    * drawn per criterion ([[perCriterion]]).
     */
-  def numberOfStars: Int =
-    (if (rates.id <= 5 || !halfStar) rates.id
-     else rates.id / 2) * (if (hasCriteria) criteriaCount else 1)
+  def numberOfStars: Int = rates.id / starUnits
+
+  /** A rate (a vote's, or a file's average) on one criterion's stars: a criteria round's
+    * rate is the sum of its [[criteriaCount]] criteria's (U2), drawn as their average, `sum / n`
+    * (C3); other rounds' as it is. In stored units, as `rate`.
+    */
+  def perCriterion(rate: Double): Double =
+    if (hasCriteria) rate / criteriaCount.max(1) else rate
+
+  /** The stored units a file's static stars are filled to for `rate` (`showStar`): a criteria
+    * round's [[perCriterion]] rounded to the nearest unit, so to the nearest half star in a
+    * half-star round (3.25 stars, 6.5 units, draws 3.5); other rounds' truncated, as before C3.
+    */
+  def starsRate(rate: Double): Int =
+    if (hasCriteria) math.round(perCriterion(rate)).toInt else rate.toInt
 
   def regionIds: Seq[String] = regions.map(_.split(",").toSeq).getOrElse(Nil)
 
