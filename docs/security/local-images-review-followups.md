@@ -5,6 +5,10 @@ The signup session bug (the session got `username -> password`) is fixed on the 
 
 #1, #2, #5 and P1 are fixed on `ukwikidev/performance-memory` (`64210da`, `62b644e`, `39d5aef`), so the merge brings them in.
 
+**Status 2026-11-02** (the security re-review, `2026-11-02-rereview-previous.md` section 4, checked
+again in security batch S10): the table below is current; the sections after it keep the original
+findings as they were written.
+
 The rest are deferred **until `ukwikidev/performance-memory` is merged**, so they don't conflict with it.
 `performance-memory` branched from this branch at `a65e165`. The two branches touch different files (the signup fix vs. rounds and region stats), so the merge is clean. Its status for each
 item below was checked at `b46fafd`. Line numbers will still move, so re-check each item against the
@@ -14,16 +18,16 @@ merged code before fixing it.
 |---|----------|------|------|----------------------------|
 | 1 | High | Authorization | `RoundController.saveRound`, `RoundService.createNewRound` | **Fixed** (`39d5aef`) |
 | 2 | High | Round distribution | `RoundService.distributeNewImages` | **Fixed** (`62b644e`) |
-| 3 | High | Round distribution | `DistributeImages.scala` | Open. The insert is now chunked, same transaction |
-| 4 | High | Performance / DoS | `ImageProxyController.scala` | Open, untouched |
+| 3 | High | Round distribution | `DistributeImages.scala` | **Fixed**: `addCriteriaRates` in the chunk's transaction (`RoundDistributionJobSpec`) |
+| 4 | High | Performance / DoS | `ImageProxyController.scala` | **Partially fixed**: signed-in viewers only, smaller widths scaled from the cache; any width up to 3840 still accepted (security plan S6, P5) |
 | 5 | Medium | Region stats | `ImageDbNew.byRegionStat` | **Fixed** (`64210da`) |
 | 6 | Medium | Data consistency | `ImageService`, `ImageJdbc` | **Fixed** (`9db7c54`, V57) |
-| 7 | Medium | Local image cache | `LocalImageCacheService.startDownload` | Open, untouched |
-| 8 | Low | Export | `Global.legacyThumbUrl` | Open, untouched |
-| 9 | Low | Scripts | `ConnectDb.scala` | Open, untouched |
+| 7 | Medium | Local image cache | `LocalImageCacheService.startDownload` | **Fixed** (B1; `LocalImageCacheServiceSpec` "stop running, as failed") |
+| 8 | Low | Export | `Global.legacyThumbUrl` | **Fixed**: `resizedImagesUrls` prefixes `wlxjury.host` (`ThumbnailUrlsExportSpec`) |
+| 9 | Low | Scripts | `ConnectDb.scala` | **N/A**: the file is deleted |
 | P1 | High | Round creation | `RoundService.createNewRound` (duplicate guard) | **Fixed** (`62b644e`) |
-| P2 | Low | Region gallery | `ImageDbNew.where`, `Selection.apply(Page, ...)` | New in `performance-memory` |
-| P3 | Low | Deployment | `RoundService` locks, `RoundImageCounts` | New in `performance-memory` |
+| P2 | Low | Region gallery | `ImageDbNew.where`, `Selection.apply(Page, ...)` | **N/A**: `Selection.apply(Page, ...)` is deleted |
+| P3 | Low | Deployment | `RoundService` locks, `RoundImageCounts` | **Documented**: one instance per database (`docs/deployment.md`) |
 
 ---
 

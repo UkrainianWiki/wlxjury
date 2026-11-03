@@ -223,7 +223,8 @@ class JobSchedulerSpec extends Specification with BeforeAll with BeforeEach with
       s.started(job.id)
       val failed = s.await(job.id, 10.seconds)
       failed.status === JobStatus.Failed
-      failed.error must beSome(contain("simulated failure at step 4"))
+      (failed.failure.map(_.key) must beSome(_root_.services.jobs.JobError.CrashedKey)) and
+        (failed.failure.flatMap(_.reference) must beSome) and (failed.error must not(beSome(contain("simulated failure"))))
       (failed.state \ "done").as[Int] === 3 // the failed step rolled back
       h.failed.asScala.toSeq === Seq(job.id)
 
@@ -325,7 +326,8 @@ class JobSchedulerSpec extends Specification with BeforeAll with BeforeEach with
       s.started(p.id)
       val failed = s.await(p.id, 10.seconds)
       failed.status === JobStatus.Failed
-      failed.error must beSome(contain("API down at page 2"))
+      (failed.failure.map(_.key) must beSome(_root_.services.jobs.JobError.CrashedKey)) and
+        (failed.failure.flatMap(_.reference) must beSome) and (failed.error must not(beSome(contain("API down"))))
       (failed.state \ "page").as[Int] === 2
 
       paging.failAtPage.remove(p.id)

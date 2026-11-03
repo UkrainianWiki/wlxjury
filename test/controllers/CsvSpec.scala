@@ -61,6 +61,42 @@ class CsvSpec extends Specification {
     }
   }
 
+  "formula injection" should {
+    val starts = Seq("=", "+", "-", "@", "\t", "\r", " =", "\t+", " \t@")
+
+    /** The lines as GalleryController.csvStream sends them (Csv.writeRow), read back. */
+    def written(rows: Seq[Seq[String]]): Seq[Seq[String]] =
+      com.github.tototoshi.csv.CSVReader.open(new java.io.StringReader(rows.map(Csv.writeRow).mkString)).all()
+
+    "prefix a juror's name starting with a formula character in the header" in {
+      val jurors = starts.zipWithIndex.map { case (c, i) => User(s"${c}HYPERLINK(1)", "", Some(i.toLong + 1)) }
+      written(Csv.exportRates(Seq.empty, jurors, ratedRound(5))).head ===
+        Seq("Rank", "File", "Overall") ++ starts.map(c => s"'${c}HYPERLINK(1)")
+    }
+
+    "prefix a file title starting with a formula character in its row" in {
+      val files = starts.map(c => ImageWithRating(Image(0, s"${c}cmd|' /C calc'!A0"), Seq.empty))
+      written(Csv.exportRates(files, Seq.empty, ratedRound(5))).tail.map(_(1)) ===
+        starts.map(c => s"'${c}cmd|' /C calc'!A0")
+    }
+
+    "leave other text and the app's numbers, a binary round's -1 and rank ranges included, as they are" in {
+      val jurors = Seq(User("Juror =1", "", Some(1)), User("Juror2", "", Some(2)))
+      val files = Seq("File:a=b.jpg", "File:c.jpg").map(t => ImageWithRating(Image(0, t), Seq(Selection(0, 1, 0, rate = -1))))
+      written(Csv.exportRates(files, jurors, binaryRound)).take(3) === Seq(
+        Seq("Rank", "File", "Overall", "Juror =1", "Juror2"),
+        Seq("1-2", "File:a=b.jpg", "0", "-1", ""),
+        Seq("1-2", "File:c.jpg", "0", "-1", "")
+      )
+    }
+
+    "neutralise every non-numeric cell of any export, by type or by text" in {
+      (Csv.writeRow(Seq(-1, -2.5, "-1", "-0.5", "-x", "+1", "@a", " -1", "a-b", "")) ===
+        "-1,-2.5,-1,-0.5,'-x,'+1,'@a,' -1,a-b,\r\n") and
+        (Csv.text("") === "") and (Csv.text("a =b") === "a =b") and (Csv.text("-5") === "'-5")
+    }
+  }
+
   "add bom" should {
     val BOM = "\ufeff"
     "header" in {

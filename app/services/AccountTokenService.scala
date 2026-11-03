@@ -132,7 +132,7 @@ object AccountTokenService {
                 sql"""UPDATE users SET password = $passwordHash, email_verified_at = NOW(3),
                         auth_version = ${User.BumpAuthVersion}
                       WHERE id = ${user.getId}""".update.apply()
-                val revokedApiTokens = ApiTokenJdbc.revokeAll(user.getId)
+                val revokedApiCount = ApiTokenJdbc.revokeAll(user.getId)
                 val roles = pending.flatMap { p =>
                   val used = p.id == link.id || AccountTokenJdbc.markUsed(p.id)
                   for {
@@ -150,7 +150,7 @@ object AccountTokenService {
                 val revokedLinks = AccountTokenJdbc.revokeUnused(user.getId, AccountTokenJdbc.AllPurposes)
                 logger.info(
                   s"account_link_accepted purpose=${link.purpose} tokenId=${link.id} accountId=${user.getId} " +
-                    s"apiTokensRevoked=$revokedApiTokens linksRevoked=$revokedLinks memberships=${roles.mkString(",")}")
+                    s"apiTokensRevoked=$revokedApiCount linksRevoked=$revokedLinks memberships=${roles.mkString(",")}")
                 Right(link -> User.findById(user.getId)(session).get)
               }
             }

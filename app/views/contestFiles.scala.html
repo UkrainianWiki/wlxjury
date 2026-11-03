@@ -56,7 +56,9 @@
         <div id="gallery" class="gallery mw-gallery-traditional" style="display:none;" @views.GalleryTiles.attributes(user, user.getId, None)>
         @for(file <- files) {
             @* a deleted file's thumbnail from the cache: the gallery's size is one it keeps *@
-            <img alt="@file.image.title"
+            @* unitegallery reads alt as html (the tiles' text panels insert it with .html()): the
+               title escaped once more, as gallery.scala.html's caption *@
+            <img alt="@play.twirl.api.HtmlFormat.escape(file.image.title).body"
                 src="@Global.resizeTo(file.image, Global.gallerySizeY)"
                 data-image="@Global.largeImage(file.image).src"
                 data-width="@file.image.width"

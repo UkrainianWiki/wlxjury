@@ -13,10 +13,11 @@
 @editedAccount = @{ editUserForm("id").value.flatMap(_.toLongOption).filter(_ != 0).flatMap(id => User.findById(id)) }
 
 
-@* the token card's copy button (copy-field.js): only on the own profile, which has the card *@
+@* the token card's scripts (copy-field.js, submit-once.js): only on the own profile, which has the card *@
 @pageScripts = {
     @if(tokensCard.nonEmpty) {
         <script src="@routes.Assets.versioned("javascripts/copy-field.js")"></script>
+        <script src="@routes.Assets.versioned("javascripts/submit-once.js")"></script>
     }
 }
 
@@ -156,6 +157,12 @@
             <div class="col-md-8 col-xl-7 mt-4 mt-md-0">
                 @apiTokens(card)
             </div>
+        }
+        @* root, on another account: a link to its API tokens, to revoke them (ApiTokenAdminController) *@
+        @if(tokensCard.isEmpty && user.hasRole(User.ROOT_ROLE)) {
+            @for(id <- editUserForm("id").value.flatMap(_.toLongOption).filter(id => id != 0 && !user.id.contains(id))) {
+                <p class="col-12 mt-3"><a href="@routes.ApiTokenAdminController.tokens(id)">@Messages("api.tokens")</a></p>
+            }
         }
     </div>
 }

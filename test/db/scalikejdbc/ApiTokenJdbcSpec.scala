@@ -30,17 +30,19 @@ class ApiTokenJdbcSpec extends Specification with BeforeAll with BeforeEach with
 
   private def tokenId(token: String): Long = ApiTokenJdbc.findByHash(ApiTokenService.hash(token)).get.id
 
-  "V75" should {
+  "V75 and V79" should {
     "create api_token with its columns, a unique hash and the user's tokens deleted with the user" in {
       val columns = DB.readOnly { implicit session =>
         sql"""SELECT column_name, column_type, is_nullable FROM information_schema.columns
               WHERE table_schema = DATABASE() AND table_name = 'api_token' ORDER BY ordinal_position"""
           .map(rs => (rs.string(1), rs.string(2), rs.string(3))).list.apply()
       }
-      columns.map(_._1) === Seq("id", "user_id", "name", "token_hash", "prefix", "created_at", "expires_at",
-        "last_used_at", "revoked_at")
+      // create_nonce: V79, the hash of the create form's nonce (ApiTokenService.createOnce)
+      columns.map(_._1) === Seq("id", "user_id", "name", "token_hash", "prefix", "create_nonce", "created_at",
+        "expires_at", "last_used_at", "revoked_at")
+      columns.find(_._1 == "create_nonce").map(c => (c._2, c._3)) === Some(("char(64)", "YES"))
       columns.find(_._1 == "token_hash").map(_._2) === Some("char(64)")
-      columns.filter(_._3 == "YES").map(_._1) === Seq("expires_at", "last_used_at", "revoked_at")
+      columns.filter(_._3 == "YES").map(_._1) === Seq("create_nonce", "expires_at", "last_used_at", "revoked_at")
 
       val user = newUser("alice@example.com")
       val token = ApiTokenService.create(user.getId, "cli", Some(90))
