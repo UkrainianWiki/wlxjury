@@ -364,7 +364,7 @@ class LocalImageCacheServiceSpec extends Specification {
     "return bytes on an immediate 200" in {
       withServer(_ => HttpResponse(entity = HttpEntity(ContentTypes.`application/octet-stream`, okBytes))) { port =>
         val result = Await.result(
-          mkService(mkTempDir()).downloadWithRetry(s"http://127.0.0.1:$port/img", attempt = 1),
+          mkService(mkTempDir(), serverPort = Some(port)).downloadWithRetry(s"http://localhost:$port/img", attempt = 1),
           10.seconds
         )
         result must beSome
@@ -380,7 +380,7 @@ class LocalImageCacheServiceSpec extends Specification {
           HttpResponse(entity = HttpEntity(ContentTypes.`application/octet-stream`, okBytes))
       } { port =>
         val result = Await.result(
-          mkService(mkTempDir()).downloadWithRetry(s"http://127.0.0.1:$port/img", attempt = 1),
+          mkService(mkTempDir(), serverPort = Some(port)).downloadWithRetry(s"http://localhost:$port/img", attempt = 1),
           10.seconds
         )
         result must beSome
@@ -394,7 +394,7 @@ class LocalImageCacheServiceSpec extends Specification {
         HttpResponse(StatusCodes.TooManyRequests, headers = List(RawHeader("Retry-After", "0")))
       } { port =>
         val result = Await.result(
-          mkService(mkTempDir(), maxAttempts = 3).downloadWithRetry(s"http://127.0.0.1:$port/img", attempt = 1),
+          mkService(mkTempDir(), maxAttempts = 3, serverPort = Some(port)).downloadWithRetry(s"http://localhost:$port/img", attempt = 1),
           10.seconds
         )
         result must beNone
@@ -409,7 +409,7 @@ class LocalImageCacheServiceSpec extends Specification {
         HttpResponse(StatusCodes.InternalServerError)
       } { port =>
         val result = Await.result(
-          mkService(mkTempDir()).downloadWithRetry(s"http://127.0.0.1:$port/img", attempt = 1),
+          mkService(mkTempDir(), serverPort = Some(port)).downloadWithRetry(s"http://localhost:$port/img", attempt = 1),
           10.seconds
         )
         result must beNone
@@ -424,7 +424,7 @@ class LocalImageCacheServiceSpec extends Specification {
         HttpResponse(StatusCodes.NotFound)
       } { port =>
         Await.result(
-          mkService(mkTempDir()).downloadWithRetry(s"http://127.0.0.1:$port/img", attempt = 1),
+          mkService(mkTempDir(), serverPort = Some(port)).downloadWithRetry(s"http://localhost:$port/img", attempt = 1),
           10.seconds
         ) must throwA[ThumbnailNotFound]
         requestsSeen.get() === 1
@@ -453,11 +453,93 @@ class LocalImageCacheServiceSpec extends Specification {
         p
       }
       Await.result(
-        mkService(mkTempDir())
-          .downloadWithRetry(s"http://127.0.0.1:$port/img", attempt = 1)
+        mkService(mkTempDir(), serverPort = Some(port))
+          .downloadWithRetry(s"http://localhost:$port/img", attempt = 1)
           .failed,
         10.seconds
       ) must beAnInstanceOf[Exception]
+    }
+  }
+
+  // ── outbound hosts (P9) ───────────────────────────────────────────────────
+
+  "a fetch" should {
+
+    val okBytes = jpegBytes()
+    def ok = HttpResponse(entity = HttpEntity(ContentTypes.`application/octet-stream`, okBytes))
+
+    "be made only from the configured Wikimedia host: another host, scheme, port or a userinfo trick is refused unsent" in {
+      val foreignRequests = new AtomicInteger(0)
+      withServer { n => foreignRequests.set(n); ok } { foreign =>
+        withServer(_ => ok) { wikimedia =>
+          val svc = mkService(mkTempDir(), serverPort = Some(wikimedia))
+          svc.fetchable(s"http://localhost:$wikimedia/wikipedia/commons/a/ab/X.jpg") must beTrue
+          forall(Seq(
+            s"http://localhost:$foreign/img",
+            s"http://127.0.0.1:$foreign/img",
+            s"https://localhost:$wikimedia/img",
+            s"http://localhost:$wikimedia@127.0.0.1:$foreign/img",
+            s"//localhost:$wikimedia/img",
+            "file:///etc/passwd"
+          )) { url =>
+            svc.fetchable(url) must beFalse
+            Await.result(svc.downloadWithRetry(url, attempt = 1).failed, 10.seconds) must
+              beAnInstanceOf[IllegalArgumentException]
+          }
+          foreignRequests.get === 0
+        }
+      }
+    }
+
+    "not follow a redirect to another host" in {
+      val foreignRequests = new AtomicInteger(0)
+      withServer { n => foreignRequests.set(n); ok } { foreign =>
+        withServer(_ => HttpResponse(StatusCodes.Found,
+          headers = List(headers.Location(s"http://localhost:$foreign/img")))) { wikimedia =>
+          val svc = mkService(mkTempDir(), serverPort = Some(wikimedia))
+          Await.result(svc.downloadWithRetry(s"http://localhost:$wikimedia/img", attempt = 1), 10.seconds) must beNone
+          foreignRequests.get === 0
+        }
+      }
+    }
+
+    "refuse an original file stored with a url not on Wikimedia's upload host, unsent" in {
+      val foreignRequests = new AtomicInteger(0)
+      withServer { n => foreignRequests.set(n); ok } { foreign =>
+        withServer(_ => ok) { wikimedia =>
+          val svc = mkService(mkTempDir(), serverPort = Some(wikimedia))
+          // narrower than every thumbnail box: the original itself is what would be fetched
+          forall(Seq(
+            s"http://localhost:$foreign/wikipedia/commons/a/ab/Small.jpg",
+            s"http://localhost:$foreign/x?//upload.wikimedia.org/wikipedia/commons/a/ab/Small.jpg"
+          )) { url =>
+            val small = Image(pageId = 7, title = "File:Small.jpg", url = Some(url), width = 100, height = 75)
+            Await.result(svc.fetchAndCacheAll(small, 100).failed, 10.seconds).getMessage must
+              contain("No cacheable URL")
+          }
+          foreignRequests.get === 0
+        }
+      }
+    }
+
+    "fetch a protocol-relative Commons url's original from the configured host, as https's" in {
+      val requests = new AtomicInteger(0)
+      withServer { n => requests.set(n); ok } { wikimedia =>
+        val svc = mkService(mkTempDir(), serverPort = Some(wikimedia))
+        val small = Image(pageId = 8, title = "File:Small.jpg",
+          url = Some("//upload.wikimedia.org/wikipedia/commons/a/ab/Small.jpg"), width = 100, height = 75)
+        Await.result(svc.fetchAndCacheAll(small, 100), 10.seconds) must not(beEmpty)
+        requests.get === 1
+      }
+    }
+
+    "take only Commons urls on Wikimedia's upload host as Commons files" in {
+      import services.imports.CommonsFileCheck.isCommonsUrl
+      isCommonsUrl("https://upload.wikimedia.org/wikipedia/commons/a/ab/X.jpg") must beTrue
+      isCommonsUrl("//upload.wikimedia.org/wikipedia/commons/a/ab/X.jpg") must beTrue
+      isCommonsUrl("https://evil.example/x?//upload.wikimedia.org/wikipedia/commons/a/ab/X.jpg") must beFalse
+      isCommonsUrl("https://upload.wikimedia.org.evil.example/wikipedia/commons/a/ab/X.jpg") must beFalse
+      isCommonsUrl("https://upload.wikimedia.org/wikipedia/uk/a/ab/X.jpg") must beFalse
     }
   }
 

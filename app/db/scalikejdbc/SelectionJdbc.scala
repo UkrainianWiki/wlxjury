@@ -155,19 +155,16 @@ object SelectionJdbc extends CRUDMapper[Selection] {
 
   /** Rates the juror's selection of the file in the round; the number of selections found
     * (0 or 1): MariaDB's driver counts the rows matched, not only those changed
-    * (`useAffectedRows` off, its default), so a vote of the stored rate counts too.
+    * (`useAffectedRows` off, its default), so a vote of the stored rate counts too. None if the
+    * juror is stopped on the round (an inactive round_user row, P6), also when the stop races
+    * the vote ([[RoundUser.isStopped]] is checked before, for the stopped round's answer).
     */
   def rate(pageId: Long, juryId: Long, roundId: Long, rate: Int = 1)(implicit session: DBSession = AutoSession): Int =
-    withSQL {
-      update(SelectionJdbc)
-        .set(column.rate -> rate)
-        .where
-        .eq(column.pageId, pageId)
-        .and
-        .eq(column.juryId, juryId)
-        .and
-        .eq(column.roundId, roundId)
-    }.update()
+    sql"""UPDATE selection SET rate = $rate
+          WHERE page_id = $pageId AND jury_id = $juryId AND round_id = $roundId
+            AND NOT EXISTS (SELECT 1 FROM round_user ru
+                            WHERE ru.round_id = $roundId AND ru.user_id = $juryId AND ru.active = FALSE)"""
+      .update()
 
   /** Moves the image's votes to another round, also those moved aside (V63): a juror's
     * vote already in the new round wins. If the new round

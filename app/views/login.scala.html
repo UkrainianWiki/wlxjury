@@ -18,6 +18,12 @@
             <div class="alert alert-danger" role="alert">
             @Messages(loginForm.errors.head.message)
             </div>
+            @* any refused sign-in, whatever the account (no account enumeration): a password
+               forgotten, or a legacy one retired after its grace period (P8), is set again
+               through a link *@
+            @if(loginForm.errors.head.message == "invalid.user.or.password") {
+                <p class="signin-password-link-hint">@Messages("signin.password.link.hint")</p>
+            }
         }
 
         @bs.text(loginForm("login"), Symbol("_hiddenLabel") -> Messages("signin.your.login"), Symbol("placeholder") -> Messages("login"), Symbol("class") -> "form-control-lg")
