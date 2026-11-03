@@ -90,7 +90,7 @@ class RoundImageLockSpec extends Specification with TestDb with BeforeAll with B
   }
 
   "moving a file to another round" should {
-    "wait for a monument id change holding the image, and both commit" in withPool { implicit ec =>
+    "wait for a monument id change holding the file's round (round-first), and both commit" in withPool { implicit ec =>
       implicit val contest: ContestJury = createContests(10).head
       val jurors = createUsers("jury", 1, 2)
       val r1 = roundDao.create(Round(None, 1, None, contest.getId, active = true)).getId
@@ -101,13 +101,14 @@ class RoundImageLockSpec extends Specification with TestDb with BeforeAll with B
       val go = new CountDownLatch(1)
       // updateMonumentIdIn: the image's row, then (here once the move waits) its votes
       val change = Future(DB.localTx { implicit s =>
+        RoundWrites.lockForFiles(Seq(1L)) // the round-first rule (RoundWrites): the file's rounds, then its image
         sql"UPDATE images SET monument_id = '46-101-0001' WHERE page_id = 1".update()
         held.countDown()
         go.await(30, TimeUnit.SECONDS)
         ImageJdbc.updateMonumentIdIn(1L, "46-101-0001")
       })
       held.await(30, TimeUnit.SECONDS) must beTrue
-      val move = Future(VoteJdbc.setRound(1L, r1, r2))
+      val move = Future(TestVoteWrites.setRound(1L, r1, r2))
       (lockWait(move) === "LOCK WAIT") and {
         go.countDown()
         (Await.result(change, 30.seconds) === (())) and (Await.result(move, 30.seconds) === (())) and

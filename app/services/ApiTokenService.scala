@@ -1,7 +1,7 @@
 package services
 
 import controllers.Secured
-import db.scalikejdbc.{ApiToken, ApiTokenJdbc, User}
+import db.scalikejdbc.{ApiToken, ApiTokenJdbc, WriteTx, User}
 import play.api.Logging
 import scalikejdbc.{AutoSession, DB, DBSession}
 
@@ -116,18 +116,22 @@ object ApiTokenService extends Logging {
     * session meanwhile revokes every token, so none may follow it).
     */
   def createOnce(user: User, name: String, expiresInDays: Option[Int], nonce: String): CreateOutcome =
-    DB.localTx { implicit s =>
-      val userId = user.getId
-      if (!ApiTokenJdbc.lockOwner(userId).contains(user.authVersion)) CreateOutcome.SessionEnded
+  {
+    val userId = user.getId
+    val (outcome, replaced) = WriteTx.write { implicit s =>
+      if (!ApiTokenJdbc.lockOwner(userId).contains(user.authVersion)) (CreateOutcome.SessionEnded, Nil)
       else {
         val replaced = ApiTokenJdbc.unusedOfSubmit(userId, hash(nonce))
         replaced.foreach(ApiTokenJdbc.revoke(_, userId))
-        if (replaced.nonEmpty)
-          logger.info(s"api_token_replaced userId=$userId tokenIds=${replaced.mkString(",")} reason=repeated_submit")
-        if (ApiTokenJdbc.findByUser(userId).count(_.usable) >= MaxActive) CreateOutcome.LimitReached
-        else CreateOutcome.Created(create(userId, name, expiresInDays, Some(nonce)))
+        if (ApiTokenJdbc.findByUser(userId).count(_.usable) >= MaxActive) (CreateOutcome.LimitReached, replaced)
+        else (CreateOutcome.Created(create(userId, name, expiresInDays, Some(nonce))), replaced)
       }
     }
+    // after the commit: a retried or rolled-back transaction logs nothing it didn't do
+    if (replaced.nonEmpty)
+      logger.info(s"api_token_replaced userId=$userId tokenIds=${replaced.mkString(",")} reason=repeated_submit")
+    outcome
+  }
 
   /** Root revokes another user's unrevoked tokens (`tokenId`, else all of them), in one
     * transaction with the user's row locked; logged at INFO with ids only if any was revoked.

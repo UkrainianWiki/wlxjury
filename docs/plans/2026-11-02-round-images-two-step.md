@@ -209,6 +209,20 @@ foreign keys). A pair with votes in both tables (a file moved into a round that 
 
 ### Lock order
 
+**Since the write-path robustness batch (2026-11-03, `docs/plans/2026-11-03-write-path-simplification.md`,
+W1–W3):** the rule between writers is no longer this table order but the **round-first rule**:
+every structural write (anything but a juror's own vote) locks the rounds it touches **for
+update, first** in its transaction (`RoundWrites.lock`; writers that start from files lock the
+files' rounds first, `RoundWrites.lockForFiles`), so the round row serializes the structural
+writers of a round; the DAO's writers check it at run time (`RoundWrites.requireRounds` /
+`requireFiles`). Juror votes stay row-level (`VoteJdbc.rate` by primary key, then `round_user`
+and `round_criterion` with share locks; `CriteriaRate.updateRate`) and never lock the round.
+Every connection runs at **READ COMMITTED** (`db.default.hikaricp.transactionIsolation`; the
+tests' pool by the driver's `transactionIsolation`): no gap locks, plain reads current. Write
+transactions are retried on a deadlock (`Tx.write`, 3 attempts; job steps by the scheduler).
+Below the round the order still holds and is what each writer does, but it is no longer the
+safety argument between two structural writers of one round. Kept from before:
+
 `round` → `images` → `vote` → `criteria_rate` → `vote_aside` → `round_image` (criteria plan §3,
 folded in with P1). It extends today's rounds → files → votes (`DeletedFiles`). Rule:
 `criteria_rate` rows are written only while their vote row is locked (`CriteriaRate.updateRate`,
@@ -390,6 +404,12 @@ manual reverse rename.
 
 ### P1b: CoI disqualification (§7)
 
+**Write-path rules (user, 2026-11-03, W2/W7 of the write-path plan):** disqualify and requalify
+are structural writers (`RoundWrites.lock` first; `RoundConflicts` already locks the round), and
+once P3's `paused` exists they are allowed only on a round that isn't open, the status checked
+under the round's X lock in the action's own transaction; row-level correctness and the retry
+stay (a vote already in flight can still land).
+
 Cheap right after P1, so not left to P3: it needs only P1's `status`, today's `moveVotesAside`,
 the `restoreVotes` condition, a requalify action and the re-check listing; no counts exist yet
 to recompute. It ends the vote deletion of D9 early.
@@ -409,6 +429,13 @@ to recompute. It ends the vote deletion of D9 early.
   `deleted`; the re-check lists ended and new matches; authorization and CSRF as in §6.
 
 ### P2a: counts in shadow
+
+**Replaced (user, 2026-11-03, W6 of the write-path plan):** no deltas in the vote
+transaction; the count columns are kept by a dirty-round mark and a background recompute,
+done correctly: a dirty-generation counter (or the mark cleared before the read); each window's
+`round_image` rows locked `FOR UPDATE` before the votes are read, at READ COMMITTED; a per-file
+dirty set; the bulk writers' marks persisted on the round row; exact consumers (top-N, CSV,
+finalize) read the votes directly. The items below describe the original plan.
 
 - Work: the count columns and backfill; deltas in vote and insert paths; `recompute` in bulk
   paths; the repair job's count part. Reads unchanged.
@@ -434,6 +461,11 @@ to recompute. It ends the vote deletion of D9 early.
   `RoundDistributionSimulation`. Report absolute deltas and run variation separately.
 
 ### P3: two-step flow
+
+**Write-path rules (user, 2026-11-03, W2/W7):** re-apply, Prune and D16a's `removeImage`
+(`dq`) are round-first writers gated to `paused`/`draft` (the status read under the round's X
+lock); the fill runs in `draft`. The test-only `removeImage` (`TestVoteWrites`) is not the app's:
+P3 writes D16a's anew.
 
 - Work: `round.status` and its backfill, job modes, Prune, the form, the review page, re-apply,
   the threshold preview, POST routes. `removeImage` excludes the file (D16a: `dq`, `dq_code =

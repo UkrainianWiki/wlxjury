@@ -155,13 +155,16 @@ object ImageJdbc extends CRUDMapper[Image]
 
   /** Updates the image, and its vote rows' copy of its monument id. */
   def update(image: Image): Unit = {
-    DB.localTx { implicit session => updateIn(image) }
+    WriteTx.write { implicit session => RoundWrites.lockForFiles(Seq(image.pageId)); updateIn(image) }
     RegionCountCache.invalidateMonumentIds()
   }
 
   /** [[update]] in the caller's transaction: the caller invalidates
-    * [[RegionCountCache.invalidateMonumentIds]] after it commits. */
+    * [[RegionCountCache.invalidateMonumentIds]] after it commits. It writes the file's votes
+    * in every round (their monument id copies): the caller has locked the file's rounds first
+    * ([[RoundWrites.lockForFiles]]; checked). */
   def updateIn(image: Image)(implicit session: DBSession): Unit = {
+    RoundWrites.requireFiles(Seq(image.pageId))
     updateById(image.pageId).withAttributes(
       fileAttributes(image) ++
         Seq("monumentId" -> image.monumentId, "description" -> image.description, "author" -> image.author): _*
@@ -196,13 +199,14 @@ object ImageJdbc extends CRUDMapper[Image]
 
   /** Sets the image's monument id, and its vote rows' copy of it. */
   def updateMonumentId(pageId: Long, monumentId: String): Unit = {
-    DB.localTx { implicit session => updateMonumentIdIn(pageId, monumentId) }
+    WriteTx.write { implicit session => RoundWrites.lockForFiles(Seq(pageId)); updateMonumentIdIn(pageId, monumentId) }
     RegionCountCache.invalidateMonumentIds()
   }
 
   /** [[updateMonumentId]] in the caller's transaction: the caller invalidates
     * [[RegionCountCache.invalidateMonumentIds]] after it commits. */
   def updateMonumentIdIn(pageId: Long, monumentId: String)(implicit session: DBSession): Unit = {
+    RoundWrites.requireFiles(Seq(pageId))
     updateById(pageId).withAttributes("monumentId" -> monumentId)
     syncSelectionMonumentId(pageId, Some(monumentId))
   }
@@ -323,7 +327,8 @@ object ImageJdbc extends CRUDMapper[Image]
       sql"UPDATE images SET deleted_at = NULL WHERE page_id IN ($pageIds) AND deleted_at IS NOT NULL".update()
 
   /** The open rounds ([[Round.openCond]]) that `pageIds` have votes in, read as committed
-    * and locked in share mode until the transaction ends. A file deleted on Commons leaves
+    * and locked for update until the transaction ends (a structural write follows:
+    * [[RoundWrites]], recorded). A file deleted on Commons leaves
     * these rounds only ([[archiveVotes]]); a round opened meanwhile ([[Round.setActiveGuarded]])
     * then either is open here, or waits for this transaction and sees the files deleted.
     * Call it before marking them deleted.
@@ -336,16 +341,18 @@ object ImageJdbc extends CRUDMapper[Image]
                            WHERE page_id IN ($pageIds) AND status = ${RoundImageJdbc.Status.In}"""
         .map(_.long(1)).list()
       if (roundIds.isEmpty) Set.empty
-      else
-        sql"""SELECT id, ${Round.openCond(sqls"round")} FROM round WHERE id IN ($roundIds)
-              ORDER BY id LOCK IN SHARE MODE"""
+      else {
+        val ids = roundIds.distinct.sorted
+        val open = sql"""SELECT id, ${Round.openCond(sqls"round")} FROM round WHERE id IN ($ids)
+              ORDER BY id FOR UPDATE"""
           .map(rs => rs.long(1) -> rs.booleanOpt(2).getOrElse(false))
           .list()
-          .collect { case (id, true) => id }
-          .toSet
+        RoundWrites.recordRounds(open.map(_._1))
+        open.collect { case (id, true) => id }.toSet
+      }
     }
 
-  /** Locks, shared and in id order, the rounds of the files' votes moved aside, before the
+  /** Locks, for update and in id order (recorded, [[RoundWrites]]), the rounds of the files' votes moved aside, before the
     * files and their votes: [[restoreVotes]] reads them (a vote goes back only to a round that
     * still exists), and a shared lock taken there, after the votes, deadlocked with the paths
     * that lock a round first (leaving out conflicts of interest, a distribution's chunk). Read
@@ -356,8 +363,7 @@ object ImageJdbc extends CRUDMapper[Image]
       val roundIds = sql"SELECT DISTINCT round_id FROM vote_aside WHERE page_id IN ($pageIds)"
         .map(_.long(1))
         .list()
-      if (roundIds.nonEmpty)
-        sql"SELECT id FROM round WHERE id IN ($roundIds) ORDER BY id LOCK IN SHARE MODE".map(_.long(1)).list(): Unit
+      RoundWrites.lock(roundIds)
     }
 
   /** Moves the vote rows of `pageIds` in the `roundIds` rounds to vote_aside
@@ -378,13 +384,19 @@ object ImageJdbc extends CRUDMapper[Image]
     * From the files marked deleted (V64's index), few, to their votes in the round: not
     * from the round's votes, up to some 760k rows, nearly always to none.
     *
+    * The candidates are read plainly, then those still marked deleted are read again with a
+    * share lock on their image rows ([[lockDeleted]], after the round's lock: h5): a restore
+    * committing in between ([[services.imports.DeletedFiles.restore]], which locks the files
+    * for update) is waited for and seen, instead of its file's votes being moved aside again.
+    *
     * @return the files moved
     */
   def archiveDeletedVotesInRound(roundId: Long)(implicit session: DBSession): Seq[Long] = {
-    val pageIds = sql"""SELECT DISTINCT STRAIGHT_JOIN s.page_id FROM images i JOIN vote s ON s.page_id = i.page_id
+    val candidates = sql"""SELECT DISTINCT STRAIGHT_JOIN s.page_id FROM images i JOIN vote s ON s.page_id = i.page_id
                         WHERE i.deleted_at IS NOT NULL AND s.round_id = $roundId"""
       .map(_.long(1))
       .list()
+    val pageIds = lockDeleted(candidates)
     if (pageIds.nonEmpty) moveVotesAside(t => sqls"$t.round_id = $roundId AND $t.page_id IN ($pageIds)")
     pageIds
   }
@@ -408,6 +420,7 @@ object ImageJdbc extends CRUDMapper[Image]
       .map(rs => rs.long(1) -> rs.long(2))
       .list()
     val roundIds = pairs.map(_._1).distinct
+    RoundWrites.requireRounds(roundIds)
     // the rows aside that REPLACE drops: the same vote (page, juror, round) under another id,
     // moved aside before the file was distributed to the juror again; locked, then their
     // rates deleted. `where` on v: those rows have the moved rows' pages and rounds.
@@ -457,6 +470,10 @@ object ImageJdbc extends CRUDMapper[Image]
       .map(rs => rs.long(1) -> rs.long(2))
       .list()
     val roundIds = moved.map(_._1).distinct
+    // the caller locked the rounds it read the votes aside in (lockRoundsOfArchived, unlocked
+    // read); a round whose aside rows appeared since is locked now (W2's finding 3)
+    RoundWrites.lockMissing(roundIds)
+    RoundWrites.requireRounds(roundIds)
     // the new unrated rows a rated moved one replaces, with their criteria rates: rated is a
     // rate other than 0, or in a criteria round a criterion rated (a partly rated vote's rate
     // is 0, U5, but it holds the juror's work)

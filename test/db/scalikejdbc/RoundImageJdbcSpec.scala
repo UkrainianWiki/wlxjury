@@ -75,26 +75,26 @@ class RoundImageJdbcSpec extends Specification with TestDb with BeforeAll with B
 
     "remove a file's row with its votes (removeImage), and only then" in {
       val (r1, r2, _) = setUp()
-      VoteJdbc.removeImage(1L, r1)
+      TestVoteWrites.removeImage(1L, r1)
       (statuses(r1) === Seq(2L -> "in", 3L -> "in")) and (statuses(r2) === Seq(1L -> "in", 2L -> "in")) and clean(r1, r2)
     }
 
     "keep the files with a rated vote left when the unrated votes go (removeUnrated)" in {
       val (r1, _, jurors) = setUp()
       VoteJdbc.rate(2L, jurors.head, r1, 1)
-      VoteJdbc.removeUnrated(r1)
+      TestVoteWrites.removeUnrated(r1)
       (statuses(r1) === Seq(2L -> "in")) and clean(r1)
     }
 
     "move a file from one round to the other (setRound): out of one, into the other" in {
       val (r1, r2, _) = setUp()
-      VoteJdbc.setRound(3L, r1, r2)
+      TestVoteWrites.setRound(3L, r1, r2)
       val moved = RoundImageJdbc.find(r2, 3L)
       (statuses(r1) === Seq(1L -> "in", 2L -> "in")) and
         (statuses(r2) === Seq(1L -> "in", 2L -> "in", 3L -> "in")) and
         (moved.map(_.addedHow) === Some("manual")) and (moved.flatMap(_.monumentId) === Some("07-101-0003")) and
         {
-          VoteJdbc.setRound(1L, r1, r2) // into a round that has the file: stays in
+          TestVoteWrites.setRound(1L, r1, r2) // into a round that has the file: stays in
           (statuses(r1) === Seq(2L -> "in")) and (statuses(r2).map(_._1) === Seq(1L, 2L, 3L)) and clean(r1, r2)
         }
     }
@@ -149,17 +149,20 @@ class RoundImageJdbcSpec extends Specification with TestDb with BeforeAll with B
       exec(sqls"DELETE FROM vote WHERE round_id = $r1 AND page_id IN (1, 2)")
       exec(sqls"INSERT INTO vote_aside (page_id, jury_id, round_id, rate) VALUES (4, 1, $r1, 0), (5, 1, $r1, 0)")
       exec(sqls"INSERT INTO round_image (round_id, page_id, status) VALUES ($r1, 5, 'dq')")
-      val result = DB.localTx(implicit s => RoundImageJdbc.sync(r1, Seq(1L, 2L, 3L, 4L, 5L, 6L), Origin(RoundImageJdbc.AddedHow.Repair, Some(5L))))
+      val result = DB.localTx { implicit s =>
+        RoundWrites.lock(Seq(r1))
+        RoundImageJdbc.sync(r1, Seq(1L, 2L, 3L, 4L, 5L, 6L), Origin(RoundImageJdbc.AddedHow.Repair, Some(5L)))
+      }
       (result === SyncResult(added = 1, statusChanged = 1, removed = 1)) and
         (statuses(r1) === Seq(1L -> "deleted", 3L -> "in", 4L -> "deleted", 5L -> "dq")) and
         (RoundImageJdbc.find(r1, 4L).map(r => (r.addedHow, r.addedByJobId)) === Some(("repair", Some(5L)))) and
-        (DB.localTx(implicit s => RoundImageJdbc.sync(r1, Seq(1L, 2L, 3L, 4L, 5L))) === SyncResult())
+        (DB.localTx { implicit s => RoundWrites.lock(Seq(r1)); RoundImageJdbc.sync(r1, Seq(1L, 2L, 3L, 4L, 5L)) } === SyncResult())
     }
 
     "add no row in a round that doesn't exist" in {
       val (r1, _, _) = setUp()
       exec(sqls"INSERT INTO vote (page_id, jury_id, round_id, rate) VALUES (1, 1, 999, 0)")
-      DB.localTx(implicit s => RoundImageJdbc.sync(999L, Seq(1L))) === SyncResult()
+      DB.localTx { implicit s => RoundWrites.lock(Seq(999L)); RoundImageJdbc.sync(999L, Seq(1L)) } === SyncResult()
     }
   }
 

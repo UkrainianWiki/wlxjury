@@ -34,6 +34,7 @@ class ReadinessControllerSpec extends PlaySpecification with Mockito with AfterA
     "return the packaged build only when the actual schema is ready" in {
       val check = mock[ReadinessCheck]
       check.schemaVersion() returns Some((identity \ "schemaVersion").as[String])
+      check.isolation() returns "READ-COMMITTED"
       val result = new ReadinessController(stubControllerComponents(), check, ec).ready.apply(FakeRequest())
       status(result) mustEqual OK
       contentAsJson(result) mustEqual identity
@@ -42,8 +43,17 @@ class ReadinessControllerSpec extends PlaySpecification with Mockito with AfterA
     "reject an old or missing schema" in {
       val check = mock[ReadinessCheck]
       check.schemaVersion() returns Some("53")
+      check.isolation() returns "READ-COMMITTED"
       val result = new ReadinessController(stubControllerComponents(), check, ec).ready.apply(FakeRequest())
       status(result) mustEqual SERVICE_UNAVAILABLE
+    }
+    "refuse a pool that doesn't run at READ COMMITTED (the write paths rely on it, W1)" in {
+      val check = mock[ReadinessCheck]
+      check.schemaVersion() returns Some((identity \ "schemaVersion").as[String])
+      check.isolation() returns "REPEATABLE-READ"
+      val result = new ReadinessController(stubControllerComponents(), check, ec).ready.apply(FakeRequest())
+      status(result) mustEqual SERVICE_UNAVAILABLE
+      contentAsJson(result) mustEqual Json.obj("status" -> "unavailable")
     }
     "hide driver exceptions and credentials when the database is unavailable" in {
       val check = mock[ReadinessCheck]

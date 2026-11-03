@@ -29,7 +29,12 @@ class ReadinessController @Inject()(
       // No JDBC URLs, credentials, or exception messages in this response.
       try {
         val expected = (identity \ "schemaVersion").as[String]
-        if (check.schemaVersion().contains(expected)) Ok(identity).withHeaders(CACHE_CONTROL -> "no-store")
+        val isolation = check.isolation()
+        val isolated = isolation == ReadinessCheck.RequiredIsolation
+        if (!isolated)
+          ReadinessController.logger.error(s"readiness: the database pool runs at $isolation, not ${ReadinessCheck.RequiredIsolation}: " +
+            "set db.default.hikaricp.transactionIsolation = TRANSACTION_READ_COMMITTED")
+        if (isolated && check.schemaVersion().contains(expected)) Ok(identity).withHeaders(CACHE_CONTROL -> "no-store")
         else ServiceUnavailable(Json.obj("status" -> "unavailable")).withHeaders(CACHE_CONTROL -> "no-store")
       } catch {
         case NonFatal(_) =>
@@ -40,6 +45,8 @@ class ReadinessController @Inject()(
 }
 
 object ReadinessController {
+  private val logger = play.api.Logger("readiness")
+
   /** Literal loopback addresses only: never resolve a forwarded name. */
   def isLocal(request: RequestHeader): Boolean = {
     val address = request.remoteAddress

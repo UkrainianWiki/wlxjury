@@ -15,43 +15,8 @@ import scala.concurrent.duration._
 
 class DistributeImages @Inject()(imageRepo: ImageRepo) extends Logging {
 
-  /** Builds and persists the vote rows for `images` in `round`, in one transaction
-    * (all chunks or none): the old in-memory path, kept for scripts, tests and as the
-    * reference the streamed background distribution
-    * ([[services.distribution.RoundDistributionHandler]]) is checked against.
-    *
-    * @return the number of vote rows written
-    */
-  def distributeImages(round: Round, images: Seq[Image], jurors: Seq[User]): Int = {
-    DistributeImages.checkJury(round, jurors)
-    val selection: Seq[Vote] = newSelection(round, images, jurors)
-    logger.debug("saving selection: " + selection.size)
-    DB.localTx { implicit session =>
-      // in batches: see DistributeImages.insertRows
-      DistributeImages.insertRows(selection)
-    }
-    round.id.foreach(RoundImageCounts.invalidate(_)) // after the commit
-    logger.debug("saved selection")
-    selection.size
-  }
-
   def newSelection(round: Round, images: Seq[Image], jurors: Seq[User]): Seq[Vote] =
     DistributeImages.assign(round, images, jurors.sorted.toIndexedSeq, startPosition = 0L)
-
-  def distributeImages(
-      round: Round,
-      jurors: Seq[User],
-      prevRounds: Seq[Round],
-      removeUnrated: Boolean = false
-  ): Int = {
-    if (removeUnrated) {
-      VoteJdbc.removeUnrated(round.getId)
-    }
-
-    val images = imagesByRound(round, prevRounds)
-
-    distributeImages(round, images, jurors)
-  }
 
   def imagesByRound(round: Round, prevRounds: Seq[Round] = Nil): Seq[Image] = {
     getFilteredImages(

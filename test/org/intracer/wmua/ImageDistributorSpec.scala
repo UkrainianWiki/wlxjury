@@ -1,5 +1,6 @@
 package org.intracer.wmua
 
+import org.intracer.wmua.cmd.InMemoryDistribution._
 import db.scalikejdbc._
 import org.intracer.wmua.cmd.DistributeImages
 import org.specs2.mock.Mockito

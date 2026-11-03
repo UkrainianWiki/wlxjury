@@ -1,6 +1,6 @@
 package services.imports
 
-import db.scalikejdbc.{ImageJdbc, RoundImageCounts}
+import db.scalikejdbc.{ImageJdbc, RoundImageCounts, WriteTx}
 import org.intracer.wmua.Image
 import org.scalawiki.dto.Page
 import play.api.Logging
@@ -252,8 +252,9 @@ class CommonsFileCheck(
     }.toSeq
     val deleted = results.collect { case (id, FileCheck.Deleted) => id }.toSeq
     if (changed.nonEmpty || deleted.nonEmpty) {
-      val rounds = DB.localTx { implicit session =>
-        // First: it locks the open rounds, then all these files in page id order
+      val rounds = WriteTx.write { implicit session =>
+        // First: it locks the deleted files' open rounds for update (RoundWrites), then all
+        // these files in page id order
         val rounds = DeletedFiles.markDeleted(deleted, alsoLock = changed.map(_.pageId))
         changed.foreach { image =>
           ImageJdbc.updateFileInfo(image)

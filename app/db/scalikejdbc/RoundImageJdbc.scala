@@ -86,22 +86,10 @@ object RoundImageJdbc {
     */
   private[scalikejdbc] def inTransaction[A](session: DBSession)(f: DBSession => A): A =
     session match {
-      case _: AutoSession            => DB.localTx(f)
-      case NamedAutoSession(name, _) => NamedDB(name).localTx(f)
+      case _: AutoSession            => WriteTx.write(f)
+      case NamedAutoSession(name, _) => WriteTx.retry(NamedDB(name).localTx(f))
       case s                         => f(s)
     }
-
-  /** Locks the rounds in share mode, in id order: before a vote insert (or anything else that
-    * adds rows here), as the lock order puts the round first. round_image's foreign key, and
-    * [[addVoted]]'s read of the round, would otherwise lock it after the votes, and a
-    * transaction holding the round for update while it locks the round's votes (a criteria
-    * change, [[RoundCriterion.updateIn]]; leaving out conflicts of interest) then deadlocked
-    * with the insert.
-    */
-  def lockRounds(roundIds: Seq[Long])(implicit session: DBSession): Unit =
-    if (roundIds.nonEmpty)
-      sql"SELECT id FROM round WHERE id IN (${roundIds.distinct.sorted}) ORDER BY id LOCK IN SHARE MODE"
-        .map(_.long(1)).list(): Unit
 
   /** Adds the files of vote rows just inserted to their rounds, status `in`, after the
     * insert and in its transaction: the insert's foreign key check has locked the files'
@@ -109,13 +97,14 @@ object RoundImageJdbc {
     * back, or votes added to a file whose votes are aside) becomes `in`; its `added_*` stay.
     * A vote of a round that doesn't exist (vote.round_id has no foreign key: scripts, old
     * specs) adds no row, as V84's backfill leaves such pairs out. The caller has locked the
-    * rounds ([[lockRounds]], before the votes). P1b: `status = 'in'` here would requalify a
+    * rounds for update ([[RoundWrites]], before the votes; checked). P1b: `status = 'in'` here would requalify a
     * disqualified (`dq`) file; votes are never inserted for one (the fill's anti-join), and
     * P1b keeps `dq` here (plan §9).
     *
     * @param pairs (round id, page id) of the inserted votes
     */
-  def addVoted(pairs: Iterable[(Long, Long)], origin: Origin)(implicit session: DBSession): Unit =
+  def addVoted(pairs: Iterable[(Long, Long)], origin: Origin)(implicit session: DBSession): Unit = {
+    RoundWrites.requireRounds(pairs.map(_._1))
     pairs.groupBy(_._1).toSeq.sortBy(_._1).foreach { case (roundId, ofRound) =>
       ofRound.map(_._2).toSeq.distinct.sorted.grouped(Chunk).foreach { pageIds =>
         sql"""INSERT INTO round_image (round_id, page_id, status, added_how, added_by_job_id, added_at, monument_id)
@@ -124,6 +113,7 @@ object RoundImageJdbc {
               ON DUPLICATE KEY UPDATE status = ${Status.In}""".update()
       }
     }
+  }
 
   /** Brings the rows of the round's files `pageIds` in line with their votes, after a bulk
     * write of those votes in the same transaction: `in` where the pair has `vote` rows; else
@@ -132,10 +122,12 @@ object RoundImageJdbc {
     * committed state, not the snapshot's), then the rows locked and written. A missing row is
     * added with `missing` as its origin, with its image's monument id.
     */
-  def sync(roundId: Long, pageIds: Seq[Long], missing: Origin = Origin.Manual)(implicit session: DBSession): SyncResult =
+  def sync(roundId: Long, pageIds: Seq[Long], missing: Origin = Origin.Manual)(implicit session: DBSession): SyncResult = {
+    if (pageIds.nonEmpty) RoundWrites.requireRounds(Seq(roundId))
     pageIds.distinct.sorted.grouped(Chunk).foldLeft(SyncResult()) { (acc, chunk) =>
       acc + syncChunk(roundId, chunk, missing)
     }
+  }
 
   /** [[sync]] of each round's pairs, rounds in id order. */
   def syncPairs(pairs: Iterable[(Long, Long)], missing: Origin = Origin.Manual)(implicit session: DBSession): SyncResult =
@@ -179,9 +171,11 @@ object RoundImageJdbc {
   /** The rows' copy of the image's monument id (as vote's, V48), after the image's row is
     * updated and locked. Rows already right aren't rewritten.
     */
-  def syncMonumentId(pageId: Long, monumentId: Option[String])(implicit session: DBSession): Unit =
+  def syncMonumentId(pageId: Long, monumentId: Option[String])(implicit session: DBSession): Unit = {
+    RoundWrites.requireFiles(Seq(pageId))
     sql"""UPDATE round_image SET monument_id = $monumentId
           WHERE page_id = $pageId AND NOT (monument_id <=> $monumentId)""".update(): Unit
+  }
 
   // ── reads ────────────────────────────────────────────────────────────────
 

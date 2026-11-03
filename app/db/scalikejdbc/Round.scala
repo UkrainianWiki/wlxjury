@@ -349,7 +349,9 @@ object Round extends RoundRepo with CRUDMapper[Round] {
         )
     }.updateAndReturnGeneratedKey()
 
-    // its criteria, in the caller's session (RoundService.insert: the round's transaction)
+    // its criteria, in the caller's session (RoundService.insert: the round's transaction);
+    // the new row is the transaction's (an insert holds it for update)
+    RoundWrites.recordRounds(Seq(id))
     RoundCriterion.insert(id, round.criterionIds)
     round.copy(id = Some(id), hasCriteria = round.criterionIds.nonEmpty)
   }
@@ -431,7 +433,7 @@ object Round extends RoundRepo with CRUDMapper[Round] {
   def setActiveGuarded(id: Long, active: Boolean): Boolean = {
     val refused =
       sql"SELECT distributing FROM round WHERE id = $id".map(_.boolean(1)).single().getOrElse(false) && active
-    val archived = DB.localTx { implicit session =>
+    val archived = WriteTx.write { implicit session =>
       val wasOpen = isOpen(id)
       sql"""UPDATE round
             SET active_before_freeze = IF(freeze_count > 0, $active AND NOT distributing, active_before_freeze),
@@ -450,7 +452,7 @@ object Round extends RoundRepo with CRUDMapper[Round] {
     * reads them moves them itself ([[services.imports.DeletedFiles.settle]]).
     */
   def settleDeletedFiles(id: Long): Unit = {
-    val archived = DB.localTx { implicit session =>
+    val archived = WriteTx.write { implicit session =>
       isOpen(id) && ImageJdbc.archiveDeletedVotesInRound(id).nonEmpty
     }
     if (archived) RoundImageCounts.invalidate(id)
@@ -468,18 +470,19 @@ object Round extends RoundRepo with CRUDMapper[Round] {
             OR ($table.freeze_count > 0 AND $table.active_before_freeze = 1))"""
 
   /** Whether the round is open ([[openCond]]), read as committed and locked for update. */
-  def isOpen(id: Long)(implicit session: DBSession): Boolean =
-    sql"SELECT ${openCond(sqls"round")} FROM round WHERE id = $id FOR UPDATE"
+  def isOpen(id: Long)(implicit session: DBSession): Boolean = {
+    val open = sql"SELECT ${openCond(sqls"round")} FROM round WHERE id = $id FOR UPDATE"
       .map(_.booleanOpt(1).getOrElse(false))
       .single()
-      .getOrElse(false)
+    RoundWrites.recordRounds(Seq(id))
+    open.getOrElse(false)
+  }
 
   /** Locks the rounds for update in id order, as [[services.imports.DeletedFiles]] locks
     * them, before any of their updates.
     */
   def lock(ids: Seq[Long])(implicit session: DBSession): Unit =
-    if (ids.nonEmpty)
-      sql"SELECT id FROM round WHERE id IN (${ids.distinct}) ORDER BY id FOR UPDATE".map(_.long(1)).list(): Unit
+    RoundWrites.lock(ids)
 
   /** Freezes previous rounds for a distribution that reads their votes: they become
     * inactive (no votes) until [[release]]. The first freeze of a round saves its active

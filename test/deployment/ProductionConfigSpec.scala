@@ -63,6 +63,9 @@ class ProductionConfigSpec extends Specification {
     "require the signing key even though the included app has a development default" in {
       resolved(variables - "PLAY_HTTP_SECRET_KEY") must throwA[ConfigException.UnresolvedSubstitution]
     }
+    "inherit READ COMMITTED for the pool from the release (W1 of the write-path plan)" in {
+      releaseConfig().getString("db.default.hikaricp.transactionIsolation") mustEqual "TRANSACTION_READ_COMMITTED"
+    }
     "require DB credentials and preserve special characters without shell expansion" in {
       resolved(variables).getString("db.default.password") mustEqual variables("WLXJURY_DB_PASSWORD")
       resolved(variables - "WLXJURY_DB_PASSWORD") must throwA[ConfigException.UnresolvedSubstitution]

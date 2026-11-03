@@ -38,8 +38,6 @@ object DbErrors {
     isDeadlock(e) || causes(e).exists(_.isInstanceOf[SQLTransactionRollbackException] && !isLockWaitTimeout(e)) ||
       (lockWaitTimeout && isLockWaitTimeout(e))
 
-  /** `tx` again once if the database rolled it back as a deadlock's victim. */
-  def retryOnDeadlock[T](tx: => T): T =
-    try tx
-    catch { case e: Throwable if isDeadlock(e) => tx }
+  /** `tx` again if the database rolled it back as a deadlock's victim ([[WriteTx.retry]]). */
+  def retryOnDeadlock[T](tx: => T): T = WriteTx.retry(tx)
 }

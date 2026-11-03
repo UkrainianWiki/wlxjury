@@ -1,6 +1,6 @@
 package services.imports
 
-import db.scalikejdbc.{ImageJdbc, Round}
+import db.scalikejdbc.{ImageJdbc, Round, WriteTx}
 import scalikejdbc.{DB, DBSession}
 
 /** Files deleted on Commons (V63): marked deleted, with their votes in the open rounds
@@ -41,9 +41,13 @@ object DeletedFiles {
   def settle(pageIds: Seq[Long]): Seq[Long] =
     if (pageIds.isEmpty) Nil
     else
-      DB.localTx { implicit session =>
-        val deleted = ImageJdbc.lockDeleted(pageIds) // first: a restore meanwhile is seen
-        ImageJdbc.archiveVotes(deleted, ImageJdbc.lockOpenRoundsOf(deleted))
+      WriteTx.write { implicit session =>
+        // the files' open rounds first (h3: rounds before images, as every structural write),
+        // then the files still marked deleted, read with a share lock (a restore meanwhile is
+        // waited for and seen)
+        val open = ImageJdbc.lockOpenRoundsOf(pageIds)
+        val deleted = ImageJdbc.lockDeleted(pageIds)
+        ImageJdbc.archiveVotes(deleted, open)
       }
 
   /** Restores those of `pageIds` that were marked deleted or have votes moved aside.

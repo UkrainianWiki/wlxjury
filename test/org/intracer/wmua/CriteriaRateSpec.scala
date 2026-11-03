@@ -52,7 +52,10 @@ class CriteriaRateSpec extends Specification with TestDb with BeforeAll with Bef
       }
     }
     // the file's row in the round (round_image, V84), as the app's writers keep it
-    DB.localTx(implicit s => db.scalikejdbc.RoundImageJdbc.sync(round.getId, Seq(pageId)))
+    DB.localTx { implicit s =>
+      db.scalikejdbc.RoundWrites.lock(Seq(round.getId))
+      db.scalikejdbc.RoundImageJdbc.sync(round.getId, Seq(pageId))
+    }
     addRates(id, rates)
     id
   }
@@ -217,6 +220,7 @@ class CriteriaRateSpec extends Specification with TestDb with BeforeAll with Bef
         // the vote locked as VoteJdbc.deleteVotes and ImageJdbc.moveVotesAside lock it,
         // then deleted with its rates
         val holder = Future(DB.localTx { implicit s =>
+          RoundWrites.lock(Seq(round.getId)) // a structural writer: its round first
           sql"SELECT id FROM vote WHERE id = $id FOR UPDATE".map(_.long(1)).single()
           held.countDown()
           delete.await(30, TimeUnit.SECONDS)
@@ -323,7 +327,7 @@ class CriteriaRateSpec extends Specification with TestDb with BeforeAll with Bef
       } finally pool.shutdownNow(): Unit
     }
 
-    "run at READ COMMITTED, the pool's connections given back at REPEATABLE READ" in {
+    "run at READ COMMITTED, as every connection of the pool now does (W1)" in {
       val (_, round, Seq(juror, _)) = setUp()
       val id = vote(1, juror, round, rates = Nil)
       def isolation(implicit s: DBSession): String = sql"SELECT @@tx_isolation".map(_.string(1)).single().get
@@ -336,7 +340,7 @@ class CriteriaRateSpec extends Specification with TestDb with BeforeAll with Bef
         (isolation(s), before, count(s))
       }
       seen === (("READ-COMMITTED", 0, 1))
-      forall(1 to 5)(_ => DB.readOnly(s => isolation(s)) === "REPEATABLE-READ")
+      forall(1 to 5)(_ => DB.readOnly(s => isolation(s)) === "READ-COMMITTED")
     }
 
     "sum every vote's criteria right when its criteria are voted at once" in {
@@ -363,7 +367,7 @@ class CriteriaRateSpec extends Specification with TestDb with BeforeAll with Bef
       } finally pool.shutdownNow(): Unit
     }
 
-    "be retried once when it is a deadlock's victim, and only then" in {
+    "be retried when it is a deadlock's victim (3 attempts in all, WriteTx), and only then" in {
       def deadlock = new SQLException("Deadlock found when trying to get lock", "40001", 1213)
       def lockWaitTimeout = new java.sql.SQLTransactionRollbackException("Lock wait timeout exceeded", "40001", 1205)
       var calls = 0
@@ -372,7 +376,7 @@ class CriteriaRateSpec extends Specification with TestDb with BeforeAll with Bef
 
       calls = 0
       DbErrors.retryOnDeadlock[String] { calls += 1; throw deadlock } must throwA[SQLException]
-      calls === 2
+      calls === WriteTx.Attempts
 
       calls = 0
       DbErrors.retryOnDeadlock[String] { calls += 1; throw lockWaitTimeout } must throwA[SQLException]
@@ -394,8 +398,8 @@ class CriteriaRateSpec extends Specification with TestDb with BeforeAll with Bef
       val kept = vote(2, juror, round, Seq(1, 2))
       val aside = vote(3, juror, round, Seq(7, 8), table = "vote_aside")
 
-      VoteJdbc.removeImage(1, round.getId)
-      VoteJdbc.removeImage(3, round.getId)
+      TestVoteWrites.removeImage(1, round.getId)
+      TestVoteWrites.removeImage(3, round.getId)
 
       ids("vote") === Set(kept)
       ids("vote_aside") must beEmpty
@@ -413,7 +417,7 @@ class CriteriaRateSpec extends Specification with TestDb with BeforeAll with Bef
       val another = this.round(contest, 2)
       val elsewhere = vote(1, juror, another)
 
-      VoteJdbc.removeUnrated(round.getId)
+      TestVoteWrites.removeUnrated(round.getId)
 
       ids("vote") === Set(rated.head, rated(2), elsewhere)
       ids("vote_aside") === Set(rated(1))
@@ -430,7 +434,7 @@ class CriteriaRateSpec extends Specification with TestDb with BeforeAll with Bef
       val dropped = vote(1, other, round, Seq(5, 6))
       val there = vote(1, other, target, Seq(1, 1))
 
-      VoteJdbc.setRound(1, round.getId, target.getId)
+      TestVoteWrites.setRound(1, round.getId, target.getId)
 
       DB.readOnly(implicit s => sql"SELECT id, round_id FROM vote".map(rs => rs.long(1) -> rs.long(2)).list()).toMap ===
         Map(moved -> target.getId, there -> target.getId)
@@ -474,7 +478,7 @@ class CriteriaRateSpec extends Specification with TestDb with BeforeAll with Bef
       val asideRated2 = vote(2, other, round, Seq(1, 1), table = "vote_aside")
       val newPartial2 = vote(2, other, round, Seq(0, 3))
 
-      DB.localTx(implicit s => ImageJdbc.restoreVotes(Seq(1L, 2L)))
+      DB.localTx { implicit s => RoundWrites.lock(Seq(round.getId)); ImageJdbc.restoreVotes(Seq(1L, 2L)) }
 
       // a rated (or partly rated) vote wins over an unrated one, a new one over one aside: the
       // juror's moved back, the other's new one stays, its partial rates kept
@@ -493,7 +497,7 @@ class CriteriaRateSpec extends Specification with TestDb with BeforeAll with Bef
       val aside = vote(1, juror, round, Seq(3, 4), table = "vote_aside")
       DB.autoCommit(implicit s => sql"DELETE FROM round WHERE id = ${round.getId}".update())
 
-      DB.localTx(implicit s => ImageJdbc.restoreVotes(Seq(1L)))
+      DB.localTx { implicit s => RoundWrites.lock(Seq(round.getId)); ImageJdbc.restoreVotes(Seq(1L)) }
 
       ids("vote") must beEmpty
       ids("vote_aside") must beEmpty
@@ -507,7 +511,7 @@ class CriteriaRateSpec extends Specification with TestDb with BeforeAll with Bef
       // distributed again meanwhile, and rated
       val newer = vote(1, juror, round, Seq(1, 2))
 
-      DB.localTx(implicit s => ImageJdbc.archiveVotes(Seq(1L), Set(round.getId)))
+      DB.localTx { implicit s => RoundWrites.lock(Seq(round.getId)); ImageJdbc.archiveVotes(Seq(1L), Set(round.getId)) }
 
       ids("vote") must beEmpty
       ids("vote_aside") === Set(newer)
@@ -530,6 +534,7 @@ class CriteriaRateSpec extends Specification with TestDb with BeforeAll with Bef
         val holder = Future(DB.localTx { implicit s =>
           sql"SET SESSION innodb_lock_wait_timeout = 10".execute.apply()
           try {
+            RoundWrites.lock(Seq(round.getId)) // a structural writer: its round first
             sql"SELECT COUNT(*) FROM vote WHERE page_id = 1 FOR UPDATE".map(_.int(1)).single()
             held.countDown()
             lockAside.await(30, TimeUnit.SECONDS)
@@ -537,7 +542,7 @@ class CriteriaRateSpec extends Specification with TestDb with BeforeAll with Bef
           } finally sql"SET SESSION innodb_lock_wait_timeout = DEFAULT".execute.apply(): Unit
         })
         held.await(30, TimeUnit.SECONDS) must beTrue
-        val restore = Future(DB.localTx(implicit s => ImageJdbc.restoreVotes(Seq(1L))))
+        val restore = Future(DB.localTx { implicit s => RoundWrites.lock(Seq(round.getId)); ImageJdbc.restoreVotes(Seq(1L)) })
         // the restore waits at the file's votes, holding nothing aside: the holder locks those
         // next without waiting (the restore that locked vote_aside first deadlocked here)
         lockWait(restore) === "LOCK WAIT"
@@ -564,7 +569,7 @@ class CriteriaRateSpec extends Specification with TestDb with BeforeAll with Bef
         val holder = Future(DB.localTx { implicit s =>
           sql"SET SESSION innodb_lock_wait_timeout = 10".execute.apply()
           try {
-            sql"SELECT id FROM round WHERE id = ${round.getId} FOR UPDATE".map(_.long(1)).single()
+            RoundWrites.lock(Seq(round.getId))
             held.countDown()
             removeVotes.await(30, TimeUnit.SECONDS)
             VoteJdbc.deleteVotes(sqls"v.round_id = ${round.getId} AND v.page_id IN (${Seq(1L)})")
