@@ -1,5 +1,7 @@
 # Security Incident Prevention Implementation Plan
 
+**Status is tracked in [register.md](register.md)** (2026-11-02); the status tables below are snapshots.
+
 ## Goal
 
 Bring the codebase into consistent compliance with the practices in `docs/security/incident-prevention-guidelines.md`, and document the final standards so they stay enforced during future changes.
