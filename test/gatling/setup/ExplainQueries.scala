@@ -31,6 +31,9 @@ object ExplainQueries {
     println(s"[explain] binary round $binary, rated round $rated, juror $juror, region $region")
 
     val galleryOrder = "ORDER BY s.rate DESC, s.monument_id ASC, s.page_id ASC"
+    // the deferred join's inner query returns the order columns, and the page is sorted by them
+    val galleryKeys = "s.rate AS o0, s.monument_id AS o1, s.page_id AS o2"
+    val pageOrder = "ORDER BY k.o0 DESC, k.o1 ASC, k.o2 ASC"
 
     val statements: Seq[(String, String, Boolean)] = Seq(
       // (title, sql, also ANALYZE)
@@ -59,20 +62,20 @@ object ExplainQueries {
         s"""SELECT i.*, s.* FROM selection s STRAIGHT_JOIN images i ON i.page_id = s.page_id
             WHERE s.jury_id = $juror AND s.round_id = $rated $galleryOrder LIMIT 15 OFFSET 60""", true),
       ("T9 new gallery page (deferred join)",
-        s"""SELECT i.*, s.* FROM (SELECT s.id FROM selection s
+        s"""SELECT i.*, s.* FROM (SELECT s.id, $galleryKeys FROM selection s
             WHERE s.jury_id = $juror AND s.round_id = $rated $galleryOrder LIMIT 15 OFFSET 60) k
             STRAIGHT_JOIN selection s ON s.id = k.id
-            STRAIGHT_JOIN images i ON i.page_id = s.page_id $galleryOrder""", true),
+            STRAIGHT_JOIN images i ON i.page_id = s.page_id $pageOrder""", true),
       ("T9 old region gallery page",
         s"""SELECT i.*, s.* FROM selection s STRAIGHT_JOIN images i ON i.page_id = s.page_id
             WHERE s.jury_id = $juror AND s.round_id = $rated AND i.monument_id LIKE '$region%'
             $galleryOrder LIMIT 15 OFFSET 0""", true),
       ("T9 new region gallery page (deferred join)",
-        s"""SELECT i.*, s.* FROM (SELECT s.id FROM selection s
+        s"""SELECT i.*, s.* FROM (SELECT s.id, $galleryKeys FROM selection s
             WHERE s.jury_id = $juror AND s.round_id = $rated AND s.monument_id LIKE '$region%'
             $galleryOrder LIMIT 15 OFFSET 0) k
             STRAIGHT_JOIN selection s ON s.id = k.id
-            STRAIGHT_JOIN images i ON i.page_id = s.page_id $galleryOrder""", true),
+            STRAIGHT_JOIN images i ON i.page_id = s.page_id $pageOrder""", true),
       ("T9 old gallery count",
         s"SELECT COUNT(DISTINCT s.page_id) FROM selection s WHERE s.jury_id = $juror AND s.round_id = $rated", true),
       ("T9 new gallery count",

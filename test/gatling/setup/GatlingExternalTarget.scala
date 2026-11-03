@@ -39,9 +39,10 @@ object GatlingExternalTarget {
                        WHERE s.round_id IN ($rounds) ORDER BY u.id"""
       .map(rs => (rs.long(1), rs.string(2), password(rs.long(1)))).list()
 
-    val organizers = sql"""SELECT id, email FROM users WHERE contest_id = $contestId
-                           AND (roles LIKE '%admin%' OR roles LIKE '%organizer%') AND deleted_at IS NULL
-                           ORDER BY id"""
+    val organizers = sql"""SELECT u.id, u.email FROM users u JOIN user_contest uc ON uc.user_id = u.id
+                           WHERE uc.contest_id = $contestId
+                           AND (uc.role LIKE '%admin%' OR uc.role LIKE '%organizer%') AND u.deleted_at IS NULL
+                           ORDER BY u.id"""
       .map(rs => (rs.long(1), rs.string(2), password(rs.long(1)))).list()
     require(organizers.nonEmpty, s"contest $contestId has no organizer accounts")
 

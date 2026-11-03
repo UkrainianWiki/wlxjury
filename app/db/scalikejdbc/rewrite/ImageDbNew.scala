@@ -123,14 +123,22 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
       * The inner query reads selection alone: every selection row has its image (foreign
       * key FK_selection_page_id, V58), so it pages the same rows the plain query and
       * [[imageRank]] see when joining images.
+      *
+      * The inner query also returns the ORDER BY columns (as o0, o1, ...; from the same
+      * index), and the page's rows are put back in order by those: an ORDER BY on k
+      * alone sorts k's few rows before the join, while one on s.* columns copies the
+      * joined rows, images' TEXT columns included, into an on-disk temporary table.
       */
     private def deferredJoinPage(columnsStr: String): SQLSyntax = {
-      val order = SQLSyntax.createUnsafely(orderBy())
+      val keys = order.toSeq.zipWithIndex.map { case ((name, dir), n) => (name, s"o$n", dir) }
+      val keyColumns = SQLSyntax.createUnsafely(keys.map { case (name, alias, _) => s", $name as $alias" }.mkString)
+      val innerOrder = SQLSyntax.createUnsafely(orderBy())
+      val outerOrder = SQLSyntax.createUnsafely(orderSql(keys.map { case (_, alias, dir) => s"k.$alias" -> dir }))
       val page = SQLSyntax.createUnsafely(limitSql())
       val columns = SQLSyntax.createUnsafely(columnsStr)
-      sqls"$columns from (select s.id from selection s ${where()} $order $page) k" +
+      sqls"$columns from (select s.id$keyColumns from selection s ${where()} $innerOrder $page) k" +
         sqls" STRAIGHT_JOIN selection s on s.id = k.id" +
-        sqls" STRAIGHT_JOIN images i on i.page_id = s.page_id $order"
+        sqls" STRAIGHT_JOIN images i on i.page_id = s.page_id $outerOrder"
     }
 
     def list()(implicit session: DBSession = autoSession): Seq[ImageWithRating] = {
@@ -238,7 +246,9 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
       }
     }
 
-    def orderBy(fields: Map[String, Int] = order): String = {
+    def orderBy(fields: Map[String, Int] = order): String = orderSql(fields.toSeq)
+
+    private def orderSql(fields: Seq[(String, Int)]): String = {
       val dirMap = Map(1 -> "asc", -1 -> "desc")
 
       fields.headOption

@@ -77,6 +77,8 @@ The runtime directory can be `root:wlxjury` mode `0750`; nonsecret config `0640`
 
 Required variables: `WLXJURY_DB_HOST`, `WLXJURY_DB`, `WLXJURY_DB_USER`, `WLXJURY_DB_PASSWORD`, and `PLAY_HTTP_SECRET_KEY`. Optional Commons credentials retain the repository's `COMMONS_USER` / `COMMONS_PASSWORD` names. Do not set optional credentials to empty strings to represent absence.
 
+*Since `ukwikidev/commons-bot-login`:* the import jobs log in with `COMMONS_USER` / `COMMONS_PASSWORD` (before, nothing used them). They must be a bot password (`Account@botname`, Special:BotPasswords with "High-volume (bot) access") of an account in the bot group, not the account's main password. Before deploying, check what an existing server's runtime file carries over from the old config: a main password, or a stale bot password, is refused and retried every 6 hours, with a warning in the log, and imports run with the anonymous limit of 50 files per request. Leave `SCALAWIKI_LOGIN` / `SCALAWIKI_PASSWORD` unset: scalawiki would log the shared bot in as that account first.
+
 The proposed production overlay must:
 
 1. Include the release's **classpath** `application.conf` explicitly, so it follows new application defaults instead of including another external copy by accident.

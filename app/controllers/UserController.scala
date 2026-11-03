@@ -1,13 +1,13 @@
 package controllers
 
-import db.scalikejdbc.{ContestJuryJdbc, User}
+import db.scalikejdbc.{ContestJuryJdbc, User, UserContestJdbc}
 import org.intracer.wmua._
 import org.scalawiki.dto.cmd.query.Query
 import org.scalawiki.dto.cmd.query.list._
 import play.api.Configuration
 import play.api.data.Form
 import play.api.data.Forms._
-import play.api.i18n.{I18nSupport, Lang}
+import play.api.i18n.{I18nSupport, Lang, Messages}
 import play.api.mvc.{ControllerComponents, EssentialAction, Result}
 import services.UserService
 import spray.util.pimpFuture
@@ -45,7 +45,7 @@ class UserController @Inject()(cc: ControllerComponents,
 
   def allUsers(): EssentialAction =
     withAuth(rolePermission(Set(User.ROOT_ROLE))) { user => implicit request =>
-      val users = User.findAll()
+      val users = User.withMemberships(User.findAll())
       val contests = ContestJuryJdbc.findAll()
       Ok(
         views.html.users(user,
@@ -95,38 +95,50 @@ class UserController @Inject()(cc: ControllerComponents,
     }
   }
 
-  /**
-    * Executes code block if currentUser is allowed to edit other user, redirects to Login page otherwise
-    *
-    * @param currentUser currently logged user
-    * @param otherUser   other user to edit
-    * @param block       code block that operates on other user
-    * @return view returned from code block or Login page if not allowed
+  /** The user `currentUser` may edit, in the contest whose role the edit form shows:
+    * themselves; for root, anyone (in `contestId` if a member of it, else in their latest
+    * contest); for an admin, members of the admin's current contest.
     */
-  def havingEditRights(currentUser: User, otherUser: User)(
-      block: => Result): Result = {
-    if (!currentUser.canEdit(otherUser)) {
-      Redirect(routes.LoginController.index) // TODO message
-    } else {
-      block
+  def editableUser(currentUser: User, userId: Long, contestId: Option[Long] = None): Option[User] =
+    if (currentUser.id.contains(userId)) Some(currentUser)
+    else if (currentUser.hasRole(User.ROOT_ROLE))
+      contestId
+        .flatMap(User.findInContest(userId, _))
+        .orElse(User.findById(userId).map(Secured.inCurrentContest(_, None)))
+    else if (currentUser.hasRole(User.ADMIN_ROLE))
+      currentUser.contestId.flatMap(User.findInContest(userId, _))
+    else None
+
+  /** Whether `currentUser` may change `other`'s account (name, email, wiki account,
+    * password), shared by all of other's contests: as root, as themselves, or as an
+    * admin of each contest other is in or worked in ([[User.contestsWorkedIn]]).
+    * Otherwise only other's role in the admin's contest can change: an admin of one
+    * contest must not take over an account that is, say, an admin of another, nor an
+    * account with a past elsewhere that they have just added to their contest by its
+    * email.
+    */
+  def canEditAccount(currentUser: User, other: User): Boolean =
+    currentUser.hasRole(User.ROOT_ROLE) || currentUser.id == other.id || !other.hasRole(User.ROOT_ROLE) && {
+      val adminOf = currentUser.userContests.filter(_.roles.contains(User.ADMIN_ROLE)).map(_.contestId).toSet
+      val contests = UserContestJdbc.findByUser(other.getId).map(_.contestId) ++
+        User.contestsWorkedIn(other.getId)
+      contests.forall(adminOf.contains)
     }
-  }
 
   /**
     * Shows edit user form
     *
     * @param userId userId of the user to edit
+    * @param contestId for root, the contest whose role the form shows
     * @return edit user form view
     */
-  def editUser(userId: Long): EssentialAction =
+  def editUser(userId: Long, contestId: Option[Long] = None): EssentialAction =
     withAuth(rolePermission(
       Set(User.ADMIN_ROLE, User.ROOT_ROLE, s"USER_ID_$userId"))) {
       user => implicit request =>
-        val editedUser = User.findById(userId).get
-
-        havingEditRights(user, editedUser) {
+        editableUser(user, userId, contestId).fold(Redirect(routes.LoginController.index)) { editedUser =>
           val filledForm = editUserForm.fill(editedUser)
-          Ok(views.html.editUser(user, filledForm, user.currentContest))
+          Ok(views.html.editUser(user, filledForm, editedUser.contestId.orElse(user.currentContest)))
         }
     }
 
@@ -148,89 +160,110 @@ class UserController @Inject()(cc: ControllerComponents,
             )
         ),
         formUser => {
-          havingEditRights(user, formUser) {
-
-            val userId = formUser.getId
-            val count = User.countByEmail(userId, formUser.email)
-            if (count > 0) {
-              BadRequest(
-                views.html.editUser(
-                  user,
-                  editUserForm
-                    .fill(formUser)
-                    .withError("email", "email should be unique"),
-                  contestId = formUser.contestId
-                )
-              )
+          val userId = formUser.getId
+          if (userId == 0) {
+            if (user.isAdmin(formUser.contestId)) {
+              // an existing email joins the contest with its account
+              val added = userService.createNewUser(user, formUser)
+              Redirect(routes.UserController.users(formUser.contestId))
+                .flashing("users-added" -> addedMessage(Seq(added)))
             } else {
-              if (userId == 0) {
-                userService.createNewUser(user, formUser)
-              } else {
-
-                // only admin can update roles
-                val newRoles = if (user.hasAnyRole(User.ADMIN_ROLES)) {
-                  if (!user.hasRole(User.ROOT_ROLE) && formUser.roles.contains(
-                        User.ROOT_ROLE)) {
-                    userRolesFromDb(formUser)
-                  } else {
-                    formUser.roles
-                  }
-                } else {
-                  userRolesFromDb(formUser)
-                }
-
-                User.updateUser(userId,
-                                formUser.fullname,
-                                formUser.wikiAccount,
-                                formUser.email,
-                                newRoles,
-                                formUser.lang,
-                                formUser.sort)
-
-                for (password <- formUser.password) {
-                  val hash = User.hash(formUser, password)
-                  User.updateHash(userId, hash)
-                }
-              }
-
-              val result = if (user.hasAnyRole(User.ADMIN_ROLES)) {
-                Redirect(routes.UserController.users(formUser.contestId))
-              } else {
-                Redirect(routes.LoginController.index)
-              }
-              val lang = for (lang <- formUser.lang; if formUser.id == user.id)
-                yield lang
-
-              lang.fold(result)(l => result.withLang(Lang(l)))
+              Redirect(routes.LoginController.index) // TODO message
+            }
+          } else {
+            editableUser(user, userId, formUser.contestId).fold(Redirect(routes.LoginController.index)) {
+              editedUser => updateUser(user, editedUser, formUser)
             }
           }
         }
       )
   }
 
-  /**
-    *
-    * @param user user with id
-    * @return user roles from database
+  private def updateUser(user: User, editedUser: User, formUser: User)(
+      implicit request: play.api.mvc.Request[_]): Result = {
+    def badRequest(form: Form[User]) =
+      BadRequest(views.html.editUser(user, form, contestId = editedUser.contestId))
+
+    val userId = editedUser.getId
+    def wikiAccount(u: User) = u.wikiAccount.map(_.trim).filter(_.nonEmpty)
+    val accountChanged =
+      formUser.fullname.trim != editedUser.fullname.trim ||
+        formUser.email != editedUser.emailLo ||
+        wikiAccount(formUser) != wikiAccount(editedUser) ||
+        formUser.password.nonEmpty
+
+    if (User.countByEmail(userId, formUser.email) > 0) {
+      badRequest(editUserForm.fill(formUser).withError("email", "email should be unique"))
+    } else if (accountChanged && !canEditAccount(user, editedUser)) {
+      badRequest(editUserForm.fill(formUser).withGlobalError("user.in.other.contests"))
+    } else {
+      if (canEditAccount(user, editedUser)) {
+        User.updateUser(userId,
+                        formUser.fullname,
+                        formUser.wikiAccount,
+                        formUser.email,
+                        formUser.lang,
+                        formUser.sort)
+
+        for (password <- formUser.password) {
+          val hash = User.hash(formUser, password)
+          User.updateHash(userId, hash)
+        }
+      }
+
+      // only admins change roles, only root makes root, and only in editedUser's contest.
+      // A root user's form shows root, which an admin's role list lacks: an admin leaves a
+      // root user's role alone.
+      val newRole = formUser.roles.headOption
+      if (user.hasRole(User.ROOT_ROLE) && !user.id.contains(userId)) {
+        User.setRoot(userId, newRole.contains(User.ROOT_ROLE))
+      }
+      for {
+        role <- newRole if role != User.ROOT_ROLE && user.hasAnyRole(User.ADMIN_ROLES)
+        if user.hasRole(User.ROOT_ROLE) || !editedUser.hasRole(User.ROOT_ROLE)
+        contestId <- editedUser.contestId
+      } UserContestJdbc.updateRole(userId, contestId, role)
+
+      val result = if (user.hasAnyRole(User.ADMIN_ROLES)) {
+        Redirect(routes.UserController.users(editedUser.contestId))
+      } else {
+        Redirect(routes.LoginController.index)
+      }
+      val lang = for (lang <- formUser.lang; if formUser.id == user.id)
+        yield lang
+
+      lang.fold(result)(l => result.withLang(Lang(l)))
+    }
+  }
+
+  /** Runs `f` on `contestIdParam`, else the user's current contest; without either (a root
+    * user, who needs no contest), shows the contests to pick one from.
     */
-  def userRolesFromDb(user: User): Set[String] = {
-    (for (userId <- user.id;
-          dbUser <- User.findById(userId))
-      yield dbUser.roles).getOrElse(Set.empty)
+  private def withContestId(user: User, contestIdParam: Option[Long])(f: Long => Result): Result =
+    contestIdParam.orElse(user.currentContest).fold(Redirect(routes.ContestController.list()))(f)
+
+  /** The flash message for people added to a contest: how many got a new account, how many
+    * joined it with the account they had, and how many were in it already.
+    */
+  private def addedMessage(added: Seq[UserService.Added])(implicit messages: Messages): String = {
+    import UserService._
+    messages("users.added",
+             added.count(_.isInstanceOf[NewAccount]),
+             added.count(_.isInstanceOf[JoinedContest]),
+             added.count(_.isInstanceOf[AlreadyMember]))
   }
 
   def showImportUsers(contestIdParam: Option[Long]): EssentialAction =
     withAuth(contestPermission(User.ADMIN_ROLES, contestIdParam)) {
       user => implicit request =>
-        val contestId = contestIdParam.orElse(user.currentContest).get
-        Ok(views.html.importUsers(user, importUsersForm, contestId))
+        withContestId(user, contestIdParam) { contestId =>
+          Ok(views.html.importUsers(user, importUsersForm, contestId))
+        }
     }
 
   def importUsers(contestIdParam: Option[Long] = None): EssentialAction =
     withAuth(contestPermission(User.ADMIN_ROLES, contestIdParam)) {
-      user => implicit request =>
-        val contestId = contestIdParam.orElse(user.currentContest).get
-
+      user => implicit request => withContestId(user, contestIdParam) { contestId =>
         importUsersForm
           .bindFromRequest()
           .fold(
@@ -250,12 +283,13 @@ class UserController @Inject()(cc: ControllerComponents,
               val results = parsed.map(
                 pu =>
                   Try(userService
-                    .createUser(user, pu.copy(roles = Set("jury")), contest)))
+                    .addToContest(user, pu.copy(roles = Set("jury")), contest)))
 
               Redirect(routes.UserController.users(Some(contestId)))
+                .flashing("users-added" -> addedMessage(results.flatMap(_.toOption)))
             }
           )
-
+      }
     }
 
   def editGreeting(contestIdParam: Option[Long],
@@ -298,9 +332,7 @@ class UserController @Inject()(cc: ControllerComponents,
 
   def saveGreeting(contestIdParam: Option[Long] = None): EssentialAction =
     withAuth(contestPermission(User.ADMIN_ROLES, contestIdParam)) {
-      user => implicit request =>
-        val contestId = contestIdParam.orElse(user.currentContest).get
-
+      user => implicit request => withContestId(user, contestIdParam) { contestId =>
         greetingTemplateForm
           .bindFromRequest()
           .fold(
@@ -313,7 +345,7 @@ class UserController @Inject()(cc: ControllerComponents,
               Redirect(routes.UserController.users(Some(contestId)))
             }
           )
-
+      }
     }
 
   val editUserForm = Form(
@@ -343,9 +375,19 @@ class UserController @Inject()(cc: ControllerComponents,
     )(Greeting.apply)(Greeting.unapply)
   )
 
+  /** Makes `contestId`, one of the user's contests, the session's current contest. */
+  def switchContest(contestId: Long): EssentialAction = withAuth() { user => request =>
+    if (user.userContests.exists(m => m.contestId == contestId && m.active)) {
+      val newSession = request.session + (Secured.CurrentContestId -> contestId.toString)
+      Redirect(routes.LoginController.index).withSession(newSession)
+    } else {
+      onUnAuthorized(user)
+    }
+  }
+
   def resetPassword(id: Long): EssentialAction =
     withAuth(rolePermission(Set(User.ROOT_ROLE))) { user => implicit request =>
-      val editedUser = User.findById(id).get
+      val editedUser = Secured.inCurrentContest(User.findById(id).get, None)
 
       val password = User.randomString(8)
       val contest: Option[ContestJury] =

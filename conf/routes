@@ -63,9 +63,10 @@ GET         /admin/importusers                                                  
 POST        /admin/importusers                                                      @controllers.UserController.importUsers(contestId: Option[Long] ?= None)
 GET         /admin/greeting                                                         @controllers.UserController.editGreeting(contestId: Option[Long] ?= None)
 POST        /admin/greeting                                                         @controllers.UserController.saveGreeting(contestId: Option[Long] ?= None)
-GET         /users/edit/:id                                                         @controllers.UserController.editUser(id: Long)
+GET         /users/edit/:id                                                         @controllers.UserController.editUser(id: Long, contestId: Option[Long] ?= None)
 POST        /users/save                                                             @controllers.UserController.saveUser()
 POST        /users/resetpasswd/:id                                                  @controllers.UserController.resetPassword(id: Long)
+GET         /switch-contest/:contestId                                              @controllers.UserController.switchContest(contestId: Long)
 
 GET         /admin/rounds                                                           @controllers.RoundController.rounds(contestId: Option[Long] ?= None)
 GET         /admin/rounds/edit                                                      @controllers.RoundController.editRound(id: Option[Long] ?= None, contestId: Long, topImages: Option[Int] ?= None)
@@ -74,7 +75,7 @@ GET         /admin/rounds/newfiles                                              
 GET         /admin/jobs/:id                                                         @controllers.JobController.status(id: Long)
 POST        /admin/jobs/:id/cancel                                                  @controllers.JobController.cancel(id: Long)
 POST        /admin/jobs/:id/retry                                                   @controllers.JobController.retry(id: Long)
-POST        /admin/setimages                                                        @controllers.RoundController.setImages()
+POST        /admin/setimages                                                        @controllers.RoundController.setImages(contestId: Option[Long] ?= None)
 POST        /admin/setround                                                         @controllers.RoundController.setRound()
 POST        /round/setrounduser                                                     @controllers.RoundController.setRoundUser()
 

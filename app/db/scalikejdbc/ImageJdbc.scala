@@ -109,8 +109,43 @@ object ImageJdbc extends CRUDMapper[Image]
     }.batch(batchParams: _*).apply()
   }
 
+  /** Inserts the images, skipping those already stored (e.g. by another contest's import
+    * of a shared file), so an import page repeated after a crash or a retry is a no-op.
+    */
+  def insertIgnore(images: Seq[Image])(implicit session: DBSession): Unit =
+    if (images.nonEmpty) {
+      val params = images.map(i =>
+        Seq(i.pageId, i.title, i.url, i.pageUrl, i.width, i.height, i.monumentId, i.description, i.size,
+          i.author, i.mime, i.mediaType))
+      sql"""INSERT IGNORE INTO images (page_id, title, url, page_url, width, height, monument_id, description,
+                                       size, author, mime, media_type)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""".batch(params: _*).apply()
+    }
+
+  /** The stored images among `pageIds`, each with whether it is in the category. */
+  def findWithCategoryLink(pageIds: Seq[Long], categoryId: Long)(implicit session: DBSession): Seq[(Image, Boolean)] =
+    if (pageIds.isEmpty) Nil
+    else
+      sql"""SELECT ${i.result.*}, cm.page_id IS NOT NULL AS linked FROM images i
+            LEFT JOIN category_members cm ON cm.page_id = i.page_id AND cm.category_id = $categoryId
+            WHERE i.page_id IN ($pageIds)"""
+        .map(rs => (ImageJdbc(i)(rs), rs.boolean("linked")))
+        .list()
+
+  /** The stored images' monument ids, by page id (NULL ones as None). */
+  def monumentIds(pageIds: Seq[Long])(implicit session: DBSession): Map[Long, Option[String]] =
+    if (pageIds.isEmpty) Map.empty
+    else
+      sql"SELECT page_id, monument_id FROM images WHERE page_id IN ($pageIds)"
+        .map(rs => rs.long(1) -> rs.stringOpt(2))
+        .list()
+        .toMap
+
   /** Updates the image, and its selection rows' copy of its monument id. */
-  def update(image: Image): Unit = DB.localTx { implicit session =>
+  def update(image: Image): Unit = DB.localTx { implicit session => updateIn(image) }
+
+  /** [[update]] in the caller's transaction. */
+  def updateIn(image: Image)(implicit session: DBSession): Unit = {
     updateById(image.pageId).withAttributes(
       "title" -> image.title,
       "url" -> image.url,
@@ -135,6 +170,11 @@ object ImageJdbc extends CRUDMapper[Image]
 
   /** Sets the image's monument id, and its selection rows' copy of it. */
   def updateMonumentId(pageId: Long, monumentId: String): Unit = DB.localTx { implicit session =>
+    updateMonumentIdIn(pageId, monumentId)
+  }
+
+  /** [[updateMonumentId]] in the caller's transaction. */
+  def updateMonumentIdIn(pageId: Long, monumentId: String)(implicit session: DBSession): Unit = {
     updateById(pageId).withAttributes("monumentId" -> monumentId)
     syncSelectionMonumentId(pageId, Some(monumentId))
   }
