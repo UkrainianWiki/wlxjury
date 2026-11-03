@@ -2,7 +2,7 @@ package org.intracer.wmua.cmd
 
 import db.scalikejdbc.{MediaType, Round}
 import org.intracer.wmua.cmd.ImageWithRatingSeqFilter.ImageFilter
-import org.intracer.wmua.{Image, ImageWithRating}
+import org.intracer.wmua.{CategoryRule, Image, ImageWithRating}
 import org.scalawiki.wlx.{ImageDB, MonumentDB}
 import org.scalawiki.wlx.dto.{Contest, SpecialNomination}
 import org.scalawiki.wlx.query.MonumentQuery
@@ -54,6 +54,10 @@ case class ExcludeRegionIds(regionIds: Set[String]) extends ImageFilterGen {
 
 case class IncludePageIds(pageIds: Set[Long]) extends ImageFilterGen {
   def apply(): ImageFilter = imageFilter(i => pageIds.contains(i.pageId))
+}
+
+case class CategoryImages(rule: CategoryRule, firstIds: Set[Long], secondIds: Set[Long]) extends ImageFilterGen {
+  def apply(): ImageFilter = imageFilter(image => rule.accepts(image.pageId, firstIds, secondIds))
 }
 
 case class ExcludePageIds(pageIds: Set[Long]) extends ImageFilterGen {

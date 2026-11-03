@@ -160,8 +160,10 @@ class RoundDistributionHandler @Inject() (
     val prevRounds = RoundDistributionHandler.previousRounds(round)
     val jurors = User.distributionJurors(roundId).sortBy(_.getId).toIndexedSeq
     DistributeImages.checkJury(round, jurors)
-    val includeFromCats = distributeImages.categoryFileIds(round.category)
-    val excludeFromCats = distributeImages.categoryFileIds(round.excludeCategory)
+    val categoryRule = round.categoryRule
+    categoryRule.requireValid()
+    val firstCategoryIds = distributeImages.categoryFileIds(categoryRule.first)
+    val secondCategoryIds = distributeImages.categoryFileIds(categoryRule.second)
     val prev = prevRounds.headOption
     val perImage = if (round.distribution == 0) jurors.size else round.distribution
     // read once per job run: a membership changed later applies to the next distribution
@@ -171,7 +173,7 @@ class RoundDistributionHandler @Inject() (
       prevRounds = prevRounds,
       jurors = jurors,
       perImage = perImage,
-      filter = distributeImages.perImageFilters(round, prevRounds, includeFromCats, excludeFromCats, coi.keySet),
+      filter = distributeImages.perImageFilters(round, prevRounds, firstCategoryIds, secondCategoryIds, coi.keySet),
       coi = coi,
       rated = prev.flatMap(_ => round.prevSelectedBy.map(_ > 0)),
       topN = prev.flatMap(_ => round.topImages),
