@@ -16,12 +16,12 @@ class SchemaBaselineSpec extends Specification {
       if (sys.props.get("generate.baseline").isEmpty)
         skipped("Pass -Dgenerate.baseline=true to regenerate the baseline")
 
-      val container = MariaDBContainer(
+      val container = SharedTestDb.forTests(MariaDBContainer(
         dockerImageName = DockerImageName.parse("mariadb:10.6.22"),
         dbName = "wlxjury",
         dbUsername = "WLXJURY_DB_USER",
         dbPassword = "WLXJURY_DB_PASSWORD"
-      )
+      ))
 
       db.TestDocker.start("the baseline database", container)
       try {

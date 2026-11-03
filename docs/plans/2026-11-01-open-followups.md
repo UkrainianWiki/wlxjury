@@ -2245,3 +2245,64 @@ again. Not worth it now; after P0 and P1 at most, and tmpfs halves what it saves
 Not recommended: durability flags alone (no measurable effect); turning off flyway-play's
 migrate on app start in tests (2–6 s per suite; `SchemaBaselineSpec` and the Gatling fixture
 migrate through it).
+
+### Recommendations 1–4 done (`ukwikidev/test-speed`)
+
+1. `SharedTestDb.forTests`: the shared container's data directory on tmpfs (`rw,size=1g`: a
+   runaway spec fails with "table is full" instead of filling the Docker VM), buffer pool 128M,
+   redo log 48M (not the pilot's 256M / 128M: the container stays at about 200–350 MB with its
+   tmpfs, 63 MB of data after the migrate), `table_open_cache=2000`,
+   `table_definition_cache=1000`, `sort_buffer_size=2M`, `innodb_flush_method=fsync` (no
+   O_DIRECT on tmpfs), `innodb_flush_log_at_trx_commit=0`, `innodb_doublewrite=0` (the
+   measured tmpfs variant). `SchemaBaselineSpec`'s generator container uses it too; the Gatling
+   fixture's container builds its own options and is unchanged. A failure after the start
+   (Flyway, the pool) stops the container; the kept `Try` still fails every later spec at once.
+   `max_allowed_packet` stays at Testcontainers' 1M: the first run with the recommended 16M
+   failed `DistributeImagesBatchSpec`, which checks that a distribution's batch fits 1M; the
+   migration spec's scripts are at most 11 KB, so its 16M was never needed.
+2. `AppendImagesSpec` "get international images" and `ImagesFromListSpec` "import from list"
+   are skipped unless `-Dintegration=true` ("reads the live Wikimedia Commons: run with
+   -Dintegration=true").
+3. `RoundDistributionJobSpec.ratedRound`: the same seeded rates, written as one batch `UPDATE`
+   in one transaction (ORM syntax on `VoteJdbc`), not one autocommit per vote.
+4. `ConvertToInnoDbMigrationSpec` on the shared server: its databases (never `wlxjury`) as root,
+   dropped in `afterAll`. Safe: no script sets globals, uses `USE` or names `wlxjury.`; every
+   `information_schema` read filters on `DATABASE()` but `CriteriaRateSpec`'s `INNODB_TRX`,
+   and the specs run one at a time in the forked JVM.
+
+Full suites, one run each (`target/checks/` of the worktree that ran them):
+
+| Run | Tree | Total | Passed | Skipped | Failed | Wall (sbt `test`) | Spec time |
+|---|---|---|---|---|---|---|---|
+| Before, base | `d8054737` (`20261102-223152-12328.log`) | 1667 | 1661 | 6 | 0 | 22:02 | 1176 s |
+| Before, P0 | P0 branch (`wlxjury-p0`, `20261102-220955-27740.log`) | 1667 | 1661 | 6 | 0 | 21:25 | 1123 s |
+| After | `ee1368fa` + these changes (`20261102-231916-26328.log`) | 1667 | 1659 | 8 | 0 | 6:57 | 350 s |
+
+The fairer baseline is P0's run: the same code as `ee1368fa` apart from these changes (V82,
+the renames), the same 177 specs. Against it: −868 s of wall time (21:25 → 6:57, −68 %), spec
+time 1123 → 350 s; against `d8054737`, −905 s. The 2 more skipped are the live-Commons
+examples. A first after-run (`20261102-230836-180.log`, with the 16M packet) failed only
+`DistributeImagesBatchSpec`, 7:14.
+
+Top 10 per-spec deltas (P0 → after; `GalleryOrderSpec`, first in all three runs, carries the
+container's start and migrate: 39.5 → 24.6 s):
+
+| Spec | d8054737 | P0 | After | Δ vs P0 |
+|---|---|---|---|---|
+| LargeImageSpec | 55.1 s | 61.0 s | 7.0 s | −54.0 s |
+| RoundDistributionJobSpec | 63.2 s | 57.5 s | 29.8 s | −27.7 s |
+| AppendImagesSpec | 34.8 s | 30.8 s | 3.9 s | −26.9 s |
+| ConvertToInnoDbMigrationSpec | 31.5 s | 31.3 s | 6.2 s | −25.1 s |
+| ApiTokenPageSpec | 18.8 s | 26.8 s | 1.8 s | −25.0 s |
+| SecuredSpec | 29.2 s | 24.3 s | 1.4 s | −22.9 s |
+| ImageDbNewDbSpec | 25.8 s | 25.0 s | 2.8 s | −22.2 s |
+| MutationAuthorizationSpec | 24.9 s | 24.5 s | 4.7 s | −19.8 s |
+| SessionsSpec | 10.8 s | 20.9 s | 2.3 s | −18.6 s |
+| AccountInvitationSpec | 20.5 s | 20.1 s | 1.7 s | −18.4 s |
+
+No spec got slower by more than 1.5 s (`LocalImageCacheServiceSpec` 20.6 → 22.1 s, not
+database-bound). Slowest now: `ListPositionSpec` 46.4 s (recommendation 5), the distribution
+specs (`RoundDistributionJobSpec` 29.8 s, `RoundRedistributionFiltersSpec` 29.2 s,
+`CategoryClauseSpec` 17.4 s), `GalleryOrderSpec` 24.6 s (first), `LocalImageCacheServiceSpec`
+22.3 s. No flaky or tmpfs-only failure in the clean run. Recommendations 5–8 stay open; 6 and 7
+are moot with tmpfs (truncation is 30–40 ms).

@@ -7,7 +7,7 @@ import org.specs2.specification.{BeforeAll, BeforeEach}
 import services.TestImportServices
 import services.imports.{CommonsLogin, ImportSource, MwCommonsSource}
 
-/** Importing a pasted list of files, over Commons. */
+/** Importing a pasted list of files, over the live Commons: only with -Dintegration=true. */
 class ImagesFromListSpec extends Specification with JuryTestHelpers with TestDb
     with BeforeAll with BeforeEach {
 
@@ -22,6 +22,8 @@ class ImagesFromListSpec extends Specification with JuryTestHelpers with TestDb
   "contest" should {
 
     "import from list" in {
+      if (!sys.props.get("integration").contains("true"))
+        skipped("reads the live Wikimedia Commons: run with -Dintegration=true")
       val list = resourceAsString("ArmeniaImageList.txt")
       val uniqueNormalizedNames = ImportSource.titles(list)
 
