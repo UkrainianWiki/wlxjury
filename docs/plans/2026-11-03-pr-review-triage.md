@@ -20,7 +20,8 @@ These come from our own stack-aware review of all 54 PRs (2026-11-03). Each
 reviewer checked whether a problem is fixed later in the stack or already
 planned, and flagged only what is neither. There are 8 entries in 7 PRs, none
 High or Medium. File:line is at the PR's tip, and at the final tip `8b246ace`
-where it moved.
+where it moved. Entries from CodeRabbit's reviews (R185-1 onwards) give the newest tip,
+`stack/62-docs-phase`.
 
 ### R198-1: A job that crashes the JVM is retried forever
 
@@ -227,6 +228,136 @@ where it moved.
   [`2026-11-02-security-resolution.md`](2026-11-02-security-resolution.md)
   ("S6 review fixes" follow-up).
 
+### R185-1: Local image cache bookkeeping gaps
+
+From CodeRabbit's reviews of #185, #186 and #187. Each item is small; together they decide
+whether the cache's counts and registry tell the truth. File:line at the newest tip
+(`stack/62-docs-phase`, `c5f0d164`), `app/services/LocalImageCacheService.scala` unless named.
+
+- **PR:** #185 (02, tip `3ebe865f`), #186 (03, `155040c4`), #187 (04, `6a13cd09`).
+- **Severity:** Low (the first item), Nit (the rest).
+- **At the newest tip:** all still there. Fixed meanwhile, so not part of this entry: the
+  atomic start (#196), lookup failures and failed streams shown as failed (#216), counted
+  download and decode failures (#196), temp file plus atomic move (#194), `saveResized`
+  rewriting a file deleted from disk (#196), protocol-relative URLs (#230), the served widths
+  (#230).
+- **Items, failure scenarios and fixes:**
+  1. **`wlxjury.thumbs.parallelism` of 0 or less** (`:78`, used at `:400`) is read unchecked.
+     Pekko's `mapAsyncUnordered` has no `require` on it (`MapAsyncUnordered`, pekko-stream
+     1.0.3 `Ops.scala:1394`); with 0 it never pulls, the stream never completes, and the
+     contest's progress stays `running` until a restart, so later starts are refused. Fix:
+     reject values below 1 at startup (or fall back to the default) with a WARN.
+     (#185 `LocalImageCacheService.scala:169`.)
+  2. **Write failures are neither awaited nor counted** (`downloadAndResize` `:524-531`,
+     `saveResized` `:650-668`): the writes run in unawaited futures whose `recover` only logs
+     and releases the claim, so the run counts the image as done with no error. `ImageIO.write`
+     returning `false` (no writer) is not treated as a failure either (`:133`, `:655`). Fix:
+     return the write futures from `saveResized` (one combined future), await them in
+     `downloadAndResize`, and fail when `ImageIO.write` returns `false`. (#187 `:284`, review
+     remark "Throw when ImageIO.write returns false".)
+  3. **The registry claim is not atomic** (`:647-648`: `containsKey` then `put`). Two writers
+     of one file both write (harmless since the atomic move), but a failing one removes the
+     claim the other made, so the file is rewritten on the next run. Fix: `putIfAbsent` and
+     skip when claimed; on failure remove only the own claim. (#187 `:363`.)
+  4. **The bulk filter trusts the registry only** (`allSizesCached` `:484-486`): a file
+     deleted while the app runs stays "cached", so a bulk run skips the image; the proxy
+     notices (`ImageProxyController.scala:150`, `file.exists()`), the bulk job doesn't.
+     Fix: check the widest target file on disk in `allSizesCached`. (#186 `:225`.)
+  5. **The proxy doesn't wait for the startup scan** (`fileIfCached` `:98-101` before
+     `registryReady` `:719`): in the minutes after a restart, a cached file is fetched from
+     Wikimedia again, and on a failed fetch the request is redirected. Fix: wait on
+     `registryReady` (with a short timeout) in `serveImage`, or serve a file that exists on
+     disk while the scan runs. (#186 `:94`.)
+  6. **`Retry-After` as an HTTP date** (`retryDelay` `:612-623`) falls back to the
+     exponential delay. Wikimedia sends seconds today, so this is defensive. Fix: parse the
+     HTTP-date form too (Pekko's typed `Retry-After` header has both forms). (#185 `:279`;
+     integrations practices §1.5 says the downloads honour `Retry-After`.)
+  7. **Optional optimizations of the proxy's miss path**, to be measured first (performance
+     practices §3.1): return the requested size before the rest of the cascade is scaled; skip
+     the cascade when all target sizes are registered; reuse the nearest cascade output for a
+     width that isn't generated. A miss happens once per image and served width (`servedWidths`,
+     #230), so the gain is small. (#187 review remarks.)
+- **Placement:** append after [`2026-11-01-open-followups.md` "Still open"](https://github.com/UkrainianWiki/wlxjury/blob/stack/62-docs-phase/docs/plans/2026-11-01-open-followups.md#still-open)
+  as a "local image cache" item; items 1–5 together, item 6 with them if cheap, item 7 only
+  after a measurement.
+
+### R185-2: Image cache tests and tooling nits
+
+- **PR:** #185 (02, tip `3ebe865f`), #186 (03, `155040c4`), #187 (04, `6a13cd09`).
+- **Severity:** Nit.
+- **At the newest tip:** all still there.
+- **Items, failure scenarios and fixes:**
+  1. **The Docker spec empties a fixed shared directory**
+     (`test/services/LocalImageCacheServiceDockerSpec.scala:42`, `:107-112`;
+     `docker-compose.test.yml:8`): it deletes everything under `/tmp/wlxjury-jury-images`,
+     which a manual Apache stack or a second run may be using. Fix: a per-run directory passed
+     to the app config and the compose bind mount (testing practices §7.3, "its own temp
+     directory"). (#185 `:115`.)
+  2. **`run-dev.sh` runs sbt in the caller's directory** (`run-dev.sh:5`) while it reads `.env`
+     from its own: run from elsewhere, sbt starts in the wrong place. Fix: `cd "$(dirname "$0")"`
+     first. (#185 `run-dev.sh:5`.)
+  3. **Stale `wlxjury.thumbs.host` comment** (`conf/apache/jury-images.conf:3`): the app no
+     longer reads that key since #186 (thumbnails go through the Play proxy); the comment still
+     says to set it. Fix: describe what the vhost is for now (the Docker spec's Apache, a cache
+     front) or drop the line. (#185 `jury-images.conf:6`, #186 review remark on the plan.)
+  4. **The cascaded benchmark stops at the requested width**
+     (`test/services/FetchAndCacheAllBenchmark.scala:60-64`, `takeWhile(_ >= requestedPx)`),
+     while `fetchAndCacheAll` cascades through every target width below it too, before it
+     answers. The `cascaded` numbers under-measure the response path for every width above the
+     smallest. Fix: cascade all target widths, or name the benchmark for what it measures.
+     (#187 `:65`.)
+  5. **Weak assertions:** the `cascadeScale` tests use a blank source, so wrong pixels pass (add
+     a two-colour source and sample both halves); the "download a response larger than the
+     default 16 MB Pekko HTTP limit" example (`LocalImageCacheServiceSpec.scala:434-445`) calls
+     `toStrict` on a local entity, not `downloadWithRetry`, so it guards nothing in the
+     download path (serve a body over 8 MB from a local server through `downloadWithRetry`, and
+     rename the example). (#187 review remarks; testing practices §6.)
+- **Placement:** fold into the same "local image cache" item as R185-1 (after open-followups
+  "Still open"); items 1 and 5 can go with the CI batch's test fixes.
+
+### R186-1: V44 narrows images.title to 255 characters
+
+- **PR:** #186 (03, tip `155040c4`). `conf/db/migration/default/V44__Alter_images_title_index.sql:1`:
+  `ALTER TABLE images MODIFY title varchar(255)` (from `varchar(4000)`).
+- **Severity:** Low.
+- **At the newest tip:** still there (applied migrations don't change; V63's
+  `VARCHAR(255)` title columns for renamed files have the same limit).
+- **Failure scenario:** stored titles carry the `File:` prefix, and Commons allows file names up
+  to 255 bytes. An ASCII-named file of 251–255 bytes gives a 256–260 character title, which
+  `images.title` can't hold: under MariaDB's `STRICT_TRANS_TABLES` the import step's insert
+  fails ("Data too long") and the step's job fails or retries; without strict mode the title is
+  truncated and `findByFilename` never matches it. Rare (most titles are far shorter; a
+  Cyrillic name reaches 255 bytes at about 127 characters).
+- **Suggested fix:** a new migration widening `images.title` (and V63's title columns) to
+  `VARCHAR(260)`, `utf8mb4` (the index stays under InnoDB's 3072-byte key limit); a spec that
+  imports a 255-byte ASCII file name. First check production for titles near the limit.
+- **Placement:** append to [db practices §11](https://github.com/UkrainianWiki/wlxjury/blob/stack/62-docs-phase/docs/db/practices.md#11-where-the-code-doesnt-follow-these-yet-for-triage)
+  as a new item beside V7 (the same kind of limit for `category.title`), and take it with the
+  next schema batch.
+
+### R190-1: Gatling fixture settings and setup checks
+
+- **PR:** #190 (07, tip `ac4bedbd`). `test/gatling/setup/GatlingConfig.scala:16`,
+  `test/gatling/setup/GatlingDbSetup.scala:99`, `:128`, `test/gatling/setup/GatlingTestFixture.scala:23`.
+- **Severity:** Nit.
+- **At the newest tip:** still there (`GatlingConfig.scala:17`; `GatlingDbSetup.scala:180`,
+  `:196-207`, `:229`; `GatlingTestFixture.scala:52`, `:73`).
+- **Items, failure scenarios and fixes:**
+  1. `gatling.maxRate` below 1 passes config loading and fails later in `rng.nextInt` with a
+     message that doesn't name the setting; above 20 the rating round falls back to `1-20` but
+     ratings up to `maxRate` are still generated and voted. Fix: require
+     `1 <= maxRate <= Round.rateRounds.last.id` in `GatlingConfig`.
+  2. The setup builds every selection before `take(50000)`: with many users and
+     `jurorFraction = 1.0` (about 3.8M selections at 50 users) the fixture build can run out of
+     heap. Fix: insert per image batch and keep only the first 50,000 voting pairs, keeping the
+     RNG order so the cached fixture stays the same (`FixtureVersion` unchanged).
+  3. `freePort()` closes its probe socket before `TestServer` binds the port, so another
+     process can take it in between. Fix: retry the start on a bind failure (or bind port 0 if
+     `TestServer` reports the port).
+- **Placement:** append to [performance practices §1](https://github.com/UkrainianWiki/wlxjury/blob/stack/62-docs-phase/docs/performance/practices.md#1-load-tests-gatling)
+  follow-ups, done with open-followups 3.6 (the benchmark workload gaps) before the next
+  capacity measurement.
+
 New entries use the format `### R<PR>-<n>: <short title>`, then PR and file:line
 at its tip, severity, whether it is still at the final tip, the failure
 scenario, the suggested fix and the placement (append after an existing plan,
@@ -317,3 +448,20 @@ on GitHub master) or tests for them, so none needs an entry here:
 | `Api.scala:37` `getContest` 404 (review-level) | 1 | #196 (`37e6ea26`) |
 | `ApiSpec.scala:17` routed unknown-id and PUT tests (review-level) | 1 | #218 (`16b4fccf`) |
 | `conf/routes:13` routed tokenless `POST /auth` test (review-level) | 1 | #231 (`40aef2e1`) |
+
+### CodeRabbit, PRs 185-190
+
+CodeRabbit's inline comments and review-level remarks on #185-#190, classified against the
+current stack tips (`series.json`, then `stack/60`-`62`); each has a reply on its PR.
+Review-level remarks are answered in one comment per PR. New entries:
+[R185-1](#r185-1-local-image-cache-bookkeeping-gaps), [R185-2](#r185-2-image-cache-tests-and-tooling-nits),
+[R186-1](#r186-1-v44-narrows-imagestitle-to-255-characters), [R190-1](#r190-1-gatling-fixture-settings-and-setup-checks).
+
+| PR | Inline comments: class |
+|---|---|
+| #185 | ImageController.scala:90 round ownership: fixed later; LocalImageCacheService.scala:92 atomic start: fixed later; LocalImageCacheService.scala:104 lookup failure: fixed later; LocalImageCacheService.scala:169 parallelism: new entry; LocalImageCacheService.scala:236 failed downloads counted: fixed later; LocalImageCacheService.scala:247 body size cap: not applicable; LocalImageCacheService.scala:279 Retry-After date: new entry; LocalImageCacheService.scala:295 temp file and move: fixed later; build.sbt:13 jsTest npm ci: fixed later; jury-images.conf:6 HTTPS note: new entry; run-dev.sh:5 working directory: new entry; LocalImageCacheServiceDockerSpec.scala:115 shared /tmp: new entry |
+| #186 | ImageProxyController.scala:19 page1- prefix: fixed later; ImageProxyController.scala:27 + in file names: fixed later; ImageProxyController.scala:33 width bound: fixed later; LocalImageCacheService.scala:94 registry wait: new entry; LocalImageCacheService.scala:109 protocol-relative URLs: fixed later; LocalImageCacheService.scala:225 disk check: new entry; LocalImageCacheService.scala:337 atomic writes: fixed later; V44 images.title varchar(255): new entry; LocalImageCacheServiceSpec.scala:575 sleep: fixed later |
+| #187 | LocalImageCacheService.scala:284 await writes: new entry; LocalImageCacheService.scala:359 register after write: fixed later; LocalImageCacheService.scala:363 atomic claim: new entry; FetchAndCacheAllBenchmark.scala:65 cascade widths: new entry; LocalImageCacheServiceSpec.scala:306 sleep: fixed later |
+| #188 | flyway-baseline-design.md:88 regeneration command: fixed later; SchemaBaselineSpec.scala:17 generate.baseline=false: fixed later; SchemaBaselineSpec.scala:50 mysqldump check: fixed later |
+| #189 | db-performance-analysis.md:237 comment.id: fixed later |
+| #190 | schema-performance-analysis.txt:155 conclusions: fixed later; gatling-perf-tests.md:9 versions: fixed later; gatling-db-perf-tests-design.md:11 V45: fixed later; GatlingCompare.scala:171 missing V45: fixed later; GatlingConfig.scala:16 maxRate below 1: new entry; GatlingDbSetup.scala:99 maxRate above 20: new entry; GatlingDbSetup.scala:128 streaming selections: new entry; GatlingTestFixture.scala:23 port gap: new entry; RoundManagementSimulation.scala:24 admin user: fixed later; VotingSimulation.scala:39 vote tuples: fixed later |
