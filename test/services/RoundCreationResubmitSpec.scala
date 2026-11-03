@@ -117,7 +117,7 @@ class RoundCreationResubmitSpec extends Specification with TestDb with BeforeAll
         case r: RoundService.Resubmitted => (r.round.id === failed.id) and (r.imagesAdded === 20)
       }
       rounds(contest).size === 2 // the previous round and the resumed one: no stray round
-      SelectionJdbc.imageCountByRound(failed.getId) === 20
+      ImageJdbc.imageCountByRounds(Seq(failed.getId)).values.sum === 20
       flaky.previousActive.toSeq === Seq(false, false) // frozen during both attempts
       roundDao.findById(previous.getId).map(_.active) === Some(false) // a creation leaves them frozen
     }
@@ -144,7 +144,7 @@ class RoundCreationResubmitSpec extends Specification with TestDb with BeforeAll
       results.map(_.get).count(_.isInstanceOf[RoundService.Created]) === 1
       results.map(_.get.imagesAdded).sum === 20
       rounds(contest).size === 1
-      SelectionJdbc.imageCountByRound(rounds(contest).head.getId) === 20
+      ImageJdbc.imageCountByRounds(Seq(rounds(contest).head.getId)).values.sum === 20
       selectionRows(rounds(contest).head.getId).size === 40
     }
 
@@ -198,7 +198,7 @@ class RoundCreationResubmitSpec extends Specification with TestDb with BeforeAll
       val (contest, jurors) = setUp()
       val failed = failedRound(contest, "Round 1", jurors)
       service.distributeNewImages(failed.getId) === 20
-      SelectionJdbc.imageCountByRound(failed.getId) === 20
+      ImageJdbc.imageCountByRounds(Seq(failed.getId)).values.sum === 20
     }
 
     "restore the previous rounds' state afterwards" in {

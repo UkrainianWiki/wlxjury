@@ -91,7 +91,8 @@ class ImageController @Inject() (
                 jobs.collect { case Left(running) => running } match {
                   case Nil => back
                   case running =>
-                    back.flashing("error" -> running.map(j => s"Already running: ${imageService.title(j)}.").mkString(" "))
+                    back.flashing("error" ->
+                      running.map(j => messagesApi.preferred(request)("import.already.running", imageService.title(j))).mkString(" "))
                 }
               }
             }

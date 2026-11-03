@@ -301,16 +301,16 @@ class JobScheduler(handlerList: Seq[JobHandler], val settings: JobScheduler.Sett
   /** Queues a failed job again; it resumes from its state.
     * @return the job, or why it can't be retried
     */
-  def retry(jobId: Long): Either[String, Job] = {
+  def retry(jobId: Long): Either[JobScheduler.RetryRefused, Job] = {
     val result =
       try
         DB.localTx { implicit s =>
           JobJdbc.lock(jobId) match {
-            case None                    => Left("no such job")
-            case Some(j) if !j.isFailed  => Left(s"the job is ${j.status}, not failed")
+            case None                    => Left(JobScheduler.RetryRefused("job.retry.missing"))
+            case Some(j) if !j.isFailed  => Left(JobScheduler.RetryRefused("job.retry.not.failed", j.status))
             case Some(j) =>
               handlers.get(j.kind) match {
-                case None => Left(s"no handler for job kind ${j.kind}")
+                case None => Left(JobScheduler.RetryRefused("job.retry.no.handler", j.kind))
                 case Some(h) =>
                   val ctx = new StepContext(s)
                   JobJdbc.requeue(jobId, h.onRetry(j, ctx), Option.when(inline)(instanceId))
@@ -320,7 +320,7 @@ class JobScheduler(handlerList: Seq[JobHandler], val settings: JobScheduler.Sett
         }
       catch {
         case e: Throwable if JobJdbc.isDuplicateActive(e) =>
-          Left("another job for the same subject is running")
+          Left(JobScheduler.RetryRefused("job.retry.duplicate"))
       }
     result.map { ctx =>
       runAfterCommit(ctx)
@@ -470,6 +470,9 @@ class JobScheduler(handlerList: Seq[JobHandler], val settings: JobScheduler.Sett
 }
 
 object JobScheduler {
+
+  /** Why a job can't be retried: a message key and its arguments. */
+  final case class RetryRefused(messageKey: String, args: String*)
 
   sealed trait Mode
   object Mode {

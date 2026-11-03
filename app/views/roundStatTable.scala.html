@@ -73,7 +73,7 @@
                     @total
                     @if(user.isAdmin(Some(round.contestId))) {
                         <br>
-                        <a href="/thumb_urls/@round.contestId?roundId=@round.getId">@Messages("thumbnail.urls")</a>
+                        <a href="/thumb_urls/@round.contestId?roundId=@round.getId" title="@Messages("thumbnail.urls.help")">@Messages("thumbnail.urls")</a>
                     }
                 </th>
                 @* a binary round's files with at least one vote of each kind, as the lists of all
