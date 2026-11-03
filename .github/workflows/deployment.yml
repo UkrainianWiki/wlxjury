@@ -1,0 +1,88 @@
+# The deployment tool's tests (docs/deployment.md, "Local verification"): the Python unit tests,
+# shellcheck, and the integration tests in the disposable Ubuntu + MariaDB 10.6 image against the
+# packaged release (sbt dist). The sbt specs of that list run in ci.yml's full suite.
+# Plan: docs/plans/2026-11-03-ci-and-scalawiki-packages.md
+# Wikimedia access is anonymous (CLAUDE.md, Testing): never pass COMMONS_* or SCALAWIKI_*
+# credentials, as env or secrets, to any job here. TestConfigAnonymousSpec checks it.
+name: Deployment tests
+
+on:
+  # Every PR: the release test starts the packaged app, so any startup code matters, and an
+  # always-run check can be made required without staying pending (about 4.5 minutes)
+  pull_request:
+  push:
+    branches: [master, ukwikidev/followups]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  # PRs: one group per PR, and a new push cancels the PR's older run. Everything else (pushes,
+  # the weekly schedule, manual runs) gets a group per event and commit: GitHub keeps only one
+  # pending run per group, so a shared group would drop runs of merged commits.
+  group: deployment-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || format('{0}-{1}-{2}', github.event_name, github.ref, github.sha) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  SCALAWIKI_SHA: 25951dbe1e05bc195b8719e2edbb08464f0ea932
+
+jobs:
+  scripts:
+    name: Python unit tests and shellcheck
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Unit tests on Python 3.8, the oldest supported
+        run: >-
+          docker run --rm --network none
+          --mount type=bind,source="$PWD",target=/workspace,readonly
+          --workdir /workspace/scripts/deployment
+          python:3.8.20-slim python -B -m unittest -v test_deployment
+      - name: shellcheck
+        run: >-
+          docker run --rm
+          --mount type=bind,source="$PWD/scripts/deployment",target=/s,readonly
+          koalaman/shellcheck:v0.11.0 -S style /s/wlxjury-release.sh
+
+  release:
+    name: Restore and release-script tests on the packaged release
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+          cache: sbt
+      - uses: sbt/setup-sbt@ecad189dd245444b9ae0a0cd5922fd938b88906f # v1.5.12
+      - name: scalawiki (interim, from source)
+        uses: ./.github/actions/scalawiki
+        with:
+          sha: ${{ env.SCALAWIKI_SHA }}
+          jdk: 17
+      - name: sbt dist
+        run: python3 scripts/agent-check.py -- sbt -J-Xmx1g -J-Dfile.encoding=UTF-8 dist
+      - name: Build the test image (Ubuntu 22.04, MariaDB 10.6, OpenJDK 17)
+        run: docker build -q -f scripts/deployment/Dockerfile.test -t wlxjury-deployment-test:local scripts/deployment
+      - name: Restore and release-script tests
+        # test_database_restore's packaged-release test reads target/universal/wlxjury-<version>.zip;
+        # with CI set it fails, instead of skipping, when the ZIP is missing
+        run: >-
+          docker run --rm --network none -e CI
+          --mount type=bind,source="$PWD",target=/workspace,readonly
+          --workdir /workspace/scripts/deployment
+          wlxjury-deployment-test:local -B -m unittest -v test_database_restore test_release_script
+      - name: End of the log
+        if: failure()
+        run: tail -n 200 target/checks/*.log || true
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: deployment-logs-${{ github.run_id }}-${{ github.run_attempt }}
+          path: target/checks/
+          if-no-files-found: ignore
+          retention-days: 14

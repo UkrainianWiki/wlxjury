@@ -1,0 +1,114 @@
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+index c8c5c06..96fc9b2 100644
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -16,5 +16,7 @@ jobs:
+           cache: sbt
+       - name: Install sbt
+         uses: sbt/setup-sbt@v1
++      # Anonymous: never pass SCALAWIKI_LOGIN / SCALAWIKI_PASSWORD (or other wiki credentials)
++      # to any job; the build makes tests ignore them anyway (scalawiki.anonymous).
+       - name: Build and Test
+         run: sbt -v +test
+\ No newline at end of file
+diff --git a/build.sbt b/build.sbt
+index 35a8c56..9c2c570 100644
+--- a/build.sbt
++++ b/build.sbt
+@@ -3,6 +3,14 @@ import Dependencies._
+ 
+ ThisBuild / Test / fork := true
+ 
++// Tests use the wikis anonymously: LoginInfo.fromEnv ignores SCALAWIKI_LOGIN / SCALAWIKI_PASSWORD
++// in the forked test JVM unless sbt runs with -Dscalawiki.allowTestLogin=true (no CI job does).
++// Specs that read live wikis at volume run only with -Dscalawiki.live=true.
++ThisBuild / Test / javaOptions ++= {
++  val anonymous = !sys.props.get("scalawiki.allowTestLogin").contains("true")
++  Seq(s"-Dscalawiki.anonymous=$anonymous") ++ sys.props.get("scalawiki.live").map(v => s"-Dscalawiki.live=$v")
++}
++
+ // UTF-8 stdout/stderr so Cyrillic in reports/tests isn't mangled to '?'.
+ ThisBuild / Test / javaOptions ++= Seq(
+   "-Dfile.encoding=UTF-8",
+diff --git a/scalawiki-core/src/main/scala/org/scalawiki/LoginInfo.scala b/scalawiki-core/src/main/scala/org/scalawiki/LoginInfo.scala
+index f063dbf..1844297 100644
+--- a/scalawiki-core/src/main/scala/org/scalawiki/LoginInfo.scala
++++ b/scalawiki-core/src/main/scala/org/scalawiki/LoginInfo.scala
+@@ -10,14 +10,22 @@ case class LoginInfoValue(login: String, password: String) extends LoginInfo
+ 
+ object LoginInfo {
+ 
++  /** Set to `true` (the build sets it for tests) to make [[fromEnv]] ignore the
++    * environment: no bot logs in as `SCALAWIKI_LOGIN` then. A test that must log in
++    * needs `-Dscalawiki.allowTestLogin=true` on sbt's command line, which no CI job sets.
++    */
++  val AnonymousProperty = "scalawiki.anonymous"
++
+   def fromEnv(
+       loginProp: String = "SCALAWIKI_LOGIN",
+       passwordProp: String = "SCALAWIKI_PASSWORD"
+   ): Option[LoginInfo] =
+-    for (
+-      login <- sys.env.get(loginProp);
+-      password <- sys.env.get(passwordProp)
+-    )
+-      yield LoginInfoValue(login, password)
++    if (sys.props.get(AnonymousProperty).contains("true")) None
++    else
++      for (
++        login <- sys.env.get(loginProp).filter(_.nonEmpty);
++        password <- sys.env.get(passwordProp).filter(_.nonEmpty)
++      )
++        yield LoginInfoValue(login, password)
+ 
+ }
+diff --git a/scalawiki-core/src/test/scala/org/scalawiki/mockserver/BaseMockServerSpec.scala b/scalawiki-core/src/test/scala/org/scalawiki/mockserver/BaseMockServerSpec.scala
+index 99e162f..421ece0 100644
+--- a/scalawiki-core/src/test/scala/org/scalawiki/mockserver/BaseMockServerSpec.scala
++++ b/scalawiki-core/src/test/scala/org/scalawiki/mockserver/BaseMockServerSpec.scala
+@@ -23,7 +23,8 @@ class BaseMockServerSpec extends Specification with StubServer {
+   val http = new HttpClientPekko(system)
+   val apiUrl = "/w/api.php"
+ 
+-  def getBot: MwBot = MwBot.fromHost(Host, Protocol, Some(Port))
++  // never the environment's account: it would be sent to the mock server
++  def getBot: MwBot = MwBot.fromHost(Host, Protocol, Some(Port), loginInfo = None)
+ 
+   def login(wiki: MwBot, username: String, passwd: String): String =
+     await(wiki.login(username, passwd))
+diff --git a/scalawiki-wlx/src/test/scala/org/scalawiki/wlx/WlmUaListsSpec.scala b/scalawiki-wlx/src/test/scala/org/scalawiki/wlx/WlmUaListsSpec.scala
+index ddb5199..f9faee5 100644
+--- a/scalawiki-wlx/src/test/scala/org/scalawiki/wlx/WlmUaListsSpec.scala
++++ b/scalawiki-wlx/src/test/scala/org/scalawiki/wlx/WlmUaListsSpec.scala
+@@ -6,21 +6,27 @@ import org.scalawiki.wlx.dto.Contest
+ import org.scalawiki.wlx.query.MonumentQuery
+ import org.specs2.mutable.Specification
+ 
++/** Reads every WLM-UA monument list from the live uk.wikipedia.org (hundreds of API
++  * requests without a local http-cache/): only with -Dscalawiki.live=true.
++  */
+ class WlmUaListsSpec extends Specification {
+ 
+   sequential
+ 
++  skipAllUnless(sys.props.get("scalawiki.live").contains("true"))
++
+   val campaign = "wlm-ua"
+   val cacheName = s"$campaign-2019"
+ 
+   val contest = Contest.byCampaign(campaign).get.copy(year = 2019)
+   val country = contest.country
+ 
+-  val bot =
++  // lazy: built only when an example runs, so a skipped spec makes no request
++  lazy val bot =
+     new CachedBot(Site.ukWiki, cacheName + "-wiki", true)
+-  val monumentQuery = MonumentQuery.create(contest)(bot)
+-  val monumentDb = MonumentDB.getMonumentDbBlocking(contest, monumentQuery)
+-  val all = monumentDb.allMonuments
++  lazy val monumentQuery = MonumentQuery.create(contest)(bot)
++  lazy val monumentDb = MonumentDB.getMonumentDbBlocking(contest, monumentQuery)
++  lazy val all = monumentDb.allMonuments
+ 
+   "places" should {
+     "be mostly detected" in {
