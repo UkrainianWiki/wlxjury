@@ -1,0 +1,92 @@
+# Test coverage of the Scala specs (sbt-scoverage) and the Jest tests, as its own workflow so that
+# ci.yml's test job keeps its speed: instrumented code runs slower. Report only: no minimum, and
+# not a required check. Plan: docs/plans/2026-11-03-ci-and-scalawiki-packages.md, "Test coverage".
+# Wikimedia access is anonymous (CLAUDE.md, Testing): never pass COMMONS_* or SCALAWIKI_*
+# credentials, as env or secrets, to any job here, and never -Dintegration (live Commons specs).
+name: Coverage
+
+on:
+  # Any base branch, like ci.yml: stacked PRs target the PR below them
+  pull_request:
+  push:
+    branches: [master, ukwikidev/followups]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  # As in ci.yml: PRs cancel their older run; other events get a group per event and commit.
+  group: coverage-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || format('{0}-{1}-{2}', github.event_name, github.ref, github.sha) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  # The same pin as ci.yml (bump all workflows together)
+  SCALAWIKI_SHA: 25951dbe1e05bc195b8719e2edbb08464f0ea932
+
+jobs:
+  coverage:
+    name: Coverage (Scala and JS)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+          cache: sbt
+
+      - uses: sbt/setup-sbt@ecad189dd245444b9ae0a0cd5922fd938b88906f # v1.5.12
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: javascript-test/package-lock.json
+
+      - name: scalawiki (interim, from source)
+        uses: ./.github/actions/scalawiki
+        with:
+          sha: ${{ env.SCALAWIKI_SHA }}
+          jdk: 17
+
+      - name: Pull the test database image
+        run: docker pull -q mariadb:10.6.22
+
+      - name: Instrument, test and report
+        # `coverage` instruments the main sources for this sbt session only; `test` runs the
+        # specs and, through build.sbt's jsTest, Jest with --coverage. One MariaDB, production's
+        # 10.6: coverage does not depend on the server version.
+        run: >-
+          env -u COMMONS_USER -u COMMONS_PASSWORD -u SCALAWIKI_LOGIN -u SCALAWIKI_PASSWORD
+          python3 scripts/agent-check.py --
+          sbt -J-Xmx2g -J-Dfile.encoding=UTF-8 -Dwlxjury.test.mariadb-image=mariadb:10.6.22
+          'set Test / javaOptions ++= Seq("-Xmx768m", "-Dfile.encoding=UTF-8")'
+          coverage Test/compile test coverageReport
+
+      - name: Coverage summary
+        if: always()
+        run: python3 scripts/coverage-summary.py >> "$GITHUB_STEP_SUMMARY"
+
+      - name: End of the log
+        if: failure()
+        run: tail -n 400 target/checks/*.log
+
+      - name: Upload coverage reports and logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-reports-attempt-${{ github.run_attempt }}
+          # scoverage-report: HTML and scoverage.xml; coverage-report: Cobertura XML;
+          # jest-coverage: lcov.info, the lcov HTML report and coverage-summary.json
+          path: |
+            target/scala-2.13/scoverage-report/
+            target/scala-2.13/coverage-report/
+            target/jest-coverage/
+            target/test-reports/
+            target/checks/
+            hs_err_pid*.log
+          if-no-files-found: warn
+          retention-days: 14
