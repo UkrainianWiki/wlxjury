@@ -51,7 +51,7 @@ class RoundService @Inject() (distributeImages: DistributeImages, dao: RoundRepo
         .toMap
     }.toMap
 
-    val totalByRate = dao.roundRateStat(roundId).toMap
+    val totalByRate = if (round.isBinary) dao.roundRateStat(roundId).toMap else Map.empty[Int, Int]
     val total = SelectionQuery(roundId = Some(roundId), grouped = true).count()
 
     val roundUsers = RoundUser.byRoundId(roundId).groupBy(_.userId)

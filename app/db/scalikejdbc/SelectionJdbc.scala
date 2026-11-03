@@ -20,24 +20,26 @@ object SelectionJdbc extends CRUDMapper[Selection] {
   override lazy val defaultAlias = createAlias("s")
 
   override def extract(rs: WrappedResultSet, c: ResultName[Selection]): Selection = Selection(
-    pageId = rs.long(c.pageId),
-    juryId = rs.long(c.juryId),
-    roundId = rs.long(c.roundId),
-    rate = rs.int(c.rate),
-    id = rs.longOpt(c.id),
-    createdAt = rs.timestampOpt(c.createdAt).map(_.toZonedDateTime),
-    deletedAt = rs.timestampOpt(c.deletedAt).map(_.toZonedDateTime)
+    pageId     = rs.long(c.pageId),
+    juryId     = rs.long(c.juryId),
+    roundId    = rs.long(c.roundId),
+    rate       = rs.int(c.rate),
+    id         = rs.longOpt(c.id),
+    createdAt  = rs.timestampOpt(c.createdAt).map(_.toZonedDateTime),
+    deletedAt  = rs.timestampOpt(c.deletedAt).map(_.toZonedDateTime),
+    monumentId = rs.stringOpt(c.monumentId)
   )
 
   def apply(c: ResultName[Selection])(rs: WrappedResultSet): Selection =
     Selection(
-      pageId = rs.long(c.pageId),
-      juryId = rs.long(c.juryId),
-      roundId = rs.long(c.roundId),
-      rate = rs.int(c.rate),
-      id = rs.longOpt(c.id),
-      createdAt = rs.timestampOpt(c.createdAt).map(_.toZonedDateTime),
-      deletedAt = rs.timestampOpt(c.deletedAt).map(_.toZonedDateTime)
+      pageId     = rs.long(c.pageId),
+      juryId     = rs.long(c.juryId),
+      roundId    = rs.long(c.roundId),
+      rate       = rs.int(c.rate),
+      id         = rs.longOpt(c.id),
+      createdAt  = rs.timestampOpt(c.createdAt).map(_.toZonedDateTime),
+      deletedAt  = rs.timestampOpt(c.deletedAt).map(_.toZonedDateTime),
+      monumentId = rs.stringOpt(c.monumentId)
     )
 
   def create(
@@ -45,41 +47,45 @@ object SelectionJdbc extends CRUDMapper[Selection] {
       rate: Int,
       juryId: Long,
       roundId: Long,
-      createdAt: Option[ZonedDateTime] = None
+      createdAt: Option[ZonedDateTime] = None,
+      monumentId: Option[String] = None
   )(implicit session: DBSession = AutoSession): Selection = {
     val id = withSQL {
       insert
         .into(SelectionJdbc)
         .namedValues(
-          column.pageId -> pageId,
-          column.rate -> rate,
-          column.juryId -> juryId,
-          column.roundId -> roundId
+          column.pageId     -> pageId,
+          column.rate       -> rate,
+          column.juryId     -> juryId,
+          column.roundId    -> roundId,
+          column.monumentId -> monumentId
         )
     }.updateAndReturnGeneratedKey()
 
     Selection(
-      pageId = pageId,
-      juryId = juryId,
-      roundId = roundId,
-      rate = rate,
-      id = Some(id),
-      createdAt = createdAt
+      pageId     = pageId,
+      juryId     = juryId,
+      roundId    = roundId,
+      rate       = rate,
+      id         = Some(id),
+      createdAt  = createdAt,
+      monumentId = monumentId
     )
   }
 
   def batchInsert(selections: Iterable[Selection])(implicit session: DBSession = AutoSession): Unit = {
     val column = SelectionJdbc.column
     val batchParams: Seq[Seq[Any]] =
-      selections.map(i => Seq(i.pageId, i.rate, i.juryId, i.roundId)).toSeq
+      selections.map(i => Seq(i.pageId, i.rate, i.juryId, i.roundId, i.monumentId.orNull)).toSeq
     withSQL {
       insert
         .into(SelectionJdbc)
         .namedValues(
-          column.pageId -> sqls.?,
-          column.rate -> sqls.?,
-          column.juryId -> sqls.?,
-          column.roundId -> sqls.?
+          column.pageId     -> sqls.?,
+          column.rate       -> sqls.?,
+          column.juryId     -> sqls.?,
+          column.roundId    -> sqls.?,
+          column.monumentId -> sqls.?
         )
     }.batch(batchParams: _*).apply()
   }

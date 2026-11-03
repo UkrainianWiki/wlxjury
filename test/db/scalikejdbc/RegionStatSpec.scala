@@ -28,8 +28,8 @@ class RegionStatSpec extends Specification with BeforeAll with TestDb {
   private def insertSelections(selections: Seq[Selection])(implicit session: DBSession): Unit =
     selectionDao.batchInsert(selections)
 
-  private def selection(pageId: Long, userId: Long, roundId: Long): Selection =
-    Selection(pageId = pageId, juryId = userId, roundId = roundId, rate = 1)
+  private def selection(pageId: Long, userId: Long, roundId: Long, monumentId: Option[String] = None): Selection =
+    Selection(pageId = pageId, juryId = userId, roundId = roundId, rate = 1, monumentId = monumentId)
 
   "byRegionStat" should {
 
@@ -48,7 +48,7 @@ class RegionStatSpec extends Specification with BeforeAll with TestDb {
       )
       insertMonuments(imgs.map(i => monument(i.monumentId.get)))
       insertImages(imgs)
-      insertSelections(imgs.map(i => selection(i.pageId, userId, roundId)))
+      insertSelections(imgs.map(i => selection(i.pageId, userId, roundId, i.monumentId)))
 
       val result = SelectionQuery(roundId = Some(roundId)).byRegionStat()
       result.map(_.id) must_== Seq("07")
@@ -63,7 +63,7 @@ class RegionStatSpec extends Specification with BeforeAll with TestDb {
       )
       insertMonuments(imgs.map(i => monument(i.monumentId.get)))
       insertImages(imgs)
-      insertSelections(imgs.map(i => selection(i.pageId, userId, roundId)))
+      insertSelections(imgs.map(i => selection(i.pageId, userId, roundId, i.monumentId)))
 
       val result = SelectionQuery(roundId = Some(roundId)).byRegionStat()
       result.map(_.id).sorted must_== Seq("07", "14")
@@ -78,8 +78,8 @@ class RegionStatSpec extends Specification with BeforeAll with TestDb {
       insertMonuments(Seq(imgRegion07, imgRegion14).map(i => monument(i.monumentId.get)))
       insertImages(Seq(imgRegion07, imgRegion14))
       insertSelections(Seq(
-        selection(imgRegion07.pageId, userId3, roundId),
-        selection(imgRegion14.pageId, userId4, roundId)
+        selection(imgRegion07.pageId, userId3, roundId, imgRegion07.monumentId),
+        selection(imgRegion14.pageId, userId4, roundId, imgRegion14.monumentId)
       ))
 
       val resultUser3 = SelectionQuery(userId = Some(userId3), roundId = Some(roundId)).byRegionStat()
@@ -98,8 +98,8 @@ class RegionStatSpec extends Specification with BeforeAll with TestDb {
       insertMonuments(Seq(imgRound1, imgRound2).map(i => monument(i.monumentId.get)))
       insertImages(Seq(imgRound1, imgRound2))
       insertSelections(Seq(
-        selection(imgRound1.pageId, userId, round1),
-        selection(imgRound2.pageId, userId, round2)
+        selection(imgRound1.pageId, userId, round1, imgRound1.monumentId),
+        selection(imgRound2.pageId, userId, round2, imgRound2.monumentId)
       ))
 
       val resultRound1 = SelectionQuery(roundId = Some(round1)).byRegionStat()

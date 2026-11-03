@@ -331,7 +331,6 @@ object Round extends RoundRepo with CRUDMapper[Round] {
 
   def roundUserStat(roundId: Long): Seq[RoundStatRow] =
     sql"""SELECT s.jury_id, s.rate, count(1) FROM selection s
-      JOIN users u ON u.id = s.jury_id
     WHERE s.round_id = $roundId
     GROUP BY s.jury_id, s.rate"""
       .map(rs => RoundStatRow(rs.int(1), rs.int(2), rs.int(3)))
@@ -339,8 +338,7 @@ object Round extends RoundRepo with CRUDMapper[Round] {
 
   def roundRateStat(roundId: Long): Seq[(Int, Int)] =
     sql"""SELECT rate, count(1) FROM
-(SELECT DISTINCT s.page_id, s.rate FROM users u
-  JOIN selection s ON s.jury_id = u.id
+(SELECT DISTINCT s.page_id, s.rate FROM selection s
   WHERE s.round_id = $roundId) t
   GROUP BY rate""".map(rs => (rs.int(1), rs.int(2))).list()
 

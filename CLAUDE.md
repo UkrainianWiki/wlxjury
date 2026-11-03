@@ -6,6 +6,27 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 WLX Jury Tool is a Play Framework (Scala) web application for image selection and rating in Wiki Loves Monuments and Wiki Loves Earth photo contests. Jurors browse images, rate/select them across configurable rounds, and organizers manage contests and view aggregated results. Images are fetched from Wikimedia Commons.
 
+## Looking Up Library Sources
+
+**Before searching the web for any library API** (ScalikeJDBC, Testcontainers, Play, Pekko, etc.), check `target/dep-sources/` first — it contains extracted `.scala`/`.java` source files for all dependencies.
+
+```bash
+# One-time setup (re-run after adding new dependencies):
+sbt extractDepSources
+
+# Then search directly — much faster than web search:
+# grep -r "class MariaDBContainer" target/dep-sources/
+# grep -r "def withinTxSession" target/dep-sources/
+```
+
+Layout: `target/dep-sources/<org>/<artifact-name>-<version>/` — e.g.:
+- `target/dep-sources/org.testcontainers/testcontainers-1.x.x/`
+- `target/dep-sources/com.dimafeng/testcontainers-scala-core_2.13-0.41.0/`
+- `target/dep-sources/org.scalikejdbc/scalikejdbc_2.13-4.3.2/`
+- `target/dep-sources/com.typesafe.play/play_2.13-3.0.7/`
+
+If `target/dep-sources/` is empty or missing, run `sbt extractDepSources` once.
+
 ## Commands
 
 ### Running the application
