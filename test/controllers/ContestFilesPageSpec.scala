@@ -140,7 +140,9 @@ class ContestFilesPageSpec extends PlaySpecification with PlayTestDb {
         first must contain("All files (18)")
         tiles(first) === (1L to 15L).toList
         tiles(second) === List(16L, 17L, 18L)
-        second must contain(s"""<li><a href="/contest/${f.contest.getId}/files">&laquo;</a></li>""") // to page 1
+        second must contain(s"""<li><a href="/contest/${f.contest.getId}/files" rel="prev"""") // to page 1
+        first must contain("1–15 of 18")
+        second must contain("16–18 of 18")
       }
     }
 

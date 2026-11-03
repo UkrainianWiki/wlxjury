@@ -1,0 +1,36 @@
+@(menu: Option[RegionMenu])(implicit messages: Messages)
+@* A round gallery's region menu: the region shown, or all. A Bootstrap dropdown, as the navbar's
+   menus are, so it closes on a click outside it or on Esc. Its regions and their file counts are
+   read when it is first opened (region-menu.js, GalleryController.regions); until then, or if
+   that fails, it lists all the regions and the region shown. Without script its button goes to
+   all the regions. *@
+@for(m <- menu) {
+    <style>
+        .region-menu { display: inline-block; text-align: left; }
+        .region-menu .region-menu-list { min-width: 240px; max-height: 70vh; overflow-y: auto; }
+        .region-menu-status { padding: 3px 20px; color: #777; white-space: normal; }
+        .region-menu-status:empty { display: none; }
+        .region-menu-noscript { margin-left: 8px; color: #999; }
+    </style>
+    <div class="row">
+        <nav>
+        <div class="col-md-12 text-center" style="margin-bottom: 5px;">
+            <div class="dropdown region-menu" id="regionmenu" data-regions-url="@m.regionsUrl"
+                data-loading="@Messages("region.menu.loading")" data-failed="@Messages("region.menu.failed")">
+                <a class="btn btn-default btn-sm dropdown-toggle" href="@m.allUrl" data-toggle="dropdown" role="button"
+                    aria-haspopup="true" aria-expanded="false">
+                    @Messages("region.menu"): <b>@m.current.fold(Messages("region.all"))(_.name)</b> <span class="caret"></span>
+                </a>
+                <ul class="dropdown-menu region-menu-list">
+                    <li @if(m.current.isEmpty) {class="active"}><a href="@m.allUrl">@Messages("region.all")</a></li>
+                    @for(region <- m.current) {
+                        <li class="active"><a href="@m.currentUrl">@region.name</a></li>
+                    }
+                    <li class="region-menu-status"></li>
+                </ul>
+                <noscript><span class="region-menu-noscript">@Messages("region.menu.noscript")</span></noscript>
+            </div>
+        </div>
+        </nav>
+    </div>
+}

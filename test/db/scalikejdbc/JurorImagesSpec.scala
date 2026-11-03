@@ -164,7 +164,7 @@ class JurorImagesSpec extends Specification with BeforeAll with TestDb {
       val query: SelectionQuery = ImageDbNew.SelectionQuery(
         userId = user.id,
         roundId = round.id,
-        order = Map("rate" -> -1)
+        order = Seq("rate" -> -1)
       )
       val result = query.list()
 
@@ -190,7 +190,7 @@ class JurorImagesSpec extends Specification with BeforeAll with TestDb {
       val query = ImageDbNew.SelectionQuery(
         userId = user.id,
         roundId = round.id,
-        order = Map("rate" -> -1)
+        order = Seq("rate" -> -1)
       )
       val result = query.list()
 
@@ -233,7 +233,7 @@ class JurorImagesSpec extends Specification with BeforeAll with TestDb {
       val query = ImageDbNew.SelectionQuery(
         roundId = round.id,
         grouped = true,
-        order = Map("rate" -> -1)
+        order = Seq("rate" -> -1)
       )
       val result = query.list()
 
