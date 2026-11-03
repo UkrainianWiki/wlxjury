@@ -1,12 +1,14 @@
 # Security re-review: new findings (2026-11-02)
 
+> **Status: historical** (the 2026-11-02 re-review). Live status: [register.md](../../security/register.md).
+
 ## Scope, commit, method
 
 - **Tree:** `ukwikidev/security-rereview` at `9e3bc9ec` (the integrated `ukwikidev/followups`:
   batches B1–B8 and `ukwikidev/api-auth`).
-- **Goal:** issues that `docs/security/review.md`, `incident-prevention-guidelines.md`,
+- **Goal:** issues that `98a8a79e:docs/security/review.md`, `incident-prevention-guidelines.md`,
   `incident-prevention-implementation-plan.md` and `local-images-review-followups.md` do not
-  already list, nor `2026-11-02-rereview-previous.md` (written in parallel; its O2 and O3 are
+  already list, nor `docs/history/security/2026-11-02-rereview-previous.md` (written in parallel; its O2 and O3 are
   referenced, not repeated, with verification detail below). Known open items (no sign-in throttling, `style-src 'unsafe-inline'`, the
   deprecated CSP key, default headers, HSTS in Apache, legacy SHA-1 hashes, public Swagger) are
   not repeated.
@@ -98,7 +100,7 @@
   the current password is a 400 and changes nothing; after a password change, older sessions
   are refused (O3) and the tokens are revoked (or listed for revocation).
 
-### Already raised as O2 and O3 (`2026-11-02-rereview-previous.md`): verification and severity
+### Already raised as O2 and O3 (`docs/history/security/2026-11-02-rereview-previous.md`): verification and severity
 
 - **O2, account pre-claim: confirmed by a spec.** A sign-up through `LoginController.signUp`
   with an email nobody has, then an admin's `/users/save` with `id = 0`, that email and role

@@ -1,5 +1,9 @@
 # Database Performance Analysis
 
+> **Status: historical** (2026-03-25). It uses the table names before V82 (`selection` is now
+> `vote`, `rounds` is `round`) and the removed B44 schema. Its proposals are applied; what is
+> left is in [db/practices.md](../db/practices.md) §11 V11.
+
 **Date:** 2026-03-25
 **Schema baseline:** `conf/db/migration/default/B44__Baseline.sql` (removed 2026-11: Flyway never applied it, `docs/plans/2026-11-03-flyway.md`)
 **Method:** Cross-referenced schema indexes against all query patterns in `app/db/scalikejdbc/` and `app/db/scalikejdbc/rewrite/`

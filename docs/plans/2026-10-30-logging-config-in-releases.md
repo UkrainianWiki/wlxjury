@@ -11,7 +11,7 @@ repository's copy, not the server's, so its removal lines are not written in pro
 
 - **Why the file is outside the release.** `dbedca56` (2026-10-13) moved production from the
   Debian package to versioned releases with configuration in `/etc/wlxjury-runtime`
-  (`docs/plans/2026-10-11-deployment-procedure.md`, "Configuration without manual merges"). The
+  (`docs/history/2026-10-11-deployment-procedure.md`, "Configuration without manual merges"). The
   release's own `conf/logback.xml` writes to `${application.home}/logs`, inside the release
   directory: root-owned, not writable by the `wlxjury` user, and a new one each deploy. The
   external file writes to `/var/log/wlxjury` (owned by `wlxjury`). No hand-made production

@@ -8,7 +8,7 @@ import java.time.format.DateTimeFormatter
 import java.util.concurrent.{Callable, Executors, TimeUnit}
 import scala.jdk.CollectionConverters._
 
-/** Times the region count queries (docs/plans/2026-10-25-region-improvements.md, item 4) on
+/** Times the region count queries (98a8a79e:docs/plans/2026-10-25-region-improvements.md, item 4) on
   * the Gatling fixture DB (D1: 38,367 files in the contest's category, 20 jurors, a binary and
   * a rated round, 10 jurors per image), and optionally on a category three times as large
   * (D2, `-Dbench.d2=true`).

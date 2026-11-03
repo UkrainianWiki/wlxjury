@@ -15,7 +15,7 @@ Line numbers are at c2af5f41.
 |---|---|---|
 | `criteria (id, round, name, contest)` | V9 (B44 baseline: `id` BIGINT UNSIGNED AUTO_INCREMENT, unique, no PK) | **Never read or written by the code.** Contents in production unknown. |
 | `selection.criteria_id` | V9 | Mapped as `Selection.criteriaId` (`Selection.scala:11`), never set or read. |
-| `criteria_rate (id, selection, criteria, rate)` | V10 | `id` BIGINT UNSIGNED NOT NULL, UNIQUE but not AUTO_INCREMENT and no PK; index on `selection`; no FK to `selection`, no UNIQUE `(selection, criteria)`. ~166k rows in the January 2026 dump; ~25k (estimate) in the copy trimmed to contests from 2024 on (`2026-10-07-prod-like-benchmark.md`), so criteria rounds ran in 2024 or later. |
+| `criteria_rate (id, selection, criteria, rate)` | V10 | `id` BIGINT UNSIGNED NOT NULL, UNIQUE but not AUTO_INCREMENT and no PK; index on `selection`; no FK to `selection`, no UNIQUE `(selection, criteria)`. ~166k rows in the January 2026 dump; ~25k (estimate) in the copy trimmed to contests from 2024 on (`docs/history/2026-10-07-prod-like-benchmark.md`), so criteria rounds ran in 2024 or later. |
 | `rounds.has_criteria` | V19 | Read (`Round.scala:294`); **not written by `Round.create`** (`Round.scala:310-343`), not in the round form (`EditRound.scala`). Only set by hand-run SQL (tests do `UPDATE rounds SET has_criteria = 1`). |
 | V53 | | deletes `criteria_rate` rows of duplicate selections before the unique index. |
 

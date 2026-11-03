@@ -1,5 +1,11 @@
 # Production-like Benchmark, Storage Engine and MariaDB Configuration Plan (October 2026)
 
+> **Status: historical** (results record, Phases 1–5 done 2026-10-10; open workload gaps are in
+> `docs/plans/2026-11-01-open-followups.md` 3.6). Lasting rules moved to
+> [performance/practices.md](../performance/practices.md) §2 and §4.6; the runbook stays
+> [`bench/README.md`](../../bench/README.md). Kept for the cited baselines and the MariaDB
+> configuration and archiving decisions.
+
 > **To run or resume the benchmark, follow the runbook [`bench/README.md`](../../bench/README.md).** It has the prerequisites, the existing images, snapshots and results, the rebuild steps, the exact commands for the remaining phases, the validity rules and troubleshooting. Raw results and the dump live outside the repository in `C:\scala\wlxjury-bench-work\`.
 
 **Goal:** Measure the jury tool the way it runs in production, and use those measurements to decide:

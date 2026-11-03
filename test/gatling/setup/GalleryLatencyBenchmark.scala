@@ -11,7 +11,7 @@ import java.time.format.DateTimeFormatter
 import scala.util.Random
 
 /** One juror's clicks, one request at a time, over HTTP to the fixture's TestServer
-  * (docs/plans/2026-10-28-gallery-latency.md, Phase 1 step 1): gallery pages (1, 5, 50, the
+  * (98a8a79e:docs/plans/2026-10-28-gallery-latency.md, Phase 1 step 1): gallery pages (1, 5, 50, the
   * last; all regions and the juror's largest; file and rate order), the large view (a file
   * early, in the middle, at the end of the list), the `pageid` redirect (Esc), the
   * organisers' all-jurors page, and votes → redirect → the next large view. Each request

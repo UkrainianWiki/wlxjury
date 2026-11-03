@@ -1,5 +1,8 @@
 # Binary rounds: all the jurors' votes together
 
+> **Status: historical** (done; cited by code comments for its decisions and issues, which
+> stay in force). Table names are before V82 (`selection` = `vote`).
+
 A yes/no (binary) round stores `selection.rate` -1 (rejected), 0 (unrated), 1 (selected). Since
 79f5c51e the by-rate gallery for all the jurors (`asUserId == 0`) shows the file's approvals
 ("✓ n", `binaryVote.scala.html`), counted by `sum(s.rate > 0) as approvals`

@@ -466,7 +466,7 @@ object Neighbourhood {
 object RoundList {
 
   /** A file list's files to a page: all the jurors' votes on 38,366 files at once ran a 1 GB
-    * server out of memory (docs/plans/2026-11-01-binary-aggregate-votes.md, issue 4).
+    * server out of memory (docs/history/2026-11-01-binary-aggregate-votes.md, issue 4).
     */
   val FileListPageSize = 1000
 
