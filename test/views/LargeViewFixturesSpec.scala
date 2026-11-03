@@ -27,6 +27,10 @@ class LargeViewFixturesSpec extends Specification {
     "binary-own.html" -> (() => large(binaryRound, middle)),
     // the juror's own view of a rated round (1..5 stars)
     "rated-own.html" -> (() => large(ratedRound, middle)),
+    // the juror's own view of a half-star round (1..10 as five stars), at a file rated 7: 3.5 stars
+    "rated-half-own.html" -> (() => large(halfStarRound, middle, rated = Map(middle -> 7))),
+    // another juror's view of the rated round, at a file rated 4: read-only
+    "rated-readonly.html" -> (() => large(ratedRound, middle, asUserId = otherJurorId, rated = Map(middle -> 4))),
     // another juror's view of the binary round: read-only
     "binary-readonly.html" -> (() => large(binaryRound, middle, asUserId = otherJurorId)),
     // a contest file's large view: read-only, its own keys (fileKeyboardNav)

@@ -39,14 +39,22 @@
     @defining(list.asUserId) { asUserId =>
     @defining(list.regionParam) { region =>
 
+    @* the page's title, for screen readers: the navbar shows where it is *@
+    <h1 class="visually-hidden">@Messages("filelist")</h1>
+
     <div class="row">
+    <div class="col-12">
 
-        @defining(s"<!-- " +
-                s"${Messages("round")} ${round.fold(Messages("no"))(_.description)}, " +
-                s"${Messages("juror")}: ${Option(asUser).fold(Messages("all"))(u => u.fullname)} " +
-                s"${KOATUU.regions.get(region).fold("")(name => s", ${Messages("region")} $name")}. --> ") { t => @t <br/> }
-
+    @* the list to copy into a wiki page, first a heading saying what it lists: the round, the
+       juror (all of them without one) and the region if one, inside the block so that copying
+       it copies the heading too *@
     <div contenteditable="true">
+
+        <h2 class="h5">@{Seq(
+            round.map(r => s"${Messages("round")} ${r.description}"),
+            Some(s"${Messages("juror")}: ${Option(asUser).fold(Messages("all"))(_.fullname)}"),
+            KOATUU.regions.get(region).map(name => s"${Messages("region.menu")}: $name")
+        ).flatten.mkString(" · ")}</h2>
 
         @if(wrapInTable) {
             <table class="table table-striped table-sm">
@@ -92,12 +100,13 @@
                     }
                 }
 
+                @* the table's other columns; the list without the table has only the files *@
                 @if(wrapInTable) {
                     <td>@file.rateString(round.get)</td>
-                }
-                <td>@file.image.mpxStr</td>
-                @for(juror <- jurors) {
-                    <td> @file.jurorRateStr(juror) </td>
+                    <td>@file.image.mpxStr</td>
+                    @for(juror <- jurors) {
+                        <td> @file.jurorRateStr(juror) </td>
+                    }
                 }
             }
         }
@@ -111,12 +120,14 @@
                 }
                 <th> @Messages("file") </th>
                 <th> @ratedOrSelected(round.get, asUserId) </th>
+                <th> @Messages("mpx") </th>
                 @for(juror <- jurors) {
                     <th> @juror.fullname </th>
                 }
             </tfoot>
         </table>
         }
+    </div>
     </div>
     </div>
 }

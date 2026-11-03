@@ -280,6 +280,23 @@ class RoundListDbSpec extends Specification with TestDb with BeforeAll with Befo
       hood.file.pageId === order(5)
       hood.files.map(_.pageId) === order(5) +: order.filterNot(_ == order(5)).take(4)
     }
+
+    "show in the strip the five files after the file, past the ones it moves among" in {
+      val (round, user, order) = setUpN(12)
+      val list = RoundList(round, user.getId)
+      val middle = list.around(order(5)).get
+      (middle.files.map(_.pageId), middle.following.map(_.pageId)) === (order.slice(3, 8), order.slice(6, 11))
+      list.around(order.head).get.following.map(_.pageId) === order.slice(1, 6)
+      list.around(order(9)).get.following.map(_.pageId) === order.slice(10, 12)
+      list.around(order.last).get.following must beEmpty
+    }
+
+    "show in the strip the files after one the filter now leaves out" in {
+      val (round, user, order) = setUpN(10)
+      SelectionJdbc.rate(order(5), user.getId, round.getId, 4)
+      val hood = RoundList(round, user.getId, filter = VoteFilter.Unrated).around(order(5)).get
+      hood.following.map(_.pageId) === order.filterNot(_ == order(5)).take(5)
+    }
   }
 
   "a vote's move in a juror's list" should {

@@ -14,6 +14,11 @@
         contestId: Option[Long] = None,
         filters: Html = Html(""),
         backHere: Boolean = true)(content: Html)(implicit messages: Messages, request: RequestHeader)
+@* the viewer votes on the gallery's tiles: their own files in an active round; a binary round's
+   with thumbs up and down, a rated one's (without criteria, which the large view rates) with
+   stars (tile-votes.js) *@
+@jury = @{ user != null && user.getId == asUserId && selectedRound.exists(_.active) && user.roles.contains("jury") }
+@starsRound = @{ views.TileStars.round(user, asUserId, selectedRound) }
 @layout(Messages(title), bodyClass = if (gallery) "gallery" else "") {
         <script type='text/javascript' src="@routes.Assets.versioned("javascripts/unitegallery.js")"></script>
         <link rel="stylesheet" href="@routes.Assets.versioned("stylesheets/unite-gallery.css")" type='text/css' />
@@ -21,6 +26,11 @@
         <script type="text/javascript" src="@routes.Assets.versioned("javascripts/vote-errors.js")"></script>
         <script type="text/javascript" src="@routes.Assets.versioned("javascripts/region-menu.js")"></script>
         <script type="text/javascript" src="@routes.Assets.versioned("javascripts/pager-jump.js")"></script>
+        <script type="text/javascript" src="@routes.Assets.versioned("javascripts/tile-votes.js")"></script>
+        @if(starsRound.nonEmpty) {
+        <script type="text/javascript" src="@routes.Assets.versioned("javascripts/jquery.raty.js")"></script>
+        <script type="text/javascript" src="@routes.Assets.versioned("javascripts/large-rate.js")"></script>
+        }
         <script type="text/javascript" src="@routes.Assets.versioned("javascripts/ug-theme-tiles.js")"></script>
 
         <link rel="stylesheet" href="@routes.Assets.versioned("stylesheets/ug-theme-default.css")" type='text/css' />
@@ -39,8 +49,10 @@
                         // thumbnail that failed to load, follow the colour mode
                         tile_enable_background: false,
                         tile_enable_overlay: true,
-                        jury: @(user.getId == asUserId && selectedRound.exists(_.active) && user.roles.contains("jury")),
-                        binary: @selectedRound.exists(_.isBinary)
+                        jury: @jury,
+                        binary: @selectedRound.exists(_.isBinary),
+                        // a rated round's tile stars: their number, and whether in half stars
+                        wlx_stars: @starsRound.fold(Html("null"))(r => Html(s"{number: ${r.rates.id / r.starUnits}, half: ${r.starUnits == 2}}"))
                     });
                 });
         </script>

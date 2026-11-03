@@ -10,14 +10,17 @@
     /* a thumbnail or image that failed to load, and its mark */
     --wlx-thumb-failed-bg: #c6c6c6;
     --wlx-thumb-failed-mark: #6e6e6e;
-    /* the large view's current thumbnail */
-    --wlx-current-bg: #a9a9a9;
     /* a file deleted on Commons: its red frame */
     --wlx-deleted: #dc3545;
     /* the navbar's selected and rejected tabs (own votes), and the active tab's background */
     --wlx-selected: #146c43;
     --wlx-rejected: #b02a37;
     --wlx-nav-active-bg: rgba(0, 0, 0, .09);
+    /* a binary round's vote frames on the gallery tiles: saturated, at least 3:1 on the image
+       grey (4.0 and 4.4) and the page (5.1 and 5.6), parted from the photo by a white line */
+    --wlx-vote-selected: #007f35;
+    --wlx-vote-rejected: #d1001f;
+    --wlx-vote-line: #fff;
     /* rating stars (raty and the static ones): at least 3:1 on the page and on the image grey */
     --wlx-star: #a36a00;
 }
@@ -26,10 +29,13 @@
     --wlx-image-bg: #303030;
     --wlx-thumb-failed-bg: #4a4a4a;
     --wlx-thumb-failed-mark: #a0a0a0;
-    --wlx-current-bg: #111111;
     --wlx-deleted: #e35d6a;
     --wlx-selected: #75b798;
     --wlx-rejected: #ea868f;
     --wlx-nav-active-bg: rgba(255, 255, 255, .1);
+    /* 5.8 and 4.1 on the image grey, 6.8 and 4.8 on the page; a black line */
+    --wlx-vote-selected: #22c55e;
+    --wlx-vote-rejected: #ff4d5e;
+    --wlx-vote-line: #000;
     --wlx-star: #ffc107;
 }

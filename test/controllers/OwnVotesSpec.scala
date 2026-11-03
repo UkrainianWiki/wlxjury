@@ -142,6 +142,18 @@ class OwnVotesSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
+    "get no stars to vote with on a juror's gallery tiles, which the juror has (tile-votes.js)" in {
+      testDbApp { app =>
+        val f = fixture()
+        def stars(viewer: User, round: Round = f.roundA) =
+          "wlx_stars: ([^\\n]*)".r.findFirstMatchIn(contentAsString(
+            get(app, viewer, s"/gallery/round/${round.getId}/user/${f.juror1.getId}/page/1"))).map(_.group(1).trim)
+        stars(f.juror1) === Some("{number: 5, half: false}")
+        forall(Seq(f.organizer, f.admin, f.root)) { viewer => stars(viewer) === Some("null") }
+        stars(f.juror2, f.orgViewRound) === Some("null") // another juror's votes, open to its jurors
+      }
+    }
+
     "find no member of the contest who is not in the round, user of another contest, or missing user in it" in {
       testDbApp { app =>
         val f = fixture()

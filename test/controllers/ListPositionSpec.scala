@@ -50,7 +50,7 @@ class ListPositionSpec extends Specification with TestDb with BeforeAll with Bef
 
   private def samePlaces(round: Round, juror: User, files: Seq[Long]) = {
     val all = for (list <- lists(round, juror); pageId <- files) yield {
-      def window(h: Option[Neighbourhood]) = h.map(n => (n.files.map(_.pageId), n.index, n.position))
+      def window(h: Option[Neighbourhood]) = h.map(n => (n.files.map(_.pageId), n.index, n.position, n.following.map(_.pageId)))
       (list.filter, list.order, list.region, pageId,
         list.position(pageId), window(list.around(pageId)), list.rankPosition(pageId), window(list.aroundAtOffset(pageId)))
     }

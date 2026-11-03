@@ -69,10 +69,6 @@ li.gallerybox div.thumb_small {
       overflow: hidden;
   }
 
-.current {
-     background-color: var(--wlx-current-bg);
- }
-
 img.cropped {
     position: absolute;
     margin: auto;
@@ -126,7 +122,7 @@ img.cropped {
     border-left-width: 5px;
     border-radius: 3px;
 }
-.bs-callout h4 {
+.bs-callout .h4 {
     margin-top: 0;
     margin-bottom: 5px;
 }
@@ -136,7 +132,7 @@ img.cropped {
 .bs-callout-info {
     border-left-color: var(--bs-info);
 }
-.bs-callout-info h4 {
+.bs-callout-info .h4 {
     color: var(--bs-info-text-emphasis);
 }
 
@@ -186,6 +182,39 @@ a.wlx-large-failed img {
     text-overflow: ellipsis;
     white-space: nowrap;
     cursor: pointer;
+}
+/* A binary round's vote on the juror's own gallery tiles (tile-votes.js), from the file's
+   stored vote at load: a frame over the tile's edge, so that no tile or image moves when a
+   vote changes it; none unrated. Saturated colours (theme.css --wlx-vote-*) with an inner line
+   that parts the frame from a photo as dark or as bright as it is. The thumb of the vote the
+   file has (aria-pressed) is ringed in its colour: a click on it undoes the vote. */
+.ug-thumb-wrapper.ug-tile.wlx-tile-selected::before, .ug-thumb-wrapper.ug-tile.wlx-tile-rejected::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    border: 4px solid var(--wlx-vote-selected);
+    box-shadow: inset 0 0 0 1px var(--wlx-vote-line);
+    z-index: 4;
+    pointer-events: none;
+}
+.ug-thumb-wrapper.ug-tile.wlx-tile-rejected::before {
+    border-color: var(--wlx-vote-rejected);
+}
+.ug-thumb-wrapper.ug-tile .ug-tile-icon[aria-pressed=true] {
+    border-radius: 6px;
+    background-color: rgba(var(--bs-body-bg-rgb), .85);
+    box-shadow: 0 0 0 3px var(--wlx-vote-selected);
+}
+.ug-thumb-wrapper.ug-tile .ug-tile-icon.ug-icon-reject[aria-pressed=true] {
+    box-shadow: 0 0 0 3px var(--wlx-vote-rejected);
+}
+/* A thumb with the keyboard focus (tile-votes.js): the focus ring outside the pressed one. */
+.ug-thumb-wrapper.ug-tile .ug-tile-icon[tabindex]:focus-visible {
+    outline: var(--bs-focus-ring-width) solid var(--bs-focus-ring-color);
+    outline-offset: 4px;
 }
 /* The read-only large view's thumbnails (large/contestFile.scala.html): the link fills the
    box, so a thumbnail that failed to load, hidden, still opens its file; that one is the
@@ -245,6 +274,17 @@ div.thumb_small.wlx-thumb-failed img {
 .wlx-multi .ts-control { min-height: calc(1.5em + .75rem + 2px); }
 .wlx-multi .wlx-select-all { padding: .375rem .75rem; }
 .wlx-multi .ts-dropdown .option .tomselect-checkbox { margin-right: .5rem; }
+/* Tom Select's Bootstrap 5 theme takes its backgrounds from Bootstrap's variables but keeps a
+   few light mode colours (text, the typed text's row, the match highlight, the spinner): the
+   mode's own. :root outweighs its rules, which the admin pages load after this file */
+:root .ts-dropdown, :root .ts-control, :root .ts-control input { color: var(--bs-body-color); }
+:root .ts-dropdown .create { color: var(--bs-secondary-color); }
+:root .ts-dropdown .active.create { color: var(--bs-body-color); }
+:root .ts-dropdown [data-selectable] .highlight { background: var(--bs-warning-bg-subtle); }
+:root .ts-dropdown .spinner::after { border-color: var(--bs-border-color) transparent; }
+/* the category fields (category-suggest.js): a text field, without a select's arrow and its room */
+:root .wlx-category-suggest.single { --ts-pr-caret: 0px; }
+:root .wlx-category-suggest.single .ts-control, :root .wlx-category-suggest.single .ts-control input { cursor: text; }
 
 /* a button inside a link (round stat tables): no underline under the spaces around it */
 a:has(> .btn) { text-decoration: none; }
@@ -258,7 +298,7 @@ a:has(> .btn) { text-decoration: none; }
 .rank-line { margin-bottom: 10px; }
 
 /* the large views (large/large.scala.html, large/contestFile.scala.html): a side column with
-   the buttons, stars, thumbnails and the file's details, and the image beside it */
+   the buttons, stars, the file's details and the files after it, and the image beside it */
 .large-view { padding-left: 5px; }
 .large-side { min-width: 220px; }
 .large-main { margin-left: 5px; margin-top: 10px; }
@@ -268,6 +308,19 @@ a:has(> .btn) { text-decoration: none; }
 .large-box, .large-line { margin-right: 5px; padding: 5px; }
 .large-box { margin-top: 10px; }
 .large-line { margin-top: 5px; }
+/* a collapsible section of the side column (large/sideSection.scala.html): its heading, a
+   button in the page's text colour, its chevron turned while the section is closed */
+.large-section { margin-top: 10px; }
+.large-section-toggle {
+    display: flex; align-items: center; gap: 4px; width: calc(100% - 5px); padding: 2px 5px;
+    border: 0; border-radius: var(--bs-border-radius-sm); background: none;
+    color: var(--bs-body-color); font-size: .875rem; font-weight: 600; text-align: start;
+}
+.large-section-toggle:hover { background-color: var(--wlx-nav-active-bg); }
+.large-section-toggle:focus-visible { outline: 2px solid var(--bs-focus-ring-color); outline-offset: 1px; }
+.large-section-toggle .bi { transition: transform .2s; }
+.large-section-toggle.collapsed .bi { transform: rotate(-90deg); }
+@media (prefers-reduced-motion: reduce) { .large-section-toggle .bi { transition: none; } }
 
 /* raty's stars (large/raty.scala.html) and the static ones (showStar): Bootstrap Icons in the
    mode's star colour. Ten and the cancel icon fit one line of the side column; more (a 1-11 ..
@@ -278,10 +331,58 @@ a:has(> .btn) { text-decoration: none; }
 .large-stars .wlx-star { margin-right: 1px; }
 .large-stars .raty-cancel { color: var(--bs-secondary-color); font-size: 1rem; line-height: 1; margin-right: 2px; }
 .large-stars .raty-cancel.bi-x-circle-fill { color: var(--bs-danger); }
+/* the number above the stars (large/navigationButtons): the rate, or a hovered star's. On a line
+   of its own, as ten stars and the cancel icon fill the column's line; a fixed width, so that a
+   longer number while hovering moves nothing. */
+.large-rate { margin-top: 10px; line-height: 1.2; }
+.large-rate + .large-stars { margin-top: 2px; }
+.large-rate-number { display: inline-block; min-width: 4ch; font-weight: 600; font-variant-numeric: tabular-nums; }
 .rate-stars { margin-left: 5px; margin-right: 10px; }
-
-/* an empty anchor before a gallery tile (galleryByRate, galleryByRateRegions, monuments) */
-.tile-anchor { display: inline; }
+/* a rated round's stars on the juror's own gallery tiles (tile-votes.js): a strip at the
+   tile's foot in the page's colour, so the stars read on any photo and in both modes. Each
+   star and the cancel icon is 1em wide (raty finds a half star by the icon's font size): as
+   large as one line of them fits the tile (--wlx-tile-stars: the stars and the cancel icon),
+   from 11px to 16px; on a narrower tile they wrap onto a second line. Above the tile's hover
+   overlay and its zoom icon. */
+.ug-thumb-wrapper.ug-tile .wlx-tile-stars {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 7;
+    container-type: inline-size;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    align-items: center;
+    padding: 3px 4px;
+    background-color: rgba(var(--bs-body-bg-rgb), .85);
+    cursor: default;
+}
+.wlx-tile-stars .wlx-star, .wlx-tile-stars .raty-cancel {
+    width: 1em;
+    font-size: 14px;
+    font-size: clamp(11px, calc((100cqw - 8px) / var(--wlx-tile-stars, 11)), 16px);
+    line-height: 1.2;
+    text-align: center;
+    cursor: pointer;
+}
+.wlx-tile-stars .raty-cancel { color: var(--bs-secondary-color); }
+.wlx-tile-stars .raty-cancel.bi-x-circle-fill { color: var(--bs-danger); }
+/* the same stars in the juror's own by-rate list (galleryByRate.scala.html), in the line of
+   the rank and the rate text, at the static stars' size; a file whose rate changed keeps its
+   place until a reload, its rank greyed and dotted (its title says why) */
+.wlx-byrate-stars .wlx-tile-stars { display: inline-flex; vertical-align: text-bottom; }
+.wlx-byrate-stars .wlx-tile-stars .wlx-star,
+.wlx-byrate-stars .wlx-tile-stars .raty-cancel { font-size: 1rem; }
+.wlx-rate-changed .rank-line b {
+    color: var(--bs-secondary-color);
+    text-decoration: underline dotted;
+}
+/* a binary round's result (binaryVote): approvals or a juror's vote, in the colours of the
+   navbar's selected and rejected tabs */
+.wlx-vote-selected { color: var(--wlx-selected); }
+.wlx-vote-rejected { color: var(--wlx-rejected); }
 
 /* the round and user forms' Save and Cancel (snippets/submit, snippets/button) */
 .form-action-wide { width: 25%; }

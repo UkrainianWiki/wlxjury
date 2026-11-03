@@ -169,7 +169,11 @@ object SelectionJdbc extends CRUDMapper[Selection] {
         .eq(s.roundId, roundId)
     ).withAttributes("rate" -> -1)
 
-  def rate(pageId: Long, juryId: Long, roundId: Long, rate: Int = 1)(implicit session: DBSession = AutoSession): Unit =
+  /** Rates the juror's selection of the file in the round; the number of selections found
+    * (0 or 1): MariaDB's driver counts the rows matched, not only those changed
+    * (`useAffectedRows` off, its default), so a vote of the stored rate counts too.
+    */
+  def rate(pageId: Long, juryId: Long, roundId: Long, rate: Int = 1)(implicit session: DBSession = AutoSession): Int =
     withSQL {
       update(SelectionJdbc)
         .set(column.rate -> rate)

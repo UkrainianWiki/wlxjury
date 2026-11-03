@@ -11,7 +11,8 @@ case class ImageWithRating(
     selection: Seq[Selection],
     countFromDb: Int = 0,
     rank: Option[Int] = None,
-    rank2: Option[Int] = None
+    rank2: Option[Int] = None,
+    approvalsFromDb: Option[Int] = None
 ) extends Ordered[ImageWithRating] {
 
   val ownJuryRating = new OwnRating(
@@ -55,6 +56,11 @@ case class ImageWithRating(
   def rateSum: Int =
     selection.foldLeft(0)((acc, s) => acc + Math.max(s.rate, 0))
 
+  /** A binary round's approvals of the file: its selections (rate 1), counted by the query
+    * of a list of all the jurors' votes together, whose one selection per file has their sum.
+    */
+  def approvals: Int = approvalsFromDb.getOrElse(selection.count(_.rate > 0))
+
   def jurors: Set[Long] = selection.map(s => s.juryId).toSet
 
   def jurorRate(juror: User): Option[Int] =
@@ -77,7 +83,7 @@ case class ImageWithRating(
 
   def rateString(round: Round): String = {
     if (round.isBinary) {
-      selection.count(_.rate > 0).toString
+      approvals.toString
     } else {
       if (ratedJurors(round) < 2) rateSum.toString
       else

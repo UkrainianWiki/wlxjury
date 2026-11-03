@@ -77,6 +77,7 @@ sbt -Dgatling.roundMgmt.stress=true "Gatling/testOnly gatling.simulations.RoundM
 - `ConcurrentRoundCreationSimulation` has 10 admins create rounds at once (large, small, top-N, "distribute new files") while jurors vote and browse; per-admin submit-to-done times, solo reference times and heap go to `target/gatling/concurrent-distribution.txt`. `gatling.jobs.*` sets the app's job workers and chunk size for a run.
 - To measure with production-like JVM settings, prefix e.g. `"set Gatling / javaOptions ++= Seq(\"-Xmx512m\", \"-Xlog:gc*:file=target/gatling/gc-%p.log:time,uptime,level,tags\")"`; `%p` keeps one GC log per forked JVM.
 - Results: `target/gatling/<simulation>-<timestamp>/` (`js/stats.json` has per-request statistics).
+- To use the fixture by hand or for UI screenshots: `Test/runMain gatling.setup.UiShotsServer` (it sets the images' Commons URLs in its own container, writes `target/ui-shots/server.json`, stops on `target/ui-shots/server.stop`); command and logins in `docs/plans/2026-10-31-theme-modes-and-design-system.md`, "Running the fixture locally".
 
 ### Building packages
 ```bash

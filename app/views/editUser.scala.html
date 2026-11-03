@@ -14,9 +14,9 @@
 
 
             @if(!editUserForm("id").value.contains("0")) {
-                <h3>@Messages("edit.user")</h3>
+                <h1 class="h3">@Messages("edit.user")</h1>
             } else {
-                <h3>@Messages("create.user")</h3>
+                <h1 class="h3">@Messages("create.user")</h1>
             }
 
             @form(routes.UserController.saveUser(), Symbol("class") -> "form-vertical") {
@@ -49,10 +49,20 @@
                     @bs.select(editUserForm("lang"), Seq("en", "fr", "ru", "uk").map(x => (x, User.LANGS(x))),
                         Symbol("_label") -> Messages("language"))
 
-                    @* the colour mode, on the user's own profile only *@
+                    @* the colour mode, on the user's own profile only: a radio button per mode with its
+                       icon (an <option> can't hold one), the form's one checked, else the default *@
                     @if(editUserForm("id").value.contains(user.getId.toString)) {
-                        @bs.select(editUserForm("theme"), controllers.Theme.All.map(t => (t.value, Messages("theme." + t.value))),
-                            Symbol("_label") -> Messages("theme"))
+                        @defining(editUserForm("theme")) { field =>
+                        <fieldset class="mb-3">
+                            <legend class="form-label fs-6" id="theme-label">@Messages("theme")</legend>
+                            <div class="btn-group" role="group" aria-labelledby="theme-label">
+                            @for(theme <- controllers.Theme.All) {
+                                <input type="radio" class="btn-check" name="@field.name" id="theme-@theme.value" value="@theme.value" autocomplete="off"@if(theme == controllers.Theme.parse(field.value)){ checked}>
+                                <label class="btn btn-outline-secondary" for="theme-@theme.value"><i class="bi bi-@theme.icon" aria-hidden="true"></i> @Messages("theme." + theme.value)</label>
+                            }
+                            </div>
+                        </fieldset>
+                        }
                     }
 
                     @if(true || editUserForm("id").value.contains(user.id.toString)) {
@@ -89,7 +99,7 @@
             <div class="d-none">
             @form(routes.UserController.resetPassword(editUserForm("id").value.map(_.toLong).get),
                 Symbol("class") -> "form-vertical", Symbol("id") -> "reset-password") {
-                <input type="submit" class="btn btn-outline-secondary" value="@Messages("Reset password")">
+                <input type="submit" class="btn btn-outline-secondary" value="@Messages("resetpassword")">
                 }
             </div>
         </div>

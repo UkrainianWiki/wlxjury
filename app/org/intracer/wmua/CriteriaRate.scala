@@ -39,6 +39,16 @@ object CriteriaRate extends SQLSyntaxSupport[CriteriaRate] {
       .update()
   }
 
+  /** The number of criteria of a criteria round: those rated in one of its selections, as a
+    * distribution gives each of them a rate per criterion (DistributeImages.addCriteriaRates);
+    * None if no selection of the round has criteria rates.
+    */
+  def countOf(roundId: Long)(implicit session: DBSession = autoSession): Option[Int] =
+    sql"""SELECT COUNT(DISTINCT criteria) FROM criteria_rate
+          WHERE selection = (SELECT s.id FROM selection s
+            WHERE s.round_id = $roundId AND EXISTS (SELECT 1 FROM criteria_rate cr WHERE cr.selection = s.id)
+            LIMIT 1)""".map(_.int(1)).single().filter(_ > 0)
+
   def getRates(
       selection: Long
   )(implicit session: DBSession = autoSession): Seq[CriteriaRate] = withSQL {

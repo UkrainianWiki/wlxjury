@@ -2,6 +2,7 @@ package db.scalikejdbc
 
 import db.RoundRepo
 import org.intracer.wmua.{CategoryRule, HasId, ImageWithRating}
+import org.intracer.wmua.cmd.DistributeImages
 import scalikejdbc._
 import scalikejdbc.orm.{CRUDMapper, JoinTable}
 
@@ -54,7 +55,10 @@ case class Round(
     submitToken: Option[String] = None,
     distributing: Boolean = false,
     freezeCount: Int = 0,
-    excludeCoi: Boolean = false
+    excludeCoi: Boolean = false,
+    // a criteria round's criteria, read for its by-rate gallery (CriteriaRate.countOf);
+    // otherwise those a distribution gives
+    criteriaCount: Int = DistributeImages.CriteriaIds.size
 ) extends HasId {
 
   /** Jurors may see and vote in the round: it is active, and not still being created
@@ -81,9 +85,29 @@ case class Round(
 
   def isBinary: Boolean = rates.id == Round.binaryRound.id
 
+  /** A rate's stored units per star: 2 in a half-star round (a half star is 1), else 1. */
+  def starUnits: Int = if (rates.id > 5 && halfStar) 2 else 1
+
+  /** The highest rate the stars give, in stored units: all of them (a half-star 1-7 round
+    * draws 3 stars, so 6).
+    */
+  def maxRate: Int = rates.id / starUnits * starUnits
+
+  /** A juror's vote the round takes, in its stored units: -1, 0 or 1 in a binary round; 0
+    * (unrated) or from a half star or a star up to [[maxRate]] in a rated one, also for each
+    * criterion; none in a comments-only round.
+    */
+  def acceptsRate(rate: Int): Boolean =
+    if (isBinary) rate >= -1 && rate <= 1
+    else if (rates.id == Round.commentsOnlyRound.id) false
+    else rate == 0 || (rate >= rates.minRate && rate <= maxRate)
+
+  /** The stars of a file's result: a criteria round's for all its criteria together, as the
+    * file's rate is the sum of theirs (CriteriaRate.updateRate).
+    */
   def numberOfStars: Int =
     (if (rates.id <= 5 || !halfStar) rates.id
-     else rates.id / 2) * (if (hasCriteria) (if (!id.contains(1327)) 4 else 2) else 1)
+     else rates.id / 2) * (if (hasCriteria) criteriaCount else 1)
 
   def regionIds: Seq[String] = regions.map(_.split(",").toSeq).getOrElse(Nil)
 

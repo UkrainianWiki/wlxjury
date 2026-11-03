@@ -11,11 +11,12 @@
 @import helper._
 
 @mainAdmin("campaigns", user, user.getId) {
+    <h1 class="visually-hidden">@Messages("campaigns")</h1>
     <div class="row" xmlns="http://www.w3.org/1999/html">
 
-        <h3>@Messages("import.from.list.page.images.category")</h3>
+        <h2 class="h3">@Messages("import.from.list.page.images.category")</h2>
         <div class="bs-callout bs-callout-info">
-            <h4>@Messages("examples.of.inputs")</h4>
+            <h3 class="h4">@Messages("examples.of.inputs")</h3>
             <p>
         <ul>
             <li>Category:Images from Wiki Loves Earth 2016
@@ -25,13 +26,15 @@
         </div>
         @bs.form(routes.ContestController.importContests(), Symbol("id") -> "import-contests") {
             @helper.CSRF.formField
-            @bs.text(importForm("source"), Symbol("placeholder") -> Messages("source"), Symbol("_label") -> Messages("source"), Symbol("_help") -> "")
+            @* a category or a list page: Commons' categories suggested once it starts with Category: *@
+            @bs.text(importForm("source"), Symbol("placeholder") -> Messages("source"), Symbol("_label") -> Messages("source"), Symbol("_help") -> "",
+                Symbol("data-category-suggest") -> "mixed")
 
             <button type="submit" class="btn btn-primary">@Messages("import")</button>
         }
     </div>
     <div class="row" >
-        <h3>@Messages("campaigns")</h3>
+        <h2 class="h3">@Messages("campaigns")</h2>
 
         @contestsTable(contests)
 
@@ -63,7 +66,7 @@
 
                             <td>
                                 <input type="hidden" name="id" id="id" value="0" />
-                                @bs.text(editContestForm("name"), Symbol("placeholder") -> Messages("Name"), Symbol("_hiddenLabel") -> Messages("Name"), Symbol("_help") -> "")
+                                @bs.text(editContestForm("name"), Symbol("placeholder") -> Messages("name"), Symbol("_hiddenLabel") -> Messages("name"), Symbol("_help") -> "")
                             </td>
                             <td>
                             @bs.text(editContestForm("country"), Symbol("placeholder") -> Messages("country"), Symbol("_hiddenLabel") -> Messages("country"), Symbol("_help") -> "")
@@ -72,7 +75,8 @@
                             @bs.text(editContestForm("year"), Symbol("placeholder") -> Messages("year"), Symbol("_hiddenLabel") -> Messages("year"), Symbol("_help") -> "")
                             </td>
                             <td>
-                            @bs.text(editContestForm("images"), Symbol("placeholder") -> Messages("images"), Symbol("_hiddenLabel") -> Messages("images"), Symbol("_help") -> "")
+                            @bs.text(editContestForm("images"), Symbol("placeholder") -> Messages("images"), Symbol("_hiddenLabel") -> Messages("images"), Symbol("_help") -> "",
+                                Symbol("data-category-suggest") -> "mixed")
                             </td>
                             <td>
                             </td>
@@ -123,6 +127,7 @@
             </tbody>
         </table>
     </div>
+    <script src="@routes.Assets.versioned("javascripts/category-suggest.js")"></script>
 }
 
 

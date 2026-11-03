@@ -1,6 +1,6 @@
 @import db.scalikejdbc.User
 @import db.scalikejdbc.Round
-@(round: Round, user: User, rate: Int, byUserRateCount: Map[Long, Map[Int, Int]])
+@(round: Round, user: User, rate: Int, byUserRateCount: Map[Long, Map[Int, Int]])(implicit messages: Messages)
     @defining(byUserRateCount.getOrElse(user.getId, Map.empty).toSeq.collect({
         case (x, y)
             if
@@ -12,30 +12,14 @@
         @if(count != 0) {
         <div class="btn-group">
             @if(round.isBinary || rate == 0) {
-                <a href="@RoundList(round, user.getId, filter = VoteFilter.ofRate(rate)).pageUrl(1)">
-                    <button type="button" class="btn btn-outline-secondary btn-sm py-0 px-1 @if(count == 0) {disabled}">
-                        <i class="bi bi-grid-3x3-gap-fill" aria-hidden="true"></i>
-                    </button>
-                </a>
+                @snippets.iconLink(RoundList(round, user.getId, filter = VoteFilter.ofRate(rate)).pageUrl(1), "grid-3x3-gap-fill", Messages("gallery"), count != 0)
             } else {
-                <a href="@RoundList(round, user.getId, filter = VoteFilter.Rated, view = GalleryView.ByRate).pageUrl(1)">
-                    <button type="button" class="btn btn-outline-secondary btn-sm py-0 px-1 @if(count == 0) {disabled}">
-                        <i class="bi bi-bar-chart-fill" aria-hidden="true"></i>
-                    </button>
-                </a>
+                @snippets.iconLink(RoundList(round, user.getId, filter = VoteFilter.Rated, view = GalleryView.ByRate).pageUrl(1), "bar-chart-fill", Messages("byrate"), count != 0)
             }
             @if(round.isBinary || rate == 0) {
-                <a href="@RoundList(round, user.getId, filter = VoteFilter.ofRate(rate), view = GalleryView.FileList).pageUrl(1)">
-                    <button type="button" class="btn btn-outline-secondary btn-sm py-0 px-1 @if(count == 0) {disabled}">
-                        <i class="bi bi-list-ul" aria-hidden="true"></i>
-                    </button>
-                </a>
+                @snippets.iconLink(RoundList(round, user.getId, filter = VoteFilter.ofRate(rate), view = GalleryView.FileList).pageUrl(1), "list-ul", Messages("filelist"), count != 0)
             } else {
-                <a href="@RoundList(round, user.getId, view = GalleryView.FileList).pageUrl(1)">
-                    <button type="button" class="btn btn-outline-secondary btn-sm py-0 px-1 @if(count == 0) {disabled}">
-                        <i class="bi bi-list-ul" aria-hidden="true"></i>
-                    </button>
-                </a>
+                @snippets.iconLink(RoundList(round, user.getId, view = GalleryView.FileList).pageUrl(1), "list-ul", Messages("filelist"), count != 0)
             }
         </div>
     @count

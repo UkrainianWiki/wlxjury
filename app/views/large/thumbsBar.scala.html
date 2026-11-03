@@ -3,16 +3,17 @@
         list: RoundList,
         hood: Neighbourhood)(
         implicit flash: Flash, request: Request[Any], messages: Messages)
+@* A round's large view's strip of the files after its file (Neighbourhood.following), in a
+   section closed by default; none at the list's end. Not the file itself, which the stars
+   above rate, nor those before it. *@
 
-@thumbSmall(style:String) = {
-    <div class="@style">
-}
-
+@if(hood.following.nonEmpty) {
+@sideSection("large-next", "large.next.files", open = false) {
 <ul class="gallery mw-gallery-traditional">
-@for((file, i) <- hood.files.zipWithIndex) {
+@for(file <- hood.following) {
     <li class="gallerybox">
 
-    @thumbSmall(if(i == hood.index) "thumb_small current" else "thumb_small")
+    <div class="thumb_small">
         <div class="my-1 mx-auto">
             <a href="@list.largeUrl(file.pageId)">
                 @if(file.image.isImage) {
@@ -32,3 +33,5 @@
     </li>
 }
 </ul>
+}
+}
