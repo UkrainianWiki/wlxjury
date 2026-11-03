@@ -117,7 +117,7 @@ app/
 - **ContestJury**: A photo contest (e.g., "Wiki Loves Monuments 2024 Ukraine")
 - **Round**: A judging round within a contest. Can be binary (select/reject) or rated (1–N stars). Rounds can filter images by region, category, monument, size, media type, and special nomination.
 - **Selection**: A juror's vote/rating on an image in a round (`page_id`, `jury_id`, `round_id`, `rate`)
-- **User roles**: `root` (super-admin, `users.is_root`, no contest), and per contest `admin`, `organizer`, `jury` in `user_contest` (V61/V62): one account per email, a member of any number of contests with a role in each. The session's `current_contest_id` picks the contest a request runs in (`Secured.inCurrentContest`); users loaded with `User.contestMembers` / `findByContest` / `loadJurors` carry their role in that contest, a plain `findById` has none.
+- **User roles**: `root` (super-admin, `users.is_root`, no contest; set only by root through `User.setRoot` / account creation, never read from `user_contest`), and per contest exactly one of `User.ContestRoles` (= `FORM_ROLES`: `no`, `jury`, `organizer`, `admin`, `board`, `auditor`, `staff`) in `user_contest.role` (V61/V62): one account per email, a member of any number of contests with a role in each. A role is checked exactly (no splitting, trimming or case folding) by the edit form, `UserController.saveUser` (`User.mayAssignRoles`), `UserService.addToContest`, the DAO (`createMembership` / `updateRole` / `User.create` `require` it) and V76's binary `CHECK` constraint; the reader (`UserContest.roles`) ignores any other stored value (the membership is then inactive). Adding a role needs a V-migration replacing the constraint. The session's `current_contest_id` picks the contest a request runs in (`Secured.inCurrentContest`); users loaded with `User.contestMembers` / `findByContest` / `loadJurors` carry their role in that contest, a plain `findById` has none.
 
 ### Background jobs
 
@@ -160,6 +160,8 @@ One MariaDB Testcontainer per JVM, shared across all specs via `SharedTestDb` (l
 - **`autoSession`**: Many DAO methods default to `autoSession` — each call opens+closes its own connection. Service-layer code calling these cannot participate in an outer test transaction.
 - **`hasManyThrough`**: Lazy val on the companion object (e.g., `Round.usersRef`) — must be accessed once before `round.users` is populated. `SharedTestDb.initialized` does this automatically.
 - **Source:** GitHub: https://github.com/scalikejdbc/scalikejdbc — local jars: `~/.ivy2/cache/org.scalikejdbc/scalikejdbc_2.13/srcs/`
+
+**Table names:** new tables are singular snake_case (`job`, `round_image`); a link table is `<owner>_<thing>` (`round_user`, `user_contest`); a foreign key column is `<table>_id`; index and constraint names start with the table name. The old plural tables (`images`, `rounds`, `users`, …) keep their names.
 
 ### REST API
 
