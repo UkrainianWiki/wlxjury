@@ -34,82 +34,28 @@ rejected = Rejetées
 binary.tally = {0,choice,0#0 approbation|1#1 approbation|1<{0,number,integer} approbations}, {1,choice,0#0 rejet|1#1 rejet|1<{1,number,integer} rejets}
 rated = Notées
 all = Toutes
-all.jury.rating = Toutes les notes du jury
 
 statistics = Statistiques
-thumbnails = Vignettes
 file.list = Liste des fichiers
 
-top-x = Haut {}
 regions = Régions
-
-wiki.loves.earth = Wiki Loves Earth {0}
-wiki.loves.earth.Ukraine = Wiki Loves Earth en Ukraine
-wiki.loves.monuments.Ukraine = Wiki Loves Monuments en Ukraine
-wiki.loves.earth.Russia = Wiki Loves Earth en Russie
 
 welcome.subject = Bienvenue au jury {0}
 
-error.technical=Erreur technique, veuillez réessayer
-validate=Valider
 reset=Réinitialiser
 
-account.not.validated.check.mail=Compte non validé. Vérifiez vos courriels.
-account.successfully.validated=Compte validé avec succès
-account.settings.email.successful=Courriel validé avec succès ({0})
 invalid.user.or.password=Utilisateur ou mot de passe invalide
-youve.been.logged.out=Vous avez été déconnecté
-error.sending.email=Erreur d''envoi de courriel
-error.sending.confirm.email=Erreur lors de l''envoi du courriel de confirmation
 error.email.already.exist=Cette adresse courriel est déjà utilisée par un autre compte.
-error.account.already.validated=Ce compte est déjà validé
-error.unknown.email=Courriel inconnu
-error.confirm=La confirmation a échoué
-error.expiredresetlink=Cette réinitialisation de mot de passe a expiré.
-error.expiredmaillink=Ce changement de courriel a expiré.
 
 signin.signin=Se connecter
-signin.your.email=Votre adresse email
 signin.your.login=Votre identifiant
 signin.your.password=Votre mot de passe
 
-forgot.password=Mot de passe oublié ?
-
 signup.signup=S''inscrire
-signup.successfull=Inscription réussie !
-signup.new=Nouveau ?
-signup.reset.password=Réinitialisez votre mot de passe
-signup.generate.password=Générer un mot de passe
-signup.msg.created=Vous allez bientôt recevoir un courriel de confirmation. Vérifiez vos courriel pour activer votre compte.
-signup.valid.email=Courriel invalide
-signup.repeat.your.password=Répétez votre mot de passe
 
 resetpassword=Réinitialiser le mot de passe
-resetpassword.mailsent=Un courriel a été envoyé, veuillez vérifier votre courrier.
-resetpassword.success=Votre mot de passe a été réinitialisé.
-resetpassword.new.password=Nouveau mot de passe :
 
-changemail.mailsent=Un courriel a été envoyé, veuillez vérifier votre courrier.
-
-mail.confirm.subject=Bienvenue à Jury - Demander la confirmation
-mail.confirm.message=Bienvenue à Jury. <br> Cliquez sur ce lien : {0} pour confirmer votre adresse courriel.
-
-mail.welcome.subject=Bienvenue à Jury
-mail.welcome.message=Bienvenue à Jury. <br> Votre compte est validé.
-
-mail.reset.ask.subject=Jury - Nouveau mot de passe
 # Vous ne pouvez pas l'utiliser ; vous n'avez pas d'issue, car le guillemet unique arrête le {0}
-mail.reset.ask.message=Vous avez demandé que votre mot de passe soit réinitialisé. <br> Cliquez sur ce lien : {0} pour changer votre mot de passe.
-
-mail.change.ask.subject=Jury - Confirmez votre adresse courriel
-mail.change.ask.message=Vous avez demandé que votre courriel soit modifié. <br> Cliquez sur ce lien : {0} pour confirmer votre adresse courriel.
-
-mail.reset.fail.subject=Tentative d''Accéder au compte
-mail.reset.fail.message=Vous (ou quelqu''un d''autre) a entré cette adresse courriel en tentant de changer le mot de passe. Toutefois, cette adresse courriel ne figure pas dans notre liste d''utilisateurs enregistrés. La tentative de réinitialisation du mot de passe a donc échoué.
-
-mail.reset.confirm.subject=Jury - Nouveau mot de passe
-mail.reset.confirm.message=Bonjour, <br><br> Votre mot de passe a été réinitialisé.
-
 
 # Default messages
 
@@ -141,7 +87,6 @@ error.maxLength=La longueur maximale est {0}
 error.email=Adresse courriel valide requise
 error.pattern=Doit satisfaire {0}
 
-dates = Dates
 total = Total
 
 80=Kyiv
@@ -184,7 +129,6 @@ large.rate = Note : {0}
 large.rate.none = Non noté
 select.image = Sélectionner une image
 reject.image = Rejeter l''image
-remove.image = Supprimer l''image du tour
 up.key = Monter
 down.key = Descendre
 format.boolean=
@@ -192,9 +136,7 @@ format.boolean=
 no.round.yet=Aucun tour configuré pour le moment. Veuillez attendre que l''administrateur du concours configure l''outil.
 
 not.a.member = Pas un membre ?
-forgot.your.password = Mot de passe oublié ?
 sign.up.now = S''inscrire maintenant
-or.use.social = Ou utilisez votre compte de MediaWiki pour vous connecter:
 
 edit.user = Modifier l''utilisateur
 create.user = Créer un utilisateur
@@ -217,7 +159,6 @@ files = Fichiers
 
 images = Images
 image = Image
-videos = Vidéos
 video = Vidéo
 contest.files = Images du concours
 files.source = Source des images
@@ -263,16 +204,13 @@ add.round=Ajouter un tour
 number = Numbre
 row.number = N°
 file.distribution = Distribution d''image
-selected.rated = Sélectionné / évalué
 rating.type = Type de notation
 
-set.current.round = Définir le tour actuel
 edit.round = Modifier le tour
 create.round= Créer un tour
 round.name.optional=Nom du tour (optionel)
 previous.round = Tours précédents
 error.previous.rounds.mixed.type = Tous les tours précédents doivent être du même type de notation
-round.name = Nom du tour
 jurors = Jurés
 juror.name=Nom du juré
 media.filtering = Filtrage d''image
@@ -285,7 +223,6 @@ top.images=Nombre de meilleures images des tours précédents
 top.images.binary.order=Meilleurs fichiers d''un tour oui/non par
 each.file.to.all.jurors=Chaque image à tous les jurés
 each.file.to.i.juror.s=Chaque image à {0} juré(s)
-category.filter=Filtre de catégorie
 category.operation=Opération sur les catégories
 category.first=Catégorie A
 category.second=Catégorie B
@@ -299,9 +236,6 @@ error.category.operation=Choisissez une opération de catégorie valide.
 error.category.first.required=Indiquez la catégorie A pour cette opération.
 error.category.second.required=Indiquez la catégorie B pour cette opération.
 category=Catégorie
-absent=Absent
-files.should.be.IN.the.category=Les images doivent être DANS la catégorie
-files.should.be.NOT.IN.the.category=Les images ne doivent PAS être DANS la catégorie
 monument.ids.comma.separated=Identifiants des monuments (séparés par une virgule)
 minimum.megapixels=Résolution minimale (Mpx)
 minimum.megabytes=Taille minimale du fichier (Mo)

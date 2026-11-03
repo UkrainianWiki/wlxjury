@@ -127,8 +127,8 @@ class LargeViewSideSpec extends Specification {
     def criteria(html: String): Seq[(String, String)] = {
       val doc = Jsoup.parse(html)
       (1 to 2).map { i =>
-        val score = raw"(?s)#rate-image$i'\)\.raty\(\{\s*score: ([0-9.]+),".r
-          .findFirstMatchIn(html).fold("")(_.group(1))
+        // large-stars.js draws them from their data-score
+        val score = doc.getElementById(s"rate-image$i").attr("data-score")
         doc.getElementById(s"rate-number$i").text -> score
       }
     }

@@ -28,7 +28,6 @@ users = Пользователи
 rounds = Раунды
 previous.round = Предыдущие раунды
 error.previous.rounds.mixed.type = Все предыдущие раунды должны быть одного типа оценивания
-round.name = Название раунда
 jurors = Жюри
 juror.name=Имя
 media.filtering = Фильтрация файлов
@@ -41,7 +40,6 @@ top.images=Количество лучших файлов из предыдущ�
 top.images.binary.order=Лучшие файлы раунда да/нет по
 each.file.to.all.jurors=Каждый файл всем членам жюри
 each.file.to.i.juror.s=Каждый файл {0} членам жюри
-category.filter=Фильтр категорий
 category.operation=Операция над категориями
 category.first=Категория A
 category.second=Категория B
@@ -55,9 +53,6 @@ error.category.operation=Выберите корректную операцию 
 error.category.first.required=Укажите категорию A для этой операции.
 error.category.second.required=Укажите категорию B для этой операции.
 category=Категория
-absent=Нет
-files.should.be.IN.the.category=Файлы должны быть В категории
-files.should.be.NOT.IN.the.category=Файлы должны быть НЕ В категории
 monument.ids.comma.separated=Идентификаторы памятников (через запятую)
 minimum.megapixels=Минимальное разрешение (Мпкс)
 minimum.megabytes=Минимальный размер файла (МБ)
@@ -69,79 +64,25 @@ rejected = Отброшенные
 binary.tally = Одобрений: {0}, отклонений: {1}
 rated = С оценкой
 all = Все
-all.jury.rating = Суммарный выбор жюри
 
 statistics = Статистика
-thumbnails = Иконки
 file.list = Список файлов
 
-top-x = Топ 21
-
 welcome.subject = Добро пожаловать в жюри {0}
-wiki.loves.earth = Вики любит Землю {0}
-wiki.loves.earth.Ukraine = Вики любит Землю 2015 в Украине
-wiki.loves.monuments.Ukraine = Вики любит памятники в Украине
-wiki.loves.earth.Russia = Вики любит Землю 2015 в России
 
-error.technical=Technical Error, please Retry
-validate=Validate
 reset=Reset
 
-account.not.validated.check.mail=Account not validated. Check your emails.
-account.successfully.validated=Account successfully validated
-account.settings.email.successful=Email successfully validated ({0})
 invalid.user.or.password=Неверный пользователь или пароль
-youve.been.logged.out=You''ve been logged out
-error.sending.email=Error sending email
-error.sending.confirm.email=Error while sending confirmation mail
 error.email.already.exist=Этот адрес электронной почты уже используется другой учётной записью.
-error.account.already.validated=Account already validated
-error.unknown.email=Unknown email
-error.confirm=Confirmation failed
-error.expiredresetlink=This password reset has expired.
-error.expiredmaillink=This mail change has expired.
 
 signin.signin=Войти
-signin.your.email=Ваша пошта
 signin.your.login=Ваш логин
 signin.your.password=Ваш пароль
 
-forgot.password=Forgot password ?
-
 signup.signup=Регистрация
-signup.successfull=Sign Up - Successful !
-signup.new=New ?
-signup.reset.password=Reset your password
-signup.generate.password=Generate a password
-signup.msg.created=You will receive a confirmation email soon. Check your email to activate your account.
-signup.valid.email=Invalid Email
-signup.repeat.your.password=Повторите пароль
 
 resetpassword=Сбросить пароль
-resetpassword.mailsent=A mail has been sent, please check your mail.
-resetpassword.success=Your password has been reset.
-resetpassword.new.password=New password :
 
-changemail.mailsent=A mail has been sent, please check your mail.
-
-mail.confirm.subject=Welcome to Play20StartApp - Ask for confirmation
-mail.confirm.message=Welcome to Play20StartApp. <br> Click on this link : {0} to confirm your email.
-
-mail.welcome.subject=Welcome to Play20StartApp
-mail.welcome.message=Welcome to Play20StartApp. <br> Your account is validated. Enjoy !
-
-mail.reset.ask.subject=Play20StartApp - New password
-# Cannot use You've unescaped here, as the single quote stops the {0}
-mail.reset.ask.message=You asked for your password to be reset.  <br> Click on this link : {0} to change your password.
-
-mail.change.ask.subject=Play20StartApp - Validate email
-mail.change.ask.message=You asked for your email to be changed.  <br> Click on this link : {0} to validate your email.
-
-mail.reset.fail.subject=Account Access Attempted
-mail.reset.fail.message=You (or someone else) entered this email address when trying to change the password.  However, this email address is not on our list of registered users, and so the attempted password reset has failed.
-
-mail.reset.confirm.subject=Play20StartApp - New password
-mail.reset.confirm.message=Hello, <br><br> Your password has been reset.
 constraint.required=Обязательное поле
 constraint.min=Минимальное значение: {0}
 constraint.max=Максимальное значение: {0}
@@ -166,7 +107,6 @@ error.maxLength=Максимальная длина — {0}
 error.email=Требуется адрес электронной почты
 error.pattern=Должно соответствовать {0}
 
-dates = Дати
 total = Разом
 
 80=Киев
@@ -211,7 +151,6 @@ large.rate = Оценка: {0}
 large.rate.none = Без оценки
 select.image = Выбрать изображение
 reject.image = Отбросить изображение
-remove.image = Убрать изображение из раунда
 up.key = Вверх
 down.key = Вниз
 format.boolean=
@@ -277,9 +216,7 @@ id.template.help = Пусто: шаблон из настроек кампани
 region.other = Другое ({0})
 no.round.yet=Ещё не настроено ни одного тура. Подождите, пока администратор конкурса настроит инструмент.
 not.a.member = Не зарегистрированы?
-forgot.your.password = Забыли пароль?
 sign.up.now = Зарегистрироваться
-or.use.social = Или используйте существующую учётную запись MediaWiki:
 edit.user = Редактирование пользователя
 create.user = Создание пользователя
 role.admin=Администратор
@@ -356,9 +293,7 @@ add.round=Добавить раунд
 number = Номер
 row.number = №
 file.distribution = Распределение файлов
-selected.rated = Выбрано/Оценено
 rating.type = Тип оценивания
-set.current.round = Сделать текущим раундом
 edit.round = Редактировать раунд
 create.round= Создать раунд
 select.all = Выбрать все
@@ -398,7 +333,6 @@ job.retry.duplicate=Не удалось повторить: другая зад�
 import.already.running=Уже выполняется: {0}.
 images = Изображения
 image = Изображение
-videos = Видео
 video = Видео
 language = Язык
 reset.password = Сбросить пароль

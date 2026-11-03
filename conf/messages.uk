@@ -34,80 +34,27 @@ rejected = Відкинуті
 binary.tally = Схвалень: {0}, відхилень: {1}
 rated = Оцінені
 all = Всі
-all.jury.rating = Сумарний вибір журі
 
 statistics = Статистика
-thumbnails = Іконки
 file.list = Список файлів
 
-top-x = Топ 21
 regions = Регіони
 
 welcome.subject = Ласкаво просимо до журі {0}
-wiki.loves.earth = Вікі любить Землю {0}
-wiki.loves.earth.Ukraine = Вікі любить Землю в Україні
-wiki.loves.monuments.Ukraine = Вікі любить пам''ятки в Україні
-wiki.loves.earth.Russia = Вікі любить Землю в Росії
 
-error.technical=Technical Error, please Retry
-validate=Validate
 reset=Reset
 
-account.not.validated.check.mail=Account not validated. Check your emails.
-account.successfully.validated=Account successfully validated
-account.settings.email.successful=Email successfully validated ({0})
 invalid.user.or.password=Невірний користувач або пароль
-youve.been.logged.out=You''ve been logged out
-error.sending.email=Error sending email
-error.sending.confirm.email=Error while sending confirmation mail
 error.email.already.exist=Ця адреса електронної пошти вже використовується іншим обліковим записом.
-error.account.already.validated=Account already validated
-error.unknown.email=Unknown email
-error.confirm=Confirmation failed
-error.expiredresetlink=This password reset has expired.
-error.expiredmaillink=This mail change has expired.
 
 signin.signin=Увійти
-signin.your.email=Ваша пошта
 signin.your.login=Ваш логін
 signin.your.password=Ваш пароль
 
-forgot.password=Forgot password ?
-
 signup.signup=Реєстрація
-signup.successfull=Sign Up - Successful !
-signup.new=New ?
-signup.reset.password=Reset your password
-signup.generate.password=Generate a password
-signup.msg.created=You will receive a confirmation email soon. Check your email to activate your account.
-signup.valid.email=Invalid Email
-signup.repeat.your.password=Повторіть пароль
 
 resetpassword=Скинути пароль
-resetpassword.mailsent=A mail has been sent, please check your mail.
-resetpassword.success=Your password has been reset.
-resetpassword.new.password=New password:
 
-changemail.mailsent=A mail has been sent, please check your mail.
-
-mail.confirm.subject=Welcome to Play20StartApp - Ask for confirmation
-mail.confirm.message=Welcome to Play20StartApp. <br> Click on this link : {0} to confirm your email.
-
-mail.welcome.subject=Welcome to Play20StartApp
-mail.welcome.message=Welcome to Play20StartApp. <br> Your account is validated. Enjoy !
-
-mail.reset.ask.subject=Jury - New password
-# Cannot use You've unescaped here, as the single quote stops the {0}
-mail.reset.ask.message=You asked for your password to be reset.  <br> Click on this link : {0} to change your password.
-
-mail.change.ask.subject=Jury - Validate email
-mail.change.ask.message=You asked for your email to be changed.  <br> Click on this link : {0} to validate your email.
-
-mail.reset.fail.subject=Account Access Attempted
-mail.reset.fail.message=You (or someone else) entered this email address when trying to change the password.  However, this email address is not on our list of registered users, and so the attempted password reset has failed.
-
-mail.reset.confirm.subject=Jury - New password
-mail.reset.confirm.message=Hello, <br><br> Your password has been reset.
 constraint.required=Обов''язкове поле
 constraint.min=Мінімальне значення: {0}
 constraint.max=Максимальне значення: {0}
@@ -132,7 +79,6 @@ error.maxLength=Максимальна довжина — {0}
 error.email=Потрібна адреса пошти
 error.pattern=Має відповідати {0}
 
-dates = Дати
 total = Разом
 
 01=АР Крим
@@ -177,15 +123,12 @@ large.rate = Оцінка: {0}
 large.rate.none = Без оцінки
 select.image = Вибрати зображення
 reject.image = Відкинути зображення
-remove.image = Вилучити зображення з раунду
 up.key = Вгору
 down.key = Вниз
 format.boolean=
 
 not.a.member = Не зареєстровані?
-forgot.your.password = Забули пароль?
 sign.up.now = Зареєструватися
-or.use.social = Або використайте існуючу обліковку MediaWiki:
 
 edit.user = Редагування користувача
 create.user = Створення користувача
@@ -206,7 +149,6 @@ media.type = Тип файлів
 files = Файли
 images = Зображення
 image = Зображення
-videos = Відео
 video = Відео
 contest.files = Файли конкурсу
 files.source = Джерело файлів
@@ -234,7 +176,6 @@ root=Суперадміністратор
 no=Немає
 yes=Так
 
-
 campaigns=Кампанії
 campaign=Кампанія
 contests=Конкурси
@@ -253,16 +194,13 @@ add.round=Додати раунд
 number = Номер
 row.number = №
 file.distribution = Поділ файлів
-selected.rated = Вибрано/Оцінено
 rating.type = Тип оцінювання
 
-set.current.round = Встановити поточний раунд
 edit.round = Редагувати раунд
 create.round= Створити раунд
 round.name.optional=Назва раунда (необов''язково)
 previous.round = Попередні раунди
 error.previous.rounds.mixed.type = Усі попередні раунди мають бути одного типу оцінювання
-round.name = Назва раунда
 jurors = Журі
 juror.name=Ім''я
 media.filtering = Фільтрування файлів
@@ -275,7 +213,6 @@ top.images=Кількість найкращих файлів із попере�
 top.images.binary.order=Найкращі файли раунду так/ні за
 each.file.to.all.jurors=Кожний файл всім членам журі
 each.file.to.i.juror.s=Кожний файл для {0} членів журі
-category.filter=Фільтр категорій
 category.operation=Операція над категоріями
 category.first=Категорія A
 category.second=Категорія B
@@ -289,9 +226,6 @@ error.category.operation=Виберіть коректну операцію на
 error.category.first.required=Вкажіть категорію A для цієї операції.
 error.category.second.required=Вкажіть категорію B для цієї операції.
 category=Категорія
-absent=Немає
-files.should.be.IN.the.category=Файли мають бути В категорії
-files.should.be.NOT.IN.the.category=Файли мають бути НЕ В категорії
 monument.ids.comma.separated=Ідентифікатори пам''яток (розділені комами)
 minimum.megapixels=Мінімальна роздільність (Мпкс)
 minimum.megabytes=Мінімальний розмір файлу (МБ)

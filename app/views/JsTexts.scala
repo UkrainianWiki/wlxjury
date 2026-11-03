@@ -4,9 +4,10 @@ import play.api.i18n.Messages
 import play.api.libs.json.{JsObject, JsString}
 import play.twirl.api.Html
 
-/** Localised texts for a page's script, as a JSON object literal to put in a <script>: the
-  * strings JSON-escaped, not HTML-escaped (a script reads ' and & literally), and every `<`
-  * written as its JSON unicode escape, so no text ends the script element.
+/** Localised texts for a page's script, as a JSON object: in a `<script type="application/json">`
+  * data block (editRound), the strings JSON-escaped, not HTML-escaped (the block's text is read
+  * as it is), and every `<` written as its JSON unicode escape, so no text ends the element; or,
+  * as a String, in an attribute, which Twirl escapes (`data-multi-select`, monuments).
   */
 object JsTexts {
 

@@ -3,7 +3,10 @@
 // "select all" checkbox above them, and the control summing up the selection as it did (none
 // selected; up to three names; "4 selected"; "all selected (5)"). The original <select> stays
 // the form's field: Tom Select keeps its selected options and fires its change event, which the
-// page's own handlers (mainAdmin.scala.html) listen to. A disabled select stays disabled.
+// page's own handlers (round-form.js) listen to. A disabled select stays disabled.
+// A select with a data-multi-select attribute (monuments.scala.html) starts by itself once the
+// page is parsed, with that attribute's JSON as its texts (views.JsTexts.multiSelect), and is
+// cleared when its form is reset.
 (function () {
   'use strict';
 
@@ -62,6 +65,30 @@
     return ts;
   }
 
+  /** Starts each `select[data-multi-select]` in `doc`; returns their Tom Selects. */
+  function initAll(doc) {
+    var started = [];
+    Array.prototype.forEach.call(doc.querySelectorAll('select[data-multi-select]'), function (select) {
+      var texts;
+      try {
+        texts = JSON.parse(select.getAttribute('data-multi-select'));
+      } catch (e) {
+        return; // a plain multiple select rather than a broken one
+      }
+      var ts = multiSelect(select, texts);
+      if (!ts) return;
+      if (select.form) select.form.addEventListener('reset', function () { ts.clear(); });
+      started.push(ts);
+    });
+    return started;
+  }
+
   window.wlxMultiSelect = multiSelect;
-  if (typeof module !== 'undefined') module.exports = { summaryText: summaryText, multiSelect: multiSelect };
+  if (typeof module !== 'undefined') {
+    module.exports = { summaryText: summaryText, multiSelect: multiSelect, initAll: initAll };
+  } else if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', function () { initAll(document); });
+  } else {
+    initAll(document);
+  }
 })();

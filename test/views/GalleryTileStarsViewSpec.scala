@@ -7,8 +7,9 @@ import play.api.test.CSRFTokenHelper._
 import play.api.test.{FakeRequest, PlaySpecification}
 
 /** The stars on a rated round's gallery tiles (tile-votes.js): only in the juror's own gallery
-  * of an active round without criteria, as unitegallery's `wlx_stars` option (the stars'
-  * number and half stars) with raty's script; in any other gallery `null` and no raty.
+  * of an active round without criteria, as #gallery's data-stars (the stars' number and half
+  * stars, which gallery-init.js gives unitegallery as its `wlx_stars` option) with raty's
+  * script; in any other gallery no data-stars and no raty.
   */
 class GalleryTileStarsViewSpec extends PlaySpecification {
 
@@ -24,21 +25,24 @@ class GalleryTileStarsViewSpec extends PlaySpecification {
     contentAsString(views.html.gallery(user, RoundList(round, asUserId), LargeViewRenders.files(), Pager(1, 13),
       Nil, None, new RateDistribution(Map.empty)))
 
+  /** #gallery's data-stars, "null" without one. */
   private def starsOption(html: String): String =
-    "wlx_stars: ([^\\n]*)".r.findFirstMatchIn(html).map(_.group(1).trim).getOrElse("missing")
+    Option(org.jsoup.Jsoup.parse(html).getElementById("gallery")).fold("missing") { g =>
+      if (g.hasAttr("data-stars")) g.attr("data-stars") else "null"
+    }
 
   "a gallery's tile stars" should {
     "be on the juror's own tiles of an active rated round" in {
       val html = page(LargeViewRenders.ratedRound)
-      starsOption(html) === "{number: 5, half: false}"
+      starsOption(html) === """{"number":5,"half":false}"""
       html must contain("javascripts/jquery.raty.js")
       html must contain("javascripts/large-rate.js")
     }
 
     "be in half stars in a half-star round: five for 1-10, three for 1-7" in {
-      starsOption(page(LargeViewRenders.halfStarRound)) === "{number: 5, half: true}"
+      starsOption(page(LargeViewRenders.halfStarRound)) === """{"number":5,"half":true}"""
       starsOption(page(LargeViewRenders.ratedRound.copy(rates = Round.ratesById(7), halfStar = true))) ===
-        "{number: 3, half: true}"
+        """{"number":3,"half":true}"""
     }
 
     // an organizer's view of a juror's votes (it reads the round's jurors): OwnVotesSpec
@@ -58,8 +62,8 @@ class GalleryTileStarsViewSpec extends PlaySpecification {
 
     "leave the binary round's thumbs as they were" in {
       val html = page(LargeViewRenders.binaryRound)
-      html must contain("jury: true")
-      html must contain("binary: true")
+      html must contain("data-jury=\"true\"")
+      html must contain("data-binary=\"true\"")
     }
   }
 

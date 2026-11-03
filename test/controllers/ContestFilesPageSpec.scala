@@ -130,8 +130,11 @@ class ContestFilesPageSpec extends PlaySpecification with PlayTestDb {
         val (_, page) = get(s"/contest/${f.contest.getId}/files", f.admin)
 
         page must contain("""<body class="gallery">""")
-        page must contain("""<div id="gallery" class="gallery mw-gallery-traditional" style="display:none;">""")
-        page must contain("tiles_justified_row_height: 200") // main.scala.html's unitegallery
+        page must contain("""<div id="gallery" class="gallery mw-gallery-traditional" style="display:none;" data-jury="false" data-binary="false">""")
+        // the tiles, which gallery-init.js starts: no votes on them, and no tile-votes.js
+        page must contain("javascripts/unitegallery.js")
+        page must contain("javascripts/gallery-init.js")
+        page must not contain "javascripts/tile-votes.js"
         // the pager in the navbar, above the page's content
         page.indexOf("""id="pagenav"""") must be_>(page.indexOf("<nav class=\"navbar"))
         page.indexOf("""id="pagenav"""") must be_<(page.indexOf("id=\"contest-files-head\""))
@@ -483,9 +486,10 @@ class ContestFilesPageSpec extends PlaySpecification with PlayTestDb {
         button(page, "Previous image") must beSome(s"$files/3")
         button(page, "Next image") must beSome(s"$files/5")
         button(page, "Back to gallery") must beSome(files)
-        page must contain(s"""'down', function (e) { return wlxGo(e, "$files/5"); }""")
-        page must contain(s"""'up', function (e) { return wlxGo(e, "$files/3"); }""")
-        page must contain(s"""'esc', function (e) { return wlxGo(e, "$files"); }""")
+        // the keys' paths (large-keys.js)
+        page must contain(s"""data-key-down="$files/5"""")
+        page must contain(s"""data-key-up="$files/3"""")
+        page must contain(s"""data-key-esc="$files"""")
         // the strip: the files after it, 5 to 8; not it, nor those before it (2, Gone.jpg, and 3)
         """href="([^"]*)" title="File:File\d\.jpg"""".r.findAllMatchIn(page).map(_.group(1)).toList ===
           List(5L, 6L, 7L, 8L).map(id => s"$files/$id")

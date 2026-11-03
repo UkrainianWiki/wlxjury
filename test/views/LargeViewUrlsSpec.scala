@@ -35,17 +35,19 @@ class LargeViewUrlsSpec extends Specification {
     def votes: Seq[String] = keyVotes ++ dataVoteUrls ++ ratyVotePrefixes.map(_ + "3?sort=rate")
   }
 
-  private def captures(regex: String, text: String): Seq[String] =
-    regex.r.findAllMatchIn(text).map(_.group(1)).toSeq
+  /** The values of `el`'s attributes whose names start with `prefix`, in their order. */
+  private def attributes(el: Element, prefix: String): Seq[String] =
+    Option(el).toSeq.flatMap(_.attributes.asScala.toSeq).filter(_.getKey.startsWith(prefix)).map(_.getValue)
 
   def urls(html: String): Urls = {
     val doc = Jsoup.parse(html)
-    val scripts = doc.select("script:not([src])").asScala.map(_.data()).mkString("\n")
+    // large-keys.js's keys and large-stars.js's stars read their paths from these attributes
+    val keys = doc.getElementById("large-keys")
     Urls(
-      keyVotes = captures("""voteLarge\("([^"]*)"\)""", scripts),
-      ratyVotePrefixes = captures("""voteLarge\('([^']*)' \+""", scripts),
+      keyVotes = attributes(keys, "data-vote-key-"),
+      ratyVotePrefixes = doc.select(".large-stars[data-vote-prefix]").asScala.map(_.attr("data-vote-prefix")).toSeq,
       dataVoteUrls = doc.select("[data-vote-url]").asScala.map(_.attr("data-vote-url")).toSeq,
-      locations = captures("""window\.location = "([^"]*)"""", scripts) ++ captures("""wlxGo\(e, "([^"]*)"\)""", scripts),
+      locations = attributes(keys, "data-key-"),
       hrefs = doc.select("a[href]").asScala.map(a => a -> a.attr("href")).toSeq,
       formActions = doc.select("form[action]").asScala.map(_.attr("action")).toSeq,
       doc = doc,
@@ -69,9 +71,12 @@ class LargeViewUrlsSpec extends Specification {
       a.parents().asScala.exists(_.hasClass("btn-group"))
 
   private def checkCommon(u: Urls, roundView: Boolean) = {
-    // no absolute URL is voted or moved to, in a script or an attribute
-    """(voteLarge\(|window\.location\s*=\s*|wlxGo\(e,\s*|form\.action\s*=\s*|data-vote-url=)['"](https?:)?//[^'"]*""".r
+    // no absolute URL is voted or moved to, in an attribute; and no script holds one: the
+    // body's only inline script restores the side sections
+    """(data-vote-url|data-key-[a-z]+|data-vote-key-[a-z0-9]+|data-vote-prefix)=['"](https?:)?//[^'"]*""".r
       .findAllIn(u.html).toSeq must beEmpty
+    u.doc.select("body script:not([src])").asScala.map(_.data().trim)
+      .filterNot(_ == "if (window.wlxLargeSections) wlxLargeSections.restore(document);") must beEmpty
     (u.votes ++ u.locations ++ u.formActions).filterNot(isPath) must beEmpty
     u.hrefs.filterNot { case (a, _) => roundView && isUpDownButton(a) }.map(_._2).filterNot(isFineHref).map(h => s"'$h'") must beEmpty
 
@@ -120,7 +125,12 @@ class LargeViewUrlsSpec extends Specification {
           u.dataVoteUrls must haveSize(expected.size)
         } else {
           u.keyVotes must_== (0 to 5).map(s => s"/large/round/1/pageid/${pageIdAt(index)}/select/$s?sort=rate")
-          u.ratyVotePrefixes must haveSize(if (round.hasCriteria) 3 else 1)
+          // the stars of each of the two criteria, or the file's own (the inline script before
+          // large-stars.js also set up the file's own stars in a criteria round, which has none)
+          u.ratyVotePrefixes must haveSize(if (round.hasCriteria) 2 else 1)
+          if (round.hasCriteria)
+            u.doc.select(".large-stars[data-vote-query]").asScala.map(_.attr("data-vote-query")).toSeq must_==
+              Seq(1, 2).map(c => s"?sort=rate&criteria=$c")
           u.ratyVotePrefixes.head must_== s"/large/round/1/pageid/${pageIdAt(index)}/select/"
         }
       }
@@ -130,7 +140,8 @@ class LargeViewUrlsSpec extends Specification {
         checkCommon(u, roundView = true)
         checkVoteForm(u, readOnly = true)
         u.locations must haveSize(navCount)
-        u.html must not(contain("voteLarge(\""))
+        u.keyVotes must beEmpty
+        u.ratyVotePrefixes must beEmpty
       }
 
       s"only move, by paths, in the juror's own $roundName view of a closed round at index $index" in {
