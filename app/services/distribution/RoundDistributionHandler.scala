@@ -318,9 +318,14 @@ class RoundDistributionHandler @Inject() (
         if (window.size == 0)
           continue(st1.copy(phase = if (titleCountOf(job) > 0) Phase.List else Phase.Verify, cursor = 0L))
         else {
-          val passed: Seq[Image] =
+          // the round for update first (RoundWrites), so the candidates (and their anti-join on
+          // the round's files) are read with every other structural writer of it held off;
+          // then the files' current monument ids (h6)
+          RoundWrites.lock(Seq(roundId))
+          val read: Seq[Image] =
             if (c.topN.isDefined) DistributionSource.imagesIn(window.ids, roundId)
             else c.filter(candidates(c, roundId, st1.cursor, window.last)).map(_.image)
+          val passed = withLockedMonumentIds(read)
           val rows = DistributeImages.assign(c.round, passed, c.jurors, st1.position)
           beforeInsert(c.round, passed)
           DistributeImages.insertRows(rows, origin(job, listed = false))
@@ -351,12 +356,16 @@ class RoundDistributionHandler @Inject() (
               // files' images and their votes (monument ids), some in this round, before the
               // chunk's insert would lock the round; a criteria change (the round for update,
               // then its votes) deadlocked with that
-              RoundImageJdbc.lockRounds(Seq(roundId))
+              // a structural write of this round and, through the changed stored files' monument
+              // ids, of every round those files are in: all those rounds for update first
+              // (RoundWrites), then the changed files in page order (h2), then the rest
+              RoundWrites.lockForFiles(chunk.changed.map(_.pageId), Seq(roundId))
+              RoundWrites.lockFiles(chunk.changed.map(_.pageId))
               ImageJdbc.insertIgnore(chunk.fetched)
               updateStored(chunk)
               if (chunk.changed.nonEmpty) ctx.afterCommit(RegionCountCache.invalidateMonumentIds())
-              val listed =
-                DistributionSource.imagesIn((chunk.stored ++ chunk.fetched).map(_.pageId).distinct.sorted, roundId)
+              val listed = withLockedMonumentIds(
+                DistributionSource.imagesIn((chunk.stored ++ chunk.fetched).map(_.pageId).distinct.sorted, roundId))
               // a round that leaves out conflicts of interest leaves them out of its list too
               val conflicts = listed.flatMap(image => CoiMembers.matchOf(c.coi)(image.author).map(image -> _))
               val conflictIds = conflicts.map(_._1.pageId).toSet
@@ -417,6 +426,22 @@ class RoundDistributionHandler @Inject() (
     }
   }
 
+  /** The images with their monument ids as committed now, their rows read in share mode in
+    * page id order (h6): the vote rows built from them carry the copy (`vote.monument_id`), and
+    * a monument change committing after a plain read would otherwise leave the new rows with
+    * the old id. Called after the round's lock (round, then images).
+    */
+  private def withLockedMonumentIds(images: Seq[Image])(implicit session: DBSession): Seq[Image] =
+    if (images.isEmpty) images
+    else {
+      val ids = images.map(_.pageId).distinct.sorted
+      val current = ids.grouped(2000).flatMap { chunk =>
+        sql"SELECT page_id, monument_id FROM images WHERE page_id IN ($chunk) ORDER BY page_id LOCK IN SHARE MODE"
+          .map(rs => rs.long(1) -> rs.stringOpt(2)).list()
+      }.toMap
+      images.map(i => current.get(i.pageId).fold(i)(m => i.copy(monumentId = m)))
+    }
+
   /** Moves aside the round's votes of files deleted on Commons, if the round is open
     * ([[Round.openCond]]): a step may have read a file as a candidate just before it was
     * marked deleted ([[services.imports.DeletedFiles.markDeleted]]), and added it after its
@@ -435,11 +460,14 @@ class RoundDistributionHandler @Inject() (
     *
     * @return whether each is being created (`distributing`)
     */
-  private def lockRounds(ids: Seq[Long])(implicit session: DBSession): Map[Long, Boolean] =
-    sql"SELECT id, distributing FROM round WHERE id IN (${ids.distinct}) ORDER BY id FOR UPDATE"
+  private def lockRounds(ids: Seq[Long])(implicit session: DBSession): Map[Long, Boolean] = {
+    val locked = sql"SELECT id, distributing FROM round WHERE id IN (${ids.distinct.sorted}) ORDER BY id FOR UPDATE"
       .map(rs => rs.long(1) -> rs.boolean(2))
       .list()
       .toMap
+    RoundWrites.recordRounds(ids)
+    locked
+  }
 
   private def continue(st: DistributionState) = StepResult.Continue(Json.toJsObject(st), progress(st))
 

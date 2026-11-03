@@ -149,8 +149,15 @@ object SharedTestDb {
     true
   }
 
+  /** The pool's connections at READ COMMITTED, as production's (`db.default.hikaricp.
+    * transactionIsolation`, W1 of docs/plans/2026-11-03-write-path-simplification.md): the
+    * driver sets it on each new connection.
+    */
+  private[db] def readCommittedUrl(url: String): String =
+    url + (if (url.contains("?")) "&" else "?") + "transactionIsolation=READ-COMMITTED"
+
   private def registerPools(): Unit = {
-    ConnectionPool.singleton(_url, _user, _password)
+    ConnectionPool.singleton(readCommittedUrl(_url), _user, _password)
   }
 
   /** Re-registers the default ScalikeJDBC pool using the shared container's

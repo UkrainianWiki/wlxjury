@@ -272,8 +272,9 @@ class JobScheduler(handlerList: Seq[JobHandler], val settings: JobScheduler.Sett
       Right(JobJdbc.findById(id).get)
     } catch {
       case e: Throwable if JobJdbc.isDuplicateActive(e) =>
-        // a locking read: the caller's transaction may have read before the active job committed
-        Left(job.dedupeKey.flatMap(JobJdbc.lockActiveByDedupeKey).getOrElse(throw e))
+        // a plain read, the latest committed at READ COMMITTED (no lock on the active job's row,
+        // which its running step holds before anything else)
+        Left(job.dedupeKey.flatMap(JobJdbc.activeByDedupeKey(_)).getOrElse(throw e))
     }
   }
 

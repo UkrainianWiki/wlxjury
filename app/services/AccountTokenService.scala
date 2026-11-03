@@ -174,8 +174,9 @@ object AccountTokenService {
   def confirmEmailChange(token: String): Either[Refusal, (String, User)] =
     if (!Format.matches(token)) Left(Malformed)
     else
-      try
-        DB.localTx { implicit session =>
+      try {
+        var confirmed = Option.empty[String] // logged after the commit
+        val result = DB.localTx { implicit session =>
           AccountTokenJdbc.lockByHash(hash(token)) match {
             case None                                                  => refused(Unknown, None)
             case Some(t) if t.purpose != AccountTokenJdbc.EmailChange => refused(WrongPurpose, Some(t))
@@ -190,13 +191,15 @@ object AccountTokenService {
                   User.setEmail(user.getId, link.email, verified = true)
                   // a password link sent to the old address must not set the password any more
                   AccountTokenJdbc.revokeUnused(user.getId, AccountTokenJdbc.SetsPassword :+ AccountTokenJdbc.EmailChange)
-                  logger.info(s"email_change_confirmed tokenId=${link.id} accountId=${user.getId}")
+                  confirmed = Some(s"email_change_confirmed tokenId=${link.id} accountId=${user.getId}")
                   Right(user.email -> User.findById(user.getId)(session).get)
                 }
               }
           }
         }
-      catch {
+        confirmed.foreach(line => logger.info(line))
+        result
+      } catch {
         // another account took the address meanwhile (the unique key)
         case e: SQLIntegrityConstraintViolationException =>
           logger.warn(s"account_token_refused reason=${AddressTaken.reason} error=${e.getClass.getName}")

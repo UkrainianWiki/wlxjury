@@ -50,9 +50,9 @@ object VoteJdbc extends CRUDMapper[Vote] {
       monumentId: Option[String] = None
   )(implicit session: DBSession = AutoSession): Vote = {
     // the vote and its file's row in the round commit together (RoundImageJdbc.addVoted);
-    // the round first, in share mode: the lock order (RoundImageJdbc.lockRounds)
+    // the round first, for update: a structural write (RoundWrites)
     val id = RoundImageJdbc.inTransaction(session) { implicit session =>
-      RoundImageJdbc.lockRounds(Seq(roundId))
+      RoundWrites.lock(Seq(roundId))
       val id = withSQL {
         insert
           .into(VoteJdbc)
@@ -81,14 +81,13 @@ object VoteJdbc extends CRUDMapper[Vote] {
 
   /** Inserts the vote rows, and adds their files to their rounds ([[RoundImageJdbc.addVoted]],
     * as `origin` added them), in one transaction: the caller's, or one of its own. Their
-    * rounds are locked in share mode first ([[RoundImageJdbc.lockRounds]]): round_image's
-    * foreign key would lock them after the votes, out of the lock order, and a change of the
-    * round's criteria (round, then its votes) then deadlocked with a distribution's chunk.
+    * rounds are locked for update first ([[RoundWrites.lock]]): an insert is a structural
+    * write, and round_image's foreign key would otherwise lock them after the votes.
     */
   def batchInsert(selections: Iterable[Vote], origin: RoundImageJdbc.Origin = RoundImageJdbc.Origin.Manual)(implicit
       session: DBSession = AutoSession
   ): Unit = if (selections.nonEmpty) RoundImageJdbc.inTransaction(session) { implicit session =>
-    RoundImageJdbc.lockRounds(selections.map(_.roundId).toSeq)
+    RoundWrites.lock(selections.map(_.roundId).toSeq)
     val column = VoteJdbc.column
     val batchParams: Seq[Seq[Any]] =
       selections.map(i => Seq(i.pageId, i.rate, i.juryId, i.roundId, i.monumentId.orNull)).toSeq
@@ -163,52 +162,40 @@ object VoteJdbc extends CRUDMapper[Vote] {
       .apply()
       .headOption
 
-  def destroy(pageId: Long, juryId: Long, roundId: Long): Unit =
-    updateBy(
-      sqls
-        .eq(s.pageId, pageId)
-        .and
-        .eq(s.juryId, juryId)
-        .and
-        .eq(s.roundId, roundId)
-    ).withAttributes("rate" -> -1)
-
-  /** Rates the juror's selection of the file in the round; the number of selections found
-    * (0 or 1): MariaDB's driver counts the rows matched, not only those changed
-    * (`useAffectedRows` off, its default), so a vote of the stored rate counts too. None if the
-    * juror is stopped on the round (an inactive round_user row, P6), also when the stop races
-    * the vote ([[RoundUser.isStopped]] is checked before, for the stopped round's answer); and
-    * none in a criteria round, whose votes are per criterion
-    * ([[org.intracer.wmua.CriteriaRate.updateRate]]), also when its criteria were added after
-    * the caller read the round: the change locks the round's votes first
-    * ([[RoundCriterion.update]]), and this statement's subquery then reads the committed rows.
+  /** A juror's vote on the file in the round (W1/h4 of
+    * docs/plans/2026-11-03-write-path-simplification.md): the number of votes rated, 0 or 1.
+    * One transaction, retried on a deadlock ([[WriteTx]]): the vote's id by a plain read, then its row
+    * locked by its primary key (so the juror locks the clustered row first, as every delete or
+    * move of it does, not its unique secondary entry first: one row, two indexes, deadlocked);
+    * then, read with a lock, whether the juror is stopped on the round (an inactive round_user
+    * row, P6: also when the stop races the vote) and whether the round has criteria (a criteria
+    * round's votes are per criterion, [[org.intracer.wmua.CriteriaRate.updateRate]]; a change
+    * of its criteria locks the round's votes first, [[RoundCriterion.update]], so a vote waiting
+    * for it reads the committed criteria); then the rate. A juror's vote never locks the round:
+    * it is row-level, not a structural write ([[RoundWrites]]).
     */
-  def rate(pageId: Long, juryId: Long, roundId: Long, rate: Int = 1)(implicit session: DBSession = AutoSession): Int =
-    sql"""UPDATE vote SET rate = $rate
-          WHERE page_id = $pageId AND jury_id = $juryId AND round_id = $roundId
-            AND NOT EXISTS (SELECT 1 FROM round_user ru
-                            WHERE ru.round_id = $roundId AND ru.user_id = $juryId AND ru.active = FALSE)
-            AND NOT EXISTS (SELECT 1 FROM round_criterion rc WHERE rc.round_id = $roundId)"""
-      .update()
-
-  /** Moves the image's votes to another round, also those moved aside (V63): a juror's
-    * vote already in the new round wins. If the new round
-    * is open, the votes of a file deleted on Commons are then moved aside there
-    * ([[Round.settleDeletedFiles]]).
-    *
-    * Lock order: both rounds (share mode), then the file's image row (`FOR UPDATE`, as
-    * [[ImageJdbc.updateMonumentIdIn]] takes it before the file's votes), then the votes, then
-    * round_image: locking the votes first deadlocked with a monument id change, whose
-    * round_image row this adds needs the image's row for its key.
-    */
-  def setRound(pageId: Long, oldRoundId: Long, newRoundId: Long): Unit = {
-    DB.localTx { implicit session =>
-      RoundImageJdbc.lockRounds(Seq(oldRoundId, newRoundId))
-      ImageJdbc.lockFiles(Seq(pageId))
-      moveVotes(newRoundId, oldRoundId, sqls"AND src.page_id = $pageId")
+  def rate(pageId: Long, juryId: Long, roundId: Long, rate: Int = 1)(implicit session: DBSession = AutoSession): Int = {
+    session match {
+      case _: AutoSession =>
+        // the id read on the transaction's own connection, before the locks (a plain read)
+        WriteTx.write(tx => voteId(pageId, juryId, roundId)(tx).fold(0)(id => rateIn(id, juryId, roundId, rate)(tx)))
+      case s => voteId(pageId, juryId, roundId)(s).fold(0)(id => rateIn(id, juryId, roundId, rate)(s)) // the caller's transaction
     }
-    RoundImageCounts.invalidate(oldRoundId, newRoundId)
-    Round.settleDeletedFiles(newRoundId)
+  }
+
+  private def voteId(pageId: Long, juryId: Long, roundId: Long)(implicit session: DBSession): Option[Long] =
+    sql"SELECT id FROM vote WHERE page_id = $pageId AND jury_id = $juryId AND round_id = $roundId".map(_.long(1)).single()
+
+  /** [[rate]] of the vote `id` in the caller's transaction. */
+  private[scalikejdbc] def rateIn(id: Long, juryId: Long, roundId: Long, rate: Int)(implicit session: DBSession): Int = {
+    val locked = sql"SELECT id FROM vote WHERE id = $id AND jury_id = $juryId AND round_id = $roundId FOR UPDATE"
+      .map(_.long(1)).single().isDefined
+    def stopped = sql"""SELECT 1 FROM round_user WHERE round_id = $roundId AND user_id = $juryId AND active = FALSE
+                        LOCK IN SHARE MODE""".map(_ => ()).single().isDefined
+    def criteria = sql"SELECT 1 FROM round_criterion WHERE round_id = $roundId LIMIT 1 LOCK IN SHARE MODE"
+      .map(_ => ()).single().isDefined
+    if (!locked || stopped || criteria) 0
+    else sql"UPDATE vote SET rate = $rate WHERE id = $id".update()
   }
 
   def activeJurors(roundId: Long): Int =
@@ -229,33 +216,7 @@ object VoteJdbc extends CRUDMapper[Vote] {
     where("roundId" -> roundId)
       .distinctCount("juryId")
 
-  /** Removes the image from the round, also its votes moved aside (V63): restoring its file
-    * on Commons must not bring them back. Their criteria rates go with them ([[deleteVotes]]).
-    */
-  def removeImage(pageId: Long, roundId: Long): Unit = {
-    DB.localTx { implicit session =>
-      deleteVotes(sqls"v.page_id = $pageId AND v.round_id = $roundId")
-    }
-    RoundImageCounts.invalidate(roundId)
-  }
-
-  /** Removes the round's unrated votes, also those moved aside (V63), as [[removeImage]]. A
-    * partly rated criteria vote (its rate 0 until every criterion is rated, U5) is kept: it has
-    * a juror's work ([[votedByCriteria]]).
-    */
-  def removeUnrated(roundId: Long): Unit = {
-    DB.localTx { implicit session =>
-      val unrated = sqls"v.rate = 0 AND v.round_id = $roundId"
-      val tables = Seq(sqls"vote", sqls"vote_aside")
-      tables.foreach(lockVotes(_, unrated))
-      val ids = tables.flatMap(t => sql"SELECT v.id FROM $t v WHERE $unrated FOR UPDATE".map(_.long(1)).list())
-      val partial = votedByCriteria(ids)
-      ids.filterNot(partial).grouped(DeleteChunk).foreach(chunk => deleteVotes(sqls"v.id IN ($chunk)"))
-    }
-    RoundImageCounts.invalidate(roundId)
-  }
-
-  private val DeleteChunk = 5000
+  private[scalikejdbc] val DeleteChunk = 5000
 
   /** Those of the votes `ids` with a criterion rated (a rate above 0), read with a shared
     * lock: votes whose rate is 0 but that hold a juror's work, in a criteria round (U5). The
@@ -274,13 +235,15 @@ object VoteJdbc extends CRUDMapper[Vote] {
     * its upgrade, with a juror voting on one of them), then their rates and they are deleted:
     * rates are written only while their vote is locked ([[org.intracer.wmua.CriteriaRate.updateRate]]).
     * Last, their files' rows in their rounds follow what is left ([[RoundImageJdbc.sync]]: a
-    * file with no votes left there is no longer in the round, as before V84).
+    * file with no votes left there is no longer in the round, as before V84). A structural
+    * write: the caller has locked the votes' rounds first ([[RoundWrites]]; checked).
     *
     * @return the votes deleted
     */
   def deleteVotes(where: SQLSyntax)(implicit session: DBSession): Int = {
     val touched = Seq(sqls"vote", sqls"vote_aside").map { table =>
       val pairs = lockPairs(table, where)
+      RoundWrites.requireRounds(pairs.map(_._1))
       // from the votes to their rates by criteria_rate_vote_id_idx: from criteria_rate, the
       // statement would lock (and scan) every rate
       sql"DELETE cr FROM $table v STRAIGHT_JOIN criteria_rate cr ON cr.vote_id = v.id WHERE $where".update()
@@ -303,32 +266,5 @@ object VoteJdbc extends CRUDMapper[Vote] {
     */
   private[scalikejdbc] def lockVotes(table: SQLSyntax, where: SQLSyntax)(implicit session: DBSession): Unit =
     sql"SELECT COUNT(*) FROM $table v WHERE $where FOR UPDATE".map(_.int(1)).single(): Unit
-
-  /** Moves the source round's votes `andWhere` selects (on `src`) to the target round, in
-    * vote and in vote_aside, but those of a juror who has the image in the
-    * target round already: they are dropped, with their criteria rates. The moved votes keep
-    * their ids, so their criteria rates follow them. Then the files' rows in both rounds
-    * follow their votes ([[RoundImageJdbc.sync]]): out of the source round, into the target
-    * one (added `manual`).
-    */
-  private def moveVotes(targetRoundId: Long, sourceRoundId: Long, andWhere: SQLSyntax)(implicit
-      session: DBSession
-  ): Unit = {
-    val pageIds = Seq(sqls"vote", sqls"vote_aside").flatMap { table =>
-      val source = sqls"src.round_id = $sourceRoundId $andWhere"
-      val inTarget = sqls"""JOIN $table tgt
-              ON tgt.round_id = $targetRoundId
-             AND tgt.page_id = src.page_id
-             AND tgt.jury_id = src.jury_id"""
-      val moved = sql"SELECT DISTINCT src.page_id FROM $table src WHERE $source FOR UPDATE".map(_.long(1)).list()
-      sql"""DELETE cr FROM $table src $inTarget STRAIGHT_JOIN criteria_rate cr ON cr.vote_id = src.id
-            WHERE $source""".update()
-      sql"DELETE src FROM $table src $inTarget WHERE $source".update()
-
-      sql"UPDATE $table src SET src.round_id = $targetRoundId WHERE $source".update()
-      moved
-    }.distinct
-    RoundImageJdbc.syncPairs(pageIds.flatMap(p => Seq(sourceRoundId -> p, targetRoundId -> p)))
-  }
 
 }

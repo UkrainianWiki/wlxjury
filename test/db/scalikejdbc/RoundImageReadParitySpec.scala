@@ -119,9 +119,9 @@ class RoundImageReadParitySpec extends Specification with TestDb with BeforeAll 
     DB.localTx(implicit s => DeletedFiles.markDeleted(deleted))
     DB.localTx(implicit s => DeletedFiles.restore(deleted.filter(_ % 2 == 0)))
     // a file moved, one removed, the unrated votes of round 3
-    VoteJdbc.setRound(7L, rounds(0), rounds(1))
-    VoteJdbc.removeImage(11L, rounds(1))
-    VoteJdbc.removeUnrated(rounds(2))
+    TestVoteWrites.setRound(7L, rounds(0), rounds(1))
+    TestVoteWrites.removeImage(11L, rounds(1))
+    TestVoteWrites.removeUnrated(rounds(2))
     rounds
   }
 

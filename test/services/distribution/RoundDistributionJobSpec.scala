@@ -1,5 +1,6 @@
 package services.distribution
 
+import org.intracer.wmua.cmd.InMemoryDistribution._
 import db.scalikejdbc._
 import org.intracer.wmua.cmd.{DistributeImages, SelectTopByRating}
 import org.intracer.wmua.{ContestJury, Image, ImageWithRating, Vote}

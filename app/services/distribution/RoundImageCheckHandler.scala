@@ -1,6 +1,6 @@
 package services.distribution
 
-import db.scalikejdbc.{RegionCountCache, RoundImageCounts, RoundImageJdbc, User}
+import db.scalikejdbc.{RegionCountCache, RoundImageCounts, RoundImageJdbc, RoundWrites, User}
 import play.api.Logging
 import play.api.libs.json._
 import scalikejdbc._
@@ -106,14 +106,17 @@ class RoundImageCheckHandler(windowRows: Int, orphanWindow: Int) extends JobHand
     }
   }
 
-  /** The round's row in share mode, first; then whether its distribution is active, read
-    * with a lock too (the latest, not the snapshot's; a distribution queued meanwhile locks the
-    * round for update first, so it waits for this step). None if the round is gone.
+  /** The round's row for update, first (a structural write, [[RoundWrites]]); then whether
+    * its distribution is active, a plain read at READ COMMITTED (the latest committed: a
+    * distribution is queued, and ends, under the round's lock, so none changes while this step
+    * holds it; no lock on `job`, whose row a running step holds before the round: break 11).
+    * None if the round is gone.
     */
   private def lockRound(roundId: Long)(implicit session: DBSession): Option[Boolean] =
-    sql"SELECT id FROM round WHERE id = $roundId LOCK IN SHARE MODE".map(_.long(1)).single().map { _ =>
-      sql"""SELECT 1 FROM job WHERE active_dedupe_key = ${RoundDistributionHandler.dedupeKey(roundId)}
-            LOCK IN SHARE MODE""".map(_ => ()).single().isDefined
+    sql"SELECT id FROM round WHERE id = $roundId FOR UPDATE".map(_.long(1)).single().map { _ =>
+      RoundWrites.recordRounds(Seq(roundId))
+      sql"""SELECT 1 FROM job WHERE active_dedupe_key = ${RoundDistributionHandler.dedupeKey(roundId)}"""
+        .map(_ => ()).single().isDefined
     }
 
   private def syncStep(job: Job, st: ImageCheckState, ctx: StepContext)(implicit session: DBSession): StepResult =

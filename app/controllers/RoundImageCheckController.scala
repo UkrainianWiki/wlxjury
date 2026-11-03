@@ -46,7 +46,7 @@ class RoundImageCheckController @Inject() (
     val back = Redirect(
       Secured.safeLocalPath(request.body.asFormUrlEncoded.flatMap(_.get("returnTo")).flatMap(_.headOption))
         .getOrElse(fallback))
-    DB.localTx(implicit session => jobs.enqueue(job)) match {
+    db.scalikejdbc.WriteTx.write(implicit session => jobs.enqueue(job)) match {
       case Right(queued) =>
         jobs.started(queued.id)
         back.flashing("success" -> messages("round.images.check.queued", queued.id))

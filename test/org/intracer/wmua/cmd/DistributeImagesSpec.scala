@@ -1,5 +1,6 @@
 package org.intracer.wmua.cmd
 
+import org.intracer.wmua.cmd.InMemoryDistribution._
 import db.ImageRepo
 import db.scalikejdbc.{Round, User}
 import org.intracer.wmua.Image

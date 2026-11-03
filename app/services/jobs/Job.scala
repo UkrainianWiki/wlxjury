@@ -148,12 +148,6 @@ object JobJdbc {
   def activeByDedupeKey(key: String)(implicit session: DBSession = AutoSession): Option[Job] =
     sql"SELECT $columns FROM job WHERE active_dedupe_key = $key".map(extract).single()
 
-  /** The key's active job as committed now, not as the caller's transaction's snapshot has
-    * it (a locking read), locked until the end of that transaction.
-    */
-  def lockActiveByDedupeKey(key: String)(implicit session: DBSession): Option[Job] =
-    sql"SELECT $columns FROM job WHERE active_dedupe_key = $key LOCK IN SHARE MODE".map(extract).single()
-
   /** The latest job of each subject, e.g. of each round of a contest. */
   def latestBySubjects(kind: String, subjectType: String, subjectIds: Seq[Long])(implicit
       session: DBSession = AutoSession

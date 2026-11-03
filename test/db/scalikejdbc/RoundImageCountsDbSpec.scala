@@ -1,5 +1,6 @@
 package db.scalikejdbc
 
+import org.intracer.wmua.cmd.InMemoryDistribution._
 import org.intracer.wmua.cmd.DistributeImages
 import org.intracer.wmua.{ContestJury, Image}
 import org.specs2.mutable.Specification
@@ -72,10 +73,10 @@ class RoundImageCountsDbSpec extends Specification with TestDb with BeforeAll wi
       val (_, round, images, jurors) = setUp(3)
       distributor.distributeImages(round, images, jurors)
       count(round.getId) === 3
-      VoteJdbc.removeImage(images.head.pageId, round.getId)
+      TestVoteWrites.removeImage(images.head.pageId, round.getId)
       count(round.getId) === 2
       VoteJdbc.rate(images(1).pageId, jurors.head.getId, round.getId, 1)
-      VoteJdbc.removeUnrated(round.getId)
+      TestVoteWrites.removeUnrated(round.getId)
       count(round.getId) === 1
     }
 
@@ -85,7 +86,7 @@ class RoundImageCountsDbSpec extends Specification with TestDb with BeforeAll wi
       distributor.distributeImages(round, images, jurors)
       count(round.getId) === 2
       count(other.getId) === 0
-      VoteJdbc.setRound(images.head.pageId, round.getId, other.getId)
+      TestVoteWrites.setRound(images.head.pageId, round.getId, other.getId)
       count(round.getId) === 1
       count(other.getId) === 1
     }
