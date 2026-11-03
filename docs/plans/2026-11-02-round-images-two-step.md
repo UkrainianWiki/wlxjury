@@ -1080,16 +1080,15 @@ followups tree with P1, the robustness batch and the practices), 2026-11-03. No 
   them; the code writes both together. Can come with P3.
 - The requalify reason is a code from a fixed list, not free text: the log line stays ids and
   codes (secure-coding §13), and nothing stores it (§5: "the reason goes to the audit log").
-  **[open: user]** whether requalifications (who, when, the code; a free-text note?) should be
-  stored; today a requalify clears `dq_*`, leaving only the INFO log line. Recommended (the
-  follow-up review): a later append-only `round_image_event` table (round, page, action, code,
-  by, at, prior status), landing before P3 or with CoI overrides; it also lifts the limitation
-  below.
+  Today a requalify clears `dq_*`, leaving only the INFO log line. **Decided (user,
+  2026-11-03), as recommended:** requalifications are recorded in an append-only
+  `round_image_event` table (round, page, action, code, by, at, prior status), written in the
+  action's transaction; its own small batch, landing **before P3**. It also lifts the known
+  limitation below (the prior status). Free text not needed.
 - The round form on an open round sets the flag and refuses the disqualification (W7) rather
-  than stopping the round itself. **[open: user]** whether the form should offer "stop and
-  disqualify" in one step. Recommended: no one-step "stop and
-  disqualify"; optionally a separate "Stop the round" button on the conflicts page with its own
-  confirm.
+  than stopping the round itself. **Decided (user, 2026-11-03), as recommended:** no one-step
+  "stop and disqualify". A separate "Stop the round" button with its own confirm on the
+  conflicts page is optional, and goes with the event-table batch.
 - A file deleted on Commons meanwhile is requalified `in` (review finding 1), not `deleted`
   as §5 first said: the gate only admits rounds that aren't open, which keep deleted files'
   votes until they open.
@@ -1097,7 +1096,7 @@ followups tree with P1, the robustness batch and the practices), 2026-11-03. No 
   `deleted`), then disqualified, comes back `in` with its votes when requalified, not
   `deleted`: without its prior status it can't be told from a file deleted while the round was
   stopped (which keeps its votes). The round's opening moves the votes aside again. Pinned by
-  `CoiRoundSpec`; the planned event table (prior status) fixes it.
+  `CoiRoundSpec`; the event-table batch (prior status, decided 2026-11-03) fixes it.
 - Frozen rounds are refused too (beyond W7's wording): a next round's distribution reads the
   frozen round's votes, and moving them mid-read would make its fill inconsistent.
 - A `dq` row with no votes left (only after a hand edit or the test-only deletes) is kept, so
