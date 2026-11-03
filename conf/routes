@@ -10,6 +10,7 @@ GET         /assets/*file                                                       
 
 GET         /logout                                                                 @controllers.LoginController.logout()
 
++ nocsrf
 POST        /auth                                                                   @controllers.LoginController.auth()
 
 GET         /auth                                                                   @controllers.LoginController.login()
