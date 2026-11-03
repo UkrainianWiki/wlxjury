@@ -106,7 +106,7 @@ variants in one JVM; its latencies are not production's (db §7.7, performance �
 
 **4.1 Guard specs scan the sources.** A rule that can be checked mechanically gets a guard: most
 are in `test/security/` (`testOnly security.*`, secure-coding §21), others are `db.*` and
-`views.*` specs (db §10, [UI](../ui/practices.md) §6). A guard's allowlist is one entry per file
+`views.*` specs (db §10, [UI](../ui/practices.md) §8). A guard's allowlist is one entry per file
 or action with a reason; a hit is fixed or allowlisted for that one file, never silenced by
 widening a pattern (secure-coding header).
 
@@ -254,7 +254,7 @@ visual and two behaviour checks by hand ([UI](../ui/practices.md) §5).
 - **Engines:** Playwright on desktop Chromium, Firefox and WebKit, as parallel jobs on every PR.
   Record each engine's job time first, then decide which engines stay per PR and which move to
   master pushes.
-- **Mobile profiles later,** together with mobile support (UI §7).
+- **Mobile profiles later,** together with mobile support (UI §6.2; mobile is not supported yet).
 - **Sign-in once per role:** a saved storage state per role (root, admin, organizer, juror),
   made by signing in through the form at the start of the run, not per test.
 - **No network:** Commons and image URLs stubbed by route (as `ui-shots.py` does), any other host
