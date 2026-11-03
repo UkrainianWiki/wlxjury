@@ -74,7 +74,7 @@ that fixes it avoids reopening done work, and the entries keep the rest from bei
 **3.2 A stack-aware review** checks each finding against the later tips and the plans before
 flagging it, and flags only what is neither fixed later nor planned.
 
-**3.3 CodeRabbit one PR at a time.** Its reviews come about one per 30–60 minutes and its chat
+**3.3 CodeRabbit one PR at a time.** Its reviews come about one per 45–50 minutes and its chat
 answers are limited per hour, so the orchestrator requests one review, triages it (replies in
 each thread, new entries in the triage document), then requests the next (the user's choice,
 2026-11-03). The tools and their limits: [`scripts/review/`](../../scripts/review/README.md);
@@ -197,7 +197,10 @@ rename it if the release slips to a later month). Releasing:
 2. build with `-Dwlxjury.buildId=26.11` (the ID becomes `26.11-<commit>`, the ZIP
    `wlxjury-26.11.zip`; [deployment.md](../deployment.md), "Build and rehearse");
 3. after the deploy, the changelog heading becomes `## 26.11 (YYYY-MM-DD)` with the deploy date
-   (§7.3), and the next commit sets the next snapshot (`26.12-SNAPSHOT`).
+   (§7.3), and the next commit, on followups and on master, sets the next snapshot:
+   `26.12-SNAPSHOT`, or `26.11.1-SNAPSHOT` if another deploy is planned in the same month. Never
+   leave `26.11-SNAPSHOT` after `26.11` ships: its Debian version `26.11~SNAPSHOT` sorts below
+   the installed `26.11`.
 
 Debian packages get `26.11~SNAPSHOT` for a snapshot (so it sorts before `26.11`) and RPMs the
 version without `-SNAPSHOT` (`build.sbt`). Builds before the scheme are `0.13-…` and keep their

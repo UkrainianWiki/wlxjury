@@ -96,10 +96,10 @@ From V53, this release applies V54, V55, V55.1 and V56–V60. V55.1 rebuilds tab
 
 ## Cutover deployment with wlxjury-deploy
 
-Use this for the cutover release. Upload the reviewed ZIP:
+Use this for the cutover release (release 1, `26.11`; the ZIP built above). Upload the reviewed ZIP:
 
 ```bash
-sudo wlxjury-deploy prepare /srv/releases/wlxjury-0.13.zip --sha256 FULL_LOWERCASE_SHA256
+sudo wlxjury-deploy prepare /srv/releases/wlxjury-26.11.zip --sha256 FULL_LOWERCASE_SHA256
 sudo wlxjury-deploy deploy /opt/wlxjury/releases/PRINTED_RELEASE_NAME --writers-reviewed
 ```
 
