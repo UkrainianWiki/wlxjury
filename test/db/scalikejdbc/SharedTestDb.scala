@@ -84,6 +84,26 @@ object SharedTestDb {
     */
   val Image: String = sys.props.getOrElse("wlxjury.test.mariadb-image", "mariadb:10.6.22")
 
+  /** The test server's version, (major, minor), e.g. (10, 6). */
+  lazy val serverVersion: (Int, Int) = {
+    require(initialized)
+    val version = DB.readOnly { implicit s =>
+      scalikejdbc.SQL("SELECT VERSION()").map(_.string(1)).single.apply().getOrElse("")
+    }
+    version.split("[.-]").take(2).map(_.toInt) match { case Array(major, minor) => (major, minor) }
+  }
+
+  /** Whether the server stores DESC index keys (MariaDB 10.8+; before, DESC is parsed and
+    * ignored): V85 swaps the juror gallery's index only there.
+    */
+  def descendingIndexKeys: Boolean = serverVersion._1 * 1000 + serverVersion._2 >= 10008
+
+  /** vote's index on (jury_id, round_id, rate, monument_id, page_id): V82's name, or V85's with
+    * rate descending.
+    */
+  def voteGalleryIndex: String =
+    if (descendingIndexKeys) "vote_jury_round_ratedesc_mon_page_idx" else "vote_jury_round_rate_mon_page_idx"
+
   private def start(): Boolean = {
     val container = forTests(MariaDBContainer(
       dockerImageName = DockerImageName.parse(Image),

@@ -1,6 +1,8 @@
 # The production server for benchmarks (docs/plans/2026-10-07-prod-like-benchmark.md):
 # Ubuntu 22.04 with the Ubuntu packages of MariaDB 10.6 and OpenJDK 17, production's
 # active /etc/mysql files, and the jury tool started as wlxjury.service starts it.
+# The server after the move to 24.04 (MariaDB 10.11) is Dockerfile.noble; it becomes the
+# default with the move (docs/plans/2026-10-19-mariadb-10.11.md).
 #
 #   docker build -t wlxjury-bench-server bench/server
 #

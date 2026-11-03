@@ -73,7 +73,7 @@ lazy val root =
       Gatling / javaOptions     += "-Dconfig.file=test/resources/application.conf",
       // Forward -Dgatling.* overrides to Gatling JVM
       Gatling / javaOptions     ++= sys.props.toSeq.collect {
-        case (k, v) if k.startsWith("gatling.") => s"-D$k=$v"
+        case (k, v) if k.startsWith("gatling.") || k == "wlxjury.test.mariadb-image" => s"-D$k=$v"
       },
       // gatling-sbt wires GatlingIt/enterprisePackage into the project's
       // packagedArtifacts (gated on `<config> / publishArtifact`), so `sbt dist`
@@ -235,8 +235,9 @@ routesGenerator := InjectedRoutesGenerator
 Test / javaOptions += "-Dconfig.file=test/resources/application.conf"
 Test / javaOptions += "-Djna.nosys=true"
 Test / fork := true
-// Forward -Dintegration, -Ddocker.tests, -Dgenerate.baseline and -Dimport.* (ImportScaleSpec) to the forked test JVM
-Test / javaOptions ++= Seq("integration", "docker.tests", "generate.baseline", "import.scale", "import.latencyMs", "import.pageSize").flatMap { key =>
+// Forward -Dintegration, -Ddocker.tests, -Dgenerate.baseline, -Dimport.* (ImportScaleSpec) and
+// -Dwlxjury.test.mariadb-image (SharedTestDb.Image) to the forked test JVM
+Test / javaOptions ++= Seq("integration", "docker.tests", "generate.baseline", "import.scale", "import.latencyMs", "import.pageSize", "wlxjury.test.mariadb-image").flatMap { key =>
   sys.props.get(key).map(v => s"-D$key=$v")
 }
 

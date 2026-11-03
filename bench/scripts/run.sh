@@ -48,7 +48,7 @@ log() { echo "[run $label] $(date -Iseconds) $*" | tee -a "$out/run.log" >&2; }
 power() { powershell.exe -NoProfile -Command "(Get-CimInstance Win32_Battery).BatteryStatus" | tr -d '\r'; }
 p=$(power)
 if [[ "$p" != "2" ]]; then log "NOT on mains power (BatteryStatus=$p): aborting"; exit 2; fi
-log "on mains power; dist=$dist snapshot=$snap cnf=${cnf:-production} sims=${sims[*]} extra=${extra[*]:-}"
+log "on mains power; image=${BENCH_IMAGE:-wlxjury-bench-server} dist=$dist snapshot=$snap cnf=${cnf:-production} sims=${sims[*]} extra=${extra[*]:-}"
 
 "$B" stop
 # Release previous VM cache before copying a fresh snapshot.

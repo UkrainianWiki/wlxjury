@@ -64,7 +64,7 @@ class RegionCountsSpec extends Specification with BeforeAll with TestDb {
                        FROM vote s WHERE s.jury_id = $juror1 AND s.round_id = $round
                        GROUP BY region ORDER BY NULL"""
         .map(rs => (rs.stringOpt("key"), rs.stringOpt("Extra").getOrElse(""))).list()
-      plan.map(_._1) === Seq(Some("vote_jury_round_rate_mon_page_idx"))
+      plan.map(_._1) === Seq(Some(SharedTestDb.voteGalleryIndex))
       plan.head._2 must contain("Using index")
     }
   }

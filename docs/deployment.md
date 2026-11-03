@@ -74,7 +74,7 @@ sha256sum target/universal/wlxjury-0.13.zip
 
 Use a reviewed build name and the final ZIP hash. A requested build ID is refused if `app`, `conf`, `public`, `project` or `build.sbt` has uncommitted **or untracked** changes (untracked Twirl templates are compiled too), and the short commit is appended unless the name already contains it, e.g. `0.13-reviewed-dbedca565807`. Without `-Dwlxjury.buildId` the ID is version and commit, with `-dirty` for any such change. The rules are in `project/BuildIdentity.scala`, tested by `deployment.BuildIdentitySpec`. Server setup files (`conf/wlxjury`, `conf/apache`, `conf/systemd`) are installed from the checkout and are not in the ZIP. `wlxjury-build.json` is both at the release root and embedded in the app; it contains build, version and the latest numerically ordered migration, including 55.1. Artifact hashes distinguish packages even when version/build names repeat.
 
-Rehearse the **exact ZIP** against a consistent isolated production copy on MariaDB 10.6, including Flyway history. Production MyISAM needs locking or stopped writers; `--single-transaction` alone is insufficient. Disable real email, isolate access and staging cache, and prevent copied jobs from contacting production services. Measure migration, startup, backup, restore and peak space; review V58 orphans, V65 orphans (the count of `category_members` rows whose image or category is gone, which V65 archives into `category_members_orphans` and deletes; the check query is in its header) and V60 job recovery. Test restoring the backup and old release too.
+Rehearse the **exact ZIP** against a consistent isolated production copy on production's MariaDB (10.6 until the move to Ubuntu 24.04's 10.11, `docs/plans/2026-10-19-mariadb-10.11.md`), including Flyway history. Production MyISAM needs locking or stopped writers; `--single-transaction` alone is insufficient. Disable real email, isolate access and staging cache, and prevent copied jobs from contacting production services. Measure migration, startup, backup, restore and peak space; review V58 orphans, V65 orphans (the count of `category_members` rows whose image or category is gone, which V65 archives into `category_members_orphans` and deletes; the check query is in its header) and V60 job recovery. Test restoring the backup and old release too.
 
 From V53, this release applies V54, V55, V55.1 and V56–V60. V55.1 rebuilds tables and changes collation; earlier production-copy measurements were about 2.5 minutes with considerable disk growth before other migration work. Set an outage/timeout budget from rehearsal. Read `docs/plans/2026-10-07-prod-like-benchmark.md` for measured results and limits. Apply the reviewed 256 MiB MariaDB config in maintenance after conversion, restart/recheck MariaDB and the app before reopening. The tool does not change DB server settings used by other hosted applications.
 
@@ -299,6 +299,77 @@ For one account, use "End sessions" instead. To rotate:
    bring back the rotated key. After any restore, check that `runtime.env` holds the current key
    (compare it on the server, e.g. with `sha256sum` of the line, without printing it).
 
+### MariaDB 10.11: V85's gallery index
+
+V85 (`V85__Vote_gallery_index_rate_desc.sql`) stores `vote.rate` descending in the juror
+gallery's index. Only MariaDB 10.8 and later can do that. The plan is
+`docs/plans/2026-10-19-mariadb-10.11.md`.
+
+**On production's 10.6**, every deploy that applies V85 logs this warning:
+`WARN … DB: V85: vote gallery index left ascending (needs MariaDB 10.8+); run its ALTER again after the server move`.
+This is expected. V85 changes nothing on 10.6 and is recorded as applied.
+
+**After the move to 10.11 (Ubuntu 24.04)**, by dump and restore or by in-place upgrade, check the
+index in the app's database:
+
+1. Connect as the release tool does. The database is `WLXJURY_DB` in
+   `/etc/wlxjury-runtime/runtime.env` (`wlxjury` in the example), and `--host` is its
+   `WLXJURY_DB_HOST`:
+
+   ```bash
+   sudo mariadb --defaults-extra-file=/etc/wlxjury-runtime/db-admin.cnf --host=localhost wlxjury
+   ```
+
+2. Run the check:
+
+   ```sql
+   SELECT INDEX_NAME, COLLATION FROM information_schema.STATISTICS
+   WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'vote' AND COLUMN_NAME = 'rate'
+     AND INDEX_NAME IN ('vote_jury_round_rate_mon_page_idx', 'vote_jury_round_ratedesc_mon_page_idx');
+   ```
+
+3. Read the result:
+
+| Result | Meaning | Action |
+|---|---|---|
+| one row: `vote_jury_round_ratedesc_mon_page_idx`, `D` | done | none |
+| one row: `vote_jury_round_rate_mon_page_idx`, `A` | V85 ran on 10.6 | run V85 again (below) |
+| two rows: `…ratedesc…` `D` and `…rate_mon…` `A` | part-way: the old index is still there | run V85 again; it drops the old index |
+| `…ratedesc…` with `A` (with or without a `…rate_mon…` row) | the descending-named index was built before 10.8, e.g. from a dump of a 10.11 database restored on 10.6 | run V85 again; it rebuilds the index descending |
+| no row | neither gallery index exists | stop and investigate; V85 doesn't create one from nothing |
+
+**To run V85 again**, run the script itself in that session. It ships in the release at
+`/opt/wlxjury/current/conf/db/migration/default/V85__Vote_gallery_index_rate_desc.sql`
+(`release_root` in `deployment.json`, then the release's `conf/`):
+
+```bash
+sudo mariadb --defaults-extra-file=/etc/wlxjury-runtime/db-admin.cnf --host=localhost wlxjury \
+  < /opt/wlxjury/current/conf/db/migration/default/V85__Vote_gallery_index_rate_desc.sql
+```
+
+The script reads the state above and runs only the `ALTER` that state needs, then
+`ANALYZE TABLE vote`. Where the index is already done it runs nothing. Running it is therefore
+the same as running that `ALTER` by hand. For the common case, only the old index, the `ALTER` is:
+
+```sql
+ALTER TABLE vote
+  ADD INDEX vote_jury_round_ratedesc_mon_page_idx (jury_id, round_id, rate DESC, monument_id, page_id),
+  DROP INDEX vote_jury_round_rate_mon_page_idx,
+  ALGORITHM = INPLACE, LOCK = NONE;
+ANALYZE TABLE vote;
+```
+
+It runs online and took about 11 s on 3M rows; measure it on the rehearsal copy. Then repeat the
+check. Don't add a row to `flyway_schema_history`.
+
+**The app reminds you.** On a 10.8+ server where a gallery index still has `rate` ascending,
+every start logs:
+`vote's gallery index has rate ascending on a server with descending index keys: run V85's ALTER again`.
+
+**After every restore on 10.11, check again.** A backup taken before the re-run (on 10.6, or on
+10.11 before V85 ran again) brings back the ascending index when restored, whether with
+`wlxjury-release restore` or a manual import. Repeat the check, and run V85 again if needed.
+
 ### One app instance
 
 The app assumes that one instance serves a database at a time. Some state lives in the JVM:
@@ -359,7 +430,7 @@ docker run --rm --network none --mount type=bind,source="$PWD",target=/workspace
 docker run --rm --mount type=bind,source="$PWD/scripts/deployment",target=/s,readonly koalaman/shellcheck:stable -S style /s/wlxjury-release.sh
 ```
 
-Python 3.8 is the oldest supported version. The restore image is self-contained: Ubuntu 22.04's MariaDB 10.6, OpenJDK 17, Python 3, `curl` and `unzip`. Its packaged-release test runs the ZIP from `sbt dist`, checks that it carries no server setup files and that readiness refuses a forwarded request. `test_release_script` runs `wlxjury-release.sh` unmodified against a real MariaDB, with stand-ins only for systemd (a `systemctl` stub that starts and stops the selected release's launcher) and Apache (a fake proxy that honors the maintenance flag). It covers:
+Python 3.8 is the oldest supported version. The restore image is self-contained: Ubuntu 22.04's MariaDB 10.6 (`--build-arg UBUNTU=24.04` for the new server's 10.11), OpenJDK 17, Python 3, `curl` and `unzip`. Its packaged-release test runs the ZIP from `sbt dist`, checks that it carries no server setup files and that readiness refuses a forwarded request. `test_release_script` runs `wlxjury-release.sh` unmodified against a real MariaDB, with stand-ins only for systemd (a `systemctl` stub that starts and stops the selected release's launcher) and Apache (a fake proxy that honors the maintenance flag). It covers:
 - deploying and reopening, including a timer that starts its job during the maintenance checks;
 - a release without migrations: no dump by default (or one with `--backup`), and a `restore` that only switches the release back, keeping later writes, but refuses once a later migration ran;
 - refusals that leave everything unchanged, including an unreachable database endpoint;

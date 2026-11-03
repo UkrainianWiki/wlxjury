@@ -22,7 +22,7 @@ class SchemaBaselineSpec extends Specification {
         skipped("Pass -Dgenerate.baseline=true to regenerate the baseline")
 
       val container = SharedTestDb.forTests(MariaDBContainer(
-        dockerImageName = DockerImageName.parse("mariadb:10.6.22"),
+        dockerImageName = DockerImageName.parse(SharedTestDb.Image),
         dbName = "wlxjury",
         dbUsername = "WLXJURY_DB_USER",
         dbPassword = "WLXJURY_DB_PASSWORD"
