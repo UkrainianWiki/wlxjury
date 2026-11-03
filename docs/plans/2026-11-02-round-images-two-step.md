@@ -1,6 +1,6 @@
 # Round images and two-step rounds
 
-Status: P0 merged (V82, §12); P1 implemented (V84, §13). Written 2026-11-02 from a planning agent's investigation of
+Status: P0 merged (V82, §12); P1 implemented (V84, §13); P1b implemented (no migration, §14). Written 2026-11-02 from a planning agent's investigation of
 `ukwikidev/followups` at b641c78d, the Montage review (`2026-11-02-montage-rounds-parity.md`)
 and the user's answers. References are to files and functions; line numbers drift (B11 has
 changed `RoundList` and `ImageDbNew` since).
@@ -201,7 +201,9 @@ Checked by `RoundImageInvariants.violations(roundId)`; specs assert it empty aft
    repair job archives orphans in `criteria_rate_orphan` (V78's table, reason `orphan`) and
    deletes them.
 8. P1 to P2b (until P3 fills rows before distributing): a row has votes, `in` in `vote`,
-   `deleted`/`dq` in `vote_aside`; a pair with no votes left has no row.
+   `deleted` in `vote_aside`; a pair with no votes left has no row. A `dq` row (P1b, §14) has
+   its votes in `vote_aside`, or none: it is kept whatever its votes, so the file never comes
+   back.
 
 Only pairs of a round and an image that exist count (vote.round_id and vote_aside have no
 foreign keys). A pair with votes in both tables (a file moved into a round that isn't open) is
@@ -330,7 +332,9 @@ not reassigned (as now).
 - "Leave out now" (`RoundConflicts.removeFromRound`) becomes: status `dq`, `dq_code = coi`,
   `dq_detail` = the matched account and role (`CoiMembers.matchOf`), `dq_by`, `dq_at`, votes to
   `vote_aside` (D7). It no longer deletes `vote`, `vote_aside` or `criteria_rate` rows.
-- Until then it keeps deleting votes (D9).
+- Until then it keeps deleting votes (D9). **Done in P1b (§14)**: disqualify and requalify,
+  gated to rounds not open (W7), on the round form and the round's conflicts page
+  (`/admin/rounds/:id/conflicts`, the re-check below).
 - Requalify: manual, admin, with a reason (D8).
 - "Re-check conflicts" on the round (beside `RoundController.coiCounts`): lists `coi` rows whose
   author no longer matches the contest's current conflict set (`CoiMembers.forContest`), with who
@@ -403,6 +407,8 @@ manual reverse rename.
 - Gatling: `GatlingDbSetup.load` fills it through the DAO; bump `FixtureVersion`.
 
 ### P1b: CoI disqualification (§7)
+
+**Implemented (§14).**
 
 **Write-path rules (user, 2026-11-03, W2/W7 of the write-path plan):** disqualify and requalify
 are structural writers (`RoundWrites.lock` first; `RoundConflicts` already locks the round), and
@@ -1039,3 +1045,110 @@ Logs under `target/checks/` of the worktree.
 | Gate | full suite at `ebd21539` (Jest included) | **1762: 1752 passed, 0 failed, 1 error, 9 skipped, 1 pending**; Jest 253/253; 7:47. The error: `LocalImageCacheServiceSpec` "be populated by initRegistry", an `AccessDeniedException` renaming a temp file under `%TEMP%` (Windows; P1 doesn't touch the service or its spec) | `20261103-062738-3256.log` |
 | Rerun | `LocalImageCacheServiceSpec` alone | 78/78 | `20261103-063613-26104.log` |
 | Follow-up nits (list phase's round lock) | `RoundDistributionJobSpec`, `RoundImageLockSpec`, the round-image specs, `RoundFileListSpec` | 72/72 | `20261103-064134-13104.log` |
+
+## 14. P1b results
+
+Branch `ukwikidev/p1b-coi-disqualification` (from `stack/59-db-access-practices` `7f88363c`, the
+followups tree with P1, the robustness batch and the practices), 2026-11-03. No migration: V84's
+`status` and `dq_*` columns are enough; V88 is not taken.
+
+### What changed
+
+| Item | Code |
+|---|---|
+| Disqualify (D7) | `RoundConflicts.disqualify`: one `WriteTx` transaction; the round `FOR UPDATE` first (recorded, `RoundWrites`), the gate read under it; the round's conflict-of-interest files not yet `dq` (`CoiMembers.roundFiles`, now `in`/`deleted` rows only), optionally only those asked for; their votes moved aside with their ids (`ImageJdbc.moveVotesAsideInRound`, today's `moveVotesAside`: `criteria_rate` rows follow by vote id); then the rows `dq` (`RoundImageJdbc.disqualify`: `dq_code = 'coi'`, `dq_detail` = the matched account and role, `dq_by`, `dq_at`), round_image last. A file already `deleted` only changes status. No `vote`, `vote_aside` or `criteria_rate` row is deleted any more (D9 ends) |
+| Requalify (D8) | `RoundConflicts.requalify(roundId, pageIds, reason, by)`: the same gate; the `dq` rows among `pageIds` (read plainly under the round lock); those deleted on Commons (`lockDeleted`, share mode, after the round); the others' votes back with their ids and rates (`ImageJdbc.moveVotesBackInRound`, today's `moveVotesBack` scoped to the round and pages); then `RoundImageJdbc.sync(..., requalify = pages)`: `in`, or `deleted` (votes aside) for a file deleted meanwhile, `dq_*` cleared. The reason is a code (`mistaken_match`, `conflict_ended`), logged, not stored |
+| W7 gating | `RoundConflicts.gate`, under the round's X lock in the action's transaction: refused `Distributing` (being created, or a distribution job of the round queued or running: its dedupe key read plainly), `Frozen` (`freeze_count > 0`: a next round's distribution reads its votes), `Open` (`Round.openCond`), `NotFound`. Juror votes in flight stay row-level and land or change nothing (spec'd) |
+| `addVoted` guard | `ON DUPLICATE KEY UPDATE status = IF(status = 'dq', 'dq', 'in')`, then any `dq` row among the pages refuses the insert (`IllegalStateException`: the caller's transaction rolls back with its votes) |
+| `sync` guard | a `dq` row stays `dq` whatever its votes (with some: invariant 3 reports it; with none: the row is kept, so the file is never distributed again); only the `requalify` set follows its votes; a row leaving `dq` loses its `dq_*` |
+| Restore from Commons | `restoreVotes`, `deletedOrArchived` and `lockRoundsOfArchived` leave out the votes aside of a pair whose row is `dq` (`notDisqualified`): a restored file's disqualified votes stay aside, and an import doesn't lock a round for them |
+| Repair job | its sync keeps `dq` rows (removed 0, statusFixed 0); a new `dqWithVotes` count (invariant 3 for `dq`: reported, not repaired) in the details and the WARN line |
+| Invariants | 8 no longer requires votes of a `dq` row; 3 unchanged |
+| Distribution | unchanged: the fill, previous-round and list anti-join (`notInRound`) already reads any `round_image` row, so "Distribute new files" and a pasted list never re-add a `dq` file (spec'd); next rounds read `in` rows only |
+| Round form | "Leave out conflicts of interest" saved ticked on an existing round: disqualifies on a stopped round (`coi.disqualified`); on an open or frozen round only the flag is set and the flash says to stop it first (`coi.disqualify.open`, `coi.disqualify.frozen`); help and confirm texts say the votes are kept |
+| Conflicts page | `GET /admin/rounds/:id/conflicts` (`RoundConflictsController.page`, `views.round.conflicts`), linked from the round's edit page: the re-check of §7. It lists the files that are conflicts now (offered for disqualifying) and the disqualified ones with code, detail, date and whether they still match ("no longer a conflict" is an ended match). `POST …/conflicts/disqualify` (ticked `pageId`s, only those still conflicts) and `POST …/conflicts/requalify` (`pageId`s and a `reason` code) |
+| Authorization | page: `rolePermission(admin ∪ organizer)`, then the round's contest (`Secured.inContest`); organizers read only (no form, no checkboxes); root; 404 for no round. POSTs: the round's contest's admins and root, CSRF (`csrfField`), no contest switch |
+| Audit | `coi` logger at INFO, after commit: round id, page ids, user ids, roles, the reason code; no names or accounts (the old line had accounts) |
+| Stress harness | `coi_remove` became `coi_disqualify` (disqualify, then requalify; refused while the round is open) |
+
+### Design choices
+
+- No V88. A CHECK on the `dq_code` values, or `status = 'dq'` ⇔ `dq_code IS NOT NULL`, would
+  need a table copy (ADD CONSTRAINT CHECK validates every row) for no reader that relies on
+  them; the code writes both together. Can come with P3.
+- The requalify reason is a code from a fixed list, not free text: the log line stays ids and
+  codes (secure-coding §13), and nothing stores it (§5: "the reason goes to the audit log").
+  **[open: user]** whether a free-text note, stored (e.g. in a later `round_event` table), is
+  wanted.
+- The round form on an open round sets the flag and refuses the disqualification (W7) rather
+  than stopping the round itself. **[open: user]** whether the form should offer "stop and
+  disqualify" in one step.
+- Frozen rounds are refused too (beyond W7's wording): a next round's distribution reads the
+  frozen round's votes, and moving them mid-read would make its fill inconsistent.
+- A `dq` row with no votes left (only after a hand edit or the test-only deletes) is kept, so
+  the file stays out; requalifying it removes the row (P1's invariant 8: no votes, no row) and a
+  later "Distribute new files" may add the file again.
+- Organizers may view the conflicts page (D20); jurors never (it tells which files are out).
+
+### Pre-deploy
+
+Read-only, production, as the admin user:
+```sql
+SELECT status, COUNT(*) FROM round_image GROUP BY status;   -- no 'dq' rows yet: nothing wrote them
+SELECT COUNT(*) FROM round_image WHERE dq_code IS NOT NULL OR dq_by IS NOT NULL;  -- 0
+```
+No migration, no rollback SQL. Rolling back to a release before P1b: its `sync` would turn a
+`dq` row with votes aside into `deleted`, and its restore would bring the votes back on the next
+import of the file; requalify the `dq` files first (the conflicts page), or accept that. A
+behaviour change to announce: "Leave out conflicts of interest" on an open round now only sets
+the flag; stop the round to disqualify.
+
+### Files
+
+New: `app/controllers/RoundConflictsController.scala`, `app/views/round/conflicts.scala.html`,
+`test/controllers/RoundConflictsAuthorizationSpec.scala`,
+`test/db/scalikejdbc/CoiDisqualifyLockSpec.scala`; routes `GET /admin/rounds/:id/conflicts`,
+`POST /admin/rounds/:id/conflicts/disqualify`, `POST /admin/rounds/:id/conflicts/requalify`;
+message keys `coi.*` (en, fr, uk, ru). Changed: `RoundConflicts` (rewritten), `RoundImageJdbc`,
+`ImageJdbc`, `CoiMembers.roundFiles`, `RoundImageInvariants`, `RoundImageCheckHandler`,
+`RoundController.leaveOutConflicts`, `editRound.scala.html`; specs `CoiRoundSpec` (the
+disqualification block replaces "leave out now"), `CoiAuthorizationSpec`, `RoundWritesGuardSpec`,
+`StructuralWritesSpec` (`RoundImageJdbc#disqualify`, requireRounds), `MessagesCompletenessSpec`
+(prefixes `coi.requalify.reason.`, `coi.code.`), `test/stress/WritePathStress.scala`.
+
+### Specs
+
+- `CoiRoundSpec` "disqualifying conflicts of interest": votes and criteria rates kept exactly
+  (ids, rates); rows `dq` with code, detail, by, at; counts; another round untouched; a restore
+  from Commons keeping them aside; a second run finding nothing. Requalify restoring the exact
+  votes, criteria rates and rows (`dq_*` cleared); requalify of a file deleted meanwhile →
+  `deleted`, then its restore → `in`; only the files asked for. W7 refusals (open, being
+  created, frozen, job queued, missing) writing nothing; requalify refused on an open round.
+  "Distribute new files" and a pasted list never re-adding a `dq` file (also once the role is
+  gone), requalify bringing it back. The guard against a vote insert (refused), a sync (kept,
+  invariant 3 reported), a `dq` row with no votes, the repair job (kept, `dqWithVotes` 1).
+  Invariants after each step.
+- `CoiDisqualifyLockSpec` (INNODB_TRX): a disqualify waits for a juror's vote in flight and moves
+  the voted row (the requalify gives back that rate); a vote after it changes nothing; it waits
+  for a distribution chunk holding the round, then disqualifies the chunk's file too; with the
+  chunk's job active it waits, then refuses and writes nothing.
+- `RoundConflictsAuthorizationSpec`: the page for the admin (forms), the organizer (no forms),
+  root; juror, board, another contest's admin 403; missing 404. POSTs by the admin and root 303;
+  juror, organizer, board, another contest's admin (also for this contest's round) 403 with
+  nothing written; missing 404; signed out; an open round refused with the message; no reason,
+  an unknown reason, an empty selection refused; CSRF (missing, forged, then valid) on both.
+- `CoiAuthorizationSpec`: the round form on an open round sets the flag only; on a stopped one
+  it disqualifies (admin, root); CSRF.
+- `RoundWritesGuardSpec`: the new writers refuse without the round lock; a restore leaves `dq`
+  votes aside.
+
+### Checks
+
+Logs under `target/checks/` of the worktree.
+
+| Step | Specs | Result | Log |
+|---|---|---|---|
+| First compile | `Test/compile` | ok after `I18nSupport` on the new controller | `20261103-160445-27664.log` |
+| Affected, first run | `CoiRoundSpec`, `CoiDisqualifyLockSpec`, `RoundWritesGuardSpec`, `RoundConflictsAuthorizationSpec`, `CoiAuthorizationSpec`, `StructuralWritesSpec`, `MessagesCompletenessSpec`, `RoundImageJdbcSpec`, `RoundImageCheckSpec` | 83: 81 passed, 2 failed, both expectations of the new specs (a vote for a `dq` file violates invariant 1 too; a signed-out POST redirects to the login page) | `20261103-161326-24844.log` |
+| Affected, fixed, with the guards and neighbours | the two specs, `db.MigrationSchemaSpec`, `db.VoteRowLockSpec`, `db.MigrationNamingSpec`, `security.*`, `DeletedFilesSpec`, `RoundDistributionJobSpec`, `CriteriaRateSpec`, `RoundImageLockSpec`, `RoundImageReadParitySpec`, `WritePathLockSpec`, `RoundImageCheckAuthorizationSpec`, `MutationAuthorizationSpec`, `CoiMembersSpec`, `RoundRedistributionFiltersSpec` | 212/212 | `20261103-161800-4800.log` |
+| Gate | full suite at `793e5c00` (`Test/compile`, `test`, Jest included) | **1922: 1912 passed, 0 failed, 0 errors, 10 skipped, 1 pending**; Jest 253/253; 11:37 | `20261103-162154-25116.log` |
