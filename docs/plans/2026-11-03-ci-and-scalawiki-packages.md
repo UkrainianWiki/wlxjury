@@ -427,3 +427,22 @@ The two scalawiki diffs (`publishing.diff`, `anonymous-tests.diff`) both change 
   - `TestConfigAnonymousSpec` passed (4 of 4) with dummy `COMMONS_USER` / `COMMONS_PASSWORD` set in the JVM's environment.
   - Earlier, all of `services.imports.*`, `AppendImagesSpec` and `ImagesFromListSpec` passed.
   - Every run used `env -u COMMONS_USER -u COMMONS_PASSWORD -u SCALAWIKI_LOGIN -u SCALAWIKI_PASSWORD`, or the dummy values.
+
+## Validation of PR [60]
+
+- **actionlint 1.7.7** (`rhysd/actionlint:1.7.7`): 0 errors in all four workflows.
+- **Run 1** (`fcced9ac`): Coverage failed in the scalawiki build (Maven Central answered 404 for sbt 1.10.6's launcher POM once, a transient error; CI's scalawiki step passed at the same time). CI failed in `TestConfigAnonymousSpec`, which flagged the job's `env -u COMMONS_USER …` line; fixed in `ce9e6cef` (above). The log step no longer fails when sbt never ran (`3c598fdf`). Deployment tests passed.
+- **Run 2** (`3c598fdf`, 2026-11-03 13:51 UTC), all green:
+  - **Coverage** [run 41648056201](https://github.com/UkrainianWiki/wlxjury/actions/runs/41648056201): **6m48s** job, scalawiki from the cache. `coverage Test/compile` 96 s, `test` 258 s, `coverageReport` 3 s. Scala: 1902 total, 0 failed, 10 skipped, 1 pending; Jest: 20 suites, 253 passed. Artifact `coverage-reports-attempt-1`, about 40 MB unpacked (25 MB Scala reports, 15 MB JUnit XML, 0.4 MB Jest).
+  - **CI** [run 41648056177](https://github.com/UkrainianWiki/wlxjury/actions/runs/41648056177), same commit: 5m23s job, `Test/compile` 63 s, `test` 207 s. So instrumentation costs about **+25% on the suite** (258 s against 207 s), +33 s of compile, and **about 1.5 min on the job**. That is far under the 15 minutes that would have moved coverage off PRs.
+  - **Deployment tests** [run 41648056167](https://github.com/UkrainianWiki/wlxjury/actions/runs/41648056167): both jobs passed; `sbt dist` is unaffected by the packaging guard when coverage is off.
+- **Baseline (run 41648056201):**
+
+  | | Statements | Branches | Lines | Functions |
+  |---|---|---|---|---|
+  | Scala (scoverage) | **89.89%** (16,930 / 18,834) | **85.94%** | | |
+  | JS (Jest, V8) | **96.76%** (1,465 / 1,514) | **91.39%** (446 / 488) | **96.76%** (1,465 / 1,514) | **93.81%** (91 / 97) |
+
+  - Scala by package (statements): `controllers` 90.5% (6,427), `db.scalikejdbc` 93.4%, `services` 88.6%, `services.distribution` 93.1%, `services.imports` 88.9%, `services.jobs` 86.2%, `services.oauth` 91.0%, `org.intracer.wmua.cmd` 77.8%, `modules` 62.9% (Guice wiring and startup), `api` 89.0%.
+  - No generated file is in the report: no `target/` source, no `views.html` or `router` package (the `views` package is the hand-written helpers in `app/views/`).
+  - V8 counts JS statements as lines, so the two JS figures are equal by construction.
