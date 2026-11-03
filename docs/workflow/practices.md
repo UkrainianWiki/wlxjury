@@ -74,6 +74,12 @@ that fixes it avoids reopening done work, and the entries keep the rest from bei
 **3.2 A stack-aware review** checks each finding against the later tips and the plans before
 flagging it, and flags only what is neither fixed later nor planned.
 
+**3.3 CodeRabbit one PR at a time.** Its reviews come about one per 45–50 minutes and its chat
+answers are limited per hour, so the orchestrator requests one review, triages it (replies in
+each thread, new entries in the triage document), then requests the next (the user's choice,
+2026-11-03). The tools and their limits: [`scripts/review/`](../../scripts/review/README.md);
+their state files are rebuilt from GitHub, so nothing is lost with a session.
+
 ## 4. Worktrees, the sbt lock and the environment
 
 **4.1 One worktree per batch.** `git worktree add C:/scala/wlxjury-<name> -b ukwikidev/<name> <base>`.
@@ -96,6 +102,10 @@ that failed halfway is held forever or released for someone else's run.
 
 **4.4 Windows.** sbt runs from Git Bash with the direct launcher and UTF-8 (CLAUDE.md "Agent
 efficiency"); PowerShell 5.1 splits `-Dfile.encoding=UTF-8` and drops quotes of `set` arguments.
+
+**4.5 gh.** The GitHub CLI is `/c/Users/ilya/tools/gh/bin/gh.exe` on the orchestrator's machine
+(not on `PATH`); scripts take it from `GH` or `--gh`. Agents use it to read (PR lists, checks,
+logs) unless the task says to write.
 
 ## 5. Commits
 
@@ -136,12 +146,21 @@ exist (`git ls-remote origin
 refs/heads/stack/NN-…`), then `git push origin <sha>:refs/heads/stack/NN-<theme>`. The PR body
 ends its "Stacked PR" section with "Based on #<prev>; last in the series."; when the next one
 opens, that line of the previous PR becomes "next: #<new>" and nothing else in its body changes.
+Only the orchestrator (or the user) edits a PR body, including another agent's PR: an agent
+that needs a change there asks for it. *Why:* two writers of one body overwrite each other, and
+the stack's links must stay consistent.
 
-**6.4 A later commit goes to both.** When the stack tip and a followups branch have the same
-tree, a new commit is applied to both (a mirror branch from followups, e.g.
-`ukwikidev/followups-ci`, cherry-picked with `-x` or re-applied) and the trees are compared again.
+**6.4 A later commit goes to both, and the trees stay equal.** When the stack tip and a
+followups branch have the same tree, a new commit on the stack is mirrored on a followups branch
+with the same tree: `git commit-tree <stack tip>^{tree} -p <followups tip>` (or a cherry-pick
+with `-x`), then `git diff --stat <stack tip> <mirror>` must be empty. *Example:*
+`ukwikidev/followups-ci` for PR 55, `ukwikidev/followups-refresh` for PR 67 (#250).
 
-**6.5 CI must be green** on the stack PR before the next batch builds on it (testing §8.3).
+**6.5 Restack by merge, never by force.** When a lower stack PR changes (a review fix), the
+branches above it take the change by a merge commit (or a new commit), never a rebase or a force
+push of a pushed branch: reviewers' threads and the PR series' recorded tips stay valid.
+
+**6.6 CI must be green** on the stack PR before the next batch builds on it (testing §8.3).
 
 ## 7. Releases, hotfixes and the changelog
 
@@ -156,11 +175,37 @@ the deployed commit, the smallest fix, its own runbook and data script, deployed
 goes there; the hotfix record moves to `docs/history/` and is deleted when a release replaces it.
 *Why:* production can't take the untested distance between its commit and followups for one fix.
 
-**7.3 The changelog** (`CHANGELOG.md`): user-visible changes per release; "Unreleased (developed,
-not yet deployed)" first, then deployed releases dated from production's
-`flyway_schema_history.installed_on` (or the deploy record for a release without migrations).
-A batch adds its line under Unreleased in the same PR; a deploy moves the block under "Deployed"
-with its date. PR numbers are the stack's.
+**7.3 The changelog** (`CHANGELOG.md`) is a **development changelog** (the user, 2026-11-03):
+each release has **Features** (what organizers and jurors notice) and **Development** (the
+important engineering changes: frameworks, database and migrations, tests and CI, deployment
+tooling). It leaves out unmerged work, hosting and server details (hosts, server paths,
+accounts, infrastructure), and trivial refactors. "Unreleased (developed, not yet deployed)"
+comes first. Deployed releases are dated from their migrations (production's
+`flyway_schema_history.installed_on`, the first migration a deploy applied; a change without a
+migration is "deployed by" the next deploy that contained it, or dated from a deploy record);
+earlier releases by their development period (first to last commit) or their git tag. A batch
+adds its line under Unreleased in the same PR; a deploy moves the block under its release heading
+(§7.4) with its date. PR numbers are the stack's. *Why:* the changelog shows how the project
+developed, without what changes with the hosting or what no reader needs.
+
+**7.4 Calendar versions** (the user, 2026-11-03). A release is named `YY.MM` for the month it
+ships (`26.11`), with `.N` for an extra deploy in the same month (`26.11.1`, `26.11.2`). Between
+releases `build.sbt` carries the next release as a snapshot (`version := "26.11-SNAPSHOT"`;
+rename it if the release slips to a later month). Releasing:
+1. the release commit sets `version := "26.11"` (on followups, or on a release branch from the
+   tested commit, as for release 1 from `d8054737`);
+2. build with `-Dwlxjury.buildId=26.11` (the ID becomes `26.11-<commit>`, the ZIP
+   `wlxjury-26.11.zip`; [deployment.md](../deployment.md), "Build and rehearse");
+3. after the deploy, the changelog heading becomes `## 26.11 (YYYY-MM-DD)` with the deploy date
+   (§7.3), and the next commit, on followups and on master, sets the next snapshot:
+   `26.12-SNAPSHOT`, or `26.11.1-SNAPSHOT` if another deploy is planned in the same month. Never
+   leave `26.11-SNAPSHOT` after `26.11` ships: its Debian version `26.11~SNAPSHOT` sorts below
+   the installed `26.11`.
+
+Debian packages get `26.11~SNAPSHOT` for a snapshot (so it sorts before `26.11`) and RPMs the
+version without `-SNAPSHOT` (`build.sbt`). Builds before the scheme are `0.13-…` and keep their
+names; `26.11` sorts after `0.13`. *Why:* the version says when a deployed build shipped. *Guard:* `deployment.BuildIdentitySpec` checks the version's form in the packaged
+manifest.
 
 ## 8. Keeping the practices docs current
 
@@ -179,8 +224,10 @@ these yet" list (db §11) or the triage, not silently into the rule's wording.
 | 4.2 one sbt JVM at a time | the lock directory (by convention) | enforced by convention only |
 | 4.3 no credentials in CI | `TestConfigAnonymousSpec` (workflows) | enforced |
 | 5.3 trailers | review | planned: none |
-| 6.2 stack tip equals its followups tree | `git diff --stat` by the orchestrator | manual check |
-| 6.5 green CI on PRs | `ci.yml` on every PR | runs on every PR; branch protection requiring `CI / sbt test (mariadb:10.6.22)` on `master` is planned (CI plan, U8) |
+| 6.2, 6.4 stack tip equals its followups tree | `git diff --stat` by the orchestrator | manual check |
+| 6.5 restack by merge, no force | review; the series' recorded tips | by convention only |
+| 6.6 green CI on PRs | `ci.yml` on every PR | runs on every PR; branch protection requiring `CI / sbt test (mariadb:10.6.22)` on `master` is planned (CI plan, U8) |
 | 7.1 pre-deploy checks | roadmap list, done by the user | manual |
 | 7.3 changelog line per batch | review | planned |
+| 7.4 calendar version form | `deployment.BuildIdentitySpec` (the packaged manifest's version) | enforced |
 | 8.1 practices updated with the batch | the reviewer (testing checklist's last line) | review only |

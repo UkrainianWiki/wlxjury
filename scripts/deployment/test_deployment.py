@@ -53,10 +53,10 @@ class Fixture(unittest.TestCase):
     def archive(self, entries=None):
         path = self.base / 'release.zip'
         if entries is None:
-            entries = {'wlxjury-0.13/bin/wlxjury': '#!/bin/sh\n',
-                       'wlxjury-0.13/lib/app.jar': 'jar',
-                       'wlxjury-0.13/conf/application.conf': 'unmodified defaults',
-                       'wlxjury-0.13/wlxjury-build.json': json.dumps({'build': '0.13-v60', 'schemaVersion': '60'})}
+            entries = {'wlxjury-26.11/bin/wlxjury': '#!/bin/sh\n',
+                       'wlxjury-26.11/lib/app.jar': 'jar',
+                       'wlxjury-26.11/conf/application.conf': 'unmodified defaults',
+                       'wlxjury-26.11/wlxjury-build.json': json.dumps({'build': '26.11-v60', 'schemaVersion': '60'})}
         with zipfile.ZipFile(str(path), 'w') as bundle:
             for key, value in entries.items():
                 bundle.writestr(key, value)
@@ -114,7 +114,7 @@ class ArtifactTest(Fixture):
         archive = self.archive()
         result = self.tool.prepare(archive, deploy.digest(archive))
         self.assertTrue((result / 'bin' / 'wlxjury').is_file())
-        self.assertFalse((result / 'wlxjury-0.13').exists())
+        self.assertFalse((result / 'wlxjury-26.11').exists())
         self.assertEqual((result / 'conf' / 'application.conf').read_text(), 'unmodified defaults')
         self.assertEqual(self.tool.identity(result)['schemaVersion'], '60')
         with self.assertRaises(deploy.DeploymentError):
