@@ -69,7 +69,7 @@ cookie value is never written into HTML as given (secure-coding §6).
 
 **3.2 Colours are variables.** Bootstrap 5.3's `--bs-*` and the app's own `--wlx-*` in
 `public/stylesheets/theme.css` (`--wlx-image-bg`, `--wlx-selected`/`--wlx-rejected`,
-`--wlx-current-bg`, …), per mode; `main.css` has no hex colour, templates no inline colour. Text
+`--wlx-nav-active-bg`, …), per mode; `main.css` has no hex colour, templates no inline colour. Text
 on the navbar's vote tabs has at least 4.5:1 contrast in both modes. In light mode photos sit on a
 neutral grey, not white. *Why:* one place per colour and mode; photos are judged without glare.
 
@@ -124,13 +124,13 @@ Commons). The automated browser layer that will take these over is planned (test
 
 ## 6. Supported browsers
 
-**6.1 Desktop:** the current and previous major versions of Chromium-based browsers (Chrome,
-Edge), Firefox and Safari (WebKit). A change is checked in at least Chromium and Firefox by hand
-until the browser tests run all three engines (testing §10).
+**6.1 Desktop** (proposed, awaiting the user): the current and previous major versions of
+Chromium-based browsers (Chrome, Edge), Firefox and Safari (WebKit); until the browser tests run
+all three engines (testing §10), a change is checked by hand in at least Chromium and Firefox.
 
 **6.2 Mobile: not supported yet.** Pages render on phones but are not designed or tested for
-them. Mobile support is a planned item (roadmap), and the browser tests' mobile profiles come with
-it. Write "not supported yet", never "broken", in issues and docs.
+them. Mobile support is queued in the roadmap ("Mobile support (not supported yet)"), and the
+browser tests' mobile profiles come with it. Write "not supported yet", never "broken", in issues and docs.
 
 ## 7. The vendored gallery
 
@@ -138,8 +138,8 @@ it. Write "not supported yet", never "broken", in issues and docs.
 patched (`wlxjury:` comments: escaping of titles and attributes, `.on("load")` for jQuery 3,
 failed-thumbnail and deleted-file marks, the theme lookup); `jquery.hotkeys.js` and `jquery.raty.js`
 are vendored too. Outside Jest coverage; `gallery-init.test.js` and `unitegallery-alt.test.js`
-(a tile's alt text escaped) touch them. A change to a vendored file is marked `wlxjury:` with its reason. The patch inventory,
-targeted tests and the keep-or-replace decision are queued
+(a tile's alt text escaped) touch them. A change to a vendored file is marked `wlxjury:` with
+its reason. The patch inventory, targeted tests and the keep-or-replace decision are queued
 ([roadmap, "the patched gallery"](../plans/2026-11-02-roadmap.md#queued-user-2026-11-03-the-patched-gallery);
 [dependencies](../dependencies/practices.md) §7).
 
@@ -158,7 +158,7 @@ targeted tests and the keep-or-replace decision are queued
 | 4.3 keys vote by path | `views.LargeViewControllerSpec`, `large-view-keys.test.js` | enforced |
 | 4.1 accessible names | review | planned: with the browser tests (an accessibility scan per page) |
 | 5 zero CSP violations and console errors | `ui-shots.py` prints console messages | planned as a failing check in the browser tests |
-| 6.1 three engines | — | planned (testing §10) |
+| 6.1 three engines | — | planned (testing §10); the browser list itself is proposed, awaiting the user |
 
 ## 9. Where the code doesn't follow these yet (for triage)
 
@@ -166,4 +166,5 @@ targeted tests and the keep-or-replace decision are queued
   `.btn-success[data-vote-url]` / `.btn-danger[data-vote-url]`, so a restyled button breaks the
   check; a `data-vote` value would not.
 - **U2 (2.1):** `style-src 'unsafe-inline'` stays (secure-coding §5 exceptions, P3); inline `style`
-  attributes remain in some large-view templates (theme-modes Phase 4, gradual).
+  attributes remain in `contestFiles`, `gallery`, `pageLinks`, `round/edit/imageFiltering` and
+  `snippets/jobStatus` (theme-modes Phase 4, gradual).

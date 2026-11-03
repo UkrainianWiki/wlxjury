@@ -27,7 +27,8 @@ images, the sbt-scoverage choice); `build.sbt`, `project/plugins.sbt`,
 **1.1 At least two weeks old.** A new dependency or a new version is one released at least 14 days
 before it is merged: a library, a plugin, a webjar, an npm package, an action or an image. Check the
 release date on the registry (Maven Central, npm, the action's tag, the image's tag), not the
-date it was announced. A security fix that can't wait is the exception, named in the PR. *Why:*
+date it was announced. Proposed, awaiting the user: a security fix that can't wait is an
+exception, named in the PR. *Why:*
 a compromised or broken release is usually found and pulled within days; waiting costs little.
 
 **1.2 Compatible with the build, checked at the source.** Check the version against the build's

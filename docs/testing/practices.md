@@ -25,6 +25,7 @@ theme-modes invariants in `98a8a79e:docs/plans/2026-10-31-theme-modes-and-design
 9. [Coverage](#9-coverage)
 10. [Browser tests (planned)](#10-browser-tests-planned)
 11. [Guards](#11-guards)
+12. [Where the code doesn't follow these yet (for triage)](#12-where-the-code-doesnt-follow-these-yet-for-triage)
 
 ## 1. Layers
 
@@ -110,8 +111,9 @@ are in `test/security/` (`testOnly security.*`, secure-coding §21), others are 
 or action with a reason; a hit is fixed or allowlisted for that one file, never silenced by
 widening a pattern (secure-coding header).
 
-**4.2 A guard must not pass vacuously.** Each guard has a self-test that its scan finds the thing
-it guards: a known good match in the real sources, and a bad example it flags. *Examples:*
+**4.2 A guard must not pass vacuously** (partly enforced). Each guard needs a self-test that its
+scan finds the thing it guards: a known good match in the real sources, and a bad example it
+flags. Several guards don't have one yet (§12, T8). *Examples:*
 `RouteAuthSpec` "be classified by the scan as built (it is not vacuous)", `LogHygieneSpec` "be found
 by the scan", `VoteRowLockSpec` (sees `VoteJdbc.rateIn`'s lock by id), `TestConfigAnonymousSpec`
 (`env -u NAME` allowed, `-u NAME=x` flagged). *Why:* a scan whose pattern no longer matches
@@ -149,8 +151,10 @@ access"). Details in CLAUDE.md "Testing".
 `AppendImagesSpec` "get international images", `ImagesFromListSpec`,
 `LocalImageCacheServiceIntegrationSpec` (CI weekly, `integration.yml`, anonymous);
 `-Ddocker.tests=true`: `LocalImageCacheServiceDockerSpec` (50 downloads); `-Dimport.scale=true`:
-`ImportScaleSpec`; the Gatling stress flags (performance §1.3). `build.sbt` forwards exactly these
-keys to the forked JVM. Everything else uses fakes: `FakeCommonsSource`, `FakeWikimedia`,
+`ImportScaleSpec`. `build.sbt` forwards these keys to the forked test JVM, with
+`generate.baseline`, `import.latencyMs`, `import.pageSize` and `wlxjury.test.mariadb-image`; the
+Gatling flags (`gatling.*`, the stress flags of performance §1.3) go through
+`Gatling / javaOptions`. Everything else uses fakes: `FakeCommonsSource`, `FakeWikimedia`,
 `FakeMonumentListSource`, mock servers. *Why:* no network flakiness by default, and no load on
 Wikimedia from every run.
 
@@ -186,7 +190,7 @@ built in a new way, needs a pattern or an entry there. *Why:* a missing key show
 English on one language's pages. UI side: [UI](../ui/practices.md) §1.
 
 **6.5 Errors by key.** A spec of an error page checks the message key's text and that request or
-exception text is absent (`LoginControllerSpec`, `ThemeViewSpec`; secure-coding §12).
+exception text is absent (`ErrorHandlerSpec`, `security.ErrorTextSpec`; secure-coding §12).
 
 ## 7. Flaky tests
 
@@ -211,17 +215,19 @@ container left by a killed run is removed by Ryuk.
 ## 8. Runtime budget and CI
 
 **8.1 Affected specs first.** Compile, then run the specs of the change (with its negative cases)
-through `python scripts/agent-check.py -- …` from Git Bash (CLAUDE.md "Agent efficiency"). The
-full suite runs once at a release point or a merge into the integration branch; after a failure,
-fix and rerun the affected specs before another full run. No tests for documentation-only changes.
+through `python scripts/agent-check.py -- …` from Git Bash (CLAUDE.md "Agent efficiency").
+Locally, the full suite runs once at a release boundary; after a failure, fix and rerun the
+affected specs before another full run. CI runs the full suite on every PR (§8.3). No local tests
+for documentation-only changes.
 
 **8.2 One sbt JVM at a time** across worktrees and agents: the shared lock
 ([workflow](../workflow/practices.md) §4).
 
 **8.3 CI on every PR.** `ci.yml`: the full sbt suite and Jest on MariaDB 10.6.22 (10.11.14 on
 master pushes and weekly), about 5½ minutes; `deployment.yml`: the Python tests and the release
-tests; `coverage.yml`: the same suite instrumented (§9); `integration.yml`: the live group weekly. The check to require on `master` is
-`CI / sbt test (mariadb:10.6.22)` (CI plan, U8); coverage is never required.
+tests; `coverage.yml`: the same suite instrumented (§9); `integration.yml`: the live group
+weekly. The check to require on `master` is `CI / sbt test (mariadb:10.6.22)` (CI plan, U8);
+coverage is never required.
 
 **8.4 Read results by totals and exit code.** A failure-path test may log `[error]`; the totals and
 the process's exit code decide. Full logs stay under `target/checks/`.
@@ -273,13 +279,28 @@ visual and two behaviour checks by hand ([UI](../ui/practices.md) §5).
 | 2.4 the pool belongs to Play's app | `ConnectionPoolConfigSpec` | enforced |
 | 3.1 lock specs fail without the lock | each lock spec's own "without the lock" check (db §7.6) | enforced per spec |
 | 3.2 `round_image` invariants | `RoundImageInvariants` in the write specs | enforced |
-| 4.2 guards not vacuous | a self-test in each guard spec | enforced (one per guard) |
+| 4.2 guards not vacuous | a self-test in `RouteAuthSpec`, `LogHygieneSpec`, `RoleValuesSpec`, `VoteRowLockSpec`, `TestConfigAnonymousSpec`; `StructuralWritesSpec` checks its list for stale entries | partly enforced: not in `RawHtmlSinksSpec`, `RawSqlSpec`, `ErrorTextSpec`, `ExportsSpec` (§12, T8) |
 | 4.4 production-like chains | `FlywayUpgradeSpec`, `ConvertToInnoDbMigrationSpec` | enforced |
 | 5.1 anonymous Wikimedia, no credentials in workflows | `TestConfigAnonymousSpec`, `AnonymousBotsSpec` | enforced |
 | 5.3 live specs off by default | `skipAllUnless` / `skipped` in each live spec | enforced per spec |
-| 6.1 no CSS-class assertions | review | planned: a scan of `test/` and `javascript-test/` for class selectors, with an allowlist (`is-invalid`, `active`) |
+| 6.1 no CSS-class assertions | review | planned: a scan of `test/` and `javascript-test/` for class selectors, with an allowlist of classes that are the behaviour (`is-invalid`, `active`; Jest's `show`, `collapsed`, `tomselected`, `loading`) |
 | 6.2 no assertion on a missing element | review | planned with the browser tests (a helper that requires exactly one match) |
 | 6.4 messages in all four files | `views.MessagesCompletenessSpec` | enforced |
 | 9 coverage | `coverage.yml` (report only) | enforced as a report; no minimum (planned after a stable baseline) |
 | 10 browser tests | — | planned (roadmap) |
 | 7.2 no wall-clock waits in specs | review | planned |
+
+## 12. Where the code doesn't follow these yet (for triage)
+
+Ids continue the dependencies doc's T1–T4.
+
+- **T5 (6.1):** CSS-class selectors in specs: `GalleryByRateViewSpec` (`.visually-hidden`,
+  `.wlx-approvals`, `.bi-check-lg`, `.wlx-byrate-stars`), `LargeViewSideSpec` (`.large-side`,
+  `.large-nav`, `.wlx-vote-unrated`).
+- **T6 (6.2):** absence assertions that pass when the page changed:
+  `doc.select(".wlx-approvals").size === 0` (`GalleryByRateViewSpec`); `ThemeViewSpec`'s
+  `if (…) page must not(contain(value))`.
+- **T7 (7.2):** `Thread.sleep` in `JobSchedulerSpec`, `LocalImageCacheServiceSpec`,
+  `ConvertToInnoDbMigrationSpec` and `CommonsFileCheckSpec`.
+- **T8 (4.2):** `RawHtmlSinksSpec`, `RawSqlSpec`, `ErrorTextSpec` and `ExportsSpec` have no
+  self-test that their scan still matches anything.

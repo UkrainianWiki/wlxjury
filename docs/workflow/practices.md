@@ -130,7 +130,9 @@ original authors and dates (§5.3). The tip's tree equals the followups commit i
 (`git diff --stat` empty), and the body says which (`Original history`). *Why:* 844 commits
 reviewed as 54 single-theme PRs (PR series).
 
-**6.3 Push without force.** Check that the branch doesn't exist (`git ls-remote origin
+**6.3 Who pushes, and without force.** The orchestrator pushes stack branches and opens the PRs;
+an agent does so only when the user asks for it in that task. Check that the branch doesn't
+exist (`git ls-remote origin
 refs/heads/stack/NN-…`), then `git push origin <sha>:refs/heads/stack/NN-<theme>`. The PR body
 ends its "Stacked PR" section with "Based on #<prev>; last in the series."; when the next one
 opens, that line of the previous PR becomes "next: #<new>" and nothing else in its body changes.

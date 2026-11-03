@@ -13,7 +13,8 @@ secure-coding §13, §18, §20; db practices §1.6 (R227-1); `Secured.denialLogL
 
 Production today: one VPS shared with Apache/WordPress; Apache proxies to Play on
 `127.0.0.1:9000` (`conf/apache/0002-wlxjury.conf`; to be confirmed on the server, §5.3); one
-`wlxjury.service` running a versioned ZIP release; MariaDB 10.6 on the same host (10.11 after the move to Ubuntu 24.04, [`2026-10-19-mariadb-10.11.md`](../plans/2026-10-19-mariadb-10.11.md)).
+`wlxjury.service` running a versioned ZIP release; MariaDB 10.6 on the same host (10.11 after
+the move to Ubuntu 24.04, [`2026-10-19-mariadb-10.11.md`](../plans/2026-10-19-mariadb-10.11.md)).
 
 ## Contents
 
@@ -40,8 +41,10 @@ server error show a short reference on the page or in the JSON (`{error, referen
 `ref=` is in the log line. Users never see the exception (secure-coding §12).
 
 **1.3 Named loggers by concern.** `security.authz` (denials, WARN), `security.account`
-(invitations, links, OAuth: `oauth_*`), `security.auth` (sign-in failures, e.g.
-`oauth_choose_proof_failed … ip=`), `security.roles`, `security.password`; `coi` (conflict-of-interest
+(invitations, links, OAuth: `oauth_*`), `security.auth` (today one line:
+`oauth_choose_proof_failed accountId=… proof=password ip=…`, a wrong password in the OAuth
+account chooser, `OAuthChooserController`; the password sign-in form, `LoginController`, logs no
+failure line: OP4), `security.roles`, `security.password`; `coi` (conflict-of-interest
 removals, the only record of them, INFO); `readiness`; `services.ApiTokenService` (refused tokens by
 prefix). A new class of security event gets a `security.*` logger and a level the production
 logback writes.
@@ -135,10 +138,11 @@ monitoring yet.
 once a minute (`ExitOnOutOfMemoryError`, `Restart=on-failure`); cancel it in SQL (performance
 §4.2).
 
-**5.3 Sign-in throttling is fail2ban's** (user decision, S4): the filter matches the
-`security.auth` sign-in failure lines by `ip=`. It is correct only while Apache proxies to Play on
-`127.0.0.1`, because Play trusts `X-Forwarded-For` only from loopback
-([integrations](../integrations/practices.md) §3.2). Planned with the infra plan (postponed).
+**5.3 Sign-in throttling is to be fail2ban's** (user decision, S4), planned with the infra plan
+(postponed). It needs a `security.auth` failure line with `ip=` for the password form, which
+doesn't exist yet (OP4; only the OAuth chooser's `oauth_choose_proof_failed` has one). Its
+`ip=` is the client's only while Apache proxies to Play on `127.0.0.1`, because Play trusts
+`X-Forwarded-For` only from loopback ([integrations](../integrations/practices.md) §3.2).
 
 **5.4 Watch after a release:** RSS after adding a library with native buffers (performance §4.7),
 heap after GC, and the error rate in the first hour.
@@ -146,7 +150,8 @@ heap after GC, and the error rate in the first hour.
 ## 6. Runtime limits
 
 The JVM runs with `-Xmx1g -XX:MaxDirectMemorySize=128m -XX:+ExitOnOutOfMemoryError` and
-`MALLOC_ARENA_MAX=2` (`/etc/default/wlxjury`); pools, dispatchers and job workers have the budget
+`MALLOC_ARENA_MAX=2` (`/etc/default/wlxjury`); MariaDB has a 128 MiB buffer pool, 256 MiB
+recommended (`bench/cnf/recommended-60-wlxjury.cnf`, performance §4.6); pools, dispatchers and job workers have the budget
 of performance §4.5 and db §5.6; per-request limits (bcrypt, API tokens, the image proxy) are
 secure-coding §18. A new pool, worker count or limit is checked against those budgets.
 
@@ -161,7 +166,7 @@ secure-coding §18. A new pool, worker count or limit is checked against those b
 | 2.1 readiness: local only, schema and READ COMMITTED | `ReadinessControllerSpec`, `ReadinessDatabaseSpec` | enforced |
 | 3.3 restore path | `test_database_restore`, `test_release_script` (`deployment.yml`) | enforced on every PR |
 | 4.4 production settings | `ProductionConfigSpec`; G14 `ProductionConfigParitySpec` for the infra template | enforced; G14 planned |
-| 5.3 fail2ban on sign-in failures | infra plan (S4) | planned (postponed) |
+| 5.3 fail2ban on sign-in failures | infra plan (S4); the password form's failure line (OP4) | planned (postponed) |
 | 5.1 uptime monitoring | — | planned: not decided |
 
 ## 8. Where the setup doesn't follow these yet (for triage)
@@ -171,3 +176,6 @@ secure-coding §18. A new pool, worker count or limit is checked against those b
   pre-deploy list asks for `security.account` at INFO. The infra template also lacks `coi`.
 - **OP2 (1.5):** whole exceptions with driver text are logged (db §11 V2).
 - **OP3 (5.1):** no external monitoring or alerting; a stopped service is noticed by users.
+- **OP4 (1.3, 5.3):** the password sign-in form (`LoginController`) logs no failure line: a
+  wrong password only re-renders the form with `invalid.user.or.password`. fail2ban (S4) needs a
+  `security.auth` line with the client's `ip=` (and the account id, if any) there first.

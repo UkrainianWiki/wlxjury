@@ -44,8 +44,8 @@ For every change with tests, and every change that should have them. Each line p
 ## Runs and coverage
 
 - [ ] No sleep-based waits or wall-clock timing; clocks injected (§7.2).
-- [ ] The affected specs ran (and their results are in the PR); the full suite only at a release
-  point or merge (§8.1).
+- [ ] The affected specs ran (and their results are in the PR); a local full suite only at a release
+  boundary, CI's on every PR (§8.1).
 - [ ] The coverage report was read for the touched files; uncovered branches there are either
   tested or explained (§9.3).
 - [ ] A change that adds a test layer, a flag or a guard updates this practices doc in the same PR

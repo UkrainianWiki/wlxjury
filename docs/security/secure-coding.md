@@ -510,26 +510,32 @@ Each planned guard lands with the batch named; until then the checklist line is 
 ## 22. Privacy
 
 **Rule: personal data.** The app holds jurors' and organizers' emails, names, wiki accounts,
-password hashes, votes, comments and, in sign-in failure lines, client addresses. Collect only
-what a feature needs; show an email or name only to the account itself, its contests' admins and
-root; never put one in a log line (§13), a URL, a shared cache or a test fixture taken from
-production. Exports with juror names go only to those who may see the round's organizer views
-(§16, `User.canViewOrgInfo`).
+password hashes, votes, comments and, in the one sign-in failure line that has one
+(`oauth_choose_proof_failed`, operations §1.3), a client address. Collect only what a feature
+needs; never put personal data in a log line (§13), a URL, a shared cache or a test fixture taken
+from production. **Emails** are shown to the account itself and on the contest's users page,
+which is for admins and root only (`UserController.users`, `User.ADMIN_ROLES`). **Names** of a
+round's jurors (the galleries' juror menu, `User.findRoundJurorsToView` in `navbar.scala.html`;
+exports, §16) go to those who may see the round's organizer views, `User.canViewOrgInfo`: root,
+the contest's admins and organizers, and the round's jurors when the round has `juryOrgView` on.
 
-**Rule: juror confidentiality.** A juror sees only their own votes; other jurors' votes, the
-all-jurors views and the list of a round's jurors are for `canViewOrgInfo` only, and only of
-jurors of that round (`GalleryService.viewerRounds` / `mayViewRound` / `viewAs`, otherwise 404;
-CLAUDE.md "Own votes"). File authors are shown to organizers only (`GalleryController`'s
-`showAuthor`). *Why:* a juror's ratings are confidential to the contest's organizers, and a juror
-who sees others' ratings or the authors no longer judges alone.
+**Rule: juror confidentiality.** Unless the round shares its organizer views with its jurors
+(`juryOrgView`), a juror sees only their own votes. Other jurors' votes, the all-jurors views
+and the juror list are for `canViewOrgInfo`, and only of jurors of that round
+(`GalleryService.viewerRounds` / `mayViewRound` / `viewAs`, otherwise 404; CLAUDE.md "Own
+votes"). File authors are shown under the same condition (`GalleryController`'s `showAuthor`,
+`large.scala.html`). *Why:* votes and authors are the organizers' information; a round shares
+them with its jurors only when its organizers choose to (`juryOrgView`).
 
-**Rule: conflicts of interest and lobbying.** The tool never tells a participant who judges a
-round or how a juror voted, so an author can't find and lobby a juror through it. Files by a
-contest member or root (`CoiMembers`: the file's author matched to their wiki accounts) are
-left out of that contest's rounds when the round's conflict-of-interest option is on; the
-matches and counts are shown on the round's admin pages only, and each removal is a line on the
-`coi` logger, its only record until P1b keeps them as `dq` rows. *Why:* a juror judging a
-member's file, or a participant knowing whom to approach, undermines the result.
+**Rule: conflicts of interest and lobbying.** The tool shows a round's jurors and votes only
+under the rules above, never to a participant without a role in the contest, so an author can't
+find and lobby a juror through it. Files by a contest member or root (`CoiMembers`: the file's
+author matched to their wiki accounts) are left out of that contest's rounds when the round's
+conflict-of-interest option is on. The matches, with whose they are, are listed to the contest's
+organizers and admins on the contest files page (`CoiAuthorizationSpec`); taking them out of a
+round from the round form is admin-only. Each removal is a line on the `coi` logger, its only
+record until P1b keeps them as `dq` rows. *Why:* a juror judging a member's file, or a
+participant knowing whom to approach, undermines the result.
 
 **Rule: dumps are anonymised at once.** A production dump lives outside every repository, is
 restored only into an isolated database and anonymised there right after the restore

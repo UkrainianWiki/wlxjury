@@ -86,5 +86,5 @@ The rule is in workflow §8: the update is in the same PR, and the reviewer chec
 `docs/user/`, planned: an English juror guide, then organizer and admin guides after P3. The
 English source lives in the repository and is reviewed with the code. A release step publishes it
 to a wiki page and marks it for translation, and translations happen there with the Translate
-extension. Interface messages go through translatewiki ([UI](ui/practices.md) §1.4). Which wiki
+extension. Interface messages are to go through translatewiki (planned; [UI](ui/practices.md) §1.4). Which wiki
 (Meta-Wiki, Commons or another) is an open question for the user.
