@@ -74,7 +74,12 @@ object SharedTestDb {
       "--table-definition-cache=1000",
       "--sort-buffer-size=2M",
       "--innodb-flush-log-at-trx-commit=0",
-      "--innodb-doublewrite=0"
+      "--innodb-doublewrite=0",
+      // A leaked lock fails fast, naming the lock, instead of hanging the suite: row locks after
+      // 10 s (default 50), metadata locks after 60 s (default a year). The lock specs wait
+      // deliberately but briefly; CriteriaRateSpec sets its own 10 s.
+      "--innodb-lock-wait-timeout=10",
+      "--lock-wait-timeout=60"
     )
     container
   }
