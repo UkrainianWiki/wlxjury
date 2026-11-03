@@ -220,8 +220,8 @@ fix and rerun the affected specs before another full run. No tests for documenta
 
 **8.3 CI on every PR.** `ci.yml`: the full sbt suite and Jest on MariaDB 10.6.22 (10.11.14 on
 master pushes and weekly), about 5½ minutes; `deployment.yml`: the Python tests and the release
-tests; `coverage.yml`: the same suite instrumented (§9); `integration.yml`: the live group weekly. The required check is
-`CI / sbt test (mariadb:10.6.22)`; coverage is not required.
+tests; `coverage.yml`: the same suite instrumented (§9); `integration.yml`: the live group weekly. The check to require on `master` is
+`CI / sbt test (mariadb:10.6.22)` (CI plan, U8); coverage is never required.
 
 **8.4 Read results by totals and exit code.** A failure-path test may log `[error]`; the totals and
 the process's exit code decide. Full logs stay under `target/checks/`.
