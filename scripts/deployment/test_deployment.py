@@ -765,6 +765,17 @@ class LegacyAdoptionTest(Fixture):
         self.assertFalse(self.tool.current.is_symlink())
         self.assertIn(setting, (source / 'conf' / 'application.conf').read_text())
 
+    def test_adoption_allows_only_the_listed_settings_with_credential_words(self):
+        # wlxjury.legacyPasswords.retire etc. are a schedule, not credentials; another key under
+        # the same object is still refused.
+        setting = 'wlxjury.legacyPasswords { retire = true, token = "listed-private" }'
+        source = self.legacy_package(self.LEGACY + setting + '\n')
+        with self.assertRaises(deploy.DeploymentError) as error:
+            self.tool.adopt_legacy(source, 'legacy-0.12-v53')
+        self.assertIn('wlxjury.legacyPasswords.token', str(error.exception))
+        self.assertNotIn('wlxjury.legacyPasswords.retire', str(error.exception))
+        self.assertNotIn('listed-private', str(error.exception))
+
     def test_pending_migration_in_installed_jar_blocks_adoption_before_selection(self):
         self.tool = FakeDeployment(self.settings)
         source = self.base / 'package'
