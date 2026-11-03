@@ -8,7 +8,7 @@ import org.specs2.specification.{BeforeAll, BeforeEach}
 import java.nio.file.{Files, Paths}
 
 /** V78 archives (criteria_rate_orphan) and deletes the criteria rates whose vote is in
-  * neither selection nor selection_deleted.
+  * neither selection nor selection_deleted (vote and vote_aside since V82).
   */
 class CriteriaRateOrphansMigrationSpec extends Specification with TestDb with BeforeAll with BeforeEach {
 
@@ -53,9 +53,11 @@ class CriteriaRateOrphansMigrationSpec extends Specification with TestDb with Be
       dropCopies()
       try {
         DB.autoCommit { implicit s =>
+          // the tables as V78 found them: V82 renamed them and criteria_rate's column
           sql"CREATE TABLE t_criteria_rate LIKE criteria_rate".execute.apply()
-          sql"CREATE TABLE t_selection LIKE selection".execute.apply()
-          sql"CREATE TABLE t_selection_deleted LIKE selection_deleted".execute.apply()
+          sql"ALTER TABLE t_criteria_rate RENAME COLUMN vote_id TO selection".execute.apply()
+          sql"CREATE TABLE t_selection LIKE vote".execute.apply()
+          sql"CREATE TABLE t_selection_deleted LIKE vote_aside".execute.apply()
           sql"""INSERT INTO t_selection (id, jury_id, round_id, page_id, rate) VALUES
                 (1, 10, 1, 1, 7), (2, 10, 1, 2, 0)""".execute.apply()
           sql"INSERT INTO t_selection_deleted (id, jury_id, round_id, page_id, rate) VALUES (3, 10, 1, 3, 5)"

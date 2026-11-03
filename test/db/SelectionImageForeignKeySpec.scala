@@ -47,7 +47,7 @@ class SelectionImageForeignKeySpec extends Specification with TestDb with Before
       try {
         DB.autoCommit { implicit s =>
           sql"CREATE TABLE t_images LIKE images".execute.apply()
-          sql"CREATE TABLE t_selection LIKE selection".execute.apply()
+          sql"CREATE TABLE t_selection LIKE vote".execute.apply() // selection before V82
           sql"INSERT INTO t_images (page_id, title, width, height) VALUES (1, 'File:1.jpg', 1, 1), (2, 'File:2.jpg', 1, 1)".execute.apply()
           sql"""INSERT INTO t_selection (jury_id, round_id, page_id, rate, monument_id) VALUES
                 (10, 1, 1, 1, '07-101-0001'), (10, 1, 2, 0, NULL), (10, 1, 3, -1, '07-101-0003'),
@@ -81,9 +81,9 @@ class SelectionImageForeignKeySpec extends Specification with TestDb with Before
     }
   }
 
-  "the selection table" should {
+  "the vote table" should {
 
-    "delete an image's selection rows with the image" in {
+    "delete an image's vote rows with the image" in {
       implicit val contest: ContestJury = createContests(10).head
       val juror = createUsers("jury", 1).head
       imageDao.batchInsert(Seq(1L, 2L).map(id => Image(id, s"File:$id.jpg", None, None, 1, 1, None)))
@@ -95,7 +95,7 @@ class SelectionImageForeignKeySpec extends Specification with TestDb with Before
       selectionDao.findAll().map(_.pageId).toSet === Set(2L)
     }
 
-    "refuse a selection row for an image that doesn't exist" in {
+    "refuse a vote row for an image that doesn't exist" in {
       selectionDao.create(404L, rate = 0, juryId = 1L, roundId = 1L) must throwA[java.sql.SQLException]
       selectionDao.findAll() must beEmpty
     }

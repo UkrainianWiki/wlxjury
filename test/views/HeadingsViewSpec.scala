@@ -2,7 +2,7 @@ package views
 
 import controllers.{GalleryView, Pager, RateDistribution, RoundList}
 import db.scalikejdbc.User
-import org.intracer.wmua.{Image, ImageWithRating, Selection}
+import org.intracer.wmua.{Image, ImageWithRating, Vote}
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
 import play.api.data.Form
@@ -32,7 +32,7 @@ class HeadingsViewSpec extends PlaySpecification {
 
   private val files = (0 until 3).map { i =>
     ImageWithRating(Image(pageId = 201L + i, title = s"File:Image ${201 + i}.jpg"),
-      selection = Seq(Selection(201L + i, juror.getId, ratedRound.getId, i + 1)))
+      votes = Seq(Vote(201L + i, juror.getId, ratedRound.getId, i + 1)))
   }
 
   "a page" should {

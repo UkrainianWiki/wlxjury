@@ -44,7 +44,7 @@ class CoiAuthorizationSpec extends PlaySpecification with PlayTestDb with Mockit
     User.NON_ACCESS_ROLES.foreach(r =>
       member(s"$r@example.com", r, account = Some(if (r == User.BOARD_ROLE) "Board member" else s"$r account")))
     val round = roundDao.create(Round(None, 1, Some("R"), contestId, active = true, juryOrgView = true))
-    images.foreach(i => SelectionJdbc.create(i.pageId, 0, juror.getId, round.getId))
+    images.foreach(i => VoteJdbc.create(i.pageId, 0, juror.getId, round.getId))
     round
   }
 
@@ -101,7 +101,7 @@ class CoiAuthorizationSpec extends PlaySpecification with PlayTestDb with Mockit
         status(page(app, staff, s"/rate/round/$r/pageid/1/select/1", POST)) === FORBIDDEN
         status(page(app, staff, s"/large/round/$r/pageid/1/select/1", POST)) === FORBIDDEN
         status(page(app, staff, s"/regions/round/$r/user/0/region/all")) === FORBIDDEN
-        SelectionJdbc.byRound(r).map(_.rate).toSet === Set(0)
+        VoteJdbc.byRound(r).map(_.rate).toSet === Set(0)
       }
     }
 
@@ -177,7 +177,7 @@ class CoiAuthorizationSpec extends PlaySpecification with PlayTestDb with Mockit
         Seq("juror@example.com", "organizer@example.com", "other-admin@example.com", "board@example.com").map { email =>
           status(save(app, email, saveRound(round, excludeCoi = true)))
         } === Seq(FORBIDDEN, FORBIDDEN, FORBIDDEN, FORBIDDEN)
-        SelectionJdbc.byRound(round.getId).map(_.pageId).toSet === Set(1L, 2L, 3L)
+        VoteJdbc.byRound(round.getId).map(_.pageId).toSet === Set(1L, 2L, 3L)
         roundDao.findById(round.getId).get.excludeCoi must beFalse
       }
     }
@@ -188,14 +188,14 @@ class CoiAuthorizationSpec extends PlaySpecification with PlayTestDb with Mockit
         val result = save(app, "admin@example.com", saveRound(round, excludeCoi = true))
         status(result) === SEE_OTHER
         flash(result).get("success") must beSome(contain("2"))
-        SelectionJdbc.byRound(round.getId).map(_.pageId).toSet === Set(3L)
+        VoteJdbc.byRound(round.getId).map(_.pageId).toSet === Set(3L)
         roundDao.findById(round.getId).get.excludeCoi must beTrue
 
         val other = roundDao.create(Round(None, 2, Some("R2"), contestId, active = true))
-        SelectionJdbc.create(1L, 0, User.findByEmail("juror@example.com").head.getId, other.getId)
+        VoteJdbc.create(1L, 0, User.findByEmail("juror@example.com").head.getId, other.getId)
         User.create(User("root@example.com", "root@example.com", None, Set(User.ROOT_ROLE), Some("hash")))
         status(save(app, "root@example.com", saveRound(other, excludeCoi = true))) === SEE_OTHER
-        SelectionJdbc.byRound(other.getId) must beEmpty
+        VoteJdbc.byRound(other.getId) must beEmpty
       }
     }
 
@@ -206,7 +206,7 @@ class CoiAuthorizationSpec extends PlaySpecification with PlayTestDb with Mockit
         val result = save(app, "admin@example.com", saveRound(round, excludeCoi = false))
         status(result) === SEE_OTHER
         flash(result).get("success") must beNone
-        SelectionJdbc.byRound(round.getId).map(_.pageId).toSet === Set(1L, 2L, 3L)
+        VoteJdbc.byRound(round.getId).map(_.pageId).toSet === Set(1L, 2L, 3L)
         roundDao.findById(round.getId).get.excludeCoi must beFalse
       }
     }
@@ -222,9 +222,9 @@ class CoiAuthorizationSpec extends PlaySpecification with PlayTestDb with Mockit
               "csrfToken" -> sessionToken)
             .withFormUrlEncodedBody(body: _*)).get
         status(post(saveRound(round, excludeCoi = true): _*)) === FORBIDDEN
-        SelectionJdbc.byRound(round.getId).size === 3
+        VoteJdbc.byRound(round.getId).size === 3
         status(post(saveRound(round, excludeCoi = true) :+ ("csrfToken" -> sessionToken): _*)) === SEE_OTHER
-        SelectionJdbc.byRound(round.getId).map(_.pageId).toSet === Set(3L)
+        VoteJdbc.byRound(round.getId).map(_.pageId).toSet === Set(3L)
       }
     }
   }

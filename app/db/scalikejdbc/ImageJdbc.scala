@@ -21,10 +21,10 @@ object ImageJdbc extends CRUDMapper[Image]
   override val primaryKeyFieldName = "page_id"
 
   val i = ImageJdbc.syntax("i")
-  val s = SelectionJdbc.s
-  val s1 = SelectionJdbc.syntax("s1")
-  val s2 = SelectionJdbc.syntax("s2")
-  val s3 = SelectionJdbc.syntax("s3")
+  val s = VoteJdbc.s
+  val s1 = VoteJdbc.syntax("s1")
+  val s2 = VoteJdbc.syntax("s2")
+  val s3 = VoteJdbc.syntax("s3")
   val c = CriteriaRate.c
   val cl = CategoryLinkJdbc.cl
 
@@ -153,7 +153,7 @@ object ImageJdbc extends CRUDMapper[Image]
         .list()
         .toMap
 
-  /** Updates the image, and its selection rows' copy of its monument id. */
+  /** Updates the image, and its vote rows' copy of its monument id. */
   def update(image: Image): Unit = {
     DB.localTx { implicit session => updateIn(image) }
     RegionCountCache.invalidateMonumentIds()
@@ -194,7 +194,7 @@ object ImageJdbc extends CRUDMapper[Image]
   def updateResolution(pageId: Long, width: Int, height: Int): Unit =
     updateById(pageId).withAttributes("width" -> width, "height" -> height)
 
-  /** Sets the image's monument id, and its selection rows' copy of it. */
+  /** Sets the image's monument id, and its vote rows' copy of it. */
   def updateMonumentId(pageId: Long, monumentId: String): Unit = {
     DB.localTx { implicit session => updateMonumentIdIn(pageId, monumentId) }
     RegionCountCache.invalidateMonumentIds()
@@ -207,7 +207,7 @@ object ImageJdbc extends CRUDMapper[Image]
     syncSelectionMonumentId(pageId, Some(monumentId))
   }
 
-  /** selection.monument_id (V48) is a copy of images.monument_id that the galleries
+  /** vote.monument_id (V48) is a copy of images.monument_id that the galleries
     * sort and filter by regions on; it must follow the image, also in the votes moved
     * aside (V63), which may come back. A page_id lookup on the unique
     * (page_id, jury_id, round_id) index; rows already right aren't rewritten.
@@ -215,7 +215,7 @@ object ImageJdbc extends CRUDMapper[Image]
   private def syncSelectionMonumentId(pageId: Long, monumentId: Option[String])(implicit
       session: DBSession
   ): Unit =
-    Seq(sqls"selection", sqls"selection_deleted").foreach { table =>
+    Seq(sqls"vote", sqls"vote_aside").foreach { table =>
       sql"""UPDATE $table SET monument_id = $monumentId
             WHERE page_id = $pageId AND NOT (monument_id <=> $monumentId)""".update()
     }
@@ -296,7 +296,7 @@ object ImageJdbc extends CRUDMapper[Image]
         .list()
 
   /** Locks the files' rows for update, in page id order, as a distribution's chunk locks
-    * them (in share mode, for selection's foreign key): a transaction that updates several
+    * them (in share mode, for vote's foreign key): a transaction that updates several
     * files in more than one statement locks them all with this first.
     */
   def lockFiles(pageIds: Seq[Long])(implicit session: DBSession): Unit =
@@ -310,7 +310,7 @@ object ImageJdbc extends CRUDMapper[Image]
     if (pageIds.isEmpty) Nil
     else
       sql"""SELECT page_id FROM images WHERE page_id IN ($pageIds) AND deleted_at IS NOT NULL
-            UNION SELECT DISTINCT page_id FROM selection_deleted WHERE page_id IN ($pageIds)"""
+            UNION SELECT DISTINCT page_id FROM vote_aside WHERE page_id IN ($pageIds)"""
         .map(_.long(1))
         .list()
 
@@ -328,10 +328,10 @@ object ImageJdbc extends CRUDMapper[Image]
   def lockOpenRoundsOf(pageIds: Seq[Long])(implicit session: DBSession): Set[Long] =
     if (pageIds.isEmpty) Set.empty
     else {
-      val roundIds = sql"SELECT DISTINCT round_id FROM selection WHERE page_id IN ($pageIds)".map(_.long(1)).list()
+      val roundIds = sql"SELECT DISTINCT round_id FROM vote WHERE page_id IN ($pageIds)".map(_.long(1)).list()
       if (roundIds.isEmpty) Set.empty
       else
-        sql"""SELECT id, ${Round.openCond(sqls"rounds")} FROM rounds WHERE id IN ($roundIds)
+        sql"""SELECT id, ${Round.openCond(sqls"round")} FROM round WHERE id IN ($roundIds)
               ORDER BY id LOCK IN SHARE MODE"""
           .map(rs => rs.long(1) -> rs.booleanOpt(2).getOrElse(false))
           .list()
@@ -347,15 +347,15 @@ object ImageJdbc extends CRUDMapper[Image]
     */
   def lockRoundsOfArchived(pageIds: Seq[Long])(implicit session: DBSession): Unit =
     if (pageIds.nonEmpty) {
-      val roundIds = sql"SELECT DISTINCT round_id FROM selection_deleted WHERE page_id IN ($pageIds)"
+      val roundIds = sql"SELECT DISTINCT round_id FROM vote_aside WHERE page_id IN ($pageIds)"
         .map(_.long(1))
         .list()
       if (roundIds.nonEmpty)
-        sql"SELECT id FROM rounds WHERE id IN ($roundIds) ORDER BY id LOCK IN SHARE MODE".map(_.long(1)).list(): Unit
+        sql"SELECT id FROM round WHERE id IN ($roundIds) ORDER BY id LOCK IN SHARE MODE".map(_.long(1)).list(): Unit
     }
 
-  /** Moves the selection rows of `pageIds` in the `roundIds` rounds to selection_deleted
-    * (V63): every gallery, count and result reads selection, so they no longer show the
+  /** Moves the vote rows of `pageIds` in the `roundIds` rounds to vote_aside
+    * (V63): every gallery, count and result reads vote, so they no longer show the
     * files. A row moved before (a file deleted, restored and deleted again) is replaced by
     * the current one.
     *
@@ -375,7 +375,7 @@ object ImageJdbc extends CRUDMapper[Image]
     * @return the files moved
     */
   def archiveDeletedVotesInRound(roundId: Long)(implicit session: DBSession): Seq[Long] = {
-    val pageIds = sql"""SELECT DISTINCT STRAIGHT_JOIN s.page_id FROM images i JOIN selection s ON s.page_id = i.page_id
+    val pageIds = sql"""SELECT DISTINCT STRAIGHT_JOIN s.page_id FROM images i JOIN vote s ON s.page_id = i.page_id
                         WHERE i.deleted_at IS NOT NULL AND s.round_id = $roundId"""
       .map(_.long(1))
       .list()
@@ -383,12 +383,12 @@ object ImageJdbc extends CRUDMapper[Image]
     pageIds
   }
 
-  /** Moves the selection rows `where` selects (on the alias it is given) to selection_deleted.
+  /** Moves the vote rows `where` selects (on the alias it is given) to vote_aside.
     * They keep their ids, so their criteria rates follow them; those of an older row of the
     * same vote that the move replaces are deleted with it.
     *
-    * Lock order, as every vote delete or move: selection, then selection_deleted, then
-    * criteria_rate ([[SelectionJdbc.deleteVotes]], [[moveVotesBack]]).
+    * Lock order, as every vote delete or move: vote, then vote_aside, then
+    * criteria_rate ([[VoteJdbc.deleteVotes]], [[moveVotesBack]]).
     *
     * @return their rounds
     */
@@ -397,23 +397,23 @@ object ImageJdbc extends CRUDMapper[Image]
     val v = sqls"v"
     // The latest rows, not the snapshot's, locked as the DELETE locks them: a shared lock
     // first would deadlock, on its upgrade, with a juror voting on one of them
-    val roundIds = sql"SELECT DISTINCT s.round_id FROM selection s WHERE ${where(s)} FOR UPDATE"
+    val roundIds = sql"SELECT DISTINCT s.round_id FROM vote s WHERE ${where(s)} FOR UPDATE"
       .map(_.long(1))
       .list()
     // the rows aside that REPLACE drops: the same vote (page, juror, round) under another id,
     // moved aside before the file was distributed to the juror again; locked, then their
     // rates deleted. `where` on v: those rows have the moved rows' pages and rounds.
-    val replaced = sqls"""${where(v)} AND EXISTS (SELECT 1 FROM selection s WHERE s.id <> v.id
+    val replaced = sqls"""${where(v)} AND EXISTS (SELECT 1 FROM vote s WHERE s.id <> v.id
                             AND s.page_id = v.page_id AND s.jury_id = v.jury_id AND s.round_id = v.round_id)"""
-    sql"SELECT COUNT(*) FROM selection_deleted v WHERE $replaced FOR UPDATE".map(_.int(1)).single()
-    sql"DELETE cr FROM selection_deleted v STRAIGHT_JOIN criteria_rate cr ON cr.selection = v.id WHERE $replaced"
+    sql"SELECT COUNT(*) FROM vote_aside v WHERE $replaced FOR UPDATE".map(_.int(1)).single()
+    sql"DELETE cr FROM vote_aside v STRAIGHT_JOIN criteria_rate cr ON cr.vote_id = v.id WHERE $replaced"
       .update()
-    sql"REPLACE INTO selection_deleted SELECT s.* FROM selection s WHERE ${where(s)}".update()
-    sql"DELETE s FROM selection s WHERE ${where(s)}".update()
+    sql"REPLACE INTO vote_aside SELECT s.* FROM vote s WHERE ${where(s)}".update()
+    sql"DELETE s FROM vote s WHERE ${where(s)}".update()
     roundIds
   }
 
-  /** Moves back all the selection rows of `pageIds` that [[archiveVotes]] moved aside
+  /** Moves back all the vote rows of `pageIds` that [[archiveVotes]] moved aside
     * ([[moveVotesBack]]).
     *
     * @return the rounds that gained rows (their cached image counts are stale)
@@ -422,40 +422,40 @@ object ImageJdbc extends CRUDMapper[Image]
     if (pageIds.isEmpty) Nil
     else moveVotesBack(pageIds)
 
-  /** Moves the files' selection_deleted rows back to selection, but those of rounds deleted
+  /** Moves the files' vote_aside rows back to vote, but those of rounds deleted
     * meanwhile, which are dropped. Where the file was distributed again to the same juror in
     * the round meanwhile, the juror's vote wins: the moved row replaces an unrated new one,
     * and gives way to a rated one (the juror voted again). Nothing of the files stays aside.
     * Criteria rates follow their votes: the moved rows keep their ids and so their rates; the
     * rates of the rows replaced or dropped are deleted.
     *
-    * Lock order: the rounds ([[lockRoundsOfArchived]], by the caller: the `rounds` subquery
-    * below reads them with a shared lock) and the files before, then the files' selection rows
-    * (and the gaps where theirs would go), then selection_deleted, then criteria_rate, as
-    * [[moveVotesAside]], [[SelectionJdbc.deleteVotes]] and [[RoundConflicts]]: locking
-    * selection_deleted first deadlocked with them.
+    * Lock order: the rounds ([[lockRoundsOfArchived]], by the caller: the `round` subquery
+    * below reads them with a shared lock) and the files before, then the files' vote rows
+    * (and the gaps where theirs would go), then vote_aside, then criteria_rate, as
+    * [[moveVotesAside]], [[VoteJdbc.deleteVotes]] and [[RoundConflicts]]: locking
+    * vote_aside first deadlocked with them.
     *
     * @return the rounds that gained rows
     */
   private def moveVotesBack(pageIds: Seq[Long])(implicit session: DBSession): Seq[Long] = {
     val where = sqls"d.page_id IN ($pageIds)"
     val sameVote = sqls"s.page_id = d.page_id AND s.jury_id = d.jury_id AND s.round_id = d.round_id"
-    val roundExists = sqls"EXISTS (SELECT 1 FROM rounds r WHERE r.id = d.round_id)"
-    sql"SELECT COUNT(*) FROM selection WHERE page_id IN ($pageIds) FOR UPDATE".map(_.int(1)).single()
-    val roundIds = sql"SELECT DISTINCT d.round_id FROM selection_deleted d WHERE $where FOR UPDATE"
+    val roundExists = sqls"EXISTS (SELECT 1 FROM round r WHERE r.id = d.round_id)"
+    sql"SELECT COUNT(*) FROM vote WHERE page_id IN ($pageIds) FOR UPDATE".map(_.int(1)).single()
+    val roundIds = sql"SELECT DISTINCT d.round_id FROM vote_aside d WHERE $where FOR UPDATE"
       .map(_.long(1))
       .list()
     // the new unrated rows a rated moved one replaces, with their criteria rates
     val replacedNew = sqls"$where AND COALESCE(s.rate, 0) = 0 AND COALESCE(d.rate, 0) <> 0"
-    sql"""DELETE cr FROM selection_deleted d JOIN selection s ON $sameVote
-          STRAIGHT_JOIN criteria_rate cr ON cr.selection = s.id WHERE $replacedNew""".update()
-    sql"DELETE s FROM selection s JOIN selection_deleted d ON $sameVote WHERE $replacedNew".update()
-    sql"""INSERT INTO selection SELECT d.* FROM selection_deleted d
-          WHERE $where AND $roundExists AND NOT EXISTS (SELECT 1 FROM selection s WHERE $sameVote)""".update()
+    sql"""DELETE cr FROM vote_aside d JOIN vote s ON $sameVote
+          STRAIGHT_JOIN criteria_rate cr ON cr.vote_id = s.id WHERE $replacedNew""".update()
+    sql"DELETE s FROM vote s JOIN vote_aside d ON $sameVote WHERE $replacedNew".update()
+    sql"""INSERT INTO vote SELECT d.* FROM vote_aside d
+          WHERE $where AND $roundExists AND NOT EXISTS (SELECT 1 FROM vote s WHERE $sameVote)""".update()
     // the rows not moved back, with their criteria rates
-    sql"""DELETE cr FROM selection_deleted d STRAIGHT_JOIN criteria_rate cr ON cr.selection = d.id
-          WHERE $where AND NOT EXISTS (SELECT 1 FROM selection s WHERE s.id = d.id)""".update()
-    sql"DELETE d FROM selection_deleted d WHERE $where".update()
+    sql"""DELETE cr FROM vote_aside d STRAIGHT_JOIN criteria_rate cr ON cr.vote_id = d.id
+          WHERE $where AND NOT EXISTS (SELECT 1 FROM vote s WHERE s.id = d.id)""".update()
+    sql"DELETE d FROM vote_aside d WHERE $where".update()
     roundIds
   }
 
@@ -654,10 +654,10 @@ object ImageJdbc extends CRUDMapper[Image]
       .list()
 
   /** The number of [[roundDeletedFiles]], and of those still counted in the round: with
-    * votes in selection, which its galleries and results read.
+    * votes in vote, which its galleries and results read.
     */
   def roundDeletedFileCounts(roundId: Long)(implicit session: DBSession = AutoSession): (Int, Int) =
-    sql"""SELECT COUNT(*), COALESCE(SUM(${hasVotes(sqls"selection", roundId)}), 0) FROM images i
+    sql"""SELECT COUNT(*), COALESCE(SUM(${hasVotes(sqls"vote", roundId)}), 0) FROM images i
           WHERE i.deleted_at IS NOT NULL AND ${inRound(roundId)}"""
       .map(rs => rs.int(1) -> rs.int(2))
       .single()
@@ -710,7 +710,7 @@ object ImageJdbc extends CRUDMapper[Image]
 
   /** The file `i` has votes in the round, counted or moved aside. */
   private def inRound(roundId: Long): SQLSyntax =
-    sqls"(${hasVotes(sqls"selection", roundId)} OR ${hasVotes(sqls"selection_deleted", roundId)})"
+    sqls"(${hasVotes(sqls"vote", roundId)} OR ${hasVotes(sqls"vote_aside", roundId)})"
 
   private def hasVotes(table: SQLSyntax, roundId: Long): SQLSyntax =
     sqls"EXISTS (SELECT 1 FROM $table v WHERE v.round_id = $roundId AND v.page_id = i.page_id)"
@@ -734,20 +734,20 @@ object ImageJdbc extends CRUDMapper[Image]
 
   def rateDistribution(userId: Long, roundId: Long): Map[Int, Int] =
     sql"""SELECT s.rate, count(1)
-  FROM selection s
+  FROM vote s
   WHERE
   s.jury_id = $userId
   AND s.round_id = $roundId
   GROUP BY rate""".map(rs => rs.int(1) -> rs.int(2)).list().toMap
 
   /** Distinct images per round, for the given rounds (rounds without images are left
-    * out). A loose scan of idx_selection_round_page_rate: no join through rounds, which
+    * out). A loose scan of vote_round_page_rate_idx: no join through rounds, which
     * prevented it. Callers go through [[RoundImageCounts]].
     */
   def imageCountByRounds(roundIds: Seq[Long]): Map[Long, Int] =
     if (roundIds.isEmpty) Map.empty
     else
-      sql"""SELECT s.round_id, COUNT(DISTINCT s.page_id) FROM selection s
+      sql"""SELECT s.round_id, COUNT(DISTINCT s.page_id) FROM vote s
             WHERE s.round_id IN ($roundIds) GROUP BY s.round_id"""
         .map(rs => rs.long(1) -> rs.int(2))
         .list()
@@ -756,7 +756,7 @@ object ImageJdbc extends CRUDMapper[Image]
   def byRound(roundId: Long): List[Image] = withSQL {
     select(distinct(i.result.*))
       .from(ImageJdbc as i)
-      .innerJoin(SelectionJdbc as s)
+      .innerJoin(VoteJdbc as s)
       .on(i.pageId, s.pageId)
       .where
       .eq(s.roundId, roundId)

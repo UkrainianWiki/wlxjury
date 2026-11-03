@@ -38,7 +38,7 @@ class ListPositionSpec extends Specification with TestDb with BeforeAll with Bef
     })
     val possible = if (rates == Round.binaryRound) Seq(-1, 0, 1) else 0 to rates.maxRate
     def vote(user: User, page: Int, i: Int) =
-      Selection(page.toLong, user.getId, round.getId, possible(i % possible.size), monumentId = monuments(page))
+      Vote(page.toLong, user.getId, round.getId, possible(i % possible.size), monumentId = monuments(page))
     selectionDao.batchInsert((1 to 14).map(p => vote(juror, p, p * 5 + 1)) ++ (1 to 6).map(p => vote(other, p, p)) :+
       vote(other, 99, 1))
     (round, juror, (1L to 14L) :+ 99L)
@@ -68,7 +68,7 @@ class ListPositionSpec extends Specification with TestDb with BeforeAll with Bef
     }
 
   private def sameMoves(round: Round, juror: User, files: Seq[Long]) = {
-    val rates = files.flatMap(p => SelectionJdbc.findBy(p, juror.getId, round.getId).map(s => p -> s.rate)).toMap
+    val rates = files.flatMap(p => VoteJdbc.findBy(p, juror.getId, round.getId).map(s => p -> s.rate)).toMap
     val all = for (list <- lists(round, juror); pageId <- files.filter(rates.contains); before <- Seq(0, 3, 7)) yield
       (list.filter, list.order, list.region, pageId, before,
         list.voteMoved(pageId, before, rates(pageId)), movedByRank(list, pageId, before, rates(pageId)))

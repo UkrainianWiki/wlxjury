@@ -6,7 +6,7 @@ import scala.collection.concurrent.TrieMap
 /** The number of distinct images per round, cached.
   *
   * A round's image set changes only when images are distributed to it, removed from it
-  * or moved between rounds, never on a vote (a vote updates `rate` on an existing selection
+  * or moved between rounds, never on a vote (a vote updates `rate` on an existing vote
   * row), so the count is invalidated explicitly by those writes. Invalidate AFTER the
   * writing transaction commits: a load that starts before the commit and ends after
   * the invalidation is discarded through the version check. The TTL only bounds how

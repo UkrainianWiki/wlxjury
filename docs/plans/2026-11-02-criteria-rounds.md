@@ -123,7 +123,7 @@ contest); both listed as decisions.
   (lock the vote row, upsert the criterion, recompute `vote.rate`); P2a adds the `round_image`
   delta to that same transaction. **Lock order:** §5 lists `… vote → vote_aside → round_image →
   criteria_rate`, but a criterion vote writes `criteria_rate` before the delta. Recommend
-  `rounds → images → vote → criteria_rate → vote_aside → round_image`, with the rule that
+  `round → images → vote → criteria_rate → vote_aside → round_image`, with the rule that
   `criteria_rate` rows are written only while their vote row is locked; `RoundConflicts` today
   deletes `criteria_rate` before locking the votes (`RoundConflicts.scala:67-71`): lock the votes
   first (C1), until P1b removes that delete.
@@ -151,7 +151,11 @@ suite once at the release boundary (CLAUDE.md).
 
 No code. Results decide U1, U6, U11 and close open item 3.4.
 
+Before P0 (V82), as written below; after it, the second block (`round`, `vote`, `vote_aside`,
+`criteria_rate.vote_id`).
+
 ```sql
+-- before V82
 SELECT r.id, r.contest_id, r.name, r.rates, r.half_star, r.active, c.name, c.year
   FROM rounds r JOIN contest_jury c ON c.id = r.contest_id WHERE r.has_criteria = 1;
 SELECT s.round_id, cr.criteria, COUNT(*), SUM(cr.rate > 0)
@@ -164,6 +168,22 @@ SELECT COUNT(*) FROM selection WHERE criteria_id IS NOT NULL;
 -- votes whose rate differs from their criteria sum (S4 damage)
 SELECT s.round_id, COUNT(*) FROM selection s JOIN (SELECT selection, SUM(IF(rate > 0, rate, 0)) t
   FROM criteria_rate GROUP BY selection) x ON x.selection = s.id WHERE s.rate <> x.t GROUP BY s.round_id;
+```
+
+```sql
+-- after V82
+SELECT r.id, r.contest_id, r.name, r.rates, r.half_star, r.active, c.name, c.year
+  FROM round r JOIN contest_jury c ON c.id = r.contest_id WHERE r.has_criteria = 1;
+SELECT v.round_id, cr.criteria, COUNT(*), SUM(cr.rate > 0)
+  FROM criteria_rate cr JOIN vote v ON v.id = cr.vote_id GROUP BY v.round_id, cr.criteria;
+SELECT * FROM criteria;
+SELECT COUNT(*) FROM criteria_rate cr WHERE NOT EXISTS (SELECT 1 FROM vote v WHERE v.id = cr.vote_id)
+  AND NOT EXISTS (SELECT 1 FROM vote_aside d WHERE d.id = cr.vote_id);   -- orphans
+SELECT vote_id, criteria, COUNT(*) FROM criteria_rate GROUP BY 1, 2 HAVING COUNT(*) > 1 LIMIT 20;
+SELECT COUNT(*) FROM vote WHERE criteria_id IS NOT NULL;
+-- votes whose rate differs from their criteria sum (S4 damage)
+SELECT v.round_id, COUNT(*) FROM vote v JOIN (SELECT vote_id, SUM(IF(rate > 0, rate, 0)) t
+  FROM criteria_rate GROUP BY vote_id) x ON x.vote_id = v.id WHERE v.rate <> x.t GROUP BY v.round_id;
 ```
 
 ### C1: vote integrity, no schema change (before P0)
@@ -337,7 +357,7 @@ failed (`target/checks/20261102-155458-22196.log`).
   ids and renamed `criterion_id`. `criteria_rate`: `id` becomes the AUTO_INCREMENT PK, add
   `UNIQUE (vote_id, criterion_id)` (after removing C0's duplicates) and FK `criterion_id` →
   `criterion` ON DELETE CASCADE. Drop `selection.criteria_id` (`vote.criteria_id` after P0) if C0
-  shows it unused (U11). `rounds.has_criteria` stays, kept equal to "has criterion rows".
+  shows it unused (U11). `round.has_criteria` (`rounds` before P0) stays, kept equal to "has criterion rows".
 - Model: `Round.criteria: Seq[Criterion]` loaded by `CriterionJdbc.ofRound(s)`; remove
   `CriteriaIds`, `criteriaCount`'s default, `criteriaNames`, `CriteriaRate.countOf` and the name
   map; `Round.create` writes `has_criteria`.
@@ -425,7 +445,7 @@ failed (`target/checks/20261102-155458-22196.log`).
 
 - **U5, U6, U8–U12:** as recommended: a criteria vote counts as rated only when all criteria are
   rated; rates are written on vote (upsert); the CSV has per-criterion averages only; no sorting by
-  one criterion for now; after the first vote only names can change; drop `selection.criteria_id`
+  one criterion for now; after the first vote only names can change; drop `vote.criteria_id`
   and `criteria.contest` after C0; repair votes whose rate differs from their criteria sum by
   migration if C0 finds any.
 
@@ -448,7 +468,7 @@ The options as first written:
 - **U9** Sorting/ranking by one criterion (needs the child table of §3) [rec: not now].
 - **U10** Edits after the first vote: names only [rec], or also add/remove (rates of a removed
   criterion are dropped and sums recomputed).
-- **U11** Drop `selection.criteria_id` and the old `criteria.contest` column [rec, after C0].
+- **U11** Drop `vote.criteria_id` (`selection.criteria_id` before P0) and the old `criteria.contest` column [rec, after C0].
 - **U12** Repair votes whose `rate` differs from their criteria sum (S4 damage) by migration
   [rec if C0 finds any], or leave history as is.
 - **Names' language:** free text per round in the contest's language [rec]; no message keys.

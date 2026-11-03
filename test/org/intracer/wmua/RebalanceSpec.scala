@@ -8,7 +8,7 @@ import org.intracer.wmua.cmd.DistributeImages.{NoRebalance, Rebalance}
 class RebalanceSpec extends Specification {
 
   val round = new Round(Some(1), number = 1, contestId = 1)
-  val selection = Selection(1, 1, 1)
+  val selection = Vote(1, 1, 1)
   val juror = User("", "", Some(1))
   val image = Image(1, "")
   lazy val di  = new DistributeImages(ImageJdbc)

@@ -88,7 +88,7 @@ object GalleryLatencyBenchmark {
 
     // the juror with the most files in both rounds
     val (jurorId, email, password) = f.jurors.filter(j => f.roundsOf(j._1).size == 2).maxBy { j =>
-      sql"SELECT COUNT(*) FROM selection WHERE jury_id = ${j._1}".map(_.int(1)).single().getOrElse(0)
+      sql"SELECT COUNT(*) FROM vote WHERE jury_id = ${j._1}".map(_.int(1)).single().getOrElse(0)
     }
     val juror = new Client(f.baseUrl)
     val (loginStatus, _, _, _) = juror.send("POST", "/auth", "login", Map("login" -> email, "password" -> password))
@@ -111,11 +111,11 @@ object GalleryLatencyBenchmark {
 
     val rounds = Seq("binary" -> f.roundBinaryId, "rated" -> f.roundRatingId)
     for ((kind, roundId) <- rounds) {
-      val count = sql"SELECT COUNT(*) FROM selection WHERE jury_id = $jurorId AND round_id = $roundId"
+      val count = sql"SELECT COUNT(*) FROM vote WHERE jury_id = $jurorId AND round_id = $roundId"
         .map(_.int(1)).single().getOrElse(0)
       // the juror's largest region, as the region nav and the region filter have it
       val (region, regionCount) = sql"""SELECT NULLIF(LEFT(SUBSTRING_INDEX(monument_id, '-', 1), 3), '') r, COUNT(*) n
-           FROM selection WHERE jury_id = $jurorId AND round_id = $roundId GROUP BY r ORDER BY n DESC"""
+           FROM vote WHERE jury_id = $jurorId AND round_id = $roundId GROUP BY r ORDER BY n DESC"""
         .map(rs => rs.stringOpt(1) -> rs.int(2)).list().collectFirst { case (Some(r), n) => (r, n) }.get
       println(s"[latency] $kind round $roundId: juror $jurorId has $count files, region $region $regionCount")
 
@@ -131,7 +131,7 @@ object GalleryLatencyBenchmark {
 
       // files at the start, the middle and the end of the list in file order
       def fileAt(position: Int): Long =
-        sql"""SELECT page_id FROM selection WHERE jury_id = $jurorId AND round_id = $roundId
+        sql"""SELECT page_id FROM vote WHERE jury_id = $jurorId AND round_id = $roundId
               ORDER BY monument_id, page_id LIMIT 1 OFFSET $position""".map(_.long(1)).single().get
       val files = Seq("early" -> fileAt(2), "middle" -> fileAt(count / 2), "end" -> fileAt(count - 1))
       for (order <- Seq("file", "rate"); (where, pageId) <- files) {
@@ -155,9 +155,9 @@ object GalleryLatencyBenchmark {
     // votes last: they change the juror's lists. Each vote goes on to the next file's large view.
     val random = new Random(1)
     for ((kind, roundId) <- rounds; order <- Seq("file", "rate") if included(s"vote-$kind-$order")) {
-      val count = sql"SELECT COUNT(*) FROM selection WHERE jury_id = $jurorId AND round_id = $roundId"
+      val count = sql"SELECT COUNT(*) FROM vote WHERE jury_id = $jurorId AND round_id = $roundId"
         .map(_.int(1)).single().getOrElse(0)
-      val start = sql"""SELECT page_id FROM selection WHERE jury_id = $jurorId AND round_id = $roundId
+      val start = sql"""SELECT page_id FROM vote WHERE jury_id = $jurorId AND round_id = $roundId
             ORDER BY monument_id, page_id LIMIT 1 OFFSET ${count / 3 + (if (order == "rate") 200 else 0)}"""
         .map(_.long(1)).single().get
       var pageId = start

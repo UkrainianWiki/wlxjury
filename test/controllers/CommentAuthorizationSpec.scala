@@ -51,7 +51,7 @@ class CommentAuthorizationSpec extends PlaySpecification with PlayTestDb {
     val image = Image(1L, "File:Image1.jpg", None, None, 640, 480, Some("12-345-1"))
     imageDao.batchInsert(Seq(image))
     round.addUsers(Seq(juror, both).map(j => RoundUser(round.getId, j.getId, "jury", active = true)))
-    selectionDao.batchInsert(Seq(juror, both).map(j => Selection(image, j, round)))
+    selectionDao.batchInsert(Seq(juror, both).map(j => Vote(image, j, round)))
     Fixture(a, b, round, image, juror, member, both, jurorB, organizer, admin, root)
   }
 

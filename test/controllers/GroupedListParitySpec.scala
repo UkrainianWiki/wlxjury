@@ -55,14 +55,14 @@ class GroupedListParitySpec extends Specification with TestDb with BeforeAll wit
     val random = new scala.util.Random(42)
     val votes = images.zipWithIndex.map { case (image, n) =>
       val voters = (0 until 2 + n % 3).map(k => jurors((n + k) % jurors.size))
-      image -> voters.map(j => Selection(image, j, round, rate(random)))
+      image -> voters.map(j => Vote(image, j, round, rate(random)))
     }
     selectionDao.batchInsert(votes.flatMap(_._2))
-    // two votes without a page id (`selection.page_id` is nullable), in region 07-101 and
+    // two votes without a page id (`vote.page_id` is nullable), in region 07-101 and
     // matching every filter but the unrated: no list has them
     scalikejdbc.DB.autoCommit { implicit s =>
       jurors.take(2).foreach { j =>
-        scalikejdbc.SQL("INSERT INTO selection (page_id, rate, jury_id, round_id, monument_id) VALUES (NULL, 1, ?, ?, '07-101-9999')")
+        scalikejdbc.SQL("INSERT INTO vote (page_id, rate, jury_id, round_id, monument_id) VALUES (NULL, 1, ?, ?, '07-101-9999')")
           .bind(j.getId, round.getId).update()
       }
     }
@@ -89,9 +89,9 @@ class GroupedListParitySpec extends Specification with TestDb with BeforeAll wit
       check(s"page $p", page.map(_.pageId), slice.map(_.pageId))
       if (page.map(_.pageId) == slice.map(_.pageId)) {
         if (list.view == GalleryView.FileList)
-          check(s"page $p votes", page.map(_.selection.map(_.rate).sorted), slice.map(_.rates.sorted))
+          check(s"page $p votes", page.map(_.votes.map(_.rate).sorted), slice.map(_.rates.sorted))
         else {
-          check(s"page $p sums", page.map(_.selection.map(_.rate).sum), slice.map(_.sum))
+          check(s"page $p sums", page.map(_.votes.map(_.rate).sum), slice.map(_.sum))
           check(s"page $p vote counts", page.map(_.countFromDb), slice.map(_.rates.size))
           if (list.round.isBinary)
             check(s"page $p tallies", page.map(f => (f.approvals, f.rejections)), slice.map(f => (f.approvals, f.rejections)))

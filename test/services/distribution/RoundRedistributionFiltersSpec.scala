@@ -29,7 +29,7 @@ class RoundRedistributionFiltersSpec extends Specification with TestDb with Befo
     CategoryLinkJdbc.addToCategory(contestDao.findById(contest.getId).get.categoryId.get, added)
   }
 
-  private def pageIds(roundId: Long): Set[Long] = SelectionJdbc.byRound(roundId).map(_.pageId).toSet
+  private def pageIds(roundId: Long): Set[Long] = VoteJdbc.byRound(roundId).map(_.pageId).toSet
 
   "redistribution with saved round filters" should {
     "apply each image filter and their combination to newly imported files, preserving votes" in {
@@ -63,9 +63,9 @@ class RoundRedistributionFiltersSpec extends Specification with TestDb with Befo
       val created = cases.map { case (settings, expected) =>
         val round = service.createNewRound(settings, jurors.map(_.getId))
         pageIds(round.getId) === expected.filter(_ <= 10)
-        val vote = SelectionJdbc.byRound(round.getId).head
-        SelectionJdbc.rate(vote.pageId, vote.juryId, round.getId, 1)
-        (round, expected, SelectionJdbc.byRound(round.getId))
+        val vote = VoteJdbc.byRound(round.getId).head
+        VoteJdbc.rate(vote.pageId, vote.juryId, round.getId, 1)
+        (round, expected, VoteJdbc.byRound(round.getId))
       }
       addImages(contest, 11 to 20)
 
@@ -73,7 +73,7 @@ class RoundRedistributionFiltersSpec extends Specification with TestDb with Befo
         val newCount = expected.count(_ > 10)
         service.newFilesCount(round.getId) === newCount.toLong
         service.distributeNewImages(round.getId) === newCount
-        val actual = SelectionJdbc.byRound(round.getId)
+        val actual = VoteJdbc.byRound(round.getId)
         (pageIds(round.getId) === expected) and
           (actual.filter(_.pageId <= 10).toSet === original.toSet) and
           (service.newFilesCount(round.getId) === 0L) and
@@ -89,10 +89,10 @@ class RoundRedistributionFiltersSpec extends Specification with TestDb with Befo
       val source = Round(None, 0, Some("Source"), contest.getId, active = true)
       val binary = service.createNewRound(source, jurors.map(_.getId))
       val rated = service.createNewRound(source.copy(rates = Round.ratesById(5)), jurors.map(_.getId))
-      def vote(round: Round): Unit = SelectionJdbc.byRound(round.getId).foreach { row =>
+      def vote(round: Round): Unit = VoteJdbc.byRound(round.getId).foreach { row =>
         val rate = if (round.isBinary) { if (row.pageId % 3 == 0) 1 else 0 }
                    else (row.pageId % 5 + 1).toInt
-        SelectionJdbc.rate(row.pageId, row.juryId, round.getId, rate)
+        VoteJdbc.rate(row.pageId, row.juryId, round.getId, rate)
       }
       vote(binary)
       vote(rated)
@@ -130,7 +130,7 @@ class RoundRedistributionFiltersSpec extends Specification with TestDb with Befo
       // A (1): 3 approvals, 2 rejections; B (2): 2 approvals, 3 unrated; C (3): 1 approval
       val votes = Map(1L -> Seq(1, 1, 1, -1, -1), 2L -> Seq(1, 1, 0, 0, 0), 3L -> Seq(1, 0, 0, 0, 0))
       for ((pageId, rates) <- votes; (juror, rate) <- jurors.zip(rates))
-        SelectionJdbc.rate(pageId, juror.getId, binary.getId, rate)
+        VoteJdbc.rate(pageId, juror.getId, binary.getId, rate)
 
       val top1 = source.copy(previous = Some(binary.getId.toString), topImages = Some(1))
       def order(o: BinaryOrder) = Some(o)
@@ -172,7 +172,7 @@ class RoundRedistributionFiltersSpec extends Specification with TestDb with Befo
       val source = Round(None, 0, Some("Source"), contest.getId, active = true, rates = Round.ratesById(5))
       val rated = service.createNewRound(source, jurors.map(_.getId))
       for ((pageId, rate) <- Seq(1L -> 2, 2L -> 5, 3L -> 3); juror <- jurors)
-        SelectionJdbc.rate(pageId, juror.getId, rated.getId, rate)
+        VoteJdbc.rate(pageId, juror.getId, rated.getId, rate)
       Round.setActive(rated.getId, active = true)
       val top = source.copy(previous = Some(rated.getId.toString), topImages = Some(1),
         topBinaryOrder = Some(BinaryOrder.Difference))
@@ -193,7 +193,7 @@ class RoundRedistributionFiltersSpec extends Specification with TestDb with Befo
       // A (1): 3 approvals, 2 rejections (sum 1); B (2): 2 approvals (sum 2); C (3): 1 approval (sum 1)
       val votes = Map(1L -> Seq(1, 1, 1, -1, -1), 2L -> Seq(1, 1, 0, 0, 0), 3L -> Seq(1, 0, 0, 0, 0))
       for ((pageId, rates) <- votes; (juror, rate) <- jurors.zip(rates))
-        SelectionJdbc.rate(pageId, juror.getId, binary.getId, rate)
+        VoteJdbc.rate(pageId, juror.getId, binary.getId, rate)
 
       // as rounds stored before V72 are: a top-N and no order, filled by "Distribute new files"
       val old = source.copy(previous = Some(binary.getId.toString), topImages = Some(1), number = 2)
@@ -225,9 +225,9 @@ class RoundRedistributionFiltersSpec extends Specification with TestDb with Befo
       val source = Round(None, 0, Some("Source"), contest.getId, active = true)
       val binary = service.createNewRound(source, jurors.map(_.getId))
       // approved (3, 6, 9), rejected (1, 4, 7, 10) and unrated (2, 5, 8) files
-      def vote(): Unit = SelectionJdbc.byRound(binary.getId).foreach { row =>
+      def vote(): Unit = VoteJdbc.byRound(binary.getId).foreach { row =>
         val rate = (row.pageId % 3).toInt match { case 0 => 1; case 1 => -1; case _ => 0 }
-        SelectionJdbc.rate(row.pageId, row.juryId, binary.getId, rate)
+        VoteJdbc.rate(row.pageId, row.juryId, binary.getId, rate)
       }
       vote()
       val next = source.copy(previous = Some(binary.getId.toString), distribution = 1)
@@ -261,9 +261,9 @@ class RoundRedistributionFiltersSpec extends Specification with TestDb with Befo
         4 -> Seq(0, 0, 0, 0, 0), 5 -> Seq(1, 1, -1, -1, 0), 6 -> Seq(1, 1, 1, 1, -1), 7 -> Seq(-1, 0, 0, 0, 0),
         8 -> Seq(1, 0, 0, 0, 0), 9 -> Seq(-1, -1, -1, 0, 0), 0 -> Seq(1, 1, 0, 0, 0))
       def vote(): Unit =
-        for (row <- SelectionJdbc.byRound(binary.getId); (juror, rate) <- jurors.zip(votes((row.pageId % 10).toInt))
+        for (row <- VoteJdbc.byRound(binary.getId); (juror, rate) <- jurors.zip(votes((row.pageId % 10).toInt))
              if juror.getId == row.juryId)
-          SelectionJdbc.rate(row.pageId, row.juryId, binary.getId, rate)
+          VoteJdbc.rate(row.pageId, row.juryId, binary.getId, rate)
       vote()
 
       val next = source.copy(previous = Some(binary.getId.toString), distribution = 1, number = 2)
@@ -311,8 +311,8 @@ class RoundRedistributionFiltersSpec extends Specification with TestDb with Befo
       val source = Round(None, 0, Some("Source"), contest.getId, active = true)
       val rated = service.createNewRound(source.copy(rates = Round.ratesById(5)), jurors.map(_.getId))
       // rows with a negative rate, which rejected-by would count in a yes/no round
-      def vote(): Unit = SelectionJdbc.byRound(rated.getId).foreach { row =>
-        SelectionJdbc.rate(row.pageId, row.juryId, rated.getId, if (row.pageId % 2 == 0) -1 else 3)
+      def vote(): Unit = VoteJdbc.byRound(rated.getId).foreach { row =>
+        VoteJdbc.rate(row.pageId, row.juryId, rated.getId, if (row.pageId % 2 == 0) -1 else 3)
       }
       vote()
       val fromRated = source.copy(previous = Some(rated.getId.toString), distribution = 1)
@@ -349,9 +349,9 @@ class RoundRedistributionFiltersSpec extends Specification with TestDb with Befo
       // juror 1 rejects the even files in the first round and those divisible by 3 in the
       // second: only 6, 12 and 18 have two rejections, one in each round
       def vote(): Unit = Seq(first -> 2, second -> 3).foreach { case (round, divisor) =>
-        SelectionJdbc.byRound(round.getId).foreach { row =>
+        VoteJdbc.byRound(round.getId).foreach { row =>
           val rate = if (row.juryId == jurors.head.getId && row.pageId % divisor == 0) -1 else 1
-          SelectionJdbc.rate(row.pageId, row.juryId, round.getId, rate)
+          VoteJdbc.rate(row.pageId, row.juryId, round.getId, rate)
         }
       }
       vote()
@@ -387,7 +387,7 @@ class RoundRedistributionFiltersSpec extends Specification with TestDb with Befo
       val service = TestRoundServices.roundService(TestRoundServices.handler(chunkRows = 3))
       val source = Round(None, 0, Some("No previous"), contest.getId, distribution = 1, active = true)
       val rounds = Seq(None, Some(0)).map(by => service.createNewRound(source.copy(prevSelectedBy = by), jurors.map(_.getId)))
-      def rows(round: Round) = SelectionJdbc.byRound(round.getId).map(s => (s.pageId, s.juryId)).toSet
+      def rows(round: Round) = VoteJdbc.byRound(round.getId).map(s => (s.pageId, s.juryId)).toSet
       val created = rounds.map(rows)
       addImages(contest, 11 to 20)
       val inMemory = new DistributeImages(ImageJdbc)

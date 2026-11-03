@@ -3,7 +3,7 @@ package gatling.setup
 import scalikejdbc._
 
 /** Prints the query plans (EXPLAIN, and ANALYZE where it's cheap enough) of the
-  * selection queries behind the slow pages, on the Gatling fixture DB.
+  * vote queries behind the slow pages, on the Gatling fixture DB.
   *
   * Both the queries before and after the October 2026 performance work are listed
   * (docs/plans/2026-10-05-performance-and-memory.md), as literal SQL, so a run against
@@ -23,11 +23,11 @@ object ExplainQueries {
     val juror  = f.jurors(11)._1 // the plan's examples use juror 12
     val region = "07"
 
-    val indexes = sql"SHOW INDEX FROM selection".map(rs => rs.string("Key_name")).list().distinct
-    val orphans = sql"""SELECT COUNT(*) FROM selection s LEFT JOIN images i ON i.page_id = s.page_id
+    val indexes = sql"SHOW INDEX FROM vote".map(rs => rs.string("Key_name")).list().distinct
+    val orphans = sql"""SELECT COUNT(*) FROM vote s LEFT JOIN images i ON i.page_id = s.page_id
                         WHERE s.page_id IS NOT NULL AND i.page_id IS NULL""".map(_.long(1)).single().getOrElse(0L)
-    println(s"[explain] selection rows without an image: $orphans")
-    println(s"[explain] selection indexes: ${indexes.mkString(", ")}")
+    println(s"[explain] vote rows without an image: $orphans")
+    println(s"[explain] vote indexes: ${indexes.mkString(", ")}")
     println(s"[explain] binary round $binary, rated round $rated, juror $juror, region $region")
 
     val galleryOrder = "ORDER BY s.rate DESC, s.monument_id ASC, s.page_id ASC"
@@ -38,57 +38,57 @@ object ExplainQueries {
     val statements: Seq[(String, String, Boolean)] = Seq(
       // (title, sql, also ANALYZE)
       ("T4 old roundRateStat",
-        s"""SELECT rate, count(1) FROM (SELECT DISTINCT s.page_id, s.rate FROM selection s
+        s"""SELECT rate, count(1) FROM (SELECT DISTINCT s.page_id, s.rate FROM vote s
             WHERE s.round_id = $binary) t GROUP BY rate""", true),
       ("T4 new selectedImageCount",
-        s"SELECT COUNT(DISTINCT s.page_id) FROM selection s WHERE s.round_id = $binary AND s.rate = 1", true),
+        s"SELECT COUNT(DISTINCT s.page_id) FROM vote s WHERE s.round_id = $binary AND s.rate = 1", true),
       ("T4 total (COUNT DISTINCT of a round)",
-        s"SELECT COUNT(DISTINCT s.page_id) FROM selection s WHERE s.round_id = $binary", true),
+        s"SELECT COUNT(DISTINCT s.page_id) FROM vote s WHERE s.round_id = $binary", true),
       ("T5 old roundsStat",
-        s"""SELECT r.id, count(DISTINCT s.page_id) FROM rounds r JOIN selection s ON r.id = s.round_id
+        s"""SELECT r.id, count(DISTINCT s.page_id) FROM round r JOIN vote s ON r.id = s.round_id
             WHERE r.contest_id = ${f.contestId} GROUP BY r.id LIMIT 2""", true),
       ("T5 new imageCountByRounds",
-        s"""SELECT s.round_id, COUNT(DISTINCT s.page_id) FROM selection s
+        s"""SELECT s.round_id, COUNT(DISTINCT s.page_id) FROM vote s
             WHERE s.round_id IN ($binary, $rated) GROUP BY s.round_id""", true),
       ("T6 old findByRoundSelection",
-        s"""SELECT u.* FROM users u JOIN selection s ON u.id = s.jury_id
+        s"""SELECT u.* FROM users u JOIN vote s ON u.id = s.jury_id
             WHERE s.round_id = $binary GROUP BY u.id ORDER BY u.id""", true),
       ("T6 new findByRoundSelection (jury ids)",
-        s"SELECT DISTINCT jury_id FROM selection WHERE round_id = $binary", true),
+        s"SELECT DISTINCT jury_id FROM vote WHERE round_id = $binary", true),
       ("T7 edit page's imagesByRound (byRoundMerged of the round)",
-        s"""SELECT sum(s.rate), count(s.rate), i.* FROM selection s STRAIGHT_JOIN images i
+        s"""SELECT sum(s.rate), count(s.rate), i.* FROM vote s STRAIGHT_JOIN images i
             ON i.page_id = s.page_id WHERE s.round_id = $binary GROUP BY s.page_id ORDER BY 1 DESC""", true),
       ("T9 old gallery page",
-        s"""SELECT i.*, s.* FROM selection s STRAIGHT_JOIN images i ON i.page_id = s.page_id
+        s"""SELECT i.*, s.* FROM vote s STRAIGHT_JOIN images i ON i.page_id = s.page_id
             WHERE s.jury_id = $juror AND s.round_id = $rated $galleryOrder LIMIT 15 OFFSET 60""", true),
       ("T9 new gallery page (deferred join)",
-        s"""SELECT i.*, s.* FROM (SELECT s.id, $galleryKeys FROM selection s
+        s"""SELECT i.*, s.* FROM (SELECT s.id, $galleryKeys FROM vote s
             WHERE s.jury_id = $juror AND s.round_id = $rated $galleryOrder LIMIT 15 OFFSET 60) k
-            STRAIGHT_JOIN selection s ON s.id = k.id
+            STRAIGHT_JOIN vote s ON s.id = k.id
             STRAIGHT_JOIN images i ON i.page_id = s.page_id $pageOrder""", true),
       ("T9 old region gallery page",
-        s"""SELECT i.*, s.* FROM selection s STRAIGHT_JOIN images i ON i.page_id = s.page_id
+        s"""SELECT i.*, s.* FROM vote s STRAIGHT_JOIN images i ON i.page_id = s.page_id
             WHERE s.jury_id = $juror AND s.round_id = $rated AND i.monument_id LIKE '$region%'
             $galleryOrder LIMIT 15 OFFSET 0""", true),
       ("T9 new region gallery page (deferred join)",
-        s"""SELECT i.*, s.* FROM (SELECT s.id, $galleryKeys FROM selection s
+        s"""SELECT i.*, s.* FROM (SELECT s.id, $galleryKeys FROM vote s
             WHERE s.jury_id = $juror AND s.round_id = $rated AND s.monument_id LIKE '$region%'
             $galleryOrder LIMIT 15 OFFSET 0) k
-            STRAIGHT_JOIN selection s ON s.id = k.id
+            STRAIGHT_JOIN vote s ON s.id = k.id
             STRAIGHT_JOIN images i ON i.page_id = s.page_id $pageOrder""", true),
       ("T9 old gallery count",
-        s"SELECT COUNT(DISTINCT s.page_id) FROM selection s WHERE s.jury_id = $juror AND s.round_id = $rated", true),
+        s"SELECT COUNT(DISTINCT s.page_id) FROM vote s WHERE s.jury_id = $juror AND s.round_id = $rated", true),
       ("T9 new gallery count",
-        s"SELECT COUNT(*) FROM selection s WHERE s.jury_id = $juror AND s.round_id = $rated", true),
+        s"SELECT COUNT(*) FROM vote s WHERE s.jury_id = $juror AND s.round_id = $rated", true),
       ("T9 old region gallery count",
-        s"""SELECT count(t.pi_on_i) FROM (SELECT i.page_id AS pi_on_i FROM selection s
+        s"""SELECT count(t.pi_on_i) FROM (SELECT i.page_id AS pi_on_i FROM vote s
             STRAIGHT_JOIN images i ON i.page_id = s.page_id
             WHERE s.jury_id = $juror AND s.round_id = $rated AND i.monument_id LIKE '$region%') t""", true),
       ("T9 new region gallery count",
-        s"""SELECT COUNT(*) FROM selection s
+        s"""SELECT COUNT(*) FROM vote s
             WHERE s.jury_id = $juror AND s.round_id = $rated AND s.monument_id LIKE '$region%'""", true),
       ("T9 byRegionStat (juror)",
-        s"""SELECT DISTINCT m.adm0 FROM selection s JOIN monument m ON m.id = s.monument_id
+        s"""SELECT DISTINCT m.adm0 FROM vote s JOIN monument m ON m.id = s.monument_id
             WHERE m.adm0 IS NOT NULL AND s.jury_id = $juror AND s.round_id = $rated""", true)
     )
 

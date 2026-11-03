@@ -77,7 +77,7 @@ sbt -Dgatling.roundMgmt.stress=true "Gatling/testOnly gatling.simulations.RoundM
 - Simulations live in `test/gatling/simulations/`, settings in `test/resources/gatling-perf.conf` (override any key with `-Dgatling.<key>=...`). Each simulation forks a JVM that runs the app (`TestServer`) and restores the fixture DB: `data/wlm-UA-images-2025.csv` (~38k images, all in the contest's category), 20 jurors, a binary and a rated round.
 - The fixture DB is cached as a dump in `data/cache/`, keyed by `GatlingDbCache.cacheKey` (migrations, CSV sizes, fixture parameters, `FixtureVersion`). Bump `FixtureVersion` whenever `GatlingDbSetup.load` changes what it writes.
 - Organizer flows (RoundManagement, AggregatedRatings) model a few organizers with think time by default; `gatling.roundMgmt.stress` / `gatling.aggRatings.stress` run the old many-sessions worst case.
-- `RoundDistributionSimulation` creates rounds through the round form and logs each step's time (submit to the end of its background job), selection rows and heap after GC to `target/gatling/distribution-memory.txt`.
+- `RoundDistributionSimulation` creates rounds through the round form and logs each step's time (submit to the end of its background job), vote rows and heap after GC to `target/gatling/distribution-memory.txt`.
 - `ConcurrentRoundCreationSimulation` has 10 admins create rounds at once (large, small, top-N, "distribute new files") while jurors vote and browse; per-admin submit-to-done times, solo reference times and heap go to `target/gatling/concurrent-distribution.txt`. `gatling.jobs.*` sets the app's job workers and chunk size for a run.
 - To measure with production-like JVM settings, prefix e.g. `"set Gatling / javaOptions ++= Seq(\"-Xmx512m\", \"-Xlog:gc*:file=target/gatling/gc-%p.log:time,uptime,level,tags\")"`; `%p` keeps one GC log per forked JVM.
 - Results: `target/gatling/<simulation>-<timestamp>/` (`js/stats.json` has per-request statistics).
@@ -104,7 +104,7 @@ sbt packageAll           # All package variants
 
 ```
 app/
-  org/intracer/wmua/   # Domain model (case classes): Image, Selection, ContestJury,
+  org/intracer/wmua/   # Domain model (case classes): Image, Vote, ContestJury,
                        #   Round, User, Comment, CriteriaRate, ImageWithRating
   db/                  # Repository interfaces (ImageRepo, RoundRepo)
   db/scalikejdbc/      # Repository implementations using ScalikeJDBC CRUDMapper
@@ -120,12 +120,12 @@ app/
 
 - **ContestJury**: A photo contest (e.g., "Wiki Loves Monuments 2024 Ukraine")
 - **Round**: A judging round within a contest. Can be binary (select/reject) or rated (1–N stars). Rounds can filter images by region, category, monument, size, media type, and special nomination.
-- **Selection**: A juror's vote/rating on an image in a round (`page_id`, `jury_id`, `round_id`, `rate`)
+- **Vote** (`org.intracer.wmua.Vote`, DAO `VoteJdbc`): A juror's vote/rating on an image in a round, a row of table `vote` (`page_id`, `jury_id`, `round_id`, `rate`; V82 renamed it from `selection`). Votes of a file deleted on Commons are moved aside to `vote_aside` with their ids; `vote_orphan` keeps the votes V58 found without an image; a criteria round's per-criterion rates are `criteria_rate` rows (`vote_id`).
 - **User roles**: `root` (super-admin, `users.is_root`, no contest; set only by root through `User.setRoot` / account creation, never read from `user_contest`), and per contest exactly one of `User.ContestRoles` (= `FORM_ROLES`: `no`, `jury`, `organizer`, `admin`, `board`, `auditor`, `staff`) in `user_contest.role` (V61/V62): one account per email, a member of any number of contests with a role in each. A role is checked exactly (no splitting, trimming or case folding) by the edit form, `UserController.saveUser` (`User.mayAssignRoles`), `UserService.addToContest`, the DAO (`createMembership` / `updateRole` / `User.create` `require` it) and V76's binary `CHECK` constraint; the reader (`UserContest.roles`) ignores any other stored value (the membership is then inactive). Adding a role needs a V-migration replacing the constraint. The session's `current_contest_id` picks the contest a request runs in (`Secured.inCurrentContest`); users loaded with `User.contestMembers` / `findByContest` / `loadJurors` carry their role in that contest, a plain `findById` has none.
 
 ### Background jobs
 
-Long work runs as a job in the generic `job` table (V60), never on a request thread: `services.jobs.JobScheduler` runs one short step (one transaction) of a job at a time on its own pool (`jobs.*` in `application.conf`), taking turns between contests and jobs, with per-kind concurrency limits, a lease (`owner`, `heartbeat_at`) for restart recovery, Cancel and Retry. A `JobHandler` per kind does the steps; only `round_distribution` (`services.distribution.RoundDistributionHandler`, the single fill path for a new round, a resubmit and "Distribute new files") exists so far. A round being created stays hidden from jurors (`rounds.distributing`) until its count check passes. Tests run jobs inline (`jobs.mode = inline` in `test/resources/application.conf`; `services.TestRoundServices` without a Play app).
+Long work runs as a job in the generic `job` table (V60), never on a request thread: `services.jobs.JobScheduler` runs one short step (one transaction) of a job at a time on its own pool (`jobs.*` in `application.conf`), taking turns between contests and jobs, with per-kind concurrency limits, a lease (`owner`, `heartbeat_at`) for restart recovery, Cancel and Retry. A `JobHandler` per kind does the steps; only `round_distribution` (`services.distribution.RoundDistributionHandler`, the single fill path for a new round, a resubmit and "Distribute new files") exists so far. A round being created stays hidden from jurors (`round.distributing`) until its count check passes. Tests run jobs inline (`jobs.mode = inline` in `test/resources/application.conf`; `services.TestRoundServices` without a Play app).
 
 ### Authentication & Authorization
 
@@ -169,7 +169,7 @@ One MariaDB Testcontainer per JVM, shared across all specs via `SharedTestDb` (l
 - **`hasManyThrough`**: Lazy val on the companion object (e.g., `Round.usersRef`) — must be accessed once before `round.users` is populated. `SharedTestDb.initialized` does this automatically.
 - **Source:** GitHub: https://github.com/scalikejdbc/scalikejdbc — local jars: `~/.ivy2/cache/org.scalikejdbc/scalikejdbc_2.13/srcs/`
 
-**Table names:** new tables are singular snake_case (`job`, `round_image`); a link table is `<owner>_<thing>` (`round_user`, `user_contest`); a foreign key column is `<table>_id`; index and constraint names start with the table name. The old plural tables (`images`, `rounds`, `users`, …) keep their names.
+**Table names:** new tables are singular snake_case (`job`, `round_image`); a link table is `<owner>_<thing>` (`round_user`, `user_contest`); a foreign key column is `<table>_id`; index and constraint names start with the table name. The old plural tables (`images`, `users`, `category_members`, …) keep their names; V82 renamed `rounds` to `round` and `selection` and its copies to `vote`, `vote_aside`, `vote_orphan` (`criteria_rate.selection` to `vote_id`). Scala names (`Round`, …) and URLs/routes are not affected.
 
 ### REST API
 

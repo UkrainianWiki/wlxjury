@@ -64,7 +64,7 @@ class RoundCreationResubmitSpec extends Specification with TestDb with BeforeAll
 
   private def rounds(contest: ContestJury) = roundDao.findByContest(contest.getId)
 
-  private def selectionRows(roundId: Long) = SelectionJdbc.byRound(roundId)
+  private def selectionRows(roundId: Long) = VoteJdbc.byRound(roundId)
 
   "submit" should {
 
@@ -214,7 +214,7 @@ class RoundCreationResubmitSpec extends Specification with TestDb with BeforeAll
   }
 
   /** What a failed creation leaves behind: the round row and its round_user rows, but
-    * no selection rows (the distribution's transaction rolled back).
+    * no vote rows (the distribution's transaction rolled back).
     */
   private def failedRound(contest: ContestJury, name: String, jurors: Seq[Long]): Round = {
     val round = roundDao.create(newRound(contest, name).copy(number = 1))

@@ -46,7 +46,7 @@ class LargeImageSpec extends PlaySpecification with PlayTestDb {
                       user: User = user,
                       round: Round = round) = {
     val selections = images.zipWithIndex.map { case (image, i) =>
-      Selection(image, user, round, rate)
+      Vote(image, user, round, rate)
     }
     selectionDao.batchInsert(selections)
     selections
@@ -412,24 +412,24 @@ class LargeImageSpec extends PlaySpecification with PlayTestDb {
     // selection of file 0 rated 3 and 4. File 1 is only another juror's.
     def setUpCriteria(): (Image, Image, User) = {
       setUp(rates = Round.ratesById(10))
-      DB.autoCommit { implicit s => sql"UPDATE rounds SET has_criteria = 1 WHERE id = ${round.getId}".update() }
+      DB.autoCommit { implicit s => sql"UPDATE round SET has_criteria = 1 WHERE id = ${round.getId}".update() }
       round = roundDao.findById(round.getId).get
       val Seq(mine, others) = createImages(2)
       createSelection(Seq(mine))
       val other = userDao.create(User("Other", "other@example.com", None, Set("jury"), contestId = contest.id))
       round.addUsers(Seq(RoundUser(round.getId, other.getId, "jury", active = true)))
       createSelection(Seq(others), user = other)
-      val selection = SelectionJdbc.findBy(mine.pageId, user.getId, round.getId).get
-      val othersSelection = SelectionJdbc.findBy(others.pageId, other.getId, round.getId).get
+      val selection = VoteJdbc.findBy(mine.pageId, user.getId, round.getId).get
+      val othersSelection = VoteJdbc.findBy(others.pageId, other.getId, round.getId).get
       DB.autoCommit { implicit s =>
-        sql"""INSERT INTO criteria_rate (id, selection, criteria, rate) VALUES
+        sql"""INSERT INTO criteria_rate (id, vote_id, criteria, rate) VALUES
               (1, ${selection.getId}, 1, 3), (2, ${selection.getId}, 2, 4), (3, ${othersSelection.getId}, 1, 5)"""
           .update()
       }
       (mine, others, other)
     }
     def criteriaRates(pageId: Long, juror: User): Map[Long, Int] =
-      SelectionJdbc.findBy(pageId, juror.getId, round.getId).toSeq
+      VoteJdbc.findBy(pageId, juror.getId, round.getId).toSeq
         .flatMap(s => CriteriaRate.getRates(s.getId)).map(c => c.criteria -> c.rate).toMap
     def viewRequest(roundId: Long, pageId: Long) =
       FakeRequest(GET, s"/large/round/$roundId/user/${user.getId}/pageid/$pageId")
@@ -458,13 +458,13 @@ class LargeImageSpec extends PlaySpecification with PlayTestDb {
       testDbApp { app =>
         val (mine, others, other) = setUpCriteria()
         // the other juror's selection rated in both criteria too, as a distribution gives them
-        val othersSelection = SelectionJdbc.findBy(others.pageId, other.getId, round.getId).get
+        val othersSelection = VoteJdbc.findBy(others.pageId, other.getId, round.getId).get
         DB.autoCommit { implicit s =>
-          sql"INSERT INTO criteria_rate (id, selection, criteria, rate) VALUES (4, ${othersSelection.getId}, 2, 0)"
+          sql"INSERT INTO criteria_rate (id, vote_id, criteria, rate) VALUES (4, ${othersSelection.getId}, 2, 0)"
             .update()
         }
         // the file's rate, the sum of its criteria's: 3 + 4
-        CriteriaRate.updateRate(SelectionJdbc.findBy(mine.pageId, user.getId, round.getId).get.getId, 1, 3)
+        CriteriaRate.updateRate(VoteJdbc.findBy(mine.pageId, user.getId, round.getId).get.getId, 1, 3)
         val page = route(app, FakeRequest(GET, s"/byrate/round/${round.getId}/user/${user.getId}/page/1")
           .withHeaders(ACCEPT -> "text/html")
           .withSession(Secured.UserName -> email, Secured.CurrentContestId -> contest.getId.toString)).get
@@ -508,7 +508,7 @@ class LargeImageSpec extends PlaySpecification with PlayTestDb {
       testDbApp { app =>
         implicit val materializer: Materializer = app.materializer
         val (mine, _, _) = setUpCriteria()
-        CriteriaRate.updateRate(SelectionJdbc.findBy(mine.pageId, user.getId, round.getId).get.getId, 1, 3)
+        CriteriaRate.updateRate(VoteJdbc.findBy(mine.pageId, user.getId, round.getId).get.getId, 1, 3)
 
         val result = controller.rateByPageId(round.getId, mine.pageId, select = 9)
           .apply(voteRequest(s"/large/round/${round.getId}/pageid/${mine.pageId}/select/9"))
@@ -517,7 +517,7 @@ class LargeImageSpec extends PlaySpecification with PlayTestDb {
         status(result) === BAD_REQUEST
         contentAsString(result) must contain("vote.error.invalid.rate")
         criteriaRates(mine.pageId, user) === Map(1L -> 3, 2L -> 4)
-        SelectionJdbc.findBy(mine.pageId, user.getId, round.getId).map(_.rate) === Some(7)
+        VoteJdbc.findBy(mine.pageId, user.getId, round.getId).map(_.rate) === Some(7)
       }
     }
 
@@ -546,7 +546,7 @@ class LargeImageSpec extends PlaySpecification with PlayTestDb {
 
         status(result) === NOT_FOUND
         criteriaRates(others.pageId, other) === Map(1L -> 5)
-        SelectionJdbc.findBy(others.pageId, user.getId, round.getId) must beNone
+        VoteJdbc.findBy(others.pageId, user.getId, round.getId) must beNone
       }
     }
 
@@ -707,7 +707,7 @@ class LargeImageSpec extends PlaySpecification with PlayTestDb {
         .withSession(Secured.UserName -> email, Secured.CurrentContestId -> contest.getId.toString,
           "csrfToken" -> token)
         .withFormUrlEncodedBody(body: _*)).get
-    def rate() = SelectionJdbc.findBy(images.head.pageId, user.getId, round.getId).map(_.rate)
+    def rate() = VoteJdbc.findBy(images.head.pageId, user.getId, round.getId).map(_.rate)
 
     "not be cast by a GET" in {
       withCsrfApp { app =>
@@ -731,10 +731,10 @@ class LargeImageSpec extends PlaySpecification with PlayTestDb {
     "be refused without the CSRF token for a criterion too" in {
       withCsrfApp { app =>
         setUpVote(app)
-        DB.autoCommit { implicit s => sql"UPDATE rounds SET has_criteria = 1 WHERE id = ${round.getId}".update() }
-        val vote = SelectionJdbc.findBy(images.head.pageId, user.getId, round.getId).get
+        DB.autoCommit { implicit s => sql"UPDATE round SET has_criteria = 1 WHERE id = ${round.getId}".update() }
+        val vote = VoteJdbc.findBy(images.head.pageId, user.getId, round.getId).get
         DB.autoCommit { implicit s =>
-          sql"INSERT INTO criteria_rate (id, selection, criteria, rate) VALUES (1, ${vote.getId}, 1, 0)".update()
+          sql"INSERT INTO criteria_rate (id, vote_id, criteria, rate) VALUES (1, ${vote.getId}, 1, 0)".update()
         }
         def sendCriterion(body: (String, String)*) =
           route(app, FakeRequest(POST, s"/large/round/${round.getId}/pageid/${images.head.pageId}/select/5?criteria=1")
@@ -815,7 +815,7 @@ class LargeImageSpec extends PlaySpecification with PlayTestDb {
         .withHeaders(Seq(COOKIE -> "PLAY_SESSION=signed-in", "X-Requested-With" -> "XMLHttpRequest") ++ headers: _*)
         .withSession(Secured.UserName -> email, Secured.CurrentContestId -> contest.getId.toString,
           "csrfToken" -> sessionToken)).get
-    def rate() = SelectionJdbc.findBy(image.pageId, user.getId, round.getId).map(_.rate)
+    def rate() = VoteJdbc.findBy(image.pageId, user.getId, round.getId).map(_.rate)
 
     "be refused without the CSRF token, or with a forged one" in {
       withCsrfApp { app =>
@@ -944,7 +944,7 @@ class LargeImageSpec extends PlaySpecification with PlayTestDb {
         setUp()
         createSelection(createImages(40))
         val order = RoundList(round, user.getId).query.list().map(_.pageId)
-        SelectionJdbc.rate(order(20), user.getId, round.getId, 1)
+        VoteJdbc.rate(order(20), user.getId, round.getId, 1)
 
         // 20 unrated files before it: page 2, where the juror was, not page 1
         redirectLocation(back(app, order(20), "?rate=0")) ===
@@ -973,7 +973,7 @@ class LargeImageSpec extends PlaySpecification with PlayTestDb {
         val images = createImages(5)
         createSelection(images)
         val order = RoundList(round, user.getId).query.list().map(_.pageId)
-        SelectionJdbc.rate(order(3), user.getId, round.getId, -1)
+        VoteJdbc.rate(order(3), user.getId, round.getId, -1)
 
         val result = controller.large(user.getId, order(3), "all", round.getId)
           .apply(request(s"/large/round/${round.getId}/user/${user.getId}/pageid/${order(3)}?rate=0"))

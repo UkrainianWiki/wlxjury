@@ -3,7 +3,7 @@ package services
 import controllers.RoundStat
 import db.RoundRepo
 import db.scalikejdbc.Round.RoundStatRow
-import db.scalikejdbc.{ImageJdbc, Round, RoundImageCounts, RoundUser, SelectionJdbc, User}
+import db.scalikejdbc.{ImageJdbc, Round, RoundImageCounts, RoundUser, VoteJdbc, User}
 import org.intracer.wmua.cmd.DistributeImages
 import play.api.Logging
 import play.api.libs.json.Json
@@ -127,8 +127,9 @@ class RoundService @Inject() (
         (created, job)
       })
     catch {
+      // the unique index round_submit_token_uidx (rounds_submit_token_uidx before V82)
       case e: java.sql.SQLIntegrityConstraintViolationException
-          if submitToken.isDefined && Option(e.getMessage).exists(_.contains("rounds_submit_token")) =>
+          if submitToken.isDefined && Option(e.getMessage).exists(_.contains("submit_token_uidx")) =>
         Left(submitToken.flatMap(submitted(_, round.contestId)).getOrElse(throw e))
     }
   }

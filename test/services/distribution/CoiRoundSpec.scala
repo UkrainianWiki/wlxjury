@@ -69,7 +69,7 @@ class CoiRoundSpec extends Specification with TestDb with BeforeAll with BeforeE
   private def remove(roundId: Long, by: User) =
     RoundConflicts.removeFromRound(roundId, by, RoundDistributionHandler.dedupeKey(roundId))
 
-  private def pageIds(roundId: Long): Set[Long] = SelectionJdbc.byRound(roundId).map(_.pageId).toSet
+  private def pageIds(roundId: Long): Set[Long] = VoteJdbc.byRound(roundId).map(_.pageId).toSet
 
   private def jobOf(roundId: Long) =
     JobJdbc.latestBySubjects(RoundDistributionHandler.Kind, RoundDistributionHandler.SubjectType, Seq(roundId))
@@ -95,7 +95,7 @@ class CoiRoundSpec extends Specification with TestDb with BeforeAll with BeforeE
       val (contest, jurors, board) = setUp()
       val svc = service
       val first = svc.createNewRound(newRound(contest, excludeCoi = false), jurors.map(_.getId))
-      SelectionJdbc.byRound(first.getId).foreach(s => SelectionJdbc.rate(s.pageId, s.juryId, first.getId, 1))
+      VoteJdbc.byRound(first.getId).foreach(s => VoteJdbc.rate(s.pageId, s.juryId, first.getId, 1))
       // file 8's author joins the contest's staff after round 1
       User.create(User("Somebody", "somebody@example.com", None, Set("staff"), Some("h"), contest.id,
         wikiAccount = Some("Somebody")))
@@ -174,17 +174,17 @@ class CoiRoundSpec extends Specification with TestDb with BeforeAll with BeforeE
   "leaving out conflicts of interest now" should {
 
     def criteriaRows(roundId: Long): Map[Long, Int] = DB.readOnly { implicit s =>
-      sql"""SELECT s.page_id, COUNT(*) FROM criteria_rate c JOIN selection s ON s.id = c.selection
+      sql"""SELECT s.page_id, COUNT(*) FROM criteria_rate c JOIN vote s ON s.id = c.vote_id
             WHERE s.round_id = $roundId GROUP BY s.page_id""".map(rs => rs.long(1) -> rs.int(2)).list().toMap
     }
 
     def asideRows(roundId: Long): Set[Long] = DB.readOnly { implicit s =>
-      sql"SELECT page_id FROM selection_deleted WHERE round_id = $roundId".map(_.long(1)).list().toSet
+      sql"SELECT page_id FROM vote_aside WHERE round_id = $roundId".map(_.long(1)).list().toSet
     }
 
     def addCriteria(roundId: Long): Unit = DB.autoCommit { implicit s =>
-      sql"""INSERT INTO criteria_rate (id, selection, criteria, rate)
-            SELECT s.id, s.id, 1, 1 FROM selection s WHERE s.round_id = $roundId""".update()
+      sql"""INSERT INTO criteria_rate (id, vote_id, criteria, rate)
+            SELECT s.id, s.id, 1, 1 FROM vote s WHERE s.round_id = $roundId""".update()
     }
 
     "remove the files with their votes, those moved aside and criteria rates, and nothing else" in {
@@ -206,11 +206,11 @@ class CoiRoundSpec extends Specification with TestDb with BeforeAll with BeforeE
       pageIds(round.getId) === (1L to 10L).toSet -- conflicts
       asideRows(round.getId) must beEmpty
       criteriaRows(round.getId).keySet === (1L to 10L).toSet -- conflicts
-      // no criteria rate is left without its vote, in selection or moved aside
+      // no criteria rate is left without its vote, in vote or moved aside
       DB.readOnly { implicit s =>
         sql"""SELECT COUNT(*) FROM criteria_rate cr
-              WHERE NOT EXISTS (SELECT 1 FROM selection s WHERE s.id = cr.selection)
-                AND NOT EXISTS (SELECT 1 FROM selection_deleted d WHERE d.id = cr.selection)""".map(_.long(1)).single()
+              WHERE NOT EXISTS (SELECT 1 FROM vote s WHERE s.id = cr.vote_id)
+                AND NOT EXISTS (SELECT 1 FROM vote_aside d WHERE d.id = cr.vote_id)""".map(_.long(1)).single()
       } === Some(0L)
       roundDao.findById(round.getId).get.excludeCoi must beTrue
       RoundImageCounts.get(Seq(round.getId))(ImageJdbc.imageCountByRounds) === Map(round.getId -> 7)
@@ -226,9 +226,9 @@ class CoiRoundSpec extends Specification with TestDb with BeforeAll with BeforeE
       val svc = service
       val round = svc.createNewRound(newRound(contest, excludeCoi = false), jurors.map(_.getId))
       val admin = jurors.head
-      sql"UPDATE rounds SET active = 0 WHERE id = ${round.getId}".update()(AutoSession)
+      sql"UPDATE round SET active = 0 WHERE id = ${round.getId}".update()(AutoSession)
       remove(round.getId, admin) === RoundConflicts.Outcome.NotOpen
-      sql"UPDATE rounds SET active = 1, distributing = 1 WHERE id = ${round.getId}".update()(AutoSession)
+      sql"UPDATE round SET active = 1, distributing = 1 WHERE id = ${round.getId}".update()(AutoSession)
       remove(round.getId, admin) === RoundConflicts.Outcome.NotOpen
       pageIds(round.getId) === (1L to 10L).toSet
       remove(12345L, admin) === RoundConflicts.Outcome.NotFound

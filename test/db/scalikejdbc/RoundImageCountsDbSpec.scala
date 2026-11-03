@@ -72,10 +72,10 @@ class RoundImageCountsDbSpec extends Specification with TestDb with BeforeAll wi
       val (_, round, images, jurors) = setUp(3)
       distributor.distributeImages(round, images, jurors)
       count(round.getId) === 3
-      SelectionJdbc.removeImage(images.head.pageId, round.getId)
+      VoteJdbc.removeImage(images.head.pageId, round.getId)
       count(round.getId) === 2
-      SelectionJdbc.rate(images(1).pageId, jurors.head.getId, round.getId, 1)
-      SelectionJdbc.removeUnrated(round.getId)
+      VoteJdbc.rate(images(1).pageId, jurors.head.getId, round.getId, 1)
+      VoteJdbc.removeUnrated(round.getId)
       count(round.getId) === 1
     }
 
@@ -85,7 +85,7 @@ class RoundImageCountsDbSpec extends Specification with TestDb with BeforeAll wi
       distributor.distributeImages(round, images, jurors)
       count(round.getId) === 2
       count(other.getId) === 0
-      SelectionJdbc.setRound(images.head.pageId, round.getId, other.getId)
+      VoteJdbc.setRound(images.head.pageId, round.getId, other.getId)
       count(round.getId) === 1
       count(other.getId) === 1
     }
@@ -94,7 +94,7 @@ class RoundImageCountsDbSpec extends Specification with TestDb with BeforeAll wi
       val (_, round, images, jurors) = setUp(2)
       distributor.distributeImages(round, images, jurors)
       count(round.getId) === 2
-      SelectionJdbc.rate(images.head.pageId, jurors.head.getId, round.getId, 1)
+      VoteJdbc.rate(images.head.pageId, jurors.head.getId, round.getId, 1)
       count(round.getId) === ImageJdbc.imageCountByRounds(Seq(round.getId))(round.getId)
     }
   }

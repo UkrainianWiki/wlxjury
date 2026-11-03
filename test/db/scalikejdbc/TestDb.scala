@@ -19,14 +19,14 @@ trait TestDb {
   val imageDao: ImageJdbc.type         = ImageJdbc
   val monumentDao: MonumentJdbc.type   = MonumentJdbc
   val roundDao: Round.type             = Round
-  val selectionDao: SelectionJdbc.type = SelectionJdbc
+  val selectionDao: VoteJdbc.type = VoteJdbc
   val userDao: User.type               = User
   val userContestDao: UserContestJdbc.type = UserContestJdbc
 
   def now: ZonedDateTime = TestDb.now
 
-  /** Inserts a minimal image for each page id that has none yet: a selection row needs
-    * its image (foreign key FK_selection_page_id), so a test inserting selection rows of
+  /** Inserts a minimal image for each page id that has none yet: a vote row needs
+    * its image (foreign key vote_page_id_fk), so a test inserting vote rows of
     * its own inserts their images first.
     */
   def insertImagesFor(pageIds: Long*)(implicit session: DBSession = AutoSession): Unit = {

@@ -96,7 +96,7 @@ class LargeViewSideSpec extends Specification {
       implicit val msgs: play.api.i18n.Messages = messages(request("/"))
       val list = controllers.RoundList(binaryRound, 0, view = controllers.GalleryView.ByRate)
       val votes = Seq(1 -> 1, 2 -> -1, 3 -> 0).map { case (id, rate) =>
-        (org.intracer.wmua.Selection(101L, id.toLong, binaryRound.getId, rate),
+        (org.intracer.wmua.Vote(101L, id.toLong, binaryRound.getId, rate),
           db.scalikejdbc.User(s"Juror $id", s"j$id@example.org", id = Some(id.toLong)))
       }
       val items = Jsoup.parse(views.html.large.juryStat(votes, list).body).select(".large-line li").asScala

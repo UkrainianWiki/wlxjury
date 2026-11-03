@@ -24,6 +24,8 @@ class AccountVerificationMigrationSpec extends Specification with TestDb with Be
     new String(Files.readAllBytes(Paths.get(Script)), "UTF-8").linesIterator
       .filterNot(_.trim.startsWith("--")).mkString("\n")
       .split(";").map(_.trim).filter(_.nonEmpty).toSeq
+      // run on the vote tables as V82 renamed them
+      .map(_.replaceAll("\\bselection_deleted\\b", "vote_aside").replaceAll("\\bselection\\b", "vote"))
 
   private def run(): Unit =
     DB.autoCommit { implicit s => statements.foreach(statement => SQL(statement).execute.apply()) }
@@ -60,9 +62,9 @@ class AccountVerificationMigrationSpec extends Specification with TestDb with Be
               ($juror, 10, 'jury'), ($organizer, 10, 'organizer'), ($boardOnly, 10, 'board'), ($deletedMember, 10, 'admin')"""
           .update.apply()
         sql"INSERT INTO round_user (user_id, round_id, role, active) VALUES ($assigned, 1, 'jury', 0)".update.apply()
-        sql"INSERT INTO selection (jury_id, round_id, page_id, rate) VALUES ($voter, 1, 1, 1), ($deletedVoter, 1, 2, 1)"
+        sql"INSERT INTO vote (jury_id, round_id, page_id, rate) VALUES ($voter, 1, 1, 1), ($deletedVoter, 1, 2, 1)"
           .update.apply()
-        sql"INSERT INTO selection_deleted (jury_id, round_id, page_id, rate) VALUES ($oldVoter, 1, 3, 1)".update.apply()
+        sql"INSERT INTO vote_aside (jury_id, round_id, page_id, rate) VALUES ($oldVoter, 1, 3, 1)".update.apply()
         sql"SET FOREIGN_KEY_CHECKS=1".execute.apply()
         sql"UPDATE users SET deleted_at = NOW() WHERE id IN ($deletedVoter, $deletedMember)".update.apply()
       }
@@ -77,8 +79,8 @@ class AccountVerificationMigrationSpec extends Specification with TestDb with Be
           (User.findAll().forall(u => !u.wikiAccountVerified && u.authVersion == 0) must beTrue)
       } finally DB.autoCommit { implicit s =>
         sql"DELETE FROM round_user".update.apply()
-        sql"DELETE FROM selection".update.apply()
-        sql"DELETE FROM selection_deleted".update.apply()
+        sql"DELETE FROM vote".update.apply()
+        sql"DELETE FROM vote_aside".update.apply()
       }
     }
 

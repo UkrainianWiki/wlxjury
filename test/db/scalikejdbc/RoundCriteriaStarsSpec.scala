@@ -41,11 +41,11 @@ class RoundCriteriaStarsSpec extends Specification with BeforeAll {
       CriteriaRate.countOf(round.getId) must beNone
 
       // a selection without criteria rates first, then two with two criteria each
-      SelectionJdbc.create(1, 0, 7, round.getId)
-      val s1 = SelectionJdbc.create(1, 0, 8, round.getId)
-      val s2 = SelectionJdbc.create(2, 0, 8, round.getId)
-      val s3 = SelectionJdbc.create(1, 0, 8, other.getId)
-      sql"""INSERT INTO criteria_rate (id, selection, criteria, rate) VALUES
+      VoteJdbc.create(1, 0, 7, round.getId)
+      val s1 = VoteJdbc.create(1, 0, 8, round.getId)
+      val s2 = VoteJdbc.create(2, 0, 8, round.getId)
+      val s3 = VoteJdbc.create(1, 0, 8, other.getId)
+      sql"""INSERT INTO criteria_rate (id, vote_id, criteria, rate) VALUES
             (1, ${s1.getId}, 6, 3), (2, ${s1.getId}, 7, 0), (3, ${s2.getId}, 6, 0), (4, ${s2.getId}, 7, 5),
             (5, ${s3.getId}, 6, 1), (6, ${s3.getId}, 7, 1), (7, ${s3.getId}, 8, 1), (8, ${s3.getId}, 9, 1)"""
         .update()

@@ -135,9 +135,9 @@ class SelectionQuerySpec extends Specification {
 
   "join" should {
 
-    "use selection as the outer (driving) table" in {
+    "use vote as the outer (driving) table" in {
       val j = SelectionQuery(userId = Some(userId), roundId = Some(roundId)).join(monuments = false)
-      j.indexOf("selection s") must beLessThan(j.indexOf("images i"))
+      j.indexOf("vote s") must beLessThan(j.indexOf("images i"))
     }
 
     "emit STRAIGHT_JOIN" in {

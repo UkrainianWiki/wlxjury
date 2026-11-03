@@ -75,9 +75,9 @@ case class Round(
   def availableJurors(implicit session: DBSession = AutoSession): Seq[User] =
     User.findByContestAndRoles(contestId, roles.toSeq)
 
-  lazy val numberOfActiveJurors = SelectionJdbc.activeJurors(id.get)
+  lazy val numberOfActiveJurors = VoteJdbc.activeJurors(id.get)
 
-  lazy val numberOfAssignedJurors = SelectionJdbc.allJurors(id.get)
+  lazy val numberOfAssignedJurors = VoteJdbc.allJurors(id.get)
 
   def numberOfJurorsForAverageRate: Long =
     if (!optionalRate) numberOfAssignedJurors else numberOfActiveJurors
@@ -232,11 +232,11 @@ object Round extends RoundRepo with CRUDMapper[Round] {
 
   implicit def session: DBSession = autoSession
 
-  override val tableName = "rounds"
+  override val tableName = "round"
 
   lazy val c = Round.syntax("c")
 
-  lazy val s = SelectionJdbc.syntax("s")
+  lazy val s = VoteJdbc.syntax("s")
 
   lazy val ru = RoundUser.syntax("ru")
 
@@ -423,10 +423,10 @@ object Round extends RoundRepo with CRUDMapper[Round] {
     */
   def setActiveGuarded(id: Long, active: Boolean): Boolean = {
     val refused =
-      sql"SELECT distributing FROM rounds WHERE id = $id".map(_.boolean(1)).single().getOrElse(false) && active
+      sql"SELECT distributing FROM round WHERE id = $id".map(_.boolean(1)).single().getOrElse(false) && active
     val archived = DB.localTx { implicit session =>
       val wasOpen = isOpen(id)
-      sql"""UPDATE rounds
+      sql"""UPDATE round
             SET active_before_freeze = IF(freeze_count > 0, $active AND NOT distributing, active_before_freeze),
                 active = IF(freeze_count > 0, active, $active AND NOT distributing)
             WHERE id = $id""".update()
@@ -437,7 +437,7 @@ object Round extends RoundRepo with CRUDMapper[Round] {
     !refused
   }
 
-  /** After votes were moved into the round ([[SelectionJdbc.setRound]]) and committed: if
+  /** After votes were moved into the round ([[VoteJdbc.setRound]]) and committed: if
     * it is open, moves aside its votes of files deleted on Commons, in a transaction of its
     * own. One marked deleted after this
     * reads them moves them itself ([[services.imports.DeletedFiles.settle]]).
@@ -454,7 +454,7 @@ object Round extends RoundRepo with CRUDMapper[Round] {
     * (V63, [[ImageJdbc.lockOpenRoundsOf]]); the others, finished or not started yet, keep
     * its votes until they open ([[setActiveGuarded]]).
     *
-    * @param table the rounds table or its alias
+    * @param table the round table or its alias
     */
   def openCond(table: SQLSyntax): SQLSyntax =
     sqls"""($table.active = 1 OR $table.distributing = 1
@@ -462,7 +462,7 @@ object Round extends RoundRepo with CRUDMapper[Round] {
 
   /** Whether the round is open ([[openCond]]), read as committed and locked for update. */
   def isOpen(id: Long)(implicit session: DBSession): Boolean =
-    sql"SELECT ${openCond(sqls"rounds")} FROM rounds WHERE id = $id FOR UPDATE"
+    sql"SELECT ${openCond(sqls"round")} FROM round WHERE id = $id FOR UPDATE"
       .map(_.booleanOpt(1).getOrElse(false))
       .single()
       .getOrElse(false)
@@ -472,7 +472,7 @@ object Round extends RoundRepo with CRUDMapper[Round] {
     */
   def lock(ids: Seq[Long])(implicit session: DBSession): Unit =
     if (ids.nonEmpty)
-      sql"SELECT id FROM rounds WHERE id IN (${ids.distinct}) ORDER BY id FOR UPDATE".map(_.long(1)).list(): Unit
+      sql"SELECT id FROM round WHERE id IN (${ids.distinct}) ORDER BY id FOR UPDATE".map(_.long(1)).list(): Unit
 
   /** Freezes previous rounds for a distribution that reads their votes: they become
     * inactive (no votes) until [[release]]. The first freeze of a round saves its active
@@ -481,7 +481,7 @@ object Round extends RoundRepo with CRUDMapper[Round] {
     */
   def freeze(roundIds: Seq[Long])(implicit session: DBSession): Unit =
     roundIds.distinct.sorted.foreach { id =>
-      sql"""UPDATE rounds
+      sql"""UPDATE round
             SET active_before_freeze = IF(freeze_count = 0, COALESCE(active, 0), active_before_freeze),
                 active = 0,
                 freeze_count = freeze_count + 1
@@ -495,7 +495,7 @@ object Round extends RoundRepo with CRUDMapper[Round] {
     */
   def release(roundIds: Seq[Long], close: Boolean)(implicit session: DBSession): Unit =
     roundIds.distinct.sorted.foreach { id =>
-      sql"""UPDATE rounds
+      sql"""UPDATE round
             SET active_before_freeze = IF($close, 0, active_before_freeze),
                 freeze_count = GREATEST(freeze_count - 1, 0),
                 active = IF(freeze_count = 0, COALESCE(active_before_freeze, active), active),
@@ -505,7 +505,7 @@ object Round extends RoundRepo with CRUDMapper[Round] {
 
   /** A round's creation has passed its count check: it is shown to its jurors. */
   def completeCreation(id: Long)(implicit session: DBSession): Unit =
-    sql"UPDATE rounds SET distributing = 0, active = 1 WHERE id = $id".update()
+    sql"UPDATE round SET distributing = 0, active = 1 WHERE id = $id".update()
 
   def setInactiveAllInContest(contestId: Long): Unit =
     withSQL {
@@ -525,17 +525,17 @@ object Round extends RoundRepo with CRUDMapper[Round] {
   case class RoundStatRow(juror: Long, rate: Int, count: Int)
 
   def roundUserStat(roundId: Long): Seq[RoundStatRow] =
-    sql"""SELECT s.jury_id, s.rate, count(1) FROM selection s
+    sql"""SELECT s.jury_id, s.rate, count(1) FROM vote s
     WHERE s.round_id = $roundId
     GROUP BY s.jury_id, s.rate"""
       .map(rs => RoundStatRow(rs.int(1), rs.int(2), rs.int(3)))
       .list()
 
   /** Distinct images selected (rate 1) in a binary round: a scan of the round's
-    * entries in idx_selection_round_page_rate, without reading the rows.
+    * entries in vote_round_page_rate_idx, without reading the rows.
     */
   def selectedImageCount(roundId: Long): Int =
-    sql"""SELECT COUNT(DISTINCT s.page_id) FROM selection s
+    sql"""SELECT COUNT(DISTINCT s.page_id) FROM vote s
           WHERE s.round_id = $roundId AND s.rate = 1"""
       .map(_.int(1))
       .single()
@@ -545,11 +545,11 @@ object Round extends RoundRepo with CRUDMapper[Round] {
     * rejection (-1): what its lists of all the jurors' votes filtered by each list
     * (docs/plans/2026-11-01-binary-aggregate-votes.md, decision 3), a file in as many of them
     * as its votes are of kinds. One scan of the round's entries in
-    * idx_selection_round_page_rate, without reading the rows.
+    * vote_round_page_rate_idx, without reading the rows.
     */
   def imageCountsByRate(roundId: Long): Map[Int, Int] =
     sql"""SELECT COALESCE(SUM(t.a > 0), 0), COALESCE(SUM(t.u > 0), 0), COALESCE(SUM(t.r > 0), 0) FROM (
-            SELECT SUM(s.rate > 0) a, SUM(s.rate = 0) u, SUM(s.rate < 0) r FROM selection s
+            SELECT SUM(s.rate > 0) a, SUM(s.rate = 0) u, SUM(s.rate < 0) r FROM vote s
             WHERE s.round_id = $roundId GROUP BY s.page_id) t"""
       .map(rs => Map(1 -> rs.int(1), 0 -> rs.int(2), -1 -> rs.int(3)))
       .single()

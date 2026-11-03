@@ -142,7 +142,7 @@ class CommonsFileCheckSpec extends Specification with TestDb with BeforeAll with
       ImageJdbc.findByFilename("Old_name.jpg") must beNone
       ImageJdbc.findByFilename("New_name.jpg").map(_.pageId) must beSome(1L)
       ImageJdbc.findRenamed("Old_name.jpg").map(_.title) must beSome("File:New_name.jpg")
-      selectionRows("selection", 1L) === 4
+      selectionRows("vote", 1L) === 4
     }
 
     "mark a file Commons no longer has deleted, and move its votes aside" in {
@@ -155,10 +155,10 @@ class CommonsFileCheckSpec extends Specification with TestDb with BeforeAll with
       check.stop()
 
       deletedAt(1L) must beSome
-      selectionRows("selection", 1L) === 0
-      selectionRows("selection_deleted", 1L) === 4
+      selectionRows("vote", 1L) === 0
+      selectionRows("vote_aside", 1L) === 4
       deletedAt(2L) must beNone
-      selectionRows("selection", 2L) === 4
+      selectionRows("vote", 2L) === 4
       ImageJdbc.findByFilename("Deleted.jpg") must beNone
       ImageJdbc.imageCountByRounds(rounds) === rounds.map(_ -> 1).toMap
     }
@@ -174,8 +174,8 @@ class CommonsFileCheckSpec extends Specification with TestDb with BeforeAll with
       check.stop()
 
       deletedAt(1L) must beNone
-      selectionRows("selection", 1L) === 4
-      selectionRows("selection_deleted", 1L) === 0
+      selectionRows("vote", 1L) === 4
+      selectionRows("vote_aside", 1L) === 0
     }
 
     "change nothing for a file Commons has as stored" in {
@@ -188,7 +188,7 @@ class CommonsFileCheckSpec extends Specification with TestDb with BeforeAll with
 
       ImageJdbc.findById(1L).map(_.title) must beSome("File:Same.jpg")
       deletedAt(1L) must beNone
-      selectionRows("selection", 1L) === 4
+      selectionRows("vote", 1L) === 4
     }
 
     "change nothing for a file whose url Commons now gives with tracking parameters" in {
@@ -293,7 +293,7 @@ class CommonsFileCheckSpec extends Specification with TestDb with BeforeAll with
 
       await(check.check(file)) === FileCheck.Unknown
       deletedAt(1L) must beNone
-      selectionRows("selection", 1L) === 4
+      selectionRows("vote", 1L) === 4
 
       await(check.check(file)) === FileCheck.Unknown
       calls.get === 1

@@ -1,6 +1,6 @@
 package controllers
 
-import db.scalikejdbc.{PlayTestDb, Round, SelectionJdbc, User}
+import db.scalikejdbc.{PlayTestDb, Round, VoteJdbc, User}
 import org.intracer.wmua.{ContestJury, Image}
 import play.api.inject.bind
 import play.api.libs.json.Json
@@ -30,7 +30,7 @@ class RoundEditPageSpec extends PlaySpecification with PlayTestDb {
     val round = roundDao.create(
       Round(None, 1, Some("Round 1"), contest.getId, distribution = 0, active = true))
     for (img <- images.take(2); juror <- jurors)
-      SelectionJdbc.create(img.pageId, rate = 0, juryId = juror.getId, roundId = round.getId)
+      VoteJdbc.create(img.pageId, rate = 0, juryId = juror.getId, roundId = round.getId)
     (contest, admin, round)
   }
 
@@ -116,7 +116,7 @@ class RoundEditPageSpec extends PlaySpecification with PlayTestDb {
       val failing = org.mockito.Mockito.mock(classOf[services.RoundService])
       import org.mockito.ArgumentMatchers.any
       org.mockito.Mockito.when(failing.submit(any(), any(), any(), any(), any()))
-        .thenThrow(new IllegalStateException("Duplicate entry 'secret' for key 'rounds.name'"))
+        .thenThrow(new IllegalStateException("Duplicate entry 'secret' for key 'round.name'"))
       testDbAppWith(bind[services.RoundService].toInstance(failing)) { implicit app =>
         val (contest, admin, round) = fixture()
         val jurors = User.findRoundJurors(round.getId).map(_.getId)
@@ -229,8 +229,8 @@ class RoundEditPageSpec extends PlaySpecification with PlayTestDb {
         val added = Seq(image(6).copy(width = 2000, height = 1000), image(7))
         imageDao.batchInsert(added)
         db.scalikejdbc.CategoryLinkJdbc.addToCategory(categoryId, added)
-        val original = SelectionJdbc.byRound(round.getId).head
-        SelectionJdbc.rate(original.pageId, original.juryId, round.getId, 1)
+        val original = VoteJdbc.byRound(round.getId).head
+        VoteJdbc.rate(original.pageId, original.juryId, round.getId, 1)
 
         val count = route(app, get(s"/admin/rounds/newfiles?id=${round.getId}", admin)).get
         status(count) must_== OK
@@ -247,7 +247,7 @@ class RoundEditPageSpec extends PlaySpecification with PlayTestDb {
         status(result) must_== SEE_OTHER
         flash(result).get("error") must beNone
         roundDao.findById(round.getId).flatMap(_.minMpx) must beSome(1)
-        val selections = SelectionJdbc.byRound(round.getId)
+        val selections = VoteJdbc.byRound(round.getId)
         selections.map(_.pageId).toSet must_== Set(5L, 6L)
         selections.find(s => s.pageId == original.pageId && s.juryId == original.juryId).map(_.rate) must beSome(1)
       }
@@ -286,7 +286,7 @@ class RoundEditPageSpec extends PlaySpecification with PlayTestDb {
         val result = route(app, save).get
         status(result) must_== SEE_OTHER
         flash(result).get("error") must beNone
-        SelectionJdbc.byRound(round.getId).map(_.pageId).toSet === Set(1L, 2L, 3L, 4L)
+        VoteJdbc.byRound(round.getId).map(_.pageId).toSet === Set(1L, 2L, 3L, 4L)
       }
     }
 

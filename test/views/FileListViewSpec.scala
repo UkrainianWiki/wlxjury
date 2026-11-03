@@ -2,7 +2,7 @@ package views
 
 import controllers.{GalleryView, Pager, RateDistribution, RoundList}
 import db.scalikejdbc.User
-import org.intracer.wmua.{Image, ImageWithRating, Selection}
+import org.intracer.wmua.{Image, ImageWithRating, Vote}
 import org.jsoup.Jsoup
 import org.jsoup.nodes.{Comment, Document}
 import play.api.mvc.{Flash, Request}
@@ -27,7 +27,7 @@ class FileListViewSpec extends PlaySpecification {
 
   private val files = Seq(301L, 302L).map { pageId =>
     ImageWithRating(Image(pageId = pageId, title = s"File:Image $pageId.jpg", width = 2000, height = 1000),
-      selection = jurors.map(j => Selection(pageId, j.getId, round.getId, if (pageId == 301L) 1 else -1)))
+      votes = jurors.map(j => Vote(pageId, j.getId, round.getId, if (pageId == 301L) 1 else -1)))
   }
 
   private def render(asUser: User, wrapInTable: Boolean, region: String = "all",
@@ -76,8 +76,8 @@ class FileListViewSpec extends PlaySpecification {
       val third = User("Juror 3", "j3@example.org", id = Some(3L))
       // juror 1 selected, juror 2 rejected, juror 3 yet to vote; juror 4 not assigned the file
       val file = ImageWithRating(Image(pageId = 303L, title = "File:Image 303.jpg", width = 2000, height = 1000),
-        selection = Seq(Selection(303L, 1, round.getId, 1), Selection(303L, 2, round.getId, -1),
-          Selection(303L, 3, round.getId, 0)))
+        votes = Seq(Vote(303L, 1, round.getId, 1), Vote(303L, 2, round.getId, -1),
+          Vote(303L, 3, round.getId, 0)))
       val copy = block(render(null, wrapInTable = true, files = Seq(file),
         jurors = jurors :+ third :+ User("Juror 4", "j4@example.org", id = Some(4L))))
       val cells = copy.select("tbody tr td").asScala.toList

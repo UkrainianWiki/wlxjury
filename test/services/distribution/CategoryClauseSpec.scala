@@ -71,15 +71,15 @@ class CategoryClauseSpec extends Specification with TestDb with BeforeAll with B
         roundDao.findById(reference.getId).flatMap(_.categoryClause) === clause
         di.imagesByRound(reference).map(_.pageId).toSet === expected.filter(_ <= 4)
         val created = service.createNewRound(settings, jurors.map(_.getId))
-        SelectionJdbc.byRound(created.getId).map(_.pageId).toSet === expected.filter(_ <= 4)
-        SelectionJdbc.byRound(created.getId).headOption.foreach { vote =>
-          SelectionJdbc.rate(vote.pageId, vote.juryId, created.getId, 1)
+        VoteJdbc.byRound(created.getId).map(_.pageId).toSet === expected.filter(_ <= 4)
+        VoteJdbc.byRound(created.getId).headOption.foreach { vote =>
+          VoteJdbc.rate(vote.pageId, vote.juryId, created.getId, 1)
         }
-        val original = SelectionJdbc.byRound(created.getId).toSet
+        val original = VoteJdbc.byRound(created.getId).toSet
         add(contest, 5 to 8)
         service.newFilesCount(created.getId) === expected.count(_ > 4).toLong
         service.distributeNewImages(created.getId) === expected.count(_ > 4)
-        val after = SelectionJdbc.byRound(created.getId)
+        val after = VoteJdbc.byRound(created.getId)
         after.map(_.pageId).toSet === expected
         after.filter(_.pageId <= 4).toSet === original
         service.newFilesCount(created.getId) === 0L
@@ -96,7 +96,7 @@ class CategoryClauseSpec extends Specification with TestDb with BeforeAll with B
       val created = service.createNewRound(Round(None, 0, Some("Union and region"), contest.getId,
         category = categoryA, excludeCategory = categoryB, categoryClause = Some("or"), regions = Some("14")),
         jurors.map(_.getId))
-      SelectionJdbc.byRound(created.getId).map(_.pageId).toSet === Set[Long](3, 7)
+      VoteJdbc.byRound(created.getId).map(_.pageId).toSet === Set[Long](3, 7)
     }
 
     "honor legacy exclusion when topping up an already correctly populated round" in {
@@ -106,13 +106,13 @@ class CategoryClauseSpec extends Specification with TestDb with BeforeAll with B
       val round = roundDao.create(Round(None, 1, Some("Legacy"), contest.getId,
         category = categoryA, categoryClause = Some("-1"), active = true))
       round.addUsers(jurors.map(j => RoundUser(round.getId, j.getId, "jury", active = true)))
-      for (pageId <- Seq(1L, 3L); juror <- jurors) SelectionJdbc.create(pageId, 1, juror.getId, round.getId)
+      for (pageId <- Seq(1L, 3L); juror <- jurors) VoteJdbc.create(pageId, 1, juror.getId, round.getId)
       add(contest, 5 to 8)
       val service = TestRoundServices.roundService(new RoundDistributionHandler(
         distributor, TestRoundServices.config(3), TestRoundServices.emptyCommons))
       service.newFilesCount(round.getId) === 2L
       service.distributeNewImages(round.getId) === 2
-      SelectionJdbc.byRound(round.getId).map(_.pageId).toSet === Set[Long](1, 3, 5, 7)
+      VoteJdbc.byRound(round.getId).map(_.pageId).toSet === Set[Long](1, 3, 5, 7)
     }
 
     "apply a category union before top-N ranking" in {
@@ -123,13 +123,13 @@ class CategoryClauseSpec extends Specification with TestDb with BeforeAll with B
         distributor, TestRoundServices.config(3), TestRoundServices.emptyCommons))
       val previous = service.createNewRound(Round(None, 0, Some("Rated"), contest.getId,
         rates = Round.ratesById(5)), jurors.map(_.getId))
-      SelectionJdbc.byRound(previous.getId).foreach { row =>
-        SelectionJdbc.rate(row.pageId, row.juryId, previous.getId, 6 - row.pageId.toInt)
+      VoteJdbc.byRound(previous.getId).foreach { row =>
+        VoteJdbc.rate(row.pageId, row.juryId, previous.getId, 6 - row.pageId.toInt)
       }
       val created = service.createNewRound(Round(None, 0, Some("Union top"), contest.getId,
         previous = Some(previous.getId.toString), topImages = Some(2),
         category = categoryA, excludeCategory = categoryB, categoryClause = Some("or")), jurors.map(_.getId))
-      SelectionJdbc.byRound(created.getId).map(_.pageId).toSet === Set[Long](2, 3)
+      VoteJdbc.byRound(created.getId).map(_.pageId).toSet === Set[Long](2, 3)
     }
 
     "reject invalid script settings before creating any round" in {
