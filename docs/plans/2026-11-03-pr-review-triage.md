@@ -154,14 +154,33 @@ where it moved.
   "Duplicate entry 'alice@example.org' for key ..." is logged at ERROR. That is
   the leak N11 lists as fixed in the app; the driver logger at ERROR removes only
   the driver's own copy.
-- **Suggested fix:** for a `java.sql.SQLException` in the cause chain, log
-  `SqlLogging.describe(e)` and the stack frames without messages (a scrubbed
-  wrapper `Throwable` or a logback `throwableConverter`); or correct the comment
-  and the register. Add a spec where a forced duplicate-key error logs no bound
-  value.
+- **Suggested fix (design):** redact the values but keep the error diagnosable,
+  for a `java.sql.SQLException` anywhere in the cause chain of the
+  `server_error` and job-crash logs (a scrubbed wrapper `Throwable` or a logback
+  `throwableConverter` for `java.sql.*`, building on `SqlLogging.describe`):
+  - **Keep:** the SQLState, the vendor error code, and the constraint or index
+    name parsed from the driver message (`Duplicate entry '…' for key
+    'users_email_uidx'` gives key `users_email_uidx`); the statement template
+    with placeholders (ScalikeJDBC has it without the bound params), each
+    parameter's type and length; the request context: the user-facing
+    reference, path, account id, and contest, round or job ids; the stack
+    frames.
+  - **Redact:** the quoted values in the driver message.
+  - **Keyed hash:** in place of each redacted value, a truncated HMAC with a
+    per-installation secret. Two errors with the same value then correlate, and
+    an operator can test a suspected value by hashing it, without the log ever
+    holding the value.
+  - **Opt-in unredacted mode** for staging or development: a config flag, off
+    by default and never on in production config, with a startup WARN when it
+    is on.
+
+  Specs: a forced duplicate-key error logs the SQLState, error code, key name,
+  template and reference, and a hash but no bound value; the same value gives
+  the same hash; the flag logs the value and warns at startup.
 - **Placement:** a new item after S5 in
   [`2026-11-02-security-resolution.md`](2026-11-02-security-resolution.md),
-  "N11 residual: exception messages in the server_error and job logs".
+  "Diagnosable redaction of database errors (fixes the remaining value leak;
+  keeps reproduction possible)".
 
 ### R229-1: V80 undo does not sign out pre-S3 cookies
 
