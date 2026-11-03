@@ -109,4 +109,31 @@ class LoginControllerSpec extends PlaySpecification with Results with PlayTestDb
     }
 
   }
+
+  "signUp" should {
+    "log in as the new user, not as the user named by the password" in {
+      testDbApp { implicit app =>
+        implicit val mat: Materializer = app.materializer
+        User.create(
+          User("root",
+               "root@dot.com",
+               password = Some(User.sha1("strong")),
+               roles = Set(User.ROOT_ROLE))
+        )
+        val result = login
+          .signUp()
+          .apply(
+            FakeRequest()
+              .withFormUrlEncodedBody(
+                "login" -> "new@dot.com",
+                "password" -> "root@dot.com",
+                "repeat.password" -> "root@dot.com"
+              )
+              .withCSRFToken)
+
+        status(result) === SEE_OTHER
+        session(result).get(Secured.UserName) === Some("new@dot.com")
+      }
+    }
+  }
 }

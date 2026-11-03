@@ -89,6 +89,36 @@ organization := "org.intracer"
 
 version := "0.13"
 
+// The same identity is embedded in the app and placed at the ZIP root. The
+// deployment tool compares readiness with this manifest before opening traffic.
+// Rules live in project/BuildIdentity.scala, which the tests also compile.
+lazy val deploymentManifest = taskKey[File]("Write the release identity and expected schema")
+deploymentManifest := {
+  import wlxjury.build.BuildIdentity
+  val base = baseDirectory.value
+  def git(args: String*) = scala.util.Try(scala.sys.process.Process("git" +: args, base).!!.trim).toOption
+  val commit = git("rev-parse", "--short=12", "HEAD")
+  // Untracked sources are compiled too (e.g. new Twirl templates), so `git diff` is not enough.
+  val dirty = git(Seq("status", "--porcelain", "--untracked-files=all", "--") ++ BuildIdentity.SourcePaths: _*)
+    .forall(BuildIdentity.isDirty)
+  val id = BuildIdentity.buildId(version.value, commit, dirty, sys.props.get("wlxjury.buildId"))
+    .fold(message => sys.error(message), identity)
+  val latest = BuildIdentity.latestMigration((base / "conf" / "db" / "migration" / "default").listFiles().map(_.getName).toSeq)
+  val out = (Compile / resourceManaged).value / "wlxjury-build.json"
+  val content = BuildIdentity.manifest(id, version.value, latest)
+  if (!out.exists || IO.read(out) != content) IO.write(out, content)
+  out
+}
+Compile / resourceGenerators += Def.task { Seq(deploymentManifest.value) }.taskValue
+Universal / mappings += deploymentManifest.value -> "wlxjury-build.json"
+// Server setup files are installed once from a reviewed checkout (docs/deployment.md);
+// keep them out of releases, whose conf/ directory is also on the app's classpath.
+Universal / mappings ~= (_.filterNot { case (_, path) =>
+  // Mapping paths use the build machine's separator.
+  Seq("conf/wlxjury/", "conf/apache/", "conf/systemd/").exists(path.replace('\\', '/').startsWith)
+})
+Test / unmanagedSources += baseDirectory.value / "project" / "BuildIdentity.scala"
+
 scalaVersion := "2.13.15"
 
 val ScalikejdbcVersion = "4.3.2"
