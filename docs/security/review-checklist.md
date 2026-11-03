@@ -66,6 +66,9 @@ same commit as the fix.
 - [ ] A new export writes through `Csv.writeRow`/`Csv.write` (§16).
 - [ ] New log lines carry ids only: no email, name, password, token or whole account; no bound
   SQL values (§13).
+- [ ] Personal data is shown only to the account, its contests' admins and root; a juror sees
+  only their own votes; authors and conflict-of-interest matches only on organizer pages; no
+  production dump or derived data in the diff (§22).
 
 ## Dependencies
 

@@ -26,7 +26,8 @@ there are the old ones (the mapping is [docs/history/README.md](../history/READM
   pointer line and one repointed link.
 - **Contradictions:** C6 (roadmap row: DB practices merged as `1ea5cb74`) and C7 (the triage
   doc cited on `origin/stack/series-doc`) fixed.
-- **Held for the testing doc:** messages in all four files (§6).
+- **Held for the testing doc:** messages in all four files (§6); written in testing practices
+  §6.4 (docs phase).
 
 ## 1. Inventory
 
@@ -220,48 +221,16 @@ files). For deletes:
 
 ## 6. What feeds the next practices documents
 
-### `docs/testing/practices.md` (next)
+**Written** (docs phase, 2026-11-03): every source listed here went into
+`docs/testing/practices.md` and its checklist, `docs/workflow/`, `docs/operations/`,
+`docs/integrations/`, `docs/ui/` and `docs/dependencies/practices.md`, and `docs/README.md`
+(index: [docs/README.md](../README.md) §1); privacy into secure-coding §22, architecture
+conventions into CLAUDE.md "Conventions". The list itself is at this file's earlier version
+(`92ee9dc6:docs/plans/2026-11-03-docs-consolidation.md`).
 
-- CLAUDE.md "Testing" (anonymous Wikimedia, `-Dintegration`, `-Ddocker.tests`, guards),
-  "Database Tests" (isolation table, pool lifecycle, `ProductionFilters.withSharedApp`),
-  "Agent efficiency" (agent-check, affected specs first, full suite at the release boundary,
-  no tests for CSS class names).
-- db practices §9 (isolation, shared server, parity specs and their cases, invariants,
-  anonymous Commons), §7.6 lock specs (`INNODB_TRX` waits, no sleeps, fails without the lock),
-  §7.7 and performance §2.8 the stress harness (opt-in, relative numbers only).
-- secure-coding header (guard allowlists: one entry per file with a reason, never widen a
-  pattern), §9 "Tests" (negative authorization cases), §21 guards; CSRF off in tests and
-  `CsrfTestApp.withCsrfApp`.
-- **Messages in all four files** with the same placeholders (`MessagesCompletenessSpec`),
-  held here by the user's decision; and tests assert on ids, data attributes and text, not
-  styling classes (theme-modes and open-followups invariants, at `98a8a79e`).
-- The test-suite runtime measurements and open recommendations 5 and 8 (open-followups).
-- `2026-11-03-ci-and-scalawiki-packages.md` (what CI runs).
-- **The current baseline** to cite, with its run id (CI plan, "Test coverage"): coverage on
-  `4a861818`: Scala 89.87 % statements, 85.84 % branches; JS 96.76 % lines, 91.39 % branches
-  (templates not measured; the vendored gallery `unitegallery.js`, `ug-theme-tiles.js`,
-  `jquery.hotkeys`, `jquery.raty` excluded from JS coverage by `collectCoverageFrom`). About 2,150 tests: Scala 1902 examples (0 failed), Jest 253, 68
-  Python deployment tests, 24 release-image tests; Scala grew from about 1,660 examples during
-  2026-11-03. CI on every PR (#238) and the coverage workflow (#243).
-- `scripts/agent-check.py`, `scripts/ui_checks.py`, `scripts/ui-shots.py`; the 2026-03 Docker
-  and integration image-cache test plans and the superpowers AutoRollback and Gatling plans (at
-  `98a8a79e`) for the origin of the opt-in flags and `AutoRollbackDb`.
-
-### The five queued documents (roadmap, "Queued (user, 2026-11-03)")
-
-| Document | Current sources |
-|---|---|
-| Development workflow | roadmap "Running agents (how)"; the PR series doc and the PR review triage (`origin/stack/series-doc`); the trimmed open-followups and security-resolution batch tables; CLAUDE.md "Agent efficiency"; the sbt lock and `env -u` (CLAUDE.md "Testing", db §9.5); the hotfix record (`docs/history/security/`); `CHANGELOG.md` |
-| Operations and observability | `docs/deployment.md` (recovery runbook, sessions and key rotation, one instance); secure-coding §13 (log lines by id), db §1.6 (redaction, R227-1); `Secured.denialLogLine`; `/health/ready` (`ReadinessCheck`); the roadmap's pre-deploy section; S4/S8 in security-resolution (fail2ban, HSTS, loggers); `2026-10-30-logging-config-in-releases.md` |
-| External integrations | CLAUDE.md "Testing" (anonymous bots, `AnonymousBots`, `CommonsLogin`) and "Wikimedia Commons Integration"; secure-coding §17, §19 (outbound hosts, Pekko in step with scalawiki); `docs/oauth.md` and the OAuth port plan; the CI plan (GitHub Packages, pins); `LocalImageCacheService` retries |
-| UI, i18n and accessibility | secure-coding §5, §8 (CSP, no inline code, sinks); the theme-modes plan at `98a8a79e` (design system, phases, invariants); performance §1.7 and `scripts/ui-shots.py`, `ui_checks.py` (screenshots, browser checks); CLAUDE.md "Keyboard voting"; `MessagesCompletenessSpec` (if not taken by the testing doc) |
-| Dependencies and supply chain | secure-coding §19 and guard G11; the CI plan (pinned actions and images, checksums); CLAUDE.md's agent rules on library versions; the PR series doc's base notes |
-
-**The patched gallery** (user, 2026-11-03; roadmap queue): `public/javascripts/unitegallery.js`
-(24,670 lines, vendored and patched, `wlxjury:` comments) and `ug-theme-tiles.js` are outside JS
-coverage and tested only by `gallery-init.test.js`. Feeds the testing doc (targeted jsdom tests
-per patch; coverage scope) and the UI doc (the patch inventory, `docs/vendor/unitegallery.md`);
-the keep-or-replace decision feeds the dependencies doc.
+Not written yet, tracked elsewhere: the test-suite runtime recommendations 5 and 8
+(open-followups, "Test-suite runtime"); the patched gallery's inventory, targeted tests and
+keep-or-replace decision (roadmap, "the patched gallery"; UI practices §7, dependencies §7).
 
 ## 7. Decisions for the user
 

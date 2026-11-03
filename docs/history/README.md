@@ -6,7 +6,8 @@ deleted on 2026-11-03 (`docs/plans/2026-11-03-docs-consolidation.md`); git keeps
 deleted or moved file at its old path with `git show 98a8a79e:<old path>` (98a8a79e is
 `ukwikidev/followups` before the consolidation). The lasting rules are in the practices:
 [security](../security/secure-coding.md), [database](../db/practices.md),
-[performance](../performance/practices.md).
+[performance](../performance/practices.md), and the others indexed in
+[docs/README.md](../README.md).
 
 ## Kept records
 
