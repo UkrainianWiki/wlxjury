@@ -4,7 +4,8 @@ Deployment: [single-service procedure and recovery](docs/deployment.md).
 
 Changes, by release and deploy date: [CHANGELOG.md](CHANGELOG.md). Practices:
 [security](docs/security/secure-coding.md), [database](docs/db/practices.md),
-[performance](docs/performance/practices.md); open work: [roadmap](docs/plans/2026-11-02-roadmap.md).
+[performance](docs/performance/practices.md), [testing](docs/testing/practices.md) and the
+others in the [docs index](docs/README.md); open work: [roadmap](docs/plans/2026-11-02-roadmap.md).
 
 ## Security Controls
 

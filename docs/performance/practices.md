@@ -210,10 +210,13 @@ the tests keep 1 MB so an oversized batch fails there first, `DistributeImagesBa
 sizes of db §5.5–§5.6; a new pool, dispatcher or worker count is checked against that budget, and
 MariaDB's `max_connections` (151) must allow the app's pool.
 
-**4.6 MariaDB memory.** Production: a 128 MiB buffer pool. The measured recommendation is
-512 MiB (`bench/cnf/recommended-60-wlxjury.cnf`: concurrent buffer-pool reads 8,660 → 24,
-category-round completion 4.99 → 3.60 s, ~690 MiB MariaDB RSS), everything else as production;
-1 GiB and more bought nothing on this data. The Gatling fixture uses 512 MiB; the test server
+**4.6 MariaDB memory.** Production: a 128 MiB buffer pool. The recommendation is 256 MiB
+(`bench/cnf/recommended-60-wlxjury.cnf`, updated 2026-10-11 after the background-distribution
+comparison; `docs/deployment.md` says the same): on fresh full-data suites 128M → 256M cut
+concurrent buffer-pool reads 9,843 → 49 and raised MariaDB's peak sampled RSS 268 → 392 MiB,
+everything else as production. There is no 512M measurement on that release; the earlier
+512 MiB recommendation (reads 8,660 → 24 on an older release) is in the history record. The
+Gatling fixture's container uses 512 MiB, a separate choice (§1.2); the test server
 (`SharedTestDb.forTests`) 128 MiB on a tmpfs data directory (`size=1g`, so a runaway spec fails
 with "table is full" instead of filling the Docker VM), 48 MiB redo log, no doublewrite, flush at
 commit off: fast, not durable, never a benchmark. Keep production's durable flushing

@@ -68,6 +68,9 @@ Developed 2026-11-02 to 2026-11-03, PRs #232–#236.
     96.76 % of lines and 91.39 % of branches. Templates are not measured, and
     neither is the vendored, patched gallery (`unitegallery.js`, `ug-theme-tiles.js`), which the
     JavaScript figure excludes.
+- Documentation: consolidated into practices docs with a history index (#245); practices for
+  testing, workflow, operations, integrations, UI and dependencies, and a docs index
+  ([docs/README.md](docs/README.md), PR 62).
 
 ## Deployed
 
