@@ -1,0 +1,24 @@
+@(token: Option[String], email: String)(implicit flash: Flash, messages: Messages, req: RequestHeader)
+@* an email change's link: a button that confirms it (a POST), then the result. The address
+   shown is the one the link was sent to, which the reader owns *@
+@mainAdmin("application.name") {
+<div class="row">
+<div class="col-md-6 offset-md-3">
+    <h1 class="h3">@Messages("email.change.title")</h1>
+    @token match {
+        case Some(value) => {
+            <p>@Messages("email.change.confirm", email)</p>
+            @bs.form(routes.LoginController.emailConfirm()) {
+                <input type="hidden" name="token" value="@value">
+                @helper.CSRF.formField
+                <button id="submit" type="submit" class="btn btn-primary">@Messages("email.change.confirm.button")</button>
+            }
+        }
+        case None => {
+            <p class="alert alert-success" role="status">@Messages("email.change.done", email)</p>
+            <p><a href="@routes.LoginController.login()">@Messages("signin.signin")</a></p>
+        }
+    }
+</div>
+</div>
+}

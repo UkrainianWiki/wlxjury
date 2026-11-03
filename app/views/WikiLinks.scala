@@ -18,6 +18,12 @@ import scala.util.matching.Regex
   */
 object WikiLinks {
 
+  /** A wiki user name as a URL path segment or query value (N4): underscores for spaces, and
+    * every other character that means something in a URL (`&`, `?`, `#`, `/`, ...) encoded.
+    */
+  def encodedUserName(name: String): String =
+    URLEncoder.encode(name.trim.replace(' ', '_'), StandardCharsets.UTF_8)
+
   private val Link = """\[\[([^\[\]|]+)(?:\|([^\[\]]*))?\]\]""".r
 
   def apply(wikiText: Option[String], host: String): Html = apply(wikiText.getOrElse(""), host)

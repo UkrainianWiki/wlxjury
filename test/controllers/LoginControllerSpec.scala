@@ -262,69 +262,33 @@ class LoginControllerSpec extends PlaySpecification with Results with PlayTestDb
     }
   }
 
-  "signUp" should {
-    "log in as the new user, not as the user named by the password" in {
+  "the login page" should {
+    "show the sign-in form on an empty database, never a sign-up (S2, P20)" in {
+      testDbApp { implicit app =>
+        val page = appLogin.login().apply(FakeRequest(GET, "/auth").withCSRFToken)
+        status(page) === OK
+        val html = contentAsString(page)
+        html must contain("""action="/auth"""")
+        html must not(contain("/signup"))
+        html must contain("This installation has no accounts yet.")
+      }
+    }
+  }
+
+  "signing in" should {
+    "put the account's auth version in the session, which a later version refuses" in {
       testDbApp { implicit app =>
         implicit val mat: Materializer = app.materializer
-        User.create(
-          User("root",
-               "root@dot.com",
-               password = Some(services.PasswordHasher.default.hash("strong")),
-               roles = Set(User.ROOT_ROLE))
-        )
-        val result = login
-          .signUp()
-          .apply(
-            FakeRequest()
-              .withFormUrlEncodedBody(
-                "login" -> "new@dot.com",
-                "password" -> "root@dot.com",
-                "repeat.password" -> "root@dot.com"
-              )
-              .withCSRFToken)
-
-        // a new account has no role in any contest yet: the denial page
-        status(result) === FORBIDDEN
-        session(result).get(Secured.UserName) === Some("new@dot.com")
-      }
-    }
-
-    def signUp(loginName: String)(implicit app: Application) = {
-      implicit val mat: Materializer = app.materializer
-      login
-        .signUp()
-        .apply(
-          FakeRequest()
-            .withFormUrlEncodedBody(
-              "login" -> loginName,
-              "password" -> "anything",
-              "repeat.password" -> "anything"
-            )
-            .withCSRFToken)
-    }
-
-    "not log in as an existing account with the email" in {
-      testDbApp { implicit app =>
-        val root = User.create(
-          User("root", "root@dot.com", password = Some(services.PasswordHasher.default.hash("strong")), roles = Set(User.ROOT_ROLE))
-        )
-        val result = signUp("Root@Dot.com")
-
-        status(result) === BAD_REQUEST
-        session(result).get(Secured.UserName) must beNone
-        User.findAll().map(_.id) === Seq(root.id)
-        User.findById(root.getId).flatMap(_.password) === root.password
-      }
-    }
-
-    "not take a login that is not an email: it would be read as someone's wiki account" in {
-      testDbApp { implicit app =>
-        User.create(User("Wiki user", "wiki@dot.com", wikiAccount = Some("WikiUser"), password = Some("x")))
-        val result = signUp("WikiUser")
-
-        status(result) === BAD_REQUEST
-        session(result).get(Secured.UserName) must beNone
-        User.findAll().size === 1
+        val root = User.create(User("root", "versioned@dot.com",
+          password = Some(services.PasswordHasher.default.hash("strong")), isRoot = true))
+        scalikejdbc.DB.autoCommit { implicit s =>
+          scalikejdbc.SQL("UPDATE users SET auth_version = 3 WHERE id = ?").bind(root.getId).update.apply()
+        }
+        val result = login.auth().apply(
+          FakeRequest().withFormUrlEncodedBody("login" -> "versioned@dot.com", "password" -> "strong").withCSRFToken)
+        session(result).get(Secured.AuthVersion) === Some("3")
+        Secured.sessionUser("versioned@dot.com", None, Some("3"), None) must beSome
+        Secured.sessionUser("versioned@dot.com", None, None, None) must beNone
       }
     }
   }

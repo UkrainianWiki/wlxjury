@@ -24,8 +24,15 @@ POST        /auth                                                               
 
 GET         /auth                                                                   @controllers.LoginController.login(returnTo: Option[String] ?= None)
 
-GET         /signup                                                                 @controllers.LoginController.signUpView()
-POST        /signup                                                                 @controllers.LoginController.signUp()
+# no sign-up: accounts come from an organizer's invitation. A mailed link (invitation, password
+# link, email change) opens a page; its form posts with the CSRF token. /setup: the first account
+# of an empty installation, with the configured setup token (404 otherwise)
+GET         /invitation/:token                                                      @controllers.LoginController.invitation(token: String)
+POST        /invitation                                                             @controllers.LoginController.acceptInvitation()
+GET         /email/confirm/:token                                                   @controllers.LoginController.emailConfirmPage(token: String)
+POST        /email/confirm                                                          @controllers.LoginController.emailConfirm()
+GET         /setup                                                                  @controllers.LoginController.setupView()
+POST        /setup                                                                  @controllers.LoginController.setup()
 
 GET         /error                                                                  @controllers.LoginController.error(message: String ?= "Unknown error")
 
@@ -72,7 +79,11 @@ GET         /admin/greeting                                                     
 POST        /admin/greeting                                                         @controllers.UserController.saveGreeting(contestId: Option[Long] ?= None)
 GET         /users/edit/:id                                                         @controllers.UserController.editUser(id: Long, contestId: Option[Long] ?= None)
 POST        /users/save                                                             @controllers.UserController.saveUser()
+# root: mails the account a link that sets a new password (P7)
 POST        /users/resetpasswd/:id                                                  @controllers.UserController.resetPassword(id: Long)
+# an admin of the contest: a new invitation for a member or pending invitee with an unverified email
+POST        /users/:id/invite                                                       @controllers.UserController.reinvite(id: Long, contestId: Long)
+POST        /users/:id/invitation/cancel                                            @controllers.UserController.cancelInvitation(id: Long, contestId: Long)
 # the own profile's personal API tokens (POST forms with the CSRF token; the session only)
 POST        /users/tokens                                                           @controllers.UserController.createApiToken()
 POST        /users/tokens/:id/revoke                                                @controllers.UserController.revokeApiToken(id: Long)

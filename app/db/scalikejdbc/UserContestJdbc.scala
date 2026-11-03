@@ -60,6 +60,16 @@ object UserContestJdbc extends JoinTable[UserContest] {
           VALUES ($userId, $contestId, $role)""".update.apply() > 0
   }
 
+  /** Adds the user to the contest with the role, or sets their role there if a member: an
+    * accepted invitation's role ([[services.AccountTokenService.acceptPasswordLink]]).
+    */
+  def setMembership(userId: Long, contestId: Long, role: String)
+                   (implicit session: DBSession = AutoSession): Unit = {
+    require(User.isContestRole(role), "not a contest role")
+    sql"""INSERT INTO user_contest (user_id, contest_id, role) VALUES ($userId, $contestId, $role)
+          ON DUPLICATE KEY UPDATE role = VALUES(role)""".update.apply()
+  }
+
   /** Sets the member's role: one of [[User.ContestRoles]] only. */
   def updateRole(userId: Long, contestId: Long, role: String)
                 (implicit session: DBSession = AutoSession): Unit = {

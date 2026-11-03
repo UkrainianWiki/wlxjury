@@ -57,6 +57,16 @@ object ApiTokenService extends Logging {
     token
   }
 
+  /** A new token of the signed-in user, if their account's auth version is still the session's
+    * (L1: not one an accepted link ended meanwhile); its value, to be shown once.
+    */
+  def createFor(user: User, name: String, expiresInDays: Option[Int]): Option[String] = {
+    val token = generate()
+    if (ApiTokenJdbc.createIfVersion(user.getId, user.authVersion, name.trim.take(NameMaxLength), hash(token),
+        displayPrefix(token), expiresInDays)) Some(token)
+    else None
+  }
+
   /** The token's record and its user, in their latest contest ([[Secured.inCurrentContest]],
     * as a session without a current contest), if the token is usable: well-formed, known,
     * neither revoked nor expired, and its user not deleted. Records the use. A refused token

@@ -108,7 +108,7 @@ class CoiAuthorizationSpec extends PlaySpecification with PlayTestDb with Mockit
     "not be in the contest: no current contest, nothing to switch to" in {
       testDbApp { app =>
         setUp()
-        val board = Secured.sessionUser("board@example.com", Some(contestId.toString)).get
+        val board = Secured.sessionUser("board@example.com", Some(contestId.toString), None, None).get
         board.contestId must beNone
         Secured.inContest(board, contestId).contestId must beNone
         status(page(app, "board@example.com", s"/switch-contest/$contestId", POST)) === FORBIDDEN
@@ -249,7 +249,8 @@ class CoiAuthorizationSpec extends PlaySpecification with PlayTestDb with Mockit
 
         status(result) === SEE_OTHER
         val board = User.findByContestAndRoles(contestId, Seq("board"))
-        board.flatMap(_.wikiAccount).toSet === Set("Board one", "Board_two")
+        // stored as MediaWiki names them (S2, N4): underscores as spaces
+        board.flatMap(_.wikiAccount).toSet === Set("Board one", "Board two")
         board.map(_.email).toSet === Set("")
         there was no(mail).sendMail(any[User], any[User], any[String], any[String])
       }

@@ -33,7 +33,7 @@ class ErrorHandler @Inject() (
       message: String
   ): Future[Result] = {
     implicit val impReq: RequestHeader = request
-    val line = s"client_error method=${request.method} path=${Secured.logValue(request.path)} status=$statusCode " +
+    val line = s"client_error method=${request.method} path=${Secured.logPath(request.path)} status=$statusCode " +
       s"message=${Secured.logValue(message)}"
     if (statusCode == NOT_FOUND) logger.debug(line) else logger.warn(line)
     val messageKey = statusCode match {
@@ -50,7 +50,7 @@ class ErrorHandler @Inject() (
   override def onServerError(request: RequestHeader, exception: Throwable): Future[Result] = {
     implicit val impReq: RequestHeader = request
     val reference = Secured.newReference()
-    logger.error(s"server_error ref=$reference method=${request.method} path=${Secured.logValue(request.path)}", exception)
+    logger.error(s"server_error ref=$reference method=${request.method} path=${Secured.logPath(request.path)}", exception)
     Future.successful(
       if (ApiFailure.isApiRequest(request))
         InternalServerError(Json.obj("error" -> ApiFailure.serverError(reference).body.error, "reference" -> reference))
@@ -64,7 +64,7 @@ class ErrorHandler @Inject() (
 
   /** The signed-in user for the page's navigation, if the database can tell. */
   private def sessionUser(request: RequestHeader): Option[User] =
-    Try(request.session.get(Secured.UserName).flatMap(Secured.sessionUser(_, request.session.get(Secured.CurrentContestId))))
+    Try(Secured.sessionUserOf(request))
       .toOption
       .flatten
 }
