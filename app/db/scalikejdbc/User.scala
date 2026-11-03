@@ -724,19 +724,16 @@ object User extends CRUDMapper[User] {
     * (an invalid character, a control character, too long). Right(None): blank.
     */
   def normalizeWikiAccount(input: String): Either[String, Option[String]] = {
-    val withoutPrefix = input.trim.replaceFirst("(?i)^user:", "")
-    val spaced = withoutPrefix.replace('_', ' ').replaceAll("\\s+", " ").trim
-    if (spaced.isEmpty) Right(None)
-    else if (spaced.exists(c => InvalidWikiAccountChars.contains(c) || Character.isISOControl(c)))
+    // one normalisation for names stored here and the CoI filter's keys (L5): CoiMembers.normalize
+    // (title case of the first letter, as MediaWiki: Georgian Mkhedruli stays, `ǆ` becomes `ǅ`)
+    val normalized = CoiMembers.normalize(input)
+    if (normalized.isEmpty) Right(None)
+    else if (normalized.exists(c => InvalidWikiAccountChars.contains(c) || Character.isISOControl(c)))
       Left("wiki.account.invalid")
-    else if (spaced.codePointCount(0, spaced.length) > WikiAccountMaxLength) Left("wiki.account.invalid")
-    else {
-      val first = spaced.codePointAt(0)
-      val capitalized = new String(Character.toChars(Character.toUpperCase(first))) +
-        spaced.substring(Character.charCount(first))
-      Right(Some(capitalized))
-    }
+    else if (normalized.codePointCount(0, normalized.length) > WikiAccountMaxLength) Left("wiki.account.invalid")
+    else Right(Some(normalized))
   }
+
 
   /** The user's colour mode ([[controllers.Theme]]): one of its three values only. */
   def updateTheme(id: Long, theme: controllers.Theme)(implicit session: DBSession = autoSession): Unit =
@@ -770,6 +767,55 @@ object User extends CRUDMapper[User] {
       sql"UPDATE users SET auth_version = $BumpAuthVersion WHERE id = $id".update.apply()
       authVersionOf(id)
     }
+
+  /** Marks the account's wiki account verified, if it is `wikiAccount` (as the column compares):
+    * a Wikimedia sign-in by that very name proved it (services.oauth.IdentityLinker). The name
+    * stays, so no session ends.
+    */
+  def verifyWikiAccount(id: Long, wikiAccount: String)(implicit session: DBSession = autoSession): Unit =
+    sql"""UPDATE users SET wiki_account_verified_at = NOW(3)
+          WHERE id = $id AND wiki_account = $wikiAccount AND wiki_account_verified_at IS NULL""".update.apply()
+
+  /** Clears the wiki account's verification: the Wikimedia account that proved it was renamed
+    * (M1), so the name may now be someone else's.
+    */
+  def unverifyWikiAccount(id: Long)(implicit session: DBSession = autoSession): Unit =
+    sql"UPDATE users SET wiki_account_verified_at = NULL WHERE id = $id".update.apply()
+
+  /** Why [[setVerifiedWikiAccount]] set nothing. */
+  sealed abstract class WikiAccountRefusal(val messageKey: String)
+  case object WikiAccountTaken extends WikiAccountRefusal("oauth.linked.wiki.taken")
+  case object WikiAccountOther extends WikiAccountRefusal("oauth.wiki.ask.organizer")
+
+  /** Sets the account's wiki account to `wikiAccount` (normalised, [[normalizeWikiAccount]]),
+    * verified now: its holder linked that Wikimedia account from their own profile and confirmed
+    * (B4). In one transaction, the account's row locked: only if its wiki account is empty or
+    * already this name, and no other account has the name. A changed name ends the account's
+    * sessions, as [[setWikiAccount]]; the new version, for the session that changed it to stay
+    * signed in with.
+    */
+  def setVerifiedWikiAccount(id: Long, wikiAccount: String): Either[WikiAccountRefusal, Int] =
+    DB.localTx { s =>
+      implicit val session: DBSession = s
+      val current = sql"SELECT wiki_account FROM users WHERE id = $id FOR UPDATE".map(_.stringOpt(1)).single.apply().flatten
+        .map(_.trim).filter(_.nonEmpty)
+      if (current.exists(c => normalizeWikiAccount(c).toOption.flatten.forall(_ != wikiAccount))) Left(WikiAccountOther)
+      else if (sql"""SELECT EXISTS(SELECT 1 FROM users WHERE wiki_account = $wikiAccount AND id <> $id
+                     AND deleted_at IS NULL)""".map(_.boolean(1)).single.apply().contains(true)) Left(WikiAccountTaken)
+      else {
+        // MariaDB assigns left to right: the version reads the old name, as in setWikiAccount
+        sql"""UPDATE users SET
+                wiki_account_verified_at = NOW(3),
+                auth_version = IF(wiki_account <=> $wikiAccount, auth_version, $BumpAuthVersion),
+                wiki_account = $wikiAccount
+              WHERE id = $id""".update.apply()
+        authVersionOf(id).toRight(WikiAccountOther)
+      }
+    }
+
+  /** The account's row, locked until the transaction ends. */
+  def lockRow(id: Long)(implicit session: DBSession): Option[User] =
+    sql"SELECT ${u.result.*} FROM ${User as u} WHERE ${u.id} = $id FOR UPDATE".map(User(u.resultName)).single.apply()
 
   private def authVersionOf(id: Long)(implicit session: DBSession): Option[Int] =
     sql"SELECT auth_version FROM users WHERE id = $id".map(_.int(1)).single.apply()

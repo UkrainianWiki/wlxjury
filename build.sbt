@@ -144,6 +144,9 @@ val ScalawikiVersion = "0.7.0-SNAPSHOT"
 val PlayMailerVersion = "9.0.0"
 val MockServerVersion = "5.7.0"
 val playVersion = "3.0.7"
+// Login with Google and Wikimedia accounts (services.oauth): PKCE, state, nonce, the token exchange
+// and, for Google, OpenID Connect discovery and ID token validation. No pac4j (S10 removed it).
+val NimbusOAuthVersion = "11.38.2"
 // Pekko and Pekko HTTP must match scalawiki's (project/Dependencies.scala, Library.Pekko: PekkoV,
 // PekkoHttpV), which brings them too: update them there first, then here.
 val PekkoVersion = "1.0.3"
@@ -183,6 +186,7 @@ libraryDependencies ++= Seq(
   "org.scalawiki" %% "scalawiki-wlx" % ScalawikiVersion,
   "org.apache.pekko" %% "pekko-stream" % PekkoVersion,
   "org.apache.pekko" %% "pekko-http" % PekkoHttpVersion,
+  "com.nimbusds" % "oauth2-oidc-sdk" % NimbusOAuthVersion,
   "com.typesafe.play" %% "play-mailer" % PlayMailerVersion,
   "com.typesafe.play" %% "play-mailer-guice" % PlayMailerVersion,
   "com.github.tototoshi" %% "scala-csv" % "1.4.1",

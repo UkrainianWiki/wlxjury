@@ -2,7 +2,8 @@
         user: db.scalikejdbc.User,
         editUserForm: Form[db.scalikejdbc.User],
         contestId: Option[Long] = None,
-        tokensCard: Option[controllers.ApiTokensCard] = None
+        tokensCard: Option[controllers.ApiTokensCard] = None,
+        linkedAccountsCard: Option[controllers.LinkedAccountsCard] = None
 )(implicit flash: Flash, messages: Messages, req: RequestHeader)
 
 @import helper._
@@ -176,10 +177,16 @@
             </section>
             }
         </div>
-        @* the own profile only: the user's personal API tokens *@
-        @for(card <- tokensCard) {
+        @* the own profile only: the user's personal API tokens, and their linked Google and
+           Wikimedia accounts (if this host offers a provider, or one is linked) *@
+        @if(tokensCard.nonEmpty || linkedAccountsCard.exists(_.nonEmpty)) {
             <div class="col-md-8 col-xl-7 mt-4 mt-md-0">
-                @apiTokens(card)
+                @for(card <- tokensCard) {
+                    @apiTokens(card)
+                }
+                @for(card <- linkedAccountsCard if card.nonEmpty) {
+                    @linkedAccounts(card)
+                }
             </div>
         }
         @* root, on another account: a link to its API tokens, to revoke them (ApiTokenAdminController) *@

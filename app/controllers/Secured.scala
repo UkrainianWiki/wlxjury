@@ -399,7 +399,7 @@ object Secured {
     * (`/invitation/<token>`, `/email/confirm/<token>`) masked.
     */
   def logPath(path: String): String =
-    logValue(path.replaceAll("^/(invitation|email/confirm)/[^/]+", "/$1/***"))
+    logValue(path.replaceAll("^/(invitation|email/confirm|oauth/choose/confirm)/[^/]+", "/$1/***"))
 
   def logValue(value: String): String =
     "\"" + value.flatMap {

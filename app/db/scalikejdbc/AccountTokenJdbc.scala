@@ -34,6 +34,9 @@ object AccountTokenJdbc {
   val PasswordReset = "password_reset"
   val EmailChange = "email_change"
 
+  /** The OAuth account chooser's proof by mail: the account's holder reads its verified address. */
+  val OAuthChoose = "oauth_choose"
+
   /** The purposes whose acceptance sets the password and proves the account's email. */
   val SetsPassword: Seq[String] = Seq(Invitation, PasswordReset)
 
@@ -83,6 +86,15 @@ object AccountTokenJdbc {
   def lockByHash(tokenHash: String)(implicit session: DBSession): Option[AccountToken] =
     sql"SELECT $columns FROM account_token WHERE token_hash = $tokenHash FOR UPDATE".map(extract).single.apply()
 
+  /** The account's live links of the purposes sent to `email`, the latest first, their rows
+    * locked until the transaction ends.
+    */
+  def lockLive(userId: Long, purposes: Seq[String], email: String)(implicit session: DBSession): Seq[AccountToken] =
+    sql"""SELECT $columns FROM account_token
+          WHERE user_id = $userId AND purpose IN ($purposes) AND email = $email
+            AND used_at IS NULL AND revoked_at IS NULL AND expires_at > NOW(3)
+          ORDER BY id DESC FOR UPDATE""".map(extract).list.apply()
+
   def find(id: Long)(implicit session: DBSession = AutoSession): Option[AccountToken] =
     sql"SELECT $columns FROM account_token WHERE id = $id".map(extract).single.apply()
 
@@ -106,6 +118,11 @@ object AccountTokenJdbc {
     sql"""SELECT EXISTS(SELECT 1 FROM account_token WHERE user_id = $userId AND purpose = $purpose
             AND created_at > NOW(3) - INTERVAL $seconds SECOND)""".map(_.boolean(1)).single.apply().contains(true)
 
+  /** How many links of the purpose the account got in the last `seconds`. */
+  def countSince(userId: Long, purpose: String, seconds: Long)(implicit session: DBSession = AutoSession): Long =
+    sql"""SELECT COUNT(*) FROM account_token WHERE user_id = $userId AND purpose = $purpose
+            AND created_at > NOW(3) - INTERVAL $seconds SECOND""".map(_.long(1)).single.apply().getOrElse(0L)
+
   /** Revokes the account's unused invitations into the contest (an admin's cancel); how many. */
   def revokeInvitations(userId: Long, contestId: Long)(implicit session: DBSession = AutoSession): Int =
     sql"""UPDATE account_token SET revoked_at = NOW(3)
@@ -113,7 +130,10 @@ object AccountTokenJdbc {
             AND used_at IS NULL AND revoked_at IS NULL""".update.apply()
 
   /** Every purpose. */
-  val AllPurposes: Seq[String] = Seq(Invitation, PasswordReset, EmailChange)
+  val AllPurposes: Seq[String] = Seq(Invitation, PasswordReset, EmailChange, OAuthChoose)
+
+  /** The purposes refused once the account's email is no longer the address the link went to. */
+  val BoundToEmail: Seq[String] = SetsPassword :+ OAuthChoose
 
   /** The account's live invitations sent to `email` that wait to give a role. */
   def pendingInvitationsOf(userId: Long, email: String)(implicit session: DBSession = AutoSession): Seq[AccountToken] =
