@@ -146,7 +146,7 @@ class RoundController @Inject() (
       val round = roundId.flatMap(Round.findById)
       CoiCounts(CoiMembers.files(categoryId, members).size, roundId.map(CoiMembers.roundFiles(_, members).size),
         CoiMembers.filesWithoutAuthor(categoryId), excluded = round.exists(_.excludeCoi),
-        open = round.exists(r => r.active || r.distributing))
+        open = round.exists(r => r.active || r.distributing || r.freezeCount > 0))
     }
   }
 
@@ -176,11 +176,16 @@ class RoundController @Inject() (
       RoundConflicts.disqualify(roundId, user, RoundDistributionHandler.dedupeKey(roundId), excludeCoi = true) match {
         case RoundConflicts.Outcome.Disqualified(files) =>
           if (files.isEmpty) Nil else Seq("success" -> messages("coi.disqualified", files.size, stored.number))
-        case _ if inRound.isEmpty => Nil
-        case RoundConflicts.Outcome.Open => Seq("error" -> messages("coi.disqualify.open", stored.number, inRound.size))
-        case RoundConflicts.Outcome.Frozen       => Seq("error" -> messages("coi.disqualify.frozen", stored.number))
+        // refused before the flag was set: said whether or not the round has conflicts
         case RoundConflicts.Outcome.Distributing => Seq("error" -> messages("coi.remove.distributing", stored.number))
-        case _                                   => Nil
+        case _ if inRound.isEmpty                => Nil
+        // the flag is set, and a later save changes nothing: the round's conflicts page, linked
+        // on the rounds list (`coiRound`), disqualifies them once the round is stopped
+        case RoundConflicts.Outcome.Open =>
+          Seq("error" -> messages("coi.disqualify.open", stored.number, inRound.size), "coiRound" -> roundId.toString)
+        case RoundConflicts.Outcome.Frozen =>
+          Seq("error" -> messages("coi.disqualify.frozen", stored.number), "coiRound" -> roundId.toString)
+        case _ => Nil
       }
     }
   }
@@ -597,7 +602,7 @@ object RoundController {
   */
 /** The round form's conflicts of interest ([[RoundController]]): the contest's, the round's,
   * those without an author; whether the round leaves them out already (saving it ticked then
-  * changes nothing, so nothing is confirmed) and is open (saving only sets the flag).
+  * changes nothing, so nothing is confirmed) and is open or frozen (saving only sets the flag).
   */
 final case class CoiCounts(conflicts: Int, inRound: Option[Int], withoutAuthor: Long, excluded: Boolean = false,
     open: Boolean = false) {

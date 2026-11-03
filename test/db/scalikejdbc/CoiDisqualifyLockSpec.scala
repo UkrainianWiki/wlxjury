@@ -74,6 +74,37 @@ class CoiDisqualifyLockSpec extends Specification with TestDb with BeforeAll wit
     sql"SELECT rate FROM vote_aside WHERE round_id = $round AND page_id = $pageId".map(_.int(1)).single()
   }
 
+  "a requalify" should {
+
+    "wait for a restore from Commons holding the file (round → images → vote), and both commit" in withPool { implicit ec =>
+      val (round, juror, admin) = setUp()
+      RoundConflicts.disqualify(round, admin, key(round))
+      // file 1 deleted on Commons, then found again by an import
+      DB.localTx(implicit s => services.imports.DeletedFiles.markDeleted(Seq(1L)))
+      val held = new CountDownLatch(1)
+      val go = new CountDownLatch(1)
+      // DeletedFiles.restore in an import step: the file's row for update, its votes locked
+      val restore = Future(DB.localTx { implicit s =>
+        val restored = services.imports.DeletedFiles.restore(Seq(1L))
+        held.countDown()
+        go.await(30, TimeUnit.SECONDS)
+        restored
+      })
+      held.await(30, TimeUnit.SECONDS) must beTrue
+      val back = Future(RoundConflicts.requalify(round, Seq(1L), RoundConflicts.RequalifyReason.ConflictEnded, admin,
+        key(round)))
+      (lockWait(back) === "LOCK WAIT") and {
+        go.countDown()
+        (Await.result(restore, 30.seconds) must beEmpty) and
+          (Await.result(back, 30.seconds) === RoundConflicts.Outcome.Requalified(Seq(1L))) and
+          (ImageJdbc.isDeleted(1L) must beFalse) and
+          (VoteJdbc.findBy(1L, juror.getId, round).map(_.rate) === Some(0)) and
+          (RoundImageJdbc.find(round, 1L).map(_.status) === Some("in")) and
+          (RoundImageInvariants.violations(round) must beEmpty)
+      }
+    }
+  }
+
   "a disqualify" should {
 
     "wait for a juror's vote in flight on the file, move the voted row aside, and a requalify bring the rate back" in

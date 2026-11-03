@@ -165,6 +165,10 @@ object RoundConflicts {
             else
               sql"""SELECT page_id FROM round_image WHERE round_id = $roundId AND page_id IN ($requested)
                     AND status = ${Status.Dq} ORDER BY page_id""".map(_.long(1)).list()
+          // the files next, in page order, before their votes (round → images → vote …): the
+          // votes moved back check their image's foreign key, which a restore from Commons
+          // holds for update while it locks the files' votes
+          ImageJdbc.lockFiles(dq)
           ImageJdbc.moveVotesBackInRound(roundId, dq)
           // every one of them follows its votes now (one with none left leaves the round, as
           // before V84)

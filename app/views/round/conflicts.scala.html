@@ -24,6 +24,8 @@
             }
             @if(mayEdit && (round.active || round.distributing)) {
                 <div class="alert alert-warning" id="coi-round-open">@Messages("coi.action.open", round.number)</div>
+            } else if(mayEdit && round.freezeCount > 0) {
+                <div class="alert alert-warning" id="coi-round-open">@Messages("coi.disqualify.frozen", round.number)</div>
             }
 
             <h2 class="h4 mt-4">@Messages("coi.round.matches")</h2>

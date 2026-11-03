@@ -316,6 +316,30 @@ class CoiRoundSpec extends Specification with TestDb with BeforeAll with BeforeE
       RoundImageInvariants.violations(r) must beEmpty
     }
 
+    "requalify a file deleted while the round was open as in, with its votes: its prior status isn't kept (a known limitation)" in {
+      val (contest, jurors, _) = setUp()
+      val round = service.createNewRound(newRound(contest, excludeCoi = false), jurors.map(_.getId))
+      val r = round.getId
+      rateAll(r)
+      val before = votes(sqls"vote", r).filter(_._2 == 2L)
+      // deleted on Commons while the round is open: its votes aside, `deleted`
+      DB.localTx(implicit s => DeletedFiles.markDeleted(Seq(2L)))
+      statuses(r).get(2L) === Some("deleted")
+      stop(r)
+      disqualify(r, jurors.head)
+      statuses(r).get(2L) === Some("dq")
+      requalify(r, Seq(2L), jurors.head) === RoundConflicts.Outcome.Requalified(Seq(2L))
+      // today: `in` with its votes, not `deleted` as before (a later round_image_event table
+      // would keep the prior status, §14)
+      statuses(r).get(2L) === Some("in")
+      votes(sqls"vote", r).filter(_._2 == 2L) === before
+      RoundImageInvariants.violations(r) must beEmpty
+      // the round's opening moves them aside again
+      Round.setActiveGuarded(r, active = true) must beTrue
+      statuses(r).get(2L) === Some("deleted")
+      RoundImageInvariants.violations(r) must beEmpty
+    }
+
     "disqualify only the files asked for that are conflicts" in {
       val (contest, jurors, _) = setUp()
       val round = service.createNewRound(newRound(contest, excludeCoi = false), jurors.map(_.getId))

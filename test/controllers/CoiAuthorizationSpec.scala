@@ -192,7 +192,13 @@ class CoiAuthorizationSpec extends PlaySpecification with PlayTestDb with Mockit
         val round = setUp()
         val result = save(app, "admin@example.com", saveRound(round, excludeCoi = true))
         status(result) === SEE_OTHER
-        flash(result).get("error") must beSome(contain("stop it"))
+        flash(result).get("error") must beSome(contain("stop the round"))
+        // a later save does nothing: the rounds list links the round's conflicts page
+        flash(result).get("coiRound") must beSome(round.getId.toString)
+        contentAsString(route(app, FakeRequest(GET, s"/admin/rounds?contestId=$contestId")
+          .withSession(Secured.UserName -> "admin@example.com", Secured.CurrentContestId -> contestId.toString)
+          .withFlash("error" -> "x", "coiRound" -> round.getId.toString).withCSRFToken).get) must
+          contain(s"/admin/rounds/${round.getId}/conflicts")
         VoteJdbc.byRound(round.getId).map(_.pageId).toSet === Set(1L, 2L, 3L)
         RoundImageJdbc.disqualified(round.getId) must beEmpty
         roundDao.findById(round.getId).get.excludeCoi must beTrue
@@ -239,6 +245,23 @@ class CoiAuthorizationSpec extends PlaySpecification with PlayTestDb with Mockit
         flash(again).get("success") must beNone
         RoundImageJdbc.disqualified(r).map(_.pageId) === Seq(2L)
         VoteJdbc.byRound(r).map(_.pageId).toSet === Set(1L, 3L)
+      }
+    }
+
+    "say the round is being distributed, also when it has no conflicts, and not set the flag" in {
+      testDbApp { app =>
+        setUp()
+        val juror = User.findByEmail("juror@example.com").head
+        val clean = roundDao.create(Round(None, 2, Some("R2"), contestId, active = false))
+        VoteJdbc.create(3L, 0, juror.getId, clean.getId)
+        DB.autoCommit { implicit s =>
+          services.jobs.JobJdbc.insert(services.jobs.NewJob(services.distribution.RoundDistributionHandler.Kind,
+            Some(contestId), Some(services.distribution.RoundDistributionHandler.SubjectType), clean.id,
+            Some(services.distribution.RoundDistributionHandler.dedupeKey(clean.getId))), owner = None)
+        }
+        val result = save(app, "admin@example.com", saveRound(clean, excludeCoi = true))
+        (status(result) === SEE_OTHER) and (flash(result).get("error") must beSome(contain("distributed"))) and
+          (roundDao.findById(clean.getId).get.excludeCoi must beFalse)
       }
     }
 
