@@ -15,7 +15,8 @@ developed (its first to last commit), or "released around" a git tag, with the r
 where a tag or `version :=` in `build.sbt` gives one. Earlier deploy dates may be added later.
 Plans that aren't built
 yet are in the [roadmap](docs/plans/2026-11-02-roadmap.md). PR numbers are the stacked series,
-#184–#243 (`origin/stack/series-doc`, `docs/plans/2026-11-03-pr-series.md`).
+#184–#249 (01–59 in `docs/plans/2026-11-03-pr-series.md` on `origin/stack/series-doc`, the
+later ones in the roadmap).
 
 **Versioning:** from the next release on, versions are calendar-based, `YY.MM` (e.g. `26.11`),
 with `.N` for an extra deploy in the same month (`26.11.1`), and release headings will read
@@ -80,6 +81,10 @@ Developed 2026-11-02 to 2026-11-03, PRs #232–#236.
 
 - **Votes don't fail** when jurors vote while admins change rounds (#239, 2026-11-03).
 - **Sign in with Google or Wikimedia**, to an existing account (#240, V87, 2026-11-03).
+- **Conflicts of interest:** on a stopped round, its conflicts page disqualifies a juror's
+  conflicted files keeping their votes, and requalifies them (#244, 2026-11-03).
+- **Criteria rounds' results:** per-criterion averages in the file list, the by-rate list, the
+  CSV and the all-jurors large view, and stars per criterion (#247, 2026-11-03).
 
 **Development**
 
@@ -94,6 +99,8 @@ Developed 2026-11-02 to 2026-11-03, PRs #232–#236.
 - Documentation consolidated into practices docs (testing, workflow, operations,
   integrations, UI, dependencies) with a history index and a docs index
   ([docs/README.md](docs/README.md); #245, PR 62).
+- Calendar versions (`YY.MM`; the build is `26.11-SNAPSHOT`); the CodeRabbit request and
+  review triage tools in `scripts/review/` (PR 67).
 - **Migrations:** V85 gallery index, V86 timestamp definitions, V87 for the sign-in (#240).
 
 ## Deployed

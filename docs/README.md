@@ -23,7 +23,8 @@ follow these yet" list for triage where one exists):
 **References** (how a part works today): [api.md](api.md) (REST API), [deployment.md](deployment.md)
 (deploy and recovery runbook), [oauth.md](oauth.md) (Google and Wikimedia sign-in);
 [`bench/README.md`](../bench/README.md) (the production-like benchmark),
-[`scripts/README.md`](../scripts/README.md); [CHANGELOG.md](../CHANGELOG.md) (by release).
+[`scripts/README.md`](../scripts/README.md), [`scripts/review/README.md`](../scripts/review/README.md)
+(CodeRabbit requests and review triage); [CHANGELOG.md](../CHANGELOG.md) (by release).
 
 **Plans:** [plans/](plans/), active work only, indexed by the
 [roadmap](plans/2026-11-02-roadmap.md); [plans/ci-drafts/](plans/ci-drafts/) holds diffs for other
@@ -80,6 +81,13 @@ The rule is in workflow §8: the update is in the same PR, and the reviewer chec
   too: written to a file, committed with `git commit -F`.
 - **Size:** a practices doc stays readable in one sitting (about 150–500 lines); a rule that
   belongs to another doc is pointed to, not copied.
+- **The changelog is a development changelog** (the user, 2026-11-03): each release has
+  "Features" (what organizers and jurors notice) and "Development" (the important engineering
+  changes). It leaves out unmerged work, hosting and server details, and trivial refactors.
+  Deployed releases are dated from their migrations (production's
+  `flyway_schema_history.installed_on`), earlier ones by their development period or git tag;
+  release headings are calendar versions, `## 26.11 (YYYY-MM-DD)`. The upkeep is in
+  [workflow](workflow/practices.md) §7.3–7.4.
 
 ## 5. User docs
 
