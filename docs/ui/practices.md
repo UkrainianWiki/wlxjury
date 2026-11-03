@@ -39,9 +39,9 @@ names are keys, `2026-11-02-criteria-rounds.md`).
 translatewiki (planned; today the four files are edited in the repository). Long user-facing
 pages (the planned user guides, [docs/README.md](../README.md) §5) are written in English in the
 repository and reviewed with the code; a release step publishes them to a wiki page and marks it
-for translation, and translations happen there with MediaWiki's Translate extension. Which wiki
-(Meta-Wiki, Commons or another) is an open question for the user. Repository docs, user docs
-included, are English only.
+for translation, and translations happen there with MediaWiki's Translate extension. The wiki is
+Commons, where the jury tools' pages already are (the user, 2026-11-03); nothing is published until
+the user decides. Repository docs, user docs included, are English only.
 
 ## 2. Scripts under the CSP
 
@@ -124,9 +124,19 @@ Commons). The automated browser layer that will take these over is planned (test
 
 ## 6. Supported browsers
 
-**6.1 Desktop** (proposed, awaiting the user): the current and previous major versions of
-Chromium-based browsers (Chrome, Edge), Firefox and Safari (WebKit); until the browser tests run
-all three engines (testing §10), a change is checked by hand in at least Chromium and Firefox.
+**6.1 Desktop** (the user, 2026-11-03): supported and tested are the current and previous major
+versions of Chromium-based browsers (Chrome, Edge, Opera), Firefox and Safari (WebKit). A major is
+the first version number: Chromium and Firefox ship one every four weeks, Safari once a year with
+the OS. Until the browser tests run all three engines (testing §10), a change is checked by hand in
+at least Chromium and Firefox. *Why:* the engines the browser tests run.
+
+**6.1a Compatibility floor: Chrome 109 and Firefox 115.** Signing in, voting and the core pages
+must keep working there (cosmetic issues aren't fixed): no JavaScript or CSS feature newer than
+those versions. *Why:* in a 14-day sample of production's signed-in visitors (2026-11-03, 105
+client and browser pairs) about a fifth used old browsers: Firefox 115 ESR, Chrome 109 (the last
+for Windows 7/8) and old Opera releases. Rerun the count each contest season and raise the floor as
+they drop out: `ssh <server> 'python3 -' < scripts/browser-stats.py` (read-only; prints counts only,
+no addresses or user agents).
 
 **6.2 Mobile: not supported yet.** Pages render on phones but are not designed or tested for
 them. Mobile support is queued in the roadmap ("Mobile support (not supported yet)"), and the
@@ -158,7 +168,8 @@ its reason. The patch inventory, targeted tests and the keep-or-replace decision
 | 4.3 keys vote by path | `views.LargeViewControllerSpec`, `large-view-keys.test.js` | enforced |
 | 4.1 accessible names | review | planned: with the browser tests (an accessibility scan per page) |
 | 5 zero CSP violations and console errors | `ui-shots.py` prints console messages | planned as a failing check in the browser tests |
-| 6.1 three engines | — | planned (testing §10); the browser list itself is proposed, awaiting the user |
+| 6.1 three engines | — | planned (testing §10) |
+| 6.1a the floor (Chrome 109, Firefox 115) | review | planned: a Browserslist or lint check of the scripts and styles |
 
 ## 9. Where the code doesn't follow these yet (for triage)
 
