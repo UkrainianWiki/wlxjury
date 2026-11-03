@@ -1,7 +1,6 @@
 package db
 
 import db.scalikejdbc.SharedTestDb
-import org.flywaydb.core.Flyway
 import org.specs2.mutable.Specification
 import org.specs2.specification.{AfterAll, BeforeAll}
 
@@ -13,9 +12,9 @@ import scala.util.Using
 
 /** V55.1 converts production's MyISAM tables to InnoDB.
   *
-  * The rest of the test suite runs on the B44 baseline, which has always been InnoDB, so
-  * it can't show what production does: production's jury tables are still MyISAM until
-  * V55.1 runs (they were created before InnoDB became the default). This spec starts from
+  * The rest of the test suite runs on a fresh database (V1 onward on MariaDB 10.6, whose
+  * default engine is InnoDB), so it can't show what production does: production's jury tables
+  * are still MyISAM until V55.1 runs (they were created before InnoDB became the default). This spec starts from
   * production's schema at V53 (test/resources/db/prod-v53-myisam-schema.sql, MyISAM,
   * utf8mb3 / utf8mb4_unicode_ci), in databases of its own on the shared test server
   * (SharedTestDb's, whose wlxjury database it leaves alone; dropped after the spec), and
@@ -28,7 +27,7 @@ import scala.util.Using
   *    Flyway's order, as a deploy runs them;
   *  - V65 adds category_members' foreign keys, which production lacks (MyISAM ignored
   *    V24's), after archiving the members whose image or category is gone, and is a no-op
-  *    on a second run and on the B44 baseline, which has the keys.
+  *    on a second run and on a fresh database, which has the keys.
   */
 class ConvertToInnoDbMigrationSpec extends Specification with BeforeAll with AfterAll {
 
@@ -53,10 +52,11 @@ class ConvertToInnoDbMigrationSpec extends Specification with BeforeAll with Aft
 
   private def jdbcUrl(db: String): String = SharedTestDb.jdbcUrl.replaceFirst("/wlxjury(\\?|$)", s"/$db$$1")
 
-  /** Flyway on a database, as a deploy runs it, up to a version. */
-  private def flywayTo(db: String, version: String): Unit =
-    Flyway.configure().dataSource(jdbcUrl(db), "root", SharedTestDb.password)
-      .locations("filesystem:conf/db/migration/default").target(version).load().migrate()
+  /** Flyway on a database, as a deploy runs it (db.Migrations), up to a version. */
+  private def flywayTo(db: String, version: String): Unit = {
+    Migrations.migrate(jdbcUrl(db), "root", SharedTestDb.password, Migrations.Settings(target = Some(version)))
+    ()
+  }
 
   private def statements(sql: String): Seq[String] =
     sql.linesIterator.filterNot(_.trim.startsWith("--")).mkString("\n")
@@ -265,8 +265,8 @@ class ConvertToInnoDbMigrationSpec extends Specification with BeforeAll with Aft
       }
     }
 
-    "V65 be a no-op on the B44 baseline, which has category_members' keys" in {
-      // a fresh database, as the test suite's: Flyway applies B44, then the migrations after it
+    "V65 be a no-op on a fresh database, which has category_members' keys" in {
+      // a fresh database, as the test suite's: Flyway runs V1 onward
       Using.resource(emptyDb("baseline")) { c =>
         flywayTo("baseline", "64")
         memberKeys(c) === cascadingMemberKeys

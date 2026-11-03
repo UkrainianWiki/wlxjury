@@ -13,9 +13,13 @@ import scala.concurrent.Future
 /** The app's [[JobScheduler]], with a handler per job kind, started with the app (it
   * recovers the jobs an earlier run left) and stopped before the database: the DBApi is
   * injected so that its stop hook, registered before this one, runs after it.
+  *
+  * `migrations` is injected so that the database is migrated before the scheduler starts:
+  * Guice doesn't order eager bindings by module (modules.MigrationOrderSpec).
   */
 @Singleton
 class JobSchedulerProvider @Inject() (
+    migrations: DatabaseMigrations,
     config: Configuration,
     lifecycle: ApplicationLifecycle,
     dbApi: DBApi,

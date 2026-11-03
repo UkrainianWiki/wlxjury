@@ -137,6 +137,8 @@ ThisBuild / javaOptions += "-Dfile.encoding=UTF-8"
 Universal / javaOptions += "-Dfile.encoding=UTF-8"
 
 val ScalikejdbcVersion = "4.3.2"
+// Flyway runs from db.Migrations (no flyway-play): docs/plans/2026-11-03-flyway.md
+val FlywayVersion = "13.12.0"
 val ScalikejdbcPlayVersion = "3.0.1-scalikejdbc-4.3"
 val ScalawikiVersion = "0.7.0-SNAPSHOT"
 val PlayMailerVersion = "9.0.0"
@@ -177,8 +179,8 @@ libraryDependencies ++= Seq(
   "org.scalikejdbc" %% "scalikejdbc-orm" % ScalikejdbcVersion,
   "org.scalikejdbc" %% "scalikejdbc-play-dbapi-adapter" % ScalikejdbcPlayVersion,
   "org.scalikejdbc" %% "scalikejdbc-test" % ScalikejdbcVersion % Test,
-  "org.flywaydb" %% "flyway-play" % "8.0.1",
-  "org.flywaydb" % "flyway-mysql" % "9.16.3",
+  "org.flywaydb" % "flyway-core" % FlywayVersion,
+  "org.flywaydb" % "flyway-mysql" % FlywayVersion,
   "org.mariadb.jdbc" % "mariadb-java-client" % "3.5.3",
   "org.scalawiki" %% "scalawiki-core" % ScalawikiVersion,
   "org.scalawiki" %% "scalawiki-wlx" % ScalawikiVersion,

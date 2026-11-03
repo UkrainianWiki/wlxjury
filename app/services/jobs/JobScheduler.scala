@@ -151,7 +151,7 @@ class JobScheduler(handlerList: Seq[JobHandler], val settings: JobScheduler.Sett
         }
         dispatch()
       } catch {
-        // e.g. the job table not migrated yet (Flyway's apply page): once a minute, not every poll
+        // e.g. the job table not migrated yet: once a minute, not every poll
         case NonFatal(e) =>
           val now = System.currentTimeMillis()
           if (now - lastPollWarning > 60000) {
@@ -162,8 +162,9 @@ class JobScheduler(handlerList: Seq[JobHandler], val settings: JobScheduler.Sett
 
   @volatile private var tableExists = false
 
-  /** The job table exists: until its migration has run (Flyway's apply page), the
-    * scheduler waits instead of failing a query every poll.
+  /** The job table exists. The app starts the scheduler only after the migrations
+    * (modules.JobSchedulerProvider depends on modules.DatabaseMigrations); a scheduler started
+    * on a database without the table yet waits instead of failing a query every poll.
     */
   private def tableReady(): Boolean =
     tableExists || {

@@ -1,7 +1,7 @@
 # Database Performance Analysis
 
 **Date:** 2026-03-25
-**Schema baseline:** `conf/db/migration/default/B44__Baseline.sql`
+**Schema baseline:** `conf/db/migration/default/B44__Baseline.sql` (removed 2026-11: Flyway never applied it, `docs/plans/2026-11-03-flyway.md`)
 **Method:** Cross-referenced schema indexes against all query patterns in `app/db/scalikejdbc/` and `app/db/scalikejdbc/rewrite/`
 
 ---

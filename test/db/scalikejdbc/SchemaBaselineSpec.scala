@@ -9,10 +9,15 @@ import play.api.test.Helpers.running
 import java.io.File
 import java.nio.file.Files
 
+/** Dumps the schema a fresh database reaches (every migration) to target/schema-baseline.sql,
+  * as a starting point for a baseline script. It is not a migration: a baseline is cut, checked
+  * against replaying the migrations and wired in deliberately (docs/plans/2026-11-03-flyway.md);
+  * the B44__Baseline.sql this once wrote into conf/db/migration/default never ran anywhere.
+  */
 class SchemaBaselineSpec extends Specification {
 
   "schema baseline generator" should {
-    "generate B44 baseline migration" in {
+    "dump the migrated schema" in {
       if (sys.props.get("generate.baseline").isEmpty)
         skipped("Pass -Dgenerate.baseline=true to regenerate the baseline")
 
@@ -51,7 +56,8 @@ class SchemaBaselineSpec extends Specification {
             )
 
             val sql = result.getStdout
-            val outputFile = new File("conf/db/migration/default/B44__Baseline.sql")
+            val outputFile = new File("target/schema-baseline.sql")
+            Files.createDirectories(outputFile.toPath.getParent)
             Files.writeString(outputFile.toPath, sql)
 
             sql must not(beEmpty)

@@ -2229,6 +2229,10 @@ history and is unaffected (a baseline applies only to an empty schema); Flyway s
 (`selection` → `vote`) is still on its branch, so a baseline made now would have to be made
 again. Not worth it now; after P0 and P1 at most, and tmpfs halves what it saves.
 
+*Correction (2026-11-03, Flyway batch, `docs/plans/2026-11-03-flyway.md`):* Flyway 9.16.3
+never applied B44 (it has no `B` migrations); "B44 alone" above was V1..V44. B44 is removed and
+Flyway is 13.12.0, run by `db.Migrations`.
+
 **Recommendations, ranked by saving ÷ risk:**
 
 | # | Change | Spec(s) | Saving | Risk | Effort |

@@ -1,7 +1,6 @@
 package db.scalikejdbc
 
 import com.dimafeng.testcontainers.MariaDBContainer
-import org.flywaydb.core.Flyway
 import org.testcontainers.utility.DockerImageName
 import scalikejdbc.{ConnectionPool, DB}
 
@@ -78,9 +77,14 @@ object SharedTestDb {
     container
   }
 
+  /** Production's MariaDB; `-Dwlxjury.test.mariadb-image=mariadb:10.11.14` runs the specs on
+    * another server version (the Flyway upgrade was checked on 10.11 this way).
+    */
+  val Image: String = sys.props.getOrElse("wlxjury.test.mariadb-image", "mariadb:10.6.22")
+
   private def start(): Boolean = {
     val container = forTests(MariaDBContainer(
-      dockerImageName = DockerImageName.parse("mariadb:10.6.22"),
+      dockerImageName = DockerImageName.parse(Image),
       dbName         = "wlxjury",
       dbUsername     = "WLXJURY_DB_USER",
       dbPassword     = "WLXJURY_DB_PASSWORD"
@@ -92,7 +96,13 @@ object SharedTestDb {
     catch { case e: Throwable => scala.util.Try(container.stop()); throw e }
   }
 
+  @volatile private var _container: MariaDBContainer = _
+
+  /** The shared container, for a spec that runs a client in it (mariadb-dump, mariadb). */
+  private[db] def container: MariaDBContainer = { require(initialized); _container }
+
   private def configure(container: MariaDBContainer): Boolean = {
+    _container       = container
     _url             = container.jdbcUrl
     _user            = container.username
     _password        = container.password
@@ -101,12 +111,7 @@ object SharedTestDb {
     Class.forName(container.driverClassName)
     registerPools()
 
-    Flyway
-      .configure()
-      .dataSource(container.jdbcUrl, container.username, container.password)
-      .locations("classpath:db/migration/default")
-      .load()
-      .migrate()
+    db.Migrations.migrate(container.jdbcUrl, container.username, container.password)
 
     // Initialise the hasManyThrough association so that round.users is populated
     // when Round.findById / findAll is called without a Play application.

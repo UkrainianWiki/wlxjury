@@ -1,0 +1,82 @@
+1 | 1 | Create table selection | SQL | V1__Create_table_selection.sql | 1128036440 | 1
+2 | 2 | Create table users | SQL | V2__Create_table_users.sql | 1399049045 | 1
+3 | 3 | Create table rounds | SQL | V3__Create_table_rounds.sql | -1724470196 | 1
+4 | 4 | Create table contest | SQL | V4__Create_table_contest.sql | 329002143 | 1
+5 | 5 | Create table images | SQL | V5__Create_table_images.sql | 1936644252 | 1
+6 | 6 | Create table monument | SQL | V6__Create_table_monument.sql | -1770125199 | 1
+7 | 7 | Create indicies | SQL | V7__Create_indicies.sql | 1586518387 | 1
+8 | 8 | Create table comment | SQL | V8__Create_table_comment.sql | -1268153887 | 1
+9 | 9 | Create table criteria | SQL | V9__Create_table_criteria.sql | 1617315125 | 1
+10 | 10 | Create table criteria rate | SQL | V10__Create_table_criteria_rate.sql | -1569705399 | 1
+11 | 11 | Alter images add description | SQL | V11__Alter_images_add_description.sql | -1494503291 | 1
+12 | 12 | Alter contest add greeting | SQL | V12__Alter_contest_add_greeting.sql | -1035083259 | 1
+13 | 13 | Alter rounds add filters | SQL | V13__Alter_rounds_add_filters.sql | 576480419 | 1
+14 | 14 | Alter rounds add category filter | SQL | V14__Alter_rounds_add_category_filter.sql | 6434584 | 1
+15 | 15 | Alter rounds add regions | SQL | V15__Alter_rounds_add_regions.sql | -166749951 | 1
+16 | 16 | Alter users add wiki account | SQL | V16__Alter_users_add_wiki_account.sql | 1951023437 | 1
+17 | 17 | Alter images add size | SQL | V17__Alter_images_add_size.sql | 90906416 | 1
+18 | 18 | Alter rounds add image size filter | SQL | V18__Alter_rounds_add_image_size_filter.sql | -1454119720 | 1
+19 | 19 | Alter rounds add criteria | SQL | V19__Alter_rounds_add_criteria.sql | 616670360 | 1
+20 | 20 | Alter monuments add regions | SQL | V20__Alter_monuments_add_regions.sql | -329872699 | 1
+21 | 21 | Alter rounds add halfstar | SQL | V21__Alter_rounds_add_halfstar.sql | 653613738 | 1
+22 | 22 | Alter rounds add monuments | SQL | V22__Alter_rounds_add_monuments.sql | 656763604 | 1
+23 | 23 | Alter users drop default contest | SQL | V23__Alter_users_drop_default_contest.sql | -1305285682 | 1
+24 | 24 | Image categories | SQL | V24__Image_categories.sql | -724591449 | 1
+25 | 25 | Alter images add author | SQL | V25__Alter_images_add_author.sql | 479563863 | 1
+26 | 26 | Alter comments add contest | SQL | V26__Alter_comments_add_contest.sql | 535715910 | 1
+27 | 27 | Up monuments limits | SQL | V27__Up_monuments_limits.sql | 287456163 | 1
+28 | 28 | Alter selection rename round id | SQL | V28__Alter_selection_rename_round_id.sql | 986662750 | 1
+29 | 29 | Alter comment rename round id | SQL | V29__Alter_comment_rename_round_id.sql | -689622485 | 1
+30 | 30 | Alter user rename contest id | SQL | V30__Alter_user_rename_contest_id.sql | -492390237 | 1
+31 | 31 | Alter round rename contest id | SQL | V31__Alter_round_rename_contest_id.sql | -565528515 | 1
+32 | 32 | Alter rounds add top images filter | SQL | V32__Alter_rounds_add_top_images_filter.sql | -1236035808 | 1
+33 | 33 | Alter images add monuments index | SQL | V33__Alter_images_add_monuments_index.sql | 2036324956 | 1
+34 | 34 | Alter user add sort | SQL | V34__Alter_user_add_sort.sql | -280575419 | 1
+35 | 35 | Alter rounds add special nomination filter | SQL | V35__Alter_rounds_add_special_nomination_filter.sql | 1910007867 | 1
+36 | 36 | Alter contest add campaign | SQL | V36__Alter_contest_add_campaign.sql | 1157350328 | 1
+37 | 37 | Round User | SQL | V37__Round_User.sql | -1009487865 | 1
+38 | 38 | Migrate round user | SQL | V38__Migrate_round_user.sql | 1360418473 | 1
+39 | 39 | Alter monuments add subregions | SQL | V39__Alter_monuments_add_subregions.sql | 1663589217 | 1
+40 | 40 | Alter selection drop timestamps | SQL | V40__Alter_selection_drop_timestamps.sql | 568258536 | 1
+41 | 41 | Alter round decimal prev rate | SQL | V41__Alter_round_decimal_prev_rate.sql | 1490732315 | 1
+42 | 42 | Alter rounds add media type filter | SQL | V42__Alter_rounds_add_media_type_filter.sql | 1277118315 | 1
+43 | 43 | Alter images add mime | SQL | V43__Alter_images_add_mime.sql | 584537 | 1
+44 | 44 | Alter images title index | SQL | V44__Alter_images_title_index.sql | -1606981986 | 1
+45 | 46 | Schema cleanup | SQL | V46__Schema_cleanup.sql | 1664957425 | 1
+46 | 47 | Analyze tables after index changes | SQL | V47__Analyze_tables_after_index_changes.sql | 78369460 | 1
+47 | 48 | denormalize selection monument id | SQL | V48__denormalize_selection_monument_id.sql | -2096077671 | 1
+48 | 49 | idx selection round jury rate | SQL | V49__idx_selection_round_jury_rate.sql | 576573393 | 1
+49 | 50 | idx selection round monument id | SQL | V50__idx_selection_round_monument_id.sql | -1503679091 | 1
+50 | 51 | monument id unique | SQL | V51__monument_id_unique.sql | 359765642 | 1
+51 | 52 | Alter rounds previous to csv | SQL | V52__Alter_rounds_previous_to_csv.sql | -1058953621 | 1
+52 | 53 | Add unique selection index | SQL | V53__Add_unique_selection_index.sql | 1978450078 | 1
+53 | 54 | Alter images add media type | SQL | V54__Alter_images_add_media_type.sql | -1983752795 | 1
+54 | 55 | Create skipped V45 indexes | SQL | V55__Create_skipped_V45_indexes.sql | 2057557874 | 1
+55 | 55.1 | Convert to InnoDB | SQL | V55_1__Convert_to_InnoDB.sql | 1714914127 | 1
+56 | 56 | idx selection round page rate | SQL | V56__idx_selection_round_page_rate.sql | -317397342 | 1
+57 | 57 | Resync selection monument id | SQL | V57__Resync_selection_monument_id.sql | -1900800220 | 1
+58 | 58 | Selection page id foreign key | SQL | V58__Selection_page_id_foreign_key.sql | 1350782631 | 1
+59 | 59 | Rounds submit token | SQL | V59__Rounds_submit_token.sql | 526009849 | 1
+60 | 60 | Background jobs | SQL | V60__Background_jobs.sql | -159955352 | 1
+61 | 61 | Add is root and user contest | SQL | V61__Add_is_root_and_user_contest.sql | -32811846 | 1
+62 | 62 | Migrate roles to user contest | SQL | V62__Migrate_roles_to_user_contest.sql | -1516337748 | 1
+63 | 63 | Deleted and renamed files | SQL | V63__Deleted_and_renamed_files.sql | -221543359 | 1
+64 | 64 | Index deleted files | SQL | V64__Index_deleted_files.sql | 1588813848 | 1
+65 | 65 | Category members foreign keys | SQL | V65__Category_members_foreign_keys.sql | 2041987344 | 1
+66 | 66 | Index images page monument | SQL | V66__Index_images_page_monument.sql | -695452059 | 1
+67 | 67 | Users email nullable | SQL | V67__Users_email_nullable.sql | -1098681713 | 1
+68 | 68 | Rounds exclude coi | SQL | V68__Rounds_exclude_coi.sql | 2094434308 | 1
+69 | 69 | Rounds exclude category | SQL | V69__Rounds_exclude_category.sql | 1231623677 | 1
+70 | 70 | Named category clauses | SQL | V70__Named_category_clauses.sql | 348785794 | 1
+71 | 71 | Users add theme | SQL | V71__Users_add_theme.sql | -1799836997 | 1
+72 | 72 | Rounds top binary order | SQL | V72__Rounds_top_binary_order.sql | 436964276 | 1
+73 | 73 | Rounds prev selected by zero to null | SQL | V73__Rounds_prev_selected_by_zero_to_null.sql | 1957373462 | 1
+74 | 74 | Rounds prev rejected by | SQL | V74__Rounds_prev_rejected_by.sql | -1678597579 | 1
+75 | 75 | Api tokens | SQL | V75__Api_tokens.sql | 1141901420 | 1
+76 | 76 | User contest role allowlist | SQL | V76__User_contest_role_allowlist.sql | 2073754549 | 1
+77 | 77 | Account verification and tokens | SQL | V77__Account_verification_and_tokens.sql | -1012949477 | 1
+78 | 78 | Criteria rate orphans | SQL | V78__Criteria_rate_orphans.sql | -369768825 | 1
+79 | 79 | Api token create nonce | SQL | V79__Api_token_create_nonce.sql | -1032183890 | 1
+80 | 80 | Session upgrade window | SQL | V80__Session_upgrade_window.sql | -1613836300 | 1
+81 | 81 | Legacy password retirement | SQL | V81__Legacy_password_retirement.sql | -510140169 | 1
+82 | 82 | Rename selection to vote | SQL | V82__Rename_selection_to_vote.sql | 2125039119 | 1
