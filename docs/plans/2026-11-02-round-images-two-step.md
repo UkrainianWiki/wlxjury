@@ -122,7 +122,7 @@ CREATE TABLE IF NOT EXISTS round_image (
   `(round_id, page_id, rate)` index) joined to `round` and `images`, status `in`, `legacy`;
   then the `vote_aside`-only pairs as `deleted`; `INSERT IGNORE` throughout. Production had 3.0M
   vote rows (V55_1's header): ~0.3–1M rows, ~30–100 MB, an estimated 10–60 s per statement. Time
-  it on a production copy (`2026-10-07-prod-like-benchmark.md`) before deploying.
+  it on a production copy (`docs/history/2026-10-07-prod-like-benchmark.md`) before deploying.
 
 ### Counts (P2a, `ALGORITHM=INSTANT`)
 
@@ -359,7 +359,7 @@ not reassigned (as now).
   rejections), so the views don't change. Pages as a deferred join.
 - Order columns: one vocabulary rendered for either source (`ListOrder`, `BinaryOrder`,
   `RankKey`): approvals, rejections, `rate_sum`, `monument_id`/`page_id`.
-- Vote filters stay file-level (decision 3 of `2026-11-01-binary-aggregate-votes.md`): Unrated →
+- Vote filters stay file-level (decision 3 of `docs/history/2026-11-01-binary-aggregate-votes.md`): Unrated →
   `assigned > voted`; Selected/Rated → `approvals > 0`; Rejected → `rejections > 0`; plus
   `OR page_id = withPageId`.
 - Region: `s.region = ?`; several regions or a sub-region join `monument` on `monument_id`.
@@ -970,7 +970,7 @@ could change a P1 decision; P2b's flag pilot is the next measurement.
                         WHERE NOT EXISTS (SELECT 1 FROM vote s WHERE s.round_id = d.round_id
                                           AND s.page_id = d.page_id)) x;
   ```
-  Always time the backfill on a production copy (`2026-10-07-prod-like-benchmark.md`) with
+  Always time the backfill on a production copy (`docs/history/2026-10-07-prod-like-benchmark.md`) with
   production's buffer pool (128M, MariaDB's default): the fixture's ~1 s ran with 512M, so the
   5–20 s estimate may be optimistic if `vote` doesn't fit in memory.
 - **Deploy** with `wlxjury-release deploy` (dump before Flyway, "Ready under maintenance").

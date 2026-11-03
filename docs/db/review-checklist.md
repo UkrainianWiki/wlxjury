@@ -45,14 +45,16 @@ quotes the lines they checked; each item points to its section of
   by deferred join or keyset with a unique tie-breaker; no query per row (§3.1–3.3, §3.6).
 - [ ] New counts cached with after-commit invalidation, or read from `round_image` (§3.4, §3.7).
 - [ ] Batches ≤ 5,000 rows; a step ≤ 15,000 (§3.5, §5.5).
-- [ ] A performance claim is a paired run with SQL logging off, absolute deltas and variation,
-  commit ids recorded; `FixtureVersion` bumped if the fixture changed (§4).
+- [ ] A performance claim passes [the performance checklist](../performance/review-checklist.md)
+  (paired run, SQL logging off, absolute deltas, commit ids, `FixtureVersion`, no production
+  data).
 
 ## Transactions, isolation, locks
 
 - [ ] One transaction owner (`WriteTx.write`, a job step, or the caller of a `…In` method); no
   `DB.localTx` or `AutoSession` call inside a transaction (§5.1, §5.2).
 - [ ] No network, mail or file I/O inside; caches, logs and wake-ups after commit (§5.3).
+- [ ] Work that can outlast a request is a job (`JobHandler`), one short transaction per step (§5.5a).
 - [ ] Every decision re-read inside the transaction, after its locks (§5.4).
 - [ ] Nothing relies on REPEATABLE READ: no gap lock, no subquery as a guard; upserts and FK
   checks still lock gaps (§6.2).
@@ -67,7 +69,8 @@ quotes the lines they checked; each item points to its section of
 ## Tests
 
 - [ ] AutoRollback for DAO specs with the session threaded, truncation for services (§9.1).
-- [ ] A rewritten read has a parity spec; write specs assert `RoundImageInvariants` (§9.3, §9.4).
+- [ ] A rewritten read has a parity spec over its cases (juror and organizer, binary and rated,
+  with and without region and filters); write specs assert `RoundImageInvariants` (§9.3, §9.4).
 - [ ] Run with the Commons variables unset; no credentials in tests (§9.5).
 - [ ] Source-scan guards pass (no Docker): `testOnly db.MigrationNamingSpec
   db.MigrationSchemaSpec db.VoteRowLockSpec security.RawSqlSpec security.StructuralWritesSpec`;

@@ -8,7 +8,7 @@ import java.nio.file.Files
 
 /** Serves the Gatling fixture (GatlingTestFixture: a MariaDB testcontainer restored from
   * `data/cache/`, the app in a TestServer) for UI screenshots
-  * (docs/plans/2026-10-31-theme-modes-and-design-system.md, "Screenshots") and for trying the
+  * (docs/performance/practices.md §1.7; 98a8a79e:docs/plans/2026-10-31-theme-modes-and-design-system.md, "Screenshots") and for trying the
   * app locally ("Running the fixture locally" there).
   *
   * The fixture's images have titles but no url ([[GatlingDbSetup]] loads them from a CSV), so it

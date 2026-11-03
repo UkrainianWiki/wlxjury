@@ -14,7 +14,7 @@ import javax.inject.{Inject, Singleton}
 import scala.collection.mutable
 import scala.concurrent.{ExecutionContext, Future}
 
-/** A timing log for measurements (docs/plans/2026-10-28-gallery-latency.md): per request, its
+/** A timing log for measurements (docs/performance/practices.md §1.4; 98a8a79e:docs/plans/2026-10-28-gallery-latency.md): per request, its
   * time in all, the time it waited before its action ran, the action's own time, its
   * queries (by statement, count and time) and the time spent rendering templates. Off unless
   * [[RequestTimingFilter]] is enabled (`play.filters.enabled`), as the Gatling fixture does

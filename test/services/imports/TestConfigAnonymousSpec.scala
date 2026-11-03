@@ -29,15 +29,17 @@ class TestConfigAnonymousSpec extends Specification {
   /** A workflow or action line (its comment removed) that hands wiki credentials or secrets to
     * a job: COMMONS_* or SCALAWIKI_LOGIN etc. (SCALAWIKI_SHA, the commit CI builds, is not
     * one), secrets.X but GITHUB_TOKEN, secrets['X'], toJSON(secrets), `secrets: inherit`, or
-    * the test-login switch.
+    * the test-login switch. `env -u NAME` removes a variable, so those names don't count.
     */
-  private def passesCredentials(code: String): Boolean =
+  private def passesCredentials(line: String): Boolean = {
+    val code = line.replaceAll("(?<!\\S)-u\\s+(COMMONS_[A-Z]+|SCALAWIKI_[A-Z]+)(?!\\S)", "")
     code.matches(".*\\b(COMMONS_[A-Z]+|SCALAWIKI_(LOGIN|PASSWORD|USER|TOKEN))\\b.*") ||
       code.matches(".*\\bsecrets\\s*\\.(?!GITHUB_TOKEN\\b).*") ||
       code.matches(".*\\bsecrets\\s*\\[.*") ||
       code.matches("(?i).*\\btoJSON\\(\\s*secrets\\s*\\).*") ||
       code.matches(".*\\bsecrets\\s*:\\s*inherit\\b.*") ||
       code.contains("allowTestLogin")
+  }
 
   private def yamlFiles(dir: File): Seq[File] =
     Option(dir.listFiles()).toSeq.flatten.flatMap { f =>
@@ -84,12 +86,16 @@ class TestConfigAnonymousSpec extends Specification {
 
     "be checked for the forms that pass secrets" in {
       Seq("password: ${{ secrets['COMMONS'] }}", "all: ${{ toJSON(secrets) }}", "    secrets: inherit",
-        "token: ${{ secrets.BOT_TOKEN }}", "COMMONS_USER: x", "-Dcommons.allowTestLogin=true")
+        "token: ${{ secrets.BOT_TOKEN }}", "COMMONS_USER: x", "-Dcommons.allowTestLogin=true",
+        "env -u COMMONS_USER COMMONS_PASSWORD=x sbt test", "env -u COMMONS_USER=x sbt test",
+        "env -u COMMONS_USER -u SCALAWIKI_PASSWORD SCALAWIKI_LOGIN=x sbt test")
         .filterNot(passesCredentials) must beEmpty
     }
 
-    "not flag the token they use, or the scalawiki commit" in {
-      Seq("GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}", "SCALAWIKI_SHA: 25951dbe").filter(passesCredentials) must beEmpty
+    "not flag the token they use, the scalawiki commit, or credentials removed with env -u" in {
+      Seq("GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}", "SCALAWIKI_SHA: 25951dbe",
+        "env -u COMMONS_USER -u COMMONS_PASSWORD -u SCALAWIKI_LOGIN -u SCALAWIKI_PASSWORD")
+        .filter(passesCredentials) must beEmpty
     }
   }
 }

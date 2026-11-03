@@ -42,7 +42,7 @@ class GalleryController @Inject() (
 
   /** Which round galleries' region navs show their regions' file counts
     * (`gallery.regionCounts`): "off", a juror's ("juror"), or also the whole round's, the
-    * organisers' (`user/0`) views ("all"). docs/plans/2026-10-25-region-improvements.md
+    * organisers' (`user/0`) views ("all"). docs/performance/practices.md §3.3 (measured in 98a8a79e:docs/plans/2026-10-25-region-improvements.md)
     * has the measurements behind the default.
     */
   private val roundRegionCounts = config.getOptional[String]("gallery.regionCounts").getOrElse("all")

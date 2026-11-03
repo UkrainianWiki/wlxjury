@@ -12,6 +12,22 @@ Before changing authentication, sessions, roles or accounts, SQL, views or JavaS
 
 Before changing SQL, schema, migrations, transactions or locking, read `docs/db/practices.md` (query safety, keys, indexes, benchmarks, transactions, READ COMMITTED, lock order and retry, migrations, tests; with the guards that enforce each rule and where the code doesn't follow one yet); reviewers apply `docs/db/review-checklist.md`.
 
+Before a load test, benchmark, performance change or memory sizing, read `docs/performance/practices.md` (Gatling, paired benchmarks, caching and jobs, heap and pool budgets); review with `docs/performance/review-checklist.md`.
+
+Before writing or running tests, read `docs/testing/practices.md`; review with `docs/testing/review-checklist.md`.
+
+Before branching, committing, opening a stack PR or releasing, read `docs/workflow/practices.md`.
+
+Before changing log lines, readiness, backups or the deploy, read `docs/operations/practices.md`.
+
+Before changing calls to Wikimedia, the scalawiki pin or the OAuth providers, read `docs/integrations/practices.md`.
+
+Before changing templates, scripts, messages or themes, read `docs/ui/practices.md`.
+
+Before adding or updating a dependency, action, image or downloaded tool, read `docs/dependencies/practices.md`.
+
+Which doc to update when, and how to write docs: `docs/README.md`.
+
 ## Looking Up Library Sources
 
 **Before searching the web for any library API** (ScalikeJDBC, Testcontainers, Play, Pekko, etc.), check `target/dep-sources/` first — it contains extracted `.scala`/`.java` source files for all dependencies.
@@ -105,7 +121,8 @@ sbt -Dgatling.roundMgmt.stress=true "Gatling/testOnly gatling.simulations.RoundM
 - `ConcurrentRoundCreationSimulation` has 10 admins create rounds at once (large, small, top-N, "distribute new files") while jurors vote and browse; per-admin submit-to-done times, solo reference times and heap go to `target/gatling/concurrent-distribution.txt`. `gatling.jobs.*` sets the app's job workers and chunk size for a run.
 - To measure with production-like JVM settings, prefix e.g. `"set Gatling / javaOptions ++= Seq(\"-Xmx512m\", \"-Xlog:gc*:file=target/gatling/gc-%p.log:time,uptime,level,tags\")"`; `%p` keeps one GC log per forked JVM.
 - Results: `target/gatling/<simulation>-<timestamp>/` (`js/stats.json` has per-request statistics).
-- To use the fixture by hand or for UI screenshots: `Test/runMain gatling.setup.UiShotsServer` (it sets the images' Commons URLs in its own container, writes `target/ui-shots/server.json`, stops on `target/ui-shots/server.stop`); command and logins in `docs/plans/2026-10-31-theme-modes-and-design-system.md`, "Running the fixture locally".
+- Never run Gatling, JMH or other benchmarks in an sbt session where `coverage` is on: its classes are instrumented (scoverage) and measure slower. Start a new session, or run `coverageOff`, first.
+- To use the fixture by hand or for UI screenshots: `Test/runMain gatling.setup.UiShotsServer` (it sets the images' Commons URLs in its own container, writes `target/ui-shots/server.json`, stops on `target/ui-shots/server.stop`); command and logins in `docs/performance/practices.md` §1.7.
 
 ### Building packages
 ```bash
@@ -139,6 +156,13 @@ app/
   modules/             # Guice DI: AppModule binds RoundRepo→Round, ImageRepo→ImageJdbc
   views/               # Twirl templates
 ```
+
+### Conventions
+
+- **Layers:** a controller authorizes through a `Secured` builder, binds the form, calls a service and renders; business rules and transactions are in `services/`; SQL is in the DAOs under `db/scalikejdbc/` (raw SQL text only in the files `security.RawSqlSpec` lists); templates get ready values and run no queries (not yet so in `editUser`, `logged`, `monuments` and `navbar` (`User.findRoundJurorsToView`), which call DAOs).
+- **Long work is a `JobHandler`** (`services.jobs`): `kind`, `step(job, ctx)` doing one bounded chunk in the transaction of its `StepContext` (the job's row locked) and returning `Continue`/`Done`/`Failed(JobError, …)` with the state to resume from; `prepare` (outside any transaction) or a `FetchingJobHandler` for external calls; `onFailed`/`onCancelled`/`onRetry` undo and redo in the same transaction as the status change; cache invalidation via `ctx.afterCommit`. Register it in `modules.JobSchedulerProvider`.
+- **Errors are message keys:** user-visible failures carry a key and arguments (`JobError(key, args, reference)`, `views.html.errorPage`, JSON `{error, reference}`), never exception or request text; the text comes from `conf/messages.*` (all four files).
+- **Config:** defaults are in `conf/application.conf`, the tests' in `test/resources/application.conf`; production overrides go in the server's `production.conf` (secrets as `${?VAR}`) and are listed in the release notes; a setting whose silent misspelling would be dangerous is validated at start, as `db.Migrations` does: an unknown `db.<name>.migration.*` key fails the start instead of being ignored.
 
 ### Key Domain Concepts
 

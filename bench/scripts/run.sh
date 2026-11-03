@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# One measured run on the benchmark server (docs/plans/2026-10-07-prod-like-benchmark.md):
+# One measured run on the benchmark server (docs/history/2026-10-07-prod-like-benchmark.md):
 #
 #   run.sh <label> <dist> <snapshot> <cnf|-> <simulation>... [-- <extra -D options for sbt>]
 #

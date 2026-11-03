@@ -4,12 +4,11 @@ The rules every change to this repository follows, one section per issue class t
 occurred here. Each section gives the rule, a correct example in this codebase, the guard that
 enforces it and the known exceptions. Reviewers apply [review-checklist.md](review-checklist.md);
 the status of each security item is in [register.md](register.md). This document replaces the
-"Practices" and "Standards" of `incident-prevention-guidelines.md` (2026-04, now a pointer here).
+"Practices" and "Standards" of `incident-prevention-guidelines.md` (2026-04; deleted, at `98a8a79e`).
 
 **Guards** are specs in `test/security/` (`testOnly security.*`; most scan the sources and need
 no database, `SignedOutSpec` starts the test app) and the named specs elsewhere. "Planned: G<n>"
-names a guard of the [practices plan](../plans/2026-11-02-security-practices.md) and the batch
-it lands with.
+names a guard not built yet; [§21](#21-guards) lists every guard, built and planned.
 
 **Allowlists.** A guard's allowlist is a small map in the spec: one entry per file (or, for
 `RouteAuthSpec`, per action), each with a one-line reason. Adding an entry is a review item.
@@ -47,6 +46,8 @@ abuse.
 18. [Limits](#18-limits)
 19. [Dependencies](#19-dependencies)
 20. [Deployment configuration](#20-deployment-configuration)
+21. [Guards](#21-guards)
+22. [Privacy](#22-privacy)
 
 ## 1. SQL
 
@@ -121,6 +122,11 @@ and `--password=` in `scripts/`.
 **Rule.** No inline `<script>`, event-handler attribute or `javascript:` URL; scripts are files
 under `public/javascripts/` reading `data-*` attributes. The two inline scripts (the theme
 script, the large views' restore) are allowed by their hashes. The CSP never gets wider.
+No page loads a script, style or font from another host: libraries are webjars or files under
+`public/`, never a CDN; only Commons' images, videos and the category suggestions are remote.
+*Why:* a third-party host could change what runs on every page, and `'self'` stays enough.
+*Source:* theme-modes plan (`98a8a79e:docs/plans/2026-10-31-theme-modes-and-design-system.md`), "Invariants
+that every reviewer checks".
 
 **Example.** `play.filters.csp.directives` in `conf/application.conf` (Play's `CSPFilter`; S7
 moved it from the deprecated `play.filters.headers.contentSecurityPolicy`, P11): every directive
@@ -151,6 +157,9 @@ server answers a server error, and a request it can't parse, outside the filters
 adds the same headers to those (`modules.ResponseSecurityHeaders`, from the same configuration
 and code). A page whose URL holds a secret (a mailed link's token) sends `no-referrer`; it is the
 only header an action may set in place of the filter's (`modules.AppSecurityHeadersFilter`).
+A cookie's value is parsed into its enumerated set (`Theme.parse`, `BinaryOrder.parse`): anything
+else is the default, and the raw value is never written into a page or used for authorization.
+*Why:* a cookie is request text. *Source:* theme-modes plan, "Invariants" ("The theme value").
 
 **Example.** `ThemeCookies` (`controllers/Theme.scala`) and `RoundList.remembered` take
 `secure` from the session's setting; `production.conf` sets `play.http.session.secure`,
@@ -212,7 +221,9 @@ the file is replaced, and prefer replacing the library to patching more of it.
 `withAuthJson`, `withAuthJsonOn`) with a contest-, round- or role-scoped permission, or is on
 the public list. A resource (round, job, comment, file) is checked in its own contest as the
 user's membership there (`Secured.inContest`), never by switching the session's contest on a
-POST or poll. A request-supplied id is looked up with `fold`/`getOrElse` to a 404, never `.get`.
+POST or poll. Only a page GET switches the session's contest (`Secured.isPageRequest`: not a
+script request, `Sec-Fetch-Mode` included, nor a prefetch); a background poll or fragment must
+not move the user to another contest. A request-supplied id is looked up with `fold`/`getOrElse` to a 404, never `.get`.
 Editing another account checks the editor's admin or root role in that account's contest
 (`UserController.saveUser` through `editableUser`: an admin only for members of their
 current contest; root any account).
@@ -221,6 +232,11 @@ A vote needs the round open to its jurors and the juror not stopped on it (`Roun
 an inactive `round_user` row, P6); otherwise the answer of a stopped round, nothing written. The
 vote's update statements check the same, so a stop racing a vote wins.
 Denials go through `onUnAuthorized`/`onUnAuthorizedJson` with a `Secured.Denial`.
+The REST API has no role model of its own: `api.ApiAuth` authorizes through the same `Secured`
+permissions and `User` role checks. An API token is accepted only under `/api/`, and its value is
+never logged, flashed, put in a URL or stored in plain text (SHA-256 only, §3). *Why:* a second
+model drifts from the first, and a token is a password. *Source:* api-auth
+plan (`98a8a79e:docs/plans/2026-11-01-api-auth.md`), "Invariants".
 
 **Example.** `GalleryController.selectWS`: `withAuthJson(roundPermission(..., roundId))`,
 then the round open to jurors, then only the juror's own selection; `ImageDiscussionController
@@ -293,7 +309,11 @@ leaving for the provider would need the providers in the CSP's `form-action`), a
 
 **Rule.** Users see message keys and a logged reference, never request text or an exception's
 message: pages, JSON, job status and persisted user-facing fields. A missing resource is a 404
-with `views.html.errorPage`.
+with `views.html.errorPage`. A JSON endpoint answers its errors in JSON (`{error, reference}`,
+`onUnAuthorizedJson`, `withAuthJson`), never an HTML page; signed out, a script request gets a JSON 401 and a
+page GET goes to the sign-in page keeping `returnTo` (§7). *Why:* a script can't show a page,
+and a lost destination makes the user start over. *Source:* error-handling
+plan (`98a8a79e:docs/plans/2026-10-27-error-handling.md`) §3–§4.
 
 **Example.** `ErrorHandler` (a server error shows a reference); `services.jobs.JobError` (a
 job's error is a key, numeric arguments and the reference of its ERROR log line).
@@ -459,3 +479,76 @@ G14 `ProductionConfigParitySpec` (S8: B5's keys in the infra template), infra
 
 **Exceptions.** O1: the infra template lacks B5's block; applied by hand before any followups
 deploy (register). `useSSL=false` for a local DB (S8).
+
+## 21. Guards
+
+| Rule | Enforced by | State |
+|---|---|---|
+| G1 §10 roles: no split of a role value; role form fields allowlisted | `security.RoleValuesSpec` | built (S1) |
+| G2 §9 every routed action uses a `Secured` builder or is listed | `security.RouteAuthSpec` | built (S1) |
+| G2b §9 every non-public route refuses a request without a session | `security.SignedOutSpec` | built (S1) |
+| G3 §11 every POST route refused without a token; G3b GET actions with mutating names allowlisted | `security.CsrfCoverageSpec` | planned (S4 was skipped; with the infra plan's fail2ban work, postponed) |
+| G4 §1 `createUnsafely(`/`SQL(s"` only in listed files; G4b §3 `MessageDigest`, SHA-1 only in listed files | `security.RawSqlSpec` | built (S5) |
+| G5 §8 raw HTML sinks in `app/` and `public/javascripts/` only in listed files | `security.RawHtmlSinksSpec` | built (S5) |
+| G6 §5, §6 security headers on real responses | `security.SecurityHeadersSpec` | built (S7) |
+| G7 §15 session `maxAge`, `httpOnly`, production `secure` | `security.SessionConfigSpec` | planned (S3 left it) |
+| G8 §16 CSV only through `Csv` / `csvStream` | `security.ExportsSpec` | built (S5) |
+| G9 §13 log calls don't interpolate email, name, password, token, secret | `security.LogHygieneSpec` | built (S5) |
+| G10 §17 outbound call sites match a list; G10b §7 no `request.host`/`absoluteURL` outside a list | `security.OutboundHostsSpec` | planned (not done in S6) |
+| G11 §19 dependency update and vulnerability report at the release gate (a report, not a failure) | sbt/npm task | planned (S10: no plugin yet) |
+| G12 §2, §4 no secret-shaped literal, `MYSQL_PWD` or `--password=` in tracked files | `security.NoSecretsSpec` or infra's `check-no-secrets.sh` | planned (infra plan) |
+| G13 §12 no exception text in responses or user-visible persisted fields | `security.ErrorTextSpec` | built (S5) |
+| G14 §20 B5's keys in the deployed config template | `deployment.ProductionConfigParitySpec` | planned (S8, infra plan) |
+| §7.2 of db practices: raw structural writes listed with their lock | `security.StructuralWritesSpec` | built |
+| §22 juror confidentiality, conflicts of interest | `OwnVotesSpec`, `CoiAuthorizationSpec` | built |
+| §22 dumps anonymised, never committed | review | planned: none (a scan for dump-shaped files in tracked paths is possible) |
+
+Each planned guard lands with the batch named; until then the checklist line is the check.
+*Source:* the security practices plan (`98a8a79e:docs/plans/2026-11-02-security-practices.md`,
+"Guard specs to add"), deleted after this table.
+
+## 22. Privacy
+
+**Rule: personal data.** The app holds jurors' and organizers' emails, names, wiki accounts,
+password hashes, votes, comments and, in the one sign-in failure line that has one
+(`oauth_choose_proof_failed`, operations §1.3), a client address. Collect only what a feature
+needs; never put personal data in a log line (§13), a URL, a shared cache or a test fixture taken
+from production. **Emails** are shown to the account itself and on the contest's users page,
+which is for admins and root only (`UserController.users`, `User.ADMIN_ROLES`). **Names** of a
+round's jurors (the galleries' juror menu, `User.findRoundJurorsToView` in `navbar.scala.html`;
+exports, §16) go to those who may see the round's organizer views, `User.canViewOrgInfo`: root,
+the contest's admins and organizers, and the round's jurors when the round has `juryOrgView` on.
+
+**Rule: juror confidentiality.** Unless the round shares its organizer views with its jurors
+(`juryOrgView`), a juror sees only their own votes. Other jurors' votes, the all-jurors views
+and the juror list are for `canViewOrgInfo`, and only of jurors of that round
+(`GalleryService.viewerRounds` / `mayViewRound` / `viewAs`, otherwise 404; CLAUDE.md "Own
+votes"). File authors are shown under the same condition (`GalleryController`'s `showAuthor`,
+`large.scala.html`). *Why:* votes and authors are the organizers' information; a round shares
+them with its jurors only when its organizers choose to (`juryOrgView`).
+
+**Rule: conflicts of interest and lobbying.** The tool shows a round's jurors and votes only
+under the rules above, never to a participant without a role in the contest, so an author can't
+find and lobby a juror through it. Files by a contest member or root (`CoiMembers`: the file's
+author matched to their wiki accounts) are left out of that contest's rounds when the round's
+conflict-of-interest option is on. The matches, with whose they are, are listed to the contest's
+organizers and admins on the contest files page (`CoiAuthorizationSpec`); taking them out of a
+round from the round form is admin-only. Each removal is a line on the `coi` logger, its only
+record until P1b keeps them as `dq` rows. *Why:* a juror judging a member's file, or a
+participant knowing whom to approach, undermines the result.
+
+**Rule: dumps are anonymised at once.** A production dump lives outside every repository, is
+restored only into an isolated database and anonymised there right after the restore
+(`bench/scripts/anonymise.sql`: synthetic emails, names and passwords, same shapes); never commit
+a dump, a restored or derived copy, or query output with personal data, and never put one under
+`data/cache` (performance §2.7). *Why:* a committed copy can't be recalled.
+
+**Guards.** `OwnVotesSpec`, `CoiAuthorizationSpec`, `security.LogHygieneSpec` (§13); dumps:
+review only.
+
+**Exceptions.** `scripts/run-with-prod-dump.sh` restores a production dump into a local
+container without anonymising it (the dump stays in `/tmp/wlxjury-prod.sql.gz`), for a
+developer's own check against real data: a triage item (anonymise after the restore, or retire
+the script). The production dump in `C:\scala\wlxjury-bench-work\` (register P10) waits for the
+user's agreement to delete. *Source:* user, 2026-11-03 (docs phase); `bench/README.md` §1
+"Personal data".
