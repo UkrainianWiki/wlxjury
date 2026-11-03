@@ -10,6 +10,8 @@ import play.api.test.CSRFTokenHelper._
 import play.api.test.{FakeRequest, PlaySpecification}
 import services.{SMTPOrWikiMail, UserService}
 
+import scalikejdbc._
+
 import scala.concurrent.Future
 
 /** Conflicts of interest and access: the board, auditors and staff (roles without access)
@@ -182,20 +184,37 @@ class CoiAuthorizationSpec extends PlaySpecification with PlayTestDb with Mockit
       }
     }
 
-    "take them out when its contest's admin saves it ticked, and for root" in {
+    "only set the flag of an open round, saying to stop it first (W7)" in {
       testDbApp { app =>
         val round = setUp()
         val result = save(app, "admin@example.com", saveRound(round, excludeCoi = true))
         status(result) === SEE_OTHER
+        flash(result).get("error") must beSome(contain("stop it"))
+        VoteJdbc.byRound(round.getId).map(_.pageId).toSet === Set(1L, 2L, 3L)
+        RoundImageJdbc.disqualified(round.getId) must beEmpty
+        roundDao.findById(round.getId).get.excludeCoi must beTrue
+      }
+    }
+
+    "disqualify them, keeping their votes, when its contest's admin saves a stopped round ticked, and for root" in {
+      testDbApp { app =>
+        val round = setUp()
+        Round.setActive(round.getId, active = false)
+        val result = save(app, "admin@example.com", saveRound(round, excludeCoi = true))
+        status(result) === SEE_OTHER
         flash(result).get("success") must beSome(contain("2"))
         VoteJdbc.byRound(round.getId).map(_.pageId).toSet === Set(3L)
+        RoundImageJdbc.disqualified(round.getId).map(_.pageId) === Seq(1L, 2L)
+        DB.readOnly(implicit s => sql"SELECT page_id FROM vote_aside WHERE round_id = ${round.getId}".map(_.long(1)).list())
+          .toSet === Set(1L, 2L)
         roundDao.findById(round.getId).get.excludeCoi must beTrue
 
-        val other = roundDao.create(Round(None, 2, Some("R2"), contestId, active = true))
+        val other = roundDao.create(Round(None, 2, Some("R2"), contestId, active = false))
         VoteJdbc.create(1L, 0, User.findByEmail("juror@example.com").head.getId, other.getId)
         User.create(User("root@example.com", "root@example.com", None, Set(User.ROOT_ROLE), Some("hash")))
         status(save(app, "root@example.com", saveRound(other, excludeCoi = true))) === SEE_OTHER
         VoteJdbc.byRound(other.getId) must beEmpty
+        RoundImageJdbc.disqualified(other.getId).map(_.pageId) === Seq(1L)
       }
     }
 
@@ -214,6 +233,7 @@ class CoiAuthorizationSpec extends PlaySpecification with PlayTestDb with Mockit
     "need the CSRF token" in {
       withCsrfApp { app =>
         val round = setUp()
+        Round.setActive(round.getId, active = false)
         val sessionToken = token(app)
         def post(body: (String, String)*) =
           route(app, FakeRequest(POST, "/admin/rounds/save")

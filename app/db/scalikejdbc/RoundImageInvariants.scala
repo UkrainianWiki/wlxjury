@@ -6,7 +6,8 @@ import scalikejdbc._
 /** The invariants that keep `round_image` (V84) in step with the votes
   * (docs/plans/2026-11-02-round-images-two-step.md, §5), checked per round. Specs assert
   * [[violations]] empty after each scenario; the `round_image_check` job repairs what it can
-  * (1, 2, 3, 6, 8) and reports the rest. Only pairs of a round and an image that exist count:
+  * (1, 2, 6, 8; 3 for `deleted` rows) and reports the rest (3 for `dq` rows: a vote written
+  * for a disqualified file). Only pairs of a round and an image that exist count:
   * vote.round_id and vote_aside have no foreign keys, and V84 left such pairs out.
   *
   *  1. Every (round, file) with a `vote` row has a row with status `in`.
@@ -19,7 +20,8 @@ import scalikejdbc._
   *  7. Every `criteria_rate.vote_id` is a vote's in `vote` or `vote_aside` (not per round:
   *     [[criteriaOrphans]]).
   *  8. Until P3 (a round filled before it is distributed): a row has votes, `in` in `vote`,
-  *     `deleted` or `dq` in `vote_aside`.
+  *     `deleted` in `vote_aside`. A `dq` row (P1b) may have none: it is kept whatever its
+  *     votes, so that the file is never distributed again ([[RoundImageJdbc.sync]]).
   */
 object RoundImageInvariants {
 
@@ -56,7 +58,7 @@ object RoundImageInvariants {
                        ORDER BY ri.page_id"""),
         pages(8, sql"""SELECT ri.page_id FROM round_image ri
                        WHERE ri.round_id = $roundId
-                         AND (ri.status = ${Status.In} AND NOT $inVote OR ri.status IN ($aside) AND NOT $inAside)
+                         AND (ri.status = ${Status.In} AND NOT $inVote OR ri.status = ${Status.Deleted} AND NOT $inAside)
                        ORDER BY ri.page_id""")
       ).flatten
     }

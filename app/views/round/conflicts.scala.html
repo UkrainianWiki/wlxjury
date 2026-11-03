@@ -1,0 +1,121 @@
+@import db.scalikejdbc.{Round, RoundConflicts, User}
+@(
+        user: User,
+        round: Round,
+        review: RoundConflicts.Review,
+        mayEdit: Boolean,
+        reasons: Seq[String]
+)(implicit flash: Flash, messages: Messages, req: RequestHeader)
+
+@* A round's conflicts of interest (RoundConflictsController): the files that are conflicts now,
+   to disqualify, and the disqualified ones, to requalify. Organizers see the lists only: the
+   forms, their checkboxes (tied to them by the form attribute) and buttons are its admins'. *@
+@mainAdmin("coi.round.title", user, user.getId, contestId = Some(round.contestId)) {
+    <div class="row">
+        <div class="col-md-10">
+            <h1 class="h3">@Messages("coi.round.title.of", round.number, round.description)</h1>
+            <p>@Messages("coi.round.help")</p>
+
+            @for(text <- flash.get("success")) {
+                <div class="alert alert-success" role="status">@text</div>
+            }
+            @for(text <- flash.get("error")) {
+                <div class="alert alert-danger" role="alert">@text</div>
+            }
+            @if(mayEdit && (round.active || round.distributing)) {
+                <div class="alert alert-warning" id="coi-round-open">@Messages("coi.action.open", round.number)</div>
+            }
+
+            <h2 class="h4 mt-4">@Messages("coi.round.matches")</h2>
+            @if(review.matches.isEmpty) {
+                <p id="coi-matches-none">@Messages("coi.round.matches.none")</p>
+            } else {
+                <table class="table table-striped table-sm" id="coi-matches">
+                    <thead>
+                        <tr>
+                            @if(mayEdit) { <th scope="col"><span class="visually-hidden">@Messages("coi.select")</span></th> }
+                            <th scope="col">@Messages("coi.file")</th>
+                            <th scope="col">@Messages("coi.person")</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    @for((pageId, title, member) <- review.matches) {
+                        <tr data-coi-match="@pageId">
+                            @if(mayEdit) {
+                                <td><input type="checkbox" class="form-check-input" name="pageId" value="@pageId" checked
+                                           form="coi-disqualify" aria-label="@title"/></td>
+                            }
+                            <td>@title</td>
+                            <td>@member.describe</td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+                @if(mayEdit) {
+                    <form method="post" action="@controllers.routes.RoundConflictsController.disqualify(round.getId)" id="coi-disqualify">
+                        @csrfField()
+                        <button type="submit" class="btn btn-warning">@Messages("coi.disqualify")</button>
+                        <p class="form-text">@Messages("coi.disqualify.help")</p>
+                    </form>
+                }
+            }
+
+            <h2 class="h4 mt-4">@Messages("coi.round.disqualified")</h2>
+            @if(review.disqualified.isEmpty) {
+                <p id="coi-disqualified-none">@Messages("coi.round.disqualified.none")</p>
+            } else {
+                <table class="table table-striped table-sm" id="coi-disqualified">
+                    <thead>
+                        <tr>
+                            @if(mayEdit) { <th scope="col"><span class="visually-hidden">@Messages("coi.select")</span></th> }
+                            <th scope="col">@Messages("coi.file")</th>
+                            <th scope="col">@Messages("coi.reason")</th>
+                            <th scope="col">@Messages("coi.disqualified.at")</th>
+                            <th scope="col">@Messages("coi.match.now")</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    @for(file <- review.disqualified) {
+                        <tr data-dq="@file.row.pageId" data-dq-ended="@file.matchNow.isEmpty">
+                            @if(mayEdit) {
+                                <td><input type="checkbox" class="form-check-input" name="pageId" value="@file.row.pageId"
+                                           form="coi-requalify" aria-label="@file.title"/></td>
+                            }
+                            <td>@file.title</td>
+                            <td>@for(code <- file.row.code) {@Messages("coi.code." + code)}@for(detail <- file.row.detail) {: @detail}</td>
+                            <td>@for(at <- file.row.at) {@at.toLocalDate}</td>
+                            <td>@file.matchNow.fold(Messages("coi.match.ended"))(m => Messages("coi.match.still", m.describe))</td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+                @if(mayEdit) {
+                    <form method="post" action="@controllers.routes.RoundConflictsController.requalify(round.getId)" id="coi-requalify">
+                        @csrfField()
+                        <div class="row g-2 align-items-end">
+                            <div class="col-auto">
+                                <label class="form-label" for="coi-requalify-reason">@Messages("coi.requalify.reason")</label>
+                                <select class="form-select" name="reason" id="coi-requalify-reason" required>
+                                    <option value="">—</option>
+                                    @for(r <- reasons) {
+                                        <option value="@r">@Messages("coi.requalify.reason." + r)</option>
+                                    }
+                                </select>
+                            </div>
+                            <div class="col-auto">
+                                <button type="submit" class="btn btn-outline-primary">@Messages("coi.requalify")</button>
+                            </div>
+                        </div>
+                        <p class="form-text">@Messages("coi.requalify.help")</p>
+                    </form>
+                }
+            }
+
+            @if(mayEdit) {
+                <div class="mt-4">
+                    @snippets.button(controllers.routes.RoundController.editRound(Some(round.getId), round.contestId), "coi.round.back")
+                </div>
+            }
+        </div>
+    </div>
+}

@@ -11,8 +11,8 @@ import services.{RoundService, TestRoundServices}
 
 /** A round that leaves out conflicts of interest ([[Round.excludeCoi]]): its distribution
   * leaves out the files of the contest's members in [[User.COI_ROLES]] and of root users,
-  * and "Leave out conflicts of interest now" ([[RoundConflicts.removeFromRound]]) takes
-  * them out of a round that has them, with their votes.
+  * and disqualifying them ([[RoundConflicts.disqualify]], P1b) takes them out of a round that
+  * has them, keeping their votes aside, until they are requalified ([[RoundConflicts.requalify]]).
   */
 class CoiRoundSpec extends Specification with TestDb with BeforeAll with BeforeEach {
 
@@ -65,9 +65,6 @@ class CoiRoundSpec extends Specification with TestDb with BeforeAll with BeforeE
 
   private def newRound(contest: ContestJury, excludeCoi: Boolean, number: Long = 1) =
     Round(None, number, Some("R"), contest.getId, distribution = 0, active = true, excludeCoi = excludeCoi)
-
-  private def remove(roundId: Long, by: User) =
-    RoundConflicts.removeFromRound(roundId, by, RoundDistributionHandler.dedupeKey(roundId))
 
   private def pageIds(roundId: Long): Set[Long] = VoteJdbc.byRound(roundId).map(_.pageId).toSet
 
@@ -171,101 +168,240 @@ class CoiRoundSpec extends Specification with TestDb with BeforeAll with BeforeE
     }
   }
 
-  "leaving out conflicts of interest now" should {
+  "disqualifying conflicts of interest" should {
 
-    def criteriaRows(roundId: Long): Map[Long, Int] = DB.readOnly { implicit s =>
-      sql"""SELECT s.page_id, COUNT(*) FROM criteria_rate c JOIN vote s ON s.id = c.vote_id
-            WHERE s.round_id = $roundId GROUP BY s.page_id""".map(rs => rs.long(1) -> rs.int(2)).list().toMap
+    def criteriaRates(roundId: Long): Set[(Long, Long, Int)] = DB.readOnly { implicit s =>
+      sql"""SELECT c.vote_id, c.criterion_id, c.rate FROM criteria_rate c
+            WHERE c.vote_id IN (SELECT id FROM vote WHERE round_id = $roundId
+                                UNION SELECT id FROM vote_aside WHERE round_id = $roundId)"""
+        .map(rs => (rs.long(1), rs.long(2), rs.int(3))).list().toSet
     }
 
-    def asideRows(roundId: Long): Set[Long] = DB.readOnly { implicit s =>
-      sql"SELECT page_id FROM vote_aside WHERE round_id = $roundId".map(_.long(1)).list().toSet
+    /** The round's votes as stored: id, page, juror, rate, in vote or aside. */
+    def votes(table: SQLSyntax, roundId: Long): Set[(Long, Long, Long, Int)] = DB.readOnly { implicit s =>
+      sql"SELECT id, page_id, jury_id, rate FROM $table WHERE round_id = $roundId"
+        .map(rs => (rs.long(1), rs.long(2), rs.long(3), rs.int(4))).list().toSet
     }
+
+    def asidePages(roundId: Long): Set[Long] = votes(sqls"vote_aside", roundId).map(_._2)
 
     def addCriteria(roundId: Long): Unit = DB.autoCommit { implicit s =>
       sql"""INSERT INTO criteria_rate (vote_id, criterion_id, rate)
-            SELECT s.id, 1, 1 FROM vote s WHERE s.round_id = $roundId""".update()
+            SELECT s.id, 1, 1 + s.id % 5 FROM vote s WHERE s.round_id = $roundId""".update()
     }
 
-    "remove the files with their votes, those moved aside and criteria rates, and nothing else" in {
+    /** Every vote of the round rated, each with its own rate. */
+    def rateAll(roundId: Long): Unit = DB.autoCommit { implicit s =>
+      sql"UPDATE vote SET rate = 1 + (id * 7) % 9 WHERE round_id = $roundId".update()
+    }
+
+    def statuses(roundId: Long): Map[Long, String] = RoundImageJdbc.byRound(roundId).map(r => r.pageId -> r.status).toMap
+
+    def stop(roundId: Long): Unit = Round.setActiveGuarded(roundId, active = false) must beTrue
+
+    def disqualify(roundId: Long, by: User, only: Option[Set[Long]] = None, excludeCoi: Boolean = false) =
+      RoundConflicts.disqualify(roundId, by, RoundDistributionHandler.dedupeKey(roundId), only, excludeCoi)
+
+    def requalify(roundId: Long, pageIds: Seq[Long], by: User) =
+      RoundConflicts.requalify(roundId, pageIds, RoundConflicts.RequalifyReason.MistakenMatch, by,
+        RoundDistributionHandler.dedupeKey(roundId))
+
+    "disqualify the files, keeping their votes and criteria rates aside, and nothing else" in {
       val (contest, jurors, _) = setUp()
       val svc = service
       val round = svc.createNewRound(newRound(contest, excludeCoi = false), jurors.map(_.getId))
       val other = svc.createNewRound(newRound(contest, excludeCoi = false, number = 2), jurors.map(_.getId))
       addCriteria(round.getId)
-      // file 6 deleted on Commons: its votes moved aside
+      // file 6 deleted on Commons while the round is open: its votes moved aside
       DB.localTx(implicit s => DeletedFiles.markDeleted(Seq(6L)))
-      asideRows(round.getId) === Set(6L)
-      // the round's files, those with votes moved aside too
-      RoundImageCounts.get(Seq(round.getId))(ImageJdbc.imageCountByRounds) === Map(round.getId -> 10)
+      asidePages(round.getId) === Set(6L)
+      val before = votes(sqls"vote", round.getId) ++ votes(sqls"vote_aside", round.getId)
+      val rates = criteriaRates(round.getId)
+      stop(round.getId)
 
-      val admin = User.findByEmail("juror@example.com").head
-      val outcome = remove(round.getId, admin)
+      val admin = jurors.head
+      disqualify(round.getId, admin, excludeCoi = true) must beLike {
+        case RoundConflicts.Outcome.Disqualified(files) => files.map(_._1).toSet === conflicts
+      }
 
-      outcome must beLike { case RoundConflicts.Outcome.Removed(files) => files.map(_._1).toSet === conflicts }
       pageIds(round.getId) === (1L to 10L).toSet -- conflicts
-      asideRows(round.getId) must beEmpty
-      criteriaRows(round.getId).keySet === (1L to 10L).toSet -- conflicts
-      // no criteria rate is left without its vote, in vote or moved aside
-      DB.readOnly { implicit s =>
-        sql"""SELECT COUNT(*) FROM criteria_rate cr
-              WHERE NOT EXISTS (SELECT 1 FROM vote s WHERE s.id = cr.vote_id)
-                AND NOT EXISTS (SELECT 1 FROM vote_aside d WHERE d.id = cr.vote_id)""".map(_.long(1)).single()
-      } === Some(0L)
+      asidePages(round.getId) === conflicts
+      // every vote kept, with its id and rate; every criteria rate too
+      (votes(sqls"vote", round.getId) ++ votes(sqls"vote_aside", round.getId)) === before
+      criteriaRates(round.getId) === rates
+      statuses(round.getId).filter(_._2 == "dq").keySet === conflicts
+      RoundImageJdbc.disqualified(round.getId).map(r => (r.pageId, r.code, r.detail, r.by)) === Seq(
+        (2L, Some("coi"), Some("Board_member — board"), admin.id),
+        (4L, Some("coi"), Some("Juror one — jury"), admin.id),
+        (6L, Some("coi"), Some("Root user — root"), admin.id))
+      RoundImageJdbc.disqualified(round.getId).forall(_.at.isDefined) must beTrue
       roundDao.findById(round.getId).get.excludeCoi must beTrue
       RoundImageCounts.get(Seq(round.getId))(ImageJdbc.imageCountByRounds) === Map(round.getId -> 7)
+      CoiMembers.roundFiles(round.getId, CoiMembers.forContest(contest.getId)) must beEmpty
       // another round keeps its files
       pageIds(other.getId) === (1L to 10L).toSet - 6L
-      // their rows in the round go with their votes (round_image, V84); the other round's stay
-      RoundImageJdbc.byRound(round.getId).map(_.pageId).toSet === (1L to 10L).toSet -- conflicts
-      RoundImageJdbc.byRound(other.getId).map(r => r.pageId -> r.status).toMap.get(6L) === Some("deleted")
+      statuses(other.getId).get(6L) === Some("deleted")
       Seq(round, other).flatMap(r => RoundImageInvariants.violations(r.getId)) must beEmpty
-      // restoring the deleted file brings nothing back
+
+      // restoring the deleted file brings back the other round's votes only
       DB.localTx(implicit s => DeletedFiles.restore(Seq(6L)))
       pageIds(round.getId) must not(contain(6L))
-      RoundImageJdbc.find(round.getId, 6L) must beNone
-      RoundImageJdbc.find(other.getId, 6L).map(_.status) === Some("in")
+      statuses(round.getId).get(6L) === Some("dq")
+      asidePages(round.getId) === conflicts
+      statuses(other.getId).get(6L) === Some("in")
+      // a second disqualify finds nothing new
+      disqualify(round.getId, admin) === RoundConflicts.Outcome.Disqualified(Nil)
       Seq(round, other).flatMap(r => RoundImageInvariants.violations(r.getId)) must beEmpty
     }
 
-    "be refused for a round that is not open" in {
-      val (contest, jurors, _) = setUp()
-      val svc = service
-      val round = svc.createNewRound(newRound(contest, excludeCoi = false), jurors.map(_.getId))
-      val admin = jurors.head
-      sql"UPDATE round SET active = 0 WHERE id = ${round.getId}".update()(AutoSession)
-      remove(round.getId, admin) === RoundConflicts.Outcome.NotOpen
-      sql"UPDATE round SET active = 1, distributing = 1 WHERE id = ${round.getId}".update()(AutoSession)
-      remove(round.getId, admin) === RoundConflicts.Outcome.NotOpen
-      pageIds(round.getId) === (1L to 10L).toSet
-      remove(12345L, admin) === RoundConflicts.Outcome.NotFound
-    }
-
-    "be refused while a distribution of the round is queued or running" in {
+    "requalify them with their votes, exact rates and criteria rates back" in {
       val (contest, jurors, _) = setUp()
       val round = service.createNewRound(newRound(contest, excludeCoi = false), jurors.map(_.getId))
-      // "Distribute new files", queued: it reads the round when it starts
-      DB.autoCommit { implicit s =>
-        JobJdbc.insert(services.jobs.NewJob(RoundDistributionHandler.Kind, Some(contest.getId),
-          Some(RoundDistributionHandler.SubjectType), round.id,
-          Some(RoundDistributionHandler.dedupeKey(round.getId))), owner = None)
+      rateAll(round.getId)
+      addCriteria(round.getId)
+      val before = votes(sqls"vote", round.getId)
+      val rates = criteriaRates(round.getId)
+      val rowsBefore = RoundImageJdbc.byRound(round.getId)
+      stop(round.getId)
+      disqualify(round.getId, jurors.head)
+      RoundImageInvariants.violations(round.getId) must beEmpty
+
+      requalify(round.getId, conflicts.toSeq :+ 8L :+ 999L, jurors.head) === RoundConflicts.Outcome.Requalified(Seq(2L, 4L, 6L), Nil)
+
+      votes(sqls"vote", round.getId) === before
+      votes(sqls"vote_aside", round.getId) must beEmpty
+      criteriaRates(round.getId) === rates
+      RoundImageJdbc.byRound(round.getId) === rowsBefore
+      RoundImageJdbc.disqualified(round.getId) must beEmpty
+      DB.readOnly { implicit s =>
+        sql"""SELECT COUNT(*) FROM round_image WHERE round_id = ${round.getId}
+              AND (dq_code IS NOT NULL OR dq_detail IS NOT NULL OR dq_by IS NOT NULL OR dq_at IS NOT NULL)"""
+          .map(_.long(1)).single()
+      } === Some(0L)
+      RoundImageCounts.get(Seq(round.getId))(ImageJdbc.imageCountByRounds) === Map(round.getId -> 10)
+      RoundImageInvariants.violations(round.getId) must beEmpty
+      // still conflicts: a re-check offers them again (no overrides yet)
+      CoiMembers.roundFiles(round.getId, CoiMembers.forContest(contest.getId)).map(_._1).toSet === conflicts
+    }
+
+    "requalify a file deleted on Commons meanwhile as deleted, its votes aside until it is restored" in {
+      val (contest, jurors, _) = setUp()
+      val round = service.createNewRound(newRound(contest, excludeCoi = false), jurors.map(_.getId))
+      rateAll(round.getId)
+      val before = votes(sqls"vote", round.getId)
+      stop(round.getId)
+      disqualify(round.getId, jurors.head)
+      DB.localTx(implicit s => DeletedFiles.markDeleted(Seq(2L)))
+      statuses(round.getId).get(2L) === Some("dq")
+
+      requalify(round.getId, Seq(2L, 4L), jurors.head) === RoundConflicts.Outcome.Requalified(Seq(2L, 4L), Seq(2L))
+      statuses(round.getId).get(2L) === Some("deleted")
+      statuses(round.getId).get(4L) === Some("in")
+      asidePages(round.getId) === Set(2L, 6L)
+      RoundImageInvariants.violations(round.getId) must beEmpty
+
+      DB.localTx(implicit s => DeletedFiles.restore(Seq(2L)))
+      statuses(round.getId).get(2L) === Some("in")
+      votes(sqls"vote", round.getId) === before.filterNot(_._2 == 6L)
+      RoundImageInvariants.violations(round.getId) must beEmpty
+    }
+
+    "disqualify only the files asked for that are conflicts" in {
+      val (contest, jurors, _) = setUp()
+      val round = service.createNewRound(newRound(contest, excludeCoi = false), jurors.map(_.getId))
+      stop(round.getId)
+      disqualify(round.getId, jurors.head, only = Some(Set(2L, 3L))) must beLike {
+        case RoundConflicts.Outcome.Disqualified(files) => files.map(_._1) === Seq(2L)
       }
-      remove(round.getId, jurors.head) === RoundConflicts.Outcome.Distributing
-      pageIds(round.getId) === (1L to 10L).toSet
+      statuses(round.getId).filter(_._2 == "dq").keySet === Set(2L)
       roundDao.findById(round.getId).get.excludeCoi must beFalse
     }
 
-    "let \"Distribute new files\" add a file again once its author's role is gone" in {
+    "be refused, writing nothing, while the round is open, being created, frozen or being distributed (W7)" in {
+      val (contest, jurors, _) = setUp()
+      val round = service.createNewRound(newRound(contest, excludeCoi = false), jurors.map(_.getId))
+      val r = round.getId
+      val admin = jurors.head
+      def unchanged = (pageIds(r) === (1L to 10L).toSet) and (RoundImageJdbc.disqualified(r) must beEmpty) and
+        (roundDao.findById(r).get.excludeCoi must beFalse)
+      // open to its jurors
+      (disqualify(r, admin, excludeCoi = true) === RoundConflicts.Outcome.Open) and unchanged and {
+        // being created
+        sql"UPDATE round SET active = 0, distributing = 1 WHERE id = $r".update()(AutoSession)
+        disqualify(r, admin) === RoundConflicts.Outcome.Distributing
+      } and {
+        // frozen by a next round's distribution, stopped before
+        sql"UPDATE round SET distributing = 0, freeze_count = 1, active_before_freeze = 0 WHERE id = $r".update()(AutoSession)
+        disqualify(r, admin) === RoundConflicts.Outcome.Frozen
+      } and {
+        // stopped, with "Distribute new files" queued: it reads the round when it starts
+        sql"UPDATE round SET freeze_count = 0, active_before_freeze = NULL WHERE id = $r".update()(AutoSession)
+        DB.autoCommit { implicit s =>
+          JobJdbc.insert(services.jobs.NewJob(RoundDistributionHandler.Kind, Some(contest.getId),
+            Some(RoundDistributionHandler.SubjectType), round.id, Some(RoundDistributionHandler.dedupeKey(r))), owner = None)
+        }
+        disqualify(r, admin) === RoundConflicts.Outcome.Distributing
+      } and unchanged and (disqualify(12345L, admin) === RoundConflicts.Outcome.NotFound) and
+        (RoundImageInvariants.violations(r) must beEmpty)
+    }
+
+    "refuse requalifying while the round is open, keeping the files disqualified" in {
+      val (contest, jurors, _) = setUp()
+      val round = service.createNewRound(newRound(contest, excludeCoi = false), jurors.map(_.getId))
+      stop(round.getId)
+      disqualify(round.getId, jurors.head)
+      Round.setActiveGuarded(round.getId, active = true) must beTrue
+      (requalify(round.getId, conflicts.toSeq, jurors.head) === RoundConflicts.Outcome.Open) and
+        (statuses(round.getId).filter(_._2 == "dq").keySet === conflicts) and
+        (asidePages(round.getId) === conflicts) and (RoundImageInvariants.violations(round.getId) must beEmpty)
+    }
+
+    "never let \"Distribute new files\" or a pasted list add a disqualified file, also once its author's role is gone" in {
       val (contest, jurors, board) = setUp()
       val svc = service
       val round = svc.createNewRound(newRound(contest, excludeCoi = false), jurors.map(_.getId))
-      remove(round.getId, jurors.head)
-      pageIds(round.getId) must not(contain(2L))
-
-      svc.distributeNewImages(round.getId) === 0 // the round now leaves them out
+      stop(round.getId)
+      disqualify(round.getId, jurors.head)
       UserContestJdbc.updateRole(board.getId, contest.getId, User.NO_ROLE)
-      svc.distributeNewImages(round.getId) === 1
+      svc.distributeNewImages(round.getId) === 0
+      svc.distributeNewFiles(round.getId, titles = Seq("File:Image 2.jpg"), newFiles = false)
+      jobOf(round.getId).status === JobStatus.Done
+      pageIds(round.getId) must not(contain(2L))
+      statuses(round.getId).get(2L) === Some("dq")
+      RoundImageInvariants.violations(round.getId) must beEmpty
+      // requalified, it is back with its votes; not added twice
+      requalify(round.getId, Seq(2L), jurors.head) === RoundConflicts.Outcome.Requalified(Seq(2L), Nil)
       pageIds(round.getId) must contain(2L)
+      svc.distributeNewImages(round.getId) === 0
+    }
+
+    "keep a disqualified file disqualified against a vote insert, a sync and the repair job" in {
+      val (contest, jurors, _) = setUp()
+      val round = service.createNewRound(newRound(contest, excludeCoi = false), jurors.map(_.getId))
+      val r = round.getId
+      stop(r)
+      disqualify(r, jurors.head)
+      // a vote insert for one is refused, with nothing written
+      VoteJdbc.create(2L, 0, jurors.head.getId, r) must throwA[IllegalStateException]("disqualified")
+      pageIds(r) must not(contain(2L))
+      // a vote written around the DAO (an older release, a hand edit): the sync keeps it dq
+      DB.autoCommit(implicit s => sql"INSERT INTO vote (page_id, jury_id, round_id, rate) VALUES (4, ${jurors.head.getId}, $r, 0)".update())
+      DB.localTx { implicit s => RoundWrites.lock(Seq(r)); RoundImageJdbc.sync(r, Seq(2L, 4L, 6L)) } === RoundImageJdbc.SyncResult()
+      statuses(r).filter(_._2 == "dq").keySet === conflicts
+      // a vote with no `in` row (1) of a `dq` row (3)
+      RoundImageInvariants.violations(r).map(v => v.invariant -> v.pageId) === Seq(1 -> 4L, 3 -> 4L)
+      // a dq row with no votes left stays, so the file never comes back
+      DB.autoCommit(implicit s => sql"DELETE FROM vote_aside WHERE round_id = $r AND page_id = 6".update())
+      // the repair job: keeps every dq row and reports the vote of one
+      val check = new RoundImageCheckHandler()
+      val scheduler = TestRoundServices.inlineScheduler(check, TestRoundServices.handler())
+      val queued = DB.localTx(implicit s => scheduler.enqueue(RoundImageCheckHandler.roundJob(r, contest.getId, jurors.head))).toOption.get
+      scheduler.started(queued.id)
+      val details = check.details(JobJdbc.findById(queued.id).get)
+      ((details \ "dqWithVotes").as[Long] === 1L) and ((details \ "removed").as[Long] === 0L) and
+        ((details \ "statusFixed").as[Long] === 0L) and
+        (statuses(r).filter(_._2 == "dq").keySet === conflicts) and
+        (service.distributeNewImages(r) === 0)
     }
   }
 }

@@ -149,11 +149,13 @@ class RoundController @Inject() (
   }
 
   /** The round form's "Leave out conflicts of interest" saved for an existing round: ticked,
-    * takes the round's conflict-of-interest files out with their votes, which are not kept,
-    * and leaves them out of its later distributions ([[RoundConflicts.removeFromRound]], which
-    * refuses while a distribution of the round is queued or running); a round that isn't open
-    * and has none just keeps them out. Unticked, stops leaving them out: files taken out
-    * don't come back, later distributions may add them.
+    * disqualifies the round's conflict-of-interest files, keeping their votes aside, and leaves
+    * them out of its later distributions ([[RoundConflicts.disqualify]]: only while the round
+    * is not open to its jurors, W7, and no distribution of it is queued or running). A round
+    * that has none, or is open (the flag alone: an open round is stopped first to disqualify
+    * them), just keeps them out of later distributions. Unticked, stops leaving them out:
+    * files disqualified stay so (their requalifying is on the round's conflicts page),
+    * later distributions may add the others.
     *
     * @return the flash messages to show
     */
@@ -168,15 +170,18 @@ class RoundController @Inject() (
       val inRound = CoiMembers.roundFiles(roundId, CoiMembers.forContest(stored.contestId))
       if (inRound.isEmpty && stored.excludeCoi) Nil
       else
-        RoundConflicts.removeFromRound(roundId, user, RoundDistributionHandler.dedupeKey(roundId)) match {
-          case RoundConflicts.Outcome.Removed(files) =>
-            if (files.isEmpty) Nil else Seq("success" -> messages("coi.removed", files.size, stored.number))
-          case RoundConflicts.Outcome.NotOpen if inRound.isEmpty =>
+        RoundConflicts.disqualify(roundId, user, RoundDistributionHandler.dedupeKey(roundId), excludeCoi = true) match {
+          case RoundConflicts.Outcome.Disqualified(files) =>
+            if (files.isEmpty) Nil else Seq("success" -> messages("coi.disqualified", files.size, stored.number))
+          case refused @ (RoundConflicts.Outcome.Open | RoundConflicts.Outcome.Frozen) =>
+            // no distribution of it is active: the flag applies to its later ones
             Round.setExcludeCoi(roundId, excludeCoi = true)
-            Nil
-          case RoundConflicts.Outcome.NotOpen      => Seq("error" -> messages("coi.remove.not.open", stored.number))
+            if (inRound.isEmpty) Nil
+            else if (refused == RoundConflicts.Outcome.Open)
+              Seq("error" -> messages("coi.disqualify.open", stored.number, inRound.size))
+            else Seq("error" -> messages("coi.disqualify.frozen", stored.number))
           case RoundConflicts.Outcome.Distributing => Seq("error" -> messages("coi.remove.distributing", stored.number))
-          case RoundConflicts.Outcome.NotFound     => Nil
+          case _                                   => Nil
         }
     }
   }

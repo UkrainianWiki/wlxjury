@@ -23,6 +23,8 @@ import javax.inject.{Inject, Singleton}
   * @param monumentFixed rows whose monument id wasn't their image's
   * @param notMarkedDeleted `deleted` rows whose image isn't marked deleted (invariant 4:
   *                    reported, not repaired)
+  * @param dqWithVotes `dq` rows with `vote` rows (invariant 3: a vote written for a
+  *                    disqualified file; reported, not repaired: the row stays `dq`)
   * @param orphansArchived criteria rates of no vote, archived in criteria_rate_orphan and deleted
   * @param drift       per round with drift, what was fixed (the first [[RoundImageCheckHandler.MaxDrift]])
   */
@@ -37,13 +39,15 @@ final case class ImageCheckState(
     removed: Long = 0L,
     monumentFixed: Long = 0L,
     notMarkedDeleted: Long = 0L,
+    dqWithVotes: Long = 0L,
     orphansArchived: Long = 0L,
     drift: Seq[String] = Nil,
     roundAdded: Long = 0L,
     roundStatusFixed: Long = 0L,
     roundRemoved: Long = 0L,
     roundMonumentFixed: Long = 0L,
-    roundNotMarkedDeleted: Long = 0L
+    roundNotMarkedDeleted: Long = 0L,
+    roundDqWithVotes: Long = 0L
 )
 
 object ImageCheckState {
@@ -65,7 +69,10 @@ object ImageCheckState {
   * first takes the round's row in share mode (the lock order's first) and leaves the round
   * out if its distribution is queued or running (a distribution writes the same rows).
   * What a round needed is logged at WARN and kept in the job's details. A `deleted` row whose
-  * file isn't marked deleted (invariant 4) is only reported: its votes would have to move.
+  * file isn't marked deleted (invariant 4) is only reported: its votes would have to move. So
+  * is a disqualified (`dq`) row with votes in `vote` (invariant 3): the sync keeps a `dq` row
+  * `dq` whatever its votes (P1b), and a `dq` row with no votes stays, so the file is never
+  * distributed again; only a requalify takes it back.
   *
   * The criteria rates of no vote (invariant 7: a vote id in neither vote nor vote_aside) are
   * archived in criteria_rate_orphan (reason `orphan`, as V78 did) and deleted, window by
@@ -90,7 +97,8 @@ class RoundImageCheckHandler(windowRows: Int, orphanWindow: Int) extends JobHand
     val st = stateOf(job)
     Json.obj("rounds" -> st.rounds, "skipped" -> st.skipped, "added" -> st.added, "statusFixed" -> st.statusFixed,
       "removed" -> st.removed, "monumentFixed" -> st.monumentFixed, "notMarkedDeleted" -> st.notMarkedDeleted,
-      "orphansArchived" -> st.orphansArchived, "drift" -> st.drift, "phase" -> st.phase)
+      "dqWithVotes" -> st.dqWithVotes, "orphansArchived" -> st.orphansArchived, "drift" -> st.drift,
+      "phase" -> st.phase)
   }
 
   def step(job: Job, ctx: StepContext): StepResult = {
@@ -176,8 +184,14 @@ class RoundImageCheckHandler(windowRows: Int, orphanWindow: Int) extends JobHand
                                   WHERE $window AND ri.status = ${RoundImageJdbc.Status.Deleted}
                                     AND i.deleted_at IS NULL"""
               .map(_.long(1)).single().getOrElse(0L)
+            val dqWithVotes = sql"""SELECT COUNT(*) FROM round_image ri
+                                    WHERE $window AND ri.status = ${RoundImageJdbc.Status.Dq}
+                                      AND EXISTS (SELECT 1 FROM vote v WHERE v.round_id = ri.round_id
+                                                  AND v.page_id = ri.page_id)"""
+              .map(_.long(1)).single().getOrElse(0L)
             continue(st.copy(cursor = to, roundMonumentFixed = st.roundMonumentFixed + fixed,
-              roundNotMarkedDeleted = st.roundNotMarkedDeleted + notMarked))
+              roundNotMarkedDeleted = st.roundNotMarkedDeleted + notMarked,
+              roundDqWithVotes = st.roundDqWithVotes + dqWithVotes))
         }
     }
 
@@ -194,10 +208,11 @@ class RoundImageCheckHandler(windowRows: Int, orphanWindow: Int) extends JobHand
 
   /** The round is done: its drift recorded and logged, then the next round. */
   private def roundDone(job: Job, st: ImageCheckState, gone: Boolean)(implicit session: DBSession): StepResult = {
-    val drift = st.roundAdded + st.roundStatusFixed + st.roundRemoved + st.roundMonumentFixed + st.roundNotMarkedDeleted
+    val drift = st.roundAdded + st.roundStatusFixed + st.roundRemoved + st.roundMonumentFixed + st.roundNotMarkedDeleted +
+      st.roundDqWithVotes
     val line = s"round ${st.roundId}: ${st.roundAdded} added, ${st.roundStatusFixed} status fixed, " +
       s"${st.roundRemoved} removed, ${st.roundMonumentFixed} monument ids fixed, " +
-      s"${st.roundNotMarkedDeleted} deleted but not marked deleted"
+      s"${st.roundNotMarkedDeleted} deleted but not marked deleted, ${st.roundDqWithVotes} disqualified with votes"
     if (drift > 0) logger.warn(s"round_image_check job ${job.id}: $line")
     if (st.skipped.lastOption.contains(st.roundId))
       logger.info(s"round_image_check job ${job.id}: round ${st.roundId} left out, its distribution is active")
@@ -208,8 +223,10 @@ class RoundImageCheckHandler(windowRows: Int, orphanWindow: Int) extends JobHand
       removed = st.removed + st.roundRemoved,
       monumentFixed = st.monumentFixed + st.roundMonumentFixed,
       notMarkedDeleted = st.notMarkedDeleted + st.roundNotMarkedDeleted,
+      dqWithVotes = st.dqWithVotes + st.roundDqWithVotes,
       drift = if (drift > 0) (st.drift :+ line).take(MaxDrift) else st.drift,
       roundAdded = 0L, roundStatusFixed = 0L, roundRemoved = 0L, roundMonumentFixed = 0L, roundNotMarkedDeleted = 0L,
+      roundDqWithVotes = 0L,
       phase = Phase.Sync, cursor = 0L
     )
     nextRound(job, st.roundId).fold(afterRounds(job, done))(r => continue(done.copy(roundId = r)))
@@ -265,7 +282,8 @@ class RoundImageCheckHandler(windowRows: Int, orphanWindow: Int) extends JobHand
   private def finish(job: Job, st: ImageCheckState): StepResult = {
     logger.info(s"round_image_check job ${job.id}: ${st.rounds} rounds checked, ${st.added} rows added, " +
       s"${st.statusFixed} statuses fixed, ${st.removed} removed, ${st.monumentFixed} monument ids fixed, " +
-      s"${st.notMarkedDeleted} deleted but not marked deleted, ${st.skipped.size} left out")
+      s"${st.notMarkedDeleted} deleted but not marked deleted, ${st.dqWithVotes} disqualified with votes, " +
+      s"${st.skipped.size} left out")
     StepResult.Done(Json.toJsObject(st), progress(st))
   }
 
