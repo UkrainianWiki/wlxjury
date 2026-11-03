@@ -172,7 +172,7 @@ object SelectionJdbc extends CRUDMapper[Selection] {
         .eq(column.roundId, roundId)
     }.update()
 
-  def setRound(pageId: Long, oldRoundId: Long, newRoundId: Long): Unit =
+  def setRound(pageId: Long, oldRoundId: Long, newRoundId: Long): Unit = {
     withSQL {
       update(SelectionJdbc)
         .set(column.roundId -> newRoundId)
@@ -181,6 +181,8 @@ object SelectionJdbc extends CRUDMapper[Selection] {
         .and
         .eq(column.roundId, oldRoundId)
     }.update()
+    RoundImageCounts.invalidate(oldRoundId, newRoundId)
+  }
 
   def activeJurors(roundId: Long): Int =
     sql"""SELECT count( 1 )
@@ -211,21 +213,26 @@ object SelectionJdbc extends CRUDMapper[Selection] {
     updateBy(sqls.eq(s.pageId, pageId))
       .withAttributes("deletedAt" -> ZonedDateTime.now)
 
-  def removeImage(pageId: Long, roundId: Long): Unit =
+  def removeImage(pageId: Long, roundId: Long): Unit = {
+    // unaliased columns: a DELETE has no "s" alias ("Unknown column 's.page_id'")
     deleteBy(
       sqls
-        .eq(s.pageId, pageId)
+        .eq(column.pageId, pageId)
         .and
-        .eq(s.roundId, roundId)
+        .eq(column.roundId, roundId)
     )
+    RoundImageCounts.invalidate(roundId)
+  }
 
-  def removeUnrated(roundId: Long): Unit =
+  def removeUnrated(roundId: Long): Unit = {
     deleteBy(
       sqls
         .eq(column.rate, 0)
         .and
         .eq(column.roundId, roundId)
     )
+    RoundImageCounts.invalidate(roundId)
+  }
 
   /** Re-parents every selection of `sourceRoundId` to `targetRoundId`.
     *
@@ -234,7 +241,8 @@ object SelectionJdbc extends CRUDMapper[Selection] {
     * `(page_id, jury_id, round_id)` unique index.
     *
     * Runs in the caller's session: wrap it in a transaction (as
-    * `RoundService.mergeRounds` does) so the delete and the update apply together.
+    * `RoundService.mergeRounds` does) so the delete and the update apply together,
+    * and invalidate both rounds' [[RoundImageCounts]] after it commits.
     */
   def mergeRounds(targetRoundId: Long, sourceRoundId: Long)(implicit session: DBSession = AutoSession): Unit = {
     sql"""DELETE src FROM selection src

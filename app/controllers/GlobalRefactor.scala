@@ -127,9 +127,13 @@ class GlobalRefactor(val commons: MwBot) {
                                   titlePrefix = None)
 
           future.map { filesInCategory =>
+            // only the files stored as images: a selection row needs its image
+            // (foreign key FK_selection_page_id)
+            val stored = ImageJdbc.existingIds(filesInCategory.flatMap(_.id).toSet).toSet
             val selection =
-              filesInCategory.map(img => Selection(img, juror, round))
+              filesInCategory.filter(_.id.exists(stored.contains)).map(img => Selection(img, juror, round))
             SelectionJdbc.batchInsert(selection)
+            round.id.foreach(RoundImageCounts.invalidate(_))
           }
       }
     }

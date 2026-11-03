@@ -8,7 +8,7 @@ import scalikejdbc.{ConnectionPool, DB}
 object SharedTestDb {
 
   private val dataTables = Seq(
-    "criteria_rate", "selection", "category_members", "comment",
+    "job", "criteria_rate", "selection", "category_members", "comment",
     "criteria", "round_user", "images", "rounds", "users",
     "category", "monument", "contest_jury"
   )
@@ -21,6 +21,8 @@ object SharedTestDb {
       dataTables.foreach(t => SQL(s"TRUNCATE TABLE `$t`").execute.apply())
       SQL("SET FOREIGN_KEY_CHECKS=1").execute.apply()
     }
+    // TRUNCATE resets AUTO_INCREMENT, so round ids are reused
+    RoundImageCounts.clear()
   }
 
   // Exposed so that SharedPlayApp can reuse this container (one container per JVM)

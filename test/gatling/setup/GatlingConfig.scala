@@ -34,10 +34,50 @@ object GatlingConfig {
     val createRound: Boolean = cfg.getBoolean("gatling.roundMgmt.createRound")
   }
 
-  object AggRatings extends OrganizerFlow("gatling.aggRatings")
+  object AggRatings extends OrganizerFlow("gatling.aggRatings") {
+    val withVoting: Boolean = cfg.getBoolean("gatling.aggRatings.withVoting")
+  }
 
   /** Organizer accounts the fixture provides: the most sessions any organizer flow uses. */
-  def organizerAccounts: Int = math.max(RoundMgmt.organizers, AggRatings.organizers)
+  def organizerAccounts: Int = Seq(RoundMgmt.organizers, AggRatings.organizers, Concurrent.admins).max
+
+  /** The app's background job scheduler (jobs.* in application.conf). */
+  object Jobs {
+    private val c = cfg.getConfig("gatling.jobs")
+    val workers: Int                 = c.getInt("workers")
+    val distributionConcurrency: Int = c.getInt("distributionConcurrency")
+    val chunkRows: Int               = c.getInt("chunkRows")
+  }
+
+  /** Many admins creating rounds at once (ConcurrentRoundCreationSimulation). */
+  object Concurrent {
+    private val c = cfg.getConfig("gatling.concurrent")
+    val admins: Int            = c.getInt("admins")
+    val jurorsPerImage: Int    = c.getInt("jurorsPerImage")
+    val soloFirst: Boolean     = c.getBoolean("soloFirst")
+    val withVoting: Boolean    = c.getBoolean("withVoting")
+    val voterUsers: Int        = c.getInt("voterUsers")
+    val durationSeconds: Int   = c.getInt("durationSeconds")
+    val pollMillis: Int        = c.getInt("pollMillis")
+    val timeoutMinutes: Int    = c.getInt("timeoutMinutes")
+  }
+
+  /** `gatling.target = external`: run against an app that is already running (see
+    * [[GatlingExternalTarget]]) instead of a TestServer on a generated fixture. */
+  val external: Boolean = cfg.getString("gatling.target") == "external"
+
+  object External {
+    private val c = cfg.getConfig("gatling.external")
+    val baseUrl: String        = c.getString("baseUrl")
+    val appPort: Int           = new java.net.URI(baseUrl).getPort
+    val dbUrl: String          = c.getString("db.url")
+    val dbUser: String         = c.getString("db.user")
+    val dbPassword: String     = c.getString("db.password")
+    val contestId: Long        = c.getLong("contestId")
+    val binaryRoundId: Long    = c.getLong("binaryRoundId")
+    val ratedRoundId: Long     = c.getLong("ratedRoundId")
+    val passwordPrefix: String = c.getString("passwordPrefix")
+  }
 
   object Distribution {
     private val c = cfg.getConfig("gatling.distribution")
@@ -47,5 +87,6 @@ object GatlingConfig {
     val topUp: Boolean      = c.getBoolean("topUp")
     val iterations: Int     = c.getInt("iterations")
     val timeoutMinutes: Int = c.getInt("timeoutMinutes")
+    val pollMillis: Int     = c.getInt("pollMillis")
   }
 }

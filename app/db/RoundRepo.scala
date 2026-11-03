@@ -19,6 +19,6 @@ trait RoundRepo {
 
   def roundUserStat(roundId: Long): Seq[RoundStatRow]
 
-  def roundRateStat(roundId: Long): Seq[(Int, Int)]
+  def selectedImageCount(roundId: Long): Int
 
 }

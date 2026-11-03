@@ -320,13 +320,19 @@ class GalleryController @Inject() (
         roundId
       )
     ) { user => implicit request =>
-    SelectionJdbc.rate(
-      pageId = pageId,
-      juryId = user.getId,
-      roundId = roundId,
-      rate = select
-    )
-    Ok("success")
+    // Votes only in a round open to its jurors: not in a stopped round, a previous round
+    // frozen while a distribution reads its votes, or a round still being distributed.
+    if (!Round.findById(roundId).exists(_.openToJurors))
+      Conflict("The round is not open for voting")
+    else {
+      SelectionJdbc.rate(
+        pageId = pageId,
+        juryId = user.getId,
+        roundId = roundId,
+        rate = select
+      )
+      Ok("success")
+    }
   }
 
   def csvStream(lines: Seq[Seq[String]], filename: String): Result = {

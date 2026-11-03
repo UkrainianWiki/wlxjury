@@ -27,6 +27,7 @@
 2. Then Task 2 (fix the benchmarks) and Task 2b (add a round-distribution benchmark that runs first, before Voting), so every later task is measured against an honest baseline that also covers round creation.
 3. Then Tasks 3–9 in order; each is independently shippable.
 4. Task 10 needs production index statistics first.
+5. Task 11 (orphan selection rows, foreign key to images) came out of the second review; run its production check query before deploying.
 
 ---
 
@@ -963,6 +964,142 @@ Also: V51's `monument_id_unique(id)` duplicates `monument`'s primary key.
 - Re-run the EXPLAINs from Tasks 4–9.
 - Voting "cast vote" p95/p99 should not get worse.
 - Every new migration changes the Gatling DB-dump cache key, so the first run after it rebuilds the fixture.
+
+---
+
+## Task 11: Remove orphan selection rows and key `selection.page_id` to `images` (done 2026-10-06)
+
+**Background:**
+- "Orphans" are `selection` rows whose `page_id` has no `images` row. They can only come from historical manual deletes or old scripts: the app no longer deletes images (`ImageJdbc.deleteImage` had no callers).
+- Every gallery, rank and result query joins `images`, so orphans were invisible except in counts.
+- They also kept the juror gallery's deferred join (Task 9) from reading `selection` alone. Review fix 833b01d joined `images` inside its inner query, so the pages matched `imageRank`. That cost a primary-key lookup in `images` for every one of the juror's rows before the LIMIT, and `count()` still counted orphans.
+- `category_members` has had `FK_category_member_page_id ... ON DELETE CASCADE` since V24; `selection` had no foreign key.
+
+**Production check first** (the rows V58 archives and deletes):
+
+```sql
+SELECT COUNT(*) FROM selection s LEFT JOIN images i ON i.page_id = s.page_id
+WHERE s.page_id IS NOT NULL AND i.page_id IS NULL;
+```
+
+**Migration** `V58__Selection_page_id_foreign_key.sql`:
+1. Archive: `CREATE TABLE IF NOT EXISTS selection_orphans LIKE selection` and `INSERT IGNORE ... SELECT s.*` of the orphans. Idempotent, all columns kept.
+2. Delete the orphans: `s.page_id IS NOT NULL` and no `images` row.
+3. `SET foreign_key_checks = 0`, then `ADD CONSTRAINT FK_selection_page_id FOREIGN KEY IF NOT EXISTS (page_id) REFERENCES images (page_id) ON DELETE CASCADE, ALGORITHM = INPLACE, LOCK = NONE`, then the checks back on.
+   - With the checks on, InnoDB can only add a foreign key by copying the whole table (ALGORITHM=COPY, writes blocked). With them off it is an in-place, metadata-only change.
+   - Not validating is safe: step 2 just deleted every row the key would reject, and Flyway runs the migration before the app serves requests.
+   - `selection_page_id_index (page_id)` serves as the key's index. If Task 10 drops it, the unique `(page_id, jury_id, round_id)` index takes over.
+
+**Measured on the Gatling fixture** (767k selection rows, 38k images):
+- **Orphans:** the fixture has none (the check query takes 0.28 s).
+- **Runtime:** with 20k orphans created for the test, the whole migration took 3.2 s:
+  - archive: 1.2 s
+  - delete: 1.9 s
+  - in-place foreign key: 24 ms
+- **Production estimate:** about 4 s per million selection rows, so roughly 10–20 s for a few million, nearly all of it the two scans. The same key added with the checks on (table copy) took 20 s on the fixture; on production that would be minutes, with writes blocked.
+- **Insert cost:** 114k selection rows took 3.6 s with the key and 3.2 s without (one sample each). Each insert now does one primary-key check in `images`.
+
+**Code:**
+- `ImageJdbc.deleteImage` is removed. Deleting an image now deletes its selection rows (cascade); a future delete path must invalidate `RoundImageCounts` for the affected rounds.
+- Distribution takes its images from `images` and is unaffected.
+- The unused `GlobalRefactor.distributeByCategory` now inserts rows only for the category files that are stored as images.
+- The Gatling fixture inserts images before selections, and its dump restore runs with `FOREIGN_KEY_CHECKS=0`.
+- **Gallery:** the deferred join's inner query reads `selection` alone again. Pages, counts and `imageRank` agree by construction, and `COUNT(*)` still needs both the juror and the round fixed.
+
+**EXPLAIN** (fixture, juror 20, rated round, `LIMIT 15 OFFSET 60`):
+- The inner query uses `idx_selection_jury_round_rate_mon_page`: "Using where; Using index; Using filesort", 19,120 index entries, no `images` access.
+- A page takes 13 ms (21 ms with the images join, 129 ms with the old query); a region page 8 ms.
+
+**Benchmarks** (JurorGallery / RegionFilter, default flow, Task 1 JVM flags), mean / p95 ms:
+
+| Request | b36876b (before Task 11) | 833b01d review fix (images join in the inner query) | Task 11 (selection-only inner query) |
+|---|---|---|---|
+| JurorGallery / gallery page | 263 / 763 | 154 / 453 | 136 / 399 |
+| RegionFilter / region gallery page | 94 / 309 | 83 / 258 | 109 / 364 |
+
+Single runs on the same Windows PC. The region page is within run-to-run noise of the earlier runs. Its queries do index-only work either way (8 ms vs 15 ms in ANALYZE), so the page time is dominated by the rest of the page.
+
+The full set at the branch head, Task 1 JVM flags, 0 KO everywhere:
+- **`gatlingAll`** (`fromRated` and `topUp` on), mean / p95 ms:
+  - cast vote: 9 / 16
+  - edit round: 38 / 54
+  - rounds list: 38 / 45
+  - round stats: 171 / 260 (RoundManagement), 200 / 263 (AggregatedRatings)
+- **RoundDistribution:** 5.6 / 4.9 / 0.65 / 0.85 s per step. Max heap after GC 149 MB, 0 full GCs.
+- **RoundManagement stress:** rounds list 14 / 31, login 17 / 26.
+- **AggregatedRatings stress with voting:** cast vote 59 / 140, juror login 94 / 187, organizer login 65 / 146, round stats 6620 / 9073.
+
+**Tests:**
+- `SelectionImageForeignKeySpec`: V58 on copies of the tables (archive, delete, the key, idempotence, cascade, rejected insert), plus the cascade and the rejected insert on the real schema.
+- `ImageDbNewDbSpec`: pages, count and `imageRank` agree.
+- `SelectionSpec`: an insert for a missing image fails with `FK_selection_page_id`.
+- Specs that inserted selection rows without images now insert them first (`TestDb.insertImagesFor`).
+
+---
+
+## Task 12: Detect duplicate round submissions with a submission token, and fix the retry flow
+
+**Background:** two code reviews of this branch found problems in how round creation handles resubmits and retries (2026-10-06, unverified review findings, confirmed against the code where noted):
+
+- **The duplicate check compares round settings.** `RoundService.createNewRound` (`3e32a1f`) refuses a new round whose settings match a round of the same contest created in the last 30 minutes. It leaves out the jurors on purpose ("a resubmit never changes them"). That causes two problems:
+  - **A split jury is refused.** Two deliberately separate rounds with the same filters and different jurors, created within 30 minutes, look like a duplicate.
+  - **The empty-round exemption** (`62b644e`, to let a failed creation be retried) also covers rounds that were legitimately empty, so their double submit is duplicated.
+- **A failed creation leaves its round behind.** After `RoundDistributionFailed` the created round stays active, with `round_user` rows and no images. A resubmit creates a **second** round; the spec asserts `created.id !== failed.id`.
+- **Two locks, so concurrent fills are possible.** Creation locks per contest (`RoundService.lock`), "Distribute new files" locks per round. A resubmit and a "Distribute new files" on the same failed round can both fill a round at the same time.
+- **Retry fixes needed regardless of the duplicate check:**
+  1. **Deactivated jurors get images on a retry.** `User.findRoundJurors` falls back to `RoundUser.byRoundId`, which ignores `active`. Use `RoundUser.activeJurors`.
+  2. **Previous rounds aren't frozen during a retried distribution.** Creation deactivates them while copying; the retry path does not. After a failure, `create()`'s catch re-activates them, so jurors can vote mid-copy and selected images are missed (they turn up later as "new files").
+- **Minor: the lock map grows forever.** `RoundService`'s lock `TrieMap` gains one entry per contest and round and never shrinks.
+
+**Design: a one-time submission token (idempotency key) instead of comparing settings.**
+
+- **Form:** when the new-round form is rendered, `editRound` puts a fresh random token (UUID) in a hidden field. This is only for creating a round; editing an existing round doesn't need it.
+- **Storage:** store the token with the round in the same transaction that creates it, under a DB unique constraint. Either:
+  - a nullable `rounds.submit_token VARCHAR(36) UNIQUE` (next free migration), or
+  - a `round_submissions(token PRIMARY KEY, round_id, created_at)` table.
+
+  Pick one and justify it. NULL for existing rounds and for API-created rounds without a token.
+- **Save** (`saveRound` → `createNewRound`):
+  - **New token:** create the round as now.
+  - **Known token** (a resubmit: double click, browser retry after a timeout, Back+Submit):
+    - Do **not** create anything. Look up the round for that token.
+    - If its distribution failed or is incomplete, **resume it** (see below). Otherwise redirect to it, with the same flash as today.
+  - **Concurrent identical submits:** the unique constraint decides. Catch the duplicate-key error and treat the loser as a resubmit. This works across app instances, unlike the in-JVM lock.
+- **Remove** `sameSettings`, the 30-minute window, the empty-round exemption, the per-contest creation lock and its `TrieMap`. Keep per-round mutual exclusion for distribution (next point).
+- **Resume = continue the same round.**
+  - A resubmit of a failed creation and "Distribute new files" go through **one** code path, under **one** per-round lock. That can be a lock striped by round id (fixed array, no unbounded map) or a DB row lock (`SELECT … FOR UPDATE` on the round), which also works across instances.
+  - That path:
+    - freezes the previous rounds while copying, as creation does, and restores their state afterwards;
+    - uses only **active** jurors (`RoundUser.activeJurors`);
+    - keeps `distributeAndVerify`'s exactness and chunked inserts.
+- **Make background distribution easy to add later** (not part of this task): keep the "distribute or resume a round" entry point independent of the HTTP request, so a later task can run it as a background job with a stored status.
+
+**Not in this task:** moving distribution off the request thread (see "Open: long round creations on the blocking dispatcher" below), and the other review findings listed at the end.
+
+**Tests:**
+- **A resubmit with the same token:** no second round; it redirects to the first one.
+- **A split jury:** two forms with the same settings and different jurors create two rounds.
+- **A legitimately empty round resubmitted:** not duplicated.
+- **A failed creation, then a resubmit:** the same round is resumed and filled. No stray round, and the previous rounds are frozen during the copy.
+- **A retry with a deactivated juror:** that juror gets no images.
+- **Concurrent identical submits:** exactly one round, fully distributed.
+- **Concurrent resume and "Distribute new files" on one round:** filled once.
+- **Spec updates:** `RoundCreationResubmitSpec` and the `62b644e` specs, including the `created.id !== failed.id` assertion.
+
+**Verify:**
+- The full `sbt test` passes.
+- RoundDistribution (all four steps) and the RoundManagement default flow still pass with the Task 1 JVM flags, with no regressions against the Task 11 numbers.
+
+### Open: long round creations on the blocking dispatcher (decision pending, not part of Task 12)
+
+**The problem:** the blocking dispatcher has 8 threads (`b46fafd`). Creating a round runs the whole distribution inside the request, about a minute for a large contest. A few of those, plus "Count new files" (which calls Commons) or an image import, can occupy all 8 threads, and galleries and `/roundstat` then stall. Task 12's token removes the resubmits that wait on a lock, but not the long request itself.
+
+**Proposed:**
+- Run distribution as a **background job on its own small pool** (1–2 threads).
+- Store a status on the round: distributing / failed / done.
+- Have the save return a 303 to the round page immediately; "retry" resumes the job.
+- This also removes the dependency on Play's idle timeout and Apache's `ProxyTimeout` for long creations.
+- It changes the organizer's experience (a status instead of a long page load), so it needs the maintainer's decision first.
 
 ---
 

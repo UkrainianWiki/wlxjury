@@ -17,7 +17,7 @@ import scala.util.Random
   */
 class AggregatedRatingsSimulation extends Simulation {
 
-  private val baseUrl = s"http://localhost:${GatlingTestFixture.port}"
+  private val baseUrl = GatlingTestFixture.baseUrl
   private val cfg     = GatlingConfig.AggRatings
 
   private val rounds = Seq(GatlingTestFixture.roundBinaryId, GatlingTestFixture.roundRatingId)
@@ -54,14 +54,41 @@ class AggregatedRatingsSimulation extends Simulation {
     .exec(login)
     .repeat(cfg.stressRepeat)(roundStat)
 
-  private val setUpBuilder = setUp(
+  // Optional (gatling.aggRatings.withVoting): jurors voting, as in VotingSimulation, at
+  // the same time, to see whether votes and logins stay fast while /roundstat is loaded.
+  private val jurorFeeder = Iterator.continually(GatlingTestFixture.jurorsIn(None)).flatten.map {
+    case (id, email, pass) => Map("userId" -> id, "email" -> email, "password" -> pass)
+  }
+  // a vote on one of the juror's own images
+  private val nextVote = exec { s =>
+    val (pageId, roundId, rate) = GatlingTestFixture.nextVote(s("userId").as[Long])
+    s.set("pageId", pageId).set("voteRoundId", roundId).set("rate", rate)
+  }
+  private val votingScn = scenario("Voting alongside")
+    .feed(jurorFeeder)
+    .exec(http("juror login").post("/auth")
+      .formParam("login", "#{email}").formParam("password", "#{password}")
+      .check(status.is(303)))
+    .exitHereIfFailed
+    .repeat(15) {
+      exec(nextVote)
+        .exec(http("cast vote")
+          .post("/rate/round/#{voteRoundId}/pageid/#{pageId}/select/#{rate}")
+          .check(status.is(200), bodyString.is("success")))
+    }
+
+  private def standardLoad(users: Int) = Seq(
+    rampUsers(users).during(GatlingConfig.rampUpSeconds.seconds),
+    constantUsersPerSec(users.toDouble / 10).during(GatlingConfig.durationSeconds.seconds))
+
+  private val setUpBuilder = setUp((
     if (cfg.stress)
-      stressScn.inject(
-        rampUsers(cfg.stressUsers).during(GatlingConfig.rampUpSeconds.seconds),
-        constantUsersPerSec(cfg.stressUsers.toDouble / 10).during(GatlingConfig.durationSeconds.seconds))
+      Seq(stressScn.inject(standardLoad(cfg.stressUsers))) ++
+        (if (cfg.withVoting) Seq(votingScn.inject(standardLoad(GatlingConfig.users))) else Nil)
     else
-      organizerScn.inject(rampUsers(cfg.organizers).during(cfg.rampUpSeconds.seconds))
-  ).protocols(http.baseUrl(baseUrl).disableFollowRedirect)
+      Seq(organizerScn.inject(rampUsers(cfg.organizers).during(cfg.rampUpSeconds.seconds))) ++
+        (if (cfg.withVoting) Seq(votingScn.inject(standardLoad(GatlingConfig.users))) else Nil)
+  ).toList: _*).protocols(http.baseUrl(baseUrl).disableFollowRedirect)
 
   // A safety net for the default flow only: the stress run drains its whole queue, as before.
   if (!cfg.stress) setUpBuilder.maxDuration((cfg.durationSeconds + cfg.rampUpSeconds + 180).seconds)

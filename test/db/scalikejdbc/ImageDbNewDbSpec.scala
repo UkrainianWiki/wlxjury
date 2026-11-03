@@ -157,4 +157,102 @@ class ImageDbNewDbSpec extends Specification with BeforeAll with TestDb {
       ).list() === Nil
     }
   }
+
+  "a juror's gallery page (deferred join)" should {
+
+    // rates and monuments chosen so every ORDER BY column decides some pair
+    val rows = Seq(
+      (300L, 1, "13-002"), (301L, 0, "01-001"), (302L, 1, "13-001"), (303L, -1, "07-001"),
+      (304L, 1, "13-001"), (305L, 0, "07-002"), (306L, 1, "07-003"), (307L, -1, "01-002")
+    )
+    // rate DESC, monument_id ASC, page_id ASC
+    val expectedOrder = Seq(306L, 302L, 304L, 300L, 301L, 305L, 307L, 303L)
+
+    def insertRows()(implicit session: scalikejdbc.DBSession): Unit = {
+      imageDao.batchInsert(rows.map { case (p, _, m) => img(p, m) })
+      selectionDao.batchInsert(rows.map { case (p, r, m) => sel(p, r, m) })
+    }
+
+    def page(size: Int, offset: Int, regions: Set[String] = Set.empty) = SelectionQuery(
+      userId = Some(userId), roundId = Some(roundId), regions = regions,
+      order = galleryOrder, limit = Some(Limit(pageSize = Some(size), offset = Some(offset)))
+    )
+
+    "page ids through the selection rows alone, then join the page's rows" in {
+      val sql = page(3, 0).query().value
+      sql must contain("from (select s.id from selection s")
+      sql must contain("STRAIGHT_JOIN images i")
+    }
+
+    "keep the gallery order across pages" in new AutoRollbackDb {
+      insertRows()
+      val pages = (0 until 3).map(n => page(3, n * 3).list().map(_.image.pageId))
+      pages.flatten === expectedOrder
+      pages.map(_.size) === Seq(3, 3, 2)
+    }
+
+    "return the same images and selections as the unpaged query" in new AutoRollbackDb {
+      insertRows()
+      val all = SelectionQuery(userId = Some(userId), roundId = Some(roundId), order = galleryOrder).list()
+      page(8, 0).list() === all
+      all.map(_.image.pageId) === expectedOrder
+    }
+
+    "filter a region by selection's monument id" in new AutoRollbackDb {
+      insertRows()
+      page(2, 0, Set("13")).list().map(_.image.pageId) === Seq(302L, 304L)
+      page(2, 2, Set("13")).list().map(_.image.pageId) === Seq(300L)
+      page(2, 0, Set("13")).count() === 3
+    }
+
+    "agree with the count and the image rank" in new AutoRollbackDb {
+      insertRows()
+      val pages = (0 until 3).map(n => page(3, n * 3).list().map(_.image.pageId))
+      pages.flatten === expectedOrder
+      page(3, 0).count() === expectedOrder.size
+      // imageRank (the large view's navigation) agrees with the pages' positions
+      expectedOrder.zipWithIndex.forall { case (p, i) => page(3, 0).imageRank(p) == i + 1 } must beTrue
+    }
+
+    "page selection ids without reading images" in {
+      val inner = page(3, 0).query().value.split(" k ").head
+      inner must not(contain("images"))
+    }
+
+    "not apply to the organizer's grouped view" in {
+      val sql = SelectionQuery(roundId = Some(roundId), grouped = true, order = galleryOrder,
+        limit = Some(Limit(pageSize = Some(3), offset = Some(0)))).query().value
+      sql must not(contain("select s.id from selection s"))
+    }
+  }
+
+  "SelectionQuery.count of a juror's images" should {
+
+    "count rows without DISTINCT, the juror having one row per image" in {
+      SelectionQuery(userId = Some(userId), roundId = Some(roundId)).query(count = true).value must
+        contain("COUNT(*)")
+      SelectionQuery(roundId = Some(roundId)).query(count = true).value must
+        contain("COUNT(DISTINCT s.page_id)")
+    }
+
+    "count distinct images when the round isn't fixed" in new AutoRollbackDb {
+      imageDao.batchInsert(Seq(img(410L, "07-001"), img(411L, "07-002")))
+      // the juror has image 410 in two rounds
+      selectionDao.batchInsert(Seq(sel(410L, 1, "07-001"), sel(411L, 0, "07-002"),
+        sel(410L, 0, "07-001").copy(roundId = roundId + 1)))
+      val q = SelectionQuery(userId = Some(userId))
+      q.query(count = true).value must contain("COUNT(DISTINCT s.page_id)")
+      q.count() === 2
+      SelectionQuery(userId = Some(userId), regions = Set("07")).count() === 3 // row count, as before
+    }
+
+    "count a region on selection alone, matching the list" in new AutoRollbackDb {
+      imageDao.batchInsert(Seq(img(400L, "07-001"), img(401L, "07-002"), img(402L, "08-001")))
+      selectionDao.batchInsert(Seq(sel(400L, 1, "07-001"), sel(401L, 0, "07-002"), sel(402L, 1, "08-001")))
+      val q = SelectionQuery(userId = Some(userId), roundId = Some(roundId), regions = Set("07"))
+      q.query(count = true).value must not(contain("images"))
+      q.count() === 2
+      q.count() === q.list().size
+    }
+  }
 }

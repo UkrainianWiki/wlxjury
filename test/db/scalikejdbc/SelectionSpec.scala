@@ -23,6 +23,7 @@ class SelectionSpec extends Specification with BeforeAll {
     "insert selection" in new AutoRollbackDb {
       val s = Selection(pageId = -1, juryId = 20, roundId = 0, rate = 30, id = Some(40))
 
+      insertImagesFor(s.pageId)
       val created = selectionDao.create(s.pageId, s.rate, s.juryId, s.roundId)
       val id = created.getId
       created === s.copy(id = Some(id))
@@ -37,6 +38,7 @@ class SelectionSpec extends Specification with BeforeAll {
         Selection(pageId = 22, juryId = 3, roundId = -1, rate = 12)
       ))
 
+      insertImagesFor(s.map(_.pageId): _*)
       selectionDao.batchInsert(s)
 
       val selections = sameTime(selectionDao.findAll())
@@ -46,7 +48,14 @@ class SelectionSpec extends Specification with BeforeAll {
       noIds(selections) === s
     }
 
+    "reject a selection row whose image doesn't exist" in new AutoRollbackDb {
+      selectionDao.create(pageId = 404, rate = 0, juryId = 10, roundId = 1) must throwA[java.sql.SQLException].like {
+        case e => e.getMessage must contain("FK_selection_page_id")
+      }
+    }
+
     "reject a duplicate selection for the same image, juror and round" in new AutoRollbackDb {
+      insertImagesFor(1)
       selectionDao.create(pageId = 1, rate = 0, juryId = 10, roundId = 1)
       selectionDao.create(pageId = 1, rate = 1, juryId = 10, roundId = 1) must throwA[Exception]
     }
@@ -60,6 +69,7 @@ class SelectionSpec extends Specification with BeforeAll {
         Selection(pageId = 1, roundId = 21, juryId = 10)
       ))
 
+      insertImagesFor(s.map(_.pageId): _*)
       selectionDao.batchInsert(s)
 
       selectionDao.rate(pageId = 1, juryId = 10, roundId = 20, rate = 1)
@@ -74,6 +84,7 @@ class SelectionSpec extends Specification with BeforeAll {
     }
 
     "persist and read back monumentId via create" in new AutoRollbackDb {
+      insertImagesFor(-10L)
       val created = selectionDao.create(
         pageId = -10L, rate = 1, juryId = 20L, roundId = 0L,
         monumentId = Some("13-220")
@@ -84,6 +95,7 @@ class SelectionSpec extends Specification with BeforeAll {
     }
 
     "persist None monumentId via create" in new AutoRollbackDb {
+      insertImagesFor(-11L)
       val created = selectionDao.create(
         pageId = -11L, rate = 0, juryId = 20L, roundId = 0L
       )
@@ -98,6 +110,7 @@ class SelectionSpec extends Specification with BeforeAll {
         Selection(pageId = 2L, juryId = 1L, roundId = 1L, rate = 0, monumentId = Some("07-101")),
         Selection(pageId = 3L, juryId = 1L, roundId = 1L, rate = 1, monumentId = None)
       )
+      insertImagesFor(selections.map(_.pageId): _*)
       selectionDao.batchInsert(selections)
       val all = selectionDao.findAll().sortBy(_.pageId)
       all.map(_.monumentId) === Seq(Some("13-001"), Some("07-101"), None)
@@ -106,6 +119,7 @@ class SelectionSpec extends Specification with BeforeAll {
 
   "mergeRounds" should {
     "re-parent all source round selections to the target round" in new AutoRollbackDb {
+      insertImagesFor(1, 2, 3)
       selectionDao.batchInsert(Seq(
         Selection(pageId = 1, juryId = 10, roundId = 1, rate = 1),
         Selection(pageId = 2, juryId = 10, roundId = 1, rate = 0),
@@ -120,6 +134,7 @@ class SelectionSpec extends Specification with BeforeAll {
     }
 
     "drop a source selection that collides with an existing target selection" in new AutoRollbackDb {
+      insertImagesFor(1, 2)
       selectionDao.batchInsert(Seq(
         Selection(pageId = 1, juryId = 10, roundId = 1, rate = 1),
         Selection(pageId = 2, juryId = 10, roundId = 1, rate = 1),

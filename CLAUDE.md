@@ -57,7 +57,8 @@ sbt -Dgatling.roundMgmt.stress=true "Gatling/testOnly gatling.simulations.RoundM
 - Simulations live in `test/gatling/simulations/`, settings in `test/resources/gatling-perf.conf` (override any key with `-Dgatling.<key>=...`). Each simulation forks a JVM that runs the app (`TestServer`) and restores the fixture DB: `data/wlm-UA-images-2025.csv` (~38k images, all in the contest's category), 20 jurors, a binary and a rated round.
 - The fixture DB is cached as a dump in `data/cache/`, keyed by `GatlingDbCache.cacheKey` (migrations, CSV sizes, fixture parameters, `FixtureVersion`). Bump `FixtureVersion` whenever `GatlingDbSetup.load` changes what it writes.
 - Organizer flows (RoundManagement, AggregatedRatings) model a few organizers with think time by default; `gatling.roundMgmt.stress` / `gatling.aggRatings.stress` run the old many-sessions worst case.
-- `RoundDistributionSimulation` creates rounds through the round form and logs each step's time, selection rows and heap after GC to `target/gatling/distribution-memory.txt`.
+- `RoundDistributionSimulation` creates rounds through the round form and logs each step's time (submit to the end of its background job), selection rows and heap after GC to `target/gatling/distribution-memory.txt`.
+- `ConcurrentRoundCreationSimulation` has 10 admins create rounds at once (large, small, top-N, "distribute new files") while jurors vote and browse; per-admin submit-to-done times, solo reference times and heap go to `target/gatling/concurrent-distribution.txt`. `gatling.jobs.*` sets the app's job workers and chunk size for a run.
 - To measure with production-like JVM settings, prefix e.g. `"set Gatling / javaOptions ++= Seq(\"-Xmx512m\", \"-Xlog:gc*:file=target/gatling/gc-%p.log:time,uptime,level,tags\")"`; `%p` keeps one GC log per forked JVM.
 - Results: `target/gatling/<simulation>-<timestamp>/` (`js/stats.json` has per-request statistics).
 
@@ -100,6 +101,10 @@ app/
 - **Round**: A judging round within a contest. Can be binary (select/reject) or rated (1–N stars). Rounds can filter images by region, category, monument, size, media type, and special nomination.
 - **Selection**: A juror's vote/rating on an image in a round (`page_id`, `jury_id`, `round_id`, `rate`)
 - **User roles**: `root` (super-admin), `admin`, `organizer`, `jury`
+
+### Background jobs
+
+Long work runs as a job in the generic `job` table (V60), never on a request thread: `services.jobs.JobScheduler` runs one short step (one transaction) of a job at a time on its own pool (`jobs.*` in `application.conf`), taking turns between contests and jobs, with per-kind concurrency limits, a lease (`owner`, `heartbeat_at`) for restart recovery, Cancel and Retry. A `JobHandler` per kind does the steps; only `round_distribution` (`services.distribution.RoundDistributionHandler`, the single fill path for a new round, a resubmit and "Distribute new files") exists so far. A round being created stays hidden from jurors (`rounds.distributing`) until its count check passes. Tests run jobs inline (`jobs.mode = inline` in `test/resources/application.conf`; `services.TestRoundServices` without a Play app).
 
 ### Authentication & Authorization
 
