@@ -1,0 +1,17 @@
+@(returnTo: Option[String])(implicit messages: Messages, request: RequestHeader)
+@* GET /logout: old links and bookmarks show a button, they never sign out by themselves
+   (a link another site could open). *@
+@mainAdmin(Messages("logout")) {
+    <div class="row">
+        <div class="col-md-4 col-md-offset-4">
+            <p>@Messages("logout.confirm")</p>
+            <form method="post" action="@routes.LoginController.logout()">
+                @csrfField()
+                @for(path <- returnTo) {
+                    <input type="hidden" name="returnTo" value="@path"/>
+                }
+                <button type="submit" class="btn btn-primary">@Messages("logout")</button>
+            </form>
+        </div>
+    </div>
+}

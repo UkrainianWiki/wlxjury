@@ -11,7 +11,7 @@
         region: String = "all",
         //        menu: Html = Html.empty,
         pager: Html = Html(""),
-        contestId: Option[Long] = None)(content: Html)(implicit messages: Messages)
+        contestId: Option[Long] = None)(content: Html)(implicit messages: Messages, request: RequestHeader)
 <!DOCTYPE html>
 
 <html lang="@messages.lang.language">

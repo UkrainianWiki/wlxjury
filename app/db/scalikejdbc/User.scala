@@ -80,11 +80,14 @@ case class User(
   def canManageContestFiles(refContestId: Long): Boolean =
     hasContestRole(User.ADMIN_ROLES, Some(refContestId))
 
+  /** Whether the user may see the round's organizer views (its statistics, the jurors'
+    * votes): root, or in the round's contest an admin or organizer, or a juror when the
+    * round lets its jurors see them ([[Round.juryOrgView]]).
+    */
   def canViewOrgInfo(round: Round): Boolean =
-    hasRole("root") ||
-      (contestId.contains(round.contestId) &&
-        hasAnyRole(Set("organizer", "admin", "root")) ||
-        (roles.contains("jury") && round.juryOrgView))
+    hasRole(User.ROOT_ROLE) ||
+      contestId.contains(round.contestId) &&
+      (hasAnyRole(User.ADMIN_ROLES ++ User.ORG_COM_ROLES) || hasRole(User.JURY_ROLE) && round.juryOrgView)
 
   def description: String =
     Seq(fullname, wikiAccount.fold("")(u => "User:" + u), email).mkString(" / ")
@@ -320,6 +323,29 @@ object User extends CRUDMapper[User] {
           UNION
           SELECT r.contest_id FROM (SELECT DISTINCT round_id FROM selection WHERE jury_id = $userId) s
           JOIN rounds r ON r.id = s.round_id""".map(_.long(1)).list()
+
+  /** Whether the user is a juror of the round: with votes in it (selection, as
+    * [[findByRoundSelection]] lists them, for legacy rounds without round_user rows) or
+    * assigned to it (round_user, active or not).
+    */
+  def isRoundJuror(roundId: Long, userId: Long)(implicit session: DBSession = autoSession): Boolean =
+    sql"""SELECT EXISTS(SELECT 1 FROM users u WHERE u.id = $userId AND (
+            EXISTS(SELECT 1 FROM selection s WHERE s.round_id = $roundId AND s.jury_id = $userId) OR
+            EXISTS(SELECT 1 FROM round_user ru WHERE ru.round_id = $roundId AND ru.user_id = $userId)))"""
+      .map(_.boolean(1)).single().getOrElse(false)
+
+  /** The round's jurors as [[isRoundJuror]] accepts them, ordered by id: with votes in it
+    * or assigned to it (round_user, active or not). The galleries' juror menu, so that it
+    * lists every juror an organiser may view the round as, also one without votes yet.
+    */
+  def findRoundJurorsToView(roundId: Long)(implicit session: DBSession = autoSession): Seq[User] = {
+    val ids = sql"""SELECT DISTINCT jury_id FROM selection WHERE round_id = $roundId
+                    UNION
+                    SELECT user_id FROM round_user WHERE round_id = $roundId"""
+      .map(_.long(1))
+      .list()
+    if (ids.isEmpty) Nil else findAllBy(sqls.in(u.id, ids)).sortBy(_.id)
+  }
 
   /** The users with selection rows in the round (its jurors), ordered by id.
     *

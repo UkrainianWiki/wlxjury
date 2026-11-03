@@ -167,11 +167,21 @@ class MultiContestUserSpec extends PlaySpecification with PlayTestDb with Mockit
         val gina = member("gina@example.com", 10L -> "jury", 20L -> "organizer")
         def switch(to: Long) = call(
           controller.switchContest(to),
-          FakeRequest(GET, s"/switch-contest/$to").withSession(Secured.UserName -> gina.email)
+          FakeRequest(POST, s"/switch-contest/$to").withSession(Secured.UserName -> gina.email)
         )
 
         session(switch(10)).get(Secured.CurrentContestId) === Some("10")
-        redirectLocation(switch(30)) must beSome(contain("/error"))
+        val denied = call(
+          controller.switchContest(30),
+          FakeRequest(POST, "/switch-contest/30")
+            .withHeaders("Accept-Language" -> "fr")
+            .withSession(Secured.UserName -> gina.email)
+        )
+        status(denied) mustEqual FORBIDDEN
+        val body = contentAsString(denied)
+        body must contain("Accès refusé")
+        body must contain("Vous êtes connecté avec le compte gina@example.com.")
+        body must beMatching("""(?s).*Référence : [0-9a-f]{8}, \d{4}-\d\d-\d\d \d\d:\d\d UTC.*""")
       }
     }
 
@@ -183,10 +193,10 @@ class MultiContestUserSpec extends PlaySpecification with PlayTestDb with Mockit
 
         Secured.inCurrentContest(hal, None).contestId === Some(10L)
         Secured.inCurrentContest(hal, Some("20")).contestId === Some(10L)
-        redirectLocation(call(
+        status(call(
           controller.switchContest(20),
-          FakeRequest(GET, "/switch-contest/20").withSession(Secured.UserName -> hal.email)
-        )) must beSome(contain("/error"))
+          FakeRequest(POST, "/switch-contest/20").withSession(Secured.UserName -> hal.email)
+        )) mustEqual FORBIDDEN
       }
     }
   }
@@ -240,7 +250,7 @@ class MultiContestUserSpec extends PlaySpecification with PlayTestDb with Mockit
             .withSession(Secured.UserName -> kim.email, Secured.CurrentContestId -> "10")
         )
 
-        redirectLocation(result) must beSome(contain("/error"))
+        status(result) mustEqual FORBIDDEN
         // the session cookie is not rewritten: contest 10 stays current
         session(result).get(Secured.CurrentContestId) must beNone
       }
@@ -287,6 +297,25 @@ class MultiContestUserSpec extends PlaySpecification with PlayTestDb with Mockit
   }
 
   "editing users" should {
+    "deny a juror another user's edit page without naming the page's own user as a role" in {
+      testDbApp { implicit app =>
+        implicit val mat: Materializer = app.materializer
+        createContests(10)
+        val juror = member("juror@example.com", 10L -> "jury")
+        val other = member("other@example.com", 10L -> "jury")
+
+        val page = call(
+          controller.editUser(other.getId, Some(10)),
+          FakeRequest(GET, s"/users/edit/${other.getId}?contestId=10").withSession(Secured.UserName -> juror.email)
+        )
+
+        status(page) mustEqual FORBIDDEN
+        val html = contentAsString(page)
+        html must contain("This page is for: Admin, Root.")
+        html must not(contain("USER_ID_"))
+      }
+    }
+
     "let root edit the role in the contest the edit link names" in {
       testDbApp { implicit app =>
         implicit val mat: Materializer = app.materializer

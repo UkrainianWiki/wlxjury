@@ -20,7 +20,7 @@
         wrapInTable: Boolean,
         rates: RateDistribution,
         showAuthor: Boolean = false
-)(implicit flash: Flash, messages: Messages)
+)(implicit flash: Flash, messages: Messages, request: RequestHeader)
 
 @wrapInIf(tag: String, condition: Boolean)(content: Html) = {@if(condition) {<@tag> @content </@tag>} else {@content}}
 

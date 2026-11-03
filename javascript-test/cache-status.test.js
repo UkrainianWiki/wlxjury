@@ -174,7 +174,8 @@ describe("pollCacheStatus", () => {
         mockFetch({ total: 0, done: 0, errors: 0, running: false, ratePerSec: 0, etaSeconds: 0 });
         pollCacheStatus("/status/42");
         await flushPromises();
-        expect(global.fetch).toHaveBeenCalledWith("/status/42");
+        expect(global.fetch).toHaveBeenCalledWith("/status/42",
+            { credentials: "same-origin", headers: { "X-Requested-With": "XMLHttpRequest" } });
     });
 
     test("updates #cache-status innerHTML", async () => {
@@ -208,6 +209,28 @@ describe("pollCacheStatus", () => {
         pollCacheStatus("/status/1");
         await flushPromises();
         expect(global.fetch).toHaveBeenCalledTimes(1);
+        jest.advanceTimersByTime(5000);
+        await flushPromises();
+        expect(global.fetch).toHaveBeenCalledTimes(2);
+    });
+
+    test("stops polling and leaves the text when access is denied (401/403)", async () => {
+        for (const code of [401, 403]) {
+            statusEl.innerHTML = "before";
+            global.fetch = jest.fn(() => Promise.resolve({ status: code, json: () => Promise.reject(new Error("html")) }));
+            pollCacheStatus("/status/1");
+            await flushPromises();
+            jest.advanceTimersByTime(30000);
+            await flushPromises();
+            expect(global.fetch).toHaveBeenCalledTimes(1);
+            expect(statusEl.innerHTML).toBe("before");
+        }
+    });
+
+    test("retries after 5 s when another error answers with no JSON", async () => {
+        global.fetch = jest.fn(() => Promise.resolve({ status: 500, json: () => Promise.reject(new Error("html")) }));
+        pollCacheStatus("/status/1");
+        await flushPromises();
         jest.advanceTimersByTime(5000);
         await flushPromises();
         expect(global.fetch).toHaveBeenCalledTimes(2);

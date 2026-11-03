@@ -1,11 +1,11 @@
 package controllers
 
-import db.scalikejdbc.{ContestJuryJdbc, ImageJdbc, User}
+import db.scalikejdbc.{ContestJuryJdbc, ImageJdbc, Round, User}
 import org.intracer.wmua.ContestJury
 import play.api.data.Form
 import play.api.data.Forms._
 import play.api.i18n.I18nSupport
-import play.api.mvc.{ControllerComponents, EssentialAction}
+import play.api.mvc.{ControllerComponents, EssentialAction, RequestHeader, Result}
 import play.api.libs.json.Json
 import services.imports.{CommonsSource, FileTitles}
 import services.jobs.Job
@@ -26,19 +26,27 @@ class ImageController @Inject() (
   /** Shows contest images view
     */
   def images(contestId: Long): EssentialAction =
-    withAuth(_.canManageContestFiles(contestId)) { user => implicit request =>
-      val contest = ContestJuryJdbc.findById(contestId).get
+    withAuth(contestPermission(User.ADMIN_ROLES, Some(contestId))) { user => implicit request =>
+      withContest(user, contestId) { contest =>
+        val sourceImageNum = getNumberOfImages(contest)
+        val dbImagesNum = ImageJdbc.countByContest(contest)
 
-      val sourceImageNum = getNumberOfImages(contest)
-      val dbImagesNum = ImageJdbc.countByContest(contest)
-
-      val filledForm =
-        importImagesForm.fill((contest.images.getOrElse(""), "", ""))
-      Ok(
-        views.html
-          .contest_images(filledForm, contest, user, sourceImageNum, dbImagesNum, importJobs(contestId))
-      )
+        val filledForm =
+          importImagesForm.fill((contest.images.getOrElse(""), "", ""))
+        Ok(
+          views.html
+            .contest_images(filledForm, contest, user, sourceImageNum, dbImagesNum, importJobs(contestId))
+        )
+      }
     }
+
+  /** `f` of the contest, or the error page if there is none (root may ask for any id). */
+  private def withContest(user: User, contestId: Long)(f: ContestJury => Result)(implicit
+      request: RequestHeader
+  ): Result =
+    ContestJuryJdbc.findById(contestId).fold[Result](
+      NotFound(views.html.errorPage(Some(user), "error.title", "error.contest.not.found"))
+    )(f)
 
   /** The contest's latest import jobs, each with what it does. */
   private def importJobs(contestId: Long): Seq[(Job, String)] =
@@ -52,42 +60,43 @@ class ImageController @Inject() (
     */
   def importImages(contestId: Long): EssentialAction =
     withAuth(contestPermission(User.ADMIN_ROLES, Some(contestId))) { user => implicit request =>
-      val contest = ContestJuryJdbc.findById(contestId).get
-      importImagesForm
-        .bindFromRequest()
-        .fold(
-          formWithErrors =>
-            BadRequest(
-              views.html
-                .contest_images(formWithErrors, contest, user, 0, ImageJdbc.countByContest(contest), importJobs(contestId))
-            ),
-          { case (source, list, action) =>
-            // lines of the list that name no file are shown, not dropped
-            val unreadable = if (action == "import.files") FileTitles.unreadable(list) else Nil
-            if (unreadable.nonEmpty)
+      withContest(user, contestId) { contest =>
+        importImagesForm
+          .bindFromRequest()
+          .fold(
+            formWithErrors =>
               BadRequest(
-                views.html.contest_images(
-                  importImagesForm
-                    .fill((source, list, action))
-                    .withGlobalError("files.list.unreadable", unreadable.size, unreadable.take(5).mkString(" · ")),
-                  contest, user, 0, ImageJdbc.countByContest(contest), importJobs(contestId)
+                views.html
+                  .contest_images(formWithErrors, contest, user, 0, ImageJdbc.countByContest(contest), importJobs(contestId))
+              ),
+            { case (source, list, action) =>
+              // lines of the list that name no file are shown, not dropped
+              val unreadable = if (action == "import.files") FileTitles.unreadable(list) else Nil
+              if (unreadable.nonEmpty)
+                BadRequest(
+                  views.html.contest_images(
+                    importImagesForm
+                      .fill((source, list, action))
+                      .withGlobalError("files.list.unreadable", unreadable.size, unreadable.take(5).mkString(" · ")),
+                    contest, user, 0, ImageJdbc.countByContest(contest), importJobs(contestId)
+                  )
                 )
-              )
-            else {
-              // the import runs in the background: the files page shows its progress
-              val jobs =
-                if (action == "import.files") Seq(imageService.importFiles(contest, source, list, user.id))
-                else if (action == "update.monuments") imageService.updateMonuments(contest, source, user.id)
-                else Nil
-              val back = Redirect(routes.ImageController.images(contestId))
-              jobs.collect { case Left(running) => running } match {
-                case Nil => back
-                case running =>
-                  back.flashing("error" -> running.map(j => s"Already running: ${imageService.title(j)}.").mkString(" "))
+              else {
+                // the import runs in the background: the files page shows its progress
+                val jobs =
+                  if (action == "import.files") Seq(imageService.importFiles(contest, source, list, user.id))
+                  else if (action == "update.monuments") imageService.updateMonuments(contest, source, user.id)
+                  else Nil
+                val back = Redirect(routes.ImageController.images(contestId))
+                jobs.collect { case Left(running) => running } match {
+                  case Nil => back
+                  case running =>
+                    back.flashing("error" -> running.map(j => s"Already running: ${imageService.title(j)}.").mkString(" "))
+                }
               }
             }
-          }
-        )
+          )
+      }
     }
 
   def startImageCache(contestId: Long): EssentialAction =
@@ -97,19 +106,28 @@ class ImageController @Inject() (
     }
 
   def imageCacheStatus(contestId: Long): EssentialAction =
-    withAuth(contestPermission(User.ADMIN_ROLES, Some(contestId))) { _ => _ =>
+    withAuthJson(contestPermission(User.ADMIN_ROLES, Some(contestId))) { _ => _ =>
       Ok(Json.toJson(localImageCacheService.progress(contestId)))
     }
 
+  /** The permission is the contest's, so the round must be one of its: never another's. */
+  private def inContest(contestId: Long, roundId: Long): Boolean =
+    Round.findById(roundId).exists(_.contestId == contestId)
+
   def startRoundImageCache(id: Long, rid: Long): EssentialAction =
-    withAuth(contestPermission(User.ADMIN_ROLES, Some(id))) { _ => implicit request =>
-      localImageCacheService.startDownloadForRound(id, rid)
-      Redirect(routes.RoundController.editRound(Some(rid), id, None))
+    withAuth(contestPermission(User.ADMIN_ROLES, Some(id))) { user => implicit request =>
+      if (!inContest(id, rid))
+        NotFound(views.html.errorPage(Some(user), "error.title", "error.round.not.found"))
+      else {
+        localImageCacheService.startDownloadForRound(id, rid)
+        Redirect(routes.RoundController.editRound(Some(rid), id, None))
+      }
     }
 
   def roundImageCacheStatus(id: Long, rid: Long): EssentialAction =
-    withAuth(contestPermission(User.ADMIN_ROLES, Some(id))) { _ => _ =>
-      Ok(Json.toJson(localImageCacheService.progressForRound(rid)))
+    withAuthJson(contestPermission(User.ADMIN_ROLES, Some(id))) { _ => _ =>
+      if (!inContest(id, rid)) NotFound(Json.obj("error" -> "round not found"))
+      else Ok(Json.toJson(localImageCacheService.progressForRound(rid)))
     }
 
   val importImagesForm = Form(

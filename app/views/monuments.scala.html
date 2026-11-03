@@ -2,7 +2,7 @@
 @import org.scalawiki.wlx.dto.Monument
 
 @import java.net.URLEncoder
-@(monuments: Seq[Monument], region: String = "all")(implicit flash: Flash, messages: Messages)
+@(monuments: Seq[Monument], region: String = "all")(implicit flash: Flash, messages: Messages, request: RequestHeader)
 
 @main("gallery", null, 0, None, Seq.empty, gallery = false, None, region, Html(""))  {
 
