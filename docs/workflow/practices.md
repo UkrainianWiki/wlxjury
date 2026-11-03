@@ -154,7 +154,7 @@ the stack's links must stay consistent.
 followups branch have the same tree, a new commit on the stack is mirrored on a followups branch
 with the same tree: `git commit-tree <stack tip>^{tree} -p <followups tip>` (or a cherry-pick
 with `-x`), then `git diff --stat <stack tip> <mirror>` must be empty. *Example:*
-`ukwikidev/followups-ci` for PR 55, `ukwikidev/followups-refresh` for PR 67.
+`ukwikidev/followups-ci` for PR 55, `ukwikidev/followups-refresh` for PR 67 (#250).
 
 **6.5 Restack by merge, never by force.** When a lower stack PR changes (a review fix), the
 branches above it take the change by a merge commit (or a new commit), never a rebase or a force

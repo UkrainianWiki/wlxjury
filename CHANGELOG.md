@@ -100,7 +100,7 @@ Developed 2026-11-02 to 2026-11-03, PRs #232–#236.
   integrations, UI, dependencies) with a history index and a docs index
   ([docs/README.md](docs/README.md); #245, PR 62).
 - Calendar versions (`YY.MM`; the build is `26.11-SNAPSHOT`); the CodeRabbit request and
-  review triage tools in `scripts/review/` (PR 67).
+  review triage tools in `scripts/review/` (#250).
 - **Migrations:** V85 gallery index, V86 timestamp definitions, V87 for the sign-in (#240).
 
 ## Deployed
