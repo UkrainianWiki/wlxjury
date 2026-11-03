@@ -41,7 +41,7 @@
 
                     @if(user.hasAnyRole(User.ADMIN_ROLES)) {
                         @select(editUserForm("roles"),
-                            (Seq("no", "jury", "organizer", "admin") ++ (
+                            (db.scalikejdbc.User.FORM_ROLES ++ (
                                     if(user.hasRole("root")) Seq("root") else Seq.empty)
                                     ).map(x => (x, Messages(x))),
                             Seq(Symbol("_label") -> Messages("role"), Symbol("_help") -> "", Symbol("class") -> "form-control") ++

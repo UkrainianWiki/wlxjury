@@ -78,6 +78,11 @@
                                 <a href="https://commons.wikimedia.org/wiki/User:@user.wikiAccount" @if(!user.accountValid){style="color: red"}>
                                     @user.wikiAccount
                                 </a>
+                                @* a member whose files are conflicts of interest, who can't be matched with them *@
+                                @if(contestOpt.nonEmpty && user.wikiAccount.forall(_.trim.isEmpty) &&
+                                        user.contestRoles.exists(db.scalikejdbc.User.COI_ROLES.contains)) {
+                                    <span class="text-warning coi-no-account">@Messages("coi.no.wiki.account")</span>
+                                }
 
                             </td>
                             <td>
@@ -129,7 +134,7 @@
                             <td>
                             @select(
                                 editUserForm("roles"),
-                                Seq("no", "jury", "organizer", "admin").map(x => (x, Messages(x))),
+                                db.scalikejdbc.User.FORM_ROLES.map(x => (x, Messages(x))),
                                 Symbol("_label") -> Messages("role"), Symbol("_help") -> "", Symbol("class") -> "form-control")
                             </td>
                             <td>

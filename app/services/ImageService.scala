@@ -99,10 +99,23 @@ object ImageService {
 
   /** The fetched images that are stored already but changed: those
     * [[db.scalikejdbc.ImageJdbc.update]] has something to write for. Compared on the fields
-    * it writes ([[ImageJdbc.fileInfo]], the monument id and the description).
+    * it writes ([[ImageJdbc.fileInfo]], the monument id, the description and the author).
     */
+  /** A fetched file as an import stores it over the stored one: as Commons has it now, but,
+    * fetched without its page text, with the stored description and author; and with the
+    * stored monument id unless the contest reads monument ids (`monumentIds`) from the text,
+    * which came.
+    */
+  def withStoredText(fetched: Image, stored: Image, text: Boolean, monumentIds: Boolean): Image =
+    fetched.copy(
+      monumentId = if (monumentIds && text) fetched.monumentId else stored.monumentId,
+      description = if (text) fetched.description else stored.description,
+      author = if (text) fetched.author else stored.author
+    )
+
   def changedImages(fetched: Seq[Image], existing: Seq[Image]): Seq[Image] = {
-    def stored(i: Image) = ImageJdbc.fileInfo(i) ++ Seq("monumentId" -> i.monumentId, "description" -> i.description)
+    def stored(i: Image) = ImageJdbc.fileInfo(i) ++
+      Seq("monumentId" -> i.monumentId, "description" -> i.description, "author" -> i.author)
     val existingById = existing.map(i => i.pageId -> stored(i)).toMap
     fetched.filter(i => existingById.get(i.pageId).exists(_ != stored(i)))
   }

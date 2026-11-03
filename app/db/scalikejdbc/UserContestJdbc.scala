@@ -9,11 +9,12 @@ case class UserContest(userId: Long, contestId: Long, role: String) {
   /** V62 writes one role; split in case a comma-separated one is written another way. */
   def roles: Set[String] = role.split(",").map(_.trim).filter(_.nonEmpty).toSet
 
-  /** False for the edit form's "no" role: the user stays on the contest's user list, where
+  /** False for the edit form's "no" role and the roles without access (board, auditor,
+    * staff: [[User.NON_ACCESS_ROLES]]): the user stays on the contest's user list, where
     * an admin can give them a role again, but the contest is not theirs to open (not
-    * picked at login, not in the contest switcher).
+    * picked at login, not in the contest switcher, never the contest a request runs in).
     */
-  def active: Boolean = (roles - User.NO_ROLE).nonEmpty
+  def active: Boolean = (roles -- User.INACTIVE_ROLES).nonEmpty
 }
 
 object UserContestJdbc extends JoinTable[UserContest] {

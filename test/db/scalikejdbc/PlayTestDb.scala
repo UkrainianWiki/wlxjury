@@ -1,7 +1,7 @@
 package db.scalikejdbc
 
 import play.api.Application
-import play.api.inject.guice.GuiceApplicationBuilder
+import play.api.inject.guice.{GuiceApplicationBuilder, GuiceableModule}
 
 import scala.concurrent.Await
 import scala.concurrent.duration._
@@ -44,24 +44,41 @@ trait PlayTestDb extends TestDb {
       SharedPlayApp.init()
       SharedPlayApp.truncateAll()
       body(SharedPlayApp.app)
-    } else {
-      SharedTestDb.init()
-      val perTestApp = new GuiceApplicationBuilder()
-        .configure(Map(
-          "db.default.driver"   -> SharedTestDb.driverClassName,
-          "db.default.username" -> SharedTestDb.username,
-          "db.default.password" -> SharedTestDb.password,
-          "db.default.url"      -> SharedTestDb.jdbcUrl
-        ) ++ additionalConfig)
-        .build()
-      try {
-        body(perTestApp)
-      } finally {
-        Await.result(perTestApp.stop(), 30.seconds)
-        // PlayDBApiAdapterModule closes ALL ScalikeJDBC pools on stop().
-        // Restore the shared container's pool so other tests can still connect.
-        SharedTestDb.reregisterDefault()
-      }
+    } else perTestApp(additionalConfig, Nil)(body)
+  }
+
+  /** Run `body` with a fresh Play application whose bindings `overrides` replace (e.g. a
+    * fake [[services.imports.CommonsSource]]), on [[SharedTestDb]]'s container, truncated
+    * first.
+    */
+  def testDbAppWith[T](overrides: GuiceableModule*)(
+      body: Application => T
+  )(implicit additionalConfig: Map[String, String] = Map.empty): T = {
+    SharedTestDb.init()
+    SharedTestDb.truncateAll()
+    perTestApp(additionalConfig, overrides)(body)
+  }
+
+  private def perTestApp[T](additionalConfig: Map[String, String], overrides: Seq[GuiceableModule])(
+      body: Application => T
+  ): T = {
+    SharedTestDb.init()
+    val perTestApp = new GuiceApplicationBuilder()
+      .configure(Map(
+        "db.default.driver"   -> SharedTestDb.driverClassName,
+        "db.default.username" -> SharedTestDb.username,
+        "db.default.password" -> SharedTestDb.password,
+        "db.default.url"      -> SharedTestDb.jdbcUrl
+      ) ++ additionalConfig)
+      .overrides(overrides: _*)
+      .build()
+    try {
+      body(perTestApp)
+    } finally {
+      Await.result(perTestApp.stop(), 30.seconds)
+      // PlayDBApiAdapterModule closes ALL ScalikeJDBC pools on stop().
+      // Restore the shared container's pool so other tests can still connect.
+      SharedTestDb.reregisterDefault()
     }
   }
 

@@ -84,16 +84,20 @@ class DistributeImages @Inject()(imageRepo: ImageRepo) extends Logging {
     * rating (a global ranking) and the exclusion of the images already in the round. Each
     * decides per image, so applying them to any slice of the candidates (a chunk) selects
     * exactly the images the whole list would. `includeFromCats` / `excludeFromCats` are
-    * the page ids of the round's Commons category filters ([[categoryFileIds]]).
+    * the page ids of the round's Commons category filters ([[categoryFileIds]]);
+    * `excludeAuthors` the conflict-of-interest accounts of a round that leaves them out
+    * ([[db.scalikejdbc.CoiMembers]]).
     */
   def perImageFilters(
       round: Round,
       prevRounds: Seq[Round],
       includeFromCats: Iterable[Long],
-      excludeFromCats: Iterable[Long]
+      excludeFromCats: Iterable[Long],
+      excludeAuthors: Set[String] = Set.empty
   ): Seq[ImageWithRating] => Seq[ImageWithRating] = {
     val prevRound = prevRounds.headOption
     ImageWithRatingSeqFilter.makeFunChain(
+      Option.when(excludeAuthors.nonEmpty)(ExcludeAuthors(excludeAuthors)).toSeq ++
       ImageWithRatingSeqFilter.funGenerators(
         prevRound,
         includeRegionIds = round.regionIds.toSet,

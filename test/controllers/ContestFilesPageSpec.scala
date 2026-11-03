@@ -224,6 +224,26 @@ class ContestFilesPageSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
+    "show the conflicts of interest's regions, counting only them, and a region's" in {
+      testDbApp { implicit app =>
+        val f = fixture()
+        byMonuments(f.contest)
+        addRegionFiles(f)
+        // 3 and 4 by the board member: region 07 and 14
+        User.create(User("Board", "", None, Set(User.BOARD_ROLE), None, f.contest.id, wikiAccount = Some("Board member")))
+        DB.autoCommit { implicit s => sql"UPDATE images SET author = 'Board member' WHERE page_id IN (3, 4)".update() }
+        val base = s"/contest/${f.contest.getId}/files"
+
+        val (_, coi) = get(s"$base?coi=true", f.admin)
+        tiles(coi) === List(3L, 4L)
+        coi must contain("""id="regionmenu"""")
+        counted(menuPlaces(coi, "regionmenu", f.admin)) === Map(s"$base?region=07&coi=true" -> 1, s"$base?region=14&coi=true" -> 1)
+
+        val (_, region) = get(s"$base?region=14&coi=true", f.admin)
+        tiles(region) === List(4L)
+      }
+    }
+
     "show a Wiki Loves Earth contest's regions, named as Ukraine's" in {
       testDbApp { implicit app =>
         val f = fixture()

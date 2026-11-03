@@ -29,7 +29,19 @@ object EditRound {
 
   private val jurorsMappingKV = "jurors" -> seq(text).verifying(nonEmptySeq)
   val jurorsMapping: Mapping[Seq[String]] = single(jurorsMappingKV)
+
+  /** The round form: [[roundMapping]]'s fields (Play's mappings take at most 22) and
+    * "Leave out conflicts of interest" ([[Round.excludeCoi]]).
+    */
   val editRoundForm: Form[EditRound] = Form(
+    mapping(
+      "" -> roundMapping,
+      "excludeCoi" -> boolean
+    )((edit, excludeCoi) => edit.copy(round = edit.round.copy(excludeCoi = excludeCoi)))(edit =>
+      Some((edit, edit.round.excludeCoi)))
+  )
+
+  private def roundMapping: Mapping[EditRound] =
     mapping(
       "id" -> optional(longNumber),
       "number" -> longNumber,
@@ -62,7 +74,6 @@ object EditRound {
             Round.sameRateType(Round.findByIds(editRound.round.contestId, ids))
         }
       )
-  )
 
   def applyEdit(
       id: Option[Long],

@@ -112,6 +112,35 @@ object User extends CRUDMapper[User] {
   val USER_ID_PREFIX = "USER_ID_"
   /** The edit form's "no role": a member of the contest without access to it. */
   val NO_ROLE = "no"
+
+  /** The contest's board, audit committee and staff: roles that grant nothing in the tool
+    * (in no permission set, and a membership with only one of them is not active,
+    * [[UserContest.active]]), only there so that their files are conflicts of interest
+    * ([[CoiMembers]]).
+    */
+  val BOARD_ROLE = "board"
+  val AUDITOR_ROLE = "auditor"
+  val STAFF_ROLE = "staff"
+  val NON_ACCESS_ROLES: Set[String] = Set(BOARD_ROLE, AUDITOR_ROLE, STAFF_ROLE)
+
+  /** Roles of a membership that is not the user's to open: none, or only roles without access. */
+  val INACTIVE_ROLES: Set[String] = NON_ACCESS_ROLES + NO_ROLE
+
+  /** The contest roles whose members' files are conflicts of interest ([[CoiMembers]]): all
+    * but `prejury` and "no"; root users count in every contest too.
+    */
+  val COI_ROLES: Set[String] = Set(ADMIN_ROLE, "organizer", JURY_ROLE) ++ NON_ACCESS_ROLES
+
+  /** The roles the users page and its edit form offer, in their order. */
+  val FORM_ROLES: Seq[String] = Seq(NO_ROLE, JURY_ROLE, "organizer", ADMIN_ROLE, BOARD_ROLE, AUDITOR_ROLE, STAFF_ROLE)
+
+  /** The roles "Import users" adds people with: all of [[FORM_ROLES]] but "no". */
+  val IMPORT_ROLES: Seq[String] = FORM_ROLES.filterNot(_ == NO_ROLE)
+
+  /** users.email as stored: none (a user added by wiki account only) is NULL (V67), so any
+    * number of such users fit the unique key.
+    */
+  def storedEmail(email: String): Option[String] = Option(email).map(_.trim.toLowerCase).filter(_.nonEmpty)
   val LANGS = Map("en" -> "English", "fr" -> "Français", "ru" -> "Русский", "uk" -> "Українська")
 
   def unapplyEdit(user: User): Option[
@@ -258,7 +287,7 @@ object User extends CRUDMapper[User] {
     User(
       id          = Some(id),
       fullname    = rs.string(c.fullname),
-      email       = rs.string(c.email),
+      email       = rs.stringOpt(c.email).getOrElse(""),
       roles       = Set(USER_ID_PREFIX + id) ++ (if (root) Set(ROOT_ROLE) else Set.empty),
       isRoot      = root,
       password    = rs.stringOpt(c.password),
@@ -452,7 +481,7 @@ object User extends CRUDMapper[User] {
         .into(User)
         .namedValues(
           column.fullname    -> user.fullname,
-          column.email       -> user.email.trim.toLowerCase,
+          column.email       -> storedEmail(user.email),
           column.wikiAccount -> user.wikiAccount,
           column.password    -> user.password,
           column.isRoot      -> root,
@@ -484,7 +513,7 @@ object User extends CRUDMapper[User] {
     updateById(id)
       .withAttributes(
         "fullname"    -> fullname,
-        "email"       -> email,
+        "email"       -> storedEmail(email),
         "wikiAccount" -> wikiAccount,
         "lang"        -> lang,
         "sort"        -> sort
