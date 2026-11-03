@@ -143,24 +143,37 @@ class LargeViewController @Inject() (
   private def showRound(pageId: Long, user: User, list: RoundList)(implicit request: Request[Any]): Result =
     list.around(pageId).fold(Redirect(list.pageUrl(1)))(showFile(_, user, list))
 
-  private def showFile(hood: Neighbourhood, user: User, list: RoundList)(implicit request: Request[Any]): Result = {
-    val round = list.round
-    val asUserId = list.asUserId
+  private def showFile(hood: Neighbourhood, user: User, viewed: RoundList)(implicit request: Request[Any]): Result = {
+    val asUserId = viewed.asUserId
     val pageId = hood.file.pageId
+    val roundCriteria = if (viewed.round.hasCriteria) RoundCriterion.ofRound(viewed.round.getId) else Nil
+    // a criteria round's results are drawn per criterion (Round.perCriterion)
+    val list = if (roundCriteria.isEmpty) viewed
+      else viewed.withRound(viewed.round.copy(criteriaCount = roundCriteria.size))
+    val round = list.round
 
     val votes = if (user.canViewOrgInfo(round)) {
       VoteJdbc.byRoundAndImageWithJury(round.getId, pageId)
     } else Seq.empty
 
-    // the round's criteria in their order, each with the viewed juror's rate (0 without one:
-    // rates are written by votes), also when it is the current round (roundId 0); none
-    // without a vote, nor for all the jurors together (C3)
-    val criteria: Seq[(Criterion, Int)] = if (round.hasCriteria && asUserId != 0) {
-      VoteJdbc.findBy(pageId, asUserId, round.getId).fold(Seq.empty[(Criterion, Int)]) { vote =>
+    // the round's criteria in their order (also when it is the current round, roundId 0), in
+    // stored units: each with the viewed juror's rate (0 without one: rates are written by
+    // votes; none without a vote), or for all the jurors together (only organisers view them,
+    // GalleryService.viewAs) each one's average over the votes rated in every criterion, 0
+    // for none (C3)
+    val criteria: Seq[(Criterion, Double)] =
+      if (roundCriteria.isEmpty) Nil
+      else if (asUserId == 0) {
+        val averages = CriteriaRate.averages(round.getId, Seq(pageId)).getOrElse(pageId, Map.empty)
+        roundCriteria.map(c => c -> averages.get(c.id).fold(0.0)(_.toDouble))
+      } else VoteJdbc.findBy(pageId, asUserId, round.getId).fold(Seq.empty[(Criterion, Double)]) { vote =>
         val rates = CriteriaRate.getRates(vote.getId).map(c => c.criterionId -> c.rate).toMap
-        RoundCriterion.ofRound(round.getId).map(c => c -> rates.getOrElse(c.id, 0))
+        roundCriteria.map(c => c -> rates.getOrElse(c.id, 0).toDouble)
       }
-    } else Nil
+
+    // each juror's rates of the criteria, in the organisers' list of the file's votes
+    val jurorCriteria = JurorCriteria(roundCriteria,
+      if (roundCriteria.isEmpty || votes.isEmpty) Map.empty else CriteriaRate.ratesOfFile(round.getId, pageId))
 
     val monument = hood.file.image.monumentId.flatMap(id => if (id.trim.nonEmpty) MonumentJdbc.find(id) else None)
 
@@ -177,7 +190,8 @@ class LargeViewController @Inject() (
               monument,
               comments,
               votes,
-              criteria
+              criteria,
+              jurorCriteria
             )
           )
         )

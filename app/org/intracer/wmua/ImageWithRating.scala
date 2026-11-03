@@ -109,6 +109,20 @@ case class ImageWithRating(
     }
   }
 
+  /** A criteria round's rate where its stars are drawn (the by-rate gallery, the large view for
+    * all the jurors): per criterion in stars, as the stars ([[Round.perCriterion]]), then the
+    * sum in stored units, the scale of the CSV, the ranks and "min average rate" (U7): one
+    * vote's `3.50 (Σ 7)`; several jurors' `4.83 (Σ 9.67: 29 / 3 jurors)`, their average sum, and
+    * the rate sum over [[ratedJurors]] (of a grouped row the assigned jurors, unrated as 0).
+    */
+  def criteriaRateString(round: Round)(implicit messages: play.api.i18n.Messages): String = {
+    val jurors = ratedJurors(round)
+    val stars = CriteriaResults.format(BigDecimal(round.perCriterion(totalRate(round)) / round.starUnits))
+    if (jurors < 2) messages("criteria.rate.one", stars, rateSum.toString)
+    else messages("criteria.rate.many", stars, CriteriaResults.format(BigDecimal(totalRate(round))), rateSum.toString,
+      jurors.toString)
+  }
+
   def pageId: Long = image.pageId
 
   def title: String = image.title

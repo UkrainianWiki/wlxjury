@@ -3,7 +3,7 @@ package services.distribution
 import org.intracer.wmua.cmd.InMemoryDistribution._
 import db.scalikejdbc._
 import org.intracer.wmua.cmd.{DistributeImages, SelectTopByRating}
-import org.intracer.wmua.{ContestJury, Image, ImageWithRating, Vote}
+import org.intracer.wmua.{ContestJury, CriteriaRate, Image, ImageWithRating, Vote}
 import org.specs2.mutable.Specification
 import org.specs2.specification.{AfterEach, BeforeAll, BeforeEach}
 import scalikejdbc._
@@ -590,6 +590,39 @@ class RoundDistributionJobSpec extends Specification with TestDb with BeforeAll 
           Round.setActive(prev.getId, active = true)
           (pageIds(created.getId) === expected) and (expected.size === template.topImages.get)
         }.reduce(_ and _)
+    }
+
+    "pick from a criteria round by its files' criteria sums, a partly rated vote unrated (U5, U7)" in {
+      val (contest, _, jurors) = setUp(6, 2)
+      val Seq(j1, j2) = jurors
+      val prev = roundDao.create(Round(None, 1, Some("Criteria"), contest.getId, rates = Round.ratesById(10),
+        active = true, criterionIds = Seq(1L, 2L)))
+      prev.addUsers(jurors.map(u => RoundUser(prev.getId, u.getId, "jury", active = true)))
+      di.distributeImages(prev, jurors, Nil)
+      def rate(pageId: Long, juror: User, rates: Int*): Unit = {
+        val vote = VoteJdbc.findBy(pageId, juror.getId, prev.getId).get
+        rates.zipWithIndex.foreach { case (r, i) => CriteriaRate.updateRate(vote.getId, i + 1L, r) must beTrue }
+      }
+      // per juror, the sums: file 1 18 and 16 (17), file 2 12 and 12 (12), file 3 12 and a
+      // partly rated vote, 0 (6; 11 if that vote counted its 10), file 4 4 and 4; 5 and 6 unrated
+      rate(1, j1, 9, 9); rate(1, j2, 8, 8)
+      rate(2, j1, 6, 6); rate(2, j2, 6, 6)
+      rate(3, j1, 6, 6); rate(3, j2, 10)
+      rate(4, j1, 2, 2); rate(4, j2, 2, 2)
+      VoteJdbc.findBy(3, j2.getId, prev.getId).map(_.rate) must beSome(0)
+
+      def created(template: Round): Set[Long] = {
+        Round.setActive(prev.getId, active = true)
+        val round = inlineService(new TestHandler(chunkRows = 3)).createNewRound(template, jurors.map(_.getId))
+        pageIds(round.getId)
+      }
+      def from(name: String) = newRound(contest, name, rates = Round.ratesById(10)).copy(previous = Some(prev.getId.toString))
+
+      // "min average rate" 11 is a sum: per criterion (8.5 at most) no file would pass
+      created(from("Min").copy(prevMinAvgRate = Some(BigDecimal(11)))) === Set(1L, 2L)
+      created(from("Min 6").copy(prevMinAvgRate = Some(BigDecimal(6)))) === Set(1L, 2L, 3L)
+      created(from("Top").copy(topImages = Some(2))) === Set(1L, 2L)
+      created(from("Top 3").copy(topImages = Some(3))) === Set(1L, 2L, 3L)
     }
 
     "keep a top-N round at N on \"Distribute new files\"" in {

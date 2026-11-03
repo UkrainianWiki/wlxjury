@@ -1,0 +1,10 @@
+@import org.intracer.wmua.{Criterion, CriteriaResults}
+@(averages: Seq[(Criterion, Option[BigDecimal])])(implicit messages: Messages)
+@* a file's average of each of its round's criteria, in stored units as the rate beside it, a
+   dash where no juror has rated it in every criterion (U5). The names are message keys' texts
+   or an admin's fallback text: escaped as any text here *@
+<ul class="wlx-criteria-averages list-unstyled small mb-0">
+    @for((criterion, average) <- averages) {
+        <li><span class="wlx-criterion-name">@criterion.name</span>: @average.map(CriteriaResults.format).getOrElse("–")</li>
+    }
+</ul>

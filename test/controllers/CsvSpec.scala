@@ -61,6 +61,35 @@ class CsvSpec extends Specification {
     }
   }
 
+  "a criteria round's export" should {
+    val round = ratedRound(10).copy(hasCriteria = true)
+    val criteria = Seq(1L -> "Quality", 7L -> "Composition")
+    val jurors = (1 to 2).map(i => User(s"Juror$i", "", Some(i.toLong)))
+    val files = Seq(
+      ImageWithRating(Image(10, "File:a.jpg"), Seq(Vote(10, 1, 0, rate = 14), Vote(10, 2, 0, rate = 15))),
+      ImageWithRating(Image(11, "File:b.jpg"), Seq(Vote(11, 1, 0, rate = 0), Vote(11, 2, 0, rate = 0))))
+    val averages = Map(10L -> Map(1L -> BigDecimal(7), 7L -> BigDecimal("7.5")))
+
+    "have each criterion's average after Overall, empty where none, the juror columns the sums (U8)" in {
+      Csv.exportRates(files, jurors, round, criteria = criteria, averages = averages) === Seq(
+        Seq("Rank", "File", "Overall", "Quality", "Composition", "Juror1", "Juror2"),
+        Seq("1", "File:a.jpg", "14.50 (29 / 2)", "7.00", "7.50", "14", "15"),
+        Seq("2", "File:b.jpg", "0", "", "", "0", "0")
+      )
+    }
+
+    "have no criteria columns without criteria" in {
+      Csv.exportRates(files, jurors, round).head === Seq("Rank", "File", "Overall", "Juror1", "Juror2")
+    }
+
+    "write an admin's criterion name as text, never a formula" in {
+      val rows = Csv.exportRates(files, jurors, round, criteria = Seq(1L -> "=HYPERLINK(\"x\")", 2L -> "@SUM(1)"),
+        averages = averages).map(Csv.writeRow)
+      com.github.tototoshi.csv.CSVReader.open(new java.io.StringReader(rows.mkString)).all().head.slice(3, 5) ===
+        Seq("'=HYPERLINK(\"x\")", "'@SUM(1)")
+    }
+  }
+
   "formula injection" should {
     val starts = Seq("=", "+", "-", "@", "\t", "\r", " =", "\t+", " \t@")
 

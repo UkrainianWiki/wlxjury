@@ -16,7 +16,8 @@
         outputFormat: String = "wiki",
         wrapInTable: Boolean,
         rates: RateDistribution,
-        showAuthor: Boolean = false
+        showAuthor: Boolean = false,
+        criteria: org.intracer.wmua.CriteriaResults = org.intracer.wmua.CriteriaResults.empty
 )(implicit flash: Flash, messages: Messages, request: RequestHeader)
 
 @wrapInIf(tag: String, condition: Boolean)(content: Html) = {@if(condition) {<@tag> @content </@tag>} else {@content}}
@@ -30,6 +31,16 @@
         @if(round.isBinary) { @Messages("overall.votes")} else {@Messages("total.rating")}
     } else {
         @if(round.isBinary) { @Messages("selected")} else {@Messages("rating")}
+    }
+    @* a criteria round's rate is the sum of its criteria's (U2), as "min average rate" reads it (U7) *@
+    @if(round.hasCriteria) { <span class="small text-body-secondary">(@Messages("criteria.sum"))</span> }
+}
+
+@* a criteria round's columns after the rate: each criterion's average, the list's juror's or all
+   the jurors' (U8, as the CSV); its name a message's text or an admin's fallback text, escaped *@
+@criteriaHeads() = {
+    @for(criterion <- criteria.criteria) {
+        <th class="wlx-criterion-average"> @criterion.name </th>
     }
 }
 
@@ -83,6 +94,7 @@
                     }
                     <th> @Messages("file") </th>
                     <th> @ratedOrSelected(round.get, asUserId) </th>
+                    @criteriaHeads()
                     <th> @Messages("mpx") </th>
                     @for(juror <- jurors) {
                         <th> @juror.fullname </th>
@@ -125,6 +137,9 @@
                     } else {
                         <td>@file.rateString(round.get)</td>
                     }
+                    @for((_, average) <- criteria.of(file.pageId)) {
+                        <td class="wlx-criterion-average">@average.map(org.intracer.wmua.CriteriaResults.format)</td>
+                    }
                     <td>@file.image.mpxStr</td>
                     @for(juror <- jurors) {
                         @if(binaryVotes) {
@@ -146,6 +161,7 @@
                 }
                 <th> @Messages("file") </th>
                 <th> @ratedOrSelected(round.get, asUserId) </th>
+                @criteriaHeads()
                 <th> @Messages("mpx") </th>
                 @for(juror <- jurors) {
                     <th> @juror.fullname </th>

@@ -98,7 +98,7 @@ object LargeViewRenders {
     implicit val msgs: Messages = messages
     implicit val flash: Flash = Flash()
     val rates = criteriaRates.getOrElse(Map(1 -> 2, 2 -> 3))
-    val criteria = if (round.hasCriteria) roundCriteria.map(c => c -> rates.getOrElse(c.id.toInt, 0)) else Nil
+    val criteria = if (round.hasCriteria) roundCriteria.map(c => c -> rates.getOrElse(c.id.toInt, 0).toDouble) else Nil
     val list = RoundList(round, asUserId, filter = rate.fold[VoteFilter](VoteFilter.All)(VoteFilter.ofRate),
       view = GalleryView.parse(module).get)
     views.html.large.large(
