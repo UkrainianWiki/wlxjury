@@ -731,7 +731,8 @@ class LocalImageCacheServiceSpec extends Specification {
       val img    = mkImage()
       val src    = ImageIO.read(new ByteArrayInputStream(jpegBytes(800, 600)))
       svc1.saveResized(img, src, 800)
-      awaitFiles(svc1.localFile(img, neededWidths.head))
+      // every size, not just the first: a write still in flight would race svc2's walk
+      awaitFiles(neededWidths.filter(_ <= 800).map(svc1.localFile(img, _)): _*)
 
       val svc2 = mkService(tmpDir)
       Await.result(svc2.initRegistry(), 10.seconds)
