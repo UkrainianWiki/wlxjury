@@ -40,6 +40,8 @@ jobs:
         # Fails unless HEAD is exactly at a tag and the tree is clean: never publish a snapshot
         run: sbt -batch dynverAssertTagVersion
 
+      # Anonymous (anonymous-tests.diff): no SCALAWIKI_LOGIN / SCALAWIKI_PASSWORD or other wiki
+      # credentials anywhere in this workflow; live-wiki specs stay off (no -Dscalawiki.live).
       - name: Test
         run: sbt -batch test
 

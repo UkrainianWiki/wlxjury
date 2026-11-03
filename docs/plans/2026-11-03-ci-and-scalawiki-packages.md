@@ -213,7 +213,59 @@ Drafts:
 
 - `docs/plans/ci-drafts/scalawiki/publishing.diff`: `build.sbt` and `project/plugins.sbt` for scalawiki's `page-categories` (`git apply` there).
 - `docs/plans/ci-drafts/scalawiki/.github/workflows/publish.yml`: goes to scalawiki's `.github/workflows/publish.yml`.
+- `docs/plans/ci-drafts/scalawiki/anonymous-tests.diff`: scalawiki's tests made anonymous, and the live `WlmUaListsSpec` behind `-Dscalawiki.live=true` (see "Anonymous Wikimedia access").
 - `docs/plans/ci-drafts/wlxjury/consume-scalawiki-package.diff`: wlxjury's `build.sbt` once `0.7.0-M1` exists, relative to [55].
+
+## Anonymous Wikimedia access (added 2026-11-03)
+
+**Incident.** The owner of IlyaBot got many "multiple failed attempts to log in to Wikimedia Commons" notices after the bot password changed.
+
+- This machine has `COMMONS_USER` / `COMMONS_PASSWORD` in its environment.
+- `test/resources/application.conf` read them (`${?COMMONS_USER}`), so every test JVM's app logged in as IlyaBot, with the stale password.
+- scalawiki logs a new `MwBot` in from `SCALAWIKI_LOGIN` / `SCALAWIKI_PASSWORD` too, through the default `LoginInfo.fromEnv()` of `MwBot.fromHost` / `fromSite`. Those two aren't set here.
+
+**Rule, for both repositories:** tests and CI use Wikimedia anonymously. A test that reads live wikis at volume goes behind a flag that is off by default.
+
+**wlxjury (PR [55]):**
+
+- **Test config:** `commons.user = ""`, `commons.password = ""`, with no environment substitution, and a comment saying why. `CommonsLogin.credentials` drops empty values.
+- **Test-mode rule:** `CommonsLogin.credentials(config, mode)` gives no account in Mode.Test unless `-Dcommons.allowTestLogin=true`; it logs a warning instead. No spec or CI job sets the flag.
+- **Bot creation:** wlxjury creates its bots with `loginInfo = None` (`AppModule.bot`, `Global.commons`, `MonumentListSource`, and the test helper `CommonsImageFetcher`). scalawiki's environment login is never used; production's only account is `commons.user`, through `CommonsLogin`.
+- **`TestConfigAnonymousSpec` checks four things:**
+  - the test config resolves to an empty account even with `COMMONS_USER` etc. supplied;
+  - it has no `${?COMMONS_*}` / `${?SCALAWIKI_*}` substitution;
+  - the test JVM's loaded config gives `CommonsLogin` no account;
+  - the workflows pass no `COMMONS_*` / `SCALAWIKI_*` names and no `secrets.*` but `GITHUB_TOKEN`.
+- **Other paths:**
+  - The Gatling fixture uses the same test config in Mode.Test.
+  - The bench server maps the Wikimedia hosts to 127.0.0.1 and passes no Commons environment.
+  - The deployment test image runs with `--network none` and no `-e`. `test_database_restore` now also strips `COMMONS_*` / `SCALAWIKI_*` from the packaged release's environment.
+- **Workflows:** each says, in a comment, never to pass these credentials.
+- **Manual runs:** sbt and Docker runs on a machine with bot credentials use `env -u COMMONS_USER -u COMMONS_PASSWORD -u SCALAWIKI_LOGIN -u SCALAWIKI_PASSWORD` (CLAUDE.md, Testing).
+
+**wlxjury specs that read live Wikimedia, all off by default and anonymous:**
+
+| Spec | Flag | Live requests per run |
+|---|---|---|
+| `AppendImagesSpec` "get international images" | `-Dintegration=true` | one winners page's files (350+), in batches of 50: about 10–20 API requests |
+| `ImagesFromListSpec` | `-Dintegration=true` | 262 listed titles: about 6–10 API requests |
+| `LocalImageCacheServiceIntegrationSpec` | `-Dintegration=true` | a category listing and 5 image downloads |
+| `LocalImageCacheServiceDockerSpec` | `-Ddocker.tests=true` | a category listing and 50 image downloads (the heaviest) |
+
+Only the `-Dintegration=true` group runs in CI, weekly (`integration.yml`). Every other spec uses fakes, stubs or mock servers.
+
+**scalawiki (draft: `docs/plans/ci-drafts/scalawiki/anonymous-tests.diff`, for a PR in that repository).** Findings on `origin/page-categories`:
+
+| Where | What | Proposal |
+|---|---|---|
+| `LoginInfo.fromEnv` (default `loginInfo` of `MwBot.fromHost` / `fromSite`, so also `CachedBot.sessionHttp` and scalawiki's library code) | logs a new bot in as `SCALAWIKI_LOGIN` from the environment | returns None when `-Dscalawiki.anonymous=true`. The build sets that for the forked test JVM unless sbt runs with `-Dscalawiki.allowTestLogin=true`. Empty values count as unset |
+| `scalawiki-wlx` `WlmUaListsSpec` | runs in the default `sbt test`, also in scalawiki's CI. Reads every WLM-UA monument list from live `uk.wikipedia.org` (hundreds of requests without a local `http-cache/`) through `CachedBot`, which logs in from the environment | `skipAllUnless(-Dscalawiki.live=true)` and lazy vals, so a skipped spec makes no request. The build forwards `-Dscalawiki.live` |
+| `BaseMockServerSpec.getBot` | `fromHost` on the mock server with the default `loginInfo`: would send environment credentials to it | `loginInfo = None` |
+| `scalawiki-core/src/it/` (`BaseIntegrationSpec`, `IntegrationSpec`, `EditEncodingIntegrationTest`, `EditTokensIntegrationTest`) | log in with `LoginInfo.fromEnv()` and edit live wikis | not compiled or run: the build has no IntegrationTest configuration. Leave them out of the build; if they come back, put them behind `scalawiki.allowTestLogin` |
+| `LoginSpec`, `CachedBotSpec` and the other wlx specs | stub HTTP clients and mock servers; `CachedBotSpec` already passes `loginInfo = None` | none |
+| `.github/workflows/ci.yml`, the drafted `publish.yml` | pass no wiki credentials | a comment saying so |
+
+The two scalawiki diffs (`publishing.diff`, `anonymous-tests.diff`) both change `build.sbt`. Make them separate PRs and rebase the second on the first. The anonymous-tests one should go first.
 
 ## Rollout
 
@@ -283,4 +335,16 @@ Drafts:
 - **scalawiki build, before implementation:** the local compile wasn't run (the shared sbt lock was taken). scalawiki's own CI passed `sbt -v +test` on JDK 11 on the pinned commit `25951dbe` (run 40713977251, 2m15s), and `~/.ivy2/local` holds a 0.7.0-SNAPSHOT built with JDK 17.
 - **actionlint 1.7.7** (Docker image `rhysd/actionlint:1.7.7`, with its bundled shellcheck): 0 errors in `ci.yml`, `deployment.yml` and `integration.yml`, and in the scalawiki `publish.yml` draft.
 - **Compile with the resolver change:** `Test/compile` passed locally (142 s; 209 main and 242 test sources, cold test compile) with sbt at `-Xmx2g`. The same compile at CLAUDE.md's `-Xmx512m` resolved all dependencies and compiled the main sources without the removed resolvers, then ran out of heap on the test sources. That is why CI gives sbt 2 GB.
-- **First CI runs:** pending; recorded after the first run of PR [55].
+- **CI run 1** (`fff0e473`, 2026-11-03 10:13 UTC):
+  - **CI** [run 41617381909](https://github.com/UkrainianWiki/wlxjury/actions/runs/41617381909), `sbt test (mariadb:10.6.22)`: **success in 7m19s.**
+    - Cold caches: no sbt or Coursier cache yet, so scalawiki was built from source.
+    - `Test/compile` took 92 s, the suite 205 s.
+    - Scala: 1771 total, 0 failed, 0 errors, 10 skipped, 1 pending. Jest: 20 suites, 253 tests passed.
+    - Artifact `test-reports-0-attempt-1` (2.1 MB: 384 JUnit XML files and the check log).
+    - Much faster than the 20–28 min estimate: tmpfs and the 4-vCPU runner suit the suite.
+  - **Deployment tests** [run 41617381787](https://github.com/UkrainianWiki/wlxjury/actions/runs/41617381787):
+    - `Restore and release-script tests on the packaged release`: **success in 4m26s** (`sbt dist`, image build, and both test modules).
+    - `Python unit tests and shellcheck`: **failed in 11 s**. `test_adoption_accepts_the_shipped_application_conf` took the shipped `wlxjury.legacyPasswords.{retire,firstCheck,checkEvery}` (S6) for literal credentials, because the setting path contains "password".
+    - This failure was already on the stack, not caused by CI.
+    - Fixed in [55]: an exact-path allowlist (`NONSECRET_SETTINGS`) in `wlxjury-deploy.py`, with a test that any other key under `wlxjury.legacyPasswords` is still refused. Locally, all 61 Python tests pass on python:3.8-slim.
+- **CI run 2:** RESULT_CI2
