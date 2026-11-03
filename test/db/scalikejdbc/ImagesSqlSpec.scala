@@ -106,8 +106,8 @@ class ImagesSqlSpec extends FunSuite with AutoRollbackMunitDb {
       s"""select $allFields from selection s
           STRAIGHT_JOIN images i
           on i.page_id = s.page_id
-          where s.monument_id like ?""",
-      expectedParams = Seq("12%")
+          where s.monument_id like ? and NULLIF(LEFT(SUBSTRING_INDEX(s.monument_id, '-', 1), 3), '') = ?""",
+      expectedParams = Seq("12%", "12")
     )
   }
 
@@ -168,8 +168,8 @@ class ImagesSqlSpec extends FunSuite with AutoRollbackMunitDb {
       s"""select count(t.pi_on_i) from (select  i.page_id as pi_on_i from selection s
           STRAIGHT_JOIN images i
           on i.page_id = s.page_id
-          where s.round_id = ? and s.monument_id like ? ) t""",
-      expectedParams = Seq(5L, "12%"),
+          where s.round_id = ? and s.monument_id like ? and NULLIF(LEFT(SUBSTRING_INDEX(s.monument_id, '-', 1), 3), '') = ? ) t""",
+      expectedParams = Seq(5L, "12%", "12"),
       f = _.query(count = true)
     )
   }
@@ -177,8 +177,8 @@ class ImagesSqlSpec extends FunSuite with AutoRollbackMunitDb {
   dbTest("count - a juror's region on selection alone, without DISTINCT") { implicit session =>
     check(
       SelectionQuery(userId = Some(4L), roundId = Some(5L), regions = Set("12")),
-      "select COUNT(*) from selection s where s.jury_id = ? and s.round_id = ? and s.monument_id like ?",
-      expectedParams = Seq(4L, 5L, "12%"),
+      "select COUNT(*) from selection s where s.jury_id = ? and s.round_id = ? and s.monument_id like ? and NULLIF(LEFT(SUBSTRING_INDEX(s.monument_id, '-', 1), 3), '') = ?",
+      expectedParams = Seq(4L, 5L, "12%", "12"),
       f = _.query(count = true)
     )
   }

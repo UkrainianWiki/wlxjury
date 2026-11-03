@@ -67,6 +67,15 @@ class ContestFilesDbSpec extends Specification with BeforeAll with TestDb {
       ImageJdbc.regionCounts(FileList.Category(categoryId, deletedOnly = true)) === Map("07" -> 2, "14" -> 1)
     }
 
+    "count all their regions with those without a monument id, as many as the category's files" in new AutoRollbackDb {
+      val categoryId = categoryFixture()
+
+      val counts = ImageJdbc.categoryRegionCounts(categoryId)
+      counts === RegionCountCache.Counts(Map("07" -> 5, "14" -> 5, "123" -> 1), noRegion = 1)
+      counts.total === 12
+      ImageJdbc.categoryDeletedCount(categoryId) === 3
+    }
+
     "be only those deleted on Commons, the latest deleted first, all or in a region" in new AutoRollbackDb {
       val deleted = FileList.Category(categoryFixture(), deletedOnly = true)
 

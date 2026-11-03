@@ -49,7 +49,7 @@
                 @if(regions.nonEmpty) {
                     @regionNav(
                         (region: String) =>
-                            routes.GalleryController.query("byrate", Some(asUserId), 1, region, roundId.asInstanceOf[Long], rate).url,
+                            routes.GalleryController.query("byrate", Some(asUserId), 1, region, roundId.asInstanceOf[Long], rate, rated).url,
                         maybeRound, region, regions)
                 }
 
