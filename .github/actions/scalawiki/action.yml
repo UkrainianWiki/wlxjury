@@ -31,6 +31,7 @@ runs:
         # Public repository: no token. GitHub serves a reachable commit by its SHA.
         git fetch -q --depth 1 https://github.com/UkrainianWiki/scalawiki.git "$SCALAWIKI_SHA"
         git checkout -q FETCH_HEAD
+        # publishLocal runs no tests and makes no Wikimedia requests; no credentials here.
         # Only the modules wlxjury uses, and scalawiki-core's own dependency; no Scaladoc.
         sbt -J-Xmx1g -J-Dfile.encoding=UTF-8 \
           'set ThisBuild / Compile / packageDoc / publishArtifact := false' \

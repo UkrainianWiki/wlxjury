@@ -47,10 +47,10 @@ object Global {
   /** The app's Commons bot: `MwBot.fromHost` keeps one bot (and its session cookies) per
     * host, so this is [[modules.AppModule.bot]] too, logged in by the import jobs'
     * [[services.imports.CommonsLogin]] when credentials are set. Anonymous where no app
-    * has started (scripts, some specs), unless `SCALAWIKI_LOGIN` / `SCALAWIKI_PASSWORD`
-    * are set: then scalawiki logs it in as that account when it is created.
+    * has started (scripts, specs): created with `loginInfo = None`, so scalawiki doesn't log
+    * it in as `SCALAWIKI_LOGIN` / `SCALAWIKI_PASSWORD` from the environment.
     */
-  lazy val commons: MwBot = MwBot.fromHost(COMMONS_WIKIMEDIA_ORG)
+  lazy val commons: MwBot = MwBot.fromHost(COMMONS_WIKIMEDIA_ORG, loginInfo = None)
 
   val useLegacyThumbUrl = true
   val thumbUrl: (Image, Int, Int) => String =

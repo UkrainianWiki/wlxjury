@@ -216,6 +216,9 @@ class PackagedReleaseTest(DatabaseFixture):
                                   "GRANT ALL PRIVILEGES ON jury.* TO 'app'@'localhost';").encode())
         environment = os.environ.copy()
         environment.update(env)
+        # The release reads commons.user from the environment; tests never log in to Commons.
+        for name in ('COMMONS_USER', 'COMMONS_PASSWORD', 'SCALAWIKI_LOGIN', 'SCALAWIKI_PASSWORD'):
+            environment.pop(name, None)
         environment['JAVA_OPTS'] = '-Xmx512m -Dfile.encoding=UTF-8'
         # production.conf requires the jury's host names (AllowedHostsFilter)
         environment['WLXJURY_ALLOWED_HOSTS'] = 'jury.example.org'

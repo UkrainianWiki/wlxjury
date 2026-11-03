@@ -69,6 +69,19 @@ sbt "testOnly db.scalikejdbc.*"                       # Run all DB tests
 
 Tests use Testcontainers (Docker) to spin up a MariaDB 10.6 instance automatically (`SharedTestDb.Image`; `-Dwlxjury.test.mariadb-image=mariadb:10.11.14` runs them, and the Gatling fixture, on another server version). No manual DB setup needed for tests. Test configuration is at `test/resources/application.conf`.
 
+**Tests are anonymous to Wikimedia; live, high-load tests are opt-in.**
+- **No account in tests:** the test config sets `commons.user` and `commons.password` to `""`, with no `${?COMMONS_USER}` substitution.
+  - `CommonsLogin.credentials` gives no account in Mode.Test unless `-Dcommons.allowTestLogin=true`, which no spec or CI job sets.
+  - wlxjury creates its bots with `MwBot.fromHost(..., loginInfo = None)`, so scalawiki doesn't log in as `SCALAWIKI_LOGIN`.
+  - `TestConfigAnonymousSpec` guards all of this, and also checks that the CI workflows pass no `COMMONS_*` / `SCALAWIKI_*` credentials and no secrets but `GITHUB_TOKEN`.
+  - Why: a machine with the bot's credentials in its environment logged the bot in from every test JVM, so a changed bot password became a stream of failed logins on the bot's account.
+- **Specs that read live Wikimedia** run only with a flag, and anonymously:
+  - `-Dintegration=true`: `AppendImagesSpec` "get international images" (one winners page, 350+ files), `ImagesFromListSpec` (262 listed files) and `LocalImageCacheServiceIntegrationSpec` (5 downloads).
+  - `-Ddocker.tests=true`: `LocalImageCacheServiceDockerSpec` (50 files from a category, and their downloads).
+  - Nothing reaches live Wikimedia by default. CI runs the `-Dintegration=true` group weekly only (`.github/workflows/integration.yml`).
+- **Running sbt or Docker by hand on a machine that has bot credentials:** prefix the command with `env -u COMMONS_USER -u COMMONS_PASSWORD -u SCALAWIKI_LOGIN -u SCALAWIKI_PASSWORD`.
+
+
 ### Performance tests (Gatling)
 ```bash
 sbt gatlingAll                                                  # All simulations, RoundDistribution first
@@ -187,4 +200,4 @@ Tapir endpoints in `app/api/Api.scala`, served by Tapir's Play interpreter (`tap
 
 ### Wikimedia Commons Integration
 
-`scalawiki-core` and `scalawiki-wlx` (resolved from `Resolver.mavenLocal` or bintray) provide the Commons API client (`MwBot`). Credentials are optional (`commons.user` / `commons.password` env vars) but improve API rate limits.
+`scalawiki-core` and `scalawiki-wlx` (from `~/.ivy2/local` via scalawiki's `publishLocal`, or `~/.m2`; CI builds the pinned commit from source, see `docs/plans/2026-11-03-ci-and-scalawiki-packages.md`) provide the Commons API client (`MwBot`). The production account is optional (`commons.user` / `commons.password`, from `COMMONS_USER` / `COMMONS_PASSWORD` on the server) but improves API rate limits; tests never use it (Testing).

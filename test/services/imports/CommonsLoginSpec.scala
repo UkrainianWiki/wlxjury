@@ -4,7 +4,7 @@ import org.intracer.wmua.JuryTestHelpers
 import org.mockito.Mockito.{never, timeout, times, verify}
 import org.scalawiki.MwBot
 import org.specs2.mutable.Specification
-import play.api.Configuration
+import play.api.{Configuration, Mode}
 
 import scala.concurrent.duration._
 import scala.concurrent.{Await, ExecutionContext, Future, Promise}
@@ -249,11 +249,20 @@ class CommonsLoginSpec extends Specification with JuryTestHelpers {
   "credentials" should {
 
     "need both the user and the password" in {
-      CommonsLogin.credentials(Configuration("commons.user" -> "IlyaBot@jury", "commons.password" -> "secret")) ===
+      CommonsLogin.credentials(Configuration("commons.user" -> "IlyaBot@jury", "commons.password" -> "secret"), Mode.Prod) ===
         Some(credentials)
-      CommonsLogin.credentials(Configuration("commons.user" -> "IlyaBot@jury")) === None
-      CommonsLogin.credentials(Configuration("commons.user" -> "", "commons.password" -> "")) === None
-      CommonsLogin.credentials(Configuration.empty) === None
+      CommonsLogin.credentials(Configuration("commons.user" -> "IlyaBot@jury"), Mode.Prod) === None
+      CommonsLogin.credentials(Configuration("commons.user" -> "", "commons.password" -> ""), Mode.Prod) === None
+      CommonsLogin.credentials(Configuration.empty, Mode.Prod) === None
+    }
+
+    "be None in Mode.Test, unless commons.allowTestLogin is true" in {
+      val set = Configuration("commons.user" -> "IlyaBot@jury", "commons.password" -> "secret")
+      (CommonsLogin.credentials(set, Mode.Test) must beNone) and
+        (CommonsLogin.credentials(set ++ Configuration(CommonsLogin.AllowTestLoginKey -> false), Mode.Test) must beNone) and
+        (CommonsLogin.credentials(set ++ Configuration(CommonsLogin.AllowTestLoginKey -> true), Mode.Test) must
+          beSome(credentials)) and
+        (CommonsLogin.credentials(set, Mode.Dev) must beSome(credentials))
     }
 
     "leave the password out of toString" in {

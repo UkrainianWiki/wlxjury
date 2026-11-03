@@ -2,6 +2,8 @@
 # shellcheck, and the integration tests in the disposable Ubuntu + MariaDB 10.6 image against the
 # packaged release (sbt dist). The sbt specs of that list run in ci.yml's full suite.
 # Plan: docs/plans/2026-11-03-ci-and-scalawiki-packages.md
+# Wikimedia access is anonymous (CLAUDE.md, Testing): never pass COMMONS_* or SCALAWIKI_*
+# credentials, as env or secrets, to any job here. TestConfigAnonymousSpec checks it.
 name: Deployment tests
 
 on:

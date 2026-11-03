@@ -2,7 +2,7 @@ package services.imports
 
 import org.scalawiki.MwBot
 import play.api.libs.json.{JsValue, Json}
-import play.api.{Configuration, Logging}
+import play.api.{Configuration, Logging, Mode}
 
 import java.util.concurrent.atomic.{AtomicBoolean, AtomicLong}
 import scala.concurrent.Await
@@ -133,6 +133,9 @@ class CommonsLogin(
 
 object CommonsLogin {
 
+  /** Not `Logging`: the class imports this object's members and has its own `logger`. */
+  private val credentialsLogger = play.api.Logger(classOf[CommonsLogin])
+
   /** Page ids or titles per request without `apihighlimits`. */
   val Limit = 50
 
@@ -162,12 +165,24 @@ object CommonsLogin {
   /** Anonymous requests: no credentials, nothing to check. */
   def anonymous(bot: MwBot): CommonsLogin = new CommonsLogin(bot, None)
 
-  /** `commons.user` and `commons.password`, if both are set and not empty. */
-  def credentials(config: Configuration): Option[Credentials] =
-    for {
+  /** Lets a Mode.Test app log in: `-Dcommons.allowTestLogin=true`. No spec or CI job sets it. */
+  val AllowTestLoginKey = "commons.allowTestLogin"
+
+  /** `commons.user` and `commons.password`, if both are set and not empty. None in
+    * Mode.Test unless [[AllowTestLoginKey]] is true: tests use Commons anonymously, so a
+    * machine's credentials (or a stale bot password) can't turn test runs into logins.
+    */
+  def credentials(config: Configuration, mode: Mode): Option[Credentials] = {
+    val configured = for {
       user <- config.getOptional[String]("commons.user").filter(_.nonEmpty)
       password <- config.getOptional[String]("commons.password").filter(_.nonEmpty)
     } yield Credentials(user, password)
+    if (mode != Mode.Test || config.getOptional[Boolean](AllowTestLoginKey).contains(true)) configured
+    else {
+      configured.foreach(c => credentialsLogger.warn(s"Not logging in as ${c.user} in Mode.Test: set -D$AllowTestLoginKey=true to allow it"))
+      None
+    }
+  }
 
   /** Who a session is.
     * @param user the account's name; None for an anonymous session

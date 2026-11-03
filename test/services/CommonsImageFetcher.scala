@@ -15,7 +15,8 @@ trait CommonsImageFetcher {
 
   /** Fetch up to `limit` eligible images from a Commons category via scalawiki. */
   def fetchImagesFromCommons(category: String, limit: Int): Seq[Image] = {
-    val bot   = MwBot.fromHost("commons.wikimedia.org")
+    // anonymous: tests never log in (scalawiki's default reads SCALAWIKI_LOGIN)
+    val bot   = MwBot.fromHost("commons.wikimedia.org", loginInfo = None)
     val pages = Await.result(
       bot
         .page(category)

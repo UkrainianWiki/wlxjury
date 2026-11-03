@@ -1,8 +1,11 @@
 # The specs that read the live Wikimedia Commons, skipped without -Dintegration=true (CLAUDE.md).
+# They read anonymously: a few dozen API requests and 5 image downloads a run.
 # Weekly and on demand, never on PRs: they depend on Commons' content and availability.
 # Scheduled runs use the workflow file on the default branch (master), and GitHub disables
 # schedules in a public repository after 60 days without activity.
 # Plan: docs/plans/2026-11-03-ci-and-scalawiki-packages.md
+# Wikimedia access is anonymous (CLAUDE.md, Testing): never pass COMMONS_* or SCALAWIKI_*
+# credentials, as env or secrets, to any job here. TestConfigAnonymousSpec checks it.
 name: Live Commons specs
 
 on:

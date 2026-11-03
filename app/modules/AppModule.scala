@@ -42,17 +42,20 @@ class AppModule(environment: Environment, configuration: Configuration)
 
   /** The Commons bot. `MwBot.fromHost` keeps one per host, so the session [[CommonsLogin]]
     * logs in is the one every request uses, [[controllers.Global.commons]]'s included (both
-    * `commons.wikimedia.org`). The first `fromHost` call creates it, logged in at once as
-    * `SCALAWIKI_LOGIN` / `SCALAWIKI_PASSWORD` when those are set in the environment;
-    * [[CommonsLogin]] then finds the session logged in and keeps that account instead of
-    * `commons.user`, so leave them unset on the server.
+    * `commons.wikimedia.org`). Created anonymous (`loginInfo = None`): scalawiki's default
+    * would log it in at once as `SCALAWIKI_LOGIN` / `SCALAWIKI_PASSWORD` from the
+    * environment, in tests too. The app's only account is `commons.user`, through
+    * [[CommonsLogin]].
     */
   @Provides
-  def bot: MwBot = MwBot.fromHost(configuration.get[String]("commons.host"))
+  def bot: MwBot = MwBot.fromHost(configuration.get[String]("commons.host"), loginInfo = None)
 
-  /** One for the app: it keeps what the session is between import steps. */
+  /** One for the app: it keeps what the session is between import steps. No account in
+    * Mode.Test unless `commons.allowTestLogin` ([[CommonsLogin.credentials]]).
+    */
   @Provides @Singleton
-  def commonsLogin(bot: MwBot): CommonsLogin = new CommonsLogin(bot, CommonsLogin.credentials(configuration))
+  def commonsLogin(bot: MwBot): CommonsLogin =
+    new CommonsLogin(bot, CommonsLogin.credentials(configuration, environment.mode))
 
   /** One for the app: it batches the checks of all requests and keeps their answers. */
   @Provides @Singleton
