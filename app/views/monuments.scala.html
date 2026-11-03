@@ -6,8 +6,8 @@
 
 @main("gallery", null, 0, None, Seq.empty, gallery = false)  {
 
-    <script type="text/javascript" src="@routes.Assets.at("javascripts/bootstrap-multiselect.js")"></script>
-    <link rel="stylesheet" href="@routes.Assets.at("stylesheets/bootstrap-multiselect.css")" type="text/css"/>
+    <script type="text/javascript" src="@routes.Assets.versioned("javascripts/bootstrap-multiselect.js")"></script>
+    <link rel="stylesheet" href="@routes.Assets.versioned("stylesheets/bootstrap-multiselect.css")" type="text/css"/>
 
     <script type="text/javascript">
     $(document).ready(function() {
