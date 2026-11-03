@@ -84,9 +84,12 @@ case "$cmd" in
     [[ -n "${BENCH_JOBS_WORKERS:-}" ]] && envs+=(-e "BENCH_JOBS_WORKERS=$BENCH_JOBS_WORKERS")
     [[ -n "${BENCH_JOBS_CHUNK_ROWS:-}" ]] && envs+=(-e "BENCH_JOBS_CHUNK_ROWS=$BENCH_JOBS_CHUNK_ROWS")
     # The server's limits, by count only: 2 CPUs (no quota), 4.9 GB RAM + 2 GB swap,
-    # no I/O throttling; MariaDB and the app share them.
+    # no I/O throttling; MariaDB and the app share them. The Wikimedia hosts point to
+    # 127.0.0.1: a benchmark never calls Commons (a call fails at once, visibly).
     dk run -d --name "$NAME" \
       --cpuset-cpus=0,1 --memory=4900m --memory-swap=6900m \
+      --add-host commons.wikimedia.org:127.0.0.1 --add-host upload.wikimedia.org:127.0.0.1 \
+      --add-host uk.wikipedia.org:127.0.0.1 --add-host www.wikidata.org:127.0.0.1 \
       -p "$APP_PORT:9000" -p "$DB_PORT:3306" \
       -v "$DATA_VOL:/var/lib/mysql" -v "$DISTS_VOL:/opt/dists:ro" \
       -v "$(winpath "$REPO/bench/cnf"):/bench/cnf:ro" \
