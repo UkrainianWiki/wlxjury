@@ -1,6 +1,6 @@
 package controllers
 
-import db.scalikejdbc.TestDb
+import db.scalikejdbc.PlayTestDb
 import org.intracer.wmua.Image
 import org.specs2.mutable.Specification
 import play.api.test.Helpers._
@@ -10,7 +10,7 @@ import java.io.{ByteArrayOutputStream, File}
 import java.nio.file.Files
 import javax.imageio.ImageIO
 
-class ImageProxyControllerSpec extends Specification with TestDb {
+class ImageProxyControllerSpec extends Specification with PlayTestDb {
 
   sequential
 

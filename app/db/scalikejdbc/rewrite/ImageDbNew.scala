@@ -88,15 +88,15 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
       result
     }
 
-    def list(): Seq[ImageWithRating] = {
+    def list()(implicit session: DBSession = autoSession): Seq[ImageWithRating] = {
       postProcessor(SQL(query()).map(reader).list())
     }
 
-    def count(): Int = {
+    def count()(implicit session: DBSession = autoSession): Int = {
       single(query(count = true))
     }
 
-    def imageRank(pageId: Long): Int = {
+    def imageRank(pageId: Long)(implicit session: DBSession = autoSession): Int = {
       single(
         imageRankSql(
           pageId,
@@ -144,7 +144,7 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
       }
     }
 
-    def single(sql: String): Int = {
+    def single(sql: String)(implicit session: DBSession = autoSession): Int = {
       SQL(sql).map(_.int(1)).single().getOrElse(0)
     }
 

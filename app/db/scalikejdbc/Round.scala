@@ -53,7 +53,7 @@ case class Round(
     mediaType: Option[String] = None
 ) extends HasId {
 
-  def availableJurors: Seq[User] =
+  def availableJurors(implicit session: DBSession = AutoSession): Seq[User] =
     User.findAllBy(
       sqls.in(User.u.roles, roles.toSeq).and.eq(User.u.contestId, contestId)
     )
@@ -222,7 +222,7 @@ object Round extends RoundRepo with CRUDMapper[Round] {
       mediaType = rs.stringOpt(c.mediaType)
     ).withFixedCategories
 
-  def create(round: Round): Round = {
+  def create(round: Round)(implicit session: DBSession = AutoSession): Round = {
     val id = withSQL {
       insert
         .into(Round)
@@ -265,7 +265,7 @@ object Round extends RoundRepo with CRUDMapper[Round] {
         "active" -> round.active
       )
 
-  def activeRounds(contestId: Long): Seq[Round] =
+  def activeRounds(contestId: Long)(implicit session: DBSession = AutoSession): Seq[Round] =
     where("contestId" -> contestId, "active" -> true)
       .orderBy(r.id)
       .apply()

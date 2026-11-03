@@ -282,9 +282,26 @@ object User extends CRUDMapper[User] {
       email: String,
       password: String,
       roles: Set[String],
-      contestId: Option[Long] = None,
-      lang: Option[String] = None,
-      createdAt: Option[ZonedDateTime] = Some(ZonedDateTime.now)
+      contestId: Option[Long]
+  ): User = create(fullname, email, password, roles, contestId, None, Some(ZonedDateTime.now))
+
+  def create(
+      fullname: String,
+      email: String,
+      password: String,
+      roles: Set[String],
+      contestId: Option[Long],
+      lang: Option[String]
+  ): User = create(fullname, email, password, roles, contestId, lang, Some(ZonedDateTime.now))
+
+  def create(
+      fullname: String,
+      email: String,
+      password: String,
+      roles: Set[String],
+      contestId: Option[Long],
+      lang: Option[String],
+      createdAt: Option[ZonedDateTime]
   ): User = {
     val id = withSQL {
       insert
@@ -311,7 +328,7 @@ object User extends CRUDMapper[User] {
     )
   }
 
-  def create(user: User): User = {
+  def create(user: User)(implicit session: DBSession = AutoSession): User = {
     val id = withSQL {
       insert
         .into(User)

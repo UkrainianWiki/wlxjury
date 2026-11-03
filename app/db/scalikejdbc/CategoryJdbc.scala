@@ -21,7 +21,7 @@ object CategoryJdbc extends CRUDMapper[Category] {
     title = rs.string(c.title)
   )
 
-  def findOrInsert(title: String): Long = {
+  def findOrInsert(title: String)(implicit session: DBSession = AutoSession): Long = {
     where("title" -> title).apply().headOption.map(_.id).getOrElse {
       createWithAttributes("title" -> title)
     }
@@ -32,27 +32,25 @@ object CategoryLinkJdbc extends SQLSyntaxSupport[CategoryLink] {
   val cl = CategoryLinkJdbc.syntax("cl")
   override val tableName = "category_members"
 
-  def addToCategory(categoryId: Long, images: Seq[Image]): Unit = {
+  def addToCategory(categoryId: Long, images: Seq[Image])(implicit session: DBSession = AutoSession): Unit = {
     val categoryLinks = images.map { image => CategoryLink(categoryId, image.pageId) }
 
     batchInsert(categoryLinks)
   }
 
-  def batchInsert(links: Seq[CategoryLink]): Unit = {
+  def batchInsert(links: Seq[CategoryLink])(implicit session: DBSession = AutoSession): Unit = {
     val column = CategoryLinkJdbc.column
 
-    DB localTx { implicit session =>
-      val batchParams: Seq[Seq[Any]] = links.map(link => Seq(
-        link.categoryId,
-        link.pageId
-      ))
+    val batchParams: Seq[Seq[Any]] = links.map(link => Seq(
+      link.categoryId,
+      link.pageId
+    ))
 
-      withSQL {
-        insert.into(CategoryLinkJdbc).namedValues(
-          column.categoryId -> sqls.?,
-          column.pageId -> sqls.?
-        )
-      }.batch(batchParams: _*).apply()
-    }
+    withSQL {
+      insert.into(CategoryLinkJdbc).namedValues(
+        column.categoryId -> sqls.?,
+        column.pageId -> sqls.?
+      )
+    }.batch(batchParams: _*).apply()
   }
 }
