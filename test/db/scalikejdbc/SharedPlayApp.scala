@@ -56,7 +56,7 @@ object SharedPlayApp {
 
   private val dataTables = Seq(
     "account_token", "api_token", "job", "legacy_password_retired", "criteria_rate", "criteria_rate_orphan", "round_image", "vote", "vote_aside", "image_renames", "category_members", "comment",
-    "criteria", "round_criterion", "round_user", "user_contest", "images", "round", "users",
+    "criteria", "round_criterion", "round_user", "user_contest", "user_identity", "images", "round", "users",
     "category", "monument", "contest_jury"
   )
 

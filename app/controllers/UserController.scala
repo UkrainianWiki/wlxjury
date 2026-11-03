@@ -1,6 +1,6 @@
 package controllers
 
-import db.scalikejdbc.{AccountTokenJdbc, ApiTokenJdbc, ContestJuryJdbc, User, UserContestJdbc}
+import db.scalikejdbc.{AccountTokenJdbc, ApiTokenJdbc, ContestJuryJdbc, User, UserContestJdbc, UserIdentityJdbc}
 import org.intracer.wmua._
 import org.scalawiki.dto.cmd.query.Query
 import org.scalawiki.dto.cmd.query.list._
@@ -11,6 +11,7 @@ import play.api.data.validation.{Constraint, Constraints, Valid}
 import play.api.i18n.{I18nSupport, Lang, Messages}
 import play.api.mvc.{Action, AnyContent, ControllerComponents, EssentialAction, Result}
 import modules.BlockingExecutionContext
+import services.oauth.{OAuthProviders, OAuthSettings}
 import services.{ApiTokenService, PasswordHasher, UserService}
 import spray.util.pimpFuture
 
@@ -23,7 +24,8 @@ import scala.util.{Failure, Success, Try}
 class UserController @Inject()(cc: ControllerComponents,
                                userService: UserService,
                                blocking: BlockingExecutionContext,
-                               themeCookies: ThemeCookies = ThemeCookies.default)
+                               themeCookies: ThemeCookies = ThemeCookies.default,
+                               oauthSettings: OAuthSettings = OAuthSettings.disabled)
     extends Secured(cc)
     with I18nSupport {
 
@@ -174,8 +176,12 @@ class UserController @Inject()(cc: ControllerComponents,
       if (user.theme.flatMap(Theme.find).isEmpty) user.copy(theme = Some(Theme.of(request).value)) else user
     val nonce = ApiTokensCard.newNonce()
     val card = ApiTokensCard(ApiTokenJdbc.findByUser(user.getId), tokenForm, newToken, nonce, notice)
-    status(views.html.editUser(user, userForm.getOrElse(editUserForm.fill(withTheme)), user.currentContest, Some(card)))
-      .addingToSession(ApiTokensCard.NonceKey -> nonce)
+    val linkNonce = ApiTokensCard.newNonce()
+    val linked = LinkedAccountsCard(UserIdentityJdbc.findByUser(user.getId), oauthSettings.providersFor(request.host),
+      linkNonce)
+    status(views.html.editUser(user, userForm.getOrElse(editUserForm.fill(withTheme)), user.currentContest, Some(card),
+      Some(linked)))
+      .addingToSession(ApiTokensCard.NonceKey -> nonce, OAuthController.LinkNonceKey -> linkNonce)
   }
 
   /** Creates a personal API token of the signed-in user (a POST of their profile's form, with
@@ -377,6 +383,15 @@ class UserController @Inject()(cc: ControllerComponents,
     }
   }
 
+  /** An admin's change of another account's email or wiki account: its Google and Wikimedia
+    * identities (or one provider's), which may have been linked by the old one, are unlinked.
+    */
+  private def unlinkIdentities(userId: Long, provider: Option[String]): Unit = {
+    val unlinked = UserIdentityJdbc.deleteByUser(userId, provider)
+    if (unlinked > 0)
+      play.api.Logger("security.account").info(s"oauth_unlinked_by_admin accountId=$userId count=$unlinked")
+  }
+
   /** 503 with the form: no turn to hash the password came in time. */
   private def passwordBusy(user: User, form: Form[User], contestId: Option[Long])(
       implicit request: play.api.mvc.Request[_]): Result =
@@ -394,8 +409,11 @@ class UserController @Inject()(cc: ControllerComponents,
 
     if (canEditAccount(user, editedUser)) {
       User.updateUser(userId, formUser.fullname, formUser.lang, formUser.sort)
-      if (!own && formUser.wikiAccount.map(_.trim).filter(_.nonEmpty) != editedUser.wikiAccount.map(_.trim).filter(_.nonEmpty))
+      if (!own && formUser.wikiAccount.map(_.trim).filter(_.nonEmpty) != editedUser.wikiAccount.map(_.trim).filter(_.nonEmpty)) {
         User.setWikiAccount(userId, newWiki)
+        // the name may now be someone else's: a Wikimedia account linked to the old one goes
+        unlinkIdentities(userId, Some(OAuthProviders.Wikimedia))
+      }
       // a new password ends the account's other sessions; this one stays, with the new version
       newVersion = newHash.flatMap(User.setPasswordHash(userId, _))
       for (_ <- newVersion)
@@ -410,6 +428,9 @@ class UserController @Inject()(cc: ControllerComponents,
           // an invitee who has not set a password: a fixed address, still unverified, and a
           // new invitation to it (the old one was bound to the old address)
           User.setEmail(userId, formUser.email, verified = false)
+          // the invitee may now be someone else: a Google or Wikimedia account linked by the old
+          // address goes (as the old address's invitation, which no longer matches)
+          unlinkIdentities(userId, None)
           val updated = User.findById(userId).map(u => editedUser.copy(email = u.email, emailVerifiedAt = None))
           for (u <- updated if u.emailLo.nonEmpty && !u.isRoot && u.contestRole.exists(User.ACCESS_ROLES.contains))
             notices += Messages(if (userService.invite(user, u, contest, None)) "invitation.sent" else "invitation.not.sent")
@@ -686,6 +707,8 @@ class UserController @Inject()(cc: ControllerComponents,
       User.findById(id).filter(_.deletedAt.isEmpty).fold[Result](
         NotFound(views.html.errorPage(Some(user), "error.title", "error.user.not.found"))
       ) { found =>
+        // B1: the account may be about to change hands; its holder re-links after accepting
+        unlinkIdentities(id, None)
         val message =
           if (found.emailLo.isEmpty) "password.link.no.email"
           else if (userService.sendPasswordLink(user, found)) "password.link.sent"

@@ -1,6 +1,6 @@
-@(loginForm: Form[(String, String)], returnTo: Option[String] = None, noAccounts: Boolean = false)(implicit flash: Flash, messages: Messages, req: RequestHeader)
+@(loginForm: Form[(String, String)], returnTo: Option[String] = None, noAccounts: Boolean = false, providers: Seq[String] = Nil)(implicit flash: Flash, messages: Messages, req: RequestHeader)
 
 
-@login(loginForm, returnTo, noAccounts)
+@login(loginForm, returnTo, noAccounts, providers)
 
 

@@ -1,0 +1,44 @@
+@(card: controllers.LinkedAccountsCard)(implicit flash: Flash, messages: Messages, req: RequestHeader)
+@import helper._
+@* The own profile's Google and Wikimedia accounts (UserController, OAuthController): each linked
+   one with Unlink (a POST form with the CSRF token), and a Link for each provider this host
+   offers (a link: it leaves for the provider). Flash messages: keys only. *@
+<section class="card mt-4" id="linked-accounts" aria-labelledby="linked-accounts-title">
+    <div class="card-body">
+        <h2 class="h5 card-title" id="linked-accounts-title">@Messages("oauth.linked.accounts")</h2>
+
+        @flash.get(controllers.OAuthController.FlashSuccess).filter(controllers.OAuthController.MessageKeys.contains).map { key =>
+            <div class="alert alert-success" role="status">@Messages(key)</div>
+        }
+        @flash.get(controllers.OAuthController.FlashError).filter(controllers.OAuthController.MessageKeys.contains).map { key =>
+            <div class="alert alert-danger" role="alert">@Messages(key)</div>
+        }
+
+        <table class="table table-sm align-middle mb-0">
+        @for(provider <- card.rows) {
+            @defining(card.identities.filter(_.provider == provider)) { linked =>
+                @for(identity <- linked) {
+                    <tr>
+                        <td>@Messages(s"oauth.provider.$provider")</td>
+                        <td>@identity.label</td>
+                        <td class="text-end">
+                        @form(routes.OAuthController.unlink(provider), Symbol("class") -> "d-inline") {
+                            @csrfField()
+                            <input type="hidden" name="subject" value="@identity.subject">
+                            <button type="submit" class="btn btn-outline-secondary btn-sm">@Messages("oauth.unlink")</button>
+                        }
+                        </td>
+                    </tr>
+                }
+                @if(card.providers.contains(provider)) {
+                    <tr>
+                        <td>@Messages(s"oauth.provider.$provider")</td>
+                        <td class="text-body-secondary">@if(linked.isEmpty) {@Messages("oauth.not.linked")}</td>
+                        <td class="text-end"><a id="link-@provider" class="btn btn-outline-secondary btn-sm" href="@routes.OAuthController.link(provider, Some(card.linkNonce))">@Messages("oauth.connect")</a></td>
+                    </tr>
+                }
+            }
+        }
+        </table>
+    </div>
+</section>
