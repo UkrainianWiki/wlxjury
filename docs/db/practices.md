@@ -14,8 +14,9 @@ move, `docs/plans/2026-10-19-mariadb-10.11.md`), Flyway 13 run by `db.Migrations
 the code doesn't follow a rule yet. **Sources:** the
 write-path document (`docs/plans/2026-11-03-write-path-simplification.md`, matrix §2,
 decisions W1–W10 §9, results §11), the round-images plan §5 and §12–§13, the criteria plan
-(C1/C2), the follow-ups plan B9–B12, `docs/db-performance-analysis.md`, the PR review triage
-(`docs/plans/2026-11-03-pr-review-triage.md` on `origin/stack/series-doc`).
+(C1/C2), the follow-ups plan B9–B12, `docs/history/db-performance-analysis.md` (2026-03), the PR
+review triage (`docs/plans/2026-11-03-pr-review-triage.md`, only on the branch
+`origin/stack/series-doc`: `git show origin/stack/series-doc:docs/plans/2026-11-03-pr-review-triage.md`).
 
 ## Contents
 
@@ -199,43 +200,16 @@ over `vote`. Use `vote` for per-juror rates and sums. Rewrites go behind a parit
 
 **3.8 Indexes cost writes.** Each secondary index on `vote` is one more insert-intention and
 row lock per vote row in a 15k-row step. Add one with a measured read gain, drop one nothing
-uses (`docs/db-performance-analysis.md` lists the candidates; check with
-`information_schema.STATISTICS` and the plans first).
+uses (§11 V11 lists the candidates; check with `information_schema.STATISTICS` and the plans
+first).
 
 ## 4. Benchmarks
 
-The progressive method of CLAUDE.md ("Agent efficiency"), applied to database work.
-
-**4.1 Reuse, then pilot, then expand.** Check the plans for a measurement of the same query
-first (B10–B12, `db-performance-analysis.md`, write-path §4). Then a small paired pilot on the
-*app path* (`GalleryLatencyBenchmark`, a Gatling simulation), not only the narrow SQL: W10's
-−497 ms was the SQL's; the app path's ordering constraints moved it to P2b. Expand only if the
-result could change the decision; estimate the runtime before a matrix.
-
-**4.2 Paired and interleaved.** A and B in one warmed JVM on the same inputs, order
-alternating (A, B, B, A per block, or AB/BA pairs), every pair's results compared for equality
-(B10 added that: a wrong count had been timed unnoticed). *Examples:*
-`RegionCountPairedBenchmark`, `RoundImageBenchmark`; `WritePathReadBenchmark` (15
-interleaved pairs after 2 warm-ups) is on the investigation branch
-`ukwikidev/write-path-investigation` only.
-
-**4.3 Same settings for both.** SQL debug logging off
-(`-Dscalikejdbc.global.loggingSQLAndTime.enabled=false`), recorded for both variants; the
-same buffer pool and fixture; no other DB benchmark or test running against the server.
-
-**4.4 Absolute deltas and variation.** Medians with min–max (or p50/p95), the paired delta's
-median and range, "B faster in k of n", per-block deltas. Never a percentage of one query as
-user impact. Keep outliers; state the limitations (one run, the Docker VM, harness vs
-production rates as in write-path §3).
-
-**4.5 The fixture.** `data/wlm-UA-images-2025.csv` (~38k files, 20 jurors, a binary and a
-rated round), cached under `data/cache/` by `GatlingDbCache.cacheKey`. Bump
-`GatlingDbCache.FixtureVersion` (`GatlingDbCache.scala:31`) when `GatlingDbSetup.load` writes
-something different; a new migration changes the key by itself.
-
-**4.6 Record it.** In the plan's results section: the commit ids of A and B, the command and
-settings, the table, the log under `target/checks/` and the results directory
-(`target/gatling/…`). Machine-readable results stay on disk.
+Moved to [performance/practices.md](../performance/practices.md) §2 (2026-11-03): reuse, then a
+paired pilot on the app path; paired and interleaved runs; the same settings for both (SQL
+logging off) and like-with-like comparisons; absolute deltas and variation; recording with
+commit ids; the bench server; production data out of repositories; the stress harness. The
+Gatling fixture and `FixtureVersion` are §1.2 there.
 
 ## 5. Transactions
 
@@ -272,9 +246,17 @@ what to lock (`RoundWrites.lockForFiles`' unlocked lookup, then `lockMissing` fo
 missed).
 
 **5.5 Short transactions.** A step holds its locks for well under a second: 15,000 vote rows
-(`jobs.roundDistribution.chunkRows`), import pages of 500 files, `sync` in 2,000-page groups.
+(`jobs.roundDistribution.chunkRows`), import pages of 500 files (with `apihighlimits`; 50 without, `CommonsSource.maxIdsPerRequest`), `sync` in 2,000-page groups.
 A request transaction does one action. The Hikari pool has 30 connections
 (`conf/application.conf:67`); a request waiting on a round row holds one while it waits.
+
+**5.5a Long work is a job.** Work that may take more than a request's few seconds (filling or
+redistributing a round, imports from Commons, checks over every round) runs as a job on the `job`
+table (`JobScheduler`, a `JobHandler` per kind), never on a request thread: one short
+transaction per step (§5.5), a lease for restart recovery, Cancel and Retry, and a dedupe key
+(§2.3). The request only creates the job and answers. *Why:* a request that held a thread and a
+transaction for minutes hit Play's and Apache's timeouts and blocked other admins (background
+distribution and import, `c3f8e68b`, `7e20a35d`).
 
 **5.6 Blocking JDBC and the pool budget.** JDBC blocks its thread: actions with database work
 run on the blocking dispatcher (`Secured.withAuthOn(blocking)`, `blocking-dispatcher` 8
@@ -435,16 +417,20 @@ READ COMMITTED URL) for every spec; databases of their own on it for migration s
 **9.3 Parity specs for rewritten reads.** A rewritten query passes the same spec as the old
 one, checked against the old code once: `GroupedListParitySpec` (an in-memory model of the
 all-jurors lists, run on B12's base), `RoundImageReadParitySpec` (P1's reads from
-`round_image` against `vote`).
+`round_image` against `vote`). The spec covers the read's cases on the same data: juror and
+organizer, binary and rated, with and without a region and a filter. *Source:* gallery-latency
+plan (`98a8a79e:docs/plans/2026-10-28-gallery-latency.md`), "Rules".
 
 **9.4 Invariants after writes.** Specs that write votes assert
 `RoundImageInvariants.violations(roundId)` (or `all()`) empty after each scenario; the harness
 checks them after stress.
 
-**9.5 Anonymous Commons only.** Tests never use Commons credentials: run sbt with
-`env -u COMMONS_USER -u COMMONS_PASSWORD -u SCALAWIKI_LOGIN -u SCALAWIKI_PASSWORD`; live-Commons
-specs only with `-Dintegration=true`. (`test/resources/application.conf:37-38` still reads
-`${?COMMONS_USER}`: §11, V4.)
+**9.5 Anonymous Commons only.** Tests never use Commons credentials: the test config sets
+`commons.user`/`commons.password` to `""` (no `${?COMMONS_USER}`), `CommonsLogin` refuses a
+login in Mode.Test unless `commons.allowTestLogin`, and bots come from `AnonymousBots`
+(`TestConfigAnonymousSpec`, `AnonymousBotsSpec`; details in CLAUDE.md "Testing"). Still run
+sbt by hand with `env -u COMMONS_USER -u COMMONS_PASSWORD -u SCALAWIKI_LOGIN -u
+SCALAWIKI_PASSWORD`; live-Commons specs only with `-Dintegration=true`.
 
 ## 10. Guards
 
@@ -462,6 +448,7 @@ specs only with `-Dintegration=true`. (`test/resources/application.conf:37-38` s
 | 7.3 vote rows locked by primary key | `db.VoteRowLockSpec` (new): a tripwire for literal SQL of the pre-h4 shape (locking, writing or upserting a vote by `page_id` and `jury_id` without the id), not full enforcement |
 | 8.4 production-like chains | `FlywayUpgradeSpec`, `ConvertToInnoDbMigrationSpec` |
 | 9.4 invariants | `RoundImageInvariants` in the write specs |
+| 9.5 anonymous Commons in tests | `TestConfigAnonymousSpec`, `AnonymousBotsSpec` |
 
 **Proposed, by value and cost** (not built):
 1. **Form length vs column length** (2.5, R225-1): high value, medium cost. A source scan
@@ -488,8 +475,8 @@ specs only with `-Dintegration=true`. (`test/resources/application.conf:37-38` s
 - **V3 (2.5, R225-1):** no `maxLength` on `UserController`'s `email`/`fullname`,
   `LoginController`'s `login`, `ContestController`'s fields, `CriteriaController`'s `name`,
   `ImageDiscussionController`'s `text`, `EditRound`'s text fields (only `ApiTokensCard` has one).
-- **V4 (9.5):** `test/resources/application.conf:37-38` takes `COMMONS_USER`/`COMMONS_PASSWORD`
-  from the environment; only the `env -u` prefix keeps tests anonymous.
+- **V4 (9.5): fixed** (`9cc2fd85`, `0880122b`): the test config no longer reads
+  `COMMONS_USER`/`COMMONS_PASSWORD`, and scalawiki's environment login is closed for its bots.
 - **V5 (2.1):** pre-P0 names remain (`FK_round_user_round_id`, `fk_api_token_user`,
   `fk_account_token_*` from V75/V77, `fk_uc_*`): renamed only when a migration touches them
   (V87 renamed V77's `chk_account_token_purpose` to `account_token_purpose_chk`).
@@ -509,3 +496,9 @@ specs only with `-Dintegration=true`. (`test/resources/application.conf:37-38` s
   `NOT EXISTS` inside the vote's locking read: under READ COMMITTED the subquery is a
   consistent read, so a stop committed meanwhile isn't waited for. `VoteJdbc.rateIn` reads it
   `LOCK IN SHARE MODE` as a separate statement.
+- **V11 (3.8), index candidates.** The 2026-03 analysis (`docs/history/db-performance-analysis.md`,
+  pre-V82 names) is applied: V45–V47 indexes, V46 schema fixes (except `monument`'s key, V6),
+  V50 region stats, the ranking and `roundUserStat` rewrites. Left: single-column `vote`
+  indexes that are prefixes of composite ones (`vote_round_idx`, `vote_jury_id_idx`) and
+  `vote_rate_idx` (rate alone): drop candidates under §3.8, the same on `vote_aside`, after
+  `EXPLAIN` of the queries that might use them.

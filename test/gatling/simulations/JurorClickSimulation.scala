@@ -7,7 +7,7 @@ import io.gatling.http.Predef._
 import scala.concurrent.duration._
 import scala.util.Random
 
-/** A juror clicking through their files (docs/plans/2026-10-28-gallery-latency.md): a gallery
+/** A juror clicking through their files (98a8a79e:docs/plans/2026-10-28-gallery-latency.md): a gallery
   * page, a file's large view, votes there (each a POST and its redirect to the next file's
   * large view), Esc back to the gallery (the `pageid` redirect, then the page), over again.
   *

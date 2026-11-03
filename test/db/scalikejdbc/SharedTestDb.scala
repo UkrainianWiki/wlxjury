@@ -55,7 +55,7 @@ object SharedTestDb {
   /** The test server's settings, for the shared container and the specs that start a
     * MariaDB of their own (not the Gatling fixture's, which stays production-like): the
     * data directory on tmpfs (TRUNCATE drops and re-creates each table's file: 0.5-1 s per
-    * `truncateAll` on disk, 30-40 ms on tmpfs; docs/plans/2026-11-01-open-followups.md,
+    * `truncateAll` on disk, 30-40 ms on tmpfs; 98a8a79e:docs/plans/2026-11-01-open-followups.md,
     * "Database-heavy specs"), capped at 1 GB so a runaway spec fails ("table is full")
     * instead of filling the Docker VM's memory; and caches sized for the suite instead of
     * Testcontainers' my.cnf (a 16M buffer pool, a 5M redo log, 4 open tables). The pool

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Screenshots of a fixed list of pages, for comparing the UI before and after a change
-(docs/plans/2026-10-31-theme-modes-and-design-system.md, "Screenshots").
+(docs/performance/practices.md §1.7; the harness's origin: 98a8a79e:docs/plans/2026-10-31-theme-modes-and-design-system.md, "Screenshots").
 
 Needs Python with Playwright and Pillow, and Chrome (or Edge) installed; Playwright's own
 browsers aren't downloaded. A venv inside the checkout keeps it local:

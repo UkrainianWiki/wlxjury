@@ -12,7 +12,7 @@ import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import scala.collection.mutable.ListBuffer
 
-/** The ranks of the by-rate gallery and the file list (docs/plans/2026-11-01-open-followups.md,
+/** The ranks of the by-rate gallery and the file list (98a8a79e:docs/plans/2026-11-01-open-followups.md,
   * batch B11) on the Gatling fixture DB: the queries of a whole page view with today's
   * [[SelectionQuery.keyCounts]] (A), with the pager's total taken from its counts (K), with the
   * ranks as window functions in the page query (W), and W with the list's total as one more

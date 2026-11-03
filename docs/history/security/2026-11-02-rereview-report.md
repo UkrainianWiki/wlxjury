@@ -1,15 +1,15 @@
 # Security re-review: consolidated report (2026-11-02)
 
-**Status is tracked in [register.md](register.md)** (2026-11-02); the status tables below are snapshots.
+**Status is tracked in [register.md](../../security/register.md)** (2026-11-02); the status tables below are snapshots.
 
 For the team. Detailed evidence is in the two working documents:
 
 - [Previous reviews re-checked](2026-11-02-rereview-previous.md) (item by item, `a1883256`);
 - [New findings N1–N11](2026-11-02-rereview-new.md) (`76b60f23`).
 
-The resolution plan is [docs/plans/2026-11-02-security-resolution.md](../plans/2026-11-02-security-resolution.md);
+The resolution plan is [docs/plans/2026-11-02-security-resolution.md](../../plans/2026-11-02-security-resolution.md);
 the plan for secure-coding rules, checklists and guard specs is
-[docs/plans/2026-11-02-security-practices.md](../plans/2026-11-02-security-practices.md).
+98a8a79e:docs/plans/2026-11-02-security-practices.md (`98a8a79e:docs/plans/2026-11-02-security-practices.md`).
 
 ## Executive summary
 
@@ -152,5 +152,5 @@ hashed personal tokens; the local-images follow-ups #1–#3, #7, #8.
   evidence and counts (45 fixed, 9 partial, 16 open, 0 regressed).
 - [2026-11-02-rereview-new.md](2026-11-02-rereview-new.md): N1–N11 with scenarios, fixes and
   guarding tests, and the verification run.
-- [Resolution plan](../plans/2026-11-02-security-resolution.md),
-  [practices plan](../plans/2026-11-02-security-practices.md).
+- [Resolution plan](../../plans/2026-11-02-security-resolution.md),
+  practices plan (`98a8a79e:docs/plans/2026-11-02-security-practices.md`).

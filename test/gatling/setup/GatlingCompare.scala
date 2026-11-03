@@ -16,7 +16,7 @@ import scala.util.Try
  *
  *  After all passes, prints an attribution table showing which index contributed
  *  what marginal latency change to each simulation, then writes to
- *  docs/gatling-comparison.txt.
+ *  target/gatling/gatling-comparison.txt (the V45 run: git show 0a43cc9f:docs/gatling-comparison.txt).
  *
  *  Usage:
  *    sbt "Test/runMain gatling.setup.GatlingCompare"
@@ -258,7 +258,7 @@ for (sim <- sims) {
   def main(args: Array[String]): Unit = {
     val root       = new File(System.getProperty("user.dir"))
     val gatlingDir = new File(root, "target/gatling")
-    val reportOut  = new File(root, "docs/gatling-comparison.txt")
+    val reportOut  = new File(root, "target/gatling/gatling-comparison.txt")
 
     def runPass(label: String): Map[String, SimStats] = {
       val beforeMs = System.currentTimeMillis()

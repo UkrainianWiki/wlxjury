@@ -4,7 +4,7 @@ import java.nio.charset.StandardCharsets.UTF_8
 import java.nio.file.{Files, Path, Paths}
 import scala.jdk.CollectionConverters._
 
-/** The sources the guard specs (docs/plans/2026-11-02-security-practices.md, G*) scan: a file's
+/** The sources the guard specs (docs/security/secure-coding.md §21, G*) scan: a file's
   * path, with `/`, and its text. Twirl comments (`@* *@`) are dropped, and so are Scala/JS
   * comments if asked, so that a comment naming a sink is not a hit.
   */

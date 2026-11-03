@@ -6,7 +6,7 @@ import scalikejdbc._
   * vote queries behind the slow pages, on the Gatling fixture DB.
   *
   * Both the queries before and after the October 2026 performance work are listed
-  * (docs/plans/2026-10-05-performance-and-memory.md), as literal SQL, so a run against
+  * (98a8a79e:docs/plans/2026-10-05-performance-and-memory.md), as literal SQL, so a run against
   * an older schema shows the old plans too.
   *
   * Run: sbt "Test/runMain gatling.setup.ExplainQueries"

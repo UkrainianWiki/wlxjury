@@ -1,5 +1,8 @@
 # Deployment investigation and implementation plan
 
+> **Status: historical** (implemented in `dbedca56`). The procedure is
+> [docs/deployment.md](../deployment.md); its "Why it works this way" summarises this record.
+
 Date: 2026-10-11. Implementation added 2026-10-13 on `codex/deployment-procedure`, based on the selected V60 benchmark branch. Production inspection was read-only; production rollout and real-data rehearsal remain pending. The current operational procedure is [docs/deployment.md](../deployment.md).
 
 ## Recommendation

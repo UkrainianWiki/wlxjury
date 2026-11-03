@@ -4,7 +4,7 @@ import scalikejdbc._
 
 /** External-target mode (`-Dgatling.target=external`): the simulations run against an app
   * that is already running, e.g. the production-like benchmark server
-  * (bench/scripts/bench.sh, docs/plans/2026-10-07-prod-like-benchmark.md), with no
+  * (bench/scripts/bench.sh, docs/history/2026-10-07-prod-like-benchmark.md), with no
   * TestServer and no testcontainer. The data is whatever that server's database holds,
   * typically an anonymised production copy; the fixture's ids are read from it over JDBC
   * (`gatling.external.db.*`) for the contest and rounds named in `gatling.external`.

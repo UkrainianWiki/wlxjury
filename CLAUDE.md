@@ -12,6 +12,8 @@ Before changing authentication, sessions, roles or accounts, SQL, views or JavaS
 
 Before changing SQL, schema, migrations, transactions or locking, read `docs/db/practices.md` (query safety, keys, indexes, benchmarks, transactions, READ COMMITTED, lock order and retry, migrations, tests; with the guards that enforce each rule and where the code doesn't follow one yet); reviewers apply `docs/db/review-checklist.md`.
 
+Before a load test, benchmark, performance change or memory sizing, read `docs/performance/practices.md` (Gatling, paired benchmarks, caching and jobs, heap and pool budgets); review with `docs/performance/review-checklist.md`.
+
 ## Looking Up Library Sources
 
 **Before searching the web for any library API** (ScalikeJDBC, Testcontainers, Play, Pekko, etc.), check `target/dep-sources/` first — it contains extracted `.scala`/`.java` source files for all dependencies.
@@ -106,7 +108,7 @@ sbt -Dgatling.roundMgmt.stress=true "Gatling/testOnly gatling.simulations.RoundM
 - To measure with production-like JVM settings, prefix e.g. `"set Gatling / javaOptions ++= Seq(\"-Xmx512m\", \"-Xlog:gc*:file=target/gatling/gc-%p.log:time,uptime,level,tags\")"`; `%p` keeps one GC log per forked JVM.
 - Results: `target/gatling/<simulation>-<timestamp>/` (`js/stats.json` has per-request statistics).
 - Never run Gatling, JMH or other benchmarks in an sbt session where `coverage` is on: its classes are instrumented (scoverage) and measure slower. Start a new session, or run `coverageOff`, first.
-- To use the fixture by hand or for UI screenshots: `Test/runMain gatling.setup.UiShotsServer` (it sets the images' Commons URLs in its own container, writes `target/ui-shots/server.json`, stops on `target/ui-shots/server.stop`); command and logins in `docs/plans/2026-10-31-theme-modes-and-design-system.md`, "Running the fixture locally".
+- To use the fixture by hand or for UI screenshots: `Test/runMain gatling.setup.UiShotsServer` (it sets the images' Commons URLs in its own container, writes `target/ui-shots/server.json`, stops on `target/ui-shots/server.stop`); command and logins in `docs/performance/practices.md` §1.7.
 
 ### Building packages
 ```bash

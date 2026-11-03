@@ -20,8 +20,8 @@ import scala.jdk.CollectionConverters._
 import scala.concurrent.duration._
 
 /** The region menu's counts, A against B: alternating AB/BA pairs on identical inputs, in
-  * repeated blocks on one warmed fixture (docs/plans/2026-11-01-open-followups.md, batch B10;
-  * the method of docs/plans/2026-10-25-region-improvements.md).
+  * repeated blocks on one warmed fixture (98a8a79e:docs/plans/2026-11-01-open-followups.md, batch B10;
+  * the method of 98a8a79e:docs/plans/2026-10-25-region-improvements.md).
   *
   *  - `sql-round`: the whole round's regions, `byRegionStat` (A, `gallery.regionCounts=off`)
   *    against `regionCounts` (B, `all`), both rounds, each of their tabs' filters.

@@ -49,7 +49,7 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
       keyset: Option[Keyset] = None,
       // the vote filter picks files, those with a matching vote, and their counts and order
       // still use all their votes (HAVING on the grouped query): all the jurors' lists
-      // (docs/plans/2026-11-01-binary-aggregate-votes.md, decision 3); else it picks vote rows
+      // (docs/history/2026-11-01-binary-aggregate-votes.md, decision 3); else it picks vote rows
       filesByVotes: Boolean = false,
       // a grouped query also counts each file's approvals and rejections apart: a yes/no
       // round's tally (ImageWithRating.approvals), which no rated round's page reads

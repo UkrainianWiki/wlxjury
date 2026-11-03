@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The production-like benchmark environment (docs/plans/2026-10-07-prod-like-benchmark.md).
+# The production-like benchmark environment (docs/history/2026-10-07-prod-like-benchmark.md).
 #
 #   bench.sh image                       build the server image (bench/server/$BENCH_DOCKERFILE,
 #                                        default Dockerfile: Ubuntu 22.04, MariaDB 10.6;

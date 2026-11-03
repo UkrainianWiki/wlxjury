@@ -172,7 +172,7 @@ class LargeViewUrlsSpec extends Specification {
 
     "keep a rated round's Unrated tab in every link, which it lost before" in {
       // the gallery's tile opened the large view without the filter, and Esc went back to all
-      // the files by rate (docs/plans/2026-10-27-gallery-position-and-sorting.md, A)
+      // the files by rate (98a8a79e:docs/plans/2026-10-27-gallery-position-and-sorting.md, A)
       val u = urls(large(ratedRound, middle, rate = Some(0)))
       val moves = u.locations ++ u.hrefs.collect { case (a, href) if isUpDownButton(a) => href }
       moves must not(beEmpty)

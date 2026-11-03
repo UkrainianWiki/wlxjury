@@ -2,7 +2,7 @@
 
 This runbook lets an agent or a person, with no other context, finish and reproduce the production-like benchmark: the jury tool and MariaDB running as on the production server, measured with Gatling, on an anonymised copy of production data.
 
-- **The why and the design:** [`docs/plans/2026-10-07-prod-like-benchmark.md`](../docs/plans/2026-10-07-prod-like-benchmark.md). Read it first: production facts, the phases, and **Results so far**.
+- **The why and the design:** [`docs/history/2026-10-07-prod-like-benchmark.md`](../docs/history/2026-10-07-prod-like-benchmark.md). Read it first: production facts, the phases, and **Results so far**.
 - **Completed 2026-10-10:** phases 3–5, validated full-suite runs, including the post-crash recovery pair. The plan contains the measurements, configuration and archiving decisions, deployment steps and runbook gaps. Raw data stays outside Git. Use new labels when reproducing completed points; existing labels are refused.
 
 - **Latest bgdist follow-up, 2026-10-10:** fresh full-data 128/256 MiB suites passed. Production choice updated 2026-10-11: select 256 MiB to reduce database read demand competing with cached-image reads and shared VPS storage. Latency results remain mixed. This supersedes the earlier 512 MiB recommendation and the subsequent 128 MiB preference; see the plan’s final follow-up section.
@@ -247,7 +247,10 @@ Export BENCH_SCRATCH as in section 5 and satisfy prerequisites; add -AllowLowMem
 
 ## 7. Recording results
 
-- **The plan:** after each phase, update **Results so far** in `docs/plans/2026-10-07-prod-like-benchmark.md`: summary tables from `summarize.js`, the runs' labels, and conditions such as the date and anything unusual.
+- **The plan:** the benchmark is finished and its record is history
+  (`docs/history/2026-10-07-prod-like-benchmark.md`). A new run records its results in the plan
+  it serves (performance practices §2.5); the old instruction, kept for the format: update
+  **Results so far**: summary tables from `summarize.js`, the runs' labels, and conditions such as the date and anything unusual.
 - **Commits:** commit script and config changes as logical steps, staging only your own files. Never data. Raw results stay in `$BENCH_SCRATCH/results`. Server memory comes from GC/RSS/NMT; the simulation HeapWatcher observes the Gatling client JVM in external mode. Report job completion separately from HTTP form response time.
 - **Final report** (the plan's **Rules** section):
   - the baseline and after-conversion numbers;
