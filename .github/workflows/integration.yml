@@ -1,0 +1,64 @@
+# The specs that read the live Wikimedia Commons, skipped without -Dintegration=true (CLAUDE.md).
+# They read anonymously: a few dozen API requests and 5 image downloads a run.
+# Weekly and on demand, never on PRs: they depend on Commons' content and availability.
+# Scheduled runs use the workflow file on the default branch (master), and GitHub disables
+# schedules in a public repository after 60 days without activity.
+# Plan: docs/plans/2026-11-03-ci-and-scalawiki-packages.md
+# Wikimedia access is anonymous (CLAUDE.md, Testing): never pass COMMONS_* or SCALAWIKI_*
+# credentials, as env or secrets, to any job here. TestConfigAnonymousSpec checks it.
+name: Live Commons specs
+
+on:
+  schedule:
+    - cron: '17 4 * * 1'   # Mondays 04:17 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  # a group per event and commit: GitHub keeps only one pending run per group
+  group: integration-${{ github.event_name }}-${{ github.sha }}
+  cancel-in-progress: false
+
+env:
+  SCALAWIKI_SHA: 25951dbe1e05bc195b8719e2edbb08464f0ea932
+
+jobs:
+  live-commons:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+          cache: sbt
+      - uses: sbt/setup-sbt@ecad189dd245444b9ae0a0cd5922fd938b88906f # v1.5.12
+      - name: scalawiki (interim, from source)
+        uses: ./.github/actions/scalawiki
+        with:
+          sha: ${{ env.SCALAWIKI_SHA }}
+          jdk: 17
+      - name: Live Commons specs
+        # -Dintegration goes to sbt's JVM; build.sbt forwards it to the forked test JVM.
+        # testOnly skips build.sbt's jsTest (it is wired into `test` only).
+        run: >-
+          python3 scripts/agent-check.py --
+          sbt -J-Xmx2g -J-Dfile.encoding=UTF-8 -Dintegration=true
+          'set Test / javaOptions ++= Seq("-Xmx768m", "-Dfile.encoding=UTF-8")'
+          'testOnly controllers.AppendImagesSpec controllers.ImagesFromListSpec services.LocalImageCacheServiceIntegrationSpec'
+      - name: End of the log
+        if: failure()
+        run: tail -n 400 target/checks/*.log
+      - name: Upload reports and logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-reports-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            target/test-reports/
+            target/checks/
+          if-no-files-found: warn
+          retention-days: 30

@@ -175,6 +175,10 @@ def externalize_legacy(text):
 
 
 CREDENTIAL_NAME = re.compile(r'password|passwd|secret', re.I)
+# Shipped settings whose names hold a credential word but whose values are not credentials
+# (the legacy-password retirement schedule). Exact paths only: anything else stays refused.
+NONSECRET_SETTINGS = frozenset(('wlxjury.legacyPasswords.retire', 'wlxjury.legacyPasswords.firstCheck',
+                                'wlxjury.legacyPasswords.checkEvery'))
 # A credential as a URL query parameter, such as "...?user=a&password=b".
 QUERY_CREDENTIAL = re.compile(r'[?&;][^=&;]*(?:password|passwd|secret)[^=&;]*=[^&;]', re.I)
 # Line formats (.ini, .cnf, .env, .properties, JVM options) and comment text.
@@ -313,7 +317,7 @@ class HoconScan:
         literal = [part for part in parts if part[0] != 'sub']
         if not literal or [part[:2] for part in parts] in ([('str', '')], [('word', 'null')]):
             return
-        if CREDENTIAL_NAME.search(path):
+        if CREDENTIAL_NAME.search(path) and path not in NONSECRET_SETTINGS:
             self.found.append((parts[0][2], path))
         elif QUERY_CREDENTIAL.search(''.join(part[1] for part in literal)):
             self.found.append((parts[0][2], path + ' query parameter'))

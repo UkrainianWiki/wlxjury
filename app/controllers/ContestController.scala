@@ -27,6 +27,8 @@ class ContestController @Inject() (
       year: Option[Int],
       country: Option[String]
   ): Future[Iterable[Contest]] = {
+    // CampaignList's bot is scalawiki's default commons one: make sure it is the anonymous one
+    services.imports.AnonymousBots.seed()
     if (contestType.isEmpty) {
       CampaignList.yearsContests()
     } else {

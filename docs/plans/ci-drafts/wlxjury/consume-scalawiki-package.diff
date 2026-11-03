@@ -1,0 +1,39 @@
+diff --git a/build.sbt b/build.sbt
+index 03c1435..c8f8266 100644
+--- a/build.sbt
++++ b/build.sbt
+@@ -140,7 +140,10 @@ val ScalikejdbcVersion = "4.3.2"
+ // Flyway runs from db.Migrations (no flyway-play): docs/plans/2026-11-03-flyway.md
+ val FlywayVersion = "13.12.0"
+ val ScalikejdbcPlayVersion = "3.0.1-scalikejdbc-4.3"
+-val ScalawikiVersion = "0.7.0-SNAPSHOT"
++// A published release (GitHub Packages, below). To build against a local scalawiki checkout:
++// there `sbt 'set ThisBuild / version := "0.7.0-SNAPSHOT"' publishLocal`, here
++// `sbt -Dscalawiki.version=0.7.0-SNAPSHOT ...` (DEV.md, "scalawiki").
++val ScalawikiVersion = sys.props.getOrElse("scalawiki.version", "0.7.0-M1")
+ val PlayMailerVersion = "9.0.0"
+ val MockServerVersion = "5.7.0"
+ val playVersion = "3.0.7"
+@@ -158,10 +161,20 @@ val MunitVersion = "0.7.29"
+ val GatlingVersion = "3.8.4"
+ 
+ // Bintray (and with it JCenter) shut down in 2021; every dependency is on Maven Central.
+-// scalawiki comes from ~/.ivy2/local (sbt's default, where scalawiki's publishLocal goes)
+-// or ~/.m2: docs/plans/2026-11-03-ci-and-scalawiki-packages.md
++// Resolution order: ~/.ivy2/local (sbt's default, where scalawiki's publishLocal goes), then
++// ~/.m2 (publishM2), then Maven Central, then scalawiki's GitHub Packages repository last, so
++// local builds win and every other library is looked up on Central first.
+ resolvers += Resolver.mavenLocal
+ 
++externalResolvers += "GitHub Packages (scalawiki)" at "https://maven.pkg.github.com/UkrainianWiki/scalawiki"
++
++// GitHub Packages wants a token even for public packages. CI: the workflow's GITHUB_TOKEN with
++// packages: read. Locally: ~/.sbt/1.0/github.sbt, or GITHUB_PACKAGES_TOKEN (a classic PAT with
++// read:packages). Without one, only a locally published scalawiki resolves.
++credentials ++= sys.env.get("GITHUB_PACKAGES_TOKEN").orElse(sys.env.get("GITHUB_TOKEN")).toSeq.map { token =>
++  Credentials("GitHub Package Registry", "maven.pkg.github.com", sys.env.getOrElse("GITHUB_ACTOR", "token"), token)
++}
++
+ libraryDependencySchemes += "org.scala-lang.modules" %% "scala-parser-combinators" % "always"
+ 
+ libraryDependencies ++= Seq(

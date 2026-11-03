@@ -197,9 +197,14 @@ class DatabaseRestoreTest(DatabaseFixture):
 
 class PackagedReleaseTest(DatabaseFixture):
     def test_real_zip_starts_in_production_and_rejects_missing_signing_key(self):
-        archive = Path('/workspace/target/universal/wlxjury-0.13.zip')
-        if not archive.is_file():
-            self.skipTest('Run sbt dist before the packaged-release smoke test')
+        # The ZIP of this checkout's version (sbt dist): the newest, if older ones are left over.
+        archives = sorted(Path('/workspace/target/universal').glob('wlxjury-*.zip'), key=lambda p: p.stat().st_mtime)
+        if not archives:
+            message = 'Run sbt dist before the packaged-release smoke test'
+            if os.environ.get('CI'):
+                self.fail(message + ' (CI is set: the test must not be skipped there)')
+            self.skipTest(message)
+        archive = archives[-1]
         with zipfile.ZipFile(str(archive)) as bundle:
             deployment_only = [name for name in bundle.namelist()
                                if any('/conf/' + part + '/' in name for part in ('wlxjury', 'apache', 'systemd'))]
@@ -216,6 +221,9 @@ class PackagedReleaseTest(DatabaseFixture):
                                   "GRANT ALL PRIVILEGES ON jury.* TO 'app'@'localhost';").encode())
         environment = os.environ.copy()
         environment.update(env)
+        # The release reads commons.user from the environment; tests never log in to Commons.
+        for name in ('COMMONS_USER', 'COMMONS_PASSWORD', 'SCALAWIKI_LOGIN', 'SCALAWIKI_PASSWORD'):
+            environment.pop(name, None)
         environment['JAVA_OPTS'] = '-Xmx512m -Dfile.encoding=UTF-8'
         # production.conf requires the jury's host names (AllowedHostsFilter)
         environment['WLXJURY_ALLOWED_HOSTS'] = 'jury.example.org'

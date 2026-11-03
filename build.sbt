@@ -157,12 +157,9 @@ val TapirVersion = "1.11.15"
 val MunitVersion = "0.7.29"
 val GatlingVersion = "3.8.4"
 
-resolvers += Resolver.bintrayRepo("intracer", "maven")
-
-resolvers += "scalaz-bintray" at "https://dl.bintray.com/scalaz/releases"
-
-resolvers += Resolver.jcenterRepo
-
+// Bintray (and with it JCenter) shut down in 2021; every dependency is on Maven Central.
+// scalawiki comes from ~/.ivy2/local (sbt's default, where scalawiki's publishLocal goes)
+// or ~/.m2: docs/plans/2026-11-03-ci-and-scalawiki-packages.md
 resolvers += Resolver.mavenLocal
 
 libraryDependencySchemes += "org.scala-lang.modules" %% "scala-parser-combinators" % "always"
