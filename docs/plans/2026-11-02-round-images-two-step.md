@@ -448,6 +448,13 @@ finalize) read the votes directly. The items below describe the original plan.
 ### P2b: reads behind a flag
 
 - Work: §8. Flag `roundImage.read`, off until the pilot, then on.
+- One rule for a file's average (decided by the user, 2026-11-03, after C3's review: criteria
+  plan, "C3 results", "Denominators"). Today the grouped rows (by-rate gallery, all-jurors
+  large view) average a file's rate sum over its assigned jurors, unrated votes as 0, while the
+  per-vote rows (file list, CSV) average over its rated jurors; both use the active jurors in an
+  `optionalRate` round. C3 shows the grouped views' denominator (`… 29 / 3 jurors`). P2b's
+  `round_image` source picks one rule for every view (and `assigned`/`voted` give either), with
+  a parity spec of the chosen rule and C3's criteria averages (fully rated votes) beside it.
 - Rollback: the flag.
 - Specs: old/new parity (equal pages, counts, ranks, positions over random data) in
   `ImageDbNewDbSpec`/`RoundListDbSpec`; `GalleryOrderSpec`, `AllJurorsListSpec`,
