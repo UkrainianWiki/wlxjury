@@ -57,6 +57,8 @@ sbt ~run         # Start with triggered background recompilation
 
 Requires environment variables: `WLXJURY_DB_HOST`, `WLXJURY_DB`, `WLXJURY_DB_USER`, `WLXJURY_DB_PASSWORD`
 
+Pending migrations: `sbt -Ddb.default.migration.auto=true run` applies them at start; without it the app refuses to start while one is pending (`db.Migrations`, no flyway-play apply page).
+
 ### Testing
 ```bash
 sbt test:compile                                      # Compile all tests
@@ -95,7 +97,7 @@ sbt packageAll           # All package variants
 ### Tech Stack
 - **Play Framework 3.0** (Scala 2.13, Netty server — Pekko HTTP server disabled)
 - **ScalikeJDBC 4.3** with ORM (`CRUDMapper`) for database access
-- **MariaDB** as the database with **Flyway** migrations (`conf/db/migration/default/`)
+- **MariaDB** as the database with **Flyway** 13 (Community) migrations (`conf/db/migration/default/`, V files only: no `B` baseline script), run by `db.Migrations` (the app at start, `SharedTestDb`, migration specs)
 - **Tapir 1.11** + Pekko HTTP for the REST API layer
 - **Authentication** is the app's own: session cookie and `Secured` (no pac4j)
 - **scalawiki** (internal library) for Wikimedia Commons integration

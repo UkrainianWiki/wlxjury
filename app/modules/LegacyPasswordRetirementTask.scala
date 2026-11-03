@@ -56,10 +56,15 @@ class LegacyPasswordRetirement(
 }
 
 /** [[LegacyPasswordRetirement]] on a timer of its own, started with the app (bound eagerly in
-  * [[AppModule]]) and stopped with it.
+  * [[AppModule]]) and stopped with it; after the migrations (`migrations` is injected for that:
+  * modules.MigrationOrderSpec).
   */
 @Singleton
-class LegacyPasswordRetirementTask @Inject() (config: Configuration, lifecycle: ApplicationLifecycle) {
+class LegacyPasswordRetirementTask @Inject() (
+    migrations: DatabaseMigrations,
+    config: Configuration,
+    lifecycle: ApplicationLifecycle
+) {
 
   private val enabled = config.getOptional[Boolean]("wlxjury.legacyPasswords.retire").getOrElse(true)
   private val firstCheck = config.getOptional[FiniteDuration]("wlxjury.legacyPasswords.firstCheck").getOrElse(1.minute)

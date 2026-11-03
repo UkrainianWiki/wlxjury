@@ -77,6 +77,10 @@ class ProductionConfigSpec extends Specification {
       config.getBoolean("db.default.migration.cleanOnValidationError") must beFalse
       config.getStringList("db.default.migration.ignoreMigrationPatterns").asScala must beEmpty
     }
+
+    "be read by db.Migrations as the settings db.FlywayUpgradeSpec upgrades with" in {
+      db.Migrations.Settings.fromConfig(Configuration(releaseConfig())) mustEqual db.Migrations.Settings(auto = true)
+    }
   }
 
   "the allowed hosts in production" should {
