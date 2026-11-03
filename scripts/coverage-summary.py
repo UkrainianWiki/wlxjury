@@ -59,7 +59,8 @@ def main(argv=None):
     lines = ["## Test coverage", ""]
     lines += table("Scala (scoverage)", args.scoverage, scala_rows)
     lines += table("JavaScript (Jest, V8)", args.jest, jest_rows)
-    lines.append("Reports: the `coverage-reports-*` artifact (HTML, scoverage and Cobertura XML, lcov).")
+    lines.append("Reports: artifact `coverage-reports-*` (scoverage and Cobertura XML, lcov and its HTML); "
+                 "on pushes and manual runs also `coverage-html-*` (the Scala HTML report).")
     sys.stdout.write("\n".join(lines) + "\n")
     return 0
 

@@ -80,14 +80,24 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: coverage-reports-attempt-${{ github.run_attempt }}
-          # scoverage-report: HTML and scoverage.xml; coverage-report: Cobertura XML;
-          # jest-coverage: lcov.info, the lcov HTML report and coverage-summary.json
+          # scoverage.xml; coverage-report: Cobertura XML; jest-coverage: lcov.info, the lcov HTML
+          # report and coverage-summary.json. The Scala HTML (about 22 MB) is the next step's.
           path: |
-            target/scala-2.13/scoverage-report/
+            target/scala-2.13/scoverage-report/scoverage.xml
             target/scala-2.13/coverage-report/
             target/jest-coverage/
             target/test-reports/
             target/checks/
             hs_err_pid*.log
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Upload the Scala HTML report
+        # Pushes and manual runs only: a PR's numbers are in the job summary and the XML above
+        if: always() && github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-html-attempt-${{ github.run_attempt }}
+          path: target/scala-2.13/scoverage-report/
           if-no-files-found: warn
           retention-days: 14
