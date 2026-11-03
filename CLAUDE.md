@@ -10,6 +10,8 @@ WLX Jury Tool is a Play Framework (Scala) web application for image selection an
 
 Before changing authentication, sessions, roles or accounts, SQL, views or JavaScript, config or deployment, exports or logging, read `docs/security/secure-coding.md` (one rule per past issue class, with its example and guard). Reviewers (and agents acting as reviewers) apply `docs/security/review-checklist.md`; `docs/security/register.md` is the one live status table of security items, updated in the same commit as a fix. Every such batch runs `testOnly security.*` (the guard specs in `test/security/`; `SignedOutSpec` needs Docker). A guard hit, also one after a merge, is fixed or allowlisted for that one file (or action) with a reason, never silenced by widening a pattern.
 
+Before changing SQL, schema, migrations, transactions or locking, read `docs/db/practices.md` (query safety, keys, indexes, benchmarks, transactions, READ COMMITTED, lock order and retry, migrations, tests; with the guards that enforce each rule and where the code doesn't follow one yet); reviewers apply `docs/db/review-checklist.md`.
+
 ## Looking Up Library Sources
 
 **Before searching the web for any library API** (ScalikeJDBC, Testcontainers, Play, Pekko, etc.), check `target/dep-sources/` first — it contains extracted `.scala`/`.java` source files for all dependencies.

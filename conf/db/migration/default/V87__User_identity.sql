@@ -23,7 +23,9 @@ CREATE TABLE IF NOT EXISTS user_identity (
 
 -- The account chooser's proof by mail (OAuthController.chooseConfirm): a short, single-use link
 -- to an account's verified address, before a Wikimedia identity whose name several accounts
--- have is linked to it. Widens V77's purposes.
-ALTER TABLE account_token DROP CONSTRAINT chk_account_token_purpose;
-ALTER TABLE account_token ADD CONSTRAINT chk_account_token_purpose
+-- have is linked to it. Widens V77's purposes, and gives the check its table-first name
+-- (V77's chk_account_token_purpose): one statement, since MariaDB commits each DDL statement,
+-- so a failure can't leave the table without its check.
+ALTER TABLE account_token DROP CONSTRAINT chk_account_token_purpose,
+  ADD CONSTRAINT account_token_purpose_chk
   CHECK (BINARY purpose IN ('invitation', 'password_reset', 'email_change', 'oauth_choose'));
