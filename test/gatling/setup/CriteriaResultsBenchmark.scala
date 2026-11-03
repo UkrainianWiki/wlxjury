@@ -152,6 +152,31 @@ object CriteriaResultsBenchmark {
         () => { val p = allIds(rnd.nextInt(allIds.size)); fileList.query.withVotes(Seq(p)) },
         () => { val p = allIds(rnd.nextInt(allIds.size)); CriteriaRate.averages(round.getId, Seq(p)); CriteriaRate.ratesOfFile(round.getId, p) })
 
+      // variants of the averages query, against it as built (A)
+      val rid0 = round.getId
+      def variant(ids: Seq[Long], order: SQLSyntax) =
+        sql"""SELECT v.page_id, cr.criterion_id, AVG(cr.rate) FROM vote v
+              STRAIGHT_JOIN criteria_rate cr ON cr.vote_id = v.id
+              STRAIGHT_JOIN round_criterion rc ON rc.round_id = v.round_id AND rc.criterion_id = cr.criterion_id
+              WHERE v.round_id = $rid0 AND v.page_id IN ($ids) AND v.rate > 0 AND cr.rate > 0
+              GROUP BY v.page_id, cr.criterion_id $order""".map(rs => rs.long(1)).list()
+      paired("averages 1000 files: A as built, B ORDER BY NULL",
+        () => { val from = 1000 * rnd.nextInt(files / 1000); CriteriaRate.averages(round.getId, allIds.slice(from, from + 1000)) },
+        () => { val from = 1000 * rnd.nextInt(files / 1000); variant(allIds.slice(from, from + 1000), sqls"ORDER BY NULL") })
+      paired("CSV averages: A by 1000 files, B one query by round",
+        () => allIds.grouped(1000).foreach(CriteriaRate.averages(round.getId, _)),
+        () => sql"""SELECT v.page_id, cr.criterion_id, AVG(cr.rate) FROM vote v
+              STRAIGHT_JOIN criteria_rate cr ON cr.vote_id = v.id
+              STRAIGHT_JOIN round_criterion rc ON rc.round_id = v.round_id AND rc.criterion_id = cr.criterion_id
+              WHERE v.round_id = $rid0 AND v.rate > 0 AND cr.rate > 0
+              GROUP BY v.page_id, cr.criterion_id ORDER BY NULL""".map(rs => rs.long(1)).list())
+      paired("rows read: A the 1000 files' rates, B their count only",
+        () => { val from = 1000 * rnd.nextInt(files / 1000); val ids = allIds.slice(from, from + 1000)
+          sql"""SELECT v.page_id, cr.criterion_id, cr.rate FROM vote v STRAIGHT_JOIN criteria_rate cr ON cr.vote_id = v.id
+                WHERE v.round_id = $rid0 AND v.page_id IN ($ids) AND v.rate > 0""".map(rs => rs.long(1)).list() },
+        () => { val from = 1000 * rnd.nextInt(files / 1000); val ids = allIds.slice(from, from + 1000)
+          sql"""SELECT COUNT(*) FROM vote v WHERE v.round_id = $rid0 AND v.page_id IN ($ids) AND v.rate > 0""".map(_.long(1)).single() })
+
       def explain(name: String, q: SQLSyntax): Unit = {
         say(s"EXPLAIN $name:")
         sql"EXPLAIN $q".map(rs => (1 to rs.metaData.getColumnCount).map(i => s"${rs.metaData.getColumnLabel(i)}=${rs.stringOpt(i).getOrElse("NULL")}").mkString(" "))
