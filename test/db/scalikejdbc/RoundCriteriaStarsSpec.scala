@@ -39,6 +39,16 @@ class RoundCriteriaStarsSpec extends Specification with BeforeAll {
       rated.copy(hasCriteria = true).perCriterion(34) === 34
       criteria.copy(criteriaCount = 0).perCriterion(34) === 34
     }
+
+    "fill a criteria round's stars to the nearest unit (half star), other rounds' truncated as before" in {
+      val two = rated.copy(hasCriteria = true, criteriaCount = 2)
+      // 7.25 -> 7, 7.5 -> 8 units
+      two.starsRate(14.5) === 7
+      two.starsRate(15) === 8
+      // half stars: 13 units over 2 criteria, 6.5 -> 7 units, three and a half stars
+      two.copy(halfStar = true).starsRate(13) === 7
+      rated.starsRate(7.9) === 7
+    }
   }
 
   "a round's criteria count" should {

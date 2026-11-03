@@ -21,7 +21,7 @@
         } else {
             @defining(round.rates.id > 5 && round.halfStar) { halfStar =>
                 @for(i <- 1 to round.numberOfStars) {
-                    @showStar(i, round.perCriterion(vote.rate).toInt, halfStar)
+                    @showStar(i, round.starsRate(vote.rate), halfStar)
                     }
                 @vote.rate
             }

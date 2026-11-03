@@ -127,10 +127,12 @@ class CriteriaResultsPageSpec extends PlaySpecification with PlayTestDb {
         val tile = Jsoup.parse(html).getElementById(f.images.head.pageId.toString)
         tile.select(".wlx-criteria-averages li").asScala.map(_.text) ===
           Seq("Scientific value: 7.00", s"$hostileName: 7.50")
-        // the gallery's grouped row: 29 over the 3 assigned jurors, 9.67, over 2 criteria: 4 of
-        // the round's 10 stars
+        // the gallery's grouped row: 29 over the 3 assigned jurors (juror 3's partly rated vote
+        // counts 0), 9.67, over 2 criteria: 4.83, rounded to 5 of the round's 10 stars; the
+        // number says so (Q2: its denominator shown)
         tile.select(".rate-stars i.wlx-star").size === 10
-        tile.select(".rate-stars i.bi-star-fill").size === 4
+        tile.select(".rate-stars i.bi-star-fill").size === 5
+        tile.select(".rate-stars").text() must contain("4.83 (Σ 9.67: 29 / 3 jurors)")
         html must not(contain("<script>alert(1)"))
       }
     }
@@ -158,6 +160,7 @@ class CriteriaResultsPageSpec extends PlaySpecification with PlayTestDb {
         val doc = Jsoup.parse(html)
         // 29 / 3 per juror, over 2 criteria
         doc.getElementById("rate-number").text() === "4.83"
+        doc.select(".wlx-criteria-overall-rate").text() === "4.83 (Σ 9.67: 29 / 3 jurors)"
         doc.getElementById("rate-number1").text() === "7"
         doc.getElementById("rate-number2").text() === "7.5"
         doc.select(".large-side .wlx-criterion-name").asScala.map(_.text).take(2) === Seq("Scientific value", hostileName)
@@ -166,6 +169,38 @@ class CriteriaResultsPageSpec extends PlaySpecification with PlayTestDb {
           Set(Seq("Scientific value: 8", s"$hostileName: 6"), Seq("Scientific value: 6", s"$hostileName: 9"),
             Seq("Scientific value: 2", s"$hostileName: –"))
         html must not(contain("<script>alert(1)"))
+      }
+    }
+
+    "average the file list's rate over the round's active jurors in an optional-rate round" in {
+      testDbApp { app =>
+        val f = fixture()
+        // juror 3 rates file 1 fully: active in the round, though file 0's vote stays partial
+        val vote = VoteJdbc.findBy(f.images(1).pageId, f.juror3.getId, f.round.getId).get
+        Seq(1L -> 4, f.custom.id -> 4).foreach { case (c, r) => CriteriaRate.updateRate(vote.getId, c, r) must beTrue }
+        DB.autoCommit(implicit s => sql"UPDATE round SET optional_rate = 1 WHERE id = ${f.round.getId}".update())
+        val (_, rows) = table(contentAsString(get(app, f.organizer, fileList(f, 0))))
+        // over the 3 active jurors, not file 0's 2 rated votes; its averages still over those 2
+        rows("File:Image0.jpg").slice(2, 5) === Seq("9.67 (29 / 3)", "7.00", "7.50")
+      }
+    }
+  }
+
+  "a juror of a juryOrgView criteria round" should {
+
+    "see all the jurors' averages and each juror's criteria rates, as organisers do" in {
+      testDbApp { app =>
+        val f = fixture()
+        DB.autoCommit(implicit s => sql"UPDATE round SET jury_org_view = 1 WHERE id = ${f.round.getId}".update())
+        val (head, rows) = table(contentAsString(get(app, f.juror1, fileList(f, 0))))
+        head.slice(3, 5) === Seq("Scientific value", hostileName)
+        rows("File:Image0.jpg").slice(3, 5) === Seq("7.00", "7.50")
+        val doc = Jsoup.parse(contentAsString(get(app, f.juror1, large(f, 0, f.images.head.pageId))))
+        doc.getElementById("rate-number1").text() === "7"
+        doc.select(".wlx-criteria-overall-rate").text() === "4.83 (Σ 9.67: 29 / 3 jurors)"
+        doc.select(".large-line .wlx-criteria-rates").asScala.map(_.select("li").asScala.map(_.text).toSeq).toSet ===
+          Set(Seq("Scientific value: 8", s"$hostileName: 6"), Seq("Scientific value: 6", s"$hostileName: 9"),
+            Seq("Scientific value: 2", s"$hostileName: –"))
       }
     }
   }

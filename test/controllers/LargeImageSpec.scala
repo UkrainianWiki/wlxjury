@@ -471,8 +471,10 @@ class LargeImageSpec extends PlaySpecification with PlayTestDb {
         status(page) === OK
         val tile = org.jsoup.Jsoup.parse(contentAsString(page)).getElementById(mine.pageId.toString)
         tile.select(".rate-stars i.wlx-star").size === 10
-        // the rate, 7, over the two criteria: 3.5, so 3 full stars, as an average is drawn
-        tile.select(".rate-stars i.bi-star-fill").size === 3
+        // the rate, 7, over the two criteria: 3.5, rounded to 4 full stars (no half stars here),
+        // and said beside them with the sum
+        tile.select(".rate-stars i.bi-star-fill").size === 4
+        tile.select(".rate-stars").text() must contain("3.50 (Σ 7)")
       }
     }
 

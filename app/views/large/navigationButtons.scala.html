@@ -87,6 +87,8 @@
        @if(list.asUserId == 0) {
            <div class="wlx-criteria-overall">@Messages("criteria.overall")</div>
            @rateNumber("rate-number", score)
+           @* the number with the sum and its jurors beside it, as the by-rate gallery has it *@
+           <div class="wlx-criteria-overall-rate small">@hood.file.criteriaRateString(round)</div>
            @stars("rate-image", "rate-number", score, k, None)
        }
        @criteria.zipWithIndex.map { case ((criterion, rate), index) =>

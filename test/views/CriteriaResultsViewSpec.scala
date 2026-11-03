@@ -60,8 +60,9 @@ class CriteriaResultsViewSpec extends PlaySpecification {
       tile.select(".rate-stars i.wlx-star").size === 10
       // 14.5 per juror over 2 criteria: 7 full stars
       tile.select(".rate-stars i.bi-star-fill").size === 7
-      // the rate is the jurors' average sum, with the sum and the jurors
-      tile.select(".rate-stars").text() must contain("14.50 (29 / 2)")
+      // the number matches the stars: per criterion, then the average sum, the sum and the
+      // jurors it is over (the grouped row's, its assigned jurors)
+      tile.select(".rate-stars").text() must contain("7.25 (Σ 14.50: 29 / 2 jurors)")
     }
 
     "show each criterion's average, a dash where no juror rated every criterion" in {
@@ -90,6 +91,7 @@ class CriteriaResultsViewSpec extends PlaySpecification {
 
     "show each file's averages, empty where none" in {
       val rows = doc.select("tbody tr").asScala.map(_.select("td").asScala.map(_.text))
+      // a plain sum here, labelled as one, as the CSV has it
       rows.head.slice(2, 5) === Seq("14.50 (29 / 2)", "7.00", "7.50")
       rows(1).slice(3, 5) === Seq("", "")
     }
@@ -123,6 +125,7 @@ class CriteriaResultsViewSpec extends PlaySpecification {
       // 7.25 per criterion
       doc.getElementById("rate-number").text() === "7.25"
       doc.getElementById("rate-image").attr("data-score") === "7.25"
+      doc.select(".wlx-criteria-overall-rate").text() === "7.25 (Σ 14.50: 29 / 2 jurors)"
       doc.select(".large-side .wlx-criterion-name").asScala.map(_.text) === Seq("Quality", xss)
       doc.getElementById("rate-number1").text() === "7"
       doc.getElementById("rate-number2").text() === "7.5"
@@ -150,6 +153,59 @@ class CriteriaResultsViewSpec extends PlaySpecification {
       lines(1).select(".wlx-criteria-rates li").asScala.map(_.text) === Seq("Quality: –", s"$xss: 3")
       html must not(contain("<b>Juror B</b>"))
       noScript(doc, html)
+    }
+  }
+
+  "a half-star criteria round (1-10, five stars; rates in half-star units)" should {
+    val half = round.copy(halfStar = true)
+    /** Two jurors' sums 14 and 12 (stored units): 13 per juror, 6.5 per criterion, 3.25 stars. */
+    val file = ImageWithRating(Image(301, "File:Image 301.jpg"), Seq(Vote(301, 0, 1, 26)), countFromDb = 2)
+
+    "fill the by-rate stars to the nearest half star of the average, the number in stars, the sum in units" in {
+      val doc = Jsoup.parse(contentAsString(views.html.galleryByRate(juror, RoundList(half, 0, view = GalleryView.ByRate),
+        Seq(file), Pager(1, 1), Nil, None, new RateDistribution(Map.empty), Seq("1"), results)))
+      val stars = doc.getElementById("301").select(".rate-stars")
+      stars.select("i.wlx-star").size === 5
+      // 6.5 units: 3 full and a half (truncated, 6 units, it drew 3)
+      stars.select("i.bi-star-fill").size === 3
+      stars.select("i.bi-star-half").size === 1
+      stars.text() must contain("3.25 (Σ 13.00: 26 / 2 jurors)")
+      // the averages in stored units, as the CSV has them
+      doc.getElementById("301").select(".wlx-criteria-averages li").asScala.map(_.text) ===
+        Seq("Quality: 7.00", s"$xss: 7.50")
+    }
+
+    "show the large view's rates in stars: each criterion's units over 2, the overall per criterion" in {
+      val doc = Jsoup.parse(contentAsString(views.html.large.large(juror.copy(roles = Set("organizer")),
+        RoundList(half, 0, view = GalleryView.ByRate), Neighbourhood(Seq(file), 0, 0), None, Nil,
+        Seq(Vote(301, 11, 1, 13, id = Some(91)) -> juror.copy(id = Some(11))),
+        Seq(quality -> 7.0, hostile -> 6.0), JurorCriteria(criteria, Map(91L -> Map(1L -> 7, 2L -> 6))))))
+      doc.getElementById("rate-number").text() === "3.25"
+      doc.getElementById("rate-image").attr("data-half") === "true"
+      doc.getElementById("rate-number1").text() === "3.5"
+      doc.getElementById("rate-number2").text() === "3"
+      doc.getElementById("rate-image1").attr("data-number") === "5"
+      // the juror's vote, 13 units over 2 criteria: 6.5, three and a half of five stars
+      val line = doc.selectFirst(".large-line > ol > li")
+      line.select("i.wlx-star").size === 5
+      line.select("i.bi-star-fill").size === 3
+      line.select("i.bi-star-half").size === 1
+      line.select(".wlx-criteria-rates li").asScala.map(_.text) === Seq("Quality: 7", s"$xss: 6")
+    }
+  }
+
+  "a round with one criterion (a legacy round, V83's backfill)" should {
+    "draw its stars and number as its sum" in {
+      val one = round.copy(criteriaCount = 1)
+      val own = ImageWithRating(Image(301, "File:Image 301.jpg"), Seq(Vote(301, juror.getId, 1, 7)))
+      val doc = Jsoup.parse(contentAsString(views.html.galleryByRate(juror, RoundList(one, juror.getId,
+        view = GalleryView.ByRate), Seq(own), Pager(1, 1), Nil, None, new RateDistribution(Map.empty), Seq("1"),
+        CriteriaResults(Seq(quality), Map(301L -> Map(1L -> BigDecimal(7)))))))
+      val tile = doc.getElementById("301")
+      tile.select(".rate-stars i.wlx-star").size === 10
+      tile.select(".rate-stars i.bi-star-fill").size === 7
+      tile.select(".rate-stars").text() must contain("7.00 (Σ 7)")
+      tile.select(".wlx-criteria-averages li").asScala.map(_.text) === Seq("Quality: 7.00")
     }
   }
 }

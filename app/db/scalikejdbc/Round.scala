@@ -122,6 +122,13 @@ case class Round(
   def perCriterion(rate: Double): Double =
     if (hasCriteria) rate / criteriaCount.max(1) else rate
 
+  /** The stored units a file's static stars are filled to for `rate` (`showStar`): a criteria
+    * round's [[perCriterion]] rounded to the nearest unit, so to the nearest half star in a
+    * half-star round (3.25 stars, 6.5 units, draws 3.5); other rounds' truncated, as before C3.
+    */
+  def starsRate(rate: Double): Int =
+    if (hasCriteria) math.round(perCriterion(rate)).toInt else rate.toInt
+
   def regionIds: Seq[String] = regions.map(_.split(",").toSeq).getOrElse(Nil)
 
   /** "Selected by at least N jurors" as the distribution reads it: N >= 1 approvals (rated
