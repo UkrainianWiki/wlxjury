@@ -134,17 +134,32 @@ object ApiTokenService extends Logging {
     * How many were revoked.
     */
   def revokeByRoot(rootId: Long, userId: Long, tokenId: Option[Long] = None): Int = {
-    val revoked = DB.localTx { implicit s =>
+    val revoked = revokeLocked(userId, tokenId)
+    if (revoked.nonEmpty)
+      logger.info(s"api_token_revoked by=root rootId=$rootId userId=$userId tokenIds=${revoked.mkString(",")}")
+    revoked.size
+  }
+
+  /** The user revokes all their own unrevoked tokens (their profile's "revoke all", S3: a
+    * password change leaves them), as [[revokeByRoot]]: one transaction, their row locked,
+    * logged with ids only if any was revoked. How many were revoked.
+    */
+  def revokeAllOwn(userId: Long): Int = {
+    val revoked = revokeLocked(userId, None)
+    if (revoked.nonEmpty)
+      logger.info(s"api_token_revoked by=self userId=$userId tokenIds=${revoked.mkString(",")}")
+    revoked.size
+  }
+
+  /** Revokes the user's unrevoked tokens (`tokenId`, else all), their row locked; the ids. */
+  private def revokeLocked(userId: Long, tokenId: Option[Long]): Seq[Long] =
+    DB.localTx { implicit s =>
       ApiTokenJdbc.lockOwner(userId)
       ApiTokenJdbc.findByUser(userId)
         .filter(t => !t.revoked && tokenId.forall(_ == t.id))
         .filter(t => ApiTokenJdbc.revoke(t.id, userId))
         .map(_.id)
     }
-    if (revoked.nonEmpty)
-      logger.info(s"api_token_revoked by=root rootId=$rootId userId=$userId tokenIds=${revoked.mkString(",")}")
-    revoked.size
-  }
 
   /** Logs the refusal at INFO, else at WARN. */
   private def refused(info: Boolean, reason: String, fields: String*): Option[Nothing] = {

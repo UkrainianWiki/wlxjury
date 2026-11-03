@@ -498,3 +498,13 @@ invitation.cancelled = The invitation has been cancelled.
 root.needs.verified.email = Root only for an account whose owner has verified its email (an accepted invitation or password link).
 email.changed.subject = The email address of your jury tool account was changed
 email.changed.body = Hello,\n\nThe email address of your jury tool account has been changed to {0}.\n\nIf this was not you, contact a contest organizer at once.
+
+# Sessions (security batch S3)
+signin.keep = Keep me signed in
+sessions.title = Sessions
+sessions.help = Sign out on every device and browser where you are signed in, this one included. Changing your password does this too, except on this browser. Your API tokens are not affected: revoke them under API tokens.
+sessions.signout.everywhere = Sign out everywhere
+sessions.end = End sessions
+sessions.ended = Every session of this account has ended; it must sign in again.
+api.tokens.revoke.all.mine = Revoke all tokens
+api.tokens.revoked.all = Tokens revoked: {0}.

@@ -92,6 +92,12 @@ class LoginController @Inject() (
   private def returnTo(implicit request: Request[AnyContent]): Option[String] =
     Secured.safeLocalPath(request.body.asFormUrlEncoded.flatMap(_.get("returnTo").flatMap(_.headOption)))
 
+  /** "Keep me signed in" (the form's checkbox, checked by default): a persistent cookie. A form
+    * without it (unchecked, or a client that never sends it) gets a browser-session cookie.
+    */
+  private def keepSignedIn(implicit request: Request[AnyContent]): Boolean =
+    request.body.asFormUrlEncoded.flatMap(_.get(LoginController.KeepField)).exists(_.exists(_.nonEmpty))
+
   /** 503 with the page, asking to try again: too many sign-ins at once. */
   private def busy(page: play.twirl.api.Html): Result =
     noStore(ServiceUnavailable(page)).withHeaders(RETRY_AFTER -> "5")
@@ -118,7 +124,7 @@ class LoginController @Inject() (
         try {
           User
             .login(login, password, deadline)
-            .map(signedIn(_, login, returnTo))
+            .map(signedIn(_, login, returnTo, keepSignedIn))
             .getOrElse(
               noStore(BadRequest(views.html.index(bound.withGlobalError("invalid.user.or.password"), returnTo)))
             )
@@ -132,15 +138,15 @@ class LoginController @Inject() (
 
   /** A new session of `user` (as read when the password was checked: its auth version is the
     * one the session carries), in `contestId` if they are an active member of it, else in the
-    * latest contest where they may see a page.
+    * latest contest where they may see a page; issued now, persistent if `keep`
+    * ([[SessionLifetime]]).
     */
-  private def signedIn(user: User, login: String, returnTo: Option[String], contestId: Option[Long] = None)(implicit
-      request: RequestHeader
-  ): Result = {
+  private def signedIn(user: User, login: String, returnTo: Option[String], keep: Boolean,
+                       contestId: Option[Long] = None)(implicit request: RequestHeader): Result = {
     val latest = Secured.inCurrentContest(user, contestId.map(_.toString))
     // defensive: inCurrentContest already picks an active membership; kept should its rules change
     val inContest = Secured.permitted(latest, _.hasAnyRole(Secured.ViewerRoles)).getOrElse(latest)
-    val sessionData = Secured.signedInSession(user, login) ++
+    val sessionData = Secured.signedInSession(user, login, keep) ++
       inContest.contestId.map(id => Secured.CurrentContestId -> id.toString)
     val nextPage = returnTo.fold(indexRedirect(inContest))(url => Redirect(url))
     val result = nextPage.withSession(sessionData: _*)
@@ -188,7 +194,9 @@ class LoginController @Inject() (
                 case Left(_) => linkInvalid
                 case Right((accepted, account)) =>
                   // to the start page by a redirect: a reload must not post the form again
-                  linkPage(signedIn(account, account.emailLo, Some(routes.LoginController.index.url), accepted.contestId))
+                  // no checkbox on this form: kept signed in, the sign-in form's default
+                  linkPage(signedIn(account, account.emailLo, Some(routes.LoginController.index.url), keep = true,
+                    accepted.contestId))
               }
             } catch {
               case _: PasswordHasher.Busy =>
@@ -260,7 +268,7 @@ class LoginController @Inject() (
                   case None => notFound
                   case Some(root) =>
                     accountLogger.info(s"setup_created_root accountId=${root.getId}")
-                    signedIn(root, root.emailLo, Some(routes.LoginController.index.url))
+                    signedIn(root, root.emailLo, Some(routes.LoginController.index.url), keep = true)
                 }
               } catch {
                 case _: PasswordHasher.Busy => busy(views.html.setup(bound.withGlobalError("signin.busy")))
@@ -283,14 +291,26 @@ class LoginController @Inject() (
     noStore(Ok(views.html.logout(Secured.safeLocalPath(returnTo))))
   }
 
-  /** Signs out (a POST with the CSRF token): a new session, and the login page, which
-    * comes back to `returnTo` (a local path only) after signing in again.
+  /** Signs out this browser (a POST with the CSRF token): a new session, and the login page,
+    * which comes back to `returnTo` (a local path only) after signing in again. Other sessions
+    * of the account stay ([[logoutEverywhere]] ends them).
     */
   def logout(): Action[AnyContent] = Action { implicit request =>
     val returnTo = Secured.safeLocalPath(
       request.body.asFormUrlEncoded.flatMap(_.get("returnTo").flatMap(_.headOption))
     )
     Redirect(routes.LoginController.login(returnTo)).withNewSession
+  }
+
+  /** Signs out everywhere (a POST with the CSRF token, from the own profile): the account's
+    * session version goes up ([[User.endSessions]]), so every session of it ends, this one
+    * included, which then goes to the login page. API tokens are not sessions: they stay
+    * (the profile revokes them).
+    */
+  def logoutEverywhere(): EssentialAction = withAuth(_ => true) { user => implicit request =>
+    User.endSessions(user.getId)
+    accountLogger.info(s"sessions_ended accountId=${user.getId} by=self")
+    Redirect(routes.LoginController.login(None)).withNewSession
   }
 
   /** Old links to the error page: only known message keys, never the link's text. */
@@ -331,6 +351,9 @@ class LoginController @Inject() (
 }
 
 object LoginController {
+
+  /** The sign-in form's "Keep me signed in" checkbox. */
+  val KeepField = "remember"
 
   /** The messages `/error?message=` shows; any other text shows error.unknown. */
   val ErrorPageKeys: Set[String] =
