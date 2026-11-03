@@ -295,9 +295,10 @@ The two scalawiki diffs (`publishing.diff`, `anonymous-tests.diff`) both change 
   - `coverageProvider: "v8"`: the default Babel provider reported 0 of 0 statements for these files, with the same config. V8 counts statements as lines.
   - `collectCoverageFrom`: our own `public/javascripts/*.js`, untested ones included, without the vendored `jquery.hotkeys.js`, `jquery.raty.js`, `unitegallery.js` and `ug-theme-tiles.js`.
   - Reporters: `lcov` (`lcov.info` and an HTML report), `text-summary` (in the log) and `json-summary`, into `target/jest-coverage/`.
-- **Scala exclusions (`build.sbt`):** generated code only. `coverageExcludedPackages`: `router.*`, `views.html.*` (and `views.txt` / `views.xml`), `controllers.javascript.*`, `controllers.Reverse*`, `*BuildInfo*` (there is no BuildInfo today; harmless). `coverageExcludedFiles`: `.*/target/.*`, every managed source (Twirl and routes are compiled from `target/scala-2.13/twirl` and `routes`).
+- **Scala exclusions (`build.sbt`):** generated code only. `coverageExcludedPackages`: `router.*`, `controllers.javascript.*`, `controllers.Reverse*`, `*BuildInfo*` (there is no BuildInfo today; harmless). `coverageExcludedFiles`: `.*/target/.*`, every managed source (Twirl and routes are compiled from `target/scala-2.13/twirl` and `routes`). The templates go by file only, not by a `views.html.*` package rule: the hand-written `app/views/bs/FieldView.scala` and `Layout.scala` are in package `views.html.bs` and are measured.
   - **Not excluded: `org.intracer.wmua.cmd`.** Despite the name it holds no command-line tools: `DistributeImages` and `ImageWithRatingSeqFilter` are the distribution and filtering logic that `RoundDistributionHandler` uses, with their own specs. There is no `main` or `App` under `app/`.
-- **Reports:** artifact `coverage-reports-attempt-<n>`, kept 14 days: `target/scala-2.13/scoverage-report/` (HTML, `index.html`, and `scoverage.xml`), `target/scala-2.13/coverage-report/` (Cobertura `cobertura.xml`), `target/jest-coverage/` (`lcov.info`, `lcov-report/index.html`, `coverage-summary.json`), plus the JUnit XML and the check log.
+- **Reports:** artifact `coverage-reports-attempt-<n>`, kept 14 days: `target/scala-2.13/scoverage-report/scoverage.xml`, `target/scala-2.13/coverage-report/` (Cobertura `cobertura.xml`), `target/jest-coverage/` (`lcov.info`, `lcov-report/index.html`, `coverage-summary.json`), plus the JUnit XML and the check log.
+  - The Scala HTML report (`target/scala-2.13/scoverage-report/`, `index.html`; about 22 MB) is a second artifact, `coverage-html-attempt-<n>`, on pushes and manual runs only. For a PR, read the job summary and the XML, or run `sbt coverage test coverageReport` locally.
   - `scripts/coverage-summary.py` writes the job summary (`$GITHUB_STEP_SUMMARY`): Scala statement and branch %, and JS lines, statements, functions and branches %. It runs `if: always()` and lists a missing report as missing.
 - **Packaging stays uninstrumented:**
   - `deployment.yml`'s `sbt dist` runs on its own runner, in a session that never ran `coverage`, so nothing instrumented can reach it.
@@ -319,7 +320,7 @@ The two scalawiki diffs (`publishing.diff`, `anonymous-tests.diff`) both change 
 
 - The lock and timing specs passed under instrumentation with their own timeouts: `CriteriaRateSpec` 18.7 → 21.5 s, `RoundImageLockSpec` 0.6 → 0.6 s, `WritePathLockSpec` 1.9 → 2.9 s. None needs more time or an exclusion. `CategoryOperationInitializationSpec` (`Class.forName` on the category-operation objects) passes too: scoverage keeps class and member names.
 - The slowest distribution specs grow most (`RoundDistributionJobSpec` 36 → 44 s, `RoundRedistributionFiltersSpec` 32 → 41 s).
-- **Anomaly, not caused by coverage:** in the uninstrumented run, one statement of `CoiRoundSpec` (`UPDATE round SET active_before_freeze = …`, the freeze release) waited 1565 s (26 min) before completing; the spec then passed. Instrumented, the same spec took 6 s. It looks like a row-lock wait on `round` from another connection, or a stalled machine; not reproduced. Excluded from the sums above. Worth a look if it recurs in CI.
+- **Anomaly, not caused by coverage:** in the uninstrumented run, one statement of `CoiRoundSpec` (`UPDATE round SET active_before_freeze = …`, the freeze release) waited 1565 s (26 min) before completing; the spec then passed. Instrumented, the same spec took 6 s. Unexplained, and not a row-lock wait: InnoDB's 50 s default would have failed it. Likely a metadata lock or a paused VM; not reproduced. Since PR [60] the test container runs with `--innodb-lock-wait-timeout=10` and `--lock-wait-timeout=60` (`SharedTestDb.forTests`), so a leaked row or metadata lock now fails the spec with an error that names it, instead of hanging. Excluded from the sums above. Worth a look if it recurs in CI.
 
 **Baseline:** from the first CI run of PR [60], under "Validation of PR [60]" below.
 
@@ -436,13 +437,15 @@ The two scalawiki diffs (`publishing.diff`, `anonymous-tests.diff`) both change 
   - **Coverage** [run 41648056201](https://github.com/UkrainianWiki/wlxjury/actions/runs/41648056201): **6m48s** job, scalawiki from the cache. `coverage Test/compile` 96 s, `test` 258 s, `coverageReport` 3 s. Scala: 1902 total, 0 failed, 10 skipped, 1 pending; Jest: 20 suites, 253 passed. Artifact `coverage-reports-attempt-1`, about 40 MB unpacked (25 MB Scala reports, 15 MB JUnit XML, 0.4 MB Jest).
   - **CI** [run 41648056177](https://github.com/UkrainianWiki/wlxjury/actions/runs/41648056177), same commit: 5m23s job, `Test/compile` 63 s, `test` 207 s. So instrumentation costs about **+25% on the suite** (258 s against 207 s), +33 s of compile, and **about 1.5 min on the job**. That is far under the 15 minutes that would have moved coverage off PRs.
   - **Deployment tests** [run 41648056167](https://github.com/UkrainianWiki/wlxjury/actions/runs/41648056167): both jobs passed; `sbt dist` is unaffected by the packaging guard when coverage is off.
-- **Baseline (run 41648056201):**
+- **Run 3** (`4a861818`, docs only): Coverage [run 41649422116](https://github.com/UkrainianWiki/wlxjury/actions/runs/41649422116), CI and Deployment tests all green.
+- **Baseline (run 41649422116, `4a861818`):**
 
   | | Statements | Branches | Lines | Functions |
   |---|---|---|---|---|
-  | Scala (scoverage) | **89.89%** (16,930 / 18,834) | **85.94%** | | |
+  | Scala (scoverage) | **89.87%** (16,926 / 18,834) | **85.84%** | | |
   | JS (Jest, V8) | **96.76%** (1,465 / 1,514) | **91.39%** (446 / 488) | **96.76%** (1,465 / 1,514) | **93.81%** (91 / 97) |
 
-  - Scala by package (statements): `controllers` 90.5% (6,427), `db.scalikejdbc` 93.4%, `services` 88.6%, `services.distribution` 93.1%, `services.imports` 88.9%, `services.jobs` 86.2%, `services.oauth` 91.0%, `org.intracer.wmua.cmd` 77.8%, `modules` 62.9% (Guice wiring and startup), `api` 89.0%.
-  - No generated file is in the report: no `target/` source, no `views.html` or `router` package (the `views` package is the hand-written helpers in `app/views/`).
+  - Scala by package (statements): `controllers` 90.5% (6,427), `db.scalikejdbc` 93.4%, `services` 88.5%, `services.distribution` 93.1%, `services.imports` 88.9%, `services.jobs` 85.9%, `services.oauth` 91.0%, `org.intracer.wmua.cmd` 77.8%, `modules` 62.9% (Guice wiring and startup), `api` 89.0%.
+  - No generated file is in the report: no `target/` source, no `router` package, no template (the `views` package is the hand-written helpers in `app/views/`).
   - V8 counts JS statements as lines, so the two JS figures are equal by construction.
+  - Run to run, Scala moves a little: run 2 had 89.89% / 85.94% (16,930 statements), 4 more in `services` and `services.jobs`, whose timing-dependent paths (scheduler, retries) don't run the same every time. Read differences of a tenth of a point as noise.
