@@ -41,11 +41,21 @@ case class Image(
   /** By MediaWiki's media type, else the file extension - see scalawiki's `Image.isVideo`. */
   def isVideo: Boolean = org.scalawiki.dto.Image.isVideo(title, mediaType)
 
+  /** A file shown by a thumbnail also at its full width or wider (a PDF, TIFF, SVG or
+    * WebM): a browser can't show it in an `<img>`.
+    */
+  def thumbnailOnly: Boolean = {
+    val lowerCaseTitle = title.toLowerCase
+    ImageUtil.ThumbnailOnlyExtensions.exists(lowerCaseTitle.endsWith)
+  }
+
 }
 
 object ImageUtil {
 
   def fmt = new DecimalFormat("0.0")
+
+  val ThumbnailOnlyExtensions: Seq[String] = List(".pdf", ".tif", ".tiff", ".svg", ".webm")
 
   def resizeTo(w: Int, h: Int, resizeToX: Int, resizeToY: Int): Int = {
     val yRatio = h.toDouble / resizeToY

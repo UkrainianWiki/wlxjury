@@ -381,15 +381,11 @@ class GalleryController @Inject() (
     val urls =
       for (
         image <- images;
-        (x, y) <- Global.smallSizes;
-        factor <- Global.sizeFactors
+        px <- Global.thumbnailWidths(image.width, image.height)
       )
-        yield Seq(
-          Global.resizeTo(image, (x * factor).toInt, (y * factor).toInt),
-          Global.resizeTo(image, (y * factor).toInt)
-        )
+        yield Global.resizeToPx(image, px)
 
-    urls.flatten.sorted.distinct
+    urls.sorted.distinct
   }
 
   def urlsStream(

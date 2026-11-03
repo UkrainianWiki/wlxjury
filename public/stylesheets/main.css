@@ -242,3 +242,36 @@ body {
 .bs-callout-info h4 {
     color: #5bc0de;
 }
+
+/* A gallery tile whose thumbnail failed to load (a file deleted or renamed on Commons):
+   unitegallery.js marks it, sized from the image's data-width/height. A plain grey tile
+   instead of the browser's broken-image icon; hovering still shows the file's title. */
+.ug-thumb-wrapper.wlx-thumb-failed {
+    background-color: #e0e0e0;
+}
+.ug-thumb-wrapper.wlx-thumb-failed img.ug-thumb-image {
+    visibility: hidden;
+}
+/* The large view's image that failed to load from Wikimedia and from this server (a file
+   deleted on Commons): large.scala.html marks its link. The same grey box. */
+a.wlx-large-failed {
+    display: inline-block;
+    position: relative;
+    width: 640px;
+    max-width: 100%;
+    height: 480px;
+    background-color: #e0e0e0;
+}
+a.wlx-large-failed img {
+    display: none;
+}
+.ug-thumb-wrapper.wlx-thumb-failed::after, a.wlx-large-failed::after {
+    content: "\2298";
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 48px;
+    color: #9e9e9e;
+    pointer-events: none;
+}

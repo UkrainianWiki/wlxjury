@@ -5,9 +5,12 @@ import controllers.KOATUU
 import db.{ImageRepo, RoundRepo}
 import db.scalikejdbc.{ImageJdbc, Round}
 import org.scalawiki.MwBot
+import play.api.inject.ApplicationLifecycle
 import play.api.{Configuration, Environment, Logging}
-import services.imports.{CommonsLogin, CommonsSource, MonumentListSource, MwCommonsSource, MwMonumentListSource}
+import services.imports.{CommonsFileCheck, CommonsLogin, CommonsSource, MonumentListSource, MwCommonsSource, MwMonumentListSource}
 import services.jobs.JobScheduler
+
+import scala.concurrent.Future
 
 class AppModule(environment: Environment, configuration: Configuration)
     extends AbstractModule
@@ -39,4 +42,12 @@ class AppModule(environment: Environment, configuration: Configuration)
   /** One for the app: it keeps what the session is between import steps. */
   @Provides @Singleton
   def commonsLogin(bot: MwBot): CommonsLogin = new CommonsLogin(bot, CommonsLogin.credentials(configuration))
+
+  /** One for the app: it batches the checks of all requests and keeps their answers. */
+  @Provides @Singleton
+  def commonsFileCheck(source: CommonsSource, lifecycle: ApplicationLifecycle): CommonsFileCheck = {
+    val check = new CommonsFileCheck(source)
+    lifecycle.addStopHook(() => Future.successful(check.stop()))
+    check
+  }
 }

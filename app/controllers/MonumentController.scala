@@ -6,20 +6,21 @@ import org.scalawiki.wlx.dto.{Contest, ContestType, Monument, SpecialNomination}
 import org.scalawiki.wlx.query.MonumentQuery
 import org.scalawiki.wlx.stat.ContestStat
 import play.api.i18n.I18nSupport
-import play.api.mvc.{AbstractController, ControllerComponents}
+import play.api.mvc.{ControllerComponents, EssentialAction}
 
 import javax.inject.Inject
 
+/** The monument lists, for signed-in users. */
 class MonumentController @Inject()(cc: ControllerComponents)
-    extends AbstractController(cc)
+    extends Secured(cc)
     with I18nSupport {
 
-  def list = Action { implicit request =>
+  def list: EssentialAction = withAuth() { _ => implicit request =>
     val monuments = MonumentJdbc.findAll(Some(20))
     Ok(views.html.monuments(monuments))
   }
 
-  def byId(id: String) = Action { implicit request =>
+  def byId(id: String): EssentialAction = withAuth() { _ => implicit request =>
     val monuments = MonumentJdbc.find(id).toSeq
     Ok(views.html.monuments(monuments))
   }
