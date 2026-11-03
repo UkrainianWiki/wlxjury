@@ -216,9 +216,16 @@ class CoiRoundSpec extends Specification with TestDb with BeforeAll with BeforeE
       RoundImageCounts.get(Seq(round.getId))(ImageJdbc.imageCountByRounds) === Map(round.getId -> 7)
       // another round keeps its files
       pageIds(other.getId) === (1L to 10L).toSet - 6L
+      // their rows in the round go with their votes (round_image, V84); the other round's stay
+      RoundImageJdbc.byRound(round.getId).map(_.pageId).toSet === (1L to 10L).toSet -- conflicts
+      RoundImageJdbc.byRound(other.getId).map(r => r.pageId -> r.status).toMap.get(6L) === Some("deleted")
+      Seq(round, other).flatMap(r => RoundImageInvariants.violations(r.getId)) must beEmpty
       // restoring the deleted file brings nothing back
       DB.localTx(implicit s => DeletedFiles.restore(Seq(6L)))
       pageIds(round.getId) must not(contain(6L))
+      RoundImageJdbc.find(round.getId, 6L) must beNone
+      RoundImageJdbc.find(other.getId, 6L).map(_.status) === Some("in")
+      Seq(round, other).flatMap(r => RoundImageInvariants.violations(r.getId)) must beEmpty
     }
 
     "be refused for a round that is not open" in {

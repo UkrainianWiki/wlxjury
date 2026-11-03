@@ -167,6 +167,8 @@ class DeletedFilesSpec extends Specification with TestDb with BeforeAll with Bef
       DB.autoCommit { implicit s =>
         sql"DELETE FROM vote_aside WHERE page_id = 1".update()
         sql"UPDATE vote SET round_id = $r1 WHERE page_id = 1 AND round_id = $r2".update()
+        // with the file's rows, as VoteJdbc.setRound keeps them (round_image, V84)
+        RoundImageJdbc.syncPairs(Seq(r1 -> 1L, r2 -> 1L))
       }
 
       DeletedFiles.settle(Seq(1L)) === Seq(r1)

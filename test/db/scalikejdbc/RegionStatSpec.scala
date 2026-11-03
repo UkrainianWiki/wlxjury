@@ -5,7 +5,7 @@ import org.intracer.wmua.{Image, Vote}
 import org.scalawiki.wlx.dto.Monument
 import org.specs2.mutable.Specification
 import org.specs2.specification.BeforeAll
-import scalikejdbc.DBSession
+import scalikejdbc._
 
 class RegionStatSpec extends Specification with BeforeAll with TestDb {
 
@@ -23,8 +23,15 @@ class RegionStatSpec extends Specification with BeforeAll with TestDb {
   private def insertMonuments(monuments: Seq[Monument])(implicit session: DBSession): Unit =
     monumentDao.batchInsert(monuments)
 
-  private def insertSelections(selections: Seq[Vote])(implicit session: DBSession): Unit =
+  /** The votes, in their rounds: a vote adds its file to its round (round_image, V84) only if
+    * the round exists, and the whole round's regions are read from those rows.
+    */
+  private def insertSelections(selections: Seq[Vote])(implicit session: DBSession): Unit = {
+    selections.map(_.roundId).distinct.foreach { id =>
+      sql"INSERT IGNORE INTO round (id, number, contest_id, rates) VALUES ($id, 1, 1, 1)".update()
+    }
     selectionDao.batchInsert(selections)
+  }
 
   private def selection(pageId: Long, userId: Long, roundId: Long, monumentId: Option[String] = None): Vote =
     Vote(pageId = pageId, juryId = userId, roundId = roundId, rate = 1, monumentId = monumentId)

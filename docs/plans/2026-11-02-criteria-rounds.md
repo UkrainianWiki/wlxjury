@@ -101,7 +101,7 @@ criteria.
 Weights and localisation: no evidence either was ever used (names were always one language per
 contest); both listed as decisions.
 
-## 3. Interaction with the round-images plan (recommendations to merge into `2026-11-02-round-images-two-step.md`)
+## 3. Interaction with the round-images plan (merged into `2026-11-02-round-images-two-step.md` §5, §8 with P1, 2026-11-03)
 
 - **P0 rename:** keep `criteria_rate.selection → vote_id` in P0 as planned. Leave the other
   criteria changes (column `criteria → criterion_id`, keys) to C2 so P0 stays behaviour-free.
