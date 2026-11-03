@@ -55,11 +55,10 @@ Test / test := (Test / test).dependsOn(jsTest).value
 // Scala coverage (sbt-scoverage), measured only by `sbt coverage test coverageReport` in the CI
 // job "coverage" (plan: docs/plans/2026-11-03-ci-and-scalawiki-packages.md, "Test coverage").
 // Not measured: generated code, i.e. the Twirl templates and the routes and reverse routes.
+// The templates go by file only (below): views.html.bs also holds hand-written FieldView and
+// Layout (app/views/bs/), which are measured.
 coverageExcludedPackages := Seq(
   "router\\..*",
-  "views\\.html\\..*",
-  "views\\.txt\\..*",
-  "views\\.xml\\..*",
   "controllers\\.javascript\\..*",
   "controllers\\.Reverse.*",
   ".*BuildInfo.*"
