@@ -24,7 +24,7 @@ services:
       WLXJURY_DB: wlxjury
       WLXJURY_DB_USER: wlxjury_user
       WLXJURY_DB_PASSWORD: wlxjury_password
-      JAVA_OPTS: -Ddb.default.migration.auto=true -Dplay.http.secret.key=realSecret
+      JAVA_OPTS: -Ddb.default.migration.auto=true -Dplay.http.secret.key=realSecret -Dwlxjury.allowedHosts=localhost
     ports:
       - "9000:9000"
 

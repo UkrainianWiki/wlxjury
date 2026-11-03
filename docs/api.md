@@ -49,7 +49,7 @@ Errors are JSON, with a fixed code and never the request's text:
 
 | Status | Body | When |
 |---|---|---|
-| 400 | `{"error": "bad_request"}` | a body or path that can't be read |
+| 400 | `{"error": "bad_request"}` | a body or path that can't be read, or a `Host` that isn't one of the deployment's names (`WLXJURY_ALLOWED_HOSTS`, docs/deployment.md): call the API by the jury tool's host name, not the server's address |
 | 401 | `{"error": "unauthenticated"}`, `WWW-Authenticate: Bearer` | no credentials, or a token that is unknown, revoked, expired or malformed |
 | 403 | `{"error": "forbidden", "reference": "1a2b3c4d"}` | signed in, but not allowed; the reference finds the log line |
 | 403 | `{"error": "csrf", "reference": "…"}` | a session's write without a valid `Csrf-Token` header |

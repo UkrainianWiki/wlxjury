@@ -102,6 +102,7 @@ class GalleryOrderSpec extends PlaySpecification with PlayTestDb {
         val cookie = cookies(chosen).get(RoundList.SortCookie)
         cookie.map(_.value) === Some("rate")
         cookie.flatMap(_.maxAge) must beSome(be_>(0))
+        cookie.map(_.secure) === Some(false) // as the session cookie in the tests
 
         tiles(page(gallery(f), f, cookie.get)).head === f.pageIds(9)
         // the URL's order wins, and becomes the remembered one
@@ -109,6 +110,18 @@ class GalleryOrderSpec extends PlaySpecification with PlayTestDb {
         // nothing to remember without a chosen order, or the same one
         cookies(get(gallery(f), f)).get(RoundList.SortCookie) must beNone
         cookies(get(gallery(f, "?sort=rate"), f, cookie.get)).get(RoundList.SortCookie) must beNone
+      }
+    }
+
+    "have their order remembered in a Secure cookie when the session cookie is (production)" in {
+      implicit val cfg: Map[String, String] = Map("play.http.session.secure" -> "true")
+      testDbApp { implicit app =>
+        // a fresh app with this config: the shared one's truncation doesn't run
+        SharedTestDb.truncateAll()
+        val f = fixture()
+        val cookie = cookies(get(gallery(f, "?sort=rate"), f)).get(RoundList.SortCookie)
+        cookie.map(_.value) === Some("rate")
+        cookie.map(_.secure) === Some(true)
       }
     }
 

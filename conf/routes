@@ -2,8 +2,13 @@
 # This file defines all application routes (Higher priority routes first)
 # ~~~~
 
-# Home page
+# The deploy tools' readiness check, at http://127.0.0.1:9000/health/ready: any Host (anyhost:
+# AllowedHostsFilter skips it), since production allows only the jury's names. It answers only
+# loopback clients; through Apache (X-Forwarded-For) it is a 404 (ReadinessController).
++ anyhost
 GET         /health/ready                                                           controllers.ReadinessController.ready
+
+# Home page
 GET         /                                                                       @controllers.LoginController.index
 
 GET         /wikipedia/commons/thumb/*path                                          @controllers.ImageProxyController.serve(path: String)
