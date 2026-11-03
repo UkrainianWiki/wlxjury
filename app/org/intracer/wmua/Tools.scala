@@ -110,15 +110,6 @@ object Tools {
     }
   }
 
-  def verifySpain(): Unit = {
-    val newImages = ImageJdbc.byRatingMerged(0, 112).map(_.title).toSet
-    val selected = Source.fromFile("spain.txt")(scala.io.Codec.UTF8).getLines().map(_.replace(160.asInstanceOf[Char], ' ').trim).toSet
-
-    val absent = selected -- newImages
-
-    absent.foreach(println)
-  }
-
   def removeIneligible() = {
     val category = "Category:Obviously ineligible submissions for ESPC 2015 in Ukraine"
     val query = commons.page(category)
