@@ -8,6 +8,9 @@
 //   chosen;
 // - the conflicts of interest's confirmation, when saving a round with the box ticked would
 //   take files out of it (data-coi-round-files, data-coi-confirm);
+// - a new round's criteria (#round-criteria), hidden and disabled (so not sent) for a yes/no
+//   or comments-only rating (#rates 1 or 0); an existing round's rating is fixed (its select
+//   disabled), and its criteria stay as they are;
 // - the jurors' table, loaded when its panel is first opened (#round-stat-table's data-src),
 //   and the number of new files on request (#count-new-files' data-src): the edit page leaves
 //   out its two expensive parts.
@@ -93,6 +96,20 @@
     });
   }
 
+  /** Shows a new round's criteria for a rated rating only; disabled selects aren't sent. */
+  function initCriteria(doc) {
+    var rates = doc.getElementById('rates');
+    var box = doc.getElementById('round-criteria');
+    if (!rates || !box || rates.disabled) return;
+    function update() {
+      var rated = Number(rates.value) > 1;
+      box.hidden = !rated;
+      Array.prototype.forEach.call(box.querySelectorAll('select'), function (s) { s.disabled = !rated; });
+    }
+    rates.addEventListener('change', update);
+    update();
+  }
+
   function initLazyParts() {
     $('#collapseJurors').one('show.bs.collapse', function () {
       var el = $('#round-stat-table');
@@ -117,6 +134,7 @@
     $('#previousRound').change(previousRoundsChanged);
     $('#jurors').change(jurorsChanged(t.distribution || {}));
     initCoiConfirm(doc);
+    initCriteria(doc);
     initLazyParts();
   }
 

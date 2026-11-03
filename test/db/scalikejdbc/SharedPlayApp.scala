@@ -56,7 +56,7 @@ object SharedPlayApp {
 
   private val dataTables = Seq(
     "account_token", "api_token", "job", "legacy_password_retired", "criteria_rate", "vote", "vote_aside", "image_renames", "category_members", "comment",
-    "criteria", "round_user", "user_contest", "images", "round", "users",
+    "criteria", "round_criterion", "round_user", "user_contest", "images", "round", "users",
     "category", "monument", "contest_jury"
   )
 
@@ -66,6 +66,8 @@ object SharedPlayApp {
     DB.autoCommit { implicit session =>
       SQL("SET FOREIGN_KEY_CHECKS=0").execute.apply()
       dataTables.foreach(t => SQL(s"TRUNCATE TABLE `$t`").execute.apply())
+      // the catalogue keeps the criteria V83 ships, which no test adds
+      SQL(s"DELETE FROM criterion WHERE id > ${org.intracer.wmua.Criterion.Shipped.size}").execute.apply()
       SQL("SET FOREIGN_KEY_CHECKS=1").execute.apply()
     }
     // TRUNCATE resets AUTO_INCREMENT, so round ids are reused

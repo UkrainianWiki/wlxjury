@@ -96,7 +96,7 @@ class RoundListSpec extends Specification {
     "keep its view too in a large view's, its votes' and its comments'" in {
       list.largeUrl(105) === "/large/round/7/user/3/region/80/pageid/105?module=byrate&filter=unrated&sort=rate"
       list.voteUrl(105, 4) === "/large/round/7/region/80/pageid/105/select/4?module=byrate&filter=unrated&sort=rate"
-      list.voteUrl(105, 4, Some(2)) ===
+      list.voteUrl(105, 4, Some(2L)) ===
         "/large/round/7/region/80/pageid/105/select/4?module=byrate&filter=unrated&sort=rate&criteria=2"
       list.votePrefix(105) + 4 + list.voteQuery() === list.voteUrl(105, 4)
       list.commentUrl(105) === "/comment/region/80/pageid/105?round=7&module=byrate&filter=unrated&sort=rate"

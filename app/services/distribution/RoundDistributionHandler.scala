@@ -78,7 +78,7 @@ object DistributionState {
   *  3. apply the round's per-image filters ([[DistributeImages.perImageFilters]], the
   *     same chain as the in-memory path);
   *  4. assign jurors from the job's running position ([[DistributeImages.assign]]) and
-  *     insert the vote rows, and criteria rates in a criteria round.
+  *     insert the vote rows (a criteria round's rates are written by its votes).
   *
   * A job may carry a pasted list of files (`params.titles`, from the round form's "Add
   * files"): after the filtered candidates (or instead of them, with `params.listOnly`) its
@@ -321,7 +321,7 @@ class RoundDistributionHandler @Inject() (
             else c.filter(candidates(c, roundId, st1.cursor, window.last)).map(_.image)
           val rows = DistributeImages.assign(c.round, passed, c.jurors, st1.position)
           beforeInsert(c.round, passed)
-          DistributeImages.insertRows(c.round, rows)
+          DistributeImages.insertRows(rows)
           afterInsert(c.round, rows)
           if (rows.nonEmpty) ctx.afterCommit(RoundImageCounts.invalidate(roundId))
           continue(
@@ -356,7 +356,7 @@ class RoundDistributionHandler @Inject() (
               val passed = listed.filterNot(i => conflictIds.contains(i.pageId))
               val rows = DistributeImages.assign(c.round, passed, c.jurors, st1.position)
               beforeInsert(c.round, passed)
-              DistributeImages.insertRows(c.round, rows)
+              DistributeImages.insertRows(rows)
               afterInsert(c.round, rows)
               if (rows.nonEmpty) ctx.afterCommit(RoundImageCounts.invalidate(roundId))
               continue(

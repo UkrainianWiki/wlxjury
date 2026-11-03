@@ -63,8 +63,8 @@ region filter was Vuln 1); `orderBy` is built from the query's enumerated `sortO
 
 **Exceptions** (`RawSqlSpec.Allowed`): `ImageJdbc` (`regionOf` over a fixed column),
 `ImageDbNew` (structure, group, order and limit from enumerated options and numbers),
-`DistributeImages` (criteria ids, constants), `RoundDistributionHandler` (an order from an
-enumerated set).
+`RoundDistributionHandler` (an order from an enumerated set). (`DistributeImages` left the
+list with its criteria ids, C2.)
 
 ## 2. Secrets in configuration
 
@@ -299,7 +299,8 @@ job's error is a key, numeric arguments and the reference of its ERROR log line)
 
 **Exceptions** (`ErrorTextSpec.Allowed`, capped per file): `RoundController` (the text of our
 own `require` on round settings), `Job` (the dedupe index's name), `DbErrors` (deadlock and lock
-wait tests), `RoundService` (the submit token's unique index): each tests the text, none shows it.
+wait tests), `RoundService` (the submit token's unique index), `CriterionJdbc` (the unique index on a
+criterion's name, C2): each tests the text, none shows it.
 
 ## 13. Personal data in logs
 
