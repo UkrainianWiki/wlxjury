@@ -35,8 +35,6 @@
 @main("filelist", user, list.asUserId, Some(list.round), rounds, gallery = false, Some(list),
     filters = views.html.regionMenu(regionMenu)) {
 
-    <div class="container">
-
     @defining(Some(list.round)) { round =>
     @defining(list.asUserId) { asUserId =>
     @defining(list.regionParam) { region =>
@@ -119,7 +117,6 @@
             </tfoot>
         </table>
         }
-    </div>
     </div>
     </div>
 }

@@ -10,7 +10,8 @@
         pager: Html = Html(""),
         contestId: Option[Long] = None,
         rates: RateDistribution = new RateDistribution(Map.empty),
-        filters: Html = Html(""))(implicit messages: Messages, request: RequestHeader)
+        filters: Html = Html(""),
+        backHere: Boolean = true)(implicit messages: Messages, request: RequestHeader)
 
 @* The viewer's own gallery: the page's list if it is that, else where they start in its round *@
 @ownList(l: RoundList) = @{
@@ -58,8 +59,8 @@
     }
 }
 
-<!-- Navigation bar on the top of the page: dark in every colour mode -->
-<nav class="navbar navbar-expand bg-dark mb-2 py-1" data-bs-theme="dark">
+<!-- Navigation bar on the top of the page, in the page's colour mode -->
+<nav class="navbar navbar-expand bg-body-tertiary border-bottom mb-2 py-1">
     <div class="container-fluid px-2">
         <ul class="navbar-nav flex-wrap align-items-center me-auto">
             @if(user != null) {
@@ -162,6 +163,6 @@
             @filters
             @pager
         </ul>
-        @logged(user)
+        @logged(user, backHere)
     </div>
 </nav>

@@ -36,6 +36,18 @@ class UserDbSpec extends Specification with BeforeAll {
       found.map(_.contestId) === Some(None)
     }
 
+    "keep the user's colour mode (V71), none until chosen" in new AutoRollbackDb {
+      val created = userDao.create(User("themed", "themed@example.com", theme = Some("dark")))
+      userDao.findById(created.getId).flatMap(_.theme) === Some("dark")
+
+      val plain = userDao.create(User("plain", "plain@example.com"))
+      userDao.findById(plain.getId).flatMap(_.theme) === None
+      userDao.updateTheme(plain.getId, controllers.Theme.Auto)
+      userDao.findById(plain.getId).flatMap(_.theme) === Some("auto")
+      userDao.updateTheme(plain.getId, controllers.Theme.Light)
+      userDao.findById(plain.getId).flatMap(_.theme) === Some("light")
+    }
+
     "create a contest member, found with the role in that contest only" in new AutoRollbackDb {
       createContests(10, 20)
       val created = userDao.create(User("juror", "juror@example.com", None, Set("jury"), Some("hash"), Some(10L)))

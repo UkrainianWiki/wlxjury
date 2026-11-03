@@ -10,13 +10,13 @@
 @index = @{ hood.index }
 
 @optionalButton(url: Option[String], nav: String, icon: String, title: String) = {
-    <a role="button" class="btn btn-secondary btn-sm@if(url.isEmpty) { disabled}" @if(url.isEmpty) {aria-disabled="true" }data-nav="@nav" href="@url.getOrElse("#")" title="@Html(title)">
+    <a role="button" class="btn btn-outline-secondary btn-sm@if(url.isEmpty) { disabled}" @if(url.isEmpty) {aria-disabled="true" }data-nav="@nav" href="@url.getOrElse("#")" title="@Html(title)">
         <i class="bi bi-@icon" aria-hidden="true"></i>
     </a>
 }
 
 @buttonGallery() = {
-    <a role="button" class="btn btn-secondary btn-sm" data-nav="gallery" href="@list.atUrl(files(index).pageId)" title="@Messages("back.to.gallery") &lt;Esc&gt;">
+    <a role="button" class="btn btn-outline-secondary btn-sm" data-nav="gallery" href="@list.atUrl(files(index).pageId)" title="@Messages("back.to.gallery") &lt;Esc&gt;">
         <i class="bi bi-grid-3x3-gap-fill" aria-hidden="true"></i>
     </a>
 }
@@ -44,7 +44,7 @@
     }
 }
 
-<div class="btn-group" role="group" style="margin:10px;">
+<div class="btn-group large-nav" role="group">
     @buttonGallery()
     @buttonUp()
     @buttonDown()
@@ -59,9 +59,9 @@
     @if(round.hasCriteria) {
        @round.criteriaNames.zipWithIndex.map { case (criteriaName, index) =>
            <div>@criteriaName</div>
-           <div id="rate-image@(index + 1)" style="margin-top:10px;"> </div>
+           <div id="rate-image@(index + 1)" class="large-stars"></div>
        }
     } else if (round.rates.id > 0)  {
-        <div id="rate-image" style="margin-top:10px ;"></div>
+        <div id="rate-image" class="large-stars"></div>
     }
     }

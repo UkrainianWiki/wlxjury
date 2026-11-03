@@ -10,7 +10,7 @@
         pager: Html = Html(""),
         contestId: Option[Long] = None)(content: Html)(implicit messages: Messages, request: RequestHeader)
 @* `title`: a message key, as main's *@
-@layout(Messages(title), bodyClass = if (gallery) "gallery" else "", theme = if (gallery) "dark" else "light") {
+@layout(Messages(title), bodyClass = if (gallery) "gallery" else "") {
         <script>
                 var contestId = @contestId.getOrElse(0L);
         </script>
@@ -75,7 +75,9 @@
 } {
         @navbar(title, user, asUserId, selectedRound, rounds, pager = pager, contestId = contestId)
 
-        <div class="container">
+        @* admin pages and their tables: up to the xxl container's width; forms narrow
+           themselves with their own columns *@
+        <div class="container-xxl">
 
         @content
 

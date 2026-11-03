@@ -17,22 +17,22 @@
 @urlAt(i: Int) = @{ view.largeUrl(files(i).image.pageId) }
 
 @navButton(url: Option[String], nav: String, icon: String, title: String) = {
-    <a role="button" class="btn btn-secondary btn-sm@if(url.isEmpty) { disabled}" @if(url.isEmpty) {aria-disabled="true" }data-nav="@nav" href="@url.getOrElse("#")" title="@title">
+    <a role="button" class="btn btn-outline-secondary btn-sm@if(url.isEmpty) { disabled}" @if(url.isEmpty) {aria-disabled="true" }data-nav="@nav" href="@url.getOrElse("#")" title="@title">
         <i class="bi bi-@icon" aria-hidden="true"></i>
     </a>
 }
 
 @defining(files(index)) { file =>
 @defining(file.image) { image =>
-@layout(image.title.stripPrefix("File:"), bodyClass = "gallery", fullHeight = true, theme = "dark") {
+@layout(image.title.stripPrefix("File:"), bodyClass = "gallery", fullHeight = true) {
 
         @fileKeyboardNav(index, files.size, urlAt, view.pageUrl(page))
 } {
-        <div class="container-fluid" style="padding-left:5px; margin-left:0px; margin-right:0px; height:100%">
-            <div class="row" style="height:100%">
-                <div class="col-1 contest-file-info" style="margin-left:0px; min-width: 220px">
+        <div class="container-fluid large-view h-100">
+            <div class="row h-100">
+                <div class="col-1 contest-file-info large-side">
 
-                    <div class="btn-group" role="group" style="margin:10px;">
+                    <div class="btn-group large-nav" role="group">
                         @navButton(Some(view.pageUrl(page)), "gallery", "grid-3x3-gap-fill", s"${Messages("back.to.gallery")} <Esc>")
                         @navButton(Option.when(index > 0)(urlAt(index - 1)), "up", "chevron-up", s"${Messages("previous.image")} <${Messages("up.key")}>")
                         @navButton(Option.when(index < files.size - 1)(urlAt(index + 1)), "down", "chevron-down", s"${Messages("next.image")} <${Messages("down.key")}>")
@@ -65,9 +65,9 @@
                     </ul>
 
                     @for(at <- file.deletedAt) {
-                        <div id="deleted-file" class="card card-body" style="margin-right: 5px; margin-top: 10px; padding: 5px;">
+                        <div id="deleted-file" class="card card-body large-box">
                             <span class="badge text-bg-danger">@Messages("deleted.on.commons", at.toLocalDate)</span>
-                            <div style="margin-top: 5px;">
+                            <div class="mt-1">
                                 <a href="@Global.commonsPageUrl(image)" target="_blank" rel="noopener">@Messages("files.open.on.commons")</a>
                             </div>
                             <div>
@@ -79,7 +79,7 @@
                     @authorInfo(image, user)
                     @monumentInfo(image, monument)
 
-                    <div class="file-title" style="margin-right: 5px; margin-top: 5px; padding: 5px;">
+                    <div class="file-title large-line">
                         <a href="@Global.commonsPageUrl(image)" target="_blank" rel="noopener">@image.title</a>
                         @if(file.deletedAt.isEmpty) {
                             <br><a href="@image.url">@Html(Messages("full.resolution", image.resolutionStr, image.mpxStr))</a>
@@ -87,7 +87,7 @@
                     </div>
                 </div>
 
-                <div id="mainContent" class="col" style="margin-left:5px; margin-top: 10px; height:100%">
+                <div id="mainContent" class="col large-main h-100">
                     @* the file's page on Commons, in a new tab. A deleted file, gone from Wikimedia: the
                        largest thumbnail the cache keeps, else a grey box. Another, as large.scala.html
                        shows it: from Wikimedia, at its sizes; if that fails, once from this server; if
@@ -97,14 +97,14 @@
                         @if(image.isImage && file.deletedAt.isDefined && cached.isEmpty) {class="wlx-large-failed"}>
                         @if(image.isImage && file.deletedAt.isDefined) {
                             @for(src <- cached) {
-                                <img id="large_image" alt="@image.title" src="@src" style="max-width:100%; max-height:100%;"
+                                <img id="large_image" alt="@image.title" src="@src" class="mw-100 mh-100"
                                     onerror="this.parentNode.classList.add('wlx-large-failed');">
                             }
                         }
                         @if(image.isImage && file.deletedAt.isEmpty) {
                             @defining(Global.largeImage(image)) { large =>
                             <img id="large_image" alt="@image.title"
-                                src="@large.src" style="max-width:100%; max-height:100%;"
+                                src="@large.src" class="mw-100 mh-100"
                                 srcset="@large.srcset" @large.sizes.map { sizes => sizes="@sizes" }
                                 @large.fallback.map { fallback => data-fallback="@fallback" }
                                 onerror="var f = this.getAttribute('data-fallback');

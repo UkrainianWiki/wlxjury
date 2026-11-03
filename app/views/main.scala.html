@@ -12,8 +12,9 @@
         pager: Html = Html(""),
         rates: RateDistribution = new RateDistribution(Map.empty),
         contestId: Option[Long] = None,
-        filters: Html = Html(""))(content: Html)(implicit messages: Messages, request: RequestHeader)
-@layout(Messages(title), bodyClass = if (gallery) "gallery" else "", theme = if (gallery) "dark" else "light") {
+        filters: Html = Html(""),
+        backHere: Boolean = true)(content: Html)(implicit messages: Messages, request: RequestHeader)
+@layout(Messages(title), bodyClass = if (gallery) "gallery" else "") {
         <script type='text/javascript' src="@routes.Assets.versioned("javascripts/unitegallery.js")"></script>
         <link rel="stylesheet" href="@routes.Assets.versioned("stylesheets/unite-gallery.css")" type='text/css' />
 
@@ -34,6 +35,9 @@
                         tiles_justified_space_between:5,
                         tiles_justified_row_height: 200,
                         tile_overlay_opacity: 0.3,
+                        // no inline #F0F0F0 behind tiles: the page's grey, and main.css's for a
+                        // thumbnail that failed to load, follow the colour mode
+                        tile_enable_background: false,
                         tile_enable_overlay: true,
                         jury: @(user.getId == asUserId && selectedRound.exists(_.active) && user.roles.contains("jury")),
                         binary: @selectedRound.exists(_.isBinary)
@@ -43,9 +47,9 @@
         }
 } {
         @navbar(title, user, asUserId, selectedRound, rounds, list, pager,
-            contestId = contestId.orElse(selectedRound.map(_.contestId)), rates, filters)
+            contestId = contestId.orElse(selectedRound.map(_.contestId)), rates, filters, backHere)
 
-     <div class="container-fluid" style="margin-left: 0; margin-right :0;">
+     <div class="container-fluid">
 
         @content
 

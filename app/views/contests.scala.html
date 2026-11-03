@@ -27,9 +27,7 @@
             @helper.CSRF.formField
             @bs.text(importForm("source"), Symbol("placeholder") -> Messages("source"), Symbol("_label") -> Messages("source"), Symbol("_help") -> "")
 
-            <div class="btn btn-primary" onClick="document.forms['import-contests'].submit();">
-            @Messages("import")
-        </div>
+            <button type="submit" class="btn btn-primary">@Messages("import")</button>
         }
     </div>
     <div class="row" >
@@ -37,7 +35,7 @@
 
         @contestsTable(contests)
 
-        <table class="table table-striped table-sm" style="background-color: #CCCCCC;">
+        <table class="table table-striped table-sm">
 
             <thead>
                 <tr>
@@ -84,9 +82,8 @@
                             @bs.text(editContestForm("monumentIdTemplate"), Symbol("placeholder") -> Messages("id.template"), Symbol("_hiddenLabel") -> Messages("id.template"), Symbol("_help") -> Messages("id.template.help"))
                             </td>
                             <td>
-                                <div class="btn btn-primary" onClick="document.forms['add-contest'].submit();">
-                                @Messages("add")
-                                </div>
+                                @* a button outside the form in the DOM (a form can't wrap a table row): submits it by name *@
+                                <button type="button" class="btn btn-primary" onclick="document.forms['add-contest'].submit();">@Messages("add")</button>
                             </td>
                         </tr>
                     }

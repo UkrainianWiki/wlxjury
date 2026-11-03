@@ -5,7 +5,7 @@
 @import org.scalawiki.wlx.dto.Monument
 
 @for(m <- monument) {
-    <div class="card card-body" style="margin-right: 5px; margin-top: 10px; padding: 5px;">
+    <div class="card card-body large-box">
         @Messages(image.region.getOrElse("")), @Html(Monument.wikiLinkToUrl(m.city.getOrElse(""), "uk.wikipedia.org")) <br>
         <!--                        @Html(m.typ.getOrElse("") + " " + m.subType.getOrElse("")) <br> -->
         @Html(Monument.wikiLinkToUrl(m.name, "uk.wikipedia.org")) <br>

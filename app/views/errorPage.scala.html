@@ -28,5 +28,6 @@
 @if(user.isEmpty) {
     @mainAdmin(titleKey)(content)
 } else {
-    @main(titleKey, user.get, user.get.getId)(content)
+    @* the user menu's theme switch goes to the start page, not back to this URL *@
+    @main(titleKey, user.get, user.get.getId, backHere = false)(content)
 }
