@@ -24,7 +24,7 @@ the service, giving access to `private[services]` methods).
 
 The entire spec is skipped unless the JVM system property `integration` is set to `true`:
 
-```
+```bash
 sbt -Dintegration=true "testOnly services.LocalImageCacheServiceIntegrationSpec"
 ```
 

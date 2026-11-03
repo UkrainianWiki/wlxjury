@@ -29,7 +29,7 @@ Enable in `build.sbt` on the root project:
 ```
 
 Run benchmarks with:
-```
+```bash
 sbt "jmh:run -i 5 -wi 3 -f 1 .*SaveResizedBenchmark"
 sbt "jmh:run -i 5 -wi 3 -f 1 .*FetchAndCacheAllBenchmark"
 ```
@@ -52,7 +52,7 @@ This cleanly separates CPU computation from disk IO, enabling stable benchmarkin
 ## Optimization: Cascaded Scaling
 
 **Current** — every size scaled from `sourceImg`:
-```
+```text
 sourceImg (2200px) → 160px
 sourceImg (2200px) → 240px
 sourceImg (2200px) → 320px
@@ -61,7 +61,7 @@ sourceImg (2200px) → 1466px
 ```
 
 **New** — each size scaled from the previous larger output:
-```
+```text
 sourceImg (2200px) → 1466px → 666px → 500px → 333px → 320px → 240px → 160px
 ```
 
@@ -130,7 +130,7 @@ Both classes live in `test/services/` (same package as the service, enabling acc
 
 ## Success Criteria
 
-- JMH output shows cascaded `SaveResizedBenchmark` has lower ops/ms than `fromLargest` for the full 8-size run
+- JMH output shows cascaded `SaveResizedBenchmark` has higher ops/ms than `fromLargest` for the full 8-size run
 - JMH output shows cascaded `FetchAndCacheAllBenchmark` has lower latency for small sizes (120–500px) where the cascade ratio advantage is largest
 - All existing tests pass
 - No regression in image quality (correct dimensions verified by existing `saveResized` tests)

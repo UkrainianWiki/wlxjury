@@ -311,7 +311,13 @@ class GalleryController @Inject() (
       rate: Option[Int],
       module: String,
       criteria: Option[Int]
-  ): EssentialAction = withAuth() { user => implicit request =>
+  ): EssentialAction =
+    withAuth(
+      roundPermission(
+        User.ADMIN_ROLES ++ User.JURY_ROLES ++ User.ORG_COM_ROLES,
+        roundId
+      )
+    ) { user => implicit request =>
     SelectionJdbc.rate(
       pageId = pageId,
       juryId = user.getId,

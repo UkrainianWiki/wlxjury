@@ -14,7 +14,7 @@ class ApiSpec
   with JsonFormat {
 
   private val service = mock[ContestService]
-  private val route = new Api(service).routes
+  private val route = new Api(service, system).routes
   private val contest = ContestJury(
     id = Some(1),
     name = "WLM",

@@ -200,6 +200,13 @@ object SelectionJdbc extends CRUDMapper[Selection] {
     where("roundId" -> roundId)
       .distinctCount("juryId")
 
+  /** Number of distinct images that have at least one selection row in the round.
+    * Used to verify that image distribution for a freshly created round is complete.
+    */
+  def imageCountByRound(roundId: Long): Long =
+    where("roundId" -> roundId)
+      .distinctCount("pageId")
+
   def destroyAll(pageId: Long): Unit =
     updateBy(sqls.eq(s.pageId, pageId))
       .withAttributes("deletedAt" -> ZonedDateTime.now)
@@ -220,8 +227,27 @@ object SelectionJdbc extends CRUDMapper[Selection] {
         .eq(column.roundId, roundId)
     )
 
+  /** Re-parents every selection of `sourceRoundId` to `targetRoundId`.
+    *
+    * A juror may have rated the same image in both rounds; that source row is dropped
+    * (the target round's selection wins) so the merge can't violate the
+    * `(page_id, jury_id, round_id)` unique index.
+    */
   def mergeRounds(targetRoundId: Long, sourceRoundId: Long): Unit =
-    updateBy(sqls.eq(s.roundId, sourceRoundId))
-      .withNamedValues(s.roundId -> targetRoundId)
+    DB localTx { implicit session =>
+      sql"""DELETE src FROM selection src
+            JOIN selection tgt
+              ON tgt.round_id = $targetRoundId
+             AND tgt.page_id = src.page_id
+             AND tgt.jury_id = src.jury_id
+            WHERE src.round_id = $sourceRoundId""".update()
+
+      withSQL {
+        update(SelectionJdbc)
+          .set(column.roundId -> targetRoundId)
+          .where
+          .eq(column.roundId, sourceRoundId)
+      }.update()
+    }
 
 }

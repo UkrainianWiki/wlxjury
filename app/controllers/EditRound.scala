@@ -1,6 +1,6 @@
 package controllers
 
-import db.scalikejdbc.{MediaType, Round, RoundLimits}
+import db.scalikejdbc.{ContestJuryJdbc, MediaType, Round, RoundLimits}
 import org.scalawiki.wlx.dto.SpecialNomination
 import play.api.data.{Form, Mapping}
 import play.api.data.Forms._
@@ -35,7 +35,7 @@ object EditRound {
       "rates" -> number,
       "returnTo" -> optional(text),
       "minMpx" -> text,
-      "previousRound" -> optional(longNumber),
+      "previousRound" -> seq(text),
       "minJurors" -> optional(text),
       "minAvgRate" -> optional(text),
       "source" -> optional(text),
@@ -49,6 +49,14 @@ object EditRound {
       "specialNomination" -> optional(text),
       "mediaType" -> text
     )(applyEdit)(unapplyEdit)
+      .verifying(
+        "error.previous.rounds.mixed.type",
+        editRound => {
+          val ids = editRound.round.previousIds
+          ids.sizeIs < 2 ||
+            Round.sameRateType(Round.findByIds(editRound.round.contestId, ids))
+        }
+      )
   )
 
   def applyEdit(
@@ -61,7 +69,7 @@ object EditRound {
       rates: Int,
       returnTo: Option[String],
       minMpx: String,
-      previousRound: Option[Long],
+      previousRounds: Seq[String],
       prevSelectedBy: Option[String],
       prevMinAvgRate: Option[String],
       category: Option[String],
@@ -75,6 +83,7 @@ object EditRound {
       specialNomination: Option[String],
       mediaType: String
   ): EditRound = {
+    val previousRoundIds = previousRounds.flatMap(s => Try(s.trim.toLong).toOption)
     val round = new Round(
       id,
       num,
@@ -85,7 +94,7 @@ object EditRound {
       Round.ratesById(rates),
       limits = RoundLimits(),
       minMpx = Try(minMpx.toInt).toOption,
-      previous = previousRound,
+      previous = Option.when(previousRoundIds.nonEmpty)(previousRoundIds.mkString(",")),
       prevSelectedBy = prevSelectedBy.flatMap(s => Try(s.toInt).toOption),
       prevMinAvgRate = prevMinAvgRate.flatMap(s => Try(BigDecimal(s)).toOption),
       category = category,
@@ -94,7 +103,12 @@ object EditRound {
       minImageSize = Try(minImageSize.toInt).toOption,
       monuments = monumentIds,
       topImages = topImages,
-      specialNomination = specialNomination.filter(SpecialNomination.nominations.map(_.name).contains),
+      specialNomination = specialNomination.filter { name =>
+        ContestJuryJdbc.findById(contest).exists { c =>
+          c.name == "Wiki Loves Monuments" && c.country == "Ukraine" &&
+            SpecialNomination.nominations.filter(_.years.contains(c.year)).exists(_.name == name)
+        }
+      },
       mediaType = Option(mediaType).filterNot(_ == MediaType.All)
     ).withFixedCategories
     EditRound(round, jurors.flatMap(s => Try(s.toLong).toOption), returnTo, newImages)
@@ -111,7 +125,7 @@ object EditRound {
         Int,
         Option[String],
         String,
-        Option[Long],
+        Seq[String],
         Option[String],
         Option[String],
         Option[String],
@@ -138,7 +152,7 @@ object EditRound {
         round.rates.id,
         editRound.returnTo,
         round.minMpx.fold("No")(_.toString),
-        round.previous,
+        round.previousIds.map(_.toString),
         round.prevSelectedBy.map(_.toString),
         round.prevMinAvgRate.map(_.toString),
         round.category,
