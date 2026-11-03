@@ -347,4 +347,18 @@ The two scalawiki diffs (`publishing.diff`, `anonymous-tests.diff`) both change 
     - `Python unit tests and shellcheck`: **failed in 11 s**. `test_adoption_accepts_the_shipped_application_conf` took the shipped `wlxjury.legacyPasswords.{retire,firstCheck,checkEvery}` (S6) for literal credentials, because the setting path contains "password".
     - This failure was already on the stack, not caused by CI.
     - Fixed in [55]: an exact-path allowlist (`NONSECRET_SETTINGS`) in `wlxjury-deploy.py`, with a test that any other key under `wlxjury.legacyPasswords` is still refused. Locally, all 61 Python tests pass on python:3.8-slim.
-- **CI run 2:** RESULT_CI2
+- **CI run 2** (`c3f8cdc1`: anonymous tests and the adoption fix, 2026-11-03 10:55 UTC):
+  - **CI** [run 41623216087](https://github.com/UkrainianWiki/wlxjury/actions/runs/41623216087): **success in 5m08s**, with the sbt cache and the scalawiki cache restored.
+    - `Test/compile` took 65 s, the suite 180 s.
+    - Scala: 1776 total (`TestConfigAnonymousSpec` and the new `CommonsLoginSpec` example included), 0 failed, 10 skipped, 1 pending. Jest: 253 passed.
+    - Artifact `test-reports-0-attempt-1` (2.1 MB).
+  - **Deployment tests** [run 41623216062](https://github.com/UkrainianWiki/wlxjury/actions/runs/41623216062): both jobs **succeeded**. Python and shellcheck took 12 s; restore and release script took 4m22s. Artifact `deployment-logs-…` (5 KB).
+- **Measured runtime:**
+  - A CI run takes about 5–7 min, against the 20–28 min estimated above, and the deployment job about 4.5 min.
+  - With about 3 runs per PR, a PR costs about 20 runner-minutes, and a month after the series about 300–500 min.
+  - The queue at the 20-job limit is correspondingly shorter.
+- **Locally:**
+  - `TestConfigAnonymousSpec` and `CommonsLoginSpec` passed (28 of 28) with the credential variables unset.
+  - `TestConfigAnonymousSpec` passed (4 of 4) with dummy `COMMONS_USER` / `COMMONS_PASSWORD` set in the JVM's environment.
+  - Earlier, all of `services.imports.*`, `AppendImagesSpec` and `ImagesFromListSpec` passed.
+  - Every run used `env -u COMMONS_USER -u COMMONS_PASSWORD -u SCALAWIKI_LOGIN -u SCALAWIKI_PASSWORD`, or the dummy values.
