@@ -123,8 +123,14 @@ class LargeViewUrlsSpec extends Specification {
           val expected = (if (index == 0) Nil else Seq(1)) ++ (if (index == fileCount - 1) Nil else Seq(-1))
           u.keyVotes must_== expected.map(s => s"/large/round/1/pageid/${pageIdAt(index)}/select/$s?sort=rate")
           u.dataVoteUrls must haveSize(expected.size)
+        } else if (round.hasCriteria) {
+          // no digit keys: they voted the file's own rate, which overwrote the sum of its
+          // criteria (the server refuses it now); a criterion is voted by its stars
+          u.keyVotes must beEmpty
         } else {
           u.keyVotes must_== (0 to 5).map(s => s"/large/round/1/pageid/${pageIdAt(index)}/select/$s?sort=rate")
+        }
+        if (!round.isBinary) {
           // the stars of each of the two criteria, or the file's own (the inline script before
           // large-stars.js also set up the file's own stars in a criteria round, which has none)
           u.ratyVotePrefixes must haveSize(if (round.hasCriteria) 2 else 1)
@@ -133,6 +139,7 @@ class LargeViewUrlsSpec extends Specification {
               Seq(1, 2).map(c => s"?sort=rate&criteria=$c")
           u.ratyVotePrefixes.head must_== s"/large/round/1/pageid/${pageIdAt(index)}/select/"
         }
+        success
       }
 
       s"only move, by paths, in another juror's $roundName view at index $index" in {

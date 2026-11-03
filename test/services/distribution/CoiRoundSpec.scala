@@ -206,6 +206,12 @@ class CoiRoundSpec extends Specification with TestDb with BeforeAll with BeforeE
       pageIds(round.getId) === (1L to 10L).toSet -- conflicts
       asideRows(round.getId) must beEmpty
       criteriaRows(round.getId).keySet === (1L to 10L).toSet -- conflicts
+      // no criteria rate is left without its vote, in selection or moved aside
+      DB.readOnly { implicit s =>
+        sql"""SELECT COUNT(*) FROM criteria_rate cr
+              WHERE NOT EXISTS (SELECT 1 FROM selection s WHERE s.id = cr.selection)
+                AND NOT EXISTS (SELECT 1 FROM selection_deleted d WHERE d.id = cr.selection)""".map(_.long(1)).single()
+      } === Some(0L)
       roundDao.findById(round.getId).get.excludeCoi must beTrue
       RoundImageCounts.get(Seq(round.getId))(ImageJdbc.imageCountByRounds) === Map(round.getId -> 7)
       // another round keeps its files

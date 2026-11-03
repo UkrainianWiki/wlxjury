@@ -504,6 +504,37 @@ class LargeImageSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
+    "refuse a vote of the file's own rate (400), which overwrote the sum of its criteria before" in {
+      testDbApp { app =>
+        implicit val materializer: Materializer = app.materializer
+        val (mine, _, _) = setUpCriteria()
+        CriteriaRate.updateRate(SelectionJdbc.findBy(mine.pageId, user.getId, round.getId).get.getId, 1, 3)
+
+        val result = controller.rateByPageId(round.getId, mine.pageId, select = 9)
+          .apply(voteRequest(s"/large/round/${round.getId}/pageid/${mine.pageId}/select/9"))
+          .run()
+
+        status(result) === BAD_REQUEST
+        contentAsString(result) must contain("vote.error.invalid.rate")
+        criteriaRates(mine.pageId, user) === Map(1L -> 3, 2L -> 4)
+        SelectionJdbc.findBy(mine.pageId, user.getId, round.getId).map(_.rate) === Some(7)
+      }
+    }
+
+    "change nothing for a criterion the juror's selection hasn't (404), a success before" in {
+      testDbApp { app =>
+        implicit val materializer: Materializer = app.materializer
+        val (mine, _, _) = setUpCriteria()
+
+        val result = controller.rateByPageId(round.getId, mine.pageId, select = 7, criteria = Some(9))
+          .apply(voteRequest(s"/large/round/${round.getId}/pageid/${mine.pageId}/select/7?criteria=9"))
+          .run()
+
+        status(result) === NOT_FOUND
+        criteriaRates(mine.pageId, user) === Map(1L -> 3, 2L -> 4)
+      }
+    }
+
     "change nothing for a file the juror has no selection for (404), which failed before" in {
       testDbApp { app =>
         implicit val materializer: Materializer = app.materializer
@@ -694,6 +725,33 @@ class LargeImageSpec extends PlaySpecification with PlayTestDb {
         status(send(app, POST)) === FORBIDDEN
         status(send(app, POST, "csrfToken" -> "forged")) === FORBIDDEN
         rate() === Some(0)
+      }
+    }
+
+    "be refused without the CSRF token for a criterion too" in {
+      withCsrfApp { app =>
+        setUpVote(app)
+        DB.autoCommit { implicit s => sql"UPDATE rounds SET has_criteria = 1 WHERE id = ${round.getId}".update() }
+        val vote = SelectionJdbc.findBy(images.head.pageId, user.getId, round.getId).get
+        DB.autoCommit { implicit s =>
+          sql"INSERT INTO criteria_rate (id, selection, criteria, rate) VALUES (1, ${vote.getId}, 1, 0)".update()
+        }
+        def sendCriterion(body: (String, String)*) =
+          route(app, FakeRequest(POST, s"/large/round/${round.getId}/pageid/${images.head.pageId}/select/5?criteria=1")
+            .withHeaders(COOKIE -> "PLAY_SESSION=signed-in")
+            .withSession(Secured.UserName -> email, Secured.CurrentContestId -> contest.getId.toString,
+              "csrfToken" -> token)
+            .withFormUrlEncodedBody(body: _*)).get
+        def criterion() = CriteriaRate.getRates(vote.getId).map(_.rate)
+
+        status(sendCriterion()) === FORBIDDEN
+        status(sendCriterion("csrfToken" -> "forged")) === FORBIDDEN
+        criterion() === Seq(0)
+        rate() === Some(0)
+        // with the token: voted
+        status(sendCriterion("csrfToken" -> token)) === SEE_OTHER
+        criterion() === Seq(5)
+        rate() === Some(5)
       }
     }
 
