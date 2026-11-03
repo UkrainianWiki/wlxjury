@@ -103,6 +103,9 @@ GET         /admin/rounds/edit                                                  
 POST        /admin/rounds/save                                                      @controllers.RoundController.saveRound()
 GET         /admin/criteria                                                         @controllers.CriteriaController.list(contestId: Option[Long] ?= None)
 POST        /admin/criteria                                                         @controllers.CriteriaController.add(contestId: Option[Long] ?= None)
+# round_image_check jobs (round images against their votes): a round's, by its contest's admins; every round's, by root
+POST        /admin/rounds/:id/check-images                                          @controllers.RoundImageCheckController.checkRound(id: Long)
+POST        /admin/round-images/check                                               @controllers.RoundImageCheckController.checkAll()
 GET         /admin/rounds/newfiles                                                  @controllers.RoundController.newFilesCount(id: Long)
 GET         /admin/jobs/:id                                                         @controllers.JobController.status(id: Long)
 POST        /admin/jobs/:id/cancel                                                  @controllers.JobController.cancel(id: Long)

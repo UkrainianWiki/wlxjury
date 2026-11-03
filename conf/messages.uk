@@ -159,6 +159,11 @@ thumbnail.urls = адреси мініатюр
 thumbnail.urls.help = Адреси мініатюр на цьому сервері, по одній у рядку. Щоб завантажити їх через wget чи скрипт, передайте cookie вашої сесії.
 local.image.cache = Локальний кеш зображень
 download.images.locally = Завантажити зображення локально
+round.images.check.title = Зображення раунду
+round.images.check = Перевірити зображення раунду
+round.images.check.all = Перевірити зображення всіх раундів
+round.images.check.queued = Перевірку зображень поставлено в чергу (завдання {0})
+round.images.check.running = Перевірка зображень уже в черзі або виконується (завдання {0})
 contest = Конкурс
 
 mass.import = Масовий імпорт

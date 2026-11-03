@@ -222,7 +222,7 @@ object GatlingDbSetup {
 
     // Refresh optimizer statistics after bulk load so the first query uses correct plans.
     DB autoCommit { implicit session =>
-      SQL("ANALYZE TABLE images, vote, monument, users, round, round_user").execute.apply()
+      SQL("ANALYZE TABLE images, vote, round_image, monument, users, round, round_user").execute.apply()
     }
 
     val interleavedSelections = binarySelections.zip(ratingSelections).flatMap { case (b, r) => Seq(b, r) }

@@ -325,22 +325,35 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
       * monument id's prefix, as monument.adm0 is (MonumentJdbc) and as the single-region
       * filter matches it (`s.monument_id like 'XX%'`): read from the vote rows
       * alone, so the regions show even when the monument list was never loaded. Only
-      * sub-regions (adm1) need the monument table.
+      * sub-regions (adm1) need the monument table. The whole round's: from its files `in` it
+      * (round_image, V84: one row per file, its region stored), not its every juror's votes.
       */
     def byRegionStat()(implicit session: DBSession = autoSession): Map[String, Option[Int]] = {
-      val (region, monumentJoin) =
-        if (subRegions) (s"m.$regionColumn", "JOIN monument m ON m.id = s.monument_id")
-        else (regionOf("s.monument_id"), "")
-      val map = SQL(s"""SELECT DISTINCT $region
-                       |FROM vote s
-                       |$monumentJoin
-                       |WHERE $region IS NOT NULL
-                       |  ${userId.fold("") { id => s"AND s.jury_id = $id" }}
-                       |  AND s.round_id = ${roundId.get}""".stripMargin)
+      val sql = userId match {
+        case Some(id) =>
+          val (region, monumentJoin) =
+            if (subRegions) (s"m.$regionColumn", "JOIN monument m ON m.id = s.monument_id")
+            else (regionOf("s.monument_id"), "")
+          s"""SELECT DISTINCT $region
+             |FROM vote s
+             |$monumentJoin
+             |WHERE $region IS NOT NULL
+             |  AND s.jury_id = ${id.toLong}
+             |  AND s.round_id = ${roundId.get.toLong}""".stripMargin
+        case None =>
+          val (region, monumentJoin) =
+            if (subRegions) (s"m.$regionColumn", "JOIN monument m ON m.id = ri.monument_id")
+            else ("ri.region", "")
+          s"""SELECT DISTINCT $region
+             |FROM round_image ri
+             |$monumentJoin
+             |WHERE $region IS NOT NULL
+             |  AND ri.round_id = ${roundId.get.toLong} AND ri.status = 'in'""".stripMargin
+      }
+      SQL(sql)
         .map(rs => rs.string(1) -> Option.empty[Int])
         .list()
         .toMap
-      map
     }
 
     /** The number of the query's images in each region, without its region filter: every

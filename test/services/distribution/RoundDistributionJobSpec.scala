@@ -239,7 +239,11 @@ class RoundDistributionJobSpec extends Specification with TestDb with BeforeAll 
       val (contest, imgs, jurors) = setUp(20, 3)
       val h = new TestHandler(chunkRows = 3)
       // Committed with chunk 2: an image chunk 1 added goes missing
-      h.atChunk = Some(2 -> (() => DB.autoCommit(implicit s => sql"DELETE FROM vote WHERE page_id = 1".update())))
+      // (its votes and its round_image row, V84, as VoteJdbc.removeImage takes them)
+      h.atChunk = Some(2 -> (() => DB.autoCommit { implicit s =>
+        sql"DELETE FROM vote WHERE page_id = 1".update()
+        sql"DELETE FROM round_image WHERE page_id = 1".update()
+      }))
       h.failBeforeChunk = Some(3)
       val service = inlineService(h)
       val roundId = service.submit(newRound(contest, "R1"), jurors.map(_.getId), None).round.getId
@@ -609,6 +613,66 @@ class RoundDistributionJobSpec extends Specification with TestDb with BeforeAll 
       service.distributeNewImages(created.getId) === 5
       service.newFilesCount(created.getId) === 0L
       pageIds(created.getId).size === imgs.size + 5
+    }
+  }
+
+  "a round distribution job's round_image rows (V84)" should {
+
+    def rows(roundId: Long) = RoundImageJdbc.byRound(roundId)
+
+    "be written with its votes: one per file, 'in', 'fill', the job's id; then 'new_files'" in {
+      val (contest, imgs, jurors) = setUp(20, 3)
+      val service = inlineService(new TestHandler(chunkRows = 4))
+      val created = service.createNewRound(newRound(contest, "R1"), jurors.map(_.getId))
+      val job = jobOf(created.getId)
+      val more = (101 to 103).map(i => Image(i.toLong, s"File:More$i.jpg", None, None, 800, 600, Some(s"12-345-$i")))
+      imageDao.batchInsert(more)
+      CategoryLinkJdbc.addToCategory(contestDao.findById(contest.getId).get.categoryId.get, more)
+      service.distributeNewImages(created.getId) === 3
+      val second = jobOf(created.getId)
+      val all = rows(created.getId)
+      (all.map(_.pageId) === (imgs ++ more).map(_.pageId)) and
+        (all.map(_.status).distinct === Seq(RoundImageJdbc.Status.In)) and
+        (all.filter(_.pageId < 100).map(r => (r.addedHow, r.addedByJobId)).distinct === Seq(("fill", Some(job.id)))) and
+        (all.filter(_.pageId > 100).map(r => (r.addedHow, r.addedByJobId)).distinct === Seq(("new_files", Some(second.id)))) and
+        (all.find(_.pageId == 101).flatMap(_.region) === Some("12")) and
+        (RoundImageInvariants.violations(created.getId) must beEmpty)
+    }
+
+    "add a pasted list's files as 'list'" in {
+      val (contest, imgs, jurors) = setUp(6, 2)
+      val service = inlineService(TestRoundServices.handler())
+      val created = service.createNewRound(newRound(contest, "R1"), jurors.map(_.getId))
+      imageDao.batchInsert(Seq(Image(200L, "File:Listed.jpg", None, None, 800, 600, None)))
+      service.distributeNewFiles(created.getId, titles = Seq("File:Listed.jpg"), newFiles = false)
+      (rows(created.getId).find(_.pageId == 200L).map(_.addedHow) === Some("list")) and
+        (rows(created.getId).size === imgs.size + 1) and
+        (RoundImageInvariants.violations(created.getId) must beEmpty)
+    }
+
+    "leave none of a failed chunk, and none twice on resume" in {
+      val (contest, _, jurors) = setUp(20, 3)
+      val h = new TestHandler(chunkRows = 3)
+      h.failAfterInsertOfChunk = Some(3) // after its votes and rows are inserted, in its transaction
+      val service = inlineService(h)
+      val submitted = service.submit(newRound(contest, "R1"), jurors.map(_.getId), Some(java.util.UUID.randomUUID().toString))
+      val roundId = submitted.round.getId
+      (submitted.job.map(_.status) === Some(JobStatus.Failed)) and
+        (rows(roundId).map(_.pageId) === pageIds(roundId).toSeq.sorted) and (rows(roundId).size === 6) and
+        (RoundImageInvariants.violations(roundId) must beEmpty) and {
+          service.distributeNewImages(roundId) === 20
+          (rows(roundId).size === 20) and (RoundImageInvariants.violations(roundId) must beEmpty)
+        }
+    }
+
+    "keep a file with a row and no votes out of the next distribution (the round_image anti-join)" in {
+      val (contest, imgs, jurors) = setUp(6, 2)
+      val service = inlineService(TestRoundServices.handler())
+      val created = service.createNewRound(newRound(contest, "R1"), jurors.map(_.getId))
+      // file 1's votes gone by hand, its row left: the anti-join reads round_image too
+      DB.autoCommit(implicit s => sql"DELETE FROM vote WHERE round_id = ${created.getId} AND page_id = 1".update())
+      (service.newFilesCount(created.getId) === 0L) and (service.distributeNewImages(created.getId) === 0) and
+        (pageIds(created.getId) === imgs.map(_.pageId).toSet - 1L)
     }
   }
 }

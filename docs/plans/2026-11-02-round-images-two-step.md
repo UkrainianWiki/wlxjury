@@ -1,6 +1,6 @@
 # Round images and two-step rounds
 
-Status: plan, not started. Written 2026-11-02 from a planning agent's investigation of
+Status: P0 merged (V82, §12); P1 implemented (V84, §13). Written 2026-11-02 from a planning agent's investigation of
 `ukwikidev/followups` at b641c78d, the Montage review (`2026-11-02-montage-rounds-parity.md`)
 and the user's answers. References are to files and functions; line numbers drift (B11 has
 changed `RoundList` and `ImageDbNew` since).
@@ -42,6 +42,7 @@ All D1–D20 decided by the user (the last recommendations confirmed 2026-11-02)
 | D14 | Phases P0 rename → P1 membership → P1b CoI disqualification → P2a counts in shadow → P2b reads behind a flag → P3 two-step flow | [user] |
 | D15 | A general `round.status` (draft / paused / active / finalized / cancelled) instead of a review flag | [user] |
 | D16 | Rows are never deleted, except: a re-apply in review, before any vote exists in the round, deletes the `fill` rows that no longer pass | [user] |
+| D16a | From P3, removing a file from a round (`removeImage`) excludes it instead of deleting its row: status `dq`, `dq_code = 'manual'`, the reason kept, its votes moved aside as D7 does for CoI; "Distribute new files" and a re-apply never re-add it. P1 keeps its behaviour (the row goes with the votes, invariant 8) until then (user, 2026-11-03) | [user] |
 | D17 | Top-N on re-apply: re-ranked from scratch, disqualified files skipped; already distributed files count toward N (today's rule) | [user] |
 | D18 | Previous rounds are not frozen during review; the review page warns if their votes changed since the fill | [user] |
 | D19 | Filter edits after distribution only add files | [user] |
@@ -78,25 +79,30 @@ The rest of this plan uses the new names.
 
 ### `round_image` (P1)
 
+As V84 created it (§13; the names follow §12's rule, `round` after V82):
+
 ```sql
 CREATE TABLE IF NOT EXISTS round_image (
   round_id        BIGINT UNSIGNED NOT NULL,
   page_id         BIGINT          NOT NULL,
   status          VARCHAR(16)     NOT NULL DEFAULT 'in',     -- in | dq | deleted
-  added_how       VARCHAR(16)     NOT NULL DEFAULT 'legacy', -- fill | list | new_files | manual | legacy
-  added_by_job_id BIGINT UNSIGNED NULL,                      -- its params.settings: the filters
-  added_at        TIMESTAMP(3)    NULL,                      -- NULL for backfilled rows
-  dq_code         VARCHAR(16)     NULL,                      -- coi | min_mpx | category | date | manual
-  dq_detail       VARCHAR(255)    NULL,                      -- e.g. the matched account and role
-  dq_by           BIGINT UNSIGNED NULL,
-  dq_at           TIMESTAMP(3)    NULL,
-  monument_id     VARCHAR(190)    NULL,                      -- copy of images.monument_id (as vote's, V48)
-  region          VARCHAR(3) AS (NULLIF(LEFT(SUBSTRING_INDEX(monument_id,'-',1),3),'')) STORED,
+  added_how       VARCHAR(16)     NOT NULL DEFAULT 'legacy', -- fill | list | new_files | manual | repair | legacy
+  added_by_job_id BIGINT UNSIGNED NULL DEFAULT NULL,         -- its params.settings: the filters
+  added_at        TIMESTAMP(3)    NULL DEFAULT NULL,         -- NULL for backfilled rows
+  dq_code         VARCHAR(16)     NULL DEFAULT NULL,         -- coi | min_mpx | category | date | manual
+  dq_detail       VARCHAR(255)    NULL DEFAULT NULL,         -- e.g. the matched account and role
+  dq_by           BIGINT UNSIGNED NULL DEFAULT NULL,
+  dq_at           TIMESTAMP(3)    NULL DEFAULT NULL,
+  monument_id     VARCHAR(255)    NULL DEFAULT NULL,         -- copy of images.monument_id (255: production's images column)
+  region          VARCHAR(3) AS (NULLIF(LEFT(SUBSTRING_INDEX(monument_id, '-', 1), 3), '')) STORED,
   PRIMARY KEY (round_id, page_id),
-  KEY round_image_page_idx (page_id),
-  CONSTRAINT round_image_round_fk FOREIGN KEY (round_id) REFERENCES rounds(id) ON DELETE CASCADE,
-  CONSTRAINT round_image_page_fk  FOREIGN KEY (page_id)  REFERENCES images(page_id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+  KEY round_image_page_id_idx (page_id),
+  CONSTRAINT round_image_round_id_fk FOREIGN KEY (round_id) REFERENCES round (id) ON DELETE CASCADE,
+  CONSTRAINT round_image_page_id_fk FOREIGN KEY (page_id) REFERENCES images (page_id) ON DELETE CASCADE,
+  CONSTRAINT round_image_status_chk CHECK (BINARY status IN ('in', 'dq', 'deleted')),
+  CONSTRAINT round_image_added_how_chk
+    CHECK (BINARY added_how IN ('fill', 'list', 'new_files', 'manual', 'repair', 'legacy'))
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_general_ci;
 ```
 
 - Statuses: `in` (in the round; distributed or not is derived from its votes, `assigned > 0`
@@ -176,7 +182,7 @@ Every writer of `vote` keeps it in step, in the same transaction:
 - Repair job: new kind `round_image_check`, dedupe `round_image_check:round:R`, admin/root, run
   after each deploy or rollback; page-id windows; anti-joins both ways plus count comparisons;
   fixes and records drift in `details`, logs it at WARN; refuses while the round's distribution
-  job is active.
+  job is active. P1 built its membership part and invariant 7 (§13); P2a adds the counts.
 - Triggers rejected (D13): `CREATE TRIGGER` needs SUPER or `log_bin_trust_function_creators`,
   they fire per row of a 15k-row chunk, the migration-spec splitter has no DELIMITER, and the
   logic is hidden from the Scala specs.
@@ -191,13 +197,34 @@ Checked by `RoundImageInvariants.violations(roundId)`; specs assert it empty aft
 4. A `deleted` row's image has `deleted_at` set.
 5. The counts equal the GROUP BY over the pair's `vote` rows (P2a on).
 6. `monument_id` equals `images.monument_id`.
+7. Every `criteria_rate.vote_id` exists in `vote` or `vote_aside` (criteria plan §3). The
+   repair job archives orphans in `criteria_rate_orphan` (V78's table, reason `orphan`) and
+   deletes them.
+8. P1 to P2b (until P3 fills rows before distributing): a row has votes, `in` in `vote`,
+   `deleted`/`dq` in `vote_aside`; a pair with no votes left has no row.
+
+Only pairs of a round and an image that exist count (vote.round_id and vote_aside have no
+foreign keys). A pair with votes in both tables (a file moved into a round that isn't open) is
+`in` (1 wins over 2).
 
 ### Lock order
 
-`round` → `images` → `vote` → `vote_aside` → `round_image` → `criteria_rate`. It extends
-today's rounds → files → votes (`DeletedFiles`). Two jurors voting on one image each hold their
-own vote row and queue on the one `round_image` row: no cycle. Never recompute from a
-non-locking snapshot (a concurrent delta would be lost).
+`round` → `images` → `vote` → `criteria_rate` → `vote_aside` → `round_image` (criteria plan §3,
+folded in with P1). It extends today's rounds → files → votes (`DeletedFiles`). Rule:
+`criteria_rate` rows are written only while their vote row is locked (`CriteriaRate.updateRate`,
+`VoteJdbc.deleteVotes`, the moves), so a criterion vote writes `criteria_rate` before any
+delta. Two jurors voting on one image each hold their own vote row and queue on the one
+`round_image` row: no cycle. Never recompute from a non-locking snapshot (a concurrent delta
+would be lost). As implemented in P1 (§13): every `round_image` write comes last in its
+transaction; `RoundImageJdbc.sync` reads the pairs' votes in share mode, then locks the rows.
+"round_image last" holds per chunk when one transaction syncs several chunks (`removeUnrated`'s
+chunks, `sync`'s 2,000-page groups). `removeUnrated` chunks by vote id, so one page's votes can
+span two chunks; what prevents a cycle is that each `sync` chunk share-locks all the votes of its
+pages (`vote`, then `vote_aside`) before it locks their `round_image` rows. Another transaction
+that holds a vote of one of those pages is then waited for before any of their rows is locked,
+and every writer of a `round_image` row holds the pair's votes first. A vote insert locks its rounds
+in share mode before the votes (`RoundImageJdbc.lockRounds`): round_image's foreign key would
+otherwise take the round after them (review B1).
 
 ### `vote_aside` and status
 
@@ -323,7 +350,8 @@ not reassigned (as now).
 - Distribution: "selected by" → `approvals` (binary) or `rate_sum` (rated); `rejectedBy` →
   `SUM(rejections) < n`; top-N pages sort `round_image` rows (one per previous round and image).
 - Stays on `vote`: a juror's own lists and counts, `withVotes` (file list and CSV juror
-  columns), `juryStat`, `roundUserStat`, juror membership, `CriteriaRate.countOf`.
+  columns), `juryStat`, `roundUserStat`, juror membership. (`CriteriaRate.countOf` went with C2:
+  a round's criteria come from `round_criterion`.)
 - B12 (narrow grouped page) is pending a user decision; P2b would supersede it.
 
 Expected on the 38k-file round (estimates, not measured): grouped page 0.5–0.9 s → ~10–30 ms;
@@ -366,6 +394,16 @@ Cheap right after P1, so not left to P3: it needs only P1's `status`, today's `m
 the `restoreVotes` condition, a requalify action and the re-check listing; no counts exist yet
 to recompute. It ends the vote deletion of D9 early.
 
+- Guard needed (P1 review): P1's `RoundImageJdbc.addVoted` (`ON DUPLICATE KEY UPDATE status =
+  'in'`) and `sync` ("has votes → `in`") would requalify a `dq` file whose votes come back.
+  P1b keeps `dq` in both: `addVoted`'s update becomes `status = IF(status = 'dq', 'dq', 'in')`
+  (and the vote insert is refused for a `dq` file: the fill's anti-join already excludes it),
+  `sync` keeps a `dq` row `dq` whatever its votes, and only requalify sets `in`; invariant 3
+  (`dq` rows have no `vote` rows) then catches any vote written for one.
+- Before P3 (rows filled before any vote): `sync`'s "no votes → no row" and the repair job's
+  removal of rows with no votes must become status- and phase-aware: an `in` row of a `paused`
+  round, or a `fill`/`list`/`new_files` row not yet distributed, is kept; invariant 8 ends.
+
 - Specs: disqualify then requalify restores exact rates and `criteria_rate`; restoring a deleted
   file doesn't restore disqualified votes; requalify of a file deleted meanwhile leaves it
   `deleted`; the re-check lists ended and new matches; authorization and CSRF as in §6.
@@ -398,7 +436,11 @@ to recompute. It ends the vote deletion of D9 early.
 ### P3: two-step flow
 
 - Work: `round.status` and its backfill, job modes, Prune, the form, the review page, re-apply,
-  the threshold preview, POST routes.
+  the threshold preview, POST routes. `removeImage` excludes the file (D16a: `dq`, `dq_code =
+  'manual'`, the reason kept, votes moved aside); first, `RoundImageJdbc.sync`'s "no votes → no
+  row" and the repair job's removal of rows with no votes become status- and phase-aware (a
+  `dq` row, an `in` row of a `paused` round, a filled row not yet distributed are kept), and
+  invariant 8 ends.
 - Risk: rounds left paused at a rollback; finish or cancel them first.
 - Specs: `RoundEditPageSpec`, `RoundControllerSpec`, `RoundCreationResubmitSpec`, a new
   `RoundImagesReviewSpec` (§6 authorization and CSRF); job specs: fill then distribute gives the
@@ -422,6 +464,10 @@ to recompute. It ends the vote deletion of D9 early.
   ranks use the SQL sum; decide what a rated round's vote below 0 means, then show a grouped row's
   `rate_sum`.
 - B12 pending a user decision (superseded by P2b if P2b ships).
+- Decided (user, 2026-11-03; D16a): in P3, `removeImage` marks the row `dq` (`dq_code =
+  'manual'`, its votes moved aside as D7 does for CoI) instead of deleting it, so a removed file
+  never comes back by "Distribute new files" or a re-apply. P1 keeps its behaviour (invariant 8)
+  until then.
 - Later, after this plan: CoI overrides (§7); juror add/swap/remove and quorum change (candidates:
   `in` rows with `assigned < round.distribution`, moved-aside votes in `vote_aside` with a
   reason); finalize locking votes; a `round_event` audit table written with status changes and
@@ -697,3 +743,267 @@ The independent review found no Critical or High issue; these were fixed before 
 | L3 | A part-way V82 left new table names with old indexes | V82 reordered: index renames and the foreign key swap on the old table names, then the column, the atomic `RENAME TABLE` last. `RoundService` matches `submit_token_uidx`, true under both names. Re-verified on a scratch `mariadb:10.6` (10.6.28): forward on the three schema paths gives identical names (34 indexes) and the foreign keys (`vote_page_id_fk`; `FK_round_user_round_id` → `round` where it exists); forward + the reverse SQL gives back every table's pre-V82 `SHOW CREATE TABLE` (367 lines, identical) |
 | L4 | `criteria-rounds.md` C0 queries named the old tables | marked "before V82", with an "after V82" block (`round`, `vote`, `vote_aside`, `cr.vote_id`) |
 | Nits | rollback written as a template; `secure-coding.md` `rounds.roles`; `oauth-login`'s rebase | rollback written out in full; `round.roles`; the `SharedTestDb`/`SharedPlayApp` conflict noted |
+
+## 13. P1 results
+
+Branch `ukwikidev/round-image-p1` (from `ukwikidev/followups` 4540659a: P0's V82, C1, C2's V83,
+the Flyway batch), 2026-11-03. Commits: `617dcd67` (code, V84, specs), then the truncation fix and these notes.
+
+### Migration V84 (`V84__Round_image.sql`)
+
+| Step | Statement | Note |
+|---|---|---|
+| 1 | `CREATE TABLE IF NOT EXISTS round_image` (§4's SQL) | keys `PRIMARY (round_id, page_id)`, `round_image_page_id_idx`; FKs `round_image_round_id_fk` → `round`, `round_image_page_id_fk` → `images`, both `ON DELETE CASCADE`; `round_image_status_chk`, `round_image_added_how_chk` (BINARY, as V76) |
+| 2 | `INSERT … SELECT` the distinct `(round_id, page_id)` of `vote` joined to `round` and `images`: `in`, `legacy` | a loose scan of `vote_round_page_rate_idx` |
+| 3 | the same over `vote_aside`: `deleted`, `legacy` | a pair with votes in both stays `in` |
+
+Both inserts end in a no-op `ON DUPLICATE KEY UPDATE round_id = round_image.round_id`: a rerun
+after a failure part-way adds only what is missing and changes no row (spec'd); `INSERT IGNORE`
+would also hide a truncation. Pairs of a missing round (`vote.round_id` has no FK) or a missing
+image (`vote_aside` has none) are left out, and the invariants count only existing ones. V84
+needs nothing of `round_user`: production's missing `FK_round_user_round_id` doesn't matter.
+`monument_id` is VARCHAR(255) (production's `images.monument_id`; the test schema's is 190), its
+collation explicit, `utf8mb4_general_ci`, as `images.monument_id`'s since V55.1 (spec'd on the
+test schema and the production-like chain).
+
+### Backfill: in the migration
+
+Measured on the Gatling fixture (767,340 vote rows, 367 MB with indexes, 76,734 pairs, MariaDB
+10.6.22, 512 MB buffer pool): step 2 1.01–1.15 s (three runs), step 3 2 ms (no rows aside),
+`CREATE` 1–3 ms; round_image 10 MB. Production had 3.0M vote rows (V55_1's header): the scan
+scales with the votes (~4×, ~4.5 s), the insert with the pairs (unknown: 0.3–1M, 4–13× the
+fixture's). Estimate **5–20 s** with the fixture's 512M buffer pool (more with production's
+128M if `vote` doesn't fit: time it on a copy, see the deploy note), with the app stopped (`wlxjury-release deploy` runs Flyway
+under maintenance), so its shared locks on `vote` block nobody. Decision: backfill in V84, not
+as a job: the reads switch at deploy and need every row; a job would need a dual read path
+until it finished. The pre-deploy queries below size it on production.
+
+### Repair job: needed now, built
+
+`round_image_check` (`services.distribution.RoundImageCheckHandler`), default concurrency 1:
+- a round's (`params.roundId`, dedupe `round_image_check:round:R`, the round's contest), queued
+  by its contest's admins (`POST /admin/rounds/:id/check-images`, "Check round images" on the
+  round's edit page); every round's then the criteria rates (`params.all`, dedupe
+  `round_image_check:all`, no contest), by root (`POST /admin/round-images/check`, "Check every
+  round's images" on the rounds page). CSRF on both; a check already active isn't queued again.
+- steps: per round, windows of page ids (≤ 10,000 rows of each of `vote`, `vote_aside`,
+  `round_image`) synced as the bulk writers sync (`RoundImageJdbc.sync`, rows added as `repair`
+  with the job's id); then, in steps of their own, the rows' monument ids from `images` and a
+  count of `deleted` rows whose file isn't marked deleted (invariant 4: reported, not repaired).
+  Each step first takes the round's row in share mode and leaves the round out (`skipped`)
+  while its distribution is queued or running.
+- invariant 7 (all-rounds job only): `criteria_rate` windows of 5,000 ids; candidates read
+  plainly, their vote ids then looked up with locks in `vote` and `vote_aside`, the rates still
+  of no vote locked, archived in `criteria_rate_orphan` (reason `orphan`) and deleted.
+- drift is logged at WARN per round and kept in the job's details (`added`, `statusFixed`,
+  `removed`, `monumentFixed`, `notMarkedDeleted`, `orphansArchived`, `skipped`, the first 100
+  rounds' lines). After each step's commit the caches follow, as the other writers do: the
+  round's image count (`RoundImageCounts.invalidate`) when a window changed rows, the monument
+  ids (`RegionCountCache.invalidateMonumentIds`) after a monument fix (review N4).
+
+Why now: P1's reads rely on the rows (a missing one would hide a file from the count, the
+regions, a CoI removal and a deleted file's move aside), and any release older than P1 writes
+votes without them.
+
+### Keeping it correct (as built)
+
+- `RoundImageJdbc.addVoted`, after the votes' insert in its transaction (`VoteJdbc.create`,
+  `batchInsert`; an auto-commit session gets a transaction of its own): one `INSERT … SELECT`
+  from `round` and `images` per 2,000 pages (the FK check has locked the images' rows already),
+  `ON DUPLICATE KEY UPDATE status = 'in'`. A vote of a round that doesn't exist adds no row.
+  The distribution passes `fill` (creation), `new_files` ("Distribute new files"), `list` (a
+  pasted list), with its job id; everything else is `manual`.
+- `RoundImageJdbc.sync(roundId, pageIds)` after a bulk write in its transaction: the pairs'
+  votes read in share mode (`vote`, then `vote_aside`), the rows `FOR UPDATE`, then `in` where
+  votes remain, `deleted` where only aside ones (`dq` kept), no row where none; a missing row
+  added with the image's monument id. Callers: `VoteJdbc.deleteVotes` (so `removeImage`,
+  `removeUnrated`, `RoundConflicts.removeFromRound`), `moveVotes` (`setRound`: out of the
+  source, into the target as `manual`), `ImageJdbc.moveVotesAside` (`archiveVotes`,
+  `archiveDeletedVotesInRound`: a round's opening, a distribution's end, `settle`),
+  `moveVotesBack` (restore). `updateMonumentIdIn` updates the rows' `monument_id` last.
+- Rows follow the votes in P1 (invariant 8): a file whose votes are deleted (`removeImage`, the
+  unrated, CoI "leave out now" per D9, moved to another round) loses its row, as it left the
+  round before; "Distribute new files" may add it back, as before. D16 ("rows are never
+  deleted") applies from P3, when rows exist before votes. Decided by the user (2026-11-03,
+  D16a): in P3 `removeImage` marks the row `dq` (`dq_code = 'manual'`, the reason kept, votes
+  moved aside as D7 does); "Distribute new files" and a re-apply never re-add it. Before that,
+  `sync`'s "no votes → no row" and the repair job's removal must become status- and
+  phase-aware (§9, P1b and P3).
+- Lock order (§5, now `round → images → vote → criteria_rate → vote_aside → round_image`):
+  every `round_image` write is last. A vote insert (`create`, `batchInsert`, so every chunk)
+  first locks its rounds in share mode (`RoundImageJdbc.lockRounds`), before the votes (review
+  B1: the FK check took the round after them, and a "Distribute new files" chunk deadlocked with
+  a criteria change, which holds the round for update and then locks its votes; reproduced
+  with ERROR 1213 on a scratch MariaDB, spec'd in `RoundImageLockSpec`). `setRound` locks both
+  rounds (share), then the file's image row (`ImageJdbc.lockFiles`, for update), then the votes
+  (review N1: the round_image row it adds needed the image after the votes, against
+  `updateMonumentIdIn`; spec'd). The repair job's monument step reads the differing rows
+  plainly, locks their images in share mode in page id order, then writes the rows by key, in
+  a transaction that touches no vote (review N2); its "distribution active" check is a locking
+  read (N3). The list phase of a distribution locks its round (share mode) at the top of its
+  step, before it inserts fetched files and updates stored ones (`updateStored` locks their
+  images and every vote of them, some in the round): fixed after the follow-up review, which
+  found it otherwise took the round after those votes. Remaining: `sync` adds a row only to
+  repair drift (a pair with votes and no row). Every caller that may do so locks the round
+  first, except `removeImage` and `removeUnrated`. There it would need such drift, plus a
+  concurrent transaction holding the round for update while it waits for that pair's votes.
+  A lock spec for the list phase was not added: it needs a stored file that Commons reports
+  changed, inside a step held open mid-transaction; the order is the vote inserts' (spec'd).
+- `CriteriaRate.updateRate` (READ COMMITTED) and `VoteJdbc.rate` are untouched: a rate doesn't
+  change membership. P2a puts its delta inside `updateRateIn`, after the vote lock.
+- P1b hooks (comments in the code, no code): `moveVotesBack` gets a condition on the row's
+  status (`deleted` only), `RoundConflicts` moves votes aside and sets `dq`; `sync` already
+  keeps `dq`; `addVoted` never meets a `dq` file since the anti-join reads round_image.
+
+### Reads moved to round_image
+
+`ImageJdbc.imageCountByRounds` (`RoundImageJdbc.countsIn`), the distribution's count check
+(`countAll`, `countIn`), its anti-join `notInRound` (round_image first; the `vote` and
+`vote_aside` checks kept until the job has shown no drift on production), `ImageJdbc.byRound`,
+the whole round's `SelectionQuery.byRegionStat` (`gallery.regionCounts = off`, and sub-regions;
+the default menu's `regionCounts` is P2b's), `CoiMembers.roundFiles`, `ImageJdbc`'s `inRound`
+(the round's deleted-file list), `roundDeletedFileCounts`, `lockOpenRoundsOf`, the organizers'
+`VoteJdbc.inRound`, `DistributionSource.previousWindow`/`previousCount` without vote filters.
+Two edges change, both for the better: a vote with no page id no longer adds its monument's
+region to the whole round's regions, and votes of a round that doesn't exist add no row.
+
+### Benchmarks (`gatling.setup.RoundImageBenchmark`, SQL debug logging off)
+
+Paired on the fixture, the replaced vote query (A) against round_image (B), 20 interleaved
+pairs (order alternating) after 3 warm-ups, results compared per pair (all equal). Log
+`target/checks/20261103-054802-2860.log`, `target/gatling/round-image-bench-20261103-054847/`.
+
+| Read | A median (min–max) | B median (min–max) | paired B−A median (min..max) | B faster |
+|---|---|---|---|---|
+| `imageCountByRounds` (both rounds) | 142.7 ms (117.8–203.5) | 25.9 ms (23.8–42.7) | **−113.6 ms** (−171.2..−93.8) | 20/20 |
+| count check (rated round) | 124.8 ms (120.0–162.0) | 7.7 ms (7.5–8.4) | **−116.9 ms** (−153.8..−112.4) | 20/20 |
+| whole round `byRegionStat` (rated) | 194.2 ms (184.5–292.7) | 20.9 ms (19.6–28.6) | **−173.7 ms** (−264.5..−163.7) | 20/20 |
+| whole round sub-regions | 0.9 ms | 0.9 ms | 0.0 | 13/20 (the fixture's monuments have no `adm1`: both empty) |
+| previous-round windows, a full walk (750 files each) | 879.0 ms (745.7–2182.4) | 65.2 ms (56.9–220.7) | **−799.2 ms** (−2057.5..−681.4) | 20/20 |
+| open rounds of 200 files | 4.7 ms (3.4–6.7) | 2.9 ms (2.5–5.2) | −1.4 ms (−3.0..−0.4) | 20/20 |
+
+Write side, 5 distribution-sized chunks (750 files × 20 jurors, 15,000 vote rows, rolled
+back): the votes' batch insert 497 ms median (353–1261), `addVoted` 14 ms (8.7–63): **+2.8%**
+per chunk. A vote's rate is unchanged in P1 (no round_image write). Reused, not rerun: the
+by-rate/all-jurors pages and the default region menu (B11/B12, follow-ups plan), whose reads
+P1 doesn't touch (P2b's). Not expanded: every moved read is one-sided and large, and no result
+could change a P1 decision; P2b's flag pilot is the next measurement.
+
+### Deploy note
+
+- **Order.** Followups (V71–V81) first, as its own release; then the release with V82 onward.
+  V84 runs after V82 and V83 in the same Flyway run if they ship together.
+- **Before** (read-only, production, as the admin user; an unexpected row stops the deploy):
+  ```sql
+  SELECT VERSION();                                                       -- 10.6+
+  SELECT version, success FROM flyway_schema_history ORDER BY installed_rank DESC LIMIT 1;
+  SELECT TABLE_NAME AS already_there FROM information_schema.TABLES
+  WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'round_image';           -- none
+  SELECT TABLE_NAME, COLUMN_NAME, COLUMN_TYPE FROM information_schema.COLUMNS
+  WHERE TABLE_SCHEMA = DATABASE()
+    AND (TABLE_NAME, COLUMN_NAME) IN (('round', 'id'), ('images', 'page_id'));  -- bigint(20) unsigned, bigint(20)
+  SELECT TABLE_NAME, ENGINE FROM information_schema.TABLES
+  WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME IN ('round', 'images');    -- InnoDB (the FKs)
+  SELECT MAX(CHAR_LENGTH(monument_id)) FROM images;                         -- <= 255
+  SELECT COLLATION_NAME FROM information_schema.COLUMNS
+  WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'images' AND COLUMN_NAME = 'monument_id';
+                                       -- utf8mb4_general_ci (round_image.monument_id's)
+  SELECT COUNT(*) FROM vote v JOIN images i ON i.page_id = v.page_id
+  WHERE NOT (v.monument_id <=> i.monument_id);  -- 0: the whole round's regions now come from
+                                                -- images.monument_id, not the votes' copy
+  SELECT @@log_bin, @@binlog_format;   -- 0, or MIXED/ROW (as V83's check; INSERT ... SELECT
+                                       -- ... ON DUPLICATE KEY UPDATE is unsafe for STATEMENT)
+  -- the backfill's size: vote rows, the pairs it writes, those aside only
+  SELECT COUNT(*) FROM vote;
+  SELECT COUNT(*) FROM (SELECT DISTINCT round_id, page_id FROM vote) p;
+  SELECT COUNT(*) FROM (SELECT DISTINCT round_id, page_id FROM vote_aside) d
+  WHERE NOT EXISTS (SELECT 1 FROM vote s WHERE s.round_id = d.round_id AND s.page_id = d.page_id);
+  -- left out: pairs of no round or no image (expected 0)
+  SELECT COUNT(*) FROM (SELECT DISTINCT round_id, page_id FROM vote) p
+  WHERE NOT EXISTS (SELECT 1 FROM round r WHERE r.id = p.round_id) OR p.page_id IS NULL;
+  SELECT COUNT(*) FROM (SELECT DISTINCT round_id, page_id FROM vote_aside) p
+  WHERE NOT EXISTS (SELECT 1 FROM round r WHERE r.id = p.round_id)
+     OR NOT EXISTS (SELECT 1 FROM images i WHERE i.page_id = p.page_id);
+  -- 'deleted' rows whose file isn't marked deleted (invariant 4; the check job reports them)
+  SELECT COUNT(*) FROM (SELECT DISTINCT d.round_id, d.page_id FROM vote_aside d
+                        JOIN images i ON i.page_id = d.page_id AND i.deleted_at IS NULL
+                        WHERE NOT EXISTS (SELECT 1 FROM vote s WHERE s.round_id = d.round_id
+                                          AND s.page_id = d.page_id)) x;
+  ```
+  Always time the backfill on a production copy (`2026-10-07-prod-like-benchmark.md`) with
+  production's buffer pool (128M, MariaDB's default): the fixture's ~1 s ran with 512M, so the
+  5–20 s estimate may be optimistic if `vote` doesn't fit in memory.
+- **Deploy** with `wlxjury-release deploy` (dump before Flyway, "Ready under maintenance").
+  Then, as root, "Check every round's images" (rounds page): it must report no drift (the
+  backfill just ran), and archives any criteria rate of no vote; see the job's details
+  (`/admin/jobs/:id`) or its WARN lines. Then `wlxjury-release reopen OPERATION`.
+- **Recovery up to `reopen`:** `wlxjury-release restore OPERATION` (the pre-migration dump;
+  also after a part-way V84 failure).
+- **After `reopen`:** the SQL below, then deploy the previous release (at V83). Old code ignores
+  round_image, but `db.Migrations` validates without `*:future`, so the history row must go;
+  dropping the table makes the next forward deploy run V84 again, rebuilding every row from the
+  votes the older release wrote (spec'd). Then the check job, as above.
+
+### Rollback SQL after reopen (tested: forward, this, forward again)
+
+Only with the app stopped and the previous release at V83. If V82–V84 shipped together and the
+target is V81, run this first, then C2's and P0's rollback SQL.
+
+```sql
+DROP TABLE round_image;
+DELETE FROM flyway_schema_history WHERE version = '84';
+```
+
+`RoundImageMigrationSpec` (on copies: forward, this, forward gives the same rows, the other
+tables' `SHOW CREATE TABLE` unchanged) and `FlywayUpgradeSpec` "V84's rollback SQL after reopen"
+(a migrated database: this gives V83's schema and history exactly; votes written meanwhile; a
+second migrate rebuilds round_image from them).
+
+### Files
+
+New: `V84__Round_image.sql`, `db.scalikejdbc.RoundImageJdbc`, `RoundImageInvariants`,
+`services.distribution.RoundImageCheckHandler`, `controllers.RoundImageCheckController`; routes
+`POST /admin/rounds/:id/check-images`, `POST /admin/round-images/check`; message keys
+`round.images.check*` (en, fr, uk, ru). Changed: `VoteJdbc`, `ImageJdbc`, `ImageDbNew`
+(`byRegionStat`), `CoiMembers`, `RoundDistributionHandler`, `DistributeImages.insertRows`,
+`JobSchedulerProvider`, the `editRound`/`rounds` views, CLAUDE.md. Gatling: `FixtureVersion`
+`fixture-v6`, `round_image` in the `ANALYZE` lists, `RoundImageBenchmark`.
+
+### Specs
+
+New: `db.RoundImageMigrationSpec` (backfill = GROUP BY, rerun, regions, keys and checks,
+rollback), `db.scalikejdbc.RoundImageJdbcSpec` (every write path: inserts and their rollback,
+`removeImage`, `removeUnrated`, `setRound`, deleted and restored on Commons, a round opening, a
+round deleted while aside, monument ids, round and image deletion; `sync`; reads; each
+invariant detected), `db.scalikejdbc.RoundImageReadParitySpec` (every moved read against the
+replaced query over random data from the app's writers, three seeds),
+`services.distribution.RoundImageCheckSpec` (drift injected by raw SQL repaired, invariant 4
+reported, orphans archived, a clean rerun, one round only, a distributing round skipped),
+`controllers.RoundImageCheckAuthorizationSpec` (admin and root 303; juror, organizer, another
+contest's admin (also on this contest's round) 403; missing round 404; signed out; all rounds
+root only; CSRF refused; the buttons). Extended: `RoundDistributionJobSpec` (rows `fill`,
+`new_files`, `list` with job ids; a failed chunk leaves none; resume; the anti-join),
+`CoiRoundSpec` (leave out now), `ConvertToInnoDbMigrationSpec` (V84 on the production-like
+chain: rows, regions, FKs), `FlywayUpgradeSpec` (rollback). Raw vote SQL fixed in
+`DeletedFilesSpec`, `CriteriaRateSpec` (its `vote` helper syncs the row; C1/C2's lock specs
+unchanged and green), `RoundDistributionJobSpec`, `RegionStatSpec` (its rounds now exist).
+
+### Checks
+
+Logs under `target/checks/` of the worktree.
+
+| Step | Specs | Result | Log |
+|---|---|---|---|
+| First compile | `Test/compile` | ok | `20261103-052642-7332.log` |
+| Breakage scan | `db.*`, `services.*`, `org.intracer.wmua.*`, `security.*`, `controllers.*`, `views.*`, `api.*`, `modules.*`, `gatling.*` | 1687: 4 failed, 41 errors (votes of rounds that don't exist failing the FK; raw vote SQL in 3 specs; the chain spec's FK list) | `20261103-052945-5840.log` |
+| After fixes | the new specs, the failed/errored ones, `security.*`, `MigrationNamingSpec`, `FlywayUpgradeSpec`, `MessagesCompletenessSpec` | 213: 5 failed, 1 error (two expectations of the new specs; `RegionStatSpec`'s fake rounds) | `20261103-054011-19012.log` |
+| Fixed | `RoundImageJdbcSpec`, `RoundImageReadParitySpec`, `RegionStatSpec`, `CoiRoundSpec` | 36/36 | `20261103-054347-13888.log` |
+| Rollback | `FlywayUpgradeSpec`, `RoundImageMigrationSpec` | 13: 12 passed, 1 skipped (fixture regeneration) | `20261103-055045-13944.log` |
+| Benchmark | `RoundImageBenchmark` (fixture-v6 built) | exit 0, no parity problem | `20261103-054802-2860.log` |
+| Gate | full suite (`Test/compile`, `test`, Jest included) at `617dcd67` | **1760: 1750 passed, 1 failed, 0 errors, 9 skipped, 1 pending**; Jest 253/253; 7:55. The failure: `CriteriaRateOrphansMigrationSpec` expects the shared `criteria_rate_orphan` empty, and `RoundImageCheckSpec` had archived rows there: the table is now in `SharedTestDb`/`SharedPlayApp`'s truncation lists | `20261103-055207-26244.log` |
+| After the fix | `RoundImageCheckSpec`, `CriteriaRateOrphansMigrationSpec`, `CriteriaCatalogueMigrationSpec`, `CriteriaRateSpec`, `RoundImageCheckAuthorizationSpec`, `RoundImageJdbcSpec` | 58/58 | `20261103-060145-2980.log` |
+| Review fixes (`c169b3e5`) | the round-image specs, the new `RoundImageLockSpec`, `CriteriaRateSpec`, `RoundCriteriaSpec`, `RoundDistributionJobSpec`, `CoiRoundSpec`, `DeletedFilesSpec`, `ConvertToInnoDbMigrationSpec`, `FlywayUpgradeSpec`, `security.*` | 184: 183 passed, 1 skipped | `20261103-062328-26772.log` |
+| B1/N1 regression check | `RoundImageLockSpec` with the fixes taken out by hand (then restored) | both examples error with `Deadlock found` (1213) | (scratch run, 2026-11-03 06:26) |
+| Gate | full suite at `ebd21539` (Jest included) | **1762: 1752 passed, 0 failed, 1 error, 9 skipped, 1 pending**; Jest 253/253; 7:47. The error: `LocalImageCacheServiceSpec` "be populated by initRegistry", an `AccessDeniedException` renaming a temp file under `%TEMP%` (Windows; P1 doesn't touch the service or its spec) | `20261103-062738-3256.log` |
+| Rerun | `LocalImageCacheServiceSpec` alone | 78/78 | `20261103-063613-26104.log` |
+| Follow-up nits (list phase's round lock) | `RoundDistributionJobSpec`, `RoundImageLockSpec`, the round-image specs, `RoundFileListSpec` | 72/72 | `20261103-064134-13104.log` |
