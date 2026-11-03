@@ -39,7 +39,7 @@ class MwMonumentListSource extends MonumentListSource {
   private def bot(contest: Contest): MwBot = {
     val host = contest.listsHost.getOrElse(MwBot.ukWiki)
     // anonymous: scalawiki's default would log in as SCALAWIKI_LOGIN from the environment
-    bots.getOrElseUpdate(host, MwBot.fromHost(host, loginInfo = None))
+    bots.getOrElseUpdate(host, AnonymousBots.bot(host))
   }
 
   def listPages(contest: Contest, template: String, cursor: JsObject, limit: Int): (Seq[String], Option[JsObject]) = {

@@ -165,7 +165,12 @@ object CommonsLogin {
   /** Anonymous requests: no credentials, nothing to check. */
   def anonymous(bot: MwBot): CommonsLogin = new CommonsLogin(bot, None)
 
-  /** Lets a Mode.Test app log in: `-Dcommons.allowTestLogin=true`. No spec or CI job sets it. */
+  /** Lets a Mode.Test app log in. No spec or CI job sets it, and build.sbt doesn't forward it
+    * from sbt's command line: the test JVM is forked, and the test config's account is empty. A
+    * deliberate manual run against Commons with an account needs all three in the forked JVM:
+    * `set Test / javaOptions ++= Seq("-Dcommons.allowTestLogin=true", "-Dcommons.user=…",
+    * "-Dcommons.password=…")` (the password is then visible in the process list).
+    */
   val AllowTestLoginKey = "commons.allowTestLogin"
 
   /** `commons.user` and `commons.password`, if both are set and not empty. None in

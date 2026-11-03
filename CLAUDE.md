@@ -71,9 +71,16 @@ Tests use Testcontainers (Docker) to spin up a MariaDB 10.6 instance automatical
 
 **Tests are anonymous to Wikimedia; live, high-load tests are opt-in.**
 - **No account in tests:** the test config sets `commons.user` and `commons.password` to `""`, with no `${?COMMONS_USER}` substitution.
-  - `CommonsLogin.credentials` gives no account in Mode.Test unless `-Dcommons.allowTestLogin=true`, which no spec or CI job sets.
-  - wlxjury creates its bots with `MwBot.fromHost(..., loginInfo = None)`, so scalawiki doesn't log in as `SCALAWIKI_LOGIN`.
-  - `TestConfigAnonymousSpec` guards all of this, and also checks that the CI workflows pass no `COMMONS_*` / `SCALAWIKI_*` credentials and no secrets but `GITHUB_TOKEN`.
+  - `CommonsLogin.credentials` gives no account in Mode.Test unless `commons.allowTestLogin` is true. No spec or CI job sets it.
+    - `build.sbt` doesn't forward it from sbt's command line.
+    - A deliberate manual run with an account needs all three in the forked JVM: `set Test / javaOptions ++= Seq("-Dcommons.allowTestLogin=true", "-Dcommons.user=…", "-Dcommons.password=…")`.
+  - **scalawiki's environment login:** `MwBot.fromHost` / `fromSite` default to logging a new bot in as `SCALAWIKI_LOGIN`, and `MwBot.cache` keeps one bot per domain.
+    - wlxjury creates its bots through `services.imports.AnonymousBots` (`loginInfo = None`).
+    - `AppModule` seeds the anonymous commons and uk.wikipedia bots at startup, so the default calls inside scalawiki (`SpecialNomination.getNominationMonuments`, `CampaignList`) get them. `SpecialNominationFilter` and `ContestController.fetchContests` seed before those calls too.
+    - **Not covered:** a scalawiki default call for another domain, in a JVM where neither the app nor `AnonymousBots` created that domain's bot first. wlxjury has none.
+  - **Guards:**
+    - `TestConfigAnonymousSpec`: the test config and the workflows/actions pass no `COMMONS_*` / `SCALAWIKI_*` credentials and no secrets but `GITHUB_TOKEN`.
+    - `AnonymousBotsSpec`: the app seeds the bots, and `app/` creates no bot or `MonumentQuery` with scalawiki's default login.
   - Why: a machine with the bot's credentials in its environment logged the bot in from every test JVM, so a changed bot password became a stream of failed logins on the bot's account.
 - **Specs that read live Wikimedia** run only with a flag, and anonymously:
   - `-Dintegration=true`: `AppendImagesSpec` "get international images" (one winners page, 350+ files), `ImagesFromListSpec` (262 listed files) and `LocalImageCacheServiceIntegrationSpec` (5 downloads).

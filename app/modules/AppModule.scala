@@ -7,7 +7,7 @@ import db.scalikejdbc.{ImageJdbc, Round}
 import org.scalawiki.MwBot
 import play.api.inject.ApplicationLifecycle
 import play.api.{Configuration, Environment, Logging}
-import services.imports.{CommonsFileCheck, CommonsLogin, CommonsSource, MonumentListSource, MwCommonsSource, MwMonumentListSource}
+import services.imports.{AnonymousBots, CommonsFileCheck, CommonsLogin, CommonsSource, MonumentListSource, MwCommonsSource, MwMonumentListSource}
 import services.jobs.JobScheduler
 
 import scala.concurrent.Future
@@ -18,6 +18,9 @@ class AppModule(environment: Environment, configuration: Configuration)
 
   override def configure(): Unit = {
     logger.info("Application has started")
+    // before anything (scalawiki's own code included) makes a bot that logs in from the
+    // environment: services.imports.AnonymousBots
+    AnonymousBots.seed(configuration.get[String]("commons.host"))
 
     bind(classOf[RoundRepo]).toInstance(Round)
     bind(classOf[ImageRepo]).toInstance(ImageJdbc)
@@ -42,13 +45,13 @@ class AppModule(environment: Environment, configuration: Configuration)
 
   /** The Commons bot. `MwBot.fromHost` keeps one per host, so the session [[CommonsLogin]]
     * logs in is the one every request uses, [[controllers.Global.commons]]'s included (both
-    * `commons.wikimedia.org`). Created anonymous (`loginInfo = None`): scalawiki's default
+    * `commons.wikimedia.org`). Created anonymous ([[AnonymousBots]]): scalawiki's default
     * would log it in at once as `SCALAWIKI_LOGIN` / `SCALAWIKI_PASSWORD` from the
     * environment, in tests too. The app's only account is `commons.user`, through
     * [[CommonsLogin]].
     */
   @Provides
-  def bot: MwBot = MwBot.fromHost(configuration.get[String]("commons.host"), loginInfo = None)
+  def bot: MwBot = AnonymousBots.bot(configuration.get[String]("commons.host"))
 
   /** One for the app: it keeps what the session is between import steps. No account in
     * Mode.Test unless `commons.allowTestLogin` ([[CommonsLogin.credentials]]).

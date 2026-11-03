@@ -3,11 +3,13 @@ package org.intracer.wmua.cmd
 import db.scalikejdbc.{MediaType, Round}
 import org.intracer.wmua.cmd.ImageWithRatingSeqFilter.ImageFilter
 import org.intracer.wmua.{BinaryOrder, CategoryRule, Image, ImageWithRating}
+import org.scalawiki.MwBot
 import org.scalawiki.wlx.{ImageDB, MonumentDB}
 import org.scalawiki.wlx.dto.{Contest, SpecialNomination}
 import org.scalawiki.wlx.query.MonumentQuery
 import org.scalawiki.wlx.stat.ContestStat
 import play.api.Logging
+import services.imports.AnonymousBots
 
 import scala.concurrent.Await
 import scala.concurrent.duration.DurationInt
@@ -145,10 +147,14 @@ case class SpecialNominationFilter(specialNominationName: String) extends ImageF
     .find(_.name == specialNominationName)
     .map { nomination =>
       val contest = Contest.WLMUkraine(2020)
+      // anonymous bots (services.imports.AnonymousBots): an explicit one for the query here, and
+      // the seeded cache for the one getMonumentsMap's own MonumentQuery.create takes by default
+      AnonymousBots.seed()
+      val ukWiki = AnonymousBots.bot(MwBot.ukWiki)
       val stat = if (nomination.cities.nonEmpty) {
         ContestStat(contest, 2012, currentYearImageDb = new ImageDB(contest, Nil), totalImageDb = new ImageDB(contest, Nil))
           .copy(monumentDb =
-            Some(Await.result(MonumentDB.getMonumentDb(contest, MonumentQuery.create(contest)), 30.minutes)))
+            Some(Await.result(MonumentDB.getMonumentDb(contest, MonumentQuery.create(contest)(ukWiki)), 30.minutes)))
       } else {
         ContestStat(contest, 2012, currentYearImageDb = new ImageDB(contest, Nil), totalImageDb = new ImageDB(contest, Nil))
       }
