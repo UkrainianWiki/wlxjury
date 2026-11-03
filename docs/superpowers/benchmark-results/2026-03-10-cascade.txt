@@ -1,0 +1,1435 @@
+[info] welcome to sbt 1.9.6 (Eclipse Adoptium Java 17.0.18)
+[info] loading global plugins from /Users/ilya/.sbt/1.0/plugins
+[info] loading settings for project wlxjury-build-build-build from metals.sbt ...
+[info] loading project definition from /Users/ilya/scala/wlxjury/project/project/project
+[info] loading settings for project wlxjury-build-build from metals.sbt ...
+[info] loading project definition from /Users/ilya/scala/wlxjury/project/project
+[success] Generated .bloop/wlxjury-build-build.json
+[success] Total time: 1 s, completed Mar 10, 2026, 4:59:10 PM
+[info] loading settings for project wlxjury-build from metals.sbt,plugins.sbt ...
+[info] loading project definition from /Users/ilya/scala/wlxjury/project
+[success] Generated .bloop/wlxjury-build.json
+[success] Total time: 1 s, completed Mar 10, 2026, 4:59:10 PM
+[info] loading settings for project root from build.sbt ...
+[info]   __              __
+[info]   \ \     ____   / /____ _ __  __
+[info]    \ \   / __ \ / // __ `// / / /
+[info]    / /  / /_/ // // /_/ // /_/ /
+[info]   /_/  / .___//_/ \__,_/ \__, /
+[info]       /_/               /____/
+[info] 
+[info] Version 3.0.7 running Java 17.0.18
+[info] 
+[info] Play is run entirely by the community. Please consider contributing and/or donating:
+[info] https://www.playframework.com/sponsors
+[info] 
+[warn] sbt 0.13 shell syntax is deprecated; use slash syntax instead: Jmh / run
+[info] running (fork) org.openjdk.jmh.generators.bytecode.JmhBytecodeGenerator /Users/ilya/scala/wlxjury/target/scala-2.13/test-classes /Users/ilya/scala/wlxjury/target/scala-2.13/src_managed/jmh /Users/ilya/scala/wlxjury/target/scala-2.13/resource_managed/jmh default
+[info] Processing 62 classes from /Users/ilya/scala/wlxjury/target/scala-2.13/test-classes with "reflection" generator
+[info] Writing out Java source to /Users/ilya/scala/wlxjury/target/scala-2.13/src_managed/jmh and resources to /Users/ilya/scala/wlxjury/target/scala-2.13/resource_managed/jmh
+[info] compiling 12 Java sources to /Users/ilya/scala/wlxjury/target/scala-2.13/test-classes ...
+[info] done compiling
+[info] running (fork) org.openjdk.jmh.Main -i 5 -wi 3 -f 1 .*SaveResizedBenchmark
+[info] # JMH version: 1.37
+[info] # VM version: JDK 17.0.18, OpenJDK 64-Bit Server VM, 17.0.18+8
+[info] # VM invoker: /Users/ilya/.sdkman/candidates/java/17.0.18-tem/bin/java
+[info] # VM options: -Dconfig.file=test/resources/application.conf -Djna.nosys=true
+[info] # Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
+[info] # Warmup: 3 iterations, 1 s each
+[info] # Measurement: 5 iterations, 1 s each
+[info] # Timeout: 10 min per iteration
+[info] # Threads: 1 thread, will synchronize iterations
+[info] # Benchmark mode: Average time, time/op
+[info] # Benchmark: services.SaveResizedBenchmark.cascaded
+[info] # Run progress: 0.00% complete, ETA 00:00:16
+[info] # Fork: 1 of 1
+[info] # Warmup Iteration   1: 16:59:27,026 |-INFO in ch.qos.logback.classic.LoggerContext[default] - This is logback-classic version 1.5.17
+[info] 16:59:27,027 |-INFO in ch.qos.logback.classic.util.ContextInitializer@2c734c36 - No custom configurators were discovered as a service.
+[info] 16:59:27,027 |-INFO in ch.qos.logback.classic.util.ContextInitializer@2c734c36 - Trying to configure with ch.qos.logback.classic.joran.SerializedModelConfigurator
+[info] 16:59:27,027 |-INFO in ch.qos.logback.classic.util.ContextInitializer@2c734c36 - Constructed configurator of type class ch.qos.logback.classic.joran.SerializedModelConfigurator
+[info] 16:59:27,029 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Could NOT find resource [logback-test.scmo]
+[info] 16:59:27,029 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Could NOT find resource [logback.scmo]
+[info] 16:59:27,031 |-INFO in ch.qos.logback.classic.util.ContextInitializer@2c734c36 - ch.qos.logback.classic.joran.SerializedModelConfigurator.configure() call lasted 2 milliseconds. ExecutionStatus=INVOKE_NEXT_IF_ANY
+[info] 16:59:27,031 |-INFO in ch.qos.logback.classic.util.ContextInitializer@2c734c36 - Trying to configure with ch.qos.logback.classic.util.DefaultJoranConfigurator
+[info] 16:59:27,032 |-INFO in ch.qos.logback.classic.util.ContextInitializer@2c734c36 - Constructed configurator of type class ch.qos.logback.classic.util.DefaultJoranConfigurator
+[info] 16:59:27,032 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Could NOT find resource [logback-test.xml]
+[info] 16:59:27,033 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Found resource [logback.xml] at [jar:file:/Users/ilya/scala/wlxjury/target/bg-jobs/sbt_6521cb0a/job-1/target/b8869005/2d8572dd/wlxjury_2.13-0.13-jmh.jar!/logback.xml]
+[info] 16:59:27,034 |-WARN in ch.qos.logback.classic.util.DefaultJoranConfigurator@53b64487 - Resource [logback.xml] occurs multiple times on the classpath.
+[info] 16:59:27,034 |-WARN in ch.qos.logback.classic.util.DefaultJoranConfigurator@53b64487 - Resource [logback.xml] occurs at [jar:file:/Users/ilya/scala/wlxjury/target/bg-jobs/sbt_6521cb0a/target/3f1a46a8/832de3ea/wlxjury_2.13-0.13-tests.jar!/logback.xml]
+[info] 16:59:27,034 |-WARN in ch.qos.logback.classic.util.DefaultJoranConfigurator@53b64487 - Resource [logback.xml] occurs at [jar:file:/Users/ilya/scala/wlxjury/target/bg-jobs/sbt_6521cb0a/target/2abad4ee/28ea974f/wlxjury_2.13-0.13.jar!/logback.xml]
+[info] 16:59:27,034 |-WARN in ch.qos.logback.classic.util.DefaultJoranConfigurator@53b64487 - Resource [logback.xml] occurs at [jar:file:/Users/ilya/scala/wlxjury/target/bg-jobs/sbt_6521cb0a/job-1/target/b8869005/2d8572dd/wlxjury_2.13-0.13-jmh.jar!/logback.xml]
+[info] 16:59:27,037 |-INFO in ConfigurationWatchList(mainURL=jar:file:/Users/ilya/scala/wlxjury/target/bg-jobs/sbt_6521cb0a/job-1/target/b8869005/2d8572dd/wlxjury_2.13-0.13-jmh.jar!/logback.xml, fileWatchList={}, urlWatchList=[}) - URL [jar:file:/Users/ilya/scala/wlxjury/target/bg-jobs/sbt_6521cb0a/job-1/target/b8869005/2d8572dd/wlxjury_2.13-0.13-jmh.jar!/logback.xml] is not of type file
+[info] 16:59:27,063 |-WARN in ch.qos.logback.core.joran.action.ConversionRuleAction - [converterClass] attribute is deprecated and replaced by [class]. See element [conversionRule] near line 3
+[info] 16:59:27,086 |-INFO in ch.qos.logback.core.model.processor.ConversionRuleModelHandler - registering conversion word coloredLevel with class [play.api.libs.logback.ColoredLevel]
+[info] 16:59:27,089 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - Processing appender named [STDOUT]
+[info] 16:59:27,089 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - About to instantiate appender of type [ch.qos.logback.core.ConsoleAppender]
+[info] 16:59:27,093 |-INFO in ch.qos.logback.core.model.processor.ImplicitModelHandler - Assuming default type [ch.qos.logback.classic.encoder.PatternLayoutEncoder] for [encoder] property
+[info] 16:59:27,110 |-INFO in ch.qos.logback.core.ConsoleAppender[STDOUT] - BEWARE: Writing to the console can be very slow. Avoid logging to the 
+[info] 16:59:27,110 |-INFO in ch.qos.logback.core.ConsoleAppender[STDOUT] - console in production environments, especially in high volume systems.
+[info] 16:59:27,110 |-INFO in ch.qos.logback.core.ConsoleAppender[STDOUT] - See also https://logback.qos.ch/codes.html#slowConsole
+[info] 16:59:27,110 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - Processing appender named [ASYNCSTDOUT]
+[info] 16:59:27,110 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - About to instantiate appender of type [ch.qos.logback.classic.AsyncAppender]
+[info] 16:59:27,111 |-INFO in ch.qos.logback.core.model.processor.AppenderRefModelHandler - Attaching appender named [STDOUT] to ch.qos.logback.classic.AsyncAppender[ASYNCSTDOUT]
+[info] 16:59:27,111 |-INFO in ch.qos.logback.classic.AsyncAppender[ASYNCSTDOUT] - Attaching appender named [STDOUT] to AsyncAppender.
+[info] 16:59:27,111 |-INFO in ch.qos.logback.classic.AsyncAppender[ASYNCSTDOUT] - Setting discardingThreshold to 51
+[info] 16:59:27,112 |-INFO in ch.qos.logback.classic.model.processor.LoggerModelHandler - Setting level of logger [play] to DEBUG
+[info] 16:59:27,112 |-INFO in ch.qos.logback.classic.model.processor.LoggerModelHandler - Setting level of logger [application] to DEBUG
+[info] 16:59:27,112 |-INFO in ch.qos.logback.classic.model.processor.LoggerModelHandler - Setting level of logger [com.gargoylesoftware.htmlunit.javascript] to OFF
+[info] 16:59:27,112 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - Processing appender named [FILE]
+[info] 16:59:27,112 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - About to instantiate appender of type [ch.qos.logback.core.FileAppender]
+[info] 16:59:27,113 |-INFO in ch.qos.logback.core.model.processor.ModelInterpretationContext@74927c1 - value "./logs/application.log" substituted for "${application.home:-.}/logs/application.log"
+[info] 16:59:27,113 |-INFO in ch.qos.logback.core.model.processor.ImplicitModelHandler - Assuming default type [ch.qos.logback.classic.encoder.PatternLayoutEncoder] for [encoder] property
+[info] 16:59:27,114 |-INFO in ch.qos.logback.core.FileAppender[FILE] - File property is set to [./logs/application.log]
+[info] 16:59:27,114 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - Processing appender named [ASYNCFILE]
+[info] 16:59:27,114 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - About to instantiate appender of type [ch.qos.logback.classic.AsyncAppender]
+[info] 16:59:27,114 |-INFO in ch.qos.logback.core.model.processor.AppenderRefModelHandler - Attaching appender named [FILE] to ch.qos.logback.classic.AsyncAppender[ASYNCFILE]
+[info] 16:59:27,114 |-INFO in ch.qos.logback.classic.AsyncAppender[ASYNCFILE] - Attaching appender named [FILE] to AsyncAppender.
+[info] 16:59:27,114 |-INFO in ch.qos.logback.classic.AsyncAppender[ASYNCFILE] - Setting discardingThreshold to 51
+[info] 16:59:27,115 |-INFO in ch.qos.logback.classic.model.processor.RootLoggerModelHandler - Setting level of ROOT logger to WARN
+[info] 16:59:27,115 |-INFO in ch.qos.logback.core.model.processor.AppenderRefModelHandler - Attaching appender named [ASYNCFILE] to Logger[ROOT]
+[info] 16:59:27,115 |-INFO in ch.qos.logback.core.model.processor.AppenderRefModelHandler - Attaching appender named [ASYNCSTDOUT] to Logger[ROOT]
+[info] 16:59:27,115 |-INFO in ch.qos.logback.core.model.processor.DefaultProcessor@663ac9d3 - End of configuration.
+[info] 16:59:27,115 |-INFO in ch.qos.logback.classic.joran.JoranConfigurator@3842059d - Registering current configuration as safe fallback point
+[info] 16:59:27,115 |-INFO in ch.qos.logback.classic.util.ContextInitializer@2c734c36 - ch.qos.logback.classic.util.DefaultJoranConfigurator.configure() call lasted 83 milliseconds. ExecutionStatus=DO_NOT_INVOKE_NEXT_IF_ANY
+[info] 73.681 ms/op
+[info] # Warmup Iteration   2: 47.234 ms/op
+[info] # Warmup Iteration   3: 47.020 ms/op
+[info] Iteration   1: 46.246 ms/op
+[info] Iteration   2: 45.252 ms/op
+[info] Iteration   3: 47.164 ms/op
+[info] Iteration   4: 45.286 ms/op
+[info] Iteration   5: 45.948 ms/op
+[info] Result "services.SaveResizedBenchmark.cascaded":
+[info]   45.979 ±(99.9%) 3.035 ms/op [Average]
+[info]   (min, avg, max) = (45.252, 45.979, 47.164), stdev = 0.788
+[info]   CI (99.9%): [42.944, 49.014] (assumes normal distribution)
+[info] # JMH version: 1.37
+[info] # VM version: JDK 17.0.18, OpenJDK 64-Bit Server VM, 17.0.18+8
+[info] # VM invoker: /Users/ilya/.sdkman/candidates/java/17.0.18-tem/bin/java
+[info] # VM options: -Dconfig.file=test/resources/application.conf -Djna.nosys=true
+[info] # Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
+[info] # Warmup: 3 iterations, 1 s each
+[info] # Measurement: 5 iterations, 1 s each
+[info] # Timeout: 10 min per iteration
+[info] # Threads: 1 thread, will synchronize iterations
+[info] # Benchmark mode: Average time, time/op
+[info] # Benchmark: services.SaveResizedBenchmark.fromLargest
+[info] # Run progress: 50.00% complete, ETA 00:00:14
+[info] # Fork: 1 of 1
+[info] # Warmup Iteration   1: 16:59:41,877 |-INFO in ch.qos.logback.classic.LoggerContext[default] - This is logback-classic version 1.5.17
+[info] 16:59:41,877 |-INFO in ch.qos.logback.classic.util.ContextInitializer@21020db5 - No custom configurators were discovered as a service.
+[info] 16:59:41,877 |-INFO in ch.qos.logback.classic.util.ContextInitializer@21020db5 - Trying to configure with ch.qos.logback.classic.joran.SerializedModelConfigurator
+[info] 16:59:41,878 |-INFO in ch.qos.logback.classic.util.ContextInitializer@21020db5 - Constructed configurator of type class ch.qos.logback.classic.joran.SerializedModelConfigurator
+[info] 16:59:41,879 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Could NOT find resource [logback-test.scmo]
+[info] 16:59:41,880 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Could NOT find resource [logback.scmo]
+[info] 16:59:41,882 |-INFO in ch.qos.logback.classic.util.ContextInitializer@21020db5 - ch.qos.logback.classic.joran.SerializedModelConfigurator.configure() call lasted 2 milliseconds. ExecutionStatus=INVOKE_NEXT_IF_ANY
+[info] 16:59:41,882 |-INFO in ch.qos.logback.classic.util.ContextInitializer@21020db5 - Trying to configure with ch.qos.logback.classic.util.DefaultJoranConfigurator
+[info] 16:59:41,882 |-INFO in ch.qos.logback.classic.util.ContextInitializer@21020db5 - Constructed configurator of type class ch.qos.logback.classic.util.DefaultJoranConfigurator
+[info] 16:59:41,883 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Could NOT find resource [logback-test.xml]
+[info] 16:59:41,884 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Found resource [logback.xml] at [jar:file:/Users/ilya/scala/wlxjury/target/bg-jobs/sbt_6521cb0a/job-1/target/b8869005/2d8572dd/wlxjury_2.13-0.13-jmh.jar!/logback.xml]
+[info] 16:59:41,884 |-WARN in ch.qos.logback.classic.util.DefaultJoranConfigurator@22b17cb1 - Resource [logback.xml] occurs multiple times on the classpath.
+[info] 16:59:41,884 |-WARN in ch.qos.logback.classic.util.DefaultJoranConfigurator@22b17cb1 - Resource [logback.xml] occurs at [jar:file:/Users/ilya/scala/wlxjury/target/bg-jobs/sbt_6521cb0a/target/3f1a46a8/832de3ea/wlxjury_2.13-0.13-tests.jar!/logback.xml]
+[info] 16:59:41,884 |-WARN in ch.qos.logback.classic.util.DefaultJoranConfigurator@22b17cb1 - Resource [logback.xml] occurs at [jar:file:/Users/ilya/scala/wlxjury/target/bg-jobs/sbt_6521cb0a/target/2abad4ee/28ea974f/wlxjury_2.13-0.13.jar!/logback.xml]
+[info] 16:59:41,884 |-WARN in ch.qos.logback.classic.util.DefaultJoranConfigurator@22b17cb1 - Resource [logback.xml] occurs at [jar:file:/Users/ilya/scala/wlxjury/target/bg-jobs/sbt_6521cb0a/job-1/target/b8869005/2d8572dd/wlxjury_2.13-0.13-jmh.jar!/logback.xml]
+[info] 16:59:41,887 |-INFO in ConfigurationWatchList(mainURL=jar:file:/Users/ilya/scala/wlxjury/target/bg-jobs/sbt_6521cb0a/job-1/target/b8869005/2d8572dd/wlxjury_2.13-0.13-jmh.jar!/logback.xml, fileWatchList={}, urlWatchList=[}) - URL [jar:file:/Users/ilya/scala/wlxjury/target/bg-jobs/sbt_6521cb0a/job-1/target/b8869005/2d8572dd/wlxjury_2.13-0.13-jmh.jar!/logback.xml] is not of type file
+[info] 16:59:41,914 |-WARN in ch.qos.logback.core.joran.action.ConversionRuleAction - [converterClass] attribute is deprecated and replaced by [class]. See element [conversionRule] near line 3
+[info] 16:59:41,936 |-INFO in ch.qos.logback.core.model.processor.ConversionRuleModelHandler - registering conversion word coloredLevel with class [play.api.libs.logback.ColoredLevel]
+[info] 16:59:41,938 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - Processing appender named [STDOUT]
+[info] 16:59:41,938 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - About to instantiate appender of type [ch.qos.logback.core.ConsoleAppender]
+[info] 16:59:41,942 |-INFO in ch.qos.logback.core.model.processor.ImplicitModelHandler - Assuming default type [ch.qos.logback.classic.encoder.PatternLayoutEncoder] for [encoder] property
+[info] 16:59:41,959 |-INFO in ch.qos.logback.core.ConsoleAppender[STDOUT] - BEWARE: Writing to the console can be very slow. Avoid logging to the 
+[info] 16:59:41,959 |-INFO in ch.qos.logback.core.ConsoleAppender[STDOUT] - console in production environments, especially in high volume systems.
+[info] 16:59:41,959 |-INFO in ch.qos.logback.core.ConsoleAppender[STDOUT] - See also https://logback.qos.ch/codes.html#slowConsole
+[info] 16:59:41,959 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - Processing appender named [ASYNCSTDOUT]
+[info] 16:59:41,959 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - About to instantiate appender of type [ch.qos.logback.classic.AsyncAppender]
+[info] 16:59:41,960 |-INFO in ch.qos.logback.core.model.processor.AppenderRefModelHandler - Attaching appender named [STDOUT] to ch.qos.logback.classic.AsyncAppender[ASYNCSTDOUT]
+[info] 16:59:41,960 |-INFO in ch.qos.logback.classic.AsyncAppender[ASYNCSTDOUT] - Attaching appender named [STDOUT] to AsyncAppender.
+[info] 16:59:41,960 |-INFO in ch.qos.logback.classic.AsyncAppender[ASYNCSTDOUT] - Setting discardingThreshold to 51
+[info] 16:59:41,960 |-INFO in ch.qos.logback.classic.model.processor.LoggerModelHandler - Setting level of logger [play] to DEBUG
+[info] 16:59:41,960 |-INFO in ch.qos.logback.classic.model.processor.LoggerModelHandler - Setting level of logger [application] to DEBUG
+[info] 16:59:41,960 |-INFO in ch.qos.logback.classic.model.processor.LoggerModelHandler - Setting level of logger [com.gargoylesoftware.htmlunit.javascript] to OFF
+[info] 16:59:41,960 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - Processing appender named [FILE]
+[info] 16:59:41,960 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - About to instantiate appender of type [ch.qos.logback.core.FileAppender]
+[info] 16:59:41,962 |-INFO in ch.qos.logback.core.model.processor.ModelInterpretationContext@664adff - value "./logs/application.log" substituted for "${application.home:-.}/logs/application.log"
+[info] 16:59:41,962 |-INFO in ch.qos.logback.core.model.processor.ImplicitModelHandler - Assuming default type [ch.qos.logback.classic.encoder.PatternLayoutEncoder] for [encoder] property
+[info] 16:59:41,962 |-INFO in ch.qos.logback.core.FileAppender[FILE] - File property is set to [./logs/application.log]
+[info] 16:59:41,963 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - Processing appender named [ASYNCFILE]
+[info] 16:59:41,963 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - About to instantiate appender of type [ch.qos.logback.classic.AsyncAppender]
+[info] 16:59:41,963 |-INFO in ch.qos.logback.core.model.processor.AppenderRefModelHandler - Attaching appender named [FILE] to ch.qos.logback.classic.AsyncAppender[ASYNCFILE]
+[info] 16:59:41,963 |-INFO in ch.qos.logback.classic.AsyncAppender[ASYNCFILE] - Attaching appender named [FILE] to AsyncAppender.
+[info] 16:59:41,963 |-INFO in ch.qos.logback.classic.AsyncAppender[ASYNCFILE] - Setting discardingThreshold to 51
+[info] 16:59:41,963 |-INFO in ch.qos.logback.classic.model.processor.RootLoggerModelHandler - Setting level of ROOT logger to WARN
+[info] 16:59:41,964 |-INFO in ch.qos.logback.core.model.processor.AppenderRefModelHandler - Attaching appender named [ASYNCFILE] to Logger[ROOT]
+[info] 16:59:41,964 |-INFO in ch.qos.logback.core.model.processor.AppenderRefModelHandler - Attaching appender named [ASYNCSTDOUT] to Logger[ROOT]
+[info] 16:59:41,964 |-INFO in ch.qos.logback.core.model.processor.DefaultProcessor@2f990d76 - End of configuration.
+[info] 16:59:41,964 |-INFO in ch.qos.logback.classic.joran.JoranConfigurator@4d17ed11 - Registering current configuration as safe fallback point
+[info] 16:59:41,964 |-INFO in ch.qos.logback.classic.util.ContextInitializer@21020db5 - ch.qos.logback.classic.util.DefaultJoranConfigurator.configure() call lasted 82 milliseconds. ExecutionStatus=DO_NOT_INVOKE_NEXT_IF_ANY
+[info] 67.298 ms/op
+[info] # Warmup Iteration   2: 46.630 ms/op
+[info] # Warmup Iteration   3: 45.992 ms/op
+[info] Iteration   1: 46.377 ms/op
+[info] Iteration   2: 47.381 ms/op
+[info] Iteration   3: 47.484 ms/op
+[info] Iteration   4: 48.140 ms/op
+[info] Iteration   5: 45.756 ms/op
+[info] Result "services.SaveResizedBenchmark.fromLargest":
+[info]   47.028 ±(99.9%) 3.659 ms/op [Average]
+[info]   (min, avg, max) = (45.756, 47.028, 48.140), stdev = 0.950
+[info]   CI (99.9%): [43.369, 50.687] (assumes normal distribution)
+[info] # Run complete. Total time: 00:00:29
+[info] REMEMBER: The numbers below are just data. To gain reusable insights, you need to follow up on
+[info] why the numbers are the way they are. Use profilers (see -prof, -lprof), design factorial
+[info] experiments, perform baseline and negative tests that provide experimental control, make sure
+[info] the benchmarking environment is safe on JVM/OS/HW level, ask for reviews from the domain experts.
+[info] Do not assume the numbers tell you what you want them to tell.
+[info] NOTE: Current JVM experimentally supports Compiler Blackholes, and they are in use. Please exercise
+[info] extra caution when trusting the results, look into the generated code to check the benchmark still
+[info] works, and factor in a small probability of new VM bugs. Additionally, while comparisons between
+[info] different JVMs are already problematic, the performance difference caused by different Blackhole
+[info] modes can be very significant. Please make sure you use the consistent Blackhole mode for comparisons.
+[info] Benchmark                         Mode  Cnt   Score   Error  Units
+[info] SaveResizedBenchmark.cascaded     avgt    5  45.979 ± 3.035  ms/op
+[info] SaveResizedBenchmark.fromLargest  avgt    5  47.028 ± 3.659  ms/op
+[success] Total time: 40 s, completed Mar 10, 2026, 4:59:51 PM
+[info] welcome to sbt 1.9.6 (Eclipse Adoptium Java 17.0.18)
+[info] loading global plugins from /Users/ilya/.sbt/1.0/plugins
+[info] loading settings for project wlxjury-build-build-build from metals.sbt ...
+[info] loading project definition from /Users/ilya/scala/wlxjury/project/project/project
+[info] loading settings for project wlxjury-build-build from metals.sbt ...
+[info] loading project definition from /Users/ilya/scala/wlxjury/project/project
+[success] Generated .bloop/wlxjury-build-build.json
+[success] Total time: 1 s, completed Mar 10, 2026, 5:04:38 PM
+[info] loading settings for project wlxjury-build from metals.sbt,plugins.sbt ...
+[info] loading project definition from /Users/ilya/scala/wlxjury/project
+[success] Generated .bloop/wlxjury-build.json
+[success] Total time: 1 s, completed Mar 10, 2026, 5:04:39 PM
+[info] loading settings for project root from build.sbt ...
+[info]   __              __
+[info]   \ \     ____   / /____ _ __  __
+[info]    \ \   / __ \ / // __ `// / / /
+[info]    / /  / /_/ // // /_/ // /_/ /
+[info]   /_/  / .___//_/ \__,_/ \__, /
+[info]       /_/               /____/
+[info] 
+[info] Version 3.0.7 running Java 17.0.18
+[info] 
+[info] Play is run entirely by the community. Please consider contributing and/or donating:
+[info] https://www.playframework.com/sponsors
+[info] 
+[warn] sbt 0.13 shell syntax is deprecated; use slash syntax instead: Jmh / run
+[info] compiling 12 Java sources to /Users/ilya/scala/wlxjury/target/scala-2.13/test-classes ...
+[info] done compiling
+[info] running (fork) org.openjdk.jmh.Main -i 5 -wi 3 -f 1 .*FetchAndCacheAllBenchmark
+[info] # JMH version: 1.37
+[info] # VM version: JDK 17.0.18, OpenJDK 64-Bit Server VM, 17.0.18+8
+[info] # VM invoker: /Users/ilya/.sdkman/candidates/java/17.0.18-tem/bin/java
+[info] # VM options: -Dconfig.file=test/resources/application.conf -Djna.nosys=true
+[info] # Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
+[info] # Warmup: 3 iterations, 1 s each
+[info] # Measurement: 5 iterations, 1 s each
+[info] # Timeout: 10 min per iteration
+[info] # Threads: 1 thread, will synchronize iterations
+[info] # Benchmark mode: Average time, time/op
+[info] # Benchmark: services.FetchAndCacheAllBenchmark.cascaded
+[info] # Parameters: (targetHeightStr = 120)
+[info] # Run progress: 0.00% complete, ETA 00:02:08
+[info] # Fork: 1 of 1
+[info] # Warmup Iteration   1: 17:04:50,620 |-INFO in ch.qos.logback.classic.LoggerContext[default] - This is logback-classic version 1.5.17
+[info] 17:04:50,621 |-INFO in ch.qos.logback.classic.util.ContextInitializer@2f0eddc - No custom configurators were discovered as a service.
+[info] 17:04:50,621 |-INFO in ch.qos.logback.classic.util.ContextInitializer@2f0eddc - Trying to configure with ch.qos.logback.classic.joran.SerializedModelConfigurator
+[info] 17:04:50,622 |-INFO in ch.qos.logback.classic.util.ContextInitializer@2f0eddc - Constructed configurator of type class ch.qos.logback.classic.joran.SerializedModelConfigurator
+[info] 17:04:50,623 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Could NOT find resource [logback-test.scmo]
+[info] 17:04:50,623 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Could NOT find resource [logback.scmo]
+[info] 17:04:50,626 |-INFO in ch.qos.logback.classic.util.ContextInitializer@2f0eddc - ch.qos.logback.classic.joran.SerializedModelConfigurator.configure() call lasted 1 milliseconds. ExecutionStatus=INVOKE_NEXT_IF_ANY
+[info] 17:04:50,626 |-INFO in ch.qos.logback.classic.util.ContextInitializer@2f0eddc - Trying to configure with ch.qos.logback.classic.util.DefaultJoranConfigurator
+[info] 17:04:50,626 |-INFO in ch.qos.logback.classic.util.ContextInitializer@2f0eddc - Constructed configurator of type class ch.qos.logback.classic.util.DefaultJoranConfigurator
+[info] 17:04:50,626 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Could NOT find resource [logback-test.xml]
+[info] 17:04:50,627 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Found resource [logback.xml] at [jar:file:/Users/ilya/scala/wlxjury/target/bg-jobs/sbt_e1f68dca/job-1/target/b8869005/2d8572dd/wlxjury_2.13-0.13-jmh.jar!/logback.xml]
+[info] 17:04:50,628 |-WARN in ch.qos.logback.classic.util.DefaultJoranConfigurator@778327d7 - Resource [logback.xml] occurs multiple times on the classpath.
+[info] 17:04:50,628 |-WARN in ch.qos.logback.classic.util.DefaultJoranConfigurator@778327d7 - Resource [logback.xml] occurs at [jar:file:/Users/ilya/scala/wlxjury/target/bg-jobs/sbt_e1f68dca/target/3f1a46a8/832de3ea/wlxjury_2.13-0.13-tests.jar!/logback.xml]
+[info] 17:04:50,628 |-WARN in ch.qos.logback.classic.util.DefaultJoranConfigurator@778327d7 - Resource [logback.xml] occurs at [jar:file:/Users/ilya/scala/wlxjury/target/bg-jobs/sbt_e1f68dca/target/2abad4ee/28ea974f/wlxjury_2.13-0.13.jar!/logback.xml]
+[info] 17:04:50,628 |-WARN in ch.qos.logback.classic.util.DefaultJoranConfigurator@778327d7 - Resource [logback.xml] occurs at [jar:file:/Users/ilya/scala/wlxjury/target/bg-jobs/sbt_e1f68dca/job-1/target/b8869005/2d8572dd/wlxjury_2.13-0.13-jmh.jar!/logback.xml]
+[info] 17:04:50,631 |-INFO in ConfigurationWatchList(mainURL=jar:file:/Users/ilya/scala/wlxjury/target/bg-jobs/sbt_e1f68dca/job-1/target/b8869005/2d8572dd/wlxjury_2.13-0.13-jmh.jar!/logback.xml, fileWatchList={}, urlWatchList=[}) - URL [jar:file:/Users/ilya/scala/wlxjury/target/bg-jobs/sbt_e1f68dca/job-1/target/b8869005/2d8572dd/wlxjury_2.13-0.13-jmh.jar!/logback.xml] is not of type file
+[info] 17:04:50,657 |-WARN in ch.qos.logback.core.joran.action.ConversionRuleAction - [converterClass] attribute is deprecated and replaced by [class]. See element [conversionRule] near line 3
+[info] 17:04:50,681 |-INFO in ch.qos.logback.core.model.processor.ConversionRuleModelHandler - registering conversion word coloredLevel with class [play.api.libs.logback.ColoredLevel]
+[info] 17:04:50,684 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - Processing appender named [STDOUT]
+[info] 17:04:50,684 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - About to instantiate appender of type [ch.qos.logback.core.ConsoleAppender]
+[info] 17:04:50,687 |-INFO in ch.qos.logback.core.model.processor.ImplicitModelHandler - Assuming default type [ch.qos.logback.classic.encoder.PatternLayoutEncoder] for [encoder] property
+[info] 17:04:50,703 |-INFO in ch.qos.logback.core.ConsoleAppender[STDOUT] - BEWARE: Writing to the console can be very slow. Avoid logging to the 
+[info] 17:04:50,703 |-INFO in ch.qos.logback.core.ConsoleAppender[STDOUT] - console in production environments, especially in high volume systems.
+[info] 17:04:50,703 |-INFO in ch.qos.logback.core.ConsoleAppender[STDOUT] - See also https://logback.qos.ch/codes.html#slowConsole
+[info] 17:04:50,703 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - Processing appender named [ASYNCSTDOUT]
+[info] 17:04:50,703 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - About to instantiate appender of type [ch.qos.logback.classic.AsyncAppender]
+[info] 17:04:50,704 |-INFO in ch.qos.logback.core.model.processor.AppenderRefModelHandler - Attaching appender named [STDOUT] to ch.qos.logback.classic.AsyncAppender[ASYNCSTDOUT]
+[info] 17:04:50,704 |-INFO in ch.qos.logback.classic.AsyncAppender[ASYNCSTDOUT] - Attaching appender named [STDOUT] to AsyncAppender.
+[info] 17:04:50,705 |-INFO in ch.qos.logback.classic.AsyncAppender[ASYNCSTDOUT] - Setting discardingThreshold to 51
+[info] 17:04:50,705 |-INFO in ch.qos.logback.classic.model.processor.LoggerModelHandler - Setting level of logger [play] to DEBUG
+[info] 17:04:50,705 |-INFO in ch.qos.logback.classic.model.processor.LoggerModelHandler - Setting level of logger [application] to DEBUG
+[info] 17:04:50,705 |-INFO in ch.qos.logback.classic.model.processor.LoggerModelHandler - Setting level of logger [com.gargoylesoftware.htmlunit.javascript] to OFF
+[info] 17:04:50,705 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - Processing appender named [FILE]
+[info] 17:04:50,705 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - About to instantiate appender of type [ch.qos.logback.core.FileAppender]
+[info] 17:04:50,707 |-INFO in ch.qos.logback.core.model.processor.ModelInterpretationContext@5faf7da9 - value "./logs/application.log" substituted for "${application.home:-.}/logs/application.log"
+[info] 17:04:50,707 |-INFO in ch.qos.logback.core.model.processor.ImplicitModelHandler - Assuming default type [ch.qos.logback.classic.encoder.PatternLayoutEncoder] for [encoder] property
+[info] 17:04:50,707 |-INFO in ch.qos.logback.core.FileAppender[FILE] - File property is set to [./logs/application.log]
+[info] 17:04:50,708 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - Processing appender named [ASYNCFILE]
+[info] 17:04:50,708 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - About to instantiate appender of type [ch.qos.logback.classic.AsyncAppender]
+[info] 17:04:50,708 |-INFO in ch.qos.logback.core.model.processor.AppenderRefModelHandler - Attaching appender named [FILE] to ch.qos.logback.classic.AsyncAppender[ASYNCFILE]
+[info] 17:04:50,708 |-INFO in ch.qos.logback.classic.AsyncAppender[ASYNCFILE] - Attaching appender named [FILE] to AsyncAppender.
+[info] 17:04:50,708 |-INFO in ch.qos.logback.classic.AsyncAppender[ASYNCFILE] - Setting discardingThreshold to 51
+[info] 17:04:50,708 |-INFO in ch.qos.logback.classic.model.processor.RootLoggerModelHandler - Setting level of ROOT logger to WARN
+[info] 17:04:50,708 |-INFO in ch.qos.logback.core.model.processor.AppenderRefModelHandler - Attaching appender named [ASYNCFILE] to Logger[ROOT]
+[info] 17:04:50,708 |-INFO in ch.qos.logback.core.model.processor.AppenderRefModelHandler - Attaching appender named [ASYNCSTDOUT] to Logger[ROOT]
+[info] 17:04:50,709 |-INFO in ch.qos.logback.core.model.processor.DefaultProcessor@31fc5414 - End of configuration.
+[info] 17:04:50,709 |-INFO in ch.qos.logback.classic.joran.JoranConfigurator@33373cb - Registering current configuration as safe fallback point
+[info] 17:04:50,709 |-INFO in ch.qos.logback.classic.util.ContextInitializer@2f0eddc - ch.qos.logback.classic.util.DefaultJoranConfigurator.configure() call lasted 83 milliseconds. ExecutionStatus=DO_NOT_INVOKE_NEXT_IF_ANY
+[info] 92.701 ms/op
+[info] # Warmup Iteration   2: 48.557 ms/op
+[info] # Warmup Iteration   3: 47.042 ms/op
+[info] Iteration   1: 48.040 ms/op
+[info] Iteration   2: 46.739 ms/op
+[info] Iteration   3: 69.749 ms/op
+[info] Iteration   4: 45.897 ms/op
+[info] Iteration   5: 46.736 ms/op
+[info] Result "services.FetchAndCacheAllBenchmark.cascaded":
+[info]   51.432 ±(99.9%) 39.539 ms/op [Average]
+[info]   (min, avg, max) = (45.897, 51.432, 69.749), stdev = 10.268
+[info]   CI (99.9%): [11.893, 90.972] (assumes normal distribution)
+[info] # JMH version: 1.37
+[info] # VM version: JDK 17.0.18, OpenJDK 64-Bit Server VM, 17.0.18+8
+[info] # VM invoker: /Users/ilya/.sdkman/candidates/java/17.0.18-tem/bin/java
+[info] # VM options: -Dconfig.file=test/resources/application.conf -Djna.nosys=true
+[info] # Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
+[info] # Warmup: 3 iterations, 1 s each
+[info] # Measurement: 5 iterations, 1 s each
+[info] # Timeout: 10 min per iteration
+[info] # Threads: 1 thread, will synchronize iterations
+[info] # Benchmark mode: Average time, time/op
+[info] # Benchmark: services.FetchAndCacheAllBenchmark.cascaded
+[info] # Parameters: (targetHeightStr = 180)
+[info] # Run progress: 6.25% complete, ETA 00:03:41
+[info] # Fork: 1 of 1
+[info] # Warmup Iteration   1: 17:05:05,392 |-INFO in ch.qos.logback.classic.LoggerContext[default] - This is logback-classic version 1.5.17
+[info] 17:05:05,393 |-INFO in ch.qos.logback.classic.util.ContextInitializer@e29db74 - No custom configurators were discovered as a service.
+[info] 17:05:05,393 |-INFO in ch.qos.logback.classic.util.ContextInitializer@e29db74 - Trying to configure with ch.qos.logback.classic.joran.SerializedModelConfigurator
+[info] 17:05:05,393 |-INFO in ch.qos.logback.classic.util.ContextInitializer@e29db74 - Constructed configurator of type class ch.qos.logback.classic.joran.SerializedModelConfigurator
+[info] 17:05:05,395 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Could NOT find resource [logback-test.scmo]
+[info] 17:05:05,395 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Could NOT find resource [logback.scmo]
+[info] 17:05:05,398 |-INFO in ch.qos.logback.classic.util.ContextInitializer@e29db74 - ch.qos.logback.classic.joran.SerializedModelConfigurator.configure() call lasted 2 milliseconds. ExecutionStatus=INVOKE_NEXT_IF_ANY
+[info] 17:05:05,398 |-INFO in ch.qos.logback.classic.util.ContextInitializer@e29db74 - Trying to configure with ch.qos.logback.classic.util.DefaultJoranConfigurator
+[info] 17:05:05,398 |-INFO in ch.qos.logback.classic.util.ContextInitializer@e29db74 - Constructed configurator of type class ch.qos.logback.classic.util.DefaultJoranConfigurator
+[info] 17:05:05,399 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Could NOT find resource [logback-test.xml]
+[info] 17:05:05,400 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Found resource [logback.xml] at [jar:file:/Users/ilya/scala/wlxjury/target/bg-jobs/sbt_e1f68dca/job-1/target/b8869005/2d8572dd/wlxjury_2.13-0.13-jmh.jar!/logback.xml]
+[info] 17:05:05,400 |-WARN in ch.qos.logback.classic.util.DefaultJoranConfigurator@73f78581 - Resource [logback.xml] occurs multiple times on the classpath.
+[info] 17:05:05,400 |-WARN in ch.qos.logback.classic.util.DefaultJoranConfigurator@73f78581 - Resource [logback.xml] occurs at [jar:file:/Users/ilya/scala/wlxjury/target/bg-jobs/sbt_e1f68dca/target/3f1a46a8/832de3ea/wlxjury_2.13-0.13-tests.jar!/logback.xml]
+[info] 17:05:05,400 |-WARN in ch.qos.logback.classic.util.DefaultJoranConfigurator@73f78581 - Resource [logback.xml] occurs at [jar:file:/Users/ilya/scala/wlxjury/target/bg-jobs/sbt_e1f68dca/target/2abad4ee/28ea974f/wlxjury_2.13-0.13.jar!/logback.xml]
+[info] 17:05:05,400 |-WARN in ch.qos.logback.classic.util.DefaultJoranConfigurator@73f78581 - Resource [logback.xml] occurs at [jar:file:/Users/ilya/scala/wlxjury/target/bg-jobs/sbt_e1f68dca/job-1/target/b8869005/2d8572dd/wlxjury_2.13-0.13-jmh.jar!/logback.xml]
+[info] 17:05:05,404 |-INFO in ConfigurationWatchList(mainURL=jar:file:/Users/ilya/scala/wlxjury/target/bg-jobs/sbt_e1f68dca/job-1/target/b8869005/2d8572dd/wlxjury_2.13-0.13-jmh.jar!/logback.xml, fileWatchList={}, urlWatchList=[}) - URL [jar:file:/Users/ilya/scala/wlxjury/target/bg-jobs/sbt_e1f68dca/job-1/target/b8869005/2d8572dd/wlxjury_2.13-0.13-jmh.jar!/logback.xml] is not of type file
+[info] 17:05:05,431 |-WARN in ch.qos.logback.core.joran.action.ConversionRuleAction - [converterClass] attribute is deprecated and replaced by [class]. See element [conversionRule] near line 3
+[info] 17:05:05,456 |-INFO in ch.qos.logback.core.model.processor.ConversionRuleModelHandler - registering conversion word coloredLevel with class [play.api.libs.logback.ColoredLevel]
+[info] 17:05:05,459 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - Processing appender named [STDOUT]
+[info] 17:05:05,460 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - About to instantiate appender of type [ch.qos.logback.core.ConsoleAppender]
+[info] 17:05:05,464 |-INFO in ch.qos.logback.core.model.processor.ImplicitModelHandler - Assuming default type [ch.qos.logback.classic.encoder.PatternLayoutEncoder] for [encoder] property
+[info] 17:05:05,481 |-INFO in ch.qos.logback.core.ConsoleAppender[STDOUT] - BEWARE: Writing to the console can be very slow. Avoid logging to the 
+[info] 17:05:05,481 |-INFO in ch.qos.logback.core.ConsoleAppender[STDOUT] - console in production environments, especially in high volume systems.
+[info] 17:05:05,481 |-INFO in ch.qos.logback.core.ConsoleAppender[STDOUT] - See also https://logback.qos.ch/codes.html#slowConsole
+[info] 17:05:05,481 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - Processing appender named [ASYNCSTDOUT]
+[info] 17:05:05,481 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - About to instantiate appender of type [ch.qos.logback.classic.AsyncAppender]
+[info] 17:05:05,482 |-INFO in ch.qos.logback.core.model.processor.AppenderRefModelHandler - Attaching appender named [STDOUT] to ch.qos.logback.classic.AsyncAppender[ASYNCSTDOUT]
+[info] 17:05:05,482 |-INFO in ch.qos.logback.classic.AsyncAppender[ASYNCSTDOUT] - Attaching appender named [STDOUT] to AsyncAppender.
+[info] 17:05:05,483 |-INFO in ch.qos.logback.classic.AsyncAppender[ASYNCSTDOUT] - Setting discardingThreshold to 51
+[info] 17:05:05,483 |-INFO in ch.qos.logback.classic.model.processor.LoggerModelHandler - Setting level of logger [play] to DEBUG
+[info] 17:05:05,483 |-INFO in ch.qos.logback.classic.model.processor.LoggerModelHandler - Setting level of logger [application] to DEBUG
+[info] 17:05:05,483 |-INFO in ch.qos.logback.classic.model.processor.LoggerModelHandler - Setting level of logger [com.gargoylesoftware.htmlunit.javascript] to OFF
+[info] 17:05:05,483 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - Processing appender named [FILE]
+[info] 17:05:05,483 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - About to instantiate appender of type [ch.qos.logback.core.FileAppender]
+[info] 17:05:05,484 |-INFO in ch.qos.logback.core.model.processor.ModelInterpretationContext@5f674d83 - value "./logs/application.log" substituted for "${application.home:-.}/logs/application.log"
+[info] 17:05:05,484 |-INFO in ch.qos.logback.core.model.processor.ImplicitModelHandler - Assuming default type [ch.qos.logback.classic.encoder.PatternLayoutEncoder] for [encoder] property
+[info] 17:05:05,485 |-INFO in ch.qos.logback.core.FileAppender[FILE] - File property is set to [./logs/application.log]
+[info] 17:05:05,486 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - Processing appender named [ASYNCFILE]
+[info] 17:05:05,486 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - About to instantiate appender of type [ch.qos.logback.classic.AsyncAppender]
+[info] 17:05:05,486 |-INFO in ch.qos.logback.core.model.processor.AppenderRefModelHandler - Attaching appender named [FILE] to ch.qos.logback.classic.AsyncAppender[ASYNCFILE]
+[info] 17:05:05,486 |-INFO in ch.qos.logback.classic.AsyncAppender[ASYNCFILE] - Attaching appender named [FILE] to AsyncAppender.
+[info] 17:05:05,486 |-INFO in ch.qos.logback.classic.AsyncAppender[ASYNCFILE] - Setting discardingThreshold to 51
+[info] 17:05:05,486 |-INFO in ch.qos.logback.classic.model.processor.RootLoggerModelHandler - Setting level of ROOT logger to WARN
+[info] 17:05:05,486 |-INFO in ch.qos.logback.core.model.processor.AppenderRefModelHandler - Attaching appender named [ASYNCFILE] to Logger[ROOT]
+[info] 17:05:05,486 |-INFO in ch.qos.logback.core.model.processor.AppenderRefModelHandler - Attaching appender named [ASYNCSTDOUT] to Logger[ROOT]
+[info] 17:05:05,486 |-INFO in ch.qos.logback.core.model.processor.DefaultProcessor@10730063 - End of configuration.
+[info] 17:05:05,487 |-INFO in ch.qos.logback.classic.joran.JoranConfigurator@1ff10843 - Registering current configuration as safe fallback point
+[info] 17:05:05,487 |-INFO in ch.qos.logback.classic.util.ContextInitializer@e29db74 - ch.qos.logback.classic.util.DefaultJoranConfigurator.configure() call lasted 89 milliseconds. ExecutionStatus=DO_NOT_INVOKE_NEXT_IF_ANY
+[info] 73.693 ms/op
+[info] # Warmup Iteration   2: 46.557 ms/op
+[info] # Warmup Iteration   3: 46.538 ms/op
+[info] Iteration   1: 45.411 ms/op
+[info] Iteration   2: 45.584 ms/op
+[info] Iteration   3: 46.881 ms/op
+[info] Iteration   4: 47.154 ms/op
+[info] Iteration   5: 46.388 ms/op
+[info] Result "services.FetchAndCacheAllBenchmark.cascaded":
+[info]   46.284 ±(99.9%) 2.968 ms/op [Average]
+[info]   (min, avg, max) = (45.411, 46.284, 47.154), stdev = 0.771
+[info]   CI (99.9%): [43.316, 49.251] (assumes normal distribution)
+[info] # JMH version: 1.37
+[info] # VM version: JDK 17.0.18, OpenJDK 64-Bit Server VM, 17.0.18+8
+[info] # VM invoker: /Users/ilya/.sdkman/candidates/java/17.0.18-tem/bin/java
+[info] # VM options: -Dconfig.file=test/resources/application.conf -Djna.nosys=true
+[info] # Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
+[info] # Warmup: 3 iterations, 1 s each
+[info] # Measurement: 5 iterations, 1 s each
+[info] # Timeout: 10 min per iteration
+[info] # Threads: 1 thread, will synchronize iterations
+[info] # Benchmark mode: Average time, time/op
+[info] # Benchmark: services.FetchAndCacheAllBenchmark.cascaded
+[info] # Parameters: (targetHeightStr = 240)
+[info] # Run progress: 12.50% complete, ETA 00:03:27
+[info] # Fork: 1 of 1
+[info] # Warmup Iteration   1: 17:05:20,275 |-INFO in ch.qos.logback.classic.LoggerContext[default] - This is logback-classic version 1.5.17
+[info] 17:05:20,276 |-INFO in ch.qos.logback.classic.util.ContextInitializer@425627b7 - No custom configurators were discovered as a service.
+[info] 17:05:20,276 |-INFO in ch.qos.logback.classic.util.ContextInitializer@425627b7 - Trying to configure with ch.qos.logback.classic.joran.SerializedModelConfigurator
+[info] 17:05:20,277 |-INFO in ch.qos.logback.classic.util.ContextInitializer@425627b7 - Constructed configurator of type class ch.qos.logback.classic.joran.SerializedModelConfigurator
+[info] 17:05:20,278 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Could NOT find resource [logback-test.scmo]
+[info] 17:05:20,278 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Could NOT find resource [logback.scmo]
+[info] 17:05:20,281 |-INFO in ch.qos.logback.classic.util.ContextInitializer@425627b7 - ch.qos.logback.classic.joran.SerializedModelConfigurator.configure() call lasted 2 milliseconds. ExecutionStatus=INVOKE_NEXT_IF_ANY
+[info] 17:05:20,281 |-INFO in ch.qos.logback.classic.util.ContextInitializer@425627b7 - Trying to configure with ch.qos.logback.classic.util.DefaultJoranConfigurator
+[info] 17:05:20,281 |-INFO in ch.qos.logback.classic.util.ContextInitializer@425627b7 - Constructed configurator of type class ch.qos.logback.classic.util.DefaultJoranConfigurator
+[info] 17:05:20,281 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Could NOT find resource [logback-test.xml]
+[info] 17:05:20,282 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Found resource [logback.xml] at [jar:file:/Users/ilya/scala/wlxjury/target/bg-jobs/sbt_e1f68dca/job-1/target/b8869005/2d8572dd/wlxjury_2.13-0.13-jmh.jar!/logback.xml]
+[info] 17:05:20,283 |-WARN in ch.qos.logback.classic.util.DefaultJoranConfigurator@6f389cc0 - Resource [logback.xml] occurs multiple times on the classpath.
+[info] 17:05:20,283 |-WARN in ch.qos.logback.classic.util.DefaultJoranConfigurator@6f389cc0 - Resource [logback.xml] occurs at [jar:file:/Users/ilya/scala/wlxjury/target/bg-jobs/sbt_e1f68dca/target/3f1a46a8/832de3ea/wlxjury_2.13-0.13-tests.jar!/logback.xml]
+[info] 17:05:20,283 |-WARN in ch.qos.logback.classic.util.DefaultJoranConfigurator@6f389cc0 - Resource [logback.xml] occurs at [jar:file:/Users/ilya/scala/wlxjury/target/bg-jobs/sbt_e1f68dca/target/2abad4ee/28ea974f/wlxjury_2.13-0.13.jar!/logback.xml]
+[info] 17:05:20,283 |-WARN in ch.qos.logback.classic.util.DefaultJoranConfigurator@6f389cc0 - Resource [logback.xml] occurs at [jar:file:/Users/ilya/scala/wlxjury/target/bg-jobs/sbt_e1f68dca/job-1/target/b8869005/2d8572dd/wlxjury_2.13-0.13-jmh.jar!/logback.xml]
+[info] 17:05:20,287 |-INFO in ConfigurationWatchList(mainURL=jar:file:/Users/ilya/scala/wlxjury/target/bg-jobs/sbt_e1f68dca/job-1/target/b8869005/2d8572dd/wlxjury_2.13-0.13-jmh.jar!/logback.xml, fileWatchList={}, urlWatchList=[}) - URL [jar:file:/Users/ilya/scala/wlxjury/target/bg-jobs/sbt_e1f68dca/job-1/target/b8869005/2d8572dd/wlxjury_2.13-0.13-jmh.jar!/logback.xml] is not of type file
+[info] 17:05:20,313 |-WARN in ch.qos.logback.core.joran.action.ConversionRuleAction - [converterClass] attribute is deprecated and replaced by [class]. See element [conversionRule] near line 3
+[info] 17:05:20,337 |-INFO in ch.qos.logback.core.model.processor.ConversionRuleModelHandler - registering conversion word coloredLevel with class [play.api.libs.logback.ColoredLevel]
+[info] 17:05:20,340 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - Processing appender named [STDOUT]
+[info] 17:05:20,340 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - About to instantiate appender of type [ch.qos.logback.core.ConsoleAppender]
+[info] 17:05:20,344 |-INFO in ch.qos.logback.core.model.processor.ImplicitModelHandler - Assuming default type [ch.qos.logback.classic.encoder.PatternLayoutEncoder] for [encoder] property
+[info] 17:05:20,362 |-INFO in ch.qos.logback.core.ConsoleAppender[STDOUT] - BEWARE: Writing to the console can be very slow. Avoid logging to the 
+[info] 17:05:20,362 |-INFO in ch.qos.logback.core.ConsoleAppender[STDOUT] - console in production environments, especially in high volume systems.
+[info] 17:05:20,362 |-INFO in ch.qos.logback.core.ConsoleAppender[STDOUT] - See also https://logback.qos.ch/codes.html#slowConsole
+[info] 17:05:20,362 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - Processing appender named [ASYNCSTDOUT]
+[info] 17:05:20,362 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - About to instantiate appender of type [ch.qos.logback.classic.AsyncAppender]
+[info] 17:05:20,363 |-INFO in ch.qos.logback.core.model.processor.AppenderRefModelHandler - Attaching appender named [STDOUT] to ch.qos.logback.classic.AsyncAppender[ASYNCSTDOUT]
+[info] 17:05:20,363 |-INFO in ch.qos.logback.classic.AsyncAppender[ASYNCSTDOUT] - Attaching appender named [STDOUT] to AsyncAppender.
+[info] 17:05:20,364 |-INFO in ch.qos.logback.classic.AsyncAppender[ASYNCSTDOUT] - Setting discardingThreshold to 51
+[info] 17:05:20,364 |-INFO in ch.qos.logback.classic.model.processor.LoggerModelHandler - Setting level of logger [play] to DEBUG
+[info] 17:05:20,364 |-INFO in ch.qos.logback.classic.model.processor.LoggerModelHandler - Setting level of logger [application] to DEBUG
+[info] 17:05:20,364 |-INFO in ch.qos.logback.classic.model.processor.LoggerModelHandler - Setting level of logger [com.gargoylesoftware.htmlunit.javascript] to OFF
+[info] 17:05:20,364 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - Processing appender named [FILE]
+[info] 17:05:20,364 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - About to instantiate appender of type [ch.qos.logback.core.FileAppender]
+[info] 17:05:20,365 |-INFO in ch.qos.logback.core.model.processor.ModelInterpretationContext@eb05705 - value "./logs/application.log" substituted for "${application.home:-.}/logs/application.log"
+[info] 17:05:20,365 |-INFO in ch.qos.logback.core.model.processor.ImplicitModelHandler - Assuming default type [ch.qos.logback.classic.encoder.PatternLayoutEncoder] for [encoder] property
+[info] 17:05:20,366 |-INFO in ch.qos.logback.core.FileAppender[FILE] - File property is set to [./logs/application.log]
+[info] 17:05:20,367 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - Processing appender named [ASYNCFILE]
+[info] 17:05:20,367 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - About to instantiate appender of type [ch.qos.logback.classic.AsyncAppender]
+[info] 17:05:20,367 |-INFO in ch.qos.logback.core.model.processor.AppenderRefModelHandler - Attaching appender named [FILE] to ch.qos.logback.classic.AsyncAppender[ASYNCFILE]
+[info] 17:05:20,367 |-INFO in ch.qos.logback.classic.AsyncAppender[ASYNCFILE] - Attaching appender named [FILE] to AsyncAppender.
+[info] 17:05:20,367 |-INFO in ch.qos.logback.classic.AsyncAppender[ASYNCFILE] - Setting discardingThreshold to 51
+[info] 17:05:20,367 |-INFO in ch.qos.logback.classic.model.processor.RootLoggerModelHandler - Setting level of ROOT logger to WARN
+[info] 17:05:20,367 |-INFO in ch.qos.logback.core.model.processor.AppenderRefModelHandler - Attaching appender named [ASYNCFILE] to Logger[ROOT]
+[info] 17:05:20,367 |-INFO in ch.qos.logback.core.model.processor.AppenderRefModelHandler - Attaching appender named [ASYNCSTDOUT] to Logger[ROOT]
+[info] 17:05:20,367 |-INFO in ch.qos.logback.core.model.processor.DefaultProcessor@25c5048f - End of configuration.
+[info] 17:05:20,367 |-INFO in ch.qos.logback.classic.joran.JoranConfigurator@724aeb35 - Registering current configuration as safe fallback point
+[info] 17:05:20,367 |-INFO in ch.qos.logback.classic.util.ContextInitializer@425627b7 - ch.qos.logback.classic.util.DefaultJoranConfigurator.configure() call lasted 86 milliseconds. ExecutionStatus=DO_NOT_INVOKE_NEXT_IF_ANY
+[info] 85.798 ms/op
+[info] # Warmup Iteration   2: 49.548 ms/op
+[info] # Warmup Iteration   3: 46.628 ms/op
+[info] Iteration   1: 46.782 ms/op
+[info] Iteration   2: 46.435 ms/op
+[info] Iteration   3: 46.852 ms/op
+[info] Iteration   4: 45.388 ms/op
+[info] Iteration   5: 45.846 ms/op
+[info] Result "services.FetchAndCacheAllBenchmark.cascaded":
+[info]   46.261 ±(99.9%) 2.425 ms/op [Average]
+[info]   (min, avg, max) = (45.388, 46.261, 46.852), stdev = 0.630
+[info]   CI (99.9%): [43.836, 48.686] (assumes normal distribution)
+[info] # JMH version: 1.37
+[info] # VM version: JDK 17.0.18, OpenJDK 64-Bit Server VM, 17.0.18+8
+[info] # VM invoker: /Users/ilya/.sdkman/candidates/java/17.0.18-tem/bin/java
+[info] # VM options: -Dconfig.file=test/resources/application.conf -Djna.nosys=true
+[info] # Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
+[info] # Warmup: 3 iterations, 1 s each
+[info] # Measurement: 5 iterations, 1 s each
+[info] # Timeout: 10 min per iteration
+[info] # Threads: 1 thread, will synchronize iterations
+[info] # Benchmark mode: Average time, time/op
+[info] # Benchmark: services.FetchAndCacheAllBenchmark.cascaded
+[info] # Parameters: (targetHeightStr = 250)
+[info] # Run progress: 18.75% complete, ETA 00:03:13
+[info] # Fork: 1 of 1
+[info] # Warmup Iteration   1: 17:05:35,221 |-INFO in ch.qos.logback.classic.LoggerContext[default] - This is logback-classic version 1.5.17
+[info] 17:05:35,221 |-INFO in ch.qos.logback.classic.util.ContextInitializer@1619f54d - No custom configurators were discovered as a service.
+[info] 17:05:35,221 |-INFO in ch.qos.logback.classic.util.ContextInitializer@1619f54d - Trying to configure with ch.qos.logback.classic.joran.SerializedModelConfigurator
+[info] 17:05:35,222 |-INFO in ch.qos.logback.classic.util.ContextInitializer@1619f54d - Constructed configurator of type class ch.qos.logback.classic.joran.SerializedModelConfigurator
+[info] 17:05:35,224 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Could NOT find resource [logback-test.scmo]
+[info] 17:05:35,224 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Could NOT find resource [logback.scmo]
+[info] 17:05:35,227 |-INFO in ch.qos.logback.classic.util.ContextInitializer@1619f54d - ch.qos.logback.classic.joran.SerializedModelConfigurator.configure() call lasted 2 milliseconds. ExecutionStatus=INVOKE_NEXT_IF_ANY
+[info] 17:05:35,227 |-INFO in ch.qos.logback.classic.util.ContextInitializer@1619f54d - Trying to configure with ch.qos.logback.classic.util.DefaultJoranConfigurator
+[info] 17:05:35,227 |-INFO in ch.qos.logback.classic.util.ContextInitializer@1619f54d - Constructed configurator of type class ch.qos.logback.classic.util.DefaultJoranConfigurator
+[info] 17:05:35,228 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Could NOT find resource [logback-test.xml]
+[info] 17:05:35,228 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Found resource [logback.xml] at [jar:file:/Users/ilya/scala/wlxjury/target/bg-jobs/sbt_e1f68dca/job-1/target/b8869005/2d8572dd/wlxjury_2.13-0.13-jmh.jar!/logback.xml]
+[info] 17:05:35,229 |-WARN in ch.qos.logback.classic.util.DefaultJoranConfigurator@4f8e34da - Resource [logback.xml] occurs multiple times on the classpath.
+[info] 17:05:35,229 |-WARN in ch.qos.logback.classic.util.DefaultJoranConfigurator@4f8e34da - Resource [logback.xml] occurs at [jar:file:/Users/ilya/scala/wlxjury/target/bg-jobs/sbt_e1f68dca/target/3f1a46a8/832de3ea/wlxjury_2.13-0.13-tests.jar!/logback.xml]
+[info] 17:05:35,229 |-WARN in ch.qos.logback.classic.util.DefaultJoranConfigurator@4f8e34da - Resource [logback.xml] occurs at [jar:file:/Users/ilya/scala/wlxjury/target/bg-jobs/sbt_e1f68dca/target/2abad4ee/28ea974f/wlxjury_2.13-0.13.jar!/logback.xml]
+[info] 17:05:35,229 |-WARN in ch.qos.logback.classic.util.DefaultJoranConfigurator@4f8e34da - Resource [logback.xml] occurs at [jar:file:/Users/ilya/scala/wlxjury/target/bg-jobs/sbt_e1f68dca/job-1/target/b8869005/2d8572dd/wlxjury_2.13-0.13-jmh.jar!/logback.xml]
+[info] 17:05:35,233 |-INFO in ConfigurationWatchList(mainURL=jar:file:/Users/ilya/scala/wlxjury/target/bg-jobs/sbt_e1f68dca/job-1/target/b8869005/2d8572dd/wlxjury_2.13-0.13-jmh.jar!/logback.xml, fileWatchList={}, urlWatchList=[}) - URL [jar:file:/Users/ilya/scala/wlxjury/target/bg-jobs/sbt_e1f68dca/job-1/target/b8869005/2d8572dd/wlxjury_2.13-0.13-jmh.jar!/logback.xml] is not of type file
+[info] 17:05:35,260 |-WARN in ch.qos.logback.core.joran.action.ConversionRuleAction - [converterClass] attribute is deprecated and replaced by [class]. See element [conversionRule] near line 3
+[info] 17:05:35,285 |-INFO in ch.qos.logback.core.model.processor.ConversionRuleModelHandler - registering conversion word coloredLevel with class [play.api.libs.logback.ColoredLevel]
+[info] 17:05:35,288 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - Processing appender named [STDOUT]
+[info] 17:05:35,288 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - About to instantiate appender of type [ch.qos.logback.core.ConsoleAppender]
+[info] 17:05:35,292 |-INFO in ch.qos.logback.core.model.processor.ImplicitModelHandler - Assuming default type [ch.qos.logback.classic.encoder.PatternLayoutEncoder] for [encoder] property
+[info] 17:05:35,310 |-INFO in ch.qos.logback.core.ConsoleAppender[STDOUT] - BEWARE: Writing to the console can be very slow. Avoid logging to the 
+[info] 17:05:35,310 |-INFO in ch.qos.logback.core.ConsoleAppender[STDOUT] - console in production environments, especially in high volume systems.
+[info] 17:05:35,310 |-INFO in ch.qos.logback.core.ConsoleAppender[STDOUT] - See also https://logback.qos.ch/codes.html#slowConsole
+[info] 17:05:35,310 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - Processing appender named [ASYNCSTDOUT]
+[info] 17:05:35,310 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - About to instantiate appender of type [ch.qos.logback.classic.AsyncAppender]
+[info] 17:05:35,312 |-INFO in ch.qos.logback.core.model.processor.AppenderRefModelHandler - Attaching appender named [STDOUT] to ch.qos.logback.classic.AsyncAppender[ASYNCSTDOUT]
+[info] 17:05:35,312 |-INFO in ch.qos.logback.classic.AsyncAppender[ASYNCSTDOUT] - Attaching appender named [STDOUT] to AsyncAppender.
+[info] 17:05:35,312 |-INFO in ch.qos.logback.classic.AsyncAppender[ASYNCSTDOUT] - Setting discardingThreshold to 51
+[info] 17:05:35,312 |-INFO in ch.qos.logback.classic.model.processor.LoggerModelHandler - Setting level of logger [play] to DEBUG
+[info] 17:05:35,312 |-INFO in ch.qos.logback.classic.model.processor.LoggerModelHandler - Setting level of logger [application] to DEBUG
+[info] 17:05:35,312 |-INFO in ch.qos.logback.classic.model.processor.LoggerModelHandler - Setting level of logger [com.gargoylesoftware.htmlunit.javascript] to OFF
+[info] 17:05:35,312 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - Processing appender named [FILE]
+[info] 17:05:35,312 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - About to instantiate appender of type [ch.qos.logback.core.FileAppender]
+[info] 17:05:35,314 |-INFO in ch.qos.logback.core.model.processor.ModelInterpretationContext@34aca1a3 - value "./logs/application.log" substituted for "${application.home:-.}/logs/application.log"
+[info] 17:05:35,314 |-INFO in ch.qos.logback.core.model.processor.ImplicitModelHandler - Assuming default type [ch.qos.logback.classic.encoder.PatternLayoutEncoder] for [encoder] property
+[info] 17:05:35,314 |-INFO in ch.qos.logback.core.FileAppender[FILE] - File property is set to [./logs/application.log]
+[info] 17:05:35,315 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - Processing appender named [ASYNCFILE]
+[info] 17:05:35,315 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - About to instantiate appender of type [ch.qos.logback.classic.AsyncAppender]
+[info] 17:05:35,315 |-INFO in ch.qos.logback.core.model.processor.AppenderRefModelHandler - Attaching appender named [FILE] to ch.qos.logback.classic.AsyncAppender[ASYNCFILE]
+[info] 17:05:35,315 |-INFO in ch.qos.logback.classic.AsyncAppender[ASYNCFILE] - Attaching appender named [FILE] to AsyncAppender.
+[info] 17:05:35,315 |-INFO in ch.qos.logback.classic.AsyncAppender[ASYNCFILE] - Setting discardingThreshold to 51
+[info] 17:05:35,315 |-INFO in ch.qos.logback.classic.model.processor.RootLoggerModelHandler - Setting level of ROOT logger to WARN
+[info] 17:05:35,315 |-INFO in ch.qos.logback.core.model.processor.AppenderRefModelHandler - Attaching appender named [ASYNCFILE] to Logger[ROOT]
+[info] 17:05:35,315 |-INFO in ch.qos.logback.core.model.processor.AppenderRefModelHandler - Attaching appender named [ASYNCSTDOUT] to Logger[ROOT]
+[info] 17:05:35,315 |-INFO in ch.qos.logback.core.model.processor.DefaultProcessor@a3a7b08 - End of configuration.
+[info] 17:05:35,316 |-INFO in ch.qos.logback.classic.joran.JoranConfigurator@195e5f99 - Registering current configuration as safe fallback point
+[info] 17:05:35,316 |-INFO in ch.qos.logback.classic.util.ContextInitializer@1619f54d - ch.qos.logback.classic.util.DefaultJoranConfigurator.configure() call lasted 89 milliseconds. ExecutionStatus=DO_NOT_INVOKE_NEXT_IF_ANY
+[info] 71.566 ms/op
+[info] # Warmup Iteration   2: 47.433 ms/op
+[info] # Warmup Iteration   3: 46.213 ms/op
+[info] Iteration   1: 44.750 ms/op
+[info] Iteration   2: 44.723 ms/op
+[info] Iteration   3: 44.928 ms/op
+[info] Iteration   4: 45.862 ms/op
+[info] Iteration   5: 46.769 ms/op
+[info] Result "services.FetchAndCacheAllBenchmark.cascaded":
+[info]   45.407 ±(99.9%) 3.440 ms/op [Average]
+[info]   (min, avg, max) = (44.723, 45.407, 46.769), stdev = 0.893
+[info]   CI (99.9%): [41.967, 48.846] (assumes normal distribution)
+[info] # JMH version: 1.37
+[info] # VM version: JDK 17.0.18, OpenJDK 64-Bit Server VM, 17.0.18+8
+[info] # VM invoker: /Users/ilya/.sdkman/candidates/java/17.0.18-tem/bin/java
+[info] # VM options: -Dconfig.file=test/resources/application.conf -Djna.nosys=true
+[info] # Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
+[info] # Warmup: 3 iterations, 1 s each
+[info] # Measurement: 5 iterations, 1 s each
+[info] # Timeout: 10 min per iteration
+[info] # Threads: 1 thread, will synchronize iterations
+[info] # Benchmark mode: Average time, time/op
+[info] # Benchmark: services.FetchAndCacheAllBenchmark.cascaded
+[info] # Parameters: (targetHeightStr = 375)
+[info] # Run progress: 25.00% complete, ETA 00:03:07
+[info] # Fork: 1 of 1
+[info] # Warmup Iteration   1: 17:05:53,340 |-INFO in ch.qos.logback.classic.LoggerContext[default] - This is logback-classic version 1.5.17
+[info] 17:05:53,341 |-INFO in ch.qos.logback.classic.util.ContextInitializer@516ae4b5 - No custom configurators were discovered as a service.
+[info] 17:05:53,341 |-INFO in ch.qos.logback.classic.util.ContextInitializer@516ae4b5 - Trying to configure with ch.qos.logback.classic.joran.SerializedModelConfigurator
+[info] 17:05:53,342 |-INFO in ch.qos.logback.classic.util.ContextInitializer@516ae4b5 - Constructed configurator of type class ch.qos.logback.classic.joran.SerializedModelConfigurator
+[info] 17:05:53,344 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Could NOT find resource [logback-test.scmo]
+[info] 17:05:53,344 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Could NOT find resource [logback.scmo]
+[info] 17:05:53,346 |-INFO in ch.qos.logback.classic.util.ContextInitializer@516ae4b5 - ch.qos.logback.classic.joran.SerializedModelConfigurator.configure() call lasted 2 milliseconds. ExecutionStatus=INVOKE_NEXT_IF_ANY
+[info] 17:05:53,346 |-INFO in ch.qos.logback.classic.util.ContextInitializer@516ae4b5 - Trying to configure with ch.qos.logback.classic.util.DefaultJoranConfigurator
+[info] 17:05:53,347 |-INFO in ch.qos.logback.classic.util.ContextInitializer@516ae4b5 - Constructed configurator of type class ch.qos.logback.classic.util.DefaultJoranConfigurator
+[info] 17:05:53,347 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Could NOT find resource [logback-test.xml]
+[info] 17:05:53,348 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Found resource [logback.xml] at [jar:file:/Users/ilya/scala/wlxjury/target/bg-jobs/sbt_e1f68dca/job-1/target/b8869005/2d8572dd/wlxjury_2.13-0.13-jmh.jar!/logback.xml]
+[info] 17:05:53,348 |-WARN in ch.qos.logback.classic.util.DefaultJoranConfigurator@475c204 - Resource [logback.xml] occurs multiple times on the classpath.
+[info] 17:05:53,349 |-WARN in ch.qos.logback.classic.util.DefaultJoranConfigurator@475c204 - Resource [logback.xml] occurs at [jar:file:/Users/ilya/scala/wlxjury/target/bg-jobs/sbt_e1f68dca/target/3f1a46a8/832de3ea/wlxjury_2.13-0.13-tests.jar!/logback.xml]
+[info] 17:05:53,349 |-WARN in ch.qos.logback.classic.util.DefaultJoranConfigurator@475c204 - Resource [logback.xml] occurs at [jar:file:/Users/ilya/scala/wlxjury/target/bg-jobs/sbt_e1f68dca/target/2abad4ee/28ea974f/wlxjury_2.13-0.13.jar!/logback.xml]
+[info] 17:05:53,349 |-WARN in ch.qos.logback.classic.util.DefaultJoranConfigurator@475c204 - Resource [logback.xml] occurs at [jar:file:/Users/ilya/scala/wlxjury/target/bg-jobs/sbt_e1f68dca/job-1/target/b8869005/2d8572dd/wlxjury_2.13-0.13-jmh.jar!/logback.xml]
+[info] 17:05:53,353 |-INFO in ConfigurationWatchList(mainURL=jar:file:/Users/ilya/scala/wlxjury/target/bg-jobs/sbt_e1f68dca/job-1/target/b8869005/2d8572dd/wlxjury_2.13-0.13-jmh.jar!/logback.xml, fileWatchList={}, urlWatchList=[}) - URL [jar:file:/Users/ilya/scala/wlxjury/target/bg-jobs/sbt_e1f68dca/job-1/target/b8869005/2d8572dd/wlxjury_2.13-0.13-jmh.jar!/logback.xml] is not of type file
+[info] 17:05:53,382 |-WARN in ch.qos.logback.core.joran.action.ConversionRuleAction - [converterClass] attribute is deprecated and replaced by [class]. See element [conversionRule] near line 3
+[info] 17:05:53,410 |-INFO in ch.qos.logback.core.model.processor.ConversionRuleModelHandler - registering conversion word coloredLevel with class [play.api.libs.logback.ColoredLevel]
+[info] 17:05:53,413 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - Processing appender named [STDOUT]
+[info] 17:05:53,413 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - About to instantiate appender of type [ch.qos.logback.core.ConsoleAppender]
+[info] 17:05:53,418 |-INFO in ch.qos.logback.core.model.processor.ImplicitModelHandler - Assuming default type [ch.qos.logback.classic.encoder.PatternLayoutEncoder] for [encoder] property
+[info] 17:05:53,436 |-INFO in ch.qos.logback.core.ConsoleAppender[STDOUT] - BEWARE: Writing to the console can be very slow. Avoid logging to the 
+[info] 17:05:53,436 |-INFO in ch.qos.logback.core.ConsoleAppender[STDOUT] - console in production environments, especially in high volume systems.
+[info] 17:05:53,436 |-INFO in ch.qos.logback.core.ConsoleAppender[STDOUT] - See also https://logback.qos.ch/codes.html#slowConsole
+[info] 17:05:53,436 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - Processing appender named [ASYNCSTDOUT]
+[info] 17:05:53,436 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - About to instantiate appender of type [ch.qos.logback.classic.AsyncAppender]
+[info] 17:05:53,437 |-INFO in ch.qos.logback.core.model.processor.AppenderRefModelHandler - Attaching appender named [STDOUT] to ch.qos.logback.classic.AsyncAppender[ASYNCSTDOUT]
+[info] 17:05:53,437 |-INFO in ch.qos.logback.classic.AsyncAppender[ASYNCSTDOUT] - Attaching appender named [STDOUT] to AsyncAppender.
+[info] 17:05:53,438 |-INFO in ch.qos.logback.classic.AsyncAppender[ASYNCSTDOUT] - Setting discardingThreshold to 51
+[info] 17:05:53,438 |-INFO in ch.qos.logback.classic.model.processor.LoggerModelHandler - Setting level of logger [play] to DEBUG
+[info] 17:05:53,438 |-INFO in ch.qos.logback.classic.model.processor.LoggerModelHandler - Setting level of logger [application] to DEBUG
+[info] 17:05:53,438 |-INFO in ch.qos.logback.classic.model.processor.LoggerModelHandler - Setting level of logger [com.gargoylesoftware.htmlunit.javascript] to OFF
+[info] 17:05:53,438 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - Processing appender named [FILE]
+[info] 17:05:53,438 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - About to instantiate appender of type [ch.qos.logback.core.FileAppender]
+[info] 17:05:53,439 |-INFO in ch.qos.logback.core.model.processor.ModelInterpretationContext@30977fac - value "./logs/application.log" substituted for "${application.home:-.}/logs/application.log"
+[info] 17:05:53,439 |-INFO in ch.qos.logback.core.model.processor.ImplicitModelHandler - Assuming default type [ch.qos.logback.classic.encoder.PatternLayoutEncoder] for [encoder] property
+[info] 17:05:53,440 |-INFO in ch.qos.logback.core.FileAppender[FILE] - File property is set to [./logs/application.log]
+[info] 17:05:53,441 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - Processing appender named [ASYNCFILE]
+[info] 17:05:53,441 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - About to instantiate appender of type [ch.qos.logback.classic.AsyncAppender]
+[info] 17:05:53,441 |-INFO in ch.qos.logback.core.model.processor.AppenderRefModelHandler - Attaching appender named [FILE] to ch.qos.logback.classic.AsyncAppender[ASYNCFILE]
+[info] 17:05:53,441 |-INFO in ch.qos.logback.classic.AsyncAppender[ASYNCFILE] - Attaching appender named [FILE] to AsyncAppender.
+[info] 17:05:53,441 |-INFO in ch.qos.logback.classic.AsyncAppender[ASYNCFILE] - Setting discardingThreshold to 51
+[info] 17:05:53,441 |-INFO in ch.qos.logback.classic.model.processor.RootLoggerModelHandler - Setting level of ROOT logger to WARN
+[info] 17:05:53,441 |-INFO in ch.qos.logback.core.model.processor.AppenderRefModelHandler - Attaching appender named [ASYNCFILE] to Logger[ROOT]
+[info] 17:05:53,441 |-INFO in ch.qos.logback.core.model.processor.AppenderRefModelHandler - Attaching appender named [ASYNCSTDOUT] to Logger[ROOT]
+[info] 17:05:53,441 |-INFO in ch.qos.logback.core.model.processor.DefaultProcessor@1ad8fe58 - End of configuration.
+[info] 17:05:53,442 |-INFO in ch.qos.logback.classic.joran.JoranConfigurator@648fdb76 - Registering current configuration as safe fallback point
+[info] 17:05:53,442 |-INFO in ch.qos.logback.classic.util.ContextInitializer@516ae4b5 - ch.qos.logback.classic.util.DefaultJoranConfigurator.configure() call lasted 95 milliseconds. ExecutionStatus=DO_NOT_INVOKE_NEXT_IF_ANY
+[info] 65.433 ms/op
+[info] # Warmup Iteration   2: 46.603 ms/op
+[info] # Warmup Iteration   3: 49.022 ms/op
+[info] Iteration   1: 45.409 ms/op
+[info] Iteration   2: 44.469 ms/op
+[info] Iteration   3: 62.850 ms/op
+[info] Iteration   4: 44.358 ms/op
+[info] Iteration   5: 45.767 ms/op
+[info] Result "services.FetchAndCacheAllBenchmark.cascaded":
+[info]   48.571 ±(99.9%) 30.824 ms/op [Average]
+[info]   (min, avg, max) = (44.358, 48.571, 62.850), stdev = 8.005
+[info]   CI (99.9%): [17.747, 79.394] (assumes normal distribution)
+[info] # JMH version: 1.37
+[info] # VM version: JDK 17.0.18, OpenJDK 64-Bit Server VM, 17.0.18+8
+[info] # VM invoker: /Users/ilya/.sdkman/candidates/java/17.0.18-tem/bin/java
+[info] # VM options: -Dconfig.file=test/resources/application.conf -Djna.nosys=true
+[info] # Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
+[info] # Warmup: 3 iterations, 1 s each
+[info] # Measurement: 5 iterations, 1 s each
+[info] # Timeout: 10 min per iteration
+[info] # Threads: 1 thread, will synchronize iterations
+[info] # Benchmark mode: Average time, time/op
+[info] # Benchmark: services.FetchAndCacheAllBenchmark.cascaded
+[info] # Parameters: (targetHeightStr = 500)
+[info] # Run progress: 31.25% complete, ETA 00:02:50
+[info] # Fork: 1 of 1
+[info] # Warmup Iteration   1: 17:06:08,191 |-INFO in ch.qos.logback.classic.LoggerContext[default] - This is logback-classic version 1.5.17
+[info] 17:06:08,191 |-INFO in ch.qos.logback.classic.util.ContextInitializer@1753ac6b - No custom configurators were discovered as a service.
+[info] 17:06:08,191 |-INFO in ch.qos.logback.classic.util.ContextInitializer@1753ac6b - Trying to configure with ch.qos.logback.classic.joran.SerializedModelConfigurator
+[info] 17:06:08,192 |-INFO in ch.qos.logback.classic.util.ContextInitializer@1753ac6b - Constructed configurator of type class ch.qos.logback.classic.joran.SerializedModelConfigurator
+[info] 17:06:08,193 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Could NOT find resource [logback-test.scmo]
+[info] 17:06:08,193 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Could NOT find resource [logback.scmo]
+[info] 17:06:08,196 |-INFO in ch.qos.logback.classic.util.ContextInitializer@1753ac6b - ch.qos.logback.classic.joran.SerializedModelConfigurator.configure() call lasted 2 milliseconds. ExecutionStatus=INVOKE_NEXT_IF_ANY
+[info] 17:06:08,196 |-INFO in ch.qos.logback.classic.util.ContextInitializer@1753ac6b - Trying to configure with ch.qos.logback.classic.util.DefaultJoranConfigurator
+[info] 17:06:08,196 |-INFO in ch.qos.logback.classic.util.ContextInitializer@1753ac6b - Constructed configurator of type class ch.qos.logback.classic.util.DefaultJoranConfigurator
+[info] 17:06:08,196 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Could NOT find resource [logback-test.xml]
+[info] 17:06:08,197 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Found resource [logback.xml] at [jar:file:/Users/ilya/scala/wlxjury/target/bg-jobs/sbt_e1f68dca/job-1/target/b8869005/2d8572dd/wlxjury_2.13-0.13-jmh.jar!/logback.xml]
+[info] 17:06:08,198 |-WARN in ch.qos.logback.classic.util.DefaultJoranConfigurator@27e376e1 - Resource [logback.xml] occurs multiple times on the classpath.
+[info] 17:06:08,198 |-WARN in ch.qos.logback.classic.util.DefaultJoranConfigurator@27e376e1 - Resource [logback.xml] occurs at [jar:file:/Users/ilya/scala/wlxjury/target/bg-jobs/sbt_e1f68dca/target/3f1a46a8/832de3ea/wlxjury_2.13-0.13-tests.jar!/logback.xml]
+[info] 17:06:08,198 |-WARN in ch.qos.logback.classic.util.DefaultJoranConfigurator@27e376e1 - Resource [logback.xml] occurs at [jar:file:/Users/ilya/scala/wlxjury/target/bg-jobs/sbt_e1f68dca/target/2abad4ee/28ea974f/wlxjury_2.13-0.13.jar!/logback.xml]
+[info] 17:06:08,198 |-WARN in ch.qos.logback.classic.util.DefaultJoranConfigurator@27e376e1 - Resource [logback.xml] occurs at [jar:file:/Users/ilya/scala/wlxjury/target/bg-jobs/sbt_e1f68dca/job-1/target/b8869005/2d8572dd/wlxjury_2.13-0.13-jmh.jar!/logback.xml]
+[info] 17:06:08,201 |-INFO in ConfigurationWatchList(mainURL=jar:file:/Users/ilya/scala/wlxjury/target/bg-jobs/sbt_e1f68dca/job-1/target/b8869005/2d8572dd/wlxjury_2.13-0.13-jmh.jar!/logback.xml, fileWatchList={}, urlWatchList=[}) - URL [jar:file:/Users/ilya/scala/wlxjury/target/bg-jobs/sbt_e1f68dca/job-1/target/b8869005/2d8572dd/wlxjury_2.13-0.13-jmh.jar!/logback.xml] is not of type file
+[info] 17:06:08,229 |-WARN in ch.qos.logback.core.joran.action.ConversionRuleAction - [converterClass] attribute is deprecated and replaced by [class]. See element [conversionRule] near line 3
+[info] 17:06:08,251 |-INFO in ch.qos.logback.core.model.processor.ConversionRuleModelHandler - registering conversion word coloredLevel with class [play.api.libs.logback.ColoredLevel]
+[info] 17:06:08,254 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - Processing appender named [STDOUT]
+[info] 17:06:08,254 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - About to instantiate appender of type [ch.qos.logback.core.ConsoleAppender]
+[info] 17:06:08,257 |-INFO in ch.qos.logback.core.model.processor.ImplicitModelHandler - Assuming default type [ch.qos.logback.classic.encoder.PatternLayoutEncoder] for [encoder] property
+[info] 17:06:08,273 |-INFO in ch.qos.logback.core.ConsoleAppender[STDOUT] - BEWARE: Writing to the console can be very slow. Avoid logging to the 
+[info] 17:06:08,273 |-INFO in ch.qos.logback.core.ConsoleAppender[STDOUT] - console in production environments, especially in high volume systems.
+[info] 17:06:08,273 |-INFO in ch.qos.logback.core.ConsoleAppender[STDOUT] - See also https://logback.qos.ch/codes.html#slowConsole
+[info] 17:06:08,273 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - Processing appender named [ASYNCSTDOUT]
+[info] 17:06:08,273 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - About to instantiate appender of type [ch.qos.logback.classic.AsyncAppender]
+[info] 17:06:08,274 |-INFO in ch.qos.logback.core.model.processor.AppenderRefModelHandler - Attaching appender named [STDOUT] to ch.qos.logback.classic.AsyncAppender[ASYNCSTDOUT]
+[info] 17:06:08,274 |-INFO in ch.qos.logback.classic.AsyncAppender[ASYNCSTDOUT] - Attaching appender named [STDOUT] to AsyncAppender.
+[info] 17:06:08,275 |-INFO in ch.qos.logback.classic.AsyncAppender[ASYNCSTDOUT] - Setting discardingThreshold to 51
+[info] 17:06:08,275 |-INFO in ch.qos.logback.classic.model.processor.LoggerModelHandler - Setting level of logger [play] to DEBUG
+[info] 17:06:08,275 |-INFO in ch.qos.logback.classic.model.processor.LoggerModelHandler - Setting level of logger [application] to DEBUG
+[info] 17:06:08,275 |-INFO in ch.qos.logback.classic.model.processor.LoggerModelHandler - Setting level of logger [com.gargoylesoftware.htmlunit.javascript] to OFF
+[info] 17:06:08,275 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - Processing appender named [FILE]
+[info] 17:06:08,275 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - About to instantiate appender of type [ch.qos.logback.core.FileAppender]
+[info] 17:06:08,276 |-INFO in ch.qos.logback.core.model.processor.ModelInterpretationContext@4a710818 - value "./logs/application.log" substituted for "${application.home:-.}/logs/application.log"
+[info] 17:06:08,276 |-INFO in ch.qos.logback.core.model.processor.ImplicitModelHandler - Assuming default type [ch.qos.logback.classic.encoder.PatternLayoutEncoder] for [encoder] property
+[info] 17:06:08,277 |-INFO in ch.qos.logback.core.FileAppender[FILE] - File property is set to [./logs/application.log]
+[info] 17:06:08,277 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - Processing appender named [ASYNCFILE]
+[info] 17:06:08,277 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - About to instantiate appender of type [ch.qos.logback.classic.AsyncAppender]
+[info] 17:06:08,277 |-INFO in ch.qos.logback.core.model.processor.AppenderRefModelHandler - Attaching appender named [FILE] to ch.qos.logback.classic.AsyncAppender[ASYNCFILE]
+[info] 17:06:08,277 |-INFO in ch.qos.logback.classic.AsyncAppender[ASYNCFILE] - Attaching appender named [FILE] to AsyncAppender.
+[info] 17:06:08,278 |-INFO in ch.qos.logback.classic.AsyncAppender[ASYNCFILE] - Setting discardingThreshold to 51
+[info] 17:06:08,278 |-INFO in ch.qos.logback.classic.model.processor.RootLoggerModelHandler - Setting level of ROOT logger to WARN
+[info] 17:06:08,278 |-INFO in ch.qos.logback.core.model.processor.AppenderRefModelHandler - Attaching appender named [ASYNCFILE] to Logger[ROOT]
+[info] 17:06:08,278 |-INFO in ch.qos.logback.core.model.processor.AppenderRefModelHandler - Attaching appender named [ASYNCSTDOUT] to Logger[ROOT]
+[info] 17:06:08,278 |-INFO in ch.qos.logback.core.model.processor.DefaultProcessor@76992bc9 - End of configuration.
+[info] 17:06:08,278 |-INFO in ch.qos.logback.classic.joran.JoranConfigurator@15963d4e - Registering current configuration as safe fallback point
+[info] 17:06:08,278 |-INFO in ch.qos.logback.classic.util.ContextInitializer@1753ac6b - ch.qos.logback.classic.util.DefaultJoranConfigurator.configure() call lasted 82 milliseconds. ExecutionStatus=DO_NOT_INVOKE_NEXT_IF_ANY
+[info] 61.161 ms/op
+[info] # Warmup Iteration   2: 43.763 ms/op
+[info] # Warmup Iteration   3: 42.844 ms/op
+[info] Iteration   1: 42.569 ms/op
+[info] Iteration   2: 44.126 ms/op
+[info] Iteration   3: 44.131 ms/op
+[info] Iteration   4: 43.525 ms/op
+[info] Iteration   5: 44.565 ms/op
+[info] Result "services.FetchAndCacheAllBenchmark.cascaded":
+[info]   43.783 ±(99.9%) 2.977 ms/op [Average]
+[info]   (min, avg, max) = (42.569, 43.783, 44.565), stdev = 0.773
+[info]   CI (99.9%): [40.807, 46.760] (assumes normal distribution)
+[info] # JMH version: 1.37
+[info] # VM version: JDK 17.0.18, OpenJDK 64-Bit Server VM, 17.0.18+8
+[info] # VM invoker: /Users/ilya/.sdkman/candidates/java/17.0.18-tem/bin/java
+[info] # VM options: -Dconfig.file=test/resources/application.conf -Djna.nosys=true
+[info] # Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
+[info] # Warmup: 3 iterations, 1 s each
+[info] # Measurement: 5 iterations, 1 s each
+[info] # Timeout: 10 min per iteration
+[info] # Threads: 1 thread, will synchronize iterations
+[info] # Benchmark mode: Average time, time/op
+[info] # Benchmark: services.FetchAndCacheAllBenchmark.cascaded
+[info] # Parameters: (targetHeightStr = 1100)
+[info] # Run progress: 37.50% complete, ETA 00:02:33
+[info] # Fork: 1 of 1
+[info] # Warmup Iteration   1: 17:06:22,956 |-INFO in ch.qos.logback.classic.LoggerContext[default] - This is logback-classic version 1.5.17
+[info] 17:06:22,957 |-INFO in ch.qos.logback.classic.util.ContextInitializer@7b367d76 - No custom configurators were discovered as a service.
+[info] 17:06:22,957 |-INFO in ch.qos.logback.classic.util.ContextInitializer@7b367d76 - Trying to configure with ch.qos.logback.classic.joran.SerializedModelConfigurator
+[info] 17:06:22,958 |-INFO in ch.qos.logback.classic.util.ContextInitializer@7b367d76 - Constructed configurator of type class ch.qos.logback.classic.joran.SerializedModelConfigurator
+[info] 17:06:22,960 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Could NOT find resource [logback-test.scmo]
+[info] 17:06:22,960 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Could NOT find resource [logback.scmo]
+[info] 17:06:22,963 |-INFO in ch.qos.logback.classic.util.ContextInitializer@7b367d76 - ch.qos.logback.classic.joran.SerializedModelConfigurator.configure() call lasted 3 milliseconds. ExecutionStatus=INVOKE_NEXT_IF_ANY
+[info] 17:06:22,963 |-INFO in ch.qos.logback.classic.util.ContextInitializer@7b367d76 - Trying to configure with ch.qos.logback.classic.util.DefaultJoranConfigurator
+[info] 17:06:22,964 |-INFO in ch.qos.logback.classic.util.ContextInitializer@7b367d76 - Constructed configurator of type class ch.qos.logback.classic.util.DefaultJoranConfigurator
+[info] 17:06:22,964 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Could NOT find resource [logback-test.xml]
+[info] 17:06:22,965 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Found resource [logback.xml] at [jar:file:/Users/ilya/scala/wlxjury/target/bg-jobs/sbt_e1f68dca/job-1/target/b8869005/2d8572dd/wlxjury_2.13-0.13-jmh.jar!/logback.xml]
+[info] 17:06:22,966 |-WARN in ch.qos.logback.classic.util.DefaultJoranConfigurator@57febf9e - Resource [logback.xml] occurs multiple times on the classpath.
+[info] 17:06:22,966 |-WARN in ch.qos.logback.classic.util.DefaultJoranConfigurator@57febf9e - Resource [logback.xml] occurs at [jar:file:/Users/ilya/scala/wlxjury/target/bg-jobs/sbt_e1f68dca/target/3f1a46a8/832de3ea/wlxjury_2.13-0.13-tests.jar!/logback.xml]
+[info] 17:06:22,966 |-WARN in ch.qos.logback.classic.util.DefaultJoranConfigurator@57febf9e - Resource [logback.xml] occurs at [jar:file:/Users/ilya/scala/wlxjury/target/bg-jobs/sbt_e1f68dca/target/2abad4ee/28ea974f/wlxjury_2.13-0.13.jar!/logback.xml]
+[info] 17:06:22,966 |-WARN in ch.qos.logback.classic.util.DefaultJoranConfigurator@57febf9e - Resource [logback.xml] occurs at [jar:file:/Users/ilya/scala/wlxjury/target/bg-jobs/sbt_e1f68dca/job-1/target/b8869005/2d8572dd/wlxjury_2.13-0.13-jmh.jar!/logback.xml]
+[info] 17:06:22,970 |-INFO in ConfigurationWatchList(mainURL=jar:file:/Users/ilya/scala/wlxjury/target/bg-jobs/sbt_e1f68dca/job-1/target/b8869005/2d8572dd/wlxjury_2.13-0.13-jmh.jar!/logback.xml, fileWatchList={}, urlWatchList=[}) - URL [jar:file:/Users/ilya/scala/wlxjury/target/bg-jobs/sbt_e1f68dca/job-1/target/b8869005/2d8572dd/wlxjury_2.13-0.13-jmh.jar!/logback.xml] is not of type file
+[info] 17:06:22,999 |-WARN in ch.qos.logback.core.joran.action.ConversionRuleAction - [converterClass] attribute is deprecated and replaced by [class]. See element [conversionRule] near line 3
+[info] 17:06:23,027 |-INFO in ch.qos.logback.core.model.processor.ConversionRuleModelHandler - registering conversion word coloredLevel with class [play.api.libs.logback.ColoredLevel]
+[info] 17:06:23,030 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - Processing appender named [STDOUT]
+[info] 17:06:23,030 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - About to instantiate appender of type [ch.qos.logback.core.ConsoleAppender]
+[info] 17:06:23,036 |-INFO in ch.qos.logback.core.model.processor.ImplicitModelHandler - Assuming default type [ch.qos.logback.classic.encoder.PatternLayoutEncoder] for [encoder] property
+[info] 17:06:23,060 |-INFO in ch.qos.logback.core.ConsoleAppender[STDOUT] - BEWARE: Writing to the console can be very slow. Avoid logging to the 
+[info] 17:06:23,060 |-INFO in ch.qos.logback.core.ConsoleAppender[STDOUT] - console in production environments, especially in high volume systems.
+[info] 17:06:23,060 |-INFO in ch.qos.logback.core.ConsoleAppender[STDOUT] - See also https://logback.qos.ch/codes.html#slowConsole
+[info] 17:06:23,060 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - Processing appender named [ASYNCSTDOUT]
+[info] 17:06:23,060 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - About to instantiate appender of type [ch.qos.logback.classic.AsyncAppender]
+[info] 17:06:23,061 |-INFO in ch.qos.logback.core.model.processor.AppenderRefModelHandler - Attaching appender named [STDOUT] to ch.qos.logback.classic.AsyncAppender[ASYNCSTDOUT]
+[info] 17:06:23,061 |-INFO in ch.qos.logback.classic.AsyncAppender[ASYNCSTDOUT] - Attaching appender named [STDOUT] to AsyncAppender.
+[info] 17:06:23,062 |-INFO in ch.qos.logback.classic.AsyncAppender[ASYNCSTDOUT] - Setting discardingThreshold to 51
+[info] 17:06:23,063 |-INFO in ch.qos.logback.classic.model.processor.LoggerModelHandler - Setting level of logger [play] to DEBUG
+[info] 17:06:23,063 |-INFO in ch.qos.logback.classic.model.processor.LoggerModelHandler - Setting level of logger [application] to DEBUG
+[info] 17:06:23,063 |-INFO in ch.qos.logback.classic.model.processor.LoggerModelHandler - Setting level of logger [com.gargoylesoftware.htmlunit.javascript] to OFF
+[info] 17:06:23,063 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - Processing appender named [FILE]
+[info] 17:06:23,063 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - About to instantiate appender of type [ch.qos.logback.core.FileAppender]
+[info] 17:06:23,064 |-INFO in ch.qos.logback.core.model.processor.ModelInterpretationContext@5a8857c6 - value "./logs/application.log" substituted for "${application.home:-.}/logs/application.log"
+[info] 17:06:23,064 |-INFO in ch.qos.logback.core.model.processor.ImplicitModelHandler - Assuming default type [ch.qos.logback.classic.encoder.PatternLayoutEncoder] for [encoder] property
+[info] 17:06:23,066 |-INFO in ch.qos.logback.core.FileAppender[FILE] - File property is set to [./logs/application.log]
+[info] 17:06:23,066 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - Processing appender named [ASYNCFILE]
+[info] 17:06:23,066 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - About to instantiate appender of type [ch.qos.logback.classic.AsyncAppender]
+[info] 17:06:23,067 |-INFO in ch.qos.logback.core.model.processor.AppenderRefModelHandler - Attaching appender named [FILE] to ch.qos.logback.classic.AsyncAppender[ASYNCFILE]
+[info] 17:06:23,067 |-INFO in ch.qos.logback.classic.AsyncAppender[ASYNCFILE] - Attaching appender named [FILE] to AsyncAppender.
+[info] 17:06:23,067 |-INFO in ch.qos.logback.classic.AsyncAppender[ASYNCFILE] - Setting discardingThreshold to 51
+[info] 17:06:23,067 |-INFO in ch.qos.logback.classic.model.processor.RootLoggerModelHandler - Setting level of ROOT logger to WARN
+[info] 17:06:23,067 |-INFO in ch.qos.logback.core.model.processor.AppenderRefModelHandler - Attaching appender named [ASYNCFILE] to Logger[ROOT]
+[info] 17:06:23,067 |-INFO in ch.qos.logback.core.model.processor.AppenderRefModelHandler - Attaching appender named [ASYNCSTDOUT] to Logger[ROOT]
+[info] 17:06:23,067 |-INFO in ch.qos.logback.core.model.processor.DefaultProcessor@78a80146 - End of configuration.
+[info] 17:06:23,067 |-INFO in ch.qos.logback.classic.joran.JoranConfigurator@33a64032 - Registering current configuration as safe fallback point
+[info] 17:06:23,067 |-INFO in ch.qos.logback.classic.util.ContextInitializer@7b367d76 - ch.qos.logback.classic.util.DefaultJoranConfigurator.configure() call lasted 103 milliseconds. ExecutionStatus=DO_NOT_INVOKE_NEXT_IF_ANY
+[info] 94.043 ms/op
+[info] # Warmup Iteration   2: 55.681 ms/op
+[info] # Warmup Iteration   3: 54.738 ms/op
+[info] Iteration   1: 54.685 ms/op
+[info] Iteration   2: 53.045 ms/op
+[info] Iteration   3: 53.124 ms/op
+[info] Iteration   4: 54.383 ms/op
+[info] Iteration   5: 54.256 ms/op
+[info] Result "services.FetchAndCacheAllBenchmark.cascaded":
+[info]   53.899 ±(99.9%) 2.925 ms/op [Average]
+[info]   (min, avg, max) = (53.045, 53.899, 54.685), stdev = 0.760
+[info]   CI (99.9%): [50.973, 56.824] (assumes normal distribution)
+[info] # JMH version: 1.37
+[info] # VM version: JDK 17.0.18, OpenJDK 64-Bit Server VM, 17.0.18+8
+[info] # VM invoker: /Users/ilya/.sdkman/candidates/java/17.0.18-tem/bin/java
+[info] # VM options: -Dconfig.file=test/resources/application.conf -Djna.nosys=true
+[info] # Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
+[info] # Warmup: 3 iterations, 1 s each
+[info] # Measurement: 5 iterations, 1 s each
+[info] # Timeout: 10 min per iteration
+[info] # Threads: 1 thread, will synchronize iterations
+[info] # Benchmark mode: Average time, time/op
+[info] # Benchmark: services.FetchAndCacheAllBenchmark.cascaded
+[info] # Parameters: (targetHeightStr = 1650)
+[info] # Run progress: 43.75% complete, ETA 00:02:18
+[info] # Fork: 1 of 1
+[info] # Warmup Iteration   1: 17:06:38,595 |-INFO in ch.qos.logback.classic.LoggerContext[default] - This is logback-classic version 1.5.17
+[info] 17:06:38,596 |-INFO in ch.qos.logback.classic.util.ContextInitializer@6ffa413c - No custom configurators were discovered as a service.
+[info] 17:06:38,596 |-INFO in ch.qos.logback.classic.util.ContextInitializer@6ffa413c - Trying to configure with ch.qos.logback.classic.joran.SerializedModelConfigurator
+[info] 17:06:38,596 |-INFO in ch.qos.logback.classic.util.ContextInitializer@6ffa413c - Constructed configurator of type class ch.qos.logback.classic.joran.SerializedModelConfigurator
+[info] 17:06:38,597 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Could NOT find resource [logback-test.scmo]
+[info] 17:06:38,598 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Could NOT find resource [logback.scmo]
+[info] 17:06:38,600 |-INFO in ch.qos.logback.classic.util.ContextInitializer@6ffa413c - ch.qos.logback.classic.joran.SerializedModelConfigurator.configure() call lasted 2 milliseconds. ExecutionStatus=INVOKE_NEXT_IF_ANY
+[info] 17:06:38,600 |-INFO in ch.qos.logback.classic.util.ContextInitializer@6ffa413c - Trying to configure with ch.qos.logback.classic.util.DefaultJoranConfigurator
+[info] 17:06:38,600 |-INFO in ch.qos.logback.classic.util.ContextInitializer@6ffa413c - Constructed configurator of type class ch.qos.logback.classic.util.DefaultJoranConfigurator
+[info] 17:06:38,601 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Could NOT find resource [logback-test.xml]
+[info] 17:06:38,602 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Found resource [logback.xml] at [jar:file:/Users/ilya/scala/wlxjury/target/bg-jobs/sbt_e1f68dca/job-1/target/b8869005/2d8572dd/wlxjury_2.13-0.13-jmh.jar!/logback.xml]
+[info] 17:06:38,602 |-WARN in ch.qos.logback.classic.util.DefaultJoranConfigurator@35c8c30a - Resource [logback.xml] occurs multiple times on the classpath.
+[info] 17:06:38,602 |-WARN in ch.qos.logback.classic.util.DefaultJoranConfigurator@35c8c30a - Resource [logback.xml] occurs at [jar:file:/Users/ilya/scala/wlxjury/target/bg-jobs/sbt_e1f68dca/target/3f1a46a8/832de3ea/wlxjury_2.13-0.13-tests.jar!/logback.xml]
+[info] 17:06:38,602 |-WARN in ch.qos.logback.classic.util.DefaultJoranConfigurator@35c8c30a - Resource [logback.xml] occurs at [jar:file:/Users/ilya/scala/wlxjury/target/bg-jobs/sbt_e1f68dca/target/2abad4ee/28ea974f/wlxjury_2.13-0.13.jar!/logback.xml]
+[info] 17:06:38,602 |-WARN in ch.qos.logback.classic.util.DefaultJoranConfigurator@35c8c30a - Resource [logback.xml] occurs at [jar:file:/Users/ilya/scala/wlxjury/target/bg-jobs/sbt_e1f68dca/job-1/target/b8869005/2d8572dd/wlxjury_2.13-0.13-jmh.jar!/logback.xml]
+[info] 17:06:38,606 |-INFO in ConfigurationWatchList(mainURL=jar:file:/Users/ilya/scala/wlxjury/target/bg-jobs/sbt_e1f68dca/job-1/target/b8869005/2d8572dd/wlxjury_2.13-0.13-jmh.jar!/logback.xml, fileWatchList={}, urlWatchList=[}) - URL [jar:file:/Users/ilya/scala/wlxjury/target/bg-jobs/sbt_e1f68dca/job-1/target/b8869005/2d8572dd/wlxjury_2.13-0.13-jmh.jar!/logback.xml] is not of type file
+[info] 17:06:38,633 |-WARN in ch.qos.logback.core.joran.action.ConversionRuleAction - [converterClass] attribute is deprecated and replaced by [class]. See element [conversionRule] near line 3
+[info] 17:06:38,656 |-INFO in ch.qos.logback.core.model.processor.ConversionRuleModelHandler - registering conversion word coloredLevel with class [play.api.libs.logback.ColoredLevel]
+[info] 17:06:38,658 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - Processing appender named [STDOUT]
+[info] 17:06:38,658 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - About to instantiate appender of type [ch.qos.logback.core.ConsoleAppender]
+[info] 17:06:38,662 |-INFO in ch.qos.logback.core.model.processor.ImplicitModelHandler - Assuming default type [ch.qos.logback.classic.encoder.PatternLayoutEncoder] for [encoder] property
+[info] 17:06:38,678 |-INFO in ch.qos.logback.core.ConsoleAppender[STDOUT] - BEWARE: Writing to the console can be very slow. Avoid logging to the 
+[info] 17:06:38,678 |-INFO in ch.qos.logback.core.ConsoleAppender[STDOUT] - console in production environments, especially in high volume systems.
+[info] 17:06:38,678 |-INFO in ch.qos.logback.core.ConsoleAppender[STDOUT] - See also https://logback.qos.ch/codes.html#slowConsole
+[info] 17:06:38,678 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - Processing appender named [ASYNCSTDOUT]
+[info] 17:06:38,678 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - About to instantiate appender of type [ch.qos.logback.classic.AsyncAppender]
+[info] 17:06:38,679 |-INFO in ch.qos.logback.core.model.processor.AppenderRefModelHandler - Attaching appender named [STDOUT] to ch.qos.logback.classic.AsyncAppender[ASYNCSTDOUT]
+[info] 17:06:38,679 |-INFO in ch.qos.logback.classic.AsyncAppender[ASYNCSTDOUT] - Attaching appender named [STDOUT] to AsyncAppender.
+[info] 17:06:38,679 |-INFO in ch.qos.logback.classic.AsyncAppender[ASYNCSTDOUT] - Setting discardingThreshold to 51
+[info] 17:06:38,680 |-INFO in ch.qos.logback.classic.model.processor.LoggerModelHandler - Setting level of logger [play] to DEBUG
+[info] 17:06:38,680 |-INFO in ch.qos.logback.classic.model.processor.LoggerModelHandler - Setting level of logger [application] to DEBUG
+[info] 17:06:38,680 |-INFO in ch.qos.logback.classic.model.processor.LoggerModelHandler - Setting level of logger [com.gargoylesoftware.htmlunit.javascript] to OFF
+[info] 17:06:38,680 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - Processing appender named [FILE]
+[info] 17:06:38,680 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - About to instantiate appender of type [ch.qos.logback.core.FileAppender]
+[info] 17:06:38,682 |-INFO in ch.qos.logback.core.model.processor.ModelInterpretationContext@3ac8798d - value "./logs/application.log" substituted for "${application.home:-.}/logs/application.log"
+[info] 17:06:38,682 |-INFO in ch.qos.logback.core.model.processor.ImplicitModelHandler - Assuming default type [ch.qos.logback.classic.encoder.PatternLayoutEncoder] for [encoder] property
+[info] 17:06:38,683 |-INFO in ch.qos.logback.core.FileAppender[FILE] - File property is set to [./logs/application.log]
+[info] 17:06:38,683 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - Processing appender named [ASYNCFILE]
+[info] 17:06:38,683 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - About to instantiate appender of type [ch.qos.logback.classic.AsyncAppender]
+[info] 17:06:38,684 |-INFO in ch.qos.logback.core.model.processor.AppenderRefModelHandler - Attaching appender named [FILE] to ch.qos.logback.classic.AsyncAppender[ASYNCFILE]
+[info] 17:06:38,684 |-INFO in ch.qos.logback.classic.AsyncAppender[ASYNCFILE] - Attaching appender named [FILE] to AsyncAppender.
+[info] 17:06:38,684 |-INFO in ch.qos.logback.classic.AsyncAppender[ASYNCFILE] - Setting discardingThreshold to 51
+[info] 17:06:38,684 |-INFO in ch.qos.logback.classic.model.processor.RootLoggerModelHandler - Setting level of ROOT logger to WARN
+[info] 17:06:38,684 |-INFO in ch.qos.logback.core.model.processor.AppenderRefModelHandler - Attaching appender named [ASYNCFILE] to Logger[ROOT]
+[info] 17:06:38,684 |-INFO in ch.qos.logback.core.model.processor.AppenderRefModelHandler - Attaching appender named [ASYNCSTDOUT] to Logger[ROOT]
+[info] 17:06:38,684 |-INFO in ch.qos.logback.core.model.processor.DefaultProcessor@496b3d4d - End of configuration.
+[info] 17:06:38,684 |-INFO in ch.qos.logback.classic.joran.JoranConfigurator@49ba864c - Registering current configuration as safe fallback point
+[info] 17:06:38,684 |-INFO in ch.qos.logback.classic.util.ContextInitializer@6ffa413c - ch.qos.logback.classic.util.DefaultJoranConfigurator.configure() call lasted 84 milliseconds. ExecutionStatus=DO_NOT_INVOKE_NEXT_IF_ANY
+[info] 84.337 ms/op
+[info] # Warmup Iteration   2: 49.845 ms/op
+[info] # Warmup Iteration   3: 48.915 ms/op
+[info] Iteration   1: 52.544 ms/op
+[info] Iteration   2: 50.275 ms/op
+[info] Iteration   3: 51.489 ms/op
+[info] Iteration   4: 50.051 ms/op
+[info] Iteration   5: 51.090 ms/op
+[info] Result "services.FetchAndCacheAllBenchmark.cascaded":
+[info]   51.090 ±(99.9%) 3.859 ms/op [Average]
+[info]   (min, avg, max) = (50.051, 51.090, 52.544), stdev = 1.002
+[info]   CI (99.9%): [47.230, 54.949] (assumes normal distribution)
+[info] # JMH version: 1.37
+[info] # VM version: JDK 17.0.18, OpenJDK 64-Bit Server VM, 17.0.18+8
+[info] # VM invoker: /Users/ilya/.sdkman/candidates/java/17.0.18-tem/bin/java
+[info] # VM options: -Dconfig.file=test/resources/application.conf -Djna.nosys=true
+[info] # Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
+[info] # Warmup: 3 iterations, 1 s each
+[info] # Measurement: 5 iterations, 1 s each
+[info] # Timeout: 10 min per iteration
+[info] # Threads: 1 thread, will synchronize iterations
+[info] # Benchmark mode: Average time, time/op
+[info] # Benchmark: services.FetchAndCacheAllBenchmark.fromLargest
+[info] # Parameters: (targetHeightStr = 120)
+[info] # Run progress: 50.00% complete, ETA 00:02:02
+[info] # Fork: 1 of 1
+[info] # Warmup Iteration   1: 17:06:53,395 |-INFO in ch.qos.logback.classic.LoggerContext[default] - This is logback-classic version 1.5.17
+[info] 17:06:53,395 |-INFO in ch.qos.logback.classic.util.ContextInitializer@258f8584 - No custom configurators were discovered as a service.
+[info] 17:06:53,396 |-INFO in ch.qos.logback.classic.util.ContextInitializer@258f8584 - Trying to configure with ch.qos.logback.classic.joran.SerializedModelConfigurator
+[info] 17:06:53,396 |-INFO in ch.qos.logback.classic.util.ContextInitializer@258f8584 - Constructed configurator of type class ch.qos.logback.classic.joran.SerializedModelConfigurator
+[info] 17:06:53,397 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Could NOT find resource [logback-test.scmo]
+[info] 17:06:53,398 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Could NOT find resource [logback.scmo]
+[info] 17:06:53,400 |-INFO in ch.qos.logback.classic.util.ContextInitializer@258f8584 - ch.qos.logback.classic.joran.SerializedModelConfigurator.configure() call lasted 2 milliseconds. ExecutionStatus=INVOKE_NEXT_IF_ANY
+[info] 17:06:53,400 |-INFO in ch.qos.logback.classic.util.ContextInitializer@258f8584 - Trying to configure with ch.qos.logback.classic.util.DefaultJoranConfigurator
+[info] 17:06:53,400 |-INFO in ch.qos.logback.classic.util.ContextInitializer@258f8584 - Constructed configurator of type class ch.qos.logback.classic.util.DefaultJoranConfigurator
+[info] 17:06:53,401 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Could NOT find resource [logback-test.xml]
+[info] 17:06:53,401 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Found resource [logback.xml] at [jar:file:/Users/ilya/scala/wlxjury/target/bg-jobs/sbt_e1f68dca/job-1/target/b8869005/2d8572dd/wlxjury_2.13-0.13-jmh.jar!/logback.xml]
+[info] 17:06:53,402 |-WARN in ch.qos.logback.classic.util.DefaultJoranConfigurator@bd848d4 - Resource [logback.xml] occurs multiple times on the classpath.
+[info] 17:06:53,402 |-WARN in ch.qos.logback.classic.util.DefaultJoranConfigurator@bd848d4 - Resource [logback.xml] occurs at [jar:file:/Users/ilya/scala/wlxjury/target/bg-jobs/sbt_e1f68dca/target/3f1a46a8/832de3ea/wlxjury_2.13-0.13-tests.jar!/logback.xml]
+[info] 17:06:53,402 |-WARN in ch.qos.logback.classic.util.DefaultJoranConfigurator@bd848d4 - Resource [logback.xml] occurs at [jar:file:/Users/ilya/scala/wlxjury/target/bg-jobs/sbt_e1f68dca/target/2abad4ee/28ea974f/wlxjury_2.13-0.13.jar!/logback.xml]
+[info] 17:06:53,402 |-WARN in ch.qos.logback.classic.util.DefaultJoranConfigurator@bd848d4 - Resource [logback.xml] occurs at [jar:file:/Users/ilya/scala/wlxjury/target/bg-jobs/sbt_e1f68dca/job-1/target/b8869005/2d8572dd/wlxjury_2.13-0.13-jmh.jar!/logback.xml]
+[info] 17:06:53,406 |-INFO in ConfigurationWatchList(mainURL=jar:file:/Users/ilya/scala/wlxjury/target/bg-jobs/sbt_e1f68dca/job-1/target/b8869005/2d8572dd/wlxjury_2.13-0.13-jmh.jar!/logback.xml, fileWatchList={}, urlWatchList=[}) - URL [jar:file:/Users/ilya/scala/wlxjury/target/bg-jobs/sbt_e1f68dca/job-1/target/b8869005/2d8572dd/wlxjury_2.13-0.13-jmh.jar!/logback.xml] is not of type file
+[info] 17:06:53,432 |-WARN in ch.qos.logback.core.joran.action.ConversionRuleAction - [converterClass] attribute is deprecated and replaced by [class]. See element [conversionRule] near line 3
+[info] 17:06:53,456 |-INFO in ch.qos.logback.core.model.processor.ConversionRuleModelHandler - registering conversion word coloredLevel with class [play.api.libs.logback.ColoredLevel]
+[info] 17:06:53,459 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - Processing appender named [STDOUT]
+[info] 17:06:53,459 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - About to instantiate appender of type [ch.qos.logback.core.ConsoleAppender]
+[info] 17:06:53,462 |-INFO in ch.qos.logback.core.model.processor.ImplicitModelHandler - Assuming default type [ch.qos.logback.classic.encoder.PatternLayoutEncoder] for [encoder] property
+[info] 17:06:53,478 |-INFO in ch.qos.logback.core.ConsoleAppender[STDOUT] - BEWARE: Writing to the console can be very slow. Avoid logging to the 
+[info] 17:06:53,478 |-INFO in ch.qos.logback.core.ConsoleAppender[STDOUT] - console in production environments, especially in high volume systems.
+[info] 17:06:53,478 |-INFO in ch.qos.logback.core.ConsoleAppender[STDOUT] - See also https://logback.qos.ch/codes.html#slowConsole
+[info] 17:06:53,478 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - Processing appender named [ASYNCSTDOUT]
+[info] 17:06:53,478 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - About to instantiate appender of type [ch.qos.logback.classic.AsyncAppender]
+[info] 17:06:53,479 |-INFO in ch.qos.logback.core.model.processor.AppenderRefModelHandler - Attaching appender named [STDOUT] to ch.qos.logback.classic.AsyncAppender[ASYNCSTDOUT]
+[info] 17:06:53,479 |-INFO in ch.qos.logback.classic.AsyncAppender[ASYNCSTDOUT] - Attaching appender named [STDOUT] to AsyncAppender.
+[info] 17:06:53,479 |-INFO in ch.qos.logback.classic.AsyncAppender[ASYNCSTDOUT] - Setting discardingThreshold to 51
+[info] 17:06:53,480 |-INFO in ch.qos.logback.classic.model.processor.LoggerModelHandler - Setting level of logger [play] to DEBUG
+[info] 17:06:53,480 |-INFO in ch.qos.logback.classic.model.processor.LoggerModelHandler - Setting level of logger [application] to DEBUG
+[info] 17:06:53,480 |-INFO in ch.qos.logback.classic.model.processor.LoggerModelHandler - Setting level of logger [com.gargoylesoftware.htmlunit.javascript] to OFF
+[info] 17:06:53,480 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - Processing appender named [FILE]
+[info] 17:06:53,480 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - About to instantiate appender of type [ch.qos.logback.core.FileAppender]
+[info] 17:06:53,481 |-INFO in ch.qos.logback.core.model.processor.ModelInterpretationContext@3d9897be - value "./logs/application.log" substituted for "${application.home:-.}/logs/application.log"
+[info] 17:06:53,481 |-INFO in ch.qos.logback.core.model.processor.ImplicitModelHandler - Assuming default type [ch.qos.logback.classic.encoder.PatternLayoutEncoder] for [encoder] property
+[info] 17:06:53,482 |-INFO in ch.qos.logback.core.FileAppender[FILE] - File property is set to [./logs/application.log]
+[info] 17:06:53,483 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - Processing appender named [ASYNCFILE]
+[info] 17:06:53,483 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - About to instantiate appender of type [ch.qos.logback.classic.AsyncAppender]
+[info] 17:06:53,483 |-INFO in ch.qos.logback.core.model.processor.AppenderRefModelHandler - Attaching appender named [FILE] to ch.qos.logback.classic.AsyncAppender[ASYNCFILE]
+[info] 17:06:53,483 |-INFO in ch.qos.logback.classic.AsyncAppender[ASYNCFILE] - Attaching appender named [FILE] to AsyncAppender.
+[info] 17:06:53,483 |-INFO in ch.qos.logback.classic.AsyncAppender[ASYNCFILE] - Setting discardingThreshold to 51
+[info] 17:06:53,483 |-INFO in ch.qos.logback.classic.model.processor.RootLoggerModelHandler - Setting level of ROOT logger to WARN
+[info] 17:06:53,483 |-INFO in ch.qos.logback.core.model.processor.AppenderRefModelHandler - Attaching appender named [ASYNCFILE] to Logger[ROOT]
+[info] 17:06:53,483 |-INFO in ch.qos.logback.core.model.processor.AppenderRefModelHandler - Attaching appender named [ASYNCSTDOUT] to Logger[ROOT]
+[info] 17:06:53,483 |-INFO in ch.qos.logback.core.model.processor.DefaultProcessor@744ff631 - End of configuration.
+[info] 17:06:53,483 |-INFO in ch.qos.logback.classic.joran.JoranConfigurator@6f42f8f8 - Registering current configuration as safe fallback point
+[info] 17:06:53,483 |-INFO in ch.qos.logback.classic.util.ContextInitializer@258f8584 - ch.qos.logback.classic.util.DefaultJoranConfigurator.configure() call lasted 83 milliseconds. ExecutionStatus=DO_NOT_INVOKE_NEXT_IF_ANY
+[info] 2.342 ms/op
+[info] # Warmup Iteration   2: 1.155 ms/op
+[info] # Warmup Iteration   3: 1.201 ms/op
+[info] Iteration   1: 1.506 ms/op
+[info] Iteration   2: 1.679 ms/op
+[info] Iteration   3: 1.173 ms/op
+[info] Iteration   4: 1.067 ms/op
+[info] Iteration   5: 1.018 ms/op
+[info] Result "services.FetchAndCacheAllBenchmark.fromLargest":
+[info]   1.289 ±(99.9%) 1.114 ms/op [Average]
+[info]   (min, avg, max) = (1.018, 1.289, 1.679), stdev = 0.289
+[info]   CI (99.9%): [0.175, 2.403] (assumes normal distribution)
+[info] # JMH version: 1.37
+[info] # VM version: JDK 17.0.18, OpenJDK 64-Bit Server VM, 17.0.18+8
+[info] # VM invoker: /Users/ilya/.sdkman/candidates/java/17.0.18-tem/bin/java
+[info] # VM options: -Dconfig.file=test/resources/application.conf -Djna.nosys=true
+[info] # Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
+[info] # Warmup: 3 iterations, 1 s each
+[info] # Measurement: 5 iterations, 1 s each
+[info] # Timeout: 10 min per iteration
+[info] # Threads: 1 thread, will synchronize iterations
+[info] # Benchmark mode: Average time, time/op
+[info] # Benchmark: services.FetchAndCacheAllBenchmark.fromLargest
+[info] # Parameters: (targetHeightStr = 180)
+[info] # Run progress: 56.25% complete, ETA 00:01:46
+[info] # Fork: 1 of 1
+[info] # Warmup Iteration   1: 17:07:08,101 |-INFO in ch.qos.logback.classic.LoggerContext[default] - This is logback-classic version 1.5.17
+[info] 17:07:08,102 |-INFO in ch.qos.logback.classic.util.ContextInitializer@2fe787cd - No custom configurators were discovered as a service.
+[info] 17:07:08,102 |-INFO in ch.qos.logback.classic.util.ContextInitializer@2fe787cd - Trying to configure with ch.qos.logback.classic.joran.SerializedModelConfigurator
+[info] 17:07:08,103 |-INFO in ch.qos.logback.classic.util.ContextInitializer@2fe787cd - Constructed configurator of type class ch.qos.logback.classic.joran.SerializedModelConfigurator
+[info] 17:07:08,104 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Could NOT find resource [logback-test.scmo]
+[info] 17:07:08,105 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Could NOT find resource [logback.scmo]
+[info] 17:07:08,107 |-INFO in ch.qos.logback.classic.util.ContextInitializer@2fe787cd - ch.qos.logback.classic.joran.SerializedModelConfigurator.configure() call lasted 2 milliseconds. ExecutionStatus=INVOKE_NEXT_IF_ANY
+[info] 17:07:08,107 |-INFO in ch.qos.logback.classic.util.ContextInitializer@2fe787cd - Trying to configure with ch.qos.logback.classic.util.DefaultJoranConfigurator
+[info] 17:07:08,107 |-INFO in ch.qos.logback.classic.util.ContextInitializer@2fe787cd - Constructed configurator of type class ch.qos.logback.classic.util.DefaultJoranConfigurator
+[info] 17:07:08,107 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Could NOT find resource [logback-test.xml]
+[info] 17:07:08,108 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Found resource [logback.xml] at [jar:file:/Users/ilya/scala/wlxjury/target/bg-jobs/sbt_e1f68dca/job-1/target/b8869005/2d8572dd/wlxjury_2.13-0.13-jmh.jar!/logback.xml]
+[info] 17:07:08,109 |-WARN in ch.qos.logback.classic.util.DefaultJoranConfigurator@3df5eb48 - Resource [logback.xml] occurs multiple times on the classpath.
+[info] 17:07:08,109 |-WARN in ch.qos.logback.classic.util.DefaultJoranConfigurator@3df5eb48 - Resource [logback.xml] occurs at [jar:file:/Users/ilya/scala/wlxjury/target/bg-jobs/sbt_e1f68dca/target/3f1a46a8/832de3ea/wlxjury_2.13-0.13-tests.jar!/logback.xml]
+[info] 17:07:08,109 |-WARN in ch.qos.logback.classic.util.DefaultJoranConfigurator@3df5eb48 - Resource [logback.xml] occurs at [jar:file:/Users/ilya/scala/wlxjury/target/bg-jobs/sbt_e1f68dca/target/2abad4ee/28ea974f/wlxjury_2.13-0.13.jar!/logback.xml]
+[info] 17:07:08,109 |-WARN in ch.qos.logback.classic.util.DefaultJoranConfigurator@3df5eb48 - Resource [logback.xml] occurs at [jar:file:/Users/ilya/scala/wlxjury/target/bg-jobs/sbt_e1f68dca/job-1/target/b8869005/2d8572dd/wlxjury_2.13-0.13-jmh.jar!/logback.xml]
+[info] 17:07:08,118 |-INFO in ConfigurationWatchList(mainURL=jar:file:/Users/ilya/scala/wlxjury/target/bg-jobs/sbt_e1f68dca/job-1/target/b8869005/2d8572dd/wlxjury_2.13-0.13-jmh.jar!/logback.xml, fileWatchList={}, urlWatchList=[}) - URL [jar:file:/Users/ilya/scala/wlxjury/target/bg-jobs/sbt_e1f68dca/job-1/target/b8869005/2d8572dd/wlxjury_2.13-0.13-jmh.jar!/logback.xml] is not of type file
+[info] 17:07:08,152 |-WARN in ch.qos.logback.core.joran.action.ConversionRuleAction - [converterClass] attribute is deprecated and replaced by [class]. See element [conversionRule] near line 3
+[info] 17:07:08,177 |-INFO in ch.qos.logback.core.model.processor.ConversionRuleModelHandler - registering conversion word coloredLevel with class [play.api.libs.logback.ColoredLevel]
+[info] 17:07:08,180 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - Processing appender named [STDOUT]
+[info] 17:07:08,180 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - About to instantiate appender of type [ch.qos.logback.core.ConsoleAppender]
+[info] 17:07:08,186 |-INFO in ch.qos.logback.core.model.processor.ImplicitModelHandler - Assuming default type [ch.qos.logback.classic.encoder.PatternLayoutEncoder] for [encoder] property
+[info] 17:07:08,207 |-INFO in ch.qos.logback.core.ConsoleAppender[STDOUT] - BEWARE: Writing to the console can be very slow. Avoid logging to the 
+[info] 17:07:08,207 |-INFO in ch.qos.logback.core.ConsoleAppender[STDOUT] - console in production environments, especially in high volume systems.
+[info] 17:07:08,207 |-INFO in ch.qos.logback.core.ConsoleAppender[STDOUT] - See also https://logback.qos.ch/codes.html#slowConsole
+[info] 17:07:08,207 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - Processing appender named [ASYNCSTDOUT]
+[info] 17:07:08,207 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - About to instantiate appender of type [ch.qos.logback.classic.AsyncAppender]
+[info] 17:07:08,208 |-INFO in ch.qos.logback.core.model.processor.AppenderRefModelHandler - Attaching appender named [STDOUT] to ch.qos.logback.classic.AsyncAppender[ASYNCSTDOUT]
+[info] 17:07:08,209 |-INFO in ch.qos.logback.classic.AsyncAppender[ASYNCSTDOUT] - Attaching appender named [STDOUT] to AsyncAppender.
+[info] 17:07:08,209 |-INFO in ch.qos.logback.classic.AsyncAppender[ASYNCSTDOUT] - Setting discardingThreshold to 51
+[info] 17:07:08,210 |-INFO in ch.qos.logback.classic.model.processor.LoggerModelHandler - Setting level of logger [play] to DEBUG
+[info] 17:07:08,210 |-INFO in ch.qos.logback.classic.model.processor.LoggerModelHandler - Setting level of logger [application] to DEBUG
+[info] 17:07:08,210 |-INFO in ch.qos.logback.classic.model.processor.LoggerModelHandler - Setting level of logger [com.gargoylesoftware.htmlunit.javascript] to OFF
+[info] 17:07:08,210 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - Processing appender named [FILE]
+[info] 17:07:08,210 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - About to instantiate appender of type [ch.qos.logback.core.FileAppender]
+[info] 17:07:08,212 |-INFO in ch.qos.logback.core.model.processor.ModelInterpretationContext@3b31fcb5 - value "./logs/application.log" substituted for "${application.home:-.}/logs/application.log"
+[info] 17:07:08,212 |-INFO in ch.qos.logback.core.model.processor.ImplicitModelHandler - Assuming default type [ch.qos.logback.classic.encoder.PatternLayoutEncoder] for [encoder] property
+[info] 17:07:08,212 |-INFO in ch.qos.logback.core.FileAppender[FILE] - File property is set to [./logs/application.log]
+[info] 17:07:08,213 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - Processing appender named [ASYNCFILE]
+[info] 17:07:08,213 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - About to instantiate appender of type [ch.qos.logback.classic.AsyncAppender]
+[info] 17:07:08,213 |-INFO in ch.qos.logback.core.model.processor.AppenderRefModelHandler - Attaching appender named [FILE] to ch.qos.logback.classic.AsyncAppender[ASYNCFILE]
+[info] 17:07:08,213 |-INFO in ch.qos.logback.classic.AsyncAppender[ASYNCFILE] - Attaching appender named [FILE] to AsyncAppender.
+[info] 17:07:08,213 |-INFO in ch.qos.logback.classic.AsyncAppender[ASYNCFILE] - Setting discardingThreshold to 51
+[info] 17:07:08,213 |-INFO in ch.qos.logback.classic.model.processor.RootLoggerModelHandler - Setting level of ROOT logger to WARN
+[info] 17:07:08,213 |-INFO in ch.qos.logback.core.model.processor.AppenderRefModelHandler - Attaching appender named [ASYNCFILE] to Logger[ROOT]
+[info] 17:07:08,214 |-INFO in ch.qos.logback.core.model.processor.AppenderRefModelHandler - Attaching appender named [ASYNCSTDOUT] to Logger[ROOT]
+[info] 17:07:08,214 |-INFO in ch.qos.logback.core.model.processor.DefaultProcessor@290cff30 - End of configuration.
+[info] 17:07:08,214 |-INFO in ch.qos.logback.classic.joran.JoranConfigurator@4f3a8d93 - Registering current configuration as safe fallback point
+[info] 17:07:08,214 |-INFO in ch.qos.logback.classic.util.ContextInitializer@2fe787cd - ch.qos.logback.classic.util.DefaultJoranConfigurator.configure() call lasted 107 milliseconds. ExecutionStatus=DO_NOT_INVOKE_NEXT_IF_ANY
+[info] 4.813 ms/op
+[info] # Warmup Iteration   2: 2.111 ms/op
+[info] # Warmup Iteration   3: 2.332 ms/op
+[info] Iteration   1: 2.028 ms/op
+[info] Iteration   2: 1.923 ms/op
+[info] Iteration   3: 1.776 ms/op
+[info] Iteration   4: 1.985 ms/op
+[info] Iteration   5: 2.010 ms/op
+[info] Result "services.FetchAndCacheAllBenchmark.fromLargest":
+[info]   1.944 ±(99.9%) 0.394 ms/op [Average]
+[info]   (min, avg, max) = (1.776, 1.944, 2.028), stdev = 0.102
+[info]   CI (99.9%): [1.551, 2.338] (assumes normal distribution)
+[info] # JMH version: 1.37
+[info] # VM version: JDK 17.0.18, OpenJDK 64-Bit Server VM, 17.0.18+8
+[info] # VM invoker: /Users/ilya/.sdkman/candidates/java/17.0.18-tem/bin/java
+[info] # VM options: -Dconfig.file=test/resources/application.conf -Djna.nosys=true
+[info] # Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
+[info] # Warmup: 3 iterations, 1 s each
+[info] # Measurement: 5 iterations, 1 s each
+[info] # Timeout: 10 min per iteration
+[info] # Threads: 1 thread, will synchronize iterations
+[info] # Benchmark mode: Average time, time/op
+[info] # Benchmark: services.FetchAndCacheAllBenchmark.fromLargest
+[info] # Parameters: (targetHeightStr = 240)
+[info] # Run progress: 62.50% complete, ETA 00:01:31
+[info] # Fork: 1 of 1
+[info] # Warmup Iteration   1: 17:07:23,132 |-INFO in ch.qos.logback.classic.LoggerContext[default] - This is logback-classic version 1.5.17
+[info] 17:07:23,133 |-INFO in ch.qos.logback.classic.util.ContextInitializer@2b200ac7 - No custom configurators were discovered as a service.
+[info] 17:07:23,133 |-INFO in ch.qos.logback.classic.util.ContextInitializer@2b200ac7 - Trying to configure with ch.qos.logback.classic.joran.SerializedModelConfigurator
+[info] 17:07:23,133 |-INFO in ch.qos.logback.classic.util.ContextInitializer@2b200ac7 - Constructed configurator of type class ch.qos.logback.classic.joran.SerializedModelConfigurator
+[info] 17:07:23,134 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Could NOT find resource [logback-test.scmo]
+[info] 17:07:23,135 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Could NOT find resource [logback.scmo]
+[info] 17:07:23,137 |-INFO in ch.qos.logback.classic.util.ContextInitializer@2b200ac7 - ch.qos.logback.classic.joran.SerializedModelConfigurator.configure() call lasted 2 milliseconds. ExecutionStatus=INVOKE_NEXT_IF_ANY
+[info] 17:07:23,137 |-INFO in ch.qos.logback.classic.util.ContextInitializer@2b200ac7 - Trying to configure with ch.qos.logback.classic.util.DefaultJoranConfigurator
+[info] 17:07:23,137 |-INFO in ch.qos.logback.classic.util.ContextInitializer@2b200ac7 - Constructed configurator of type class ch.qos.logback.classic.util.DefaultJoranConfigurator
+[info] 17:07:23,138 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Could NOT find resource [logback-test.xml]
+[info] 17:07:23,139 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Found resource [logback.xml] at [jar:file:/Users/ilya/scala/wlxjury/target/bg-jobs/sbt_e1f68dca/job-1/target/b8869005/2d8572dd/wlxjury_2.13-0.13-jmh.jar!/logback.xml]
+[info] 17:07:23,139 |-WARN in ch.qos.logback.classic.util.DefaultJoranConfigurator@51445ca5 - Resource [logback.xml] occurs multiple times on the classpath.
+[info] 17:07:23,139 |-WARN in ch.qos.logback.classic.util.DefaultJoranConfigurator@51445ca5 - Resource [logback.xml] occurs at [jar:file:/Users/ilya/scala/wlxjury/target/bg-jobs/sbt_e1f68dca/target/3f1a46a8/832de3ea/wlxjury_2.13-0.13-tests.jar!/logback.xml]
+[info] 17:07:23,139 |-WARN in ch.qos.logback.classic.util.DefaultJoranConfigurator@51445ca5 - Resource [logback.xml] occurs at [jar:file:/Users/ilya/scala/wlxjury/target/bg-jobs/sbt_e1f68dca/target/2abad4ee/28ea974f/wlxjury_2.13-0.13.jar!/logback.xml]
+[info] 17:07:23,139 |-WARN in ch.qos.logback.classic.util.DefaultJoranConfigurator@51445ca5 - Resource [logback.xml] occurs at [jar:file:/Users/ilya/scala/wlxjury/target/bg-jobs/sbt_e1f68dca/job-1/target/b8869005/2d8572dd/wlxjury_2.13-0.13-jmh.jar!/logback.xml]
+[info] 17:07:23,143 |-INFO in ConfigurationWatchList(mainURL=jar:file:/Users/ilya/scala/wlxjury/target/bg-jobs/sbt_e1f68dca/job-1/target/b8869005/2d8572dd/wlxjury_2.13-0.13-jmh.jar!/logback.xml, fileWatchList={}, urlWatchList=[}) - URL [jar:file:/Users/ilya/scala/wlxjury/target/bg-jobs/sbt_e1f68dca/job-1/target/b8869005/2d8572dd/wlxjury_2.13-0.13-jmh.jar!/logback.xml] is not of type file
+[info] 17:07:23,169 |-WARN in ch.qos.logback.core.joran.action.ConversionRuleAction - [converterClass] attribute is deprecated and replaced by [class]. See element [conversionRule] near line 3
+[info] 17:07:23,192 |-INFO in ch.qos.logback.core.model.processor.ConversionRuleModelHandler - registering conversion word coloredLevel with class [play.api.libs.logback.ColoredLevel]
+[info] 17:07:23,194 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - Processing appender named [STDOUT]
+[info] 17:07:23,195 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - About to instantiate appender of type [ch.qos.logback.core.ConsoleAppender]
+[info] 17:07:23,198 |-INFO in ch.qos.logback.core.model.processor.ImplicitModelHandler - Assuming default type [ch.qos.logback.classic.encoder.PatternLayoutEncoder] for [encoder] property
+[info] 17:07:23,215 |-INFO in ch.qos.logback.core.ConsoleAppender[STDOUT] - BEWARE: Writing to the console can be very slow. Avoid logging to the 
+[info] 17:07:23,215 |-INFO in ch.qos.logback.core.ConsoleAppender[STDOUT] - console in production environments, especially in high volume systems.
+[info] 17:07:23,215 |-INFO in ch.qos.logback.core.ConsoleAppender[STDOUT] - See also https://logback.qos.ch/codes.html#slowConsole
+[info] 17:07:23,215 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - Processing appender named [ASYNCSTDOUT]
+[info] 17:07:23,215 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - About to instantiate appender of type [ch.qos.logback.classic.AsyncAppender]
+[info] 17:07:23,216 |-INFO in ch.qos.logback.core.model.processor.AppenderRefModelHandler - Attaching appender named [STDOUT] to ch.qos.logback.classic.AsyncAppender[ASYNCSTDOUT]
+[info] 17:07:23,216 |-INFO in ch.qos.logback.classic.AsyncAppender[ASYNCSTDOUT] - Attaching appender named [STDOUT] to AsyncAppender.
+[info] 17:07:23,216 |-INFO in ch.qos.logback.classic.AsyncAppender[ASYNCSTDOUT] - Setting discardingThreshold to 51
+[info] 17:07:23,217 |-INFO in ch.qos.logback.classic.model.processor.LoggerModelHandler - Setting level of logger [play] to DEBUG
+[info] 17:07:23,217 |-INFO in ch.qos.logback.classic.model.processor.LoggerModelHandler - Setting level of logger [application] to DEBUG
+[info] 17:07:23,217 |-INFO in ch.qos.logback.classic.model.processor.LoggerModelHandler - Setting level of logger [com.gargoylesoftware.htmlunit.javascript] to OFF
+[info] 17:07:23,217 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - Processing appender named [FILE]
+[info] 17:07:23,217 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - About to instantiate appender of type [ch.qos.logback.core.FileAppender]
+[info] 17:07:23,218 |-INFO in ch.qos.logback.core.model.processor.ModelInterpretationContext@5e19d26b - value "./logs/application.log" substituted for "${application.home:-.}/logs/application.log"
+[info] 17:07:23,218 |-INFO in ch.qos.logback.core.model.processor.ImplicitModelHandler - Assuming default type [ch.qos.logback.classic.encoder.PatternLayoutEncoder] for [encoder] property
+[info] 17:07:23,219 |-INFO in ch.qos.logback.core.FileAppender[FILE] - File property is set to [./logs/application.log]
+[info] 17:07:23,219 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - Processing appender named [ASYNCFILE]
+[info] 17:07:23,219 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - About to instantiate appender of type [ch.qos.logback.classic.AsyncAppender]
+[info] 17:07:23,219 |-INFO in ch.qos.logback.core.model.processor.AppenderRefModelHandler - Attaching appender named [FILE] to ch.qos.logback.classic.AsyncAppender[ASYNCFILE]
+[info] 17:07:23,219 |-INFO in ch.qos.logback.classic.AsyncAppender[ASYNCFILE] - Attaching appender named [FILE] to AsyncAppender.
+[info] 17:07:23,219 |-INFO in ch.qos.logback.classic.AsyncAppender[ASYNCFILE] - Setting discardingThreshold to 51
+[info] 17:07:23,219 |-INFO in ch.qos.logback.classic.model.processor.RootLoggerModelHandler - Setting level of ROOT logger to WARN
+[info] 17:07:23,220 |-INFO in ch.qos.logback.core.model.processor.AppenderRefModelHandler - Attaching appender named [ASYNCFILE] to Logger[ROOT]
+[info] 17:07:23,220 |-INFO in ch.qos.logback.core.model.processor.AppenderRefModelHandler - Attaching appender named [ASYNCSTDOUT] to Logger[ROOT]
+[info] 17:07:23,220 |-INFO in ch.qos.logback.core.model.processor.DefaultProcessor@2d4b0c79 - End of configuration.
+[info] 17:07:23,220 |-INFO in ch.qos.logback.classic.joran.JoranConfigurator@6615cb37 - Registering current configuration as safe fallback point
+[info] 17:07:23,220 |-INFO in ch.qos.logback.classic.util.ContextInitializer@2b200ac7 - ch.qos.logback.classic.util.DefaultJoranConfigurator.configure() call lasted 83 milliseconds. ExecutionStatus=DO_NOT_INVOKE_NEXT_IF_ANY
+[info] 6.397 ms/op
+[info] # Warmup Iteration   2: 4.458 ms/op
+[info] # Warmup Iteration   3: 4.716 ms/op
+[info] Iteration   1: 4.004 ms/op
+[info] Iteration   2: 3.524 ms/op
+[info] Iteration   3: 3.245 ms/op
+[info] Iteration   4: 3.381 ms/op
+[info] Iteration   5: 3.341 ms/op
+[info] Result "services.FetchAndCacheAllBenchmark.fromLargest":
+[info]   3.499 ±(99.9%) 1.154 ms/op [Average]
+[info]   (min, avg, max) = (3.245, 3.499, 4.004), stdev = 0.300
+[info]   CI (99.9%): [2.345, 4.653] (assumes normal distribution)
+[info] # JMH version: 1.37
+[info] # VM version: JDK 17.0.18, OpenJDK 64-Bit Server VM, 17.0.18+8
+[info] # VM invoker: /Users/ilya/.sdkman/candidates/java/17.0.18-tem/bin/java
+[info] # VM options: -Dconfig.file=test/resources/application.conf -Djna.nosys=true
+[info] # Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
+[info] # Warmup: 3 iterations, 1 s each
+[info] # Measurement: 5 iterations, 1 s each
+[info] # Timeout: 10 min per iteration
+[info] # Threads: 1 thread, will synchronize iterations
+[info] # Benchmark mode: Average time, time/op
+[info] # Benchmark: services.FetchAndCacheAllBenchmark.fromLargest
+[info] # Parameters: (targetHeightStr = 250)
+[info] # Run progress: 68.75% complete, ETA 00:01:15
+[info] # Fork: 1 of 1
+[info] # Warmup Iteration   1: 17:07:37,778 |-INFO in ch.qos.logback.classic.LoggerContext[default] - This is logback-classic version 1.5.17
+[info] 17:07:37,779 |-INFO in ch.qos.logback.classic.util.ContextInitializer@31ec6a6 - No custom configurators were discovered as a service.
+[info] 17:07:37,779 |-INFO in ch.qos.logback.classic.util.ContextInitializer@31ec6a6 - Trying to configure with ch.qos.logback.classic.joran.SerializedModelConfigurator
+[info] 17:07:37,780 |-INFO in ch.qos.logback.classic.util.ContextInitializer@31ec6a6 - Constructed configurator of type class ch.qos.logback.classic.joran.SerializedModelConfigurator
+[info] 17:07:37,781 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Could NOT find resource [logback-test.scmo]
+[info] 17:07:37,781 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Could NOT find resource [logback.scmo]
+[info] 17:07:37,783 |-INFO in ch.qos.logback.classic.util.ContextInitializer@31ec6a6 - ch.qos.logback.classic.joran.SerializedModelConfigurator.configure() call lasted 1 milliseconds. ExecutionStatus=INVOKE_NEXT_IF_ANY
+[info] 17:07:37,783 |-INFO in ch.qos.logback.classic.util.ContextInitializer@31ec6a6 - Trying to configure with ch.qos.logback.classic.util.DefaultJoranConfigurator
+[info] 17:07:37,784 |-INFO in ch.qos.logback.classic.util.ContextInitializer@31ec6a6 - Constructed configurator of type class ch.qos.logback.classic.util.DefaultJoranConfigurator
+[info] 17:07:37,784 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Could NOT find resource [logback-test.xml]
+[info] 17:07:37,785 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Found resource [logback.xml] at [jar:file:/Users/ilya/scala/wlxjury/target/bg-jobs/sbt_e1f68dca/job-1/target/b8869005/2d8572dd/wlxjury_2.13-0.13-jmh.jar!/logback.xml]
+[info] 17:07:37,786 |-WARN in ch.qos.logback.classic.util.DefaultJoranConfigurator@7cd8b0f - Resource [logback.xml] occurs multiple times on the classpath.
+[info] 17:07:37,786 |-WARN in ch.qos.logback.classic.util.DefaultJoranConfigurator@7cd8b0f - Resource [logback.xml] occurs at [jar:file:/Users/ilya/scala/wlxjury/target/bg-jobs/sbt_e1f68dca/target/3f1a46a8/832de3ea/wlxjury_2.13-0.13-tests.jar!/logback.xml]
+[info] 17:07:37,786 |-WARN in ch.qos.logback.classic.util.DefaultJoranConfigurator@7cd8b0f - Resource [logback.xml] occurs at [jar:file:/Users/ilya/scala/wlxjury/target/bg-jobs/sbt_e1f68dca/target/2abad4ee/28ea974f/wlxjury_2.13-0.13.jar!/logback.xml]
+[info] 17:07:37,786 |-WARN in ch.qos.logback.classic.util.DefaultJoranConfigurator@7cd8b0f - Resource [logback.xml] occurs at [jar:file:/Users/ilya/scala/wlxjury/target/bg-jobs/sbt_e1f68dca/job-1/target/b8869005/2d8572dd/wlxjury_2.13-0.13-jmh.jar!/logback.xml]
+[info] 17:07:37,789 |-INFO in ConfigurationWatchList(mainURL=jar:file:/Users/ilya/scala/wlxjury/target/bg-jobs/sbt_e1f68dca/job-1/target/b8869005/2d8572dd/wlxjury_2.13-0.13-jmh.jar!/logback.xml, fileWatchList={}, urlWatchList=[}) - URL [jar:file:/Users/ilya/scala/wlxjury/target/bg-jobs/sbt_e1f68dca/job-1/target/b8869005/2d8572dd/wlxjury_2.13-0.13-jmh.jar!/logback.xml] is not of type file
+[info] 17:07:37,815 |-WARN in ch.qos.logback.core.joran.action.ConversionRuleAction - [converterClass] attribute is deprecated and replaced by [class]. See element [conversionRule] near line 3
+[info] 17:07:37,838 |-INFO in ch.qos.logback.core.model.processor.ConversionRuleModelHandler - registering conversion word coloredLevel with class [play.api.libs.logback.ColoredLevel]
+[info] 17:07:37,842 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - Processing appender named [STDOUT]
+[info] 17:07:37,842 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - About to instantiate appender of type [ch.qos.logback.core.ConsoleAppender]
+[info] 17:07:37,846 |-INFO in ch.qos.logback.core.model.processor.ImplicitModelHandler - Assuming default type [ch.qos.logback.classic.encoder.PatternLayoutEncoder] for [encoder] property
+[info] 17:07:37,867 |-INFO in ch.qos.logback.core.ConsoleAppender[STDOUT] - BEWARE: Writing to the console can be very slow. Avoid logging to the 
+[info] 17:07:37,867 |-INFO in ch.qos.logback.core.ConsoleAppender[STDOUT] - console in production environments, especially in high volume systems.
+[info] 17:07:37,867 |-INFO in ch.qos.logback.core.ConsoleAppender[STDOUT] - See also https://logback.qos.ch/codes.html#slowConsole
+[info] 17:07:37,867 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - Processing appender named [ASYNCSTDOUT]
+[info] 17:07:37,867 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - About to instantiate appender of type [ch.qos.logback.classic.AsyncAppender]
+[info] 17:07:37,869 |-INFO in ch.qos.logback.core.model.processor.AppenderRefModelHandler - Attaching appender named [STDOUT] to ch.qos.logback.classic.AsyncAppender[ASYNCSTDOUT]
+[info] 17:07:37,869 |-INFO in ch.qos.logback.classic.AsyncAppender[ASYNCSTDOUT] - Attaching appender named [STDOUT] to AsyncAppender.
+[info] 17:07:37,869 |-INFO in ch.qos.logback.classic.AsyncAppender[ASYNCSTDOUT] - Setting discardingThreshold to 51
+[info] 17:07:37,870 |-INFO in ch.qos.logback.classic.model.processor.LoggerModelHandler - Setting level of logger [play] to DEBUG
+[info] 17:07:37,870 |-INFO in ch.qos.logback.classic.model.processor.LoggerModelHandler - Setting level of logger [application] to DEBUG
+[info] 17:07:37,870 |-INFO in ch.qos.logback.classic.model.processor.LoggerModelHandler - Setting level of logger [com.gargoylesoftware.htmlunit.javascript] to OFF
+[info] 17:07:37,870 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - Processing appender named [FILE]
+[info] 17:07:37,870 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - About to instantiate appender of type [ch.qos.logback.core.FileAppender]
+[info] 17:07:37,871 |-INFO in ch.qos.logback.core.model.processor.ModelInterpretationContext@25a0abf3 - value "./logs/application.log" substituted for "${application.home:-.}/logs/application.log"
+[info] 17:07:37,871 |-INFO in ch.qos.logback.core.model.processor.ImplicitModelHandler - Assuming default type [ch.qos.logback.classic.encoder.PatternLayoutEncoder] for [encoder] property
+[info] 17:07:37,872 |-INFO in ch.qos.logback.core.FileAppender[FILE] - File property is set to [./logs/application.log]
+[info] 17:07:37,873 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - Processing appender named [ASYNCFILE]
+[info] 17:07:37,873 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - About to instantiate appender of type [ch.qos.logback.classic.AsyncAppender]
+[info] 17:07:37,873 |-INFO in ch.qos.logback.core.model.processor.AppenderRefModelHandler - Attaching appender named [FILE] to ch.qos.logback.classic.AsyncAppender[ASYNCFILE]
+[info] 17:07:37,873 |-INFO in ch.qos.logback.classic.AsyncAppender[ASYNCFILE] - Attaching appender named [FILE] to AsyncAppender.
+[info] 17:07:37,873 |-INFO in ch.qos.logback.classic.AsyncAppender[ASYNCFILE] - Setting discardingThreshold to 51
+[info] 17:07:37,873 |-INFO in ch.qos.logback.classic.model.processor.RootLoggerModelHandler - Setting level of ROOT logger to WARN
+[info] 17:07:37,873 |-INFO in ch.qos.logback.core.model.processor.AppenderRefModelHandler - Attaching appender named [ASYNCFILE] to Logger[ROOT]
+[info] 17:07:37,873 |-INFO in ch.qos.logback.core.model.processor.AppenderRefModelHandler - Attaching appender named [ASYNCSTDOUT] to Logger[ROOT]
+[info] 17:07:37,873 |-INFO in ch.qos.logback.core.model.processor.DefaultProcessor@4eded9bb - End of configuration.
+[info] 17:07:37,874 |-INFO in ch.qos.logback.classic.joran.JoranConfigurator@1508d1a8 - Registering current configuration as safe fallback point
+[info] 17:07:37,874 |-INFO in ch.qos.logback.classic.util.ContextInitializer@31ec6a6 - ch.qos.logback.classic.util.DefaultJoranConfigurator.configure() call lasted 90 milliseconds. ExecutionStatus=DO_NOT_INVOKE_NEXT_IF_ANY
+[info] 6.302 ms/op
+[info] # Warmup Iteration   2: 3.649 ms/op
+[info] # Warmup Iteration   3: 3.663 ms/op
+[info] Iteration   1: 3.569 ms/op
+[info] Iteration   2: 3.480 ms/op
+[info] Iteration   3: 3.304 ms/op
+[info] Iteration   4: 3.359 ms/op
+[info] Iteration   5: 3.225 ms/op
+[info] Result "services.FetchAndCacheAllBenchmark.fromLargest":
+[info]   3.387 ±(99.9%) 0.530 ms/op [Average]
+[info]   (min, avg, max) = (3.225, 3.387, 3.569), stdev = 0.138
+[info]   CI (99.9%): [2.858, 3.917] (assumes normal distribution)
+[info] # JMH version: 1.37
+[info] # VM version: JDK 17.0.18, OpenJDK 64-Bit Server VM, 17.0.18+8
+[info] # VM invoker: /Users/ilya/.sdkman/candidates/java/17.0.18-tem/bin/java
+[info] # VM options: -Dconfig.file=test/resources/application.conf -Djna.nosys=true
+[info] # Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
+[info] # Warmup: 3 iterations, 1 s each
+[info] # Measurement: 5 iterations, 1 s each
+[info] # Timeout: 10 min per iteration
+[info] # Threads: 1 thread, will synchronize iterations
+[info] # Benchmark mode: Average time, time/op
+[info] # Benchmark: services.FetchAndCacheAllBenchmark.fromLargest
+[info] # Parameters: (targetHeightStr = 375)
+[info] # Run progress: 75.00% complete, ETA 00:01:00
+[info] # Fork: 1 of 1
+[info] # Warmup Iteration   1: 17:07:52,359 |-INFO in ch.qos.logback.classic.LoggerContext[default] - This is logback-classic version 1.5.17
+[info] 17:07:52,360 |-INFO in ch.qos.logback.classic.util.ContextInitializer@eeb2bcb - No custom configurators were discovered as a service.
+[info] 17:07:52,360 |-INFO in ch.qos.logback.classic.util.ContextInitializer@eeb2bcb - Trying to configure with ch.qos.logback.classic.joran.SerializedModelConfigurator
+[info] 17:07:52,361 |-INFO in ch.qos.logback.classic.util.ContextInitializer@eeb2bcb - Constructed configurator of type class ch.qos.logback.classic.joran.SerializedModelConfigurator
+[info] 17:07:52,362 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Could NOT find resource [logback-test.scmo]
+[info] 17:07:52,362 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Could NOT find resource [logback.scmo]
+[info] 17:07:52,365 |-INFO in ch.qos.logback.classic.util.ContextInitializer@eeb2bcb - ch.qos.logback.classic.joran.SerializedModelConfigurator.configure() call lasted 2 milliseconds. ExecutionStatus=INVOKE_NEXT_IF_ANY
+[info] 17:07:52,365 |-INFO in ch.qos.logback.classic.util.ContextInitializer@eeb2bcb - Trying to configure with ch.qos.logback.classic.util.DefaultJoranConfigurator
+[info] 17:07:52,365 |-INFO in ch.qos.logback.classic.util.ContextInitializer@eeb2bcb - Constructed configurator of type class ch.qos.logback.classic.util.DefaultJoranConfigurator
+[info] 17:07:52,366 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Could NOT find resource [logback-test.xml]
+[info] 17:07:52,367 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Found resource [logback.xml] at [jar:file:/Users/ilya/scala/wlxjury/target/bg-jobs/sbt_e1f68dca/job-1/target/b8869005/2d8572dd/wlxjury_2.13-0.13-jmh.jar!/logback.xml]
+[info] 17:07:52,368 |-WARN in ch.qos.logback.classic.util.DefaultJoranConfigurator@209859be - Resource [logback.xml] occurs multiple times on the classpath.
+[info] 17:07:52,368 |-WARN in ch.qos.logback.classic.util.DefaultJoranConfigurator@209859be - Resource [logback.xml] occurs at [jar:file:/Users/ilya/scala/wlxjury/target/bg-jobs/sbt_e1f68dca/target/3f1a46a8/832de3ea/wlxjury_2.13-0.13-tests.jar!/logback.xml]
+[info] 17:07:52,368 |-WARN in ch.qos.logback.classic.util.DefaultJoranConfigurator@209859be - Resource [logback.xml] occurs at [jar:file:/Users/ilya/scala/wlxjury/target/bg-jobs/sbt_e1f68dca/target/2abad4ee/28ea974f/wlxjury_2.13-0.13.jar!/logback.xml]
+[info] 17:07:52,368 |-WARN in ch.qos.logback.classic.util.DefaultJoranConfigurator@209859be - Resource [logback.xml] occurs at [jar:file:/Users/ilya/scala/wlxjury/target/bg-jobs/sbt_e1f68dca/job-1/target/b8869005/2d8572dd/wlxjury_2.13-0.13-jmh.jar!/logback.xml]
+[info] 17:07:52,371 |-INFO in ConfigurationWatchList(mainURL=jar:file:/Users/ilya/scala/wlxjury/target/bg-jobs/sbt_e1f68dca/job-1/target/b8869005/2d8572dd/wlxjury_2.13-0.13-jmh.jar!/logback.xml, fileWatchList={}, urlWatchList=[}) - URL [jar:file:/Users/ilya/scala/wlxjury/target/bg-jobs/sbt_e1f68dca/job-1/target/b8869005/2d8572dd/wlxjury_2.13-0.13-jmh.jar!/logback.xml] is not of type file
+[info] 17:07:52,398 |-WARN in ch.qos.logback.core.joran.action.ConversionRuleAction - [converterClass] attribute is deprecated and replaced by [class]. See element [conversionRule] near line 3
+[info] 17:07:52,420 |-INFO in ch.qos.logback.core.model.processor.ConversionRuleModelHandler - registering conversion word coloredLevel with class [play.api.libs.logback.ColoredLevel]
+[info] 17:07:52,422 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - Processing appender named [STDOUT]
+[info] 17:07:52,423 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - About to instantiate appender of type [ch.qos.logback.core.ConsoleAppender]
+[info] 17:07:52,426 |-INFO in ch.qos.logback.core.model.processor.ImplicitModelHandler - Assuming default type [ch.qos.logback.classic.encoder.PatternLayoutEncoder] for [encoder] property
+[info] 17:07:52,442 |-INFO in ch.qos.logback.core.ConsoleAppender[STDOUT] - BEWARE: Writing to the console can be very slow. Avoid logging to the 
+[info] 17:07:52,442 |-INFO in ch.qos.logback.core.ConsoleAppender[STDOUT] - console in production environments, especially in high volume systems.
+[info] 17:07:52,442 |-INFO in ch.qos.logback.core.ConsoleAppender[STDOUT] - See also https://logback.qos.ch/codes.html#slowConsole
+[info] 17:07:52,442 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - Processing appender named [ASYNCSTDOUT]
+[info] 17:07:52,442 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - About to instantiate appender of type [ch.qos.logback.classic.AsyncAppender]
+[info] 17:07:52,443 |-INFO in ch.qos.logback.core.model.processor.AppenderRefModelHandler - Attaching appender named [STDOUT] to ch.qos.logback.classic.AsyncAppender[ASYNCSTDOUT]
+[info] 17:07:52,443 |-INFO in ch.qos.logback.classic.AsyncAppender[ASYNCSTDOUT] - Attaching appender named [STDOUT] to AsyncAppender.
+[info] 17:07:52,443 |-INFO in ch.qos.logback.classic.AsyncAppender[ASYNCSTDOUT] - Setting discardingThreshold to 51
+[info] 17:07:52,444 |-INFO in ch.qos.logback.classic.model.processor.LoggerModelHandler - Setting level of logger [play] to DEBUG
+[info] 17:07:52,444 |-INFO in ch.qos.logback.classic.model.processor.LoggerModelHandler - Setting level of logger [application] to DEBUG
+[info] 17:07:52,444 |-INFO in ch.qos.logback.classic.model.processor.LoggerModelHandler - Setting level of logger [com.gargoylesoftware.htmlunit.javascript] to OFF
+[info] 17:07:52,444 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - Processing appender named [FILE]
+[info] 17:07:52,444 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - About to instantiate appender of type [ch.qos.logback.core.FileAppender]
+[info] 17:07:52,445 |-INFO in ch.qos.logback.core.model.processor.ModelInterpretationContext@3f88c446 - value "./logs/application.log" substituted for "${application.home:-.}/logs/application.log"
+[info] 17:07:52,445 |-INFO in ch.qos.logback.core.model.processor.ImplicitModelHandler - Assuming default type [ch.qos.logback.classic.encoder.PatternLayoutEncoder] for [encoder] property
+[info] 17:07:52,445 |-INFO in ch.qos.logback.core.FileAppender[FILE] - File property is set to [./logs/application.log]
+[info] 17:07:52,446 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - Processing appender named [ASYNCFILE]
+[info] 17:07:52,446 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - About to instantiate appender of type [ch.qos.logback.classic.AsyncAppender]
+[info] 17:07:52,446 |-INFO in ch.qos.logback.core.model.processor.AppenderRefModelHandler - Attaching appender named [FILE] to ch.qos.logback.classic.AsyncAppender[ASYNCFILE]
+[info] 17:07:52,446 |-INFO in ch.qos.logback.classic.AsyncAppender[ASYNCFILE] - Attaching appender named [FILE] to AsyncAppender.
+[info] 17:07:52,446 |-INFO in ch.qos.logback.classic.AsyncAppender[ASYNCFILE] - Setting discardingThreshold to 51
+[info] 17:07:52,446 |-INFO in ch.qos.logback.classic.model.processor.RootLoggerModelHandler - Setting level of ROOT logger to WARN
+[info] 17:07:52,446 |-INFO in ch.qos.logback.core.model.processor.AppenderRefModelHandler - Attaching appender named [ASYNCFILE] to Logger[ROOT]
+[info] 17:07:52,446 |-INFO in ch.qos.logback.core.model.processor.AppenderRefModelHandler - Attaching appender named [ASYNCSTDOUT] to Logger[ROOT]
+[info] 17:07:52,446 |-INFO in ch.qos.logback.core.model.processor.DefaultProcessor@5dbf2fa0 - End of configuration.
+[info] 17:07:52,447 |-INFO in ch.qos.logback.classic.joran.JoranConfigurator@465d1fbc - Registering current configuration as safe fallback point
+[info] 17:07:52,447 |-INFO in ch.qos.logback.classic.util.ContextInitializer@eeb2bcb - ch.qos.logback.classic.util.DefaultJoranConfigurator.configure() call lasted 82 milliseconds. ExecutionStatus=DO_NOT_INVOKE_NEXT_IF_ANY
+[info] 17.052 ms/op
+[info] # Warmup Iteration   2: 7.215 ms/op
+[info] # Warmup Iteration   3: 7.072 ms/op
+[info] Iteration   1: 7.232 ms/op
+[info] Iteration   2: 7.019 ms/op
+[info] Iteration   3: 7.047 ms/op
+[info] Iteration   4: 7.254 ms/op
+[info] Iteration   5: 6.921 ms/op
+[info] Result "services.FetchAndCacheAllBenchmark.fromLargest":
+[info]   7.094 ±(99.9%) 0.553 ms/op [Average]
+[info]   (min, avg, max) = (6.921, 7.094, 7.254), stdev = 0.143
+[info]   CI (99.9%): [6.542, 7.647] (assumes normal distribution)
+[info] # JMH version: 1.37
+[info] # VM version: JDK 17.0.18, OpenJDK 64-Bit Server VM, 17.0.18+8
+[info] # VM invoker: /Users/ilya/.sdkman/candidates/java/17.0.18-tem/bin/java
+[info] # VM options: -Dconfig.file=test/resources/application.conf -Djna.nosys=true
+[info] # Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
+[info] # Warmup: 3 iterations, 1 s each
+[info] # Measurement: 5 iterations, 1 s each
+[info] # Timeout: 10 min per iteration
+[info] # Threads: 1 thread, will synchronize iterations
+[info] # Benchmark mode: Average time, time/op
+[info] # Benchmark: services.FetchAndCacheAllBenchmark.fromLargest
+[info] # Parameters: (targetHeightStr = 500)
+[info] # Run progress: 81.25% complete, ETA 00:00:45
+[info] # Fork: 1 of 1
+[info] # Warmup Iteration   1: 17:08:06,946 |-INFO in ch.qos.logback.classic.LoggerContext[default] - This is logback-classic version 1.5.17
+[info] 17:08:06,946 |-INFO in ch.qos.logback.classic.util.ContextInitializer@4bf4c862 - No custom configurators were discovered as a service.
+[info] 17:08:06,946 |-INFO in ch.qos.logback.classic.util.ContextInitializer@4bf4c862 - Trying to configure with ch.qos.logback.classic.joran.SerializedModelConfigurator
+[info] 17:08:06,947 |-INFO in ch.qos.logback.classic.util.ContextInitializer@4bf4c862 - Constructed configurator of type class ch.qos.logback.classic.joran.SerializedModelConfigurator
+[info] 17:08:06,948 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Could NOT find resource [logback-test.scmo]
+[info] 17:08:06,948 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Could NOT find resource [logback.scmo]
+[info] 17:08:06,951 |-INFO in ch.qos.logback.classic.util.ContextInitializer@4bf4c862 - ch.qos.logback.classic.joran.SerializedModelConfigurator.configure() call lasted 2 milliseconds. ExecutionStatus=INVOKE_NEXT_IF_ANY
+[info] 17:08:06,951 |-INFO in ch.qos.logback.classic.util.ContextInitializer@4bf4c862 - Trying to configure with ch.qos.logback.classic.util.DefaultJoranConfigurator
+[info] 17:08:06,951 |-INFO in ch.qos.logback.classic.util.ContextInitializer@4bf4c862 - Constructed configurator of type class ch.qos.logback.classic.util.DefaultJoranConfigurator
+[info] 17:08:06,951 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Could NOT find resource [logback-test.xml]
+[info] 17:08:06,952 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Found resource [logback.xml] at [jar:file:/Users/ilya/scala/wlxjury/target/bg-jobs/sbt_e1f68dca/job-1/target/b8869005/2d8572dd/wlxjury_2.13-0.13-jmh.jar!/logback.xml]
+[info] 17:08:06,953 |-WARN in ch.qos.logback.classic.util.DefaultJoranConfigurator@2878ff5 - Resource [logback.xml] occurs multiple times on the classpath.
+[info] 17:08:06,953 |-WARN in ch.qos.logback.classic.util.DefaultJoranConfigurator@2878ff5 - Resource [logback.xml] occurs at [jar:file:/Users/ilya/scala/wlxjury/target/bg-jobs/sbt_e1f68dca/target/3f1a46a8/832de3ea/wlxjury_2.13-0.13-tests.jar!/logback.xml]
+[info] 17:08:06,953 |-WARN in ch.qos.logback.classic.util.DefaultJoranConfigurator@2878ff5 - Resource [logback.xml] occurs at [jar:file:/Users/ilya/scala/wlxjury/target/bg-jobs/sbt_e1f68dca/target/2abad4ee/28ea974f/wlxjury_2.13-0.13.jar!/logback.xml]
+[info] 17:08:06,953 |-WARN in ch.qos.logback.classic.util.DefaultJoranConfigurator@2878ff5 - Resource [logback.xml] occurs at [jar:file:/Users/ilya/scala/wlxjury/target/bg-jobs/sbt_e1f68dca/job-1/target/b8869005/2d8572dd/wlxjury_2.13-0.13-jmh.jar!/logback.xml]
+[info] 17:08:06,956 |-INFO in ConfigurationWatchList(mainURL=jar:file:/Users/ilya/scala/wlxjury/target/bg-jobs/sbt_e1f68dca/job-1/target/b8869005/2d8572dd/wlxjury_2.13-0.13-jmh.jar!/logback.xml, fileWatchList={}, urlWatchList=[}) - URL [jar:file:/Users/ilya/scala/wlxjury/target/bg-jobs/sbt_e1f68dca/job-1/target/b8869005/2d8572dd/wlxjury_2.13-0.13-jmh.jar!/logback.xml] is not of type file
+[info] 17:08:06,980 |-WARN in ch.qos.logback.core.joran.action.ConversionRuleAction - [converterClass] attribute is deprecated and replaced by [class]. See element [conversionRule] near line 3
+[info] 17:08:07,006 |-INFO in ch.qos.logback.core.model.processor.ConversionRuleModelHandler - registering conversion word coloredLevel with class [play.api.libs.logback.ColoredLevel]
+[info] 17:08:07,009 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - Processing appender named [STDOUT]
+[info] 17:08:07,009 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - About to instantiate appender of type [ch.qos.logback.core.ConsoleAppender]
+[info] 17:08:07,013 |-INFO in ch.qos.logback.core.model.processor.ImplicitModelHandler - Assuming default type [ch.qos.logback.classic.encoder.PatternLayoutEncoder] for [encoder] property
+[info] 17:08:07,030 |-INFO in ch.qos.logback.core.ConsoleAppender[STDOUT] - BEWARE: Writing to the console can be very slow. Avoid logging to the 
+[info] 17:08:07,030 |-INFO in ch.qos.logback.core.ConsoleAppender[STDOUT] - console in production environments, especially in high volume systems.
+[info] 17:08:07,030 |-INFO in ch.qos.logback.core.ConsoleAppender[STDOUT] - See also https://logback.qos.ch/codes.html#slowConsole
+[info] 17:08:07,030 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - Processing appender named [ASYNCSTDOUT]
+[info] 17:08:07,030 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - About to instantiate appender of type [ch.qos.logback.classic.AsyncAppender]
+[info] 17:08:07,031 |-INFO in ch.qos.logback.core.model.processor.AppenderRefModelHandler - Attaching appender named [STDOUT] to ch.qos.logback.classic.AsyncAppender[ASYNCSTDOUT]
+[info] 17:08:07,031 |-INFO in ch.qos.logback.classic.AsyncAppender[ASYNCSTDOUT] - Attaching appender named [STDOUT] to AsyncAppender.
+[info] 17:08:07,031 |-INFO in ch.qos.logback.classic.AsyncAppender[ASYNCSTDOUT] - Setting discardingThreshold to 51
+[info] 17:08:07,032 |-INFO in ch.qos.logback.classic.model.processor.LoggerModelHandler - Setting level of logger [play] to DEBUG
+[info] 17:08:07,032 |-INFO in ch.qos.logback.classic.model.processor.LoggerModelHandler - Setting level of logger [application] to DEBUG
+[info] 17:08:07,032 |-INFO in ch.qos.logback.classic.model.processor.LoggerModelHandler - Setting level of logger [com.gargoylesoftware.htmlunit.javascript] to OFF
+[info] 17:08:07,032 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - Processing appender named [FILE]
+[info] 17:08:07,032 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - About to instantiate appender of type [ch.qos.logback.core.FileAppender]
+[info] 17:08:07,033 |-INFO in ch.qos.logback.core.model.processor.ModelInterpretationContext@3d592d3d - value "./logs/application.log" substituted for "${application.home:-.}/logs/application.log"
+[info] 17:08:07,033 |-INFO in ch.qos.logback.core.model.processor.ImplicitModelHandler - Assuming default type [ch.qos.logback.classic.encoder.PatternLayoutEncoder] for [encoder] property
+[info] 17:08:07,033 |-INFO in ch.qos.logback.core.FileAppender[FILE] - File property is set to [./logs/application.log]
+[info] 17:08:07,034 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - Processing appender named [ASYNCFILE]
+[info] 17:08:07,034 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - About to instantiate appender of type [ch.qos.logback.classic.AsyncAppender]
+[info] 17:08:07,034 |-INFO in ch.qos.logback.core.model.processor.AppenderRefModelHandler - Attaching appender named [FILE] to ch.qos.logback.classic.AsyncAppender[ASYNCFILE]
+[info] 17:08:07,034 |-INFO in ch.qos.logback.classic.AsyncAppender[ASYNCFILE] - Attaching appender named [FILE] to AsyncAppender.
+[info] 17:08:07,034 |-INFO in ch.qos.logback.classic.AsyncAppender[ASYNCFILE] - Setting discardingThreshold to 51
+[info] 17:08:07,034 |-INFO in ch.qos.logback.classic.model.processor.RootLoggerModelHandler - Setting level of ROOT logger to WARN
+[info] 17:08:07,034 |-INFO in ch.qos.logback.core.model.processor.AppenderRefModelHandler - Attaching appender named [ASYNCFILE] to Logger[ROOT]
+[info] 17:08:07,035 |-INFO in ch.qos.logback.core.model.processor.AppenderRefModelHandler - Attaching appender named [ASYNCSTDOUT] to Logger[ROOT]
+[info] 17:08:07,035 |-INFO in ch.qos.logback.core.model.processor.DefaultProcessor@39fe544 - End of configuration.
+[info] 17:08:07,035 |-INFO in ch.qos.logback.classic.joran.JoranConfigurator@d022263 - Registering current configuration as safe fallback point
+[info] 17:08:07,035 |-INFO in ch.qos.logback.classic.util.ContextInitializer@4bf4c862 - ch.qos.logback.classic.util.DefaultJoranConfigurator.configure() call lasted 84 milliseconds. ExecutionStatus=DO_NOT_INVOKE_NEXT_IF_ANY
+[info] 21.433 ms/op
+[info] # Warmup Iteration   2: 12.867 ms/op
+[info] # Warmup Iteration   3: 12.275 ms/op
+[info] Iteration   1: 11.633 ms/op
+[info] Iteration   2: 11.635 ms/op
+[info] Iteration   3: 11.876 ms/op
+[info] Iteration   4: 11.625 ms/op
+[info] Iteration   5: 12.471 ms/op
+[info] Result "services.FetchAndCacheAllBenchmark.fromLargest":
+[info]   11.848 ±(99.9%) 1.403 ms/op [Average]
+[info]   (min, avg, max) = (11.625, 11.848, 12.471), stdev = 0.364
+[info]   CI (99.9%): [10.445, 13.251] (assumes normal distribution)
+[info] # JMH version: 1.37
+[info] # VM version: JDK 17.0.18, OpenJDK 64-Bit Server VM, 17.0.18+8
+[info] # VM invoker: /Users/ilya/.sdkman/candidates/java/17.0.18-tem/bin/java
+[info] # VM options: -Dconfig.file=test/resources/application.conf -Djna.nosys=true
+[info] # Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
+[info] # Warmup: 3 iterations, 1 s each
+[info] # Measurement: 5 iterations, 1 s each
+[info] # Timeout: 10 min per iteration
+[info] # Threads: 1 thread, will synchronize iterations
+[info] # Benchmark mode: Average time, time/op
+[info] # Benchmark: services.FetchAndCacheAllBenchmark.fromLargest
+[info] # Parameters: (targetHeightStr = 1100)
+[info] # Run progress: 87.50% complete, ETA 00:00:30
+[info] # Fork: 1 of 1
+[info] # Warmup Iteration   1: 17:08:23,273 |-INFO in ch.qos.logback.classic.LoggerContext[default] - This is logback-classic version 1.5.17
+[info] 17:08:23,274 |-INFO in ch.qos.logback.classic.util.ContextInitializer@59d3786d - No custom configurators were discovered as a service.
+[info] 17:08:23,274 |-INFO in ch.qos.logback.classic.util.ContextInitializer@59d3786d - Trying to configure with ch.qos.logback.classic.joran.SerializedModelConfigurator
+[info] 17:08:23,275 |-INFO in ch.qos.logback.classic.util.ContextInitializer@59d3786d - Constructed configurator of type class ch.qos.logback.classic.joran.SerializedModelConfigurator
+[info] 17:08:23,276 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Could NOT find resource [logback-test.scmo]
+[info] 17:08:23,276 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Could NOT find resource [logback.scmo]
+[info] 17:08:23,279 |-INFO in ch.qos.logback.classic.util.ContextInitializer@59d3786d - ch.qos.logback.classic.joran.SerializedModelConfigurator.configure() call lasted 2 milliseconds. ExecutionStatus=INVOKE_NEXT_IF_ANY
+[info] 17:08:23,279 |-INFO in ch.qos.logback.classic.util.ContextInitializer@59d3786d - Trying to configure with ch.qos.logback.classic.util.DefaultJoranConfigurator
+[info] 17:08:23,279 |-INFO in ch.qos.logback.classic.util.ContextInitializer@59d3786d - Constructed configurator of type class ch.qos.logback.classic.util.DefaultJoranConfigurator
+[info] 17:08:23,279 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Could NOT find resource [logback-test.xml]
+[info] 17:08:23,280 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Found resource [logback.xml] at [jar:file:/Users/ilya/scala/wlxjury/target/bg-jobs/sbt_e1f68dca/job-1/target/b8869005/2d8572dd/wlxjury_2.13-0.13-jmh.jar!/logback.xml]
+[info] 17:08:23,281 |-WARN in ch.qos.logback.classic.util.DefaultJoranConfigurator@53067f60 - Resource [logback.xml] occurs multiple times on the classpath.
+[info] 17:08:23,281 |-WARN in ch.qos.logback.classic.util.DefaultJoranConfigurator@53067f60 - Resource [logback.xml] occurs at [jar:file:/Users/ilya/scala/wlxjury/target/bg-jobs/sbt_e1f68dca/target/3f1a46a8/832de3ea/wlxjury_2.13-0.13-tests.jar!/logback.xml]
+[info] 17:08:23,281 |-WARN in ch.qos.logback.classic.util.DefaultJoranConfigurator@53067f60 - Resource [logback.xml] occurs at [jar:file:/Users/ilya/scala/wlxjury/target/bg-jobs/sbt_e1f68dca/target/2abad4ee/28ea974f/wlxjury_2.13-0.13.jar!/logback.xml]
+[info] 17:08:23,281 |-WARN in ch.qos.logback.classic.util.DefaultJoranConfigurator@53067f60 - Resource [logback.xml] occurs at [jar:file:/Users/ilya/scala/wlxjury/target/bg-jobs/sbt_e1f68dca/job-1/target/b8869005/2d8572dd/wlxjury_2.13-0.13-jmh.jar!/logback.xml]
+[info] 17:08:23,285 |-INFO in ConfigurationWatchList(mainURL=jar:file:/Users/ilya/scala/wlxjury/target/bg-jobs/sbt_e1f68dca/job-1/target/b8869005/2d8572dd/wlxjury_2.13-0.13-jmh.jar!/logback.xml, fileWatchList={}, urlWatchList=[}) - URL [jar:file:/Users/ilya/scala/wlxjury/target/bg-jobs/sbt_e1f68dca/job-1/target/b8869005/2d8572dd/wlxjury_2.13-0.13-jmh.jar!/logback.xml] is not of type file
+[info] 17:08:23,312 |-WARN in ch.qos.logback.core.joran.action.ConversionRuleAction - [converterClass] attribute is deprecated and replaced by [class]. See element [conversionRule] near line 3
+[info] 17:08:23,337 |-INFO in ch.qos.logback.core.model.processor.ConversionRuleModelHandler - registering conversion word coloredLevel with class [play.api.libs.logback.ColoredLevel]
+[info] 17:08:23,340 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - Processing appender named [STDOUT]
+[info] 17:08:23,340 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - About to instantiate appender of type [ch.qos.logback.core.ConsoleAppender]
+[info] 17:08:23,344 |-INFO in ch.qos.logback.core.model.processor.ImplicitModelHandler - Assuming default type [ch.qos.logback.classic.encoder.PatternLayoutEncoder] for [encoder] property
+[info] 17:08:23,361 |-INFO in ch.qos.logback.core.ConsoleAppender[STDOUT] - BEWARE: Writing to the console can be very slow. Avoid logging to the 
+[info] 17:08:23,361 |-INFO in ch.qos.logback.core.ConsoleAppender[STDOUT] - console in production environments, especially in high volume systems.
+[info] 17:08:23,361 |-INFO in ch.qos.logback.core.ConsoleAppender[STDOUT] - See also https://logback.qos.ch/codes.html#slowConsole
+[info] 17:08:23,362 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - Processing appender named [ASYNCSTDOUT]
+[info] 17:08:23,362 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - About to instantiate appender of type [ch.qos.logback.classic.AsyncAppender]
+[info] 17:08:23,363 |-INFO in ch.qos.logback.core.model.processor.AppenderRefModelHandler - Attaching appender named [STDOUT] to ch.qos.logback.classic.AsyncAppender[ASYNCSTDOUT]
+[info] 17:08:23,363 |-INFO in ch.qos.logback.classic.AsyncAppender[ASYNCSTDOUT] - Attaching appender named [STDOUT] to AsyncAppender.
+[info] 17:08:23,363 |-INFO in ch.qos.logback.classic.AsyncAppender[ASYNCSTDOUT] - Setting discardingThreshold to 51
+[info] 17:08:23,363 |-INFO in ch.qos.logback.classic.model.processor.LoggerModelHandler - Setting level of logger [play] to DEBUG
+[info] 17:08:23,363 |-INFO in ch.qos.logback.classic.model.processor.LoggerModelHandler - Setting level of logger [application] to DEBUG
+[info] 17:08:23,363 |-INFO in ch.qos.logback.classic.model.processor.LoggerModelHandler - Setting level of logger [com.gargoylesoftware.htmlunit.javascript] to OFF
+[info] 17:08:23,363 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - Processing appender named [FILE]
+[info] 17:08:23,363 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - About to instantiate appender of type [ch.qos.logback.core.FileAppender]
+[info] 17:08:23,365 |-INFO in ch.qos.logback.core.model.processor.ModelInterpretationContext@6503c74a - value "./logs/application.log" substituted for "${application.home:-.}/logs/application.log"
+[info] 17:08:23,365 |-INFO in ch.qos.logback.core.model.processor.ImplicitModelHandler - Assuming default type [ch.qos.logback.classic.encoder.PatternLayoutEncoder] for [encoder] property
+[info] 17:08:23,365 |-INFO in ch.qos.logback.core.FileAppender[FILE] - File property is set to [./logs/application.log]
+[info] 17:08:23,366 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - Processing appender named [ASYNCFILE]
+[info] 17:08:23,366 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - About to instantiate appender of type [ch.qos.logback.classic.AsyncAppender]
+[info] 17:08:23,366 |-INFO in ch.qos.logback.core.model.processor.AppenderRefModelHandler - Attaching appender named [FILE] to ch.qos.logback.classic.AsyncAppender[ASYNCFILE]
+[info] 17:08:23,366 |-INFO in ch.qos.logback.classic.AsyncAppender[ASYNCFILE] - Attaching appender named [FILE] to AsyncAppender.
+[info] 17:08:23,366 |-INFO in ch.qos.logback.classic.AsyncAppender[ASYNCFILE] - Setting discardingThreshold to 51
+[info] 17:08:23,366 |-INFO in ch.qos.logback.classic.model.processor.RootLoggerModelHandler - Setting level of ROOT logger to WARN
+[info] 17:08:23,366 |-INFO in ch.qos.logback.core.model.processor.AppenderRefModelHandler - Attaching appender named [ASYNCFILE] to Logger[ROOT]
+[info] 17:08:23,366 |-INFO in ch.qos.logback.core.model.processor.AppenderRefModelHandler - Attaching appender named [ASYNCSTDOUT] to Logger[ROOT]
+[info] 17:08:23,366 |-INFO in ch.qos.logback.core.model.processor.DefaultProcessor@59e59f5 - End of configuration.
+[info] 17:08:23,367 |-INFO in ch.qos.logback.classic.joran.JoranConfigurator@155e8a06 - Registering current configuration as safe fallback point
+[info] 17:08:23,367 |-INFO in ch.qos.logback.classic.util.ContextInitializer@59d3786d - ch.qos.logback.classic.util.DefaultJoranConfigurator.configure() call lasted 88 milliseconds. ExecutionStatus=DO_NOT_INVOKE_NEXT_IF_ANY
+[info] 106.363 ms/op
+[info] # Warmup Iteration   2: 54.034 ms/op
+[info] # Warmup Iteration   3: 55.438 ms/op
+[info] Iteration   1: 54.266 ms/op
+[info] Iteration   2: 59.083 ms/op
+[info] Iteration   3: 56.200 ms/op
+[info] Iteration   4: 51.939 ms/op
+[info] Iteration   5: 51.367 ms/op
+[info] Result "services.FetchAndCacheAllBenchmark.fromLargest":
+[info]   54.571 ±(99.9%) 12.223 ms/op [Average]
+[info]   (min, avg, max) = (51.367, 54.571, 59.083), stdev = 3.174
+[info]   CI (99.9%): [42.348, 66.794] (assumes normal distribution)
+[info] # JMH version: 1.37
+[info] # VM version: JDK 17.0.18, OpenJDK 64-Bit Server VM, 17.0.18+8
+[info] # VM invoker: /Users/ilya/.sdkman/candidates/java/17.0.18-tem/bin/java
+[info] # VM options: -Dconfig.file=test/resources/application.conf -Djna.nosys=true
+[info] # Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
+[info] # Warmup: 3 iterations, 1 s each
+[info] # Measurement: 5 iterations, 1 s each
+[info] # Timeout: 10 min per iteration
+[info] # Threads: 1 thread, will synchronize iterations
+[info] # Benchmark mode: Average time, time/op
+[info] # Benchmark: services.FetchAndCacheAllBenchmark.fromLargest
+[info] # Parameters: (targetHeightStr = 1650)
+[info] # Run progress: 93.75% complete, ETA 00:00:15
+[info] # Fork: 1 of 1
+[info] # Warmup Iteration   1: 17:08:39,761 |-INFO in ch.qos.logback.classic.LoggerContext[default] - This is logback-classic version 1.5.17
+[info] 17:08:39,762 |-INFO in ch.qos.logback.classic.util.ContextInitializer@7c637f2d - No custom configurators were discovered as a service.
+[info] 17:08:39,762 |-INFO in ch.qos.logback.classic.util.ContextInitializer@7c637f2d - Trying to configure with ch.qos.logback.classic.joran.SerializedModelConfigurator
+[info] 17:08:39,763 |-INFO in ch.qos.logback.classic.util.ContextInitializer@7c637f2d - Constructed configurator of type class ch.qos.logback.classic.joran.SerializedModelConfigurator
+[info] 17:08:39,764 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Could NOT find resource [logback-test.scmo]
+[info] 17:08:39,765 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Could NOT find resource [logback.scmo]
+[info] 17:08:39,767 |-INFO in ch.qos.logback.classic.util.ContextInitializer@7c637f2d - ch.qos.logback.classic.joran.SerializedModelConfigurator.configure() call lasted 2 milliseconds. ExecutionStatus=INVOKE_NEXT_IF_ANY
+[info] 17:08:39,767 |-INFO in ch.qos.logback.classic.util.ContextInitializer@7c637f2d - Trying to configure with ch.qos.logback.classic.util.DefaultJoranConfigurator
+[info] 17:08:39,767 |-INFO in ch.qos.logback.classic.util.ContextInitializer@7c637f2d - Constructed configurator of type class ch.qos.logback.classic.util.DefaultJoranConfigurator
+[info] 17:08:39,767 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Could NOT find resource [logback-test.xml]
+[info] 17:08:39,768 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Found resource [logback.xml] at [jar:file:/Users/ilya/scala/wlxjury/target/bg-jobs/sbt_e1f68dca/job-1/target/b8869005/2d8572dd/wlxjury_2.13-0.13-jmh.jar!/logback.xml]
+[info] 17:08:39,769 |-WARN in ch.qos.logback.classic.util.DefaultJoranConfigurator@38962aff - Resource [logback.xml] occurs multiple times on the classpath.
+[info] 17:08:39,769 |-WARN in ch.qos.logback.classic.util.DefaultJoranConfigurator@38962aff - Resource [logback.xml] occurs at [jar:file:/Users/ilya/scala/wlxjury/target/bg-jobs/sbt_e1f68dca/target/3f1a46a8/832de3ea/wlxjury_2.13-0.13-tests.jar!/logback.xml]
+[info] 17:08:39,769 |-WARN in ch.qos.logback.classic.util.DefaultJoranConfigurator@38962aff - Resource [logback.xml] occurs at [jar:file:/Users/ilya/scala/wlxjury/target/bg-jobs/sbt_e1f68dca/target/2abad4ee/28ea974f/wlxjury_2.13-0.13.jar!/logback.xml]
+[info] 17:08:39,769 |-WARN in ch.qos.logback.classic.util.DefaultJoranConfigurator@38962aff - Resource [logback.xml] occurs at [jar:file:/Users/ilya/scala/wlxjury/target/bg-jobs/sbt_e1f68dca/job-1/target/b8869005/2d8572dd/wlxjury_2.13-0.13-jmh.jar!/logback.xml]
+[info] 17:08:39,773 |-INFO in ConfigurationWatchList(mainURL=jar:file:/Users/ilya/scala/wlxjury/target/bg-jobs/sbt_e1f68dca/job-1/target/b8869005/2d8572dd/wlxjury_2.13-0.13-jmh.jar!/logback.xml, fileWatchList={}, urlWatchList=[}) - URL [jar:file:/Users/ilya/scala/wlxjury/target/bg-jobs/sbt_e1f68dca/job-1/target/b8869005/2d8572dd/wlxjury_2.13-0.13-jmh.jar!/logback.xml] is not of type file
+[info] 17:08:39,800 |-WARN in ch.qos.logback.core.joran.action.ConversionRuleAction - [converterClass] attribute is deprecated and replaced by [class]. See element [conversionRule] near line 3
+[info] 17:08:39,826 |-INFO in ch.qos.logback.core.model.processor.ConversionRuleModelHandler - registering conversion word coloredLevel with class [play.api.libs.logback.ColoredLevel]
+[info] 17:08:39,829 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - Processing appender named [STDOUT]
+[info] 17:08:39,829 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - About to instantiate appender of type [ch.qos.logback.core.ConsoleAppender]
+[info] 17:08:39,834 |-INFO in ch.qos.logback.core.model.processor.ImplicitModelHandler - Assuming default type [ch.qos.logback.classic.encoder.PatternLayoutEncoder] for [encoder] property
+[info] 17:08:39,851 |-INFO in ch.qos.logback.core.ConsoleAppender[STDOUT] - BEWARE: Writing to the console can be very slow. Avoid logging to the 
+[info] 17:08:39,852 |-INFO in ch.qos.logback.core.ConsoleAppender[STDOUT] - console in production environments, especially in high volume systems.
+[info] 17:08:39,852 |-INFO in ch.qos.logback.core.ConsoleAppender[STDOUT] - See also https://logback.qos.ch/codes.html#slowConsole
+[info] 17:08:39,852 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - Processing appender named [ASYNCSTDOUT]
+[info] 17:08:39,852 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - About to instantiate appender of type [ch.qos.logback.classic.AsyncAppender]
+[info] 17:08:39,853 |-INFO in ch.qos.logback.core.model.processor.AppenderRefModelHandler - Attaching appender named [STDOUT] to ch.qos.logback.classic.AsyncAppender[ASYNCSTDOUT]
+[info] 17:08:39,853 |-INFO in ch.qos.logback.classic.AsyncAppender[ASYNCSTDOUT] - Attaching appender named [STDOUT] to AsyncAppender.
+[info] 17:08:39,853 |-INFO in ch.qos.logback.classic.AsyncAppender[ASYNCSTDOUT] - Setting discardingThreshold to 51
+[info] 17:08:39,854 |-INFO in ch.qos.logback.classic.model.processor.LoggerModelHandler - Setting level of logger [play] to DEBUG
+[info] 17:08:39,854 |-INFO in ch.qos.logback.classic.model.processor.LoggerModelHandler - Setting level of logger [application] to DEBUG
+[info] 17:08:39,854 |-INFO in ch.qos.logback.classic.model.processor.LoggerModelHandler - Setting level of logger [com.gargoylesoftware.htmlunit.javascript] to OFF
+[info] 17:08:39,854 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - Processing appender named [FILE]
+[info] 17:08:39,854 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - About to instantiate appender of type [ch.qos.logback.core.FileAppender]
+[info] 17:08:39,855 |-INFO in ch.qos.logback.core.model.processor.ModelInterpretationContext@5e6dc533 - value "./logs/application.log" substituted for "${application.home:-.}/logs/application.log"
+[info] 17:08:39,855 |-INFO in ch.qos.logback.core.model.processor.ImplicitModelHandler - Assuming default type [ch.qos.logback.classic.encoder.PatternLayoutEncoder] for [encoder] property
+[info] 17:08:39,856 |-INFO in ch.qos.logback.core.FileAppender[FILE] - File property is set to [./logs/application.log]
+[info] 17:08:39,856 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - Processing appender named [ASYNCFILE]
+[info] 17:08:39,856 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - About to instantiate appender of type [ch.qos.logback.classic.AsyncAppender]
+[info] 17:08:39,856 |-INFO in ch.qos.logback.core.model.processor.AppenderRefModelHandler - Attaching appender named [FILE] to ch.qos.logback.classic.AsyncAppender[ASYNCFILE]
+[info] 17:08:39,856 |-INFO in ch.qos.logback.classic.AsyncAppender[ASYNCFILE] - Attaching appender named [FILE] to AsyncAppender.
+[info] 17:08:39,856 |-INFO in ch.qos.logback.classic.AsyncAppender[ASYNCFILE] - Setting discardingThreshold to 51
+[info] 17:08:39,857 |-INFO in ch.qos.logback.classic.model.processor.RootLoggerModelHandler - Setting level of ROOT logger to WARN
+[info] 17:08:39,857 |-INFO in ch.qos.logback.core.model.processor.AppenderRefModelHandler - Attaching appender named [ASYNCFILE] to Logger[ROOT]
+[info] 17:08:39,857 |-INFO in ch.qos.logback.core.model.processor.AppenderRefModelHandler - Attaching appender named [ASYNCSTDOUT] to Logger[ROOT]
+[info] 17:08:39,857 |-INFO in ch.qos.logback.core.model.processor.DefaultProcessor@5725cdd3 - End of configuration.
+[info] 17:08:39,857 |-INFO in ch.qos.logback.classic.joran.JoranConfigurator@f3a6ed1 - Registering current configuration as safe fallback point
+[info] 17:08:39,857 |-INFO in ch.qos.logback.classic.util.ContextInitializer@7c637f2d - ch.qos.logback.classic.util.DefaultJoranConfigurator.configure() call lasted 90 milliseconds. ExecutionStatus=DO_NOT_INVOKE_NEXT_IF_ANY
+[info] 93.303 ms/op
+[info] # Warmup Iteration   2: 53.780 ms/op
+[info] # Warmup Iteration   3: 55.051 ms/op
+[info] Iteration   1: 48.410 ms/op
+[info] Iteration   2: 49.078 ms/op
+[info] Iteration   3: 68.029 ms/op
+[info] Iteration   4: 52.492 ms/op
+[info] Iteration   5: 51.466 ms/op
+[info] Result "services.FetchAndCacheAllBenchmark.fromLargest":
+[info]   53.895 ±(99.9%) 31.100 ms/op [Average]
+[info]   (min, avg, max) = (48.410, 53.895, 68.029), stdev = 8.077
+[info]   CI (99.9%): [22.795, 84.995] (assumes normal distribution)
+[info] # Run complete. Total time: 00:04:06
+[info] REMEMBER: The numbers below are just data. To gain reusable insights, you need to follow up on
+[info] why the numbers are the way they are. Use profilers (see -prof, -lprof), design factorial
+[info] experiments, perform baseline and negative tests that provide experimental control, make sure
+[info] the benchmarking environment is safe on JVM/OS/HW level, ask for reviews from the domain experts.
+[info] Do not assume the numbers tell you what you want them to tell.
+[info] NOTE: Current JVM experimentally supports Compiler Blackholes, and they are in use. Please exercise
+[info] extra caution when trusting the results, look into the generated code to check the benchmark still
+[info] works, and factor in a small probability of new VM bugs. Additionally, while comparisons between
+[info] different JVMs are already problematic, the performance difference caused by different Blackhole
+[info] modes can be very significant. Please make sure you use the consistent Blackhole mode for comparisons.
+[info] Benchmark                              (targetHeightStr)  Mode  Cnt   Score    Error  Units
+[info] FetchAndCacheAllBenchmark.cascaded                   120  avgt    5  51.432 ± 39.539  ms/op
+[info] FetchAndCacheAllBenchmark.cascaded                   180  avgt    5  46.284 ±  2.968  ms/op
+[info] FetchAndCacheAllBenchmark.cascaded                   240  avgt    5  46.261 ±  2.425  ms/op
+[info] FetchAndCacheAllBenchmark.cascaded                   250  avgt    5  45.407 ±  3.440  ms/op
+[info] FetchAndCacheAllBenchmark.cascaded                   375  avgt    5  48.571 ± 30.824  ms/op
+[info] FetchAndCacheAllBenchmark.cascaded                   500  avgt    5  43.783 ±  2.977  ms/op
+[info] FetchAndCacheAllBenchmark.cascaded                  1100  avgt    5  53.899 ±  2.925  ms/op
+[info] FetchAndCacheAllBenchmark.cascaded                  1650  avgt    5  51.090 ±  3.859  ms/op
+[info] FetchAndCacheAllBenchmark.fromLargest                120  avgt    5   1.289 ±  1.114  ms/op
+[info] FetchAndCacheAllBenchmark.fromLargest                180  avgt    5   1.944 ±  0.394  ms/op
+[info] FetchAndCacheAllBenchmark.fromLargest                240  avgt    5   3.499 ±  1.154  ms/op
+[info] FetchAndCacheAllBenchmark.fromLargest                250  avgt    5   3.387 ±  0.530  ms/op
+[info] FetchAndCacheAllBenchmark.fromLargest                375  avgt    5   7.094 ±  0.553  ms/op
+[info] FetchAndCacheAllBenchmark.fromLargest                500  avgt    5  11.848 ±  1.403  ms/op
+[info] FetchAndCacheAllBenchmark.fromLargest               1100  avgt    5  54.571 ± 12.223  ms/op
+[info] FetchAndCacheAllBenchmark.fromLargest               1650  avgt    5  53.895 ± 31.100  ms/op
+[success] Total time: 251 s (04:11), completed Mar 10, 2026, 5:08:51 PM
