@@ -80,7 +80,8 @@ object SharedTestDb {
     Round.usersRef
 
     Runtime.getRuntime.addShutdownHook(new Thread(() => {
-      ConnectionPool.closeAll()
+      // a Play DataSourceConnectionPool left as the default throws on close: stop the container anyway
+      scala.util.Try(ConnectionPool.closeAll())
       container.stop()
     }))
 

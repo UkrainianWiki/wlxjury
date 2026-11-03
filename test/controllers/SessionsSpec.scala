@@ -269,10 +269,12 @@ class SessionsSpec extends PlaySpecification with PlayTestDb with AccountTestSup
       withCsrfApp { implicit app =>
         createContests(10)
         val juror = contestMember("juror@example.com")
+        // the sign-in page's token: every POST needs it, cookies or not (S7, N6)
+        val csrf = token(app)
         def signIn(fields: (String, String)*) =
-          route(app, FakeRequest(POST, "/auth")
+          route(app, FakeRequest(POST, "/auth").withSession("csrfToken" -> csrf)
             .withFormUrlEncodedBody(Seq("login" -> juror.email, "password" -> "secret",
-              "returnTo" -> s"/users/edit/${juror.getId}") ++ fields: _*)).get
+              "returnTo" -> s"/users/edit/${juror.getId}", "csrfToken" -> csrf) ++ fields: _*)).get
 
         val kept = signIn("remember" -> "true")
         status(kept) === SEE_OTHER
@@ -399,8 +401,9 @@ class SessionsSpec extends PlaySpecification with PlayTestDb with AccountTestSup
         status(send(app, GET, s"/users/edit/${juror.getId}", old)) === OK
         status(send(app, GET, s"/users/edit/${juror.getId}", old)) === OK
       }
-      // after the window (a fresh app reads it): the old cookie is signed out, an S3 one is not
-      withCsrfApp { implicit app =>
+      // after the window (a fresh app reads it, not the shared one, which has read it open): the
+      // old cookie is signed out, an S3 one is not
+      security.ProductionFilters.withApp { implicit app =>
         createContests(10)
         val juror = contestMember("juror@example.com")
         setWindow(-1)
