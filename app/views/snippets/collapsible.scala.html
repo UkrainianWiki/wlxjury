@@ -1,13 +1,13 @@
 @(titleKey: String, headingId: String, collapsibleId: String, open: Boolean = false)(body: Html)(implicit messages: Messages)
-<div class="panel panel-default">
-    <div class="panel-heading" id="@headingId">
-        <a role="button" data-toggle="collapse" href="#@collapsibleId" aria-expanded="@open" aria-controls="@collapsibleId">
-            <h3 class="panel-title">@Messages(titleKey)</h3>
+<div class="card mb-3">
+    <div class="card-header" id="@headingId">
+        <a role="button" class="d-block text-decoration-none@if(!open) { collapsed}" data-bs-toggle="collapse" href="#@collapsibleId" aria-expanded="@open" aria-controls="@collapsibleId">
+            <h3 class="h6 mb-0">@Messages(titleKey)</h3>
         </a>
     </div>
 
-    <div id="@collapsibleId" class="panel-collapse collapse @if(open) {in}" role="tabpanel" aria-labelledby="@headingId">
-        <div class="panel-body">
+    <div id="@collapsibleId" class="collapse@if(open) { show}" aria-labelledby="@headingId">
+        <div class="card-body">
             @body
         </div>
     </div>

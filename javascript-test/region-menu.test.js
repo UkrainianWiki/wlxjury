@@ -7,27 +7,30 @@
 // A round gallery's region menu (region-menu.js): its regions are read on its first opening
 // only, listed with their counts, kept for the page; a failure keeps the page's own items and
 // says so, and the next opening tries again. The menu below is regionMenu.scala.html's, as
-// rendered in the navbar for a juror in a region; it is a Bootstrap dropdown, whose show.bs.dropdown and
-// hide.bs.dropdown (jQuery events) are triggered here as Bootstrap's dropdown.js triggers them.
+// rendered in the navbar for a juror in a region; it is a Bootstrap 5 dropdown, opened and closed here
+// by Bootstrap's own script (the bundle, as the pages load it), with and without jQuery.
 
 const path = require("path");
 
+const bootstrap = require("bootstrap/dist/js/bootstrap.bundle.js");
 const SCRIPT = path.join(__dirname, "..", "public", "javascripts", "region-menu.js");
 const REGIONS_URL = "/regions/round/1/user/2/region/80";
 
 const MENU = `
-<ul class="nav navbar-nav">
-    <li class="dropdown region-menu" id="regionmenu" data-regions-url="${REGIONS_URL}"
+<nav class="navbar navbar-expand" data-bs-theme="dark">
+<ul class="navbar-nav">
+    <li class="nav-item dropdown region-menu" id="regionmenu" data-regions-url="${REGIONS_URL}"
         data-loading="LOADING" data-failed="FAILED">
-        <a class="dropdown-toggle" href="/gallery/round/1/user/2/page/1" data-toggle="dropdown" role="button"
-            aria-haspopup="true" aria-expanded="false">Region: <b>Kyiv</b> <span class="caret"></span></a>
+        <a class="nav-link dropdown-toggle" href="/gallery/round/1/user/2/page/1" data-bs-toggle="dropdown" role="button"
+            aria-expanded="false">Region: <b>Kyiv</b></a>
         <ul class="dropdown-menu region-menu-list">
-            <li><a href="/gallery/round/1/user/2/page/1">All</a></li>
-            <li class="active"><a href="/gallery/round/1/user/2/region/80/page/1">Kyiv</a></li>
-            <li class="region-menu-status"></li>
+            <li><a class="dropdown-item" href="/gallery/round/1/user/2/page/1">All</a></li>
+            <li><a class="dropdown-item active" href="/gallery/round/1/user/2/region/80/page/1">Kyiv</a></li>
+            <li class="region-menu-status dropdown-item-text"></li>
         </ul>
     </li>
-</ul>`;
+</ul>
+</nav>`;
 
 const REGIONS = {
     current: "80",
@@ -55,22 +58,35 @@ function menu() {
     return document.getElementById("regionmenu");
 }
 
-/** Opens the menu as Bootstrap's dropdown.js does: show.bs.dropdown on the toggle's parent. */
+function toggle() {
+    return menu().querySelector("[data-bs-toggle=dropdown]");
+}
+
+/** Opens the menu as a click on its toggle does (Bootstrap's data API); if it is open, closes it. */
+async function click() {
+    toggle().click();
+    await settle();
+}
+
+/** Opens the menu (Bootstrap's show.bs.dropdown, dispatched on the toggle). */
 async function open() {
-    window.jQuery(menu()).trigger("show.bs.dropdown");
+    bootstrap.Dropdown.getOrCreateInstance(toggle()).show();
     await settle();
 }
 
 async function close() {
-    window.jQuery(menu()).trigger("hide.bs.dropdown");
+    bootstrap.Dropdown.getOrCreateInstance(toggle()).hide();
     await settle();
 }
 
-/** The menu's items: text, link and classes. */
+/** The menu's items: text, link and classes (the item's and its link's, but dropdown-item). */
 function items() {
     return Array.from(menu().querySelectorAll(".region-menu-list > li")).map(li => {
         const a = li.querySelector("a");
-        return { text: li.textContent.trim(), href: a && a.getAttribute("href"), classes: li.className };
+        const classes = li.querySelector("hr.dropdown-divider") ? "divider"
+            : [li.className, a ? a.className : ""].join(" ").split(/\s+/)
+                .filter(c => c && c !== "dropdown-item" && c !== "dropdown-item-text" && c !== "region-menu-status").join(" ");
+        return { text: li.textContent.trim(), href: a && a.getAttribute("href"), classes };
     });
 }
 
@@ -123,7 +139,7 @@ test("lists all, then the regions with their counts, the region shown active, ki
         { text: "", href: null, classes: "divider" },
         // no count (not counted): the name alone; a name is text, never markup
         { text: "Nature <b>reserves</b>", href: "/gallery/round/1/user/2/region/WLE/page/1",
-          classes: " region-nomination" }
+          classes: "region-nomination" }
     ]);
     expect(menu().querySelector(".region-menu-list b")).toBeNull();
 });
@@ -184,8 +200,24 @@ test("closing the menu reads nothing", async () => {
     expect(fetch).not.toHaveBeenCalled();
 });
 
-test("does nothing without jQuery (Bootstrap's dropdown needs it too)", async () => {
+test("a click on the toggle opens it and reads the regions", async () => {
+    fetch.mockReturnValue(answer(200, REGIONS));
+
+    await click();
+
+    expect(toggle().getAttribute("aria-expanded")).toBe("true");
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(items().map(i => i.text)).toEqual(["All", "Volyn (12)", "Kyiv (0)", "", "Nature <b>reserves</b>"]);
+});
+
+test("works without jQuery: Bootstrap 5 then dispatches its events natively only", async () => {
+    document.body.innerHTML = MENU;
     delete window.jQuery;
     delete window.$;
-    expect(() => jest.isolateModules(() => require(SCRIPT))).not.toThrow();
+    jest.isolateModules(() => require(SCRIPT));
+    fetch.mockReturnValue(answer(200, REGIONS));
+
+    await open();
+
+    expect(fetch).toHaveBeenCalledTimes(1);
 });

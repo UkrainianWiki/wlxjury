@@ -7,16 +7,14 @@
 )(implicit flash: Flash, messages: Messages, request: RequestHeader)
     @import helper._
 
-    @implicitFieldConstructor = @{
-        b3.horizontal.fieldConstructor("col-md-4", "col-md-8")
-    }
+    @implicitLayout = @{ bs.Layout.horizontal("col-md-4", "col-md-8") }
 
     @mainAdmin("users", adminUser, adminUser.getId, contestId = Some(contestId)) {
         <div class="row" >
 
             <h3>@Messages("edit.greeting.template")</h3>
 
-            <table class="table table-striped table-condensed">
+            <table class="table table-striped table-sm">
                 <caption>@Messages("variables")</caption>
                 <thead>
                     <tr>
@@ -35,23 +33,22 @@
             </table>
 
             @form(routes.UserController.saveGreeting(Some(contestId)), Symbol("id") -> "greeting-template") {
-                <div class="form-group">
+                <div class="mb-3">
 
-                    @textarea(field = importUserForm("greetingtemplate"),
-                        args = Symbol("rows") -> 15,
+                    @bs.textarea(importUserForm("greetingtemplate"),
+                        Symbol("rows") -> 15,
                         Symbol("cols") -> 50,
-                        Symbol("class") -> "form-control",
                         Symbol("id") -> "greeting-template",
                         Symbol("_label") -> Messages("greeting.template")
                     )
 
-                    @b3.checkbox(importUserForm("use"), Symbol("_label") -> Messages("send.greeting.to.new.users"))
+                    @bs.checkbox(importUserForm("use"), Symbol("_label") -> Messages("send.greeting.to.new.users"))
                     @helper.CSRF.formField
 
                     <div class="form-actions">
-                        <input type="submit" class="btn btn-default btn-primary" value="@Messages("save")">
-                        <a href="#substitution" class="btn btn-info" data-toggle="collapse">@Messages("check")</a>
-                        <a href="@routes.UserController.users(Some(contestId))" class="btn btn-default">@Messages("cancel")</a>
+                        <input type="submit" class="btn btn-primary" value="@Messages("save")">
+                        <a href="#substitution" class="btn btn-info" data-bs-toggle="collapse">@Messages("check")</a>
+                        <a href="@routes.UserController.users(Some(contestId))" class="btn btn-outline-secondary">@Messages("cancel")</a>
                     </div>
                 </div>
 

@@ -2,7 +2,7 @@
 @import db.scalikejdbc.Round
 @(user: User, round: Round, stat: RoundStat)(implicit flash: Flash, messages: Messages, req: RequestHeader)
 
-<table class="table table-striped table-condensed">
+<table class="table table-striped table-sm">
     <thead>
         <tr>
             <th>@Messages("N")</th>
@@ -33,13 +33,13 @@
 
                 @if(round.isBinary) {
                     <a href="/gallery/round/@round.id/user/@user.id/page/1">
-                        <button type="button" class="btn btn-default btn-xs @if(count == 0) {disabled}">
-                            <span class="glyphicon glyphicon-th" aria-hidden="true"></span>
+                        <button type="button" class="btn btn-outline-secondary btn-sm py-0 px-1 @if(count == 0) {disabled}">
+                            <i class="bi bi-grid-3x3-gap-fill" aria-hidden="true"></i>
                         </button>
                     </a>
                     <a href="/filelist/round/@round.id/user/@user.id/page/1">
-                        <button type="button" class="btn btn-default btn-xs @if(count == 0) {disabled}">
-                            <span class="glyphicon glyphicon-align-justify" aria-hidden="true"></span>
+                        <button type="button" class="btn btn-outline-secondary btn-sm py-0 px-1 @if(count == 0) {disabled}">
+                            <i class="bi bi-list-ul" aria-hidden="true"></i>
                         </button>
                     </a>
                 }
@@ -75,13 +75,13 @@
                 </th>
                 <th>
                         <a href="@RoundList(round, 0, view = GalleryView.ByRate).pageUrl(1)">
-                            <button type="button" class="btn btn-default btn-xs @if(total == 0) {disabled}">
-                                <span class="glyphicon glyphicon-signal" aria-hidden="true"></span>
+                            <button type="button" class="btn btn-outline-secondary btn-sm py-0 px-1 @if(total == 0) {disabled}">
+                                <i class="bi bi-bar-chart-fill" aria-hidden="true"></i>
                             </button>
                         </a>
                         <a href="@RoundList(round, 0, view = GalleryView.FileList).pageUrl(1)">
-                            <button type="button" class="btn btn-default btn-xs @if(total == 0) {disabled}">
-                                <span class="glyphicon glyphicon-align-justify" aria-hidden="true"></span>
+                            <button type="button" class="btn btn-outline-secondary btn-sm py-0 px-1 @if(total == 0) {disabled}">
+                                <i class="bi bi-list-ul" aria-hidden="true"></i>
                             </button>
                         </a>
                     @total
@@ -94,13 +94,13 @@
                     <div class="btn-group">
                     @if(round.isBinary) {
                         <a href="@RoundList(round, 0, filter = VoteFilter.Rate(1), view = GalleryView.ByRate).pageUrl(1)">
-                            <button type="button" class="btn btn-default btn-xs @if(total == 0) {disabled}">
-                                <span class="glyphicon glyphicon-signal" aria-hidden="true"></span>
+                            <button type="button" class="btn btn-outline-secondary btn-sm py-0 px-1 @if(total == 0) {disabled}">
+                                <i class="bi bi-bar-chart-fill" aria-hidden="true"></i>
                             </button>
                         </a>
                         <a href="@RoundList(round, 0, filter = VoteFilter.Rate(1), view = GalleryView.FileList).pageUrl(1)">
-                            <button type="button" class="btn btn-default btn-xs @if(total == 0) {disabled}">
-                                <span class="glyphicon glyphicon-align-justify" aria-hidden="true"></span>
+                            <button type="button" class="btn btn-outline-secondary btn-sm py-0 px-1 @if(total == 0) {disabled}">
+                                <i class="bi bi-list-ul" aria-hidden="true"></i>
                             </button>
                         </a>
                     }

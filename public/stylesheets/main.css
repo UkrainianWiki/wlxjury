@@ -3,39 +3,36 @@ ol, ul {
     padding: 0;
 }
 
-body.gallery{
+/* the galleries and the large views (data-bs-theme="dark"): their grey, as before */
+body.gallery {
+    --bs-body-bg: #303030;
     background-color: #303030;
 }
 
-/* the navbar's selected and rejected tabs (navbar.scala.html ownTabs), when not the active one */
-.navbar-inverse .nav .selected> a {
-    color : #5bc75b;
+/* the navbar's links a little apart, and the page's own tab (ownTabs) or menu item marked as
+   Bootstrap 3's dark navbar marked it */
+.navbar .navbar-nav .nav-link {
+    padding-left: .6rem;
+    padding-right: .6rem;
 }
-.navbar-inverse .nav .rejected> a {
-    color : #c75b5b;
+.navbar .navbar-nav .nav-link.active {
+    background-color: #080808;
+}
+/* the navbar's selected and rejected tabs (navbar.scala.html ownTabs) */
+.navbar .nav-item.vote-selected > .nav-link {
+    color: #5bc75b;
+}
+.navbar .nav-item.vote-rejected > .nav-link {
+    color: #c75b5b;
 }
 
-#regionnav>li.region-nomination>a {
+#regionnav>li.region-nomination>a, .region-menu-list>li.region-nomination>a {
     font-style: italic;
 }
 
 #regionnav>li.region-separator>span {
     border: none;
     background: none;
-}
-
-#regionnav>li>a {
-    padding-top: 4px;
-    padding-right: 8px;
-    padding-bottom: 4px;
-    padding-left: 8px;
-}
-
-#pagenav>li>a, #pagenav>li>span {
-    padding-top: 4px;
-    padding-right: 8px;
-    padding-bottom: 4px;
-    padding-left: 8px;
 }
 
 
@@ -159,46 +156,6 @@ a.wlx-large-failed {
 a.wlx-large-failed img {
     display: none;
 }
-/* The contest files page (contestFiles.scala.html), on the galleries' dark background: its
-   heading, tabs and notes. */
-.contest-files-head {
-    color: #ddd;
-}
-.contest-files-head h4 {
-    color: #eee;
-}
-.contest-files-head a {
-    color: #9cc9ff;
-}
-/* Bootstrap's a:hover / a:focus colour, which won over the rule above (the same specificity)
-   while main.css loaded before Bootstrap: :where() keeps this rule at that specificity */
-:where(.contest-files-head) a:hover, :where(.contest-files-head) a:focus {
-    color: #23527c;
-}
-.contest-files-head a.btn-default {
-    color: #333;
-}
-.contest-files-head .text-muted {
-    color: #aaa;
-}
-.contest-files-head .nav-tabs {
-    border-bottom-color: #555;
-    margin-bottom: 10px;
-}
-.contest-files-head .nav-tabs > li > a {
-    color: #ccc;
-}
-.contest-files-head .nav-tabs > li > a:hover, .contest-files-head .nav-tabs > li > a:focus {
-    color: #fff;
-    background-color: #444;
-    border-color: #555 #555 #555;
-}
-.contest-files-head .nav-tabs > li.active > a, .contest-files-head .nav-tabs > li.active > a:hover,
-.contest-files-head .nav-tabs > li.active > a:focus {
-    color: #fff;
-    background-color: #303030;
-    border-color: #555 #555 transparent;
-}
 /* A file deleted on Commons, in the contest files' gallery (unitegallery.js marks its tile,
    data-deleted) and in its large view's thumbnails: a red frame. The tile's mark links the
    file's page on Commons, above the tile, which opens the large view. */
@@ -209,7 +166,7 @@ a.wlx-large-failed img {
     left: 0;
     right: 0;
     bottom: 0;
-    border: 3px solid #d9534f;
+    border: 3px solid var(--bs-danger);
     z-index: 4;
     pointer-events: none;
 }
@@ -251,57 +208,40 @@ div.thumb_small.wlx-thumb-failed img {
     pointer-events: none;
 }
 
-/* A POST form in a dropdown menu (sign out, switch contest), its button looking like the
-   menu's links (Bootstrap 3's .dropdown-menu > li > a). */
+/* A POST form in a dropdown menu (sign out, switch contest): its button is a dropdown-item */
 .dropdown-menu .navbar-menu-form {
     margin: 0;
-}
-.dropdown-menu .navbar-menu-form .btn-link {
-    display: block;
-    width: 100%;
-    padding: 3px 20px;
-    border: 0;
-    border-radius: 0;
-    clear: both;
-    font-weight: normal;
-    line-height: 1.42857143;
-    color: #333;
-    text-align: left;
-    white-space: nowrap;
-    text-decoration: none;
-}
-.dropdown-menu .navbar-menu-form .btn-link:hover,
-.dropdown-menu .navbar-menu-form .btn-link:focus {
-    color: #262626;
-    background-color: #f5f5f5;
-}
-.dropdown-menu > .active .navbar-menu-form .btn-link {
-    color: #fff;
-    background-color: #337ab7;
 }
 
 /* A gallery's region or country menu in the navbar (regionMenu.scala.html): a long list scrolls */
 .region-menu .region-menu-list { min-width: 240px; max-height: 70vh; overflow-y: auto; }
-.region-menu-status { padding: 3px 20px; color: #777; white-space: normal; }
+.region-menu-status { color: var(--bs-secondary-color); white-space: normal; }
 .region-menu-status:empty { display: none; }
 
 /* The pager's page box (pageLinks.scala.html), in a dropdown of the items shown */
-/* floated as Bootstrap floats the pager's links, so it stays between them; the box opens under
-   it from its left edge, as wide as its contents (pager-jump.js opens it leftwards only if it
-   would leave the window) */
-.pagination > .pager-jump-menu { position: relative; float: left; }
+/* the box opens under it from its left edge, as wide as its contents (pager-jump.js opens it
+   leftwards only if it would leave the window) */
+.pagination > .pager-jump-menu { position: relative; }
 .dropdown-menu.pager-jump-box { padding: 8px 12px; min-width: 0; }
 .pager-jump { white-space: nowrap; }
 .pager-jump label { font-weight: normal; margin: 0 6px 0 0; }
 /* the number, as wide as its page's digits (pageLinks.scala.html), without the browser's up and
    down arrows: Bootstrap stretches them past the box, which cut off the up one at some zooms;
    the Up and Down keys still step it, and the pager's links step a page */
-.pager-jump input[type=number] { display: inline-block; height: 30px; padding: 2px 6px; margin: 0 4px;
+.pager-jump input[type=number] { display: inline-block; padding: 2px 6px; margin: 0 4px;
     -moz-appearance: textfield; appearance: textfield; }
 .pager-jump input[type=number]::-webkit-inner-spin-button,
 .pager-jump input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
 
-/* A pager link with no page to go to: greyed out, not a link that only forbids the cursor */
-.pagination > .disabled > span,
-.pagination > .disabled > span:hover,
-.pagination > .disabled > span:focus { color: #c8c8c8; background-color: #f7f7f7; cursor: default; }
+/* The round form's multiple selects (multi-select.js, Tom Select): the control sums up the
+   selection, as bootstrap-multiselect's button did, instead of listing each item */
+.wlx-multi .ts-control > .item { display: none; }
+.wlx-multi .ts-control { min-height: calc(1.5em + .75rem + 2px); }
+.wlx-multi .wlx-select-all { padding: .375rem .75rem; }
+.wlx-multi .ts-dropdown .option .tomselect-checkbox { margin-right: .5rem; }
+
+/* a button inside a link (round stat tables): no underline under the spaces around it */
+a:has(> .btn) { text-decoration: none; }
+
+/* the large view's comments header: dark text on its grey, in either mode */
+.comment-header { color: #222; }

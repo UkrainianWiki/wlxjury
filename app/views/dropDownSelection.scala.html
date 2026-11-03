@@ -1,24 +1,21 @@
 @(dto: UiSelectionDto[Any], iconOnly: Boolean = false)(implicit messages: Messages)
-<li class="dropdown">
-
-    <!-- Current selected value with dropdown icon -->
-    <a class="dropdown-toggle" data-toggle="dropdown" role="button" aria-expanded="false" href="#">
-
-        <!-- If no icon: display text, if icon is defined: display icon -->
-        @dto.current.icon.fold(Html(dto.current.localizedText)) { iconClass =>
-                <span class="glyphicon glyphicon-@iconClass" style="font-size: 12px"></span>
+@* A navbar menu: its toggle shows the current item (its icon only if `iconOnly` and it has one,
+   the text then read by screen readers and shown as a tooltip), the menu every item, the current
+   one marked active. Icons are full class strings (`bi bi-…`). *@
+@icon(iconClass: String) = {<i class="@iconClass" aria-hidden="true"></i>}
+<li class="nav-item dropdown">
+    <a class="nav-link dropdown-toggle" data-bs-toggle="dropdown" role="button" aria-expanded="false" href="#"
+        @if(iconOnly && dto.current.icon.nonEmpty) {title="@dto.current.localizedText"}>
+        @dto.current.icon.filter(_ => iconOnly) match {
+            case Some(iconClass) => { @icon(iconClass)<span class="visually-hidden">@dto.current.localizedText</span> }
+            case None => { @dto.current.localizedText }
         }
-        <span class="caret"></span>
     </a>
-
-    <!-- Menu that is shown when clicking on dropdown -->
-    <ul class="dropdown-menu" role="menu">
+    <ul class="dropdown-menu">
         @for((id, value) <- dto.optValues) {
             <li>
-                <a href="@dto.itemUrlFunction(id)">
-                    @value.icon.map { iconClass =>
-                        <i class="@iconClass" style="font-size: 16px" aria-hidden="true"></i>
-                    }
+                <a class="dropdown-item@if(id == dto.selectedItemId) { active}" @if(id == dto.selectedItemId) {aria-current="true" }href="@dto.itemUrlFunction(id)">
+                    @value.icon.map { iconClass => @icon(iconClass) }
                     @value.localizedText
                 </a>
             </li>

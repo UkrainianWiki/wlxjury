@@ -1,0 +1,23 @@
+@* A field's wrapper for the bs helpers: label, the input, help and errors, laid out by the layout *@
+@(f: FieldView)(input: Html)(implicit layout: Layout)
+@labelTag(cls: String) = {
+@for(l <- f.label) {<label class="@cls@if(f.labelHidden){ visually-hidden}" for="@f.id">@l</label>}
+}
+@layout.horizontal match {
+case Some(h) => {
+<div class="row mb-3" id="@f.wrapperId">
+    @labelTag(h.labelCol + " col-form-label")
+    <div class="@if(f.labelVisible){@h.fieldCol} else {@h.offsetFieldCol}">
+        @input
+        @feedback(f)
+    </div>
+</div>
+}
+case None => {
+<div class="mb-3" id="@f.wrapperId">
+    @labelTag("form-label")
+    @input
+    @feedback(f)
+</div>
+}
+}

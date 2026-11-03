@@ -119,11 +119,11 @@ class GalleryOrderSpec extends PlaySpecification with PlayTestDb {
         val html = page(gallery(f, "?filter=unrated"), f).replace("&amp;", "&")
         val base = s"/gallery/round/${f.round.getId}/user/${f.juror.getId}/page/1"
 
-        html must contain(s"""<a href="$base?sort=file">All (20)</a>""")
-        html must contain(s"""<a href="$base?filter=unrated&sort=file">Unrated (19)</a>""")
-        html must contain(s"""<a href="$base?filter=rated&sort=file">Rated (1)</a>""")
+        html must contain(s"""href="$base?sort=file">All (20)</a>""")
+        html must contain(s"""href="$base?filter=unrated&sort=file">Unrated (19)</a>""")
+        html must contain(s"""href="$base?filter=rated&sort=file">Rated (1)</a>""")
         // the unrated tab is the page's
-        html must beMatching(s"""(?s).*<li role="presentation" class="active">\\s*<a href="\\Q$base?filter=unrated&sort=file\\E">.*""")
+        html must contain(s"""<a class="nav-link active" aria-current="page" href="$base?filter=unrated&sort=file">""")
         html must contain(s"""href="$base?filter=unrated&sort=rate"""")
       }
     }
@@ -136,10 +136,10 @@ class GalleryOrderSpec extends PlaySpecification with PlayTestDb {
         val html = page(gallery(f), f).replace("&amp;", "&")
         val base = s"/gallery/round/${f.round.getId}/user/${f.juror.getId}/page/1"
 
-        html must contain(s"""<a href="$base?sort=file">All (20)</a>""")
-        html must contain(s"""<a href="$base?filter=unrated&sort=file">Unrated (18)</a>""")
-        html must contain(s"""<a href="$base?filter=selected&sort=file">Selected (1)</a>""")
-        html must contain(s"""<a href="$base?filter=rejected&sort=file">Rejected (1)</a>""")
+        html must contain(s"""href="$base?sort=file">All (20)</a>""")
+        html must contain(s"""href="$base?filter=unrated&sort=file">Unrated (18)</a>""")
+        html must contain(s"""href="$base?filter=selected&sort=file">Selected (1)</a>""")
+        html must contain(s"""href="$base?filter=rejected&sort=file">Rejected (1)</a>""")
       }
     }
   }

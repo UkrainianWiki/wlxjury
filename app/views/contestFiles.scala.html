@@ -9,14 +9,16 @@
    (gallery.scala.html): the country and region menus and the pager in the navbar, justified tiles. A tile
    opens the file's large view; a deleted file's mark (unitegallery.js, data-deleted) links
    its page on Commons. *@
+@* a tab's link: the page's own marked active *@
+@tab(active: Boolean) = @{ if (active) Html(""" class="nav-link active" aria-current="page"""") else Html(""" class="nav-link"""") }
 @main("contest.files", user, gallery = true, pager = pagerNav(pager, view.pageUrl), contestId = view.contest.id,
     filters = regionMenu(view.countryMenu.toSeq ++ view.regionMenu)) {
 
-    <div class="contest-files-head">
+    <div class="contest-files-head" id="contest-files-head">
         <h4>@Messages("contest") @view.contest.fullName
             @* the files' import and local cache, for the contest's admins *@
             @if(user.canManageContestFiles(view.contest.getId)) {
-                <a id="import-files" class="btn btn-default btn-xs" style="margin-left: 10px"
+                <a id="import-files" class="btn btn-outline-secondary btn-sm ms-2"
                    href="@routes.ImageController.images(view.contest.getId)">@Messages("files.import.cache")</a>
             }
         </h4>
@@ -30,16 +32,16 @@
                 <p><a href="@routes.RoundController.roundStat(round.getId)">@Messages("statistics")</a></p>
             }
             case None => {
-                <ul class="nav nav-tabs" id="file-tabs">
-                    <li @if(!view.deletedOnly && !view.coi) {class="active"}>
-                        <a href="@routes.GalleryController.contestFiles(view.contest.getId)">@Messages("files.all") (@view.allCount)</a>
+                <ul class="nav nav-tabs mb-2" id="file-tabs">
+                    <li class="nav-item">
+                        <a@tab(!view.deletedOnly && !view.coi) href="@routes.GalleryController.contestFiles(view.contest.getId)">@Messages("files.all") (@view.allCount)</a>
                     </li>
-                    <li @if(view.deletedOnly && !view.coi) {class="active"}>
-                        <a href="@routes.GalleryController.contestFiles(view.contest.getId, deleted = true)">@Messages("files.deleted.on.commons") (@view.deletedCount)</a>
+                    <li class="nav-item">
+                        <a@tab(view.deletedOnly && !view.coi) href="@routes.GalleryController.contestFiles(view.contest.getId, deleted = true)">@Messages("files.deleted.on.commons") (@view.deletedCount)</a>
                     </li>
                     @* the files a round that leaves out conflicts of interest leaves out, and whose they are *@
-                    <li @if(view.coi) {class="active"}>
-                        <a id="coi-tab" href="@routes.GalleryController.contestFiles(view.contest.getId, coi = true)">@Messages("coi.files")@for(files <- view.coiFiles) { (@files.size)}</a>
+                    <li class="nav-item">
+                        <a id="coi-tab"@tab(view.coi) href="@routes.GalleryController.contestFiles(view.contest.getId, coi = true)">@Messages("coi.files")@for(files <- view.coiFiles) { (@files.size)}</a>
                     </li>
                 </ul>
             }
