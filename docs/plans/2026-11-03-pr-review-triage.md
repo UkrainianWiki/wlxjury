@@ -27,20 +27,20 @@ CI or the deploy-adoption fix).
 
 ### PR 184 (01, transient revert)
 
-CodeRabbit reviewed `c48cd68c`: 8 inline comments and 3 review-level remarks.
+CodeRabbit reviewed `c48cd68c` (the pre-rebuild SHA of `ccbff0a9`): 8 inline comments and 3 review-level remarks.
 All 11 are changes this PR backs out on purpose (the five 2026-04-22 review fixes
 on GitHub master) or tests for them, so none needs an entry here:
 
 | Comment | Class | Where it is fixed |
 |---|---|---|
-| `EditRound.scala:97` special nomination contest and year check | 1 | #196 (`07d02180`) |
-| `LoginController.scala:59` `no-store` on invalid sign-in | 1 | #196 (`07d02180`) |
-| `LoginController.scala:75` `no-store` on sign-up | 1 | #196 (`07d02180`) |
-| `Tools.scala:23` MySQL driver class (and `ConnectDb`) | 1 | #196 (`07d02180`) |
-| `ContestService.scala:70` campaign not passed to `create` | 1 | #196 (`07d02180`) |
-| `conf/routes:13` `+ nocsrf` on `POST /auth` | 1 | #196 (`07d02180`) |
-| `ContestSpec.scala:16` live Commons bot | 1 | #196 (`07d02180`) |
-| `ContestSpec.scala:30` expected contest without campaign | 1 | #196 (`07d02180`) |
-| `Api.scala:37` `getContest` 404 (review-level) | 1 | #196 (`07d02180`) |
-| `ApiSpec.scala:17` routed unknown-id and PUT tests (review-level) | 1 | #218 (`60c86a35`) |
-| `conf/routes:13` routed tokenless `POST /auth` test (review-level) | 1 | #231 (`19815fa9`) |
+| `EditRound.scala:97` special nomination contest and year check | 1 | #196 (`37e6ea26`) |
+| `LoginController.scala:59` `no-store` on invalid sign-in | 1 | #196 (`37e6ea26`) |
+| `LoginController.scala:75` `no-store` on sign-up | 1 | #196 (`37e6ea26`) |
+| `Tools.scala:23` MySQL driver class (and `ConnectDb`) | 1 | #196 (`37e6ea26`) |
+| `ContestService.scala:70` campaign not passed to `create` | 1 | #196 (`37e6ea26`) |
+| `conf/routes:13` `+ nocsrf` on `POST /auth` | 1 | #196 (`37e6ea26`) |
+| `ContestSpec.scala:16` live Commons bot | 1 | #196 (`37e6ea26`) |
+| `ContestSpec.scala:30` expected contest without campaign | 1 | #196 (`37e6ea26`) |
+| `Api.scala:37` `getContest` 404 (review-level) | 1 | #196 (`37e6ea26`) |
+| `ApiSpec.scala:17` routed unknown-id and PUT tests (review-level) | 1 | #218 (`16b4fccf`) |
+| `conf/routes:13` routed tokenless `POST /auth` test (review-level) | 1 | #231 (`40aef2e1`) |
