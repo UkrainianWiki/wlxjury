@@ -367,6 +367,13 @@ The two scalawiki diffs (`publishing.diff`, `anonymous-tests.diff`) both change 
     - Scala: 1776 total (`TestConfigAnonymousSpec` and the new `CommonsLoginSpec` example included), 0 failed, 10 skipped, 1 pending. Jest: 253 passed.
     - Artifact `test-reports-0-attempt-1` (2.1 MB).
   - **Deployment tests** [run 41623216062](https://github.com/UkrainianWiki/wlxjury/actions/runs/41623216062): both jobs **succeeded**. Python and shellcheck took 12 s; restore and release script took 4m22s. Artifact `deployment-logs-…` (5 KB).
+- **CI run 3** (`4bbca2ec`: the review fixes, 2026-11-03 12:09 UTC):
+  - **CI** [run 41633371583](https://github.com/UkrainianWiki/wlxjury/actions/runs/41633371583): **success in 6m17s**.
+    - Scala: 1780 total (`AnonymousBotsSpec` included), 0 failed, 10 skipped, 1 pending. Jest: 253 passed.
+    - `Test/compile` took 80 s, the suite 193 s.
+  - **Deployment tests** [run 41633371700](https://github.com/UkrainianWiki/wlxjury/actions/runs/41633371700), now on every PR: **success**.
+    - Python: 61 tests on `python:3.8.20-slim` and shellcheck v0.11.0, 11 s.
+    - Release job: 4m57s. The packaged-release test found the ZIP by glob and passed, and all 24 restore and release-script tests passed.
 - **Measured runtime:**
   - A CI run takes about 5–7 min, against the 20–28 min estimated above, and the deployment job about 4.5 min.
   - With about 3 runs per PR, a PR costs about 20 runner-minutes, and a month after the series about 300–500 min.
