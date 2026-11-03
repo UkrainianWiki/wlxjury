@@ -40,4 +40,17 @@
                 }
             </div>
         }
+
+        <hr/>
+        <h4>@Messages("local.image.cache")</h4>
+        <div id="cache-status"></div>
+        <form method="post" action="@routes.ImageController.startImageCache(contest.getId)">
+            @helper.CSRF.formField
+            <button type="submit" class="btn btn-default">@Messages("download.images.locally")</button>
+        </form>
+
+        <script src="@routes.Assets.at("javascripts/cache-status.js")"></script>
+        <script>
+            pollCacheStatus("@routes.ImageController.imageCacheStatus(contest.getId)");
+        </script>
     }
