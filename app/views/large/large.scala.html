@@ -11,11 +11,13 @@
         monument: Option[Monument],
         comments: Seq[Comment],
         votes: Seq[(Vote, User)],
-        criteria: Seq[(org.intracer.wmua.Criterion, Int)] = Nil)(
+        criteria: Seq[(org.intracer.wmua.Criterion, Double)] = Nil,
+        jurorCriteria: org.intracer.wmua.JurorCriteria = org.intracer.wmua.JurorCriteria.empty)(
         implicit flash: Flash, request: Request[Any], messages: Messages)
 
     @defining(list.round) { round =>
-    @defining(hood.file.totalRate(round) / (if (round.rates.id > 5 && round.halfStar) 2.0 else 1.0)) { score =>
+    @* the file's rate in stars: a criteria round's per criterion (Round.perCriterion) *@
+    @defining(round.perCriterion(hood.file.totalRate(round)) / round.starUnits) { score =>
     @defining(!user.roles.contains("jury") || !round.active || user.getId != list.asUserId) { readOnly =>
     @main_large(user, list, readOnly = readOnly, hood = hood) {
         @defining(hood.file.image) { image =>
@@ -31,7 +33,7 @@
                         }
                         @monumentInfo(image, monument)
                         @fullSizeUrl(image, round)
-                        @juryStat(votes, list)
+                        @juryStat(votes, list, jurorCriteria)
                     }
                     @thumbsBar(list, hood)
                     @* the sections' stored states, before the column is painted (large-sections.js): the one

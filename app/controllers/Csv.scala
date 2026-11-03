@@ -6,7 +6,7 @@
   import db.scalikejdbc.{Round, User}
   import org.apache.pekko.NotUsed
   import org.apache.pekko.stream.scaladsl.Source
-  import org.intracer.wmua.{BinaryOrder, ImageWithRating}
+  import org.intracer.wmua.{BinaryOrder, CriteriaRate, CriteriaResults, ImageWithRating}
   import org.intracer.wmua.ImageWithRating.Ranks
 
   import scala.concurrent.{ExecutionContext, Future}
@@ -48,24 +48,32 @@
 
     private val Number = """-?\d+(\.\d+)?""".r
 
+    /** The rows of `files`: rank, title, the overall rate, a criteria round's average of each
+      * of `criteria` (id and name; their averages by page id and criterion id,
+      * [[org.intracer.wmua.CriteriaRate.averages]], U8), then each juror's rate.
+      */
     def exportRates(
         files: Seq[ImageWithRating],
         jurors: Seq[User],
         round: Round,
-        order: BinaryOrder = BinaryOrder.Default
+        order: BinaryOrder = BinaryOrder.Default,
+        criteria: Seq[(Long, String)] = Nil,
+        averages: Map[Long, Map[Long, BigDecimal]] = Map.empty
     ): Seq[Seq[String]] = {
       val ranks = ImageWithRating.rankImages(files, round, order)
-      header(jurors) +: files.zip(ranks).map { case (file, rank) => row(file, rank, jurors, round) } ++:
-        legend(round).toSeq
+      header(jurors, criteria) +: files.zip(ranks).map { case (file, rank) =>
+        row(file, rank, jurors, round, criteria, averages)
+      } ++: legend(round).toSeq
     }
 
     /** A list's files as [[exportRates]] has them, the header first with a BOM, streamed: the
-      * list's page ids and rank keys read at once, then their votes a [[Chunk]] of files at a
-      * time, on `ec`, as the rows are sent, never holding the round's votes. The ranks come
-      * from that first read, so they follow the rows' order even if votes change mid-export
-      * (a row's votes are those when its chunk is read).
+      * list's page ids and rank keys read at once, then their votes (and in a criteria round
+      * their averages of `criteria`, the list juror's or all the jurors') a [[Chunk]] of files
+      * at a time, on `ec`, as the rows are sent, never holding the round's votes. The ranks
+      * come from that first read, so they follow the rows' order even if votes change
+      * mid-export (a row's votes are those when its chunk is read).
       */
-    def rateRows(list: RoundList, jurors: Seq[User], chunk: Int = Chunk)(implicit
+    def rateRows(list: RoundList, jurors: Seq[User], criteria: Seq[(Long, String)] = Nil, chunk: Int = Chunk)(implicit
         ec: ExecutionContext
     ): Source[Seq[String], NotUsed] = {
       val query = list.query
@@ -73,10 +81,17 @@
       val pageKeys = query.pageKeys(key.columns.map(_._1))
       val ranks = Ranks.of(pageKeys.map(_._2))
       val rankOf = pageKeys.map { case (pageId, values) => pageId -> ranks(values) }.toMap
-      Source.single(addBom(Seq(header(jurors))).head) ++
+      val juror = Option.when(list.asUserId != 0)(list.asUserId)
+      Source.single(addBom(Seq(header(jurors, criteria))).head) ++
         Source.fromIterator(() => pageKeys.map(_._1).grouped(chunk))
-          .mapAsync(1)(ids => Future(query.withVotes(ids)))
-          .mapConcat(_.map(file => row(file, rankOf.getOrElse(file.pageId, ""), jurors, list.round))) ++
+          .mapAsync(1)(ids => Future {
+            val averages = if (criteria.isEmpty) Map.empty[Long, Map[Long, BigDecimal]]
+              else CriteriaRate.averages(list.round.getId, ids, juror)
+            query.withVotes(ids) -> averages
+          })
+          .mapConcat { case (files, averages) =>
+            files.map(file => row(file, rankOf.getOrElse(file.pageId, ""), jurors, list.round, criteria, averages))
+          } ++
         Source(legend(list.round).toList)
     }
 
@@ -89,11 +104,22 @@
     val BinaryLegend: Seq[String] =
       Seq("", "Overall: approvals. Jurors: 1 selected, -1 rejected, 0 not voted yet, empty not assigned")
 
-    /** The juror names and file titles here are user text: [[writeRow]] neutralises them. */
-    private def header(jurors: Seq[User]): Seq[String] = Seq("Rank", "File", "Overall") ++ jurors.map(_.fullname)
+    /** The juror names, criteria names (an admin's fallback text, [[org.intracer.wmua.Criterion]])
+      * and file titles here are user text: [[writeRow]] neutralises them.
+      */
+    private def header(jurors: Seq[User], criteria: Seq[(Long, String)]): Seq[String] =
+      Seq("Rank", "File", "Overall") ++ criteria.map(_._2) ++ jurors.map(_.fullname)
 
-    private def row(file: ImageWithRating, rank: String, jurors: Seq[User], round: Round): Seq[String] =
-      Seq(rank, file.image.title, file.rateString(round)) ++ jurors.map(file.jurorRateStr)
+    /** A file's row; a criterion's average empty where no juror rated the file in all the
+      * criteria (U5).
+      */
+    private def row(file: ImageWithRating, rank: String, jurors: Seq[User], round: Round,
+        criteria: Seq[(Long, String)], averages: Map[Long, Map[Long, BigDecimal]]): Seq[String] = {
+      val ofFile = averages.getOrElse(file.pageId, Map.empty)
+      Seq(rank, file.image.title, file.rateString(round)) ++
+        criteria.map { case (id, _) => ofFile.get(id).fold("")(CriteriaResults.format) } ++
+        jurors.map(file.jurorRateStr)
+    }
 
     /** Characters that make a spreadsheet read a cell as a formula (OWASP "CSV injection"). */
     val FormulaStarts: Set[Char] = Set('=', '+', '-', '@', '\t', '\r')

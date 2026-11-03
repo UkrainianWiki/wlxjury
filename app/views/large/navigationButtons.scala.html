@@ -4,7 +4,7 @@
         list: RoundList,
         hood: Neighbourhood,
         score: Double = 0,
-        criteria: Seq[(org.intracer.wmua.Criterion, Int)] = Nil,
+        criteria: Seq[(org.intracer.wmua.Criterion, Double)] = Nil,
         readOnly: Boolean = true)(
         implicit flash: Flash, request: Request[Any], messages: Messages)
 
@@ -79,12 +79,20 @@
     } else {
         </div>
     @if(round.hasCriteria) {
-       @* the round's criteria in their order, each with its stars (0: not rated yet) *@
-       @defining(if (round.rates.id > 5 && round.halfStar) 2 else 1) { k =>
+       @* the round's criteria in their order, each with its stars (0: not rated yet): the viewed
+          juror's rates, or for all the jurors (list.asUserId 0, read-only) first the file's rate
+          per criterion, then each criterion's average (C3). Names are a message's text or an
+          admin's fallback text, escaped *@
+       @defining(round.starUnits) { k =>
+       @if(list.asUserId == 0) {
+           <div class="wlx-criteria-overall">@Messages("criteria.overall")</div>
+           @rateNumber("rate-number", score)
+           @stars("rate-image", "rate-number", score, k, None)
+       }
        @criteria.zipWithIndex.map { case ((criterion, rate), index) =>
-           <div>@criterion.name</div>
-           @rateNumber(s"rate-number${index + 1}", rate.toDouble / k)
-           @stars(s"rate-image${index + 1}", s"rate-number${index + 1}", rate.toDouble / k, k, Some(criterion.id))
+           <div class="wlx-criterion-name">@criterion.name</div>
+           @rateNumber(s"rate-number${index + 1}", rate / k)
+           @stars(s"rate-image${index + 1}", s"rate-number${index + 1}", rate / k, k, Some(criterion.id))
        }
        }
     } else if (round.rates.id > 0)  {

@@ -3,7 +3,11 @@
 @(vote: Vote,
         round: Round,
         title: String,
-        url: String)(implicit messages: Messages)
+        url: String,
+        criteria: Seq[(org.intracer.wmua.Criterion, Option[Int])] = Nil)(implicit messages: Messages)
+@* a juror's vote: a binary round's mark, a rated round's stars and rate; a criteria round's
+   stars per criterion (Round.perCriterion: its rate is their sum), then the juror's rate of each
+   criterion, rated or not yet (C3) *@
 
 <div class="rank-line">
 
@@ -16,11 +20,18 @@
             @binaryVote(vote.rate, unrated = true)
         } else {
             @defining(round.rates.id > 5 && round.halfStar) { halfStar =>
-                @for(i <- 1 to round.rates.id / (if (halfStar) 2 else 1)) {
-                    @showStar(i, vote.rate, halfStar)
+                @for(i <- 1 to round.numberOfStars) {
+                    @showStar(i, round.perCriterion(vote.rate).toInt, halfStar)
                     }
                 @vote.rate
             }
         }
     </span>
+    @if(criteria.nonEmpty) {
+        <ul class="wlx-criteria-rates list-unstyled small mb-0">
+        @for((criterion, rate) <- criteria) {
+            <li><span class="wlx-criterion-name">@criterion.name</span>: @rate.fold("–")(_.toString)</li>
+        }
+        </ul>
+    }
 </div>

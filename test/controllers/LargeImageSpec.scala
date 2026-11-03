@@ -454,7 +454,7 @@ class LargeImageSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
-    "draw each file's stars in the by-rate gallery for the round's criteria: two of ten stars each" in {
+    "draw each file's stars in the by-rate gallery per criterion: the round's ten, 20 for two criteria before" in {
       testDbApp { app =>
         val (mine, others, other) = setUpCriteria()
         // the other juror's selection rated in both criteria too, as a distribution gives them
@@ -470,9 +470,9 @@ class LargeImageSpec extends PlaySpecification with PlayTestDb {
           .withSession(Secured.UserName -> email, Secured.CurrentContestId -> contest.getId.toString)).get
         status(page) === OK
         val tile = org.jsoup.Jsoup.parse(contentAsString(page)).getElementById(mine.pageId.toString)
-        tile.select(".rate-stars i.wlx-star").size === 20
-        // the rate as 7 of the 20 stars
-        tile.select(".rate-stars i.bi-star-fill").size === 7
+        tile.select(".rate-stars i.wlx-star").size === 10
+        // the rate, 7, over the two criteria: 3.5, so 3 full stars, as an average is drawn
+        tile.select(".rate-stars i.bi-star-fill").size === 3
       }
     }
 

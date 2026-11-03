@@ -3,8 +3,9 @@ package db.scalikejdbc
 import org.specs2.mutable.Specification
 import org.specs2.specification.BeforeAll
 
-/** A file's stars in the by-rate gallery (Round.numberOfStars): the round's stars, times its
-  * criteria in a criteria round, whose count is the round's criteria (RoundCriterion.countOf).
+/** A file's stars (Round.numberOfStars): the round's, also in a criteria round, whose rate (the
+  * sum of its criteria's) is drawn per criterion (Round.perCriterion, C3) on them; its count
+  * is the round's criteria (RoundCriterion.countOf).
   */
 class RoundCriteriaStarsSpec extends Specification with BeforeAll {
 
@@ -19,14 +20,24 @@ class RoundCriteriaStarsSpec extends Specification with BeforeAll {
       rated.copy(rates = Round.ratesById(5), halfStar = true).numberOfStars === 5
     }
 
-    "count each criterion's stars in a criteria round" in {
+    "be one criterion's stars in a criteria round, which multiplied them by its criteria before" in {
       val criteria = rated.copy(hasCriteria = true)
-      // not loaded with the round: the by-rate gallery sets it (RoundCriterion.countOf)
       criteria.numberOfStars === 10
-      criteria.copy(criteriaCount = 2).numberOfStars === 20
-      criteria.copy(criteriaCount = 2, halfStar = true).numberOfStars === 10
-      // the count matters only in a criteria round
-      rated.copy(criteriaCount = 2).numberOfStars === 10
+      criteria.copy(criteriaCount = 2).numberOfStars === 10
+      criteria.copy(criteriaCount = 2, halfStar = true).numberOfStars === 5
+    }
+  }
+
+  "a rate on one criterion's stars" should {
+    "be a criteria round's sum over its criteria, any other round's rate as it is" in {
+      val criteria = rated.copy(hasCriteria = true, criteriaCount = 4)
+      // 4 criteria rated 7, 8, 9 and 10: 34, drawn as 8.5
+      criteria.perCriterion(34) === 8.5
+      criteria.copy(criteriaCount = 2).perCriterion(7) === 3.5
+      // the count matters only in a criteria round; not loaded, it is 1
+      rated.copy(criteriaCount = 4).perCriterion(34) === 34
+      rated.copy(hasCriteria = true).perCriterion(34) === 34
+      criteria.copy(criteriaCount = 0).perCriterion(34) === 34
     }
   }
 
