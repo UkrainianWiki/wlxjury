@@ -1,0 +1,50 @@
+# DRAFT for UkrainianWiki/scalawiki (goes to .github/workflows/publish.yml there, with
+# ../../publishing.diff applied). Plan: wlxjury docs/plans/2026-11-03-ci-and-scalawiki-packages.md
+#
+# Publishes http-extensions, scalawiki-core, scalawiki-dumps and scalawiki-wlx (Scala 2.13) to
+# GitHub Packages when a version tag is pushed: `git tag -a 0.7.0-M1 -m 0.7.0-M1 <commit>`,
+# then `git push origin 0.7.0-M1`. A version is published once and never replaced: a fix is a
+# new tag. The packages are linked to this repository and inherit its (public) visibility.
+name: Publish
+
+on:
+  push:
+    tags: ['[0-9]+.[0-9]+.[0-9]+*']   # 0.7.0, 0.7.0-M1, 0.7.1-RC1; plain, like the 0.6.x tags
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # sbt-dynver reads the tags
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 11   # as ci.yml; scalac emits Java 8 bytecode (-target:jvm-1.8)
+          cache: sbt
+
+      - uses: sbt/setup-sbt@v1
+
+      - name: The version is the tag
+        # Fails unless HEAD is exactly at a tag and the tree is clean: never publish a snapshot
+        run: sbt -batch dynverAssertTagVersion
+
+      - name: Test
+        run: sbt -batch test
+
+      - name: Publish
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        # publish / skip excludes the aggregate and scalawiki-bots (build.sbt)
+        run: sbt -batch publish

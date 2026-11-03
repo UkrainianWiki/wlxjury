@@ -1,0 +1,75 @@
+diff --git a/build.sbt b/build.sbt
+index 35a8c56..fac5c6d 100644
+--- a/build.sbt
++++ b/build.sbt
+@@ -10,11 +10,34 @@ ThisBuild / Test / javaOptions ++= Seq(
+   "-Dsun.stderr.encoding=UTF-8"
+ )
+ 
++// Versions come from git tags (sbt-dynver): a commit tagged 0.7.0 builds as 0.7.0; any other
++// commit, or a dirty tree, as a -SNAPSHOT (e.g. 0.7.0-3-1a2b3c4d-SNAPSHOT). Tags are plain
++// numbers, like the existing 0.6.x ones. Local development with wlxjury overrides it:
++//   sbt 'set ThisBuild / version := "0.7.0-SNAPSHOT"' publishLocal
++ThisBuild / dynverVTagPrefix := false
++ThisBuild / dynverSeparator := "-"
++ThisBuild / dynverSonatypeSnapshots := true
++ThisBuild / versionScheme := Some("early-semver")
++
++// Releases go to GitHub Packages (Maven), from .github/workflows/publish.yml on a tag push.
++// The workflow's GITHUB_TOKEN (packages: write) publishes; a person needs a classic PAT with
++// write:packages in GITHUB_TOKEN to publish by hand. Without a token, publishLocal still works.
++ThisBuild / publishMavenStyle := true
++ThisBuild / publishTo := Some("GitHub Packages" at "https://maven.pkg.github.com/UkrainianWiki/scalawiki")
++ThisBuild / credentials ++= sys.env.get("GITHUB_TOKEN").toSeq.map { token =>
++  Credentials("GitHub Package Registry", "maven.pkg.github.com", sys.env.getOrElse("GITHUB_ACTOR", "token"), token)
++}
++// The POMs must not send consumers to this build's resolvers (dead Bintray hosts among them)
++ThisBuild / pomIncludeRepository := { _ => false }
++ThisBuild / homepage := Some(url("https://github.com/UkrainianWiki/scalawiki"))
++ThisBuild / scmInfo := Some(
++  ScmInfo(url("https://github.com/UkrainianWiki/scalawiki"), "scm:git:https://github.com/UkrainianWiki/scalawiki.git")
++)
++
+ lazy val isScala213 = settingKey[Boolean]("Is the scala version 2.13.")
+ 
+ lazy val commonSettings = Seq(
+   organization := "org.scalawiki",
+-  version := "0.7.0-SNAPSHOT",
+   crossScalaVersions := Seq(Scala213V),
+   scalaVersion := crossScalaVersions.value.last,
+   isScala213 := scalaVersion.value.startsWith("2.13."),
+@@ -57,8 +80,11 @@ lazy val commonSettings = Seq(
+   }
+ )
+ 
++// Published: http-extensions, scalawiki-core, scalawiki-dumps, scalawiki-wlx (libraries).
++// Not published: this aggregate and scalawiki-bots (an application; assembly jars instead).
+ lazy val scalawiki = (project in file("."))
+   .settings(commonSettings)
++  .settings(publish / skip := true)
+   .dependsOn(core, bots, dumps, wlx, `http-extensions`)
+   .aggregate(core, bots, dumps, wlx, `http-extensions`)
+ 
+@@ -93,6 +119,7 @@ lazy val core = Project("scalawiki-core", file("scalawiki-core"))
+ lazy val bots = Project("scalawiki-bots", file("scalawiki-bots"))
+   .dependsOn(core % "compile->compile;test->test", wlx)
+   .settings(commonSettings: _*)
++  .settings(publish / skip := true)
+   .settings(
+     libraryDependencies ++= Seq(
+       "com.github.pathikrit" %% "better-files" % BetterFilesV,
+diff --git a/project/plugins.sbt b/project/plugins.sbt
+index 8aeab40..301a008 100644
+--- a/project/plugins.sbt
++++ b/project/plugins.sbt
+@@ -6,7 +6,9 @@ addSbtPlugin("org.scoverage" % "sbt-scoverage" % "2.2.2")
+ 
+ addSbtPlugin("com.typesafe.sbt" % "sbt-twirl" % "1.5.1")
+ 
+-addSbtPlugin("org.foundweekends" % "sbt-bintray" % "0.6.1")
++// Version from git tags (build.sbt). sbt-bintray is gone: Bintray shut down in 2021, and the
++// plugin replaced publishTo with its Bintray repository.
++addSbtPlugin("com.github.sbt" % "sbt-dynver" % "5.1.0")
+ 
+ addSbtPlugin("com.eed3si9n" % "sbt-assembly" % "2.3.0")
+ 
