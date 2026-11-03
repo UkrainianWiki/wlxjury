@@ -31,8 +31,16 @@ class LocalImageCacheServiceSpec extends Specification {
 
   // ── helpers ──────────────────────────────────────────────────────────────
 
-  def mkService(dir: File, maxAttempts: Int = 3, serverPort: Option[Int] = None): LocalImageCacheService =
-    new LocalImageCacheService(mkConfig(dir, maxAttempts, serverPort), system)
+  /** A service whose own start (registry, then the unused-sizes cleanup, which writes the sizes
+    * marker through a `.tmp-` file) has finished, so an example's explicit `initRegistry()` doesn't
+    * walk the cache while that temp file is moved (`NoSuchFileException` from `Files.walk`, CI
+    * run 41693236416 on #249).
+    */
+  def mkService(dir: File, maxAttempts: Int = 3, serverPort: Option[Int] = None): LocalImageCacheService = {
+    val svc = new LocalImageCacheService(mkConfig(dir, maxAttempts, serverPort), system)
+    Await.result(svc.unusedSizesCleanedUp, 30.seconds)
+    svc
+  }
 
   def mkConfig(dir: File, maxAttempts: Int = 3, serverPort: Option[Int] = None): Configuration = {
     val wikiBase = serverPort.map(p => s"http://localhost:$p").getOrElse("https://upload.wikimedia.org")
@@ -325,13 +333,12 @@ class LocalImageCacheServiceSpec extends Specification {
       val img = mkImage(filename = "Photo.jpg", w = 400, h = 300) // small image
 
       svc.saveResized(img, new BufferedImage(400, 300, BufferedImage.TYPE_INT_RGB), sourcePx = 400)
-      // Wait for the smallest expected file to appear before asserting the rest.
-      awaitFiles(svc.localFile(img, 150))
+      // The smaller sizes ARE created. They are written in the background, so wait (bounded) for
+      // every one of them, not only the first, before asserting.
+      awaitFiles(Seq(150, 225, 300, 333).map(svc.localFile(img, _)): _*)
 
       // For 400×300, the 375 and 500 tall sizes and wider boxes produce px=400=image.width → no file
       svc.localFile(img, 400).exists() must beFalse
-      // But the smaller sizes ARE created
-      Seq(150, 225, 300, 333).forall(px => svc.localFile(img, px).exists()) must beTrue
     }
 
     "not create files for sizes larger than sourcePx" in {
@@ -341,17 +348,14 @@ class LocalImageCacheServiceSpec extends Specification {
 
       // Download only a 500px source (covers heights 120–375 but not 500 and above)
       svc.saveResized(img, new BufferedImage(500, 375, BufferedImage.TYPE_INT_RGB), sourcePx = 500)
-      // Wait for the smallest expected file (333px) to confirm writes landed.
-      awaitFiles(svc.localFile(img, 333))
+      // 333px < sourcePx and 500px = sourcePx → files ARE created; both are written in the
+      // background, so wait (bounded) for both before asserting.
+      awaitFiles(svc.localFile(img, 333), svc.localFile(img, 500))
 
       // 666px > sourcePx=500 → no file
       svc.localFile(img, 666).exists()  must beFalse
       svc.localFile(img, 1466).exists() must beFalse
       svc.localFile(img, 2200).exists() must beFalse
-      // 500px = sourcePx → file IS created
-      svc.localFile(img, 500).exists()  must beTrue
-      // 333px < sourcePx → file IS created
-      svc.localFile(img, 333).exists()  must beTrue
     }
   }
 
