@@ -214,19 +214,21 @@ class FlywayUpgradeSpec extends Specification with BeforeAll with AfterAll {
     "give back V83's schema and history, and V84 run again rebuild round_image from the votes" in {
       emptyDb("fw_v83")
       flyway("fw_v83", production.copy(target = Some("83"))).migrate()
+      // the release that brought V84: the later migrations (V85 on) are not part of it
       emptyDb("fw_v84_back")
-      flyway("fw_v84_back").migrate().success must beTrue
+      flyway("fw_v84_back", production.copy(target = Some("84"))).migrate().success must beTrue
       Using.resource(connect("fw_v84_back"))(c => run(c, v84Rollback))
       history("fw_v84_back").map(_.split(" \\| ")(1)) === upTo("83")
       schema("fw_v84_back") === schema("fw_v83")
       // what the previous release writes meanwhile: votes, with no round_image
       Using.resource(connect("fw_v84_back"))(c => run(c, Seq(
-        "INSERT INTO round (id, number, contest_id, rates) VALUES (1, 1, 1, 1)",
+        // created_at given: a database created on MariaDB 10.10+ has no default for it before V86
+        "INSERT INTO round (id, number, contest_id, rates, created_at) VALUES (1, 1, 1, 1, NOW())",
         "INSERT INTO images (page_id, title, monument_id) VALUES (1, 'File:1.jpg', '07-101-1'), (2, 'File:2.jpg', NULL)",
         "INSERT INTO vote (page_id, jury_id, round_id, rate) VALUES (1, 1, 1, 0), (2, 1, 1, 1), (2, 2, 1, -1)",
         "INSERT INTO vote_aside (page_id, jury_id, round_id, rate) VALUES (1, 2, 1, 1)")))
-      flyway("fw_v84_back").migrate().success must beTrue
-      history("fw_v84_back").map(_.split(" \\| ")(1)) === versions
+      flyway("fw_v84_back", production.copy(target = Some("84"))).migrate().success must beTrue
+      history("fw_v84_back").map(_.split(" \\| ")(1)) === upTo("84")
       Using.resource(connect("fw_v84_back")) { c =>
         rows(c, "SELECT round_id, page_id, status, added_how, region FROM round_image ORDER BY 1, 2")(rs =>
           (rs.getLong(1), rs.getLong(2), rs.getString(3), rs.getString(4), Option(rs.getString(5)))) ===

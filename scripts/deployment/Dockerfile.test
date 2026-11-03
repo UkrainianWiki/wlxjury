@@ -3,7 +3,12 @@
 # curl and unzip that wlxjury-release.sh uses.
 #
 #   docker build -f scripts/deployment/Dockerfile.test -t wlxjury-deployment-test:local scripts/deployment
-FROM ubuntu:22.04
+#
+# The server after the move to 24.04 (Ubuntu 24.04, MariaDB 10.11); make it the default
+# with the move (docs/plans/2026-10-19-mariadb-10.11.md):
+#   docker build --build-arg UBUNTU=24.04 -f scripts/deployment/Dockerfile.test -t wlxjury-deployment-test:noble scripts/deployment
+ARG UBUNTU=22.04
+FROM ubuntu:${UBUNTU}
 ENV DEBIAN_FRONTEND=noninteractive LANG=C.UTF-8
 RUN apt-get update \
  && apt-get install -y --no-install-recommends mariadb-server mariadb-client openjdk-17-jre-headless python3 \

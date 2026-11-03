@@ -485,7 +485,9 @@ object User extends CRUDMapper[User] {
 
   /** The contests the user has a past in: a round they are or were assigned to
     * (round_user), or voted in (vote, for legacy rounds without round_user rows).
-    * DISTINCT round_id over vote_jury_round_rate_mon_page_idx is a loose index scan.
+    * DISTINCT round_id over vote's (jury_id, round_id, rate, ...) index
+    * (vote_jury_round_rate_mon_page_idx, or V85's vote_jury_round_ratedesc_mon_page_idx on
+    * MariaDB 10.8+) is a loose index scan.
     */
   def contestsWorkedIn(userId: Long)(implicit session: DBSession = autoSession): Seq[Long] =
     sql"""SELECT r.contest_id FROM round_user ru JOIN round r ON r.id = ru.round_id
