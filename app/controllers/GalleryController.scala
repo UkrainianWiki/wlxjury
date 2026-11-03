@@ -172,7 +172,17 @@ class GalleryController @Inject() (
     // Lazy, as the pager, menu and tabs: a CSV streams all the list's files without them
     lazy val counts = list.jurorCounts()
 
-    lazy val pager = Pager(page, counts.fold(list.count())(_.total(list.filter, list.region)), list.pageSize)
+    // a ranked list's (a file list, by rate): the number of its files of each rank key, which
+    // rank the page, and whose sum is its total: no count of its own
+    lazy val rankCounts = Option.when(list.ranked)(list.rankCounts())
+    def ranks(files: Seq[ImageWithRating]): Seq[String] = rankCounts.fold(Seq.empty[String])(list.ranks(files, _))
+
+    // the list's total: a juror's from their counts, a ranked list's from its rank counts
+    lazy val pager = Pager(page,
+      counts.map(_.total(list.filter, list.region))
+        .orElse(rankCounts.map(_.map(_._2).sum))
+        .getOrElse(list.count()),
+      list.pageSize)
     lazy val files = list.files(pager)
 
     // the region menu, whose regions are read when it is opened (regions)
@@ -195,21 +205,18 @@ class GalleryController @Inject() (
         csvStream(Csv.rateRows(list, jurors)(blocking), name)
 
       case GalleryView.FileList =>
-        val ranks = list.ranks(files)
         val useTable = !round.isBinary || asUserId == 0
         val showAuthor = user.canViewOrgInfo(round) && files.exists(_.image.author.nonEmpty)
-        Ok(views.html.fileList(user, list, asUser, files, ranks, jurors, rounds, menu, pager, "wiki", useTable, rates,
+        Ok(views.html.fileList(user, list, asUser, files, ranks(files), jurors, rounds, menu, pager, "wiki", useTable, rates,
           showAuthor))
 
       case GalleryView.Gallery | GalleryView.ByRate =>
         // a criteria round's stars count its criteria: read once for the page
         val shown = if (!round.hasCriteria) list
           else list.withRound(round.copy(criteriaCount = CriteriaRate.countOf(round.getId).getOrElse(round.criteriaCount)))
-        // the by-rate gallery's ranks among all the list's files, as a file list's (one grouped count);
-        // none in file order, which they would not follow
-        val ranks =
-          if (list.view == GalleryView.ByRate && list.order != ListOrder.FileOrder) list.ranks(files) else Nil
-        Ok(RequestTiming.render(views.html.galleryByRate(user, shown, files, pager, rounds, menu, rates, ranks)))
+        // the by-rate gallery's ranks among all the list's files, as a file list's; none in file
+        // order, which they would not follow (RoundList.ranked)
+        Ok(RequestTiming.render(views.html.galleryByRate(user, shown, files, pager, rounds, menu, rates, ranks(files))))
     }
   }
 
