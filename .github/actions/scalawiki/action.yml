@@ -1,0 +1,37 @@
+# Interim (docs/plans/2026-11-03-ci-and-scalawiki-packages.md, "Interim path"): wlxjury
+# needs org.scalawiki %% scalawiki-core / scalawiki-wlx, which are published nowhere
+# reachable yet. Build the pinned scalawiki commit and publish it to ~/.ivy2/local,
+# which sbt's default resolver chain reads before any remote repository.
+# Delete this action, and its uses, once wlxjury resolves a published package.
+name: scalawiki from source
+description: Publish a pinned scalawiki commit to the runner's ~/.ivy2/local
+inputs:
+  sha:
+    description: Full scalawiki commit SHA (a branch name would make builds unreproducible)
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Restore the scalawiki build for this commit
+      id: cache
+      uses: actions/cache@v4
+      with:
+        path: ~/.ivy2/local/org.scalawiki
+        key: scalawiki-ivy-local-${{ inputs.sha }}
+    - name: Build scalawiki and publish it locally
+      if: steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      env:
+        SCALAWIKI_SHA: ${{ inputs.sha }}
+      run: |
+        set -euo pipefail
+        dir="$RUNNER_TEMP/scalawiki"
+        git init -q "$dir"
+        cd "$dir"
+        # Public repository: no token. GitHub serves a reachable commit by its SHA.
+        git fetch -q --depth 1 https://github.com/UkrainianWiki/scalawiki.git "$SCALAWIKI_SHA"
+        git checkout -q FETCH_HEAD
+        # Only the modules wlxjury uses, and scalawiki-core's own dependency; no Scaladoc.
+        sbt -J-Xmx1g -J-Dfile.encoding=UTF-8 \
+          'set ThisBuild / Compile / packageDoc / publishArtifact := false' \
+          http-extensions/publishLocal scalawiki-core/publishLocal scalawiki-wlx/publishLocal

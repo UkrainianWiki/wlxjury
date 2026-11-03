@@ -1,0 +1,103 @@
+# Scala specs (Testcontainers MariaDB on tmpfs) and the Jest tests, on every PR and on pushes to
+# the integration branches. Plan: docs/plans/2026-11-03-ci-and-scalawiki-packages.md
+name: CI
+
+on:
+  # Any base branch: stacked PRs target the PR below them, not master.
+  pull_request:
+  push:
+    branches: [master, ukwikidev/followups]
+  # Weekly on master, with MariaDB 10.11 too (the matrix below)
+  schedule:
+    - cron: '41 3 * * 1'   # Mondays 03:41 UTC
+  workflow_dispatch:
+
+# Read-only token. Fork PRs get a read-only one anyway; this keeps same-repo PRs the same.
+permissions:
+  contents: read
+
+concurrency:
+  # One run per PR (or per pushed branch); a new push cancels the PR's older run. Pushes to
+  # master and followups queue instead, so each merged commit keeps its result.
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  # Interim: the scalawiki commit wlxjury builds against (origin/page-categories). Bump it with
+  # the scalawiki change; drop it once a published version is used.
+  SCALAWIKI_SHA: 25951dbe1e05bc195b8719e2edbb08464f0ea932
+
+jobs:
+  test:
+    name: sbt test (${{ matrix.mariadb }})
+    # Pinned: Testcontainers' Docker API compatibility depends on the image's Docker Engine
+    # (build.sbt, TestcontainersJavaVersion). Move deliberately, not when ubuntu-latest moves.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        # Production's 10.6 always; the 24.04 server's 10.11 only on pushes to master and in the
+        # weekly run, until 10.11 becomes the default with the move (SharedTestDb.Image).
+        mariadb: >-
+          ${{ fromJSON((github.event_name == 'schedule' || (github.event_name == 'push' && github.ref == 'refs/heads/master'))
+          && '["mariadb:10.6.22", "mariadb:10.11.14"]' || '["mariadb:10.6.22"]') }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+          # Caches ~/.ivy2/cache, ~/.sbt and the Coursier cache, keyed on the build files
+          cache: sbt
+
+      - uses: sbt/setup-sbt@v1
+
+      # build.sbt's jsTest runs `npm ci` in javascript-test/ when node_modules is missing
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: javascript-test/package-lock.json
+
+      - name: scalawiki (interim, from source)
+        uses: ./.github/actions/scalawiki
+        with:
+          sha: ${{ env.SCALAWIKI_SHA }}
+
+      - name: Pull the test database image
+        # Separate step so its time is not counted as test time
+        run: docker pull -q "$MARIADB_IMAGE"
+        env:
+          MARIADB_IMAGE: ${{ matrix.mariadb }}
+
+      - name: Compile and test
+        # CLAUDE.md's options, but sbt gets 2g: a cold Test/compile (no incremental state on a
+        # runner) runs out of heap at 512m. The check script keeps the full output in target/checks/
+        # and prints a bounded summary; the full log is uploaded below. build.sbt forwards
+        # -Dwlxjury.test.mariadb-image to the forked test JVM (SharedTestDb.Image).
+        run: >-
+          python3 scripts/agent-check.py --
+          sbt -J-Xmx2g -J-Dfile.encoding=UTF-8 "-Dwlxjury.test.mariadb-image=$MARIADB_IMAGE"
+          'set Test / javaOptions ++= Seq("-Xmx768m", "-Dfile.encoding=UTF-8")'
+          Test/compile test
+        env:
+          MARIADB_IMAGE: ${{ matrix.mariadb }}
+
+      - name: End of the log
+        if: failure()
+        run: tail -n 400 target/checks/*.log
+
+      - name: Upload reports and logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          # ':' is not allowed in artifact names; the job index tells the matrix entries apart
+          name: test-reports-${{ strategy.job-index }}-attempt-${{ github.run_attempt }}
+          path: |
+            target/test-reports/
+            target/checks/
+            **/hs_err_pid*.log
+          if-no-files-found: warn
+          retention-days: 14
