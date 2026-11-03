@@ -19,9 +19,10 @@ permissions:
   contents: read
 
 concurrency:
-  # One run per PR (or per pushed branch); a new push cancels the PR's older run. Pushes to
-  # master and followups queue instead, so each merged commit keeps its result.
-  group: ci-${{ github.event.pull_request.number || github.ref }}
+  # PRs: one group per PR, and a new push cancels the PR's older run. Everything else (pushes,
+  # the weekly schedule, manual runs) gets a group per event and commit: GitHub keeps only one
+  # pending run per group, so a shared group would drop runs of merged commits.
+  group: ci-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || format('{0}-{1}-{2}', github.event_name, github.ref, github.sha) }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
@@ -54,7 +55,7 @@ jobs:
           # Caches ~/.ivy2/cache, ~/.sbt and the Coursier cache, keyed on the build files
           cache: sbt
 
-      - uses: sbt/setup-sbt@v1
+      - uses: sbt/setup-sbt@ecad189dd245444b9ae0a0cd5922fd938b88906f # v1.5.12
 
       # build.sbt's jsTest runs `npm ci` in javascript-test/ when node_modules is missing
       - uses: actions/setup-node@v4
@@ -67,6 +68,7 @@ jobs:
         uses: ./.github/actions/scalawiki
         with:
           sha: ${{ env.SCALAWIKI_SHA }}
+          jdk: 17
 
       - name: Pull the test database image
         # Separate step so its time is not counted as test time
@@ -100,6 +102,6 @@ jobs:
           path: |
             target/test-reports/
             target/checks/
-            **/hs_err_pid*.log
+            hs_err_pid*.log
           if-no-files-found: warn
           retention-days: 14

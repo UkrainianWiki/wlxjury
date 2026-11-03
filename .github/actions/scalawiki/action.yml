@@ -9,6 +9,9 @@ inputs:
   sha:
     description: Full scalawiki commit SHA (a branch name would make builds unreproducible)
     required: true
+  jdk:
+    description: Major version of the JDK that builds it (in the cache key)
+    required: true
 runs:
   using: composite
   steps:
@@ -17,7 +20,8 @@ runs:
       uses: actions/cache@v4
       with:
         path: ~/.ivy2/local/org.scalawiki
-        key: scalawiki-ivy-local-${{ inputs.sha }}
+        # bump v1 when what the build publishes changes (modules, flags)
+        key: scalawiki-ivy-local-${{ inputs.sha }}-jdk${{ inputs.jdk }}-v1
     - name: Build scalawiki and publish it locally
       if: steps.cache.outputs.cache-hit != 'true'
       shell: bash

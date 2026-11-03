@@ -17,7 +17,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: integration
+  # a group per event and commit: GitHub keeps only one pending run per group
+  group: integration-${{ github.event_name }}-${{ github.sha }}
   cancel-in-progress: false
 
 env:
@@ -34,11 +35,12 @@ jobs:
           distribution: temurin
           java-version: 17
           cache: sbt
-      - uses: sbt/setup-sbt@v1
+      - uses: sbt/setup-sbt@ecad189dd245444b9ae0a0cd5922fd938b88906f # v1.5.12
       - name: scalawiki (interim, from source)
         uses: ./.github/actions/scalawiki
         with:
           sha: ${{ env.SCALAWIKI_SHA }}
+          jdk: 17
       - name: Live Commons specs
         # -Dintegration goes to sbt's JVM; build.sbt forwards it to the forked test JVM.
         # testOnly skips build.sbt's jsTest (it is wired into `test` only).

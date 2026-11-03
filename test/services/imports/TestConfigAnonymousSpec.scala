@@ -26,6 +26,26 @@ class TestConfigAnonymousSpec extends Specification {
       .withFallback(ConfigFactory.parseFile(testConfig))
       .resolve()
 
+  /** A workflow or action line (its comment removed) that hands wiki credentials or secrets to
+    * a job: COMMONS_* or SCALAWIKI_LOGIN etc. (SCALAWIKI_SHA, the commit CI builds, is not
+    * one), secrets.X but GITHUB_TOKEN, secrets['X'], toJSON(secrets), `secrets: inherit`, or
+    * the test-login switch.
+    */
+  private def passesCredentials(code: String): Boolean =
+    code.matches(".*\\b(COMMONS_[A-Z]+|SCALAWIKI_(LOGIN|PASSWORD|USER|TOKEN))\\b.*") ||
+      code.matches(".*\\bsecrets\\s*\\.(?!GITHUB_TOKEN\\b).*") ||
+      code.matches(".*\\bsecrets\\s*\\[.*") ||
+      code.matches("(?i).*\\btoJSON\\(\\s*secrets\\s*\\).*") ||
+      code.matches(".*\\bsecrets\\s*:\\s*inherit\\b.*") ||
+      code.contains("allowTestLogin")
+
+  private def yamlFiles(dir: File): Seq[File] =
+    Option(dir.listFiles()).toSeq.flatten.flatMap { f =>
+      if (f.isDirectory) yamlFiles(f)
+      else if (f.getName.endsWith(".yml") || f.getName.endsWith(".yaml")) Seq(f)
+      else Nil
+    }
+
   "the test config" should {
 
     "have no Commons account, whatever the environment holds" in {
@@ -47,20 +67,29 @@ class TestConfigAnonymousSpec extends Specification {
     }
   }
 
-  "the CI workflows" should {
+  "the CI workflows and actions" should {
 
     "pass no Commons or scalawiki credentials and no secrets but GITHUB_TOKEN" in {
-      val workflows = Option(new File(".github/workflows").listFiles()).toSeq.flatten
-        .filter(f => f.getName.endsWith(".yml") || f.getName.endsWith(".yaml"))
+      val files = yamlFiles(new File(".github/workflows")) ++ yamlFiles(new File(".github/actions"))
       val lines = for {
-        file <- workflows
+        file <- files
         (line, number) <- scala.io.Source.fromFile(file, "UTF-8").getLines().toSeq.zipWithIndex
         code = line.replaceFirst("\\s#.*$", "").replaceFirst("^\\s*#.*$", "")
-        // credential names; SCALAWIKI_SHA (the commit CI builds) is not one
-        if code.matches(".*\\b(COMMONS_[A-Z]+|SCALAWIKI_(LOGIN|PASSWORD|USER|TOKEN))\\b.*") ||
-          code.matches(".*\\bsecrets\\.(?!GITHUB_TOKEN\\b).*") || code.contains("allowTestLogin")
-      } yield s"${file.getName}:${number + 1}: $line"
-      (workflows must not(beEmpty)) and (lines must beEmpty)
+        if passesCredentials(code)
+      } yield s"${file.getPath}:${number + 1}: $line"
+      (files.exists(_.getPath.contains("workflows")) must beTrue) and
+        (files.exists(_.getPath.contains("actions")) must beTrue) and
+        (lines must beEmpty)
+    }
+
+    "be checked for the forms that pass secrets" in {
+      Seq("password: ${{ secrets['COMMONS'] }}", "all: ${{ toJSON(secrets) }}", "    secrets: inherit",
+        "token: ${{ secrets.BOT_TOKEN }}", "COMMONS_USER: x", "-Dcommons.allowTestLogin=true")
+        .filterNot(passesCredentials) must beEmpty
+    }
+
+    "not flag the token they use, or the scalawiki commit" in {
+      Seq("GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}", "SCALAWIKI_SHA: 25951dbe").filter(passesCredentials) must beEmpty
     }
   }
 }
