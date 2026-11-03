@@ -78,18 +78,22 @@ object CoiMembers {
         .flatMap { case (pageId, author) => matchOf(members)(Some(author)).map(pageId -> _) }
         .toMap
 
-  /** The round's files that are conflicts of interest, those with votes moved aside
-    * (`vote_aside`) too: every file with a row in the round (round_image, V84, whatever its
-    * status): page id, title and the person each is by, as [[files]] finds them.
+  /** The round's files that are conflicts of interest and not disqualified (P1b), those with
+    * votes moved aside as deleted on Commons too: every file with a row in the round
+    * (round_image, V84) of one of `statuses` (`in` and `deleted` by default): page id, title
+    * and the person each is by, as [[files]] finds them.
     */
-  def roundFiles(roundId: Long, members: Map[String, Member])(implicit
-      session: DBSession = AutoSession
-  ): Seq[(Long, String, Member)] =
-    if (members.isEmpty) Nil
+  def roundFiles(
+      roundId: Long,
+      members: Map[String, Member],
+      statuses: Seq[String] = Seq(RoundImageJdbc.Status.In, RoundImageJdbc.Status.Deleted)
+  )(implicit session: DBSession = AutoSession): Seq[(Long, String, Member)] =
+    if (members.isEmpty || statuses.isEmpty) Nil
     else
       sql"""SELECT i.page_id, i.title, i.author
             FROM round_image ri STRAIGHT_JOIN images i ON i.page_id = ri.page_id
-            WHERE ri.round_id = $roundId AND i.author IN (${members.keys.toSeq}) ORDER BY ri.page_id"""
+            WHERE ri.round_id = $roundId AND ri.status IN ($statuses) AND i.author IN (${members.keys.toSeq})
+            ORDER BY ri.page_id"""
         .map(rs => (rs.long(1), rs.string(2), rs.string(3)))
         .list()
         .flatMap { case (pageId, title, author) => matchOf(members)(Some(author)).map((pageId, title, _)) }

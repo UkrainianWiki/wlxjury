@@ -312,14 +312,24 @@ object ImageJdbc extends CRUDMapper[Image]
         .map(_.long(1))
         .list(): Unit
 
-  /** Of `pageIds`, those marked deleted or with votes moved aside: those to restore. */
+  /** Of `pageIds`, those marked deleted or with votes moved aside, but for a disqualified
+    * file's ([[notDisqualified]]): those to restore.
+    */
   def deletedOrArchived(pageIds: Seq[Long])(implicit session: DBSession): Seq[Long] =
     if (pageIds.isEmpty) Nil
     else
       sql"""SELECT page_id FROM images WHERE page_id IN ($pageIds) AND deleted_at IS NOT NULL
-            UNION SELECT DISTINCT page_id FROM vote_aside WHERE page_id IN ($pageIds)"""
+            UNION SELECT DISTINCT d.page_id FROM vote_aside d WHERE d.page_id IN ($pageIds) AND ${notDisqualified(sqls"d")}"""
         .map(_.long(1))
         .list()
+
+  /** The votes aside of `alias` are not those of a file disqualified in their round (P1b):
+    * those stay aside until it is requalified ([[RoundConflicts.requalify]]). Read plainly:
+    * a disqualify or requalify locks the round first, as the caller has (or is about to).
+    */
+  private def notDisqualified(alias: SQLSyntax): SQLSyntax =
+    sqls"""NOT EXISTS (SELECT 1 FROM round_image dq WHERE dq.round_id = $alias.round_id
+                       AND dq.page_id = $alias.page_id AND dq.status = ${RoundImageJdbc.Status.Dq})"""
 
   /** Clears the deleted mark of files Commons has again (an undeletion). */
   def clearDeleted(pageIds: Seq[Long])(implicit session: DBSession): Unit =
@@ -360,7 +370,7 @@ object ImageJdbc extends CRUDMapper[Image]
     */
   def lockRoundsOfArchived(pageIds: Seq[Long])(implicit session: DBSession): Unit =
     if (pageIds.nonEmpty) {
-      val roundIds = sql"SELECT DISTINCT round_id FROM vote_aside WHERE page_id IN ($pageIds)"
+      val roundIds = sql"SELECT DISTINCT d.round_id FROM vote_aside d WHERE d.page_id IN ($pageIds) AND ${notDisqualified(sqls"d")}"
         .map(_.long(1))
         .list()
       RoundWrites.lock(roundIds)
@@ -401,6 +411,22 @@ object ImageJdbc extends CRUDMapper[Image]
     pageIds
   }
 
+  /** Moves aside the votes of the round's files `pageIds` (to disqualify them, P1b:
+    * [[RoundConflicts.disqualify]]): their ids kept, so their rates and criteria rates come
+    * back exactly with [[moveVotesBackInRound]]. The caller has locked the round
+    * ([[RoundWrites]]; checked) and marks the rows `dq` after this
+    * ([[RoundImageJdbc.disqualify]]).
+    *
+    * @return the round, if it lost rows
+    */
+  def moveVotesAsideInRound(roundId: Long, pageIds: Seq[Long])(implicit session: DBSession): Seq[Long] =
+    if (pageIds.isEmpty) Nil
+    else {
+      RoundWrites.requireRounds(Seq(roundId))
+      val pages = pageIds.distinct.sorted
+      moveVotesAside(t => sqls"$t.round_id = $roundId AND $t.page_id IN ($pages)")
+    }
+
   /** Moves the vote rows `where` selects (on the alias it is given) to vote_aside.
     * They keep their ids, so their criteria rates follow them; those of an older row of the
     * same vote that the move replaces are deleted with it.
@@ -435,37 +461,57 @@ object ImageJdbc extends CRUDMapper[Image]
     roundIds
   }
 
-  /** Moves back all the vote rows of `pageIds` that [[archiveVotes]] moved aside
+  /** Moves back the vote rows of `pageIds` that [[archiveVotes]] moved aside, but a
+    * disqualified file's ([[notDisqualified]], P1b: they stay aside until it is requalified)
     * ([[moveVotesBack]]).
     *
     * @return the rounds that gained rows (their cached image counts are stale)
     */
   def restoreVotes(pageIds: Seq[Long])(implicit session: DBSession): Seq[Long] =
     if (pageIds.isEmpty) Nil
-    else moveVotesBack(pageIds)
+    else
+      moveVotesBack(sqls"d.page_id IN ($pageIds) AND ${notDisqualified(sqls"d")}",
+        sqls"page_id IN ($pageIds)", requalify = None)
 
-  /** Moves the files' vote_aside rows back to vote, but those of rounds deleted
-    * meanwhile, which are dropped. Where the file was distributed again to the same juror in
-    * the round meanwhile, the juror's vote wins: the moved row replaces an unrated new one,
-    * and gives way to a rated one (the juror voted again). Nothing of the files stays aside.
-    * Criteria rates follow their votes: the moved rows keep their ids and so their rates; the
-    * rates of the rows replaced or dropped are deleted.
+  /** Moves back the votes aside of the round's disqualified files `pageIds`, to requalify
+    * them ([[RoundConflicts.requalify]]), with their exact rates and criteria rates (their
+    * ids kept); their rows then follow their votes, `dq` lifted
+    * ([[RoundImageJdbc.requalifyRows]]). The caller has locked the round.
+    *
+    * @return the round, if it gained rows
+    */
+  def moveVotesBackInRound(roundId: Long, pageIds: Seq[Long])(implicit session: DBSession): Seq[Long] =
+    if (pageIds.isEmpty) Nil
+    else {
+      RoundWrites.requireRounds(Seq(roundId))
+      val pages = pageIds.distinct.sorted
+      moveVotesBack(sqls"d.round_id = $roundId AND d.page_id IN ($pages)",
+        sqls"round_id = $roundId AND page_id IN ($pages)", requalify = Some(roundId -> pages.toSet))
+    }
+
+  /** Moves the vote_aside rows `where` selects (on alias `d`) back to vote, but those of
+    * rounds deleted meanwhile, which are dropped. Where the file was distributed again to the
+    * same juror in the round meanwhile, the juror's vote wins: the moved row replaces an
+    * unrated new one, and gives way to a rated one (the juror voted again). Nothing that
+    * `where` selects stays aside. Criteria rates follow their votes: the moved rows keep their
+    * ids and so their rates; the rates of the rows replaced or dropped are deleted.
     *
     * Lock order: the rounds ([[lockRoundsOfArchived]], by the caller: the `round` subquery
     * below reads them with a shared lock) and the files before, then the files' vote rows
-    * (and the gaps where theirs would go), then vote_aside, then criteria_rate, as
-    * [[moveVotesAside]], [[VoteJdbc.deleteVotes]] and [[RoundConflicts]]: locking
-    * vote_aside first deadlocked with them. Last, the files' rows in those rounds: `in` again
-    * ([[RoundImageJdbc.sync]]). P1b: a disqualified file's votes stay aside (a condition on
-    * its `round_image` status here).
+    * (`votes`, on vote, and the gaps where theirs would go), then vote_aside, then
+    * criteria_rate, as [[moveVotesAside]], [[VoteJdbc.deleteVotes]] and [[RoundConflicts]]:
+    * locking vote_aside first deadlocked with them. Last, the files' rows in those rounds:
+    * `in` again ([[RoundImageJdbc.sync]]; a `dq` row stays `dq` unless `requalify` names it).
     *
+    * @param requalify the round and files whose `dq` this lifts (a requalify), if any
     * @return the rounds that gained rows
     */
-  private def moveVotesBack(pageIds: Seq[Long])(implicit session: DBSession): Seq[Long] = {
-    val where = sqls"d.page_id IN ($pageIds)"
+  private def moveVotesBack(where: SQLSyntax, votes: SQLSyntax, requalify: Option[(Long, Set[Long])])(implicit
+      session: DBSession
+  ): Seq[Long] = {
     val sameVote = sqls"s.page_id = d.page_id AND s.jury_id = d.jury_id AND s.round_id = d.round_id"
     val roundExists = sqls"EXISTS (SELECT 1 FROM round r WHERE r.id = d.round_id)"
-    sql"SELECT COUNT(*) FROM vote WHERE page_id IN ($pageIds) FOR UPDATE".map(_.int(1)).single()
+    sql"SELECT COUNT(*) FROM vote WHERE $votes FOR UPDATE".map(_.int(1)).single()
     val moved = sql"SELECT DISTINCT d.round_id, d.page_id FROM vote_aside d WHERE $where FOR UPDATE"
       .map(rs => rs.long(1) -> rs.long(2))
       .list()
@@ -494,7 +540,12 @@ object ImageJdbc extends CRUDMapper[Image]
     sql"""DELETE cr FROM vote_aside d STRAIGHT_JOIN criteria_rate cr ON cr.vote_id = d.id
           WHERE $where AND NOT EXISTS (SELECT 1 FROM vote s WHERE s.id = d.id)""".update()
     sql"DELETE d FROM vote_aside d WHERE $where".update()
-    RoundImageJdbc.syncPairs(moved)
+    requalify match {
+      case Some((roundId, pages)) =>
+        RoundImageJdbc.syncPairs(moved.filterNot(_._1 == roundId))
+        RoundImageJdbc.requalifyRows(roundId, moved.filter(_._1 == roundId).map(_._2).filter(pages))
+      case None => RoundImageJdbc.syncPairs(moved)
+    }
     roundIds
   }
 

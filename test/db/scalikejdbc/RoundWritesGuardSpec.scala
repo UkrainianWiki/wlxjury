@@ -81,6 +81,32 @@ class RoundWritesGuardSpec extends Specification with TestDb with BeforeAll with
     }
   }
 
+  "disqualifying and requalifying (P1b)" should {
+    "fail without the round's lock, and write nothing" in {
+      val (round, _) = setUp()
+      (DB.localTx(implicit s => ImageJdbc.moveVotesAsideInRound(round, Seq(1L))) must throwA[IllegalStateException]) and
+        (DB.localTx(implicit s => ImageJdbc.moveVotesBackInRound(round, Seq(1L))) must throwA[IllegalStateException]) and
+        (DB.localTx(implicit s => RoundImageJdbc.disqualify(round, Map(1L -> "x"), RoundImageJdbc.DqCode.Coi, None)) must
+          throwA[IllegalStateException]) and
+        (votes(round) === 1) and (RoundImageJdbc.find(round, 1L).map(_.status) === Some("in"))
+    }
+    "run with it, and the restore from Commons leave the votes aside" in {
+      val (round, _) = setUp()
+      DB.localTx { implicit s =>
+        RoundWrites.lock(Seq(round))
+        ImageJdbc.moveVotesAsideInRound(round, Seq(1L))
+        RoundImageJdbc.disqualify(round, Map(1L -> "x"), RoundImageJdbc.DqCode.Coi, None)
+      } === 1
+      val restored = DB.localTx { implicit s =>
+        ImageJdbc.lockRoundsOfArchived(Seq(1L)); ImageJdbc.lockFiles(Seq(1L)); ImageJdbc.restoreVotes(Seq(1L))
+      }
+      (restored must beEmpty) and (votes(round) === 0) and
+        (RoundImageJdbc.find(round, 1L).map(_.status) === Some("dq")) and
+        (DB.localTx(implicit s => ImageJdbc.deletedOrArchived(Seq(1L))) must beEmpty) and
+        (RoundImageInvariants.violations(round) must beEmpty)
+    }
+  }
+
   "a restore (W2's finding 3)" should {
     "lock a round whose votes aside its caller's lookup missed, and restore them" in {
       val (r1, juror) = setUp()

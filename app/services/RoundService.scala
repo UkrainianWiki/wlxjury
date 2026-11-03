@@ -149,7 +149,7 @@ class RoundService @Inject() (
       listOnly: Boolean = false
   )(implicit session: DBSession): Job = {
     // the round first, with the rounds it freezes: "Leave out conflicts of interest now"
-    // checks for its active job under the round's lock (RoundConflicts.removeFromRound)
+    // checks for its active job under the round's lock (RoundConflicts.disqualify)
     Round.lock(round.previousIds :+ round.getId)
     // an active distribution of the round, read plainly under the round's lock (READ
     // COMMITTED: the latest committed; jobs of the round are queued and end under this lock):

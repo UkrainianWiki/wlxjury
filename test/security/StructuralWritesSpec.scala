@@ -21,6 +21,7 @@ class StructuralWritesSpec extends Specification {
     "app/db/scalikejdbc/ImageJdbc.scala#moveVotesBack" -> "requireRounds",
     "app/db/scalikejdbc/ImageJdbc.scala#syncSelectionMonumentId" -> "its callers updateIn / updateMonumentIdIn requireFiles",
     "app/db/scalikejdbc/RoundImageJdbc.scala#addVoted" -> "requireRounds",
+    "app/db/scalikejdbc/RoundImageJdbc.scala#disqualify" -> "requireRounds (RoundConflicts.disqualify locks the round first)",
     "app/db/scalikejdbc/RoundImageJdbc.scala#syncChunk" -> "its caller sync requireRounds",
     "app/db/scalikejdbc/RoundImageJdbc.scala#syncMonumentId" -> "requireFiles",
     // their own round lock, recorded

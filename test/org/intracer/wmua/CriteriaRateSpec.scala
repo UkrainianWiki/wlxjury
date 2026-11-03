@@ -565,7 +565,7 @@ class CriteriaRateSpec extends Specification with TestDb with BeforeAll with Bef
       try {
         val held = new CountDownLatch(1)
         val removeVotes = new CountDownLatch(1)
-        // RoundConflicts.removeFromRound's locks: the round, then the file's votes, deleted
+        // the old RoundConflicts.removeFromRound's locks: the round, then the file's votes, deleted
         val holder = Future(DB.localTx { implicit s =>
           sql"SET SESSION innodb_lock_wait_timeout = 10".execute.apply()
           try {

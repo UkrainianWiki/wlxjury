@@ -286,12 +286,17 @@ object WritePathStress {
           val active = Round.findById(f.toggled).exists(_.active)
           Round.setActiveGuarded(f.toggled, !active)
         }),
-      Path("coi_remove", 1, adminThinkMs * 6, "request: RoundController -> RoundConflicts.removeFromRound, then the flag cleared",
+      Path("coi_disqualify", 1, adminThinkMs * 6,
+        "request: RoundConflictsController -> RoundConflicts.disqualify, then requalify (refused while the round is open, W7)",
         (_, rnd) => {
           val r = Seq(f.binary, f.rated)(rnd.nextInt(2))
-          val out = RoundConflicts.removeFromRound(r, f.admin, RoundDistributionHandler.dedupeKey(r))
-          Round.setExcludeCoi(r, excludeCoi = false)
-          out.isInstanceOf[RoundConflicts.Outcome.Removed]
+          val key = RoundDistributionHandler.dedupeKey(r)
+          RoundConflicts.disqualify(r, f.admin, key) match {
+            case RoundConflicts.Outcome.Disqualified(files) =>
+              files.isEmpty || RoundConflicts.requalify(r, files.map(_._1), RoundConflicts.RequalifyReason.MistakenMatch,
+                f.admin, key).isInstanceOf[RoundConflicts.Outcome.Requalified]
+            case _ => true // refused under the round's lock: open, frozen or distributing
+          }
         }),
       // distribution jobs (job steps, inline here: one step per transaction, retried 3x)
       Path("distribute_new", 1, adminThinkMs, "job: round_distribution (Distribute, Verify), \"Distribute new files\"",

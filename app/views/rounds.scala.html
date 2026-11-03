@@ -20,7 +20,12 @@
             <h1 class="h3">@Messages("campaign") @contest.fullName</h1>
 
             @flash.get("error").map { err =>
-                <div class="alert alert-danger">@err</div>
+                <div class="alert alert-danger">@err
+                    @* "Leave out conflicts of interest" saved on an open round: where to disqualify them *@
+                    @for(rid <- flash.get("coiRound").flatMap(_.toLongOption)) {
+                        <a href="@routes.RoundConflictsController.page(rid)" id="flash-coi-round">@Messages("coi.round.link")</a>
+                    }
+                </div>
             }
             @flash.get("success").map { msg =>
                 <div class="alert alert-info" id="flash-success">@msg</div>

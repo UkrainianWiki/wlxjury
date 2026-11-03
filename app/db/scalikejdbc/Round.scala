@@ -361,7 +361,7 @@ object Round extends RoundRepo with CRUDMapper[Round] {
     updateById(id).withAttributes("name" -> round.name): Unit
 
   /** The round form's "Leave out conflicts of interest", for a round with none of them to
-    * take out, or to stop leaving them out ([[RoundConflicts.removeFromRound]] sets it for
+    * take out, or to stop leaving them out ([[RoundConflicts.disqualify]] sets it for
     * one with some).
     */
   def setExcludeCoi(id: Long, excludeCoi: Boolean): Unit =
