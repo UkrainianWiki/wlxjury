@@ -550,6 +550,26 @@ class LocalImageCacheServiceSpec extends Specification {
       tmpDir.delete()
       ok
     }
+
+    "delete stale .tmp- files and not register them during initRegistry" in {
+      val tmpDir = Files.createTempDirectory("registry-stale-tmp").toFile
+      val svc    = mkService(tmpDir)
+
+      // Simulate a stale temp file left by a prior JVM crash
+      val staleDir = new File(tmpDir, "wikipedia/commons/thumb/a/ab/Photo.jpg")
+      staleDir.mkdirs()
+      val staleFile = new File(staleDir, ".tmp-crashed-1234.jpg")
+      staleFile.createNewFile()
+
+      Await.result(svc.initRegistry(), 10.seconds)
+
+      staleFile.exists()                              must beFalse   // file was deleted
+      svc.registryContains(staleFile)                must beFalse   // not in registry
+      svc.registrySize                               mustEqual 0    // nothing else registered
+
+      tmpDir.delete()
+      ok
+    }
   }
 
   // ── fetchAndCacheAll / fileIfCached ──────────────────────────────────────
@@ -693,6 +713,38 @@ class LocalImageCacheServiceSpec extends Specification {
 
       val corrupt = allWidths.filterNot { px =>
         val f = svc.localFile(img, px)
+        f.exists() && scala.util.Try(ImageIO.read(f)).toOption.exists(_ != null)
+      }
+      corrupt must beEmpty
+    }
+
+    "not corrupt files when two separate instances write the same image simultaneously" in {
+      val dir  = mkTempDir()
+      val svc1 = mkService(dir) // simulates JVM instance 1 — fresh empty registry
+      val svc2 = mkService(dir) // simulates JVM instance 2 — separate empty registry
+      val img  = mkImage(filename = "CrossInstance.jpg", w = 4000, h = 3000)
+      val src  = new BufferedImage(2200, 1650, BufferedImage.TYPE_INT_RGB)
+      val targetHts = Seq(120, 180, 240, 250, 375, 500, 1100, 1650)
+      val allWidths = targetHts.map(h => ImageUtil.resizeTo(4000, 3000, h)).filter(_ < 4000)
+
+      val barrier = new java.util.concurrent.CyclicBarrier(2)
+      val f1 = Future { barrier.await(); svc1.saveResized(img, src, 2200) }
+      val f2 = Future { barrier.await(); svc2.saveResized(img, src, 2200) }
+      Await.result(Future.sequence(Seq(f1, f2)), 30.seconds)
+
+      // No temp files must be left behind (walk subdirectories recursively)
+      val tmpFiles = {
+        import scala.jdk.CollectionConverters._
+        java.nio.file.Files.walk(dir.toPath)
+          .iterator().asScala
+          .filter(p => p.getFileName.toString.startsWith(".tmp-"))
+          .toSeq
+      }
+      tmpFiles must beEmpty
+
+      // All produced files must be valid, non-corrupt JPEGs
+      val corrupt = allWidths.filterNot { px =>
+        val f = svc1.localFile(img, px)
         f.exists() && scala.util.Try(ImageIO.read(f)).toOption.exists(_ != null)
       }
       corrupt must beEmpty

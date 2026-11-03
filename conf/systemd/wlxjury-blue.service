@@ -1,0 +1,18 @@
+[Unit]
+Description=WLX Jury Tool (blue slot)
+After=network.target
+
+[Service]
+Type=simple
+User=wlxjury
+WorkingDirectory=/opt/wlxjury-blue
+EnvironmentFile=/etc/wlxjury/blue.env
+ExecStart=/opt/wlxjury-blue/bin/wlxjury \
+  -Dhttp.port=${WLXJURY_HTTP_PORT} \
+  -Dpidfile.path=/run/wlxjury-blue/play.pid
+RuntimeDirectory=wlxjury-blue
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
