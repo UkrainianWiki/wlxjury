@@ -62,8 +62,9 @@ class RoundService @Inject() (
     submitToken.flatMap(submitted(_, round.contestId)) match {
       case Some(existing) => resubmitted(existing)
       case None =>
-        val configuredRound = round.withFixedCategories.withCanonicalCategoryRule
-        RoundDistributionHandler.previousRounds(configuredRound)
+        val canonical = round.withFixedCategories.withCanonicalCategoryRule
+        val prevRounds = RoundDistributionHandler.previousRounds(canonical)
+        val configuredRound = canonical.withExplicitTopOrder(prevRounds.exists(_.isBinary))
         val jurors = User.loadJurors(round.contestId, jurorIds).distinct
         require(jurors.nonEmpty, "no jurors selected for the round; nothing to distribute")
         require(
@@ -150,6 +151,12 @@ class RoundService @Inject() (
     // checks for its active job under the round's lock (RoundConflicts.removeFromRound)
     Round.lock(round.previousIds :+ round.getId)
     val state = distribution.initialState(round, listOnly)
+    // the top-N's order and the rejected-by filter only where they apply: from a yes/no
+    // previous round
+    val binaryPrevious =
+      round.previousIds.nonEmpty && Round.findByIds(round.contestId, round.previousIds).exists(_.isBinary)
+    val topOrder = round.topImages.filter(_ => binaryPrevious).map(_ => round.topOrderParam)
+    val rejectedBy = round.rejectedByFilter.filter(_ => binaryPrevious)
     jobs.enqueue(
       NewJob(
         kind = RoundDistributionHandler.Kind,
@@ -164,9 +171,11 @@ class RoundService @Inject() (
           "settings" -> Json.obj(
             "previous" -> round.previous,
             "distribution" -> round.distribution,
-            "prevSelectedBy" -> round.prevSelectedBy,
+            "prevSelectedBy" -> round.selectedByFilter,
+            "prevRejectedBy" -> rejectedBy,
             "prevMinAvgRate" -> round.prevMinAvgRate,
             "topImages" -> round.topImages,
+            "topBinaryOrder" -> topOrder,
             "regions" -> round.regions,
             "monuments" -> round.monuments,
             "category" -> round.category,
@@ -291,10 +300,9 @@ class RoundService @Inject() (
         .toMap
     }.toMap
 
-    // The stat table reads only the selected count (rate 1) of a binary round;
-    // "unrated" is total - selected.
+    // a binary round's files with at least one vote of each rate: the stat table's footer
     val totalByRate =
-      if (round.isBinary) Map(1 -> dao.selectedImageCount(roundId)) else Map.empty[Int, Int]
+      if (round.isBinary) dao.imageCountsByRate(roundId) else Map.empty[Int, Int]
     val total = RoundImageCounts
       .get(Seq(roundId))(ImageJdbc.imageCountByRounds)
       .getOrElse(roundId, 0)

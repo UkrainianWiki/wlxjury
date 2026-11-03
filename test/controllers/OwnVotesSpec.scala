@@ -7,6 +7,7 @@ import play.api.mvc.Result
 import play.api.test.CSRFTokenHelper._
 import play.api.test.{FakeRequest, PlaySpecification}
 
+import scala.jdk.CollectionConverters._
 import scala.concurrent.Future
 
 /** A juror sees only their own votes: a round's gallery, file list, CSV and large view
@@ -126,6 +127,27 @@ class OwnVotesSpec extends PlaySpecification with PlayTestDb {
         val f = fixture()
         views(app, f.juror2, f.orgViewRound, f.juror1.getId, f.images.head.pageId, OK)
         views(app, f.juror2, f.orgViewRound, 0L, f.images.head.pageId, OK)
+      }
+    }
+  }
+
+  "a binary round's large view" should {
+
+    "list every juror's vote to an organiser, rejections and votes yet to come too, and none to a juror" in {
+      testDbApp { app =>
+        val f = fixture()
+        val binary = roundDao.create(Round(None, 3, Some("A yes/no round"), contestId = f.roundA.contestId,
+          rates = Round.binaryRound, active = true))
+        binary.addUsers(Seq(f.juror1, f.juror2).map(j => RoundUser(binary.getId, j.getId, "jury", active = true)))
+        val image = f.images.head
+        selectionDao.batchInsert(Seq(Selection(image, f.juror1, binary, rate = -1), Selection(image, f.juror2, binary, rate = 0)))
+        def votes(viewer: User, asUserId: Long) =
+          org.jsoup.Jsoup.parse(contentAsString(get(app, viewer, largePath(binary, asUserId, image.pageId))))
+            .select(".large-line li").asScala.toList.map(li => (li.select("a").text, li.select(".visually-hidden").text))
+        (votes(f.organizer, 0L) === List(("Juror 1", "Rejected"), ("Juror 2", "Unrated"))) and
+          (votes(f.organizer, f.juror2.getId) === List(("Juror 1", "Rejected"), ("Juror 2", "Unrated"))) and
+          // a juror's own large view: not the other juror's rejection, nor their own list of votes
+          (votes(f.juror2, f.juror2.getId) === Nil)
       }
     }
   }

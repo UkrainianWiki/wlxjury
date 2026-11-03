@@ -41,6 +41,13 @@
                         data-roundId="@roundId"
                         data-rate="@file.rate"
                         data-largeUrl="@list.largeUrl(file.pageId)"
+                        @* all the jurors' votes on a binary round's file, on its tile (tile-votes.js addTally):
+                           approvals, rejections and what a screen reader reads, as binaryTally has them *@
+                        @if(list.aggregateBinary) {
+                        data-approvals="@file.approvals"
+                        data-rejections="@file.rejections"
+                        data-tally="@Messages("binary.tally", file.approvals, file.rejections)"
+                        }
                         >
                     }
             </div>

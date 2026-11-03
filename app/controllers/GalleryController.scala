@@ -145,7 +145,8 @@ class GalleryController @Inject() (
             at.fold(
               page => galleryOf(user, list, page, rounds, contest).withCookies(RoundList.remembered(list, user).toSeq: _*),
               // the page with the file, or where it would be if the filter now leaves it out
-              pageId => Redirect(list.position(pageId).fold(list.pageUrl(1))(p => list.pageUrl(Pager.pageOf(p)) + "#" + pageId))
+              pageId => Redirect(list.position(pageId).fold(list.pageUrl(1))(p =>
+                list.pageUrl(Pager.pageOf(p, list.pageSize)) + "#" + pageId))
             )
           }
         }
@@ -164,17 +165,18 @@ class GalleryController @Inject() (
 
     lazy val asUser = galleryService.getAsUser(asUserId, user)
 
-    // a juror's list: its total, region counts and tabs from one query over the juror's files
-    val counts = list.jurorCounts()
+    // a juror's list: its total, region counts and tabs from one query over the juror's files.
+    // Lazy, as the pager, menu and tabs: a CSV streams all the list's files without them
+    lazy val counts = list.jurorCounts()
 
-    val pager = Pager(page, counts.fold(list.count())(_.total(list.filter, list.region)))
-    val files = list.files(pager)
+    lazy val pager = Pager(page, counts.fold(list.count())(_.total(list.filter, list.region)), list.pageSize)
+    lazy val files = list.files(pager)
 
     // the region menu, whose regions are read when it is opened (regions)
-    val menu = regionMenu(list, contest)
+    lazy val menu = regionMenu(list, contest)
 
     // the viewer's own tabs: the counts above when the list is their own
-    val rates = counts.filter(_ => user.id.contains(asUserId)).fold(galleryService.rateDistribution(user, round))(c =>
+    lazy val rates = counts.filter(_ => user.id.contains(asUserId)).fold(galleryService.rateDistribution(user, round))(c =>
       new RateDistribution(c.rates))
 
     lazy val jurors =
@@ -186,22 +188,25 @@ class GalleryController @Inject() (
         Ok(RequestTiming.render(views.html.gallery(user, list, files, pager, rounds, menu, rates)))
 
       case GalleryView.Csv =>
-        val data = Csv.exportRates(files, jurors, round)
         val name = "WLXJury_Round_" + round.description
-        csvStream(data, name)
+        csvStream(Csv.rateRows(list, jurors)(blocking), name)
 
       case GalleryView.FileList =>
-        val ranks = ImageWithRating.rankImages(files, round)
+        val ranks = list.ranks(files)
         val useTable = !round.isBinary || asUserId == 0
         val showAuthor = user.canViewOrgInfo(round) && files.exists(_.image.author.nonEmpty)
-        Ok(views.html.fileList(user, list, asUser, files, ranks, jurors, rounds, menu, "wiki", useTable, rates,
+        Ok(views.html.fileList(user, list, asUser, files, ranks, jurors, rounds, menu, pager, "wiki", useTable, rates,
           showAuthor))
 
       case GalleryView.Gallery | GalleryView.ByRate =>
         // a criteria round's stars count its criteria: read once for the page
         val shown = if (!round.hasCriteria) list
           else list.withRound(round.copy(criteriaCount = CriteriaRate.countOf(round.getId).getOrElse(round.criteriaCount)))
-        Ok(RequestTiming.render(views.html.galleryByRate(user, shown, files, pager, rounds, menu, rates)))
+        // the by-rate gallery's ranks among all the list's files, as a file list's (one grouped count);
+        // none in file order, which they would not follow
+        val ranks =
+          if (list.view == GalleryView.ByRate && list.order != ListOrder.FileOrder) list.ranks(files) else Nil
+        Ok(RequestTiming.render(views.html.galleryByRate(user, shown, files, pager, rounds, menu, rates, ranks)))
     }
   }
 
@@ -292,11 +297,9 @@ class GalleryController @Inject() (
       Ok("success")
   }
 
-  def csvStream(lines: Seq[Seq[String]], filename: String): Result = {
-    val withBom = Csv.addBom(lines).toList
-    val source = Source[Seq[String]](withBom).map { line =>
-      ByteString(Csv.writeRow(line))
-    }
+  /** CSV rows as a download, sent as they are read ([[Csv.rateRows]]). */
+  def csvStream(lines: Source[Seq[String], _], filename: String): Result = {
+    val source = lines.map(line => ByteString(Csv.writeRow(line)))
     Result(
       ResponseHeader(
         OK,
