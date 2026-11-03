@@ -92,6 +92,7 @@ background and keep its log:
 
 ```bash
 export GH=/c/Users/ilya/tools/gh/bin/gh.exe
+mkdir -p target/review
 python -I scripts/review/coderabbit_loop.py --self-test
 python -I scripts/review/coderabbit_loop.py --first 194 --last 249 --batch 1          # what it would do
 python -I scripts/review/coderabbit_loop.py --first 194 --last 249 --batch 1 --post >> target/review/loop.log 2>&1
