@@ -77,7 +77,7 @@
                         @bs.checkbox(field = editRoundForm("excludeCoi"),
                             Symbol("_label") -> Messages("coi.exclude"),
                             Symbol("_help") -> coi.fold("")(c => c.describe),
-                            Symbol("data-coi-round-files") -> coi.flatMap(_.inRound).getOrElse(0),
+                            Symbol("data-coi-round-files") -> coi.fold(0)(_.toConfirm),
                             Symbol("data-coi-confirm") -> Messages("coi.exclude.confirm", coi.flatMap(_.inRound).getOrElse(0)))
 
                         @* open when the form comes back with a list in it *@

@@ -266,7 +266,7 @@ class CoiRoundSpec extends Specification with TestDb with BeforeAll with BeforeE
       disqualify(round.getId, jurors.head)
       RoundImageInvariants.violations(round.getId) must beEmpty
 
-      requalify(round.getId, conflicts.toSeq :+ 8L :+ 999L, jurors.head) === RoundConflicts.Outcome.Requalified(Seq(2L, 4L, 6L), Nil)
+      requalify(round.getId, conflicts.toSeq :+ 8L :+ 999L, jurors.head) === RoundConflicts.Outcome.Requalified(Seq(2L, 4L, 6L))
 
       votes(sqls"vote", round.getId) === before
       votes(sqls"vote_aside", round.getId) must beEmpty
@@ -284,26 +284,36 @@ class CoiRoundSpec extends Specification with TestDb with BeforeAll with BeforeE
       CoiMembers.roundFiles(round.getId, CoiMembers.forContest(contest.getId)).map(_._1).toSet === conflicts
     }
 
-    "requalify a file deleted on Commons meanwhile as deleted, its votes aside until it is restored" in {
+    "requalify a file deleted on Commons meanwhile as it was, in with its votes, aside once the round opens" in {
       val (contest, jurors, _) = setUp()
       val round = service.createNewRound(newRound(contest, excludeCoi = false), jurors.map(_.getId))
-      rateAll(round.getId)
-      val before = votes(sqls"vote", round.getId)
-      stop(round.getId)
-      disqualify(round.getId, jurors.head)
+      val r = round.getId
+      rateAll(r)
+      val before = votes(sqls"vote", r)
+      stop(r)
+      // deleted on Commons while the round is stopped: a round that isn't open keeps its votes
+      DB.localTx(implicit s => DeletedFiles.markDeleted(Seq(3L)))
+      statuses(r).get(3L) === Some("in")
+      disqualify(r, jurors.head)
       DB.localTx(implicit s => DeletedFiles.markDeleted(Seq(2L)))
-      statuses(round.getId).get(2L) === Some("dq")
+      statuses(r).get(2L) === Some("dq")
 
-      requalify(round.getId, Seq(2L, 4L), jurors.head) === RoundConflicts.Outcome.Requalified(Seq(2L, 4L), Seq(2L))
-      statuses(round.getId).get(2L) === Some("deleted")
-      statuses(round.getId).get(4L) === Some("in")
-      asidePages(round.getId) === Set(2L, 6L)
-      RoundImageInvariants.violations(round.getId) must beEmpty
+      requalify(r, Seq(2L, 4L), jurors.head) === RoundConflicts.Outcome.Requalified(Seq(2L, 4L))
+      // as before the disqualify: in, with the votes, as file 3 (deleted, never disqualified)
+      statuses(r).get(2L) === Some("in")
+      statuses(r).get(4L) === Some("in")
+      votes(sqls"vote", r) === before.filterNot(_._2 == 6L)
+      RoundImageInvariants.violations(r) must beEmpty
 
+      // the round opens: the deleted files' votes move aside, as for any deleted file
+      Round.setActiveGuarded(r, active = true) must beTrue
+      statuses(r).get(2L) === Some("deleted")
+      statuses(r).get(3L) === Some("deleted")
+      asidePages(r) === Set(2L, 3L, 6L)
+      RoundImageInvariants.violations(r) must beEmpty
       DB.localTx(implicit s => DeletedFiles.restore(Seq(2L)))
-      statuses(round.getId).get(2L) === Some("in")
-      votes(sqls"vote", round.getId) === before.filterNot(_._2 == 6L)
-      RoundImageInvariants.violations(round.getId) must beEmpty
+      statuses(r).get(2L) === Some("in")
+      RoundImageInvariants.violations(r) must beEmpty
     }
 
     "disqualify only the files asked for that are conflicts" in {
@@ -325,7 +335,7 @@ class CoiRoundSpec extends Specification with TestDb with BeforeAll with BeforeE
       def unchanged = (pageIds(r) === (1L to 10L).toSet) and (RoundImageJdbc.disqualified(r) must beEmpty) and
         (roundDao.findById(r).get.excludeCoi must beFalse)
       // open to its jurors
-      (disqualify(r, admin, excludeCoi = true) === RoundConflicts.Outcome.Open) and unchanged and {
+      (disqualify(r, admin) === RoundConflicts.Outcome.Open) and unchanged and {
         // being created
         sql"UPDATE round SET active = 0, distributing = 1 WHERE id = $r".update()(AutoSession)
         disqualify(r, admin) === RoundConflicts.Outcome.Distributing
@@ -342,7 +352,13 @@ class CoiRoundSpec extends Specification with TestDb with BeforeAll with BeforeE
         }
         disqualify(r, admin) === RoundConflicts.Outcome.Distributing
       } and unchanged and (disqualify(12345L, admin) === RoundConflicts.Outcome.NotFound) and
-        (RoundImageInvariants.violations(r) must beEmpty)
+        (RoundImageInvariants.violations(r) must beEmpty) and {
+        // the round form's flag on an open round: set under the lock, nothing disqualified
+        sql"DELETE FROM job".update()(AutoSession)
+        sql"UPDATE round SET active = 1 WHERE id = $r".update()(AutoSession)
+        (disqualify(r, admin, excludeCoi = true) === RoundConflicts.Outcome.Open) and
+          (roundDao.findById(r).get.excludeCoi must beTrue) and (RoundImageJdbc.disqualified(r) must beEmpty)
+      }
     }
 
     "refuse requalifying while the round is open, keeping the files disqualified" in {
@@ -370,7 +386,7 @@ class CoiRoundSpec extends Specification with TestDb with BeforeAll with BeforeE
       statuses(round.getId).get(2L) === Some("dq")
       RoundImageInvariants.violations(round.getId) must beEmpty
       // requalified, it is back with its votes; not added twice
-      requalify(round.getId, Seq(2L), jurors.head) === RoundConflicts.Outcome.Requalified(Seq(2L), Nil)
+      requalify(round.getId, Seq(2L), jurors.head) === RoundConflicts.Outcome.Requalified(Seq(2L))
       pageIds(round.getId) must contain(2L)
       svc.distributeNewImages(round.getId) === 0
     }

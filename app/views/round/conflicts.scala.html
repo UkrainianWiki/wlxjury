@@ -13,7 +13,7 @@
 @mainAdmin("coi.round.title", user, user.getId, contestId = Some(round.contestId)) {
     <div class="row">
         <div class="col-md-10">
-            <h1 class="h3">@Messages("coi.round.title.of", round.number, round.description)</h1>
+            <h1 class="h3">@Messages("coi.round.title.of", round.number, round.name.getOrElse(""))</h1>
             <p>@Messages("coi.round.help")</p>
 
             @for(text <- flash.get("success")) {

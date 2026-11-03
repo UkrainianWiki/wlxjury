@@ -22,6 +22,7 @@ import scalikejdbc._
   *  8. Until P3 (a round filled before it is distributed): a row has votes, `in` in `vote`,
   *     `deleted` in `vote_aside`. A `dq` row (P1b) may have none: it is kept whatever its
   *     votes, so that the file is never distributed again ([[RoundImageJdbc.sync]]).
+  *  9. A `dq` row has its `dq_code` and `dq_at`; any other row has no `dq_*` (P1b; reported).
   */
 object RoundImageInvariants {
 
@@ -59,6 +60,12 @@ object RoundImageInvariants {
         pages(8, sql"""SELECT ri.page_id FROM round_image ri
                        WHERE ri.round_id = $roundId
                          AND (ri.status = ${Status.In} AND NOT $inVote OR ri.status = ${Status.Deleted} AND NOT $inAside)
+                       ORDER BY ri.page_id"""),
+        pages(9, sql"""SELECT ri.page_id FROM round_image ri
+                       WHERE ri.round_id = $roundId
+                         AND (ri.status = ${Status.Dq} AND (ri.dq_code IS NULL OR ri.dq_at IS NULL)
+                           OR ri.status <> ${Status.Dq} AND (ri.dq_code IS NOT NULL OR ri.dq_detail IS NOT NULL
+                             OR ri.dq_by IS NOT NULL OR ri.dq_at IS NOT NULL))
                        ORDER BY ri.page_id""")
       ).flatten
     }

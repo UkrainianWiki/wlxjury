@@ -14,8 +14,9 @@ import scalikejdbc._
   *    leave the jurors' lists and the round's counts; a restore on Commons leaves their votes
   *    aside; "Distribute new files" never adds them again (its anti-join reads every row).
   *  - **Requalify** (a mistaken match or an ended conflict, an admin's action with a reason
-  *    code): the votes come back exactly, the rows `in` again; a file deleted on Commons
-  *    meanwhile becomes `deleted`, its votes staying aside.
+  *    code): the votes come back exactly, the rows `in` again. A file deleted on Commons
+  *    meanwhile is `in` too, as any deleted file of a round that is not open: its votes move
+  *    aside when the round opens ([[Round.setActiveGuarded]]).
   *
   * Both are structural writes (W2): the round is locked for update first, in the action's own
   * transaction, and they are allowed only while the round is not open to its jurors (W7 of
@@ -48,10 +49,8 @@ object RoundConflicts {
     /** The files disqualified: page id, title and the person each is by. */
     final case class Disqualified(files: Seq[(Long, String, CoiMembers.Member)]) extends Outcome
 
-    /** The files requalified, and of those the ones deleted on Commons meanwhile (now
-      * `deleted`, their votes aside).
-      */
-    final case class Requalified(pageIds: Seq[Long], deleted: Seq[Long]) extends Outcome
+    /** The files requalified. */
+    final case class Requalified(pageIds: Seq[Long]) extends Outcome
 
     /** The round is open to its jurors (W7): it must be stopped first. */
     case object Open extends Outcome
@@ -97,7 +96,9 @@ object RoundConflicts {
     * @param distributionKey the dedupe key of the round's distribution jobs ([[gate]])
     * @param only            only these of them (the conflicts page's selection), if given:
     *                        a file no longer a conflict is never disqualified
-    * @param excludeCoi      also set the round's [[Round.excludeCoi]] (the round form)
+    * @param excludeCoi      also set the round's [[Round.excludeCoi]] (the round form), also
+    *                        when the round is open or frozen (refused, but no distribution of
+    *                        it is active)
     */
   def disqualify(
       roundId: Long,
@@ -106,11 +107,18 @@ object RoundConflicts {
       only: Option[Set[Long]] = None,
       excludeCoi: Boolean = false
   ): Outcome = {
+    def setFlag()(implicit session: DBSession): Unit =
+      if (excludeCoi) sql"UPDATE round SET exclude_coi = TRUE WHERE id = $roundId".update(): Unit
     val outcome = WriteTx.write { implicit session =>
       gate(roundId, distributionKey) match {
+        // no distribution of it is active: the flag, set under the round's lock, applies to
+        // its later ones (review finding 4)
+        case Left(refused @ (Outcome.Open | Outcome.Frozen)) =>
+          setFlag()
+          refused
         case Left(refused) => refused
         case Right(contestId) =>
-          if (excludeCoi) sql"UPDATE round SET exclude_coi = TRUE WHERE id = $roundId".update()
+          setFlag()
           val conflicts = CoiMembers.roundFiles(roundId, CoiMembers.forContest(contestId))
             .filter { case (pageId, _, _) => only.forall(_.contains(pageId)) }
           val pageIds = conflicts.map(_._1)
@@ -136,10 +144,11 @@ object RoundConflicts {
 
   /** Requalifies the round's disqualified files among `pageIds` (D8), in one transaction with
     * the round locked first, while the round is not open ([[gate]]): their votes back with
-    * their exact rates and criteria rates, their rows `in`; a file now deleted on Commons
-    * (read in share mode, after the round) becomes `deleted`, its votes staying aside, as a
-    * file deleted while in an open round. A requalified file is offered again by a later
-    * re-check while its author still matches (no overrides yet, plan §7).
+    * their exact rates and criteria rates, their rows `in`, as before. A file deleted on
+    * Commons meanwhile too: a round that is not open keeps a deleted file's votes until it
+    * opens ([[services.imports.DeletedFiles]]), so it is `in` as it was (review finding 1; the
+    * plan's §5 first had it `deleted`, votes aside). A requalified file is offered again by a
+    * later re-check while its author still matches (no overrides yet, plan §7).
     *
     * @param reason one of [[RequalifyReason.All]]
     */
@@ -156,21 +165,17 @@ object RoundConflicts {
             else
               sql"""SELECT page_id FROM round_image WHERE round_id = $roundId AND page_id IN ($requested)
                     AND status = ${Status.Dq} ORDER BY page_id""".map(_.long(1)).list()
-          val deleted = ImageJdbc.lockDeleted(dq)
-          ImageJdbc.moveVotesBackInRound(roundId, dq.diff(deleted))
-          // every one of them follows its votes now: the deleted ones `deleted`, any with no
-          // votes left out of the round, as before V84
-          RoundImageJdbc.sync(roundId, dq, requalify = dq.toSet)
-          Outcome.Requalified(dq, deleted)
+          ImageJdbc.moveVotesBackInRound(roundId, dq)
+          // every one of them follows its votes now (one with none left leaves the round, as
+          // before V84)
+          RoundImageJdbc.requalifyRows(roundId, dq)
+          Outcome.Requalified(dq)
       }
     }
     outcome match {
-      case Outcome.Requalified(files, deleted) if files.nonEmpty =>
+      case Outcome.Requalified(files) if files.nonEmpty =>
         RoundImageCounts.invalidate(roundId)
-        logger.info(
-          s"Round $roundId: requalified ${files.size} files ($reason), by user ${by.getId}: ${files.mkString(", ")}" +
-            (if (deleted.isEmpty) "" else s"; deleted on Commons, votes kept aside: ${deleted.mkString(", ")}")
-        )
+        logger.info(s"Round $roundId: requalified ${files.size} files ($reason), by user ${by.getId}: ${files.mkString(", ")}")
       case _ =>
     }
     outcome

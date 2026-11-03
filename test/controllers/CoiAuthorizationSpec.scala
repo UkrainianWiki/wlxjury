@@ -163,11 +163,14 @@ class CoiAuthorizationSpec extends PlaySpecification with PlayTestDb with Mockit
 
   "the round form's \"Leave out conflicts of interest\" of an existing round" should {
 
-    "show the round's own count, and ask before taking them out" in {
+    "show the round's own count, and ask before disqualifying them: on a stopped round only" in {
       testDbApp { app =>
         val round = setUp()
-        val html = contentAsString(page(app, "admin@example.com", s"/admin/rounds/edit?id=${round.getId}&contestId=$contestId"))
+        def html = contentAsString(page(app, "admin@example.com", s"/admin/rounds/edit?id=${round.getId}&contestId=$contestId"))
+        // open: saving only sets the flag, nothing to confirm
         html must contain("2 of this round")
+        html must contain("data-coi-round-files=\"0\"")
+        Round.setActive(round.getId, active = false)
         html must contain("data-coi-round-files=\"2\"")
         html must not(contain("remove-conflicts"))
       }
@@ -215,6 +218,27 @@ class CoiAuthorizationSpec extends PlaySpecification with PlayTestDb with Mockit
         status(save(app, "root@example.com", saveRound(other, excludeCoi = true))) === SEE_OTHER
         VoteJdbc.byRound(other.getId) must beEmpty
         RoundImageJdbc.disqualified(other.getId).map(_.pageId) === Seq(1L)
+      }
+    }
+
+    "not disqualify again on a later save, so a requalified file stays in (review finding 2)" in {
+      testDbApp { app =>
+        val round = setUp()
+        val r = round.getId
+        Round.setActive(r, active = false)
+        status(save(app, "admin@example.com", saveRound(round, excludeCoi = true))) === SEE_OTHER
+        RoundImageJdbc.disqualified(r).map(_.pageId) === Seq(1L, 2L)
+        val admin = User.findByEmail("admin@example.com").head
+        RoundConflicts.requalify(r, Seq(1L), RoundConflicts.RequalifyReason.MistakenMatch, admin,
+          services.distribution.RoundDistributionHandler.dedupeKey(r)) === RoundConflicts.Outcome.Requalified(Seq(1L))
+        // the form, the flag set: no confirm, and a save changes nothing
+        contentAsString(page(app, "admin@example.com", s"/admin/rounds/edit?id=$r&contestId=$contestId")) must
+          contain("data-coi-round-files=\"0\"")
+        val again = save(app, "admin@example.com", saveRound(round, excludeCoi = true))
+        status(again) === SEE_OTHER
+        flash(again).get("success") must beNone
+        RoundImageJdbc.disqualified(r).map(_.pageId) === Seq(2L)
+        VoteJdbc.byRound(r).map(_.pageId).toSet === Set(1L, 3L)
       }
     }
 

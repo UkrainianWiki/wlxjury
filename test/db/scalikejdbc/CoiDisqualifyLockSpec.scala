@@ -98,7 +98,7 @@ class CoiDisqualifyLockSpec extends Specification with TestDb with BeforeAll wit
             }) and
             (asideRate(round, 1L) === Some(5)) and (RoundImageInvariants.violations(round) must beEmpty) and
             (RoundConflicts.requalify(round, Seq(1L), RoundConflicts.RequalifyReason.MistakenMatch, admin, key(round)) ===
-              RoundConflicts.Outcome.Requalified(Seq(1L), Nil)) and
+              RoundConflicts.Outcome.Requalified(Seq(1L))) and
             (VoteJdbc.findBy(1L, juror.getId, round).map(_.rate) === Some(5)) and
             (RoundImageInvariants.violations(round) must beEmpty)
         }

@@ -475,10 +475,8 @@ object ImageJdbc extends CRUDMapper[Image]
 
   /** Moves back the votes aside of the round's disqualified files `pageIds`, to requalify
     * them ([[RoundConflicts.requalify]]), with their exact rates and criteria rates (their
-    * ids kept); their rows then follow their votes, `dq` lifted ([[RoundImageJdbc.sync]]'s
-    * `requalify`). The caller has locked the round and checked the files: not deleted on
-    * Commons (a deleted file's votes stay aside; the caller lifts its mark with
-    * [[RoundImageJdbc.sync]]).
+    * ids kept); their rows then follow their votes, `dq` lifted
+    * ([[RoundImageJdbc.requalifyRows]]). The caller has locked the round.
     *
     * @return the round, if it gained rows
     */
@@ -545,7 +543,7 @@ object ImageJdbc extends CRUDMapper[Image]
     requalify match {
       case Some((roundId, pages)) =>
         RoundImageJdbc.syncPairs(moved.filterNot(_._1 == roundId))
-        RoundImageJdbc.sync(roundId, moved.filter(_._1 == roundId).map(_._2), requalify = pages)
+        RoundImageJdbc.requalifyRows(roundId, moved.filter(_._1 == roundId).map(_._2).filter(pages))
       case None => RoundImageJdbc.syncPairs(moved)
     }
     roundIds

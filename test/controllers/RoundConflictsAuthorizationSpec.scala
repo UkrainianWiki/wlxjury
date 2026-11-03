@@ -141,6 +141,31 @@ class RoundConflictsAuthorizationSpec extends PlaySpecification with PlayTestDb 
       }
     }
 
+    "check a user of two contests in the round's contest, never switching the session on a POST" in {
+      testDbApp { app =>
+        val (round, other) = setUp()
+        val r = round.getId
+        // an admin of contest 10 whose session is in contest 20, where they are a juror
+        val both = User.findByEmail("admin@example.com").head
+        UserContestJdbc.createMembership(both.getId, 20L, "jury") must beTrue
+        // a juror of contest 10 who is an admin of contest 20
+        val juror = User.findByEmail("juror@example.com").head
+        UserContestJdbc.createMembership(juror.getId, 20L, "admin") must beTrue
+        def as(email: String, current: Long, method: String, path: String, body: (String, String)*) =
+          route(app, FakeRequest(method, path).withFormUrlEncodedBody(body: _*)
+            .withSession(Secured.UserName -> email, Secured.CurrentContestId -> current.toString).withCSRFToken).get
+        val view = as("admin@example.com", 20L, GET, page(r))
+        val posted = as("admin@example.com", 20L, POST, disqualify(r), "pageId" -> "1")
+        (status(view) === OK) and (status(posted) === SEE_OTHER) and
+          (session(posted).get(Secured.CurrentContestId) must not(beSome(contestId.toString))) and
+          (disqualified(round) === Seq(1L)) and
+          (status(as("juror@example.com", 20L, POST, disqualify(r), "pageId" -> "2")) === FORBIDDEN) and
+          (status(as("juror@example.com", contestId, POST, requalify(r), "pageId" -> "1", mistaken)) === FORBIDDEN) and
+          (status(as("juror@example.com", 20L, GET, page(r))) === FORBIDDEN) and
+          (disqualified(round) === Seq(1L)) and (other.contestId === 20L)
+      }
+    }
+
     "be refused when signed out" in {
       testDbApp { app =>
         val (round, _) = setUp()

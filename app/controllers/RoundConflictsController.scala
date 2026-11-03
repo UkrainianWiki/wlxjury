@@ -66,10 +66,8 @@ class RoundConflictsController @Inject() (
           case (_, None) => back(round).flashing("error" -> messages("coi.requalify.reason.missing"))
           case (_, Some(code)) =>
             RoundConflicts.requalify(round.getId, pageIds, code, user, RoundDistributionHandler.dedupeKey(round.getId)) match {
-              case RoundConflicts.Outcome.Requalified(files, deleted) =>
-                back(round).flashing("success" ->
-                  (messages("coi.requalified", files.size, round.number) +
-                    (if (deleted.isEmpty) "" else " " + messages("coi.requalified.deleted", deleted.size))))
+              case RoundConflicts.Outcome.Requalified(files) =>
+                back(round).flashing("success" -> messages("coi.requalified", files.size, round.number))
               case refused => refusal(round, refused)(messages)
             }
         }

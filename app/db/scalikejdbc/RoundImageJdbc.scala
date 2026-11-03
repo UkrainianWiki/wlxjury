@@ -10,8 +10,8 @@ import scalikejdbc._
   * with votes: status `in` while the pair has `vote` rows, `deleted` while its votes are only
   * in `vote_aside` (a file deleted on Commons in an open round), and no row once the pair has
   * none ([[RoundImageInvariants]]). A disqualified file (`dq`, P1b: [[RoundConflicts]]) keeps
-  * its row, with its votes aside, whatever its votes: only an explicit requalify ([[sync]]'s
-  * `requalify`) takes it back to `in`, so "Distribute new files" never adds it again.
+  * its row, with its votes aside, whatever its votes: only an explicit requalify
+  * ([[requalifyRows]]) takes it back to `in`, so "Distribute new files" never adds it again.
   *
   * Writers:
   *  - a vote insert ([[VoteJdbc.create]], [[VoteJdbc.batchInsert]], so a distribution, the
@@ -21,7 +21,7 @@ import scalikejdbc._
   *    a file to another round, leaving out conflicts of interest) brings the pairs it touched
   *    in line with their votes afterwards ([[sync]]);
   *  - disqualifying a file marks its row `dq` after its votes are moved aside
-  *    ([[disqualify]]); requalifying it lifts the mark ([[sync]] with `requalify`);
+  *    ([[disqualify]]); requalifying it lifts the mark ([[requalifyRows]]);
   *  - a monument id change follows the image ([[syncMonumentId]]);
   *  - a deleted round or image takes its rows with it (foreign keys, ON DELETE CASCADE);
   *  - the `round_image_check` job repairs drift ([[services.distribution.RoundImageCheckHandler]]).
@@ -143,15 +143,23 @@ object RoundImageJdbc {
     * write of those votes in the same transaction: `in` where the pair has `vote` rows; else
     * `deleted` where it has `vote_aside` rows; no row where it has neither. A `dq` row stays
     * `dq` whatever its votes (P1b: a vote written for it is invariant 3's to report; one with
-    * none keeps its row, so it is never distributed again), except the files in `requalify`
-    * ([[RoundConflicts.requalify]]), which follow their votes as any other; a row leaving
-    * `dq` loses its `dq_*`. The votes are read in share mode (the caller holds those it
+    * none keeps its row, so it is never distributed again); only [[requalifyRows]] lifts it. The votes are read in share mode (the caller holds those it
     * wrote; the others' latest committed state, not the snapshot's), then the rows locked and
     * written. A missing row is added with `missing` as its origin, with its image's monument
     * id.
     */
-  def sync(roundId: Long, pageIds: Seq[Long], missing: Origin = Origin.Manual, requalify: Set[Long] = Set.empty)(
-      implicit session: DBSession
+  def sync(roundId: Long, pageIds: Seq[Long], missing: Origin = Origin.Manual)(implicit session: DBSession): SyncResult =
+    syncWith(roundId, pageIds, missing, requalify = Set.empty)
+
+  /** [[sync]] of the round's files `pageIds` with their `dq` lifted (a requalify,
+    * [[RoundConflicts.requalify]], after their votes are moved back): they follow their votes
+    * as any other row, and lose their `dq_*`.
+    */
+  private[scalikejdbc] def requalifyRows(roundId: Long, pageIds: Seq[Long])(implicit session: DBSession): SyncResult =
+    syncWith(roundId, pageIds, Origin.Manual, requalify = pageIds.toSet)
+
+  private def syncWith(roundId: Long, pageIds: Seq[Long], missing: Origin, requalify: Set[Long])(implicit
+      session: DBSession
   ): SyncResult = {
     if (pageIds.nonEmpty) RoundWrites.requireRounds(Seq(roundId))
     pageIds.distinct.sorted.grouped(Chunk).foldLeft(SyncResult()) { (acc, chunk) =>
