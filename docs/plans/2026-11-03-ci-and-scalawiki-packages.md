@@ -360,7 +360,7 @@ The two scalawiki diffs (`publishing.diff`, `anonymous-tests.diff`) both change 
     - `Restore and release-script tests on the packaged release`: **success in 4m26s** (`sbt dist`, image build, and both test modules).
     - `Python unit tests and shellcheck`: **failed in 11 s**. `test_adoption_accepts_the_shipped_application_conf` took the shipped `wlxjury.legacyPasswords.{retire,firstCheck,checkEvery}` (S6) for literal credentials, because the setting path contains "password".
     - This failure was already on the stack, not caused by CI.
-    - Fixed in [55]: an exact-path allowlist (`NONSECRET_SETTINGS`) in `wlxjury-deploy.py`, with a test that any other key under `wlxjury.legacyPasswords` is still refused. Locally, all 61 Python tests pass on python:3.8-slim.
+    - Fixed in [55] at first with an exact-path allowlist (`NONSECRET_SETTINGS`) in `wlxjury-deploy.py`. That allowlist is superseded: followups' deploy adoption-scanner fix (`75618f04`, stack PR 58) names a credential by its leaf key only (`credential_name()`), so the schedule settings pass without any allowlist. On followups (`ukwikidev/followups-ci`) and from stack PR 58 on, `NONSECRET_SETTINGS` is gone, and the test is `test_adoption_refuses_a_credential_leaf_under_the_legacy_password_schedule`: `retire` passes, a `token` leaf under `wlxjury.legacyPasswords` is still refused. Locally, all 61 Python tests pass on python:3.8-slim.
 - **CI run 2** (`c3f8cdc1`: anonymous tests and the adoption fix, 2026-11-03 10:55 UTC):
   - **CI** [run 41623216087](https://github.com/UkrainianWiki/wlxjury/actions/runs/41623216087): **success in 5m08s**, with the sbt cache and the scalawiki cache restored.
     - `Test/compile` took 65 s, the suite 180 s.
