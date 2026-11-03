@@ -1,5 +1,7 @@
 # Hotfix: contest role allowlist (N1), on top of 0.13-authz-6fa5b56fb021
 
+> **Status: historical** (deployed 2026-11-02 14:01Z as `0.13-round-filters-rolefix-f3f2c73617de`). Delete it once a followups release replaces the hotfix on production.
+
 **What it fixes.** A contest admin could make any account root through the edit form's free-text
 `roles` field (`jury,root`): `UserContest.roles` split `user_contest.role` on commas and the
 user's roles took root from it. The hotfix (branch `ukwikidev/hotfix-role-allowlist`, from the
@@ -74,7 +76,7 @@ lost after `backup-skipped`).
 
 ## 4. Data and root audit (after the deploy; the user runs it)
 
-`docs/security/2026-11-02-role-allowlist-data.sql`, **one statement at a time** in an
+`docs/history/security/2026-11-02-role-allowlist-data.sql`, **one statement at a time** in an
 interactive `mysql` session (never pipe the file into `mysql`: the `COMMIT` must follow a
 check of the count):
 

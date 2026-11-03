@@ -2,7 +2,7 @@ package org.intracer.wmua
 
 /** The order of a yes/no round's files by all of its jurors' votes together: the galleries,
   * file list and CSV of all the jurors' votes, and the top-N a next round takes from it
-  * (docs/plans/2026-11-01-binary-aggregate-votes.md, decision 1). Files of the same values
+  * (docs/history/2026-11-01-binary-aggregate-votes.md, decision 1). Files of the same values
   * tie, and ties go in page id order wherever the order is used.
   *
   * @param param its value of a list URL's `sort`, the order cookie's and `round.top_binary_order`'s

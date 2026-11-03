@@ -1,5 +1,10 @@
 # Category operators
 
+> **Status: historical** (implemented in `95093df2`, `f9c31ce5`; the legacy-compatible rule
+> model it describes is in force).
+> The redistribution plan's "existing-round recovery check" was dropped: the lost filter values
+> never reached a production deploy, so there is nothing to recover.
+
 Approved in chat: retain single-category Include and Exclude and add AND, OR/union,
 and MINUS. Both category fields are required for binary operations. Existing round
 filters remain immutable; existing assignments and votes are not rewritten.

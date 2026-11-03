@@ -1,13 +1,15 @@
 # Re-review of the previous security reviews (2026-11-02)
 
+> **Status: historical** (the 2026-11-02 re-review). Live status: [register.md](../../security/register.md). The documents it re-checks are deleted; read them with `git show 98a8a79e:<path>`.
+
 **Scope.** Every finding, recommendation, guideline and checklist item of the earlier security
 documents, checked again against the current code:
 
-- `docs/security/review.md`, `incident-prevention-guidelines.md`,
+- `98a8a79e:docs/security/review.md`, `incident-prevention-guidelines.md`,
   `incident-prevention-implementation-plan.md`, `local-images-review-followups.md`;
 - the security items of `docs/plans/2026-11-01-open-followups.md` (section 2, 4.5, 4.7, 6.1, 6.4,
-  the B5 and B6 review-fix tables), `docs/plans/2026-11-01-api-auth.md` (merged, `992d8eb2`),
-  `docs/plans/2026-10-27-error-handling.md`, `docs/superpowers/plans/2026-04-20-sql-injection-fix.md`
+  the B5 and B6 review-fix tables), `98a8a79e:docs/plans/2026-11-01-api-auth.md` (merged, `992d8eb2`),
+  `98a8a79e:docs/plans/2026-10-27-error-handling.md`, `98a8a79e:docs/superpowers/plans/2026-04-20-sql-injection-fix.md`
   and the COI plan's authorization section;
 - the security rows of the Montage comparison (`docs/comparison/01-wlxjury.md` WJ-F1, WJ-F2, WJ-Q4;
   `03-comparison.md` Q4), which exists only untracked in the main checkout (read only).
@@ -29,7 +31,7 @@ Counts over the tables below: 45 Fixed (of which 6 only in the repo, see O1), 16
 No item regressed in code. The one material gap is deployment: the infra template of
 `/etc/wlxjury-runtime/production.conf` has none of batch B5's settings.
 
-## 1. `docs/security/review.md`
+## 1. `98a8a79e:docs/security/review.md`
 
 | Item | Previous claim | Now | Evidence | Notes |
 |---|---|---|---|---|
@@ -52,7 +54,7 @@ No item regressed in code. The one material gap is deployment: the infra templat
 | Step 4, `@Html(...)` audit | Done (B6) | **Holds** | `rg 'Html\(\|HtmlFormat\.raw'` in `app/` gives exactly the uses in the 2.6 table; `WikiLinksSpec` (incl. `<script>`, `<img onerror>`, `-->`), `GalleryDescriptionViewSpec` (double-escaped `data-description`). DOM sinks: `cache-status.js:55` `innerHTML` of numbers and constants only | |
 | Step 5, HSTS in Apache | Open (infra) | **Open (infra)** | infra `roles/wlxjury_tls/templates/wlxjury-ssl.conf.j2` and the repo's `conf/apache/*` set no `Strict-Transport-Security` | HTTP→HTTPS redirects exist for every name (repo `0002-wlxjury.conf:13-70`, infra `wlxjury-http.conf.j2:16`) |
 
-## 2. `docs/security/incident-prevention-guidelines.md`
+## 2. `98a8a79e:docs/security/incident-prevention-guidelines.md`
 
 | Item | Previous claim | Now | Evidence | Notes |
 |---|---|---|---|---|
@@ -78,7 +80,7 @@ No item regressed in code. The one material gap is deployment: the infra templat
 | Checklist: arbitrary URL fetches | — | **Partially** | Practice 6 | |
 | Checklist: deployment config aligned with allowed hosts and headers | — | **Open** | O1, Step 5 | |
 
-## 3. `docs/security/incident-prevention-implementation-plan.md`
+## 3. `98a8a79e:docs/security/incident-prevention-implementation-plan.md`
 
 | Item | Previous claim | Now | Evidence | Notes |
 |---|---|---|---|---|
@@ -97,7 +99,7 @@ No item regressed in code. The one material gap is deployment: the infra templat
 | Verification plan: header integration tests | — | **Open** | none found | |
 | Verification plan: manual checks (cross-contest mutation, missing CSRF, malicious region, bad Host, sessions after secret rotation) | — | **Cannot verify** | automated equivalents exist for the first four (above); the last needs a deployment | |
 
-## 4. `docs/security/local-images-review-followups.md`
+## 4. `98a8a79e:docs/security/local-images-review-followups.md`
 
 The document's own status table still shows #3, #4, #7, #8, #9, P2 and P3 as open; most are fixed.
 

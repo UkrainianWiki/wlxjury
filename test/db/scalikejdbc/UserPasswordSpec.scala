@@ -121,7 +121,7 @@ class UserPasswordSpec extends PlaySpecification with PlayTestDb {
         values.zipWithIndex.foreach { case (p, i) => User.create(User(s"U$i", s"u$i@example.com", password = Some(p))) }
         User.create(User("None", "none@example.com"))
 
-        // the queries in the B4 results (docs/plans/2026-11-01-open-followups.md)
+        // the queries in the B4 results (98a8a79e:docs/plans/2026-11-01-open-followups.md)
         val neverMatch = DB.readOnly { implicit s =>
           SQL("""SELECT COUNT(*) FROM users WHERE password IS NOT NULL AND password NOT REGEXP BINARY '^([0-9a-f]{40}|\\$2[ab]\\$[0-9]{2}\\$[./A-Za-z0-9]{53})$'""")
             .map(_.long(1)).single.apply()

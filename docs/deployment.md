@@ -1,10 +1,24 @@
 # Deployment and recovery
 
-Use `scripts/deployment/wlxjury-deploy.py` on Linux as root, with Python 3.8+, systemd, Apache and MariaDB client tools, for the one-time setup and the cutover release. After the cutover, routine releases use the smaller [`wlxjury-release`](#routine-deployment-after-the-cutover) script, with a `restore` command and a recovery runbook; see `docs/plans/2026-10-13-deployment-tooling-alternatives.md` for why. The old blue/green scripts are disabled and their slot files removed.
+Use `scripts/deployment/wlxjury-deploy.py` on Linux as root, with Python 3.8+, systemd, Apache and MariaDB client tools, for the one-time setup and the cutover release. After the cutover, routine releases use the smaller [`wlxjury-release`](#routine-deployment-after-the-cutover) script, with a `restore` command and a recovery runbook ([why](#why-it-works-this-way)). The old blue/green scripts are disabled and their slot files removed.
 
 Run every `deploy`, `restore` and `reopen` inside `tmux` (or `screen`). The tool ignores SSH hangups and logs each step to `/var/backups/wlxjury/operations.log`, so a dropped connection does not interrupt a backup, migration or restore. You still need the terminal to follow it and to act on the result.
 
 The selected baseline is the latest benchmarked background-distribution release, including **V55.1 and V60**. The changes from `bcdf9847` are present as `32a1253`; its migration, test and fixture are identical. The measured MariaDB recommendation remains `bench/cnf/recommended-60-wlxjury.cnf`, with a **256 MiB** buffer pool. These changes have been implemented locally; production setup and real-data rehearsal are separate rollout steps.
+
+## Why it works this way
+
+One `wlxjury.service`, immutable versioned ZIP releases, a maintenance window and a rehearsal
+against an isolated database (2026-10-11 investigation; implemented in `dbedca56`, review fixes
+`ebb6fd04`). Blue/green was dropped: it gave neither zero downtime nor a safe rollback after a
+migration, and two app processes and two databases don't fit the server's disk. No standard
+tool (Ansible, pyinfra, Capistrano-style release folders) covers the recovery part (phase
+records, `restore` with its dump, refusing a restore after reopening), so the one-time cutover
+keeps the tested `wlxjury-deploy.py`; routine releases use the small `wlxjury-release`
+(`b5a1f9ec`, `restore` in `cc15dfd7`) with a rehearsed runbook instead of guided recovery
+commands (tooling comparisons `24d0c62a`, `6d96d264`). The cutover code (`adopt-legacy`,
+`scrub-legacy`, about 350 lines) is retired once the cutover is accepted and its recovery
+records are gone (roadmap). The Debian package stays a later option.
 
 ## One-time setup on the server
 
@@ -78,7 +92,7 @@ Use a reviewed build name and the final ZIP hash. A requested build ID is refuse
 
 Rehearse the **exact ZIP** against a consistent isolated production copy on production's MariaDB (10.6 until the move to Ubuntu 24.04's 10.11, `docs/plans/2026-10-19-mariadb-10.11.md`), including Flyway history. Production MyISAM needs locking or stopped writers; `--single-transaction` alone is insufficient. Disable real email, isolate access and staging cache, and prevent copied jobs from contacting production services. Measure migration, startup, backup, restore and peak space; review V58 orphans, V65 orphans (the count of `category_members` rows whose image or category is gone, which V65 archives into `category_members_orphans` and deletes; the check query is in its header) and V60 job recovery. Test restoring the backup and old release too.
 
-From V53, this release applies V54, V55, V55.1 and V56–V60. V55.1 rebuilds tables and changes collation; earlier production-copy measurements were about 2.5 minutes with considerable disk growth before other migration work. Set an outage/timeout budget from rehearsal. Read `docs/plans/2026-10-07-prod-like-benchmark.md` for measured results and limits. Apply the reviewed 256 MiB MariaDB config in maintenance after conversion, restart/recheck MariaDB and the app before reopening. The tool does not change DB server settings used by other hosted applications.
+From V53, this release applies V54, V55, V55.1 and V56–V60. V55.1 rebuilds tables and changes collation; earlier production-copy measurements were about 2.5 minutes with considerable disk growth before other migration work. Set an outage/timeout budget from rehearsal. Read `docs/history/2026-10-07-prod-like-benchmark.md` for measured results and limits. Apply the reviewed 256 MiB MariaDB config in maintenance after conversion, restart/recheck MariaDB and the app before reopening. The tool does not change DB server settings used by other hosted applications.
 
 ## Cutover deployment with wlxjury-deploy
 
