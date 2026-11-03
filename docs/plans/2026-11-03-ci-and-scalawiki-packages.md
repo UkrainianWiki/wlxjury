@@ -287,6 +287,7 @@ The two scalawiki diffs (`publishing.diff`, `anonymous-tests.diff`) both change 
 
 - **`.github/workflows/coverage.yml`, job `Coverage (Scala and JS)`:** its own workflow, so `ci.yml`'s test job keeps its speed. Same triggers as `ci.yml` without the weekly schedule: every PR (any base), pushes to `master` and `ukwikidev/followups`, and `workflow_dispatch`. Same setup (Temurin 17, sbt cache, Node 20, the scalawiki action) and MariaDB 10.6.22 only.
   - Command: `env -u COMMONS_USER -u COMMONS_PASSWORD -u SCALAWIKI_LOGIN -u SCALAWIKI_PASSWORD python3 scripts/agent-check.py -- sbt … coverage Test/compile test coverageReport`. No `-Dintegration`, no credentials (the anonymous rule above).
+  - `TestConfigAnonymousSpec` flags any `COMMONS_*` / `SCALAWIKI_LOGIN` etc. in a workflow line, which failed CI's first run on this `env -u` line. It now ignores a name only as `env -u NAME` (a whole argument, so `-u COMMONS_USER=x` and a following `NAME=x` are still flagged), with examples both ways.
   - `coverageAggregate` is not needed: the build is one project.
   - **Non-blocking:** no coverage minimum, and the check is not to be required (U8 names only `CI / sbt test (mariadb:10.6.22)`). A real test failure still turns the job red, as it would in `ci.yml`.
 - **Jest:** `build.sbt`'s `jsTest` passes `--coverage` when `coverageEnabled` is on (that is, after `coverage` in the same sbt session), and `--no-coverage` otherwise. So a plain `sbt test`, and `ci.yml`, are unchanged, and the coverage job runs Jest once, with coverage.
