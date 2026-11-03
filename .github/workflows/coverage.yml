@@ -72,7 +72,8 @@ jobs:
 
       - name: End of the log
         if: failure()
-        run: tail -n 400 target/checks/*.log
+        # A setup step (e.g. the scalawiki build) can fail before sbt writes any log
+        run: tail -n 400 target/checks/*.log || true
 
       - name: Upload coverage reports and logs
         if: always()
