@@ -7,15 +7,18 @@ Bodies are files in <dir>/bodies/ (write them with reply_bodies.py):
 A body is skipped when it is recorded in <dir>/replies.json, or, with that file missing, when
 GitHub already has it: for a thread, a reply by ukwikidev (`in_reply_to_id`); for an issue
 comment, one by ukwikidev carrying the body's marker (`<!-- wlxjury-review:<pr>:<name> -->`,
-added on posting) or starting with the body's first line. So replies.json can be deleted and is
-rebuilt as replies are posted. 5 s between posts (CodeRabbit answers replies, and its chat
-messages per hour are limited).
+added on posting), or, among our comments with no marker at all (posted before markers existed),
+one whose whole body is the same. So replies.json can be deleted and is rebuilt as replies are
+posted. 5 s between posts (CodeRabbit answers replies, and its chat messages per hour are limited).
 
-Usage: python -I post_replies.py PR [--dir target/review/triage] [--dry-run]
+Posts only with --post; without it (or with --dry-run) it lists what it would post.
+
+Usage: python -I post_replies.py PR [--dir target/review/triage] [--post]
 """
 import argparse
 import os
 import pathlib
+import re
 import sys
 import time
 
@@ -27,16 +30,56 @@ def marker(pr, name):
     return f"<!-- wlxjury-review:{pr}:{name} -->"
 
 
-def first_line(text):
-    return next((line.strip() for line in text.splitlines() if line.strip() and not line.startswith("<!--")), "")
+ANY_MARKER = re.compile(r"<!-- wlxjury-review:[^>]*-->")
+
+
+def norm(text):
+    return "\n".join(line.rstrip() for line in text.replace("\r\n", "\n").strip().splitlines())
+
+
+def already_posted(pr, name, text, issue_bodies):
+    """An issue comment of ours with this body's marker; for a comment with no marker at all
+    (posted before markers existed), one whose whole body equals this one."""
+    for b in issue_bodies:
+        if ANY_MARKER.search(b):
+            if marker(pr, name) in b:
+                return True
+        elif norm(b) == norm(ANY_MARKER.sub("", text)):
+            return True
+    return False
+
+
+def self_test():
+    body = "Fixed later in the stack: #200.\n\nDetails follow."
+    checks = [
+        ("same marker", already_posted("5", "summary", body, ["other text\n\n" + marker("5", "summary")]), True),
+        ("other marker, same first line", already_posted("5", "summary", body,
+                                                          ["Fixed later in the stack: #200.\n\n" + marker("5", "stack-review")]), False),
+        ("no marker, same body", already_posted("5", "summary", body, [body.replace("\n", "\r\n") + "\n"]), True),
+        ("no marker, same first line only", already_posted("5", "summary", body,
+                                                           ["Fixed later in the stack: #200.\n\nOther details."]), False),
+    ]
+    bad = [c for c in checks if c[1] != c[2]]
+    for name, got, want in checks:
+        print(f"{'ok  ' if got == want else 'FAIL'} {name}")
+    print(f"{len(checks) - len(bad)}/{len(checks)} checks passed")
+    return 1 if bad else 0
 
 
 def main():
     ap = add_common_args(argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter))
-    ap.add_argument("pr", help="PR number")
+    ap.add_argument("pr", nargs="?", help="PR number")
     ap.add_argument("--dir", default=str(DEFAULT_DIR / "triage"), help="triage folder (default %(default)s)")
-    ap.add_argument("--dry-run", action="store_true", help="list what would be posted; post nothing")
+    ap.add_argument("--post", "--write", dest="post", action="store_true", help="post the replies; without it, only list what would be posted")
+    ap.add_argument("--dry-run", action="store_true", help="the default: list what would be posted, post nothing")
+    ap.add_argument("--self-test", action="store_true", help="check the duplicate detection on samples and exit")
     a = ap.parse_args()
+    if a.self_test:
+        return self_test()
+    if a.pr is None:
+        ap.error("PR is required")
+    if a.post and a.dry_run:
+        ap.error("--post and --dry-run contradict each other")
     pr, d = a.pr, pathlib.Path(a.dir)
     hub = GitHub(gh_path(a.gh), a.repo)
     state_path = d / "replies.json"
@@ -59,9 +102,9 @@ def main():
             print("skip (recorded)", key); continue
         if inline and int(name) in threads:
             print("skip (already on GitHub)", key); continue
-        if not inline and any(marker(pr, name) in b or (first_line(text) and b.strip().startswith(first_line(text))) for b in issue):
+        if not inline and already_posted(pr, name, text, issue):
             print("skip (already on GitHub)", key); continue
-        if a.dry_run:
+        if not a.post:
             print("would post", key); continue
         if not inline and marker(pr, name) not in text:
             # the marker lets a later run find this comment without replies.json
