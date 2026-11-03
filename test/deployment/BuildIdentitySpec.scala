@@ -32,6 +32,24 @@ class BuildIdentitySpec extends Specification {
     }
   }
 
+  "a calendar version" should {
+    // YY.MM, .N for an extra deploy in the same month; the snapshot carries the next release
+    // (workflow practices §7.4).
+    "name snapshot, release and same-month builds" in {
+      BuildIdentity.buildId("26.11-SNAPSHOT", Some("dbedca565807"), dirty = false, None) must
+        beRight("26.11-SNAPSHOT-dbedca565807")
+      BuildIdentity.buildId("26.11", Some("dbedca565807"), dirty = false, Some("26.11")) must
+        beRight("26.11-dbedca565807")
+      BuildIdentity.buildId("26.11.1", Some("dbedca565807"), dirty = false, Some("26.11.1-hotfix")) must
+        beRight("26.11.1-hotfix-dbedca565807")
+    }
+    "be the version build.sbt sets, in the packaged manifest" in {
+      val stream = getClass.getClassLoader.getResourceAsStream("wlxjury-build.json")
+      val manifest = try Json.parse(stream) finally stream.close()
+      (manifest \ "version").as[String] must beMatching("""[0-9]{2}\.(0[1-9]|1[0-2])(\.[1-9][0-9]*)?(-SNAPSHOT)?""")
+    }
+  }
+
   "the source status" should {
     "count untracked files as changes" in {
       // `git status --porcelain` output; `git diff` reported nothing for these.

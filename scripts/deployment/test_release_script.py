@@ -281,16 +281,16 @@ class ReleaseScriptTest(unittest.TestCase):
         (directory / 'bin' / 'wlxjury').chmod(0o755)
         (directory / 'wlxjury-build.json').write_text(json.dumps(manifest))
 
-    def release_zip(self, schema='60', build='0.13-test', fail=False):
+    def release_zip(self, schema='60', build='26.11-test', fail=False):
         """A ZIP like sbt dist's: one top-level folder and no permission bits."""
-        manifest = {'build': build, 'version': '0.13', 'schemaVersion': schema}
+        manifest = {'build': build, 'version': '26.11', 'schemaVersion': schema}
         if fail:
             manifest['failMigration'] = True
         archive = self.base / ('wlxjury-%s.zip' % build)
         with zipfile.ZipFile(str(archive), 'w') as bundle:
-            bundle.writestr('wlxjury-0.13/bin/wlxjury', FAKE_APP)
-            bundle.writestr('wlxjury-0.13/lib/app.jar', 'jar')
-            bundle.writestr('wlxjury-0.13/wlxjury-build.json', json.dumps(manifest))
+            bundle.writestr('wlxjury-26.11/bin/wlxjury', FAKE_APP)
+            bundle.writestr('wlxjury-26.11/lib/app.jar', 'jar')
+            bundle.writestr('wlxjury-26.11/wlxjury-build.json', json.dumps(manifest))
         return archive, hashlib.sha256(archive.read_bytes()).hexdigest()
 
     def release(self, *args):
@@ -349,7 +349,7 @@ class ReleaseScriptTest(unittest.TestCase):
         self.assertSucceeded(result)
         operation = self.operation()
         self.assertEqual(self.milestones(operation), ['started', 'backup-complete', 'migration-may-start', 'ready'])
-        release = self.root / 'releases' / ('0.13-test-' + sha[:12])
+        release = self.root / 'releases' / ('26.11-test-' + sha[:12])
         self.assertEqual((self.root / 'current').resolve(), release)
         self.assertIn('wlxjury-release reopen ' + operation.name, result.stdout)
         # Migrated while closed: maintenance on, restarts held, the writers still stopped.
