@@ -1,0 +1,21 @@
+@(user: db.scalikejdbc.User, subject: String, name: String)(implicit flash: Flash, messages: Messages, request: RequestHeader)
+@* After a Wikimedia account is linked from the own profile (OAuthController.wikiAccountPage,
+   review B4): asks before setting the own (empty) wiki account to its username. The form posts
+   only the identity's subject; the name comes from the identity on the server. *@
+@mainAdmin("oauth.wiki.confirm.title", user, user.getId) {
+    <div class="row">
+        <div class="col-md-6 offset-md-3" id="wiki-account-confirm">
+            <h1 class="h3">@Messages("oauth.wiki.confirm.title")</h1>
+            @flash.get(controllers.OAuthController.FlashSuccess).filter(controllers.OAuthController.MessageKeys.contains).map { key =>
+                <div class="alert alert-success" role="status">@Messages(key)</div>
+            }
+            <p>@Messages("oauth.wiki.confirm.text", name)</p>
+            <form method="post" action="@routes.OAuthController.setWikiAccount()" class="d-inline">
+                @csrfField()
+                <input type="hidden" name="subject" value="@subject">
+                <button type="submit" class="btn btn-primary">@Messages("oauth.wiki.confirm.submit")</button>
+            </form>
+            <a class="btn btn-outline-secondary" href="@routes.UserController.editUser(user.getId)">@Messages("cancel")</a>
+        </div>
+    </div>
+}

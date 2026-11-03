@@ -1,4 +1,4 @@
-@(loginForm: Form[(String, String)], returnTo: Option[String] = None, noAccounts: Boolean = false)(implicit flash: Flash, messages: Messages, req: RequestHeader)
+@(loginForm: Form[(String, String)], returnTo: Option[String] = None, noAccounts: Boolean = false, providers: Seq[String] = Nil)(implicit flash: Flash, messages: Messages, req: RequestHeader)
 
 @mainAdmin("application.name") {
 
@@ -7,6 +7,22 @@
 <fieldset class="col-md-6 offset-md-3">
 
     <legend>@Messages("signin.signin")</legend>
+
+    @* why a Google or Wikimedia sign-in failed: a message key only (OAuthController) *@
+    @flash.get(controllers.OAuthController.FlashError).filter(controllers.OAuthController.MessageKeys.contains).map { key =>
+        <div class="alert alert-danger" role="alert" id="oauth-error">@Messages(key)</div>
+    }
+
+    @* the Google and Wikimedia sign-ins this host offers: links (a GET leaves for the provider,
+       so the CSP's form-action stays 'self'); they keep the user signed in, as the form's default *@
+    @if(providers.nonEmpty) {
+        <div class="oauth-signin d-grid gap-2 mb-3">
+        @for(provider <- providers) {
+            <a id="oauth-@provider" class="btn btn-lg btn-outline-secondary" href="@routes.OAuthController.login(provider, returnTo)">@Messages(s"oauth.signin.$provider")</a>
+        }
+        </div>
+        <p class="text-center text-body-secondary">@Messages("oauth.or")</p>
+    }
 
     @bs.form(routes.LoginController.auth()) {
 

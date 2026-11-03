@@ -1,6 +1,6 @@
 package services
 
-import db.scalikejdbc.{AccountToken, AccountTokenJdbc, ApiTokenJdbc, User, UserContestJdbc}
+import db.scalikejdbc.{AccountToken, AccountTokenJdbc, ApiTokenJdbc, User, UserContestJdbc, UserIdentityJdbc}
 import play.api.Logger
 import scalikejdbc._
 
@@ -25,10 +25,13 @@ object AccountTokenService {
   val InvitationValidSeconds: Long = 7L * 24 * 3600
   val PasswordResetValidSeconds: Long = 7L * 24 * 3600
   val EmailChangeValidSeconds: Long = 24L * 3600
+  /** As long as the chooser's choice waits in the session (F5). */
+  val OAuthChooseValidSeconds: Long = 15L * 60
 
   def validSeconds(purpose: String): Long = purpose match {
     case AccountTokenJdbc.EmailChange   => EmailChangeValidSeconds
     case AccountTokenJdbc.PasswordReset => PasswordResetValidSeconds
+    case AccountTokenJdbc.OAuthChoose   => OAuthChooseValidSeconds
     case _                              => InvitationValidSeconds
   }
 
@@ -103,56 +106,131 @@ object AccountTokenService {
     else
       User.findById(t.userId)(session).filter(_.deletedAt.isEmpty) match {
         case None => refused(AccountGone, Some(t))
-        case Some(user) if AccountTokenJdbc.SetsPassword.contains(t.purpose) && user.emailLo != t.email =>
+        case Some(user) if AccountTokenJdbc.BoundToEmail.contains(t.purpose) && user.emailLo != t.email =>
           refused(OtherAddress, Some(t))
         case Some(user) => Right(t -> user)
       }
 
   /** Accepts an invitation or a password link, in one transaction, the link's row locked:
-    * the password becomes `passwordHash` (the old one stops working), the email is verified,
-    * `auth_version` goes up (every session of the account ends), every API token of the
-    * account is revoked, the account's pending invitations sent to this address give their
-    * roles if whoever sent each may still give it in that contest ([[mayStillGrant]]), and every
-    * other unused link of the account, of any purpose (an email change a former holder of the
-    * password asked for included, M1), is revoked. The account, as stored now.
+    * the password becomes `passwordHash` (the old one stops working), and what accepting a link
+    * proves follows ([[proveEmail]]). The account, as stored now.
     */
   def acceptPasswordLink(token: String, passwordHash: String): Either[Refusal, (AccountToken, User)] =
     if (!Format.matches(token)) Left(Malformed)
-    else
+    else {
       // quiet: the statements bind the password hash, which must not reach the SQL log
-      User.quietTx { implicit session =>
+      val result = User.quietTx { implicit session =>
         AccountTokenJdbc.lockByHash(hash(token)) match {
           case None                                                         => refused(Unknown, None)
           case Some(t) if !AccountTokenJdbc.SetsPassword.contains(t.purpose) => refused(WrongPurpose, Some(t))
           case Some(t) =>
             checked(t).flatMap { case (link, user) =>
-              val pending = AccountTokenJdbc.pendingInvitationsOf(user.getId, link.email)
-              if (!AccountTokenJdbc.markUsed(link.id)) refused(NotLive, Some(link))
-              else {
-                sql"""UPDATE users SET password = $passwordHash, email_verified_at = NOW(3),
-                        auth_version = ${User.BumpAuthVersion}
-                      WHERE id = ${user.getId}""".update.apply()
-                val revokedApiCount = ApiTokenJdbc.revokeAll(user.getId)
-                val roles = pending.flatMap { p =>
-                  val used = p.id == link.id || AccountTokenJdbc.markUsed(p.id)
-                  for {
-                    contestId <- p.contestId
-                    role <- p.role
-                    if used
-                    if mayStillGrant(p, contestId) || { logger.warn(
-                      s"invitation_role_dropped reason=inviter_no_longer_admin tokenId=${p.id} accountId=${user.getId} " +
-                        s"contestId=$contestId"); false }
-                  } yield {
-                    UserContestJdbc.setMembership(user.getId, contestId, role)
-                    s"$contestId:$role"
-                  }
-                }
-                val revokedLinks = AccountTokenJdbc.revokeUnused(user.getId, AccountTokenJdbc.AllPurposes)
-                logger.info(
-                  s"account_link_accepted purpose=${link.purpose} tokenId=${link.id} accountId=${user.getId} " +
-                    s"apiTokensRevoked=$revokedApiCount linksRevoked=$revokedLinks memberships=${roles.mkString(",")}")
-                Right(link -> User.findById(user.getId)(session).get)
-              }
+              proveEmail(link, user, Some(passwordHash)).map { case (proven, line) => (link, proven, line) }
+            }
+        }
+      }
+      // the acceptance's line after the commit (the write-path batch's rule)
+      result.map { case (link, proven, line) => logger.info(line); link -> proven }
+    }
+
+  /** Accepts the account's live invitation or password link by a Google or Wikimedia sign-in
+    * whose provider verified `verifiedEmail` (the user's decision 1, review B3): for an account
+    * without a password only, whose current email, the link's address and `verifiedEmail` are
+    * the same. In one transaction, the links' rows and then the account's locked: what accepting
+    * the link proves follows ([[proveEmail]], without a password), then `link` (the identity's
+    * row, in the same transaction). The account as stored now; refused, changing nothing, without
+    * such a link. Run again on a deadlock ([[db.scalikejdbc.WriteTx.retry]]): the body decides from
+    * what it reads inside, and its log lines come after the commit.
+    */
+  def acceptByProvider[A](userId: Long, verifiedEmail: String)(
+      link: (User, DBSession) => Either[A, Unit]): Either[Option[A], User] = {
+    final class Abort(val error: Option[Any]) extends RuntimeException(null, null, false, false)
+    try {
+      val (proven, line) = db.scalikejdbc.WriteTx.write { implicit session =>
+        val email = verifiedEmail.trim.toLowerCase
+        val links = AccountTokenJdbc.lockLive(userId, AccountTokenJdbc.SetsPassword, email)
+        val user  = User.lockRow(userId).filter(_.deletedAt.isEmpty)
+        (links.headOption, user) match {
+          case (Some(t), Some(u)) if u.password.isEmpty && u.emailLo == email && t.email == email =>
+            val (proven, line) = proveEmail(t, u, None).fold(_ => throw new Abort(None), identity)
+            // the identity in the same transaction: a refusal undoes the proof too
+            link(proven, session).fold(e => throw new Abort(Some(e)), _ => (proven, line))
+          case _ => throw new Abort(None)
+        }
+      }
+      logger.info(line)
+      Right(proven)
+    } catch {
+      case a: Abort =>
+        if (a.error.isEmpty) logger.info(s"account_link_by_provider_refused reason=no_live_link accountId=$userId")
+        Left(a.error.map(_.asInstanceOf[A]))
+    }
+  }
+
+  /** What accepting `link` proves, shared by [[acceptPasswordLink]] and [[acceptByProvider]] so
+    * that they can't drift, in the caller's transaction with the link's row locked: the email is
+    * verified, the password becomes `passwordHash` if given, `auth_version` goes up (every
+    * session of the account ends), every API token of the account is revoked, its Google and
+    * Wikimedia identities are unlinked (B1: the account may have changed hands; a provider's
+    * sign-in links its own after this), the account's pending invitations sent to this address
+    * give their roles if whoever sent each may still give it in that contest ([[mayStillGrant]]),
+    * and every other unused link of the account, of any purpose (an email change a former holder
+    * of the password asked for included, M1), is revoked. The account, as stored now, and the
+    * acceptance's log line, for the caller to write after the commit.
+    */
+  private def proveEmail(link: AccountToken, user: User, passwordHash: Option[String])(implicit
+      session: DBSession
+  ): Either[Refusal, (User, String)] = {
+    val pending = AccountTokenJdbc.pendingInvitationsOf(user.getId, link.email)
+    if (!AccountTokenJdbc.markUsed(link.id)) refused(NotLive, Some(link))
+    else {
+      passwordHash match {
+        case Some(h) =>
+          sql"""UPDATE users SET password = $h, email_verified_at = NOW(3), auth_version = ${User.BumpAuthVersion}
+                WHERE id = ${user.getId}""".update.apply()
+        case None =>
+          sql"""UPDATE users SET email_verified_at = NOW(3), auth_version = ${User.BumpAuthVersion}
+                WHERE id = ${user.getId}""".update.apply()
+      }
+      val revokedApiCount = ApiTokenJdbc.revokeAll(user.getId)
+      val unlinked = UserIdentityJdbc.deleteByUser(user.getId)
+      val roles = pending.flatMap { p =>
+        val used = p.id == link.id || AccountTokenJdbc.markUsed(p.id)
+        for {
+          contestId <- p.contestId
+          role <- p.role
+          if used
+          if mayStillGrant(p, contestId) || { logger.warn(
+            s"invitation_role_dropped reason=inviter_no_longer_admin tokenId=${p.id} accountId=${user.getId} " +
+              s"contestId=$contestId"); false }
+        } yield {
+          UserContestJdbc.setMembership(user.getId, contestId, role)
+          s"$contestId:$role"
+        }
+      }
+      val revokedLinks = AccountTokenJdbc.revokeUnused(user.getId, AccountTokenJdbc.AllPurposes)
+      val by = if (passwordHash.isDefined) "link" else "provider"
+      val line =
+        s"account_link_accepted purpose=${link.purpose} tokenId=${link.id} accountId=${user.getId} by=$by " +
+          s"apiTokensRevoked=$revokedApiCount identitiesUnlinked=$unlinked linksRevoked=$revokedLinks " +
+          s"memberships=${roles.mkString(",")}"
+      Right(User.findById(user.getId)(session).get -> line)
+    }
+  }
+
+  /** Uses a live chooser link (`oauth_choose`) of the account: its row locked, marked used; the
+    * account, if the link is live, the account's and its address still the same.
+    */
+  def useChooseLink(token: String): Either[Refusal, User] =
+    if (!Format.matches(token)) Left(Malformed)
+    else
+      DB.localTx { implicit session =>
+        AccountTokenJdbc.lockByHash(hash(token)) match {
+          case None                                                   => refused(Unknown, None)
+          case Some(t) if t.purpose != AccountTokenJdbc.OAuthChoose => refused(WrongPurpose, Some(t))
+          case Some(t) =>
+            checked(t).flatMap { case (link, user) =>
+              if (!AccountTokenJdbc.markUsed(link.id)) refused(NotLive, Some(link)) else Right(user)
             }
         }
       }

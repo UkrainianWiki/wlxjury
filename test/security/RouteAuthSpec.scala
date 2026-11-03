@@ -114,7 +114,17 @@ object RouteAuthSpec {
     "controllers.LoginController.emailConfirm" -> "confirming an email change: token checked, POST with CSRF",
     "controllers.LoginController.setupView" -> "404 unless users is empty and wlxjury.setup.token is set",
     "controllers.LoginController.setup" -> "404 unless users is empty; the setup token is checked",
-    "controllers.UserController.switchContestLink" -> "an old link: redirects to / and changes nothing (switching is a POST)"
+    "controllers.UserController.switchContestLink" -> "an old link: redirects to / and changes nothing (switching is a POST)",
+    "controllers.OAuthController.login" ->
+      "leaves for the provider (404 if not offered on the host); only the session's flow keys change",
+    "controllers.OAuthController.callback" ->
+      "the provider's redirect: signs in or links only with the state of this browser's flow (IdentityLinker's S2 rules)",
+    "controllers.OAuthChooserController.page" -> "the account chooser: only the session's own choice, by its flow token",
+    "controllers.OAuthChooserController.choose" ->
+      "a choice: POST with CSRF; the session's choice and option tokens; a placeholder, or a password proof",
+    "controllers.OAuthChooserController.confirmPage" -> "a mailed link's page: a button, changes nothing",
+    "controllers.OAuthChooserController.confirm" ->
+      "the mailed proof: POST with CSRF; a live single-use link of an account of this session's choice"
   )
 
   /** Actions that check the session themselves (no builder), each refusing a signed-out

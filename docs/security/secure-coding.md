@@ -284,7 +284,10 @@ the token; `SecurityHeadersSpec` checks that no route has `nocsrf`.
 other POST needs it, cookies or not (`play.filters.csrf.header.protectHeaders = null`, S7, N6):
 a cookieless API POST with no credentials gets the JSON CSRF refusal (403, with a `hint` to send
 `Authorization: Bearer <token>`), not a 401. A sign-in form left open after its session cookie
-is gone gets the CSRF page asking to reload.
+is gone gets the CSRF page asking to reload. The OAuth sign-in (`OAuthController`, docs/oauth.md):
+its starts (`GET /oauth/<provider>/login`, `/link`) change only the session's flow keys (a POST
+leaving for the provider would need the providers in the CSP's `form-action`), and its callback
+(`GET`, from the provider) signs in or links only with the state of the flow this session started.
 
 ## 12. Errors shown to users
 
@@ -336,6 +339,15 @@ with the token row locked.
 
 **Guards.** `AccountInvitationSpec`, `OwnAccountSpec`, `AccountReviewFixesSpec`, `SetupSpec`,
 `db.AccountVerificationMigrationSpec`, `MultiContestUserSpec`, `UserControllerSpec`.
+
+A Google or Wikimedia identity's first sign-in links to an account by the same rule
+(`services.oauth.IdentityLinker`): by an email the provider is authoritative for (Google: Gmail or
+an `hd` claim), only if the account's email is verified, or it has no password and a live link to
+that address, which the sign-in accepts (`AccountTokenService.acceptByProvider`, sharing
+`proveEmail` with `acceptPasswordLink`); by wiki account only for a never-linked placeholder (no
+password, no email, no Wikimedia identity now or before); never creating an account. Accepting a
+link, root's password reset, an admin's change of an invitee's email or another's wiki account
+unlink identities; unlinking ends the account's other sessions.
 
 **Exceptions.** N5 (postponed): the greeting/invitation is sent "From" the inviter.
 Duplicate wiki accounts are refused at sign-in, not merged (postponed).
@@ -390,7 +402,9 @@ a redirect, a stored foreign url), `ImageProxyFileCheckSpec`, `LargeViewUrlsSpec
 `OutboundHostsSpec` (call sites of `singleRequest`, `ws.url`, `MwBot`, `new URL(` match a list;
 not done in S6).
 
-**Exceptions.** `MonumentListSource` uses `contest.listsHost` (root-set configuration).
+**Exceptions.** `MonumentListSource` uses `contest.listsHost` (root-set configuration). The OAuth
+providers (`services.oauth`) call `oauth.google.issuer` (its discovery document's endpoints and
+keys) and `oauth.wikimedia.baseUrl` only, with `oauth.connectTimeout`/`readTimeout`.
 
 ## 18. Limits
 

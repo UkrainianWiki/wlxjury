@@ -38,6 +38,23 @@ POST        /setup                                                              
 
 GET         /error                                                                  @controllers.LoginController.error(message: String ?= "Unknown error")
 
+# Sign-in with a Google or Wikimedia account (docs/oauth.md; off without configuration). The
+# starts are links (GET: a navigation to the provider) that change only the session's flow keys;
+# the callback signs in or links only with that flow's state. Unlinking is a POST with the CSRF token
+GET         /oauth/:provider/login                                                  @controllers.OAuthController.login(provider: String, returnTo: Option[String] ?= None)
+GET         /oauth/:provider/callback                                               @controllers.OAuthController.callback(provider: String)
+GET         /oauth/:provider/link                                                   @controllers.OAuthController.link(provider: String, n: Option[String] ?= None)
+POST        /oauth/:provider/unlink                                                 @controllers.OAuthController.unlink(provider: String)
+# the own wiki account from a linked Wikimedia account: asked on a page, set by its POST (CSRF)
+GET         /oauth/wiki-account                                                     @controllers.OAuthController.wikiAccountPage(subject: String)
+POST        /oauth/wiki-account                                                     @controllers.OAuthController.setWikiAccount()
+# duplicates: a Wikimedia sign-in whose name several accounts have chooses one (its choice in the
+# session); another than a placeholder needs its password or a link mailed to its address
+GET         /oauth/choose                                                           @controllers.OAuthChooserController.page(flow: String)
+POST        /oauth/choose                                                           @controllers.OAuthChooserController.choose()
+GET         /oauth/choose/confirm/:token                                            @controllers.OAuthChooserController.confirmPage(token: String)
+POST        /oauth/choose/confirm                                                   @controllers.OAuthChooserController.confirm()
+
 GET         /query                                                                  controllers.GalleryController.query(module:String ?= "byrate", user: Option[Long] ?= None, page: Int ?= 1, region: String ?= "all", round: Long ?= 0)
 
 GET         /byrate/user/:user/page/:page                                           controllers.GalleryController.byRate(user: Long, page: Int, region: String = "all", round: Long = 0)

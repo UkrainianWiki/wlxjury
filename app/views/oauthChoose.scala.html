@@ -1,0 +1,69 @@
+@(flow: String, entries: Seq[controllers.OAuthChooserController.Entry])(implicit flash: Flash, messages: Messages, request: RequestHeader)
+@* The account chooser (OAuthChooserController): the accounts whose wiki account is the Wikimedia
+   username, by their option tokens (never ids), each with its contests and roles and a masked
+   email, and the ways to choose it. Every form posts with the CSRF token. *@
+@mainAdmin("oauth.choose.title") {
+<div class="row">
+<div class="col-md-8 offset-md-2" id="oauth-choose">
+    <h1 class="h3">@Messages("oauth.choose.title")</h1>
+    <p>@Messages("oauth.choose.text")</p>
+    @flash.get(controllers.OAuthController.FlashError).filter(controllers.OAuthController.MessageKeys.contains).map { key =>
+        <div class="alert alert-danger" role="alert">@Messages(key)</div>
+    }
+    @flash.get(controllers.OAuthController.FlashSuccess).filter(controllers.OAuthController.MessageKeys.contains).map { key =>
+        <div class="alert alert-success" role="status">@Messages(key)</div>
+    }
+    @for(e <- entries) {
+    <section class="card mb-3 oauth-choose-account">
+        <div class="card-body">
+            <h2 class="h5 card-title">@e.wikiAccount</h2>
+            <p class="mb-1">@e.maskedEmail.getOrElse(Messages("oauth.choose.no.email"))</p>
+            @if(e.contests.isEmpty) {
+                <p class="text-body-secondary">@Messages("oauth.choose.no.contests")</p>
+            } else {
+                <ul class="mb-2">
+                @for((contest, role) <- e.contests) {
+                    <li>@contest: @Messages(role)</li>
+                }
+                </ul>
+            }
+            @if(e.direct) {
+                <form method="post" action="@routes.OAuthChooserController.choose()" class="d-inline">
+                    @csrfField()
+                    <input type="hidden" name="flow" value="@flow">
+                    <input type="hidden" name="option" value="@e.option">
+                    <input type="hidden" name="proof" value="direct">
+                    <button type="submit" class="btn btn-primary">@Messages("oauth.choose.this")</button>
+                </form>
+            }
+            @if(!e.direct && e.password) {
+                <form method="post" action="@routes.OAuthChooserController.choose()" class="row g-2 align-items-center mb-2">
+                    @csrfField()
+                    <input type="hidden" name="flow" value="@flow">
+                    <input type="hidden" name="option" value="@e.option">
+                    <input type="hidden" name="proof" value="password">
+                    <div class="col-auto">
+                        <input type="password" class="form-control" name="password" autocomplete="current-password"
+                               aria-label="@Messages("oauth.choose.password")" placeholder="@Messages("oauth.choose.password")">
+                    </div>
+                    <div class="col-auto"><button type="submit" class="btn btn-outline-primary">@Messages("oauth.choose.with.password")</button></div>
+                </form>
+            }
+            @if(!e.direct && e.mail) {
+                <form method="post" action="@routes.OAuthChooserController.choose()" class="d-inline">
+                    @csrfField()
+                    <input type="hidden" name="flow" value="@flow">
+                    <input type="hidden" name="option" value="@e.option">
+                    <input type="hidden" name="proof" value="mail">
+                    <button type="submit" class="btn btn-outline-secondary">@Messages("oauth.choose.with.mail")</button>
+                </form>
+            }
+            @if(!e.direct && !e.password && !e.mail) {
+                <p class="text-body-secondary mb-0">@Messages("oauth.choose.ask.organizer")</p>
+            }
+        </div>
+    </section>
+    }
+</div>
+</div>
+}

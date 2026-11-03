@@ -1,0 +1,17 @@
+@(token: String)(implicit flash: Flash, messages: Messages, request: RequestHeader)
+@* The account chooser's mailed link (OAuthChooserController.confirmPage): a button that
+   confirms (a POST with the CSRF token), so that a mail scanner opening the link changes
+   nothing. It works in the browser that made the choice. *@
+@mainAdmin("oauth.choose.title") {
+<div class="row">
+<div class="col-md-6 offset-md-3" id="oauth-choose-confirm">
+    <h1 class="h3">@Messages("oauth.choose.title")</h1>
+    <p>@Messages("oauth.choose.confirm.text")</p>
+    <form method="post" action="@routes.OAuthChooserController.confirm()">
+        @csrfField()
+        <input type="hidden" name="token" value="@token">
+        <button type="submit" class="btn btn-primary">@Messages("oauth.choose.confirm")</button>
+    </form>
+</div>
+</div>
+}

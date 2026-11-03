@@ -200,6 +200,32 @@ class UserService @Inject()(val sendMail: SMTPOrWikiMail,
       AccountTokenJdbc.PasswordReset, tokenId)
   }
 
+  /** Mails the account's verified address a short, single-use link that proves its holder is the
+    * one choosing it in the OAuth account chooser ([[controllers.OAuthChooserController]]) for the
+    * Wikimedia account `wikimediaName`; `path` makes the link's path of its token. False, sending
+    * nothing, without a verified address, within a minute of the previous one, or after
+    * [[ChooseLinksPerDay]] in a day: checked and created under the account's row lock (F5).
+    */
+  def sendChooseLink(account: User, wikimediaName: String, path: String => String)(implicit messages: Messages,
+      linkHost: LinkHost = LinkHost.None): Boolean =
+    if (!account.emailVerified || account.emailLo.isEmpty) false
+    else {
+      val created = scalikejdbc.DB.localTx { implicit session =>
+        User.lockRow(account.getId)
+        if (AccountTokenJdbc.createdSince(account.getId, AccountTokenJdbc.OAuthChoose, 60) ||
+          AccountTokenJdbc.countSince(account.getId, AccountTokenJdbc.OAuthChoose, 86400) >= ChooseLinksPerDay) None
+        else {
+          AccountTokenJdbc.revokeUnused(account.getId, Seq(AccountTokenJdbc.OAuthChoose))
+          Some(AccountTokenService.create(account.getId, AccountTokenJdbc.OAuthChoose, account.emailLo, createdBy = account.id))
+        }
+      }
+      created.fold(false) { case (tokenId, token) =>
+        val minutes = AccountTokenService.OAuthChooseValidSeconds / 60
+        mailLink(systemSender, account, messages("oauth.choose.mail.subject"),
+          messages("oauth.choose.mail.body", linkUrl(path(token)), minutes, wikimediaName), AccountTokenJdbc.OAuthChoose, tokenId)
+      }
+    }
+
   /** Mails `newEmail` a link that makes it the account's email once followed. If another account
     * has that address, nothing is sent; the caller answers the same either way (N7).
     */
@@ -413,6 +439,9 @@ object UserService {
     case at if at > 0 => email.take(1) + "***" + email.substring(at)
     case _            => "***"
   }
+
+  /** The most account chooser links an account gets in a day (F5). */
+  val ChooseLinksPerDay = 5
 
   /** The shortest time between two email-change links of an account. */
   val EmailChangeIntervalSeconds: Long = 60
