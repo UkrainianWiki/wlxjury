@@ -1,5 +1,6 @@
 package services.distribution
 
+import org.intracer.wmua.cmd.InMemoryDistribution._
 import db.scalikejdbc._
 import org.intracer.wmua.{BinaryOrder, ContestJury, Image}
 import org.intracer.wmua.cmd.DistributeImages

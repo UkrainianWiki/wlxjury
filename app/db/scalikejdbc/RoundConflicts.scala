@@ -50,7 +50,7 @@ object RoundConflicts {
     *                        [[Round.excludeCoi]], or the removal sees the job.
     */
   def removeFromRound(roundId: Long, by: User, distributionKey: String): Outcome = {
-    val outcome = DB.localTx { implicit session =>
+    val outcome = WriteTx.write { implicit session =>
       sql"""SELECT contest_id, active = 1 AND distributing = 0 AND freeze_count = 0
             FROM round WHERE id = $roundId FOR UPDATE"""
         .map(rs => rs.long(1) -> rs.boolean(2))
@@ -61,6 +61,7 @@ object RoundConflicts {
                           .map(_ => ()).single().isDefined =>
           Outcome.Distributing
         case Some((contestId, _)) =>
+          RoundWrites.recordRounds(Seq(roundId)) // locked for update above
           sql"UPDATE round SET exclude_coi = TRUE WHERE id = $roundId".update()
           val conflicts = CoiMembers.roundFiles(roundId, CoiMembers.forContest(contestId))
           val pageIds = conflicts.map(_._1)

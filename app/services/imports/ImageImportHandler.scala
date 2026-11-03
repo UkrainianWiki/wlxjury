@@ -1,6 +1,6 @@
 package services.imports
 
-import db.scalikejdbc.{CategoryLinkJdbc, ContestJuryJdbc, ImageJdbc, RegionCountCache, RoundImageCounts}
+import db.scalikejdbc.{CategoryLinkJdbc, ContestJuryJdbc, ImageJdbc, RegionCountCache, RoundImageCounts, RoundWrites}
 import org.intracer.wmua.{ContestJury, Image}
 import org.scalawiki.dto.Page
 import play.api.libs.json._
@@ -312,8 +312,15 @@ class ImageImportHandler @Inject() (source: CommonsSource, config: Configuration
     val unlinked = fetched.filterNot(i => stored.get(i.pageId).exists(_._2))
     // a stored file of another contest too: its author may be from before authors were resolved
     val changed = ImageService.changedImages(fetched, stored.values.map(_._1).toSeq)
-    // Locks the restored files with those updated below, in page id order
-    val restored = DeletedFiles.restore(stored.keys.toSeq, alsoLock = changed.map(_.pageId))
+    // A structural write of every round the restored and the changed files are in (their
+    // votes move back, their monument id copies change): those rounds for update first
+    // (RoundWrites; only these files, so a page with nothing to restore or change locks none),
+    // then the files in page id order (h2, also when nothing is restored), then the writes
+    val toRestore = ImageJdbc.deletedOrArchived(stored.keys.toSeq)
+    val changedIds = changed.map(_.pageId)
+    RoundWrites.lockForFiles((toRestore ++ changedIds).distinct)
+    val restored = DeletedFiles.restore(toRestore, alsoLock = changedIds)
+    RoundWrites.lockFiles(changedIds)
     if (restored.nonEmpty) ctx.afterCommit(RoundImageCounts.invalidate(restored: _*))
     // the category's region counts: files join it, or a changed file's monument id may change
     if (unlinked.nonEmpty) ctx.afterCommit(RegionCountCache.invalidateCategory(categoryId))
@@ -338,6 +345,7 @@ class ImageImportHandler @Inject() (source: CommonsSource, config: Configuration
   ): ImportState = {
     val current = ImageJdbc.monumentIds(page.monumentIds.map(_._1))
     val changed = page.monumentIds.filter { case (pageId, id) => current.get(pageId).exists(!_.contains(id)) }
+    RoundWrites.lockForFiles(changed.map(_._1)) // their rounds first (RoundWrites), then each file
     changed.foreach { case (pageId, id) => ImageJdbc.updateMonumentIdIn(pageId, id) }
     if (changed.nonEmpty) ctx.afterCommit(RegionCountCache.invalidateMonumentIds())
     st.copy(monumentIdsChanged = st.monumentIdsChanged + changed.size)

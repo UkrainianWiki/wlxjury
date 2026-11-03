@@ -131,7 +131,7 @@ class DeletedFilesSpec extends Specification with TestDb with BeforeAll with Bef
       implicit val contest: ContestJury = ContestJuryJdbc.findAll().head
       val r3 = roundDao.create(Round(None, 3, None, contest.getId, createdAt = now, active = true)).getId
 
-      VoteJdbc.setRound(1L, r2, r3)
+      TestVoteWrites.setRound(1L, r2, r3)
       rows("vote", 1L, r3) must beEmpty
       rows("vote_aside", 1L, r3) === Seq(1, 1)
     }
@@ -144,7 +144,7 @@ class DeletedFilesSpec extends Specification with TestDb with BeforeAll with Bef
       DB.localTx(implicit s => DeletedFiles.restore(Seq(1L)))
       DB.localTx(implicit s => DeletedFiles.markDeleted(Seq(1L))) must beEmpty
 
-      VoteJdbc.setRound(1L, r2, r1)
+      TestVoteWrites.setRound(1L, r2, r1)
       rows("vote", 1L, r1) === Seq(1, 1) // r1's own votes win over r2's
       rows("vote", 1L, r2) must beEmpty
     }
@@ -154,7 +154,7 @@ class DeletedFilesSpec extends Specification with TestDb with BeforeAll with Bef
       VoteJdbc.rate(1L, j1, r2, 5)
       DB.localTx(implicit s => DeletedFiles.markDeleted(Seq(1L))) // both rounds open: all aside
 
-      VoteJdbc.setRound(1L, r1, r2)
+      TestVoteWrites.setRound(1L, r1, r2)
       rows("vote_aside", 1L, r2) === Seq(5, 1)
       rows("vote_aside", 1L, r1) must beEmpty
     }
@@ -164,10 +164,11 @@ class DeletedFilesSpec extends Specification with TestDb with BeforeAll with Bef
       setRound(r2, sqls"active = 0")
       DB.localTx(implicit s => DeletedFiles.markDeleted(Seq(1L)))
       // Moved into the open r1 by a transaction that committed before markDeleted did
-      DB.autoCommit { implicit s =>
+      DB.localTx { implicit s =>
+        RoundWrites.lock(Seq(r1, r2))
         sql"DELETE FROM vote_aside WHERE page_id = 1".update()
         sql"UPDATE vote SET round_id = $r1 WHERE page_id = 1 AND round_id = $r2".update()
-        // with the file's rows, as VoteJdbc.setRound keeps them (round_image, V84)
+        // with the file's rows, as TestVoteWrites.setRound keeps them (round_image, V84)
         RoundImageJdbc.syncPairs(Seq(r1 -> 1L, r2 -> 1L))
       }
 
@@ -206,7 +207,7 @@ class DeletedFilesSpec extends Specification with TestDb with BeforeAll with Bef
       implicit val contest: ContestJury = ContestJuryJdbc.findAll().head
       val r3 = roundDao.create(Round(None, 3, None, contest.getId, createdAt = now, active = true)).getId
       DB.localTx(implicit s => DeletedFiles.markDeleted(Seq(1L)))
-      VoteJdbc.setRound(1L, r1, r3)
+      TestVoteWrites.setRound(1L, r1, r3)
 
       DB.localTx(implicit s => DeletedFiles.restore(Seq(1L)))
       rows("vote", 1L, r1) must beEmpty
@@ -218,8 +219,8 @@ class DeletedFilesSpec extends Specification with TestDb with BeforeAll with Bef
       val (Seq(r1, r2), Seq(j1, _)) = setUp()
       DB.autoCommit(implicit s => sql"UPDATE vote SET rate = 0 WHERE page_id = 1 AND round_id = $r2 AND jury_id = $j1".update())
       DB.localTx(implicit s => DeletedFiles.markDeleted(Seq(1L)))
-      VoteJdbc.removeImage(1L, r1)
-      VoteJdbc.removeUnrated(r2)
+      TestVoteWrites.removeImage(1L, r1)
+      TestVoteWrites.removeUnrated(r2)
 
       DB.localTx(implicit s => DeletedFiles.restore(Seq(1L)))
       rows("vote", 1L, r1) must beEmpty
@@ -233,7 +234,7 @@ class DeletedFilesSpec extends Specification with TestDb with BeforeAll with Bef
       val j3 = createUsers("jury", 3).head.getId
       selectionDao.create(1L, rate = 3, juryId = j3, roundId = r2)
       DB.localTx(implicit s => DeletedFiles.markDeleted(Seq(1L)))
-      VoteJdbc.setRound(1L, r2, r1)
+      TestVoteWrites.setRound(1L, r2, r1)
 
       DB.localTx(implicit s => DeletedFiles.restore(Seq(1L)))
       rows("vote", 1L, r1) === Seq(1, 1, 3) // j1 and j2 of r1 win over theirs of r2

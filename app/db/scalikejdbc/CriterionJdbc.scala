@@ -130,6 +130,7 @@ object RoundCriterion {
     if (sql"SELECT id FROM round WHERE id = $roundId FOR UPDATE".map(_.long(1)).single().isEmpty)
       Left(Refusal.NotFound)
     else {
+      RoundWrites.recordRounds(Seq(roundId))
       val stored = idsOf(roundId)
       if (stored == criterionIds) Right(false)
       else {

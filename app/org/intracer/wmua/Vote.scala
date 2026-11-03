@@ -11,7 +11,6 @@ case class Vote(pageId: Long, juryId: Long, roundId: Long,
                      criteriaId: Option[Int] = None,
                      monumentId: Option[String] = None) extends HasId {
 
-  def destroy() = VoteJdbc.destroy(pageId, juryId, roundId)
 
 }
 

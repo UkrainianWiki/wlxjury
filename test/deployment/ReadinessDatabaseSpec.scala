@@ -16,6 +16,8 @@ class ReadinessDatabaseSpec extends Specification {
       val stream = getClass.getClassLoader.getResourceAsStream("wlxjury-build.json")
       val expected = try (Json.parse(stream) \ "schemaVersion").as[String] finally stream.close()
       check.schemaVersion() must beSome(expected)
+      // the pool's level, from the tests' config as from production's (W1)
+      check.isolation() === services.ReadinessCheck.RequiredIsolation
       val rank = sql"SELECT MAX(installed_rank) FROM flyway_schema_history".map(_.int(1)).single.apply().get + 1
       try {
         sql"""INSERT INTO flyway_schema_history (installed_rank, version, description, type, script,

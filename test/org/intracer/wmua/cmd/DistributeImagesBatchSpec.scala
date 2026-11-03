@@ -1,5 +1,6 @@
 package org.intracer.wmua.cmd
 
+import org.intracer.wmua.cmd.InMemoryDistribution._
 import db.scalikejdbc._
 import org.intracer.wmua.{ContestJury, Image}
 import org.specs2.mutable.Specification

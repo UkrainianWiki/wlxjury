@@ -3,7 +3,7 @@ package services
 import controllers.RoundStat
 import db.RoundRepo
 import db.scalikejdbc.Round.RoundStatRow
-import db.scalikejdbc.{ImageJdbc, Round, RoundImageCounts, RoundUser, VoteJdbc, User}
+import db.scalikejdbc.{ImageJdbc, Round, RoundImageCounts, RoundUser, VoteJdbc, User, WriteTx}
 import org.intracer.wmua.cmd.DistributeImages
 import play.api.Logging
 import play.api.libs.json.Json
@@ -118,7 +118,7 @@ class RoundService @Inject() (
   ): Either[Round, (Round, Job)] = {
     val number = dao.countByContest(round.contestId) + 1
     try
-      Right(DB.localTx { implicit session =>
+      Right(WriteTx.write { implicit session =>
         val created = dao.create(
           round.copy(number = number, submitToken = submitToken, active = false, distributing = true)
         )
@@ -151,6 +151,11 @@ class RoundService @Inject() (
     // the round first, with the rounds it freezes: "Leave out conflicts of interest now"
     // checks for its active job under the round's lock (RoundConflicts.removeFromRound)
     Round.lock(round.previousIds :+ round.getId)
+    // an active distribution of the round, read plainly under the round's lock (READ
+    // COMMITTED: the latest committed; jobs of the round are queued and end under this lock):
+    // refused here, before an insert whose duplicate key would lock the running job's row, which
+    // its step holds before the round (break 11 of the write-path plan)
+    JobJdbc.activeByDedupeKey(RoundDistributionHandler.dedupeKey(round.getId)).foreach(active => throw AlreadyDistributing(active))
     val state = distribution.initialState(round, listOnly)
     // the top-N's order and the rejected-by filter only where they apply: from a yes/no
     // previous round
@@ -232,7 +237,7 @@ class RoundService @Inject() (
         RoundDistributionHandler.previousRounds(round)
         DistributeImages.checkJury(round, User.distributionJurors(roundId))
         try {
-          val job = DB.localTx { implicit session =>
+          val job = WriteTx.write { implicit session =>
             enqueueOrFail(round, completingCreation = round.distributing, createdBy, titles,
               listOnly = titles.nonEmpty && !newFiles && !round.distributing)
           }
