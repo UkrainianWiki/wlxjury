@@ -91,6 +91,28 @@ class RoundEditPageSpec extends PlaySpecification with PlayTestDb {
         html must contain(s"/admin/rounds/newfiles?id=${round.getId}")
         html must contain("value='Round 1'").or(contain("value=\"Round 1\""))
         html must not(contain("/thumb_urls/")) // the stat table isn't rendered
+        html must contain("""name="fileList"""")
+      }
+    }
+
+    "add the pasted files to the round" in {
+      testDbApp { implicit app =>
+        val (contest, admin, round) = fixture()
+        round.addUsers(User.findRoundJurors(round.getId).map(u => db.scalikejdbc.RoundUser(round.getId, u.getId, "jury", active = true)))
+        val jurors = User.findRoundJurors(round.getId).map(_.getId)
+        val save = FakeRequest(POST, "/admin/rounds/save")
+          .withSession(Secured.UserName -> admin.email)
+          .withFormUrlEncodedBody(
+            Seq("id" -> round.getId.toString, "number" -> "1", "name" -> "Round 1", "contest" -> contest.getId.toString,
+              "roles" -> "jury", "distribution" -> "0", "rates" -> "1", "minMpx" -> "", "minSize" -> "",
+              "mediaType" -> "all",
+              "fileList" -> "Image3.jpg\nhttps://commons.wikimedia.org/wiki/File:Image4.jpg") ++
+              jurors.zipWithIndex.map { case (id, i) => s"jurors[$i]" -> id.toString }: _*)
+          .withCSRFToken
+        val result = route(app, save).get
+        status(result) must_== SEE_OTHER
+        flash(result).get("error") must beNone
+        SelectionJdbc.byRound(round.getId).map(_.pageId).toSet === Set(1L, 2L, 3L, 4L)
       }
     }
 
