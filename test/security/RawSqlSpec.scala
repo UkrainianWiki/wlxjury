@@ -14,7 +14,6 @@ class RawSqlSpec extends Specification {
     "app/db/scalikejdbc/ImageJdbc.scala" -> "regionOf over a fixed column name",
     "app/db/scalikejdbc/rewrite/ImageDbNew.scala" ->
       "the gallery query builder: structure, group, order and limit from enumerated options and numbers; values bound",
-    "app/org/intracer/wmua/cmd/DistributeImages.scala" -> "the criteria ids, constants",
     "app/services/distribution/RoundDistributionHandler.scala" -> "an order from an enumerated set"
   )
 

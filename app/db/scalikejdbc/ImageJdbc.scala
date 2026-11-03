@@ -445,11 +445,20 @@ object ImageJdbc extends CRUDMapper[Image]
     val roundIds = sql"SELECT DISTINCT d.round_id FROM vote_aside d WHERE $where FOR UPDATE"
       .map(_.long(1))
       .list()
-    // the new unrated rows a rated moved one replaces, with their criteria rates
-    val replacedNew = sqls"$where AND COALESCE(s.rate, 0) = 0 AND COALESCE(d.rate, 0) <> 0"
-    sql"""DELETE cr FROM vote_aside d JOIN vote s ON $sameVote
-          STRAIGHT_JOIN criteria_rate cr ON cr.vote_id = s.id WHERE $replacedNew""".update()
-    sql"DELETE s FROM vote s JOIN vote_aside d ON $sameVote WHERE $replacedNew".update()
+    // the new unrated rows a rated moved one replaces, with their criteria rates: rated is a
+    // rate other than 0, or in a criteria round a criterion rated (a partly rated vote's rate
+    // is 0, U5, but it holds the juror's work)
+    val pairs = sql"""SELECT s.id, s.rate, d.id, d.rate FROM vote_aside d JOIN vote s ON $sameVote
+                      WHERE $where FOR UPDATE"""
+      .map(rs => (rs.long(1), rs.intOpt(2).getOrElse(0), rs.long(3), rs.intOpt(4).getOrElse(0))).list()
+    val byCriteria = VoteJdbc.votedByCriteria(pairs.flatMap { case (s, _, d, _) => Seq(s, d) })
+    val replacedNew = pairs.collect {
+      case (s, sRate, d, dRate) if sRate == 0 && !byCriteria(s) && (dRate != 0 || byCriteria(d)) => s
+    }
+    if (replacedNew.nonEmpty) {
+      sql"DELETE cr FROM vote s STRAIGHT_JOIN criteria_rate cr ON cr.vote_id = s.id WHERE s.id IN ($replacedNew)".update()
+      sql"DELETE s FROM vote s WHERE s.id IN ($replacedNew)".update()
+    }
     sql"""INSERT INTO vote SELECT d.* FROM vote_aside d
           WHERE $where AND $roundExists AND NOT EXISTS (SELECT 1 FROM vote s WHERE $sameVote)""".update()
     // the rows not moved back, with their criteria rates

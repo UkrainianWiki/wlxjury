@@ -221,8 +221,12 @@ class ConvertToInnoDbMigrationSpec extends Specification with BeforeAll with Aft
         rows(c, "SELECT id, rate FROM vote ORDER BY id")(rs => (rs.getLong(1), rs.getInt(2))) === List((10L, 1), (11L, -1))
         rows(c, "SELECT AUTO_INCREMENT FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'vote'")(
           _.getLong(1)) === List(5000L)
-        rows(c, "SELECT vote_id, criteria, rate FROM criteria_rate")(rs => (rs.getLong(1), rs.getLong(2), rs.getInt(3))) ===
+        // V83: the rate under criterion 1 of the catalogue, criteria_rate's id its primary key
+        rows(c, "SELECT vote_id, criterion_id, rate FROM criteria_rate")(rs => (rs.getLong(1), rs.getLong(2), rs.getInt(3))) ===
           List((10L, 1L, 5))
+        rows(c, "SELECT COUNT(*) FROM criterion")(_.getInt(1)) === List(9)
+        rows(c, """SELECT INDEX_NAME FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE()
+                   AND TABLE_NAME = 'criteria_rate' AND COLUMN_NAME = 'id'""")(_.getString(1)) === List("PRIMARY")
         // every index and key of the renamed tables starts with its table's name, but the id keys
         rows(c, """SELECT DISTINCT TABLE_NAME, INDEX_NAME FROM information_schema.STATISTICS
                    WHERE TABLE_SCHEMA = DATABASE()

@@ -154,3 +154,45 @@ describe("the round form", () => {
         expect($("#count-new-files").prop("disabled")).toBe(false);
     });
 });
+
+describe("a new round's criteria", () => {
+    function criteriaPage(ratesDisabled = false) {
+        document.body.innerHTML = `
+          <form id="round-form">
+            <select id="rates" name="rates"${ratesDisabled ? " disabled" : ""}>
+              <option value="0">Comments only</option><option value="1">+/-</option><option value="10">1-10</option>
+            </select>
+            <div id="round-criteria">
+              <select name="criteria[0]"><option value=""></option><option value="6" selected>Technical quality</option></select>
+              <select name="criteria[1]"><option value=""></option><option value="7" selected>Usefulness</option></select>
+            </div>
+          </form>`;
+    }
+    const box = () => document.getElementById("round-criteria");
+    const disabled = () => Array.from(box().querySelectorAll("select"), s => s.disabled);
+    const choose = value => {
+        const rates = document.getElementById("rates");
+        rates.value = value;
+        rates.dispatchEvent(new Event("change"));
+    };
+
+    test("are shown and sent for a rated rating only", () => {
+        criteriaPage();
+        document.getElementById("rates").value = "1";
+        init(document);
+        expect([box().hidden, disabled()]).toEqual([true, [true, true]]);
+        choose("10");
+        expect([box().hidden, disabled()]).toEqual([false, [false, false]]);
+        expect(new FormData(document.getElementById("round-form")).getAll("criteria[0]")).toEqual(["6"]);
+        choose("0");
+        expect([box().hidden, disabled()]).toEqual([true, [true, true]]);
+        expect(new FormData(document.getElementById("round-form")).has("criteria[0]")).toBe(false);
+    });
+
+    test("stay as they are in an existing round, whose rating is fixed", () => {
+        criteriaPage(true);
+        document.getElementById("rates").value = "1";
+        init(document);
+        expect([box().hidden, disabled()]).toEqual([false, [false, false]]);
+    });
+});

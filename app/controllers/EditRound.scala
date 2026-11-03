@@ -1,8 +1,8 @@
 package controllers
 
-import db.scalikejdbc.{ContestJuryJdbc, MediaType, Round, RoundLimits, User}
+import db.scalikejdbc.{ContestJuryJdbc, CriterionJdbc, MediaType, Round, RoundCriterion, RoundLimits, User}
 import org.scalawiki.wlx.dto.SpecialNomination
-import org.intracer.wmua.{BinaryOrder, CategoryOperation, CategoryRule}
+import org.intracer.wmua.{BinaryOrder, CategoryOperation, CategoryRule, Criterion}
 import play.api.data.{Form, Mapping}
 import play.api.data.Forms._
 import play.api.data.validation._
@@ -13,12 +13,16 @@ import scala.util.Try
   *
   * @param fileList  "Add files": a pasted list of files to add to the round
   * @param newImages "Distribute new files"
+  * @param criteriaShown the form had the criteria selects (`round.criterionIds`): a client
+  *                      without them (a script, an older page) leaves an existing round's
+  *                      criteria as they are
   */
 case class EditRound(
     round: Round,
     jurors: Seq[Long],
     fileList: Option[String] = None,
-    newImages: Boolean = false
+    newImages: Boolean = false,
+    criteriaShown: Boolean = true
 )
 
 object EditRound {
@@ -46,14 +50,36 @@ object EditRound {
     if (errors.isEmpty) Valid else Invalid(errors.map(key => ValidationError(key)))
   }
 
+  /** A criteria round's criteria (the form's criteria[0..9] selects, by position; the empty
+    * ones left out): none, or 2 to 10 of the catalogue, each once, in a rated round. A value
+    * that is no id is an unknown criterion. An existing round's criteria posted as stored are
+    * not checked: they are not changed, and a legacy criteria round's (V83: one criterion, more
+    * than 10, or a rating that isn't rated) stay as they are while the rest of its form is saved.
+    */
+  private val validCriteria: Constraint[EditRound] = Constraint("constraint.criteria") { edit =>
+    val round = edit.round
+    val unchanged = round.id.exists(id => RoundCriterion.idsOf(id) == round.criterionIds)
+    if (unchanged) Valid
+    else
+      Criterion.validationError(round.criterionIds, round.isRated, CriterionJdbc.existing(_))
+        .fold[ValidationResult](Valid)(key => Invalid(ValidationError(key, Criterion.MinPerRound, Criterion.MaxPerRound)))
+  }
+
+  /** The criteria selects' values: the chosen ones, by position (-1 for a value that is no id). */
+  def criterionIdsOf(values: Seq[String]): Seq[Long] =
+    values.map(_.trim).filter(_.nonEmpty).map(_.toLongOption.filter(_ > 0).getOrElse(-1L))
+
   val editRoundForm: Form[EditRound] = Form(
     mapping(
       "" -> roundMapping,
       "excludeCoi" -> boolean,
       "categoryClause" -> categoryOperation,
       "topBinaryOrder" -> optional(text),
-      "rejectedBy" -> optional(text)
-    )((edit, excludeCoi, selected, topOrder, rejectedBy) => {
+      "rejectedBy" -> optional(text),
+      "criteria" -> seq(text),
+      "criteriaShown" -> boolean,
+      "halfStar" -> boolean
+    )((edit, excludeCoi, selected, topOrder, rejectedBy, criteria, criteriaShown, halfStar) => {
       val configured = selected match {
         case None => edit.round // Older clients omitted the clause; retain their inference.
         case Some(value) =>
@@ -63,12 +89,15 @@ object EditRound {
           else edit.round.copy(categoryClause = operation.storedValue,
             excludeCategory = edit.round.excludeCategory.filter(_ => operation.requiresSecond))
       }
-      edit.copy(round = configured.copy(excludeCoi = excludeCoi,
+      edit.copy(criteriaShown = criteriaShown, round = configured.copy(excludeCoi = excludeCoi,
         topBinaryOrder = edit.round.topImages.flatMap(_ => BinaryOrder.ofForm(topOrder)),
-        prevRejectedBy = rejectedBy.flatMap(s => Try(s.toInt).toOption).filter(_ > 0)))
+        prevRejectedBy = rejectedBy.flatMap(s => Try(s.toInt).toOption).filter(_ > 0),
+        criterionIds = criterionIdsOf(criteria), halfStar = halfStar))
     })(edit => Some((edit, edit.round.excludeCoi, Some(edit.round.categoryRule.operation.formValue),
-      edit.round.topImages.map(_ => edit.round.topOrderParam), edit.round.rejectedByFilter.map(_.toString))))
+      edit.round.topImages.map(_ => edit.round.topOrderParam), edit.round.rejectedByFilter.map(_.toString),
+      edit.round.criterionIds.map(_.toString), edit.criteriaShown, edit.round.halfStar)))
       .verifying(validCategories)
+      .verifying(validCriteria)
   )
 
   /** Keep older submissions meaningful on an error page, where the form has no value. */

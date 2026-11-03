@@ -130,6 +130,10 @@ Backfilled by one `UPDATE … JOIN (GROUP BY round_id, page_id)`.
 - Binary orders: approvals, rejections, `Difference` = `rate_sum`; the legacy top-N rule =
   `GREATEST(rate_sum, 0)`.
 - Criteria rounds count `vote.rate`, already the criteria sum (`CriteriaRate.updateRate`).
+  Since C2 (U5) a criteria vote's `vote.rate` is that sum only once every criterion of the round
+  is rated, and 0 before (the user's decision, 2026-11-03): a departure from the criteria plan's §3 "vote.rate stays the sum"
+  for partial votes, so `rate <> 0` is the criteria-aware "voted" and the delta rule needs no
+  criteria count.
   optional_rate's denominator stays round-level (`numberOfActiveJurors`), computed when read.
 - Votes with a NULL rate: see open items.
 
@@ -157,6 +161,11 @@ Every writer of `vote` keeps it in step, in the same transaction:
   today is two autocommit statements): one `localTx` that locks the vote row
   (`SELECT … FOR UPDATE`), updates it (and `criteria_rate`), and if the rate changed adds the
   deltas to the image's counts. Retry once on a deadlock or lock wait. ~1–3 ms per vote.
+- `CriteriaRate.updateRate` (C2): runs at READ COMMITTED (`db.scalikejdbc.ReadCommitted`), and
+  sums the vote's rates with a plain read after locking the vote row (a locking range read
+  deadlocked with the next vote's upsert). P2a's `round_image` delta goes inside
+  `updateRateIn`, after the vote lock; its `round_image` row is read locked (`FOR UPDATE`), as
+  every delta, and READ COMMITTED keeps any plain read there current.
 - Inserts (`create`, `batchInsert`, so the distribution, the in-memory path, the Gatling fixture
   and the test helpers): `round_image` upsert per (round, page), `assigned = assigned + n`.
 - Bulk writers recompute the pages they touch (`RoundImageJdbc.recompute(roundId, pageIds)`,

@@ -25,20 +25,21 @@ class CriteriaRateSpec extends Specification with TestDb with BeforeAll with Bef
   override def beforeAll(): Unit = SharedTestDb.init()
   override protected def before: Any = SharedTestDb.truncateAll()
 
-  private var nextRateId = 0L
   // votes aside keep the ids they had in selection: theirs here are apart from vote's
   private var nextAsideId = 1000L
 
-  private def round(contest: ContestJury, number: Int = 1): Round =
-    roundDao.create(Round(None, number, contestId = contest.getId, rates = Round.ratesById(10), active = true))
+  /** A criteria round, of `criteria` (V83's 1, 2 by default). */
+  private def round(contest: ContestJury, number: Int = 1, criteria: Seq[Long] = Seq(1L, 2L)): Round =
+    roundDao.create(Round(None, number, contestId = contest.getId, rates = Round.ratesById(10), active = true,
+      criterionIds = criteria))
 
-  /** A vote with a rate per criterion (criteria 1, 2, ...), `rates` of them, and the vote's rate
-    * their sum, as [[CriteriaRate.updateRate]] keeps it.
+  /** A vote with a rate row per criterion (criteria 1, 2, ...), `rates` of them, and the vote's
+    * rate their sum if all are rated (else 0), as [[CriteriaRate.updateRate]] keeps it.
     */
   private def vote(pageId: Long, juror: User, round: Round, rates: Seq[Int] = Seq(0, 0),
       table: String = "vote"): Long = {
     insertImagesFor(pageId)
-    val sum = rates.filter(_ > 0).sum
+    val sum = if (rates.forall(_ > 0)) rates.sum else 0
     val id = DB.autoCommit { implicit s =>
       if (table == "vote")
         sql"INSERT INTO vote (page_id, jury_id, round_id, rate) VALUES ($pageId, ${juror.getId}, ${round.getId}, $sum)"
@@ -56,16 +57,14 @@ class CriteriaRateSpec extends Specification with TestDb with BeforeAll with Bef
 
   private def addRates(voteId: Long, rates: Seq[Int]): Unit = DB.autoCommit { implicit s =>
     rates.zipWithIndex.foreach { case (rate, i) =>
-      nextRateId += 1
-      sql"INSERT INTO criteria_rate (id, vote_id, criteria, rate) VALUES ($nextRateId, $voteId, ${i + 1}, $rate)"
-        .update()
+      sql"INSERT INTO criteria_rate (vote_id, criterion_id, rate) VALUES ($voteId, ${i + 1}, $rate)".update()
     }
   }
 
   /** The vote's criteria rates, by criterion. */
   private def ratesOf(voteId: Long): Map[Long, Int] =
     DB.readOnly { implicit s =>
-      sql"SELECT criteria, rate FROM criteria_rate WHERE vote_id = $voteId".map(rs => rs.long(1) -> rs.int(2)).list()
+      sql"SELECT criterion_id, rate FROM criteria_rate WHERE vote_id = $voteId".map(rs => rs.long(1) -> rs.int(2)).list()
     }.toMap
 
   private def rateOf(voteId: Long, table: String = "vote"): Option[Int] =
@@ -116,27 +115,56 @@ class CriteriaRateSpec extends Specification with TestDb with BeforeAll with Bef
   private def ids(table: String): Set[Long] =
     DB.readOnly(implicit s => SQL(s"SELECT id FROM $table").map(_.long(1)).list()).toSet
 
-  private def setUp(): (ContestJury, Round, Seq[User]) = {
+  private def setUp(criteria: Seq[Long] = Seq(1L, 2L)): (ContestJury, Round, Seq[User]) = {
     implicit val session: DBSession = AutoSession
     implicit val contest: ContestJury = createContests(10).head
     val jurors = createUsers(1, 2)
-    (contest, round(contest), jurors)
+    (contest, round(contest, criteria = criteria), jurors)
   }
 
   "a criterion vote" should {
 
-    "set the criterion and the vote's rate to the sum of its criteria's positive rates" in {
+    "set the criterion, and the vote's rate to the sum of its criteria once all are rated (U5), else 0" in {
       val (_, round, Seq(juror, _)) = setUp()
       val id = vote(1, juror, round)
 
       CriteriaRate.updateRate(id, 1, 3) must beTrue
+      rateOf(id) === Some(0) // one of two rated: not rated yet
       CriteriaRate.updateRate(id, 2, 4) must beTrue
       ratesOf(id) === Map(1L -> 3, 2L -> 4)
       rateOf(id) === Some(7)
-      // the stored rate again: found (the driver counts rows matched)
+      // the stored rate again
       CriteriaRate.updateRate(id, 2, 4) must beTrue
+      rateOf(id) === Some(7)
+      // a criterion back to 0: unrated, and so the vote
       CriteriaRate.updateRate(id, 1, 0) must beTrue
-      rateOf(id) === Some(4)
+      ratesOf(id) === Map(1L -> 0, 2L -> 4)
+      rateOf(id) === Some(0)
+    }
+
+    "write a rate the vote has no row for (U6: none pre-created), one row per criterion" in {
+      val (_, round, Seq(juror, _)) = setUp()
+      val id = vote(1, juror, round, rates = Nil)
+      ratesOf(id) must beEmpty
+
+      CriteriaRate.updateRate(id, 2, 5) must beTrue
+      ratesOf(id) === Map(2L -> 5)
+      rateOf(id) === Some(0)
+      CriteriaRate.updateRate(id, 1, 6) must beTrue
+      CriteriaRate.updateRate(id, 1, 2) must beTrue
+      ratesOf(id) === Map(1L -> 2, 2L -> 5)
+      rateOf(id) === Some(7)
+      DB.readOnly(implicit s => sql"SELECT COUNT(*) FROM criteria_rate".map(_.long(1)).single()) === Some(2L)
+    }
+
+    "take the round's criteria, whatever their ids, and only them" in {
+      val (_, round, Seq(juror, _)) = setUp(criteria = Seq(9L, 4L, 7L))
+      val id = vote(1, juror, round, rates = Nil)
+
+      CriteriaRate.updateRate(id, 1, 5) must beFalse // V83's criterion 1, not the round's
+      Seq(9L -> 1, 4L -> 2, 7L -> 3).forall { case (c, r) => CriteriaRate.updateRate(id, c, r) } must beTrue
+      ratesOf(id) === Map(9L -> 1, 4L -> 2, 7L -> 3)
+      rateOf(id) === Some(6)
     }
 
     "change nothing for a criterion the vote hasn't, or a vote gone" in {
@@ -207,9 +235,112 @@ class CriteriaRateSpec extends Specification with TestDb with BeforeAll with Bef
       } finally pool.shutdownNow(): Unit
     }
 
-    "sum every vote's criteria right when its criteria are voted at once" in {
+    "hold up a change of the round's criteria until a criterion vote in progress ends, which then refuses it" in {
+      val (_, round, Seq(juror, _)) = setUp()
+      val id = vote(1, juror, round, rates = Nil)
+      val pool = Executors.newFixedThreadPool(2)
+      implicit val ec: ExecutionContext = ExecutionContext.fromExecutor(pool)
+      try {
+        val voted = new CountDownLatch(1)
+        val commit = new CountDownLatch(1)
+        // the round's first vote, not committed yet
+        val first = Future(DB.localTx { implicit s =>
+          val v = CriteriaRate.updateRateIn(id, 2, 5)
+          voted.countDown()
+          commit.await(30, TimeUnit.SECONDS)
+          v
+        })
+        voted.await(30, TimeUnit.SECONDS) must beTrue
+        // criteria moved: taken before a vote, refused after one; it waits at the round's votes
+        val change = Future(RoundCriterion.update(round.getId, Seq(2L, 1L)))
+        lockWait(change) === "LOCK WAIT"
+        RoundCriterion.idsOf(round.getId) === Seq(1L, 2L)
+        commit.countDown()
+        Await.result(first, 30.seconds) must beTrue
+        Await.result(change, 30.seconds) must beLeft(RoundCriterion.Refusal.Voted: RoundCriterion.Refusal)
+        RoundCriterion.idsOf(round.getId) === Seq(1L, 2L)
+        ratesOf(id) === Map(2L -> 5)
+      } finally pool.shutdownNow(): Unit
+    }
+
+    "refuse a criterion vote waiting while its criterion is replaced, the rates then under the new one" in {
       val (_, round, Seq(juror, other)) = setUp()
-      val votes = (1L to 10L).flatMap(p => Seq(vote(p, juror, round, Seq(0, 0, 0)), vote(p, other, round, Seq(0, 0, 0))))
+      val id = vote(1, juror, round, rates = Nil)
+      val others = vote(1, other, round, rates = Nil)
+      CriteriaRate.updateRate(others, 2, 4) must beTrue // a vote: after it, criteria only replaced
+      val pool = Executors.newFixedThreadPool(2)
+      implicit val ec: ExecutionContext = ExecutionContext.fromExecutor(pool)
+      try {
+        val changed = new CountDownLatch(1)
+        val commit = new CountDownLatch(1)
+        // criterion 2 replaced by 3 in its place, not committed yet
+        val change = Future(DB.localTx { implicit s =>
+          val r = RoundCriterion.updateIn(round.getId, Seq(1L, 3L))
+          changed.countDown()
+          commit.await(30, TimeUnit.SECONDS)
+          r
+        })
+        changed.await(30, TimeUnit.SECONDS) must beTrue
+        val voting = Future(CriteriaRate.updateRate(id, 2, 5))
+        lockWait(voting) === "LOCK WAIT"
+        commit.countDown()
+        Await.result(change, 30.seconds) must beRight(true)
+        Await.result(voting, 30.seconds) must beFalse
+        ratesOf(id) must beEmpty
+        ratesOf(others) === Map(3L -> 4)
+        CriteriaRate.updateRate(id, 3, 5) must beTrue
+      } finally pool.shutdownNow(): Unit
+    }
+
+    "refuse a plain vote waiting while criteria are given to its round (no rate without criteria rates)" in {
+      val (contest, _, Seq(juror, _)) = setUp()
+      val plain = round(contest, 2, criteria = Nil)
+      vote(1, juror, plain, rates = Nil)
+      val pool = Executors.newFixedThreadPool(2)
+      implicit val ec: ExecutionContext = ExecutionContext.fromExecutor(pool)
+      try {
+        val changed = new CountDownLatch(1)
+        val commit = new CountDownLatch(1)
+        val change = Future(DB.localTx { implicit s =>
+          val r = RoundCriterion.updateIn(plain.getId, Seq(1L, 2L))
+          changed.countDown()
+          commit.await(30, TimeUnit.SECONDS)
+          r
+        })
+        changed.await(30, TimeUnit.SECONDS) must beTrue
+        // the round read before the change: no criteria, so the caller sends a plain vote
+        val voting = Future(VoteJdbc.rate(1, juror.getId, plain.getId, 5))
+        lockWait(voting) === "LOCK WAIT"
+        commit.countDown()
+        Await.result(change, 30.seconds) must beRight(true)
+        Await.result(voting, 30.seconds) === 0
+        DB.readOnly(implicit s => sql"SELECT rate FROM vote WHERE round_id = ${plain.getId}".map(_.int(1)).single()) ===
+          Some(0)
+        // and refused afterwards too
+        VoteJdbc.rate(1, juror.getId, plain.getId, 5) === 0
+      } finally pool.shutdownNow(): Unit
+    }
+
+    "run at READ COMMITTED, the pool's connections given back at REPEATABLE READ" in {
+      val (_, round, Seq(juror, _)) = setUp()
+      val id = vote(1, juror, round, rates = Nil)
+      def isolation(implicit s: DBSession): String = sql"SELECT @@tx_isolation".map(_.string(1)).single().get
+      def count(implicit s: DBSession): Int =
+        sql"SELECT COUNT(*) FROM criteria_rate WHERE vote_id = $id".map(_.int(1)).single().get
+      val seen: (String, Int, Int) = db.scalikejdbc.ReadCommitted.localTx { s =>
+        val before = count(s)
+        // committed by another transaction after this one's first read
+        DB.autoCommit(other => sql"INSERT INTO criteria_rate (vote_id, criterion_id, rate) VALUES ($id, 1, 2)".update.apply()(other))
+        (isolation(s), before, count(s))
+      }
+      seen === (("READ-COMMITTED", 0, 1))
+      forall(1 to 5)(_ => DB.readOnly(s => isolation(s)) === "REPEATABLE-READ")
+    }
+
+    "sum every vote's criteria right when its criteria are voted at once" in {
+      val (_, round, Seq(juror, other)) = setUp(criteria = Seq(1L, 2L, 3L))
+      // half of them with their rows pre-created (as distributions did before V83), half without
+      val votes = (1L to 10L).flatMap(p => Seq(vote(p, juror, round, Seq(0, 0, 0)), vote(p, other, round, Nil)))
       val pool = Executors.newFixedThreadPool(6)
       implicit val ec: ExecutionContext = ExecutionContext.fromExecutor(pool)
       try {
@@ -271,16 +402,18 @@ class CriteriaRateSpec extends Specification with TestDb with BeforeAll with Bef
       orphans === 0
     }
 
-    "remove a round's unrated votes with their criteria rates, also those moved aside" in {
+    "remove a round's unrated votes with their criteria rates, also those moved aside, but not partly rated ones" in {
       val (contest, round, Seq(juror, other)) = setUp()
       val unrated = Seq(vote(1, juror, round), vote(2, other, round), vote(3, juror, round, table = "vote_aside"))
-      val rated = Seq(vote(1, other, round, Seq(0, 2)), vote(4, juror, round, Seq(1, 0), table = "vote_aside"))
+      // a vote with one criterion of two rated: its rate is 0 (U5), but it holds the juror's work
+      val rated = Seq(vote(1, other, round, Seq(0, 2)), vote(4, juror, round, Seq(1, 3), table = "vote_aside"),
+        vote(5, juror, round, Seq(4, 0)))
       val another = this.round(contest, 2)
       val elsewhere = vote(1, juror, another)
 
       VoteJdbc.removeUnrated(round.getId)
 
-      ids("vote") === Set(rated.head, elsewhere)
+      ids("vote") === Set(rated.head, rated(2), elsewhere)
       ids("vote_aside") === Set(rated(1))
       forall(unrated)(ratesOf(_) must beEmpty)
       ratesOf(rated.head) === Map(1L -> 0, 2L -> 2)
@@ -330,17 +463,26 @@ class CriteriaRateSpec extends Specification with TestDb with BeforeAll with Bef
       val asideUnrated = vote(1, other, round, Seq(0, 0), table = "vote_aside")
       // the file distributed again meanwhile: the juror's new vote unrated, the other's rated
       val newUnrated = vote(1, juror, round, Seq(0, 0))
+      // the other's partly rated (its rate 0, U5): the juror's work, as a rated vote
       val newRated = vote(1, other, round, Seq(2, 0))
+      // file 2: the juror's partly rated vote aside, an unrated new one; the other's rated vote
+      // aside, a partly rated new one
+      val asidePartial = vote(2, juror, round, Seq(0, 5), table = "vote_aside")
+      val newUnrated2 = vote(2, juror, round, Seq(0, 0))
+      val asideRated2 = vote(2, other, round, Seq(1, 1), table = "vote_aside")
+      val newPartial2 = vote(2, other, round, Seq(0, 3))
 
-      DB.localTx(implicit s => ImageJdbc.restoreVotes(Seq(1L)))
+      DB.localTx(implicit s => ImageJdbc.restoreVotes(Seq(1L, 2L)))
 
-      // the rated vote wins: the juror's moved back, the other's new one stays
-      ids("vote") === Set(asideRated, newRated)
+      // a rated (or partly rated) vote wins over an unrated one, a new one over one aside: the
+      // juror's moved back, the other's new one stays, its partial rates kept
+      ids("vote") === Set(asideRated, newRated, asidePartial, newPartial2)
       ids("vote_aside") must beEmpty
       ratesOf(asideRated) === Map(1L -> 3, 2L -> 4)
       ratesOf(newRated) === Map(1L -> 2, 2L -> 0)
-      ratesOf(newUnrated) must beEmpty
-      ratesOf(asideUnrated) must beEmpty
+      ratesOf(asidePartial) === Map(1L -> 0, 2L -> 5)
+      ratesOf(newPartial2) === Map(1L -> 0, 2L -> 3)
+      forall(Seq(newUnrated, asideUnrated, newUnrated2, asideRated2))(ratesOf(_) must beEmpty)
       orphans === 0
     }
 

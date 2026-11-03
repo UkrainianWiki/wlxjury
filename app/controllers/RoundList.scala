@@ -366,7 +366,7 @@ final case class RoundList(
     withParams(routes.LargeViewController.large(asUserId, pageId, regionParam, roundId).url, params(module = true))
 
   /** A vote for the file in its large view, going on in this list: `select` the rate. */
-  def voteUrl(pageId: Long, select: Int, criterion: Option[Int] = None): String =
+  def voteUrl(pageId: Long, select: Int, criterion: Option[Long] = None): String =
     votePrefix(pageId) + select + voteQuery(criterion)
 
   /** A large view vote's URL before the rate: the stars add theirs, then [[voteQuery]]. */
@@ -374,7 +374,7 @@ final case class RoundList(
     routes.LargeViewController.rateByPageId(roundId, pageId, 0, regionParam).url.stripSuffix("0")
 
   /** A large view vote's query string: this list's, and the criterion voted for, if any. */
-  def voteQuery(criterion: Option[Int] = None): String =
+  def voteQuery(criterion: Option[Long] = None): String =
     withParams("", params(module = true) ++ criterion.map(c => "criteria" -> c.toString))
 
   /** The list's regions, for its region menu ([[GalleryController.regions]]): its viewer,

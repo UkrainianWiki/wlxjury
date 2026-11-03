@@ -300,27 +300,18 @@ class RoundDistributionJobSpec extends Specification with TestDb with BeforeAll 
       roundDao.findById(roundId).get.active must beTrue
     }
 
-    "write criteria rates in the chunk transaction, and roll them back with it" in {
+    "write no criteria rates in a criteria round: its votes write them (V83)" in {
       val (c, _, jurors) = setUp(12, 2)
       implicit val contest: ContestJury = c
-      val round = roundDao.create(newRound(contest, "Criteria", distribution = 2).copy(number = 1))
-      sql"UPDATE round SET has_criteria = 1 WHERE id = ${round.getId}".update()(AutoSession)
+      val round = roundDao.create(newRound(contest, "Criteria", distribution = 2).copy(number = 1, criterionIds = Seq(6L, 7L)))
       round.addUsers(jurors.map(u => RoundUser(round.getId, u.getId, "jury", active = true)))
-      val h = new TestHandler(chunkRows = 8) // 4 images, 8 rows per chunk
-      h.failAfterInsertOfChunk = Some(2)
-      val service = inlineService(h)
-      service.distributeNewImages(round.getId) must throwA[RoundService.RoundDistributionFailed]
-
-      def criteriaRows = DB.readOnly(implicit s => sql"""SELECT COUNT(*) FROM criteria_rate c JOIN vote s ON s.id = c.vote_id
-                                WHERE s.round_id = ${round.getId}""".map(_.int(1)).single().get)
-      VoteJdbc.byRound(round.getId).size === 8 // chunk 1 only
-      criteriaRows === 8 * DistributeImages.CriteriaIds.size // chunk 2's rolled back with its rows
+      val service = inlineService(new TestHandler(chunkRows = 8))
 
       service.distributeNewImages(round.getId) === 12
       VoteJdbc.byRound(round.getId).size === 24
-      criteriaRows === 24 * DistributeImages.CriteriaIds.size
-      DB.readOnly(implicit s => sql"SELECT COUNT(DISTINCT id) = COUNT(*) FROM criteria_rate".map(_.boolean(1)).single()) ===
-        Some(true)
+      DB.readOnly(implicit s => sql"SELECT COUNT(*) FROM criteria_rate".map(_.int(1)).single()) === Some(0)
+      RoundCriterion.idsOf(round.getId) === Seq(6L, 7L)
+      roundDao.findById(round.getId).map(_.hasCriteria) must beSome(true)
     }
 
     "keep a juror deactivated before a retry out of the rest of the distribution" in {

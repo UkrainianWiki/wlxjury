@@ -1,0 +1,53 @@
+@import db.scalikejdbc.User
+@import org.intracer.wmua.Criterion
+@(
+        user: User,
+        catalogue: Seq[Criterion],
+        addForm: Form[String],
+        contestId: Option[Long]
+)(implicit flash: Flash, messages: Messages, req: RequestHeader)
+
+@implicitLayout = @{ bs.Layout.horizontal("col-md-4", "col-md-8") }
+
+@* the global criteria catalogue (CriteriaController): every contest's round form offers it *@
+@mainAdmin("criteria.catalogue", user, user.getId, contestId = contestId) {
+    <div class="row">
+        <div class="col-md-8">
+            <h1 class="h3">@Messages("criteria.catalogue")</h1>
+            <p>@Messages("criteria.catalogue.help")</p>
+
+            @if(flash.get("success").nonEmpty) {
+                <div class="alert alert-success">@Messages("criteria.catalogue.added")</div>
+            }
+
+            <table class="table table-striped table-sm" id="criteria-catalogue">
+                <thead>
+                    <tr>
+                        <th>@Messages("criteria.name")</th>
+                        <th>@Messages("criteria.fallback.name")</th>
+                    </tr>
+                </thead>
+                <tbody>
+                @for(c <- catalogue) {
+                    <tr data-criterion-id="@c.id">
+                        <td>@c.name</td>
+                        <td>@c.fallbackName</td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+
+            @bs.form(routes.CriteriaController.add(contestId), Symbol("id") -> "criteria-add") {
+                @helper.CSRF.formField
+                @bs.text(addForm("name"), Symbol("_label") -> Messages("criteria.add.name"),
+                    Symbol("_help") -> Messages("criteria.add.help"), Symbol("maxlength") -> Criterion.MaxNameLength)
+                <div class="form-actions mt-2">
+                    @snippets.submit("criteria.add")
+                    @for(cid <- contestId) {
+                        @snippets.button(routes.RoundController.rounds(Some(cid)), "rounds")
+                    }
+                </div>
+            }
+        </div>
+    </div>
+}

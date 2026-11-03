@@ -11,7 +11,7 @@
         monument: Option[Monument],
         comments: Seq[Comment],
         votes: Seq[(Vote, User)],
-        byCriteria: Map[Int, Int] = Map.empty)(
+        criteria: Seq[(org.intracer.wmua.Criterion, Int)] = Nil)(
         implicit flash: Flash, request: Request[Any], messages: Messages)
 
     @defining(list.round) { round =>
@@ -23,7 +23,7 @@
             <div class="row h-100">
                 <div class="col-1 large-side">
 
-                    @navigationButtons(user, list, hood, score, byCriteria, readOnly)
+                    @navigationButtons(user, list, hood, score, criteria, readOnly)
                     @* under the stars, what they rate: the file's details, then the files after it *@
                     @sideSection("large-info", "large.file.info", open = true) {
                         @if(user.canViewOrgInfo(round)){

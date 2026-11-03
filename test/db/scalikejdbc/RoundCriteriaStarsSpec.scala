@@ -1,14 +1,10 @@
 package db.scalikejdbc
 
-import org.intracer.wmua.{CriteriaRate, Image}
-import org.intracer.wmua.cmd.DistributeImages
 import org.specs2.mutable.Specification
 import org.specs2.specification.BeforeAll
-import scalikejdbc._
 
 /** A file's stars in the by-rate gallery (Round.numberOfStars): the round's stars, times its
-  * criteria in a criteria round, whose count is read from the round's criteria rates
-  * (CriteriaRate.countOf) rather than hard-coded.
+  * criteria in a criteria round, whose count is the round's criteria (RoundCriterion.countOf).
   */
 class RoundCriteriaStarsSpec extends Specification with BeforeAll {
 
@@ -23,9 +19,10 @@ class RoundCriteriaStarsSpec extends Specification with BeforeAll {
       rated.copy(rates = Round.ratesById(5), halfStar = true).numberOfStars === 5
     }
 
-    "count each criterion's stars in a criteria round: those a distribution gives by default" in {
+    "count each criterion's stars in a criteria round" in {
       val criteria = rated.copy(hasCriteria = true)
-      criteria.numberOfStars === 10 * DistributeImages.CriteriaIds.size
+      // not loaded with the round: the by-rate gallery sets it (RoundCriterion.countOf)
+      criteria.numberOfStars === 10
       criteria.copy(criteriaCount = 2).numberOfStars === 20
       criteria.copy(criteriaCount = 2, halfStar = true).numberOfStars === 10
       // the count matters only in a criteria round
@@ -34,24 +31,17 @@ class RoundCriteriaStarsSpec extends Specification with BeforeAll {
   }
 
   "a round's criteria count" should {
-    "be the criteria rated in its selections, none without criteria rates" in new AutoRollbackDb {
-      imageDao.batchInsert(Seq(Image(1, "File:1.jpg"), Image(2, "File:2.jpg")))
-      val round = roundDao.create(rated.copy(hasCriteria = true))
-      val other = roundDao.create(rated.copy(hasCriteria = true))
-      CriteriaRate.countOf(round.getId) must beNone
-
-      // a selection without criteria rates first, then two with two criteria each
-      VoteJdbc.create(1, 0, 7, round.getId)
-      val s1 = VoteJdbc.create(1, 0, 8, round.getId)
-      val s2 = VoteJdbc.create(2, 0, 8, round.getId)
-      val s3 = VoteJdbc.create(1, 0, 8, other.getId)
-      sql"""INSERT INTO criteria_rate (id, vote_id, criteria, rate) VALUES
-            (1, ${s1.getId}, 6, 3), (2, ${s1.getId}, 7, 0), (3, ${s2.getId}, 6, 0), (4, ${s2.getId}, 7, 5),
-            (5, ${s3.getId}, 6, 1), (6, ${s3.getId}, 7, 1), (7, ${s3.getId}, 8, 1), (8, ${s3.getId}, 9, 1)"""
-        .update()
-
-      CriteriaRate.countOf(round.getId) === Some(2)
-      CriteriaRate.countOf(other.getId) === Some(4)
+    "be the round's criteria, none without them, whatever its votes' rates" in new AutoRollbackDb {
+      val plain = roundDao.create(rated)
+      val round = roundDao.create(rated.copy(criterionIds = Seq(6L, 7L)))
+      val other = roundDao.create(rated.copy(criterionIds = Seq(6L, 7L, 8L, 9L)))
+      RoundCriterion.countOf(plain.getId) === 0
+      RoundCriterion.countOf(round.getId) === 2
+      RoundCriterion.countOf(other.getId) === 4
+      // no votes, nor rates, needed: the round's definition
+      roundDao.findById(round.getId).map(_.hasCriteria) must beSome(true)
+      roundDao.findById(plain.getId).map(_.hasCriteria) must beSome(false)
+      RoundCriterion.idsOf(other.getId) === Seq(6L, 7L, 8L, 9L)
     }
   }
 }

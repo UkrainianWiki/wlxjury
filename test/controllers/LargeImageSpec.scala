@@ -408,11 +408,11 @@ class LargeImageSpec extends PlaySpecification with PlayTestDb {
   }
 
   "a round with criteria" should {
-    // a rated round with criteria, the juror's current one; criteria 1 and 2 of the juror's
-    // selection of file 0 rated 3 and 4. File 1 is only another juror's.
-    def setUpCriteria(): (Image, Image, User) = {
+    // a rated round with criteria 1 and 2 (V83's), the juror's current one; criteria 1 and 2
+    // of the juror's vote of file 0 rated 3 and 4. File 1 is only another juror's.
+    def setUpCriteria(criteria: Seq[Long] = Seq(1L, 2L)): (Image, Image, User) = {
       setUp(rates = Round.ratesById(10))
-      DB.autoCommit { implicit s => sql"UPDATE round SET has_criteria = 1 WHERE id = ${round.getId}".update() }
+      DB.autoCommit { implicit s => RoundCriterion.insert(round.getId, criteria) }
       round = roundDao.findById(round.getId).get
       val Seq(mine, others) = createImages(2)
       createSelection(Seq(mine))
@@ -422,19 +422,19 @@ class LargeImageSpec extends PlaySpecification with PlayTestDb {
       val selection = VoteJdbc.findBy(mine.pageId, user.getId, round.getId).get
       val othersSelection = VoteJdbc.findBy(others.pageId, other.getId, round.getId).get
       DB.autoCommit { implicit s =>
-        sql"""INSERT INTO criteria_rate (id, vote_id, criteria, rate) VALUES
-              (1, ${selection.getId}, 1, 3), (2, ${selection.getId}, 2, 4), (3, ${othersSelection.getId}, 1, 5)"""
+        sql"""INSERT INTO criteria_rate (vote_id, criterion_id, rate) VALUES
+              (${selection.getId}, 1, 3), (${selection.getId}, 2, 4), (${othersSelection.getId}, 1, 5)"""
           .update()
       }
       (mine, others, other)
     }
     def criteriaRates(pageId: Long, juror: User): Map[Long, Int] =
       VoteJdbc.findBy(pageId, juror.getId, round.getId).toSeq
-        .flatMap(s => CriteriaRate.getRates(s.getId)).map(c => c.criteria -> c.rate).toMap
-    def viewRequest(roundId: Long, pageId: Long) =
+        .flatMap(s => CriteriaRate.getRates(s.getId)).map(c => c.criterionId -> c.rate).toMap
+    def viewRequest(roundId: Long, pageId: Long, lang: String = "uk") =
       FakeRequest(GET, s"/large/round/$roundId/user/${user.getId}/pageid/$pageId")
         .withSession(Secured.UserName -> email, Secured.CurrentContestId -> contest.getId.toString)
-        .withHeaders("Accept" -> "text/html")
+        .withHeaders("Accept" -> "text/html", "Accept-Language" -> lang)
         .withCSRFToken
 
     "show the juror's criteria rates in the current round's view (round 0), which failed before" in {
@@ -460,7 +460,7 @@ class LargeImageSpec extends PlaySpecification with PlayTestDb {
         // the other juror's selection rated in both criteria too, as a distribution gives them
         val othersSelection = VoteJdbc.findBy(others.pageId, other.getId, round.getId).get
         DB.autoCommit { implicit s =>
-          sql"INSERT INTO criteria_rate (id, vote_id, criteria, rate) VALUES (4, ${othersSelection.getId}, 2, 0)"
+          sql"INSERT INTO criteria_rate (vote_id, criterion_id, rate) VALUES (${othersSelection.getId}, 2, 0)"
             .update()
         }
         // the file's rate, the sum of its criteria's: 3 + 4
@@ -476,7 +476,7 @@ class LargeImageSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
-    "show no criteria rates for a selection without them" in {
+    "show the round's criteria at 0 for a vote without rates (none pre-created, U6), each with its stars" in {
       testDbApp { app =>
         implicit val materializer: Materializer = app.materializer
         val (mine, _, _) = setUpCriteria()
@@ -486,7 +486,40 @@ class LargeImageSpec extends PlaySpecification with PlayTestDb {
         val result = call(appController.large(user.getId, mine.pageId, "all", 0L),
           viewRequest(0L, mine.pageId))
         status(result) === OK
-        contentAsString(result) must not(contain("Науковість"))
+        val doc = org.jsoup.Jsoup.parse(contentAsString(result))
+        doc.text must contain("Науковість")
+        doc.getElementById("rate-number1").text === "–"
+        doc.getElementById("rate-number2").text === "–"
+        doc.getElementById("rate-image2").attr("data-vote-query") must contain("criteria=2")
+      }
+    }
+
+    "show the round's criteria in their order, by name in the viewer's language, whatever their ids" in {
+      testDbApp { app =>
+        implicit val materializer: Materializer = app.materializer
+        val (mine, _, _) = setUpCriteria(criteria = Seq(9L, 6L))
+        val custom = CriterionJdbc.add("Composition", None).toOption.get
+        DB.autoCommit { implicit s =>
+          sql"DELETE FROM round_criterion WHERE round_id = ${round.getId}".update()
+          RoundCriterion.insert(round.getId, Seq(9L, custom.id, 6L))
+        }
+        val vote = VoteJdbc.findBy(mine.pageId, user.getId, round.getId).get
+        CriteriaRate.updateRate(vote.getId, custom.id, 8) must beTrue
+        val appController = new LargeViewController(app.injector.instanceOf[play.api.mvc.ControllerComponents], galleryService)
+
+        def page(lang: String) = {
+          val result = call(appController.large(user.getId, mine.pageId, "all", round.getId), viewRequest(round.getId, mine.pageId, lang))
+          status(result) === OK
+          org.jsoup.Jsoup.parse(contentAsString(result))
+        }
+        def names(doc: org.jsoup.nodes.Document) =
+          (1 to 3).map(i => doc.getElementById(s"rate-number$i").parents.first.previousElementSibling.text)
+        // the shipped ones translated, the one added by its fallback text in every language
+        names(page("en")) === Seq("Extra points", "Composition", "Technical quality")
+        val uk = page("uk")
+        names(uk) === Seq("Додаткові бали", "Composition", "Технічна якість")
+        (1 to 3).map(i => uk.getElementById(s"rate-number$i").text) === Seq("–", "8", "–")
+        uk.getElementById("rate-image2").attr("data-vote-query") must contain(s"criteria=${custom.id}")
       }
     }
 
@@ -495,7 +528,7 @@ class LargeImageSpec extends PlaySpecification with PlayTestDb {
         implicit val materializer: Materializer = app.materializer
         val (mine, _, _) = setUpCriteria()
 
-        val result = controller.rateByPageId(round.getId, mine.pageId, select = 7, criteria = Some(2))
+        val result = controller.rateByPageId(round.getId, mine.pageId, select = 7, criteria = Some(2L))
           .apply(voteRequest(s"/large/round/${round.getId}/pageid/${mine.pageId}/select/7?criteria=2"))
           .run()
 
@@ -526,7 +559,7 @@ class LargeImageSpec extends PlaySpecification with PlayTestDb {
         implicit val materializer: Materializer = app.materializer
         val (mine, _, _) = setUpCriteria()
 
-        val result = controller.rateByPageId(round.getId, mine.pageId, select = 7, criteria = Some(9))
+        val result = controller.rateByPageId(round.getId, mine.pageId, select = 7, criteria = Some(9L))
           .apply(voteRequest(s"/large/round/${round.getId}/pageid/${mine.pageId}/select/7?criteria=9"))
           .run()
 
@@ -540,7 +573,7 @@ class LargeImageSpec extends PlaySpecification with PlayTestDb {
         implicit val materializer: Materializer = app.materializer
         val (_, others, other) = setUpCriteria()
 
-        val result = controller.rateByPageId(round.getId, others.pageId, select = 1, criteria = Some(1))
+        val result = controller.rateByPageId(round.getId, others.pageId, select = 1, criteria = Some(1L))
           .apply(voteRequest(s"/large/round/${round.getId}/pageid/${others.pageId}/select/1?criteria=1"))
           .run()
 
@@ -555,7 +588,7 @@ class LargeImageSpec extends PlaySpecification with PlayTestDb {
         implicit val materializer: Materializer = app.materializer
         val (mine, _, _) = setUpCriteria()
 
-        val result = controller.rateByPageId(0L, mine.pageId, select = 7, criteria = Some(1))
+        val result = controller.rateByPageId(0L, mine.pageId, select = 7, criteria = Some(1L))
           .apply(voteRequest(s"/large/round/0/pageid/${mine.pageId}/select/7?criteria=1"))
           .run()
 
@@ -731,10 +764,11 @@ class LargeImageSpec extends PlaySpecification with PlayTestDb {
     "be refused without the CSRF token for a criterion too" in {
       withCsrfApp { app =>
         setUpVote(app)
-        DB.autoCommit { implicit s => sql"UPDATE round SET has_criteria = 1 WHERE id = ${round.getId}".update() }
+        // a round of one criterion (the form takes 2 to 10; one makes the vote's rate the criterion's)
+        DB.autoCommit { implicit s => RoundCriterion.insert(round.getId, Seq(1L)) }
         val vote = VoteJdbc.findBy(images.head.pageId, user.getId, round.getId).get
         DB.autoCommit { implicit s =>
-          sql"INSERT INTO criteria_rate (id, vote_id, criteria, rate) VALUES (1, ${vote.getId}, 1, 0)".update()
+          sql"INSERT INTO criteria_rate (vote_id, criterion_id, rate) VALUES (${vote.getId}, 1, 0)".update()
         }
         def sendCriterion(body: (String, String)*) =
           route(app, FakeRequest(POST, s"/large/round/${round.getId}/pageid/${images.head.pageId}/select/5?criteria=1")

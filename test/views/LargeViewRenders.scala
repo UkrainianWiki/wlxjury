@@ -29,8 +29,11 @@ object LargeViewRenders {
     Round(id = Some(1), number = 1, contestId = 1, active = true, rates = Round.ratesById(5))
   /** Rated 1..10 in half stars: five stars, a rate of 7 drawn as 3.5. */
   val halfStarRound: Round = ratedRound.copy(rates = Round.ratesById(10), halfStar = true)
-  val criteriaRound: Round =
-    ratedRound.copy(hasCriteria = true, criteriaNames = Seq("Quality", "Composition"))
+  val criteriaRound: Round = ratedRound.copy(hasCriteria = true)
+  /** [[criteriaRound]]'s criteria: keys without a message, so shown by their fallback names. */
+  val roundCriteria: Seq[org.intracer.wmua.Criterion] = Seq(
+    org.intracer.wmua.Criterion(1, "criterion.test.quality", "Quality"),
+    org.intracer.wmua.Criterion(2, "criterion.test.composition", "Composition"))
   /** [[criteriaRound]] in half stars, rated 1..10 per criterion. */
   val halfStarCriteriaRound: Round = criteriaRound.copy(rates = Round.ratesById(10), halfStar = true)
 
@@ -94,7 +97,8 @@ object LargeViewRenders {
       request(s"/large/round/${round.getId}/user/$asUserId/pageid/${fs(index).pageId}", cookies)
     implicit val msgs: Messages = messages
     implicit val flash: Flash = Flash()
-    val byCriteria = criteriaRates.getOrElse(if (round.hasCriteria) Map(1 -> 2, 2 -> 3) else Map.empty[Int, Int])
+    val rates = criteriaRates.getOrElse(Map(1 -> 2, 2 -> 3))
+    val criteria = if (round.hasCriteria) roundCriteria.map(c => c -> rates.getOrElse(c.id.toInt, 0)) else Nil
     val list = RoundList(round, asUserId, filter = rate.fold[VoteFilter](VoteFilter.All)(VoteFilter.ofRate),
       view = GalleryView.parse(module).get)
     views.html.large.large(
@@ -104,7 +108,7 @@ object LargeViewRenders {
         monument = None,
         comments = Nil,
         votes = Nil,
-        byCriteria = byCriteria
+        criteria = criteria
       ).body
   }
 
