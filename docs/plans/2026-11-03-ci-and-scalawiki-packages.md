@@ -281,6 +281,49 @@ Only the `-Dintegration=true` group runs in CI, weekly (`integration.yml`). Ever
 
 The two scalawiki diffs (`publishing.diff`, `anonymous-tests.diff`) both change `build.sbt`. Make them separate PRs and rebase the second on the first. The anonymous-tests one should go first.
 
+## Test coverage (added 2026-11-03, PR [60])
+
+**What runs where:**
+
+- **`.github/workflows/coverage.yml`, job `Coverage (Scala and JS)`:** its own workflow, so `ci.yml`'s test job keeps its speed. Same triggers as `ci.yml` without the weekly schedule: every PR (any base), pushes to `master` and `ukwikidev/followups`, and `workflow_dispatch`. Same setup (Temurin 17, sbt cache, Node 20, the scalawiki action) and MariaDB 10.6.22 only.
+  - Command: `env -u COMMONS_USER -u COMMONS_PASSWORD -u SCALAWIKI_LOGIN -u SCALAWIKI_PASSWORD python3 scripts/agent-check.py -- sbt … coverage Test/compile test coverageReport`. No `-Dintegration`, no credentials (the anonymous rule above).
+  - `coverageAggregate` is not needed: the build is one project.
+  - **Non-blocking:** no coverage minimum, and the check is not to be required (U8 names only `CI / sbt test (mariadb:10.6.22)`). A real test failure still turns the job red, as it would in `ci.yml`.
+- **Jest:** `build.sbt`'s `jsTest` passes `--coverage` when `coverageEnabled` is on (that is, after `coverage` in the same sbt session), and `--no-coverage` otherwise. So a plain `sbt test`, and `ci.yml`, are unchanged, and the coverage job runs Jest once, with coverage.
+  - Config in `javascript-test/package.json` (`"jest"`): `rootDir` is the repository root and `roots` are `javascript-test/` and `public/javascripts/`, because Jest measures nothing outside its `rootDir` (the scripts under test are in `public/javascripts/`).
+  - `coverageProvider: "v8"`: the default Babel provider reported 0 of 0 statements for these files, with the same config. V8 counts statements as lines.
+  - `collectCoverageFrom`: our own `public/javascripts/*.js`, untested ones included, without the vendored `jquery.hotkeys.js`, `jquery.raty.js`, `unitegallery.js` and `ug-theme-tiles.js`.
+  - Reporters: `lcov` (`lcov.info` and an HTML report), `text-summary` (in the log) and `json-summary`, into `target/jest-coverage/`.
+- **Scala exclusions (`build.sbt`):** generated code only. `coverageExcludedPackages`: `router.*`, `views.html.*` (and `views.txt` / `views.xml`), `controllers.javascript.*`, `controllers.Reverse*`, `*BuildInfo*` (there is no BuildInfo today; harmless). `coverageExcludedFiles`: `.*/target/.*`, every managed source (Twirl and routes are compiled from `target/scala-2.13/twirl` and `routes`).
+  - **Not excluded: `org.intracer.wmua.cmd`.** Despite the name it holds no command-line tools: `DistributeImages` and `ImageWithRatingSeqFilter` are the distribution and filtering logic that `RoundDistributionHandler` uses, with their own specs. There is no `main` or `App` under `app/`.
+- **Reports:** artifact `coverage-reports-attempt-<n>`, kept 14 days: `target/scala-2.13/scoverage-report/` (HTML, `index.html`, and `scoverage.xml`), `target/scala-2.13/coverage-report/` (Cobertura `cobertura.xml`), `target/jest-coverage/` (`lcov.info`, `lcov-report/index.html`, `coverage-summary.json`), plus the JUnit XML and the check log.
+  - `scripts/coverage-summary.py` writes the job summary (`$GITHUB_STEP_SUMMARY`): Scala statement and branch %, and JS lines, statements, functions and branches %. It runs `if: always()` and lists a missing report as missing.
+- **Packaging stays uninstrumented:**
+  - `deployment.yml`'s `sbt dist` runs on its own runner, in a session that never ran `coverage`, so nothing instrumented can reach it.
+  - Locally, `coverage` stays on for the rest of that sbt session. `build.sbt` now fails `Universal / mappings` (which `dist`, `stage`, the Debian and RPM packages all use) while `coverageEnabled` is on: `sbt coverage dist` stops with "Coverage instrumentation is on…". A new session or `coverageOff` recompiles without instrumentation (scalac options change).
+- **Plugin versions:**
+  - `sbt-scoverage` **2.1.0 → 2.3.1** (2025-02-20). Scoverage's compiler plugin is published per full Scala version: for Scala 2.13.15 only `scalac-scoverage-plugin` 2.2.1 and 2.3.0 exist. 2.1.0 wants 2.1.1, which has no 2.13.15 build, so `sbt coverage` could not have resolved. 2.4.x (from 2025-10) needs the 2.4/2.5 compiler plugin, which starts at Scala 2.13.16. 2.3.1 is built against sbt 1.10.7 and works on this build's sbt 1.9.6 (`project/build.properties`; not 1.10.x).
+  - A later bump of Scala to 2.13.16+ allows sbt-scoverage 2.4.x.
+  - `sbt-coveralls` 1.3.11: **left as is, unused.** Nothing calls `coveralls`. It is the ready option if Coveralls is chosen.
+- **External services:** none yet, and no tokens. Coveralls (`sbt-coveralls`, or the Coveralls GitHub Action with `lcov.info` and Cobertura) or Codecov (its action reads `cobertura.xml` and `lcov.info`) would add PR comments and history. A later decision for the user; both need a repository token or OIDC setup.
+
+**Measured locally** (8 cores, Windows, Docker Desktop; one subset of 15 specs, 164 examples: the three lock-sensitive specs `CriteriaRateSpec`, `RoundImageLockSpec`, `WritePathLockSpec`, the reflection-based `CategoryOperationInitializationSpec`, `ContestFilesPageSpec`, `RoundSpec`, `services.distribution.*` and `org.intracer.wmua.cmd.*`):
+
+| | Without coverage | With coverage |
+|---|---|---|
+| `Test/compile` | 171 s (cold test compile) | 124 s (main recompiled with instrumentation) |
+| Specs, summed per-spec times | 142.5 s | 167.7 s (**+18%**) |
+| `coverageReport` | | 18 s |
+| Result | 164 passed | 164 passed |
+
+- The lock and timing specs passed under instrumentation with their own timeouts: `CriteriaRateSpec` 18.7 → 21.5 s, `RoundImageLockSpec` 0.6 → 0.6 s, `WritePathLockSpec` 1.9 → 2.9 s. None needs more time or an exclusion. `CategoryOperationInitializationSpec` (`Class.forName` on the category-operation objects) passes too: scoverage keeps class and member names.
+- The slowest distribution specs grow most (`RoundDistributionJobSpec` 36 → 44 s, `RoundRedistributionFiltersSpec` 32 → 41 s).
+- **Anomaly, not caused by coverage:** in the uninstrumented run, one statement of `CoiRoundSpec` (`UPDATE round SET active_before_freeze = …`, the freeze release) waited 1565 s (26 min) before completing; the spec then passed. Instrumented, the same spec took 6 s. It looks like a row-lock wait on `round` from another connection, or a stalled machine; not reproduced. Excluded from the sums above. Worth a look if it recurs in CI.
+
+**Baseline:** from the first CI run of PR [60], under "Validation of PR [60]" below.
+
+**Thresholds:** none (`coverageFailOnMinimum := false`, no Jest `coverageThreshold`). The first numbers come from one run, and a minimum just below them would fail on unrelated changes (new untested code, a moved spec) before anyone has looked at the reports. Revisit after a few weeks of numbers: a minimum a couple of points below the stable baseline, per language, and only then a required check.
+
 ## Rollout
 
 ### User actions
