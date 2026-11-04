@@ -524,29 +524,47 @@ mode; production runs the ZIP with `wlxjury-release` (above). Steps, from a chec
 
 A published image (GHCR, queued on the roadmap) will remove steps 1-3 for people who only run the
 app. The image is the ZIP's files (the same list) under `/opt/docker`, on Temurin's Java 17 JRE
-(pinned by digest), run as the user `wlxjury` (uid 10001), with `-Dpidfile.path=/dev/null`. Its jars
-are in three layers, bottom to top: third-party jars (102 MB), scalawiki's (3.7 MB), then
-wlxjury's own jars with `bin/` and `conf/` (about 23 MB), so a code change rebuilds and moves only
-the top one (`dockerGroupLayers` in `build.sbt`).
+(pinned by digest), run as the user and group `wlxjury` (uid and gid 10001), with
+`-Dpidfile.path=/dev/null`. Its jars are in three layers, bottom to top: third-party jars
+(102 MB), scalawiki's (3.7 MB), then wlxjury's own jars with `bin/` and `conf/` (about 23 MB), so
+a code change rebuilds and moves only the top one (`dockerGroupLayers` in `build.sbt`).
 
 **What the compose file sets.** MariaDB 10.6.22 (production's and the tests'), pinned by digest,
-with production's server setting (`bench/cnf/recommended-60-wlxjury.cnf`) and its data in the
-named volume `db`; its port is not published. The app takes the secrets from `.env`
+with production's server setting (the 256 MiB buffer pool of
+`bench/cnf/recommended-60-wlxjury.cnf`, as a command-line option: on Windows a bind-mounted
+option file is world-writable in the container, and mysqld ignores such a file) and its data in
+the named volume `db`; its port is not published. The app takes the secrets from `.env`
 (`WLXJURY_COMPOSE_DB_PASSWORD`, `PLAY_HTTP_SECRET_KEY`, `WLXJURY_SETUP_TOKEN`; compose refuses to
 start without the first two), migrates at start (`db.default.migration.auto`, the other
 `db.Migrations` settings at their safe defaults), accesses Commons anonymously (empty
-`commons.user`), and answers to `WLXJURY_ALLOWED_HOSTS` (default `localhost`). Its port is
-published on `127.0.0.1:9000` only; `WLXJURY_HTTP_BIND` and `WLXJURY_HTTP_PORT` change that. Its
-health check is `/health/ready` from inside the container, so `up --wait` returns once the schema
-is the build's. Serving others needs a TLS proxy in front, its host name in
-`WLXJURY_ALLOWED_HOSTS` and `WLXJURY_HOST`, and secure cookies (`play.http.session.secure` and
-the rest, as `production.conf` sets them, through `JAVA_OPTS`).
+`commons.user`), and answers to `WLXJURY_ALLOWED_HOSTS` (default `localhost`). Its container may
+use 1.5 GB (`mem_limit`), and the JVM's heap 75% of that (`-XX:MaxRAMPercentage=75`, about
+1.1 GB). Its health check is `/health/ready` from inside the container, so `up --wait` returns
+once the schema is the build's.
+
+**Settings and their limits.**
+- The port is published on `127.0.0.1:9000` only; `WLXJURY_HTTP_BIND` and `WLXJURY_HTTP_PORT`
+  change that. Another port needs `WLXJURY_HOST` to match (the links use it).
+- A published port skips the host firewall's input rules (ufw): Docker's own rules come first.
+  Never bind `0.0.0.0` counting on the firewall; put a TLS proxy on the host in front of
+  `127.0.0.1` instead
+  (`docs/investigations/2026-11-04-simpler-deployment.md`, §3.1).
+- `JAVA_OPTS` (the heap, migrations, hosts, Commons) is set in `docker-compose.yml`, so `.env`
+  can't add to it. To change it, set it in a `docker-compose.override.yml`, which replaces the
+  whole value: copy it and edit.
+- Serving others needs that proxy, its host name in `WLXJURY_ALLOWED_HOSTS` and `WLXJURY_HOST`,
+  and secure cookies (`play.http.session.secure` and the rest, as `production.conf` sets them,
+  through `JAVA_OPTS`). The proxy reaches the container from the Docker bridge's gateway, not
+  from loopback, so Play doesn't trust its `X-Forwarded-For`: the app sees the gateway's address
+  as every client's (a roadmap follow-up).
 
 **Tested.** `scripts/docker/smoke-test.sh` runs the file as its own project (`wlxjury-smoke`) with
 throwaway secrets: readiness and its schema version, the sign-in and setup pages, creating the
-first account, then a restart on the same volumes that keeps it; it removes everything at the end.
-CI runs it on every PR (`.github/workflows/compose.yml`, about 6-8 minutes). Locally (2026-11-04)
-the cold `up --wait` took 28-34 s (a new database and every migration), a restart 18 s; `sbt Docker/publishLocal` 75 s with compiled sources. The image is 395 MB.
+first account, a thumbnail written to the cache volume by the app's user, then a restart on the
+same volumes that keeps both; it removes everything at the end. CI runs it on every PR
+(`.github/workflows/compose.yml`; about 6-8 minutes, an estimate until the first runs). Locally
+(2026-11-04) the cold `up --wait` took 28-34 s (a new database and every migration), a restart
+18 s, `sbt Docker/publishLocal` 75 s with compiled sources; the image is 395 MB.
 
 ## Local verification
 

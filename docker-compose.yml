@@ -22,10 +22,12 @@ services:
       MARIADB_USER: wlxjury
       MARIADB_PASSWORD: ${WLXJURY_COMPOSE_DB_PASSWORD:?set it in .env (scripts/docker/generate-env.sh)}
       MARIADB_RANDOM_ROOT_PASSWORD: "1"
+    # production's server setting, bench/cnf/recommended-60-wlxjury.cnf (the 256 MiB buffer pool),
+    # as an option rather than a mounted file: on Windows a bind-mounted file is world-writable
+    # in the container, and mysqld ignores a world-writable option file
+    command: ["--innodb-buffer-pool-size=256M"]
     volumes:
       - db:/var/lib/mysql
-      # production's server setting (the 256 MiB buffer pool)
-      - ./bench/cnf/recommended-60-wlxjury.cnf:/etc/mysql/conf.d/60-wlxjury.cnf:ro
     healthcheck:
       # the image's own check: the server accepts connections and InnoDB is initialized
       test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
@@ -51,16 +53,21 @@ services:
       PLAY_HTTP_SECRET_KEY: ${PLAY_HTTP_SECRET_KEY:?set it in .env (scripts/docker/generate-env.sh)}
       # /setup creates the first account with it (32 characters or more); unused afterwards
       WLXJURY_SETUP_TOKEN: ${WLXJURY_SETUP_TOKEN:-}
-      # Not secret, so on the command line: migrations at start (db.Migrations; the other
-      # db.default.migration settings keep their safe defaults, which production.conf also
-      # sets), the host names the app answers to, the URL its links use, and Commons access
-      # without an account (an empty commons.user is anonymous; never put credentials here).
+      # Not secret, so on the command line: the heap, 75% of the container's memory limit (below);
+      # migrations at start (db.Migrations; the other db.default.migration settings keep their
+      # safe defaults, which production.conf also sets); the host names the app answers to, the
+      # URL its links use (with the published port), and Commons access without an account (an
+      # empty commons.user is anonymous; never put credentials here). .env can't add to this:
+      # a docker-compose.override.yml that sets JAVA_OPTS replaces it whole.
       JAVA_OPTS: >-
+        -XX:MaxRAMPercentage=75
         -Ddb.default.migration.auto=true
         -Dwlxjury.allowedHosts=${WLXJURY_ALLOWED_HOSTS:-localhost}
         -Dwlxjury.host=${WLXJURY_HOST:-http://localhost:9000/}
         -Dcommons.user=
         -Dcommons.password=
+    # the JVM's heap is 75% of it (about 1.1 GB); production budgets 1300 MiB for the app
+    mem_limit: 1536m
     ports:
       - "${WLXJURY_HTTP_BIND:-127.0.0.1}:${WLXJURY_HTTP_PORT:-9000}:9000"
     volumes:
