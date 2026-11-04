@@ -358,9 +358,15 @@ build) with its back/forward cache. The large image from `upload.wikimedia.org` 
 proxy and falls back to this host's image proxy, which answers from the fixture's stub; the
 guard's listeners still report every other host (requests and WebSockets), and accept the
 engine's console line for a refused file only when its location is that `upload.wikimedia.org`
-file. `guards.spec.js` checks that the proxy refuses an image, an https `fetch` and a `wss://`
-WebSocket, with each engine's error (`net::ERR_PROXY_CONNECTION_FAILED`,
-`NS_ERROR_PROXY_CONNECTION_REFUSED`, `Could not connect to server`). Shown on 2026-11-04 with the large view's
+file, or, where the line carries no location (WebKit), when the same page had an
+`upload.wikimedia.org` load refused. `guards.spec.js` checks that the proxy refuses an image, an
+https `fetch` and a `wss://` WebSocket, with each engine's error (`lib/proxy-errors.js`).
+**The texts differ by platform**, and a local Windows run doesn't prove the Linux ones (CI's):
+Chromium `net::ERR_PROXY_CONNECTION_FAILED` and Firefox `NS_ERROR_PROXY_CONNECTION_REFUSED` on
+both, WebKit `Could not connect to server` on Windows but `Could not connect to proxy server
+127.0.0.1: Connection refused` on Linux; `npm run check:proxy-errors` checks the patterns against
+both, and a new text comes from a CI log. WebKit on Linux also types some image loads `other`,
+so the guard accepts `other` from the upload host only for a Commons file's path. Shown on 2026-11-04 with the large view's
 `no-store` dropped (locally, not committed):
 
 | Engine | With `no-store` | Without it | Shows the regression |

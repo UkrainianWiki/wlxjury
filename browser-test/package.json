@@ -8,7 +8,8 @@
     "server:stop": "node fixture-server.mjs stop",
     "test": "playwright test",
     "report": "allure generate ../target/browser-test/allure-results && node allure-offline.mjs",
-    "report:selftest": "node allure-offline.mjs --self-test"
+    "report:selftest": "node allure-offline.mjs --self-test",
+    "check:proxy-errors": "node lib/proxy-errors.check.mjs"
   },
   "engines": {
     "node": ">=20"
