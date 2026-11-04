@@ -249,7 +249,8 @@ tools, no downloaded Java tool to checksum (dependencies §4.1), history in a fi
 reports. Two-week rule (§1.1): on 2026-11-04 the newest eligible `allure` is 3.21.0; 3.22.1 is
 eligible from 2026-11-06 and may be taken if the PR merges after that. `allurerc.mjs`, not
 `.ts` (TypeScript config needs Node 22.18; CI runs Node 20). The classic (Allure 2-style) plugin
-is experimental: use the default Awesome report.
+is experimental: use the default Awesome report. *Superseded (the user, 2026-11-04):* the
+allure2 plugin, since Awesome hard-codes Google Analytics (§8).
 
 **4.3 Its surface:** `allure` 3.21.0 depends on about 30 `@allurereport/*` packages (Jira,
 Slack, Xray plugins among them, unused). A test tool only, never served or packaged; named in the
@@ -356,8 +357,8 @@ covered** (*Part:* in Notes), **7 uncovered**: J-09, J-10, J-22, J-29, J-31, J-3
 S-04), 41 Scala only. The guide sections no story links: the three "Kinds of rounds" ones and
 "Conflicts of interest". The review added seven stories: O-06, A-18, R-04 (each role's sign-in,
 for `auth.setup.js`'s per-role tags), S-07 (a vote by a non-juror of the round or another
-contest), S-08 (a vote outside the round's rates), S-09 (another account's password, email and
-wiki account), S-10 (an admin's change refused to a juror or an organizer), so S-01 is no longer a
+contest), S-08 (a vote outside the round's rates), S-09 (another account's password and email, and its wiki account
+set only unverified), S-10 (an admin's change refused to a juror or an organizer), so S-01 is no longer a
 bucket for every refusal; S-01's sentence now names the board, auditor and staff members too.
 J-36 became *Part:*. `RouteAuthSpec`'s scan lost its tag (a guard, §2.3).
 
@@ -380,8 +381,8 @@ J-36 became *Part:*. `RouteAuthSpec`'s scan lost its tag (a guard, §2.3).
   a report with Awesome's gtag block), and puts a CSP `<meta>` first in `<head>`. The allure2
   report with that CSP, opened in Chromium with every non-file request refused: no request left
   the file, no console error (the first CSP had `base-uri 'none'`, which blocked the report's
-  own `<base>`: dropped), the tabs drawn. **Rule: recheck on every Allure update.** Its "open
-  trace" button sends a trace to `trace.playwright.dev` on click (testing §10.10).
+  own `<base>`: dropped), the tabs drawn. **Rule: recheck on every Allure update.** Its trace
+  viewer would frame `trace.playwright.dev`; the CSP blocks it (testing §10.10).
 
 **Behaviors and history:** the Behaviors tab groups epic, feature, story (`Admin` > `Admin` >
 `A-01 …`, `A-02 …`, `A-18 …`; a juror test under its guide section); two generates with
@@ -440,5 +441,18 @@ with `invalid.user.or.password` and no session (J-03; the block's J-07 moved to 
   imports it); the transitive packages (~160) were locked with `npm install --before
   2026-10-21`, so none is newer than the two-week rule; their licenses are permissive
   (BlueOak-1.0.0, PSF-2.0, `dompurify` MPL-2.0 or Apache-2.0 among MIT, Apache, ISC, BSD).
+
+**The follow-up review** (approved, non-blocking fixes): the Scala cross-check counts only a
+real ID shape (`[J-27`, `[J27`; not a type parameter `[A1]`, `Map[K1, V1]`) in the code with
+`//` and `/* */` comments blanked, with self-test cases for the three; `STRAY_ID` also fails on
+string data shaped like an ID (`"S-10"`), documented. `RoundController.saveRound` (cross-contest
+isolation) lost S-10; `RoleAssignmentSpec`'s organizer and juror saves of their own profile with
+the admin role assert their status: 303, saved with the role field ignored; the same-contest
+"organiser not a juror" criteria example is tagged S-07; S-09's sentence names the admin's
+unverified wiki account. `allure-offline.mjs` checks every `*.html` of the report's directory
+(no `index.html` fails). The trace viewer's `trace.playwright.dev` frame is blocked by the CSP,
+so traces are neither sent nor viewable in the report (testing §10.10). Not done (optional):
+asserting each role's landing page in the sign-in setups. The counts are unchanged: 75
+stories, 52 covered, 16 partly covered, 7 uncovered.
 
 **Deferred:** as §6, plus a three-engine local report size, and step 5's tests.

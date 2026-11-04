@@ -281,10 +281,12 @@ matrix leg, and locally `python scripts/story-coverage.py`) reads the catalogue,
 summary. **It fails** on: an ID the catalogue lacks or retired, in any test, a `fixme` or skipped
 one too; a malformed ID (`J-7`, `X-01`, `j-01`, `J01`) in a tag, a Scala name or a catalogue
 row; a tag string not attached to a test's or a describe's `tag` option; a Scala ID outside its
-`[..]` group (`J-27]`, `[J-27`); a duplicate row; a guide section link without its `#anchor`, and
+`[..]` group (`J-27]`, `[J-27`; string data shaped like an ID, `"S-10"`, counts too: build
+such a value instead); a duplicate row; a guide section link without its `#anchor`, and
 a guide or Notes link to a missing file or heading; and a vacuous run: no tag in either layer, or
-a raw count of the quoted tags (`'@J-21'`, comments included) and of the `[J-27` groups on code
-lines that differs from what it parsed (§4.2; `--self-test` runs each case on
+a raw count of the quoted tags (`'@J-21'`, comments included) and of the `[J-27` groups in the
+Scala code (comments left out; a type parameter such as `[A1]` is no ID) that differs from
+what it parsed (§4.2; `--self-test` runs each case on
 `scripts/testdata/story-coverage/`). **It reports, without failing:** the uncovered stories by
 role, those cited by one layer only, the tests in `test.fixme`/`test.skip` (not counted), and
 the guide's sections no story links (drift). States: *covered* (cited, no *Part:*), *partly
@@ -484,7 +486,8 @@ engine); Suites by spec file.
   the check below still passes.
 - **The check** (`allure-offline.mjs`): it fails if the report has a Google Analytics loader
   (`googletagmanager`, `gtag`), or markup or CSS that loads a script, stylesheet, image, frame,
-  media or `url()` from another host, or is no report at all (no `<head>`); else it puts a
+  media or `url()` from another host, or is no report at all (no `<head>`), in every `*.html`
+file of `allure-report/` (no `index.html` fails too); else it puts a
   Content-Security-Policy `<meta>` first in `<head>` (`default-src 'none'`; scripts and styles
   inline, `data:` and `blob:` URLs), so the browser refuses any other host even if a later
   Allure adds one. `npm run report:selftest` checks it on reports that must fail (a gtag block,
@@ -492,10 +495,12 @@ engine); Suites by spec file.
   Shown on 2026-11-04 in Chromium with every non-file request refused: the allure2 report with
   the CSP draws its tabs with no request leaving the file and no console error (`base-uri` is
   left out of the CSP: the report sets its own `<base>`).
-- **Traces:** a failed test's trace is in the report; its "open trace" button opens
-  `trace.playwright.dev` (Playwright's hosted viewer) in a new window and hands it the trace,
-  so a click sends the trace to that site. Use `npx playwright show-trace <zip>` on the
-  `browser-failures-<engine>-attempt-<n>` artifact's trace instead when that matters.
+- **Traces:** a failed test's trace is in the report as an attachment. The allure2 bundle's
+  trace viewer would load `trace.playwright.dev` (Playwright's hosted viewer) in an `<iframe>`
+  and post the trace to it; the report's CSP (`frame-src data: blob:`) blocks that frame, so a
+  trace is neither sent to that site nor viewable in the report. Download it from the report,
+  or take it from the `browser-failures-<engine>-attempt-<n>` artifact, and open it with
+  `npx playwright show-trace <zip>`.
 - **Size:** a Chromium run (55 tests, the a11y attachments): 3.8 MB, from 0.7 MB (72 files) of
   results; a history entry about 70 KB, so 30 runs (`historyLimit`) about 2 MB.
 - **CI:** each engine's job uploads `allure-results-<engine>-attempt-<n>`; the `report` job

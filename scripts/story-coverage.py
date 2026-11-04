@@ -8,7 +8,8 @@ and $GITHUB_STEP_SUMMARY when set (testing practices §9.4).
 
 Fails (exit 1) on: an ID in a test (a fixme or skipped one too) that the catalogue lacks or
 retired; a malformed ID (J-7, X-01, j-01, J01), in a tag, a Scala name or a catalogue row; a tag
-string not attached to a test's or a describe's `tag`; a Scala ID outside a [..] group; a
+string not attached to a test's or a describe's `tag`; a Scala ID outside a [..] group (string
+data shaped like an ID, "S-10", counts too: build such a value instead); a
 duplicate catalogue row; a guide section link without its #anchor, and a guide or notes link to a
 missing file or heading; and a vacuous run: no tag in the browser tests or the Scala specs, or a
 raw count of the quoted tags ('@J-21') and the [J-27 groups that differs from what was parsed.
@@ -350,24 +351,56 @@ def browser_tests(path):
 # ---------------------------------------------------------------------------- Scala specs
 
 SCALA_STRING = re.compile(r'"((?:[^"\\\n]|\\.)*)"')
-# a bracket group of IDs, loosely (any case, the hyphen optional: [J-27, S-01], [j-27], [J27])
-BRACKET = re.compile(r"\[\s*([A-Za-z]-?\d+(?:\s*,\s*[A-Za-z]-?\d+)*)\s*\]")
-# an ID outside any bracket group (a bracket left open or closed only, or parentheses)
+# a story ID, loosely: a letter, a hyphen and digits (J-27, j-27, X-01, J-7), or a role letter and
+# two digits without the hyphen (J27, j27); never a type parameter such as [A1] or [K1, V1]
+_ID = r"(?:[A-Za-z]-\d+|[JOARSjoars]\d{2,})"
+# a bracket group of IDs, loosely ([J-27, S-01], [j-27], [J27])
+BRACKET = re.compile(r"\[\s*(" + _ID + r"(?:\s*,\s*" + _ID + r")*)\s*\]")
+# an ID outside any bracket group (a bracket left open or closed only, or parentheses). It also
+# fails on string data shaped like an ID ("S-10" as a value): build such a value instead
 STRAY_ID = re.compile(r"(?<![\w-])[JOARS]-\d{1,3}(?![\w-])")
-# the cross-check: a story ID right after a [ anywhere on a code line
-RAW_SCALA_TAG = re.compile(r"\[\s*[A-Za-z]-?\d")
+# the cross-check: a story ID right after a [ anywhere in the code, comments left out
+RAW_SCALA_TAG = re.compile(r"\[\s*(?:[A-Za-z]-\d|[JOARSjoars]\d{2})")
 RAW_JS_TAG = re.compile(r"(['\"`])@[A-Za-z]-?\d+\1")
+
+
+def scala_code(text):
+    """The source with its comments blanked (a // to the line's end, a /* */ body, its newlines
+    kept), string literals left as they are; enough for the tag scan, not a Scala parser."""
+    out, i, n = [], 0, len(text)
+    while i < n:
+        c = text[i]
+        if text.startswith('"""', i):
+            j = text.find('"""', i + 3)
+            j = n if j < 0 else j + 3
+            out.append(text[i:j])
+            i = j
+        elif c == '"':
+            j = i + 1
+            while j < n and text[j] not in '"\n':
+                j += 2 if text[j] == "\\" else 1
+            out.append(text[i:j + 1])
+            i = j + 1
+        elif text.startswith("//", i):
+            j = text.find("\n", i)
+            i = n if j < 0 else j
+        elif text.startswith("/*", i):
+            j = text.find("*/", i + 2)
+            j = n if j < 0 else j + 2
+            out.append("\n" * text.count("\n", i, j))
+            i = j
+        else:
+            out.append(c)
+            i += 1
+    return "".join(out)
 
 
 def scala_tags(path):
     """(line, example or block name, [IDs, as written]) for each string literal with a bracket
-    group of IDs; (line, name, text) for an ID outside one; and the raw count of [X-NN starts on
-    the file's code lines (comments left out), for the cross-check."""
+    group of IDs; (line, name, text) for an ID outside one; and the raw count of [ID starts in
+    the file's code (comments left out), for the cross-check."""
     out, stray, raw = [], [], 0
-    for no, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
-        stripped = line.lstrip()
-        if stripped.startswith(("//", "*", "/*")):
-            continue
+    for no, line in enumerate(scala_code(path.read_text(encoding="utf-8")).splitlines(), 1):
         raw += len(RAW_SCALA_TAG.findall(line))
         for lit in SCALA_STRING.finditer(line):
             text = lit.group(1)
@@ -643,6 +676,19 @@ def self_test():
             (scala, clean_scala.replace("}\n", "  def f = g[J-01]()\n}\n", 1)[::1],
              "ID groups on its code lines", "a Scala ID outside a name"),
         ]
+        # ordinary code the cross-check must not count (the follow-up review)
+        fine = [
+            ("a type parameter", "  def f[A1](m: Map[K1, V1]): Seq[A1] = Nil\n"),
+            ("a trailing comment", '  "another example" in { ok } // as [J-04] does\n'),
+            ("a block comment", "  /* the stories:\n     [J-04] and [J-01]\n  */\n"),
+            ("a string after a comment", "  // a \"[J-04]\" in a comment\n"),
+        ]
+        for what, code in fine:
+            scala.write_text(clean_scala.replace("}\n", code + "}\n", 1), encoding="utf-8")
+            spec.write_text(clean_spec, encoding="utf-8")
+            cat.write_text(orig[cat], encoding="utf-8")
+            _, errs, _ = run(root, None, False)
+            check(errs == [], f"{what} is no story tag, got {errs}")
         for p, text, expect, what in cases:
             check(text != orig[p] and text != (clean_spec if p == spec else clean_scala if p == scala else orig[cat]),
                   f"{what}: the case changes the fixture")

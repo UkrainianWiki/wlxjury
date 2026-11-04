@@ -169,8 +169,10 @@ class RoleAssignmentSpec extends PlaySpecification with PlayTestDb with Mockito 
         createContests(10)
         val org = member("org@example.com", 10L -> "organizer")
         val jury = member("jury@example.com", 10L -> "jury")
-        status(save(org, 10, form(org.getId, org.email, 10, "admin"): _*))
-        status(save(jury, 10, form(jury.getId, jury.email, 10, "admin"): _*))
+        // their own profile is saved (303) with the role field ignored: only an admin's form
+        // sets a role, so neither becomes admin
+        (status(save(org, 10, form(org.getId, org.email, 10, "admin"): _*)),
+         status(save(jury, 10, form(jury.getId, jury.email, 10, "admin"): _*))) === ((SEE_OTHER, SEE_OTHER)) and
         (UserContestJdbc.find(org.getId, 10).map(_.role) === Some("organizer")) and
           (UserContestJdbc.find(jury.getId, 10).map(_.role) === Some("jury"))
       }

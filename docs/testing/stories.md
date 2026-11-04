@@ -118,5 +118,5 @@ a guide or a test needs them.
 | S-06 | A vote in a round not open to jurors (stopped, frozen, distributing) is refused and the stored vote stays | [Rounds you don't see](../user/juror-guide.md#rounds-you-dont-see) | *Part:* a stopped round and a stopped juror only |
 | S-07 | A vote from someone not a juror of the round, or of another contest, is refused and changes nothing | – | |
 | S-08 | A vote outside the round's rates (2 in a yes/no round, 6 in a 1–5 round) is refused | – | |
-| S-09 | No one sets another account's password; its email or wiki account changes only through an invitation or a mailed link | – | |
+| S-09 | No one sets another account's password; an admin changes its email only while it is an invitee (who is invited again), root through a link mailed to the new address; an admin may set its wiki account, valid and no other account's, as unverified | – | |
 | S-10 | A juror or an organizer is refused an admin's change (a POST), and nothing is written | – | |

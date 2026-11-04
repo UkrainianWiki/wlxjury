@@ -288,7 +288,7 @@ class MutationAuthorizationSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
-    "change only the juror's own criteria: 404 for another's file and for an organiser not a juror, 403 for another contest's juror" in {
+    "change only the juror's own criteria: 404 for another's file and for an organiser not a juror, 403 for another contest's juror [S-07]" in {
       testDbApp { app =>
         val juror = setUp()
         val round = criteriaRoundOf(juror)
@@ -974,7 +974,7 @@ class MutationAuthorizationSpec extends PlaySpecification with PlayTestDb {
     }
   }
 
-  "RoundController.saveRound [A-01, S-10]" should {
+  "RoundController.saveRound [A-01]" should {
     "save a round of the admin's own contest" in {
       testDbApp { app =>
         implicit val materializer: Materializer = app.materializer

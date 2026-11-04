@@ -7,7 +7,7 @@
 //   2. fails (exit 1) if the report has a Google Analytics loader (googletagmanager, gtag), or
 //      markup or CSS that loads a script, stylesheet, image, frame, media or url() from another
 //      host; or if the file is not a report (no <head>), so it can't pass by finding nothing.
-//   node allure-offline.mjs [index.html]      (default ../target/browser-test/allure-report/)
+//   node allure-offline.mjs [report dir]     (default ../target/browser-test/allure-report: every *.html)
 //   node allure-offline.mjs --self-test       (a report with a gtag block must fail)
 import fs from 'node:fs';
 import os from 'node:os';
@@ -43,14 +43,24 @@ export function check(html) {
   return { problems: [...new Set(problems)], html: out };
 }
 
-function run(file) {
-  const { problems, html } = check(fs.readFileSync(file, 'utf8'));
-  if (problems.length) {
-    console.error(`allure-offline: ${file} would load from another host or is not a report:\n  ${problems.join('\n  ')}`);
+/** Every *.html file of the report's directory (a file given: its directory), index.html
+  * required: each checked, and given the CSP meta only if all pass. */
+function run(target) {
+  const dir = fs.statSync(target).isDirectory() ? target : path.dirname(target);
+  const pages = fs.readdirSync(dir, { recursive: true }).filter((f) => /\.html?$/i.test(f)).map((f) => path.join(dir, f));
+  if (!fs.existsSync(path.join(dir, 'index.html'))) {
+    console.error(`allure-offline: ${dir} has no index.html: not a report`);
     return 1;
   }
-  fs.writeFileSync(file, html);
-  console.log(`allure-offline: ok, CSP meta first in <head>; ${fs.statSync(file).size} bytes`);
+  const checked = pages.map((file) => ({ file, ...check(fs.readFileSync(file, 'utf8')) }));
+  const bad = checked.filter((c) => c.problems.length);
+  for (const c of bad) {
+    console.error(`allure-offline: ${c.file} would load from another host or is not a report:\n  ${c.problems.join('\n  ')}`);
+  }
+  if (bad.length) return 1;
+  for (const c of checked) fs.writeFileSync(c.file, c.html);
+  console.log(`allure-offline: ok, ${checked.length} HTML file(s), the CSP meta first in each <head>; `
+    + `index.html ${fs.statSync(path.join(dir, 'index.html')).size} bytes`);
   return 0;
 }
 
@@ -73,16 +83,30 @@ function selfTest() {
       failures.push(`${name}: the CSP meta is not first in <head>`);
     }
   }
-  // and through the file path, as CI runs it
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'allure-offline-'));
-  const bad = path.join(dir, 'index.html');
-  fs.writeFileSync(bad, cases[0][1]);
-  if (run(bad) !== 1) failures.push('the file with a gtag block passed');
-  fs.rmSync(dir, { recursive: true, force: true });
+  // and through the report's directory, as CI runs it
+  const good = cases[cases.length - 1][1];
+  const reports = [
+    ['an index.html with a gtag block', { 'index.html': cases[0][1] }, 1],
+    ['another HTML file with a CDN stylesheet', { 'index.html': good, 'data/extra.html': cases[2][1] }, 1],
+    ['no index.html', { 'other.html': good }, 1],
+    ['a clean report', { 'index.html': good, 'data/extra.html': good }, 0],
+  ];
+  for (const [name, files, want] of reports) {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'allure-offline-'));
+    for (const [f, html] of Object.entries(files)) {
+      fs.mkdirSync(path.dirname(path.join(dir, f)), { recursive: true });
+      fs.writeFileSync(path.join(dir, f), html);
+    }
+    if (run(dir) !== want) failures.push(`${name}: want exit ${want}`);
+    if (want === 0 && !Object.keys(files).every((f) => fs.readFileSync(path.join(dir, f), 'utf8').includes(META))) {
+      failures.push(`${name}: a page without the CSP meta`);
+    }
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
   for (const f of failures) console.error(`FAIL: ${f}`);
   console.log(`allure-offline self-test: ${failures.length ? `${failures.length} failure(s)` : 'ok'}`);
   return failures.length ? 1 : 0;
 }
 
 const arg = process.argv[2];
-process.exitCode = arg === '--self-test' ? selfTest() : run(arg ?? '../target/browser-test/allure-report/index.html');
+process.exitCode = arg === '--self-test' ? selfTest() : run(arg ?? '../target/browser-test/allure-report');
