@@ -199,12 +199,12 @@ rename it if the release slips to a later month). Releasing:
 3. after the deploy, the changelog heading becomes `## 26.11 (YYYY-MM-DD)` with the deploy date
    (§7.3), and the next commit, on followups and on master, sets the next snapshot:
    `26.12-SNAPSHOT`, or `26.11.1-SNAPSHOT` if another deploy is planned in the same month. Never
-   leave `26.11-SNAPSHOT` after `26.11` ships: its Debian version `26.11~SNAPSHOT` sorts below
-   the installed `26.11`.
+   leave `26.11-SNAPSHOT` after `26.11` ships: a snapshot names the release still to come, and
+   later builds would read as older than the deployed `26.11`.
 
-Debian packages get `26.11~SNAPSHOT` for a snapshot (so it sorts before `26.11`) and RPMs the
-version without `-SNAPSHOT` (`build.sbt`). Builds before the scheme are `0.13-…` and keep their
-names; `26.11` sorts after `0.13`. *Why:* the version says when a deployed build shipped. *Guard:* `deployment.BuildIdentitySpec` checks the version's form in the packaged
+The release artifact is the ZIP (`sbt dist`); there are no Debian or RPM packages (dropped
+2026-11-04). Builds before the scheme are `0.13-…` and keep their names; `26.11` sorts after
+`0.13`. *Why:* the version says when a deployed build shipped. *Guard:* `deployment.BuildIdentitySpec` checks the version's form in the packaged
 manifest.
 
 ## 8. Keeping the practices docs current

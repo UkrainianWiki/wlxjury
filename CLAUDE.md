@@ -124,12 +124,12 @@ sbt -Dgatling.roundMgmt.stress=true "Gatling/testOnly gatling.simulations.RoundM
 - Never run Gatling, JMH or other benchmarks in an sbt session where `coverage` is on: its classes are instrumented (scoverage) and measure slower. Start a new session, or run `coverageOff`, first.
 - To use the fixture by hand or for UI screenshots: `Test/runMain gatling.setup.UiShotsServer` (it sets the images' Commons URLs in its own container, writes `target/ui-shots/server.json`, stops on `target/ui-shots/server.stop`); command and logins in `docs/performance/practices.md` §1.7.
 
-### Building packages
+### Building the release
 ```bash
-sbt packageDebSystemd    # Debian package with systemd
-sbt packageRpmSystemd    # RPM package with systemd
-sbt packageAll           # All package variants
+sbt dist    # The release ZIP, target/universal/wlxjury-<version>.zip (Universal / packageBin)
 ```
+
+The ZIP is the only release artifact (no Debian or RPM packages); `wlxjury-release` deploys it (`docs/deployment.md`).
 
 ## Architecture
 

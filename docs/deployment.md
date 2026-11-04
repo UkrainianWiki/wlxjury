@@ -18,7 +18,10 @@ keeps the tested `wlxjury-deploy.py`; routine releases use the small `wlxjury-re
 (`b5a1f9ec`, `restore` in `cc15dfd7`) with a rehearsed runbook instead of guided recovery
 commands (tooling comparisons `24d0c62a`, `6d96d264`). The cutover code (`adopt-legacy`,
 `scrub-legacy`, about 350 lines) is retired once the cutover is accepted and its recovery
-records are gone (roadmap). The Debian package stays a later option.
+records are gone (roadmap). The release artifact is the ZIP from `sbt dist`; the Debian and RPM
+packages were dropped (2026-11-04, unused for years). The server's original `wlxjury.service` unit
+and `wlxjury` user came from the old Debian package; `wlxjury-infra` now manages both (its
+`wlxjury_app` role).
 
 ## One-time setup on the server
 
