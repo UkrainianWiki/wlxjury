@@ -85,7 +85,11 @@ ScalikeJDBC's default (`PlayDBApiAdapterModule`; `ConnectionPoolConfigSpec`); `r
 `app.stop()` closes it. A spec that uses `running(app)` calls `SharedTestDb.reregisterDefault()`
 in a `finally`; registering again closes the pool it replaces. *Why:* otherwise every later spec
 in the JVM fails on a closed pool; and a spec on another pool than production's (ScalikeJDBC's
-commons-dbcp2 default until 2026-11-04) tests a pool that never runs.
+commons-dbcp2 default until 2026-11-04) tests a pool that never runs. The switch did not change
+the tests' speed: `db.*` and `services.distribution.*` (446 tests, ABBA pilot after a warm-up,
+2026-11-04) took 174 and 174 s on dbcp2, 171 and 170 s on HikariCP, no spec more than 1 s
+apart. dbcp2 validated no borrow (no validation query); HikariCP pinged about 100 of 18,476
+borrows, those idle over 500 ms (`aliveBypassWindowMs`), so there is nothing to turn off.
 
 **2.5 Order independence.** A spec seeds what it reads and never relies on ids from 1 or on rows
 another spec left; `AutoRollbackDb` empties the database before each example (`a65e165c`). A
