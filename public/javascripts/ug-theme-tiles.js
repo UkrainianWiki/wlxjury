@@ -194,20 +194,22 @@ function UGTheme_tiles(){
 	
 	
 	/**
-	 * on tile click - open lightbox
+	 * on tile click - open the file's large view
 	 */
 	function onTileClick(data, objTile){
-		
-		objTile = jQuery(objTile);		
-		
+
+		objTile = jQuery(objTile);
+
 		var objItem = g_objTileDesign.getItemByTile(objTile);
 
-		//the tile's large view in the gallery's list (its filter and order), as the page has it
+		//wlxjury: the tile's large view in the gallery's list (its filter and order), as the page
+		//has it (data-largeUrl), not upstream's lightbox (g_lightbox.open(objItem.index))
 		window.open(objItem.largeUrl, "_self");
 	}
 
 	/**
-	 * on tile click - open lightbox
+	 * wlxjury: on a thumb up click: select the file, or take the selection back if it is selected
+	 * (issue #6)
 	 */
 	function onSelectClick(data, objTile){
 
@@ -223,7 +225,7 @@ function UGTheme_tiles(){
 	}
 
 	/**
-	 * on tile click - open lightbox
+	 * wlxjury: on a thumb down click: reject the file, or take the rejection back (issue #6)
 	 */
 	function onRejectClick(data, objTile) {
 
@@ -238,7 +240,7 @@ function UGTheme_tiles(){
 		}
 	}
 
-	//a binary round's vote, shown on the tile once stored (tile-votes.js)
+	//wlxjury: a binary round's vote, shown on the tile once stored (tile-votes.js)
 	function serviceCall(objItem, rate, objTile) {
 		wlxTileVotes.vote(objTile[0], objItem, rate);
 	}
@@ -289,6 +291,7 @@ function UGTheme_tiles(){
 		}
 		
 		jQuery(g_objTileDesign).on(g_objTileDesign.events.TILE_CLICK, onTileClick);
+		//wlxjury: the thumbs' clicks (unitegallery.js UGTileDesign's SELECT_CLICK, REJECT_CLICK)
 		jQuery(g_objTileDesign).on(g_objTileDesign.events.SELECT_CLICK, onSelectClick);
 		jQuery(g_objTileDesign).on(g_objTileDesign.events.REJECT_CLICK, onRejectClick);
 		
