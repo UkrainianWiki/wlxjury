@@ -7,10 +7,12 @@ import importlib.util
 import io
 import json
 from pathlib import Path
+import struct
 import tempfile
 import unittest
 import unittest.mock
 import zipfile
+import zlib
 
 HERE = Path(__file__).resolve().parent
 
@@ -135,6 +137,63 @@ class ParseSummaryTest(unittest.TestCase):
             with self.assertRaises(comment.SummaryError):
                 comment.read_summary_zip(blob)
 
+    def raw_read(self, blob):
+        with zipfile.ZipFile(io.BytesIO(blob)) as archive:
+            return archive.read(comment.SUMMARY_FILE)
+
+    def test_corrupt_deflate_is_refused_not_raised(self):
+        blob = corrupt_deflate(deflated(doc()))
+        with self.assertRaises(zlib.error):  # what zipfile itself raises: not a BadZipFile
+            self.raw_read(blob)
+        with self.assertRaises(comment.SummaryError):
+            comment.read_summary_zip(blob)
+
+    def test_truncated_member_is_refused_not_raised(self):
+        blob = truncated_member(deflated(doc()), 10)
+        # zipfile raises BadZipFile (CRC) or EOFError, depending on the Python version
+        with self.assertRaises((zipfile.BadZipFile, EOFError)):
+            self.raw_read(blob)
+        with self.assertRaises(comment.SummaryError):
+            comment.read_summary_zip(blob)
+
+    def test_deeply_nested_json_is_refused_not_raised(self):
+        raw = b"[" * 8000 + b"]" * 8000
+        self.assertLessEqual(len(raw), comment.MAX_JSON_BYTES)
+        with self.assertRaises(RecursionError):
+            json.loads(raw.decode())
+        with self.assertRaises(comment.SummaryError):
+            comment.parse_summary(raw)
+        with self.assertRaises(comment.SummaryError):
+            comment.read_summary_zip(deflated(raw))
+
+
+def deflated(raw):
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr(comment.SUMMARY_FILE, raw)
+    return buffer.getvalue()
+
+
+def _data_offset(blob):
+    name_len, extra_len = struct.unpack_from("<HH", blob, 26)
+    return 30 + name_len + extra_len
+
+
+def corrupt_deflate(blob):
+    """The member's first deflate byte set to 0xFF: a block of the reserved type 3."""
+    data = bytearray(blob)
+    data[_data_offset(blob)] = 0xFF
+    return bytes(data)
+
+
+def truncated_member(blob, size):
+    """The member's compressed size cut to size bytes, in both headers: its stream ends early."""
+    data = bytearray(blob)
+    struct.pack_into("<I", data, 18, size)
+    central = data.index(b"PK\x01\x02")
+    struct.pack_into("<I", data, central + 20, size)
+    return bytes(data)
+
 
 class RenderTest(unittest.TestCase):
     def test_table_with_a_base(self):
@@ -231,6 +290,13 @@ class RunTest(unittest.TestCase):
         fake = api(comments=comments)
         self.assertEqual(comment.run(event(), ENV, fake), "#263: updated")
         self.assertEqual(fake.sent[0][:2], ("PATCH", f"repos/{REPO}/issues/comments/6"))
+
+    def test_a_bot_comment_that_only_quotes_the_marker_is_not_ours(self):
+        comments = [{"id": 7, "user": {"login": comment.BOT}, "body": "Quoted: " + comment.MARKER},
+                    {"id": 8, "user": {"login": comment.BOT}, "body": None}]
+        fake = api(comments=comments)
+        self.assertEqual(comment.run(event(), ENV, fake), "#263: created")
+        self.assertEqual(fake.sent[0][:2], ("POST", f"repos/{REPO}/issues/263/comments"))
 
     def test_no_base_run(self):
         fake = api(runs=[])

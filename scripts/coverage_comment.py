@@ -71,10 +71,14 @@ def parse_summary(raw):
     """The validated summary (dict) from the artifact's bytes, or SummaryError."""
     if not isinstance(raw, (bytes, bytearray)) or len(raw) > MAX_JSON_BYTES:
         raise SummaryError("not a small file")
+    # Fail closed: any decoding failure (bad UTF-8 or JSON, RecursionError on deep nesting, ...)
+    # is a refused summary, so one corrupt artifact never breaks the job for other PRs
     try:
         data = json.loads(raw.decode("utf-8"), object_pairs_hook=_no_duplicates,
                           parse_constant=_refuse_constant)
-    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+    except SummaryError:
+        raise
+    except Exception as error:  # noqa: BLE001
         raise SummaryError(f"not JSON: {type(error).__name__}") from None
     if not isinstance(data, dict) or set(data) != TOP_KEYS:
         raise SummaryError("unexpected keys")
@@ -101,6 +105,8 @@ def read_summary_zip(blob):
     """The summary from an artifact's zip: only SUMMARY_FILE is read, with a size cap."""
     if len(blob) > MAX_ZIP_BYTES:
         raise SummaryError("artifact too large")
+    # Fail closed: any failure to read the zip (BadZipFile, zlib.error, EOFError on a truncated
+    # member, an LZMA or CRC error, an unsupported method, ...) is a refused summary
     try:
         with zipfile.ZipFile(io.BytesIO(blob)) as archive:
             info = archive.getinfo(SUMMARY_FILE)
@@ -108,7 +114,9 @@ def read_summary_zip(blob):
                 raise SummaryError("summary too large")
             with archive.open(info) as member:
                 raw = member.read(MAX_JSON_BYTES + 1)
-    except (zipfile.BadZipFile, KeyError, RuntimeError, NotImplementedError, OSError) as error:
+    except SummaryError:
+        raise
+    except Exception as error:  # noqa: BLE001
         raise SummaryError(f"not the summary artifact: {type(error).__name__}") from None
     return parse_summary(raw)
 
@@ -215,7 +223,10 @@ def upsert_comment(api, repo, number, body):
         comments = api.get_json(f"repos/{repo}/issues/{number}/comments?per_page=100&page={page}")
         for comment in comments:
             user = (comment.get("user") or {}).get("login")
-            if user == BOT and MARKER in (comment.get("body") or "") and _is_int(comment.get("id")):
+            body_now = comment.get("body")
+            # Our comment starts with the marker; one that only quotes it is someone else's
+            if (user == BOT and isinstance(body_now, str) and body_now.startswith(MARKER)
+                    and _is_int(comment.get("id"))):
                 api.send("PATCH", f"repos/{repo}/issues/comments/{comment['id']}", {"body": body})
                 return "updated"
         if len(comments) < 100:
