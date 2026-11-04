@@ -489,6 +489,15 @@ object WritePathStress {
         t -> sql"SELECT COUNT(*) FROM ${SQLSyntax.createUnsafely(t)} v JOIN images i ON i.page_id = v.page_id WHERE NOT (v.monument_id <=> i.monument_id)"
           .map(_.long(1)).single().get
       }.toMap
+      // the stale copies themselves (a residual window of the write-path plan's h6): table,
+      // round, page, juror, the vote's copy and the image's monument id, 20 a table at most
+      val monumentRows = Seq("vote", "vote_aside").flatMap { t =>
+        sql"""SELECT v.round_id, v.page_id, v.jury_id, v.monument_id, i.monument_id
+              FROM ${SQLSyntax.createUnsafely(t)} v JOIN images i ON i.page_id = v.page_id
+              WHERE NOT (v.monument_id <=> i.monument_id) ORDER BY v.round_id, v.page_id, v.jury_id LIMIT 20"""
+          .map(r => s"$t round ${r.long(1)} page ${r.long(2)} juror ${r.long(3)} vote ${r.stringOpt(4).getOrElse("NULL")} " +
+            s"image ${r.stringOpt(5).getOrElse("NULL")}").list()
+      }
       val rounds = sql"SELECT id, freeze_count, distributing FROM round WHERE freeze_count <> 0 OR distributing <> 0"
         .map(r => s"round ${r.long(1)} freeze ${r.int(2)} distributing ${r.boolean(3)}").list()
       val jobs = sql"SELECT status, COUNT(*) FROM job GROUP BY status".map(r => r.string(1) -> r.long(2)).list().toMap
@@ -505,6 +514,7 @@ object WritePathStress {
         "criteriaVoteRateWrong" -> criteriaRates,
         "criteriaRateOfCriterionNotInRound" -> foreignRates,
         "monumentCopyWrong" -> monumentCopies,
+        "monumentCopyWrongRows" -> monumentRows,
         "roundsLeftFrozen" -> rounds,
         "jobs" -> jobs,
         "votesAtStart" -> votesAtStart,
@@ -567,6 +577,7 @@ object WritePathStress {
       text ++= s"  ${v.size}x $k\n"
     }
     text ++= s"invariants: ${Json.stringify(checks)}\n"
+    (checks \ "monumentCopyWrongRows").asOpt[Seq[String]].getOrElse(Nil).foreach(row => text ++= s"  stale monument copy: $row\n")
     if (stuck.nonEmpty) text ++= s"STUCK threads: ${stuck.mkString(", ")}\n"
     ps.foreach { p => stats(p.name).samples.asScala.foreach(s => text ++= s"  ${p.name}: $s\n") }
 

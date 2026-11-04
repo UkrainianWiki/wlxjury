@@ -14,11 +14,23 @@ import scalikejdbc._
   *    ([[markFile]], the last statement of [[VoteJdbc.rate]] and
   *    [[org.intracer.wmua.CriteriaRate.updateRate]]): no count delta, no lock on the round or
   *    on `round_image`, only the entry's record (exclusive: the file's votes queue on it).
-  *  - A bulk writer of a round's votes (a vote insert, so a distribution chunk; a move aside or
-  *    back; a delete; a file moved to another round; a disqualify or requalify; the repair job's
-  *    sync) bumps the round's generation, `round.counts_gen`, in its own transaction
-  *    ([[markRounds]], from [[RoundImageJdbc.addVoted]] and the sync): it holds the round for
-  *    update already (the round-first rule, [[RoundWrites]]), so it takes no new lock.
+  *  - A bulk writer of a round's votes bumps the round's generation, `round.counts_gen`, in its
+  *    own transaction ([[markRounds]]): it holds the round for update already (the round-first
+  *    rule, [[RoundWrites]]), so it takes no new lock. The production ones, all through
+  *    [[RoundImageJdbc]]: [[RoundImageJdbc.addVoted]] (every vote insert: a distribution chunk,
+  *    [[VoteJdbc.create]] / [[VoteJdbc.batchInsert]]); [[ImageJdbc]]'s `moveVotesAside` and
+  *    `moveVotesBack` through [[RoundImageJdbc.syncPairs]] (a file deleted or restored on
+  *    Commons, a round's opening or a distribution's end, a disqualify's and a requalify's
+  *    moves); [[RoundImageJdbc.requalifyRows]]; the repair job's [[RoundImageJdbc.sync]]
+  *    ([[services.distribution.RoundImageCheckHandler]]). [[VoteJdbc.deleteVotes]] marks too, but
+  *    only the test-only writers call it (`TestVoteWrites`, since W8).
+  *  - Writes that need no mark, since the counts read only `vote`'s rows and rates: a change of
+  *    a round's criteria ([[RoundCriterion.update]]: before the first vote no rate is set, after
+  *    it only a criterion's renaming, which moves `criteria_rate` rows and leaves `vote.rate`);
+  *    monument id and region updates (no count reads them); a juror stopped or started on the
+  *    round (`round_user.active`: their vote rows stay). So the counts include a stopped juror's
+  *    votes, as today's grouped reads over `vote` do (`ImageDbNew` doesn't join `round_user`);
+  *    P2b keeps that, or leaves them out on both sides.
   *
   * '''The recompute''' ([[fileWindow]], [[roundWindow]]; run by
   * `services.counts.RoundCountsRecompute` on a timer, `modules.RoundCountsTask`), one window of
@@ -55,6 +67,18 @@ object RoundCounts {
 
   /** Files per recompute window (one transaction): ~100 ms on a 38k-file round's rows. */
   val DefaultWindow = 2000
+
+  /** The isolation level the recompute needs (`@@tx_isolation`'s value): its plain read of the
+    * votes after the locks must see the latest committed votes, which REPEATABLE READ's snapshot
+    * may not.
+    */
+  val ReadCommitted = "READ-COMMITTED"
+
+  /** The caller's connection's isolation level, as [[services.ReadinessCheck]] reads it
+    * (`@@tx_isolation`: MariaDB 10.6 has no `@@transaction_isolation`, which 11.1 added).
+    */
+  def isolation()(implicit session: DBSession): String =
+    sql"SELECT @@tx_isolation".map(_.string(1)).single().getOrElse("")
 
   // ── marks ──────────────────────────────────────────────────────────────────
 

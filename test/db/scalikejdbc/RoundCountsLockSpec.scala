@@ -86,7 +86,7 @@ class RoundCountsLockSpec extends Specification with TestDb with BeforeAll with 
       VoteJdbc.rate(1L, j2.getId, r, -1) // the file's entry, committed
       val held = new CountDownLatch(1)
       val go = new CountDownLatch(1)
-      // juror 1's vote, its entry's key locked (shared: the entry is there), not committed
+      // juror 1's vote, its file's entry (there already) locked exclusively by the upsert, not committed
       val vote = Future(DB.localTx { implicit s =>
         val n = VoteJdbc.rate(1L, j1.getId, r, 1)
         held.countDown()

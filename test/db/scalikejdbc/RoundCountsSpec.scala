@@ -264,5 +264,23 @@ class RoundCountsSpec extends Specification with TestDb with BeforeAll with Befo
           budget = scala.concurrent.duration.DurationInt(1).minute)).runOnce().roundsRecounted === 1) and
         (RoundCounts.drift(r) must beEmpty)
     }
+
+    "refuse to run on a connection that isn't READ COMMITTED, writing nothing and keeping the marks" in {
+      implicit val contest: ContestJury = createContests(10).head
+      val (r, Seq(j1)) = round(Map(1L -> Seq(0)))
+      recompute.untilClean()
+      VoteJdbc.rate(1L, j1.getId, r, 1)
+      DB.localTx { implicit s => RoundWrites.lock(Seq(r)); RoundCounts.markRounds(Seq(r)) }
+      // the pool at REPEATABLE READ, as a misconfigured production pool would be
+      ConnectionPool.singleton(HikariTestPool(SharedTestDb.jdbcUrl, SharedTestDb.username, SharedTestDb.password,
+        name = "counts-repeatable-read", minimumIdle = 1, maximumPoolSize = 4,
+        isolation = Some("TRANSACTION_REPEATABLE_READ")))
+      val refused = try recompute.untilClean() finally SharedTestDb.reregisterDefault()
+      val kept = (entries(r), gen(r), counts(r, 1L))
+      val fixed = recompute.untilClean()
+      (refused.refusedIsolation === Some("REPEATABLE-READ")) and (refused.windows === 0) and
+        (kept === ((Seq(1L), 3L -> 2L, Counts(1, 0, 0, 0, 0)))) and (fixed.refusedIsolation must beNone) and
+        (counts(r, 1L) === Counts(1, 1, 1, 0, 1)) and (RoundCounts.isClean(r) must beTrue)
+    }
   }
 }
