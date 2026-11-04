@@ -160,7 +160,9 @@ object SharedTestDb {
     * docs/plans/2026-11-03-write-path-simplification.md; CriteriaRateSpec checks it). 8
     * connections at most, the size the tests ran with on ScalikeJDBC's old commons-dbcp2 pool,
     * where production has 30: one JVM of tests against one container needs no more.
-    * Registering it again (reregisterDefault) makes ScalikeJDBC close the pool it replaces.
+    * Registering it again (reregisterDefault) makes ScalikeJDBC close a HikariTestPool it
+    * replaces; a replaced Play pool is not closed so (its close throws, in ScalikeJDBC's
+    * background clean-up): Play closes it when the app stops.
     */
   private def registerPools(): Unit = {
     ConnectionPool.singleton(

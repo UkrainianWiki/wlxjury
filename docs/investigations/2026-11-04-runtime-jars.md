@@ -178,7 +178,7 @@ org.jfree.chart.JFreeChart <- wlx.stat.reports.AuthorsStat <- AuthorsStat$ <- wl
 | Tapir API, docs/Swagger part (cats-core 6.1, cats-kernel 3.6, shapeless 3.2, swagger-ui 3.1, circe, snakeyaml, apispec, enumeratum, quicklens) | 19.59 | 28 | needed while `/api/docs` is generated at run time (see 3c) |
 | Tapir API core (tapir-core, server, play-server, json-play, sttp-model/shared, magnolia) | 2.99 | 9 | needed (the API is served) |
 | webjars (Bootstrap 5.3.8 2.5, bootstrap-icons 1.7, Tom Select 1.1, jQuery, requirejs, the locators, classgraph, mustache, commons-text) | 6.77 | 11 | needed (Bootstrap, icons, Tom Select, jQuery); the locator chain is webjars-play's |
-| DB (MariaDB, Flyway 13.12 core and mysql, ScalikeJDBC 4.3.2, HikariCP, dbcp2, pool2, joda) | 5.83 | 20 | needed; dbcp2 and pool2 come from scalikejdbc-core but the pool is Hikari (`PlayDBApiAdapterModule`) |
+| DB (MariaDB, Flyway 13.12 core and mysql, ScalikeJDBC 4.3.2, HikariCP, dbcp2, pool2, joda) | 5.83 | 20 | needed; dbcp2 and pool2 come from scalikejdbc-core but the pool is Hikari (`PlayDBApiAdapterModule`). **Since removed** (2026-11-04, dependency updates part 2, step 1): dbcp2, pool2 and dbcp2's jakarta.transaction-api are excluded; joda stays (dependencies practices §3.4) |
 | scalawiki: other (jsoup, scallop, ficus, chronoscala, retry, odelay, scala-csv 2.0, commons-codec/io/lang3, pekko-http-caching, caffeine) | 3.76 | 12 | needed: scallop is reachable (`ContestController` → `RateConfig` → `StatParams`) |
 | scalawiki own jars (core 1.2, wlx 2.4, http-extensions) | 3.74 | 3 | needed |
 | scalawiki: charts (scala-chart, jfreechart, jcommon, scala-swing) | 2.99 | 4 | **unused** (decision 2) |

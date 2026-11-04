@@ -169,8 +169,10 @@ scalikejdbc-orm mapper (`CRUDMapper`, through `SQLSyntaxSupportBase`, which mixe
 `JodaTimeImplicits`) calls `scalikejdbc.jodatime.JodaBinders` when it is constructed, and the
 joins, includes and `withTableName` copies of `CRUDFeatureWithId` carry the same (a `jdeps`
 scan of scalikejdbc-orm 4.3.5). Excluding `scalikejdbc-joda-time` would fail every DAO at run
-time, not at compile time; keeping it without joda-time (its binders are typed with joda's
-classes) was not tried, as nothing guards which of joda's classes load when. They go when scalikejdbc-orm drops `JodaTimeImplicits` from `SQLSyntaxSupportBase`, or wlxjury
+time, not at compile time. Keeping it without joda-time fails too, from the bytecode:
+`JodaBinders$`'s static initializer links lambdas whose implementation methods take and return
+joda types (`$anonfun$jodaDateTime$1(java.util.Date): org.joda.time.DateTime`), so the first
+`CRUDMapper` constructed would throw `NoClassDefFoundError` for `org.joda.time.DateTime`. They go when scalikejdbc-orm drops `JodaTimeImplicits` from `SQLSyntaxSupportBase`, or wlxjury
 leaves scalikejdbc-orm.
 
 ## 4. Downloaded tools and checksums

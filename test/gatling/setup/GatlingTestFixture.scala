@@ -96,8 +96,10 @@ object GatlingTestFixture {
     * READ COMMITTED as Play's): the size of the commons-dbcp2 pool of ScalikeJDBC's defaults
     * that scalikejdbc.PlayFixtureModule's PlayInitializer registered until it was dropped from
     * play.modules.enabled (it raced the HikariCP pool, so earlier runs may have used either).
-    * That option was "dbcp", until commons-dbcp2 left the build. Any other value ("hikari",
-    * the default) keeps Play's pool.
+    * That option was "dbcp", until commons-dbcp2 left the build. It is not like-for-like with
+    * "small" beyond the size: "dbcp" ran at the server's default, REPEATABLE READ, and a borrow
+    * waited 5 s for a connection; "small" runs at READ COMMITTED and waits 30 s. Earlier "dbcp"
+    * results compare only roughly. Any other value ("hikari", the default) keeps Play's pool.
     */
   private def choosePool(app: _root_.play.api.Application): Unit = {
     val started = scalikejdbc.ConnectionPool.get().dataSource.getClass.getName

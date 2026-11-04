@@ -79,11 +79,19 @@ it instead of hanging the suite (one `CoiRoundSpec` statement once waited 26 min
 ScalikeJDBC's default pool is `SharedTestDb`'s `HikariTestPool` (`db.scalikejdbc`): Play's
 HikariCP settings (autoCommit, 30 s connection timeout, idle timeout and max lifetime), READ
 COMMITTED as production's `transactionIsolation` (`CriteriaRateSpec`), 2 idle and 8 at most where
-production keeps 10 and 30. The Gatling fixture (`gatling.pool=small`), its external target and
-`WritePathStress` use the same class. A Play app's start makes its own HikariCP pool
-ScalikeJDBC's default (`PlayDBApiAdapterModule`; `ConnectionPoolConfigSpec`); `running(app)` or
-`app.stop()` closes it. A spec that uses `running(app)` calls `SharedTestDb.reregisterDefault()`
-in a `finally`; registering again closes the pool it replaces. *Why:* otherwise every later spec
+production keeps 10 and 30. HikariCP sets that level on a new connection only if it differs from
+the default it read from the pool's first connection, in production as here, so a global level
+changed during a pool's life is not picked up; only `WritePathStress` changes it, and it builds
+new pools afterwards (and checks each path's level). The Gatling fixture (`gatling.pool=small`),
+its external target and `WritePathStress` use the same class. `small` differs from the old
+`dbcp` option in more than size: READ COMMITTED where `dbcp` ran at the server's default,
+REPEATABLE READ, and a borrow waits 30 s instead of 5 s, so earlier `dbcp` Gatling results are
+not like-for-like. `WritePathStress` takes only `maxSize` from its `ConnectionPoolSettings`, not
+`connectionTimeoutMillis`. A Play app's start makes its own HikariCP pool ScalikeJDBC's default
+(`PlayDBApiAdapterModule`; `ConnectionPoolConfigSpec`); `running(app)` or `app.stop()` closes it.
+A spec that uses `running(app)` calls `SharedTestDb.reregisterDefault()` in a `finally`.
+Registering again closes a replaced `HikariTestPool`; a replaced Play pool (a plain
+`DataSourceConnectionPool`) is not closed that way, Play closes it when the app stops. *Why:* otherwise every later spec
 in the JVM fails on a closed pool; and a spec on another pool than production's (ScalikeJDBC's
 commons-dbcp2 default until 2026-11-04) tests a pool that never runs. The switch did not change
 the tests' speed: `db.*` and `services.distribution.*` (446 tests, ABBA pilot after a warm-up,

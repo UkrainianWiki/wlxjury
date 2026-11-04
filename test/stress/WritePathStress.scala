@@ -90,7 +90,8 @@ object WritePathStress {
     private val pools = new ConcurrentHashMap[String, ConnectionPool]()
     // one HikariCP pool per path (HikariTestPool, as the tests'), none kept idle as the
     // commons-dbcp2 pools this used before; no isolation of its own: the variant sets the
-    // server's default (SET GLOBAL) before the pool is registered
+    // server's default (SET GLOBAL) before the pool is registered. Of `settings` only maxSize
+    // applies: a borrow waits Play's 30 s (HikariTestPool), not connectionTimeoutMillis (5 s)
     private def current: ConnectionPool =
       pools.computeIfAbsent(tag.get, t =>
         HikariTestPool(url, if (t == "harness") fallbackUser else userOf(t),
@@ -401,6 +402,16 @@ object WritePathStress {
       exec(c, s"CREATE USER IF NOT EXISTS '${userOf(p.name)}'@'%' IDENTIFIED BY '$password'")
       exec(c, s"GRANT ALL PRIVILEGES ON *.* TO '${userOf(p.name)}'@'%'")
     })
+    // every path's pool runs at the level just set (HikariTestPool sets none of its own)
+    val expected = if (rc) "READ-COMMITTED" else "REPEATABLE-READ"
+    ("harness" +: ps.map(_.name)).foreach { t =>
+      val previous = tag.get
+      tag.set(t)
+      val seen = try DB.readOnly(implicit s => sql"SELECT @@tx_isolation".map(_.string(1)).single().get)
+                 finally tag.set(previous)
+      require(seen == expected, s"path $t runs at $seen, expected $expected")
+    }
+    println(s"[stress] $variant: every path's pool at $expected")
     val votesAtStart = DB.readOnly(implicit s => sql"SELECT COUNT(*) FROM vote".map(_.long(1)).single().get)
     val logStart = SharedTestDb.container.container.getLogs().length
     val before = root(status(_, statusNames))
