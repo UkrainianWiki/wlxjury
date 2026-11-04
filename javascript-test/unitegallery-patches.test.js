@@ -57,19 +57,38 @@ async function until(cond, what) {
     throw new Error("timed out waiting for " + what);
 }
 
-/** The gallery's options as gallery-init.js gives them, with `extra`. */
-function options(extra) {
-    return Object.assign({
-        gallery_theme: "tiles",
-        tiles_type: "justified",
-        tiles_justified_row_height: 200,
-        tile_enable_background: false,
-        tile_enable_overlay: true,
-        jury: false,
-        binary: false,
-        wlx_stars: null
-    }, extra);
+const galleryInit = require("../public/javascripts/gallery-init.js");
+
+/**
+ * The gallery's options as gallery-init.js gives them for the #gallery element `el`.
+ * `extra`'s `jury`, `binary` and `wlx_stars` become el's data-jury, data-binary and data-stars
+ * (as views.GalleryTiles writes them); its other keys override options a page doesn't set
+ * (tile_enable_image_effect, a theme that isn't loaded).
+ */
+function options(el, extra) {
+    const { jury, binary, wlx_stars: stars, ...rest } = extra || {};
+    if (jury !== undefined) el.setAttribute("data-jury", String(jury));
+    if (binary !== undefined) el.setAttribute("data-binary", String(binary));
+    if (stars) el.setAttribute("data-stars", JSON.stringify(stars));
+    return Object.assign(galleryInit.options(el), rest);
 }
+
+describe("gallery-init.js's options", () => {
+    // N15's premise (docs/vendor/unitegallery.md §3): the link sinks are unreachable while
+    // these stay at unitegallery's defaults, off
+    test("leave the tile and thumbnail links off", () => {
+        const el = document.createElement("div");
+        const o = galleryInit.options(el);
+        ["tile_show_link_icon", "tile_as_link", "thumb_wrapper_as_link"].forEach((k) => expect(o[k]).toBeUndefined());
+        expect(o.gallery_theme).toBe("tiles");
+    });
+
+    test("unitegallery's defaults for them are off", () => {
+        expect(ugSrc).toMatch(/tile_as_link: false,/);
+        expect(ugSrc).toMatch(/tile_show_link_icon: false,/);
+        expect(ugSrc).toMatch(/thumb_wrapper_as_link: false,/);
+    });
+});
 
 let nextId = 1;
 
@@ -96,7 +115,7 @@ async function gallery(items, extra) {
         el.appendChild(img);
     });
     document.body.appendChild(el);
-    jQuery("#gallery").unitegallery(options(extra));
+    jQuery("#gallery").unitegallery(options(el, extra));
     await until(() => document.querySelectorAll("#gallery .ug-tile").length === items.length, "the tiles");
     await tick(60);
     return Array.from(document.querySelectorAll("#gallery .ug-tiles-wrapper .ug-tile"));
@@ -248,7 +267,8 @@ describe("the theme's constructor, looked up by name (no eval under the CSP)", (
 
     test("a theme that isn't loaded is an error that names it", () => {
         document.body.innerHTML = "<div id='gallery' style='width:1000px'><img alt='a' src='/t/m.jpg'></div>";
-        expect(() => jQuery("#gallery").unitegallery(options({ gallery_theme: "nope" })))
+        const opts = options(document.getElementById("gallery"), { gallery_theme: "nope" });
+        expect(() => jQuery("#gallery").unitegallery(opts))
             .toThrow("unite gallery: the theme UGTheme_nope isn't loaded");
     });
 });
@@ -257,7 +277,10 @@ describe("the binary round's thumbs (issue #6)", () => {
     const tile = (overrides) => Object.assign({ src: loaded("/t/n" + nextId + ".jpg") }, overrides);
 
     test("a juror's tiles in a binary round have them, and get their stored votes", async () => {
-        const tiles = await gallery([tile({ "data-rate": "1" }), tile({ "data-rate": "0" })], { jury: true, binary: true });
+        const tiles = await gallery([
+            tile({ "data-rate": "1", "data-pageId": "42", "data-roundId": "7" }),
+            tile({ "data-rate": "0" })
+        ], { jury: true, binary: true });
         tiles.forEach((t) => {
             expect(t.querySelectorAll(".ug-icon-select")).toHaveLength(1);
             expect(t.querySelectorAll(".ug-icon-reject")).toHaveLength(1);
@@ -265,8 +288,21 @@ describe("the binary round's thumbs (issue #6)", () => {
         expect(window.wlxTileVotes.addVote).toHaveBeenCalledTimes(2);
         const [el, item] = window.wlxTileVotes.addVote.mock.calls[0];
         expect(el).toBe(tiles[0]);
-        expect(item.rate).toBe("1");
-        expect(item.pageId).toMatch(/^\d+$/);
+        // the fields tile-votes.js sends the vote with (voteUrl: round and page id)
+        expect([item.rate, item.pageId, item.roundId]).toEqual(["1", "42", "7"]);
+    });
+
+    test("the thumbs sit below the zoom icon, select left of reject (positionElements)", async () => {
+        const [t] = await gallery([tile()], { jury: true, binary: true });
+        const at = (sel) => {
+            const s = t.querySelector(sel).style;
+            return { left: parseFloat(s.left), top: parseFloat(s.top) };
+        };
+        const zoom = at(".ug-icon-zoom"), select = at(".ug-icon-select"), reject = at(".ug-icon-reject");
+        [zoom, select, reject].forEach((p) => { expect(Number.isFinite(p.left)).toBe(true); expect(Number.isFinite(p.top)).toBe(true); });
+        expect(select.top).toBeGreaterThan(zoom.top);
+        expect(reject.top).toBeGreaterThan(zoom.top);
+        expect(select.left).toBeLessThan(reject.left);
     });
 
     test("no thumbs for an organiser, nor in a rated round", async () => {
@@ -305,7 +341,7 @@ describe("the tiles theme (ug-theme-tiles.js)", () => {
         const tiles = await gallery([{ src: loaded("/t/p.jpg") }, { src: loaded("/t/q.jpg") }], { jury: true, wlx_stars: stars });
         expect(window.wlxTileVotes.addStars).toHaveBeenCalledTimes(2);
         expect(window.wlxTileVotes.addStars.mock.calls[1][0]).toBe(tiles[1]);
-        expect(window.wlxTileVotes.addStars.mock.calls[1][2]).toBe(stars);
+        expect(window.wlxTileVotes.addStars.mock.calls[1][2]).toEqual(stars);
     });
 
     test("the jurors' tally on every tile, from data-approvals / data-rejections / data-tally", async () => {
