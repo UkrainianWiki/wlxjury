@@ -42,7 +42,7 @@ class LoginCsrfSpec extends PlaySpecification with PlayTestDb with AccountTestSu
 
   private def signIn(password: String) = Seq("login" -> email, "password" -> password)
 
-  "a cookieless POST without the CSRF token" should {
+  "a cookieless POST without the CSRF token [S-02, J-34]" should {
     "not sign in, even with the right password" in {
       ProductionFilters.withSharedApp { implicit app =>
         createContests(10)
@@ -81,7 +81,7 @@ class LoginCsrfSpec extends PlaySpecification with PlayTestDb with AccountTestSu
     }
   }
 
-  "the sign-in page" should {
+  "the sign-in page [J-34]" should {
     "set the CSRF token in the session and the form, which lets the sign-in in" in {
       ProductionFilters.withSharedApp { implicit app =>
         createContests(10)

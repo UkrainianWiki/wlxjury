@@ -407,7 +407,7 @@ class LargeImageSpec extends PlaySpecification with PlayTestDb {
     }
   }
 
-  "a round with criteria" should {
+  "a round with criteria [J-23]" should {
     // a rated round with criteria 1 and 2 (V83's), the juror's current one; criteria 1 and 2
     // of the juror's vote of file 0 rated 3 and 4. File 1 is only another juror's.
     def setUpCriteria(criteria: Seq[Long] = Seq(1L, 2L)): (Image, Image, User) = {
@@ -600,7 +600,7 @@ class LargeImageSpec extends PlaySpecification with PlayTestDb {
     }
   }
 
-  "the large view of a round" should {
+  "the large view of a round [J-19, J-27]" should {
     // contests A and B, each with a rated round; two jurors of A and one of B, each with a
     // vote on two files in their round; A's organizer and admin, a root, and a juror of B
     // whose membership of A is deactivated, still listed in A's round
@@ -725,7 +725,7 @@ class LargeImageSpec extends PlaySpecification with PlayTestDb {
 
   private def withCsrfApp[T](body: play.api.Application => T): T = CsrfTestApp.withCsrfApp(body)
 
-  "a vote in the large view, through the router and the filters" should {
+  "a vote in the large view, through the router and the filters [J-20, S-02]" should {
     // a rated round with two unrated files; the session has a CSRF token, as a signed-in
     // browser's has, and sends a cookie, which makes the filter check the request
     var images: Seq[Image] = Nil
@@ -813,7 +813,7 @@ class LargeImageSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
-    "be refused, as in a stopped round, to a juror stopped on the round, with the token (P6)" in {
+    "be refused, as in a stopped round, to a juror stopped on the round, with the token (P6) [S-06]" in {
       withCsrfApp { app =>
         setUpVote(app)
         RoundUser.setActive(round.getId, user.getId, active = false)
@@ -837,7 +837,7 @@ class LargeImageSpec extends PlaySpecification with PlayTestDb {
     }
   }
 
-  "a vote on a gallery tile, through the router and the filters" should {
+  "a vote on a gallery tile, through the router and the filters [J-16, J-17, S-02]" should {
     // a binary round with an unrated file; a session with a CSRF token, as a signed-in
     // browser's has, and a cookie, which makes the filter check the request
     var image: Image = null
@@ -895,7 +895,7 @@ class LargeImageSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
-    "be refused as JSON, as in a closed round, to a juror stopped on the round, with the token (P6)" in {
+    "be refused as JSON, as in a closed round, to a juror stopped on the round, with the token (P6) [S-06]" in {
       withCsrfApp { app =>
         setUpTile()
         val sessionToken = CsrfTestApp.token(app)
@@ -951,7 +951,7 @@ class LargeImageSpec extends PlaySpecification with PlayTestDb {
     }
   }
 
-  "going back from the large view to the gallery" should {
+  "going back from the large view to the gallery [J-19]" should {
 
     def gallery(app: play.api.Application) =
       new GalleryController(galleryService, Helpers.stubControllerComponents(),
@@ -1001,7 +1001,7 @@ class LargeImageSpec extends PlaySpecification with PlayTestDb {
     }
   }
 
-  "the large view of a file just voted out of its list" should {
+  "the large view of a file just voted out of its list [J-36]" should {
     "show that file, not the list's first, which it went to before" in {
       testDbApp { app =>
         implicit val materializer: Materializer = app.materializer

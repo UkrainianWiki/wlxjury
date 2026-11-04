@@ -56,7 +56,7 @@ class RoundEditPageSpec extends PlaySpecification with PlayTestDb {
     (options.map(_.attr("value")), options.filter(_.hasAttr("selected")).map(_.attr("value")))
   }
 
-  "the new-round form" should {
+  "the new-round form [A-01]" should {
 
     "carry a fresh submission token" in {
       testDbApp { implicit app =>
@@ -81,7 +81,7 @@ class RoundEditPageSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
-    "create one round when saved twice" in {
+    "create one round when saved twice [A-15]" in {
       testDbApp { implicit app =>
         val (contest, admin, round) = fixture()
         val jurors = User.findRoundJurors(round.getId).map(_.getId)
@@ -149,7 +149,7 @@ class RoundEditPageSpec extends PlaySpecification with PlayTestDb {
     }
   }
 
-  "the round edit page" should {
+  "the round edit page [A-02]" should {
 
     "show the legacy rule of a top-N from before V72 (no order stored), selected" in {
       testDbApp { implicit app =>
@@ -267,7 +267,7 @@ class RoundEditPageSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
-    "add the pasted files to the round" in {
+    "add the pasted files to the round [A-14]" in {
       // Commons as the files are stored; real Commons has other files of these names
       testDbAppWith(bind[CommonsSource].toInstance(new FakeCommonsSource((1L to 4L).map(i => FakeFile(image(i)))))) {
         implicit app =>
@@ -326,7 +326,7 @@ class RoundEditPageSpec extends PlaySpecification with PlayTestDb {
     }
   }
 
-  "the round stat table fragment" should {
+  "the round stat table fragment [O-01]" should {
     "list the round's jurors" in {
       testDbApp { implicit app =>
         val (_, admin, round) = fixture()
@@ -340,7 +340,7 @@ class RoundEditPageSpec extends PlaySpecification with PlayTestDb {
     }
   }
 
-  "the new files count" should {
+  "the new files count [A-05]" should {
     "count the contest images the round doesn't have yet" in {
       testDbApp { implicit app =>
         val (_, admin, round) = fixture()

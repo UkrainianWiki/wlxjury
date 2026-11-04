@@ -227,8 +227,7 @@ secure-coding §18. A new pool, worker count or limit is checked against those b
   `visitFileFailed` returning `CONTINUE`, and delete only `.tmp-` files older than about an hour.
 - **OP6 (3.3a, 5.1):** installing the monit check, fixing the image cache folder's owner and
   mode, and the first prune (with `--dry-run`) are deployment steps (deployment.md); the infra
-  roles should own them (the draft in
-  [`ci-drafts/infra/`](../plans/ci-drafts/infra/ops-retention-monit.diff)). The rule for a
+  roles should own them. The rule for a
   shared host: other monit checks there should not restart MariaDB during a deployment; add a
   filesystem space alert beside them.
 - **OP7 (3.3a):** prune never deletes rescue dumps (`before-restore-*`) or `wlxjury-deploy`'s

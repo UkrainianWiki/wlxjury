@@ -48,5 +48,7 @@ For every change with tests, and every change that should have them. Each line p
   boundary, CI's on every PR (§8.1).
 - [ ] The coverage report was read for the touched files; uncovered branches there are either
   tested or explained (§9.3).
+- [ ] A new user-visible flow has a story ID in [stories.md](stories.md) and a tagged test, or is
+  listed there as uncovered; a new tag cites a story whose sentence the test shows (§9.4).
 - [ ] A change that adds a test layer, a flag or a guard updates this practices doc in the same PR
   ([workflow](../workflow/practices.md) §8).

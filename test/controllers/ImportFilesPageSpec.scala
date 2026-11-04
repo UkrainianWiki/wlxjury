@@ -33,7 +33,7 @@ class ImportFilesPageSpec extends PlaySpecification with PlayTestDb {
   private def filesPage(contestId: Long, user: User) =
     FakeRequest(GET, s"/contest/$contestId/images").withSession(Secured.UserName -> user.email).withCSRFToken
 
-  "the files page" should {
+  "the files page [A-09]" should {
 
     "start an import job and show it" in {
       testDbApp { implicit app =>

@@ -25,7 +25,7 @@ class LoginControllerSpec extends PlaySpecification with Results with PlayTestDb
   def appLogin(implicit app: Application) =
     new LoginController(userService, app.injector.instanceOf[ControllerComponents], signIn)
 
-  "auth" should {
+  "auth [J-02]" should {
     "fail empty request" in {
       testDbApp { implicit app =>
         implicit val mat: Materializer = app.materializer
@@ -51,22 +51,28 @@ class LoginControllerSpec extends PlaySpecification with Results with PlayTestDb
       }
     }
 
-    "fail when wrong password" in {
+    "keep the login page, with its error, for a wrong password [J-03]" in {
       testDbApp { implicit app =>
         implicit val mat: Materializer = app.materializer
-        User.create(User("name", "qwerty@dot.com"))
+        User.create(User("name", "qwerty@dot.com", password = Some(services.PasswordHasher.default.hash("strong"))))
 
         val result = login
           .auth()
           .apply(
             FakeRequest()
-              .withHeaders(
+              .withFormUrlEncodedBody(
                 "login" -> "qwerty@dot.com",
                 "password" -> "1234"
               )
               .withCSRFToken)
 
         status(result) === BAD_REQUEST
+        val page = contentAsString(result)
+        // this controller renders message keys (no messages file): the form's error, in its alert
+        page must contain("role=\"alert\"")
+        page must contain("invalid.user.or.password")
+        page must contain("name=\"password\"")
+        session(result).get(Secured.UserName) must beNone
       }
     }
 
@@ -116,7 +122,7 @@ class LoginControllerSpec extends PlaySpecification with Results with PlayTestDb
       }
     }
 
-    "return to the requested local page after signing in" in {
+    "return to the requested local page after signing in [J-07]" in {
       testDbApp { implicit app =>
         implicit val mat: Materializer = app.materializer
         User.create(User("name", "return@dot.com", password = Some(services.PasswordHasher.default.hash("strong"))))
@@ -177,7 +183,7 @@ class LoginControllerSpec extends PlaySpecification with Results with PlayTestDb
       }
     }
 
-    "ignore an external return URL after signing in" in {
+    "ignore an external return URL after signing in [J-07]" in {
       testDbApp { implicit app =>
         implicit val mat: Materializer = app.materializer
         User.create(
@@ -206,7 +212,7 @@ class LoginControllerSpec extends PlaySpecification with Results with PlayTestDb
 
   }
 
-  "a request without a session" should {
+  "a request without a session [J-07]" should {
     "go to the login page, which comes back to a GET's page" in {
       testDbApp { implicit app =>
         val page = route(app, FakeRequest(GET, "/contest/628/files?page=2")).get
@@ -221,7 +227,7 @@ class LoginControllerSpec extends PlaySpecification with Results with PlayTestDb
     }
   }
 
-  "the error page" should {
+  "the error page [S-05]" should {
     "show only known messages, never the link's text" in {
       testDbApp { implicit app =>
         val contest = createContests(10).head
@@ -250,7 +256,7 @@ class LoginControllerSpec extends PlaySpecification with Results with PlayTestDb
       }
     }
 
-    "send a juror without an active round to a page saying so" in {
+    "send a juror without an active round to a page saying so [J-08]" in {
       testDbApp { implicit app =>
         val contest = createContests(10).head
         val juror = User.create(User("Juror", "juror@dot.com", None, Set("jury"), Some("hash"), contest.id))
@@ -262,7 +268,7 @@ class LoginControllerSpec extends PlaySpecification with Results with PlayTestDb
     }
   }
 
-  "the login page" should {
+  "the login page [J-02]" should {
     "show the sign-in form on an empty database, never a sign-up (S2, P20)" in {
       testDbApp { implicit app =>
         val page = appLogin.login().apply(FakeRequest(GET, "/auth").withCSRFToken)
@@ -275,7 +281,7 @@ class LoginControllerSpec extends PlaySpecification with Results with PlayTestDb
     }
   }
 
-  "signing in" should {
+  "signing in [J-02]" should {
     "put the account's auth version in the session, which a later version refuses" in {
       testDbApp { implicit app =>
         implicit val mat: Materializer = app.materializer

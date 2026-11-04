@@ -121,6 +121,12 @@ Developed 2026-11-02 to 2026-11-03, PRs #232–#236.
   2026-11-04; [operations practices](docs/operations/practices.md) §3.3a, §4.5).
 - The unused Apache thumbnail config (`conf/apache/jury-images.conf`, its test image and Compose
   service) removed; the app's proxy (`ImageProxyController`) serves thumbnails.
+- No Scaladoc in the release: the ZIP loses `share/doc/api` (730 files, 42 MB unpacked; the ZIP
+  121.5 → 116.2 MB), and `sbt dist` no longer runs Scaladoc (208 → 72 s here).
+- docker-compose works again and is tested: `sbt Docker/publishLocal` builds the image (the ZIP's
+  files on a Java 17 JRE, non-root, three jar layers), MariaDB 10.6.22, secrets from `.env`,
+  a CI smoke job (`compose.yml`); scalawiki's pin is one file, `project/scalawiki.sha`
+  ([deployment](docs/deployment.md), "Run with docker-compose").
 - **Thumbnails at Wikimedia's widths only:** the image proxy's redirects to `upload.wikimedia.org`
   (a file not stored or of unknown size, a failed fetch, an inconclusive Commons check) go to the
   next standard width up (`Global.wikimediaStep`), or to a stored file itself once that width

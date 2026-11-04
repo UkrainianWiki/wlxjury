@@ -77,7 +77,7 @@ async function largeView(routelessAs, url) {
 }
 
 test.describe('a juror votes', () => {
-  test('in the binary round\'s large view by key, then Back shows the vote', async ({ routelessAs, fixture, baseURL, browserName }) => {
+  test('in the binary round\'s large view by key, then Back shows the vote', { tag: ['@J-21', '@J-24'] }, async ({ routelessAs, fixture, baseURL, browserName }) => {
     const { juror } = fixture.accounts;
     const url = baseURL + largePath(fixture.roundBinaryId, juror.id, juror.pageId);
     const page = await largeView(routelessAs, url);
@@ -90,7 +90,7 @@ test.describe('a juror votes', () => {
     await expectBackShowsVote(page, url, binaryVote, expected, before, browserName);
   });
 
-  test('in the binary round\'s large view by its button, then Back shows the vote', async ({ routelessAs, fixture, baseURL, browserName }) => {
+  test('in the binary round\'s large view by its button, then Back shows the vote', { tag: ['@J-20', '@J-24'] }, async ({ routelessAs, fixture, baseURL, browserName }) => {
     const { juror } = fixture.accounts;
     const url = baseURL + largePath(fixture.roundBinaryId, juror.id, juror.pageId);
     const page = await largeView(routelessAs, url);
@@ -101,7 +101,7 @@ test.describe('a juror votes', () => {
     await expectBackShowsVote(page, url, binaryVote, expected, before, browserName);
   });
 
-  test('in the rated round\'s large view by key, then Back shows the rate', async ({ routelessAs, fixture, baseURL, browserName }) => {
+  test('in the rated round\'s large view by key, then Back shows the rate', { tag: ['@J-21', '@J-24'] }, async ({ routelessAs, fixture, baseURL, browserName }) => {
     const { juror } = fixture.accounts;
     const url = baseURL + largePath(fixture.roundRatingId, juror.id, juror.ratedPageId);
     const page = await largeView(routelessAs, url);
@@ -113,7 +113,7 @@ test.describe('a juror votes', () => {
     await expectBackShowsVote(page, url, ratedVote, expected, before, browserName);
   });
 
-  test('in the rated round\'s large view by a star, then Back shows the rate', async ({ routelessAs, fixture, baseURL, browserName }) => {
+  test('in the rated round\'s large view by a star, then Back shows the rate', { tag: ['@J-20', '@J-24'] }, async ({ routelessAs, fixture, baseURL, browserName }) => {
     const { juror } = fixture.accounts;
     const url = baseURL + largePath(fixture.roundRatingId, juror.id, juror.ratedPageId);
     const page = await largeView(routelessAs, url);
@@ -127,7 +127,7 @@ test.describe('a juror votes', () => {
     await expectBackShowsVote(page, url, ratedVote, expected, before, browserName);
   });
 
-  test('in the binary round\'s gallery by a tile\'s thumb', async ({ page, context, fixture }) => {
+  test('in the binary round\'s gallery by a tile\'s thumb', { tag: ['@J-16', '@J-36', '@S-02'] }, async ({ page, context, fixture }) => {
     const { juror } = fixture.accounts;
     await page.goto(galleryPath(fixture.roundBinaryId, juror.id));
     const select = page.getByRole('button', { name: 'Selected' }).first();
@@ -148,7 +148,7 @@ test.describe('a juror votes', () => {
     await large.close();
   });
 
-  test('in the rated round\'s gallery by a tile\'s star', async ({ page, context, fixture }) => {
+  test('in the rated round\'s gallery by a tile\'s star', { tag: '@J-17' }, async ({ page, context, fixture }) => {
     const { juror } = fixture.accounts;
     await page.goto(galleryPath(fixture.roundRatingId, juror.id));
     // the first tile's stars: raty's <i data-alt="n">, as in the large view (tile-votes.js adds

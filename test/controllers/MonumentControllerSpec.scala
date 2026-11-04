@@ -9,7 +9,7 @@ class MonumentControllerSpec extends Specification with PlayTestDb {
 
   sequential
 
-  "the monument lists" should {
+  "the monument lists [A-13]" should {
     "send a visitor who isn't signed in to the login page" in {
       testDbApp { implicit app =>
         Seq("/monuments", "/monuments/id/07-101-0001").map { path =>

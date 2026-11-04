@@ -6,13 +6,19 @@
   "scripts": {
     "server:start": "node fixture-server.mjs start",
     "server:stop": "node fixture-server.mjs stop",
-    "test": "playwright test"
+    "test": "playwright test",
+    "report": "allure generate ../target/browser-test/allure-results && node allure-offline.mjs",
+    "report:selftest": "node allure-offline.mjs --self-test",
+    "check:proxy-errors": "node lib/proxy-errors.check.mjs"
   },
   "engines": {
     "node": ">=20"
   },
   "devDependencies": {
     "@axe-core/playwright": "4.14.0",
-    "@playwright/test": "1.64.1"
+    "@playwright/test": "1.64.1",
+    "allure": "3.21.0",
+    "allure-js-commons": "3.14.0",
+    "allure-playwright": "3.14.0"
   }
 }

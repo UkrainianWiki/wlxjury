@@ -20,10 +20,6 @@ concurrency:
   group: coverage-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || format('{0}-{1}-{2}', github.event_name, github.ref, github.sha) }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
-env:
-  # The same pin as ci.yml (bump all workflows together)
-  SCALAWIKI_SHA: 25951dbe1e05bc195b8719e2edbb08464f0ea932
-
 jobs:
   coverage:
     name: Coverage (Scala and JS)
@@ -49,7 +45,6 @@ jobs:
       - name: scalawiki (interim, from source)
         uses: ./.github/actions/scalawiki
         with:
-          sha: ${{ env.SCALAWIKI_SHA }}
           jdk: 17
 
       - name: Pull the test database image

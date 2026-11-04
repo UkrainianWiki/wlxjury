@@ -88,15 +88,15 @@ answers a thumbnail at any other width with 400 at the edge
 ## 2. scalawiki
 
 **2.1 Pinned to a commit.** wlxjury builds against `UkrainianWiki/scalawiki` `origin/page-categories`
-at `25951dbe` (version `0.7.0-SNAPSHOT`). Locally it comes from `~/.ivy2/local` via scalawiki's
+at the commit in `project/scalawiki.sha` (version `0.7.0-SNAPSHOT`). Locally it comes from `~/.ivy2/local` via scalawiki's
 `publishLocal`; CI's composite action `.github/actions/scalawiki` fetches that commit and runs
-`publishLocal`, cached by SHA. The SHA is `SCALAWIKI_SHA` in `ci.yml`, `coverage.yml`,
-`deployment.yml` and `integration.yml`: bump all of them together. *Why:* a snapshot that exists
+`publishLocal`, cached by SHA. The SHA is in one file, `project/scalawiki.sha`, which the
+action reads (every workflow uses it without a `sha` input): bump it there. *Why:* a snapshot that exists
 only in each developer's `~/.ivy2/local` can't be reproduced; the pin makes CI and laptops build
 the same code.
 
 **2.2 Read scalawiki at its pinned commit.** A local scalawiki checkout or `target/dep-sources` may
-be on another branch or older: read `git show 25951dbe:<path>` (or `origin/page-categories`)
+be on another branch or older: read `git show <sha>:<path>` in scalawiki, `<sha>` from wlxjury's `project/scalawiki.sha` (or `origin/page-categories`)
 before concluding that something is or isn't in scalawiki.
 
 **2.3 Pekko in step.** Pekko and Pekko HTTP come with scalawiki too; wlxjury's `PekkoVersion` (1.0.3)
@@ -155,7 +155,7 @@ with `oauth.connectTimeout`/`readTimeout`; at most `oauth.maxConcurrent` exchang
 | 1.3 page sizes and relogin | `CommonsLoginSpec`, `MwCommonsSourceSpec` | enforced |
 | 1.5 retries | `MwCommonsSourceSpec` (with a short `retryDelay`); `LocalImageCacheServiceSpec` (429, `Retry-After`, `maxAttempts`) | enforced |
 | 1.7 outbound hosts | `LocalImageCacheServiceSpec` ("a fetch"), `ImageProxyFileCheckSpec`; G10 `OutboundHostsSpec` | enforced per path; G10 planned |
-| 2.1 one SHA in every workflow | — | planned: a check that the four `SCALAWIKI_SHA` values agree (until the package replaces them) |
+| 2.1 one SHA in every workflow | `project/scalawiki.sha`, read by `.github/actions/scalawiki` | enforced (one copy) |
 | 2.3 Pekko in step | `build.sbt` comment | review only |
 | 3.1 hosts listed exactly | `OAuthControllerSpec`, `OAuthRouterSpec` | enforced |
 | 3.4 authoritative emails | `ProvidersSpec`, `IdentityLinkerSpec` | enforced |

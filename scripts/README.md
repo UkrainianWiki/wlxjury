@@ -31,3 +31,16 @@ The container (`wlxjury-local-dev`) is left running after the script exits. To r
 ```bash
 docker rm -f wlxjury-local-dev
 ```
+
+## story-coverage.py
+
+The story coverage matrix ([testing practices](../docs/testing/practices.md) §9.4): which browser
+tests (Playwright tags, `'@J-21'`) and Scala specs (`[J-27]` in a name) cite each story of
+[`docs/testing/stories.md`](../docs/testing/stories.md). Python standard library only, no build;
+a step of `ci.yml`. Fails on an unknown, retired or malformed ID, a duplicate row or a dead guide
+anchor; reports the uncovered stories.
+
+```bash
+python scripts/story-coverage.py              # the matrix: stdout, target/story-coverage.md
+python scripts/story-coverage.py --self-test  # on scripts/testdata/story-coverage/
+```
