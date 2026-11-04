@@ -2,7 +2,7 @@
 // violations, console errors or failed responses (lib/fixtures.js). In Chromium each page also
 // gets an accessibility scan (axe-core, from node_modules, injected by @axe-core/playwright: no
 // CDN); its findings are written to target/browser-test/a11y/ as a report. A serious or critical
-// finding fails the test unless its rule is in KNOWN, the triaged ones (UI practices §9, U3).
+// finding fails the test unless its rule is in KNOWN, the triaged ones (UI practices §9, U19–U21).
 import fs from 'node:fs';
 import path from 'node:path';
 import AxeBuilder from '@axe-core/playwright';
@@ -13,12 +13,12 @@ import { OUT } from '../lib/server.js';
 // rule id -> where it is triaged (UI practices §9); a finding of these is reported, not failed.
 // The first scans (2026-11-04) found these six rules on 9 to 11 of the 17 pages.
 const KNOWN = {
-  'color-contrast': 'U4: outline-secondary buttons and theme labels below 4.5:1',
-  'button-name': 'U5: icon-only buttons inside links (campaigns, users)',
-  'link-name': 'U5: icon-only links (campaigns, users, the rated gallery\'s thumbnail)',
-  label: 'U6: a field without a label (contest images: #source)',
-  'select-name': 'U6: a select without a name (new round form: #jurors, behind Tom Select)',
-  'aria-prohibited-attr': 'U5: aria-label on the navbar\'s disabled view links (round statistics)',
+  'color-contrast': 'U19: outline-secondary buttons and theme labels below 4.5:1',
+  'button-name': 'U20: icon-only buttons inside links (campaigns, users)',
+  'link-name': 'U20: icon-only links (campaigns, users, the rated gallery\'s thumbnail)',
+  label: 'U21: a field without a label (contest images: #source)',
+  'select-name': 'U21: a select without a name (new round form: #jurors, behind Tom Select)',
+  'aria-prohibited-attr': 'U20: aria-label on the navbar\'s disabled view links (round statistics)',
 };
 
 const A11Y_DIR = path.join(OUT, 'a11y');

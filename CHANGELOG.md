@@ -101,6 +101,8 @@ Developed 2026-11-02 to 2026-11-03, PRs #232–#236.
   ([docs/README.md](docs/README.md); #245, PR 62).
 - Calendar versions (`YY.MM`; the build is `26.11-SNAPSHOT`); the CodeRabbit request and
   review triage tools in `scripts/review/` (#250).
+- An English juror guide, `docs/user/juror-guide.md`, written from the tool as it is; not
+  published yet.
 - Browser tests: Playwright on desktop Chromium, Firefox and WebKit, a CI job per engine on
   every PR, against the screenshot fixture with Commons stubbed; votes, Back after a vote, the
   colour modes, refusals and organizer pages, with zero CSP violations and console errors per

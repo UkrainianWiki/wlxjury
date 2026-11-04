@@ -271,7 +271,7 @@ session to `target/browser-test/auth/<engine>-<role>.json`. A test takes a role 
 | `guards` | the fixture sends the production CSP; a CSP violation and a request to another host are reported; Commons images get the placeholder (the guards' self-tests, §4.2) |
 | `sign-in` | sign in through the form, sign out through the user menu's POST with its token; a sign-out without the token is refused and the session stays; a wrong password |
 | `voting` | binary round: large view by key and by button, gallery thumb; rated round: large view by key and by star, gallery star; Back after a large-view vote shows the stored vote, as a fresh load does (from `ui_checks.py`) |
-| `sections` | the large view's and the contest file's side sections restored as stored by DOMContentLoaded; the first-frame check (from `ui_checks.py`) is `fixme`, triage U3 ([UI](../ui/practices.md) §9) |
+| `sections` | the large view's and the contest file's side sections restored as stored by DOMContentLoaded; the first-frame check (from `ui_checks.py`) is `fixme`, triage U18 ([UI](../ui/practices.md) §9) |
 | `theme` | the login page's switch (no request), the navbar's CSRF POST, `auto` in both schemes with every frame in the scheme's mode (the "Firefox theme flash" check) |
 | `access` | a juror refused another juror's votes (gallery, large view, all jurors) and the admin pages, an organizer the round form: the 403 page with its reference |
 | `organizer` | the organizer role's round statistics and by-rate list; the admin's rounds list, round form with its jurors' table, edit-then-cancel (nothing saved, no job), new round form; root's campaigns page |

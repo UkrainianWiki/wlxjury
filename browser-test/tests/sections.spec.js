@@ -5,7 +5,7 @@
 // it is painted), and at DOMContentLoaded.
 //
 // Enforced: the sections are restored by DOMContentLoaded, before the page's own scripts run.
-// Not enforced (triage U3, UI practices §9): that no frame shows them in their default states.
+// Not enforced (triage U18, UI practices §9): that no frame shows them in their default states.
 // The probe sees a frame with the defaults in about one load of eight in Chromium and Firefox,
 // under parallel load, on the large view and the contest file: a frame before the column's
 // restore script ran (the parser yielding between the sections and the script), or a frame the
@@ -58,7 +58,7 @@ for (const [name, role, path] of [
     });
 
     test(`the side sections of ${name} are drawn as stored from the first frame`, async ({ page, fixture }) => {
-      test.fixme(true, 'U3 (UI practices §9): a frame with the default states in about one load of eight');
+      test.fixme(true, 'U18 (UI practices §9): a frame with the default states in about one load of eight');
       await page.addInitScript(probe);
       for (let i = 0; i < LOADS; i++) {
         await page.goto(path(fixture), { waitUntil: 'load' });

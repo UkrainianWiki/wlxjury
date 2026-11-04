@@ -169,7 +169,7 @@ its reason. The patch inventory, targeted tests and the keep-or-replace decision
 | 3.3 form helpers | `BsFormHelpersSpec` | enforced |
 | 4.2 one h1 | `views.HeadingsViewSpec` | enforced |
 | 4.3 keys vote by path | `views.LargeViewControllerSpec`, `large-view-keys.test.js` | enforced |
-| 4.1 accessible names | axe-core per page in the browser tests' tour (`pages.spec.js`, Chromium) | enforced for serious and critical findings of rules not triaged (U4–U6); the rest a report |
+| 4.1 accessible names | axe-core per page in the browser tests' tour (`pages.spec.js`, Chromium) | enforced for serious and critical findings of rules not triaged (U19–U21); the rest a report |
 | 5 zero CSP violations and console errors | the browser tests' guards (`browser-test/lib/fixtures.js`), every page of every test | enforced |
 | 6.1 three engines | `browser.yml`: a job per engine on every PR | enforced |
 | 6.1a the floor (Chrome 109, Firefox 115) | review | planned: a Browserslist or lint check of the scripts and styles |
@@ -184,7 +184,58 @@ its reason. The patch inventory, targeted tests and the keep-or-replace decision
 - **U2 (2.1):** `style-src 'unsafe-inline'` stays (secure-coding §5 exceptions, P3); inline `style`
   attributes remain in `contestFiles`, `gallery`, `pageLinks`, `round/edit/imageFiltering` and
   `snippets/jobStatus` (theme-modes Phase 4, gradual).
-- **U3 (4.3, testing §10):** the large view's and the contest file's side sections can show
+
+Found while writing the juror guide (2026-11-03, confirmed in its review); none fixed yet:
+
+- **U3 (4.3), medium: the large view's window clamps its keys.** It knows only the files around
+  its file (`Neighbourhood.Side = 2`, `Window = 5`), so Page Up/Down and Home/End move at most two
+  files mid-list (a little more near its start), not five files or to the list's ends, as
+  `fileKeyboardNav`'s comment and the keys' names suggest.
+- **U4 (4.3), low bug: key 0 in a comments-only round.** `keyboardNav` binds the digits 0 to
+  `min(maxRate, 9)` for any non-binary round; a comments-only round has maxRate 0, so 0 posts a
+  vote that the server refuses ("This round doesn't take that rate…"). Guard on `round.isRated`.
+- **U5 (4.3), low–medium: top rates unreachable by key** where maxRate > 9 (a 1–10 round, or a
+  half-star round past 4.5 stars): the digits stop at 9.
+- **U6, low–medium: three forms of a rate's text.** The gallery's `rateString` shows stored
+  units ("7" in a half-star round), the large view's number shows stars ("3.5"), and
+  `voteMoved` shows "★ 3.5".
+- **U7 (4.3), low: Delete on a Mac.** Its Delete key sends keyCode 8 (backspace), which is not
+  bound; only Fn+Delete (46) rejects, while the tooltip says "<Delete>".
+- **U8 (4.3), low–medium: no on-page list of the large view's keys;** only the buttons'
+  tooltips name them.
+- **U9 (3.5), low bug: no failed-image mark in the rated grid and the thumbs bar.** The by-rate
+  grid (`galleryByRate`) loads no `large-view.js`, so a deleted file shows the browser's
+  broken-image icon, not the grey ⊘ box; the large view's "Next files" strip neither.
+- **U10, question for the user: comments are visible to every juror, with names.** The large view
+  loads all the file's comments in the contest (`CommentJdbc.findBySubjectAndContest`). Intended,
+  or should jurors see only their own (judging bias)?
+- **U11 (4.1), medium accessibility bug: a focused binary thumb is invisible.** The thumbs take
+  the focus (`tile-votes.js`), but sit in the tile's overlay at opacity 0 until hovered, so the
+  keyboard focus can't be seen (WCAG 2.4.7).
+- **U12 (1), low: "No round configured yet" wording.** `no.round.yet` also shows when the
+  juror's rounds are stopped, paused for them or being distributed, not only before any round is
+  configured.
+- **U13, low–medium: the large view shows no file title;** only the image's `alt` and the
+  Commons link carry it.
+- **U14, low: "Edit user" heading on one's own profile** (`editUser.scala.html`).
+- **U15 (1), low: "(Jury)" vs "Juror".** `logged.scala.html`'s contest menu names roles with
+  `Messages(r)` ("Jury"); elsewhere `role.jury` ("Juror"). Use `Messages("role." + r)`.
+- **U16 (1), low: `signin.password.link.hint` says to ask the contest's organizers for a
+  link,** but organizers can't send one, and contest admins only to an unverified member
+  (`UserController.reinvite`); for an account with a verified email and a usable password only
+  root can (`resetPassword`).
+- **U17, low bug: "No contests" in the account chooser.** `OAuthChooserController.entry` lists
+  contests only for directly choosable accounts; one that needs its password or a mailed link
+  shows "No contests" even when it has some.
+
+Found by the browser tests (2026-11-04; testing §10). None of U3–U17 is checked by them yet:
+they press Space, Delete and digits, not Page Up/Down or Home/End, and not on a Mac (U3, U5,
+U7); the fixture has no comments-only or half-star round and no deleted file (U4, U6, U9); axe
+doesn't check that the focus is visible, and `voting.spec.js` clicks the binary thumb without
+looking at its focus (U11: a check of the focused thumb's opacity would catch it); U12–U17 are
+texts, for view specs. Each can get a browser test with its fix.
+
+- **U18 (4.3, testing §10):** the large view's and the contest file's side sections can show
   their default states for a frame before the column's restore script runs: the browser tests'
   probe sees such a frame in about one load of eight in Chromium and Firefox under parallel load
   (2026-11-04). It may be a frame the browser ran but didn't paint (Chromium holds the old page's
@@ -192,18 +243,18 @@ its reason. The patch inventory, targeted tests and the keep-or-replace decision
   script). `sections.spec.js` enforces the restore by DOMContentLoaded and keeps the first-frame
   check as `fixme`. A fix would hide the sections until restored, or restore from the layout's
   first script.
-- **U4 (3.2, 4.1):** colour contrast below 4.5:1 (axe `color-contrast`, serious) on 7 of the
+- **U19 (3.2, 4.1):** colour contrast below 4.5:1 (axe `color-contrast`, serious) on 7 of the
   tour's 17 pages: the `btn-outline-secondary` buttons and links (round form, new round form,
   contest files' import, contest images, users), the theme switch's unpressed labels (login
   page, profile), and `text-muted`-like text on the users page.
-- **U5 (4.1):** controls without an accessible name (axe `button-name` critical, `link-name`
+- **U20 (4.1):** controls without an accessible name (axe `button-name` critical, `link-name`
   serious): the icon-only buttons nested in links on the campaigns page (2) and the users page
   (31, one per row, `<a><button>`), and an empty thumbnail link in the rated gallery's strip;
   `aria-prohibited-attr` (serious): `aria-label` on the navbar's disabled view links (round
   statistics).
-- **U6 (4.1, 3.3):** form fields without a label (axe `label`, `select-name`, critical): the
+- **U21 (4.1, 3.3):** form fields without a label (axe `label`, `select-name`, critical): the
   contest images page's `#source`, and the new round form's `#jurors` select behind Tom Select.
-- **U7 (2, testing §10.2):** in Firefox, leaving a gallery by a form POST (sign-out, the theme
+- **U22 (2, testing §10.2):** in Firefox, leaving a gallery by a form POST (sign-out, the theme
   switch) twice raised a page error on the page being left, `TypeError: can't access property
   "hasAttribute", document.body is null` (Bootstrap 5.3's jQuery check, `document.body.hasAttribute`),
   in two of five three-engine runs (2026-11-04); not seen in 24 Firefox runs of those specs alone.
