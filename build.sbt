@@ -88,6 +88,12 @@ lazy val root =
       Jmh / sourceDirectory     := (Test / sourceDirectory).value,
       Jmh / classDirectory      := (Test / classDirectory).value,
       Jmh / dependencyClasspath := (Test / dependencyClasspath).value,
+      // sbt-jmh adds jmh-core and its generators (with commons-math3 and jopt-simple) to Compile,
+      // which shipped them in the release (runtime jars investigation, 2026-11-04, decision 2).
+      // The benchmarks are in test/ and Jmh uses Test's classpath (above): Test is enough.
+      libraryDependencies := libraryDependencies.value.map { m =>
+        if (m.organization == "org.openjdk.jmh" && m.configurations.isEmpty) m % Test else m
+      },
       // Gatling sources live in test/gatling/ — separate from JMH sources in test/
 //      Gatling / scalaSource     := (Test / sourceDirectory).value / "gatling",
 //      // Exclude Gatling simulation files from Test scope (they need gatling classpath, not Test)
@@ -239,6 +245,16 @@ val TapirVersion = "1.11.15"
 val MunitVersion = "0.7.29"
 val GatlingVersion = "3.8.4"
 
+val ScalawikiPlayJson2 = Seq(
+  ExclusionRule("com.typesafe.play", "play-json_2.13"),
+  ExclusionRule("com.typesafe.play", "play-functional_2.13")
+)
+val ScalawikiCharts = Seq(
+  ExclusionRule("de.sciss"), // scala-chart
+  ExclusionRule("org.scala-lang.modules", "scala-swing_2.13"),
+  ExclusionRule("org.jfree") // jfreechart, jcommon
+)
+
 // Bintray (and with it JCenter) shut down in 2021; every dependency is on Maven Central.
 // scalawiki comes from ~/.ivy2/local (sbt's default, where scalawiki's publishLocal goes)
 // or ~/.m2: docs/plans/2026-11-03-ci-and-scalawiki-packages.md
@@ -261,20 +277,26 @@ libraryDependencies ++= Seq(
   "org.flywaydb" % "flyway-core" % FlywayVersion,
   "org.flywaydb" % "flyway-mysql" % FlywayVersion,
   "org.mariadb.jdbc" % "mariadb-java-client" % "3.5.3",
-  "org.scalawiki" %% "scalawiki-core" % ScalawikiVersion,
-  "org.scalawiki" %% "scalawiki-wlx" % ScalawikiVersion,
+  // scalawiki-core still declares play-json 2.9.4 under the old `com.typesafe.play` group, which
+  // Coursier keeps beside Play's `org.playframework` 3.0.x: the same 306 classes twice, 2.9.4
+  // first on the classpath. Every member wlxjury, Play, Tapir and scalawiki call exists in 3.0.x
+  // (runtime jars investigation, decision 4). scalawiki-wlx brings scala-chart (with scala-swing,
+  // jfreechart and jcommon) for its stat-bot reports, which wlxjury never runs (decision 2).
+  // Both exclusions go once scalawiki moves to play-json 3 and splits its stat module out.
+  "org.scalawiki" %% "scalawiki-core" % ScalawikiVersion excludeAll (ScalawikiPlayJson2: _*),
+  "org.scalawiki" %% "scalawiki-wlx" % ScalawikiVersion excludeAll (ScalawikiPlayJson2 ++ ScalawikiCharts: _*),
   "org.apache.pekko" %% "pekko-stream" % PekkoVersion,
   "org.apache.pekko" %% "pekko-http" % PekkoHttpVersion,
   "com.nimbusds" % "oauth2-oidc-sdk" % NimbusOAuthVersion,
   "com.typesafe.play" %% "play-mailer" % PlayMailerVersion,
   "com.typesafe.play" %% "play-mailer-guice" % PlayMailerVersion,
-  "com.github.tototoshi" %% "scala-csv" % "1.4.1",
+  // 2.0.0, the version scalawiki-wlx brings and the one that runs
+  "com.github.tototoshi" %% "scala-csv" % "2.0.0",
   // ImageIO needs a WebP reader to resize Commons images for the thumbnail cache.
   "com.twelvemonkeys.imageio" % "imageio-webp" % "3.15.0",
   "uk.org.lidalia" % "sysout-over-slf4j" % "1.0.2",
   // Password hashes (services.PasswordHasher): bcrypt $2b$, cost from password.bcrypt.cost
   "at.favre.lib" % "bcrypt" % "0.10.2",
-  "javax.xml.bind" % "jaxb-api" % "2.3.1",
   "com.softwaremill.sttp.tapir" %% "tapir-core" % TapirVersion,
   // the REST API (api.ApiRouter) on Play's own server, through its filters; Play's Pekko
   // HTTP server stays out (the app runs on Netty)
@@ -301,6 +323,10 @@ libraryDependencies ++= Seq(
   "io.gatling.highcharts" % "gatling-charts-highcharts" % GatlingVersion % Test,
   "io.gatling" % "gatling-test-framework" % GatlingVersion % Test
 )
+
+// commons-dbcp2 (from scalikejdbc-core) brings commons-logging, which Play's jcl-over-slf4j
+// already provides (and shadows on the classpath)
+excludeDependencies += ExclusionRule("commons-logging", "commons-logging")
 
 dependencyOverrides ++= Seq(
   "commons-io" % "commons-io" % "2.16.1"
