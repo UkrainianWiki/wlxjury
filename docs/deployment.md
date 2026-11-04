@@ -214,7 +214,7 @@ It unpacks the release into a new root-owned folder under `/opt/wlxjury/releases
 
 It then records `traffic-may-resume`, restores automatic restarts, removes maintenance, checks every URL reaches the app, and restarts the writer units that were running before the deployment. If a URL fails, fix routing and run `reopen` again. Once it records `complete`, it [prunes](#retention-old-releases-and-dumps) old releases and dumps; a failed prune only warns, since traffic is open by then.
 
-`deploy` also refuses, before anything changes, while [the image cache folder](#the-image-cache-folder) is group- or world-writable.
+`deploy` also refuses, before anything changes, while [the image cache folder](#the-image-cache-folder) is not owned by the service user or is group- or world-writable.
 
 `restore OPERATION` backs out a deployment, holding the lock throughout and stopping at the first failure:
 1. It refuses an operation without a complete backup, refuses after `traffic-may-resume` without `--accept-data-loss`, refuses a backup of a database other than the one `runtime.env` now names, and refuses when the dump was pruned.
@@ -231,38 +231,54 @@ It never restores config: if the release changed config, restore `config.tgz` by
 
 ### Retention: old releases and dumps
 
-Release folders (about 135 MB each) and pre-deployment dumps (`database.sql.gz`) stay on the server only as long as a `restore` can need them; restic (`wmua-backup.timer`, daily, and the 4-hourly `wmua-backup-db@wlxjury.timer`) stays the long-term backup. `wlxjury-release prune` deletes the rest. It runs by itself at the end of every successful `reopen`, never after a failed one, so a rollback stays possible throughout a deployment. By hand:
+Release folders and pre-deployment dumps (`database.sql.gz`) stay on the server only as long as a `restore` can need them; the server's long-term backup is separate. `wlxjury-release prune` deletes the rest. It runs by itself at the end of every successful `reopen`, never after a failed one, so a rollback stays possible throughout a deployment. By hand:
 
 ```bash
 sudo wlxjury-release prune --dry-run   # lists what it keeps, and why, and what it would delete
 sudo wlxjury-release prune
 ```
 
-It takes the deployment lock and refuses while maintenance is on. The settings are in `deployment.json`, with these defaults (the user, 2026-11-04; the numbers may change):
+It takes the deployment lock and refuses while maintenance is on. If only the prune at the end of a `reopen` fails, `reopen` prints `PRUNE FAILED after a successful reopen` and exits 3: traffic is open and the operation is `complete`, so don't rerun `reopen`; fix the cause and run `prune`. The settings are in `deployment.json`, with these defaults (the user, 2026-11-04; the numbers may change):
 
 | Setting | Default | Keeps |
 |---|---|---|
-| `keep_previous_releases` | 2 | the current release, plus the 2 releases besides it that an operation named most recently (as `previous` or `candidate`); folders no operation names come last |
+| `keep_previous_releases` | 2 | the current release, plus the 2 releases besides it that an operation named most recently (as `previous` or `candidate`), whatever else keeps them; folders no operation names come last |
 | `keep_backup_dumps` | 3 | the dumps of the 3 newest operations that took one (every release with migrations, and `--backup`) |
 | `keep_backup_days` | 14 | every dump younger than that, whatever the count |
 
 Whatever the numbers, it never deletes:
-- the release `current` points at, or a release named by an operation that is not `complete` (of either tool: an unknown or damaged state counts as open);
+- the release `current` points at, or a release named by an operation that is not `complete` (of either tool; a missing or damaged milestones file, or a damaged record, counts as open);
 - the dump of an open operation, or of the operation that deployed the current release;
-- rescue dumps (`before-restore-*`), operation folders (`record`, `milestones`, `config.tgz`, the log), or anything of `wlxjury-deploy`'s cutover records, apart from their releases once those records are `complete`.
+- **the previous release of every dump it keeps**, so every dump left can be restored with `wlxjury-release restore`;
+- rescue dumps (`before-restore-*`), operation folders (`record`, `milestones`, `config.tgz`, the log), or anything of `wlxjury-deploy`'s cutover records, apart from their releases once those records are `complete`;
+- symlinks, and folders without a `wlxjury-build.json` (such as `lost+found`).
 
-It also removes `.staging.*` folders that a killed `deploy` left. Each deletion is logged with its size to `/var/backups/wlxjury/prune.log`, and, after a `reopen`, to that operation's `operation.log`; a pruned dump also gets a line in its own operation's log, and `restore` of that operation then refuses. Both settings must be at least 1, since a restore needs the previous release and the newest dump. Example, on a server with releases r1 to r6 deployed in order and switched back to r2, all dumps a month old except r3's (3 days): it keeps r2 (current), r6 and r5, and deletes r1, r3, r4 and the legacy release; it keeps the dumps of r6's, r5's and r4's operations (the newest three), r3's (younger than 14 days) and r2's (it deployed the current release), and deletes r1's.
+So more than three releases can stay: one per kept dump besides. With a migrating deploy every day, the 14-day rule alone keeps about 14 dumps and so about 14 releases; lower `keep_backup_days` if that is too much disk.
+
+It decides everything before deleting anything, and stops, deleting nothing, when it can't tell what is safe: an open operation whose releases it can't read or that names a path outside `releases`, or a symlink among the operation folders. A dump whose age can't be read is kept. Paths are compared resolved (`realpath -m`), and the settings are read as decimal whole numbers.
+
+It also removes `.staging.*` folders that a killed `deploy` left. Each deletion is logged with its size to `prune.log` in the backup folder, and, after a `reopen`, to that operation's `operation.log`; a pruned dump also gets a line in its own operation's log, and `restore` of that operation then refuses before anything changes. `keep_previous_releases` and `keep_backup_dumps` must be at least 1, since a restore needs the previous release and the newest dump.
+
+Example: releases r1 to r8 deployed in order, then switched back to r2, with every dump a month old except r4's (3 days). Prune keeps:
+- r2, the current release;
+- r8 and r7, the two used most recently besides it;
+- r7, r6 and r5, the previous releases of the newest three dumps;
+- r3, for r4's young dump, and r1, for r2's dump, which deployed the current release.
+
+It deletes r4 and the legacy release, and the dumps of r1's, r3's and r5's operations.
 
 ### The image cache folder
 
-`/var/www/jury-images` (`wlxjury.thumbs.local-path`, 8.1 GB on 2026-11-04) holds the thumbnails the app downloads from Commons. Only the app reads and writes it: `ImageProxyController` serves it to signed-in users, and no Apache vhost on production serves it (the optional `conf/apache/jury-images.conf` is not enabled). The app writes each file as a temporary `.tmp-*` file in the target folder and moves it into place, creating folders as it goes; it needs to own the folders, nothing more. So the folder is owner `wlxjury`, mode `0755`: folders `0755` and files `0644`, as the app creates them (with the unit's default umask). `deploy` refuses while the folder named by `image_cache_dir` in `deployment.json` (default `/var/www/jury-images`, checked only if it exists) is group- or world-writable. Production's was `0777` until 2026-11; the one-off fix:
+The image cache (`wlxjury.thumbs.local-path`, default `/var/www/jury-images`) holds the thumbnails the app downloads from Commons. Only the app reads and writes it: `ImageProxyController` serves it to signed-in users. The optional `conf/apache/jury-images.conf` would serve it to anyone, without that check; the steps here don't use it. The app writes each file as a temporary `.tmp-*` file in the target folder and moves it into place, creating folders as it goes; it needs to own the folders, nothing more. So the folder is owned by the service user (`wlxjury`), mode `0755`: folders `0755` and files `0644`, as the app creates them (with the unit's default umask).
+
+`deploy` refuses, before anything changes, while the folder named by `image_cache_dir` in `deployment.json` is not owned by `service_user` (default `wlxjury`) or is group- or world-writable. It is checked only if it exists (on a new server the app creates it), and at its target if it is a symlink. If the folder is group- or world-writable, or owned by another account, fix it with:
 
 ```bash
 sudo chown wlxjury:wlxjury /var/www/jury-images
 sudo chmod 0755 /var/www/jury-images
-# Then anything below that others could write to (none found on 2026-11-04). find passes names as
-# arguments, never through a shell or xargs, so Cyrillic and other names are safe; -xdev stays on
-# this filesystem. Only entries that need it are changed, so the 8 GB of files aren't rewritten.
+# Then anything below that others could write to. find passes names as arguments, never through
+# a shell or xargs, so Cyrillic and other names are safe; -xdev stays on this filesystem. Only
+# entries that need it are changed, so a large cache isn't rewritten.
 sudo find /var/www/jury-images -xdev \! -user wlxjury -print            # expect nothing
 sudo find /var/www/jury-images -xdev -type d -perm /022 -exec chmod go-w {} +
 sudo find /var/www/jury-images -xdev -type f -perm /022 -exec chmod go-w {} +
@@ -273,18 +289,19 @@ stat -c '%a %U:%G' /var/www/jury-images                                 # 755 wl
 
 ### Monitoring with monit
 
-monit runs on the server and checks Apache, MariaDB, fail2ban and the backup's last success; [`conf/monit/wlxjury`](../conf/monit/wlxjury) adds the app. It is **alert only**: no start, stop or restart. systemd already restarts the app after a crash (`Restart=on-failure`), and a restart by monit during a deployment would bypass the deployment's hold (`Restart=no`) and could rerun a migration. It runs [`conf/monit/wlxjury-check`](../conf/monit/wlxjury-check), which fails when `wlxjury.service` is not active or `http://127.0.0.1:9000/health/ready` doesn't answer 200 (the release's schema and READ COMMITTED; loopback only, any `Host` header, [operations](operations/practices.md) §2.1). While the maintenance flag is on it is quiet, so a deployment raises no alert, unless the flag is more than two hours old (an operation that stopped). An alert comes after three failed cycles in a row, so a crash that systemd restarts in seconds raises none. Install it once (the user's step):
+Where monit is installed, [`conf/monit/wlxjury`](../conf/monit/wlxjury) adds the app. It is **alert only**: no start, stop or restart. systemd already restarts the app after a crash (`Restart=on-failure`), and a restart by monit during a deployment would bypass the deployment's hold (`Restart=no`) and could rerun a migration. For the same reason, other monit checks on a shared host should not restart MariaDB during a deployment.
+
+It runs [`conf/monit/wlxjury-check`](../conf/monit/wlxjury-check) with `deployment.json`, from which it reads the service, the port and the runtime folder. It fails when the service is not active or `http://127.0.0.1:PORT/health/ready` doesn't answer 200 (the release's schema and READ COMMITTED; loopback only, any `Host` header, [operations](operations/practices.md) §2.1), or when it can't read `deployment.json`. While the maintenance flag is on it is quiet, so a deployment raises no alert, unless the flag is more than two hours old (an operation that stopped). An alert comes after three failed cycles in a row, so a crash that systemd restarts in seconds raises none. Install it once:
 
 ```bash
 sudo install -D -o root -g root -m 0755 conf/monit/wlxjury-check /usr/local/lib/wlxjury/monit-check
 sudo install -o root -g root -m 0644 conf/monit/wlxjury /etc/monit/conf.d/wlxjury
-sudo /usr/local/lib/wlxjury/monit-check; echo "exit $?"   # ready, exit 0
-sudo monit -t && sudo monit reload
-sudo tail -n 5 /var/log/monit.log                          # a reload line, no 'wlxjury' error
-sudo monit summary                                         # lists wlxjury, if monit's httpd interface is on
+sudo /usr/local/lib/wlxjury/monit-check /etc/wlxjury-runtime/deployment.json; echo "exit $?"   # ready, exit 0
+sudo monit -t && sudo monit reload    # if monit -t fails: sudo rm /etc/monit/conf.d/wlxjury
+sudo tail -n 5 /var/log/monit.log     # a reload line, no 'wlxjury' error
 ```
 
-Undo: remove both files and `sudo monit reload`. How monit sends its alerts depends on `set alert` and `set mailserver` in the root-only `/etc/monit/monitrc` ([operations](operations/practices.md) §8, OP7). `wlxjury-infra` should install these files too (the draft in [`ci-drafts/infra/`](plans/ci-drafts/infra/ops-retention-monit.diff)).
+Undo: remove both files and `sudo monit reload`. Whom monit alerts, and how, is the server's monit configuration (`set alert`, `set mailserver`); check that it alerts someone. A filesystem space alert (`check filesystem` on the disk that holds the releases, dumps and image cache) is worth adding there too. `wlxjury-infra` should install these files (the draft in [`ci-drafts/infra/`](plans/ci-drafts/infra/ops-retention-monit.diff)).
 
 ### Static assets
 
@@ -589,9 +606,9 @@ Python 3.8 is the oldest supported version. The restore image is self-contained:
 - a damaged backup, an import that fails part-way, and its rerun; an import that fails just after dropping the database, and its retry without a new rescue dump;
 - refusing a backup of another database, too little free space for the reserve and the rescue dump, and a `db-admin.cnf` that names a remote host while the app uses the local server;
 - `restore` after reopening: the data-loss decision, refusing while another session uses the database, ending a leftover app session that holds a table lock before the rescue dump, and keeping every rescue dump across retries;
-- a group- or world-writable image cache folder, refused before anything changes;
-- pruning: nothing deleted by a failed `reopen` and the prune after its rerun; fewer releases than the keep count; the current release kept however old, and the dumps of the newest operations, of young ones and of the operation that deployed the current release; releases and dumps of an open operation and of an open cutover record; `--dry-run`; refusing during maintenance and bad settings; unfinished unpacks removed; `restore` refusing a pruned dump.
+- the image cache folder refused before anything changes when group- or world-writable, owned by another account, not a folder, or a symlink to such a folder; a missing one accepted;
+- pruning: nothing deleted by a failed `reopen` and the prune after its rerun; exit 3 when only that prune fails; fewer releases than the keep count; the current release kept however old; the dumps of the newest operations, of young ones and of the operation that deployed the current release, each with its previous release, including two restored deployments after a completed one; releases and dumps of an open operation and of an open cutover record; missing or damaged milestones counted as open; stopping, deleting nothing, on an open operation it can't read, one naming a path outside `releases`, a corrupt cutover record or a symlinked operation folder; paths compared resolved; decimal settings with leading zeros; a dump whose age can't be read kept; symlinks and non-release folders skipped; `--dry-run` listing exactly what the real run deletes; refusing during maintenance, under a held lock and with bad settings; unfinished unpacks removed; `restore` refusing a pruned dump before the data-loss decision.
 
-`MonitCheckTest` (in the same file) runs `conf/monit/wlxjury-check` against a stub `systemctl` and a fake readiness endpoint (ready, 503, not active, quiet in maintenance, a stale flag, nothing listening), checks that `conf/monit/wlxjury` only alerts, and runs `monit -t` on it in the image.
+`MonitCheckTest` (in the same file) runs `conf/monit/wlxjury-check` with a test `deployment.json`, a stub `systemctl` and a fake readiness endpoint (ready, 503, not active, quiet in maintenance, a stale flag, nothing listening, an unreadable config), checks that `conf/monit/wlxjury` only alerts, and runs `monit -t` on it in the image.
 
 Tests own a MariaDB 10.6 process and synthetic mixed-engine data. They do not certify real production backups, disk capacity, Apache coverage or outage time; those remain rollout/rehearsal gates.

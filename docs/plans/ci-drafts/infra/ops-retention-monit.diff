@@ -1,15 +1,15 @@
 diff --git a/roles/wlxjury_app/defaults/main.yml b/roles/wlxjury_app/defaults/main.yml
-index 25427ad..c106769 100644
+index 25427ad..c6a7a27 100644
 --- a/roles/wlxjury_app/defaults/main.yml
 +++ b/roles/wlxjury_app/defaults/main.yml
-@@ -26,6 +26,25 @@ wlxjury_restore_minimum_free_bytes: 2147483648
+@@ -26,6 +26,26 @@ wlxjury_restore_minimum_free_bytes: 2147483648
  wlxjury_session_end_timeout_seconds: 600
  wlxjury_systemd_dropin_dir: /etc/systemd/system/wlxjury.service.d
  
 +# Retention for wlxjury-release prune, which runs after every successful reopen
 +# (docs/deployment.md, "Retention"): the releases kept besides the current one,
-+# and the pre-deployment dumps kept by count and by age. restic keeps the
-+# long-term backups.
++# and the pre-deployment dumps kept by count and by age. The long-term
++# backup is separate.
 +wlxjury_keep_previous_releases: 2
 +wlxjury_keep_backup_dumps: 3
 +wlxjury_keep_backup_days: 14
@@ -22,43 +22,46 @@ index 25427ad..c106769 100644
 +# monit's alert-only check of the app (conf/monit in the app repository), when
 +# monit is installed. Never a restart: that would bypass the deployment hold.
 +wlxjury_monit: true
-+# The app repository's conf/monit folder on the controller, at the reviewed version.
-+wlxjury_monit_source: "{{ wlxjury_tools_source }}/../../conf/monit"
++# The app repository's conf/monit folder on the controller, at the reviewed
++# version (wlxjury-check and wlxjury), when wlxjury_monit is on.
++wlxjury_monit_source: REPLACE_ME
 +
  # The app repository's scripts/deployment folder on the controller, at the
  # reviewed version: wlxjury-deploy and wlxjury-release are installed from it.
  wlxjury_tools_source: REPLACE_ME
 diff --git a/roles/wlxjury_app/handlers/main.yml b/roles/wlxjury_app/handlers/main.yml
-index 0fc6cbf..5453525 100644
+index 0fc6cbf..1a42b5f 100644
 --- a/roles/wlxjury_app/handlers/main.yml
 +++ b/roles/wlxjury_app/handlers/main.yml
-@@ -3,3 +3,16 @@
+@@ -3,3 +3,9 @@
    ansible.builtin.systemd_service:
      daemon_reload: true
    listen: wlxjury reload systemd
 +
-+# monit -t first: a broken control file would stop monit on reload, and with it
-+# the server's other checks.
-+- name: Check monit's configuration
-+  ansible.builtin.command:
-+    argv: [monit, -t]
-+  changed_when: false
-+  listen: wlxjury reload monit
-+
++# tasks/monit.yml has run monit -t (and removed a refused file) before this.
 +- name: Reload monit
 +  ansible.builtin.command:
 +    argv: [monit, reload]
 +  listen: wlxjury reload monit
 diff --git a/roles/wlxjury_app/tasks/main.yml b/roles/wlxjury_app/tasks/main.yml
-index 1bdc8b7..ab91f24 100644
+index 1bdc8b7..faf5dec 100644
 --- a/roles/wlxjury_app/tasks/main.yml
 +++ b/roles/wlxjury_app/tasks/main.yml
-@@ -110,6 +110,16 @@
+@@ -4,6 +4,7 @@
+     that:
+       - wlxjury_public_url is match('^https?://[A-Za-z0-9.-]+(:[0-9]+)?/$')
+       - wlxjury_tools_source != 'REPLACE_ME'
++      - not wlxjury_monit or wlxjury_monit_source != 'REPLACE_ME'
+       - wlxjury_quiesce_units | select('match', '^[A-Za-z0-9_.@-]+\.(service|timer)$') | list | length
+         == wlxjury_quiesce_units | length
+       - wlxjury_jvm_environment | dict2items | map(attribute='key') | select('match', '^[A-Z][A-Z0-9_]*$') | list
+@@ -110,6 +111,17 @@
      # Not the drop-in directory: package scripts remove it when empty, and the
      # deployment tools create it whenever they write their restart hold.
  
 +# The folder only; its files are the app's (0644 files, 0755 folders, written
-+# through temporary files and moves). Production's was 0777 until 2026-11.
++# through temporary files and moves). wlxjury-release refuses to deploy while it
++# isn't the service user's or is group- or world-writable.
 +- name: Create the image cache directory, writable by the app only
 +  ansible.builtin.file:
 +    path: "{{ wlxjury_image_cache_dir }}"
@@ -70,7 +73,7 @@ index 1bdc8b7..ab91f24 100644
  - name: Write the configuration
    ansible.builtin.import_tasks: config.yml
  
-@@ -122,3 +132,7 @@
+@@ -122,3 +134,7 @@
  
  - name: Install the service
    ansible.builtin.import_tasks: service.yml
@@ -80,10 +83,10 @@ index 1bdc8b7..ab91f24 100644
 +  when: wlxjury_monit
 diff --git a/roles/wlxjury_app/tasks/monit.yml b/roles/wlxjury_app/tasks/monit.yml
 new file mode 100644
-index 0000000..525ca0d
+index 0000000..bbd4999
 --- /dev/null
 +++ b/roles/wlxjury_app/tasks/monit.yml
-@@ -0,0 +1,36 @@
+@@ -0,0 +1,52 @@
 +---
 +# conf/monit from the app repository: an alert-only program check. monit itself,
 +# its mail settings and its other checks belong to the server, not this role.
@@ -92,39 +95,55 @@ index 0000000..525ca0d
 +    path: /etc/monit/conf.d
 +  register: wlxjury_monit_dir
 +
-+- name: Create the folder for monit's check script
-+  ansible.builtin.file:
-+    path: /usr/local/lib/wlxjury
-+    state: directory
-+    owner: root
-+    group: root
-+    mode: "0755"
-+  when: wlxjury_monit_dir.stat.isdir | default(false)
-+
-+- name: Install monit's check script
-+  ansible.builtin.copy:
-+    src: "{{ wlxjury_monit_source }}/wlxjury-check"
-+    dest: /usr/local/lib/wlxjury/monit-check
-+    owner: root
-+    group: root
-+    mode: "0755"
-+  when: wlxjury_monit_dir.stat.isdir | default(false)
-+  notify: wlxjury reload monit
-+
 +- name: Install monit's check of the app
-+  ansible.builtin.copy:
-+    src: "{{ wlxjury_monit_source }}/wlxjury"
-+    dest: /etc/monit/conf.d/wlxjury
-+    owner: root
-+    group: root
-+    mode: "0644"
 +  when: wlxjury_monit_dir.stat.isdir | default(false)
-+  notify: wlxjury reload monit
++  block:
++    - name: Create the folder for monit's check script
++      ansible.builtin.file:
++        path: /usr/local/lib/wlxjury
++        state: directory
++        owner: root
++        group: root
++        mode: "0755"
++
++    - name: Install monit's check script
++      ansible.builtin.copy:
++        src: "{{ wlxjury_monit_source }}/wlxjury-check"
++        dest: /usr/local/lib/wlxjury/monit-check
++        owner: root
++        group: root
++        mode: "0755"
++      notify: wlxjury reload monit
++
++    - name: Install the check
++      ansible.builtin.copy:
++        src: "{{ wlxjury_monit_source }}/wlxjury"
++        dest: /etc/monit/conf.d/wlxjury
++        owner: root
++        group: root
++        mode: "0644"
++      notify: wlxjury reload monit
++
++    # A control file monit refuses would stop it at the next reload, and with it
++    # the server's other checks.
++    - name: Check monit's configuration
++      ansible.builtin.command:
++        argv: [monit, -t]
++      changed_when: false
++  rescue:
++    - name: Remove the check monit refused
++      ansible.builtin.file:
++        path: /etc/monit/conf.d/wlxjury
++        state: absent
++
++    - name: Stop with monit's verdict
++      ansible.builtin.fail:
++        msg: monit -t refused the configuration with conf/monit/wlxjury; the file was removed again.
 diff --git a/roles/wlxjury_app/templates/deployment.json.j2 b/roles/wlxjury_app/templates/deployment.json.j2
-index 543ebcc..8b21496 100644
+index 543ebcc..96115bb 100644
 --- a/roles/wlxjury_app/templates/deployment.json.j2
 +++ b/roles/wlxjury_app/templates/deployment.json.j2
-@@ -10,6 +10,10 @@
+@@ -10,6 +10,11 @@
    'minimum_free_bytes': wlxjury_minimum_free_bytes | int,
    'restore_minimum_free_bytes': wlxjury_restore_minimum_free_bytes | int,
    'session_end_timeout_seconds': wlxjury_session_end_timeout_seconds | int,
@@ -132,6 +151,40 @@ index 543ebcc..8b21496 100644
 +  'keep_backup_dumps': wlxjury_keep_backup_dumps | int,
 +  'keep_backup_days': wlxjury_keep_backup_days | int,
 +  'image_cache_dir': wlxjury_image_cache_dir,
++  'service_user': wlxjury_user,
    'quiesce_units': wlxjury_quiesce_units,
    'maintenance_urls': wlxjury_maintenance_urls,
  } | to_nice_json(indent=2) }}
+diff --git a/tests/run.sh b/tests/run.sh
+index 76ce061..d5c574c 100644
+--- a/tests/run.sh
++++ b/tests/run.sh
+@@ -128,8 +128,15 @@ import json
+ config = json.load(open('/etc/wlxjury-runtime/deployment.json'))
+ assert config['maintenance_urls'] == ['http://jury.test/', 'http://jury-plain.test/', 'https://jury.test/'], config
+ assert config['quiesce_units'] == ['test-backup.timer', 'test-backup.service'], config
+-print('ok  deployment.json lists every URL the vhosts serve')
++assert (config['keep_previous_releases'], config['keep_backup_dumps'], config['keep_backup_days']) == (2, 3, 14), config
++assert (config['image_cache_dir'], config['service_user']) == ('/var/www/jury-images', 'wlxjury'), config
++print('ok  deployment.json lists every URL the vhosts serve, the retention and the image cache')
+ EOF
++[ "$(stat -c '%a %U:%G' /var/www/jury-images)" = "755 wlxjury:wlxjury" ] || fail "image cache owner or mode"
++if [ -d /etc/monit/conf.d ]; then
++  [ -x /usr/local/lib/wlxjury/monit-check ] && [ -f /etc/monit/conf.d/wlxjury ] || fail "monit check not installed"
++  monit -t || fail "monit refuses its configuration"
++fi
+ expect https://jury.test/ 200 'jury app 0.13-test'
+ expect http://jury.test/ 301
+ expect http://jury-plain.test/ 200 'jury app 0.13-test'
+diff --git a/tests/vars.yml b/tests/vars.yml
+index f09e0fb..0ddf463 100644
+--- a/tests/vars.yml
++++ b/tests/vars.yml
+@@ -16,6 +16,7 @@ wlxjury_jvm_environment:
+   MALLOC_ARENA_MAX: "2"
+ wlxjury_quiesce_units: [test-backup.timer, test-backup.service]
+ wlxjury_tools_source: /src/app/scripts/deployment
++wlxjury_monit_source: /src/app/conf/monit
+ wlxjury_minimum_free_bytes: 1
+ wlxjury_restore_minimum_free_bytes: 1
+ wlxjury_ready_timeout_seconds: 60

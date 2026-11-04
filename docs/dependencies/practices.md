@@ -34,8 +34,8 @@ younger than two weeks only when that digest carries nothing but security fixes 
 JRE. The PR links each advisory it fixes (the Ubuntu USN, the JDK's CVE or the image's release
 note), pins the new digest, and says why the fix can't wait; a base update with anything else in
 it waits the two weeks. *Why:* a compromised or broken release is usually found and pulled within
-days; waiting costs little. For a base image's JRE, though, it would cost more than today, where
-`unattended-upgrades` patches the host's JRE within a day.
+days; waiting costs little. For a base image's JRE, though, it would cost more than on a host
+whose package updates patch its JRE.
 
 **1.2 Compatible with the build, checked at the source.** Check the version against the build's
 Scala, sbt and JDK before choosing it, and read its sources in `target/dep-sources/`
