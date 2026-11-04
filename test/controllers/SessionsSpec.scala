@@ -100,7 +100,7 @@ class SessionsSpec extends PlaySpecification with PlayTestDb with AccountTestSup
     }
   }
 
-  "sign out everywhere" should {
+  "sign out everywhere [J-06]" should {
 
     "end every session of the account, this one and a second browser's" in {
       withCsrfApp { implicit app =>
@@ -146,7 +146,7 @@ class SessionsSpec extends PlaySpecification with PlayTestDb with AccountTestSup
     }
   }
 
-  "root's end sessions" should {
+  "root's end sessions [A-08]" should {
 
     "end every session of the account, not root's" in {
       withCsrfApp { implicit app =>
@@ -196,7 +196,7 @@ class SessionsSpec extends PlaySpecification with PlayTestDb with AccountTestSup
     }
   }
 
-  "one's own password change" should {
+  "one's own password change [J-32]" should {
 
     "end the account's other sessions, keep this one with the new version, and keep the API tokens" in {
       withCsrfApp { implicit app =>

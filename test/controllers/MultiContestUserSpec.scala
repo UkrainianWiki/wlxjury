@@ -61,7 +61,7 @@ class MultiContestUserSpec extends PlaySpecification with PlayTestDb with Mockit
       "contest" -> contestId.toString
     ) ++ password.map("password" -> _)
 
-  "createUser" should {
+  "createUser [A-07]" should {
     "add an existing email to another contest, keeping its account and password" in {
       testDbApp { implicit app =>
         val Seq(c10, c20) = createContests(10, 20)
@@ -96,7 +96,7 @@ class MultiContestUserSpec extends PlaySpecification with PlayTestDb with Mockit
     }
   }
 
-  "saveUser" should {
+  "saveUser [A-08]" should {
     "let a contest admin add an existing email to the contest" in {
       testDbApp { implicit app =>
         createContests(10, 20)
@@ -162,7 +162,7 @@ class MultiContestUserSpec extends PlaySpecification with PlayTestDb with Mockit
     }
   }
 
-  "switchContest" should {
+  "switchContest [J-11]" should {
     "switch only to one of the user's contests" in {
       testDbApp { implicit app =>
         implicit val mat: Materializer = app.materializer
@@ -204,7 +204,7 @@ class MultiContestUserSpec extends PlaySpecification with PlayTestDb with Mockit
     }
   }
 
-  "a link into another of the user's contests" should {
+  "a link into another of the user's contests [J-11]" should {
     "open that contest and make it the session's current one" in {
       testDbApp { implicit app =>
         implicit val mat: Materializer = app.materializer
@@ -260,7 +260,7 @@ class MultiContestUserSpec extends PlaySpecification with PlayTestDb with Mockit
     }
   }
 
-  "adding users" should {
+  "adding users [A-07]" should {
     "not let a contest admin create a root user" in {
       testDbApp { implicit app =>
         createContests(10)
@@ -298,7 +298,7 @@ class MultiContestUserSpec extends PlaySpecification with PlayTestDb with Mockit
     }
   }
 
-  "editing users" should {
+  "editing users [A-08]" should {
     "deny a juror another user's edit page without naming the page's own user as a role" in {
       testDbApp { implicit app =>
         implicit val mat: Materializer = app.materializer

@@ -35,7 +35,7 @@ class SignOutAndSwitchSpec extends PlaySpecification with PlayTestDb {
       .withSession(Secured.UserName -> email, Secured.CurrentContestId -> "10", "csrfToken" -> sessionToken)
       .withFormUrlEncodedBody(body: _*)).get
 
-  "signing out" should {
+  "signing out [J-06, S-02]" should {
 
     "not happen on a GET, which shows a button that signs out" in {
       withCsrfApp { app =>
@@ -91,7 +91,7 @@ class SignOutAndSwitchSpec extends PlaySpecification with PlayTestDb {
     }
   }
 
-  "switching the contest" should {
+  "switching the contest [J-11, S-02]" should {
 
     "not happen on a GET, which goes to the start page" in {
       withCsrfApp { app =>

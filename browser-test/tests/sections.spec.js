@@ -47,7 +47,7 @@ for (const [name, role, path] of [
   test.describe(() => {
     test.use({ role });
 
-    test(`the side sections of ${name} are restored as stored before its scripts run`, async ({ page, fixture }) => {
+    test(`the side sections of ${name} are restored as stored before its scripts run`, { tag: '@J-33' }, async ({ page, fixture }) => {
       await page.addInitScript(probe);
       for (let i = 0; i < LOADS; i++) {
         await page.goto(path(fixture), { waitUntil: 'load' });
@@ -57,7 +57,7 @@ for (const [name, role, path] of [
       await expect(page.locator('#large-next')).toBeVisible();
     });
 
-    test(`the side sections of ${name} are drawn as stored from the first frame`, async ({ page, fixture }) => {
+    test(`the side sections of ${name} are drawn as stored from the first frame`, { tag: '@J-33' }, async ({ page, fixture }) => {
       test.fixme(true, 'U18 (UI practices §9): a frame with the default states in about one load of eight');
       await page.addInitScript(probe);
       for (let i = 0; i < LOADS; i++) {

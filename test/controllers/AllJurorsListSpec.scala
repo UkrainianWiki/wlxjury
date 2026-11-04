@@ -61,7 +61,7 @@ class AllJurorsListSpec extends PlaySpecification with PlayTestDb {
   private def wholeList(f: Fixture, order: BinaryOrder = BinaryOrder.Default): Seq[ImageWithRating] =
     RoundList(f.round, 0, order = ListOrder.Binary(order), view = GalleryView.FileList).query.list()
 
-  "an organiser's file list of all the jurors' votes" should {
+  "an organiser's file list of all the jurors' votes [O-02]" should {
 
     "show a page of 1000 files, the next page the rest, ranked among all the round's files" in {
       testDbApp { implicit app =>
@@ -85,7 +85,7 @@ class AllJurorsListSpec extends PlaySpecification with PlayTestDb {
     }
   }
 
-  "a vote filter of all the jurors' votes" should {
+  "a vote filter of all the jurors' votes [O-02]" should {
 
     "list the files with a matching vote, each with all its votes, in the file list and CSV" in {
       testDbApp { implicit app =>
@@ -105,7 +105,7 @@ class AllJurorsListSpec extends PlaySpecification with PlayTestDb {
     }
   }
 
-  "the order of all the jurors' votes" should {
+  "the order of all the jurors' votes [O-02]" should {
 
     "be offered in the navbar, and the one chosen remembered for the next list" in {
       testDbApp { implicit app =>
@@ -160,7 +160,7 @@ class AllJurorsListSpec extends PlaySpecification with PlayTestDb {
     }
   }
 
-  "the CSV of all the jurors' votes" should {
+  "the CSV of all the jurors' votes [O-05]" should {
 
     "stream the rows the whole list gives, its votes read a chunk of files at a time" in {
       testDbApp { implicit app =>

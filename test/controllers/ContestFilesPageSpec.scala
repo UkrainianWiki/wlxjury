@@ -104,7 +104,7 @@ class ContestFilesPageSpec extends PlaySpecification with PlayTestDb {
   private def button(page: String, title: String): Option[String] =
     s"""href="([^"]*)" title="$title""".r.findFirstMatchIn(page).map(_.group(1).replace("&amp;", "&"))
 
-  "the contest files page" should {
+  "the contest files page [A-12]" should {
 
     "show all the contest's files, those deleted on Commons marked" in {
       testDbApp { implicit app =>
@@ -470,7 +470,7 @@ class ContestFilesPageSpec extends PlaySpecification with PlayTestDb {
     }
   }
 
-  "a contest file's large view" should {
+  "a contest file's large view [A-12]" should {
 
     "show the file read-only, with its monument, author and page on Commons" in {
       testDbApp { implicit app =>
@@ -581,7 +581,7 @@ class ContestFilesPageSpec extends PlaySpecification with PlayTestDb {
     }
   }
 
-  "the round statistics" should {
+  "the round statistics [O-01]" should {
     "count the round's files deleted on Commons, linking them for the contest's admins" in {
       testDbApp { implicit app =>
         val f = fixture()

@@ -65,7 +65,7 @@ class GalleryRegionsSpec extends PlaySpecification with PlayTestDb {
   private def tiles(page: String): List[Long] =
     """(?:data-pageId|class="gallerybox" id)="(\d+)"""".r.findAllMatchIn(page).map(_.group(1).toLong).toList
 
-  "a round's gallery" should {
+  "a round's gallery [J-14]" should {
 
     "name a Wiki Loves Earth contest's regions as Ukraine's" in {
       testDbApp { implicit app =>

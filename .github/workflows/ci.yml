@@ -95,6 +95,16 @@ jobs:
           npm --prefix javascript-test run lint
           npm --prefix javascript-test run lint:selftest
 
+      # The story coverage matrix (testing practices §9.4), in seconds, without a build: a story
+      # ID that the catalogue lacks or retired, or a malformed one, fails here; the matrix goes to
+      # the job's summary. After the tests, as the lint, so a tag typo never hides the suite's
+      # result; in the first matrix leg only, so the summary has it once. Its self-test first.
+      - name: Story coverage
+        if: (success() || failure()) && strategy.job-index == 0
+        run: |
+          python3 scripts/story-coverage.py --self-test
+          python3 scripts/story-coverage.py > /dev/null
+
       - name: End of the log
         if: failure()
         run: tail -n 400 target/checks/*.log

@@ -100,7 +100,7 @@ class AdminPagesCurrentContestSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
-    "save the greeting of the session's current contest" in {
+    "save the greeting of the session's current contest [A-17]" in {
       testDbApp { implicit app =>
         val (ann, _) = fixture()
         val result = route(app,
@@ -132,7 +132,7 @@ class AdminPagesCurrentContestSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
-    "not save the greeting for a juror" in {
+    "not save the greeting for a juror [A-17]" in {
       testDbApp { implicit app =>
         fixture()
         val juror = member("jury@example.com", 10L -> "jury")

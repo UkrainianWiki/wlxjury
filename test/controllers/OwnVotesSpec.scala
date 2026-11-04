@@ -92,7 +92,7 @@ class OwnVotesSpec extends PlaySpecification with PlayTestDb {
     status(get(app, viewer, largePath(round, asUserId, pageId), json = true)) === expected
   }
 
-  "a juror of a round" should {
+  "a juror of a round [J-27]" should {
 
     "be refused another juror's votes in it, as a page and as JSON" in {
       testDbApp { app =>
@@ -122,7 +122,7 @@ class OwnVotesSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
-    "see another juror's votes, and all together, in a round open to its jurors (juryOrgView)" in {
+    "see another juror's votes, and all together, in a round open to its jurors (juryOrgView) [J-28]" in {
       testDbApp { app =>
         val f = fixture()
         views(app, f.juror2, f.orgViewRound, f.juror1.getId, f.images.head.pageId, OK)
@@ -131,7 +131,7 @@ class OwnVotesSpec extends PlaySpecification with PlayTestDb {
     }
   }
 
-  "a binary round's large view" should {
+  "a binary round's large view [O-03]" should {
 
     "list every juror's vote to an organiser, rejections and votes yet to come too, and none to a juror" in {
       testDbApp { app =>
@@ -152,7 +152,7 @@ class OwnVotesSpec extends PlaySpecification with PlayTestDb {
     }
   }
 
-  "the round's contest's organizer and admin, and root" should {
+  "the round's contest's organizer and admin, and root [O-03]" should {
 
     "see a juror's votes, and all together" in {
       testDbApp { app =>
@@ -223,7 +223,7 @@ class OwnVotesSpec extends PlaySpecification with PlayTestDb {
     }
   }
 
-  "a juror's normal navigation" should {
+  "a juror's normal navigation [J-27]" should {
 
     /** The app's links to galleries and large views in the page, unescaped. */
     def links(page: String): Seq[String] =

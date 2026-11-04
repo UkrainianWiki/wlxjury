@@ -6,7 +6,7 @@ import { test, expect } from '../lib/fixtures.js';
 test.describe('an organizer', () => {
   test.use({ role: 'organizer' });
 
-  test('opens a round\'s statistics, with a row per juror', async ({ page, fixture }) => {
+  test('opens a round\'s statistics, with a row per juror', { tag: '@O-01' }, async ({ page, fixture }) => {
     await page.goto(`/roundstat/${fixture.roundBinaryId}`);
     await expect(page.getByRole('heading', { level: 1, name: 'Statistics' })).toBeAttached();
     await expect(page.getByRole('columnheader', { name: 'Selected' })).toBeVisible();
@@ -15,7 +15,7 @@ test.describe('an organizer', () => {
     await expect(page.getByRole('link', { name: /Binary Round/ })).toHaveAttribute('aria-current', 'page');
   });
 
-  test('opens the rated round\'s files by rate, of all the jurors', async ({ page, fixture }) => {
+  test('opens the rated round\'s files by rate, of all the jurors', { tag: '@O-02' }, async ({ page, fixture }) => {
     await page.goto(`/byrate/round/${fixture.roundRatingId}/user/0/page/1`);
     await expect(page.getByRole('heading', { level: 1, name: 'By rate' })).toBeAttached();
     // a file per row, each its image linking to its large view; read-only: no vote buttons
@@ -30,7 +30,7 @@ test.describe('an organizer', () => {
 test.describe('an admin', () => {
   test.use({ role: 'admin' });
 
-  test('opens a round\'s form from the rounds list, with its jurors\' table', async ({ page, fixture }) => {
+  test('opens a round\'s form from the rounds list, with its jurors\' table', { tag: '@A-02' }, async ({ page, fixture }) => {
     await page.goto(`/admin/rounds?contestId=${fixture.contestId}`);
     await expect(page.getByRole('heading', { level: 1 })).toContainText('Campaign');
     await page.getByRole('row', { name: /Binary Round/ }).getByRole('link', { name: '1', exact: true }).click();
@@ -44,7 +44,7 @@ test.describe('an admin', () => {
     await expect(page.getByRole('cell', { name: fixture.accounts.juror.login, exact: true })).toBeVisible();
   });
 
-  test('changes a round\'s name, cancels, and the round keeps its name', async ({ page, fixture }) => {
+  test('changes a round\'s name, cancels, and the round keeps its name', { tag: '@A-02' }, async ({ page, fixture }) => {
     const form = `/admin/rounds/edit?id=${fixture.roundBinaryId}&contestId=${fixture.contestId}`;
     await page.goto(form);
     const name = page.getByLabel('Round name (optional)');
@@ -59,7 +59,7 @@ test.describe('an admin', () => {
     await expect(page.getByLabel('Round name (optional)')).toHaveValue('Binary Round');
   });
 
-  test('opens the new round form, whose fields follow the choices', async ({ page, fixture }) => {
+  test('opens the new round form, whose fields follow the choices', { tag: '@A-01' }, async ({ page, fixture }) => {
     await page.goto(`/admin/rounds/edit?contestId=${fixture.contestId}`);
     await expect(page.getByRole('heading', { level: 1, name: 'Create round' })).toBeVisible();
     await expect(page.getByLabel('Round name (optional)')).toHaveValue('');
@@ -70,7 +70,7 @@ test.describe('an admin', () => {
 test.describe('root', () => {
   test.use({ role: 'root' });
 
-  test('opens the campaigns page', async ({ page }) => {
+  test('opens the campaigns page', { tag: '@R-01' }, async ({ page }) => {
     await page.goto('/contests');
     await expect(page.getByRole('heading', { level: 1, name: 'Campaigns' })).toBeAttached();
     await expect(page.getByRole('cell', { name: /Wiki Loves Monuments/ }).first()).toBeVisible();

@@ -138,6 +138,16 @@ jobs:
         working-directory: browser-test
         run: node fixture-server.mjs stop || true
 
+      # This engine's Allure results, for the report job below (testing practices §10.10)
+      - name: Upload the Allure results
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: allure-results-${{ matrix.engine }}-attempt-${{ github.run_attempt }}
+          path: target/browser-test/allure-results/
+          if-no-files-found: ignore
+          retention-days: 14
+
       - name: Times
         if: always()
         run: |
@@ -175,4 +185,103 @@ jobs:
           name: accessibility-report-attempt-${{ github.run_attempt }}
           path: target/browser-test/a11y/
           if-no-files-found: ignore
+          retention-days: 14
+
+  # The three engines' results merged into one Allure report (testing practices §10.10): a test per
+  # engine (its "Project" parameter), grouped by the stories its tags name. One HTML file that
+  # opens offline, uploaded as an artifact only (GitHub Pages is not decided: plan
+  # 2026-11-04-story-coverage.md §4.5). Advisory: its failure fails no engine's job. History: a
+  # JSONL file in the Actions cache, appended only on pushes (master and ukwikidev/followups, the
+  # push triggers above); a PR's report reads its base's.
+  report:
+    name: Allure report
+    needs: browser
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22.23.4
+          cache: npm
+          cache-dependency-path: browser-test/package-lock.json
+
+      # allure, from browser-test's lockfile (no browser is downloaded by the install)
+      - name: Install the report tool
+        working-directory: browser-test
+        run: npm ci
+
+      # Every attempt's results, one directory per artifact: a re-run of the failed jobs leaves the
+      # passed engines' results under their earlier attempt
+      - name: Download the engines' results
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: allure-results-*
+          path: target/browser-test/allure-attempts
+
+      # each engine's latest attempt only, merged (result files have unique names)
+      - name: Each engine's latest results
+        run: |
+          mkdir -p target/browser-test/allure-results
+          for engine in chromium firefox webkit; do
+            latest="" best=0
+            for dir in target/browser-test/allure-attempts/allure-results-"$engine"-attempt-*; do
+              [ -d "$dir" ] || continue
+              n=${dir##*-attempt-}
+              if [ "$n" -gt "$best" ]; then best=$n latest=$dir; fi
+            done
+            if [ -z "$latest" ]; then echo "::warning::no Allure results for $engine"; continue; fi
+            echo "$engine: ${latest##*/}"
+            cp -R "$latest"/. target/browser-test/allure-results/
+          done
+
+      # the newest saved history: saved under a run's key, restored by prefix
+      - name: Restore the report's history
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: target/browser-test/allure-history
+          key: allure-history-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: allure-history-
+
+      # npm run report: allure generate, then allure-offline.mjs, which fails on an analytics
+      # loader or anything loaded from another host (and adds the CSP meta), so an unchecked
+      # report is never uploaded. ALLURE_NO_ANALYTICS here and in allurerc.mjs (the allure2
+      # plugin honours it; testing practices §10.10).
+      - name: Generate and check the report
+        working-directory: browser-test
+        env:
+          ALLURE_APPEND_HISTORY: ${{ github.event_name == 'push' && 'true' || 'false' }}
+          ALLURE_NO_ANALYTICS: 'true'
+          NO_UPDATE_NOTIFIER: '1'
+        run: |
+          test -n "$(ls -A ../target/browser-test/allure-results 2>/dev/null)" || { echo "no Allure results"; exit 1; }
+          npm run report:selftest
+          npm run report
+          {
+            echo "### Allure report"
+            echo
+            echo "The \`allure-report-attempt-${{ github.run_attempt }}\` artifact: one HTML file, checked to load nothing from another host. Results: $(ls ../target/browser-test/allure-results | wc -l) files."
+            echo
+            echo "| File | Size |"
+            echo "|---|---|"
+            find ../target/browser-test/allure-report -type f -printf '| %P | %s bytes |\n'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Save the report's history
+        if: github.event_name == 'push'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: target/browser-test/allure-history
+          key: allure-history-${{ github.run_id }}-${{ github.run_attempt }}
+
+      - name: Upload the report
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: allure-report-attempt-${{ github.run_attempt }}
+          path: target/browser-test/allure-report/
+          if-no-files-found: error
           retention-days: 14

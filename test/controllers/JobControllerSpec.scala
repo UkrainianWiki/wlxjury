@@ -53,7 +53,7 @@ class JobControllerSpec extends PlaySpecification with PlayTestDb {
     finally logger.detachAppender(appender)
   }
 
-  "a failed job's status" should {
+  "a failed job's status [A-06]" should {
     "show a message key and a logged reference, never the exception's text" in {
       testDbApp { app =>
         implicit val materializer: Materializer = app.materializer

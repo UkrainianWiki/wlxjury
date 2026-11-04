@@ -78,7 +78,7 @@ class OAuthChooserSpec extends PlaySpecification with Results with PlayTestDb wi
     (placeholder, juror)
   }
 
-  "a Wikimedia sign-in matching several accounts" should {
+  "a Wikimedia sign-in matching several accounts [J-05]" should {
     "list them by option tokens, with masked emails, and contests only for one chosen directly" in testDbApp { implicit app =>
       val (placeholder, juror) = twins()
 
