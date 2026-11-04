@@ -57,7 +57,6 @@ object GatlingTestFixture {
         "db.default.password" -> container.password,
         "db.default.url"      -> container.jdbcUrl,
         "play.filters.disabled"              -> Seq.empty[String],
-        "play.filters.csrf.method.whiteList" -> Seq("GET", "HEAD", "OPTIONS", "POST"),
         "play.http.session.secure"           -> false,
         // the test config runs jobs inline; the benchmark runs them as production does
         "jobs.mode"                              -> "background",
@@ -67,7 +66,8 @@ object GatlingTestFixture {
         "jobs.pollInterval"                      -> "2 seconds",
         // region counts: the contest files page's cache, and the round galleries' counts
         "regions.countCache"                     -> GatlingConfig.regionCountCache
-      ) ++ GatlingConfig.regionCounts.map("gallery.regionCounts" -> _) ++ timingConfig ++ cspConfig ++ filtersConfig)
+      ) ++ GatlingConfig.regionCounts.map("gallery.regionCounts" -> _) ++ timingConfig ++ csrfConfig ++ cspConfig ++
+        filtersConfig)
       .build()
     localApplication = Some(app)
     val server = TestServer(port, app)
@@ -107,6 +107,13 @@ object GatlingTestFixture {
     println(s"[pool] at start: $started; for the run (gatling.pool=${GatlingConfig.pool}): " +
       scalikejdbc.ConnectionPool.get().dataSource.getClass.getName)
   }
+
+  /** The CSRF filter skips POSTs too, as the simulations send none of its tokens; with
+    * -Dui.csrf=on (the browser tests, browser-test/fixture-server.mjs) it checks them as in
+    * production (Play's default whitelist: GET, HEAD, OPTIONS). Lazy, as cspMode. */
+  private lazy val csrfConfig: Map[String, Any] =
+    if (sys.props.get("ui.csrf").contains("on")) { println("[csrf] POSTs checked"); Map.empty }
+    else Map("play.filters.csrf.method.whiteList" -> Seq("GET", "HEAD", "OPTIONS", "POST"))
 
   /** With -Dui.csp=production (the screenshot harness's --csp), the production content security
     * policy (play.filters.csp from conf/application.conf, security.ProductionFilters), which the

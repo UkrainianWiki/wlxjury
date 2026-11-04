@@ -20,7 +20,9 @@ import java.nio.file.Files
   *
   * It then writes `target/ui-shots/server.json`: the base URL, the contest and
   * round ids, a juror with images in both rounds (id, login, password), the organizer
-  * (an admin of the contest), a root account (created here) and the juror's first page id in the binary and the rated round.
+  * (an admin of the contest), a root account (created here) and the juror's first page id in the binary and the rated round;
+  * for the browser tests (browser-test/), an account with the contest's organizer role (created here) and up to
+  * eight jurors with files in both rounds, each with its first page id in each.
   * Then it serves until `target/ui-shots/server.stop` exists (or the process is killed) and exits,
   * stopping the server and the container.
   *
@@ -64,19 +66,34 @@ object UiShotsServer {
       .find(j => f.roundsOf(j._1).contains(f.roundRatingId))
       .orElse(f.jurorsIn(Some(f.roundBinaryId)).headOption)
       .getOrElse(sys.error("No juror with images in the binary round"))
-    val pageId = sql"""SELECT MIN(page_id) FROM vote
-                       WHERE jury_id = $jurorId AND round_id = ${f.roundBinaryId}"""
-      .map(_.long(1)).single().getOrElse(sys.error("The juror has no images"))
+    // a juror's first file in a round (0 without one)
+    def firstPage(juror: Long, round: Long): Long =
+      sql"SELECT MIN(page_id) FROM vote WHERE jury_id = $juror AND round_id = $round"
+        .map(_.longOpt(1)).single().flatten.getOrElse(0L)
+    val pageId = Some(firstPage(jurorId, f.roundBinaryId)).filter(_ > 0)
+      .getOrElse(sys.error("The juror has no images"))
     // the juror's first file in the rated round, for the large view's stars (0 without one)
-    val ratedPageId = sql"""SELECT MIN(page_id) FROM vote
-                            WHERE jury_id = $jurorId AND round_id = ${f.roundRatingId}"""
-      .map(_.longOpt(1)).single().flatten.getOrElse(0L)
+    val ratedPageId = firstPage(jurorId, f.roundRatingId)
+    // the browser tests (browser-test/): jurors with files in both rounds, each engine voting
+    // as its own juror and signing in and out as another, so engines may share one server
+    val jurors = f.jurorsIn(Some(f.roundBinaryId)).filter(j => f.roundsOf(j._1).contains(f.roundRatingId))
+      .take(8).map { case (id, email, password) =>
+        s"""{"id": $id, "login": ${q(email)}, "password": ${q(password)}, """ +
+          s""""pageId": ${firstPage(id, f.roundBinaryId)}, "ratedPageId": ${firstPage(id, f.roundRatingId)}}"""
+      }
     val (_, orgEmail, orgPassword) = f.organizer
     // a root account, in this run's container only, for the root-only pages (the campaigns page)
     val (rootEmail, rootPassword) = ("root@ui-shots.test", "rootpass")
     if (db.scalikejdbc.User.findByEmail(rootEmail).isEmpty)
       db.scalikejdbc.User.create(fullname = "Root", email = rootEmail, passwordHash = services.PasswordHasher.default.hash(rootPassword),
         roles = Set(db.scalikejdbc.User.ROOT_ROLE), contestId = None)
+    // an account with the contest's organizer role (the fixture's organizer is its admin), in
+    // this run's container only
+    val (orgRoleEmail, orgRolePassword) = ("organizer-role@ui-shots.test", "orgrolepass")
+    if (db.scalikejdbc.User.findByEmail(orgRoleEmail).isEmpty)
+      db.scalikejdbc.User.create(fullname = "Organizer role", email = orgRoleEmail,
+        passwordHash = services.PasswordHasher.default.hash(orgRolePassword),
+        roles = db.scalikejdbc.User.ORG_COM_ROLES, contestId = Some(f.contestId))
     println(s"[ui-shots] set the Commons url of ${CommonsFileUrl.fillMissing()} images")
 
     val json =
@@ -88,6 +105,8 @@ object UiShotsServer {
          |  "juror": {"id": $jurorId, "login": ${q(jurorEmail)}, "password": ${q(jurorPassword)}},
          |  "organizer": {"login": ${q(orgEmail)}, "password": ${q(orgPassword)}},
          |  "root": {"login": ${q(rootEmail)}, "password": ${q(rootPassword)}},
+         |  "organizerRole": {"login": ${q(orgRoleEmail)}, "password": ${q(orgRolePassword)}},
+         |  "jurors": [${jurors.mkString(", ")}],
          |  "pageId": $pageId,
          |  "ratedPageId": $ratedPageId
          |}
