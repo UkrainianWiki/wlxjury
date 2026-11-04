@@ -1,5 +1,5 @@
 """Tests of the coverage report scripts: coverage-summary.py --json, coverage_comment.py (the PR
-comment, which reads an artifact the PR's code could have written).
+comment, which reads an artifact the PR's code could have written) and coveralls-paths.py.
 
     python3 -B -m unittest discover -s scripts -p test_coverage_reports.py
 """
@@ -24,6 +24,7 @@ def load(name, file):
 
 summary = load("coverage_summary", "coverage-summary.py")
 comment = load("coverage_comment", "coverage_comment.py")
+paths = load("coveralls_paths", "coveralls-paths.py")
 
 SHA = "03a15d9cedf3adbc0af0f09ee8a2159105084de6"
 BASE_SHA = "04c1d3100f044dc1cdd0c56c58f9be063a0b6c7d"
@@ -268,6 +269,28 @@ class RunTest(unittest.TestCase):
     def test_reads_this_attempts_summary_only(self):
         fake = api()
         self.assertEqual(comment.run(event(run_attempt=2), ENV, fake), "skipped: the run has no coverage summary")
+
+
+class CoverallsPathsTest(unittest.TestCase):
+    def test_paths_become_relative_to_the_repository(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "app" / "controllers").mkdir(parents=True)
+            (root / "app" / "controllers" / "A.scala").write_text("x", encoding="utf-8")
+            (root / "public" / "javascripts").mkdir(parents=True)
+            (root / "public" / "javascripts" / "a.js").write_text("x", encoding="utf-8")
+            (root / "javascript-test").mkdir()
+            xml = ('<coverage><sources><source>--source</source><source>%s</source></sources>'
+                   '<packages><package><classes><class name="A" filename="controllers/A.scala"/>'
+                   '<class name="G" filename="Gone.scala"/></classes></package></packages></coverage>'
+                   % (root / "app"))
+            out = paths.cobertura_with_repo_paths(xml, root)
+            self.assertIn('filename="app/controllers/A.scala"', out)
+            self.assertIn('filename="Gone.scala"', out)
+            lcov = paths.lcov_with_repo_paths("TN:\nSF:../public/javascripts/a.js\nDA:1,1\nend_of_record\n"
+                                              "SF:../../outside.js\nend_of_record\n", root)
+            self.assertIn("SF:public/javascripts/a.js\n", lcov)
+            self.assertIn("SF:../../outside.js\n", lcov)
 
 
 if __name__ == "__main__":

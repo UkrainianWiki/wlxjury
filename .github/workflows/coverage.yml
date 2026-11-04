@@ -4,8 +4,8 @@
 # Wikimedia access is anonymous (CLAUDE.md, Testing): never pass COMMONS_* or SCALAWIKI_*
 # credentials, as env or secrets, to any job here, and never -Dintegration (live Commons specs).
 # Actions are pinned by commit SHA, the release as a comment (dependencies practices §2.2).
-# The numbers show in the job summary and in a PR comment (coverage-comment.yml reads this
-# run's coverage-summary artifact; testing practices §9.5).
+# The numbers show in the job summary, in a PR comment (coverage-comment.yml reads this run's
+# coverage-summary artifact) and, once enabled, on Coveralls (testing practices §9.5).
 name: Coverage
 
 on:
@@ -92,6 +92,27 @@ jobs:
           path: target/coverage-summary.json
           if-no-files-found: warn
           retention-days: 90
+
+      # Coveralls (testing practices §9.5): off until the repository variable COVERALLS_ENABLED
+      # is 'true', and never failing the job. One build with both reports, their paths made
+      # relative to the repository first. The token is the job's read-only GITHUB_TOKEN, which
+      # Coveralls accepts for a public repository; no other secret.
+      - name: Coveralls paths
+        id: coveralls-paths
+        if: success() && vars.COVERALLS_ENABLED == 'true'
+        continue-on-error: true
+        run: python3 scripts/coveralls-paths.py
+
+      - name: Coveralls
+        if: success() && vars.COVERALLS_ENABLED == 'true' && steps.coveralls-paths.outcome == 'success'
+        continue-on-error: true
+        uses: coverallsapp/github-action@8d6379e14d29928660c4ba802d8e85393440b329 # v2.3.8
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          files: target/coveralls/cobertura.xml target/coveralls/lcov.info
+          # The reporter binary the action downloads (checksum-verified): an exact release,
+          # not "latest" (dependencies practices §2.2)
+          coverage-reporter-version: v0.6.22
 
       - name: End of the log
         if: failure()
