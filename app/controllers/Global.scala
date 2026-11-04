@@ -52,9 +52,8 @@ object Global {
     */
   lazy val commons: MwBot = services.imports.AnonymousBots.bot(COMMONS_WIKIMEDIA_ORG)
 
-  val useLegacyThumbUrl = true
-  val thumbUrl: (Image, Int, Int) => String =
-    if (useLegacyThumbUrl) legacyThumbUlr else thumbPhpUrl
+  /** A thumbnail's url: on this server, through the image proxy ([[ImageProxyController]]). */
+  val thumbUrl: (Image, Int, Int) => String = legacyThumbUlr
 
   def resizeTo(info: Image, resizeToWidth: Int, resizeToHeight: Int): String = {
     val px = info.resizeTo(resizeToWidth, resizeToHeight)
@@ -157,14 +156,6 @@ object Global {
     * Wikimedia's sizes the large box needs.
     */
   def largeFallbackPx(image: Image): Int = wikimediaStep(image.resizeTo(largeSizeX, largeSizeY))
-
-  def thumbPhpUrl(info: Image, px: Int, resizeToHeight: Int): String = {
-    val file = URLEncoder.encode(
-      info.title.replaceFirst("File:", "").replace(" ", "_"),
-      "UTF-8"
-    )
-    s"https://commons.wikimedia.org/w/thumb.php?f=$file&w=$px"
-  }
 
   def legacyThumbUlr(info: Image, px: Int, resizeToHeight: Int): String =
     legacyThumbUrl(info, px)

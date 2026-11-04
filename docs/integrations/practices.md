@@ -75,7 +75,8 @@ host (set by root); never a URL from a request; redirects not followed (secure-c
 **1.8 Thumbnails only at Wikimedia's widths.** Any `upload.wikimedia.org/.../thumb/...<px>px-` URL
 we fetch or send a browser to is at one of `Global.wikimediaSteps` (20, 40, 60, 120, 250, 330,
 500, 960, 1280, 1920, 3840), through `Global.wikimediaStep(px)` (the narrowest no narrower), or is
-the original: the cache's source (`LocalImageCacheService.source`), the large view
+the original, once that step reaches the width of a file of known size
+(`LocalImageCacheService.wikimediaUrl`): the cache's source (`LocalImageCacheService.source`), the large view
 (`Global.largeImage`) and every proxy redirect (`ImageProxyController`). The pages' own widths
 (333, 666, 300, …) are served only by our proxy. The test Wikimedia (`FakeWikimedia`, the
 `LocalImageCacheServiceSpec` servers) answers others with 400. *Why:* since 2026-05-13 Wikimedia

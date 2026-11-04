@@ -123,8 +123,10 @@ Developed 2026-11-02 to 2026-11-03, PRs #232–#236.
   service) removed; the app's proxy (`ImageProxyController`) serves thumbnails.
 - **Thumbnails at Wikimedia's widths only:** the image proxy's redirects to `upload.wikimedia.org`
   (a file not stored or of unknown size, a failed fetch, an inconclusive Commons check) go to the
-  next standard width up (`Global.wikimediaStep`), not the page's width, which Wikimedia has
-  refused with 400 since 2026-05-13 (T414805); the test Wikimedia refuses them too (developed
+  next standard width up (`Global.wikimediaStep`), or to a stored file itself once that width
+  reaches the file's, not the page's width, which Wikimedia has refused with 400 since
+  2026-05-13 (T414805); the test Wikimedia refuses them too; the unused `thumb.php` url helper
+  removed (developed
   2026-11-04; [integrations practices](docs/integrations/practices.md) §1.8).
 - **Migrations:** V85 gallery index, V86 timestamp definitions, V87 for the sign-in (#240).
 

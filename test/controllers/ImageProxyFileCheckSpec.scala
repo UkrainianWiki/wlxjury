@@ -218,7 +218,7 @@ class ImageProxyFileCheckSpec
       val result = proxy.serve(thumb("Same"))(signedIn)
       status(result) === SEE_OTHER
       // 333 wide is not one of Wikimedia's sizes (T414805)
-      redirectLocation(result) must beSome("https://upload.wikimedia.org/wikipedia/commons/thumb/a/ab/Same.jpg/500px-Same.jpg")
+      redirectLocation(result) must beSome(endWith("/wikipedia/commons/thumb/a/ab/Same.jpg/500px-Same.jpg"))
       check.stop()
       count("SELECT COUNT(*) FROM images WHERE page_id = 1 AND deleted_at IS NULL") === 1
       count("SELECT COUNT(*) FROM vote WHERE page_id = 1") === 1
@@ -233,8 +233,7 @@ class ImageProxyFileCheckSpec
 
       val result = proxy.serve(thumb("Error_file"))(signedIn)
       status(result) === SEE_OTHER
-      redirectLocation(result) must
-        beSome("https://upload.wikimedia.org/wikipedia/commons/thumb/a/ab/Error_file.jpg/500px-Error_file.jpg")
+      redirectLocation(result) must beSome(endWith("/wikipedia/commons/thumb/a/ab/Error_file.jpg/500px-Error_file.jpg"))
       check.stop()
       source.detailCalls.get === 0
       count("SELECT COUNT(*) FROM images WHERE deleted_at IS NOT NULL") === 0
@@ -254,9 +253,31 @@ class ImageProxyFileCheckSpec
       val result = restarted.serve(thumb("Old_name"))(signedIn)
       status(result) === SEE_OTHER
       again.stop()
-      redirectLocation(result) must
-        beSome("https://upload.wikimedia.org/wikipedia/commons/thumb/a/ab/Old_name.jpg/500px-Old_name.jpg")
+      // to the file as now stored, under its new name
+      redirectLocation(result) must beSome(endWith("/wikipedia/commons/thumb/c/cd/Error_new_name.jpg/500px-Error_new_name.jpg"))
       source.detailCalls.get === 0
+    }
+
+    "redirect a former name's thumbnail to the file itself, not a wider size, when the next size up is that wide" in {
+      val old = commonsImage(1L, "Old_small").copy(width = 300, height = 225)
+      store(old)
+      val current = renamed(old, "Error_small")
+      val (proxy, _, check) = controller(Seq(current))
+      val widths = LocalImageCacheService.servedWidths(old)
+      status(proxy.serve(s"a/ab/Old_small.jpg/${widths.head}px-Old_small.jpg")(signedIn)) === SEE_OTHER
+      check.stop()
+
+      val (restarted, _, again) = controller(Nil)
+      // 280 as a page might ask: not served, so redirected to a served width first
+      val locations = (widths :+ 280).map(px => redirectLocation(restarted.serve(s"a/ab/Old_small.jpg/${px}px-Old_small.jpg")(signedIn)))
+      again.stop()
+      forall(locations.flatten.filterNot(_.startsWith("/"))) { url =>
+        FakeWikimedia.thumbnailWidth(url) match {
+          case Some(w) => (w must be_<(300)) and (Global.wikimediaSteps must contain(w))
+          case None    => url === current.url.get
+        }
+      }
+      locations.flatten.filterNot(_.startsWith("/")) must contain(current.url.get)
     }
   }
 

@@ -86,6 +86,8 @@ class ImageProxyController(
     val segments = path.split("/").toSeq
     // Expect at least: X/XX/filename/Npx-filename (or page1-Npx-filename for PDF/TIF)
     val parsed = for {
+      // the last segment is the thumbnail's name, here and in the redirects ([[wikimedia]])
+      _           <- Option.when(!path.endsWith("/"))(())
       rawFilename <- if (segments.length >= 2) Some(segments(segments.length - 2)) else None
       // Replace '+' before URLDecoding: '+' in path segments is a literal plus,
       // not a space (URLDecoder follows query-param convention by default).
@@ -116,7 +118,7 @@ class ImageProxyController(
 
             case Some((image, direct)) =>
               serveImage(image, px, path) { ex =>
-                if (direct) afterFailedFetch(image, ex, px, path) else Future.successful(wikimedia(path, px))
+                if (direct) afterFailedFetch(image, ex, px, path) else Future.successful(onWikimedia(image, px, path))
               }
 
             case None =>
@@ -171,7 +173,7 @@ class ImageProxyController(
     * ([[LocalImageCacheService.checkOnCommons]]). A renamed or re-uploaded file's thumbnail
     * is served right away ([[serveCurrent]]), a re-uploaded one's other cached sizes dropped
     * ([[LocalImageCacheService.evict]]); a deleted file's is 404. Other failures and
-    * answers, or none in time, redirect to Wikimedia as before.
+    * answers, or none in time, redirect to Wikimedia as before ([[onWikimedia]]).
     */
   private def afterFailedFetch(image: Image, ex: Throwable, px: Int, path: String): Future[Result] =
     cache.checkOnCommons(image, ex).flatMap {
@@ -180,7 +182,7 @@ class ImageProxyController(
         cache.evict(image)
         serveCurrent(current, px, path)
       case FileCheck.Deleted => Future.successful(NotFound)
-      case _                 => Future.successful(wikimedia(path, px))
+      case _                 => Future.successful(onWikimedia(image, px, path))
     }
 
   /** The thumbnail of a renamed or re-uploaded file as now stored, no wider than the file
@@ -197,15 +199,29 @@ class ImageProxyController(
     else serveImage(current, width, path)(_ => Future.successful(onWikimedia))
   }
 
+  /** A stored file's thumbnail `px` wide on Wikimedia, as [[serveCurrent]]'s: no wider than the
+    * file (unless only thumbnails show it, [[Image.thumbnailOnly]]), at the narrowest of
+    * Wikimedia's sizes no narrower, or the file itself once that size reaches the file's width
+    * ([[LocalImageCacheService.wikimediaUrl]]). A file of unknown width, or not a Commons file,
+    * as [[wikimedia]].
+    */
+  private def onWikimedia(image: Image, px: Int, path: String): Result = {
+    val width = if (image.width > 0 && !image.thumbnailOnly) math.min(px, image.width) else px
+    Option.when(image.width > 0)(())
+      .flatMap(_ => cache.wikimediaUrl(image, Global.wikimediaStep(width)))
+      .fold(wikimedia(path, px))(Redirect(_, SEE_OTHER))
+  }
+
   /** The thumbnail `path` on Wikimedia, at the narrowest of its sizes no narrower than `px`
     * ([[Global.wikimediaStep]]): since 2026-05-13 it answers any other width with 400
     * (https://phabricator.wikimedia.org/T414805), and the browser would show a broken image.
+    * For a file not stored or of unknown width; 404 if the last segment isn't a thumbnail's name.
     */
   private def wikimedia(path: String, px: Int): Result = {
     val slash = path.lastIndexOf('/')
-    val standard = LocalImageCacheService.withThumbnailPx(path.substring(slash + 1), Global.wikimediaStep(px))
-      .fold(path)(path.substring(0, slash + 1) + _)
-    Redirect(s"https://upload.wikimedia.org/wikipedia/commons/thumb/$standard", SEE_OTHER)
+    LocalImageCacheService.withThumbnailPx(path.substring(slash + 1), Global.wikimediaStep(px))
+      .fold[Result](NotFound)(name =>
+        Redirect(s"https://upload.wikimedia.org/wikipedia/commons/thumb/${path.substring(0, slash + 1)}$name", SEE_OTHER))
   }
 }
 
