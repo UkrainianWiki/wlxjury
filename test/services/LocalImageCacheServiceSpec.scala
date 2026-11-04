@@ -94,14 +94,20 @@ class LocalImageCacheServiceSpec extends Specification {
     height = h
   )
 
-  /** Starts a local HTTP server whose response depends on the (1-based) request count.
+  /** As Wikimedia: 400 for a thumbnail at a width not among its sizes ([[FakeWikimedia.refused]]). */
+  def asWikimedia(request: HttpRequest)(response: => HttpResponse): HttpResponse =
+    if (FakeWikimedia.refused(request.uri.path.toString)) HttpResponse(StatusCodes.BadRequest) else response
+
+  /** Starts a local HTTP server whose response depends on the (1-based) request count; as
+    * Wikimedia, it refuses a thumbnail at a width not among its sizes ([[asWikimedia]]).
     * Shuts down the server after the body returns.
     */
   def withServer[T](handler: Int => HttpResponse)(body: Int => T): T = {
     val requestCount = new AtomicInteger(0)
     val binding = Await.result(
-      Http().newServerAt("127.0.0.1", 0).bindSync { _ =>
-        handler(requestCount.incrementAndGet())
+      Http().newServerAt("127.0.0.1", 0).bindSync { request =>
+        val n = requestCount.incrementAndGet()
+        asWikimedia(request)(handler(n))
       },
       5.seconds
     )
@@ -1044,7 +1050,7 @@ class LocalImageCacheServiceSpec extends Specification {
       val binding = Await.result(
         Http().newServerAt("127.0.0.1", 0).bindSync { req =>
           requested.add(req.uri.path.toString)
-          HttpResponse(entity = HttpEntity(ContentTypes.`application/octet-stream`, ByteString(jpegBytes(1920, 1440))))
+          asWikimedia(req)(HttpResponse(entity = HttpEntity(ContentTypes.`application/octet-stream`, ByteString(jpegBytes(1920, 1440)))))
         },
         5.seconds
       )
@@ -1071,7 +1077,7 @@ class LocalImageCacheServiceSpec extends Specification {
       val binding = Await.result(
         Http().newServerAt("127.0.0.1", 0).bindSync { req =>
           requested.add(req.uri.path.toString)
-          HttpResponse(entity = HttpEntity(ContentTypes.`application/octet-stream`, ByteString(sent)))
+          asWikimedia(req)(HttpResponse(entity = HttpEntity(ContentTypes.`application/octet-stream`, ByteString(sent))))
         },
         5.seconds
       )
@@ -1096,7 +1102,7 @@ class LocalImageCacheServiceSpec extends Specification {
       val binding = Await.result(
         Http().newServerAt("127.0.0.1", 0).bindSync { req =>
           requested.add(req.uri.path.toString)
-          HttpResponse(entity = HttpEntity(ContentTypes.`application/octet-stream`, ByteString(jpegBytes(330, 440))))
+          asWikimedia(req)(HttpResponse(entity = HttpEntity(ContentTypes.`application/octet-stream`, ByteString(jpegBytes(330, 440)))))
         },
         5.seconds
       )
@@ -1313,6 +1319,63 @@ class LocalImageCacheServiceSpec extends Specification {
 
       tmpDir.delete()
       ok
+    }
+  }
+
+  // ── widths asked of Wikimedia ────────────────────────────────────────────
+
+  "the widths asked of Wikimedia" should {
+
+    // the files of ImageProxyWidthSpec's size list, a photo and a PDF each
+    val files = for {
+      (w, h) <- Seq((800, 600), (4000, 3000), (3000, 4000), (640, 480), (10000, 1000), (200, 150), (300, 400))
+      ext    <- Seq("Photo_%dx%d.jpg", "Doc_%dx%d.pdf")
+      name    = ext.format(w, h)
+    } yield Image(1L, s"File:$name", Some(s"https://upload.wikimedia.org/wikipedia/commons/a/ab/$name"), None, w, h)
+
+    /** The paths asked of a Wikimedia that answers each with an image of the size asked for
+      * (the file's for an original) and refuses non-standard widths ([[asWikimedia]]).
+      */
+    def requested(fetch: LocalImageCacheService => Image => Future[Any]): Seq[String] = {
+      val paths = new java.util.concurrent.ConcurrentLinkedQueue[String]()
+      val binding = Await.result(
+        Http().newServerAt("127.0.0.1", 0).bindSync { req =>
+          val path = req.uri.path.toString
+          paths.add(path)
+          val image = files.find(f => path.contains(f.title.stripPrefix("File:"))).get
+          val w = FakeWikimedia.thumbnailWidth(path).getOrElse(image.width)
+          asWikimedia(req)(HttpResponse(entity = HttpEntity(ContentTypes.`application/octet-stream`,
+            ByteString(jpegBytes(w, math.max(1, w * image.height / image.width))))))
+        },
+        5.seconds
+      )
+      try {
+        files.foreach { file =>
+          val svc = mkService(mkTempDir(), maxAttempts = 1, serverPort = Some(binding.localAddress.getPort))
+          scala.util.Try(Await.result(fetch(svc)(file), 30.seconds))
+        }
+      } finally Await.result(binding.unbind(), 5.seconds)
+      paths.asScala.toSeq
+    }
+
+    "be one of Wikimedia's sizes or the original, for every width the proxy serves" in {
+      val paths = requested(svc => file =>
+        Future.sequence(LocalImageCacheService.servedWidths(file).map(px => svc.fetchAndCacheAll(file, px).recover { case _ => () })))
+      paths must not(beEmpty)
+      forall(paths)(path => FakeWikimedia.refused(path) must beFalse)
+    }
+
+    "be one of Wikimedia's sizes or the original when a round is prefetched" in {
+      val paths = requested(svc => file => svc.downloadAndResize(file))
+      paths.size must be_>=(files.size)
+      forall(paths)(path => FakeWikimedia.refused(path) must beFalse)
+    }
+
+    "be refused as Wikimedia does at other widths, so that a regression fails here" in {
+      FakeWikimedia.refused("/wikipedia/commons/thumb/a/ab/Photo.jpg/333px-Photo.jpg") must beTrue
+      FakeWikimedia.refused("/wikipedia/commons/thumb/a/ab/Doc.pdf/page1-824px-Doc.pdf.jpg") must beTrue
+      FakeWikimedia.refused("/wikipedia/commons/thumb/a/ab/Photo.jpg/330px-Photo.jpg") must beFalse
+      FakeWikimedia.refused("/wikipedia/commons/a/ab/Photo.jpg") must beFalse
     }
   }
 

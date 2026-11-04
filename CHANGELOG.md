@@ -127,6 +127,13 @@ Developed 2026-11-02 to 2026-11-03, PRs #232–#236.
   files on a Java 17 JRE, non-root, three jar layers), MariaDB 10.6.22, secrets from `.env`,
   a CI smoke job (`compose.yml`); scalawiki's pin is one file, `project/scalawiki.sha`
   ([deployment](docs/deployment.md), "Run with docker-compose").
+- **Thumbnails at Wikimedia's widths only:** the image proxy's redirects to `upload.wikimedia.org`
+  (a file not stored or of unknown size, a failed fetch, an inconclusive Commons check) go to the
+  next standard width up (`Global.wikimediaStep`), or to the file itself once that reaches the
+  file's width, never the page's width, which Wikimedia has refused with 400 since
+  2026-05-13 (T414805); the test Wikimedia refuses them too; the unused `thumb.php` url helper
+  removed (developed
+  2026-11-04; [integrations practices](docs/integrations/practices.md) §1.8).
 - **Migrations:** V85 gallery index, V86 timestamp definitions, V87 for the sign-in (#240).
 
 ## Deployed

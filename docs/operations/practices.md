@@ -213,7 +213,8 @@ secure-coding §18. A new pool, worker count or limit is checked against those b
 - **OP2 (1.5):** whole exceptions with driver text are logged (db §11 V2).
 - **OP3 (5.1):** no external monitoring or alerting; a stopped service is noticed by users. The
   local monit check (`conf/monit/wlxjury`) covers a stopped or unready app where it is installed
-  and monit's alerts reach someone.
+  and monit's alerts reach someone. Configuring where monit alerts go is deferred (user,
+  2026-11-04: later); until then the check only writes monit's own log.
 - **OP4 (1.3, 5.3):** the password sign-in form (`LoginController`) logs no failure line: a
   wrong password only re-renders the form with `invalid.user.or.password`. fail2ban (S4) needs a
   `security.auth` line with the client's `ip=` (and the account id, if any) there first.
