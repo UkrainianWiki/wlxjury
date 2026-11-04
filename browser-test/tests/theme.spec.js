@@ -33,7 +33,7 @@ function shade(color) {
   return (r + g + b) / 3 > 127 ? 'light' : 'dark';
 }
 
-test.describe('the colour mode', () => {
+test.describe('the colour mode', { tag: '@J-30' }, () => {
   test('the login page\'s switch sets the mode at once, without a request', async ({ page, context, baseURL }) => {
     await context.addCookies([{ name: 'theme', value: 'light', url: baseURL }]);
     await page.goto('/auth');

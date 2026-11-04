@@ -7,7 +7,7 @@ import { signIn } from '../lib/actions.js';
 import { authFile, ROLES } from '../lib/server.js';
 
 for (const role of ROLES) {
-  setup(`sign in as ${role}`, async ({ page, fixture, browserName }) => {
+  setup(`sign in as ${role}`, { tag: '@J-02' }, async ({ page, fixture, browserName }) => {
     await signIn(page, fixture.accounts[role]);
     const file = authFile(browserName, role);
     fs.mkdirSync(path.dirname(file), { recursive: true });

@@ -103,7 +103,7 @@ class ImageProxyFileCheckSpec
     }
   }
 
-  "a thumbnail Wikimedia doesn't have" should {
+  "a thumbnail Wikimedia doesn't have [J-18]" should {
 
     "be served under the file's new name when Commons renamed it, and stored so" in {
       val old = commonsImage(1L, "Old_name")

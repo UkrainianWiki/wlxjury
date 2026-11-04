@@ -53,7 +53,7 @@ class ThemeSwitchSpec extends PlaySpecification with PlayTestDb with Mockito {
 
   private def themeCookie(result: Future[Result]): Option[Cookie] = cookies(result).get(Theme.CookieName)
 
-  "the theme switch" should {
+  "the theme switch [J-30]" should {
 
     "be refused without the CSRF token, or with a forged one, changing nothing" in {
       withCsrfApp { app =>
@@ -208,7 +208,7 @@ class ThemeSwitchSpec extends PlaySpecification with PlayTestDb with Mockito {
     }
   }
 
-  "signing in" should {
+  "signing in [J-30]" should {
 
     "set the theme cookie from the user's row" in {
       testDbApp { implicit app =>
@@ -232,7 +232,7 @@ class ThemeSwitchSpec extends PlaySpecification with PlayTestDb with Mockito {
     }
   }
 
-  "saving a profile" should {
+  "saving a profile [J-30]" should {
 
     def save(app: Application, as: String, user: User, theme: Option[String]) =
       route(app, FakeRequest(POST, "/users/save")
@@ -336,7 +336,7 @@ class ThemeSwitchSpec extends PlaySpecification with PlayTestDb with Mockito {
     }
   }
 
-  "the theme cookie" should {
+  "the theme cookie [J-30]" should {
     "be Secure when the session cookie is" in {
       implicit val cfg: Map[String, String] = Map("play.http.session.secure" -> "true")
       testDbApp { implicit app =>

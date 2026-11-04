@@ -80,7 +80,7 @@ class RoleAssignmentSpec extends PlaySpecification with PlayTestDb with Mockito 
     (statuses.filterNot(_._2 == BAD_REQUEST) === Nil) and (state() === before)
   }
 
-  "an admin's /users/save" should {
+  "an admin's /users/save [A-08]" should {
     "refuse a role that is not a contest role for their own account" in {
       testDbApp { implicit app =>
         createContests(10)
@@ -163,7 +163,7 @@ class RoleAssignmentSpec extends PlaySpecification with PlayTestDb with Mockito 
     }
   }
 
-  "an organizer's or a juror's /users/save" should {
+  "an organizer's or a juror's /users/save [S-01]" should {
     "leave their own role as it is" in {
       testDbApp { implicit app =>
         createContests(10)
@@ -185,7 +185,7 @@ class RoleAssignmentSpec extends PlaySpecification with PlayTestDb with Mockito 
     }
   }
 
-  "root's /users/save" should {
+  "root's /users/save [R-03]" should {
     "make a member root through users.is_root, writing no contest role" in {
       testDbApp { implicit app =>
         createContests(10)
@@ -238,7 +238,7 @@ class RoleAssignmentSpec extends PlaySpecification with PlayTestDb with Mockito 
     }
   }
 
-  "saveUser for a new user" should {
+  "saveUser for a new user [A-07]" should {
     "not report another IllegalArgumentException as a refused role" in {
       testDbApp { implicit app =>
         createContests(10)

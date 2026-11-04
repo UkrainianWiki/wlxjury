@@ -66,7 +66,7 @@ class CommentAuthorizationSpec extends PlaySpecification with PlayTestDb {
 
   private def commented(as: User): Boolean = CommentJdbc.findAll().exists(_.userId == as.getId)
 
-  "a comment on a round's file" should {
+  "a comment on a round's file [J-25]" should {
 
     "be added by a juror of the round" in {
       testDbApp { app =>

@@ -24,7 +24,7 @@ class ContestTemplateSpec extends PlaySpecification with PlayTestDb {
   private def get(path: String, user: User)(implicit app: Application): String =
     contentAsString(route(app, FakeRequest(GET, path).withSession(Secured.UserName -> user.email).withCSRFToken).get)
 
-  "a contest's monument id template" should {
+  "a contest's monument id template [A-13]" should {
 
     "stay empty when saved empty, and show as the campaign config's" in {
       testDbApp { implicit app =>

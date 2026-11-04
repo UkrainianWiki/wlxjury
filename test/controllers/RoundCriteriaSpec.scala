@@ -87,7 +87,7 @@ class RoundCriteriaSpec extends PlaySpecification with PlayTestDb {
     }
   }
 
-  "the round form" should {
+  "the round form [A-01]" should {
 
     "create a criteria round with its criteria in their order, distributed without rates" in {
       testDbApp { app =>
@@ -313,7 +313,7 @@ class RoundCriteriaSpec extends PlaySpecification with PlayTestDb {
     }
   }
 
-  "a partly rated criteria vote (U5)" should {
+  "a partly rated criteria vote (U5) [J-23]" should {
 
     "stay in the juror's Unrated list and out of the round's active jurors until every criterion is rated" in {
       testDbApp { app =>

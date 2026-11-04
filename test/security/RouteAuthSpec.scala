@@ -68,7 +68,7 @@ class RouteAuthSpec extends Specification {
     sources.get(s"app/${cls.replace('.', '/')}.scala")
   }
 
-  "every routed action" should {
+  "every routed action [S-01]" should {
     "use a Secured builder, or be listed as public or checking the session itself" in {
       val unchecked = for {
         route <- AppRoutes.all

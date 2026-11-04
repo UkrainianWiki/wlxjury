@@ -5,7 +5,7 @@ import { test, expect } from '../lib/fixtures.js';
 import { allowFirefoxLeavingGallery, galleryPath, signIn } from '../lib/actions.js';
 
 test.describe('signing in and out', () => {
-  test('a juror signs in, then signs out from the user menu', async ({ page, fixture, diagnostics, browserName }) => {
+  test('a juror signs in, then signs out from the user menu', { tag: ['@J-02', '@J-06', '@J-07', '@S-02'] }, async ({ page, fixture, diagnostics, browserName }) => {
     allowFirefoxLeavingGallery(diagnostics, browserName); // U22: the sign-out leaves a gallery
     const juror = fixture.freshJuror;
     await signIn(page, juror);
@@ -29,7 +29,7 @@ test.describe('signing in and out', () => {
     await expect(page.getByLabel('Your login')).toBeVisible();
   });
 
-  test('a sign-out without the CSRF token is refused and the session stays', async ({ page, fixture, diagnostics }) => {
+  test('a sign-out without the CSRF token is refused and the session stays', { tag: ['@S-02', '@J-34'] }, async ({ page, fixture, diagnostics }) => {
     const juror = fixture.freshJuror;
     await signIn(page, juror);
     // the page's own cookies, without the form's token
@@ -43,7 +43,7 @@ test.describe('signing in and out', () => {
     await expect(page).toHaveURL(new RegExp(`${gallery}$`));
   });
 
-  test('a wrong password keeps the login page, with its error', async ({ page, fixture, diagnostics }) => {
+  test('a wrong password keeps the login page, with its error', { tag: '@J-03' }, async ({ page, fixture, diagnostics }) => {
     diagnostics.expectStatus(400); // the login page again, as a 400
     await page.goto('/auth');
     await page.getByLabel('Your login').fill(fixture.freshJuror.login);

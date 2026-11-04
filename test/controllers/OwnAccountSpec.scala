@@ -51,7 +51,7 @@ class OwnAccountSpec extends PlaySpecification with PlayTestDb with AccountTestS
       FakeRequest(POST, "/email/confirm").withFormUrlEncodedBody("token" -> token).withCSRFToken)
   }
 
-  "one's own password" should {
+  "one's own password [J-32]" should {
     "change only with the right current password (N2)" in {
       testDbApp { implicit app =>
         createContests(10)
@@ -81,7 +81,7 @@ class OwnAccountSpec extends PlaySpecification with PlayTestDb with AccountTestS
     }
   }
 
-  "one's own email" should {
+  "one's own email [J-32]" should {
     "change only with the current password, and only once the link mailed to the new address is followed" in {
       testDbApp { implicit app =>
         implicit val mat: Materializer = app.materializer
@@ -153,7 +153,7 @@ class OwnAccountSpec extends PlaySpecification with PlayTestDb with AccountTestS
     }
   }
 
-  "one's own wiki account" should {
+  "one's own wiki account [J-32]" should {
     "be read-only until the Commons login verifies it" in {
       testDbApp { implicit app =>
         createContests(10)
@@ -167,7 +167,7 @@ class OwnAccountSpec extends PlaySpecification with PlayTestDb with AccountTestS
     }
   }
 
-  "another account" should {
+  "another account [S-01]" should {
     "never get its password set, by an admin or root" in {
       testDbApp { implicit app =>
         createContests(10)

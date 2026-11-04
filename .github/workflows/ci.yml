@@ -48,6 +48,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # The story coverage matrix (testing practices §9.4), in seconds and before the build: a
+      # story ID that the catalogue lacks or retired, or a malformed one, fails here; the matrix
+      # goes to the job's summary. Its self-test first, so a broken script can't pass vacuously.
+      - name: Story coverage
+        run: |
+          python3 scripts/story-coverage.py --self-test
+          python3 scripts/story-coverage.py > /dev/null
+
       - uses: actions/setup-java@v4
         with:
           distribution: temurin

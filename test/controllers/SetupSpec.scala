@@ -24,7 +24,7 @@ class SetupSpec extends PlaySpecification with PlayTestDb with AccountTestSuppor
   private def form(token: String = SetupToken, email: String = "Root@Example.com", password: String = "root-password") =
     Seq("token" -> token, "login" -> email, "password" -> password, "repeat.password" -> password)
 
-  "without a setup token" should {
+  "without a setup token [R-02]" should {
     "have no setup page, even on an empty database, and the login page say so" in {
       testDbApp { implicit app =>
         status(route(app, FakeRequest(GET, "/setup")).get) === NOT_FOUND
@@ -35,7 +35,7 @@ class SetupSpec extends PlaySpecification with PlayTestDb with AccountTestSuppor
     }
   }
 
-  "with a setup token" should {
+  "with a setup token [R-02]" should {
     implicit val config: Map[String, String] = Map("wlxjury.setup.token" -> SetupToken)
 
     "create root once with the right token, verified, and then be gone" in {

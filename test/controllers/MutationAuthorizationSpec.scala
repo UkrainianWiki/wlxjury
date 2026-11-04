@@ -75,7 +75,7 @@ class MutationAuthorizationSpec extends PlaySpecification with PlayTestDb {
     status(result) mustEqual FORBIDDEN
   }
 
-  "GalleryController.selectWS" should {
+  "GalleryController.selectWS [S-01]" should {
     "reject cross-contest selection mutations" in {
       testDbApp { app =>
         implicit val materializer: Materializer = app.materializer
@@ -131,7 +131,7 @@ class MutationAuthorizationSpec extends PlaySpecification with PlayTestDb {
   // A vote's rate and file, the gallery's (selectWS, JSON) and the large view's (rateByPageId, a
   // page or a redirect): only a rate the round takes (Round.acceptsRate), stored in the
   // juror's own selection of the file; a file not assigned to the juror changes nothing (404).
-  "a juror's vote, in the gallery and the large view" should {
+  "a juror's vote, in the gallery and the large view [S-01]" should {
     val pageId = 1010L
 
     /** A contest, its juror and a file. */
@@ -220,7 +220,7 @@ class MutationAuthorizationSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
-    "take no votes in a comments-only round" in {
+    "take no votes in a comments-only round [J-26]" in {
       testDbApp { app =>
         val juror = setUp()
         val round = roundOf(juror, Round.commentsOnlyRound)
@@ -324,7 +324,7 @@ class MutationAuthorizationSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
-    "change nothing in a stopped round: 409 in the gallery, back to the gallery from the large view" in {
+    "change nothing in a stopped round: 409 in the gallery, back to the gallery from the large view [S-06]" in {
       testDbApp { app =>
         val juror = setUp()
         val round = roundOf(juror, Round.ratesById(5), active = false, rate = 2)
@@ -336,7 +336,7 @@ class MutationAuthorizationSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
-    "change nothing for a juror stopped on the round (P6): 409 in the gallery, back to the gallery from the large view" in {
+    "change nothing for a juror stopped on the round (P6): 409 in the gallery, back to the gallery from the large view [S-06]" in {
       testDbApp { app =>
         val juror = setUp()
         val round = roundOf(juror, Round.ratesById(5), rate = 2)
@@ -459,7 +459,7 @@ class MutationAuthorizationSpec extends PlaySpecification with PlayTestDb {
     }
   }
 
-  "JobController" should {
+  "JobController [A-06]" should {
     "let only the admins of the job's contest see, cancel or retry it" in {
       testDbApp { app =>
         implicit val materializer: Materializer = app.materializer
@@ -974,7 +974,7 @@ class MutationAuthorizationSpec extends PlaySpecification with PlayTestDb {
     }
   }
 
-  "RoundController.saveRound" should {
+  "RoundController.saveRound [A-01, S-01]" should {
     "save a round of the admin's own contest" in {
       testDbApp { app =>
         implicit val materializer: Materializer = app.materializer
@@ -1064,7 +1064,7 @@ class MutationAuthorizationSpec extends PlaySpecification with PlayTestDb {
   private def roundUserActive(roundId: Long, userId: Long): Option[Boolean] =
     RoundUser.byRoundId(roundId).find(_.userId == userId).map(_.active)
 
-  "RoundController.setRound" should {
+  "RoundController.setRound [A-03]" should {
     "stop a round of the admin's own contest" in {
       testDbApp { app =>
         implicit val materializer: Materializer = app.materializer
@@ -1097,7 +1097,7 @@ class MutationAuthorizationSpec extends PlaySpecification with PlayTestDb {
     }
   }
 
-  "RoundController.setRoundUser" should {
+  "RoundController.setRoundUser [A-04]" should {
     "deactivate a juror in a round of the admin's own contest" in {
       testDbApp { app =>
         implicit val materializer: Materializer = app.materializer
@@ -1131,7 +1131,7 @@ class MutationAuthorizationSpec extends PlaySpecification with PlayTestDb {
     }
   }
 
-  "ImageDiscussionController.addComment" should {
+  "ImageDiscussionController.addComment [J-25]" should {
     "reject cross-contest comment mutations" in {
       testDbApp { app =>
         implicit val materializer: Materializer = app.materializer

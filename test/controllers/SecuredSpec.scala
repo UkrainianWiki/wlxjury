@@ -37,7 +37,7 @@ class SecuredSpec extends PlaySpecification with Mockito with PlayTestDb
     }
   }
 
-  "onUnAuthenticated" should {
+  "onUnAuthenticated [J-07]" should {
     val secured = new SecuredWithCc
 
     "answer a script's request with a JSON 401, not the login page" in {
@@ -70,7 +70,7 @@ class SecuredSpec extends PlaySpecification with Mockito with PlayTestDb
     }
   }
 
-  "access denial" should {
+  "access denial [J-35, S-01]" should {
     "return 403 and identify the signed-in account" in {
       testDbApp { implicit app =>
         val user = userDao.create(User("Wrong account", "wrong-account@server.com"))
@@ -126,7 +126,7 @@ class SecuredSpec extends PlaySpecification with Mockito with PlayTestDb
     }
   }
 
-  "access denial page" should {
+  "access denial page [J-35]" should {
     def page(user: User, denial: Secured.Denial)(implicit app: play.api.Application) = {
       val controller = new Secured(app.injector.instanceOf[ControllerComponents]) {}
       val result = controller.onUnAuthorized(user, FakeRequest("GET", "/admin/rounds?contestId=603"), denial)
