@@ -126,6 +126,15 @@ own `actions/cache` is v6.1.0). setup-java v6 caches the JDK too when `cache` is
 workflows set `cache-jdk: false`, as v4 behaved. download-artifact v8 fails on a digest
 mismatch (`digest-mismatch: error`), and `browser.yml`'s report sets `merge-multiple: false`
 (the default) since it reads each `allure-results-*-attempt-*` artifact's own directory.
+`coverallsapp/github-action` v2.3.8 (`8d6379e14d29928660c4ba802d8e85393440b329`, released
+2026-07-27; a composite action, so no Node runtime of its own) sends coverage to Coveralls from
+`coverage.yml` (testing practices §9.5). It downloads Coveralls' `coverage-reporter` binary from
+that project's GitHub releases and checks it against the release's checksum file; the workflow
+pins the binary to v0.6.22 (2026-08-19) with `coverage-reporter-version`, since the action's
+default is `latest`. It replaces the `sbt-coveralls` plugin, which nothing ran and which is
+removed from `project/plugins.sbt` (2026-11-05). The PR comment (`coverage-comment.yml`) adds no
+action: it uses `actions/checkout` as above and the `gh` preinstalled on the runner image, from
+`scripts/coverage_comment.py` (standard library only).
 
 **2.3 Images by exact tag.** `mariadb:10.6.22`, `mariadb:10.11.14`, `python:3.8.20-slim`,
 `koalaman/shellcheck:v0.11.0` (and `rhysd/actionlint:1.7.7` when run by hand); Testcontainers' image through
