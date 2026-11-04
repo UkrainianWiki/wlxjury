@@ -3,6 +3,7 @@
 # not a required check. Plan: docs/plans/2026-11-03-ci-and-scalawiki-packages.md, "Test coverage".
 # Wikimedia access is anonymous (CLAUDE.md, Testing): never pass COMMONS_* or SCALAWIKI_*
 # credentials, as env or secrets, to any job here, and never -Dintegration (live Commons specs).
+# Actions are pinned by commit SHA, the release as a comment (dependencies practices §2.2).
 name: Coverage
 
 on:
@@ -26,19 +27,21 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
         with:
           distribution: temurin
           java-version: 17
           cache: sbt
+          cache-jdk: false   # as v4 (ci.yml)
 
       - uses: sbt/setup-sbt@ecad189dd245444b9ae0a0cd5922fd938b88906f # v1.5.12
 
-      - uses: actions/setup-node@v4
+      # Node 22, as ci.yml (dependencies practices §9, T5)
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 20
+          node-version: 22.23.4
           cache: npm
           cache-dependency-path: javascript-test/package-lock.json
 
@@ -72,7 +75,7 @@ jobs:
 
       - name: Upload coverage reports and logs
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: coverage-reports-attempt-${{ github.run_attempt }}
           # scoverage.xml; coverage-report: Cobertura XML; jest-coverage: lcov.info, the lcov HTML
@@ -90,7 +93,7 @@ jobs:
       - name: Upload the Scala HTML report
         # Pushes and manual runs only: a PR's numbers are in the job summary and the XML above
         if: always() && github.event_name != 'pull_request'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: coverage-html-attempt-${{ github.run_attempt }}
           path: target/scala-2.13/scoverage-report/
