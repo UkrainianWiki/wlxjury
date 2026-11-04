@@ -1,0 +1,18 @@
+# monit's check of the jury app: installed as /etc/monit/conf.d/wlxjury, with wlxjury-check
+# beside this file as /usr/local/lib/wlxjury/monit-check (docs/deployment.md, "Monitoring
+# with monit").
+#
+# Alert only: no start, stop or restart program, and no restart action. systemd restarts the
+# app after a crash (Restart=on-failure); a restart from monit during a deployment would bypass
+# the deployment's hold (zz-deployment-hold.conf, Restart=no) and could rerun a migration.
+#
+# One program check instead of monit's process and HTTP checks: those alert on every deploy,
+# while the script stays quiet while the maintenance flag is on (for up to two hours). It fails
+# when the service is not active or /health/ready doesn't answer 200 (the release's schema and
+# READ COMMITTED, operations practices 2.1). Three failed cycles in a row before an alert, so a
+# crash that systemd restarts within seconds doesn't alert. The script reads the service, port
+# and runtime folder from the deployment tools' deployment.json, named here.
+check program wlxjury with path "/usr/local/lib/wlxjury/monit-check /etc/wlxjury-runtime/deployment.json"
+    with timeout 30 seconds
+  group wlxjury
+  if status != 0 for 3 cycles then alert

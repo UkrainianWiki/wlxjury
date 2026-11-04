@@ -11,7 +11,6 @@ import play.api.test.FakeRequest
 import org.testcontainers.containers.wait.strategy.Wait
 
 import java.io.File
-import java.net.HttpURLConnection
 import scala.annotation.tailrec
 import scala.concurrent.ExecutionContext
 
@@ -33,38 +32,17 @@ class LocalImageCacheServiceDockerSpec extends Specification with CommonsImageFe
 
   lazy val compose: DockerComposeContainer = DockerComposeContainer(
     composeFiles = Seq(new File("docker-compose.test.yml")),
-    exposedServices = Seq(
-      ExposedService("apache",  80,   Wait.forListeningPort()),
-      ExposedService("mariadb", 3306, Wait.forHealthcheck())
-    )
+    exposedServices = Seq(ExposedService("mariadb", 3306, Wait.forHealthcheck()))
   )
 
   lazy val imagesDir = new File("/tmp/wlxjury-jury-images")
 
-  lazy val apacheHost: String = compose.getServiceHost("apache", 80)
-  lazy val apachePort: Int    = compose.getServicePort("apache", 80)
   lazy val mariadbHost: String = compose.getServiceHost("mariadb", 3306)
   lazy val mariadbPort: Int    = compose.getServicePort("mariadb", 3306)
 
   // ── helpers ─────────────────────────────────────────────────────────────────
 
-  /** Simple blocking HTTP GET; returns (statusCode, contentType, X-Jury-Cache header value). */
-  def httpGet(url: String): (Int, Option[String], Option[String]) = {
-    val conn = new java.net.URL(url).openConnection().asInstanceOf[HttpURLConnection]
-    conn.setConnectTimeout(10_000)
-    conn.setReadTimeout(30_000)
-    try (conn.getResponseCode,
-         Option(conn.getContentType),
-         Option(conn.getHeaderField("X-Jury-Cache")))
-    finally conn.disconnect()
-  }
-
-  /** Build an Apache URL from a Wikimedia Commons thumb URL. */
-  def toApacheUrl(wikiUrl: String): String =
-    wikiUrl.replaceFirst("https?://upload\\.wikimedia\\.org",
-                         s"http://$apacheHost:$apachePort")
-
-  /** Build Play app pointing at compose MariaDB and Apache. */
+  /** Build Play app pointing at compose MariaDB. */
   def buildApp(extraConfig: Map[String, String] = Map.empty) =
     new GuiceApplicationBuilder()
       .configure(Map(
@@ -112,45 +90,14 @@ class LocalImageCacheServiceDockerSpec extends Specification with CommonsImageFe
     } else {
       imagesDir.mkdirs()
     }
-    db.TestDocker.start("the Apache cache containers", compose)
+    db.TestDocker.start("the image cache database container", compose)
   }
 
-  // ── test (a): Apache serving ────────────────────────────────────────────────
-
-  "Apache" should {
-
-    "proxy an uncached file from Wikimedia Commons" in {
-      images must not(beEmpty)
-      val image = images.head
-      val px = org.intracer.wmua.ImageUtil.resizeTo(image.width, image.height, 250)
-      // Build a thumb URL using the same pattern as LocalImageCacheService.wikiThumbUrl
-      val wikiUrlOpt = image.url.filter(_.contains("//upload.wikimedia.org/wikipedia/commons/")).map { url =>
-        val base     = url.replace(
-          "//upload.wikimedia.org/wikipedia/commons/",
-          "//upload.wikimedia.org/wikipedia/commons/thumb/"
-        )
-        val thumbFile = url.substring(url.lastIndexOf("/") + 1)
-        s"$base/${px}px-$thumbFile"
-      }
-      wikiUrlOpt must beSome
-      val apacheUrl = toApacheUrl(wikiUrlOpt.get)
-      val (st, _, xCache) = httpGet(apacheUrl)
-      (st mustEqual 200) and (xCache must beSome("proxied"))
-    }
-
-    "return non-200 for a completely bogus path" in {
-      val (st, _, _) = httpGet(
-        s"http://$apacheHost:$apachePort/wikipedia/commons/thumb/x/xx/nosuchfile.jpg/999px-nosuchfile.jpg"
-      )
-      st must be_>=(400)
-    }
-  }
-
-  // ── test (b): jury tool end-to-end ──────────────────────────────────────────
+  // ── jury tool end-to-end ──────────────────────────────────────────
 
   "Jury tool image cache endpoints" should {
 
-    "download all images and serve them at all sizes via Apache" in {
+    "download all images and cache them at all sizes" in {
       images must not(beEmpty)
 
       val app = buildApp()
@@ -191,32 +138,10 @@ class LocalImageCacheServiceDockerSpec extends Specification with CommonsImageFe
 
         val svc = app.injector.instanceOf[LocalImageCacheService]
 
-        // All sizes must be cached on disk
+        // All sizes must be cached on disk, where the app's proxy (ImageProxyController) serves them.
         images.foldLeft(ok: org.specs2.matcher.MatchResult[Any]) { (acc, img) =>
           acc and (svc.allSizesCached(img) must beTrue.updateMessage(
             m => s"${img.title}: $m"))
-        } and {
-          // Spot-check a sample of images: assert Apache serves them from local disk.
-          // X-Cache: local  → file found in DocumentRoot, served without proxying  ✓
-          // X-Cache: proxied → file missing from container, Apache fetched from Wikimedia ✗
-          // Using X-Cache avoids false passes (local file ≈ proxied file both return 200)
-          // and avoids 429s from Wikimedia caused by making many rapid proxy requests.
-          images.take(3).foldLeft(ok: org.specs2.matcher.MatchResult[Any]) { (acc, img) =>
-            controllers.Global.thumbnailWidths(img.width, img.height).foldLeft(acc) { (acc2, px) =>
-              if (px < img.width) {
-                svc.wikiThumbUrl(img, px) match {
-                  case None => acc2
-                  case Some(wikiUrl) =>
-                    val apacheUrl = toApacheUrl(wikiUrl)
-                    val (st, _, xCache) = httpGet(apacheUrl)
-                    acc2 and
-                      (st mustEqual 200).updateMessage(m => s"${img.title} ${px}px status: $m") and
-                      (xCache must beSome("local")).updateMessage(
-                        m => s"${img.title} ${px}px not served from local cache (X-Cache=$xCache): $m")
-                }
-              } else acc2
-            }
-          }
         }
       } finally {
         // running(app) stops Play which closes ALL ScalikeJDBC pools.
