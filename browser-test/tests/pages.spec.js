@@ -10,8 +10,16 @@ import { test, expect } from '../lib/fixtures.js';
 import { galleryPath, largePath } from '../lib/actions.js';
 import { OUT } from '../lib/server.js';
 
-// rule id -> where it is triaged; a finding of these is reported, not failed
-const KNOWN = {};
+// rule id -> where it is triaged (UI practices §9); a finding of these is reported, not failed.
+// The first scans (2026-11-04) found these six rules on 11 of the 17 pages.
+const KNOWN = {
+  'color-contrast': 'U4: outline-secondary buttons and theme labels below 4.5:1',
+  'button-name': 'U5: icon-only buttons inside links (campaigns, users)',
+  'link-name': 'U5: icon-only links (campaigns, users, the rated gallery\'s thumbnail)',
+  label: 'U6: a field without a label (contest images: #source)',
+  'select-name': 'U6: a select without a name (new round form: #jurors, behind Tom Select)',
+  'aria-prohibited-attr': 'U5: aria-label on the navbar\'s disabled view links (round statistics)',
+};
 
 const A11Y_DIR = path.join(OUT, 'a11y');
 

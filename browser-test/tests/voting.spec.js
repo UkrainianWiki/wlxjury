@@ -124,11 +124,12 @@ test.describe('a juror votes', () => {
   test('in the rated round\'s gallery by a tile\'s star', async ({ page, context, fixture }) => {
     const { juror } = fixture.accounts;
     await page.goto(galleryPath(fixture.roundRatingId, juror.id));
-    // the first tile's stars: raty's <i data-alt="n">, as in the large view
-    const stars = page.locator('#gallery [data-alt="1"]').first().locator('..');
-    await expect(stars.locator('[data-alt="5"]')).toHaveCount(1);
+    // the first tile's stars: raty's <i data-alt="n">, as in the large view (tile-votes.js
+    // adds them to unitegallery's tiles, outside #gallery)
+    const star = page.locator('[data-alt="5"]').first();
+    await expect(star).toBeVisible();
     const response = page.waitForResponse((r) => r.request().method() === 'POST' && r.url().includes('/rate/round/'));
-    await stars.locator('[data-alt="5"]').click();
+    await star.click();
     const first = await response;
     expect(first.status()).toBe(200);
     const [, pageId, rate] = new URL(first.url()).pathname.match(/\/pageid\/(\d+)\/select\/(\d+)$/);

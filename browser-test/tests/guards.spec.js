@@ -26,18 +26,20 @@ test.describe('the guards', () => {
   });
 
   test('a request to another host is refused and reported', async ({ page, diagnostics }) => {
+    // Chromium logs the refused load on the console, whenever it arrives
+    diagnostics.allow(/^console error: Failed to load resource: net::ERR_BLOCKED_BY_CLIENT/);
     await page.goto('/auth');
-    // an image: the CSP's img-src allows https:, so only the guard stops it
-    const result = await page.evaluate(() => new Promise((resolve) => {
-      const img = new Image();
-      img.onload = () => resolve('loaded');
-      img.onerror = () => resolve('refused');
+    // an image: the CSP's img-src allows https:, so only the guard stops it (WebKit fires no
+    // error event on the refused image, so the test waits for the guard instead)
+    await page.evaluate(() => {
+      const img = document.createElement('img');
+      img.id = 'other-host';
       img.src = 'https://example.org/x.png';
-    }));
-    expect(result).toBe('refused');
+      document.body.append(img);
+    });
+    await expect.poll(() => diagnostics.otherHosts).toContain('example.org');
+    expect(await page.evaluate(() => document.getElementById('other-host').naturalWidth)).toBe(0);
     expect(diagnostics.take('other host')).toEqual([expect.stringContaining('https://example.org refused')]);
-    // Chromium logs the refused load on the console
-    diagnostics.take('console error');
   });
 
   test('images from Commons get the placeholder', async ({ page }) => {

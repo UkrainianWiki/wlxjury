@@ -33,10 +33,16 @@ const pathOf = (page) => {
   }
 };
 
+// Not problems in any test: Firefox logs a font whose download the next navigation cancelled
+// (NS_BINDING_ABORTED, 0x804B0002 = 2152398850) as a console error.
+const ALWAYS_ALLOWED = [
+  /^console error: .*downloadable font: download failed .* status=2152398850 /,
+];
+
 export class Diagnostics {
   constructor() {
     this.problems = [];
-    this.allowed = [];
+    this.allowed = [...ALWAYS_ALLOWED];
     this.otherHosts = [];
   }
 
@@ -47,7 +53,7 @@ export class Diagnostics {
 
   /** The test opens a page answered with `status`: its response, and Chromium's console line for it. */
   expectStatus(status) {
-    this.allow(new RegExp(`^HTTP ${status} `));
+    this.allow(new RegExp(`^HTTP ${status}: `));
     this.allow(new RegExp(`^console error: Failed to load resource: the server responded with a status of ${status}\\b`));
   }
 

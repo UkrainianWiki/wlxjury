@@ -18,8 +18,11 @@ test.describe('an organizer', () => {
   test('opens the rated round\'s files by rate, of all the jurors', async ({ page, fixture }) => {
     await page.goto(`/byrate/round/${fixture.roundRatingId}/user/0/page/1`);
     await expect(page.getByRole('heading', { level: 1, name: 'By rate' })).toBeAttached();
-    // a file per row, each with its rate, read-only: no vote buttons
-    await expect(page.getByRole('link', { name: /\.jpe?g/i }).first()).toBeVisible();
+    // a file per row, each its image linking to its large view; read-only: no vote buttons
+    const files = page.getByRole('link').filter({ has: page.getByRole('img') })
+      .and(page.locator(`[href*="/large/round/${fixture.roundRatingId}/user/0/"]`));
+    await expect(files.first().getByRole('img')).toBeVisible();
+    expect(await files.count()).toBeGreaterThan(1);
     await expect(page.getByRole('button', { name: /^Select image/ })).toHaveCount(0);
   });
 });
