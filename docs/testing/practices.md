@@ -330,14 +330,24 @@ story, and carries no tag.
   base run" when there is none, e.g. its summaries expired after 90 days), and a link to the run.
   The Coverage job writes `coverage-summary.json` (`coverage-summary.py --json`) as the artifact
   `coverage-summary-attempt-N`; `coverage-comment.yml`, a `workflow_run` workflow, reads it with
-  `scripts/coverage_comment.py`. That workflow is the only one with write rights
-  (`pull-requests: write`, `actions: read`), so it never checks out or runs the PR's code: it
-  checks out only its script, at the default branch, and refuses a summary that isn't exactly the
-  format (known keys, a 40-hex SHA equal to the run's head, the run's PR, percentages from 0 to
-  100), and a run that isn't a PR from this repository (fork PRs get no comment). Its tests,
-  hostile input included, are `scripts/test_coverage_reports.py`, a step of `coverage.yml`. A
-  `workflow_run` workflow runs only from the default branch, so the comment starts once the
-  workflow is on `master`.
+  `scripts/coverage_comment.py`. That workflow is the only one with a write right
+  (`pull-requests: write`, for the comment; its `actions: read`, for the artifacts, only reads),
+  so it never checks out or runs the PR's code: it checks out only its script, at the default
+  branch, and refuses a summary that isn't exactly the format (known keys, a 40-hex SHA equal to
+  the run's head, the run's PR, percentages from 0 to 100) or can't be decoded at all, and a run
+  that isn't a PR from this repository (fork PRs get no comment). Its tests, hostile input
+  included, are `scripts/test_coverage_reports.py`, a step of `coverage.yml`. A `workflow_run`
+  workflow runs only from the default branch, so the comment starts once the workflow is on
+  `master`.
+
+  **What the two columns measure.** The PR column is measured on GitHub's test merge commit of
+  the PR into its base (a `pull_request` run checks that out), labelled with the PR's head SHA.
+  The base column comes from the base branch's latest successful Coverage run: for `master` (or
+  `ukwikidev/followups`), a push run on that commit; for a stacked base such as `stack/*`, the
+  lower PR's own `pull_request` run, which measured *its* merge commit into the branch below it.
+  So in a stack the change is between two merge commits, not between two branch heads. A run
+  without a summary, e.g. of a PR branch whose `coverage.yml` predates this step, is skipped with
+  "the run has no coverage summary", and as a base it counts as "no base run".
 - **Coveralls** ([coveralls.io](https://coveralls.io/github/UkrainianWiki/wlxjury)), once
   enabled: the history per branch and per-file line coverage. `coverage.yml` sends both
   reports in one build with `coverallsapp/github-action` (scoverage's Cobertura XML and Jest's
@@ -348,8 +358,11 @@ story, and carries no tag.
   the job. **What Coveralls receives:** each measured file's path, per-line hit counts and
   branch counts, and an MD5 digest of the file (not its text: Coveralls shows the source by
   fetching the public file from GitHub), plus the commit's SHA, branch, subject line and its
-  author's and committer's names and e-mail addresses, and the run's id and URL. Nothing from
-  `target/` but the two reports; no secret but `GITHUB_TOKEN`.
+  author's and committer's names and e-mail addresses, and the run's id and URL. On a PR run
+  the commit reported is GitHub's test merge commit (what the run checked out), not the PR's
+  head. Nothing from `target/` but the two reports; no secret but `GITHUB_TOKEN`. **Turning
+  Coveralls on adds a third party that keeps this data** (per-file coverage history and the
+  commits' names and e-mail addresses), under Coveralls' own terms and retention.
 
   **To turn it on** (the user's steps): sign in at coveralls.io with GitHub; add the
   repository `UkrainianWiki/wlxjury` (the organisation may first have to approve the Coveralls

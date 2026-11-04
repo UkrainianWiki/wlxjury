@@ -129,9 +129,18 @@ mismatch (`digest-mismatch: error`), and `browser.yml`'s report sets `merge-mult
 `coverallsapp/github-action` v2.3.8 (`8d6379e14d29928660c4ba802d8e85393440b329`, released
 2026-07-27; a composite action, so no Node runtime of its own) sends coverage to Coveralls from
 `coverage.yml` (testing practices §9.5). It downloads Coveralls' `coverage-reporter` binary from
-that project's GitHub releases and checks it against the release's checksum file; the workflow
-pins the binary to v0.6.22 (2026-08-19) with `coverage-reporter-version`, since the action's
-default is `latest`. It replaces the `sbt-coveralls` plugin, which nothing ran and which is
+that project's GitHub releases; the workflow pins the binary to v0.6.22 (2026-08-19) with
+`coverage-reporter-version`, since the action's default is `latest`. **The action's checksum
+check protects against a broken download only, not a compromised release:** it compares the
+binary with `coveralls-checksums.txt` fetched from the same release, so whoever can replace the
+binary there can replace the checksum too. The binary's hash can't be pinned in our workflow: the
+action has no input for a local reporter, and its install step always downloads into `~/bin` and
+puts that first on `PATH`, so a binary we verify ourselves would not be the one it runs. The only
+way to pin the hash would be to drop the action and run the reporter ourselves. The hash checked
+on 2026-11-05, for comparison on the next update: `coveralls-linux-x86_64.tar.gz` v0.6.22,
+SHA-256 `cd042b63bcb2c03fd0fd3372c040507331f5013a997828071e2ab7f9584fc7d6` (recomputed from the
+download, equal to the release's checksum file). The step runs only when Coveralls is enabled,
+with the job's read-only token. It replaces the `sbt-coveralls` plugin, which nothing ran and which is
 removed from `project/plugins.sbt` (2026-11-05). The PR comment (`coverage-comment.yml`) adds no
 action: it uses `actions/checkout` as above and the `gh` preinstalled on the runner image, from
 `scripts/coverage_comment.py` (standard library only).
