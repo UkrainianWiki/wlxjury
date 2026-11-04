@@ -47,7 +47,8 @@ object PoolWatcher {
         case _                      =>
       }
       val cp = scalikejdbc.ConnectionPool.get()
-      // Play's HikariCP pool, or a ScalikeJDBC pool (commons-dbcp2: no count of waiting threads, -1)
+      // Play's HikariCP pool or a HikariTestPool (gatling.pool=small), or another ScalikeJDBC
+      // pool (no count of waiting threads, -1)
       val sample: () => (Int, Int, Int) = cp.dataSource match {
         case h: HikariDataSource =>
           poolName = s"HikariCP max ${h.getMaximumPoolSize}"

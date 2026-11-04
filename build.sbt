@@ -334,8 +334,18 @@ libraryDependencies ++= Seq(
   "io.gatling" % "gatling-test-framework" % GatlingVersion % Test
 )
 
-// commons-dbcp2 (from scalikejdbc-core) brings commons-logging, which Play's jcl-over-slf4j
-// already provides (and shadows on the classpath)
+// scalikejdbc-core's commons-dbcp2 (with commons-pool2) is ScalikeJDBC's default pool, which
+// nothing registers: the app uses Play's HikariCP pool (scalikejdbc.PlayDBApiAdapterModule,
+// ConnectionPoolConfigSpec) and the tests and tools a HikariCP pool too (db.scalikejdbc.
+// HikariTestPool). Only ConnectionPool.add/singleton with a URL and no factory, or
+// scalikejdbc-config's DBs.setup, would reach for it.
+excludeDependencies ++= Seq(
+  ExclusionRule("org.apache.commons", "commons-dbcp2"),
+  ExclusionRule("org.apache.commons", "commons-pool2")
+)
+// commons-logging: jcl-over-slf4j (Play's) provides its API and shadows it on the classpath.
+// commons-dbcp2 brought it at run time; in Test play-test's htmlunit, commons-beanutils and
+// commons-validator (through fluentlenium) still do.
 excludeDependencies += ExclusionRule("commons-logging", "commons-logging")
 // play-mailer 10's jakarta.mail brings com.sun.activation:jakarta.activation 1.2.1: the
 // javax.activation API (the same 31 classes) and the implementation MailcapCommandMap needs.
