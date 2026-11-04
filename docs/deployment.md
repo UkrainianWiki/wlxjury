@@ -55,13 +55,6 @@ POSIX locale (no `LANG`), JDK 17's `sun.jnu.encoding` is ASCII and those paths t
 the service with `LANG=C.UTF-8` (or another UTF-8 locale), in a container image too, and check
 after a change that a gallery with Cyrillic file names gets its thumbnails from the cache.
 
-**Apache 2.4.56 and later and `?` in file names.** The fix for CVE-2023-25690 makes `mod_rewrite`
-refuse (403) a substitution that would carry a `?` decoded from `%3F` unless the rule has
-`UnsafeAllow3F`. `conf/apache/jury-images.conf`'s proxy rule substitutes the decoded path
-(`$1`), so a thumbnail of a Commons file whose name contains `?` is expected to get a 403 from the
-image vhost when it isn't cached (not tested). Don't add `UnsafeAllow3F` to that `[P]` rule: the
-flag reopens the request splitting the fix closed.
-
 It can also recreate a new server. For this server, follow its `docs/adopting-the-existing-server.md`. It replaces the manual steps below, apart from `adopt-legacy` and `scrub-legacy`. Those steps, and the files under `conf/apache`, `conf/systemd` and `conf/wlxjury`, stay here until production is configured from that repository.
 
 Run from a reviewed checkout. `/etc/wlxjury` points into the old Debian installation (`/usr/share/wlxjury`), so runtime settings go in a new real directory. No credentials belong in the checkout, ZIP, command-line arguments or console output.
