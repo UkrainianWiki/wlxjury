@@ -244,7 +244,7 @@ val NimbusOAuthVersion = "11.38.2"
 // PekkoHttpV), which brings them too: update them there first, then here.
 val PekkoVersion = "1.0.3"
 val PekkoHttpVersion = "1.0.1"
-val ScalaTestVersion = "3.2.9"
+val ScalaTestVersion = "3.2.20"
 val TestcontainersScalaVersion = "0.41.0"
 // testcontainers-scala 0.41 brings testcontainers-java 1.19, which Docker Engine 29+
 // rejects (it no longer serves the old default API version); 1.21.4 speaks 1.44.
@@ -323,9 +323,10 @@ libraryDependencies ++= Seq(
   "com.dimafeng" %% "testcontainers-scala-mysql" % TestcontainersScalaVersion % Test,
   "io.chrisdavenport" %% "testcontainers-specs2" % "0.2.0-M5" % Test,
   "org.mock-server" % "mockserver-netty" % MockServerVersion % Test,
-  "net.java.dev.jna" % "jna" % "4.5.0" % Test,
-  "net.java.dev.jna" % "jna-platform" % "4.5.0" % Test,
-  "com.lihaoyi" %% "os-lib" % "0.11.4" % Test,
+  "net.java.dev.jna" % "jna" % "5.19.1" % Test,
+  "net.java.dev.jna" % "jna-platform" % "5.19.1" % Test,
+  // 0.11.8: 0.11.9 (2026-10-26) and 0.11.10 (2026-10-27) were under two weeks old on 2026-11-04
+  "com.lihaoyi" %% "os-lib" % "0.11.8" % Test,
   "org.apache.pekko" %% "pekko-stream-testkit" % PekkoVersion % Test,
   "org.scalameta" %% "munit" % MunitVersion % Test,
   "io.gatling.highcharts" % "gatling-charts-highcharts" % GatlingVersion % Test,
