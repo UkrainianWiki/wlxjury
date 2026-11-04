@@ -207,7 +207,13 @@ pipelineStages := Seq(digest)
 // for it. `sbt doc` still builds it locally.
 PlayKeys.includeDocumentationInBinary := false
 
-scalaVersion := "2.13.15"
+// 2.13.17, not 2.13.18: 2.13.18 miscompiles a single Int literal passed to `Long*` in a method
+// with a further (implicit, default) parameter list, e.g. TestDb.createContests(10): the List
+// holds a boxed Integer and unboxing throws ClassCastException at run time (2.13.15-2.13.17
+// widen it). Play 3.0.12 and webjars-play 3.0.10 declare scala-library 2.13.18; 2.13.18's
+// library adds only one compile-time annotation class to 2.13.17's. Move to 2.13.19+ once a
+// release fixes this and is two weeks old.
+scalaVersion := "2.13.17"
 
 // Keep source decoding and forked JVM defaults deterministic across machines.
 ThisBuild / scalacOptions += "-encoding"
