@@ -18,7 +18,8 @@ export default [
     ],
   },
   {
-    files: ['public/javascripts/*.js'],
+    // our scripts, and the lint's own self-test fixture (lint-selftest/, npm run lint:selftest)
+    files: ['public/javascripts/**/*.js', 'javascript-test/lint-selftest/**/*.js'],
     plugins: { compat },
     languageOptions: {
       ecmaVersion: 2022,

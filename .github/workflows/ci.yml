@@ -57,20 +57,13 @@ jobs:
 
       - uses: sbt/setup-sbt@ecad189dd245444b9ae0a0cd5922fd938b88906f # v1.5.12
 
-      # build.sbt's jsTest runs `npm ci` in javascript-test/ when node_modules is missing
-      - uses: actions/setup-node@v4
+      # build.sbt's jsTest runs `npm ci` in javascript-test/ when node_modules is missing. Node 22:
+      # eslint-plugin-compat 7 needs it (dependencies practices §9, T5)
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: 20
+          node-version: 22.23.4
           cache: npm
           cache-dependency-path: javascript-test/package-lock.json
-
-      # The supported browsers (.browserslistrc) against our scripts' APIs and our stylesheets'
-      # features, in seconds and without a browser (UI practices §6.1a); its npm ci also serves
-      # jsTest below, which then skips its own
-      - name: Compatibility lint
-        run: |
-          npm --prefix javascript-test ci --no-audit --no-fund
-          npm --prefix javascript-test run lint
 
       - name: scalawiki (interim, from source)
         uses: ./.github/actions/scalawiki
@@ -96,6 +89,17 @@ jobs:
           Test/compile test
         env:
           MARIADB_IMAGE: ${{ matrix.mariadb }}
+
+      # The supported browsers (.browserslistrc) against our scripts' APIs and the CSS features
+      # caniuse lists, in seconds and without a browser (UI practices §6.1a), with its self-test.
+      # After the tests and whatever they did, so that a lint failure never hides the suite's
+      # result; node_modules is jsTest's, or installed here if sbt stopped before it
+      - name: Compatibility lint
+        if: success() || failure()
+        run: |
+          [ -d javascript-test/node_modules ] || npm --prefix javascript-test ci --no-audit --no-fund
+          npm --prefix javascript-test run lint
+          npm --prefix javascript-test run lint:selftest
 
       - name: End of the log
         if: failure()

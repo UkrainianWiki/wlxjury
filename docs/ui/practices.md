@@ -132,15 +132,18 @@ version number: Chromium and Firefox ship one every four weeks, Safari once a ye
 *Tested in a browser* is less: the browser tests (testing §10) run one current build of each
 engine on every PR, the one Playwright 1.64.1 bundles (Chromium 156, Firefox 157, WebKit 27.2).
 The previous majors are *linted* only (`.browserslistrc`, the compatibility lint: our scripts'
-APIs and stylesheets' features), never run. A visible change is still looked at by hand in at
+APIs and the CSS features caniuse lists), never run. A visible change is still looked at by hand in at
 least Chromium and Firefox (§5). *Why:* the engines the browser tests run.
 
 **6.1a Compatibility floor: Chrome 109 and Firefox 115.** Signing in, voting and the core pages
 must keep working there (cosmetic issues aren't fixed): no JavaScript or CSS feature newer than
 those versions. *Checked by:* the compatibility lint only (`.browserslistrc` includes them;
 `npm --prefix javascript-test run lint`, a step of `ci.yml`'s job), which sees our scripts' browser
-APIs, their syntax (ES2022) and our stylesheets' features, not how a page renders or behaves
-there, nor a feature a fallback covers. Nothing runs in these versions, and nothing is planned to
+APIs, their syntax (ES2022) and the CSS features caniuse lists (not every property: `text-wrap:
+balance` isn't flagged), not how a page renders or behaves there, nor a feature a fallback
+covers. The inline scripts in templates aren't linted (three today, all trivial: the layout's
+theme script and the two large views' section restore, `InlineScriptHashesSpec`); the lint fails on its own
+fixtures (`npm --prefix javascript-test run lint:selftest`), and reports a needless disable. Nothing runs in these versions, and nothing is planned to
 (the user, 2026-11-04): a difference there is found by users or by hand. *Why:* in a 14-day sample of production's signed-in visitors (2026-11-03, 105
 client and browser pairs) about a fifth used old browsers: Firefox 115 ESR, Chrome 109 (the last
 for Windows 7/8) and old Opera releases. Rerun the count each contest season and raise the floor as
@@ -178,7 +181,7 @@ its reason. The patch inventory, targeted tests and the keep-or-replace decision
 | 4.1 accessible names | axe-core per page in the browser tests' tour (`pages.spec.js`, Chromium) | enforced in CI once the job runs, for serious and critical findings not triaged for that page (U19–U21); the rest a report; not yet a required check |
 | 5 zero CSP violations and console errors | the browser tests' guards (`browser-test/lib/fixtures.js`), every page of every test | enforced in CI once the job runs; not yet a required check |
 | 6.1 one current build per engine, in a browser | `browser.yml`: a job per engine on every PR | enforced in CI once the job runs; not yet a required check |
-| 6.1, 6.1a the supported range: previous majors, Chrome 109, Firefox 115 | the compatibility lint (`.browserslistrc`; `eslint-plugin-compat`, `stylelint-no-unsupported-browser-features`), a step of `ci.yml`'s job | enforced for our scripts' APIs and syntax and our stylesheets' features; not run in those browsers |
+| 6.1, 6.1a the supported range: previous majors, Chrome 109, Firefox 115 | the compatibility lint (`.browserslistrc`; `eslint-plugin-compat`, `stylelint-no-unsupported-browser-features`), a step of `ci.yml`'s job | enforced for our scripts' APIs and syntax and the CSS features caniuse lists; not run in those browsers |
 
 ## 9. Where the code doesn't follow these yet (for triage)
 
@@ -274,7 +277,9 @@ texts, for view specs. Each can get a browser test with its fix.
   its back/forward cache although it is `no-store`, so Back shows the file with its vote from
   before; with the cache off (`WLX_CHROMIUM_BFCACHE=off`) Back loads it again and shows the stored
   vote. Likely Chrome's back/forward cache for `no-store` pages, which restores such a page when
-  no cookie changed, as after a vote. `voting.spec.js`'s four Back checks are expected to fail in Chromium
-  (`test.fail`) until it is fixed (2026-11-04); to confirm in a real Chrome by hand. A fix would
+  no cookie changed, as after a vote. In Chromium `voting.spec.js`'s four Back checks assert it
+  (the `pageshow` event `persisted`, the old vote shown, a fresh load showing the stored one,
+  annotated `U23`), so they fail once Chromium stops restoring the stale page, the signal to
+  revisit this (2026-11-04); to confirm in a real Chrome by hand. A fix would
   reload on `pageshow` with `persisted` (`Secured.noStore`'s comment weighs that against a flash
   of the old votes), or change a cookie on a vote.

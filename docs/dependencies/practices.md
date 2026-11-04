@@ -175,5 +175,7 @@ Jest test, and prefer replacing to patching more of it (secure-coding §8).
   `koalaman/shellcheck:stable`, while CI runs `python:3.8.20-slim` and `v0.11.0`.
 - **T3 (2.1):** `scripts/ui-shots.py` installs `"pillow<11"`, a range.
 - **T4 (6.2):** `unitegallery.js` and `ug-theme-tiles.js` carry no license header.
-- **T5 (1.3):** the workflows run Node 20 (`setup-node`), which reached its end of life in April
-  2026; `browser.yml` keeps it to match `ci.yml`. Move both to Node 22 or 24 in one update PR.
+- **T5 (1.3):** Node 20 reached its end of life in April 2026, and `eslint-plugin-compat` 7.0.2
+  declares Node >= 22. `ci.yml` (whose job runs the lint) and `browser.yml` run Node 22.23.4
+  (2026-10-20, `setup-node` pinned by SHA); `coverage.yml` still runs Node 20 (Jest only), to
+  move with the next update.
