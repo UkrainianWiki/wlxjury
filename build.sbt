@@ -164,6 +164,10 @@ ThisBuild / scalacOptions += "-encoding"
 ThisBuild / scalacOptions += "UTF-8"
 ThisBuild / javacOptions += "-encoding"
 ThisBuild / javacOptions += "UTF-8"
+// Java 17 is the baseline (the user, 2026-11-04; production runs OpenJDK 17): class files and the
+// JDK API are 17's whatever JDK builds, so a newer local JDK can't slip in a newer API.
+ThisBuild / scalacOptions += "-release:17"
+ThisBuild / javacOptions ++= Seq("--release", "17")
 ThisBuild / javaOptions += "-Dfile.encoding=UTF-8"
 Universal / javaOptions += "-Dfile.encoding=UTF-8"
 

@@ -37,6 +37,15 @@ Scala, sbt and JDK before choosing it, and read its sources in `target/dep-sourc
 compiler plugin is published per full Scala version, and 2.4.x starts at Scala 2.13.16 (this build
 is 2.13.15); 2.1.0 couldn't resolve at all (CI plan, "Test coverage").
 
+**1.2a Java 17 is the baseline** (the user, 2026-11-04). The build compiles with `-release:17`
+(scalac) and `--release 17` (javac); CI and the deployment test images run JDK 17, and production
+runs OpenJDK 17 ([deployment.md](../deployment.md), "Java 17 is required"). An update that needs
+Java 17 is fine. One that needs a newer JDK (class files above version 61, or JDK 21 APIs) waits
+until the baseline moves. Java 11 is not supported: don't hold a version back, or add a pin, for
+it. `javap -v` on a class from the jar shows its level (`major version: 61` is Java 17). *Why:*
+many updates now need 17 (Flyway 10 and later already did: `FlywayVersion` 13.12.0 is version 61),
+and production has run 17 since its Ubuntu 22.04 install.
+
 **1.3 Used, maintained, reviewed.** A new dependency is used by the code that adds it, has recent
 releases and a responsive upstream, and is named in the PR's "Security" section
 (`dependencies`); an unused one is removed (S10 removed `play-pac4j`, comparing `sbt dist`'s

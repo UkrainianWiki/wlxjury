@@ -149,7 +149,8 @@ heap after GC, and the error rate in the first hour.
 
 ## 6. Runtime limits
 
-The JVM runs with `-Xmx1g -XX:MaxDirectMemorySize=128m -XX:+ExitOnOutOfMemoryError` and
+The JVM is OpenJDK 17, the build's baseline ([deployment.md](../deployment.md), "Java 17 is
+required"). It runs with `-Xmx1g -XX:MaxDirectMemorySize=128m -XX:+ExitOnOutOfMemoryError` and
 `MALLOC_ARENA_MAX=2` (`/etc/default/wlxjury`); MariaDB has a 128 MiB buffer pool, 256 MiB
 recommended (`bench/cnf/recommended-60-wlxjury.cnf`, performance §4.6); pools, dispatchers and job workers have the budget
 of performance §4.5 and db §5.6; per-request limits (bcrypt, API tokens, the image proxy) are

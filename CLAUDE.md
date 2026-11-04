@@ -134,6 +134,7 @@ The ZIP is the only release artifact (no Debian or RPM packages); `wlxjury-relea
 ## Architecture
 
 ### Tech Stack
+- **Java 17** baseline: `-release:17` / `--release 17`, CI and production on JDK 17; no Java 11 support (`docs/dependencies/practices.md` §1.2a)
 - **Play Framework 3.0** (Scala 2.13, Netty server — Pekko HTTP server disabled)
 - **ScalikeJDBC 4.3** with ORM (`CRUDMapper`) for database access
 - **MariaDB** as the database with **Flyway** 13 (Community) migrations (`conf/db/migration/default/`, V files only: no `B` baseline script), run by `db.Migrations` (the app at start, `SharedTestDb`, migration specs)
