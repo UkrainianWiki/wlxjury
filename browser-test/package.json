@@ -6,7 +6,8 @@
   "scripts": {
     "server:start": "node fixture-server.mjs start",
     "server:stop": "node fixture-server.mjs stop",
-    "test": "playwright test"
+    "test": "playwright test",
+    "check:proxy-errors": "node lib/proxy-errors.check.mjs"
   },
   "engines": {
     "node": ">=20"
