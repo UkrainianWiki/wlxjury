@@ -76,11 +76,19 @@ production's MariaDB build (performance §2.6).
 
 ## 3. Pekko and scalawiki
 
-**3.1 Pekko follows scalawiki.** Pekko and Pekko HTTP come with scalawiki, whose versions are in its
-`project/Dependencies.scala` (`Library.Pekko`: `PekkoV`, `PekkoHttpV`). Bump scalawiki first, then
-`PekkoVersion` (1.0.3) and `PekkoHttpVersion` (1.0.1) in `build.sbt`, then rerun the image cache
-specs (`LocalImageCacheService*Spec`, which use Pekko HTTP's client). *Why:* two Pekko versions on
-one classpath fail at run time, not at compile time (secure-coding §19; the `build.sbt` comment).
+**3.1 Pekko follows scalawiki and Play.** Pekko HTTP comes with scalawiki, whose versions are in its
+`project/Dependencies.scala` (`Library.Pekko`: `PekkoV`, `PekkoHttpV`), and Play itself is built on
+Pekko (actor, stream). A Pekko version must suit both: bump scalawiki first, check that the Play
+line in use accepts that Pekko, then `PekkoVersion` (1.0.3) and `PekkoHttpVersion` (1.0.1) in
+`build.sbt`, then rerun the image cache specs (`LocalImageCacheService*Spec`, which use Pekko HTTP's
+client). Pekko 2.0 waits for a Play release that supports it (none known yet; user, 2026-11-04).
+*Why:* two Pekko versions on one classpath fail at run time, not at compile time (secure-coding §19;
+the `build.sbt` comment).
+
+**3.3 The next major lines** (user, 2026-11-04): Play 3.1 is not released yet; Pekko 2.0 comes with
+a Play release that supports it (3.1); Scala 3 is not planned, and may come later together with
+scalawiki's own improvements; sbt 2 is worth investigating for development speed (roadmap, "sbt 2
+investigation").
 
 **3.2 scalawiki is pinned by commit** until a tagged package exists (integrations §2.1, §2.4).
 
