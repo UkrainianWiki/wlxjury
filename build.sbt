@@ -157,16 +157,21 @@ Universal / mappings := {
 Test / unmanagedSources += baseDirectory.value / "project" / "BuildIdentity.scala"
 
 // The docker-compose image (`sbt Docker/publishLocal`, docker-compose.yml): the ZIP's files under
-// /opt/docker on a Java 17 JRE, run as a non-root user. The base is pinned by digest: Temurin
-// 17.0.20.1 (released 2026-08-19, production's JRE; dependencies practices §1.1, §2.3) on Ubuntu
-// 22.04, production's release.
+// /opt/docker on a Java 17 JRE, run as a non-root user. The base is pinned by digest, and that
+// digest is itself at least 14 days old (dependencies practices §1.1, §2.3): Temurin 17.0.20.1
+// (production's JRE) on Ubuntu 22.04, the build of 2026-10-17 (the tag is rebuilt for OS
+// updates; this digest is the one docker-library/repo-info recorded then). 17.0.21 (2026-10-22)
+// was 13 days old on 2026-11-04.
 Docker / packageName := "wlxjury"
-dockerBaseImage := "eclipse-temurin:17.0.20.1_1-jre-jammy@sha256:c35794d1348777e6bc310b9b7f420098ef8f37e988199549b545fded79a895a2"
+dockerBaseImage := "eclipse-temurin:17.0.20.1_1-jre-jammy@sha256:b3054a20e1a851574cdb1692dd0db5310c647e62214a2a7abecbec1b9e3ae8f1"
 // The version tag, and `local`, the tag docker-compose.yml runs (it needn't change per release).
 dockerAliases := Seq(dockerAlias.value, dockerAlias.value.withTag(Some("local")))
 dockerExposedPorts := Seq(9000)
 Docker / daemonUser := "wlxjury"
 Docker / daemonUserUid := Some("10001")
+// its own group, not root's (the plugin's default gid 0)
+Docker / daemonGroup := "wlxjury"
+Docker / daemonGroupGid := Some("10001")
 // Writable by that user (the files under /opt/docker are read-only to it): the file log
 // (logback.xml) and the thumbnail cache (wlxjury.thumbs.local-path).
 dockerExposedVolumes := Seq("/opt/docker/logs", "/var/www/jury-images")
