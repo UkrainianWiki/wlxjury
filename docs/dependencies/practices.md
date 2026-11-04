@@ -63,9 +63,13 @@ object R {
 `create(10, 20)`, `create(10L)` and a method without the second list are fine. No scala/bug issue
 matched (searched read-only on 2026-11-04: varargs, `Long`, widening, `unboxToLong`, the
 2.13.18 regressions); reporting it upstream is open. Move to a 2.13.x that fixes it once that
-release is two weeks old. Play 3.0.12 and webjars-play 3.0.10 declare scala-library 2.13.18;
-its class list differs from 2.13.17's by one compile-time annotation
-(`scala.annotation.unchecked.uncheckedOverride`).
+release is two weeks old. Play 3.0.12 declares scala-library 2.13.18; its class list differs
+from 2.13.17's by one compile-time annotation (`scala.annotation.unchecked.uncheckedOverride`).
+2.13.18 fixed two known regressions of 2.13.17, and neither affects this build:
+- annotations invisible to macros when the annotation class extends a class with arguments
+  (scala/bug#13140, scala/scala#11173). This matters to Tapir's derived schemas, but `app/` puts
+  no such annotation on a derived type;
+- the `-Xlint:infer-any` false positives (scala/scala#11162). The build doesn't enable `-Xlint`.
 
 **1.2a Java 17 is the baseline** (the user, 2026-11-04). The build compiles with `-release:17`
 (scalac) and `--release 17` (javac); CI and the deployment test images run JDK 17, and production
@@ -233,3 +237,6 @@ Jest test, and prefer replacing to patching more of it (secure-coding §8).
   declares Node >= 22. `ci.yml` (whose job runs the lint) and `browser.yml` run Node 22.23.4
   (2026-10-20, `setup-node` pinned by SHA); `coverage.yml` still runs Node 20 (Jest only), to
   move with the next update.
+- **T6 (5.1):** `ErrorHandler.withCookieCells` is redundant since Play 3.0.9, which always gives a
+  request its cookies, session and flash (playframework #13407, #13415). Remove it, with its
+  malformed-URI spec, in a later clean-up.
