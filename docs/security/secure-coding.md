@@ -204,11 +204,21 @@ Text given to a vendored library is escaped for the sink that library uses.
 and raty insert with jQuery's `.html()`: the tile `alt` and `data-description` are escaped once
 more (`gallery.scala.html`, `contestFiles.scala.html`); raty gets numbers and empty hints only
 (`large-stars.js`). Local patch to unitegallery (S5): the thumbnail `alt` (`setHtmlThumb`, the
-image-effect overlay) is `escapeAttr(htmlToText(title))` and `urlThumb` is escaped; keep it if
-the file is replaced, and prefer replacing the library to patching more of it.
+image-effect overlay) is `escapeAttr(htmlToText(title))` and `urlThumb` is escaped, and the
+lightbox slide's url (`placeImageInsideParent`, `data-image`) is escaped (register N14,
+2026-11-04); keep them if the file is replaced, and prefer replacing the library to patching more
+of it. Every patch and the sinks left as upstream wrote them (the lightbox title and
+description, `.html()` of the template-escaped `alt` and `data-description`; the link icon's
+`href`, unreachable, N15) are listed in [the vendor doc](../vendor/unitegallery.md) §2–§3.
+`RawHtmlSinksSpec` exempts `unitegallery.js`, `jquery.raty.js` and `jquery.hotkeys.js` by name,
+so unitegallery's sinks are guarded by the Jest patch tests instead. It does scan
+`ug-theme-tiles.js`. **G5 gap (register N16, Info):** its `DomRaw` pattern doesn't match
+jQuery's `.append`, `.prepend`, `.before`, `.after` or `jQuery("<…")`, so it wouldn't flag
+data inserted through them in any script. The spec isn't changed yet.
 
 **Guards.** `security.RawHtmlSinksSpec` (G5), `views.WikiLinksSpec`,
-`views.GalleryDescriptionViewSpec`, `ContestFilesPageSpec`, Jest `unitegallery-alt.test.js`.
+`views.GalleryDescriptionViewSpec`, `ContestFilesPageSpec`, Jest `unitegallery-alt.test.js` and
+`unitegallery-patches.test.js` (hostile titles, urls and marks through the running gallery).
 
 **Exceptions** (`RawHtmlSinksSpec.Allowed`, each with what it inserts): `bs/FieldView`,
 `GalleryTiles`, `JsTexts`, `WikiLinks`, `contestFiles`, `large/contestFile`,

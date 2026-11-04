@@ -134,6 +134,12 @@ Developed 2026-11-02 to 2026-11-03, PRs #232–#236.
   2026-05-13 (T414805); the test Wikimedia refuses them too; the unused `thumb.php` url helper
   removed (developed
   2026-11-04; [integrations practices](docs/integrations/practices.md) §1.8).
+- The vendored gallery (Unite Gallery 1.7.28) is inventoried and tested: every wlxjury patch is
+  listed with its commits, and the formerly unmarked ones are marked. Jest runs the gallery in
+  jsdom, with a test per patch that fails when the patch is reverted. The lightbox slide's url
+  is now escaped too. The patched copy stays until our own tiles replace it, planned later
+  with the other frontend changes (developed
+  2026-11-04; [docs/vendor/unitegallery.md](docs/vendor/unitegallery.md)).
 - Dependency updates, part 1 (developed 2026-11-04):
   - Unused and duplicate jars are off the runtime classpath: JMH moved to `Test`; scalawiki's chart jars, its play-json 2.9.4 and `commons-logging` are excluded. `lib/` went from 209 jars, 128.4 MB to 196 jars, 121.5 MB.
   - play-mailer 10.1.0 (`org.playframework`), Play 3.0.12 and Scala 2.13.17. Scala skips 2.13.18, which miscompiles a single `Int` literal passed to `Long*` in a method with a further parameter list ([dependencies practices](docs/dependencies/practices.md) §1.2b).

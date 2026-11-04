@@ -1004,7 +1004,9 @@ function UGFunctions(){
 			obj.style += "left:"+obj.imageLeft+"px;";
 		}
 
-		urlImage = urlImage.replace('"','\"');
+		//wlxjury: the url escaped for the quoted attribute; upstream's replace('"','\"') changed
+		//nothing ('\"' is '"'). The lightbox's slides (data-image) are placed on every gallery page
+		urlImage = t.escapeAttr(urlImage);
 
 		htmlImage += " style='"+obj.style+"'";
 		htmlImage += " src=\""+urlImage+"\"";
@@ -10367,6 +10369,7 @@ function UGTileDesign(){
 		CUSTOM: "custom"
 	};
 
+	//wlxjury: the binary round's thumbs on a tile, as events for the tiles theme (issue #6)
 	this.events = {
 		TILE_CLICK: "tile_click",
 		SELECT_CLICK: "select_click",
@@ -10706,6 +10709,8 @@ function UGTileDesign(){
 
 				htmlAdd += "<div class='ug-tile-icon " + iconPlayClass + "' style='display:none'></div>";
 
+				//wlxjury: thumbs up and down on a juror's tiles in a binary round (options jury and
+				//binary, gallery-init.js; issue #6)
 				if(g_options.jury) {
 					if(g_options.binary) {
 						htmlAdd += "<div class='ug-tile-icon ug-icon-select' style='display:none'></div>";
@@ -10729,6 +10734,8 @@ function UGTileDesign(){
 
 			}
 
+			//wlxjury: toSaparateIcon spelt toSeparateIcon; below, the select icon takes the link
+			//icon's place (upstream hid .ug-icon-link here and made the tile clickable without it)
 			var toSeparateIcon = g_temp.isSaparateIcons;
 			if(toSeparateIcon == false && objItem.type != "image" && g_temp.isVideoplayIconAlwaysOn == true)
 				toSeparateIcon = true;
@@ -10997,6 +11004,7 @@ function UGTileDesign(){
 		return objButton;
 	}
 
+	//wlxjury: the tile's thumbs up (select) and down (reject) icons, or null (issue #6)
 	function getButtonSelect(objTile){
 		var objButton = objTile.find(".ug-icon-select");
 		if(objButton.length == 0)
@@ -11252,6 +11260,9 @@ function UGTileDesign(){
 	/**
 	 * position the elements
 	 */
+	//wlxjury: the zoom icon above the middle and the thumbs up and down below it, rather than
+	//upstream's zoom and link icons side by side; the gap above a text panel a third of its
+	//height, not a half (issue #6: icons on portrait files)
 	function positionElements(objTile){
 
 		var objItem = t.getItemByTile(objTile);
@@ -11668,6 +11679,8 @@ function UGTileDesign(){
 
 	/**
 	 * on select icon click
+	 * wlxjury: the thumbs' clicks, as onLinkButtonClick, become SELECT_CLICK / REJECT_CLICK for
+	 * the tiles theme (issue #6)
 	 */
 	function onSelectButtonClick(event){
 		var objTile = jQuery(this).parents(".ug-tile");
@@ -11721,6 +11734,7 @@ function UGTileDesign(){
 		g_objParentWrapper.delegate(".ug-tile", "click", onTileClick);
 
 		g_objParentWrapper.delegate(".ug-tile .ug-icon-link", "click", onLinkButtonClick);
+		//wlxjury: the deleted file's mark and the thumbs
 		g_objParentWrapper.delegate(".ug-tile .wlx-deleted-label", "click", onDeletedLabelClick);
 		g_objParentWrapper.delegate(".ug-tile .ug-icon-select", "click", onSelectButtonClick);
 		g_objParentWrapper.delegate(".ug-tile .ug-icon-reject", "click", onRejectButtonClick);
@@ -19839,7 +19853,7 @@ function UniteGalleryMain(){
 
 			if(tagname == "img"){
 
-				//protection against lazy load
+				//protection against lazy load (wlxjury: lasy spelt lazy, no change in behaviour)
 				var lazyLoadSrc = objChild.data("lazyload-src");
 				if(lazyLoadSrc && lazyLoadSrc != ""){
 					objChild.attr("src", lazyLoadSrc);
@@ -19864,6 +19878,8 @@ function UniteGalleryMain(){
 
 				objItem.title = objChild.attr("alt");
 
+				//wlxjury: the file's page id, round, the viewer's vote and its large view's url, for
+				//the tiles theme's votes and clicks (gallery.scala.html; issue #6)
 				objItem.pageId = objChild.attr("data-pageId");
 				objItem.roundId = objChild.attr("data-roundId");
 				objItem.rate = objChild.attr("data-rate");
