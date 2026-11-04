@@ -113,7 +113,18 @@ async function watchPages(context, diagnostics, { routed }) {
   });
   const watch = (page) => {
     page.on('console', (m) => {
-      if (m.type() === 'error') diagnostics.add('console error', page, m.text().slice(0, 300));
+      if (m.type() !== 'error') return;
+      // the routeless browser: the engine's line for an upload the dead proxy refused, by the
+      // failed resource's URL (the message's location), not any line of the test
+      if (!routed && PROXY_REFUSED.test(m.text()) && isUploadUrl(m.location()?.url)) return;
+      diagnostics.add('console error', page, m.text().slice(0, 300));
+    });
+    // a WebSocket: the guard's route doesn't see one (that takes routeWebSocket); the app opens none
+    page.on('websocket', (ws) => {
+      const url = new URL(ws.url());
+      if (LOCAL_HOSTS.has(url.hostname)) return;
+      diagnostics.otherHosts.push(url.hostname);
+      diagnostics.add('other host', page, `${url.origin} (WebSocket)`);
     });
     // with the top of its stack: where it was thrown
     page.on('pageerror', (e) => diagnostics.add('page error', page,
@@ -127,7 +138,9 @@ async function watchPages(context, diagnostics, { routed }) {
       const failure = r.failure()?.errorText ?? '';
       if (diagnostics.refused.has(r) || CANCELLED.test(failure)) return;
       const url = new URL(r.url());
-      if (!routed && isCommonsUpload(url, r)) return; // the dead proxy's
+      // the routeless browser: the dead proxy refuses upload.wikimedia.org's files (the large
+      // image, which falls back to this host's)
+      if (!routed && isCommonsUpload(url, r)) return;
       diagnostics.add('request failed', page, `${url.origin}${url.pathname} (${failure})`);
     });
     if (!routed) {
@@ -186,8 +199,18 @@ function routelessLaunch(browserName) {
   return { proxy: DEAD_PROXY };
 }
 
-// the engine's console line for the large image refused by the dead proxy
-const PROXY_REFUSED = /^console error: Failed to load resource: (net::ERR_PROXY_CONNECTION_FAILED|.*proxy|Could not connect)/i;
+// the engine's console line for a resource the dead proxy refused (lib's guards.spec.js has the
+// failures' texts); accepted only for a file of upload.wikimedia.org (isUploadUrl)
+const PROXY_REFUSED = /^Failed to load resource: (net::ERR_PROXY_CONNECTION_FAILED|NS_ERROR_PROXY_CONNECTION_REFUSED|Could not connect to server)$/;
+
+function isUploadUrl(u) {
+  try {
+    const url = new URL(u);
+    return url.protocol === 'https:' && url.hostname === COMMONS_UPLOAD;
+  } catch {
+    return false;
+  }
+}
 
 export const test = base.extend({
   fixture: async ({ browserName }, use) => use(fixtureFor(browserName)),
@@ -227,7 +250,6 @@ export const test = base.extend({
         baseURL: fixture.baseUrl,
         storageState: role ? authFile(browserName, role) : undefined,
       });
-      diagnostics.allow(PROXY_REFUSED);
       await watchPages(context, diagnostics, { routed: false });
       opened.push(context);
       return context;

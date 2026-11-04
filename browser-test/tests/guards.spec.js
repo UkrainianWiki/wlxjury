@@ -66,17 +66,51 @@ test.describe('the guards', () => {
     expect(sizes).toEqual([[640, 480], [640, 480]]);
   });
 
-  test('the routeless browser refuses other hosts too', async ({ routelessAs, diagnostics }) => {
-    // the image's failure through the dead proxy, whenever it arrives
-    diagnostics.allow(/^request failed: https:\/\/example\.org\/x\.png /);
-    const page = await (await routelessAs(null)).newPage();
+  // the engine's error for a connection to the dead proxy (lib/fixtures.js DEAD_PROXY), as seen
+  // on 2026-11-04 (Chromium 156, Firefox 157, WebKit 27.2)
+  const PROXY_ERROR = {
+    chromium: /^net::ERR_PROXY_CONNECTION_FAILED$/,
+    firefox: /^NS_ERROR_PROXY_CONNECTION_REFUSED$/,
+    webkit: /^Could not connect to server$/,
+  };
+
+  test('the routeless browser sends other hosts to the dead proxy, which refuses them', async ({ routelessAs, diagnostics, browserName }) => {
+    // the refusals' own reports, whenever they arrive: the failed requests and the engines' console
+    // lines for them
+    diagnostics.allow(/^request failed: https:\/\/example\.org\//);
+    diagnostics.allow(/^console error: .*(example\.org|proxy|Could not connect|Couldn't connect)/i);
+    const failures = [];
+    const context = await routelessAs(null);
+    context.on('requestfailed', (r) => failures.push([new URL(r.url()).origin, r.failure()?.errorText]));
+    const page = await context.newPage();
     await page.goto('/auth');
+    // an image (the CSP's img-src allows https:), and from a page without a CSP an https fetch
+    // and a wss:// WebSocket
     await page.evaluate(() => {
       const img = document.createElement('img');
       img.src = 'https://example.org/x.png';
       document.body.append(img);
     });
-    await expect.poll(() => diagnostics.otherHosts).toContain('example.org');
-    expect(diagnostics.take('other host')).toEqual([expect.stringContaining('https://example.org refused')]);
+    await expect.poll(() => failures.length).toBeGreaterThan(0);
+    const blank = await context.newPage();
+    const results = await blank.evaluate(() => Promise.all([
+      fetch('https://example.org/api').then(() => 'loaded', () => 'refused'),
+      new Promise((resolve) => {
+        const ws = new WebSocket('wss://example.org/socket');
+        ws.onopen = () => { ws.close(); resolve('open'); };
+        ws.onerror = () => resolve('refused');
+      }),
+    ]));
+    expect(results).toEqual(['refused', 'refused']);
+    await expect.poll(() => failures.length).toBeGreaterThanOrEqual(2);
+    for (const [origin, error] of failures) {
+      expect(origin).toBe('https://example.org');
+      expect(error, `${browserName}'s error for the dead proxy`).toMatch(PROXY_ERROR[browserName]);
+    }
+    // each reported as another host, and each failure
+    expect(diagnostics.take('other host')).toEqual(expect.arrayContaining([
+      expect.stringContaining('https://example.org refused'),
+    ]));
+    expect(diagnostics.otherHosts.filter((h) => h === 'example.org').length).toBeGreaterThanOrEqual(2);
   });
 });

@@ -495,12 +495,12 @@ On every PR, in one current build of each engine (Chromium 156, Firefox 157, Web
 ### Known gaps
 
 - **Back after a vote in Chrome shows the old vote** (U23, [UI](ui/practices.md) §9): Chromium
-  brings the `no-store` large view back from its back/forward cache; the browser tests expect it
-  to fail there. Nothing to check by hand until it is fixed, but once, in a real Chrome, whether
+  brings the `no-store` large view back from its back/forward cache; the browser tests assert
+  that stale page there, and fail once it stops. Nothing to check by hand until it is fixed, but once, in a real Chrome, whether
   Chrome does it too (U23 says so).
 - **The previous majors and the floor (Chrome 109, Firefox 115) are linted, not run**
   ([UI](ui/practices.md) §6.1, §6.1a): the compatibility lint (`.browserslistrc`, `ci.yml`) sees
-  our scripts' APIs and syntax and our stylesheets' features, not rendering or behaviour. A
+  our scripts' APIs and syntax and the CSS features caniuse lists, not rendering or behaviour. A
   release that changes how the core pages work (sign-in, voting) can be tried by hand in
   Firefox 115 ESR or Chrome 109 where one is at hand; it is not required.
 - **The side sections' first frame** (U18) and **Firefox's page error when leaving a gallery**

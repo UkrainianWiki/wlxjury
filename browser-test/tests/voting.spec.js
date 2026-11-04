@@ -4,8 +4,10 @@
 // (vote_then_back), with the buttons found by role and name instead of their classes (U1).
 // The large-view tests run in the routeless browser (lib/fixtures.js routelessAs): the guard's
 // routes turn the browser's cache off and Playwright's Chromium has no back/forward cache, so
-// with them a page without no-store would pass too. Without no-store they fail in Firefox and
-// WebKit; in Chromium they fail with it too (U23, expected to fail there).
+// with them a page without no-store would pass too. Without no-store they fail in Firefox. In
+// Chromium, Back restores the no-store large view from the back/forward cache with the old vote
+// (U23): there they assert just that (the page restored, the old vote shown, a fresh load showing
+// the stored one), so they fail once Chromium stops doing it, the signal to revisit U23.
 // Each engine votes as its own juror (lib/server.js), so the engines can share a server; each
 // test reads the file's vote first and casts one that changes it, so a rerun votes again.
 import { test, expect } from '../lib/fixtures.js';
@@ -41,35 +43,41 @@ async function voteAndMove(page, act) {
   return new URL(request.url());
 }
 
-/** Back after the vote: the voted file, showing the stored vote, as a fresh load of it does. */
-async function expectBackShowsVote(page, url, read, expected) {
+/** Back after the vote: the voted file, showing the stored vote `expected`, as a fresh load of
+  * it does; in Chromium (U23), the page restored from the back/forward cache with the vote it had
+  * `before`. */
+async function expectBackShowsVote(page, url, read, expected, before, browserName) {
   // 'commit': a page the back/forward cache restores fires no load event
   await page.goBack({ waitUntil: 'commit' });
   await expect(page).toHaveURL(url);
-  await expect.poll(() => read(page), { message: 'Back shows the stored vote' }).toBe(expected);
+  if (browserName === 'chromium') {
+    test.info().annotations.push({ type: 'U23', description: 'Chromium restores the no-store large view from its back/forward cache (UI practices §9)' });
+    await expect.poll(() => page.evaluate(() => window.wlxPageshow), { message: 'U23: restored from the back/forward cache' })
+      .toEqual({ persisted: true });
+    expect(await read(page), 'U23: the restored page shows the vote from before').toBe(before);
+  } else {
+    await expect.poll(() => read(page), { message: 'Back shows the stored vote' }).toBe(expected);
+  }
   const fresh = await page.context().newPage();
   await fresh.goto(url);
-  expect(await read(fresh), 'a fresh load shows the same vote').toBe(expected);
+  expect(await read(fresh), 'a fresh load shows the stored vote').toBe(expected);
   await fresh.close();
-}
-
-/** U23 (UI practices §9, open): Chromium (156) brings the large view back from its
-  * back/forward cache after a vote although it is no-store, with the vote it had before: the
-  * Back checks fail there, as expected until it is fixed. */
-function expectChromiumBackStale(browserName) {
-  test.fail(browserName === 'chromium', 'U23: Chromium restores the no-store large view from its back/forward cache');
 }
 
 /** The juror's large view of `url`, in the routeless browser. */
 async function largeView(routelessAs, url) {
-  const page = await (await routelessAs('juror')).newPage();
+  const context = await routelessAs('juror');
+  // each pageshow: persisted is true for a page the back/forward cache brought back
+  await context.addInitScript(() => {
+    window.addEventListener('pageshow', (e) => { window.wlxPageshow = { persisted: e.persisted }; });
+  });
+  const page = await context.newPage();
   await page.goto(url);
   return page;
 }
 
 test.describe('a juror votes', () => {
   test('in the binary round\'s large view by key, then Back shows the vote', async ({ routelessAs, fixture, baseURL, browserName }) => {
-    expectChromiumBackStale(browserName);
     const { juror } = fixture.accounts;
     const url = baseURL + largePath(fixture.roundBinaryId, juror.id, juror.pageId);
     const page = await largeView(routelessAs, url);
@@ -79,11 +87,10 @@ test.describe('a juror votes', () => {
     const posted = await voteAndMove(page, () => page.keyboard.press(key));
     expect(posted.origin, 'the vote posts to this host').toBe(new URL(baseURL).origin);
     expect(posted.pathname).toMatch(new RegExp(`/pageid/${juror.pageId}/select/${expected}$`));
-    await expectBackShowsVote(page, url, binaryVote, expected);
+    await expectBackShowsVote(page, url, binaryVote, expected, before, browserName);
   });
 
   test('in the binary round\'s large view by its button, then Back shows the vote', async ({ routelessAs, fixture, baseURL, browserName }) => {
-    expectChromiumBackStale(browserName);
     const { juror } = fixture.accounts;
     const url = baseURL + largePath(fixture.roundBinaryId, juror.id, juror.pageId);
     const page = await largeView(routelessAs, url);
@@ -91,11 +98,10 @@ test.describe('a juror votes', () => {
     const [button, expected] = before === -1 ? [selectButton(page), 1] : [rejectButton(page), -1];
     const posted = await voteAndMove(page, () => button.click());
     expect(posted.pathname).toMatch(new RegExp(`/select/${expected}$`));
-    await expectBackShowsVote(page, url, binaryVote, expected);
+    await expectBackShowsVote(page, url, binaryVote, expected, before, browserName);
   });
 
   test('in the rated round\'s large view by key, then Back shows the rate', async ({ routelessAs, fixture, baseURL, browserName }) => {
-    expectChromiumBackStale(browserName);
     const { juror } = fixture.accounts;
     const url = baseURL + largePath(fixture.roundRatingId, juror.id, juror.ratedPageId);
     const page = await largeView(routelessAs, url);
@@ -104,11 +110,10 @@ test.describe('a juror votes', () => {
     const posted = await voteAndMove(page, () => page.keyboard.press(String(expected)));
     expect(posted.origin).toBe(new URL(baseURL).origin);
     expect(posted.pathname).toMatch(new RegExp(`/pageid/${juror.ratedPageId}/select/${expected}$`));
-    await expectBackShowsVote(page, url, ratedVote, expected);
+    await expectBackShowsVote(page, url, ratedVote, expected, before, browserName);
   });
 
   test('in the rated round\'s large view by a star, then Back shows the rate', async ({ routelessAs, fixture, baseURL, browserName }) => {
-    expectChromiumBackStale(browserName);
     const { juror } = fixture.accounts;
     const url = baseURL + largePath(fixture.roundRatingId, juror.id, juror.ratedPageId);
     const page = await largeView(routelessAs, url);
@@ -119,7 +124,7 @@ test.describe('a juror votes', () => {
     await expect(star).toHaveCount(1);
     const posted = await voteAndMove(page, () => star.click());
     expect(posted.pathname).toMatch(new RegExp(`/select/${expected}$`));
-    await expectBackShowsVote(page, url, ratedVote, expected);
+    await expectBackShowsVote(page, url, ratedVote, expected, before, browserName);
   });
 
   test('in the binary round\'s gallery by a tile\'s thumb', async ({ page, context, fixture }) => {

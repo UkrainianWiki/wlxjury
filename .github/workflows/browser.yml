@@ -51,10 +51,10 @@ jobs:
 
       - uses: sbt/setup-sbt@ecad189dd245444b9ae0a0cd5922fd938b88906f # v1.5.12
 
-      # Node 20, as ci.yml (dependencies practices §9, T5)
+      # Node 22, as ci.yml (dependencies practices §9, T5)
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: 20
+          node-version: 22.23.4
           cache: npm
           cache-dependency-path: browser-test/package-lock.json
 
@@ -64,11 +64,11 @@ jobs:
           sha: ${{ env.SCALAWIKI_SHA }}
           jdk: 17
 
-      # The fixture's database image: SharedTestDb.Image's default, read from the source
+      # The fixture's database image: SharedTestDb.Image's default, read from its exact line
       - name: The fixture's database image
         run: |
-          image=$(grep -oE '"mariadb:[0-9.]+"' test/db/scalikejdbc/SharedTestDb.scala | head -1 | tr -d '"')
-          test -n "$image"
+          image=$(sed -nE 's/^[[:space:]]*val Image: String = sys\.props\.getOrElse\("wlxjury\.test\.mariadb-image", "(mariadb:[0-9.]+)"\)[[:space:]]*$/\1/p' test/db/scalikejdbc/SharedTestDb.scala)
+          test "$(printf '%s\n' "$image" | grep -c .)" = 1
           echo "MARIADB_IMAGE=$image" >> "$GITHUB_ENV"
           docker pull -q "$image"
 

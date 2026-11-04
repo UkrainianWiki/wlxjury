@@ -265,8 +265,8 @@ failure, and an HTML report come with it; Node is already in CI for Jest.
 ([UI](../ui/practices.md) §6.1, §6.1a): the current and previous majors of Chromium-based
 browsers, Firefox and Safari, and the floor Chrome 109 and Firefox 115. *Tested in a browser* is
 only the current Playwright build of each engine, above. *Linted* is the whole supported range
-(`.browserslistrc`): the compatibility lint checks our scripts' APIs and our stylesheets'
-features against it (`npm --prefix javascript-test run lint`, a step of `ci.yml`'s job). Real runs
+(`.browserslistrc`): the compatibility lint checks our scripts' APIs and the CSS
+features caniuse lists against it (`npm --prefix javascript-test run lint`, a step of `ci.yml`'s job). Real runs
 on older versions (the previous Chrome major, Chrome 109, Firefox 115, an older Safari) are not
 done and not planned (the user, 2026-11-04): the previous majors and the floor are covered by
 the lint only, which can't see rendering or behaviour differences, or a feature a polyfill or a
@@ -301,7 +301,8 @@ by page. A test that opens a 403 or 404 page on purpose says so with
 `diagnostics.expectStatus(403)`, which accepts that status for the page's own document only. The
 only other allowances: Firefox's console line for a font download a navigation cancelled
 (everywhere), and U22's page error in the two tests that leave a gallery by a POST, in Firefox
-only. The fixture runs with the production CSP, CSRF checked on POSTs, and its image proxy
+only. The guard's route doesn't see WebSockets (that would take `routeWebSocket`); the app opens
+none, and a page's WebSocket to another host is reported by the `websocket` event. The fixture runs with the production CSP, CSRF checked on POSTs, and its image proxy
 fetching from a placeholder stub in its JVM, never from Commons (`-Dui.csp=production
 -Dui.csrf=on -Dui.images=stub`, `fixture-server.mjs`).
 
@@ -312,13 +313,17 @@ page Back brings back is then always loaded again, and the Back checks would pas
 sent to a proxy that isn't there (`127.0.0.1:9`; this host bypasses it), and Chromium (its full
 build) with its back/forward cache. The large image from `upload.wikimedia.org` fails through the
 proxy and falls back to this host's image proxy, which answers from the fixture's stub; the
-guard's listeners still report every other host. Shown on 2026-11-04 with the large view's
+guard's listeners still report every other host (requests and WebSockets), and accept the
+engine's console line for a refused file only when its location is that `upload.wikimedia.org`
+file. `guards.spec.js` checks that the proxy refuses an image, an https `fetch` and a `wss://`
+WebSocket, with each engine's error (`net::ERR_PROXY_CONNECTION_FAILED`,
+`NS_ERROR_PROXY_CONNECTION_REFUSED`, `Could not connect to server`). Shown on 2026-11-04 with the large view's
 `no-store` dropped (locally, not committed):
 
 | Engine | With `no-store` | Without it | Shows the regression |
 |---|---|---|---|
 | Firefox 157 | pass | 4 of 4 fail | yes |
-| Chromium 156 | 4 of 4 fail: Back shows the old vote from the back/forward cache (U23); pass with `WLX_CHROMIUM_BFCACHE=off` | fail | yes; expected to fail (`test.fail`) until U23 is fixed |
+| Chromium 156 | Back restores the page from the back/forward cache with the old vote (U23); with `WLX_CHROMIUM_BFCACHE=off` it shows the stored one | the same | no, while U23 stands: the tests assert U23 there (`pageshow` with `persisted`, the old vote shown, a fresh load showing the stored one, a `U23` annotation), so they fail once Chromium stops restoring the stale page |
 | WebKit 27.2 (Windows) | pass | pass (with `max-age=600` instead: 2 of 4 fail) | no: Back after a vote in Safari stays a manual check ([release checklist](../deployment.md#release-checklist)) |
 
 **10.4 Sharing a server.** `UiShotsServer` writes up to eight jurors with files in both rounds to
@@ -390,7 +395,7 @@ sign-ins, 2 `fixme`):
 | the same, before the routeless browser and the new guards' tests | 68 s | 91 s | 91 s |
 | CI job, estimated (to replace with GitHub's job duration) | ~11 min | ~13 min | ~13 min |
 
-In Chromium 4 of the tests are expected to fail (U23). All three engines at once against one
+In Chromium the 4 Back tests assert U23's stale page instead of the stored vote. All three engines at once against one
 server: 314 s. The routeless browser (one more browser per worker, its pages loaded
 without the guard's stubs) and the new guards' tests roughly doubled the local times. The
 fixture's start: 170–260 s with a compiled checkout and the cached dump (sbt start and an
@@ -429,9 +434,9 @@ sharing `target/` with the engines' jobs is the first saving, before dropping an
 | 6.4 messages in all four files | `views.MessagesCompletenessSpec` | enforced |
 | 9 coverage | `coverage.yml` (report only) | enforced as a report; no minimum (planned after a stable baseline) |
 | 10 browser tests, one current build per engine | `browser.yml`: a job per engine (Chromium, Firefox, WebKit) on every PR | enforced in CI once the job runs; not yet a required check |
-| 10 the supported range (previous majors, the floor) | the compatibility lint (`.browserslistrc`; `ci.yml`'s job) | enforced for our scripts' APIs and stylesheets' features; nothing runs in those versions |
+| 10 the supported range (previous majors, the floor) | the compatibility lint (`.browserslistrc`; `ci.yml`'s job), with its self-test (`lint:selftest`) | enforced for our scripts' APIs and the CSS features caniuse lists; nothing runs in those versions |
 | 10.2 zero CSP violations, console errors, failed requests, other hosts per page | `browser-test/lib/fixtures.js` (every test); its self-tests in `guards.spec.js` | enforced in CI once the job runs; not yet a required check |
-| 10.3 Back after a vote | `voting.spec.js` in the routeless browser | enforced in Firefox once the job runs; Chromium expected to fail (U23); WebKit can't show it (manual in Safari) |
+| 10.3 Back after a vote | `voting.spec.js` in the routeless browser | enforced in Firefox once the job runs; in Chromium U23 asserted instead; WebKit can't show it (manual in Safari) |
 | 10.5 accessibility | axe-core per page of `pages.spec.js` (Chromium) | enforced in CI once the job runs, for serious and critical findings not triaged for that page; the rest a report; not yet a required check |
 | 7.2 no wall-clock waits in specs | review | planned |
 
