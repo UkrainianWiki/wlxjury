@@ -25,7 +25,7 @@ class LoginControllerSpec extends PlaySpecification with Results with PlayTestDb
   def appLogin(implicit app: Application) =
     new LoginController(userService, app.injector.instanceOf[ControllerComponents], signIn)
 
-  "auth [J-02, J-03, J-07]" should {
+  "auth [J-02]" should {
     "fail empty request" in {
       testDbApp { implicit app =>
         implicit val mat: Materializer = app.materializer
@@ -51,22 +51,28 @@ class LoginControllerSpec extends PlaySpecification with Results with PlayTestDb
       }
     }
 
-    "fail when wrong password" in {
+    "keep the login page, with its error, for a wrong password [J-03]" in {
       testDbApp { implicit app =>
         implicit val mat: Materializer = app.materializer
-        User.create(User("name", "qwerty@dot.com"))
+        User.create(User("name", "qwerty@dot.com", password = Some(services.PasswordHasher.default.hash("strong"))))
 
         val result = login
           .auth()
           .apply(
             FakeRequest()
-              .withHeaders(
+              .withFormUrlEncodedBody(
                 "login" -> "qwerty@dot.com",
                 "password" -> "1234"
               )
               .withCSRFToken)
 
         status(result) === BAD_REQUEST
+        val page = contentAsString(result)
+        // this controller renders message keys (no messages file): the form's error, in its alert
+        page must contain("role=\"alert\"")
+        page must contain("invalid.user.or.password")
+        page must contain("name=\"password\"")
+        session(result).get(Secured.UserName) must beNone
       }
     }
 
@@ -116,7 +122,7 @@ class LoginControllerSpec extends PlaySpecification with Results with PlayTestDb
       }
     }
 
-    "return to the requested local page after signing in" in {
+    "return to the requested local page after signing in [J-07]" in {
       testDbApp { implicit app =>
         implicit val mat: Materializer = app.materializer
         User.create(User("name", "return@dot.com", password = Some(services.PasswordHasher.default.hash("strong"))))
@@ -177,7 +183,7 @@ class LoginControllerSpec extends PlaySpecification with Results with PlayTestDb
       }
     }
 
-    "ignore an external return URL after signing in" in {
+    "ignore an external return URL after signing in [J-07]" in {
       testDbApp { implicit app =>
         implicit val mat: Materializer = app.materializer
         User.create(

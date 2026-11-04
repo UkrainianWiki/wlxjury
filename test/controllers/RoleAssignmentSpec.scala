@@ -163,7 +163,7 @@ class RoleAssignmentSpec extends PlaySpecification with PlayTestDb with Mockito 
     }
   }
 
-  "an organizer's or a juror's /users/save [S-01]" should {
+  "an organizer's or a juror's /users/save [S-10]" should {
     "leave their own role as it is" in {
       testDbApp { implicit app =>
         createContests(10)

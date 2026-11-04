@@ -75,7 +75,7 @@ class MutationAuthorizationSpec extends PlaySpecification with PlayTestDb {
     status(result) mustEqual FORBIDDEN
   }
 
-  "GalleryController.selectWS [S-01]" should {
+  "GalleryController.selectWS [S-07]" should {
     "reject cross-contest selection mutations" in {
       testDbApp { app =>
         implicit val materializer: Materializer = app.materializer
@@ -100,7 +100,7 @@ class MutationAuthorizationSpec extends PlaySpecification with PlayTestDb {
     }
   }
 
-  "GalleryController.selectWS on the juror's own round" should {
+  "GalleryController.selectWS on the juror's own round [S-06]" should {
     "take votes only while the round is open to its jurors" in {
       testDbApp { app =>
         implicit val materializer: Materializer = app.materializer
@@ -131,7 +131,7 @@ class MutationAuthorizationSpec extends PlaySpecification with PlayTestDb {
   // A vote's rate and file, the gallery's (selectWS, JSON) and the large view's (rateByPageId, a
   // page or a redirect): only a rate the round takes (Round.acceptsRate), stored in the
   // juror's own selection of the file; a file not assigned to the juror changes nothing (404).
-  "a juror's vote, in the gallery and the large view [S-01]" should {
+  "a juror's vote, in the gallery and the large view" should {
     val pageId = 1010L
 
     /** A contest, its juror and a file. */
@@ -179,7 +179,7 @@ class MutationAuthorizationSpec extends PlaySpecification with PlayTestDb {
       (inGallery, afterGallery, inLarge, stored(round, juror))
     }
 
-    "take -1, 0 and 1 in a binary round, and refuse 2" in {
+    "take -1, 0 and 1 in a binary round, and refuse 2 [S-08]" in {
       testDbApp { app =>
         val juror = setUp()
         val round = roundOf(juror, Round.binaryRound)
@@ -192,7 +192,7 @@ class MutationAuthorizationSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
-    "take 0 and 1..5 in a 1-5 round, and refuse 6 and negative rates" in {
+    "take 0 and 1..5 in a 1-5 round, and refuse 6 and negative rates [S-08]" in {
       testDbApp { app =>
         val juror = setUp()
         val round = roundOf(juror, Round.ratesById(5))
@@ -445,7 +445,7 @@ class MutationAuthorizationSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
-    "refuse another contest's juror, changing nothing" in {
+    "refuse another contest's juror, changing nothing [S-07]" in {
       testDbApp { app =>
         val juror = setUp()
         val round = roundOf(juror, Round.ratesById(5), rate = 2)
@@ -974,7 +974,7 @@ class MutationAuthorizationSpec extends PlaySpecification with PlayTestDb {
     }
   }
 
-  "RoundController.saveRound [A-01, S-01]" should {
+  "RoundController.saveRound [A-01, S-10]" should {
     "save a round of the admin's own contest" in {
       testDbApp { app =>
         implicit val materializer: Materializer = app.materializer

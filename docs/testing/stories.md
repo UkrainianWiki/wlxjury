@@ -60,7 +60,7 @@ a guide or a test needs them.
 | J-33 | The large view's side sections stay as the juror left them | – | *Part:* the first frame is `fixme` (U18, UI practices §9) |
 | J-34 | An expired page or token says to reload | ["This page has expired or you were signed out"](../user/juror-guide.md#this-page-has-expired-or-you-were-signed-out) | |
 | J-35 | "Access denied" shows a reference and a way to sign in as another account | ["Access denied" and its reference](../user/juror-guide.md#access-denied-and-its-reference) | |
-| J-36 | A juror changes an earlier vote from the Selected, Rejected or Rated tab | [Tabs: all, unrated, selected, rejected](../user/juror-guide.md#tabs-all-unrated-selected-rejected) | browser: changes a vote from the first tab |
+| J-36 | A juror changes an earlier vote from the Selected, Rejected or Rated tab | [Tabs: all, unrated, selected, rejected](../user/juror-guide.md#tabs-all-unrated-selected-rejected) | *Part:* no test changes a vote from the Selected, Rejected or Rated tab; the browser changes one from the first tab, the Scala specs one voted out of a filtered list |
 | J-37 | The large view shows the file's resolution, monument and Commons link; a video plays | [Opening a file in the large view](../user/juror-guide.md#opening-a-file-in-the-large-view) | browser: the page tour opens it only |
 
 ## Organizer
@@ -72,6 +72,7 @@ a guide or a test needs them.
 | O-03 | An organizer views one juror's votes from the juror menu | – | |
 | O-04 | An organizer reads a criteria round's results | – | |
 | O-05 | An organizer exports a round's results as CSV, or the thumbnail URLs | – | |
+| O-06 | An organizer signs in with login and password | – | |
 
 ## Admin
 
@@ -94,6 +95,7 @@ a guide or a test needs them.
 | A-15 | A double submit of the new round form makes one round | – | |
 | A-16 | An admin makes the next round from earlier results: selected by at least, minimum average, top N, several rounds merged | – | the form's choices in view specs (`TopBinaryOrderChoiceSpec` …), the selection in service specs |
 | A-17 | An admin edits the contest's greeting, previewed per member; a new account gets it by mail | – | *Part:* saving it only |
+| A-18 | An admin signs in with login and password | – | |
 
 ## Root
 
@@ -102,14 +104,19 @@ a guide or a test needs them.
 | R-01 | Root opens the campaigns page, creates a contest or imports contests from Commons | – | *Part:* opening the page only |
 | R-02 | First-run setup creates the root account | – | |
 | R-03 | Root lists all users across contests and makes an account root | – | *Part:* making an account root only |
+| R-04 | Root signs in with login and password | – | |
 
 ## System and security
 
 | ID | Story | Guide section | Notes |
 |---|---|---|---|
-| S-01 | A juror is refused organizer and admin pages; an organizer admin pages (403 with reference) | ["Access denied" and its reference](../user/juror-guide.md#access-denied-and-its-reference) | |
+| S-01 | A juror is refused organizer and admin pages, an organizer admin pages, a member with no jury role (board, auditor, staff) every page (403 with reference) | ["Access denied" and its reference](../user/juror-guide.md#access-denied-and-its-reference) | |
 | S-02 | A state-changing POST without the CSRF token is refused | – | |
 | S-03 | Every page runs under the production CSP, without violations or other hosts | – | every browser test checks it (`lib/fixtures.js`); the policy itself in `ContentSecurityPolicySpec`, a guard |
 | S-04 | Every page has one `h1` and no untriaged serious accessibility finding | – | the axe scan in Chromium only |
 | S-05 | A missing resource is the 404 page; a server error the error page with a reference | [Other errors](../user/juror-guide.md#other-errors) | |
 | S-06 | A vote in a round not open to jurors (stopped, frozen, distributing) is refused and the stored vote stays | [Rounds you don't see](../user/juror-guide.md#rounds-you-dont-see) | *Part:* a stopped round and a stopped juror only |
+| S-07 | A vote from someone not a juror of the round, or of another contest, is refused and changes nothing | – | |
+| S-08 | A vote outside the round's rates (2 in a yes/no round, 6 in a 1–5 round) is refused | – | |
+| S-09 | No one sets another account's password; its email or wiki account changes only through an invitation or a mailed link | – | |
+| S-10 | A juror or an organizer is refused an admin's change (a POST), and nothing is written | – | |

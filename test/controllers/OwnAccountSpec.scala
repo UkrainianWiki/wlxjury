@@ -167,7 +167,7 @@ class OwnAccountSpec extends PlaySpecification with PlayTestDb with AccountTestS
     }
   }
 
-  "another account [S-01]" should {
+  "another account [S-09]" should {
     "never get its password set, by an admin or root" in {
       testDbApp { implicit app =>
         createContests(10)
