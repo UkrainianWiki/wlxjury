@@ -9,8 +9,21 @@
 
 @* A round's conflicts of interest (RoundConflictsController): the files that are conflicts now,
    to disqualify, and the disqualified ones, to requalify. Organizers see the lists only: the
-   forms, their checkboxes (tied to them by the form attribute) and buttons are its admins'. *@
-@mainAdmin("coi.round.title", user, user.getId, contestId = Some(round.contestId)) {
+   forms, their checkboxes (tied to them by the form attribute) and buttons are its admins'.
+   The history (round_image_event, V88) is shown to all who see the page; "Stop the round" to its
+   admins while the round is open, through the rounds list's own action (RoundController.setRound),
+   with a confirm (confirm-submit.js). *@
+@mayStop = @{ mayEdit && round.active && !round.distributing }
+@historyTime = @{ java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm") }
+@statusText(status: Option[String]) = @{ Messages("coi.status." + status.getOrElse("removed")) }
+@codeText(action: String, code: String) = @{
+    if (action == db.scalikejdbc.RoundImageEventJdbc.Action.Requalify) Messages("coi.requalify.reason." + code)
+    else Messages("coi.code." + code)
+}
+@scripts = {
+    @if(mayStop) { <script src="@routes.Assets.versioned("javascripts/confirm-submit.js")"></script> }
+}
+@mainAdmin("coi.round.title", user, user.getId, contestId = Some(round.contestId), head = scripts) {
     <div class="row">
         <div class="col-md-10">
             <h1 class="h3">@Messages("coi.round.title.of", round.number, round.name.getOrElse(""))</h1>
@@ -23,7 +36,21 @@
                 <div class="alert alert-danger" role="alert">@text</div>
             }
             @if(mayEdit && (round.active || round.distributing)) {
-                <div class="alert alert-warning" id="coi-round-open">@Messages("coi.action.open", round.number)</div>
+                <div class="alert alert-warning" id="coi-round-open">
+                    @Messages("coi.action.open", round.number)
+                    @if(mayStop) {
+                        @* the rounds list's start/stop action, back to this page; asks first *@
+                        <form method="post" action="@controllers.routes.RoundController.setRound()" id="coi-round-stop"
+                              class="mt-2" data-confirm="@Messages("coi.round.stop.confirm", round.number)">
+                            @csrfField()
+                            <input type="hidden" name="currentId" value="@round.getId"/>
+                            <input type="hidden" name="setActive" value="false"/>
+                            <input type="hidden" name="returnTo" value="conflicts"/>
+                            <button type="submit" class="btn btn-sm btn-outline-danger">@Messages("round.stop")</button>
+                            <span class="form-text ms-2">@Messages("coi.round.stop.help")</span>
+                        </form>
+                    }
+                </div>
             } else if(mayEdit && round.freezeCount > 0) {
                 <div class="alert alert-warning" id="coi-round-open">@Messages("coi.disqualify.frozen", round.number)</div>
             }
@@ -110,6 +137,40 @@
                         </div>
                         <p class="form-text">@Messages("coi.requalify.help")</p>
                     </form>
+                }
+            }
+
+            <h2 class="h4 mt-4">@Messages("coi.history")</h2>
+            @if(review.history.isEmpty) {
+                <p id="coi-history-none">@Messages("coi.history.none")</p>
+            } else {
+                <p class="form-text">@Messages("coi.history.help")</p>
+                <table class="table table-striped table-sm" id="coi-history">
+                    <thead>
+                        <tr>
+                            <th scope="col">@Messages("coi.history.at")</th>
+                            <th scope="col">@Messages("coi.file")</th>
+                            <th scope="col">@Messages("coi.history.action")</th>
+                            <th scope="col">@Messages("coi.reason")</th>
+                            <th scope="col">@Messages("coi.history.status")</th>
+                            <th scope="col">@Messages("coi.history.by")</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    @for(entry <- review.history) {
+                        <tr data-event="@entry.event.id" data-event-page="@entry.event.pageId" data-event-action="@entry.event.action">
+                            <td><time datetime="@entry.event.at.toOffsetDateTime">@entry.event.at.format(historyTime)</time></td>
+                            <td>@entry.title</td>
+                            <td>@Messages("coi.event." + entry.event.action)</td>
+                            <td>@codeText(entry.event.action, entry.event.code)</td>
+                            <td>@statusText(Some(entry.event.priorStatus)) → @statusText(entry.event.newStatus)</td>
+                            <td>@entry.byName.getOrElse(entry.event.by.fold("—")(id => s"#$id"))</td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+                @if(review.history.size >= RoundConflicts.HistoryLimit) {
+                    <p class="form-text" id="coi-history-limited">@Messages("coi.history.limited", RoundConflicts.HistoryLimit)</p>
                 }
             }
 

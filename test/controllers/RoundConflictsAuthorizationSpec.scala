@@ -203,6 +203,113 @@ class RoundConflictsAuthorizationSpec extends PlaySpecification with PlayTestDb 
       }
     }
 
+    "show the round's history (V88) to its admin and organizer, also on an open round, never to a juror or another contest's admin" in {
+      testDbApp { app =>
+        val (round, _) = setUp()
+        val r = round.getId
+        status(post(app, Some("admin@example.com"), disqualify(r), both: _*)) === SEE_OTHER
+        status(post(app, Some("root@example.com"), requalify(r), "pageId" -> "1", mistaken)) === SEE_OTHER
+        val events = RoundImageEventJdbc.byRound(r)
+        def shows(body: String) =
+          (body must contain("id=\"coi-history\"")) and
+            (body must contain("data-event-action=\"requalify\"")) and
+            (body must contain("data-event-action=\"disqualify\"")) and
+            events.map(e => body must contain(s"data-event=\"${e.id}\"")).reduce(_ and _) and
+            (body must contain("A mistaken match")) and (body must contain("In the round → Disqualified"))
+        val admin = contentAsString(get(app, "admin@example.com", page(r)))
+        val organizer = contentAsString(get(app, "organizer@example.com", page(r)))
+        Round.setActive(r, active = true)
+        val open = get(app, "organizer@example.com", page(r))
+        (events.map(e => (e.pageId, e.action)) === Seq(1L -> "requalify", 2L -> "disqualify", 1L -> "disqualify")) and
+          shows(admin) and shows(organizer) and (status(open) === OK) and shows(contentAsString(open)) and
+          Seq("juror@example.com", "board@example.com", "other-admin@example.com").map { email =>
+            val refused = get(app, email, page(r))
+            (status(refused) === FORBIDDEN) and (contentAsString(refused) must not(contain("coi-history")))
+          }.reduce(_ and _)
+      }
+    }
+
+    "say when the round has no history yet" in {
+      testDbApp { app =>
+        val (round, _) = setUp()
+        contentAsString(get(app, "organizer@example.com", page(round.getId))) must contain("coi-history-none")
+      }
+    }
+  }
+
+  "\"Stop the round\" on the conflicts page" should {
+
+    def stop(r: Long) = Seq("currentId" -> r.toString, "setActive" -> "false", "returnTo" -> "conflicts")
+
+    "be offered to its admin while the round is open, never to an organizer or on a stopped round" in {
+      testDbApp { app =>
+        val (round, _) = setUp()
+        val r = round.getId
+        val stopped = contentAsString(get(app, "admin@example.com", page(r)))
+        Round.setActive(r, active = true)
+        val admin = contentAsString(get(app, "admin@example.com", page(r)))
+        val organizer = contentAsString(get(app, "organizer@example.com", page(r)))
+        (stopped must not(contain("coi-round-stop"))) and
+          (admin must contain("id=\"coi-round-stop\"")) and (admin must contain("data-confirm=\"Stop round 1?")) and
+          (admin must contain("javascripts/confirm-submit.js")) and
+          (organizer must not(contain("coi-round-stop"))) and (organizer must not(contain("confirm-submit.js")))
+      }
+    }
+
+    "stop the round for its admin, back to the conflicts page, and then allow disqualifying" in {
+      testDbApp { app =>
+        val (round, _) = setUp()
+        val r = round.getId
+        Round.setActive(r, active = true)
+        val result = post(app, Some("admin@example.com"), "/admin/setround", stop(r): _*)
+        (status(result) === SEE_OTHER) and (redirectLocation(result) must beSome(page(r))) and
+          (flash(result).get("success") must beSome(contain("stopped"))) and
+          (Round.findById(r).map(_.active) must beSome(false)) and
+          (status(post(app, Some("admin@example.com"), disqualify(r), both: _*)) === SEE_OTHER) and
+          (disqualified(round) === Seq(1L, 2L)) and
+          // without returnTo: the rounds list, as before
+          (redirectLocation(post(app, Some("admin@example.com"), "/admin/setround",
+            "currentId" -> r.toString, "setActive" -> "false")) must beSome(s"/admin/rounds?contestId=$contestId"))
+      }
+    }
+
+    "be refused to a juror, an organizer, the board and another contest's admin; the round stays open" in {
+      testDbApp { app =>
+        val (round, other) = setUp()
+        val r = round.getId
+        Round.setActive(r, active = true)
+        val refused = Seq("juror@example.com", "organizer@example.com", "board@example.com", "other-admin@example.com")
+          .map(email => email -> status(post(app, Some(email), "/admin/setround", stop(r): _*)))
+        (refused.filter(_._2 != FORBIDDEN) must beEmpty) and
+          // this contest's admin, for another contest's round
+          (status(post(app, Some("admin@example.com"), "/admin/setround", stop(other.getId): _*)) === FORBIDDEN) and
+          (Round.findById(r).map(_.active) must beSome(true)) and
+          (redirectLocation(post(app, None, "/admin/setround", stop(r): _*)) must not(beSome(page(r)))) and
+          (Round.findById(r).map(_.active) must beSome(true))
+      }
+    }
+
+    "need the CSRF token" in {
+      withCsrfApp { app =>
+        val (round, _) = setUp()
+        val r = round.getId
+        Round.setActive(r, active = true)
+        val sessionToken = token(app)
+        def send(body: (String, String)*) =
+          route(app, FakeRequest(POST, "/admin/setround")
+            .withHeaders(COOKIE -> "PLAY_SESSION=signed-in", ACCEPT -> "text/html")
+            .withSession(Secured.UserName -> "admin@example.com", Secured.CurrentContestId -> contestId.toString,
+              "csrfToken" -> sessionToken)
+            .withFormUrlEncodedBody(body: _*)).get
+        (status(send(stop(r): _*)) === FORBIDDEN) and (Round.findById(r).map(_.active) must beSome(true)) and
+          (status(send(stop(r) :+ ("csrfToken" -> sessionToken): _*)) === SEE_OTHER) and
+          (Round.findById(r).map(_.active) must beSome(false))
+      }
+    }
+  }
+
+  "the conflicts page's forms" should {
+
     "need the CSRF token" in {
       withCsrfApp { app =>
         val (round, _) = setUp()

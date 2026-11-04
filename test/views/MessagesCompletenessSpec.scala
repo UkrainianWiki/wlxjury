@@ -85,7 +85,9 @@ class MessagesCompletenessSpec extends Specification {
     "role."  -> (User.FORM_ROLES.filterNot(_ == User.NO_ROLE) :+ User.ROOT_ROLE), // accessDenied
     "theme." -> Theme.All.map(_.value),
     "coi.requalify.reason." -> db.scalikejdbc.RoundConflicts.RequalifyReason.All, // round/conflicts.scala.html
-    "coi.code." -> db.scalikejdbc.RoundImageJdbc.DqCode.All                         // round/conflicts.scala.html
+    "coi.code." -> db.scalikejdbc.RoundImageJdbc.DqCode.All,                        // round/conflicts.scala.html
+    "coi.event." -> db.scalikejdbc.RoundImageEventJdbc.Action.All,                  // round/conflicts.scala.html
+    "coi.status." -> (db.scalikejdbc.RoundImageJdbc.Status.All :+ "removed")        // round/conflicts.scala.html
   )
 
   /** Keys looked up from a value rather than a literal. */
