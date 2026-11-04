@@ -14,6 +14,9 @@ dist
 /RUNNING_PID
 /.settings
 .env
+# copies and variants of it (.env.local, .env.bak), but not the template
+.env.*
+!.env.example
 # Real server settings, if ever created in a checkout. Anchored: other files may share these names.
 /runtime.env
 /db-admin.cnf
