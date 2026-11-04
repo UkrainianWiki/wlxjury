@@ -22,7 +22,8 @@ planned, and flagged only what is neither. There are 8 entries in 7 PRs, none
 High or Medium. File:line is at the PR's tip, and at the final tip `8b246ace`
 where it moved. Entries from CodeRabbit's reviews (R185-1 onwards) give the newest tip,
 `stack/62-docs-phase`; from R191-1 on, `stack/68-juror-guide` (`06103e89`, the followups
-mirror `63c80ff7` has the same tree). R193-4 is the first Medium.
+mirror `63c80ff7` has the same tree); from R196-1 on, the followups tip `34788a54` (the mirror
+of `stack/71-investigations`, `6c00ed6e`). R193-4 is the first Medium.
 
 ### R198-1: A job that crashes the JVM is retried forever
 
@@ -503,6 +504,296 @@ whether the cache's counts and registry tell the truth. File:line at the newest 
      `adm0` the payload doesn't match, and assert it is excluded.
 - **Placement:** with the CI batch's test fixes (testing practices §6, weak assertions).
 
+### R196-1: Several previous rounds merge their ratings unevenly
+
+- **PR:** #196 (13, tip `37e6ea26`). `app/db/scalikejdbc/Round.scala:324` (`sameRateType`),
+  `app/org/intracer/wmua/cmd/DistributeImages.scala:163`, `:222`.
+- **Severity:** Low (an organizer's choice of several previous rounds picks the wrong files;
+  one previous round is unaffected).
+- **At the newest tip:** all still there. `Round.scala:431-432` (`sameRateType` compares
+  `isBinary` only); `DistributeImages.scala:126` (`prevRound = prevRounds.headOption`), `:197-214`
+  (`mergeByPageId`); `ImageWithRatingSeqFilter.scala:116` (`SelectedAtLeast`: `rateSum >= by`);
+  the streamed path the same: `RoundDistributionHandler.scala:188-191` (the denominator from the
+  first previous round), `:764` (one entry per previous round, juror 0, the round's rate sum).
+- **Items, failure scenarios and fixes:**
+  1. **Different rating scales pass as one type:** a 1-5 and a 1-10 round (or a comments-only and
+     a rated one) may be merged; the first round's `prevMinAvgRate` and top-N then rank sums of
+     both scales. Fix: compare `rates.id` (and refuse comments-only with rated) in `sameRateType`,
+     which the form and `DistributeImages` both call.
+  2. **Optional-rate rounds divide by the first round's jurors:** with two optional-rate previous
+     rounds the sums come from both and the denominator from the first
+     (`numberOfJurorsForAverageRate`), so an average can exceed the scale and the selection
+     depends on the rounds' order. Fix: decide the rule first; refusing several optional-rate
+     previous rounds (beside the rate-type check) is the small one, a denominator over all
+     contributing rounds the other.
+  3. **"Selected by at least N" counts per round, not per juror:** each previous round gives one
+     entry with its approvals, so a juror who selected a file in two rounds counts twice and one
+     juror satisfies N = 2. Fix: count distinct approving jurors across the previous rounds in
+     the candidate query (`COUNT(DISTINCT jury_id)` over `vote` of those rounds), for both paths.
+  A spec per item with two previous rounds.
+- **Placement:** append after [`2026-11-01-open-followups.md` "Still open"](https://github.com/UkrainianWiki/wlxjury/blob/stack/62-docs-phase/docs/plans/2026-11-01-open-followups.md#still-open),
+  decided with the round-images two-step plan (its D6: an image can come from several previous
+  rounds), whose candidate queries replace these.
+
+### R196-2: The round form shows both previous-round filter groups at first
+
+- **PR:** #196 (13, tip `37e6ea26`). `app/views/mainAdmin.scala.html:59-68` (review remark).
+- **Severity:** Nit.
+- **At the newest tip:** still there. Since #217 the handler is in
+  `public/javascripts/round-form.js:43-54`, bound at `:134` to `change` only;
+  `app/views/round/edit/imageFiltering.scala.html:36`, `:70` render both groups.
+- **Failure scenario:** a form shown with previous rounds chosen (a new round's form back with
+  an error, or an existing round) shows the yes/no filters and the rating filters together until
+  the previous rounds are changed; the hidden one's values are still sent.
+- **Suggested fix:** call `previousRoundsChanged()` once in `init`, after binding it; a
+  `round-form` jsTest case.
+- **Placement:** append after open-followups "Still open", with the next round-form change.
+
+### R196-3: Authorization and query tests that would pass a regression
+
+- **PR:** #196 (13, `37e6ea26`), #197 (14, `9c61c478`), #201 (18, `eb39d040`) review remarks.
+- **Severity:** Nit (test gaps; the code they cover is right today).
+- **At the newest tip:** all still there.
+- **Items:**
+  1. No cache-hit test for `page1-` / `lossy-page1-` thumbnails: the PDF and TIFF examples
+     (`test/controllers/ImageProxyControllerSpec.scala:150-166`) store no image, so only the
+     redirect is tested. Add one with a stored PDF and its cached file, expecting 200.
+  2. The cross-contest vote example (`test/controllers/MutationAuthorizationSpec.scala:79-98`)
+     seeds no vote, so an update that ran before the check would change nothing and still pass.
+     Seed the juror's vote with another rate and assert it is unchanged.
+  3. No example of an own round with another contest's `contestId` for `addComment`
+     (`ImageDiscussionController.scala:38`, `CommentAuthorizationSpec`): removing the filter
+     passes. Add it, expecting the refusal and no comment.
+  4. No example refusing another contest's juror the gallery list
+     (`GalleryService.isNotAuthorized`; the large view has one, `LargeImageSpec.scala:641`).
+  5. The deferred-join plan check (`test/db/scalikejdbc/ImageDbNewDbSpec.scala:219-226`) looks
+     for `Using temporary` only, on eight rows; a sort of the joined rows can show as
+     `Using filesort` alone. Also refuse `Using filesort` on the joined table, or check the plan's
+     table order.
+- **Placement:** [testing practices §12](https://github.com/UkrainianWiki/wlxjury/blob/stack/68-juror-guide/docs/testing/practices.md#12-where-the-code-doesnt-follow-these-yet-for-triage)
+  as a new T item; with the CI batch's test fixes (as R195-1).
+
+### R197-1: Gatling simulation caps and checks
+
+- **PR:** #197 (14, tip `9c61c478`). `test/gatling/GatlingSmokeSpec.scala:56`,
+  `test/gatling/setup/HeapWatcher.scala:54`, `test/gatling/simulations/AggregatedRatingsSimulation.scala:63`,
+  `RoundDistributionSimulation.scala:109-111`, `:168`, `RoundManagementSimulation.scala:114`.
+- **Severity:** Nit (measurement tools; no effect on the app).
+- **At the newest tip:** all still there (`GatlingSmokeSpec.scala:63-66`, `:107`;
+  `HeapWatcher.scala:40-76`; `AggregatedRatingsSimulation.scala:81-82`;
+  `RoundDistributionSimulation.scala:134`, `:195`; `RoundManagementSimulation.scala:76`, `:112`).
+- **Items, failure scenarios and fixes:**
+  1. `warmGet` drops the first GET's status (and "RegionStat smoke" its inline warm-up's), so a
+     route that fails once and then answers 200 passes. Check both statuses.
+  2. `HeapWatcher` counts a GC by when its notification arrives: one that arrives after `end()`
+     is lost, after the next `start()` counted there. Attribute by `GcInfo` start time within the
+     step's window.
+  3. The stress branch of `AggregatedRatingsSimulation` reads the global `rampUpSeconds` and
+     `durationSeconds`, so `gatling.aggRatings.*` timing overrides do nothing there. Read `cfg`'s,
+     or say in `gatling-perf.conf` that stress mode ignores them.
+  4. `RoundDistributionSimulation` caps the run at 60 minutes whatever `iterations`,
+     `timeoutMinutes` and the optional steps add up to, so a long configuration is cut off. Derive
+     the cap from them.
+  5. `RoundManagementSimulation`'s cap (duration + ramp-up + 180 s) is shorter than the create
+     request's timeout (`Distribution.timeoutMinutes`), so the run can end with a creation in
+     flight and unrecorded. Add the timeout when `createRound` is on.
+  6. A distribution step's `ok` compares counts only; a swap of an eligible file for another
+     keeps both. Compare the round's page ids with the expected set (it needs its own query).
+- **Placement:** with [R190-1](#r190-1-gatling-fixture-settings-and-setup-checks), in
+  performance practices §1 follow-ups.
+
+### R197-2: Media type kept, classified and tested loosely
+
+- **PR:** #197 (14, tip `9c61c478`). `app/db/scalikejdbc/ImageJdbc.scala:123`,
+  `app/org/intracer/wmua/cmd/ImageWithRatingSeqFilter.scala:106-107`.
+- **Severity:** Nit.
+- **At the newest tip:** all still there. `ImageJdbc.scala:180-188` (`fileInfo` writes
+  `mediaType` as fetched), `services/imports/CommonsFileCheck.scala:241`;
+  `ImageWithRatingSeqFilter.scala:135-142` (`MediaTypeIs`), `Image.scala:36` (`isImage = !isVideo`);
+  `EditRound.scala:141`, `:203` (`mediaType` is free text).
+- **Items, failure scenarios and fixes:**
+  1. A refresh writes the fetched `mediaType` even when Commons returns none (a file whose
+     current revision is hidden): a stored `VIDEO` becomes NULL and a `.ogg` video is then
+     classed by its extension as an image. Keep the stored value when the fetched one is empty.
+  2. An image-only round takes every file that isn't a video, audio files too. Require an image
+     media type (or `BITMAP`/`DRAWING`, with the extension fallback for rows without one).
+  3. A stored media type other than `video` / `image` (the form posts free text) filters nothing.
+     Validate the form value against `MediaType.mediaTypes`; fail closed in `MediaTypeIs`.
+  4. Tests: no import spec asserts a stored media type (`FetchImageInfoSpec` is gone since #201),
+     and `DistributeImagesSpec` has no file whose media type and extension disagree. Import a
+     video through `FakeCommonsSource` and check `media_type`; add a `.jpg` with `VIDEO`.
+- **Placement:** append after open-followups "Still open"; items 1 and 4 with the next import
+  change.
+
+### R199-1: Benchmark scripts lose state on early exits
+
+- **PR:** #199 (16, tip `77b4d2cf`). `bench/README.md:132`, `bench/scripts/convert.sh:23`,
+  `bench/scripts/run.sh:70`, `:128-129`.
+- **Severity:** Nit (benchmark tooling).
+- **At the newest tip:** all still there (`bench/README.md:121-136`, `:95-99`;
+  `convert.sh:23`, `:38`; `run.sh:39-43`, `:67-72`, `:130-131`).
+- **Items, failure scenarios and fixes:**
+  1. The "check after each step" commands run `$B sql` after each step's `$B stop`, which
+     removes the container. Run them before the stop (or after `$B start -`).
+  2. `convert.sh` starts the sampler with `docker exec -d` and stops it only after the last
+     `ANALYZE`; a `set -e` exit before that leaves it running. Stop it in an `EXIT` trap.
+  3. `run.sh` refuses a snapshot whose round 1775 has a category, but the documented check and
+     `reopen-contest.sql` cover round 1721's only. Add 1775 to the documented check and say how to
+     fix such a snapshot.
+  4. `run.sh` copies `application.log` and `stdout.log` only after the loop; an early abort
+     reaches `cleanup`, whose `bench.sh stop` removes the container and its logs. Copy them in
+     `cleanup` first, guarded so the copy after the loop isn't overwritten.
+- **Placement:** [performance practices §2](https://github.com/UkrainianWiki/wlxjury/blob/stack/68-juror-guide/docs/performance/practices.md#2-benchmarks)
+  follow-ups, before the next benchmark run.
+
+### R200-1: Release tools end and check database sessions too broadly
+
+- **PR:** #200 (17, tip `6a9a60ff`). `scripts/deployment/wlxjury-deploy.py:435`, `:558`, `:563`;
+  `scripts/deployment/wlxjury-release.sh:70`, `:257`, `:266`, `:357`.
+- **Severity:** Low (items 1, 2, 4), Nit (3, 5). Only with a database account or server
+  shared with other work, or a deployment config that leaves a list empty.
+- **At the newest tip:** all still there (`wlxjury-deploy.py:475`, `:586-605`;
+  `wlxjury-release.sh:75`, `:242-267`, `:350-356`).
+- **Items, failure scenarios and fixes:**
+  1. **`end_sessions` kills every session of `WLXJURY_DB_USER`, on any database** (both tools),
+     before the "other sessions" check: another workload on that account loses its queries and
+     transactions. Add `DB = '<database>'` to the kill and to the wait loop.
+  2. **The "other sessions" check counts only `DB = '<database>'`:** a session with no default
+     database (or another one) can still write to the jury tables, and its writes after the
+     rescue dump are lost by the restore's `DROP DATABASE`. Count `DB IS NULL` sessions of
+     non-system users too (not `event_scheduler` and the like), and refuse.
+  3. **`deploy` dumps without `end_sessions`:** a leftover session of the app account (a long
+     `ALTER`) blocks the `--lock-tables` dump while maintenance is on. Call `end_sessions` before
+     the dump, as `restore` does.
+  4. **An empty or absent `quiesce_units` is one empty writer in `wlxjury-release.sh`** (`json`
+     prints an empty line, `mapfile` reads it): `stop_unit ""` fails after maintenance is on.
+     Drop empty entries after `mapfile` (or have `json` print nothing for an empty list), so an
+     absent or empty list means no writers, as in `wlxjury-deploy.py`.
+  5. **`wlxjury-deploy.py` accepts a `.timer` as `service`:** stopping it leaves the JVM running
+     during the backup, and the new release never starts. Require `.service` for `service`.
+  Cases in `test_release_script.py` / `test_database_restore.py` for 1, 2 and 4.
+- **Placement:** [operations practices §8](https://github.com/UkrainianWiki/wlxjury/blob/stack/68-juror-guide/docs/operations/practices.md#8-where-the-setup-doesnt-follow-these-yet-for-triage)
+  as a new OP item (3.3, 4), taken with the next release-tool change.
+
+### R200-2: Release tools' copies, file modes and public checks
+
+- **PR:** #200 (17, tip `6a9a60ff`). `scripts/deployment/wlxjury-deploy.py:153`, `:370`, `:694`,
+  `:752`, `:965`; `scripts/deployment/wlxjury-release.sh:219`, `:296`;
+  `conf/wlxjury/production.conf:6`; review remarks on `ReadinessControllerSpec.scala:59-60` and
+  `test_deployment.py:232-234`.
+- **Severity:** Low (items 2 and 3), Nit (the rest).
+- **At the newest tip:** all still there (`wlxjury-deploy.py:150`, `:223`, `:710-746`,
+  `:787-791`, `:1006`; `wlxjury-release.sh:216-220`, `:298`; `production.conf:6`). Fixed
+  meanwhile: token- and key-named credentials in the adoption scan (#241).
+- **Items, failure scenarios and fixes:**
+  1. **A remote database connects without TLS:** `production.conf` sets `useSSL=false`, and
+     `adopt-legacy` keeps only the host and database of the old URL, dropping options such as
+     `useSSL=true`. Fine for a database on the app's host, which is what `production.conf` is
+     written for. Fix: refuse a legacy URL whose options the new config doesn't reproduce, and
+     make TLS a `runtime.env` setting (or document that a remote database needs a tunnel).
+  2. **`adopt-legacy` copies more than it scans:** `shutil.copytree` copies a symlink's target as
+     a regular file, and only `.conf`, `.ini`, `.properties`, `.cnf` and `.env` are scanned; the
+     copy is then made 0644 under a 0755 release. Refuse symlinks before the copy, and scan every
+     copied text file (checking the bundled `messages.*` and `logback.xml` give no findings).
+  3. **A restore writes `/etc/default/wlxjury` back as 0644** whatever its mode was (the snapshot
+     is 0600): a credential there becomes readable by local users. Restore it with the original
+     file's mode (record it in the snapshot), or 0600 when unknown.
+  4. **The ZIP symlink check can miss:** under `pipefail`, `zipinfo | grep -q '^l'` stops `grep` at
+     the first match, `zipinfo` may get SIGPIPE, and the `if` reads that as no match. Use
+     `grep '^l' >/dev/null` (reads it all). The SHA-256 of the reviewed build is checked first.
+  5. **The public checks accept any 2xx/3xx:** a redirect to another host, or a name proxied to
+     another live app, passes and `reopen` records `complete`. Compare a 3xx `Location` host with
+     the URL's and look for a page marker of the app (both tools).
+  6. **Tests:** no case sends a readiness answer with another build or schema to
+     `Deployment.wait_ready` (`test_deployment.py`'s fake skips the poller), and the packaged-app
+     test sends no `X-Forwarded-For: 127.0.0.1, 203.0.113.5` (expect 404).
+- **Placement:** operations practices §8 as a new OP item, with R200-1; items 2 and 3 first.
+
+### R200-3: Operational INFO lines and scheduler start-up failures not logged
+
+- **PR:** #200 (17, tip `6a9a60ff`). `conf/wlxjury/logback.xml:16`,
+  `app/services/jobs/JobScheduler.scala:157`.
+- **Severity:** Nit.
+- **At the newest tip:** still there (`logback.xml:15-30`: `application`, `coi` and
+  `services.ApiTokenService` at INFO, root WARN; `JobScheduler.scala:169-175`, used at `:142` and
+  `:178`).
+- **Items, failure scenarios and fixes:**
+  1. Play's `Logging` names a logger after its class, so the INFO lines of `services.*` and
+     `controllers.*` (the scheduler's start, requeue counts, download retries, a round's
+     distribution) are not written with this config. Decide which packages log at INFO in
+     production (a short list, with OP1's `security.*`) and add them.
+  2. `tableReady()` swallows the table check's failure: before the first success a database
+     failure at start-up gives no scheduler line at all. Log it, throttled as `poll()` does.
+- **Placement:** extend operations practices §8 OP1 (and the logging plan's "the loggers as now"
+  step, `2026-10-30-logging-config-in-releases.md`).
+
+### R201-1: Adding a member is not atomic and can lose the greeting
+
+- **PR:** #201 (18, tip `eb39d040`). `app/db/scalikejdbc/User.scala:424`,
+  `app/db/scalikejdbc/UserContestJdbc.scala:47`, `app/services/UserService.scala:52`.
+- **Severity:** Nit.
+- **At the newest tip:** all still there (`User.scala:620-648`, `UserContestJdbc.scala:56-60`,
+  `UserService.scala:80-91`, `:115-131`).
+- **Items, failure scenarios and fixes:**
+  1. `User.create` commits the account (auto session) before the membership insert, and drops
+     the insert's result: a contest deleted in between leaves an account with no membership, and
+     the admin is told the user was added. Run both in one `DB.localTx` and throw when the
+     membership isn't inserted.
+  2. `createMembership` uses `INSERT IGNORE`, so a foreign key failure (the contest or user
+     deleted after the lookup) is "0 rows" and `addToContest` answers `AlreadyMember`. Insert
+     without `IGNORE` and treat only a duplicate key (1062) as already a member.
+  3. In the existing-account branch the membership commits before `sendMail`; if the mail fails,
+     the exception leaves the method, a retried import finds the membership and answers
+     `AlreadyMember`, and the greeting is never sent. Record unsent greetings (a flag or an
+     outbox row) for a later send; never put the mail inside the transaction.
+- **Placement:** append after open-followups "Still open" (with R225-1, the account forms), or
+  the account-join plan when its batch is planned.
+
+### R201-2: Two specs call Wikimedia without the integration flag
+
+- **PR:** #201 (18, tip `eb39d040`). `test/controllers/ImportFilesPageSpec.scala:52`,
+  `test/services/imports/MonumentListImportSpec.scala:136`.
+- **Severity:** Nit.
+- **At the newest tip:** still there (`ImportFilesPageSpec.scala:37-52`: the first example runs
+  the app's `MwCommonsSource`; `MonumentListImportSpec.scala:135-150`, `MwMonumentListSourceSpec`).
+  Testing practices §5.3 says live tests are behind flags, and the MariaDB 10.11 plan's test run
+  records both failing on DNS while the machine slept.
+- **Suggested fix:** the files-page example with a `FakeCommonsSource` bound in its test app
+  (`testDbApp` with an overriding module), and `MwMonumentListSourceSpec` behind
+  `-Dintegration=true` (listed in §5.3, run by `integration.yml`).
+- **Placement:** testing practices §12 as a new T item; with the CI batch's test fixes.
+
+### R201-3: The files page waits for Commons' category count
+
+- **PR:** #201 (18, tip `eb39d040`). `app/controllers/ImageController.scala:47-49` (review
+  remark).
+- **Severity:** Low.
+- **At the newest tip:** still there (`ImageController.scala:27-31`, `:56-57`;
+  `services/imports/MwApi.scala:69-90`: a timeout per attempt, retries with a doubling wait).
+- **Failure scenario:** when Commons is slow or failing, the contest files page waits for
+  `categoryFileCount` through all its retries on a request thread (`withAuth`, the default
+  pool) and then fails with the error page, so the admin sees neither the local count nor the
+  import jobs, and can't start or cancel one from there.
+- **Suggested fix:** read the count with a short timeout and no retries, off the request thread
+  (`withAuthOn(blocking)`) or by script after the page loads; show "unknown" on failure. A spec
+  with a failing fake source expecting 200 and the local count.
+- **Placement:** [integrations practices §5](https://github.com/UkrainianWiki/wlxjury/blob/stack/68-juror-guide/docs/integrations/practices.md#5-where-the-code-doesnt-follow-these-yet-for-triage)
+  as a new I item (it breaks §1.6, "never on a request thread"); fix with the next import change.
+
+### R201-4: Monument list import settings and nomination order
+
+- **PR:** #201 (18, tip `eb39d040`). `app/services/imports/MonumentListImportHandler.scala:93`,
+  `:158`.
+- **Severity:** Nit.
+- **At the newest tip:** still there (`MonumentListImportHandler.scala:86`, `:149-158`).
+- **Items, failure scenarios and fixes:**
+  1. `jobs.monumentImport.pageSize` of 0 or less reaches the `embeddedin` request as `eilimit`;
+     the job fails on its first fetch. Refuse values below 1 at start-up, as the image handler does.
+  2. Two list pages of one step can name the same new monument id; both pass the nomination
+     filter and the batch keeps the later, so the stored page depends on title order. Keep the
+     first: `.distinctBy(_.id)` after the filter.
+- **Placement:** append after open-followups "Still open", with the next import change.
+
 New entries use the format `### R<PR>-<n>: <short title>`, then PR and file:line
 at its tip, severity, whether it is still at the final tip, the failure
 scenario, the suggested fix and the placement (append after an existing plan,
@@ -638,3 +929,41 @@ thread, and the review-level remarks in one comment per PR (#192, #193, #195). N
 | #192 | MonumentJdbc.scala:40 batch without a transaction: fixed later (#201) |
 | #193 | B44 monument.id key: fixed later (#195 V51, #234); V45x names skipped by Flyway: fixed later (#197 V55); GatlingSmokeSpec Run: typo: new entry (R193-1); cache dump copied to the final path: new entry (R193-1); orphan selections in count/list: fixed later (#198 V58); shared decode on concurrent misses: new entry (R185-1 item 7); Voting check reads no stored rate: fixed later (#214); .env required with --reuse-container: new entry (R193-4); Page overload untested: fixed later (#216) |
 | #195 | short-region LIKE wildcards: fixed later (#205); multi-code test column: new entry (R195-1); injection cases seed no rows: new entry (R195-1) |
+
+### CodeRabbit, PRs 196-201
+
+CodeRabbit's 59 inline comments and 30 review-level remarks on #196-#201 (#198 got no review),
+classified against the followups tip `34788a54` (the mirror of `stack/71-investigations`,
+`6c00ed6e`); one reply per thread, and the review-level remarks in one comment per PR (#196,
+#197, #199, #200, #201). New entries:
+[R196-1](#r196-1-several-previous-rounds-merge-their-ratings-unevenly),
+[R196-2](#r196-2-the-round-form-shows-both-previous-round-filter-groups-at-first),
+[R196-3](#r196-3-authorization-and-query-tests-that-would-pass-a-regression),
+[R197-1](#r197-1-gatling-simulation-caps-and-checks),
+[R197-2](#r197-2-media-type-kept-classified-and-tested-loosely),
+[R199-1](#r199-1-benchmark-scripts-lose-state-on-early-exits),
+[R200-1](#r200-1-release-tools-end-and-check-database-sessions-too-broadly),
+[R200-2](#r200-2-release-tools-copies-file-modes-and-public-checks),
+[R200-3](#r200-3-operational-info-lines-and-scheduler-start-up-failures-not-logged),
+[R201-1](#r201-1-adding-a-member-is-not-atomic-and-can-lose-the-greeting),
+[R201-2](#r201-2-two-specs-call-wikimedia-without-the-integration-flag),
+[R201-3](#r201-3-the-files-page-waits-for-commons-category-count),
+[R201-4](#r201-4-monument-list-import-settings-and-nomination-order); none Medium or above.
+Two #196 comments (the thumbnail writes) go to the existing
+[R185-1](#r185-1-local-image-cache-bookkeeping-gaps) item 2.
+
+| PR | Inline comments: class |
+|---|---|
+| #196 | EditRound.scala:86 non-numeric previousRound[] dropped: not applicable; ImageProxyController.scala:21 pageN- prefix (its PDF-source part fixed later, #202): not applicable; Round.scala:324 sameRateType checks only binary: new entry; SelectionJdbc.scala:243 mergeRounds leaves criteria rates: fixed later; ConnectDb.scala:16 wrong config keys: fixed later; LocalImageCacheService.scala:197 round lookup failure zeroes progress: fixed later; LocalImageCacheService.scala:399 unbounded write futures: new entry; LocalImageCacheServiceSpec.scala:326 wait for all four files: fixed later; LocalImageCacheServiceSpec.scala:342 wait for the 500px file: fixed later; RoundController.scala:205 re-render calls imagesByRound again: fixed later; DistributeImages.scala:52 criteria rates need inserted ids: fixed later; DistributeImages.scala:163 merged optional-rate denominator: new entry; DistributeImages.scala:222 selected-at-least counts per round: new entry; LocalImageCacheService.scala:416 write failures not counted: new entry; RoundService.scala:48 restore loop stops on the first failure: fixed later; V52 rounds.previous varchar(255): not applicable |
+| #197 | ImageJdbc.scala:123 refresh clears a stored mediaType: new entry; ImageWithRatingSeqFilter.scala:107 unknown media type passes all: new entry; ImageWithRatingSeqFilter.scala:106 audio counts as image: new entry; GatlingSmokeSpec.scala:56 warm-up status ignored: new entry; HeapWatcher.scala:54 GC counted by arrival: new entry; AggregatedRatingsSimulation.scala:63 stress ignores aggRatings timing: new entry; RoundDistributionSimulation.scala:168 fixed 60-minute cap: new entry; RoundManagementSimulation.scala:114 cap shorter than create timeout: new entry |
+| #199 | bench/README.md:132 snapshot check after stop: new entry; convert.sh:23 sampler left running on error: new entry; run.sh:70 round 1775 category undocumented: new entry |
+| #200 | JobScheduler.scala:157 tableReady failures not logged: new entry; logback.xml:16 services/controllers INFO dropped: new entry; BuildIdentity.scala:46 Int version components: not applicable; wlxjury-deploy.py:153 legacy JDBC options dropped: new entry; wlxjury-deploy.py:177 token-named credentials: fixed later; wlxjury-deploy.py:370 only some config suffixes scanned: new entry; wlxjury-deploy.py:435 service may be a .timer: new entry; wlxjury-deploy.py:563 sessions without a default database: new entry; wlxjury-deploy.py:694 copytree follows symlinks: new entry; wlxjury-deploy.py:752 3xx to another host passes: new entry; wlxjury-release.sh:70 empty quiesce_units: new entry; wlxjury-release.sh:219 public URL may reach another app: new entry; wlxjury-release.sh:257 end_sessions on every database: new entry; wlxjury-release.sh:266 sessions without a default database: new entry; wlxjury-release.sh:296 grep -q under pipefail: new entry; wlxjury-release.sh:344 database server identity: not applicable; wlxjury-release.sh:357 no end_sessions before the deploy dump: new entry; wlxjury-deploy.py:558 end_sessions on every database: new entry; wlxjury-deploy.py:965 restored /etc/default/wlxjury is 0644: new entry |
+| #201 | UserController.scala:225 roles=jury,root: fixed later; UserController.scala:289 failed import entries not reported: fixed later; ImageJdbc.scala:122 author truncated to 256: fixed later; User.scala:424 account and membership not atomic: new entry; UserContestJdbc.scala:47 INSERT IGNORE reported as AlreadyMember: new entry; CommonsSource.scala:52 + decoded as a space: fixed later; ImageText.scala:26 a page without text clears stored values: fixed later; MonumentListImportHandler.scala:93 pageSize unchecked: new entry; MonumentListImportHandler.scala:158 duplicate ids in one batch: new entry; Job.scala:152 deadlock in the duplicate check: fixed later; UserService.scala:52 greeting lost after a mail failure: new entry; ImportFilesPageSpec.scala:52 live Commons: new entry; MonumentListImportSpec.scala:136 live Wikipedia: new entry |
+
+| PR | Review-level remarks: class |
+|---|---|
+| #196 | selectWS in a closed round: fixed later (#198); running flag on a failed query: fixed later (#216); previous rounds of another contest: fixed later (#198); saveRound role-only check: fixed later (#206); previous-round handler on load: new entry (R196-2); failed creation leaves the round active: fixed later (#198); new-round example with an id: not applicable; PDF/TIFF cache-hit test: new entry (R196-3); no-mutation checks seed no vote: new entry (R196-3); same-contest success tests: fixed later (#198, #206); own round with a foreign contestId: new entry (R196-3); ApiSpec PUT tests: fixed later (#218); list test's requested titles: fixed later (#201) |
+| #197 | monument update on the default dispatcher: fixed later (#201); distribution step checks counts only: new entry (R197-1); gallery list foreign-contest test: new entry (R196-3); one-image fetch test without a media type: new entry (R197-2); media type over extension test: new entry (R197-2); isVideo ignores mime: not applicable |
+| #199 | run.sh loses the app logs on an abort: new entry (R199-1) |
+| #200 | SourcePaths without src/main/resources: not applicable; useSSL=false for a remote database: new entry (R200-2); forwarded-loopback readiness case: new entry (R200-2); readiness with another build or schema: new entry (R200-2); ErrorDocument 503 for a stopped backend: not applicable |
+| #201 | canViewOrgInfo jury branch without the contest: fixed later (#206); files page blocks on the Commons count: new entry (R201-3); resetPassword .get: fixed later (#206); fallback to the first admin contest: fixed later (#206); EXPLAIN checks Using temporary only: new entry (R196-3) |
