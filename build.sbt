@@ -271,7 +271,8 @@ resolvers += Resolver.mavenLocal
 libraryDependencySchemes += "org.scala-lang.modules" %% "scala-parser-combinators" % "always"
 
 libraryDependencies ++= Seq(
-  "org.webjars" %% "webjars-play" % "3.0.10",
+  // The webjars' files are served by controllers.WebJars from META-INF/resources/webjars, with
+  // no locator: webjars-play (and its webjars-locator chain) isn't needed
   "org.webjars" % "jquery" % "3.7.1",
   // Bootstrap 5's bundle JS includes Popper; Tom Select's complete build includes its two deps
   "org.webjars" % "bootstrap" % "5.3.8" exclude ("org.webjars", "popper.js"),
@@ -342,7 +343,9 @@ excludeDependencies += ExclusionRule("commons-logging", "commons-logging")
 excludeDependencies += ExclusionRule("javax.activation", "javax.activation-api")
 
 dependencyOverrides ++= Seq(
-  "commons-io" % "commons-io" % "2.22.0"
+  "commons-io" % "commons-io" % "2.22.0",
+  // 3.13.0 came with webjars-play's commons-text; without it scalawiki's 3.4 (2015) would win
+  "org.apache.commons" % "commons-lang3" % "3.13.0"
 ) ++ Seq("testcontainers", "jdbc", "database-commons", "mariadb", "mysql").map { module =>
   "org.testcontainers" % module % TestcontainersJavaVersion
 }
