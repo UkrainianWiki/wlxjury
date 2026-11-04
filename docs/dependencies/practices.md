@@ -155,6 +155,24 @@ excludes `commons-logging` (jcl-over-slf4j provides it) and jaxb-api's `javax.ac
 (jakarta.activation 1.2.1, from play-mailer 10, carries it). *Why:* two copies of the same class
 on the classpath load whichever comes first, unannounced, because the group IDs differ.
 
+From ScalikeJDBC (dependency updates part 2, step 1; user, 2026-11-04), `build.sbt` excludes
+`commons-dbcp2` and `commons-pool2` in every scope (and with them dbcp2's
+`jakarta.transaction-api` 1.3.3 left): scalikejdbc-core's default pool, which nothing
+registers once the tests use HikariCP as production does (testing §2.4, `HikariTestPool`). It
+would come back only through `ConnectionPool.add`/`singleton` with a URL and no factory, or
+scalikejdbc-config's `DBs.setup*`, which nothing calls; the grep for `ConnectionPool.add`,
+`singleton(`, `DBs.` and `Commons2ConnectionPool` finds only `DataSourceConnectionPool`s and
+`WritePathStress`'s own factory. With dbcp2 gone, nothing brings `commons-logging` at run time;
+in Test play-test's htmlunit, commons-beanutils and commons-validator still do, so its exclusion
+stays. joda-time 2.13.1 and joda-convert 2.2.4 stay, with `scalikejdbc-joda-time`: every
+scalikejdbc-orm mapper (`CRUDMapper`, through `SQLSyntaxSupportBase`, which mixes in
+`JodaTimeImplicits`) calls `scalikejdbc.jodatime.JodaBinders` when it is constructed, and the
+joins, includes and `withTableName` copies of `CRUDFeatureWithId` carry the same (a `jdeps`
+scan of scalikejdbc-orm 4.3.5). Excluding `scalikejdbc-joda-time` would fail every DAO at run
+time, not at compile time; keeping it without joda-time (its binders are typed with joda's
+classes) was not tried, as nothing guards which of joda's classes load when. They go when scalikejdbc-orm drops `JodaTimeImplicits` from `SQLSyntaxSupportBase`, or wlxjury
+leaves scalikejdbc-orm.
+
 ## 4. Downloaded tools and checksums
 
 **4.1 Verify what is downloaded.** A tool fetched by a script or workflow outside a package manager
