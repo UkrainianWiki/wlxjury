@@ -155,6 +155,84 @@ index 543ebcc..96115bb 100644
    'quiesce_units': wlxjury_quiesce_units,
    'maintenance_urls': wlxjury_maintenance_urls,
  } | to_nice_json(indent=2) }}
+diff --git a/roles/wlxjury_web/defaults/main.yml b/roles/wlxjury_web/defaults/main.yml
+index 7b16278..10f1c7a 100644
+--- a/roles/wlxjury_web/defaults/main.yml
++++ b/roles/wlxjury_web/defaults/main.yml
+@@ -7,8 +7,3 @@ wlxjury_apache_modules: [rewrite, proxy, proxy_http, headers, ssl]
+ # sites-available/<name>.conf for the HTTP vhosts.
+ wlxjury_apache_site: wlxjury
+ 
+-# Optional local image cache vhost (conf/apache/jury-images.conf in the app
+-# repository): {server_name: images.example.org, document_root: /var/www/jury-images}.
+-wlxjury_images_vhost: {}
+-# Wikimedia's User-Agent policy asks for contact details.
+-wlxjury_images_user_agent: "WLXJury/1.0 (https://commons.wikimedia.org/wiki/Commons:WLX_Jury_Tool; intracer@gmail.com)"
+diff --git a/roles/wlxjury_web/tasks/main.yml b/roles/wlxjury_web/tasks/main.yml
+index 193f770..67e55ed 100644
+--- a/roles/wlxjury_web/tasks/main.yml
++++ b/roles/wlxjury_web/tasks/main.yml
+@@ -55,19 +55,13 @@
+     creates: "/etc/apache2/sites-enabled/{{ wlxjury_apache_site }}.conf"
+   notify: wlxjury reload apache
+ 
+-- name: Install the image cache vhost
+-  ansible.builtin.template:
+-    src: wlxjury-images.conf.j2
+-    dest: /etc/apache2/sites-available/wlxjury-images.conf
+-    owner: root
+-    group: root
+-    mode: "0644"
+-  notify: wlxjury reload apache
+-  when: wlxjury_images_vhost | length > 0
+-
+-- name: Enable the image cache vhost
+-  ansible.builtin.command:
+-    argv: [a2ensite, wlxjury-images]
+-    creates: /etc/apache2/sites-enabled/wlxjury-images.conf
++# The app serves its image cache itself (ImageProxyController, signed-in users
++# only); the image cache vhost the role once offered served it to anyone.
++- name: Remove the retired image cache vhost
++  ansible.builtin.file:
++    path: "{{ item }}"
++    state: absent
++  loop:
++    - /etc/apache2/sites-enabled/wlxjury-images.conf
++    - /etc/apache2/sites-available/wlxjury-images.conf
+   notify: wlxjury reload apache
+-  when: wlxjury_images_vhost | length > 0
+diff --git a/roles/wlxjury_web/templates/wlxjury-images.conf.j2 b/roles/wlxjury_web/templates/wlxjury-images.conf.j2
+deleted file mode 100644
+index 8b47af8..0000000
+--- a/roles/wlxjury_web/templates/wlxjury-images.conf.j2
++++ /dev/null
+@@ -1,26 +0,0 @@
+-# Managed by wlxjury-infra. Serve locally cached jury images and fall back to
+-# upload.wikimedia.org for missing files. Set wlxjury.thumbs.host to this host.
+-<VirtualHost *:80>
+-    ServerName {{ wlxjury_images_vhost.server_name }}
+-    DocumentRoot {{ wlxjury_images_vhost.document_root | default('/var/www/jury-images') }}
+-
+-    <Directory {{ wlxjury_images_vhost.document_root | default('/var/www/jury-images') }}>
+-        Options -Indexes
+-        AllowOverride None
+-        Require all granted
+-        Header set Cache-Control "public, max-age=2592000"
+-    </Directory>
+-
+-    # DOCUMENT_ROOT+REQUEST_URI rather than REQUEST_FILENAME: Apache may split the
+-    # URL at a .jpg directory boundary and treat the rest as PATH_INFO.
+-    RewriteEngine On
+-    RewriteCond %{DOCUMENT_ROOT}%{REQUEST_URI} !-f
+-    RewriteRule ^(/wikipedia/commons/thumb/.+)$ https://upload.wikimedia.org$1 [P,L,E=PROXIED:1]
+-
+-    Header always set X-Jury-Cache "local"
+-    Header always set X-Jury-Cache "proxied" env=PROXIED
+-
+-    SSLProxyEngine On
+-    ProxyPassReverse / https://upload.wikimedia.org/
+-    RequestHeader set User-Agent "{{ wlxjury_images_vhost.user_agent | default(wlxjury_images_user_agent) }}"
+-</VirtualHost>
 diff --git a/tests/run.sh b/tests/run.sh
 index 76ce061..d5c574c 100644
 --- a/tests/run.sh

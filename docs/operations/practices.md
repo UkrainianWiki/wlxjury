@@ -230,9 +230,6 @@ secure-coding §18. A new pool, worker count or limit is checked against those b
   [`ci-drafts/infra/`](../plans/ci-drafts/infra/ops-retention-monit.diff)). On a shared host,
   other monit checks should not restart MariaDB during a deployment, and a filesystem space
   alert belongs beside them.
-- **OP7 (security):** the optional `conf/apache/jury-images.conf` would serve the image cache to
-  anyone, while `ImageProxyController` serves thumbnails only to signed-in users. Whether to
-  remove it is open.
-- **OP8 (3.3a):** prune never deletes rescue dumps (`before-restore-*`) or `wlxjury-deploy`'s
+- **OP7 (3.3a):** prune never deletes rescue dumps (`before-restore-*`) or `wlxjury-deploy`'s
   cutover records (their dumps and config copies). They go by hand after review, or with the
   cutover's retirement (roadmap).

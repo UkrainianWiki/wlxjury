@@ -269,7 +269,7 @@ It deletes r4 and the legacy release, and the dumps of r1's, r3's and r5's opera
 
 ### The image cache folder
 
-The image cache (`wlxjury.thumbs.local-path`, default `/var/www/jury-images`) holds the thumbnails the app downloads from Commons. Only the app reads and writes it: `ImageProxyController` serves it to signed-in users. The optional `conf/apache/jury-images.conf` would serve it to anyone, without that check; the steps here don't use it. The app writes each file as a temporary `.tmp-*` file in the target folder and moves it into place, creating folders as it goes; it needs to own the folders, nothing more. So the folder is owned by the service user (`wlxjury`), mode `0755`: folders `0755` and files `0644`, as the app creates them (with the unit's default umask).
+The image cache (`wlxjury.thumbs.local-path`, default `/var/www/jury-images`) holds the thumbnails the app downloads from Commons. Only the app reads and writes it: `ImageProxyController` serves it to signed-in users (no Apache vhost serves it). The app writes each file as a temporary `.tmp-*` file in the target folder and moves it into place, creating folders as it goes; it needs to own the folders, nothing more. So the folder is owned by the service user (`wlxjury`), mode `0755`: folders `0755` and files `0644`, as the app creates them (with the unit's default umask).
 
 `deploy` refuses, before anything changes, while the folder named by `image_cache_dir` in `deployment.json` is not owned by `service_user` (default `wlxjury`) or is group- or world-writable. It is checked only if it exists (on a new server the app creates it), and at its target if it is a symlink. If the folder is group- or world-writable, or owned by another account, fix it with:
 
