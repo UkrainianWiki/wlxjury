@@ -31,6 +31,7 @@ in progress; S6 on `ukwikidev/security-s6` (not merged); S7 queued; S4 and S8 fo
 | P10 | Production dump and bench volumes on the workstation | Low | Open; S9 skipped for now | ops | S9 | — | 2026-11-02 |
 | P19 | No audit log of admin actions | Info | Scheduled with the rounds-parity plan's audit log | app | parity plan | — | 2026-11-02 |
 | N1 (production) | The role-allowlist hotfix on the server | High | Hotfix deployed 2026-11-02 as `0.13-round-filters-rolefix-f3f2c73617de` (branch `ukwikidev/hotfix-role-allowlist-f9c31ce5`, runbook [2026-11-02-role-allowlist-hotfix.md](../history/security/2026-11-02-role-allowlist-hotfix.md) on that branch); the schema-66 ZIP from `ukwikidev/hotfix-role-allowlist` is superseded and must not be deployed; `jury1`/`jury-` rows reset; open: the user's `roles=root` browser check and the leftover query | ops | S1 | — | 2026-11-02 |
+| N15 | unitegallery's tile link icon puts the item's link (an `<a href>` around the tile's `<img>`) in a quoted `href` unescaped (`setHtmlThumb`) | Info | Open, not reachable: `tile_show_link_icon` and `tile_as_link` are off (gallery-init.js) and no template wraps a tile in a link. Escape it, or drop the gallery ([vendor doc](../vendor/unitegallery.md) §4), before turning either on | app | patched gallery | — | 2026-11-04 |
 
 ## Fixed
 
@@ -57,6 +58,7 @@ in progress; S6 on `ukwikidev/security-s6` (not merged); S7 queued; S4 and S8 fo
 | P17 | `/api/docs` under the production CSP not checked in a browser | Info | Fixed without a relaxation (static check of Swagger UI 5.18.3: no inline script or handler, files from this host, `data:` images, no eval reached; router check of its responses); no browser run (no Chrome harness fixture in the worktree) | app | S7 | `SecurityHeadersSpec` | 2026-11-02 |
 | N12 | The token pages' `Referrer-Policy: no-referrer` (S2) replaced by Play's filter value in production | Low | Fixed (found in S7: Play's `SecurityHeadersFilter` overwrote it; `AppSecurityHeadersFilter` keeps it) | app | S7 | `SecurityHeadersSpec` (token page) | 2026-11-02 |
 | N13 | A request Play's server can't parse (e.g. `GET /%zz`) got no answer: `ErrorHandler.onClientError` failed without a cookies attribute; server errors had no security headers | Low | Fixed (found in the S7 review fixes: `ErrorHandler.withCookieCells`, `ResponseSecurityHeaders`) | app | S7 | `SecurityHeadersSpec` (running server) | 2026-11-02 |
+| N14 | unitegallery's lightbox slide `src` (`placeImageInsideParent`, the tile's `data-image`) inserted with `.html()` unescaped: upstream's `replace('"','\"')` changed nothing. Built on every gallery page, the lightbox unused. Reachable only by a stored image url with a `"`; Commons' urls percent-encode it | Low | Fixed (found by the gallery patch inventory, 2026-11-04: `escapeAttr`; [vendor doc](../vendor/unitegallery.md) P13) | app | patched gallery | Jest `unitegallery-patches` (vendored files are exempt from G5 by name) | 2026-11-04 |
 
 Fixed before the re-review and still guarded (2026-11-02 re-check, no regression): SQL
 injection in `ImageDbNew` (Vuln 1; `RawSqlSpec`, `SelectionQuerySpec`); the committed secret

@@ -21,7 +21,8 @@ follow these yet" list for triage where one exists):
 | [dependencies/](dependencies/) | [practices.md](dependencies/practices.md) | — | adding or updating a library, action, image or tool |
 
 **References** (how a part works today): [api.md](api.md) (REST API), [deployment.md](deployment.md)
-(deploy and recovery runbook), [oauth.md](oauth.md) (Google and Wikimedia sign-in);
+(deploy and recovery runbook), [oauth.md](oauth.md) (Google and Wikimedia sign-in),
+[vendor/unitegallery.md](vendor/unitegallery.md) (the vendored gallery's patches and tests);
 [`bench/README.md`](../bench/README.md) (the production-like benchmark),
 [`scripts/README.md`](../scripts/README.md), [`scripts/review/README.md`](../scripts/review/README.md)
 (CodeRabbit requests and review triage); [CHANGELOG.md](../CHANGELOG.md) (by release).
