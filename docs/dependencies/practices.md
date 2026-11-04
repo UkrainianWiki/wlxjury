@@ -48,7 +48,11 @@ code, to a new one.
 **2.1 Exact versions everywhere.** sbt dependencies and plugins at exact versions (no `latest`,
 no ranges, no `-SNAPSHOT` but scalawiki's pinned build); webjars at exact versions (`jquery`
 3.7.1, `bootstrap` 5.3.8, `tom-select` 2.6.2); Jest's tools through `javascript-test/package-lock.json`
-and `npm ci`; Python tools at exact versions where installed (`playwright==1.48.0`). *Why:* the
+and `npm ci`; the browser tests' `@playwright/test` 1.64.1 (released 2026-10-14) and
+`@axe-core/playwright` 4.14.0 (2026-10-15, with `axe-core` 4.14.0) at exact versions in
+`browser-test/package.json` and its lockfile, the browsers being the builds that Playwright
+version names (Chromium 156, Firefox 157, WebKit 27.2; CI caches them by the lockfile's hash);
+Python tools at exact versions where installed (`playwright==1.48.0`). *Why:* the
 same commit must build the same thing next month.
 
 **2.2 Actions by commit SHA.** A workflow `uses:` a third-party action by its full commit SHA, with
@@ -107,7 +111,9 @@ failure; no plugin yet).
 **6.1 Compatible with Apache 2.0.** The project is Apache-2.0 (`LICENSE`). A new dependency's
 license is permissive and compatible (Apache-2.0, MIT, BSD); a copyleft
 library that is served to browsers or linked into the app needs the user's decision first. Name
-the license in the PR.
+the license in the PR. *Example:* `axe-core` and `@axe-core/playwright` are MPL-2.0 (a
+file-level copyleft): test tools only, injected into the test browsers by the browser tests,
+never served by the app or packaged with it, so no decision was needed; Playwright is Apache-2.0.
 
 **6.2 Vendored files keep their notice.** A copied file keeps its upstream copyright and license
 header (`jquery.raty.js`: MIT; `jquery.hotkeys.js`: dual MIT or GPL v2); a file without
@@ -128,7 +134,7 @@ Jest test, and prefer replacing to patching more of it (secure-coding §8).
 |---|---|---|
 | 1.1 at least two weeks old | review | planned: a check of new versions' release dates in update PRs |
 | 1.3 no unused dependency | review; `sbt dist` classpath diff | review only |
-| 2.1 npm lockfile | `npm ci` in `jsTest` (fails on a lockfile mismatch) | enforced |
+| 2.1 npm lockfile | `npm ci` in `jsTest` and in `browser.yml` (fails on a lockfile mismatch) | enforced |
 | 2.2 actions by SHA | review | planned: a workflow scan for `uses:` without a 40-hex SHA |
 | 2.3 images by exact tag | review | planned: the same scan for `latest`/`stable` tags in workflows and scripts |
 | 3.1 Pekko in step | `build.sbt` comment; image cache specs | review only |
