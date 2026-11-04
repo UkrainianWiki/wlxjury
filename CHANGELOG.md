@@ -113,6 +113,14 @@ Developed 2026-11-02 to 2026-11-03, PRs #232–#236.
 - A compatibility lint of our scripts and stylesheets against the supported browsers
   (`.browserslistrc`: the last two majors, Chrome 109, Firefox 115), a step of CI; older versions
   are linted, not run in a browser.
+- Operations: `wlxjury-release prune`, run after every successful `reopen`, keeps the current
+  release and four before it and the dumps of the five newest operations that took one (by
+  count; an age rule is off by default), each with the release its restore switches back to, and stops rather than guess; deploys refuse an image cache that
+  isn't the service user's or is group- or world-writable; an alert-only monit check of the app,
+  quiet during maintenance (`conf/monit/`); no containers on production for now (developed
+  2026-11-04; [operations practices](docs/operations/practices.md) §3.3a, §4.5).
+- The unused Apache thumbnail config (`conf/apache/jury-images.conf`, its test image and Compose
+  service) removed; the app's proxy (`ImageProxyController`) serves thumbnails.
 - **Migrations:** V85 gallery index, V86 timestamp definitions, V87 for the sign-in (#240).
 
 ## Deployed
