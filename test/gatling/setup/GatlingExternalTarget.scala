@@ -19,8 +19,9 @@ object GatlingExternalTarget {
 
   def load(): GatlingFixtureData = {
     Class.forName("org.mariadb.jdbc.Driver")
-    ConnectionPool.singleton(cfg.dbUrl, cfg.dbUser, cfg.dbPassword,
-      ConnectionPoolSettings(initialSize = 2, maxSize = 8))
+    // reads only: a HikariCP pool as the tests' (db.scalikejdbc.HikariTestPool), 2 idle and 8 at most
+    ConnectionPool.singleton(_root_.db.scalikejdbc.HikariTestPool(cfg.dbUrl, cfg.dbUser, cfg.dbPassword,
+      name = "gatling-external", minimumIdle = 2, maximumPoolSize = 8))
     implicit val session: DBSession = AutoSession
 
     val contestId = cfg.contestId
