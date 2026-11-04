@@ -227,7 +227,7 @@ ThisBuild / javacOptions ++= Seq("--release", "17")
 ThisBuild / javaOptions += "-Dfile.encoding=UTF-8"
 Universal / javaOptions += "-Dfile.encoding=UTF-8"
 
-val ScalikejdbcVersion = "4.3.2"
+val ScalikejdbcVersion = "4.3.5"
 // Flyway runs from db.Migrations (no flyway-play): docs/plans/2026-11-03-flyway.md
 val FlywayVersion = "13.12.0"
 val ScalikejdbcPlayVersion = "3.0.1-scalikejdbc-4.3"
