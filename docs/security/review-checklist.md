@@ -108,8 +108,6 @@ Recorded in the release's results (the plan's results section or the release not
    - V76: the role query first (a bad row fails the migration and needs
      `wlxjury-release restore`);
    - the case-sensitive pre-release password query (follow-ups plan, B4);
-   - manual checks: Back after a vote in Safari (the browser tests' WebKit can't show it; the
-     theme flash and Firefox's Back are the browser tests', Chromium's Back is bug U23, UI
-     practices §9); category suggestions against live Commons.
+   - the manual release checks: [deployment.md, "Release checklist"](../deployment.md#release-checklist).
 5. Infra template parity: G14 or `ProductionConfigSpec` on the template, once the infra plan
    provides it; until then the O1 item above, checked by hand.

@@ -120,11 +120,9 @@ their stored state from the first frame. The browser tests (testing §10) run th
 more, in one current build of each engine on every PR; `--checks` stays as the harness's quick
 check in Chrome.
 
-**5.3 Every release:** the manual checks left in the roadmap's "Every release" (the `auto`
-screenshots in both schemes, looked at; Back after a vote in Safari, which the browser tests'
-WebKit can't show; category suggestions against live Commons). The theme flash, in one current
-build of each engine, and Back after a vote, in Firefox and Chromium, are now the browser tests'
-(`theme.spec.js`, `voting.spec.js`; in Chromium Back shows the old vote, U23).
+**5.3 Every release:** the manual UI checks (the `auto` screenshots looked at, Back after a vote
+in Safari, category suggestions against live Commons) are in the
+[release checklist](../deployment.md#release-checklist), with what the browser tests cover.
 
 ## 6. Supported browsers
 

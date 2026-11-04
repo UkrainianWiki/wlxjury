@@ -319,7 +319,7 @@ guard's listeners still report every other host. Shown on 2026-11-04 with the la
 |---|---|---|---|
 | Firefox 157 | pass | 4 of 4 fail | yes |
 | Chromium 156 | 4 of 4 fail: Back shows the old vote from the back/forward cache (U23); pass with `WLX_CHROMIUM_BFCACHE=off` | fail | yes; expected to fail (`test.fail`) until U23 is fixed |
-| WebKit 27.2 (Windows) | pass | pass (with `max-age=600` instead: 2 of 4 fail) | no: Back after a vote in Safari stays a manual check ("Every release") |
+| WebKit 27.2 (Windows) | pass | pass (with `max-age=600` instead: 2 of 4 fail) | no: Back after a vote in Safari stays a manual check ([release checklist](../deployment.md#release-checklist)) |
 
 **10.4 Sharing a server.** `UiShotsServer` writes up to eight jurors with files in both rounds to
 `server.json`; each engine votes as its own juror (Chromium the first, Firefox the second, WebKit
