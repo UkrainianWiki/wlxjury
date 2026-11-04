@@ -113,7 +113,8 @@ the tool logs each step to `/var/backups/wlxjury/operations.log`. One app instan
 ["Before any production deploy"](../plans/2026-11-02-roadmap.md#before-any-production-deploy-of-followups):
 the user's manual checks per release and per migration (e.g. `SELECT @@log_bin, @@binlog_format`
 before READ COMMITTED writes; V84's backfill size; the infra template's O1 keys). The ZIP is
-built only after the user confirms them.
+built only after the user confirms them. The checks of every release are the
+[release checklist](../deployment.md#release-checklist).
 
 **4.3 Rollback by milestone.** Before `migration-may-start`, restart and `reopen`. From
 `migration-may-start` until reopening, `restore OPERATION` (never just start the previous release:

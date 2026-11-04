@@ -106,6 +106,13 @@ Developed 2026-11-02 to 2026-11-03, PRs #232–#236.
 - Debian/RPM packages and the Vagrant setup dropped; the ZIP is the release artifact. The dead
   Travis and AppVeyor configs and the Heroku files (`Procfile`, `system.properties`) removed.
 - Java 17 baseline: compiled with `-release:17`, Java 11 support dropped (CI already ran 17).
+- Browser tests: Playwright in one current build each of desktop Chromium, Firefox and WebKit,
+  a CI job per engine on every PR, against the screenshot fixture with Commons stubbed; votes,
+  Back after a vote, the colour modes, refusals and organizer pages, with zero CSP violations and
+  console errors per page and an accessibility scan ([testing practices](docs/testing/practices.md) §10).
+- A compatibility lint of our scripts and stylesheets against the supported browsers
+  (`.browserslistrc`: the last two majors, Chrome 109, Firefox 115), a step of CI; older versions
+  are linted, not run in a browser.
 - **Migrations:** V85 gallery index, V86 timestamp definitions, V87 for the sign-in (#240).
 
 ## Deployed

@@ -448,6 +448,65 @@ sudo wlxjury-release restore OPERATION --accept-data-loss
 
 Rehearse the deployment and each section of this runbook on a production copy before relying on them.
 
+## Release checklist
+
+The one list of the checks made by hand before or after a release (the user, 2026-11-04). The
+deploy itself is [Routine deployment after the cutover](#routine-deployment-after-the-cutover)
+and the way back the [Recovery runbook](#recovery-runbook); a release's own items (config keys,
+migrations, queries for that release) are in the roadmap's
+["Before any production deploy"](plans/2026-11-02-roadmap.md#before-any-production-deploy-of-followups).
+A change that adds, removes or automates a manual check updates this section
+([docs/README.md](README.md) §3).
+
+### Before the release
+
+| Check | What to do | Why by hand | When |
+|---|---|---|---|
+| The release's own items | The roadmap's list for this release (release 1, release 2): config keys, HTTPS, loggers, the pre-release queries (`SELECT @@log_bin, @@binlog_format`, the password and role counts), each with its detail there; [operations](operations/practices.md) §4.2 | They read production's config and data, which no test has | Every release, as the list for it says |
+| The `auto` colour mode, looked at | `target/ui-venv/Scripts/python scripts/ui-shots.py shoot --label <release> --mode auto --scheme light --start-server`, the same with `--scheme dark`; look through the shots, or `diff` them against the last release's ([UI](ui/practices.md) §5.1) | Looked at by a person: the browser tests check the mode of every frame, not how a page looks in it | Every release; necessarily when a template, `theme.css` or `main.css` changed |
+| Back after a vote in Safari | In Safari (macOS), as a juror: open a binary round's large view, vote with Space, press Back: the file shows the new vote, not the one before; the same with a digit in a rated round | Playwright's WebKit (Windows and Linux builds) brings the page back fresh even without `no-store`, so the browser tests can't show the regression there ([testing](testing/practices.md) §10.3) | Every release; necessarily when the large view, its keys or `Secured.noStore` changed |
+| Category suggestions against live Commons | As an organizer, in a category field (the contest images page, the round form's image filtering): type a few letters of a real category; Commons' categories are suggested and one can be picked | Needs live Commons: the tests stub every Commons call and refuse its hosts | Every release; necessarily when `category-suggest.js`, Tom Select or the suggestions' endpoint changed |
+| Signing in with Google or Wikimedia | On a staging host first: sign in with each provider and link an account ([integrations](integrations/practices.md) §3.3) | Real providers, which the tests fake | Before a production host is listed for OAuth, and when the providers' config or the sign-in code changed |
+
+### After the deploy
+
+| Check | What to do | Why by hand | When |
+|---|---|---|---|
+| Smoke test before reopening | The release's pages on `127.0.0.1:9000` with a jury host name, as [Routine deployment after the cutover](#routine-deployment-after-the-cutover) says, then `reopen` | The production server, its config and data | Every deploy |
+| Back out if needed | The [Recovery runbook](#recovery-runbook), by the last milestone | A decision | When the smoke test fails |
+
+### Covered by the browser tests: not repeated by hand
+
+On every PR, in one current build of each engine (Chromium 156, Firefox 157, WebKit 27.2;
+[testing](testing/practices.md) §10), `browser.yml`:
+
+- the theme flash: `auto` in both schemes, every frame from the first in the right mode
+  (`theme.spec.js`), in all three engines, Firefox included; and the two theme switches;
+- Back after a vote shows the stored vote, in Firefox (`voting.spec.js`); voting by key, button,
+  thumb and star in both rounds (`voting.spec.js`);
+- zero CSP violations, console errors and failed requests on every page visited, and the
+  production CSP sent (`guards.spec.js`, every spec);
+- signing in and out with the CSRF token (`sign-in.spec.js`); a juror's and an organizer's 403
+  pages (`access.spec.js`); the organizer and admin pages, and the round form's edit-then-cancel
+  (`organizer.spec.js`);
+- the large view's side sections restored before its scripts run (`sections.spec.js`);
+- one `h1` per page, and an accessibility scan in Chromium (`pages.spec.js`).
+
+### Known gaps
+
+- **Back after a vote in Chrome shows the old vote** (U23, [UI](ui/practices.md) §9): Chromium
+  brings the `no-store` large view back from its back/forward cache; the browser tests assert
+  that stale page there, and fail once it stops. Nothing to check by hand until it is fixed, but once, in a real Chrome, whether
+  Chrome does it too (U23 says so).
+- **The previous majors and the floor (Chrome 109, Firefox 115) are linted, not run**
+  ([UI](ui/practices.md) §6.1, §6.1a): the compatibility lint (`.browserslistrc`, `ci.yml`) sees
+  our scripts' APIs and syntax and the CSS features caniuse lists, not rendering or behaviour. A
+  release that changes how the core pages work (sign-in, voting) can be tried by hand in
+  Firefox 115 ESR or Chrome 109 where one is at hand; it is not required.
+- **The side sections' first frame** (U18) and **Firefox's page error when leaving a gallery**
+  (U22) are open triage items, not checks.
+- **Phones:** not supported yet ([UI](ui/practices.md) §6.2).
+
 ## Local verification
 
 ```bash

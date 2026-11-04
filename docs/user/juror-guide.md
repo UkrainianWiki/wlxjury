@@ -382,8 +382,8 @@ The jury tool supports the current and the previous version of these desktop bro
 - Firefox
 - Safari
 
-Signing in and voting also keep working in Chrome 109 and Firefox 115, which some older
-computers can't upgrade from. Pages may look different there.
+Chrome 109 and Firefox 115, which some older computers can't upgrade from, are supported too
+for signing in and voting. Pages may look different there.
 
 Phones and tablets are not supported yet. The pages open there, but they aren't designed or
 tested for small screens. Please judge on a computer.

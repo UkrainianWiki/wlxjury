@@ -1,0 +1,3 @@
+/* The compatibility lint's self-test (npm run lint:selftest): :has(), which Firefox 115-120
+   don't support, must be reported. Not served: outside public/. */
+a:has(> .btn) { text-decoration: none; }

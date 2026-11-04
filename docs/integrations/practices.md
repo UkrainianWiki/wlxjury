@@ -146,7 +146,7 @@ with `oauth.connectTimeout`/`readTimeout`; at most `oauth.maxConcurrent` exchang
 | 2.3 Pekko in step | `build.sbt` comment | review only |
 | 3.1 hosts listed exactly | `OAuthControllerSpec`, `OAuthRouterSpec` | enforced |
 | 3.4 authoritative emails | `ProvidersSpec`, `IdentityLinkerSpec` | enforced |
-| 3.2, 3.3 proxy and staging checks | OAuth port pre-deploy list | manual |
+| 3.2, 3.3 proxy and staging checks | OAuth port pre-deploy list; the [release checklist](../deployment.md#release-checklist) | manual |
 
 ## 5. Where the code doesn't follow these yet (for triage)
 

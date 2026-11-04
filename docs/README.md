@@ -59,6 +59,7 @@ every deleted document with its last commit.
 | ships a user-visible change | CHANGELOG.md "Unreleased" |
 | changes a label, a key or what a juror sees or does | the juror guide (`docs/user/juror-guide.md`, §5) |
 | starts, lands or decides a batch | the roadmap |
+| adds, removes or automates a manual check | the release checklist in deployment.md ("Release checklist") |
 
 The rule is in workflow §8: the update is in the same PR, and the reviewer checks it.
 

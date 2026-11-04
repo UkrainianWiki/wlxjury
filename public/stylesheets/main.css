@@ -282,6 +282,8 @@ div.thumb_small.wlx-thumb-failed img {
 :root .wlx-category-suggest.single .ts-control, :root .wlx-category-suggest.single .ts-control input { cursor: text; }
 
 /* a button inside a link (round stat tables): no underline under the spaces around it */
+/* stylelint-disable-next-line plugin/no-unsupported-browser-features -- cosmetic: Firefox 115-120
+   drop the rule and underline the spaces; the floor's cosmetic issues aren't fixed (UI §6.1a) */
 a:has(> .btn) { text-decoration: none; }
 
 
@@ -372,6 +374,8 @@ a:has(> .btn) { text-decoration: none; }
 .wlx-byrate-stars .wlx-tile-stars .raty-cancel { font-size: 1rem; }
 .wlx-rate-changed .rank-line b {
     color: var(--bs-secondary-color);
+    /* stylelint-disable-next-line plugin/no-unsupported-browser-features -- the shorthand's line
+       and style work in every supported browser; caniuse's "partial" is about thickness and skip */
     text-decoration: underline dotted;
 }
 /* a binary round's result (binaryVote, binaryTally): a juror's vote, or all the jurors'
