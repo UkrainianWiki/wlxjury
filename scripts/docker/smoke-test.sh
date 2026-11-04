@@ -34,7 +34,7 @@ jar="$work/cookies"
 # The settings come from the throwaway env file only: a variable exported in the shell would
 # take precedence over --env-file
 compose() {
-  env -u WLXJURY_COMPOSE_DB_PASSWORD -u PLAY_HTTP_SECRET_KEY -u WLXJURY_SETUP_TOKEN \
+  env -u WLXJURY_COMPOSE_DB_PASSWORD -u WLXJURY_COMPOSE_DB_ROOT_PASSWORD -u PLAY_HTTP_SECRET_KEY -u WLXJURY_SETUP_TOKEN \
     -u WLXJURY_ALLOWED_HOSTS -u WLXJURY_HOST -u WLXJURY_HTTP_BIND -u WLXJURY_HTTP_PORT \
     -u WLXJURY_IMAGE -u COMPOSE_FILE -u COMPOSE_PROJECT_NAME -u COMPOSE_PROFILES \
     docker compose -p "$project" -f "$repo/docker-compose.yml" --env-file "$env_file" "$@"
@@ -51,16 +51,20 @@ if [ -n "$(compose ps -a -q 2>/dev/null)" ]; then
   exit 2
 fi
 
+redact() { grep -Eiv 'GENERATED ROOT PASSWORD|PASSWORD *[:=]' || true; }
+
 cleanup() {
   status=$?
   if [ -n "${SMOKE_LOGS:-}" ]; then
     mkdir -p "$SMOKE_LOGS"
-    compose logs --no-color --timestamps > "$SMOKE_LOGS/compose.log" 2>&1 || true
+    # no secret in an uploaded log: drop any line that prints a password, belt and braces (the
+    # root password is given, so MariaDB prints none)
+    compose logs --no-color --timestamps 2>&1 | redact > "$SMOKE_LOGS/compose.log" || true
     compose ps -a > "$SMOKE_LOGS/ps.txt" 2>&1 || true
   fi
   if [ "$status" -ne 0 ]; then
     echo "--- smoke test failed (exit $status); the end of the logs:" >&2
-    compose logs --no-color --tail 80 >&2 || true
+    compose logs --no-color --tail 80 2>&1 | redact >&2 || true
   fi
   if $keep && [ "$status" -eq 0 ]; then
     echo "kept: docker compose -p $project -f $repo/docker-compose.yml --env-file $env_file down -v"

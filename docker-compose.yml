@@ -21,7 +21,9 @@ services:
       MARIADB_DATABASE: wlxjury
       MARIADB_USER: wlxjury
       MARIADB_PASSWORD: ${WLXJURY_COMPOSE_DB_PASSWORD:?set it in .env (scripts/docker/generate-env.sh)}
-      MARIADB_RANDOM_ROOT_PASSWORD: "1"
+      # from .env, not MARIADB_RANDOM_ROOT_PASSWORD: the image prints a password it generates
+      # in its log (and so in CI's uploaded logs), never one it is given
+      MARIADB_ROOT_PASSWORD: ${WLXJURY_COMPOSE_DB_ROOT_PASSWORD:?set it in .env (scripts/docker/generate-env.sh)}
     # production's server setting, bench/cnf/recommended-60-wlxjury.cnf (the 256 MiB buffer pool),
     # as an option rather than a mounted file: on Windows a bind-mounted file is world-writable
     # in the container, and mysqld ignores a world-writable option file

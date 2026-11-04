@@ -1,16 +1,17 @@
 #!/usr/bin/env bash
 # Gives docker-compose.yml's secrets random values in .env (or the file named as $1): each of
-# WLXJURY_COMPOSE_DB_PASSWORD, PLAY_HTTP_SECRET_KEY and WLXJURY_SETUP_TOKEN that is missing or
+# WLXJURY_COMPOSE_DB_PASSWORD, WLXJURY_COMPOSE_DB_ROOT_PASSWORD, PLAY_HTTP_SECRET_KEY and
+# WLXJURY_SETUP_TOKEN that is missing or
 # empty (a CR alone, from a Windows editor, counts as empty) gets 64 random hex characters. A
-# value already there is kept, so it is safe to rerun (and the database password must stay the
-# one the volume was created with). The values are never printed or passed as arguments: read
+# value already there is kept, so it is safe to rerun (and the database passwords must stay the
+# ones the volume was created with). The values are never printed or passed as arguments: read
 # the setup token from the file. The file ends up mode 600, also if it existed.
 set -euo pipefail
 # every file this script creates, the temporary ones included, is the owner's only
 umask 077
 
 file="${1:-$(cd "$(dirname "$0")/../.." && pwd)/.env}"
-names=(WLXJURY_COMPOSE_DB_PASSWORD PLAY_HTTP_SECRET_KEY WLXJURY_SETUP_TOKEN)
+names=(WLXJURY_COMPOSE_DB_PASSWORD WLXJURY_COMPOSE_DB_ROOT_PASSWORD PLAY_HTTP_SECRET_KEY WLXJURY_SETUP_TOKEN)
 
 random_hex() {
   if command -v openssl >/dev/null 2>&1; then openssl rand -hex 32

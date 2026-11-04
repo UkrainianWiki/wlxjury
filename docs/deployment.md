@@ -535,7 +535,9 @@ with production's server setting (the 256 MiB buffer pool of
 option file is world-writable in the container, and mysqld ignores such a file) and its data in
 the named volume `db`; its port is not published. The app takes the secrets from `.env`
 (`WLXJURY_COMPOSE_DB_PASSWORD`, `PLAY_HTTP_SECRET_KEY`, `WLXJURY_SETUP_TOKEN`; compose refuses to
-start without the first two), migrates at start (`db.default.migration.auto`, the other
+start without the first two); MariaDB's root password is `WLXJURY_COMPOSE_DB_ROOT_PASSWORD`, also
+required, given rather than generated because the image prints a generated one in its log (the
+smoke test also drops password lines from the logs it saves), migrates at start (`db.default.migration.auto`, the other
 `db.Migrations` settings at their safe defaults), accesses Commons anonymously (empty
 `commons.user`), and answers to `WLXJURY_ALLOWED_HOSTS` (default `localhost`). Its container may
 use 1.5 GB (`mem_limit`), and the JVM's heap 75% of that (`-XX:MaxRAMPercentage=75`, about
