@@ -64,6 +64,14 @@ jobs:
           cache: npm
           cache-dependency-path: javascript-test/package-lock.json
 
+      # The supported browsers (.browserslistrc) against our scripts' APIs and our stylesheets'
+      # features, in seconds and without a browser (UI practices §6.1a); its npm ci also serves
+      # jsTest below, which then skips its own
+      - name: Compatibility lint
+        run: |
+          npm --prefix javascript-test ci --no-audit --no-fund
+          npm --prefix javascript-test run lint
+
       - name: scalawiki (interim, from source)
         uses: ./.github/actions/scalawiki
         with:
