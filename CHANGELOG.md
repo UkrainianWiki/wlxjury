@@ -113,6 +113,11 @@ Developed 2026-11-02 to 2026-11-03, PRs #232–#236.
 - A compatibility lint of our scripts and stylesheets against the supported browsers
   (`.browserslistrc`: the last two majors, Chrome 109, Firefox 115), a step of CI; older versions
   are linted, not run in a browser.
+- Operations: `wlxjury-release prune`, run after every successful `reopen`, keeps the current
+  release and two before it and the recent pre-deployment dumps, never what a restore can need;
+  deploys refuse a group- or world-writable image cache; an alert-only monit check of the app,
+  quiet during maintenance (`conf/monit/`); no containers on production for now (developed
+  2026-11-04; [operations practices](docs/operations/practices.md) §3.3a, §4.5).
 - **Migrations:** V85 gallery index, V86 timestamp definitions, V87 for the sign-in (#240).
 
 ## Deployed

@@ -99,6 +99,15 @@ isolated production copy before relying on it (deployment.md, "Build and rehears
 `test_database_restore` and `test_release_script` run the restore path against a real MariaDB and
 the packaged ZIP on every PR. *Why:* a backup that was never restored is a hope, not a backup.
 
+**3.3a Keep on the server only what a restore can need.** `wlxjury-release prune`, run at the end
+of every successful `reopen` (never after a failed one), keeps the current release and the 2
+used before it, the dumps of the last 3 operations that took one and every dump younger than 14
+days (settings in `deployment.json`, user, 2026-11-04), and never what an open operation names,
+the dump of the operation that deployed the current release, or a rescue dump
+(deployment.md, "Retention"). restic (`wmua-backup`) stays the long-term backup. *Why:* 19
+release folders (2.5 GB) were never pruned, on one 59 GB disk shared with the 8 GB image cache,
+MariaDB and the WordPress sites; a full disk stops MariaDB for every tenant.
+
 **3.4 Dumps hold personal data.** A production dump is restored only inside an isolated container
 and anonymised at once; it never enters a repository or `data/cache` (secure-coding §22,
 performance §2.7).
@@ -127,12 +136,31 @@ requires is in the deployed template too; a config change in the repository name
 needs (secure-coding §20). Secrets are `${?VAR}` references in `production.conf`, values in the
 root-only `runtime.env`.
 
+**4.5 No containers on production now** (the user, 2026-11-04). Production keeps the `sbt dist`
+ZIP, systemd, Apache and the host's MariaDB. *Why:* the server is shared: Apache owns ports 80 and
+443 and one certificate for 21 domains, MariaDB and Postfix serve the WordPress sites too, and
+monit, restic and cron run beside them. A container would wrap only the JVM, and would still need
+host networking for MariaDB and Postfix on loopback and for Play's loopback proxy trust, while
+Apache and `wlxjury-release` stayed. It would add a runtime, base images to patch outside apt
+(today `unattended-upgrades` patches the host's JRE within a day) and image disk, and wouldn't
+shorten the outage: migrations still need maintenance and one app instance. If containers come
+later (a new server, or a JRE kept apart from the host), the path is **rootful Podman with a
+Quadlet unit and `Network=host`**, after the move to Ubuntu 24.04 (22.04's Podman 3.4 has no
+Quadlet), never as part of it: no daemon, no `docker` group, no published ports to bypass ufw, and
+the generated `wlxjury.service` keeps the unit's ordering and the deployment hold. For other
+deployers, a reference image is queued (roadmap, "Reference container image on GHCR with
+provenance"). Evidence: the investigation of 2026-11-04 (options compared: keep and simplify,
+Compose with and without MariaDB, Podman Quadlet, Kamal).
+
 ## 5. Monitoring and throttling
 
 **5.1 What is watched today.** The application log and Apache's logs on the server; the deploy
 tools' readiness checks; root's "Check every round's images" (`round_image_check`) after a
-release that touches votes (it must report no drift). There is no external uptime or metrics
-monitoring yet.
+release that touches votes (it must report no drift); monit's alert-only check of the service
+and `/health/ready`, quiet while the maintenance flag is on (`conf/monit/wlxjury`, deployment.md,
+"Monitoring with monit"; once the user installs it). It never restarts the app: systemd does after
+a crash, and a restart during a deployment would bypass its hold. There is no external uptime or
+metrics monitoring yet.
 
 **5.2 Jobs.** A job's status and Cancel/Retry are on its page; a job that keeps failing shows in
 `job.attempts`. Until R198-1 is fixed, a job step that runs out of memory restarts the JVM about
@@ -167,9 +195,12 @@ secure-coding §18. A new pool, worker count or limit is checked against those b
 | 1.6 the server's logback equals the repository's | — | planned (logging plan: ship it with each release) |
 | 2.1 readiness: local only, schema and READ COMMITTED | `ReadinessControllerSpec`, `ReadinessDatabaseSpec` | enforced |
 | 3.3 restore path | `test_database_restore`, `test_release_script` (`deployment.yml`) | enforced on every PR |
+| 3.3a retention: prune keeps what a restore needs | `test_release_script` (the prune tests) | enforced on every PR |
+| The image cache isn't group- or world-writable | `wlxjury-release deploy` refuses; `test_release_script` | enforced at each deploy |
+| 5.1 monit check: alert only, quiet in maintenance | `MonitCheckTest` (with `monit -t`) | enforced on every PR; installing it is the user's step |
 | 4.4 production settings | `ProductionConfigSpec`; G14 `ProductionConfigParitySpec` for the infra template | enforced; G14 planned |
 | 5.3 fail2ban on sign-in failures | infra plan (S4); the password form's failure line (OP4) | planned (postponed) |
-| 5.1 uptime monitoring | — | planned: not decided |
+| 5.1 external uptime monitoring | — | planned: not decided |
 
 ## 8. Where the setup doesn't follow these yet (for triage)
 
@@ -177,7 +208,9 @@ secure-coding §18. A new pool, worker count or limit is checked against those b
   the INFO lines of `security.account` (`oauth_*`, invitations) are not written; the OAuth port's
   pre-deploy list asks for `security.account` at INFO. The infra template also lacks `coi`.
 - **OP2 (1.5):** whole exceptions with driver text are logged (db §11 V2).
-- **OP3 (5.1):** no external monitoring or alerting; a stopped service is noticed by users.
+- **OP3 (5.1):** no external monitoring or alerting; a stopped service is noticed by users. The
+  local monit check (`conf/monit/wlxjury`, 2026-11-04) covers a stopped or unready app once
+  installed, if monit's alerts reach someone (OP7); a server that is down raises nothing.
 - **OP4 (1.3, 5.3):** the password sign-in form (`LoginController`) logs no failure line: a
   wrong password only re-renders the form with `invalid.user.or.password`. fail2ban (S4) needs a
   `security.auth` line with the client's `ip=` (and the account id, if any) there first.
@@ -189,3 +222,30 @@ secure-coding §18. A new pool, worker count or limit is checked against those b
   failed walk leaves `registryReady` failed for good, so local image downloads fail until a
   restart, and the unused-sizes cleanup is skipped. Suggested fix: `Files.walkFileTree` with
   `visitFileFailed` returning `CONTINUE`, and delete only `.tmp-` files older than about an hour.
+- **OP6 (3.3a, 5.1; the user's steps, 2026-11-04):** production doesn't follow the ops batch yet:
+  19 release folders (2.5 GB) never pruned, the image cache folder at `0777`, no monit check of
+  the app. The commands are in deployment.md ("Retention", "The image cache folder",
+  "Monitoring with monit"); the first prune with `--dry-run`. `wlxjury-infra` doesn't own them
+  either: the draft [`ci-drafts/infra/ops-retention-monit.diff`](../plans/ci-drafts/infra/ops-retention-monit.diff)
+  (applies to its `d544c17`) adds the retention settings and `image_cache_dir` to
+  `deployment.json`, creates the cache folder `0755` owned by `wlxjury`, and installs the monit
+  files where `/etc/monit/conf.d` exists, with `monit -t` before the reload.
+- **OP7 (5.1):** how monit alerts is unknown. `/etc/monit/monitrc` is root-only, and
+  `/var/log/mail.log` shows no mail from monit during its `mysqld` and `apache` failures of
+  2026-10-21, so it probably has no `set alert` recipient, or mails through another server. The
+  user checks, without printing credentials:
+  `sudo grep -nE '^\s*set (alert|mailserver|mail-format)' /etc/monit/monitrc | sed -E 's/(username|password) +[^ ]+/\1 ***/g'`.
+  Until it alerts someone, the check only writes `/var/log/monit.log`.
+- **OP8 (4.3):** the server's own monit checks restart Apache and MariaDB (`then restart`, via
+  `/etc/init.d`). A MariaDB restart during a deployment's dump or migration isn't covered by the
+  deployment hold, and on 2026-10-21 monit retried a failing `mysqld` start five times before
+  giving up. Decide whether those checks should only alert.
+- **OP9 (5.1):** no disk-space alert, while one 59 GB root holds the image cache (8.1 GB), the
+  releases, the dumps, MariaDB and the WordPress sites. A server-wide monit
+  `check filesystem rootfs with path /` with `if space usage > 85% then alert` would cover it.
+- **OP10 (security):** the optional `conf/apache/jury-images.conf` would serve the image cache to
+  anyone, while `ImageProxyController` serves thumbnails only to signed-in users. Production
+  doesn't enable it. Remove it, or say that it makes the thumbnails public.
+- **OP11 (3.3a):** prune never deletes rescue dumps (`before-restore-*`) or `wlxjury-deploy`'s
+  cutover records (their dumps and config copies). They go by hand after review, or with the
+  cutover's retirement (roadmap).

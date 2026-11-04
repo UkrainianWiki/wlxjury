@@ -28,8 +28,14 @@ images, the sbt-scoverage choice); `build.sbt`, `project/plugins.sbt`,
 before it is merged: a library, a plugin, a webjar, an npm package, an action or an image. Check the
 release date on the registry (Maven Central, npm, the action's tag, the image's tag), not the
 date it was announced. One exception (the user, 2026-11-03): a security fix that can't wait may be
-newer, if the PR says why and links the advisory; pin its exact version and read its changelog. *Why:*
-a compromised or broken release is usually found and pulled within days; waiting costs little.
+newer, if the PR says why and links the advisory; pin its exact version and read its changelog.
+It covers base images too (the user, 2026-11-04): a container's `FROM` may move to a digest
+younger than two weeks only when that digest carries nothing but security fixes of the OS or the
+JRE. The PR links each advisory it fixes (the Ubuntu USN, the JDK's CVE or the image's release
+note), pins the new digest, and says why the fix can't wait; a base update with anything else in
+it waits the two weeks. *Why:* a compromised or broken release is usually found and pulled within
+days; waiting costs little. For a base image's JRE, though, it would cost more than today, where
+`unattended-upgrades` patches the host's JRE within a day.
 
 **1.2 Compatible with the build, checked at the source.** Check the version against the build's
 Scala, sbt and JDK before choosing it, and read its sources in `target/dep-sources/`
