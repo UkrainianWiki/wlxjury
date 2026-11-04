@@ -215,12 +215,29 @@ jobs:
         working-directory: browser-test
         run: npm ci
 
+      # Every attempt's results, one directory per artifact: a re-run of the failed jobs leaves the
+      # passed engines' results under their earlier attempt
       - name: Download the engines' results
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
-          pattern: allure-results-*-attempt-${{ github.run_attempt }}
-          merge-multiple: true
-          path: target/browser-test/allure-results
+          pattern: allure-results-*
+          path: target/browser-test/allure-attempts
+
+      # each engine's latest attempt only, merged (result files have unique names)
+      - name: Each engine's latest results
+        run: |
+          mkdir -p target/browser-test/allure-results
+          for engine in chromium firefox webkit; do
+            latest="" best=0
+            for dir in target/browser-test/allure-attempts/allure-results-"$engine"-attempt-*; do
+              [ -d "$dir" ] || continue
+              n=${dir##*-attempt-}
+              if [ "$n" -gt "$best" ]; then best=$n latest=$dir; fi
+            done
+            if [ -z "$latest" ]; then echo "::warning::no Allure results for $engine"; continue; fi
+            echo "$engine: ${latest##*/}"
+            cp -R "$latest"/. target/browser-test/allure-results/
+          done
 
       # the newest saved history: saved under a run's key, restored by prefix
       - name: Restore the report's history
@@ -230,17 +247,24 @@ jobs:
           key: allure-history-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: allure-history-
 
-      - name: Generate the report
+      # npm run report: allure generate, then allure-offline.mjs, which fails on an analytics
+      # loader or anything loaded from another host (and adds the CSP meta), so an unchecked
+      # report is never uploaded. ALLURE_NO_ANALYTICS here and in allurerc.mjs (the allure2
+      # plugin honours it; testing practices §10.10).
+      - name: Generate and check the report
         working-directory: browser-test
         env:
           ALLURE_APPEND_HISTORY: ${{ github.event_name == 'push' && 'true' || 'false' }}
+          ALLURE_NO_ANALYTICS: 'true'
+          NO_UPDATE_NOTIFIER: '1'
         run: |
           test -n "$(ls -A ../target/browser-test/allure-results 2>/dev/null)" || { echo "no Allure results"; exit 1; }
-          npx allure generate ../target/browser-test/allure-results
+          npm run report:selftest
+          npm run report
           {
             echo "### Allure report"
             echo
-            echo "The \`allure-report\` artifact: one HTML file, opens offline. Results: $(ls ../target/browser-test/allure-results | wc -l) files."
+            echo "The \`allure-report-attempt-${{ github.run_attempt }}\` artifact: one HTML file, checked to load nothing from another host. Results: $(ls ../target/browser-test/allure-results | wc -l) files."
             echo
             echo "| File | Size |"
             echo "|---|---|"
