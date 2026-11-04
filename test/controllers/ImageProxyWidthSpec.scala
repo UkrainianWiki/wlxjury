@@ -23,18 +23,21 @@ class ImageProxyWidthSpec
   sequential
 
   override def beforeAll(): Unit = SharedTestDb.init()
-  override protected def before: Any = SharedTestDb.truncateAll()
+  override protected def before: Any = {
+    SharedTestDb.truncateAll()
+    wikimediaRequests.clear()
+  }
   override def afterAll(): Unit = stopWikimedia()
 
   private val signedIn = FakeRequest().withSession(Secured.UserName -> "juror@example.org")
 
-  /** The image, voted on by one juror (the session's) in one round. */
-  private def store(img: Image): Unit = {
+  /** The images, voted on by one juror (the session's) in one round. */
+  private def store(imgs: Image*): Unit = {
     implicit val contest: ContestJury = createContests(10).head
     val round = roundDao.create(Round(None, 1, None, contest.getId, createdAt = now, active = true)).getId
     val juror = userDao.create(User("Juror", "juror@example.org", None, Set("jury"), contestId = contest.id)).getId
-    imageDao.batchInsert(Seq(img))
-    selectionDao.create(img.pageId, rate = 1, juryId = juror, roundId = round, monumentId = img.monumentId)
+    imageDao.batchInsert(imgs)
+    imgs.foreach(img => selectionDao.create(img.pageId, rate = 1, juryId = juror, roundId = round, monumentId = img.monumentId))
   }
 
   private def proxy() = {
@@ -127,24 +130,53 @@ class ImageProxyWidthSpec
       forall(ShownAt)(px => cache.fileIfCached(image, px) must beNone)
     }
 
-    "send a file of unknown size to Wikimedia, nothing fetched here" in {
+    "send a file of unknown size to Wikimedia at its next size up, nothing fetched here" in {
       store(commonsImage(1L, "New_file").copy(width = 0, height = 0))
       val (controller, _) = proxy()
 
+      // Wikimedia refuses 400 wide (T414805): the narrowest of its sizes no narrower is 500
       val result = controller.serve("a/ab/New_file.jpg/400px-New_file.jpg")(signedIn)
       status(result) === SEE_OTHER
       redirectLocation(result) must
-        beSome("https://upload.wikimedia.org/wikipedia/commons/thumb/a/ab/New_file.jpg/400px-New_file.jpg")
+        beSome("https://upload.wikimedia.org/wikipedia/commons/thumb/a/ab/New_file.jpg/500px-New_file.jpg")
+      wikimediaRequests.isEmpty must beTrue
     }
 
-    "not be redirected for a file not stored, nor signed out: Wikimedia's, and 401" in {
+    "send a file not stored to Wikimedia at its next size up, a PDF's page prefix kept; signed out 401" in {
       val (controller, _) = proxy()
       store(commonsImage(1L, "New_file"))
 
       val missing = controller.serve("x/xx/Missing.jpg/400px-Missing.jpg")(signedIn)
       status(missing) === SEE_OTHER
-      redirectLocation(missing) must beSome("https://upload.wikimedia.org/wikipedia/commons/thumb/x/xx/Missing.jpg/400px-Missing.jpg")
+      redirectLocation(missing) must beSome("https://upload.wikimedia.org/wikipedia/commons/thumb/x/xx/Missing.jpg/500px-Missing.jpg")
+      val pdf = controller.serve("x/xx/Missing.pdf/page1-167px-Missing.pdf.jpg")(signedIn)
+      redirectLocation(pdf) must beSome("https://upload.wikimedia.org/wikipedia/commons/thumb/x/xx/Missing.pdf/page1-250px-Missing.pdf.jpg")
+      // one of Wikimedia's sizes as it is
+      redirectLocation(controller.serve("x/xx/Missing.jpg/330px-Missing.jpg")(signedIn)) must
+        beSome("https://upload.wikimedia.org/wikipedia/commons/thumb/x/xx/Missing.jpg/330px-Missing.jpg")
       status(controller.serve("a/ab/New_file.jpg/400px-New_file.jpg")(FakeRequest())) === UNAUTHORIZED
+    }
+
+    "only ever send the browser to, or fetch from, Wikimedia at one of its sizes or the original" in {
+      // the widths of production's redirects (824, 167), the pages' and odd ones
+      val widths = Seq(1, 19, 21, 150, 167, 225, 300, 333, 400, 450, 600, 666, 824, 961, 1466, 2000, 3839, 3840)
+      val (controller, _) = proxy()
+      store(commonsImage(1L, "New_file"), commonsImage(2L, "New_unknown").copy(width = 0, height = 0),
+        commonsImage(3L, "Error_file"))
+
+      val locations = for {
+        name   <- Seq("New_file", "New_unknown", "Error_file", "Missing")
+        px     <- widths
+        result  = controller.serve(s"a/ab/$name.jpg/${px}px-$name.jpg")(signedIn)
+        if status(result) == SEE_OTHER
+        url    <- redirectLocation(result)
+      } yield url
+      locations must not(beEmpty)
+      forall(locations.filter(_.startsWith("https://upload.wikimedia.org/"))) { url =>
+        FakeWikimedia.thumbnailWidth(url).forall(Global.wikimediaSteps.contains) must beTrue
+      }
+      wikimediaRequests.isEmpty must beFalse
+      forall(wikimediaRequests.toArray.toSeq.map(_.toString))(path => FakeWikimedia.refused(path) must beFalse)
     }
   }
 }
