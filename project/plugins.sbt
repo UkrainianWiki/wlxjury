@@ -8,7 +8,7 @@ resolvers += Classpaths.sbtPluginReleases
 // Use the Play sbt plugin for Play projects
 addSbtPlugin("org.playframework" % "sbt-plugin" % "3.0.12")
 
-addSbtPlugin("com.github.sbt" % "sbt-native-packager" % "1.10.0")
+addSbtPlugin("com.github.sbt" % "sbt-native-packager" % "1.13.0")
 
 // Fingerprints packaged assets (pipelineStages in build.sbt)
 addSbtPlugin("com.github.sbt" % "sbt-digest" % "2.1.0")
