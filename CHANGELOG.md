@@ -83,6 +83,12 @@ Developed 2026-11-02 to 2026-11-03, PRs #232–#236.
 - **Sign in with Google or Wikimedia**, to an existing account (#240, V87, 2026-11-03).
 - **Conflicts of interest:** on a stopped round, its conflicts page disqualifies a juror's
   conflicted files keeping their votes, and requalifies them (#244, 2026-11-03).
+- **Disqualification history:** a round's conflicts page lists every disqualification and
+  requalification of its files (when, which file, the reason code, the status before and after,
+  by whom), for its admins and organizers. A requalified file goes back to the status it had: a
+  file deleted on Commons while the round was open stays deleted, its votes aside, instead of
+  coming back. A "Stop the round" button, with a confirm, on an open round's conflicts page
+  (developed 2026-11-04, V88).
 - **Criteria rounds' results:** per-criterion averages in the file list, the by-rate list, the
   CSV and the all-jurors large view, and stars per criterion (#247, 2026-11-03).
 
@@ -147,7 +153,12 @@ Developed 2026-11-02 to 2026-11-03, PRs #232–#236.
   - Test-only: scalatest 3.2.20, os-lib 0.11.8 and jna 5.19.1.
   - sbt-scoverage 2.4.4, sbt-coveralls 1.3.15, sbt-digest 2.1.0, sbt-jmh 0.4.8 and sbt-native-packager 1.13.0, with an identical ZIP layout.
 - Dependency updates, part 2, step 1 (developed 2026-11-04): the tests run on HikariCP, the pool production uses, instead of ScalikeJDBC's commons-dbcp2 default, with no change in their speed. commons-dbcp2 and commons-pool2 are out of the build. `lib/` has 185 jars, 120.4 MB. joda-time stays, because scalikejdbc-orm's mappers load it.
-- **Migrations:** V85 gallery index, V86 timestamp definitions, V87 for the sign-in (#240).
+- `round_image_event`, an append-only table of disqualifications and requalifications, written
+  in the action's transaction after its `round_image` rows (last in the lock order, round
+  locked first; `StructuralWritesSpec` scans it); the requalify reads the latest event's prior
+  status (developed 2026-11-04; [round images plan](docs/plans/2026-11-02-round-images-two-step.md) §15).
+- **Migrations:** V85 gallery index, V86 timestamp definitions, V87 for the sign-in (#240);
+  V88 `round_image_event`.
 
 ## Deployed
 

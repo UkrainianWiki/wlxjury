@@ -1,6 +1,7 @@
 # Round images and two-step rounds
 
-Status: P0 merged (V82, §12); P1 implemented (V84, §13); P1b implemented (no migration, §14). Written 2026-11-02 from a planning agent's investigation of
+Status: P0 merged (V82, §12); P1 implemented (V84, §13); P1b implemented (no migration, §14);
+the `round_image_event` batch implemented (V88, §15). Written 2026-11-02 from a planning agent's investigation of
 `ukwikidev/followups` at b641c78d, the Montage review (`2026-11-02-montage-rounds-parity.md`)
 and the user's answers. References are to files and functions; line numbers drift (B11 has
 changed `RoundList` and `ImageDbNew` since).
@@ -225,8 +226,10 @@ transactions are retried on a deadlock (`Tx.write`, 3 attempts; job steps by the
 Below the round the order still holds and is what each writer does, but it is no longer the
 safety argument between two structural writers of one round. Kept from before:
 
-`round` → `images` → `vote` → `criteria_rate` → `vote_aside` → `round_image` (criteria plan §3,
-folded in with P1). It extends today's rounds → files → votes (`DeletedFiles`). Rule:
+`round` → `images` → `vote` → `criteria_rate` → `vote_aside` → `round_image` →
+`round_image_event` (criteria plan §3, folded in with P1; the event table since V88, §15: a
+disqualify's or requalify's events are inserted after its rows, the round held for update). It
+extends today's rounds → files → votes (`DeletedFiles`). Rule:
 `criteria_rate` rows are written only while their vote row is locked (`CriteriaRate.updateRate`,
 `VoteJdbc.deleteVotes`, the moves), so a criterion vote writes `criteria_rate` before any
 delta. Two jurors voting on one image each hold their own vote row and queue on the one
@@ -253,6 +256,9 @@ otherwise take the round after them (review B1).
   the job/audit log); if the image now has `deleted_at`, status `deleted` and the votes stay
   aside. **P1b (§14, review finding 1):** `in` with its votes instead, as any deleted file of a
   round that is not open (the only rounds requalify runs on); they move aside when it opens.
+  **Since V88 (§15):** the status before the disqualify, from the file's latest
+  `round_image_event`: `deleted` (votes left aside) if it was `deleted` and is still deleted;
+  otherwise, or with no event (disqualified before V88), `in` with its votes.
 - Disqualifying a file already deleted: only the status changes.
 
 ## 6. The two-step flow
@@ -1103,7 +1109,8 @@ followups tree with P1, the robustness batch and the practices), 2026-11-03. No 
   `deleted`), then disqualified, comes back `in` with its votes when requalified, not
   `deleted`: without its prior status it can't be told from a file deleted while the round was
   stopped (which keeps its votes). The round's opening moves the votes aside again. Pinned by
-  `CoiRoundSpec`; the event-table batch (prior status, decided 2026-11-03) fixes it.
+  `CoiRoundSpec`; the event-table batch (prior status, decided 2026-11-03) fixes it. **Fixed
+  by V88 (§15)**: it comes back `deleted`, its votes aside; `CoiRoundSpec` pins that now.
 - Frozen rounds are refused too (beyond W7's wording): a next round's distribution reads the
   frozen round's votes, and moving them mid-read would make its fill inconsistent.
 - A `dq` row with no votes left (only after a hand edit or the test-only deletes) is kept, so
@@ -1228,3 +1235,182 @@ Logs under `target/checks/` of the worktree.
 | CI | PR #244 at `ad9d3003` (before the review fixes): CI and deployment tests | success (8m04s, 5m37s) | GitHub Actions |
 | CI | PR #244 at `0196326f`: deployment tests success (4m29s); CI failed once on `LocalImageCacheServiceSpec` "not create files for sizes where px >= image.width" (an async timing assertion; P1b doesn't touch it), passed on the rerun of the failed job (attempt 2) | GitHub Actions run 41658076144 |
 | Follow-up review fixes | `CoiRoundSpec`, `CoiDisqualifyLockSpec`, `RoundConflictsAuthorizationSpec`, `CoiAuthorizationSpec`, `RoundWritesGuardSpec`, `MessagesCompletenessSpec`, `StructuralWritesSpec`, `RawHtmlSinksSpec`, `RouteAuthSpec`, `VoteRowLockSpec`, `DeletedFilesSpec`, `RoundImageJdbcSpec` | 109/109 | `20261103-171838-6136.log` |
+
+## 15. `round_image_event` results
+
+Branch `ukwikidev/round-image-event` (from `origin/stack/78-test-pool-hikari` `9ba40a68`, PR
+#261, the stack tip), 2026-11-04. Roadmap queue item 4, decided by the user 2026-11-03 (§14,
+"Design choices"), before P3. Migration **V88** (`V88__Round_image_event.sql`).
+
+### Migration V88
+
+```sql
+CREATE TABLE IF NOT EXISTS round_image_event (
+  id           BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  round_id     BIGINT UNSIGNED NOT NULL,
+  page_id      BIGINT          NOT NULL,
+  action       VARCHAR(16)     NOT NULL,                 -- disqualify | requalify
+  code         VARCHAR(16)     NOT NULL,                 -- a dq_code, or a requalify reason
+  prior_status VARCHAR(16)     NOT NULL,                 -- the row's status before
+  new_status   VARCHAR(16)     NULL DEFAULT NULL,        -- after; NULL: the row went (no votes)
+  created_by   BIGINT UNSIGNED NULL DEFAULT NULL,        -- users.id, no foreign key
+  created_at   TIMESTAMP(3)    NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  PRIMARY KEY (id),
+  KEY round_image_event_round_page_idx (round_id, page_id, id),
+  CONSTRAINT round_image_event_round_id_fk FOREIGN KEY (round_id) REFERENCES round (id) ON DELETE CASCADE,
+  CONSTRAINT round_image_event_action_chk CHECK (BINARY action IN ('disqualify', 'requalify')),
+  CONSTRAINT round_image_event_prior_status_chk CHECK (BINARY prior_status IN ('in', 'dq', 'deleted')),
+  CONSTRAINT round_image_event_new_status_chk CHECK (new_status IS NULL OR BINARY new_status IN ('in', 'dq', 'deleted'))
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_general_ci;
+```
+
+- Types follow `round_image` (`round_id BIGINT UNSIGNED`, `page_id BIGINT`, statuses and codes
+  `VARCHAR(16)`, `TIMESTAMP(3)`) and `job` (`created_by`, `created_at`). A surrogate key: a file
+  has many events. Ids grow with time (each action holds its round's lock), so "latest" and
+  "in order" are by id.
+- `round_image_event_round_page_idx`: a file's history in order and its latest event (the
+  requalify's read, a range of the index per page), and a round's history (a range, then a
+  sort of the round's events, tens to hundreds). No index on `created_at`: nothing reads by it.
+- Foreign key to `round` with cascade, as `round_image`'s (db practices §2.4): its check
+  share-locks the round row, which the writer holds for update. **None to `images`**: its check
+  would share-lock the image row after `round_image`, out of the lock order (a disqualify doesn't
+  lock its images); an image deleted takes its `round_image` rows and leaves its events, which
+  nothing reads without them. None to `users`: a deleted account keeps its history.
+- CHECKs on action and statuses only: the codes grow with P3 (`manual`), and widening a CHECK on
+  a growing table copies it; the code checks them (`require`).
+- New and empty: a `CREATE TABLE`, no backfill, cheap on 10.6 and 10.11 (no copy, no lock on an
+  existing table but the `round` FK's metadata). Rerunnable (`IF NOT EXISTS`). `dq` rows from
+  before V88 have no event: a requalify of one falls back to the behaviour before (`in`).
+
+### What changed
+
+| Item | Code |
+|---|---|
+| Events | `RoundImageEventJdbc` (new): `record` (`private[scalikejdbc]`, `requireRounds`, one multi-row `INSERT` per 2,000 files), `latestDisqualify`, `byRound` (newest first, 500 at most), `ofFile` |
+| Disqualify | `RoundConflicts.disqualify` reads the files' statuses (`RoundImageJdbc.statuses`, plain, under the round's lock) **before** moving their votes aside (which makes them `deleted`); `RoundImageJdbc.disqualify(…, prior)` marks them `dq`, then records one `disqualify` event per row it marked (code `coi`, prior `in` or `deleted`, new `dq`). Rows already `dq` get no event |
+| Requalify | `RoundConflicts.requalify`, after the gate and `lockFiles`: the files whose latest event is a `disqualify` with prior `deleted` and whose image is still deleted (`deleted_at`, read under the image's lock) keep their votes aside; the others' votes move back. `RoundImageJdbc.requalifyRows(…, reason, by)` lifts `dq` (now `in`, `deleted`, or no row when no vote is left) and records one `requalify` event per row that left `dq` (code `mistaken_match` / `conflict_ended`, prior `dq`, new the status, NULL for a removed row). `moveVotesBack` no longer lifts the round's rows itself (its `requalify` pairs are skipped by its sync), so each lift is recorded once |
+| Lock order | round → images → vote → criteria_rate → vote_aside → round_image → **round_image_event** (§5, db practices §7.1) |
+| Guards | `StructuralWritesSpec` scans `round_image_event` and lists `RoundImageEventJdbc#record` (requireRounds); `RoundWrites` refuses `record` without the round lock |
+| History | the round's conflicts page (`RoundConflicts.Review.history`, `views.round.conflicts`): "History", newest first, 500 at most: when, file, action, reason code, status before → after, by (the account's name, or `#id`). Message keys only (`coi.history.*`, `coi.event.*`, `coi.status.*`; codes through `coi.code.*` and `coi.requalify.reason.*`), en/fr/uk/ru. Shown to all who may see the page (the round's admins and organizers, root), also on an open round; never jurors (D20: the page is 403 for them) |
+| Stop the round | on an open round's conflicts page, for its admins (`mayEdit`, not while distributing): a form to the rounds list's own action (`POST /admin/setround`, `currentId`, `setActive=false`, CSRF field; `withAdminRound` unchanged) with `returnTo=conflicts` (a fixed word, never a path), which redirects back to the page with `coi.round.stopped`; a confirm (`data-confirm`, `public/javascripts/confirm-submit.js`, loaded only where the button is). No new action, no one-step "stop and disqualify" |
+
+Status changes recorded: **disqualify and requalify only**. Not recorded, decided from §5 and
+§14: a file deleted on Commons or restored (`in` ↔ `deleted`, by the imports and the round's
+opening: they follow Commons and are in the import job's details and logs), `sync`'s recounts and
+the repair job (they bring rows in line with the votes, no decision), rows added by a
+distribution (the job records them, `added_by_job_id`). P3's D16a (`removeImage` as `dq`,
+`dq_code = 'manual'`) goes through `RoundImageJdbc.disqualify` and so records itself.
+
+### Design choices
+
+- **Both actions, not only requalify.** The decision said requalifications; the prior status a
+  requalify restores is only known if the disqualify recorded it, so both are recorded. A new
+  `new_status` column beside the decided `prior_status`: a requalify's event says which status it
+  restored (`in`, `deleted`, or the row removed).
+- **The prior status is read before the move.** Moving a file's votes aside makes its row
+  `deleted` (sync) before it is marked `dq`, so the row's status at the mark is not the prior one;
+  `RoundConflicts.disqualify` reads it first, under the round's lock (every writer of the round's
+  statuses holds it; a juror's vote changes no status).
+- **Restore `deleted` only while still deleted.** A file restored on Commons while disqualified
+  keeps its votes aside (P1b); requalified, it comes back `in` with them, as the restore would
+  have done. Invariant 4 (a `deleted` row's image is deleted) holds either way.
+- **No event: as before V88.** Rows disqualified before V88 come back `in` (the known limitation
+  for those only, which production can't have: no `dq` row is written before P1b ships, and P1b
+  and V88 are both undeployed).
+- **"Stop the round" reuses the existing action.** It is the rounds list's start/stop
+  (`RoundService.setCurrentRound` → `Round.setActiveGuarded`), with the same authorization and
+  CSRF; only the redirect target is chosen by a fixed form word. The round's status flow is
+  unchanged; disqualifying stays a second, explicit step (§14: no one-step "stop and
+  disqualify").
+- The history shows the account's full name: account data shown to the round's admins and
+  organizers, no request text; the log lines stay ids and codes (secure-coding §13).
+
+### Pre-deploy (V88)
+
+Read-only, production, as the admin user, before the deploy:
+```sql
+SELECT VERSION();                                                    -- 10.6 today; 10.11 after the move
+SELECT version, success FROM flyway_schema_history ORDER BY installed_rank DESC LIMIT 1;  -- 87 (or the release's last), success 1
+SELECT COUNT(*) FROM information_schema.TABLES
+  WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'round_image_event';            -- 0
+SELECT ENGINE, ROW_FORMAT FROM information_schema.TABLES
+  WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'round';                         -- InnoDB, Dynamic
+SELECT COLUMN_TYPE FROM information_schema.COLUMNS
+  WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'round' AND COLUMN_NAME = 'id';  -- bigint(20) unsigned
+SELECT COUNT(*) FROM round_image WHERE status = 'dq';                -- the rows that will have no event (0 expected)
+```
+
+- **Deploy:** V88 runs at start-up with the other pending migrations; a `CREATE TABLE` of an
+  empty table, well under a second on both servers. Nothing to backfill, no job to run.
+- **Rollback after `reopen`** (tested forward, back, forward again: `FlywayUpgradeSpec` "V88's
+  rollback SQL after reopen"; the schema after it equals V87's):
+  ```sql
+  DROP TABLE round_image_event;
+  DELETE FROM flyway_schema_history WHERE version = '88';
+  ```
+  The older code ignores the table. What it loses: the history, and a requalify then restores
+  `in` for every file (the behaviour before V88). Before `reopen`, `wlxjury-release restore`.
+- Announce: the conflicts page shows the round's disqualify/requalify history to its admins and
+  organizers, and a "Stop the round" button on an open round.
+
+### Files
+
+New: `conf/db/migration/default/V88__Round_image_event.sql`,
+`app/db/scalikejdbc/RoundImageEventJdbc.scala`, `public/javascripts/confirm-submit.js`,
+`javascript-test/confirm-submit.test.js`, `test/db/scalikejdbc/RoundImageEventSpec.scala`.
+Changed: `RoundImageJdbc` (`disqualify` with `prior` and its events, `requalifyRows` with reason
+and by and its events, `statuses`), `RoundConflicts` (prior read, the requalify's prior status,
+the history), `ImageJdbc.moveVotesBack`, `RoundController.setRound` (`returnTo`),
+`views/round/conflicts.scala.html`, `conf/messages.{en,fr,uk,ru}`; specs `CoiRoundSpec`,
+`CoiDisqualifyLockSpec`, `RoundConflictsAuthorizationSpec`, `StructuralWritesSpec`,
+`MessagesCompletenessSpec` (prefixes `coi.event.`, `coi.status.`), `FlywayUpgradeSpec`,
+`SharedTestDb`/`SharedPlayApp` (truncate the table).
+
+### Specs
+
+- `CoiRoundSpec`: the pinned case now passes the fix: a file deleted while the round was open,
+  disqualified, requalified → `deleted`, its votes aside with their ids and rates, the events
+  `disqualify coi deleted→dq`, `requalify mistaken_match dq→deleted`; the round's opening leaves
+  it; a restore brings the votes back. Prior `in` (every conflict, exact votes, criteria rates and
+  rows; events `in→dq`, `dq→in`). Restored on Commons while disqualified → `in`. No event (rows
+  from before V88, the events deleted) → `in`, the opening moves it aside. Repeated (in→dq→in,
+  deleted→dq→deleted, deleted→dq→in after a restore): six events in order, each requalify from
+  the latest disqualify. Refused actions (open round) and files already `dq` record nothing.
+- `RoundImageEventSpec`: the table as created on the test server (10.6: columns, key, FK with
+  cascade, the three CHECKs, engine, collation); CHECKs refuse an unknown action or status, the
+  code length is checked; events go with their round; `record` refused without the round lock
+  (and outside a transaction); **a failing event (its CHECK) rolls back the moved votes and the
+  `dq` rows**; a transaction failing after the event takes it with it; a requalify records only
+  the rows that left `dq`, once; a `dq` row with no votes left, requalified, recorded with
+  `new_status` NULL.
+- `CoiDisqualifyLockSpec` (INNODB_TRX): a disqualify waiting for a juror's vote in flight on the
+  file records it `in→dq`, and the requalify `dq→in` with the juror's rate back; one waiting for
+  a distribution chunk records the chunk's file too; one refused after waiting records nothing.
+- `RoundConflictsAuthorizationSpec`: the history for the round's admin and organizer (also on an
+  open round, every event's row, the reason and status texts), "no history yet"; 403 without it
+  for a juror, the board and another contest's admin. "Stop the round": offered to the admin on
+  an open round only, never to the organizer (nor its script); the admin's POST stops the round
+  and returns to the page, after which a disqualify goes through; without `returnTo` the rounds
+  list as before; 403 for a juror, an organizer, the board, another contest's admin, and this
+  contest's admin for another contest's round, the round still open; signed out refused; CSRF
+  (missing refused, valid accepted).
+- `FlywayUpgradeSpec`: V88's rollback SQL gives back V87's schema and history; V88 again creates
+  the table, empty; a rerun of its statement changes nothing.
+- Jest `confirm-submit.test.js`: asks with the form's text, sends when confirmed, drops when
+  declined, leaves other forms alone.
+- Browser tests: the conflicts page is not in the page tour (`browser-test/tests/pages.spec.js`),
+  so its accessibility scan doesn't cover it; nothing to rerun there.
+
+### Checks
+
+Logs under `target/checks/` of the worktree.
+
+| Step | Specs | Result | Log |
+|---|---|---|---|
+| First compile | `Test/compile` | ok | `20261104-205049-5040.log` |
+| Affected | `CoiRoundSpec`, `CoiDisqualifyLockSpec`, `RoundImageEventSpec`, `RoundConflictsAuthorizationSpec`, `StructuralWritesSpec`, `MessagesCompletenessSpec`, `RoundWritesGuardSpec`, `FlywayUpgradeSpec`, `MigrationSchemaSpec`, `MigrationNamingSpec`, `CoiAuthorizationSpec`, `RawHtmlSinksSpec`, `RouteAuthSpec`, `MutationAuthorizationSpec`, `RoundImageJdbcSpec`, `RoundImageCheckSpec`, `DeletedFilesSpec` | **188: 187 passed, 0 failed, 1 skipped** (a `FlywayUpgradeSpec` fixture generator, off by default) | `20261104-205822-6520.log` (the first try, `20261104-205730-25996.log`, stopped at a spec's compile error) |
+| Stress harness | `db.stress.WritePathStress`, baseline, 90 s (`-Dstress.seconds=90`), all 16 paths; `coi_disqualify` now writes the events | `coi_disqualify` 85 operations, 0 deadlocks, 0 lock wait timeouts, 0 failures; invariants clean. 12 server deadlocks, every one with the test-only `remove_unrated` (victim each time) against juror votes or a criteria change; 73 `distribute_new`/`distribute_list` count mismatches against the test-only `remove_image`/`set_round` (write paths plan §2, break 7). None involves `round_image_event`; not compared against a run of the base commit | `20261104-210109-28684.log`, `target/stress/write-paths-20261104-210150/` |
+| Gate | full suite at `e3170f17` (`Test/compile`, `test`, Jest included), MariaDB 10.6 container | **1998: 1990 passed, 0 failed, 0 errors, 8 skipped, 1 pending**; Jest 22 suites, 285/285; 10:47 | `20261104-210412-26052.log` |
+
+Not run: the suite on MariaDB 10.11 (`-Dwlxjury.test.mariadb-image`); V88's DDL has no
+version-dependent part (CI runs both). No independent review yet.

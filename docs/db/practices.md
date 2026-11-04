@@ -121,7 +121,9 @@ key's name (`RoundService` matches `submit_token_uidx`) and answers with a messa
 
 **2.4 Foreign keys where the parent outlives the child** and the cascade is wanted
 (`round_image` → `round`, `images`; `round_criterion` → `round`, `criterion`;
-`vote.page_id` → `images` (V58)). **Exceptions:** `vote.round_id`, `vote_aside` and
+`vote.page_id` → `images` (V58); `round_image_event` → `round` (V88), but not → `images`: its
+check would share-lock the image row after `round_image`, out of the §7.1 order, and an image
+deleted leaves its events unread). **Exceptions:** `vote.round_id`, `vote_aside` and
 `criteria_rate.vote_id` have none: a vote moves between `vote` and `vote_aside` keeping its
 id (no single parent table), and an FK check takes a share lock on the parent row for every
 child row written, which for `round` in a 15k-row step is a lock the round-first order must
@@ -299,11 +301,14 @@ READ COMMITTED refuses writes. Pre-deploy: `SELECT @@log_bin, @@binlog_format;`.
 
 **7.1 Lock order.** `job` (a step's own row) → `round` → `images` → `vote` →
 (`round_user`, `round_criterion`: share-locked by a vote after its row) → `criteria_rate` →
-`vote_aside` → `round_image` (round-images §5, write-path §8). A criteria change
-(`RoundCriterion.update`) locks the round and its votes before writing `round_criterion`, so
-it never waits on a vote holding them. Within a table in key order: rounds by id, files by
-`page_id`. `round_image` last in every transaction; `criteria_rate` written only while its
-vote row is locked.
+`vote_aside` → `round_image` → `round_image_event` (round-images §5 and §15, write-path §8). A
+criteria change (`RoundCriterion.update`) locks the round and its votes before writing
+`round_criterion`, so it never waits on a vote holding them. Within a table in key order:
+rounds by id, files by `page_id`. `round_image` last in every transaction but for a
+disqualify's or requalify's events (V88), inserted after its rows (`RoundImageEventJdbc.record`,
+called by `RoundImageJdbc.disqualify` and `requalifyRows`; the round held for update, so the
+insert's foreign key check on `round` waits on nothing); `criteria_rate` written only while
+its vote row is locked.
 
 **7.2 Round first** (W2). A structural write (inserting, deleting or moving votes or aside
 rows, `round_image` rows, criteria, monument copies) locks its round(s) `FOR UPDATE` first, in
@@ -387,14 +392,16 @@ gets an example there.
 queries run on production before the deploy (version, last Flyway row, the indexes and keys it
 expects, rows it would refuse, views/triggers/grants on renamed tables: P0 §12), and the
 roadmap's "Before any production deploy" links them. Rollback after `reopen` is SQL tested
-forward, back (identical `SHOW CREATE TABLE`) and forward again (V82, V84). Until `reopen`,
+forward, back (identical `SHOW CREATE TABLE`) and forward again (V82, V84, V88). Until `reopen`,
 `wlxjury-release restore` is the path.
 
 **8.6 Online DDL, timed on a copy.** State `ALGORITHM=INSTANT`/`NOCOPY`/`INPLACE, LOCK=NONE`
 so a statement fails rather than copies a large table (V56, V58, V82, V85); an FK on a large
 table is added with `foreign_key_checks = 0` after a data check (V58, V65, V82). Time the DDL
 and any backfill on production-sized data and record it (V82: ≤ 0.034 s on 1M rows; V85:
-10.9 s on 3.07M rows). Backfills that don't fit a deploy window are jobs.
+10.9 s on 3.07M rows). Backfills that don't fit a deploy window are jobs. A new, empty table
+(V84 before its backfill, V88's `round_image_event`) is a plain `CREATE TABLE IF NOT EXISTS`:
+no copy, and its foreign keys only touch the parents' metadata.
 
 **8.7 Version-conditional DDL.** When a server version changes the meaning (10.6 parses
 `DESC` in an index and ignores it), read `VERSION()` and `information_schema`, run the
@@ -444,7 +451,7 @@ SCALAWIKI_PASSWORD`; live-Commons specs only with `-Dintegration=true`.
 | 3.3 no filesort on the juror gallery (10.8+) | `db.VoteGalleryIndexSpec` |
 | 3.5 batches fit 1M packets | `DistributeImagesBatchSpec` |
 | 6.1 READ COMMITTED | `ReadinessControllerSpec`, `ReadinessDatabaseSpec`, `ProductionConfigSpec`, `CriteriaRateSpec` |
-| 7.2 round first | `RoundWritesGuardSpec` (run time), `security.StructuralWritesSpec` (raw writes) |
+| 7.2 round first | `RoundWritesGuardSpec` and `RoundImageEventSpec` (run time), `security.StructuralWritesSpec` (raw writes, `round_image_event` too since V88) |
 | 7.3 vote rows locked by primary key | `db.VoteRowLockSpec` (new): a tripwire for literal SQL of the pre-h4 shape (locking, writing or upserting a vote by `page_id` and `jury_id` without the id), not full enforcement |
 | 8.4 production-like chains | `FlywayUpgradeSpec`, `ConvertToInnoDbMigrationSpec` |
 | 9.4 invariants | `RoundImageInvariants` in the write specs |
