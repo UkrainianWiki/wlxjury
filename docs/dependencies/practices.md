@@ -115,7 +115,17 @@ read from, so updating it moves the range); Python tools at exact versions where
 **2.2 Actions by commit SHA.** A workflow `uses:` a third-party action by its full commit SHA, with
 the tag as a comment: `sbt/setup-sbt@ecad189dd245444b9ae0a0cd5922fd938b88906f # v1.5.12`.
 *Why:* a tag can be moved to other code; a SHA can't. First-party `actions/*` follow the same
-rule (§9 T1).
+rule, and every workflow and the scalawiki action pin every action this way (done 2026-11-05).
+The pin is the tag's commit (`git/ref/tags/<tag>`, peeled for an annotated tag), and the
+release is one whose `action.yml` says `runs.using: node24` (`gh api
+repos/actions/<name>/contents/action.yml?ref=<tag>`) and is two weeks old (§1.1). On
+2026-11-05: `actions/checkout` v7.0.1, `actions/setup-java` v6.1.0, `actions/setup-node`
+v7.1.0, `actions/cache` (with `cache/restore` and `cache/save`) v6.1.0, `actions/upload-artifact`
+v7.0.2, `actions/download-artifact` v8.0.2 and `sbt/setup-sbt` v1.5.12 (a composite action whose
+own `actions/cache` is v6.1.0). setup-java v6 caches the JDK too when `cache` is set; the
+workflows set `cache-jdk: false`, as v4 behaved. download-artifact v8 fails on a digest
+mismatch (`digest-mismatch: error`), and `browser.yml`'s report sets `merge-multiple: false`
+(the default) since it reads each `allure-results-*-attempt-*` artifact's own directory.
 
 **2.3 Images by exact tag.** `mariadb:10.6.22`, `mariadb:10.11.14`, `python:3.8.20-slim`,
 `koalaman/shellcheck:v0.11.0` (and `rhysd/actionlint:1.7.7` when run by hand); Testcontainers' image through
@@ -249,18 +259,16 @@ the patch is reverted, and prefer replacing to patching more of it (secure-codin
 
 ## 9. Where the build doesn't follow these yet (for triage)
 
-- **T1 (2.2):** every workflow but `browser.yml` uses `actions/checkout@v4`,
-  `actions/setup-java@v4`, `actions/setup-node@v4`, `actions/upload-artifact@v4` and (in
-  `.github/actions/scalawiki`) `actions/cache@v4` by tag; only `sbt/setup-sbt` is pinned by SHA
-  there. `browser.yml` pins every action by SHA (done 2026-11-04).
+- **T1 (2.2), closed 2026-11-05:** every workflow and `.github/actions/scalawiki` pin every
+  action by commit SHA, on Node 24 releases (§2.2; `browser.yml` first, 2026-11-04). The rest
+  had used `actions/*@v4` by tag, which GitHub warned ran on the deprecated Node 20.
 - **T2 (2.3):** `docs/deployment.md` "Local verification" runs `python:3.8-slim` and
   `koalaman/shellcheck:stable`, while CI runs `python:3.8.20-slim` and `v0.11.0`.
 - **T3 (2.1):** `scripts/ui-shots.py` installs `"pillow<11"`, a range.
 - **T4 (6.2):** `unitegallery.js` and `ug-theme-tiles.js` carry no license header.
-- **T5 (1.3):** Node 20 reached its end of life in April 2026, and `eslint-plugin-compat` 7.0.2
-  declares Node >= 22. `ci.yml` (whose job runs the lint) and `browser.yml` run Node 22.23.4
-  (2026-10-20, `setup-node` pinned by SHA); `coverage.yml` still runs Node 20 (Jest only), to
-  move with the next update.
+- **T5 (1.3), closed 2026-11-05:** Node 20 reached its end of life in April 2026, and
+  `eslint-plugin-compat` 7.0.2 declares Node >= 22. `ci.yml` (whose job runs the lint),
+  `browser.yml` and `coverage.yml` run Node 22.23.4 (2026-10-20, `setup-node` pinned by SHA).
 - **T6 (5.1):** `ErrorHandler.withCookieCells` is redundant since Play 3.0.9, which always gives a
   request its cookies, session and flash (playframework #13407, #13415). Remove it, with its
   malformed-URI spec, in a later clean-up.
