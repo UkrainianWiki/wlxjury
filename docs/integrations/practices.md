@@ -48,9 +48,9 @@ An anonymous session still works, in smaller batches.
 
 **1.4 Identify the client.** API requests carry scalawiki's User-Agent (`HttpClientPekko`:
 `ScalaWiki/0.7 (https://github.com/UkrainianWiki/scalawiki; ukwikidev@wikimedia.org.ua)`,
-`SCALAWIKI_USER_AGENT` overrides it); image downloads and Apache's image proxy send
+`SCALAWIKI_USER_AGENT` overrides it); image downloads send
 `WLXJury/1.0 (https://commons.wikimedia.org/wiki/Commons:WLX_Jury_Tool; …)`
-(`LocalImageCacheService`, `conf/apache/jury-images.conf`). *Why:* Wikimedia's API etiquette and
+(`LocalImageCacheService`). *Why:* Wikimedia's API etiquette and
 its User-Agent policy require a descriptive agent with contact details; anonymous-looking clients
 are throttled or blocked.
 

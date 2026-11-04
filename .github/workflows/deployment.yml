@@ -40,8 +40,8 @@ jobs:
       - name: shellcheck
         run: >-
           docker run --rm
-          --mount type=bind,source="$PWD/scripts/deployment",target=/s,readonly
-          koalaman/shellcheck:v0.11.0 -S style /s/wlxjury-release.sh
+          --mount type=bind,source="$PWD",target=/s,readonly
+          koalaman/shellcheck:v0.11.0 -S style /s/scripts/deployment/wlxjury-release.sh /s/conf/monit/wlxjury-check
 
   release:
     name: Restore and release-script tests on the packaged release

@@ -414,8 +414,7 @@ database entry.
 paths only; `downloadWithRetry` fetches only from `wiki-base-url`'s scheme, host and port, and an
 original only for a url `CommonsFileCheck.isCommonsUrl` accepts, a prefix match: P9; redirects
 are never followed); `ImageProxyController.serve` (path → database file, width capped at 3840);
-`MwBot.fromHost` in `AppModule.bot`; Apache `conf/apache/jury-images.conf` proxies misses only
-to `upload.wikimedia.org`.
+`MwBot.fromHost` in `AppModule.bot`.
 
 **Guards.** `LocalImageCacheServiceSpec` ("a fetch": another host, scheme, port, userinfo,
 a redirect, a stored foreign url), `ImageProxyFileCheckSpec`, `LargeViewUrlsSpec`. Planned: G10
@@ -471,7 +470,7 @@ no directory listings, the maintenance switch tested.
 
 **Example.** `conf/wlxjury/production.conf` (allowed hosts, Secure cookies, Flyway without
 baseline or clean); `conf/apache/0002-wlxjury.conf` (HTTPS redirect),
-`conf/apache/jury-images.conf` (`Options -Indexes`), `conf/apache/wlxjury-maintenance.conf`.
+`conf/apache/wlxjury-maintenance.conf`.
 
 **Guards.** `ProductionConfigSpec`; the deploy tool tests in `scripts/deployment/`. Planned:
 G14 `ProductionConfigParitySpec` (S8: B5's keys in the infra template), infra

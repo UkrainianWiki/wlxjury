@@ -1,0 +1,326 @@
+Draft for the wlxjury-infra repository (apply with git apply at its d544c17): retention
+settings, the image cache folder, the alert-only monit check, and removing the retired image
+cache vhost. Not included: each host's inventory must set wlxjury_monit_source (the app
+repository's conf/monit folder on the controller) next to wlxjury_tools_source, or set
+wlxjury_monit: false; the play's asserts name it while it is missing.
+
+diff --git a/README.md b/README.md
+index 53bebab..520c4d9 100644
+--- a/README.md
++++ b/README.md
+@@ -7,8 +7,8 @@ What it manages:
+ | Role | Manages |
+ |---|---|
+ | `wlxjury_database` | The app's database and account, and the app's own MariaDB settings file (`60-wlxjury.cnf`). It optionally installs `mariadb-server`. |
+-| `wlxjury_app` | The service user, `/opt/wlxjury`, `/var/backups/wlxjury` and `/etc/wlxjury-runtime`: `runtime.env` from the vault, `production.conf`, `logback.xml`, `deployment.json` and `db-admin.cnf`. It also manages `/etc/default/wlxjury`, the systemd unit, and the `wlxjury-deploy` and `wlxjury-release` tools. On a new server it installs the first release. |
+-| `wlxjury_web` | The HTTP vhosts for every jury hostname, the maintenance snippet they include before any redirect, the probe filter that refuses PHP and WordPress scans, the optional image-cache vhost, and Apache's modules. |
++| `wlxjury_app` | The service user, `/opt/wlxjury`, `/var/backups/wlxjury` and `/etc/wlxjury-runtime`: `runtime.env` from the vault, `production.conf`, `logback.xml`, `deployment.json` and `db-admin.cnf`. It also manages `/etc/default/wlxjury`, the systemd unit, the image cache folder (`0755`, owned by the service user), the `wlxjury-deploy` and `wlxjury-release` tools with their retention settings, and, where monit runs, the app's alert-only monit check. On a new server it installs the first release. |
++| `wlxjury_web` | The HTTP vhosts for every jury hostname, the maintenance snippet they include before any redirect, the probe filter that refuses PHP and WordPress scans, and Apache's modules. It removes the image-cache vhost it once offered: the app serves its image cache itself. |
+ | `wlxjury_tls` | Certificates (certbot, or existing files, each checked to name its HTTPS hostnames) and the HTTPS vhosts. It then refuses any jury hostname that another enabled site still serves, and finally disables the retired jury sites. |
+ | `wlxjury_common` | Settings shared by the roles, and checks that refuse placeholders. |
+ 
+diff --git a/docs/design.md b/docs/design.md
+index aaee9ee..e1faa67 100644
+--- a/docs/design.md
++++ b/docs/design.md
+@@ -74,7 +74,7 @@ What a Toolforge target needs, to be checked against Toolforge's documentation b
+ - **Build.** Building with sbt through the JVM buildpack, or a `project.toml`/`Procfile` that runs the staged `sbt dist` output on port 8000.
+ - **Memory.** The memory the JVM needs (the server budget gives the app 1300 MiB) against the web service's limits, possibly with a quota request.
+ - **Database.** Moving the database to ToolsDB, whose database names are prefixed with the tool's credential user, and whose MyISAM and collation behaviour must match the V55.1 and V60 migrations.
+-- **Image cache.** Replacing the local image-cache vhost, which needs Apache and local disk.
++- **Image cache.** The app's local image cache, which it serves itself and which needs local disk.
+ - **Procedure.** A Toolforge deployment procedure: maintenance by stopping the web service, a backup job before migrations, starting the new image, and restoring from that backup if a migration fails.
+ 
+ That would be a `toolforge/` target in this repository: the environment-variable list generated from the same settings as `runtime.env`, a `jobs.yaml` for the backup job, and a small deploy script run on the bastion as the tool. The release, its manifest and its readiness endpoint stay as they are.
+diff --git a/roles/wlxjury_app/defaults/main.yml b/roles/wlxjury_app/defaults/main.yml
+index 25427ad..db2af28 100644
+--- a/roles/wlxjury_app/defaults/main.yml
++++ b/roles/wlxjury_app/defaults/main.yml
+@@ -26,6 +26,26 @@ wlxjury_restore_minimum_free_bytes: 2147483648
+ wlxjury_session_end_timeout_seconds: 600
+ wlxjury_systemd_dropin_dir: /etc/systemd/system/wlxjury.service.d
+ 
++# Retention for wlxjury-release prune, which runs after every successful reopen
++# (docs/deployment.md, "Retention"): the releases kept besides the current one,
++# and the pre-deployment dumps kept by count; keep_backup_days 0 turns the age
++# rule off (releases are infrequent). The long-term backup is separate.
++wlxjury_keep_previous_releases: 4
++wlxjury_keep_backup_dumps: 5
++wlxjury_keep_backup_days: 0
++
++# The app's image cache (wlxjury.thumbs.local-path). Only the app writes it and
++# serves it (ImageProxyController); wlxjury-release refuses to deploy while it
++# is group- or world-writable.
++wlxjury_image_cache_dir: /var/www/jury-images
++
++# monit's alert-only check of the app (conf/monit in the app repository), when
++# monit is installed. Never a restart: that would bypass the deployment hold.
++wlxjury_monit: true
++# The app repository's conf/monit folder on the controller, at the reviewed
++# version (wlxjury-check and wlxjury), when wlxjury_monit is on.
++wlxjury_monit_source: REPLACE_ME
++
+ # The app repository's scripts/deployment folder on the controller, at the
+ # reviewed version: wlxjury-deploy and wlxjury-release are installed from it.
+ wlxjury_tools_source: REPLACE_ME
+diff --git a/roles/wlxjury_app/handlers/main.yml b/roles/wlxjury_app/handlers/main.yml
+index 0fc6cbf..1a42b5f 100644
+--- a/roles/wlxjury_app/handlers/main.yml
++++ b/roles/wlxjury_app/handlers/main.yml
+@@ -3,3 +3,9 @@
+   ansible.builtin.systemd_service:
+     daemon_reload: true
+   listen: wlxjury reload systemd
++
++# tasks/monit.yml has run monit -t (and removed a refused file) before this.
++- name: Reload monit
++  ansible.builtin.command:
++    argv: [monit, reload]
++  listen: wlxjury reload monit
+diff --git a/roles/wlxjury_app/tasks/main.yml b/roles/wlxjury_app/tasks/main.yml
+index 1bdc8b7..e1a2019 100644
+--- a/roles/wlxjury_app/tasks/main.yml
++++ b/roles/wlxjury_app/tasks/main.yml
+@@ -4,13 +4,15 @@
+     that:
+       - wlxjury_public_url is match('^https?://[A-Za-z0-9.-]+(:[0-9]+)?/$')
+       - wlxjury_tools_source != 'REPLACE_ME'
++      - not wlxjury_monit or wlxjury_monit_source != 'REPLACE_ME'
+       - wlxjury_quiesce_units | select('match', '^[A-Za-z0-9_.@-]+\.(service|timer)$') | list | length
+         == wlxjury_quiesce_units | length
+       - wlxjury_jvm_environment | dict2items | map(attribute='key') | select('match', '^[A-Z][A-Z0-9_]*$') | list
+         | length == wlxjury_jvm_environment | length
+       - wlxjury_jvm_environment.JAVA_OPTS is not defined
+     fail_msg: >-
+-      Set wlxjury_public_url (with a trailing slash), wlxjury_tools_source, valid wlxjury_quiesce_units
++      Set wlxjury_public_url (with a trailing slash), wlxjury_tools_source, wlxjury_monit_source (or
++      wlxjury_monit: false), valid wlxjury_quiesce_units
+       and upper-case wlxjury_jvm_environment names (JAVA_OPTS goes in wlxjury_java_opts) first.
+     quiet: true
+ 
+@@ -110,6 +112,17 @@
+     # Not the drop-in directory: package scripts remove it when empty, and the
+     # deployment tools create it whenever they write their restart hold.
+ 
++# The folder only; its files are the app's (0644 files, 0755 folders, written
++# through temporary files and moves). wlxjury-release refuses to deploy while it
++# isn't the service user's or is group- or world-writable.
++- name: Create the image cache directory, writable by the app only
++  ansible.builtin.file:
++    path: "{{ wlxjury_image_cache_dir }}"
++    state: directory
++    owner: "{{ wlxjury_user }}"
++    group: "{{ wlxjury_group }}"
++    mode: "0755"
++
+ - name: Write the configuration
+   ansible.builtin.import_tasks: config.yml
+ 
+@@ -122,3 +135,7 @@
+ 
+ - name: Install the service
+   ansible.builtin.import_tasks: service.yml
++
++- name: Install monit's check of the app
++  ansible.builtin.import_tasks: monit.yml
++  when: wlxjury_monit
+diff --git a/roles/wlxjury_app/tasks/monit.yml b/roles/wlxjury_app/tasks/monit.yml
+new file mode 100644
+index 0000000..4b9fe58
+--- /dev/null
++++ b/roles/wlxjury_app/tasks/monit.yml
+@@ -0,0 +1,55 @@
++---
++# conf/monit from the app repository: an alert-only program check. monit itself,
++# its mail settings and its other checks belong to the server, not this role.
++- name: Find monit
++  ansible.builtin.stat:
++    path: /etc/monit/conf.d
++  register: wlxjury_monit_dir
++
++- name: Install monit's check of the app
++  when: wlxjury_monit_dir.stat.isdir | default(false)
++  block:
++    - name: Create the folder for monit's check script
++      ansible.builtin.file:
++        path: /usr/local/lib/wlxjury
++        state: directory
++        owner: root
++        group: root
++        mode: "0755"
++
++    - name: Install monit's check script
++      ansible.builtin.copy:
++        src: "{{ wlxjury_monit_source }}/wlxjury-check"
++        dest: /usr/local/lib/wlxjury/monit-check
++        owner: root
++        group: root
++        mode: "0755"
++      notify: wlxjury reload monit
++
++    - name: Install the check
++      ansible.builtin.copy:
++        src: "{{ wlxjury_monit_source }}/wlxjury"
++        dest: /etc/monit/conf.d/wlxjury
++        owner: root
++        group: root
++        mode: "0644"
++      notify: wlxjury reload monit
++
++    # A control file monit refuses would stop it at the next reload, and with it
++    # the server's other checks.
++    - name: Check monit's configuration
++      ansible.builtin.command:
++        argv: [monit, -t]
++      changed_when: false
++  rescue:
++    - name: Remove the check monit refused
++      ansible.builtin.file:
++        path: /etc/monit/conf.d/wlxjury
++        state: absent
++
++    - name: Stop with monit's verdict
++      ansible.builtin.fail:
++        msg: >-
++          Installing the app's monit check failed, or monit -t refused the server's monit
++          configuration with it in place (the cause may be another file). /etc/monit/conf.d/wlxjury
++          was removed again; see the task output above.
+diff --git a/roles/wlxjury_app/templates/deployment.json.j2 b/roles/wlxjury_app/templates/deployment.json.j2
+index 543ebcc..96115bb 100644
+--- a/roles/wlxjury_app/templates/deployment.json.j2
++++ b/roles/wlxjury_app/templates/deployment.json.j2
+@@ -10,6 +10,11 @@
+   'minimum_free_bytes': wlxjury_minimum_free_bytes | int,
+   'restore_minimum_free_bytes': wlxjury_restore_minimum_free_bytes | int,
+   'session_end_timeout_seconds': wlxjury_session_end_timeout_seconds | int,
++  'keep_previous_releases': wlxjury_keep_previous_releases | int,
++  'keep_backup_dumps': wlxjury_keep_backup_dumps | int,
++  'keep_backup_days': wlxjury_keep_backup_days | int,
++  'image_cache_dir': wlxjury_image_cache_dir,
++  'service_user': wlxjury_user,
+   'quiesce_units': wlxjury_quiesce_units,
+   'maintenance_urls': wlxjury_maintenance_urls,
+ } | to_nice_json(indent=2) }}
+diff --git a/roles/wlxjury_common/tasks/main.yml b/roles/wlxjury_common/tasks/main.yml
+index cc2914c..05b4774 100644
+--- a/roles/wlxjury_common/tasks/main.yml
++++ b/roles/wlxjury_common/tasks/main.yml
+@@ -17,6 +17,7 @@
+       wlxjury_public_url: "{{ wlxjury_public_url | default('') }}"
+       wlxjury_java_opts: "{{ wlxjury_java_opts | default('') }}"
+       wlxjury_tools_source: "{{ wlxjury_tools_source | default('') }}"
++      wlxjury_monit_source: "{{ wlxjury_monit_source | default('') if wlxjury_monit | default(true) else '' }}"
+       wlxjury_apache_retired_sites: "{{ wlxjury_apache_retired_sites | default([]) }}"
+       wlxjury_tls_certificates: "{{ wlxjury_tls_certificates | default([]) }}"
+       wlxjury_tls_email: "{{ wlxjury_tls_email | default('') if wlxjury_tls_provider | default('') == 'certbot' else '' }}"
+diff --git a/roles/wlxjury_web/defaults/main.yml b/roles/wlxjury_web/defaults/main.yml
+index 7b16278..10f1c7a 100644
+--- a/roles/wlxjury_web/defaults/main.yml
++++ b/roles/wlxjury_web/defaults/main.yml
+@@ -7,8 +7,3 @@ wlxjury_apache_modules: [rewrite, proxy, proxy_http, headers, ssl]
+ # sites-available/<name>.conf for the HTTP vhosts.
+ wlxjury_apache_site: wlxjury
+ 
+-# Optional local image cache vhost (conf/apache/jury-images.conf in the app
+-# repository): {server_name: images.example.org, document_root: /var/www/jury-images}.
+-wlxjury_images_vhost: {}
+-# Wikimedia's User-Agent policy asks for contact details.
+-wlxjury_images_user_agent: "WLXJury/1.0 (https://commons.wikimedia.org/wiki/Commons:WLX_Jury_Tool; intracer@gmail.com)"
+diff --git a/roles/wlxjury_web/tasks/main.yml b/roles/wlxjury_web/tasks/main.yml
+index 193f770..8157c12 100644
+--- a/roles/wlxjury_web/tasks/main.yml
++++ b/roles/wlxjury_web/tasks/main.yml
+@@ -55,19 +55,13 @@
+     creates: "/etc/apache2/sites-enabled/{{ wlxjury_apache_site }}.conf"
+   notify: wlxjury reload apache
+ 
+-- name: Install the image cache vhost
+-  ansible.builtin.template:
+-    src: wlxjury-images.conf.j2
+-    dest: /etc/apache2/sites-available/wlxjury-images.conf
+-    owner: root
+-    group: root
+-    mode: "0644"
+-  notify: wlxjury reload apache
+-  when: wlxjury_images_vhost | length > 0
+-
+-- name: Enable the image cache vhost
+-  ansible.builtin.command:
+-    argv: [a2ensite, wlxjury-images]
+-    creates: /etc/apache2/sites-enabled/wlxjury-images.conf
++# The app serves its image cache itself (ImageProxyController); the role no
++# longer installs an image cache vhost.
++- name: Remove the retired image cache vhost
++  ansible.builtin.file:
++    path: "{{ item }}"
++    state: absent
++  loop:
++    - /etc/apache2/sites-enabled/wlxjury-images.conf
++    - /etc/apache2/sites-available/wlxjury-images.conf
+   notify: wlxjury reload apache
+-  when: wlxjury_images_vhost | length > 0
+diff --git a/roles/wlxjury_web/templates/wlxjury-images.conf.j2 b/roles/wlxjury_web/templates/wlxjury-images.conf.j2
+deleted file mode 100644
+index 8b47af8..0000000
+--- a/roles/wlxjury_web/templates/wlxjury-images.conf.j2
++++ /dev/null
+@@ -1,26 +0,0 @@
+-# Managed by wlxjury-infra. Serve locally cached jury images and fall back to
+-# upload.wikimedia.org for missing files. Set wlxjury.thumbs.host to this host.
+-<VirtualHost *:80>
+-    ServerName {{ wlxjury_images_vhost.server_name }}
+-    DocumentRoot {{ wlxjury_images_vhost.document_root | default('/var/www/jury-images') }}
+-
+-    <Directory {{ wlxjury_images_vhost.document_root | default('/var/www/jury-images') }}>
+-        Options -Indexes
+-        AllowOverride None
+-        Require all granted
+-        Header set Cache-Control "public, max-age=2592000"
+-    </Directory>
+-
+-    # DOCUMENT_ROOT+REQUEST_URI rather than REQUEST_FILENAME: Apache may split the
+-    # URL at a .jpg directory boundary and treat the rest as PATH_INFO.
+-    RewriteEngine On
+-    RewriteCond %{DOCUMENT_ROOT}%{REQUEST_URI} !-f
+-    RewriteRule ^(/wikipedia/commons/thumb/.+)$ https://upload.wikimedia.org$1 [P,L,E=PROXIED:1]
+-
+-    Header always set X-Jury-Cache "local"
+-    Header always set X-Jury-Cache "proxied" env=PROXIED
+-
+-    SSLProxyEngine On
+-    ProxyPassReverse / https://upload.wikimedia.org/
+-    RequestHeader set User-Agent "{{ wlxjury_images_vhost.user_agent | default(wlxjury_images_user_agent) }}"
+-</VirtualHost>
+diff --git a/tests/run.sh b/tests/run.sh
+index 76ce061..3b125a1 100644
+--- a/tests/run.sh
++++ b/tests/run.sh
+@@ -128,8 +128,15 @@ import json
+ config = json.load(open('/etc/wlxjury-runtime/deployment.json'))
+ assert config['maintenance_urls'] == ['http://jury.test/', 'http://jury-plain.test/', 'https://jury.test/'], config
+ assert config['quiesce_units'] == ['test-backup.timer', 'test-backup.service'], config
+-print('ok  deployment.json lists every URL the vhosts serve')
++assert (config['keep_previous_releases'], config['keep_backup_dumps'], config['keep_backup_days']) == (4, 5, 0), config
++assert (config['image_cache_dir'], config['service_user']) == ('/var/www/jury-images', 'wlxjury'), config
++print('ok  deployment.json lists every URL the vhosts serve, the retention and the image cache')
+ EOF
++[ "$(stat -c '%a %U:%G' /var/www/jury-images)" = "755 wlxjury:wlxjury" ] || fail "image cache owner or mode"
++if [ -d /etc/monit/conf.d ]; then
++  [ -x /usr/local/lib/wlxjury/monit-check ] && [ -f /etc/monit/conf.d/wlxjury ] || fail "monit check not installed"
++  monit -t || fail "monit refuses its configuration"
++fi
+ expect https://jury.test/ 200 'jury app 0.13-test'
+ expect http://jury.test/ 301
+ expect http://jury-plain.test/ 200 'jury app 0.13-test'
+diff --git a/tests/vars.yml b/tests/vars.yml
+index f09e0fb..0ddf463 100644
+--- a/tests/vars.yml
++++ b/tests/vars.yml
+@@ -16,6 +16,7 @@ wlxjury_jvm_environment:
+   MALLOC_ARENA_MAX: "2"
+ wlxjury_quiesce_units: [test-backup.timer, test-backup.service]
+ wlxjury_tools_source: /src/app/scripts/deployment
++wlxjury_monit_source: /src/app/conf/monit
+ wlxjury_minimum_free_bytes: 1
+ wlxjury_restore_minimum_free_bytes: 1
+ wlxjury_ready_timeout_seconds: 60
