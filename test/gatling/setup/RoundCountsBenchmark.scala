@@ -60,7 +60,7 @@ object RoundCountsBenchmark {
   private def spread(xs: Seq[Double]) = s"${f2(median(xs))} (p95 ${f2(pct(xs, 0.95))}, ${f2(xs.min)}-${f2(xs.max)})"
 
   /** The base commit's (04c1d310) juror vote: [[VoteJdbc.rate]] as it was, without the mark. */
-  private def baseVote(pageId: Long, juryId: Long, roundId: Long, rate: Int): Int = WriteTx.write { implicit s =>
+  private def baseVote(pageId: Long, juryId: Long, roundId: Long, rate: Int): Int = WriteTx.write { implicit session =>
     sql"SELECT id FROM vote WHERE page_id = $pageId AND jury_id = $juryId AND round_id = $roundId".map(_.long(1)).single()
       .fold(0) { id =>
         val locked = sql"SELECT id FROM vote WHERE id = $id AND jury_id = $juryId AND round_id = $roundId FOR UPDATE"
@@ -141,7 +141,7 @@ object RoundCountsBenchmark {
       say(s"per-file pass after the votes above ($dirtyAfterVotes files marked, A's votes unmarked): " +
         s"${f2(tPerFile)} ms, ${perFile.windows} windows, ${perFile.changed} rows changed")
       val full = (1 to recounts).map { _ =>
-        DB.localTx { implicit s => RoundWrites.lock(Seq(rated)); sql"UPDATE round SET counts_gen = counts_gen + 1, created_at = created_at WHERE id = $rated".update() }
+        DB.localTx { implicit session => RoundWrites.lock(Seq(rated)); sql"UPDATE round SET counts_gen = counts_gen + 1, created_at = created_at WHERE id = $rated".update() }
         val (sum, t) = ms(recompute.untilClean())
         say(s"full recount: ${f2(t)} ms, ${sum.windows} windows (${f2(t / math.max(1, sum.windows))} ms each), " +
           s"${sum.files} files, ${sum.changed} rows changed")
@@ -158,7 +158,7 @@ object RoundCountsBenchmark {
       var busy = 0
       val recounter = new Thread(() => {
         while (!stop.get()) {
-          DB.localTx { implicit s => RoundWrites.lock(Seq(rated)); sql"UPDATE round SET counts_gen = counts_gen + 1, created_at = created_at WHERE id = $rated".update() }
+          DB.localTx { implicit session => RoundWrites.lock(Seq(rated)); sql"UPDATE round SET counts_gen = counts_gen + 1, created_at = created_at WHERE id = $rated".update() }
           recompute.untilClean()
           busy += 1
         }
