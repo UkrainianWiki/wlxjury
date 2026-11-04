@@ -335,8 +335,25 @@ traces, screenshots, the HTML report and the server's log are uploaded on failur
 accessibility report always. Each job writes its times (fixture start, tests, whole job) to the
 run's summary. *Decision pending:* which engines stay per PR, from the recorded times (§10.8).
 
-**10.8 Times** (measured 2026-11-04; the user decides from CI's own numbers what stays per PR):
-see the table below, filled from the first local run and, once pushed, from CI.
+**10.8 Times** (2026-11-04; the user decides from CI's own numbers what stays per PR). Locally
+(Windows 11, the server on the same machine, 3 workers; 53 tests per engine, 4 of them the
+sign-ins, 2 `fixme`):
+
+| | Chromium | Firefox | WebKit |
+|---|---|---|---|
+| tests, the engine alone | 68 s | 91 s | 91 s |
+| CI job, estimated (to replace with the first run's) | ~10 min | ~11 min | ~11 min |
+
+All three engines at once against one server: 218–235 s. The fixture's start: 201 s with a
+compiled checkout and the cached dump (sbt start and an incremental compile ~130 s, the fixture
+~70 s); the first start in a fresh checkout compiled the app and tests (~8 min here) and built
+the dump from the CSVs (~1.5 min). Setting the images' Commons urls in one transaction instead of
+a commit per row took ~2.5 minutes off every start. *The CI estimate:* setup and caches ~1.5 min,
+the browser and its system packages ~1 min, a cold `Test/compile` ~3.5–4 min (`ci.yml`'s job,
+compile and the whole suite, is ~5½ min), the fixture ~1.5 min (+1.5 on a dump-cache miss), the
+tests ~1.5–2.5× the local times on a 4-CPU runner with 2 workers. The compile is most of each
+job; if the three jobs are too slow, one compiling job sharing `target/` with the engines' jobs is
+the first saving, before dropping an engine from PRs.
 
 - **Mobile profiles later,** together with mobile support (UI §6.2; mobile is not supported yet).
 - **The compatibility floor** (Chrome 109, Firefox 115, UI §6.1a) is not run: Playwright's

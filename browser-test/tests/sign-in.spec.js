@@ -17,6 +17,9 @@ test.describe('signing in and out', () => {
     await page.getByRole('button', { name: 'Logout' }).click();
     const form = new URLSearchParams((await logout).postData() ?? '');
     expect(form.get('csrfToken'), 'the sign-out form sends its CSRF token').toBeTruthy();
+    // its answer, the login page, before going on (a navigation now would cancel it)
+    await expect(page).toHaveURL(/\/auth(\?|$)/);
+    await expect(page.getByLabel('Your login')).toBeVisible();
 
     // signed out: the gallery now asks to sign in, coming back to it afterwards
     await page.goto(gallery);

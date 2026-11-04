@@ -104,7 +104,9 @@ export async function guard(context, diagnostics) {
     page.on('console', (m) => {
       if (m.type() === 'error') diagnostics.add('console error', page, m.text().slice(0, 300));
     });
-    page.on('pageerror', (e) => diagnostics.add('page error', page, String(e).slice(0, 300)));
+    // with the top of its stack: where it was thrown
+    page.on('pageerror', (e) => diagnostics.add('page error', page,
+      `${String(e).slice(0, 200)} at ${(e.stack ?? '').split('\n').slice(1, 3).join(' < ').slice(0, 300)}`));
     page.on('response', (r) => {
       if (r.status() >= 400) diagnostics.add(`HTTP ${r.status()}`, page, new URL(r.url()).pathname);
     });
