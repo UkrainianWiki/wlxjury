@@ -703,6 +703,7 @@ img.ug-sepia-effect{
 	background-image:url('../images/icon-link32.png');	
 }
 
+/* wlxjury: the binary round's thumbs up and down on a juror's tiles (issue #6) */
 .ug-thumb-wrapper.ug-tile .ug-tile-icon.ug-icon-select{
 	background-image:url('../images/Symbol_thumbs_up_green.png');
 }

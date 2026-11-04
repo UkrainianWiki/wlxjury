@@ -171,6 +171,27 @@ class ContestFilesPageSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
+    "give unitegallery a tile's description as html, the title and conflict lines escaped once more" in {
+      testDbApp { implicit app =>
+        val f = fixture()
+        addFiles(f.contest, Seq(image(3L, "A & <i>b</i>")))
+        // a conflict of interest whose account has markup in it: its "account — role" line
+        val account = "Board <i>x</i> & y"
+        User.create(User("Board", "", None, Set(User.BOARD_ROLE), None, f.contest.id, wikiAccount = Some(account)))
+        DB.autoCommit { implicit s => sql"UPDATE images SET author = $account WHERE page_id = 3".update() }
+        val (_, page) = get(s"/contest/${f.contest.getId}/files?coi=true", f.admin)
+
+        // the attribute as the browser decodes it is html: unitegallery's text panels insert it
+        // with .html() (docs/vendor/unitegallery.md §3; register N8)
+        val description = org.jsoup.Jsoup.parse(page).select("#gallery img[data-pageId=3]").attr("data-description")
+        description must startWith("<b>File:A &amp; &lt;i&gt;b&lt;/i&gt;.jpg</b><br>Board &lt;i&gt;x&lt;/i&gt; &amp; y — ")
+        val shown = org.jsoup.Jsoup.parseBodyFragment(description)
+        shown.select("i").size === 0
+        shown.select("b").text === "File:A & <i>b</i>.jpg"
+        shown.body.text must startWith("File:A & <i>b</i>.jpg Board <i>x</i> & y — ")
+      }
+    }
+
     "page the files in page id order" in {
       testDbApp { implicit app =>
         val f = fixture()

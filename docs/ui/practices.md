@@ -159,11 +159,15 @@ browser tests' mobile profiles come with it. Write "not supported yet", never "b
 `public/javascripts/unitegallery.js` (24,670 lines) and `ug-theme-tiles.js` are vendored and
 patched (`wlxjury:` comments: escaping of titles and attributes, `.on("load")` for jQuery 3,
 failed-thumbnail and deleted-file marks, the theme lookup); `jquery.hotkeys.js` and `jquery.raty.js`
-are vendored too. Outside Jest coverage; `gallery-init.test.js` and `unitegallery-alt.test.js`
-(a tile's alt text escaped) touch them. A change to a vendored file is marked `wlxjury:` with
-its reason. The patch inventory, targeted tests and the keep-or-replace decision are queued
-([roadmap, "the patched gallery"](../plans/2026-11-02-roadmap.md#queued-user-2026-11-03-the-patched-gallery);
-[dependencies](../dependencies/practices.md) §7).
+are vendored too. A change to a vendored file is marked `wlxjury:` with its reason, and comes
+with a test in `unitegallery-patches.test.js` that fails when the change is reverted. That file
+runs the gallery in jsdom on tiles built as the templates build them; `unitegallery-alt.test.js`
+also tests the thumbnail's alt. Every patch (Unite Gallery 1.7.28, marked and formerly unmarked),
+its commits and its test are listed in [docs/vendor/unitegallery.md](../vendor/unitegallery.md).
+The files stay outside Jest coverage (testing §9.1). **Decision (user, 2026-11-04):** our own
+tiles will replace the gallery later, planned with a UI developer with the other frontend
+changes after the API is prepared; the patched copy stays until then
+([investigation](../investigations/2026-11-04-gallery-keep-or-replace.md)).
 
 ## 8. Guards
 
