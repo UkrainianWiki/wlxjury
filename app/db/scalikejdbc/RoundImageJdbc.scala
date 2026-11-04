@@ -26,9 +26,9 @@ import scalikejdbc._
   *  - a deleted round or image takes its rows with it (foreign keys, ON DELETE CASCADE);
   *  - the `round_image_check` job repairs drift ([[services.distribution.RoundImageCheckHandler]]).
   *
-  * Lock order: `round` → `images` → `vote` → `criteria_rate` → `vote_aside` → `round_image`:
-  * every writer here runs after its votes are written and locked, and locks the pairs' rows
-  * last. A recount never reads a non-locking snapshot of the votes ([[sync]] reads them in
+  * Lock order: `round` → `images` → `vote` → `criteria_rate` → `vote_aside` → `round_image`
+  * → `round_image_event` (V88: a disqualify's or requalify's events, after its rows): every
+  * writer here runs after its votes are written and locked, and locks the pairs' rows last. A recount never reads a non-locking snapshot of the votes ([[sync]] reads them in
   * share mode): a concurrent write would be missed.
   */
 object RoundImageJdbc {
@@ -149,21 +149,35 @@ object RoundImageJdbc {
     * id.
     */
   def sync(roundId: Long, pageIds: Seq[Long], missing: Origin = Origin.Manual)(implicit session: DBSession): SyncResult =
-    syncWith(roundId, pageIds, missing, requalify = Set.empty)
+    syncWith(roundId, pageIds, missing, requalify = Set.empty)._1
 
   /** [[sync]] of the round's files `pageIds` with their `dq` lifted (a requalify,
-    * [[RoundConflicts.requalify]], after their votes are moved back): they follow their votes
-    * as any other row, and lose their `dq_*`.
+    * [[RoundConflicts.requalify]], after the votes to bring back are moved back): they follow
+    * their votes as any other row (`in` with votes, `deleted` with votes only aside, no row with
+    * none), and lose their `dq_*`. Each row that leaves `dq` is recorded, after the rows, as a
+    * `requalify` event with `reason` ([[RoundImageEventJdbc]], V88): its status before (`dq`)
+    * and after.
+    *
+    * @param reason one of [[RoundConflicts.RequalifyReason.All]]
     */
-  private[scalikejdbc] def requalifyRows(roundId: Long, pageIds: Seq[Long])(implicit session: DBSession): SyncResult =
-    syncWith(roundId, pageIds, Origin.Manual, requalify = pageIds.toSet)
-
-  private def syncWith(roundId: Long, pageIds: Seq[Long], missing: Origin, requalify: Set[Long])(implicit
+  private[scalikejdbc] def requalifyRows(roundId: Long, pageIds: Seq[Long], reason: String, by: Option[Long])(implicit
       session: DBSession
   ): SyncResult = {
+    val (result, lifted) = syncWith(roundId, pageIds, Origin.Manual, requalify = pageIds.toSet)
+    RoundImageEventJdbc.record(roundId, RoundImageEventJdbc.Action.Requalify, reason, by,
+      lifted.map { case (pageId, now) => RoundImageEventJdbc.Change(pageId, Status.Dq, now) })
+    result
+  }
+
+  /** The rows synced, and those that left `dq`: page id -> their status now (None: removed). */
+  private def syncWith(roundId: Long, pageIds: Seq[Long], missing: Origin, requalify: Set[Long])(implicit
+      session: DBSession
+  ): (SyncResult, Seq[(Long, Option[String])]) = {
     if (pageIds.nonEmpty) RoundWrites.requireRounds(Seq(roundId))
-    pageIds.distinct.sorted.grouped(Chunk).foldLeft(SyncResult()) { (acc, chunk) =>
-      acc + syncChunk(roundId, chunk, missing, requalify)
+    pageIds.distinct.sorted.grouped(Chunk).foldLeft((SyncResult(), Seq.empty[(Long, Option[String])])) {
+      case ((acc, lifted), chunk) =>
+        val (r, l) = syncChunk(roundId, chunk, missing, requalify)
+        (acc + r, lifted ++ l)
     }
   }
 
@@ -175,7 +189,7 @@ object RoundImageJdbc {
 
   private def syncChunk(roundId: Long, pageIds: Seq[Long], missing: Origin, requalify: Set[Long])(implicit
       session: DBSession
-  ): SyncResult = {
+  ): (SyncResult, Seq[(Long, Option[String])]) = {
     val voted = sql"""SELECT DISTINCT page_id FROM vote WHERE round_id = $roundId AND page_id IN ($pageIds)
                       LOCK IN SHARE MODE""".map(_.long(1)).list().toSet
     val aside = sql"""SELECT DISTINCT page_id FROM vote_aside WHERE round_id = $roundId AND page_id IN ($pageIds)
@@ -207,36 +221,62 @@ object RoundImageJdbc {
             FROM round r JOIN images i ON i.page_id IN (${ps.sorted})
             WHERE r.id = $roundId ORDER BY i.page_id""".update()
     }.sum
-    SyncResult(added = added, statusChanged = changed.size, removed = gone.size)
+    val lifted = rows.toSeq.collect { case (p, Status.Dq) if requalify(p) => p -> wanted(p) }.sortBy(_._1)
+    (SyncResult(added = added, statusChanged = changed.size, removed = gone.size), lifted)
   }
 
   /** Marks the round's files disqualified (`dq`, P1b), after their votes were moved aside in
     * the same transaction ([[ImageJdbc.moveVotesAsideInRound]]): `dq_code`, a detail per file
-    * (cut to [[DqDetailLength]]), who and when. Rows already `dq` keep theirs. A structural
+    * (cut to [[DqDetailLength]]), who and when. Rows already `dq` keep theirs. Each row marked
+    * is recorded, after the rows, as a `disqualify` event with `code` ([[RoundImageEventJdbc]],
+    * V88): its status before, as `prior` gives it (the caller's read before it moved the votes
+    * aside, which made the rows `deleted`), else as found here; and after (`dq`). A structural
     * write: the caller has locked the round first ([[RoundWrites]]; checked).
     *
     * @param details page id -> `dq_detail`
+    * @param prior   page id -> the row's status before the caller's moves ([[statuses]])
     * @return the rows marked
     */
-  def disqualify(roundId: Long, details: Map[Long, String], code: String, by: Option[Long])(implicit
-      session: DBSession
-  ): Int = {
+  def disqualify(
+      roundId: Long,
+      details: Map[Long, String],
+      code: String,
+      by: Option[Long],
+      prior: Map[Long, String] = Map.empty
+  )(implicit session: DBSession): Int = {
     require(DqCode.All.contains(code), s"unknown dq_code $code")
     if (details.isEmpty) 0
     else {
       RoundWrites.requireRounds(Seq(roundId))
       val pageIds = details.keys.toSeq.sorted
-      sql"""SELECT page_id FROM round_image WHERE round_id = $roundId AND page_id IN ($pageIds) ORDER BY page_id
-            FOR UPDATE""".map(_.long(1)).list()
-      details.toSeq.groupBy { case (_, detail) => detail.take(DqDetailLength) }.toSeq.sortBy(_._1).map {
+      val found = sql"""SELECT page_id, status FROM round_image WHERE round_id = $roundId AND page_id IN ($pageIds)
+                        ORDER BY page_id FOR UPDATE""".map(rs => rs.long(1) -> rs.string(2)).list()
+      val marked = details.toSeq.groupBy { case (_, detail) => detail.take(DqDetailLength) }.toSeq.sortBy(_._1).map {
         case (detail, ofDetail) =>
           sql"""UPDATE round_image SET status = ${Status.Dq}, dq_code = $code, dq_detail = $detail, dq_by = $by,
                   dq_at = NOW(3)
                 WHERE round_id = $roundId AND page_id IN (${ofDetail.map(_._1).sorted}) AND status <> ${Status.Dq}"""
             .update()
       }.sum
+      // the rows found locked and not yet `dq` are those the updates marked
+      val changes = found.collect {
+        case (pageId, status) if status != Status.Dq =>
+          RoundImageEventJdbc.Change(pageId, prior.getOrElse(pageId, status), Some(Status.Dq))
+      }
+      RoundImageEventJdbc.record(roundId, RoundImageEventJdbc.Action.Disqualify, code, by, changes)
+      marked
     }
   }
+
+  /** The statuses of the round's files `pageIds` that have a row: read plainly, under the
+    * round's lock the caller holds (every writer of a round's rows but a juror's vote holds it,
+    * and a vote doesn't change a status).
+    */
+  def statuses(roundId: Long, pageIds: Seq[Long])(implicit session: DBSession): Map[Long, String] =
+    pageIds.distinct.sorted.grouped(Chunk).flatMap { chunk =>
+      sql"SELECT page_id, status FROM round_image WHERE round_id = $roundId AND page_id IN ($chunk)"
+        .map(rs => rs.long(1) -> rs.string(2)).list()
+    }.toMap
 
   /** The rows' copy of the image's monument id (as vote's, V48), after the image's row is
     * updated and locked. Rows already right aren't rewritten.

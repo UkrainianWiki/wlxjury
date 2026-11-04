@@ -199,6 +199,10 @@ class CoiRoundSpec extends Specification with TestDb with BeforeAll with BeforeE
 
     def stop(roundId: Long): Unit = Round.setActiveGuarded(roundId, active = false) must beTrue
 
+    /** The file's events in the round (V88), oldest first: action, code, status before and after, by. */
+    def history(roundId: Long, pageId: Long): Seq[(String, String, String, Option[String], Option[Long])] =
+      RoundImageEventJdbc.ofFile(roundId, pageId).map(e => (e.action, e.code, e.priorStatus, e.newStatus, e.by))
+
     def disqualify(roundId: Long, by: User, only: Option[Set[Long]] = None, excludeCoi: Boolean = false) =
       RoundConflicts.disqualify(roundId, by, RoundDistributionHandler.dedupeKey(roundId), only, excludeCoi)
 
@@ -280,6 +284,11 @@ class CoiRoundSpec extends Specification with TestDb with BeforeAll with BeforeE
       } === Some(0L)
       RoundImageCounts.get(Seq(round.getId))(ImageJdbc.imageCountByRounds) === Map(round.getId -> 10)
       RoundImageInvariants.violations(round.getId) must beEmpty
+      // each recorded (V88): was `in`, disqualified, then requalified `in` again, by the admin
+      conflicts.toSeq.sorted.map(p => history(round.getId, p)).distinct === Seq(Seq(
+        ("disqualify", "coi", "in", Some("dq"), jurors.head.id),
+        ("requalify", "mistaken_match", "dq", Some("in"), jurors.head.id)))
+      RoundImageEventJdbc.byRound(round.getId).map(_.pageId).toSet === conflicts
       // still conflicts: a re-check offers them again (no overrides yet)
       CoiMembers.roundFiles(round.getId, CoiMembers.forContest(contest.getId)).map(_._1).toSet === conflicts
     }
@@ -316,28 +325,141 @@ class CoiRoundSpec extends Specification with TestDb with BeforeAll with BeforeE
       RoundImageInvariants.violations(r) must beEmpty
     }
 
-    "requalify a file deleted while the round was open as in, with its votes: its prior status isn't kept (a known limitation)" in {
+    "requalify a file deleted while the round was open as it was, deleted with its votes aside (V88's prior status)" in {
       val (contest, jurors, _) = setUp()
       val round = service.createNewRound(newRound(contest, excludeCoi = false), jurors.map(_.getId))
       val r = round.getId
+      val admin = jurors.head
       rateAll(r)
       val before = votes(sqls"vote", r).filter(_._2 == 2L)
       // deleted on Commons while the round is open: its votes aside, `deleted`
       DB.localTx(implicit s => DeletedFiles.markDeleted(Seq(2L)))
       statuses(r).get(2L) === Some("deleted")
       stop(r)
-      disqualify(r, jurors.head)
+      disqualify(r, admin)
       statuses(r).get(2L) === Some("dq")
-      requalify(r, Seq(2L), jurors.head) === RoundConflicts.Outcome.Requalified(Seq(2L))
-      // today: `in` with its votes, not `deleted` as before (a later round_image_event table
-      // would keep the prior status, §14)
+      history(r, 2L) === Seq(("disqualify", "coi", "deleted", Some("dq"), admin.id))
+      requalify(r, conflicts.toSeq.sorted, admin) === RoundConflicts.Outcome.Requalified(Seq(2L, 4L, 6L))
+      // as before the disqualify (§14's known limitation, lifted): `deleted`, its votes aside
+      // with their ids and rates, none in vote
+      statuses(r).get(2L) === Some("deleted")
+      votes(sqls"vote_aside", r).filter(_._2 == 2L) === before
+      votes(sqls"vote", r).filter(_._2 == 2L) must beEmpty
+      history(r, 2L) === Seq(("disqualify", "coi", "deleted", Some("dq"), admin.id),
+        ("requalify", "mistaken_match", "dq", Some("deleted"), admin.id))
+      // the other files, `in` before, are `in` with their votes
+      statuses(r).filter { case (p, _) => p != 2L && conflicts(p) }.values.toSet === Set("in")
+      RoundImageInvariants.violations(r) must beEmpty
+      // the round's opening leaves it as it is; a restore from Commons brings the votes back
+      Round.setActiveGuarded(r, active = true) must beTrue
+      statuses(r).get(2L) === Some("deleted")
+      DB.localTx(implicit s => DeletedFiles.restore(Seq(2L)))
       statuses(r).get(2L) === Some("in")
       votes(sqls"vote", r).filter(_._2 == 2L) === before
       RoundImageInvariants.violations(r) must beEmpty
-      // the round's opening moves them aside again
+    }
+
+    "requalify a file deleted while the round was open, then restored on Commons while disqualified, as in with its votes" in {
+      val (contest, jurors, _) = setUp()
+      val round = service.createNewRound(newRound(contest, excludeCoi = false), jurors.map(_.getId))
+      val r = round.getId
+      rateAll(r)
+      val before = votes(sqls"vote", r).filter(_._2 == 2L)
+      DB.localTx(implicit s => DeletedFiles.markDeleted(Seq(2L)))
+      stop(r)
+      disqualify(r, jurors.head)
+      // restored while disqualified: its votes stay aside (P1b), the row `dq`
+      DB.localTx(implicit s => DeletedFiles.restore(Seq(2L)))
+      statuses(r).get(2L) === Some("dq")
+      requalify(r, Seq(2L), jurors.head) === RoundConflicts.Outcome.Requalified(Seq(2L))
+      // was `deleted`, but no longer deleted: `in` with its votes, as the restore would have made it
+      statuses(r).get(2L) === Some("in")
+      votes(sqls"vote", r).filter(_._2 == 2L) === before
+      history(r, 2L).map(e => (e._1, e._3, e._4)) === Seq(("disqualify", "deleted", Some("dq")), ("requalify", "dq", Some("in")))
+      RoundImageInvariants.violations(r) must beEmpty
+    }
+
+    "requalify a file disqualified before V88 (no event) as in, with its votes, as before V88" in {
+      val (contest, jurors, _) = setUp()
+      val round = service.createNewRound(newRound(contest, excludeCoi = false), jurors.map(_.getId))
+      val r = round.getId
+      rateAll(r)
+      val before = votes(sqls"vote", r).filter(_._2 == 2L)
+      DB.localTx(implicit s => DeletedFiles.markDeleted(Seq(2L)))
+      stop(r)
+      disqualify(r, jurors.head)
+      // a row disqualified before V88 has no event
+      sql"DELETE FROM round_image_event WHERE round_id = $r".update()(AutoSession)
+      requalify(r, Seq(2L), jurors.head) === RoundConflicts.Outcome.Requalified(Seq(2L))
+      // the behaviour before V88: `in` with its votes; the round's opening moves them aside
+      statuses(r).get(2L) === Some("in")
+      votes(sqls"vote", r).filter(_._2 == 2L) === before
+      history(r, 2L).map(e => (e._1, e._3, e._4)) === Seq(("requalify", "dq", Some("in")))
+      RoundImageInvariants.violations(r) must beEmpty
       Round.setActiveGuarded(r, active = true) must beTrue
       statuses(r).get(2L) === Some("deleted")
       RoundImageInvariants.violations(r) must beEmpty
+    }
+
+    "restore each file's status from its latest disqualify over repeated disqualify and requalify" in {
+      val (contest, jurors, _) = setUp()
+      val round = service.createNewRound(newRound(contest, excludeCoi = false), jurors.map(_.getId))
+      val r = round.getId
+      val admin = jurors.head
+      rateAll(r)
+      val before = votes(sqls"vote", r).filter(_._2 == 2L)
+      stop(r)
+      // 1: in -> dq -> in
+      disqualify(r, admin, only = Some(Set(2L)))
+      RoundConflicts.requalify(r, Seq(2L), RoundConflicts.RequalifyReason.ConflictEnded, admin,
+        RoundDistributionHandler.dedupeKey(r)) === RoundConflicts.Outcome.Requalified(Seq(2L))
+      statuses(r).get(2L) === Some("in")
+      // 2: deleted on Commons while the round is open, then stopped: deleted -> dq -> deleted
+      Round.setActiveGuarded(r, active = true) must beTrue
+      DB.localTx(implicit s => DeletedFiles.markDeleted(Seq(2L)))
+      stop(r)
+      disqualify(r, admin, only = Some(Set(2L)))
+      requalify(r, Seq(2L), admin)
+      statuses(r).get(2L) === Some("deleted")
+      votes(sqls"vote_aside", r).filter(_._2 == 2L) === before
+      // 3: disqualified again while deleted, restored on Commons meanwhile: deleted -> dq -> in
+      disqualify(r, admin, only = Some(Set(2L)))
+      statuses(r).get(2L) === Some("dq")
+      DB.localTx(implicit s => DeletedFiles.restore(Seq(2L)))
+      requalify(r, Seq(2L), admin)
+      statuses(r).get(2L) === Some("in")
+      votes(sqls"vote", r).filter(_._2 == 2L) === before
+      history(r, 2L) === Seq(
+        ("disqualify", "coi", "in", Some("dq"), admin.id),
+        ("requalify", "conflict_ended", "dq", Some("in"), admin.id),
+        ("disqualify", "coi", "deleted", Some("dq"), admin.id),
+        ("requalify", "mistaken_match", "dq", Some("deleted"), admin.id),
+        ("disqualify", "coi", "deleted", Some("dq"), admin.id),
+        ("requalify", "mistaken_match", "dq", Some("in"), admin.id))
+      // only file 2 has a history; the round's newest first
+      RoundImageEventJdbc.byRound(r).map(_.pageId).toSet === Set(2L)
+      RoundImageEventJdbc.byRound(r).map(_.id) === RoundImageEventJdbc.ofFile(r, 2L).map(_.id).reverse
+      RoundImageInvariants.violations(r) must beEmpty
+    }
+
+    "record nothing for a refused action or a file already disqualified" in {
+      val (contest, jurors, _) = setUp()
+      val round = service.createNewRound(newRound(contest, excludeCoi = false), jurors.map(_.getId))
+      val r = round.getId
+      // open: refused
+      disqualify(r, jurors.head) === RoundConflicts.Outcome.Open
+      RoundImageEventJdbc.byRound(r) must beEmpty
+      stop(r)
+      disqualify(r, jurors.head)
+      RoundImageEventJdbc.byRound(r).size === conflicts.size
+      // again: nothing new; a requalify of files not disqualified: nothing
+      disqualify(r, jurors.head) === RoundConflicts.Outcome.Disqualified(Nil)
+      requalify(r, Seq(8L), jurors.head) === RoundConflicts.Outcome.Requalified(Nil)
+      RoundImageEventJdbc.byRound(r).size === conflicts.size
+      // a requalify refused on an open round records nothing
+      Round.setActiveGuarded(r, active = true) must beTrue
+      requalify(r, conflicts.toSeq, jurors.head) === RoundConflicts.Outcome.Open
+      RoundImageEventJdbc.byRound(r).map(_.action).toSet === Set("disqualify")
     }
 
     "disqualify only the files asked for that are conflicts" in {

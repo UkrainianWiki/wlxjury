@@ -4,8 +4,8 @@ import org.specs2.mutable.Specification
 
 /** The tripwire beside the round-first rule's run-time guard
   * (docs/plans/2026-11-03-write-path-simplification.md, W2): raw SQL that writes `vote`,
-  * `vote_aside`, `criteria_rate`, `round_image`, `round_criterion` or a monument id copy is
-  * written only in these methods. Each either `require`s its round (or file) locks at run time
+  * `vote_aside`, `criteria_rate`, `round_image`, `round_image_event` (V88), `round_criterion`
+  * or a monument id copy is written only in these methods. Each either `require`s its round (or file) locks at run time
   * ([[db.scalikejdbc.RoundWrites]]) or is listed with the lock it takes itself. A new raw write
   * elsewhere fails here until it is routed through a guarded writer or listed with its reason.
   * Writes through CRUDMapper or QueryDSL (`updateById`, `insert.into`) are guarded at run time
@@ -24,6 +24,8 @@ class StructuralWritesSpec extends Specification {
     "app/db/scalikejdbc/RoundImageJdbc.scala#disqualify" -> "requireRounds (RoundConflicts.disqualify locks the round first)",
     "app/db/scalikejdbc/RoundImageJdbc.scala#syncChunk" -> "its caller sync requireRounds",
     "app/db/scalikejdbc/RoundImageJdbc.scala#syncMonumentId" -> "requireFiles",
+    "app/db/scalikejdbc/RoundImageEventJdbc.scala#record" ->
+      "requireRounds (its callers RoundImageJdbc.disqualify / requalifyRows, after the rows: last)",
     // their own round lock, recorded
     "app/db/scalikejdbc/CriterionJdbc.scala#updateIn" -> "the round FOR UPDATE first, then its votes (RoundCriterion.update)",
     "app/db/scalikejdbc/CriterionJdbc.scala#insert" -> "a new round's criteria, in its creating transaction (the inserted round row)",
@@ -38,7 +40,7 @@ class StructuralWritesSpec extends Specification {
 
   private val statement =
     ("""(?i)(INSERT( IGNORE)? INTO|REPLACE INTO|UPDATE|DELETE( \w+)? FROM)\s+""" +
-      """(vote|vote_aside|criteria_rate|round_image|round_criterion)\b""" +
+      """(vote|vote_aside|criteria_rate|round_image|round_image_event|round_criterion)\b""" +
       """|UPDATE \$table|DELETE \w+ FROM \$table|UPDATE images SET monument_id""").r
 
   /** An object's or class's member def: two spaces in, so a local def inside it doesn't count. */
