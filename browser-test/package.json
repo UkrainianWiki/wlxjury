@@ -1,0 +1,19 @@
+{
+  "name": "wlxjury-browser-test",
+  "private": true,
+  "type": "module",
+  "description": "Playwright tests in Chromium, Firefox and WebKit against the UiShotsServer fixture (docs/testing/practices.md §10)",
+  "scripts": {
+    "server:start": "node fixture-server.mjs start",
+    "server:stop": "node fixture-server.mjs stop",
+    "test": "playwright test",
+    "check:proxy-errors": "node lib/proxy-errors.check.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "4.14.0",
+    "@playwright/test": "1.64.1"
+  }
+}

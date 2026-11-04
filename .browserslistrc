@@ -1,0 +1,13 @@
+# The browsers the jury tool supports (docs/ui/practices.md §6.1, §6.1a): the current and
+# previous major versions of Chromium-based browsers, Firefox and Safari, and the compatibility
+# floor Chrome 109 and Firefox 115 (Windows 7/8, Firefox ESR). One place for the compatibility
+# lint of our scripts (eslint-plugin-compat) and styles (stylelint-no-unsupported-browser-features),
+# javascript-test/package.json "lint". The versions come from caniuse-lite, pinned in
+# javascript-test/package-lock.json: "last 2" moves when it is updated.
+last 2 Chrome major versions
+last 2 Edge major versions
+last 2 Opera major versions
+last 2 Firefox major versions
+last 2 Safari major versions
+Chrome >= 109
+Firefox >= 115

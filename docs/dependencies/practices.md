@@ -57,8 +57,16 @@ code, to a new one.
 **2.1 Exact versions everywhere.** sbt dependencies and plugins at exact versions (no `latest`,
 no ranges, no `-SNAPSHOT` but scalawiki's pinned build); webjars at exact versions (`jquery`
 3.7.1, `bootstrap` 5.3.8, `tom-select` 2.6.2); Jest's tools through `javascript-test/package-lock.json`
-and `npm ci`; Python tools at exact versions where installed (`playwright==1.48.0`). *Why:* the
-same commit must build the same thing next month.
+and `npm ci`; the browser tests' `@playwright/test` 1.64.1 (released 2026-10-14) and
+`@axe-core/playwright` 4.14.0 (2026-10-15, with `axe-core` 4.14.0) at exact versions in
+`browser-test/package.json` and its lockfile, the browsers being the builds that Playwright
+version names (Chromium 156, Firefox 157, WebKit 27.2; CI caches them by the lockfile's hash);
+the compatibility lint's `eslint` 10.13.0, `eslint-plugin-compat` 7.0.2, `globals` 17.13.0,
+`stylelint` 17.16.0, `stylelint-no-unsupported-browser-features` 8.1.2, `browserslist` 4.29.4 and
+`caniuse-lite` 1.0.30001817 at exact versions in `javascript-test/package.json` (all released 14
+days or more before 2026-11-04; `caniuse-lite` is the data that `.browserslistrc`'s "last 2" is
+read from, so updating it moves the range); Python tools at exact versions where installed
+(`playwright==1.48.0`). *Why:* the same commit must build the same thing next month.
 
 **2.2 Actions by commit SHA.** A workflow `uses:` a third-party action by its full commit SHA, with
 the tag as a comment: `sbt/setup-sbt@ecad189dd245444b9ae0a0cd5922fd938b88906f # v1.5.12`.
@@ -124,7 +132,11 @@ failure; no plugin yet).
 **6.1 Compatible with Apache 2.0.** The project is Apache-2.0 (`LICENSE`). A new dependency's
 license is permissive and compatible (Apache-2.0, MIT, BSD); a copyleft
 library that is served to browsers or linked into the app needs the user's decision first. Name
-the license in the PR.
+the license in the PR. *Example:* `axe-core` and `@axe-core/playwright` are MPL-2.0 (a
+file-level copyleft): test tools only, injected into the test browsers by the browser tests,
+never served by the app or packaged with it, so no decision was needed; Playwright is Apache-2.0.
+The compatibility lint's tools are MIT; `caniuse-lite`'s data is CC-BY-4.0 (attribution; test
+tooling only, not shipped).
 
 **6.2 Vendored files keep their notice.** A copied file keeps its upstream copyright and license
 header (`jquery.raty.js`: MIT; `jquery.hotkeys.js`: dual MIT or GPL v2); a file without
@@ -145,7 +157,7 @@ Jest test, and prefer replacing to patching more of it (secure-coding §8).
 |---|---|---|
 | 1.1 at least two weeks old | review | planned: a check of new versions' release dates in update PRs |
 | 1.3 no unused dependency | review; `sbt dist` classpath diff | review only |
-| 2.1 npm lockfile | `npm ci` in `jsTest` (fails on a lockfile mismatch) | enforced |
+| 2.1 npm lockfile | `npm ci` in `jsTest` and in `browser.yml` (fails on a lockfile mismatch) | enforced |
 | 2.2 actions by SHA | review | planned: a workflow scan for `uses:` without a 40-hex SHA |
 | 2.3 images by exact tag | review | planned: the same scan for `latest`/`stable` tags in workflows and scripts |
 | 3.1 Pekko in step | `build.sbt` comment; image cache specs | review only |
@@ -155,10 +167,15 @@ Jest test, and prefer replacing to patching more of it (secure-coding §8).
 
 ## 9. Where the build doesn't follow these yet (for triage)
 
-- **T1 (2.2):** every workflow uses `actions/checkout@v4`, `actions/setup-java@v4`,
-  `actions/setup-node@v4`, `actions/upload-artifact@v4` and (in `.github/actions/scalawiki`)
-  `actions/cache@v4` by tag; only `sbt/setup-sbt` is pinned by SHA.
+- **T1 (2.2):** every workflow but `browser.yml` uses `actions/checkout@v4`,
+  `actions/setup-java@v4`, `actions/setup-node@v4`, `actions/upload-artifact@v4` and (in
+  `.github/actions/scalawiki`) `actions/cache@v4` by tag; only `sbt/setup-sbt` is pinned by SHA
+  there. `browser.yml` pins every action by SHA (done 2026-11-04).
 - **T2 (2.3):** `docs/deployment.md` "Local verification" runs `python:3.8-slim` and
   `koalaman/shellcheck:stable`, while CI runs `python:3.8.20-slim` and `v0.11.0`.
 - **T3 (2.1):** `scripts/ui-shots.py` installs `"pillow<11"`, a range.
 - **T4 (6.2):** `unitegallery.js` and `ug-theme-tiles.js` carry no license header.
+- **T5 (1.3):** Node 20 reached its end of life in April 2026, and `eslint-plugin-compat` 7.0.2
+  declares Node >= 22. `ci.yml` (whose job runs the lint) and `browser.yml` run Node 22.23.4
+  (2026-10-20, `setup-node` pinned by SHA); `coverage.yml` still runs Node 20 (Jest only), to
+  move with the next update.
