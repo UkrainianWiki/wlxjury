@@ -301,7 +301,7 @@ libraryDependencies ++= Seq(
   // 2.0.0, the version scalawiki-wlx brings and the one that runs
   "com.github.tototoshi" %% "scala-csv" % "2.0.0",
   // ImageIO needs a WebP reader to resize Commons images for the thumbnail cache.
-  "com.twelvemonkeys.imageio" % "imageio-webp" % "3.15.0",
+  "com.twelvemonkeys.imageio" % "imageio-webp" % "3.15.3",
   "uk.org.lidalia" % "sysout-over-slf4j" % "1.0.2",
   // Password hashes (services.PasswordHasher): bcrypt $2b$, cost from password.bcrypt.cost
   "at.favre.lib" % "bcrypt" % "0.10.2",
@@ -341,7 +341,7 @@ excludeDependencies += ExclusionRule("commons-logging", "commons-logging")
 excludeDependencies += ExclusionRule("javax.activation", "javax.activation-api")
 
 dependencyOverrides ++= Seq(
-  "commons-io" % "commons-io" % "2.16.1"
+  "commons-io" % "commons-io" % "2.22.0"
 ) ++ Seq("testcontainers", "jdbc", "database-commons", "mariadb", "mysql").map { module =>
   "org.testcontainers" % module % TestcontainersJavaVersion
 }
