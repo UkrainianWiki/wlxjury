@@ -65,7 +65,7 @@ Artifacts: `org.scalawiki:scalawiki-core_2.13`, `scalawiki-wlx_2.13`, `http-exte
   - Never move or delete a published tag, and never delete a package version.
   - GitHub Packages rejects re-uploading an existing release version. I haven't tested this on this registry; it is what Maven repositories normally do.
 - `versionScheme := Some("early-semver")` tells eviction checks that 0.x minor versions are binary-incompatible.
-- **First release: `0.7.0-M1`** on the commit wlxjury builds against now, `25951dbe` (see the open questions).
+- **First release: `0.7.0-M1`** on the commit wlxjury builds against now, `25951dbe` (see the open questions). **Superseded (2026-11-04):** scalawiki moves to a Java 17 baseline (branch `java17`, off `master`), and with sbt-dynver the tagged commit must contain `publishing.diff` and `publish.yml`, which `25951dbe` doesn't. The order is: `java17` into `master` and `page-categories`, then the publishing branch (A3), then tag `0.7.0-M1` on top. So the first published release is Java 17 (class file 61) from the start; wlxjury already runs on 17. The `java17` branch also removes `sbt-bintray` and the dead resolvers, so `publishing.diff`'s removal of them is redone against it.
 
 ### Publishing
 
@@ -381,7 +381,7 @@ The two scalawiki diffs (`publishing.diff`, `anonymous-tests.diff`) both change 
 
 ## Open questions
 
-1. **Which commit gets the first tag?** *Recommendation:* `0.7.0-M1` on `25951dbe` (page-categories head, the code wlxjury runs against now). Then merge page-categories into scalawiki `master` and cut later releases from `master`. A tag doesn't need its commit on `master`. Until then, CI depends on `25951dbe` staying reachable on GitHub (fetched by SHA). Tag it (`0.7.0-M1`, or a plain `wlxjury-ci-pin` tag), so a force-push or branch deletion in scalawiki can't break wlxjury's CI.
+1. **Which commit gets the first tag?** *Superseded 2026-11-04:* on top of `java17` and the publishing branch (see "First release" above). The earlier recommendation: `0.7.0-M1` on `25951dbe` (page-categories head, the code wlxjury runs against now). Then merge page-categories into scalawiki `master` and cut later releases from `master`. A tag doesn't need its commit on `master`. Until then, CI depends on `25951dbe` staying reachable on GitHub (fetched by SHA). Tag it (`0.7.0-M1`, or a plain `wlxjury-ci-pin` tag), so a force-push or branch deletion in scalawiki can't break wlxjury's CI.
 2. ~~Should the CI file go at the bottom of the stack?~~ **Decided:** on top, as PR [55]. #184–#237 get no CI.
 3. **Rerun PRs when their base changes (`pull_request` type `edited`)?** *Recommendation:* no. The rebase push after a lower PR merges reruns it anyway, and `edited` also fires on title and description edits.
 4. ~~MariaDB 10.11 in CI?~~ **Decided:** only on pushes to master and weekly, until the move to 24.04 makes it the default.
