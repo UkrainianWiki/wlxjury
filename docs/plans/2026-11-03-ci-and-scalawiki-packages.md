@@ -14,7 +14,8 @@ Status: the wlxjury part is implemented in PR `[55] CI` (branch `stack/55-ci`, o
 - **MariaDB 10.11:** only on pushes to master and in the weekly run (`ci.yml`'s matrix and schedule). PRs test 10.6.22.
 - **No scalawiki snapshots** are published; only tags.
 - **Dead resolvers:** Bintray and JCenter are removed from wlxjury's `build.sbt` in this PR. The scalawiki side is in its later PR.
-- **`appveyor.yml`** is deleted once Actions is green, in a follow-up PR.
+- **`appveyor.yml`** is deleted once Actions is green, in a follow-up PR. **Done** (2026-11-04,
+  the Java 17 batch, with the README's AppVeyor and codecov badges).
 
 ## Facts this plan rests on
 
@@ -357,7 +358,7 @@ The two scalawiki diffs (`publishing.diff`, `anonymous-tests.diff`) both change 
 
 1. U1, U2.
 2. A1 and A2: CI with from-source scalawiki, PR [55].
-3. U3. Then a follow-up PR that deletes `appveyor.yml`.
+3. U3. Then a follow-up PR that deletes `appveyor.yml` (done in the Java 17 batch, 2026-11-04).
 4. A3, U4, U5: publishing.
 5. U6, A4.
 6. A5 or A6.
@@ -387,7 +388,7 @@ The two scalawiki diffs (`publishing.diff`, `anonymous-tests.diff`) both change 
 5. ~~Publish snapshots?~~ **Decided:** no, only tags.
 6. **JDK for scalawiki's publish: 11, like its CI, or 17, like wlxjury?** *Recommendation:* 11, matching the tested CI. The bytecode targets 8 either way. Move both together later.
 7. ~~Remove the dead resolvers?~~ **Decided:** yes. wlxjury's are removed in [55]; scalawiki's go in its own PR (A3).
-8. ~~Keep `appveyor.yml`?~~ **Decided:** delete it once Actions is green, in a follow-up PR (scalawiki's in A3).
+8. ~~Keep `appveyor.yml`?~~ **Decided:** delete it once Actions is green, in a follow-up PR (scalawiki's in A3). wlxjury's was deleted in the Java 17 batch (2026-11-04).
 
 ## Validation of PR [55]
 

@@ -74,8 +74,9 @@ lazy val root =
     .enablePlugins(
       PlayScala,
       PlayNettyServer,
-      DebianPlugin,
-      SystemdPlugin,
+      // The release artifact is the Universal ZIP (`sbt dist`); there are no Debian or RPM
+      // packages. The ZIP's bin/wlxjury launcher comes from JavaServerAppPackaging; production's
+      // systemd unit supplies /etc/default/wlxjury (JAVA_OPTS) as an EnvironmentFile.
       JavaServerAppPackaging,
       JmhPlugin,
       GatlingPlugin
@@ -112,10 +113,6 @@ organization := "org.intracer"
 // Calendar version YY.MM (.N for an extra deploy in the same month); the snapshot carries the
 // next release. Release steps: docs/workflow/practices.md §7.4.
 version := "26.11-SNAPSHOT"
-// Package versions: Debian sorts `~` before anything, so 26.11~SNAPSHOT < 26.11 < 26.11.1 (and
-// 26.11 > 0.13); rpmbuild refuses `-` in a version, and rpmRelease is already SNAPSHOT for one.
-Debian / version := version.value.replace("-SNAPSHOT", "~SNAPSHOT")
-Rpm / version := version.value.stripSuffix("-SNAPSHOT")
 
 // The same identity is embedded in the app and placed at the ZIP root. The
 // deployment tool compares readiness with this manifest before opening traffic.
@@ -168,6 +165,10 @@ ThisBuild / scalacOptions += "-encoding"
 ThisBuild / scalacOptions += "UTF-8"
 ThisBuild / javacOptions += "-encoding"
 ThisBuild / javacOptions += "UTF-8"
+// Java 17 is the baseline (the user, 2026-11-04; production runs OpenJDK 17): class files and the
+// JDK API are 17's whatever JDK builds, so a newer local JDK can't slip in a newer API.
+ThisBuild / scalacOptions += "-release:17"
+ThisBuild / javacOptions ++= Seq("--release", "17")
 ThisBuild / javaOptions += "-Dfile.encoding=UTF-8"
 Universal / javaOptions += "-Dfile.encoding=UTF-8"
 
@@ -277,35 +278,6 @@ Test / javaOptions ++= Seq("integration", "docker.tests", "generate.baseline", "
   sys.props.get(key).map(v => s"-D$key=$v")
 }
 
-//rpmRelease := "1"
-
-rpmRequirements ++= Seq("java-1.8.0-openjdk", "bash")
-
-rpmVendor := "intracer"
-
-rpmUrl := Some("https://github.com/intracer/wlxjury")
-
-rpmLicense := Some("ASL 2.0")
-
-packageSummary := "WLX Jury Tool is an image selection and rating tool for Wiki Loves Monuments and Wiki Loves Earth contests"
-
-packageDescription :=
-  """On gallery page jurors or organizing committee can browse the images, see the rating or selection status of each image, open large image view page.
-    |Images can be filtered by their status - unrated, and selected or rejected in selection rounds or rated in rating rounds.
-    |In rating rounds images are sorted by their rating.
-    |Organizing committee can see the votes of each juror separately or the overall rating of all jurors together.
-    |In large image view there is vertical ribbon of image thumbnails on the left and large currently viewed image on the right.
-    |User can go backward or forward with navigation buttons or arrow keys on the keyboard, or can click the thumbnails in the ribbon
-    |Juror can select, reject or rate the currently viewed image.
-    |Juror can also comment the image and see other jurors comments.
-    |Organizing committee can see the ratings and comments given by all jurors to the image.
-    |From large image view one can return to gallery view, visit image page on commons by clicking the large image, or open full resolution version of the image. Caption of the full resolution image version link shows image resolution.
-  """.stripMargin.replace('\n', ' ')
-
-maintainer := "Ilya Korniiko <intracer@gmail.com>"
-
-Debian / debianPackageRecommends ++= Seq("virtual-mysql-server")
-
 // All Gatling simulations in a fixed order: rounds are created and their images
 // distributed before voting starts, so RoundDistribution runs first. Each simulation
 // forks its own JVM and restores the fixture DB, so the order doesn't change results.
@@ -319,111 +291,3 @@ addCommandAlias(
     ";Gatling/testOnly gatling.simulations.RoundManagementSimulation" +
     ";Gatling/testOnly gatling.simulations.AggregatedRatingsSimulation"
 )
-
-addCommandAlias(
-  "packageAll",
-  "; clean" +
-    "; packageDebSystemV" +
-    "; clean " +
-    "; packageDebUpstart" +
-    "; clean " +
-    "; packageDebSystemd" +
-    "; clean " +
-    "; packageRpmSystemV" +
-    "; clean " +
-    "; packageRpmUpstart" +
-    "; clean " +
-    "; packageRpmSystemd"
-)
-
-addCommandAlias(
-  "packageDebSystemV",
-  "; set serverLoading in Debian := Some(com.typesafe.sbt.packager.archetypes.systemloader.ServerLoader.SystemV)" +
-    "; internalPackageDebianSystemV"
-)
-
-addCommandAlias(
-  "packageDebUpstart",
-  "; set serverLoading in Debian := Some(com.typesafe.sbt.packager.archetypes.systemloader.ServerLoader.Upstart)" +
-    "; internalPackageDebianUpstart"
-)
-
-addCommandAlias(
-  "packageDebSystemd",
-  "; set serverLoading in Debian := Some(com.typesafe.sbt.packager.archetypes.systemloader.ServerLoader.Systemd)" +
-    "; internalPackageDebianSystemd"
-)
-
-addCommandAlias(
-  "packageRpmSystemV",
-  "; set serverLoading in Rpm := Some(com.typesafe.sbt.packager.archetypes.systemloader.ServerLoader.SystemV)" +
-    "; internalPackageRpmSystemV"
-)
-
-addCommandAlias(
-  "packageRpmUpstart",
-  "; set serverLoading in Rpm := Some(com.typesafe.sbt.packager.archetypes.systemloader.ServerLoader.Upstart)" +
-    "; internalPackageRpmUpstart"
-)
-
-addCommandAlias(
-  "packageRpmSystemd",
-  "; set serverLoading in Rpm := Some(com.typesafe.sbt.packager.archetypes.systemloader.ServerLoader.Systemd)" +
-    "; internalPackageRpmSystemd"
-)
-
-lazy val internalPackageDebianSystemV =
-  taskKey[File]("creates debian package with systemv")
-lazy val internalPackageDebianUpstart =
-  taskKey[File]("creates debian package with upstart")
-lazy val internalPackageDebianSystemd =
-  taskKey[File]("creates debian package with systemd")
-
-lazy val internalPackageRpmSystemV =
-  taskKey[File]("creates rpm package with systemv")
-lazy val internalPackageRpmUpstart =
-  taskKey[File]("creates rpm package with upstart")
-lazy val internalPackageRpmSystemd =
-  taskKey[File]("creates rpm package with systemd")
-
-internalPackageDebianSystemV := {
-  val output = baseDirectory.value / "package" / s"wlxjury-systemv-${version.value}.deb"
-  val debianFile = (Debian / packageBin).value
-  IO.move(debianFile, output)
-  output
-}
-
-internalPackageDebianUpstart := {
-  val output = baseDirectory.value / "package" / s"wlxjury-upstart-${version.value}.deb"
-  val debianFile = (Debian / packageBin).value
-  IO.move(debianFile, output)
-  output
-}
-
-internalPackageDebianSystemd := {
-  val output = baseDirectory.value / "package" / s"wlxjury-systemd-${version.value}.deb"
-  val debianFile = (Debian / packageBin).value
-  IO.move(debianFile, output)
-  output
-}
-
-internalPackageRpmSystemV := {
-  val output = baseDirectory.value / "package" / s"wlxjury-systemv-${version.value}.rpm"
-  val rpmFile = (Rpm / packageBin).value
-  IO.move(rpmFile, output)
-  output
-}
-
-internalPackageRpmUpstart := {
-  val output = baseDirectory.value / "package" / s"wlxjury-upstart-${version.value}.rpm"
-  val rpmFile = (Rpm / packageBin).value
-  IO.move(rpmFile, output)
-  output
-}
-
-internalPackageRpmSystemd := {
-  val output = baseDirectory.value / "package" / s"wlxjury-systemd-${version.value}.rpm"
-  val rpmFile = (Rpm / packageBin).value
-  IO.move(rpmFile, output)
-  output
-}

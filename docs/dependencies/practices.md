@@ -37,6 +37,15 @@ Scala, sbt and JDK before choosing it, and read its sources in `target/dep-sourc
 compiler plugin is published per full Scala version, and 2.4.x starts at Scala 2.13.16 (this build
 is 2.13.15); 2.1.0 couldn't resolve at all (CI plan, "Test coverage").
 
+**1.2a Java 17 is the baseline** (the user, 2026-11-04). The build compiles with `-release:17`
+(scalac) and `--release 17` (javac); CI and the deployment test images run JDK 17, and production
+runs OpenJDK 17 ([deployment.md](../deployment.md), "Java 17 is required"). An update that needs
+Java 17 is fine. One that needs a newer JDK (class files above version 61, or JDK 21 APIs) waits
+until the baseline moves. Java 11 is not supported: don't hold a version back, or add a pin, for
+it. `javap -v` on a class from the jar shows its level (`major version: 61` is Java 17). *Why:*
+many updates now need 17 (Flyway 10 and later already did: `FlywayVersion` 13.12.0 is version 61),
+and production has run 17 since its Ubuntu 22.04 install.
+
 **1.3 Used, maintained, reviewed.** A new dependency is used by the code that adds it, has recent
 releases and a responsive upstream, and is named in the PR's "Security" section
 (`dependencies`); an unused one is removed (S10 removed `play-pac4j`, comparing `sbt dist`'s
@@ -75,11 +84,19 @@ production's MariaDB build (performance §2.6).
 
 ## 3. Pekko and scalawiki
 
-**3.1 Pekko follows scalawiki.** Pekko and Pekko HTTP come with scalawiki, whose versions are in its
-`project/Dependencies.scala` (`Library.Pekko`: `PekkoV`, `PekkoHttpV`). Bump scalawiki first, then
-`PekkoVersion` (1.0.3) and `PekkoHttpVersion` (1.0.1) in `build.sbt`, then rerun the image cache
-specs (`LocalImageCacheService*Spec`, which use Pekko HTTP's client). *Why:* two Pekko versions on
-one classpath fail at run time, not at compile time (secure-coding §19; the `build.sbt` comment).
+**3.1 Pekko follows scalawiki and Play.** Pekko HTTP comes with scalawiki, whose versions are in its
+`project/Dependencies.scala` (`Library.Pekko`: `PekkoV`, `PekkoHttpV`), and Play itself is built on
+Pekko (actor, stream). A Pekko version must suit both: bump scalawiki first, check that the Play
+line in use accepts that Pekko, then `PekkoVersion` (1.0.3) and `PekkoHttpVersion` (1.0.1) in
+`build.sbt`, then rerun the image cache specs (`LocalImageCacheService*Spec`, which use Pekko HTTP's
+client). Pekko 2.0 waits for a Play release that supports it (none known yet; user, 2026-11-04).
+*Why:* two Pekko versions on one classpath fail at run time, not at compile time (secure-coding §19;
+the `build.sbt` comment).
+
+**3.3 The next major lines** (user, 2026-11-04): Play 3.1 is not released yet; Pekko 2.0 comes with
+a Play release that supports it (3.1); Scala 3 is not planned, and may come later together with
+scalawiki's own improvements; sbt 2 is worth investigating for development speed (roadmap, "sbt 2
+investigation").
 
 **3.2 scalawiki is pinned by commit** until a tagged package exists (integrations §2.1, §2.4).
 

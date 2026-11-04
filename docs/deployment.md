@@ -18,7 +18,10 @@ keeps the tested `wlxjury-deploy.py`; routine releases use the small `wlxjury-re
 (`b5a1f9ec`, `restore` in `cc15dfd7`) with a rehearsed runbook instead of guided recovery
 commands (tooling comparisons `24d0c62a`, `6d96d264`). The cutover code (`adopt-legacy`,
 `scrub-legacy`, about 350 lines) is retired once the cutover is accepted and its recovery
-records are gone (roadmap). The Debian package stays a later option.
+records are gone (roadmap). The release artifact is the ZIP from `sbt dist`; the Debian and RPM
+packages were dropped (2026-11-04, unused for years). The server's original `wlxjury.service` unit
+and `wlxjury` user came from the old Debian package; `wlxjury-infra` now manages both (its
+`wlxjury_app` role).
 
 ## One-time setup on the server
 
@@ -29,9 +32,19 @@ records are gone (roadmap). The Debian package stays a later option.
 - the systemd unit and the app's MariaDB settings;
 - the installation of `wlxjury-deploy` and `wlxjury-release`.
 
+**Java 17 is required.** Releases are compiled for Java 17 (class file version 61; `-release:17`
+in `build.sbt`); on Java 11 the app fails at start with `UnsupportedClassVersionError`.
+Production runs OpenJDK 17 (17.0.20.1 when checked on 2026-11-04), the default `java` on Ubuntu
+22.04; `wlxjury-infra` installs `openjdk-17-jre-headless`. The launcher (`bin/wlxjury`) runs
+`$JAVA_HOME/bin/java` if `JAVA_HOME` is set (and that file is executable), else the `java` on
+`PATH`, so keep 17 the default and don't point `JAVA_HOME` at another JDK. The server also has an old Java 11, not the default and no longer needed:
+the user may remove it later (for example `apt remove openjdk-11-jre-headless`, after checking
+with `update-alternatives --list java` that nothing else selects it). Production's
+`-XX:G1PeriodicGCInterval` already needed Java 12 or later.
+
 It can also recreate a new server. For this server, follow its `docs/adopting-the-existing-server.md`. It replaces the manual steps below, apart from `adopt-legacy` and `scrub-legacy`. Those steps, and the files under `conf/apache`, `conf/systemd` and `conf/wlxjury`, stay here until production is configured from that repository.
 
-Run from a reviewed checkout. `/etc/wlxjury` points into the package, so runtime settings go in a new real directory. No credentials belong in the checkout, ZIP, command-line arguments or console output.
+Run from a reviewed checkout. `/etc/wlxjury` points into the old Debian installation (`/usr/share/wlxjury`), so runtime settings go in a new real directory. No credentials belong in the checkout, ZIP, command-line arguments or console output.
 
 ```bash
 sudo install -D -o root -g root -m 0755 scripts/deployment/wlxjury-deploy.py /usr/local/sbin/wlxjury-deploy

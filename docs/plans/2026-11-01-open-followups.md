@@ -94,4 +94,5 @@ top N of another contest's round. More ranking methods (STV, normalised ratings)
 trial and Codex colours (theme decision 2). Keyset paging of galleries. A design for faster
 organisers' all-jurors views. "Count new files" as a job. Moving local image downloads to the
 job table. Prefetching import pages. The import's open questions (unifying the monument
-template, WLE nominations). The Debian package and Ansible deployment options.
+template, WLE nominations). The Ansible deployment option (the Debian package was dropped
+on 2026-11-04; the ZIP is the release artifact).
