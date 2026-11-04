@@ -161,7 +161,7 @@ per-IP limit.
   an image proxy counts under ToU §4.5 ("Do not … proxy or relay traffic for other servers") is
   **unconfirmed**.
 
-**The switch.** None exists: `Global.useLegacyThumbUrl` is a hard-coded `val`, gallery URLs are
+**The switch.** None exists: `Global.useLegacyThumbUrl` was a hard-coded `val` (removed since, with the unused `thumb.php` helper, #258), gallery URLs are
 relative, and `wlxjury.thumbs.local-path` is mandatory. In `commons` mode:
 - `thumbUrl`/`srcSet` emit `https://upload.wikimedia.org/...` at `wikimediaStep` widths (a 330-px
   tile where about 300 px is needed);
