@@ -14,7 +14,7 @@ async function expectAccessDenied(page, response) {
 test.describe('a juror', () => {
   test.use({ role: 'juror' });
 
-  test('can\'t see another juror\'s votes, in the gallery or the large view', async ({ page, fixture, diagnostics }) => {
+  test('can\'t see another juror\'s votes, in the gallery or the large view', { tag: ['@J-27', '@J-35'] }, async ({ page, fixture, diagnostics }) => {
     diagnostics.expectStatus(403);
     const other = fixture.otherJuror;
     for (const path of [
@@ -34,7 +34,7 @@ test.describe('a juror', () => {
     }
   });
 
-  test('can\'t open an organizer page', async ({ page, fixture, diagnostics }) => {
+  test('can\'t open an organizer page', { tag: ['@S-01', '@J-35'] }, async ({ page, fixture, diagnostics }) => {
     diagnostics.expectStatus(403);
     for (const path of [
       `/admin/rounds?contestId=${fixture.contestId}`,
@@ -52,7 +52,7 @@ test.describe('a juror', () => {
 test.describe('an organizer', () => {
   test.use({ role: 'organizer' });
 
-  test('can\'t open the round form, an admin\'s page', async ({ page, fixture, diagnostics }) => {
+  test('can\'t open the round form, an admin\'s page', { tag: '@S-01' }, async ({ page, fixture, diagnostics }) => {
     diagnostics.expectStatus(403);
     await expectAccessDenied(page, await page.goto(`/admin/rounds/edit?id=${fixture.roundBinaryId}&contestId=${fixture.contestId}`));
   });

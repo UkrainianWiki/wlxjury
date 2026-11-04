@@ -130,7 +130,7 @@ class OAuthControllerSpec extends PlaySpecification with Results with PlayTestDb
     ExternalProfile("google", sub, Some(email), emailVerified = true,
       hostedDomain = Option.when(!email.endsWith("@gmail.com"))(email.substring(email.indexOf('@') + 1)))
 
-  "login" should {
+  "login [J-04]" should {
     "send the user to the provider, keeping the sign-in in the session" in testDbApp { implicit app =>
       val result = controller.login("google")(get("/oauth/google/login"))
 
@@ -162,7 +162,7 @@ class OAuthControllerSpec extends PlaySpecification with Results with PlayTestDb
     }
   }
 
-  "callback" should {
+  "callback [J-04]" should {
     "sign in the account with the verified email, as a password sign-in does (S3)" in testDbApp { implicit app =>
       createContests(10L)
       val alice = verified("alice@example.com")
@@ -431,7 +431,7 @@ class OAuthControllerSpec extends PlaySpecification with Results with PlayTestDb
     }
   }
 
-  "link" should {
+  "link [J-32]" should {
     "link the account signed in with to the signed-in user's own" in testDbApp { implicit app =>
       createContests(10L)
       val alice = verified("alice@example.com")
@@ -606,7 +606,7 @@ class OAuthControllerSpec extends PlaySpecification with Results with PlayTestDb
     }
   }
 
-  "unlink" should {
+  "unlink [J-32]" should {
     "unlink only the user's own identity" in testDbApp { implicit app =>
       createContests(10L)
       val alice = verified("alice@example.com")
@@ -635,7 +635,7 @@ class OAuthControllerSpec extends PlaySpecification with Results with PlayTestDb
     }
   }
 
-  "an unlinked identity" should {
+  "an unlinked identity [J-04]" should {
     "not be linked again by a first sign-in's email, only from the profile (F2)" in testDbApp { implicit app =>
       createContests(10L)
       val alice = verified("alice@example.com")
@@ -659,7 +659,7 @@ class OAuthControllerSpec extends PlaySpecification with Results with PlayTestDb
     }
   }
 
-  "the login page" should {
+  "the login page [J-04]" should {
     "offer the providers configured for the host, keeping returnTo" in testDbApp { implicit app =>
       verified("alice@example.com", role = None)
 
@@ -684,7 +684,7 @@ class OAuthControllerSpec extends PlaySpecification with Results with PlayTestDb
     }
   }
 
-  "the own profile" should {
+  "the own profile [J-32]" should {
     "show the linked accounts and the providers to link" in testDbApp { implicit app =>
       createContests(10L)
       val alice = verified("alice@example.com")

@@ -6,7 +6,7 @@ class ErrorHandlerSpec extends PlaySpecification with PlayTestDb {
 
   sequential
 
-  "a server error" should {
+  "a server error [S-05]" should {
     "show a reference, not the exception's message" in {
       testDbApp { implicit app =>
         val handler = app.injector.instanceOf[ErrorHandler]
@@ -47,7 +47,7 @@ class ErrorHandlerSpec extends PlaySpecification with PlayTestDb {
     }
   }
 
-  "a client error" should {
+  "a client error [S-05]" should {
     "show the status's message, not the error's text" in {
       testDbApp { implicit app =>
         val handler = app.injector.instanceOf[ErrorHandler]

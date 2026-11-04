@@ -1,7 +1,8 @@
 # Story coverage and the Allure overview (plan)
 
-**State:** planned (user decision, 2026-11-04: user-story coverage for the tests, with an Allure
-overview). Not started. **Sources:** `browser-test/` at `76d88f1a` (Playwright Test 1.64.1, 53
+**State:** steps 1–4 built on `ukwikidev/story-coverage` (2026-11-04, [results](#8-results));
+step 5 (the first gaps) not started. User decision, 2026-11-04: user-story coverage for the
+tests, with an Allure overview. **Sources:** `browser-test/` at `76d88f1a` (Playwright Test 1.64.1, 53
 tests per engine), [testing](../testing/practices.md) §9–§11,
 [juror guide](../user/juror-guide.md), [dependencies](../dependencies/practices.md) §1, §2, §6,
 [workflow](../workflow/practices.md) §8, `conf/routes`, `build.sbt` (specs2: 209 spec files;
@@ -248,7 +249,8 @@ tools, no downloaded Java tool to checksum (dependencies §4.1), history in a fi
 reports. Two-week rule (§1.1): on 2026-11-04 the newest eligible `allure` is 3.21.0; 3.22.1 is
 eligible from 2026-11-06 and may be taken if the PR merges after that. `allurerc.mjs`, not
 `.ts` (TypeScript config needs Node 22.18; CI runs Node 20). The classic (Allure 2-style) plugin
-is experimental: use the default Awesome report.
+is experimental: use the default Awesome report. *Superseded (the user, 2026-11-04):* the
+allure2 plugin, since Awesome hard-codes Google Analytics (§8).
 
 **4.3 Its surface:** `allure` 3.21.0 depends on about 30 `@allurereport/*` packages (Jira,
 Slack, Xray plugins among them, unused). A test tool only, never served or packaged; named in the
@@ -343,3 +345,114 @@ does not fail the engines' jobs).
 
 **7.5 Public reports.** Only if Pages is chosen (§4.5): no server log, trace or credential in
 the published files.
+
+## 8. Results
+
+Built 2026-11-04 on `ukwikidev/story-coverage` (based on `stack/70-browser-tests`, `474e6cac`),
+then reworked after the review the same day.
+
+**The matrix** (`python scripts/story-coverage.py`): 75 stories, **52 covered, 16 partly
+covered** (*Part:* in Notes), **7 uncovered**: J-09, J-10, J-22, J-29, J-31, J-37, A-16. By layer:
+20 stories have browser and Scala tests, 7 browser only (J-33, O-06, A-18, R-01, R-04, S-03,
+S-04), 41 Scala only. The guide sections no story links: the three "Kinds of rounds" ones and
+"Conflicts of interest". The review added seven stories: O-06, A-18, R-04 (each role's sign-in,
+for `auth.setup.js`'s per-role tags), S-07 (a vote by a non-juror of the round or another
+contest), S-08 (a vote outside the round's rates), S-09 (another account's password and email, and its wiki account
+set only unverified), S-10 (an admin's change refused to a juror or an organizer), so S-01 is no longer a
+bucket for every refusal; S-01's sentence now names the board, auditor and staff members too.
+J-36 became *Part:*. `RouteAuthSpec`'s scan lost its tag (a guard, §2.3).
+
+**The two unverified points:**
+
+- *`allure.story()` from the auto fixture:* works. A probe with a `{ auto: true }` fixture calling
+  `allure.epic/feature/story` before `use()` gave the result JSON those labels beside the `tag`
+  labels; in the Chromium run every tagged test has them (e.g. `Juror` /
+  `Light, dark or system theme` / `J-30 …`) and the "Project" parameter `chromium`. An unknown tag
+  (`@J-98`) failed the probe's test from the fixture. One side effect: the labels travel as
+  attachments ("Allure Metadata"), so Playwright's HTML report lists them per test.
+- *Offline:* **not with Allure 3's default report.** Its Awesome plugin hard-codes Google
+  Analytics (`analyticsEnable: true` in `@allurereport/plugin-awesome`'s `generators.js`; the
+  classic and dashboard plugins too), with no opt-out; upstream, allure3#476 and PR #784 are
+  open. Opened with every non-file request refused, the Awesome report asked
+  `www.googletagmanager.com` twice. The **allure2 plugin honours `ALLURE_NO_ANALYTICS`**
+  (`generators.js:129`). *Decision (the user, 2026-11-04): Allure 3 with the allure2 plugin*,
+  `ALLURE_NO_ANALYTICS=true` in `allurerc.mjs` and in the report job; `allure-offline.mjs` is a
+  check that fails on an analytics loader or anything from another host (its self-test includes
+  a report with Awesome's gtag block), and puts a CSP `<meta>` first in `<head>`. The allure2
+  report with that CSP, opened in Chromium with every non-file request refused: no request left
+  the file, no console error (the first CSP had `base-uri 'none'`, which blocked the report's
+  own `<base>`: dropped), the tabs drawn. **Rule: recheck on every Allure update.** Its trace
+  viewer would frame `trace.playwright.dev`; the CSP blocks it (testing §10.10).
+
+**Behaviors and history:** the Behaviors tab groups epic, feature, story (`Admin` > `Admin` >
+`A-01 …`, `A-02 …`, `A-18 …`; a juror test under its guide section); two generates with
+`ALLURE_APPEND_HISTORY=true` gave two history lines and the overview's Trend chart two runs.
+
+**Sizes:** a Chromium run (53 passed, 2 `fixme` skipped): 72 result files, 0.7 MB; the allure2
+one-file report 3.8 MB (Awesome's was 3.9 MB); a history entry 70 KB (`historyLimit: 30`, about
+2 MB). A three-engine report: not measured locally (the a11y attachments are Chromium's only).
+
+**Checks:** the script's `--self-test` (each review case: an unknown ID in a `fixme` test, an
+unattached tag string, a quoted tag in a comment, lowercase and hyphenless IDs in tags, rows and
+Scala names, a Scala ID outside its brackets or outside a name, a guide link without its anchor,
+Notes links to a missing file or heading) and the tree pass; `npx playwright test --list`: 165
+tests; `Test/compile` and `testOnly` of `LoginControllerSpec`, `OwnAccountSpec`,
+`RoleAssignmentSpec`, `RouteAuthSpec`: 47 passed (earlier: `SignOutAndSwitchSpec`,
+`OAuthChooserSpec`, `SetupSpec`, 19), the bracketed IDs in the JUnit XML names; Chromium with
+the Allure reporter: 53 passed, 2 skipped; `npm run report:selftest` and `npm run report`.
+`LoginControllerSpec`'s wrong-password example sent the login as headers, so it showed a
+missing form, not a wrong password: it now posts the form and asserts the login page's alert
+with `invalid.user.or.password` and no session (J-03; the block's J-07 moved to the two
+`returnTo` examples).
+
+**Where the plan and the code differ (the code followed):**
+
+- *§1.4's Scala column vs §2.3:* the column names view-render, parity, form-mapping and unit
+  specs that §2.3 excludes; only the request-level ones were tagged (39 files).
+  `RoundControllerSpec` is a form-mapping unit test (not O-01, A-01, A-04: those are
+  `ContestFilesPageSpec`/`RoundEditPageSpec`, `RoundEditPageSpec`/`RoundCriteriaSpec`, and
+  `MutationAuthorizationSpec`'s `setRoundUser` block). `AppendImagesSpec` is the import service
+  (A-09, A-13), not A-05/A-14; A-14 is `RoundEditPageSpec`'s "add the pasted files" example and
+  A-05 its new-files count. `ContentSecurityPolicySpec` is a guard of the policy (S-03 stays with
+  the browser guards). Left untagged, so their stories show as Scala-uncovered or *Part:*:
+  `RoundListSpec`, `RoundListDbSpec`, `JurorCountsSpec`, `ListPositionSpec`, `PagerSpec`,
+  `GalleryTileStarsViewSpec`, `GalleryByRateViewSpec`, `LargeViewUrlsSpec`, `LargeViewSideSpec`,
+  `ThemeViewSpec`, `StartStopViewSpec`, `HeadingsViewSpec`, `GroupedListParitySpec`, `CsvSpec`,
+  the three choice specs, `ImagesFromListSpec`, `UserControllerSpec`.
+- *The "?" stories:* A-13 `ContestTemplateSpec`, `MonumentControllerSpec`; A-15
+  `RoundEditPageSpec` ("create one round when saved twice"); A-17 `AdminPagesCurrentContestSpec`
+  (saving the greeting); S-06 the stopped-round and stopped-juror examples of
+  `MutationAuthorizationSpec` and `LargeImageSpec`.
+- *The tour:* `pages.spec.js` is tagged S-04 only; a page it merely opens is noted in the story's
+  Notes ("browser: the page tour opens it only"), not tagged, so a 200 doesn't count as a story.
+- *The fixme test* (`sections.spec.js`, U18) is tagged J-33, checked, and listed as not counting.
+- *Playwright:* `test.describe(details, fn)` without a title takes the object as the title, so
+  the anonymous describe in `sections.spec.js` got its tags on its tests instead.
+- *Testing doc numbering:* §5 named 10.6 "Adding a test" and 10.7 the CI section; in the code
+  they are 10.7 and 10.8 (10.9 is "Times"), so the Allure section is **10.10**.
+- *§4.2's Awesome report:* replaced by the allure2 plugin (above).
+- *The report job* runs `if: !cancelled()`, not `always()`, takes each engine's latest attempt
+  (a re-run of the failed jobs keeps the passed engines' earlier results), and builds through
+  `npm run report`, so it never uploads an unchecked report; the history is under
+  `target/browser-test/allure-history/`, not `history/`.
+- *`ci.yml`'s step* runs after "Compile and test" (`success() || failure()`, as the lint), in the
+  first matrix leg only, not before the compile: a tag typo then can't hide the suite's result.
+- *Dependencies:* `allure-js-commons` 3.14.0 is a direct, exact devDependency (the fixture
+  imports it); the transitive packages (~160) were locked with `npm install --before
+  2026-10-21`, so none is newer than the two-week rule; their licenses are permissive
+  (BlueOak-1.0.0, PSF-2.0, `dompurify` MPL-2.0 or Apache-2.0 among MIT, Apache, ISC, BSD).
+
+**The follow-up review** (approved, non-blocking fixes): the Scala cross-check counts only a
+real ID shape (`[J-27`, `[J27`; not a type parameter `[A1]`, `Map[K1, V1]`) in the code with
+`//` and `/* */` comments blanked, with self-test cases for the three; `STRAY_ID` also fails on
+string data shaped like an ID (`"S-10"`), documented. `RoundController.saveRound` (cross-contest
+isolation) lost S-10; `RoleAssignmentSpec`'s organizer and juror saves of their own profile with
+the admin role assert their status: 303, saved with the role field ignored; the same-contest
+"organiser not a juror" criteria example is tagged S-07; S-09's sentence names the admin's
+unverified wiki account. `allure-offline.mjs` checks every `*.html` of the report's directory
+(no `index.html` fails). The trace viewer's `trace.playwright.dev` frame is blocked by the CSP,
+so traces are neither sent nor viewable in the report (testing §10.10). Not done (optional):
+asserting each role's landing page in the sign-in setups. The counts are unchanged: 75
+stories, 52 covered, 16 partly covered, 7 uncovered.
+
+**Deferred:** as §6, plus a three-engine local report size, and step 5's tests.

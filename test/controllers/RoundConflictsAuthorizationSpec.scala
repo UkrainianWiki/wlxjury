@@ -69,7 +69,7 @@ class RoundConflictsAuthorizationSpec extends PlaySpecification with PlayTestDb 
   private val both = Seq("pageId" -> "1", "pageId" -> "2")
   private val mistaken = "reason" -> RoundConflicts.RequalifyReason.MistakenMatch
 
-  "a round's conflicts page" should {
+  "a round's conflicts page [A-10]" should {
 
     "list its conflicts to its contest's admin with the forms, and to its organizer without them" in {
       testDbApp { app =>
@@ -107,7 +107,7 @@ class RoundConflictsAuthorizationSpec extends PlaySpecification with PlayTestDb 
     }
   }
 
-  "disqualifying and requalifying" should {
+  "disqualifying and requalifying [A-10]" should {
 
     "work for its contest's admin and root, in the round's contest, with the reason shown" in {
       testDbApp { app =>

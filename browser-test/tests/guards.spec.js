@@ -3,7 +3,7 @@
 import { test, expect } from '../lib/fixtures.js';
 import { isProxyError } from '../lib/proxy-errors.js';
 
-test.describe('the guards', () => {
+test.describe('the guards', { tag: '@S-03' }, () => {
   test('the fixture sends the production content security policy', async ({ page }) => {
     const response = await page.goto('/auth');
     const csp = response.headers()['content-security-policy'];

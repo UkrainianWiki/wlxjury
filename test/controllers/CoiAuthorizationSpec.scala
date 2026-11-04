@@ -81,7 +81,7 @@ class CoiAuthorizationSpec extends PlaySpecification with PlayTestDb with Mockit
     )
   }
 
-  "a member whose only role is board, auditor or staff" should {
+  "a member whose only role is board, auditor or staff [S-01]" should {
 
     "be refused every page, as a non-member is" in {
       testDbApp { app =>
@@ -118,7 +118,7 @@ class CoiAuthorizationSpec extends PlaySpecification with PlayTestDb with Mockit
     }
   }
 
-  "the contest files page's conflicts of interest" should {
+  "the contest files page's conflicts of interest [A-10]" should {
 
     "list the files by members in conflict-of-interest roles to organizers and admins, with whose they are" in {
       testDbApp { app =>
@@ -296,7 +296,7 @@ class CoiAuthorizationSpec extends PlaySpecification with PlayTestDb with Mockit
     }
   }
 
-  "importing users with a role" should {
+  "importing users with a role [A-07]" should {
 
     "add the board, auditors and staff by wiki account, two without emails, and greet none of them" in {
       testDbApp { implicit app =>

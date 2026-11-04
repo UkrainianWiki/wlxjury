@@ -13,7 +13,7 @@ follow these yet" list for triage where one exists):
 | [security/](security/) | [secure-coding.md](security/secure-coding.md) | [review-checklist.md](security/review-checklist.md); status: [register.md](security/register.md) | auth, sessions, roles, SQL, views and JS, config, exports, logs, personal data |
 | [db/](db/) | [practices.md](db/practices.md) | [review-checklist.md](db/review-checklist.md) | SQL, schema, migrations, transactions, locking |
 | [performance/](performance/) | [practices.md](performance/practices.md) | [review-checklist.md](performance/review-checklist.md) | load tests, benchmarks, speed or memory changes |
-| [testing/](testing/) | [practices.md](testing/practices.md) | [review-checklist.md](testing/review-checklist.md) | writing or running tests, CI, coverage |
+| [testing/](testing/) | [practices.md](testing/practices.md); the user stories tests cite: [stories.md](testing/stories.md) | [review-checklist.md](testing/review-checklist.md) | writing or running tests, CI, coverage, story tags |
 | [workflow/](workflow/) | [practices.md](workflow/practices.md) | — | branches, PRs, reviews, commits, releases |
 | [operations/](operations/) | [practices.md](operations/practices.md) | — | logging, readiness, backups, deploys, monitoring |
 | [integrations/](integrations/) | [practices.md](integrations/practices.md) | — | Wikimedia API, scalawiki, OAuth providers |
@@ -63,6 +63,7 @@ roadmap. A plan that takes it up cites it; once nothing is open in it, it follow
 | adds or updates a dependency, action, image or downloaded tool | dependencies practices |
 | ships a user-visible change | CHANGELOG.md "Unreleased" |
 | changes a label, a key or what a juror sees or does | the juror guide (`docs/user/juror-guide.md`, §5) |
+| adds or changes a user-visible flow | the story catalogue (`docs/testing/stories.md`): a story ID, its guide section, a tagged test or its uncovered entry (testing §9.4) |
 | starts, lands or decides a batch | the roadmap |
 | adds, removes or automates a manual check | the release checklist in deployment.md ("Release checklist") |
 

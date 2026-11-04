@@ -25,6 +25,9 @@ export default defineConfig({
     ['list'],
     ['html', { outputFolder: '../target/browser-test/report', open: 'never' }],
     ['json', { outputFile: '../target/browser-test/results.json' }],
+    // the Allure results (testing §10.10): each test with its engine as the "Project" parameter
+    // and its story labels (lib/fixtures.js storyLabels); `npx allure generate` builds the report
+    ['allure-playwright', { resultsDir: '../target/browser-test/allure-results' }],
   ],
   use: {
     locale: 'en-US',

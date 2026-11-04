@@ -61,7 +61,7 @@ const summarize = (violations) => violations.map((v) => ({
   targets: v.nodes.slice(0, 5).map((n) => n.target.join(' ')),
 }));
 
-test.describe('the page tour', () => {
+test.describe('the page tour', { tag: '@S-04' }, () => {
   for (const [name, role, pathOf] of TOUR) {
     test(name, async ({ contextAs, fixture, browserName }, testInfo) => {
       const context = await contextAs(role);

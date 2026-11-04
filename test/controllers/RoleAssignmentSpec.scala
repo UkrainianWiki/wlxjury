@@ -80,7 +80,7 @@ class RoleAssignmentSpec extends PlaySpecification with PlayTestDb with Mockito 
     (statuses.filterNot(_._2 == BAD_REQUEST) === Nil) and (state() === before)
   }
 
-  "an admin's /users/save" should {
+  "an admin's /users/save [A-08]" should {
     "refuse a role that is not a contest role for their own account" in {
       testDbApp { implicit app =>
         createContests(10)
@@ -163,14 +163,16 @@ class RoleAssignmentSpec extends PlaySpecification with PlayTestDb with Mockito 
     }
   }
 
-  "an organizer's or a juror's /users/save" should {
+  "an organizer's or a juror's /users/save [S-10]" should {
     "leave their own role as it is" in {
       testDbApp { implicit app =>
         createContests(10)
         val org = member("org@example.com", 10L -> "organizer")
         val jury = member("jury@example.com", 10L -> "jury")
-        status(save(org, 10, form(org.getId, org.email, 10, "admin"): _*))
-        status(save(jury, 10, form(jury.getId, jury.email, 10, "admin"): _*))
+        // their own profile is saved (303) with the role field ignored: only an admin's form
+        // sets a role, so neither becomes admin
+        (status(save(org, 10, form(org.getId, org.email, 10, "admin"): _*)),
+         status(save(jury, 10, form(jury.getId, jury.email, 10, "admin"): _*))) === ((SEE_OTHER, SEE_OTHER)) and
         (UserContestJdbc.find(org.getId, 10).map(_.role) === Some("organizer")) and
           (UserContestJdbc.find(jury.getId, 10).map(_.role) === Some("jury"))
       }
@@ -185,7 +187,7 @@ class RoleAssignmentSpec extends PlaySpecification with PlayTestDb with Mockito 
     }
   }
 
-  "root's /users/save" should {
+  "root's /users/save [R-03]" should {
     "make a member root through users.is_root, writing no contest role" in {
       testDbApp { implicit app =>
         createContests(10)
@@ -238,7 +240,7 @@ class RoleAssignmentSpec extends PlaySpecification with PlayTestDb with Mockito 
     }
   }
 
-  "saveUser for a new user" should {
+  "saveUser for a new user [A-07]" should {
     "not report another IllegalArgumentException as a refused role" in {
       testDbApp { implicit app =>
         createContests(10)

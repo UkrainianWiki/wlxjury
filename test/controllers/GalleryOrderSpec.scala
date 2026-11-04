@@ -46,7 +46,7 @@ class GalleryOrderSpec extends PlaySpecification with PlayTestDb {
 
   private def gallery(f: Fixture, query: String = "") = s"/gallery/round/${f.round.getId}/user/${f.juror.getId}/page/1$query"
 
-  "a juror" should {
+  "a juror [J-12, J-13, J-15]" should {
 
     "start on all their files, in file order" in {
       testDbApp { implicit app =>
@@ -204,7 +204,7 @@ class GalleryOrderSpec extends PlaySpecification with PlayTestDb {
     }
   }
 
-  "a juror's vote in the large view" should {
+  "a juror's vote in the large view [J-20]" should {
 
     def vote(f: Fixture, pageId: Long, rate: Int, query: String)(implicit app: Application): Future[Result] =
       route(app, FakeRequest(POST, s"/large/round/${f.round.getId}/pageid/$pageId/select/$rate$query")
@@ -239,7 +239,7 @@ class GalleryOrderSpec extends PlaySpecification with PlayTestDb {
     }
   }
 
-  "the pages with a juror's votes" should {
+  "the pages with a juror's votes [J-24]" should {
     // Back after a vote loads them again instead of showing the old votes from a cache
     "never be cached: the galleries, the file list and the large view" in {
       testDbApp { implicit app =>

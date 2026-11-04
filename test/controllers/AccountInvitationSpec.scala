@@ -88,7 +88,7 @@ class AccountInvitationSpec extends PlaySpecification with PlayTestDb with Accou
     }
   }
 
-  "an organizer's add of a new person" should {
+  "an organizer's add of a new person [A-07]" should {
     "create the account without a password and mail an invitation whose token is stored hashed" in {
       testDbApp { implicit app =>
         createContests(10)
@@ -125,7 +125,7 @@ class AccountInvitationSpec extends PlaySpecification with PlayTestDb with Accou
     }
   }
 
-  "accepting an invitation" should {
+  "accepting an invitation [J-01]" should {
     "show the form, set the password once, verify the email, sign in, and refuse the link again" in {
       testDbApp { implicit app =>
         createContests(10)
@@ -211,7 +211,7 @@ class AccountInvitationSpec extends PlaySpecification with PlayTestDb with Accou
     }
   }
 
-  "O2: an organizer's add of an email an unverified account with a password has" should {
+  "O2: an organizer's add of an email an unverified account with a password has [A-07]" should {
     "invite its owner instead of handing the role to the password's holder, who loses the account on acceptance" in {
       testDbApp { implicit app =>
         implicit val mat: Materializer = app.materializer
@@ -304,7 +304,7 @@ class AccountInvitationSpec extends PlaySpecification with PlayTestDb with Accou
     }
   }
 
-  "an admin's role change for an unverified member with a password" should {
+  "an admin's role change for an unverified member with a password [A-08]" should {
     "become an invitation, the role given once accepted; a direct change revokes it" in {
       testDbApp { implicit app =>
         createContests(10)
@@ -332,7 +332,7 @@ class AccountInvitationSpec extends PlaySpecification with PlayTestDb with Accou
     }
   }
 
-  "re-sending an invitation" should {
+  "re-sending an invitation [A-07]" should {
     "be for an admin of the contest, for an unverified member or pending invitee of it, never a root account" in {
       testDbApp { implicit app =>
         implicit val mat: Materializer = app.materializer
@@ -430,7 +430,7 @@ class AccountInvitationSpec extends PlaySpecification with PlayTestDb with Accou
     }
   }
 
-  "root's reset password (P7)" should {
+  "root's reset password (P7) [A-08]" should {
     "mail a link, keep the password until it is used, set it once, and log no email or token" in {
       testDbApp { implicit app =>
         implicit val mat: Materializer = app.materializer

@@ -16,7 +16,7 @@ class LargeViewControllerSpec extends PlaySpecification {
   import play.api.i18n._
   implicit val lang: Lang = Lang("en-US")
 
-  "large view" should {
+  "large view [J-20, J-21]" should {
     "have correct rating link" in {
       implicit val request = play.api.test.FakeRequest("GET", "/").withCSRFToken
       implicit val messages = Helpers.stubMessagesApi().preferred(request)

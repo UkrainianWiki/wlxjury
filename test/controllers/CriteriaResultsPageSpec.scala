@@ -87,7 +87,7 @@ class CriteriaResultsPageSpec extends PlaySpecification with PlayTestDb {
     head -> rows
   }
 
-  "the results of a criteria round for all its jurors" should {
+  "the results of a criteria round for all its jurors [O-04]" should {
 
     "show each criterion's average in the file list, over the votes rated in every criterion (U5)" in {
       testDbApp { app =>
@@ -186,7 +186,7 @@ class CriteriaResultsPageSpec extends PlaySpecification with PlayTestDb {
     }
   }
 
-  "a juror of a juryOrgView criteria round" should {
+  "a juror of a juryOrgView criteria round [J-28]" should {
 
     "see all the jurors' averages and each juror's criteria rates, as organisers do" in {
       testDbApp { app =>
@@ -205,7 +205,7 @@ class CriteriaResultsPageSpec extends PlaySpecification with PlayTestDb {
     }
   }
 
-  "a juror of a criteria round" should {
+  "a juror of a criteria round [J-23]" should {
 
     "see only their own rates as the averages of their file list and CSV" in {
       testDbApp { implicit app =>
@@ -265,7 +265,7 @@ class CriteriaResultsPageSpec extends PlaySpecification with PlayTestDb {
     }
   }
 
-  "the round form" should {
+  "the round form [A-01]" should {
 
     "say that a criteria round's min average rate is a sum (U7), and not without one" in {
       testDbApp { app =>

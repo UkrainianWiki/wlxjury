@@ -19,7 +19,7 @@ class MissingResourceSpec extends PlaySpecification with PlayTestDb {
   private def request(app: Application, method: String, path: String, root: User): Future[Result] =
     route(app, FakeRequest(method, path).withSession(Secured.UserName -> root.email).withCSRFToken).get
 
-  "root" should {
+  "root [S-05]" should {
 
     "find no contest's images page or import for a missing contest" in {
       testDbApp { app =>

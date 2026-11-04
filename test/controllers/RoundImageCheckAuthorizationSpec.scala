@@ -58,7 +58,7 @@ class RoundImageCheckAuthorizationSpec extends PlaySpecification with PlayTestDb
   private def checkRound(round: Long) = s"/admin/rounds/$round/check-images"
   private val checkAll = "/admin/round-images/check"
 
-  "checking a round's images" should {
+  "checking a round's images [A-11]" should {
 
     "be queued for its contest's admin and root, in the round's contest, and run" in {
       testDbApp { app =>
@@ -94,7 +94,7 @@ class RoundImageCheckAuthorizationSpec extends PlaySpecification with PlayTestDb
     }
   }
 
-  "checking every round's images" should {
+  "checking every round's images [A-11]" should {
 
     "be queued for root only, with no contest" in {
       testDbApp { app =>
@@ -108,7 +108,7 @@ class RoundImageCheckAuthorizationSpec extends PlaySpecification with PlayTestDb
     }
   }
 
-  "the forms" should {
+  "the forms [A-11]" should {
 
     "need the CSRF token" in {
       withCsrfApp { app =>

@@ -84,7 +84,7 @@ class RegionMenuSpec extends PlaySpecification with PlayTestDb {
     finally GlobalSettings.queryCompletionListener = previous
   }
 
-  "a round's gallery" should {
+  "a round's gallery [J-14]" should {
 
     "show the region menu with the region it is in, without reading the region counts" in {
       testDbApp { implicit app =>
