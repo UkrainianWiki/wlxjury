@@ -22,9 +22,7 @@ dist
 /conf/wlxjury/db-admin.cnf
 /conf/wlxjury/deployment.json
 __pycache__/
-.vagrant
 node_modules
-package
 null
 .qodo
 .bloop
