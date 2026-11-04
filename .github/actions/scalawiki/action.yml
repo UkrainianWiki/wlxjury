@@ -7,26 +7,39 @@ name: scalawiki from source
 description: Publish a pinned scalawiki commit to the runner's ~/.ivy2/local
 inputs:
   sha:
-    description: Full scalawiki commit SHA (a branch name would make builds unreproducible)
-    required: true
+    description: >-
+      Full scalawiki commit SHA (a branch name would make builds unreproducible). Empty: the
+      one in project/scalawiki.sha, the pin every workflow and developer uses.
+    required: false
+    default: ''
   jdk:
     description: Major version of the JDK that builds it (in the cache key)
     required: true
 runs:
   using: composite
   steps:
+    - name: The scalawiki commit
+      id: pin
+      shell: bash
+      env:
+        INPUT_SHA: ${{ inputs.sha }}
+      run: |
+        set -euo pipefail
+        sha="${INPUT_SHA:-$(tr -d '[:space:]' < project/scalawiki.sha)}"
+        [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::not a full commit SHA: '$sha'"; exit 1; }
+        echo "sha=$sha" >> "$GITHUB_OUTPUT"
     - name: Restore the scalawiki build for this commit
       id: cache
       uses: actions/cache@v4
       with:
         path: ~/.ivy2/local/org.scalawiki
         # bump v1 when what the build publishes changes (modules, flags)
-        key: scalawiki-ivy-local-${{ inputs.sha }}-jdk${{ inputs.jdk }}-v1
+        key: scalawiki-ivy-local-${{ steps.pin.outputs.sha }}-jdk${{ inputs.jdk }}-v1
     - name: Build scalawiki and publish it locally
       if: steps.cache.outputs.cache-hit != 'true'
       shell: bash
       env:
-        SCALAWIKI_SHA: ${{ inputs.sha }}
+        SCALAWIKI_SHA: ${{ steps.pin.outputs.sha }}
       run: |
         set -euo pipefail
         dir="$RUNNER_TEMP/scalawiki"

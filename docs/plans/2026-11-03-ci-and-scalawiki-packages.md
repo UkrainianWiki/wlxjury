@@ -193,7 +193,7 @@ On Windows with the direct launcher, put `-Dscalawiki.version=…` before `-jar`
 
 **Recommendation: build scalawiki from source in CI now, then switch to the published package.**
 
-- **What the composite action does:** it fetches the pinned commit `SCALAWIKI_SHA` (public, no token) into `$RUNNER_TEMP` and runs `http-extensions/publishLocal scalawiki-core/publishLocal scalawiki-wlx/publishLocal` without Scaladoc. It caches `~/.ivy2/local/org.scalawiki` keyed on the SHA, the JDK and a version (`<sha>-jdk17-v1`), so only the first run per SHA pays the 2–3 minutes.
+- **What the composite action does:** it fetches the pinned commit (`SCALAWIKI_SHA` then; since 2026-11-04 the file `project/scalawiki.sha`; public, no token) into `$RUNNER_TEMP` and runs `http-extensions/publishLocal scalawiki-core/publishLocal scalawiki-wlx/publishLocal` without Scaladoc. It caches `~/.ivy2/local/org.scalawiki` keyed on the SHA, the JDK and a version (`<sha>-jdk17-v1`), so only the first run per SHA pays the 2–3 minutes.
   - At `25951dbe` the build still says `0.7.0-SNAPSHOT`, which is exactly what wlxjury's `build.sbt` asks for today. So the workflows need **no change to `build.sbt`**, and CI can start before any scalawiki change.
 - **Why not a hand-published first package:**
   - It needs a classic PAT with `write:packages` on someone's machine, and the publishing settings merged into scalawiki first.
@@ -350,7 +350,7 @@ The two scalawiki diffs (`publishing.diff`, `anonymous-tests.diff`) both change 
   - Verify locally with `sbt dynverAssertTagVersion` (it should fail on an untagged commit), `show scalawiki-core/version` and `publishLocal`, run in a scratch clone so `~/.ivy2/local` keeps the developers' snapshot.
 - **A4.** After U5: test the cross-repository read with a throwaway `workflow_dispatch` workflow in wlxjury. With `permissions: packages: read` it should run `curl -fsSI -u "x:$GITHUB_TOKEN" https://maven.pkg.github.com/UkrainianWiki/scalawiki/org/scalawiki/scalawiki-core_2.13/0.7.0-M1/scalawiki-core_2.13-0.7.0-M1.pom`. Record the result here.
 - **A5.** If A4 passes:
-  - Apply `consume-scalawiki-package.diff`, add `packages: read` to the three workflows, and remove the scalawiki action and `SCALAWIKI_SHA`.
+  - Apply `consume-scalawiki-package.diff`, add `packages: read` to the three workflows, and remove the scalawiki action and `project/scalawiki.sha` (it replaced the workflows' `SCALAWIKI_SHA` on 2026-11-04).
   - Update DEV.md (setup note) and CLAUDE.md (the scalawiki line under "Wikimedia Commons Integration").
 - **A6.** If A4 fails: keep from-source in CI, replacing the pinned SHA with the tag `0.7.0-M1`. Developers still use the package with their PAT.
 
