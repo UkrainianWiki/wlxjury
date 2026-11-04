@@ -21,7 +21,8 @@ reviewer checked whether a problem is fixed later in the stack or already
 planned, and flagged only what is neither. There are 8 entries in 7 PRs, none
 High or Medium. File:line is at the PR's tip, and at the final tip `8b246ace`
 where it moved. Entries from CodeRabbit's reviews (R185-1 onwards) give the newest tip,
-`stack/62-docs-phase`.
+`stack/62-docs-phase`; from R191-1 on, `stack/68-juror-guide` (`06103e89`, the followups
+mirror `63c80ff7` has the same tree). R193-4 is the first Medium.
 
 ### R198-1: A job that crashes the JVM is retried forever
 
@@ -276,7 +277,10 @@ whether the cache's counts and registry tell the truth. File:line at the newest 
      practices §3.1): return the requested size before the rest of the cascade is scaled; skip
      the cascade when all target sizes are registered; reuse the nearest cascade output for a
      width that isn't generated. A miss happens once per image and served width (`servedWidths`,
-     #230), so the gain is small. (#187 review remarks.)
+     #230), so the gain is small. (#187 review remarks.) Also share the decoded source among
+     concurrent misses of one image: since #193 they share the download, but each still
+     decodes and scales its own copy, and the miss path has no concurrency bound (#193 review
+     remark on `LocalImageCacheService.scala:121-127`).
 - **Placement:** append after [`2026-11-01-open-followups.md` "Still open"](https://github.com/UkrainianWiki/wlxjury/blob/stack/62-docs-phase/docs/plans/2026-11-01-open-followups.md#still-open)
   as a "local image cache" item; items 1–5 together, item 6 with them if cheap, item 7 only
   after a measurement.
@@ -354,9 +358,150 @@ whether the cache's counts and registry tell the truth. File:line at the newest 
   3. `freePort()` closes its probe socket before `TestServer` binds the port, so another
      process can take it in between. Fix: retry the start on a bind failure (or bind port 0 if
      `TestServer` reports the port).
+  4. A `gatling.jurorFraction` that rounds to no jurors (`math.round(numJurors * fraction)`
+     is 0, e.g. below 1/6 with the smoke spec's 3 users) writes no selections, and the first
+     vote (`GatlingTestFixture.nextVote`) fails with an exception that names no setting
+     (`GatlingDbSetup.scala:196`, `:204`). Fix: require at least one juror per image in
+     `GatlingConfig` or the setup, naming the fraction. (#193 `gatling-perf.conf:11`.)
 - **Placement:** append to [performance practices §1](https://github.com/UkrainianWiki/wlxjury/blob/stack/62-docs-phase/docs/performance/practices.md#1-load-tests-gatling)
   follow-ups, done with open-followups 3.6 (the benchmark workload gaps) before the next
   capacity measurement.
+
+### R191-1: Shared test DB helpers leak state on failure
+
+- **PR:** #191 (08, tip `7989c055`). `test/db/scalikejdbc/AutoRollbackMunitDb.scala:30`,
+  `test/db/scalikejdbc/SharedPlayApp.scala:69`, `test/services/LocalImageCacheServiceDockerSpec.scala:226`.
+- **Severity:** Nit.
+- **At the newest tip:** all still there (`AutoRollbackMunitDb.scala:27-29`;
+  `SharedTestDb.scala:17-24`, `SharedPlayApp.scala:66-72`; `LocalImageCacheServiceDockerSpec.scala:224`).
+  Fixed meanwhile, so not part of this entry: committed rows of other specs reaching the
+  rollback specs (#197, `AutoRollbackDb.db()` truncates before each example).
+- **Items, failure scenarios and fixes:**
+  1. `AutoRollbackMunitDb`'s fixture borrows a connection, then calls `db.begin()` and
+     `db.withinTxSession()`; if either throws, the setup fails, the teardown never runs and the
+     connection is never returned to the pool. Later `dbTest`s in the JVM then wait for a
+     connection. Fix: close the `DB` and rethrow when the transaction start fails.
+  2. `truncateAll` (both `SharedTestDb` and `SharedPlayApp`) sets `FOREIGN_KEY_CHECKS=0`,
+     truncates, then sets it back; a failing `TRUNCATE` (a lock wait timeout, §2.3) skips the
+     reset and returns the pooled connection with foreign key checks off, so later specs on
+     that connection can insert rows the schema refuses. Fix: reset in a `finally`.
+  3. The Docker spec's cleanup (`if (SharedTestDb.initialized) SharedTestDb.reregisterDefault()`)
+     forces the lazy shared container: when the spec runs before any DB spec, its `finally`
+     starts a second MariaDB and runs the migrations, and a failure there replaces the
+     spec's own result. Fix: `SharedTestDb.isStarted`, as `SchemaBaselineSpec` and
+     `GatlingSmokeSpec` do. (Runs only with `-Ddocker.tests`.)
+- **Placement:** append to [testing practices §2](https://github.com/UkrainianWiki/wlxjury/blob/stack/68-juror-guide/docs/testing/practices.md#2-isolation-and-the-shared-server)
+  follow-ups; take with the CI batch's test fixes (as R185-2 items 1 and 5).
+
+### R193-1: Gatling fixture cache can keep a broken or stale dump
+
+- **PR:** #193 (10, tip `c7bac6de`). `test/gatling/setup/GatlingDbCache.scala:39`, `:68`,
+  `:98`, `:102-107`; `test/gatling/GatlingSmokeSpec.scala:13`.
+- **Severity:** Nit.
+- **At the newest tip:** all still there (`GatlingDbCache.scala:45-49`, `:79-84`, `:101-110`,
+  `:114-121`; `GatlingSmokeSpec.scala:16`). Fixed meanwhile: the fixture generator's changes
+  invalidate the dump through `FixtureVersion` (#197).
+- **Items, failure scenarios and fixes:**
+  1. **The key hashes the CSV files' sizes only:** a same-length edit of
+     `data/wlm-UA-images-2025.csv` or `data/wlm-ua-monuments.csv` restores the old dump, and the
+     simulations run on the old rows. Fix: hash the contents (38k rows; or the file's
+     modification time plus size, if hashing is too slow).
+  2. **A failed `zcat` passes the restore:** `zcat … | mysql …` returns `mysql`'s status, and
+     `mysql` exits 0 on empty input, so an empty or corrupt dump restores an empty fixture
+     without an error. Fix: `set -o pipefail` in the `sh -c` (the image's shell permitting) or
+     decompress to a file and chain `&&`.
+  3. **A failed `mysqldump` passes the save:** `mysqldump … | gzip > …` returns `gzip`'s
+     status, so a partial dump is cached and reused. Fix: as item 2.
+  4. **The copy writes the final dump path:** an interrupted copy leaves a partial
+     `gatling-<key>.sql.gz`, which `exists` then treats as a cache hit. Fix: copy to a
+     temp file beside it and move it into place.
+  5. **The smoke spec's `Run:` line names `gatling.GatlinSmokeSpec`**, so the copied command
+     selects nothing. Fix: the class name.
+- **Placement:** with [R190-1](#r190-1-gatling-fixture-settings-and-setup-checks), in
+  performance practices §1 follow-ups.
+
+### R193-2: GatlingCompare compares nothing since V55
+
+- **PR:** #193 (10, tip `c7bac6de`). `test/gatling/setup/GatlingCompare.scala:139`, `:237`,
+  `:250`, `:289`.
+- **Severity:** Nit (a measurement tool; no effect on the app).
+- **At the newest tip:** still there (`GatlingCompare.scala:134-140`, `:240-251`, `:263-271`),
+  and worse: #197 (`9c61c478`) moved V45a-V45g into V55 (Flyway skipped the `V45x` names), so
+  the files the tool stashes and restores don't exist. Every pass runs the full schema, and
+  [performance practices §1.6](https://github.com/UkrainianWiki/wlxjury/blob/stack/68-juror-guide/docs/performance/practices.md#1-load-tests-gatling)
+  still describes the tool as comparing runs pass by pass.
+- **Items, failure scenarios and fixes:**
+  1. Each pass's attribution row measures run-to-run noise (all of them now; at #193 the V45a
+     row already did, since V48 drops V45a's index).
+  2. `simColumns` uses camel-case keys while `collectLogs` keys the results by Gatling's
+     lowercase directory names (`votingsimulation-…`), so every attribution cell is `n/a`.
+  3. A pass whose `sbt Gatling/test` failed is still recorded (a warning only), and `n/a`
+     means both "missing" and "under 1%".
+  4. `stashFrom` and `restoreUpTo` ignore `renameTo`'s result, and nothing restores the files
+     if a pass throws.
+- **Suggested fix:** retire the tool: delete `GatlingCompare.scala` and point §1.6 at the
+  V45 result (`git show 0a43cc9f:docs/gatling-comparison.txt`) and at paired runs of two
+  builds (performance practices §2.4). Fix items 2-4 only if a per-migration comparison is
+  wanted again.
+- **Placement:** with the docs batch (performance practices §1.6), or with R190-1.
+
+### R193-3: extractDepSources keeps partial or stale sources
+
+- **PR:** #193 (10, tip `c7bac6de`). `build.sbt:24`.
+- **Severity:** Nit (developer tooling).
+- **At the newest tip:** still there (`build.sbt:22-26`).
+- **Failure scenario:** the task skips a module whose `target/dep-sources/<org>/<name>-<revision>`
+  directory exists. An extraction stopped halfway leaves the directory, so the sources stay
+  incomplete; a `SNAPSHOT` republished at the same revision (scalawiki `0.7.0-SNAPSHOT`) keeps
+  the old sources, which CLAUDE.md tells agents to read first.
+  [Integrations practices §2.2](https://github.com/UkrainianWiki/wlxjury/blob/stack/68-juror-guide/docs/integrations/practices.md#2-scalawiki)
+  works around it for scalawiki (read it at the pinned commit).
+- **Suggested fix:** unzip into a temp directory and rename it into place; re-extract when the
+  source jar is newer than the directory (or always for `SNAPSHOT` revisions).
+- **Placement:** with the scalawiki packages plan
+  ([`2026-11-03-ci-and-scalawiki-packages.md`](https://github.com/UkrainianWiki/wlxjury/blob/stack/68-juror-guide/docs/plans/2026-11-03-ci-and-scalawiki-packages.md)),
+  whose versioned releases remove the SNAPSHOT case.
+
+### R193-4: run-with-prod-dump.sh exposes the restored production data
+
+- **PR:** #193 (10, tip `c7bac6de`). `scripts/run-with-prod-dump.sh:68-75`, `:122`, `:144`,
+  `:152`, `:178`.
+- **Severity:** Medium (item 1), Low (item 2), Nit (items 3-5). The restored dump has the
+  users' emails and password hashes.
+- **At the newest tip:** all still there (`:257`, `:89` and `:216`, `:210`, `:181`, `:64-80`).
+  Fixed meanwhile: the credentials go in mode-600 option files, not `MYSQL_PWD` (#221, B6).
+- **Items, failure scenarios and fixes:**
+  1. **The local MariaDB is published on every interface** (`-p "${LOCAL_PORT}:3306"`), and
+     its passwords are literals in the script (`:87-88`, a public repository): anyone who can
+     reach the developer's machine on port 3307 can read the restored production data. Fix:
+     `-p "127.0.0.1:${LOCAL_PORT}:3306"` (the script connects only through 127.0.0.1).
+  2. **The dump is written with the caller's umask** (`gzip > "$tmp_file"`, then `mv` to
+     `/tmp/wlxjury-prod.sql.gz`) and stays there for `--skip-dump`: with umask 022 other local
+     users can read it. Fix: `umask 077` for the dump (and `chmod 600` an existing one).
+  3. **`mysqldump -h "$WLXJURY_DB_HOST"`** gets the app's `host:port` form, so a configured
+     port fails host resolution. Fix: split it and pass `-P` (as `wlxjury-deploy.py` does).
+  4. **`--reuse-container` checks only that the container runs**, not its published port,
+     so sbt can reach another service on 3307 (and run migrations there with
+     `migration.auto`). Fix: check `docker port` for `${LOCAL_PORT}`.
+  5. **`--reuse-container` still requires `.env`** with the four production variables, which
+     the reuse path doesn't use. Fix: load and check them only when dumping.
+- **Placement:** [secure-coding §4](https://github.com/UkrainianWiki/wlxjury/blob/stack/68-juror-guide/docs/security/secure-coding.md#4-secrets-in-scripts)
+  (secrets in scripts), with its planned guard G12; items 1 and 2 first.
+
+### R195-1: SelectionQuery injection tests don't show the filter applies
+
+- **PR:** #195 (12, tip `f42d0bb3`). `test/db/scalikejdbc/SelectionQuerySpec.scala:49-55`,
+  `test/db/scalikejdbc/ImageDbNewDbSpec.scala:144-148`.
+- **Severity:** Nit.
+- **At the newest tip:** still there (`SelectionQuerySpec.scala:50-57`,
+  `ImageDbNewDbSpec.scala:140-158`).
+- **Items, failure scenarios and fixes:**
+  1. The multi-code region test checks `in (?, ?)` and the parameters but not the column, so
+     rendering `m.adm1` in that branch still passes. Fix: assert `m.adm0 in (?, ?)`.
+  2. The injection examples insert no votes, so they return `Nil` even with the region
+     predicate removed. Fix: seed an image, the user's vote in the round and a monument whose
+     `adm0` the payload doesn't match, and assert it is excluded.
+- **Placement:** with the CI batch's test fixes (testing practices §6, weak assertions).
 
 New entries use the format `### R<PR>-<n>: <short title>`, then PR and file:line
 at its tip, severity, whether it is still at the final tip, the failure
@@ -465,3 +610,31 @@ Review-level remarks are answered in one comment per PR. New entries:
 | #188 | flyway-baseline-design.md:88 regeneration command: fixed later; SchemaBaselineSpec.scala:17 generate.baseline=false: fixed later; SchemaBaselineSpec.scala:50 mysqldump check: fixed later |
 | #189 | db-performance-analysis.md:237 comment.id: fixed later |
 | #190 | schema-performance-analysis.txt:155 conclusions: fixed later; gatling-perf-tests.md:9 versions: fixed later; gatling-db-perf-tests-design.md:11 V45: fixed later; GatlingCompare.scala:171 missing V45: fixed later; GatlingConfig.scala:16 maxRate below 1: new entry; GatlingDbSetup.scala:99 maxRate above 20: new entry; GatlingDbSetup.scala:128 streaming selections: new entry; GatlingTestFixture.scala:23 port gap: new entry; RoundManagementSimulation.scala:24 admin user: fixed later; VotingSimulation.scala:39 vote tuples: fixed later |
+
+### CodeRabbit, PRs 191-195
+
+CodeRabbit's 51 inline comments and 13 review-level remarks on #191-#195, classified against
+the followups tip `63c80ff7` (the tree of `stack/68-juror-guide`, `06103e89`); one reply per
+thread, and the review-level remarks in one comment per PR (#192, #193, #195). New entries:
+[R191-1](#r191-1-shared-test-db-helpers-leak-state-on-failure),
+[R193-1](#r193-1-gatling-fixture-cache-can-keep-a-broken-or-stale-dump),
+[R193-2](#r193-2-gatlingcompare-compares-nothing-since-v55),
+[R193-3](#r193-3-extractdepsources-keeps-partial-or-stale-sources),
+[R193-4](#r193-4-run-with-prod-dumpsh-exposes-the-restored-production-data) (Medium),
+[R195-1](#r195-1-selectionquery-injection-tests-dont-show-the-filter-applies); items added to
+[R185-1](#r185-1-local-image-cache-bookkeeping-gaps) (item 7, shared decode) and
+[R190-1](#r190-1-gatling-fixture-settings-and-setup-checks) (item 4, juror fraction).
+
+| PR | Inline comments: class |
+|---|---|
+| #191 | CategoryJdbc.scala:54 category link insert transaction: fixed later; ImageJdbc.scala:105 image batch insert transaction: fixed later; SelectionJdbc.scala:84 selection batch insert transaction: fixed later; AutoRollbackMunitDb.scala:30 connection leak on begin failure: new entry; ImageSpec.scala:25 committed rows from other specs: fixed later; JurorImagesSpec.scala:32 page id collisions: fixed later; RoundSpec.scala:14 committed rounds from other specs: fixed later; SelectionSpec.scala:20 committed selections from other specs: fixed later; SharedPlayApp.scala:69 FOREIGN_KEY_CHECKS not restored in finally: new entry; LocalImageCacheServiceDockerSpec.scala:226 forces SharedTestDb.initialized: new entry |
+| #192 | ImageJdbc.scala:248 duplicate selection rows in ranked join: fixed later; ImageDbNew.scala:112 regions need the monument join: fixed later; ImageRankedSpec.scala:43 ROW_NUMBER loses shared ranks: fixed later; RoundUserStatSpec.scala:27 leftover rows: fixed later |
+| #193 | ImageDbNew.scala:118 selection.monument_id not synced: fixed later; LocalImageCacheService.scala:164 running flag on lookup failure: fixed later; build.sbt:24 dep-source extraction partial and stale: new entry; selection-monument-id plan:57 test:compile runs no Flyway: fixed later; GatlingCompare.scala:139 camel-case simColumns keys: new entry; GatlingCompare.scala:289 failed passes recorded: new entry; GatlingDbCache.scala:44 generator not in cache key: fixed later; GatlingDbCache.scala:68 zcat status ignored: new entry; GatlingDbCache.scala:98 mysqldump status ignored: new entry; gatling-perf.conf:11 juror fraction selecting no jurors: new entry; LocalImageCacheServiceSpec.scala:689 barrier on the dispatcher: not applicable; run-with-prod-dump.sh:122 reused container's port: new entry; run-with-prod-dump.sh:144 host:port passed to -h: new entry; run-with-prod-dump.sh:152 dump file mode: new entry; run-with-prod-dump.sh:178 port published on all interfaces: new entry; GatlingCompare.scala:237 V45a row measures noise: new entry; GatlingCompare.scala:250 renameTo unchecked: new entry; GatlingDbCache.scala:39 CSV sizes in cache key: new entry; LocalImageCacheServiceSpec.scala:698 partial JPEG and claim release: fixed later |
+| #194 | LocalImageCacheService.scala:147 startup deletes another slot's .tmp- files: fixed later; LocalImageCacheService.scala:380 claim kept after a failed write: fixed later; wlxjury-deploy-canary.sh:36 mv nests the release: fixed later; wlxjury-deploy-canary.sh:47 DB host and dump permissions: fixed later; wlxjury-promote.sh:33 predictable dump file: fixed later; wlxjury-promote.sh:49 signals leave maintenance on: fixed later; wlxjury-promote.sh:59 in-flight writes missed by the snapshot: fixed later; wlxjury-promote.sh:53 concurrent promotions: fixed later; wlxjury-promote.sh:66 WLXJURY_DB_HOST unused: fixed later; wlxjury-promote.sh:74 health check timeout and target: fixed later; wlxjury-promote.sh:88 post-swap failure keeps maintenance: fixed later; wlxjury-promote.sh:90 slot files out of sync: fixed later; 0002-wlxjury.conf:98 maintenance rule missing on HTTPS: fixed later; wlxjury-blue.service:11 listener on all interfaces: fixed later; blue-green-deployment plan:9 replay steps: fixed later |
+| #195 | security/review.md:57 option file mode before the write: fixed later; sql-injection-fix plan:181 monument join condition: fixed later; ImagesSqlSpec.scala:173 regional count counts rows: not applicable |
+
+| PR | Review-level remarks: class |
+|---|---|
+| #192 | MonumentJdbc.scala:40 batch without a transaction: fixed later (#201) |
+| #193 | B44 monument.id key: fixed later (#195 V51, #234); V45x names skipped by Flyway: fixed later (#197 V55); GatlingSmokeSpec Run: typo: new entry (R193-1); cache dump copied to the final path: new entry (R193-1); orphan selections in count/list: fixed later (#198 V58); shared decode on concurrent misses: new entry (R185-1 item 7); Voting check reads no stored rate: fixed later (#214); .env required with --reuse-container: new entry (R193-4); Page overload untested: fixed later (#216) |
+| #195 | short-region LIKE wildcards: fixed later (#205); multi-code test column: new entry (R195-1); injection cases seed no rows: new entry (R195-1) |
