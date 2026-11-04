@@ -274,18 +274,24 @@ the tests show only some of it. Tests cite stories:
   a unit test shows a rule, not a story; tagging ~2,000 examples would make the matrix noisy and
   the tags churn with every refactor. A story whose only tests are service specs says so in Notes.
 
-`scripts/story-coverage.py` (standard library only; a step of `ci.yml` before the build, and
-locally `python scripts/story-coverage.py`) reads the catalogue, the tags in
+`scripts/story-coverage.py` (standard library only; a step of `ci.yml` after the tests, in one
+matrix leg, and locally `python scripts/story-coverage.py`) reads the catalogue, the tags in
 `browser-test/tests/*.js` and the bracketed IDs in `test/**/*.scala`, and writes the matrix
 (story, state, browser tests, Scala specs) to stdout, `target/story-coverage.md` and the job's
-summary. **It fails** on an ID the catalogue lacks or retired, a malformed ID (`J-7`, `X-01`), a
-duplicate or malformed catalogue row, a guide link whose anchor has no heading, and no tag at all
-in either layer (§4.2; `--self-test` runs it on `scripts/testdata/story-coverage/`). **It reports,
-without failing:** the uncovered stories by role, those cited by one layer only, the tests in
-`test.fixme`/`test.skip` (not counted), and the guide's sections no story links (drift). States:
-*covered* (cited, no *Part:*), *partly covered* (cited, with *Part:*), *uncovered*. It is static: a
-tag says a test cites the story, not that the test asserts the whole outcome (reviewers check a
-new tag against the sentence) or that it passed (the Allure report, §10.10).
+summary. **It fails** on: an ID the catalogue lacks or retired, in any test, a `fixme` or skipped
+one too; a malformed ID (`J-7`, `X-01`, `j-01`, `J01`) in a tag, a Scala name or a catalogue
+row; a tag string not attached to a test's or a describe's `tag` option; a Scala ID outside its
+`[..]` group (`J-27]`, `[J-27`); a duplicate row; a guide section link without its `#anchor`, and
+a guide or Notes link to a missing file or heading; and a vacuous run: no tag in either layer, or
+a raw count of the quoted tags (`'@J-21'`, comments included) and of the `[J-27` groups on code
+lines that differs from what it parsed (§4.2; `--self-test` runs each case on
+`scripts/testdata/story-coverage/`). **It reports, without failing:** the uncovered stories by
+role, those cited by one layer only, the tests in `test.fixme`/`test.skip` (not counted), and
+the guide's sections no story links (drift). States: *covered* (cited, no *Part:*), *partly
+covered* (cited, with *Part:*), *uncovered*. It is static: a tag says a test cites the story, not
+that the test asserts the whole outcome (reviewers check a new tag against the sentence) or that
+it passed (the Allure report, §10.10). A guard (`RouteAuthSpec`'s scan) shows a rule, not a
+story, and carries no tag.
 
 ## 10. Browser tests
 
@@ -385,7 +391,7 @@ env -u COMMONS_USER -u COMMONS_PASSWORD -u SCALAWIKI_LOGIN -u SCALAWIKI_PASSWORD
 npx playwright test                          # the three engines; or --project=firefox
 npx playwright test tests/voting.spec.js --project=webkit --headed
 npx playwright show-report ../target/browser-test/report
-npx allure generate ../target/browser-test/allure-results && node allure-offline.mjs   # §10.10
+NO_UPDATE_NOTIFIER=1 npm run report   # the Allure report, checked (§10.10)
 node fixture-server.mjs stop
 ```
 
@@ -420,8 +426,8 @@ lockfile's hash. A run reads only its own branch's and its base branch's caches,
 PR's first runs are cold (the dump built from the CSVs, the browser downloaded). The start step
 has its own 25-minute timeout; traces, screenshots, the HTML report and the server's log are
 uploaded on a failure or a cancellation, the accessibility report always, and each engine's
-Allure results always (`allure-results-<engine>`); the `report` job (after the three, unless the
-run was cancelled) merges them into the `allure-report` artifact (§10.10), and its failure fails
+Allure results always (`allure-results-<engine>-attempt-<n>`); the `report` job (after the three,
+unless the run was cancelled) merges each engine's latest into `allure-report-attempt-<n>` (§10.10), and its failure fails
 no engine's job. *Decision pending:* which engines stay per PR, from **GitHub's job duration** of
 each engine's job; the job's summary adds its steps' times (fixture start, tests).
 
@@ -462,22 +468,41 @@ sharing `target/` with the engines' jobs is the first saving, before dropping an
 writes each test's result to `target/browser-test/allure-results/`, with its engine as the
 "Project" parameter, its tags as `tag` labels, and, from the `storyLabels` fixture (§9.4), its
 stories as labels: epic the role, feature the guide section (else the role), story the ID and
-the catalogue's sentence. `npx allure generate` (Allure Report 3, `allurerc.mjs`) builds
-**one HTML file**, `target/browser-test/allure-report/index.html`: the Awesome report with its
-scripts, styles and data inlined, so it opens from disk with the network off. **But Allure
-3.21.0 always adds Google Analytics** (`gtag.js` from `www.googletagmanager.com`;
-`analyticsEnable: true` is hard-coded in `@allurereport/plugin-awesome`, no option turns it off):
-`node allure-offline.mjs` removes that block after every `generate`, and fails if the file still
-names a script, stylesheet, image, frame or CSS `url()` on another host. Checked on 2026-11-04 in
-Chromium with every non-file request refused: before it, the two gtag requests; after it, none,
-no console error, the report drawn ([dependencies](../dependencies/practices.md) §2.1). A
-Chromium run's report (55 tests, the a11y attachments): 3.9 MB, from 0.7 MB of results. Open it
-in a browser; the tree groups the tests by epic, feature and story (a test with several stories
-under each), a test per engine.
+the catalogue's sentence. `npm run report` (from `browser-test/`) runs `allure generate`
+(Allure Report 3, `allurerc.mjs`) and then `node allure-offline.mjs`, so no report is used or
+uploaded unchecked. It builds **one HTML file**, `target/browser-test/allure-report/index.html`,
+scripts, styles and data inlined: open it in a browser, no server needed. Its **Behaviors** tab
+groups the tests by epic, feature and story (a test with several stories under each, a test per
+engine); Suites by spec file.
 
-- **CI:** the `report` job of `browser.yml` merges the three engines' results (unique file names;
-  the "Project" parameter keeps an engine's run of a test apart) and uploads the
-  `allure-report` artifact (14 days), its size in the job's summary. **An artifact only:**
+- **The allure2 plugin, not Awesome** (the user, 2026-11-04). Awesome, Allure 3's default report,
+  hard-codes Google Analytics (`gtag.js` from `www.googletagmanager.com`: `analyticsEnable: true`
+  in `@allurereport/plugin-awesome`'s `generators.js`, as in the classic and dashboard plugins),
+  with no opt-out; upstream, allure3#476 and PR #784 are open. The allure2 plugin honours
+  `ALLURE_NO_ANALYTICS` (`generators.js:129`), set to `true` in `allurerc.mjs` and again in the
+  report job's env. **Recheck on every Allure update:** the plugin's analytics switch, and that
+  the check below still passes.
+- **The check** (`allure-offline.mjs`): it fails if the report has a Google Analytics loader
+  (`googletagmanager`, `gtag`), or markup or CSS that loads a script, stylesheet, image, frame,
+  media or `url()` from another host, or is no report at all (no `<head>`); else it puts a
+  Content-Security-Policy `<meta>` first in `<head>` (`default-src 'none'`; scripts and styles
+  inline, `data:` and `blob:` URLs), so the browser refuses any other host even if a later
+  Allure adds one. `npm run report:selftest` checks it on reports that must fail (a gtag block,
+  a CDN stylesheet, a protocol-relative script, a CSS `url()`, no `<head>`) and one that passes.
+  Shown on 2026-11-04 in Chromium with every non-file request refused: the allure2 report with
+  the CSP draws its tabs with no request leaving the file and no console error (`base-uri` is
+  left out of the CSP: the report sets its own `<base>`).
+- **Traces:** a failed test's trace is in the report; its "open trace" button opens
+  `trace.playwright.dev` (Playwright's hosted viewer) in a new window and hands it the trace,
+  so a click sends the trace to that site. Use `npx playwright show-trace <zip>` on the
+  `browser-failures-<engine>-attempt-<n>` artifact's trace instead when that matters.
+- **Size:** a Chromium run (55 tests, the a11y attachments): 3.8 MB, from 0.7 MB (72 files) of
+  results; a history entry about 70 KB, so 30 runs (`historyLimit`) about 2 MB.
+- **CI:** each engine's job uploads `allure-results-<engine>-attempt-<n>`; the `report` job
+  takes every attempt's artifact and merges each engine's latest (a re-run of the failed jobs
+  leaves the passed engines' results under the earlier attempt; result files have unique names,
+  and the "Project" parameter keeps an engine's run of a test apart), then uploads
+  `allure-report-attempt-<n>` (14 days), its size in the job's summary. **An artifact only:**
   GitHub Pages would publish test names, steps and failure screenshots, and is not decided
   (plan [`2026-11-04-story-coverage.md`](../plans/2026-11-04-story-coverage.md) §4.5).
 - **History:** `historyPath` is a JSONL file (`target/browser-test/allure-history/`), kept in
@@ -487,11 +512,10 @@ under each), a test per engine.
   days is evicted: the trend restarts, no result is lost.
 - **Not in it yet:** the Scala specs (Allure 3 reads JUnit XML, but `ci.yml` is another
   workflow; their IDs are in the matrix, §9.4).
-- **Locally:** after a run, from `browser-test/`, `npx allure generate
-  ../target/browser-test/allure-results && node allure-offline.mjs` (the paths are from that
-  directory: the reporter's `resultsDir` is resolved from the working directory). Results
-  accumulate across runs until `target/browser-test/` is deleted. A history file of 30 runs is
-  about 2 MB (70 KB per Chromium run).
+- **Locally:** after a run, from `browser-test/`, `NO_UPDATE_NOTIFIER=1 npm run report` (the
+  variable keeps npm's update notice out of the output). The paths are from that directory: the
+  reporter's `resultsDir` is resolved from the working directory. Results accumulate across runs
+  until `target/browser-test/` is deleted.
 
 ## 11. Guards
 
@@ -511,6 +535,7 @@ under each), a test per engine.
 | 9.4 story IDs known, guide anchors exist | `scripts/story-coverage.py` in `ci.yml` (with its `--self-test`); the `storyLabels` fixture in each browser test | enforced |
 | 9.4 uncovered stories | the script's summary (`target/story-coverage.md`, the job's summary) | a report; no minimum until the catalogue has settled |
 | 10.10 Allure report per run | `browser.yml`'s `report` job | enforced as a report (advisory: it fails no engine's job) |
+| 10.10 no analytics, nothing from another host in the report | `allure-offline.mjs` in `npm run report` (the report job, before the upload), with its self-test; `ALLURE_NO_ANALYTICS` | enforced in the report job; recheck on every Allure update |
 | 10 browser tests, one current build per engine | `browser.yml`: a job per engine (Chromium, Firefox, WebKit) on every PR | enforced in CI once the job runs; not yet a required check |
 | 10 the supported range (previous majors, the floor) | the compatibility lint (`.browserslistrc`; `ci.yml`'s job), with its self-test (`lint:selftest`) | enforced for our scripts' APIs and the CSS features caniuse lists; nothing runs in those versions |
 | 10.2 zero CSP violations, console errors, failed requests, other hosts per page | `browser-test/lib/fixtures.js` (every test); its self-tests in `guards.spec.js` | enforced in CI once the job runs; not yet a required check |

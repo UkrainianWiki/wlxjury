@@ -62,13 +62,15 @@ and `npm ci`; the browser tests' `@playwright/test` 1.64.1 (released 2026-10-14)
 `browser-test/package.json` and its lockfile, the browsers being the builds that Playwright
 version names (Chromium 156, Firefox 157, WebKit 27.2; CI caches them by the lockfile's hash);
 the browser tests' report tools `allure` 3.21.0 (Allure Report 3, released 2026-10-16) and
-`allure-playwright` 3.14.0 (2026-10-19, with `allure-js-commons` 3.14.0) at exact versions in the
-same files, their ~160 transitive packages locked with `npm install --before` 14 days back (the
-newest `allure`, 3.22.x, was too new on 2026-11-04; one update PR per bump, given its release
-rate). Test tools only, never served or packaged; the one-file report they build loads nothing
-from another host once `browser-test/allure-offline.mjs` has removed the Google Analytics tag
-Allure always adds (no CDN: checked with the network blocked, testing §10.10; recheck on every
-`allure` bump);
+`allure-playwright` 3.14.0 (2026-10-19) and `allure-js-commons` 3.14.0 (the fixture's import, a
+direct dependency) at exact versions in the same files, their ~160 transitive packages locked
+with `npm install --before` 14 days back (the newest `allure`, 3.22.x, was too new on 2026-11-04;
+one update PR per bump, given its release rate). Test tools only, never served or packaged. The
+report uses Allure 3's **allure2 plugin, not its default Awesome one** (the user, 2026-11-04):
+Awesome hard-codes Google Analytics with no opt-out (upstream allure3#476 and PR #784 open),
+allure2 honours `ALLURE_NO_ANALYTICS`; `browser-test/allure-offline.mjs` then fails the report on
+any analytics loader or other host and adds a CSP (no CDN: checked with the network blocked,
+testing §10.10). **Recheck on every Allure update;**
 the compatibility lint's `eslint` 10.13.0, `eslint-plugin-compat` 7.0.2, `globals` 17.13.0,
 `stylelint` 17.16.0, `stylelint-no-unsupported-browser-features` 8.1.2, `browserslist` 4.29.4 and
 `caniuse-lite` 1.0.30001817 at exact versions in `javascript-test/package.json` (all released 14
