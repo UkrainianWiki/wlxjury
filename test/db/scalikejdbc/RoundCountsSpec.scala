@@ -62,6 +62,8 @@ class RoundCountsSpec extends Specification with TestDb with BeforeAll with Befo
     "add the counts to round_image, the generations to round, and round_image_dirty, on the test server" in {
       def create(t: String) = DB.readOnly(implicit s => sql"SHOW CREATE TABLE ${SQLSyntax.createUnsafely(t)}"
         .map(_.string(2)).single()).get
+      // the server the run is on (10.6 by default, 10.11 with -Dwlxjury.test.mariadb-image)
+      println(s"[RoundCountsSpec] server ${DB.readOnly(implicit s => sql"SELECT VERSION()".map(_.string(1)).single()).get}")
       val ri = create("round_image")
       val r = create("round")
       val dirty = create("round_image_dirty")

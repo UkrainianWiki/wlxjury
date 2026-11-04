@@ -157,8 +157,14 @@ Developed 2026-11-02 to 2026-11-03, PRs #232–#236.
   in the action's transaction after its `round_image` rows (last in the lock order, round
   locked first; `StructuralWritesSpec` scans it); the requalify reads the latest event's prior
   status (developed 2026-11-04; [round images plan](docs/plans/2026-11-02-round-images-two-step.md) §15).
+- Per-file vote counts on `round_image` (assigned, voted, approvals, rejections, rate sum), kept
+  in the background, not yet read (P2a): a juror's vote marks its file in `round_image_dirty`
+  and a bulk write bumps its round's `counts_gen`, both in their own transactions, and a timer
+  (`modules.RoundCountsTask`, `roundCounts.*`) recounts in windows of 2,000 files; the
+  migration leaves every round dirty, so the counts fill in after the deploy (developed
+  2026-11-05; [round images plan](docs/plans/2026-11-02-round-images-two-step.md) §16).
 - **Migrations:** V85 gallery index, V86 timestamp definitions, V87 for the sign-in (#240);
-  V88 `round_image_event`.
+  V88 `round_image_event`; V89 `round_image` counts.
 
 ## Deployed
 

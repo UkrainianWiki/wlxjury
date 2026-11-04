@@ -129,7 +129,8 @@ CREATE TABLE IF NOT EXISTS round_image (
 
 `assigned` (vote rows), `voted` (`rate <> 0`), `approvals` (`rate > 0`), `rejections`
 (`rate < 0`), `rate_sum` (`SUM(rate)`), all `NOT NULL DEFAULT 0`; unrated = assigned − voted.
-Backfilled by one `UPDATE … JOIN (GROUP BY round_id, page_id)`.
+As built (V89, §16): added `INSTANT`, filled by the background recompute (every round is dirty
+after the migration), not by an `UPDATE … JOIN` in the migration.
 
 - Today's averaging (unrated as 0 over `assigned`, or over the round-level denominators of
   `RoundDistributionHandler`'s `Denominator`), Montage's (over `voted`) and a damped score
@@ -161,7 +162,9 @@ the transition, so `Round.openToJurors`, `activeRounds` and `openCond` keep work
 
 ## 5. Keeping `round_image` correct
 
-Every writer of `vote` keeps it in step, in the same transaction:
+Every writer of `vote` keeps it in step, in the same transaction (membership and status; the
+**counts** are no longer kept by deltas: W6, §9 "P2a", as built in §16, a vote marks its file and
+a bulk writer its round, and a background recompute writes the counts):
 
 - Votes (`SelectionJdbc.rate` from `GalleryController.selectWS` and
   `LargeViewController.rateByPageId`, `SelectionJdbc.destroy`, `CriteriaRate.updateRate`, which
@@ -450,7 +453,8 @@ transaction; the count columns are kept by a dirty-round mark and a background r
 done correctly: a dirty-generation counter (or the mark cleared before the read); each window's
 `round_image` rows locked `FOR UPDATE` before the votes are read, at READ COMMITTED; a per-file
 dirty set; the bulk writers' marks persisted on the round row; exact consumers (top-N, CSV,
-finalize) read the votes directly. The items below describe the original plan.
+finalize) read the votes directly. The items below describe the original plan. **Built (§16)**,
+V89.
 
 - Work: the count columns and backfill; deltas in vote and insert paths; `recompute` in bulk
   paths; the repair job's count part. Reads unchanged.
@@ -1454,3 +1458,253 @@ pre-deploy, deleted accounts as `#id`, the wording, the case-sensitive CHECKs, t
 
 Not run: the suite on MariaDB 10.11 (`-Dwlxjury.test.mariadb-image`); V88's DDL has no
 version-dependent part (CI runs both).
+
+## 16. P2a results
+
+Branch `ukwikidev/p2a-counts` (from `origin/stack/79-round-image-event` `04c1d310`, PR #262,
+the stack tip), 2026-11-05. Roadmap queue item 5, first part; the design is W6 (§9 "P2a", the
+write-path plan's decisions), replacing the deltas. Migration **V89**
+(`V89__Round_image_counts.sql`). Shadow only: no reader uses the counts (P2b).
+
+### Migration V89
+
+```sql
+ALTER TABLE round_image
+  ADD COLUMN IF NOT EXISTS assigned   INT NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS voted      INT NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS approvals  INT NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS rejections INT NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS rate_sum   INT NOT NULL DEFAULT 0,
+  ALGORITHM = INSTANT;
+ALTER TABLE round
+  ADD COLUMN IF NOT EXISTS counts_gen      BIGINT UNSIGNED NOT NULL DEFAULT 1,
+  ADD COLUMN IF NOT EXISTS counts_gen_done BIGINT UNSIGNED NOT NULL DEFAULT 0,
+  ALGORITHM = INSTANT;
+CREATE TABLE IF NOT EXISTS round_image_dirty (
+  round_id BIGINT UNSIGNED NOT NULL,
+  page_id  BIGINT          NOT NULL,
+  PRIMARY KEY (round_id, page_id)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_general_ci;
+```
+
+- The counts are §4's, over the pair's `vote` rows: a `deleted` or `dq` row (votes in
+  `vote_aside`) counts 0. A NULL rate counts as unrated (§11's open item, decided here: it is
+  neither voted nor summed, as `COUNT`/`SUM` treat it). Signed `INT`: `assigned - voted` never
+  goes out of range.
+- **No backfill.** The defaults (`counts_gen` 1, `counts_gen_done` 0) make every round, and every
+  round created later, dirty; the recompute fills the counts in the background after the deploy.
+  Measured on the Gatling fixture (MariaDB 10.6.22): V89's three statements 27, 30 and 18 ms; the
+  rollback's 17, 32 and 26 ms; the recount of the whole fixture (2 rounds, 76,734 rows, all
+  changed) 15.5 s in 40 windows (~390 ms each: every row written). Production's 0.3–1M rows
+  (§13's estimate): ~1–3.5 minutes of background work after the deploy, in windows that hold a
+  round's lock ~0.4 s each.
+- `round_image_dirty` has **no foreign key**: its check would share-lock the round (or the image)
+  in every vote, and a vote never locks the round. Entries of a round that no longer exists are
+  dropped by the recompute.
+
+### The design against W6's list
+
+| W6 condition | As built |
+|---|---|
+| a dirty-generation counter, or the mark cleared before the read | Both, per kind of mark. Bulk writes: `round.counts_gen`, bumped in the writer's transaction; a full recount reads it in its first window and sets `counts_gen_done` to that value in its last, so a bulk write between two windows leaves `counts_gen_done < counts_gen` and the round is recounted again (`RoundCountsSpec`). Votes: the entry is locked before the votes are read and deleted after, by key, in the same transaction; a vote that marks it later waits, then re-inserts it |
+| each window's `round_image` rows locked `FOR UPDATE` before the vote read, at READ COMMITTED | The window's rows `FOR UPDATE`, then their dirty entries `FOR UPDATE`, then a plain read of the votes (READ COMMITTED: the latest committed), then the writes. The entry lock is what a vote meets: a vote holding its entry is waited for and read; one arriving after waits for the window, and its entry survives (`RoundCountsLockSpec`, INNODB_TRX both ways) |
+| a per-file dirty set | `round_image_dirty (round_id, page_id)`, upserted by a juror's vote whose rate changes (`VoteJdbc.rateIn`, `CriteriaRate.updateRateIn`; not when the rate is unchanged, a partly rated criteria vote included) as its last statement |
+| the bulk writers' marks persisted on the round row | `RoundCounts.markRounds` from `RoundImageJdbc.addVoted` and every `sync` (so every distribution chunk, move aside or back, delete, `setRound`, disqualify, requalify, the repair job's windows), under the round lock the writer holds (`requireRounds`): no new lock. `created_at = created_at` in the `UPDATE`: production's `round.created_at` has `ON UPDATE CURRENT_TIMESTAMP` (V86) |
+| exact consumers read the votes directly | Nothing reads the counts yet: top-N distributions, the CSV and the results read `vote` as before. P2b must keep them there (or recount first); `RoundCounts`' scaladoc says so |
+
+**Why a table, not a column on `round_image`.** A `counts_dirty` column would make every vote
+write the row all the file's jurors share, and finding the dirty rows would need a secondary
+index (written by every first vote) or a scan of each round. The table is tiny, a vote writes
+only its entry, and the recompute finds work with a loose scan of its key.
+
+**The upsert, not `INSERT IGNORE`.** The first build used `INSERT IGNORE`: its duplicate check
+takes a shared record lock, and when the recompute deleted an entry while two votes waited on
+it, both held shared locks on the delete-marked record and both upgraded to re-insert it:
+`RoundCountsLockSpec`'s 20 jurors on one file saw **56 server deadlocks and 2 votes failing**
+after `WriteTx`'s 3 attempts (log `20261105-000751-19828.log`). `INSERT … ON DUPLICATE KEY UPDATE
+round_id = round_id` takes an exclusive record lock on the duplicate (no gap), so the waiting
+votes queue one at a time: **0 deadlocks** since (10.6 and 10.11).
+
+**Lock order** (§5, db practices §7.1): `round` → `images` → `vote` → `criteria_rate` →
+`vote_aside` → `round_image` → `round_image_dirty` → `round_image_event`. A juror's vote:
+`vote` (→ `round_user`, `round_criterion` shared → `criteria_rate`) → `round_image_dirty`, never
+`round` or `round_image`. The recompute: `round` (for update) → `round_image` →
+`round_image_dirty`, `vote` read without a lock. No other transaction locks `round_image_dirty`.
+
+### The recompute
+
+- `db.scalikejdbc.RoundCounts`: the marks, `fileWindow` (up to 2,000 marked files of a round,
+  lowest page ids first), `roundWindow` (a full recount's window by page id; it waits while the
+  round is being distributed, `distributing` or its distribution job active, whose chunks bump the
+  generation), `drift` and `isClean`. Counts are written only where they differ, in one JDBC batch
+  of key updates, not a multi-table `UPDATE … JOIN`: as far as InnoDB's source reads (a
+  multi-table update is not among the statements it reads consistently at READ COMMITTED), it
+  share-locks the read side, which would lock the votes; not tested here, the plain read
+  avoids the question.
+- `services.counts.RoundCountsRecompute.runOnce`: one tick, each window its own `WriteTx`
+  (retried on 1213): first every round's marked files, then full recounts (those under way, then
+  open rounds, then the newest), stopping at the tick's budget; a recount left part-way goes on
+  from its last page at the next tick (kept in memory; after a restart it starts again). Errors
+  are logged as `round_counts_failed error=<class>` (WARN) and leave the round for the next tick.
+- `modules.RoundCountsTask`: a timer of its own (one thread), eager, after the migrations
+  (`MigrationOrderSpec`), `roundCounts.interval` 5 s after the previous tick, `budget` 2 s,
+  `window` 2,000. `roundCounts.mode = manual` in the tests' config (specs call `untilClean`); the
+  Gatling fixture runs it in the background (`-Dgatling.roundCounts.mode=manual` turns it off).
+- **Not a job.** A `job` row per tick would pile up (nothing prunes the table: ~17k rows a day for
+  a round voted on all day), and the work needs no lease: every window commits on its own, the
+  marks are in the database, and two instances would only repeat some windows (each holds its
+  round).
+- **Invariant 5** (`RoundImageInvariants.counts`): the rows whose counts differ from the GROUP BY,
+  checked once the round is clean (no marked file, `counts_gen_done >= counts_gen`); every spec
+  that asserts `violations` after a recount checks it.
+
+### Vote latency and recompute cost (`gatling.setup.RoundCountsBenchmark`, fixture-v7)
+
+Rated round of 38,367 files and 383,670 votes, MariaDB 10.6.22, SQL debug logging off and the
+app's recompute off in both variants; one committed transaction per vote, the rate always
+changed; 200 interleaved pairs after 20 warm-ups. Log `target/checks/20261105-002014-27856.log`,
+`target/gatling/round-counts-bench-20261105-002121/summary.txt`.
+
+| Measurement | Result |
+|---|---|
+| A: the base commit's vote (its statements, copied) | median 7.63 ms (p95 9.58; 5.90–16.17) |
+| B: `VoteJdbc.rate` with the mark | median 8.40 ms (p95 11.23; 6.66–22.46) |
+| paired B − A | **+0.71 ms** median (p05 −0.79 .. p95 +2.82); B slower in 168/200 |
+| B alone / B while full recounts of its round run on another thread | 8.39 / 9.40 ms median (+1.00); p95 10.85 / 11.23 (+0.37) |
+| full recount of the round (20 windows) | 590, 491, 471 ms (24–29 ms a window); the write-path plan's one-statement recount took 1.92 s |
+| per-file pass | 220 files 51 ms; 50 files 21 ms (one window) |
+
+The write-path plan measured P2a's delta at +1.3 ms with a lock on the shared `round_image` row;
+the mark costs about half that, and the counts are seconds old instead of exact (W6). A criteria
+vote was not benchmarked (the fixture has no criteria round); it adds the same one statement.
+
+### Stress harness (`db.stress.WritePathStress`, 90 s, all paths, seed 42)
+
+The branch adds a 17th path, `recount` (`RoundCountsRecompute.runOnce` every 0–500 ms), and
+checks invariant 5 after a final recount. Base `04c1d310` run on the same settings, two runs each:
+
+| Run | server deadlocks | involving `recount` / `round_image_dirty` | vote_binary p50 / p95 ms | vote_rated | vote_criteria | invariants |
+|---|---|---|---|---|---|---|
+| base #1 | 10 | — | 9.5 / 18.8 | 9.5 / 18.1 | 9.9 / 31.0 | clean |
+| base #2 | 13 | — | 9.3 / 19.5 | 9.3 / 19.4 | 9.7 / 31.8 | clean |
+| branch #1 | 5 | 0 | 10.7 / 22.8 | 11.0 / 23.1 | 10.5 / 40.4 | clean (counts too); 3 stale `vote.monument_id` copies |
+| branch #2 | 9 | 0 | 10.1 / 21.2 | 10.3 / 21.5 | 9.9 / 37.2 | clean (counts too) |
+
+- Every deadlock in the four runs has the test-only `remove_unrated` in it but one (branch #2:
+  `remove_image` × `vote_rated`, the vote retried by `WriteTx`, no failure); none touches
+  `round_image_dirty`. Visible failures: only the known `distribute_new`/`distribute_list`
+  count mismatches against the test-only `remove_image`/`set_round` (break 7), in both.
+- Juror votes: **+0.6 to +1.7 ms** at p50 and +2 to +4 ms at p95 (criteria +5 to +9 ms at p95)
+  under stress, with one more thread on the database; base run-to-run spread ~0.2 ms at p50,
+  ~1 ms at p95.
+- The 3 stale monument copies of branch #1 didn't recur in branch #2 or the base runs; P2a
+  doesn't write monument ids (the write-path plan's h6 window, left as it was).
+
+Logs: branch `target/checks/20261105-002355-12908.log` and `…-003413-29380.log` (results
+`target/stress/write-paths-20261105-002443/`, `…-003537/`); base `…-002705-21480.log` and
+`…-003121-4836.log` (`…-002816/`, `…-003205/`).
+
+### Deploy note
+
+V89 ships in release 2 with V82–V88: before the deploy production is at release 1 (its last
+Flyway row **81**, tables `rounds` and `selection`; `round` and `round_image` are V82's and
+V84's). Read-only, production, as the admin user, before the deploy:
+```sql
+SELECT VERSION();   -- 10.6+ (INSTANT ADD COLUMN; the rollback's INSTANT DROP COLUMN: 10.4+)
+SELECT version, success FROM flyway_schema_history ORDER BY installed_rank DESC LIMIT 1;   -- 81, 1
+SELECT ENGINE, ROW_FORMAT FROM information_schema.TABLES
+  WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'rounds';         -- InnoDB, Dynamic (not Compressed)
+SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE()
+  AND TABLE_NAME = 'rounds' AND COLUMN_NAME IN ('counts_gen', 'counts_gen_done');          -- 0
+SELECT COUNT(*) FROM information_schema.TABLES
+  WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'round_image_dirty';                    -- 0
+-- the background recount's size: V84's pairs (§13's query), ~0.4 s per 2,000 rows the first time
+SELECT COUNT(*) FROM (SELECT DISTINCT round_id, page_id FROM selection) p;
+SELECT COUNT(*) FROM selection WHERE rate IS NULL;          -- counted as unrated (§16)
+```
+- **Deploy:** V89 runs with the others at start-up: metadata-only `ALTER`s and an empty table
+  (tens of ms on the fixture). Nothing to run by hand: the app recounts every round in the
+  background, open rounds first.
+- **After `reopen`** (read-only): `SELECT COUNT(*) FROM round WHERE counts_gen_done < counts_gen`
+  falls to 0 within minutes (a round being distributed waits for its job);
+  `SELECT COUNT(*) FROM round_image_dirty` stays small (emptied every few seconds while jurors
+  vote). WARN lines `round_counts_failed` mean a tick's window failed (retried at the next).
+- **Rollback after `reopen`** (tested forward, back, forward again: `FlywayUpgradeSpec` "V89's
+  rollback SQL after reopen"; the schema after it equals V88's), with the app stopped:
+  ```sql
+  DROP TABLE round_image_dirty;
+  ALTER TABLE round DROP COLUMN counts_gen, DROP COLUMN counts_gen_done, ALGORITHM = INSTANT;
+  ALTER TABLE round_image DROP COLUMN assigned, DROP COLUMN voted, DROP COLUMN approvals,
+    DROP COLUMN rejections, DROP COLUMN rate_sum, ALGORITHM = INSTANT;
+  DELETE FROM flyway_schema_history WHERE version = '89';
+  ```
+  The older code never read the counts, so nothing is lost; its votes mark nothing, and a
+  forward deploy runs V89 again, which makes every round dirty and recounts it from the votes.
+  Before `reopen`, `wlxjury-release restore`.
+- Nothing to announce: no page changes.
+
+### Files
+
+New: `conf/db/migration/default/V89__Round_image_counts.sql`, `app/db/scalikejdbc/RoundCounts.scala`,
+`app/services/counts/RoundCountsRecompute.scala`, `app/modules/RoundCountsTask.scala`,
+`test/db/scalikejdbc/RoundCountsSpec.scala`, `test/db/scalikejdbc/RoundCountsLockSpec.scala`,
+`test/controllers/RoundCountsVoteSpec.scala`, `test/gatling/setup/RoundCountsBenchmark.scala`.
+Changed: `VoteJdbc.rateIn`, `CriteriaRate.updateRateIn` (the mark), `RoundImageJdbc` (`addVoted`
+and `sync` bump the generation), `RoundImageInvariants` (5), `AppModule`, `conf/application.conf`
+(`roundCounts`), the tests' config (`roundCounts.mode = manual`), `SharedTestDb`/`SharedPlayApp`
+(truncate the table), `StructuralWritesSpec` (scans `round_image_dirty`; `RoundCounts`' writers
+listed), `MigrationOrderSpec`, `FlywayUpgradeSpec`, the Gatling fixture (recounted after its
+load, `fixture-v7`), `WritePathStress` (`recount`, invariant 5).
+
+### Specs
+
+- `RoundCountsSpec`: V89's schema on the test server; every round dirty until recounted; a vote
+  marks its file, not the round, only when its rate changes; refused votes mark nothing; a
+  criteria vote marks once its rate changes (all criteria rated, and back); bulk writers bump the
+  generation (`batchInsert`, `removeImage`, `setRound`, both rounds) keeping `created_at`, and
+  are refused without the round lock; counts equal the votes after a recount in windows of 2
+  (binary, rated, half stars, criteria, a deleted file's row 0); a hand-changed count reported
+  as invariant 5 once clean, repaired by the next recount; a bulk write between two windows
+  leaves the round dirty and is recounted; a vote between two windows keeps its mark; a round
+  being distributed waits, its marked files counted; entries of a missing round dropped; the
+  tick's budget.
+- `RoundCountsLockSpec` (INNODB_TRX): a file window waits for a vote holding its existing entry
+  and reads it; a full recount's window waits for a vote's new entry and reads it; a vote waits
+  for a window holding its entry and leaves its mark for the next pass; 20 jurors voting 40
+  times each on one file (binary and criteria rounds) while the recompute ticks: 800 votes, 0
+  failures, 0 server deadlocks, invariant 5 afterwards (on a 24-connection pool).
+- `RoundCountsVoteSpec` (a Play app, the routes): the gallery's and the large view's votes in a
+  binary round (marks, then counts), a juror changing their mind, an unchanged vote marking
+  nothing; a rated, a half-star and a criteria round's counts; invariant 5 after each recount.
+- `FlywayUpgradeSpec`: V89's rollback SQL gives V88's schema and history; V89 again makes every
+  round dirty and the counts 0; a rerun of its statements changes nothing.
+
+### Checks
+
+Logs under `target/checks/` of the worktree.
+
+| Step | Specs | Result | Log |
+|---|---|---|---|
+| First compile | `Test/compile` | ok | `20261105-000001-15056.log` |
+| New specs, first run | the three new specs, `StructuralWritesSpec`, `MigrationOrderSpec`, `FlywayUpgradeSpec`, `MigrationSchemaSpec`, `MigrationNamingSpec` | 2 failures: invariant 4 in a spec's own setup (a file aside not marked deleted), and the 20-juror run's 56 deadlocks with `INSERT IGNORE` (above) | `20261105-000751-19828.log` |
+| Fixed (the upsert) | `RoundCountsSpec`, `RoundCountsLockSpec`, `FlywayUpgradeSpec` | 26: 25 passed, 1 skipped (the Flyway fixture generator) | `20261105-001107-25208.log` |
+| Breakage scan | `db.*`, `org.intracer.wmua.*`, `services.*`, `security.*`, `modules.*` | **961: 955 passed, 0 failed, 6 skipped, 1 pending** | `20261105-001236-19504.log` |
+| MariaDB 10.11 | the three new specs and `FlywayUpgradeSpec` on `mariadb:10.11.14` | 31: 30 passed, 1 skipped; the 20-juror run 0 deadlocks | `20261105-003751-16636.log`; `RoundCountsSpec` again with the server's version printed (`10.11.14-MariaDB`), `20261105-003951-29056.log` |
+| Benchmark | `RoundCountsBenchmark` (fixture-v7 built) | exit 0, no problem | `20261105-002014-27856.log` |
+| Stress | `WritePathStress`, branch and base, two runs each | above | above |
+
+### Open questions
+
+- **Bulk writers touching a few files** (a file deleted on Commons in an open round, a CoI
+  disqualify of a few files) mark the whole round, so its next tick recounts every file (~0.5 s
+  for 38k). W6 asked for the round row; marking those writers' files in `round_image_dirty`
+  instead (after `round_image`, in the lock order) would make that a per-file pass. Not needed
+  at production's rate of such writes; a candidate if P2b's "as of" lag matters.
+- **The first recount after the deploy** writes every row (~0.4 s windows on the fixture). A
+  smaller window for rounds never recounted, or a `CASE` update, would shorten the round lock a
+  window holds; it only delays structural writers by under a second.
+- **P2b's "as of"**: `RoundCounts.state` gives a round's generation, last recount and marked
+  files; nothing records when a round was last clean. P2b decides whether it shows that.
+- The repair job (`round_image_check`) bumps the generation through its sync windows, so a run
+  forces a recount; it doesn't compare counts itself (invariant 5 is the spec's and the harness's
+  check).
