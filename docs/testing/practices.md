@@ -23,7 +23,7 @@ theme-modes invariants in `98a8a79e:docs/plans/2026-10-31-theme-modes-and-design
 7. [Flaky tests](#7-flaky-tests)
 8. [Runtime budget and CI](#8-runtime-budget-and-ci)
 9. [Coverage](#9-coverage)
-10. [Browser tests (planned)](#10-browser-tests-planned)
+10. [Browser tests](#10-browser-tests)
 11. [Guards](#11-guards)
 12. [Where the code doesn't follow these yet (for triage)](#12-where-the-code-doesnt-follow-these-yet-for-triage)
 
@@ -42,7 +42,7 @@ milliseconds; a spec through the router starts an app and truncates tables.
 | Jest | `javascript-test/*.test.js` on `public/javascripts/`, jsdom; `sbt test` runs it (`jsTest`, `npm ci`) | page scripts: votes, keys, menus, pager |
 | Python | `scripts/deployment/test_deployment.py` (68 tests, `python:3.8.20-slim`, `--network none`), `test_database_restore`, `test_release_script` (24, in `Dockerfile.test` against the `sbt dist` ZIP); `scripts/test_agent_check.py` | the deploy and release tools |
 | Gatling | `test/gatling/`, `sbt gatlingAll` | load and latency: [performance](../performance/practices.md) §1 |
-| Browser | planned: §10 | what only a real engine shows |
+| Browser | `browser-test/` (Playwright, Chromium, Firefox, WebKit) on the `UiShotsServer` fixture: §10 | what only a real engine shows: votes and Back, keys, first frames, CSP and console |
 
 **1.2 One Play app per JVM.** `SharedPlayApp` and `ProductionFilters.withSharedApp` reuse one app
 and the shared container; a spec never stops them (no `running`, no `TestServer` around the shared
@@ -252,25 +252,103 @@ is a missing test case. No minimum is enforced yet (a threshold a few points und
 baseline is a later decision, CI plan). The gallery's own tests are queued (roadmap, "the patched
 gallery").
 
-## 10. Browser tests (planned)
+## 10. Browser tests
 
-Not built yet; queued in the roadmap. Today `scripts/ui-shots.py` and `ui_checks.py` cover the
-visual and two behaviour checks by hand ([UI](../ui/practices.md) §5).
+`browser-test/`: `@playwright/test` (JavaScript, its own `package.json` and lockfile, outside
+`javascript-test/` so that Jest doesn't collect its specs) on desktop Chromium, Firefox and
+WebKit, against the `UiShotsServer` fixture. *Why Playwright Test rather than the Python
+Playwright of `ui-shots.py`:* projects per engine, sign-in projects as dependencies, traces and
+screenshots on failure, and an HTML report come with it; Node is already in CI for Jest.
 
-- **Engines:** Playwright on desktop Chromium, Firefox and WebKit, as parallel jobs on every PR.
-  Record each engine's job time first, then decide which engines stay per PR and which move to
-  master pushes.
+**10.1 What runs.** `playwright.config.js` has a project per engine (`chromium`, `firefox`,
+`webkit`), each depending on its sign-in project (`setup-<engine>`, `tests/auth.setup.js`), which
+signs in through the login form once per role (juror, organizer, admin, root) and saves the
+session to `target/browser-test/auth/<engine>-<role>.json`. A test takes a role with
+`test.use({ role: 'juror' })`, or opens another session with `contextAs(role)`. The specs:
+
+| Spec | What it shows |
+|---|---|
+| `guards` | the fixture sends the production CSP; a CSP violation and a request to another host are reported; Commons images get the placeholder (the guards' self-tests, §4.2) |
+| `sign-in` | sign in through the form, sign out through the user menu's POST with its token; a sign-out without the token is refused and the session stays; a wrong password |
+| `voting` | binary round: large view by key and by button, gallery thumb; rated round: large view by key and by star, gallery star; Back after a large-view vote shows the stored vote, as a fresh load does (from `ui_checks.py`) |
+| `sections` | the large view's and the contest file's side sections drawn as stored from the first frame (from `ui_checks.py`) |
+| `theme` | the login page's switch (no request), the navbar's CSRF POST, `auto` in both schemes with every frame in the scheme's mode (the "Firefox theme flash" check) |
+| `access` | a juror refused another juror's votes (gallery, large view, all jurors) and the admin pages, an organizer the round form: the 403 page with its reference |
+| `organizer` | the organizer role's round statistics and by-rate list; the admin's rounds list, round form with its jurors' table, edit-then-cancel (nothing saved, no job), new round form; root's campaigns page |
+| `pages` | a tour of 17 pages (each role's): status 200, one `h1`; in Chromium an axe-core scan per page (§10.4) |
+
+**10.2 Every page passes** (`lib/fixtures.js`, for every context of every test): images from
+Commons, the image proxy and `/<width>px-` URLs get a placeholder PNG; a request to any other
+host is refused and fails the test; a CSP violation (the `securitypolicyviolation` event, which
+all three engines fire), a console error, an uncaught page error or a response of 400 or more
+fails it, listed by page. A test that opens a 403 or 404 page on purpose says so with
+`diagnostics.expectStatus(403)`. The fixture runs with the production CSP and with CSRF checked on
+POSTs (`-Dui.csp=production -Dui.csrf=on`, `fixture-server.mjs`).
+
+**10.3 Sharing a server.** `UiShotsServer` writes up to eight jurors with files in both rounds to
+`server.json`; each engine votes as its own juror (Chromium the first, Firefox the second, WebKit
+the third), signs in and out and switches the theme as another, and checks that a seventh's votes
+stay hidden, so the three engines can run at once against one server. Each voting test reads the
+file's vote first and casts one that changes it, so a rerun against the same server votes again.
+
+**10.4 Accessibility.** In Chromium each page of the tour gets an axe-core scan (WCAG 2.1 A and
+AA rules; axe is injected from `node_modules` by `@axe-core/playwright`, never a CDN); its
+findings go to `target/browser-test/a11y/<page>.json` and the test's attachments (CI: the
+`accessibility-report` artifact). A serious or critical finding fails the test unless its rule
+is in the spec's `KNOWN` list, which points to its triage entry ([UI](../ui/practices.md) §9).
+
+**10.5 Run it locally** (Git Bash; Docker running; the shared sbt lock, [workflow](../workflow/practices.md) §4,
+held while the server runs):
+
+```bash
+cd browser-test
+npm ci
+npx playwright install chromium firefox webkit   # once per Playwright version, ~0.5 GB
+env -u COMMONS_USER -u COMMONS_PASSWORD -u SCALAWIKI_LOGIN -u SCALAWIKI_PASSWORD node fixture-server.mjs start
+npx playwright test                          # all three engines; or --project=firefox
+npx playwright test tests/voting.spec.js --project=webkit --headed
+npx playwright show-report ../target/browser-test/report
+node fixture-server.mjs stop
+```
+
+`start` compiles, starts `Test/runMain gatling.setup.UiShotsServer` in the background (log:
+`target/ui-shots/server-browser-test.log`), and returns when `server.json` answers; it reuses a
+server that already answers. `stop` asks it to stop and waits. A server started by
+`ui-shots.py` lacks `-Dui.csrf=on`: the CSRF tests then fail, so stop it first. Flags:
+`--project=<engine>`, `--headed`, `--debug`, `-g <title>`, `--trace on`; a failed test keeps its
+trace and screenshot under `target/browser-test/results/` (`npx playwright show-trace <zip>`).
+Delete `target/browser-test/` when done; traces are a few MB each.
+
+**10.6 Adding a test.** A spec under `browser-test/tests/` imports `test` and `expect` from
+`lib/fixtures.js` (never from `@playwright/test`, which has no guards), takes a role, finds
+elements by role and accessible name, label or text (`getByRole`, `getByLabel`, `getByText`;
+an id or `data-*` attribute where the page has no name, as raty's stars), and asserts that an
+element exists before asserting on it (`one()` in `lib/actions.js`, §6.2). Waits are Playwright's
+auto-waiting `expect`s and `waitForRequest`/`waitForResponse` on a named request, never
+`waitForTimeout`. Keep it to what only a browser shows: a template's output belongs in a view
+spec, a script's logic in Jest (§1.1).
+
+**10.7 CI** (`.github/workflows/browser.yml`): one job per engine in parallel on every PR and
+on pushes to the integration branches, `fail-fast: false`. The fixture's dump (`data/cache`) and
+Playwright's browser are cached (keys: what `GatlingDbCache.cacheKey` hashes; the lockfile);
+traces, screenshots, the HTML report and the server's log are uploaded on failure, the
+accessibility report always. Each job writes its times (fixture start, tests, whole job) to the
+run's summary. *Decision pending:* which engines stay per PR, from the recorded times (§10.8).
+
+**10.8 Times** (measured 2026-11-04; the user decides from CI's own numbers what stays per PR):
+see the table below, filled from the first local run and, once pushed, from CI.
+
 - **Mobile profiles later,** together with mobile support (UI §6.2; mobile is not supported yet).
-- **Sign-in once per role:** a saved storage state per role (root, admin, organizer, juror),
-  made by signing in through the form at the start of the run, not per test.
-- **No network:** Commons and image URLs stubbed by route (as `ui-shots.py` does), any other host
-  blocked and listed; the server is the `UiShotsServer` fixture.
-- **Every page passes:** zero CSP violations and zero console errors, collected per page.
-- **From Montage's Cypress tests** (`hatnote/montage` `d879cb8`, `frontend/cypress/`): take request
-  stubs with named aliases and waiting on them, a session set up before the visit, and
-  edit-then-cancel flows. Don't copy: assertions inside `if ($body.find(…).length > 0)` (they pass
-  when the element is missing, §6.2), CSS-class selectors (§6.1), and the hard-coded dev-server
-  URL (`http://localhost:5173`; take the base URL from the fixture's `server.json`).
+- **The compatibility floor** (Chrome 109, Firefox 115, UI §6.1a) is not run: Playwright's
+  browsers are current builds; the floor stays a review item with its planned lint check.
+- **From Montage's Cypress tests** (`hatnote/montage` `d879cb8`, `frontend/cypress/`), taken:
+  waiting on a named request instead of a delay (`cy.intercept(...).as()` / `cy.wait('@alias')`:
+  here `waitForRequest` on the vote, theme and sign-out POSTs and the jurors' table), a session
+  set up before the visit (`cy.setCookie`: here the saved sessions), edit-then-cancel (the round
+  form), and "a double click must not save twice" as an idea for later (`data-submit-once`). Not
+  copied: assertions inside `if ($body.find(…).length > 0)` (they pass when the element is
+  missing, §6.2), CSS-class selectors (§6.1), and the hard-coded dev-server URL
+  (`http://localhost:5173`; here the base URL comes from `server.json`).
 
 ## 11. Guards
 
@@ -284,10 +362,12 @@ visual and two behaviour checks by hand ([UI](../ui/practices.md) §5).
 | 5.1 anonymous Wikimedia, no credentials in workflows | `TestConfigAnonymousSpec`, `AnonymousBotsSpec` | enforced |
 | 5.3 live specs off by default | `skipAllUnless` / `skipped` in each live spec | enforced per spec |
 | 6.1 no CSS-class assertions | review | planned: a scan of `test/` and `javascript-test/` for class selectors, with an allowlist of classes that are the behaviour (`is-invalid`, `active`; Jest's `show`, `collapsed`, `tomselected`, `loading`) |
-| 6.2 no assertion on a missing element | review | planned with the browser tests (a helper that requires exactly one match) |
+| 6.2 no assertion on a missing element | review; `one()` in `browser-test/lib/actions.js` | review; the browser tests' helper requires exactly one match |
 | 6.4 messages in all four files | `views.MessagesCompletenessSpec` | enforced |
 | 9 coverage | `coverage.yml` (report only) | enforced as a report; no minimum (planned after a stable baseline) |
-| 10 browser tests | — | planned (roadmap) |
+| 10 browser tests, three engines | `browser.yml`: a job per engine (Chromium, Firefox, WebKit) on every PR | enforced |
+| 10.2 zero CSP violations, console errors, failed responses, other hosts per page | `browser-test/lib/fixtures.js` (every test); its self-tests in `guards.spec.js` | enforced |
+| 10.4 accessibility | axe-core per page of `pages.spec.js` (Chromium) | enforced for serious and critical findings not triaged; the rest a report |
 | 7.2 no wall-clock waits in specs | review | planned |
 
 ## 12. Where the code doesn't follow these yet (for triage)

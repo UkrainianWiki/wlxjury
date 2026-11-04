@@ -40,7 +40,8 @@ test.describe('signing in and out', () => {
     diagnostics.take('HTTP 403'); // the refused POST isn't a page's
   });
 
-  test('a wrong password keeps the login page, with its error', async ({ page, fixture }) => {
+  test('a wrong password keeps the login page, with its error', async ({ page, fixture, diagnostics }) => {
+    diagnostics.expectStatus(400); // the login page again, as a 400
     await page.goto('/auth');
     await page.getByLabel('Your login').fill(fixture.freshJuror.login);
     await page.getByLabel('Your password').fill('not the password');
