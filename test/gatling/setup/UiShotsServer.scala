@@ -94,7 +94,9 @@ object UiShotsServer {
       db.scalikejdbc.User.create(fullname = "Organizer role", email = orgRoleEmail,
         passwordHash = services.PasswordHasher.default.hash(orgRolePassword),
         roles = db.scalikejdbc.User.ORG_COM_ROLES, contestId = Some(f.contestId))
-    println(s"[ui-shots] set the Commons url of ${CommonsFileUrl.fillMissing()} images")
+    // in one transaction: as autocommitted statements (a commit per row) it took about 2.5 minutes
+    val filled = DB.localTx { tx => CommonsFileUrl.fillMissing()(tx) }
+    println(s"[ui-shots] set the Commons url of $filled images")
 
     val json =
       s"""{

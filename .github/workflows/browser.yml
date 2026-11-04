@@ -1,0 +1,155 @@
+# The browser tests (browser-test/, docs/testing/practices.md §10): Playwright on desktop
+# Chromium, Firefox and WebKit, one job per engine in parallel, on every PR and on pushes to the
+# integration branches, each against its own UiShotsServer fixture. Each job's time is in the
+# run's summary (the steps' times too); the user decides from them which engines stay per PR.
+# Wikimedia access is anonymous (CLAUDE.md, Testing): never pass COMMONS_* or SCALAWIKI_*
+# credentials, as env or secrets, to any job here. TestConfigAnonymousSpec checks it. The tests
+# stub Commons and refuse every other host, so they need no network but this runner's.
+name: Browser tests
+
+on:
+  pull_request:
+  push:
+    branches: [master, ukwikidev/followups]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: browser-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || format('{0}-{1}-{2}', github.event_name, github.ref, github.sha) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  # as ci.yml: the scalawiki commit wlxjury builds against, until a published version is used
+  SCALAWIKI_SHA: 25951dbe1e05bc195b8719e2edbb08464f0ea932
+  # the fixture's database, as SharedTestDb.Image's default
+  MARIADB_IMAGE: mariadb:10.6.22
+
+jobs:
+  browser:
+    name: browser tests (${{ matrix.engine }})
+    # Pinned, as ci.yml: Testcontainers' Docker API compatibility depends on the runner's engine
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        engine: [chromium, firefox, webkit]
+    steps:
+      - name: Start the clock
+        run: echo "JOB_START=$(date +%s)" >> "$GITHUB_ENV"
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+          cache: sbt
+
+      - uses: sbt/setup-sbt@ecad189dd245444b9ae0a0cd5922fd938b88906f # v1.5.12
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: browser-test/package-lock.json
+
+      - name: scalawiki (interim, from source)
+        uses: ./.github/actions/scalawiki
+        with:
+          sha: ${{ env.SCALAWIKI_SHA }}
+          jdk: 17
+
+      - name: Pull the fixture database image
+        run: docker pull -q "$MARIADB_IMAGE"
+
+      # The Gatling fixture's dump (GatlingDbCache): built from the CSVs on a miss (about 1.5
+      # minutes), keyed on what GatlingDbCache.cacheKey hashes
+      - name: Restore the fixture's dump
+        uses: actions/cache@v4
+        with:
+          path: data/cache
+          key: gatling-fixture-${{ env.MARIADB_IMAGE }}-${{ hashFiles('conf/db/migration/default/*.sql', 'data/*.csv', 'test/gatling/setup/GatlingDbCache.scala', 'test/gatling/setup/GatlingDbSetup.scala', 'test/resources/gatling-perf.conf') }}
+
+      - name: Install the test tools
+        working-directory: browser-test
+        run: npm ci
+
+      # Playwright's own build of the engine, for the version in package-lock.json
+      - name: Restore the browser
+        id: browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ matrix.engine }}-${{ hashFiles('browser-test/package-lock.json') }}
+
+      - name: Install the browser
+        working-directory: browser-test
+        run: |
+          if [ "${{ steps.browsers.outputs.cache-hit }}" = true ]; then
+            npx playwright install-deps "${{ matrix.engine }}"
+          else
+            npx playwright install --with-deps "${{ matrix.engine }}"
+          fi
+
+      - name: Start the fixture
+        working-directory: browser-test
+        run: |
+          start=$(date +%s)
+          node fixture-server.mjs start
+          echo "SERVER_SECONDS=$(( $(date +%s) - start ))" >> "$GITHUB_ENV"
+
+      - name: Browser tests
+        working-directory: browser-test
+        env:
+          CI: true
+        run: |
+          start=$(date +%s)
+          status=0
+          npx playwright test --project="${{ matrix.engine }}" || status=$?
+          echo "TEST_SECONDS=$(( $(date +%s) - start ))" >> "$GITHUB_ENV"
+          exit $status
+
+      - name: Stop the fixture
+        if: always()
+        working-directory: browser-test
+        run: node fixture-server.mjs stop || true
+
+      - name: Times
+        if: always()
+        run: |
+          total=$(( $(date +%s) - JOB_START ))
+          {
+            echo "### Browser tests (${{ matrix.engine }})"
+            echo
+            echo "| Part | Seconds |"
+            echo "|---|---|"
+            echo "| fixture start (compile, restore, serve) | ${SERVER_SECONDS:-–} |"
+            echo "| tests | ${TEST_SECONDS:-–} |"
+            echo "| whole job | $total |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # traces and screenshots of the failed tests (trace: retain-on-failure), the report and the
+      # server's log
+      - name: Upload the failures
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-failures-${{ matrix.engine }}-attempt-${{ github.run_attempt }}
+          path: |
+            target/browser-test/results/
+            target/browser-test/report/
+            target/ui-shots/server-browser-test.log
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Upload the accessibility report
+        if: always() && matrix.engine == 'chromium'
+        uses: actions/upload-artifact@v4
+        with:
+          name: accessibility-report-attempt-${{ github.run_attempt }}
+          path: target/browser-test/a11y/
+          if-no-files-found: ignore
+          retention-days: 14
