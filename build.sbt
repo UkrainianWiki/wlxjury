@@ -226,7 +226,8 @@ val ScalikejdbcVersion = "4.3.2"
 val FlywayVersion = "13.12.0"
 val ScalikejdbcPlayVersion = "3.0.1-scalikejdbc-4.3"
 val ScalawikiVersion = "0.7.0-SNAPSHOT"
-val PlayMailerVersion = "9.0.0"
+// play-mailer 10 is the Play 3 line (org.playframework); 9.x was Play 2.9's (com.typesafe.play)
+val PlayMailerVersion = "10.1.0"
 val MockServerVersion = "5.7.0"
 val playVersion = "3.0.7"
 // Login with Google and Wikimedia accounts (services.oauth): PKCE, state, nonce, the token exchange
@@ -288,8 +289,8 @@ libraryDependencies ++= Seq(
   "org.apache.pekko" %% "pekko-stream" % PekkoVersion,
   "org.apache.pekko" %% "pekko-http" % PekkoHttpVersion,
   "com.nimbusds" % "oauth2-oidc-sdk" % NimbusOAuthVersion,
-  "com.typesafe.play" %% "play-mailer" % PlayMailerVersion,
-  "com.typesafe.play" %% "play-mailer-guice" % PlayMailerVersion,
+  "org.playframework" %% "play-mailer" % PlayMailerVersion,
+  "org.playframework" %% "play-mailer-guice" % PlayMailerVersion,
   // 2.0.0, the version scalawiki-wlx brings and the one that runs
   "com.github.tototoshi" %% "scala-csv" % "2.0.0",
   // ImageIO needs a WebP reader to resize Commons images for the thumbnail cache.
@@ -327,6 +328,10 @@ libraryDependencies ++= Seq(
 // commons-dbcp2 (from scalikejdbc-core) brings commons-logging, which Play's jcl-over-slf4j
 // already provides (and shadows on the classpath)
 excludeDependencies += ExclusionRule("commons-logging", "commons-logging")
+// play-mailer 10's jakarta.mail brings com.sun.activation:jakarta.activation 1.2.1: the
+// javax.activation API (the same 31 classes) and the implementation MailcapCommandMap needs.
+// jaxb-api's javax.activation-api 1.2.0 (from scalawiki-core) would be a second copy of the API.
+excludeDependencies += ExclusionRule("javax.activation", "javax.activation-api")
 
 dependencyOverrides ++= Seq(
   "commons-io" % "commons-io" % "2.16.1"
