@@ -145,7 +145,8 @@ object SharedTestDb {
     Round.usersRef
 
     Runtime.getRuntime.addShutdownHook(new Thread(() => {
-      // a Play DataSourceConnectionPool left as the default throws on close: stop the container anyway
+      // a Play DataSourceConnectionPool left as the default throws on close (ScalikeJDBC's
+      // DefaultDataSourceCloser; a HikariTestPool closes): stop the container anyway
       scala.util.Try(ConnectionPool.closeAll())
       container.stop()
     }))
@@ -154,15 +155,16 @@ object SharedTestDb {
     true
   }
 
-  /** The pool's connections at READ COMMITTED, as production's (`db.default.hikaricp.
-    * transactionIsolation`, W1 of docs/plans/2026-11-03-write-path-simplification.md): the
-    * driver sets it on each new connection.
+  /** ScalikeJDBC's default pool: a HikariCP pool, as production's (Play's, db.default.hikaricp),
+    * at READ COMMITTED as production's (`transactionIsolation`, W1 of
+    * docs/plans/2026-11-03-write-path-simplification.md; CriteriaRateSpec checks it). 8
+    * connections at most, the size the tests ran with on ScalikeJDBC's old commons-dbcp2 pool,
+    * where production has 30: one JVM of tests against one container needs no more.
+    * Registering it again (reregisterDefault) makes ScalikeJDBC close the pool it replaces.
     */
-  private[db] def readCommittedUrl(url: String): String =
-    url + (if (url.contains("?")) "&" else "?") + "transactionIsolation=READ-COMMITTED"
-
   private def registerPools(): Unit = {
-    ConnectionPool.singleton(readCommittedUrl(_url), _user, _password)
+    ConnectionPool.singleton(
+      HikariTestPool(_url, _user, _password, name = "test-default", minimumIdle = 2, maximumPoolSize = 8))
   }
 
   /** Re-registers the default ScalikeJDBC pool using the shared container's

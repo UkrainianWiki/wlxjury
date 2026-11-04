@@ -88,10 +88,14 @@ object WritePathStress {
   private final class RoutingPool(url: String, fallbackUser: String, fallbackPassword: String, settings: ConnectionPoolSettings)
       extends ConnectionPool(url, fallbackUser, fallbackPassword, settings) {
     private val pools = new ConcurrentHashMap[String, ConnectionPool]()
+    // one HikariCP pool per path (HikariTestPool, as the tests'), none kept idle as the
+    // commons-dbcp2 pools this used before; no isolation of its own: the variant sets the
+    // server's default (SET GLOBAL) before the pool is registered
     private def current: ConnectionPool =
       pools.computeIfAbsent(tag.get, t =>
-        if (t == "harness") new Commons2ConnectionPool(url, fallbackUser, fallbackPassword, settings)
-        else new Commons2ConnectionPool(url, userOf(t), password, settings))
+        HikariTestPool(url, if (t == "harness") fallbackUser else userOf(t),
+          if (t == "harness") fallbackPassword else password, name = s"stress-$t",
+          minimumIdle = 0, maximumPoolSize = settings.maxSize, isolation = None))
     override def borrow(): Connection = current.borrow()
     override def dataSource: DataSource = current.dataSource
     override def close(): Unit = pools.values().asScala.foreach(p => scala.util.Try(p.close()))

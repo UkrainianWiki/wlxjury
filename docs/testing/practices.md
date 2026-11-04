@@ -65,7 +65,7 @@ transaction is invisible to it (`Secured.userFromRequest`, `GalleryService`, `Ro
 **2.2 One MariaDB per JVM, on tmpfs.** `SharedTestDb.forTests`: MariaDB 10.6 (`SharedTestDb.Image`;
 10.11 by `-Dwlxjury.test.mariadb-image=mariadb:10.11.14`), data directory on tmpfs (`size=1g`,
 so a runaway spec fails with "table is full"), 128M buffer pool, 48M redo log, flushing off,
-1M `max_allowed_packet`, READ COMMITTED in the URL. *Why:* `TRUNCATE` re-creates table files:
+1M `max_allowed_packet`. *Why:* `TRUNCATE` re-creates table files:
 0.5–1 s per `truncateAll` on disk, 30–40 ms on tmpfs; the suite went from 21:25 to 6:57
 (`2d5d0ef4`). It is fast, not durable: never a benchmark (performance §4.6).
 
@@ -75,10 +75,17 @@ it instead of hanging the suite (one `CoiRoundSpec` statement once waited 26 min
 "Test coverage"). A spec that tests a timeout sets its own session value and resets it in
 `finally` (`CriteriaRateSpec`).
 
-**2.4 Pool lifecycle.** A Play app's start makes its HikariCP pool ScalikeJDBC's default
-(`PlayDBApiAdapterModule`; `ConnectionPoolConfigSpec`); `running(app)` or `app.stop()` closes it.
-A spec that uses `running(app)` calls `SharedTestDb.reregisterDefault()` in a `finally`.
-*Why:* otherwise every later spec in the JVM fails on a closed pool.
+**2.4 Pool lifecycle.** The tests run on HikariCP, as production. Without a Play app,
+ScalikeJDBC's default pool is `SharedTestDb`'s `HikariTestPool` (`db.scalikejdbc`): Play's
+HikariCP settings (autoCommit, 30 s connection timeout, idle timeout and max lifetime), READ
+COMMITTED as production's `transactionIsolation` (`CriteriaRateSpec`), 2 idle and 8 at most where
+production keeps 10 and 30. The Gatling fixture (`gatling.pool=small`), its external target and
+`WritePathStress` use the same class. A Play app's start makes its own HikariCP pool
+ScalikeJDBC's default (`PlayDBApiAdapterModule`; `ConnectionPoolConfigSpec`); `running(app)` or
+`app.stop()` closes it. A spec that uses `running(app)` calls `SharedTestDb.reregisterDefault()`
+in a `finally`; registering again closes the pool it replaces. *Why:* otherwise every later spec
+in the JVM fails on a closed pool; and a spec on another pool than production's (ScalikeJDBC's
+commons-dbcp2 default until 2026-11-04) tests a pool that never runs.
 
 **2.5 Order independence.** A spec seeds what it reads and never relies on ids from 1 or on rows
 another spec left; `AutoRollbackDb` empties the database before each example (`a65e165c`). A
@@ -538,7 +545,7 @@ file of `allure-report/` (no `index.html` fails too); else it puts a
 
 | Rule | Enforced by | State |
 |---|---|---|
-| 2.4 the pool belongs to Play's app | `ConnectionPoolConfigSpec` | enforced |
+| 2.4 the pool belongs to Play's app; the tests' own pool is HikariCP | `ConnectionPoolConfigSpec` | enforced |
 | 3.1 lock specs fail without the lock | each lock spec's own "without the lock" check (db §7.6) | enforced per spec |
 | 3.2 `round_image` invariants | `RoundImageInvariants` in the write specs | enforced |
 | 4.2 guards not vacuous | a self-test in `RouteAuthSpec`, `LogHygieneSpec`, `RoleValuesSpec`, `VoteRowLockSpec`, `TestConfigAnonymousSpec`; `StructuralWritesSpec` checks its list for stale entries | partly enforced: not in `RawHtmlSinksSpec`, `RawSqlSpec`, `ErrorTextSpec`, `ExportsSpec` (§12, T8) |

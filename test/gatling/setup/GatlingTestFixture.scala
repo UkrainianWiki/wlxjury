@@ -92,17 +92,21 @@ object GatlingTestFixture {
 
   /** ScalikeJDBC's default pool for the run (`-Dgatling.pool`). At start it is always Play's
     * HikariCP pool (db.default.hikaricp, 30 connections), which scalikejdbc.PlayDBApiAdapterModule
-    * registers. "dbcp" replaces it with a commons-dbcp2 pool of ScalikeJDBC's defaults (8
-    * connections), as scalikejdbc.PlayFixtureModule's PlayInitializer registered it until it
-    * was dropped from play.modules.enabled: it raced the HikariCP pool, so earlier runs may
-    * have used either. Any other value ("hikari", the default) keeps Play's pool.
+    * registers. "small" replaces it with a HikariCP pool of 8 connections (none kept idle, at
+    * READ COMMITTED as Play's): the size of the commons-dbcp2 pool of ScalikeJDBC's defaults
+    * that scalikejdbc.PlayFixtureModule's PlayInitializer registered until it was dropped from
+    * play.modules.enabled (it raced the HikariCP pool, so earlier runs may have used either).
+    * That option was "dbcp", until commons-dbcp2 left the build. Any other value ("hikari",
+    * the default) keeps Play's pool.
     */
   private def choosePool(app: _root_.play.api.Application): Unit = {
     val started = scalikejdbc.ConnectionPool.get().dataSource.getClass.getName
-    if (GatlingConfig.pool == "dbcp") {
+    require(GatlingConfig.pool != "dbcp", "gatling.pool=dbcp is gone with commons-dbcp2: use small (HikariCP, 8 connections)")
+    if (GatlingConfig.pool == "small") {
       val c = app.configuration
-      scalikejdbc.ConnectionPool.add(scalikejdbc.ConnectionPool.DEFAULT_NAME, c.get[String]("db.default.url"),
-        c.get[String]("db.default.username"), c.get[String]("db.default.password"), scalikejdbc.ConnectionPoolSettings())
+      scalikejdbc.ConnectionPool.singleton(_root_.db.scalikejdbc.HikariTestPool(c.get[String]("db.default.url"),
+        c.get[String]("db.default.username"), c.get[String]("db.default.password"), name = "gatling-small",
+        minimumIdle = 0, maximumPoolSize = 8))
     }
     println(s"[pool] at start: $started; for the run (gatling.pool=${GatlingConfig.pool}): " +
       scalikejdbc.ConnectionPool.get().dataSource.getClass.getName)
