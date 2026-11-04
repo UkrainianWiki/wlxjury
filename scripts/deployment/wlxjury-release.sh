@@ -593,12 +593,15 @@ remove() {  # remove yes|no PATH LABEL [MORE...]: delete PATH and MORE, or say i
 prune_old() {  # prune_old yes|no: delete (yes) or list (no) what the retention rules let go
   local apply=$1 keep_releases keep_dumps keep_days current current_op=-1 dir name path dump why
   local i order=0 kept=0 count=0 now mtime paths previous
-  local -a operations=() names=() lines=() drop_releases=() drop_dumps=() staging=()
+  local -a operations=() names=() lines=() drop_releases=() drop_dumps=() unpacks=()
+  # Not "staging": on_exit removes that global, and a local of that name would shadow it.
   local -A last=() keep=()
   # Explicit exits: from reopen this runs where set -e does not apply.
-  keep_releases=$(setting keep_previous_releases 2) || exit 1
-  keep_dumps=$(setting keep_backup_dumps 3) || exit 1
-  keep_days=$(setting keep_backup_days 14) || exit 1
+  # By count (the user, 2026-11-04: releases are infrequent); keep_backup_days 0 turns the age
+  # rule off, and is the default.
+  keep_releases=$(setting keep_previous_releases 4) || exit 1
+  keep_dumps=$(setting keep_backup_dumps 5) || exit 1
+  keep_days=$(setting keep_backup_days 0) || exit 1
   [ "$keep_releases" -ge 1 ] || die "keep_previous_releases must be at least 1: restore needs the previous release"
   [ "$keep_dumps" -ge 1 ] || die "keep_backup_dumps must be at least 1: restore needs the newest dump"
   [ -L "$ROOT/current" ] || die "$ROOT/current must link to the running release; nothing was deleted"
@@ -607,7 +610,13 @@ prune_old() {  # prune_old yes|no: delete (yes) or list (no) what the retention 
   keep[$current]='the current release'
 
   # Operations oldest first: both tools name their folders by UTC start time. A symlink there
-  # could hide an open operation, so it stops the prune.
+  # could hide an open operation, so it stops the prune; so does a name the line-based lists
+  # below can't carry.
+  for dir in "$BACKUPS"/* "$ROOT/releases"/*; do
+    case $dir in
+      *$'\n'* | *$'\t'*) die "a name with a line break or tab in $(dirname "$dir"); rename it by hand; nothing was deleted" ;;
+    esac
+  done
   for dir in "$BACKUPS"/*; do
     if [ -L "$dir" ] && { [ -e "$dir/record" ] || [ -e "$dir/deployment.json" ]; }; then
       die "$dir is a symlink to an operation folder; resolve it by hand; nothing was deleted"
@@ -624,6 +633,8 @@ prune_old() {  # prune_old yes|no: delete (yes) or list (no) what the retention 
     if ! paths=$(operation_releases "$dir"); then
       if operation_open "$dir"; then
         die "cannot read the releases of the open operation $(basename "$dir"); nothing was deleted"
+      elif [ -f "$dir/database.sql.gz" ]; then
+        die "cannot read the releases of the operation $(basename "$dir"), which has a dump; nothing was deleted"
       fi
       echo "Note: cannot read the releases of the finished operation $(basename "$dir"); it keeps nothing"
       continue
@@ -633,6 +644,8 @@ prune_old() {  # prune_old yes|no: delete (yes) or list (no) what the retention 
       if [ -z "$name" ]; then
         if operation_open "$dir"; then
           die "the open operation $(basename "$dir") names $path, outside $ROOT/releases; nothing was deleted"
+        elif [ -f "$dir/record" ] && [ -f "$dir/database.sql.gz" ]; then
+          die "the operation $(basename "$dir"), which has a dump, names $path, outside $ROOT/releases; nothing was deleted"
         fi
         continue
       fi
@@ -657,6 +670,7 @@ prune_old() {  # prune_old yes|no: delete (yes) or list (no) what the retention 
     if operation_open "$dir"; then why='its operation is open'
     elif [ "$count" -le "$keep_dumps" ]; then why="one of the newest $keep_dumps"
     elif [ "$i" = "$current_op" ]; then why='taken by the operation that deployed the current release'
+    elif [ "$keep_days" = 0 ]; then why=''  # The age rule is off.
     elif ! mtime=$(stat -c %Y -- "$dump" 2>/dev/null) || ! [[ $mtime =~ ^[0-9]+$ ]]; then why="its age can't be read"
     elif [ $((now - mtime)) -lt $((keep_days * 86400)) ]; then why="younger than $keep_days days"
     else why=''
@@ -668,7 +682,7 @@ prune_old() {  # prune_old yes|no: delete (yes) or list (no) what the retention 
     echo "Keep dump $(basename "$dir")/database.sql.gz: $why"
     previous=$(record_of "$dir" previous)
     name=$(release_name "$previous")
-    if [ -z "$name" ] || [ ! -d "$ROOT/releases/$name" ]; then
+    if [ ! -d "$ROOT/releases/$name" ]; then
       echo "Note: the previous release of $(basename "$dir") is gone, so its dump is for a manual import only"
     elif [ -z "${keep[$name]:-}" ]; then
       keep[$name]="restore of the kept dump $(basename "$dir") switches back to it"
@@ -707,14 +721,14 @@ prune_old() {  # prune_old yes|no: delete (yes) or list (no) what the retention 
     fi
   done
   for dir in "$ROOT/releases"/.staging.*; do
-    if [ -d "$dir" ] && [ ! -L "$dir" ]; then staging+=("$dir"); fi
+    if [ -d "$dir" ] && [ ! -L "$dir" ]; then unpacks+=("$dir"); fi
   done
 
   # Only now, with every decision made, delete.
   for name in "${drop_releases[@]}"; do
     remove "$apply" "$ROOT/releases/$name" "release $name" || exit 1
   done
-  for dir in "${staging[@]}"; do
+  for dir in "${unpacks[@]}"; do
     remove "$apply" "$dir" "the unfinished unpack $(basename "$dir")" || exit 1
   done
   for dir in "${drop_dumps[@]}"; do
