@@ -203,3 +203,9 @@ its reason. The patch inventory, targeted tests and the keep-or-replace decision
   statistics).
 - **U6 (4.1, 3.3):** form fields without a label (axe `label`, `select-name`, critical): the
   contest images page's `#source`, and the new round form's `#jurors` select behind Tom Select.
+- **U7 (2, testing §10.2):** in Firefox, leaving a gallery by a form POST (sign-out, the theme
+  switch) twice raised a page error on the page being left, `TypeError: can't access property
+  "hasAttribute", document.body is null` (Bootstrap 5.3's jQuery check, `document.body.hasAttribute`),
+  in two of five three-engine runs (2026-11-04); not seen in 24 Firefox runs of those specs alone.
+  The browser tests still fail on it (no allowance); the guard now records the stack, to find
+  which script calls Bootstrap after the body is gone. Users don't see it (the page is being left).

@@ -11,7 +11,7 @@ import { galleryPath, largePath } from '../lib/actions.js';
 import { OUT } from '../lib/server.js';
 
 // rule id -> where it is triaged (UI practices §9); a finding of these is reported, not failed.
-// The first scans (2026-11-04) found these six rules on 11 of the 17 pages.
+// The first scans (2026-11-04) found these six rules on 9 to 11 of the 17 pages.
 const KNOWN = {
   'color-contrast': 'U4: outline-secondary buttons and theme labels below 4.5:1',
   'button-name': 'U5: icon-only buttons inside links (campaigns, users)',
