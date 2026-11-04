@@ -86,7 +86,8 @@ class RoundWritesGuardSpec extends Specification with TestDb with BeforeAll with
       val (round, _) = setUp()
       (DB.localTx(implicit s => ImageJdbc.moveVotesAsideInRound(round, Seq(1L))) must throwA[IllegalStateException]) and
         (DB.localTx(implicit s => ImageJdbc.moveVotesBackInRound(round, Seq(1L))) must throwA[IllegalStateException]) and
-        (DB.localTx(implicit s => RoundImageJdbc.disqualify(round, Map(1L -> "x"), RoundImageJdbc.DqCode.Coi, None)) must
+        (DB.localTx(implicit s =>
+          RoundImageJdbc.disqualify(round, Map(1L -> "x"), RoundImageJdbc.DqCode.Coi, None, Map(1L -> "in"))) must
           throwA[IllegalStateException]) and
         (votes(round) === 1) and (RoundImageJdbc.find(round, 1L).map(_.status) === Some("in"))
     }
@@ -94,8 +95,9 @@ class RoundWritesGuardSpec extends Specification with TestDb with BeforeAll with
       val (round, _) = setUp()
       DB.localTx { implicit s =>
         RoundWrites.lock(Seq(round))
+        val prior = RoundImageJdbc.statuses(round, Seq(1L))
         ImageJdbc.moveVotesAsideInRound(round, Seq(1L))
-        RoundImageJdbc.disqualify(round, Map(1L -> "x"), RoundImageJdbc.DqCode.Coi, None)
+        RoundImageJdbc.disqualify(round, Map(1L -> "x"), RoundImageJdbc.DqCode.Coi, None, prior)
       } === 1
       val restored = DB.localTx { implicit s =>
         ImageJdbc.lockRoundsOfArchived(Seq(1L)); ImageJdbc.lockFiles(Seq(1L)); ImageJdbc.restoreVotes(Seq(1L))

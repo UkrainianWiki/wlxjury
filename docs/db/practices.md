@@ -122,8 +122,8 @@ key's name (`RoundService` matches `submit_token_uidx`) and answers with a messa
 **2.4 Foreign keys where the parent outlives the child** and the cascade is wanted
 (`round_image` → `round`, `images`; `round_criterion` → `round`, `criterion`;
 `vote.page_id` → `images` (V58); `round_image_event` → `round` (V88), but not → `images`: its
-check would share-lock the image row after `round_image`, out of the §7.1 order, and an image
-deleted leaves its events unread). **Exceptions:** `vote.round_id`, `vote_aside` and
+check would share-lock the image row after `round_image`, out of the §7.1 order; an image
+deleted keeps its events, which the round's history shows as `#pageId`). **Exceptions:** `vote.round_id`, `vote_aside` and
 `criteria_rate.vote_id` have none: a vote moves between `vote` and `vote_aside` keeping its
 id (no single parent table), and an FK check takes a share lock on the parent row for every
 child row written, which for `round` in a 15k-row step is a lock the round-first order must

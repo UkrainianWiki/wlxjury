@@ -230,11 +230,14 @@ object RoundImageJdbc {
     * (cut to [[DqDetailLength]]), who and when. Rows already `dq` keep theirs. Each row marked
     * is recorded, after the rows, as a `disqualify` event with `code` ([[RoundImageEventJdbc]],
     * V88): its status before, as `prior` gives it (the caller's read before it moved the votes
-    * aside, which made the rows `deleted`), else as found here; and after (`dq`). A structural
-    * write: the caller has locked the round first ([[RoundWrites]]; checked).
+    * aside, which made the rows `deleted`), and after (`dq`). A row to mark that `prior` lacks
+    * is refused before anything is written (an [[IllegalArgumentException]]): the status found
+    * here may already be the move's, so it is never guessed. A structural write: the caller has
+    * locked the round first ([[RoundWrites]]; checked).
     *
     * @param details page id -> `dq_detail`
-    * @param prior   page id -> the row's status before the caller's moves ([[statuses]])
+    * @param prior   page id -> the row's status before the caller's moves ([[statuses]], read
+    *                under the round's lock before them); required for every row to mark
     * @return the rows marked
     */
   def disqualify(
@@ -242,7 +245,7 @@ object RoundImageJdbc {
       details: Map[Long, String],
       code: String,
       by: Option[Long],
-      prior: Map[Long, String] = Map.empty
+      prior: Map[Long, String]
   )(implicit session: DBSession): Int = {
     require(DqCode.All.contains(code), s"unknown dq_code $code")
     if (details.isEmpty) 0
@@ -251,6 +254,9 @@ object RoundImageJdbc {
       val pageIds = details.keys.toSeq.sorted
       val found = sql"""SELECT page_id, status FROM round_image WHERE round_id = $roundId AND page_id IN ($pageIds)
                         ORDER BY page_id FOR UPDATE""".map(rs => rs.long(1) -> rs.string(2)).list()
+      val toMark = found.collect { case (pageId, status) if status != Status.Dq => pageId }
+      val unknown = toMark.filterNot(prior.contains)
+      require(unknown.isEmpty, s"no prior status for pages ${unknown.take(10).mkString(", ")} of round $roundId")
       val marked = details.toSeq.groupBy { case (_, detail) => detail.take(DqDetailLength) }.toSeq.sortBy(_._1).map {
         case (detail, ofDetail) =>
           sql"""UPDATE round_image SET status = ${Status.Dq}, dq_code = $code, dq_detail = $detail, dq_by = $by,
@@ -259,10 +265,7 @@ object RoundImageJdbc {
             .update()
       }.sum
       // the rows found locked and not yet `dq` are those the updates marked
-      val changes = found.collect {
-        case (pageId, status) if status != Status.Dq =>
-          RoundImageEventJdbc.Change(pageId, prior.getOrElse(pageId, status), Some(Status.Dq))
-      }
+      val changes = toMark.map(pageId => RoundImageEventJdbc.Change(pageId, prior(pageId), Some(Status.Dq)))
       RoundImageEventJdbc.record(roundId, RoundImageEventJdbc.Action.Disqualify, code, by, changes)
       marked
     }

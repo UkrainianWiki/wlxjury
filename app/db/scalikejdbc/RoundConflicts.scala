@@ -18,7 +18,8 @@ import scalikejdbc._
   *    the votes back exactly, the rows `in` again; a file that was `deleted` (deleted on Commons
   *    while the round was open) and still is stays `deleted`, its votes aside. A file deleted on
   *    Commons after it was disqualified is `in`, as any deleted file of a round that is not
-  *    open: its votes move aside when the round opens ([[Round.setActiveGuarded]]).
+  *    open: its votes move aside when the round opens ([[Round.setActiveGuarded]]). Two rare
+  *    residual cases are listed at [[requalify]].
   *
   * Each file disqualified or requalified is recorded in `round_image_event`
   * ([[RoundImageEventJdbc]]) in the action's transaction, after its row: the round's history on
@@ -162,9 +163,21 @@ object RoundConflicts {
     *    until it opens ([[services.imports.DeletedFiles]]), so it is `in` as it was (review
     *    finding 1).
     *  - Was `deleted` (deleted on Commons while the round was open, its votes aside) and still
-    *    deleted: `deleted`, its votes left aside (§14's known limitation, lifted by V88). Restored
-    *    on Commons meanwhile: `in` with its votes, as a restore would have done.
+    *    deleted: `deleted`, its votes left aside (the case of §14's known limitation, fixed by
+    *    V88). Restored on Commons meanwhile: `in` with its votes, as a restore would have done.
     *  - Disqualified before V88 (no event): `in` with its votes, as before V88.
+    *
+    * Residual limitations (plan §15): the events record the status at the disqualify, not what
+    * happened to the file while it was disqualified, nor whether the round was open then.
+    *  - A: disqualified on a stopped round (`in`), the round opened, the file deleted on Commons
+    *    (its votes already aside), the round stopped, then requalified: `in` with its votes,
+    *    where a file not disqualified would be `deleted`. The round's next opening moves them
+    *    aside.
+    *  - B: was `deleted`, restored on Commons while disqualified, deleted again while the round
+    *    is stopped, then requalified: `deleted`, its votes aside, where review finding 1's rule
+    *    for a file deleted while the round is stopped gives `in` with its votes. A restore on
+    *    Commons brings them back.
+    * Both keep the invariants; telling them apart needs the round's open/closed history.
     *
     * A requalified file is offered again by a later re-check while its author still matches (no
     * overrides yet, plan §7).
@@ -234,8 +247,9 @@ object RoundConflicts {
     def ended: Seq[DisqualifiedFile] = disqualified.filter(_.matchNow.isEmpty)
   }
 
-  /** An event of the round's history (`round_image_event`): the file's title and the name of
-    * who did it, if their account is still there.
+  /** An event of the round's history (`round_image_event`): the file's title (`#pageId` for an
+    * image no longer stored) and the name of who did it, if their account is still there and
+    * not deleted (the page shows `#id` otherwise).
     */
   final case class HistoryEntry(event: RoundImageEventJdbc.Event, title: String, byName: Option[String])
 
@@ -258,7 +272,8 @@ object RoundConflicts {
     val names =
       if (userIds.isEmpty) Map.empty[Long, String]
       else
-        sql"SELECT id, fullname FROM users WHERE id IN ($userIds)"
+        // a soft-deleted account (`deleted_at`) is shown as `#id`
+        sql"SELECT id, fullname FROM users WHERE id IN ($userIds) AND deleted_at IS NULL"
           .map(rs => rs.long(1) -> rs.stringOpt(2).getOrElse("")).list().toMap
     def title(pageId: Long) = files.get(pageId).map(_._1).getOrElse(s"#$pageId")
     Review(

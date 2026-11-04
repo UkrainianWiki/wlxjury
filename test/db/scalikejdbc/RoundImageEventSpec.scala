@@ -62,13 +62,20 @@ class RoundImageEventSpec extends Specification with TestDb with BeforeAll with 
               VALUES ($round, 1, $action, 'coi', $prior, $now)""".update()
       }
       (insert("removed", "in", "dq") must throwA[SQLException]) and
+        // BINARY: the CHECKs are case-sensitive, under the table's case-insensitive collation
+        (insert("Disqualify", "in", "dq") must throwA[SQLException]) and
+        (insert("disqualify", "IN", "dq") must throwA[SQLException]) and
+        (insert("disqualify", "in", "DQ") must throwA[SQLException]) and
+        // the lower-case values pass
+        (insert("disqualify", "in", "dq") === 1) and
         (insert("disqualify", "out", "dq") must throwA[SQLException]) and
         (insert("disqualify", "in", "gone") must throwA[SQLException]) and
         (DB.localTx { implicit s =>
           RoundWrites.lock(Seq(round))
           RoundImageEventJdbc.record(round, Action.Disqualify, "x" * 17, None, Seq(Change(1L, "in", Some("dq"))))
         } must throwA[IllegalArgumentException]) and
-        (RoundImageEventJdbc.byRound(round) must beEmpty)
+        (RoundImageEventJdbc.byRound(round).map(e => (e.action, e.priorStatus, e.newStatus)) ===
+          Seq(("disqualify", "in", Some("dq"))))
     }
 
     "go with its round" in {
@@ -107,6 +114,19 @@ class RoundImageEventSpec extends Specification with TestDb with BeforeAll with 
         (voted(round) === Set(1L, 2L)) and (status(round, 1L) === Some("in")) and (status(round, 2L) === Some("in")) and
         (RoundImageJdbc.disqualified(round) must beEmpty) and (RoundImageEventJdbc.byRound(round) must beEmpty) and
         (RoundImageInvariants.violations(round) must beEmpty)
+    }
+
+    "be refused, before anything is written, for a row to mark whose prior status isn't given" in {
+      val (round, _) = setUp()
+      (DB.localTx { implicit s =>
+        RoundWrites.lock(Seq(round))
+        val prior = RoundImageJdbc.statuses(round, Seq(1L))
+        ImageJdbc.moveVotesAsideInRound(round, Seq(1L, 2L))
+        // file 2's prior status missing: never guessed from the moved row's `deleted`
+        RoundImageJdbc.disqualify(round, Map(1L -> "x", 2L -> "y"), DqCode.Coi, None, prior)
+      } must throwA[IllegalArgumentException]("no prior status for pages 2")) and
+        (voted(round) === Set(1L, 2L)) and (RoundImageJdbc.disqualified(round) must beEmpty) and
+        (RoundImageEventJdbc.byRound(round) must beEmpty)
     }
 
     "roll back with its action when the transaction fails after it" in {

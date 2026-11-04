@@ -229,6 +229,22 @@ class RoundConflictsAuthorizationSpec extends PlaySpecification with PlayTestDb 
       }
     }
 
+    "show a deleted account in the history as its id, not its name" in {
+      testDbApp { app =>
+        val (round, _) = setUp()
+        val r = round.getId
+        val admin = User.findByEmail("admin@example.com").head
+        status(post(app, Some("admin@example.com"), disqualify(r), "pageId" -> "1")) === SEE_OTHER
+        def rows(body: String) = """(?s)data-event="\d+".*?</tr>""".r.findAllIn(body).toSeq
+        val named = rows(contentAsString(get(app, "organizer@example.com", page(r))))
+        DB.autoCommit(implicit s => sql"UPDATE users SET deleted_at = NOW() WHERE id = ${admin.getId}".update())
+        val deleted = rows(contentAsString(get(app, "organizer@example.com", page(r))))
+        (named.size === 1) and (named.head must contain("<td>admin@example.com</td>")) and
+          (deleted.size === 1) and (deleted.head must contain(s"<td>#${admin.getId}</td>")) and
+          (deleted.head must not(contain("admin@example.com")))
+      }
+    }
+
     "say when the round has no history yet" in {
       testDbApp { app =>
         val (round, _) = setUp()

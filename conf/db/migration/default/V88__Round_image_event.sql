@@ -22,7 +22,8 @@
 -- round_image's (a deleted round takes its history with it); its check share-locks the round
 -- row, which the writer already holds for update. No foreign key to images: its check would
 -- share-lock the image row after round_image, out of the lock order; an image deleted takes its
--- round_image rows (their cascade) and leaves its events, which nothing reads without them.
+-- round_image rows (their cascade) and keeps its events, which the round's history still shows
+-- (as #page_id, its title gone).
 --
 -- round_image_event_round_page_idx (round_id, page_id, id): a file's history in order (ids grow
 -- with time: each action holds its round's lock), its latest event (the requalify's prior
