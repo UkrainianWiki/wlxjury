@@ -25,9 +25,10 @@ on sign-in; round merging deleted; the denial line logs the account id only.
 
 ## Still open
 
-**Manual and production checks (the user):** 3.1 theme flash in Chrome and Firefox and the
-`auto` screenshots, 3.2 category suggestions against live Commons, 3.3 Back after a vote: listed
-under the roadmap's pre-deploy "Every release".
+**Manual and production checks (the user):** 3.1 the `auto` screenshots (the theme flash is now
+the browser tests', in one current build of each engine), 3.2 category suggestions against live
+Commons, 3.3 Back after a vote in Safari (Firefox's is the browser tests'; Chromium's shows the
+old vote, UI practices §9 U23): listed under the roadmap's pre-deploy "Every release".
 
 3.4 **The criteria count of round 1327** (`CriteriaRate.countOf` replaced the hard-coded 2):
 check it against production data. Read-only SQL on production can only be run by the user

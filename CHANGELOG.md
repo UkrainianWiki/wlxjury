@@ -103,10 +103,13 @@ Developed 2026-11-02 to 2026-11-03, PRs #232–#236.
   review triage tools in `scripts/review/` (#250).
 - An English juror guide, `docs/user/juror-guide.md`, written from the tool as it is; not
   published yet.
-- Browser tests: Playwright on desktop Chromium, Firefox and WebKit, a CI job per engine on
-  every PR, against the screenshot fixture with Commons stubbed; votes, Back after a vote, the
-  colour modes, refusals and organizer pages, with zero CSP violations and console errors per
-  page and an accessibility scan ([testing practices](docs/testing/practices.md) §10).
+- Browser tests: Playwright in one current build each of desktop Chromium, Firefox and WebKit,
+  a CI job per engine on every PR, against the screenshot fixture with Commons stubbed; votes,
+  Back after a vote, the colour modes, refusals and organizer pages, with zero CSP violations and
+  console errors per page and an accessibility scan ([testing practices](docs/testing/practices.md) §10).
+- A compatibility lint of our scripts and stylesheets against the supported browsers
+  (`.browserslistrc`: the last two majors, Chrome 109, Firefox 115), a step of CI; older versions
+  are linted, not run in a browser.
 - **Migrations:** V85 gallery index, V86 timestamp definitions, V87 for the sign-in (#240).
 
 ## Deployed

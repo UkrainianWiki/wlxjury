@@ -117,25 +117,33 @@ performance §1.7.
 **5.2 Browser checks.** `--checks` runs `ui_checks.py` after the shots: a vote by key in the large
 view of both rounds, then Back, shows the stored vote; the large view's side sections are drawn in
 their stored state from the first frame. The browser tests (testing §10) run these checks, and
-more, in three engines on every PR; `--checks` stays as the harness's quick check in Chrome.
+more, in one current build of each engine on every PR; `--checks` stays as the harness's quick
+check in Chrome.
 
 **5.3 Every release:** the manual checks left in the roadmap's "Every release" (the `auto`
-screenshots in both schemes, looked at; category suggestions against live Commons). The theme
-flash and Back after a vote are now the browser tests' (`theme.spec.js`, `voting.spec.js`).
+screenshots in both schemes, looked at; Back after a vote in Safari, which the browser tests'
+WebKit can't show; category suggestions against live Commons). The theme flash, in one current
+build of each engine, and Back after a vote, in Firefox and Chromium, are now the browser tests'
+(`theme.spec.js`, `voting.spec.js`; in Chromium Back shows the old vote, U23).
 
 ## 6. Supported browsers
 
-**6.1 Desktop** (the user, 2026-11-03): supported and tested are the current and previous major
-versions of Chromium-based browsers (Chrome, Edge, Opera), Firefox and Safari (WebKit). A major is
-the first version number: Chromium and Firefox ship one every four weeks, Safari once a year with
-the OS. The browser tests (testing §10) run all three engines on every PR, in Playwright's
-current builds (Chromium 156, Firefox 157, WebKit 27.2 with Playwright 1.64.1); a visible change
-is still looked at by hand in at least Chromium and Firefox (§5). *Why:* the engines the browser
-tests run.
+**6.1 Desktop** (the user, 2026-11-03): supported are the current and previous major versions of
+Chromium-based browsers (Chrome, Edge, Opera), Firefox and Safari (WebKit). A major is the first
+version number: Chromium and Firefox ship one every four weeks, Safari once a year with the OS.
+*Tested in a browser* is less: the browser tests (testing §10) run one current build of each
+engine on every PR, the one Playwright 1.64.1 bundles (Chromium 156, Firefox 157, WebKit 27.2).
+The previous majors are *linted* only (`.browserslistrc`, the compatibility lint: our scripts'
+APIs and stylesheets' features), never run. A visible change is still looked at by hand in at
+least Chromium and Firefox (§5). *Why:* the engines the browser tests run.
 
 **6.1a Compatibility floor: Chrome 109 and Firefox 115.** Signing in, voting and the core pages
 must keep working there (cosmetic issues aren't fixed): no JavaScript or CSS feature newer than
-those versions. *Why:* in a 14-day sample of production's signed-in visitors (2026-11-03, 105
+those versions. *Checked by:* the compatibility lint only (`.browserslistrc` includes them;
+`npm --prefix javascript-test run lint`, a step of `ci.yml`'s job), which sees our scripts' browser
+APIs, their syntax (ES2022) and our stylesheets' features, not how a page renders or behaves
+there, nor a feature a fallback covers. Nothing runs in these versions, and nothing is planned to
+(the user, 2026-11-04): a difference there is found by users or by hand. *Why:* in a 14-day sample of production's signed-in visitors (2026-11-03, 105
 client and browser pairs) about a fifth used old browsers: Firefox 115 ESR, Chrome 109 (the last
 for Windows 7/8) and old Opera releases. Rerun the count each contest season and raise the floor as
 they drop out: `ssh <server> 'python3 -' < scripts/browser-stats.py` (read-only; prints counts only,
@@ -169,10 +177,10 @@ its reason. The patch inventory, targeted tests and the keep-or-replace decision
 | 3.3 form helpers | `BsFormHelpersSpec` | enforced |
 | 4.2 one h1 | `views.HeadingsViewSpec` | enforced |
 | 4.3 keys vote by path | `views.LargeViewControllerSpec`, `large-view-keys.test.js` | enforced |
-| 4.1 accessible names | axe-core per page in the browser tests' tour (`pages.spec.js`, Chromium) | enforced for serious and critical findings of rules not triaged (U19–U21); the rest a report |
-| 5 zero CSP violations and console errors | the browser tests' guards (`browser-test/lib/fixtures.js`), every page of every test | enforced |
-| 6.1 three engines | `browser.yml`: a job per engine on every PR | enforced |
-| 6.1a the floor (Chrome 109, Firefox 115) | review | planned: a Browserslist or lint check of the scripts and styles |
+| 4.1 accessible names | axe-core per page in the browser tests' tour (`pages.spec.js`, Chromium) | enforced in CI once the job runs, for serious and critical findings not triaged for that page (U19–U21); the rest a report; not yet a required check |
+| 5 zero CSP violations and console errors | the browser tests' guards (`browser-test/lib/fixtures.js`), every page of every test | enforced in CI once the job runs; not yet a required check |
+| 6.1 one current build per engine, in a browser | `browser.yml`: a job per engine on every PR | enforced in CI once the job runs; not yet a required check |
+| 6.1, 6.1a the supported range: previous majors, Chrome 109, Firefox 115 | the compatibility lint (`.browserslistrc`; `eslint-plugin-compat`, `stylelint-no-unsupported-browser-features`), a step of `ci.yml`'s job | enforced for our scripts' APIs and syntax and our stylesheets' features; not run in those browsers |
 
 ## 9. Where the code doesn't follow these yet (for triage)
 
@@ -258,5 +266,17 @@ texts, for view specs. Each can get a browser test with its fix.
   switch) twice raised a page error on the page being left, `TypeError: can't access property
   "hasAttribute", document.body is null` (Bootstrap 5.3's jQuery check, `document.body.hasAttribute`),
   in two of five three-engine runs (2026-11-04); not seen in 24 Firefox runs of those specs alone.
-  The browser tests still fail on it (no allowance); the guard now records the stack, to find
-  which script calls Bootstrap after the body is gone. Users don't see it (the page is being left).
+  Suspected cause: a Bootstrap tooltip's delayed hide (the gallery's buttons have tooltips)
+  firing after Firefox removed the page's body. Still open; accepted, by its exact message, only
+  in the two tests that leave a gallery by a POST (`sign-in.spec.js`'s sign-out, `theme.spec.js`'s
+  navbar switch) and only in Firefox (`allowFirefoxLeavingGallery`). Users don't see it (the page
+  is being left).
+- **U23 (4.3), medium bug: in Chromium, Back after a vote shows the old vote.** Chromium 156 (the
+  browser tests' routeless browser, its back/forward cache on) brings the large view back from
+  its back/forward cache although it is `no-store`, so Back shows the file with its vote from
+  before; with the cache off (`WLX_CHROMIUM_BFCACHE=off`) Back loads it again and shows the stored
+  vote. Likely Chrome's back/forward cache for `no-store` pages, which restores such a page when
+  no cookie changed, as after a vote. `voting.spec.js`'s four Back checks are expected to fail in Chromium
+  (`test.fail`) until it is fixed (2026-11-04); to confirm in a real Chrome by hand. A fix would
+  reload on `pageshow` with `persisted` (`Secured.noStore`'s comment weighs that against a flash
+  of the old votes), or change a cookie on a vote.
