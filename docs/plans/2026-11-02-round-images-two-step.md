@@ -1692,6 +1692,7 @@ Logs under `target/checks/` of the worktree.
 | MariaDB 10.11 | the three new specs and `FlywayUpgradeSpec` on `mariadb:10.11.14` | 31: 30 passed, 1 skipped; the 20-juror run 0 deadlocks | `20261105-003751-16636.log`; `RoundCountsSpec` again with the server's version printed (`10.11.14-MariaDB`), `20261105-003951-29056.log` |
 | Benchmark | `RoundCountsBenchmark` (fixture-v7 built) | exit 0, no problem | `20261105-002014-27856.log` |
 | Stress | `WritePathStress`, branch and base, two runs each | above | above |
+| Gate | full suite at `e32dbde8` (`Test/compile`, `test`, Jest included), MariaDB 10.6 container | **2025: 2017 passed, 0 failed, 0 errors, 8 skipped, 1 pending**; Jest 22 suites, 285/285; 10:30 | `20261105-004358-16720.log` |
 
 ### Open questions
 
