@@ -113,6 +113,8 @@ Developed 2026-11-02 to 2026-11-03, PRs #232–#236.
 - A compatibility lint of our scripts and stylesheets against the supported browsers
   (`.browserslistrc`: the last two majors, Chrome 109, Firefox 115), a step of CI; older versions
   are linted, not run in a browser.
+- No Scaladoc in the release: the ZIP loses `share/doc/api` (730 files, 42 MB unpacked; the ZIP
+  121.5 → 116.2 MB), and `sbt dist` no longer runs Scaladoc (208 → 72 s here).
 - **Migrations:** V85 gallery index, V86 timestamp definitions, V87 for the sign-in (#240).
 
 ## Deployed

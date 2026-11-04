@@ -158,6 +158,11 @@ Test / unmanagedSources += baseDirectory.value / "project" / "BuildIdentity.scal
 // pipeline (stage, dist) runs it: `sbt run` and tests serve plain names.
 pipelineStages := Seq(digest)
 
+// No Scaladoc in the release: Play's dist mappings would run `Compile / doc` and add it as
+// share/doc/api (42 MB that nothing on the server reads), and every stage or dist would wait
+// for it. `sbt doc` still builds it locally.
+PlayKeys.includeDocumentationInBinary := false
+
 scalaVersion := "2.13.15"
 
 // Keep source decoding and forked JVM defaults deterministic across machines.
