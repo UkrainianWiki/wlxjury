@@ -39,9 +39,37 @@ whose package updates patch its JRE.
 
 **1.2 Compatible with the build, checked at the source.** Check the version against the build's
 Scala, sbt and JDK before choosing it, and read its sources in `target/dep-sources/`
-(`sbt extractDepSources`) before the web. *Example:* sbt-scoverage 2.3.1, not 2.4.x: scoverage's
-compiler plugin is published per full Scala version, and 2.4.x starts at Scala 2.13.16 (this build
-is 2.13.15); 2.1.0 couldn't resolve at all (CI plan, "Test coverage").
+(`sbt extractDepSources`) before the web. *Example:* scoverage's compiler plugin is published
+per full Scala version, so sbt-scoverage moves with `scalaVersion`: 2.3.1 while the build was on
+2.13.15 (2.4.x starts at 2.13.16; 2.1.0 couldn't resolve at all, CI plan, "Test coverage"), 2.4.4
+with 2.13.17 (dependency-updates batch, 2026-11-04).
+
+**1.2b A version that miscompiles is skipped, with the reason next to the pin.** Scala is
+**2.13.17, not 2.13.18** (2026-11-04): 2.13.18 miscompiles a single `Int` literal passed to a
+`Long*` parameter of a method with a further (implicit, default) parameter list. The varargs
+`List` then holds a boxed `Integer`, and unboxing it throws `ClassCastException` at run time;
+2.13.15, 2.13.16 and 2.13.17 widen it. Found by `DistributeImagesBatchSpec` through
+`TestDb.createContests(10)`; nothing in `app/` has such a signature (`rg "\w+\*\)\s*\("`). The
+repro, compiled with each version's `scala.tools.nsc.Main` and run:
+
+```scala
+trait S; object AutoS extends S
+object R {
+  def create(ids: Long*)(implicit s: S = AutoS): Seq[Long] = ids.map(_ + 1)
+  def main(a: Array[String]): Unit = println(create(10)) // 2.13.18: ClassCastException
+}
+```
+
+`create(10, 20)`, `create(10L)` and a method without the second list are fine. No scala/bug issue
+matched (searched read-only on 2026-11-04: varargs, `Long`, widening, `unboxToLong`, the
+2.13.18 regressions); reporting it upstream is open. Move to a 2.13.x that fixes it once that
+release is two weeks old. Play 3.0.12 declares scala-library 2.13.18; its class list differs
+from 2.13.17's by one compile-time annotation (`scala.annotation.unchecked.uncheckedOverride`).
+2.13.18 fixed two known regressions of 2.13.17, and neither affects this build:
+- annotations invisible to macros when the annotation class extends a class with arguments
+  (scala/bug#13140, scala/scala#11173). This matters to Tapir's derived schemas, but `app/` puts
+  no such annotation on a derived type;
+- the `-Xlint:infer-any` false positives (scala/scala#11162). The build doesn't enable `-Xlint`.
 
 **1.2a Java 17 is the baseline** (the user, 2026-11-04). The build compiles with `-release:17`
 (scalac) and `--release 17` (javac); CI and the deployment test images run JDK 17, and production
@@ -115,6 +143,17 @@ scalawiki's own improvements; sbt 2 is worth investigating for development speed
 investigation").
 
 **3.2 scalawiki is pinned by commit** until a tagged package exists (integrations §2.1, §2.4).
+
+**3.4 What wlxjury excludes from scalawiki, until scalawiki changes.** `build.sbt` excludes
+`ScalawikiPlayJson2` from scalawiki-core and -wlx: these are its `com.typesafe.play` play-json
+and play-functional 2.9.4, the same classes as Play's `org.playframework` 3.0.x and loaded first.
+It also excludes `ScalawikiCharts` from -wlx: scala-chart, scala-swing, jfreechart and jcommon,
+which only its stat-bot reports use. `SpecialNominationFilterSpec` covers the `ContestStat` path
+next to them. Both exclusions go once the scalawiki PR (play-json 3, a `scalawiki-stat` module)
+is published; that PR's plan is in the roadmap's dependency-updates entry. The same commit
+excludes `commons-logging` (jcl-over-slf4j provides it) and jaxb-api's `javax.activation-api`
+(jakarta.activation 1.2.1, from play-mailer 10, carries it). *Why:* two copies of the same class
+on the classpath load whichever comes first, unannounced, because the group IDs differ.
 
 ## 4. Downloaded tools and checksums
 
@@ -202,3 +241,6 @@ the patch is reverted, and prefer replacing to patching more of it (secure-codin
   declares Node >= 22. `ci.yml` (whose job runs the lint) and `browser.yml` run Node 22.23.4
   (2026-10-20, `setup-node` pinned by SHA); `coverage.yml` still runs Node 20 (Jest only), to
   move with the next update.
+- **T6 (5.1):** `ErrorHandler.withCookieCells` is redundant since Play 3.0.9, which always gives a
+  request its cookies, session and flash (playframework #13407, #13415). Remove it, with its
+  malformed-URI spec, in a later clean-up.

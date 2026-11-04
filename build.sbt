@@ -88,6 +88,12 @@ lazy val root =
       Jmh / sourceDirectory     := (Test / sourceDirectory).value,
       Jmh / classDirectory      := (Test / classDirectory).value,
       Jmh / dependencyClasspath := (Test / dependencyClasspath).value,
+      // sbt-jmh adds jmh-core and its generators (with commons-math3 and jopt-simple) to Compile,
+      // which shipped them in the release (runtime jars investigation, 2026-11-04, decision 2).
+      // The benchmarks are in test/ and Jmh uses Test's classpath (above): Test is enough.
+      libraryDependencies := libraryDependencies.value.map { m =>
+        if (m.organization == "org.openjdk.jmh" && m.configurations.isEmpty) m % Test else m
+      },
       // Gatling sources live in test/gatling/ — separate from JMH sources in test/
 //      Gatling / scalaSource     := (Test / sourceDirectory).value / "gatling",
 //      // Exclude Gatling simulation files from Test scope (they need gatling classpath, not Test)
@@ -201,7 +207,13 @@ pipelineStages := Seq(digest)
 // for it. `sbt doc` still builds it locally.
 PlayKeys.includeDocumentationInBinary := false
 
-scalaVersion := "2.13.15"
+// 2.13.17, not 2.13.18: 2.13.18 miscompiles a single Int literal passed to `Long*` in a method
+// with a further (implicit, default) parameter list, e.g. TestDb.createContests(10): the List
+// holds a boxed Integer and unboxing throws ClassCastException at run time (2.13.15-2.13.17
+// widen it). Play 3.0.12 and webjars-play 3.0.10 declare scala-library 2.13.18; 2.13.18's
+// library adds only one compile-time annotation class to 2.13.17's. Move to 2.13.19+ once a
+// release fixes this and is two weeks old.
+scalaVersion := "2.13.17"
 
 // Keep source decoding and forked JVM defaults deterministic across machines.
 ThisBuild / scalacOptions += "-encoding"
@@ -215,14 +227,16 @@ ThisBuild / javacOptions ++= Seq("--release", "17")
 ThisBuild / javaOptions += "-Dfile.encoding=UTF-8"
 Universal / javaOptions += "-Dfile.encoding=UTF-8"
 
-val ScalikejdbcVersion = "4.3.2"
+val ScalikejdbcVersion = "4.3.5"
 // Flyway runs from db.Migrations (no flyway-play): docs/plans/2026-11-03-flyway.md
 val FlywayVersion = "13.12.0"
 val ScalikejdbcPlayVersion = "3.0.1-scalikejdbc-4.3"
 val ScalawikiVersion = "0.7.0-SNAPSHOT"
-val PlayMailerVersion = "9.0.0"
+// play-mailer 10 is the Play 3 line (org.playframework); 9.x was Play 2.9's (com.typesafe.play)
+val PlayMailerVersion = "10.1.0"
 val MockServerVersion = "5.7.0"
-val playVersion = "3.0.7"
+// the Play sbt plugin's version (project/plugins.sbt) sets Play's; keep this in step
+val playVersion = "3.0.12"
 // Login with Google and Wikimedia accounts (services.oauth): PKCE, state, nonce, the token exchange
 // and, for Google, OpenID Connect discovery and ID token validation. No pac4j (S10 removed it).
 val NimbusOAuthVersion = "11.38.2"
@@ -230,7 +244,7 @@ val NimbusOAuthVersion = "11.38.2"
 // PekkoHttpV), which brings them too: update them there first, then here.
 val PekkoVersion = "1.0.3"
 val PekkoHttpVersion = "1.0.1"
-val ScalaTestVersion = "3.2.9"
+val ScalaTestVersion = "3.2.20"
 val TestcontainersScalaVersion = "0.41.0"
 // testcontainers-scala 0.41 brings testcontainers-java 1.19, which Docker Engine 29+
 // rejects (it no longer serves the old default API version); 1.21.4 speaks 1.44.
@@ -238,6 +252,16 @@ val TestcontainersJavaVersion = "1.21.4"
 val TapirVersion = "1.11.15"
 val MunitVersion = "0.7.29"
 val GatlingVersion = "3.8.4"
+
+val ScalawikiPlayJson2 = Seq(
+  ExclusionRule("com.typesafe.play", "play-json_2.13"),
+  ExclusionRule("com.typesafe.play", "play-functional_2.13")
+)
+val ScalawikiCharts = Seq(
+  ExclusionRule("de.sciss"), // scala-chart
+  ExclusionRule("org.scala-lang.modules", "scala-swing_2.13"),
+  ExclusionRule("org.jfree") // jfreechart, jcommon
+)
 
 // Bintray (and with it JCenter) shut down in 2021; every dependency is on Maven Central.
 // scalawiki comes from ~/.ivy2/local (sbt's default, where scalawiki's publishLocal goes)
@@ -247,7 +271,8 @@ resolvers += Resolver.mavenLocal
 libraryDependencySchemes += "org.scala-lang.modules" %% "scala-parser-combinators" % "always"
 
 libraryDependencies ++= Seq(
-  "org.webjars" %% "webjars-play" % "3.0.2",
+  // The webjars' files are served by controllers.WebJars from META-INF/resources/webjars, with
+  // no locator: webjars-play (and its webjars-locator chain) isn't needed
   "org.webjars" % "jquery" % "3.7.1",
   // Bootstrap 5's bundle JS includes Popper; Tom Select's complete build includes its two deps
   "org.webjars" % "bootstrap" % "5.3.8" exclude ("org.webjars", "popper.js"),
@@ -261,20 +286,26 @@ libraryDependencies ++= Seq(
   "org.flywaydb" % "flyway-core" % FlywayVersion,
   "org.flywaydb" % "flyway-mysql" % FlywayVersion,
   "org.mariadb.jdbc" % "mariadb-java-client" % "3.5.3",
-  "org.scalawiki" %% "scalawiki-core" % ScalawikiVersion,
-  "org.scalawiki" %% "scalawiki-wlx" % ScalawikiVersion,
+  // scalawiki-core still declares play-json 2.9.4 under the old `com.typesafe.play` group, which
+  // Coursier keeps beside Play's `org.playframework` 3.0.x: the same 306 classes twice, 2.9.4
+  // first on the classpath. Every member wlxjury, Play, Tapir and scalawiki call exists in 3.0.x
+  // (runtime jars investigation, decision 4). scalawiki-wlx brings scala-chart (with scala-swing,
+  // jfreechart and jcommon) for its stat-bot reports, which wlxjury never runs (decision 2).
+  // Both exclusions go once scalawiki moves to play-json 3 and splits its stat module out.
+  "org.scalawiki" %% "scalawiki-core" % ScalawikiVersion excludeAll (ScalawikiPlayJson2: _*),
+  "org.scalawiki" %% "scalawiki-wlx" % ScalawikiVersion excludeAll (ScalawikiPlayJson2 ++ ScalawikiCharts: _*),
   "org.apache.pekko" %% "pekko-stream" % PekkoVersion,
   "org.apache.pekko" %% "pekko-http" % PekkoHttpVersion,
   "com.nimbusds" % "oauth2-oidc-sdk" % NimbusOAuthVersion,
-  "com.typesafe.play" %% "play-mailer" % PlayMailerVersion,
-  "com.typesafe.play" %% "play-mailer-guice" % PlayMailerVersion,
-  "com.github.tototoshi" %% "scala-csv" % "1.4.1",
+  "org.playframework" %% "play-mailer" % PlayMailerVersion,
+  "org.playframework" %% "play-mailer-guice" % PlayMailerVersion,
+  // 2.0.0, the version scalawiki-wlx brings and the one that runs
+  "com.github.tototoshi" %% "scala-csv" % "2.0.0",
   // ImageIO needs a WebP reader to resize Commons images for the thumbnail cache.
-  "com.twelvemonkeys.imageio" % "imageio-webp" % "3.15.0",
+  "com.twelvemonkeys.imageio" % "imageio-webp" % "3.15.3",
   "uk.org.lidalia" % "sysout-over-slf4j" % "1.0.2",
   // Password hashes (services.PasswordHasher): bcrypt $2b$, cost from password.bcrypt.cost
   "at.favre.lib" % "bcrypt" % "0.10.2",
-  "javax.xml.bind" % "jaxb-api" % "2.3.1",
   "com.softwaremill.sttp.tapir" %% "tapir-core" % TapirVersion,
   // the REST API (api.ApiRouter) on Play's own server, through its filters; Play's Pekko
   // HTTP server stays out (the app runs on Netty)
@@ -293,17 +324,28 @@ libraryDependencies ++= Seq(
   "com.dimafeng" %% "testcontainers-scala-mysql" % TestcontainersScalaVersion % Test,
   "io.chrisdavenport" %% "testcontainers-specs2" % "0.2.0-M5" % Test,
   "org.mock-server" % "mockserver-netty" % MockServerVersion % Test,
-  "net.java.dev.jna" % "jna" % "4.5.0" % Test,
-  "net.java.dev.jna" % "jna-platform" % "4.5.0" % Test,
-  "com.lihaoyi" %% "os-lib" % "0.11.4" % Test,
+  "net.java.dev.jna" % "jna" % "5.19.1" % Test,
+  "net.java.dev.jna" % "jna-platform" % "5.19.1" % Test,
+  // 0.11.8: 0.11.9 (2026-10-26) and 0.11.10 (2026-10-27) were under two weeks old on 2026-11-04
+  "com.lihaoyi" %% "os-lib" % "0.11.8" % Test,
   "org.apache.pekko" %% "pekko-stream-testkit" % PekkoVersion % Test,
   "org.scalameta" %% "munit" % MunitVersion % Test,
   "io.gatling.highcharts" % "gatling-charts-highcharts" % GatlingVersion % Test,
   "io.gatling" % "gatling-test-framework" % GatlingVersion % Test
 )
 
+// commons-dbcp2 (from scalikejdbc-core) brings commons-logging, which Play's jcl-over-slf4j
+// already provides (and shadows on the classpath)
+excludeDependencies += ExclusionRule("commons-logging", "commons-logging")
+// play-mailer 10's jakarta.mail brings com.sun.activation:jakarta.activation 1.2.1: the
+// javax.activation API (the same 31 classes) and the implementation MailcapCommandMap needs.
+// jaxb-api's javax.activation-api 1.2.0 (from scalawiki-core) would be a second copy of the API.
+excludeDependencies += ExclusionRule("javax.activation", "javax.activation-api")
+
 dependencyOverrides ++= Seq(
-  "commons-io" % "commons-io" % "2.16.1"
+  "commons-io" % "commons-io" % "2.22.0",
+  // 3.13.0 came with webjars-play's commons-text; without it scalawiki's 3.4 (2015) would win
+  "org.apache.commons" % "commons-lang3" % "3.13.0"
 ) ++ Seq("testcontainers", "jdbc", "database-commons", "mariadb", "mysql").map { module =>
   "org.testcontainers" % module % TestcontainersJavaVersion
 }

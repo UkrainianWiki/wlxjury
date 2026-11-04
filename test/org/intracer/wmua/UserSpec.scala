@@ -85,6 +85,16 @@ class UserSpec extends Specification {
       )
     }
 
+    // jakarta.mail 1.6.7 (play-mailer 10) parses non-ASCII where javax.mail 1.5.6 threw; Play's
+    // emailAddress check still refuses the address, so both stay wiki account names as before
+    "keep non-ASCII names and addresses as wiki accounts" in {
+      val strings = Seq("Ім'я Прізвище", "юзер@приклад.укр", "Ім'я Прізвище <юзер@приклад.укр>")
+
+      User.parseList(strings.mkString("\n")) === strings.map { account =>
+        User(id = None, contestId = None, fullname = "", email = "", wikiAccount = Some(account))
+      }
+    }
+
     "parse names and emails newlines and commas" in {
       val strings = Seq(
         "Name1 Surname1 <email1@server.com>",
