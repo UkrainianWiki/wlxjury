@@ -475,8 +475,8 @@ object ImageJdbc extends CRUDMapper[Image]
 
   /** Moves back the votes aside of the round's disqualified files `pageIds`, to requalify
     * them ([[RoundConflicts.requalify]]), with their exact rates and criteria rates (their
-    * ids kept); their rows then follow their votes, `dq` lifted
-    * ([[RoundImageJdbc.requalifyRows]]). The caller has locked the round.
+    * ids kept). The caller has locked the round, and lifts their rows' `dq` after this
+    * ([[RoundImageJdbc.requalifyRows]], which records it).
     *
     * @return the round, if it gained rows
     */
@@ -501,9 +501,11 @@ object ImageJdbc extends CRUDMapper[Image]
     * (`votes`, on vote, and the gaps where theirs would go), then vote_aside, then
     * criteria_rate, as [[moveVotesAside]], [[VoteJdbc.deleteVotes]] and [[RoundConflicts]]:
     * locking vote_aside first deadlocked with them. Last, the files' rows in those rounds:
-    * `in` again ([[RoundImageJdbc.sync]]; a `dq` row stays `dq` unless `requalify` names it).
+    * `in` again ([[RoundImageJdbc.sync]]; a `dq` row stays `dq`), but those `requalify` names.
     *
-    * @param requalify the round and files whose `dq` this lifts (a requalify), if any
+    * @param requalify the round and files being requalified, if any: their rows are left to the
+    *                  caller, which lifts their `dq` next and records it
+    *                  ([[RoundImageJdbc.requalifyRows]])
     * @return the rounds that gained rows
     */
   private def moveVotesBack(where: SQLSyntax, votes: SQLSyntax, requalify: Option[(Long, Set[Long])])(implicit
@@ -541,10 +543,9 @@ object ImageJdbc extends CRUDMapper[Image]
           WHERE $where AND NOT EXISTS (SELECT 1 FROM vote s WHERE s.id = d.id)""".update()
     sql"DELETE d FROM vote_aside d WHERE $where".update()
     requalify match {
-      case Some((roundId, pages)) =>
-        RoundImageJdbc.syncPairs(moved.filterNot(_._1 == roundId))
-        RoundImageJdbc.requalifyRows(roundId, moved.filter(_._1 == roundId).map(_._2).filter(pages))
-      case None => RoundImageJdbc.syncPairs(moved)
+      // the requalified rows are the caller's to lift and record (RoundImageJdbc.requalifyRows)
+      case Some((roundId, pages)) => RoundImageJdbc.syncPairs(moved.filterNot { case (r, p) => r == roundId && pages(p) })
+      case None                   => RoundImageJdbc.syncPairs(moved)
     }
     roundIds
   }

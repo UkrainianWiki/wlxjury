@@ -237,6 +237,33 @@ class FlywayUpgradeSpec extends Specification with BeforeAll with AfterAll {
     }
   }
 
+  /** V88's rollback SQL after reopen (docs/plans/2026-11-02-round-images-two-step.md, §15). */
+  private val v88Rollback = Seq("DROP TABLE round_image_event", "DELETE FROM flyway_schema_history WHERE version = '88'")
+
+  "V88's rollback SQL after reopen" should {
+    "give back V87's schema and history, and V88 run again create round_image_event, empty" in {
+      emptyDb("fw_v87")
+      flyway("fw_v87", production.copy(target = Some("87"))).migrate()
+      emptyDb("fw_v88_back")
+      flyway("fw_v88_back", production.copy(target = Some("88"))).migrate().success must beTrue
+      Using.resource(connect("fw_v88_back"))(c => run(c, v88Rollback))
+      history("fw_v88_back").map(_.split(" \\| ")(1)) === upTo("87")
+      schema("fw_v88_back") === schema("fw_v87")
+      // a rerun of V88 alone on a database that has it is a no-op (IF NOT EXISTS)
+      val v88 = new String(java.nio.file.Files.readAllBytes(
+        java.nio.file.Paths.get("conf/db/migration/default/V88__Round_image_event.sql")), "UTF-8")
+        .linesIterator.filterNot(_.trim.startsWith("--")).mkString("\n").trim.stripSuffix(";")
+      flyway("fw_v88_back", production.copy(target = Some("88"))).migrate().success must beTrue
+      history("fw_v88_back").map(_.split(" \\| ")(1)) === upTo("88")
+      val once = schema("fw_v88_back")
+      Using.resource(connect("fw_v88_back")) { c =>
+        run(c, Seq(v88))
+        rows(c, "SELECT COUNT(*) FROM round_image_event")(_.getInt(1)) === List(0)
+      }
+      schema("fw_v88_back") === once
+    }
+  }
+
   "the app's start with production's settings but without auto" should {
     "refuse while a migration is pending, without changing the database" in {
       emptyDb("fw_pending")
