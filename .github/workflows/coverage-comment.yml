@@ -1,0 +1,55 @@
+# The coverage comment on a PR: after each Coverage run of a PR from this repository, one
+# comment (found by its hidden marker) is created or updated with the totals and the change
+# against the latest successful Coverage run on the PR's base branch (testing practices §9.5).
+#
+# Security: workflow_run runs this file and its script from the default branch, with a token
+# that can write PR comments, so it never checks out or runs the PR's code. It checks out only
+# scripts/coverage_comment.py at the default branch's commit, and the script reads the Coverage
+# run's coverage-summary artifact as data: a small JSON file, validated (known keys, a 40-hex
+# SHA, a PR number, percentages from 0 to 100) and otherwise refused. Nothing from the event or
+# the artifact goes into a shell command or a `${{ }}` expression here; the script reads the
+# event from GITHUB_EVENT_PATH. Runs of fork PRs and of pushes are skipped.
+# Actions are pinned by commit SHA, the release as a comment (dependencies practices §2.2).
+name: Coverage comment
+
+on:
+  workflow_run:
+    workflows: [Coverage]
+    types: [completed]
+
+# Nothing at the top; the job asks for what it needs
+permissions: {}
+
+concurrency:
+  # One comment update per PR branch at a time, in order: a run for an older commit finds that
+  # the PR has moved on and leaves the comment alone
+  group: coverage-comment-${{ github.event.workflow_run.head_repository.full_name }}-${{ github.event.workflow_run.head_branch }}
+  cancel-in-progress: false
+
+jobs:
+  comment:
+    name: Coverage comment
+    # A PR run from a branch of this repository that got as far as a result
+    if: >-
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.head_repository.full_name == github.repository &&
+      (github.event.workflow_run.conclusion == 'success' || github.event.workflow_run.conclusion == 'failure')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read        # the checkout of the default branch's script
+      actions: read         # the Coverage runs' artifacts
+      pull-requests: write  # the comment
+    steps:
+      # The default branch's commit (github.sha in a workflow_run), never the PR's
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts/coverage_comment.py
+          sparse-checkout-cone-mode: false
+
+      - name: Post or update the comment
+        env:
+          GH_TOKEN: ${{ github.token }}
+        # -I: standard library only, nothing imported from the working directory
+        run: python3 -I scripts/coverage_comment.py
