@@ -13,9 +13,15 @@
 // `role` (test.use({ role: 'juror' })) signs the test's page in with that role's saved state
 // (auth.setup.js); `contextAs(role)` opens another guarded context, for a second role or a
 // fresh session; `routelessAs(role)` opens one without routes, for the Back checks (below).
+//
+// `storyLabels` (auto): a test's story tags ('@J-21', docs/testing/stories.md) become its Allure
+// labels: epic the role, feature the guide section (else the role), story the ID and sentence; a
+// tag the catalogue lacks or retired fails the test (testing practices §9.4).
 import { test as base, expect } from '@playwright/test';
+import * as allure from 'allure-js-commons';
 import { PLACEHOLDER_PNG } from './placeholder.js';
 import { authFile, fixtureFor } from './server.js';
+import { catalogue, ROLES, storyIds } from './stories.js';
 
 export { expect };
 
@@ -256,6 +262,16 @@ export const test = base.extend({
     });
     await Promise.all(opened.map((c) => c.close()));
   },
+  storyLabels: [async ({}, use, testInfo) => {
+    const ids = storyIds(testInfo.tags);
+    const stories = catalogue();
+    const epics = new Set(ids.map((id) => ROLES[id[0]]));
+    const features = new Set(ids.map((id) => stories[id].section ?? ROLES[id[0]]));
+    for (const epic of epics) await allure.epic(epic);
+    for (const feature of features) await allure.feature(feature);
+    for (const id of ids) await allure.story(`${id} ${stories[id].text}`);
+    await use();
+  }, { auto: true }],
   // after each test: nothing went wrong on any page it opened
   noPageProblems: [async ({ diagnostics }, use) => {
     await use();
