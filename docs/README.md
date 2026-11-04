@@ -28,7 +28,8 @@ follow these yet" list for triage where one exists):
 
 **Plans:** [plans/](plans/), active work only, indexed by the
 [roadmap](plans/2026-11-02-roadmap.md); [plans/ci-drafts/](plans/ci-drafts/) holds diffs for other
-repositories. **History:** [history/](history/README.md), records still cited, and the index of
+repositories. **Investigations:** [investigations/](investigations/), records of investigations
+that were not taken up; their findings are cited by plans when they are. **History:** [history/](history/README.md), records still cited, and the index of
 every deleted document with its last commit.
 
 ## 2. The lifecycle of a plan
@@ -43,6 +44,10 @@ every deleted document with its last commit.
    **or moved to `history/`** with a status header, only if its reasons or baselines are still
    cited (by code, a practices doc or a runbook) or it is the runbook for something not yet on
    production. Delete a history record when nothing cites it any more.
+
+An investigation the user records without planning goes to `investigations/YYYY-MM-DD-<topic>.md`
+(findings, recommendations, the user's open questions; no server details) and is listed in the
+roadmap. A plan that takes it up cites it; once nothing is open in it, it follows step 4.
 
 ## 3. Which doc to update when
 

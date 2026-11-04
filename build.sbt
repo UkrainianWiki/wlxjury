@@ -78,6 +78,9 @@ lazy val root =
       // packages. The ZIP's bin/wlxjury launcher comes from JavaServerAppPackaging; production's
       // systemd unit supplies /etc/default/wlxjury (JAVA_OPTS) as an EnvironmentFile.
       JavaServerAppPackaging,
+      // `sbt Docker/publishLocal`: the docker-compose image, from the same staged files as the
+      // ZIP (settings below; docs/deployment.md, "Run with docker-compose").
+      DockerPlugin,
       JmhPlugin,
       GatlingPlugin
     )
@@ -153,10 +156,50 @@ Universal / mappings := {
 }
 Test / unmanagedSources += baseDirectory.value / "project" / "BuildIdentity.scala"
 
+// The docker-compose image (`sbt Docker/publishLocal`, docker-compose.yml): the ZIP's files under
+// /opt/docker on a Java 17 JRE, run as a non-root user. The base is pinned by digest, and that
+// digest is itself at least 14 days old (dependencies practices §1.1, §2.3): Temurin 17.0.20.1
+// (production's JRE) on Ubuntu 22.04, the build of 2026-10-17 (the tag is rebuilt for OS
+// updates; this digest is the one docker-library/repo-info recorded then). 17.0.21 (2026-10-22)
+// was 13 days old on 2026-11-04.
+Docker / packageName := "wlxjury"
+dockerBaseImage := "eclipse-temurin:17.0.20.1_1-jre-jammy@sha256:b3054a20e1a851574cdb1692dd0db5310c647e62214a2a7abecbec1b9e3ae8f1"
+// The version tag, and `local`, the tag docker-compose.yml runs (it needn't change per release).
+dockerAliases := Seq(dockerAlias.value, dockerAlias.value.withTag(Some("local")))
+dockerExposedPorts := Seq(9000)
+Docker / daemonUser := "wlxjury"
+Docker / daemonUserUid := Some("10001")
+// its own group, not root's (the plugin's default gid 0)
+Docker / daemonGroup := "wlxjury"
+Docker / daemonGroupGid := Some("10001")
+// Writable by that user (the files under /opt/docker are read-only to it): the file log
+// (logback.xml) and the thumbnail cache (wlxjury.thumbs.local-path).
+dockerExposedVolumes := Seq("/opt/docker/logs", "/var/www/jury-images")
+// The image's root directory is read-only to the app's user, so Play writes no RUNNING_PID.
+dockerCmd := Seq("-Dpidfile.path=/dev/null")
+// Three jar layers, bottom to top, so that a change rebuilds and moves only what changed: the
+// third-party jars (stable, the bulk), scalawiki's (a snapshot, changes more often), then
+// wlxjury's own jars and assets with bin/ and conf/ (bin/wlxjury lists the classpath).
+Docker / dockerGroupLayers := {
+  val lib = (Docker / defaultLinuxInstallLocation).value + "/lib/"
+
+  {
+    case (_, path) if path.startsWith(lib + "org.scalawiki.") => 2
+    case (_, path) if path.startsWith(lib + "org.intracer.")  => 3
+    case (_, path) if path.startsWith(lib)                    => 1
+    case _                                                    => 3
+  }
+}
+
 // Packaged assets get <md5>-<name> copies and <name>.md5 files, which routes.Assets.versioned
 // puts in asset URLs, so a deploy changes the URL of every changed file. Only the packaged
 // pipeline (stage, dist) runs it: `sbt run` and tests serve plain names.
 pipelineStages := Seq(digest)
+
+// No Scaladoc in the release: Play's dist mappings would run `Compile / doc` and add it as
+// share/doc/api (42 MB that nothing on the server reads), and every stage or dist would wait
+// for it. `sbt doc` still builds it locally.
+PlayKeys.includeDocumentationInBinary := false
 
 scalaVersion := "2.13.15"
 

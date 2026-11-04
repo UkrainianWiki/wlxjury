@@ -746,9 +746,22 @@ class LegacyAdoptionTest(Fixture):
     def test_adoption_accepts_the_shipped_application_conf(self):
         # Its jury greeting holds "password: {{Password}}" inside a """ string.
         shipped = Path(__file__).resolve().parents[2] / 'conf'
-        # Older packages also shipped Apache files in conf/; they are not HOCON.
+        # Older packages also shipped Apache files in conf/, such as their image vhost; they are not HOCON.
+        apache = '\n'.join([
+            '<VirtualHost *:80>',
+            '    DocumentRoot /var/www/jury-images',
+            '    <Directory /var/www/jury-images>',
+            '        Options -Indexes',
+            '        Require all granted',
+            '    </Directory>',
+            '    RewriteEngine On',
+            '    RewriteCond %{DOCUMENT_ROOT}%{REQUEST_URI} !-f',
+            '    RewriteRule ^(/wikipedia/commons/thumb/.+)$ https://upload.wikimedia.org$1 [P,L,E=PROXIED:1]',
+            '    Header always set X-Jury-Cache "local"',
+            '    RequestHeader set User-Agent "WLXJury/1.0 (https://commons.wikimedia.org/wiki/Commons:WLX_Jury_Tool)"',
+            '</VirtualHost>', ''])
         source = self.legacy_package((shipped / 'application.conf').read_text(encoding='utf-8'),
-                                     {'jury-images.conf': (shipped / 'apache' / 'jury-images.conf').read_text()})
+                                     {'jury-images.conf': apache})
         self.tool.adopt_legacy(source, 'legacy-0.12-v53')
         copied = (self.tool.current.resolve() / 'conf' / 'application.conf').read_text(encoding='utf-8')
         self.assertIn('and password: {{Password}}', copied)

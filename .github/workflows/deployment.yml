@@ -24,9 +24,6 @@ concurrency:
   group: deployment-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || format('{0}-{1}-{2}', github.event_name, github.ref, github.sha) }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
-env:
-  SCALAWIKI_SHA: 25951dbe1e05bc195b8719e2edbb08464f0ea932
-
 jobs:
   scripts:
     name: Python unit tests and shellcheck
@@ -43,8 +40,8 @@ jobs:
       - name: shellcheck
         run: >-
           docker run --rm
-          --mount type=bind,source="$PWD/scripts/deployment",target=/s,readonly
-          koalaman/shellcheck:v0.11.0 -S style /s/wlxjury-release.sh
+          --mount type=bind,source="$PWD",target=/s,readonly
+          koalaman/shellcheck:v0.11.0 -S style /s/scripts/deployment/wlxjury-release.sh /s/conf/monit/wlxjury-check
 
   release:
     name: Restore and release-script tests on the packaged release
@@ -61,7 +58,6 @@ jobs:
       - name: scalawiki (interim, from source)
         uses: ./.github/actions/scalawiki
         with:
-          sha: ${{ env.SCALAWIKI_SHA }}
           jdk: 17
       - name: sbt dist
         run: python3 scripts/agent-check.py -- sbt -J-Xmx1g -J-Dfile.encoding=UTF-8 dist
