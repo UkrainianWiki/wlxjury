@@ -41,7 +41,26 @@ Production runs OpenJDK 17 (17.0.20.1 when checked on 2026-11-04), the default `
 `PATH`, so keep 17 the default and don't point `JAVA_HOME` at another JDK. The server also has an old Java 11, not the default and no longer needed:
 the user may remove it later (for example `apt remove openjdk-11-jre-headless`, after checking
 with `update-alternatives --list java` that nothing else selects it). Production's
-`-XX:G1PeriodicGCInterval` already needed Java 12 or later.
+`-XX:G1PeriodicGCInterval` already needed Java 12 or later. When several JDKs are installed,
+`update-alternatives` in auto mode makes the highest-priority one (usually the newest) the
+`java` on `PATH`, so a package that pulls in a newer JDK silently switches the app (and anything
+else run with `java`) to it. Set the alternative to 17 explicitly
+(`update-alternatives --set java <the 17 JVM's bin/java>`) and check `java -version` after
+package changes. Running on a newer Java is its own tested change (roadmap, "Java 21 runtime").
+
+**A UTF-8 locale is required.** The image cache stores Commons file names URL-decoded
+(`LocalImageCacheService`), so Cyrillic and other non-ASCII names become file names. Under the
+POSIX locale (no `LANG`), JDK 17's `sun.jnu.encoding` is ASCII and those paths throw
+`InvalidPathException: Malformed input`; `-Dfile.encoding=UTF-8` doesn't cover file names. Run
+the service with `LANG=C.UTF-8` (or another UTF-8 locale), in a container image too, and check
+after a change that a gallery with Cyrillic file names gets its thumbnails from the cache.
+
+**Apache 2.4.56 and later and `?` in file names.** The fix for CVE-2023-25690 makes `mod_rewrite`
+refuse (403) a substitution that would carry a `?` decoded from `%3F` unless the rule has
+`UnsafeAllow3F`. `conf/apache/jury-images.conf`'s proxy rule substitutes the decoded path
+(`$1`), so a thumbnail of a Commons file whose name contains `?` is expected to get a 403 from the
+image vhost when it isn't cached (not tested). Don't add `UnsafeAllow3F` to that `[P]` rule: the
+flag reopens the request splitting the fix closed.
 
 It can also recreate a new server. For this server, follow its `docs/adopting-the-existing-server.md`. It replaces the manual steps below, apart from `adopt-legacy` and `scrub-legacy`. Those steps, and the files under `conf/apache`, `conf/systemd` and `conf/wlxjury`, stay here until production is configured from that repository.
 
