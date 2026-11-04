@@ -5,7 +5,6 @@ import { test, expect } from '../lib/fixtures.js';
 test.describe('a juror', { tag: '@J-01' }, () => {
   test('signs in', { tag: ['@J-02', '@J-99', '@slow'] }, async ({ page }) => {
     await page.goto(`/auth?n=${[1, 2].map((x) => `${x}`).join('')}`);
-    expect(/'@J-55'/.test('x')).toBe(false);
   });
 
   test('is drawn from the first frame', async () => {

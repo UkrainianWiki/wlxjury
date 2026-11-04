@@ -6,11 +6,14 @@ Reads the catalogue (docs/testing/stories.md), the Playwright tags in browser-te
 headings of the guides the catalogue links. Writes the matrix to stdout, target/story-coverage.md
 and $GITHUB_STEP_SUMMARY when set (testing practices §9.4).
 
-Fails (exit 1) on: an ID in a test that the catalogue lacks or retired, a malformed ID, a
-duplicate or malformed catalogue row, a guide link whose anchor has no heading, and no tag at all
-in the browser tests or in the Scala specs (a vacuous run). Reports, without failing: the stories
-no test cites, those cited by one layer only, the tests inside test.fixme or test.skip (not
-counted as covering) and the guide sections no story links.
+Fails (exit 1) on: an ID in a test (a fixme or skipped one too) that the catalogue lacks or
+retired; a malformed ID (J-7, X-01, j-01, J01), in a tag, a Scala name or a catalogue row; a tag
+string not attached to a test's or a describe's `tag`; a Scala ID outside a [..] group; a
+duplicate catalogue row; a guide section link without its #anchor, and a guide or notes link to a
+missing file or heading; and a vacuous run: no tag in the browser tests or the Scala specs, or a
+raw count of the quoted tags ('@J-21') and the [J-27 groups that differs from what was parsed.
+Reports, without failing: the stories no test cites, those cited by one layer only, the tests
+inside test.fixme or test.skip (not counted as covering) and the guide sections no story links.
 
     python3 scripts/story-coverage.py [--root DIR] [--out PATH] [--no-summary]
     python3 scripts/story-coverage.py --self-test
@@ -35,9 +38,12 @@ ROLES = {"J": "Juror", "O": "Organizer", "A": "Admin", "R": "Root", "S": "System
 STRICT_ID = re.compile(r"^[JOARS]-\d{2}$")
 # what looks like a story ID, valid or not: a capital, a hyphen, then digits (J-7, X-01, J-021)
 ID_SHAPED = re.compile(r"^[A-Z]-\d+$")
-# a catalogue row: its first cell looks like an ID
-ROW = re.compile(r"^\|\s*([A-Z]-\w*)\s*\|(.*)\|\s*$")
-LINK = re.compile(r"\]\(([^)#\s]*)#([^)\s]+)\)")
+# what looks like a story ID loosely: any case, the hyphen optional (J-01, j-01, J01, J-1, X-01)
+LOOSE_ID = re.compile(r"^[A-Za-z]-?\d+$")
+# a catalogue row: its first cell looks like an ID, loosely (a malformed one is an error)
+ROW = re.compile(r"^\|\s*([A-Za-z]-?\d+\w*)\s*\|(.*)\|\s*$")
+# a Markdown link: its target, and its anchor if any
+LINK = re.compile(r"\]\(([^)#\s]*)(?:#([^)\s]*))?\)")
 HEADING = re.compile(r"^(#{1,6})\s+(.+?)\s*#*\s*$")
 PART = "*Part:*"
 RETIRED = "(retired)"
@@ -50,7 +56,8 @@ class Story:
         self.id, self.text, self.guide, self.notes, self.line = sid, text, guide, notes, line
         self.retired = RETIRED in notes
         self.part = PART in notes
-        self.links = LINK.findall(guide)
+        self.links = LINK.findall(guide)          # (target, anchor), the guide section
+        self.note_links = LINK.findall(notes)     # (target, anchor), any
         self.browser = []  # (spec file, title)
         self.scala = []    # (spec file, line, name)
 
@@ -239,6 +246,9 @@ def split_args(toks, lo, hi):
     return args
 
 
+ATTACHED = set()  # the tokens read as a test's or a describe's tag
+
+
 def tag_values(toks, lo, hi):
     """The strings of an options object's `tag` (a string or an array of them), else []."""
     if not (toks[lo].kind == "punct" and toks[lo].value == "{"):
@@ -252,10 +262,13 @@ def tag_values(toks, lo, hi):
         if t.kind == "ident" and t.value == "tag" and toks[j + 1].value == ":":
             v = toks[j + 2]
             if v.kind == "str":
+                ATTACHED.add(id(v))
                 return [v.value]
             if v.value == "[":
                 end = matching(toks, j + 2)
-                return [x.value for x in toks[j + 3:end] if x.kind == "str"]
+                strs = [x for x in toks[j + 3:end] if x.kind == "str"]
+                ATTACHED.update(id(x) for x in strs)
+                return [x.value for x in strs]
         j += 1
     return []
 
@@ -271,6 +284,7 @@ def browser_tests(path):
     tag-shaped string in the file (for the ID checks)."""
     src = path.read_text(encoding="utf-8")
     toks = js_tokens(src)
+    ATTACHED.clear()  # ids of this file's tokens, alive while toks is
     calls = []  # (kind, title, tags, lo, hi, skipped)
     marks = []  # positions of an unconditional test.fixme() / test.skip() inside a body
     i = 0
@@ -325,29 +339,44 @@ def browser_tests(path):
                                  for c in outer for m in marks)
         name = " › ".join([c[1] for c in outer if c[1]] + [title])
         tests.append((name, all_tags, skipped))
-    shaped = [(src.count("\n", 0, t.pos) + 1, t.value) for t in toks
-              if t.kind == "str" and t.value.startswith("@") and ID_SHAPED.match(t.value[1:])]
-    return tests, shaped
+    shaped = [(src.count("\n", 0, t.pos) + 1, t.value, id(t) in ATTACHED) for t in toks
+              if t.kind == "str" and t.value.startswith("@") and LOOSE_ID.match(t.value[1:])]
+    # the cross-check: the quoted story tags in the raw text, comments included, which the
+    # tokenizer must all have seen (else it misread the file, and the matrix would miss tags)
+    raw = len(RAW_JS_TAG.findall(src))
+    return tests, shaped, raw
 
 
 # ---------------------------------------------------------------------------- Scala specs
 
 SCALA_STRING = re.compile(r'"((?:[^"\\\n]|\\.)*)"')
-BRACKET = re.compile(r"\[\s*([A-Z]-\d+(?:\s*,\s*[A-Z]-\d+)*)\s*\]")
+# a bracket group of IDs, loosely (any case, the hyphen optional: [J-27, S-01], [j-27], [J27])
+BRACKET = re.compile(r"\[\s*([A-Za-z]-?\d+(?:\s*,\s*[A-Za-z]-?\d+)*)\s*\]")
+# an ID outside any bracket group (a bracket left open or closed only, or parentheses)
+STRAY_ID = re.compile(r"(?<![\w-])[JOARS]-\d{1,3}(?![\w-])")
+# the cross-check: a story ID right after a [ anywhere on a code line
+RAW_SCALA_TAG = re.compile(r"\[\s*[A-Za-z]-?\d")
+RAW_JS_TAG = re.compile(r"(['\"`])@[A-Za-z]-?\d+\1")
 
 
 def scala_tags(path):
-    """(line, example or block name, [IDs]) for each string literal of the file with a [J-27]."""
-    out = []
+    """(line, example or block name, [IDs, as written]) for each string literal with a bracket
+    group of IDs; (line, name, text) for an ID outside one; and the raw count of [X-NN starts on
+    the file's code lines (comments left out), for the cross-check."""
+    out, stray, raw = [], [], 0
     for no, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
         stripped = line.lstrip()
         if stripped.startswith(("//", "*", "/*")):
             continue
+        raw += len(RAW_SCALA_TAG.findall(line))
         for lit in SCALA_STRING.finditer(line):
-            ids = [x.strip() for b in BRACKET.finditer(lit.group(1)) for x in b.group(1).split(",")]
+            text = lit.group(1)
+            ids = [x.strip() for b in BRACKET.finditer(text) for x in b.group(1).split(",")]
             if ids:
-                out.append((no, lit.group(1), ids))
-    return out
+                out.append((no, text, ids))
+            for m in STRAY_ID.finditer(BRACKET.sub(" ", text)):
+                stray.append((no, text, m.group(0)))
+    return out, stray, raw
 
 
 # ---------------------------------------------------------------------------- the matrix
@@ -360,17 +389,27 @@ def collect(root):
     stories = read_catalogue(cat_path, errors)
     rel = lambda p: p.relative_to(root).as_posix()
 
-    # the guides' anchors
+    # the links of the Guide section and Notes cells: the file exists, the anchor is a heading;
+    # a guide section link needs its anchor
     guides = {}
     for s in stories.values():
-        for target, anchor in s.links:
-            path = (cat_path.parent / target).resolve() if target else cat_path.resolve()
-            if path not in guides:
-                guides[path] = anchors(path) if path.is_file() else None
-            if guides[path] is None:
-                errors.append(f"{CATALOGUE.as_posix()}:{s.line}: {s.id}: {target} not found")
-            elif anchor not in {a for _, _, a in guides[path]}:
-                errors.append(f"{CATALOGUE.as_posix()}:{s.line}: {s.id}: {target}#{anchor} has no such heading")
+        where = f"{CATALOGUE.as_posix()}:{s.line}: {s.id}"
+        for cell, links in (("guide section", s.links), ("notes", s.note_links)):
+            for target, anchor in links:
+                if re.match(r"^[a-z][a-z0-9+.-]*:", target):
+                    if cell == "guide section":
+                        errors.append(f"{where}: the guide section links {target}, not a guide in this repository")
+                    continue  # an external link in the notes: not checked here
+                if cell == "guide section" and not anchor:
+                    errors.append(f"{where}: the guide section link {target or '(empty)'} has no #anchor")
+                    continue
+                path = (cat_path.parent / target).resolve() if target else cat_path.resolve()
+                if path not in guides:
+                    guides[path] = anchors(path) if path.is_file() else None
+                if guides[path] is None:
+                    errors.append(f"{where}: {cell}: {target} not found")
+                elif anchor and anchor not in {a for _, _, a in guides[path]}:
+                    errors.append(f"{where}: {cell}: {target}#{anchor} has no such heading")
 
     def cite(sid, where, add):
         if not STRICT_ID.match(sid):
@@ -382,42 +421,56 @@ def collect(root):
         else:
             add(stories[sid])
 
-    skipped, browser_tags, scala_count = [], 0, 0
+    skipped, browser_tags, scala_count, browser_raw, scala_raw = [], 0, 0, 0, 0
     for spec in sorted((root / BROWSER_TESTS).glob("*.js")):
-        tests, shaped = browser_tests(spec)
-        cited = set()
+        tests, shaped, raw = browser_tests(spec)
+        browser_raw += raw
         for name, tags, skip in tests:
             for tag in tags:
-                if not tag.startswith("@") or not ID_SHAPED.match(tag[1:]):
+                if not tag.startswith("@") or not LOOSE_ID.match(tag[1:]):
                     continue  # another kind of tag (@slow)
                 browser_tags += 1
-                cited.add(tag)
+                where = f"{rel(spec)}: {name!r}"
                 if skip:
-                    if tag[1:] in stories:
-                        skipped.append((tag[1:], f"{spec.name}: {name}"))
+                    # checked as any tag, listed, not counted as covering
+                    cite(tag[1:], where, lambda s, n=name: skipped.append((s.id, f"{spec.name}: {n}")))
                     continue
-                cite(tag[1:], f"{rel(spec)}: {name!r}", lambda s, n=name: s.browser.append((spec.name, n)))
-        for line, value in shaped:
-            if value not in cited:
-                cite(value[1:], f"{rel(spec)}:{line}", lambda s: None)
-                notes.append(f"{rel(spec)}:{line}: {value} is not a test's or a describe's tag")
+                cite(tag[1:], where, lambda s, n=name: s.browser.append((spec.name, n)))
+        for line, value, attached in shaped:
+            if not attached:
+                errors.append(f"{rel(spec)}:{line}: {value} is not attached to a test or a describe "
+                              "(a tag must be a string in its `tag` option)")
+        if raw != len(shaped):
+            errors.append(f"{rel(spec)}: {raw} quoted story tags in the text, {len(shaped)} read by the "
+                          "parser (a tag in a comment, or a file the parser misreads)")
 
     for spec in sorted((root / SCALA_TESTS).rglob("*.scala")):
-        for line, name, ids in scala_tags(spec):
+        found, stray, raw = scala_tags(spec)
+        scala_raw += raw
+        for line, name, ids in found:
             for sid in ids:
                 scala_count += 1
                 cite(sid, f"{rel(spec)}:{line}", lambda s, n=name, ln=line: s.scala.append((spec.stem, ln, n)))
+        for line, name, text in stray:
+            errors.append(f"{rel(spec)}:{line}: {text} outside a [..] group in {name!r} (write [{text}])")
+        if raw != sum(1 for _, n, _ in found for _ in BRACKET.finditer(n)):
+            errors.append(f"{rel(spec)}: {raw} [ID groups on its code lines, "
+                          f"{sum(1 for _, n, _ in found for _ in BRACKET.finditer(n))} in names "
+                          "(an ID group outside a name's string, or one the parser misreads)")
 
     if browser_tags == 0:
         errors.append(f"no story tag in {BROWSER_TESTS.as_posix()}/*.js: the matrix would be vacuous")
     if scala_count == 0:
         errors.append(f"no story ID in the Scala specs under {SCALA_TESTS.as_posix()}/: the matrix would be vacuous")
+    if browser_raw == 0 or scala_raw == 0:
+        errors.append("the raw cross-check found no story IDs in the "
+                      + ("browser tests" if browser_raw == 0 else "Scala specs") + ": the matrix would be vacuous")
 
     linked = {(p, a) for s in stories.values() for t, a in s.links
               for p in [(cat_path.parent / t).resolve() if t else cat_path.resolve()]}
     unlinked = [(p, title) for p, heads in guides.items() if heads
                 for level, title, a in heads if level == 3 and (p, a) not in linked]
-    extra = {"skipped": skipped, "unlinked": [(rel(p) if root.resolve() in p.parents else p.name, t) for p, t in unlinked]}
+    extra = {"counts": (browser_tags, browser_raw, scala_count, scala_raw), "skipped": skipped, "unlinked": [(rel(p) if root.resolve() in p.parents else p.name, t) for p, t in unlinked]}
     return stories, errors, notes, extra
 
 
@@ -563,6 +616,37 @@ def self_test():
                 "duplicate story ID J-01", "a duplicate row")
         variant(lambda: (clean(), cat.write_text(orig[cat].replace("#signing-in", "#signing-out"), encoding="utf-8")),
                 "has no such heading", "a dead anchor")
+
+        # the review's cases (2026-11-04), each on the clean fixture
+        clean_spec = orig[spec].replace("'@J-02', ", "").replace("'@J-99'", "'@J-01'")
+        clean_scala = orig[scala].replace(" [J-02]", "")
+        def put(p, text):
+            return lambda: (clean(), p.write_text(text, encoding="utf-8"))
+        cases = [
+            (spec, clean_spec.replace("test('is drawn from the first frame', async",
+                                      "test('is drawn from the first frame', { tag: '@J-98' }, async"),
+             "J-98 is not in", "an unknown ID in a fixme test"),
+            (spec, clean_spec + "\nconst TAGS = ['@J-01'];\n", "is not attached", "a tag string outside a tag option"),
+            (spec, clean_spec + "\n// as '@J-01' does\n", "quoted story tags in the text", "a tag the parser can't see"),
+            (spec, clean_spec.replace("'@J-01'", "'@j-01'"), "malformed story ID 'j-01'", "a lowercase tag"),
+            (cat, orig[cat] + "| J05 | Again | – | |\n", "malformed story ID 'J05'", "a row's ID without its hyphen"),
+            (cat, orig[cat] + "| j-05 | Again | – | |\n", "malformed story ID 'j-05'", "a row's ID in lower case"),
+            (cat, orig[cat].replace("(../user/juror-guide.md#signing-in)", "(../user/juror-guide.md)"),
+             "has no #anchor", "a guide section link without its anchor"),
+            (cat, orig[cat].replace("| *Part:* by rate only |", "| *Part:* by rate only, [see](../user/missing.md) |"),
+             "notes: ../user/missing.md not found", "a notes link to a missing file"),
+            (cat, orig[cat].replace("| *Part:* by rate only |", "| *Part:* by rate only, [see](../user/juror-guide.md#nope) |"),
+             "notes: ../user/juror-guide.md#nope has no such heading", "a notes link to a missing heading"),
+            (scala, clean_scala.replace("[J-01]", "[j-01]"), "malformed story ID 'j-01'", "a lowercase Scala ID"),
+            (scala, clean_scala.replace("[J-01]", "J-01]"), "outside a [..] group", "a Scala ID without its ["),
+            (scala, clean_scala.replace("[J-01]", "[J-01"), "outside a [..] group", "a Scala ID without its ]"),
+            (scala, clean_scala.replace("}\n", "  def f = g[J-01]()\n}\n", 1)[::1],
+             "ID groups on its code lines", "a Scala ID outside a name"),
+        ]
+        for p, text, expect, what in cases:
+            check(text != orig[p] and text != (clean_spec if p == spec else clean_scala if p == scala else orig[cat]),
+                  f"{what}: the case changes the fixture")
+            variant(put(p, text), expect, what)
 
     for f in failures:
         print(f"FAIL: {f}")

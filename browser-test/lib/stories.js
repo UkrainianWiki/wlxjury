@@ -11,8 +11,8 @@ export const ROLES = { J: 'Juror', O: 'Organizer', A: 'Admin', R: 'Root', S: 'Sy
 
 // a table row: | ID | Story | Guide section | Notes |
 const ROW = /^\|\s*([JOARS]-\d{2})\s*\|(.*)\|\s*$/;
-// what looks like a story ID, valid or not (the script fails on a malformed one)
-const STORY_TAG = /^@[A-Z]-\d+$/;
+// what looks like a story ID, valid or not (J-7, j-07, J07: malformed, so they fail here too)
+const STORY_TAG = /^@[A-Za-z]-?\d+$/;
 
 let stories;
 
