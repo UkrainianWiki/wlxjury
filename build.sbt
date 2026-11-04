@@ -75,7 +75,8 @@ lazy val root =
       PlayScala,
       PlayNettyServer,
       // The release artifact is the Universal ZIP (`sbt dist`); there are no Debian or RPM
-      // packages. JavaServerAppPackaging's launcher reads /etc/default/wlxjury, as production's does.
+      // packages. The ZIP's bin/wlxjury launcher comes from JavaServerAppPackaging; production's
+      // systemd unit supplies /etc/default/wlxjury (JAVA_OPTS) as an EnvironmentFile.
       JavaServerAppPackaging,
       JmhPlugin,
       GatlingPlugin
