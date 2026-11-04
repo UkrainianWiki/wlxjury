@@ -15,8 +15,8 @@ import scala.concurrent.duration._
 import scala.jdk.CollectionConverters._
 
 /** The migrations finish before anything that uses the database at the start begins: the job
-  * scheduler (its provider starts it, and it takes over requeued jobs) and the legacy password
-  * timer. Guice doesn't order eager singletons by module (an eager provider binding is built
+  * scheduler (its provider starts it, and it takes over requeued jobs), the legacy password
+  * timer and the round counts' timer (P2a). Guice doesn't order eager singletons by module (an eager provider binding is built
   * before an earlier module's eager singleton, and in Prod's PRODUCTION stage Play builds the
   * router, its controllers and so the scheduler early): the constructor dependency on
   * [[DatabaseMigrations]] is what orders them. Checked in Prod mode (Guice's PRODUCTION stage)
@@ -43,7 +43,8 @@ class MigrationOrderSpec extends Specification {
   }
 
   /** The DB users bound eagerly or started at construction, which must come after the migrations. */
-  private val dbUsers = Seq(classOf[JobSchedulerProvider], classOf[JobScheduler], classOf[LegacyPasswordRetirementTask])
+  private val dbUsers =
+    Seq(classOf[JobSchedulerProvider], classOf[JobScheduler], classOf[LegacyPasswordRetirementTask], classOf[RoundCountsTask])
 
   "the app's start in Prod mode" should {
     "finish the migrations before the job scheduler and the password timer are built" in {
@@ -64,7 +65,10 @@ class MigrationOrderSpec extends Specification {
           "jobs.pollInterval" -> "1 hour",
           "jobs.heartbeatInterval" -> "1 hour",
           "wlxjury.legacyPasswords.retire" -> true,
-          "wlxjury.legacyPasswords.firstCheck" -> "1 hour"
+          "wlxjury.legacyPasswords.firstCheck" -> "1 hour",
+          // a timer too, whose first tick comes only after the spec
+          "roundCounts.mode" -> "background",
+          "roundCounts.interval" -> "1 hour"
         ))
         .bindings(new Recording)
         .build()
@@ -89,7 +93,7 @@ class MigrationOrderSpec extends Specification {
 
     "have each of them depend on the migrations by its constructor" in {
       // the structural guarantee, independent of the order Guice happened to take
-      foreach(Seq(classOf[JobSchedulerProvider], classOf[LegacyPasswordRetirementTask])) { c =>
+      foreach(Seq(classOf[JobSchedulerProvider], classOf[LegacyPasswordRetirementTask], classOf[RoundCountsTask])) { c =>
         val deps = com.google.inject.spi.InjectionPoint.forConstructorOf(c).getDependencies.asScala.map(_.getKey)
         deps must contain(Key.get(classOf[DatabaseMigrations]))
       }

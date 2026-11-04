@@ -24,10 +24,14 @@ import scalikejdbc._
   *    ([[disqualify]]); requalifying it lifts the mark ([[requalifyRows]]);
   *  - a monument id change follows the image ([[syncMonumentId]]);
   *  - a deleted round or image takes its rows with it (foreign keys, ON DELETE CASCADE);
-  *  - the `round_image_check` job repairs drift ([[services.distribution.RoundImageCheckHandler]]).
+  *  - the `round_image_check` job repairs drift ([[services.distribution.RoundImageCheckHandler]]);
+  *  - the count columns (V89, P2a) are written only by the background recompute
+  *    ([[RoundCounts]]); a vote insert and a sync here bump their round's generation
+  *    ([[RoundCounts.markRounds]]), so the round is recounted.
   *
   * Lock order: `round` → `images` → `vote` → `criteria_rate` → `vote_aside` → `round_image`
-  * → `round_image_event` (V88: a disqualify's or requalify's events, after its rows): every
+  * → `round_image_dirty` (V89, [[RoundCounts]]) → `round_image_event` (V88: a disqualify's or
+  * requalify's events, after its rows): every
   * writer here runs after its votes are written and locked, and locks the pairs' rows last. A recount never reads a non-locking snapshot of the votes ([[sync]] reads them in
   * share mode): a concurrent write would be missed.
   */
@@ -137,6 +141,8 @@ object RoundImageJdbc {
             s"Votes inserted for disqualified files of round $roundId (pages ${disqualified.mkString(", ")}): refused")
       }
     }
+    // the rounds' counts follow in the background (P2a): their generation bumped, last
+    RoundCounts.markRounds(pairs.map(_._1))
   }
 
   /** Brings the rows of the round's files `pageIds` in line with their votes, after a bulk
@@ -174,11 +180,14 @@ object RoundImageJdbc {
       session: DBSession
   ): (SyncResult, Seq[(Long, Option[String])]) = {
     if (pageIds.nonEmpty) RoundWrites.requireRounds(Seq(roundId))
-    pageIds.distinct.sorted.grouped(Chunk).foldLeft((SyncResult(), Seq.empty[(Long, Option[String])])) {
+    val synced = pageIds.distinct.sorted.grouped(Chunk).foldLeft((SyncResult(), Seq.empty[(Long, Option[String])])) {
       case ((acc, lifted), chunk) =>
         val (r, l) = syncChunk(roundId, chunk, missing, requalify)
         (acc + r, lifted ++ l)
     }
+    // the caller wrote these files' votes: the round's counts follow in the background (P2a)
+    if (pageIds.nonEmpty) RoundCounts.markRounds(Seq(roundId))
+    synced
   }
 
   /** [[sync]] of each round's pairs, rounds in id order. */

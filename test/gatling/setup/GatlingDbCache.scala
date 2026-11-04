@@ -27,8 +27,9 @@ object GatlingDbCache {
     * v4: the users' passwords are bcrypt hashes (the tests' cost, 4), not SHA-1.
     * v5: the dump's rows are INSERT IGNORE, so rows a migration seeds itself (V80's
     *     session_upgrade_window) don't clash on restore after the migrations ran.
-    * v6: round_image (V84) rows, written by VoteJdbc.batchInsert with the votes. */
-  val FixtureVersion = "fixture-v6"
+    * v6: round_image (V84) rows, written by VoteJdbc.batchInsert with the votes.
+    * v7: round_image's counts (V89) recounted after the load (RoundCountsRecompute), the rounds clean. */
+  val FixtureVersion = "fixture-v7"
 
   // ── Cache key ──────────────────────────────────────────────────────────────
 
