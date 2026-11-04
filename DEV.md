@@ -31,11 +31,27 @@ Now open [http://localhost:9000](http://localhost:9000)
 
 ### Creating the root admin
 
-The first account signed up on an empty database becomes root (`users.is_root`): open
-[http://localhost:9000/signup](http://localhost:9000/signup) and sign up with an email and a
-password. Later sign-ups get no role; root (or a contest's admin) adds them to contests. On a
-database that already has users, make an existing account root with
+There is no sign-up. On an empty database, set `WLXJURY_SETUP_TOKEN` (32 characters or more),
+open [http://localhost:9000/setup](http://localhost:9000/setup) and create the first account,
+root (`users.is_root`), with the token, an email and a password; root (or a contest's admin)
+invites the others ([deployment](docs/deployment.md), "Accounts, invitations and the first
+account"). On a database that already has users, make an existing account root with
 `UPDATE users SET is_root = TRUE WHERE email = '...';`.
+
+### Running with docker-compose
+
+The app and MariaDB in containers, without a local database:
+
+```bash
+sbt Docker/publishLocal            # the image wlxjury:local, after scalawiki's publishLocal above
+scripts/docker/generate-env.sh     # random secrets in .env, kept on reruns
+docker compose up -d --wait        # http://localhost:9000/setup, with WLXJURY_SETUP_TOKEN from .env
+docker compose down                # down -v also deletes the database
+```
+
+What it sets, its limits and its CI test: [deployment](docs/deployment.md), "Run with
+docker-compose". A published image (queued) will make the sbt step unnecessary for people who
+only run the app.
 
 ## Development
 

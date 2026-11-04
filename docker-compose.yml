@@ -1,33 +1,81 @@
-version: '2.1'
+# The jury tool and MariaDB, for development and as a simple deployment without TLS or a proxy
+# (docs/deployment.md, "Run with docker-compose"). Production runs the ZIP with wlxjury-release.
+#
+#   sbt Docker/publishLocal            # builds the image wlxjury:local
+#   scripts/docker/generate-env.sh     # once: random secrets in .env
+#   docker compose up -d --wait        # http://localhost:9000/
+#
+# Settings come from .env (template: .env.example), never literals here. The database's port
+# isn't published; the app's is bound to 127.0.0.1 unless WLXJURY_HTTP_BIND says otherwise.
+# CI runs this file (.github/workflows/compose.yml, scripts/docker/smoke-test.sh).
+
+name: wlxjury
 
 services:
 
   db:
-    image: mysql:5.7
-    restart: always
+    # Production's MariaDB release and the tests' (SharedTestDb.Image), pinned by digest
+    image: mariadb:10.6.22@sha256:7589b386fa6686a5d5f131b504ed21c81e492c48b78c6c4be0d5be1066542559
+    restart: unless-stopped
     environment:
-      MYSQL_DATABASE: wlxjury
-      MYSQL_USER: wlxjury_user
-      MYSQL_PASSWORD: wlxjury_password
-      MYSQL_RANDOM_ROOT_PASSWORD: "yes"
-    ports:
-      - "3306"
+      MARIADB_DATABASE: wlxjury
+      MARIADB_USER: wlxjury
+      MARIADB_PASSWORD: ${WLXJURY_COMPOSE_DB_PASSWORD:?set it in .env (scripts/docker/generate-env.sh)}
+      MARIADB_RANDOM_ROOT_PASSWORD: "1"
+    volumes:
+      - db:/var/lib/mysql
+      # production's server setting (the 256 MiB buffer pool)
+      - ./bench/cnf/recommended-60-wlxjury.cnf:/etc/mysql/conf.d/60-wlxjury.cnf:ro
     healthcheck:
-      test: ["CMD", "mysqladmin" ,"ping", "-h", "localhost"]
-      timeout: 20s
-      retries: 10
+      # the image's own check: the server accepts connections and InnoDB is initialized
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
 
-  wlxjury:
-    image: wlxjury:26.11-SNAPSHOT
-    environment:
-      WLXJURY_DB_HOST: db
-      WLXJURY_DB: wlxjury
-      WLXJURY_DB_USER: wlxjury_user
-      WLXJURY_DB_PASSWORD: wlxjury_password
-      JAVA_OPTS: -Ddb.default.migration.auto=true -Dplay.http.secret.key=realSecret -Dwlxjury.allowedHosts=localhost
-    ports:
-      - "9000:9000"
-
+  app:
+    # Built by `sbt Docker/publishLocal` (build.sbt); never pulled
+    image: ${WLXJURY_IMAGE:-wlxjury:local}
+    pull_policy: never
+    restart: unless-stopped
     depends_on:
       db:
         condition: service_healthy
+    environment:
+      WLXJURY_DB_HOST: db
+      WLXJURY_DB: wlxjury
+      WLXJURY_DB_USER: wlxjury
+      WLXJURY_DB_PASSWORD: ${WLXJURY_COMPOSE_DB_PASSWORD:?set it in .env (scripts/docker/generate-env.sh)}
+      # Play refuses a key shorter than 32 bytes in production mode
+      PLAY_HTTP_SECRET_KEY: ${PLAY_HTTP_SECRET_KEY:?set it in .env (scripts/docker/generate-env.sh)}
+      # /setup creates the first account with it (32 characters or more); unused afterwards
+      WLXJURY_SETUP_TOKEN: ${WLXJURY_SETUP_TOKEN:-}
+      # Not secret, so on the command line: migrations at start (db.Migrations; the other
+      # db.default.migration settings keep their safe defaults, which production.conf also
+      # sets), the host names the app answers to, the URL its links use, and Commons access
+      # without an account (an empty commons.user is anonymous; never put credentials here).
+      JAVA_OPTS: >-
+        -Ddb.default.migration.auto=true
+        -Dwlxjury.allowedHosts=${WLXJURY_ALLOWED_HOSTS:-localhost}
+        -Dwlxjury.host=${WLXJURY_HOST:-http://localhost:9000/}
+        -Dcommons.user=
+        -Dcommons.password=
+    ports:
+      - "${WLXJURY_HTTP_BIND:-127.0.0.1}:${WLXJURY_HTTP_PORT:-9000}:9000"
+    volumes:
+      - images:/var/www/jury-images
+      - logs:/opt/docker/logs
+    healthcheck:
+      # 200 once the schema is the build's and the pool runs READ COMMITTED
+      # (ReadinessController; it answers loopback clients only, as this one is)
+      test: ["CMD", "curl", "-fsS", "-o", "/dev/null", "http://127.0.0.1:9000/health/ready"]
+      interval: 5s
+      timeout: 5s
+      retries: 6
+      start_period: 180s
+
+volumes:
+  db:
+  images:
+  logs:

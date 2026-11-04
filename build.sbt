@@ -78,6 +78,9 @@ lazy val root =
       // packages. The ZIP's bin/wlxjury launcher comes from JavaServerAppPackaging; production's
       // systemd unit supplies /etc/default/wlxjury (JAVA_OPTS) as an EnvironmentFile.
       JavaServerAppPackaging,
+      // `sbt Docker/publishLocal`: the docker-compose image, from the same staged files as the
+      // ZIP (settings below; docs/deployment.md, "Run with docker-compose").
+      DockerPlugin,
       JmhPlugin,
       GatlingPlugin
     )
@@ -152,6 +155,36 @@ Universal / mappings := {
   packaged
 }
 Test / unmanagedSources += baseDirectory.value / "project" / "BuildIdentity.scala"
+
+// The docker-compose image (`sbt Docker/publishLocal`, docker-compose.yml): the ZIP's files under
+// /opt/docker on a Java 17 JRE, run as a non-root user. The base is pinned by digest: Temurin
+// 17.0.20.1 (released 2026-08-19, production's JRE; dependencies practices §1.1, §2.3) on Ubuntu
+// 22.04, production's release.
+Docker / packageName := "wlxjury"
+dockerBaseImage := "eclipse-temurin:17.0.20.1_1-jre-jammy@sha256:c35794d1348777e6bc310b9b7f420098ef8f37e988199549b545fded79a895a2"
+// The version tag, and `local`, the tag docker-compose.yml runs (it needn't change per release).
+dockerAliases := Seq(dockerAlias.value, dockerAlias.value.withTag(Some("local")))
+dockerExposedPorts := Seq(9000)
+Docker / daemonUser := "wlxjury"
+Docker / daemonUserUid := Some("10001")
+// Writable by that user (the files under /opt/docker are read-only to it): the file log
+// (logback.xml) and the thumbnail cache (wlxjury.thumbs.local-path).
+dockerExposedVolumes := Seq("/opt/docker/logs", "/var/www/jury-images")
+// The image's root directory is read-only to the app's user, so Play writes no RUNNING_PID.
+dockerCmd := Seq("-Dpidfile.path=/dev/null")
+// Three jar layers, bottom to top, so that a change rebuilds and moves only what changed: the
+// third-party jars (stable, the bulk), scalawiki's (a snapshot, changes more often), then
+// wlxjury's own jars and assets with bin/ and conf/ (bin/wlxjury lists the classpath).
+Docker / dockerGroupLayers := {
+  val lib = (Docker / defaultLinuxInstallLocation).value + "/lib/"
+
+  {
+    case (_, path) if path.startsWith(lib + "org.scalawiki.") => 2
+    case (_, path) if path.startsWith(lib + "org.intracer.")  => 3
+    case (_, path) if path.startsWith(lib)                    => 1
+    case _                                                    => 3
+  }
+}
 
 // Packaged assets get <md5>-<name> copies and <name>.md5 files, which routes.Assets.versioned
 // puts in asset URLs, so a deploy changes the URL of every changed file. Only the packaged

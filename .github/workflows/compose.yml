@@ -1,0 +1,64 @@
+# docker-compose smoke test (docs/deployment.md, "Run with docker-compose"): build the image with
+# `sbt Docker/publishLocal`, start docker-compose.yml with throwaway secrets, wait for the health
+# checks, check readiness, the sign-in and setup pages and the first account, restart on the
+# same volumes, then remove everything (scripts/docker/smoke-test.sh). About 6-8 minutes:
+# sbt's dependencies come from setup-java's cache, scalawiki from its action's cache.
+# Wikimedia access is anonymous (CLAUDE.md, Testing): no COMMONS_* or SCALAWIKI_* credentials,
+# and no secrets at all: the script generates the compose secrets for this run only.
+# Actions are pinned by commit SHA, the release as a comment (dependencies practices §2.2).
+name: docker-compose
+
+on:
+  pull_request:
+  push:
+    branches: [master, ukwikidev/followups]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: compose-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || format('{0}-{1}-{2}', github.event_name, github.ref, github.sha) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  smoke:
+    name: docker compose up
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4.9.1
+        with:
+          distribution: temurin
+          java-version: 17
+          cache: sbt
+
+      - uses: sbt/setup-sbt@ecad189dd245444b9ae0a0cd5922fd938b88906f # v1.5.12
+
+      - name: scalawiki (interim, from source)
+        uses: ./.github/actions/scalawiki
+        with:
+          jdk: 17
+
+      - name: Build the image (sbt Docker/publishLocal)
+        run: python3 scripts/agent-check.py -- sbt -J-Xmx2g -J-Dfile.encoding=UTF-8 Docker/publishLocal
+
+      - name: Smoke test
+        env:
+          SMOKE_LOGS: target/compose-smoke
+        run: scripts/docker/smoke-test.sh
+
+      - name: Upload the logs
+        if: failure() || cancelled()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: compose-smoke-attempt-${{ github.run_attempt }}
+          path: |
+            target/compose-smoke/
+            target/checks/
+          if-no-files-found: ignore
+          retention-days: 14
