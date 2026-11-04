@@ -35,20 +35,21 @@ jobs:
       - name: Start the clock
         run: echo "JOB_START=$(date +%s)" >> "$GITHUB_ENV"
 
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
-      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4.9.1
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
         with:
           distribution: temurin
           java-version: 17
           cache: sbt
+          cache-jdk: false   # as v4 (ci.yml)
 
       - uses: sbt/setup-sbt@ecad189dd245444b9ae0a0cd5922fd938b88906f # v1.5.12
 
       # Node 22, as ci.yml (dependencies practices §9, T5)
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22.23.4
           cache: npm
@@ -73,7 +74,7 @@ jobs:
       # reads only its own branch's and its base branch's caches.
       - name: Restore the fixture's dump
         id: dump
-        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: data/cache
           key: gatling-fixture-${{ env.MARIADB_IMAGE }}-${{ hashFiles('conf/db/migration/default/*.sql', 'data/*.csv', 'test/gatling/setup/GatlingDbCache.scala', 'test/gatling/setup/GatlingDbSetup.scala', 'test/resources/gatling-perf.conf') }}
@@ -90,7 +91,7 @@ jobs:
       # Playwright's own build of the engine, for the version in package-lock.json
       - name: Restore the browser
         id: browsers
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ matrix.engine }}-${{ hashFiles('browser-test/package-lock.json') }}
@@ -117,7 +118,7 @@ jobs:
 
       - name: Save the fixture's dump
         if: steps.dump.outputs.cache-hit != 'true'
-        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: data/cache
           key: ${{ steps.dump.outputs.cache-primary-key }}
@@ -141,7 +142,7 @@ jobs:
       # This engine's Allure results, for the report job below (testing practices §10.10)
       - name: Upload the Allure results
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: allure-results-${{ matrix.engine }}-attempt-${{ github.run_attempt }}
           path: target/browser-test/allure-results/
@@ -168,7 +169,7 @@ jobs:
       # server's log; also when the job was cancelled or timed out
       - name: Upload the failures
         if: failure() || cancelled()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: browser-failures-${{ matrix.engine }}-attempt-${{ github.run_attempt }}
           path: |
@@ -180,7 +181,7 @@ jobs:
 
       - name: Upload the accessibility report
         if: always() && matrix.engine == 'chromium'
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: accessibility-report-attempt-${{ github.run_attempt }}
           path: target/browser-test/a11y/
@@ -200,11 +201,11 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22.23.4
           cache: npm
@@ -218,10 +219,12 @@ jobs:
       # Every attempt's results, one directory per artifact: a re-run of the failed jobs leaves the
       # passed engines' results under their earlier attempt
       - name: Download the engines' results
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: allure-results-*
           path: target/browser-test/allure-attempts
+          # explicit (the default): the next step reads each artifact's own directory
+          merge-multiple: false
 
       # each engine's latest attempt only, merged (result files have unique names)
       - name: Each engine's latest results
@@ -241,7 +244,7 @@ jobs:
 
       # the newest saved history: saved under a run's key, restored by prefix
       - name: Restore the report's history
-        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: target/browser-test/allure-history
           key: allure-history-${{ github.run_id }}-${{ github.run_attempt }}
@@ -273,13 +276,13 @@ jobs:
 
       - name: Save the report's history
         if: github.event_name == 'push'
-        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: target/browser-test/allure-history
           key: allure-history-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Upload the report
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: allure-report-attempt-${{ github.run_attempt }}
           path: target/browser-test/allure-report/
