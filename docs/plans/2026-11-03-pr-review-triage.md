@@ -23,7 +23,8 @@ High or Medium. File:line is at the PR's tip, and at the final tip `8b246ace`
 where it moved. Entries from CodeRabbit's reviews (R185-1 onwards) give the newest tip,
 `stack/62-docs-phase`; from R191-1 on, `stack/68-juror-guide` (`06103e89`, the followups
 mirror `63c80ff7` has the same tree); from R196-1 on, the followups tip `34788a54` (the mirror
-of `stack/71-investigations`, `6c00ed6e`). R193-4 is the first Medium.
+of `stack/71-investigations`, `6c00ed6e`); from R202-1 on, the followups tip `b85b0b60` (the
+mirror of `stack/77-dependency-updates`, `17e145b3`). R193-4 is the first Medium.
 
 ### R198-1: A job that crashes the JVM is retried forever
 
@@ -236,7 +237,8 @@ From CodeRabbit's reviews of #185, #186 and #187. Each item is small; together t
 whether the cache's counts and registry tell the truth. File:line at the newest tip
 (`stack/62-docs-phase`, `c5f0d164`), `app/services/LocalImageCacheService.scala` unless named.
 
-- **PR:** #185 (02, tip `3ebe865f`), #186 (03, `155040c4`), #187 (04, `6a13cd09`).
+- **PR:** #185 (02, tip `3ebe865f`), #186 (03, `155040c4`), #187 (04, `6a13cd09`); item 8
+  from #202 (19, `feba8519`).
 - **Severity:** Low (the first item), Nit (the rest).
 - **At the newest tip:** all still there. Fixed meanwhile, so not part of this entry: the
   atomic start (#196), lookup failures and failed streams shown as failed (#216), counted
@@ -282,9 +284,18 @@ whether the cache's counts and registry tell the truth. File:line at the newest 
      concurrent misses of one image: since #193 they share the download, but each still
      decodes and scales its own copy, and the miss path has no concurrency bound (#193 review
      remark on `LocalImageCacheService.scala:121-127`).
+  8. **A write can outlive `evict`** (`evict` `:187-193`, `saveResized` `:630-668`; at the
+     followups tip `b85b0b60`): when Commons replaces a file (`FileCheck.Changed`), `evict` lists
+     and deletes the image's cached sizes, but a `saveResized` write still pending, or one started
+     afterwards from source bytes read before the eviction, moves the old version's thumbnail in
+     after the listing. Its registry claim stays, so the old thumbnail is served for good (or,
+     with no claim left, registered by the next startup scan). Fix: track the pending writes per
+     image directory and let `evict` wait for them before it lists; give each write the
+     eviction count it started under and drop the write if it changed. (#202
+     `LocalImageCacheService.scala:190`.)
 - **Placement:** append after [`2026-11-01-open-followups.md` "Still open"](https://github.com/UkrainianWiki/wlxjury/blob/stack/62-docs-phase/docs/plans/2026-11-01-open-followups.md#still-open)
-  as a "local image cache" item; items 1–5 together, item 6 with them if cheap, item 7 only
-  after a measurement.
+  as a "local image cache" item; items 1–5 together (item 8 with item 2: both track the write
+  futures), item 6 with them if cheap, item 7 only after a measurement.
 
 ### R185-2: Image cache tests and tooling nits
 
@@ -371,7 +382,8 @@ whether the cache's counts and registry tell the truth. File:line at the newest 
 ### R191-1: Shared test DB helpers leak state on failure
 
 - **PR:** #191 (08, tip `7989c055`). `test/db/scalikejdbc/AutoRollbackMunitDb.scala:30`,
-  `test/db/scalikejdbc/SharedPlayApp.scala:69`, `test/services/LocalImageCacheServiceDockerSpec.scala:226`.
+  `test/db/scalikejdbc/SharedPlayApp.scala:69`, `test/services/LocalImageCacheServiceDockerSpec.scala:226`;
+  item 4 from #204 (21, `52ad411b`).
 - **Severity:** Nit.
 - **At the newest tip:** all still there (`AutoRollbackMunitDb.scala:27-29`;
   `SharedTestDb.scala:17-24`, `SharedPlayApp.scala:66-72`; `LocalImageCacheServiceDockerSpec.scala:224`).
@@ -391,6 +403,12 @@ whether the cache's counts and registry tell the truth. File:line at the newest 
      starts a second MariaDB and runs the migrations, and a failure there replaces the
      spec's own result. Fix: `SharedTestDb.isStarted`, as `SchemaBaselineSpec` and
      `GatlingSmokeSpec` do. (Runs only with `-Ddocker.tests`.)
+  4. `TestDocker.start` stops a container whose start ended just after `StartTimeout` from
+     `onTimeout`, on the calling thread and with no bound (`test/db/TestDocker.scala:37-46`,
+     `within` `:52-68`): a Docker that stopped answering then holds the failing spec past its
+     timeout instead of reporting it. Fix: run the stop as `within` runs the start (a daemon
+     thread, a bounded wait), keeping the `IllegalStateException` as the error. (#204 review
+     remark on `TestDocker.scala:64-66`.)
 - **Placement:** append to [testing practices §2](https://github.com/UkrainianWiki/wlxjury/blob/stack/68-juror-guide/docs/testing/practices.md#2-isolation-and-the-shared-server)
   follow-ups; take with the CI batch's test fixes (as R185-2 items 1 and 5).
 
@@ -680,7 +698,7 @@ whether the cache's counts and registry tell the truth. File:line at the newest 
 - **PR:** #200 (17, tip `6a9a60ff`). `scripts/deployment/wlxjury-deploy.py:153`, `:370`, `:694`,
   `:752`, `:965`; `scripts/deployment/wlxjury-release.sh:219`, `:296`;
   `conf/wlxjury/production.conf:6`; review remarks on `ReadinessControllerSpec.scala:59-60` and
-  `test_deployment.py:232-234`.
+  `test_deployment.py:232-234`; item 7 from #204 (21, `52ad411b`).
 - **Severity:** Low (items 2 and 3), Nit (the rest).
 - **At the newest tip:** all still there (`wlxjury-deploy.py:150`, `:223`, `:710-746`,
   `:787-791`, `:1006`; `wlxjury-release.sh:216-220`, `:298`; `production.conf:6`). Fixed
@@ -707,7 +725,13 @@ whether the cache's counts and registry tell the truth. File:line at the newest 
   6. **Tests:** no case sends a readiness answer with another build or schema to
      `Deployment.wait_ready` (`test_deployment.py`'s fake skips the poller), and the packaged-app
      test sends no `X-Forwarded-For: 127.0.0.1, 203.0.113.5` (expect 404).
-- **Placement:** operations practices §8 as a new OP item, with R200-1; items 2 and 3 first.
+  7. **Restore step 1 reads as a refusal after `backup-skipped`** (`docs/deployment.md:232`,
+     at the followups tip; #204 `docs/deployment.md:196`): "It refuses an operation without a
+     complete backup", while the paragraph after the steps (`:240`) says such an operation is
+     restored by switching the release back. An operator reading only the steps may hold off a
+     back-out that would work. Fix: name the exception in step 1 and link the paragraph.
+- **Placement:** operations practices §8 as a new OP item, with R200-1; items 2 and 3 first,
+  item 7 with the next deployment docs change.
 
 ### R200-3: Operational INFO lines and scheduler start-up failures not logged
 
@@ -793,6 +817,211 @@ whether the cache's counts and registry tell the truth. File:line at the newest 
      filter and the batch keeps the later, so the stored page depends on title order. Keep the
      first: `.distinctBy(_.id)` after the filter.
 - **Placement:** append after open-followups "Still open", with the next import change.
+
+### R202-1: The Commons file check can apply a stale answer
+
+- **PR:** #202 (19, tip `feba8519`). `app/services/imports/CommonsFileCheck.scala:136`, `:266`;
+  `app/services/imports/DeletedFiles.scala:60`.
+- **Severity:** Nit (each needs an import of the same file within the check's few hundred
+  milliseconds; the next import or check puts it right).
+- **At the newest tip:** all still there (`CommonsFileCheck.scala:131-140` `reusable`,
+  `:202-216` `ask`, `:248-263` `write`; `DeletedFiles.scala:60` `restore`).
+- **Items, failure scenarios and fixes:**
+  1. **A pending check answers `Deleted` for a restored file:** `reusable` hands out a check
+     still being asked (`case None`) whatever the file's state; only a finished `Deleted` is
+     dropped for a file no longer marked deleted. An import that restores the file while the
+     check runs leaves a thumbnail request joining it with `Deleted` (then `NotFound`). Fix:
+     don't join a pending check for a file whose `restored` test holds, or re-read
+     `ImageJdbc.isDeleted` before answering `Deleted`.
+  2. **`write` applies Commons' answer to the rows as `ask` read them:** `stored` is the
+     requesting `Image`, read without a lock; an import that updates the file between that read
+     and `write`'s transaction is overwritten with the older answer, and a rename recorded from
+     the wrong former title. Fix: after `markDeleted` locks the rows (`alsoLock`), re-read their
+     file fields and skip `updateFileInfo` and `recordRename` for a row that differs, answering
+     it `Unknown`.
+  3. **A deletion mark from an outdated read:** a file back on Commons between `ask`'s request
+     and `write`'s commit can be restored by a concurrent import before the mark commits
+     (`restore` doesn't see it), so the mark stays and the file's votes stay aside in open rounds
+     until an import of that file runs again. Fix: after the mark commits, ask Commons once more
+     for the deleted files and restore those present, as `settle` runs after it; a failed request
+     leaves the marks.
+- **Placement:** append after open-followups "Still open"; take with the write-path plan's split
+  of `CommonsFileCheck.write` into W12 and W13 (`2026-11-03-write-path-simplification.md`), which
+  changes the same transaction.
+
+### R203-2: Adding a pasted list waits for Commons and misses some files
+
+- **PR:** #203 (20, tip `8a05dc37`). `app/services/distribution/RoundDistributionHandler.scala:135`,
+  `:307-309` and `:134-135` (review remarks); `app/services/imports/FileTitles.scala:49`;
+  `app/services/RoundService.scala:60`, `:221-222` (review remark).
+- **Severity:** Low (item 1), Nit (the rest).
+- **At the newest tip:** all still there (`RoundDistributionHandler.scala:143-148` `prepare`,
+  `:160-196` `context`, `:205-227` `listChunk`, `:355-390` the list step;
+  `FileTitles.scala:44-49`; `RoundService.scala:55-63` `submit`, `:222-243` `distributeNewFiles`;
+  `RoundController.scala:373-377`).
+- **Items, failure scenarios and fixes:**
+  1. **A list-only job reads the round's category filters from Commons:** `prepare` and `step`
+     build the whole `Context`, whose `categoryFileIds` asks Commons for each category operand
+     (up to 5 minutes each). "Add files" to a round with a category filter waits for those
+     lookups, and fails when Commons does, though the list step uses only the round, its jurors
+     and its conflicts of interest. Fix: a list-only context without the category ids (and
+     without the previous rounds' votes).
+  2. **A list step isn't bounded by `chunkRows`:** it takes `commons.maxIdsPerRequest` titles
+     (up to 500) and inserts one row per juror and file in one transaction, while the
+     distribution path sizes its window by `chunkRows / perImage`. Fix: take
+     `max(1, min(maxIdsPerRequest, chunkRows / perImage))` titles a step.
+  3. **A listed file marked deleted locally is dropped silently:** Commons answers its title
+     with the same page id, `insertIgnore` keeps the row with its `deleted_at`, and
+     `imagesIn` leaves it out, so the file is neither added nor reported missing. Fix: restore
+     such files in the step (`DeletedFiles.restore`, as the import's write step does), or
+     report them; a spec with a stored deleted row.
+  4. **A caption with a wiki link hides the file:** `withoutWikiLink` starts at the first
+     `[[`, so `File:A.jpg|Photo by [[User:Jane]]` reads as `File:User:Jane`. Fix: only a `[[`
+     before the first `|` starts a link; add the case to `FileTitlesSpec`.
+  5. **An empty list without "new files" distributes the filters' files:**
+     `distributeNewFiles(titles = Nil, newFiles = false)` enqueues an ordinary distribution
+     (`listOnly` needs a title), though its doc says without `newFiles` only the list is added.
+     The controller never calls it so. Fix: refuse (or do nothing for) an empty list without
+     `newFiles`.
+  6. **A resubmitted form drops its changed list unsaid:** a resubmit (Back, edit the list,
+     Submit) finds the round and returns before reading `titles`; the flash says only that the
+     round was already created. Fix: when the resubmit carries a list, say some listed files may
+     not have been added and point to "Add files".
+- **Placement:** with [R203-1](#r203-1-a-pasted-file-list-over-100-kb-is-refused), in the
+  Montage parity plan's import batch (gap row 24, order item 9); items 4-6 are small and can go
+  with the next round form change.
+
+### R203-3: Files, region and sign-out tests that would pass a regression
+
+- **PR:** #203 (20, `8a05dc37`), #205 (22, `e70ed585`), #206 (23, `398fc43d`): review remarks and
+  `test/controllers/SignOutAndSwitchSpec.scala:45`, `:104`.
+- **Severity:** Nit (test gaps; the code they cover is right today).
+- **At the newest tip:** all still there.
+- **Items:**
+  1. No controller example posts a contest import list with a line that names no file
+     (`ImageController.importImages`, `FileTitles.unreadable`; `test/controllers/ImportFilesPageSpec.scala`
+     posts an empty list only). Post `https://commons.wikimedia.org/w/index.php?curid=1`, expect
+     400, no import job and the source unchanged.
+  2. "count the regions on every view with the cache switched off"
+     (`test/controllers/ContestFilesPageSpec.scala:395-407`) drops both pages and checks only that
+     the cache loaded nothing; uncached counts of 0 would pass. Assert `All files (8)` on both.
+  3. The whole-round `regionCounts` examples (`test/db/scalikejdbc/RegionCountsSpec.scala:75-90`)
+     have no `rated = Some(false)`, the one case of the whole-round query grouped by page (the
+     juror example doesn't run that query). Add a `wholeRound(rated = Some(false))` assertion.
+  4. The GET `/logout` example (`SignOutAndSwitchSpec.scala:41-46`) accepts a session without
+     the user name, so a GET that signs out passes. Assert the response sets no session, or one
+     that still names the user.
+  5. The GET `/switch-contest/20` example (`SignOutAndSwitchSpec.scala:96-104`) checks only that
+     the contest isn't 20; a GET that clears the session or switches elsewhere passes. Assert the
+     session is unchanged (no session cookie set).
+  6. "see a juror's votes, and all together" (`test/controllers/OwnVotesSpec.scala:157-165`)
+     checks statuses only, and both jurors have the same ratings, so a view of the wrong juror's
+     votes passes. Give the jurors distinct ratings and assert one only the requested juror has
+     (gallery, by rate, file list, CSV), and that the all-jurors view differs.
+- **Placement:** [testing practices §12](https://github.com/UkrainianWiki/wlxjury/blob/stack/68-juror-guide/docs/testing/practices.md#12-where-the-code-doesnt-follow-these-yet-for-triage)
+  as a new T item, with [R196-3](#r196-3-authorization-and-query-tests-that-would-pass-a-regression);
+  with the CI batch's test fixes.
+
+### R204-1: Contest file paging, window and video sources
+
+- **PR:** #204 (21, tip `52ad411b`). `app/controllers/GalleryController.scala:441`, `:464`;
+  `app/views/large/contestFile.scala.html:134-135`.
+- **Severity:** Nit.
+- **At the newest tip:** all still there (`app/controllers/Pager.scala:14`;
+  `GalleryController.scala:485-497` `contestFileLarge`; `contestFile.scala.html:90-93`,
+  `:129-133`, `large.scala.html:64-65`, `thumbsBar.scala.html:25-26`,
+  `galleryByRate.scala.html:92-93`).
+- **Items, failure scenarios and fixes:**
+  1. **A huge page number shows the first page:** `Pager.offset` computes `(page - 1) * pageSize`
+     in `Int`; past about 143 million it wraps negative and `max(0, …)` makes it 0, so the files
+     page lists page 1 while the pager names the requested one (every gallery's `Pager` too).
+     Fix: compute in `Long` and clamp to `Int.MaxValue` (an empty page).
+  2. **The large view's rank and window are two reads:** `fileRank` and `listFiles` run as
+     separate statements; files added before the target between them shift the window, the
+     target falls out of it, and the view redirects to page 1. Fix: read both in one
+     transaction with a consistent snapshot, or retry once when the target isn't in the window.
+  3. **Every video is declared WebM:** the `<source>` tags say `type="video/webm"` whatever the
+     file is, so a browser without WebM skips an Ogg (or other) video it could play. Fix: the
+     stored `mime` as `type`, none when unknown.
+  4. **A deleted video gets an empty player:** the video branches render Commons' URL also for a
+     file marked deleted, with no fallback, while a deleted image shows its cached thumbnail or a
+     grey box. Fix: for `deletedAt`, show the cached poster (or the grey box) instead.
+- **Placement:** append after open-followups "Still open"; items 3 and 4 with the next large
+  view change.
+
+### R205-1: Region filter and region count cache nits
+
+- **PR:** #205 (22, tip `e70ed585`) review remarks: `app/db/scalikejdbc/rewrite/ImageDbNew.scala:253-254`,
+  `app/db/scalikejdbc/RegionCountCache.scala:50-56`, `app/services/imports/ImageImportHandler.scala:250-252`.
+- **Severity:** Nit.
+- **At the newest tip:** all still there (`ImageDbNew.scala:465-467`; `RegionCountCache.scala:45-61`;
+  `ImageImportHandler.scala:327`).
+- **Items, failure scenarios and fixes:**
+  1. **`%` and `_` in a region reach the sub-region `LIKE`:** with `subRegions` (a "Віа Регіа"
+     special nomination round) a region of two characters or fewer goes into
+     `s.monument_id like '<region>%'` unescaped, so `region=0_` lists a juror's files of several
+     regions (their own round's files; nothing outside it). Fix: escape both, as the other
+     branch's `regionOf` check makes it exact.
+  2. **Concurrent misses each count the category:** a miss runs the count query per request,
+     with no load in flight shared, on the 8-thread blocking pool the slow pages share. Fix: one
+     load per category (a future in the cache), the versions checked as now; measure first
+     (performance practices §3.1).
+  3. **Any changed file clears every category's counts:** `writeImages` calls
+     `invalidateMonumentIds()` for a change of url, size or description too, though counts
+     depend only on links and monument ids. Fix: invalidate only when a changed file's monument
+     id differs from the stored one.
+- **Placement:** append after open-followups "Still open"; item 2 only after a measurement.
+
+### R205-2: agent-check and region benchmark tools
+
+- **PR:** #205 (22, tip `e70ed585`). `scripts/agent-check.py:34`, `:42`, `:72`;
+  `test/gatling/setup/RegionCountBenchmark.scala:59`, `RegionCountPairedBenchmark.scala:129`; review
+  remarks on `RegionCountBenchmark.scala:268-274` and `scripts/test_agent_check.py:31-37`.
+- **Severity:** Nit (developer tools; no effect on the app).
+- **At the newest tip:** all still there (`agent-check.py:25-43` `summarize`, `:79`;
+  `RegionCountBenchmark.scala:58`, `:245`; `RegionCountPairedBenchmark.scala:67`).
+- **Items, failure scenarios and fixes:**
+  1. `summarize` keeps the first three failure anchors only, so a compile error after three
+     earlier matches is summarized as `Compilation failed` without its `file.scala:line`. Take
+     anchors from the start and the end, and say how many were left out.
+  2. The truncation notice is added after `max_chars`, so a summary reaches 6,048 characters.
+     Reserve its length inside the limit.
+  3. The wrapper reads the whole log into memory to summarize it; a very large log can exhaust
+     memory after the command ended. Stream it line by line, keeping the summary lines and the
+     failure windows.
+  4. `RegionCountBenchmark.main` catches nothing: an exception after the fixture server started
+     leaves Play's non-daemon threads running and the forked JVM hangs. Catch `Throwable`, print
+     it and `sys.exit(1)`, as `RegionCountPairedBenchmark` does.
+  5. `RegionCountPairedBenchmark` takes `bench.pairs` and `bench.roundPairs` of 0, then fails on
+     an empty sample after writing its output files. `require` both positive before the fixture
+     starts.
+  6. `bench.maxSeconds` stops starting runs but doesn't bound one in flight; a query that never
+     returns keeps the benchmark running. Say so in the scaladoc, or set a statement timeout.
+  7. The output-bound test (`scripts/test_agent_check.py:30-37`) never reaches the truncation
+     branch: add a selected line over `max_chars` and assert the notice and the bound (with
+     item 2).
+- **Placement:** items 1-3 and 7 with the next change of the agent tools (CLAUDE.md "Agent
+  efficiency" names them); items 4-6 with [R190-1](#r190-1-gatling-fixture-settings-and-setup-checks)
+  and [R197-1](#r197-1-gatling-simulation-caps-and-checks), in performance practices §1 follow-ups.
+
+### R206-1: A missing round's comment and the pollers' denials
+
+- **PR:** #206 (23, tip `398fc43d`). `app/controllers/ImageDiscussionController.scala:42`,
+  `javascript-test/job-status.test.js:137`, `public/javascripts/cache-status.js:46`.
+- **Severity:** Nit.
+- **At the newest tip:** all still there (`ImageDiscussionController.scala:29-45`;
+  `public/javascripts/job-status.js:94`; `cache-status.js:48-52`).
+- **Items, failure scenarios and fixes:**
+  1. `addComment` answers a round id that doesn't exist with the 403 page, while a missing
+     resource is a 404 elsewhere (`error.round.not.found`). Answer 404 when the id names no
+     round; keep the denial for a round of another contest.
+  2. `JobController` answers a job the user may not see with the same JSON 404 as a missing one,
+     and `pollJobStatus` treats only 401 and 403 as denied: on a 404 it blanks the text, hides
+     Retry and Cancel and stops without the denied text. Treat 404 as denied (and test it).
+  3. `pollCacheStatus` stops on 401 or 403 without a word, leaving the last progress text
+     ("… running…"). Write the element's `data-denied-text`, as `job-status.js` does.
+- **Placement:** append after open-followups "Still open"; with the next change of the job or
+  cache pages.
 
 New entries use the format `### R<PR>-<n>: <short title>`, then PR and file:line
 at its tip, severity, whether it is still at the final tip, the failure
@@ -967,3 +1196,38 @@ Two #196 comments (the thumbnail writes) go to the existing
 | #199 | run.sh loses the app logs on an abort: new entry (R199-1) |
 | #200 | SourcePaths without src/main/resources: not applicable; useSSL=false for a remote database: new entry (R200-2); forwarded-loopback readiness case: new entry (R200-2); readiness with another build or schema: new entry (R200-2); ErrorDocument 503 for a stopped backend: not applicable |
 | #201 | canViewOrgInfo jury branch without the contest: fixed later (#206); files page blocks on the Commons count: new entry (R201-3); resetPassword .get: fixed later (#206); fallback to the first admin contest: fixed later (#206); EXPLAIN checks Using temporary only: new entry (R196-3) |
+
+### CodeRabbit, PRs 202-206
+
+CodeRabbit's 31 inline comments and 15 review-level remarks on #202-#206 (the remarks are in
+the review bodies, under "Follow-ups" and "Nitpick comments", which `threads.py` doesn't list;
+#202 has none), classified against the followups tip `b85b0b60` (the mirror of
+`stack/77-dependency-updates`, `17e145b3`); one reply per thread, and the review-level remarks in
+one comment per PR (#203, #204, #205, #206). New entries:
+[R202-1](#r202-1-the-commons-file-check-can-apply-a-stale-answer),
+[R203-2](#r203-2-adding-a-pasted-list-waits-for-commons-and-misses-some-files) (Low),
+[R203-3](#r203-3-files-region-and-sign-out-tests-that-would-pass-a-regression),
+[R204-1](#r204-1-contest-file-paging-window-and-video-sources),
+[R205-1](#r205-1-region-filter-and-region-count-cache-nits),
+[R205-2](#r205-2-agent-check-and-region-benchmark-tools),
+[R206-1](#r206-1-a-missing-rounds-comment-and-the-pollers-denials); none Medium or above. Items
+added to [R185-1](#r185-1-local-image-cache-bookkeeping-gaps) (item 8, writes that outlive
+`evict`), [R191-1](#r191-1-shared-test-db-helpers-leak-state-on-failure) (item 4, the unbounded
+stop in `TestDocker`) and [R200-2](#r200-2-release-tools-copies-file-modes-and-public-checks)
+(item 7, restore step 1). The 100 KB form limit (#203 `editRound.scala.html:71`) is the
+existing [R203-1](#r203-1-a-pasted-file-list-over-100-kb-is-refused).
+
+| PR | Inline comments: class |
+|---|---|
+| #202 | SelectionJdbc.scala:280 target votes in the other table: fixed later (#239); CommonsFileCheck.scala:136 pending Deleted for a restored file: new entry; CommonsFileCheck.scala:266 write applies an unlocked snapshot: new entry; DeletedFiles.scala:60 mark from an outdated read: new entry; ImageImportHandler.scala:260 restored file of another contest not refreshed: fixed later (#209); LocalImageCacheService.scala:190 writes outlive evict: new entry (R185-1) |
+| #203 | RoundDistributionHandler.scala:135 list-only job reads the category filters: new entry; RoundDistributionHandler.scala:183 stored title not checked on Commons: not applicable; RoundDistributionHandler.scala:309 stored title not updated: fixed later (#209); FileTitles.scala:49 wiki link in a caption: new entry; RoundService.scala:60 resubmit drops a changed list: new entry; editRound.scala.html:71 list over 100 KB refused: new entry (R203-1) |
+| #204 | GalleryController.scala:441 page offset overflow: new entry; GalleryController.scala:464 rank and window in two reads: new entry; contestFile.scala.html:134 video type always WebM: new entry; contestFile.scala.html:135 deleted video without a fallback: new entry; deployment.md:196 restore step 1 and backup-skipped: new entry (R200-2) |
+| #205 | agent-check.py:34 first three anchors only: new entry; agent-check.py:42 notice past max_chars: new entry; agent-check.py:72 whole log read: new entry; RegionCountBenchmark.scala:59 no exit on an exception: new entry; RegionCountPairedBenchmark.scala:129 pairs of 0: new entry |
+| #206 | GalleryController.scala:305 juror lookup with round 0: fixed later (#207); ImageDiscussionController.scala:42 missing round answered 403: new entry; LoginController.scala:60 returnTo on the first-account sign-up: fixed later (#225); LoginController.scala:83 CSRF token dropped from the session: not applicable; main_large.scala.html:47 no-JavaScript binary vote: not applicable; job-status.test.js:137 404 not treated as denied: new entry; cache-status.js:46 no denial text: new entry; SignOutAndSwitchSpec.scala:45 GET logout assertion: new entry (R203-3); SignOutAndSwitchSpec.scala:104 GET switch assertion: new entry (R203-3) |
+
+| PR | Review-level remarks: class |
+|---|---|
+| #203 | list step leaves a locally deleted file out: new entry (R203-2); list step not bounded by chunkRows: new entry (R203-2); empty list without new files: new entry (R203-2); import list line naming no file untested: new entry (R203-3) |
+| #204 | TestDocker stop after a late start unbounded: new entry (R191-1); another contest's admin on the files list untested: fixed later (#209) |
+| #205 | sub-region LIKE wildcards: new entry (R205-1); concurrent region-count loads: new entry (R205-1); invalidation on any changed file: new entry (R205-1); maxSeconds doesn't bound a run in flight: new entry (R205-2); cache-off test asserts no count: new entry (R203-3); oversized selected line untested: new entry (R205-2); whole-round unrated count untested: new entry (R203-3); cached-image test reads no body: fixed later (#206) |
+| #206 | organizer, admin and root vote views check statuses only: new entry (R203-3) |
