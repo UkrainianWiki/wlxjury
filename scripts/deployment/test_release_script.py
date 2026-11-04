@@ -184,6 +184,9 @@ class ReleaseScriptTest(unittest.TestCase):
             directory.mkdir(parents=True)
         self.flag = self.runtime / 'maintenance'
         self.hold = self.dropin / 'zz-deployment-hold.conf'
+        self.image_cache = self.base / 'jury-images'
+        self.image_cache.mkdir()
+        self.image_cache.chmod(0o755)
         self.app_port = free_port()
         self.start_database()
         (stubs / 'systemctl').write_text(SYSTEMCTL_STUB)
@@ -268,7 +271,8 @@ class ReleaseScriptTest(unittest.TestCase):
                   'backup_root': str(self.backups), 'database_dir': str(self.datadir),
                   'service': SERVICE, 'systemd_dropin_dir': str(self.dropin), 'port': self.app_port,
                   'ready_timeout_seconds': 10, 'minimum_free_bytes': 1,
-                  'quiesce_units': WRITERS, 'maintenance_urls': urls or self.urls}
+                  'quiesce_units': WRITERS, 'maintenance_urls': urls or self.urls,
+                  'image_cache_dir': str(self.image_cache)}
         config.update(settings)
         self.config = self.runtime / 'deployment.json'
         self.config.write_text(json.dumps(config))
@@ -779,6 +783,266 @@ class ReleaseScriptTest(unittest.TestCase):
         result = self.release('reopen', str(self.base))
         self.assertEqual(result.returncode, 1)
         self.assertIn('not an operation folder', result.stderr)
+
+    def test_a_writable_image_cache_stops_the_deployment_before_anything_changes(self):
+        archive, sha = self.release_zip()
+        for mode in (0o777, 0o2775):
+            self.image_cache.chmod(mode)
+            refused = self.release('deploy', archive, sha)
+            self.assertEqual(refused.returncode, 1)
+            self.assertIn('is group- or world-writable (mode %o)' % mode, refused.stderr)
+            self.assertIn('chmod go-w ' + str(self.image_cache), refused.stderr)
+            self.assertUnchanged()
+        self.image_cache.chmod(0o2755)  # Only write access for others counts.
+        self.assertSucceeded(self.release('deploy', archive, sha))
+
+    # Retention: prune, on its own and at the end of reopen.
+
+    def past_operation(self, name, previous, candidate, finished=True, age_days=30):
+        """A wlxjury-release operation folder with a dump, as an earlier deployment left it."""
+        operation = self.backups / name
+        operation.mkdir(mode=0o700)
+        (operation / 'record').write_text(
+            'previous=%s\ncandidate=%s\nzip_sha256=%s\nwriters=\ndatabase=jury\ndb_host=localhost:%d\n'
+            % (previous, candidate, '0' * 64, self.db_port))
+        milestones = ['started', 'backup-complete', 'migration-may-start', 'ready']
+        if finished:
+            milestones += ['traffic-may-resume', 'complete']
+        (operation / 'milestones').write_text('\n'.join(milestones) + '\n')
+        (operation / 'operation.log').write_text('')
+        self.write_dump(operation, b'-- the dump before ' + candidate.name.encode() + b'\n')
+        then = time.time() - age_days * 86400
+        for path in (operation / 'database.sql.gz', operation / 'database.sql.gz.sha256'):
+            os.utime(str(path), (then, then))
+        return operation
+
+    def history(self, count, open_operations=(), young=()):
+        """Releases r1..rCOUNT and their operations, oldest first: operation k took r(k-1) (the
+        legacy release for k = 1) to rk and finished, unless k is in open_operations. Its dump
+        is 30 days old, or 3 days for k in young."""
+        previous, operations = self.old, []
+        for k in range(1, count + 1):
+            release = self.root / 'releases' / ('r%d' % k)
+            self.write_release(release, {'build': 'r%d' % k, 'version': '26.11', 'schemaVersion': '53'})
+            operations.append(self.past_operation('202501%02dT000000Z-r%d' % (k, k), previous, release,
+                                                  finished=k not in open_operations,
+                                                  age_days=3 if k in young else 30))
+            previous = release
+        return operations
+
+    def select(self, release):
+        (self.root / 'current.next').symlink_to(release)
+        os.replace(str(self.root / 'current.next'), str(self.root / 'current'))
+
+    def release_names(self):
+        return sorted(path.name for path in (self.root / 'releases').iterdir())
+
+    @staticmethod
+    def dumps(operations):
+        return [(operation / 'database.sql.gz').exists() for operation in operations]
+
+    def test_reopen_prunes_old_releases_and_dumps_only_once_it_succeeds(self):
+        operations = self.history(4)
+        self.select(self.root / 'releases' / 'r4')
+        archive, sha = self.release_zip()
+        self.assertSucceeded(self.release('deploy', archive, sha))
+        operation, = [path for path in self.backups.iterdir() if path.is_dir() and path not in operations]
+        new = (self.root / 'current').resolve().name
+        everything = sorted(['legacy-0.12-v53', 'r1', 'r2', 'r3', 'r4', new])
+        self.assertEqual(self.release_names(), everything)  # deploy itself deletes nothing.
+        self.broken_routes.add('/b')
+        self.assertEqual(self.release('reopen', operation.name).returncode, 1)
+        # A failed reopen deletes nothing: a restore may still need any of them.
+        self.assertEqual(self.release_names(), everything)
+        self.assertEqual(self.dumps(operations), [True] * 4)
+        self.broken_routes.clear()
+        reopened = self.release('reopen', operation.name)
+        self.assertSucceeded(reopened)
+        # The current release and the two used before it stay.
+        self.assertEqual(self.release_names(), sorted(['r3', 'r4', new]))
+        self.assertIn('Deleted release r1', reopened.stdout)
+        self.assertIn('Keep release r4: one of the 2 used most recently', reopened.stdout)
+        # The newest three dumps stay (this operation's, r4's and r3's); the older ones go with
+        # their checksums, and their operation folders stay.
+        self.assertTrue((operation / 'database.sql.gz').exists())
+        self.assertEqual(self.dumps(operations), [False, False, True, True])
+        self.assertFalse((operations[0] / 'database.sql.gz.sha256').exists())
+        self.assertTrue((operations[0] / 'record').exists())
+        self.assertIn('database.sql.gz pruned', (operations[0] / 'operation.log').read_text())
+        log = (self.backups / 'prune.log').read_text()
+        self.assertIn('deleted %s (' % (self.root / 'releases' / 'r1'), log)
+        self.assertIn('deleted %s (' % (operations[0] / 'database.sql.gz'), log)
+        self.assertIn('Deleted release r1', (operation / 'operation.log').read_text())
+
+    def test_prune_with_fewer_releases_than_it_keeps_deletes_nothing(self):
+        operations = self.history(1)
+        self.select(self.root / 'releases' / 'r1')
+        for args in (('prune', '--dry-run'), ('prune',)):
+            result = self.release(*args)
+            self.assertSucceeded(result)
+            self.assertNotIn('elete', result.stdout)
+            self.assertIn('Keep release legacy-0.12-v53', result.stdout)
+        self.assertEqual(self.release_names(), ['legacy-0.12-v53', 'r1'])
+        self.assertEqual(self.dumps(operations), [True])
+        self.assertFalse((self.backups / 'prune.log').exists())
+
+    def test_prune_keeps_the_current_release_and_the_dumps_a_restore_relies_on(self):
+        operations = self.history(6, young=(3,))
+        # Switched back to r2: the current release is kept however old it is, and so is the
+        # dump of the operation that deployed it.
+        self.select(self.root / 'releases' / 'r2')
+        dry = self.release('prune', '--dry-run')
+        self.assertSucceeded(dry)
+        self.assertIn('Would delete release r4', dry.stdout)
+        self.assertIn('Would delete dump %s/database.sql.gz' % operations[0].name, dry.stdout)
+        self.assertEqual(len(self.release_names()), 7)
+        self.assertEqual(self.dumps(operations), [True] * 6)
+        pruned = self.release('prune')
+        self.assertSucceeded(pruned)
+        self.assertEqual(self.release_names(), ['r2', 'r5', 'r6'])
+        self.assertIn('Keep release r2: the current release', pruned.stdout)
+        # r6's, r5's and r4's are the newest three, r3's is younger than 14 days, r2's deployed
+        # the current release.
+        self.assertEqual(self.dumps(operations), [False, True, True, True, True, True])
+        self.assertIn('younger than 14 days', pruned.stdout)
+        self.assertIn('taken by the operation that deployed the current release', pruned.stdout)
+
+    def test_prune_keeps_what_an_open_operation_names_and_never_touches_the_cutover(self):
+        self.write_config(keep_previous_releases=1, keep_backup_dumps=1)
+        operations = self.history(4, open_operations=(2,))
+        self.select(self.root / 'releases' / 'r4')
+        # wlxjury-deploy's cutover record, still open: it names the legacy release.
+        cutover = self.backups / '20241001T000000Z-abcdef12'
+        cutover.mkdir(mode=0o700)
+        record = {'id': cutover.name, 'phase': 'ready', 'previous': str(self.old), 'candidate': str(self.old)}
+        (cutover / 'deployment.json').write_text(json.dumps(record))
+        self.write_dump(cutover, b'-- the cutover dump\n')
+        self.assertSucceeded(self.release('prune'))
+        # r3 is the one kept besides r4; r1 and r2 belong to the open operation 2.
+        self.assertEqual(self.release_names(), ['legacy-0.12-v53', 'r1', 'r2', 'r3', 'r4'])
+        # The newest dump and the open operation's stay.
+        self.assertEqual(self.dumps(operations), [False, True, False, True])
+        record['phase'] = 'complete'
+        (cutover / 'deployment.json').write_text(json.dumps(record))
+        self.assertSucceeded(self.release('prune'))
+        self.assertEqual(self.release_names(), ['r1', 'r2', 'r3', 'r4'])
+        self.assertTrue((cutover / 'database.sql.gz').exists())
+        # A pruned dump: restore says so before anything changes.
+        refused = self.release('restore', operations[2].name, '--accept-data-loss')
+        self.assertEqual(refused.returncode, 1)
+        self.assertIn('database.sql.gz is gone (pruned', refused.stderr)
+        self.assertFalse(self.flag.exists())
+        self.assertTrue(self.active(SERVICE))
+
+    def test_prune_refuses_during_maintenance_and_removes_unfinished_unpacks(self):
+        self.history(1)
+        staging = self.root / 'releases' / '.staging.abc123'
+        (staging / 'wlxjury-26.11').mkdir(parents=True)
+        self.flag.touch()
+        refused = self.release('prune')
+        self.assertEqual(refused.returncode, 1)
+        self.assertIn('maintenance is on', refused.stderr)
+        self.assertTrue(staging.exists())
+        self.flag.unlink()
+        self.write_config(keep_previous_releases=0)
+        self.assertIn('keep_previous_releases must be at least 1', self.release('prune').stderr)
+        self.write_config(keep_backup_days='two weeks')
+        self.assertIn('keep_backup_days', self.release('prune').stderr)
+        self.write_config()
+        self.assertEqual(self.release('prune', '--force').returncode, 2)  # Usage error.
+        self.assertTrue(staging.exists())
+        self.assertSucceeded(self.release('prune'))
+        self.assertFalse(staging.exists())
+        self.assertEqual(self.release_names(), ['legacy-0.12-v53', 'r1'])
+
+
+MONIT_CHECK = Path(__file__).resolve().parents[2] / 'conf' / 'monit' / 'wlxjury-check'
+MONIT_CONFIG = MONIT_CHECK.parent / 'wlxjury'
+
+
+class FakeReadiness(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        status = self.server.test.ready_status if self.path == '/health/ready' else 404
+        self.send_response(status)
+        self.send_header('Content-Length', '0')
+        self.end_headers()
+
+    def log_message(self, *args):
+        pass
+
+
+@unittest.skipUnless(os.name == 'posix' and shutil.which('sh') and shutil.which('curl'), 'Needs sh and curl')
+class MonitCheckTest(unittest.TestCase):
+    """conf/monit/wlxjury: alert only, quiet while maintenance is on."""
+
+    def setUp(self):
+        self.base = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, str(self.base), True)
+        stubs = self.base / 'bin'
+        stubs.mkdir()
+        (stubs / 'systemctl').write_text('#!/bin/sh\n[ "$1 $2 $3" = "is-active --quiet wlxjury.service" ] '
+                                         '&& [ -e "%s" ]\n' % (self.base / 'active'))
+        (stubs / 'systemctl').chmod(0o755)
+        self.ready_status = 200
+        self.server = http.server.ThreadingHTTPServer(('127.0.0.1', 0), FakeReadiness)
+        self.server.test = self
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+        self.addCleanup(self.server.server_close)
+        self.flag = self.base / 'maintenance'
+        self.env = dict(os.environ, PATH=str(stubs) + os.pathsep + os.environ['PATH'],
+                        WLXJURY_MAINTENANCE_FLAG=str(self.flag),
+                        WLXJURY_READY_URL='http://127.0.0.1:%d/health/ready' % self.server.server_port)
+
+    def check(self):
+        result = subprocess.run(['sh', str(MONIT_CHECK)], env=self.env, stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE, text=True, timeout=30)
+        return result.returncode, result.stdout.strip()
+
+    def test_ready_failing_and_maintenance(self):
+        (self.base / 'active').touch()
+        self.assertEqual(self.check(), (0, 'ready'))
+        self.ready_status = 503  # A schema that doesn't match the release, or the wrong isolation.
+        self.assertEqual(self.check(), (1, '%s answers HTTP 503' % self.env['WLXJURY_READY_URL']))
+        (self.base / 'active').unlink()
+        self.assertEqual(self.check(), (2, 'wlxjury.service is not active'))
+        # A deployment holds maintenance: quiet, until the flag is two hours old.
+        self.flag.touch()
+        self.assertEqual(self.check()[0], 0)
+        then = time.time() - 3 * 3600
+        os.utime(str(self.flag), (then, then))
+        status, line = self.check()
+        self.assertEqual(status, 3)
+        self.assertIn('more than 120 minutes', line)
+        self.flag.unlink()
+        (self.base / 'active').touch()
+        self.server.shutdown()
+        self.server.server_close()
+        self.assertEqual(self.check(), (1, '%s answers HTTP 000' % self.env['WLXJURY_READY_URL']))
+
+    def test_the_monit_file_only_alerts(self):
+        lines = [line.strip() for line in MONIT_CONFIG.read_text().splitlines()
+                 if line.strip() and not line.lstrip().startswith('#')]
+        self.assertEqual(lines[0], 'check program wlxjury with path /usr/local/lib/wlxjury/monit-check'
+                                   ' with timeout 30 seconds')
+        for line in lines:
+            self.assertNotRegex(line.lower(), r'\b(start|stop|restart|exec|unmonitor)\b', line)
+
+    @unittest.skipUnless(shutil.which('monit') and hasattr(os, 'geteuid') and os.geteuid() == 0,
+                         'monit -t needs monit, as root (the Dockerfile.test image)')
+    def test_monit_accepts_the_file(self):
+        script = self.base / 'monit-check'
+        shutil.copyfile(str(MONIT_CHECK), str(script))
+        script.chmod(0o755)
+        config = self.base / 'wlxjury'
+        config.write_text(MONIT_CONFIG.read_text().replace('/usr/local/lib/wlxjury/monit-check', str(script)))
+        control = self.base / 'monitrc'
+        control.write_text('set daemon 30\nset logfile %s\nset idfile %s\nset statefile %s\ninclude %s\n'
+                           % (self.base / 'monit.log', self.base / 'monit.id', self.base / 'monit.state', config))
+        control.chmod(0o600)
+        result = subprocess.run(['monit', '-t', '-c', str(control)], stdout=subprocess.PIPE,
+                                stderr=subprocess.STDOUT, text=True, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertIn('Control file syntax OK', result.stdout)
 
 
 if __name__ == '__main__':

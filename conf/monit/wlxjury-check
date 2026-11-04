@@ -1,0 +1,34 @@
+#!/bin/sh
+# monit's check of the jury app (conf/monit/wlxjury), installed as
+# /usr/local/lib/wlxjury/monit-check (docs/deployment.md, "Monitoring with monit").
+#
+# Exit 0 when the app is ready, or while a deployment holds the maintenance flag; otherwise a
+# non-zero status and one line, which monit puts in its alert. It only reads: it never starts,
+# stops or restarts anything. The WLXJURY_* variables are for the tests; monit sets none of them.
+PATH=${PATH:+$PATH:}/usr/sbin:/usr/bin:/sbin:/bin
+flag=${WLXJURY_MAINTENANCE_FLAG:-/etc/wlxjury-runtime/maintenance}
+service=${WLXJURY_SERVICE:-wlxjury.service}
+# Loopback only, as /health/ready requires; any Host header is accepted there (conf/routes).
+url=${WLXJURY_READY_URL:-http://127.0.0.1:9000/health/ready}
+# A deployment's maintenance window is minutes; a flag left on for longer is an operation
+# that stopped and waits for the runbook.
+max_minutes=${WLXJURY_MAINTENANCE_MAX_MINUTES:-120}
+
+if [ -e "$flag" ]; then
+  if [ -n "$(find "$flag" -maxdepth 0 -mmin +"$max_minutes")" ]; then
+    echo "maintenance has been on for more than $max_minutes minutes: an operation stopped; see the recovery runbook"
+    exit 3
+  fi
+  echo "maintenance is on (a deployment is open): not checked"
+  exit 0
+fi
+if ! systemctl is-active --quiet "$service"; then
+  echo "$service is not active"
+  exit 2
+fi
+code=$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' "$url" 2>/dev/null) || code=000
+if [ "$code" != 200 ]; then
+  echo "$url answers HTTP $code"
+  exit 1
+fi
+echo "ready"

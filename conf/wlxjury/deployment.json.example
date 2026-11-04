@@ -10,6 +10,10 @@
   "minimum_free_bytes": 4294967296,
   "restore_minimum_free_bytes": 2147483648,
   "session_end_timeout_seconds": 600,
+  "keep_previous_releases": 2,
+  "keep_backup_dumps": 3,
+  "keep_backup_days": 14,
+  "image_cache_dir": "/var/www/jury-images",
   "quiesce_units": ["wmua-backup-db@wlxjury.timer", "wmua-backup-db@wlxjury.service"],
   "maintenance_urls": [
     "http://jury.wle.org.ua/", "https://jury.wle.org.ua/",

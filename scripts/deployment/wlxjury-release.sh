@@ -10,6 +10,11 @@
 #   wlxjury-release [--config FILE] deploy RELEASE.zip SHA256 [--backup]
 #   wlxjury-release [--config FILE] reopen OPERATION
 #   wlxjury-release [--config FILE] restore OPERATION [--accept-data-loss]
+#   wlxjury-release [--config FILE] prune [--dry-run]
+#
+# A successful reopen ends with prune: old release folders and old
+# pre-deployment dumps are deleted, keeping what a restore can still need
+# (docs/deployment.md, "Retention").
 #
 # Run as root inside tmux. Reads the deployment.json and runtime.env that
 # wlxjury-deploy uses, and shares its lock, so the two never run at once.
@@ -23,7 +28,7 @@ staging=''
 
 usage() {
   echo "usage: wlxjury-release [--config FILE] deploy RELEASE.zip SHA256 [--backup]" \
-       "| reopen OPERATION | restore OPERATION [--accept-data-loss]" >&2
+       "| reopen OPERATION | restore OPERATION [--accept-data-loss] | prune [--dry-run]" >&2
   exit 2
 }
 
@@ -80,6 +85,9 @@ done
 [ "${#URLS[@]}" -gt 0 ] || die "list every jury HTTP/HTTPS URL in maintenance_urls"
 FLAG=$RUNTIME/maintenance
 HOLD=$DROPIN_DIR/zz-deployment-hold.conf
+# The app's image cache (wlxjury.thumbs.local-path); checked only where it exists.
+IMAGE_CACHE=$(json "$config" image_cache_dir)
+IMAGE_CACHE=${IMAGE_CACHE:-/var/www/jury-images}
 
 env_value() {  # One fully double-quoted value per line, as wlxjury-deploy writes them.
   sed -n "s/^$1=\"\\(.*\\)\"\$/\\1/p" "$RUNTIME/runtime.env"
@@ -161,6 +169,19 @@ open_operation() {  # Lock, log, and require intact milestones.
   # file means "unknown", never "nothing happened".
   if [ ! -f "$op/milestones" ] || [ "$(head -n 1 "$op/milestones")" != started ]; then
     die "milestones are missing or damaged, so the state is unknown; keep maintenance on and investigate"
+  fi
+}
+
+check_image_cache() {
+  # Only the app writes the cache, and it serves it itself (ImageProxyController): a group- or
+  # world-writable folder would let any local process, PHP included, plant files in it.
+  local mode
+  [ -e "$IMAGE_CACHE" ] || return 0
+  [ -d "$IMAGE_CACHE" ] || die "image_cache_dir $IMAGE_CACHE is not a directory"
+  mode=$(stat -L -c %a "$IMAGE_CACHE")
+  if (( 8#$mode & 8#022 )); then
+    die "the image cache $IMAGE_CACHE is group- or world-writable (mode $mode); nothing was changed." \
+        "Fix it with: chmod go-w $IMAGE_CACHE (docs/deployment.md, \"The image cache folder\")"
   fi
 }
 
@@ -293,6 +314,7 @@ deploy() {
   lock
   [ ! -e "$FLAG" ] || die "maintenance is on: finish or recover the previous operation first"
   [ -L "$ROOT/current" ] || die "$ROOT/current must link to the running release"
+  check_image_cache
   echo "$sha  $zip" | sha256sum -c --quiet - || die "ZIP checksum mismatch"
   # Releases come from the reviewed sbt dist build only; symlinks are never expected.
   if zipinfo "$zip" | grep -q '^l'; then die "ZIP contains symlinks"; fi
@@ -401,7 +423,13 @@ reopen() {
   writers=$(record_value writers)
   for unit in $writers; do systemctl start "$unit"; done
   mark complete
-  echo "Traffic resumed with $current. Keep $op and the previous release."
+  echo "Traffic resumed with $current."
+  # Only now, with traffic back on a ready release, may old releases and dumps go. A failure
+  # here leaves everything in place and the operation complete.
+  if ! (prune_old yes); then
+    echo "wlxjury-release: warning: pruning stopped; traffic is open and the operation is complete." \
+         "See wlxjury-release prune --dry-run." >&2
+  fi
 }
 
 restore_release() {  # A deployment without migrations: the database stays, the release goes back.
@@ -438,6 +466,8 @@ restore() {
   if reached traffic-may-resume && [ "$accept" != yes ]; then
     die "traffic has resumed, so later writes would be lost: rerun with --accept-data-loss after a reconciliation decision"
   fi
+  [ -f "$op/database.sql.gz" ] ||
+    die "$op/database.sql.gz is gone (pruned: see $BACKUPS/prune.log); nothing was changed"
   # The backup replaces a whole database: only ever the one it was taken from.
   if [ "$(record_value database)" != "$DATABASE" ] || [ "$(record_value db_host)" != "$DB_HOST" ]; then
     die "the backup is of database $(record_value database) at $(record_value db_host), but runtime.env now names" \
@@ -485,7 +515,160 @@ restore() {
   echo "  wlxjury-release reopen $(basename "$op")"
 }
 
+# Retention (docs/deployment.md, "Retention"). Each rule only ever keeps more: what a restore can
+# still need is never deleted. Rescue dumps (before-restore-*) and wlxjury-deploy's cutover
+# records are never touched; restic keeps the long-term backups.
+
+setting() {  # setting KEY DEFAULT: a whole number from deployment.json
+  local value
+  value=$(json "$config" "$1")
+  value=${value:-$2}
+  [[ $value =~ ^[0-9]+$ ]] || die "$1 in $config must be a whole number"
+  echo "$value"
+}
+
+operation_open() {  # operation_open DIR: anything but a finished operation, an unknown state included
+  if [ -f "$1/record" ]; then
+    [ "$(tail -n 1 "$1/milestones" 2>/dev/null)" != complete ]
+  else  # A wlxjury-deploy record of the cutover.
+    [ "$(json "$1/deployment.json" phase 2>/dev/null)" != complete ]
+  fi
+}
+
+operation_releases() {  # The previous and candidate releases of an operation, one per line.
+  if [ -f "$1/record" ]; then
+    sed -n 's/^previous=//p; s/^candidate=//p' "$1/record"
+  else
+    json "$1/deployment.json" previous
+    json "$1/deployment.json" candidate
+  fi
+}
+
+release_name() {  # release_name PATH: the folder name, if PATH is a release folder
+  local parent
+  parent=$(dirname "$1")
+  if [ "$parent" = "$ROOT/releases" ] || [ "$parent" = "$(realpath "$ROOT/releases")" ]; then
+    basename "$1"
+  fi
+}
+
+remove() {  # remove yes|no PATH LABEL [MORE...]: delete PATH and MORE, or say it would
+  local apply=$1 path=$2 label=$3 size
+  shift 3
+  size=$(du -sh "$path" 2>/dev/null | cut -f1)
+  if [ "$apply" != yes ]; then
+    echo "Would delete $label ($size)"
+    return 0
+  fi
+  rm -rf --one-file-system -- "$path" "$@" || die "could not delete $path; the rest was kept"
+  printf '%s deleted %s (%s)\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$path" "$size" >> "$BACKUPS/prune.log"
+  echo "Deleted $label ($size)"
+}
+
+prune_old() {  # prune_old yes|no: delete (yes) or list (no) what the retention rules let go
+  local apply=$1 keep_releases keep_dumps keep_days current current_op=-1 dir name path dump why
+  local i order=0 kept=0 count=0
+  local -a operations=() names=()
+  local -A last=() keep=()
+  # Explicit exits: from reopen this runs where set -e does not apply.
+  keep_releases=$(setting keep_previous_releases 2) || exit 1
+  keep_dumps=$(setting keep_backup_dumps 3) || exit 1
+  keep_days=$(setting keep_backup_days 14) || exit 1
+  [ "$keep_releases" -ge 1 ] || die "keep_previous_releases must be at least 1: restore needs the previous release"
+  [ "$keep_dumps" -ge 1 ] || die "keep_backup_dumps must be at least 1: restore needs the newest dump"
+  [ -L "$ROOT/current" ] || die "$ROOT/current must link to the running release; nothing was deleted"
+  current=$(release_name "$(readlink -f "$ROOT/current")")
+  [ -n "$current" ] || die "$ROOT/current does not point into $ROOT/releases; nothing was deleted"
+  keep[$current]='the current release'
+
+  # Operations oldest first: both tools name their folders by UTC start time.
+  mapfile -t operations < <(
+    for dir in "$BACKUPS"/*; do
+      if [ -d "$dir" ] && [ ! -L "$dir" ] && { [ -f "$dir/record" ] || [ -f "$dir/deployment.json" ]; }; then
+        printf '%s\n' "$dir"
+      fi
+    done | LC_ALL=C sort)
+  for i in "${!operations[@]}"; do
+    dir=${operations[i]}
+    while IFS= read -r path; do
+      name=$(release_name "$path")
+      [ -n "$name" ] || continue
+      order=$((order + 1))
+      last[$name]=$order
+      if operation_open "$dir" && [ -z "${keep[$name]:-}" ]; then
+        keep[$name]="named by the open operation $(basename "$dir")"
+      fi
+    done < <(operation_releases "$dir")
+    if [ -f "$dir/record" ] && [ "$(release_name "$(record_of "$dir" candidate)")" = "$current" ]; then
+      current_op=$i
+    fi
+  done
+
+  # Releases by their last use in an operation, newest first; folders no operation names (a
+  # deploy that stopped during its checks) after them, newest first.
+  mapfile -t names < <(
+    for dir in "$ROOT/releases"/*; do
+      if [ -d "$dir" ] && [ ! -L "$dir" ]; then
+        name=$(basename "$dir")
+        printf '%s\t%s\t%s\n' "${last[$name]:-0}" "$(stat -c %Y "$dir")" "$name"
+      fi
+    done | LC_ALL=C sort -t $'\t' -k1,1nr -k2,2nr | cut -f3-)
+  for name in "${names[@]}"; do
+    if [ -n "${keep[$name]:-}" ]; then
+      echo "Keep release $name: ${keep[$name]}"
+    elif [ "$kept" -lt "$keep_releases" ]; then
+      kept=$((kept + 1))
+      echo "Keep release $name: one of the $keep_releases used most recently besides the current one"
+    else
+      remove "$apply" "$ROOT/releases/$name" "release $name" || exit 1
+    fi
+  done
+  for dir in "$ROOT/releases"/.staging.*; do
+    if [ -d "$dir" ] && [ ! -L "$dir" ]; then
+      remove "$apply" "$dir" "the unfinished unpack $(basename "$dir")" || exit 1
+    fi
+  done
+
+  # Pre-deployment dumps, newest first.
+  for (( i = ${#operations[@]} - 1; i >= 0; i-- )); do
+    dir=${operations[i]}
+    dump=$dir/database.sql.gz
+    if [ ! -f "$dir/record" ] || [ ! -f "$dump" ]; then continue; fi
+    count=$((count + 1))
+    if operation_open "$dir"; then why='its operation is open'
+    elif [ "$count" -le "$keep_dumps" ]; then why="one of the newest $keep_dumps"
+    elif [ "$i" = "$current_op" ]; then why='taken by the operation that deployed the current release'
+    elif [ -n "$(find "$dump" -maxdepth 0 -mmin "-$((keep_days * 1440))")" ]; then why="younger than $keep_days days"
+    else why=''
+    fi
+    if [ -n "$why" ]; then
+      echo "Keep dump $(basename "$dir")/database.sql.gz: $why"
+    else
+      remove "$apply" "$dump" "dump $(basename "$dir")/database.sql.gz" "$dump.sha256" || exit 1
+      if [ "$apply" = yes ]; then
+        echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) database.sql.gz pruned by wlxjury-release prune" >> "$dir/operation.log"
+      fi
+    fi
+  done
+  echo "Rescue dumps (before-restore-*) and the cutover's records are never pruned; restic keeps the long-term backups."
+}
+
+record_of() {  # record_of DIR KEY: a value from an operation's record
+  sed -n "s/^$2=//p" "$1/record"
+}
+
+prune() {
+  lock
+  [ ! -e "$FLAG" ] || die "maintenance is on: finish the open operation (reopen or restore) before pruning"
+  prune_old "$1"
+}
+
 case ${1:-} in
+  prune)
+    if [ $# = 1 ]; then prune yes
+    elif [ $# = 2 ] && [ "$2" = --dry-run ]; then prune no
+    else usage
+    fi ;;
   deploy)
     if [ $# = 3 ]; then deploy "$2" "$3" no
     elif [ $# = 4 ] && [ "$4" = --backup ]; then deploy "$2" "$3" yes
