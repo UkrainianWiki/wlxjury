@@ -87,6 +87,11 @@ jobs:
         working-directory: browser-test
         run: npm ci
 
+      # The dead proxy's error texts, per engine and platform, against what each gave (seconds)
+      - name: Check the proxy-error patterns
+        working-directory: browser-test
+        run: npm run check:proxy-errors
+
       # Playwright's own build of the engine, for the version in package-lock.json
       - name: Restore the browser
         id: browsers

@@ -1,6 +1,7 @@
 // The guards are not vacuous (testing §4.2): the fixture sends the production CSP, a violation
 // of it and a request to another host are reported, and Commons images are stubbed.
 import { test, expect } from '../lib/fixtures.js';
+import { isProxyError } from '../lib/proxy-errors.js';
 
 test.describe('the guards', () => {
   test('the fixture sends the production content security policy', async ({ page }) => {
@@ -66,14 +67,6 @@ test.describe('the guards', () => {
     expect(sizes).toEqual([[640, 480], [640, 480]]);
   });
 
-  // the engine's error for a connection to the dead proxy (lib/fixtures.js DEAD_PROXY), as seen
-  // on 2026-11-04 (Chromium 156, Firefox 157, WebKit 27.2)
-  const PROXY_ERROR = {
-    chromium: /^net::ERR_PROXY_CONNECTION_FAILED$/,
-    firefox: /^NS_ERROR_PROXY_CONNECTION_REFUSED$/,
-    webkit: /^Could not connect to server$/,
-  };
-
   test('the routeless browser sends other hosts to the dead proxy, which refuses them', async ({ routelessAs, diagnostics, browserName }) => {
     // the refusals' own reports, whenever they arrive: the failed requests and the engines' console
     // lines for them
@@ -105,7 +98,7 @@ test.describe('the guards', () => {
     await expect.poll(() => failures.length).toBeGreaterThanOrEqual(2);
     for (const [origin, error] of failures) {
       expect(origin).toBe('https://example.org');
-      expect(error, `${browserName}'s error for the dead proxy`).toMatch(PROXY_ERROR[browserName]);
+      expect(isProxyError(browserName, error), `${browserName}'s error for the dead proxy: ${error}`).toBe(true);
     }
     // each reported as another host, and each failure
     expect(diagnostics.take('other host')).toEqual(expect.arrayContaining([
