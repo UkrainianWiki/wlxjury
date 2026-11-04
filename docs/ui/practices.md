@@ -164,8 +164,10 @@ with a test in `unitegallery-patches.test.js` that fails when the change is reve
 runs the gallery in jsdom on tiles built as the templates build them; `unitegallery-alt.test.js`
 also tests the thumbnail's alt. Every patch (Unite Gallery 1.7.28, marked and formerly unmarked),
 its commits and its test are listed in [docs/vendor/unitegallery.md](../vendor/unitegallery.md).
-The files stay outside Jest coverage (testing §9.1). Keep or replace: a recommendation, not yet
-decided, in [investigations/2026-11-04-gallery-keep-or-replace.md](../investigations/2026-11-04-gallery-keep-or-replace.md).
+The files stay outside Jest coverage (testing §9.1). **Decision (user, 2026-11-04):** our own
+tiles will replace the gallery later, planned with a UI developer with the other frontend
+changes after the API is prepared; the patched copy stays until then
+([investigation](../investigations/2026-11-04-gallery-keep-or-replace.md)).
 
 ## 8. Guards
 

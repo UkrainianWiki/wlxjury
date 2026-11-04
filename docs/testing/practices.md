@@ -254,8 +254,8 @@ scheduler paths): read smaller differences as noise.
 
 **9.3 How to use it.** Read the report for the files a change touched: an uncovered branch there
 is a missing test case. No minimum is enforced yet (a threshold a few points under a stable
-baseline is a later decision, CI plan), so the gallery batch changed no threshold. With its 25
-tests, Jest counts 278 tests at 96.76 % of lines and 91.39 % of branches (2026-11-04, local; the
+baseline is a later decision, CI plan), so the gallery batch changed no threshold. With its 28
+tests, Jest counts 281 tests at 96.76 % of lines and 91.39 % of branches (2026-11-04, local; the
 vendored files excluded, as in the baseline).
 
 **9.4 Story coverage.** Line coverage says which lines ran, not which flows a juror or an organizer

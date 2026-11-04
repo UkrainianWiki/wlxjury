@@ -4,8 +4,10 @@ The juror and organizer galleries (`gallery.scala.html`) and the contest files p
 (`contestFiles.scala.html`) lay their tiles out with Unite Gallery's tiles theme
 (`snippets/galleryScripts.scala.html`, started by `gallery-init.js`). The files are copied into
 the tree and patched for wlxjury. This doc lists every patch, how the copy was compared with
-upstream, the tests, and what is still unescaped. The keep-or-replace decision is the user's:
-[investigation, 2026-11-04](../investigations/2026-11-04-gallery-keep-or-replace.md).
+upstream, the tests, and what is still unescaped. **Decision (user, 2026-11-04):** our own tiles
+will replace the gallery later, planned with a UI developer with the other frontend changes
+after the API is prepared; the patched copy stays until then
+([investigation](../investigations/2026-11-04-gallery-keep-or-replace.md)).
 Rules: [UI practices](../ui/practices.md) §7, [dependencies](../dependencies/practices.md) §7,
 [secure coding](../security/secure-coding.md) §8.
 
@@ -47,9 +49,31 @@ follow-ups B3 and B5 (`249ddc76`, `c5c6e881`) and security batch S5 (`eb7f706b`)
 Every patch carries a `wlxjury:` comment at its place. *Was marked* says whether it had one
 before this inventory: the unmarked ones were found by diffing against the tag (§5) and are
 marked now. *Test* names the test in `javascript-test/unitegallery-patches.test.js`
-(`unitegallery-alt.test.js` where it says so) that fails when the patch is reverted. The revert
-proof (2026-11-04) reverted each patch on its own and ran both files: every patch below failed at
-least one test, except P15 and C1, which change no behaviour a test could see.
+(`unitegallery-alt.test.js` where it says so) that fails when the patch is reverted.
+
+**What the revert proof showed (2026-11-04).** It is a local script, not committed. It applied
+33 mutations, one at a time, then ran this file and `unitegallery-alt.test.js`, and every
+mutation failed at least one test. The mutations were:
+- **P1 and P2:** each alone, P1 returning its input as it is and P2 not escaping.
+- **P3, P4, P13:** each restored to upstream's code.
+- **P5–P10:** each reverted. For P8 the `stopPropagation` was removed on its own. For P9, the
+  `data-deleted` read and the three tally reads were each removed; the `data-commonsUrl` read
+  wasn't, though the mark test asserts its `href`.
+- **P11:** each event name, each delegate, and the icons' HTML.
+- **P12:** its placement branch switched off.
+- **P14:** each of its four field reads.
+- **T1:** the stored votes and the stars, separately.
+- **T2, T3:** each reverted.
+- **T4:** the select toggle and the reject toggle.
+- **T5:** each binding.
+
+Not mutated, so not shown by the proof:
+- `getButtonSelect`/`getButtonReject` and the select/reject click handlers' bodies. They are
+  run by the click tests, but not reverted one by one.
+- P12's gap above a text panel (no text panel is on).
+- P15 and C1, which change no behaviour a test can see.
+
+The run's output lists each mutation with the tests it failed.
 
 ### unitegallery.js
 
@@ -66,9 +90,9 @@ least one test, except P15 and C1, which change no behaviour a test could see.
 | P9 | The item parser (`UniteGalleryMain`, `<img>` children) | Reads `data-deleted`, `data-commonsUrl` (P7), and `data-approvals`, `data-rejections`, `data-tally` (the organizers' tally on a binary round, `tile-votes.js addTally`). | `52ad411b`, `340edf09` | yes | the P7 tests; theme: "the jurors' tally on every tile" |
 | P10 | `UniteGalleryMain` `initTheme` | Looks the theme's constructor up as `window["UGTheme_" + name]` rather than with `eval`, which the CSP refuses (no `'unsafe-eval'`). A missing theme throws an error that names it. | `c5c6e881` (B5) | yes | "the tiles start with eval refused", "a theme that isn't loaded…" |
 | P11 | `UGTileDesign`: events `SELECT_CLICK`, `REJECT_CLICK`; the select/reject icons in `setHtmlThumb` (only with the options `jury` and `binary`); `getButtonSelect`/`getButtonReject`; `onSelectButtonClick`/`onRejectButtonClick` and their delegates | The binary round's thumbs up and down on a juror's tiles. The select icon takes the link icon's place in `setHtmlThumb`: upstream hid `.ug-icon-link` there, and made the tile clickable only when there was no link icon. | `40390606`, `bb0a59aa` (jury only), `ebfcfefd` (binary only) | **no**, marked now | "a juror's tiles in a binary round have them…", "no thumbs for an organiser, nor in a rated round", the six click cases |
-| P12 | `UGTileDesign` `positionElements` | The zoom icon goes a third of the way down and the thumbs below it, where upstream put zoom and link icons side by side. The gap above a text panel is a third of its height, not half. Layout only, for icons on portrait files. | `40390606`, `632e3121` | **no**, marked now | — (jsdom lays nothing out; the browser tests' `voting.spec.js` clicks the thumbs) |
+| P12 | `UGTileDesign` `positionElements` | The zoom icon goes a third of the way down and the thumbs below it, where upstream put zoom and link icons side by side. The gap above a text panel is a third of its height, not half. Layout only, for icons on portrait files. | `40390606`, `632e3121` | **no**, marked now | "the thumbs sit below the zoom icon, select left of reject" (the positions the patch writes; jsdom's tile is 250 × 200 px). The text panel gap is untested |
 | P13 | `UGFunctions.placeImageInsideParent` | The lightbox slide's url (`data-image`) is escaped for its double-quoted `src`. Upstream's `urlImage.replace('"','\"')` changed nothing, because `'\"'` is `'"'`. The lightbox is built and its first slides placed on every gallery page, although wlxjury never opens it. **Security** (register N14, Low). | this branch | new | "a data-image with a double quote stays the src" |
-| P14 | The item parser | Reads `data-pageId`, `data-roundId`, `data-rate` and `data-largeUrl` for the theme's votes and clicks. | `51d67172`, `7d5024a4`, `cb782f30` | **no**, marked now | the theme's click and vote tests |
+| P14 | The item parser | Reads `data-pageId`, `data-roundId`, `data-rate` and `data-largeUrl` for the theme's votes and clicks. | `51d67172` (page id, round), `7d5024a4` (rate), `cb782f30` and `52ad411b` (large-view url) | **no**, marked now | "a juror's tiles in a binary round have them…" (rate, page id, round), the click cases (rate), "a tile click opens the file's large view…" |
 | P15 | `setHtmlThumb` `toSeparateIcon`; the item parser's `lazyLoadSrc`; the comment "prototype gallery function" | Spelling only (`toSaparateIcon`, `lasyLoadSrc`, `funciton`). No change in behaviour. | `40390606`, `632e3121`, `51d67172` | **no**, the first two marked now | — |
 
 ### ug-theme-tiles.js
@@ -77,8 +101,8 @@ least one test, except P15 and C1, which change no behaviour a test could see.
 |---|---|---|---|---|---|
 | T1 | `setHtml` | Shows a juror's stored votes on the tiles of a binary round (`wlxTileVotes.addVote`) and a rated round's stars (`addStars`, option `wlx_stars`). | `68c4716c` | yes | "a juror's tiles in a binary round have them…", "a rated round's stars on every tile" |
 | T2 | `setHtml` | Shows the jurors' tally on the organizers' tiles, if `tile-votes.js` is loaded (the contest files page doesn't load it). | `340edf09` | yes | "the jurors' tally on every tile", "a page without tile-votes.js…" |
-| T3 | `onTileClick` | A tile click opens the file's large view in this tab (`data-largeUrl`, which keeps the gallery's filter and order), not upstream's lightbox. | `cb782f30`, `51608464`, `cf56da73` | **no**, marked now | "a tile click opens the file's large view…" |
-| T4 | `onSelectClick`, `onRejectClick`, `serviceCall` | A thumb click votes 1 / -1, or 0 when the file already has that vote. The vote is sent by `wlxTileVotes.vote`, which shows it once it is stored. | `49136f58`, `51d67172`, `68c4716c` | **no** (only `serviceCall`'s comment), marked now | the six click cases |
+| T3 | `onTileClick` | A tile click opens the file's large view in this tab (`data-largeUrl`, which keeps the gallery's filter and order), not upstream's lightbox. | `cb782f30`, `51608464`, `52ad411b`, `cf56da73` | **no**, marked now | "a tile click opens the file's large view…" |
+| T4 | `onSelectClick`, `onRejectClick`, `serviceCall` | A thumb click votes 1 / -1, or 0 when the file already has that vote. The vote is sent by `wlxTileVotes.vote`, which shows it once it is stored. | `49136f58`, `51d67172`, `7d5024a4`, `68c4716c` | **no** (only `serviceCall`'s comment), marked now | the six click cases |
 | T5 | `initEvents` | Binds `SELECT_CLICK` and `REJECT_CLICK` (P11) to T4. | `49136f58` | **no**, marked now | the six click cases |
 
 ### unite-gallery.css
@@ -90,13 +114,19 @@ least one test, except P15 and C1, which change no behaviour a test could see.
 ## 3. Sinks left as upstream wrote them
 
 The vendored files insert markup with jQuery's `.html()` and string concatenation in many
-places. `security.RawHtmlSinksSpec` (G5) exempts the vendored files by name. These are the ones
-that item data reaches:
+places. `security.RawHtmlSinksSpec` (G5) exempts `unitegallery.js` by name (with
+`jquery.raty.js` and `jquery.hotkeys.js`), but it scans `ug-theme-tiles.js`. The theme passes
+because its insertions are `.append` of constant markup, which G5's `DomRaw` pattern doesn't
+match anyway: the pattern misses `.append`, `.prepend`, `.before`, `.after` and `jQuery("<…")`
+(register N16, Info). These are the sinks in `unitegallery.js` that item data reaches, or
+could reach:
 
 | Sink | What reaches it | State |
 |---|---|---|
 | The lightbox and text panel's title and description, `UGTextPanel.setTextPlain` (and `UniteGalleryMain.setTextContainers`), `.html()` | The tile's `alt` and `data-description` | Safe only because the templates escape the text once more (`gallery.scala.html`, `contestFiles.scala.html`; register N8; `GalleryDescriptionViewSpec`, `ContestFilesPageSpec`). Jest: "the lightbox's title (upstream, not patched)". |
 | The link icon's `href` in `setHtmlThumb` | `objItem.link`, the `href` of an `<a>` that wraps a tile's `<img>` | Unescaped and not reachable: `tile_show_link_icon` and `tile_as_link` are off, and no template wraps a tile in a link. Register N15 (Info). Escape it before turning either option on. |
+| The thumbnail wrapper's `<a href='objItem.link'>` in `UGThumbsGeneral` | The same `objItem.link` | Unescaped and not reachable: `thumb_wrapper_as_link` is off, and `tile_as_link` (which turns it on) is off too. Part of N15. Jest asserts that gallery-init.js leaves all three options at their defaults, which are off. |
+| The video players' HTML and urls (YouTube, Vimeo, HTML5, SoundCloud, Wistia) | `data-videoid` and the other video fields | Not reachable: an item is a video only by `data-type`, and no template sets it. |
 | The gallery's error box, `innerHTML` | The message of an error thrown while starting the gallery, e.g. P10's theme name | The name is the constant `tiles` from gallery-init.js. |
 | `placeImageInsideParent` | The lightbox slide's url | Escaped now (P13, N14). |
 
@@ -108,8 +138,18 @@ of `<img>` tags built the way the templates write them. jsdom neither loads imag
 them out, so two fakes stand in: an image's natural size comes from a table keyed by its
 `src`, and setting `src` fires `load`, or `error` when the src isn't in the table. With these,
 the tiles, the lightbox and their events run unchanged. `tile-votes.js` is replaced by a
-recording stub, since its own tests cover it. The test file has 25 tests. The older
+recording stub, since its own tests cover it. The options come from gallery-init.js's
+`options(el)`, built from `#gallery`'s `data-jury`, `data-binary` and `data-stars`, so the
+tests run what the pages run. The test file has 28 tests. The older
 `unitegallery-alt.test.js` checks the two thumbnail sinks.
+
+**What the image fake leaves out.** A thumbnail that hasn't loaded yet when the gallery checks
+it (`checkImagesLoaded`, natural width 0) is loaded again through a proxy `<img>`, and the
+gallery waits for that proxy. In the fake, an image's natural size depends only on its `src`,
+not on time. So a thumbnail in the table has its size from the start and never goes through a
+proxy, and one that isn't in the table gets a proxy that fails. The normal path for an
+uncached thumbnail, a proxy that loads successfully, isn't modelled. The browser tests cover
+it on real pages.
 
 **Coverage.** Jest's V8 coverage sees only files loaded through its module system. The
 vendored files are plain scripts that define globals, so the tests load them with an indirect
@@ -132,5 +172,6 @@ diff -u -w -B up.js ours.js     # every hunk is one of §2's patches
 
 Do the same for `themes/tiles/ug-theme-tiles.js` and `css/unite-gallery.css`. Ignoring
 whitespace matters: `40390606` re-indented about 13,000 lines, and without `-w` the diff is
-33,000 lines long. With it, 2026-11-04's diff was 19 hunks in `unitegallery.js`, 4 in the
-theme and 1 in the CSS, all listed above.
+33,000 lines long. With it, `diff -u -w -B` on 2026-11-04 gave 20 hunks in `unitegallery.js`
+(19 before P13), 3 in the theme and 1 in the CSS, all listed above. A hunk can hold several
+patches.

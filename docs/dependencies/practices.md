@@ -167,9 +167,9 @@ one (`unitegallery.js`, upstream MIT) gets its license recorded in the gallery i
 `jquery.hotkeys.js` are copied into `public/javascripts/`, and the gallery is patched for wlxjury
 (`wlxjury:` comments; [UI](../ui/practices.md) §7). The patch inventory, with how the version was
 identified and how to diff against upstream again, is [docs/vendor/unitegallery.md](../vendor/unitegallery.md).
-Upstream is unmaintained: last tag 2016, last release commit 2017. **Keep the patched fork or
-replace the gallery: the user's decision.** The 2026-11-04 recommendation is to replace it with
-our own tiles (CSS plus a small script) as its own batch
+Upstream is unmaintained: last tag 2016, last release commit 2017. **Decision (user,
+2026-11-04):** our own tiles will replace the gallery later, planned with a UI developer with the
+other frontend changes after the API is prepared; the patched copy stays until then
 ([investigation](../investigations/2026-11-04-gallery-keep-or-replace.md)). Until then: no new
 patch without a `wlxjury:` comment and a test in `unitegallery-patches.test.js` that fails when
 the patch is reverted, and prefer replacing to patching more of it (secure-coding §8).

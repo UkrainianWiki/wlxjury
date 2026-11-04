@@ -210,8 +210,11 @@ lightbox slide's url (`placeImageInsideParent`, `data-image`) is escaped (regist
 of it. Every patch and the sinks left as upstream wrote them (the lightbox title and
 description, `.html()` of the template-escaped `alt` and `data-description`; the link icon's
 `href`, unreachable, N15) are listed in [the vendor doc](../vendor/unitegallery.md) §2–§3.
-`RawHtmlSinksSpec` exempts the vendored files by name, so their sinks are guarded by the Jest
-patch tests instead.
+`RawHtmlSinksSpec` exempts `unitegallery.js`, `jquery.raty.js` and `jquery.hotkeys.js` by name,
+so unitegallery's sinks are guarded by the Jest patch tests instead. It does scan
+`ug-theme-tiles.js`. **G5 gap (register N16, Info):** its `DomRaw` pattern doesn't match
+jQuery's `.append`, `.prepend`, `.before`, `.after` or `jQuery("<…")`, so it wouldn't flag
+data inserted through them in any script. The spec isn't changed yet.
 
 **Guards.** `security.RawHtmlSinksSpec` (G5), `views.WikiLinksSpec`,
 `views.GalleryDescriptionViewSpec`, `ContestFilesPageSpec`, Jest `unitegallery-alt.test.js` and
