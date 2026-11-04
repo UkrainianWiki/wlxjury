@@ -2,17 +2,31 @@
 # monit's check of the jury app (conf/monit/wlxjury), installed as
 # /usr/local/lib/wlxjury/monit-check (docs/deployment.md, "Monitoring with monit").
 #
-# Exit 0 when the app is ready, or while a deployment holds the maintenance flag; otherwise a
-# non-zero status and one line, which monit puts in its alert. It only reads: it never starts,
-# stops or restarts anything. The WLXJURY_* variables are for the tests; monit sets none of them.
+#   monit-check [DEPLOYMENT_JSON]   (default /etc/wlxjury-runtime/deployment.json)
+#
+# Reads the service, the port and the runtime folder (for the maintenance flag) from the
+# deployment tools' deployment.json. Exit 0 when the app is ready, or while a deployment holds
+# the maintenance flag; otherwise a non-zero status and one line, which monit puts in its alert.
+# It only reads: it never starts, stops or restarts anything.
 PATH=${PATH:+$PATH:}/usr/sbin:/usr/bin:/sbin:/bin
-flag=${WLXJURY_MAINTENANCE_FLAG:-/etc/wlxjury-runtime/maintenance}
-service=${WLXJURY_SERVICE:-wlxjury.service}
-# Loopback only, as /health/ready requires; any Host header is accepted there (conf/routes).
-url=${WLXJURY_READY_URL:-http://127.0.0.1:9000/health/ready}
+config=${1:-/etc/wlxjury-runtime/deployment.json}
 # A deployment's maintenance window is minutes; a flag left on for longer is an operation
 # that stopped and waits for the runbook.
-max_minutes=${WLXJURY_MAINTENANCE_MAX_MINUTES:-120}
+max_minutes=120
+
+settings=$(python3 -c 'import json, sys
+c = json.load(open(sys.argv[1], encoding="utf-8"))
+port, runtime, service = int(c["port"]), c["runtime_dir"], c["service"]
+assert 0 < port < 65536 and runtime.startswith("/") and "\n" not in runtime + service
+print(port); print(runtime); print(service)' "$config" 2>/dev/null) || {
+  echo "cannot read port, runtime_dir and service from $config"
+  exit 4
+}
+port=$(echo "$settings" | sed -n 1p)
+flag=$(echo "$settings" | sed -n 2p)/maintenance
+service=$(echo "$settings" | sed -n 3p)
+# Loopback only, as /health/ready requires; any Host header is accepted there (conf/routes).
+url=http://127.0.0.1:$port/health/ready
 
 if [ -e "$flag" ]; then
   if [ -n "$(find "$flag" -maxdepth 0 -mmin +"$max_minutes")" ]; then

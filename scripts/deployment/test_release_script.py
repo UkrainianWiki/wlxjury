@@ -191,6 +191,9 @@ class ReleaseScriptTest(unittest.TestCase):
         self.start_database()
         (stubs / 'systemctl').write_text(SYSTEMCTL_STUB)
         (stubs / 'systemctl').chmod(0o755)
+        # stat fails for any path with "statfail" in it, as for a file it can't read.
+        (stubs / 'stat').write_text('#!/bin/sh\ncase "$*" in *statfail*) exit 1 ;; esac\nexec /usr/bin/stat "$@"\n')
+        (stubs / 'stat').chmod(0o755)
         self.broken_routes = set()
         self.timer_fires_during_checks = False
         self.apache = http.server.ThreadingHTTPServer(('127.0.0.1', 0), FakeApache)
@@ -272,7 +275,7 @@ class ReleaseScriptTest(unittest.TestCase):
                   'service': SERVICE, 'systemd_dropin_dir': str(self.dropin), 'port': self.app_port,
                   'ready_timeout_seconds': 10, 'minimum_free_bytes': 1,
                   'quiesce_units': WRITERS, 'maintenance_urls': urls or self.urls,
-                  'image_cache_dir': str(self.image_cache)}
+                  'image_cache_dir': str(self.image_cache), 'service_user': 'root'}
         config.update(settings)
         self.config = self.runtime / 'deployment.json'
         self.config.write_text(json.dumps(config))
@@ -784,21 +787,47 @@ class ReleaseScriptTest(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertIn('not an operation folder', result.stderr)
 
-    def test_a_writable_image_cache_stops_the_deployment_before_anything_changes(self):
+    # The image cache folder: deploy refuses before anything changes.
+
+    def assertCacheRefused(self, text):
         archive, sha = self.release_zip()
+        refused = self.release('deploy', archive, sha)
+        self.assertEqual(refused.returncode, 1)
+        self.assertIn(text, refused.stderr)
+        self.assertIn('"The image cache folder"', refused.stderr)
+        self.assertUnchanged()
+
+    def test_a_writable_image_cache_stops_the_deployment_before_anything_changes(self):
         for mode in (0o777, 0o2775):
             self.image_cache.chmod(mode)
-            refused = self.release('deploy', archive, sha)
-            self.assertEqual(refused.returncode, 1)
-            self.assertIn('is group- or world-writable (mode %o)' % mode, refused.stderr)
-            self.assertIn('chmod go-w ' + str(self.image_cache), refused.stderr)
-            self.assertUnchanged()
+            self.assertCacheRefused('is group- or world-writable (mode %o)' % mode)
         self.image_cache.chmod(0o2755)  # Only write access for others counts.
+        archive, sha = self.release_zip()
+        self.assertSucceeded(self.release('deploy', archive, sha))
+
+    def test_the_image_cache_must_be_the_service_users_folder(self):
+        os.chown(str(self.image_cache), 65534, 65534)
+        self.assertCacheRefused('is owned by nobody, not root')
+        os.chown(str(self.image_cache), 0, 0)
+        # A symlink is checked at its target.
+        target = self.base / 'cache-target'
+        target.mkdir()
+        target.chmod(0o777)
+        self.image_cache.rmdir()
+        self.image_cache.symlink_to(target)
+        self.assertCacheRefused('is group- or world-writable (mode 777)')
+        # Not a folder at all.
+        self.image_cache.unlink()
+        self.image_cache.write_text('')
+        self.assertCacheRefused('is not a directory')
+        # Missing: a new server's, which the app creates.
+        self.image_cache.unlink()
+        archive, sha = self.release_zip()
         self.assertSucceeded(self.release('deploy', archive, sha))
 
     # Retention: prune, on its own and at the end of reopen.
 
-    def past_operation(self, name, previous, candidate, finished=True, age_days=30):
+    def past_operation(self, name, previous, candidate, finished=True, age_days=30, restored=False):
         """A wlxjury-release operation folder with a dump, as an earlier deployment left it."""
         operation = self.backups / name
         operation.mkdir(mode=0o700)
@@ -806,15 +835,22 @@ class ReleaseScriptTest(unittest.TestCase):
             'previous=%s\ncandidate=%s\nzip_sha256=%s\nwriters=\ndatabase=jury\ndb_host=localhost:%d\n'
             % (previous, candidate, '0' * 64, self.db_port))
         milestones = ['started', 'backup-complete', 'migration-may-start', 'ready']
+        if restored:
+            milestones += ['restoring', 'database-restored']
         if finished:
             milestones += ['traffic-may-resume', 'complete']
         (operation / 'milestones').write_text('\n'.join(milestones) + '\n')
         (operation / 'operation.log').write_text('')
-        self.write_dump(operation, b'-- the dump before ' + candidate.name.encode() + b'\n')
+        self.write_dump(operation, b'-- the dump before ' + Path(str(candidate)).name.encode() + b'\n')
         then = time.time() - age_days * 86400
         for path in (operation / 'database.sql.gz', operation / 'database.sql.gz.sha256'):
             os.utime(str(path), (then, then))
         return operation
+
+    def new_release(self, name):
+        release = self.root / 'releases' / name
+        self.write_release(release, {'build': name, 'version': '26.11', 'schemaVersion': '53'})
+        return release
 
     def history(self, count, open_operations=(), young=()):
         """Releases r1..rCOUNT and their operations, oldest first: operation k took r(k-1) (the
@@ -822,8 +858,7 @@ class ReleaseScriptTest(unittest.TestCase):
         is 30 days old, or 3 days for k in young."""
         previous, operations = self.old, []
         for k in range(1, count + 1):
-            release = self.root / 'releases' / ('r%d' % k)
-            self.write_release(release, {'build': 'r%d' % k, 'version': '26.11', 'schemaVersion': '53'})
+            release = self.new_release('r%d' % k)
             operations.append(self.past_operation('202501%02dT000000Z-r%d' % (k, k), previous, release,
                                                   finished=k not in open_operations,
                                                   age_days=3 if k in young else 30))
@@ -840,6 +875,25 @@ class ReleaseScriptTest(unittest.TestCase):
     @staticmethod
     def dumps(operations):
         return [(operation / 'database.sql.gz').exists() for operation in operations]
+
+    def assertEveryDumpRestorable(self):
+        """Each dump left has the previous release its restore switches back to."""
+        for record in self.backups.glob('*/record'):
+            if (record.parent / 'database.sql.gz').exists():
+                previous = Path(record.read_text().split('previous=')[1].split('\n')[0])
+                self.assertTrue((previous / 'wlxjury-build.json').is_file(), record.parent.name)
+                self.assertTrue(os.access(str(previous / 'bin' / 'wlxjury'), os.X_OK), record.parent.name)
+
+    def assertPruneStops(self, text):
+        before, dumps = self.release_names(), sorted(map(str, self.backups.glob('*/database.sql.gz')))
+        for args in (('prune', '--dry-run'), ('prune',)):
+            stopped = self.release(*args)
+            self.assertEqual(stopped.returncode, 1, stopped.stdout)
+            self.assertIn(text, stopped.stderr)
+            self.assertIn('nothing was deleted', stopped.stderr)
+            self.assertNotIn('elete', stopped.stdout)
+        self.assertEqual(self.release_names(), before)
+        self.assertEqual(sorted(map(str, self.backups.glob('*/database.sql.gz'))), dumps)
 
     def test_reopen_prunes_old_releases_and_dumps_only_once_it_succeeds(self):
         operations = self.history(4)
@@ -858,10 +912,12 @@ class ReleaseScriptTest(unittest.TestCase):
         self.broken_routes.clear()
         reopened = self.release('reopen', operation.name)
         self.assertSucceeded(reopened)
-        # The current release and the two used before it stay.
-        self.assertEqual(self.release_names(), sorted(['r3', 'r4', new]))
+        # The current release and the two used before it stay, and r2, which restoring r3's
+        # kept dump switches back to.
+        self.assertEqual(self.release_names(), sorted(['r2', 'r3', 'r4', new]))
         self.assertIn('Deleted release r1', reopened.stdout)
-        self.assertIn('Keep release r4: one of the 2 used most recently', reopened.stdout)
+        self.assertIn('Keep release r4: restore of the kept dump %s' % operation.name, reopened.stdout)
+        self.assertIn('Keep release r2: restore of the kept dump %s' % operations[2].name, reopened.stdout)
         # The newest three dumps stay (this operation's, r4's and r3's); the older ones go with
         # their checksums, and their operation folders stay.
         self.assertTrue((operation / 'database.sql.gz').exists())
@@ -873,6 +929,25 @@ class ReleaseScriptTest(unittest.TestCase):
         self.assertIn('deleted %s (' % (self.root / 'releases' / 'r1'), log)
         self.assertIn('deleted %s (' % (operations[0] / 'database.sql.gz'), log)
         self.assertIn('Deleted release r1', (operation / 'operation.log').read_text())
+        self.assertEveryDumpRestorable()
+
+    def test_a_prune_that_fails_after_reopen_exits_3_with_the_deployment_complete(self):
+        operations = self.history(4)
+        self.select(self.root / 'releases' / 'r4')
+        archive, sha = self.release_zip()
+        self.assertSucceeded(self.release('deploy', archive, sha))
+        operation, = [path for path in self.backups.iterdir() if path.is_dir() and path not in operations]
+        before = self.release_names()
+        self.write_config(keep_backup_days='two weeks')
+        reopened = self.release('reopen', operation.name)
+        self.assertEqual(reopened.returncode, 3, reopened.stdout + reopened.stderr)
+        self.assertIn('PRUNE FAILED after a successful reopen', reopened.stderr)
+        self.assertIn('Do not rerun reopen', reopened.stderr)
+        self.assertNotIn('follow the runbook', reopened.stderr)
+        self.assertEqual(self.milestones(operation)[-1], 'complete')
+        self.assertFalse(self.flag.exists())
+        self.assertTrue(self.active('backup.timer'))
+        self.assertEqual(self.release_names(), before)
 
     def test_prune_with_fewer_releases_than_it_keeps_deletes_nothing(self):
         operations = self.history(1)
@@ -886,31 +961,53 @@ class ReleaseScriptTest(unittest.TestCase):
         self.assertEqual(self.dumps(operations), [True])
         self.assertFalse((self.backups / 'prune.log').exists())
 
-    def test_prune_keeps_the_current_release_and_the_dumps_a_restore_relies_on(self):
-        operations = self.history(6, young=(3,))
+    def test_prune_keeps_the_current_release_and_every_kept_dumps_release(self):
+        operations = self.history(8, young=(4,))
         # Switched back to r2: the current release is kept however old it is, and so is the
         # dump of the operation that deployed it.
         self.select(self.root / 'releases' / 'r2')
         dry = self.release('prune', '--dry-run')
         self.assertSucceeded(dry)
-        self.assertIn('Would delete release r4', dry.stdout)
-        self.assertIn('Would delete dump %s/database.sql.gz' % operations[0].name, dry.stdout)
-        self.assertEqual(len(self.release_names()), 7)
-        self.assertEqual(self.dumps(operations), [True] * 6)
+        self.assertEqual(len(self.release_names()), 9)
+        self.assertEqual(self.dumps(operations), [True] * 8)
         pruned = self.release('prune')
         self.assertSucceeded(pruned)
-        self.assertEqual(self.release_names(), ['r2', 'r5', 'r6'])
+        # The dry run listed exactly what the real run deleted.
+        would = sorted(line.replace('Would delete ', '', 1) for line in dry.stdout.splitlines()
+                       if line.startswith('Would delete '))
+        deleted = sorted(line.replace('Deleted ', '', 1) for line in pruned.stdout.splitlines()
+                         if line.startswith('Deleted '))
+        self.assertEqual(would, deleted)
+        self.assertTrue(deleted)
+        # r2 is current; r8 and r7 are the two used most recently besides it; r7, r6 and r5 are
+        # switched back to by the newest three dumps, r3 by r4's young dump and r1 by r2's dump
+        # (it deployed the current release). r4 and the legacy release go.
+        self.assertEqual(self.release_names(), ['r1', 'r2', 'r3', 'r5', 'r6', 'r7', 'r8'])
         self.assertIn('Keep release r2: the current release', pruned.stdout)
-        # r6's, r5's and r4's are the newest three, r3's is younger than 14 days, r2's deployed
-        # the current release.
-        self.assertEqual(self.dumps(operations), [False, True, True, True, True, True])
+        self.assertEqual(self.dumps(operations), [False, True, False, True, False, True, True, True])
         self.assertIn('younger than 14 days', pruned.stdout)
         self.assertIn('taken by the operation that deployed the current release', pruned.stdout)
+        self.assertEveryDumpRestorable()
+
+    def test_restored_deployments_keep_the_release_of_the_dump_that_deployed_current(self):
+        # op1 A -> B completes; op2 B -> C and op3 B -> D are each restored and reopened.
+        self.write_config(keep_previous_releases=1, keep_backup_dumps=1)
+        a, b, c, d = (self.new_release(name) for name in ('A', 'B', 'C', 'D'))
+        op1 = self.past_operation('20250101T000000Z-B', a, b)
+        op2 = self.past_operation('20250102T000000Z-C', b, c, restored=True)
+        op3 = self.past_operation('20250103T000000Z-D', b, d, restored=True)
+        self.select(b)
+        self.assertSucceeded(self.release('prune'))
+        # op3's dump is the newest and op1's deployed the current release: both stay, with A,
+        # which restoring op1 switches back to. op2's dump goes; C, used least recently, goes.
+        self.assertEqual(self.dumps([op1, op2, op3]), [True, False, True])
+        self.assertEqual(self.release_names(), ['A', 'B', 'D'])
+        self.assertEveryDumpRestorable()
 
     def test_prune_keeps_what_an_open_operation_names_and_never_touches_the_cutover(self):
         self.write_config(keep_previous_releases=1, keep_backup_dumps=1)
-        operations = self.history(4, open_operations=(2,))
-        self.select(self.root / 'releases' / 'r4')
+        operations = self.history(5, open_operations=(2,))
+        self.select(self.root / 'releases' / 'r5')
         # wlxjury-deploy's cutover record, still open: it names the legacy release.
         cutover = self.backups / '20241001T000000Z-abcdef12'
         cutover.mkdir(mode=0o700)
@@ -918,23 +1015,100 @@ class ReleaseScriptTest(unittest.TestCase):
         (cutover / 'deployment.json').write_text(json.dumps(record))
         self.write_dump(cutover, b'-- the cutover dump\n')
         self.assertSucceeded(self.release('prune'))
-        # r3 is the one kept besides r4; r1 and r2 belong to the open operation 2.
-        self.assertEqual(self.release_names(), ['legacy-0.12-v53', 'r1', 'r2', 'r3', 'r4'])
-        # The newest dump and the open operation's stay.
-        self.assertEqual(self.dumps(operations), [False, True, False, True])
+        # r4 is the one kept besides r5 (and the newest dump's), r3 goes; r1 and r2 belong to
+        # the open operation 2, the legacy release to the open cutover.
+        self.assertEqual(self.release_names(), ['legacy-0.12-v53', 'r1', 'r2', 'r4', 'r5'])
+        self.assertEqual(self.dumps(operations), [False, True, False, False, True])
         record['phase'] = 'complete'
         (cutover / 'deployment.json').write_text(json.dumps(record))
         self.assertSucceeded(self.release('prune'))
-        self.assertEqual(self.release_names(), ['r1', 'r2', 'r3', 'r4'])
+        self.assertEqual(self.release_names(), ['r1', 'r2', 'r4', 'r5'])
         self.assertTrue((cutover / 'database.sql.gz').exists())
-        # A pruned dump: restore says so before anything changes.
-        refused = self.release('restore', operations[2].name, '--accept-data-loss')
+        self.assertEveryDumpRestorable()
+        # A pruned dump: restore says so before anything changes, even before the data-loss
+        # decision.
+        refused = self.release('restore', operations[2].name)
         self.assertEqual(refused.returncode, 1)
         self.assertIn('database.sql.gz is gone (pruned', refused.stderr)
         self.assertFalse(self.flag.exists())
         self.assertTrue(self.active(SERVICE))
 
-    def test_prune_refuses_during_maintenance_and_removes_unfinished_unpacks(self):
+    def test_damaged_milestones_and_states_count_as_open(self):
+        self.write_config(keep_previous_releases=1, keep_backup_dumps=1)
+        operations = self.history(5)
+        self.select(self.root / 'releases' / 'r5')
+        (operations[0] / 'milestones').unlink()                              # r1 and legacy
+        (operations[1] / 'milestones').write_text('garbage\ncomplete\n')      # r1 and r2
+        self.assertSucceeded(self.release('prune'))
+        self.assertEqual(self.release_names(), ['legacy-0.12-v53', 'r1', 'r2', 'r4', 'r5'])
+        self.assertEqual(self.dumps(operations), [True, True, False, False, True])
+
+    def test_an_open_operation_that_cannot_be_read_stops_the_prune(self):
+        operations = self.history(5, open_operations=(2,))
+        self.select(self.root / 'releases' / 'r5')
+        record = operations[1] / 'record'
+        good = record.read_text()
+        record.write_text(good.replace('candidate=', 'candidate_was='))
+        self.assertPruneStops('cannot read the releases of the open operation ' + operations[1].name)
+        record.write_text(good.replace('candidate=%s' % (self.root / 'releases' / 'r2'), 'candidate=/srv/elsewhere/r2'))
+        self.assertPruneStops('names /srv/elsewhere/r2, outside')
+        record.write_text(good)
+        cutover = self.backups / '20241001T000000Z-abcdef12'
+        cutover.mkdir(mode=0o700)
+        (cutover / 'deployment.json').write_text('{"phase": "comp')  # A corrupt record is open.
+        self.assertPruneStops('cannot read the releases of the open operation ' + cutover.name)
+        shutil.rmtree(str(cutover))
+        # A symlink among the operation folders could hide an open one.
+        (self.backups / '20250110T000000Z-link').symlink_to(operations[1])
+        self.assertPruneStops('is a symlink to an operation folder')
+
+    def test_release_paths_are_compared_resolved(self):
+        self.write_config(keep_previous_releases=1, keep_backup_dumps=1)
+        operations = self.history(5, open_operations=(2,))
+        self.select(self.root / 'releases' / 'r5')
+        record = operations[1] / 'record'
+        releases = self.root / 'releases'
+        record.write_text(record.read_text()
+                          .replace('previous=%s' % (releases / 'r1'), 'previous=%s//../releases/./r1/' % releases)
+                          .replace('candidate=%s' % (releases / 'r2'), 'candidate=%s/../releases/r2' % releases))
+        self.assertSucceeded(self.release('prune'))
+        self.assertIn('r1', self.release_names())
+        self.assertIn('r2', self.release_names())
+
+    def test_settings_are_decimal_and_an_unreadable_age_keeps_the_dump(self):
+        operations = self.history(5)
+        self.select(self.root / 'releases' / 'r5')
+        # Leading zeros are decimal, not octal: 08 is eight.
+        self.write_config(keep_previous_releases='08', keep_backup_dumps='08')
+        kept = self.release('prune')
+        self.assertSucceeded(kept)
+        self.assertNotIn('elete', kept.stdout)
+        # The stat stub fails for the oldest dump: its age is unknown, so it stays, with legacy.
+        os.rename(str(operations[0]), str(operations[0]) + '-statfail')
+        self.write_config(keep_previous_releases='01', keep_backup_dumps='01')
+        pruned = self.release('prune')
+        self.assertSucceeded(pruned)
+        self.assertIn("its age can't be read", pruned.stdout)
+        self.assertTrue((Path(str(operations[0]) + '-statfail') / 'database.sql.gz').exists())
+        self.assertEqual(self.dumps(operations[1:]), [False, False, False, True])
+        self.assertIn('legacy-0.12-v53', self.release_names())
+        self.assertEveryDumpRestorable()
+
+    def test_prune_skips_symlinks_and_folders_that_are_not_releases(self):
+        self.write_config(keep_previous_releases=1, keep_backup_dumps=1)
+        self.history(4)
+        self.select(self.root / 'releases' / 'r4')
+        (self.root / 'releases' / 'lost+found').mkdir()
+        (self.root / 'releases' / 'link').symlink_to(self.root / 'releases' / 'r1')
+        pruned = self.release('prune')
+        self.assertSucceeded(pruned)
+        self.assertIn('Skip lost+found: not a release folder', pruned.stdout)
+        self.assertIn('Skip link: a symlink', pruned.stdout)
+        self.assertIn('lost+found', self.release_names())
+        self.assertTrue((self.root / 'releases' / 'link').is_symlink())
+        self.assertNotIn('r1', self.release_names())
+
+    def test_prune_refuses_during_maintenance_a_held_lock_and_bad_settings(self):
         self.history(1)
         staging = self.root / 'releases' / '.staging.abc123'
         (staging / 'wlxjury-26.11').mkdir(parents=True)
@@ -944,10 +1118,17 @@ class ReleaseScriptTest(unittest.TestCase):
         self.assertIn('maintenance is on', refused.stderr)
         self.assertTrue(staging.exists())
         self.flag.unlink()
+        with (self.root / 'deployment.lock').open('a') as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            locked = self.release('prune')
+        self.assertEqual(locked.returncode, 1)
+        self.assertIn('holds the lock', locked.stderr)
+        self.assertTrue(staging.exists())
         self.write_config(keep_previous_releases=0)
         self.assertIn('keep_previous_releases must be at least 1', self.release('prune').stderr)
-        self.write_config(keep_backup_days='two weeks')
-        self.assertIn('keep_backup_days', self.release('prune').stderr)
+        for bad in ('two weeks', '-1', '1e3'):
+            self.write_config(keep_backup_days=bad)
+            self.assertIn('keep_backup_days', self.release('prune').stderr)
         self.write_config()
         self.assertEqual(self.release('prune', '--force').returncode, 2)  # Usage error.
         self.assertTrue(staging.exists())
@@ -971,7 +1152,8 @@ class FakeReadiness(http.server.BaseHTTPRequestHandler):
         pass
 
 
-@unittest.skipUnless(os.name == 'posix' and shutil.which('sh') and shutil.which('curl'), 'Needs sh and curl')
+@unittest.skipUnless(os.name == 'posix' and shutil.which('sh') and shutil.which('curl') and shutil.which('python3'),
+                     'Needs sh, curl and python3')
 class MonitCheckTest(unittest.TestCase):
     """conf/monit/wlxjury: alert only, quiet while maintenance is on."""
 
@@ -980,7 +1162,7 @@ class MonitCheckTest(unittest.TestCase):
         self.addCleanup(shutil.rmtree, str(self.base), True)
         stubs = self.base / 'bin'
         stubs.mkdir()
-        (stubs / 'systemctl').write_text('#!/bin/sh\n[ "$1 $2 $3" = "is-active --quiet wlxjury.service" ] '
+        (stubs / 'systemctl').write_text('#!/bin/sh\n[ "$1 $2 $3" = "is-active --quiet jury-test.service" ] '
                                          '&& [ -e "%s" ]\n' % (self.base / 'active'))
         (stubs / 'systemctl').chmod(0o755)
         self.ready_status = 200
@@ -988,23 +1170,27 @@ class MonitCheckTest(unittest.TestCase):
         self.server.test = self
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
         self.addCleanup(self.server.server_close)
-        self.flag = self.base / 'maintenance'
-        self.env = dict(os.environ, PATH=str(stubs) + os.pathsep + os.environ['PATH'],
-                        WLXJURY_MAINTENANCE_FLAG=str(self.flag),
-                        WLXJURY_READY_URL='http://127.0.0.1:%d/health/ready' % self.server.server_port)
+        runtime = self.base / 'runtime'
+        runtime.mkdir()
+        self.flag = runtime / 'maintenance'
+        self.config = self.base / 'deployment.json'
+        self.config.write_text(json.dumps({'port': self.server.server_port, 'runtime_dir': str(runtime),
+                                           'service': 'jury-test.service'}))
+        self.url = 'http://127.0.0.1:%d/health/ready' % self.server.server_port
+        self.env = dict(os.environ, PATH=str(stubs) + os.pathsep + os.environ['PATH'])
 
-    def check(self):
-        result = subprocess.run(['sh', str(MONIT_CHECK)], env=self.env, stdout=subprocess.PIPE,
-                                stderr=subprocess.PIPE, text=True, timeout=30)
+    def check(self, config=None):
+        result = subprocess.run(['sh', str(MONIT_CHECK), str(config or self.config)], env=self.env,
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=30)
         return result.returncode, result.stdout.strip()
 
     def test_ready_failing_and_maintenance(self):
         (self.base / 'active').touch()
         self.assertEqual(self.check(), (0, 'ready'))
         self.ready_status = 503  # A schema that doesn't match the release, or the wrong isolation.
-        self.assertEqual(self.check(), (1, '%s answers HTTP 503' % self.env['WLXJURY_READY_URL']))
+        self.assertEqual(self.check(), (1, '%s answers HTTP 503' % self.url))
         (self.base / 'active').unlink()
-        self.assertEqual(self.check(), (2, 'wlxjury.service is not active'))
+        self.assertEqual(self.check(), (2, 'jury-test.service is not active'))
         # A deployment holds maintenance: quiet, until the flag is two hours old.
         self.flag.touch()
         self.assertEqual(self.check()[0], 0)
@@ -1017,13 +1203,21 @@ class MonitCheckTest(unittest.TestCase):
         (self.base / 'active').touch()
         self.server.shutdown()
         self.server.server_close()
-        self.assertEqual(self.check(), (1, '%s answers HTTP 000' % self.env['WLXJURY_READY_URL']))
+        self.assertEqual(self.check(), (1, '%s answers HTTP 000' % self.url))
+
+    def test_an_unreadable_config_alerts(self):
+        self.assertEqual(self.check(self.base / 'missing.json')[0], 4)
+        broken = self.base / 'broken.json'
+        broken.write_text(json.dumps({'port': 'x', 'runtime_dir': 'relative', 'service': 's'}))
+        status, line = self.check(broken)
+        self.assertEqual(status, 4)
+        self.assertIn('cannot read port, runtime_dir and service', line)
 
     def test_the_monit_file_only_alerts(self):
         lines = [line.strip() for line in MONIT_CONFIG.read_text().splitlines()
                  if line.strip() and not line.lstrip().startswith('#')]
-        self.assertEqual(lines[0], 'check program wlxjury with path /usr/local/lib/wlxjury/monit-check'
-                                   ' with timeout 30 seconds')
+        self.assertEqual(lines[0], 'check program wlxjury with path '
+                                   '"/usr/local/lib/wlxjury/monit-check /etc/wlxjury-runtime/deployment.json"')
         for line in lines:
             self.assertNotRegex(line.lower(), r'\b(start|stop|restart|exec|unmonitor)\b', line)
 
@@ -1034,7 +1228,9 @@ class MonitCheckTest(unittest.TestCase):
         shutil.copyfile(str(MONIT_CHECK), str(script))
         script.chmod(0o755)
         config = self.base / 'wlxjury'
-        config.write_text(MONIT_CONFIG.read_text().replace('/usr/local/lib/wlxjury/monit-check', str(script)))
+        config.write_text(MONIT_CONFIG.read_text()
+                          .replace('/usr/local/lib/wlxjury/monit-check', str(script))
+                          .replace('/etc/wlxjury-runtime/deployment.json', str(self.config)))
         control = self.base / 'monitrc'
         control.write_text('set daemon 30\nset logfile %s\nset idfile %s\nset statefile %s\ninclude %s\n'
                            % (self.base / 'monit.log', self.base / 'monit.id', self.base / 'monit.state', config))
@@ -1043,7 +1239,6 @@ class MonitCheckTest(unittest.TestCase):
                                 stderr=subprocess.STDOUT, text=True, timeout=30)
         self.assertEqual(result.returncode, 0, result.stdout)
         self.assertIn('Control file syntax OK', result.stdout)
-
 
 if __name__ == '__main__':
     unittest.main()

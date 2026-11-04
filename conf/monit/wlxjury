@@ -10,7 +10,9 @@
 # while the script stays quiet while the maintenance flag is on (for up to two hours). It fails
 # when the service is not active or /health/ready doesn't answer 200 (the release's schema and
 # READ COMMITTED, operations practices 2.1). Three failed cycles in a row before an alert, so a
-# crash that systemd restarts within seconds doesn't alert.
-check program wlxjury with path /usr/local/lib/wlxjury/monit-check with timeout 30 seconds
+# crash that systemd restarts within seconds doesn't alert. The script reads the service, port
+# and runtime folder from the deployment tools' deployment.json, named here.
+check program wlxjury with path "/usr/local/lib/wlxjury/monit-check /etc/wlxjury-runtime/deployment.json"
+    with timeout 30 seconds
   group wlxjury
   if status != 0 for 3 cycles then alert
