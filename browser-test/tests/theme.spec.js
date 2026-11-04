@@ -3,18 +3,34 @@
 // from the first frame, light and dark, with no frame in the other mode (the "Firefox theme
 // flash" check of the roadmap's "Every release", now in all three engines).
 import { test, expect } from '../lib/fixtures.js';
-import { galleryPath, signIn } from '../lib/actions.js';
+import { allowFirefoxLeavingGallery, galleryPath, signIn } from '../lib/actions.js';
 
-/** Before the page's scripts: the mode (data-bs-theme) of every frame until the page has loaded. */
+/** Before the page's scripts: from the first animation frame (whose callbacks run before it is
+  * painted) until the page has loaded, each frame's mode attribute, the root's computed
+  * color-scheme (the canvas's colour before any background) and the page's computed background:
+  * the body's once it exists, else the root's. */
 function framesProbe() {
   window.wlxFrames = [];
   (function frame() {
     requestAnimationFrame(() => {
       const root = document.documentElement;
-      if (root && document.body) window.wlxFrames.push(root.getAttribute('data-bs-theme'));
+      const painted = document.body || root;
+      window.wlxFrames.push({
+        theme: root.getAttribute('data-bs-theme'),
+        colorScheme: getComputedStyle(root).colorScheme,
+        background: getComputedStyle(painted).backgroundColor,
+        body: !!document.body,
+      });
       if (document.readyState !== 'complete' || window.wlxFrames.length < 2) frame();
     });
   }());
+}
+
+/** "light" or "dark" for an rgb(a) colour, null for a transparent one (the canvas shows). */
+function shade(color) {
+  const [r, g, b, a = 1] = color.match(/[\d.]+/g).map(Number);
+  if (a === 0) return null;
+  return (r + g + b) / 3 > 127 ? 'light' : 'dark';
 }
 
 test.describe('the colour mode', () => {
@@ -37,7 +53,8 @@ test.describe('the colour mode', () => {
     await expect(page.locator('html')).toHaveAttribute('data-bs-theme', 'dark');
   });
 
-  test('the navbar\'s switch posts the mode, which the next pages show', async ({ page, fixture }) => {
+  test('the navbar\'s switch posts the mode, which the next pages show', async ({ page, fixture, diagnostics, browserName }) => {
+    allowFirefoxLeavingGallery(diagnostics, browserName); // U22: the switch's POST leaves a gallery
     const juror = fixture.freshJuror;
     await signIn(page, juror);
     const gallery = galleryPath(fixture.roundBinaryId, juror.id);
@@ -82,13 +99,14 @@ test.describe('the colour mode', () => {
         await expect.poll(() => page.evaluate(() => window.wlxFrames.length), { message: `frames of ${path}` })
           .toBeGreaterThanOrEqual(2);
         const frames = await page.evaluate(() => window.wlxFrames);
-        expect(new Set(frames), `${path}: the mode of each frame until loaded`).toEqual(new Set([scheme]));
+        // every frame: the scheme's mode, the canvas in the scheme (a light canvas is also the
+        // default, "normal"), and any background drawn in the scheme's shade
+        const wrong = frames.filter((f) => f.theme !== scheme
+          || !(f.colorScheme === scheme || (scheme === 'light' && f.colorScheme === 'normal'))
+          || (shade(f.background) !== null && shade(f.background) !== scheme));
+        expect(wrong, `${path}: frames not in the ${scheme} mode, of ${frames.length}`).toEqual([]);
+        expect(frames.some((f) => f.body && shade(f.background) === scheme), `${path}: a frame with the page`).toBe(true);
         await expect(page.locator('html')).toHaveAttribute('data-theme-pref', 'auto');
-        // the page's background is the scheme's (the variables applied, not only the attribute)
-        const background = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
-        const [r, g, b] = background.match(/\d+/g).map(Number);
-        const light = (r + g + b) / 3 > 127;
-        expect(light ? 'light' : 'dark', `${path}: body background ${background}`).toBe(scheme);
       }
     });
   }

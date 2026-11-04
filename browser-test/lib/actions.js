@@ -13,6 +13,15 @@ export async function signIn(page, account) {
   await expect(page).not.toHaveURL(/\/auth(\?|$)/);
 }
 
+/** U22 (UI practices §9, open): in Firefox, leaving a gallery by a form POST at times raises this
+  * page error on the page being left. Accepted only in the tests that leave a gallery so, and
+  * only in Firefox. */
+export function allowFirefoxLeavingGallery(diagnostics, browserName) {
+  if (browserName === 'firefox') {
+    diagnostics.allow(/^page error: TypeError: can't access property "hasAttribute", document\.body is null/);
+  }
+}
+
 /** Exactly one element matches (testing §6.2), then returns it. */
 export async function one(locator) {
   await expect(locator).toHaveCount(1);

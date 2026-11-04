@@ -2,7 +2,8 @@
 // Starts and stops the browser tests' server: gatling.setup.UiShotsServer, the Gatling fixture
 // (a MariaDB testcontainer restored from data/cache/, built from the CSVs the first time) and the
 // app with the production filters, the production content security policy (-Dui.csp=production)
-// and CSRF checked on POSTs (-Dui.csrf=on). docs/testing/practices.md §10.
+// and CSRF checked on POSTs (-Dui.csrf=on); its image proxy fetches from a placeholder stub,
+// never from Commons (-Dui.images=stub). docs/testing/practices.md §10.
 //
 //   node fixture-server.mjs start   # compiles, starts it in the background, waits for server.json
 //   node fixture-server.mjs stop    # asks it to stop (target/ui-shots/server.stop) and waits
@@ -28,7 +29,7 @@ const STOP_TIMEOUT_MS = 3 * 60 * 1000;
 const CREDENTIALS = ['COMMONS_USER', 'COMMONS_PASSWORD', 'SCALAWIKI_LOGIN', 'SCALAWIKI_PASSWORD'];
 
 const SBT_COMMANDS = [
-  'set Test / javaOptions ++= Seq("-Xmx1g", "-Dfile.encoding=UTF-8", "-Dui.csp=production", "-Dui.csrf=on")',
+  'set Test / javaOptions ++= Seq("-Xmx1g", "-Dfile.encoding=UTF-8", "-Dui.csp=production", "-Dui.csrf=on", "-Dui.images=stub")',
   // Play's Assets serves public/ from the classpath, which the test classpath lacks
   'set Test / unmanagedClasspath += Attributed.blank((Assets / packageBin).value)',
   'Test/runMain gatling.setup.UiShotsServer',

@@ -66,8 +66,8 @@ object GatlingTestFixture {
         "jobs.pollInterval"                      -> "2 seconds",
         // region counts: the contest files page's cache, and the round galleries' counts
         "regions.countCache"                     -> GatlingConfig.regionCountCache
-      ) ++ GatlingConfig.regionCounts.map("gallery.regionCounts" -> _) ++ timingConfig ++ csrfConfig ++ cspConfig ++
-        filtersConfig)
+      ) ++ GatlingConfig.regionCounts.map("gallery.regionCounts" -> _) ++ timingConfig ++ csrfConfig ++ imagesConfig ++
+        cspConfig ++ filtersConfig)
       .build()
     localApplication = Some(app)
     val server = TestServer(port, app)
@@ -114,6 +114,39 @@ object GatlingTestFixture {
   private lazy val csrfConfig: Map[String, Any] =
     if (sys.props.get("ui.csrf").contains("on")) { println("[csrf] POSTs checked"); Map.empty }
     else Map("play.filters.csrf.method.whiteList" -> Seq("GET", "HEAD", "OPTIONS", "POST"))
+
+  /** With -Dui.images=stub (the browser tests): the image proxy fetches its thumbnails from a
+    * stub in this JVM, which answers every path with one placeholder PNG, instead of from
+    * upload.wikimedia.org, and caches them under target/ui-shots/thumbs. The browser tests' Back
+    * checks run without Playwright's routes (which turn the browser's cache off), so their
+    * thumbnails reach this server's proxy; with the stub it never fetches from Commons. */
+  private lazy val imagesConfig: Map[String, Any] =
+    if (!sys.props.get("ui.images").contains("stub")) Map.empty
+    else {
+      val png = {
+        val image = new java.awt.image.BufferedImage(640, 480, java.awt.image.BufferedImage.TYPE_INT_RGB)
+        val g = image.createGraphics()
+        g.setColor(new java.awt.Color(120, 140, 160))
+        g.fillRect(0, 0, 640, 480)
+        g.dispose()
+        val out = new java.io.ByteArrayOutputStream()
+        javax.imageio.ImageIO.write(image, "png", out)
+        out.toByteArray
+      }
+      val stub = com.sun.net.httpserver.HttpServer.create(new java.net.InetSocketAddress("127.0.0.1", 0), 0)
+      stub.createContext("/", exchange => {
+        exchange.getResponseHeaders.set("Content-Type", "image/png")
+        exchange.sendResponseHeaders(200, png.length.toLong)
+        try exchange.getResponseBody.write(png) finally exchange.close()
+      })
+      stub.start()
+      val base = s"http://127.0.0.1:${stub.getAddress.getPort}"
+      println(s"[images] thumbnails from the stub at $base")
+      Map(
+        "wlxjury.thumbs.wiki-base-url" -> base,
+        "wlxjury.thumbs.local-path"    -> new java.io.File("target/ui-shots/thumbs").getAbsolutePath
+      )
+    }
 
   /** With -Dui.csp=production (the screenshot harness's --csp), the production content security
     * policy (play.filters.csp from conf/application.conf, security.ProductionFilters), which the

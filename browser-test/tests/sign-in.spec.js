@@ -2,10 +2,11 @@
 // sign-out without the token is refused. Each in a fresh session of the engine's own juror, so
 // the saved sessions of the other tests stay signed in.
 import { test, expect } from '../lib/fixtures.js';
-import { galleryPath, signIn } from '../lib/actions.js';
+import { allowFirefoxLeavingGallery, galleryPath, signIn } from '../lib/actions.js';
 
 test.describe('signing in and out', () => {
-  test('a juror signs in, then signs out from the user menu', async ({ page, fixture }) => {
+  test('a juror signs in, then signs out from the user menu', async ({ page, fixture, diagnostics, browserName }) => {
+    allowFirefoxLeavingGallery(diagnostics, browserName); // U22: the sign-out leaves a gallery
     const juror = fixture.freshJuror;
     await signIn(page, juror);
     const gallery = galleryPath(fixture.roundBinaryId, juror.id);
@@ -40,7 +41,6 @@ test.describe('signing in and out', () => {
     const response = await page.goto(gallery);
     expect(response.status()).toBe(200);
     await expect(page).toHaveURL(new RegExp(`${gallery}$`));
-    diagnostics.take('HTTP 403'); // the refused POST isn't a page's
   });
 
   test('a wrong password keeps the login page, with its error', async ({ page, fixture, diagnostics }) => {
