@@ -72,6 +72,18 @@ it blocks others (db §5.5a).
 **1.7 Only configured hosts.** Commons (`commons.host`), `upload.wikimedia.org`, the contest's lists
 host (set by root); never a URL from a request; redirects not followed (secure-coding §17).
 
+**1.8 Thumbnails only at Wikimedia's widths.** Any `upload.wikimedia.org/.../thumb/...<px>px-` URL
+we fetch or send a browser to is at one of `Global.wikimediaSteps` (20, 40, 60, 120, 250, 330,
+500, 960, 1280, 1920, 3840), through `Global.wikimediaStep(px)` (the narrowest no narrower), or is
+the original: the cache's source (`LocalImageCacheService.source`), the large view
+(`Global.largeImage`) and every proxy redirect (`ImageProxyController`). The pages' own widths
+(333, 666, 300, …) are served only by our proxy. The test Wikimedia (`FakeWikimedia`, the
+`LocalImageCacheServiceSpec` servers) answers others with 400. *Why:* since 2026-05-13 Wikimedia
+answers a thumbnail at any other width with 400 at the edge
+([T414805](https://phabricator.wikimedia.org/T414805),
+[Common thumbnail sizes](https://www.mediawiki.org/wiki/Common_thumbnail_sizes), read
+2026-11-04), so the browser shows a broken image.
+
 ## 2. scalawiki
 
 **2.1 Pinned to a commit.** wlxjury builds against `UkrainianWiki/scalawiki` `origin/page-categories`

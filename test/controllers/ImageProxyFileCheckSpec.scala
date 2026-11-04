@@ -210,14 +210,15 @@ class ImageProxyFileCheckSpec
       count("SELECT COUNT(*) FROM vote_aside WHERE page_id = 1") === 1
     }
 
-    "redirect to Wikimedia as before when Commons has the file as stored" in {
+    "redirect to Wikimedia at its next size up when Commons has the file as stored" in {
       val same = commonsImage(1L, "Same")
       store(same)
       val (proxy, _, check) = controller(Seq(same))
 
       val result = proxy.serve(thumb("Same"))(signedIn)
       status(result) === SEE_OTHER
-      redirectLocation(result) must beSome(s"https://upload.wikimedia.org/wikipedia/commons/thumb/${thumb("Same")}")
+      // 333 wide is not one of Wikimedia's sizes (T414805)
+      redirectLocation(result) must beSome("https://upload.wikimedia.org/wikipedia/commons/thumb/a/ab/Same.jpg/500px-Same.jpg")
       check.stop()
       count("SELECT COUNT(*) FROM images WHERE page_id = 1 AND deleted_at IS NULL") === 1
       count("SELECT COUNT(*) FROM vote WHERE page_id = 1") === 1
@@ -230,10 +231,32 @@ class ImageProxyFileCheckSpec
       store(img)
       val (proxy, source, check) = controller(Nil)
 
-      status(proxy.serve(thumb("Error_file"))(signedIn)) === SEE_OTHER
+      val result = proxy.serve(thumb("Error_file"))(signedIn)
+      status(result) === SEE_OTHER
+      redirectLocation(result) must
+        beSome("https://upload.wikimedia.org/wikipedia/commons/thumb/a/ab/Error_file.jpg/500px-Error_file.jpg")
       check.stop()
       source.detailCalls.get === 0
       count("SELECT COUNT(*) FROM images WHERE deleted_at IS NOT NULL") === 0
+    }
+
+    "redirect a former name's thumbnail to Wikimedia at its next size up when the file can't be fetched" in {
+      val old = commonsImage(1L, "Old_name")
+      store(old)
+      // stored under its new name, which this Wikimedia fails to serve
+      val (proxy, _, check) = controller(Seq(renamed(old, "Error_new_name")))
+      status(proxy.serve(thumb("Old_name"))(signedIn)) === SEE_OTHER
+      check.stop()
+      ImageJdbc.findById(1L).map(_.title) must beSome("File:Error new name.jpg")
+
+      // a page rendered before the rename: found under the former name, not asked about again
+      val (restarted, source, again) = controller(Nil)
+      val result = restarted.serve(thumb("Old_name"))(signedIn)
+      status(result) === SEE_OTHER
+      again.stop()
+      redirectLocation(result) must
+        beSome("https://upload.wikimedia.org/wikipedia/commons/thumb/a/ab/Old_name.jpg/500px-Old_name.jpg")
+      source.detailCalls.get === 0
     }
   }
 

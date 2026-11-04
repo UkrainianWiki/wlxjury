@@ -79,6 +79,20 @@ class ImageProxyControllerSpec extends Specification with PlayTestDb {
       }
     }
 
+    // Wikimedia refuses thumbnails at other widths than its own with 400 since 2026-05-13 (T414805)
+    "redirect to Wikimedia at its next size up, not at a width it refuses, when image is not in DB" in {
+      testDbApp { implicit app =>
+        val widths = Seq(167 -> 250, 333 -> 500, 824 -> 960, 1466 -> 1920, 3840 -> 3840)
+        forall(widths) { case (px, step) =>
+          val result = route(app,
+            thumbRequest(s"/wikipedia/commons/thumb/x/xx/NoSuchFile.jpg/${px}px-NoSuchFile.jpg")).get
+          status(result) mustEqual SEE_OTHER
+          header("Location", result) must beSome(
+            beEqualTo(s"https://upload.wikimedia.org/wikipedia/commons/thumb/x/xx/NoSuchFile.jpg/${step}px-NoSuchFile.jpg"))
+        }
+      }
+    }
+
     // Wikimedia URLs use underscores while DB titles store spaces.
     // e.g. URL: /My_Image.jpg  →  DB title: File:My Image.jpg
     "serve cached image when URL uses underscores but DB title has spaces" in {
@@ -151,10 +165,11 @@ class ImageProxyControllerSpec extends Specification with PlayTestDb {
       testDbApp { implicit app =>
         val result = route(app,
           thumbRequest(
-            "/wikipedia/commons/thumb/a/ab/Report.pdf/page1-250px-Report.pdf.jpg")).get
-        // No matching image in DB → redirect to Wikimedia
+            "/wikipedia/commons/thumb/a/ab/Report.pdf/page1-300px-Report.pdf.jpg")).get
+        // No matching image in DB → redirect to Wikimedia, at its next size up
         status(result) mustEqual SEE_OTHER
-        header("Location", result) must beSome(contain("upload.wikimedia.org"))
+        header("Location", result) must beSome(
+          beEqualTo("https://upload.wikimedia.org/wikipedia/commons/thumb/a/ab/Report.pdf/page1-330px-Report.pdf.jpg"))
       }
     }
 
@@ -162,9 +177,10 @@ class ImageProxyControllerSpec extends Specification with PlayTestDb {
       testDbApp { implicit app =>
         val result = route(app,
           thumbRequest(
-            "/wikipedia/commons/thumb/a/ab/Scan.tif/lossy-page1-250px-Scan.tif.jpg")).get
+            "/wikipedia/commons/thumb/a/ab/Scan.tif/lossy-page1-225px-Scan.tif.jpg")).get
         status(result) mustEqual SEE_OTHER
-        header("Location", result) must beSome(contain("upload.wikimedia.org"))
+        header("Location", result) must beSome(
+          beEqualTo("https://upload.wikimedia.org/wikipedia/commons/thumb/a/ab/Scan.tif/lossy-page1-250px-Scan.tif.jpg"))
       }
     }
 
