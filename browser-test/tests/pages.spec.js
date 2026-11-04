@@ -26,6 +26,8 @@ const KNOWN = {
   users: { 'color-contrast': U19, 'button-name': U20, 'link-name': U20 },
   'contest images': { 'color-contrast': U19, label: U21 },
   campaigns: { 'button-name': U20, 'link-name': U20 },
+  // aria-label on the navbar's disabled view links; seen again on 2026-11-04's re-check
+  'round statistics': { 'aria-prohibited-attr': U20 },
 };
 
 const A11Y_DIR = path.join(OUT, 'a11y');

@@ -67,6 +67,8 @@ test.describe('the guards', () => {
   });
 
   test('the routeless browser refuses other hosts too', async ({ routelessAs, diagnostics }) => {
+    // the image's failure through the dead proxy, whenever it arrives
+    diagnostics.allow(/^request failed: https:\/\/example\.org\/x\.png /);
     const page = await (await routelessAs(null)).newPage();
     await page.goto('/auth');
     await page.evaluate(() => {
@@ -76,7 +78,5 @@ test.describe('the guards', () => {
     });
     await expect.poll(() => diagnostics.otherHosts).toContain('example.org');
     expect(diagnostics.take('other host')).toEqual([expect.stringContaining('https://example.org refused')]);
-    diagnostics.take('request failed');
-    diagnostics.take('console error');
   });
 });
