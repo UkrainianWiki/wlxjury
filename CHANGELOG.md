@@ -134,6 +134,10 @@ Developed 2026-11-02 to 2026-11-03, PRs #232–#236.
   2026-05-13 (T414805); the test Wikimedia refuses them too; the unused `thumb.php` url helper
   removed (developed
   2026-11-04; [integrations practices](docs/integrations/practices.md) §1.8).
+- Dependency updates, part 1 (developed 2026-11-04):
+  - Unused and duplicate jars are off the runtime classpath: JMH moved to `Test`; scalawiki's chart jars, its play-json 2.9.4 and `commons-logging` are excluded. `lib/` went from 209 jars, 128.4 MB to 196 jars, 121.5 MB.
+  - play-mailer 10.1.0 (`org.playframework`), Play 3.0.12 and Scala 2.13.17. Scala skips 2.13.18, which miscompiles `Long*` varargs ([dependencies practices](docs/dependencies/practices.md) §1.2b).
+  - sbt-scoverage 2.4.4, sbt-coveralls 1.3.15, sbt-digest 2.1.0, sbt-jmh 0.4.8 and sbt-native-packager 1.13.0, with an identical ZIP layout.
 - **Migrations:** V85 gallery index, V86 timestamp definitions, V87 for the sign-in (#240).
 
 ## Deployed
