@@ -240,7 +240,12 @@ new session before any benchmark or `dist`). It measures what runs, not what is 
 run by a test without an assertion on its result counts as covered. Twirl templates are not
 measured (generated code is excluded; the hand-written `app/views/bs/` helpers are); the vendored,
 patched gallery (`unitegallery.js`, `ug-theme-tiles.js`) and `jquery.hotkeys`, `jquery.raty` are
-outside Jest's `collectCoverageFrom`.
+outside Jest's `collectCoverageFrom`. The gallery's patches are asserted instead, by
+`unitegallery-patches.test.js`: each patch has a test that fails when the patch is reverted
+([vendor doc](../vendor/unitegallery.md) §2, §4). Its tests load the files with `eval`, which V8
+coverage doesn't count. A one-off measurement (2026-11-04) put the theme at 86.2 % of lines and
+82.4 % of branches, with every wlxjury line covered. The theme is about a quarter ours, so it
+stays excluded.
 
 **9.2 The baseline** (`4a861818`, run [41649422116](https://github.com/UkrainianWiki/wlxjury/actions/runs/41649422116)):
 Scala **89.87 %** statements, **85.84 %** branches; JS **96.76 %** lines, **91.39 %** branches;
@@ -249,8 +254,9 @@ scheduler paths): read smaller differences as noise.
 
 **9.3 How to use it.** Read the report for the files a change touched: an uncovered branch there
 is a missing test case. No minimum is enforced yet (a threshold a few points under a stable
-baseline is a later decision, CI plan). The gallery's own tests are queued (roadmap, "the patched
-gallery").
+baseline is a later decision, CI plan), so the gallery batch changed no threshold. With its 28
+tests, Jest counts 281 tests at 96.76 % of lines and 91.39 % of branches (2026-11-04, local; the
+vendored files excluded, as in the baseline).
 
 **9.4 Story coverage.** Line coverage says which lines ran, not which flows a juror or an organizer
 can rely on. [stories.md](stories.md) lists what each role does, a story per row with an ID

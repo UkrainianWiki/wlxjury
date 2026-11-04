@@ -134,6 +134,12 @@ Developed 2026-11-02 to 2026-11-03, PRs #232–#236.
   2026-05-13 (T414805); the test Wikimedia refuses them too; the unused `thumb.php` url helper
   removed (developed
   2026-11-04; [integrations practices](docs/integrations/practices.md) §1.8).
+- The vendored gallery (Unite Gallery 1.7.28) is inventoried and tested: every wlxjury patch is
+  listed with its commits, and the formerly unmarked ones are marked. Jest runs the gallery in
+  jsdom, with a test per patch that fails when the patch is reverted. The lightbox slide's url
+  is now escaped too. The patched copy stays until our own tiles replace it, planned later
+  with the other frontend changes (developed
+  2026-11-04; [docs/vendor/unitegallery.md](docs/vendor/unitegallery.md)).
 - **Migrations:** V85 gallery index, V86 timestamp definitions, V87 for the sign-in (#240).
 
 ## Deployed
