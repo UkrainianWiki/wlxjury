@@ -304,7 +304,7 @@ sudo find /var/www/jury-images -xdev -type f -perm /022 -exec chmod go-w {} +
 stat -c '%a %U:%G' /var/www/jury-images                                 # 755 wlxjury:wlxjury
 ```
 
-`wlxjury-infra` should own this (the draft in [`ci-drafts/infra/`](plans/ci-drafts/infra/ops-retention-monit.diff)).
+`wlxjury-infra` should own this.
 
 ### Monitoring with monit
 
@@ -320,7 +320,7 @@ sudo monit -t && sudo monit reload    # if monit -t fails: sudo rm /etc/monit/co
 sudo tail -n 5 /var/log/monit.log     # a reload line, no 'wlxjury' error
 ```
 
-Undo: remove both files and `sudo monit reload`. Whom monit alerts, and how, is the server's monit configuration (`set alert`, `set mailserver`); check that it alerts someone. A filesystem space alert (`check filesystem` on the disk that holds the releases, dumps and image cache) is worth adding there too. `wlxjury-infra` should install these files (the draft in [`ci-drafts/infra/`](plans/ci-drafts/infra/ops-retention-monit.diff)).
+Undo: remove both files and `sudo monit reload`. Whom monit alerts, and how, is the server's monit configuration (`set alert`, `set mailserver`); check that it alerts someone. A filesystem space alert (`check filesystem` on the disk that holds the releases, dumps and image cache) is worth adding there too. `wlxjury-infra` should install these files.
 
 ### Static assets
 

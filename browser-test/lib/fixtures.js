@@ -15,6 +15,7 @@
 // fresh session; `routelessAs(role)` opens one without routes, for the Back checks (below).
 import { test as base, expect } from '@playwright/test';
 import { PLACEHOLDER_PNG } from './placeholder.js';
+import { isProxyConsoleLine } from './proxy-errors.js';
 import { authFile, fixtureFor } from './server.js';
 
 export { expect };
@@ -29,10 +30,17 @@ function isStubbedImage(url, request) {
   return isCommonsUpload(url, request);
 }
 
+// a Commons file's path on its upload host, an image's or a video's
+const COMMONS_FILE = /^\/wikipedia\/commons\/.+\.(jpe?g|png|gif|tiff?|svg|webp|webm|ogv|ogg|mp4|mpe?g)$/i;
+
 /** A file from Commons' upload host, as a page loads one: an image, or a video's source (the
-  * fixture has some videos). */
+  * fixture has some videos). WebKit on Linux types some image loads "other" (the large view's
+  * image, 2026-11-04 CI): "other" counts only for a Commons file's path, so a fetch, a script or
+  * any other path there is still refused. */
 function isCommonsUpload(url, request) {
-  return url.protocol === 'https:' && url.hostname === COMMONS_UPLOAD && ['image', 'media'].includes(request.resourceType());
+  if (url.protocol !== 'https:' || url.hostname !== COMMONS_UPLOAD) return false;
+  const type = request.resourceType();
+  return type === 'image' || type === 'media' || (type === 'other' && COMMONS_FILE.test(decodeURI(url.pathname)));
 }
 
 const pathOf = (page) => {
@@ -62,7 +70,9 @@ const ALWAYS_ALLOWED = [
 const CANCELLED = /^(net::ERR_ABORTED|NS_BINDING_ABORTED|cancelled|Load request cancelled)/i;
 
 export class Diagnostics {
-  constructor() {
+  constructor(browserName) {
+    this.browserName = browserName;
+    this.proxied = [];
     this.problems = [];
     this.allowed = [...ALWAYS_ALLOWED];
     this.otherHosts = [];
@@ -112,11 +122,24 @@ async function watchPages(context, diagnostics, { routed }) {
     });
   });
   const watch = (page) => {
+    // the routeless browser: this page's refused uploads, and its dead-proxy console lines
+    // without a location to tie them to one (WebKit's)
+    const proxied = { uploadsRefused: 0, lines: [] };
+    if (!routed) diagnostics.proxied.push({ page, proxied });
     page.on('console', (m) => {
       if (m.type() !== 'error') return;
-      // the routeless browser: the engine's line for an upload the dead proxy refused, by the
-      // failed resource's URL (the message's location), not any line of the test
-      if (!routed && PROXY_REFUSED.test(m.text()) && isUploadUrl(m.location()?.url)) return;
+      // the routeless browser: the engine's line for an upload the dead proxy refused, tied to
+      // that upload by the failed resource's URL (the message's location), or, where the line
+      // carries none, to a refused upload of the same page (checked after the test), never
+      // allowed by its text alone
+      if (!routed && isProxyConsoleLine(diagnostics.browserName, m.text())) {
+        const location = m.location()?.url;
+        if (isUploadUrl(location)) return;
+        if (!location || location === page.url()) {
+          proxied.lines.push(m.text().slice(0, 300));
+          return;
+        }
+      }
       diagnostics.add('console error', page, m.text().slice(0, 300));
     });
     // a WebSocket: the guard's route doesn't see one (that takes routeWebSocket); the app opens none
@@ -140,7 +163,10 @@ async function watchPages(context, diagnostics, { routed }) {
       const url = new URL(r.url());
       // the routeless browser: the dead proxy refuses upload.wikimedia.org's files (the large
       // image, which falls back to this host's)
-      if (!routed && isCommonsUpload(url, r)) return;
+      if (!routed && isCommonsUpload(url, r)) {
+        proxied.uploadsRefused++;
+        return;
+      }
       diagnostics.add('request failed', page, `${url.origin}${url.pathname} (${failure})`);
     });
     if (!routed) {
@@ -199,10 +225,9 @@ function routelessLaunch(browserName) {
   return { proxy: DEAD_PROXY };
 }
 
-// the engine's console line for a resource the dead proxy refused (lib's guards.spec.js has the
-// failures' texts); accepted only for a file of upload.wikimedia.org (isUploadUrl)
-const PROXY_REFUSED = /^Failed to load resource: (net::ERR_PROXY_CONNECTION_FAILED|NS_ERROR_PROXY_CONNECTION_REFUSED|Could not connect to server)$/;
-
+// the engine's console line for a resource the dead proxy refused: lib/proxy-errors.js, per
+// engine and platform; accepted only for a file of upload.wikimedia.org (isUploadUrl), or a
+// refused upload of the same page
 function isUploadUrl(u) {
   try {
     const url = new URL(u);
@@ -217,7 +242,7 @@ export const test = base.extend({
   baseURL: async ({ fixture }, use) => use(fixture.baseUrl),
   role: [null, { option: true }],
   storageState: async ({ role, browserName, storageState }, use) => use(role ? authFile(browserName, role) : storageState),
-  diagnostics: async ({}, use) => use(new Diagnostics()),
+  diagnostics: async ({ browserName }, use) => use(new Diagnostics(browserName)),
   context: async ({ context, diagnostics }, use) => {
     await guard(context, diagnostics);
     await use(context);
@@ -259,6 +284,10 @@ export const test = base.extend({
   // after each test: nothing went wrong on any page it opened
   noPageProblems: [async ({ diagnostics }, use) => {
     await use();
+    // a routeless page's dead-proxy console lines without a location: only with a refused upload
+    for (const { page, proxied } of diagnostics.proxied) {
+      if (proxied.uploadsRefused === 0) proxied.lines.forEach((line) => diagnostics.add('console error', page, line));
+    }
     expect(diagnostics.problems, 'CSP violations, console errors, failed requests or other hosts').toEqual([]);
   }, { auto: true }],
 });
