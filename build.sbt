@@ -271,7 +271,7 @@ resolvers += Resolver.mavenLocal
 libraryDependencySchemes += "org.scala-lang.modules" %% "scala-parser-combinators" % "always"
 
 libraryDependencies ++= Seq(
-  "org.webjars" %% "webjars-play" % "3.0.2",
+  "org.webjars" %% "webjars-play" % "3.0.10",
   "org.webjars" % "jquery" % "3.7.1",
   // Bootstrap 5's bundle JS includes Popper; Tom Select's complete build includes its two deps
   "org.webjars" % "bootstrap" % "5.3.8" exclude ("org.webjars", "popper.js"),
