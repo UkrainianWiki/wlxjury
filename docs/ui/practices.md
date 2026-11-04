@@ -179,3 +179,46 @@ its reason. The patch inventory, targeted tests and the keep-or-replace decision
 - **U2 (2.1):** `style-src 'unsafe-inline'` stays (secure-coding §5 exceptions, P3); inline `style`
   attributes remain in `contestFiles`, `gallery`, `pageLinks`, `round/edit/imageFiltering` and
   `snippets/jobStatus` (theme-modes Phase 4, gradual).
+
+Found while writing the juror guide (2026-11-03, confirmed in its review); none fixed yet:
+
+- **U3 (4.3), medium: the large view's window clamps its keys.** It knows only the files around
+  its file (`Neighbourhood.Side = 2`, `Window = 5`), so Page Up/Down and Home/End move at most two
+  files mid-list (a little more near its start), not five files or to the list's ends, as
+  `fileKeyboardNav`'s comment and the keys' names suggest.
+- **U4 (4.3), low bug: key 0 in a comments-only round.** `keyboardNav` binds the digits 0 to
+  `min(maxRate, 9)` for any non-binary round; a comments-only round has maxRate 0, so 0 posts a
+  vote that the server refuses ("This round doesn't take that rate…"). Guard on `round.isRated`.
+- **U5 (4.3), low–medium: top rates unreachable by key** where maxRate > 9 (a 1–10 round, or a
+  half-star round past 4.5 stars): the digits stop at 9.
+- **U6, low–medium: three forms of a rate's text.** The gallery's `rateString` shows stored
+  units ("7" in a half-star round), the large view's number shows stars ("3.5"), and
+  `voteMoved` shows "★ 3.5".
+- **U7 (4.3), low: Delete on a Mac.** Its Delete key sends keyCode 8 (backspace), which is not
+  bound; only Fn+Delete (46) rejects, while the tooltip says "<Delete>".
+- **U8 (4.3), low–medium: no on-page list of the large view's keys;** only the buttons'
+  tooltips name them.
+- **U9 (3.5), low bug: no failed-image mark in the rated grid and the thumbs bar.** The by-rate
+  grid (`galleryByRate`) loads no `large-view.js`, so a deleted file shows the browser's
+  broken-image icon, not the grey ⊘ box; the large view's "Next files" strip neither.
+- **U10, question for the user: comments are visible to every juror, with names.** The large view
+  loads all the file's comments in the contest (`CommentJdbc.findBySubjectAndContest`). Intended,
+  or should jurors see only their own (judging bias)?
+- **U11 (4.1), medium accessibility bug: a focused binary thumb is invisible.** The thumbs take
+  the focus (`tile-votes.js`), but sit in the tile's overlay at opacity 0 until hovered, so the
+  keyboard focus can't be seen (WCAG 2.4.7).
+- **U12 (1), low: "No round configured yet" wording.** `no.round.yet` also shows when the
+  juror's rounds are stopped, paused for them or being distributed, not only before any round is
+  configured.
+- **U13, low–medium: the large view shows no file title;** only the image's `alt` and the
+  Commons link carry it.
+- **U14, low: "Edit user" heading on one's own profile** (`editUser.scala.html`).
+- **U15 (1), low: "(Jury)" vs "Juror".** `logged.scala.html`'s contest menu names roles with
+  `Messages(r)` ("Jury"); elsewhere `role.jury` ("Juror"). Use `Messages("role." + r)`.
+- **U16 (1), low: `signin.password.link.hint` says to ask the contest's organizers for a
+  link,** but organizers can't send one, and contest admins only to an unverified member
+  (`UserController.reinvite`); for an account with a verified email and a usable password only
+  root can (`resetPassword`).
+- **U17, low bug: "No contests" in the account chooser.** `OAuthChooserController.entry` lists
+  contests only for directly choosable accounts; one that needs its password or a mailed link
+  shows "No contests" even when it has some.

@@ -57,6 +57,7 @@ every deleted document with its last commit.
 | adds a message key, a page pattern, a script, a theme variable, a vendored patch | UI practices |
 | adds or updates a dependency, action, image or downloaded tool | dependencies practices |
 | ships a user-visible change | CHANGELOG.md "Unreleased" |
+| changes a label, a key or what a juror sees or does | the juror guide (`docs/user/juror-guide.md`, §5) |
 | starts, lands or decides a batch | the roadmap |
 
 The rule is in workflow §8: the update is in the same PR, and the reviewer checks it.
@@ -91,7 +92,11 @@ The rule is in workflow §8: the update is in the same PR, and the reviewer chec
 
 ## 5. User docs
 
-`docs/user/`, planned: an English juror guide, then organizer and admin guides after P3. The
+`docs/user/`: the English [juror guide](user/juror-guide.md) exists (written from the tool as it
+was on 2026-11-03; **unpublished**); organizer and admin guides follow after P3. It is written for
+the Translate extension: short paragraphs, headings that stand alone, no relative links,
+screenshots as `[Screenshot: …]` placeholders, the interface's labels from `conf/messages.en`.
+What updates it is in §3. The UI findings made while writing it are UI practices §9 (U3–U17). The
 English source lives in the repository and is reviewed with the code. A release step publishes it
 to a wiki page and marks it for translation, and translations happen there with the Translate
 extension. Interface messages are to go through translatewiki (planned; [UI](ui/practices.md) §1.4).
