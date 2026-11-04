@@ -252,6 +252,41 @@ is a missing test case. No minimum is enforced yet (a threshold a few points und
 baseline is a later decision, CI plan). The gallery's own tests are queued (roadmap, "the patched
 gallery").
 
+**9.4 Story coverage.** Line coverage says which lines ran, not which flows a juror or an organizer
+can rely on. [stories.md](stories.md) lists what each role does, a story per row with an ID
+(`J-` juror, `O-` organizer, `A-` admin, `R-` root, `S-` system or security, two digits; never
+reused, a retired one marked *(retired)*), its juror guide section, and *Part:* in Notes while
+the tests show only some of it. Tests cite stories:
+
+- **Playwright:** the native tag, on a test or a `describe` (which covers its tests):
+  `test('…', { tag: ['@J-21', '@J-24'] }, async (…) => …)`; `npx playwright test --grep @J-21`
+  runs a story's tests. The `storyLabels` fixture turns the tags into the Allure report's labels
+  (§10.10) and fails a test whose tag the catalogue lacks.
+- **Scala:** the ID in brackets in an example's or a `should` block's name, the block covering its
+  examples: `"a juror's own votes [J-27]" should { … }`, munit `test("[J-02] …")`. No Allure
+  adapter exists for specs2 or munit; the name reaches sbt's JUnit XML unchanged.
+- **Which Scala specs:** the story-level ones only, those that drive a request through the
+  router or a Play app (or the controller with its database) for a catalogue flow: most of
+  `test/controllers/` and the request-level ones of `test/views/` and `test/security/`, about 40
+  files, one tag per block where possible. *Not tagged:* `test/db/`, `test/services/`,
+  `test/org/`, `test/stress/`, `test/gatling/`, template-rendering view specs, parity specs, the
+  source-scan guards (`RawSqlSpec`, `LogHygieneSpec` …), form-mapping unit specs and Jest. *Why:*
+  a unit test shows a rule, not a story; tagging ~2,000 examples would make the matrix noisy and
+  the tags churn with every refactor. A story whose only tests are service specs says so in Notes.
+
+`scripts/story-coverage.py` (standard library only; a step of `ci.yml` before the build, and
+locally `python scripts/story-coverage.py`) reads the catalogue, the tags in
+`browser-test/tests/*.js` and the bracketed IDs in `test/**/*.scala`, and writes the matrix
+(story, state, browser tests, Scala specs) to stdout, `target/story-coverage.md` and the job's
+summary. **It fails** on an ID the catalogue lacks or retired, a malformed ID (`J-7`, `X-01`), a
+duplicate or malformed catalogue row, a guide link whose anchor has no heading, and no tag at all
+in either layer (§4.2; `--self-test` runs it on `scripts/testdata/story-coverage/`). **It reports,
+without failing:** the uncovered stories by role, those cited by one layer only, the tests in
+`test.fixme`/`test.skip` (not counted), and the guide's sections no story links (drift). States:
+*covered* (cited, no *Part:*), *partly covered* (cited, with *Part:*), *uncovered*. It is static: a
+tag says a test cites the story, not that the test asserts the whole outcome (reviewers check a
+new tag against the sentence) or that it passed (the Allure report, §10.10).
+
 ## 10. Browser tests
 
 `browser-test/`: `@playwright/test` (JavaScript, its own `package.json` and lockfile, outside
@@ -279,16 +314,16 @@ session to `target/browser-test/auth/<engine>-<role>.json`. A test takes a role 
 `test.use({ role: 'juror' })`, or opens another session with `contextAs(role)`. 55 tests per
 engine (165 in all), 4 of them its sign-ins:
 
-| Spec | What it shows |
-|---|---|
-| `guards` | the fixture sends the production CSP; a CSP violation is reported; an image from another host, a lookalike of Commons' upload host and `commons.wikimedia.org`, and a request to Commons' API, are refused and reported; Commons' and the image proxy's images get the placeholder; the routeless browser refuses other hosts too (the guards' self-tests, §4.2) |
-| `sign-in` | sign in through the form, sign out through the user menu's POST with its token; a sign-out without the token is refused and the session stays; a wrong password |
-| `voting` | binary round: large view by key and by button, gallery thumb; rated round: large view by key and by star, gallery star (reading the tile's rate first); Back after a large-view vote shows the stored vote, as a fresh load does (from `ui_checks.py`; §10.3) |
-| `sections` | the large view's and the contest file's side sections restored as stored by DOMContentLoaded; the first-frame check (from `ui_checks.py`) is `fixme`, triage U18 ([UI](../ui/practices.md) §9) |
-| `theme` | the login page's switch (no request), the navbar's CSRF POST; `auto` in both schemes with every frame, from the first, in the scheme's mode: the `data-bs-theme` attribute, the root's computed `color-scheme` and the page's computed background (the "Firefox theme flash" check) |
-| `access` | a juror refused another juror's votes (gallery, large view, all jurors) and the admin pages, an organizer the round form: the 403 page with its reference |
-| `organizer` | the organizer role's round statistics and by-rate list; the admin's rounds list, round form with its jurors' table, edit-then-cancel (nothing saved, no job), new round form; root's campaigns page |
-| `pages` | a tour of 17 pages (each role's): status 200, one `h1`; in Chromium an axe-core scan per page (§10.5) |
+| Spec | What it shows | Stories |
+|---|---|---|
+| `guards` | the fixture sends the production CSP; a CSP violation is reported; an image from another host, a lookalike of Commons' upload host and `commons.wikimedia.org`, and a request to Commons' API, are refused and reported; Commons' and the image proxy's images get the placeholder; the routeless browser refuses other hosts too (the guards' self-tests, §4.2) | S-03 |
+| `sign-in` | sign in through the form, sign out through the user menu's POST with its token; a sign-out without the token is refused and the session stays; a wrong password | J-02, J-03, J-06, J-07, J-34, S-02 |
+| `voting` | binary round: large view by key and by button, gallery thumb; rated round: large view by key and by star, gallery star (reading the tile's rate first); Back after a large-view vote shows the stored vote, as a fresh load does (from `ui_checks.py`; §10.3) | J-16, J-17, J-20, J-21, J-24, J-36, S-02 |
+| `sections` | the large view's and the contest file's side sections restored as stored by DOMContentLoaded; the first-frame check (from `ui_checks.py`) is `fixme`, triage U18 ([UI](../ui/practices.md) §9) | J-33 |
+| `theme` | the login page's switch (no request), the navbar's CSRF POST; `auto` in both schemes with every frame, from the first, in the scheme's mode: the `data-bs-theme` attribute, the root's computed `color-scheme` and the page's computed background (the "Firefox theme flash" check) | J-30 |
+| `access` | a juror refused another juror's votes (gallery, large view, all jurors) and the admin pages, an organizer the round form: the 403 page with its reference | J-27, J-35, S-01 |
+| `organizer` | the organizer role's round statistics and by-rate list; the admin's rounds list, round form with its jurors' table, edit-then-cancel (nothing saved, no job), new round form; root's campaigns page | O-01, O-02, A-01, A-02, R-01 |
+| `pages` | a tour of 17 pages (each role's): status 200, one `h1`; in Chromium an axe-core scan per page (§10.5) | S-04 |
 
 **10.2 Every page passes** (`lib/fixtures.js`, for every context of every test): images and
 videos from `upload.wikimedia.org` (requests of type image or media only) and this host's
@@ -350,6 +385,7 @@ env -u COMMONS_USER -u COMMONS_PASSWORD -u SCALAWIKI_LOGIN -u SCALAWIKI_PASSWORD
 npx playwright test                          # the three engines; or --project=firefox
 npx playwright test tests/voting.spec.js --project=webkit --headed
 npx playwright show-report ../target/browser-test/report
+npx allure generate ../target/browser-test/allure-results && node allure-offline.mjs   # §10.10
 node fixture-server.mjs stop
 ```
 
@@ -371,7 +407,9 @@ element exists before asserting on it (`one()` in `lib/actions.js`, §6.2). Wait
 auto-waiting `expect`s, `waitForURL`, and `waitForRequest`/`waitForResponse` on a named request,
 never `waitForTimeout` or `networkidle`. A check of what the browser keeps between pages (Back,
 caches) uses `routelessAs` (§10.3). Keep it to what only a browser shows: a template's output
-belongs in a view spec, a script's logic in Jest (§1.1).
+belongs in a view spec, a script's logic in Jest (§1.1). A test of a flow in
+[stories.md](stories.md) carries its story tag (`{ tag: '@J-21' }`, §9.4); a new user-visible flow
+gets a story first. A test of the harness itself (the guards' self-tests) needs none.
 
 **10.8 CI** (`.github/workflows/browser.yml`, its actions pinned by SHA): one job per engine in
 parallel on every PR and on pushes to the integration branches, `fail-fast: false`; not a
@@ -381,9 +419,11 @@ fixture starts, so a failed test run still keeps it; Playwright's browser is cac
 lockfile's hash. A run reads only its own branch's and its base branch's caches, so a stacked
 PR's first runs are cold (the dump built from the CSVs, the browser downloaded). The start step
 has its own 25-minute timeout; traces, screenshots, the HTML report and the server's log are
-uploaded on a failure or a cancellation, the accessibility report always. *Decision pending:*
-which engines stay per PR, from **GitHub's job duration** of each engine's job; the job's
-summary adds its steps' times (fixture start, tests).
+uploaded on a failure or a cancellation, the accessibility report always, and each engine's
+Allure results always (`allure-results-<engine>`); the `report` job (after the three, unless the
+run was cancelled) merges them into the `allure-report` artifact (§10.10), and its failure fails
+no engine's job. *Decision pending:* which engines stay per PR, from **GitHub's job duration** of
+each engine's job; the job's summary adds its steps' times (fixture start, tests).
 
 **10.9 Times** (2026-11-04; the user decides from CI's own numbers what stays per PR). Locally
 (Windows 11, the server on the same machine, 3 workers; 55 tests per engine, 4 of them the
@@ -418,6 +458,41 @@ sharing `target/` with the engines' jobs is the first saving, before dropping an
   missing, §6.2), CSS-class selectors (§6.1), and the hard-coded dev-server URL
   (`http://localhost:5173`; here the base URL comes from `server.json`).
 
+**10.10 The Allure report.** `allure-playwright` (a reporter beside `list`, `html` and `json`)
+writes each test's result to `target/browser-test/allure-results/`, with its engine as the
+"Project" parameter, its tags as `tag` labels, and, from the `storyLabels` fixture (§9.4), its
+stories as labels: epic the role, feature the guide section (else the role), story the ID and
+the catalogue's sentence. `npx allure generate` (Allure Report 3, `allurerc.mjs`) builds
+**one HTML file**, `target/browser-test/allure-report/index.html`: the Awesome report with its
+scripts, styles and data inlined, so it opens from disk with the network off. **But Allure
+3.21.0 always adds Google Analytics** (`gtag.js` from `www.googletagmanager.com`;
+`analyticsEnable: true` is hard-coded in `@allurereport/plugin-awesome`, no option turns it off):
+`node allure-offline.mjs` removes that block after every `generate`, and fails if the file still
+names a script, stylesheet, image, frame or CSS `url()` on another host. Checked on 2026-11-04 in
+Chromium with every non-file request refused: before it, the two gtag requests; after it, none,
+no console error, the report drawn ([dependencies](../dependencies/practices.md) §2.1). A
+Chromium run's report (55 tests, the a11y attachments): 3.9 MB, from 0.7 MB of results. Open it
+in a browser; the tree groups the tests by epic, feature and story (a test with several stories
+under each), a test per engine.
+
+- **CI:** the `report` job of `browser.yml` merges the three engines' results (unique file names;
+  the "Project" parameter keeps an engine's run of a test apart) and uploads the
+  `allure-report` artifact (14 days), its size in the job's summary. **An artifact only:**
+  GitHub Pages would publish test names, steps and failure screenshots, and is not decided
+  (plan [`2026-11-04-story-coverage.md`](../plans/2026-11-04-story-coverage.md) §4.5).
+- **History:** `historyPath` is a JSONL file (`target/browser-test/allure-history/`), kept in
+  the Actions cache under a run's key and restored by prefix; it is appended
+  (`ALLURE_APPEND_HISTORY=true`) only on pushes to `master` and `ukwikidev/followups`, so a
+  PR's report shows trends against its base without adding to them. A cache unused for seven
+  days is evicted: the trend restarts, no result is lost.
+- **Not in it yet:** the Scala specs (Allure 3 reads JUnit XML, but `ci.yml` is another
+  workflow; their IDs are in the matrix, §9.4).
+- **Locally:** after a run, from `browser-test/`, `npx allure generate
+  ../target/browser-test/allure-results && node allure-offline.mjs` (the paths are from that
+  directory: the reporter's `resultsDir` is resolved from the working directory). Results
+  accumulate across runs until `target/browser-test/` is deleted. A history file of 30 runs is
+  about 2 MB (70 KB per Chromium run).
+
 ## 11. Guards
 
 | Rule | Enforced by | State |
@@ -433,6 +508,9 @@ sharing `target/` with the engines' jobs is the first saving, before dropping an
 | 6.2 no assertion on a missing element | review; `one()` in `browser-test/lib/actions.js` | review; the browser tests' helper requires exactly one match |
 | 6.4 messages in all four files | `views.MessagesCompletenessSpec` | enforced |
 | 9 coverage | `coverage.yml` (report only) | enforced as a report; no minimum (planned after a stable baseline) |
+| 9.4 story IDs known, guide anchors exist | `scripts/story-coverage.py` in `ci.yml` (with its `--self-test`); the `storyLabels` fixture in each browser test | enforced |
+| 9.4 uncovered stories | the script's summary (`target/story-coverage.md`, the job's summary) | a report; no minimum until the catalogue has settled |
+| 10.10 Allure report per run | `browser.yml`'s `report` job | enforced as a report (advisory: it fails no engine's job) |
 | 10 browser tests, one current build per engine | `browser.yml`: a job per engine (Chromium, Firefox, WebKit) on every PR | enforced in CI once the job runs; not yet a required check |
 | 10 the supported range (previous majors, the floor) | the compatibility lint (`.browserslistrc`; `ci.yml`'s job), with its self-test (`lint:selftest`) | enforced for our scripts' APIs and the CSS features caniuse lists; nothing runs in those versions |
 | 10.2 zero CSP violations, console errors, failed requests, other hosts per page | `browser-test/lib/fixtures.js` (every test); its self-tests in `guards.spec.js` | enforced in CI once the job runs; not yet a required check |

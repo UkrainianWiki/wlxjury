@@ -1,7 +1,8 @@
 # Story coverage and the Allure overview (plan)
 
-**State:** planned (user decision, 2026-11-04: user-story coverage for the tests, with an Allure
-overview). Not started. **Sources:** `browser-test/` at `76d88f1a` (Playwright Test 1.64.1, 53
+**State:** steps 1–4 built on `ukwikidev/story-coverage` (2026-11-04, [results](#8-results));
+step 5 (the first gaps) not started. User decision, 2026-11-04: user-story coverage for the
+tests, with an Allure overview. **Sources:** `browser-test/` at `76d88f1a` (Playwright Test 1.64.1, 53
 tests per engine), [testing](../testing/practices.md) §9–§11,
 [juror guide](../user/juror-guide.md), [dependencies](../dependencies/practices.md) §1, §2, §6,
 [workflow](../workflow/practices.md) §8, `conf/routes`, `build.sbt` (specs2: 209 spec files;
@@ -343,3 +344,70 @@ does not fail the engines' jobs).
 
 **7.5 Public reports.** Only if Pages is chosen (§4.5): no server log, trace or credential in
 the published files.
+
+## 8. Results
+
+Built 2026-11-04 on `ukwikidev/story-coverage` (based on `stack/70-browser-tests`, `474e6cac`).
+
+**The matrix** (`python scripts/story-coverage.py`): 68 stories, **46 covered, 15 partly
+covered** (*Part:* in Notes), **7 uncovered**: J-09, J-10, J-22, J-29, J-31, J-37, A-16. By layer:
+20 stories have browser and Scala tests, 4 browser only (J-33, R-01, S-03, S-04), 37 Scala only. The
+guide sections no story links: the three "Kinds of rounds" ones and "Conflicts of interest".
+
+**The two unverified points:**
+
+- *`allure.story()` from the auto fixture:* works. A probe with a `{ auto: true }` fixture calling
+  `allure.epic/feature/story` before `use()` gave the result JSON those labels beside the `tag`
+  labels; in the Chromium run every tagged test has them (e.g. `Juror` /
+  `Light, dark or system theme` / `J-30 …`) and the "Project" parameter `chromium`. An unknown tag
+  (`@J-98`) failed the probe's test from the fixture. One side effect: the labels travel as
+  attachments ("Allure Metadata"), so Playwright's HTML report lists them per test.
+- *Offline:* **not as shipped.** Allure 3.21.0's Awesome report hard-codes Google Analytics
+  (`analyticsEnable: true` in `@allurereport/plugin-awesome`'s `generators.js`; also in the
+  classic, allure2 and dashboard plugins): opened with every non-file request refused, the
+  report asked `www.googletagmanager.com` twice. `browser-test/allure-offline.mjs` removes that
+  block after `generate` and fails if markup or CSS still loads from another host; after it, no
+  request left the file, no console error, and the report drew its tree. Recheck on each
+  `allure` bump (a later release may add a switch).
+
+**Sizes:** a Chromium run (53 passed, 2 `fixme` skipped): 72 result files, 0.7 MB; the one-file
+report 3.9 MB; a history entry 70 KB (`historyLimit: 30`, about 2 MB). Three engines' report:
+not measured locally (expected ~5 MB: the a11y attachments are Chromium's only).
+
+**Checks:** the script's `--self-test` and the tree pass; `npx playwright test --list`: 165
+tests (55 per engine); `Test/compile` and `testOnly controllers.SignOutAndSwitchSpec
+controllers.OAuthChooserSpec controllers.SetupSpec`: 19 passed, the bracketed IDs in the JUnit
+XML names; Chromium with the Allure reporter: 53 passed, 2 skipped (the `fixme`s).
+
+**Where the plan and the code differ (the code followed):**
+
+- *§1.4's Scala column vs §2.3:* the column names view-render, parity, form-mapping and unit
+  specs that §2.3 excludes; only the request-level ones were tagged (39 files).
+  `RoundControllerSpec` is a form-mapping unit test (not O-01, A-01, A-04: those are
+  `ContestFilesPageSpec`/`RoundEditPageSpec`, `RoundEditPageSpec`/`RoundCriteriaSpec`, and
+  `MutationAuthorizationSpec`'s `setRoundUser` block). `AppendImagesSpec` is the import service
+  (A-09, A-13), not A-05/A-14; A-14 is `RoundEditPageSpec`'s "add the pasted files" example and
+  A-05 its new-files count. `ContentSecurityPolicySpec` is a guard of the policy (S-03 stays with
+  the browser guards). Left untagged, so their stories show as Scala-uncovered or *Part:*:
+  `RoundListSpec`, `RoundListDbSpec`, `JurorCountsSpec`, `ListPositionSpec`, `PagerSpec`,
+  `GalleryTileStarsViewSpec`, `GalleryByRateViewSpec`, `LargeViewUrlsSpec`, `LargeViewSideSpec`,
+  `ThemeViewSpec`, `StartStopViewSpec`, `HeadingsViewSpec`, `GroupedListParitySpec`, `CsvSpec`,
+  the three choice specs, `ImagesFromListSpec`, `UserControllerSpec`.
+- *The "?" stories:* A-13 `ContestTemplateSpec`, `MonumentControllerSpec`; A-15
+  `RoundEditPageSpec` ("create one round when saved twice"); A-17 `AdminPagesCurrentContestSpec`
+  (saving the greeting); S-06 the stopped-round and stopped-juror examples of
+  `MutationAuthorizationSpec` and `LargeImageSpec`.
+- *The tour:* `pages.spec.js` is tagged S-04 only; a page it merely opens is noted in the story's
+  Notes ("browser: the page tour opens it only"), not tagged, so a 200 doesn't count as a story.
+- *The fixme test* (`sections.spec.js`, U18) is tagged J-33 and listed as not counting.
+- *Playwright:* `test.describe(details, fn)` without a title takes the object as the title, so
+  the anonymous describe in `sections.spec.js` got its tags on its tests instead.
+- *Testing doc numbering:* §5 named 10.6 "Adding a test" and 10.7 the CI section; in the code
+  they are 10.7 and 10.8 (10.9 is "Times"), so the Allure section is **10.10**.
+- *The report job* runs `if: !cancelled()`, not `always()`, so a cancelled PR run builds no
+  report; the history is under `target/browser-test/allure-history/`, not `history/`.
+- *Dependencies:* the transitive packages (~160) were locked with `npm install --before
+  2026-10-21`, so none is newer than the two-week rule; their licenses are permissive
+  (BlueOak-1.0.0, PSF-2.0, `dompurify` MPL-2.0 or Apache-2.0 among MIT, Apache, ISC, BSD).
+
+**Deferred:** as §6, plus a three-engine local report size, and step 5's tests.

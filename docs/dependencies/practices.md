@@ -61,6 +61,14 @@ and `npm ci`; the browser tests' `@playwright/test` 1.64.1 (released 2026-10-14)
 `@axe-core/playwright` 4.14.0 (2026-10-15, with `axe-core` 4.14.0) at exact versions in
 `browser-test/package.json` and its lockfile, the browsers being the builds that Playwright
 version names (Chromium 156, Firefox 157, WebKit 27.2; CI caches them by the lockfile's hash);
+the browser tests' report tools `allure` 3.21.0 (Allure Report 3, released 2026-10-16) and
+`allure-playwright` 3.14.0 (2026-10-19, with `allure-js-commons` 3.14.0) at exact versions in the
+same files, their ~160 transitive packages locked with `npm install --before` 14 days back (the
+newest `allure`, 3.22.x, was too new on 2026-11-04; one update PR per bump, given its release
+rate). Test tools only, never served or packaged; the one-file report they build loads nothing
+from another host once `browser-test/allure-offline.mjs` has removed the Google Analytics tag
+Allure always adds (no CDN: checked with the network blocked, testing §10.10; recheck on every
+`allure` bump);
 the compatibility lint's `eslint` 10.13.0, `eslint-plugin-compat` 7.0.2, `globals` 17.13.0,
 `stylelint` 17.16.0, `stylelint-no-unsupported-browser-features` 8.1.2, `browserslist` 4.29.4 and
 `caniuse-lite` 1.0.30001817 at exact versions in `javascript-test/package.json` (all released 14
@@ -136,7 +144,10 @@ the license in the PR. *Example:* `axe-core` and `@axe-core/playwright` are MPL-
 file-level copyleft): test tools only, injected into the test browsers by the browser tests,
 never served by the app or packaged with it, so no decision was needed; Playwright is Apache-2.0.
 The compatibility lint's tools are MIT; `caniuse-lite`'s data is CC-BY-4.0 (attribution; test
-tooling only, not shipped).
+tooling only, not shipped). `allure`, `allure-playwright` and `allure-js-commons` are Apache-2.0;
+their transitive packages are MIT, Apache-2.0, ISC, BSD, BlueOak-1.0.0 (`glob`, `minimatch` …),
+PSF-2.0 (`argparse`) and `dompurify`'s MPL-2.0 or Apache-2.0: all permissive or with a permissive
+choice, and test tooling only.
 
 **6.2 Vendored files keep their notice.** A copied file keeps its upstream copyright and license
 header (`jquery.raty.js`: MIT; `jquery.hotkeys.js`: dual MIT or GPL v2); a file without
