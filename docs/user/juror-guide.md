@@ -23,7 +23,7 @@ already. Ask your contest organizer to send you a new one.
 
 If you already have an account in the tool, for example from an earlier contest, the
 organizer may add you to the new contest directly. You then sign in as before and find the new
-contest in the contest menu (see "Taking part in several contests").
+contest in the contest menu at the top of the page.
 
 [Screenshot: the "Set your password" page]
 
@@ -36,8 +36,11 @@ one for you) and your password, then press **Sign In**.
 signed out when you close the browser.
 
 If the tool says **Invalid user or password**, check both and try again. If you have forgotten
-your password, or haven't signed in for a long time, ask your contest's organizers for a link to
-set a new one. Old passwords expire, so this can happen even when you typed it right.
+your password, or haven't signed in for a long time, ask your organizer: a tool administrator can
+send you a link to set a new one. Old passwords expire, so this can happen even when you typed
+it right.
+
+The link opens a page, **Set a new password**. Your old password works until you use the link.
 
 If several jury accounts have the same wiki user name, signing in with that name doesn't work.
 Sign in with your email address instead.
@@ -51,7 +54,7 @@ password form. If you don't see these buttons, only the password works there.
 
 These buttons sign you in to the jury account you already have. They never create one. If the
 tool says **No jury account matches this account**, ask your organizer to invite you, or sign
-in with your password and link the account on your profile (see below).
+in with your password and link the account on your profile, as the next paragraphs describe.
 
 Google sign-in finds your account by itself only for a Gmail or Google Workspace address. For
 another address, accept the invitation first, then link Google on your profile. After that you
@@ -65,20 +68,26 @@ When you link a Wikimedia account and your jury account has no wiki account yet,
 **Set your wiki account** asks whether to use that Wikimedia user name. Press **Use it** to
 confirm.
 
+[Screenshot: the profile's "Linked accounts" and "Sessions" sections]
+
 ### When one wiki name has several jury accounts
 
 Some people have more than one jury account with the same wiki user name, for example from
 different years. When you sign in with Wikimedia, the tool then shows **Choose your jury
-account**, with each account's email (partly hidden) and its contests and roles.
+account**, with one box per account:
 
-- **This is my account** signs in to an account that has neither a password nor an email.
-- For an account with a password, type it under **Its password** and press **Choose with
-  its password**.
-- **Mail me a link** sends a link to that account's email address. Open it in the same browser,
-  within the minutes the email says, and press **Confirm**.
+- An account you can choose at once shows **No email** and its contests, with your role in
+  each. **This is my account** signs in to it.
+- An account with a password or an email shows its email, partly hidden, and **No contests**:
+  its contests are not listed there. Prove that it is yours in one of these two ways:
+  - type its password under **Its password** and press **Choose with its password**;
+  - or press **Mail me a link**, which sends a link to that account's email address. Open it in
+    the same browser, within the minutes the email says, and press **Confirm**.
 
 If an account says **This account cannot be chosen here: ask your contest organizer**, ask
 your organizer which account to use.
+
+[Screenshot: the "Choose your jury account" page with two accounts]
 
 ### Signing out
 
@@ -144,7 +153,7 @@ Some rated rounds have criteria, such as **Aesthetics**, **Technical quality** o
 **Usefulness for Wikipedia**. You rate each file on every criterion, with stars. A file counts as
 rated once you have rated all its criteria. Its rate is the sum of them.
 
-You rate criteria in the large view only (see "Rating by criteria").
+You rate criteria in the large view only. How is described below, with the large view.
 
 ### Comments-only rounds
 
@@ -165,15 +174,16 @@ The bar at the top has tabs for your own files in the round, each with a count:
 
 The sort menu next to the tabs has **In file order** and **By my rating**. **In file order**
 keeps every file in its place when you vote. **By my rating** puts your highest-rated files
-first. The tool remembers your choice.
+first. Your browser remembers your choice; on another computer or browser, choose it again.
 
-A file you vote on stays where it is on the page until you reload it. In a rated gallery a
-note says so: **Changed rates are re-sorted when the page is reloaded.**
+A file you vote on stays where it is on the page until you reload it. In your list of a rated
+round, a note above the files says so after your first vote on the page: **Changed rates are
+re-sorted when the page is reloaded**.
 
 ### Regions
 
 In a monuments contest, the bar has a **Region** menu: choose a region to see only its files,
-or **All regions**. Each region shows how many of your files are in it.
+or **All regions**. Each region shows how many files of the tab you are on are in it.
 
 ### The pager
 
@@ -202,6 +212,8 @@ Click the image itself to open it in the large view.
 Under each file are its stars. Click a star to rate the file. In a half-star round, click the
 left half of a star for a half star. The circled cross before the stars removes your rating.
 
+[Screenshot: a rated round's gallery with stars under each file]
+
 Rounds with criteria show your result under each file, but you rate them in the large view.
 
 ### Deleted or missing files
@@ -211,7 +223,10 @@ can't be loaded: you see a grey box with a crossed circle, or your browser's mar
 image.
 
 Once the tool notices that a file was deleted, it leaves your list. If Commons restores the
-file, it comes back with your vote. A renamed file comes back under its new name.
+file, it comes back with your vote.
+
+A renamed file keeps its place in your list. At most, its image doesn't load until the tool
+picks up its new name.
 
 You don't need to do anything about these files.
 
@@ -220,8 +235,9 @@ You don't need to do anything about these files.
 ### Opening a file in the large view
 
 Click a file in the gallery to see it large. The large view shows one file, with the buttons
-and stars on the left: **Back to gallery**, **Previous image** and **Next image** first, then
-the vote buttons or stars. Click the image to open the file's page on Commons in a new tab.
+and stars on the left. First come three buttons: the grid of squares (**Back to gallery**), the
+upward arrow (**Previous image**) and the downward arrow (**Next image**). Pointing at a button
+shows its name. Then come the vote buttons or stars. Click the image to open the file's page on Commons in a new tab.
 
 The left column also has **File details**: the full resolution with a link to the original
 file, and for monuments the place and the monument. **Next files** shows the files after this
@@ -241,7 +257,7 @@ has none. While you point at a star, it shows the rate a click gives. The circle
 your rating.
 
 After you vote, the large view moves on to the next file, so you can go through your files one
-after another.
+after another. At the end of the list it goes to the file before instead.
 
 If your vote moves the file in your list, or takes it out of the list you are in, a note says
 so, for example **The image you rated (Rejected) is no longer in this list.** Click **View it**
@@ -254,6 +270,8 @@ number. Click the stars of each criterion.
 
 The view stays on the file while you rate its criteria. Go to the next file yourself with the
 buttons or the Down key.
+
+[Screenshot: the large view of a round with criteria]
 
 ### Keyboard shortcuts in the large view
 
@@ -268,12 +286,14 @@ The large view works with the keyboard:
 | Esc | back to the gallery, at this file's page |
 | Space | select the file (yes/no round) |
 | Delete | reject the file (yes/no round) |
-| 0 to 9 | rate the file (rated round) |
+| 0 up to the highest rate (at most 9) | rate the file (rated round) |
 
-Page Up, Page Down, Home and End move among the few files around the one you see, up to four
-files away. They don't jump to the start or end of your whole list.
+Page Up, Page Down, Home and End move only among the few files around the one you see. In the
+middle of your list each of them moves at most two files; near its start, a little more. They
+don't jump to the start or end of your whole list.
 
-The digit keys give the rate in points. In a round of whole stars, 3 gives three stars. In a
+The digit keys give the rate in points, from 0 up to the round's highest rate, and at most 9.
+In a round of whole stars, 3 gives three stars. In a
 half-star round each point is half a star, so 7 gives three and a half stars. 0 removes your
 rating. A rate above 9 needs the mouse.
 
@@ -319,8 +339,10 @@ their votes are kept aside. If a file is requalified later, it comes back with y
 Your round may disappear for a while when the organizers stop it to do this.
 
 If you upload photos to the contest yourself, make sure your profile shows your **Wiki
-account**. Without it the tool can't recognise your files. You can't change it yourself: ask a
-contest admin.
+account**. Without it the tool can't recognise your files. If the field is empty, link your
+Wikimedia account on your profile: the tool offers to use its user name, as described in the
+part of this guide on signing in. To change a wiki account that is already set, ask a contest
+admin.
 
 ### Disqualified files
 
@@ -345,7 +367,7 @@ or Українська) and press **Save**.
 
 ### Your profile
 
-Your **Profile** also has your **Full name**, your **Email** and a new password. To change
+Your profile page is headed **Edit user**. It also has your **Full name**, your **Email** and a new password. To change
 your password or email, type your **Current password** too.
 
 A new email address takes effect once you follow the link sent to it.
@@ -361,7 +383,7 @@ The jury tool supports the current and the previous version of these desktop bro
 - Safari
 
 Signing in and voting also keep working in Chrome 109 and Firefox 115, which some older
-computers can't upgrade from.
+computers can't upgrade from. Pages may look different there.
 
 Phones and tablets are not supported yet. The pages open there, but they aren't designed or
 tested for small screens. Please judge on a computer.
@@ -398,8 +420,8 @@ files.
 
 ### When you are signed out
 
-You are signed out after 30 days without using the tool, and a year after you signed in at
-most. Without **Keep me signed in**, closing the browser signs you out.
+By default, you are signed out after 30 days without using the tool, and a year after you
+signed in at most. Without **Keep me signed in**, closing the browser signs you out.
 
 When you open a page while signed out, the tool asks you to sign in and then takes you back
 to that page. A vote from the gallery says **You have been signed out. Sign in again and
