@@ -21,9 +21,6 @@ concurrency:
   group: integration-${{ github.event_name }}-${{ github.sha }}
   cancel-in-progress: false
 
-env:
-  SCALAWIKI_SHA: 25951dbe1e05bc195b8719e2edbb08464f0ea932
-
 jobs:
   live-commons:
     runs-on: ubuntu-24.04
@@ -39,7 +36,6 @@ jobs:
       - name: scalawiki (interim, from source)
         uses: ./.github/actions/scalawiki
         with:
-          sha: ${{ env.SCALAWIKI_SHA }}
           jdk: 17
       - name: Live Commons specs
         # -Dintegration goes to sbt's JVM; build.sbt forwards it to the forked test JVM.

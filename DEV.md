@@ -5,7 +5,7 @@ Install JDK 17 and sbt, start a MariaDB (10.6 or 10.11), and set `WLXJURY_DB_HOS
 
 scalawiki `0.7.0-SNAPSHOT` must be published locally first: `build.sbt` resolves it from
 `~/.ivy2/local` (or `~/.m2`), not from a repository. Check out `UkrainianWiki/scalawiki` at the
-commit in `SCALAWIKI_SHA` (`.github/workflows/ci.yml`) and run, in that checkout,
+commit in `project/scalawiki.sha` and run, in that checkout,
 `sbt http-extensions/publishLocal scalawiki-core/publishLocal scalawiki-wlx/publishLocal`, as
 CI's `.github/actions/scalawiki` does ([integrations practices](docs/integrations/practices.md)
 §2.1).
