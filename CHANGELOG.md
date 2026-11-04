@@ -103,9 +103,9 @@ Developed 2026-11-02 to 2026-11-03, PRs #232–#236.
   review triage tools in `scripts/review/` (#250).
 - An English juror guide, `docs/user/juror-guide.md`, written from the tool as it is; not
   published yet.
-- Debian/RPM packages and the Vagrant setup dropped; the ZIP is the release artifact.
-- Java 17 baseline: compiled with `-release:17`, Java 11 support dropped (production and CI
-  already ran 17); the dead Travis config removed.
+- Debian/RPM packages and the Vagrant setup dropped; the ZIP is the release artifact. The dead
+  Travis and AppVeyor configs and the Heroku files (`Procfile`, `system.properties`) removed.
+- Java 17 baseline: compiled with `-release:17`, Java 11 support dropped (CI already ran 17).
 - **Migrations:** V85 gallery index, V86 timestamp definitions, V87 for the sign-in (#240).
 
 ## Deployed
