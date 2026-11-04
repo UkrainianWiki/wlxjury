@@ -128,9 +128,14 @@ class CoiDisqualifyLockSpec extends Specification with TestDb with BeforeAll wit
               case RoundConflicts.Outcome.Disqualified(files) => files.map(_._1) === Seq(1L, 2L)
             }) and
             (asideRate(round, 1L) === Some(5)) and (RoundImageInvariants.violations(round) must beEmpty) and
+            // the event (V88), in the disqualify's transaction after the rows: was `in`
+            (RoundImageEventJdbc.ofFile(round, 1L).map(e => (e.action, e.priorStatus, e.newStatus, e.by)) ===
+              Seq(("disqualify", "in", Some("dq"), admin.id))) and
             (RoundConflicts.requalify(round, Seq(1L), RoundConflicts.RequalifyReason.MistakenMatch, admin, key(round)) ===
               RoundConflicts.Outcome.Requalified(Seq(1L))) and
             (VoteJdbc.findBy(1L, juror.getId, round).map(_.rate) === Some(5)) and
+            (RoundImageEventJdbc.ofFile(round, 1L).map(e => (e.action, e.code, e.newStatus)) ===
+              Seq(("disqualify", "coi", Some("dq")), ("requalify", "mistaken_match", Some("in")))) and
             (RoundImageInvariants.violations(round) must beEmpty)
         }
       }
@@ -163,6 +168,9 @@ class CoiDisqualifyLockSpec extends Specification with TestDb with BeforeAll wit
           }) and
             (RoundImageJdbc.byRound(round).map(r => r.pageId -> r.status) ===
               Seq(1L -> "dq", 2L -> "dq", 3L -> "in", 4L -> "dq")) and
+            // the chunk's file too, recorded as `in` before
+            (RoundImageEventJdbc.byRound(round).map(e => e.pageId -> e.priorStatus).sorted ===
+              Seq(1L -> "in", 2L -> "in", 4L -> "in")) and
             (RoundImageInvariants.violations(round) must beEmpty)
         }
       }
@@ -186,7 +194,7 @@ class CoiDisqualifyLockSpec extends Specification with TestDb with BeforeAll wit
         go.countDown()
         Await.result(chunk, 30.seconds)
         (Await.result(dq, 30.seconds) === RoundConflicts.Outcome.Distributing) and
-          (RoundImageJdbc.disqualified(round) must beEmpty) and
+          (RoundImageJdbc.disqualified(round) must beEmpty) and (RoundImageEventJdbc.byRound(round) must beEmpty) and
           (VoteJdbc.byRound(round).map(_.pageId).toSet === Set(1L, 2L, 3L, 4L)) and
           (RoundImageInvariants.violations(round) must beEmpty)
       }

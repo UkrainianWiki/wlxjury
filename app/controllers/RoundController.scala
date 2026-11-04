@@ -406,7 +406,10 @@ class RoundController @Inject() (
         )
     }
 
-  /** Starts or stops a round of a contest the user administers. */
+  /** Starts or stops a round of a contest the user administers: back to the rounds list, or,
+    * with `returnTo=conflicts` (the round's conflicts page's "Stop the round"), to that page
+    * with a message. `returnTo` is a fixed word, never a path.
+    */
   def setRound(): EssentialAction = withAuth(rolePermission(User.ADMIN_ROLES)) {
     user => implicit request =>
       selectRoundForm
@@ -416,10 +419,17 @@ class RoundController @Inject() (
           selectRound =>
             selectRound.roundId.toLongOption.fold[Result](BadRequest) { id =>
               withAdminRound(user, id, roundNotFound(user), request) { round =>
-                val toList = Redirect(routes.RoundController.rounds(Some(round.contestId)))
-                if (roundsService.setCurrentRound(Nil, round.copy(active = selectRound.active))) toList
-                else toList.flashing(
-                  "error" -> messagesApi.preferred(request)("round.still.distributing", round.number, round.description))
+                val messages = messagesApi.preferred(request)
+                val toConflicts = request.body.asFormUrlEncoded.flatMap(_.get("returnTo")).exists(_.contains("conflicts"))
+                val back =
+                  if (toConflicts) Redirect(routes.RoundConflictsController.page(round.getId))
+                  else Redirect(routes.RoundController.rounds(Some(round.contestId)))
+                if (roundsService.setCurrentRound(Nil, round.copy(active = selectRound.active))) {
+                  if (toConflicts)
+                    back.flashing("success" ->
+                      messages(if (selectRound.active) "coi.round.started" else "coi.round.stopped", round.number))
+                  else back
+                } else back.flashing("error" -> messages("round.still.distributing", round.number, round.description))
               }
             }
         )
