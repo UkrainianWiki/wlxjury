@@ -1,26 +1,24 @@
-## Running with Vagrant
+## Running locally
 
-Create and provision the vagrant box with
-`vagrant up`
+Install JDK 17 and sbt, start a MariaDB (10.6 or 10.11), and set `WLXJURY_DB_HOST`,
+`WLXJURY_DB`, `WLXJURY_DB_USER` and `WLXJURY_DB_PASSWORD`.
 
-Login to vagrant box with
+scalawiki `0.7.0-SNAPSHOT` must be published locally first: `build.sbt` resolves it from
+`~/.ivy2/local` (or `~/.m2`), not from a repository. Check out `UkrainianWiki/scalawiki` at the
+commit in `SCALAWIKI_SHA` (`.github/workflows/ci.yml`) and run, in that checkout,
+`sbt http-extensions/publishLocal scalawiki-core/publishLocal scalawiki-wlx/publishLocal`, as
+CI's `.github/actions/scalawiki` does ([integrations practices](docs/integrations/practices.md)
+§2.1).
 
-`vagrant ssh`
-
-cd to directory with project source code
-
-`cd /vagrant`
-
-run the application with sbt
+Then run the application with sbt
 
 `sbt run`
 
 the terminal will have the following output
 
 ```
-vagrant@vagrant-ubuntu-trusty-64:/vagrant$ sbt run
-[info] Loading project definition from /vagrant/project
-[info] Set current project to wlxjury (in build file:/vagrant/)
+$ sbt run
+[info] Set current project to wlxjury
 
 --- (Running the application, auto-reloading is enabled) ---
 
