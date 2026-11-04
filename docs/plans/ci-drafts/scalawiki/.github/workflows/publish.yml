@@ -31,7 +31,7 @@ jobs:
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: 11   # as ci.yml; scalac emits Java 8 bytecode (-target:jvm-1.8)
+          java-version: 17   # scalawiki's baseline since its java17 branch (-release:17; the build refuses older JDKs)
           cache: sbt
 
       - uses: sbt/setup-sbt@v1
