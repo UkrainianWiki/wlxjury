@@ -1,3 +1,9 @@
+Draft for the wlxjury-infra repository (apply with git apply at its d544c17): retention
+settings, the image cache folder, the alert-only monit check, and removing the retired image
+cache vhost. Not included: each host's inventory must set wlxjury_monit_source (the app
+repository's conf/monit folder on the controller) next to wlxjury_tools_source, or set
+wlxjury_monit: false; the play's asserts name it while it is missing.
+
 diff --git a/README.md b/README.md
 index 53bebab..520c4d9 100644
 --- a/README.md
@@ -26,19 +32,6 @@ index aaee9ee..e1faa67 100644
  - **Procedure.** A Toolforge deployment procedure: maintenance by stopping the web service, a backup job before migrations, starting the new image, and restoring from that backup if a migration fails.
  
  That would be a `toolforge/` target in this repository: the environment-variable list generated from the same settings as `runtime.env`, a `jobs.yaml` for the backup job, and a small deploy script run on the bastion as the tool. The release, its manifest and its readiness endpoint stay as they are.
-diff --git a/inventories/production/group_vars/wlxjury/main.yml b/inventories/production/group_vars/wlxjury/main.yml
-index a7b5b4c..f0ec4fe 100644
---- a/inventories/production/group_vars/wlxjury/main.yml
-+++ b/inventories/production/group_vars/wlxjury/main.yml
-@@ -71,6 +71,8 @@ wlxjury_restore_minimum_free_bytes: 2147483648
- # The reviewed app repository on the controller (WSL path), whose
- # scripts/deployment tools are installed on the server.
- wlxjury_tools_source: /mnt/c/scala/wlxjury/scripts/deployment
-+# Its conf/monit, installed where monit runs (an alert-only check of the app).
-+wlxjury_monit_source: /mnt/c/scala/wlxjury/conf/monit
- 
- # Empty until the V60 release has converted the tables (docs/deployment.md in the
- # app repository): then set innodb_buffer_pool_size: 256M and restart MariaDB in
 diff --git a/roles/wlxjury_app/defaults/main.yml b/roles/wlxjury_app/defaults/main.yml
 index 25427ad..db2af28 100644
 --- a/roles/wlxjury_app/defaults/main.yml
