@@ -212,7 +212,7 @@ It unpacks the release into a new root-owned folder under `/opt/wlxjury/releases
 - that `current` is the operation's candidate release, or its previous release after a finished restore (`database-restored` or `release-restored`);
 - the release to be ready.
 
-It then records `traffic-may-resume`, restores automatic restarts, removes maintenance, checks every URL reaches the app, and restarts the writer units that were running before the deployment. If a URL fails, fix routing and run `reopen` again. Once it records `complete`, it [prunes](#retention-old-releases-and-dumps) old releases and dumps; a failed prune only warns, since traffic is open by then.
+It then records `traffic-may-resume`, restores automatic restarts, removes maintenance, checks every URL reaches the app, and restarts the writer units that were running before the deployment. If a URL fails, fix routing and run `reopen` again. Once it records `complete`, it [prunes](#retention-old-releases-and-dumps) old releases and dumps; if only that prune fails, `reopen` prints `PRUNE FAILED after a successful reopen` and exits 3, with the operation `complete`.
 
 `deploy` also refuses, before anything changes, while [the image cache folder](#the-image-cache-folder) is not owned by the service user or is group- or world-writable.
 
@@ -242,30 +242,37 @@ It takes the deployment lock and refuses while maintenance is on. If only the pr
 
 | Setting | Default | Keeps |
 |---|---|---|
-| `keep_previous_releases` | 2 | the current release, plus the 2 releases besides it that an operation named most recently (as `previous` or `candidate`), whatever else keeps them; folders no operation names come last |
-| `keep_backup_dumps` | 3 | the dumps of the 3 newest operations that took one (every release with migrations, and `--backup`) |
-| `keep_backup_days` | 14 | every dump younger than that, whatever the count |
+| `keep_previous_releases` | 4 | the current release, plus the 4 releases besides it that an operation named most recently (as `previous` or `candidate`), whatever else keeps them; folders no operation names come last. At least 1 |
+| `keep_backup_dumps` | 5 | the dumps of the 5 newest operations that took one (every release with migrations, and `--backup`). At least 1 |
+| `keep_backup_days` | 0 (off) | when above 0, also every dump younger than that many days, whatever the count |
+
+Releases are infrequent, so retention is by count; the age rule is off unless `keep_backup_days` is set.
 
 Whatever the numbers, it never deletes:
-- the release `current` points at, or a release named by an operation that is not `complete` (of either tool; a missing or damaged milestones file, or a damaged record, counts as open);
+- the release `current` points at, or a release named by an operation that is not `complete` (of either tool; a missing or damaged milestones file counts as open);
 - the dump of an open operation, or of the operation that deployed the current release;
 - **the previous release of every dump it keeps**, so every dump left can be restored with `wlxjury-release restore`;
 - rescue dumps (`before-restore-*`), operation folders (`record`, `milestones`, `config.tgz`, the log), or anything of `wlxjury-deploy`'s cutover records, apart from their releases once those records are `complete`;
 - symlinks, and folders without a `wlxjury-build.json` (such as `lost+found`).
 
-So more than three releases can stay: one per kept dump besides. With a migrating deploy every day, the 14-day rule alone keeps about 14 dumps and so about 14 releases; lower `keep_backup_days` if that is too much disk.
+So one more release than the count can stay: the previous release of the oldest kept dump. With the defaults, a normal history keeps about 5–6 releases. Setting `keep_backup_days` keeps more: one release per dump in that window.
 
-It decides everything before deleting anything, and stops, deleting nothing, when it can't tell what is safe: an open operation whose releases it can't read or that names a path outside `releases`, or a symlink among the operation folders. A dump whose age can't be read is kept. Paths are compared resolved (`realpath -m`), and the settings are read as decimal whole numbers.
+It decides everything before deleting anything, and stops, deleting nothing, when it can't tell what is safe:
+- an open operation whose releases it can't read, or that names a path outside `releases`;
+- an operation with a dump whose record lacks `previous` or `candidate`, or names a path outside `releases`;
+- a symlink among the operation folders;
+- a release or operation name with a line break or a tab.
 
-It also removes `.staging.*` folders that a killed `deploy` left. Each deletion is logged with its size to `prune.log` in the backup folder, and, after a `reopen`, to that operation's `operation.log`; a pruned dump also gets a line in its own operation's log, and `restore` of that operation then refuses before anything changes. `keep_previous_releases` and `keep_backup_dumps` must be at least 1, since a restore needs the previous release and the newest dump.
+A dump whose age can't be read is kept. Paths are compared resolved (`realpath -m`), and the settings are read as decimal whole numbers.
 
-Example: releases r1 to r8 deployed in order, then switched back to r2, with every dump a month old except r4's (3 days). Prune keeps:
-- r2, the current release;
-- r8 and r7, the two used most recently besides it;
-- r7, r6 and r5, the previous releases of the newest three dumps;
-- r3, for r4's young dump, and r1, for r2's dump, which deployed the current release.
+It also removes `.staging.*` folders that a killed `deploy` left. Each deletion is logged with its size to `prune.log` in the backup folder, and, after a `reopen`, to that operation's `operation.log`; a pruned dump also gets a line in its own operation's log, and `restore` of that operation then refuses before anything changes.
 
-It deletes r4 and the legacy release, and the dumps of r1's, r3's and r5's operations.
+Example, with the defaults: releases r1 to r8 deployed in order, r8 current. Prune keeps:
+- r8, the current release;
+- r7, r6, r5 and r4, the four used most recently besides it;
+- r3, the previous release of r4's dump, which is one of the newest five (r4's to r8's).
+
+It deletes r2, r1 and the legacy release, and the dumps of r1's, r2's and r3's operations, even when they are only days old.
 
 ### The image cache folder
 
@@ -517,6 +524,8 @@ sudo wlxjury-release reopen OPERATION
 
 **After `backup-skipped`**, at any later milestone: `sudo wlxjury-release restore OPERATION`, then `reopen`. No data is lost, so this needs no decision.
 
+**`reopen` exited 3 with `PRUNE FAILED after a successful reopen`:** the deployment is `complete` and traffic is open; nothing was pruned. Don't rerun `reopen`: fix the cause it printed, then run `sudo wlxjury-release prune --dry-run` and `sudo wlxjury-release prune`.
+
 **After `traffic-may-resume`:** if only `reopen` failed, fix the reported URL and rerun it. Otherwise, prefer a forward fix. Restoring now loses later votes, comments and jobs, and needs an explicit decision and a plan for reconciling them from the rescue dump. If that is the decision:
 
 ```bash
@@ -596,7 +605,7 @@ docker run --rm --network none --mount type=bind,source="$PWD",target=/workspace
 docker run --rm --mount type=bind,source="$PWD",target=/s,readonly koalaman/shellcheck:stable -S style /s/scripts/deployment/wlxjury-release.sh /s/conf/monit/wlxjury-check
 ```
 
-Python 3.8 is the oldest supported version. The restore image is self-contained: Ubuntu 22.04's MariaDB 10.6 (`--build-arg UBUNTU=24.04` for the new server's 10.11), OpenJDK 17, Python 3, `curl`, `unzip` and `monit`. Its packaged-release test runs the ZIP from `sbt dist`, checks that it carries no server setup files and that readiness refuses a forwarded request. `test_release_script` runs `wlxjury-release.sh` unmodified against a real MariaDB, with stand-ins only for systemd (a `systemctl` stub that starts and stops the selected release's launcher) and Apache (a fake proxy that honors the maintenance flag). It covers:
+Python 3.8 is the oldest supported version. The restore image is self-contained: Ubuntu 22.04's MariaDB 10.6 (`--build-arg UBUNTU=24.04` for a newer distribution's 10.11), OpenJDK 17, Python 3, `curl`, `unzip` and `monit`. Its packaged-release test runs the ZIP from `sbt dist`, checks that it carries no server setup files and that readiness refuses a forwarded request. `test_release_script` runs `wlxjury-release.sh` unmodified against a real MariaDB, with stand-ins only for systemd (a `systemctl` stub that starts and stops the selected release's launcher) and Apache (a fake proxy that honors the maintenance flag). It covers:
 - deploying and reopening, including a timer that starts its job during the maintenance checks;
 - a release without migrations: no dump by default (or one with `--backup`), and a `restore` that only switches the release back, keeping later writes, but refuses once a later migration ran;
 - refusals that leave everything unchanged, including an unreachable database endpoint;
@@ -607,7 +616,7 @@ Python 3.8 is the oldest supported version. The restore image is self-contained:
 - refusing a backup of another database, too little free space for the reserve and the rescue dump, and a `db-admin.cnf` that names a remote host while the app uses the local server;
 - `restore` after reopening: the data-loss decision, refusing while another session uses the database, ending a leftover app session that holds a table lock before the rescue dump, and keeping every rescue dump across retries;
 - the image cache folder refused before anything changes when group- or world-writable, owned by another account, not a folder, or a symlink to such a folder; a missing one accepted;
-- pruning: nothing deleted by a failed `reopen` and the prune after its rerun; exit 3 when only that prune fails; fewer releases than the keep count; the current release kept however old; the dumps of the newest operations, of young ones and of the operation that deployed the current release, each with its previous release, including two restored deployments after a completed one; releases and dumps of an open operation and of an open cutover record; missing or damaged milestones counted as open; stopping, deleting nothing, on an open operation it can't read, one naming a path outside `releases`, a corrupt cutover record or a symlinked operation folder; paths compared resolved; decimal settings with leading zeros; a dump whose age can't be read kept; symlinks and non-release folders skipped; `--dry-run` listing exactly what the real run deletes; refusing during maintenance, under a held lock and with bad settings; unfinished unpacks removed; `restore` refusing a pruned dump before the data-loss decision.
+- pruning: nothing deleted by a failed `reopen` and the prune after its rerun; exit 3 when only that prune fails; fewer releases than the keep count; the current release kept however old; the dumps of the newest operations, of young ones and of the operation that deployed the current release, each with its previous release, including two restored deployments after a completed one; releases and dumps of an open operation and of an open cutover record; missing or damaged milestones counted as open; stopping, deleting nothing, on an open operation it can't read, one naming a path outside `releases`, a corrupt cutover record or a symlinked operation folder; paths compared resolved; decimal settings with leading zeros; a dump whose age can't be read kept; symlinks and non-release folders skipped; an operation with a dump whose record can't be read, and a name with a line break, stopping it; a prune killed mid-run deleting no unfinished unpack; a prune stopping after `reopen` (exit 3); the defaults (by count, the age rule off) and `keep_backup_days` 0; `--dry-run` listing exactly what the real run deletes, unfinished unpacks included; refusing during maintenance, under a held lock and with bad settings; unfinished unpacks removed; `restore` refusing a pruned dump before the data-loss decision.
 
 `MonitCheckTest` (in the same file) runs `conf/monit/wlxjury-check` with a test `deployment.json`, a stub `systemctl` and a fake readiness endpoint (ready, 503, not active, quiet in maintenance, a stale flag, nothing listening, an unreadable config), checks that `conf/monit/wlxjury` only alerts, and runs `monit -t` on it in the image.
 

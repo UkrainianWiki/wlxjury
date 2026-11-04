@@ -100,15 +100,16 @@ isolated production copy before relying on it (deployment.md, "Build and rehears
 the packaged ZIP on every PR. *Why:* a backup that was never restored is a hope, not a backup.
 
 **3.3a Keep on the server only what a restore can need.** `wlxjury-release prune`, run at the end
-of every successful `reopen` (never after a failed one), keeps the current release and the 2
-used before it, the dumps of the last 3 operations that took one and every dump younger than 14
-days (settings in `deployment.json`, user, 2026-11-04). It never deletes what an open operation
+of every successful `reopen` (never after a failed one), keeps the current release and the 4
+used before it and the dumps of the 5 newest operations that took one: by count, since releases
+are infrequent; an age rule (`keep_backup_days`) is off unless set (settings in
+`deployment.json`, user, 2026-11-04). It never deletes what an open operation
 names, the dump of the operation that deployed the current release, a rescue dump, or the
 previous release of any dump it keeps, so every dump left stays restorable with `restore`; when
 it can't tell what is safe, it stops and deletes nothing (deployment.md, "Retention"). The
 server's long-term backup is separate. *Why:* release folders and dumps otherwise pile up on a
-disk that also holds the database and the image cache, and on a shared host a full disk stops
-the database for every service that uses it.
+disk that also holds the database and the image cache; on a host shared with other services, a
+full disk stops the database for all of them.
 
 **3.4 Dumps hold personal data.** A production dump is restored only inside an isolated container
 and anonymised at once; it never enters a repository or `data/cache` (secure-coding §22,
@@ -139,10 +140,10 @@ needs (secure-coding §20). Secrets are `${?VAR}` references in `production.conf
 root-only `runtime.env`.
 
 **4.5 No containers on production now** (the user, 2026-11-04). Production keeps the `sbt dist`
-ZIP, systemd, Apache and the host's MariaDB. *Why:* the host is shared with other services that
-use the same Apache (and its ports and certificate), MariaDB and mail. A container would wrap only
-the JVM, and would still need host networking for the database and mail on loopback and for
-Play's loopback proxy trust, while Apache and `wlxjury-release` stayed. It would add a runtime,
+ZIP, systemd, Apache and the host's MariaDB. *Why:* when other services share the host and its
+Apache (with its ports and certificate), MariaDB and mail, a container would wrap only the JVM,
+and would still need host networking for the database and mail on loopback and for Play's
+loopback proxy trust, while Apache and `wlxjury-release` stayed. It would add a runtime,
 base images to patch outside the host's package updates (which patch the host's JRE) and image
 disk, and wouldn't shorten the outage: migrations still need maintenance and one app instance. If
 containers come later (a new server, or a JRE kept apart from the host), the path is **rootful
@@ -212,7 +213,7 @@ secure-coding §18. A new pool, worker count or limit is checked against those b
 - **OP2 (1.5):** whole exceptions with driver text are logged (db §11 V2).
 - **OP3 (5.1):** no external monitoring or alerting; a stopped service is noticed by users. The
   local monit check (`conf/monit/wlxjury`) covers a stopped or unready app where it is installed
-  and monit's alerts reach someone; a host that is down raises nothing.
+  and monit's alerts reach someone.
 - **OP4 (1.3, 5.3):** the password sign-in form (`LoginController`) logs no failure line: a
   wrong password only re-renders the form with `invalid.user.or.password`. fail2ban (S4) needs a
   `security.auth` line with the client's `ip=` (and the account id, if any) there first.
@@ -227,9 +228,9 @@ secure-coding §18. A new pool, worker count or limit is checked against those b
 - **OP6 (3.3a, 5.1):** installing the monit check, fixing the image cache folder's owner and
   mode, and the first prune (with `--dry-run`) are deployment steps (deployment.md); the infra
   roles should own them (the draft in
-  [`ci-drafts/infra/`](../plans/ci-drafts/infra/ops-retention-monit.diff)). On a shared host,
-  other monit checks should not restart MariaDB during a deployment, and a filesystem space
-  alert belongs beside them.
+  [`ci-drafts/infra/`](../plans/ci-drafts/infra/ops-retention-monit.diff)). The rule for a
+  shared host: other monit checks there should not restart MariaDB during a deployment; add a
+  filesystem space alert beside them.
 - **OP7 (3.3a):** prune never deletes rescue dumps (`before-restore-*`) or `wlxjury-deploy`'s
   cutover records (their dumps and config copies). They go by hand after review, or with the
   cutover's retirement (roadmap).
