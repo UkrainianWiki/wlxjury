@@ -229,7 +229,8 @@ val ScalawikiVersion = "0.7.0-SNAPSHOT"
 // play-mailer 10 is the Play 3 line (org.playframework); 9.x was Play 2.9's (com.typesafe.play)
 val PlayMailerVersion = "10.1.0"
 val MockServerVersion = "5.7.0"
-val playVersion = "3.0.7"
+// the Play sbt plugin's version (project/plugins.sbt) sets Play's; keep this in step
+val playVersion = "3.0.12"
 // Login with Google and Wikimedia accounts (services.oauth): PKCE, state, nonce, the token exchange
 // and, for Google, OpenID Connect discovery and ID token validation. No pac4j (S10 removed it).
 val NimbusOAuthVersion = "11.38.2"

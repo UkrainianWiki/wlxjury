@@ -6,7 +6,7 @@ resolvers ++= Seq(
 resolvers += Classpaths.sbtPluginReleases
 
 // Use the Play sbt plugin for Play projects
-addSbtPlugin("org.playframework" % "sbt-plugin" % "3.0.7")
+addSbtPlugin("org.playframework" % "sbt-plugin" % "3.0.12")
 
 addSbtPlugin("com.github.sbt" % "sbt-native-packager" % "1.10.0")
 
