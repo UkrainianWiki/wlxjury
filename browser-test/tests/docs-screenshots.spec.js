@@ -68,7 +68,28 @@ test.describe('the guides\' screenshots', () => {
   const top = (page, file, height, width = VIEWPORT.width) =>
     page.screenshot({ path: file, clip: { x: 0, y: 0, width, height } });
 
-  async function shot(contextAs, role, target, name, { full = false, prepare, crop, height, width } = {}) {
+  /** The page height that ends below the `n`th row of the gallery's tiles (with a margin), so
+    * that no crop cuts through a photo. */
+  const belowRows = (page, n) => page.evaluate((rows) => {
+    // the gallery's tiles (.ug-tile) or the results' (.gallerybox), in rows: tiles in a row are
+    // centred on each other, so a tile starts a new row when it begins below the row's bottom
+    const boxes = [...document.querySelectorAll('.ug-tile, .gallerybox')]
+      .map((tile) => tile.getBoundingClientRect())
+      .filter((r) => r.height > 0)
+      .map((r) => ({ top: r.top + window.scrollY, bottom: r.bottom + window.scrollY }))
+      .sort((a, b) => a.top - b.top);
+    const rowList = [];
+    for (const box of boxes) {
+      const last = rowList[rowList.length - 1];
+      if (last && box.top < last.bottom - 4) last.bottom = Math.max(last.bottom, box.bottom);
+      else rowList.push({ top: box.top, bottom: box.bottom });
+    }
+    const row = rowList[Math.min(rows, rowList.length) - 1];
+    const next = rowList[rows]; // the margin never reaches the next row's photos
+    return Math.floor(next ? Math.min(row.bottom + 12, next.top - 2) : row.bottom + 12);
+  }, n);
+
+  async function shot(contextAs, role, target, name, { full = false, prepare, crop, height, width, rows } = {}) {
     const context = await contextAs(role);
     await context.addCookies([{ name: 'theme', value: 'dark', url: baseUrl }]);
     const page = await sized(context);
@@ -85,7 +106,8 @@ test.describe('the guides\' screenshots', () => {
       const x = Math.max(0, box.x - 12);
       await page.screenshot({ path: file, fullPage: true,
         clip: { x, y: Math.max(0, box.y - 12), width: Math.min(VIEWPORT.width - x, box.width + 24), height: box.height + 24 } });
-    } else if (height) await top(page, file, height, width);
+    } else if (rows) await top(page, file, await belowRows(page, rows), width);
+    else if (height) await top(page, file, height, width);
     else await page.screenshot({ path: file, fullPage: full });
     await context.close();
   }
@@ -93,8 +115,8 @@ test.describe('the guides\' screenshots', () => {
   test('sign-in and juror pages', async ({ contextAs, fixture }) => {
     const { juror } = fixture.accounts;
     await shot(contextAs, null, '/auth', 'juror-sign-in');
-    await shot(contextAs, 'juror', galleryPath(fixture.roundBinaryId, juror.id), 'juror-gallery-binary', { height: 200 });
-    await shot(contextAs, 'juror', galleryPath(fixture.roundRatingId, juror.id), 'juror-gallery-rated', { height: 250 });
+    await shot(contextAs, 'juror', galleryPath(fixture.roundBinaryId, juror.id), 'juror-gallery-binary', { rows: 1 });
+    await shot(contextAs, 'juror', galleryPath(fixture.roundRatingId, juror.id), 'juror-gallery-rated', { rows: 1 });
     await shot(contextAs, 'juror', galleryPath(fixture.roundBinaryId, juror.id), 'juror-gallery-top-bar', { height: 56 });
     await shot(contextAs, 'juror', largePath(fixture.roundBinaryId, juror.id, juror.pageId), 'juror-large-view-binary', { height: 520 });
     await shot(contextAs, 'juror', largePath(fixture.roundRatingId, juror.id, juror.ratedPageId), 'juror-large-view-rated', { height: 520 });
@@ -103,7 +125,7 @@ test.describe('the guides\' screenshots', () => {
 
   test('organizer pages', async ({ contextAs, fixture }) => {
     await shot(contextAs, 'organizer', `/roundstat/${fixture.roundBinaryId}`, 'organizer-round-statistics');
-    await shot(contextAs, 'organizer', `/byrate/round/${fixture.roundRatingId}/user/0/page/1`, 'organizer-results-by-rate', { height: 400 });
+    await shot(contextAs, 'organizer', `/byrate/round/${fixture.roundRatingId}/user/0/page/1`, 'organizer-results-by-rate', { rows: 2 });
     await shot(contextAs, 'organizer', `/filelist/round/${fixture.roundRatingId}/user/0/page/1`, 'organizer-results-file-list');
     await shot(contextAs, 'organizer', `/admin/rounds/${fixture.roundBinaryId}/conflicts`, 'organizer-conflicts', { height: 680 });
   });
