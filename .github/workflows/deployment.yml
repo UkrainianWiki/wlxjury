@@ -62,7 +62,7 @@ jobs:
         with:
           jdk: 17
       - name: sbt dist
-        run: python3 scripts/agent-check.py -- sbt -J-Xmx1g -J-Dfile.encoding=UTF-8 dist
+        run: python3 scripts/agent-check.py --timeout 0 -- sbt -J-Xmx1g -J-Dfile.encoding=UTF-8 dist
       - name: Build the test image (Ubuntu 22.04, MariaDB 10.6, OpenJDK 17)
         run: docker build -q -f scripts/deployment/Dockerfile.test -t wlxjury-deployment-test:local scripts/deployment
       - name: Restore and release-script tests

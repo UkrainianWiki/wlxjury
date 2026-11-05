@@ -1,8 +1,10 @@
+import datetime
 import importlib.util
 from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 
 SCRIPT = Path(__file__).with_name("agent-check.py")
@@ -48,6 +50,108 @@ class AgentCheckTest(unittest.TestCase):
             again = subprocess.run(command, capture_output=True, text=True)
             self.assertEqual(again.returncode, 2)
             self.assertEqual(log.read_text().count("raw marker"), 1)
+
+
+# The child starts a grandchild that writes a marker after GRANDCHILD_DELAY s unless it is killed,
+# then sleeps far past the timeout.
+GRANDCHILD_DELAY = 5
+CHILD = r"""
+import subprocess, sys, time
+marker = sys.argv[1]
+grandchild = "import time; time.sleep({delay}); open(r'" + marker + "', 'w').write('alive')"
+subprocess.Popen([sys.executable, "-c", grandchild])
+print("child started", flush=True)
+time.sleep(60)
+print("child finished", flush=True)
+""".replace("{delay}", str(GRANDCHILD_DELAY))
+
+
+def run_check(*args):
+    return subprocess.run([sys.executable, str(SCRIPT)] + list(args), capture_output=True, text=True)
+
+
+class TimeoutTest(unittest.TestCase):
+    def test_timeout_stops_the_whole_tree_and_keeps_the_log(self):
+        with tempfile.TemporaryDirectory() as directory:
+            log = Path(directory) / "check.log"
+            marker = Path(directory) / "grandchild-alive"
+            started = time.monotonic()
+            result = run_check("--timeout", "2", "--log", str(log), "--",
+                               sys.executable, "-c", CHILD, str(marker))
+            self.assertLess(time.monotonic() - started, 30)
+            self.assertEqual(result.returncode, 124, result.stdout + result.stderr)
+            self.assertIn("TIMED OUT after 2 s", result.stdout)
+            self.assertIn("child started", log.read_text())
+            self.assertNotIn("child finished", log.read_text())
+            # The grandchild would write its marker GRANDCHILD_DELAY s after it started.
+            time.sleep(GRANDCHILD_DELAY + 2)
+            self.assertFalse(marker.exists(), "the grandchild survived the timeout")
+
+    def test_zero_timeout_means_no_limit(self):
+        with tempfile.TemporaryDirectory() as directory:
+            log = Path(directory) / "check.log"
+            result = run_check("--timeout", "0", "--log", str(log), "--",
+                               sys.executable, "-c", "import time; time.sleep(3); print('done')")
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("done", log.read_text())
+            self.assertNotIn("TIMED OUT", result.stdout)
+
+    def test_default_timeout_is_twenty_minutes(self):
+        self.assertEqual(helper.DEFAULT_TIMEOUT, 1200)
+
+
+class LockTest(unittest.TestCase):
+    def test_lock_has_an_owner_during_the_run_and_is_removed_after(self):
+        with tempfile.TemporaryDirectory() as directory:
+            lock = Path(directory) / "jvm.lock"
+            log = Path(directory) / "check.log"
+            show = "print(open(r'" + str(lock / "owner") + "').read())"
+            result = run_check("--lock", str(lock), "--owner", "test-agent", "--log", str(log), "--",
+                               sys.executable, "-c", show)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            owner = log.read_text()
+            self.assertIn("owner=test-agent", owner)
+            self.assertRegex(owner, r"pid=\d+")
+            self.assertRegex(owner, r"started=\d{4}-\d\d-\d\dT")
+            self.assertIn("command=" + sys.executable + " -c", owner)
+            self.assertFalse(lock.exists())
+
+    def test_lock_is_released_after_a_timeout(self):
+        with tempfile.TemporaryDirectory() as directory:
+            lock = Path(directory) / "jvm.lock"
+            marker = Path(directory) / "grandchild-alive"
+            result = run_check("--lock", str(lock), "--timeout", "1", "--log", str(Path(directory) / "c.log"),
+                               "--", sys.executable, "-c", CHILD, str(marker))
+            self.assertEqual(result.returncode, 124, result.stdout + result.stderr)
+            self.assertFalse(lock.exists())
+
+    def test_busy_lock_is_waited_for_then_reported(self):
+        with tempfile.TemporaryDirectory() as directory:
+            lock = Path(directory) / "jvm.lock"
+            lock.mkdir()
+            (lock / "owner").write_text(helper.lock_owner_text("other-agent", ["sbt", "test"]))
+            result = run_check("--lock", str(lock), "--lock-wait", "1", "--log", str(Path(directory) / "c.log"),
+                               "--", sys.executable, "-c", "print('ran')")
+            self.assertEqual(result.returncode, 75, result.stdout + result.stderr)
+            self.assertIn("LOCK BUSY", result.stderr)
+            self.assertIn("owner=other-agent", result.stderr)
+            self.assertTrue((lock / "owner").exists(), "someone else's lock was touched")
+
+    def test_lock_older_than_an_hour_is_reported_without_waiting(self):
+        with tempfile.TemporaryDirectory() as directory:
+            lock = Path(directory) / "jvm.lock"
+            lock.mkdir()
+            two_hours_ago = (datetime.datetime.now().astimezone() - datetime.timedelta(hours=2))
+            (lock / "owner").write_text("owner=gone-agent\npid=1\nstarted={}\ncommand=sbt test\n".format(
+                two_hours_ago.isoformat(timespec="seconds")))
+            started = time.monotonic()
+            result = run_check("--lock", str(lock), "--lock-wait", "600", "--log", str(Path(directory) / "c.log"),
+                               "--", sys.executable, "-c", "print('ran')")
+            self.assertLess(time.monotonic() - started, 30)
+            self.assertEqual(result.returncode, 75, result.stdout + result.stderr)
+            self.assertIn("STALE LOCK", result.stderr)
+            self.assertIn("owner=gone-agent", result.stderr)
+            self.assertTrue(lock.exists())
 
 
 if __name__ == "__main__":

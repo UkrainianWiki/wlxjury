@@ -81,7 +81,7 @@ jobs:
         # and prints a bounded summary; the full log is uploaded below. build.sbt forwards
         # -Dwlxjury.test.mariadb-image to the forked test JVM (SharedTestDb.Image).
         run: >-
-          python3 scripts/agent-check.py --
+          python3 scripts/agent-check.py --timeout 0 --
           sbt -J-Xmx2g -J-Dfile.encoding=UTF-8 "-Dwlxjury.test.mariadb-image=$MARIADB_IMAGE"
           'set Test / javaOptions ++= Seq("-Xmx768m", "-Dfile.encoding=UTF-8")'
           Test/compile test
