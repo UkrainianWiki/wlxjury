@@ -283,14 +283,27 @@ class ApiTokenPageSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
-    "show no tokens card to anyone but root, and refuse their create, creating nothing" in {
+    "show no tokens card, nor the sessions' note on tokens, to anyone but root, and refuse their create, creating nothing" in {
       withCsrfApp { app =>
         setUp()
-        val omar = profile(app, as = otherEmail)
-        status(omar) === OK
-        contentAsString(omar) must not(contain("api-tokens"))
-        status(post(app, "/users/tokens", token(app), create, as = otherEmail)) === FORBIDDEN
-        ApiTokenJdbc.findByUser(userId(otherEmail)) must beEmpty
+        // a juror (Omar), a contest admin and an organizer of contest 10
+        for ((e, role) <- Seq("adam@example.com" -> User.ADMIN_ROLE, "olga@example.com" -> "organizer")) {
+          val user = User.create(User(e, e, password = Some(services.PasswordHasher.default.hash("secret"))))
+          UserContestJdbc.createMembership(user.getId, 10, role)
+        }
+        val tokensNote = "API tokens are not affected" // sessions.help.tokens
+        forall(Seq(otherEmail, "adam@example.com", "olga@example.com")) { as =>
+          val own = profile(app, as = as)
+          (status(own) === OK) and
+            (contentAsString(own) must not(contain("api-tokens"))) and
+            (contentAsString(own) must not(contain(tokensNote))) and
+            (status(post(app, "/users/tokens", token(app), create, as = as)) === FORBIDDEN) and
+            (ApiTokenJdbc.findByUser(userId(as)) must beEmpty)
+        } and {
+          // root's own profile has both
+          val root = contentAsString(profile(app))
+          (root must contain("api-tokens")) and (root must contain(tokensNote))
+        }
       }
     }
   }
