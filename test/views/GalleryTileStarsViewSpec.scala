@@ -45,7 +45,7 @@ class GalleryTileStarsViewSpec extends PlaySpecification {
         """{"number":3,"half":true,"worst":false}"""
     }
 
-    "have the ✗ button in a round with the worst mark (tile-votes.js)" in {
+    "have the worst-mark button in a round with the worst mark (tile-votes.js)" in {
       starsOption(page(LargeViewRenders.ratedRound.copy(worstMark = true))) === """{"number":5,"half":false,"worst":true}"""
     }
 

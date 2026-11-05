@@ -86,7 +86,7 @@ object UiShotsServer {
           s""""pageId": ${firstPage(id, f.roundBinaryId)}, "ratedPageId": ${firstPage(id, f.roundRatingId)}}"""
       }
     val (_, orgEmail, orgPassword) = f.organizer
-    // a root account, in this run's container only, for the root-only pages (the campaigns page)
+    // a root account, in this run's container only, for the root-only pages (the contests page)
     val (rootEmail, rootPassword) = ("root@ui-shots.test", "rootpass")
     if (db.scalikejdbc.User.findByEmail(rootEmail).isEmpty)
       db.scalikejdbc.User.create(fullname = "Root", email = rootEmail, passwordHash = services.PasswordHasher.default.hash(rootPassword),

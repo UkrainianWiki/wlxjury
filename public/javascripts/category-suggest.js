@@ -1,5 +1,5 @@
 // Commons category suggestions on the forms' category fields (inputs with data-category-suggest):
-// the round form's two categories, and the import sources on the contest files and campaigns
+// the round form's two categories, and the import sources on the contest files and contests
 // pages. A Tom Select on the text input asks the Commons API, from the browser (CORS with
 // origin=*, allowed by the CSP's connect-src), for the Category: titles that start with the
 // typed text; choosing one stores the full title, as the server reads a category (with its

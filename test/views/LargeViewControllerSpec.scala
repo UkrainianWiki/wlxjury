@@ -61,7 +61,7 @@ class LargeViewControllerSpec extends PlaySpecification {
       doc.select("body script:not([src])").asScala must beEmpty
     }
 
-    "give the worst mark (✗) by Delete and its button, clear by Backspace and its button, all by paths [J-38]" in {
+    "give the worst mark by Delete and its button, clear by Backspace and its button, all by paths [J-38]" in {
       implicit val request = play.api.test.FakeRequest("GET", "/").withCSRFToken
       implicit val messages = Helpers.stubMessagesApi().preferred(request)
       implicit val flash: Flash = Flash()

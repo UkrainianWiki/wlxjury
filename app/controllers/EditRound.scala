@@ -100,7 +100,7 @@ object EditRound {
         .fold[ValidationResult](Valid)(key => Invalid(ValidationError(key, Criterion.MinPerRound, Criterion.MaxPerRound)))
   }
 
-  /** The worst mark (✗) only in a rated round without criteria: a yes/no round's -1 is its "no",
+  /** The worst mark (rate -1) only in a rated round without criteria: a yes/no round's -1 is its "no",
     * and a criteria round's votes are per criterion.
     */
   private val validWorstMark: Constraint[EditRound] = Constraint("constraint.worst.mark") { edit =>

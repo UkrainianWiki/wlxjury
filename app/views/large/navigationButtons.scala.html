@@ -20,7 +20,7 @@
 
 @* the stars' attributes for large-stars.js: `score` in stars, the number's id, and the vote's
    path prefix and query (the criterion's for `criterion`), unless `readOnly` *@
-@* the juror's own vote in a round with the worst mark: the ✗ and clear buttons give and clear it,
+@* the juror's own vote in a round with the worst mark: the worst-mark and clear buttons give and clear it,
    so the stars have no cancel icon of their own (data-cancel) *@
 @worstVotes = @{ !readOnly && round.takesWorstMark }
 
@@ -42,7 +42,7 @@
     }
 }
 
-@* the juror's ✗ (Delete) and the clear of their vote (Backspace), apart: the clear only once the
+@* the juror's worst mark (Delete) and the clear of their vote (Backspace), apart: the clear only once the
    file has a vote; each a path, posted with the vote form's CSRF token (large-view.js) *@
 @worstButtons() = {
     @defining(files(index)) { file =>
@@ -126,7 +126,7 @@
     } else if (round.rates.id > 0)  {
         @rateNumber("rate-number", score, worst = hood.file.isWorstMark)
         @* all the jurors' votes on a rated round: the score by the round's rule, with its denominator
-           (ImageWithRating.rateText), as the by-rate gallery has it, and its ✗ *@
+           (ImageWithRating.rateText), as the by-rate gallery has it, and its worst marks *@
         @if(list.asUserId == 0 && !round.isBinary) {
             <div class="wlx-overall-rate small">@hood.file.rateText(round) @snippets.worstMarks(hood.file, round)</div>
         }

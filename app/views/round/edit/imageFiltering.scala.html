@@ -60,7 +60,7 @@
 
             @* the files with fewer rejections across the previous rounds' votes (e.g. after a
                screening where jurors only reject the few bad files): a yes/no round's "no", a rated
-               round's ✗ (a rated round without criteria, Round.rejects, whether its option is on now
+               round's worst marks (a rated round without criteria, Round.rejects, whether its option is on now
                or not); offered when any chosen previous round has one; empty: no filter (NULL) *@
             <div id="rejectFilters"
             class="@rounds.filter(_.rejects).map(r => "round" + r.getId).mkString(" ")">
