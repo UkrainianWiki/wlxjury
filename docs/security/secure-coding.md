@@ -360,14 +360,25 @@ password); otherwise an add becomes an invitation. A wiki-account match never at
 access role to an unverified wiki account. Emails are trimmed and lowercased; wiki names
 normalised and unique. Links are 32 random bytes, stored as SHA-256, single use, expiring,
 bound to account and address. Every refused link gives the same page (no account
-enumeration). One's own password or email change needs the current password; nobody sets
-another's password. Mail that is not the person's goes from `UserService.systemSender`.
+enumeration). One's own password or email change needs the current password; nobody types
+another's password: another account's password is set only through a single-use link, mailed
+(an invitation, root's reset) or **shared**: "Create a link to share" (`ShareLinkService`, V94's
+`account_token.shared`) shows the same kind of link once, in the POST's response (`no-store`,
+no referrer; never stored, logged, flashed or put in the session), for the admin to pass on
+personally. A new link of the purpose, mailed or shared, revokes the account's unused ones. Root
+may create one for any account; a contest admin only, in the request's contest, for a member or
+pending invitee of it that is not root, not themselves, has active roles (and live invitations'
+roles) jury or organizer only, and whose every membership, contest worked in and live
+invitation is in a contest they administer; checked again when the link is opened and used. A
+shared link proves no email: accepting it ends sessions, API tokens and identities as a mailed
+one does, leaves `email_verified_at` as it was, and gives only pending roles its creator may
+still give. Mail that is not the person's goes from `UserService.systemSender`.
 
 **Example.** `UserService.addToContest` (results `NewAccount`, `JoinedContest`, `Invited`,
 `WikiAccountUnverified`); `services.AccountTokenService.check`; acceptance in one transaction
-with the token row locked.
+with the token row locked; `ShareLinkService.refusal` (who may share a link).
 
-**Guards.** `AccountInvitationSpec`, `OwnAccountSpec`, `AccountReviewFixesSpec`, `SetupSpec`,
+**Guards.** `AccountInvitationSpec`, `ShareLinkSpec`, `OwnAccountSpec`, `AccountReviewFixesSpec`, `SetupSpec`,
 `db.AccountVerificationMigrationSpec`, `MultiContestUserSpec`, `UserControllerSpec`.
 
 A Google or Wikimedia identity's first sign-in links to an account by the same rule
