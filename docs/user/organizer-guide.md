@@ -128,10 +128,6 @@ A round for all the files takes no filters at all.
   [file score](#o-score-rule): with the total of the rates it is a total, and for a round with
   criteria it is the sum of the criteria's rates, averaged over the jurors. The hint under the
   field says which applies.
-- **Number of top files from the previous rounds**: take only the best N files. After the
-  other filters, the files are ordered by the earlier round's score, and N are taken. For an
-  earlier yes/no round the field **Top files of a yes/no round by** chooses the order:
-  **Approvals, then fewest rejections** or **Approvals minus rejections**.
 - The **rejection filter**: take or drop files by how many jurors rejected them in the earlier
   rounds. See the next section.
 
@@ -240,8 +236,8 @@ interest of this round**, and, where the tool's operators have set up a local im
 ### The file score
 
 The **File score** option decides how a rated round gives a file its score. The score is shown
-in the results and ranks the files, and a next round's top files and minimum score use it. The
-three rules are:
+in the results and ranks the files, and a next round's minimum score uses it. The three rules
+are:
 
 - **Average over the jurors who rated it**, the default: the file's rates added up and divided
   by the number of jurors who rated it.
@@ -259,7 +255,7 @@ the round has votes and you pick another rule. The warning says that:
 
 - the results are re-scored and re-ordered everywhere, at once;
 - a distribution that is already queued or running keeps the rule it started with;
-- the later rounds that took their top files or minimum score from this round are named. Their
+- the later rounds that took their minimum score from this round are named. Their
   files don't change, but a later **Distribute new files** there uses the new rule.
 
 <img src="images/organizer-score-rule-warning.png" alt="The file score option and its warning" width="1280">
