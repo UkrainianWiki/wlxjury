@@ -44,6 +44,12 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      # The check script's own tests (timeout, process tree, lock, keep-awake): its Windows-only
+      # parts are mocked or skipped here, the POSIX signal path runs. Standard library only.
+      - name: agent-check tests
+        working-directory: scripts
+        run: python3 -B -m unittest -v test_agent_check
+
       - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
         with:
           distribution: temurin

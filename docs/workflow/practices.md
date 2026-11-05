@@ -90,16 +90,21 @@ the main tree's packages through a junction; a copied fixture dump measures anot
 
 **4.2 One sbt or test JVM at a time, across all worktrees.** The lock is the directory
 `/c/scala/.sbt-jvm.lock` with an `owner` file inside: `owner=` (the agent or person), `pid=`,
-`host=`, `started=` (ISO time with offset), `cwd=` and `command=`, one per line. Prefer
-`python scripts/agent-check.py --lock --owner <name> -- <sbt command>`: it takes the lock, writes
-`owner`, and removes both when the run ends, a timeout (exit 124) included. By hand: take it with
-its own command, `mkdir /c/scala/.sbt-jvm.lock`, check that it succeeded, then write `owner`
-(`printf 'owner=%s\npid=%s\nstarted=%s\ncommand=%s\n' <name> $$ "$(date -Iseconds)" '<command>' >
-/c/scala/.sbt-jvm.lock/owner`); release with `rm /c/scala/.sbt-jvm.lock/owner` and
-`rmdir /c/scala/.sbt-jvm.lock`, only if you took it. If the directory exists, another run holds
-it: wait and retry, never delete it. A lock older than an hour (by `started=`, or the directory's
-time if there is no `owner`) is not waited on forever: report it, with the `owner` file, to the
-orchestrator or the user, who releases it only under §4.6. Release it between runs, not at the
+`host=`, `started=` (ISO time with offset), `timeout=` (seconds, 0 for none), `cwd=` and
+`command=`, one per line. Prefer `python scripts/agent-check.py --lock --owner <name> -- <sbt
+command>`: it takes the lock, writes `owner` (its own PID: the process that holds the lock for
+the whole run), and removes both when the run ends, a timeout (exit 124) included; if writing
+`owner` fails it removes the lock again. By hand: take it with its own command, `mkdir
+/c/scala/.sbt-jvm.lock`, check that it succeeded, then write `owner` without `pid=` (a Bash tool
+shell's `$$` exits with the command, so the lock would read as abandoned): `printf
+'owner=%s\nstarted=%s\ncommand=%s\n' <name> "$(date -Iseconds)" '<command>' >
+/c/scala/.sbt-jvm.lock/owner`; release with `rm /c/scala/.sbt-jvm.lock/owner` and `rmdir
+/c/scala/.sbt-jvm.lock`, only if you took it. If the directory exists, another run holds it: wait
+and retry, never delete it. Not waited on, but reported with the `owner` file to the orchestrator
+or the user, who releases it only under §4.6 (no script or agent removes it on its own): a lock
+whose `pid=` on this `host=` no longer runs (`agent-check` prints `LOCK OWNER GONE`: a run killed
+hard, e.g. by a tool's time limit), and one older than max(1 h, `timeout=` + 5 min) by `started=`,
+or the directory's time if there is no `owner` (`STALE LOCK`). Release it between runs, not at the
 end of a session, and never chain the lock, the run or the release with `git commit` in one
 command. *Why:* two test JVMs share the Docker VM's memory and the laptop's, and race on ports
 and containers; a lock removed by a chained command that failed halfway is held forever or

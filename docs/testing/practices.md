@@ -244,7 +244,11 @@ after `--timeout` seconds (default 1200 for targeted specs; `--timeout 1800` for
 about 10.5 min plus 3–8 for a cold compile) and exits 124 with `TIMED OUT after N s`, keeping the
 log. A 124 is a stalled run, not a failing test: read the log's tail (the last spec started, a
 Hikari clock-leap warning) before rerunning, and never raise the limit to hide a hang (§7.1).
-On Windows it also holds a keep-awake request while the command runs (`ES_SYSTEM_REQUIRED`, not
+The tree is a Windows Job Object (killed with the script, a hard kill included) or a POSIX
+process group (the script's SIGTERM/SIGHUP/SIGINT forwarded to it), so neither a timeout nor a
+stopped agent leaves a test JVM behind; a run longer than the Bash tool's 600 s foreground limit
+goes in the background (CLAUDE.md). `scripts/test_agent_check.py` runs in CI (`ci.yml`, its
+Windows parts mocked or skipped). On Windows it also holds a keep-awake request while the command runs (`ES_SYSTEM_REQUIRED`, not
 the display; `--allow-sleep` opts out), so idle sleep on battery doesn't stop a long run; lid and
 power-button actions and critical-battery hibernation still can, which is what the timeout and
 the stress harness's INVALID marking (§8.1b) are for.
