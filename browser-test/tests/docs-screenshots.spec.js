@@ -97,7 +97,7 @@ test.describe('the guides\' screenshots', () => {
     return Math.ceil(row.bottom + window.scrollY) + 2;
   }, n);
 
-  async function shot(contextAs, role, target, name, { full = false, prepare, crop, height, width, rows, tableRows } = {}) {
+  async function shot(contextAs, role, target, name, { full = false, prepare, crop, extra = 0, height, width, rows, tableRows } = {}) {
     const context = await contextAs(role);
     await context.addCookies([{ name: 'theme', value: 'dark', url: baseUrl }]);
     const page = await sized(context);
@@ -113,7 +113,7 @@ test.describe('the guides\' screenshots', () => {
       const box = await page.locator(crop).first().boundingBox();
       const x = Math.max(0, box.x - 12);
       await page.screenshot({ path: file, fullPage: true,
-        clip: { x, y: Math.max(0, box.y - 12), width: Math.min(VIEWPORT.width - x, box.width + 24), height: box.height + 24 } });
+        clip: { x, y: Math.max(0, box.y - 12), width: Math.min(VIEWPORT.width - x, box.width + 24), height: box.height + 24 + extra } });
     } else if (rows) await top(page, file, await belowRows(page, rows), width);
     else if (tableRows) await top(page, file, await belowTableRow(page, tableRows), width);
     else if (height) await top(page, file, height, width);
@@ -148,11 +148,13 @@ test.describe('the guides\' screenshots', () => {
     await shot(contextAs, 'admin', `/admin/rounds?contestId=${contest}`, 'organizer-rounds-list', { height: 460 });
     await shot(contextAs, 'admin', `/admin/rounds/edit?contestId=${contest}`, 'organizer-new-round-form', {
       crop: '#round-form', // the form only (about 800 CSS pixels wide)
+      extra: 135, // down to the end of the Save and Cancel buttons, which are below the form's box
       // the form's collapsed sections, opened
       prepare: async (page) => {
         for (const name of ['Media filtering', 'Add files']) {
           await page.getByRole('button', { name }).or(page.getByRole('link', { name })).first().click();
         }
+        await page.waitForTimeout(1000); // the sections' opening animation, before the form is measured
       },
     });
     await shot(contextAs, 'admin', `/contest/${contest}/images`, 'organizer-contest-images', { full: true });
@@ -228,7 +230,7 @@ test.describe('the guides\' screenshots', () => {
     const from = await select.boundingBox();
     const to = await warning.boundingBox();
     await page.screenshot({ path: path.join(OUT_DIR, 'organizer-score-rule-warning.png'), fullPage: true,
-      clip: { x: 0, y: from.y - 80, width: VIEWPORT.width, height: to.y + to.height - from.y + 120 } });
+      clip: { x: 0, y: from.y - 80, width: VIEWPORT.width, height: to.y + to.height - from.y + 215 } });
     await context.close(); // not saved
   });
 

@@ -43,9 +43,10 @@ of the guide that explains it. Changes that only developers or operators see are
   See [The file score](organizer-guide.md#o-score-rule).
 - **Criteria rounds' results:** each criterion's average in the file list, the by-rate gallery,
   the CSV and the large view. See [The file list](organizer-guide.md#o-file-list).
-- **Yes/no rounds:** the all-jurors view shows each file's approvals, and a next round can take
-  files **Selected by at least X jurors**. See [The by-rate gallery](organizer-guide.md#o-by-rate)
-  and [Choosing the round's files](organizer-guide.md#o-choose-files).
+- **Yes/no rounds:** the all-jurors view shows each file's approvals, you can choose the
+  order **Approvals, then fewest rejections**, and a next round can take files **Selected by at
+  least X jurors**. See [The by-rate gallery](organizer-guide.md#o-by-rate) and [Choosing the
+  round's files](organizer-guide.md#o-choose-files).
 - **Conflicts of interest page,** with its history, for organizers and admins. See
   [The conflicts page](organizer-guide.md#o-conflicts-page).
 
