@@ -90,11 +90,26 @@ class JobSchedulerSpec extends Specification with BeforeAll with BeforeEach with
     }
   }
 
+  /** A step that crashes and a cleanup that fails too, while `crash`: the scheduler can't
+    * record the failure, so the job stays running and its lease expires.
+    */
+  class CrashingHandler(kind: String) extends CountingHandler(kind) {
+    @volatile var crash = true
+    val cleanups = new AtomicInteger()
+    override def step(job: Job, ctx: StepContext): StepResult =
+      if (crash) { stepsRun.add(job.id); throw new RuntimeException("simulated crash") }
+      else super.step(job, ctx)
+    override def onFailed(job: Job, ctx: StepContext): JsObject = {
+      cleanups.incrementAndGet()
+      if (crash) throw new RuntimeException("simulated cleanup failure") else super.onFailed(job, ctx)
+    }
+  }
+
   private def background(handlers: Seq[JobHandler], workers: Int = 3, limits: Map[String, Int] = Map.empty,
-      lease: FiniteDuration = 60.seconds): JobScheduler = {
+      lease: FiniteDuration = 60.seconds, maxAttempts: Int = 5): JobScheduler = {
     val s = new JobScheduler(handlers, JobScheduler.Settings(
       workers = workers, kindLimits = limits, defaultKindLimit = 3,
-      pollInterval = 50.millis, heartbeatInterval = 200.millis, lease = lease))
+      pollInterval = 50.millis, heartbeatInterval = 200.millis, lease = lease, maxAttempts = maxAttempts))
     schedulers += s
     s
   }
@@ -266,6 +281,52 @@ class JobSchedulerSpec extends Specification with BeforeAll with BeforeEach with
       s.await(dropped.id, 10.seconds).status === JobStatus.Done
     }
 
+    "fail a job whose runs keep crashing without recording it after jobs.maxAttempts claims; a Retry starts again" in {
+      val h = new CrashingHandler("count")
+      val s = background(Seq(h), lease = 1.second, maxAttempts = 3)
+      val job = enqueue(s, newJob("count", 2))
+      s.start()
+      s.wake()
+      val failed = s.await(job.id, 30.seconds)
+      failed.status === JobStatus.Failed
+      failed.attempts === 3
+      failed.failure.map(_.key) must beSome(JobError.AttemptsKey)
+      failed.failure.map(_.args) must beSome(Seq("3"))
+      failed.failure.flatMap(_.reference) must beSome
+      failed.owner must beNone
+      h.stepsRun.asScala.count(_ == job.id) === 3 // one run per claim, none after the cap
+      h.cleanups.get === 4 // each crash's, and the give-up's (which then fails the job without it)
+      Thread.sleep(1500) // more than a lease later: not claimed again
+      h.stepsRun.asScala.count(_ == job.id) === 3
+      status(job.id) === JobStatus.Failed
+
+      h.crash = false
+      s.retry(job.id) must beRight
+      val done = s.await(job.id, 10.seconds)
+      done.status === JobStatus.Done
+      done.attempts === 1 // the Retry's claim: the count started again
+    }
+
+    "give up an exhausted job with its handler's cleanup when that works" in {
+      val h = new CountingHandler("count")
+      val s = background(Seq(h), lease = 1.second, maxAttempts = 2)
+      val job = enqueue(s, newJob("count", 2))
+      // two claims whose runs ended the JVM: running, its lease expired
+      sql"""UPDATE job SET status = 'running', owner = 'dead-instance', attempts = 2,
+              heartbeat_at = NOW(3) - INTERVAL 120 SECOND WHERE id = ${job.id}""".update()(AutoSession)
+      s.start()
+      val failed = s.await(job.id, 10.seconds)
+      failed.status === JobStatus.Failed
+      failed.failure.map(_.key) must beSome(JobError.AttemptsKey)
+      h.failed.asScala.toSeq === Seq(job.id)
+      h.stepsRun.asScala.count(_ == job.id) === 0
+    }
+
+    "read jobs.maxAttempts, 5 by default" in {
+      JobScheduler.Settings.from(play.api.Configuration()).maxAttempts === 5
+      JobScheduler.Settings.from(play.api.Configuration("jobs.maxAttempts" -> 2)).maxAttempts === 2
+    }
+
     "hand its running jobs back to the queue when stopped, for the next instance to resume" in {
       val h = new CountingHandler("count")
       val first = background(Seq(h), workers = 1)
@@ -277,6 +338,7 @@ class JobSchedulerSpec extends Specification with BeforeAll with BeforeEach with
       val stopped = JobJdbc.findById(job.id).get
       stopped.status === JobStatus.Queued
       stopped.owner must beNone
+      stopped.attempts === 0 // the handed-back claim doesn't count toward jobs.maxAttempts
       val doneBefore = (stopped.state \ "done").as[Int]
       doneBefore must beGreaterThan(0)
 
@@ -284,6 +346,94 @@ class JobSchedulerSpec extends Specification with BeforeAll with BeforeEach with
       next.start()
       eventually(10, 100.millis)((JobJdbc.findById(job.id).get.state \ "done").as[Int] must beGreaterThan(doneBefore))
       JobJdbc.findById(job.id).get.owner === Some(next.instanceId)
+      JobJdbc.findById(job.id).get.attempts === 1
+    }
+
+    "not fail a job on its first crash after it lived through graceful restarts" in {
+      val h = new CountingHandler("count")
+      val job = enqueue(background(Seq(h)), newJob("count", 2))
+      // claimed and handed back on 5 deploys, then its instance crashed holding it
+      (1 to 5).foreach { i =>
+        sql"UPDATE job SET status = 'running', owner = ${s"deploy-$i"}, attempts = attempts + 1 WHERE id = ${job.id}"
+          .update()(AutoSession)
+        JobJdbc.requeueOwned(s"deploy-$i", Seq(job.id))
+      }
+      JobJdbc.findById(job.id).get.attempts === 0
+      sql"""UPDATE job SET status = 'running', owner = 'crashed', attempts = attempts + 1,
+              heartbeat_at = NOW(3) - INTERVAL 120 SECOND WHERE id = ${job.id}""".update()(AutoSession)
+      val s = background(Seq(h), maxAttempts = 2)
+      s.start()
+      val done = s.await(job.id, 10.seconds)
+      done.status === JobStatus.Done // taken over, not given up
+      done.attempts === 2
+    }
+
+    "not give up a job after ordinary failures resumed implicitly, then one lease lapse" in {
+      val h = new CountingHandler("count")
+      val s = background(Seq(h), maxAttempts = 2)
+      val job = enqueue(s, newJob("count", 40, sleepMs = 50))
+      h.failAt.put(job.id, 2)
+      s.start()
+      s.wake()
+      s.await(job.id, 10.seconds).status === JobStatus.Failed
+      JobJdbc.findById(job.id).get.attempts === 0 // the recorded failure gave its claim back
+      // two more ordinary failures, each resumed as the round form or "Distribute new files" do
+      Seq(4, 6).foreach { at =>
+        h.failAt.put(job.id, at)
+        s.retry(job.id, explicit = false) must beRight
+        s.await(job.id, 10.seconds).status === JobStatus.Failed
+        JobJdbc.findById(job.id).get.attempts === 0
+      }
+      s.retry(job.id, explicit = false) must beRight
+      // then its instance stops renewing the lease mid-run: a claim that ended without an outcome
+      eventually(50, 100.millis)((JobJdbc.findById(job.id).get.state \ "done").as[Int] must beGreaterThan(6))
+      s.stop()
+      status(job.id) === JobStatus.Queued
+      sql"""UPDATE job SET status = 'running', owner = 'lapsed', attempts = attempts + 1,
+              heartbeat_at = NOW(3) - INTERVAL 120 SECOND WHERE id = ${job.id}""".update()(AutoSession)
+      JobJdbc.findById(job.id).get.attempts === 1
+      val next = background(Seq(h), maxAttempts = 2)
+      next.start()
+      val done = next.await(job.id, 10.seconds)
+      done.status === JobStatus.Done // taken over (attempts 1 < 2), not given up
+    }
+
+    "hand back on stop only the jobs it still holds: a dropped one's unrecorded crash counts" in {
+      val h = new CountingHandler("count")
+      val s = background(Seq(h), workers = 1)
+      s.start()
+      val held = enqueue(s, newJob("count", 1000, sleepMs = 10))
+      s.wake()
+      eventually(50, 100.millis)(s.heldJobs must contain(held.id))
+      // its own, but not held: as after a step crashed and fail() couldn't record it
+      // inserted running for it (claimed, attempts 1), so its poll never holds it
+      val dropped = DB.localTx(implicit session => JobJdbc.insert(newJob("count", 2), Some(s.instanceId)))
+      s.stop()
+      val handedBack = JobJdbc.findById(held.id).get
+      handedBack.status === JobStatus.Queued
+      handedBack.attempts === 0
+      val left = JobJdbc.findById(dropped).get
+      left.status === JobStatus.Running // to its lease: not forgiven
+      left.owner === Some(s.instanceId)
+      left.attempts === 1
+    }
+
+    "give up the other exhausted jobs and claim the rest when one can't be given up" in {
+      val h = new CountingHandler("count")
+      val s = background(Seq(h), lease = 1.second, maxAttempts = 2)
+      val broken = enqueue(s, newJob("count", 2))
+      val exhausted = enqueue(s, newJob("count", 2))
+      val queued = enqueue(s, newJob("count", 2))
+      // both ran out of attempts; the first's row can't be read (its params aren't an object)
+      sql"""UPDATE job SET status = 'running', owner = 'dead-instance', attempts = 2,
+              heartbeat_at = NOW(3) - INTERVAL 120 SECOND WHERE id IN (${broken.id}, ${exhausted.id})"""
+        .update()(AutoSession)
+      sql"UPDATE job SET params = '[]' WHERE id = ${broken.id}".update()(AutoSession)
+      s.start()
+      s.await(queued.id, 10.seconds).status === JobStatus.Done
+      s.await(exhausted.id, 10.seconds).status === JobStatus.Failed
+      DB.readOnly(implicit s => sql"SELECT status FROM job WHERE id = ${broken.id}".map(_.string(1)).single()) ===
+        Some(JobStatus.Running)
     }
 
     "not touch the jobs of kinds it has no handler for" in {

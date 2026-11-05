@@ -43,7 +43,7 @@ jobs:
         # -Dintegration goes to sbt's JVM; build.sbt forwards it to the forked test JVM.
         # testOnly skips build.sbt's jsTest (it is wired into `test` only).
         run: >-
-          python3 scripts/agent-check.py --
+          python3 scripts/agent-check.py --timeout 0 --
           sbt -J-Xmx2g -J-Dfile.encoding=UTF-8 -Dintegration=true
           'set Test / javaOptions ++= Seq("-Xmx768m", "-Dfile.encoding=UTF-8")'
           'testOnly controllers.AppendImagesSpec controllers.ImagesFromListSpec services.LocalImageCacheServiceIntegrationSpec'

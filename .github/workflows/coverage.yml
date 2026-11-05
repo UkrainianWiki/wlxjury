@@ -66,7 +66,7 @@ jobs:
         # 10.6: coverage does not depend on the server version.
         run: >-
           env -u COMMONS_USER -u COMMONS_PASSWORD -u SCALAWIKI_LOGIN -u SCALAWIKI_PASSWORD
-          python3 scripts/agent-check.py --
+          python3 scripts/agent-check.py --timeout 0 --
           sbt -J-Xmx2g -J-Dfile.encoding=UTF-8 -Dwlxjury.test.mariadb-image=mariadb:10.6.22
           'set Test / javaOptions ++= Seq("-Xmx768m", "-Dfile.encoding=UTF-8")'
           coverage Test/compile test coverageReport

@@ -988,7 +988,34 @@ part-way (the background wrapper ended; no failure in its log) and was rerun.
   what kept running, its distribution jobs failing with the count mismatch every run has (break
   7, against the test-only `remove_image`/`set_round`). The harness's end does not wait for
   retried jobs (it stops the paths' threads, joins each for 180 s at most, then checks), so
-  nothing in it was changed. The two extra base runs were not obtained. Before a long or
-  unattended harness run, keep the host awake (`powercfg /requestsoverride`, or the power plan);
-  a check that fails a run whose wall time far exceeds `stress.seconds` would make such a run
-  fail loudly instead.
+  nothing in it was changed. The two extra base runs were not obtained. The AC power had dropped
+  at 01:15:40 and the laptop, its lid closed, applied the on-battery lid action 6 s later (the
+  user changes that action; agents don't touch power settings).
+  *Since the run-hardening batch:* the harness marks such a variant **INVALID** (summary and
+  `results.json`: `valid`, `invalidReason` "host slept or clock jumped") when its `nanoTime`
+  elapsed time exceeds `stress.seconds + 300` or HikariCP logged a clock leap during it
+  (`WallTimeCheck`, `WallTimeCheckSpec`; testing practices §8.1b); `agent-check.py` stops a
+  run's whole process tree at `--timeout` (exit 124) and, on Windows, holds a keep-awake
+  request while it runs, which stops idle sleep but not a lid action.
+- **Two job-scheduler findings of the same night's investigation, fixed in the run-hardening
+  batch.** (a) A running job whose lease expired was claimed again every lease forever when each
+  run ended without recording an outcome (a crash `fail()` couldn't write, `JobScheduler.fetch`/
+  `work`/`fail`, or a step that ends the JVM, R198-1): `attempts` was counted, never checked.
+  Now after `jobs.maxAttempts` claims (default 5, counted again from a Retry) the next poll fails
+  it with `job.error.attempts` and its handler's cleanup (without it if that fails too)
+  (`JobSchedulerSpec`). (b) A distribution's Retry after a failure other than the count check
+  kept its old `imagesBefore`, so a change in the round's other files while it was failed (a file
+  removed, a repair) failed the next count check once for nothing. Now the Retry moves
+  `imagesBefore` by the change in the round's rows the job didn't add (`othersBefore`,
+  `round_image.added_by_job_id`): its own files that went missing still fail the check
+  (`RoundDistributionJobSpec`).
+  *Review follow-ups:* only the job page's explicit Retry resets `attempts`; the round form again
+  and "Distribute new files" keep it and refuse a given-up job (`job.retry.attempts`,
+  `round.distribute.attempts`, `round.resubmitted.attempts`, with its reference); a graceful
+  handback (`requeueOwned`) gives its claim back (`GREATEST(attempts - 1, 0)`; a separate counter
+  would have needed a migration for the same effect); a give-up that throws is logged per job and
+  no longer aborts the poll. The rebaseline moved to the resumed job's first step (a change while
+  it waits in the queue is in the window), and the count check also requires exactly `ownBefore +
+  imagesAdded` rows with the job's id, so a lost own file can't hide behind another's added one.
+  A file it added that was removed and added again by another job fails that check once; the
+  Retry rescans, skips the file (it has a row) and passes: nothing lost or doubled.

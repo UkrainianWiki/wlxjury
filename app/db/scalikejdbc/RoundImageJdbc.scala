@@ -322,6 +322,16 @@ object RoundImageJdbc {
   def countAll(roundId: Long)(implicit session: DBSession = AutoSession): Long =
     sql"SELECT COUNT(*) FROM round_image WHERE round_id = $roundId".map(_.long(1)).single().getOrElse(0L)
 
+  /** The round's files, whatever their status, that the job added (`added_by_job_id`). */
+  def countAddedBy(roundId: Long, jobId: Long)(implicit session: DBSession = AutoSession): Long =
+    sql"SELECT COUNT(*) FROM round_image WHERE round_id = $roundId AND added_by_job_id = $jobId"
+      .map(_.long(1)).single().getOrElse(0L)
+
+  /** The round's files, whatever their status, that the job didn't add (`added_by_job_id`). */
+  def countNotAddedBy(roundId: Long, jobId: Long)(implicit session: DBSession = AutoSession): Long =
+    sql"SELECT COUNT(*) FROM round_image WHERE round_id = $roundId AND NOT (added_by_job_id <=> $jobId)"
+      .map(_.long(1)).single().getOrElse(0L)
+
   /** Whether the file is `in` the round. */
   def isIn(roundId: Long, pageId: Long)(implicit session: DBSession = AutoSession): Boolean =
     sql"""SELECT 1 FROM round_image WHERE round_id = $roundId AND page_id = $pageId AND status = ${Status.In}"""

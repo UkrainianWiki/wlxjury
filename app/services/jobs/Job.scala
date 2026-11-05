@@ -182,14 +182,30 @@ object JobJdbc {
         .map(_.long(1))
         .list()
 
-  /** Takes the job for `owner` if it is still claimable: true if this call got it. */
-  def claim(id: Long, owner: String, leaseSeconds: Long)(implicit session: DBSession = AutoSession): Boolean =
+  /** Takes the job for `owner` if it is still claimable: true if this call got it. A running
+    * job whose lease expired is taken over only while it has had fewer than `maxAttempts`
+    * claims (since its last Retry): one whose runs keep ending without an outcome (a step
+    * that ends the JVM, or a crash it can't record) is given up instead, see [[lockExhausted]].
+    */
+  def claim(id: Long, owner: String, leaseSeconds: Long, maxAttempts: Int)(implicit
+      session: DBSession = AutoSession
+  ): Boolean =
     sql"""UPDATE job SET status = ${JobStatus.Running}, owner = $owner, heartbeat_at = NOW(3),
                          started_at = COALESCE(started_at, NOW(3)), attempts = attempts + 1, updated_at = NOW(3)
           WHERE id = $id AND (status = ${JobStatus.Queued}
-            OR (status = ${JobStatus.Running}
+            OR (status = ${JobStatus.Running} AND attempts < $maxAttempts
                 AND (heartbeat_at IS NULL OR heartbeat_at < NOW(3) - INTERVAL $leaseSeconds SECOND)))"""
       .update() == 1
+
+  /** The job's row, locked, if it is running with an expired lease and has had `maxAttempts`
+    * claims or more: its runs never recorded an outcome, so it is to be failed, not claimed.
+    */
+  def lockExhausted(id: Long, leaseSeconds: Long, maxAttempts: Int)(implicit session: DBSession): Option[Job] =
+    sql"""SELECT $columns FROM job WHERE id = $id AND status = ${JobStatus.Running} AND attempts >= $maxAttempts
+            AND (heartbeat_at IS NULL OR heartbeat_at < NOW(3) - INTERVAL $leaseSeconds SECOND)
+          FOR UPDATE"""
+      .map(extract)
+      .single()
 
   /** Renews the lease of the jobs `owner` runs and still holds: one it dropped (after a
     * crash it couldn't record) is taken over when its lease expires.
@@ -201,21 +217,33 @@ object JobJdbc {
             WHERE owner = $owner AND status = ${JobStatus.Running} AND id IN ($ids)"""
         .update()
 
-  /** Hands `owner`'s running jobs back to the queue (a graceful shutdown): another
-    * instance, or this one restarted, takes them at once instead of after the lease.
+  /** Hands `owner`'s running jobs that it still holds (`heldIds`) back to the queue (a
+    * graceful shutdown): another instance, or this one restarted, takes them at once instead of
+    * after the lease. The claim that ends this way is taken back from `attempts`: a run handed
+    * back on a deploy ended with an outcome, so it doesn't count toward `jobs.maxAttempts`. A
+    * job it owns but dropped (a crash it couldn't record) is left to its lease: that claim
+    * counts.
     */
-  def requeueOwned(owner: String)(implicit session: DBSession = AutoSession): Int =
-    sql"""UPDATE job SET status = ${JobStatus.Queued}, owner = NULL, updated_at = NOW(3)
-          WHERE owner = $owner AND status = ${JobStatus.Running}"""
-      .update()
+  def requeueOwned(owner: String, heldIds: Seq[Long])(implicit session: DBSession = AutoSession): Int =
+    if (heldIds.isEmpty) 0
+    else
+      sql"""UPDATE job SET status = ${JobStatus.Queued}, owner = NULL, updated_at = NOW(3),
+                           attempts = GREATEST(attempts - 1, 0)
+            WHERE owner = $owner AND status = ${JobStatus.Running} AND id IN ($heldIds)"""
+        .update()
 
-  /** Writes a step's outcome: the new state and progress, and the status. */
+  /** Writes a step's outcome: the new state and progress, and the status.
+    * @param giveBackClaim the owner recorded this outcome (a failure): its claim is taken back
+    *                      from `attempts`, as only runs that ended without recording anything
+    *                      count toward `jobs.maxAttempts`
+    */
   def update(
       id: Long,
       status: String,
       state: JsObject,
       progress: Progress,
-      error: Option[String]
+      error: Option[String],
+      giveBackClaim: Boolean = false
   )(implicit session: DBSession): Unit = {
     val terminal = !JobStatus.active.contains(status)
     sql"""UPDATE job SET status = $status, state = ${Json.stringify(state)},
@@ -223,18 +251,24 @@ object JobJdbc {
                          progress_unit = COALESCE(${progress.unit}, progress_unit),
                          error = $error, updated_at = NOW(3), heartbeat_at = NOW(3),
                          finished_at = IF($terminal, NOW(3), NULL),
-                         owner = IF($terminal, NULL, owner)
+                         owner = IF($terminal, NULL, owner),
+                         attempts = IF($giveBackClaim, GREATEST(attempts - 1, 0), attempts)
           WHERE id = $id"""
       .update()
   }
 
-  /** A failed job queued again (Retry): `owner` claims it at once in inline mode. */
-  def requeue(id: Long, state: JsObject, owner: Option[String])(implicit session: DBSession): Unit = {
+  /** A failed job queued again (Retry): `owner` claims it at once in inline mode. With
+    * `resetAttempts` (the user's explicit Retry) the claims count from zero again, so it gets
+    * the whole `jobs.maxAttempts`; an implicit resume keeps the count.
+    */
+  def requeue(id: Long, state: JsObject, owner: Option[String], resetAttempts: Boolean)(implicit
+      session: DBSession
+  ): Unit = {
     val status = if (owner.isDefined) JobStatus.Running else JobStatus.Queued
     sql"""UPDATE job SET status = $status, state = ${Json.stringify(state)}, error = NULL,
                          finished_at = NULL, owner = $owner, updated_at = NOW(3),
                          heartbeat_at = IF($owner IS NULL, NULL, NOW(3)),
-                         attempts = attempts + IF($owner IS NULL, 0, 1)
+                         attempts = IF($resetAttempts, 0, attempts) + IF($owner IS NULL, 0, 1)
           WHERE id = $id"""
       .update()
   }

@@ -23,6 +23,9 @@ import scala.util.control.NonFatal
   *    recording why (a step or fetch that crashed on a database error): it holds it no
   *    more, so its heartbeat stops. Each step checks, under the job's row lock,
   *    that this instance still owns the job, so two instances never run the same job.
+  *    A job taken over this way `maxAttempts` times (claims since its last Retry, `attempts`)
+  *    is failed instead of claimed again ([[giveUpIfExhausted]]): a step that ends the JVM
+  *    would otherwise restart the site every lease, forever.
   *  - '''Turns.''' A worker runs one step (one chunk) of one job, then the job goes back in
   *    line. The next step goes to the contest that has had the least step time, and
   *    within it to the job that has had the least ("virtual time", as in a fair-share
@@ -129,7 +132,7 @@ class JobScheduler(handlerList: Seq[JobHandler], val settings: JobScheduler.Sett
       if (!workers.awaitTermination(settings.lease.toSeconds / 2 max 1, TimeUnit.SECONDS))
         logger.warn(s"Job scheduler $instanceId: steps still running at shutdown")
       try {
-        val n = JobJdbc.requeueOwned(instanceId)
+        val n = JobJdbc.requeueOwned(instanceId, heldJobs.toSeq)
         if (n > 0) logger.info(s"Job scheduler $instanceId: $n running jobs handed back to the queue")
       } catch { case NonFatal(e) => logger.warn(s"Job scheduler $instanceId: could not requeue its jobs", e) }
       timer = null
@@ -144,10 +147,14 @@ class JobScheduler(handlerList: Seq[JobHandler], val settings: JobScheduler.Sett
         val ids = JobJdbc.claimable(handlers.keys.toSeq, settings.lease.toSeconds, limit = 200)
         val known = lock.synchronized(held.keySet.toSet)
         ids.filterNot(known.contains).foreach { id =>
-          if (JobJdbc.claim(id, instanceId, settings.lease.toSeconds))
+          if (JobJdbc.claim(id, instanceId, settings.lease.toSeconds, settings.maxAttempts))
             JobJdbc.findById(id).foreach { j =>
               lock.synchronized(hold(id, j.kind, j.contestId))
             }
+          else
+            // one row that can't be given up (e.g. unreadable) must not stop the others' claims
+            try giveUpIfExhausted(id)
+            catch { case NonFatal(e) => logger.error(s"Job $id: could not give it up after its attempts", e) }
         }
         dispatch()
       } catch {
@@ -301,21 +308,27 @@ class JobScheduler(handlerList: Seq[JobHandler], val settings: JobScheduler.Sett
   }
 
   /** Queues a failed job again; it resumes from its state.
+    * @param explicit the user's Retry (the job's page). Only it resets `attempts`; an implicit
+    *                 resume (the round form submitted again, "Distribute new files") keeps the
+    *                 count, and refuses a job given up after its attempts
+    *                 ([[JobScheduler.AttemptsRefusedKey]]): that one waits for the cause to be fixed
     * @return the job, or why it can't be retried
     */
-  def retry(jobId: Long): Either[JobScheduler.RetryRefused, Job] = {
+  def retry(jobId: Long, explicit: Boolean = true): Either[JobScheduler.RetryRefused, Job] = {
     val result =
       try
         DB.localTx { implicit s =>
           JobJdbc.lock(jobId) match {
             case None                    => Left(JobScheduler.RetryRefused("job.retry.missing"))
             case Some(j) if !j.isFailed  => Left(JobScheduler.RetryRefused("job.retry.not.failed", j.status))
+            case Some(j) if !explicit && j.failure.exists(_.key == JobError.AttemptsKey) =>
+              Left(JobScheduler.RetryRefused(JobScheduler.AttemptsRefusedKey, j.failure.flatMap(_.reference).getOrElse("")))
             case Some(j) =>
               handlers.get(j.kind) match {
                 case None => Left(JobScheduler.RetryRefused("job.retry.no.handler", j.kind))
                 case Some(h) =>
                   val ctx = new StepContext(s)
-                  JobJdbc.requeue(jobId, h.onRetry(j, ctx), Option.when(inline)(instanceId))
+                  JobJdbc.requeue(jobId, h.onRetry(j, ctx), Option.when(inline)(instanceId), resetAttempts = explicit)
                   Right(ctx)
               }
           }
@@ -412,7 +425,7 @@ class JobScheduler(handlerList: Seq[JobHandler], val settings: JobScheduler.Sett
               case StepResult.Done(state, p)     => JobJdbc.update(jobId, JobStatus.Done, state, p, None)
               case StepResult.Failed(error, state, p) =>
                 val after = h.onFailed(j.copy(state = state), ctx)
-                JobJdbc.update(jobId, JobStatus.Failed, after, p, Some(error.encode))
+                JobJdbc.update(jobId, JobStatus.Failed, after, p, Some(error.encode), giveBackClaim = true)
             }
             (result, ctx)
           }
@@ -457,7 +470,7 @@ class JobScheduler(handlerList: Seq[JobHandler], val settings: JobScheduler.Sett
         JobJdbc.lock(jobId).filter(j => j.status == JobStatus.Running && j.owner.contains(instanceId)).map { j =>
           val ctx = new StepContext(s)
           val state = handlers.get(j.kind).fold(j.state)(_.onFailed(j, ctx))
-          JobJdbc.update(jobId, JobStatus.Failed, state, progressOf(j), Some(error.encode))
+          JobJdbc.update(jobId, JobStatus.Failed, state, progressOf(j), Some(error.encode), giveBackClaim = true)
           ctx
         }
       }
@@ -465,6 +478,39 @@ class JobScheduler(handlerList: Seq[JobHandler], val settings: JobScheduler.Sett
     } catch {
       case NonFatal(e) => logger.error(s"Job $jobId: could not record its failure (${error.describe})", e)
     }
+
+  /** Fails a running job whose lease expired after `maxAttempts` claims instead of claiming
+    * it again: each of its runs ended without recording an outcome (a step that ended the
+    * JVM, or a crash whose failure couldn't be written), so another run would do the same,
+    * every lease, forever. Its handler's cleanup runs; if that fails too, the job is failed
+    * without it, so the loop ends either way. A Retry starts the count again.
+    */
+  private[jobs] def giveUpIfExhausted(jobId: Long): Unit = {
+    val reference = controllers.Secured.newReference()
+    def record(cleanup: Boolean): Option[(Job, StepContext)] =
+      DB.localTx { implicit s =>
+        JobJdbc.lockExhausted(jobId, settings.lease.toSeconds, settings.maxAttempts).map { j =>
+          val ctx = new StepContext(s)
+          val state = if (cleanup) handlers.get(j.kind).fold(j.state)(_.onFailed(j, ctx)) else j.state
+          val error = JobError.attemptsExhausted(j.attempts, reference)
+          JobJdbc.update(jobId, JobStatus.Failed, state, progressOf(j), Some(error.encode))
+          (j, ctx)
+        }
+      }
+    val given =
+      try record(cleanup = true)
+      catch {
+        case NonFatal(e) =>
+          logger.error(s"Job $jobId: its handler's cleanup failed while giving it up ref=$reference", e)
+          record(cleanup = false)
+      }
+    given.foreach { case (j, ctx) =>
+      logger.error(s"Job $jobId (${j.kind}): failed after ${j.attempts} claims that ended without an outcome " +
+        s"(jobs.maxAttempts = ${settings.maxAttempts}) ref=$reference")
+      runAfterCommit(ctx)
+      handlers.get(j.kind).foreach(_.forget(jobId))
+    }
+  }
 
   private def runAfterCommit(ctx: StepContext): Unit =
     ctx.afterCommitActions.foreach { f =>
@@ -477,6 +523,9 @@ object JobScheduler {
 
   /** Why a job can't be retried: a message key and its arguments. */
   final case class RetryRefused(messageKey: String, args: String*)
+
+  /** An implicit resume of a job given up after `jobs.maxAttempts`: its reference the argument. */
+  val AttemptsRefusedKey = "job.retry.attempts"
 
   sealed trait Mode
   object Mode {
@@ -493,7 +542,8 @@ object JobScheduler {
       pollInterval: FiniteDuration = 2.seconds,
       heartbeatInterval: FiniteDuration = 10.seconds,
       lease: FiniteDuration = 60.seconds,
-      transientRetries: Int = 3
+      transientRetries: Int = 3,
+      maxAttempts: Int = 5
   )
 
   object Settings {
@@ -517,7 +567,8 @@ object JobScheduler {
         defaultKindLimit = c.getOptional[Int]("defaultConcurrency").getOrElse(d.defaultKindLimit),
         pollInterval = dur("pollInterval", d.pollInterval),
         heartbeatInterval = dur("heartbeatInterval", d.heartbeatInterval),
-        lease = dur("lease", d.lease)
+        lease = dur("lease", d.lease),
+        maxAttempts = c.getOptional[Int]("maxAttempts").getOrElse(d.maxAttempts)
       )
     }
   }

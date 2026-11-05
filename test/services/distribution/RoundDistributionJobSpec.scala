@@ -8,7 +8,8 @@ import org.specs2.mutable.Specification
 import org.specs2.specification.{AfterEach, BeforeAll, BeforeEach}
 import scalikejdbc._
 import services.imports.DeletedFiles
-import services.jobs.{JobJdbc, JobScheduler, JobStatus}
+import play.api.libs.json.JsObject
+import services.jobs.{Job, JobError, JobJdbc, JobScheduler, JobStatus, StepContext}
 import services.{GalleryService, RoundService, TestRoundServices}
 
 import java.util.concurrent.atomic.AtomicInteger
@@ -55,6 +56,22 @@ class RoundDistributionJobSpec extends Specification with TestDb with BeforeAll 
       atChunk.filter(_._1 == n).foreach(_._2())
       if (crashAtChunk.contains(n)) { crashAtChunk = None; throw new InterruptedException("simulated crash") }
       if (failBeforeChunk.contains(n)) { failBeforeChunk = None; throw new RuntimeException(s"simulated failure in chunk $n") }
+      atPage.filter { case (p, _) => images.exists(_.pageId == p) }.foreach { case (_, f) => atPage = None; f(session) }
+      if (failBeforePage.exists(p => images.exists(_.pageId == p))) {
+        failBeforePage = None; throw new RuntimeException(s"simulated failure in chunk $n")
+      }
+    }
+    /** Fails the chunk that would add this file (once). */
+    @volatile var failBeforePage: Option[Long] = None
+    /** Runs, in its transaction, before the inserts of the chunk that would add this file (once). */
+    @volatile var atPage: Option[(Long, DBSession => Unit)] = None
+    /** Runs after a Retry's commit, before the resumed job's first step (once). */
+    @volatile var afterRetry: Option[() => Unit] = None
+
+    override def onRetry(job: Job, ctx: StepContext): JsObject = {
+      val state = super.onRetry(job, ctx)
+      afterRetry.foreach { f => afterRetry = None; ctx.afterCommit(f()) }
+      state
     }
 
     override protected def afterInsert(round: Round, rows: Seq[Vote])(implicit session: DBSession): Unit =
@@ -120,6 +137,27 @@ class RoundDistributionJobSpec extends Specification with TestDb with BeforeAll 
   }
 
   private def pageIds(roundId: Long): Set[Long] = VoteJdbc.byRound(roundId).map(_.pageId).toSet
+
+  /** A file leaves the round (its votes and its round_image row, as VoteJdbc.removeImage takes them). */
+  private def removeFromRound(roundId: Long, pageId: Long): Unit = DB.autoCommit { implicit s =>
+    sql"DELETE FROM vote WHERE round_id = $roundId AND page_id = $pageId".update()
+    sql"DELETE FROM round_image WHERE round_id = $roundId AND page_id = $pageId".update()
+  }
+
+  /** A round created with files 1-20, then files 101-106 added to the contest's category, for
+    * "Distribute new files" (3 files a chunk).
+    */
+  private def newFilesRound() = {
+    val (contest, imgs, jurors) = setUp(20, 3)
+    val h = new TestHandler(chunkRows = 3)
+    val service = inlineService(h)
+    val roundId = service.createNewRound(newRound(contest, "R1"), jurors.map(_.getId)).getId
+    jobOf(roundId).status === JobStatus.Done
+    val more = (101 to 106).map(i => Image(i.toLong, s"File:More$i.jpg", None, None, 800, 600, Some(s"12-345-$i")))
+    imageDao.batchInsert(more)
+    CategoryLinkJdbc.addToCategory(contestDao.findById(contest.getId).get.categoryId.get, more)
+    (contest, imgs, jurors, h, service, roundId)
+  }
 
   private def jobOf(roundId: Long) = {
     val latest = JobJdbc.latestBySubjects(RoundDistributionHandler.Kind, RoundDistributionHandler.SubjectType, Seq(roundId))
@@ -281,6 +319,135 @@ class RoundDistributionJobSpec extends Specification with TestDb with BeforeAll 
       jobOf(roundId).status === JobStatus.Done
       pageIds(roundId) === imgs.map(_.pageId).toSet - 1L - deletedWhileFailed
       roundDao.findById(roundId).get.active must beTrue
+    }
+
+    "pass its count check on a retry after a crash, when the round's other files changed while it was failed" in {
+      val (contest, imgs, jurors) = setUp(20, 3)
+      val h = new TestHandler(chunkRows = 3)
+      val service = inlineService(h)
+      val roundId = service.createNewRound(newRound(contest, "R1"), jurors.map(_.getId)).getId
+      jobOf(roundId).status === JobStatus.Done
+      val more = (101 to 106).map(i => Image(i.toLong, s"File:More$i.jpg", None, None, 800, 600, Some(s"12-345-$i")))
+      imageDao.batchInsert(more)
+      CategoryLinkJdbc.addToCategory(contestDao.findById(contest.getId).get.categoryId.get, more)
+
+      // "Distribute new files" crashes at the chunk of file 104, after adding some of the new ones
+      h.failBeforePage = Some(104L)
+      scala.util.Try(service.distributeNewImages(roundId))
+      val failed = jobOf(roundId)
+      failed.status === JobStatus.Failed
+      failed.failure.map(_.key) must beSome(_root_.services.jobs.JobError.CrashedKey)
+      val addedBefore = pageIds(roundId) -- imgs.map(_.pageId)
+      addedBefore must not(beEmpty)
+      addedBefore must not(contain(104L))
+
+      // while it is failed, a file the creation added leaves the round: its count goes down by one
+      DB.autoCommit { implicit s =>
+        sql"DELETE FROM vote WHERE round_id = $roundId AND page_id = 1".update()
+        sql"DELETE FROM round_image WHERE round_id = $roundId AND page_id = 1".update()
+      }
+
+      service.distributeNewImages(roundId) // resumes the failed job: its count check must pass
+      val done = jobOf(roundId)
+      done.id === failed.id
+      done.status === JobStatus.Done
+      done.error must beNone
+      pageIds(roundId) === imgs.map(_.pageId).toSet - 1L ++ more.map(_.pageId)
+      RoundImageInvariants.violations(roundId) must beEmpty
+    }
+
+    "rebaseline at the resumed job's first step: a change while it waited after the Retry passes too" in {
+      val (contest, imgs, jurors, h, service, roundId) = newFilesRound()
+      h.failBeforePage = Some(104L)
+      scala.util.Try(service.distributeNewImages(roundId))
+      jobOf(roundId).status === JobStatus.Failed
+      // committed after the Retry's transaction, before its first step (as while it waits in the queue)
+      h.afterRetry = Some(() => removeFromRound(roundId, 1L))
+      service.distributeNewImages(roundId)
+      jobOf(roundId).status === JobStatus.Done
+      pageIds(roundId) === imgs.map(_.pageId).toSet - 1L ++ (101L to 106L)
+    }
+
+    "fail its count check when one of its own files went missing and another's was added, though the total is right" in {
+      val (contest, imgs, jurors, h, service, roundId) = newFilesRound()
+      imageDao.batchInsert(Seq(Image(200L, "File:Other200.jpg", None, None, 800, 600, Some("12-345-200"))))
+      // while it runs: file 101, which it added, leaves the round, and another path adds file 200
+      h.atPage = Some(104L -> { implicit s =>
+        sql"DELETE FROM vote WHERE round_id = $roundId AND page_id = 101".update()
+        sql"DELETE FROM round_image WHERE round_id = $roundId AND page_id = 101".update()
+        sql"""INSERT INTO round_image (round_id, page_id, status, added_how, added_at)
+              VALUES ($roundId, 200, 'in', 'repair', NOW(3))""".update()
+      })
+      service.distributeNewImages(roundId) must throwA[RoundService.RoundDistributionFailed]
+      val failed = jobOf(roundId)
+      // the total: 20 + 6 - 1 + 1 = 26, as expected; its own rows: 5 of 6
+      failed.failure must beSome(JobError(JobError.CountMismatchKey, Seq(roundId.toString, "26", "27")))
+      // the retry after a failed count check rescans: file 101 is added again
+      service.distributeNewImages(roundId)
+      jobOf(roundId).status === JobStatus.Done
+      pageIds(roundId) === imgs.map(_.pageId).toSet ++ (101L to 106L)
+    }
+
+    "fail once, then pass on a Retry, when a file it added was removed and added again by another job" in {
+      // Its own rows go down by one and the others' up by one: the exact check of its own rows
+      // fails, though nothing is missing. The Retry rescans with fresh accounting: the file has
+      // a row (the other job's), so it is skipped, and the check passes. No file lost or doubled.
+      val (contest, imgs, jurors, h, service, roundId) = newFilesRound()
+      h.atPage = Some(104L -> { implicit s =>
+        sql"""UPDATE round_image SET added_how = 'repair', added_by_job_id = NULL
+              WHERE round_id = $roundId AND page_id = 101""".update()
+      })
+      service.distributeNewImages(roundId) must throwA[RoundService.RoundDistributionFailed]
+      jobOf(roundId).failure.map(_.key) must beSome(JobError.CountMismatchKey)
+      service.distributeNewImages(roundId)
+      jobOf(roundId).status === JobStatus.Done
+      pageIds(roundId) === imgs.map(_.pageId).toSet ++ (101L to 106L)
+      VoteJdbc.byRound(roundId).map(_.pageId).size === 26 // one vote each: none doubled
+      RoundImageInvariants.violations(roundId) must beEmpty
+    }
+
+    "not resume a distribution given up after its attempts, from \"Distribute new files\" or the form again" in {
+      val (contest, _, jurors) = setUp(20, 3)
+      val h = new TestHandler(chunkRows = 3)
+      val scheduler = TestRoundServices.inlineScheduler(h)
+      val service = new RoundService(Round, scheduler, h)
+      val token = java.util.UUID.randomUUID().toString
+      val form = newRound(contest, "R1")
+      val roundId = service.submit(form, jurors.map(_.getId), Some(token)).round.getId
+      val job = jobOf(roundId)
+      val givenUp = JobError.attemptsExhausted(5, "ref123")
+      sql"UPDATE job SET status = 'failed', attempts = 5, error = ${givenUp.encode} WHERE id = ${job.id}".update()(AutoSession)
+
+      service.distributeNewFiles(roundId) must beLike {
+        case g: RoundService.GivenUp => (g.job.id === job.id) and (g.reference === "ref123")
+      }
+      service.submit(form, jurors.map(_.getId), Some(token)) must beLike {
+        case r: RoundService.Resubmitted =>
+          (r.resumed must beFalse) and (r.givenUp must beTrue) and (r.messageKey === "round.resubmitted.attempts") and
+            (r.reference === "ref123")
+      }
+      val after = JobJdbc.findById(job.id).get
+      after.status === JobStatus.Failed
+      after.attempts === 5 // neither path granted it more runs
+      after.failure must beSome(givenUp)
+
+      scheduler.retry(job.id) must beRight // the job page's Retry: the count starts again
+      val retried = JobJdbc.findById(job.id).get
+      retried.status === JobStatus.Done
+      retried.attempts === 1
+    }
+
+    "give back the claim of an ordinary (recorded) failure; an implicit resume takes one, without a reset" in {
+      val (_, _, _, h, service, roundId) = newFilesRound()
+      h.failBeforePage = Some(104L)
+      scala.util.Try(service.distributeNewImages(roundId))
+      val failed = jobOf(roundId)
+      failed.status === JobStatus.Failed
+      failed.attempts === 0 // its one claim ended with a recorded outcome: it doesn't count
+      service.distributeNewImages(roundId)
+      val done = JobJdbc.findById(failed.id).get
+      done.status === JobStatus.Done
+      done.attempts === 1 // the resume's claim
     }
 
     "fail at a chunk, keep the committed chunks, and resume from the cursor without duplicates" in {

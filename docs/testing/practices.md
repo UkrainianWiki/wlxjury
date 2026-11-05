@@ -239,6 +239,29 @@ Locally, the full suite runs once at a release boundary; after a failure, fix an
 affected specs before another full run. CI runs the full suite on every PR (§8.3). No local tests
 for documentation-only changes.
 
+**8.1a Every local run has a time limit.** `agent-check.py` stops the run's whole process tree
+after `--timeout` seconds (default 1200 for targeted specs; `--timeout 1800` for the full suite,
+about 10.5 min plus 3–8 for a cold compile) and exits 124 with `TIMED OUT after N s`, keeping the
+log. A 124 is a stalled run, not a failing test: read the log's tail (the last spec started, a
+Hikari clock-leap warning) before rerunning, and never raise the limit to hide a hang (§7.1).
+The tree is a Windows Job Object (killed with the script, a hard kill included) or a POSIX
+process group (the script's SIGTERM/SIGHUP/SIGINT forwarded to it), so neither a timeout nor a
+stopped agent leaves a test JVM behind; a run longer than the Bash tool's 600 s foreground limit
+goes in the background (CLAUDE.md). `scripts/test_agent_check.py` runs in CI (`ci.yml`, its
+Windows parts mocked or skipped). On Windows it also holds a keep-awake request while the command runs (`ES_SYSTEM_REQUIRED`, not
+the display; `--allow-sleep` opts out), so idle sleep on battery doesn't stop a long run; lid and
+power-button actions and critical-battery hibernation still can, which is what the timeout and
+the stress harness's INVALID marking (§8.1b) are for.
+*Why:* a run whose host went to sleep, or whose spec hung on a lock, held the shared sbt lock and
+the laptop's memory all night, with no output to say why; on 2026-11-05 the AC power dropped at
+01:15 and the laptop, its lid closed, slept 6 s later on battery.
+
+**8.1b A stress variant the host slept through is INVALID.** `WritePathStress` marks a variant
+INVALID (summary and `results.json`: `valid`, `invalidReason`) when its `nanoTime` elapsed time
+is more than `stress.seconds + 300`, or HikariCP logged a clock leap or retrograde clock change
+during it: its `Thread.sleep` doesn't count the host's sleep, its elapsed time does. Its numbers
+are not compared or recorded as results; rerun it (`WallTimeCheckSpec`).
+
 **8.2 One sbt JVM at a time** across worktrees and agents: the shared lock
 ([workflow](../workflow/practices.md) §4).
 
