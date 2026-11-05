@@ -12,7 +12,10 @@ trait ImageRepo {
       pageSize: Int = Int.MaxValue,
       offset: Int = 0,
       rated: Option[Boolean] = None,
-      // the round's `isBinary`: a yes/no round's rows count their approvals and rejections
-      tally: Boolean
+      // the rows count their approvals and rejections apart
+      tally: Boolean,
+      // a rated round's (not `isBinary`): a row's rate sums the grades (a ✗ as 0), and the rated
+      // are any vote (`SelectionQuery.grades`)
+      grades: Boolean = false
   ): Seq[ImageWithRating]
 }

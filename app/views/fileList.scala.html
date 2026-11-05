@@ -135,7 +135,7 @@
                     @if(binaryVotes) {
                         <td class="text-nowrap">@binaryTally(file.approvals, file.rejections)</td>
                     } else {
-                        <td>@file.rateText(round.get)</td>
+                        <td>@file.rateText(round.get) @snippets.worstMarks(file, round.get)</td>
                     }
                     @for((_, average) <- criteria.of(file.pageId)) {
                         <td class="wlx-criterion-average">@average.map(org.intracer.wmua.CriteriaResults.format)</td>
@@ -145,7 +145,8 @@
                         @if(binaryVotes) {
                             <td class="text-center">@file.jurorRate(juror).map(rate => binaryVote(rate, unrated = true))</td>
                         } else {
-                            <td> @file.jurorRateStr(juror) </td>
+                            @* a rated round's ✗ (rate -1) as its mark *@
+                            <td> @file.jurorRate(juror).map { rate => @if(org.intracer.wmua.Vote.isRejected(rate)) {<span title="@Messages("vote.worst")"><span aria-hidden="true">✗</span><span class="visually-hidden">@Messages("vote.worst")</span></span>} else {@rate} } </td>
                         }
                     }
                 }

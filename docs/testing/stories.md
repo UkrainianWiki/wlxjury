@@ -62,6 +62,7 @@ a guide or a test needs them.
 | J-35 | "Access denied" shows a reference and a way to sign in as another account | ["Access denied" and its reference](../user/juror-guide.md#access-denied-and-its-reference) | |
 | J-36 | A juror changes an earlier vote from the Selected, Rejected or Rated tab | [Tabs: all, unrated, selected, rejected](../user/juror-guide.md#tabs-all-unrated-selected-rejected) | *Part:* no test changes a vote from the Selected, Rejected or Rated tab; the browser changes one from the first tab, the Scala specs one voted out of a filtered list |
 | J-37 | The large view shows the file's resolution, monument and Commons link; a video plays | [Opening a file in the large view](../user/juror-guide.md#opening-a-file-in-the-large-view) | browser: the page tour opens it only |
+| J-38 | In a rated round with the worst mark, a juror gives a file ✗ and clears a vote apart, by the buttons, the tile and the keys (Delete, Backspace) | [Rated rounds (stars)](../user/juror-guide.md#rated-rounds-stars) | *Part:* no browser test yet; Jest (`worst-mark.test.js`) and the Scala specs |
 
 ## Organizer
 

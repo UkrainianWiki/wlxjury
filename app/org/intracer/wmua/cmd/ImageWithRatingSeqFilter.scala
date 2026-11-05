@@ -2,7 +2,7 @@ package org.intracer.wmua.cmd
 
 import db.scalikejdbc.{MediaType, Round}
 import org.intracer.wmua.cmd.ImageWithRatingSeqFilter.ImageFilter
-import org.intracer.wmua.{BinaryOrder, CategoryRule, Image, ImageWithRating}
+import org.intracer.wmua.{BinaryOrder, CategoryRule, Image, ImageWithRating, RejectedMode}
 import org.scalawiki.MwBot
 import org.scalawiki.wlx.{ImageDB, MonumentDB}
 import org.scalawiki.wlx.dto.{Contest, SpecialNomination}
@@ -124,6 +124,13 @@ case class RejectedByLessThan(by: Int) extends ImageFilterGen {
   def apply(): ImageFilter = imageRatingFilter(i => i.rejections < by)
 }
 
+/** "Only files rejected by at least `by` jurors" (V93, `RejectedMode.Only`): the files with that
+  * many rejections or more, to review them in a round of their own.
+  */
+case class RejectedByAtLeast(by: Int) extends ImageFilterGen {
+  def apply(): ImageFilter = imageRatingFilter(i => i.rejections >= by)
+}
+
 case class MegaPixelsAtLeast(mpx: Int) extends ImageFilterGen {
   def apply(): ImageFilter = imageFilter(_.mpx >= mpx)
 }
@@ -188,7 +195,9 @@ object ImageWithRatingSeqFilter {
       mpxAtLeast: Option[Int] = None,
       sizeAtLeast: Option[Int] = None,
       specialNomination: Option[String] = None,
-      mediaType: Option[String] = None
+      mediaType: Option[String] = None,
+      // "rejected by at least N": leave those files out (the default), or keep only them (V93)
+      rejectedMode: RejectedMode = RejectedMode.Default
   ): Seq[ImageFilterGen] = {
 
     val setMap = Map(
@@ -209,7 +218,7 @@ object ImageWithRatingSeqFilter {
       selectTopByRating
         .map(top => SelectTopByRating(top, round.get, topOrder)) -> selectTopByRating,
       selectedAtLeast.map(n => SelectedAtLeast(n)) -> selectedAtLeast,
-      rejectedBy.map(RejectedByLessThan) -> rejectedBy,
+      rejectedBy.map(n => if (rejectedMode == RejectedMode.Only) RejectedByAtLeast(n) else RejectedByLessThan(n)) -> rejectedBy,
       mpxAtLeast.map(MegaPixelsAtLeast) -> mpxAtLeast,
       sizeAtLeast.map(SizeAtLeast) -> sizeAtLeast,
       specialNomination.map(SpecialNominationFilter) -> specialNomination,

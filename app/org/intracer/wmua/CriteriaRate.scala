@@ -1,5 +1,6 @@
 package org.intracer.wmua
 
+import db.scalikejdbc.VoteSql
 import scalikejdbc._
 
 case class CriteriaRate(id: Long, voteId: Long, criterionId: Long, rate: Int)
@@ -56,7 +57,7 @@ object CriteriaRate extends SQLSyntaxSupport[CriteriaRate] {
     sql"""SELECT s.round_id, s.page_id, s.rate FROM vote s WHERE s.id = $voteId
             AND NOT EXISTS (SELECT 1 FROM round_user ru
                             WHERE ru.round_id = s.round_id AND ru.user_id = s.jury_id AND ru.active = FALSE)
-          FOR UPDATE""".map(rs => (rs.long(1), rs.long(2), rs.intOpt(3).getOrElse(0))).single().exists {
+          FOR UPDATE""".map(rs => (rs.long(1), rs.long(2), rs.int(3))).single().exists {
       case (roundId, pageId, before) =>
       val criteria =
         sql"SELECT criterion_id FROM round_criterion WHERE round_id = $roundId LOCK IN SHARE MODE"
@@ -102,7 +103,7 @@ object CriteriaRate extends SQLSyntaxSupport[CriteriaRate] {
       sql"""SELECT v.page_id, cr.criterion_id, AVG(cr.rate) FROM vote v
             STRAIGHT_JOIN criteria_rate cr ON cr.vote_id = v.id
             STRAIGHT_JOIN round_criterion rc ON rc.round_id = v.round_id AND rc.criterion_id = cr.criterion_id
-            WHERE v.round_id = $roundId AND v.page_id IN ($chunk) AND v.rate > 0 $ofJuror AND cr.rate > 0
+            WHERE v.round_id = $roundId AND v.page_id IN ($chunk) AND ${VoteSql.positive(VoteSql.v)} $ofJuror AND cr.rate > 0
             GROUP BY v.page_id, cr.criterion_id"""
         .map(rs => (rs.long(1), rs.long(2), BigDecimal(rs.bigDecimal(3))))
         .list()

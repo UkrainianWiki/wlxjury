@@ -1,0 +1,13 @@
+@import db.scalikejdbc.Round
+@import org.intracer.wmua.ImageWithRating
+@(file: ImageWithRating, round: Round)(implicit messages: Messages)
+@* A rated round's ✗ (the worst mark, rate -1) beside a file's score: one juror's own vote's ✗,
+   or "✗ n" of all the jurors' votes; nothing in a yes/no round (its tally counts rejections) or
+   for none. The mark hidden from screen readers, which read the text. *@
+@if(!round.isBinary && file.worstMarks > 0) {
+    @if(file.isWorstMark) {
+        <span class="wlx-worst-mark" title="@Messages("vote.worst")"><span aria-hidden="true">✗</span><span class="visually-hidden">@Messages("vote.worst")</span></span>
+    } else {
+        <span class="wlx-worst-mark" title="@Messages("worst.marks", file.worstMarks)"><span aria-hidden="true">✗ @file.worstMarks</span><span class="visually-hidden">@Messages("worst.marks", file.worstMarks)</span></span>
+    }
+}

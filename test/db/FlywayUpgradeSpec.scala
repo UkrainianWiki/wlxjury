@@ -360,6 +360,144 @@ class FlywayUpgradeSpec extends Specification with BeforeAll with AfterAll {
     }
   }
 
+  /** V91's rollback SQL after reopen (docs/plans/2026-11-02-round-images-two-step.md, §18): back
+    * to nullable columns without a default. Not INSTANT: MariaDB makes a column nullable instantly
+    * only in ROW_FORMAT=REDUNDANT tables (ours are DYNAMIC, V55.1), so it is an online rebuild too.
+    */
+  private val v91Rollback = Seq(
+    "ALTER TABLE vote MODIFY rate INT NULL DEFAULT NULL, ALGORITHM = INPLACE, LOCK = NONE",
+    "ALTER TABLE vote_aside MODIFY rate INT NULL DEFAULT NULL, ALGORITHM = INPLACE, LOCK = NONE",
+    "DELETE FROM flyway_schema_history WHERE version = '91'")
+
+  private def statements(file: String): Seq[String] =
+    new String(Files.readAllBytes(Paths.get("conf/db/migration/default", file)), "UTF-8")
+      .linesIterator.filterNot(_.trim.startsWith("--")).mkString("\n").split(";").map(_.trim).filter(_.nonEmpty).toSeq
+
+  "V91's NOT NULL rates" should {
+    "set NULL rates to 0, make both columns NOT NULL DEFAULT 0, rerun as a no-op, and roll back to V90's schema" in {
+      emptyDb("fw_v90")
+      flyway("fw_v90", production.copy(target = Some("90"))).migrate()
+      emptyDb("fw_v91_back")
+      flyway("fw_v91_back", production.copy(target = Some("90"))).migrate().success must beTrue
+      Using.resource(connect("fw_v91_back"))(c => run(c, Seq(
+        "INSERT INTO images (page_id, title) VALUES (1, 'File:1.jpg'), (2, 'File:2.jpg'), (3, 'File:3.jpg')",
+        "INSERT INTO vote (id, page_id, jury_id, round_id, rate) VALUES (1, 1, 1, 1, NULL), (2, 2, 1, 1, 7), (3, 3, 1, 1, -1)",
+        "INSERT INTO vote_aside (id, page_id, jury_id, round_id, rate) VALUES (4, 1, 2, 1, NULL), (5, 2, 2, 1, 1)")))
+      flyway("fw_v91_back", production.copy(target = Some("91"))).migrate().success must beTrue
+      val once = schema("fw_v91_back")
+      val migrated = Using.resource(connect("fw_v91_back")) { c =>
+        val rates = rows(c, "SELECT id, rate FROM vote UNION ALL SELECT id, rate FROM vote_aside ORDER BY 1")(rs =>
+          rs.getLong(1) -> rs.getInt(2))
+        val columns = rows(c, "SELECT TABLE_NAME, IS_NULLABLE, COLUMN_DEFAULT FROM information_schema.COLUMNS " +
+          "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME IN ('vote', 'vote_aside') AND COLUMN_NAME = 'rate' " +
+          "ORDER BY TABLE_NAME")(rs => (rs.getString(1), rs.getString(2), rs.getString(3)))
+        // a vote written without a rate is unrated; a NULL one is refused (strict mode)
+        run(c, Seq("INSERT INTO vote (id, page_id, jury_id, round_id) VALUES (6, 3, 2, 1)"))
+        val default = rows(c, "SELECT rate FROM vote WHERE id = 6")(_.getInt(1))
+        val nullRefused = scala.util.Try(run(c, Seq("UPDATE vote SET rate = NULL WHERE id = 6"))).isFailure
+        run(c, Seq("DELETE FROM vote WHERE id = 6"))
+        (rates, columns, default, nullRefused)
+      }
+      (migrated._1 === List(1L -> 0, 2L -> 7, 3L -> -1, 4L -> 0, 5L -> 1)) and
+        (migrated._2 === List(("vote", "NO", "0"), ("vote_aside", "NO", "0"))) and
+        (migrated._3 === List(0)) and (migrated._4 must beTrue) and {
+          // a rerun of V91's statements on a database that has them rebuilds nothing, changes nothing
+          Using.resource(connect("fw_v91_back"))(c => run(c, statements("V91__Vote_rate_not_null.sql")))
+          schema("fw_v91_back") === once
+        } and {
+          Using.resource(connect("fw_v91_back"))(c => run(c, v91Rollback))
+          def tablesOnly(s: String) = s.split(";\n\n").filterNot(_.matches("(?s)^\\w+: \\d+ rows.*")).mkString(";\n\n")
+          (history("fw_v91_back").map(_.split(" \\| ")(1)) === upTo("90")) and
+            (tablesOnly(schema("fw_v91_back")) === tablesOnly(schema("fw_v90"))) and {
+              // the previous release may write a NULL rate meanwhile; forward again makes it 0
+              Using.resource(connect("fw_v91_back"))(c => run(c, Seq("UPDATE vote SET rate = NULL WHERE id = 2")))
+              flyway("fw_v91_back", production.copy(target = Some("91"))).migrate().success must beTrue
+              (schema("fw_v91_back") === once) and
+                (Using.resource(connect("fw_v91_back"))(c => rows(c, "SELECT rate FROM vote WHERE id = 2")(_.getInt(1))) === List(0))
+            } and {
+              // V91's ALTERs add strict mode for themselves (SET STATEMENT): back once more, then the
+              // script on a session without strict mode makes both columns NOT NULL all the same
+              Using.resource(connect("fw_v91_back")) { c =>
+                run(c, v91Rollback.init)
+                run(c, Seq("SET SESSION sql_mode = ''") ++ statements("V91__Vote_rate_not_null.sql"))
+                rows(c, "SELECT IS_NULLABLE FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() " +
+                  "AND TABLE_NAME IN ('vote', 'vote_aside') AND COLUMN_NAME = 'rate'")(_.getString(1)) === List("NO", "NO")
+              } and (schema("fw_v91_back") === once)
+            }
+        }
+    }
+  }
+
+  /** V92's rollback SQL after reopen (docs/plans/2026-11-02-round-images-two-step.md, §18). */
+  private val v92Rollback = Seq(
+    "ALTER TABLE round DROP COLUMN worst_mark, ALGORITHM = INSTANT",
+    "DELETE FROM flyway_schema_history WHERE version = '92'")
+
+  "V92's worst mark" should {
+    "add the option, off for every round, rerun as a no-op, and roll back to V91's schema" in {
+      emptyDb("fw_v91")
+      flyway("fw_v91", production.copy(target = Some("91"))).migrate()
+      emptyDb("fw_v92_back")
+      flyway("fw_v92_back", production.copy(target = Some("91"))).migrate().success must beTrue
+      Using.resource(connect("fw_v92_back"))(c => run(c, Seq(
+        "INSERT INTO round (id, number, contest_id, rates, created_at) VALUES (1, 1, 1, 10, '2020-01-01 00:00:00')")))
+      flyway("fw_v92_back", production.copy(target = Some("92"))).migrate().success must beTrue
+      val once = schema("fw_v92_back")
+      val stored = Using.resource(connect("fw_v92_back"))(c =>
+        rows(c, "SELECT worst_mark, CAST(created_at AS CHAR) FROM round")(rs => rs.getBoolean(1) -> rs.getString(2)))
+      (stored === List(false -> "2020-01-01 00:00:00")) and {
+        Using.resource(connect("fw_v92_back"))(c => run(c, statements("V92__Round_worst_mark.sql")))
+        schema("fw_v92_back") === once
+      } and {
+        Using.resource(connect("fw_v92_back"))(c => run(c, v92Rollback))
+        def tablesOnly(s: String) = s.split(";\n\n").filterNot(_.matches("(?s)^\\w+: \\d+ rows.*")).mkString(";\n\n")
+        (history("fw_v92_back").map(_.split(" \\| ")(1)) === upTo("91")) and
+          (tablesOnly(schema("fw_v92_back")) === tablesOnly(schema("fw_v91"))) and
+          (flyway("fw_v92_back", production.copy(target = Some("92"))).migrate().success must beTrue) and
+          (schema("fw_v92_back") === once)
+      }
+    }
+  }
+
+  /** V93's rollback SQL after reopen (docs/plans/2026-11-02-round-images-two-step.md, §18). */
+  private val v93Rollback = Seq(
+    "ALTER TABLE round DROP CONSTRAINT round_prev_rejected_mode_chk",
+    "ALTER TABLE round DROP COLUMN prev_rejected_mode, ALGORITHM = INSTANT",
+    "DELETE FROM flyway_schema_history WHERE version = '93'")
+
+  "V93's rejected-by mode" should {
+    "keep an existing round's filter excluding, refuse other values, rerun as a no-op, and roll back to V92's schema" in {
+      emptyDb("fw_v92")
+      flyway("fw_v92", production.copy(target = Some("92"))).migrate()
+      emptyDb("fw_v93_back")
+      flyway("fw_v93_back", production.copy(target = Some("92"))).migrate().success must beTrue
+      Using.resource(connect("fw_v93_back"))(c => run(c, Seq(
+        "INSERT INTO round (id, number, contest_id, rates, prev_rejected_by, created_at) VALUES " +
+          "(1, 1, 1, 1, 2, '2020-01-01 00:00:00')")))
+      flyway("fw_v93_back", production.copy(target = Some("93"))).migrate().success must beTrue
+      val once = schema("fw_v93_back")
+      val (stored, refused) = Using.resource(connect("fw_v93_back")) { c =>
+        val stored = rows(c, "SELECT prev_rejected_by, prev_rejected_mode, CAST(created_at AS CHAR) FROM round")(rs =>
+          (rs.getInt(1), rs.getString(2), rs.getString(3)))
+        val refused = Seq("'ONLY'", "'all'").map(v =>
+          scala.util.Try(run(c, Seq(s"UPDATE round SET prev_rejected_mode = $v WHERE id = 1"))).isFailure)
+        run(c, Seq("UPDATE round SET prev_rejected_mode = 'only', created_at = created_at WHERE id = 1"))
+        (stored, refused)
+      }
+      (stored === List((2, "exclude", "2020-01-01 00:00:00"))) and (refused === Seq(true, true)) and {
+        Using.resource(connect("fw_v93_back"))(c => run(c, statements("V93__Round_prev_rejected_mode.sql")))
+        schema("fw_v93_back") === once
+      } and {
+        Using.resource(connect("fw_v93_back"))(c => run(c, v93Rollback))
+        def tablesOnly(s: String) = s.split(";\n\n").filterNot(_.matches("(?s)^\\w+: \\d+ rows.*")).mkString(";\n\n")
+        (history("fw_v93_back").map(_.split(" \\| ")(1)) === upTo("92")) and
+          (tablesOnly(schema("fw_v93_back")) === tablesOnly(schema("fw_v92"))) and
+          (flyway("fw_v93_back", production.copy(target = Some("93"))).migrate().success must beTrue) and
+          (schema("fw_v93_back") === once)
+      }
+    }
+  }
+
   "the app's start with production's settings but without auto" should {
     "refuse while a migration is pending, without changing the database" in {
       emptyDb("fw_pending")

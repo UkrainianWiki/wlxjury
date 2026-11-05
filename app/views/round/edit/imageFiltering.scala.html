@@ -44,15 +44,6 @@
                 Symbol("value") -> "",
                 Symbol("_label") -> Messages("selected.by.at.least.x.jurors"),
                 Symbol("readonly") -> noEdit)
-            @* the files with fewer rejections across the previous rounds' votes (e.g. after a
-               screening where jurors only reject the few bad files); empty: no filter (NULL) *@
-            @bs.select(
-                editRoundForm("rejectedBy"),
-                Seq("" -> Messages("rejected.by.no.filter")) ++
-                    Seq("1", "2", "3", "4", "5", "6").map(x => (x, x)),
-                Symbol("value") -> "",
-                Symbol("_label") -> Messages("rejected.by.at.least.x.jurors"),
-                Symbol("readonly") -> noEdit)
             @* the order that picks a top-N from a yes/no previous round, stored with the round, so
                its page shows which rule picked its files and a later distribution picks the same;
                the legacy rule only for a round from before V72 that has it *@
@@ -65,6 +56,30 @@
                     Symbol("_label") -> Messages("top.images.binary.order"),
                     Symbol("readonly") -> noEdit)
             }
+            </div>
+
+            @* the files with fewer rejections across the previous rounds' votes (e.g. after a
+               screening where jurors only reject the few bad files): a yes/no round's "no", a rated
+               round's ✗ (a rated round without criteria, Round.rejects, whether its option is on now
+               or not); offered when any chosen previous round has one; empty: no filter (NULL) *@
+            <div id="rejectFilters"
+            class="@rounds.filter(_.rejects).map(r => "round" + r.getId).mkString(" ")">
+            @* the filter's mode (V93): none, leave out those files, or keep only them (to review the
+               rejected files in a round of their own); X below *@
+            @bs.select(
+                editRoundForm("rejectedMode"),
+                Seq(controllers.EditRound.NoRejectedFilter -> Messages("rejected.by.no.filter")) ++
+                    org.intracer.wmua.RejectedMode.all.map(m => (m.param, Messages(m.messageKey))),
+                Symbol("_label") -> Messages("rejected.by.mode"),
+                Symbol("readonly") -> noEdit)
+            @bs.select(
+                editRoundForm("rejectedBy"),
+                Seq("" -> Messages("rejected.by.no.filter")) ++
+                    Seq("1", "2", "3", "4", "5", "6").map(x => (x, x)),
+                Symbol("value") -> "",
+                Symbol("_label") -> Messages("rejected.by.at.least.x.jurors"),
+                Symbol("_help") -> Messages("rejected.by.help"),
+                Symbol("readonly") -> noEdit)
             </div>
 
             <div id="rateFilters"

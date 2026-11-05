@@ -1,7 +1,7 @@
 package db.scalikejdbc.rewrite
 
-import db.scalikejdbc.{ImageJdbc, VoteJdbc}
-import org.intracer.wmua.{Image, ImageWithRating, Vote}
+import db.scalikejdbc.{ImageJdbc, VoteJdbc, VoteSql}
+import org.intracer.wmua.{BinaryOrder, Image, ImageWithRating, Vote}
 import scalikejdbc.{DBSession, _}
 
 object ImageDbNew extends SQLSyntaxSupport[Image] {
@@ -54,8 +54,15 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
       // a grouped query also counts each file's approvals and rejections apart: a yes/no
       // round's tally (ImageWithRating.approvals), which no rated round's page reads
       tally: Boolean = false,
+      // a rated round's votes: a grouped row's rate is the sum of its grades (a ✗, -1, as 0:
+      // VoteSql.grade), and the rated filter is any vote, a ✗ included (VoteSql.voted); a yes/no
+      // round's (false) keeps the sum of its rates and its approvals as the rated
+      grades: Boolean = false,
       driver: String = "mysql"
   ) {
+
+    /** A grouped row's rate: the sum of the file's rates, or of a rated round's grades. */
+    private def rateSum: String = SelectionQuery.rateSum(grades)
 
     private val reader: WrappedResultSet => ImageWithRating =
       if (grouped) Readers.groupedReader(tally) else Readers.rowReader
@@ -90,7 +97,7 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
                   s", ROW_NUMBER() over (${orderBy()}) ranked"
                 else "") +
                (if (grouped)
-                  ", sum(s.rate) as rate, count(*) as rate_count"
+                  s", $rateSum as rate, count(*) as rate_count"
                 else "")
            } else {
              if (byRegion)
@@ -98,10 +105,10 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
              else if (!grouped)
                sqls"""${i.result.*}, ${s.result.*} """.value
              else if (tally)
-               sqls"""sum(s.rate) as rate, count(*) as rate_count, sum(s.rate > 0) as approvals,
-                       sum(s.rate < 0) as rejections, ${i.result.*} """.value
+               sqls"""${SQLSyntax.createUnsafely(rateSum)} as rate, count(*) as rate_count,
+                       ${SQLSyntax.createUnsafely(tallyColumns)}, ${i.result.*} """.value
              else
-               sqls"""sum(s.rate) as rate, count(*) as rate_count, ${i.result.*} """.value
+               sqls"""${SQLSyntax.createUnsafely(rateSum)} as rate, count(*) as rate_count, ${i.result.*} """.value
            })
 
       val groupByStr = if (byRegion) {
@@ -192,12 +199,12 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
     private def deferredGroupedPage(): SQLSyntax = {
       // the select's alias `rate` isn't a column of the inner select list: its sum
       val keys = sortOrder.zipWithIndex.map { case ((name, dir), n) =>
-        (if (name == "rate") "sum(s.rate)" else name, s"o$n", dir)
+        (if (name == "rate") rateSum else name, s"o$n", dir)
       }
       val aggregates = Seq("rate", "rate_count") ++ (if (tally) Seq("approvals", "rejections") else Nil)
       val inner = SQLSyntax.createUnsafely(
-        "select s.page_id as pid, sum(s.rate) as rate, count(*) as rate_count" +
-          (if (tally) ", sum(s.rate > 0) as approvals, sum(s.rate < 0) as rejections" else "") +
+        s"select s.page_id as pid, $rateSum as rate, count(*) as rate_count" +
+          (if (tally) s", $tallyColumns" else "") +
           keys.map { case (expr, alias, _) => s", $expr as $alias" }.mkString +
           (if (monumentJoin) join(monuments = true) else " from vote s")
       )
@@ -368,7 +375,7 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
       */
     def regionCounts()(implicit session: DBSession = autoSession): Map[String, Int] = {
       val conditions = rate.toSeq.map(r => s"s.rate = ${r.toInt}") ++
-        rated.toSeq.map(r => if (r) "s.rate > 0" else "s.rate = 0")
+        rated.toSeq.map(ratedCondition(_).value)
       val hit = if (conditions.isEmpty) "1" else conditions.mkString("(", " AND ", ")")
       val sql = userId match {
         case Some(juror) =>
@@ -427,13 +434,23 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
       def matching(cond: SQLSyntax) = if (perFile) sqls"sum($cond) > 0" else cond
       val votes: Seq[SQLSyntax] = Seq(
         rate.map(r => matching(sqls"s.rate = $r")),
-        rated.map(r => matching(if (r) sqls"s.rate > 0" else sqls"s.rate = 0"))
+        rated.map(r => matching(ratedCondition(r)))
       ).flatten
       votes.headOption.map { _ =>
         val cond = SQLSyntax.join(votes, sqls"and")
         withPageId.fold(cond)(pageId => sqls"($cond or s.page_id = $pageId)")
       }
     }
+
+    /** The `rated` filter's condition on a vote row: rated, or unrated. Rated is a yes/no
+      * round's yes, and a rated round's any vote, stars or a ✗ ([[grades]]).
+      */
+    private def ratedCondition(rated: Boolean): SQLSyntax =
+      if (!rated) VoteSql.unrated() else if (grades) VoteSql.voted() else VoteSql.positive()
+
+    /** A grouped row's tally: its approvals and rejections apart ([[BinaryOrder]]'s columns). */
+    private def tallyColumns: String =
+      s"${BinaryOrder.Approvals} as approvals, ${BinaryOrder.Rejections} as rejections"
 
     /** A grouped query's HAVING: with [[filesByVotes]], the files of the vote filter. */
     private def having: SQLSyntax =
@@ -514,25 +531,34 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
           votes = Seq(VoteJdbc(s)(rs))
         )
 
-      /** A grouped row: the file, its rates' sum and its vote rows (`COUNT(*)`: a NULL rate is an
-        * unrated vote, as `round_image.assigned` counts it), and with `tally` its approvals and
-        * rejections (columns 3 and 4).
+      /** A grouped row: the file, its rates' sum and its vote rows (`COUNT(*)`, as
+        * `round_image.assigned` counts them), and with `tally` its approvals and rejections
+        * (columns 3 and 4). A group has a row, and a rate is never NULL (V91).
         */
       def groupedReader(tally: Boolean)(rs: WrappedResultSet): ImageWithRating = {
         val image = ImageJdbc(i)(rs)
-        val sum = rs.intOpt(1).getOrElse(0)
-        val count = rs.intOpt(2).getOrElse(0)
+        val sum = rs.int(1)
+        val count = rs.int(2)
         ImageWithRating(
           image,
           votes = Seq(Vote(image.pageId, juryId = 0, roundId = 0, rate = sum)),
           count,
-          approvalsFromDb = if (tally) rs.intOpt(3) else None,
-          rejectionsFromDb = if (tally) rs.intOpt(4) else None
+          approvalsFromDb = Option.when(tally)(rs.int(3)),
+          rejectionsFromDb = Option.when(tally)(rs.int(4))
         )
       }
 
     }
 
+  }
+
+  object SelectionQuery {
+
+    /** The sum of a file's vote rows `s`: of its rates (a yes/no round's approvals less its
+      * rejections), or of a rated round's grades, a ✗ as 0 (`grades`). The text names the same
+      * column in every list's order and rank vocabulary (`RoundImageQuery.translate`).
+      */
+    def rateSum(grades: Boolean): String = if (grades) VoteSql.GradeSum else VoteSql.RateSum
   }
 
 }

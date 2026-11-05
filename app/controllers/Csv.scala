@@ -3,7 +3,7 @@
   import java.io.{StringWriter, Writer}
 
   import com.github.tototoshi.csv.CSVWriter
-  import db.scalikejdbc.{Round, User}
+  import db.scalikejdbc.{Round, User, VoteJdbc}
   import org.apache.pekko.NotUsed
   import org.apache.pekko.stream.scaladsl.Source
   import org.intracer.wmua.{BinaryOrder, CriteriaRate, CriteriaResults, ImageWithRating}
@@ -63,7 +63,7 @@
       val ranks = ImageWithRating.rankImages(files, round, order)
       header(jurors, criteria) +: files.zip(ranks).map { case (file, rank) =>
         row(file, rank, jurors, round, criteria, averages)
-      } ++: legend(round).toSeq
+      } ++: legend(round, files.exists(_.worstMarks > 0)).toSeq
     }
 
     /** A list's files as [[exportRates]] has them, the header first with a BOM, streamed: the
@@ -82,6 +82,8 @@
       val ranks = Ranks.of(pageKeys.map(_._2))
       val rankOf = pageKeys.map { case (pageId, values) => pageId -> ranks(values) }.toMap
       val juror = Option.when(list.asUserId != 0)(list.asUserId)
+      // a rated round's ✗ given while its option was on, for the legend (read with the keys)
+      val anyWorst = list.round.isRated && !list.round.worstMark && VoteJdbc.hasRejected(list.round.getId)
       Source.single(addBom(Seq(header(jurors, criteria))).head) ++
         Source.fromIterator(() => pageKeys.map(_._1).grouped(chunk))
           .mapAsync(1)(ids => Future {
@@ -92,17 +94,27 @@
           .mapConcat { case (files, averages) =>
             files.map(file => row(file, rankOf.getOrElse(file.pageId, ""), jurors, list.round, criteria, averages))
           } ++
-        Source(legend(list.round).toList)
+        Source(legend(list.round, anyWorst).toList)
     }
 
     /** A binary round's last row, after the files: what its "Overall" and juror columns hold,
       * the votes as they are stored (1, -1, 0), the column of a juror the file isn't assigned
-      * to empty. In English, as the header is.
+      * to empty; a rated round's where it has the worst mark, or any ✗ (`anyWorst`: given while
+      * the option was on, kept when it was turned off). In English, as the header is.
       */
-    private def legend(round: Round): Option[Seq[String]] = Option.when(round.isBinary)(BinaryLegend)
+    private def legend(round: Round, anyWorst: Boolean): Option[Seq[String]] =
+      if (round.isBinary) Some(BinaryLegend)
+      else Option.when(round.isRated && (round.worstMark || anyWorst))(WorstMarkLegend)
 
     val BinaryLegend: Seq[String] =
       Seq("", "Overall: approvals. Jurors: 1 selected, -1 rejected, 0 not voted yet, empty not assigned")
+
+    /** A rated round with the worst mark's last row: its ✗ (rate -1) counted as 0, "✗ n" after a
+      * file's score.
+      */
+    val WorstMarkLegend: Seq[String] =
+      Seq("", "Overall: the score, a worst mark counted as 0, then ✗ n: the file's worst marks. " +
+        "Jurors: the rate, -1 the worst mark (✗), 0 not rated yet, empty not assigned")
 
     /** The juror names, criteria names (an admin's fallback text, [[org.intracer.wmua.Criterion]])
       * and file titles here are user text: [[writeRow]] neutralises them.
@@ -116,7 +128,9 @@
     private def row(file: ImageWithRating, rank: String, jurors: Seq[User], round: Round,
         criteria: Seq[(Long, String)], averages: Map[Long, Map[Long, BigDecimal]]): Seq[String] = {
       val ofFile = averages.getOrElse(file.pageId, Map.empty)
-      Seq(rank, file.image.title, file.rateString(round)) ++
+      // a rated round's file's ✗ (worst marks) after its score: "14.50 (29 / 2) ✗ 1"
+      val worst = if (round.isBinary || file.worstMarks == 0) "" else s" ✗ ${file.worstMarks}"
+      Seq(rank, file.image.title, file.rateString(round) + worst) ++
         criteria.map { case (id, _) => ofFile.get(id).fold("")(CriteriaResults.format) } ++
         jurors.map(file.jurorRateStr)
     }

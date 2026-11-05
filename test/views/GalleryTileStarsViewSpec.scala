@@ -34,15 +34,19 @@ class GalleryTileStarsViewSpec extends PlaySpecification {
   "a gallery's tile stars" should {
     "be on the juror's own tiles of an active rated round" in {
       val html = page(LargeViewRenders.ratedRound)
-      starsOption(html) === """{"number":5,"half":false}"""
+      starsOption(html) === """{"number":5,"half":false,"worst":false}"""
       html must contain("javascripts/jquery.raty.js")
       html must contain("javascripts/large-rate.js")
     }
 
     "be in half stars in a half-star round: five for 1-10, three for 1-7" in {
-      starsOption(page(LargeViewRenders.halfStarRound)) === """{"number":5,"half":true}"""
+      starsOption(page(LargeViewRenders.halfStarRound)) === """{"number":5,"half":true,"worst":false}"""
       starsOption(page(LargeViewRenders.ratedRound.copy(rates = Round.ratesById(7), halfStar = true))) ===
-        """{"number":3,"half":true}"""
+        """{"number":3,"half":true,"worst":false}"""
+    }
+
+    "have the ✗ button in a round with the worst mark (tile-votes.js)" in {
+      starsOption(page(LargeViewRenders.ratedRound.copy(worstMark = true))) === """{"number":5,"half":false,"worst":true}"""
     }
 
     // an organizer's view of a juror's votes (it reads the round's jurors): OwnVotesSpec

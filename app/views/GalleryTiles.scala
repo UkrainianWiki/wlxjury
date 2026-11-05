@@ -13,8 +13,9 @@ object GalleryTiles {
     user != null && user.getId == asUserId && round.exists(_.active) && user.roles.contains("jury")
 
   def attributes(user: User, asUserId: Long, round: Option[Round]): Html = {
+    // with the worst mark (✗), a ✗ button beside the stars (tile-votes.js)
     val stars = TileStars.round(user, asUserId, round).map { r =>
-      s"""{"number":${r.rates.id / r.starUnits},"half":${r.starUnits == 2}}"""
+      s"""{"number":${r.rates.id / r.starUnits},"half":${r.starUnits == 2},"worst":${r.takesWorstMark}}"""
     }
     Html(
       s"""data-jury="${jury(user, asUserId, round)}" data-binary="${round.exists(_.isBinary)}"""" +

@@ -1,18 +1,23 @@
 package org.intracer.wmua
 
+import db.scalikejdbc.VoteSql
+
 /** How a rated round scores a file from its jurors' rates (`round.average_rule`, V90): the
   * round's one option for it, used by every view of its results (the by-rate gallery, the large
   * view for all the jurors, the file list, the CSV, criteria results) and by a next round's top-N
   * and "min average rate" from it (docs/plans/2026-11-02-round-images-two-step.md §17). It
   * replaces the legacy `optionalRate` flag (2015, never on the round form), whose round-level
   * denominator it folds into [[AverageRule.Sum]] (the user, 2026-11-05):
-  *  - [[AverageRule.Rated]]: the rate sum over the jurors who rated the file (rate above 0; in a
-  *    criteria round a vote rated in every criterion, U5), so an unrated vote is left out;
+  *  - [[AverageRule.Rated]]: the rate sum over the jurors who rated the file (any vote, stars or a
+  *    ✗; in a criteria round a vote rated in every criterion, U5), so an unrated vote is left out;
   *  - [[AverageRule.Assigned]]: over the jurors the file is assigned to (its vote rows), an
   *    unrated vote counted as 0;
   *  - [[AverageRule.Sum]]: the rate sum itself, a file a juror skipped getting nothing for it.
   *    An `optionalRate` round divided the sum by the round's active jurors, the same for every
   *    file: its order was the sum's already, and V90 makes it a `sum` round.
+  *
+  * The sum is of grades: a ✗ (the worst mark, rate -1, V92) counts as 0 under every rule, and as
+  * a juror who rated the file (the user, 2026-11-05).
   *
   * A stopped juror's votes count under every rule, as they did before V90 (their vote rows stay;
   * `round_user.active` only stops new votes). A yes/no round has no average: its lists count
@@ -64,10 +69,10 @@ object AverageRule {
   /** The SQL of a file's rate sum, its rated votes and its vote rows, over one source. */
   final case class Terms(sum: String, rated: String, assigned: String)
 
-  /** Over a file's `vote` rows `s`, grouped by file: a file whose rates are all NULL sums to 0, as
-    * its `round_image.rate_sum` does, so both sources give it key 0.
+  /** Over a file's `vote` rows `s`, grouped by file: the sum of grades and any vote as rated, a
+    * ✗ counted as 0 and as a vote (`rate` NOT NULL, V91).
     */
-  val VoteTerms: Terms = Terms("COALESCE(SUM(s.rate), 0)", "SUM(s.rate > 0)", "COUNT(*)")
+  val VoteTerms: Terms = Terms(VoteSql.GradeSum, VoteSql.VotedCount, "COUNT(*)")
 
   /** The scale of a rank key ([[AverageRule.keySql]]): averages that differ, with a denominator
     * below 30,000 jurors, differ by more than 1 / KeyScale.

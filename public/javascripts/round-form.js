@@ -11,6 +11,9 @@
 // - a new round's criteria (#round-criteria), hidden and disabled (so not sent) for a yes/no
 //   or comments-only rating (#rates 1 or 0); an existing round's rating is fixed (its select
 //   disabled), and its criteria stay as they are;
+// - the worst mark's checkbox (#round-worst-mark), hidden and disabled (so not sent) for a
+//   yes/no or comments-only rating; "rejected by at least" (#rejectFilters, classes "round<id>"
+//   of the binary rounds and the rated ones with the worst mark) shown when one is chosen;
 // - the score rule's warning (#averageRule_warning_row, rendered for a rated round with a rated
 //   vote and shown as it is without scripts): shown only while #averageRule differs from the
 //   saved rule (its data-stored-rule);
@@ -46,7 +49,8 @@
   function previousRoundsChanged() {
     var vals = $(this).val() || [];
 
-    $('#selectFilters, #rateFilters').hide();
+    $('#selectFilters, #rateFilters, #rejectFilters').hide();
+    var rejecting = false;
 
     if (vals.length) {
       $('#prevRoundFilters').show();
@@ -54,9 +58,35 @@
         return $('#selectFilters').hasClass('round' + v);
       });
       (anyBinary ? $('#selectFilters') : $('#rateFilters')).show();
+      // "rejected by at least": a yes/no round's "no" votes, a rated round's ✗ (#rejectFilters
+      // has the classes of the rounds whose votes may reject)
+      rejecting = anyRejecting(vals);
+      if (rejecting) $('#rejectFilters').show();
     } else {
       $('#prevRoundFilters').hide();
     }
+    rejectFieldsSent(rejecting);
+  }
+
+  /** Whether the chosen previous rounds `vals` include one whose votes may reject. */
+  function anyRejecting(vals) {
+    return vals.some(function (v) { return $('#rejectFilters').hasClass('round' + v); });
+  }
+
+  /** "Rejected by at least"'s fields are sent only while a chosen previous round may reject: the
+    * server refuses a filter without one. A read-only page's selects (disabled, their values in
+    * hidden inputs: an edit's, whose filters aren't changed) stay disabled; their hidden inputs
+    * follow. */
+  function rejectFieldsSent(on) {
+    $('#rejectFilters select').not('[data-wlx-locked]').prop('disabled', !on);
+    $('#rejectFilters input[type=hidden]').prop('disabled', !on);
+  }
+
+  /** Marks a read-only page's rejected-by selects (disabled as rendered), then sends the fields
+    * only for the previous rounds chosen as the page loads. */
+  function initRejectFilters() {
+    $('#rejectFilters select').each(function () { if (this.disabled) this.setAttribute('data-wlx-locked', ''); });
+    if ($('#rejectFilters').length) rejectFieldsSent(anyRejecting($('#previousRound').val() || []));
   }
 
   /** The distribution's choices for the jurors chosen: to all of them, or to 1 .. n-1. */
@@ -113,6 +143,26 @@
     update();
   }
 
+  /** Shows the worst mark's checkbox for a rated rating without criteria only (a criteria round's
+    * votes are per criterion, and the server refuses the option there); disabled inputs aren't
+    * sent, so a yes/no, comments-only or criteria round gets none. An existing round's rating is
+    * fixed. */
+  function initWorstMark(doc) {
+    var rates = doc.getElementById('rates');
+    var box = doc.getElementById('round-worst-mark');
+    if (!rates || !box) return;
+    var criteria = doc.querySelectorAll('#round-criteria select');
+    function update() {
+      var withCriteria = Array.prototype.some.call(criteria, function (s) { return !s.disabled && s.value !== ''; });
+      var shown = Number(rates.value) > 1 && !withCriteria;
+      box.hidden = !shown;
+      Array.prototype.forEach.call(box.querySelectorAll('input'), function (i) { i.disabled = !shown; });
+    }
+    Array.prototype.forEach.call(criteria, function (s) { s.addEventListener('change', update); });
+    if (!rates.disabled) rates.addEventListener('change', update);
+    update();
+  }
+
   /** Shows the score rule's warning only while the select differs from the saved rule. */
   function initScoreRuleWarning(doc) {
     var select = doc.getElementById('averageRule');
@@ -148,9 +198,11 @@
     var t = texts(doc);
     initMultiSelects(doc, t);
     $('#previousRound').change(previousRoundsChanged);
+    initRejectFilters();
     $('#jurors').change(jurorsChanged(t.distribution || {}));
     initCoiConfirm(doc);
     initCriteria(doc);
+    initWorstMark(doc);
     initScoreRuleWarning(doc);
     initLazyParts();
   }

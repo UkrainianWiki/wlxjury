@@ -304,14 +304,15 @@ class RoundRedistributionFiltersSpec extends Specification with TestDb with Befo
         ((job.params \ "settings" \ "prevRejectedBy").asOpt[Int] must beSome(1))
     }
 
-    "ignore rejected-by from a rated previous round and with no previous round, on every path" in {
+    "apply rejected-by from a rated previous round to its ✗ (its option off), ignore it with no previous round, on every path" in {
       implicit val contest: ContestJury = createContests(1).head
       val jurors = createUsers("jury", 1, 2)
       addImages(contest, 1 to 10)
       val service = TestRoundServices.roundService(TestRoundServices.handler(chunkRows = 3))
       val source = Round(None, 0, Some("Source"), contest.getId, active = true)
       val rated = service.createNewRound(source.copy(rates = Round.ratesById(5)), jurors.map(_.getId))
-      // rows with a negative rate, which rejected-by would count in a yes/no round
+      // rows with a negative rate: a ✗ (the round's option off now, Round.rejects), which
+      // rejected-by counts as a yes/no round's "no"
       def vote(): Unit = VoteJdbc.byRound(rated.getId).foreach { row =>
         VoteJdbc.rate(row.pageId, row.juryId, rated.getId, if (row.pageId % 2 == 0) -1 else 3)
       }
@@ -331,12 +332,15 @@ class RoundRedistributionFiltersSpec extends Specification with TestDb with Befo
         .map(_.pageId).toSet))
       val counts = pairs.map(_.map(r => service.newFilesCount(r.getId)))
       val added = pairs.map(_.map(r => service.distributeNewImages(r.getId)))
-      (created === Seq.fill(2)(Seq.fill(2)((1L to 10L).toSet))) and
-        (settings === Seq.fill(2)(Seq(None, None))) and
-        (reference === Seq.fill(2)(Seq.fill(2)((11L to 20L).toSet))) and
-        (counts === Seq.fill(2)(Seq(10L, 10L))) and
-        (added === Seq.fill(2)(Seq(10, 10))) and
-        (pairs.map(_.map(r => pageIds(r.getId))) === Seq.fill(2)(Seq.fill(2)((1L to 20L).toSet)))
+      // from the rated round with rejected-by 1: its files without a ✗ (the odd ones); else all
+      def odd(r: Range) = r.filter(_ % 2 == 1).map(_.toLong).toSet
+      def all(r: Range) = r.map(_.toLong).toSet
+      (created === Seq(Seq(all(1 to 10), odd(1 to 10)), Seq(all(1 to 10), all(1 to 10)))) and
+        (settings === Seq(Seq(None, Some(1)), Seq(None, None))) and
+        (reference === Seq(Seq(all(11 to 20), odd(11 to 20)), Seq(all(11 to 20), all(11 to 20)))) and
+        (counts === Seq(Seq(10L, 5L), Seq(10L, 10L))) and
+        (added === Seq(Seq(10, 5), Seq(10, 10))) and
+        (pairs.map(_.map(r => pageIds(r.getId))) === Seq(Seq(all(1 to 20), odd(1 to 20)), Seq(all(1 to 20), all(1 to 20))))
     }
 
     "sum the rejections of two yes/no previous rounds, on every path" in {

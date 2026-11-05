@@ -7,7 +7,9 @@
 //   rate a click on a hovered star gives;
 // - data-readonly: "true" in a view that votes nothing (another juror's, a stopped round);
 // - data-vote-prefix and data-vote-query: a click votes the path prefix + the rate in rate
-//   points + the query (the list's, and the criterion's), posted by large-view.js.
+//   points + the query (the list's, and the criterion's), posted by large-view.js;
+// - data-cancel: "false" in a round with the worst mark (✗), whose own ✗ and clear buttons
+//   stand apart, so the stars have no cancel icon (an ✗-like circle) of their own.
 // The stars are Bootstrap Icons (raty's starType 'i'), coloured and sized by main.css's
 // .wlx-star and .raty-cancel, without tooltips: the number shows the rate.
 (function () {
@@ -31,7 +33,7 @@
     var opts = {
       score: Number(el.getAttribute('data-score')) || 0,
       half: half,
-      cancel: true,
+      cancel: el.getAttribute('data-cancel') !== 'false',
       number: n,
       precision: false,
       space: false,
