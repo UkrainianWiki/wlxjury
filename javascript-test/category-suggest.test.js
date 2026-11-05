@@ -394,6 +394,59 @@ describe("categorySuggest", () => {
         expect(placed).toHaveBeenCalledTimes(1);
     });
 
+    test("on opening, scrolls the box to bring a field partly out of view wholly into it, then places the list", () => {
+        document.body.innerHTML = '<div class="table-responsive" id="box"><table><tbody><tr><td>' +
+            '<input type="text" id="images" class="form-control" data-category-suggest="mixed" ' +
+            'data-category-suggest-dropdown-parent="body"></td></tr></tbody></table></div>';
+        const box = document.getElementById("box");
+        let scrollLeft = 100;
+        Object.defineProperty(box, "scrollLeft", { configurable: true, get: () => scrollLeft, set: (v) => { scrollLeft = v; } });
+        const ts = suggest.categorySuggest(document.getElementById("images"));
+        const placed = jest.spyOn(ts, "positionDropdown");
+        const rect = (left, right) => ({ left, right, top: 0, bottom: 38, width: right - left, height: 38, x: left, y: 0 });
+        jest.spyOn(box, "getBoundingClientRect").mockReturnValue(rect(12, 378));
+        const field = jest.spyOn(ts.wrapper, "getBoundingClientRect");
+
+        field.mockReturnValue(rect(200, 440)); // its right part past the box's right edge
+        ts.open();
+        expect(scrollLeft).toBe(162); // scrolled by 62: its right edge at the box's
+        expect(placed).toHaveBeenCalled(); // and placed again after that
+        ts.close();
+
+        field.mockReturnValue(rect(-30, 210)); // past the left edge
+        scrollLeft = 100;
+        ts.open();
+        expect(scrollLeft).toBe(58); // scrolled back by 42: its left edge at the box's
+        ts.close();
+
+        field.mockReturnValue(rect(40, 280)); // wholly in view: the box stays
+        scrollLeft = 100;
+        ts.open();
+        expect(scrollLeft).toBe(100);
+    });
+
+    test("never lets a body list reach past the window's right edge", () => {
+        Object.defineProperty(document.documentElement, "clientWidth", { configurable: true, get: () => 390 });
+        try {
+            const ts = suggest.categorySuggest(field("mixed", "", ' data-category-suggest-dropdown-parent="body"'));
+            const rect = (left, right) => ({ left, right, top: 50, bottom: 250, width: right - left, height: 200, x: left, y: 50 });
+            const list = jest.spyOn(ts.dropdown, "getBoundingClientRect");
+            list.mockReturnValue(rect(300, 540)); // 150 px past the window's 390
+            ts.positionDropdown();
+            expect(ts.dropdown.style.left).toBe("150px");
+            list.mockReturnValue(rect(-20, 600)); // wider than the window: from its left edge
+            ts.positionDropdown();
+            expect(ts.dropdown.style.left).toBe("0px");
+            // inside: left where Tom Select placed it, at the field's left edge
+            jest.spyOn(ts.control, "getBoundingClientRect").mockReturnValue(rect(40, 280));
+            list.mockReturnValue(rect(40, 280));
+            ts.positionDropdown();
+            expect(ts.dropdown.style.left).toBe("40px");
+        } finally {
+            delete document.documentElement.clientWidth; // the prototype's again
+        }
+    });
+
     test("listens to no box for a list kept in its wrapper, or a field outside such a box", () => {
         document.body.innerHTML = '<div class="table-responsive" id="box">' +
             '<input type="text" id="a" class="form-control" data-category-suggest="mixed"></div>' +

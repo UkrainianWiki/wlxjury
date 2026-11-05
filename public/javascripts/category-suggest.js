@@ -110,26 +110,59 @@
         no_results: function () { return null; }
       }
     });
-    if (dropdownParent) followScrollingBox(ts, input);
+    if (dropdownParent) {
+      keepInWindow(ts);
+      followScrollingBox(ts, input);
+    }
     return ts;
+  }
+
+  /** A list hung from the body is placed by Tom Select under its field, which may reach past
+    * the window's right edge (a field partly out of view): wherever it is placed, its left edge
+    * is moved back so that its right edge stays in the window, never widening the page. */
+  function keepInWindow(ts) {
+    var position = ts.positionDropdown;
+    ts.positionDropdown = function () {
+      var result = position.apply(ts, arguments);
+      var width = document.documentElement.clientWidth;
+      var rect = ts.dropdown.getBoundingClientRect();
+      if (width > 0 && rect.right > width) {
+        var scrollX = window.pageXOffset || 0;
+        ts.dropdown.style.left = Math.max(scrollX, rect.left + scrollX - (rect.right - width)) + 'px';
+      }
+      return result;
+    };
   }
 
   /** A list hung from the body follows its field when the window scrolls (Tom Select does
     * that), but not when a box around the field scrolls (a .table-responsive table, sideways on
-    * a phone): there, on each scroll of the box, an open list is placed under the field again
+    * a phone). There, when the list opens, the box first scrolls the field wholly into its view,
+    * then the list is placed under it; on each scroll of the box an open list is placed again
     * while the field is wholly inside the box's visible part, and closed once it isn't, so that
     * it never reaches past the box or widens the page; until `ts` is destroyed. */
   function followScrollingBox(ts, input) {
     var box = input.closest ? input.closest('.table-responsive') : null;
     if (!box) return;
-    function follow() {
-      if (!ts.isOpen) return;
+    // a pixel's slack for rounding
+    function outside(field, visible) {
+      return field.left < visible.left - 1 || field.right > visible.right + 1;
+    }
+    function reveal() {
       var field = ts.wrapper.getBoundingClientRect();
       var visible = box.getBoundingClientRect();
-      // a pixel's slack for rounding
-      if (field.left < visible.left - 1 || field.right > visible.right + 1) ts.close();
+      if (!outside(field, visible)) return;
+      // its left edge in view first; then its right edge too, if it fits
+      var by = field.left < visible.left ? field.left - visible.left
+        : Math.min(field.right - visible.right, field.left - visible.left);
+      box.scrollLeft = box.scrollLeft + by;
+      ts.positionDropdown();
+    }
+    function follow() {
+      if (!ts.isOpen) return;
+      if (outside(ts.wrapper.getBoundingClientRect(), box.getBoundingClientRect())) ts.close();
       else ts.positionDropdown();
     }
+    ts.on('dropdown_open', reveal);
     box.addEventListener('scroll', follow, { passive: true });
     var destroy = ts.destroy;
     ts.destroy = function () {
