@@ -65,6 +65,21 @@ test.describe('an admin', () => {
     await expect(page.getByLabel('Round name (optional)')).toHaveValue('');
     await expect(page.getByLabel('Rating type')).toBeVisible();
   });
+
+  // At a phone's width the users and rounds tables scroll inside their .table-responsive box
+  // (position-relative, so their visually hidden labels don't widen the page): the page itself
+  // has no horizontal scroll. The contests page's own check is in root's suggestion test.
+  test('keeps the users and rounds pages within a phone\'s width, their tables scrolling in their boxes', { tag: ['@A-07', '@A-03'] },
+    async ({ page, fixture }) => {
+      await page.setViewportSize({ width: 390, height: 800 });
+      for (const path of [`/admin/users?contestId=${fixture.contestId}`, `/admin/rounds?contestId=${fixture.contestId}`]) {
+        await page.goto(path);
+        await expect(page.locator('.table-responsive table').first()).toBeVisible();
+        const widths = await page.evaluate(() => ({
+          page: document.documentElement.scrollWidth, window: document.documentElement.clientWidth }));
+        expect(widths.page, `${path}: no horizontal scroll of the page`).toBeLessThanOrEqual(widths.window);
+      }
+    });
 });
 
 test.describe('root', () => {
@@ -126,15 +141,22 @@ test.describe('root', () => {
       await control.fill('Category:Wiki'); // scrolls the box to the field
       await expect(dropdown).toBeVisible();
       await expect(dropdown.locator('.option')).toHaveCount(titles.length);
+      // the page itself doesn't scroll sideways: the box (position-relative) contains the hidden
+      // label and Tom Select's hidden input, and the open list fits under the field
+      const pageFits = () => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth);
+      expect(await pageFits()).toBe(true);
+      // the box scrolls the field to the left where it can (the list then stays in the window),
+      // else to the right
       const box = page.locator('.table-responsive').filter({ has: page.locator('#images') });
       const moved = await box.evaluate((el) => {
         const start = el.scrollLeft;
-        el.scrollLeft = start > 60 ? start - 60 : start + 60;
+        const max = el.scrollWidth - el.clientWidth;
+        el.scrollLeft = start + 60 <= max ? start + 60 : start - 60;
         return el.scrollLeft - start;
       });
       expect(Math.abs(moved)).toBeGreaterThan(0); // the box did scroll
       await expect.poll(async () => Math.abs((await place()).left)).toBeLessThan(3);
       expect((await place()).below).toBeGreaterThanOrEqual(0);
-      expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+      if (moved > 0) expect(await pageFits()).toBe(true);
     });
 });

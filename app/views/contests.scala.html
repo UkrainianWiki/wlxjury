@@ -41,8 +41,10 @@
         @contestsTable(contests)
 
         @* scrolls inside its box on a narrow screen; the add row's field widths: main.css
-           (.wlx-contests-table) *@
-        <div class="table-responsive">
+           (.wlx-contests-table). position-relative: the box contains the absolutely placed
+           elements inside it (visually hidden labels, Tom Select's hidden input), which would
+           otherwise widen the page; the suggestions hang from the body, outside it *@
+        <div class="table-responsive position-relative">
         <table class="table table-striped table-sm wlx-contests-table">
 
             <thead>
