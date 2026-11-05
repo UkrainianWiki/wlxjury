@@ -2,7 +2,7 @@ package controllers
 
 import db.scalikejdbc.{ContestJuryJdbc, CriterionJdbc, MediaType, Round, RoundCriterion, RoundLimits, User}
 import org.scalawiki.wlx.dto.SpecialNomination
-import org.intracer.wmua.{AverageRule, BinaryOrder, CategoryOperation, CategoryRule, Criterion}
+import org.intracer.wmua.{AverageRule, BinaryOrder, CategoryOperation, CategoryRule, Criterion, RejectedMode}
 import play.api.data.{Form, Mapping}
 import play.api.data.Forms._
 import play.api.data.validation._
@@ -28,7 +28,11 @@ case class EditRound(
     newImages: Boolean = false,
     criteriaShown: Boolean = true,
     averageRuleShown: Boolean = true,
-    worstMarkShown: Boolean = true
+    worstMarkShown: Boolean = true,
+    // the rejected-by choices as posted (V93), for the form's checks: the mode select's value
+    // (None: a client without it) and X (None: empty)
+    rejectedModeChoice: Option[String] = None,
+    rejectedByChoice: Option[Int] = None
 )
 
 object EditRound {
@@ -62,6 +66,31 @@ object EditRound {
     * not checked: they are not changed, and a legacy criteria round's (V83: one criterion, more
     * than 10, or a rating that isn't rated) stay as they are while the rest of its form is saved.
     */
+  /** "Rejected by at least N" (V93): a mode needs its N, and N a mode (not "no filter"). A client
+    * without the mode select (an older page) excludes with its N. That a new round's filter has a
+    * chosen previous round whose votes may reject is `RoundController`'s check ([[RejectedByNoSource]]:
+    * it reads the previous rounds).
+    */
+  private val validRejectedBy: Constraint[EditRound] = Constraint("constraint.rejected.by") { edit =>
+    val mode = edit.rejectedModeChoice
+    val by = edit.rejectedByChoice
+    if (mode.exists(m => m != NoRejectedFilter) && by.isEmpty) Invalid(ValidationError(RejectedByCountMissing))
+    else if (mode.contains(NoRejectedFilter) && by.isDefined) Invalid(ValidationError(RejectedByWithoutMode))
+    else Valid
+  }
+
+  /** Whether a new round's "rejected by at least N" has a chosen previous round whose votes may
+    * reject ([[Round.rejects]]: a yes/no round, a rated round without criteria). Without one it would
+    * leave nothing out ("exclude") or keep nothing ("only"): refused. An edit's previous rounds and
+    * filters aren't changed (nor its previous rounds posted): not checked.
+    */
+  def rejectedByHasSource(round: Round, previous: Seq[Round]): Boolean =
+    round.id.isDefined || round.rejectedByFilter.isEmpty || previous.exists(_.rejects)
+
+  val RejectedByCountMissing = "error.rejected.by.count.missing"
+  val RejectedByWithoutMode = "error.rejected.by.without.mode"
+  val RejectedByNoSource = "error.rejected.by.no.source"
+
   private val validCriteria: Constraint[EditRound] = Constraint("constraint.criteria") { edit =>
     val round = edit.round
     val unchanged = round.id.exists(id => RoundCriterion.idsOf(id) == round.criterionIds)
@@ -81,6 +110,11 @@ object EditRound {
   }
 
   val WorstMarkRatedOnly = "error.worst.mark.rated.only"
+
+  /** The rejected-by mode select's "no filter" (a value of its own: Play reads "" as absent, which
+    * is an older client's, excluding).
+    */
+  val NoRejectedFilter = "none"
 
   /** The criteria selects' values: the chosen ones, by position (-1 for a value that is no id). */
   def criterionIdsOf(values: Seq[String]): Seq[Long] =
@@ -103,9 +137,13 @@ object EditRound {
       // a rated round's worst mark (V92), with the hidden field saying the form had the checkbox
       // (an unchecked box sends nothing): a client without both keeps an existing round's option
       "worstMark" -> boolean,
-      "worstMarkShown" -> boolean
+      "worstMarkShown" -> boolean,
+      // "rejected by at least N" (V93): "none" no filter, "exclude" those files, "only" them; a
+      // client without it (an older page, a script) excludes, the meaning before V93
+      "rejectedMode" -> optional(text).verifying("error.invalid",
+        _.forall(m => m == EditRound.NoRejectedFilter || RejectedMode.parse(m).isDefined))
     )((edit, excludeCoi, selected, topOrder, rejectedBy, criteria, criteriaShown, halfStar, averageRule, worstMark,
-        worstMarkShown) => {
+        worstMarkShown, rejectedMode) => {
       val configured = selected match {
         case None => edit.round // Older clients omitted the clause; retain their inference.
         case Some(value) =>
@@ -115,9 +153,12 @@ object EditRound {
           else edit.round.copy(categoryClause = operation.storedValue,
             excludeCategory = edit.round.excludeCategory.filter(_ => operation.requiresSecond))
       }
-      edit.copy(criteriaShown = criteriaShown, round = configured.copy(excludeCoi = excludeCoi,
+      val rejectedByChoice = rejectedBy.flatMap(s => Try(s.toInt).toOption).filter(_ > 0)
+      edit.copy(criteriaShown = criteriaShown, rejectedModeChoice = rejectedMode, rejectedByChoice = rejectedByChoice,
+        round = configured.copy(excludeCoi = excludeCoi,
         topBinaryOrder = edit.round.topImages.flatMap(_ => BinaryOrder.ofForm(topOrder)),
-        prevRejectedBy = rejectedBy.flatMap(s => Try(s.toInt).toOption).filter(_ > 0),
+        prevRejectedBy = rejectedByChoice.filterNot(_ => rejectedMode.contains(NoRejectedFilter)),
+        prevRejectedMode = rejectedMode.flatMap(RejectedMode.parse).getOrElse(RejectedMode.Default),
         criterionIds = criterionIdsOf(criteria), halfStar = halfStar,
         averageRule = averageRule.flatMap(AverageRule.parse).getOrElse(AverageRule.Default),
         worstMark = worstMark && worstMarkShown),
@@ -125,9 +166,11 @@ object EditRound {
     })(edit => Some((edit, edit.round.excludeCoi, Some(edit.round.categoryRule.operation.formValue),
       edit.round.topImages.map(_ => edit.round.topOrderParam), edit.round.rejectedByFilter.map(_.toString),
       edit.round.criterionIds.map(_.toString), edit.criteriaShown, edit.round.halfStar,
-      Some(edit.round.averageRule.param), edit.round.worstMark, edit.worstMarkShown)))
+      Some(edit.round.averageRule.param), edit.round.worstMark, edit.worstMarkShown,
+      Some(edit.round.rejectedByFilter.fold(NoRejectedFilter)(_ => edit.round.prevRejectedMode.param)))))
       .verifying(validCategories)
       .verifying(validCriteria)
+      .verifying(validRejectedBy)
       .verifying(validWorstMark)
   )
 

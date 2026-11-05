@@ -150,8 +150,11 @@ class DistributeImages @Inject()(imageRepo: ImageRepo) extends Logging {
 
     // "exclude files rejected by at least N" counts the rejections of all the votes of the
     // previous rounds, whatever "selected by" reads (its rows are the approvals only): a yes/no
-    // round's "no" votes, a rated round's ✗ (the worst mark)
-    val notRejected = prevRound.filter(_.rejects).flatMap(_ => rejectedBy)
+    // round's "no" votes, a rated round's ✗ (the worst mark); from any previous round that may
+    // reject (Round.rejects), as the job and the round form have it; "only" whatever the sources
+    // (none rejects: no file passes, rather than every file)
+    val notRejected = rejectedBy.filter(_ =>
+      prevRounds.exists(_.rejects) || (prevRounds.nonEmpty && round.prevRejectedMode == RejectedMode.Only))
     val rejections: Map[Long, Int] = notRejected.fold(Map.empty[Long, Int])(_ =>
       mergeByPageId(prevRounds.flatMap(r => imageRepo.byRoundMerged(r.getId, tally = true, grades = !r.isBinary)))
         .map(i => i.pageId -> i.rejections).toMap)
@@ -176,6 +179,7 @@ class DistributeImages @Inject()(imageRepo: ImageRepo) extends Logging {
       topOrder = round.topBinaryOrder,
       selectedAtLeast = prevRound.flatMap(_ => selectedAtLeast),
       rejectedBy = notRejected,
+      rejectedMode = round.prevRejectedMode,
       mpxAtLeast = mpxAtLeast,
       sizeAtLeast = sizeAtLeast,
       specialNomination = round.specialNomination,

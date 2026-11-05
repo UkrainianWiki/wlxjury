@@ -372,6 +372,11 @@ class RoundController @Inject() (
               onUnAuthorized(user, request, Secured.Denial.contest(Some(contestId), User.ADMIN_ROLES))
             else round.id match {
               case None if unreadable.nonEmpty => unreadableLines
+              // "rejected by at least N" (V93) from no previous round whose votes may reject: it
+              // would leave out nothing, or keep nothing; refused, with the form kept
+              case None if !EditRound.rejectedByHasSource(round,
+                  if (round.previousIds.isEmpty) Nil else Round.findByIds(contestId, round.previousIds)) =>
+                reRender(round, EditRound.RejectedByNoSource)
               case None =>
                 try {
                   roundsService.submit(round.copy(active = true), editForm.jurors, RoundController.submitToken(request), user.id, titles) match {

@@ -3,7 +3,7 @@
   import java.io.{StringWriter, Writer}
 
   import com.github.tototoshi.csv.CSVWriter
-  import db.scalikejdbc.{Round, User}
+  import db.scalikejdbc.{Round, User, VoteJdbc}
   import org.apache.pekko.NotUsed
   import org.apache.pekko.stream.scaladsl.Source
   import org.intracer.wmua.{BinaryOrder, CriteriaRate, CriteriaResults, ImageWithRating}
@@ -63,7 +63,7 @@
       val ranks = ImageWithRating.rankImages(files, round, order)
       header(jurors, criteria) +: files.zip(ranks).map { case (file, rank) =>
         row(file, rank, jurors, round, criteria, averages)
-      } ++: legend(round).toSeq
+      } ++: legend(round, files.exists(_.worstMarks > 0)).toSeq
     }
 
     /** A list's files as [[exportRates]] has them, the header first with a BOM, streamed: the
@@ -82,6 +82,8 @@
       val ranks = Ranks.of(pageKeys.map(_._2))
       val rankOf = pageKeys.map { case (pageId, values) => pageId -> ranks(values) }.toMap
       val juror = Option.when(list.asUserId != 0)(list.asUserId)
+      // a rated round's ✗ given while its option was on, for the legend (read with the keys)
+      val anyWorst = list.round.isRated && !list.round.worstMark && VoteJdbc.hasRejected(list.round.getId)
       Source.single(addBom(Seq(header(jurors, criteria))).head) ++
         Source.fromIterator(() => pageKeys.map(_._1).grouped(chunk))
           .mapAsync(1)(ids => Future {
@@ -92,15 +94,17 @@
           .mapConcat { case (files, averages) =>
             files.map(file => row(file, rankOf.getOrElse(file.pageId, ""), jurors, list.round, criteria, averages))
           } ++
-        Source(legend(list.round).toList)
+        Source(legend(list.round, anyWorst).toList)
     }
 
     /** A binary round's last row, after the files: what its "Overall" and juror columns hold,
       * the votes as they are stored (1, -1, 0), the column of a juror the file isn't assigned
-      * to empty. In English, as the header is.
+      * to empty; a rated round's where it has the worst mark, or any ✗ (`anyWorst`: given while
+      * the option was on, kept when it was turned off). In English, as the header is.
       */
-    private def legend(round: Round): Option[Seq[String]] =
-      if (round.isBinary) Some(BinaryLegend) else Option.when(round.worstMark && round.isRated)(WorstMarkLegend)
+    private def legend(round: Round, anyWorst: Boolean): Option[Seq[String]] =
+      if (round.isBinary) Some(BinaryLegend)
+      else Option.when(round.isRated && (round.worstMark || anyWorst))(WorstMarkLegend)
 
     val BinaryLegend: Seq[String] =
       Seq("", "Overall: approvals. Jurors: 1 selected, -1 rejected, 0 not voted yet, empty not assigned")

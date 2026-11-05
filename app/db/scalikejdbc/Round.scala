@@ -1,7 +1,7 @@
 package db.scalikejdbc
 
 import db.RoundRepo
-import org.intracer.wmua.{AverageRule, BinaryOrder, CategoryRule, HasId, Vote}
+import org.intracer.wmua.{AverageRule, BinaryOrder, CategoryRule, HasId, RejectedMode, Vote}
 import scalikejdbc._
 import scalikejdbc.orm.{CRUDMapper, JoinTable}
 
@@ -36,8 +36,10 @@ case class Round(
     minMpx: Option[Int] = None,
     previous: Option[String] = None,
     prevSelectedBy: Option[Int] = None,
-    // "exclude files rejected by at least N jurors" of a yes/no previous round (V74); None: no filter
+    // "rejected by at least N jurors" of the previous rounds (V74; a rated round's ✗ too); None: no
+    // filter. Its mode (V93): exclude those files (the default, the meaning before V93) or only them
     prevRejectedBy: Option[Int] = None,
+    prevRejectedMode: RejectedMode = RejectedMode.Default,
     prevMinAvgRate: Option[BigDecimal] = None,
     category: Option[String] = None,
     excludeCategory: Option[String] = None,
@@ -116,11 +118,13 @@ case class Round(
     */
   def takesWorstMark: Boolean = worstMark && isRated && !hasCriteria
 
-  /** Its votes reject files: a yes/no round's "no", or a rated round's ✗ where it has the worst
-    * mark. A next round from it may leave out the files rejected by at least N jurors
-    * ([[rejectedByFilter]]).
+  /** Its votes may reject files: a yes/no round's "no", or a ✗ of a rated round without criteria
+    * (the rounds that can take one, [[takesWorstMark]], whatever the option is now: a ✗ given
+    * stays when it is turned off, and a stored "rejected by at least N" keeps reading them). A
+    * next round from it may leave out the files rejected by at least N jurors
+    * ([[rejectedByFilter]]); from a rated round without any ✗ the filter leaves out nothing.
     */
-  def rejects: Boolean = isBinary || (worstMark && isRated)
+  def rejects: Boolean = isBinary || (isRated && !hasCriteria)
 
   /** The stars of a file's result: the round's, also in a criteria round, whose result is
     * drawn per criterion ([[perCriterion]]).
@@ -149,8 +153,9 @@ case class Round(
     */
   def selectedByFilter: Option[Int] = prevSelectedBy.filter(_ > 0)
 
-  /** "Exclude files rejected by at least N jurors" as the distribution reads it: N >= 1, or no
-    * filter. It drops the files with N or more rejections across the previous rounds' votes.
+  /** "Rejected by at least N jurors" as the distribution reads it: N >= 1, or no filter. By
+    * [[prevRejectedMode]] it drops the files with N or more rejections across the previous rounds'
+    * votes, or keeps only them.
     */
   def rejectedByFilter: Option[Int] = prevRejectedBy.filter(_ > 0)
 
@@ -312,6 +317,7 @@ object Round extends RoundRepo with CRUDMapper[Round] {
       previous = rs.stringOpt(c.previous),
       prevSelectedBy = rs.intOpt(c.prevSelectedBy),
       prevRejectedBy = rs.intOpt(c.prevRejectedBy),
+      prevRejectedMode = RejectedMode.fromStored(rs.stringOpt(c.prevRejectedMode)),
       prevMinAvgRate = rs.bigDecimalOpt(c.prevMinAvgRate).map(BigDecimal.apply),
       category = rs.stringOpt(c.category),
       excludeCategory = rs.stringOpt(c.excludeCategory),
@@ -354,6 +360,7 @@ object Round extends RoundRepo with CRUDMapper[Round] {
           column.previous -> round.previous,
           column.prevSelectedBy -> round.prevSelectedBy,
           column.prevRejectedBy -> round.prevRejectedBy,
+          column.prevRejectedMode -> round.prevRejectedMode.param,
           column.prevMinAvgRate -> round.prevMinAvgRate,
           column.category -> round.category,
           column.excludeCategory -> round.excludeCategory,
