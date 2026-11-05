@@ -11,7 +11,8 @@
 // with Category:. data-category-suggest-dropdown-parent="body": the list hangs from the page's
 // body (Tom Select's dropdownParent), for a field inside a box that clips (a .table-responsive
 // table's overflow would cut the list off); Tom Select positions it under the field and keeps
-// its aria-* and keys. Any other value, or none, keeps the list in the field's wrapper.
+// its aria-* and keys, and this script places it again when that box scrolls (no window event
+// then). Any other value, or none, keeps the list in the field's wrapper.
 (function () {
   'use strict';
 
@@ -59,7 +60,7 @@
     var latest = 0; // the newest request's number: an answer to an older one is dropped
     var pending = null; // its AbortController
 
-    return new window.TomSelect(input, {
+    var ts = new window.TomSelect(input, {
       maxItems: 1,
       create: true, // free text: what is typed is the value, unless a suggestion is chosen
       createOnBlur: true,
@@ -109,6 +110,24 @@
         no_results: function () { return null; }
       }
     });
+    if (dropdownParent) followScrollingBox(ts, input);
+    return ts;
+  }
+
+  /** A list hung from the body follows its field when the window scrolls (Tom Select does
+    * that), but not when a box around the field scrolls (a .table-responsive table, sideways on
+    * a phone): there, an open list is placed under the field again on each scroll of the box,
+    * until `ts` is destroyed. */
+  function followScrollingBox(ts, input) {
+    var box = input.closest ? input.closest('.table-responsive') : null;
+    if (!box) return;
+    function follow() { if (ts.isOpen) ts.positionDropdown(); }
+    box.addEventListener('scroll', follow, { passive: true });
+    var destroy = ts.destroy;
+    ts.destroy = function () {
+      box.removeEventListener('scroll', follow);
+      return destroy.apply(ts, arguments);
+    };
   }
 
   function init() {

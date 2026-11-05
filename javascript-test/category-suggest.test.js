@@ -330,6 +330,44 @@ describe("categorySuggest", () => {
         expect(other.wrapper.contains(other.dropdown)).toBe(true);
     });
 
+    test("places a body list under its field again when the table's box scrolls, while open, until destroyed", () => {
+        document.body.innerHTML = '<div class="table-responsive" id="box"><table><tbody><tr><td>' +
+            '<input type="text" id="images" class="form-control" data-category-suggest="mixed" ' +
+            'data-category-suggest-dropdown-parent="body"></td></tr></tbody></table></div>';
+        const box = document.getElementById("box");
+        const ts = suggest.categorySuggest(document.getElementById("images"));
+        const placed = jest.spyOn(ts, "positionDropdown");
+        const scroll = () => box.dispatchEvent(new Event("scroll"));
+
+        scroll();
+        expect(placed).not.toHaveBeenCalled(); // closed: nothing to place
+        ts.open();
+        placed.mockClear();
+        scroll();
+        expect(placed).toHaveBeenCalledTimes(1);
+        ts.close();
+        scroll();
+        expect(placed).toHaveBeenCalledTimes(1);
+
+        const removed = jest.spyOn(box, "removeEventListener");
+        ts.destroy();
+        expect(removed).toHaveBeenCalledWith("scroll", expect.any(Function));
+        ts.isOpen = true; // even if it were still thought open, the box no longer moves it
+        scroll();
+        expect(placed).toHaveBeenCalledTimes(1);
+    });
+
+    test("listens to no box for a list kept in its wrapper, or a field outside such a box", () => {
+        document.body.innerHTML = '<div class="table-responsive" id="box">' +
+            '<input type="text" id="a" class="form-control" data-category-suggest="mixed"></div>' +
+            '<input type="text" id="b" class="form-control" data-category-suggest="mixed" data-category-suggest-dropdown-parent="body">';
+        const added = jest.spyOn(document.getElementById("box"), "addEventListener");
+        const inBox = suggest.categorySuggest(document.getElementById("a"));
+        const outside = suggest.categorySuggest(document.getElementById("b"));
+        expect(added.mock.calls.filter(([type]) => type === "scroll")).toEqual([]);
+        expect(() => { inBox.destroy(); outside.destroy(); }).not.toThrow();
+    });
+
     test("init takes the inputs marked for it only", () => {
         document.body.innerHTML = `<input id="a" data-category-suggest="category"><input id="b" data-category-suggest="mixed"><input id="c">`;
         suggest.init();
