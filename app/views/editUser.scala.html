@@ -217,7 +217,7 @@
             @if(ownProfile) {
             <section class="mt-4" id="sessions" aria-labelledby="sessions-title">
                 <h2 class="h5" id="sessions-title">@Messages("sessions.title")</h2>
-                <p class="text-body-secondary small">@Messages("sessions.help")</p>
+                <p class="text-body-secondary small">@Messages("sessions.help")@if(tokensCard.nonEmpty) { @Messages("sessions.help.tokens")}</p>
                 @form(routes.LoginController.logoutEverywhere(), Symbol("class") -> "d-inline") {
                     @csrfField()
                     <button type="submit" class="btn btn-outline-danger">@Messages("sessions.signout.everywhere")</button>

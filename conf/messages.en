@@ -48,6 +48,7 @@ invalid.user.or.password=Invalid user or password
 error.email.already.exist=This email is already used by another account.
 
 signin.signin=Sign In
+signin.heading=WLX Jury Tool
 signin.your.login=Your login
 signin.your.password=Your password
 
@@ -606,7 +607,8 @@ email.changed.body = Hello,\n\nThe email address of your jury tool account has b
 # Sessions (security batch S3)
 signin.keep = Keep me signed in
 sessions.title = Sessions
-sessions.help = Sign out on every device and browser where you are signed in, this one included. Changing your password does this too, except on this browser. Your API tokens are not affected: revoke them under API tokens.
+sessions.help = Sign out on every device and browser where you are signed in, this one included. Changing your password does this too, except on this browser.
+sessions.help.tokens = Your API tokens are not affected: revoke them under API tokens.
 sessions.signout.everywhere = Sign out everywhere
 sessions.end = End sessions
 sessions.ended = Every session of this account has ended; it must sign in again.

@@ -82,6 +82,7 @@ invalid.user.or.password=Неверный пользователь или пар
 error.email.already.exist=Этот адрес электронной почты уже используется другой учётной записью.
 
 signin.signin=Войти
+signin.heading=WLX Jury Tool
 signin.your.login=Ваш логин
 signin.your.password=Ваш пароль
 
@@ -584,7 +585,8 @@ email.changed.body = Здравствуйте!\n\nАдрес электронн�
 # Sessions (security batch S3)
 signin.keep = Запомнить меня
 sessions.title = Сеансы
-sessions.help = Выйти на всех устройствах и во всех браузерах, где вы вошли, включая этот. Смена пароля тоже это делает, кроме этого браузера. Ваших API-токенов это не касается: отзовите их в разделе API-токенов.
+sessions.help = Выйти на всех устройствах и во всех браузерах, где вы вошли, включая этот. Смена пароля тоже это делает, кроме этого браузера.
+sessions.help.tokens = Ваших API-токенов это не касается: отзовите их в разделе API-токенов.
 sessions.signout.everywhere = Выйти везде
 sessions.end = Завершить сеансы
 sessions.ended = Все сеансы этой учётной записи завершены; нужно войти снова.

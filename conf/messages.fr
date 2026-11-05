@@ -48,6 +48,7 @@ invalid.user.or.password=Utilisateur ou mot de passe invalide
 error.email.already.exist=Cette adresse courriel est déjà utilisée par un autre compte.
 
 signin.signin=Se connecter
+signin.heading=WLX Jury Tool
 signin.your.login=Votre identifiant
 signin.your.password=Votre mot de passe
 
@@ -607,7 +608,8 @@ email.changed.body = Bonjour,\n\nL''adresse courriel de votre compte de l''outil
 # Sessions (security batch S3)
 signin.keep = Rester connecté
 sessions.title = Sessions
-sessions.help = Se déconnecter sur tous les appareils et navigateurs où vous êtes connecté, celui-ci compris. Changer de mot de passe le fait aussi, sauf sur ce navigateur. Vos jetons d''API ne sont pas concernés : révoquez-les sous Jetons d''API.
+sessions.help = Se déconnecter sur tous les appareils et navigateurs où vous êtes connecté, celui-ci compris. Changer de mot de passe le fait aussi, sauf sur ce navigateur.
+sessions.help.tokens = Vos jetons d''API ne sont pas concernés : révoquez-les sous Jetons d''API.
 sessions.signout.everywhere = Se déconnecter partout
 sessions.end = Terminer les sessions
 sessions.ended = Toutes les sessions de ce compte sont terminées ; il doit se reconnecter.

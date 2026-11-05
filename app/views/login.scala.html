@@ -2,11 +2,12 @@
 
 @mainAdmin("application.name") {
 
-<h1 class="visually-hidden">@Messages("application.name")</h1>
+@* the tool's full name, centred above the form, with room below the top bar *@
+<h1 class="text-center mt-5 mb-4">@Messages("signin.heading")</h1>
 <div class="row">
 <fieldset class="col-md-6 offset-md-3">
 
-    <legend>@Messages("signin.signin")</legend>
+    <legend class="text-center">@Messages("signin.signin")</legend>
 
     @* why a Google or Wikimedia sign-in failed: a message key only (OAuthController) *@
     @flash.get(controllers.OAuthController.FlashError).filter(controllers.OAuthController.MessageKeys.contains).map { key =>
