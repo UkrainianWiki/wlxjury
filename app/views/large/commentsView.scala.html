@@ -8,27 +8,27 @@
 
 @defining(list.round) { round =>
 @if(round.active || comments.nonEmpty) {
-    <div class="large-box">
-        <div id="comments" name="comments" class="comment-header msg">
-            <strong>@Messages("comments")</strong>
-        </div>
+    @* below the file, as wide as the column but never wider than a readable line; the button
+       under the box, at its start *@
+    <section class="large-box large-comments" aria-labelledby="comments">
+        <h2 id="comments" class="h6 mb-2">@Messages("comments")</h2>
         @for(msg <- comments) {
-            <div class="msg">
-                <strong>@msg.username: </strong>
-                @msg.body <br/>
+            <div class="msg rounded mb-2">
+                <strong>@msg.username:</strong>
+                @msg.body
             </div>
         }
         @if(round.active) {
-            <div>
-            @form(Call("POST", list.commentUrl(objectId)), Symbol("class") -> "form-vertical", Symbol("id") -> "addComment") {
+            @form(Call("POST", list.commentUrl(objectId)), Symbol("id") -> "addComment") {
                 @helper.CSRF.formField
                 <input type="hidden" name="id" id="id" value="0" />
-                <textarea class="imageComment" id="text" name="text" rows="3" placeholder="@Messages("your.comment.here")"></textarea>
-                <input type="submit" class="btn btn-primary" id="saySomething" value="@Messages("submit.comment")" />
+                <label for="text" class="visually-hidden">@Messages("your.comment.here")</label>
+                <textarea class="form-control imageComment" id="text" name="text" rows="3" placeholder="@Messages("your.comment.here")"></textarea>
+                <div class="mt-2">
+                    <input type="submit" class="btn btn-primary btn-sm" id="saySomething" value="@Messages("submit.comment")" />
+                </div>
             }
-            </div>
         }
-
-    </div>
+    </section>
 }
 }

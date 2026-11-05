@@ -150,19 +150,18 @@ src="https://upload.wikimedia.org/wikipedia/commons/a/ab/Image_107.jpg" class="m
 srcset="https://upload.wikimedia.org/wikipedia/commons/a/ab/Image_107.jpg 1.5x, https://upload.wikimedia.org/wikipedia/commons/a/ab/Image_107.jpg 2x"
 data-failed-mark="large">
 </a>
-<div class="large-box">
-<div id="comments" name="comments" class="comment-header msg">
-<strong>comments</strong>
-</div>
-<div>
-<form action="/comment/region/all/pageid/107?round=1&amp;sort=rate" method="POST" class="form-vertical" id="addComment">
+<section class="large-box large-comments" aria-labelledby="comments">
+<h2 id="comments" class="h6 mb-2">comments</h2>
+<form action="/comment/region/all/pageid/107?round=1&amp;sort=rate" method="POST" id="addComment">
 <input type="hidden" name="csrfToken" value="fixture-csrf-token"/>
 <input type="hidden" name="id" id="id" value="0" />
-<textarea class="imageComment" id="text" name="text" rows="3" placeholder="your.comment.here"></textarea>
-<input type="submit" class="btn btn-primary" id="saySomething" value="submit.comment" />
+<label for="text" class="visually-hidden">your.comment.here</label>
+<textarea class="form-control imageComment" id="text" name="text" rows="3" placeholder="your.comment.here"></textarea>
+<div class="mt-2">
+<input type="submit" class="btn btn-primary btn-sm" id="saySomething" value="submit.comment" />
+</div>
 </form>
-</div>
-</div>
+</section>
 </div>
 </div>
 </div>

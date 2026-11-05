@@ -74,41 +74,21 @@ img.cropped {
 }
 
 
-/* the large view's comments (large/commentsView.scala.html) */
-.msg {
-    padding: 10px;
-    width: 100%;
+/* the large view's comments (large/commentsView.scala.html): the column's width up to a
+   readable line; the box is Bootstrap's form-control, the button below it */
+.large-comments {
+    max-width: 40rem;
+}
+
+.large-comments .msg {
+    padding: .5rem .75rem;
     background: var(--bs-secondary-bg);
     color: var(--bs-body-color);
 }
 
 .imageComment {
-    width: 800px;
-    max-width: 100%;
-    position: relative;
-    color: var(--bs-body-color);
-    background-color: var(--bs-body-bg);
-    border: var(--bs-border-width) solid var(--bs-border-color);
-    top: 4px;
+    resize: vertical;
 }
-
-.imageComment:focus{
-    border-color: var(--bs-primary-border-subtle);
-    box-shadow: 0 0 0 .2rem rgba(var(--bs-primary-rgb), .25);
-    outline: 0 none;
-}
-
-.comment-header {
-    width: 80px;
-    padding: 3px 7px;
-    font-size: 12px;
-    font-weight: bold;
-    color: var(--bs-emphasis-color);
-    background-color: var(--bs-tertiary-bg);
-    border: 1px solid var(--bs-border-color);
-    -webkit-border-radius: 4px 0 4px 0;
-    -moz-border-radius: 4px 0 4px 0;
-    border-radius: 4px 4px 0 0;}
 
 .bs-callout {
     padding: 20px;
