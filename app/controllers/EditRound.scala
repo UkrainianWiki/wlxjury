@@ -210,7 +210,7 @@ object EditRound {
       jurorsMappingKV,
       "newImages" -> boolean,
       "monumentIds" -> optional(text),
-      "topImages" -> optional(number),
+      "topImages" -> optional(number(min = 1)),
       "specialNomination" -> optional(text),
       "mediaType" -> text
     )(applyEdit)(unapplyEdit)

@@ -119,6 +119,13 @@ case class User(
   def canViewContestFiles(refContestId: Long): Boolean =
     hasContestRole(User.ADMIN_ROLES ++ User.ORG_COM_ROLES, Some(refContestId))
 
+  /** Whether the user may open a round's conflicts of interest page
+    * ([[controllers.RoundConflictsController.page]]): the contest's admins and organizers (only
+    * its admins disqualify or requalify). The round's statistics page links it for them.
+    */
+  def canViewRoundConflicts(refContestId: Long): Boolean =
+    hasContestRole(User.ADMIN_ROLES ++ User.ORG_COM_ROLES, Some(refContestId))
+
   /** Whether the user may import the contest's files and cache them locally
     * ([[controllers.ImageController.images]]): its admins.
     */
