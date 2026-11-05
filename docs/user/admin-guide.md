@@ -256,9 +256,10 @@ account with **End sessions** on its edit page.
 <a id="a-api-tokens"></a>
 ### API tokens
 
-Each person's profile has personal API tokens for command-line tools. A token acts with the
-person's roles, so it must be kept secret. Ending sessions doesn't revoke tokens: the person (or
-root, on the account's tokens page) revokes them.
+Each person's profile has a section for personal API tokens, for command-line tools. For now
+almost nothing can be done through the API, and only by root, so other people have no use for a
+token yet. A token acts with the person's roles, so it must be kept secret. Ending sessions
+doesn't revoke tokens: the person (or root, on the account's tokens page) revokes them.
 
 <a id="a-contest"></a>
 ## The contest

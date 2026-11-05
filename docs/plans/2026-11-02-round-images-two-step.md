@@ -1335,7 +1335,7 @@ distribution (the job records them, `added_by_job_id`). P3's D16a (`removeImage`
   have done. Invariant 4 (a `deleted` row's image is deleted) holds either way.
 - **No event: as before V88.** Rows disqualified before V88 come back `in` (the known limitation
   for those only). Production can't have such a row: nothing writes `dq` before P1b, and P1b and
-  V88 ship together in release 2 (V82–V88). Only a test or a hand edit makes one.
+  V88 ship together in `26.11` (V71–V94). Only a test or a hand edit makes one.
 - **Residual limitations** (rare, both keep the invariants; telling them apart needs the round's
   open/closed history, which nothing records). The event keeps the status at the disqualify, not
   what happened to the file while it was disqualified:
@@ -1359,8 +1359,8 @@ distribution (the job records them, `added_by_job_id`). P3's D16a (`removeImage`
 
 ### Pre-deploy (V88)
 
-V88 ships in release 2 with V82–V87 (roadmap, "Release 2"): before the deploy production is at
-release 1, its last Flyway row **81**, and neither `round` (V82 renames `rounds`) nor
+V88 ships in `26.11` with V71–V94 (roadmap, "Release plan"): before the deploy production is at
+V70 (`f9c31ce5`), its last Flyway row **70**, and neither `round` (V82 renames `rounds`) nor
 `round_image` (V84) exists yet, so nothing here may read them. Read-only, production, as the
 admin user, before the deploy:
 ```sql
@@ -1461,7 +1461,7 @@ Logs under `target/checks/` of the worktree.
 | Review follow-ups | `CoiRoundSpec`, `RoundImageEventSpec`, `RoundConflictsAuthorizationSpec`, `CoiDisqualifyLockSpec`, `MessagesCompletenessSpec`, `StructuralWritesSpec`, `FlywayUpgradeSpec`, `RoundWritesGuardSpec`, `MigrationSchemaSpec` | **85: 84 passed, 0 failed, 1 skipped** (the fixture generator) | `20261104-213308-25896.log` |
 
 Reviewed (independent, of `f9c97645`): approved, nothing blocking; its follow-ups are the
-commit after it (required `prior`, residual cases A and B named and pinned, release 2's
+commit after it (required `prior`, residual cases A and B named and pinned, `26.11`'s
 pre-deploy, deleted accounts as `#id`, the wording, the case-sensitive CHECKs, the cascade note).
 
 Not run: the suite on MariaDB 10.11 (`-Dwlxjury.test.mariadb-image`); V88's DDL has no
@@ -1644,8 +1644,8 @@ Logs: branch `target/checks/20261105-002355-12908.log` and `…-003413-29380.log
 
 ### Deploy note
 
-V89 ships in release 2 with V82–V88: before the deploy production is at release 1 (its last
-Flyway row **81**, tables `rounds` and `selection`; `round` and `round_image` are V82's and
+V89 ships in `26.11` with V71–V94: before the deploy production is at V70 (its last
+Flyway row **70**, tables `rounds` and `selection`; `round` and `round_image` are V82's and
 V84's). Read-only, production, as the admin user, before the deploy:
 ```sql
 SELECT VERSION();   -- 10.6+ (INSTANT ADD COLUMN; the rollback's INSTANT DROP COLUMN: 10.4+)
@@ -2040,7 +2040,7 @@ DELETE FROM flyway_schema_history WHERE version = '90';
 ```
 The older code reads `optional_rate`, which V90 left as it was.
 
-**Before the deploy (release 2):** let any distribution with a "min average rate" or a top-N from
+**Before the deploy (`26.11`):** let any distribution with a "min average rate" or a top-N from
 a former `optional_rate` round finish (`SELECT id, status FROM job WHERE kind =
 'round_distribution' AND status IN ('queued', 'running')`, with its round's previous rounds). Its
 threshold was the sum over that round's active jurors, which V90's code no longer computes
@@ -2130,7 +2130,7 @@ with its `83dcc488`), 2026-11-05. Roadmap queue item 6. Migrations **V91**
 NULL-rate item (V91) and B11 (what a rated round's vote below 0 means: a ✗, counted as 0).
 
 **Scope change (the user, 2026-11-05, during the batch):** decisions 6 and 7 below (V91 and the
-naming of every vote check) became a later non-feature item, after release 2 (roadmap item 21).
+naming of every vote check) became a later non-feature item, after `26.11` (roadmap item 21).
 They were already committed (the first two commits) and are kept; whether they ship with the ✗
 or are split off is the orchestrator's call (the ✗ commits use `VoteSql`, and V92 follows V91).
 
@@ -2141,7 +2141,7 @@ or are split off is the orchestrator's call (the ✗ commits use `VoteSql`, and 
    has the option; a criteria round neither (the round form refuses both; a vote of −1 in a round
    without the option, or in a criteria round whatever is stored, is a 400). Criteria rounds with
    ✗ (per criterion or per file, combined with the criteria sum), or criteria-based yes/no rounds,
-   are a later item after release 2, its design open (roadmap item 6's note, the user, 2026-11-05).
+   are a later item after `26.11`, its design open (roadmap item 6's note, the user, 2026-11-05).
 2. **✗ counts as 0** in every average and total: the sum of grades is `SUM(GREATEST(rate, 0))` on
    the votes and `rate_sum + rejections` on the counts. "The jurors who rated it" is any vote
    (`rate <> 0`, the counts' `voted`). Under `rated`, the grades over the jurors with any vote; under
