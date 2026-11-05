@@ -68,11 +68,13 @@ class CsvSpec extends Specification {
       val clean = ImageWithRating(Image(1, "File:b.jpg"), Seq(Vote(1, 1, 0, rate = 4), Vote(1, 2, 0, rate = 6)))
       val rows = Csv.exportRates(Seq(worst, clean), jurors, round)
       // the same average, 5.00; the sums 15 and 10 rank them
-      (rows(1) === Seq("1", "File:a.jpg", "5.00 (15 / 3); worst marks: 1", "7", "8", "-1")) and
+      (rows(1) === Seq("1", "File:a.jpg", "5.00 (15 / 3) — worst marks: 1", "7", "8", "-1")) and
         (rows(2) === Seq("2", "File:b.jpg", "5.00 (10 / 2)", "4", "6", "")) and
         (rows.last === Csv.WorstMarkLegend) and
-        // the legend names the form the cells have, and no glyph
-        (rows.last(1) must contain("\"worst marks: n\"")) and (rows.flatten.mkString must not(contain("✗"))) and
+        // the legend names the form the cells have, and no glyph; no ";" or "," in a score cell,
+        // which a spreadsheet whose list separator is ";" would split
+        (rows.last(1) must contain("\"— worst marks: n\"")) and (rows.flatten.mkString must not(contain("✗"))) and
+        (rows.drop(1).dropRight(1).map(_(2)).forall(c => !c.contains(";") && !c.contains(",")) must beTrue) and
         (Csv.exportRates(Seq(clean), jurors, ratedRound(10)).size === 2)
     }
   }

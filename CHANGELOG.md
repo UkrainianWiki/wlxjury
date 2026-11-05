@@ -122,8 +122,8 @@ Developed 2026-11-02 to 2026-11-03, PRs #232–#236.
   rated round with a vote of stars (not for one with worst marks only, where every file scores 0
   under every rule), it says that saving a different rule re-scores and re-orders the round's
   results on every page at once (nothing runs in the background), that a distribution already
-  queued keeps its rule, and which later rounds took files by this round's scores (those files
-  stay; a later "Distribute new files" there uses the new rule). In the page without JavaScript;
+  queued keeps its rule, and which later rounds took their files by this round's scores (those
+  files stay; distributing new files to them from now on uses the new rule). In the page without JavaScript;
   with it, shown once the select differs from the saved rule.
 - **The worst mark in rated rounds**, a round form option, off by default (admins; developed
   2026-11-05, V92): jurors may give a file the worst mark instead of stars, by a button (a cross
@@ -132,7 +132,7 @@ Developed 2026-11-02 to 2026-11-03, PRs #232–#236.
   as 0 in every average and total and as a vote in a juror's progress and the round's "jurors
   who rated it"; the all-jurors by-rate gallery, the file list and the large view show the same
   cross icon and the number of worst marks beside the score (the words for screen readers), a
-  juror's own views their mark; the CSV writes "; worst marks: n" after the score, as its legend
+  juror's own views their mark; the CSV writes " — worst marks: n" after the score, as its legend
   says. A next round can leave out files with at least N worst marks, as it can a yes/no round's
   rejections. Not for criteria rounds or yes/no rounds (the form refuses it).
 - **One product name and the contest's words** (developed 2026-11-05): "WLX Jury", untranslated,
