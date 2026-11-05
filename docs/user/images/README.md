@@ -1,7 +1,7 @@
 # Screenshots of the user guides
 
 Made by `browser-test/tests/docs-screenshots.spec.js` (opt-in: `DOCS_SCREENSHOTS=1`, Chromium
-only), from the browser tests' fixture: light theme, English, a 1280x800 viewport, placeholder
+only), from the browser tests' fixture: the dark theme (the tool's default), English, a 1280x800 viewport, placeholder
 images and generated accounts. Each file is named after the guide and section that uses it.
 
 The images are at device scale factor 2 (a 1280-pixel-wide page is 2560 pixels wide); the guides

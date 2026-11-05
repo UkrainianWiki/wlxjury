@@ -3,7 +3,9 @@
 //
 //   cd browser-test && DOCS_SCREENSHOTS=1 npx playwright test docs-screenshots --project=chromium
 //
-// Fixed settings: light theme, English, a 1280x800 viewport, the UiShotsServer fixture's data.
+// Fixed settings: the dark theme (the tool's default, set by the theme cookie so that a fixture
+// account's stored choice can't change it), English, a 1280x800 viewport, the UiShotsServer
+// fixture's data.
 // Every image is a Playwright `page.screenshot` or `locator.screenshot`: the page only, with no
 // browser or operating-system window around it. Never capture the screen or a headed window.
 //
@@ -29,13 +31,18 @@ test.describe('the guides\' screenshots', () => {
   test.skip(!process.env.DOCS_SCREENSHOTS, 'opt-in: set DOCS_SCREENSHOTS=1');
   test.skip(({ browserName }) => browserName !== 'chromium', 'Chromium only');
   // 2x: a 1280-wide page is a 2560-pixel PNG, shown in the guides at its CSS size (width="1280")
-  test.use({ viewport: VIEWPORT, locale: 'en-US', colorScheme: 'light', deviceScaleFactor: 2 });
+  test.use({ viewport: VIEWPORT, locale: 'en-US', colorScheme: 'dark', deviceScaleFactor: 2 });
 
   test.beforeAll(() => fs.mkdirSync(OUT_DIR, { recursive: true }));
+
+  // the app's theme cookie (controllers.Theme.CookieName), on every context before its first page
+  let baseUrl;
+  test.beforeEach(({ fixture }) => { baseUrl = fixture.baseUrl; });
 
   /** Opens `target` as `role` (null: signed out), waits for the page, and saves `name`.png. */
   async function shot(contextAs, role, target, name, { full = false, prepare, crop } = {}) {
     const context = await contextAs(role);
+    await context.addCookies([{ name: 'theme', value: 'dark', url: baseUrl }]);
     const page = await context.newPage();
     await page.goto(target);
     await expect(page.locator('h1').first()).toBeAttached();
