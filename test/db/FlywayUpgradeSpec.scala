@@ -450,6 +450,45 @@ class FlywayUpgradeSpec extends Specification with BeforeAll with AfterAll {
     }
   }
 
+  /** V94's rollback SQL after reopen (CHANGELOG, shareable set-password links): the live shared
+    * links revoked first, since an older release would take one for a mailed one, whose
+    * acceptance verifies the email.
+    */
+  private val v94Rollback = Seq(
+    "UPDATE account_token SET revoked_at = NOW(3) WHERE shared AND used_at IS NULL AND revoked_at IS NULL",
+    "ALTER TABLE account_token DROP COLUMN shared, ALGORITHM = INSTANT",
+    "DELETE FROM flyway_schema_history WHERE version = '94'")
+
+  "V94's shared links" should {
+    "mark every existing link mailed, rerun as a no-op, and roll back to the previous schema" in {
+      // the migration before V94, whichever it is once the batches below merge
+      val before = versions.takeWhile(_ != "94").last
+      emptyDb("fw_v93")
+      flyway("fw_v93", production.copy(target = Some(before))).migrate()
+      emptyDb("fw_v94_back")
+      flyway("fw_v94_back", production.copy(target = Some(before))).migrate().success must beTrue
+      Using.resource(connect("fw_v94_back"))(c => run(c, Seq(
+        "INSERT INTO users (id, fullname, email) VALUES (1, 'A', 'a@example.com')",
+        "INSERT INTO account_token (id, user_id, purpose, token_hash, email, created_at, expires_at) " +
+          s"VALUES (1, 1, 'invitation', '${"a" * 64}', 'a@example.com', '2020-01-01 00:00:00', '2020-01-08 00:00:00')")))
+      flyway("fw_v94_back", production.copy(target = Some("94"))).migrate().success must beTrue
+      val once = schema("fw_v94_back")
+      val stored = Using.resource(connect("fw_v94_back"))(c =>
+        rows(c, "SELECT shared, CAST(created_at AS CHAR) FROM account_token")(rs => rs.getBoolean(1) -> rs.getString(2)))
+      (stored === List(false -> "2020-01-01 00:00:00.000")) and {
+        Using.resource(connect("fw_v94_back"))(c => run(c, statements("V94__Account_token_shared.sql")))
+        schema("fw_v94_back") === once
+      } and {
+        Using.resource(connect("fw_v94_back"))(c => run(c, v94Rollback))
+        def tablesOnly(s: String) = s.split(";\n\n").filterNot(_.matches("(?s)^\\w+: \\d+ rows.*")).mkString(";\n\n")
+        (history("fw_v94_back").map(_.split(" \\| ")(1)) === upTo(before)) and
+          (tablesOnly(schema("fw_v94_back")) === tablesOnly(schema("fw_v93"))) and
+          (flyway("fw_v94_back", production.copy(target = Some("94"))).migrate().success must beTrue) and
+          (schema("fw_v94_back") === once)
+      }
+    }
+  }
+
   "the app's start with production's settings but without auto" should {
     "refuse while a migration is pending, without changing the database" in {
       emptyDb("fw_pending")
