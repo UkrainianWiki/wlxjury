@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """Fetches the photos for the user guides' screenshots (docs/user/images/README.md).
 
-Reads browser-test/docs-photos.json (public-domain and CC0 photos from Wikimedia Commons) and
-writes to the git-ignored target/docs-photos/:
+Reads the lists named by DOCS_PHOTOS (default `wlm-ua,wlm-intl`, comma separated):
+browser-test/docs-photos-<list>.json: wlm-ua, wlm-intl, wle-ua, wle-intl (Wiki Loves Monuments or Earth,
+Ukraine or other countries), public-domain
+and CC0 photos from Wikimedia Commons, and writes to the git-ignored target/docs-photos/<list>/:
 
   good/NN.jpg   the photos, 1280 px wide, downloaded once from upload.wikimedia.org
   bad/NN.jpg    degraded copies (blur, tilted horizon, over- or underexposed, low resolution with
@@ -16,6 +18,7 @@ stops the run. A second run downloads nothing that is cached. Needs Pillow (pip 
 """
 import io
 import json
+import os
 import re
 import sys
 import time
@@ -26,7 +29,7 @@ from pathlib import Path
 from PIL import Image, ImageEnhance, ImageFilter
 
 ROOT = Path(__file__).resolve().parent.parent
-MANIFEST = ROOT / "browser-test" / "docs-photos.json"
+LISTS = [n.strip() for n in os.environ.get("DOCS_PHOTOS", "wlm-ua,wlm-intl").split(",") if n.strip()]
 OUT = ROOT / "target" / "docs-photos"
 API = "https://commons.wikimedia.org/w/api.php"
 UA = "wlxjury-docs-photos/1.0 (https://github.com/intracer/wlxjury; user guide screenshots; anonymous) python-urllib"
@@ -78,16 +81,17 @@ def degrade(image, kind, p):
     sys.exit(f"unknown variant {kind}")
 
 
-def main():
-    manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
+def fetch_list(name):
+    manifest = json.loads((ROOT / "browser-test" / f"docs-photos-{name}.json").read_text(encoding="utf-8"))
     width = manifest["width"]
     if width not in WIDTHS:
         sys.exit(f"{width} is not a standard thumbnail width")
-    good, bad = OUT / "good", OUT / "bad"
+    good, bad = OUT / name / "good", OUT / name / "bad"
     good.mkdir(parents=True, exist_ok=True)
     bad.mkdir(parents=True, exist_ok=True)
     photos = manifest["photos"]
     files = {p["title"]: good / f"{i:02d}.jpg" for i, p in enumerate(photos)}
+    crop_bottom = {p["title"]: p["crop_bottom"] for p in photos if "crop_bottom" in p}
     missing = [t for t, f in files.items() if not f.exists()]
     for start in range(0, len(missing), 40):
         batch = missing[start:start + 40]
@@ -102,14 +106,27 @@ def main():
                 sys.exit(f"{title}: unexpected host {url}")
             print(f"fetching {title}")
             data = get(url)
-            Image.open(io.BytesIO(data)).verify()
-            files[title].write_bytes(data)
+            image = Image.open(io.BytesIO(data))
+            image.verify()
+            crop = crop_bottom.get(title)
+            if crop:  # a file with a street-art strip along its bottom edge: keep the rest
+                image = Image.open(io.BytesIO(data)).convert("RGB")
+                image.crop((0, 0, image.width, round(image.height * (1 - crop)))).save(files[title], "JPEG", quality=92)
+            else:
+                files[title].write_bytes(data)
             time.sleep(1)
     for i, d in enumerate(manifest["degraded"]):
         target = bad / f"{i:02d}.jpg"
         image = Image.open(files[d["base"]]).convert("RGB")
         degrade(image, d["variant"], d["params"]).save(target, "JPEG", quality=85)
-    print(f"{len(photos)} photos in {good}, {len(manifest['degraded'])} degraded in {bad}")
+    print(f"{name}: {len(photos)} photos in {good}, {len(manifest['degraded'])} degraded in {bad}")
+
+
+def main():
+    if not LISTS:
+        sys.exit("DOCS_PHOTOS names no list (wlm-ua, wlm-intl, wle-ua, wle-intl)")
+    for name in LISTS:
+        fetch_list(name)
 
 
 if __name__ == "__main__":

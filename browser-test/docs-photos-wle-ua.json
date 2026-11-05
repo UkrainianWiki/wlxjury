@@ -1,0 +1,178 @@
+{
+ "note": "Public-domain and CC0 photos from Wikimedia Commons, fetched by browser-test/docs-photos.py into target/docs-photos/ (never committed). Licences are checked again at fetch time.",
+ "width": 1280,
+ "photos": [
+  {
+   "title": "File:Вірьовочна драбина.jpg",
+   "license": "CC0",
+   "author": "Віктор Височин",
+   "theme": "landscape",
+   "contest": "Wiki Loves Earth",
+   "year": 2020,
+   "country": "Ukraine"
+  },
+  {
+   "title": "File:Доріжки в лісі поблизу селища Лебедівка.jpg",
+   "license": "CC0",
+   "author": "Віктор Височин",
+   "theme": "landscape",
+   "contest": "Wiki Loves Earth",
+   "year": 2020,
+   "country": "Ukraine"
+  },
+  {
+   "title": "File:Лава на пірсі.jpg",
+   "license": "CC0",
+   "author": "Віктор Височин",
+   "theme": "landscape",
+   "contest": "Wiki Loves Earth",
+   "year": 2020,
+   "country": "Ukraine"
+  },
+  {
+   "title": "File:Медуза на березі пісчаної коси.jpg",
+   "license": "CC0",
+   "author": "Віктор Височин",
+   "theme": "landscape",
+   "contest": "Wiki Loves Earth",
+   "year": 2020,
+   "country": "Ukraine"
+  },
+  {
+   "title": "File:Мушлі на піску, Тузловські лімани.jpg",
+   "license": "CC0",
+   "author": "Віктор Височин",
+   "theme": "landscape",
+   "contest": "Wiki Loves Earth",
+   "year": 2020,
+   "country": "Ukraine"
+  },
+  {
+   "title": "File:На території Шарівського замку, Харківська область - ph02.jpg",
+   "license": "CC0",
+   "author": "Віктор Височин",
+   "theme": "monument",
+   "contest": "Wiki Loves Earth",
+   "year": 2020,
+   "country": "Ukraine"
+  },
+  {
+   "title": "File:Руїни пірсу.jpg",
+   "license": "CC0",
+   "author": "Віктор Височин",
+   "theme": "landscape",
+   "contest": "Wiki Loves Earth",
+   "year": 2020,
+   "country": "Ukraine"
+  },
+  {
+   "title": "File:Світанок над косою.jpg",
+   "license": "CC0",
+   "author": "Віктор Височин",
+   "theme": "landscape",
+   "contest": "Wiki Loves Earth",
+   "year": 2020,
+   "country": "Ukraine"
+  },
+  {
+   "title": "File:Токівський водоспад на р. Кам'янка waterfall on the river Kamyanka.jpg",
+   "license": "CC0",
+   "author": "Novoklimov",
+   "theme": "monument",
+   "contest": "Wiki Loves Earth",
+   "year": 2020,
+   "country": "Ukraine"
+  },
+  {
+   "title": "File:Чайки на березі моря.jpg",
+   "license": "CC0",
+   "author": "Віктор Височин",
+   "theme": "landscape",
+   "contest": "Wiki Loves Earth",
+   "year": 2020,
+   "country": "Ukraine"
+  },
+  {
+   "title": "File:\"Серетський\" гідрологічний заказник.jpg",
+   "license": "CC0",
+   "author": "Matviyiv.lubomir",
+   "theme": "landscape",
+   "contest": "Wiki Loves Earth",
+   "year": 2023,
+   "country": "Ukraine"
+  },
+  {
+   "title": "File:Ботанічний сад імені академіка Олександра Фоміна. Пам'ятник.jpg",
+   "license": "CC0",
+   "author": "Lenka:)",
+   "theme": "monument",
+   "contest": "Wiki Loves Earth",
+   "year": 2021,
+   "country": "Ukraine"
+  },
+  {
+   "title": "File:Ольшанка річка.jpg",
+   "license": "CC0",
+   "author": "Ph-Andrew996",
+   "theme": "landscape",
+   "contest": "Wiki Loves Earth",
+   "year": 2023,
+   "country": "Ukraine"
+  },
+  {
+   "title": "File:Пейзаж Гайдари.jpg",
+   "license": "CC0",
+   "author": "Ph-Andrew996",
+   "theme": "landscape",
+   "contest": "Wiki Loves Earth",
+   "year": 2023,
+   "country": "Ukraine"
+  },
+  {
+   "title": "File:Гірська Україна.jpg",
+   "license": "CC0",
+   "author": "Slaydoggy",
+   "theme": "landscape",
+   "contest": "Wiki Loves Earth",
+   "year": 2024,
+   "country": "Ukraine"
+  },
+  {
+   "title": "File:Дуб Гаркуші у с. Гаї.jpg",
+   "license": "CC0",
+   "author": "Olga Loboda 0806",
+   "theme": "landscape",
+   "contest": "Wiki Loves Earth",
+   "year": 2024,
+   "country": "Ukraine"
+  },
+  {
+   "title": "File:Заплава на р.Уж, с.Мотійки.jpg",
+   "license": "CC0",
+   "author": "Alina Turchenko",
+   "theme": "landscape",
+   "contest": "Wiki Loves Earth",
+   "year": 2024,
+   "country": "Ukraine"
+  },
+  {
+   "title": "File:Захід сонця на річці Уж.jpg",
+   "license": "CC0",
+   "author": "Alina Turchenko",
+   "theme": "landscape",
+   "contest": "Wiki Loves Earth",
+   "year": 2024,
+   "country": "Ukraine"
+  },
+  {
+   "title": "File:Новий Світ – вид зі стежки Галицина.jpg",
+   "license": "CC0",
+   "author": "Helen Owl",
+   "theme": "landscape",
+   "contest": "Wiki Loves Earth",
+   "year": 2024,
+   "country": "Ukraine"
+  }
+ ],
+ "degraded": []
+}

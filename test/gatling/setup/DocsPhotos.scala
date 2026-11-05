@@ -38,11 +38,21 @@ object DocsPhotos {
   private def jpgs(dir: File): Seq[File] =
     Option(dir.listFiles()).toSeq.flatten.filter(_.getName.endsWith(".jpg")).sortBy(_.getName)
 
-  /** Reads the cached photos; fails with the command to run if there are none. */
-  def load(root: File): Path => Array[Byte] = {
-    val good = jpgs(new File(root, "good"))
-    val bad  = jpgs(new File(root, "bad"))
-    require(good.nonEmpty, s"no photos in $root/good: run `python browser-test/docs-photos.py` first")
+  val DefaultLists = Seq("wlm-ua", "wlm-intl")
+
+  /** The lists of -Dui.photos (`wlm-ua`, `wlm-intl`, `wle-ua`, `wle-intl`, the browser-test/docs-photos-*.json
+    * files); the default if it is not set. The photos of the lists, in this order, are the pool,
+    * so the mapping is the same for the same choice. */
+  def lists(prop: Option[String]): Seq[String] = {
+    val names = prop.toSeq.flatMap(_.split(',')).map(_.trim).filter(_.nonEmpty).distinct
+    if (names.isEmpty) DefaultLists else names
+  }
+
+  /** Reads the cached photos of `lists`; fails with the command to run if there are none. */
+  def load(root: File, lists: Seq[String]): Path => Array[Byte] = {
+    val good = lists.flatMap(l => jpgs(new File(root, s"$l/good")))
+    val bad  = lists.flatMap(l => jpgs(new File(root, s"$l/bad")))
+    require(good.nonEmpty, s"no photos in $root for ${lists.mkString(",")}: run `python browser-test/docs-photos.py` (DOCS_PHOTOS=${lists.mkString(",")}) first")
     path => {
       val (isBad, i) = choose(path, good.size, bad.size).get
       Files.readAllBytes((if (isBad) bad(i) else good(i)).toPath)

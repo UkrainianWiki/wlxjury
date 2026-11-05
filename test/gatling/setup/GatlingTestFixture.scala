@@ -137,7 +137,7 @@ object GatlingTestFixture {
       // -Dui.images=docs (the user guides' screenshots only): the stub serves the photos cached
       // by browser-test/docs-photos.py (DocsPhotos) instead of the grey placeholder
       val docs = sys.props.get("ui.images").contains("docs")
-      val photo = if (docs) Some(DocsPhotos.load(new java.io.File("target/docs-photos"))) else None
+      val photo = if (docs) Some(DocsPhotos.load(new java.io.File("target/docs-photos"), DocsPhotos.lists(sys.props.get("ui.photos")))) else None
       val png = {
         val image = new java.awt.image.BufferedImage(640, 480, java.awt.image.BufferedImage.TYPE_INT_RGB)
         val g = image.createGraphics()

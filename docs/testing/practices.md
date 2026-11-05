@@ -452,8 +452,9 @@ fetching from a placeholder stub in its JVM, never from Commons (`-Dui.csp=produ
 The user guides' screenshots (`docs-screenshots.spec.js`, `DOCS_SCREENSHOTS=1`) use a docs image
 mode instead: `UI_IMAGES=docs node fixture-server.mjs start` passes `-Dui.images=docs`, and the stub
 then serves the CC0 and public-domain photos that `browser-test/docs-photos.py` cached under
-`target/docs-photos/` (a file name always maps to the same photo; one file in four gets a degraded
-one: `DocsPhotos`). The browser guard keeps the proxy's photos in that run and fetches the upload
+`target/docs-photos/` (a file name always maps to the same photo for the same lists; one file in
+four gets a degraded one: `DocsPhotos`). `DOCS_PHOTOS` names the lists (`wlm-ua`, `wlm-intl`,
+`wle-ua`, `wle-intl`; default `wlm-ua,wlm-intl`): one contest's photos per screenshot. The browser guard keeps the proxy's photos in that run and fetches the upload
 host's images from the proxy. Normal runs and CI keep the grey stub; the photos are never committed.
 
 **10.3 Back after a vote, without routes.** Any Playwright route turns the browser's HTTP cache

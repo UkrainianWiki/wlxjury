@@ -31,8 +31,10 @@ const CREDENTIALS = ['COMMONS_USER', 'COMMONS_PASSWORD', 'SCALAWIKI_LOGIN', 'SCA
 // UI_IMAGES=docs (the user guides' screenshots, docs/user/images/README.md): the photos that
 // docs-photos.py cached instead of the grey stub; anything else keeps the stub
 const IMAGES = process.env.UI_IMAGES === 'docs' ? 'docs' : 'stub';
+// DOCS_PHOTOS: the photo lists of docs mode (wlm-ua, wlm-intl, wle-ua, wle-intl, comma separated; default wlm-ua,wlm-intl)
+const PHOTOS = (process.env.DOCS_PHOTOS || 'wlm-ua,wlm-intl').replace(/[^a-z,-]/g, '');
 const SBT_COMMANDS = [
-  `set Test / javaOptions ++= Seq("-Xmx1g", "-Dfile.encoding=UTF-8", "-Dui.csp=production", "-Dui.csrf=on", "-Dui.images=${IMAGES}")`,
+  `set Test / javaOptions ++= Seq("-Xmx1g", "-Dfile.encoding=UTF-8", "-Dui.csp=production", "-Dui.csrf=on", "-Dui.images=${IMAGES}", "-Dui.photos=${PHOTOS}")`,
   // Play's Assets serves public/ from the classpath, which the test classpath lacks
   'set Test / unmanagedClasspath += Attributed.blank((Assets / packageBin).value)',
   'Test/runMain gatling.setup.UiShotsServer',

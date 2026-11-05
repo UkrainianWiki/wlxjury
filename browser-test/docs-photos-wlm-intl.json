@@ -1,0 +1,844 @@
+{
+ "note": "Public-domain and CC0 photos from Wikimedia Commons, fetched by browser-test/docs-photos.py into target/docs-photos/ (never committed). Licences are checked again at fetch time.",
+ "width": 1280,
+ "photos": [
+  {
+   "title": "File:20160922Weinbergweg 6 Saarbruecken2.jpg",
+   "license": "CC0",
+   "author": "AnRo0002",
+   "theme": "monument",
+   "contest": "Wiki Loves Monuments",
+   "year": 2016,
+   "country": "Germany"
+  },
+  {
+   "title": "File:Haironville (Meuse) pont (03).jpg",
+   "license": "CC0",
+   "author": "Havang(nl)",
+   "theme": "monument",
+   "contest": "Wiki Loves Monuments",
+   "year": 2016,
+   "country": "France"
+  },
+  {
+   "title": "File:Hochbahn.U12.Gleispark.3.jpg",
+   "license": "CC0",
+   "author": "Membeth",
+   "theme": "monument",
+   "contest": "Wiki Loves Monuments",
+   "year": 2015,
+   "country": "Germany"
+  },
+  {
+   "title": "File:Langerwehe Alte Kirche 2017 013.jpg",
+   "license": "CC0",
+   "author": "Klaus Graf",
+   "theme": "monument",
+   "contest": "Wiki Loves Monuments",
+   "year": 2017,
+   "country": "Germany"
+  },
+  {
+   "title": "File:Zillestraße 89.2.jpg",
+   "license": "CC0",
+   "author": "Hiddenhauser",
+   "theme": "monument",
+   "contest": "Wiki Loves Monuments",
+   "year": 2016,
+   "country": "Germany"
+  },
+  {
+   "title": "File:Кинешма - Дом Миндовских 01.jpg",
+   "license": "CC0",
+   "author": "Александр Сигачёв",
+   "theme": "monument",
+   "contest": "Wiki Loves Monuments",
+   "year": 2016,
+   "country": "Russia"
+  },
+  {
+   "title": "File:Ammergauer Straße 32 bjs190914-02.jpg",
+   "license": "CC0",
+   "author": "Bjs",
+   "theme": "monument",
+   "contest": "Wiki Loves Monuments",
+   "year": 2019,
+   "country": "Germany"
+  },
+  {
+   "title": "File:Amtsrichterhaus bjs120926-01.jpg",
+   "license": "CC0",
+   "author": "Bjs",
+   "theme": "monument",
+   "contest": "Wiki Loves Monuments",
+   "year": 2019,
+   "country": "Germany"
+  },
+  {
+   "title": "File:Bielefeld - Sparrenburg - 3.jpg",
+   "license": "CC0",
+   "author": "Ath",
+   "theme": "monument",
+   "contest": "Wiki Loves Monuments",
+   "year": 2018,
+   "country": "Germany"
+  },
+  {
+   "title": "File:Boker-Heide-Kanal - Thune-Aquädukt - 2.jpg",
+   "license": "CC0",
+   "author": "Ath",
+   "theme": "landscape",
+   "contest": "Wiki Loves Monuments",
+   "year": 2018,
+   "country": "Germany"
+  },
+  {
+   "title": "File:Bow of fishing boat Frifararen at Vikarvet Museum.jpg",
+   "license": "CC0",
+   "author": "W.carter",
+   "theme": "landscape",
+   "contest": "Wiki Loves Monuments",
+   "year": 2019,
+   "country": "Sweden"
+  },
+  {
+   "title": "File:Iggenhausen - St. Alexander.jpg",
+   "license": "CC0",
+   "author": "Ath",
+   "theme": "monument",
+   "contest": "Wiki Loves Monuments",
+   "year": 2019,
+   "country": "Germany"
+  },
+  {
+   "title": "File:Muemoosachstmartinneu012020c99.jpg",
+   "license": "CC0",
+   "author": "Fentriss",
+   "theme": "monument",
+   "contest": "Wiki Loves Monuments",
+   "year": 2020,
+   "country": "Germany"
+  },
+  {
+   "title": "File:Steinhagen - Brennerei Schlichte.jpg",
+   "license": "CC0",
+   "author": "Ath",
+   "theme": "monument",
+   "contest": "Wiki Loves Monuments",
+   "year": 2019,
+   "country": "Germany"
+  },
+  {
+   "title": "File:Urftstaumauer 13.jpg",
+   "license": "CC0",
+   "author": "Leonhard Lenz",
+   "theme": "landscape",
+   "contest": "Wiki Loves Monuments",
+   "year": 2019,
+   "country": "Germany"
+  },
+  {
+   "title": "File:Urftstaumauer 21.jpg",
+   "license": "CC0",
+   "author": "Leonhard Lenz",
+   "theme": "landscape",
+   "contest": "Wiki Loves Monuments",
+   "year": 2019,
+   "country": "Germany"
+  },
+  {
+   "title": "File:Gråbrödraklostret i Ystad 03.jpg",
+   "license": "CC0",
+   "author": "\n\nThis image was produced by me, David Castor (user:dcastor). The pictures I sub",
+   "theme": "monument",
+   "contest": "Wiki Loves Monuments",
+   "year": 2021,
+   "country": "Sweden"
+  },
+  {
+   "title": "File:20180920Großer Weiher.jpg",
+   "license": "CC0",
+   "author": "AnRo0002",
+   "theme": "monument",
+   "contest": "Wiki Loves Monuments",
+   "year": 2018,
+   "country": "Germany"
+  },
+  {
+   "title": "File:Hof 8 Universität Wien 2022-08-08 03.jpg",
+   "license": "CC0",
+   "author": "Leonhard Lenz",
+   "theme": "monument",
+   "contest": "Wiki Loves Monuments",
+   "year": 2023,
+   "country": "Austria"
+  },
+  {
+   "title": "File:Kastanienallee Park Putbus 2021-09-12 03.jpg",
+   "license": "CC0",
+   "author": "Leonhard Lenz",
+   "theme": "monument",
+   "contest": "Wiki Loves Monuments",
+   "year": 2021,
+   "country": "Germany"
+  },
+  {
+   "title": "File:MD.BS.Sadaclia - Monument în memoria consătenilor căzuți în război (1941-1945) - jun 2023 - 02.jpg",
+   "license": "CC0",
+   "author": "Gikü",
+   "theme": "landscape",
+   "contest": "Wiki Loves Monuments",
+   "year": 2023,
+   "country": "Moldova"
+  },
+  {
+   "title": "File:MD.C.C - str. A. Plămădeală, 2 - Vilă urbană - oct 2021 - 05.jpg",
+   "license": "CC0",
+   "author": "Gikü",
+   "theme": "landscape",
+   "contest": "Wiki Loves Monuments",
+   "year": 2021,
+   "country": "Moldova"
+  },
+  {
+   "title": "File:MD.CS.Căinari - Biserica „Sf. Arhangheli Mihail și Gavriil” - may 2022 - 07.jpg",
+   "license": "CC0",
+   "author": "Gikü",
+   "theme": "monument",
+   "contest": "Wiki Loves Monuments",
+   "year": 2022,
+   "country": "Moldova"
+  },
+  {
+   "title": "File:Nordparterre bjs090909-01.jpg",
+   "license": "CC0",
+   "author": "Bjs",
+   "theme": "monument",
+   "contest": "Wiki Loves Monuments",
+   "year": 2021,
+   "country": "Germany"
+  },
+  {
+   "title": "File:Sipoteni La Șanț - cetățuie. Copac într-o râpă formată de alunecările de teren (2).jpg",
+   "license": "CC0",
+   "author": "TotalAnarchy",
+   "theme": "landscape",
+   "contest": "Wiki Loves Monuments",
+   "year": 2023,
+   "country": "Moldova"
+  },
+  {
+   "title": "File:Windischbach Aquädukt 2022-08-06 04.jpg",
+   "license": "CC0",
+   "author": "Leonhard Lenz",
+   "theme": "monument",
+   "contest": "Wiki Loves Monuments",
+   "year": 2023,
+   "country": "Austria"
+  },
+  {
+   "title": "File:Biserica din Hîrtopul Mare 07.jpg",
+   "license": "CC0",
+   "author": "VictorCiobanu",
+   "theme": "monument",
+   "contest": "Wiki Loves Monuments",
+   "year": 2024,
+   "country": "Moldova"
+  },
+  {
+   "title": "File:Burgruine Aggstein im Sonnenuntergang.jpg",
+   "license": "CC0",
+   "author": "Felixpauli",
+   "theme": "monument",
+   "contest": "Wiki Loves Monuments",
+   "year": 2024,
+   "country": "Austria"
+  },
+  {
+   "title": "File:Elles megaliths.jpg",
+   "license": "CC0",
+   "author": "Smailtn",
+   "theme": "landscape",
+   "contest": "Wiki Loves Monuments",
+   "year": 2025,
+   "country": "Tunisia"
+  },
+  {
+   "title": "File:Gamla Uppsala August 2025 01.jpg",
+   "license": "CC0",
+   "author": "ArildV ",
+   "theme": "landscape",
+   "contest": "Wiki Loves Monuments",
+   "year": 2025,
+   "country": "Sweden"
+  },
+  {
+   "title": "File:MD.BR.Bulboaca - Biserica „Sf. Nicolae” cu școala parohială - jul 2024 - 28.jpg",
+   "license": "CC0",
+   "author": "Gikü",
+   "theme": "monument",
+   "contest": "Wiki Loves Monuments",
+   "year": 2024,
+   "country": "Moldova"
+  },
+  {
+   "title": "File:MD.BS.Carabetovca - Monument în memoria consătenilor căzuți în război (1941-1945) - jun 2023 - 13.jpg",
+   "license": "CC0",
+   "author": "Gikü",
+   "theme": "monument",
+   "contest": "Wiki Loves Monuments",
+   "year": 2023,
+   "country": "Moldova"
+  },
+  {
+   "title": "File:MD.SR.Soloneț - Conac cu parc al lui Bjozowsky - apr 2023 - 72.jpg",
+   "license": "CC0",
+   "author": "Gikü",
+   "theme": "landscape",
+   "contest": "Wiki Loves Monuments",
+   "year": 2023,
+   "country": "Moldova"
+  },
+  {
+   "title": "File:Remote view of the Amöneburg mountain 2020-10-07 09.jpg",
+   "license": "CC0",
+   "author": "Leonhard Lenz",
+   "theme": "monument",
+   "contest": "Wiki Loves Monuments",
+   "year": 2025,
+   "country": "Germany"
+  },
+  {
+   "title": "File:Seehof 95 Wegkapelle (Hofkirchen).jpg",
+   "license": "CC0",
+   "author": "Gliwi",
+   "theme": "monument",
+   "contest": "Wiki Loves Monuments",
+   "year": 2025,
+   "country": "Germany"
+  },
+  {
+   "title": "File:View from Frauenberg at Franziskanerkloster Fulda 2025-08-31 09.jpg",
+   "license": "CC0",
+   "author": "Leonhard Lenz",
+   "theme": "landscape",
+   "contest": "Wiki Loves Monuments",
+   "year": 2025,
+   "country": "Germany"
+  },
+  {
+   "title": "File:Bar, Stadthalle Görlitz 2.jpg",
+   "license": "CC0",
+   "author": "ubahnverleih",
+   "theme": "monument",
+   "contest": "Wiki Loves Monuments",
+   "year": 2015,
+   "country": "Germany"
+  },
+  {
+   "title": "File:Bautzener Straße 2, Uhyst.jpg",
+   "license": "CC0",
+   "author": "ubahnverleih",
+   "theme": "monument",
+   "contest": "Wiki Loves Monuments",
+   "year": 2015,
+   "country": "Germany"
+  },
+  {
+   "title": "File:Heimatmuseum Großröhrsdorf 150325 IMG 6260.JPG",
+   "license": "CC0",
+   "author": "Anika",
+   "theme": "monument",
+   "contest": "Wiki Loves Monuments",
+   "year": 2015,
+   "country": "Germany"
+  },
+  {
+   "title": "File:Konsulplatz 1, Görlitz.jpg",
+   "license": "CC0",
+   "author": "ubahnverleih",
+   "theme": "monument",
+   "contest": "Wiki Loves Monuments",
+   "year": 2015,
+   "country": "Germany"
+  },
+  {
+   "title": "File:Konsulplatz 6, Görlitz.jpg",
+   "license": "CC0",
+   "author": "ubahnverleih",
+   "theme": "monument",
+   "contest": "Wiki Loves Monuments",
+   "year": 2015,
+   "country": "Germany"
+  },
+  {
+   "title": "File:Mariahilfkapelle beim Oberganischger 2.JPG",
+   "license": "CC0",
+   "author": "Plentn",
+   "theme": "monument",
+   "contest": "Wiki Loves Monuments",
+   "year": 2015,
+   "country": "South Tyrol"
+  },
+  {
+   "title": "File:Marmorbadbrücke beim Auedamm in Kassel.jpg",
+   "license": "CC0",
+   "author": "XenonX3",
+   "theme": "monument",
+   "contest": "Wiki Loves Monuments",
+   "year": 2015,
+   "country": "Germany"
+  },
+  {
+   "title": "File:Paderborn-Galerie Am Abdinghof - Kreuzgang.jpg",
+   "license": "CC0",
+   "author": "Ath",
+   "theme": "monument",
+   "contest": "Wiki Loves Monuments",
+   "year": 2015,
+   "country": "Germany"
+  },
+  {
+   "title": "File:Saxoniastraße 12-14, Dresden.jpg",
+   "license": "CC0",
+   "author": "ubahnverleih",
+   "theme": "monument",
+   "contest": "Wiki Loves Monuments",
+   "year": 2015,
+   "country": "Germany"
+  },
+  {
+   "title": "File:Schrotholzscheune Hauptstraße 1, Uhyst.jpg",
+   "license": "CC0",
+   "author": "ubahnverleih",
+   "theme": "monument",
+   "contest": "Wiki Loves Monuments",
+   "year": 2015,
+   "country": "Germany"
+  },
+  {
+   "title": "File:Temple (Paris Metro).JPG",
+   "license": "CC0",
+   "author": "Benoît Prieur",
+   "theme": "monument",
+   "contest": "Wiki Loves Monuments",
+   "year": 2015,
+   "country": "France"
+  },
+  {
+   "title": "File:20180826Seepferd-Gruppe Schwetzingen1.jpg",
+   "license": "CC0",
+   "author": "AnRo0002",
+   "theme": "monument",
+   "contest": "Wiki Loves Monuments",
+   "year": 2018,
+   "country": "Germany"
+  },
+  {
+   "title": "File:Kachtenhausen - Haferbachstraße 66.jpg",
+   "license": "CC0",
+   "author": "Ath",
+   "theme": "monument",
+   "contest": "Wiki Loves Monuments",
+   "year": 2018,
+   "country": "Germany"
+  },
+  {
+   "title": "File:Am Mühlgraben 1, Löbau.jpg",
+   "license": "CC0",
+   "author": "ubahnverleih",
+   "theme": "monument",
+   "contest": "Wiki Loves Monuments",
+   "year": 2016,
+   "country": "Germany"
+  },
+  {
+   "title": "File:Asfeld (Ardennes) Église Saint-Didier intérieur.jpg",
+   "license": "CC0",
+   "author": "Havang(nl)",
+   "theme": "monument",
+   "contest": "Wiki Loves Monuments",
+   "year": 2016,
+   "country": "France"
+  },
+  {
+   "title": "File:Wiedenbrück - In der Halle 2 (2).jpg",
+   "license": "CC0",
+   "author": "Ath",
+   "theme": "monument",
+   "contest": "Wiki Loves Monuments",
+   "year": 2016,
+   "country": "Germany"
+  },
+  {
+   "title": "File:20180902Puttenbassin Schwetzingen1.jpg",
+   "license": "CC0",
+   "author": "AnRo0002",
+   "theme": "monument",
+   "contest": "Wiki Loves Monuments",
+   "year": 2018,
+   "country": "Germany"
+  },
+  {
+   "title": "File:Wohnturm beim Steifler in Glaning.jpg",
+   "license": "CC0",
+   "author": "Mai-Sachme",
+   "theme": "monument",
+   "contest": "Wiki Loves Monuments",
+   "year": 2016,
+   "country": "South Tyrol"
+  },
+  {
+   "title": "File:Église Saint-Quentin de Contrisson MH (01).jpg",
+   "license": "CC0",
+   "author": "Havang(nl)",
+   "theme": "monument",
+   "contest": "Wiki Loves Monuments",
+   "year": 2016,
+   "country": "France"
+  },
+  {
+   "title": "File:Кинешма - Площадь революции 2.jpg",
+   "license": "CC0",
+   "author": "Александр Сигачёв",
+   "theme": "monument",
+   "contest": "Wiki Loves Monuments",
+   "year": 2016,
+   "country": "Russia"
+  },
+  {
+   "title": "File:20170901Welde Braeu Schwetzingen.jpg",
+   "license": "CC0",
+   "author": "AnRo0002",
+   "theme": "monument",
+   "contest": "Wiki Loves Monuments",
+   "year": 2017,
+   "country": "Germany"
+  },
+  {
+   "title": "File:Bar-le-Duc (Meuse) église Saint-Étienne, chemin de croix, station 01.jpg",
+   "license": "CC0",
+   "author": "Havang(nl)",
+   "theme": "monument",
+   "contest": "Wiki Loves Monuments",
+   "year": 2016,
+   "country": "France"
+  },
+  {
+   "title": "File:Delbrück - Kirchplatz 10.jpg",
+   "license": "CC0",
+   "author": "Ath",
+   "theme": "monument",
+   "contest": "Wiki Loves Monuments",
+   "year": 2017,
+   "country": "Germany"
+  },
+  {
+   "title": "File:Kermeterstollen tower Urftsee 01.jpg",
+   "license": "CC0",
+   "author": "Leonhard Lenz",
+   "theme": "monument",
+   "contest": "Wiki Loves Monuments",
+   "year": 2019,
+   "country": "Germany"
+  },
+  {
+   "title": "File:Schloß Holte - Schloss - Innenhof.jpg",
+   "license": "CC0",
+   "author": "Ath",
+   "theme": "monument",
+   "contest": "Wiki Loves Monuments",
+   "year": 2018,
+   "country": "Germany"
+  },
+  {
+   "title": "File:Abbaye du Thoronet, le cloître extérieur. Var.jpg",
+   "license": "CC0",
+   "author": "André ALLIOT",
+   "theme": "monument",
+   "contest": "Wiki Loves Monuments",
+   "year": 2017,
+   "country": "France"
+  },
+  {
+   "title": "File:Obere Dorfstraße 36, Ebersdorf (Löbau) (1).jpg",
+   "license": "CC0",
+   "author": "ubahnverleih",
+   "theme": "monument",
+   "contest": "Wiki Loves Monuments",
+   "year": 2016,
+   "country": "Germany"
+  },
+  {
+   "title": "File:Paderborn - Dom - Rothodenkmal - 7.jpg",
+   "license": "CC0",
+   "author": "Ath",
+   "theme": "monument",
+   "contest": "Wiki Loves Monuments",
+   "year": 2017,
+   "country": "Germany"
+  },
+  {
+   "title": "File:Paderborn - Geroldskapelle - 4.jpg",
+   "license": "CC0",
+   "author": "Ath",
+   "theme": "monument",
+   "contest": "Wiki Loves Monuments",
+   "year": 2017,
+   "country": "Germany"
+  },
+  {
+   "title": "File:Tramwaycablebuilding2 - Flickr - socialgalavant.jpg",
+   "license": "CC0",
+   "author": "Kayla Ferguson",
+   "theme": "monument",
+   "contest": "Wiki Loves Monuments",
+   "year": 2017,
+   "country": "Colorado"
+  },
+  {
+   "title": "File:Villa Suzanne - PA15000043 - Aurillac - 2014 (04).jpg",
+   "license": "CC0",
+   "author": "Jean-Frédéric",
+   "theme": "monument",
+   "contest": "Wiki Loves Monuments",
+   "year": 2017,
+   "country": "France"
+  },
+  {
+   "title": "File:Wall in front of 33 Brandling Park, Newcastle upon Tyne.jpg",
+   "license": "CC0",
+   "author": "Audesome",
+   "theme": "monument",
+   "contest": "Wiki Loves Monuments",
+   "year": 2017,
+   "country": "England"
+  },
+  {
+   "title": "File:Wewelsburg (Ortschaft) - 6-bogige Almebrücke.jpg",
+   "license": "CC0",
+   "author": "Ath",
+   "theme": "monument",
+   "contest": "Wiki Loves Monuments",
+   "year": 2016,
+   "country": "Germany"
+  },
+  {
+   "title": "File:20180905Casimirianum Neustadt1.jpg",
+   "license": "CC0",
+   "author": "AnRo0002",
+   "theme": "monument",
+   "contest": "Wiki Loves Monuments",
+   "year": 2018,
+   "country": "Germany"
+  },
+  {
+   "title": "File:Wiedenbrück - Lange Straße 35 - Hausmarken.jpg",
+   "license": "CC0",
+   "author": "Ath",
+   "theme": "monument",
+   "contest": "Wiki Loves Monuments",
+   "year": 2017,
+   "country": "Germany"
+  },
+  {
+   "title": "File:20180821Zähringerstraße 23 Schwetzingen1.jpg",
+   "license": "CC0",
+   "author": "AnRo0002",
+   "theme": "monument",
+   "contest": "Wiki Loves Monuments",
+   "year": 2018,
+   "country": "Germany"
+  },
+  {
+   "title": "File:20180826Römisches Aquädukt4.jpg",
+   "license": "CC0",
+   "author": "AnRo0002",
+   "theme": "monument",
+   "contest": "Wiki Loves Monuments",
+   "year": 2018,
+   "country": "Germany"
+  },
+  {
+   "title": "File:20180920Orangerieparterre Schwetzingen1.jpg",
+   "license": "CC0",
+   "author": "AnRo0002",
+   "theme": "monument",
+   "contest": "Wiki Loves Monuments",
+   "year": 2018,
+   "country": "Germany"
+  },
+  {
+   "title": "File:Fleming Memorial Hospital.jpg",
+   "license": "CC0",
+   "author": "Audesome",
+   "theme": "monument",
+   "contest": "Wiki Loves Monuments",
+   "year": 2017,
+   "country": "England"
+  },
+  {
+   "title": "File:Geschützgießerei Spandau from Sternbergpromenade 03.jpg",
+   "license": "CC0",
+   "author": "Leonhard Lenz",
+   "theme": "monument",
+   "contest": "Wiki Loves Monuments",
+   "year": 2019,
+   "country": "Germany"
+  },
+  {
+   "title": "File:Lemgo - Leopoldstraße 34.jpg",
+   "license": "CC0",
+   "author": "Ath",
+   "theme": "monument",
+   "contest": "Wiki Loves Monuments",
+   "year": 2019,
+   "country": "Germany"
+  },
+  {
+   "title": "File:Rheda - Moosstraße 4.jpg",
+   "license": "CC0",
+   "author": "Ath",
+   "theme": "monument",
+   "contest": "Wiki Loves Monuments",
+   "year": 2018,
+   "country": "Germany"
+  },
+  {
+   "title": "File:Außenlager Falkensee des KZ Sachsenhausen 04.jpg",
+   "license": "CC0",
+   "author": "Leonhard Lenz",
+   "theme": "monument",
+   "contest": "Wiki Loves Monuments",
+   "year": 2019,
+   "country": "Germany"
+  },
+  {
+   "title": "File:Tugboat Harry at home in Lysekil harbor 5.jpg",
+   "license": "CC0",
+   "author": "W.carter",
+   "theme": "monument",
+   "contest": "Wiki Loves Monuments",
+   "year": 2019,
+   "country": "Sweden"
+  },
+  {
+   "title": "File:Volkspark Jungfernheide 06.jpg",
+   "license": "CC0",
+   "author": "Leonhard Lenz",
+   "theme": "monument",
+   "contest": "Wiki Loves Monuments",
+   "year": 2019,
+   "country": "Germany"
+  },
+  {
+   "title": "File:Dunster (2020-09-16) 25.jpg",
+   "license": "CC0",
+   "author": "Simon Cobb",
+   "theme": "monument",
+   "contest": "Wiki Loves Monuments",
+   "year": 2020,
+   "country": "England"
+  },
+  {
+   "title": "File:MD.C.C - Complexul de clădiri ale fostului spital evreiesc (150B) - oct 2021 - 04.jpg",
+   "license": "CC0",
+   "author": "Gikü",
+   "theme": "monument",
+   "contest": "Wiki Loves Monuments",
+   "year": 2021,
+   "country": "Moldova"
+  },
+  {
+   "title": "File:MD.C.C - Fondul construit str. Octavian Goga - oct 2021 - 07.jpg",
+   "license": "CC0",
+   "author": "Gikü",
+   "theme": "monument",
+   "contest": "Wiki Loves Monuments",
+   "year": 2021,
+   "country": "Moldova"
+  },
+  {
+   "title": "File:MD.C.C - str. Mitropolit Petru Movilă, 27 - Casă de raport - oct 2021 - 01.jpg",
+   "license": "CC0",
+   "author": "Gikü",
+   "theme": "monument",
+   "contest": "Wiki Loves Monuments",
+   "year": 2021,
+   "country": "Moldova"
+  },
+  {
+   "title": "File:Mueriwastr10072019c97.jpg",
+   "license": "CC0",
+   "author": "Fentriss",
+   "theme": "monument",
+   "contest": "Wiki Loves Monuments",
+   "year": 2020,
+   "country": "Germany"
+  },
+  {
+   "title": "File:Peckelsheim - Zehntscheune - 2.jpg",
+   "license": "CC0",
+   "author": "Ath",
+   "theme": "monument",
+   "contest": "Wiki Loves Monuments",
+   "year": 2020,
+   "country": "Germany"
+  },
+  {
+   "title": "File:117 Vasile Lupu St, Orhei, Republic of Moldova - 50374485891.jpg",
+   "license": "CC0",
+   "author": "photobankmd",
+   "theme": "monument",
+   "contest": "Wiki Loves Monuments",
+   "year": 2022,
+   "country": "Moldova"
+  },
+  {
+   "title": "File:Exhibition Park bandstand, late afternoon.jpg",
+   "license": "CC0",
+   "author": "Audesome",
+   "theme": "monument",
+   "contest": "Wiki Loves Monuments",
+   "year": 2017,
+   "country": "England"
+  },
+  {
+   "title": "File:KdF-Seebad Rügen 2021-09-13 18.jpg",
+   "license": "CC0",
+   "author": "Leonhard Lenz",
+   "theme": "monument",
+   "contest": "Wiki Loves Monuments",
+   "year": 2021,
+   "country": "Germany"
+  },
+  {
+   "title": "File:MD.C.C - Casa arhitectului Cupcea - mar 2021 - 04.jpg",
+   "license": "CC0",
+   "author": "Gikü",
+   "theme": "monument",
+   "contest": "Wiki Loves Monuments",
+   "year": 2021,
+   "country": "Moldova"
+  },
+  {
+   "title": "File:MD.C.C - Fondul construit str. Alexandru Hîjdeu - oct 2021 - 07.jpg",
+   "license": "CC0",
+   "author": "Gikü",
+   "theme": "monument",
+   "contest": "Wiki Loves Monuments",
+   "year": 2021,
+   "country": "Moldova"
+  },
+  {
+   "title": "File:MD.C.C - str. București, 34 - Casă cu pasaj comun - sep 2021 - 04.jpg",
+   "license": "CC0",
+   "author": "Gikü",
+   "theme": "monument",
+   "contest": "Wiki Loves Monuments",
+   "year": 2021,
+   "country": "Moldova"
+  }
+ ],
+ "degraded": []
+}

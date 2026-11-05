@@ -93,17 +93,17 @@ test.describe('the guides\' screenshots', () => {
   test('sign-in and juror pages', async ({ contextAs, fixture }) => {
     const { juror } = fixture.accounts;
     await shot(contextAs, null, '/auth', 'juror-sign-in');
-    await shot(contextAs, 'juror', galleryPath(fixture.roundBinaryId, juror.id), 'juror-gallery-binary', { height: 400 });
-    await shot(contextAs, 'juror', galleryPath(fixture.roundRatingId, juror.id), 'juror-gallery-rated', { height: 400 });
+    await shot(contextAs, 'juror', galleryPath(fixture.roundBinaryId, juror.id), 'juror-gallery-binary', { height: 200 });
+    await shot(contextAs, 'juror', galleryPath(fixture.roundRatingId, juror.id), 'juror-gallery-rated', { height: 250 });
     await shot(contextAs, 'juror', galleryPath(fixture.roundBinaryId, juror.id), 'juror-gallery-top-bar', { height: 56 });
-    await shot(contextAs, 'juror', largePath(fixture.roundBinaryId, juror.id, juror.pageId), 'juror-large-view-binary', { height: 560 });
-    await shot(contextAs, 'juror', largePath(fixture.roundRatingId, juror.id, juror.ratedPageId), 'juror-large-view-rated', { height: 560 });
+    await shot(contextAs, 'juror', largePath(fixture.roundBinaryId, juror.id, juror.pageId), 'juror-large-view-binary', { height: 520 });
+    await shot(contextAs, 'juror', largePath(fixture.roundRatingId, juror.id, juror.ratedPageId), 'juror-large-view-rated', { height: 520 });
     await shot(contextAs, 'juror', `/users/edit/${juror.id}`, 'juror-profile', { full: true });
   });
 
   test('organizer pages', async ({ contextAs, fixture }) => {
     await shot(contextAs, 'organizer', `/roundstat/${fixture.roundBinaryId}`, 'organizer-round-statistics');
-    await shot(contextAs, 'organizer', `/byrate/round/${fixture.roundRatingId}/user/0/page/1`, 'organizer-results-by-rate', { height: 600 });
+    await shot(contextAs, 'organizer', `/byrate/round/${fixture.roundRatingId}/user/0/page/1`, 'organizer-results-by-rate', { height: 400 });
     await shot(contextAs, 'organizer', `/filelist/round/${fixture.roundRatingId}/user/0/page/1`, 'organizer-results-file-list');
     await shot(contextAs, 'organizer', `/admin/rounds/${fixture.roundBinaryId}/conflicts`, 'organizer-conflicts', { height: 680 });
   });
@@ -221,7 +221,7 @@ test.describe('the guides\' screenshots', () => {
       await view.goto(largePath(fixture.roundRatingId, juror.id, juror.ratedPageId));
       await expect(view.getByRole('button', { name: /Worst mark/ }).first()).toBeVisible();
       await view.waitForLoadState('networkidle');
-      await top(view, path.join(OUT_DIR, 'juror-large-view-worst-mark.png'), 560);
+      await top(view, path.join(OUT_DIR, 'juror-large-view-worst-mark.png'), 520);
       await context.close();
     } finally {
       if (!was) await setOption(false);
