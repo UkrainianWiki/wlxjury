@@ -1,0 +1,14 @@
+@(link: db.scalikejdbc.AccountToken)(implicit messages: Messages)
+@* A set-password link's status for its admin (users page, edit page): active until its expiry,
+   used, expired or revoked, with the time, and how it was given (mailed or shared). *@
+@import db.scalikejdbc.AccountToken
+@defining(link.status) { status =>
+    <span class="link-status link-status-@status.key">
+        <span class="badge @{status match {
+            case _: AccountToken.Active => "text-bg-primary"
+            case _: AccountToken.Used => "text-bg-success"
+            case _ => "text-bg-secondary"
+        }}">@Messages("link.status." + status.key)</span>
+        @Messages("link.status." + status.key + ".at", views.LinkTimes.utc(status.at))
+    </span>
+}

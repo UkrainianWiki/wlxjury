@@ -105,6 +105,9 @@ POST        /users/:id/sessions/end                                             
 # an admin of the contest: a new invitation for a member or pending invitee with an unverified email
 POST        /users/:id/invite                                                       @controllers.UserController.reinvite(id: Long, contestId: Long)
 POST        /users/:id/invitation/cancel                                            @controllers.UserController.cancelInvitation(id: Long, contestId: Long)
+# root, or an admin of the contest for an account that is theirs alone: a link to share, shown once
+POST        /users/:id/invitation/share                                             @controllers.UserController.shareInvitation(id: Long, contestId: Long)
+POST        /users/:id/password/share                                               @controllers.UserController.sharePasswordLink(id: Long, contestId: Option[Long] ?= None)
 # the own profile's personal API tokens (POST forms with the CSRF token; the session only)
 POST        /users/tokens                                                           @controllers.UserController.createApiToken()
 POST        /users/tokens/revoke-all                                                @controllers.UserController.revokeAllApiTokens()

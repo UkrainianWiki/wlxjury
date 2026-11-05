@@ -12,7 +12,9 @@ import scala.util.control.NonFatal
 /** The links mailed to an account (V77, [[AccountTokenJdbc]]): an invitation and root's
   * password link set the password and prove the email; an email change's link proves the new
   * address. A link holds 32 random bytes; only their SHA-256 is stored. Single use, revocable,
-  * expiring, bound to the account and to the address it was sent to.
+  * expiring, bound to the account and to the address it was sent to. An invitation or a password
+  * link may instead be shared (V94, [[ShareLinkService]]): shown once to the admin or root who
+  * created it, to pass on; accepting one proves no email.
   *
   * Log lines (`security.account`) name accounts and links by id only: never an email, a name
   * or a token.
@@ -48,22 +50,25 @@ object AccountTokenService {
 
   def hash(token: String): String = ApiTokenService.hash(token)
 
-  /** A new link of the account, sent to `email`; its id and the token, to be mailed once. */
+  /** A new link of the account, sent to `email` (or, `shared`, shown to its creator to pass on,
+    * the account's address as it is now); its id and the token, to be mailed or shown once.
+    */
   def create(
       userId: Long,
       purpose: String,
       email: String,
       contestId: Option[Long] = None,
       role: Option[String] = None,
-      createdBy: Option[Long] = None
+      createdBy: Option[Long] = None,
+      shared: Boolean = false
   )(implicit session: DBSession = AutoSession): (Long, String) = {
     val token = generate()
     val id = AccountTokenJdbc.create(userId, purpose, hash(token), email.trim.toLowerCase, contestId, role, createdBy,
-      validSeconds(purpose))
+      validSeconds(purpose), shared)
     logger.info(
       s"account_token_created purpose=$purpose tokenId=$id accountId=$userId" +
         createdBy.fold("")(c => s" byAccountId=$c") + contestId.fold("")(c => s" contestId=$c") +
-        role.fold("")(r => s" role=$r"))
+        role.fold("")(r => s" role=$r") + (if (shared) " shared=true" else ""))
     (id, token)
   }
 
@@ -76,6 +81,10 @@ object AccountTokenService {
   case object AccountGone extends Refusal("account_missing")
   case object OtherAddress extends Refusal("email_changed")
   case object AddressTaken extends Refusal("email_taken")
+  /** A shared link whose creator may no longer create it for the account ([[ShareLinkService]]). */
+  case object CreatorNotAllowed extends Refusal("shared_link_creator_not_allowed")
+  /** A shared link of an account without an email while Wikimedia sign-in is offered. */
+  case object SignsInWithWikimedia extends Refusal("shared_link_signs_in_with_wikimedia")
 
   private def refused(refusal: Refusal, token: Option[AccountToken]): Left[Refusal, Nothing] = {
     val line = s"account_token_refused reason=${refusal.reason}" + token.fold("")(t => s" tokenId=${t.id} accountId=${t.userId}")
@@ -86,9 +95,10 @@ object AccountTokenService {
 
   /** The link and its account, if `token` is a live link of one of `purposes` whose account
     * exists (not deleted) and, for a link that sets the password, still has the address it
-    * was sent to.
+    * was sent to. `wikimediaSignIn`: Wikimedia sign-in is offered, so a shared link of an account
+    * without an email is refused ([[ShareLinkService]]: it signs in with Wikimedia).
     */
-  def check(token: String, purposes: Seq[String])(implicit
+  def check(token: String, purposes: Seq[String], wikimediaSignIn: Boolean = false)(implicit
       session: DBSession = AutoSession
   ): Either[Refusal, (AccountToken, User)] =
     if (!Format.matches(token)) {
@@ -98,34 +108,51 @@ object AccountTokenService {
       AccountTokenJdbc.findByHash(hash(token)) match {
         case None                                         => refused(Unknown, None)
         case Some(t) if !purposes.contains(t.purpose)     => refused(WrongPurpose, Some(t))
-        case Some(t)                                      => checked(t)
+        case Some(t)                                      => checked(t, wikimediaSignIn)
       }
 
-  private def checked(t: AccountToken)(implicit session: DBSession): Either[Refusal, (AccountToken, User)] =
+  private def checked(t: AccountToken, wikimediaSignIn: Boolean = false)(implicit
+      session: DBSession): Either[Refusal, (AccountToken, User)] =
     if (!t.live) refused(NotLive, Some(t))
     else
       User.findById(t.userId)(session).filter(_.deletedAt.isEmpty) match {
         case None => refused(AccountGone, Some(t))
         case Some(user) if AccountTokenJdbc.BoundToEmail.contains(t.purpose) && user.emailLo != t.email =>
           refused(OtherAddress, Some(t))
+        // a shared link only while its creator could still create it for the account: a root
+        // account, an admin, or a member of another contest since is no longer theirs to give
+        case Some(user) if t.shared && !ShareLinkService.creatorMayStillShare(t, user) =>
+          refused(CreatorNotAllowed, Some(t))
+        // nor, without an email, once Wikimedia sign-in is offered (configured since it was created)
+        case Some(user) if t.shared && wikimediaSignIn && user.emailLo.isEmpty =>
+          refused(SignsInWithWikimedia, Some(t))
         case Some(user) => Right(t -> user)
       }
 
   /** Accepts an invitation or a password link, in one transaction, the link's row locked:
     * the password becomes `passwordHash` (the old one stops working), and what accepting a link
-    * proves follows ([[proveEmail]]). The account, as stored now.
+    * proves follows ([[proveEmail]]; a shared link proves no email). The account, as stored now.
     */
-  def acceptPasswordLink(token: String, passwordHash: String): Either[Refusal, (AccountToken, User)] =
+  def acceptPasswordLink(token: String, passwordHash: String, wikimediaSignIn: Boolean = false)
+      : Either[Refusal, (AccountToken, User)] =
     if (!Format.matches(token)) Left(Malformed)
     else {
       // quiet: the statements bind the password hash, which must not reach the SQL log
       val result = User.quietTx { implicit session =>
+        // the account's row first, then the link's (the order of every transaction that locks
+        // both: ShareLinkService.create, UserService.sendChooseLink, acceptByProvider,
+        // confirmEmailChange; UserService.addToContest's the account's row alone), before
+        // the checks read its memberships: an add into another contest (UserService.addToContest,
+        // which takes the account's lock too) commits before them, and READ COMMITTED reads it,
+        // or waits for this acceptance
+        AccountTokenJdbc.findByHash(hash(token)).foreach(t => User.lockRow(t.userId))
         AccountTokenJdbc.lockByHash(hash(token)) match {
           case None                                                         => refused(Unknown, None)
           case Some(t) if !AccountTokenJdbc.SetsPassword.contains(t.purpose) => refused(WrongPurpose, Some(t))
           case Some(t) =>
-            checked(t).flatMap { case (link, user) =>
-              proveEmail(link, user, Some(passwordHash)).map { case (proven, line) => (link, proven, line) }
+            checked(t, wikimediaSignIn).flatMap { case (link, user) =>
+              proveEmail(link, user, Some(passwordHash), emailProven = !link.shared)
+                .map { case (proven, line) => (link, proven, line) }
             }
         }
       }
@@ -136,7 +163,7 @@ object AccountTokenService {
   /** Accepts the account's live invitation or password link by a Google or Wikimedia sign-in
     * whose provider verified `verifiedEmail` (the user's decision 1, review B3): for an account
     * without a password only, whose current email, the link's address and `verifiedEmail` are
-    * the same. In one transaction, the links' rows and then the account's locked: what accepting
+    * the same. In one transaction, the account's row and then the links' locked: what accepting
     * the link proves follows ([[proveEmail]], without a password), then `link` (the identity's
     * row, in the same transaction). The account as stored now; refused, changing nothing, without
     * such a link. Run again on a deadlock ([[db.scalikejdbc.WriteTx.retry]]): the body decides from
@@ -148,11 +175,13 @@ object AccountTokenService {
     try {
       val (proven, line) = db.scalikejdbc.WriteTx.write { implicit session =>
         val email = verifiedEmail.trim.toLowerCase
-        val links = AccountTokenJdbc.lockLive(userId, AccountTokenJdbc.SetsPassword, email)
+        // the account's row, then its links' (acceptPasswordLink's order)
         val user  = User.lockRow(userId).filter(_.deletedAt.isEmpty)
+        val links = AccountTokenJdbc.lockLive(userId, AccountTokenJdbc.SetsPassword, email)
         (links.headOption, user) match {
           case (Some(t), Some(u)) if u.password.isEmpty && u.emailLo == email && t.email == email =>
-            val (proven, line) = proveEmail(t, u, None).fold(_ => throw new Abort(None), identity)
+            // the provider verified the address: proven, whether the link was mailed or shared
+            val (proven, line) = proveEmail(t, u, None, emailProven = true).fold(_ => throw new Abort(None), identity)
             // the identity in the same transaction: a refusal undoes the proof too
             link(proven, session).fold(e => throw new Abort(Some(e)), _ => (proven, line))
           case _ => throw new Abort(None)
@@ -177,29 +206,42 @@ object AccountTokenService {
     * and every other unused link of the account, of any purpose (an email change a former holder
     * of the password asked for included, M1), is revoked. The account, as stored now, and the
     * acceptance's log line, for the caller to write after the commit.
+    *
+    * `emailProven` false (a shared link set the password: its holder got it from the link's
+    * creator, not from the address): the email and the wiki account become unverified, since
+    * the password's holder proved neither (otherwise another contest's admin could add the
+    * account directly, [[User.mayTakeAccessRole]], and the address's owner link a Google sign-in
+    * to it): a later add from another contest mails an invitation, whose acceptance sets the
+    * password again and verifies the email. A pending invitation gives its role only if the
+    * link's creator may give it in that contest too (the others are revoked with the rest).
     */
-  private def proveEmail(link: AccountToken, user: User, passwordHash: Option[String])(implicit
+  private def proveEmail(link: AccountToken, user: User, passwordHash: Option[String], emailProven: Boolean)(implicit
       session: DBSession
   ): Either[Refusal, (User, String)] = {
     val pending = AccountTokenJdbc.pendingInvitationsOf(user.getId, link.email)
     if (!AccountTokenJdbc.markUsed(link.id)) refused(NotLive, Some(link))
     else {
-      passwordHash match {
-        case Some(h) =>
+      (passwordHash, emailProven) match {
+        case (Some(h), true) =>
           sql"""UPDATE users SET password = $h, email_verified_at = NOW(3), auth_version = ${User.BumpAuthVersion}
                 WHERE id = ${user.getId}""".update.apply()
-        case None =>
+        case (Some(h), false) =>
+          sql"""UPDATE users SET password = $h, email_verified_at = NULL, wiki_account_verified_at = NULL,
+                  auth_version = ${User.BumpAuthVersion}
+                WHERE id = ${user.getId}""".update.apply()
+        case (None, _) =>
           sql"""UPDATE users SET email_verified_at = NOW(3), auth_version = ${User.BumpAuthVersion}
                 WHERE id = ${user.getId}""".update.apply()
       }
       val revokedApiCount = ApiTokenJdbc.revokeAll(user.getId)
       val unlinked = UserIdentityJdbc.deleteByUser(user.getId)
       val roles = pending.flatMap { p =>
-        val used = p.id == link.id || AccountTokenJdbc.markUsed(p.id)
+        val grantable = p.contestId.exists(c => emailProven || mayGrant(link.createdBy, c))
+        val used = p.id == link.id || grantable && AccountTokenJdbc.markUsed(p.id)
         for {
           contestId <- p.contestId
           role <- p.role
-          if used
+          if used && grantable
           if mayStillGrant(p, contestId) || { logger.warn(
             s"invitation_role_dropped reason=inviter_no_longer_admin tokenId=${p.id} accountId=${user.getId} " +
               s"contestId=$contestId"); false }
@@ -209,9 +251,10 @@ object AccountTokenService {
         }
       }
       val revokedLinks = AccountTokenJdbc.revokeUnused(user.getId, AccountTokenJdbc.AllPurposes)
-      val by = if (passwordHash.isDefined) "link" else "provider"
+      val by = if (passwordHash.isEmpty) "provider" else if (link.shared) "shared_link" else "link"
       val line =
         s"account_link_accepted purpose=${link.purpose} tokenId=${link.id} accountId=${user.getId} by=$by " +
+          s"emailProven=$emailProven " +
           s"apiTokensRevoked=$revokedApiCount identitiesUnlinked=$unlinked linksRevoked=$revokedLinks " +
           s"memberships=${roles.mkString(",")}"
       Right(User.findById(user.getId)(session).get -> line)
@@ -241,7 +284,11 @@ object AccountTokenService {
     * who has been removed since gives no role.
     */
   private def mayStillGrant(invitation: AccountToken, contestId: Long)(implicit session: DBSession): Boolean =
-    invitation.createdBy.flatMap(id => User.findById(id)(session)).filter(_.deletedAt.isEmpty).exists { sender =>
+    mayGrant(invitation.createdBy, contestId)
+
+  /** Whether the account `senderId` may give a role in the contest now: root, or its admin. */
+  private def mayGrant(senderId: Option[Long], contestId: Long)(implicit session: DBSession): Boolean =
+    senderId.flatMap(id => User.findById(id)(session)).filter(_.deletedAt.isEmpty).exists { sender =>
       sender.isRoot || UserContestJdbc.find(sender.getId, contestId).exists(_.role == User.ADMIN_ROLE)
     }
 
@@ -255,6 +302,9 @@ object AccountTokenService {
       try {
         var confirmed = Option.empty[String] // logged after the commit
         val result = DB.localTx { implicit session =>
+          // the account's row first, then the link's: every transaction's order (acceptPasswordLink),
+          // so that a share or an acceptance on the same account never deadlocks with this one
+          AccountTokenJdbc.findByHash(hash(token)).foreach(t => User.lockRow(t.userId))
           AccountTokenJdbc.lockByHash(hash(token)) match {
             case None                                                  => refused(Unknown, None)
             case Some(t) if t.purpose != AccountTokenJdbc.EmailChange => refused(WrongPurpose, Some(t))

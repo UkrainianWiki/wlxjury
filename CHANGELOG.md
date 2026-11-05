@@ -119,6 +119,20 @@ Developed 2026-11-02 to 2026-11-03, PRs #232–#236.
 - **"Rejected by at least N" in two modes** (admins; developed 2026-11-05, V93): a next round
   leaves out the files rejected by at least N jurors, as before, or takes only them, to review the
   rejected files in a round of their own; from a yes/no round's rejections or a rated round's ✗.
+- **Links to share for setting a password** (admins and root; developed 2026-11-05, V94): besides
+  sending an invitation or root's password reset by email, "Create a link to share" on the users
+  page (an invitation) or on an account's page (a new password) shows the same single-use link
+  once, with a copy button, its expiry and a warning to send it only to the person, privately;
+  a new link, by email or to share, makes the previous unused ones stop working. It also works
+  for accounts without an email, which then sign in by their wiki account. The users page lists
+  each account's latest invitation and an account's page its latest links as active (until
+  when), used, expired or revoked, and how they were given. Root may create one for any account;
+  a contest admin only for jurors and organizers whose every contest is one they administer (a
+  new password only for active members; a pending invitee gets the invitation's link). Using a
+  shared link marks the account's email and wiki account unverified, since nobody proved them:
+  an admin of another contest who adds it then sends an invitation by email, which the
+  address's owner accepts. Not offered for accounts without an email where Wikimedia sign-in is
+  available (they sign in with it).
 
 **Development**
 
@@ -224,7 +238,8 @@ Developed 2026-11-02 to 2026-11-03, PRs #232–#236.
 - **Migrations:** V85 gallery index, V86 timestamp definitions, V87 for the sign-in (#240);
   V88 `round_image_event`; V89 `round_image` counts; V90 `round.average_rule`; V91 `vote.rate`
   and `vote_aside.rate` `NOT NULL DEFAULT 0` (an online rebuild of each table; the NULL handling
-  in the code removed); V92 `round.worst_mark`; V93 `round.prev_rejected_mode`.
+  in the code removed); V92 `round.worst_mark`; V93 `round.prev_rejected_mode`; V94 `account_token.shared` (`ALGORITHM = INSTANT`;
+  rollback in `FlywayUpgradeSpec`, the live shared links revoked first).
 
 ## Deployed
 

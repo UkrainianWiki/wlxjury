@@ -234,7 +234,8 @@ class AccountInvitationSpec extends PlaySpecification with PlayTestDb with Accou
         // the users page lists the pending invitation
         val page = call(userController(mail).users(Some(10)),
           as(admin, Some(10))(FakeRequest(GET, "/admin/users?contestId=10")).withCSRFToken)
-        contentAsString(page) must contain("Invitations not accepted yet")
+        contentAsString(page) must contain("pending-invitations")
+        contentAsString(page) must contain("invitation-active")
         contentAsString(page) must contain("victim@example.com")
 
         status(accept(mail.lastToken, "owner-password")) === SEE_OTHER

@@ -121,12 +121,17 @@ class LoginController @Inject() (
     * is live; else the same "invalid link" page for any reason (N7).
     */
   def invitation(token: String): Action[AnyContent] = Action { implicit request =>
-    AccountTokenService.check(token, AccountTokenJdbc.SetsPassword) match {
+    AccountTokenService.check(token, AccountTokenJdbc.SetsPassword, oauthSettings.wikimediaConfigured) match {
       case Right((link, user)) =>
-        linkPage(Ok(views.html.invitation(setPasswordForm.fill((token, "", "")), user.password.isDefined, link.purpose)))
+        linkPage(Ok(views.html.invitation(setPasswordForm.fill((token, "", "")), user.password.isDefined, link.purpose,
+          wikiLogin(user))))
       case Left(_) => linkInvalid
     }
   }
+
+  /** An account without an email signs in by its wiki account (a shared link's): the page says so. */
+  private def wikiLogin(user: User): Option[String] =
+    if (user.emailLo.nonEmpty) None else services.ShareLinkService.loginName(user)
 
   /** Sets the password with an invitation or a password link (a POST with the CSRF token):
     * proves the email, ends the account's other sessions and API tokens, gives the roles of
@@ -143,26 +148,30 @@ class LoginController @Inject() (
   private[controllers] def acceptInvitationResult(deadline: Long)(implicit request: Request[AnyContent]): Result = {
     val bound = setPasswordForm.bindFromRequest()
     val token = bound("token").value.getOrElse("")
-    AccountTokenService.check(token, AccountTokenJdbc.SetsPassword) match {
+    AccountTokenService.check(token, AccountTokenJdbc.SetsPassword, oauthSettings.wikimediaConfigured) match {
       case Left(_) => linkInvalid
       case Right((link, user)) =>
         bound.fold(
           formWithErrors =>
-            linkPage(BadRequest(views.html.invitation(formWithErrors, user.password.isDefined, link.purpose))),
+            linkPage(BadRequest(views.html.invitation(formWithErrors, user.password.isDefined, link.purpose,
+              wikiLogin(user)))),
           { case (_, password, _) =>
             try {
               val hash = PasswordHasher.default.hash(password, deadline)
-              AccountTokenService.acceptPasswordLink(token, hash) match {
+              AccountTokenService.acceptPasswordLink(token, hash, oauthSettings.wikimediaConfigured) match {
                 case Left(_) => linkInvalid
                 case Right((accepted, account)) =>
                   // to the start page by a redirect: a reload must not post the form again
                   // no checkbox on this form: kept signed in, the sign-in form's default
-                  linkPage(signedIn(account, account.emailLo, Some(routes.LoginController.index.url), keep = true,
+                  // an account without an email (a shared link's) signs in by its wiki account
+                  val login = services.ShareLinkService.loginName(account).getOrElse(account.emailLo)
+                  linkPage(signedIn(account, login, Some(routes.LoginController.index.url), keep = true,
                     accepted.contestId))
               }
             } catch {
               case _: PasswordHasher.Busy =>
-                busy(views.html.invitation(bound.withGlobalError("signin.busy"), user.password.isDefined, link.purpose))
+                busy(views.html.invitation(bound.withGlobalError("signin.busy"), user.password.isDefined, link.purpose,
+                  wikiLogin(user)))
             }
           }
         )

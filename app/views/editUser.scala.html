@@ -3,7 +3,10 @@
         editUserForm: Form[db.scalikejdbc.User],
         contestId: Option[Long] = None,
         tokensCard: Option[controllers.ApiTokensCard] = None,
-        linkedAccountsCard: Option[controllers.LinkedAccountsCard] = None
+        linkedAccountsCard: Option[controllers.LinkedAccountsCard] = None,
+        passwordLinks: Seq[db.scalikejdbc.AccountToken] = Nil,
+        mayShareLink: Boolean = false,
+        signsInWithWikimedia: Option[String] = None
 )(implicit flash: Flash, messages: Messages, req: RequestHeader)
 
 @import helper._
@@ -163,6 +166,51 @@
                 <input type="submit" class="btn btn-outline-danger" value="@Messages("sessions.end")">
                 }
             </div>
+            }
+
+            @* another account: its set-password links with their status, and "Create a link to share"
+               (a password link as root's mailed reset, shown once) where this user may create one *@
+            @if(!ownProfile && (mayShareLink || passwordLinks.nonEmpty || signsInWithWikimedia.nonEmpty)) {
+            <section class="mt-4" id="password-links" aria-labelledby="password-links-title">
+                <h2 class="h5" id="password-links-title">@Messages("links.title")</h2>
+                @for(name <- signsInWithWikimedia) {
+                    <p class="form-text signs-in-wikimedia">@Messages("share.link.wikimedia.note", name)</p>
+                }
+                @if(mayShareLink) {
+                    <p class="text-body-secondary small">@Messages("share.link.reset.explain")</p>
+                    @form(routes.UserController.sharePasswordLink(editUserForm("id").value.map(_.toLong).get, contestId),
+                        Symbol("class") -> "d-inline", Symbol("id") -> "share-password-link") {
+                        @csrfField()
+                        <button type="submit" class="btn btn-outline-secondary share-link">
+                            <i class="bi bi-link-45deg" aria-hidden="true"></i> @Messages("share.link.create")
+                        </button>
+                    }
+                }
+                @if(passwordLinks.nonEmpty) {
+                    <div class="table-responsive mt-2">
+                        <table class="table table-sm align-middle password-links">
+                            <thead>
+                                <tr>
+                                    <th scope="col">@Messages("link.purpose")</th>
+                                    <th scope="col">@Messages("link.created")</th>
+                                    <th scope="col">@Messages("link.sent")</th>
+                                    <th scope="col">@Messages("link.status")</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                            @for(link <- passwordLinks) {
+                                <tr class="link-@link.status.key">
+                                    <td>@Messages("link.purpose." + link.purpose)</td>
+                                    <td>@views.LinkTimes.utc(link.createdAt)</td>
+                                    <td>@Messages(if (link.shared) "link.sent.shared" else "link.sent.mail")</td>
+                                    <td>@linkStatus(link)</td>
+                                </tr>
+                            }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </section>
             }
 
             @* the own profile: sign out on every device (S3), this one included *@

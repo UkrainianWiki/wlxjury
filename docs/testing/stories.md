@@ -97,6 +97,7 @@ a guide or a test needs them.
 | A-16 | An admin makes the next round from earlier results: selected by at least, minimum average, top N, several rounds merged | – | the form's choices in view specs (`TopBinaryOrderChoiceSpec` …), the selection in service specs |
 | A-17 | An admin edits the contest's greeting, previewed per member; a new account gets it by mail | – | *Part:* saving it only |
 | A-18 | An admin signs in with login and password | – | |
+| A-19 | An admin creates a link to share for an invitation or a password reset, copies it once, and sees whether it was used, expired or revoked; only for accounts that are theirs alone | – | |
 
 ## Root
 
@@ -119,5 +120,5 @@ a guide or a test needs them.
 | S-06 | A vote in a round not open to jurors (stopped, frozen, distributing) is refused and the stored vote stays | [Rounds you don't see](../user/juror-guide.md#rounds-you-dont-see) | *Part:* a stopped round and a stopped juror only |
 | S-07 | A vote from someone not a juror of the round, or of another contest, is refused and changes nothing | – | |
 | S-08 | A vote outside the round's rates (2 in a yes/no round, 6 in a 1–5 round) is refused | – | |
-| S-09 | No one sets another account's password; an admin changes its email only while it is an invitee (who is invited again), root through a link mailed to the new address; an admin may set its wiki account, valid and no other account's, as unverified | – | |
+| S-09 | No one types another account's password (only a single-use link sets it, mailed or shared, A-19); an admin changes its email only while it is an invitee (who is invited again), root through a link mailed to the new address; an admin may set its wiki account, valid and no other account's, as unverified | – | |
 | S-10 | A juror or an organizer is refused an admin's change (a POST), and nothing is written | – | |
