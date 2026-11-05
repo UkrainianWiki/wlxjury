@@ -4,6 +4,8 @@
 # Wikimedia access is anonymous (CLAUDE.md, Testing): never pass COMMONS_* or SCALAWIKI_*
 # credentials, as env or secrets, to any job here, and never -Dintegration (live Commons specs).
 # Actions are pinned by commit SHA, the release as a comment (dependencies practices §2.2).
+# The numbers show in the job summary, in a PR comment (coverage-comment.yml reads this run's
+# coverage-summary artifact) and, once enabled, on Coveralls (testing practices §9.5).
 name: Coverage
 
 on:
@@ -45,6 +47,11 @@ jobs:
           cache: npm
           cache-dependency-path: javascript-test/package-lock.json
 
+      # The report scripts' tests, in a second: the PR comment's parser refuses what the
+      # Coverage job doesn't write
+      - name: Report script tests
+        run: python3 -B -m unittest discover -s scripts -p test_coverage_reports.py
+
       - name: scalawiki (interim, from source)
         uses: ./.github/actions/scalawiki
         with:
@@ -66,7 +73,47 @@ jobs:
 
       - name: Coverage summary
         if: always()
-        run: python3 scripts/coverage-summary.py >> "$GITHUB_STEP_SUMMARY"
+        # Also the totals as JSON for the PR comment: the commit measured is the PR's head (a PR
+        # run's github.sha is its merge commit), and PR_NUMBER is empty on pushes.
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: >-
+          python3 scripts/coverage-summary.py --json target/coverage-summary.json
+          --head-sha "$HEAD_SHA" --pr "$PR_NUMBER" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the coverage summary
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          # coverage-comment.yml reads this run's attempt, and the latest base-branch run's,
+          # so it is kept longer than the reports (a few hundred bytes)
+          name: coverage-summary-attempt-${{ github.run_attempt }}
+          path: target/coverage-summary.json
+          if-no-files-found: warn
+          retention-days: 90
+
+      # Coveralls (testing practices §9.5): off until the repository variable COVERALLS_ENABLED
+      # is 'true', and never failing the job. One build with both reports, their paths made
+      # relative to the repository first. The token is the job's read-only GITHUB_TOKEN, which
+      # Coveralls accepts for a public repository; no other secret.
+      - name: Coveralls paths
+        id: coveralls-paths
+        if: success() && vars.COVERALLS_ENABLED == 'true'
+        continue-on-error: true
+        run: python3 scripts/coveralls-paths.py
+
+      - name: Coveralls
+        if: success() && vars.COVERALLS_ENABLED == 'true' && steps.coveralls-paths.outcome == 'success'
+        continue-on-error: true
+        uses: coverallsapp/github-action@8d6379e14d29928660c4ba802d8e85393440b329 # v2.3.8
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          files: target/coveralls/cobertura.xml target/coveralls/lcov.info
+          # The reporter binary the action downloads: an exact release, not "latest". Its
+          # checksum comes from the same release, so it catches a broken download, not a
+          # compromised release; the action can't run a binary we verify (dependencies §2.2)
+          coverage-reporter-version: v0.6.22
 
       - name: End of the log
         if: failure()

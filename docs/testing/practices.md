@@ -320,6 +320,58 @@ that the test asserts the whole outcome (reviewers check a new tag against the s
 it passed (the Allure report, §10.10). A guard (`RouteAuthSpec`'s scan) shows a rule, not a
 story, and carries no tag.
 
+**9.5 Where the numbers show.** Three places, all from the one Coverage run:
+
+- **The run summary** of `coverage.yml` (`scripts/coverage-summary.py`), with the reports as
+  artifacts.
+- **A PR comment**, one per PR, updated in place on every Coverage run (found by the hidden
+  marker `<!-- wlxjury-coverage-comment -->`): Scala statements and branches, JS lines and
+  branches, the change against the latest successful Coverage run on the PR's base branch ("no
+  base run" when there is none, e.g. its summaries expired after 90 days), and a link to the run.
+  The Coverage job writes `coverage-summary.json` (`coverage-summary.py --json`) as the artifact
+  `coverage-summary-attempt-N`; `coverage-comment.yml`, a `workflow_run` workflow, reads it with
+  `scripts/coverage_comment.py`. That workflow is the only one with a write right
+  (`pull-requests: write`, for the comment; its `actions: read`, for the artifacts, only reads),
+  so it never checks out or runs the PR's code: it checks out only its script, at the default
+  branch, and refuses a summary that isn't exactly the format (known keys, a 40-hex SHA equal to
+  the run's head, the run's PR, percentages from 0 to 100) or can't be decoded at all, and a run
+  that isn't a PR from this repository (fork PRs get no comment). Its tests, hostile input
+  included, are `scripts/test_coverage_reports.py`, a step of `coverage.yml`. A `workflow_run`
+  workflow runs only from the default branch, so the comment starts once the workflow is on
+  `master`.
+
+  **What the two columns measure.** The PR column is measured on GitHub's test merge commit of
+  the PR into its base (a `pull_request` run checks that out), labelled with the PR's head SHA.
+  The base column comes from the base branch's latest successful Coverage run: for `master` (or
+  `ukwikidev/followups`), a push run on that commit; for a stacked base such as `stack/*`, the
+  lower PR's own `pull_request` run, which measured *its* merge commit into the branch below it.
+  So in a stack the change is between two merge commits, not between two branch heads. A run
+  without a summary, e.g. of a PR branch whose `coverage.yml` predates this step, is skipped with
+  "the run has no coverage summary", and as a base it counts as "no base run".
+- **Coveralls** ([coveralls.io](https://coveralls.io/github/UkrainianWiki/wlxjury)), once
+  enabled: the history per branch and per-file line coverage. `coverage.yml` sends both
+  reports in one build with `coverallsapp/github-action` (scoverage's Cobertura XML and Jest's
+  lcov, their paths made relative to the repository by `scripts/coveralls-paths.py`),
+  authenticated by the job's read-only `GITHUB_TOKEN` (enough for a public repository, on pushes
+  and on PRs; no `COVERALLS_REPO_TOKEN`). The step is skipped unless the repository variable
+  `COVERALLS_ENABLED` is `true`, and `continue-on-error` keeps a Coveralls failure from failing
+  the job. **What Coveralls receives:** each measured file's path, per-line hit counts and
+  branch counts, and an MD5 digest of the file (not its text: Coveralls shows the source by
+  fetching the public file from GitHub), plus the commit's SHA, branch, subject line and its
+  author's and committer's names and e-mail addresses, and the run's id and URL. On a PR run
+  the commit reported is GitHub's test merge commit (what the run checked out), not the PR's
+  head. Nothing from `target/` but the two reports; no secret but `GITHUB_TOKEN`. **Turning
+  Coveralls on adds a third party that keeps this data** (per-file coverage history and the
+  commits' names and e-mail addresses), under Coveralls' own terms and retention.
+
+  **To turn it on** (the user's steps): sign in at coveralls.io with GitHub; add the
+  repository `UkrainianWiki/wlxjury` (the organisation may first have to approve the Coveralls
+  app under its third-party access settings); leave Coveralls' own PR comments off (its
+  "Leave comments?" setting, which also needs the `@coveralls` user invited), since the comment
+  above already shows the totals; then set the variable: repository Settings → Secrets and
+  variables → Actions → Variables → `COVERALLS_ENABLED` = `true`. The next push to `master` or
+  PR run uploads. To turn it off, delete the variable or set it to anything else.
+
 ## 10. Browser tests
 
 `browser-test/`: `@playwright/test` (JavaScript, its own `package.json` and lockfile, outside
@@ -568,6 +620,7 @@ file of `allure-report/` (no `index.html` fails too); else it puts a
 | 6.2 no assertion on a missing element | review; `one()` in `browser-test/lib/actions.js` | review; the browser tests' helper requires exactly one match |
 | 6.4 messages in all four files | `views.MessagesCompletenessSpec` | enforced |
 | 9 coverage | `coverage.yml` (report only) | enforced as a report; no minimum (planned after a stable baseline) |
+| 9.5 the PR comment reads its artifact as validated data, never the PR's code | `scripts/test_coverage_reports.py` (a step of `coverage.yml`); review of `coverage-comment.yml` | enforced for the parser; the workflow by review |
 | 9.4 story IDs known, guide anchors exist | `scripts/story-coverage.py` in `ci.yml` (with its `--self-test`); the `storyLabels` fixture in each browser test | enforced |
 | 9.4 uncovered stories | the script's summary (`target/story-coverage.md`, the job's summary) | a report; no minimum until the catalogue has settled |
 | 10.10 Allure report per run | `browser.yml`'s `report` job | enforced as a report (advisory: it fails no engine's job) |
