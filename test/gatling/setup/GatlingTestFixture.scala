@@ -132,8 +132,12 @@ object GatlingTestFixture {
     * checks run without Playwright's routes (which turn the browser's cache off), so their
     * thumbnails reach this server's proxy; with the stub it never fetches from Commons. */
   private lazy val imagesConfig: Map[String, Any] =
-    if (!sys.props.get("ui.images").contains("stub")) Map.empty
+    if (!Set("stub", "docs").exists(sys.props.get("ui.images").contains)) Map.empty
     else {
+      // -Dui.images=docs (the user guides' screenshots only): the stub serves the photos cached
+      // by browser-test/docs-photos.py (DocsPhotos) instead of the grey placeholder
+      val docs = sys.props.get("ui.images").contains("docs")
+      val photo = if (docs) Some(DocsPhotos.load(new java.io.File("target/docs-photos"))) else None
       val png = {
         val image = new java.awt.image.BufferedImage(640, 480, java.awt.image.BufferedImage.TYPE_INT_RGB)
         val g = image.createGraphics()
@@ -146,16 +150,17 @@ object GatlingTestFixture {
       }
       val stub = com.sun.net.httpserver.HttpServer.create(new java.net.InetSocketAddress("127.0.0.1", 0), 0)
       stub.createContext("/", exchange => {
-        exchange.getResponseHeaders.set("Content-Type", "image/png")
-        exchange.sendResponseHeaders(200, png.length.toLong)
-        try exchange.getResponseBody.write(png) finally exchange.close()
+        val body = photo.fold(png)(_(exchange.getRequestURI.getPath))
+        exchange.getResponseHeaders.set("Content-Type", if (docs) "image/jpeg" else "image/png")
+        exchange.sendResponseHeaders(200, body.length.toLong)
+        try exchange.getResponseBody.write(body) finally exchange.close()
       })
       stub.start()
       val base = s"http://127.0.0.1:${stub.getAddress.getPort}"
-      println(s"[images] thumbnails from the stub at $base")
+      println(s"[images] thumbnails from the ${if (docs) "docs photos" else "stub"} at $base")
       Map(
         "wlxjury.thumbs.wiki-base-url" -> base,
-        "wlxjury.thumbs.local-path"    -> new java.io.File("target/ui-shots/thumbs").getAbsolutePath
+        "wlxjury.thumbs.local-path"    -> new java.io.File((if (docs) "target/ui-shots/thumbs-docs" else "target/ui-shots/thumbs")).getAbsolutePath
       )
     }
 

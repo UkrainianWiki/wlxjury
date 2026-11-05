@@ -28,8 +28,11 @@ const START_TIMEOUT_MS = 40 * 60 * 1000;
 const STOP_TIMEOUT_MS = 3 * 60 * 1000;
 const CREDENTIALS = ['COMMONS_USER', 'COMMONS_PASSWORD', 'SCALAWIKI_LOGIN', 'SCALAWIKI_PASSWORD'];
 
+// UI_IMAGES=docs (the user guides' screenshots, docs/user/images/README.md): the photos that
+// docs-photos.py cached instead of the grey stub; anything else keeps the stub
+const IMAGES = process.env.UI_IMAGES === 'docs' ? 'docs' : 'stub';
 const SBT_COMMANDS = [
-  'set Test / javaOptions ++= Seq("-Xmx1g", "-Dfile.encoding=UTF-8", "-Dui.csp=production", "-Dui.csrf=on", "-Dui.images=stub")',
+  `set Test / javaOptions ++= Seq("-Xmx1g", "-Dfile.encoding=UTF-8", "-Dui.csp=production", "-Dui.csrf=on", "-Dui.images=${IMAGES}")`,
   // Play's Assets serves public/ from the classpath, which the test classpath lacks
   'set Test / unmanagedClasspath += Attributed.blank((Assets / packageBin).value)',
   'Test/runMain gatling.setup.UiShotsServer',
