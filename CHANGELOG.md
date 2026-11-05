@@ -153,6 +153,16 @@ Developed 2026-11-02 to 2026-11-03, PRs #232–#236.
   - Test-only: scalatest 3.2.20, os-lib 0.11.8 and jna 5.19.1.
   - sbt-scoverage 2.4.4, sbt-coveralls 1.3.15, sbt-digest 2.1.0, sbt-jmh 0.4.8 and sbt-native-packager 1.13.0, with an identical ZIP layout.
 - Dependency updates, part 2, step 1 (developed 2026-11-04): the tests run on HikariCP, the pool production uses, instead of ScalikeJDBC's commons-dbcp2 default, with no change in their speed. commons-dbcp2 and commons-pool2 are out of the build. `lib/` has 185 jars, 120.4 MB. joda-time stays, because scalikejdbc-orm's mappers load it.
+- CI actions on Node.js 24, every one pinned by commit SHA: `checkout` 7.0.1, `setup-java` 6.1.0
+  (its new JDK cache left off), `setup-node` 7.1.0, `cache` 6.1.0, `upload-artifact` 7.0.2 and
+  `download-artifact` 8.0.2, each released 14 days or more before; the coverage job on Node 22
+  as the others (developed 2026-11-05; [dependencies practices](docs/dependencies/practices.md)
+  §2.2).
+- Coverage on PRs: a comment per PR, updated on every Coverage run, with the Scala and JS totals
+  and the change against the base branch (`coverage-comment.yml`, which reads the run's summary
+  as validated data and never the PR's code), and Coveralls through its GitHub Action, off until
+  the repository variable `COVERALLS_ENABLED` is set; the unused `sbt-coveralls` plugin removed
+  (developed 2026-11-05; [testing practices](docs/testing/practices.md) §9.5).
 - `round_image_event`, an append-only table of disqualifications and requalifications, written
   in the action's transaction after its `round_image` rows (last in the lock order, round
   locked first; `StructuralWritesSpec` scans it); the requalify reads the latest event's prior

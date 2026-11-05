@@ -30,7 +30,8 @@ runs:
         echo "sha=$sha" >> "$GITHUB_OUTPUT"
     - name: Restore the scalawiki build for this commit
       id: cache
-      uses: actions/cache@v4
+      # pinned by commit SHA, the release as a comment (dependencies practices §2.2)
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: ~/.ivy2/local/org.scalawiki
         # bump v1 when what the build publishes changes (modules, flags)
