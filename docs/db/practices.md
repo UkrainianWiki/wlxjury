@@ -258,7 +258,9 @@ table (`JobScheduler`, a `JobHandler` per kind), never on a request thread: one 
 transaction per step (§5.5), a lease for restart recovery, Cancel and Retry, and a dedupe key
 (§2.3). The request only creates the job and answers. A running job whose lease expired is
 taken over at most `jobs.maxAttempts` times (claims since the user's last explicit Retry,
-`job.attempts`, default 5; a graceful handback gives its claim back); then the next poll fails it
+`job.attempts`, default 5; a claim whose run recorded an outcome, a failure or a graceful
+handback of a job still held, is given back, so only runs that ended without one count); then
+the next poll fails it
 (`job.error.attempts`) with its handler's cleanup, so a job whose runs never record an outcome (a
 step that ends the JVM) isn't rerun every lease forever. Implicit resumes (the round form again,
 "Distribute new files") keep the count and refuse a job given up this way. A handler's `onRetry`

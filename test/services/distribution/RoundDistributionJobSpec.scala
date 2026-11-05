@@ -437,16 +437,17 @@ class RoundDistributionJobSpec extends Specification with TestDb with BeforeAll 
       retried.attempts === 1
     }
 
-    "keep the attempts count on an implicit resume of an ordinary failure" in {
+    "give back the claim of an ordinary (recorded) failure; an implicit resume takes one, without a reset" in {
       val (_, _, _, h, service, roundId) = newFilesRound()
       h.failBeforePage = Some(104L)
       scala.util.Try(service.distributeNewImages(roundId))
       val failed = jobOf(roundId)
       failed.status === JobStatus.Failed
+      failed.attempts === 0 // its one claim ended with a recorded outcome: it doesn't count
       service.distributeNewImages(roundId)
       val done = JobJdbc.findById(failed.id).get
       done.status === JobStatus.Done
-      done.attempts === failed.attempts + 1
+      done.attempts === 1 // the resume's claim
     }
 
     "fail at a chunk, keep the committed chunks, and resume from the cursor without duplicates" in {

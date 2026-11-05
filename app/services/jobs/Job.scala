@@ -217,24 +217,33 @@ object JobJdbc {
             WHERE owner = $owner AND status = ${JobStatus.Running} AND id IN ($ids)"""
         .update()
 
-  /** Hands `owner`'s running jobs back to the queue (a graceful shutdown): another
-    * instance, or this one restarted, takes them at once instead of after the lease. The
-    * claim that ends this way is taken back from `attempts`: a run handed back on a deploy
-    * ended with an outcome, so it doesn't count toward `jobs.maxAttempts`.
+  /** Hands `owner`'s running jobs that it still holds (`heldIds`) back to the queue (a
+    * graceful shutdown): another instance, or this one restarted, takes them at once instead of
+    * after the lease. The claim that ends this way is taken back from `attempts`: a run handed
+    * back on a deploy ended with an outcome, so it doesn't count toward `jobs.maxAttempts`. A
+    * job it owns but dropped (a crash it couldn't record) is left to its lease: that claim
+    * counts.
     */
-  def requeueOwned(owner: String)(implicit session: DBSession = AutoSession): Int =
-    sql"""UPDATE job SET status = ${JobStatus.Queued}, owner = NULL, updated_at = NOW(3),
-                         attempts = GREATEST(attempts - 1, 0)
-          WHERE owner = $owner AND status = ${JobStatus.Running}"""
-      .update()
+  def requeueOwned(owner: String, heldIds: Seq[Long])(implicit session: DBSession = AutoSession): Int =
+    if (heldIds.isEmpty) 0
+    else
+      sql"""UPDATE job SET status = ${JobStatus.Queued}, owner = NULL, updated_at = NOW(3),
+                           attempts = GREATEST(attempts - 1, 0)
+            WHERE owner = $owner AND status = ${JobStatus.Running} AND id IN ($heldIds)"""
+        .update()
 
-  /** Writes a step's outcome: the new state and progress, and the status. */
+  /** Writes a step's outcome: the new state and progress, and the status.
+    * @param giveBackClaim the owner recorded this outcome (a failure): its claim is taken back
+    *                      from `attempts`, as only runs that ended without recording anything
+    *                      count toward `jobs.maxAttempts`
+    */
   def update(
       id: Long,
       status: String,
       state: JsObject,
       progress: Progress,
-      error: Option[String]
+      error: Option[String],
+      giveBackClaim: Boolean = false
   )(implicit session: DBSession): Unit = {
     val terminal = !JobStatus.active.contains(status)
     sql"""UPDATE job SET status = $status, state = ${Json.stringify(state)},
@@ -242,7 +251,8 @@ object JobJdbc {
                          progress_unit = COALESCE(${progress.unit}, progress_unit),
                          error = $error, updated_at = NOW(3), heartbeat_at = NOW(3),
                          finished_at = IF($terminal, NOW(3), NULL),
-                         owner = IF($terminal, NULL, owner)
+                         owner = IF($terminal, NULL, owner),
+                         attempts = IF($giveBackClaim, GREATEST(attempts - 1, 0), attempts)
           WHERE id = $id"""
       .update()
   }

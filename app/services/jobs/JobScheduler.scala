@@ -132,7 +132,7 @@ class JobScheduler(handlerList: Seq[JobHandler], val settings: JobScheduler.Sett
       if (!workers.awaitTermination(settings.lease.toSeconds / 2 max 1, TimeUnit.SECONDS))
         logger.warn(s"Job scheduler $instanceId: steps still running at shutdown")
       try {
-        val n = JobJdbc.requeueOwned(instanceId)
+        val n = JobJdbc.requeueOwned(instanceId, heldJobs.toSeq)
         if (n > 0) logger.info(s"Job scheduler $instanceId: $n running jobs handed back to the queue")
       } catch { case NonFatal(e) => logger.warn(s"Job scheduler $instanceId: could not requeue its jobs", e) }
       timer = null
@@ -425,7 +425,7 @@ class JobScheduler(handlerList: Seq[JobHandler], val settings: JobScheduler.Sett
               case StepResult.Done(state, p)     => JobJdbc.update(jobId, JobStatus.Done, state, p, None)
               case StepResult.Failed(error, state, p) =>
                 val after = h.onFailed(j.copy(state = state), ctx)
-                JobJdbc.update(jobId, JobStatus.Failed, after, p, Some(error.encode))
+                JobJdbc.update(jobId, JobStatus.Failed, after, p, Some(error.encode), giveBackClaim = true)
             }
             (result, ctx)
           }
@@ -470,7 +470,7 @@ class JobScheduler(handlerList: Seq[JobHandler], val settings: JobScheduler.Sett
         JobJdbc.lock(jobId).filter(j => j.status == JobStatus.Running && j.owner.contains(instanceId)).map { j =>
           val ctx = new StepContext(s)
           val state = handlers.get(j.kind).fold(j.state)(_.onFailed(j, ctx))
-          JobJdbc.update(jobId, JobStatus.Failed, state, progressOf(j), Some(error.encode))
+          JobJdbc.update(jobId, JobStatus.Failed, state, progressOf(j), Some(error.encode), giveBackClaim = true)
           ctx
         }
       }
