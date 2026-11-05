@@ -833,7 +833,7 @@ object DistributionSource {
             JOIN images i ON i.page_id = g.page_id
             WHERE i.deleted_at IS NULL
             ORDER BY g.page_id, g.round_id"""
-      .map(rs => (ImageJdbc(i)(rs), rs.intOpt("rs").getOrElse(0), rs.int("c"), rs.intOpt("v").getOrElse(0)))
+      .map(rs => (ImageJdbc(i)(rs), rs.int("rs"), rs.int("c"), rs.int("v")))
       .list()
     val merged = mutable.LinkedHashMap.empty[Long, ImageWithRating]
     rows.foreach { case (image, sum, count, rated) =>
@@ -938,7 +938,7 @@ object DistributionSource {
     val orderBy = SQLSyntax.createUnsafely(
       (order.columns :+ ("s.page_id" -> 1)).map { case (column, dir) => column + (if (dir < 0) " DESC" else " ASC") }
         .mkString(", "))
-    sql"""SELECT s.page_id, SUM(${VoteSql.positive()}) approvals, SUM(${VoteSql.rejected()}) rejections, COUNT(s.rate) cnt
+    sql"""SELECT s.page_id, SUM(${VoteSql.positive()}) approvals, SUM(${VoteSql.rejected()}) rejections, COUNT(*) cnt
           FROM vote s
           WHERE s.round_id IN ($prevIds)
           GROUP BY s.page_id $having

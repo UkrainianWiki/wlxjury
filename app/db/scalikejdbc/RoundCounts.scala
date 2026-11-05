@@ -186,12 +186,11 @@ object RoundCounts {
 
   /** The files' counts over their `vote` rows, read plainly (the latest committed at READ
     * COMMITTED) from `vote_round_page_rate_idx`: `cond` on alias `v` narrows the round's votes
-    * to the window's files. A NULL rate is unrated.
+    * to the window's files (`rate` is NOT NULL, V91: each group's sums are numbers).
     */
   private def votedCounts(roundId: Long, cond: SQLSyntax)(implicit session: DBSession): Map[Long, Counts] =
-    sql"""SELECT v.page_id, COUNT(*), COALESCE(SUM(${VoteSql.voted(VoteSql.v)}), 0),
-                 COALESCE(SUM(${VoteSql.positive(VoteSql.v)}), 0),
-                 COALESCE(SUM(${VoteSql.rejected(VoteSql.v)}), 0), COALESCE(SUM(v.rate), 0)
+    sql"""SELECT v.page_id, COUNT(*), SUM(${VoteSql.voted(VoteSql.v)}), SUM(${VoteSql.positive(VoteSql.v)}),
+                 SUM(${VoteSql.rejected(VoteSql.v)}), SUM(v.rate)
           FROM vote v WHERE v.round_id = $roundId AND $cond GROUP BY v.page_id"""
       .map(rs => rs.long(1) -> Counts(rs.int(2), rs.int(3), rs.int(4), rs.int(5), rs.int(6))).list().toMap
 

@@ -66,10 +66,8 @@ object AverageRule {
   /** The SQL of a file's rate sum, its rated votes and its vote rows, over one source. */
   final case class Terms(sum: String, rated: String, assigned: String)
 
-  /** Over a file's `vote` rows `s`, grouped by file: a file whose rates are all NULL sums to 0, as
-    * its `round_image.rate_sum` does, so both sources give it key 0.
-    */
-  val VoteTerms: Terms = Terms("COALESCE(SUM(s.rate), 0)", s"SUM(${VoteSql.positive().value})", "COUNT(*)")
+  /** Over a file's `vote` rows `s`, grouped by file (`rate` NOT NULL, V91). */
+  val VoteTerms: Terms = Terms("SUM(s.rate)", s"SUM(${VoteSql.positive().value})", "COUNT(*)")
 
   /** The scale of a rank key ([[AverageRule.keySql]]): averages that differ, with a denominator
     * below 30,000 jurors, differ by more than 1 / KeyScale.

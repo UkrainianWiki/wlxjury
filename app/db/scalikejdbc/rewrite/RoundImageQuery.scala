@@ -28,10 +28,9 @@ import scalikejdbc._
   * before the request's first statement and unchanged after each), and reads the votes when it
   * can't. Exact consumers (the CSV, a top-N) read the votes regardless.
   *
-  * Stopped jurors' votes count, as in the vote source (neither joins `round_user`). A NULL rate
-  * is an unrated vote here (`assigned` counts it; the Unrated filter is `assigned > voted`), where
-  * the vote source's `s.rate = 0` leaves it out of the Unrated filter: production has none (the
-  * vote form writes integers; §16's pre-deploy query counts them).
+  * Stopped jurors' votes count, as in the vote source (neither joins `round_user`). A rate is
+  * never NULL (V91), so the Unrated filter `assigned > voted` is the vote source's `s.rate = 0`;
+  * the overlay's COALESCEs are for a marked file without votes (its LEFT JOIN).
   *
   * @param order      the list's ORDER BY over the counts, translated from the vote source's
   *                   ([[RoundImageQuery.of]])

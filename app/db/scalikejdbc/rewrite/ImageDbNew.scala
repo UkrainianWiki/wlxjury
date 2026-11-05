@@ -522,20 +522,20 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
           votes = Seq(VoteJdbc(s)(rs))
         )
 
-      /** A grouped row: the file, its rates' sum and its vote rows (`COUNT(*)`: a NULL rate is an
-        * unrated vote, as `round_image.assigned` counts it), and with `tally` its approvals and
-        * rejections (columns 3 and 4).
+      /** A grouped row: the file, its rates' sum and its vote rows (`COUNT(*)`, as
+        * `round_image.assigned` counts them), and with `tally` its approvals and rejections
+        * (columns 3 and 4). A group has a row, and a rate is never NULL (V91).
         */
       def groupedReader(tally: Boolean)(rs: WrappedResultSet): ImageWithRating = {
         val image = ImageJdbc(i)(rs)
-        val sum = rs.intOpt(1).getOrElse(0)
-        val count = rs.intOpt(2).getOrElse(0)
+        val sum = rs.int(1)
+        val count = rs.int(2)
         ImageWithRating(
           image,
           votes = Seq(Vote(image.pageId, juryId = 0, roundId = 0, rate = sum)),
           count,
-          approvalsFromDb = if (tally) rs.intOpt(3) else None,
-          rejectionsFromDb = if (tally) rs.intOpt(4) else None
+          approvalsFromDb = Option.when(tally)(rs.int(3)),
+          rejectionsFromDb = Option.when(tally)(rs.int(4))
         )
       }
 

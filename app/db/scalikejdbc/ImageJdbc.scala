@@ -527,7 +527,7 @@ object ImageJdbc extends CRUDMapper[Image]
     // is 0, U5, but it holds the juror's work)
     val pairs = sql"""SELECT s.id, s.rate, d.id, d.rate FROM vote_aside d JOIN vote s ON $sameVote
                       WHERE $where FOR UPDATE"""
-      .map(rs => (rs.long(1), rs.intOpt(2).getOrElse(0), rs.long(3), rs.intOpt(4).getOrElse(0))).list()
+      .map(rs => (rs.long(1), rs.int(2), rs.long(3), rs.int(4))).list()
     val byCriteria = VoteJdbc.votedByCriteria(pairs.flatMap { case (s, _, d, _) => Seq(s, d) })
     val replacedNew = pairs.collect {
       case (s, sRate, d, dRate) if sRate == 0 && !byCriteria(s) && (dRate != 0 || byCriteria(d)) => s

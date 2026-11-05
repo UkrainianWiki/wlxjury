@@ -360,6 +360,64 @@ class FlywayUpgradeSpec extends Specification with BeforeAll with AfterAll {
     }
   }
 
+  /** V91's rollback SQL after reopen (docs/plans/2026-11-02-round-images-two-step.md, §18):
+    * metadata only, back to nullable columns without a default.
+    */
+  private val v91Rollback = Seq(
+    "ALTER TABLE vote MODIFY rate INT NULL DEFAULT NULL, ALGORITHM = INSTANT",
+    "ALTER TABLE vote_aside MODIFY rate INT NULL DEFAULT NULL, ALGORITHM = INSTANT",
+    "DELETE FROM flyway_schema_history WHERE version = '91'")
+
+  private def statements(file: String): Seq[String] =
+    new String(Files.readAllBytes(Paths.get("conf/db/migration/default", file)), "UTF-8")
+      .linesIterator.filterNot(_.trim.startsWith("--")).mkString("\n").split(";").map(_.trim).filter(_.nonEmpty).toSeq
+
+  "V91's NOT NULL rates" should {
+    "set NULL rates to 0, make both columns NOT NULL DEFAULT 0, rerun as a no-op, and roll back to V90's schema" in {
+      emptyDb("fw_v90")
+      flyway("fw_v90", production.copy(target = Some("90"))).migrate()
+      emptyDb("fw_v91_back")
+      flyway("fw_v91_back", production.copy(target = Some("90"))).migrate().success must beTrue
+      Using.resource(connect("fw_v91_back"))(c => run(c, Seq(
+        "INSERT INTO images (page_id, title) VALUES (1, 'File:1.jpg'), (2, 'File:2.jpg'), (3, 'File:3.jpg')",
+        "INSERT INTO vote (id, page_id, jury_id, round_id, rate) VALUES (1, 1, 1, 1, NULL), (2, 2, 1, 1, 7), (3, 3, 1, 1, -1)",
+        "INSERT INTO vote_aside (id, page_id, jury_id, round_id, rate) VALUES (4, 1, 2, 1, NULL), (5, 2, 2, 1, 1)")))
+      flyway("fw_v91_back", production.copy(target = Some("91"))).migrate().success must beTrue
+      val once = schema("fw_v91_back")
+      val migrated = Using.resource(connect("fw_v91_back")) { c =>
+        val rates = rows(c, "SELECT id, rate FROM vote UNION ALL SELECT id, rate FROM vote_aside ORDER BY 1")(rs =>
+          rs.getLong(1) -> rs.getInt(2))
+        val columns = rows(c, "SELECT TABLE_NAME, IS_NULLABLE, COLUMN_DEFAULT FROM information_schema.COLUMNS " +
+          "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME IN ('vote', 'vote_aside') AND COLUMN_NAME = 'rate' " +
+          "ORDER BY TABLE_NAME")(rs => (rs.getString(1), rs.getString(2), rs.getString(3)))
+        // a vote written without a rate is unrated; a NULL one is refused (strict mode)
+        run(c, Seq("INSERT INTO vote (id, page_id, jury_id, round_id) VALUES (6, 3, 2, 1)"))
+        val default = rows(c, "SELECT rate FROM vote WHERE id = 6")(_.getInt(1))
+        val nullRefused = scala.util.Try(run(c, Seq("UPDATE vote SET rate = NULL WHERE id = 6"))).isFailure
+        run(c, Seq("DELETE FROM vote WHERE id = 6"))
+        (rates, columns, default, nullRefused)
+      }
+      (migrated._1 === List(1L -> 0, 2L -> 7, 3L -> -1, 4L -> 0, 5L -> 1)) and
+        (migrated._2 === List(("vote", "NO", "0"), ("vote_aside", "NO", "0"))) and
+        (migrated._3 === List(0)) and (migrated._4 must beTrue) and {
+          // a rerun of V91's statements on a database that has them rebuilds nothing, changes nothing
+          Using.resource(connect("fw_v91_back"))(c => run(c, statements("V91__Vote_rate_not_null.sql")))
+          schema("fw_v91_back") === once
+        } and {
+          Using.resource(connect("fw_v91_back"))(c => run(c, v91Rollback))
+          def tablesOnly(s: String) = s.split(";\n\n").filterNot(_.matches("(?s)^\\w+: \\d+ rows.*")).mkString(";\n\n")
+          (history("fw_v91_back").map(_.split(" \\| ")(1)) === upTo("90")) and
+            (tablesOnly(schema("fw_v91_back")) === tablesOnly(schema("fw_v90"))) and {
+              // the previous release may write a NULL rate meanwhile; forward again makes it 0
+              Using.resource(connect("fw_v91_back"))(c => run(c, Seq("UPDATE vote SET rate = NULL WHERE id = 2")))
+              flyway("fw_v91_back", production.copy(target = Some("91"))).migrate().success must beTrue
+              (schema("fw_v91_back") === once) and
+                (Using.resource(connect("fw_v91_back"))(c => rows(c, "SELECT rate FROM vote WHERE id = 2")(_.getInt(1))) === List(0))
+            }
+        }
+    }
+  }
+
   "the app's start with production's settings but without auto" should {
     "refuse while a migration is pending, without changing the database" in {
       emptyDb("fw_pending")

@@ -57,7 +57,7 @@ object CriteriaRate extends SQLSyntaxSupport[CriteriaRate] {
     sql"""SELECT s.round_id, s.page_id, s.rate FROM vote s WHERE s.id = $voteId
             AND NOT EXISTS (SELECT 1 FROM round_user ru
                             WHERE ru.round_id = s.round_id AND ru.user_id = s.jury_id AND ru.active = FALSE)
-          FOR UPDATE""".map(rs => (rs.long(1), rs.long(2), rs.intOpt(3).getOrElse(0))).single().exists {
+          FOR UPDATE""".map(rs => (rs.long(1), rs.long(2), rs.int(3))).single().exists {
       case (roundId, pageId, before) =>
       val criteria =
         sql"SELECT criterion_id FROM round_criterion WHERE round_id = $roundId LOCK IN SHARE MODE"
