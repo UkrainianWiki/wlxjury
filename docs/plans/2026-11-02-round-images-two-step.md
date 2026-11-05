@@ -2139,7 +2139,9 @@ or are split off is the orchestrator's call (the ✗ commits use `VoteSql`, and 
 1. **The option.** `round.worst_mark`, off by default: jurors of a rated round may give a file ✗,
    stored as `rate = -1`. 0 is unrated, stars 1…N unchanged. A yes/no round keeps −1/0/1 and never
    has the option; a criteria round neither (the round form refuses both; a vote of −1 in a round
-   without the option, or in a criteria round whatever is stored, is a 400).
+   without the option, or in a criteria round whatever is stored, is a 400). Criteria rounds with
+   ✗ (per criterion or per file, combined with the criteria sum), or criteria-based yes/no rounds,
+   are a later item after release 2, its design open (roadmap item 6's note, the user, 2026-11-05).
 2. **✗ counts as 0** in every average and total: the sum of grades is `SUM(GREATEST(rate, 0))` on
    the votes and `rate_sum + rejections` on the counts. "The jurors who rated it" is any vote
    (`rate <> 0`, the counts' `voted`). Under `rated`, the grades over the jurors with any vote; under
@@ -2380,12 +2382,30 @@ counted as 0, shown as ✗; a rate below −1 is set to −1 first), or set them
 V91's ALTERs add strict mode to the session's `sql_mode` and a 60 s `lock_wait_timeout` for
 themselves (`SET STATEMENT … FOR ALTER TABLE …`, through `EXECUTE IMMEDIATE`; accepted by 10.6, run
 in `FlywayUpgradeSpec` also on a session without strict mode): the server's `sql_mode` needn't be
-strict, and a rebuild that can't get its metadata lock within 60 s fails with nothing changed (a
-rerun of V91 then goes on). Time V91 on a production-sized copy before the release
-(`VoteRateNotNullBenchmark` on a restored backup, run by the user): the fixture's timing below is
-not production's.
+strict, and a rebuild that can't get its metadata lock within 60 s fails with nothing changed. Time
+V91 on a production-sized copy before the release (`VoteRateNotNullBenchmark` on a restored backup,
+run by the user): the fixture's timing below is not production's.
 
-Rollback after `reopen` (tested, `FlywayUpgradeSpec`), with the app stopped; V93, then V92 first:
+**If V91 fails** (a lock timeout, `Lock wait timeout exceeded`): MariaDB's DDL isn't transactional,
+so Flyway records V91 as failed (`flyway_schema_history`, `version = '91'`, `success = 0`), and
+the next start refuses: `db.Migrations.onStart` runs Flyway's `migrate()` (production's `auto`),
+whose validation stops at the failed row, with Flyway's message (its 9.16.3 source; Flyway 13's
+wording not checked here) "Detected failed migration to version 91 (Vote rate not null). Please
+remove any half-completed changes then run repair to fix the schema history." V91 changes nothing
+half-way: its UPDATEs are committed and harmless to rerun, and each ALTER either completed or
+changed nothing. So, with the app stopped and the long transaction gone (`SHOW PROCESSLIST`):
+```sql
+DELETE FROM flyway_schema_history WHERE version = '91' AND success = 0;
+```
+(or Flyway's `repair`), then start the app again: V91 reruns, rebuilding only a table still
+nullable.
+
+Rollback after `reopen` (tested, `FlywayUpgradeSpec`), with the app stopped; V93, then V92 first.
+Before V93's: the rounds that keep only their rejected files would, with the older code, exclude
+them instead (it has no mode); list them, `SELECT id, number, contest_id, prev_rejected_by FROM round
+WHERE prev_rejected_mode = 'only'`, and for each the user clears `prev_rejected_by` (`UPDATE round
+SET prev_rejected_by = NULL, created_at = created_at WHERE id = …`) or decides otherwise (a round
+already distributed keeps its files either way; only a later "Distribute new files" reads it).
 ```sql
 ALTER TABLE round DROP CONSTRAINT round_prev_rejected_mode_chk;
 ALTER TABLE round DROP COLUMN prev_rejected_mode, ALGORITHM = INSTANT;
@@ -2446,9 +2466,12 @@ reads it.
   and the job alike.
 - **A ✗ racing the option's turn-off** is taken: a vote doesn't lock the round row
   (`VoteJdbc.rateIn`'s note), and the ✗ stays, counted as 0, as one given just before.
-- **The rejected-by mode's form:** the mode select's empty choice is no filter; a mode with X
-  empty is no filter too; a client without the mode field (an older page, a script) excludes, the
-  meaning before V93.
+- **The rejected-by mode's form** (after the second review): "no filter" posts `none`; a mode
+  without X, and X with `none`, are form errors; a new round's filter without a chosen previous
+  round that may reject is refused (`RoundController`, `error.rejected.by.no.source`), and the
+  hidden filter's fields aren't sent (`round-form.js`). A client without the mode field (an older
+  page, a script) excludes, the meaning before V93. Should a stored "only" ever meet sources that
+  can't reject, the job applies it (no file passes) rather than dropping it.
 - **The tiles' clear** is raty's cancel icon, made an eraser and hidden while the file is
   unrated, rather than a separate button.
 - **`hasRatedVote`** (the score-rule warning) counts a ✗ as a vote, as the coordinator asked,

@@ -81,7 +81,15 @@ class RejectedByChoiceSpec extends PlaySpecification {
         (round(Map("rejectedBy" -> "2", "rejectedMode" -> "exclude")).prevRejectedMode === org.intracer.wmua.RejectedMode.Exclude) and
         (round(Map("rejectedBy" -> "2", "rejectedMode" -> "only")).prevRejectedMode === org.intracer.wmua.RejectedMode.Only) and
         (round(Map("rejectedBy" -> "2", "rejectedMode" -> "only")).prevRejectedBy must beSome(2)) and
-        (round(Map("rejectedBy" -> "2", "rejectedMode" -> "none")).prevRejectedBy must beNone)
+        (round(Map("rejectedMode" -> "none")).prevRejectedBy must beNone) and (round(Map.empty).prevRejectedBy must beNone)
+    }
+
+    "refuse a mode without X, and X with \"none\", by their messages" in {
+      def errors(data: Map[String, String]) = EditRound.editRoundForm.bind(base ++ data).globalErrors.map(_.message)
+      (errors(Map("rejectedMode" -> "exclude")) === Seq(EditRound.RejectedByCountMissing)) and
+        (errors(Map("rejectedMode" -> "only", "rejectedBy" -> "")) === Seq(EditRound.RejectedByCountMissing)) and
+        (errors(Map("rejectedMode" -> "none", "rejectedBy" -> "2")) === Seq(EditRound.RejectedByWithoutMode)) and
+        (errors(Map("rejectedMode" -> "none")) must beEmpty)
     }
 
     "refuse an unknown mode" in {

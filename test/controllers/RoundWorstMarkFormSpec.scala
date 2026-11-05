@@ -116,6 +116,29 @@ class RoundWorstMarkFormSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
+    "refuse a new round's rejected-by without a previous round that may reject, \"only\" included, by its message" in {
+      testDbApp { app =>
+        val rated = setUp()
+        val criteriaRound = roundDao.create(Round(None, 2, Some("C"), contestId, rates = Round.ratesById(10),
+          criterionIds = CriterionJdbc.all().take(2).map(_.id)))
+        val juror = User.findRoundJurors(rated.getId).head
+        VoteJdbc.rate(1, juror.getId, rated.getId, -1) // the file's ✗, which "only" keeps
+        def newRound(previous: Seq[Round], mode: String) =
+          Seq("number" -> "3", "name" -> "Next", "contest" -> contestId.toString, "roles" -> "jury",
+            "distribution" -> "0", "rates" -> "5", "minMpx" -> "", "minSize" -> "", "mediaType" -> "all",
+            "jurors[0]" -> juror.getId.toString, "rejectedMode" -> mode, "rejectedBy" -> "1") ++
+            previous.zipWithIndex.map { case (r, i) => s"previousRound[$i]" -> r.getId.toString }
+        val fromCriteria = save(app, "admin@example.com", newRound(Seq(criteriaRound), "only"))
+        val fromNone = save(app, "admin@example.com", newRound(Nil, "exclude"))
+        val before = Round.findByContest(contestId).size
+        (status(fromCriteria) === BAD_REQUEST) and
+          (contentAsString(fromCriteria) must contain("needs a previous round with rejections")) and
+          (status(fromNone) === BAD_REQUEST) and (Round.findByContest(contestId).size === before) and
+          // a rated round without criteria may reject (its ✗): taken
+          (status(save(app, "admin@example.com", newRound(Seq(rated), "only"))) === SEE_OTHER)
+      }
+    }
+
     "refuse an unknown rejected-by mode with 400 (V93)" in {
       testDbApp { app =>
         val round = setUp()

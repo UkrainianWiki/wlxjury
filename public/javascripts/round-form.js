@@ -50,6 +50,7 @@
     var vals = $(this).val() || [];
 
     $('#selectFilters, #rateFilters, #rejectFilters').hide();
+    var rejecting = false;
 
     if (vals.length) {
       $('#prevRoundFilters').show();
@@ -57,12 +58,35 @@
         return $('#selectFilters').hasClass('round' + v);
       });
       (anyBinary ? $('#selectFilters') : $('#rateFilters')).show();
-      // "rejected by at least": a yes/no round's "no" votes, a rated round's ✗ where it has the
-      // worst mark (#rejectFilters has their classes)
-      if (vals.some(function (v) { return $('#rejectFilters').hasClass('round' + v); })) $('#rejectFilters').show();
+      // "rejected by at least": a yes/no round's "no" votes, a rated round's ✗ (#rejectFilters
+      // has the classes of the rounds whose votes may reject)
+      rejecting = anyRejecting(vals);
+      if (rejecting) $('#rejectFilters').show();
     } else {
       $('#prevRoundFilters').hide();
     }
+    rejectFieldsSent(rejecting);
+  }
+
+  /** Whether the chosen previous rounds `vals` include one whose votes may reject. */
+  function anyRejecting(vals) {
+    return vals.some(function (v) { return $('#rejectFilters').hasClass('round' + v); });
+  }
+
+  /** "Rejected by at least"'s fields are sent only while a chosen previous round may reject: the
+    * server refuses a filter without one. A read-only page's selects (disabled, their values in
+    * hidden inputs: an edit's, whose filters aren't changed) stay disabled; their hidden inputs
+    * follow. */
+  function rejectFieldsSent(on) {
+    $('#rejectFilters select').not('[data-wlx-locked]').prop('disabled', !on);
+    $('#rejectFilters input[type=hidden]').prop('disabled', !on);
+  }
+
+  /** Marks a read-only page's rejected-by selects (disabled as rendered), then sends the fields
+    * only for the previous rounds chosen as the page loads. */
+  function initRejectFilters() {
+    $('#rejectFilters select').each(function () { if (this.disabled) this.setAttribute('data-wlx-locked', ''); });
+    if ($('#rejectFilters').length) rejectFieldsSent(anyRejecting($('#previousRound').val() || []));
   }
 
   /** The distribution's choices for the jurors chosen: to all of them, or to 1 .. n-1. */
@@ -174,6 +198,7 @@
     var t = texts(doc);
     initMultiSelects(doc, t);
     $('#previousRound').change(previousRoundsChanged);
+    initRejectFilters();
     $('#jurors').change(jurorsChanged(t.distribution || {}));
     initCoiConfirm(doc);
     initCriteria(doc);

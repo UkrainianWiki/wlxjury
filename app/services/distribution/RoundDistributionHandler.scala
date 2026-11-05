@@ -202,10 +202,13 @@ class RoundDistributionHandler @Inject() (
       votes = PrevVotes(
         rated = prev.isDefined && round.selectedByFilter.isDefined,
         // a yes/no round's "no" votes, or a rated round's ✗ (the worst mark), from any previous
-        // round that may reject (Round.rejects, not the live option), as RoundService records it
-        rejectedBy = round.rejectedByFilter.filter(_ => prevRounds.exists(_.rejects)),
+        // round that may reject (Round.rejects, not the live option), as RoundService records it;
+        // "only" whatever the sources (the form refuses it without one): none rejects, no file
+        // passes, rather than every file
+        rejectedBy = round.rejectedByFilter.filter(_ =>
+          prevRounds.exists(_.rejects) || (prev.isDefined && jobMode(rejectedMode, round) == RejectedMode.Only)),
         // leave those files out, or keep only them (V93): the job's recorded mode
-        rejectedMode = rejectedMode.getOrElse(round.prevRejectedMode),
+        rejectedMode = jobMode(rejectedMode, round),
         grades = prev.exists(!_.isBinary)),
       topN = prev.flatMap(_ => round.topImages),
       // none for a round from before V72: the legacy rule, by the rate sum (ratedPage)
@@ -692,6 +695,10 @@ object RoundDistributionHandler {
     */
   def jobRejectedMode(job: Job): RejectedMode =
     RejectedMode.fromStored((job.params \ "settings" \ "prevRejectedMode").asOpt[String])
+
+  /** The mode a context applies: the job's recorded one, else ("Count new files") the round's. */
+  private def jobMode(recorded: Option[RejectedMode], round: Round): RejectedMode =
+    recorded.getOrElse(round.prevRejectedMode)
 
   /** The job only adds its list: the round's filters choose nothing. */
   def listOnly(job: Job): Boolean = (job.params \ "listOnly").asOpt[Boolean].getOrElse(false)

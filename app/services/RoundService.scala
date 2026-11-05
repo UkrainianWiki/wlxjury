@@ -168,7 +168,9 @@ class RoundService @Inject() (
     val prevAverageRule = round.previousIds.headOption.flatMap(id => previous.find(_.id.contains(id)))
       .filterNot(_.isBinary).map(_.averageRule.param)
     val topOrder = round.topImages.filter(_ => binaryPrevious).map(_ => round.topOrderParam)
-    val rejectedBy = round.rejectedByFilter.filter(_ => rejectingPrevious)
+    // "only" whatever the sources, as the job applies it (the form refuses a filter without one)
+    val rejectedBy = round.rejectedByFilter.filter(_ =>
+      rejectingPrevious || (previous.nonEmpty && round.prevRejectedMode == org.intracer.wmua.RejectedMode.Only))
     jobs.enqueue(
       NewJob(
         kind = RoundDistributionHandler.Kind,

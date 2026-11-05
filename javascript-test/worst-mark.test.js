@@ -213,7 +213,8 @@ describe("the large view's stars with the worst mark", () => {
 });
 
 describe("the round form's worst mark", () => {
-    function form(rates) {
+    // `lockedX`: a read-only page's X select (disabled, its value in a hidden input)
+    function form(rates, lockedX = false) {
         window.TomSelect = require("tom-select/dist/js/tom-select.complete.js");
         window.wlxMultiSelect = require("../public/javascripts/multi-select").multiSelect;
         const { init } = require("../public/javascripts/round-form");
@@ -225,7 +226,11 @@ describe("the round form's worst mark", () => {
             </select>
             <div id="prevRoundFilters" style="display: none">
               <div id="selectFilters" class="round1">select</div>
-              <div id="rejectFilters" class="round1 round2">rejected</div>
+              <div id="rejectFilters" class="round1 round2">
+                <select id="rejectedMode" name="rejectedMode"><option value="none">No filter</option><option value="only">Only</option></select>
+                <select id="rejectedBy" name="rejectedBy"${lockedX ? " disabled" : ""}><option value="">-</option><option value="2">2</option></select>
+                ${lockedX ? '<input type="hidden" name="rejectedBy" value="2">' : ""}
+              </div>
               <div id="rateFilters">rate</div>
             </div>
             <select id="rates" name="rates"><option value="1">+/-</option><option value="0">Comments</option>
@@ -276,5 +281,28 @@ describe("the round form's worst mark", () => {
         prev.removeItem("3");
         prev.addItem("1");
         expect([shown("rejectFilters"), shown("selectFilters")]).toEqual([true, true]);
+    });
+
+    test("sends \"rejected by\"'s fields only while a chosen previous round may reject", () => {
+        form("5");
+        const fields = () => ["rejectedMode", "rejectedBy"].map(id => document.getElementById(id).disabled);
+        expect(fields()).toEqual([true, true]); // none chosen as the page loads
+        const prev = document.getElementById("previousRound").tomselect;
+        prev.addItem("3");
+        expect(fields()).toEqual([true, true]);
+        prev.addItem("2");
+        expect(fields()).toEqual([false, false]);
+        prev.clear();
+        expect(fields()).toEqual([true, true]);
+    });
+
+    test("keeps a read-only page's select disabled, its hidden value sent with a rejecting round", () => {
+        form("5", true);
+        const hidden = () => document.querySelector('#rejectFilters input[type=hidden]');
+        expect(hidden().disabled).toBe(true);
+        document.getElementById("previousRound").tomselect.addItem("1");
+        expect(document.getElementById("rejectedBy").disabled).toBe(true);
+        expect(hidden().disabled).toBe(false);
+        expect(document.getElementById("rejectedMode").disabled).toBe(false);
     });
 });
