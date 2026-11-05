@@ -110,7 +110,7 @@ object VoteJdbc extends CRUDMapper[Vote] {
 
   def byRoundSelected(roundId: Long): Seq[Vote] =
     where("roundId" -> roundId)
-      .where(sqls.ne(s.rate, 0))
+      .where(VoteSql.voted(s.rate))
       .apply()
 
   def byUser(user: User, roundId: Long): Seq[Vote] =
@@ -118,11 +118,11 @@ object VoteJdbc extends CRUDMapper[Vote] {
 
   def byUserSelected(user: User, roundId: Long): Seq[Vote] =
     where("juryId" -> user.id, "roundId" -> roundId)
-      .where(sqls.ne(s.rate, 0))
+      .where(VoteSql.voted(s.rate))
       .apply()
 
   def byUserNotSelected(user: User, roundId: Long): Seq[Vote] =
-    where("juryId" -> user.id, "roundId" -> roundId, "rate" -> 0).apply()
+    where("juryId" -> user.id, "roundId" -> roundId, "rate" -> Vote.Unrated).apply()
 
   /** Every juror's vote on the file in the round, with the juror, for the organisers' large
     * view: the highest rates first (a binary round's approvals), then the rejections, then the
@@ -142,7 +142,7 @@ object VoteJdbc extends CRUDMapper[Vote] {
         .append(isNotDeleted)
     }.map(rs => (VoteJdbc(s)(rs), User(u)(rs))).list()
       .sortBy { case (vote, juror) =>
-        (if (vote.rate > 0) 0 else if (vote.rate < 0) 1 else 2, -vote.rate, juror.fullname, juror.getId)
+        (if (vote.isPositive) 0 else if (vote.isRejected) 1 else 2, -vote.rate, juror.fullname, juror.getId)
       }
 
   /** Whether the file is in the round: `in` it ([[RoundImageJdbc.isIn]]: it has vote rows
@@ -189,11 +189,15 @@ object VoteJdbc extends CRUDMapper[Vote] {
   /** [[rate]] of the vote `id` in the caller's transaction. A rate that changes marks the
     * file's counts in the round dirty, last ([[RoundCounts.markFile]], P2a): no count delta and
     * no lock on the round or its `round_image` row.
+    *
+    * A ✗ (-1) is checked against the round's worst mark by the caller (`Round.acceptsRate`, on the
+    * round read before), not here: a vote doesn't lock the round row, so a ✗ racing the option's
+    * turn-off is taken, as a ✗ given just before it is (both stay, counted as 0; round images §18).
     */
   private[scalikejdbc] def rateIn(id: Long, juryId: Long, roundId: Long, rate: Int)(implicit session: DBSession): Int = {
     // the vote's file and its rate before, read as it is locked
     val locked = sql"SELECT page_id, rate FROM vote WHERE id = $id AND jury_id = $juryId AND round_id = $roundId FOR UPDATE"
-      .map(rs => rs.long(1) -> rs.intOpt(2).getOrElse(0)).single()
+      .map(rs => rs.long(1) -> rs.int(2)).single()
     def stopped = sql"""SELECT 1 FROM round_user WHERE round_id = $roundId AND user_id = $juryId AND active = FALSE
                         LOCK IN SHARE MODE""".map(_ => ()).single().isDefined
     def criteria = sql"SELECT 1 FROM round_criterion WHERE round_id = $roundId LIMIT 1 LOCK IN SHARE MODE"
@@ -201,7 +205,6 @@ object VoteJdbc extends CRUDMapper[Vote] {
     locked match {
       case Some((pageId, before)) if !stopped && !criteria =>
         val updated = sql"UPDATE vote SET rate = $rate WHERE id = $id".update()
-        // a NULL rate counts as 0 (unrated), so 0 for NULL changes no count
         if (rate != before) RoundCounts.markFile(roundId, pageId)
         updated
       case _ => 0
@@ -212,12 +215,19 @@ object VoteJdbc extends CRUDMapper[Vote] {
     where("roundId" -> roundId)
       .distinctCount("juryId")
 
-  /** Whether a juror has rated a file of the round (a rate other than 0, of a vote not
+  /** Whether a juror has rated a file of the round (any vote, a ✗ included, of a vote not
     * deleted): until then every file scores 0 under each score rule. One read of the
     * (round_id, rate) index; the round form's score rule warning.
     */
   def hasRatedVote(roundId: Long): Boolean =
-    sql"""SELECT 1 FROM vote WHERE round_id = $roundId AND rate <> 0 AND deleted_at IS NULL LIMIT 1"""
+    sql"""SELECT 1 FROM vote WHERE round_id = $roundId AND ${VoteSql.voted(VoteSql.bare)} AND deleted_at IS NULL LIMIT 1"""
+      .map(_.int(1)).single().isDefined
+
+  /** Whether the round has a vote below 0 (a yes/no round's no, a rated round's ✗): one read of
+    * the (round_id, rate) index. The CSV's legend of a rated round whose option was turned off.
+    */
+  def hasRejected(roundId: Long): Boolean =
+    sql"""SELECT 1 FROM vote WHERE round_id = $roundId AND ${VoteSql.rejected(VoteSql.bare)} LIMIT 1"""
       .map(_.int(1)).single().isDefined
 
   private[scalikejdbc] val DeleteChunk = 5000

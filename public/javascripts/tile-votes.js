@@ -114,59 +114,102 @@
    * finds the half by. A click on them never reaches the tile, which opens the large view.
    * `voted`, if given, is called with the rate once it is stored. While a vote is pending the
    * stars show its rate and ignore clicks; a failed one shows the last stored rate again.
+   * With `options.worst` (a round with the worst mark), a ✗ button after them gives the file
+   * ✗ (rate -1, its stars empty, the button pressed), and the cancel icon is an eraser that
+   * clears the vote, shown only once the file has one: giving ✗ and clearing stay apart.
    */
   function addStars(tile, item, options, voted) {
     var $ = window.jQuery;
     var units = options.half ? 2 : 1;
-    var current = (+item.rate || 0) / units;
-    var stored = current; // the stars of the rate the server last confirmed
+    // the stars of a rate: none for unrated or a ✗ (-1, the worst mark)
+    function starsOf(rate) { return Math.max(rate, 0) / units; }
+    var currentRate = +item.rate || 0;
+    var storedRate = currentRate; // the rate the server last confirmed
     var el = $('<div class="wlx-tile-stars"></div>')
-      .css('--wlx-tile-stars', options.number + 1)
+      .css('--wlx-tile-stars', options.number + (options.worst ? 2 : 1))
       .on('click', function (e) { e.stopPropagation(); })
       .appendTo(tile)[0];
+    var worst = null;
 
+    /** Draws `rate`: its stars, the ✗ button pressed for a ✗, the clear (raty's cancel icon, in a
+      * round with the worst mark an eraser) only once the file has a vote. */
+    function draw(rate) {
+      show(el, starsOf(rate));
+      if (!options.worst) return;
+      worst.setAttribute('aria-pressed', String(rate === -1));
+      worst.classList.toggle('wlx-tile-worst-on', rate === -1);
+      var clear = el.querySelector('.raty-cancel');
+      if (clear) clear.hidden = rate === 0;
+    }
+
+    /** Votes `rate`: shown at once, the last stored one again if it fails; none while one is
+      * pending. */
+    function rateTo(rate) {
+      if (isBusy(el)) {
+        draw(currentRate); // the pending vote's
+        return;
+      }
+      currentRate = rate;
+      draw(rate);
+      busy(el, true);
+      send(item, rate).done(function () {
+        busy(el, false);
+        storedRate = rate;
+        item.rate = rate;
+        tile.setAttribute('data-rate', rate);
+        if (voted) voted(rate);
+      }).fail(function (jqXHR) {
+        busy(el, false);
+        currentRate = storedRate;
+        draw(storedRate);
+        explain(jqXHR);
+      });
+    }
+
+    var holder = document.querySelector('[data-csrf-token]');
     $(el).raty({
       starType: 'i',
       starOn: 'bi bi-star-fill wlx-star',
       starHalf: 'bi bi-star-half wlx-star',
       starOff: 'bi bi-star wlx-star',
-      cancelOn: 'bi bi-x-circle-fill',
-      cancelOff: 'bi bi-x-circle',
+      // in a round with the worst mark, the cancel icon clears and looks it: ✗ is its own button
+      cancelOn: options.worst ? 'bi bi-eraser-fill' : 'bi bi-x-circle-fill',
+      cancelOff: options.worst ? 'bi bi-eraser' : 'bi bi-x-circle',
       cancel: true,
-      cancelHint: '',
+      cancelHint: options.worst ? (holder && holder.getAttribute('data-vote-clear')) || '' : '',
       noRatedMsg: '',
       hints: Array(options.number).fill(''),
       number: options.number,
       half: options.half,
       precision: false,
       space: false,
-      score: current,
+      score: starsOf(currentRate),
       click: function (score) {
         // the stars drawn under the pointer, as the large view gives them (large-rate.js)
-        if (isBusy(el)) {
-          show(el, current); // the pending vote's stars
-          return false;
-        }
-        var stars = window.wlxLargeRate.clicked(score, options.half);
-        var rate = Math.round(stars * units);
-        current = stars;
-        show(el, stars);
-        busy(el, true);
-        send(item, rate).done(function () {
-          busy(el, false);
-          stored = stars;
-          item.rate = rate;
-          tile.setAttribute('data-rate', rate);
-          if (voted) voted(rate);
-        }).fail(function (jqXHR) {
-          busy(el, false);
-          current = stored;
-          show(el, stored);
-          explain(jqXHR);
-        });
+        rateTo(Math.round(window.wlxLargeRate.clicked(score, options.half) * units));
         return false; // drawn above, not by raty's own rounding
       }
     });
+    if (options.worst) {
+      // the ✗ (the worst mark), a toggle button showing the file's ✗; a click gives it, never
+      // clears it (the clear is apart), Enter or Space as a click
+      var label = (holder && holder.getAttribute('data-vote-worst')) || '';
+      worst = document.createElement('i');
+      worst.className = 'bi bi-x-lg wlx-tile-worst';
+      worst.setAttribute('role', 'button');
+      worst.setAttribute('tabindex', '0');
+      worst.setAttribute('aria-label', label);
+      worst.title = label;
+      worst.addEventListener('click', function (e) { e.stopPropagation(); rateTo(-1); });
+      worst.addEventListener('keydown', function (e) {
+        if (e.key !== 'Enter' && e.key !== ' ') return;
+        e.preventDefault();
+        e.stopPropagation();
+        rateTo(-1);
+      });
+      el.appendChild(worst);
+      draw(currentRate);
+    }
     return el;
   }
 
@@ -182,7 +225,8 @@
   function addListStars(list) {
     var options = {
       number: +list.getAttribute('data-stars-number'),
-      half: list.getAttribute('data-stars-half') === 'true'
+      half: list.getAttribute('data-stars-half') === 'true',
+      worst: list.getAttribute('data-stars-worst') === 'true'
     };
     var hint = document.querySelector('.wlx-byrate-hint');
     var title = list.getAttribute('data-changed-title') || '';
@@ -198,7 +242,8 @@
       holder.textContent = '';
       addStars(holder, item, options, function (rate) {
         var changed = rate !== atLoad;
-        if (text) text.textContent = String(Math.max(rate, 0));
+        // a ✗ as its mark, as galleryByRate.scala.html renders it
+        if (text) text.textContent = rate < 0 ? '✗' : String(rate);
         box.classList.toggle('wlx-rate-changed', changed);
         if (changed) box.setAttribute('title', title);
         else box.removeAttribute('title');

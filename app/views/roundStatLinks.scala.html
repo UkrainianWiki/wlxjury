@@ -1,12 +1,15 @@
 @import db.scalikejdbc.User
 @import db.scalikejdbc.Round
+@import org.intracer.wmua.Vote
 @(round: Round, user: User, rate: Int, byUserRateCount: Map[Long, Map[Int, Int]])(implicit messages: Messages)
+    @* a binary round's votes of `rate`; a rated round's rated (any vote, a ✗ included: the
+       juror's progress) for a `rate` above 0, else its unrated *@
     @defining(byUserRateCount.getOrElse(user.getId, Map.empty).toSeq.collect({
         case (x, y)
             if
             round.isBinary && rate == x ||
-                    rate > 0 && x > 0 ||
-                    rate == 0 && x == 0
+                    !round.isBinary && Vote.isPositive(rate) && Vote.isVoted(x) ||
+                    !round.isBinary && Vote.isUnrated(rate) && Vote.isUnrated(x)
         => y
     }).sum) { count =>
         @if(count != 0) {

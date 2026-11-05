@@ -61,6 +61,43 @@ class LargeViewControllerSpec extends PlaySpecification {
       doc.select("body script:not([src])").asScala must beEmpty
     }
 
+    "give the worst mark (✗) by Delete and its button, clear by Backspace and its button, all by paths [J-38]" in {
+      implicit val request = play.api.test.FakeRequest("GET", "/").withCSRFToken
+      implicit val messages = Helpers.stubMessagesApi().preferred(request)
+      implicit val flash: Flash = Flash()
+
+      val round = Round(id = Some(1), number = 1, contestId = 1, active = true, rates = Round.ratesById(5), worstMark = true)
+      val user  = User("name", "email", id = Some(1), roles = Set("jury"), contestId = Some(1))
+      val list = RoundList(round, asUserId = 1, view = GalleryView.ByRate)
+      def render(rate: Int) = {
+        val files = Seq(ImageWithRating(Image(pageId = 1, title = "File:1.jpg"), votes = Seq(Vote(1, 1, 1, rate))))
+        val hood = Neighbourhood(files, 0, 0)
+        Jsoup.parse(contentAsString(views.html.large.main_large(user = user, list = list, readOnly = false, hood = hood)(
+          views.html.large.navigationButtons(user, list, hood, 0.0, readOnly = false))))
+      }
+      val worst = render(-1)
+      val keys = worst.getElementById("large-keys")
+      val buttons = worst.select(".large-worst [data-vote-url]").asScala.map(b =>
+        (b.attr("data-vote-url").takeWhile(_ != '?'), b.attr("aria-label"), b.attr("aria-pressed")))
+      (keys.attr("data-vote-key-del") must startWith("/large/round/1/pageid/1/select/-1?")) and
+        (keys.attr("data-vote-key-backspace") must startWith("/large/round/1/pageid/1/select/0?")) and
+        (keys.attr("data-vote-key-0") must startWith("/large/round/1/pageid/1/select/0?")) and
+        (buttons.toSeq === Seq(
+          ("/large/round/1/pageid/1/select/-1", "vote.worst", "true"), ("/large/round/1/pageid/1/select/0", "vote.clear", ""))) and
+        // the stars without raty's cancel icon; the number says ✗
+        (worst.getElementById("rate-image").attr("data-cancel") === "false") and
+        (worst.select(".large-rate-number").text === "✗") and
+        (worst.select(".large-rate .visually-hidden").text === "large.rate.worst") and
+        // the clear only once the file has a vote; a round without the option has neither, nor the keys
+        (render(0).select(".large-worst [data-vote-url]").size === 1) and {
+          val plain = Jsoup.parse(contentAsString(views.html.large.main_large(user = user,
+            list = list.copy(round = round.copy(worstMark = false)), readOnly = false,
+            hood = Neighbourhood(Seq(ImageWithRating(Image(pageId = 1, title = "File:1.jpg"), votes = Nil)), 0, 0))(Html(""))))
+          (plain.getElementById("large-keys").hasAttr("data-vote-key-del") must beFalse) and
+            (plain.getElementById("large-keys").hasAttr("data-vote-key-backspace") must beFalse)
+        }
+    }
+
     "keep the binary order of all the jurors' votes in its links" in {
       implicit val request = play.api.test.FakeRequest("GET", "/").withCSRFToken
       implicit val messages = Helpers.stubMessagesApi().preferred(request)

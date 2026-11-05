@@ -3,7 +3,7 @@ package controllers
 import db.scalikejdbc.{Round, RoundCounts, User}
 import db.scalikejdbc.rewrite.{ImageDbNew, RoundImageQuery}
 import db.scalikejdbc.rewrite.ImageDbNew.{Limit, SelectionQuery}
-import org.intracer.wmua.{BinaryOrder, ImageWithRating}
+import org.intracer.wmua.{BinaryOrder, ImageWithRating, Vote}
 import org.intracer.wmua.ImageWithRating.{RankKey, Ranks}
 import play.api.mvc.{Cookie, Flash, RequestHeader}
 
@@ -11,8 +11,8 @@ import java.net.URLEncoder
 import java.nio.charset.StandardCharsets.UTF_8
 
 /** Which of a round's files a list has, by the viewer's votes on them: all, the unrated, the
-  * rated (above 0: a binary round's selected), or those of one rate (a binary round's selected
-  * or rejected, a rated round's stars).
+  * rated (a rated round's: any vote, stars or a ✗; the filter is a rated round's only), or those
+  * of one rate (a binary round's selected or rejected, a rated round's stars).
   *
   * @param param its value of a list URL's `filter`
   */
@@ -22,8 +22,13 @@ sealed abstract class VoteFilter(val param: String) {
   def rate: Option[Int] = None
   def rated: Option[Boolean] = None
 
-  /** Whether a file of this rate is in the list, as the query's `rate` and `rated` have it. */
-  def matches(rate: Int): Boolean = this.rate.forall(_ == rate) && rated.forall(r => if (r) rate > 0 else rate == 0)
+  /** Whether a file of this rate is in the list, as the query's `rate` and `rated` have it: rated
+    * is a rated round's any vote (a ✗ included), a yes/no round's (`binary`) yes, as
+    * `SelectionQuery.grades` reads them.
+    */
+  def matches(rate: Int, binary: Boolean): Boolean =
+    this.rate.forall(_ == rate) && rated.forall(r =>
+      if (!r) Vote.isUnrated(rate) else if (binary) Vote.isPositive(rate) else Vote.isVoted(rate))
 
   /** The filter in a round: itself if a round of its kind has it ([[VoteFilter.ofRound]]),
     * else all files. A binary round's selected (`Rate(1)`) is not a rated round's "rated 1",
@@ -207,6 +212,8 @@ final case class RoundList(
       // grouped rows count their approvals and rejections: a yes/no round's tally, a rated
       // round's rated votes (the denominator of AverageRule.Rated)
       tally = true,
+      // a rated round's sums are of grades, a ✗ as 0, and its rated votes any vote
+      grades = !round.isBinary,
       subRegions = round.specialNomination.contains("Віа Регіа")
     )
 
@@ -278,7 +285,7 @@ final case class RoundList(
     * sub-regions (the monument table's).
     */
   def jurorCounts(): Option[JurorCounts] =
-    Option.when(asUserId != 0 && !query.subRegions)(JurorCounts(query.regionRateCounts()))
+    Option.when(asUserId != 0 && !query.subRegions)(JurorCounts(query.regionRateCounts(), round.isBinary))
 
   /** The pager's page of files. */
   def files(pager: Pager): Seq[ImageWithRating] =
@@ -377,7 +384,7 @@ final case class RoundList(
     else {
       // the file's place in the list after the vote; None if the filter leaves it out
       val now =
-        if (query.keyed) query.orderKey(pageId).filter(_ => filter.matches(rate)).map(query.countBefore(_))
+        if (query.keyed) query.orderKey(pageId).filter(_ => filter.matches(rate, round.isBinary)).map(query.countBefore(_))
         else Some(query.imageRank(pageId)).filter(_ > 0).map(_ - 1)
       now match {
         case None    => Option.when(filter != VoteFilter.Unrated)(MovedVote(pageId, out = true, rate))
@@ -495,7 +502,7 @@ final class CountsSession {
 /** A juror's files in a round by top-level region (None: without a monument id) and rate
   * ([[db.scalikejdbc.rewrite.ImageDbNew.SelectionQuery.regionRateCounts]]).
   */
-final case class JurorCounts(byRegionRate: Map[(Option[String], Int), Int]) {
+final case class JurorCounts(byRegionRate: Map[(Option[String], Int), Int], binary: Boolean = false) {
 
   /** The files per rate: the juror's tabs ([[RateDistribution]]). */
   def rates: Map[Int, Int] = byRegionRate.groupMapReduce(_._1._2)(_._2)(_ + _)
@@ -504,13 +511,13 @@ final case class JurorCounts(byRegionRate: Map[(Option[String], Int), Int]) {
     * none), without the files without a monument id: the region nav's counts.
     */
   def regions(filter: VoteFilter): Map[String, Int] =
-    byRegionRate.toSeq.collect { case ((Some(region), rate), n) => region -> (if (filter.matches(rate)) n else 0) }
+    byRegionRate.toSeq.collect { case ((Some(region), rate), n) => region -> (if (filter.matches(rate, binary)) n else 0) }
       .groupMapReduce(_._1)(_._2)(_ + _)
 
   /** The files the filter lists, in the region or in all of them: the list's total. */
   def total(filter: VoteFilter, region: Option[String]): Int =
     byRegionRate.toSeq.collect {
-      case ((r, rate), n) if region.forall(r.contains) && filter.matches(rate) => n
+      case ((r, rate), n) if region.forall(r.contains) && filter.matches(rate, binary) => n
     }.sum
 }
 

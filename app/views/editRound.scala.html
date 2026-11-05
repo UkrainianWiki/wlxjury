@@ -144,6 +144,17 @@
                             </div>
                         }
 
+                        @* a rated round's worst mark (✗, V92): off by default, editable on an existing
+                           round; the hidden field says the form had the checkbox (an unchecked box sends
+                           nothing). Hidden and not sent for a yes/no or comments-only rating of a new round
+                           (round-form.js); a criteria round refuses it (EditRound, RoundController) *@
+                        <div id="round-worst-mark">
+                            <input type="hidden" name="worstMarkShown" value="true" />
+                            @bs.checkbox(field = editRoundForm("worstMark"),
+                                Symbol("_text") -> Messages("round.worst.mark"),
+                                Symbol("_help") -> Messages("round.worst.mark.help"))
+                        </div>
+
                         @* a rated round's criteria, from the catalogue, by position: the empty
                            selects left out (EditRound.criterionIdsOf); after the round's first
                            vote only replaced in their places (RoundCriterion.update) *@

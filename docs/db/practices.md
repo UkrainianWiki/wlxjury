@@ -156,6 +156,19 @@ key may be 3,072 bytes (768 `utf8mb4` characters); 190 is the email convention (
 must be written under the source row's lock (h6) and is checked by an invariant (6).
 *Why:* the copy drifted under concurrency (write-path §2, break 6).
 
+**2.9 A vote's rate, by name.** `vote.rate` and `vote_aside.rate` are `INT NOT NULL DEFAULT 0`
+(V91): 0 unrated (never voted, or cleared: not told apart); a yes/no round's 1 (yes) and -1 (no);
+a rated round's stars 1…N in stored units (a half star 1), and -1 for its ✗, the worst mark, where
+the round has the option (`round.worst_mark`, V92). A ✗ counts as 0 in every average and total
+(the sum of grades: `SUM(GREATEST(rate, 0))`, the counts' `rate_sum + rejections`) and as a vote
+(`rate <> 0`) in "the jurors who rated it" and a juror's progress. Code never compares a rate
+itself: SQL uses `db.scalikejdbc.VoteSql` (`positive`, `rejected`, `unrated`, `voted`, `grade`,
+`GradeSum`), Scala `Vote.isPositive` / `isRejected` / `isUnrated` / `isVoted` / `grade`. Which a
+query means depends on the round's kind: a yes/no round's "rated" is a yes, a rated round's any
+vote (`SelectionQuery.grades`, `RoundImageQuery.grades`, `PrevVotes.grades`). *Why:* the same
+`rate > 0` meant a yes, stars and "rated" in about forty places; a ✗ changed the meaning of some
+of them only (round images §18).
+
 ## 3. Indexes and performance
 
 **3.1 `EXPLAIN` new queries on large tables.** `vote` (~3M rows in production, 384k a round

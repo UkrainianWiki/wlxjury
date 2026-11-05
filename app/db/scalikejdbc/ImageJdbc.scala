@@ -527,7 +527,7 @@ object ImageJdbc extends CRUDMapper[Image]
     // is 0, U5, but it holds the juror's work)
     val pairs = sql"""SELECT s.id, s.rate, d.id, d.rate FROM vote_aside d JOIN vote s ON $sameVote
                       WHERE $where FOR UPDATE"""
-      .map(rs => (rs.long(1), rs.intOpt(2).getOrElse(0), rs.long(3), rs.intOpt(4).getOrElse(0))).list()
+      .map(rs => (rs.long(1), rs.int(2), rs.long(3), rs.int(4))).list()
     val byCriteria = VoteJdbc.votedByCriteria(pairs.flatMap { case (s, _, d, _) => Seq(s, d) })
     val replacedNew = pairs.collect {
       case (s, sRate, d, dRate) if sRate == 0 && !byCriteria(s) && (dRate != 0 || byCriteria(d)) => s
@@ -849,15 +849,17 @@ object ImageJdbc extends CRUDMapper[Image]
       .map(ImageJdbc(i))
       .list()
 
-  /** The round's files, one row each with all their votes' sum and count; with `tally`, the
-    * round's `isBinary`, their approvals and rejections apart too (a yes/no round's rows).
+  /** The round's files, one row each with all their votes' sum and count; with `tally`, their
+    * approvals and rejections apart too; with `grades` (a rated round's), the sum of their
+    * grades (a ✗ as 0) and any vote as rated.
     */
   def byRoundMerged(
       roundId: Long,
       pageSize: Int = Int.MaxValue,
       offset: Int = 0,
       rated: Option[Boolean] = None,
-      tally: Boolean
+      tally: Boolean,
+      grades: Boolean = false
   ): Seq[ImageWithRating] =
     SelectionQuery(
       roundId = Some(roundId),
@@ -865,6 +867,7 @@ object ImageJdbc extends CRUDMapper[Image]
       order = Seq("rate" -> -1),
       rated = rated,
       tally = tally,
+      grades = grades,
       limit = Some(Limit(pageSize = Some(pageSize), offset = Some(offset)))
     ).list()
 

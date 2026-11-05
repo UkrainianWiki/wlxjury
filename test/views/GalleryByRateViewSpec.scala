@@ -164,6 +164,22 @@ class GalleryByRateViewSpec extends PlaySpecification {
         (doc.select(".rate-stars").asScala.map(_.text) === Seq("1.00 (3 / 3 jurors)", "2.00 (6 / 3 jurors)", "3.00 (9 / 3 jurors)", "4.00 (12 / 3 jurors)"))
     }
 
+    "show a rated round's worst marks to an organiser as \"✗ n\" beside the score, the text for screen readers" in {
+      // one file with two ✗ of three votes (its grades' sum 4, one rated vote with stars), one without
+      val worst = files.head.copy(votes = Seq(Vote(files.head.pageId, 0, 0, 4)), countFromDb = 3,
+        approvalsFromDb = Some(1), rejectionsFromDb = Some(2))
+      val clean = files(1).copy(votes = Seq(Vote(files(1).pageId, 0, 0, 6)), countFromDb = 3,
+        approvalsFromDb = Some(3), rejectionsFromDb = Some(0))
+      val worstRound = round.copy(worstMark = true)
+      val doc = Jsoup.parse(contentAsString(views.html.galleryByRate(
+        juror, RoundList(worstRound, 0, view = GalleryView.ByRate), Seq(worst, clean), Pager(1, 2), Nil, None,
+        new RateDistribution(Map.empty), ranks.take(2))(Flash(), LargeViewRenders.realMessages, request)))
+      val marks = doc.select(".wlx-worst-mark").asScala
+      (marks.map(_.select("[aria-hidden]").text) === Seq("✗ 2")) and
+        (marks.map(_.select(".visually-hidden").text) === Seq("2 worst marks (✗)")) and
+        (doc.select(".rate-stars").asScala.head.text must startWith("1.33 (4 / 3 jurors)"))
+    }
+
     "be in half stars in a half-star round" in {
       val list = page(LargeViewRenders.halfStarRound).selectFirst("[data-stars-number]")
       (list.attr("data-stars-number"), list.attr("data-stars-half")) === (("5", "true"))

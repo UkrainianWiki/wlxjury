@@ -104,7 +104,7 @@ object RoundCriterion {
     */
   private def voted(roundId: Long)(implicit session: DBSession): Boolean =
     Seq(sqls"vote", sqls"vote_aside").exists { table =>
-      sql"SELECT 1 FROM $table v WHERE v.round_id = $roundId AND v.rate <> 0 LIMIT 1 LOCK IN SHARE MODE"
+      sql"SELECT 1 FROM $table v WHERE v.round_id = $roundId AND ${VoteSql.voted(VoteSql.v)} LIMIT 1 LOCK IN SHARE MODE"
         .map(_.int(1)).single().isDefined ||
       sql"""SELECT 1 FROM $table v STRAIGHT_JOIN criteria_rate cr ON cr.vote_id = v.id
             WHERE v.round_id = $roundId LIMIT 1 LOCK IN SHARE MODE""".map(_.int(1)).single().isDefined

@@ -65,7 +65,51 @@ class AverageRuleSpec extends Specification {
         (both(_.rateString(r)) === Seq("15")) and
         (both(_.starRate(r)) === Seq(7.5)) and
         (both(RankKey.of(r).values) === Seq(Seq(15L))) and
-        (RankKey.of(r).columns === Seq("sum(s.rate)" -> -1))
+        (RankKey.of(r).columns === Seq("sum(GREATEST(s.rate, 0))" -> -1))
+    }
+  }
+
+  "a rated round's worst mark (✗, rate -1)" should {
+    // three jurors: 7, 8 and ✗, as vote rows and as a grouped row (the grades' sum 15; 2
+    // approvals, 1 rejection)
+    val worstRows = ImageWithRating(image, Seq(Vote(1, 11, 1, 7), Vote(1, 12, 1, 8), Vote(1, 13, 1, -1)))
+    val worstGrouped =
+      ImageWithRating(image, Seq(Vote(1, 0, 0, 15)), 3, approvalsFromDb = Some(2), rejectionsFromDb = Some(1))
+    def worst[A](f: ImageWithRating => A) = Seq(f(worstRows), f(worstGrouped)).distinct
+
+    "count as 0 and as a juror who rated it under the rated rule" in {
+      val r = round(AverageRule.Rated)
+      (worst(_.ratedVotes) === Seq(3L)) and (worst(_.rateSum) === Seq(15)) and
+        (worst(_.totalRate(r)) === Seq(5.0)) and
+        (worst(_.rateText(r)) === Seq("5.00 (15 / 3 jurors)")) and
+        (worst(_.rateString(r)) === Seq("5.00 (15 / 3)")) and
+        (worst(RankKey.of(r).values) === Seq(Seq(5000000000L, 15L))) and
+        (worst(_.worstMarks) === Seq(1))
+    }
+
+    "count as 0 under the assigned and the sum rules" in {
+      val assigned = round(AverageRule.Assigned)
+      val sum = round(AverageRule.Sum)
+      (worst(_.totalRate(assigned)) === Seq(5.0)) and (worst(_.totalRate(sum)) === Seq(15.0)) and
+        (worst(_.rateString(sum)) === Seq("15")) and (worst(RankKey.of(sum).values) === Seq(Seq(15L)))
+    }
+
+    "be one juror's own ✗, scored 0" in {
+      val own = ImageWithRating(image, Seq(Vote(1, 11, 1, -1)))
+      (own.isWorstMark must beTrue) and (own.totalRate(round(AverageRule.Rated)) === 0.0) and
+        (own.rateText(round(AverageRule.Rated)) === "0") and (own.worstMarks === 1) and
+        (worstRows.isWorstMark must beFalse) and (worstGrouped.isWorstMark must beFalse)
+    }
+
+    "be taken only by a rated round without criteria with the option" in {
+      val r = round(AverageRule.Rated)
+      (r.acceptsRate(-1) must beFalse) and (r.copy(worstMark = true).acceptsRate(-1) must beTrue) and
+        (r.copy(worstMark = true).acceptsRate(-2) must beFalse) and
+        (r.copy(worstMark = true, hasCriteria = true).acceptsRate(-1) must beFalse) and
+        (round(AverageRule.Rated, rates = 1).copy(worstMark = true).takesWorstMark must beFalse) and
+        // a next round may filter by ✗ from a rated round without criteria, whatever its option now
+        (r.copy(worstMark = true).rejects must beTrue) and (r.rejects must beTrue) and
+        (r.copy(hasCriteria = true).rejects must beFalse) and (round(AverageRule.Rated, rates = 1).rejects must beTrue)
     }
   }
 

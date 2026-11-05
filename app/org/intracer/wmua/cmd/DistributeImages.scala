@@ -113,7 +113,7 @@ class DistributeImages @Inject()(imageRepo: ImageRepo) extends Logging {
     val secondCategoryIds = categoryFileIds(categoryRule.second).toSet
 
     val currentImages = imageRepo
-      .byRoundMerged(round.getId, tally = true)
+      .byRoundMerged(round.getId, tally = true, grades = !round.isBinary)
       .filter(iwr => iwr.votes.nonEmpty)
       .toSet
     val existingImageIds = currentImages.map(_.pageId)
@@ -142,16 +142,21 @@ class DistributeImages @Inject()(imageRepo: ImageRepo) extends Logging {
       else
         mergeByPageId(
           prevRounds.flatMap(r =>
-            imageRepo.byRoundMerged(r.getId, rated = Option.when(selectedAtLeast.isDefined)(true), tally = true)
+            imageRepo.byRoundMerged(r.getId, rated = Option.when(selectedAtLeast.isDefined)(true), tally = true,
+              grades = !r.isBinary)
           )
         )
     logger.debug("Total images: " + imagesAll.size)
 
-    // "exclude files rejected by at least N" counts the rejections of all the votes of yes/no
-    // previous rounds, whatever "selected by" reads (its rows are the approvals only)
-    val notRejected = prevRound.filter(_.isBinary).flatMap(_ => rejectedBy)
+    // "exclude files rejected by at least N" counts the rejections of all the votes of the
+    // previous rounds, whatever "selected by" reads (its rows are the approvals only): a yes/no
+    // round's "no" votes, a rated round's ✗ (the worst mark); from any previous round that may
+    // reject (Round.rejects), as the job and the round form have it; "only" whatever the sources
+    // (none rejects: no file passes, rather than every file)
+    val notRejected = rejectedBy.filter(_ =>
+      prevRounds.exists(_.rejects) || (prevRounds.nonEmpty && round.prevRejectedMode == RejectedMode.Only))
     val rejections: Map[Long, Int] = notRejected.fold(Map.empty[Long, Int])(_ =>
-      mergeByPageId(prevRounds.flatMap(r => imageRepo.byRoundMerged(r.getId, tally = true)))
+      mergeByPageId(prevRounds.flatMap(r => imageRepo.byRoundMerged(r.getId, tally = true, grades = !r.isBinary)))
         .map(i => i.pageId -> i.rejections).toMap)
     val candidates = if (notRejected.isEmpty) imagesAll
       else imagesAll.map(i => i.copy(rejectionsFromDb = Some(rejections.getOrElse(i.pageId, 0))))
@@ -174,6 +179,7 @@ class DistributeImages @Inject()(imageRepo: ImageRepo) extends Logging {
       topOrder = round.topBinaryOrder,
       selectedAtLeast = prevRound.flatMap(_ => selectedAtLeast),
       rejectedBy = notRejected,
+      rejectedMode = round.prevRejectedMode,
       mpxAtLeast = mpxAtLeast,
       sizeAtLeast = sizeAtLeast,
       specialNomination = round.specialNomination,

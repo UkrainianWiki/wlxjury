@@ -415,17 +415,17 @@ class RoundListDbSpec extends Specification with TestDb with BeforeAll with Befo
         (lists.map(_.count()) must_== Seq(2, 2, 2, 2, 2, 2, 1, 1))
     }
 
-    "rank a sum round's files by their rate sums, rates below 0 too, across pages and past the end" in {
+    "rank a sum round's files by their sums of grades, a ✗ (-1) as 0, across pages and past the end" in {
       val (rated, _, ids) = setUpRated()
       val round = rated.copy(averageRule = org.intracer.wmua.AverageRule.Sum)
-      // F2 6, F1 5, F0 3, F3 and F5 2 (in file order), F4 -1
+      // F2 6, F1 5, F0 and F3 3 (F3's ✗ as 0; in file order), F5 2, F4 0 (its only vote a ✗)
       val ordered = Seq(2, 1, 0, 3, 5, 4).map(ids)
       forall(Seq(GalleryView.ByRate, GalleryView.FileList)) { view =>
         val list = RoundList(round, 0, view = view)
         val counts = list.rankCounts()
         val pages = (1 to 4).map(p => list.files(Pager(p, 6, 2)))
         (pages.flatten.map(_.pageId) must_== ordered) and
-          (pages.flatMap(list.ranks(_, counts)) must_== Seq("1", "2", "3", "4-5", "4-5", "6")) and
+          (pages.flatMap(list.ranks(_, counts)) must_== Seq("1", "2", "3-4", "3-4", "5", "6")) and
           (pages(3) must beEmpty) and (counts.map(_._2).sum must_== 6)
       }
     }

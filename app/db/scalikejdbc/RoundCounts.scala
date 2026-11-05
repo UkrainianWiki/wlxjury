@@ -186,11 +186,11 @@ object RoundCounts {
 
   /** The files' counts over their `vote` rows, read plainly (the latest committed at READ
     * COMMITTED) from `vote_round_page_rate_idx`: `cond` on alias `v` narrows the round's votes
-    * to the window's files. A NULL rate is unrated.
+    * to the window's files (`rate` is NOT NULL, V91: each group's sums are numbers).
     */
   private def votedCounts(roundId: Long, cond: SQLSyntax)(implicit session: DBSession): Map[Long, Counts] =
-    sql"""SELECT v.page_id, COUNT(*), COALESCE(SUM(v.rate <> 0), 0), COALESCE(SUM(v.rate > 0), 0),
-                 COALESCE(SUM(v.rate < 0), 0), COALESCE(SUM(v.rate), 0)
+    sql"""SELECT v.page_id, COUNT(*), SUM(${VoteSql.voted(VoteSql.v)}), SUM(${VoteSql.positive(VoteSql.v)}),
+                 SUM(${VoteSql.rejected(VoteSql.v)}), SUM(v.rate)
           FROM vote v WHERE v.round_id = $roundId AND $cond GROUP BY v.page_id"""
       .map(rs => rs.long(1) -> Counts(rs.int(2), rs.int(3), rs.int(4), rs.int(5), rs.int(6))).list().toMap
 
@@ -305,7 +305,8 @@ object RoundCounts {
     sql"""SELECT ri.page_id, ri.assigned, ri.voted, ri.approvals, ri.rejections, ri.rate_sum,
                  COALESCE(v.a, 0), COALESCE(v.vt, 0), COALESCE(v.ap, 0), COALESCE(v.rj, 0), COALESCE(v.rs, 0)
           FROM round_image ri
-          LEFT JOIN (SELECT page_id, COUNT(*) a, SUM(rate <> 0) vt, SUM(rate > 0) ap, SUM(rate < 0) rj, SUM(rate) rs
+          LEFT JOIN (SELECT page_id, COUNT(*) a, SUM(${VoteSql.voted(VoteSql.bare)}) vt,
+                            SUM(${VoteSql.positive(VoteSql.bare)}) ap, SUM(${VoteSql.rejected(VoteSql.bare)}) rj, SUM(rate) rs
                      FROM vote WHERE round_id = $roundId GROUP BY page_id) v ON v.page_id = ri.page_id
           WHERE ri.round_id = $roundId
             AND (ri.assigned, ri.voted, ri.approvals, ri.rejections, ri.rate_sum)
