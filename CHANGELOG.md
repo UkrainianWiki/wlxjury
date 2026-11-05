@@ -25,10 +25,14 @@ with `.N` for an extra deploy in the same month (`26.11.1`), and release heading
 
 ## Unreleased (developed, not yet deployed)
 
-### Release 1 (planned): `d8054737`, migrations V71–V81
+Release 2 (`26.11`) is the next deploy, V71–V94 in one go; there is no release 1 (decided
+2026-11-05: the branch that would have shipped V71–V81 alone removed admin-set passwords before
+the shareable links that replace them existed). The sections below are its parts, in the order
+they were developed. Pre-deploy steps: roadmap, "Before any production deploy".
 
-Developed 2026-10-31 to 2026-11-02, PRs #211–#231. Pre-deploy steps: roadmap, "Before any
-production deploy".
+### Developed first (V71–V81)
+
+Developed 2026-10-31 to 2026-11-02, PRs #211–#231.
 
 **Features**
 
@@ -59,7 +63,7 @@ production deploy".
   allowlist; V77 account verification and tokens; V78 criteria vote integrity; V79 API token create
   nonce; V80 session upgrade window; V81 legacy password retirement.
 
-### Release 2 (planned): V82 onward
+### Developed second (V82–V84)
 
 Developed 2026-11-02 to 2026-11-03, PRs #232–#236.
 
@@ -75,9 +79,18 @@ Developed 2026-11-02 to 2026-11-03, PRs #232–#236.
 - Flyway 13.12.0, run by the app through `db.Migrations` (#234). A faster test suite (#233).
 - **Migrations:** V82 table renames; V83 criteria catalogue; V84 `round_image`.
 
-### Developed after release 2
+### Developed third (V85–V94 and the rest)
 
 **Features**
+
+- **Passwords are set only by their owner or through a link** (S2, V77 and V94, see also
+  "Accounts" above): no admin sets another's password. A wiki account shared by several accounts
+  signs in by email. Legacy SHA-1 passwords keep working for three months after the deploy (V81),
+  then need a reset. Sessions from before the deploy are upgraded for 30 days (V80).
+- **"Leave out conflicts of interest" on an open round only sets the flag** (P1b); disqualify on
+  the stopped round's conflicts page, which keeps the votes (#244).
+- **The thumbnail fix:** thumbnails load at Wikimedia's standard widths only (#258, below).
+- **Root's "Check every round's images"** repairs a round's file list if it ever drifts (V84).
 
 - **Votes don't fail** when jurors vote while admins change rounds (#239, 2026-11-03).
 - **Sign in with Google or Wikimedia**, to an existing account (#240, V87, 2026-11-03).

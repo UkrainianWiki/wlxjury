@@ -87,3 +87,10 @@ of the guide that explains it. Changes that only developers or operators see are
   rates**.
 - On an open round, **Leave out conflicts of interest** only affects later distributions. To
   disqualify files now, stop the round and use its conflicts page.
+- **Nobody sets another person's password.** The person chooses it on an invitation or reset
+  link, which an admin can also copy and pass on in person. See
+  [Passwords](admin-guide.md#a-passwords).
+- **Old passwords:** an account whose password was stored in the old format keeps signing in
+  with it for three months after the release; after that it needs a password reset.
+- **Accounts that shared one wiki account** sign in by email, not by the wiki account.
+- **Sessions from before the release** carry over for 30 days, then you sign in again.
