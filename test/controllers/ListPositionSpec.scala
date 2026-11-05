@@ -101,7 +101,7 @@ class ListPositionSpec extends Specification with TestDb with BeforeAll with Bef
       val (round, _, files) = setUp(Round.binaryRound)
       val list = RoundList(round, 0)
       list.query.keyed must beFalse
-      files.map(list.position) === files.map(list.rankPosition)
+      files.map(list.position) === files.map(list.rankPosition(_))
     }
   }
 }

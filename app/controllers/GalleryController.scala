@@ -47,6 +47,11 @@ class GalleryController @Inject() (
     */
   private val roundRegionCounts = config.getOptional[String]("gallery.regionCounts").getOrElse("all")
 
+  /** All the jurors' lists from `round_image`'s counts (`roundImage.read`, P2b; off by default):
+    * [[RoundList.countsQuery]], each statement's snapshot proved ([[RoundList.fromCounts]]).
+    */
+  private val countsRead = config.getOptional[Boolean]("roundImage.read").getOrElse(false)
+
   /** All the category's files' counts per region, cached unless switched off. */
   private def categoryCounts(categoryId: Long): RegionCountCache.Counts =
     if (countCache) RegionCountCache.category(categoryId)(ImageJdbc.categoryRegionCounts(categoryId))
@@ -144,7 +149,7 @@ class GalleryController @Inject() (
           ContestJuryJdbc.findById(round.contestId).fold[Result](
             NotFound(views.html.errorPage(Some(user), "error.title", "error.contest.not.found"))
           ) { contest =>
-            val list = RoundList.of(round, user, asUserId, region, view)
+            val list = RoundList.of(round, user, asUserId, region, view).withCountsRead(countsRead)
             at.fold(
               page => galleryOf(user, list, page, rounds, contest).withCookies(RoundList.remembered(list, user, sessionSecure).toSeq: _*),
               // the page with the file, or where it would be if the filter now leaves it out
@@ -257,13 +262,12 @@ class GalleryController @Inject() (
     if (ContestKind.monumentIdTemplate(contest).isEmpty) Nil
     else {
       val subRegions = list.query.subRegions
-      val all = list.query.copy(regions = Set.empty)
       val counted = !subRegions && (roundRegionCounts == "all" || roundRegionCounts == "juror" && list.asUserId != 0)
       val byRegion = counts match {
         case Some(c) => c.regions(list.filter).map { case (id, n) => id -> Option.when(counted)(n) }
         case None =>
-          if (counted) all.regionCounts().map { case (id, n) => id -> Option(n) }
-          else all.byRegionStat()
+          if (counted) list.regionCounts().map { case (id, n) => id -> Option(n) }
+          else list.query.copy(regions = Set.empty).byRegionStat()
       }
       RegionScheme.of(contest).regions(byRegion, subRegions)
     }
@@ -289,7 +293,7 @@ class GalleryController @Inject() (
                 NotFound(Json.obj("error" -> "contest_not_found"))
               ) { contest =>
                 val view = request.getQueryString("module").flatMap(GalleryView.parse).getOrElse(GalleryView.ofPath(asUserId))
-                val list = RoundList.of(round, user, asUserId, region, view)
+                val list = RoundList.of(round, user, asUserId, region, view).withCountsRead(countsRead)
                 val regions = listRegions(list, contest, list.jurorCounts())
                 Ok(placesJson(list.region, messagesApi.preferred(request)("region.all"),
                   list.withRegion("all").pageUrl(1),

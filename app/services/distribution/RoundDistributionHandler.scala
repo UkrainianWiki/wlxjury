@@ -2,7 +2,7 @@ package services.distribution
 
 import db.scalikejdbc._
 import org.intracer.wmua.cmd.DistributeImages
-import org.intracer.wmua.{BinaryOrder, Image, ImageWithRating, Vote}
+import org.intracer.wmua.{AverageRule, BinaryOrder, Image, ImageWithRating, Vote}
 import play.api.libs.json._
 import play.api.{Configuration, Logging}
 import scalikejdbc._
@@ -157,7 +157,7 @@ class RoundDistributionHandler @Inject() (
   }
 
   override def prepare(job: Job): Unit = {
-    val c = contexts.getOrElseUpdate(job.id, context(roundIdOf(job)))
+    val c = contexts.getOrElseUpdate(job.id, context(roundIdOf(job), Some(jobAverageRule(job))))
     val st = stateOf(job)
     if (st.phase == Phase.List && st.listIndex < titleCountOf(job) && !listChunks.get(job.id).exists(_.index == st.listIndex))
       listChunks.put(job.id, listChunk(c.round, st.listIndex, titlesOf(job, st.listIndex, commons.maxIdsPerRequest)))
@@ -172,10 +172,13 @@ class RoundDistributionHandler @Inject() (
   protected def beforeInsert(round: Round, images: Seq[Image])(implicit session: DBSession): Unit = ()
   protected def afterInsert(round: Round, rows: Seq[Vote])(implicit session: DBSession): Unit = ()
 
-  /** What the steps need. */
-  private def context(roundId: Long): Context = {
+  /** What the steps need. Rated previous rounds score their files by `averageRule` if given (a
+    * job's, [[jobAverageRule]]), else by their own rule ("Count new files": as a job queued now).
+    */
+  private def context(roundId: Long, averageRule: Option[AverageRule]): Context = {
     val round = Round.findById(roundId).getOrElse(throw new NoSuchElementException(s"Round $roundId not found"))
     val prevRounds = RoundDistributionHandler.previousRounds(round)
+      .map(p => averageRule.filterNot(_ => p.isBinary).fold(p)(rule => p.copy(averageRule = rule)))
     val jurors = User.distributionJurors(roundId).sortBy(_.getId).toIndexedSeq
     DistributeImages.checkJury(round, jurors)
     val categoryRule = round.categoryRule
@@ -202,9 +205,14 @@ class RoundDistributionHandler @Inject() (
       categoryId =
         if (prevRounds.isEmpty) ContestJuryJdbc.findById(round.contestId).flatMap(_.categoryId) else None,
       denominator = prev match {
-        case Some(p) if p.isBinary     => Denominator.Const(p.numberOfAssignedJurors)
-        case Some(p) if p.optionalRate => Denominator.Const(p.numberOfActiveJurors.toLong)
-        case _                         => Denominator.PerImage
+        case Some(p) if p.isBinary => Denominator.Const(p.numberOfAssignedJurors)
+        case Some(p) => p.averageRule match {
+          case AverageRule.Rated    => Denominator.PerImageRated
+          case AverageRule.Assigned => Denominator.PerImage
+          // the sum itself: the score a sum round shows
+          case AverageRule.Sum      => Denominator.Const(1)
+        }
+        case None => Denominator.PerImage
       },
       windowSize = math.max(1, math.min(MaxWindow, chunkRows / math.max(1, perImage)))
     )
@@ -330,7 +338,7 @@ class RoundDistributionHandler @Inject() (
   def step(job: Job, ctx: StepContext): StepResult = {
     implicit val session: DBSession = ctx.session
     val roundId = roundIdOf(job)
-    val c = contexts.getOrElseUpdate(job.id, context(roundId))
+    val c = contexts.getOrElseUpdate(job.id, context(roundId, Some(jobAverageRule(job))))
     val st = stateOf(job) match {
       case s if s.imagesBefore.isEmpty =>
         val total = imageCount(roundId)
@@ -563,7 +571,8 @@ class RoundDistributionHandler @Inject() (
     * adding it: the same windows and filters as the job, read only.
     */
   def countNew(roundId: Long): Long = DB.readOnly { implicit session =>
-    val c = context(roundId)
+    // "Count new files": as a distribution queued now would, by the previous round's rule
+    val c = context(roundId, None)
     if (c.topN.isDefined) {
       val ranked = DistributionSource.rank(c.prevRounds.flatMap(_.id), c.votes, c.denominator, c.topN.get, c.filter, c.topOrder)
       ranked.grouped(MaxWindow).map(ids => DistributionSource.imagesIn(ids, roundId).size.toLong).sum
@@ -650,6 +659,21 @@ object RoundDistributionHandler {
 
   def titleCountOf(job: Job): Int = (job.params \ "titleCount").asOpt[Int].getOrElse(0)
 
+  /** The rule the job's rated previous round scored its files by when it was queued
+    * (`params.settings.prevAverageRule`, RoundService): None for a job queued before V90.
+    */
+  def averageRuleOf(job: Job): Option[AverageRule] =
+    (job.params \ "settings" \ "prevAverageRule").asOpt[String].flatMap(AverageRule.parse)
+
+  /** The rule a job's rated previous rounds score their files by: the one it recorded, else, for
+    * a job queued before V90 (resumed across the deploy), [[AverageRule.Assigned]], the rule its
+    * distribution applied before V90 (the rate sum over each file's vote rows). Not the round's
+    * own rule, which V90 sets to `rated`: a job resumed across the deploy would apply two rules.
+    * (A former `optional_rate` source's rule, the sum over its active jurors, isn't reproduced:
+    * such a distribution finishes before the deploy, round images §17's deploy note.)
+    */
+  def jobAverageRule(job: Job): AverageRule = averageRuleOf(job).getOrElse(AverageRule.Assigned)
+
   /** The job only adds its list: the round's filters choose nothing. */
   def listOnly(job: Job): Boolean = (job.params \ "listOnly").asOpt[Boolean].getOrElse(false)
 
@@ -680,14 +704,16 @@ object RoundDistributionHandler {
     prevRounds
   }
 
-  /** The denominator of an image's average rating in a previous round
-    * ([[ImageWithRating.totalRate]] of a grouped image): a constant for a binary round
-    * (its jurors) and an optional-rate round (its active jurors), else the image's rows.
+  /** The denominator of an image's score in a previous round ([[ImageWithRating.totalRate]] of
+    * a grouped image), by the round's [[AverageRule]]: a constant for a binary round (its
+    * jurors) and a sum round (1: the sum), else the image's rows (`PerImage`, assigned) or its
+    * rated rows (`PerImageRated`).
     */
   sealed trait Denominator
   object Denominator {
     final case class Const(n: Long) extends Denominator
     case object PerImage extends Denominator
+    case object PerImageRated extends Denominator
   }
 }
 
@@ -793,22 +819,23 @@ object DistributionSource {
   def previousCandidates(prevIds: Seq[Long], votes: PrevVotes, from: Long, to: Long, roundId: Long)(implicit
       session: DBSession
   ): Seq[ImageWithRating] = {
-    val rows = sql"""SELECT g.page_id, g.rs, g.c, ${i.result.*} FROM (
-              SELECT s.page_id, s.round_id, SUM(s.rate) rs, COUNT(s.rate) c FROM vote s
+    val rows = sql"""SELECT g.page_id, g.rs, g.c, g.v, ${i.result.*} FROM (
+              SELECT s.page_id, s.round_id, SUM(s.rate) rs, COUNT(*) c, SUM(s.rate > 0) v FROM vote s
               WHERE s.round_id IN ($prevIds) ${votesCond(prevIds, votes)} AND s.page_id > $from AND s.page_id <= $to
                 AND ${notInRound(roundId, sqls"s.page_id")}
               GROUP BY s.page_id, s.round_id) g
             JOIN images i ON i.page_id = g.page_id
             WHERE i.deleted_at IS NULL
             ORDER BY g.page_id, g.round_id"""
-      .map(rs => (ImageJdbc(i)(rs), rs.intOpt("rs").getOrElse(0), rs.int("c")))
+      .map(rs => (ImageJdbc(i)(rs), rs.intOpt("rs").getOrElse(0), rs.int("c"), rs.intOpt("v").getOrElse(0)))
       .list()
     val merged = mutable.LinkedHashMap.empty[Long, ImageWithRating]
-    rows.foreach { case (image, sum, count) =>
+    rows.foreach { case (image, sum, count, rated) =>
       val entry = Vote(image.pageId, juryId = 0, roundId = 0, rate = sum)
       merged.updateWith(image.pageId) {
-        case Some(acc) => Some(acc.copy(votes = acc.votes :+ entry, countFromDb = acc.countFromDb + count))
-        case None      => Some(ImageWithRating(image, Seq(entry), count))
+        case Some(acc) => Some(acc.copy(votes = acc.votes :+ entry, countFromDb = acc.countFromDb + count,
+          approvalsFromDb = Some(acc.approvalsFromDb.getOrElse(0) + rated)))
+        case None      => Some(ImageWithRating(image, Seq(entry), count, approvalsFromDb = Some(rated)))
       }
     }
     merged.values.toSeq
@@ -870,20 +897,22 @@ object DistributionSource {
   private def ratedPage(prevIds: Seq[Long], votes: PrevVotes, denominator: Denominator, pageSize: Int,
       offset: Int)(implicit session: DBSession): Seq[(Long, Image => ImageWithRating)] = {
     val total = denominator match {
-      case Denominator.Const(d) => sqls"IF($d = 0, 0, SUM(GREATEST(t.rs, 0)) * 1e0 / $d)"
-      case Denominator.PerImage => sqls"IF(SUM(t.c) = 0, 0, SUM(GREATEST(t.rs, 0)) * 1e0 / SUM(t.c))"
+      case Denominator.Const(d)      => sqls"IF($d = 0, 0, SUM(GREATEST(t.rs, 0)) * 1e0 / $d)"
+      case Denominator.PerImage      => sqls"IF(SUM(t.c) = 0, 0, SUM(GREATEST(t.rs, 0)) * 1e0 / SUM(t.c))"
+      case Denominator.PerImageRated => sqls"IF(SUM(t.v) = 0, 0, SUM(GREATEST(t.rs, 0)) * 1e0 / SUM(t.v))"
     }
-    sql"""SELECT t.page_id, SUM(GREATEST(t.rs, 0)) rate_sum, SUM(t.c) cnt FROM (
-            SELECT s.page_id, s.round_id, SUM(s.rate) rs, COUNT(s.rate) c FROM vote s
+    sql"""SELECT t.page_id, SUM(GREATEST(t.rs, 0)) rate_sum, SUM(t.c) cnt, SUM(t.v) rated FROM (
+            SELECT s.page_id, s.round_id, SUM(s.rate) rs, COUNT(*) c, SUM(s.rate > 0) v FROM vote s
             WHERE s.round_id IN ($prevIds) ${votesCond(prevIds, votes)}
             GROUP BY s.page_id, s.round_id) t
           GROUP BY t.page_id
           ORDER BY $total DESC, SUM(GREATEST(t.rs, 0)) DESC, SUM(t.rs) DESC, t.page_id ASC
           LIMIT $pageSize OFFSET $offset"""
       .map { rs =>
-        val (pageId, sum, count) = (rs.long(1), rs.long(2), rs.long(3))
+        val (pageId, sum, count, rated) = (rs.long(1), rs.long(2), rs.long(3), rs.long(4))
         pageId -> ((img: Image) =>
-          ImageWithRating(img, Seq(Vote(pageId, juryId = 0, roundId = 0, rate = sum.toInt)), count.toInt))
+          ImageWithRating(img, Seq(Vote(pageId, juryId = 0, roundId = 0, rate = sum.toInt)), count.toInt,
+            approvalsFromDb = Some(rated.toInt)))
       }
       .list()
   }

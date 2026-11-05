@@ -200,6 +200,26 @@ status, region and monument copy are one row per (round, file): use it for membe
 counts by region and the all-jurors orders (W10, −497 ms measured) instead of `DISTINCT`
 over `vote`. Use `vote` for per-juror rates and sums. Rewrites go behind a parity spec (§9.3).
 
+**3.7a Derived counts read exactly, or from the source.** `round_image`'s vote counts (P2a,
+V89) are kept by marks and a background recompute, so the stored numbers alone may be seconds
+old. A reader of them (`RoundImageQuery`, behind `roundImage.read`; round-images §17) overlays
+the files marked dirty with their votes' counts *in the same statement* (one READ COMMITTED
+snapshot: with no bulk write since the last full recount, a file's stored counts equal its
+votes or the file is marked), and proves that snapshot per statement: the round's generation
+clean before the request's first statement and unchanged after each
+(`RoundList.fromCounts`, `RoundCounts.cleanGeneration` and `generation`); a check in a statement
+of its own before the read is not enough (a bulk write can commit in between). When it fails,
+that statement and the rest of the request read the votes. Exact consumers (the
+CSV, a top-N, a "min average rate", a finalize) read the votes. A new count on `round_image`
+follows the same rule, with a parity spec over both sources and a dirty case
+(`GroupedListParitySpec`).
+
+**3.7b One vocabulary for an order on two sources.** A list's ORDER BY and rank keys are named
+once over the vote rows (`ListOrder`, `BinaryOrder`, `RankKey`) and translated for the counts
+(`RoundImageQuery.translate`); an unknown column reads the votes rather than guess. Averages
+in keys are exact integers (`sum * 10^9 DIV n`, `AverageRule.keySql`), never a DOUBLE whose
+text form a JDBC read may round: a key read back from SQL must equal the one computed in memory.
+
 **3.8 Indexes cost writes.** Each secondary index on `vote` is one more insert-intention and
 row lock per vote row in a 15k-row step. Add one with a measured read gain, drop one nothing
 uses (§11 V11 lists the candidates; check with `information_schema.STATISTICS` and the plans

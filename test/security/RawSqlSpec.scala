@@ -14,7 +14,9 @@ class RawSqlSpec extends Specification {
     "app/db/scalikejdbc/ImageJdbc.scala" -> "regionOf over a fixed column name",
     "app/db/scalikejdbc/rewrite/ImageDbNew.scala" ->
       "the gallery query builder: structure, group, order and limit from enumerated options and numbers; values bound",
-    "app/services/distribution/RoundDistributionHandler.scala" -> "an order from an enumerated set"
+    "app/services/distribution/RoundDistributionHandler.scala" -> "an order from an enumerated set",
+    "app/db/scalikejdbc/rewrite/RoundImageQuery.scala" ->
+      "the counts' list query (P2b): order and rank columns from a fixed vocabulary (translate), filters from fixed conditions; values and limits bound"
   )
 
   private val Digests: Map[String, String] = Map(

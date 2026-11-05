@@ -36,8 +36,8 @@ class CriteriaResultsViewSpec extends PlaySpecification {
     * per juror, 7.25 per criterion; quality 7, the other 7.5. File 302 has no fully rated vote.
     */
   private val files: Seq[ImageWithRating] = Seq(
-    ImageWithRating(Image(301, "File:Image 301.jpg"), Seq(Vote(301, 0, 1, 29)), countFromDb = 2),
-    ImageWithRating(Image(302, "File:Image 302.jpg"), Seq(Vote(302, 0, 1, 0)), countFromDb = 2)
+    ImageWithRating(Image(301, "File:Image 301.jpg"), Seq(Vote(301, 0, 1, 29)), countFromDb = 2, approvalsFromDb = Some(2)),
+    ImageWithRating(Image(302, "File:Image 302.jpg"), Seq(Vote(302, 0, 1, 0)), countFromDb = 2, approvalsFromDb = Some(0))
   )
   private val results = CriteriaResults(criteria, Map(301L -> Map(1L -> BigDecimal(7), 2L -> BigDecimal("7.5"))))
 
@@ -92,7 +92,7 @@ class CriteriaResultsViewSpec extends PlaySpecification {
     "show each file's averages, empty where none" in {
       val rows = doc.select("tbody tr").asScala.map(_.select("td").asScala.map(_.text))
       // a plain sum here, labelled as one, as the CSV has it
-      rows.head.slice(2, 5) === Seq("14.50 (29 / 2)", "7.00", "7.50")
+      rows.head.slice(2, 5) === Seq("14.50 (29 / 2 jurors)", "7.00", "7.50")
       rows(1).slice(3, 5) === Seq("", "")
     }
 
@@ -159,7 +159,7 @@ class CriteriaResultsViewSpec extends PlaySpecification {
   "a half-star criteria round (1-10, five stars; rates in half-star units)" should {
     val half = round.copy(halfStar = true)
     /** Two jurors' sums 14 and 12 (stored units): 13 per juror, 6.5 per criterion, 3.25 stars. */
-    val file = ImageWithRating(Image(301, "File:Image 301.jpg"), Seq(Vote(301, 0, 1, 26)), countFromDb = 2)
+    val file = ImageWithRating(Image(301, "File:Image 301.jpg"), Seq(Vote(301, 0, 1, 26)), countFromDb = 2, approvalsFromDb = Some(2))
 
     "fill the by-rate stars to the nearest half star of the average, the number in stars, the sum in units" in {
       val doc = Jsoup.parse(contentAsString(views.html.galleryByRate(juror, RoundList(half, 0, view = GalleryView.ByRate),

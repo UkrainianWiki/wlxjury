@@ -25,7 +25,7 @@ class RoundControllerSpec extends PlaySpecification {
         createdAt = ZonedDateTime.now,
         deletedAt = None,
         active = true,
-        optionalRate = true,
+        averageRule = org.intracer.wmua.AverageRule.Sum,
         juryOrgView = false,
         minMpx = Some(4),
         previous = Some("20"),

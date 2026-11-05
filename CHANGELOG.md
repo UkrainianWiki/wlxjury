@@ -91,6 +91,23 @@ Developed 2026-11-02 to 2026-11-03, PRs #232–#236.
   (developed 2026-11-04, V88).
 - **Criteria rounds' results:** per-criterion averages in the file list, the by-rate list, the
   CSV and the all-jurors large view, and stars per criterion (#247, 2026-11-03).
+- **A round's file score, one option on the round form** (admins; developed 2026-11-05, V90):
+  the average over the jurors who rated the file (the default), the average over all its
+  assigned jurors with a missing rate as 0, or the total of the rates. Every view of the round's
+  results uses it, shows what it divides by ("14.50 (29 / 2 of 3 jurors)", "29 (sum of 3
+  jurors)") and ranks by it, and a next round's top files and "min average rate" use it too. It
+  can be changed at any time; a next round's distribution keeps the rule it started with.
+  Changes: the all-jurors by-rate gallery and large view no longer count a juror's missing rate
+  as 0 by default (choose "assigned jurors" for that), and rank by the average rather than the
+  sum. Rounds with the old hidden "optional rate" flag become total-of-the-rates rounds: they
+  show the sum instead of the sum over the round's active jurors (same order), and a next
+  round's "min average rate" from one now compares the sum (the form's hint says so).
+- **A warning beside the file score on the round form** (admins; developed 2026-11-05): for a
+  rated round with votes, changing the score says that it re-scores and re-orders the round's
+  results on every page at once (nothing runs in the background), that a distribution already
+  queued keeps its rule, and which later rounds took their top files or minimum from this round
+  (their files don't change). In the page without JavaScript; with it, shown once the select
+  differs from the saved rule.
 
 **Development**
 
@@ -181,8 +198,16 @@ Developed 2026-11-02 to 2026-11-03, PRs #232–#236.
   exit 124), an owned sbt lock (`--lock`, an `owner` file) and, on Windows, a keep-awake
   request; the write-path stress harness marks a variant the host slept through INVALID
   ([workflow practices](docs/workflow/practices.md) §4.2, §4.6; [testing practices](docs/testing/practices.md) §8.1a–b).
+- P2b (developed 2026-11-05; [round images plan](docs/plans/2026-11-02-round-images-two-step.md)
+  §17): all the jurors' lists (the by-rate pages, the file list's pages, counts, ranks,
+  positions, the large view's neighbours, the region counts) can read `round_image`'s counts
+  (`RoundImageQuery`), the files marked dirty overlaid from their votes in the same statement and
+  a round with a recount pending read from its votes, behind `roundImage.read` (off; a pilot);
+  the CSV and a next round's top-N read the votes. Parity specs over both sources and each score
+  rule. The round's score rule (`AverageRule`) replaces the `optional_rate` flag, which the code
+  no longer reads (the column stays until a later clean-up).
 - **Migrations:** V85 gallery index, V86 timestamp definitions, V87 for the sign-in (#240);
-  V88 `round_image_event`; V89 `round_image` counts.
+  V88 `round_image_event`; V89 `round_image` counts; V90 `round.average_rule`.
 
 ## Deployed
 

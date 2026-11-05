@@ -196,3 +196,42 @@ describe("a new round's criteria", () => {
         expect([box().hidden, disabled()]).toEqual([false, [false, false]]);
     });
 });
+
+describe("the score rule's warning", () => {
+    function rulePage(stored = "rated") {
+        document.body.innerHTML = `
+          <form id="round-form">
+            <select id="averageRule" name="averageRule" aria-describedby="averageRule_help averageRule_warning">
+              <option value="rated"${stored === "rated" ? " selected" : ""}>Rated</option>
+              <option value="assigned"${stored === "assigned" ? " selected" : ""}>Assigned</option>
+              <option value="sum">Sum</option>
+            </select>
+            <div id="averageRule_warning_row" data-stored-rule="${stored}">
+              <div id="averageRule_warning">Changing the score rule re-scores this round.</div>
+            </div>
+          </form>`;
+    }
+    const row = () => document.getElementById("averageRule_warning_row");
+    const choose = value => {
+        const select = document.getElementById("averageRule");
+        select.value = value;
+        select.dispatchEvent(new Event("change"));
+    };
+
+    test("is hidden while the select shows the saved rule, and shown once it differs", () => {
+        rulePage("assigned");
+        init(document);
+        expect(row().hidden).toBe(true);
+        choose("sum");
+        expect(row().hidden).toBe(false);
+        choose("rated");
+        expect(row().hidden).toBe(false);
+        choose("assigned");
+        expect(row().hidden).toBe(true);
+    });
+
+    test("leaves a page without the warning alone", () => {
+        document.body.innerHTML = `<select id="averageRule"><option value="rated">Rated</option></select>`;
+        expect(() => init(document)).not.toThrow();
+    });
+});

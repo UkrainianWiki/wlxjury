@@ -3,12 +3,12 @@ package services.distribution
 import org.intracer.wmua.cmd.InMemoryDistribution._
 import db.scalikejdbc._
 import org.intracer.wmua.cmd.{DistributeImages, SelectTopByRating}
-import org.intracer.wmua.{ContestJury, CriteriaRate, Image, ImageWithRating, Vote}
+import org.intracer.wmua.{AverageRule, ContestJury, CriteriaRate, Image, ImageWithRating, Vote}
 import org.specs2.mutable.Specification
 import org.specs2.specification.{AfterEach, BeforeAll, BeforeEach}
 import scalikejdbc._
 import services.imports.DeletedFiles
-import play.api.libs.json.JsObject
+import play.api.libs.json.{JsObject, Json}
 import services.jobs.{Job, JobError, JobJdbc, JobScheduler, JobStatus, StepContext}
 import services.{GalleryService, RoundService, TestRoundServices}
 
@@ -67,6 +67,13 @@ class RoundDistributionJobSpec extends Specification with TestDb with BeforeAll 
     @volatile var atPage: Option[(Long, DBSession => Unit)] = None
     /** Runs after a Retry's commit, before the resumed job's first step (once). */
     @volatile var afterRetry: Option[() => Unit] = None
+    /** Runs before the job's preparation, after it was queued, and gives the job prepared (once). */
+    @volatile var beforePrepare: Option[Job => Job] = None
+
+    override def prepare(job: Job): Unit = {
+      val prepared = beforePrepare.fold(job) { f => beforePrepare = None; f(job) }
+      super.prepare(prepared)
+    }
 
     override def onRetry(job: Job, ctx: StepContext): JsObject = {
       val state = super.onRetry(job, ctx)
@@ -700,8 +707,12 @@ class RoundDistributionJobSpec extends Specification with TestDb with BeforeAll 
       val binary = ratedRound(contest, jurors, Round.binaryRound, seed = 11, "Binary")
       val binary2 = ratedRound(contest, jurors, Round.binaryRound, seed = 12, "Binary 2")
       val rated = ratedRound(contest, jurors, Round.ratesById(10), seed = 13, "Rated")
-      val optional = ratedRound(contest, jurors, Round.ratesById(10), seed = 14, "Optional")
-      sql"UPDATE round SET optional_rate = 1 WHERE id = ${optional.getId}".update()(AutoSession)
+      // the score rules (V90): a sum round (an optionalRate round's since V90) is scored, ranked
+      // and filtered by the sum; an assigned one by the average over its assigned jurors
+      val sum = ratedRound(contest, jurors, Round.ratesById(10), seed = 14, "Sum")
+      sql"UPDATE round SET average_rule = 'sum' WHERE id = ${sum.getId}".update()(AutoSession)
+      val assigned = ratedRound(contest, jurors, Round.ratesById(10), seed = 15, "Assigned")
+      sql"UPDATE round SET average_rule = 'assigned' WHERE id = ${assigned.getId}".update()(AutoSession)
       def from(rounds: Round*) = newRound(contest, "Next").copy(previous = Some(rounds.map(_.getId).mkString(",")))
       val cases = Seq(
         from(binary).copy(prevSelectedBy = Some(1)),
@@ -712,18 +723,31 @@ class RoundDistributionJobSpec extends Specification with TestDb with BeforeAll 
         from(binary, binary2).copy(prevSelectedBy = Some(1)),
         from(rated).copy(prevMinAvgRate = Some(BigDecimal(5))),
         from(rated).copy(prevSelectedBy = Some(1), prevMinAvgRate = Some(BigDecimal("6.5"))),
-        from(optional).copy(prevMinAvgRate = Some(BigDecimal(3)))
+        // a minimum score: the sum
+        from(sum).copy(prevMinAvgRate = Some(BigDecimal(12))),
+        from(assigned).copy(prevMinAvgRate = Some(BigDecimal(4)))
       )
-      cases.map { template =>
-        val (got, expected) = both(contest, jurors, template)
-        got === expected
-      }.reduce(_ and _)
+      // a sum round's minimum score is its files' rate sum, which its pages show
+      val sums = VoteJdbc.byRound(sum.getId).groupBy(_.pageId).view.mapValues(_.map(_.rate).sum).toMap
+      val (fromSum, _) = both(contest, jurors, from(sum).copy(prevMinAvgRate = Some(BigDecimal(12))))
+      (fromSum === sums.collect { case (p, s) if s >= 12 => p }.toSet) and (fromSum must not(beEmpty)) and
+        cases.map { template =>
+          val (got, expected) = both(contest, jurors, template)
+          got === expected
+        }.reduce(_ and _)
     }
 
     "pick the same top-N as the in-memory filter, ties included" in {
       val (contest, _, jurors) = setUp(60, 3)
       val rated = ratedRound(contest, jurors, Round.ratesById(5), seed = 21, "Rated")
       val binary = ratedRound(contest, jurors, Round.binaryRound, seed = 22, "Binary")
+      // the other score rules (V90): by the sum, by the average over the assigned jurors
+      def withRule(r: Round, rule: AverageRule): Round = {
+        sql"UPDATE round SET average_rule = ${rule.param} WHERE id = ${r.getId}".update()(AutoSession)
+        Round.findById(r.getId).get
+      }
+      val sum = withRule(ratedRound(contest, jurors, Round.ratesById(5), seed = 23, "Sum"), AverageRule.Sum)
+      val assigned = withRule(ratedRound(contest, jurors, Round.ratesById(5), seed = 24, "Assigned"), AverageRule.Assigned)
 
       /** The in-memory filter over the previous round's grouped images, in a deterministic
         * input order (rate sum descending, then page id), after the per-image filters.
@@ -732,14 +756,14 @@ class RoundDistributionJobSpec extends Specification with TestDb with BeforeAll 
         val probe = roundDao.create(template.copy(number = 99))
         // a yes/no round's top-N reads the approvals and rejections, which tally counts
         val candidates = ImageJdbc.byRoundMerged(prev.getId, rated = Option.when(template.selectedByFilter.isDefined)(true),
-            tally = prev.isBinary)
+            tally = true)
           .sortBy(i => (-i.votes.head.rate, i.pageId))
         val filtered = di.perImageFilters(probe, Seq(prev), Nil, Nil)(candidates)
         SelectTopByRating(n, prev)().apply(filtered).map(_.pageId).toSet
       }
 
       def ties(prev: Round, n: Int): Boolean = { // the data must have ties at the cut
-        val totals = ImageJdbc.byRoundMerged(prev.getId, tally = prev.isBinary).map(_.totalRate(prev)).sorted(Ordering[Double].reverse)
+        val totals = ImageJdbc.byRoundMerged(prev.getId, tally = true).map(_.totalRate(prev)).sorted(Ordering[Double].reverse)
         totals.lift(n - 1) == totals.lift(n)
       }
 
@@ -747,7 +771,9 @@ class RoundDistributionJobSpec extends Specification with TestDb with BeforeAll 
         (rated, newRound(contest, "Top").copy(previous = Some(rated.getId.toString), topImages = Some(10))),
         (rated, newRound(contest, "Top region").copy(previous = Some(rated.getId.toString), topImages = Some(7),
           regions = Some("12"))),
-        (binary, newRound(contest, "Top binary").copy(previous = Some(binary.getId.toString), topImages = Some(12)))
+        (binary, newRound(contest, "Top binary").copy(previous = Some(binary.getId.toString), topImages = Some(12))),
+        (sum, newRound(contest, "Top sum").copy(previous = Some(sum.getId.toString), topImages = Some(10))),
+        (assigned, newRound(contest, "Top assigned").copy(previous = Some(assigned.getId.toString), topImages = Some(10)))
       )
       (cases.exists { case (prev, t) => ties(prev, t.topImages.get) } must beTrue) and
         cases.map { case (prev, template) =>
@@ -785,11 +811,63 @@ class RoundDistributionJobSpec extends Specification with TestDb with BeforeAll 
       }
       def from(name: String) = newRound(contest, name, rates = Round.ratesById(10)).copy(previous = Some(prev.getId.toString))
 
-      // "min average rate" 11 is a sum: per criterion (8.5 at most) no file would pass
+      def withRule(rule: AverageRule): Unit =
+        sql"UPDATE round SET average_rule = ${rule.param} WHERE id = ${prev.getId}".update()(AutoSession): Unit
+
+      // over the assigned jurors (the rule of the grouped views before V90): the partly rated
+      // vote counts 0. "min average rate" 11 is a sum: per criterion (8.5 at most) no file would pass
+      withRule(AverageRule.Assigned)
       created(from("Min").copy(prevMinAvgRate = Some(BigDecimal(11)))) === Set(1L, 2L)
       created(from("Min 6").copy(prevMinAvgRate = Some(BigDecimal(6)))) === Set(1L, 2L, 3L)
       created(from("Top").copy(topImages = Some(2))) === Set(1L, 2L)
       created(from("Top 3").copy(topImages = Some(3))) === Set(1L, 2L, 3L)
+      // over the jurors who rated it (the default): file 3 is 12 over its one fully rated vote,
+      // tied with file 2, whose sum (24) ranks it first
+      withRule(AverageRule.Rated)
+      created(from("Min rated").copy(prevMinAvgRate = Some(BigDecimal(11)))) === Set(1L, 2L, 3L)
+      created(from("Top rated").copy(topImages = Some(2))) === Set(1L, 2L)
+      // by the sum: 34, 24, 12, 8; the minimum is a minimum score
+      withRule(AverageRule.Sum)
+      created(from("Min sum").copy(prevMinAvgRate = Some(BigDecimal(20)))) === Set(1L, 2L)
+      created(from("Top sum").copy(topImages = Some(3))) === Set(1L, 2L, 3L)
+    }
+
+    "rank by the rule recorded when the job was queued, and a job from before V90 by the assigned jurors" in {
+      val (contest, _, jurors) = setUp(2, 3)
+      val prev = roundDao.create(Round(None, 1, Some("Rated"), contest.getId, rates = Round.ratesById(10), active = true))
+      prev.addUsers(jurors.map(u => RoundUser(prev.getId, u.getId, "jury", active = true)))
+      di.distributeImages(prev, jurors, Nil)
+      // file 1: 10 by one juror, two unrated (10 over the rated, 3.33 over the assigned); file 2:
+      // 6 by all three (6 either way): its top-1 is file 1 by `rated`, file 2 by `assigned`
+      VoteJdbc.byRound(prev.getId).foreach { v =>
+        val rate = if (v.pageId == 2L) 6 else if (v.juryId == jurors.head.getId) 10 else 0
+        VoteJdbc.rate(v.pageId, v.juryId, prev.getId, rate)
+      }
+      def withRule(rule: AverageRule): Unit =
+        sql"UPDATE round SET average_rule = ${rule.param} WHERE id = ${prev.getId}".update()(AutoSession): Unit
+      def top1(name: String, h: TestHandler): (Set[Long], Option[String]) = {
+        Round.setActive(prev.getId, active = true)
+        val template = newRound(contest, name, rates = Round.ratesById(10))
+          .copy(previous = Some(prev.getId.toString), topImages = Some(1))
+        val round = inlineService(h).createNewRound(template, jurors.map(_.getId))
+        (pageIds(round.getId), (jobOf(round.getId).params \ "settings" \ "prevAverageRule").asOpt[String])
+      }
+      def stripRule(job: Job): Job = job.copy(params = job.params ++ Json.obj("settings" ->
+        ((job.params \ "settings").as[JsObject] - "prevAverageRule")))
+
+      // queued with `rated`; the source's rule changed to `assigned` before the job prepares
+      val recorded = new TestHandler(chunkRows = 3)
+      recorded.beforePrepare = Some { job => withRule(AverageRule.Assigned); job }
+      val (byRecorded, recordedRule) = top1("Recorded", recorded)
+      // a job without the key (queued before V90), from a source now `rated`
+      withRule(AverageRule.Rated)
+      val legacy = new TestHandler(chunkRows = 3)
+      legacy.beforePrepare = Some(stripRule)
+      val (byLegacy, _) = top1("Legacy", legacy)
+      (recordedRule must beSome("rated")) and (byRecorded === Set(1L)) and
+        (RoundDistributionHandler.averageRuleOf(stripRule(jobOf(roundDao.findByContest(contest.getId)
+          .find(_.name.contains("Legacy")).get.getId))) must beNone) and
+        (byLegacy === Set(2L))
     }
 
     "keep a top-N round at N on \"Distribute new files\"" in {

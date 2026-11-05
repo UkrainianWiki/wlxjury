@@ -34,13 +34,13 @@
                 <span class="wlx-byrate-stars" data-round-id="@round.getId" data-page-id="@file.pageId" data-rate="@file.rate">
                 }
                 @for(i <- 1 to round.numberOfStars) {
-                    @showStar(i, round.starsRate(file.totalRate(round)), round.rates.id > 5 && round.halfStar)
+                    @showStar(i, round.starsRate(file.starRate(round)), round.rates.id > 5 && round.halfStar)
                 }
                 @if(starsRound.nonEmpty) {
                 </span>
-                <span class="wlx-rate-text">@file.rateString(round)</span>
+                <span class="wlx-rate-text">@file.rateText(round)</span>
                 } else {
-                @if(round.hasCriteria) { @file.criteriaRateString(round) } else { @file.rateString(round) }
+                @if(round.hasCriteria) { @file.criteriaRateString(round) } else { @file.rateText(round) }
                 }
             }
             </span>

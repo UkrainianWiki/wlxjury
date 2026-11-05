@@ -2,11 +2,13 @@ package controllers
 
 import db.scalikejdbc._
 import db.scalikejdbc.rewrite.ImageDbNew.Limit
+import db.scalikejdbc.rewrite.RoundImageQuery
 import org.intracer.wmua._
 import org.intracer.wmua.ImageWithRating.Ranks
 import org.scalawiki.wlx.dto.Monument
 import org.specs2.mutable.Specification
 import org.specs2.specification.{BeforeAll, BeforeEach}
+import services.counts.RoundCountsRecompute
 
 import scala.collection.mutable.ListBuffer
 
@@ -16,7 +18,11 @@ import scala.collection.mutable.ListBuffer
   * over ties that span pages, every vote filter (empty lists too), regions (one, several through
   * the monument table, a Віа Регіа sub-region), binary orders, a criteria round, and the page
   * past the end. Whatever reads the lists (the grouped query, B12's deferred page, the
-  * `round_image` counts of docs/plans/2026-11-02-round-images-two-step.md P2b) must give these.
+  * `round_image` counts of docs/plans/2026-11-02-round-images-two-step.md P2b) must give these:
+  * each list is compared read from the votes and from the counts (`roundImage.read`, after a
+  * recount), for each rule a rated round scores its files by (V90); and from the counts with
+  * files marked dirty by later votes (read from their votes in the same query) and with a
+  * recount pending (read from the votes).
   */
 class GroupedListParitySpec extends Specification with TestDb with BeforeAll with BeforeEach {
 
@@ -29,15 +35,17 @@ class GroupedListParitySpec extends Specification with TestDb with BeforeAll wit
 
   private val PageSize = 3
 
+  private val recompute = new RoundCountsRecompute(RoundCountsRecompute.Settings(background = false))
+
   /** 40 files in regions 07 (sub-regions 07-101, 07-102) and 14, every 10th without a
     * monument id; 4 jurors, each file voted on by 2-4 of them with `rate`'s rates; and two
     * votes without a page id, which no list has.
     */
   private def setUp(rates: Rates, rate: scala.util.Random => Int, hasCriteria: Boolean = false,
-      specialNomination: Option[String] = None): (Round, Seq[File]) = {
+      specialNomination: Option[String] = None, rule: AverageRule = AverageRule.Default): (Round, Seq[File]) = {
     val contest = contestDao.create(None, "WLM", 2026, "Ukraine")
     val round = roundDao.create(Round(None, 1, contestId = contest.getId, rates = rates, active = true,
-      criterionIds = if (hasCriteria) Seq(1L, 2L) else Nil, specialNomination = specialNomination))
+      criterionIds = if (hasCriteria) Seq(1L, 2L) else Nil, specialNomination = specialNomination, averageRule = rule))
     val jurors = (1 to 4).map(n =>
       userDao.create(User(s"Juror $n", s"juror$n@example.com", None, Set("jury"), contestId = contest.id)))
     val images = (1 to 40).map { n =>
@@ -66,7 +74,34 @@ class GroupedListParitySpec extends Specification with TestDb with BeforeAll wit
           .bind(j.getId, round.getId).update()
       }
     }
-    (round, votes.map { case (image, s) => File(image.pageId, image.monumentId, s.map(_.rate)) })
+    // the counts as the background recompute leaves them (P2a)
+    recompute.untilClean()
+    (round, votes.map { case (image, s) => File(image.pageId, image.monumentId, s.map(_.rate), s.map(_.juryId)) })
+  }
+
+  /** The list's problems read from the votes and from the counts; and the counts' source must be
+    * the one used for every filter the counts can tell (all but one rate of a rated round).
+    */
+  private def bothSources(label: String, list: RoundList, files: Seq[File], inRegion: File => Boolean): Seq[String] = {
+    val counted = list.withCountsRead(true)
+    val tellable = list.filter.rate.forall(r => r == 0 || list.round.isBinary)
+    val problems = compare(label + " votes", list, files, inRegion) ++ compare(label + " counts", counted, files, inRegion)
+    problems ++ Option.when(tellable && !counted.countsUsed)(label + ": counts not read")
+  }
+
+  /** Votes changed after the recount: every (size / n)th file's first juror's rate set by `rate`,
+    * as a juror's vote does (each marks its file dirty); the files as they are now.
+    */
+  private def revote(round: Round, files: Seq[File], n: Int, rate: scala.util.Random => Int): Seq[File] = {
+    val random = new scala.util.Random(7)
+    files.zipWithIndex.map { case (f, i) =>
+      if (i % (files.size / n) != 0) f
+      else {
+        val r = rate(random)
+        VoteJdbc.rate(f.pageId, f.jurors.head, round.getId, r)
+        f.copy(rates = r +: f.rates.tail)
+      }
+    }
   }
 
   /** Every page of the list, its total, rank counts, positions and the large view's files,
@@ -116,18 +151,60 @@ class GroupedListParitySpec extends Specification with TestDb with BeforeAll wit
       (order, view) <- orders.map(_ -> GalleryView.ByRate) :+ (ListOrder.ByRate -> GalleryView.FileList)
     } yield RoundList(round, 0, region, filter, order, view)
 
+  private def label(l: RoundList): String = Seq(l.view.name, l.filter.param, l.order.param, l.regionParam).mkString(" ")
+
   private def inRegion(region: Option[String])(f: File): Boolean = region.forall(r => f.region.contains(r))
 
   "all the jurors' lists of a rated round" should {
-    "be the model's, in each filter, region and order" in {
+    "be the model's, in each filter, region and order, for each score rule, from the votes and the counts" in {
+      forall(AverageRule.all) { rule =>
+        SharedTestDb.truncateAll()
+        val (round, files) = setUp(Round.ratesById(5), _.nextInt(4), rule = rule)
+        val all = lists(round, VoteFilter.ofRound(round) :+ VoteFilter.Rate(2), Seq(ListOrder.ByRate, ListOrder.FileOrder),
+          Seq(None, Some("07"), Some("14"), Some("99")))
+        val problems = all.flatMap(l => bothSources(rule.param + " " + label(l), l, files, inRegion(l.region)))
+        (problems must_== Nil) and
+          // empty lists among them: region 99
+          (all.count(_.count() == 0) must be_>(0))
+      }
+    }
+
+    "be the model's from the counts with files marked dirty by later votes, and with a recount pending" in {
+      val (round, before) = setUp(Round.ratesById(5), _.nextInt(4))
+      val files = revote(round, before, 8, _.nextInt(4))
+      val all = lists(round, VoteFilter.ofRound(round), Seq(ListOrder.ByRate), Seq(None, Some("07")))
+      val dirty = RoundCounts.state(round.getId).map(_.dirtyFiles)
+      val marked = all.flatMap(l => bothSources("dirty " + label(l), l, files, inRegion(l.region)))
+      // a bulk write's mark: the round is read from its votes until recounted
+      scalikejdbc.DB.autoCommit { implicit s =>
+        scalikejdbc.SQL("UPDATE round SET counts_gen = counts_gen + 1 WHERE id = ?").bind(round.getId).update()
+      }
+      val pending = all.map(_.withCountsRead(true))
+      val pendingProblems = pending.flatMap(l => compare("pending " + label(l), l, files, inRegion(l.region)))
+      (dirty must beSome(be_>(0L))) and (marked must_== Nil) and
+        (pending.map(_.countsUsed).distinct must_== Seq(false)) and (pendingProblems must_== Nil)
+    }
+
+    "read the votes when a bulk write commits between the generation check and the counts statement" in {
       val (round, files) = setUp(Round.ratesById(5), _.nextInt(4))
-      val all = lists(round, VoteFilter.ofRound(round) :+ VoteFilter.Rate(2), Seq(ListOrder.ByRate, ListOrder.FileOrder),
-        Seq(None, Some("07"), Some("14"), Some("99")))
-      val problems = all.flatMap(l => compare(s"${l.view.name} ${l.filter.param} ${l.order.param} ${l.regionParam}", l,
-        files, inRegion(l.region)))
-      (problems must_== Nil) and
-        // empty lists among them: region 99
-        (all.count(_.count() == 0) must be_>(0))
+      // a juror without a vote yet on F1, given one (rate 4) by a bulk insert, as a distribution
+      // chunk does to a file already in the round: it bumps the generation and marks no file
+      val newcomer = userDao.create(User("Juror 5", "juror5@example.com", None, Set("jury"), contestId = Some(round.contestId)))
+      val target = files.head
+      val after = files.map(f => if (f.pageId == target.pageId) f.copy(rates = f.rates :+ 4) else f)
+      def bulkWrite(): Unit = selectionDao.batchInsert(Seq(Vote(target.pageId, newcomer.getId, round.getId, 4, monumentId = target.monumentId)))
+      val lists = Seq(GalleryView.ByRate, GalleryView.FileList).map(v => RoundList(round, 0, view = v).withCountsRead(true))
+      // the first list's first statement meets the write; the second list starts after it, dirty
+      lists.head.countsSession.beforeRead = () => { lists.head.countsSession.beforeRead = () => (); bulkWrite() }
+      val first = compare("bulk " + label(lists.head), lists.head, after, _ => true)
+      val second = compare("bulk " + label(lists(1)), lists(1), after, _ => true)
+      // once recounted, the counts are read again, and agree
+      recompute.untilClean()
+      val recounted = RoundList(round, 0, view = GalleryView.ByRate).withCountsRead(true)
+      val third = compare("recounted " + label(recounted), recounted, after, _ => true)
+      (first must_== Nil) and (lists.head.countsUsed must beFalse) and
+        (second must_== Nil) and (lists(1).countsUsed must beFalse) and
+        (third must_== Nil) and (recounted.countsUsed must beTrue)
     }
   }
 
@@ -138,9 +215,18 @@ class GroupedListParitySpec extends Specification with TestDb with BeforeAll wit
         Seq(None, Some("07"), Some("99")))
       val fileLists = for (order <- BinaryOrder.all; filter <- VoteFilter.ofRound(round))
         yield RoundList(round, 0, None, filter, ListOrder.Binary(order), GalleryView.FileList)
-      val problems = (all ++ fileLists).flatMap(l => compare(s"${l.view.name} ${l.filter.param} ${l.order.param} ${l.regionParam}",
-        l, files, inRegion(l.region)))
+      val problems = (all ++ fileLists).flatMap(l => bothSources(label(l), l, files, inRegion(l.region)))
       problems must_== Nil
+    }
+
+    "be the model's from the counts with files marked dirty, whatever the round's score rule" in {
+      forall(AverageRule.all) { rule =>
+        SharedTestDb.truncateAll()
+        val (round, before) = setUp(Round.binaryRound, r => r.nextInt(3) - 1, rule = rule)
+        val files = revote(round, before, 8, r => r.nextInt(3) - 1)
+        val all = lists(round, VoteFilter.ofRound(round), BinaryOrder.all.map(ListOrder.Binary), Seq(None))
+        all.flatMap(l => bothSources(rule.param + " " + label(l), l, files, inRegion(l.region))) must_== Nil
+      }
     }
 
     "keep the large view's file the filter leaves out in its place among all the files" in {
@@ -152,17 +238,21 @@ class GroupedListParitySpec extends Specification with TestDb with BeforeAll wit
         val expected = GroupedListModel.list(list, files, _ => true, withPageId = Some(id))
         val i = expected.indexWhere(_.pageId == id)
         val from = math.max(0, i - Neighbourhood.Side)
-        list.around(id).map(h => (h.files.map(_.pageId), h.index)) must_==
-          Some((expected.slice(from, from + Neighbourhood.Window).map(_.pageId), i - from))
+        val around = Some((expected.slice(from, from + Neighbourhood.Window).map(_.pageId), i - from))
+        (list.around(id).map(h => (h.files.map(_.pageId), h.index)) must_== around) and
+          (list.withCountsRead(true).around(id).map(h => (h.files.map(_.pageId), h.index)) must_== around)
       }
     }
   }
 
   "all the jurors' lists of a criteria round" should {
     "be the model's" in {
-      val (round, files) = setUp(Round.ratesById(5), _.nextInt(16), hasCriteria = true)
-      val all = lists(round, Seq(VoteFilter.All, VoteFilter.Rated), Seq(ListOrder.ByRate), Seq(None, Some("14")))
-      all.flatMap(l => compare(s"${l.view.name} ${l.filter.param} ${l.regionParam}", l, files, inRegion(l.region))) must_== Nil
+      forall(AverageRule.all) { rule =>
+        SharedTestDb.truncateAll()
+        val (round, files) = setUp(Round.ratesById(5), _.nextInt(16), hasCriteria = true, rule = rule)
+        val all = lists(round, Seq(VoteFilter.All, VoteFilter.Rated), Seq(ListOrder.ByRate), Seq(None, Some("14")))
+        all.flatMap(l => bothSources(rule.param + " " + label(l), l, files, inRegion(l.region))) must_== Nil
+      }
     }
   }
 
@@ -172,6 +262,10 @@ class GroupedListParitySpec extends Specification with TestDb with BeforeAll wit
       val problems = Seq(GalleryView.ByRate, GalleryView.FileList).flatMap { view =>
         val list = RoundList(round, 0, view = view)
         val q = list.query.copy(regions = Set("07", "14"))
+        val counted = RoundImageQuery.of(q, binary = false, list.rankKey.columns.map(_._1)).get
+        val counts2 = Ranks(counted.keyCounts(list.rankKey.columns))
+        val pages2 = (0 to files.size / PageSize).map(p =>
+          counted.copy(limit = Some(Limit(Some(PageSize), Some(p * PageSize)))).pageIds())
         // files without a monument id have no region
         val expected = GroupedListModel.list(list, files, _.region.nonEmpty)
         val ranks = GroupedListModel.ranks(list, expected)
@@ -181,7 +275,10 @@ class GroupedListParitySpec extends Specification with TestDb with BeforeAll wit
         Seq(
           Option.when(q.count() != expected.size)(s"$view count ${q.count()}"),
           Option.when(pages.flatten.map(_.pageId) != expected.map(_.pageId))(s"$view pages ${pages.flatten.map(_.pageId)}"),
-          Option.when(pages.flatten.map(f => counts(list.rankKey.values(f))) != ranks)(s"$view ranks")
+          Option.when(pages.flatten.map(f => counts(list.rankKey.values(f))) != ranks)(s"$view ranks"),
+          Option.when(counted.count() != expected.size)(s"$view counts' count ${counted.count()}"),
+          Option.when(pages2.flatten != expected.map(_.pageId))(s"$view counts' pages ${pages2.flatten}"),
+          Option.when(pages.flatten.map(f => counts2(list.rankKey.values(f))) != ranks)(s"$view counts' ranks")
         ).flatten
       }
       problems must_== Nil
@@ -191,7 +288,7 @@ class GroupedListParitySpec extends Specification with TestDb with BeforeAll wit
       val (round, files) = setUp(Round.ratesById(5), _.nextInt(4), specialNomination = Some("Віа Регіа"))
       val all = lists(round, Seq(VoteFilter.All, VoteFilter.Rated), Seq(ListOrder.ByRate), Seq(Some("07-101"), Some("07-102")))
       (all.map(_.query.subRegions).distinct must_== Seq(true)) and
-        (all.flatMap(l => compare(s"${l.view.name} ${l.filter.param} ${l.regionParam}", l, files,
+        (all.flatMap(l => bothSources(label(l), l, files,
           f => l.region.exists(r => f.monumentId.exists(_.take(6) == r)))) must_== Nil)
     }
   }
@@ -202,10 +299,19 @@ class GroupedListParitySpec extends Specification with TestDb with BeforeAll wit
   */
 object GroupedListModel {
 
-  /** A file of the round: its monument id and its votes' rates. */
-  final case class File(pageId: Long, monumentId: Option[String], rates: Seq[Int]) {
+  /** A file of the round: its monument id, its votes' rates and their jurors. */
+  final case class File(pageId: Long, monumentId: Option[String], rates: Seq[Int], jurors: Seq[Long] = Nil) {
     def sum: Int = rates.sum
     def approvals: Int = rates.count(_ > 0)
+
+    /** Its rank key in a rated round: its average under the rule (exact, as an integer), then
+      * its sum; the sum alone in a sum round.
+      */
+    def ratedKey(rule: AverageRule): Seq[Long] = rule match {
+      case AverageRule.Sum      => Seq(sum.toLong)
+      case AverageRule.Rated    => Seq(AverageRule.key(sum, approvals), sum.toLong)
+      case AverageRule.Assigned => Seq(AverageRule.key(sum, rates.size), sum.toLong)
+    }
     def rejections: Int = rates.count(_ < 0)
 
     /** Its top-level region, as `ImageDbNew.regionOf` and the monument table's adm0 have it. */
@@ -223,12 +329,14 @@ object GroupedListModel {
   private val monumentOrder: Ordering[Option[String]] = Ordering.Option(Ordering.String)
 
   /** The list's order: a file list by its rank key (ties by monument and page id in a rated
-    * round, by page id in a yes/no one), by rate by the rate sum or a binary order, or in file
-    * order.
+    * round, by page id in a yes/no one), by rate by the round's rule (the average, then the sum;
+    * the sum in a sum round) or a binary order, or in file order.
     */
   def ordering(list: RoundList): Ordering[File] = {
     val byFile: Ordering[File] = Ordering.by((f: File) => (f.monumentId, f.pageId))(Ordering.Tuple2(monumentOrder, Ordering.Long))
-    val bySum: Ordering[File] = Ordering.by((f: File) => -f.sum).orElse(byFile)
+    val bySum: Ordering[File] =
+      Ordering.by((f: File) => f.ratedKey(list.round.averageRule).map(-_))(Ordering.Implicits.seqOrdering[Seq, Long])
+        .orElse(byFile)
     def byBinary(order: BinaryOrder): Ordering[File] =
       Ordering.by((f: File) => (order.sortKey(f.approvals, f.rejections), f.pageId))(
         Ordering.Tuple2(Ordering.Implicits.seqOrdering[Seq, Int], Ordering.Long))
@@ -246,7 +354,8 @@ object GroupedListModel {
   /** The ranks of the list's files, by its rank key. */
   def ranks(list: RoundList, ordered: Seq[File]): Seq[String] = {
     val keys = ordered.map(f =>
-      if (list.round.isBinary) list.binaryOrder.values(f.approvals, f.rejections) else Seq(f.sum))
+      if (list.round.isBinary) list.binaryOrder.values(f.approvals, f.rejections).map(_.toLong)
+      else f.ratedKey(list.round.averageRule))
     keys.map(Ranks.of(keys))
   }
 }

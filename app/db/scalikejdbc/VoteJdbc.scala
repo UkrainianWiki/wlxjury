@@ -208,23 +208,17 @@ object VoteJdbc extends CRUDMapper[Vote] {
     }
   }
 
-  def activeJurors(roundId: Long): Int =
-    sql"""SELECT count( 1 )
-    FROM (
-
-      SELECT s.jury_id
-    FROM vote s
-    WHERE s.round_id = $roundId AND s.deleted_at IS NULL
-    GROUP BY s.jury_id
-    HAVING sum(s.rate) > 0
-    ) j"""
-      .map(_.int(1))
-      .single()
-      .get
-
   def allJurors(roundId: Long): Long =
     where("roundId" -> roundId)
       .distinctCount("juryId")
+
+  /** Whether a juror has rated a file of the round (a rate other than 0, of a vote not
+    * deleted): until then every file scores 0 under each score rule. One read of the
+    * (round_id, rate) index; the round form's score rule warning.
+    */
+  def hasRatedVote(roundId: Long): Boolean =
+    sql"""SELECT 1 FROM vote WHERE round_id = $roundId AND rate <> 0 AND deleted_at IS NULL LIMIT 1"""
+      .map(_.int(1)).single().isDefined
 
   private[scalikejdbc] val DeleteChunk = 5000
 

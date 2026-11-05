@@ -90,7 +90,7 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
                   s", ROW_NUMBER() over (${orderBy()}) ranked"
                 else "") +
                (if (grouped)
-                  ", sum(s.rate) as rate, count(s.rate) as rate_count"
+                  ", sum(s.rate) as rate, count(*) as rate_count"
                 else "")
            } else {
              if (byRegion)
@@ -98,10 +98,10 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
              else if (!grouped)
                sqls"""${i.result.*}, ${s.result.*} """.value
              else if (tally)
-               sqls"""sum(s.rate) as rate, count(s.rate) as rate_count, sum(s.rate > 0) as approvals,
+               sqls"""sum(s.rate) as rate, count(*) as rate_count, sum(s.rate > 0) as approvals,
                        sum(s.rate < 0) as rejections, ${i.result.*} """.value
              else
-               sqls"""sum(s.rate) as rate, count(s.rate) as rate_count, ${i.result.*} """.value
+               sqls"""sum(s.rate) as rate, count(*) as rate_count, ${i.result.*} """.value
            })
 
       val groupByStr = if (byRegion) {
@@ -196,7 +196,7 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
       }
       val aggregates = Seq("rate", "rate_count") ++ (if (tally) Seq("approvals", "rejections") else Nil)
       val inner = SQLSyntax.createUnsafely(
-        "select s.page_id as pid, sum(s.rate) as rate, count(s.rate) as rate_count" +
+        "select s.page_id as pid, sum(s.rate) as rate, count(*) as rate_count" +
           (if (tally) ", sum(s.rate > 0) as approvals, sum(s.rate < 0) as rejections" else "") +
           keys.map { case (expr, alias, _) => s", $expr as $alias" }.mkString +
           (if (monumentJoin) join(monuments = true) else " from vote s")
@@ -222,9 +222,9 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
       * votes, over `s`), in its order, from one read: the CSV ranks its files by these and
       * reads their votes a chunk at a time ([[withVotes]]).
       */
-    def pageKeys(columns: Seq[String])(implicit session: DBSession = autoSession): Seq[(Long, Seq[Int])] =
+    def pageKeys(columns: Seq[String])(implicit session: DBSession = autoSession): Seq[(Long, Seq[Long])] =
       sql"${files.query(idOnly = true, noLimit = true, keyColumns = columns)}"
-        .map(rs => rs.long(1) -> columns.indices.map(n => rs.int(n + 2)))
+        .map(rs => rs.long(1) -> columns.indices.map(n => rs.long(n + 2)))
         .list()
 
     /** The files of `pageIds` with their votes the list has (its juror's, or all the jurors':
@@ -247,7 +247,7 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
       * (over `s`), in the order of the columns' directions: what a page's ranks are counted
       * from among the whole list ([[org.intracer.wmua.ImageWithRating.Ranks]]).
       */
-    def keyCounts(columns: Seq[(String, Int)])(implicit session: DBSession = autoSession): Seq[(Seq[Int], Int)] = {
+    def keyCounts(columns: Seq[(String, Int)])(implicit session: DBSession = autoSession): Seq[(Seq[Long], Int)] = {
       val keys = columns.indices.map(n => s"k$n")
       val select = columns.zip(keys).map { case ((expr, _), k) => s"$expr as $k" }.mkString(", ")
       val from = if (monumentJoin) join(monuments = true) else " from vote s"
@@ -256,7 +256,7 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
         s"select ${keys.mkString(", ")}, count(*) from (") +
         inner +
         SQLSyntax.createUnsafely(s") t group by ${keys.mkString(", ")}${orderSql(keys.zip(columns.map(_._2)))}")
-      sql"$outer".map(rs => (keys.indices.map(n => rs.int(n + 1)), rs.int(keys.size + 1))).list()
+      sql"$outer".map(rs => (keys.indices.map(n => rs.long(n + 1)), rs.int(keys.size + 1))).list()
     }
 
     /** The list's files: a file list's or CSV's too, one per file whatever its votes. */
@@ -514,7 +514,8 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
           votes = Seq(VoteJdbc(s)(rs))
         )
 
-      /** A grouped row: the file, its rates' sum and count, and with `tally` its approvals and
+      /** A grouped row: the file, its rates' sum and its vote rows (`COUNT(*)`: a NULL rate is an
+        * unrated vote, as `round_image.assigned` counts it), and with `tally` its approvals and
         * rejections (columns 3 and 4).
         */
       def groupedReader(tally: Boolean)(rs: WrappedResultSet): ImageWithRating = {

@@ -90,7 +90,7 @@ class ImagesSqlSpec extends FunSuite with AutoRollbackMunitDb {
   dbTest("grouped - group by page list by round, without a yes/no round's tally") { implicit session =>
     check(
       SelectionQuery(roundId = Some(3), grouped = true),
-      s"""select sum(s.rate) as rate, count(s.rate) as rate_count, $imageFields from vote s
+      s"""select sum(s.rate) as rate, count(*) as rate_count, $imageFields from vote s
           STRAIGHT_JOIN images i
           on i.page_id = s.page_id
           where
@@ -103,7 +103,7 @@ class ImagesSqlSpec extends FunSuite with AutoRollbackMunitDb {
   dbTest("grouped with tally - a yes/no round's approvals and rejections apart") { implicit session =>
     check(
       SelectionQuery(roundId = Some(3), grouped = true, tally = true),
-      s"""select sum(s.rate) as rate, count(s.rate) as rate_count, sum(s.rate > 0) as approvals, sum(s.rate < 0) as rejections, $imageFields from vote s
+      s"""select sum(s.rate) as rate, count(*) as rate_count, sum(s.rate > 0) as approvals, sum(s.rate < 0) as rejections, $imageFields from vote s
           STRAIGHT_JOIN images i
           on i.page_id = s.page_id
           where
@@ -222,7 +222,7 @@ class ImagesSqlSpec extends FunSuite with AutoRollbackMunitDb {
         limit = Some(Limit(pageSize = Some(5), offset = Some(10)))
       ),
       s"""select k.rate, k.rate_count, $imageFields from (select s.page_id as pid, sum(s.rate) as rate,
-          count(s.rate) as rate_count from vote s where s.round_id = ? and s.page_id is not null
+          count(*) as rate_count from vote s where s.round_id = ? and s.page_id is not null
           group by s.page_id LIMIT 5 OFFSET 10) k
           STRAIGHT_JOIN images i on i.page_id = k.pid""",
       expectedParams = Seq(3L)

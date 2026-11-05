@@ -126,7 +126,7 @@ object RankQueryBenchmark {
 
   // ---- the page views
 
-  private def keyCountRanks(list: RoundList, c: Clock): Ranks[Seq[Int]] =
+  private def keyCountRanks(list: RoundList, c: Clock): Ranks[Seq[Long]] =
     c("keyCounts")(Ranks(list.query.keyCounts(list.rankKey.columns)))
 
   private def byRateA(list: RoundList, page: Int, withCount: Boolean = true): View = {

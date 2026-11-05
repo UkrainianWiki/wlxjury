@@ -151,16 +151,17 @@ class GalleryByRateViewSpec extends PlaySpecification {
     }
 
     "show a rated round's result to an organiser as stars and the rate, without a tally" in {
-      // grouped rows as all the jurors' list of a rated round has them: their rates' sum, no
-      // approvals or rejections (reading them would fail: no tally)
-      val grouped = files.map(f => f.copy(votes = Seq(Vote(f.pageId, 0, 0, f.rate * 3)), countFromDb = 3))
+      // grouped rows as all the jurors' list of a rated round has them: their rates' sum and
+      // their rated votes (the rule's denominator), no tally drawn
+      val grouped = files.map(f => f.copy(votes = Seq(Vote(f.pageId, 0, 0, f.rate * 3)), countFromDb = 3,
+        approvalsFromDb = Some(if (f.rate > 0) 3 else 0)))
       val doc = Jsoup.parse(contentAsString(views.html.galleryByRate(
         juror, RoundList(round, 0, view = GalleryView.ByRate), grouped, Pager(1, grouped.size), Nil, None,
-        new RateDistribution(Map.empty), ranks)))
+        new RateDistribution(Map.empty), ranks)(Flash(), LargeViewRenders.realMessages, request)))
       (doc.select(".wlx-approvals").size === 0) and
         (doc.select("[data-tally]").size === 0) and
         (doc.select(".rate-stars i.bi-check-lg, .rate-stars i.bi-x-lg").size === 0) and
-        (doc.select(".rate-stars").asScala.map(_.text) === Seq("1.00 (3 / 3)", "2.00 (6 / 3)", "3.00 (9 / 3)", "4.00 (12 / 3)"))
+        (doc.select(".rate-stars").asScala.map(_.text) === Seq("1.00 (3 / 3 jurors)", "2.00 (6 / 3 jurors)", "3.00 (9 / 3 jurors)", "4.00 (12 / 3 jurors)"))
     }
 
     "be in half stars in a half-star round" in {

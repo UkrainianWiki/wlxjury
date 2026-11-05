@@ -20,6 +20,11 @@
             @roundStatTable(user, round, stat)
         </div>
 
+        @* how the round scores its files in its results (V90), for a rated round *@
+        @if(round.isRated) {
+            <p class="text-muted small" id="round-average-rule">@Messages("round.average.rule.of", Messages(round.averageRule.messageKey))</p>
+        }
+
         @* the round's files deleted on Commons: out of the table above while it is open *@
         @if(stat.deletedFiles > 0) {
             <div class="row" id="deleted-files">

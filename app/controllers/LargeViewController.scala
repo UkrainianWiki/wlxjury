@@ -3,6 +3,7 @@ package controllers
 import db.scalikejdbc.{MonumentJdbc, Round, RoundCriterion, RoundUser, VoteJdbc, User}
 import modules.RequestTiming
 import org.intracer.wmua._
+import play.api.Configuration
 import play.api.i18n.I18nSupport
 import play.api.mvc.{ControllerComponents, EssentialAction, Request, Result}
 import services.GalleryService
@@ -11,9 +12,13 @@ import javax.inject.Inject
 
 class LargeViewController @Inject() (
     cc: ControllerComponents,
-    galleryService: GalleryService
+    galleryService: GalleryService,
+    config: Configuration = Configuration.empty
 ) extends Secured(cc)
     with I18nSupport {
+
+  /** The large view for all the jurors from `round_image`'s counts (`roundImage.read`, P2b). */
+  private val countsRead = config.getOptional[Boolean]("roundImage.read").getOrElse(false)
 
   import play.api.libs.json._
 
@@ -133,7 +138,7 @@ class LargeViewController @Inject() (
               case Accepts.Json() => viewAsRefused(user, round, refusal, json = true)
             }
           case _ =>
-            showRound(pageId, user, RoundList.of(round, user, asUserId, region, GalleryView.of(request)))
+            showRound(pageId, user, RoundList.of(round, user, asUserId, region, GalleryView.of(request)).withCountsRead(countsRead))
         }
     }
 

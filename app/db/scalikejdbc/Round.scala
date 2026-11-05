@@ -1,7 +1,7 @@
 package db.scalikejdbc
 
 import db.RoundRepo
-import org.intracer.wmua.{BinaryOrder, CategoryRule, HasId}
+import org.intracer.wmua.{AverageRule, BinaryOrder, CategoryRule, HasId}
 import scalikejdbc._
 import scalikejdbc.orm.{CRUDMapper, JoinTable}
 
@@ -32,7 +32,6 @@ case class Round(
     createdAt: ZonedDateTime = ZonedDateTime.now,
     deletedAt: Option[ZonedDateTime] = None,
     active: Boolean = false,
-    optionalRate: Boolean = false,
     juryOrgView: Boolean = false,
     minMpx: Option[Int] = None,
     previous: Option[String] = None,
@@ -60,6 +59,9 @@ case class Round(
     // V72): the legacy rule (BinaryOrder.LegacyParam). A new round from a yes/no round stores
     // one (withExplicitTopOrder); over rated previous rounds it plays no part, and is NULL.
     topBinaryOrder: Option[BinaryOrder] = None,
+    // how a rated round averages a file's rates (V90): every view of its results and a next
+    // round's top-N and "min average rate" from it use it
+    averageRule: AverageRule = AverageRule.Default,
     // the number of a criteria round's criteria, read where its results are drawn
     // (perCriterion: the galleries, the large view); not loaded with the round
     criteriaCount: Int = 1,
@@ -76,12 +78,7 @@ case class Round(
   def availableJurors(implicit session: DBSession = AutoSession): Seq[User] =
     User.findByContestAndRoles(contestId, roles.toSeq)
 
-  lazy val numberOfActiveJurors = VoteJdbc.activeJurors(id.get)
-
   lazy val numberOfAssignedJurors = VoteJdbc.allJurors(id.get)
-
-  def numberOfJurorsForAverageRate: Long =
-    if (!optionalRate) numberOfAssignedJurors else numberOfActiveJurors
 
   def description: String =
     name
@@ -295,7 +292,6 @@ object Round extends RoundRepo with CRUDMapper[Round] {
       createdAt = rs.timestamp(c.createdAt).toZonedDateTime,
       deletedAt = rs.timestampOpt(c.deletedAt).map(_.toZonedDateTime),
       active = rs.booleanOpt(c.active).getOrElse(false),
-      optionalRate = rs.booleanOpt(c.optionalRate).getOrElse(false),
       juryOrgView = rs.booleanOpt(c.juryOrgView).getOrElse(false),
       minMpx = rs.intOpt(c.minMpx),
       previous = rs.stringOpt(c.previous),
@@ -317,7 +313,8 @@ object Round extends RoundRepo with CRUDMapper[Round] {
       distributing = rs.booleanOpt(c.distributing).getOrElse(false),
       freezeCount = rs.intOpt(c.freezeCount).getOrElse(0),
       excludeCoi = rs.booleanOpt(c.excludeCoi).getOrElse(false),
-      topBinaryOrder = rs.stringOpt(c.topBinaryOrder).flatMap(BinaryOrder.parse)
+      topBinaryOrder = rs.stringOpt(c.topBinaryOrder).flatMap(BinaryOrder.parse),
+      averageRule = AverageRule.fromStored(rs.stringOpt(c.averageRule))
     ).withFixedCategories
 
   def create(round: Round)(implicit session: DBSession = AutoSession): Round = {
@@ -336,7 +333,6 @@ object Round extends RoundRepo with CRUDMapper[Round] {
 //          column.recommended -> round.limits.recommended,
           column.createdAt -> round.createdAt,
           column.active -> round.active,
-          column.optionalRate -> round.optionalRate,
           column.juryOrgView -> round.juryOrgView,
           column.minMpx -> round.minMpx,
           column.previous -> round.previous,
@@ -357,6 +353,7 @@ object Round extends RoundRepo with CRUDMapper[Round] {
           column.distributing -> round.distributing,
           column.excludeCoi -> round.excludeCoi,
           column.topBinaryOrder -> round.topBinaryOrder.map(_.param),
+          column.averageRule -> round.averageRule.param,
           column.hasCriteria -> round.criterionIds.nonEmpty
         )
     }.updateAndReturnGeneratedKey()
@@ -368,9 +365,15 @@ object Round extends RoundRepo with CRUDMapper[Round] {
     round.copy(id = Some(id), hasCriteria = round.criterionIds.nonEmpty)
   }
 
-  /** The round form's edit: its name. Starting and stopping it is [[setActiveGuarded]]'s. */
+  /** The round form's edit: its name and its average rule. Starting and stopping it is
+    * [[setActiveGuarded]]'s. The rule may change at any time: it changes how results are shown,
+    * not the votes; a distribution from the round reads the rule recorded in its job's settings
+    * when it was queued (`RoundService`), so a change applies to the next one.
+    */
   def updateRound(id: Long, round: Round): Unit =
-    updateById(id).withAttributes("name" -> round.name): Unit
+    // created_at set to itself: production's has ON UPDATE CURRENT_TIMESTAMP (V86)
+    sql"""UPDATE round SET name = ${round.name}, average_rule = ${round.averageRule.param}, created_at = created_at
+          WHERE id = $id""".update(): Unit
 
   /** The round form's "Leave out conflicts of interest", for a round with none of them to
     * take out, or to stop leaving them out ([[RoundConflicts.disqualify]] sets it for

@@ -5,9 +5,12 @@ import scalikejdbc._
 /** The vote counts of a round's files on `round_image` (V89: `assigned`, `voted`, `approvals`,
   * `rejections`, `rate_sum`), kept by dirty marks and a background recompute instead of deltas
   * in the vote's transaction (decision W6 of docs/plans/2026-11-03-write-path-simplification.md;
-  * docs/plans/2026-11-02-round-images-two-step.md §9 "P2a" and §16). Shadow until P2b: no reader
-  * uses them yet. Exact consumers (top-N distributions, the CSV, a finalize) read the votes
-  * themselves, also after P2b; the counts may be seconds old.
+  * docs/plans/2026-11-02-round-images-two-step.md §9 "P2a" and §16). Read by all the jurors'
+  * lists behind `roundImage.read` (P2b, [[rewrite.RoundImageQuery]], §17), which overlays the
+  * marked files' votes, and reads the votes when the round's generation isn't clean or changes
+  * across a statement ([[cleanGeneration]], [[generation]]). Exact
+  * consumers (top-N distributions, the CSV, a finalize) read the votes themselves; the stored
+  * counts alone may be seconds old.
   *
   * '''Marks.'''
   *  - A juror's vote whose rate changes upserts its file's entry in `round_image_dirty`
@@ -123,6 +126,19 @@ object RoundCounts {
   def isClean(roundId: Long)(implicit session: DBSession = AutoSession): Boolean =
     sql"SELECT counts_gen_done >= counts_gen FROM round WHERE id = $roundId".map(_.boolean(1)).single().getOrElse(true) &&
       sql"SELECT 1 FROM round_image_dirty WHERE round_id = $roundId LIMIT 1".map(_ => ()).single().isEmpty
+
+  /** The round's generation (`counts_gen`), if no full recount of it is pending
+    * (`counts_gen_done >= counts_gen`): while it stays the same, its stored counts with its marked
+    * files' votes are its votes (P2b, `controllers.RoundList.fromCounts`). A primary-key read;
+    * None for a round that doesn't exist.
+    */
+  def cleanGeneration(roundId: Long)(implicit session: DBSession = AutoSession): Option[Long] =
+    sql"SELECT counts_gen, counts_gen_done FROM round WHERE id = $roundId"
+      .map(rs => rs.long(1) -> rs.long(2)).single().collect { case (gen, done) if done >= gen => gen }
+
+  /** The round's generation (`counts_gen`): bumped by every bulk writer of its votes. */
+  def generation(roundId: Long)(implicit session: DBSession = AutoSession): Option[Long] =
+    sql"SELECT counts_gen FROM round WHERE id = $roundId".map(_.long(1)).single()
 
   /** The round's generation, the generation of its last full recount, and its files marked. */
   final case class State(gen: Long, genDone: Long, dirtyFiles: Long)
