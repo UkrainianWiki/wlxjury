@@ -10,7 +10,7 @@ developers or operators see are not listed.
 
 Changes made available before version 26.11, by who notices them.
 
-**For everyone**
+### For everyone, earlier
 
 - **One account for several contests.** A person has one account, a member of any number of
   contests with a role in each, and switches between them with the contest menu in the top bar.
@@ -20,16 +20,16 @@ Changes made available before version 26.11, by who notices them.
 - **Faster pages:** galleries and region statistics load faster, and the galleries keep your
   place and a stable order.
 
-**For jurors**
+### For jurors, earlier
 
 - **You see only your own votes.** Other jurors' votes are for the organizers. See [Your own votes
   only](juror-guide.md#your-own-votes-only).
-- **Regions:** the region menu in the galleries, with Wiki Loves Earth regions and the number of
-  files in each. See [Regions](juror-guide.md#regions).
+- **Regions:** Wiki Loves Earth regions in the region menu, and the number of files in each
+  region. See [Regions](juror-guide.md#regions).
 - **Deleted and renamed files:** a file deleted on Commons is hidden, and a renamed one shows
   under its new name. See [Deleted or missing files](juror-guide.md#deleted-or-missing-files).
 
-**For organizers and admins**
+### For organizers and admins, earlier
 
 - **Rounds are prepared in the background.** Creating a round, and **Distribute new files**,
   run as jobs with progress, **Cancel** and **Retry**. A round being created stays hidden from
@@ -38,24 +38,24 @@ Changes made available before version 26.11, by who notices them.
 - **Import files** and **Update monuments** also run in the background. See [Importing the
   contest's files](organizer-guide.md#o-import-files).
 - **A double submit no longer creates two rounds.**
-- **Filters on the round form:** media type (images or videos), a minimum resolution and file
-  size, special nominations, regions (Ukraine's and Wiki Loves Earth's), and categories, with
-  **In category A**, **Not in category A**, **In both**, **In A or B** and **In A but not B**.
-  See [Choosing the round's files](organizer-guide.md#o-choose-files).
+- **New filters on the round form:** special nominations, Wiki Loves Earth regions, and category
+  operations (**In category A**, **Not in category A**, **In both A and B**, **In A or B (or
+  both)**, **In A but not B**). See [Choosing the round's files](organizer-guide.md#o-choose-files).
 - **Add files to a round from a pasted list.** See [Adding files by
   name](organizer-guide.md#o-add-files).
 - **Conflicts of interest:** a round can leave out files by the contest's members, with a count
   on the round form. See [Conflicts of interest](organizer-guide.md#o-conflicts).
 - **The contest's files as a gallery,** with regions and a large view. See [The contest's
   files](organizer-guide.md#o-contest-files).
-- **Deleted and renamed files** are handled: see [The contest's
-  files](organizer-guide.md#o-contest-files).
-- **Better ranking numbers:** a minimum rate can have decimals.
+- **The contest's files page has a Deleted on Commons tab** for files deleted on Commons. See
+  [The contest's files](organizer-guide.md#o-contest-files).
+- **A local image cache,** where the operators have set it up: admins can use **Download images
+  locally**. See [Importing the contest's files](organizer-guide.md#o-import-files).
 
 ## New in version 26.11
 
 <a id="w-everyone"></a>
-## For everyone
+### For everyone
 
 - **Light, dark and system colour modes**, chosen with the theme icon in the top bar. See
   [Light, dark or system theme](juror-guide.md#light-dark-or-system-theme).
@@ -69,7 +69,7 @@ Changes made available before version 26.11, by who notices them.
 - **More reliable voting:** votes no longer fail when organizers change rounds at the same time.
 
 <a id="w-jurors"></a>
-## For jurors
+### For jurors
 
 - **The worst mark** (an X icon) in rated rounds that use it: a button or the Delete key gives a
   file the worst mark, the eraser or Backspace clears your vote. See [Rated rounds
@@ -83,7 +83,7 @@ Changes made available before version 26.11, by who notices them.
   requalified. See [Disqualified files](juror-guide.md#disqualified-files).
 
 <a id="w-organizers"></a>
-## For organizers
+### For organizers
 
 - **A clearer ranking.** The by-rate gallery, the file list, the CSV and the large view for all
   jurors show each file's score and what it is divided by. See [Results](organizer-guide.md#o-results).
@@ -99,7 +99,7 @@ Changes made available before version 26.11, by who notices them.
   [The conflicts page](organizer-guide.md#o-conflicts-page).
 
 <a id="w-admins"></a>
-## For admins
+### For admins
 
 - **The worst mark** as a round option, and a **rejection filter** for the next round
   (exclude files rejected by at least X, or take only those). See [The worst
@@ -115,7 +115,7 @@ Changes made available before version 26.11, by who notices them.
   instead of mailing it](admin-guide.md#a-share-link).
 
 <a id="w-changed"></a>
-## Changes to be aware of
+### Changes to be aware of
 
 - The **all-jurors by-rate list** no longer counts a juror's missing rate as 0 by default, and
   ranks by the average, not the sum. To count a missing rate as 0, choose **Average over its
