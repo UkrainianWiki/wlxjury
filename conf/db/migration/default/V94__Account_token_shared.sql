@@ -5,8 +5,8 @@
 --  * shared: the link was shown to the account's admin or root to pass on, not mailed. Accepting
 --    it sets the password, ends every session and API token of the account and unlinks its
 --    identities as a mailed one does, but proves no email (nobody showed they read a mail to the
---    address), so it leaves users.email_verified_at as it was, and gives only the pending roles
---    its creator may still give (services.AccountTokenService.proveEmail).
+--    address), so it clears users.email_verified_at and wiki_account_verified_at, and gives only
+--    the pending roles its creator may still give (services.AccountTokenService.proveEmail).
 -- ALGORITHM=INSTANT: metadata only, existing rows (all mailed) read the default; the statement
 -- fails rather than copies. Rerunnable.
 ALTER TABLE account_token

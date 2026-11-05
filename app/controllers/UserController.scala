@@ -53,11 +53,12 @@ class UserController @Inject()(cc: ControllerComponents,
           val members = users.flatMap(u => u.id.map(_ -> u)).toMap
           val accounts = members ++ invitations.map(_.userId).distinct.filterNot(members.contains)
             .flatMap(id => User.findById(id).map(id -> _))
-          // a link to share only where this admin may create one (checked again on the POST)
-          val candidates = members.values.filter(u => !u.isRoot && !(u.emailVerified && u.hasUsablePassword)).map(_.getId) ++
-            invitations.filter(_.live).map(_.userId)
-          val shareable = candidates.toSet.filter(id => accounts.get(id).exists(account =>
-            ShareLinkService.mayCreate(user, account, AccountTokenJdbc.Invitation, Some(contestId)).isEmpty))
+          // a link to share only where this admin may create one (checked again on the POST), in a
+          // few queries for the whole list
+          val candidates = (members.values.filter(u => !u.isRoot && !(u.emailVerified && u.hasUsablePassword)).map(_.getId) ++
+            invitations.filter(_.live).map(_.userId)).toSeq.distinct.flatMap(accounts.get)
+          val shareable = ShareLinkService.mayCreateFor(user, candidates, AccountTokenJdbc.Invitation, Some(contestId),
+            oauthSettings.wikimediaConfigured)
 
           Ok(
             views.html.users(user,
@@ -66,7 +67,8 @@ class UserController @Inject()(cc: ControllerComponents,
                              Some(contest),
                              pending = invitations,
                              accounts = accounts,
-                             shareable = shareable))
+                             shareable = shareable,
+                             wikimediaSignIn = oauthSettings.wikimediaConfigured))
         }).getOrElse(Redirect(routes.LoginController.index)) // TODO message
     }
 
@@ -167,10 +169,13 @@ class UserController @Inject()(cc: ControllerComponents,
           if (user.id.contains(userId)) ownProfile(Ok, user)
           else {
             val pageContest = editedUser.contestId.orElse(user.currentContest)
-            val mayShare =
-              ShareLinkService.mayCreate(user, editedUser, AccountTokenJdbc.PasswordReset, pageContest).isEmpty
+            val refusal = ShareLinkService.mayCreate(user, editedUser, AccountTokenJdbc.PasswordReset, pageContest,
+              oauthSettings.wikimediaConfigured)
+            // an account without an email signs in with Wikimedia where it is offered: said instead
+            val wikimedia = refusal.filter(_ == ShareLinkService.SignsInWithWikimedia).flatMap(_ => editedUser.wikiAccount)
             Ok(views.html.editUser(user, editUserForm.fill(editedUser), pageContest,
-              passwordLinks = passwordLinksShown(user, userId), mayShareLink = mayShare))
+              passwordLinks = passwordLinksShown(user, userId), mayShareLink = refusal.isEmpty,
+              signsInWithWikimedia = wikimedia))
           }
         }
     }
@@ -826,9 +831,8 @@ class UserController @Inject()(cc: ControllerComponents,
   private def shareLink(user: User, id: Long, purpose: String, contestId: Option[Long])(implicit
       request: play.api.mvc.Request[AnyContent]
   ): Result =
-    ShareLinkService.create(user, id, purpose, contestId) match {
-      case Right((link, token)) =>
-        val account = User.findById(id).get // locked and checked in create
+    ShareLinkService.create(user, id, purpose, contestId, oauthSettings.wikimediaConfigured) match {
+      case Right((link, token, account)) =>
         val back =
           if (purpose == AccountTokenJdbc.Invitation) routes.UserController.users(contestId).url
           else routes.UserController.editUser(id, contestId).url
@@ -842,6 +846,8 @@ class UserController @Inject()(cc: ControllerComponents,
         BadRequest(views.html.errorPage(Some(user), "error.title", "invitation.not.possible"))
       case Left(ShareLinkService.NoLogin) =>
         BadRequest(views.html.errorPage(Some(user), "error.title", "share.link.no.login"))
+      case Left(ShareLinkService.SignsInWithWikimedia) =>
+        BadRequest(views.html.errorPage(Some(user), "error.title", "share.link.wikimedia"))
       case Left(_) => NotFound(views.html.errorPage(Some(user), "error.title", "error.user.not.found"))
     }
 }

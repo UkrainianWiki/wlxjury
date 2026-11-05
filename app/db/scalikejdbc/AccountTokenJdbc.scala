@@ -139,6 +139,15 @@ object AccountTokenJdbc {
   def find(id: Long)(implicit session: DBSession = AutoSession): Option[AccountToken] =
     sql"SELECT $columns FROM account_token WHERE id = $id".map(extract).single.apply()
 
+  /** The live invitations of each of the accounts, in one query (the users page's batch). */
+  def liveInvitationsOf(userIds: Seq[Long])(implicit session: DBSession = AutoSession): Map[Long, Seq[AccountToken]] =
+    if (userIds.isEmpty) Map.empty
+    else
+      sql"""SELECT $columns FROM account_token
+            WHERE user_id IN (${userIds.distinct}) AND purpose = $Invitation
+              AND used_at IS NULL AND revoked_at IS NULL AND expires_at > NOW(3)"""
+        .map(extract).list.apply().groupBy(_.userId)
+
   /** The account's links, the latest first. */
   def findByUser(userId: Long)(implicit session: DBSession = AutoSession): Seq[AccountToken] =
     sql"SELECT $columns FROM account_token WHERE user_id = $userId ORDER BY id DESC".map(extract).list.apply()

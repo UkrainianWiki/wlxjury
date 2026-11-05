@@ -5,7 +5,8 @@
         tokensCard: Option[controllers.ApiTokensCard] = None,
         linkedAccountsCard: Option[controllers.LinkedAccountsCard] = None,
         passwordLinks: Seq[db.scalikejdbc.AccountToken] = Nil,
-        mayShareLink: Boolean = false
+        mayShareLink: Boolean = false,
+        signsInWithWikimedia: Option[String] = None
 )(implicit flash: Flash, messages: Messages, req: RequestHeader)
 
 @import helper._
@@ -169,9 +170,12 @@
 
             @* another account: its set-password links with their status, and "Create a link to share"
                (a password link as root's mailed reset, shown once) where this user may create one *@
-            @if(!ownProfile && (mayShareLink || passwordLinks.nonEmpty)) {
+            @if(!ownProfile && (mayShareLink || passwordLinks.nonEmpty || signsInWithWikimedia.nonEmpty)) {
             <section class="mt-4" id="password-links" aria-labelledby="password-links-title">
                 <h2 class="h5" id="password-links-title">@Messages("links.title")</h2>
+                @for(name <- signsInWithWikimedia) {
+                    <p class="form-text signs-in-wikimedia">@Messages("share.link.wikimedia.note", name)</p>
+                }
                 @if(mayShareLink) {
                     <p class="text-body-secondary small">@Messages("share.link.reset.explain")</p>
                     @form(routes.UserController.sharePasswordLink(editUserForm("id").value.map(_.toLong).get, contestId),

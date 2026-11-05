@@ -131,6 +131,12 @@ object AccountTokenService {
     else {
       // quiet: the statements bind the password hash, which must not reach the SQL log
       val result = User.quietTx { implicit session =>
+        // the account's row first, then the link's (the order of every transaction that locks
+        // both: ShareLinkService.create, UserService.sendChooseLink, acceptByProvider), before
+        // the checks read its memberships: an add into another contest (UserService.addToContest,
+        // which takes the account's lock too) commits before them, and READ COMMITTED reads it,
+        // or waits for this acceptance
+        AccountTokenJdbc.findByHash(hash(token)).foreach(t => User.lockRow(t.userId))
         AccountTokenJdbc.lockByHash(hash(token)) match {
           case None                                                         => refused(Unknown, None)
           case Some(t) if !AccountTokenJdbc.SetsPassword.contains(t.purpose) => refused(WrongPurpose, Some(t))
@@ -148,7 +154,7 @@ object AccountTokenService {
   /** Accepts the account's live invitation or password link by a Google or Wikimedia sign-in
     * whose provider verified `verifiedEmail` (the user's decision 1, review B3): for an account
     * without a password only, whose current email, the link's address and `verifiedEmail` are
-    * the same. In one transaction, the links' rows and then the account's locked: what accepting
+    * the same. In one transaction, the account's row and then the links' locked: what accepting
     * the link proves follows ([[proveEmail]], without a password), then `link` (the identity's
     * row, in the same transaction). The account as stored now; refused, changing nothing, without
     * such a link. Run again on a deadlock ([[db.scalikejdbc.WriteTx.retry]]): the body decides from
@@ -160,8 +166,9 @@ object AccountTokenService {
     try {
       val (proven, line) = db.scalikejdbc.WriteTx.write { implicit session =>
         val email = verifiedEmail.trim.toLowerCase
-        val links = AccountTokenJdbc.lockLive(userId, AccountTokenJdbc.SetsPassword, email)
+        // the account's row, then its links' (acceptPasswordLink's order)
         val user  = User.lockRow(userId).filter(_.deletedAt.isEmpty)
+        val links = AccountTokenJdbc.lockLive(userId, AccountTokenJdbc.SetsPassword, email)
         (links.headOption, user) match {
           case (Some(t), Some(u)) if u.password.isEmpty && u.emailLo == email && t.email == email =>
             // the provider verified the address: proven, whether the link was mailed or shared
@@ -192,9 +199,12 @@ object AccountTokenService {
     * acceptance's log line, for the caller to write after the commit.
     *
     * `emailProven` false (a shared link set the password: its holder got it from the link's
-    * creator, not from the address): the email's verified state stays as it was, and a pending
-    * invitation gives its role only if the link's creator may give it in that contest too
-    * (the others are revoked with the rest).
+    * creator, not from the address): the email and the wiki account become unverified, since
+    * the password's holder proved neither (otherwise another contest's admin could add the
+    * account directly, [[User.mayTakeAccessRole]], and the address's owner link a Google sign-in
+    * to it): a later add from another contest mails an invitation, whose acceptance sets the
+    * password again and verifies the email. A pending invitation gives its role only if the
+    * link's creator may give it in that contest too (the others are revoked with the rest).
     */
   private def proveEmail(link: AccountToken, user: User, passwordHash: Option[String], emailProven: Boolean)(implicit
       session: DBSession
@@ -207,7 +217,8 @@ object AccountTokenService {
           sql"""UPDATE users SET password = $h, email_verified_at = NOW(3), auth_version = ${User.BumpAuthVersion}
                 WHERE id = ${user.getId}""".update.apply()
         case (Some(h), false) =>
-          sql"""UPDATE users SET password = $h, auth_version = ${User.BumpAuthVersion}
+          sql"""UPDATE users SET password = $h, email_verified_at = NULL, wiki_account_verified_at = NULL,
+                  auth_version = ${User.BumpAuthVersion}
                 WHERE id = ${user.getId}""".update.apply()
         case (None, _) =>
           sql"""UPDATE users SET email_verified_at = NOW(3), auth_version = ${User.BumpAuthVersion}

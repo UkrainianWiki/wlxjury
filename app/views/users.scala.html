@@ -8,7 +8,8 @@
         contests: List[ContestJury] = Nil,
         pending: Seq[db.scalikejdbc.AccountToken] = Nil,
         accounts: Map[Long, db.scalikejdbc.User] = Map.empty,
-        shareable: Set[Long] = Set.empty
+        shareable: Set[Long] = Set.empty,
+        wikimediaSignIn: Boolean = false
 )(implicit flash: Flash, messages: Messages, req: RequestHeader)
     @import helper._
 
@@ -124,6 +125,10 @@
                                             <i class="bi bi-link-45deg" aria-hidden="true"></i>
                                         </button>
                                     </form>
+                                }
+                                @* without an email, where Wikimedia sign-in is offered: no password link, it signs in there *@
+                                @for(name <- user.wikiAccount; if wikimediaSignIn && contestOpt.nonEmpty && user.email.isEmpty && !user.isRoot && !user.hasUsablePassword) {
+                                    <span class="form-text signs-in-wikimedia">@Messages("share.link.wikimedia.note", name)</span>
                                 }
                             </td>
                             @if(contestOpt.nonEmpty) {

@@ -1,13 +1,14 @@
 package controllers
 
 import controllers.CsrfTestApp.{token => csrfToken, withCsrfApp}
-import db.scalikejdbc.{AccountTokenJdbc, PlayTestDb, User, UserContest, UserContestJdbc}
+import db.scalikejdbc.{AccountTokenJdbc, PlayTestDb, User, UserContest, UserContestJdbc, UserIdentity, UserIdentityJdbc}
 import org.apache.pekko.stream.Materializer
-import play.api.Application
-import play.api.mvc.Result
+import play.api.{Application, Configuration}
+import play.api.mvc.{ControllerComponents, Result}
 import play.api.test.CSRFTokenHelper._
 import play.api.test._
 import scalikejdbc._
+import services.oauth.OAuthSettings
 import services.{AccountTokenService, ApiTokenService}
 
 import scala.concurrent.Future
@@ -121,7 +122,7 @@ class ShareLinkSpec extends PlaySpecification with PlayTestDb with AccountTestSu
         flash(shared).data must beEmpty
         lines.filter(l => l.contains(token) || l.contains("@")) must beEmpty
         lines must contain(beMatching(s"account_link_shared purpose=invitation tokenId=\\d+ accountId=${invitee.getId} " +
-          s"byAccountId=${admin.getId} contestId=10 linksRevoked=1 identitiesUnlinked=0"))
+          s"byAccountId=${admin.getId} contestId=10 linksRevoked=1"))
         DB.readOnly(implicit s => sql"SELECT COUNT(*) FROM account_token WHERE token_hash = $token"
           .map(_.long(1)).single()) === Some(0L)
 
@@ -192,6 +193,7 @@ class ShareLinkSpec extends PlaySpecification with PlayTestDb with AccountTestSu
         val admin = account("admin@example.com", Some(10), "admin", verified = true)
         val juror = account("juror@example.com", Some(10), "jury", password = Some("old-password"), verified = true)
         val apiToken = ApiTokenService.create(juror.getId, "tool", Some(30))
+        UserIdentityJdbc.create(UserIdentity("google", "juror-subject", juror.getId))
         val mail = new RecordingMail
 
         val page = editPage(mail, admin, juror.getId, Some(10))
@@ -202,6 +204,8 @@ class ShareLinkSpec extends PlaySpecification with PlayTestDb with AccountTestSu
         val Seq(second) = linksIn(shareReset(mail, admin, juror.getId, Some(10)))
         mail.sent must beEmpty
         User.login("juror@example.com", "old-password") must beSome
+        // creating a link cuts nobody's sign-in: the identities go when it is used
+        UserIdentityJdbc.findByUser(juror.getId).map(_.subject) === Seq("juror-subject")
         status(accept(first, "new-password")) === NOT_FOUND // replaced by the second
         editPage(mail, admin, juror.getId, Some(10)) must contain("link-revoked").and(contain("link-active"))
 
@@ -210,7 +214,8 @@ class ShareLinkSpec extends PlaySpecification with PlayTestDb with AccountTestSu
         User.login("juror@example.com", "new-password") must beSome
         Secured.sessionUser("juror@example.com", Some("10"), None, None) must beNone
         ApiTokenService.authenticate(apiToken) must beNone
-        reloaded(juror).emailVerified must beTrue // as it was
+        UserIdentityJdbc.findByUser(juror.getId) must beEmpty
+        reloaded(juror).emailVerified must beFalse // nobody proved the address
         roles(juror.getId) === Seq(UserContest(juror.getId, 10, "jury"))
         editPage(mail, admin, juror.getId, Some(10)) must contain("link-used")
       }
@@ -338,6 +343,122 @@ class ShareLinkSpec extends PlaySpecification with PlayTestDb with AccountTestSu
           .withSession(Secured.UserName -> root.email, "csrfToken" -> sessionToken)).get
         status(refused) === FORBIDDEN
         AccountTokenJdbc.findByUser(juror.getId) must beEmpty
+      }
+    }
+  }
+
+  private def importUsers(mail: RecordingMail, admin: User, contestId: Long, lines: String)(implicit
+      app: Application): Future[Result] = {
+    implicit val mat: Materializer = app.materializer
+    call(userController(mail).importUsers(Some(contestId)),
+      as(admin, Some(contestId))(FakeRequest(POST, s"/admin/importusers?contestId=$contestId"))
+        .withFormUrlEncodedBody("userstoimport" -> lines, "role" -> "jury").withCSRFToken)
+  }
+
+  "an account whose password a shared link set [A-19]" should {
+    "be unverified, so that another contest's admin invites it by email or by wiki account not at all" in {
+      testDbApp { implicit app =>
+        createContests(10, 20)
+        val admin10 = account("admin10@example.com", Some(10), "admin", verified = true)
+        val admin20 = account("admin20@example.com", Some(20), "admin", verified = true)
+        val juror = account("juror@example.com", Some(10), "jury", password = Some("old-password"), verified = true,
+          wikiAccount = Some("Juror wiki"))
+        DB.autoCommit(implicit s =>
+          sql"UPDATE users SET wiki_account_verified_at = NOW(3) WHERE id = ${juror.getId}".update.apply())
+        val mail = new RecordingMail
+
+        val Seq(token) = linksIn(shareReset(mail, admin10, juror.getId, Some(10)))
+        status(accept(token, "holder-password")) === SEE_OTHER
+        reloaded(juror).emailVerified must beFalse
+        reloaded(juror).wikiAccountVerified must beFalse
+
+        // by wiki account: not added (H1)
+        val byName = importUsers(mail, admin20, 20, "User:Juror_wiki")
+        flash(byName).get("users-added") must beSome(contain("Not added, as the wiki account belongs"))
+        // by email: an invitation, not a membership (O2)
+        val byEmail = add(mail, admin20, 20, "juror@example.com")
+        flash(byEmail).get("users-added") must beSome(contain("Invited (role given once they accept): 1."))
+        roles(juror.getId) === Seq(UserContest(juror.getId, 10, "jury"))
+        mail.recipients === Seq("juror@example.com")
+
+        // the address's owner accepts it: the password is theirs again and the email verified
+        status(accept(mail.lastToken, "owner-password")) === SEE_OTHER
+        User.login("juror@example.com", "holder-password") must beNone
+        reloaded(juror).emailVerified must beTrue
+        roles(juror.getId).map(_.contestId).sorted === Seq(10L, 20L)
+      }
+    }
+  }
+
+  "the rule's other refusals [A-19]" should {
+    "refuse an admin's reset for a pending invitee (the invitation's link only), and inactive or past ties elsewhere" in {
+      testDbApp { implicit app =>
+        createContests(10, 20)
+        val admin = account("admin@example.com", Some(10), "admin", verified = true)
+        val pending = account("pending@example.com", None, "no", password = Some("old-password"))
+        val board = account("board@example.com", Some(10), "jury", verified = true)
+        UserContestJdbc.createMembership(board.getId, 20, "board")
+        val removed = account("removed@example.com", Some(10), "jury", verified = true)
+        UserContestJdbc.createMembership(removed.getId, 20, "no")
+        val past = account("past@example.com", Some(10), "jury", verified = true)
+        DB.autoCommit { implicit s =>
+          sql"INSERT INTO round (id, number, contest_id, rates, created_at) VALUES (900, 1, 20, 1, NOW())".update.apply()
+          sql"INSERT INTO round_user (user_id, round_id, role, active) VALUES (${past.getId}, 900, 'jury', 0)".update.apply()
+        }
+        val mail = new RecordingMail
+        status(add(mail, admin, 10, "pending@example.com")) === SEE_OTHER // pending (O2)
+
+        status(shareReset(mail, admin, pending.getId, Some(10))) === FORBIDDEN
+        status(shareInvitation(mail, admin, pending.getId, 10)) === OK
+        status(shareReset(mail, admin, board.getId, Some(10))) === FORBIDDEN   // board in 20
+        status(shareReset(mail, admin, removed.getId, Some(10))) === FORBIDDEN // "no" in 20
+        status(shareReset(mail, admin, past.getId, Some(10))) === FORBIDDEN    // worked in 20
+        editPage(mail, admin, past.getId, Some(10)) must not(contain("share-password-link"))
+      }
+    }
+
+    "refuse a link at use once its account became an admin, or its creator is no longer one" in {
+      testDbApp { implicit app =>
+        createContests(10)
+        val admin = account("admin@example.com", Some(10), "admin", verified = true)
+        val promoted = account("promoted@example.com", Some(10), "jury", password = Some("old-password"), verified = true)
+        val other = account("other@example.com", Some(10), "jury", password = Some("old-password"), verified = true)
+        val mail = new RecordingMail
+        val Seq(toPromoted) = linksIn(shareReset(mail, admin, promoted.getId, Some(10)))
+        val Seq(toOther) = linksIn(shareReset(mail, admin, other.getId, Some(10)))
+
+        UserContestJdbc.updateRole(promoted.getId, 10, "admin")
+        status(invitationPage(toPromoted)) === NOT_FOUND
+        status(accept(toPromoted, "new-password")) === NOT_FOUND
+        User.login("promoted@example.com", "old-password") must beSome
+
+        UserContestJdbc.updateRole(admin.getId, 10, "jury")
+        status(accept(toOther, "new-password")) === NOT_FOUND
+        User.login("other@example.com", "old-password") must beSome
+      }
+    }
+
+    "refuse a password link for an account without an email where Wikimedia sign-in is offered, and say why" in {
+      testDbApp { implicit app =>
+        implicit val mat: Materializer = app.materializer
+        createContests(10)
+        val admin = account("admin@example.com", Some(10), "admin", verified = true)
+        val wiki = User.create(User("Wiki juror", "", None, Set("jury"), None, Some(10), wikiAccount = Some("Wiki juror")))
+        val settings = new OAuthSettings(Configuration.from(Map(
+          "oauth.wikimedia.clients" -> Seq(Map("host" -> "jury.example", "clientId" -> "wm", "clientSecret" -> "secret")))))
+        val mail = new RecordingMail
+        val controller = new UserController(app.injector.instanceOf[ControllerComponents], userService(mail),
+          app.injector.instanceOf[modules.BlockingExecutionContext], ThemeCookies.default, settings)
+
+        val page = contentAsString(call(controller.users(Some(10)),
+          as(admin, Some(10))(FakeRequest(GET, "/admin/users?contestId=10")).withCSRFToken))
+        page must contain("Signs in with Wikimedia, as Wiki juror")
+        page must not(contain(routes.UserController.shareInvitation(wiki.getId, 10).url))
+        val refused = call(controller.shareInvitation(wiki.getId, 10),
+          as(admin, Some(10))(FakeRequest(POST, s"/users/${wiki.getId}/invitation/share?contestId=10")).withCSRFToken)
+        status(refused) === BAD_REQUEST
+        contentAsString(refused) must contain("signs in with Wikimedia")
+        AccountTokenJdbc.findByUser(wiki.getId) must beEmpty
       }
     }
   }

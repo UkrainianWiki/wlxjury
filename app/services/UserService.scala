@@ -72,31 +72,43 @@ class UserService @Inject()(val sendMail: SMTPOrWikiMail,
     matchAccount(person) match {
       case Some((account, byEmail)) =>
         contestId.fold[Added](AlreadyMember(account)) { cId =>
+          // matched by email: whoever can sign in owns the address (or nobody can); matched by
+          // wiki account only: only a verified wiki account says who holds it (H1), whatever
+          // the account's email or password: a legacy self-set name, or an admin's typo
+          def mayJoin(a: User) = !access || (if (byEmail) a.mayTakeAccessRole else a.wikiAccountVerified)
           User.findInContest(account.getId, cId) match {
             case Some(member) => AlreadyMember(member)
-            // matched by email: whoever can sign in owns the address (or nobody can); matched by
-            // wiki account only: only a verified wiki account says who holds it (H1), whatever
-            // the account's email or password: a legacy self-set name, or an admin's typo
-            case None if !access || (if (byEmail) account.mayTakeAccessRole else account.wikiAccountVerified) =>
-              val added = UserContestJdbc.createMembership(account.getId, cId, role)
-              val member = User.findInContest(account.getId, cId).getOrElse(account)
-              // no password, or a retired legacy one (P8): only an invitation lets its owner in
-              val needsPassword = added && access && byEmail && !account.hasUsablePassword &&
-                !account.isRoot && account.emailLo.nonEmpty
-              if (needsPassword)
-                // no password to "use as before": the invitation sets one
-                Invited(member, invite(creator, member, contestOpt, None))
-              else {
-                for (contest <- contestOpt if added && contest.greeting.use && mayBeGreeted(role))
-                  sendMail(creator, member, contest, messages("password.existing"))
-                if (added) JoinedContest(member) else AlreadyMember(member)
-              }
-            case None if byEmail =>
-              Invited(account, invite(creator, account, contestOpt, Some(role)))
             case None =>
-              accountLogger.info(
-                s"add_refused reason=wiki_account_unverified accountId=${account.getId} byAccountId=${creator.getId} contestId=$cId")
-              WikiAccountUnverified(account)
+              // decided and joined under the account's row lock, read again inside: a shared
+              // link's acceptance, which takes the same lock before checking the account's
+              // contests, either committed (this reads its password and unverified email) or
+              // waits for this membership and then refuses its link (ShareLinkService). The lock
+              // order is the acceptance's: the account's row, then its memberships and links
+              val joined = scalikejdbc.DB.localTx { implicit session =>
+                User.lockRow(account.getId).filter(mayJoin)
+                  .map(locked => UserContestJdbc.createMembership(locked.getId, cId, role) -> locked)
+              }
+              joined match {
+                case Some((added, locked)) =>
+                  val member = User.findInContest(account.getId, cId).getOrElse(account)
+                  // no password, or a retired legacy one (P8): only an invitation lets its owner in
+                  val needsPassword = added && access && byEmail && !locked.hasUsablePassword &&
+                    !locked.isRoot && locked.emailLo.nonEmpty
+                  if (needsPassword)
+                    // no password to "use as before": the invitation sets one
+                    Invited(member, invite(creator, member, contestOpt, None))
+                  else {
+                    for (contest <- contestOpt if added && contest.greeting.use && mayBeGreeted(role))
+                      sendMail(creator, member, contest, messages("password.existing"))
+                    if (added) JoinedContest(member) else AlreadyMember(member)
+                  }
+                case None if byEmail =>
+                  Invited(account, invite(creator, account, contestOpt, Some(role)))
+                case None =>
+                  accountLogger.info(
+                    s"add_refused reason=wiki_account_unverified accountId=${account.getId} byAccountId=${creator.getId} contestId=$cId")
+                  WikiAccountUnverified(account)
+              }
           }
         }
 
