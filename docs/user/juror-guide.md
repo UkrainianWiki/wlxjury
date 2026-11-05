@@ -1,7 +1,7 @@
 # WLX Jury Tool: a guide for jurors
 
 Other guides: the [organizer guide](organizer-guide.md), the [admin guide](admin-guide.md) and
-[what's new in release 2](whats-new-release-2.md).
+[what's new in 26.11](whats-new-26.11.md).
 
 This guide is for jurors of a Wiki Loves Monuments, Wiki Loves Earth or similar photo contest
 who judge its files in the WLX Jury Tool. It explains how to sign in, find your rounds, vote,

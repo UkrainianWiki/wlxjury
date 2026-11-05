@@ -122,7 +122,7 @@ From V53, this release applies V54, V55, V55.1 and V56–V60. V55.1 rebuilds tab
 
 ## Cutover deployment with wlxjury-deploy
 
-Use this for the cutover release (release 2, `26.11`; the ZIP built above). Upload the reviewed ZIP:
+Use this for the cutover release (`26.11`; the ZIP built above). Upload the reviewed ZIP:
 
 ```bash
 sudo wlxjury-deploy prepare /srv/releases/wlxjury-26.11.zip --sha256 FULL_LOWERCASE_SHA256
@@ -560,7 +560,7 @@ A change that adds, removes or automates a manual check updates this section
 
 | Check | What to do | Why by hand | When |
 |---|---|---|---|
-| The release's own items | The roadmap's [combined pre-deploy list](plans/2026-11-02-roadmap.md#before-any-production-deploy-of-followups) for this release (release 2, `26.11`; there is no release 1): the read-only queries on production's V70 schema, config keys, HTTPS, loggers, the rehearsal and the `roundImage.read` pilot on a restored backup, each with its detail there; [operations](operations/practices.md) §4.2 | They read production's config and data, which no test has | Every release, as the list for it says |
+| The release's own items | The roadmap's [combined pre-deploy list](plans/2026-11-02-roadmap.md#before-any-production-deploy-of-followups) for this release (`26.11`): the read-only queries on production's V70 schema, config keys, HTTPS, loggers, the rehearsal and the `roundImage.read` pilot on a restored backup, each with its detail there; [operations](operations/practices.md) §4.2 | They read production's config and data, which no test has | Every release, as the list for it says |
 | The `auto` colour mode, looked at | `target/ui-venv/Scripts/python scripts/ui-shots.py shoot --label <release> --mode auto --scheme light --start-server`, the same with `--scheme dark`; look through the shots, or `diff` them against the last release's ([UI](ui/practices.md) §5.1) | Looked at by a person: the browser tests check the mode of every frame, not how a page looks in it | Every release; necessarily when a template, `theme.css` or `main.css` changed |
 | Back after a vote in Safari | In Safari (macOS), as a juror: open a binary round's large view, vote with Space, press Back: the file shows the new vote, not the one before; the same with a digit in a rated round | Playwright's WebKit (Windows and Linux builds) brings the page back fresh even without `no-store`, so the browser tests can't show the regression there ([testing](testing/practices.md) §10.3) | Every release; necessarily when the large view, its keys or `Secured.noStore` changed |
 | Category suggestions against live Commons | As an organizer, in a category field (the contest images page, the round form's image filtering): type a few letters of a real category; Commons' categories are suggested and one can be picked | Needs live Commons: the tests stub every Commons call and refuse its hosts | Every release; necessarily when `category-suggest.js`, Tom Select or the suggestions' endpoint changed |

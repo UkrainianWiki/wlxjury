@@ -1,6 +1,6 @@
-# What's new in release 2
+# What's new in 26.11
 
-This page lists what you will notice in the WLX Jury Tool after release 2, compared with the
+This page lists what you will notice in the WLX Jury Tool from version 26.11, compared with the
 release in use before it (which already had background round preparation, one account for several
 contests, category filters, regions and conflicts-of-interest filters). Each item links to the part
 of the guide that explains it. Changes that only developers or operators see are not listed.
@@ -13,16 +13,12 @@ of the guide that explains it. Changes that only developers or operators see are
   theme](juror-guide.md#light-dark-or-system-theme).
 - **No sign-up page.** Accounts are made only by invitation from a contest's organizers. See
   [Accepting your invitation](juror-guide.md#accepting-your-invitation).
-- **Sign in with Google or Wikimedia**, to the account you already have, if your installation
-  offers it. You link the account on your profile. See [Signing in with Wikimedia or
-  Google](juror-guide.md#signing-in-with-wikimedia-or-google).
 - **Sessions you control:** **Keep me signed in** on the sign-in page, **Sign out everywhere**
   on your profile, and sessions that end after a long time without use. See
   [Signing out](juror-guide.md#signing-out).
 - **A confirmed email change:** a new email address takes effect when you follow the link sent
   to it. See [Your profile](juror-guide.md#your-profile).
-- **Faster pages:** the organizers' result pages load faster, and votes no longer fail when
-  organizers change rounds at the same time.
+- **More reliable voting:** votes no longer fail when organizers change rounds at the same time.
 - **Personal API tokens** on your profile, for command-line tools. See [API
   tokens](admin-guide.md#a-api-tokens).
 

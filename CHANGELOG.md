@@ -25,8 +25,8 @@ with `.N` for an extra deploy in the same month (`26.11.1`), and release heading
 
 ## Unreleased (developed, not yet deployed)
 
-Release 2 (`26.11`) is the next deploy, V71–V94 in one go; there is no release 1 (decided
-2026-11-05: the branch that would have shipped V71–V81 alone removed admin-set passwords before
+`26.11` is the next deploy, V71–V94 in one go; the earlier plan to ship V71–V81 on their own was
+dropped (decided 2026-11-05: that branch removed admin-set passwords before
 the shareable links that replace them existed). The sections below are its parts, in the order
 they were developed. Pre-deploy steps: roadmap, "Before any production deploy".
 
@@ -93,7 +93,9 @@ Developed 2026-11-02 to 2026-11-03, PRs #232–#236.
 - **Root's "Check every round's images"** repairs a round's file list if it ever drifts (V84).
 
 - **Votes don't fail** when jurors vote while admins change rounds (#239, 2026-11-03).
-- **Sign in with Google or Wikimedia**, to an existing account (#240, V87, 2026-11-03).
+- **Sign in with Google or Wikimedia**, to an existing account (#240, V87, 2026-11-03): built, but
+  not offered to users yet; it needs the providers set up and tested first, so the user-facing
+  "what's new" leaves it out.
 - **Conflicts of interest:** on a stopped round, its conflicts page disqualifies a juror's
   conflicted files keeping their votes, and requalifies them (#244, 2026-11-03).
 - **Disqualification history:** a round's conflicts page lists every disqualification and
@@ -164,7 +166,7 @@ Developed 2026-11-02 to 2026-11-03, PRs #232–#236.
   review triage tools in `scripts/review/` (#250).
 - An English juror guide, `docs/user/juror-guide.md`, written from the tool as it is; not
   published yet.
-- **Documentation:** English organizer and admin guides and "what's new in release 2"
+- **Documentation:** English organizer and admin guides and "what's new in 26.11"
   (`docs/user/`), anchored for later in-app help, with screenshots made by an opt-in browser spec
   (`browser-test/tests/docs-screenshots.spec.js`, `DOCS_SCREENSHOTS=1`), checked against the rejection
   filter and the shareable links as merged.
