@@ -74,6 +74,11 @@ img.cropped {
 }
 
 
+/* the contests table's add row (contests.scala.html): a source wide enough for its placeholder
+   in every language ("Категорія або сторінка"), a year of four digits narrow */
+.wlx-contests-table .wlx-source-input { min-width: 15rem; }
+.wlx-contests-table .wlx-year-input { width: 6rem; }
+
 /* the large view's comments (large/commentsView.scala.html): the column's width up to a
    readable line, starting where the image does (no .large-box padding on the left); the box is
    Bootstrap's form-control, the button below it; a comment keeps its own line breaks */

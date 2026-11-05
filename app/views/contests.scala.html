@@ -40,7 +40,10 @@
 
         @contestsTable(contests)
 
-        <table class="table table-striped table-sm">
+        @* scrolls inside its box on a narrow screen; the add row's field widths: main.css
+           (.wlx-contests-table) *@
+        <div class="table-responsive">
+        <table class="table table-striped table-sm wlx-contests-table">
 
             <thead>
                 <tr>
@@ -74,10 +77,12 @@
                             @bs.text(editContestForm("country"), Symbol("placeholder") -> Messages("country"), Symbol("_hiddenLabel") -> Messages("country"), Symbol("_help") -> "")
                             </td>
                             <td>
-                            @bs.text(editContestForm("year"), Symbol("placeholder") -> Messages("year"), Symbol("_hiddenLabel") -> Messages("year"), Symbol("_help") -> "")
+                            @bs.text(editContestForm("year"), Symbol("placeholder") -> Messages("year"), Symbol("_hiddenLabel") -> Messages("year"), Symbol("_help") -> "",
+                                Symbol("class") -> "wlx-year-input")
                             </td>
                             <td>
                             @bs.text(editContestForm("images"), Symbol("placeholder") -> Messages("files.source.placeholder"), Symbol("_hiddenLabel") -> Messages("files.source"), Symbol("_help") -> "",
+                                Symbol("class") -> "wlx-source-input",
                                 Symbol("data-category-suggest") -> "mixed")
                             </td>
                             <td>
@@ -142,6 +147,7 @@
                 }
             </tbody>
         </table>
+        </div>
     </div>
     <script src="@routes.Assets.versioned("javascripts/category-suggest.js")"></script>
 }

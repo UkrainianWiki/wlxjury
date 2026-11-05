@@ -118,6 +118,11 @@ class CategorySuggestViewSpec extends PlaySpecification {
         (source.attr("placeholder") === messages("import.source.placeholder")) and
         // the add row's source field: named as the column, with a placeholder short enough for it
         (doc.getElementById("images").attr("placeholder") === messages("files.source.placeholder")) and
+        // widths from main.css's .wlx-contests-table (not inline), the table scrolling in its box
+        (doc.select(".table-responsive > table.wlx-contests-table").size === 1) and
+        (doc.getElementById("images").hasClass("wlx-source-input") must beTrue) and
+        (doc.getElementById("year").hasClass("wlx-year-input") must beTrue) and
+        (doc.select("table.wlx-contests-table [style]").size === 0) and
         (doc.select("label[for=images]").text === messages("files.source")) and
         // the list's heading set apart from the import form above it
         (doc.select("h2.mt-4").text === messages("contests.list"))
