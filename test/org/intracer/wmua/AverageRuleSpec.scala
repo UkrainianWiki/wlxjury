@@ -107,7 +107,9 @@ class AverageRuleSpec extends Specification {
         (r.copy(worstMark = true).acceptsRate(-2) must beFalse) and
         (r.copy(worstMark = true, hasCriteria = true).acceptsRate(-1) must beFalse) and
         (round(AverageRule.Rated, rates = 1).copy(worstMark = true).takesWorstMark must beFalse) and
-        (r.copy(worstMark = true).rejects must beTrue) and (r.rejects must beFalse)
+        // a next round may filter by ✗ from a rated round without criteria, whatever its option now
+        (r.copy(worstMark = true).rejects must beTrue) and (r.rejects must beTrue) and
+        (r.copy(hasCriteria = true).rejects must beFalse) and (round(AverageRule.Rated, rates = 1).rejects must beTrue)
     }
   }
 

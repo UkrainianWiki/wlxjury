@@ -2,7 +2,7 @@ package controllers
 
 import db.scalikejdbc.{ContestJuryJdbc, CriterionJdbc, MediaType, Round, RoundCriterion, RoundLimits, User}
 import org.scalawiki.wlx.dto.SpecialNomination
-import org.intracer.wmua.{AverageRule, BinaryOrder, CategoryOperation, CategoryRule, Criterion}
+import org.intracer.wmua.{AverageRule, BinaryOrder, CategoryOperation, CategoryRule, Criterion, RejectedMode}
 import play.api.data.{Form, Mapping}
 import play.api.data.Forms._
 import play.api.data.validation._
@@ -82,6 +82,11 @@ object EditRound {
 
   val WorstMarkRatedOnly = "error.worst.mark.rated.only"
 
+  /** The rejected-by mode select's "no filter" (a value of its own: Play reads "" as absent, which
+    * is an older client's, excluding).
+    */
+  val NoRejectedFilter = "none"
+
   /** The criteria selects' values: the chosen ones, by position (-1 for a value that is no id). */
   def criterionIdsOf(values: Seq[String]): Seq[Long] =
     values.map(_.trim).filter(_.nonEmpty).map(_.toLongOption.filter(_ > 0).getOrElse(-1L))
@@ -103,9 +108,13 @@ object EditRound {
       // a rated round's worst mark (V92), with the hidden field saying the form had the checkbox
       // (an unchecked box sends nothing): a client without both keeps an existing round's option
       "worstMark" -> boolean,
-      "worstMarkShown" -> boolean
+      "worstMarkShown" -> boolean,
+      // "rejected by at least N" (V93): "none" no filter, "exclude" those files, "only" them; a
+      // client without it (an older page, a script) excludes, the meaning before V93
+      "rejectedMode" -> optional(text).verifying("error.invalid",
+        _.forall(m => m == EditRound.NoRejectedFilter || RejectedMode.parse(m).isDefined))
     )((edit, excludeCoi, selected, topOrder, rejectedBy, criteria, criteriaShown, halfStar, averageRule, worstMark,
-        worstMarkShown) => {
+        worstMarkShown, rejectedMode) => {
       val configured = selected match {
         case None => edit.round // Older clients omitted the clause; retain their inference.
         case Some(value) =>
@@ -117,7 +126,9 @@ object EditRound {
       }
       edit.copy(criteriaShown = criteriaShown, round = configured.copy(excludeCoi = excludeCoi,
         topBinaryOrder = edit.round.topImages.flatMap(_ => BinaryOrder.ofForm(topOrder)),
-        prevRejectedBy = rejectedBy.flatMap(s => Try(s.toInt).toOption).filter(_ > 0),
+        prevRejectedBy = rejectedBy.flatMap(s => Try(s.toInt).toOption).filter(_ > 0)
+          .filterNot(_ => rejectedMode.contains(NoRejectedFilter)),
+        prevRejectedMode = rejectedMode.flatMap(RejectedMode.parse).getOrElse(RejectedMode.Default),
         criterionIds = criterionIdsOf(criteria), halfStar = halfStar,
         averageRule = averageRule.flatMap(AverageRule.parse).getOrElse(AverageRule.Default),
         worstMark = worstMark && worstMarkShown),
@@ -125,7 +136,8 @@ object EditRound {
     })(edit => Some((edit, edit.round.excludeCoi, Some(edit.round.categoryRule.operation.formValue),
       edit.round.topImages.map(_ => edit.round.topOrderParam), edit.round.rejectedByFilter.map(_.toString),
       edit.round.criterionIds.map(_.toString), edit.criteriaShown, edit.round.halfStar,
-      Some(edit.round.averageRule.param), edit.round.worstMark, edit.worstMarkShown)))
+      Some(edit.round.averageRule.param), edit.round.worstMark, edit.worstMarkShown,
+      Some(edit.round.rejectedByFilter.fold(NoRejectedFilter)(_ => edit.round.prevRejectedMode.param)))))
       .verifying(validCategories)
       .verifying(validCriteria)
       .verifying(validWorstMark)

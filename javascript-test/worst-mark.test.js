@@ -220,8 +220,8 @@ describe("the round form's worst mark", () => {
         document.body.innerHTML = `
           <form id="round-form">
             <select id="previousRound" name="previousRound[]" multiple>
-              <option value="1">Round 1 (binary)</option><option value="2">Round 2 (rated, ✗)</option>
-              <option value="3">Round 3 (rated)</option>
+              <option value="1">Round 1 (binary)</option><option value="2">Round 2 (rated)</option>
+              <option value="3">Round 3 (rated, criteria)</option>
             </select>
             <div id="prevRoundFilters" style="display: none">
               <div id="selectFilters" class="round1">select</div>
@@ -230,6 +230,7 @@ describe("the round form's worst mark", () => {
             </div>
             <select id="rates" name="rates"><option value="1">+/-</option><option value="0">Comments</option>
               <option value="5">1-5</option></select>
+            <div id="round-criteria"><select name="criteria[0]"><option value=""></option><option value="7">Aesthetics</option></select></div>
             <div id="round-worst-mark"><input type="hidden" name="worstMarkShown" value="true">
               <input type="checkbox" id="worstMark" name="worstMark" value="true"></div>
             <select id="regions" name="regions[]" multiple></select>
@@ -252,7 +253,19 @@ describe("the round form's worst mark", () => {
         expect(Array.from(box().querySelectorAll("input")).map(i => i.disabled)).toEqual([true, true]);
     });
 
-    test("shows \"rejected by\" for a binary round and a rated one with the worst mark, not another rated one", () => {
+    test("is hidden and not sent once a criterion is chosen, shown again without one", () => {
+        form("5");
+        const criterion = document.querySelector("#round-criteria select");
+        criterion.value = "7";
+        criterion.dispatchEvent(new Event("change"));
+        expect(box().hidden).toBe(true);
+        expect(Array.from(box().querySelectorAll("input")).map(i => i.disabled)).toEqual([true, true]);
+        criterion.value = "";
+        criterion.dispatchEvent(new Event("change"));
+        expect(box().hidden).toBe(false);
+    });
+
+    test("shows \"rejected by\" for a binary round and a rated one without criteria, not a criteria round", () => {
         form("5");
         const prev = document.getElementById("previousRound").tomselect;
         prev.addItem("2");

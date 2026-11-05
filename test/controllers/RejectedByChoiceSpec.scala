@@ -44,11 +44,12 @@ class RejectedByChoiceSpec extends PlaySpecification {
   }
 
   "the rejected-by filter" should {
-    "be offered from a yes/no round and a rated round with the worst mark (✗), not another rated one" in {
+    "be offered from a yes/no round and a rated round without criteria (its ✗, the option on or off), not a criteria round" in {
       val rated = new Round(id = Some(2), number = 2, contestId = 1, rates = Round.ratesById(5))
       rejectClasses(Seq(
         new Round(id = Some(1), number = 1, contestId = 1, rates = Round.binaryRound),
-        rated, rated.copy(id = Some(3), worstMark = true))) === "round1 round3"
+        rated, rated.copy(id = Some(3), worstMark = true),
+        rated.copy(id = Some(4), hasCriteria = true))) === "round1 round2 round3"
     }
   }
 
@@ -69,6 +70,35 @@ class RejectedByChoiceSpec extends PlaySpecification {
     "store the empty choice, 0 and none as no filter, a number as itself" in {
       (bound(Map("rejectedBy" -> "")) must beNone) and (bound(Map("rejectedBy" -> "0")) must beNone) and
         (bound(Map.empty) must beNone) and (bound(Map("rejectedBy" -> "2")) must beSome(2))
+    }
+  }
+
+  "the rejected-by mode (V93)" should {
+    def round(data: Map[String, String]) = EditRound.editRoundForm.bind(base ++ data).get.round
+
+    "exclude for a client without it (the meaning before V93), keep only with \"only\", none with \"none\"" in {
+      (round(Map("rejectedBy" -> "2")).prevRejectedMode === org.intracer.wmua.RejectedMode.Exclude) and
+        (round(Map("rejectedBy" -> "2", "rejectedMode" -> "exclude")).prevRejectedMode === org.intracer.wmua.RejectedMode.Exclude) and
+        (round(Map("rejectedBy" -> "2", "rejectedMode" -> "only")).prevRejectedMode === org.intracer.wmua.RejectedMode.Only) and
+        (round(Map("rejectedBy" -> "2", "rejectedMode" -> "only")).prevRejectedBy must beSome(2)) and
+        (round(Map("rejectedBy" -> "2", "rejectedMode" -> "none")).prevRejectedBy must beNone)
+    }
+
+    "refuse an unknown mode" in {
+      (EditRound.editRoundForm.bind(base ++ Map("rejectedBy" -> "2", "rejectedMode" -> "all")).hasErrors must beTrue) and
+        (EditRound.editRoundForm.bind(base ++ Map("rejectedBy" -> "2", "rejectedMode" -> "ONLY")).hasErrors must beTrue)
+    }
+
+    "be shown as stored, \"none\" without a filter" in {
+      def shown(r: Round) = {
+        val form = EditRound.editRoundForm.fill(EditRound(r, Seq(1L), None))
+        Jsoup.parse(views.html.round.edit.imageFiltering(form, Seq(r.copy(id = Some(1), previous = None)), Map.empty,
+          User("u", "e@e", Some(1L)), noEdit = false).body)
+          .select("#rejectFilters select#rejectedMode option[selected]").asScala.map(_.attr("value")).toSeq
+      }
+      val stored = new Round(id = Some(2), number = 2, contestId = 1, rates = Round.binaryRound, previous = Some("1"))
+      (shown(stored.copy(prevRejectedBy = Some(2), prevRejectedMode = org.intracer.wmua.RejectedMode.Only)) === Seq("only")) and
+        (shown(stored.copy(prevRejectedBy = Some(2))) === Seq("exclude")) and (shown(stored) === Seq("none"))
     }
   }
 }

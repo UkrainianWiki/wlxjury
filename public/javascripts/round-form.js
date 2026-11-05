@@ -119,17 +119,22 @@
     update();
   }
 
-  /** Shows the worst mark's checkbox for a rated rating only; disabled inputs aren't sent, so a
-    * yes/no or comments-only round gets none. An existing round's rating is fixed. */
+  /** Shows the worst mark's checkbox for a rated rating without criteria only (a criteria round's
+    * votes are per criterion, and the server refuses the option there); disabled inputs aren't
+    * sent, so a yes/no, comments-only or criteria round gets none. An existing round's rating is
+    * fixed. */
   function initWorstMark(doc) {
     var rates = doc.getElementById('rates');
     var box = doc.getElementById('round-worst-mark');
     if (!rates || !box) return;
+    var criteria = doc.querySelectorAll('#round-criteria select');
     function update() {
-      var rated = Number(rates.value) > 1;
-      box.hidden = !rated;
-      Array.prototype.forEach.call(box.querySelectorAll('input'), function (i) { i.disabled = !rated; });
+      var withCriteria = Array.prototype.some.call(criteria, function (s) { return !s.disabled && s.value !== ''; });
+      var shown = Number(rates.value) > 1 && !withCriteria;
+      box.hidden = !shown;
+      Array.prototype.forEach.call(box.querySelectorAll('input'), function (i) { i.disabled = !shown; });
     }
+    Array.prototype.forEach.call(criteria, function (s) { s.addEventListener('change', update); });
     if (!rates.disabled) rates.addEventListener('change', update);
     update();
   }

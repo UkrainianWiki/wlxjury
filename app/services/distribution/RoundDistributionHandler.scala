@@ -2,7 +2,7 @@ package services.distribution
 
 import db.scalikejdbc._
 import org.intracer.wmua.cmd.DistributeImages
-import org.intracer.wmua.{AverageRule, BinaryOrder, Image, ImageWithRating, Vote}
+import org.intracer.wmua.{AverageRule, BinaryOrder, Image, ImageWithRating, RejectedMode, Vote}
 import play.api.libs.json._
 import play.api.{Configuration, Logging}
 import scalikejdbc._
@@ -157,7 +157,7 @@ class RoundDistributionHandler @Inject() (
   }
 
   override def prepare(job: Job): Unit = {
-    val c = contexts.getOrElseUpdate(job.id, context(roundIdOf(job), Some(jobAverageRule(job))))
+    val c = contexts.getOrElseUpdate(job.id, context(roundIdOf(job), Some(jobAverageRule(job)), Some(jobRejectedMode(job))))
     val st = stateOf(job)
     if (st.phase == Phase.List && st.listIndex < titleCountOf(job) && !listChunks.get(job.id).exists(_.index == st.listIndex))
       listChunks.put(job.id, listChunk(c.round, st.listIndex, titlesOf(job, st.listIndex, commons.maxIdsPerRequest)))
@@ -173,9 +173,12 @@ class RoundDistributionHandler @Inject() (
   protected def afterInsert(round: Round, rows: Seq[Vote])(implicit session: DBSession): Unit = ()
 
   /** What the steps need. Rated previous rounds score their files by `averageRule` if given (a
-    * job's, [[jobAverageRule]]), else by their own rule ("Count new files": as a job queued now).
+    * job's, [[jobAverageRule]]), else by their own rule ("Count new files": as a job queued now);
+    * "rejected by at least N" is applied by `rejectedMode` if given (a job's, [[jobRejectedMode]]),
+    * else by the round's own mode.
     */
-  private def context(roundId: Long, averageRule: Option[AverageRule]): Context = {
+  private def context(roundId: Long, averageRule: Option[AverageRule],
+      rejectedMode: Option[RejectedMode] = None): Context = {
     val round = Round.findById(roundId).getOrElse(throw new NoSuchElementException(s"Round $roundId not found"))
     val prevRounds = RoundDistributionHandler.previousRounds(round)
       .map(p => averageRule.filterNot(_ => p.isBinary).fold(p)(rule => p.copy(averageRule = rule)))
@@ -198,8 +201,11 @@ class RoundDistributionHandler @Inject() (
       coi = coi,
       votes = PrevVotes(
         rated = prev.isDefined && round.selectedByFilter.isDefined,
-        // a yes/no round's "no" votes, or a rated round's ✗ (the worst mark)
-        rejectedBy = prev.filter(_.rejects).flatMap(_ => round.rejectedByFilter),
+        // a yes/no round's "no" votes, or a rated round's ✗ (the worst mark), from any previous
+        // round that may reject (Round.rejects, not the live option), as RoundService records it
+        rejectedBy = round.rejectedByFilter.filter(_ => prevRounds.exists(_.rejects)),
+        // leave those files out, or keep only them (V93): the job's recorded mode
+        rejectedMode = rejectedMode.getOrElse(round.prevRejectedMode),
         grades = prev.exists(!_.isBinary)),
       topN = prev.flatMap(_ => round.topImages),
       // none for a round from before V72: the legacy rule, by the rate sum (ratedPage)
@@ -340,7 +346,7 @@ class RoundDistributionHandler @Inject() (
   def step(job: Job, ctx: StepContext): StepResult = {
     implicit val session: DBSession = ctx.session
     val roundId = roundIdOf(job)
-    val c = contexts.getOrElseUpdate(job.id, context(roundId, Some(jobAverageRule(job))))
+    val c = contexts.getOrElseUpdate(job.id, context(roundId, Some(jobAverageRule(job)), Some(jobRejectedMode(job))))
     val st = stateOf(job) match {
       case s if s.imagesBefore.isEmpty =>
         val total = imageCount(roundId)
@@ -617,7 +623,8 @@ object RoundDistributionHandler {
     * grades (a ✗ as 0) and their rated votes any vote, as the in-memory path reads them
     * (`SelectionQuery.grades`).
     */
-  final case class PrevVotes(rated: Boolean = false, rejectedBy: Option[Int] = None, grades: Boolean = false)
+  final case class PrevVotes(rated: Boolean = false, rejectedBy: Option[Int] = None, grades: Boolean = false,
+      rejectedMode: RejectedMode = RejectedMode.Default)
 
   /** What the steps of one job need besides its state: built by `prepare`. */
   final case class Context(
@@ -679,6 +686,13 @@ object RoundDistributionHandler {
     */
   def jobAverageRule(job: Job): AverageRule = averageRuleOf(job).getOrElse(AverageRule.Assigned)
 
+  /** How the job applies "rejected by at least N" (`params.settings.prevRejectedMode`, recorded by
+    * RoundService when queued, V93): a job queued before V93 excludes those files, the filter's
+    * meaning then.
+    */
+  def jobRejectedMode(job: Job): RejectedMode =
+    RejectedMode.fromStored((job.params \ "settings" \ "prevRejectedMode").asOpt[String])
+
   /** The job only adds its list: the round's filters choose nothing. */
   def listOnly(job: Job): Boolean = (job.params \ "listOnly").asOpt[Boolean].getOrElse(false)
 
@@ -736,20 +750,25 @@ object DistributionSource {
 
   private val i = ImageJdbc.syntax("i")
 
-  /** With "selected by at least" set, only approvals (rated votes) are read; with "exclude
-    * files rejected by at least N", no file rejected N times or more in the previous rounds.
-    * The rejection check is correlated to the row's page id: NULL-safe (unlike `NOT IN`,
-    * where one NULL page id in the subquery would drop every row) and bounded to the
+  /** With "selected by at least" set, only approvals (rated votes) are read; with "rejected by at
+    * least N", no file rejected N times or more in the previous rounds (`Exclude`), or only those
+    * (`Only`, V93). The rejection check is correlated to the row's page id: NULL-safe (unlike
+    * `NOT IN`, where one NULL page id in the subquery would drop every row) and bounded to the
     * window's own files by the `(round_id, page_id, rate)` index, rather than counting every
     * previous-round rejection again in each window.
     */
   private def votesCond(prevIds: Seq[Long], votes: PrevVotes): SQLSyntax = {
     val rated = if (votes.rated) sqls"AND ${ratedVote(votes)}" else sqls""
-    val notRejected = votes.rejectedBy.fold(sqls"")(n =>
-      sqls"""AND NOT EXISTS (SELECT 1 FROM vote r
+    val rejected = votes.rejectedBy.fold(sqls"") { n =>
+      val atLeast = sqls"""EXISTS (SELECT 1 FROM vote r
              WHERE r.page_id = s.page_id AND r.round_id IN ($prevIds) AND ${VoteSql.rejected(VoteSql.r)}
-             HAVING COUNT(*) >= $n)""")
-    sqls"$rated $notRejected"
+             HAVING COUNT(*) >= $n)"""
+      votes.rejectedMode match {
+        case RejectedMode.Exclude => sqls"AND NOT $atLeast"
+        case RejectedMode.Only    => sqls"AND $atLeast"
+      }
+    }
+    sqls"$rated $rejected"
   }
 
   /** A rated vote of the previous rounds: a yes/no round's yes, a rated round's any vote. */
@@ -938,13 +957,17 @@ object DistributionSource {
     * rejections counted together across the rounds, ties by page id: the same rule whatever
     * "selected by at least" is (docs/history/2026-11-01-binary-aggregate-votes.md, issue 2).
     * `votes` keeps the files with an approval ("selected by at least" set) and those with
-    * fewer rejections than "exclude files rejected by at least N". Each image's rating has its
-    * approvals as its rate, so "selected by at least" compares them.
+    * fewer rejections than "exclude files rejected by at least N" (or, `Only`, those with N or
+    * more). Each image's rating has its approvals as its rate, so "selected by at least" compares
+    * them.
     */
   private def binaryPage(prevIds: Seq[Long], votes: PrevVotes, order: BinaryOrder, pageSize: Int,
       offset: Int)(implicit session: DBSession): Seq[(Long, Image => ImageWithRating)] = {
     val conditions = Option.when(votes.rated)(sqls"SUM(${VoteSql.positive()}) > 0").toSeq ++
-      votes.rejectedBy.map(n => sqls"SUM(${VoteSql.rejected()}) < $n")
+      votes.rejectedBy.map(n => votes.rejectedMode match {
+        case RejectedMode.Exclude => sqls"SUM(${VoteSql.rejected()}) < $n"
+        case RejectedMode.Only    => sqls"SUM(${VoteSql.rejected()}) >= $n"
+      })
     val having = if (conditions.isEmpty) sqls"" else sqls"HAVING ${sqls.joinWithAnd(conditions: _*)}"
     val orderBy = SQLSyntax.createUnsafely(
       (order.columns :+ ("s.page_id" -> 1)).map { case (column, dir) => column + (if (dir < 0) " DESC" else " ASC") }

@@ -116,6 +116,14 @@ class RoundWorstMarkFormSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
+    "refuse an unknown rejected-by mode with 400 (V93)" in {
+      testDbApp { app =>
+        val round = setUp()
+        status(save(app, "admin@example.com", form(round, worst = false,
+          extra = Seq("rejectedBy" -> "1", "rejectedMode" -> "everything")))) === BAD_REQUEST
+      }
+    }
+
     "refuse a juror, an organizer and another contest's admin, the option unchanged" in {
       testDbApp { app =>
         val round = setUp()
