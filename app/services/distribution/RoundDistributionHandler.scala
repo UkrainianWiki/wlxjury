@@ -25,7 +25,12 @@ import scala.collection.mutable
   * @param position       images assigned so far: the juror rotation continues from it
   * @param candidatesSeen candidates read (the progress)
   * @param imagesBefore   the round's images this job didn't add (for the count check): counted
-  *                       by the job's first step
+  *                       by the job's first step, and moved on each Retry by [[othersBefore]]'s change
+  * @param othersBefore   the round's `round_image` rows not added by this job (`added_by_job_id`)
+  *                       when `imagesBefore` was last counted: a Retry adds their change since to
+  *                       `imagesBefore`, so files others added or removed while the job was failed
+  *                       don't fail its count check, while its own files that went missing still do.
+  *                       None in a state written before it existed: `imagesBefore` is then kept
   * @param total          the number of candidates, for the progress
   * @param ranked         top-N: the chosen images, ascending
   * @param frozen         the previous rounds this job holds frozen
@@ -47,6 +52,7 @@ final case class DistributionState(
     imagesAdded: Long = 0L,
     rowsAdded: Long = 0L,
     imagesBefore: Option[Long] = None,
+    othersBefore: Option[Long] = None,
     total: Option[Long] = None,
     ranked: Seq[Long] = Nil,
     frozen: Seq[Long] = Nil,
@@ -273,7 +279,11 @@ class RoundDistributionHandler @Inject() (
 
   /** Freezes the previous rounds again and resumes. After a failed count check the round is
     * rescanned from the start with fresh accounting, as "Distribute new files" would: the
-    * images already in it are skipped, the missing ones added.
+    * images already in it are skipped, the missing ones added. After any other failure it
+    * resumes from its cursor with `imagesBefore` moved by the change of the files others
+    * added ([[DistributionState.othersBefore]]): the round's count may have changed while the
+    * job was failed (a file removed from the round, a repair), and the old baseline would
+    * fail the next count check once for nothing.
     */
   override def onRetry(job: Job, ctx: StepContext): JsObject = {
     implicit val session: DBSession = ctx.session
@@ -286,13 +296,22 @@ class RoundDistributionHandler @Inject() (
     Round.release(st.frozen, close = false) // nothing, normally: a failure released them
     Round.freeze(prevIds)
     val resumed =
-      if (!st.verifyFailed) st
+      if (!st.verifyFailed) rebaseline(st, roundId, job.id)
       else
         st.copy(phase = if (listOnly(job)) Phase.List else Phase.Distribute, cursor = 0L, candidatesSeen = 0L,
           imagesAdded = 0L, rowsAdded = 0L, imagesBefore = None, verifyFailed = false, listIndex = 0, missing = 0L,
           missingTitles = Nil, coiLeftOut = 0L, coiTitles = Nil)
     Json.toJsObject(resumed.copy(frozen = prevIds))
   }
+
+  /** `imagesBefore` moved by the change in the round's files this job didn't add. */
+  private def rebaseline(st: DistributionState, roundId: Long, jobId: Long)(implicit session: DBSession) =
+    (st.imagesBefore, st.othersBefore) match {
+      case (Some(before), Some(others)) =>
+        val now = RoundImageJdbc.countNotAddedBy(roundId, jobId)
+        st.copy(imagesBefore = Some(before + now - others), othersBefore = Some(now))
+      case _ => st
+    }
 
   // ── steps ──────────────────────────────────────────────────────────────────
 
@@ -301,7 +320,9 @@ class RoundDistributionHandler @Inject() (
     val roundId = roundIdOf(job)
     val c = contexts.getOrElseUpdate(job.id, context(roundId))
     val st = stateOf(job) match {
-      case s if s.imagesBefore.isEmpty => s.copy(imagesBefore = Some(imageCount(roundId) - s.imagesAdded))
+      case s if s.imagesBefore.isEmpty =>
+        s.copy(imagesBefore = Some(imageCount(roundId) - s.imagesAdded),
+          othersBefore = Some(RoundImageJdbc.countNotAddedBy(roundId, job.id)))
       case s                           => s
     }
 

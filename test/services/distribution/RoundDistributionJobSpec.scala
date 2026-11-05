@@ -55,7 +55,12 @@ class RoundDistributionJobSpec extends Specification with TestDb with BeforeAll 
       atChunk.filter(_._1 == n).foreach(_._2())
       if (crashAtChunk.contains(n)) { crashAtChunk = None; throw new InterruptedException("simulated crash") }
       if (failBeforeChunk.contains(n)) { failBeforeChunk = None; throw new RuntimeException(s"simulated failure in chunk $n") }
+      if (failBeforePage.exists(p => images.exists(_.pageId == p))) {
+        failBeforePage = None; throw new RuntimeException(s"simulated failure in chunk $n")
+      }
     }
+    /** Fails the chunk that would add this file (once). */
+    @volatile var failBeforePage: Option[Long] = None
 
     override protected def afterInsert(round: Round, rows: Seq[Vote])(implicit session: DBSession): Unit =
       if (failAfterInsertOfChunk.contains(chunks.get)) {
@@ -281,6 +286,41 @@ class RoundDistributionJobSpec extends Specification with TestDb with BeforeAll 
       jobOf(roundId).status === JobStatus.Done
       pageIds(roundId) === imgs.map(_.pageId).toSet - 1L - deletedWhileFailed
       roundDao.findById(roundId).get.active must beTrue
+    }
+
+    "pass its count check on a retry after a crash, when the round's other files changed while it was failed" in {
+      val (contest, imgs, jurors) = setUp(20, 3)
+      val h = new TestHandler(chunkRows = 3)
+      val service = inlineService(h)
+      val roundId = service.createNewRound(newRound(contest, "R1"), jurors.map(_.getId)).getId
+      jobOf(roundId).status === JobStatus.Done
+      val more = (101 to 106).map(i => Image(i.toLong, s"File:More$i.jpg", None, None, 800, 600, Some(s"12-345-$i")))
+      imageDao.batchInsert(more)
+      CategoryLinkJdbc.addToCategory(contestDao.findById(contest.getId).get.categoryId.get, more)
+
+      // "Distribute new files" crashes at the chunk of file 104, after adding some of the new ones
+      h.failBeforePage = Some(104L)
+      scala.util.Try(service.distributeNewImages(roundId))
+      val failed = jobOf(roundId)
+      failed.status === JobStatus.Failed
+      failed.failure.map(_.key) must beSome(_root_.services.jobs.JobError.CrashedKey)
+      val addedBefore = pageIds(roundId) -- imgs.map(_.pageId)
+      addedBefore must not(beEmpty)
+      addedBefore must not(contain(104L))
+
+      // while it is failed, a file the creation added leaves the round: its count goes down by one
+      DB.autoCommit { implicit s =>
+        sql"DELETE FROM vote WHERE round_id = $roundId AND page_id = 1".update()
+        sql"DELETE FROM round_image WHERE round_id = $roundId AND page_id = 1".update()
+      }
+
+      service.distributeNewImages(roundId) // resumes the failed job: its count check must pass
+      val done = jobOf(roundId)
+      done.id === failed.id
+      done.status === JobStatus.Done
+      done.error must beNone
+      pageIds(roundId) === imgs.map(_.pageId).toSet - 1L ++ more.map(_.pageId)
+      RoundImageInvariants.violations(roundId) must beEmpty
     }
 
     "fail at a chunk, keep the committed chunks, and resume from the cursor without duplicates" in {
