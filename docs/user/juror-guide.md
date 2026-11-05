@@ -13,7 +13,8 @@ language, the same buttons and menus are in the same places.
 Terms: a **contest** is one competition, a **file** is one photo or video, a **yes/no round** is
 a round where you select or reject files, and a **juror** has the role **Juror**.
 
-## Signing in to the jury tool
+<a id="signing-in-to-the-jury-tool"></a>
+## Signing in to WLX Jury
 
 ### Accepting your invitation
 
@@ -406,7 +407,7 @@ A new email address takes effect once you follow the link sent to it.
 
 ## Supported browsers
 
-The jury tool supports the current and the previous version of these desktop browsers:
+WLX Jury supports the current and the previous version of these desktop browsers:
 
 - Chrome
 - Edge

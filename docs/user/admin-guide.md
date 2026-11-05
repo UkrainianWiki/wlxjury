@@ -287,7 +287,7 @@ changes the contests on the **Contests** page. Admins of a contest set up its
 people ([People](#a-users)), its greeting, its [files](organizer-guide.md#o-import-files) and its
 [rounds](organizer-guide.md#o-rounds-list).
 
-<img src="images/admin-campaigns.png" alt="The Contests page, where root creates and imports contests" width="1280">
+<img src="images/admin-contests.png" alt="The Contests page, where root creates and imports contests" width="1280">
 
 <a id="a-more-than-one-admin"></a>
 ### Several admins

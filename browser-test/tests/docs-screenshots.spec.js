@@ -187,6 +187,8 @@ test.describe('the guides\' screenshots', () => {
           await expect(page.locator(`#${await toggle.getAttribute('aria-controls')}.collapse.show`)).toHaveCount(1);
         }
         await expect(page.locator('#round-form .collapsing')).toHaveCount(0);
+        // the buttons end the page: room under them, so that the crop's margin is not cut off
+        await page.addStyleTag({ content: 'body { padding-bottom: 48px; }' });
       },
     });
     await shot(contextAs, 'admin', `/contest/${contest}/images`, 'organizer-contest-images', { full: true });
@@ -316,6 +318,6 @@ test.describe('the guides\' screenshots', () => {
   });
 
   test('root pages', async ({ contextAs }) => {
-    await shot(contextAs, 'root', '/contests', 'admin-campaigns');
+    await shot(contextAs, 'root', '/contests', 'admin-contests');
   });
 });

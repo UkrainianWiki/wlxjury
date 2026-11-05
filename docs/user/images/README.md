@@ -13,7 +13,7 @@ numbered examples before each shot, and the link to share shows a neutral host.
 Chromium (156), the app's own font stack, 2026-11-05. Text rendering depends on the operating
 system, so regenerate all the images together on one platform and update this line.
 
-**Size:** 24 images, about 3.4 MB in all; the largest is `juror-gallery-binary.png`, about 660 KB
+**Size:** 24 images, about 3.5 MB in all; the largest is `juror-gallery-binary.png`, about 680 KB
 (photo shots may reach about 900 KB; the others stay small). Photos make 2x PNGs large, so
 `browser-test/docs-optimize-png.py` reduces each image to a 256-colour palette after the spec
 (dithered where there are photos, so that skies show no bands), and the shots of galleries and
