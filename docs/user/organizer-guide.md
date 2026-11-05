@@ -412,8 +412,9 @@ contest's files, and of the round's files, are conflicts.
 <a id="o-conflicts-page"></a>
 ### The conflicts page
 
-Press **Conflicts of interest of this round** on the round form, to open the page **Conflicts of
-interest of round …**. Admins and organizers can open it. It has:
+Press **Conflicts of interest of this round** to open the page **Conflicts of interest of round
+…**. Admins find the button on the round form; admins and organizers find the link on the round's
+**Statistics** page. It has:
 
 - **Conflicts of interest in the round**: the files whose author is a conflicted member now,
   each with its author and reason.
