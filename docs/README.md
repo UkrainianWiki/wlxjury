@@ -100,8 +100,17 @@ The rule is in workflow §8: the update is in the same PR, and the reviewer chec
 
 ## 5. User docs
 
-`docs/user/`: the English [juror guide](user/juror-guide.md) exists (written from the tool as it
-was on 2026-11-03; **unpublished**); organizer and admin guides follow after P3. It is written for
+`docs/user/`: the English [juror guide](user/juror-guide.md), [organizer guide](user/organizer-guide.md),
+[admin guide](user/admin-guide.md) and [what's new in release 2](user/whats-new-release-2.md) exist
+(written from the tool as it is; **unpublished**). Screenshots are
+`docs/user/images/`, made by an opt-in browser spec (`docs-screenshots.spec.js`, run with
+`DOCS_SCREENSHOTS=1`; [images/README.md](user/images/README.md) says which platform made them).
+
+**Stable anchors** (for links in the tool's help later): the organizer and admin guides give
+each section an explicit `<a id="o-…"></a>` (organizer), `a-…` (admin) or `w-…` (what's new) before
+its heading, which doesn't change when the heading's words do. The juror guide's anchors are its
+headings' GitHub slugs, which the story catalogue already links; a heading there is renamed only
+together with its links. It is written for
 the Translate extension: short paragraphs, headings that stand alone, no relative links,
 screenshots as `[Screenshot: …]` placeholders, the interface's labels from `conf/messages.en`.
 What updates it is in §3. The UI findings made while writing it are UI practices §9 (U3–U17). The
