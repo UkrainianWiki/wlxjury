@@ -54,8 +54,15 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
       // a grouped query also counts each file's approvals and rejections apart: a yes/no
       // round's tally (ImageWithRating.approvals), which no rated round's page reads
       tally: Boolean = false,
+      // a rated round's votes: a grouped row's rate is the sum of its grades (a ✗, -1, as 0:
+      // VoteSql.grade), and the rated filter is any vote, a ✗ included (VoteSql.voted); a yes/no
+      // round's (false) keeps the sum of its rates and its approvals as the rated
+      grades: Boolean = false,
       driver: String = "mysql"
   ) {
+
+    /** A grouped row's rate: the sum of the file's rates, or of a rated round's grades. */
+    private def rateSum: String = SelectionQuery.rateSum(grades)
 
     private val reader: WrappedResultSet => ImageWithRating =
       if (grouped) Readers.groupedReader(tally) else Readers.rowReader
@@ -90,7 +97,7 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
                   s", ROW_NUMBER() over (${orderBy()}) ranked"
                 else "") +
                (if (grouped)
-                  ", sum(s.rate) as rate, count(*) as rate_count"
+                  s", $rateSum as rate, count(*) as rate_count"
                 else "")
            } else {
              if (byRegion)
@@ -98,10 +105,10 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
              else if (!grouped)
                sqls"""${i.result.*}, ${s.result.*} """.value
              else if (tally)
-               sqls"""sum(s.rate) as rate, count(*) as rate_count, ${SQLSyntax.createUnsafely(tallyColumns)},
-                       ${i.result.*} """.value
+               sqls"""${SQLSyntax.createUnsafely(rateSum)} as rate, count(*) as rate_count,
+                       ${SQLSyntax.createUnsafely(tallyColumns)}, ${i.result.*} """.value
              else
-               sqls"""sum(s.rate) as rate, count(*) as rate_count, ${i.result.*} """.value
+               sqls"""${SQLSyntax.createUnsafely(rateSum)} as rate, count(*) as rate_count, ${i.result.*} """.value
            })
 
       val groupByStr = if (byRegion) {
@@ -192,11 +199,11 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
     private def deferredGroupedPage(): SQLSyntax = {
       // the select's alias `rate` isn't a column of the inner select list: its sum
       val keys = sortOrder.zipWithIndex.map { case ((name, dir), n) =>
-        (if (name == "rate") "sum(s.rate)" else name, s"o$n", dir)
+        (if (name == "rate") rateSum else name, s"o$n", dir)
       }
       val aggregates = Seq("rate", "rate_count") ++ (if (tally) Seq("approvals", "rejections") else Nil)
       val inner = SQLSyntax.createUnsafely(
-        "select s.page_id as pid, sum(s.rate) as rate, count(*) as rate_count" +
+        s"select s.page_id as pid, $rateSum as rate, count(*) as rate_count" +
           (if (tally) s", $tallyColumns" else "") +
           keys.map { case (expr, alias, _) => s", $expr as $alias" }.mkString +
           (if (monumentJoin) join(monuments = true) else " from vote s")
@@ -435,9 +442,11 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
       }
     }
 
-    /** The `rated` filter's condition on a vote row: rated (a yes, or stars), or unrated. */
+    /** The `rated` filter's condition on a vote row: rated, or unrated. Rated is a yes/no
+      * round's yes, and a rated round's any vote, stars or a ✗ ([[grades]]).
+      */
     private def ratedCondition(rated: Boolean): SQLSyntax =
-      if (rated) VoteSql.positive() else VoteSql.unrated()
+      if (!rated) VoteSql.unrated() else if (grades) VoteSql.voted() else VoteSql.positive()
 
     /** A grouped row's tally: its approvals and rejections apart ([[BinaryOrder]]'s columns). */
     private def tallyColumns: String =
@@ -541,6 +550,15 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
 
     }
 
+  }
+
+  object SelectionQuery {
+
+    /** The sum of a file's vote rows `s`: of its rates (a yes/no round's approvals less its
+      * rejections), or of a rated round's grades, a ✗ as 0 (`grades`). The text names the same
+      * column in every list's order and rank vocabulary (`RoundImageQuery.translate`).
+      */
+    def rateSum(grades: Boolean): String = if (grades) VoteSql.GradeSum else VoteSql.RateSum
   }
 
 }

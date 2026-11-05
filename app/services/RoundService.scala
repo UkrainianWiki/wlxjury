@@ -158,15 +158,16 @@ class RoundService @Inject() (
     JobJdbc.activeByDedupeKey(RoundDistributionHandler.dedupeKey(round.getId)).foreach(active => throw AlreadyDistributing(active))
     val state = distribution.initialState(round, listOnly)
     // the top-N's order and the rejected-by filter only where they apply: from a yes/no
-    // previous round
+    // previous round, and the rejected-by from a rated one with the worst mark (✗) too
     val previous = if (round.previousIds.isEmpty) Nil else Round.findByIds(round.contestId, round.previousIds)
     val binaryPrevious = previous.exists(_.isBinary)
+    val rejectingPrevious = previous.headOption.exists(_.rejects)
     // the rule a rated previous round scores its files by (V90), read under its lock: the
     // distribution ranks and filters by this one, whatever the round's rule is changed to later
     val prevAverageRule = round.previousIds.headOption.flatMap(id => previous.find(_.id.contains(id)))
       .filterNot(_.isBinary).map(_.averageRule.param)
     val topOrder = round.topImages.filter(_ => binaryPrevious).map(_ => round.topOrderParam)
-    val rejectedBy = round.rejectedByFilter.filter(_ => binaryPrevious)
+    val rejectedBy = round.rejectedByFilter.filter(_ => rejectingPrevious)
     jobs.enqueue(
       NewJob(
         kind = RoundDistributionHandler.Kind,

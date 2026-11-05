@@ -36,6 +36,8 @@ import scalikejdbc._
   *                   ([[RoundImageQuery.of]])
   * @param filter     the vote filter as a condition on the counts (None: every file)
   * @param withPageId a file listed whatever the filter: the large view's
+  * @param grades     a rated round's: a file's sum is of its grades, `rate_sum + rejections` (a ✗,
+  *                   -1, as 0), as the vote source's `SelectionQuery.grades`
   */
 final case class RoundImageQuery(
     roundId: Long,
@@ -44,7 +46,8 @@ final case class RoundImageQuery(
     withPageId: Option[Long] = None,
     regions: Set[String] = Set.empty,
     subRegions: Boolean = false,
-    limit: Option[Limit] = None
+    limit: Option[Limit] = None,
+    grades: Boolean = false
 ) {
 
   import RoundImageQuery._
@@ -112,7 +115,7 @@ final case class RoundImageQuery(
     val keys = order.zipWithIndex.map { case ((expr, dir), n) => (expr, s"o$n", dir) }
     val keyColumns = raw(keys.map { case (expr, alias, _) => s", $expr AS $alias" }.mkString)
     val outerOrder = orderSql(keys.map { case (_, alias, dir) => s"k.$alias" -> dir })
-    val aggregates = raw(s"$RateSum AS rs, $Assigned AS assigned, $Approvals AS approvals, $Rejections AS rejections")
+    val aggregates = raw(s"${sum(grades)} AS rs, $Assigned AS assigned, $Approvals AS approvals, $Rejections AS rejections")
     sql"""SELECT k.rs, k.assigned, k.approvals, k.rejections, ${i.result.*}
           FROM (SELECT ri.page_id AS pid, $aggregates $keyColumns $from ${where()} ${orderSql(order)} $limitSql) k
           STRAIGHT_JOIN images i ON i.page_id = k.pid $outerOrder"""
@@ -139,7 +142,7 @@ final case class RoundImageQuery(
     */
   def keyCounts(columns: Seq[(String, Int)])(implicit session: DBSession = AutoSession): Seq[(Seq[Long], Int)] = {
     val translated = columns.map { case (c, dir) =>
-      translate(c).getOrElse(throw new IllegalArgumentException(s"no count column for $c")) -> dir
+      translate(c, grades).getOrElse(throw new IllegalArgumentException(s"no count column for $c")) -> dir
     }
     val keys = translated.indices.map(n => s"k$n")
     val select = raw(translated.zip(keys).map { case ((expr, _), k) => s"$expr AS $k" }.mkString(", "))
@@ -180,36 +183,50 @@ object RoundImageQuery {
   val Approvals = "COALESCE(dv.approvals, ri.approvals)"
   val Rejections = "COALESCE(dv.rejections, ri.rejections)"
 
-  /** The average rules' terms over the counts. */
-  val CountTerms: AverageRule.Terms = AverageRule.Terms(RateSum, Approvals, Assigned)
+  /** A rated round's file's sum of grades: its rate sum with each ✗ (-1) counted as 0 (the user,
+    * 2026-11-05), the counts' `rate_sum + rejections`, the vote source's [[VoteSql.GradeSum]].
+    */
+  val GradeSum = s"($RateSum + $Rejections)"
+
+  /** A file's sum: of its rates, or of a rated round's grades. */
+  def sum(grades: Boolean): String = if (grades) GradeSum else RateSum
+
+  /** The average rules' terms over the counts: a rated round's grades, and any vote as rated
+    * (`voted`, a ✗ included), as [[AverageRule.VoteTerms]] over the votes.
+    */
+  val CountTerms: AverageRule.Terms = AverageRule.Terms(GradeSum, Voted, Assigned)
 
   /** The vote source's order and rank columns (over a file's grouped vote rows `s`:
     * `controllers.ListOrder`, [[BinaryOrder]], `ImageWithRating.RankKey`) and the same over the
-    * counts: one vocabulary for either source.
+    * counts: one vocabulary for either source. `rate`, a grouped row's sum, is of grades in a
+    * rated round's list.
     */
   private val vocabulary: Map[String, String] = Map(
-    "rate"                  -> RateSum,
-    "sum(s.rate)"           -> RateSum,
+    VoteSql.RateSum         -> RateSum,
+    VoteSql.GradeSum        -> GradeSum,
     BinaryOrder.Approvals   -> Approvals,
     BinaryOrder.Rejections  -> Rejections,
     "s.monument_id"         -> "ri.monument_id",
     "s.page_id"             -> "ri.page_id"
   ) ++ AverageRule.all.flatMap(rule => rule.keySql(AverageRule.VoteTerms).zip(rule.keySql(CountTerms)))
 
-  def translate(column: String): Option[String] = vocabulary.get(column)
+  def translate(column: String, grades: Boolean): Option[String] =
+    if (column == "rate") Some(sum(grades)) else vocabulary.get(column)
 
   /** The vote filter as a condition on a file's counts, as the vote source's grouped lists
     * filter files (decision 3 of docs/history/2026-11-01-binary-aggregate-votes.md: a file with a
-    * matching vote): Unrated, a vote yet to come; Rated (or a binary round's selected), an
-    * approval; a binary round's rejected, a rejection. None for a filter the counts can't tell
-    * (one rate of a rated round): the vote source reads it.
+    * matching vote): Unrated, a vote yet to come; Rated, a rated round's any vote (a ✗ included)
+    * or a yes/no round's approval; a binary round's selected, an approval; its rejected, a
+    * rejection. None for a filter the counts can't tell (one rate of a rated round): the vote
+    * source reads it.
     */
   private def fileFilter(rate: Option[Int], rated: Option[Boolean], binary: Boolean): Option[Option[String]] =
     (rate, rated) match {
       case (None, None)                => Some(None)
       case (Some(0), None)             => Some(Some(s"$Assigned > $Voted"))
       case (None, Some(false))         => Some(Some(s"$Assigned > $Voted"))
-      case (None, Some(true))          => Some(Some(s"$Approvals > 0"))
+      case (None, Some(true)) if binary => Some(Some(s"$Approvals > 0"))
+      case (None, Some(true))          => Some(Some(s"$Voted > 0"))
       case (Some(1), None) if binary   => Some(Some(s"$Approvals > 0"))
       case (Some(-1), None) if binary  => Some(Some(s"$Rejections > 0"))
       case _                           => None
@@ -220,11 +237,11 @@ object RoundImageQuery {
     * reads), all in the counts' vocabulary. None: the vote source reads it.
     */
   def of(q: SelectionQuery, binary: Boolean, rankColumns: Seq[String] = Nil): Option[RoundImageQuery] = {
-    val order = q.order.map { case (c, dir) => translate(c).map(_ -> dir) }
+    val order = q.order.map { case (c, dir) => translate(c, q.grades).map(_ -> dir) }
     for {
       roundId <- q.roundId if q.userId.isEmpty && q.keyset.isEmpty && (q.grouped || q.groupWithDetails)
       filter <- fileFilter(q.rate, q.rated, binary)
-      if order.forall(_.isDefined) && rankColumns.forall(translate(_).isDefined)
-    } yield RoundImageQuery(roundId, order.flatten, filter, q.withPageId, q.regions, q.subRegions, q.limit)
+      if order.forall(_.isDefined) && rankColumns.forall(translate(_, q.grades).isDefined)
+    } yield RoundImageQuery(roundId, order.flatten, filter, q.withPageId, q.regions, q.subRegions, q.limit, q.grades)
   }
 }

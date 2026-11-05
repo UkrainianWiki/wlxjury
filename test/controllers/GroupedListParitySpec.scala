@@ -42,9 +42,10 @@ class GroupedListParitySpec extends Specification with TestDb with BeforeAll wit
     * votes without a page id, which no list has.
     */
   private def setUp(rates: Rates, rate: scala.util.Random => Int, hasCriteria: Boolean = false,
-      specialNomination: Option[String] = None, rule: AverageRule = AverageRule.Default): (Round, Seq[File]) = {
+      specialNomination: Option[String] = None, rule: AverageRule = AverageRule.Default,
+      worstMark: Boolean = false): (Round, Seq[File]) = {
     val contest = contestDao.create(None, "WLM", 2026, "Ukraine")
-    val round = roundDao.create(Round(None, 1, contestId = contest.getId, rates = rates, active = true,
+    val round = roundDao.create(Round(None, 1, contestId = contest.getId, worstMark = worstMark, rates = rates, active = true,
       criterionIds = if (hasCriteria) Seq(1L, 2L) else Nil, specialNomination = specialNomination, averageRule = rule))
     val jurors = (1 to 4).map(n =>
       userDao.create(User(s"Juror $n", s"juror$n@example.com", None, Set("jury"), contestId = contest.id)))
@@ -126,10 +127,16 @@ class GroupedListParitySpec extends Specification with TestDb with BeforeAll wit
         if (list.view == GalleryView.FileList)
           check(s"page $p votes", page.map(_.votes.map(_.rate).sorted), slice.map(_.rates.sorted))
         else {
-          check(s"page $p sums", page.map(_.votes.map(_.rate).sum), slice.map(_.sum))
+          // a rated round's sum is of grades, a ✗ as 0
+          check(s"page $p sums", page.map(_.votes.map(_.rate).sum),
+            slice.map(f => if (list.round.isBinary) f.sum else f.grades))
           check(s"page $p vote counts", page.map(_.countFromDb), slice.map(_.rates.size))
           if (list.round.isBinary)
             check(s"page $p tallies", page.map(f => (f.approvals, f.rejections)), slice.map(f => (f.approvals, f.rejections)))
+          else {
+            check(s"page $p rated votes", page.map(_.ratedVotes), slice.map(_.voted.toLong))
+            check(s"page $p worst marks", page.map(_.worstMarks), slice.map(_.rejections))
+          }
         }
         counts.foreach(c => check(s"page $p ranks", list.ranks(page, c), ranks.slice((p - 1) * PageSize, p * PageSize)))
       }
@@ -183,6 +190,22 @@ class GroupedListParitySpec extends Specification with TestDb with BeforeAll wit
       val pendingProblems = pending.flatMap(l => compare("pending " + label(l), l, files, inRegion(l.region)))
       (dirty must beSome(be_>(0L))) and (marked must_== Nil) and
         (pending.map(_.countsUsed).distinct must_== Seq(false)) and (pendingProblems must_== Nil)
+    }
+
+    "be the model's with the worst mark (✗ as 0, and as a vote), for each rule, from the votes, the counts and dirty files" in {
+      forall(AverageRule.all) { rule =>
+        SharedTestDb.truncateAll()
+        // rates -1 (✗) to 3
+        val (round, before) = setUp(Round.ratesById(5), _.nextInt(5) - 1, rule = rule, worstMark = true)
+        val all = lists(round, VoteFilter.ofRound(round) :+ VoteFilter.Rate(2), Seq(ListOrder.ByRate, ListOrder.FileOrder),
+          Seq(None, Some("07"), Some("99")))
+        val clean = all.flatMap(l => bothSources(rule.param + " ✗ " + label(l), l, before, inRegion(l.region)))
+        // ✗ given and cleared after the recount: the files marked, read through the overlay
+        val files = revote(round, before, 8, r => if (r.nextBoolean()) -1 else 0)
+        val dirty = all.filter(_.region.isEmpty).flatMap(l =>
+          bothSources(rule.param + " ✗ dirty " + label(l), l, files, inRegion(l.region)))
+        (before.exists(_.rejections > 0) must beTrue) and (clean must_== Nil) and (dirty must_== Nil)
+      }
     }
 
     "read the votes when a bulk write commits between the generation check and the counts statement" in {
@@ -304,13 +327,20 @@ object GroupedListModel {
     def sum: Int = rates.sum
     def approvals: Int = rates.count(_ > 0)
 
-    /** Its rank key in a rated round: its average under the rule (exact, as an integer), then
-      * its sum; the sum alone in a sum round.
+    /** A rated round's sum: of grades, a ✗ (-1) as 0 (the user, 2026-11-05). */
+    def grades: Int = rates.map(math.max(_, 0)).sum
+
+    /** A rated round's jurors who rated it: any vote, a ✗ included. */
+    def voted: Int = rates.count(_ != 0)
+
+    /** Its rank key in a rated round: its average of grades under the rule (exact, as an
+      * integer; the rated rule's over the jurors with any vote), then the grades' sum; the sum
+      * alone in a sum round.
       */
     def ratedKey(rule: AverageRule): Seq[Long] = rule match {
-      case AverageRule.Sum      => Seq(sum.toLong)
-      case AverageRule.Rated    => Seq(AverageRule.key(sum, approvals), sum.toLong)
-      case AverageRule.Assigned => Seq(AverageRule.key(sum, rates.size), sum.toLong)
+      case AverageRule.Sum      => Seq(grades.toLong)
+      case AverageRule.Rated    => Seq(AverageRule.key(grades, voted), grades.toLong)
+      case AverageRule.Assigned => Seq(AverageRule.key(grades, rates.size), grades.toLong)
     }
     def rejections: Int = rates.count(_ < 0)
 
@@ -320,7 +350,7 @@ object GroupedListModel {
 
   def matches(filter: VoteFilter, file: File): Boolean = filter match {
     case VoteFilter.All     => true
-    case VoteFilter.Rated   => file.rates.exists(_ > 0)
+    case VoteFilter.Rated   => file.rates.exists(_ != 0) // a rated round's: a ✗ is a vote
     case VoteFilter.Unrated => file.rates.contains(0)
     case f                  => f.rate.exists(file.rates.contains)
   }

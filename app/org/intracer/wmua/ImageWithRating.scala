@@ -4,14 +4,17 @@ import java.text.DecimalFormat
 import java.util.Locale
 import java.text.NumberFormat
 
-import db.scalikejdbc.{Round, User}
+import db.scalikejdbc.{Round, User, VoteSql}
 
 case class ImageWithRating(
     image: Image,
     votes: Seq[Vote],
     countFromDb: Int = 0,
     approvalsFromDb: Option[Int] = None,
-    rejectionsFromDb: Option[Int] = None
+    rejectionsFromDb: Option[Int] = None,
+    // a rated round's grouped row's rated votes (any vote, a ✗ included), where its query counts
+    // them without a tally (the distribution's streamed candidates)
+    votedFromDb: Option[Int] = None
 ) extends Ordered[ImageWithRating] {
 
   val ownJuryRating = new OwnRating(
@@ -43,17 +46,18 @@ case class ImageWithRating(
     */
   def totalRate(round: Round): Double =
     if (ownVote)
-      votes.head.rate
+      if (round.isBinary) votes.head.rate else votes.head.grade
     else if (ratedJurors(round) == 0)
       0.0
     else
       rateSum.toDouble / ratedJurors(round)
 
-  /** A rated round's rate sum: its votes' rates, any below 0 as 0; of a grouped row (all the
-    * jurors' votes together, one vote with their sum) that sum. Binary code counts
-    * [[approvals]] and [[rejections]] instead: of a binary round's grouped row this is
-    * max(approvals − rejections, 0), of its vote rows the approvals, or of the rows a
-    * distribution's "selected by at least" reads (rate > 0, `SelectedAtLeast`) the approvals.
+  /** A rated round's rate sum: its votes' grades (a ✗ as 0, [[Vote.grade]]); of a grouped row
+    * (all the jurors' votes together, one vote with their sum) that sum, which a rated round's
+    * query sums as grades (`SelectionQuery.grades`). Binary code counts [[approvals]] and
+    * [[rejections]] instead: of a binary round's grouped row this is max(approvals − rejections,
+    * 0), of its vote rows the approvals, or of the rows a distribution's "selected by at least"
+    * reads (rate > 0, `SelectedAtLeast`) the approvals.
     */
   def rateSum: Int =
     votes.foldLeft(0)((acc, s) => acc + s.grade)
@@ -76,6 +80,15 @@ case class ImageWithRating(
     rejectionsFromDb.getOrElse(votes.count(_.isRejected))
   }
 
+  /** A rated round's file's ✗ (worst marks, rate -1): its votes', or a grouped row's query's
+    * tally (none without one). The aggregate views show "✗ n" beside the score; a juror's own
+    * vote, its ✗.
+    */
+  def worstMarks: Int = if (grouped) rejectionsFromDb.getOrElse(0) else votes.count(_.isRejected)
+
+  /** One juror's vote of the file, a ✗ (the large view, a tile and a list of the juror's own). */
+  def isWorstMark: Boolean = ownVote && votes.head.isRejected
+
   /** A row of all the jurors' votes together: a vote of juror 0 holds their sum. */
   private def grouped: Boolean = votes.exists(_.juryId == 0)
 
@@ -92,10 +105,14 @@ case class ImageWithRating(
   /** The jurors the file is assigned to: its vote rows, of a grouped row their count. */
   def assignedJurors: Long = if (grouped) countFromDb else votes.size
 
-  /** The file's votes rated above 0 (in a criteria round, rated in every criterion: U5); of a
-    * grouped row from its query's `tally` ([[approvals]]).
+  /** A rated round's file's rated votes, "the jurors who rated it": any vote, stars or a ✗
+    * ([[Vote.isVoted]]; in a criteria round, rated in every criterion: U5, a partly rated vote's
+    * rate is 0); of a grouped row its [[votedFromDb]], else its query's `tally` ([[approvals]]
+    * and its rejections, a ✗ each: none without them).
     */
-  def ratedVotes: Long = if (grouped) approvals else votes.count(_.isPositive)
+  def ratedVotes: Long =
+    if (grouped) votedFromDb.getOrElse(approvals + rejectionsFromDb.getOrElse(0)).toLong
+    else votes.count(_.isVoted).toLong
 
   /** The denominator of the file's score ([[totalRate]]): a binary round's jurors; one
     * juror's own vote, 1; else as the round's [[AverageRule]] has it: the file's rated votes, its
@@ -192,18 +209,18 @@ object ImageWithRating {
   object RankKey {
 
     /** A binary round's by `order`. A rated round's by its average under its [[AverageRule]],
-      * then the sum of its rates, as SQL has them: the average as an exact integer key
-      * ([[AverageRule.keySql]], [[AverageRule.key]]); the sum with a rate below 0 counted as it
-      * is, not as 0 as [[ImageWithRating.rateSum]] counts it (of a grouped row, its one vote's
-      * sum; of a file's votes read one by one, their sum). An [[AverageRule.Sum]] round's by the
-      * sum alone.
+      * then the sum of its grades, as SQL has them: the average as an exact integer key
+      * ([[AverageRule.keySql]], [[AverageRule.key]]); the sum a ✗ counted as 0, as
+      * [[ImageWithRating.rateSum]] counts it and as every view shows it (of a grouped row, its
+      * one vote's sum; of a file's votes read one by one, their grades' sum). An
+      * [[AverageRule.Sum]] round's by the sum alone.
       */
     def of(round: Round, order: BinaryOrder = BinaryOrder.Default): RankKey =
       if (round.isBinary)
         RankKey(order.columns, file => order.values(file.approvals, file.rejections).map(_.toLong))
       else {
-        val sum = "sum(s.rate)" -> -1
-        def sumOf(file: ImageWithRating): Long = file.votes.map(_.rate.toLong).sum
+        val sum = VoteSql.GradeSum -> -1
+        def sumOf(file: ImageWithRating): Long = file.rateSum.toLong
         round.averageRule.keySql(AverageRule.VoteTerms) match {
           case None => RankKey(Seq(sum), file => Seq(sumOf(file)))
           case Some(average) =>

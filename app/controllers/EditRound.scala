@@ -18,6 +18,8 @@ import scala.util.Try
   *                      criteria as they are
   * @param averageRuleShown the form had the score select (`round.averageRule`): a client without
   *                      it leaves an existing round's rule as it is
+  * @param worstMarkShown the form had the worst mark checkbox (`round.worstMark`): a client
+  *                      without it leaves an existing round's option as it is
   */
 case class EditRound(
     round: Round,
@@ -25,7 +27,8 @@ case class EditRound(
     fileList: Option[String] = None,
     newImages: Boolean = false,
     criteriaShown: Boolean = true,
-    averageRuleShown: Boolean = true
+    averageRuleShown: Boolean = true,
+    worstMarkShown: Boolean = true
 )
 
 object EditRound {
@@ -68,6 +71,17 @@ object EditRound {
         .fold[ValidationResult](Valid)(key => Invalid(ValidationError(key, Criterion.MinPerRound, Criterion.MaxPerRound)))
   }
 
+  /** The worst mark (✗) only in a rated round without criteria: a yes/no round's -1 is its "no",
+    * and a criteria round's votes are per criterion.
+    */
+  private val validWorstMark: Constraint[EditRound] = Constraint("constraint.worst.mark") { edit =>
+    val round = edit.round
+    if (!round.worstMark || (round.isRated && round.criterionIds.isEmpty)) Valid
+    else Invalid(ValidationError(WorstMarkRatedOnly))
+  }
+
+  val WorstMarkRatedOnly = "error.worst.mark.rated.only"
+
   /** The criteria selects' values: the chosen ones, by position (-1 for a value that is no id). */
   def criterionIdsOf(values: Seq[String]): Seq[Long] =
     values.map(_.trim).filter(_.nonEmpty).map(_.toLongOption.filter(_ > 0).getOrElse(-1L))
@@ -85,8 +99,13 @@ object EditRound {
       // how a rated round scores its files (V90): one of AverageRule's values; a client without it
       // (an older page, a script) gets the default for a new round, an edit keeps the stored one
       // (RoundController.saveRound)
-      "averageRule" -> optional(text).verifying("error.invalid", _.forall(AverageRule.parse(_).isDefined))
-    )((edit, excludeCoi, selected, topOrder, rejectedBy, criteria, criteriaShown, halfStar, averageRule) => {
+      "averageRule" -> optional(text).verifying("error.invalid", _.forall(AverageRule.parse(_).isDefined)),
+      // a rated round's worst mark (V92), with the hidden field saying the form had the checkbox
+      // (an unchecked box sends nothing): a client without both keeps an existing round's option
+      "worstMark" -> boolean,
+      "worstMarkShown" -> boolean
+    )((edit, excludeCoi, selected, topOrder, rejectedBy, criteria, criteriaShown, halfStar, averageRule, worstMark,
+        worstMarkShown) => {
       val configured = selected match {
         case None => edit.round // Older clients omitted the clause; retain their inference.
         case Some(value) =>
@@ -100,14 +119,16 @@ object EditRound {
         topBinaryOrder = edit.round.topImages.flatMap(_ => BinaryOrder.ofForm(topOrder)),
         prevRejectedBy = rejectedBy.flatMap(s => Try(s.toInt).toOption).filter(_ > 0),
         criterionIds = criterionIdsOf(criteria), halfStar = halfStar,
-        averageRule = averageRule.flatMap(AverageRule.parse).getOrElse(AverageRule.Default)),
-        averageRuleShown = averageRule.isDefined)
+        averageRule = averageRule.flatMap(AverageRule.parse).getOrElse(AverageRule.Default),
+        worstMark = worstMark && worstMarkShown),
+        averageRuleShown = averageRule.isDefined, worstMarkShown = worstMarkShown)
     })(edit => Some((edit, edit.round.excludeCoi, Some(edit.round.categoryRule.operation.formValue),
       edit.round.topImages.map(_ => edit.round.topOrderParam), edit.round.rejectedByFilter.map(_.toString),
       edit.round.criterionIds.map(_.toString), edit.criteriaShown, edit.round.halfStar,
-      Some(edit.round.averageRule.param))))
+      Some(edit.round.averageRule.param), edit.round.worstMark, edit.worstMarkShown)))
       .verifying(validCategories)
       .verifying(validCriteria)
+      .verifying(validWorstMark)
   )
 
   /** Keep older submissions meaningful on an error page, where the form has no value. */

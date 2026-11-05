@@ -122,14 +122,20 @@ class RoundDistributionJobSpec extends Specification with TestDb with BeforeAll 
   private def newRound(contest: ContestJury, name: String, distribution: Int = 1, rates: Rates = Round.binaryRound) =
     Round(None, 0, Some(name), contest.getId, distribution = distribution, rates = rates, active = true)
 
-  /** A previous round with every image to every juror, and random rates. */
-  private def ratedRound(contest: ContestJury, jurors: Seq[User], rates: Rates, seed: Int, name: String): Round = {
-    val round = roundDao.create(Round(None, 1, Some(name), contest.getId, rates = rates, active = true))
+  /** A previous round with every image to every juror, and random rates; with `worst`, a rated
+    * round with the worst mark, its rates from -1 (✗) up.
+    */
+  private def ratedRound(contest: ContestJury, jurors: Seq[User], rates: Rates, seed: Int, name: String,
+      worst: Boolean = false): Round = {
+    val round = roundDao.create(Round(None, 1, Some(name), contest.getId, rates = rates, active = true, worstMark = worst))
     round.addUsers(jurors.map(u => RoundUser(round.getId, u.getId, "jury", active = true)))
     di.distributeImages(round, jurors, Nil)
     val random = new Random(seed)
     val votes = VoteJdbc.byRound(round.getId).map { s =>
-      val rate = if (rates == Round.binaryRound) random.nextInt(3) - 1 else random.nextInt(rates.maxRate + 1)
+      val rate =
+        if (rates == Round.binaryRound) random.nextInt(3) - 1
+        else if (worst) random.nextInt(rates.maxRate + 2) - 1
+        else random.nextInt(rates.maxRate + 1)
       Seq(rate, s.pageId, s.juryId, round.getId)
     }
     // one batch in one transaction: VoteJdbc.rate per vote was ~1400 autocommits (9 s)
@@ -735,6 +741,52 @@ class RoundDistributionJobSpec extends Specification with TestDb with BeforeAll 
           val (got, expected) = both(contest, jurors, template)
           got === expected
         }.reduce(_ and _)
+    }
+
+    "match the old path from a rated round with the worst mark: its ✗ as 0, as a vote, and as a rejection" in {
+      val (contest, _, jurors) = setUp(60, 3)
+      val worst = ratedRound(contest, jurors, Round.ratesById(5), seed = 31, "Worst", worst = true)
+      def from(r: Round) = newRound(contest, "Next").copy(previous = Some(r.getId.toString))
+      val votes = VoteJdbc.byRound(worst.getId).groupBy(_.pageId)
+      val worstMarks = votes.view.mapValues(_.count(_.rate < 0)).toMap
+      // the rated rule: the grades' sum (✗ as 0) over the votes other than 0, ✗ included
+      val averages = votes.view.mapValues { vs =>
+        val voted = vs.count(_.rate != 0)
+        if (voted == 0) 0.0 else vs.map(v => math.max(v.rate, 0)).sum.toDouble / voted
+      }.toMap
+      val cases = Seq(
+        from(worst).copy(prevRejectedBy = Some(1)),
+        from(worst).copy(prevRejectedBy = Some(2)),
+        from(worst).copy(prevMinAvgRate = Some(BigDecimal(2))),
+        from(worst).copy(prevRejectedBy = Some(2), prevMinAvgRate = Some(BigDecimal("1.5"))),
+        from(worst).copy(prevSelectedBy = Some(2), prevRejectedBy = Some(1))
+      )
+      val (noWorst, _) = both(contest, jurors, from(worst).copy(prevRejectedBy = Some(1)))
+      val (atLeast2, _) = both(contest, jurors, from(worst).copy(prevMinAvgRate = Some(BigDecimal(2))))
+      (worstMarks.values.exists(_ > 0) must beTrue) and (worstMarks.values.exists(_ == 0) must beTrue) and
+        (noWorst === worstMarks.collect { case (p, 0) => p }.toSet) and
+        (atLeast2 === averages.collect { case (p, a) if a >= 2 => p }.toSet) and (atLeast2 must not(beEmpty)) and
+        cases.map { template =>
+          val (got, expected) = both(contest, jurors, template)
+          got === expected
+        }.reduce(_ and _)
+    }
+
+    "pick the same top-N from a rated round with the worst mark as the in-memory filter, the rejected left out" in {
+      val (contest, _, jurors) = setUp(60, 3)
+      val worst = ratedRound(contest, jurors, Round.ratesById(5), seed = 32, "Worst", worst = true)
+      val template = newRound(contest, "Top ✗").copy(previous = Some(worst.getId.toString), topImages = Some(8),
+        prevRejectedBy = Some(2))
+      val rejections = ImageJdbc.byRoundMerged(worst.getId, tally = true, grades = true).map(i => i.pageId -> i.rejections).toMap
+      val probe = roundDao.create(template.copy(number = 99))
+      val candidates = ImageJdbc.byRoundMerged(worst.getId, tally = true, grades = true)
+        .filter(i => rejections(i.pageId) < 2).sortBy(i => (-i.votes.head.rate, i.pageId))
+      val expected = SelectTopByRating(8, worst)().apply(di.perImageFilters(probe, Seq(worst), Nil, Nil)(candidates))
+        .map(_.pageId).toSet
+      Round.setActive(worst.getId, active = true)
+      val created = inlineService(new TestHandler(chunkRows = 3)).createNewRound(template, jurors.map(_.getId))
+      (pageIds(created.getId) === expected) and (expected.size === 8) and
+        (pageIds(created.getId).forall(rejections(_) < 2) must beTrue)
     }
 
     "pick the same top-N as the in-memory filter, ties included" in {

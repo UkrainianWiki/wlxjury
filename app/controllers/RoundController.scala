@@ -334,8 +334,11 @@ class RoundController @Inject() (
             // the edit of an existing round, its criteria saved
             def saveEdit(stored: Round): Result = {
               val roundId = stored.getId
-              // the score rule as posted; a client without the select keeps the stored one
-              Round.updateRound(roundId, if (editForm.averageRuleShown) round else round.copy(averageRule = stored.averageRule))
+              // the score rule and the worst mark as posted; a client without the select (the
+              // checkbox) keeps the stored one
+              Round.updateRound(roundId, round.copy(
+                averageRule = if (editForm.averageRuleShown) round.averageRule else stored.averageRule,
+                worstMark = if (editForm.worstMarkShown) round.worstMark else stored.worstMark))
               // before "Distribute new files", whose job then reads the round's flag
               val coi = leaveOutConflicts(stored, round.excludeCoi, user)(request.messages)
               // one message per kind: an error of the distribution wins over the removal's
@@ -401,6 +404,11 @@ class RoundController @Inject() (
                   case stored if editForm.criteriaShown && round.criterionIds.nonEmpty && !stored.isRated &&
                       round.criterionIds != RoundCriterion.idsOf(roundId) =>
                     reRender(round, "error.criteria.rated.only")
+                  // the worst mark only in a rated round without criteria, by the stored rating and
+                  // the criteria the round has after the edit (a client without the selects keeps them)
+                  case stored if editForm.worstMarkShown && round.worstMark && (!stored.isRated ||
+                      (if (editForm.criteriaShown) round.criterionIds else RoundCriterion.idsOf(roundId)).nonEmpty) =>
+                    reRender(round, EditRound.WorstMarkRatedOnly)
                   case stored =>
                     // first: after the first vote criteria are only replaced in their places
                     // (U10), and a refused change saves nothing of the form

@@ -198,7 +198,9 @@ class RoundDistributionHandler @Inject() (
       coi = coi,
       votes = PrevVotes(
         rated = prev.isDefined && round.selectedByFilter.isDefined,
-        rejectedBy = prev.filter(_.isBinary).flatMap(_ => round.rejectedByFilter)),
+        // a yes/no round's "no" votes, or a rated round's ✗ (the worst mark)
+        rejectedBy = prev.filter(_.rejects).flatMap(_ => round.rejectedByFilter),
+        grades = prev.exists(!_.isBinary)),
       topN = prev.flatMap(_ => round.topImages),
       // none for a round from before V72: the legacy rule, by the rate sum (ratedPage)
       topOrder = prev.filter(_.isBinary).flatMap(_ => round.topBinaryOrder),
@@ -609,10 +611,13 @@ object RoundDistributionHandler {
   val MaxMissingTitles = 100
 
   /** Which votes of the previous rounds pick their files: with `rated` ("selected by at least"
-    * set) only approvals are read; with `rejectedBy` ("exclude files rejected by at least N",
-    * yes/no previous rounds) no file with N or more rejections across all their votes.
+    * set) only approvals (a rated round's: any vote) are read; with `rejectedBy` ("exclude files
+    * rejected by at least N") no file with N or more rejections across all their votes (a yes/no
+    * round's "no", a rated round's ✗). `grades`: the previous rounds are rated, their sums of
+    * grades (a ✗ as 0) and their rated votes any vote, as the in-memory path reads them
+    * (`SelectionQuery.grades`).
     */
-  final case class PrevVotes(rated: Boolean = false, rejectedBy: Option[Int] = None)
+  final case class PrevVotes(rated: Boolean = false, rejectedBy: Option[Int] = None, grades: Boolean = false)
 
   /** What the steps of one job need besides its state: built by `prepare`. */
   final case class Context(
@@ -739,7 +744,7 @@ object DistributionSource {
     * previous-round rejection again in each window.
     */
   private def votesCond(prevIds: Seq[Long], votes: PrevVotes): SQLSyntax = {
-    val rated = if (votes.rated) sqls"AND ${VoteSql.positive()}" else sqls""
+    val rated = if (votes.rated) sqls"AND ${ratedVote(votes)}" else sqls""
     val notRejected = votes.rejectedBy.fold(sqls"")(n =>
       sqls"""AND NOT EXISTS (SELECT 1 FROM vote r
              WHERE r.page_id = s.page_id AND r.round_id IN ($prevIds) AND ${VoteSql.rejected(VoteSql.r)}
@@ -747,11 +752,16 @@ object DistributionSource {
     sqls"$rated $notRejected"
   }
 
-  /** A file's aggregates in one previous round, over its vote rows `s` read: the rate sum `rs`,
-    * the rows `c` and the rated rows `v`.
+  /** A rated vote of the previous rounds: a yes/no round's yes, a rated round's any vote. */
+  private def ratedVote(votes: PrevVotes): SQLSyntax =
+    if (votes.grades) VoteSql.voted() else VoteSql.positive()
+
+  /** A file's aggregates in one previous round, over its vote rows `s` read: the rate sum `rs`
+    * (a rated round's of grades, a ✗ as 0), the rows `c` and the rated rows `v`.
     */
   private def roundAggregates(votes: PrevVotes): SQLSyntax =
-    sqls"SUM(s.rate) rs, COUNT(*) c, SUM(${VoteSql.positive()}) v"
+    if (votes.grades) sqls"SUM(${VoteSql.grade()}) rs, COUNT(*) c, SUM(${VoteSql.voted()}) v"
+    else sqls"SUM(s.rate) rs, COUNT(*) c, SUM(${VoteSql.positive()}) v"
 
   /** Images of the round never come back: the anti-join that makes a resume idempotent.
     * Nor do those with votes of the round moved aside (V63): they are in the round's count
@@ -844,7 +854,8 @@ object DistributionSource {
         case None      => Some(ImageWithRating(image, Seq(entry), count, approvalsFromDb = Some(rated)))
       }
     }
-    merged.values.toSeq
+    // a rated round's rated rows are its votes, a ✗ included (ImageWithRating.ratedVotes)
+    merged.values.toSeq.map(f => if (votes.grades) f.copy(votedFromDb = f.approvalsFromDb) else f)
   }
 
   /** The images of `ids` not yet in the round, by page id. */
@@ -918,7 +929,7 @@ object DistributionSource {
         val (pageId, sum, count, rated) = (rs.long(1), rs.long(2), rs.long(3), rs.long(4))
         pageId -> ((img: Image) =>
           ImageWithRating(img, Seq(Vote(pageId, juryId = 0, roundId = 0, rate = sum.toInt)), count.toInt,
-            approvalsFromDb = Some(rated.toInt)))
+            approvalsFromDb = Some(rated.toInt), votedFromDb = Option.when(votes.grades)(rated.toInt)))
       }
       .list()
   }

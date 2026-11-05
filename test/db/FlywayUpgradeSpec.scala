@@ -360,12 +360,13 @@ class FlywayUpgradeSpec extends Specification with BeforeAll with AfterAll {
     }
   }
 
-  /** V91's rollback SQL after reopen (docs/plans/2026-11-02-round-images-two-step.md, §18):
-    * metadata only, back to nullable columns without a default.
+  /** V91's rollback SQL after reopen (docs/plans/2026-11-02-round-images-two-step.md, §18): back
+    * to nullable columns without a default. Not INSTANT: MariaDB makes a column nullable instantly
+    * only in ROW_FORMAT=REDUNDANT tables (ours are DYNAMIC, V55.1), so it is an online rebuild too.
     */
   private val v91Rollback = Seq(
-    "ALTER TABLE vote MODIFY rate INT NULL DEFAULT NULL, ALGORITHM = INSTANT",
-    "ALTER TABLE vote_aside MODIFY rate INT NULL DEFAULT NULL, ALGORITHM = INSTANT",
+    "ALTER TABLE vote MODIFY rate INT NULL DEFAULT NULL, ALGORITHM = INPLACE, LOCK = NONE",
+    "ALTER TABLE vote_aside MODIFY rate INT NULL DEFAULT NULL, ALGORITHM = INPLACE, LOCK = NONE",
     "DELETE FROM flyway_schema_history WHERE version = '91'")
 
   private def statements(file: String): Seq[String] =
@@ -415,6 +416,37 @@ class FlywayUpgradeSpec extends Specification with BeforeAll with AfterAll {
                 (Using.resource(connect("fw_v91_back"))(c => rows(c, "SELECT rate FROM vote WHERE id = 2")(_.getInt(1))) === List(0))
             }
         }
+    }
+  }
+
+  /** V92's rollback SQL after reopen (docs/plans/2026-11-02-round-images-two-step.md, §18). */
+  private val v92Rollback = Seq(
+    "ALTER TABLE round DROP COLUMN worst_mark, ALGORITHM = INSTANT",
+    "DELETE FROM flyway_schema_history WHERE version = '92'")
+
+  "V92's worst mark" should {
+    "add the option, off for every round, rerun as a no-op, and roll back to V91's schema" in {
+      emptyDb("fw_v91")
+      flyway("fw_v91", production.copy(target = Some("91"))).migrate()
+      emptyDb("fw_v92_back")
+      flyway("fw_v92_back", production.copy(target = Some("91"))).migrate().success must beTrue
+      Using.resource(connect("fw_v92_back"))(c => run(c, Seq(
+        "INSERT INTO round (id, number, contest_id, rates, created_at) VALUES (1, 1, 1, 10, '2020-01-01 00:00:00')")))
+      flyway("fw_v92_back", production.copy(target = Some("92"))).migrate().success must beTrue
+      val once = schema("fw_v92_back")
+      val stored = Using.resource(connect("fw_v92_back"))(c =>
+        rows(c, "SELECT worst_mark, CAST(created_at AS CHAR) FROM round")(rs => rs.getBoolean(1) -> rs.getString(2)))
+      (stored === List(false -> "2020-01-01 00:00:00")) and {
+        Using.resource(connect("fw_v92_back"))(c => run(c, statements("V92__Round_worst_mark.sql")))
+        schema("fw_v92_back") === once
+      } and {
+        Using.resource(connect("fw_v92_back"))(c => run(c, v92Rollback))
+        def tablesOnly(s: String) = s.split(";\n\n").filterNot(_.matches("(?s)^\\w+: \\d+ rows.*")).mkString(";\n\n")
+        (history("fw_v92_back").map(_.split(" \\| ")(1)) === upTo("91")) and
+          (tablesOnly(schema("fw_v92_back")) === tablesOnly(schema("fw_v91"))) and
+          (flyway("fw_v92_back", production.copy(target = Some("92"))).migrate().success must beTrue) and
+          (schema("fw_v92_back") === once)
+      }
     }
   }
 

@@ -9,7 +9,9 @@ import scalikejdbc._
   * ([[org.intracer.wmua.BinaryOrder]], [[org.intracer.wmua.AverageRule]]), and the same text
   * names the same column in every list's order and rank vocabulary.
   *
-  * The values: 0 unrated; a yes/no round's 1 and -1; a rated round's stars 1…N.
+  * The values (`vote.rate`, NOT NULL DEFAULT 0 since V91): 0 unrated; a yes/no round's 1 and -1;
+  * a rated round's stars 1…N, and -1 for its ✗ (the worst mark, `round.worst_mark`, V92), which
+  * counts as 0 in every average and total ([[grade]]) and as a vote ([[voted]]).
   */
 object VoteSql {
 
@@ -28,7 +30,7 @@ object VoteSql {
   /** A yes, or stars (in a criteria round, every criterion rated). */
   def positive(rate: SQLSyntax = s): SQLSyntax = sqls"$rate > 0"
 
-  /** A no. */
+  /** A no, or a ✗. */
   def rejected(rate: SQLSyntax = s): SQLSyntax = sqls"$rate < 0"
 
   /** Not rated yet, or cleared. */
@@ -37,9 +39,22 @@ object VoteSql {
   /** A yes/no round's yes, as an equality (the round's `(round_id, rate)` index reads it). */
   def selected(rate: SQLSyntax = s): SQLSyntax = sqls"$rate = 1"
 
-  /** Any vote: yes or no, or stars. */
+  /** Any vote: yes or no, stars or ✗. */
   def voted(rate: SQLSyntax = s): SQLSyntax = sqls"$rate <> 0"
 
-  /** A rated round's grade: the stars, anything below as 0. */
+  /** A rated round's grade: the stars, a ✗ as 0. */
   def grade(rate: SQLSyntax = s): SQLSyntax = sqls"GREATEST($rate, 0)"
+
+  /** The sum of a file's vote rows `s`' rates, grouped by file: a yes/no round's approvals less
+    * its rejections. As text: a list's order and rank column, the same in every vocabulary.
+    */
+  val RateSum: String = "sum(s.rate)"
+
+  /** The sum of a file's vote rows `s`' grades, grouped by file: a rated round's score sum, a ✗ as
+    * 0 (the user's decision, 2026-11-05). As text, as [[RateSum]].
+    */
+  val GradeSum: String = s"sum(${grade().value})"
+
+  /** A file's rated votes in a rated round, grouped by file: any vote, a ✗ included. */
+  val VotedCount: String = s"SUM(${voted().value})"
 }

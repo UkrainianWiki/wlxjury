@@ -7,7 +7,7 @@ import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 
 /** V91's cost on the Gatling fixture DB (docs/plans/2026-11-02-round-images-two-step.md §18):
-  * its rollback SQL (both columns back to nullable, metadata only), then V91's statements
+  * its rollback SQL (both columns back to nullable, an online rebuild too), then V91's statements
   * timed one by one (the UPDATEs of NULL rates, the online rebuild of `vote`, then of
   * `vote_aside`), `bench.runs` times; and whether the columns end NOT NULL DEFAULT 0. The fixture
   * is built at the latest migration, so each run starts from the rollback. Run with SQL logging
@@ -27,8 +27,8 @@ object VoteRateNotNullBenchmark {
   implicit private val session: DBSession = AutoSession
 
   private val rollback = Seq(
-    "ALTER TABLE vote MODIFY rate INT NULL DEFAULT NULL, ALGORITHM = INSTANT",
-    "ALTER TABLE vote_aside MODIFY rate INT NULL DEFAULT NULL, ALGORITHM = INSTANT")
+    "ALTER TABLE vote MODIFY rate INT NULL DEFAULT NULL, ALGORITHM = INPLACE, LOCK = NONE",
+    "ALTER TABLE vote_aside MODIFY rate INT NULL DEFAULT NULL, ALGORITHM = INPLACE, LOCK = NONE")
 
   private val v91: Seq[String] =
     new String(java.nio.file.Files.readAllBytes(

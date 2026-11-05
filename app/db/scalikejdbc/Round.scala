@@ -62,6 +62,9 @@ case class Round(
     // how a rated round averages a file's rates (V90): every view of its results and a next
     // round's top-N and "min average rate" from it use it
     averageRule: AverageRule = AverageRule.Default,
+    // a rated round's worst mark (V92): jurors may give a file ✗, stored as rate -1 and counted
+    // as 0 in every average and total ([[takesWorstMark]]); off by default
+    worstMark: Boolean = false,
     // the number of a criteria round's criteria, read where its results are drawn
     // (perCriterion: the galleries, the large view); not loaded with the round
     criteriaCount: Int = 1,
@@ -100,12 +103,24 @@ case class Round(
 
   /** A juror's vote the round takes, in its stored units: -1, 0 or 1 in a binary round; 0
     * (unrated) or from a half star or a star up to [[maxRate]] in a rated one, also for each
-    * criterion; none in a comments-only round.
+    * criterion, and -1 (✗) where the round [[takesWorstMark]]; none in a comments-only round.
     */
   def acceptsRate(rate: Int): Boolean =
     if (isBinary) rate >= Vote.Rejected && rate <= Vote.Selected
     else if (rates.id == Round.commentsOnlyRound.id) false
-    else Vote.isUnrated(rate) || (rate >= rates.minRate && rate <= maxRate)
+    else Vote.isUnrated(rate) || (rate >= rates.minRate && rate <= maxRate) || (rate == Vote.Rejected && takesWorstMark)
+
+  /** Its jurors may give a file ✗ (the worst mark, rate -1): a rated round without criteria with
+    * the option on. A yes/no round's -1 is its "no", not this; a criteria round's votes are per
+    * criterion, and never ✗ (the round form refuses the option for both).
+    */
+  def takesWorstMark: Boolean = worstMark && isRated && !hasCriteria
+
+  /** Its votes reject files: a yes/no round's "no", or a rated round's ✗ where it has the worst
+    * mark. A next round from it may leave out the files rejected by at least N jurors
+    * ([[rejectedByFilter]]).
+    */
+  def rejects: Boolean = isBinary || (worstMark && isRated)
 
   /** The stars of a file's result: the round's, also in a criteria round, whose result is
     * drawn per criterion ([[perCriterion]]).
@@ -314,7 +329,8 @@ object Round extends RoundRepo with CRUDMapper[Round] {
       freezeCount = rs.intOpt(c.freezeCount).getOrElse(0),
       excludeCoi = rs.booleanOpt(c.excludeCoi).getOrElse(false),
       topBinaryOrder = rs.stringOpt(c.topBinaryOrder).flatMap(BinaryOrder.parse),
-      averageRule = AverageRule.fromStored(rs.stringOpt(c.averageRule))
+      averageRule = AverageRule.fromStored(rs.stringOpt(c.averageRule)),
+      worstMark = rs.booleanOpt(c.worstMark).getOrElse(false)
     ).withFixedCategories
 
   def create(round: Round)(implicit session: DBSession = AutoSession): Round = {
@@ -354,6 +370,7 @@ object Round extends RoundRepo with CRUDMapper[Round] {
           column.excludeCoi -> round.excludeCoi,
           column.topBinaryOrder -> round.topBinaryOrder.map(_.param),
           column.averageRule -> round.averageRule.param,
+          column.worstMark -> round.worstMark,
           column.hasCriteria -> round.criterionIds.nonEmpty
         )
     }.updateAndReturnGeneratedKey()
@@ -365,14 +382,17 @@ object Round extends RoundRepo with CRUDMapper[Round] {
     round.copy(id = Some(id), hasCriteria = round.criterionIds.nonEmpty)
   }
 
-  /** The round form's edit: its name and its average rule. Starting and stopping it is
-    * [[setActiveGuarded]]'s. The rule may change at any time: it changes how results are shown,
-    * not the votes; a distribution from the round reads the rule recorded in its job's settings
-    * when it was queued (`RoundService`), so a change applies to the next one.
+  /** The round form's edit: its name, its average rule and its worst mark. Starting and stopping
+    * it is [[setActiveGuarded]]'s. The rule may change at any time: it changes how results are
+    * shown, not the votes; a distribution from the round reads the rule recorded in its job's
+    * settings when it was queued (`RoundService`), so a change applies to the next one. The worst
+    * mark too: turned off, the ✗ votes given stay (shown, and counted as 0), and no new one is
+    * taken.
     */
   def updateRound(id: Long, round: Round): Unit =
     // created_at set to itself: production's has ON UPDATE CURRENT_TIMESTAMP (V86)
-    sql"""UPDATE round SET name = ${round.name}, average_rule = ${round.averageRule.param}, created_at = created_at
+    sql"""UPDATE round SET name = ${round.name}, average_rule = ${round.averageRule.param},
+            worst_mark = ${round.worstMark}, created_at = created_at
           WHERE id = $id""".update(): Unit
 
   /** The round form's "Leave out conflicts of interest", for a round with none of them to

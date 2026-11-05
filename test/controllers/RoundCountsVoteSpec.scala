@@ -28,10 +28,11 @@ class RoundCountsVoteSpec extends PlaySpecification with PlayTestDb {
   private var lastUser = 0
 
   /** A round of `rates` with two jurors and three files, each juror assigned every file. */
-  private def fixture(rates: Rates, halfStar: Boolean = false, criteria: Seq[Long] = Nil): Fixture = {
+  private def fixture(rates: Rates, halfStar: Boolean = false, criteria: Seq[Long] = Nil,
+      worstMark: Boolean = false): Fixture = {
     val contest = contestDao.create(None, "WLE", 2024, "Ukraine")
     val round = roundDao.create(Round(None, 1, Some("Round"), contestId = contest.getId, rates = rates, active = true,
-      halfStar = halfStar, criterionIds = criteria))
+      halfStar = halfStar, criterionIds = criteria, worstMark = worstMark))
     val jurors = (1 to 2).map { _ =>
       lastUser += 1
       userDao.create(User(s"Juror $lastUser", s"juror$lastUser@example.com", None, Set("jury"), contestId = contest.id))
@@ -131,6 +132,65 @@ class RoundCountsVoteSpec extends PlaySpecification with PlayTestDb {
         Seq(large(app, f, j1, 1L, 8, criterion = Some(2L)), large(app, f, j2, 1L, 3, criterion = Some(1L)),
           large(app, f, j2, 1L, 4, criterion = Some(2L))).map(status(_))
         (partly === ((Nil, Counts(2, 0, 0, 0, 0)))) and recounted(f) and (counts(f).head === Counts(2, 2, 2, 0, 21))
+      }
+    }
+  }
+
+  private def rate(f: Fixture, juror: User, pageId: Long): Int =
+    VoteJdbc.findBy(pageId, juror.getId, f.round.getId).get.rate
+
+  "a rated round's worst mark (✗) [J-38]" should {
+    "be taken from the gallery and the large view as -1, mark its file, count as voted and as a rejection" in {
+      testDbApp { app =>
+        val f = fixture(Round.ratesById(5), worstMark = true)
+        val Seq(j1, j2) = f.jurors
+        val statuses = Seq(gallery(app, f, j1, 1L, -1), large(app, f, j2, 1L, 4), large(app, f, j1, 2L, -1)).map(status(_))
+        val marked = entries(f.round.getId)
+        (statuses === Seq(OK, SEE_OTHER, SEE_OTHER)) and (marked === Seq(1L, 2L)) and
+          (Seq(rate(f, j1, 1L), rate(f, j2, 1L), rate(f, j1, 2L)) === Seq(-1, 4, -1)) and recounted(f) and
+          // (assigned, voted, approvals, rejections, rate_sum): the grades' sum is rate_sum + rejections
+          (counts(f) === Seq(Counts(2, 2, 1, 1, 3), Counts(2, 1, 0, 1, -1), Counts(2, 0, 0, 0, 0)))
+      }
+    }
+
+    "be cleared apart (back to 0, unrated), the clear marking the file too" in {
+      testDbApp { app =>
+        val f = fixture(Round.ratesById(5), worstMark = true)
+        val Seq(j1, _) = f.jurors
+        status(gallery(app, f, j1, 1L, -1))
+        recounted(f)
+        status(large(app, f, j1, 1L, 0))
+        val marked = entries(f.round.getId)
+        (rate(f, j1, 1L) === 0) and (marked === Seq(1L)) and recounted(f) and (counts(f).head === Counts(2, 0, 0, 0, 0))
+      }
+    }
+
+    "be refused with 400 in a rated round without the option, the vote left as it was" in {
+      testDbApp { app =>
+        val f = fixture(Round.ratesById(5))
+        val Seq(j1, _) = f.jurors
+        status(gallery(app, f, j1, 1L, 3))
+        val tile = gallery(app, f, j1, 1L, -1)
+        val largeView = large(app, f, j1, 1L, -1)
+        (status(tile) === BAD_REQUEST) and (contentAsJson(tile) \ "error").as[String] === "invalid_rate" and
+          (status(largeView) === BAD_REQUEST) and (rate(f, j1, 1L) === 3)
+      }
+    }
+
+    "be refused in a criteria round, whatever its stored option (its votes are per criterion)" in {
+      testDbApp { app =>
+        val f = fixture(Round.ratesById(10), criteria = Seq(1L, 2L), worstMark = true)
+        val Seq(j1, _) = f.jurors
+        (status(large(app, f, j1, 1L, -1, criterion = Some(1L))) === BAD_REQUEST) and
+          (status(gallery(app, f, j1, 1L, -1)) === BAD_REQUEST) and (rate(f, j1, 1L) === 0)
+      }
+    }
+
+    "leave a yes/no round's -1, its no, as it was" in {
+      testDbApp { app =>
+        val f = fixture(Round.binaryRound)
+        val Seq(j1, _) = f.jurors
+        (status(gallery(app, f, j1, 1L, -1)) === OK) and (rate(f, j1, 1L) === -1)
       }
     }
   }

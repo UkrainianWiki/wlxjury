@@ -11,8 +11,8 @@ import java.net.URLEncoder
 import java.nio.charset.StandardCharsets.UTF_8
 
 /** Which of a round's files a list has, by the viewer's votes on them: all, the unrated, the
-  * rated (above 0: a binary round's selected), or those of one rate (a binary round's selected
-  * or rejected, a rated round's stars).
+  * rated (a rated round's: any vote, stars or a ✗; the filter is a rated round's only), or those
+  * of one rate (a binary round's selected or rejected, a rated round's stars).
   *
   * @param param its value of a list URL's `filter`
   */
@@ -24,7 +24,7 @@ sealed abstract class VoteFilter(val param: String) {
 
   /** Whether a file of this rate is in the list, as the query's `rate` and `rated` have it. */
   def matches(rate: Int): Boolean =
-    this.rate.forall(_ == rate) && rated.forall(r => if (r) Vote.isPositive(rate) else Vote.isUnrated(rate))
+    this.rate.forall(_ == rate) && rated.forall(r => if (r) Vote.isVoted(rate) else Vote.isUnrated(rate))
 
   /** The filter in a round: itself if a round of its kind has it ([[VoteFilter.ofRound]]),
     * else all files. A binary round's selected (`Rate(1)`) is not a rated round's "rated 1",
@@ -208,6 +208,8 @@ final case class RoundList(
       // grouped rows count their approvals and rejections: a yes/no round's tally, a rated
       // round's rated votes (the denominator of AverageRule.Rated)
       tally = true,
+      // a rated round's sums are of grades, a ✗ as 0, and its rated votes any vote
+      grades = !round.isBinary,
       subRegions = round.specialNomination.contains("Віа Регіа")
     )
 
