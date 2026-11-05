@@ -120,11 +120,12 @@ class RoundController @Inject() (
       submitToken: Option[String] = None
   )(implicit request: RequestHeader): Html = {
     val contestId = round.contestId
+    val rounds = knownRounds.getOrElse(Round.findByContest(contestId))
     views.html.editRound(
       user,
       form,
       round.id.isEmpty,
-      knownRounds.getOrElse(Round.findByContest(contestId)),
+      rounds,
       Some(contestId),
       knownJurors.getOrElse(round.id.fold(User.loadJurors(contestId))(User.findRoundJurors).sorted),
       jurorsMapping,
@@ -133,7 +134,8 @@ class RoundController @Inject() (
       submitToken,
       round.id.flatMap(roundsService.distributionJob),
       Some(coiCounts(contestId, round.id)),
-      CriterionJdbc.all()
+      CriterionJdbc.all(),
+      round.id.flatMap(id => RoundController.ScoreRuleWarning.of(id, rounds))
     )
   }
 
@@ -597,6 +599,37 @@ object RoundController {
   }
 
   private val RequirementFailed = "requirement failed: "
+
+  /** The round form's note beside the score rule of a rated round with a rated vote: a change
+    * re-scores and re-orders its results on every page at once (reads compute the score from
+    * the rule-independent votes and counts; nothing runs in the background), a distribution
+    * already queued keeps the rule it was queued with, and `laterRounds` took their top-N or
+    * minimum score from it when they were created.
+    *
+    * @param storedRule the round's saved rule, which the page's script compares the select with
+    */
+  final case class ScoreRuleWarning(storedRule: org.intracer.wmua.AverageRule, laterRounds: Seq[Round]) {
+
+    /** The later rounds as the note names them: each one's number, and its name if it has one. */
+    def laterRoundsText: String =
+      laterRounds.map(r => r.number.toString + r.name.map(_.trim).filter(_.nonEmpty).fold("")(n => s" ($n)")).mkString(", ")
+  }
+
+  object ScoreRuleWarning {
+
+    /** The warning for round `roundId` of the contest's `rounds`, if a rated round with a rated vote. */
+    def of(roundId: Long, rounds: Seq[Round]): Option[ScoreRuleWarning] =
+      rounds.find(_.id.contains(roundId)).filter(_.isRated).filter(_ => VoteJdbc.hasRatedVote(roundId)).map { round =>
+        ScoreRuleWarning(round.averageRule, laterRounds(roundId, rounds))
+      }
+
+    /** The rounds that took a top-N or a minimum score from round `roundId`, by number. */
+    def laterRounds(roundId: Long, rounds: Seq[Round]): Seq[Round] =
+      rounds
+        .filter(r => r.deletedAt.isEmpty && r.previousIds.contains(roundId) &&
+          (r.topImages.exists(_ > 0) || r.prevMinAvgRate.isDefined))
+        .sortBy(_.number)
+  }
 
   private val TokenPattern = "[0-9a-fA-F-]{36}".r
 
