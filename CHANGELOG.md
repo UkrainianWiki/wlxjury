@@ -102,6 +102,12 @@ Developed 2026-11-02 to 2026-11-03, PRs #232–#236.
   sum. Rounds with the old hidden "optional rate" flag become total-of-the-rates rounds: they
   show the sum instead of the sum over the round's active jurors (same order), and a next
   round's "min average rate" from one now compares the sum (the form's hint says so).
+- **A warning beside the file score on the round form** (admins; developed 2026-11-05): for a
+  rated round with votes, changing the score says that it re-scores and re-orders the round's
+  results on every page at once (nothing runs in the background), that a distribution already
+  queued keeps its rule, and which later rounds took their top files or minimum from this round
+  (their files don't change). In the page without JavaScript; with it, shown once the select
+  differs from the saved rule.
 
 **Development**
 
