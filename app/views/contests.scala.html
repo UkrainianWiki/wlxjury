@@ -47,7 +47,7 @@
                     <th>@Messages("name")</th>
                     <th>@Messages("country")</th>
                     <th>@Messages("year")</th>
-                    <th>@Messages("images")</th>
+                    <th>@Messages("files.source")</th>
                     <th>@Messages("users")</th>
                     <th>@Messages("current.round")</th>
                     <th>@Messages("id.template")</th>
@@ -102,12 +102,12 @@
                         <td>@Messages(contest.country)</td>
                         <td>@contest.year</td>
                         @* the source of the contest's files (a category or a list page), linking its files
-                           page, where it is imported and set; without one, a link saying so (never a
-                           link without text) *@
+                           page, where it is imported and set; without one, the state ("Not set") and a
+                           separate link to set it (never a link without text) *@
                         <td>
                             @contest.images.map(_.trim).filter(_.nonEmpty) match {
                                 case Some(source) => { <a href="@routes.ImageController.images(contest.getId)">@source</a> }
-                                case None => { <a href="@routes.ImageController.images(contest.getId)" class="text-body-secondary">@Messages("contest.images.empty")</a> }
+                                case None => { <span class="text-body-secondary">@Messages("files.source.none")</span> <a href="@routes.ImageController.images(contest.getId)">@Messages("files.source.set")</a> }
                             }
                         </td>
                         @* icon links styled as buttons (a link, not a button in a link), named for the

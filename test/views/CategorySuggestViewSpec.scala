@@ -83,7 +83,7 @@ class CategorySuggestViewSpec extends PlaySpecification {
         (doc.select("h1.visually-hidden").size === 0) and
         (h2.get(0) === messages("import.from.list.page.images.category")) and (h2.get(1) === messages("contests.list"))
     }
-    "link a contest's files page by its source, or by words saying it has none, never by an empty link" in {
+    "link a contest's files page by its source, or say it is not set beside a link to set it, never an empty link" in {
       import scala.jdk.CollectionConverters._
       val noSource = contest.copy(id = Some(2), images = None)
       val blank = contest.copy(id = Some(3), images = Some("  "))
@@ -92,8 +92,12 @@ class CategorySuggestViewSpec extends PlaySpecification {
         Form(ignored(contest)), Form(single("source" -> nonEmptyText)))))
       val links = doc.select("tbody a[href]").asScala.toSeq
       (links.forall(a => a.text.trim.nonEmpty || a.attr("aria-label").nonEmpty) must beTrue) and
-        (links.count(_.text == messages("contest.images.empty")) === 2) and
-        (links.count(a => contest.images.contains(a.text)) === 1)
+        (links.count(_.text == messages("files.source.set")) === 2) and
+        // the state is text, not part of the link
+        (doc.select("tbody span").asScala.count(_.text == messages("files.source.none")) === 2) and
+        (links.exists(_.text.contains(messages("files.source.none"))) must beFalse) and
+        (links.count(a => contest.images.contains(a.text)) === 1) and
+        (doc.select("thead th").eachText().contains(messages("files.source")) must beTrue)
     }
     "name its icon links, and its import field apart from the field's example" in {
       val doc = org.jsoup.Jsoup.parse(contentAsString(views.html.contests(root, Seq(contest), Seq(contest),
