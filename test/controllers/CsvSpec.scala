@@ -60,7 +60,7 @@ class CsvSpec extends Specification {
       )
     }
 
-    "give a rated round's worst marks (✗) after the score, counted as 0, the votes as stored, with a legend row" in {
+    "give a rated round's worst marks in words after the score, counted as 0, the votes as stored, with a legend row" in {
       val jurors = (1 to 3).map(i => User(s"Juror$i", "", Some(i.toLong)))
       val round = ratedRound(10).copy(worstMark = true)
       val worst = ImageWithRating(Image(0, "File:a.jpg"),
@@ -68,9 +68,11 @@ class CsvSpec extends Specification {
       val clean = ImageWithRating(Image(1, "File:b.jpg"), Seq(Vote(1, 1, 0, rate = 4), Vote(1, 2, 0, rate = 6)))
       val rows = Csv.exportRates(Seq(worst, clean), jurors, round)
       // the same average, 5.00; the sums 15 and 10 rank them
-      (rows(1) === Seq("1", "File:a.jpg", "5.00 (15 / 3) ✗ 1", "7", "8", "-1")) and
+      (rows(1) === Seq("1", "File:a.jpg", "5.00 (15 / 3); worst marks: 1", "7", "8", "-1")) and
         (rows(2) === Seq("2", "File:b.jpg", "5.00 (10 / 2)", "4", "6", "")) and
         (rows.last === Csv.WorstMarkLegend) and
+        // the legend names the form the cells have, and no glyph
+        (rows.last(1) must contain("\"worst marks: n\"")) and (rows.flatten.mkString must not(contain("✗"))) and
         (Csv.exportRates(Seq(clean), jurors, ratedRound(10)).size === 2)
     }
   }

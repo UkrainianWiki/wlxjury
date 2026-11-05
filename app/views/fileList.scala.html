@@ -145,8 +145,8 @@
                         @if(binaryVotes) {
                             <td class="text-center">@file.jurorRate(juror).map(rate => binaryVote(rate, unrated = true))</td>
                         } else {
-                            @* a rated round's ✗ (rate -1) as its mark *@
-                            <td> @file.jurorRate(juror).map { rate => @if(org.intracer.wmua.Vote.isRejected(rate)) {<span title="@Messages("vote.worst")"><span aria-hidden="true">✗</span><span class="visually-hidden">@Messages("vote.worst")</span></span>} else {@rate} } </td>
+                            @* a rated round's worst mark (rate -1): its icon, the words for screen readers *@
+                            <td> @file.jurorRate(juror).map { rate => @if(org.intracer.wmua.Vote.isRejected(rate)) {<span class="wlx-worst-marks" title="@Messages("vote.worst")"><i class="bi bi-x-lg wlx-worst-mark" aria-hidden="true"></i><span class="visually-hidden">@Messages("vote.worst")</span></span>} else {@rate} } </td>
                         }
                     }
                 }

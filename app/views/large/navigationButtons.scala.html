@@ -30,13 +30,13 @@
 }
 
 @* the number above the stars `id`: their rate in stars (`score` and the criteria's, as the stars'
-   data-score has them), 3.5 in a half-star round, an average to two decimals, "–" unrated, "✗" a
-   juror's ✗ (`worst`); hovering a star shows the rate a click gives (large-rate.js). Screen
-   readers read the text beside it. *@
+   data-score has them), 3.5 in a half-star round, an average to two decimals, "–" unrated, the
+   worst mark's icon for a juror's worst mark (`worst`); hovering a star shows the rate a click
+   gives (large-rate.js). Screen readers read the text beside it. *@
 @rateNumber(id: String, stars: Double, worst: Boolean = false) = {
     @defining(BigDecimal(stars).setScale(2, BigDecimal.RoundingMode.HALF_UP).bigDecimal.stripTrailingZeros.toPlainString) { rate =>
     <div class="large-rate">
-        <span id="@id" class="large-rate-number" aria-hidden="true">@if(worst) {✗} else if(stars > 0) {@rate} else {&ndash;}</span>
+        <span id="@id" class="large-rate-number" aria-hidden="true">@if(worst) {<i class="bi bi-x-lg wlx-worst-mark" aria-hidden="true"></i>} else if(stars > 0) {@rate} else {&ndash;}</span>
         <span class="visually-hidden">@if(worst) {@Messages("large.rate.worst")} else if(stars > 0) {@Messages("large.rate", rate)} else {@Messages("large.rate.none")}</span>
     </div>
     }

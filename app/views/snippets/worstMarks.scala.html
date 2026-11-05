@@ -1,13 +1,14 @@
 @import db.scalikejdbc.Round
 @import org.intracer.wmua.ImageWithRating
 @(file: ImageWithRating, round: Round)(implicit messages: Messages)
-@* A rated round's ✗ (the worst mark, rate -1) beside a file's score: one juror's own vote's ✗,
-   or "✗ n" of all the jurors' votes; nothing in a yes/no round (its tally counts rejections) or
-   for none. The mark hidden from screen readers, which read the text. *@
+@* A rated round's worst marks (rate -1) beside a file's score: one juror's own vote's, or the
+   number of all the jurors' votes after the mark; nothing in a yes/no round (its tally counts
+   rejections) or for none. The mark is the vote controls' icon (bi-x-lg), hidden from screen
+   readers, which read the words. *@
 @if(!round.isBinary && file.worstMarks > 0) {
     @if(file.isWorstMark) {
-        <span class="wlx-worst-mark" title="@Messages("vote.worst")"><span aria-hidden="true">✗</span><span class="visually-hidden">@Messages("vote.worst")</span></span>
+        <span class="wlx-worst-marks" title="@Messages("vote.worst")"><i class="bi bi-x-lg wlx-worst-mark" aria-hidden="true"></i><span class="visually-hidden">@Messages("vote.worst")</span></span>
     } else {
-        <span class="wlx-worst-mark" title="@Messages("worst.marks", file.worstMarks)"><span aria-hidden="true">✗ @file.worstMarks</span><span class="visually-hidden">@Messages("worst.marks", file.worstMarks)</span></span>
+        <span class="wlx-worst-marks" title="@Messages("worst.marks", file.worstMarks)"><span aria-hidden="true"><i class="bi bi-x-lg wlx-worst-mark" aria-hidden="true"></i> @file.worstMarks</span><span class="visually-hidden">@Messages("worst.marks", file.worstMarks)</span></span>
     }
 }

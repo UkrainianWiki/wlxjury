@@ -12,17 +12,16 @@
        under the box, at its start *@
     <section class="large-box large-comments" aria-labelledby="comments">
         <h2 id="comments" class="h6 mb-2">@Messages("comments")</h2>
+        @* each on one line: the box keeps a comment's own line breaks (main.css: white-space:
+           pre-line), so the template adds none *@
         @for(msg <- comments) {
-            <div class="msg rounded mb-2">
-                <strong>@msg.username:</strong>
-                @msg.body
-            </div>
+            <div class="msg rounded mb-2"><strong>@msg.username:</strong> @msg.body</div>
         }
         @if(round.active) {
             @form(Call("POST", list.commentUrl(objectId)), Symbol("id") -> "addComment") {
                 @helper.CSRF.formField
                 <input type="hidden" name="id" id="id" value="0" />
-                <label for="text" class="visually-hidden">@Messages("your.comment.here")</label>
+                <label for="text" class="visually-hidden">@Messages("your.comment")</label>
                 <textarea class="form-control imageComment" id="text" name="text" rows="3" placeholder="@Messages("your.comment.here")"></textarea>
                 <div class="mt-2">
                     <input type="submit" class="btn btn-primary btn-sm" id="saySomething" value="@Messages("submit.comment")" />

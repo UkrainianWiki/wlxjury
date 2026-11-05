@@ -75,15 +75,21 @@ img.cropped {
 
 
 /* the large view's comments (large/commentsView.scala.html): the column's width up to a
-   readable line; the box is Bootstrap's form-control, the button below it */
+   readable line, starting where the image does (no .large-box padding on the left); the box is
+   Bootstrap's form-control, the button below it; a comment keeps its own line breaks */
 .large-comments {
     max-width: 40rem;
+}
+/* both classes: .large-box's padding (below) would otherwise win */
+.large-box.large-comments {
+    padding-left: 0;
 }
 
 .large-comments .msg {
     padding: .5rem .75rem;
     background: var(--bs-secondary-bg);
     color: var(--bs-body-color);
+    white-space: pre-line;
 }
 
 .imageComment {
@@ -359,7 +365,10 @@ a:has(> .btn) { text-decoration: none; }
 }
 .wlx-byrate-stars .wlx-tile-stars .wlx-tile-worst { font-size: 1rem; }
 .wlx-tile-stars .wlx-tile-worst.wlx-tile-worst-on { color: var(--bs-danger); }
-.wlx-worst-mark { color: var(--bs-danger-text-emphasis); white-space: nowrap; }
+/* a worst mark (rate -1) where results show it: the vote controls' icon (bi-x-lg), and with a
+   count of them beside it, on one line */
+.wlx-worst-mark, .wlx-worst-marks { color: var(--bs-danger-text-emphasis); }
+.wlx-worst-marks { white-space: nowrap; }
 /* the same stars in the juror's own by-rate list (galleryByRate.scala.html), in the line of
    the rank and the rate text, at the static stars' size; a file whose rate changed keeps its
    place until a reload, its rank greyed and dotted (its title says why) */

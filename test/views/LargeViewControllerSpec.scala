@@ -84,9 +84,10 @@ class LargeViewControllerSpec extends PlaySpecification {
         (keys.attr("data-vote-key-0") must startWith("/large/round/1/pageid/1/select/0?")) and
         (buttons.toSeq === Seq(
           ("/large/round/1/pageid/1/select/-1", "vote.worst", "true"), ("/large/round/1/pageid/1/select/0", "vote.clear", ""))) and
-        // the stars without raty's cancel icon; the number says ✗
+        // the stars without raty's cancel icon; the number is the worst mark's icon
         (worst.getElementById("rate-image").attr("data-cancel") === "false") and
-        (worst.select(".large-rate-number").text === "✗") and
+        (worst.select(".large-rate-number").text === "") and
+        (worst.select(".large-rate-number > i.bi-x-lg.wlx-worst-mark[aria-hidden=true]").size === 1) and
         (worst.select(".large-rate .visually-hidden").text === "large.rate.worst") and
         // the clear only once the file has a vote; a round without the option has neither, nor the keys
         (render(0).select(".large-worst [data-vote-url]").size === 1) and {

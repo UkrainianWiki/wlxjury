@@ -242,8 +242,16 @@
       holder.textContent = '';
       addStars(holder, item, options, function (rate) {
         var changed = rate !== atLoad;
-        // a ✗ as its mark, as galleryByRate.scala.html renders it
-        if (text) text.textContent = rate < 0 ? '✗' : String(rate);
+        // a worst mark as its icon, as galleryByRate.scala.html renders it
+        if (text) {
+          text.textContent = rate < 0 ? '' : String(rate);
+          if (rate < 0) {
+            var icon = document.createElement('i');
+            icon.className = 'bi bi-x-lg wlx-worst-mark';
+            icon.setAttribute('aria-hidden', 'true');
+            text.appendChild(icon);
+          }
+        }
         box.classList.toggle('wlx-rate-changed', changed);
         if (changed) box.setAttribute('title', title);
         else box.removeAttribute('title');
