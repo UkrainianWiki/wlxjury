@@ -196,8 +196,10 @@ at 1g (prod-like benchmark).
 `Restart=on-failure` (`conf/systemd/wlxjury.service.d/deployment.conf`): a clean restart beats a
 half-broken JVM. Known risk (R198-1, PR review triage on `origin/stack/series-doc`): a job step
 that runs out of memory is claimed again after its 60 s lease and crashes again, so the site
-restarts about once a minute until the job is cancelled in SQL. Until `claim` fails a job after
-repeated claims, keep steps small (4.3) and watch `job.attempts`.
+restarted about once a minute until the job was cancelled in SQL. *Fixed (run-hardening batch):*
+`claim` takes over such a job at most `jobs.maxAttempts` times (5, counted again from a Retry);
+the next poll fails it with `job.error.attempts`, so the site restarts at most 5 times. Keep
+steps small (4.3) all the same.
 
 **4.3 Chunks bound memory.** A step's memory is its chunk: the distribution step, the insert
 batch, the import page and `IN` lists have the sizes of db §1.4, §3.5 and §5.5. A bigger chunk

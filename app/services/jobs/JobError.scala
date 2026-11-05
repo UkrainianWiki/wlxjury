@@ -35,7 +35,13 @@ object JobError {
   /** The round has another number of images than the distribution added. */
   val CountMismatchKey = "job.error.count.mismatch"
 
+  /** Its runs kept ending without an outcome (`jobs.maxAttempts` claims): given up. */
+  val AttemptsKey = "job.error.attempts"
+
   def crashed(reference: String): JobError = JobError(CrashedKey, reference = Some(reference))
+
+  def attemptsExhausted(attempts: Int, reference: String): JobError =
+    JobError(AttemptsKey, Seq(attempts.toString), Some(reference))
 
   implicit val format: OFormat[JobError] = Json.using[Json.WithDefaultValues].format[JobError]
 

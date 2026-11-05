@@ -25,7 +25,20 @@ import scala.collection.mutable
   * @param position       images assigned so far: the juror rotation continues from it
   * @param candidatesSeen candidates read (the progress)
   * @param imagesBefore   the round's images this job didn't add (for the count check): counted
-  *                       by the job's first step
+  *                       by the job's first step, and moved by [[othersBefore]]'s change at the
+  *                       first step after each Retry
+  * @param othersBefore   the round's `round_image` rows not added by this job (`added_by_job_id`)
+  *                       when `imagesBefore` was last counted: the first step after a Retry adds
+  *                       their change since to `imagesBefore`, so files others added or removed in
+  *                       between (while it ran, while it was failed, while it waited in the queue)
+  *                       don't fail its count check. None in a state written before it existed:
+  *                       `imagesBefore` is then kept
+  * @param ownBefore      the round's rows added by this job (`added_by_job_id`) before the
+  *                       accounting of `imagesAdded` began (0, or after a rescan the rows of its
+  *                       earlier passes): the count check also requires exactly `ownBefore +
+  *                       imagesAdded` of them, so its own files that went missing fail it even
+  *                       when others' changes make the total come out right
+  * @param rebase         a Retry resumed the job from its cursor: its next step rebaselines
   * @param total          the number of candidates, for the progress
   * @param ranked         top-N: the chosen images, ascending
   * @param frozen         the previous rounds this job holds frozen
@@ -47,6 +60,9 @@ final case class DistributionState(
     imagesAdded: Long = 0L,
     rowsAdded: Long = 0L,
     imagesBefore: Option[Long] = None,
+    othersBefore: Option[Long] = None,
+    ownBefore: Option[Long] = None,
+    rebase: Boolean = false,
     total: Option[Long] = None,
     ranked: Seq[Long] = Nil,
     frozen: Seq[Long] = Nil,
@@ -273,7 +289,12 @@ class RoundDistributionHandler @Inject() (
 
   /** Freezes the previous rounds again and resumes. After a failed count check the round is
     * rescanned from the start with fresh accounting, as "Distribute new files" would: the
-    * images already in it are skipped, the missing ones added.
+    * images already in it are skipped, the missing ones added. After any other failure it
+    * resumes from its cursor, and its next step moves `imagesBefore` by the change of the
+    * files others added ([[DistributionState.othersBefore]], `rebase`): the round's count may
+    * have changed meanwhile (a file removed from the round, a repair), and the old baseline
+    * would fail the count check once for nothing. Its own files are checked exactly
+    * ([[DistributionState.ownBefore]]).
     */
   override def onRetry(job: Job, ctx: StepContext): JsObject = {
     implicit val session: DBSession = ctx.session
@@ -286,13 +307,23 @@ class RoundDistributionHandler @Inject() (
     Round.release(st.frozen, close = false) // nothing, normally: a failure released them
     Round.freeze(prevIds)
     val resumed =
-      if (!st.verifyFailed) st
+      if (!st.verifyFailed) st.copy(rebase = true)
       else
         st.copy(phase = if (listOnly(job)) Phase.List else Phase.Distribute, cursor = 0L, candidatesSeen = 0L,
-          imagesAdded = 0L, rowsAdded = 0L, imagesBefore = None, verifyFailed = false, listIndex = 0, missing = 0L,
+          imagesAdded = 0L, rowsAdded = 0L, imagesBefore = None, othersBefore = None, ownBefore = None,
+          rebase = false, verifyFailed = false, listIndex = 0, missing = 0L,
           missingTitles = Nil, coiLeftOut = 0L, coiTitles = Nil)
     Json.toJsObject(resumed.copy(frozen = prevIds))
   }
+
+  /** `imagesBefore` moved by the change in the round's files this job didn't add. */
+  private def rebaseline(st: DistributionState, roundId: Long, jobId: Long)(implicit session: DBSession) =
+    (st.imagesBefore, st.othersBefore) match {
+      case (Some(before), Some(others)) =>
+        val now = RoundImageJdbc.countNotAddedBy(roundId, jobId)
+        st.copy(imagesBefore = Some(before + now - others), othersBefore = Some(now), rebase = false)
+      case _ => st.copy(rebase = false)
+    }
 
   // ── steps ──────────────────────────────────────────────────────────────────
 
@@ -301,8 +332,14 @@ class RoundDistributionHandler @Inject() (
     val roundId = roundIdOf(job)
     val c = contexts.getOrElseUpdate(job.id, context(roundId))
     val st = stateOf(job) match {
-      case s if s.imagesBefore.isEmpty => s.copy(imagesBefore = Some(imageCount(roundId) - s.imagesAdded))
-      case s                           => s
+      case s if s.imagesBefore.isEmpty =>
+        val total = imageCount(roundId)
+        val own = RoundImageJdbc.countAddedBy(roundId, job.id)
+        s.copy(imagesBefore = Some(total - s.imagesAdded), othersBefore = Some(total - own),
+          ownBefore = Some(own - s.imagesAdded), rebase = false)
+      // the first step after a Retry: what others changed since the baseline isn't a mismatch
+      case s if s.rebase => rebaseline(s, roundId, job.id)
+      case s             => s
     }
 
     st.phase match {
@@ -394,9 +431,16 @@ class RoundDistributionHandler @Inject() (
       case Phase.Verify =>
         val count = imageCount(roundId)
         val expected = st.imagesBefore.getOrElse(0L) + st.imagesAdded
-        if (count != expected)
+        // its own files exactly: what it added is all there, whatever others changed
+        val own = st.ownBefore.map(_ => RoundImageJdbc.countAddedBy(roundId, job.id))
+        val ownExpected = st.ownBefore.map(_ + st.imagesAdded)
+        val reported =
+          if (count != expected) Some(expected)
+          else if (own != ownExpected) Some(count - own.get + ownExpected.get) // the total its own files should give
+          else None
+        if (reported.isDefined)
           StepResult.Failed(
-            JobError(JobError.CountMismatchKey, Seq(roundId, count, expected).map(_.toString)),
+            JobError(JobError.CountMismatchKey, Seq(roundId, count, reported.get).map(_.toString)),
             Json.toJsObject(st.copy(verifyFailed = true)),
             progress(st)
           )
