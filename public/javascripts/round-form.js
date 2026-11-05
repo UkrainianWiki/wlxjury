@@ -11,6 +11,9 @@
 // - a new round's criteria (#round-criteria), hidden and disabled (so not sent) for a yes/no
 //   or comments-only rating (#rates 1 or 0); an existing round's rating is fixed (its select
 //   disabled), and its criteria stay as they are;
+// - the worst mark's checkbox (#round-worst-mark), hidden and disabled (so not sent) for a
+//   yes/no or comments-only rating; "rejected by at least" (#rejectFilters, classes "round<id>"
+//   of the binary rounds and the rated ones with the worst mark) shown when one is chosen;
 // - the score rule's warning (#averageRule_warning_row, rendered for a rated round with a rated
 //   vote and shown as it is without scripts): shown only while #averageRule differs from the
 //   saved rule (its data-stored-rule);
@@ -46,7 +49,7 @@
   function previousRoundsChanged() {
     var vals = $(this).val() || [];
 
-    $('#selectFilters, #rateFilters').hide();
+    $('#selectFilters, #rateFilters, #rejectFilters').hide();
 
     if (vals.length) {
       $('#prevRoundFilters').show();
@@ -54,6 +57,9 @@
         return $('#selectFilters').hasClass('round' + v);
       });
       (anyBinary ? $('#selectFilters') : $('#rateFilters')).show();
+      // "rejected by at least": a yes/no round's "no" votes, a rated round's ✗ where it has the
+      // worst mark (#rejectFilters has their classes)
+      if (vals.some(function (v) { return $('#rejectFilters').hasClass('round' + v); })) $('#rejectFilters').show();
     } else {
       $('#prevRoundFilters').hide();
     }
@@ -113,6 +119,21 @@
     update();
   }
 
+  /** Shows the worst mark's checkbox for a rated rating only; disabled inputs aren't sent, so a
+    * yes/no or comments-only round gets none. An existing round's rating is fixed. */
+  function initWorstMark(doc) {
+    var rates = doc.getElementById('rates');
+    var box = doc.getElementById('round-worst-mark');
+    if (!rates || !box) return;
+    function update() {
+      var rated = Number(rates.value) > 1;
+      box.hidden = !rated;
+      Array.prototype.forEach.call(box.querySelectorAll('input'), function (i) { i.disabled = !rated; });
+    }
+    if (!rates.disabled) rates.addEventListener('change', update);
+    update();
+  }
+
   /** Shows the score rule's warning only while the select differs from the saved rule. */
   function initScoreRuleWarning(doc) {
     var select = doc.getElementById('averageRule');
@@ -151,6 +172,7 @@
     $('#jurors').change(jurorsChanged(t.distribution || {}));
     initCoiConfirm(doc);
     initCriteria(doc);
+    initWorstMark(doc);
     initScoreRuleWarning(doc);
     initLazyParts();
   }

@@ -523,11 +523,12 @@ P3 writes D16a's anew.
 - Production query before P2a: how many votes have a NULL rate. Count them as unrated
   (`COALESCE`) or normalise them to 0 in the backfill. **Goes to the ✗ item** (roadmap queue
   item 6, the user, 2026-11-05): `vote.rate` and `vote_aside.rate` made `NOT NULL DEFAULT 0`
-  after the user's pre-deploy count, NULLs set to 0 first.
+  after the user's pre-deploy count, NULLs set to 0 first. **Done: V91 (§18).**
 - B11 follow-up: `rateString`/`totalRate` show `rateSum` (rates below 0 as 0) while order and
   ranks use the SQL sum; decide what a rated round's vote below 0 means, then show a grouped row's
   `rate_sum`. **To be settled by the ✗ mark** (roadmap queue item 6, the user, 2026-11-05): a
-  rated round's −1 is a ✗, counted as 0.
+  rated round's −1 is a ✗, counted as 0. **Settled (§18):** the order, the ranks and every text
+  use the sum of grades (`SUM(GREATEST(s.rate, 0))`, the counts' `rate_sum + rejections`).
 - B12 pending a user decision (superseded by P2b if P2b ships).
 - Decided (user, 2026-11-03; D16a): in P3, `removeImage` marks the row `dq` (`dq_code =
   'manual'`, its votes moved aside as D7 does for CoI) instead of deleting it, so a removed file
@@ -2120,3 +2121,251 @@ No second full suite: the two fixes are a spec's expectation and the guard's all
 - `imageCountsByRate` (a yes/no round's statistics footer) and `byRoundMerged` still read the
   votes; small, not on a page an organizer reloads often.
 - The `optional_rate` column's drop (a later clean-up, after the rollback window).
+
+## 18. The worst mark (✗) results
+
+Branch `ukwikidev/worst-mark` (from `origin/stack/84-p2b-reads` `7f64460b`, PR #267, P2b; merged
+with its `83dcc488`), 2026-11-05. Roadmap queue item 6. Migrations **V91**
+(`V91__Vote_rate_not_null.sql`) and **V92** (`V92__Round_worst_mark.sql`). It settles §11's
+NULL-rate item (V91) and B11 (what a rated round's vote below 0 means: a ✗, counted as 0).
+
+### The user's decisions (2026-11-05)
+
+1. **The option.** `round.worst_mark`, off by default: jurors of a rated round may give a file ✗,
+   stored as `rate = -1`. 0 is unrated, stars 1…N unchanged. A yes/no round keeps −1/0/1 and never
+   has the option; a criteria round neither (the round form refuses both; a vote of −1 in a round
+   without the option, or in a criteria round whatever is stored, is a 400).
+2. **✗ counts as 0** in every average and total: the sum of grades is `SUM(GREATEST(rate, 0))` on
+   the votes and `rate_sum + rejections` on the counts. "The jurors who rated it" is any vote
+   (`rate <> 0`, the counts' `voted`). Under `rated`, the grades over the jurors with any vote; under
+   `assigned`, over its vote rows; under `sum`, the grades' sum.
+3. **A ✗ is a vote** in a juror's progress (the tabs' Rated, the statistics' rated column) and in
+   "the jurors who rated it". A cleared vote is 0, unrated; "cleared" isn't tracked apart.
+4. **A next round can leave out files with at least N ✗** of a rated source, the yes/no rounds'
+   `rejectedBy` extended (`Round.rejects`: a yes/no round, or a rated one with the option). The
+   aggregate views show "✗ n"; a juror's own views their ✗.
+5. **Give ✗ and clear apart**, by their own buttons and keys (below).
+6. **`vote.rate`, `vote_aside.rate` NOT NULL DEFAULT 0** (V91), the NULL handling removed.
+7. **The vote checks named** in Scala and SQL.
+
+### Migration V91
+
+```sql
+UPDATE vote SET rate = 0 WHERE rate IS NULL;
+UPDATE vote_aside SET rate = 0 WHERE rate IS NULL;
+-- each only while the column is still nullable (information_schema.COLUMNS.IS_NULLABLE = 'YES'),
+-- through EXECUTE IMMEDIATE, so a rerun rebuilds nothing:
+ALTER TABLE vote MODIFY rate INT NOT NULL DEFAULT 0, ALGORITHM = INPLACE, LOCK = NONE;
+ALTER TABLE vote_aside MODIFY rate INT NOT NULL DEFAULT 0, ALGORITHM = INPLACE, LOCK = NONE;
+```
+
+- The columns were `rate int(11) DEFAULT NULL` in both tables (the fixtures in `test/resources/db/`
+  and a fresh replay: V1's `rate int`, `vote_aside` `LIKE` it, V63). Their indexes (`vote_rate_idx`,
+  `vote_round_rate_idx`, `vote_jury_round_rate…`, `vote_round_jury_rate_idx`,
+  `vote_round_page_rate_idx` and `vote_aside`'s copies) are rebuilt with the table; none changes.
+  `vote_orphan` keeps its nullable column (an archive nothing reads).
+- **Not INSTANT:** NULL to NOT NULL is an online rebuild (`INPLACE, LOCK=NONE`: writes go on;
+  the statement fails rather than copies). MariaDB needs strict mode for it (the pre-deploy
+  `@@GLOBAL.sql_mode`); without, the ALTER is refused and V91 fails with nothing changed but the
+  UPDATEs (rerunnable).
+- `FlywayUpgradeSpec` "V91's NOT NULL rates" (10.6 and 10.11): NULL rates become 0, others kept
+  (a stored −1 too); both columns `NO` / default `0`; an insert without a rate is 0, an update to
+  NULL refused; a rerun of the script changes nothing; the rollback gives V90's schema and history;
+  a NULL written meanwhile becomes 0 on the forward again. The full chains (the V70 fixture, the
+  9.16.3 fresh V82 dump, `ConvertToInnoDbMigrationSpec` from production's V53 schema, whose
+  `selection` has no primary key) reach the fresh schema with V91 applied.
+
+**The NULL handling removed** (each checked): the rates read with `intOpt(..).getOrElse(0)`
+(`VoteJdbc.rateIn`'s rate before, `ImageJdbc.moveVotesBack`'s pairs, `CriteriaRate.updateRateIn`,
+the distribution's streamed rows), the recompute's `COALESCE(SUM(..), 0)` (`RoundCounts.votedCounts`),
+P2b's `COALESCE(SUM(s.rate), 0)` (`AverageRule.VoteTerms`), the grouped reader's `intOpt`, and
+`binaryPage`'s `COUNT(s.rate)` (now `COUNT(*)`). **Kept**, as not about NULL rates: the counts'
+overlay `COALESCE`s (a marked file without votes, its `LEFT JOIN`), invariant 5's (`drift`, a row
+without votes), `imageCountsByRate`'s outer sums (an empty round). V53's `COALESCE(rate, 0)` stays:
+migrations are immutable. The §17 note on the Unrated filter's difference for a NULL rate goes:
+`assigned > voted` is `s.rate = 0` now.
+
+### Migration V92
+
+```sql
+ALTER TABLE round
+  ADD COLUMN IF NOT EXISTS worst_mark BOOLEAN NOT NULL DEFAULT FALSE,
+  ALGORITHM = INSTANT;
+```
+
+Metadata only; every round reads `FALSE`. No CHECK: whether a round may have it depends on its
+rating and its criteria (`round_criterion`), which the round form and the vote check
+(`Round.takesWorstMark`) enforce. `FlywayUpgradeSpec` "V92's worst mark": off for an existing
+round, `created_at` unchanged, a rerun changes nothing, the rollback gives V91's schema, forward
+again the same.
+
+### Design
+
+- **Values and checks.** `Vote.Unrated` 0, `Selected` 1, `Rejected` −1; `Vote.isPositive` (a yes,
+  stars), `isRejected` (a no, a ✗), `isUnrated`, `isVoted` (any vote), `grade` (stars, a ✗ as 0).
+  SQL: `db.scalikejdbc.VoteSql` fragments over a rate column of a fixed alias (`positive`,
+  `rejected`, `unrated`, `selected`, `voted`, `grade`, and the texts `RateSum`, `GradeSum`,
+  `VotedCount` that name order and rank columns in every vocabulary). The first commit replaced the
+  comparisons (about 40, in 13 app files) with no change of behaviour; the ✗ commit changed only
+  the rated rounds' meaning.
+- **Which rounds a query is for.** A yes/no round's "rated" is a yes and its sum the rates' (its
+  Difference order, the legacy top-N); a rated round's "rated" is any vote and its sum of grades.
+  The vote source: `SelectionQuery.grades` (set by `RoundList` and the distribution's
+  `byRoundMerged` for rated rounds): the grouped `rate` is `sum(GREATEST(s.rate, 0))`, the rated
+  filter `s.rate <> 0`. The counts: `RoundImageQuery.grades`: the sum `rate_sum + rejections`, the
+  Rated filter `voted > 0`; `CountTerms` (sum of grades, `voted`, `assigned`) and
+  `AverageRule.VoteTerms` (`GradeSum`, `VotedCount`, `COUNT(*)`) keep the two sources in parity. The
+  rank key's sum column is `GradeSum` (in memory `rateSum`, the grades). The streamed distribution:
+  `PrevVotes.grades` (the per-round sum of grades, any vote as rated, `votedFromDb` on its
+  candidates). In rated rounds without the option no vote is below 0, so their results are
+  unchanged.
+- **The counts need no change**: P2a counts `voted` (`rate <> 0`), `approvals` (`> 0`),
+  `rejections` (`< 0`) and `rate_sum` (`SUM(rate)`) already; a ✗ or a clear changes the rate, so
+  `VoteJdbc.rateIn` marks the file (`RoundCountsVoteSpec`).
+- **`ImageWithRating`:** `ratedVotes` any vote (a grouped row's `votedFromDb`, else approvals plus
+  rejections); `rateSum` the grades; `totalRate` of one juror's ✗ is 0; `worstMarks` and
+  `isWorstMark` for the views.
+- **Authorization unchanged:** a juror of the round, their own assignment, an open round, CSRF;
+  `Round.acceptsRate(-1)` only where `takesWorstMark` (a rated round without criteria with the
+  option); else 400 (`invalid_rate`). A yes/no round's −1 as before.
+- **The round form:** a checkbox (`worstMark`) with a hidden `worstMarkShown` (a client without
+  them keeps the stored option); hidden and not sent for a yes/no or comments-only rating
+  (`round-form.js`); refused for a yes/no round (the form's check) and for a criteria round, by the
+  stored rating and the criteria after the edit (`RoundController`). Editable at any time: turned
+  off, the given ✗ stay (shown, counted as 0) and no new one is taken. "Rejected by at least N"
+  moved into its own `#rejectFilters`, offered for the yes/no rounds and the rated ones with the
+  option (`Round.rejects`); the job records it for those (`RoundService`).
+
+### What each view shows
+
+| View | A file with ✗ |
+|---|---|
+| By-rate gallery, file list, large view (all the jurors) | the score of grades and its denominator, then "✗ n" (`snippets/worstMarks`, the mark `aria-hidden`, "n worst marks (✗)" for screen readers) |
+| CSV | the Overall cell `5.00 (15 / 3) ✗ 1`; the juror's column −1; a legend row in a round with the option |
+| Large view, a juror's votes | each juror's ✗ as the mark, labelled |
+| The juror's large view | the number above the stars "✗" ("Rating: worst mark (✗)"); the stars without raty's cancel icon; under them **✗** (pressed when given) and **clear** (an eraser, only once the file has a vote) |
+| The juror's tiles and by-rate list | a ✗ toggle button after the stars (pressed, red, for a ✗; Enter or Space as a click); the cancel icon an eraser, labelled, hidden while unrated; the list's rate text "✗" |
+| The juror's tabs, round statistics | a ✗ is rated (progress) |
+| "Your vote moved" note | "Worst mark (✗)" |
+
+**Keys** (`large-keys.js`, paths only): in a rated round with the option, Delete gives ✗ and
+Backspace clears; digits rate and 0 clears, as in any rated round (no conflict). Without the
+option: as before (no Delete, no Backspace).
+
+### Files
+
+New: `app/db/scalikejdbc/VoteSql.scala`, `app/views/snippets/worstMarks.scala.html`,
+`conf/db/migration/default/V91__Vote_rate_not_null.sql`, `V92__Round_worst_mark.sql`,
+`test/controllers/RoundWorstMarkFormSpec.scala`, `test/gatling/setup/VoteRateNotNullBenchmark.scala`,
+`javascript-test/worst-mark.test.js`. Changed: `Vote`, `Round` (`worstMark`, `takesWorstMark`,
+`rejects`, `acceptsRate`), `ImageWithRating`, `AverageRule`, `BinaryOrder`, `ImageDbNew`
+(`grades`), `RoundImageQuery` (`grades`, `GradeSum`), `RoundCounts`, `VoteJdbc`, `ImageJdbc`,
+`ImageRepo`, `CriteriaRate`, `CriterionJdbc`, `RoundDistributionHandler` (`PrevVotes.grades`),
+`DistributeImages`, `RoundService`, `RoundList`, `EditRound`, `RoundController`, `Csv`, the views
+(`editRound`, `imageFiltering`, `galleryByRate`, `fileList`, `showRate`, `roundStatLinks`,
+`voteTexts`, `GalleryTiles`, `large/navigationButtons`, `large/keyboardNav`, `large/voteMoved`),
+`large-keys.js`, `large-stars.js`, `tile-votes.js`, `round-form.js`, `main.css`,
+`conf/messages.{en,fr,ru,uk}`.
+
+### Specs
+
+- `RoundCountsVoteSpec` "a rated round's worst mark (✗)": −1 from the gallery and the large view
+  marks the file and is counted (voted, a rejection, `rate_sum` −1); a clear marks and recounts; a
+  round without the option and a criteria round refuse −1 with 400, the vote unchanged; a yes/no
+  round's −1 as before; invariant 5 after each.
+- `GroupedListParitySpec` "with the worst mark": every list for each rule, rates −1…3, from the
+  votes and the counts, and with files marked dirty by ✗ and clears (the overlay); the model counts
+  grades and any vote.
+- `AverageRuleSpec`: ✗ as 0 under each rule, as a rated juror, its rank key, text, CSV text; one
+  juror's own ✗; which rounds take −1.
+- `RoundDistributionJobSpec`: from a rated round with the option, the streamed and in-memory paths
+  agree for the rejection filter (N = 1, 2), a minimum average, both, "selected by" with it, and a
+  top-N with the rejected left out; the files picked are those the votes give.
+- `RoundWorstMarkFormSpec`: offered unchecked; saved on and off; kept by a client without it;
+  refused for a yes/no and a criteria round; a juror, an organizer and another contest's admin get
+  403. `RejectedByChoiceSpec`: the filter's rounds. `FlywayUpgradeSpec`: V91, V92.
+- `LargeViewControllerSpec`: Delete, Backspace and the buttons by paths, the pressed state, the
+  stars without the cancel icon, the clear only with a vote, none without the option.
+  `GalleryByRateViewSpec` ("✗ n", its text), `GalleryTileStarsViewSpec` (`"worst"`), `CsvSpec`.
+- Jest `worst-mark.test.js`: the tile's ✗ button (label, pressed, a path with the CSRF header,
+  Enter/Space, a failure shown back, one at a time), the eraser shown only with a vote, the list's
+  text, Delete and Backspace bound only with the option, `data-cancel`, the round form's checkbox
+  and `#rejectFilters`.
+
+### Measurements
+
+**V91 on the Gatling fixture** (`gatling.setup.VoteRateNotNullBenchmark`, fixture rebuilt for V92,
+cache `gatling-2464f9d74b1b08cc`; MariaDB 10.6.22 in the fixture's container, `sql_mode`
+`IGNORE_SPACE,STRICT_TRANS_TABLES,…`; `vote` 767,340 rows (38k files, 20 jurors, two rounds),
+`vote_aside` empty; SQL logging off, the app's recompute off; 3 runs, each the rollback then V91):
+
+| Run | rollback `vote` / `vote_aside` | V91: the UPDATEs | `vote`'s ALTER | `vote_aside`'s ALTER | V91 in all |
+|---|---|---|---|---|---|
+| 1 | 10,749 / 78 ms | 1 / 1 ms | 10,367 ms | 143 ms | 10.5 s |
+| 2 | 14,512 / 190 ms | 2 / 1 ms | 15,200 ms | 184 ms | 15.4 s |
+| 3 | 13,707 / 182 ms | 2 / 1 ms | 15,371 ms | 174 ms | 15.6 s |
+
+The rebuild is ~13–20 µs a row on this laptop (10–15 s for 0.77M rows, run-to-run spread 5 s); the
+UPDATEs find nothing (the rate index). Writes go on during it (`LOCK=NONE`), but a long rebuild
+holds an exclusive lock at its start and end, and the change log it replays grows with the writes
+meanwhile. Production needs its own timing on a copy: for scale, V85's index build on `vote`
+took 10.9 s on 3.07M rows (db practices §8.6); a full rebuild at this laptop's rate would take
+40–60 s there. Deploy in a quiet hour. Log `target/checks/20261105-110928-22384.log`, results
+`target/gatling/vote-rate-not-null-20261105-111023.txt` (the worktree).
+
+The vote and list paths add no statement: the read changes are in the SQL text (a `GREATEST` per
+row in a rated round's grouped sums, `rate_sum + rejections` per row on the counts), not measured
+apart; P2b's benchmarks (§17) stand.
+
+### Deploy note (V91, V92)
+
+Read-only, production, before the deploy (run by the user):
+```sql
+SELECT COUNT(*) FROM vote WHERE rate IS NULL;        -- set to 0 (unrated) by V91
+SELECT COUNT(*) FROM vote_aside WHERE rate IS NULL;  -- the same
+SELECT @@GLOBAL.sql_mode;                            -- STRICT_TRANS_TABLES, else V91's ALTER is refused
+SELECT TABLE_NAME, COLUMN_TYPE, IS_NULLABLE, COLUMN_DEFAULT FROM information_schema.COLUMNS
+  WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME IN ('vote', 'vote_aside') AND COLUMN_NAME = 'rate';
+                                                     -- int(11), YES, NULL
+SELECT COUNT(*) FROM vote; SELECT COUNT(*) FROM vote_aside;  -- the rows V91 rebuilds
+```
+Time V91 on a production-sized copy before the release (`VoteRateNotNullBenchmark` on a restored
+backup, run by the user): the fixture's timing below is not production's.
+
+Rollback after `reopen` (tested, `FlywayUpgradeSpec`), with the app stopped; V92 first:
+```sql
+ALTER TABLE round DROP COLUMN worst_mark, ALGORITHM = INSTANT;
+DELETE FROM flyway_schema_history WHERE version = '92';
+ALTER TABLE vote MODIFY rate INT NULL DEFAULT NULL, ALGORITHM = INPLACE, LOCK = NONE;
+ALTER TABLE vote_aside MODIFY rate INT NULL DEFAULT NULL, ALGORITHM = INPLACE, LOCK = NONE;
+DELETE FROM flyway_schema_history WHERE version = '91';
+```
+V91's rollback is **not** metadata only, as planned: MariaDB makes a column nullable instantly
+only in `ROW_FORMAT=REDUNDANT` tables (`ALGORITHM=INSTANT is not supported`, 10.6); ours are
+`DYNAMIC`, so it is an online rebuild like the forward. The older code reads a −1 in a rated round
+as a rate below 0 (as 0 in its texts and averages, but its "rated" is `rate > 0` and its ranks' sum
+counts −1: B11). Before rolling back the code of a round with ✗ given, the user decides whether
+to keep them so or to clear them (`UPDATE vote v JOIN round r ON r.id = v.round_id SET v.rate = 0
+WHERE r.rates > 1 AND v.rate < 0`, then `UPDATE round SET counts_gen = counts_gen + 1,
+created_at = created_at WHERE rates > 1` so the counts are recounted: a bulk write marks no file).
+
+### Checks
+
+CHECKS
+
+### Decisions for the user (conservative choices made here)
+
+- **The option can be turned off at any time**; the ✗ given stay, shown and counted as 0, and no
+  new one is taken (the juror may still change or clear them). Refusing to turn it off while ✗
+  exist is the alternative.
+- **A juror's own by-rate list** sorts by the raw rate, so a ✗ (−1) comes after the unrated files.
+- **The CSV** appends ` ✗ n` to the Overall cell (as the pages put it beside the score) rather than
+  adding a column; the jurors' columns keep −1, explained by a legend row.
+- **"Rejected by at least N" from a rated round** is offered and applied only while the source
+  round has the option (`Round.rejects`); a round whose option was turned off after ✗ were given
+  isn't filtered by them.
+- **The tiles' clear** is raty's cancel icon, made an eraser and hidden while the file is
+  unrated, rather than a separate button.
+- **`hasRatedVote`** (the score-rule warning) counts a ✗ as a vote, as the coordinator asked,
+  though a round with only ✗ scores every file 0.
+- **V91's rollback is a rebuild**, not metadata only (above).

@@ -44,15 +44,6 @@
                 Symbol("value") -> "",
                 Symbol("_label") -> Messages("selected.by.at.least.x.jurors"),
                 Symbol("readonly") -> noEdit)
-            @* the files with fewer rejections across the previous rounds' votes (e.g. after a
-               screening where jurors only reject the few bad files); empty: no filter (NULL) *@
-            @bs.select(
-                editRoundForm("rejectedBy"),
-                Seq("" -> Messages("rejected.by.no.filter")) ++
-                    Seq("1", "2", "3", "4", "5", "6").map(x => (x, x)),
-                Symbol("value") -> "",
-                Symbol("_label") -> Messages("rejected.by.at.least.x.jurors"),
-                Symbol("readonly") -> noEdit)
             @* the order that picks a top-N from a yes/no previous round, stored with the round, so
                its page shows which rule picked its files and a later distribution picks the same;
                the legacy rule only for a round from before V72 that has it *@
@@ -65,6 +56,21 @@
                     Symbol("_label") -> Messages("top.images.binary.order"),
                     Symbol("readonly") -> noEdit)
             }
+            </div>
+
+            @* the files with fewer rejections across the previous rounds' votes (e.g. after a
+               screening where jurors only reject the few bad files): a yes/no round's "no", a rated
+               round's ✗ where it has the worst mark (Round.rejects); empty: no filter (NULL) *@
+            <div id="rejectFilters"
+            class="@rounds.filter(_.rejects).map(r => "round" + r.getId).mkString(" ")">
+            @bs.select(
+                editRoundForm("rejectedBy"),
+                Seq("" -> Messages("rejected.by.no.filter")) ++
+                    Seq("1", "2", "3", "4", "5", "6").map(x => (x, x)),
+                Symbol("value") -> "",
+                Symbol("_label") -> Messages("rejected.by.at.least.x.jurors"),
+                Symbol("_help") -> Messages("rejected.by.help"),
+                Symbol("readonly") -> noEdit)
             </div>
 
             <div id="rateFilters"

@@ -366,6 +366,20 @@ a:has(> .btn) { text-decoration: none; }
 }
 .wlx-tile-stars .raty-cancel { color: var(--bs-secondary-color); }
 .wlx-tile-stars .raty-cancel.bi-x-circle-fill { color: var(--bs-danger); }
+/* a rated round's worst mark (✗, tile-votes.js): its button after the stars, as wide as a star,
+   red when the file has it; and the ✗ beside a score or a juror's vote */
+.wlx-tile-stars .wlx-tile-worst {
+    width: 1em;
+    font-size: clamp(11px, calc((100cqw - 8px) / var(--wlx-tile-stars, 11)), 16px);
+    line-height: 1.2;
+    text-align: center;
+    cursor: pointer;
+    color: var(--bs-secondary-color);
+    margin-left: 2px;
+}
+.wlx-byrate-stars .wlx-tile-stars .wlx-tile-worst { font-size: 1rem; }
+.wlx-tile-stars .wlx-tile-worst.wlx-tile-worst-on { color: var(--bs-danger); }
+.wlx-worst-mark { color: var(--bs-danger-text-emphasis); white-space: nowrap; }
 /* the same stars in the juror's own by-rate list (galleryByRate.scala.html), in the line of
    the rank and the rate text, at the static stars' size; a file whose rate changed keeps its
    place until a reload, its rank greyed and dotted (its title says why) */

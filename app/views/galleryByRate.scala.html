@@ -38,9 +38,11 @@
                 }
                 @if(starsRound.nonEmpty) {
                 </span>
-                <span class="wlx-rate-text">@file.rateText(round)</span>
+                @* the juror's own ✗ as the mark (tile-votes.js writes the same after a vote); its
+                   ✗ button, pressed, says so to screen readers *@
+                <span class="wlx-rate-text">@if(file.isWorstMark) {✗} else {@file.rateText(round)}</span>
                 } else {
-                @if(round.hasCriteria) { @file.criteriaRateString(round) } else { @file.rateText(round) }
+                @if(round.hasCriteria) { @file.criteriaRateString(round) } else { @file.rateText(round) @snippets.worstMarks(file, round) }
                 }
             }
             </span>
@@ -73,7 +75,7 @@
             }
             @for(r <- starsRound) {
             <div class="row" @voteTexts() data-stars-number="@{r.rates.id / r.starUnits}"
-                data-stars-half="@{r.starUnits == 2}" data-changed-title="@Messages("byrate.changed.title")">
+                data-stars-half="@{r.starUnits == 2}" data-stars-worst="@{r.takesWorstMark}" data-changed-title="@Messages("byrate.changed.title")">
             }
 
                 <ul class="gallery mw-gallery-traditional">

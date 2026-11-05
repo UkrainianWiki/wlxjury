@@ -8,7 +8,9 @@
    (large-keys.js), for the juror's own view of an open round: Space to select and Del to reject
    in a binary round, a digit to rate in a rated one, none in a round with criteria (its votes are
    per criterion, by the stars; a digit would vote the file's own rate, which the server
-   refuses); each a path, never an http:// URL. Its moves are fileKeyboardNav's. *@
+   refuses); each a path, never an http:// URL. Its moves are fileKeyboardNav's. In a rated round
+   with the worst mark, Del gives ✗ and Backspace clears the vote, 0 clearing it too, as in any
+   rated round. *@
 @defining(list.round) { round =>
 @if(user.getId == list.asUserId && round.active && user.roles.contains("jury") && !round.hasCriteria) {
     @if(round.isBinary) {
@@ -16,6 +18,7 @@
         @if(file.rate >= 0) { data-vote-key-del="@list.voteUrl(file.pageId, -1)"}
     } else {
         @for(i <- 0 to Math.min(round.maxRate, 9)) { data-vote-key-@i="@list.voteUrl(file.pageId, i)"}
+        @if(round.takesWorstMark) { data-vote-key-del="@list.voteUrl(file.pageId, org.intracer.wmua.Vote.Rejected)" data-vote-key-backspace="@list.voteUrl(file.pageId, org.intracer.wmua.Vote.Unrated)"}
     }
 }
 }

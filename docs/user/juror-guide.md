@@ -147,6 +147,12 @@ Files you haven't voted on are **unrated**.
 In a rated round you give each file from one star up to the round's highest rate, for
 example 1 to 5 stars. Some rounds allow half stars.
 
+Some rated rounds also have the **worst mark**, ✗: for a file you would give fewer than one star.
+A ✗ is a vote: the file is no longer unrated, and it counts in your progress. In the results it
+counts as 0 in the file's score, and the organizers see how many ✗ a file got. Giving ✗ and
+removing your vote are two different things: a file you clear is unrated again. Rounds rated by
+criteria have no ✗.
+
 ### Rounds rated by criteria
 
 Some rated rounds have criteria, such as **Aesthetics**, **Technical quality** or
@@ -212,6 +218,11 @@ Click the image itself to open it in the large view.
 Under each file are its stars. Click a star to rate the file. In a half-star round, click the
 left half of a star for a half star. The circled cross before the stars removes your rating.
 
+In a round with the worst mark, the button with a cross after the stars (**Worst mark (✗)**) gives
+the file ✗; it turns red, and the stars are empty. The eraser before the stars removes your vote,
+✗ or stars; it shows only once the file has a vote. In your list by rate, a file with ✗ shows ✗ as
+its rate.
+
 [Screenshot: a rated round's gallery with stars under each file]
 
 Rounds with criteria show your result under each file, but you rate them in the large view.
@@ -256,6 +267,10 @@ In a rated round, click the stars. The number above them shows the file's rate, 
 has none. While you point at a star, it shows the rate a click gives. The circled cross removes
 your rating.
 
+In a round with the worst mark, the stars have no circled cross. Under them are two buttons: the
+red cross (**Worst mark (✗)**) gives the file ✗, and the eraser (**Clear the vote**), shown once
+the file has a vote, removes it. The number above the stars shows ✗ for a file you gave ✗.
+
 After you vote, the large view moves on to the next file, so you can go through your files one
 after another. At the end of the list it goes to the file before instead.
 
@@ -285,7 +300,8 @@ The large view works with the keyboard:
 | Home / End | the first or last of the files around this one |
 | Esc | back to the gallery, at this file's page |
 | Space | select the file (yes/no round) |
-| Delete | reject the file (yes/no round) |
+| Delete | reject the file (yes/no round); give it ✗ (rated round with the worst mark) |
+| Backspace | remove your vote (rated round with the worst mark) |
 | 0 up to the highest rate (at most 9) | rate the file (rated round) |
 
 Page Up, Page Down, Home and End move only among the few files around the one you see. In the

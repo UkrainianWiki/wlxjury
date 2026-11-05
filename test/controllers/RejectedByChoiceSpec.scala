@@ -30,8 +30,26 @@ class RejectedByChoiceSpec extends PlaySpecification {
       .imageFiltering(form, Seq(round.copy(id = Some(1), previous = None)), Map.empty, User("u", "e@e", Some(1L)),
         noEdit = false)
       .body
-    val options = Jsoup.parse(html).select("#selectFilters select#rejectedBy option").asScala.toSeq
+    val options = Jsoup.parse(html).select("#rejectFilters select#rejectedBy option").asScala.toSeq
     (options.map(o => o.attr("value") -> o.text), options.filter(_.hasAttr("selected")).map(_.attr("value")))
+  }
+
+  /** The classes of the rejected-by filters for previous rounds `rounds` (round-form.js shows them
+    * when one of them is chosen).
+    */
+  private def rejectClasses(rounds: Seq[Round]): String = {
+    val form = EditRound.editRoundForm.fill(EditRound(rounds.head.copy(id = Some(9), number = 9), Seq(1L), None))
+    Jsoup.parse(views.html.round.edit.imageFiltering(form, rounds, Map.empty, User("u", "e@e", Some(1L)), noEdit = false)
+      .body).getElementById("rejectFilters").className
+  }
+
+  "the rejected-by filter" should {
+    "be offered from a yes/no round and a rated round with the worst mark (✗), not another rated one" in {
+      val rated = new Round(id = Some(2), number = 2, contestId = 1, rates = Round.ratesById(5))
+      rejectClasses(Seq(
+        new Round(id = Some(1), number = 1, contestId = 1, rates = Round.binaryRound),
+        rated, rated.copy(id = Some(3), worstMark = true))) === "round1 round3"
+    }
   }
 
   "the rejected-by choices" should {

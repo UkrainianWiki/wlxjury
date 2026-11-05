@@ -20,19 +20,45 @@
 
 @* the stars' attributes for large-stars.js: `score` in stars, the number's id, and the vote's
    path prefix and query (the criterion's for `criterion`), unless `readOnly` *@
+@* the juror's own vote in a round with the worst mark: the ✗ and clear buttons give and clear it,
+   so the stars have no cancel icon of their own (data-cancel) *@
+@worstVotes = @{ !readOnly && round.takesWorstMark }
+
 @stars(id: String, numberId: String, score: Double, k: Int, criterion: Option[Long]) = {
     <div id="@id" class="large-stars" data-number="@(round.rates.id / k)" data-half="@(k == 2)" data-score="@score"
-        data-rate-number="@numberId" data-readonly="@readOnly"@if(!readOnly) { data-vote-prefix="@list.votePrefix(hood.file.pageId)" data-vote-query="@list.voteQuery(criterion)"}></div>
+        data-rate-number="@numberId" data-readonly="@readOnly"@if(!readOnly) { data-vote-prefix="@list.votePrefix(hood.file.pageId)" data-vote-query="@list.voteQuery(criterion)"}@if(worstVotes && criterion.isEmpty) { data-cancel="false"}></div>
 }
 
 @* the number above the stars `id`: their rate in stars (`score` and the criteria's, as the stars'
-   data-score has them), 3.5 in a half-star round, an average to two decimals, "–" unrated; hovering a star
-   shows the rate a click gives (large-rate.js). Screen readers read the text beside it. *@
-@rateNumber(id: String, stars: Double) = {
+   data-score has them), 3.5 in a half-star round, an average to two decimals, "–" unrated, "✗" a
+   juror's ✗ (`worst`); hovering a star shows the rate a click gives (large-rate.js). Screen
+   readers read the text beside it. *@
+@rateNumber(id: String, stars: Double, worst: Boolean = false) = {
     @defining(BigDecimal(stars).setScale(2, BigDecimal.RoundingMode.HALF_UP).bigDecimal.stripTrailingZeros.toPlainString) { rate =>
     <div class="large-rate">
-        <span id="@id" class="large-rate-number" aria-hidden="true">@if(stars > 0) {@rate} else {&ndash;}</span>
-        <span class="visually-hidden">@if(stars > 0) {@Messages("large.rate", rate)} else {@Messages("large.rate.none")}</span>
+        <span id="@id" class="large-rate-number" aria-hidden="true">@if(worst) {✗} else if(stars > 0) {@rate} else {&ndash;}</span>
+        <span class="visually-hidden">@if(worst) {@Messages("large.rate.worst")} else if(stars > 0) {@Messages("large.rate", rate)} else {@Messages("large.rate.none")}</span>
+    </div>
+    }
+}
+
+@* the juror's ✗ (Delete) and the clear of their vote (Backspace), apart: the clear only once the
+   file has a vote; each a path, posted with the vote form's CSRF token (large-view.js) *@
+@worstButtons() = {
+    @defining(files(index)) { file =>
+    <div class="btn-group large-worst mt-1" role="group">
+        <a role="button" class="btn btn-sm @if(file.isWorstMark) {btn-danger} else {btn-outline-danger}" href="#"
+            data-vote-url="@list.voteUrl(file.pageId, org.intracer.wmua.Vote.Rejected)" aria-pressed="@file.isWorstMark"
+            aria-label="@Messages("vote.worst")" title="@Messages("vote.worst") &lt;Delete&gt;">
+            <i class="bi bi-x-lg" aria-hidden="true"></i>
+        </a>
+        @if(file.rate != 0) {
+        <a role="button" class="btn btn-sm btn-outline-secondary" href="#"
+            data-vote-url="@list.voteUrl(file.pageId, org.intracer.wmua.Vote.Unrated)"
+            aria-label="@Messages("vote.clear")" title="@Messages("vote.clear") &lt;Backspace&gt;">
+            <i class="bi bi-eraser" aria-hidden="true"></i>
+        </a>
+        }
     </div>
     }
 }
@@ -98,12 +124,15 @@
        }
        }
     } else if (round.rates.id > 0)  {
-        @rateNumber("rate-number", score)
+        @rateNumber("rate-number", score, worst = hood.file.isWorstMark)
         @* all the jurors' votes on a rated round: the score by the round's rule, with its denominator
-           (ImageWithRating.rateText), as the by-rate gallery has it *@
+           (ImageWithRating.rateText), as the by-rate gallery has it, and its ✗ *@
         @if(list.asUserId == 0 && !round.isBinary) {
-            <div class="wlx-overall-rate small">@hood.file.rateText(round)</div>
+            <div class="wlx-overall-rate small">@hood.file.rateText(round) @snippets.worstMarks(hood.file, round)</div>
         }
         @stars("rate-image", "rate-number", score, if (round.rates.id > 5 && round.halfStar) 2 else 1, None)
+        @if(worstVotes) {
+            @worstButtons()
+        }
     }
     }

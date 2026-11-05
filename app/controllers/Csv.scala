@@ -99,10 +99,18 @@
       * the votes as they are stored (1, -1, 0), the column of a juror the file isn't assigned
       * to empty. In English, as the header is.
       */
-    private def legend(round: Round): Option[Seq[String]] = Option.when(round.isBinary)(BinaryLegend)
+    private def legend(round: Round): Option[Seq[String]] =
+      if (round.isBinary) Some(BinaryLegend) else Option.when(round.worstMark && round.isRated)(WorstMarkLegend)
 
     val BinaryLegend: Seq[String] =
       Seq("", "Overall: approvals. Jurors: 1 selected, -1 rejected, 0 not voted yet, empty not assigned")
+
+    /** A rated round with the worst mark's last row: its ✗ (rate -1) counted as 0, "✗ n" after a
+      * file's score.
+      */
+    val WorstMarkLegend: Seq[String] =
+      Seq("", "Overall: the score, a worst mark counted as 0, then ✗ n: the file's worst marks. " +
+        "Jurors: the rate, -1 the worst mark (✗), 0 not rated yet, empty not assigned")
 
     /** The juror names, criteria names (an admin's fallback text, [[org.intracer.wmua.Criterion]])
       * and file titles here are user text: [[writeRow]] neutralises them.
@@ -116,7 +124,9 @@
     private def row(file: ImageWithRating, rank: String, jurors: Seq[User], round: Round,
         criteria: Seq[(Long, String)], averages: Map[Long, Map[Long, BigDecimal]]): Seq[String] = {
       val ofFile = averages.getOrElse(file.pageId, Map.empty)
-      Seq(rank, file.image.title, file.rateString(round)) ++
+      // a rated round's file's ✗ (worst marks) after its score: "14.50 (29 / 2) ✗ 1"
+      val worst = if (round.isBinary || file.worstMarks == 0) "" else s" ✗ ${file.worstMarks}"
+      Seq(rank, file.image.title, file.rateString(round) + worst) ++
         criteria.map { case (id, _) => ofFile.get(id).fold("")(CriteriaResults.format) } ++
         jurors.map(file.jurorRateStr)
     }

@@ -108,6 +108,14 @@ Developed 2026-11-02 to 2026-11-03, PRs #232–#236.
   queued keeps its rule, and which later rounds took their top files or minimum from this round
   (their files don't change). In the page without JavaScript; with it, shown once the select
   differs from the saved rule.
+- **The worst mark (✗) in rated rounds**, a round form option, off by default (admins; developed
+  2026-11-05, V92): jurors may give a file ✗ instead of stars, by a button in the large view and
+  on the gallery tiles, or Delete; clearing a vote stays apart (its own button, shown once the file
+  has a vote, or Backspace; 0 still clears). A ✗ counts as 0 in every average and total and as a
+  vote in a juror's progress and the round's "jurors who rated it"; the all-jurors by-rate
+  gallery, the file list, the CSV and the large view show "✗ n" beside the score, a juror's own
+  views their ✗. A next round can leave out files with at least N ✗, as it can a yes/no round's
+  rejections. Not for criteria rounds or yes/no rounds (the form refuses it).
 
 **Development**
 
@@ -206,8 +214,14 @@ Developed 2026-11-02 to 2026-11-03, PRs #232–#236.
   the CSV and a next round's top-N read the votes. Parity specs over both sources and each score
   rule. The round's score rule (`AverageRule`) replaces the `optional_rate` flag, which the code
   no longer reads (the column stays until a later clean-up).
+- The vote checks named (developed 2026-11-05; [round images plan](docs/plans/2026-11-02-round-images-two-step.md)
+  §18): `Vote.isPositive` / `isRejected` / `isUnrated` / `isVoted` / `grade` in Scala, `VoteSql`'s
+  fragments in SQL, instead of rate comparisons in about forty places; a rated round's sums are
+  of grades (a ✗ as 0) in the votes' and the counts' queries alike (`rate_sum + rejections`).
 - **Migrations:** V85 gallery index, V86 timestamp definitions, V87 for the sign-in (#240);
-  V88 `round_image_event`; V89 `round_image` counts; V90 `round.average_rule`.
+  V88 `round_image_event`; V89 `round_image` counts; V90 `round.average_rule`; V91 `vote.rate`
+  and `vote_aside.rate` `NOT NULL DEFAULT 0` (an online rebuild of each table; the NULL handling
+  in the code removed); V92 `round.worst_mark`.
 
 ## Deployed
 
