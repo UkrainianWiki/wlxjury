@@ -2129,6 +2129,11 @@ with its `83dcc488`), 2026-11-05. Roadmap queue item 6. Migrations **V91**
 (`V91__Vote_rate_not_null.sql`) and **V92** (`V92__Round_worst_mark.sql`). It settles §11's
 NULL-rate item (V91) and B11 (what a rated round's vote below 0 means: a ✗, counted as 0).
 
+**Scope change (the user, 2026-11-05, during the batch):** decisions 6 and 7 below (V91 and the
+naming of every vote check) became a later non-feature item, after release 2 (roadmap item 21).
+They were already committed (the first two commits) and are kept; whether they ship with the ✗
+or are split off is the orchestrator's call (the ✗ commits use `VoteSql`, and V92 follows V91).
+
 ### The user's decisions (2026-11-05)
 
 1. **The option.** `round.worst_mark`, off by default: jurors of a rated round may give a file ✗,
@@ -2351,7 +2356,21 @@ created_at = created_at WHERE rates > 1` so the counts are recounted: a bulk wri
 
 ### Checks
 
-CHECKS
+Logs under `target/checks/` of the worktree (Git Bash, `scripts/agent-check.py`, the sbt
+launcher, one JVM at a time under the shared lock, Commons variables unset).
+
+| Step | Specs | Result | Log |
+|---|---|---|---|
+| The naming commit | 11 specs: the SQL guards, the list, parity, counts and distribution specs | 162 passed | `20261105-102318-16720.log` |
+| The option, first run | 27 affected specs | 270: 262 passed, 5 failed, 2 errors, 1 skipped: a rank column's text, V91's rollback refused as INSTANT, the moved rejected-by select, the tiles' JSON, a view fixture's grouped row without rejections | `20261105-104739-26880.log` |
+| After the fixes, with the new specs and Jest | 27 specs, `jsTest` | 276: 275 passed, 1 skipped; Jest 23 suites, 302/302; `npm run lint` clean | `20261105-110333-12152.log` |
+| V91's timing | `VoteRateNotNullBenchmark` | above | `20261105-110928-22384.log` |
+| Full suite | `test` (Jest included), MariaDB 10.6, specs2's smart diffs off (a first run hung in them printing a failure's large diff, and was stopped) | **2099: 2087 passed, 2 failed, 2 errors, 8 skipped, 1 pending**; Jest 23 suites, 302/302; 11:58. Failed: `ListPositionSpec`, `JurorCountsSpec` (the Rated filter matched any vote in memory also in a yes/no round, whose SQL reads a yes: `VoteFilter.matches` now takes the round's kind). Errors: `ImportFilesPageSpec`, `MwMonumentListSourceSpec` (connect timeouts to Wikipedia). `RoundListDbSpec`'s sum-round ranks moved to the ✗-as-0 rule (B11) before it | `20261105-113213-2632.log` |
+| Rerun after the fix | `ListPositionSpec`, `JurorCountsSpec`, `RoundListDbSpec`, `RoundListSpec`, `GalleryOrderSpec`, `GroupedListParitySpec`, `RoundCountsVoteSpec`, and the two network specs | **98 passed** | `20261105-114541-24324.log` |
+
+No second full suite: the fix is `VoteFilter.matches`' round kind, rerun with every spec that
+reads it. Not run: the suite on MariaDB 10.11 (`FlywayUpgradeSpec`'s V91 and V92 cases ran on
+10.6 only; V91 became a later item meanwhile).
 
 ### Decisions for the user (conservative choices made here)
 
