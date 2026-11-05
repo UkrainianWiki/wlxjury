@@ -1,5 +1,8 @@
 # WLX Jury Tool: a guide for jurors
 
+Other guides: the [organizer guide](organizer-guide.md), the [admin guide](admin-guide.md) and
+[what's new in release 2](whats-new-release-2.md).
+
 This guide is for jurors of a Wiki Loves Monuments, Wiki Loves Earth or similar photo contest
 who judge its files in the WLX Jury Tool. It explains how to sign in, find your rounds, vote,
 and what to do when something goes wrong.
@@ -45,7 +48,7 @@ The link opens a page, **Set a new password**. Your old password works until you
 If several jury accounts have the same wiki user name, signing in with that name doesn't work.
 Sign in with your email address instead.
 
-[Screenshot: the sign-in page]
+<img src="images/juror-sign-in.png" alt="The sign-in page" width="1280">
 
 ### Signing in with Wikimedia or Google
 
@@ -68,7 +71,7 @@ When you link a Wikimedia account and your jury account has no wiki account yet,
 **Set your wiki account** asks whether to use that Wikimedia user name. Press **Use it** to
 confirm.
 
-[Screenshot: the profile's "Linked accounts" and "Sessions" sections]
+<img src="images/juror-profile.png" alt="The profile page, with its linked accounts and sessions" width="1280">
 
 ### When one wiki name has several jury accounts
 
@@ -211,7 +214,7 @@ To undo a vote, press the same thumb again: the file is unrated again.
 
 Click the image itself to open it in the large view.
 
-[Screenshot: gallery tiles with a selected and a rejected file]
+<img src="images/juror-gallery-binary.png" alt="A yes/no round's gallery" width="1280">
 
 ### Rating in a rated round's gallery
 
@@ -220,10 +223,11 @@ left half of a star for a half star. The circled cross before the stars removes 
 
 In a round with the worst mark, the button with a cross after the stars (**Worst mark (✗)**) gives
 the file ✗; it turns red, and the stars are empty. The eraser before the stars removes your vote,
-✗ or stars; it shows only once the file has a vote. In your list by rate, a file with ✗ shows ✗ as
+✗ or stars; it shows only once the file has a vote. The ✗ button is a toggle that shows the
+file's ✗: pressing it again doesn't clear it, the eraser does. In your list by rate, a file with ✗ shows ✗ as
 its rate.
 
-[Screenshot: a rated round's gallery with stars under each file]
+<img src="images/juror-gallery-rated.png" alt="A rated round's gallery, with stars under each file" width="1280">
 
 Rounds with criteria show your result under each file, but you rate them in the large view.
 
@@ -256,7 +260,11 @@ one. Click a heading to show or hide its section; the tool remembers which are o
 
 Videos play in the large view.
 
-[Screenshot: the large view of a yes/no round]
+<img src="images/juror-large-view-binary.png" alt="The large view of a yes/no round" width="1280">
+
+<img src="images/juror-large-view-rated.png" alt="The large view of a rated round" width="1280">
+
+[Screenshot: the large view of a round with the worst mark (✗)]
 
 ### Voting in the large view
 
