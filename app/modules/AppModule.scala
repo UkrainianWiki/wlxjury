@@ -30,6 +30,8 @@ class AppModule(environment: Environment, configuration: Configuration)
     bind(classOf[JobScheduler]).toProvider(classOf[JobSchedulerProvider]).asEagerSingleton()
     // eager: replaces the legacy password hashes left after their grace period (P8, V81)
     bind(classOf[LegacyPasswordRetirementTask]).asEagerSingleton()
+    // eager: keeps round_image's counts in line with the votes in the background (P2a, V89)
+    bind(classOf[RoundCountsTask]).asEagerSingleton()
 
     KOATUU.load()
 

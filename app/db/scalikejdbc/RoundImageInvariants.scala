@@ -15,7 +15,9 @@ import scalikejdbc._
   *  3. `dq` and `deleted` rows have no `vote` rows.
   *  4. A `deleted` row's image has `deleted_at` set (reported, not repaired: its votes would
   *     have to move back).
-  *  5. The counts equal the votes' (P2a; no counts yet).
+  *  5. The counts equal the GROUP BY over the pair's `vote` rows (P2a, V89), once the round's
+  *     counts are current ([[RoundCounts.isClean]]: no file marked, no recount pending; the
+  *     background recompute gets there seconds after a write). Not checked while dirty.
   *  6. `monument_id` equals `images.monument_id`.
   *  7. Every `criteria_rate.vote_id` is a vote's in `vote` or `vote_aside` (not per round:
   *     [[criteriaOrphans]]).
@@ -67,9 +69,16 @@ object RoundImageInvariants {
                            OR ri.status <> ${Status.Dq} AND (ri.dq_code IS NOT NULL OR ri.dq_detail IS NOT NULL
                              OR ri.dq_by IS NOT NULL OR ri.dq_at IS NOT NULL))
                        ORDER BY ri.page_id""")
-      ).flatten
+      ).flatten ++ counts(roundId)
     }
   }
+
+  /** Invariant 5: the rows whose counts differ from their votes', if the round's counts are
+    * current; none while it is dirty.
+    */
+  def counts(roundId: Long)(implicit session: DBSession = AutoSession): Seq[Violation] =
+    if (!RoundCounts.isClean(roundId)) Nil
+    else RoundCounts.drift(roundId).map(d => Violation(5, roundId, d.pageId))
 
   /** [[violations]] of every round. */
   def all()(implicit session: DBSession = AutoSession): Seq[Violation] =

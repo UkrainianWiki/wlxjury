@@ -64,6 +64,9 @@ object GatlingTestFixture {
         "jobs.concurrency.round_distribution"    -> GatlingConfig.Jobs.distributionConcurrency,
         "jobs.roundDistribution.chunkRows"       -> GatlingConfig.Jobs.chunkRows,
         "jobs.pollInterval"                      -> "2 seconds",
+        // round_image's counts recounted in the background, as production does (P2a);
+        // -Dgatling.roundCounts.mode=manual for a benchmark that runs the recompute itself
+        "roundCounts.mode"                       -> sys.props.getOrElse("gatling.roundCounts.mode", "background"),
         // region counts: the contest files page's cache, and the round galleries' counts
         "regions.countCache"                     -> GatlingConfig.regionCountCache
       ) ++ GatlingConfig.regionCounts.map("gallery.regionCounts" -> _) ++ timingConfig ++ csrfConfig ++ imagesConfig ++
