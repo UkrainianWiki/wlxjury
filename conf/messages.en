@@ -189,6 +189,7 @@ import.source=Commons page or category
 import.source.placeholder=Category:Images from Wiki Loves Earth 2016
 contest.users.edit=Edit the users of {0}
 files.source.none=Not set
+files.source.placeholder=Category or page
 files.source.set=Set the source
 files.source.set.of=Set the source of {0}
 contest.rounds.edit=Edit the rounds of {0}

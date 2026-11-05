@@ -425,6 +425,7 @@ import.source=Страница или категория Викисклада
 import.source.placeholder=Category:Images from Wiki Loves Earth 2016
 contest.users.edit=Редактировать пользователей конкурса {0}
 files.source.none=Не указан
+files.source.placeholder=Категория или страница
 files.source.set=Указать источник
 files.source.set.of=Указать источник файлов конкурса {0}
 contest.rounds.edit=Редактировать раунды конкурса {0}

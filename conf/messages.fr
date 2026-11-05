@@ -191,6 +191,7 @@ import.source=Page ou catégorie de Commons
 import.source.placeholder=Category:Images from Wiki Loves Earth 2016
 contest.users.edit=Modifier les utilisateurs de {0}
 files.source.none=Non définie
+files.source.placeholder=Catégorie ou page
 files.source.set=Définir la source
 files.source.set.of=Définir la source des images de {0}
 contest.rounds.edit=Modifier les tours de {0}

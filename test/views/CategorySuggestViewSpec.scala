@@ -116,8 +116,8 @@ class CategorySuggestViewSpec extends PlaySpecification {
         (doc.select("a button").size === 0) and
         (doc.select("label[for=source]").text === messages("import.source")) and
         (source.attr("placeholder") === messages("import.source.placeholder")) and
-        // the add row's source field: named and exemplified as the column and the import field
-        (doc.getElementById("images").attr("placeholder") === messages("import.source.placeholder")) and
+        // the add row's source field: named as the column, with a placeholder short enough for it
+        (doc.getElementById("images").attr("placeholder") === messages("files.source.placeholder")) and
         (doc.select("label[for=images]").text === messages("files.source")) and
         // the list's heading set apart from the import form above it
         (doc.select("h2.mt-4").text === messages("contests.list"))
