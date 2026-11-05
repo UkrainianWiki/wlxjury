@@ -17,7 +17,7 @@
 
     @defining(list.round) { round =>
     @* the file's rate in stars: a criteria round's per criterion (Round.perCriterion) *@
-    @defining(round.perCriterion(hood.file.totalRate(round)) / round.starUnits) { score =>
+    @defining(round.perCriterion(hood.file.starRate(round)) / round.starUnits) { score =>
     @defining(!user.roles.contains("jury") || !round.active || user.getId != list.asUserId) { readOnly =>
     @main_large(user, list, readOnly = readOnly, hood = hood) {
         @defining(hood.file.image) { image =>

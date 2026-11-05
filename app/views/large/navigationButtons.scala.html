@@ -99,6 +99,11 @@
        }
     } else if (round.rates.id > 0)  {
         @rateNumber("rate-number", score)
+        @* all the jurors' votes on a rated round: the score by the round's rule, with its denominator
+           (ImageWithRating.rateText), as the by-rate gallery has it *@
+        @if(list.asUserId == 0 && !round.isBinary) {
+            <div class="wlx-overall-rate small">@hood.file.rateText(round)</div>
+        }
         @stars("rate-image", "rate-number", score, if (round.rates.id > 5 && round.halfStar) 2 else 1, None)
     }
     }

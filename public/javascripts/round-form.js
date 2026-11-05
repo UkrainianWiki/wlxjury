@@ -11,6 +11,9 @@
 // - a new round's criteria (#round-criteria), hidden and disabled (so not sent) for a yes/no
 //   or comments-only rating (#rates 1 or 0); an existing round's rating is fixed (its select
 //   disabled), and its criteria stay as they are;
+// - the score rule's warning (#averageRule_warning_row, rendered for a rated round with a rated
+//   vote and shown as it is without scripts): shown only while #averageRule differs from the
+//   saved rule (its data-stored-rule);
 // - the jurors' table, loaded when its panel is first opened (#round-stat-table's data-src),
 //   and the number of new files on request (#count-new-files' data-src): the edit page leaves
 //   out its two expensive parts.
@@ -110,6 +113,19 @@
     update();
   }
 
+  /** Shows the score rule's warning only while the select differs from the saved rule. */
+  function initScoreRuleWarning(doc) {
+    var select = doc.getElementById('averageRule');
+    var row = doc.getElementById('averageRule_warning_row');
+    if (!select || !row) return;
+    var stored = row.getAttribute('data-stored-rule');
+    function update() {
+      row.hidden = select.value === stored;
+    }
+    select.addEventListener('change', update);
+    update();
+  }
+
   function initLazyParts() {
     $('#collapseJurors').one('show.bs.collapse', function () {
       var el = $('#round-stat-table');
@@ -135,6 +151,7 @@
     $('#jurors').change(jurorsChanged(t.distribution || {}));
     initCoiConfirm(doc);
     initCriteria(doc);
+    initScoreRuleWarning(doc);
     initLazyParts();
   }
 

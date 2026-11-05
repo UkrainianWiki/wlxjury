@@ -67,6 +67,8 @@ object GatlingTestFixture {
         // round_image's counts recounted in the background, as production does (P2a);
         // -Dgatling.roundCounts.mode=manual for a benchmark that runs the recompute itself
         "roundCounts.mode"                       -> sys.props.getOrElse("gatling.roundCounts.mode", "background"),
+        // P2b: all the jurors' lists from round_image's counts (-Dgatling.roundImage.read=true)
+        "roundImage.read"                        -> sys.props.getOrElse("gatling.roundImage.read", "false").toBoolean,
         // region counts: the contest files page's cache, and the round galleries' counts
         "regions.countCache"                     -> GatlingConfig.regionCountCache
       ) ++ GatlingConfig.regionCounts.map("gallery.regionCounts" -> _) ++ timingConfig ++ csrfConfig ++ imagesConfig ++

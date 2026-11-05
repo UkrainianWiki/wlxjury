@@ -69,12 +69,16 @@
 
             <div id="rateFilters"
             class="@rounds.filterNot(_.isBinary).map(r => "round" + r.getId).mkString(" ")">
-            @* from a criteria round, the average of its files' criteria sums (U7): the hint says so
-               when a round the form offers has criteria *@
+            @* from a criteria round, the average of its files' criteria sums (U7); from a round scored
+               by the sum (AverageRule.Sum), a minimum score, a sum: the hints say so when a round the
+               form offers is one *@
             @bs.text(
                 editRoundForm("minAvgRate"),
                 Symbol("_label") -> Messages("average.file.rating.is.at.least"),
-                Symbol("_help") -> (if (rounds.exists(r => r.hasCriteria && !r.isBinary)) Messages("average.file.rating.criteria.sum") else ""),
+                Symbol("_help") -> Seq(
+                    Option.when(rounds.exists(r => r.hasCriteria && !r.isBinary))(Messages("average.file.rating.criteria.sum")),
+                    Option.when(rounds.exists(r => !r.isBinary && r.averageRule == org.intracer.wmua.AverageRule.Sum))(
+                        Messages("average.file.rating.sum"))).flatten.mkString(" "),
                 Symbol("readonly") -> noEdit
             )
             </div>

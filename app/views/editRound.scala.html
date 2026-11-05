@@ -14,7 +14,8 @@
         submitToken: Option[String] = None,
         distributionJob: Option[services.jobs.Job] = None,
         coi: Option[controllers.CoiCounts] = None,
-        criteria: Seq[org.intracer.wmua.Criterion] = Nil
+        criteria: Seq[org.intracer.wmua.Criterion] = Nil,
+        scoreRuleWarning: Option[controllers.RoundController.ScoreRuleWarning] = None
 )(implicit flash: Flash, messages: Messages, req: RequestHeader)
 
 @implicitLayout = @{ bs.Layout.horizontal("col-md-4", "col-md-8") }
@@ -116,6 +117,32 @@
                             editRoundForm("rates"),
                             Round.rates.map(x => (x.id.toString, if(x.id == 1) x.name else Messages("1-x.rating", x.id))),
                             Symbol("_label") -> Messages("rating.type"), Symbol("readonly") -> noEdit)
+
+                        @* how a rated round scores its files (V90, AverageRule): editable on an existing
+                           round too, as it changes only how results are shown; a next round's distribution
+                           reads the rule recorded when it was queued. The form is admins' only. *@
+                        @bs.select(
+                            editRoundForm("averageRule"),
+                            org.intracer.wmua.AverageRule.all.map(r => (r.param, Messages(r.messageKey))),
+                            Symbol("_label") -> Messages("round.average.rule"),
+                            Symbol("_help") -> Messages("round.average.rule.help"),
+                            Symbol("aria-describedby") -> scoreRuleWarning.fold[Any](None)(_ => "averageRule_warning"))
+                        @* (aria-describedby: a string, or None, left out; the helpers would render an
+                           Option's text.) A rated round with a rated vote: what a change of its rule does, in the page
+                           (shown without scripts); round-form.js shows it only while the select differs
+                           from the saved rule (data-stored-rule) *@
+                        @for(w <- scoreRuleWarning) {
+                            <div class="row mb-3" id="averageRule_warning_row" data-stored-rule="@w.storedRule.param">
+                                <div class="@implicitLayout.horizontal.fold("")(_.offsetFieldCol)">
+                                    <div class="alert alert-warning mb-0" id="averageRule_warning">
+                                        <p class="mb-0">@Messages("round.average.rule.change.warning")</p>
+                                        @if(w.laterRounds.nonEmpty) {
+                                            <p class="mb-0 mt-2" id="averageRule_warning_later">@Messages("round.average.rule.change.later", w.laterRoundsText)</p>
+                                        }
+                                    </div>
+                                </div>
+                            </div>
+                        }
 
                         @* a rated round's criteria, from the catalogue, by position: the empty
                            selects left out (EditRound.criterionIdsOf); after the round's first

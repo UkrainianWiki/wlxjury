@@ -686,8 +686,18 @@ P2b's `round_image` source can sit under it unchanged (§3, round-images §8).
     rate per criterion is lower: the spec's file shows 4.83 against 7 and 7.5.
 
   The averages' own denominator is unchanged. The grouped views now show their denominator
-  (`… 29 / 3 jurors`), so the difference is visible. The rule gets unified in P2b
-  (round-images plan, P2b item), which replaces the grouped source anyway.
+  (`… 29 / 3 jurors`), so the difference is visible. The rule gets unified in P2b (round-images
+  plan, P2b item), which replaces the grouped source anyway.
+
+  **Done in P2b (V90; round-images plan §17).** One rule per round, chosen on the round form
+  (`round.average_rule`, the user's decision of 2026-11-05) and used by every view and by a next
+  round's top-N and minimum: `rated` (the default: over the fully rated votes, U5, the same set
+  as the criteria averages, so the overall's per-criterion value is their mean: `7.25 (Σ 14.50:
+  29 / 2 of 3 jurors)` beside 7.00 and 7.50), `assigned` (over the vote rows, a partly rated vote
+  as 0: `4.83 (Σ 9.67: 29 / 3 jurors)`) or `sum` (the sum itself: `7.25 (Σ 29, sum of 3
+  jurors)`, its stars the rated jurors' average). `optionalRate` is folded into `sum` (V90 makes
+  those rounds `sum`; the code no longer reads it), so "active jurors" is gone. The criteria
+  averages themselves stay over a criterion's fully rated votes.
 - **Two scales in a half-star round.** The averages (file list, by-rate list, CSV), the sums
   and the juror columns are in stored half-star units (rates 1–10 for five stars), as every rate
   in those tables already is. The large view's numbers, and the per-criterion value of

@@ -466,6 +466,9 @@ V89.
 
 ### P2b: reads behind a flag
 
+**Built (§17), V90**, with the user's per-round score rule (2026-11-05: `rated`, `assigned`,
+`sum`; `optionalRate` folded into `sum`) in place of "one rule for every round" below.
+
 - Work: §8. Flag `roundImage.read`, off until the pilot, then on.
 - One rule for a file's average (decided by the user, 2026-11-03, after C3's review: criteria
   plan, "C3 results", "Denominators"). Today the grouped rows (by-rate gallery, all-jurors
@@ -510,17 +513,21 @@ P3 writes D16a's anew.
 ## 10. Rollout and checks
 
 - Per phase: compile, the affected specs (negative authorization included), then one full suite
-  at the release boundary; the repair job on staging after the migration, then on production.
+  at the release boundary; the repair job on a local copy of production after the migration
+  (the user's, §17 "Rollout"; there is no staging server), then on production.
 - Time each backfill on a production copy before deploying.
 - Deploy notes per phase: the migration, the rollback above, the repair job run.
 
 ## 11. Open items
 
 - Production query before P2a: how many votes have a NULL rate. Count them as unrated
-  (`COALESCE`) or normalise them to 0 in the backfill.
+  (`COALESCE`) or normalise them to 0 in the backfill. **Goes to the ✗ item** (roadmap queue
+  item 6, the user, 2026-11-05): `vote.rate` and `vote_aside.rate` made `NOT NULL DEFAULT 0`
+  after the user's pre-deploy count, NULLs set to 0 first.
 - B11 follow-up: `rateString`/`totalRate` show `rateSum` (rates below 0 as 0) while order and
   ranks use the SQL sum; decide what a rated round's vote below 0 means, then show a grouped row's
-  `rate_sum`.
+  `rate_sum`. **To be settled by the ✗ mark** (roadmap queue item 6, the user, 2026-11-05): a
+  rated round's −1 is a ✗, counted as 0.
 - B12 pending a user decision (superseded by P2b if P2b ships).
 - Decided (user, 2026-11-03; D16a): in P3, `removeImage` marks the row `dq` (`dq_code =
   'manual'`, its votes moved aside as D7 does for CoI) instead of deleting it, so a removed file
@@ -1752,6 +1759,364 @@ Logs under `target/checks/` of the worktree.
   window holds; it only delays structural writers by under a second.
 - **P2b's "as of"**: `RoundCounts.state` gives a round's generation, last recount and marked
   files; nothing records when a round was last clean. P2b decides whether it shows that.
+  **Decided in P2b (§17):** not shown; the reads are exact (the marked files overlaid from
+  their votes, a round with a recount pending read from its votes).
 - The repair job (`round_image_check`) bumps the generation through its sync windows, so a run
   forces a recount; it doesn't compare counts itself (invariant 5 is the spec's and the harness's
   check).
+
+## 17. P2b results
+
+Branch `ukwikidev/p2b-reads` (from `origin/stack/82-p2a-counts` `69dbf142`, PR #265, the stack
+tip), 2026-11-05. Roadmap queue item 5, second part. Migration **V90**
+(`V90__Round_average_rule.sql`). Two parts: the user's per-round score rule (2026-11-05), and
+all the jurors' lists read from `round_image`'s counts behind `roundImage.read`, off by default.
+
+### Migration V90
+
+```sql
+ALTER TABLE round
+  ADD COLUMN IF NOT EXISTS average_rule VARCHAR(16) NOT NULL DEFAULT 'rated',
+  ALGORITHM = INSTANT;
+UPDATE round SET average_rule = 'sum', created_at = created_at
+  WHERE optional_rate = 1 AND BINARY average_rule = 'rated';
+ALTER TABLE round DROP CONSTRAINT IF EXISTS round_average_rule_chk,
+  ADD CONSTRAINT round_average_rule_chk CHECK (BINARY average_rule IN ('rated', 'assigned', 'sum'));
+```
+
+- The column is metadata only (`INSTANT`). The `UPDATE` touches `round`'s few rows; `created_at`
+  is set to itself (production's has `ON UPDATE CURRENT_TIMESTAMP`, V86). The check is one
+  statement (db practices §8.0) and is checked against the existing rows as it is added; `round`
+  has one row per round, so its copy is instant. Every statement can be rerun.
+- **`optional_rate` is no longer read** (the user, 2026-11-05: one setting instead of two). The
+  column stays for a rollback; dropping it is a later clean-up.
+- `FlywayUpgradeSpec` "V90's average rule": an `optional_rate` round becomes `sum`, the others
+  `rated`, `created_at` unchanged; `'average'` and `'SUM'` refused; a rerun of V90 changes
+  nothing; the rollback below gives V89's schema and history; forward again gives the same rules.
+
+### The score rule (the user's decision, 2026-11-05)
+
+`org.intracer.wmua.AverageRule`, one option of a rated round, used by every view of its results
+and by a next round's top-N and "min average rate" from it. The sum is the file's rate sum; the
+rule picks what it is divided by:
+
+| Rule | Score | Form label (en) |
+|---|---|---|
+| `rated` (default) | the sum over the jurors who rated the file (`rate > 0`; in a criteria round, rated in every criterion, U5) | Average over the jurors who rated it |
+| `assigned` | the sum over the file's vote rows, unrated as 0 | Average over its assigned jurors (unrated counts as 0) |
+| `sum` | the sum itself | Total of the rates (a file a juror skipped adds nothing) |
+
+- **Defaults (confirmed by the user, 2026-11-05):** `rated` for new rounds and every existing
+  round; `sum` for the `optional_rate` rounds. `rated` goes with the coming ✗ "worst mark"
+  (roadmap queue item 6), where a ✗ counts as a rated 0: a juror's ✗ then lowers a file's
+  average, and only a file the juror left unrated is left out of it. Their old denominator (the round's
+  active jurors) was the same for every file, so their order was the sum's already; they now
+  show the sum instead of `sum / active jurors`.
+- **A yes/no round** has no average: its lists count approvals and rejections whatever its rule
+  (`AverageRuleSpec`, `GroupedListParitySpec`).
+- **Stopped jurors' votes count** under every rule, as before (their vote rows stay;
+  `round_user.active` only stops new votes): the vote source doesn't join `round_user`, nor do
+  the counts (`AverageRulePagesSpec`).
+- **The criteria averages** stay over a criterion's fully rated votes (C3); the overall score
+  follows the rule. Under `rated` both are over the same votes, so the overall's per-criterion
+  value is the criteria averages' mean (`7.25` beside `7.00` and `7.50`).
+- **Ranking.** A rated round's files rank by the rule's average, then the sum (a `sum` round's by
+  the sum alone): the CSV, the file list, the by-rate gallery for all the jurors (in any order
+  but file order), the ranks, the large view's neighbours and the top-N. The average is an exact
+  integer key in SQL and in memory (`sum * 10^9 DIV n`: ties exact, and averages that differ
+  with fewer than 30,000 jurors stay apart), so ranks read from SQL match a page's values.
+  Before, the lists ranked by the sum and showed averages over another denominator.
+- **Shown denominators** (`ImageWithRating.rateText`): `14.50 (29 / 2 of 3 jurors)`, or
+  `(29 / 3 jurors)` when every juror rated it; `9.67 (29 / 3 jurors)` under `assigned`; `29 (sum
+  of 3 jurors)` under `sum`. A criteria round: `7.25 (Σ 14.50: 29 / 2 of 3 jurors)`, a sum round
+  `7.25 (Σ 29, sum of 3 jurors)`. The CSV keeps numbers only: `14.50 (29 / 2)`, a sum round's
+  `29`. A `sum` round's stars show its rated jurors' average (the sum can exceed the stars),
+  with the sum beside them. The large view for all the jurors now shows the text under its stars
+  in a plain rated round too. Round statistics show the round's rule.
+
+**What each view's number becomes** (a file of `m` assigned jurors, `n` who rated it, sum `S`;
+`A` the round's jurors with any rated vote):
+
+| View | Before V90 | `rated` | `assigned` | `sum` |
+|---|---|---|---|---|
+| By-rate gallery, large view (all jurors) | `S/m`, ordered by `S` | `S/n`, by `S/n` then `S` | `S/m`, by `S/m` then `S` | `S`, by `S` |
+| File list, CSV | `S/n`, ranked by `S` | `S/n`, by `S/n` then `S` | `S/m` | `S` |
+| Top-N from it | by `S/m` then `S` | by `S/n` then `S` | unchanged | by `S` |
+| "Min average rate" from it | `S/m ≥ x` | `S/n ≥ x` | unchanged | `S ≥ x` (a minimum score) |
+| An `optional_rate` round, every view | `S/A`, ordered by `S` | | | `S`, ordered by `S` |
+| Yes/no round, juror's own lists | unchanged | | | |
+
+**Behaviour changes to note.** With the default `rated`, the grouped views and a next round's
+top-N or minimum from an existing rated round no longer count an unrated vote as 0: a file a
+juror skipped ranks by its other jurors' average. A next round's "min average rate" from a former
+`optional_rate` round now compares the sum (before, the sum over the round's active jurors): a
+threshold must be given as a score; the form's hint says so when a `sum` round is offered
+(`average.file.rating.sum`). A round from before V90 that should keep the old grouped numbers
+gets `assigned`.
+
+**Editing (the user, 2026-11-05: stays, with a warning): at any time, open, stopped or frozen.** The rule changes
+how results are shown, not the votes. A distribution reads the previous round's rule from its
+job's settings (`params.settings.prevAverageRule`, recorded when the job is queued, under the
+previous round's lock), so a change while a distribution runs doesn't change its top-N or
+minimum, and a later "Distribute new files" uses the rule then current. A job queued before V90
+has no recorded rule and applies `assigned`, the rule its distribution applied then (the rate sum
+over each file's vote rows), not the round's `rated` after V90, so a job resumed across the
+deploy applies one rule (`jobAverageRule`; review follow-up). A former `optional_rate` source's
+old rule (the sum over the round's active jurors) can't be reproduced: let such a distribution
+finish before the deploy (deploy note below). The next round's settings record which rule it used. The form is the admins'
+only (`RoundAverageRuleFormSpec`: a juror, an organizer and another contest's admin get 403; an
+unknown value 400; a client without the select keeps the stored rule).
+
+**A change takes effect at once; nothing runs in the background** (checked in the code,
+2026-11-05). The save is one `UPDATE round SET name, average_rule` (`Round.updateRound`): it
+bumps no `counts_gen`, marks no file, queues no job. The counts (`round_image`'s `rate_sum`,
+`assigned`, `voted`, `approvals`, `rejections`) and the votes don't depend on the rule, and
+`RoundCounts` doesn't read it; every read applies the round's rule as it loads the round, in SQL
+(`AverageRule.keySql` over `VoteTerms` or `CountTerms`) and in memory (`ImageWithRating`). No
+cache holds a score (`RegionCountCache` and `RoundImageCounts` hold file counts; the galleries
+and the large view are `no-store`). So the next page after the save shows the new scores and
+order, exactly. The only work that keeps the old rule is a distribution queued before the
+change (its job's recorded rule, above).
+
+**The round form's warning** (the user, 2026-11-05). For a rated round with a rated vote
+(`VoteJdbc.hasRatedVote`: a vote with `rate <> 0`, not deleted; without one every file scores 0
+under each rule), a note under the select (`RoundController.ScoreRuleWarning`,
+`round.average.rule.change.warning`): "Changing the score rule re-scores and re-orders this
+round's results on every page, and takes effect at once: nothing is recomputed in the background.
+A distribution already queued or running keeps the rule it started with." When later rounds of
+the contest list it among their previous rounds with a top-N or a "min average rate"
+(`round.average.rule.change.later`): "Round(s) 2 (Top), 3 used this round's scores when they were
+created; their files won't change. A later "Distribute new files" there uses the new rule." The
+note is rendered server-side, so it shows without JavaScript; `round-form.js` hides it while the
+select shows the saved rule (`data-stored-rule`) and shows it once the select differs. The
+select's `aria-describedby` names it with the help. Not on a new round's form, a round whose
+votes are all unrated, a yes/no or comments-only round (`RoundScoreRuleWarningSpec`; Jest
+`round-form.test.js`).
+
+**The ✗ item (roadmap, after P2b).** This code reads "rated" as `rate > 0` (`ratedVotes`,
+`approvals`, `AverageRule.VoteTerms.rated`, `RoundImageQuery.CountTerms`). The "worst mark (✗)"
+item stores ✗ as `rate = -1` and changes "rated" to `rate <> 0` (P2a's `voted`), with ✗ counted
+as 0 in every average and total: a `sum` round's sum of grades is then `rate_sum + rejections`
+(the counts have both). `sum(s.rate)` in the rank keys becomes that sum too.
+
+### Reads behind `roundImage.read`
+
+- `db.scalikejdbc.rewrite.RoundImageQuery` (§8): all the jurors' by-rate pages and file-list
+  page ids, `count`, rank counts, positions (`ROW_NUMBER` over the round's narrow rows), the
+  large view's neighbours and the region counts, from `round_image` (`status = 'in'`,
+  `assigned > 0`), one row per file, no GROUP BY. Its reader builds the same `ImageWithRating`
+  (rate sum, `countFromDb = assigned`, approvals, rejections). Order and rank columns are one
+  vocabulary for both sources (`RoundImageQuery.translate`: `ListOrder`, `BinaryOrder`, the rank
+  keys of each rule); a filter the counts can't tell (one rate of a rated round) and a juror's
+  list read the votes. Vote filters stay file-level: Unrated `assigned > voted`, Rated and
+  selected `approvals > 0`, rejected `rejections > 0`, plus the large view's file.
+- `RoundList.countsQuery` says whether a list may be read from the counts;
+  `GalleryController` and `LargeViewController` read `roundImage.read` (`conf/application.conf`,
+  false). The CSV reads the votes always (an exact
+  consumer), as do a top-N, a "min average rate" and the juror's own lists, counts and regions.
+- **Exactness, the fallback for dirty rounds.** Every query overlays the files marked dirty by
+  votes (`round_image_dirty`, usually a few) with their counts read from their votes, in the
+  same statement (`LEFT JOIN` of their grouped votes, `COALESCE`). At READ COMMITTED a statement
+  reads one snapshot, and in every committed state a file's stored counts equal its votes or the
+  file is marked (P2a: a vote marks its file in its transaction; the recompute writes the counts
+  and clears the marks it read in one), so the numbers are exact while no bulk write has
+  committed since the round's last full recount. **Each statement proves that for its own
+  snapshot** (`RoundList.fromCounts`, after the review: the first build checked the generation in
+  a statement of its own before the counts statement, so a bulk write committing between the two,
+  `moveVotesBack`, a distribution chunk adding votes to files already in the round, the repair
+  job's sync, would have been read with stale counts and no marks): the round's generation is
+  clean (`counts_gen_done >= counts_gen`, `RoundCounts.cleanGeneration`) when the request's first
+  counts statement begins, and unchanged (`RoundCounts.generation`) after each statement ends.
+  Every bulk writer bumps `counts_gen` in its own transaction and it only grows, so an unchanged
+  generation means no bulk write committed in between. When the check fails (a distribution, a
+  file deleted on Commons, a disqualification, until its recount, seconds), that statement and
+  the rest of the request read the votes. The source is decided once per request
+  (`CountsSession`, shared by a list's copies), so a page doesn't go back to the counts once a
+  statement has fallen back. Cost: two primary-key reads of `round` for the first statement, one
+  for each later. Spec'd: a bulk insert of a vote for a file already in the round between the
+  check and the statement is read from the votes (`GroupedListParitySpec`). Why not the votes for any dirty
+  round, or an "updating" marker: a round being judged has marked files nearly all the time
+  (marks are cleared every ~5–7 s), so the first would read the votes exactly when the pages are
+  used, and the second would show numbers seconds old. The overlay is exact at a measured cost
+  below. No "as of" is shown: nothing shown is stale.
+- **W10 (§851).** A list's page, rank counts, position and neighbours come from one source with
+  the same order columns: the request's `CountsSession` decides the source for the position and the
+  files around it. The counts' order columns are `round_image`'s `monument_id`/`page_id` copies,
+  the vote source's the vote's copies, equal by invariants 1 and 3.
+- **NULL rates.** The counts count a NULL rate as an assigned, unrated vote; the vote source now
+  counts vote rows with `COUNT(*)` too (before `COUNT(s.rate)`). Its Unrated filter is still
+  `s.rate = 0` (a NULL-rate vote isn't in it, but is in the counts' `assigned > voted`):
+  production has none to our knowledge (§16's pre-deploy query counts them). The ✗ item makes
+  `vote.rate` `NOT NULL DEFAULT 0` (roadmap queue item 6), and this difference goes.
+
+### Benchmarks (`gatling.setup.GalleryLatencyBenchmark`, fixture of 38k files, paired by the flag)
+
+One build (`48cb1c4e`), MariaDB 10.6.22 in the fixture's container, SQL debug logging off in
+every run (`-Dscalikejdbc.global.loggingSQLAndTime.enabled=false`), the app's recompute in the
+background (counts clean before the organizer cases), `-Dgatling.timing=true
+-Dbench.samples=20`, the fixture rebuilt once for V90 (cache `gatling-67def70bcd05b63b`). Each
+run is a fresh JVM with the fixture restored. "Off" is this build's vote source, which already
+ranks the rated round by the `rated` rule's average.
+
+**Pilot, `-Dbench.cases='^(organizer-|regions-.*-organizer)'`, flag off/on/off/on** (wall 353,
+149, 279, 145 s: the first rebuilt the fixture, the off runs are slower by their pages; no sleep:
+each run's wall time matches its requests). Client medians in ms (p10–p90), per run:
+
+| Case | off #1 | on #1 | off #2 | on #2 | on − off (mean of medians) |
+|---|---|---|---|---|---|
+| binary by-rate p1 | 456 (428–585) | 119 (113–128) | 451 (438–475) | 121 (111–138) | **−334** |
+| binary file list p1 (1,000 files) | 506 (473–632) | 235 (226–277) | 472 (468–496) | 231 (224–295) | **−256** |
+| binary large view, middle | 561 (512–676) | 125 (115–134) | 531 (519–621) | 124 (118–141) | **−422** |
+| rated by-rate p1 | 1035 (1019–1293) | 150 (146–158) | 1020 (1012–1044) | 157 (148–196) | **−874** |
+| rated file list p1 (1,000 files) | 1429 (1295–1757) | 273 (247–327) | 1037 (1011–1155) | 265 (244–314) | **−964** |
+| rated large view, middle | 1819 (1769–2069) | 266 (261–315) | 1772 (1758–1854) | 262 (255–288) | **−1532** |
+| region menu, binary | 179 (142–255) | 64 (59–70) | 155 (145–180) | 63 (55–75) | **−104** |
+| region menu, rated | 214 (189–258) | 50 (48–54) | 146 (141–177) | 51 (48–56) | **−130** |
+
+Run-to-run spread of a case's median: off 5–68 ms, and 392 ms for the rated file list (its
+first run, right after the fixture's rebuild); on 1–8 ms. From the timing logs (server-side, run 2 of
+each), what remains with the flag on: the rated large view's position (`ROW_NUMBER` over the
+round's 38k rows, 145 ms; 915 ms from the votes) and its page at the file's offset (96 ms; 836);
+the rated by-rate page 88 ms (822) and its rank counts 42 ms (174); the file list's page ids 79
+ms (727), its votes by page id 31 ms (unchanged); the region menu 32–39 ms (131–134). The
+generation check is 1–2 ms. The overlay's cost with marked files is not measured here: no file
+was marked during the organizer cases (the votes come last); the dirty case is exact by the specs.
+
+**Then `-Dbench.cases='^(large|vote)'`, flag off then on** (wall 133 and 134 s): the juror's
+large views (binary and rated, file and rate order, a file early, in the middle and at the end)
+and 20 votes of each kind, each followed by the next large view. The flag doesn't touch these
+paths (a juror's list reads the votes either way), and the medians moved by −6 to +15 ms with
+the p10–p90 ranges overlapping (a juror's large view 40–83 ms, a vote 53–65 ms, the next large
+view 45–56 ms): no difference beyond run noise. Logs `target/checks/20261105-085934-392.log`,
+`…-090147-10404.log`; summaries `target/gatling/p2b-pilot-summary.txt`,
+`p2b-large-vote-summary.txt` in the worktree.
+
+**Not run** (no result above could change a decision): `AggregatedRatingsSimulation`, a
+`VotingSimulation` stress run, `RoundDistributionSimulation` (the votes, the recompute and the
+distribution are unchanged by the flag; the distribution's queries add `SUM(s.rate > 0)`).
+**A later option**, if the large view's ~260 ms matters: the keyed path (§8) over the counts
+(the file's key, then `COUNT(*)` of the rows before it and a keyset page of five) instead of
+`ROW_NUMBER` and an offset page.
+
+### Rollout (a pilot; when is the user's call)
+
+1. Deploy with `roundImage.read = false` (the default): V90 and the score rule are live, the
+   lists read the votes as before.
+2. The pilot (the user, 2026-11-05: there is no staging server):
+   - (a) **On a local copy of production, run by the user.** The user restores a production
+     backup locally and runs the app on it with `roundImage.read = true`, and compares an
+     organizer's by-rate page, file list, large view and region menu with the flag off, once
+     `SELECT COUNT(*) FROM round WHERE counts_gen_done < counts_gen` is 0 (the background
+     recount after the migrations). `scripts/run-with-prod-dump.sh` does the restore: with no
+     argument it dumps production (credentials from `.env`), restores the dump into a local
+     MariaDB 10.6 container (`wlxjury-local-dev`, port 3307) and starts `sbt run` on it with
+     migrations on; `--skip-dump` reuses `/tmp/wlxjury-prod.sql.gz`, `--dump-only` stops after
+     the restore, `--reuse-container` starts sbt on the running container (the usage text,
+     `--help`). It passes sbt no other setting, so the flag goes in another way, for example
+     `SBT_OPTS=-DroundImage.read=true` (as the script's own `-Ddb.default.migration.auto=true`;
+     not tried by an agent) or a local edit of `conf/application.conf`. The query runs in the
+     container: `docker exec wlxjury-local-dev mysql wlxjury -e "…"`. **Agents never run the
+     script, nor anything else against real data.**
+   - (b) **Then production:** `roundImage.read = true` in its `production.conf`, after the same
+     query is 0 there (§16's deploy note). Rollback: the flag off and a restart.
+
+### Deploy note (V90)
+
+Read-only, production, before the deploy (with §16's for V89):
+```sql
+SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE()
+  AND TABLE_NAME = 'rounds' AND COLUMN_NAME = 'average_rule';                  -- 0
+SELECT COUNT(*), SUM(optional_rate = 1) FROM rounds;                            -- rounds, and those that become 'sum'
+SELECT r.id, r.contest_id, r.prev_min_avg_rate FROM rounds r                  -- minimums taken from them:
+  WHERE r.prev_min_avg_rate IS NOT NULL AND EXISTS (SELECT 1 FROM rounds o      -- read as sums from now on
+        WHERE o.optional_rate = 1 AND FIND_IN_SET(o.id, r.previous));
+```
+Rollback after `reopen` (tested: `FlywayUpgradeSpec`), with the app stopped:
+```sql
+ALTER TABLE round DROP CONSTRAINT round_average_rule_chk;
+ALTER TABLE round DROP COLUMN average_rule, ALGORITHM = INSTANT;
+DELETE FROM flyway_schema_history WHERE version = '90';
+```
+The older code reads `optional_rate`, which V90 left as it was.
+
+**Before the deploy (release 2):** let any distribution with a "min average rate" or a top-N from
+a former `optional_rate` round finish (`SELECT id, status FROM job WHERE kind =
+'round_distribution' AND status IN ('queued', 'running')`, with its round's previous rounds). Its
+threshold was the sum over that round's active jurors, which V90's code no longer computes
+(`numberOfActiveJurors` is gone): resumed after the deploy it would compare the sum.
+
+### Files
+
+New: `conf/db/migration/default/V90__Round_average_rule.sql`, `app/org/intracer/wmua/AverageRule.scala`,
+`app/db/scalikejdbc/rewrite/RoundImageQuery.scala`, `test/org/intracer/wmua/AverageRuleSpec.scala`,
+`test/controllers/AverageRulePagesSpec.scala`, `test/controllers/RoundAverageRuleFormSpec.scala`.
+Changed: `Round` (`averageRule`; `optionalRate`, `numberOfActiveJurors` removed), `VoteJdbc`
+(`activeJurors` removed), `ImageWithRating` (`ratedJurors`, `rateText`, `denominator`,
+`starRate`, `RankKey`), `ImageDbNew` (`COUNT(*)`, Long keys), `RoundCounts.cleanGeneration` and `generation`,
+`RoundList` (`countsQuery`, the by-rate order), `GalleryController`, `LargeViewController`,
+`EditRound`, `RoundController`, `RoundService` (`prevAverageRule`), `RoundDistributionHandler`
+(`PerImageRated`, the recorded rule), `DistributeImages`, the views (`editRound`,
+`imageFiltering`, `galleryByRate`, `fileList`, `large`, `navigationButtons`, `roundStat`),
+`conf/messages.{en,fr,uk,ru}`, `conf/application.conf`, `GatlingTestFixture`
+(`-Dgatling.roundImage.read`).
+
+### Specs
+
+- `GroupedListParitySpec`: every list (pages, sums, counts, tallies, ranks, positions, the large
+  view's neighbours; every filter, region, sub-region, several regions, binary order, criteria
+  round, past the end) against the in-memory model, **read from the votes and from the counts**,
+  for **each rule**; with eight files re-voted after the recount (dirty: read through the
+  overlay, the counts' source used) and with a recount pending (read from the votes);
+  `RoundImageQuery` directly for several regions.
+- `AverageRuleSpec`: each rule's score, page text, CSV text, stars, criteria text and rank key,
+  from vote rows and grouped rows alike; half stars; one juror; a yes/no round unchanged; the
+  key's exact ties.
+- `AverageRulePagesSpec` (through the router): the by-rate gallery's order and text, the
+  all-jurors large view, the file list and the CSV for each rule, from the votes and from the
+  counts; a stopped juror's votes counted; a vote after the recount shown at once from the counts.
+- `RoundDistributionJobSpec`: the streamed distribution against the in-memory filter for
+  `sum` and `assigned` previous rounds (min score, min average, top-N with ties); a sum round's
+  minimum is its files' sum; from a criteria round, each rule's picks.
+- `RoundAverageRuleFormSpec`, `CriteriaResultsPageSpec` (each rule's file list and large view),
+  `FlywayUpgradeSpec` (V90); expectations moved to `rated` in `CriteriaResultsViewSpec`,
+  `GalleryByRateViewSpec`, `RoundListDbSpec` (whose by-sum cases are a sum round's now),
+  `RoundCriteriaSpec`, `RoundListSpec` (every grouped list reads its tally); `RawSqlSpec` lists
+  `RoundImageQuery` among its reviewed files.
+
+### Checks
+
+Logs under `target/checks/` of the worktree (Git Bash, `scripts/agent-check.py`, the sbt
+launcher, one JVM at a time under the shared lock, Commons variables unset).
+
+| Step | Specs | Result | Log |
+|---|---|---|---|
+| Compile | `Test/compile` | ok, after two callers of the distribution's context and two test helpers' types | `20261105-082824-19780.log` |
+| Affected specs | 26 specs: the parity, rule, distribution, criteria, list, gallery, CSV, view and message specs | 367: 345 passed, 10 failed, 12 errors, 1 pending: expectations of the old rule (the by-rate text and stars, the file list's text, a criteria pick by `assigned`), view fixtures' grouped rows without a tally, the grouped SQL's text (`COUNT(*)`) | `20261105-083102-5048.log` |
+| Rerun | the failing ones, `FlywayUpgradeSpec` | 122: 119 passed, 2 failed (two view texts), 1 skipped | `20261105-083657-20204.log` |
+| New specs | `AverageRulePagesSpec`, `RoundAverageRuleFormSpec`, the two view specs | 30 passed | `20261105-084018-21024.log` |
+| Benchmarks | above | exit 0 each | `20261105-084239-9164.log`, `…-084832-26576.log`, `…-085101-18372.log`, `…-085540-5180.log`, `…-085934-392.log`, `…-090147-10404.log` |
+| Full suite | `Test/compile`, `test` (Jest included), MariaDB 10.6 | **2052: 2042 passed, 2 failed, 8 skipped, 1 pending**; Jest 22 suites, 285/285; 11:17. The two: `RoundListSpec` (a rated round's list now always reads its tally) and `RawSqlSpec` (`RoundImageQuery` added to its reviewed files) | `20261105-090927-18596.log` |
+| Fixed | `RoundListSpec`, `RawSqlSpec` | 26 passed | `20261105-092541-18052.log` |
+
+No second full suite: the two fixes are a spec's expectation and the guard's allowlist.
+
+**The score rule's warning** (`ukwikidev/p2b-rule-warning`, on `origin/stack/84-p2b-reads`
+`7f64460b`, worktree `C:/scala/wlxjury-rulewarn`):
+
+| Step | Specs | Result | Log |
+|---|---|---|---|
+| Affected specs | `Test/compile`; `RoundScoreRuleWarningSpec`, `RoundAverageRuleFormSpec`, `RoundEditPageSpec`, `RoundCriteriaSpec`, `MessagesCompletenessSpec` | 50: 49 passed, 1 failed: the select's `aria-describedby` read `Some(averageRule_warning)` (the bs helpers render an `Option`'s text; the view now passes a string or `None`) | `20261105-102740-15516.log` |
+| Rerun | the same | **50 passed** | `20261105-103331-3636.log` |
+| Jest | `round-form.test.js` (the worktree's own `npm ci`); ESLint on `round-form.js` | 12 passed; lint clean | console |
+
+### Open questions
+
+- ~~Confirm the defaults and the editing policy~~: confirmed by the user (2026-11-05): `rated`
+  (`sum` for the `optional_rate` rounds), with the ✗ item; editing at any time stays, with the
+  round form's warning (above).
+- **Lock the rule once a next round has taken its top-N or minimum from it?** The user
+  (2026-11-05): **decide later**; no lock is built. Today the next round's job settings record
+  the rule it used, the warning names such rounds, and nothing stops a change.
+- `imageCountsByRate` (a yes/no round's statistics footer) and `byRoundMerged` still read the
+  votes; small, not on a page an organizer reloads often.
+- The `optional_rate` column's drop (a later clean-up, after the rollback window).
