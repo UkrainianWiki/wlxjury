@@ -964,3 +964,31 @@ The C1/C2/P1 lock specs (`CriteriaRateSpec`, `RoundImageLockSpec`, `DeletedFiles
 READ COMMITTED now (the pool's level) and pass; two of them hold the round as the writers now
 do, so they wait at the round instead of at a vote row. A first full-suite attempt stopped
 part-way (the background wrapper ended; no failure in its log) and was rerun.
+
+## 12. Open items
+
+- **A residual stale `vote.monument_id` window (found 2026-11-05 in P2a's stress runs, round
+  images plan §16).** h6 is built (the image rows share-locked in page order before the vote rows
+  are built), yet one of P2a's four 90 s harness runs (branch #1) ended with 3 vote rows whose copy
+  differs from `images.monument_id`; the other three, both base runs on `04c1d310` (before P2a)
+  and a third base run (timing spoiled, below) had none. P2a writes no monument id, so the window
+  predates it: some writer still builds or keeps a vote's copy from a read a monument change can
+  pass. Not yet found. The harness now prints the offending rows (table, round, page, juror, the
+  vote's and the image's ids) when the invariant fails, for the next run that shows it. W4 (drop
+  the copy) would remove the class.
+- **A harness run spoiled by the host's sleep (2026-11-05).** Two more base runs
+  (`-Dstress.seconds=90 -Dstress.variants=baseline#3,baseline#4` on `04c1d310`) ran from 01:13
+  to 07:41 and were stopped by hand, still logging deadlocks and `job.error.count.mismatch`.
+  Not the harness: Windows went to sleep at 01:15:46 (Kernel-Power event 42), woke and slept
+  again at 04:15, and woke at 07:40:40, while the harness's run timer (a `Thread.sleep` of the
+  run's seconds) and its operations measure wall time. `baseline#3` then ended as usual
+  (`target/stress/write-paths-20261105-011407/`: 23,185 s "elapsed", every path's longest
+  operation 12,298 s or about 23,100 s, the two sleeps; operation counts of a normal 90 s run; 3
+  server deadlocks; invariants clean, no stale monument copy) and `baseline#4` started: it was
+  what kept running, its distribution jobs failing with the count mismatch every run has (break
+  7, against the test-only `remove_image`/`set_round`). The harness's end does not wait for
+  retried jobs (it stops the paths' threads, joins each for 180 s at most, then checks), so
+  nothing in it was changed. The two extra base runs were not obtained. Before a long or
+  unattended harness run, keep the host awake (`powercfg /requestsoverride`, or the power plan);
+  a check that fails a run whose wall time far exceeds `stress.seconds` would make such a run
+  fail loudly instead.

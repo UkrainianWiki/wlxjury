@@ -186,16 +186,26 @@ object VoteJdbc extends CRUDMapper[Vote] {
   private def voteId(pageId: Long, juryId: Long, roundId: Long)(implicit session: DBSession): Option[Long] =
     sql"SELECT id FROM vote WHERE page_id = $pageId AND jury_id = $juryId AND round_id = $roundId".map(_.long(1)).single()
 
-  /** [[rate]] of the vote `id` in the caller's transaction. */
+  /** [[rate]] of the vote `id` in the caller's transaction. A rate that changes marks the
+    * file's counts in the round dirty, last ([[RoundCounts.markFile]], P2a): no count delta and
+    * no lock on the round or its `round_image` row.
+    */
   private[scalikejdbc] def rateIn(id: Long, juryId: Long, roundId: Long, rate: Int)(implicit session: DBSession): Int = {
-    val locked = sql"SELECT id FROM vote WHERE id = $id AND jury_id = $juryId AND round_id = $roundId FOR UPDATE"
-      .map(_.long(1)).single().isDefined
+    // the vote's file and its rate before, read as it is locked
+    val locked = sql"SELECT page_id, rate FROM vote WHERE id = $id AND jury_id = $juryId AND round_id = $roundId FOR UPDATE"
+      .map(rs => rs.long(1) -> rs.intOpt(2).getOrElse(0)).single()
     def stopped = sql"""SELECT 1 FROM round_user WHERE round_id = $roundId AND user_id = $juryId AND active = FALSE
                         LOCK IN SHARE MODE""".map(_ => ()).single().isDefined
     def criteria = sql"SELECT 1 FROM round_criterion WHERE round_id = $roundId LIMIT 1 LOCK IN SHARE MODE"
       .map(_ => ()).single().isDefined
-    if (!locked || stopped || criteria) 0
-    else sql"UPDATE vote SET rate = $rate WHERE id = $id".update()
+    locked match {
+      case Some((pageId, before)) if !stopped && !criteria =>
+        val updated = sql"UPDATE vote SET rate = $rate WHERE id = $id".update()
+        // a NULL rate counts as 0 (unrated), so 0 for NULL changes no count
+        if (rate != before) RoundCounts.markFile(roundId, pageId)
+        updated
+      case _ => 0
+    }
   }
 
   def activeJurors(roundId: Long): Int =

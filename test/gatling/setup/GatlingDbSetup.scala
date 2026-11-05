@@ -220,6 +220,11 @@ object GatlingDbSetup {
       SQL("SET unique_checks = 1").execute.apply()
     }
 
+    // round_image's counts (P2a, V89): the inserts marked both rounds dirty; recounted here, so
+    // the dump is clean and a simulation's app starts with nothing to recount
+    val recounted = new services.counts.RoundCountsRecompute().untilClean()
+    println(s"[GatlingDbSetup] round counts: ${recounted.roundsRecounted} rounds, ${recounted.files} files")
+
     // Refresh optimizer statistics after bulk load so the first query uses correct plans.
     DB autoCommit { implicit session =>
       SQL("ANALYZE TABLE images, vote, round_image, monument, users, round, round_user").execute.apply()

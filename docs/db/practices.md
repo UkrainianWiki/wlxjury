@@ -275,7 +275,11 @@ as `Future(blocking(…))` on the default execution context (§11, V9).
 (`conf/application.conf:70`; `production.conf` must not override it: `ProductionConfigSpec`);
 the tests' DBCP pool through the driver URL (`SharedTestDb.readCommittedUrl`). `/ready`
 answers 503 unless a pooled connection reports `READ-COMMITTED` (`ReadinessCheck.isolation`;
-`ReadinessControllerSpec`, `ReadinessDatabaseSpec`). Write-path §4 (b): −60 % deadlocks.
+`ReadinessControllerSpec`, `ReadinessDatabaseSpec`). Write-path §4 (b): −60 % deadlocks. The
+counts' recompute depends on it (a plain read of the votes after its locks) and checks it in
+each window's transaction (`@@tx_isolation`; MariaDB 10.6 has no `@@transaction_isolation`): at
+another level it writes nothing and logs `round_counts_skipped reason=isolation` (round-images
+§16).
 
 **6.2 What it implies.**
 - **No gap locks for reads.** A locking read or a searched `UPDATE`/`DELETE` locks the rows it
@@ -301,7 +305,13 @@ READ COMMITTED refuses writes. Pre-deploy: `SELECT @@log_bin, @@binlog_format;`.
 
 **7.1 Lock order.** `job` (a step's own row) → `round` → `images` → `vote` →
 (`round_user`, `round_criterion`: share-locked by a vote after its row) → `criteria_rate` →
-`vote_aside` → `round_image` → `round_image_event` (round-images §5 and §15, write-path §8). A
+`vote_aside` → `round_image` → `round_image_dirty` → `round_image_event` (round-images §5,
+§15 and §16, write-path §8). A juror's vote whose rate changes marks its file last
+(`RoundCounts.markFile`: an upsert of its `round_image_dirty` entry, an exclusive record lock;
+not `INSERT IGNORE`, whose shared lock deadlocked votes re-inserting an entry the recompute had
+just deleted); it never locks `round` or `round_image`. The counts' recompute locks the round
+for update, then a window's `round_image` rows, then their dirty entries, and reads `vote`
+plainly; a bulk writer bumps its round's `counts_gen` under the round lock it holds. A
 criteria change (`RoundCriterion.update`) locks the round and its votes before writing
 `round_criterion`, so it never waits on a vote holding them. Within a table in key order:
 rounds by id, files by `page_id`. `round_image` last in every transaction but for a
@@ -351,8 +361,9 @@ the spec fails without the lock (C1 M3). *Examples:* `CriteriaRateSpec`, `RoundI
 `WritePathLockSpec`.
 
 **7.7 The stress harness.** `test/stress/WritePathStress.scala` (`db.stress.WritePathStress`,
-a `main`, opt-in, never in `sbt test`): 16 production write paths on threads, each as its own
-MariaDB user so a printed deadlock names its pair, invariants checked at the end. Run it for a
+a `main`, opt-in, never in `sbt test`): 17 production write paths on threads (the counts'
+recompute, `recount`, since P2a), each as its own MariaDB user so a printed deadlock names its
+pair, invariants checked at the end (5, the counts, after a final recount). Run it for a
 change to a write path's locks; compare variants in one JVM (write-path §3; §11: 0, 1, 0
 deadlocks over three 90 s runs).
 
@@ -400,8 +411,12 @@ so a statement fails rather than copies a large table (V56, V58, V82, V85); an F
 table is added with `foreign_key_checks = 0` after a data check (V58, V65, V82). Time the DDL
 and any backfill on production-sized data and record it (V82: ≤ 0.034 s on 1M rows; V85:
 10.9 s on 3.07M rows). Backfills that don't fit a deploy window are jobs. A new, empty table
-(V84 before its backfill, V88's `round_image_event`) is a plain `CREATE TABLE IF NOT EXISTS`:
-no copy, and its foreign keys only touch the parents' metadata.
+(V84 before its backfill, V88's `round_image_event`, V89's `round_image_dirty`) is a plain
+`CREATE TABLE IF NOT EXISTS`: no copy, and its foreign keys only touch the parents' metadata.
+Columns are added `ALGORITHM = INSTANT` with `ADD COLUMN IF NOT EXISTS` (V89's counts on
+`round_image` and generations on `round`: metadata only, existing rows read the default). A
+backfill a deploy needn't wait for is left to the app: V89's defaults mark every round dirty
+and the background recompute fills the counts (round-images §16).
 
 **8.7 Version-conditional DDL.** When a server version changes the meaning (10.6 parses
 `DESC` in an index and ignores it), read `VERSION()` and `information_schema`, run the
@@ -451,10 +466,11 @@ SCALAWIKI_PASSWORD`; live-Commons specs only with `-Dintegration=true`.
 | 3.3 no filesort on the juror gallery (10.8+) | `db.VoteGalleryIndexSpec` |
 | 3.5 batches fit 1M packets | `DistributeImagesBatchSpec` |
 | 6.1 READ COMMITTED | `ReadinessControllerSpec`, `ReadinessDatabaseSpec`, `ProductionConfigSpec`, `CriteriaRateSpec` |
-| 7.2 round first | `RoundWritesGuardSpec` and `RoundImageEventSpec` (run time), `security.StructuralWritesSpec` (raw writes, `round_image_event` too since V88) |
+| 7.2 round first | `RoundWritesGuardSpec`, `RoundImageEventSpec` and `RoundCountsSpec` (run time), `security.StructuralWritesSpec` (raw writes, `round_image_event` too since V88, `round_image_dirty` since V89) |
 | 7.3 vote rows locked by primary key | `db.VoteRowLockSpec` (new): a tripwire for literal SQL of the pre-h4 shape (locking, writing or upserting a vote by `page_id` and `jury_id` without the id), not full enforcement |
 | 8.4 production-like chains | `FlywayUpgradeSpec`, `ConvertToInnoDbMigrationSpec` |
-| 9.4 invariants | `RoundImageInvariants` in the write specs |
+| 9.4 invariants | `RoundImageInvariants` in the write specs; invariant 5 (the counts) once a round's counts are clean (`RoundCounts.isClean`), so after `RoundCountsRecompute.untilClean` |
+| 7.1 the counts' marks and recompute | `RoundCountsLockSpec` (INNODB_TRX waits both ways; 20 jurors on one file while the recompute runs: no lost vote, no failure) |
 | 9.5 anonymous Commons in tests | `TestConfigAnonymousSpec`, `AnonymousBotsSpec` |
 
 **Proposed, by value and cost** (not built):

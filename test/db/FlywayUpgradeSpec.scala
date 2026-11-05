@@ -264,6 +264,54 @@ class FlywayUpgradeSpec extends Specification with BeforeAll with AfterAll {
     }
   }
 
+  /** V89's rollback SQL after reopen (docs/plans/2026-11-02-round-images-two-step.md, §16). */
+  private val v89Rollback = Seq(
+    "DROP TABLE round_image_dirty",
+    "ALTER TABLE round DROP COLUMN counts_gen, DROP COLUMN counts_gen_done, ALGORITHM = INSTANT",
+    "ALTER TABLE round_image DROP COLUMN assigned, DROP COLUMN voted, DROP COLUMN approvals, " +
+      "DROP COLUMN rejections, DROP COLUMN rate_sum, ALGORITHM = INSTANT",
+    "DELETE FROM flyway_schema_history WHERE version = '89'")
+
+  "V89's rollback SQL after reopen" should {
+    "give back V88's schema and history, and V89 run again mark every round dirty" in {
+      emptyDb("fw_v88")
+      flyway("fw_v88", production.copy(target = Some("88"))).migrate()
+      emptyDb("fw_v89_back")
+      flyway("fw_v89_back", production.copy(target = Some("89"))).migrate().success must beTrue
+      // counts written and a round recounted before the rollback
+      Using.resource(connect("fw_v89_back"))(c => run(c, Seq(
+        "INSERT INTO round (id, number, contest_id, rates, created_at) VALUES (1, 1, 1, 1, NOW())",
+        "INSERT INTO images (page_id, title) VALUES (1, 'File:1.jpg')",
+        "INSERT INTO vote (page_id, jury_id, round_id, rate) VALUES (1, 1, 1, 1)",
+        "INSERT INTO round_image (round_id, page_id, assigned, voted, approvals, rate_sum) VALUES (1, 1, 1, 1, 1, 1)",
+        "INSERT INTO round_image_dirty (round_id, page_id) VALUES (1, 1)",
+        "UPDATE round SET counts_gen_done = 1 WHERE id = 1")))
+      Using.resource(connect("fw_v89_back"))(c => run(c, v89Rollback))
+      history("fw_v89_back").map(_.split(" \\| ")(1)) === upTo("88")
+      val back = schema("fw_v89_back")
+      // the rows' counts aside (the tables' row counts differ), the schema is V88's
+      def tablesOnly(s: String) = s.split(";\n\n").filterNot(_.matches("(?s)^\\w+: \\d+ rows.*")).mkString(";\n\n")
+      tablesOnly(back) === tablesOnly(schema("fw_v88"))
+      // the previous release writes a vote meanwhile, which no mark records
+      Using.resource(connect("fw_v89_back"))(c => run(c, Seq("UPDATE vote SET rate = -1 WHERE page_id = 1")))
+      flyway("fw_v89_back", production.copy(target = Some("89"))).migrate().success must beTrue
+      history("fw_v89_back").map(_.split(" \\| ")(1)) === upTo("89")
+      val once = schema("fw_v89_back")
+      Using.resource(connect("fw_v89_back")) { c =>
+        // every round dirty again, its counts back to 0: the recompute recounts them from the votes
+        (rows(c, "SELECT counts_gen, counts_gen_done FROM round")(rs => rs.getLong(1) -> rs.getLong(2)) === List(1L -> 0L)) and
+          (rows(c, "SELECT assigned, rate_sum FROM round_image")(rs => rs.getInt(1) -> rs.getInt(2)) === List(0 -> 0)) and {
+            // a rerun of V89's statements on a database that has them changes nothing (IF NOT EXISTS)
+            val v89 = new String(java.nio.file.Files.readAllBytes(
+              java.nio.file.Paths.get("conf/db/migration/default/V89__Round_image_counts.sql")), "UTF-8")
+              .linesIterator.filterNot(_.trim.startsWith("--")).mkString("\n").split(";").map(_.trim).filter(_.nonEmpty).toSeq
+            run(c, v89)
+            schema("fw_v89_back") === once
+          }
+      }
+    }
+  }
+
   "the app's start with production's settings but without auto" should {
     "refuse while a migration is pending, without changing the database" in {
       emptyDb("fw_pending")

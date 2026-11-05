@@ -70,6 +70,8 @@ object WritePathStress {
   private val voteThreads = prop("voteThreads", "2").toInt
   private val adminThinkMs = prop("adminThinkMs", "150").toInt
   private val voteThinkMs = prop("voteThinkMs", "5").toInt
+  // the counts' recompute (P2a): a tick every 0-2x this (production: every 5 s after the last)
+  private val recountThinkMs = prop("recountThinkMs", "250").toInt
   private val lockWaitTimeout = prop("lockWaitTimeout", "50").toInt
   private val seed = prop("seed", "42").toLong
   private val variants = prop("variants", "baseline").split(",").map(_.trim).filter(_.nonEmpty).toSeq
@@ -245,7 +247,7 @@ object WritePathStress {
 
   private val deletedPool = ConcurrentHashMap.newKeySet[java.lang.Long]()
 
-  private def paths(f: Fixture): Seq[Path] = {
+  private def paths(f: Fixture, recompute: services.counts.RoundCountsRecompute): Seq[Path] = {
     val caches = f.all.map(r => r -> new VoteCache(r)).toMap
     def page(rnd: Random): Long = f.images(rnd.nextInt(f.images.size)).pageId
     def pages(rnd: Random, n: Int): Seq[Long] = Seq.fill(n)(page(rnd)).distinct
@@ -359,6 +361,9 @@ object WritePathStress {
           }
           true
         }),
+      // round_image's counts (P2a, V89): the background recompute, as modules.RoundCountsTask ticks
+      Path("recount", 1, recountThinkMs, "background: RoundCountsRecompute.runOnce (RoundCountsTask's tick, windows of 2,000)",
+        (_, _) => recompute.runOnce().windows > 0),
       Path("file_check", 1, adminThinkMs * 2, "background: CommonsFileCheck.write (markDeleted + updateFileInfo, then settle)",
         (_, rnd) => {
           val deleted = if (deletedPool.size < 20) pages(rnd, 2) else Nil
@@ -397,7 +402,8 @@ object WritePathStress {
     deletedPool.clear()
     retriedSteps.clear()
     val f = seedFixture()
-    val ps = paths(f)
+    val recompute = new services.counts.RoundCountsRecompute(services.counts.RoundCountsRecompute.Settings(background = false))
+    val ps = paths(f, recompute)
     root(c => ps.foreach { p =>
       exec(c, s"CREATE USER IF NOT EXISTS '${userOf(p.name)}'@'%' IDENTIFIED BY '$password'")
       exec(c, s"GRANT ALL PRIVILEGES ON *.* TO '${userOf(p.name)}'@'%'")
@@ -466,6 +472,9 @@ object WritePathStress {
     val deadlocks = DeadlockLog.parse(log)
 
     // ── invariants ──
+    // the counts brought up to date once the paths have stopped, as the next ticks would:
+    // invariant 5 is then checked for every round that is clean
+    val finalRecount = { val previous = tag.get; tag.set("harness"); try recompute.untilClean() finally tag.set(previous) }
     val checks = DB.readOnly { implicit s =>
       val ri = RoundImageInvariants.all()
       val criteriaRates = sql"""SELECT COUNT(*) FROM vote v
@@ -480,16 +489,32 @@ object WritePathStress {
         t -> sql"SELECT COUNT(*) FROM ${SQLSyntax.createUnsafely(t)} v JOIN images i ON i.page_id = v.page_id WHERE NOT (v.monument_id <=> i.monument_id)"
           .map(_.long(1)).single().get
       }.toMap
+      // the stale copies themselves (a residual window of the write-path plan's h6): table,
+      // round, page, juror, the vote's copy and the image's monument id, 20 a table at most
+      val monumentRows = Seq("vote", "vote_aside").flatMap { t =>
+        sql"""SELECT v.round_id, v.page_id, v.jury_id, v.monument_id, i.monument_id
+              FROM ${SQLSyntax.createUnsafely(t)} v JOIN images i ON i.page_id = v.page_id
+              WHERE NOT (v.monument_id <=> i.monument_id) ORDER BY v.round_id, v.page_id, v.jury_id LIMIT 20"""
+          .map(r => s"$t round ${r.long(1)} page ${r.long(2)} juror ${r.long(3)} vote ${r.stringOpt(4).getOrElse("NULL")} " +
+            s"image ${r.stringOpt(5).getOrElse("NULL")}").list()
+      }
       val rounds = sql"SELECT id, freeze_count, distributing FROM round WHERE freeze_count <> 0 OR distributing <> 0"
         .map(r => s"round ${r.long(1)} freeze ${r.int(2)} distributing ${r.boolean(3)}").list()
       val jobs = sql"SELECT status, COUNT(*) FROM job GROUP BY status".map(r => r.string(1) -> r.long(2)).list().toMap
       val votes = sql"SELECT COUNT(*) FROM vote".map(_.long(1)).single().get
+      val notClean = f.all.filterNot(RoundCounts.isClean(_))
+      val countDrift = f.all.map(r => r.toString -> RoundCounts.drift(r).size).filter(_._2 > 0).toMap
       Json.obj(
+        "countsNotClean" -> notClean,
+        "countDrift" -> countDrift,
+        "finalRecount" -> Json.obj("windows" -> finalRecount.windows, "files" -> finalRecount.files,
+          "changed" -> finalRecount.changed, "recounted" -> finalRecount.roundsRecounted, "skipped" -> finalRecount.skipped),
         "roundImageViolations" -> ri.groupBy(_.invariant).map { case (k, v) => k.toString -> v.size },
         "roundImageViolationSamples" -> ri.take(10).map(_.toString),
         "criteriaVoteRateWrong" -> criteriaRates,
         "criteriaRateOfCriterionNotInRound" -> foreignRates,
         "monumentCopyWrong" -> monumentCopies,
+        "monumentCopyWrongRows" -> monumentRows,
         "roundsLeftFrozen" -> rounds,
         "jobs" -> jobs,
         "votesAtStart" -> votesAtStart,
@@ -552,6 +577,7 @@ object WritePathStress {
       text ++= s"  ${v.size}x $k\n"
     }
     text ++= s"invariants: ${Json.stringify(checks)}\n"
+    (checks \ "monumentCopyWrongRows").asOpt[Seq[String]].getOrElse(Nil).foreach(row => text ++= s"  stale monument copy: $row\n")
     if (stuck.nonEmpty) text ++= s"STUCK threads: ${stuck.mkString(", ")}\n"
     ps.foreach { p => stats(p.name).samples.asScala.foreach(s => text ++= s"  ${p.name}: $s\n") }
 
