@@ -107,7 +107,12 @@
                         <td>
                             @contest.images.map(_.trim).filter(_.nonEmpty) match {
                                 case Some(source) => { <a href="@routes.ImageController.images(contest.getId)">@source</a> }
-                                case None => { <span class="text-body-secondary">@Messages("files.source.none")</span> <a href="@routes.ImageController.images(contest.getId)">@Messages("files.source.set")</a> }
+                                case None => {
+                                    <span class="d-block text-body-secondary">@Messages("files.source.none")</span>
+                                    @defining(Messages("files.source.set.of", contest.fullName)) { label =>
+                                    <a class="d-block" href="@routes.ImageController.images(contest.getId)" title="@label" aria-label="@label">@Messages("files.source.set")</a>
+                                    }
+                                }
                             }
                         </td>
                         @* icon links styled as buttons (a link, not a button in a link), named for the

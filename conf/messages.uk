@@ -182,6 +182,7 @@ import.source.placeholder=Category:Images from Wiki Loves Earth 2016
 contest.users.edit=Редагувати користувачів конкурсу {0}
 files.source.none=Не вказано
 files.source.set=Вказати джерело
+files.source.set.of=Вказати джерело файлів конкурсу {0}
 contest.rounds.edit=Редагувати раунди конкурсу {0}
 source=Джерело
 import=Імпорт

@@ -93,8 +93,13 @@ class CategorySuggestViewSpec extends PlaySpecification {
       val links = doc.select("tbody a[href]").asScala.toSeq
       (links.forall(a => a.text.trim.nonEmpty || a.attr("aria-label").nonEmpty) must beTrue) and
         (links.count(_.text == messages("files.source.set")) === 2) and
-        // the state is text, not part of the link
-        (doc.select("tbody span").asScala.count(_.text == messages("files.source.none")) === 2) and
+        // each set link on its own line, named for its contest as the edit links are
+        (links.filter(_.text == messages("files.source.set")).forall { a =>
+          a.hasClass("d-block") && Set(noSource, blank).exists(c =>
+            a.attr("aria-label") == messages("files.source.set.of", c.fullName) && a.attr("title") == a.attr("aria-label"))
+        } must beTrue) and
+        // the state is text on its own line, not part of the link
+        (doc.select("tbody span.d-block").asScala.count(_.text == messages("files.source.none")) === 2) and
         (links.exists(_.text.contains(messages("files.source.none"))) must beFalse) and
         (links.count(a => contest.images.contains(a.text)) === 1) and
         (doc.select("thead th").eachText().contains(messages("files.source")) must beTrue)
