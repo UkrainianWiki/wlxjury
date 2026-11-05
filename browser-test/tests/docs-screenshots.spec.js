@@ -141,6 +141,18 @@ test.describe('the guides\' screenshots', () => {
     await shot(contextAs, 'organizer', `/byrate/round/${fixture.roundRatingId}/user/0/page/1`, 'organizer-results-by-rate', { rows: 2 });
     await shot(contextAs, 'organizer', `/filelist/round/${fixture.roundRatingId}/user/0/page/1`, 'organizer-results-file-list', { tableRows: 6 });
     await shot(contextAs, 'organizer', `/admin/rounds/${fixture.roundBinaryId}/conflicts`, 'organizer-conflicts', { height: 680 });
+    // the organizer's way to that page: the link under the statistics table (the last rows and it)
+    const context = await contextAs('organizer');
+    await context.addCookies([{ name: 'theme', value: 'dark', url: baseUrl }]);
+    const stat = await sized(context);
+    await stat.goto(`/roundstat/${fixture.roundBinaryId}`);
+    await expect(stat.locator('#round-conflicts-link a')).toBeVisible();
+    await stat.waitForLoadState('networkidle');
+    const lastRow = await stat.locator('table tbody tr').last().boundingBox();
+    const link = await stat.locator('#round-conflicts-link').boundingBox();
+    await stat.screenshot({ path: path.join(OUT_DIR, 'organizer-round-statistics-link.png'), fullPage: true,
+      clip: { x: 0, y: lastRow.y - 2, width: VIEWPORT.width, height: link.y + link.height - lastRow.y + 22 } });
+    await context.close();
   });
 
   test('admin pages', async ({ contextAs, fixture }) => {
