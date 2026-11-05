@@ -10,7 +10,8 @@ and CC0 photos from Wikimedia Commons, and writes to the git-ignored target/docs
   bad/<hash>.jpg   degraded copies (blur, tilted horizon, over- or underexposed, low resolution with
                    JPEG artefacts) of some of them, for the yes/no examples
   manifest.json    the photos and degraded copies of this run, in the list's order, each with its
-                   title and file: what gatling.setup.DocsPhotos serves, and nothing else
+                   title and file, the list file's SHA-256 and when it was checked: what
+                   gatling.setup.DocsPhotos serves, and only while the list is unchanged
 
 A file's name is a hash of the title and of how it was made (width, crop, variant), so a cached
 file always belongs to the entry that names it. It fails closed, on every run:
@@ -188,7 +189,8 @@ def download(title, info, target, crop):
 
 
 def fetch_list(name):
-    manifest = json.loads((HERE / f"docs-photos-{name}.json").read_text(encoding="utf-8"))
+    list_bytes = (HERE / f"docs-photos-{name}.json").read_bytes()
+    manifest = json.loads(list_bytes.decode("utf-8"))
     width = manifest["width"]
     if width not in WIDTHS:
         sys.exit(f"{width} is not a standard thumbnail width")
@@ -237,6 +239,9 @@ def fetch_list(name):
 
     listing = {
         "list": name,
+        # the committed list this run checked: DocsPhotos serves nothing for another version of it
+        "list_sha256": hashlib.sha256(list_bytes).hexdigest(),
+        "checked_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "width": width,
         "good": [{"title": t, "file": f"good/{files[t].name}"} for t in titles],
         "bad": degraded,

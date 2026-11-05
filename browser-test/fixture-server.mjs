@@ -32,9 +32,13 @@ const CREDENTIALS = ['COMMONS_USER', 'COMMONS_PASSWORD', 'SCALAWIKI_LOGIN', 'SCA
 
 // Docs mode (the user guides' screenshots, docs/user/images/README.md): the photos that
 // docs-photos.py cached instead of the grey stub, with DOCS_SCREENSHOTS=1 or UI_IMAGES=docs;
-// UI_IMAGES unset or stub keeps the stub, any other value is an error
+// UI_IMAGES unset or stub keeps the stub, any other value is an error, and so is
+// DOCS_SCREENSHOTS=1 with UI_IMAGES=stub (one of them is a mistake)
 const UI_IMAGES = (process.env.UI_IMAGES ?? '').trim();
 if (!['', 'stub', 'docs'].includes(UI_IMAGES)) throw new Error(`UI_IMAGES=${UI_IMAGES}: use docs or stub`);
+if (docsScreenshotsOn() && UI_IMAGES === 'stub') {
+  throw new Error('DOCS_SCREENSHOTS=1 needs the docs photos, not UI_IMAGES=stub: unset one of them');
+}
 const IMAGES = docsScreenshotsOn() || UI_IMAGES === 'docs' ? 'docs' : 'stub';
 // DOCS_PHOTOS: the photo lists of docs mode (wlm-ua, wlm-intl, wle-ua, wle-intl, comma separated; default wlm-ua,wlm-intl)
 const PHOTOS = (process.env.DOCS_PHOTOS || 'wlm-ua,wlm-intl').split(',').map((n) => n.trim()).filter(Boolean);

@@ -57,29 +57,44 @@ class DocsPhotosSpec extends Specification {
   }
 
   "DocsPhotos.load" should {
-    def withPhotos[A](manifests: Map[String, String], files: Seq[String])(test: File => A): A = {
+    /** The committed list of the manifests below (browser-test/docs-photos-wlm-ua.json's form). */
+    val committed =
+      """{"width": 1280, "photos": [{"title": "File:A.jpg", "license": "CC0"}, {"title": "File:B.jpg", "license": "CC0"}],
+        | "degraded": [{"base": "File:A.jpg", "variant": "blur", "params": {"radius": 7}}]}""".stripMargin
+
+    /** A cache under a temporary root, with the committed list (`list`) in its `lists/`. */
+    def withPhotos[A](manifests: Map[String, File => String], files: Seq[String], list: String = committed)(
+        test: (File, File) => A): A = {
       val root = Files.createTempDirectory("docs-photos").toFile
+      val lists = new File(root, "lists")
       try {
-        for ((list, json) <- manifests) {
-          new File(root, s"$list/good").mkdirs()
-          new File(root, s"$list/bad").mkdirs()
-          Files.write(new File(root, s"$list/manifest.json").toPath, json.getBytes(UTF_8))
+        lists.mkdirs()
+        val listFile = new File(lists, "docs-photos-wlm-ua.json")
+        Files.write(listFile.toPath, list.getBytes(UTF_8))
+        for ((name, json) <- manifests) {
+          new File(root, s"$name/good").mkdirs()
+          new File(root, s"$name/bad").mkdirs()
+          Files.write(new File(root, s"$name/manifest.json").toPath, json(listFile).getBytes(UTF_8))
         }
         files.foreach(f => Files.write(new File(root, f).toPath, f.getBytes(UTF_8)))
-        test(root)
+        test(root, lists)
       } finally {
         def delete(f: File): Unit = { Option(f.listFiles()).toSeq.flatten.foreach(delete); f.delete() }
         delete(root)
       }
     }
     val (g1, g2, b1) = ("good/" + "a" * 24 + ".jpg", "good/" + "b" * 24 + ".jpg", "bad/" + "c" * 24 + ".jpg")
-    val manifest =
-      s"""{"good": [{"title": "File:A.jpg", "file": "$g1"}, {"title": "File:B.jpg", "file": "$g2"}],
-         | "bad": [{"base": "File:A.jpg", "file": "$b1"}]}""".stripMargin
+    /** docs-photos.py's manifest of the committed list, with `hash` as the list's recorded hash. */
+    def manifestWith(hash: File => String): File => String = listFile =>
+      s"""{"list": "wlm-ua", "list_sha256": "${hash(listFile)}", "checked_at": "2026-11-05T12:00:00Z", "width": 1280,
+         | "good": [{"title": "File:A.jpg", "file": "$g1"}, {"title": "File:B.jpg", "file": "$g2"}],
+         | "bad": [{"base": "File:A.jpg", "variant": "blur", "file": "$b1"}]}""".stripMargin
+    val manifest = manifestWith(DocsPhotos.listHash)
+    val allFiles = Seq(s"wlm-ua/$g1", s"wlm-ua/$g2", s"wlm-ua/$b1")
 
     "serve the manifest's files in its order, nothing until the fixture is known" in
-      withPhotos(Map("wlm-ua" -> manifest), Seq(s"wlm-ua/$g1", s"wlm-ua/$g2", s"wlm-ua/$b1")) { root =>
-        val photos = DocsPhotos.load(root, Seq("wlm-ua"))
+      withPhotos(Map("wlm-ua" -> manifest), allFiles) { (root, lists) =>
+        val photos = DocsPhotos.load(root, Seq("wlm-ua"), lists)
         photos.pool.good.map(_.getName) === Seq("a" * 24 + ".jpg", "b" * 24 + ".jpg")
         photos.photo("/wikipedia/commons/thumb/1/12/F0.jpg/640px-F0.jpg") must beNone
         photos.setFixture(DocsPhotos.Fixture((0 to 3).map(i => s"File:F$i.jpg"), Seq("File:F3.jpg")))
@@ -89,19 +104,35 @@ class DocsPhotosSpec extends Specification {
         nameOf(3) === Some("c" * 24 + ".jpg")
       }
     "refuse a list without a manifest (not verified by docs-photos.py)" in
-      withPhotos(Map.empty, Nil) { root =>
+      withPhotos(Map.empty, Nil) { (root, lists) =>
         new File(root, "wlm-ua/good").mkdirs()
         Files.write(new File(root, s"wlm-ua/$g1").toPath, Array[Byte](1))
-        DocsPhotos.load(root, Seq("wlm-ua")) must throwA[IllegalArgumentException]
+        DocsPhotos.load(root, Seq("wlm-ua"), lists) must throwA[IllegalArgumentException]
       }
     "refuse a manifest naming a missing file or a path outside its list" in {
-      withPhotos(Map("wlm-ua" -> manifest), Seq(s"wlm-ua/$g1", s"wlm-ua/$b1")) { root =>
-        DocsPhotos.load(root, Seq("wlm-ua")) must throwA[IllegalArgumentException]
+      withPhotos(Map("wlm-ua" -> manifest), Seq(s"wlm-ua/$g1", s"wlm-ua/$b1")) { (root, lists) =>
+        DocsPhotos.load(root, Seq("wlm-ua"), lists) must throwA[IllegalArgumentException]
       }
-      val outside = """{"good": [{"title": "File:A.jpg", "file": "../x.jpg"}], "bad": []}"""
-      withPhotos(Map("wlm-ua" -> outside), Nil) { root =>
-        DocsPhotos.load(root, Seq("wlm-ua")) must throwA[IllegalArgumentException]
+      val outside = (listFile: File) =>
+        s"""{"list_sha256": "${DocsPhotos.listHash(listFile)}", "width": 1280,
+           | "good": [{"title": "File:A.jpg", "file": "../x.jpg"}], "bad": []}""".stripMargin
+      withPhotos(Map("wlm-ua" -> outside), Nil) { (root, lists) =>
+        DocsPhotos.load(root, Seq("wlm-ua"), lists) must throwA[IllegalArgumentException]
       }
+    }
+    "refuse a manifest of another version of the committed list: rerun docs-photos.py" in {
+      // the list changed since the fetch (a title added): its hash and titles differ
+      val changed = committed.replace("""{"title": "File:B.jpg", "license": "CC0"}""",
+        """{"title": "File:B.jpg", "license": "CC0"}, {"title": "File:C.jpg", "license": "CC0"}""")
+      // a manifest made from another version of the list (another hash)
+      val stale = withPhotos(Map("wlm-ua" -> manifestWith(_ => "0" * 64)), allFiles) { (root, lists) =>
+        DocsPhotos.load(root, Seq("wlm-ua"), lists) must throwA[IllegalArgumentException](message = "rerun docs-photos.py for wlm-ua")
+      }
+      // the hash of the changed list, but the old titles (an edited manifest)
+      val titles = withPhotos(Map("wlm-ua" -> manifest), allFiles, list = changed) { (root, lists) =>
+        DocsPhotos.load(root, Seq("wlm-ua"), lists) must throwA[IllegalArgumentException](message = "other titles")
+      }
+      stale and titles
     }
   }
 }

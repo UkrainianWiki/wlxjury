@@ -67,15 +67,33 @@ object DocsPhotos {
   /** A manifest's file: `good/` or `bad/` and docs-photos.py's hashed name, nothing else. */
   private val ManifestFile = "^(good|bad)/[0-9a-f]{24}\\.jpg$".r
 
+  /** The SHA-256 (hex) of a committed list's bytes, as docs-photos.py records it (`list_sha256`). */
+  def listHash(listFile: File): String =
+    java.security.MessageDigest.getInstance("SHA-256").digest(Files.readAllBytes(listFile.toPath))
+      .map(b => f"${b & 0xff}%02x").mkString
+
   /** Reads the photos that docs-photos.py's last successful run of each list verified (its
-    * `manifest.json`); fails with the command to run if a list has none. */
-  def pool(root: File, lists: Seq[String]): Pool = {
+    * `manifest.json`), for the list as committed (`listsDir`/docs-photos-<list>.json): the
+    * manifest must record that file's hash, width and titles, so a list changed since its last
+    * fetch serves nothing. Fails with the command to run otherwise. */
+  def pool(root: File, lists: Seq[String], listsDir: File = new File("browser-test")): Pool = {
     val command = s"run `python browser-test/docs-photos.py` (DOCS_PHOTOS=${lists.mkString(",")}) first"
     def filesOf(list: String): (Seq[File], Seq[File]) = {
       val dir      = new File(root, list)
       val manifest = new File(dir, "manifest.json")
       require(manifest.isFile, s"no verified photos for $list in $dir: $command")
       val json = Json.parse(Files.readAllBytes(manifest.toPath))
+      val listFile = new File(listsDir, s"docs-photos-$list.json")
+      require(listFile.isFile, s"no list $listFile")
+      val committed = Json.parse(Files.readAllBytes(listFile.toPath))
+      val rerun     = s"rerun docs-photos.py for $list (DOCS_PHOTOS=$list python browser-test/docs-photos.py)"
+      require((json \ "list_sha256").asOpt[String].contains(listHash(listFile)),
+        s"$manifest was made from another version of $listFile: $rerun")
+      require((json \ "width").asOpt[Int] == (committed \ "width").asOpt[Int], s"$manifest: another width than $listFile: $rerun")
+      require((json \ "good" \\ "title").map(_.as[String]) == (committed \ "photos" \\ "title").map(_.as[String]),
+        s"$manifest: other titles than $listFile: $rerun")
+      require((json \ "bad" \\ "base").map(_.as[String]) == (committed \ "degraded" \\ "base").map(_.as[String]),
+        s"$manifest: other degraded photos than $listFile: $rerun")
       def files(kind: String): Seq[File] = (json \ kind).as[Seq[JsObject]].map { entry =>
         val name = (entry \ "file").as[String]
         require(ManifestFile.matches(name) && name.startsWith(kind + "/"), s"$manifest: unexpected file '$name'")
@@ -119,5 +137,6 @@ object DocsPhotos {
     def photo(path: String): Option[Array[Byte]] = fileFor(path).map(file => Files.readAllBytes(file.toPath))
   }
 
-  def load(root: File, lists: Seq[String]): Photos = new Photos(pool(root, lists))
+  def load(root: File, lists: Seq[String], listsDir: File = new File("browser-test")): Photos =
+    new Photos(pool(root, lists, listsDir))
 }
