@@ -1,0 +1,44 @@
+@(
+        user: db.scalikejdbc.User,
+        account: db.scalikejdbc.User,
+        url: String,
+        link: db.scalikejdbc.AccountToken,
+        back: String,
+        contestId: Option[Long]
+)(implicit flash: Flash, messages: Messages, req: RequestHeader)
+@* "Create a link to share" (UserController.shareInvitation, sharePasswordLink): the new link, in
+   this response only (no-store, no referrer), with a button that copies it (copy-field.js), its
+   expiry and the warning. Never stored, logged, mailed or put in the session. *@
+
+@pageScripts = {
+    <script src="@routes.Assets.versioned("javascripts/copy-field.js")"></script>
+}
+
+@mainAdmin("share.link.title", user, user.getId, contestId = contestId, head = pageScripts) {
+    <div class="row">
+        <section class="col-md-8 col-lg-7" id="share-link" aria-labelledby="share-link-title">
+            <h1 class="h3" id="share-link-title">@Messages("share.link.title")</h1>
+            <p>@Messages("share.link.for", if (account.fullname.trim.nonEmpty) account.fullname else account.email)
+               @if(account.email.nonEmpty) { (@account.email) }</p>
+            <p>@Messages(if (link.purpose == db.scalikejdbc.AccountTokenJdbc.Invitation) "share.link.invitation.help" else "share.link.reset.help")</p>
+
+            <div class="input-group mb-2">
+                <input type="text" class="form-control font-monospace" id="shared-link" value="@url" readonly
+                       autocomplete="off" spellcheck="false" aria-label="@Messages("share.link.title")"
+                       aria-describedby="shared-link-expires shared-link-warning">
+                <button type="button" class="btn btn-outline-secondary" data-copy-target="shared-link"
+                        data-copied-text="@Messages("share.link.copied")">
+                    <i class="bi bi-clipboard" aria-hidden="true"></i> <span>@Messages("share.link.copy")</span>
+                </button>
+            </div>
+            <p class="form-text" id="shared-link-expires">@Messages("share.link.expires", views.LinkTimes.utc(link.expiresAt))</p>
+
+            <div class="alert alert-warning" role="alert" id="shared-link-warning">
+                <p class="mb-1"><strong>@Messages("share.link.warning")</strong></p>
+                <p class="mb-0">@Messages("share.link.once")</p>
+            </div>
+
+            <a href="@back" class="btn btn-outline-secondary">@Messages("share.link.back")</a>
+        </section>
+    </div>
+}
