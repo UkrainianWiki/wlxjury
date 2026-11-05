@@ -1,14 +1,13 @@
-# WLX Jury Tool: a guide for administrators
+# WLX Jury: a guide for administrators
 
-This guide is for the admins of a contest in the WLX Jury Tool, and for root, the tool's own
+This guide is for the admins of a contest in WLX Jury, and for root, the tool's own
 administrators. It explains accounts and roles, how people are invited and sign in, and the
 settings of a contest. Rounds and results are in the [organizer guide](organizer-guide.md). The
 people you add use the [juror guide](juror-guide.md).
 
 Labels in **bold** are the ones the tool shows in English. Terms: a **contest** is one
-competition (the tool's Campaigns page calls it a campaign), a **file** is one photo or video, a
-**yes/no round** is a round with the rating type **+/-**, and the roles are **Jury** (a juror),
-**Organizer** and **Admin**. Whoever installs and runs the tool
+competition, a **file** is one photo or video, a **yes/no round** is a round with the rating type
+**+/-**, and the roles are **Juror**, **Organizer** and **Admin**. Whoever installs and runs the tool
 (servers, mail, sign-in providers, backups) finds that in the operators' [deployment
 guide](../deployment.md); this guide doesn't repeat it.
 
@@ -33,7 +32,7 @@ A role belongs to a membership: one account, one contest.
 
 | Role | What it can do |
 |---|---|
-| **Jury** | Votes in the rounds it is a juror of. |
+| **Juror** | Votes in the rounds it is a juror of. |
 | **Organizer** | Reads the statistics, the results of all jurors, the contest's files and the conflicts page. Changes nothing. |
 | **Admin** | Everything an organizer does, and manages the contest: its people, rounds and files. |
 | **Board**, **Audit committee**, **Staff** | No access to the contest's pages. These roles record that a person belongs to the contest, so that their own photos count as [conflicts of interest](organizer-guide.md#o-conflicts). |
@@ -170,7 +169,7 @@ open the person's edit page and press **Create a link to share**.
 - **Root**, for any account.
 - **A contest admin**, in their contest: for a member or a person invited into it, and for a
   reset only for an active member. The account must not be root or the admin themselves, must
-  have only the roles **Jury** or **Organizer**, and every contest it belongs to, has worked in
+  have only the roles **Juror** or **Organizer**, and every contest it belongs to, has worked in
   or is invited into must be a contest the admin administers.
 - Not for a person who has no email. (Where Wikimedia sign-in is set up, such a person signs in
   with their wiki account, and the page says so.) A person with neither an email nor a wiki
@@ -284,11 +283,11 @@ tokens: the owner revokes them on the profile, and root on any account's tokens 
 
 A contest has a name, a country, a year, the Commons category or page its files come from (**Images**),
 a **monument id template** for monuments contests, a greeting, and its rounds. Root creates and
-changes the contests on the **Campaigns** page. Admins of a contest set up its
+changes the contests on the **Contests** page. Admins of a contest set up its
 people ([People](#a-users)), its greeting, its [files](organizer-guide.md#o-import-files) and its
 [rounds](organizer-guide.md#o-rounds-list).
 
-<img src="images/admin-campaigns.png" alt="The Campaigns page, where root creates and imports contests" width="1280">
+<img src="images/admin-campaigns.png" alt="The Contests page, where root creates and imports contests" width="1280">
 
 <a id="a-more-than-one-admin"></a>
 ### Several admins
@@ -299,7 +298,7 @@ this guide says for it. It can't change contests it isn't an admin of, nor root 
 <a id="a-root"></a>
 ## What only root can do
 
-- Create contests, and import them from a Commons list, on **Campaigns**, and change a contest's
+- Create contests, and import them from a Commons list, on **Contests**, and change a contest's
   settings there.
 - See **Users** across all contests, and make an account root, only if its owner has verified
   its email.

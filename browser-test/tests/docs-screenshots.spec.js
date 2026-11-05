@@ -299,6 +299,13 @@ test.describe('the guides\' screenshots', () => {
       const view = await sized(context);
       await view.goto(largePath(fixture.roundRatingId, juror.id, juror.ratedPageId));
       await expect(view.getByRole('button', { name: /Worst mark/ }).first()).toBeVisible();
+      // the shot shows a file that has the worst mark, as the guide says: give it one (the
+      // docs-mode server is started afresh for each run, so the vote needs no undoing), then
+      // open the file again, as the large view moves on after a vote
+      await view.getByRole('button', { name: /Worst mark/ }).first().click();
+      await view.waitForLoadState('networkidle');
+      await view.goto(largePath(fixture.roundRatingId, juror.id, juror.ratedPageId));
+      await expect(view.getByRole('button', { name: /Clear the vote/ }).first()).toBeVisible();
       await view.waitForLoadState('networkidle');
       await top(view, path.join(OUT_DIR, 'juror-large-view-worst-mark.png'), 520);
       await context.close();

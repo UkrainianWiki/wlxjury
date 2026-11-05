@@ -13,7 +13,7 @@ numbered examples before each shot, and the link to share shows a neutral host.
 Chromium (156), the app's own font stack, 2026-11-05. Text rendering depends on the operating
 system, so regenerate all the images together on one platform and update this line.
 
-**Size:** 24 images, about 3.1 MB in all; the largest is `juror-gallery-binary.png`, about 596 KB
+**Size:** 24 images, about 3.4 MB in all; the largest is `juror-gallery-binary.png`, about 660 KB
 (photo shots may reach about 900 KB; the others stay small). Photos make 2x PNGs large, so
 `browser-test/docs-optimize-png.py` reduces each image to a 256-colour palette after the spec
 (dithered where there are photos, so that skies show no bands), and the shots of galleries and
@@ -44,25 +44,25 @@ low resolution with JPEG artefacts), made at setup time, so that the yes/no exam
 bad files. The photos are never committed, only the screenshots.
 
 The fixture's image stub, in its docs mode, serves them: a file name always maps to the same photo
-for the same choice of lists (`gatling.setup.DocsPhotos`), and one file in four gets a degraded
-one. The file names shown on the shots are numbered examples ("Example photo N", "Author N"),
+for the same choice of lists (`gatling.setup.DocsPhotos`, by file order), and about one file in
+four gets a degraded one, never in the top rows of the shots. The file names shown on the shots are numbered examples ("Example photo N", "Author N"),
 which the spec writes.
 
 ## Regenerating the shots
 
 ```bash
 pip install pillow                                    # once
-python browser-test/docs-photos.py                    # fetch (anonymous) into target/docs-photos/
-UI_IMAGES=docs node browser-test/fixture-server.mjs start
+python browser-test/docs-photos.py                    # fetch (anonymous) into target/docs-photos/; checks every licence
+DOCS_SCREENSHOTS=1 node browser-test/fixture-server.mjs start   # docs mode (also: UI_IMAGES=docs)
 cd browser-test && DOCS_SCREENSHOTS=1 npx playwright test docs-screenshots --project=chromium
 cd .. && python browser-test/docs-optimize-png.py
 node browser-test/fixture-server.mjs stop
 ```
 
 For other lists set `DOCS_PHOTOS` (for example `wle-ua,wle-intl`) for the fetch and the server.
-Without `UI_IMAGES=docs` the server keeps the grey stub (normal browser tests and CI always do).
-Delete `target/ui-shots/thumbs-docs` when the lists change: the image proxy keeps its thumbnails.
-Regenerate all the shots together, look at each one, and update the platform and size lines.
+Without `DOCS_SCREENSHOTS=1` or `UI_IMAGES=docs` the server keeps the grey stub (normal browser
+tests and CI always do). The server empties the docs thumbnail cache at each start, and the spec
+fails if docs mode is off. Regenerate all the shots together, look at each one, and update the platform and size lines.
 
 ## Credits
 
@@ -72,11 +72,9 @@ writes this section from the lists.
 
 <!-- credits -->
 
-### Wiki Loves Monuments, Ukraine (`wlm-ua`, 18 photos)
+### Wiki Loves Monuments, Ukraine (`wlm-ua`, 16 photos)
 
 - Bratsky Monastery Laznya Illynska street 2019.jpg: Anntinomy, CC0, 2019, Ukraine
-- Bratsky Monastery Laznya Illynska street.jpg: Anntinomy, CC0, 2019, Ukraine
-- Kelii corpus 10 naukma 2019.jpg: Anntinomy, CC0, 2019, Ukraine
 - Kelii or Korpus 10 naukma 2019.jpg: Anntinomy, CC0, 2019, Ukraine
 - New Jewish cemetery in Zbarazh. 2015. P 20150503 161145.jpg: Arxivist, CC0, 2024, Ukraine
 - New Jewish cemetery in Zbarazh. 2015. P 20150503 161851.jpg: Arxivist, CC0, 2024, Ukraine

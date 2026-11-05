@@ -1,6 +1,6 @@
 # What's new in 2026 (up to version 26.11)
 
-This page lists what you will notice in the WLX Jury Tool in 2026, up to version 26.11. Earlier
+This page lists what you will notice in WLX Jury in 2026, up to version 26.11. Earlier
 changes of the year were never announced, so they are here too, in [Earlier in
 2026](#w-earlier). Each item links to the part of the guide that explains it. Changes that only
 developers or operators see are not listed.
@@ -71,8 +71,8 @@ Changes made available before version 26.11, by who notices them.
 <a id="w-jurors"></a>
 ## For jurors
 
-- **The worst mark (✗)** in rated rounds that use it: a button or the Delete key gives a file ✗,
-  the eraser or Backspace clears your vote. See [Rated rounds
+- **The worst mark** (an X icon) in rated rounds that use it: a button or the Delete key gives a
+  file the worst mark, the eraser or Backspace clears your vote. See [Rated rounds
   (stars)](juror-guide.md#rated-rounds-stars).
 - **Rounds rated by criteria**: you rate each file on several criteria with stars in the large
   view. See [Rating by criteria](juror-guide.md#rating-by-criteria).
@@ -101,7 +101,7 @@ Changes made available before version 26.11, by who notices them.
 <a id="w-admins"></a>
 ## For admins
 
-- **The worst mark (✗)** as a round option, and a **rejection filter** for the next round
+- **The worst mark** as a round option, and a **rejection filter** for the next round
   (exclude files rejected by at least X, or take only those). See [The worst
   mark](organizer-guide.md#o-worst-mark) and [The rejection
   filter](organizer-guide.md#o-rejection-filter).

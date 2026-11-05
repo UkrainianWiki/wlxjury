@@ -1,20 +1,19 @@
-# WLX Jury Tool: a guide for organizers
+# WLX Jury: a guide for organizers
 
 This guide is for the people who run the jury of a Wiki Loves Monuments, Wiki Loves Earth or
-similar photo contest in the WLX Jury Tool. It explains how to set up rounds, give files to
+similar photo contest in WLX Jury. It explains how to set up rounds, give files to
 jurors, follow the voting, read the results and handle conflicts of interest.
 
-Labels in **bold** are the ones the tool shows in English. Terms: a **contest** is one competition
-(the tool's Campaigns page calls it a campaign), a **file** is one photo or video, a **yes/no
-round** is a round with the rating type **+/-**, and the roles are **Jury** (a juror),
-**Organizer** and **Admin**. Jurors have their own guide, the
+Labels in **bold** are the ones the tool shows in English. Terms: a **contest** is one competition,
+a **file** is one photo or video, a **yes/no round** is a round with the rating type **+/-**, and
+the roles are **Juror**, **Organizer** and **Admin**. Jurors have their own guide, the
 [juror guide](juror-guide.md); read its sections on the gallery and the large view to know what
 your jurors see. People and accounts are in the [admin guide](admin-guide.md).
 
 <a id="o-who-can-do-what"></a>
 ## Who can do what
 
-The tool has these roles in a contest: **Jury**, **Organizer** and **Admin**. A person can have
+The tool has these roles in a contest: **Juror**, **Organizer** and **Admin**. A person can have
 a different role in each contest. Roles are explained in the [admin guide](admin-guide.md#a-roles).
 
 - An **Admin** of the contest does everything in this guide: creates and changes rounds, starts
@@ -33,7 +32,7 @@ which contest you are in.
 <a id="o-contest-and-rounds"></a>
 ### A contest and its rounds
 
-A **contest** (the tool also calls it a campaign) has **files**, the images and videos taken
+A **contest** has **files**, the images and videos taken
 from Commons, and **rounds**. A round is one stage of judging: its own files, its own jurors and
 its own votes. A typical contest has a first round that every file goes through, and later rounds
 that take only the best files of the earlier ones.
@@ -94,7 +93,7 @@ Press **Add round**. The page **Create round** has these parts, from the top:
   each file goes to the number of jurors you chose.
 - **Rating type**: see [Kinds of rounds](#o-round-kinds).
 - **File score**: see [The file score](#o-score-rule).
-- **Worst mark (✗)**: see [The worst mark](#o-worst-mark).
+- **Worst mark**: see [The worst mark](#o-worst-mark).
 - **Criteria**: see [Kinds of rounds](#o-round-kinds).
 
 Press **Save**. You go to the rounds list, where the round shows its distribution.
@@ -151,7 +150,7 @@ shows them, but they can't be changed.
 
 The rejection filter uses how many jurors rejected each file in the earlier rounds, counting
 every rejection in all of them. It works with earlier yes/no rounds, and with earlier rated
-rounds without criteria, where a worst mark ✗ counts as a rejection. It shows once you choose
+rounds without criteria, where a worst mark counts as a rejection. It shows once you choose
 such a previous round.
 
 It has two fields. **Rejected files** is the mode:
@@ -261,20 +260,21 @@ the round has votes and you pick another rule. The warning says that:
 <img src="images/organizer-score-rule-warning.png" alt="The file score option and its warning" width="1280">
 
 <a id="o-worst-mark"></a>
-### The worst mark (✗)
+### The worst mark
 
-The **Worst mark (✗)** option is for rated rounds without criteria. It is off by default. When
-it is on, a juror can give a file ✗ for a file worth fewer than one star, which is different from
-leaving it unrated:
+The **Worst mark** option is for rated rounds without criteria. It is off by default. When it is
+on, a juror can give a file the worst mark, shown as an X icon, for a file worth fewer than one
+star, which is different from leaving it unrated:
 
-- a ✗ counts as 0 in every average and total;
-- a ✗ is a vote: the file counts as rated in the juror's progress and in the round's count of
-  jurors who rated it;
-- the results show "✗ n" beside the file's score, for a file with ✗ votes: the file list, the
-  by-rate gallery, the large view of all jurors and the CSV;
-- a next round can use the ✗ in the [rejection filter](#o-rejection-filter).
+- a worst mark counts as 0 in every average and total;
+- a worst mark is a vote: the file counts as rated in the juror's progress and in the round's
+  count of jurors who rated it;
+- the results show the number of worst marks ("n worst marks") beside the file's score, for a
+  file that has them: the file list, the by-rate gallery, the large view of all jurors and the
+  CSV;
+- a next round can use the worst marks in the [rejection filter](#o-rejection-filter).
 
-Jurors give ✗ with a button and clear a vote with another, see the [juror
+Jurors give a worst mark with a button and clear a vote with another, see the [juror
 guide](juror-guide.md#rated-rounds-stars). The form hides the option for a yes/no round, a
 comments-only round and a round with criteria (and refuses it there if it is sent anyway). You can turn it on or off on an existing round.
 
@@ -326,7 +326,7 @@ fewest rejections** or **Approvals minus rejections**. The vote filter shows onl
 **Selected**, **Unrated** or **Rejected** votes: for a yes/no round, files with at least one
 such vote, or for a rated round **Rated** or **Unrated**. A rated round's score follows its
 [file score](#o-score-rule), with the divisor shown. In a round with criteria, each file shows
-its stars for each criterion. A file with ✗ votes shows "✗ n".
+its stars for each criterion. A file with worst marks shows how many ("n worst marks").
 
 Clicking a file opens its [large view](#o-large-view).
 
@@ -375,7 +375,7 @@ their own tab, **Deleted on Commons**.
 <a id="o-import-files"></a>
 ### Importing the contest's files
 
-Admins bring files into the contest from the **Images** link of the contest on the campaigns page
+Admins bring files into the contest from the **Images** link of the contest on the contests page
 (or **Import and cache** on the contest files page). The page **Files source** takes a Commons category
 or a page, or a pasted list of files in **Or image list**, and **Import files** adds them.
 Imports only add: no file is removed, and all the contest's rounds choose from these files.
@@ -392,7 +392,7 @@ background jobs, with their progress.
 ### What a conflict of interest is
 
 A file is a conflict of interest when its author is a member of the contest in a role that
-gives a conflict of interest (Jury, Organizer, Admin, and the Board, Audit committee and Staff
+gives a conflict of interest (Juror, Organizer, Admin, and the Board, Audit committee and Staff
 roles), or a root user. The tool recognises the files by the members' **Wiki account**. A
 member without one can't be checked, and the users page says so next to their name. An admin
 can set the wiki account, see the [admin guide](admin-guide.md#a-users).

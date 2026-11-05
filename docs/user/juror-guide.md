@@ -1,18 +1,17 @@
-# WLX Jury Tool: a guide for jurors
+# WLX Jury: a guide for jurors
 
 Other guides: the [organizer guide](organizer-guide.md), the [admin guide](admin-guide.md) and
 [what's new in 2026](whats-new-26.11.md).
 
 This guide is for jurors of a Wiki Loves Monuments, Wiki Loves Earth or similar photo contest
-who judge its files in the WLX Jury Tool. It explains how to sign in, find your rounds, vote,
+who judge its files in WLX Jury. It explains how to sign in, find your rounds, vote,
 and what to do when something goes wrong.
 
 Labels in **bold** are the ones the tool shows in English. If you use the tool in another
 language, the same buttons and menus are in the same places.
 
-Terms: a **contest** is one competition (the tool's Campaigns page calls it a campaign), a
-**file** is one photo or video, a **yes/no round** is a round where you select or reject files,
-and a **juror** has the role **Jury** (the tool writes **Jury** or **Juror**).
+Terms: a **contest** is one competition, a **file** is one photo or video, a **yes/no round** is
+a round where you select or reject files, and a **juror** has the role **Juror**.
 
 ## Signing in to the jury tool
 
@@ -37,7 +36,7 @@ contest in the contest menu at the top of the page.
 ### Signing in with your password
 
 On the sign-in page, type your email address (or your wiki user name, if your organizer set
-one for you) and your password, then press **Sign In**.
+one for you) and your password, then press **Sign in**.
 
 **Keep me signed in** is ticked by default. Untick it on a shared computer: you are then
 signed out when you close the browser.
@@ -159,11 +158,11 @@ Files you haven't voted on are **unrated**.
 In a rated round you give each file from one star up to the round's highest rate, for
 example 1 to 5 stars. Older rounds may allow half stars; new rounds don't.
 
-Some rated rounds also have the **worst mark**, ✗: for a file you would give fewer than one star.
-A ✗ is a vote: the file is no longer unrated, and it counts in your progress. In the results it
-counts as 0 in the file's score, and the organizers see how many ✗ a file got. Giving ✗ and
-removing your vote are two different things: a file you clear is unrated again. Rounds rated by
-criteria have no ✗.
+Some rated rounds also have the **worst mark**, shown as an X icon: for a file you would give
+fewer than one star. A worst mark is a vote: the file is no longer unrated, and it counts in your
+progress. In the results it counts as 0 in the file's score, and the organizers see how many
+worst marks a file got. Giving a worst mark and removing your vote are two different things: a
+file you clear is unrated again. Rounds rated by criteria have no worst mark.
 
 ### Rounds rated by criteria
 
@@ -232,11 +231,11 @@ Under each file are its stars. Click a star to rate the file. In an older round 
 stars, click the left half of a star for a half star. The circled cross before the stars removes
 your rating.
 
-In a round with the worst mark, the button with a cross after the stars (**Worst mark (✗)**) gives
-the file ✗, and the stars are empty. The eraser before the stars removes your vote,
-✗ or stars; it shows only once the file has a vote. The ✗ button is a toggle that shows the
-file's ✗: pressing it again doesn't clear it, the eraser does. In your list by rate, a file with ✗ shows ✗ as
-its rate.
+In a round with the worst mark, the button with an X icon after the stars (**Worst mark**) gives
+the file the worst mark, and the stars are empty. The eraser before the stars removes your vote,
+worst mark or stars; it shows only once the file has a vote. The worst-mark button is a toggle
+that shows the file's worst mark: pressing it again doesn't clear it, the eraser does. In your
+list by rate, a file with a worst mark shows the X icon as its rate.
 
 <img src="images/juror-gallery-rated.png" alt="A rated round's gallery, with stars under each file" width="1280">
 
@@ -275,7 +274,7 @@ Videos play in the large view.
 
 <img src="images/juror-large-view-rated.png" alt="The large view of a rated round" width="1280">
 
-<img src="images/juror-large-view-worst-mark.png" alt="The large view of a round with the worst mark: the ✗ button and the eraser under the stars" width="1280">
+<img src="images/juror-large-view-worst-mark.png" alt="The large view of a file with the worst mark: the worst-mark button and the eraser under the stars" width="1280">
 
 ### Voting in the large view
 
@@ -287,8 +286,9 @@ has none. While you point at a star, it shows the rate a click gives. The circle
 your rating.
 
 In a round with the worst mark, the stars have no circled cross. Under them are two buttons: the
-red cross (**Worst mark (✗)**) gives the file ✗, and the eraser (**Clear the vote**), shown once
-the file has a vote, removes it. The number above the stars shows ✗ for a file you gave ✗.
+button with the X icon (**Worst mark**) gives the file the worst mark, and the eraser (**Clear
+the vote**), shown once the file has a vote, removes it. Above the stars, a file you gave the
+worst mark shows the X icon instead of a number.
 
 After you vote, the large view moves on to the next file, so you can go through your files one
 after another. At the end of the list it goes to the file before instead.
@@ -319,7 +319,7 @@ The large view works with the keyboard:
 | Home / End | the first or last of the files around this one |
 | Esc | back to the gallery, at this file's page |
 | Space | select the file (yes/no round) |
-| Delete | reject the file (yes/no round); give it ✗ (rated round with the worst mark) |
+| Delete | reject the file (yes/no round); give it the worst mark (rated round with the worst mark) |
 | Backspace | remove your vote (rated round with the worst mark) |
 | 0 up to the highest rate (at most 9) | rate the file (rated round) |
 
