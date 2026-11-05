@@ -24,15 +24,21 @@ class RoundConflictsController @Inject() (
 ) extends Secured(cc)
     with play.api.i18n.I18nSupport {
 
-  private val ViewRoles = User.ADMIN_ROLES ++ User.ORG_COM_ROLES
+  /** Who may open the page, in the round's contest: [[User.canViewRoundConflicts]], the one
+    * check the statistics page's link to it uses too; its roles name a refusal. */
+  private val ViewRoles = User.RoundConflictsRoles
+  private def mayView(user: User, round: Round): Boolean = user.canViewRoundConflicts(round.contestId)
+
+  /** Who may disqualify and requalify: the round's contest's admins, and root. */
+  private def mayEdit(user: User, round: Round): Boolean =
+    contestPermission(User.ADMIN_ROLES, Some(round.contestId))(user)
 
   def page(id: Long): EssentialAction =
     withAuthOn(blocking)(rolePermission(ViewRoles)) { sessionUser => implicit request =>
-      withRound(sessionUser, id, ViewRoles) { (user, round) =>
+      withRound(sessionUser, id, ViewRoles, mayView) { (user, round) =>
         val review = RoundConflicts.review(round)
-        val mayEdit = contestPermission(User.ADMIN_ROLES, Some(round.contestId))(user)
         Secured.switchingContest(sessionUser, user)(
-          Ok(views.html.round.conflicts(user, round, review, mayEdit, RoundConflicts.RequalifyReason.All))
+          Ok(views.html.round.conflicts(user, round, review, mayEdit(user, round), RoundConflicts.RequalifyReason.All))
         )
       }
     }
@@ -40,7 +46,7 @@ class RoundConflictsController @Inject() (
   /** "Disqualify" of the files ticked (`pageId`): those still conflicts of interest. */
   def disqualify(id: Long): EssentialAction =
     withAuthOn(blocking)(rolePermission(User.ADMIN_ROLES)) { sessionUser => implicit request =>
-      withRound(sessionUser, id, User.ADMIN_ROLES) { (user, round) =>
+      withRound(sessionUser, id, User.ADMIN_ROLES, mayEdit) { (user, round) =>
         val pageIds = longs("pageId")
         val messages = messagesApi.preferred(request)
         if (pageIds.isEmpty) back(round).flashing("error" -> messages("coi.none.selected"))
@@ -57,7 +63,7 @@ class RoundConflictsController @Inject() (
   /** "Requalify" of the files ticked (`pageId`), with a reason (`reason`, a code). */
   def requalify(id: Long): EssentialAction =
     withAuthOn(blocking)(rolePermission(User.ADMIN_ROLES)) { sessionUser => implicit request =>
-      withRound(sessionUser, id, User.ADMIN_ROLES) { (user, round) =>
+      withRound(sessionUser, id, User.ADMIN_ROLES, mayEdit) { (user, round) =>
         val pageIds = longs("pageId")
         val reason = field("reason").filter(RoundConflicts.RequalifyReason.All.contains)
         val messages = messagesApi.preferred(request)
@@ -74,18 +80,17 @@ class RoundConflictsController @Inject() (
       }
     }
 
-  /** The round, checked in its own contest for `roles` (root needs no membership): `f` with
-    * the user in that contest; 404 for no round, 403 (logged) otherwise.
+  /** The round, checked in its own contest by `allowed` (root needs no membership): `f` with
+    * the user in that contest; 404 for no round, 403 (logged, naming `roles`) otherwise.
     */
-  private def withRound(user: User, id: Long, roles: Set[String])(f: (User, Round) => Result)(implicit
-      request: Request[AnyContent]
-  ): Result =
+  private def withRound(user: User, id: Long, roles: Set[String], allowed: (User, Round) => Boolean)(
+      f: (User, Round) => Result)(implicit request: Request[AnyContent]): Result =
     Round.findById(id) match {
       case None =>
         NotFound(views.html.errorPage(Some(user), "error.title", "error.round.not.found")(messagesApi.preferred(request), request))
       case Some(round) =>
         val inRound = Secured.inContest(user, round.contestId)
-        if (contestPermission(roles, Some(round.contestId))(inRound)) f(inRound, round)
+        if (allowed(inRound, round)) f(inRound, round)
         else onUnAuthorized(user, request, Secured.Denial.round(round, roles))
     }
 
