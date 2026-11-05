@@ -513,7 +513,8 @@ P3 writes D16a's anew.
 ## 10. Rollout and checks
 
 - Per phase: compile, the affected specs (negative authorization included), then one full suite
-  at the release boundary; the repair job on staging after the migration, then on production.
+  at the release boundary; the repair job on a local copy of production after the migration
+  (the user's, §17 "Rollout"; there is no staging server), then on production.
 - Time each backfill on a production copy before deploying.
 - Deploy notes per phase: the migration, the rollback above, the repair job run.
 
@@ -1805,8 +1806,10 @@ rule picks what it is divided by:
 | `assigned` | the sum over the file's vote rows, unrated as 0 | Average over its assigned jurors (unrated counts as 0) |
 | `sum` | the sum itself | Total of the rates (a file a juror skipped adds nothing) |
 
-- **Defaults (for the user to confirm):** `rated` for new rounds and every existing round,
-  as recommended; `sum` for the `optional_rate` rounds. Their old denominator (the round's
+- **Defaults (confirmed by the user, 2026-11-05):** `rated` for new rounds and every existing
+  round; `sum` for the `optional_rate` rounds. `rated` goes with the coming ✗ "worst mark"
+  (roadmap queue item 6), where a ✗ counts as a rated 0: a juror's ✗ then lowers a file's
+  average, and only a file the juror left unrated is left out of it. Their old denominator (the round's
   active jurors) was the same for every file, so their order was the sum's already; they now
   show the sum instead of `sum / active jurors`.
 - **A yes/no round** has no average: its lists count approvals and rejections whatever its rule
@@ -1851,7 +1854,7 @@ threshold must be given as a score; the form's hint says so when a `sum` round i
 (`average.file.rating.sum`). A round from before V90 that should keep the old grouped numbers
 gets `assigned`.
 
-**Editing (for the user to confirm): at any time, open, stopped or frozen.** The rule changes
+**Editing (the user, 2026-11-05: stays, with a warning): at any time, open, stopped or frozen.** The rule changes
 how results are shown, not the votes. A distribution reads the previous round's rule from its
 job's settings (`params.settings.prevAverageRule`, recorded when the job is queued, under the
 previous round's lock), so a change while a distribution runs doesn't change its top-N or
@@ -1863,6 +1866,32 @@ old rule (the sum over the round's active jurors) can't be reproduced: let such 
 finish before the deploy (deploy note below). The next round's settings record which rule it used. The form is the admins'
 only (`RoundAverageRuleFormSpec`: a juror, an organizer and another contest's admin get 403; an
 unknown value 400; a client without the select keeps the stored rule).
+
+**A change takes effect at once; nothing runs in the background** (checked in the code,
+2026-11-05). The save is one `UPDATE round SET name, average_rule` (`Round.updateRound`): it
+bumps no `counts_gen`, marks no file, queues no job. The counts (`round_image`'s `rate_sum`,
+`assigned`, `voted`, `approvals`, `rejections`) and the votes don't depend on the rule, and
+`RoundCounts` doesn't read it; every read applies the round's rule as it loads the round, in SQL
+(`AverageRule.keySql` over `VoteTerms` or `CountTerms`) and in memory (`ImageWithRating`). No
+cache holds a score (`RegionCountCache` and `RoundImageCounts` hold file counts; the galleries
+and the large view are `no-store`). So the next page after the save shows the new scores and
+order, exactly. The only work that keeps the old rule is a distribution queued before the
+change (its job's recorded rule, above).
+
+**The round form's warning** (the user, 2026-11-05). For a rated round with a rated vote
+(`VoteJdbc.hasRatedVote`: a vote with `rate <> 0`, not deleted; without one every file scores 0
+under each rule), a note under the select (`RoundController.ScoreRuleWarning`,
+`round.average.rule.change.warning`): "Changing the score rule re-scores and re-orders this
+round's results on every page, and takes effect at once: nothing is recomputed in the background.
+A distribution already queued or running keeps the rule it started with." When later rounds of
+the contest list it among their previous rounds with a top-N or a "min average rate"
+(`round.average.rule.change.later`): "Round(s) 2 (Top), 3 used this round's scores when they were
+created; their files won't change. A later "Distribute new files" there uses the new rule." The
+note is rendered server-side, so it shows without JavaScript; `round-form.js` hides it while the
+select shows the saved rule (`data-stored-rule`) and shows it once the select differs. The
+select's `aria-describedby` names it with the help. Not on a new round's form, a round whose
+votes are all unrated, a yes/no or comments-only round (`RoundScoreRuleWarningSpec`; Jest
+`round-form.test.js`).
 
 **The ✗ item (roadmap, after P2b).** This code reads "rated" as `rate > 0` (`ratedVotes`,
 `approvals`, `AverageRule.VoteTerms.rated`, `RoundImageQuery.CountTerms`). The "worst mark (✗)"
@@ -1973,10 +2002,23 @@ distribution are unchanged by the flag; the distribution's queries add `SUM(s.ra
 
 1. Deploy with `roundImage.read = false` (the default): V90 and the score rule are live, the
    lists read the votes as before.
-2. Staging: `roundImage.read = true` in its `production.conf`; compare an organizer's by-rate
-   page, file list, large view and region menu with the flag off on the same data.
-3. Production: the same, after `SELECT COUNT(*) FROM round WHERE counts_gen_done < counts_gen`
-   is 0 (§16's deploy note). Rollback: the flag off and a restart.
+2. The pilot (the user, 2026-11-05: there is no staging server):
+   - (a) **On a local copy of production, run by the user.** The user restores a production
+     backup locally and runs the app on it with `roundImage.read = true`, and compares an
+     organizer's by-rate page, file list, large view and region menu with the flag off, once
+     `SELECT COUNT(*) FROM round WHERE counts_gen_done < counts_gen` is 0 (the background
+     recount after the migrations). `scripts/run-with-prod-dump.sh` does the restore: with no
+     argument it dumps production (credentials from `.env`), restores the dump into a local
+     MariaDB 10.6 container (`wlxjury-local-dev`, port 3307) and starts `sbt run` on it with
+     migrations on; `--skip-dump` reuses `/tmp/wlxjury-prod.sql.gz`, `--dump-only` stops after
+     the restore, `--reuse-container` starts sbt on the running container (the usage text,
+     `--help`). It passes sbt no other setting, so the flag goes in another way, for example
+     `SBT_OPTS=-DroundImage.read=true` (as the script's own `-Ddb.default.migration.auto=true`;
+     not tried by an agent) or a local edit of `conf/application.conf`. The query runs in the
+     container: `docker exec wlxjury-local-dev mysql wlxjury -e "…"`. **Agents never run the
+     script, nor anything else against real data.**
+   - (b) **Then production:** `roundImage.read = true` in its `production.conf`, after the same
+     query is 0 there (§16's deploy note). Rollback: the flag off and a restart.
 
 ### Deploy note (V90)
 
@@ -2058,12 +2100,23 @@ launcher, one JVM at a time under the shared lock, Commons variables unset).
 
 No second full suite: the two fixes are a spec's expectation and the guard's allowlist.
 
+**The score rule's warning** (`ukwikidev/p2b-rule-warning`, on `origin/stack/84-p2b-reads`
+`7f64460b`, worktree `C:/scala/wlxjury-rulewarn`):
+
+| Step | Specs | Result | Log |
+|---|---|---|---|
+| Affected specs | `Test/compile`; `RoundScoreRuleWarningSpec`, `RoundAverageRuleFormSpec`, `RoundEditPageSpec`, `RoundCriteriaSpec`, `MessagesCompletenessSpec` | 50: 49 passed, 1 failed: the select's `aria-describedby` read `Some(averageRule_warning)` (the bs helpers render an `Option`'s text; the view now passes a string or `None`) | `20261105-102740-15516.log` |
+| Rerun | the same | **50 passed** | `20261105-103331-3636.log` |
+| Jest | `round-form.test.js` (the worktree's own `npm ci`); ESLint on `round-form.js` | 12 passed; lint clean | console |
+
 ### Open questions
 
-- Confirm the defaults (`rated`; `sum` for the `optional_rate` rounds) and the editing policy
-  (any time; a distribution keeps the rule it was queued with).
-- Whether to lock the rule once a next round has taken its top-N from it (today the next round's
-  job settings record the rule it used; nothing stops a later change).
+- ~~Confirm the defaults and the editing policy~~: confirmed by the user (2026-11-05): `rated`
+  (`sum` for the `optional_rate` rounds), with the ✗ item; editing at any time stays, with the
+  round form's warning (above).
+- **Lock the rule once a next round has taken its top-N or minimum from it?** The user
+  (2026-11-05): **decide later**; no lock is built. Today the next round's job settings record
+  the rule it used, the warning names such rounds, and nothing stops a change.
 - `imageCountsByRate` (a yes/no round's statistics footer) and `byRoundMerged` still read the
   votes; small, not on a page an organizer reloads often.
 - The `optional_rate` column's drop (a later clean-up, after the rollback window).
