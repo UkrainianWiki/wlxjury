@@ -62,6 +62,11 @@ class OAuthSettings @Inject() (configuration: Configuration) {
   /** Whether Google is offered on some host: its discovery document is then fetched at start. */
   def googleConfigured: Boolean = googleClient.isDefined && googleHosts.nonEmpty
 
+  /** Whether Wikimedia sign-in is offered on some host: an account without an email then signs
+    * in with it, never with a password from a shared link ([[services.ShareLinkService]]).
+    */
+  def wikimediaConfigured: Boolean = wikimediaClients.nonEmpty
+
   /** The client to use for the provider on the host, if it is offered there. */
   def client(provider: String, host: String): Option[OAuthClient] = provider match {
     case OAuthProviders.Google    => googleClient.filter(_ => googleHosts.contains(normalizeHost(host)))

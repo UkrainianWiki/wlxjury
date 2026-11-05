@@ -3,7 +3,7 @@ package services.distribution
 import org.intracer.wmua.cmd.InMemoryDistribution._
 import db.scalikejdbc._
 import org.intracer.wmua.cmd.{DistributeImages, SelectTopByRating}
-import org.intracer.wmua.{AverageRule, ContestJury, CriteriaRate, Image, ImageWithRating, Vote}
+import org.intracer.wmua.{AverageRule, ContestJury, CriteriaRate, Image, ImageWithRating, RejectedMode, Vote}
 import org.specs2.mutable.Specification
 import org.specs2.specification.{AfterEach, BeforeAll, BeforeEach}
 import scalikejdbc._
@@ -920,6 +920,86 @@ class RoundDistributionJobSpec extends Specification with TestDb with BeforeAll 
         (RoundDistributionHandler.averageRuleOf(stripRule(jobOf(roundDao.findByContest(contest.getId)
           .find(_.name.contains("Legacy")).get.getId))) must beNone) and
         (byLegacy === Set(2L))
+    }
+
+    "keep \"rejected by at least N\" from a rated round whose worst mark was turned off after ✗, on \"Distribute new files\" too" in {
+      val (contest, _, jurors) = setUp(30, 3)
+      val worst = ratedRound(contest, jurors, Round.ratesById(5), seed = 33, "Worst", worst = true)
+      // the option turned off after the ✗ were given: they stay
+      sql"UPDATE round SET worst_mark = FALSE WHERE id = ${worst.getId}".update()(AutoSession)
+      val withWorst = VoteJdbc.byRound(worst.getId).filter(_.rate < 0).map(_.pageId).toSet
+      val service = inlineService(TestRoundServices.handler())
+      val created = service.createNewRound(newRound(contest, "Next").copy(previous = Some(worst.getId.toString),
+        prevRejectedBy = Some(1)), jurors.map(_.getId))
+      val first = pageIds(created.getId)
+      val recorded = (jobOf(created.getId).params \ "settings" \ "prevRejectedBy").asOpt[Int]
+      // two new files of the previous round, one with a ✗ (a bulk insert: a juror's vote of then)
+      val added = Seq(Image(9001, "File:New9001.jpg", None, None, 1000, 800, Some("12-345-9001")),
+        Image(9002, "File:New9002.jpg", None, None, 1000, 800, Some("12-345-9002")))
+      imageDao.batchInsert(added)
+      selectionDao.batchInsert(Seq(Vote(added(0), jurors(0), worst, -1), Vote(added(0), jurors(1), worst, 5),
+        Vote(added(1), jurors(0), worst, 4)))
+      Round.setActive(worst.getId, active = true)
+      val more = service.distributeNewImages(created.getId)
+      (withWorst must not(beEmpty)) and (first.intersect(withWorst) must beEmpty) and (first must not(beEmpty)) and
+        (recorded must beSome(1)) and
+        ((jobOf(created.getId).params \ "settings" \ "prevRejectedBy").asOpt[Int] must beSome(1)) and
+        (more === 1) and (pageIds(created.getId) -- first === Set(9002L))
+    }
+
+    "apply \"rejected by at least N\" from several rated previous rounds, only one of them with the worst mark" in {
+      val (contest, _, jurors) = setUp(40, 3)
+      val worst = ratedRound(contest, jurors, Round.ratesById(5), seed = 34, "Worst", worst = true)
+      val plain = ratedRound(contest, jurors, Round.ratesById(5), seed = 35, "Plain")
+      val template = newRound(contest, "Next").copy(previous = Some(Seq(plain, worst).map(_.getId).mkString(",")),
+        prevRejectedBy = Some(1))
+      val withWorst = VoteJdbc.byRound(worst.getId).filter(_.rate < 0).map(_.pageId).toSet
+      val (got, expected) = both(contest, jurors, template)
+      (withWorst must not(beEmpty)) and (got === expected) and (got.intersect(withWorst) must beEmpty) and
+        (got must not(beEmpty))
+    }
+
+    "apply \"rejected by at least N\" in both modes from a yes/no and a rated ✗ source, at the boundary, on both paths" in {
+      val (contest, _, jurors) = setUp(40, 3)
+      val binary = ratedRound(contest, jurors, Round.binaryRound, seed = 36, "Binary")
+      val worst = ratedRound(contest, jurors, Round.ratesById(5), seed = 37, "Worst", worst = true)
+      def rejections(r: Round) = VoteJdbc.byRound(r.getId).groupBy(_.pageId).view.mapValues(_.count(_.rate < 0)).toMap
+      val results = for {
+        source <- Seq(binary, worst)
+        mode <- RejectedMode.all
+        n <- Seq(1, 2)
+      } yield {
+        val template = newRound(contest, s"Next ${mode.param} $n").copy(previous = Some(source.getId.toString),
+          prevRejectedBy = Some(n), prevRejectedMode = mode)
+        val (got, expected) = both(contest, jurors, template)
+        val byVotes = rejections(source).collect { case (p, r) if mode.passes(r, n) => p }.toSet
+        // a file with exactly n rejections: in "only", out of "exclude"
+        val boundary = rejections(source).collect { case (p, r) if r == n => p }.toSet
+        (got === expected) and (got === byVotes) and (boundary must not(beEmpty)) and
+          (if (mode == RejectedMode.Only) boundary.subsetOf(got) must beTrue else got.intersect(boundary) must beEmpty)
+      }
+      // a yes/no source's top-N among only its rejected files: ranked by the default order, ties by page id
+      val top = newRound(contest, "Top only").copy(previous = Some(binary.getId.toString), topImages = Some(4),
+        topBinaryOrder = Some(org.intracer.wmua.BinaryOrder.Default), prevRejectedBy = Some(1),
+        prevRejectedMode = RejectedMode.Only)
+      val (gotTop, expectedTop) = both(contest, jurors, top)
+      results.reduce(_ and _) and (gotTop === expectedTop) and (gotTop.size === 4) and
+        (gotTop.forall(p => rejections(binary).getOrElse(p, 0) >= 1) must beTrue)
+    }
+
+    "record the mode in the job's settings, and read a job from before V93 as excluding" in {
+      val (contest, _, jurors) = setUp(20, 2)
+      val worst = ratedRound(contest, jurors, Round.ratesById(5), seed = 38, "Worst", worst = true)
+      val created = inlineService(TestRoundServices.handler()).createNewRound(newRound(contest, "Only").copy(
+        previous = Some(worst.getId.toString), prevRejectedBy = Some(1), prevRejectedMode = RejectedMode.Only),
+        jurors.map(_.getId))
+      val job = jobOf(created.getId)
+      val before = job.copy(params = job.params ++ Json.obj("settings" ->
+        ((job.params \ "settings").as[JsObject] - "prevRejectedMode")))
+      ((job.params \ "settings" \ "prevRejectedMode").asOpt[String] must beSome("only")) and
+        (RoundDistributionHandler.jobRejectedMode(job) === RejectedMode.Only) and
+        (RoundDistributionHandler.jobRejectedMode(before) === RejectedMode.Exclude) and
+        (Round.findById(created.getId).map(_.prevRejectedMode) must beSome(RejectedMode.Only: RejectedMode))
     }
 
     "keep a top-N round at N on \"Distribute new files\"" in {

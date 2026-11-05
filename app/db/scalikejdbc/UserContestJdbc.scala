@@ -44,6 +44,13 @@ object UserContestJdbc extends JoinTable[UserContest] {
   def findByUser(userId: Long)(implicit session: DBSession = AutoSession): Seq[UserContest] =
     where("userId" -> userId).orderBy(defaultAlias.contestId.desc).apply()
 
+  /** The memberships of each of the users, in one query (the users page's batch). */
+  def findByUsers(userIds: Seq[Long])(implicit session: DBSession = AutoSession): Map[Long, Seq[UserContest]] =
+    if (userIds.isEmpty) Map.empty
+    else
+      sql"SELECT user_id, contest_id, role FROM user_contest WHERE user_id IN (${userIds.distinct})"
+        .map(rs => UserContest(rs.long(1), rs.long(2), rs.string(3))).list.apply().groupBy(_.userId)
+
   def find(userId: Long, contestId: Long)(implicit session: DBSession = AutoSession): Option[UserContest] =
     where("userId" -> userId, "contestId" -> contestId).apply().headOption
 

@@ -496,6 +496,19 @@ object User extends CRUDMapper[User] {
           SELECT r.contest_id FROM (SELECT DISTINCT round_id FROM vote WHERE jury_id = $userId) s
           JOIN round r ON r.id = s.round_id""".map(_.long(1)).list()
 
+  /** [[contestsWorkedIn]] of each of the users, in one query (the users page's batch). */
+  def contestsWorkedInBy(userIds: Seq[Long])(implicit session: DBSession = autoSession): Map[Long, Seq[Long]] =
+    if (userIds.isEmpty) Map.empty
+    else {
+      val ids = userIds.distinct
+      sql"""SELECT ru.user_id, r.contest_id FROM round_user ru JOIN round r ON r.id = ru.round_id
+            WHERE ru.user_id IN ($ids)
+            UNION
+            SELECT s.jury_id, r.contest_id FROM (SELECT DISTINCT jury_id, round_id FROM vote WHERE jury_id IN ($ids)) s
+            JOIN round r ON r.id = s.round_id""".map(rs => rs.long(1) -> rs.long(2)).list()
+        .groupMap(_._1)(_._2)
+    }
+
   /** Whether the user is a juror of the round: with votes in it (vote, as
     * [[findByRoundSelection]] lists them, for legacy rounds without round_user rows) or
     * assigned to it (round_user, active or not).

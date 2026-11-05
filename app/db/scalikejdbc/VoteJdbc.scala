@@ -189,6 +189,10 @@ object VoteJdbc extends CRUDMapper[Vote] {
   /** [[rate]] of the vote `id` in the caller's transaction. A rate that changes marks the
     * file's counts in the round dirty, last ([[RoundCounts.markFile]], P2a): no count delta and
     * no lock on the round or its `round_image` row.
+    *
+    * A ✗ (-1) is checked against the round's worst mark by the caller (`Round.acceptsRate`, on the
+    * round read before), not here: a vote doesn't lock the round row, so a ✗ racing the option's
+    * turn-off is taken, as a ✗ given just before it is (both stay, counted as 0; round images §18).
     */
   private[scalikejdbc] def rateIn(id: Long, juryId: Long, roundId: Long, rate: Int)(implicit session: DBSession): Int = {
     // the vote's file and its rate before, read as it is locked
@@ -217,6 +221,13 @@ object VoteJdbc extends CRUDMapper[Vote] {
     */
   def hasRatedVote(roundId: Long): Boolean =
     sql"""SELECT 1 FROM vote WHERE round_id = $roundId AND ${VoteSql.voted(VoteSql.bare)} AND deleted_at IS NULL LIMIT 1"""
+      .map(_.int(1)).single().isDefined
+
+  /** Whether the round has a vote below 0 (a yes/no round's no, a rated round's ✗): one read of
+    * the (round_id, rate) index. The CSV's legend of a rated round whose option was turned off.
+    */
+  def hasRejected(roundId: Long): Boolean =
+    sql"""SELECT 1 FROM vote WHERE round_id = $roundId AND ${VoteSql.rejected(VoteSql.bare)} LIMIT 1"""
       .map(_.int(1)).single().isDefined
 
   private[scalikejdbc] val DeleteChunk = 5000

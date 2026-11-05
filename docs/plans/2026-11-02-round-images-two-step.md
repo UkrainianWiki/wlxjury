@@ -2139,7 +2139,9 @@ or are split off is the orchestrator's call (the ✗ commits use `VoteSql`, and 
 1. **The option.** `round.worst_mark`, off by default: jurors of a rated round may give a file ✗,
    stored as `rate = -1`. 0 is unrated, stars 1…N unchanged. A yes/no round keeps −1/0/1 and never
    has the option; a criteria round neither (the round form refuses both; a vote of −1 in a round
-   without the option, or in a criteria round whatever is stored, is a 400).
+   without the option, or in a criteria round whatever is stored, is a 400). Criteria rounds with
+   ✗ (per criterion or per file, combined with the criteria sum), or criteria-based yes/no rounds,
+   are a later item after release 2, its design open (roadmap item 6's note, the user, 2026-11-05).
 2. **✗ counts as 0** in every average and total: the sum of grades is `SUM(GREATEST(rate, 0))` on
    the votes and `rate_sum + rejections` on the counts. "The jurors who rated it" is any vote
    (`rate <> 0`, the counts' `voted`). Under `rated`, the grades over the jurors with any vote; under
@@ -2170,8 +2172,10 @@ ALTER TABLE vote_aside MODIFY rate INT NOT NULL DEFAULT 0, ALGORITHM = INPLACE, 
   `vote_round_page_rate_idx` and `vote_aside`'s copies) are rebuilt with the table; none changes.
   `vote_orphan` keeps its nullable column (an archive nothing reads).
 - **Not INSTANT:** NULL to NOT NULL is an online rebuild (`INPLACE, LOCK=NONE`: writes go on;
-  the statement fails rather than copies). MariaDB needs strict mode for it (the pre-deploy
-  `@@GLOBAL.sql_mode`); without, the ALTER is refused and V91 fails with nothing changed but the
+  the statement fails rather than copies). MariaDB needs strict mode for it: each ALTER runs as
+  `SET STATEMENT sql_mode = '<the session's>,STRICT_TRANS_TABLES', lock_wait_timeout = 60 FOR …`
+  (after the review), so the server's mode doesn't matter, and the rebuild's metadata lock waits
+  at most 60 s for a long transaction or a backup, then V91 fails with nothing changed but the
   UPDATEs (rerunnable).
 - `FlywayUpgradeSpec` "V91's NOT NULL rates" (10.6 and 10.11): NULL rates become 0, others kept
   (a stored −1 too); both columns `NO` / default `0`; an insert without a rate is 0, an update to
@@ -2204,6 +2208,30 @@ rating and its criteria (`round_criterion`), which the round form and the vote c
 round, `created_at` unchanged, a rerun changes nothing, the rollback gives V91's schema, forward
 again the same.
 
+### Migration V93: the rejected-by mode (the user, 2026-11-05, after the review)
+
+```sql
+ALTER TABLE round
+  ADD COLUMN IF NOT EXISTS prev_rejected_mode VARCHAR(8) NOT NULL DEFAULT 'exclude',
+  ALGORITHM = INSTANT;
+ALTER TABLE round DROP CONSTRAINT IF EXISTS round_prev_rejected_mode_chk,
+  ADD CONSTRAINT round_prev_rejected_mode_chk CHECK (BINARY prev_rejected_mode IN ('exclude', 'only'));
+```
+
+"Rejected by at least N" (`prev_rejected_by`, V74) gets a second mode
+(`org.intracer.wmua.RejectedMode`): **exclude** those files (`SUM(rejected) < N` pass; every
+existing round's, the default) or **only** them (`SUM(rejected) >= N`), to review the rejected
+files in a round of their own. Rejections are a yes/no round's "no" and a rated round's ✗
+(`Round.rejects`). The round form has one select: no filter / exclude / only, N the same field; a
+client without it excludes; an unknown mode is a 400. Both modes everywhere the filter is
+applied: the in-memory filter (`RejectedByLessThan`, `RejectedByAtLeast`), the streamed candidates
+(`votesCond`: `NOT EXISTS` / `EXISTS (… HAVING COUNT(*) >= N)`), the yes/no top-N candidates
+(`binaryPage`'s HAVING), "Distribute new files". `RoundService` records the mode in the job's
+settings (`prevRejectedMode`, beside `prevRejectedBy`), and the job applies the recorded one
+(`jobRejectedMode`; a job from before V93 excludes). No settings page lists it. `FlywayUpgradeSpec`
+"V93's rejected-by mode": an existing round's filter stays `exclude`, `'ONLY'` and `'all'` refused,
+a rerun changes nothing, the rollback gives V92's schema, forward again the same.
+
 ### Design
 
 - **Values and checks.** `Vote.Unrated` 0, `Selected` 1, `Rejected` −1; `Vote.isPositive` (a yes,
@@ -2222,8 +2250,9 @@ again the same.
   `AverageRule.VoteTerms` (`GradeSum`, `VotedCount`, `COUNT(*)`) keep the two sources in parity. The
   rank key's sum column is `GradeSum` (in memory `rateSum`, the grades). The streamed distribution:
   `PrevVotes.grades` (the per-round sum of grades, any vote as rated, `votedFromDb` on its
-  candidates). In rated rounds without the option no vote is below 0, so their results are
-  unchanged.
+  candidates). A rated round without the option takes no vote below 0 (`acceptsRate`, since
+  68c4716c), so its results are unchanged **if production has none stored from before** (the
+  deploy note's query 1; a −1 found there becomes a ✗, and a rate below −1 must be set first).
 - **The counts need no change**: P2a counts `voted` (`rate <> 0`), `approvals` (`> 0`),
   `rejections` (`< 0`) and `rate_sum` (`SUM(rate)`) already; a ✗ or a clear changes the rate, so
   `VoteJdbc.rateIn` marks the file (`RoundCountsVoteSpec`).
@@ -2322,23 +2351,65 @@ The vote and list paths add no statement: the read changes are in the SQL text (
 row in a rated round's grouped sums, `rate_sum + rejections` per row on the counts), not measured
 apart; P2b's benchmarks (§17) stand.
 
-### Deploy note (V91, V92)
+### Deploy note (V91, V92, V93)
 
-Read-only, production, before the deploy (run by the user):
+Read-only, production, before the deploy (run by the user). Production is at V81 then: its
+tables are still `selection`, `selection_deleted` and `rounds` (V82 renames them to `vote`,
+`vote_aside` and `round` in the same release); the columns are the same.
 ```sql
-SELECT COUNT(*) FROM vote WHERE rate IS NULL;        -- set to 0 (unrated) by V91
-SELECT COUNT(*) FROM vote_aside WHERE rate IS NULL;  -- the same
-SELECT @@GLOBAL.sql_mode;                            -- STRICT_TRANS_TABLES, else V91's ALTER is refused
+-- 1. Negative rates already stored in rated rounds (before acceptsRate, 68c4716c, any integer
+--    could be): after the deploy a -1 there is a ✗, and a rate below -1 breaks the votes' and the
+--    counts' parity (grade 0 against rate_sum + rejections < 0). Expected: none.
+SELECT s.round_id, MIN(s.rate), COUNT(*) FROM selection s JOIN rounds r ON r.id = s.round_id
+  WHERE r.rates > 1 AND s.rate < 0 GROUP BY s.round_id;
+SELECT s.round_id, MIN(s.rate), COUNT(*) FROM selection_deleted s JOIN rounds r ON r.id = s.round_id
+  WHERE r.rates > 1 AND s.rate < 0 GROUP BY s.round_id;
+-- 2. V91: the NULL rates it sets to 0 (unrated), the columns it changes, the rows it rebuilds
+SELECT COUNT(*) FROM selection WHERE rate IS NULL;
+SELECT COUNT(*) FROM selection_deleted WHERE rate IS NULL;
 SELECT TABLE_NAME, COLUMN_TYPE, IS_NULLABLE, COLUMN_DEFAULT FROM information_schema.COLUMNS
-  WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME IN ('vote', 'vote_aside') AND COLUMN_NAME = 'rate';
-                                                     -- int(11), YES, NULL
-SELECT COUNT(*) FROM vote; SELECT COUNT(*) FROM vote_aside;  -- the rows V91 rebuilds
+  WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME IN ('selection', 'selection_deleted')
+    AND COLUMN_NAME = 'rate';                         -- int(11), YES, NULL
+SELECT COUNT(*) FROM selection; SELECT COUNT(*) FROM selection_deleted;
+-- 3. Nothing long-running when V91 rebuilds: no backup, no long transaction
+SHOW PROCESSLIST;
 ```
-Time V91 on a production-sized copy before the release (`VoteRateNotNullBenchmark` on a restored
-backup, run by the user): the fixture's timing below is not production's.
+**If query 1 finds rows**, the user decides before the deploy, per round: keep them as −1 (✗:
+counted as 0, shown as ✗; a rate below −1 is set to −1 first), or set them to 0 (unrated):
+`UPDATE selection s JOIN rounds r ON r.id = s.round_id SET s.rate = 0 WHERE r.rates > 1 AND s.rate < 0`
+(and `selection_deleted`); either before the deploy, so V89's backfill counts the result.
 
-Rollback after `reopen` (tested, `FlywayUpgradeSpec`), with the app stopped; V92 first:
+V91's ALTERs add strict mode to the session's `sql_mode` and a 60 s `lock_wait_timeout` for
+themselves (`SET STATEMENT … FOR ALTER TABLE …`, through `EXECUTE IMMEDIATE`; accepted by 10.6, run
+in `FlywayUpgradeSpec` also on a session without strict mode): the server's `sql_mode` needn't be
+strict, and a rebuild that can't get its metadata lock within 60 s fails with nothing changed. Time
+V91 on a production-sized copy before the release (`VoteRateNotNullBenchmark` on a restored backup,
+run by the user): the fixture's timing below is not production's.
+
+**If V91 fails** (a lock timeout, `Lock wait timeout exceeded`): MariaDB's DDL isn't transactional,
+so Flyway records V91 as failed (`flyway_schema_history`, `version = '91'`, `success = 0`), and
+the next start refuses: `db.Migrations.onStart` runs Flyway's `migrate()` (production's `auto`),
+whose validation stops at the failed row, with Flyway's message (its 9.16.3 source; Flyway 13's
+wording not checked here) "Detected failed migration to version 91 (Vote rate not null). Please
+remove any half-completed changes then run repair to fix the schema history." V91 changes nothing
+half-way: its UPDATEs are committed and harmless to rerun, and each ALTER either completed or
+changed nothing. So, with the app stopped and the long transaction gone (`SHOW PROCESSLIST`):
 ```sql
+DELETE FROM flyway_schema_history WHERE version = '91' AND success = 0;
+```
+(or Flyway's `repair`), then start the app again: V91 reruns, rebuilding only a table still
+nullable.
+
+Rollback after `reopen` (tested, `FlywayUpgradeSpec`), with the app stopped; V93, then V92 first.
+Before V93's: the rounds that keep only their rejected files would, with the older code, exclude
+them instead (it has no mode); list them, `SELECT id, number, contest_id, prev_rejected_by FROM round
+WHERE prev_rejected_mode = 'only'`, and for each the user clears `prev_rejected_by` (`UPDATE round
+SET prev_rejected_by = NULL, created_at = created_at WHERE id = …`) or decides otherwise (a round
+already distributed keeps its files either way; only a later "Distribute new files" reads it).
+```sql
+ALTER TABLE round DROP CONSTRAINT round_prev_rejected_mode_chk;
+ALTER TABLE round DROP COLUMN prev_rejected_mode, ALGORITHM = INSTANT;
+DELETE FROM flyway_schema_history WHERE version = '93';
 ALTER TABLE round DROP COLUMN worst_mark, ALGORITHM = INSTANT;
 DELETE FROM flyway_schema_history WHERE version = '92';
 ALTER TABLE vote MODIFY rate INT NULL DEFAULT NULL, ALGORITHM = INPLACE, LOCK = NONE;
@@ -2369,8 +2440,15 @@ launcher, one JVM at a time under the shared lock, Commons variables unset).
 | Rerun after the fix | `ListPositionSpec`, `JurorCountsSpec`, `RoundListDbSpec`, `RoundListSpec`, `GalleryOrderSpec`, `GroupedListParitySpec`, `RoundCountsVoteSpec`, and the two network specs | **98 passed** | `20261105-114541-24324.log` |
 
 No second full suite: the fix is `VoteFilter.matches`' round kind, rerun with every spec that
-reads it. Not run: the suite on MariaDB 10.11 (`FlywayUpgradeSpec`'s V91 and V92 cases ran on
-10.6 only; V91 became a later item meanwhile).
+reads it.
+
+**After the independent review** (follow-ups 1–7, and the user's rejected-by mode, V93):
+
+| Step | Specs | Result | Log |
+|---|---|---|---|
+| Affected specs | 18 specs (Flyway V91 with `SET STATEMENT` and V93, the migration guards, the distribution and redistribution specs, the form, CSV, rule, parity and vote specs, `RawSqlSpec`) | 180: 177 passed, 2 failed, 1 skipped: `RoundRedistributionFiltersSpec` pinned the old rule (a rated source ignores rejected-by; now its ✗ count, follow-up 1) and the form's "no filter" sent as "" (Play reads it as absent: now `none`) | `20261105-121344-23040.log` |
+| Rerun, with Jest | the two, the form and edit-page specs; `jsTest` | 41 passed; Jest 23 suites, 303/303; `npm run lint` clean | `20261105-122139-13136.log` |
+| MariaDB 10.11 | `FlywayUpgradeSpec` (`-Dwlxjury.test.mariadb-image=mariadb:10.11.14`; V85's 10.6-only warning absent) | 12: 11 passed, 1 skipped (the 9.16.3 fixture's regeneration); V91 (`SET STATEMENT`, a non-strict session too), V92 and V93 pass | `20261105-122547-2224.log` |
 
 ### Decisions for the user (conservative choices made here)
 
@@ -2380,9 +2458,20 @@ reads it. Not run: the suite on MariaDB 10.11 (`FlywayUpgradeSpec`'s V91 and V92
 - **A juror's own by-rate list** sorts by the raw rate, so a ✗ (−1) comes after the unrated files.
 - **The CSV** appends ` ✗ n` to the Overall cell (as the pages put it beside the score) rather than
   adding a column; the jurors' columns keep −1, explained by a legend row.
-- **"Rejected by at least N" from a rated round** is offered and applied only while the source
-  round has the option (`Round.rejects`); a round whose option was turned off after ✗ were given
-  isn't filtered by them.
+- **"Rejected by at least N" from a rated round** (changed after the review): offered and applied
+  for any rated previous round without criteria (`Round.rejects`, the `takesWorstMark` rating
+  condition without the live option), so turning the option off keeps a stored filter on a
+  resubmit, "Distribute new files" and a job's restart; from a round without any ✗ it leaves out
+  nothing. From several previous rounds: if any of them may reject, in the form, `RoundService`
+  and the job alike.
+- **A ✗ racing the option's turn-off** is taken: a vote doesn't lock the round row
+  (`VoteJdbc.rateIn`'s note), and the ✗ stays, counted as 0, as one given just before.
+- **The rejected-by mode's form** (after the second review): "no filter" posts `none`; a mode
+  without X, and X with `none`, are form errors; a new round's filter without a chosen previous
+  round that may reject is refused (`RoundController`, `error.rejected.by.no.source`), and the
+  hidden filter's fields aren't sent (`round-form.js`). A client without the mode field (an older
+  page, a script) excludes, the meaning before V93. Should a stored "only" ever meet sources that
+  can't reject, the job applies it (no file passes) rather than dropping it.
 - **The tiles' clear** is raty's cancel icon, made an eraser and hidden while the file is
   unrated, rather than a separate button.
 - **`hasRatedVote`** (the score-rule warning) counts a ✗ as a vote, as the coordinator asked,

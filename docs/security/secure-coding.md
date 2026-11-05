@@ -360,14 +360,43 @@ password); otherwise an add becomes an invitation. A wiki-account match never at
 access role to an unverified wiki account. Emails are trimmed and lowercased; wiki names
 normalised and unique. Links are 32 random bytes, stored as SHA-256, single use, expiring,
 bound to account and address. Every refused link gives the same page (no account
-enumeration). One's own password or email change needs the current password; nobody sets
-another's password. Mail that is not the person's goes from `UserService.systemSender`.
+enumeration). One's own password or email change needs the current password; nobody types
+another's password: another account's password is set only through a single-use link, mailed
+(an invitation, root's reset) or **shared**: "Create a link to share" (`ShareLinkService`, V94's
+`account_token.shared`) shows the same kind of link once, in the POST's response (`no-store`,
+no referrer; never stored, logged, flashed or put in the session), for the admin to pass on
+personally. A new link of the purpose, mailed or shared, revokes the account's unused ones. Root
+may create one for any account; a contest admin only, in the request's contest, for a member or
+pending invitee of it (a reset: an active member only) that is not root, not themselves, has
+active roles (and live invitations' roles) jury or organizer only, and whose every membership
+(inactive ones too), contest worked in and live invitation is in a contest they administer;
+checked again when the link is opened and used, under the account's row lock, which
+`UserService.addToContest` takes too. **Lock order:** every transaction that locks an account
+and its links takes the account's row first, then the links' rows and memberships
+(`AccountTokenService.acceptPasswordLink`, `acceptByProvider`, `confirmEmailChange`,
+`ShareLinkService.create`, `UserService.sendChooseLink`; `addToContest` the account's row, then
+the membership), so none deadlocks with another on the same account. Not for an account without
+an email while Wikimedia sign-in is offered (it signs in there), at creation and again when the
+link is opened and used. A shared link proves nothing: accepting it ends sessions, API tokens and
+identities as a mailed one does (identities only then, never when the link is created), **clears
+`email_verified_at` and `wiki_account_verified_at`** (so another contest's add becomes a mailed
+invitation and a wiki-account add is refused, and a Google sign-in by the address no longer
+links; a mailed link's acceptance verifies the email again), and gives only pending roles its
+creator may still give. Mail that is not the person's goes from `UserService.systemSender`.
+
+**Residual risk (accepted for now, 2026-11-05, for the user to decide):** a contest admin can add
+the email of a verified account with no ties (no membership, past work or invitation anywhere),
+which joins their contest directly (`User.mayTakeAccessRole`), and then share a reset for it. The
+link's holder gains the account's name and email and the owner is locked out; the account becomes
+unverified, so it can't be pulled into other contests (another contest's add mails an invitation,
+a wiki-account add is refused). Root's mailed reset, or a later mailed invitation, gives the
+address's owner the account back (its acceptance sets the password and ends the holder's sessions).
 
 **Example.** `UserService.addToContest` (results `NewAccount`, `JoinedContest`, `Invited`,
 `WikiAccountUnverified`); `services.AccountTokenService.check`; acceptance in one transaction
-with the token row locked.
+with the token row locked; `ShareLinkService.refusal` (who may share a link).
 
-**Guards.** `AccountInvitationSpec`, `OwnAccountSpec`, `AccountReviewFixesSpec`, `SetupSpec`,
+**Guards.** `AccountInvitationSpec`, `ShareLinkSpec`, `OwnAccountSpec`, `AccountReviewFixesSpec`, `SetupSpec`,
 `db.AccountVerificationMigrationSpec`, `MultiContestUserSpec`, `UserControllerSpec`.
 
 A Google or Wikimedia identity's first sign-in links to an account by the same rule
