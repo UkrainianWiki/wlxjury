@@ -50,6 +50,10 @@ Sign in with your email address instead.
 
 <img src="images/juror-sign-in.png" alt="The sign-in page" width="1280">
 
+<a id="signing-in-with-wikimedia-or-google"></a>
+<a id="when-one-wiki-name-has-several-jury-accounts"></a>
+<!-- not offered yet (built, providers not set up): the sections "Signing in with Wikimedia or Google" and "When one wiki name has several jury accounts".
+
 ### Signing in with Wikimedia or Google
 
 Some installations also show **Sign in with Wikimedia** and **Sign in with Google** above the
@@ -71,8 +75,6 @@ When you link a Wikimedia account and your jury account has no wiki account yet,
 **Set your wiki account** asks whether to use that Wikimedia user name. Press **Use it** to
 confirm.
 
-<img src="images/juror-profile.png" alt="The profile page, with its theme and sessions" width="1280">
-
 ### When one wiki name has several jury accounts
 
 Some people have more than one jury account with the same wiki user name, for example from
@@ -90,7 +92,8 @@ account**, with one box per account:
 If an account says **This account cannot be chosen here: ask your contest organizer**, ask
 your organizer which account to use.
 
-<!-- screenshot to add: the "Choose your jury account" page with two accounts -->
+(screenshot to add: the "Choose your jury account" page with two accounts)
+-->
 
 ### Signing out
 
@@ -99,6 +102,8 @@ Open the person icon at the top right and choose **Logout**.
 To sign out on every computer and browser at once, open your **Profile** and press **Sign out
 everywhere** under **Sessions**. Changing your password does this too, except in the browser
 you changed it in.
+
+<img src="images/juror-profile.png" alt="The profile page, with its theme and sessions" width="1280">
 
 ## Finding your rounds
 
@@ -363,10 +368,8 @@ their votes are kept aside. If a file is requalified later, it comes back with y
 Your round may disappear for a while when the organizers stop it to do this.
 
 If you upload photos to the contest yourself, make sure your profile shows your **Wiki
-account**. Without it the tool can't recognise your files. If the field is empty, link your
-Wikimedia account on your profile: the tool offers to use its user name, as described in the
-part of this guide on signing in. To change a wiki account that is already set, ask a contest
-admin.
+account**. Without it the tool can't recognise your files. If the field is empty, or to change a
+wiki account that is already set, ask a contest admin.
 
 ### Disqualified files
 

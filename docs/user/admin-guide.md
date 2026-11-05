@@ -81,8 +81,8 @@ At the bottom of the table, fill in the row: **Full name**, **Wiki account**, **
 - An account that hasn't proved its email, for example one made unverified by a shared link,
   gets an invitation instead, and the role applies when they accept it. A wiki account that
   belongs to such an account is not added: add the person by email.
-- A person added with a wiki account only has no email. They can't sign in with a password; they
-  can sign in with Wikimedia, see [Sign-in options](#a-sign-in).
+- A person added with a wiki account only has no email. They can't sign in with a password yet:
+  add the person by email to invite them.
 
 The page tells you how many accounts were created, how many people joined and how many were
 members already, and lists any invitations that could not be sent.
@@ -108,7 +108,7 @@ The pencil opens the page **Edit user**. An admin can change, for members of the
 
 - the **Role** in this contest;
 - the **Full name** and the **Wiki account** (a valid wiki name that no other account has; it
-  is marked unverified until the person confirms it by linking their Wikimedia account);
+  is marked unverified);
 - the **Email**, only while the person is still an invitee who hasn't accepted. They are invited
   again at the new address. For a person who has a password, only the person can change their
   email, on their own profile, or root.
@@ -164,9 +164,9 @@ open the person's edit page and press **Create a link to share**.
   reset only for an active member. The account must not be root or the admin themselves, must
   have only the roles **Jury** or **Organizer**, and every contest it belongs to, has worked in
   or is invited into must be a contest the admin administers.
-- Not for a person who has no email and signs in with Wikimedia, where Wikimedia sign-in is
-  offered: the page says they sign in with their wiki account. A person with neither an email nor
-  a wiki account can't get a link either.
+- Not for a person who has no email. (Where Wikimedia sign-in is set up, such a person signs in
+  with their wiki account, and the page says so.) A person with neither an email nor a wiki
+  account can't get a link either.
 
 **How it works.**
 
@@ -186,8 +186,8 @@ open the person's edit page and press **Create a link to share**.
 signs out every other session of the account, and the old password works until the link is used.
 A shared link doesn't prove that the person owns the email, because anyone who has it could use
 it. So using it **marks the email and the wiki account unverified**: if another contest then adds
-the person, they get an invitation by email first, and a Google sign-in by that address doesn't
-link until they accept a mailed link. Accepting a mailed link verifies the address again.
+the person, they get an invitation by email first. Accepting a mailed link verifies the address
+again.
 
 Treat the link like a password: anyone who has it can set the account's password until it is
 used. Pass it on to the person only, and not in a public place.
@@ -227,6 +227,8 @@ can also create a link to share for a reset, under the conditions in [Sharing a
 link](#a-share-link).
 
 <a id="a-wikimedia-google"></a>
+<!-- not offered yet (built, providers not set up): the section "Wikimedia and Google".
+
 ### Wikimedia and Google
 
 If the tool's operators set them up, the sign-in page has **Sign in with Wikimedia** and **Sign
@@ -243,6 +245,7 @@ email or wiki account, the tool unlinks their Google and Wikimedia accounts, as 
 be changing hands.
 
 Operators set the providers up in the [OAuth reference](../oauth.md).
+-->
 
 <a id="a-sessions"></a>
 ### Sessions
