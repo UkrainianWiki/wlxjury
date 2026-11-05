@@ -180,13 +180,11 @@ edit.greeting.message = Modifier le message d''accueil
 role=Rôle
 edit=Modifier
 
-organizer=Organisateur
-admin=Admin
-root=Super-administrateur
 no=Non
 yes=Oui
 
 contests=Concours
+contests.list=Liste des concours
 import.from.list.page.images.category=Importer depuis la page des images / catégorie d''images
 examples.of.inputs=Exemples d''entrées
 source=Source
@@ -644,7 +642,7 @@ round.average.rule.sum = Total des notes (un fichier qu''un juré n''a pas noté
 round.average.rule.help = Comment un tour noté calcule la note d''un fichier dans ses résultats, ses classements et pour le minimum d''un tour suivant : la moyenne des jurés qui l''ont noté ; la moyenne de tous ses jurés, une note manquante comptant 0 ; ou le total des notes. Modifiable à tout moment ; un tour suivant déjà distribué garde les fichiers pris.
 round.average.rule.of = Note du fichier : {0}
 round.average.rule.change.warning = Enregistrer une autre règle de note recalcule et réordonne les résultats de ce tour sur toutes les pages, immédiatement : rien n''est recalculé en arrière-plan. Une distribution déjà en attente ou en cours garde la règle avec laquelle elle a commencé.
-round.average.rule.change.later = {1,choice,1#Le tour {0} a pris des fichiers selon les notes de ce tour à chacune de ses distributions ; ces fichiers restent. Lancer ensuite « Distribuer les nouveaux fichiers » dans ce tour applique la nouvelle règle.|1<Les tours {0} ont pris des fichiers selon les notes de ce tour à chacune de leurs distributions ; ces fichiers restent. Lancer ensuite « Distribuer les nouveaux fichiers » dans ces tours applique la nouvelle règle.}
+round.average.rule.change.later = {1,choice,1#Le tour {0} a pris ses fichiers selon les notes de ce tour ; ces fichiers restent. Désormais, distribuer de nouveaux fichiers dans ce tour applique la nouvelle règle.|1<Les tours {0} ont pris leurs fichiers selon les notes de ce tour ; ces fichiers restent. Désormais, distribuer de nouveaux fichiers dans ces tours applique la nouvelle règle.}
 average.file.rating.sum = Pour un tour noté par le total des notes : une note minimale, le total (par ex. jusqu''à 50 pour 10 jurés de 5 étoiles).
 average.file.rating.criteria.sum = Pour un tour avec critères : une somme des notes des critères, en moyenne sur les jurés (par ex. jusqu’à 40 pour 4 critères de 10 étoiles, sans demi-étoiles).
 error.criteria.rated.only = Les critères sont réservés aux tours notés.

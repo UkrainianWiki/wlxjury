@@ -65,7 +65,7 @@ class CategorySuggestViewSpec extends PlaySpecification {
     }
   }
 
-  "the campaigns page" should {
+  "the contests page" should {
     "load the script and mark the import source and a new contest's images as mixed" in {
       val page = contentAsString(views.html.contests(root, Seq(contest), Seq(contest),
         Form(ignored(contest)), Form(single("source" -> nonEmptyText))))
@@ -74,6 +74,14 @@ class CategorySuggestViewSpec extends PlaySpecification {
       input(page, "source") must contain("""data-category-suggest="mixed"""")
       input(page, "images") must contain("""data-category-suggest="mixed"""")
       input(page, "name") must not contain "data-category-suggest"
+    }
+    "be titled Contests, shown as its heading, the import a section of its own" in {
+      val doc = org.jsoup.Jsoup.parse(contentAsString(views.html.contests(root, Seq(contest), Seq(contest),
+        Form(ignored(contest)), Form(single("source" -> nonEmptyText)))))
+      val h2 = doc.select("h2").eachText()
+      (doc.title === messages("contests")) and (doc.select("h1").text === messages("contests")) and
+        (doc.select("h1.visually-hidden").size === 0) and
+        (h2.get(0) === messages("import.from.list.page.images.category")) and (h2.get(1) === messages("contests.list"))
     }
   }
 

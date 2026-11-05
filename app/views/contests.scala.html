@@ -12,10 +12,11 @@
 
 @* the category fields' Commons suggestions (category-suggest.js) are Tom Select controls *@
 @mainAdmin("contests", user, user.getId, head = snippets.tomSelectScripts()) {
-    <h1 class="visually-hidden">@Messages("contests")</h1>
+    @* the page's title, shown; then its two sections: the import, the list *@
+    <h1 class="h3">@Messages("contests")</h1>
     <div class="row" xmlns="http://www.w3.org/1999/html">
 
-        <h2 class="h3">@Messages("import.from.list.page.images.category")</h2>
+        <h2 class="h4">@Messages("import.from.list.page.images.category")</h2>
         <div class="bs-callout bs-callout-info">
             <h3 class="h4">@Messages("examples.of.inputs")</h3>
             <p>
@@ -35,7 +36,7 @@
         }
     </div>
     <div class="row" >
-        <h2 class="h3">@Messages("contests")</h2>
+        <h2 class="h4">@Messages("contests.list")</h2>
 
         @contestsTable(contests)
 

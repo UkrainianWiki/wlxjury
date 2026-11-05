@@ -76,8 +76,8 @@ class RoundScoreRuleWarningSpec extends PlaySpecification with PlayTestDb {
         roundDao.create(Round(None, 4, Some("All"), contestId, rates = Round.ratesById(5), previous = prev))
         val later = editPage(app, round).getElementById("averageRule_warning_later")
         (later must not(beNull)) and
-          (later.text must startWith("Rounds 2 (Top), 3 took files")) and
-          (later.text must contain("\"Distribute new files\""))
+          (later.text must startWith("Rounds 2 (Top), 3 took their files")) and
+          (later.text must contain("the new rule"))
       }
     }
 
@@ -86,7 +86,7 @@ class RoundScoreRuleWarningSpec extends PlaySpecification with PlayTestDb {
         val round = setUp(rate = 4)
         roundDao.create(Round(None, 2, None, contestId, rates = Round.ratesById(5), previous = Some(round.getId.toString),
           prevMinAvgRate = Some(BigDecimal(3))))
-        editPage(app, round).getElementById("averageRule_warning_later").text must startWith("Round 2 took files")
+        editPage(app, round).getElementById("averageRule_warning_later").text must startWith("Round 2 took its files")
       }
     }
 
