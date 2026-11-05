@@ -120,6 +120,10 @@ class CategorySuggestViewSpec extends PlaySpecification {
         (doc.getElementById("images").attr("placeholder") === messages("files.source.placeholder")) and
         // widths from main.css's .wlx-contests-table (not inline), the table scrolling in its box
         (doc.select(".table-responsive > table.wlx-contests-table").size === 1) and
+        // inside that box, its suggestions hang from the body (category-suggest.js); the import
+        // field, outside it, keeps them in its wrapper
+        (doc.getElementById("images").attr("data-category-suggest-dropdown-parent") === "body") and
+        (doc.getElementById("source").hasAttr("data-category-suggest-dropdown-parent") must beFalse) and
         (doc.getElementById("images").hasClass("wlx-source-input") must beTrue) and
         (doc.getElementById("year").hasClass("wlx-year-input") must beTrue) and
         (doc.select("table.wlx-contests-table [style]").size === 0) and

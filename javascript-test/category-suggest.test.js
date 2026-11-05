@@ -302,6 +302,34 @@ describe("categorySuggest", () => {
         try { expect(suggest.categorySuggest(field())).toBeNull(); } finally { window.TomSelect = ts; }
     });
 
+    test("hangs the list from the body when the field asks for it, with its aria and keys", async () => {
+        window.fetch.mockResolvedValue(answer(["Category:Wiki Loves Earth", "Category:Wiki Loves Monuments"]));
+        const input = field("mixed", "", ' data-category-suggest-dropdown-parent="body"');
+        const ts = suggest.categorySuggest(input);
+        expect(ts.settings.dropdownParent).toBe("body");
+        expect(ts.dropdown.parentNode).toBe(document.body);
+        expect(ts.wrapper.contains(ts.dropdown)).toBe(false);
+        // the input still names its list, and the keys still reach the suggestions
+        expect(document.getElementById(ts.control_input.getAttribute("aria-controls"))).toBe(ts.dropdown_content);
+        type(ts, "Category:Wiki");
+        jest.advanceTimersByTime(250);
+        await flush();
+        expect(shown(ts)).toEqual(expect.arrayContaining(["Category:Wiki Loves Earth", "Category:Wiki Loves Monuments"]));
+        const key = (keyCode) => ts.control_input.dispatchEvent(new KeyboardEvent("keydown", { keyCode, bubbles: true }));
+        key(40);
+        key(13);
+        expect(input.value).toBe("Category:Wiki Loves Earth");
+    });
+
+    test("keeps the list in the field's wrapper otherwise, whatever else the attribute says", () => {
+        const plain = suggest.categorySuggest(field("mixed"));
+        expect(plain.settings.dropdownParent).toBeNull();
+        expect(plain.wrapper.contains(plain.dropdown)).toBe(true);
+        const other = suggest.categorySuggest(field("mixed", "", ' data-category-suggest-dropdown-parent="#elsewhere"'));
+        expect(other.settings.dropdownParent).toBeNull();
+        expect(other.wrapper.contains(other.dropdown)).toBe(true);
+    });
+
     test("init takes the inputs marked for it only", () => {
         document.body.innerHTML = `<input id="a" data-category-suggest="category"><input id="b" data-category-suggest="mixed"><input id="c">`;
         suggest.init();

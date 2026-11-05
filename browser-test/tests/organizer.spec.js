@@ -75,4 +75,48 @@ test.describe('root', () => {
     await expect(page.getByRole('heading', { level: 1, name: 'Contests' })).toBeAttached();
     await expect(page.getByRole('cell', { name: /Wiki Loves Monuments/ }).first()).toBeVisible();
   });
+
+  // The add row's source field is in the table's .table-responsive box, which would clip its
+  // suggestions: they hang from the body (data-category-suggest-dropdown-parent), under the
+  // field, moving with the page, in the page's colours. Commons' answer comes from this test's
+  // route (a page's route goes before the guard's): nothing reaches Commons.
+  test('suggests a new contest\'s source under its field, outside the table\'s box, in the dark theme', { tag: '@R-01' },
+    async ({ page, baseURL }) => {
+      const titles = Array.from({ length: 10 }, (_, i) => `Category:Wiki Loves Earth ${2016 + i}`);
+      await page.route('https://commons.wikimedia.org/w/api.php**', (route) => route.fulfill({
+        status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' },
+        body: JSON.stringify({ batchcomplete: true, query: { prefixsearch: titles.map((title, i) => ({ ns: 14, title, pageid: i + 1 })) } }),
+      }));
+      await page.context().addCookies([{ name: 'theme', value: 'dark', url: baseURL }]);
+      await page.goto('/contests');
+      const control = page.locator('#images-ts-control');
+      await control.fill('Category:Wiki');
+      const dropdown = page.locator('body > .ts-dropdown');
+      await expect(dropdown).toBeVisible();
+      await expect(dropdown.locator('.option')).toHaveCount(titles.length);
+      expect(await page.locator('.table-responsive .ts-dropdown').count()).toBe(0);
+      // under the field, at its left edge, and still there after the page scrolls
+      const place = async () => {
+        const [c, d] = [await control.locator('xpath=ancestor::div[contains(@class,"ts-control")][1]').boundingBox(),
+          await dropdown.boundingBox()];
+        return { below: d.y - (c.y + c.height), left: d.x - c.x };
+      };
+      const before = await place();
+      expect(before.below).toBeGreaterThanOrEqual(0);
+      expect(before.below).toBeLessThan(12);
+      expect(Math.abs(before.left)).toBeLessThan(2);
+      await page.evaluate(() => window.scrollBy(0, 40));
+      expect(await place()).toEqual(before);
+      // the page's colours (data-bs-theme on <html>), not the light defaults
+      const colours = await page.evaluate(() => {
+        const d = getComputedStyle(document.querySelector('body > .ts-dropdown'));
+        const b = getComputedStyle(document.body);
+        return { dropdown: [d.backgroundColor, d.color], body: [b.backgroundColor, b.color] };
+      });
+      expect(colours.dropdown).toEqual(colours.body);
+      // the keys still choose a suggestion
+      await control.press('ArrowDown');
+      await control.press('Enter');
+      await expect(page.locator('#images')).toHaveValue(titles[0]);
+    });
 });

@@ -8,7 +8,10 @@
 // the field works as plain text, without a message. data-category-suggest="category": a field
 // that holds a category only, suggested for any text; "mixed": one that may also hold a page
 // (an import source: a list page, a page with files), suggested only once the text starts
-// with Category:.
+// with Category:. data-category-suggest-dropdown-parent="body": the list hangs from the page's
+// body (Tom Select's dropdownParent), for a field inside a box that clips (a .table-responsive
+// table's overflow would cut the list off); Tom Select positions it under the field and keeps
+// its aria-* and keys. Any other value, or none, keeps the list in the field's wrapper.
 (function () {
   'use strict';
 
@@ -52,6 +55,7 @@
   function categorySuggest(input) {
     if (!input || !window.TomSelect || !window.fetch || input.readOnly || input.disabled) return null;
     var mode = input.getAttribute('data-category-suggest') === 'mixed' ? 'mixed' : 'category';
+    var dropdownParent = input.getAttribute('data-category-suggest-dropdown-parent') === 'body' ? 'body' : null;
     var latest = 0; // the newest request's number: an answer to an older one is dropped
     var pending = null; // its AbortController
 
@@ -63,6 +67,7 @@
       addPrecedence: true, // Enter keeps the text typed, Down goes to the suggestions
       delimiter: '|', // never in a title, unlike the commas some categories have
       maxOptions: LIMIT,
+      dropdownParent: dropdownParent,
       sortField: [{ field: '$order' }, { field: '$score' }], // Commons' order, not the best match first
       refreshThrottle: DELAY_MS, // the pause in typing before the list and a request follow
       loadThrottle: null, // no second delay on top of it

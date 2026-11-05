@@ -81,9 +81,11 @@
                                 Symbol("class") -> "wlx-year-input")
                             </td>
                             <td>
+                            @* its suggestions hang from the body: the .table-responsive box would clip them *@
                             @bs.text(editContestForm("images"), Symbol("placeholder") -> Messages("files.source.placeholder"), Symbol("_hiddenLabel") -> Messages("files.source"), Symbol("_help") -> "",
                                 Symbol("class") -> "wlx-source-input",
-                                Symbol("data-category-suggest") -> "mixed")
+                                Symbol("data-category-suggest") -> "mixed",
+                                Symbol("data-category-suggest-dropdown-parent") -> "body")
                             </td>
                             <td>
                             </td>
