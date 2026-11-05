@@ -90,11 +90,26 @@ class JobSchedulerSpec extends Specification with BeforeAll with BeforeEach with
     }
   }
 
+  /** A step that crashes and a cleanup that fails too, while `crash`: the scheduler can't
+    * record the failure, so the job stays running and its lease expires.
+    */
+  class CrashingHandler(kind: String) extends CountingHandler(kind) {
+    @volatile var crash = true
+    val cleanups = new AtomicInteger()
+    override def step(job: Job, ctx: StepContext): StepResult =
+      if (crash) { stepsRun.add(job.id); throw new RuntimeException("simulated crash") }
+      else super.step(job, ctx)
+    override def onFailed(job: Job, ctx: StepContext): JsObject = {
+      cleanups.incrementAndGet()
+      if (crash) throw new RuntimeException("simulated cleanup failure") else super.onFailed(job, ctx)
+    }
+  }
+
   private def background(handlers: Seq[JobHandler], workers: Int = 3, limits: Map[String, Int] = Map.empty,
-      lease: FiniteDuration = 60.seconds): JobScheduler = {
+      lease: FiniteDuration = 60.seconds, maxAttempts: Int = 5): JobScheduler = {
     val s = new JobScheduler(handlers, JobScheduler.Settings(
       workers = workers, kindLimits = limits, defaultKindLimit = 3,
-      pollInterval = 50.millis, heartbeatInterval = 200.millis, lease = lease))
+      pollInterval = 50.millis, heartbeatInterval = 200.millis, lease = lease, maxAttempts = maxAttempts))
     schedulers += s
     s
   }
@@ -264,6 +279,52 @@ class JobSchedulerSpec extends Specification with BeforeAll with BeforeEach with
               WHERE id = ${dropped.id}""".update()(AutoSession)
       s.start()
       s.await(dropped.id, 10.seconds).status === JobStatus.Done
+    }
+
+    "fail a job whose runs keep crashing without recording it after jobs.maxAttempts claims; a Retry starts again" in {
+      val h = new CrashingHandler("count")
+      val s = background(Seq(h), lease = 1.second, maxAttempts = 3)
+      val job = enqueue(s, newJob("count", 2))
+      s.start()
+      s.wake()
+      val failed = s.await(job.id, 30.seconds)
+      failed.status === JobStatus.Failed
+      failed.attempts === 3
+      failed.failure.map(_.key) must beSome(JobError.AttemptsKey)
+      failed.failure.map(_.args) must beSome(Seq("3"))
+      failed.failure.flatMap(_.reference) must beSome
+      failed.owner must beNone
+      h.stepsRun.asScala.count(_ == job.id) === 3 // one run per claim, none after the cap
+      h.cleanups.get === 4 // each crash's, and the give-up's (which then fails the job without it)
+      Thread.sleep(1500) // more than a lease later: not claimed again
+      h.stepsRun.asScala.count(_ == job.id) === 3
+      status(job.id) === JobStatus.Failed
+
+      h.crash = false
+      s.retry(job.id) must beRight
+      val done = s.await(job.id, 10.seconds)
+      done.status === JobStatus.Done
+      done.attempts === 1 // the Retry's claim: the count started again
+    }
+
+    "give up an exhausted job with its handler's cleanup when that works" in {
+      val h = new CountingHandler("count")
+      val s = background(Seq(h), lease = 1.second, maxAttempts = 2)
+      val job = enqueue(s, newJob("count", 2))
+      // two claims whose runs ended the JVM: running, its lease expired
+      sql"""UPDATE job SET status = 'running', owner = 'dead-instance', attempts = 2,
+              heartbeat_at = NOW(3) - INTERVAL 120 SECOND WHERE id = ${job.id}""".update()(AutoSession)
+      s.start()
+      val failed = s.await(job.id, 10.seconds)
+      failed.status === JobStatus.Failed
+      failed.failure.map(_.key) must beSome(JobError.AttemptsKey)
+      h.failed.asScala.toSeq === Seq(job.id)
+      h.stepsRun.asScala.count(_ == job.id) === 0
+    }
+
+    "read jobs.maxAttempts, 5 by default" in {
+      JobScheduler.Settings.from(play.api.Configuration()).maxAttempts === 5
+      JobScheduler.Settings.from(play.api.Configuration("jobs.maxAttempts" -> 2)).maxAttempts === 2
     }
 
     "hand its running jobs back to the queue when stopped, for the next instance to resume" in {

@@ -354,6 +354,7 @@ job.status.denied=No access to this job''s status.
 job.error.reference=the job stopped on an error. If it happens again, tell the administrators this reference: {0}.
 job.error.unknown=the job stopped on an error.
 job.error.count.mismatch=round {0} has {1} of {2} images after the distribution. Retry to add the missing ones.
+job.error.attempts=the job was stopped after {0} runs that each ended without finishing (the server stopped during them). Tell the administrators this reference: {1}.
 round.stat.table.failed=The jurors'' table could not be loaded: you may have been signed out or lost access to this contest. Reload the page to try again.
 sort.file=In file order
 sort.rate=By my rating

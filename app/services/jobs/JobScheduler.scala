@@ -23,6 +23,9 @@ import scala.util.control.NonFatal
   *    recording why (a step or fetch that crashed on a database error): it holds it no
   *    more, so its heartbeat stops. Each step checks, under the job's row lock,
   *    that this instance still owns the job, so two instances never run the same job.
+  *    A job taken over this way `maxAttempts` times (claims since its last Retry, `attempts`)
+  *    is failed instead of claimed again ([[giveUpIfExhausted]]): a step that ends the JVM
+  *    would otherwise restart the site every lease, forever.
   *  - '''Turns.''' A worker runs one step (one chunk) of one job, then the job goes back in
   *    line. The next step goes to the contest that has had the least step time, and
   *    within it to the job that has had the least ("virtual time", as in a fair-share
@@ -144,10 +147,11 @@ class JobScheduler(handlerList: Seq[JobHandler], val settings: JobScheduler.Sett
         val ids = JobJdbc.claimable(handlers.keys.toSeq, settings.lease.toSeconds, limit = 200)
         val known = lock.synchronized(held.keySet.toSet)
         ids.filterNot(known.contains).foreach { id =>
-          if (JobJdbc.claim(id, instanceId, settings.lease.toSeconds))
+          if (JobJdbc.claim(id, instanceId, settings.lease.toSeconds, settings.maxAttempts))
             JobJdbc.findById(id).foreach { j =>
               lock.synchronized(hold(id, j.kind, j.contestId))
             }
+          else giveUpIfExhausted(id)
         }
         dispatch()
       } catch {
@@ -466,6 +470,39 @@ class JobScheduler(handlerList: Seq[JobHandler], val settings: JobScheduler.Sett
       case NonFatal(e) => logger.error(s"Job $jobId: could not record its failure (${error.describe})", e)
     }
 
+  /** Fails a running job whose lease expired after `maxAttempts` claims instead of claiming
+    * it again: each of its runs ended without recording an outcome (a step that ended the
+    * JVM, or a crash whose failure couldn't be written), so another run would do the same,
+    * every lease, forever. Its handler's cleanup runs; if that fails too, the job is failed
+    * without it, so the loop ends either way. A Retry starts the count again.
+    */
+  private[jobs] def giveUpIfExhausted(jobId: Long): Unit = {
+    val reference = controllers.Secured.newReference()
+    def record(cleanup: Boolean): Option[(Job, StepContext)] =
+      DB.localTx { implicit s =>
+        JobJdbc.lockExhausted(jobId, settings.lease.toSeconds, settings.maxAttempts).map { j =>
+          val ctx = new StepContext(s)
+          val state = if (cleanup) handlers.get(j.kind).fold(j.state)(_.onFailed(j, ctx)) else j.state
+          val error = JobError.attemptsExhausted(j.attempts, reference)
+          JobJdbc.update(jobId, JobStatus.Failed, state, progressOf(j), Some(error.encode))
+          (j, ctx)
+        }
+      }
+    val given =
+      try record(cleanup = true)
+      catch {
+        case NonFatal(e) =>
+          logger.error(s"Job $jobId: its handler's cleanup failed while giving it up ref=$reference", e)
+          record(cleanup = false)
+      }
+    given.foreach { case (j, ctx) =>
+      logger.error(s"Job $jobId (${j.kind}): failed after ${j.attempts} claims that ended without an outcome " +
+        s"(jobs.maxAttempts = ${settings.maxAttempts}) ref=$reference")
+      runAfterCommit(ctx)
+      handlers.get(j.kind).foreach(_.forget(jobId))
+    }
+  }
+
   private def runAfterCommit(ctx: StepContext): Unit =
     ctx.afterCommitActions.foreach { f =>
       try f()
@@ -493,7 +530,8 @@ object JobScheduler {
       pollInterval: FiniteDuration = 2.seconds,
       heartbeatInterval: FiniteDuration = 10.seconds,
       lease: FiniteDuration = 60.seconds,
-      transientRetries: Int = 3
+      transientRetries: Int = 3,
+      maxAttempts: Int = 5
   )
 
   object Settings {
@@ -517,7 +555,8 @@ object JobScheduler {
         defaultKindLimit = c.getOptional[Int]("defaultConcurrency").getOrElse(d.defaultKindLimit),
         pollInterval = dur("pollInterval", d.pollInterval),
         heartbeatInterval = dur("heartbeatInterval", d.heartbeatInterval),
-        lease = dur("lease", d.lease)
+        lease = dur("lease", d.lease),
+        maxAttempts = c.getOptional[Int]("maxAttempts").getOrElse(d.maxAttempts)
       )
     }
   }
