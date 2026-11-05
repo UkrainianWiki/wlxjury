@@ -18,8 +18,6 @@ addSbtPlugin("com.github.sbt" % "sbt-digest" % "2.1.0")
 // needs sbt-scoverage 2.4.x (its plugin 2.5.x has a 2.13.17 build; 2.3.1's plugin has none).
 addSbtPlugin("org.scoverage" % "sbt-scoverage" % "2.4.4")
 
-addSbtPlugin("org.scoverage" % "sbt-coveralls" % "1.3.15")
-
 addDependencyTreePlugin
 
 addSbtPlugin("pl.project13.scala" % "sbt-jmh" % "0.4.8")

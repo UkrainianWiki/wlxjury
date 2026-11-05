@@ -44,3 +44,17 @@ anchor; reports the uncovered stories.
 python scripts/story-coverage.py              # the matrix: stdout, target/story-coverage.md
 python scripts/story-coverage.py --self-test  # on scripts/testdata/story-coverage/
 ```
+
+## coverage-summary.py, coverage_comment.py, coveralls-paths.py
+
+Coverage reporting ([testing practices](../docs/testing/practices.md) §9.5), standard library
+only. `coverage-summary.py` writes the Coverage job's summary and, with `--json`, the totals for
+the PR comment; `coverage_comment.py` is `coverage-comment.yml`'s step, which validates that
+file and creates or updates the PR's comment through `gh`; `coveralls-paths.py` writes the
+reports' copies for Coveralls with repository-relative paths.
+
+```bash
+python scripts/coverage-summary.py --json target/coverage-summary.json --head-sha SHA [--pr N]
+python scripts/coveralls-paths.py             # target/coveralls/cobertura.xml and lcov.info
+python -B -m unittest discover -s scripts -p test_coverage_reports.py
+```
