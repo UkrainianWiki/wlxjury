@@ -1,9 +1,58 @@
-# What's new in 26.11
+# What's new in 2026 (up to version 26.11)
 
-This page lists what you will notice in the WLX Jury Tool from version 26.11, compared with the
-release in use before it (which already had background round preparation, one account for several
-contests, category filters, regions and conflicts-of-interest filters). Each item links to the part
-of the guide that explains it. Changes that only developers or operators see are not listed.
+This page lists what you will notice in the WLX Jury Tool in 2026, up to version 26.11. Earlier
+changes of the year were never announced, so they are here too, in [Earlier in
+2026](#w-earlier). Each item links to the part of the guide that explains it. Changes that only
+developers or operators see are not listed.
+
+<a id="w-earlier"></a>
+## Earlier in 2026
+
+Changes made available before version 26.11, by who notices them.
+
+**For everyone**
+
+- **One account for several contests.** A person has one account, a member of any number of
+  contests with a role in each, and switches between them with the contest menu in the top bar.
+  See [Taking part in several contests](juror-guide.md#taking-part-in-several-contests).
+- **Clear access-denied pages,** with a reference you can quote when you ask for help. See
+  ["Access denied" and its reference](juror-guide.md#access-denied-and-its-reference).
+- **Faster pages:** galleries and region statistics load faster, and the galleries keep your
+  place and a stable order.
+
+**For jurors**
+
+- **You see only your own votes.** Other jurors' votes are for the organizers. See [Your own votes
+  only](juror-guide.md#your-own-votes-only).
+- **Regions:** the region menu in the galleries, with Wiki Loves Earth regions and the number of
+  files in each. See [Regions](juror-guide.md#regions).
+- **Deleted and renamed files:** a file deleted on Commons is hidden, and a renamed one shows
+  under its new name. See [Deleted or missing files](juror-guide.md#deleted-or-missing-files).
+
+**For organizers and admins**
+
+- **Rounds are prepared in the background.** Creating a round, and **Distribute new files**,
+  run as jobs with progress, **Cancel** and **Retry**. A round being created stays hidden from
+  jurors until it is ready. See [The life of a round](organizer-guide.md#o-stages) and
+  [Distributing new files](organizer-guide.md#o-distribute-new-files).
+- **Import files** and **Update monuments** also run in the background. See [Importing the
+  contest's files](organizer-guide.md#o-import-files).
+- **A double submit no longer creates two rounds.**
+- **Filters on the round form:** media type (images or videos), a minimum resolution and file
+  size, special nominations, regions (Ukraine's and Wiki Loves Earth's), and categories, with
+  **In category A**, **Not in category A**, **In both**, **In A or B** and **In A but not B**.
+  See [Choosing the round's files](organizer-guide.md#o-choose-files).
+- **Add files to a round from a pasted list.** See [Adding files by
+  name](organizer-guide.md#o-add-files).
+- **Conflicts of interest:** a round can leave out files by the contest's members, with a count
+  on the round form. See [Conflicts of interest](organizer-guide.md#o-conflicts).
+- **The contest's files as a gallery,** with regions and a large view. See [The contest's
+  files](organizer-guide.md#o-contest-files).
+- **Deleted and renamed files** are handled: see [The contest's
+  files](organizer-guide.md#o-contest-files).
+- **Better ranking numbers:** a minimum rate can have decimals.
+
+## New in version 26.11
 
 <a id="w-everyone"></a>
 ## For everyone

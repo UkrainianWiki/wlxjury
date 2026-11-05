@@ -1,7 +1,7 @@
 # WLX Jury Tool: a guide for jurors
 
 Other guides: the [organizer guide](organizer-guide.md), the [admin guide](admin-guide.md) and
-[what's new in 26.11](whats-new-26.11.md).
+[what's new in 2026](whats-new-26.11.md).
 
 This guide is for jurors of a Wiki Loves Monuments, Wiki Loves Earth or similar photo contest
 who judge its files in the WLX Jury Tool. It explains how to sign in, find your rounds, vote,
@@ -44,7 +44,7 @@ signed out when you close the browser.
 
 If the tool says **Invalid user or password**, check both and try again. If you have forgotten
 your password, ask your organizer: a tool administrator can send you a link to set a new one.
-A password set before release 26.11 stops working about three months after the update, so
+A password set before version 26.11 stops working about three months after the update, so
 this can happen even when you typed it right.
 
 The link opens a page, **Set a new password**. Your old password works until you use the link.

@@ -63,7 +63,7 @@ two buttons that write to the person on Commons, a message on their talk page an
 A badge **unverified** after a wiki account says that nobody has proved that the account
 belongs to this person: anyone could have typed it. A badge **unverified** after an email says
 that the person hasn't accepted an invitation yet. A badge **password expired** says that the
-person's password was set before release 26.11 and has stopped working: they need a link to set a
+person's password was set before version 26.11 and has stopped working: they need a link to set a
 new one. The envelope button next to the badge sends it again.
 
 A member without a wiki account whose files could be conflicts of interest shows **no wiki
@@ -221,7 +221,7 @@ you choose with the link below"; the tool adds the link itself, after your text.
 ### Password
 
 A person signs in with their email address (or, if you set one, their wiki user name) and their
-password. **Keep me signed in** is ticked by default. Passwords set before release 26.11 stop
+password. **Keep me signed in** is ticked by default. Passwords set before version 26.11 stop
 working about three months after the update: the person then needs a link to set a new one,
 which you can send from the users page. Their
 [juror guide](juror-guide.md#signing-in-with-your-password) describes the page.
