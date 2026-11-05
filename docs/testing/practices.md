@@ -239,6 +239,14 @@ Locally, the full suite runs once at a release boundary; after a failure, fix an
 affected specs before another full run. CI runs the full suite on every PR (§8.3). No local tests
 for documentation-only changes.
 
+**8.1a Every local run has a time limit.** `agent-check.py` stops the run's whole process tree
+after `--timeout` seconds (default 1200 for targeted specs; `--timeout 1800` for the full suite,
+about 10.5 min plus 3–8 for a cold compile) and exits 124 with `TIMED OUT after N s`, keeping the
+log. A 124 is a stalled run, not a failing test: read the log's tail (the last spec started, a
+Hikari clock-leap warning) before rerunning, and never raise the limit to hide a hang (§7.1).
+*Why:* a run whose host went to sleep, or whose spec hung on a lock, held the shared sbt lock and
+the laptop's memory all night, with no output to say why.
+
 **8.2 One sbt JVM at a time** across worktrees and agents: the shared lock
 ([workflow](../workflow/practices.md) §4).
 

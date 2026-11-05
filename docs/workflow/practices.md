@@ -88,13 +88,23 @@ their state files are rebuilt from GitHub, so nothing is lost with a session.
 `node_modules` or `data/cache` between worktrees: `sbt test`'s `jsTest` runs `npm ci`, which wiped
 the main tree's packages through a junction; a copied fixture dump measures another schema.
 
-**4.2 One sbt or test JVM at a time, across all worktrees.** Take the lock with its own command,
-`mkdir /c/scala/.sbt-jvm.lock`, and check that it succeeded; if the directory exists, another run
-holds it: wait and retry, never delete it. Run sbt, then `rmdir /c/scala/.sbt-jvm.lock` only if
-you took it. Release it between runs, not at the end of a session, and never chain the lock, the
-run or the release with `git commit` in one command. *Why:* two test JVMs share the Docker VM's
-memory and the laptop's, and race on ports and containers; a lock removed by a chained command
-that failed halfway is held forever or released for someone else's run.
+**4.2 One sbt or test JVM at a time, across all worktrees.** The lock is the directory
+`/c/scala/.sbt-jvm.lock` with an `owner` file inside: `owner=` (the agent or person), `pid=`,
+`host=`, `started=` (ISO time with offset), `cwd=` and `command=`, one per line. Prefer
+`python scripts/agent-check.py --lock --owner <name> -- <sbt command>`: it takes the lock, writes
+`owner`, and removes both when the run ends, a timeout (exit 124) included. By hand: take it with
+its own command, `mkdir /c/scala/.sbt-jvm.lock`, check that it succeeded, then write `owner`
+(`printf 'owner=%s\npid=%s\nstarted=%s\ncommand=%s\n' <name> $$ "$(date -Iseconds)" '<command>' >
+/c/scala/.sbt-jvm.lock/owner`); release with `rm /c/scala/.sbt-jvm.lock/owner` and
+`rmdir /c/scala/.sbt-jvm.lock`, only if you took it. If the directory exists, another run holds
+it: wait and retry, never delete it. A lock older than an hour (by `started=`, or the directory's
+time if there is no `owner`) is not waited on forever: report it, with the `owner` file, to the
+orchestrator or the user, who releases it only under §4.6. Release it between runs, not at the
+end of a session, and never chain the lock, the run or the release with `git commit` in one
+command. *Why:* two test JVMs share the Docker VM's memory and the laptop's, and race on ports
+and containers; a lock removed by a chained command that failed halfway is held forever or
+released for someone else's run; and a lock without an owner, left by an agent that stopped while
+its host slept, had others waiting all night with nobody to ask.
 
 **4.3 The `env -u` prefix.** Every sbt or Docker run by hand on a machine with bot credentials:
 `env -u COMMONS_USER -u COMMONS_PASSWORD -u SCALAWIKI_LOGIN -u SCALAWIKI_PASSWORD <command>`
@@ -106,6 +116,22 @@ efficiency"); PowerShell 5.1 splits `-Dfile.encoding=UTF-8` and drops quotes of 
 **4.5 gh.** The GitHub CLI is `/c/Users/ilya/tools/gh/bin/gh.exe` on the orchestrator's machine
 (not on `PATH`); scripts take it from `GH` or `--gh`. Agents use it to read (PR lists, checks,
 logs) unless the task says to write.
+
+**4.6 After an agent fails, stalls or is stopped, the orchestrator cleans up what it left.** Right
+away, before starting another run: list the processes it may have left (`java`, `node`, `python`
+running `agent-check.py`; on Windows PowerShell's `Get-CimInstance Win32_Process -Filter
+"Name='java.exe'" | Select ProcessId,ParentProcessId,CreationDate,CommandLine`, since `wmic` is
+gone from current Windows 11), the Docker
+containers it started (`docker ps --format '{{.ID}} {{.CreatedAt}} {{.Names}} {{.Image}}'`:
+Testcontainers' `mariadb` and its Ryuk container), and the sbt lock (§4.2, its `owner` file).
+Stop or release only what is verifiably that agent's: the command line names its worktree or its
+command, and the start time falls within its run; the lock's `owner` names it, or its `pid=` is
+gone and `started=` is within its run. Anything else (another agent's JVM, the user's dev server,
+a lock with another owner) is left alone and reported. Record what was found and done (PIDs,
+container ids, the lock's `owner` text) in the batch's results or the session's notes. *Why:*
+after the host slept mid-run, a stopped agent's forked test JVM and its container kept the
+memory and the lock, and the next runs waited on them; cleaning up by name alone (`taskkill /IM
+java.exe`) would have killed a parallel batch's run.
 
 ## 5. Commits
 
@@ -221,7 +247,9 @@ these yet" list (db §11) or the triage, not silently into the rule's wording.
 
 | Rule | Enforced by | State |
 |---|---|---|
-| 4.2 one sbt JVM at a time | the lock directory (by convention) | enforced by convention only |
+| 4.2 one sbt JVM at a time | the lock directory; `agent-check.py --lock` writes `owner`, waits, reports a lock older than an hour (`scripts/test_agent_check.py`) | by convention (taking it by hand stays possible) |
+| 4.2, testing 8.1a time limit per run | `agent-check.py --timeout` (default 1200 s, tree killed, exit 124; `scripts/test_agent_check.py`) | enforced for runs through the script |
+| 4.6 cleanup after a failed agent | the orchestrator | manual |
 | 4.3 no credentials in CI | `TestConfigAnonymousSpec` (workflows) | enforced |
 | 5.3 trailers | review | planned: none |
 | 6.2, 6.4 stack tip equals its followups tree | `git diff --stat` by the orchestrator | manual check |
