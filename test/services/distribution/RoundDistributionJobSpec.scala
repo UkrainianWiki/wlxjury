@@ -8,7 +8,7 @@ import org.specs2.mutable.Specification
 import org.specs2.specification.{AfterEach, BeforeAll, BeforeEach}
 import scalikejdbc._
 import services.imports.DeletedFiles
-import play.api.libs.json.JsObject
+import play.api.libs.json.{JsObject, Json}
 import services.jobs.{Job, JobError, JobJdbc, JobScheduler, JobStatus, StepContext}
 import services.{GalleryService, RoundService, TestRoundServices}
 
@@ -67,6 +67,13 @@ class RoundDistributionJobSpec extends Specification with TestDb with BeforeAll 
     @volatile var atPage: Option[(Long, DBSession => Unit)] = None
     /** Runs after a Retry's commit, before the resumed job's first step (once). */
     @volatile var afterRetry: Option[() => Unit] = None
+    /** Runs before the job's preparation, after it was queued, and gives the job prepared (once). */
+    @volatile var beforePrepare: Option[Job => Job] = None
+
+    override def prepare(job: Job): Unit = {
+      val prepared = beforePrepare.fold(job) { f => beforePrepare = None; f(job) }
+      super.prepare(prepared)
+    }
 
     override def onRetry(job: Job, ctx: StepContext): JsObject = {
       val state = super.onRetry(job, ctx)
@@ -823,6 +830,44 @@ class RoundDistributionJobSpec extends Specification with TestDb with BeforeAll 
       withRule(AverageRule.Sum)
       created(from("Min sum").copy(prevMinAvgRate = Some(BigDecimal(20)))) === Set(1L, 2L)
       created(from("Top sum").copy(topImages = Some(3))) === Set(1L, 2L, 3L)
+    }
+
+    "rank by the rule recorded when the job was queued, and a job from before V90 by the assigned jurors" in {
+      val (contest, _, jurors) = setUp(2, 3)
+      val prev = roundDao.create(Round(None, 1, Some("Rated"), contest.getId, rates = Round.ratesById(10), active = true))
+      prev.addUsers(jurors.map(u => RoundUser(prev.getId, u.getId, "jury", active = true)))
+      di.distributeImages(prev, jurors, Nil)
+      // file 1: 10 by one juror, two unrated (10 over the rated, 3.33 over the assigned); file 2:
+      // 6 by all three (6 either way): its top-1 is file 1 by `rated`, file 2 by `assigned`
+      VoteJdbc.byRound(prev.getId).foreach { v =>
+        val rate = if (v.pageId == 2L) 6 else if (v.juryId == jurors.head.getId) 10 else 0
+        VoteJdbc.rate(v.pageId, v.juryId, prev.getId, rate)
+      }
+      def withRule(rule: AverageRule): Unit =
+        sql"UPDATE round SET average_rule = ${rule.param} WHERE id = ${prev.getId}".update()(AutoSession): Unit
+      def top1(name: String, h: TestHandler): (Set[Long], Option[String]) = {
+        Round.setActive(prev.getId, active = true)
+        val template = newRound(contest, name, rates = Round.ratesById(10))
+          .copy(previous = Some(prev.getId.toString), topImages = Some(1))
+        val round = inlineService(h).createNewRound(template, jurors.map(_.getId))
+        (pageIds(round.getId), (jobOf(round.getId).params \ "settings" \ "prevAverageRule").asOpt[String])
+      }
+      def stripRule(job: Job): Job = job.copy(params = job.params ++ Json.obj("settings" ->
+        ((job.params \ "settings").as[JsObject] - "prevAverageRule")))
+
+      // queued with `rated`; the source's rule changed to `assigned` before the job prepares
+      val recorded = new TestHandler(chunkRows = 3)
+      recorded.beforePrepare = Some { job => withRule(AverageRule.Assigned); job }
+      val (byRecorded, recordedRule) = top1("Recorded", recorded)
+      // a job without the key (queued before V90), from a source now `rated`
+      withRule(AverageRule.Rated)
+      val legacy = new TestHandler(chunkRows = 3)
+      legacy.beforePrepare = Some(stripRule)
+      val (byLegacy, _) = top1("Legacy", legacy)
+      (recordedRule must beSome("rated")) and (byRecorded === Set(1L)) and
+        (RoundDistributionHandler.averageRuleOf(stripRule(jobOf(roundDao.findByContest(contest.getId)
+          .find(_.name.contains("Legacy")).get.getId))) must beNone) and
+        (byLegacy === Set(2L))
     }
 
     "keep a top-N round at N on \"Distribute new files\"" in {

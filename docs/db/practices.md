@@ -204,8 +204,12 @@ over `vote`. Use `vote` for per-juror rates and sums. Rewrites go behind a parit
 V89) are kept by marks and a background recompute, so the stored numbers alone may be seconds
 old. A reader of them (`RoundImageQuery`, behind `roundImage.read`; round-images §17) overlays
 the files marked dirty with their votes' counts *in the same statement* (one READ COMMITTED
-snapshot: a file's stored counts equal its votes or the file is marked), and reads the votes
-for a round whose generation isn't clean (`RoundCounts.generationClean`). Exact consumers (the
+snapshot: with no bulk write since the last full recount, a file's stored counts equal its
+votes or the file is marked), and proves that snapshot per statement: the round's generation
+clean before the request's first statement and unchanged after each
+(`RoundList.fromCounts`, `RoundCounts.cleanGeneration` and `generation`); a check in a statement
+of its own before the read is not enough (a bulk write can commit in between). When it fails,
+that statement and the rest of the request read the votes. Exact consumers (the
 CSV, a top-N, a "min average rate", a finalize) read the votes. A new count on `round_image`
 follows the same rule, with a parity spec over both sources and a dirty case
 (`GroupedListParitySpec`).

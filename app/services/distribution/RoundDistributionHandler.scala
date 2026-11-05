@@ -157,7 +157,7 @@ class RoundDistributionHandler @Inject() (
   }
 
   override def prepare(job: Job): Unit = {
-    val c = contexts.getOrElseUpdate(job.id, context(roundIdOf(job), averageRuleOf(job)))
+    val c = contexts.getOrElseUpdate(job.id, context(roundIdOf(job), Some(jobAverageRule(job))))
     val st = stateOf(job)
     if (st.phase == Phase.List && st.listIndex < titleCountOf(job) && !listChunks.get(job.id).exists(_.index == st.listIndex))
       listChunks.put(job.id, listChunk(c.round, st.listIndex, titlesOf(job, st.listIndex, commons.maxIdsPerRequest)))
@@ -172,8 +172,8 @@ class RoundDistributionHandler @Inject() (
   protected def beforeInsert(round: Round, images: Seq[Image])(implicit session: DBSession): Unit = ()
   protected def afterInsert(round: Round, rows: Seq[Vote])(implicit session: DBSession): Unit = ()
 
-  /** What the steps need. The previous rounds score their files by `averageRule`, the rule the
-    * job recorded when it was queued, if it did (a job queued before V90 didn't: their own).
+  /** What the steps need. Rated previous rounds score their files by `averageRule` if given (a
+    * job's, [[jobAverageRule]]), else by their own rule ("Count new files": as a job queued now).
     */
   private def context(roundId: Long, averageRule: Option[AverageRule]): Context = {
     val round = Round.findById(roundId).getOrElse(throw new NoSuchElementException(s"Round $roundId not found"))
@@ -338,7 +338,7 @@ class RoundDistributionHandler @Inject() (
   def step(job: Job, ctx: StepContext): StepResult = {
     implicit val session: DBSession = ctx.session
     val roundId = roundIdOf(job)
-    val c = contexts.getOrElseUpdate(job.id, context(roundId, averageRuleOf(job)))
+    val c = contexts.getOrElseUpdate(job.id, context(roundId, Some(jobAverageRule(job))))
     val st = stateOf(job) match {
       case s if s.imagesBefore.isEmpty =>
         val total = imageCount(roundId)
@@ -664,6 +664,15 @@ object RoundDistributionHandler {
     */
   def averageRuleOf(job: Job): Option[AverageRule] =
     (job.params \ "settings" \ "prevAverageRule").asOpt[String].flatMap(AverageRule.parse)
+
+  /** The rule a job's rated previous rounds score their files by: the one it recorded, else, for
+    * a job queued before V90 (resumed across the deploy), [[AverageRule.Assigned]], the rule its
+    * distribution applied before V90 (the rate sum over each file's vote rows). Not the round's
+    * own rule, which V90 sets to `rated`: a job resumed across the deploy would apply two rules.
+    * (A former `optional_rate` source's rule, the sum over its active jurors, isn't reproduced:
+    * such a distribution finishes before the deploy, round images §17's deploy note.)
+    */
+  def jobAverageRule(job: Job): AverageRule = averageRuleOf(job).getOrElse(AverageRule.Assigned)
 
   /** The job only adds its list: the round's filters choose nothing. */
   def listOnly(job: Job): Boolean = (job.params \ "listOnly").asOpt[Boolean].getOrElse(false)

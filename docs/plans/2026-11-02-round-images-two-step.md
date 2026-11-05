@@ -1854,9 +1854,13 @@ gets `assigned`.
 **Editing (for the user to confirm): at any time, open, stopped or frozen.** The rule changes
 how results are shown, not the votes. A distribution reads the previous round's rule from its
 job's settings (`params.settings.prevAverageRule`, recorded when the job is queued, under the
-previous round's lock; a job queued before V90 reads the round's own), so a change while a
-distribution runs doesn't change its top-N or minimum, and a later "Distribute new files" uses the
-rule then current. The next round's settings record which rule it used. The form is the admins'
+previous round's lock), so a change while a distribution runs doesn't change its top-N or
+minimum, and a later "Distribute new files" uses the rule then current. A job queued before V90
+has no recorded rule and applies `assigned`, the rule its distribution applied then (the rate sum
+over each file's vote rows), not the round's `rated` after V90, so a job resumed across the
+deploy applies one rule (`jobAverageRule`; review follow-up). A former `optional_rate` source's
+old rule (the sum over the round's active jurors) can't be reproduced: let such a distribution
+finish before the deploy (deploy note below). The next round's settings record which rule it used. The form is the admins'
 only (`RoundAverageRuleFormSpec`: a juror, an organizer and another contest's admin get 403; an
 unknown value 400; a client without the select keeps the stored rule).
 
@@ -1877,25 +1881,37 @@ as 0 in every average and total: a `sum` round's sum of grades is then `rate_sum
   keys of each rule); a filter the counts can't tell (one rate of a rated round) and a juror's
   list read the votes. Vote filters stay file-level: Unrated `assigned > voted`, Rated and
   selected `approvals > 0`, rejected `rejections > 0`, plus the large view's file.
-- `RoundList.countsQuery` decides per call; `GalleryController` and `LargeViewController` read
-  `roundImage.read` (`conf/application.conf`, false). The CSV reads the votes always (an exact
+- `RoundList.countsQuery` says whether a list may be read from the counts;
+  `GalleryController` and `LargeViewController` read `roundImage.read` (`conf/application.conf`,
+  false). The CSV reads the votes always (an exact
   consumer), as do a top-N, a "min average rate" and the juror's own lists, counts and regions.
 - **Exactness, the fallback for dirty rounds.** Every query overlays the files marked dirty by
   votes (`round_image_dirty`, usually a few) with their counts read from their votes, in the
   same statement (`LEFT JOIN` of their grouped votes, `COALESCE`). At READ COMMITTED a statement
   reads one snapshot, and in every committed state a file's stored counts equal its votes or the
   file is marked (P2a: a vote marks its file in its transaction; the recompute writes the counts
-  and clears the marks it read in one), so the numbers are exact while no bulk write is pending.
-  A round whose generation is not clean (`counts_gen_done < counts_gen`: a distribution, a file
-  deleted on Commons, a disqualification, until its recount, seconds) is read from its votes:
-  `RoundCounts.generationClean`, one primary-key read per call. Why not the votes for any dirty
+  and clears the marks it read in one), so the numbers are exact while no bulk write has
+  committed since the round's last full recount. **Each statement proves that for its own
+  snapshot** (`RoundList.fromCounts`, after the review: the first build checked the generation in
+  a statement of its own before the counts statement, so a bulk write committing between the two,
+  `moveVotesBack`, a distribution chunk adding votes to files already in the round, the repair
+  job's sync, would have been read with stale counts and no marks): the round's generation is
+  clean (`counts_gen_done >= counts_gen`, `RoundCounts.cleanGeneration`) when the request's first
+  counts statement begins, and unchanged (`RoundCounts.generation`) after each statement ends.
+  Every bulk writer bumps `counts_gen` in its own transaction and it only grows, so an unchanged
+  generation means no bulk write committed in between. When the check fails (a distribution, a
+  file deleted on Commons, a disqualification, until its recount, seconds), that statement and
+  the rest of the request read the votes. The source is decided once per request
+  (`CountsSession`, shared by a list's copies), so a page doesn't go back to the counts once a
+  statement has fallen back. Cost: two primary-key reads of `round` for the first statement, one
+  for each later. Spec'd: a bulk insert of a vote for a file already in the round between the
+  check and the statement is read from the votes (`GroupedListParitySpec`). Why not the votes for any dirty
   round, or an "updating" marker: a round being judged has marked files nearly all the time
   (marks are cleared every ~5–7 s), so the first would read the votes exactly when the pages are
   used, and the second would show numbers seconds old. The overlay is exact at a measured cost
-  below. The generation check is its own statement: a bulk write committing between it and the
-  page's query shows at the next load. No "as of" is shown: nothing shown is stale.
+  below. No "as of" is shown: nothing shown is stale.
 - **W10 (§851).** A list's page, rank counts, position and neighbours come from one source with
-  the same order columns: `aroundAtOffset` decides the source once for the position and the
+  the same order columns: the request's `CountsSession` decides the source for the position and the
   files around it. The counts' order columns are `round_image`'s `monument_id`/`page_id` copies,
   the vote source's the vote's copies, equal by invariants 1 and 3.
 - **NULL rates.** The counts count a NULL rate as an assigned, unrated vote; the vote source now
@@ -1981,6 +1997,12 @@ DELETE FROM flyway_schema_history WHERE version = '90';
 ```
 The older code reads `optional_rate`, which V90 left as it was.
 
+**Before the deploy (release 2):** let any distribution with a "min average rate" or a top-N from
+a former `optional_rate` round finish (`SELECT id, status FROM job WHERE kind =
+'round_distribution' AND status IN ('queued', 'running')`, with its round's previous rounds). Its
+threshold was the sum over that round's active jurors, which V90's code no longer computes
+(`numberOfActiveJurors` is gone): resumed after the deploy it would compare the sum.
+
 ### Files
 
 New: `conf/db/migration/default/V90__Round_average_rule.sql`, `app/org/intracer/wmua/AverageRule.scala`,
@@ -1988,7 +2010,7 @@ New: `conf/db/migration/default/V90__Round_average_rule.sql`, `app/org/intracer/
 `test/controllers/AverageRulePagesSpec.scala`, `test/controllers/RoundAverageRuleFormSpec.scala`.
 Changed: `Round` (`averageRule`; `optionalRate`, `numberOfActiveJurors` removed), `VoteJdbc`
 (`activeJurors` removed), `ImageWithRating` (`ratedJurors`, `rateText`, `denominator`,
-`starRate`, `RankKey`), `ImageDbNew` (`COUNT(*)`, Long keys), `RoundCounts.generationClean`,
+`starRate`, `RankKey`), `ImageDbNew` (`COUNT(*)`, Long keys), `RoundCounts.cleanGeneration` and `generation`,
 `RoundList` (`countsQuery`, the by-rate order), `GalleryController`, `LargeViewController`,
 `EditRound`, `RoundController`, `RoundService` (`prevAverageRule`), `RoundDistributionHandler`
 (`PerImageRated`, the recorded rule), `DistributeImages`, the views (`editRound`,

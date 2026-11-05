@@ -24,6 +24,7 @@ UPDATE round SET average_rule = 'sum', created_at = created_at
 
 -- 3. The allowlist, compared byte for byte (db practices §1): one statement, so a failure can't
 --    leave the column without its check; rerunnable. MariaDB checks the existing rows (all 'rated'
---    or 'sum' here) as it adds it.
+--    or 'sum' here) as it adds it, which copies the table (as V76's check did): not INSTANT, but
+--    `round` has one row per round (hundreds), so the copy takes milliseconds.
 ALTER TABLE round DROP CONSTRAINT IF EXISTS round_average_rule_chk,
   ADD CONSTRAINT round_average_rule_chk CHECK (BINARY average_rule IN ('rated', 'assigned', 'sum'));
