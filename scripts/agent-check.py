@@ -7,6 +7,12 @@ forked test JVM; elsewhere the process group), the log is kept, a "TIMED OUT aft
 printed and the exit code is 124. The deadline is checked against time.monotonic() in short
 polls, so a run whose host slept past the deadline is stopped soon after the host wakes.
 
+On Windows, while the command runs, the waiting thread holds a keep-awake request
+(SetThreadExecutionState(ES_CONTINUOUS | ES_SYSTEM_REQUIRED), released at the end, a timeout or
+an interrupt included), so idle sleep (e.g. on battery after a power cut) doesn't stop a long run.
+The display may sleep; lid and power-button actions and critical-battery hibernation still
+apply. --allow-sleep opts out.
+
 --lock takes the shared sbt lock directory (default C:/scala/.sbt-jvm.lock), writes an `owner`
 file inside it (who, PID, host, start time, working directory, command) and removes both at exit,
 a timeout included. A lock held by someone else is waited for (--lock-wait); a lock older than an
@@ -82,8 +88,45 @@ def kill_tree(process):
         process.wait()
 
 
-def run_with_timeout(command, output, timeout):
-    """Returns (exit code, timed out). The child gets its own process group, so the tree can go."""
+IS_WINDOWS = os.name == "nt"
+ES_CONTINUOUS = 0x80000000
+ES_SYSTEM_REQUIRED = 0x00000001
+
+
+class KeepAwake:
+    """While open, asks Windows not to idle-sleep (SetThreadExecutionState, from the calling
+    thread, which must be the one that waits). The display may still sleep (no
+    ES_DISPLAY_REQUIRED), and lid or power-button actions and the critical-battery hibernate
+    still apply. A no-op elsewhere, or when ctypes can't reach kernel32."""
+
+    def __init__(self, enabled=True):
+        self.kernel32 = None
+        if enabled and IS_WINDOWS:
+            try:
+                import ctypes
+                self.kernel32 = ctypes.windll.kernel32
+            except (ImportError, AttributeError, OSError):
+                self.kernel32 = None
+
+    def __enter__(self):
+        if self.kernel32 is not None:
+            self.kernel32.SetThreadExecutionState(ES_CONTINUOUS | ES_SYSTEM_REQUIRED)
+        return self
+
+    def __exit__(self, *exc):
+        if self.kernel32 is not None:
+            self.kernel32.SetThreadExecutionState(ES_CONTINUOUS)
+        return False
+
+
+def run_with_timeout(command, output, timeout, keep_awake=True):
+    """Returns (exit code, timed out). The child gets its own process group, so the tree can go.
+    On Windows the host is kept from idle sleep while it runs, unless keep_awake is False."""
+    with KeepAwake(keep_awake):
+        return _run_with_timeout(command, output, timeout)
+
+
+def _run_with_timeout(command, output, timeout):
     kwargs = {"stdout": output, "stderr": subprocess.STDOUT, "shell": False}
     if os.name == "nt":
         kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
@@ -191,6 +234,8 @@ def main():
     parser.add_argument("--timeout", type=float, default=DEFAULT_TIMEOUT,
                         help="Seconds before the process tree is stopped (exit 124); 0 means no limit. "
                              "Default %(default)s")
+    parser.add_argument("--allow-sleep", action="store_true",
+                        help="Don't keep Windows from idle sleep while the command runs")
     parser.add_argument("--lock", nargs="?", const=DEFAULT_LOCK, type=Path,
                         help="Take this lock directory for the run (default " + DEFAULT_LOCK + ")")
     parser.add_argument("--lock-wait", type=float, default=3600,
@@ -223,7 +268,7 @@ def main():
         try:
             # No shell interpolation; never overwrite evidence from an earlier check.
             with log.open("xb") as output:
-                code, timed_out = run_with_timeout(command, output, args.timeout)
+                code, timed_out = run_with_timeout(command, output, args.timeout, keep_awake=not args.allow_sleep)
         except OSError as error:
             print("Could not run check: " + str(error), file=sys.stderr)
             return 2

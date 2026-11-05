@@ -6,6 +6,7 @@ import sys
 import tempfile
 import time
 import unittest
+from unittest import mock
 
 SCRIPT = Path(__file__).with_name("agent-check.py")
 spec = importlib.util.spec_from_file_location("agent_check", SCRIPT)
@@ -98,6 +99,52 @@ class TimeoutTest(unittest.TestCase):
 
     def test_default_timeout_is_twenty_minutes(self):
         self.assertEqual(helper.DEFAULT_TIMEOUT, 1200)
+
+
+class KeepAwakeTest(unittest.TestCase):
+    """The Windows keep-awake request, with ctypes mocked (on any platform)."""
+    SET = helper.ES_CONTINUOUS | helper.ES_SYSTEM_REQUIRED
+    RELEASE = helper.ES_CONTINUOUS
+
+    def run_mocked(self, command, timeout, keep_awake=True):
+        fake = mock.MagicMock()
+        calls = fake.windll.kernel32.SetThreadExecutionState
+        with mock.patch.object(helper, "IS_WINDOWS", True), mock.patch.dict(sys.modules, {"ctypes": fake}), \
+                tempfile.TemporaryFile() as output:
+            result = helper.run_with_timeout(command, output, timeout, keep_awake=keep_awake)
+        return result, [c.args for c in calls.call_args_list]
+
+    def test_request_is_held_during_the_run_and_released_after(self):
+        (code, timed_out), calls = self.run_mocked([sys.executable, "-c", "pass"], 60)
+        self.assertEqual((code, timed_out), (0, False))
+        self.assertEqual(calls, [(self.SET,), (self.RELEASE,)])
+
+    def test_request_is_released_on_timeout(self):
+        (_, timed_out), calls = self.run_mocked([sys.executable, "-c", "import time; time.sleep(30)"], 1)
+        self.assertTrue(timed_out)
+        self.assertEqual(calls, [(self.SET,), (self.RELEASE,)])
+
+    def test_request_is_released_on_interrupt(self):
+        fake = mock.MagicMock()
+        calls = fake.windll.kernel32.SetThreadExecutionState
+        process = mock.MagicMock(pid=999999)
+        process.wait.side_effect = KeyboardInterrupt
+        with mock.patch.object(helper, "IS_WINDOWS", True), mock.patch.dict(sys.modules, {"ctypes": fake}), \
+                mock.patch.object(helper.subprocess, "Popen", return_value=process), \
+                mock.patch.object(helper, "kill_tree") as kill:
+            with self.assertRaises(KeyboardInterrupt):
+                helper.run_with_timeout(["anything"], None, 60)
+        kill.assert_called_once_with(process)
+        self.assertEqual([c.args for c in calls.call_args_list], [(self.SET,), (self.RELEASE,)])
+
+    def test_allow_sleep_and_other_platforms_make_no_request(self):
+        _, calls = self.run_mocked([sys.executable, "-c", "pass"], 60, keep_awake=False)
+        self.assertEqual(calls, [])
+        fake = mock.MagicMock()
+        with mock.patch.object(helper, "IS_WINDOWS", False), mock.patch.dict(sys.modules, {"ctypes": fake}), \
+                tempfile.TemporaryFile() as output:
+            helper.run_with_timeout([sys.executable, "-c", "pass"], output, 60)
+        fake.windll.kernel32.SetThreadExecutionState.assert_not_called()
 
 
 class LockTest(unittest.TestCase):
