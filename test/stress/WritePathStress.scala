@@ -54,6 +54,14 @@ import scala.util.control.NonFatal
   * of the app's code, after its own retries; failed jobs); job steps retried by the
   * scheduler; and the invariants at the end (round_image's, the criteria rates', the monument
   * id copies', the rounds' freeze state).
+  *
+  * Wall time: a variant runs for `stress.seconds` by `Thread.sleep`, which doesn't count time the
+  * host spent asleep, while its elapsed time is measured with `System.nanoTime`, which does. A
+  * variant whose elapsed time is more than `seconds + 300`, or during which HikariCP logged a
+  * clock leap or a retrograde clock change (its housekeeper's warning, caught by an appender), is
+  * marked INVALID in the summary and in results.json (`valid`, `invalidReason`): the host slept,
+  * the clock jumped or (Hikari's warning only) the pool's threads starved, so its rates, latencies
+  * and lock waits don't describe the code (`WallTimeCheck`).
   */
 object WritePathStress {
 
@@ -136,11 +144,14 @@ object WritePathStress {
   // ── counting the scheduler's retried steps ─────────────────────────────────
 
   private val retriedSteps = new ConcurrentLinkedQueue[String]()
+  /** HikariCP's clock warnings during the current variant (`WallTimeCheck`). */
+  private val clockWarnings = new ConcurrentLinkedQueue[String]()
 
   private object StepRetries extends AppenderBase[ILoggingEvent] {
     override def append(e: ILoggingEvent): Unit = {
       val m = e.getFormattedMessage
       if (m.contains("transient error, retrying the step")) retriedSteps.add(s"${tag.get}: ${m.take(300)}")
+      if (WallTimeCheck.isClockWarning(m)) clockWarnings.add(m.take(300))
     }
   }
 
@@ -401,6 +412,7 @@ object WritePathStress {
     SharedTestDb.truncateAll()
     deletedPool.clear()
     retriedSteps.clear()
+    clockWarnings.clear()
     val f = seedFixture()
     val recompute = new services.counts.RoundCountsRecompute(services.counts.RoundCountsRecompute.Settings(background = false))
     val ps = paths(f, recompute)
@@ -538,8 +550,13 @@ object WritePathStress {
       )
     }
     val retried = retriedSteps.asScala.toSeq
+    val leaps = clockWarnings.asScala.toSeq
+    val invalid = WallTimeCheck.invalidReason(seconds, elapsed, leaps)
     val json = Json.obj(
       "variant" -> variant,
+      "valid" -> invalid.isEmpty,
+      "invalidReason" -> invalid,
+      "clockWarnings" -> leaps,
       "parameters" -> Json.obj("seconds" -> seconds, "elapsed" -> elapsed, "images" -> imageCount, "jurors" -> jurorCount,
         "distribution" -> perImage, "chunkRows" -> chunkRows, "voteThreads" -> voteThreads, "adminThinkMs" -> adminThinkMs,
         "voteThinkMs" -> voteThinkMs, "lockWaitTimeout" -> lockWaitTimeout, "seed" -> seed,
@@ -559,7 +576,8 @@ object WritePathStress {
       "invariants" -> checks
     )
     val text = new StringBuilder
-    text ++= s"== $variant: ${f"$elapsed%.0f"} s, ${ps.map(_.threads).sum} threads, " +
+    invalid.foreach(reason => text ++= s"INVALID $variant: $reason\n")
+    text ++= s"== $variant${if (invalid.isDefined) " (INVALID)" else ""}: ${f"$elapsed%.0f"} s, ${ps.map(_.threads).sum} threads, " +
       s"server deadlocks ${after("Innodb_deadlocks") - before("Innodb_deadlocks")}, " +
       s"row lock waits ${after("Innodb_row_lock_waits") - before("Innodb_row_lock_waits")}, steps retried ${retried.size}\n"
     text ++= f"${"path"}%-18s ${"ops"}%7s ${"noop"}%6s ${"/s"}%7s ${"p50"}%7s ${"p95"}%8s ${"max"}%8s ${"dl"}%4s ${"lwt"}%4s ${"fail"}%5s ${"retry"}%5s\n"
@@ -612,6 +630,31 @@ object WritePathStress {
       0
     } catch { case e: Throwable => e.printStackTrace(); 1 }
     sys.exit(status)
+  }
+}
+
+/** Whether a variant's measurements describe the code or a host that slept (see `WritePathStress`). */
+object WallTimeCheck {
+
+  /** Elapsed time beyond the variant's `seconds` that is still a valid run (joins, a slow stop). */
+  val SlackSeconds = 300
+
+  /** HikariCP's housekeeper warnings for a forward leap or a retrograde change of the clock. */
+  def isClockWarning(message: String): Boolean =
+    message.contains("clock leap detected") || message.contains("Retrograde clock change detected")
+
+  /** None for a valid variant, else why it is INVALID. Hikari's housekeeper warns the same way
+    * when its thread was starved, so its reason says so.
+    */
+  def invalidReason(seconds: Int, elapsedSeconds: Double, clockWarnings: Seq[String]): Option[String] = {
+    val reasons = Seq(
+      Option.when(elapsedSeconds > seconds + SlackSeconds)(
+        f"host slept or clock jumped: elapsed $elapsedSeconds%.0f s for a $seconds s run (more than ${seconds + SlackSeconds} s)"),
+      Option.when(clockWarnings.nonEmpty)(
+        s"host slept, clock jumped or threads starved: HikariCP logged ${clockWarnings.size} clock warning(s), " +
+          s"first: ${clockWarnings.head.take(200)}")
+    ).flatten
+    Option.when(reasons.nonEmpty)(reasons.mkString("; "))
   }
 }
 

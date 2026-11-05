@@ -349,6 +349,9 @@ class RoundController @Inject() (
                         stored.number))
                     case RoundService.Resumed(_) if titles.nonEmpty =>
                       flashing("error" -> messagesApi.preferred(request)("round.distribute.resumed.files", stored.number))
+                    case givenUp: RoundService.GivenUp =>
+                      flashing("error" -> messagesApi.preferred(request)("round.distribute.attempts", stored.number,
+                        givenUp.reference))
                     case _ => flashing()
                   }
                 } catch {
@@ -375,7 +378,8 @@ class RoundController @Inject() (
                       logger.warn(s"Contest $contestId: ${resubmitted.message}")
                       toRoundsList.flashing(
                         "error" -> messagesApi.preferred(request)(
-                          resubmitted.messageKey, resubmitted.round.number, resubmitted.round.description))
+                          resubmitted.messageKey, resubmitted.round.number, resubmitted.round.description,
+                          resubmitted.reference))
                   }
                 } catch {
                   // Rejected before anything was created (bad input): keep the form.

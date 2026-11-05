@@ -272,7 +272,17 @@ A request transaction does one action. The Hikari pool has 30 connections
 redistributing a round, imports from Commons, checks over every round) runs as a job on the `job`
 table (`JobScheduler`, a `JobHandler` per kind), never on a request thread: one short
 transaction per step (§5.5), a lease for restart recovery, Cancel and Retry, and a dedupe key
-(§2.3). The request only creates the job and answers. *Why:* a request that held a thread and a
+(§2.3). The request only creates the job and answers. A running job whose lease expired is
+taken over at most `jobs.maxAttempts` times (claims since the user's last explicit Retry,
+`job.attempts`, default 5; a claim whose run recorded an outcome, a failure or a graceful
+handback of a job still held, is given back, so only runs that ended without one count); then
+the next poll fails it
+(`job.error.attempts`) with its handler's cleanup, so a job whose runs never record an outcome (a
+step that ends the JVM) isn't rerun every lease forever. Implicit resumes (the round form again,
+"Distribute new files") keep the count and refuse a job given up this way. A handler's `onRetry`
+marks what its last run may have left stale, and the first resumed step recounts it (the
+distribution's `imagesBefore` follows the round's other files, `othersBefore`, while its own
+files are checked exactly, `ownBefore`). *Why:* a request that held a thread and a
 transaction for minutes hit Play's and Apache's timeouts and blocked other admins (background
 distribution and import, `c3f8e68b`, `7e20a35d`).
 

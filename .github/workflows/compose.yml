@@ -46,7 +46,7 @@ jobs:
           jdk: 17
 
       - name: Build the image (sbt Docker/publishLocal)
-        run: python3 scripts/agent-check.py -- sbt -J-Xmx2g -J-Dfile.encoding=UTF-8 Docker/publishLocal
+        run: python3 scripts/agent-check.py --timeout 0 -- sbt -J-Xmx2g -J-Dfile.encoding=UTF-8 Docker/publishLocal
 
       - name: Smoke test
         env:

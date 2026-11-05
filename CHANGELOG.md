@@ -184,6 +184,14 @@ Developed 2026-11-02 to 2026-11-03, PRs #232–#236.
   (`modules.RoundCountsTask`, `roundCounts.*`) recounts in windows of 2,000 files; the
   migration leaves every round dirty, so the counts fill in after the deploy (developed
   2026-11-05; [round images plan](docs/plans/2026-11-02-round-images-two-step.md) §16).
+- Run hardening after a night run lost to the host's sleep (developed 2026-11-05): jobs whose
+  runs keep ending without an outcome (a step that ends the JVM, R198-1) are failed after
+  `jobs.maxAttempts` claims (5) instead of rerun every lease; a distribution's Retry after a
+  crash no longer fails its count check when the round's other files changed meanwhile;
+  `scripts/agent-check.py` gets a time limit that stops the whole process tree (`--timeout`,
+  exit 124), an owned sbt lock (`--lock`, an `owner` file) and, on Windows, a keep-awake
+  request; the write-path stress harness marks a variant the host slept through INVALID
+  ([workflow practices](docs/workflow/practices.md) §4.2, §4.6; [testing practices](docs/testing/practices.md) §8.1a–b).
 - P2b (developed 2026-11-05; [round images plan](docs/plans/2026-11-02-round-images-two-step.md)
   §17): all the jurors' lists (the by-rate pages, the file list's pages, counts, ranks,
   positions, the large view's neighbours, the region counts) can read `round_image`'s counts
