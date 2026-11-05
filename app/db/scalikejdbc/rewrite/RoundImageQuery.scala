@@ -13,18 +13,20 @@ import scalikejdbc._
   * counts, rank counts, positions and region counts (`controllers.GroupedListParitySpec`,
   * `RoundImageReadSpec`).
   *
-  * '''Exact while the round's generation is clean.''' The counts are kept by dirty marks and a
+  * '''Exact at a clean, unchanged generation.''' The counts are kept by dirty marks and a
   * background recompute (P2a, [[db.scalikejdbc.RoundCounts]]): a juror's vote marks its file in
   * `round_image_dirty`, a bulk writer bumps `round.counts_gen`. Each query here overlays the
   * marked files' counts read from their votes (`dv`, the files in `round_image_dirty`, usually a
   * few) on the stored ones, in the same statement. At READ COMMITTED a statement reads one
-  * snapshot, and in every committed state a file's stored counts equal its votes or the file is
-  * marked (a vote marks its file in its own transaction; the recompute writes the counts and
-  * clears the marks it read in one), as long as no bulk write is pending: so the numbers are the
-  * votes' exactly. A round whose generation is not clean (`counts_gen_done < counts_gen`: a
-  * distribution, a file deleted on Commons, a disqualification, until its recount, seconds) is
-  * read from the votes instead: the caller checks [[db.scalikejdbc.RoundCounts.generationClean]]
-  * first. Exact consumers (the CSV, a top-N) read the votes regardless.
+  * snapshot, and in a committed state with no bulk write after the last full recount a file's
+  * stored counts equal its votes or the file is marked (a vote marks its file in its own
+  * transaction; the recompute writes the counts and clears the marks it read in one): the
+  * numbers are then the votes' exactly. A statement here doesn't check that itself: a bulk write
+  * (a distribution chunk, `moveVotesBack`, the repair job's sync) changes votes without marks,
+  * and one that commits before the statement's snapshot leaves stored counts behind. The caller
+  * proves it around each statement (`controllers.RoundList.fromCounts`: the generation clean
+  * before the request's first statement and unchanged after each), and reads the votes when it
+  * can't. Exact consumers (the CSV, a top-N) read the votes regardless.
   *
   * Stopped jurors' votes count, as in the vote source (neither joins `round_user`). A NULL rate
   * is an unrated vote here (`assigned` counts it; the Unrated filter is `assigned > voted`), where

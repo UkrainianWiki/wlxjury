@@ -148,7 +148,9 @@ final case class RoundList(
     order: ListOrder = ListOrder.ByRate,
     view: GalleryView = GalleryView.Gallery,
     // `roundImage.read` (P2b): all the jurors' list from round_image's counts ([[countsQuery]])
-    countsRead: Boolean = false
+    countsRead: Boolean = false,
+    // which source this request's statements read, shared by the list's copies ([[CountsSession]])
+    countsSession: CountsSession = new CountsSession
 ) {
 
   def roundId: Long = round.getId
@@ -208,36 +210,68 @@ final case class RoundList(
       subRegions = round.specialNomination.contains("Віа Регіа")
     )
 
-  /** The list from `round_image`'s counts ([[RoundImageQuery]]), if it is read from them: all
-    * the jurors' votes with `roundImage.read` on, a filter and order the counts can tell, and
-    * the round's generation clean (no recount pending, [[RoundCounts.generationClean]]: one
-    * primary-key read). None: from the votes, as before P2b. Each call decides afresh.
+  /** The list over `round_image`'s counts ([[RoundImageQuery]]), if it may be read from them:
+    * all the jurors' votes with `roundImage.read` on, a filter and order the counts can tell,
+    * and no statement of this request fallen back to the votes ([[CountsSession]]). Whether a
+    * statement's counts are the votes' is proved per statement ([[fromCounts]]).
     */
   def countsQuery: Option[RoundImageQuery] =
-    if (!countsRead || asUserId != 0) None
-    else RoundImageQuery.of(query, round.isBinary, rankKey.columns.map(_._1)).filter(_ => RoundCounts.generationClean(roundId))
+    if (!countsRead || asUserId != 0 || countsSession.fellBack(roundId)) None
+    else RoundImageQuery.of(query, round.isBinary, rankKey.columns.map(_._1))
 
-  def count(): Int = countsQuery.fold(query.count())(_.count())
+  /** Whether this request's statements so far were read from the counts, none fallen back. */
+  def countsUsed: Boolean = countsSession.generation(roundId).isDefined && !countsSession.fellBack(roundId)
+
+  /** One statement from the counts, if its snapshot is proved to have the votes' counts, else
+    * `votes`. The proof: the round's generation was clean (`counts_gen_done >= counts_gen`) when
+    * this request's first counts statement began, and is unchanged after this one ends. Every
+    * bulk writer of the round's votes bumps `counts_gen` in its own transaction (P2a), and the
+    * generation only grows, so an unchanged generation means no bulk write committed from the
+    * first check to the end of this statement: the stored counts, with the marked files read
+    * from their votes in the same statement ([[RoundImageQuery]]), are the votes'. A generation
+    * that wasn't clean, or changed, sends this statement and the rest of the request to the
+    * votes. The first statement costs two primary-key reads of `round`, each later one one.
+    */
+  private def fromCounts[A](counts: RoundImageQuery => A)(votes: => A): A =
+    countsQuery.flatMap { q =>
+      val session = countsSession
+      session.generation(roundId).orElse(RoundCounts.cleanGeneration(roundId)) match {
+        case None =>
+          session.fallBack(roundId)
+          None
+        case Some(gen) =>
+          session.beforeRead()
+          val result = counts(q)
+          if (RoundCounts.generation(roundId).contains(gen)) {
+            session.read(roundId, gen)
+            Some(result)
+          } else {
+            session.fallBack(roundId)
+            None
+          }
+      }
+    }.getOrElse(votes)
+
+  def count(): Int = fromCounts(_.count())(query.count())
 
   /** The number of the list's files in each region, without its region filter (all the
     * jurors' votes; a juror's come from [[jurorCounts]]).
     */
   def regionCounts(): Map[String, Int] = {
     val all = copy(region = None)
-    all.countsQuery.fold(all.query.regionCounts())(_.regionCounts())
+    all.fromCounts(_.regionCounts())(all.query.regionCounts())
   }
 
   /** The list's files at `limit`, and the large view's file whatever the filter: from the
     * counts, else the votes. A file list's rows carry their votes, read by page id.
     */
-  private def read(limit: Limit, withPageId: Option[Long] = None, counts: Option[RoundImageQuery] = countsQuery)
-      : Seq[ImageWithRating] =
-    counts match {
-      case Some(c) =>
-        val paged = c.copy(limit = Some(limit), withPageId = withPageId)
-        if (withDetails) query.withVotes(paged.pageIds()) else paged.list()
-      case None => query.copy(limit = Some(limit), withPageId = withPageId).list()
-    }
+  private def read(limit: Limit, withPageId: Option[Long] = None): Seq[ImageWithRating] = {
+    def votes = query.copy(limit = Some(limit), withPageId = withPageId).list()
+    if (withDetails)
+      fromCounts(c => Option(c.copy(limit = Some(limit), withPageId = withPageId).pageIds()))(None)
+        .fold(votes)(query.withVotes(_))
+    else fromCounts(_.copy(limit = Some(limit), withPageId = withPageId).list())(votes)
+  }
 
   /** The juror's files by region and rate, which give the list's total, its region nav's
     * counts and the juror's tabs in one query; None for all the jurors' votes together, or
@@ -260,7 +294,7 @@ final case class RoundList(
     * too), from one grouped query.
     */
   def rankCounts(): Seq[(Seq[Long], Int)] =
-    countsQuery.fold(query.keyCounts(rankKey.columns))(_.keyCounts(rankKey.columns))
+    fromCounts(_.keyCounts(rankKey.columns))(query.keyCounts(rankKey.columns))
 
   /** The ranks of a page of the list's files among all of them ([[rankKey]]): a file list's, a
     * by-rate gallery's, from the list's [[rankCounts]].
@@ -285,9 +319,9 @@ final case class RoundList(
     else rankPosition(pageId)
 
   /** [[position]] by the file's rank (ROW_NUMBER) among all the list's files. */
-  private[controllers] def rankPosition(pageId: Long, counts: Option[RoundImageQuery] = countsQuery): Option[Int] = {
-    val rank = counts.fold(query.copy(withPageId = Some(pageId)).imageRank(pageId))(
-      _.copy(withPageId = Some(pageId)).imageRank(pageId))
+  private[controllers] def rankPosition(pageId: Long): Option[Int] = {
+    val rank = fromCounts(_.copy(withPageId = Some(pageId)).imageRank(pageId))(
+      query.copy(withPageId = Some(pageId)).imageRank(pageId))
     Option.when(rank > 0)(rank - 1)
   }
 
@@ -321,13 +355,13 @@ final case class RoundList(
 
   /** [[around]] by the file's position and the list's files at an offset from it. */
   private[controllers] def aroundAtOffset(pageId: Long): Option[Neighbourhood] = {
-    // one source for the position and the files around it: the same order (W10)
-    val counts = countsQuery
-    rankPosition(pageId, counts).flatMap { position =>
+    // one source for the position and the files around it, the same order (W10): the request's
+    // (CountsSession), the votes for both once one statement has fallen back
+    rankPosition(pageId).flatMap { position =>
       val offset = math.max(0, position - Neighbourhood.Side)
       val all = Neighbourhood.Window
       val files0 =
-        read(Limit(Some(math.max(all, position - offset + 1 + Neighbourhood.Following)), Some(offset)), Some(pageId), counts)
+        read(Limit(Some(math.max(all, position - offset + 1 + Neighbourhood.Following)), Some(offset)), Some(pageId))
       val files = files0.take(all)
       Some(files.indexWhere(_.pageId == pageId)).filter(_ >= 0)
         .map(Neighbourhood(files, _, position, ahead = files0.drop(all)))
@@ -428,6 +462,34 @@ final case class RoundList(
   /** A comment on the file in its large view, going back to it in this list. */
   def commentUrl(pageId: Long): String =
     withParams(routes.ImageDiscussionController.addComment(pageId, regionParam, Some(roundId)).url, params(module = true))
+}
+
+/** Which source one request's statements of all the jurors' list read (P2b), per round:
+  * `round_image`'s counts at the clean generation its first counts statement found, or, once a
+  * statement found the generation changed or not clean, the votes for the rest of the request
+  * ([[RoundList.fromCounts]]). Shared by a list's copies (`copy` keeps it); a new
+  * [[RoundList]] (a new request) gets its own. Equal to any other, so a list's equality is its
+  * parameters'.
+  */
+final class CountsSession {
+
+  private var generations = Map.empty[Long, Long]
+  private var fallen = Set.empty[Long]
+
+  /** For tests: runs after a statement's generation check, before the statement. */
+  @volatile private[controllers] var beforeRead: () => Unit = () => ()
+
+  def generation(roundId: Long): Option[Long] = synchronized(generations.get(roundId))
+
+  def fellBack(roundId: Long): Boolean = synchronized(fallen.contains(roundId))
+
+  private[controllers] def read(roundId: Long, gen: Long): Unit = synchronized(generations += roundId -> gen)
+
+  private[controllers] def fallBack(roundId: Long): Unit = synchronized(fallen += roundId)
+
+  override def equals(other: Any): Boolean = other.isInstanceOf[CountsSession]
+  override def hashCode: Int = 0
+  override def toString: String = "CountsSession"
 }
 
 /** A juror's files in a round by top-level region (None: without a monument id) and rate

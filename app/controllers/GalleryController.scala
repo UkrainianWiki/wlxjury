@@ -48,7 +48,7 @@ class GalleryController @Inject() (
   private val roundRegionCounts = config.getOptional[String]("gallery.regionCounts").getOrElse("all")
 
   /** All the jurors' lists from `round_image`'s counts (`roundImage.read`, P2b; off by default):
-    * [[RoundList.countsQuery]].
+    * [[RoundList.countsQuery]], each statement's snapshot proved ([[RoundList.fromCounts]]).
     */
   private val countsRead = config.getOptional[Boolean]("roundImage.read").getOrElse(false)
 

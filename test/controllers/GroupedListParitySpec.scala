@@ -85,8 +85,8 @@ class GroupedListParitySpec extends Specification with TestDb with BeforeAll wit
   private def bothSources(label: String, list: RoundList, files: Seq[File], inRegion: File => Boolean): Seq[String] = {
     val counted = list.withCountsRead(true)
     val tellable = list.filter.rate.forall(r => r == 0 || list.round.isBinary)
-    val used = Option.when(tellable && counted.countsQuery.isEmpty)(label + ": counts not read")
-    compare(label + " votes", list, files, inRegion) ++ compare(label + " counts", counted, files, inRegion) ++ used
+    val problems = compare(label + " votes", list, files, inRegion) ++ compare(label + " counts", counted, files, inRegion)
+    problems ++ Option.when(tellable && !counted.countsUsed)(label + ": counts not read")
   }
 
   /** Votes changed after the recount: every (size / n)th file's first juror's rate set by `rate`,
@@ -180,9 +180,31 @@ class GroupedListParitySpec extends Specification with TestDb with BeforeAll wit
         scalikejdbc.SQL("UPDATE round SET counts_gen = counts_gen + 1 WHERE id = ?").bind(round.getId).update()
       }
       val pending = all.map(_.withCountsRead(true))
+      val pendingProblems = pending.flatMap(l => compare("pending " + label(l), l, files, inRegion(l.region)))
       (dirty must beSome(be_>(0L))) and (marked must_== Nil) and
-        (pending.flatMap(_.countsQuery) must beEmpty) and
-        (pending.flatMap(l => compare("pending " + label(l), l, files, inRegion(l.region))) must_== Nil)
+        (pending.map(_.countsUsed).distinct must_== Seq(false)) and (pendingProblems must_== Nil)
+    }
+
+    "read the votes when a bulk write commits between the generation check and the counts statement" in {
+      val (round, files) = setUp(Round.ratesById(5), _.nextInt(4))
+      // a juror without a vote yet on F1, given one (rate 4) by a bulk insert, as a distribution
+      // chunk does to a file already in the round: it bumps the generation and marks no file
+      val newcomer = userDao.create(User("Juror 5", "juror5@example.com", None, Set("jury"), contestId = Some(round.contestId)))
+      val target = files.head
+      val after = files.map(f => if (f.pageId == target.pageId) f.copy(rates = f.rates :+ 4) else f)
+      def bulkWrite(): Unit = selectionDao.batchInsert(Seq(Vote(target.pageId, newcomer.getId, round.getId, 4, monumentId = target.monumentId)))
+      val lists = Seq(GalleryView.ByRate, GalleryView.FileList).map(v => RoundList(round, 0, view = v).withCountsRead(true))
+      // the first list's first statement meets the write; the second list starts after it, dirty
+      lists.head.countsSession.beforeRead = () => { lists.head.countsSession.beforeRead = () => (); bulkWrite() }
+      val first = compare("bulk " + label(lists.head), lists.head, after, _ => true)
+      val second = compare("bulk " + label(lists(1)), lists(1), after, _ => true)
+      // once recounted, the counts are read again, and agree
+      recompute.untilClean()
+      val recounted = RoundList(round, 0, view = GalleryView.ByRate).withCountsRead(true)
+      val third = compare("recounted " + label(recounted), recounted, after, _ => true)
+      (first must_== Nil) and (lists.head.countsUsed must beFalse) and
+        (second must_== Nil) and (lists(1).countsUsed must beFalse) and
+        (third must_== Nil) and (recounted.countsUsed must beTrue)
     }
   }
 
