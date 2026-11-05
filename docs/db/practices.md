@@ -275,7 +275,11 @@ as `Future(blocking(…))` on the default execution context (§11, V9).
 (`conf/application.conf:70`; `production.conf` must not override it: `ProductionConfigSpec`);
 the tests' DBCP pool through the driver URL (`SharedTestDb.readCommittedUrl`). `/ready`
 answers 503 unless a pooled connection reports `READ-COMMITTED` (`ReadinessCheck.isolation`;
-`ReadinessControllerSpec`, `ReadinessDatabaseSpec`). Write-path §4 (b): −60 % deadlocks.
+`ReadinessControllerSpec`, `ReadinessDatabaseSpec`). Write-path §4 (b): −60 % deadlocks. The
+counts' recompute depends on it (a plain read of the votes after its locks) and checks it in
+each window's transaction (`@@tx_isolation`; MariaDB 10.6 has no `@@transaction_isolation`): at
+another level it writes nothing and logs `round_counts_skipped reason=isolation` (round-images
+§16).
 
 **6.2 What it implies.**
 - **No gap locks for reads.** A locking read or a searched `UPDATE`/`DELETE` locks the rows it
