@@ -19,8 +19,6 @@ of the guide that explains it. Changes that only developers or operators see are
 - **A confirmed email change:** a new email address takes effect when you follow the link sent
   to it. See [Your profile](juror-guide.md#your-profile).
 - **More reliable voting:** votes no longer fail when organizers change rounds at the same time.
-- **Personal API tokens** on your profile, for command-line tools. See [API
-  tokens](admin-guide.md#a-api-tokens).
 
 <a id="w-jurors"></a>
 ## For jurors
