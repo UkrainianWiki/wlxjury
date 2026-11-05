@@ -312,5 +312,21 @@ class LoginControllerSpec extends PlaySpecification with Results with PlayTestDb
           (doc.select("button#submit").text === "Sign in")
       }
     }
+
+    "name the product in the account mails, as plain text with the link on a line of its own" in {
+      testDbApp { implicit app =>
+        val messages = app.injector.instanceOf[MessagesApi]
+        val link = "https://jury.example.org/invitation/abc"
+        val mails = Seq("invitation.subject.tool" -> Nil, "invitation.body.tool" -> Seq(link, 7),
+          "password.link.subject" -> Nil, "password.link.body" -> Seq(link, 7),
+          "email.change.subject" -> Nil, "email.change.body" -> Seq(link, 24),
+          "email.changed.subject" -> Nil, "email.changed.body" -> Seq("new@example.org"))
+        forall(for (l <- Seq("en", "fr", "uk", "ru"); (key, args) <- mails) yield (l, key, args)) { case (l, key, args) =>
+          val text = messages(key, args: _*)(Lang(l))
+          (text must contain("WLX Jury")) and (text must not(contain("<"))) and
+            ((!args.headOption.contains(link) || text.split("\n").contains(link)) must beTrue)
+        }
+      }
+    }
   }
 }

@@ -18,7 +18,7 @@
 
         <h2 class="h4">@Messages("import.from.list.page.images.category")</h2>
         <div class="bs-callout bs-callout-info">
-            <h3 class="h4">@Messages("examples.of.inputs")</h3>
+            <h3 class="h6">@Messages("examples.of.inputs")</h3>
             <p>
         <ul>
             <li>Category:Images from Wiki Loves Earth 2016
@@ -29,7 +29,7 @@
         @bs.form(routes.ContestController.importContests(), Symbol("id") -> "import-contests") {
             @helper.CSRF.formField
             @* a category or a list page: Commons' categories suggested once it starts with Category: *@
-            @bs.text(importForm("source"), Symbol("placeholder") -> Messages("source"), Symbol("_label") -> Messages("source"), Symbol("_help") -> "",
+            @bs.text(importForm("source"), Symbol("placeholder") -> Messages("import.source.placeholder"), Symbol("_label") -> Messages("import.source"), Symbol("_help") -> "",
                 Symbol("data-category-suggest") -> "mixed")
 
             <button type="submit" class="btn btn-primary">@Messages("import")</button>
@@ -104,19 +104,21 @@
                         <td>
                             <a href="@routes.ImageController.images(contest.getId)">@contest.images</a>
                         </td>
+                        @* icon links styled as buttons (a link, not a button in a link), named for the
+                           contest, with the same text as their tooltip *@
                         <td>
-                            <a href="@routes.UserController.users(contest.id)">
-                                <button type="button" class="btn btn-outline-secondary btn-sm">
-                                    <i class="bi bi-pencil-square" aria-hidden="true"></i>
-                                </button>
+                            @defining(Messages("contest.users.edit", contest.fullName)) { label =>
+                            <a class="btn btn-outline-secondary btn-sm" href="@routes.UserController.users(contest.id)" title="@label" aria-label="@label">
+                                <i class="bi bi-pencil-square" aria-hidden="true"></i>
                             </a>
+                            }
                         </td>
                         <td>@contest.currentRound
-                        <a href="@routes.RoundController.rounds(contest.id)">
-                            <button type="button" class="btn btn-outline-secondary btn-sm">
+                            @defining(Messages("contest.rounds.edit", contest.fullName)) { label =>
+                            <a class="btn btn-outline-secondary btn-sm" href="@routes.RoundController.rounds(contest.id)" title="@label" aria-label="@label">
                                 <i class="bi bi-pencil-square" aria-hidden="true"></i>
-                            </button>
-                        </a>
+                            </a>
+                            }
                         </td>
                         <td class="id-template">@contest.monumentIdTemplate.filter(_.trim.nonEmpty).getOrElse {
                             @for(template <- services.regions.ContestKind.configMonumentIdTemplate(contest)) {

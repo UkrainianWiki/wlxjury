@@ -40,7 +40,7 @@ class ContestTemplateSpec extends PlaySpecification with PlayTestDb {
         contest.monumentIdTemplate must beNone
 
         val page = get("/contests", user)
-        page must beMatching("""(?s).*UkrainianNaturalHeritageSite\s*<span class="text-muted"[^>]*>\(from the campaign config\)</span>.*""")
+        page must beMatching("""(?s).*UkrainianNaturalHeritageSite\s*<span class="text-muted"[^>]*>\(the default for this contest type and country\)</span>.*""")
       }
     }
 
@@ -50,7 +50,8 @@ class ContestTemplateSpec extends PlaySpecification with PlayTestDb {
         contestDao.create(None, "Wiki Loves Monuments", 2025, "Ukraine", monumentIdTemplate = Some("Custom template"))
         val page = get("/contests", user)
         page must contain("Custom template")
-        page must not contain "from the campaign config"
+        // the row's note, not the add form's help, which says the same in other words
+        page must not contain "(the default for this contest type and country)"
       }
     }
 

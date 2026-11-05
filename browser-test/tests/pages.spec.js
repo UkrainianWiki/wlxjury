@@ -25,7 +25,6 @@ const KNOWN = {
   'new round form': { 'color-contrast': U19, 'select-name': U21 },
   users: { 'color-contrast': U19, 'button-name': U20, 'link-name': U20 },
   'contest images': { 'color-contrast': U19, label: U21 },
-  contests: { 'button-name': U20, 'link-name': U20 },
   // aria-label on the navbar's disabled view links; seen again on 2026-11-04's re-check
   'round statistics': { 'aria-prohibited-attr': U20 },
 };

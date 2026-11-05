@@ -262,8 +262,9 @@ texts, for view specs. Each can get a browser test with its fix.
   contest files' import, contest images, users), the theme switch's unpressed labels (login
   page, profile), and `text-muted`-like text on the users page.
 - **U20 (4.1):** controls without an accessible name (axe `button-name` critical, `link-name`
-  serious): the icon-only buttons nested in links on the contests page (2) and the users page
-  (31, one per row, `<a><button>`), and an empty thumbnail link in the rated gallery's strip;
+  serious): the icon-only buttons nested in links on the users page (31, one per row,
+  `<a><button>`; the contests page's two were fixed on 2026-11-05: links styled as buttons, with
+  `aria-label` and a tooltip), and an empty thumbnail link in the rated gallery's strip;
   `aria-prohibited-attr` (serious): `aria-label` on the navbar's disabled view links (round
   statistics).
 - **U21 (4.1, 3.3):** form fields without a label (axe `label`, `select-name`, critical): the

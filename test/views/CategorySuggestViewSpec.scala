@@ -83,6 +83,19 @@ class CategorySuggestViewSpec extends PlaySpecification {
         (doc.select("h1.visually-hidden").size === 0) and
         (h2.get(0) === messages("import.from.list.page.images.category")) and (h2.get(1) === messages("contests.list"))
     }
+    "name its icon links, and its import field apart from the field's example" in {
+      val doc = org.jsoup.Jsoup.parse(contentAsString(views.html.contests(root, Seq(contest), Seq(contest),
+        Form(ignored(contest)), Form(single("source" -> nonEmptyText)))))
+      val source = doc.getElementById("source")
+      forall(Seq("contest.users.edit", "contest.rounds.edit")) { key =>
+        val link = doc.select(s"""a[aria-label="${messages(key, contest.fullName)}"]""")
+        (link.size === 1) and (link.attr("title") === messages(key, contest.fullName)) and
+          (link.select("i[aria-hidden=true]").size === 1)
+      } and
+        (doc.select("a button").size === 0) and
+        (doc.select("label[for=source]").text === messages("import.source")) and
+        (source.attr("placeholder") === messages("import.source.placeholder"))
+    }
   }
 
   "every page with a category field" should {
