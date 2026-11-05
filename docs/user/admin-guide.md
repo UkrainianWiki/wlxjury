@@ -5,7 +5,10 @@ administrators. It explains accounts and roles, how people are invited and sign 
 settings of a contest. Rounds and results are in the [organizer guide](organizer-guide.md). The
 people you add use the [juror guide](juror-guide.md).
 
-Labels in **bold** are the ones the tool shows in English. Whoever installs and runs the tool
+Labels in **bold** are the ones the tool shows in English. Terms: a **contest** is one
+competition (the tool's Campaigns page calls it a campaign), a **file** is one photo or video, a
+**yes/no round** is a round with the rating type **+/-**, and the roles are **Jury** (a juror),
+**Organizer** and **Admin**. Whoever installs and runs the tool
 (servers, mail, sign-in providers, backups) finds that in the operators' [deployment
 guide](../deployment.md); this guide doesn't repeat it.
 
@@ -58,9 +61,10 @@ Open **Users** in the top bar. The page lists the members of the current contest
 two buttons that write to the person on Commons, a message on their talk page and an email.
 
 A badge **unverified** after a wiki account says that nobody has proved that the account
-belongs to this person: anyone could have typed it. A badge **unverified** or **password
-expired** after an email says that the person hasn't accepted an invitation yet, or that the old
-password expired unused. The envelope button next to it sends an invitation again.
+belongs to this person: anyone could have typed it. A badge **unverified** after an email says
+that the person hasn't accepted an invitation yet. A badge **password expired** says that the
+person's password was set before release 26.11 and has stopped working: they need a link to set a
+new one. The envelope button next to the badge sends it again.
 
 A member without a wiki account whose files could be conflicts of interest shows **no wiki
 account, can't be checked for conflicts of interest**. Add their wiki account in their edit
@@ -117,15 +121,19 @@ An account that also works in other contests can't be changed by an admin of one
 admin may change the person's role in their own contest only, unless they administer all of its
 contests. Nobody sets another person's password: see [Passwords](#a-passwords).
 
+<img src="images/admin-user-edit.png" alt="The Edit user page of a member, with the role and the set-password links" width="1280">
+
 <a id="a-invitations"></a>
 ## Invitations
+
+If the email doesn't arrive, create a [link to share](#a-share-link) and pass it on yourself.
 
 <a id="a-invitation-email"></a>
 ### The invitation email
 
 A new member gets an email, **Invitation to the … jury**, with a link that is valid for a few
-days. The contest's **greeting message** can replace its standard text, see [The
-greeting](#a-greeting). The person opens the link, chooses a password on the page **Set your
+days. When the contest uses its own **greeting message**, the email is **Welcome to … jury**
+instead, with the greeting's text and the link, see [The greeting](#a-greeting). The person opens the link, chooses a password on the page **Set your
 password**, and is signed in. The email address is their login. The role applies once the
 invitation is accepted. See [Accepting your invitation](juror-guide.md#accepting-your-invitation)
 in the juror guide.
@@ -203,6 +211,9 @@ audit committee and staff members don't get it. The page lists the variables you
 text, and shows a preview for each member. Without a greeting the tool sends its standard
 invitation.
 
+The email never contains a password. Where your text has `{{Password}}`, the email says "the one
+you choose with the link below"; the tool adds the link itself, after your text.
+
 <a id="a-sign-in"></a>
 ## Signing in
 
@@ -210,8 +221,9 @@ invitation.
 ### Password
 
 A person signs in with their email address (or, if you set one, their wiki user name) and their
-password. **Keep me signed in** is ticked by default. Passwords that haven't been used for a long
-time expire: the person then needs an invitation or a link to set a new one. Their
+password. **Keep me signed in** is ticked by default. Passwords set before release 26.11 stop
+working about three months after the update: the person then needs a link to set a new one,
+which you can send from the users page. Their
 [juror guide](juror-guide.md#signing-in-with-your-password) describes the page.
 
 <a id="a-passwords"></a>
@@ -275,6 +287,8 @@ a **monument id template** for monuments contests, a greeting, and its rounds. R
 changes the contests on the **Campaigns** page. Admins of a contest set up its
 people ([People](#a-users)), its greeting, its [files](organizer-guide.md#o-import-files) and its
 [rounds](organizer-guide.md#o-rounds-list).
+
+<img src="images/admin-campaigns.png" alt="The Campaigns page, where root creates and imports contests" width="1280">
 
 <a id="a-more-than-one-admin"></a>
 ### Several admins

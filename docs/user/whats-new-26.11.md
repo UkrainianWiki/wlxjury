@@ -8,9 +8,8 @@ of the guide that explains it. Changes that only developers or operators see are
 <a id="w-everyone"></a>
 ## For everyone
 
-- **Light, dark and system colour modes**, on a refreshed layout. Choose yours with the theme
-  icon in the top bar; the tool remembers it for your account. See [Light, dark or system
-  theme](juror-guide.md#light-dark-or-system-theme).
+- **Light, dark and system colour modes**, chosen with the theme icon in the top bar. See
+  [Light, dark or system theme](juror-guide.md#light-dark-or-system-theme).
 - **No sign-up page.** Accounts are made only by invitation from a contest's organizers. See
   [Accepting your invitation](juror-guide.md#accepting-your-invitation).
 - **Sessions you control:** **Keep me signed in** on the sign-in page, **Sign out everywhere**
@@ -23,11 +22,9 @@ of the guide that explains it. Changes that only developers or operators see are
 <a id="w-jurors"></a>
 ## For jurors
 
-- **The worst mark (✗)** in rated rounds that use it: a button on the file and in the large view,
-  or the Delete key, gives a file ✗; the eraser or Backspace clears your vote. See [Rated rounds
-  (stars)](juror-guide.md#rated-rounds-stars), [Rating in a rated round's
-  gallery](juror-guide.md#rating-in-a-rated-rounds-gallery) and [Keyboard
-  shortcuts](juror-guide.md#keyboard-shortcuts-in-the-large-view).
+- **The worst mark (✗)** in rated rounds that use it: a button or the Delete key gives a file ✗,
+  the eraser or Backspace clears your vote. See [Rated rounds
+  (stars)](juror-guide.md#rated-rounds-stars).
 - **Rounds rated by criteria**: you rate each file on several criteria with stars in the large
   view. See [Rating by criteria](juror-guide.md#rating-by-criteria).
 - **A stopped round or juror** is refused cleanly: a vote in a round that isn't open is
@@ -46,10 +43,9 @@ of the guide that explains it. Changes that only developers or operators see are
   See [The file score](organizer-guide.md#o-score-rule).
 - **Criteria rounds' results:** each criterion's average in the file list, the by-rate gallery,
   the CSV and the large view. See [The file list](organizer-guide.md#o-file-list).
-- **Yes/no rounds:** the all-jurors view shows each file's approvals, you can choose the
-  order **Approvals, then fewest rejections**, and a next round can take files **Selected by at
-  least X jurors**. See [The by-rate gallery](organizer-guide.md#o-by-rate) and [Choosing the
-  round's files](organizer-guide.md#o-choose-files).
+- **Yes/no rounds:** the all-jurors view shows each file's approvals, and a next round can take
+  files **Selected by at least X jurors**. See [The by-rate gallery](organizer-guide.md#o-by-rate)
+  and [Choosing the round's files](organizer-guide.md#o-choose-files).
 - **Conflicts of interest page,** with its history, for organizers and admins. See
   [The conflicts page](organizer-guide.md#o-conflicts-page).
 
@@ -67,9 +63,7 @@ of the guide that explains it. Changes that only developers or operators see are
 - **Invitations** are the only way to add people, with a list of invitations not yet accepted,
   to send again or cancel. See [Invitations](admin-guide.md#a-invitations).
 - **Shareable set-password links** to pass on yourself, instead of mailing. See [Sharing a link
-  instead of mailing it](admin-guide.md#a-share-link). *(New in this release.)*
-- **Check round images** on a round, for when the tool's administrators ask. See [Changing a
-  round](organizer-guide.md#o-edit-round).
+  instead of mailing it](admin-guide.md#a-share-link).
 
 <a id="w-changed"></a>
 ## Changes to be aware of

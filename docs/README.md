@@ -111,8 +111,10 @@ each section an explicit `<a id="o-…"></a>` (organizer), `a-…` (admin) or `w
 its heading, which doesn't change when the heading's words do. The juror guide's anchors are its
 headings' GitHub slugs, which the story catalogue already links; a heading there is renamed only
 together with its links. It is written for
-the Translate extension: short paragraphs, headings that stand alone, no relative links,
-screenshots as `[Screenshot: …]` placeholders, the interface's labels from `conf/messages.en`.
+the Translate extension: short paragraphs, headings that stand alone, the interface's labels from
+`conf/messages.en`. The guides link to each other and to their screenshots (`<img>`) with
+relative links, which the release step rewrites for the wiki. A screenshot not made yet is an
+HTML comment, `<!-- screenshot to add: … -->`, and a section not offered yet is a comment too.
 What updates it is in §3. The UI findings made while writing it are UI practices §9 (U3–U17). The
 English source lives in the repository and is reviewed with the code. A release step publishes it
 to a wiki page and marks it for translation, and translations happen there with the Translate

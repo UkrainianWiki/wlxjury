@@ -10,6 +10,10 @@ and what to do when something goes wrong.
 Labels in **bold** are the ones the tool shows in English. If you use the tool in another
 language, the same buttons and menus are in the same places.
 
+Terms: a **contest** is one competition (the tool's Campaigns page calls it a campaign), a
+**file** is one photo or video, a **yes/no round** is a round where you select or reject files,
+and a **juror** has the role **Jury** (the tool writes **Jury** or **Juror**).
+
 ## Signing in to the jury tool
 
 ### Accepting your invitation
@@ -39,9 +43,9 @@ one for you) and your password, then press **Sign In**.
 signed out when you close the browser.
 
 If the tool says **Invalid user or password**, check both and try again. If you have forgotten
-your password, or haven't signed in for a long time, ask your organizer: a tool administrator can
-send you a link to set a new one. Old passwords expire, so this can happen even when you typed
-it right.
+your password, ask your organizer: a tool administrator can send you a link to set a new one.
+A password set before release 26.11 stops working about three months after the update, so
+this can happen even when you typed it right.
 
 The link opens a page, **Set a new password**. Your old password works until you use the link.
 
@@ -153,7 +157,7 @@ Files you haven't voted on are **unrated**.
 ### Rated rounds (stars)
 
 In a rated round you give each file from one star up to the round's highest rate, for
-example 1 to 5 stars. Some rounds allow half stars.
+example 1 to 5 stars. Older rounds may allow half stars; new rounds don't.
 
 Some rated rounds also have the **worst mark**, ✗: for a file you would give fewer than one star.
 A ✗ is a vote: the file is no longer unrated, and it counts in your progress. In the results it
@@ -212,8 +216,9 @@ To jump to a page, click the numbers in the middle, type a page number in the bo
 
 ### Voting in a yes/no round's gallery
 
-Point at a file's tile to show its buttons: thumbs up to select it, thumbs down to reject it.
-A selected file gets a green frame, a rejected one a red frame.
+Point at a file's tile and its buttons appear: thumbs up to select it, thumbs down to reject it.
+A selected file gets a green frame, a rejected one a red frame. The picture below shows tiles at
+rest, with the frames of earlier votes.
 
 To undo a vote, press the same thumb again: the file is unrated again.
 
@@ -223,11 +228,12 @@ Click the image itself to open it in the large view.
 
 ### Rating in a rated round's gallery
 
-Under each file are its stars. Click a star to rate the file. In a half-star round, click the
-left half of a star for a half star. The circled cross before the stars removes your rating.
+Under each file are its stars. Click a star to rate the file. In an older round that allows half
+stars, click the left half of a star for a half star. The circled cross before the stars removes
+your rating.
 
 In a round with the worst mark, the button with a cross after the stars (**Worst mark (✗)**) gives
-the file ✗; it turns red, and the stars are empty. The eraser before the stars removes your vote,
+the file ✗, and the stars are empty. The eraser before the stars removes your vote,
 ✗ or stars; it shows only once the file has a vote. The ✗ button is a toggle that shows the
 file's ✗: pressing it again doesn't clear it, the eraser does. In your list by rate, a file with ✗ shows ✗ as
 its rate.
@@ -309,7 +315,7 @@ The large view works with the keyboard:
 |---|---|
 | Down arrow | the next file |
 | Up arrow | the previous file |
-| Page Down / Page Up | a few files on or back |
+| Page Down / Page Up | two files on or back |
 | Home / End | the first or last of the files around this one |
 | Esc | back to the gallery, at this file's page |
 | Space | select the file (yes/no round) |
@@ -317,14 +323,13 @@ The large view works with the keyboard:
 | Backspace | remove your vote (rated round with the worst mark) |
 | 0 up to the highest rate (at most 9) | rate the file (rated round) |
 
-Page Up, Page Down, Home and End move only among the few files around the one you see. In the
-middle of your list each of them moves at most two files; near its start, a little more. They
-don't jump to the start or end of your whole list.
+These keys move only among the few files around the one you see, never to the start or end of
+your whole list.
 
 The digit keys give the rate in points, from 0 up to the round's highest rate, and at most 9.
-In a round of whole stars, 3 gives three stars. In a
-half-star round each point is half a star, so 7 gives three and a half stars. 0 removes your
-rating. A rate above 9 needs the mouse.
+In a round of whole stars, 3 gives three stars. In an older half-star round each point is half
+a star, so 7 gives three and a half stars. 0 removes your rating. A rate above 9 needs the
+mouse.
 
 On a Mac keyboard, reject with Fn and Delete together (the forward delete).
 
@@ -353,8 +358,8 @@ contest see your comment, with your name. You can comment only while the round i
 You see only your own votes. Other jurors' votes, the files' authors and the contest's
 statistics are for the organizers.
 
-Some rounds let their jurors see the organizers' view too. In such a round you get more menus:
-a juror menu, a vote filter and other views of the results.
+Older rounds may let their jurors see the organizers' view too; new rounds don't. In such a
+round you get more menus: a juror menu, a vote filter and other views of the results.
 
 ### Conflicts of interest
 

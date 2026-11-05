@@ -89,7 +89,15 @@ test.describe('the guides\' screenshots', () => {
     return Math.floor(next ? Math.min(row.bottom + 12, next.top - 2) : row.bottom + 12);
   }, n);
 
-  async function shot(contextAs, role, target, name, { full = false, prepare, crop, height, width, rows } = {}) {
+  /** The page height that ends below the `n`th body row of the page's first table, so that no
+    * crop cuts through a row. */
+  const belowTableRow = (page, n) => page.evaluate((count) => {
+    const rows = [...document.querySelectorAll('table tbody tr')].filter((r) => r.getBoundingClientRect().height > 0);
+    const row = rows[Math.min(count, rows.length) - 1].getBoundingClientRect();
+    return Math.ceil(row.bottom + window.scrollY) + 2;
+  }, n);
+
+  async function shot(contextAs, role, target, name, { full = false, prepare, crop, height, width, rows, tableRows } = {}) {
     const context = await contextAs(role);
     await context.addCookies([{ name: 'theme', value: 'dark', url: baseUrl }]);
     const page = await sized(context);
@@ -107,8 +115,13 @@ test.describe('the guides\' screenshots', () => {
       await page.screenshot({ path: file, fullPage: true,
         clip: { x, y: Math.max(0, box.y - 12), width: Math.min(VIEWPORT.width - x, box.width + 24), height: box.height + 24 } });
     } else if (rows) await top(page, file, await belowRows(page, rows), width);
+    else if (tableRows) await top(page, file, await belowTableRow(page, tableRows), width);
     else if (height) await top(page, file, height, width);
-    else await page.screenshot({ path: file, fullPage: full });
+    else {
+      // a whole page ends with a margin, so that its last button isn't cut at the edge
+      if (full) await page.addStyleTag({ content: 'body { padding-bottom: 24px; }' });
+      await page.screenshot({ path: file, fullPage: full });
+    }
     await context.close();
   }
 
@@ -124,9 +137,9 @@ test.describe('the guides\' screenshots', () => {
   });
 
   test('organizer pages', async ({ contextAs, fixture }) => {
-    await shot(contextAs, 'organizer', `/roundstat/${fixture.roundBinaryId}`, 'organizer-round-statistics');
+    await shot(contextAs, 'organizer', `/roundstat/${fixture.roundBinaryId}`, 'organizer-round-statistics', { tableRows: 12 });
     await shot(contextAs, 'organizer', `/byrate/round/${fixture.roundRatingId}/user/0/page/1`, 'organizer-results-by-rate', { rows: 2 });
-    await shot(contextAs, 'organizer', `/filelist/round/${fixture.roundRatingId}/user/0/page/1`, 'organizer-results-file-list');
+    await shot(contextAs, 'organizer', `/filelist/round/${fixture.roundRatingId}/user/0/page/1`, 'organizer-results-file-list', { tableRows: 6 });
     await shot(contextAs, 'organizer', `/admin/rounds/${fixture.roundBinaryId}/conflicts`, 'organizer-conflicts', { height: 680 });
   });
 
@@ -159,7 +172,7 @@ test.describe('the guides\' screenshots', () => {
       await page.waitForLoadState('networkidle');
     }
     // the top of the table (the fixture has 30 members), and the add row with the invitations
-    await top(page, path.join(OUT_DIR, 'admin-users.png'), 520);
+    await top(page, path.join(OUT_DIR, 'admin-users.png'), await belowTableRow(page, 4));
     const heading = await page.getByRole('heading', { name: 'Invitations', exact: true }).boundingBox();
     const table = await page.locator('table.pending-invitations').boundingBox();
     await page.screenshot({ path: path.join(OUT_DIR, 'admin-invitations.png'), fullPage: true,
@@ -177,7 +190,9 @@ test.describe('the guides\' screenshots', () => {
     await page.locator('input[value*="/invitation/"]').evaluateAll((inputs) => inputs.forEach((input) => {
       input.value = input.value.replace(/^https?:\/\/[^/]+/, 'https://jury.example.org');
     }));
-    await top(page, path.join(OUT_DIR, 'admin-share-link.png'), 440);
+    // down to the end of the warning, so that the button after it isn't cut
+    const warning = await page.locator('.alert').last().boundingBox();
+    await top(page, path.join(OUT_DIR, 'admin-share-link.png'), Math.ceil(warning.y + warning.height) + 16);
     await context.close();
     await shot(contextAs, null, invitationPath, 'juror-set-password', { height: 440 });
   });

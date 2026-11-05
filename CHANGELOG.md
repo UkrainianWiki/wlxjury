@@ -39,8 +39,8 @@ Developed 2026-10-31 to 2026-11-02, PRs #211–#231.
 - **Light, dark and auto colour modes**, on a refreshed layout; the choice is kept per user (#211–#214, V71).
 - **Yes/no rounds:** the all-jurors gallery shows each file's approvals, and "selected by at
   least N" filters by them (#215, V72–V74).
-- **REST API** under `/api` with Swagger UI; root's contest endpoints; personal API tokens on
-  the profile page (#218, V75).
+- **REST API** under `/api` with Swagger UI: an API for root only, with root's tokens on the
+  profile page (#218, V75).
 - **Accounts:** accounts are created by invitation only (no open sign-up); an email change is
   confirmed from the new address (#225, V77).
 - **Sessions:** "Keep me signed in", "Sign out everywhere", and an idle and an absolute
@@ -49,7 +49,8 @@ Developed 2026-10-31 to 2026-11-02, PRs #211–#231.
   consistent (#226, V78).
 - **Stopped jurors** can no longer vote in that round. The image proxy serves only the page
   sizes (#230, V81).
-- **Faster organizer views:** ranked and grouped all-jurors pages (#222, #224).
+- **Faster organizer views:** ranked and grouped all-jurors pages (#222, #224), live at deploy;
+  the new round-image read path (`roundImage.read`) is off at deploy.
 - **Security hardening** of roles, host names and cookies, sessions, password storage,
   output escaping, logs and exports, and security headers (#219–#231). The role fix is already
   in production as the 2026-11-02 hotfix (#223, V76).

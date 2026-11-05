@@ -74,6 +74,10 @@ object UiShotsServer {
       .getOrElse(sys.error("The juror has no images"))
     // the juror's first file in the rated round, for the large view's stars (0 without one)
     val ratedPageId = firstPage(jurorId, f.roundRatingId)
+    // the user guides' screenshots (-Dui.images=docs): this juror's email is verified, as a
+    // person's is who accepted an invitation, so that the profile shows no "unverified" badge
+    if (sys.props.get("ui.images").contains("docs"))
+      sql"UPDATE users SET email_verified_at = NOW() WHERE id = $jurorId".update()
     // the browser tests (browser-test/): jurors with files in both rounds, each engine voting
     // as its own juror and signing in and out as another, so engines may share one server
     val jurors = f.jurorsIn(Some(f.roundBinaryId)).filter(j => f.roundsOf(j._1).contains(f.roundRatingId))

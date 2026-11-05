@@ -4,7 +4,10 @@ This guide is for the people who run the jury of a Wiki Loves Monuments, Wiki Lo
 similar photo contest in the WLX Jury Tool. It explains how to set up rounds, give files to
 jurors, follow the voting, read the results and handle conflicts of interest.
 
-Labels in **bold** are the ones the tool shows in English. Jurors have their own guide, the
+Labels in **bold** are the ones the tool shows in English. Terms: a **contest** is one competition
+(the tool's Campaigns page calls it a campaign), a **file** is one photo or video, a **yes/no
+round** is a round with the rating type **+/-**, and the roles are **Jury** (a juror),
+**Organizer** and **Admin**. Jurors have their own guide, the
 [juror guide](juror-guide.md); read its sections on the gallery and the large view to know what
 your jurors see. People and accounts are in the [admin guide](admin-guide.md).
 
@@ -100,10 +103,11 @@ Press **Save**. You go to the rounds list, where the round shows its distributio
 If you press Save twice, or send the form again from the browser's Back button, the tool makes
 one round, not two, and tells you.
 
-The jurors are chosen when the round is created. Later you can pause and resume a juror, see
-[Pausing a juror](#o-pause-juror).
+The jurors are chosen when the round is created, and the **Jurors** list can't be changed on an
+existing round. To work with other jurors, create another round. Later you can pause and resume
+a juror, see [Pausing a juror](#o-pause-juror).
 
-<img src="images/organizer-new-round-form.png" alt="The round form, with its sections open" width="853">
+<img src="images/organizer-new-round-form.png" alt="The round form, with the Media filtering and Add files sections opened" width="853">
 
 <a id="o-choose-files"></a>
 ### Choosing the round's files
@@ -124,10 +128,6 @@ A round for all the files takes no filters at all.
   [file score](#o-score-rule): with the total of the rates it is a total, and for a round with
   criteria it is the sum of the criteria's rates, averaged over the jurors. The hint under the
   field says which applies.
-- **Number of top files from the previous rounds**: take only the best N files. After the
-  other filters, the files are ordered by the earlier round's score, and N are taken. For an
-  earlier yes/no round the field **Top files of a yes/no round by** chooses the order:
-  **Approvals, then fewest rejections** or **Approvals minus rejections**.
 - The **rejection filter**: take or drop files by how many jurors rejected them in the earlier
   rounds. See the next section.
 
@@ -228,24 +228,23 @@ juror's counts, as the statistics page does.
 
 **Cancel** leaves without saving anything.
 
-At the bottom of the form of an existing round there are also: **Download images locally**,
-which fills the tool's own image cache for this round's files; the button **Conflicts of
-interest of this round**; and **Check round images**, which checks that the round's list of
-files matches its votes. You need the last one only when the tool's administrators ask you to.
+At the bottom of the form of an existing round there are also the button **Conflicts of
+interest of this round**, and, where the tool's operators have set up a local image cache,
+**Download images locally**, which fills it for this round's files.
 
 <a id="o-score-rule"></a>
 ### The file score
 
 The **File score** option decides how a rated round gives a file its score. The score is shown
-in the results and ranks the files, and a next round's top files and minimum score use it. The
-three rules are:
+in the results and ranks the files, and a next round's minimum score uses it. The three rules
+are:
 
-- **Average over the jurors who rated it** (`rated`), the default: the file's rates added up
-  and divided by the number of jurors who rated it.
-- **Average over its assigned jurors (unrated counts as 0)** (`assigned`): the rates divided
-  by the number of jurors the file was given to, a juror who didn't rate it counting as 0.
-- **Total of the rates (a file a juror skipped adds nothing)** (`sum`): the rates added up,
-  not divided.
+- **Average over the jurors who rated it**, the default: the file's rates added up and divided
+  by the number of jurors who rated it.
+- **Average over its assigned jurors (unrated counts as 0)**: the rates divided by the number of
+  jurors the file was given to, a juror who didn't rate it counting as 0.
+- **Total of the rates (a file a juror skipped adds nothing)**: the rates added up, not
+  divided.
 
 The results show what the score is divided by, for example "14.50 (29 / 2 of 3 jurors)" or "29
 (sum of 3 jurors)".
@@ -256,7 +255,7 @@ the round has votes and you pick another rule. The warning says that:
 
 - the results are re-scored and re-ordered everywhere, at once;
 - a distribution that is already queued or running keeps the rule it started with;
-- the later rounds that took their top files or minimum score from this round are named. Their
+- the later rounds that took their minimum score from this round are named. Their
   files don't change, but a later **Distribute new files** there uses the new rule.
 
 <img src="images/organizer-score-rule-warning.png" alt="The file score option and its warning" width="1280">
@@ -366,9 +365,6 @@ yet, empty not assigned; for a rated round with the worst mark, -1 is the worst 
 The file is named **WLXJury_Round_** with the round's name. Cells that start with a character
 that a spreadsheet would read as a formula are changed so that they don't run as one.
 
-The statistics page of a round also has a link **thumbnail urls** (admins), a list of the
-thumbnails' addresses on this server, one per line.
-
 <a id="o-contest-files"></a>
 ### The contest's files
 
@@ -384,8 +380,9 @@ Admins bring files into the contest from the **Images** link of the contest on t
 or a page, or a pasted list of files in **Or image list**, and **Import files** adds them.
 Imports only add: no file is removed, and all the contest's rounds choose from these files.
 
-For monuments contests **Update monuments** refreshes the files' monument ids. **Download images
-locally** fills the tool's own image cache. These run as background jobs, with their progress.
+For monuments contests **Update monuments** refreshes the files' monument ids. Where the tool's
+operators have set up a local image cache, **Download images locally** fills it. These run as
+background jobs, with their progress.
 
 <img src="images/organizer-contest-images.png" alt="The page for importing the contest's files" width="1280">
 
@@ -415,8 +412,8 @@ contest's files, and of the round's files, are conflicts.
 <a id="o-conflicts-page"></a>
 ### The conflicts page
 
-Press **Conflicts of interest of this round** on the round form, to open the page **Conflicts of
-interest of round …**. Admins and organizers can open it. It has:
+Admins open the page **Conflicts of interest of round …** with the button **Conflicts of
+interest of this round** on the round form (organizers have no button for it). It has:
 
 - **Conflicts of interest in the round**: the files whose author is a conflicted member now,
   each with its author and reason.
@@ -424,7 +421,9 @@ interest of round …**. Admins and organizers can open it. It has:
 - **History**: every disqualification and requalification, newest first: when, which file, the
   reason, the status before and after, and who did it.
 
-<img src="images/organizer-conflicts.png" alt="The conflicts of interest page of a round" width="1280">
+A round without conflicts, as in the picture, says so in each part.
+
+<img src="images/organizer-conflicts.png" alt="The conflicts of interest page of a round with no conflicts, no disqualified files and no history" width="1280">
 
 <a id="o-disqualify"></a>
 ### Disqualifying and requalifying
@@ -464,7 +463,4 @@ when you start it again. A juror with no round open sees **No round configured y
 Jurors see their own votes only. In the large view of a file they see comments of other jurors,
 with names.
 
-## Where the guide is incomplete
-
-This guide describes what the tool does today. The things in it marked as designed are not yet
-checked against the finished tool. Anything not in it, such as the REST API, is not covered.
+The REST API is for root only, with root's tokens, and is not covered here.
