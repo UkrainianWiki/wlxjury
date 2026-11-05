@@ -128,6 +128,20 @@ class RoundEditPageSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
+    "keep the number of top files off a new round's form without ?topImages, and refuse one below 1" in {
+      testDbApp { implicit app =>
+        val (contest, admin, round) = fixture()
+        // top-N stays unlinked until its ties are decided (roadmap, the user, 2026-11-05)
+        val html = contentAsString(route(app, get(s"/admin/rounds/edit?contestId=${contest.getId}", admin)).get)
+        html must not(contain("""name="topImages""""))
+
+        val jurors = User.findRoundJurors(round.getId).map(_.getId)
+        val zero = route(app, saveNewRound(contest.getId, jurors, java.util.UUID.randomUUID().toString, admin,
+          Seq("previousRound[0]" -> round.getId.toString, "topImages" -> "0"))).get
+        status(zero) must_== BAD_REQUEST
+      }
+    }
+
     "preselect the default order of a top-N and store it, not the legacy rule's NULL" in {
       testDbApp { implicit app =>
         val (contest, admin, round) = fixture()
