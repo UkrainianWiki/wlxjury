@@ -20,11 +20,14 @@ class ApiTokenPageSpec extends PlaySpecification with PlayTestDb {
   private val email = "tina@example.com"
   private val otherEmail = "omar@example.com"
 
-  /** Tina and Omar, jurors of contest 10. */
-  private def setUp(): Unit = {
+  /** Tina and Omar, members of contest 10: Omar a juror; Tina root if `tinaRoot` (only root has
+    * API tokens on the profile for now, the user's decision of 2026-11-05), else a juror too.
+    */
+  private def setUp(tinaRoot: Boolean = true): Unit = {
     createContests(10)
     for (e <- Seq(email, otherEmail)) {
-      val user = User.create(User(e, e, password = Some(services.PasswordHasher.default.hash("secret"))))
+      val user = User.create(User(e, e, password = Some(services.PasswordHasher.default.hash("secret")),
+        isRoot = tinaRoot && e == email))
       UserContestJdbc.createMembership(user.getId, 10, User.JURY_ROLE)
     }
   }
@@ -279,6 +282,17 @@ class ApiTokenPageSpec extends PlaySpecification with PlayTestDb {
         contentAsString(asRoot) must not(contain("omar-cli"))
       }
     }
+
+    "show no tokens card to anyone but root, and refuse their create, creating nothing" in {
+      withCsrfApp { app =>
+        setUp()
+        val omar = profile(app, as = otherEmail)
+        status(omar) === OK
+        contentAsString(omar) must not(contain("api-tokens"))
+        status(post(app, "/users/tokens", token(app), create, as = otherEmail)) === FORBIDDEN
+        ApiTokenJdbc.findByUser(userId(otherEmail)) must beEmpty
+      }
+    }
   }
 
   "root revoking another user's API tokens" should {
@@ -286,7 +300,7 @@ class ApiTokenPageSpec extends PlaySpecification with PlayTestDb {
     val adminEmail = "adam@example.com"
 
     def setUpWithRoot(): Unit = {
-      setUp()
+      setUp(tinaRoot = false)
       User.create(User(rootEmail, rootEmail, password = Some(services.PasswordHasher.default.hash("secret")), isRoot = true))
       val admin = User.create(User(adminEmail, adminEmail, password = Some(services.PasswordHasher.default.hash("secret"))))
       UserContestJdbc.createMembership(admin.getId, 10, User.ADMIN_ROLE)

@@ -71,7 +71,7 @@ When you link a Wikimedia account and your jury account has no wiki account yet,
 **Set your wiki account** asks whether to use that Wikimedia user name. Press **Use it** to
 confirm.
 
-<img src="images/juror-profile.png" alt="The profile page, with its theme, API tokens and sessions" width="1280">
+<img src="images/juror-profile.png" alt="The profile page, with its theme and sessions" width="1280">
 
 ### When one wiki name has several jury accounts
 
