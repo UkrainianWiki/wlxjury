@@ -151,7 +151,10 @@ class JobScheduler(handlerList: Seq[JobHandler], val settings: JobScheduler.Sett
             JobJdbc.findById(id).foreach { j =>
               lock.synchronized(hold(id, j.kind, j.contestId))
             }
-          else giveUpIfExhausted(id)
+          else
+            // one row that can't be given up (e.g. unreadable) must not stop the others' claims
+            try giveUpIfExhausted(id)
+            catch { case NonFatal(e) => logger.error(s"Job $id: could not give it up after its attempts", e) }
         }
         dispatch()
       } catch {
@@ -305,21 +308,27 @@ class JobScheduler(handlerList: Seq[JobHandler], val settings: JobScheduler.Sett
   }
 
   /** Queues a failed job again; it resumes from its state.
+    * @param explicit the user's Retry (the job's page). Only it resets `attempts`; an implicit
+    *                 resume (the round form submitted again, "Distribute new files") keeps the
+    *                 count, and refuses a job given up after its attempts
+    *                 ([[JobScheduler.AttemptsRefusedKey]]): that one waits for the cause to be fixed
     * @return the job, or why it can't be retried
     */
-  def retry(jobId: Long): Either[JobScheduler.RetryRefused, Job] = {
+  def retry(jobId: Long, explicit: Boolean = true): Either[JobScheduler.RetryRefused, Job] = {
     val result =
       try
         DB.localTx { implicit s =>
           JobJdbc.lock(jobId) match {
             case None                    => Left(JobScheduler.RetryRefused("job.retry.missing"))
             case Some(j) if !j.isFailed  => Left(JobScheduler.RetryRefused("job.retry.not.failed", j.status))
+            case Some(j) if !explicit && j.failure.exists(_.key == JobError.AttemptsKey) =>
+              Left(JobScheduler.RetryRefused(JobScheduler.AttemptsRefusedKey, j.failure.flatMap(_.reference).getOrElse("")))
             case Some(j) =>
               handlers.get(j.kind) match {
                 case None => Left(JobScheduler.RetryRefused("job.retry.no.handler", j.kind))
                 case Some(h) =>
                   val ctx = new StepContext(s)
-                  JobJdbc.requeue(jobId, h.onRetry(j, ctx), Option.when(inline)(instanceId))
+                  JobJdbc.requeue(jobId, h.onRetry(j, ctx), Option.when(inline)(instanceId), resetAttempts = explicit)
                   Right(ctx)
               }
           }
@@ -514,6 +523,9 @@ object JobScheduler {
 
   /** Why a job can't be retried: a message key and its arguments. */
   final case class RetryRefused(messageKey: String, args: String*)
+
+  /** An implicit resume of a job given up after `jobs.maxAttempts`: its reference the argument. */
+  val AttemptsRefusedKey = "job.retry.attempts"
 
   sealed trait Mode
   object Mode {

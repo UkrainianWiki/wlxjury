@@ -338,6 +338,7 @@ class JobSchedulerSpec extends Specification with BeforeAll with BeforeEach with
       val stopped = JobJdbc.findById(job.id).get
       stopped.status === JobStatus.Queued
       stopped.owner must beNone
+      stopped.attempts === 0 // the handed-back claim doesn't count toward jobs.maxAttempts
       val doneBefore = (stopped.state \ "done").as[Int]
       doneBefore must beGreaterThan(0)
 
@@ -345,6 +346,44 @@ class JobSchedulerSpec extends Specification with BeforeAll with BeforeEach with
       next.start()
       eventually(10, 100.millis)((JobJdbc.findById(job.id).get.state \ "done").as[Int] must beGreaterThan(doneBefore))
       JobJdbc.findById(job.id).get.owner === Some(next.instanceId)
+      JobJdbc.findById(job.id).get.attempts === 1
+    }
+
+    "not fail a job on its first crash after it lived through graceful restarts" in {
+      val h = new CountingHandler("count")
+      val job = enqueue(background(Seq(h)), newJob("count", 2))
+      // claimed and handed back on 5 deploys, then its instance crashed holding it
+      (1 to 5).foreach { i =>
+        sql"UPDATE job SET status = 'running', owner = ${s"deploy-$i"}, attempts = attempts + 1 WHERE id = ${job.id}"
+          .update()(AutoSession)
+        JobJdbc.requeueOwned(s"deploy-$i")
+      }
+      JobJdbc.findById(job.id).get.attempts === 0
+      sql"""UPDATE job SET status = 'running', owner = 'crashed', attempts = attempts + 1,
+              heartbeat_at = NOW(3) - INTERVAL 120 SECOND WHERE id = ${job.id}""".update()(AutoSession)
+      val s = background(Seq(h), maxAttempts = 2)
+      s.start()
+      val done = s.await(job.id, 10.seconds)
+      done.status === JobStatus.Done // taken over, not given up
+      done.attempts === 2
+    }
+
+    "give up the other exhausted jobs and claim the rest when one can't be given up" in {
+      val h = new CountingHandler("count")
+      val s = background(Seq(h), lease = 1.second, maxAttempts = 2)
+      val broken = enqueue(s, newJob("count", 2))
+      val exhausted = enqueue(s, newJob("count", 2))
+      val queued = enqueue(s, newJob("count", 2))
+      // both ran out of attempts; the first's row can't be read (its params aren't an object)
+      sql"""UPDATE job SET status = 'running', owner = 'dead-instance', attempts = 2,
+              heartbeat_at = NOW(3) - INTERVAL 120 SECOND WHERE id IN (${broken.id}, ${exhausted.id})"""
+        .update()(AutoSession)
+      sql"UPDATE job SET params = '[]' WHERE id = ${broken.id}".update()(AutoSession)
+      s.start()
+      s.await(queued.id, 10.seconds).status === JobStatus.Done
+      s.await(exhausted.id, 10.seconds).status === JobStatus.Failed
+      DB.readOnly(implicit s => sql"SELECT status FROM job WHERE id = ${broken.id}".map(_.string(1)).single()) ===
+        Some(JobStatus.Running)
     }
 
     "not touch the jobs of kinds it has no handler for" in {

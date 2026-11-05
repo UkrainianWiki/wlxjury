@@ -166,7 +166,7 @@ a crash, and a restart during a deployment would bypass its hold. There is no ex
 metrics monitoring yet.
 
 **5.2 Jobs.** A job's status and Cancel/Retry are on its page; a job that keeps failing shows in
-`job.attempts` (claims since its last Retry). A job step that runs out of memory restarts the
+`job.attempts` (claims since its last explicit Retry). A job step that runs out of memory restarts the
 JVM (`ExitOnOutOfMemoryError`, `Restart=on-failure`) at most `jobs.maxAttempts` times (5): the
 next instance then fails the job with `job.error.attempts` and an ERROR line with its reference
 (R198-1, performance §4.2). Retry it only after the cause is fixed.

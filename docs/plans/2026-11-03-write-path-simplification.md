@@ -1009,3 +1009,13 @@ part-way (the background wrapper ended; no failure in its log) and was rerun.
   `imagesBefore` by the change in the round's rows the job didn't add (`othersBefore`,
   `round_image.added_by_job_id`): its own files that went missing still fail the check
   (`RoundDistributionJobSpec`).
+  *Review follow-ups:* only the job page's explicit Retry resets `attempts`; the round form again
+  and "Distribute new files" keep it and refuse a given-up job (`job.retry.attempts`,
+  `round.distribute.attempts`, `round.resubmitted.attempts`, with its reference); a graceful
+  handback (`requeueOwned`) gives its claim back (`GREATEST(attempts - 1, 0)`; a separate counter
+  would have needed a migration for the same effect); a give-up that throws is logged per job and
+  no longer aborts the poll. The rebaseline moved to the resumed job's first step (a change while
+  it waits in the queue is in the window), and the count check also requires exactly `ownBefore +
+  imagesAdded` rows with the job's id, so a lost own file can't hide behind another's added one.
+  A file it added that was removed and added again by another job fails that check once; the
+  Retry rescans, skips the file (it has a row) and passes: nothing lost or doubled.

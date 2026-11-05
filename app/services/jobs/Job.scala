@@ -218,10 +218,13 @@ object JobJdbc {
         .update()
 
   /** Hands `owner`'s running jobs back to the queue (a graceful shutdown): another
-    * instance, or this one restarted, takes them at once instead of after the lease.
+    * instance, or this one restarted, takes them at once instead of after the lease. The
+    * claim that ends this way is taken back from `attempts`: a run handed back on a deploy
+    * ended with an outcome, so it doesn't count toward `jobs.maxAttempts`.
     */
   def requeueOwned(owner: String)(implicit session: DBSession = AutoSession): Int =
-    sql"""UPDATE job SET status = ${JobStatus.Queued}, owner = NULL, updated_at = NOW(3)
+    sql"""UPDATE job SET status = ${JobStatus.Queued}, owner = NULL, updated_at = NOW(3),
+                         attempts = GREATEST(attempts - 1, 0)
           WHERE owner = $owner AND status = ${JobStatus.Running}"""
       .update()
 
@@ -244,15 +247,18 @@ object JobJdbc {
       .update()
   }
 
-  /** A failed job queued again (Retry): `owner` claims it at once in inline mode. The claims
-    * count from zero again, so a Retry gets the whole `jobs.maxAttempts`.
+  /** A failed job queued again (Retry): `owner` claims it at once in inline mode. With
+    * `resetAttempts` (the user's explicit Retry) the claims count from zero again, so it gets
+    * the whole `jobs.maxAttempts`; an implicit resume keeps the count.
     */
-  def requeue(id: Long, state: JsObject, owner: Option[String])(implicit session: DBSession): Unit = {
+  def requeue(id: Long, state: JsObject, owner: Option[String], resetAttempts: Boolean)(implicit
+      session: DBSession
+  ): Unit = {
     val status = if (owner.isDefined) JobStatus.Running else JobStatus.Queued
     sql"""UPDATE job SET status = $status, state = ${Json.stringify(state)}, error = NULL,
                          finished_at = NULL, owner = $owner, updated_at = NOW(3),
                          heartbeat_at = IF($owner IS NULL, NULL, NOW(3)),
-                         attempts = IF($owner IS NULL, 0, 1)
+                         attempts = IF($resetAttempts, 0, attempts) + IF($owner IS NULL, 0, 1)
           WHERE id = $id"""
       .update()
   }

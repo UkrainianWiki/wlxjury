@@ -9,7 +9,7 @@ import play.api.Logging
 import play.api.libs.json.Json
 import scalikejdbc.{DB, DBSession}
 import services.distribution.RoundDistributionHandler
-import services.jobs.{Job, JobJdbc, JobScheduler, NewJob, Progress}
+import services.jobs.{Job, JobError, JobJdbc, JobScheduler, NewJob, Progress}
 
 import javax.inject.Inject
 
@@ -90,13 +90,13 @@ class RoundService @Inject() (
       round
     }
 
-  /** A known submission again: no new round. A failed distribution is resumed; a running
-    * one goes on.
+  /** A known submission again: no new round. A failed distribution is resumed (but not one
+    * given up after its attempts: that waits for the job page's Retry); a running one goes on.
     */
   private def resubmitted(existing: Round): Submitted =
     distributionJob(existing.getId) match {
       case Some(j) if j.isFailed =>
-        jobs.retry(j.id) match {
+        jobs.retry(j.id, explicit = false) match {
           case Right(job) =>
             logger.info(s"Round ${existing.getId}: its form was submitted again; its distribution resumed")
             Resubmitted(existing, Some(job), resumed = true)
@@ -213,7 +213,8 @@ class RoundService @Inject() (
   /** "Distribute new files": distributes to the round, in the background, the images that
     * qualify for it but aren't in it yet, and/or ("Add files") the files of a pasted list.
     * A failed distribution of the round is resumed instead (without the list); a running
-    * one goes on.
+    * one goes on. One given up after its attempts is not resumed ([[GivenUp]]): only the job
+    * page's Retry does, once the cause is fixed.
     *
     * @param titles   a pasted list of files to add to the round, whatever its filters
     * @param newFiles also the images that qualify for the round; without, only the list
@@ -229,8 +230,9 @@ class RoundService @Inject() (
     distributionJob(roundId) match {
       case Some(j) if j.isActive => AlreadyRunning(j)
       case Some(j) if j.isFailed =>
-        jobs.retry(j.id) match {
+        jobs.retry(j.id, explicit = false) match {
           case Right(job) => Resumed(job)
+          case Left(refused) if refused.messageKey == JobScheduler.AttemptsRefusedKey => GivenUp(j)
           case Left(_)    => AlreadyRunning(distributionJob(roundId).getOrElse(j))
         }
       case _ =>
@@ -363,17 +365,27 @@ object RoundService {
   final case class Resubmitted(round: Round, job: Option[Job], resumed: Boolean) extends Submitted {
     def imagesAdded: Int = if (resumed) job.fold(0)(RoundDistributionHandler.imagesAdded(_).toInt) else 0
 
+    /** Its distribution was given up after its attempts: not resumed, it waits for a Retry. */
+    def givenUp: Boolean = !resumed && job.exists(_.failure.exists(_.key == JobError.AttemptsKey))
+
+    /** The given-up job's logged reference, for the message. */
+    def reference: String = job.flatMap(_.failure).flatMap(_.reference).getOrElse("")
+
     def message: String =
       s"Round ${round.number} (${round.description}) was already created from this form; " +
         "not creating it a second time" +
         (if (resumed) ". Its distribution was resumed."
          else if (job.exists(_.isActive)) ". Its images are still being distributed."
+         else if (givenUp) s". Its distribution was stopped after repeated crashes (ref=$reference), not resumed."
          else ".")
 
-    /** [[message]] for the admin, with the round's number and description as arguments. */
+    /** [[message]] for the admin, with the round's number, its description and the given-up
+      * job's reference as arguments.
+      */
     def messageKey: String =
       if (resumed) "round.resubmitted.resumed"
       else if (job.exists(_.isActive)) "round.resubmitted.distributing"
+      else if (givenUp) "round.resubmitted.attempts"
       else "round.resubmitted"
   }
 
@@ -382,6 +394,11 @@ object RoundService {
   final case class Started(job: Job) extends DistributionStart
   final case class Resumed(job: Job) extends DistributionStart
   final case class AlreadyRunning(job: Job) extends DistributionStart
+
+  /** The round's distribution was given up after its attempts: not resumed. */
+  final case class GivenUp(job: Job) extends DistributionStart {
+    def reference: String = job.failure.flatMap(_.reference).getOrElse("")
+  }
 
   private final case class AlreadyDistributing(active: Job) extends RuntimeException(s"job ${active.id} is active")
 
