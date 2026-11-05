@@ -301,35 +301,49 @@ test.describe('the guides\' screenshots', () => {
       await page.getByRole('button', { name: 'Save' }).click();
       await expect(page).toHaveURL(/\/admin\/rounds/);
     };
+    const { juror } = fixture.accounts;
+    const filePath = largePath(fixture.roundRatingId, juror.id, juror.ratedPageId);
+    const context = await contextAs('juror');
+    await context.addCookies([{ name: 'theme', value: 'dark', url: baseUrl }]);
+    const view = await sized(context);
+    let rateBefore = 0; // the file's own rate in stars, to give back
+    let voted = false;
     try {
       if (!was) await setOption(true);
-      const { juror } = fixture.accounts;
-      const context = await contextAs('juror');
-      await context.addCookies([{ name: 'theme', value: 'dark', url: baseUrl }]);
-      const view = await sized(context);
-      await view.goto(largePath(fixture.roundRatingId, juror.id, juror.ratedPageId));
+      await view.goto(filePath);
       await expect(view.getByRole('button', { name: /Worst mark/ }).first()).toBeVisible();
       // the shot shows a file that has the worst mark, as the guide says: give it one, then
-      // open the file again, as the large view moves on after a vote. The file's own rate is
-      // restored below, so that a rerun on the same server still shows its plain stars.
-      const rateBefore = Number(await view.locator('.large-stars').first().getAttribute('data-score')) || 0;
+      // open the file again, as the large view moves on after a vote. The vote is undone in
+      // the finally below, so that a rerun on the same server still shows plain stars.
+      rateBefore = Number(await view.locator('.large-stars').first().getAttribute('data-score')) || 0;
+      voted = true;
       await view.getByRole('button', { name: /Worst mark/ }).first().click();
       await view.waitForLoadState('networkidle');
-      await view.goto(largePath(fixture.roundRatingId, juror.id, juror.ratedPageId));
+      await view.goto(filePath);
       await expect(view.getByRole('button', { name: /Clear the vote/ }).first()).toBeVisible();
       await view.waitForLoadState('networkidle');
       await top(view, path.join(OUT_DIR, 'juror-large-view-worst-mark.png'), 520);
-      // undo the vote: clear it, and give the file its earlier rate back (a click on that star)
-      await view.getByRole('button', { name: /Clear the vote/ }).first().click();
-      await view.waitForLoadState('networkidle');
-      if (rateBefore > 0) {
-        await view.goto(largePath(fixture.roundRatingId, juror.id, juror.ratedPageId));
-        await view.locator('.large-stars .wlx-star').nth(rateBefore - 1).click();
-        await view.waitForLoadState('networkidle');
-      }
-      await context.close();
     } finally {
-      if (!was) await setOption(false);
+      try {
+        if (voted) {
+          // clear the vote, and give the file its earlier whole-star rate back (a click on that
+          // star); a half-star rate (3.5) is not restored, as a click gives whole stars
+          await view.goto(filePath);
+          const clear = view.getByRole('button', { name: /Clear the vote/ }).first();
+          if (await clear.count()) {
+            await clear.click();
+            await view.waitForLoadState('networkidle');
+          }
+          if (rateBefore > 0 && Number.isInteger(rateBefore)) {
+            await view.goto(filePath);
+            await view.locator('.large-stars .wlx-star').nth(rateBefore - 1).click();
+            await view.waitForLoadState('networkidle');
+          }
+        }
+      } finally {
+        await context.close();
+        if (!was) await setOption(false);
+      }
     }
     await admin.close();
   });
