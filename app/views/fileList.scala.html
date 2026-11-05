@@ -135,7 +135,7 @@
                     @if(binaryVotes) {
                         <td class="text-nowrap">@binaryTally(file.approvals, file.rejections)</td>
                     } else {
-                        <td>@file.rateString(round.get)</td>
+                        <td>@file.rateText(round.get)</td>
                     }
                     @for((_, average) <- criteria.of(file.pageId)) {
                         <td class="wlx-criterion-average">@average.map(org.intracer.wmua.CriteriaResults.format)</td>

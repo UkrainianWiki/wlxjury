@@ -36,13 +36,13 @@ case class ImageWithRating(
     ownJuryRating.rate = rate
   }
 
-  /** The file's average rate: a rated round's [[rateSum]] over its jurors. A binary round's is
-    * the legacy rule of a top-N from it (max(approvals − rejections, 0) over its assigned
-    * jurors, `SelectTopByRating` without an order); its lists read [[approvals]] and
-    * [[rejections]].
+  /** The file's score: a rated round's [[rateSum]] over [[ratedJurors]], its round's
+    * [[AverageRule]] (the sum itself for [[AverageRule.Sum]]); one juror's own vote, its rate. A binary round's is the legacy rule of a
+    * top-N from it (max(approvals − rejections, 0) over its assigned jurors,
+    * `SelectTopByRating` without an order); its lists read [[approvals]] and [[rejections]].
     */
   def totalRate(round: Round): Double =
-    if (votes.size == 1 && votes.head.juryId != 0)
+    if (ownVote)
       votes.head.rate
     else if (ratedJurors(round) == 0)
       0.0
@@ -86,19 +86,35 @@ case class ImageWithRating(
 
   def jurorRateStr(juror: User): String = jurorRate(juror).fold("")(_.toString)
 
-  def ratedJurors(round: Round): Long =
-    if (round.isBinary) {
-      round.numberOfAssignedJurors
-    } else if (
-      votes.headOption.exists(_.juryId == 0) && !round.optionalRate
-    )
-      countFromDb
-    else if (votes.size == 1 && votes.headOption.exists(_.juryId != 0))
-      1
-    else if (round.optionalRate)
-      round.numberOfJurorsForAverageRate
-    else votes.count(_.rate > 0)
+  /** One juror's vote of the file: a juror's own list (not a grouped row). */
+  private def ownVote: Boolean = votes.size == 1 && votes.head.juryId != 0
 
+  /** The jurors the file is assigned to: its vote rows, of a grouped row their count. */
+  def assignedJurors: Long = if (grouped) countFromDb else votes.size
+
+  /** The file's votes rated above 0 (in a criteria round, rated in every criterion: U5); of a
+    * grouped row from its query's `tally` ([[approvals]]).
+    */
+  def ratedVotes: Long = if (grouped) approvals else votes.count(_.rate > 0)
+
+  /** The denominator of the file's score ([[totalRate]]): a binary round's jurors; one
+    * juror's own vote, 1; else as the round's [[AverageRule]] has it: the file's rated votes, its
+    * assigned jurors, or 1 (the sum).
+    */
+  def ratedJurors(round: Round): Long =
+    if (round.isBinary) round.numberOfAssignedJurors
+    else if (ownVote) 1
+    else
+      round.averageRule match {
+        case AverageRule.Rated    => ratedVotes
+        case AverageRule.Assigned => assignedJurors
+        case AverageRule.Sum      => 1
+      }
+
+  /** The file's rate as the CSV has it: a binary round's approvals; a rated round's average and
+    * `(sum / jurors)`, the jurors its [[AverageRule]] divides by; the sum alone in an
+    * [[AverageRule.Sum]] round, or for a file with fewer than two.
+    */
   def rateString(round: Round): String = {
     if (round.isBinary) {
       approvals.toString
@@ -109,18 +125,52 @@ case class ImageWithRating(
     }
   }
 
+  /** The file's rate as a page shows it (the by-rate gallery, the file list): as [[rateString]],
+    * with the denominator in words for a file of several jurors: `14.50 (29 / 2 of 3 jurors)`
+    * over the rated jurors, `9.67 (29 / 3 jurors)` over the assigned, `29 (sum of 3 jurors)` in
+    * an [[AverageRule.Sum]] round.
+    */
+  def rateText(round: Round)(implicit messages: play.api.i18n.Messages): String =
+    if (round.isBinary || ownVote || assignedJurors < 2) rateString(round)
+    else if (round.averageRule == AverageRule.Sum) messages("average.sum", rateSum.toString, assignedJurors.toString)
+    else messages("average.rate", Formatter.fmt.format(totalRate(round)), denominator(round))
+
+  /** The sum and the jurors it is averaged over, in words: `29 / 2 of 3 jurors` (the rated of the
+    * assigned, or `29 / 3 jurors` when all rated), `29 / 3 jurors` (the assigned); in an
+    * [[AverageRule.Sum]] round, `sum of 3 jurors`.
+    */
+  def denominator(round: Round)(implicit messages: play.api.i18n.Messages): String = {
+    val n = ratedJurors(round)
+    round.averageRule match {
+      case AverageRule.Sum => messages("average.denominator.sum", assignedJurors.toString)
+      case AverageRule.Rated if n != assignedJurors =>
+        messages("average.denominator.rated", rateSum.toString, n.toString, assignedJurors.toString)
+      case _ => messages("average.denominator.jurors", rateSum.toString, n.toString)
+    }
+  }
+
+  /** The rate a file's stars are filled to: its [[totalRate]]; in an [[AverageRule.Sum]] round,
+    * whose score (the sum) can exceed the stars, the average over its rated jurors (one vote's
+    * scale).
+    */
+  def starRate(round: Round): Double =
+    if (round.averageRule != AverageRule.Sum || round.isBinary || ownVote) totalRate(round)
+    else if (ratedVotes == 0) 0.0
+    else rateSum.toDouble / ratedVotes
+
   /** A criteria round's rate where its stars are drawn (the by-rate gallery, the large view for
     * all the jurors): per criterion in stars, as the stars ([[Round.perCriterion]]), then the
     * sum in stored units, the scale of the CSV, the ranks and "min average rate" (U7): one
-    * vote's `3.50 (Σ 7)`; several jurors' `4.83 (Σ 9.67: 29 / 3 jurors)`, their average sum, and
-    * the rate sum over [[ratedJurors]] (of a grouped row the assigned jurors, unrated as 0).
+    * vote's `3.50 (Σ 7)`; several jurors' `7.25 (Σ 14.50: 29 / 2 of 3 jurors)`, their average
+    * sum and its [[denominator]] by the round's [[AverageRule]]; in an [[AverageRule.Sum]] round
+    * `3.63 (Σ 29, sum of 3 jurors)`, the stars of the rated jurors' average ([[starRate]]).
     */
   def criteriaRateString(round: Round)(implicit messages: play.api.i18n.Messages): String = {
-    val jurors = ratedJurors(round)
-    val stars = CriteriaResults.format(BigDecimal(round.perCriterion(totalRate(round)) / round.starUnits))
-    if (jurors < 2) messages("criteria.rate.one", stars, rateSum.toString)
-    else messages("criteria.rate.many", stars, CriteriaResults.format(BigDecimal(totalRate(round))), rateSum.toString,
-      jurors.toString)
+    val stars = CriteriaResults.format(BigDecimal(round.perCriterion(starRate(round)) / round.starUnits))
+    if (ownVote || assignedJurors < 2) messages("criteria.rate.one", stars, rateSum.toString)
+    else if (round.averageRule == AverageRule.Sum)
+      messages("criteria.rate.sum", stars, rateSum.toString, assignedJurors.toString)
+    else messages("criteria.rate.many", stars, CriteriaResults.format(BigDecimal(totalRate(round))), denominator(round))
   }
 
   def pageId: Long = image.pageId
@@ -132,23 +182,36 @@ case class ImageWithRating(
 
 object ImageWithRating {
 
-  /** How a list of all of a round's votes (file list, CSV) orders and ranks its files: by
-    * aggregates of each file's votes, as SQL over the file's vote rows `s` with their
-    * directions (1 ascending, -1 descending), and their values of a file in memory. Files of
-    * the same values tie, and share a rank range.
+  /** How a list of all of a round's votes (file list, CSV, the by-rate gallery for all the
+    * jurors) orders and ranks its files: by aggregates of each file's votes, as SQL over the
+    * file's vote rows `s` with their directions (1 ascending, -1 descending), and their values
+    * of a file in memory. Files of the same values tie, and share a rank range.
     */
-  final case class RankKey(columns: Seq[(String, Int)], values: ImageWithRating => Seq[Int])
+  final case class RankKey(columns: Seq[(String, Int)], values: ImageWithRating => Seq[Long])
 
   object RankKey {
 
-    /** A binary round's by `order`, a rated round's by the sum of its rates as SQL has it: a
-      * rate below 0 counted as it is, not as 0 as [[ImageWithRating.rateSum]] counts it, so a
-      * file with one has its rank (of a grouped row, its one vote's sum; of a file's votes
-      * read one by one, their sum).
+    /** A binary round's by `order`. A rated round's by its average under its [[AverageRule]],
+      * then the sum of its rates, as SQL has them: the average as an exact integer key
+      * ([[AverageRule.keySql]], [[AverageRule.key]]); the sum with a rate below 0 counted as it
+      * is, not as 0 as [[ImageWithRating.rateSum]] counts it (of a grouped row, its one vote's
+      * sum; of a file's votes read one by one, their sum). An [[AverageRule.Sum]] round's by the
+      * sum alone.
       */
     def of(round: Round, order: BinaryOrder = BinaryOrder.Default): RankKey =
-      if (round.isBinary) RankKey(order.columns, file => order.values(file.approvals, file.rejections))
-      else RankKey(Seq("sum(s.rate)" -> -1), file => Seq(file.votes.map(_.rate).sum))
+      if (round.isBinary)
+        RankKey(order.columns, file => order.values(file.approvals, file.rejections).map(_.toLong))
+      else {
+        val sum = "sum(s.rate)" -> -1
+        def sumOf(file: ImageWithRating): Long = file.votes.map(_.rate.toLong).sum
+        round.averageRule.keySql(AverageRule.VoteTerms) match {
+          case None => RankKey(Seq(sum), file => Seq(sumOf(file)))
+          case Some(average) =>
+            val denominator: ImageWithRating => Long =
+              if (round.averageRule == AverageRule.Rated) _.ratedVotes else _.assignedJurors
+            RankKey(Seq(average -> -1, sum), file => Seq(AverageRule.key(sumOf(file), denominator(file)), sumOf(file)))
+        }
+      }
   }
 
   /** The ranks of a list's files among all of them, from the number of its files of each key,

@@ -159,8 +159,12 @@ class RoundService @Inject() (
     val state = distribution.initialState(round, listOnly)
     // the top-N's order and the rejected-by filter only where they apply: from a yes/no
     // previous round
-    val binaryPrevious =
-      round.previousIds.nonEmpty && Round.findByIds(round.contestId, round.previousIds).exists(_.isBinary)
+    val previous = if (round.previousIds.isEmpty) Nil else Round.findByIds(round.contestId, round.previousIds)
+    val binaryPrevious = previous.exists(_.isBinary)
+    // the rule a rated previous round scores its files by (V90), read under its lock: the
+    // distribution ranks and filters by this one, whatever the round's rule is changed to later
+    val prevAverageRule = round.previousIds.headOption.flatMap(id => previous.find(_.id.contains(id)))
+      .filterNot(_.isBinary).map(_.averageRule.param)
     val topOrder = round.topImages.filter(_ => binaryPrevious).map(_ => round.topOrderParam)
     val rejectedBy = round.rejectedByFilter.filter(_ => binaryPrevious)
     jobs.enqueue(
@@ -173,7 +177,8 @@ class RoundService @Inject() (
         params = Json.obj(
           "roundId" -> round.getId,
           "completingCreation" -> completingCreation,
-          // for the record: the job reads the round, whose settings don't change once created
+          // for the record: the job reads the round, whose settings don't change once created;
+          // but prevAverageRule, which the job reads from here (RoundDistributionHandler.context)
           "settings" -> Json.obj(
             "previous" -> round.previous,
             "distribution" -> round.distribution,
@@ -182,6 +187,7 @@ class RoundService @Inject() (
             "prevMinAvgRate" -> round.prevMinAvgRate,
             "topImages" -> round.topImages,
             "topBinaryOrder" -> topOrder,
+            "prevAverageRule" -> prevAverageRule,
             "regions" -> round.regions,
             "monuments" -> round.monuments,
             "category" -> round.category,

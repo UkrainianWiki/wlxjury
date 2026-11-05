@@ -1,7 +1,7 @@
 package controllers
 
-import db.scalikejdbc.{Round, User}
-import db.scalikejdbc.rewrite.ImageDbNew
+import db.scalikejdbc.{Round, RoundCounts, User}
+import db.scalikejdbc.rewrite.{ImageDbNew, RoundImageQuery}
 import db.scalikejdbc.rewrite.ImageDbNew.{Limit, SelectionQuery}
 import org.intracer.wmua.{BinaryOrder, ImageWithRating}
 import org.intracer.wmua.ImageWithRating.{RankKey, Ranks}
@@ -146,7 +146,9 @@ final case class RoundList(
     region: Option[String] = None,
     filter: VoteFilter = VoteFilter.All,
     order: ListOrder = ListOrder.ByRate,
-    view: GalleryView = GalleryView.Gallery
+    view: GalleryView = GalleryView.Gallery,
+    // `roundImage.read` (P2b): all the jurors' list from round_image's counts ([[countsQuery]])
+    countsRead: Boolean = false
 ) {
 
   def roundId: Long = round.getId
@@ -176,6 +178,9 @@ final case class RoundList(
   private def orderColumns: Seq[(String, Int)] =
     if (withDetails) rankKey.columns ++ (if (round.isBinary) Seq("s.page_id" -> 1) else ListOrder.FileOrder.columns)
     else if (aggregateBinary && order != ListOrder.FileOrder) ListOrder.Binary(binaryOrder).columns
+    // all the jurors' votes on a rated round by rate: by the average under the round's rule, as
+    // its ranks and a file list are ([[rankKey]]), then in file order
+    else if (asUserId == 0 && !round.isBinary && order == ListOrder.ByRate) rankKey.columns ++ ListOrder.FileOrder.columns
     else order match {
       case ListOrder.Binary(_) => ListOrder.ByRate.columns
       case o                   => o.columns
@@ -197,12 +202,42 @@ final case class RoundList(
       // all the jurors' votes: the files with a vote the filter matches, counted and ordered
       // by all their votes; a juror's: their one vote on each file
       filesByVotes = asUserId == 0,
-      // a yes/no round's grouped rows count their approvals and rejections (its tally)
-      tally = round.isBinary,
+      // grouped rows count their approvals and rejections: a yes/no round's tally, a rated
+      // round's rated votes (the denominator of AverageRule.Rated)
+      tally = true,
       subRegions = round.specialNomination.contains("Віа Регіа")
     )
 
-  def count(): Int = query.count()
+  /** The list from `round_image`'s counts ([[RoundImageQuery]]), if it is read from them: all
+    * the jurors' votes with `roundImage.read` on, a filter and order the counts can tell, and
+    * the round's generation clean (no recount pending, [[RoundCounts.generationClean]]: one
+    * primary-key read). None: from the votes, as before P2b. Each call decides afresh.
+    */
+  def countsQuery: Option[RoundImageQuery] =
+    if (!countsRead || asUserId != 0) None
+    else RoundImageQuery.of(query, round.isBinary, rankKey.columns.map(_._1)).filter(_ => RoundCounts.generationClean(roundId))
+
+  def count(): Int = countsQuery.fold(query.count())(_.count())
+
+  /** The number of the list's files in each region, without its region filter (all the
+    * jurors' votes; a juror's come from [[jurorCounts]]).
+    */
+  def regionCounts(): Map[String, Int] = {
+    val all = copy(region = None)
+    all.countsQuery.fold(all.query.regionCounts())(_.regionCounts())
+  }
+
+  /** The list's files at `limit`, and the large view's file whatever the filter: from the
+    * counts, else the votes. A file list's rows carry their votes, read by page id.
+    */
+  private def read(limit: Limit, withPageId: Option[Long] = None, counts: Option[RoundImageQuery] = countsQuery)
+      : Seq[ImageWithRating] =
+    counts match {
+      case Some(c) =>
+        val paged = c.copy(limit = Some(limit), withPageId = withPageId)
+        if (withDetails) query.withVotes(paged.pageIds()) else paged.list()
+      case None => query.copy(limit = Some(limit), withPageId = withPageId).list()
+    }
 
   /** The juror's files by region and rate, which give the list's total, its region nav's
     * counts and the juror's tabs in one query; None for all the jurors' votes together, or
@@ -213,7 +248,7 @@ final case class RoundList(
 
   /** The pager's page of files. */
   def files(pager: Pager): Seq[ImageWithRating] =
-    query.copy(limit = Some(Limit(Some(pager.pageSize), Some(pager.offset)))).list()
+    read(Limit(Some(pager.pageSize), Some(pager.offset)))
 
   /** Whether a page of the list shows its files' ranks among all of them: a file list, or the
     * by-rate gallery in any order but file order, which the ranks would not follow.
@@ -224,12 +259,13 @@ final case class RoundList(
     * page's [[ranks]] are counted from, and the list's total (their sum, which [[count]] has
     * too), from one grouped query.
     */
-  def rankCounts(): Seq[(Seq[Int], Int)] = query.keyCounts(rankKey.columns)
+  def rankCounts(): Seq[(Seq[Long], Int)] =
+    countsQuery.fold(query.keyCounts(rankKey.columns))(_.keyCounts(rankKey.columns))
 
   /** The ranks of a page of the list's files among all of them ([[rankKey]]): a file list's, a
     * by-rate gallery's, from the list's [[rankCounts]].
     */
-  def ranks(files: Seq[ImageWithRating], counts: Seq[(Seq[Int], Int)]): Seq[String] = {
+  def ranks(files: Seq[ImageWithRating], counts: Seq[(Seq[Long], Int)]): Seq[String] = {
     val ranks = Ranks(counts)
     files.map(file => ranks(rankKey.values(file)))
   }
@@ -249,8 +285,9 @@ final case class RoundList(
     else rankPosition(pageId)
 
   /** [[position]] by the file's rank (ROW_NUMBER) among all the list's files. */
-  private[controllers] def rankPosition(pageId: Long): Option[Int] = {
-    val rank = query.copy(withPageId = Some(pageId)).imageRank(pageId)
+  private[controllers] def rankPosition(pageId: Long, counts: Option[RoundImageQuery] = countsQuery): Option[Int] = {
+    val rank = counts.fold(query.copy(withPageId = Some(pageId)).imageRank(pageId))(
+      _.copy(withPageId = Some(pageId)).imageRank(pageId))
     Option.when(rank > 0)(rank - 1)
   }
 
@@ -283,18 +320,19 @@ final case class RoundList(
       }
 
   /** [[around]] by the file's position and the list's files at an offset from it. */
-  private[controllers] def aroundAtOffset(pageId: Long): Option[Neighbourhood] =
-    rankPosition(pageId).flatMap { position =>
+  private[controllers] def aroundAtOffset(pageId: Long): Option[Neighbourhood] = {
+    // one source for the position and the files around it: the same order (W10)
+    val counts = countsQuery
+    rankPosition(pageId, counts).flatMap { position =>
       val offset = math.max(0, position - Neighbourhood.Side)
       val all = Neighbourhood.Window
-      val read = query
-        .copy(withPageId = Some(pageId),
-          limit = Some(Limit(Some(math.max(all, position - offset + 1 + Neighbourhood.Following)), Some(offset))))
-        .list()
-      val files = read.take(all)
+      val files0 =
+        read(Limit(Some(math.max(all, position - offset + 1 + Neighbourhood.Following)), Some(offset)), Some(pageId), counts)
+      val files = files0.take(all)
       Some(files.indexWhere(_.pageId == pageId)).filter(_ >= 0)
-        .map(Neighbourhood(files, _, position, ahead = read.drop(all)))
+        .map(Neighbourhood(files, _, position, ahead = files0.drop(all)))
     }
+  }
 
   /** How a vote for the file, at `before` in the list before the vote, changed its place:
     * moved by its new rate, or out of the list by the filter. Not out of the unrated files,
@@ -323,6 +361,9 @@ final case class RoundList(
   def withViewer(asUserId: Long): RoundList = copy(asUserId = asUserId)
 
   def withView(view: GalleryView): RoundList = copy(view = view)
+
+  /** The list read from `round_image`'s counts where it can be (`roundImage.read`, P2b). */
+  def withCountsRead(on: Boolean): RoundList = copy(countsRead = on)
 
   /** The list in another round, its filter all files if that round's kind hasn't it. */
   def withRound(round: Round): RoundList = copy(round = round, filter = filter.in(round))

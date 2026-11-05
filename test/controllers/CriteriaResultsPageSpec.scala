@@ -97,9 +97,9 @@ class CriteriaResultsPageSpec extends PlaySpecification with PlayTestDb {
         val html = contentAsString(result)
         val (head, rows) = table(html)
         head.slice(2, 5) === Seq("Total rating (sum of the criteria)", "Scientific value", hostileName)
-        // file 0: 29 over its two rated jurors (the list reads each vote: juror 3's partial one
-        // is unrated, U5); averages of jurors 1 and 2 only
-        rows("File:Image0.jpg").slice(2, 5) === Seq("14.50 (29 / 2)", "7.00", "7.50")
+        // file 0: 29 over its two rated jurors of three (the round's rule, V90's default: juror
+        // 3's partial vote is unrated, U5); averages of jurors 1 and 2 only
+        rows("File:Image0.jpg").slice(2, 5) === Seq("14.50 (29 / 2 of 3 jurors)", "7.00", "7.50")
         rows("File:Image1.jpg").slice(3, 5) === Seq("5.00", "5.00")
         // juror columns stay the sums: 14, 15, and 0 for the partial vote
         rows("File:Image0.jpg").takeRight(3) === Seq("14", "15", "0")
@@ -127,12 +127,12 @@ class CriteriaResultsPageSpec extends PlaySpecification with PlayTestDb {
         val tile = Jsoup.parse(html).getElementById(f.images.head.pageId.toString)
         tile.select(".wlx-criteria-averages li").asScala.map(_.text) ===
           Seq("Scientific value: 7.00", s"$hostileName: 7.50")
-        // the gallery's grouped row: 29 over the 3 assigned jurors (juror 3's partly rated vote
-        // counts 0), 9.67, over 2 criteria: 4.83, rounded to 5 of the round's 10 stars; the
-        // number says so (Q2: its denominator shown)
+        // the gallery's grouped row, by the round's rule as every view (V90; was over the 3
+        // assigned jurors before): 29 over the 2 who rated it, 14.50, over 2 criteria: 7.25, the
+        // criteria averages' mean, rounded to 7 of the round's 10 stars; the number says so
         tile.select(".rate-stars i.wlx-star").size === 10
-        tile.select(".rate-stars i.bi-star-fill").size === 5
-        tile.select(".rate-stars").text() must contain("4.83 (Σ 9.67: 29 / 3 jurors)")
+        tile.select(".rate-stars i.bi-star-fill").size === 7
+        tile.select(".rate-stars").text() must contain("7.25 (Σ 14.50: 29 / 2 of 3 jurors)")
         html must not(contain("<script>alert(1)"))
       }
     }
@@ -158,9 +158,9 @@ class CriteriaResultsPageSpec extends PlaySpecification with PlayTestDb {
         status(result) === OK
         val html = contentAsString(result)
         val doc = Jsoup.parse(html)
-        // 29 / 3 per juror, over 2 criteria
-        doc.getElementById("rate-number").text() === "4.83"
-        doc.select(".wlx-criteria-overall-rate").text() === "4.83 (Σ 9.67: 29 / 3 jurors)"
+        // 29 / 2 rated jurors, over 2 criteria
+        doc.getElementById("rate-number").text() === "7.25"
+        doc.select(".wlx-criteria-overall-rate").text() === "7.25 (Σ 14.50: 29 / 2 of 3 jurors)"
         doc.getElementById("rate-number1").text() === "7"
         doc.getElementById("rate-number2").text() === "7.5"
         doc.select(".large-side .wlx-criterion-name").asScala.map(_.text).take(2) === Seq("Scientific value", hostileName)
@@ -172,16 +172,30 @@ class CriteriaResultsPageSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
-    "average the file list's rate over the round's active jurors in an optional-rate round" in {
+    "show the sum in a round scored by the sum (an optional-rate round's since V90)" in {
       testDbApp { app =>
         val f = fixture()
-        // juror 3 rates file 1 fully: active in the round, though file 0's vote stays partial
+        // juror 3 rates file 1 fully, though file 0's vote stays partial
         val vote = VoteJdbc.findBy(f.images(1).pageId, f.juror3.getId, f.round.getId).get
         Seq(1L -> 4, f.custom.id -> 4).foreach { case (c, r) => CriteriaRate.updateRate(vote.getId, c, r) must beTrue }
-        DB.autoCommit(implicit s => sql"UPDATE round SET optional_rate = 1 WHERE id = ${f.round.getId}".update())
+        DB.autoCommit(implicit s => sql"UPDATE round SET average_rule = 'sum' WHERE id = ${f.round.getId}".update())
         val (_, rows) = table(contentAsString(get(app, f.organizer, fileList(f, 0))))
-        // over the 3 active jurors, not file 0's 2 rated votes; its averages still over those 2
-        rows("File:Image0.jpg").slice(2, 5) === Seq("9.67 (29 / 3)", "7.00", "7.50")
+        // the sum of file 0's rates, its criteria averages still over its 2 fully rated votes
+        val doc = Jsoup.parse(contentAsString(get(app, f.organizer, large(f, 0, f.images.head.pageId))))
+        (rows("File:Image0.jpg").slice(2, 5) === Seq("29 (sum of 3 jurors)", "7.00", "7.50")) and
+          // the large view: the stars of the rated jurors' average per criterion, the sum beside them
+          (doc.select(".wlx-criteria-overall-rate").text() === "7.25 (Σ 29, sum of 3 jurors)")
+      }
+    }
+
+    "average over the assigned jurors in a round of that rule, the criteria averages as before" in {
+      testDbApp { app =>
+        val f = fixture()
+        DB.autoCommit(implicit s => sql"UPDATE round SET average_rule = 'assigned' WHERE id = ${f.round.getId}".update())
+        val (_, rows) = table(contentAsString(get(app, f.organizer, fileList(f, 0))))
+        val doc = Jsoup.parse(contentAsString(get(app, f.organizer, large(f, 0, f.images.head.pageId))))
+        (rows("File:Image0.jpg").slice(2, 5) === Seq("9.67 (29 / 3 jurors)", "7.00", "7.50")) and
+          (doc.select(".wlx-criteria-overall-rate").text() === "4.83 (Σ 9.67: 29 / 3 jurors)")
       }
     }
   }
@@ -197,7 +211,7 @@ class CriteriaResultsPageSpec extends PlaySpecification with PlayTestDb {
         rows("File:Image0.jpg").slice(3, 5) === Seq("7.00", "7.50")
         val doc = Jsoup.parse(contentAsString(get(app, f.juror1, large(f, 0, f.images.head.pageId))))
         doc.getElementById("rate-number1").text() === "7"
-        doc.select(".wlx-criteria-overall-rate").text() === "4.83 (Σ 9.67: 29 / 3 jurors)"
+        doc.select(".wlx-criteria-overall-rate").text() === "7.25 (Σ 14.50: 29 / 2 of 3 jurors)"
         doc.select(".large-line .wlx-criteria-rates").asScala.map(_.select("li").asScala.map(_.text).toSeq).toSet ===
           Set(Seq("Scientific value: 8", s"$hostileName: 6"), Seq("Scientific value: 6", s"$hostileName: 9"),
             Seq("Scientific value: 2", s"$hostileName: –"))

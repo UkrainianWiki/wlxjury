@@ -312,6 +312,54 @@ class FlywayUpgradeSpec extends Specification with BeforeAll with AfterAll {
     }
   }
 
+  /** V90's rollback SQL after reopen (docs/plans/2026-11-02-round-images-two-step.md, §17). */
+  private val v90Rollback = Seq(
+    "ALTER TABLE round DROP CONSTRAINT round_average_rule_chk",
+    "ALTER TABLE round DROP COLUMN average_rule, ALGORITHM = INSTANT",
+    "DELETE FROM flyway_schema_history WHERE version = '90'")
+
+  "V90's average rule" should {
+    "make an optional-rate round a sum round, the others rated, refuse other values, and roll back to V89's schema" in {
+      emptyDb("fw_v89")
+      flyway("fw_v89", production.copy(target = Some("89"))).migrate()
+      emptyDb("fw_v90_back")
+      flyway("fw_v90_back", production.copy(target = Some("89"))).migrate().success must beTrue
+      Using.resource(connect("fw_v90_back"))(c => run(c, Seq(
+        "INSERT INTO round (id, number, contest_id, rates, optional_rate, created_at) VALUES " +
+          "(1, 1, 1, 10, 1, '2020-01-01 00:00:00'), (2, 2, 1, 10, NULL, '2020-01-01 00:00:00'), " +
+          "(3, 3, 1, 1, 0, '2020-01-01 00:00:00')")))
+      flyway("fw_v90_back", production.copy(target = Some("90"))).migrate().success must beTrue
+      val migrated = Using.resource(connect("fw_v90_back")) { c =>
+        val rules = rows(c, "SELECT id, average_rule, CAST(created_at AS CHAR) FROM round ORDER BY id")(rs =>
+          (rs.getLong(1), rs.getString(2), rs.getString(3)))
+        // the check: an unknown value and another case refused
+        val refused = Seq("'average'", "'SUM'").map(v =>
+          scala.util.Try(run(c, Seq(s"UPDATE round SET average_rule = $v WHERE id = 2"))).isFailure)
+        (rules, refused)
+      }
+      (migrated._1 === List((1L, "sum", "2020-01-01 00:00:00"), (2L, "rated", "2020-01-01 00:00:00"),
+        (3L, "rated", "2020-01-01 00:00:00"))) and (migrated._2 === Seq(true, true)) and {
+        val once = schema("fw_v90_back")
+        // a rerun of V90's statements on a database that has them changes nothing
+        val v90 = new String(java.nio.file.Files.readAllBytes(
+          java.nio.file.Paths.get("conf/db/migration/default/V90__Round_average_rule.sql")), "UTF-8")
+          .linesIterator.filterNot(_.trim.startsWith("--")).mkString("\n").split(";").map(_.trim).filter(_.nonEmpty).toSeq
+        Using.resource(connect("fw_v90_back"))(c => run(c, v90))
+        schema("fw_v90_back") === once
+      } and {
+        Using.resource(connect("fw_v90_back"))(c => run(c, v90Rollback))
+        def tablesOnly(s: String) = s.split(";\n\n").filterNot(_.matches("(?s)^\\w+: \\d+ rows.*")).mkString(";\n\n")
+        (history("fw_v90_back").map(_.split(" \\| ")(1)) === upTo("89")) and
+          (tablesOnly(schema("fw_v90_back")) === tablesOnly(schema("fw_v89"))) and {
+            // forward again: the optional-rate round a sum round again
+            flyway("fw_v90_back", production.copy(target = Some("90"))).migrate().success must beTrue
+            Using.resource(connect("fw_v90_back"))(c =>
+              rows(c, "SELECT average_rule FROM round ORDER BY id")(_.getString(1))) === List("sum", "rated", "rated")
+          }
+      }
+    }
+  }
+
   "the app's start with production's settings but without auto" should {
     "refuse while a migration is pending, without changing the database" in {
       emptyDb("fw_pending")

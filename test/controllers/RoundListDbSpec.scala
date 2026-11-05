@@ -286,7 +286,7 @@ class RoundListDbSpec extends Specification with TestDb with BeforeAll with Befo
 
   "all the jurors' votes on a rated round" should {
 
-    "place a file in the large view where the by-rate gallery lists it, by the rate sum" in {
+    "place a file in the large view where the by-rate gallery lists it, by the rate sum in a sum round" in {
       val (contest, round, user) = setUp(Round.ratesById(5))
       val images = createImages(4)
       val jurors = user +: (1 to 2).map(i =>
@@ -297,8 +297,11 @@ class RoundListDbSpec extends Specification with TestDb with BeforeAll with Befo
       selectionDao.batchInsert(images.zip(votes).flatMap { case (image, rates) =>
         jurors.zip(rates).map { case (j, r) => Vote(image, j, round, r) }
       })
-      val byRate = RoundList(round, 0, view = GalleryView.ByRate)
+      val byRate = RoundList(round.copy(averageRule = org.intracer.wmua.AverageRule.Sum), 0, view = GalleryView.ByRate)
       val ordered = Seq(2, 1, 3, 0).map(images(_).pageId)
+      // by the average over the jurors who rated each file (the default rule): 1, 5, 2, 4
+      val byAverage = RoundList(round, 0, view = GalleryView.ByRate)
+      (byAverage.files(Pager(1, 4)).map(_.pageId) must_== Seq(1, 3, 2, 0).map(images(_).pageId)) and
       (byRate.files(Pager(1, 4)).map(_.pageId) must_== ordered) and
         (ordered.map(byRate.position) must_== ordered.indices.map(Some(_))) and
         // its large view's files to move among, previous and next as the gallery has them
@@ -412,8 +415,9 @@ class RoundListDbSpec extends Specification with TestDb with BeforeAll with Befo
         (lists.map(_.count()) must_== Seq(2, 2, 2, 2, 2, 2, 1, 1))
     }
 
-    "rank a rated round's files by their rate sums, rates below 0 too, across pages and past the end" in {
-      val (round, _, ids) = setUpRated()
+    "rank a sum round's files by their rate sums, rates below 0 too, across pages and past the end" in {
+      val (rated, _, ids) = setUpRated()
+      val round = rated.copy(averageRule = org.intracer.wmua.AverageRule.Sum)
       // F2 6, F1 5, F0 3, F3 and F5 2 (in file order), F4 -1
       val ordered = Seq(2, 1, 0, 3, 5, 4).map(ids)
       forall(Seq(GalleryView.ByRate, GalleryView.FileList)) { view =>

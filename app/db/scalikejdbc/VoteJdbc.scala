@@ -208,20 +208,6 @@ object VoteJdbc extends CRUDMapper[Vote] {
     }
   }
 
-  def activeJurors(roundId: Long): Int =
-    sql"""SELECT count( 1 )
-    FROM (
-
-      SELECT s.jury_id
-    FROM vote s
-    WHERE s.round_id = $roundId AND s.deleted_at IS NULL
-    GROUP BY s.jury_id
-    HAVING sum(s.rate) > 0
-    ) j"""
-      .map(_.int(1))
-      .single()
-      .get
-
   def allJurors(roundId: Long): Long =
     where("roundId" -> roundId)
       .distinctCount("juryId")

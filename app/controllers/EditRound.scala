@@ -2,7 +2,7 @@ package controllers
 
 import db.scalikejdbc.{ContestJuryJdbc, CriterionJdbc, MediaType, Round, RoundCriterion, RoundLimits, User}
 import org.scalawiki.wlx.dto.SpecialNomination
-import org.intracer.wmua.{BinaryOrder, CategoryOperation, CategoryRule, Criterion}
+import org.intracer.wmua.{AverageRule, BinaryOrder, CategoryOperation, CategoryRule, Criterion}
 import play.api.data.{Form, Mapping}
 import play.api.data.Forms._
 import play.api.data.validation._
@@ -16,13 +16,16 @@ import scala.util.Try
   * @param criteriaShown the form had the criteria selects (`round.criterionIds`): a client
   *                      without them (a script, an older page) leaves an existing round's
   *                      criteria as they are
+  * @param averageRuleShown the form had the score select (`round.averageRule`): a client without
+  *                      it leaves an existing round's rule as it is
   */
 case class EditRound(
     round: Round,
     jurors: Seq[Long],
     fileList: Option[String] = None,
     newImages: Boolean = false,
-    criteriaShown: Boolean = true
+    criteriaShown: Boolean = true,
+    averageRuleShown: Boolean = true
 )
 
 object EditRound {
@@ -78,8 +81,12 @@ object EditRound {
       "rejectedBy" -> optional(text),
       "criteria" -> seq(text),
       "criteriaShown" -> boolean,
-      "halfStar" -> boolean
-    )((edit, excludeCoi, selected, topOrder, rejectedBy, criteria, criteriaShown, halfStar) => {
+      "halfStar" -> boolean,
+      // how a rated round scores its files (V90): one of AverageRule's values; a client without it
+      // (an older page, a script) gets the default for a new round, an edit keeps the stored one
+      // (RoundController.saveRound)
+      "averageRule" -> optional(text).verifying("error.invalid", _.forall(AverageRule.parse(_).isDefined))
+    )((edit, excludeCoi, selected, topOrder, rejectedBy, criteria, criteriaShown, halfStar, averageRule) => {
       val configured = selected match {
         case None => edit.round // Older clients omitted the clause; retain their inference.
         case Some(value) =>
@@ -92,10 +99,13 @@ object EditRound {
       edit.copy(criteriaShown = criteriaShown, round = configured.copy(excludeCoi = excludeCoi,
         topBinaryOrder = edit.round.topImages.flatMap(_ => BinaryOrder.ofForm(topOrder)),
         prevRejectedBy = rejectedBy.flatMap(s => Try(s.toInt).toOption).filter(_ > 0),
-        criterionIds = criterionIdsOf(criteria), halfStar = halfStar))
+        criterionIds = criterionIdsOf(criteria), halfStar = halfStar,
+        averageRule = averageRule.flatMap(AverageRule.parse).getOrElse(AverageRule.Default)),
+        averageRuleShown = averageRule.isDefined)
     })(edit => Some((edit, edit.round.excludeCoi, Some(edit.round.categoryRule.operation.formValue),
       edit.round.topImages.map(_ => edit.round.topOrderParam), edit.round.rejectedByFilter.map(_.toString),
-      edit.round.criterionIds.map(_.toString), edit.criteriaShown, edit.round.halfStar)))
+      edit.round.criterionIds.map(_.toString), edit.criteriaShown, edit.round.halfStar,
+      Some(edit.round.averageRule.param))))
       .verifying(validCategories)
       .verifying(validCriteria)
   )

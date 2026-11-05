@@ -117,6 +117,15 @@
                             Round.rates.map(x => (x.id.toString, if(x.id == 1) x.name else Messages("1-x.rating", x.id))),
                             Symbol("_label") -> Messages("rating.type"), Symbol("readonly") -> noEdit)
 
+                        @* how a rated round scores its files (V90, AverageRule): editable on an existing
+                           round too, as it changes only how results are shown; a next round's distribution
+                           reads the rule recorded when it was queued. The form is admins' only. *@
+                        @bs.select(
+                            editRoundForm("averageRule"),
+                            org.intracer.wmua.AverageRule.all.map(r => (r.param, Messages(r.messageKey))),
+                            Symbol("_label") -> Messages("round.average.rule"),
+                            Symbol("_help") -> Messages("round.average.rule.help"))
+
                         @* a rated round's criteria, from the catalogue, by position: the empty
                            selects left out (EditRound.criterionIdsOf); after the round's first
                            vote only replaced in their places (RoundCriterion.update) *@

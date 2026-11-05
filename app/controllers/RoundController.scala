@@ -332,7 +332,8 @@ class RoundController @Inject() (
             // the edit of an existing round, its criteria saved
             def saveEdit(stored: Round): Result = {
               val roundId = stored.getId
-              Round.updateRound(roundId, round)
+              // the score rule as posted; a client without the select keeps the stored one
+              Round.updateRound(roundId, if (editForm.averageRuleShown) round else round.copy(averageRule = stored.averageRule))
               // before "Distribute new files", whose job then reads the round's flag
               val coi = leaveOutConflicts(stored, round.excludeCoi, user)(request.messages)
               // one message per kind: an error of the distribution wins over the removal's

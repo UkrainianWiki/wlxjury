@@ -315,7 +315,7 @@ class RoundCriteriaSpec extends PlaySpecification with PlayTestDb {
 
   "a partly rated criteria vote (U5) [J-23]" should {
 
-    "stay in the juror's Unrated list and out of the round's active jurors until every criterion is rated" in {
+    "stay in the juror's Unrated list and out of the round's rated votes until every criterion is rated" in {
       testDbApp { app =>
         val (a, _, jurors) = fixture()
         val round = created(app, a, jurors, Seq(6L, 7L))
@@ -330,9 +330,9 @@ class RoundCriteriaSpec extends PlaySpecification with PlayTestDb {
         }
         listed("unrated") must beTrue
         CriteriaRate.updateRate(vote.getId, 6L, 3) must beTrue
-        (listed("unrated"), listed("rated"), VoteJdbc.activeJurors(round.getId)) === ((true, false, 0))
+        (listed("unrated"), listed("rated"), VoteJdbc.byRound(round.getId).count(_.rate > 0)) === ((true, false, 0))
         CriteriaRate.updateRate(vote.getId, 7L, 4) must beTrue
-        (listed("unrated"), listed("rated"), VoteJdbc.activeJurors(round.getId)) === ((false, true, 1))
+        (listed("unrated"), listed("rated"), VoteJdbc.byRound(round.getId).count(_.rate > 0)) === ((false, true, 1))
       }
     }
   }
