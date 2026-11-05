@@ -199,7 +199,7 @@ test.describe('the guides\' screenshots', () => {
       // a form can't wrap a table row, so the browser leaves the inputs outside it: by id
       await page.locator('#fullname').fill('Sample Invitee');
       await page.locator('#email').fill('invitee@example.org');
-      await page.locator('#roles').selectOption({ label: 'Jury' });
+      await page.locator('#roles').selectOption({ label: 'Juror' });
       await page.locator('#add-user-button').click();
       await page.waitForLoadState('networkidle');
     }

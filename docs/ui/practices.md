@@ -231,12 +231,13 @@ Found while writing the juror guide (2026-11-03, confirmed in its review); none 
 - **U13, low–medium: the large view shows no file title;** only the image's `alt` and the
   Commons link carry it.
 - **U14, low: "Edit user" heading on one's own profile** (`editUser.scala.html`).
-- **U15 (1), low: "(Jury)" vs "Juror".** `logged.scala.html`'s contest menu names roles with
-  `Messages(r)` ("Jury"); elsewhere `role.jury` ("Juror"). Use `Messages("role." + r)`.
-- **U16 (1), low: `signin.password.link.hint` says to ask the contest's organizers for a
-  link,** but organizers can't send one, and contest admins only to an unverified member
-  (`UserController.reinvite`); for an account with a verified email and a usable password only
-  root can (`resetPassword`).
+- **U15 (1), low: "(Jury)" vs "Juror".** Fixed (2026-11-05): every role name is
+  `Messages("role." + r)` (contest menu, users page, imports, account chooser, role selects;
+  `role.no` "No role"); the plain `jury` key is gone.
+- **U16 (1), low: whom to ask.** Fixed (2026-11-05): `signin.password.link.hint` and every
+  message that says whom to ask name the contest admin, the role that invites, re-invites and
+  creates a link to share (`UserController.users`, `reinvite`, `shareInvitation`,
+  `sharePasswordLink`); root alone mails a reset (`resetPassword`).
 - **U17, low bug: "No contests" in the account chooser.** `OAuthChooserController.entry` lists
   contests only for directly choosable accounts; one that needs its password or a mailed link
   shows "No contests" even when it has some.
@@ -261,7 +262,7 @@ texts, for view specs. Each can get a browser test with its fix.
   contest files' import, contest images, users), the theme switch's unpressed labels (login
   page, profile), and `text-muted`-like text on the users page.
 - **U20 (4.1):** controls without an accessible name (axe `button-name` critical, `link-name`
-  serious): the icon-only buttons nested in links on the campaigns page (2) and the users page
+  serious): the icon-only buttons nested in links on the contests page (2) and the users page
   (31, one per row, `<a><button>`), and an empty thumbnail link in the rated gallery's strip;
   `aria-prohibited-attr` (serious): `aria-label` on the navbar's disabled view links (round
   statistics).

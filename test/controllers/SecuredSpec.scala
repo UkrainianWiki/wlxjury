@@ -143,7 +143,7 @@ class SecuredSpec extends PlaySpecification with Mockito with PlayTestDb
         status === Helpers.FORBIDDEN
         html must contain("This page is for: Admin, Root.")
         html must contain("Your role in contest2025 4025 in country2025: Juror.")
-        html must contain("If you need access, ask your contest organizer.")
+        html must contain("If you need access, ask your contest admin.")
         html must beMatching("""(?s).*Reference: [0-9a-f]{8}, \d{4}-\d\d-\d\d \d\d:\d\d UTC.*""")
         // contest 603 is not the user's: not named
         html must not(contain("contest603"))

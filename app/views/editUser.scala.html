@@ -67,8 +67,9 @@
                     }
 
                     @bs.text(editUserForm("email"), Symbol("_label") -> Messages("email"), Symbol("placeholder") -> Messages("email"))
+                    @* the owner is told whom to ask; an admin, what an invitation would do *@
                     @for(edited <- editedAccount; if edited.email.nonEmpty && !edited.emailVerified) {
-                        <p class="form-text email-unverified"><span class="badge text-bg-warning">@Messages("unverified")</span> @Messages("email.unverified.hint")</p>
+                        <p class="form-text email-unverified"><span class="badge text-bg-warning">@Messages("unverified")</span> @if(ownProfile) {@Messages("email.unverified.own.hint")} else {@Messages("email.unverified.hint")}</p>
                     }
                     @if(ownProfile) {
                         <p class="form-text">@Messages("email.change.explain")</p>
@@ -78,7 +79,7 @@
                         @bs.select(editUserForm("roles"),
                             (db.scalikejdbc.User.FORM_ROLES ++ (
                                     if(user.hasRole("root")) Seq("root") else Seq.empty)
-                                    ).map(x => (x, Messages(x))),
+                                    ).map(x => (x, Messages("role." + x))),
                             Symbol("_label") -> Messages("role"))
                     }
 

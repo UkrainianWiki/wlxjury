@@ -32,7 +32,7 @@ test.describe('an admin', () => {
 
   test('opens a round\'s form from the rounds list, with its jurors\' table', { tag: '@A-02' }, async ({ page, fixture }) => {
     await page.goto(`/admin/rounds?contestId=${fixture.contestId}`);
-    await expect(page.getByRole('heading', { level: 1 })).toContainText('Campaign');
+    await expect(page.getByRole('heading', { level: 1 })).toContainText('Contest');
     await page.getByRole('row', { name: /Binary Round/ }).getByRole('link', { name: '1', exact: true }).click();
     await expect(page.getByRole('heading', { level: 1, name: 'Edit round' })).toBeVisible();
     await expect(page.getByLabel('Round name (optional)')).toHaveValue('Binary Round');
@@ -70,9 +70,9 @@ test.describe('an admin', () => {
 test.describe('root', () => {
   test.use({ role: 'root' });
 
-  test('opens the campaigns page', { tag: '@R-01' }, async ({ page }) => {
+  test('opens the contests page', { tag: '@R-01' }, async ({ page }) => {
     await page.goto('/contests');
-    await expect(page.getByRole('heading', { level: 1, name: 'Campaigns' })).toBeAttached();
+    await expect(page.getByRole('heading', { level: 1, name: 'Contests' })).toBeAttached();
     await expect(page.getByRole('cell', { name: /Wiki Loves Monuments/ }).first()).toBeVisible();
   });
 });

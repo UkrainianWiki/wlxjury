@@ -93,7 +93,7 @@ class LoginControllerSpec extends PlaySpecification with Results with PlayTestDb
 
         // the denial page, saying whom to ask, not a redirect to /error
         status(result) === FORBIDDEN
-        contentAsString(result) must contain("If you need access, ask your contest organizer.")
+        contentAsString(result) must contain("If you need access, ask your contest admin.")
         session(result).get(Secured.UserName) === Some("qwerty@dot.com")
       }
     }
@@ -295,6 +295,21 @@ class LoginControllerSpec extends PlaySpecification with Results with PlayTestDb
         session(result).get(Secured.AuthVersion) === Some("3")
         Secured.sessionUser("versioned@dot.com", None, Some("3"), None) must beSome
         Secured.sessionUser("versioned@dot.com", None, None, None) must beNone
+      }
+    }
+  }
+
+  "the sign-in page" should {
+    "name the product WLX Jury, one name untranslated, in its title, heading and top bar" in {
+      testDbApp { implicit app =>
+        val messages = app.injector.instanceOf[MessagesApi]
+        val doc = org.jsoup.Jsoup.parse(contentAsString(route(app, FakeRequest(GET, "/auth").withCSRFToken).get))
+        forall(Seq("en", "fr", "uk", "ru"))(l => messages("application.name")(Lang(l)) === "WLX Jury") and
+          (doc.title === "WLX Jury") and
+          (doc.select("h1").text === "WLX Jury") and
+          (doc.select("nav .navbar-brand").text === "WLX Jury") and
+          // sentence case, as the other buttons
+          (doc.select("button#submit").text === "Sign in")
       }
     }
   }

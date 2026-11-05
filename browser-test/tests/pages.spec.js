@@ -25,7 +25,7 @@ const KNOWN = {
   'new round form': { 'color-contrast': U19, 'select-name': U21 },
   users: { 'color-contrast': U19, 'button-name': U20, 'link-name': U20 },
   'contest images': { 'color-contrast': U19, label: U21 },
-  campaigns: { 'button-name': U20, 'link-name': U20 },
+  contests: { 'button-name': U20, 'link-name': U20 },
   // aria-label on the navbar's disabled view links; seen again on 2026-11-04's re-check
   'round statistics': { 'aria-prohibited-attr': U20 },
 };
@@ -50,7 +50,7 @@ const TOUR = [
   ['new round form', 'admin', (f) => `/admin/rounds/edit?contestId=${f.contestId}`],
   ['users', 'admin', (f) => `/admin/users?contestId=${f.contestId}`],
   ['contest images', 'admin', (f) => `/contest/${f.contestId}/images`],
-  ['campaigns', 'root', () => '/contests'],
+  ['contests', 'root', () => '/contests'],
 ];
 
 const summarize = (violations) => violations.map((v) => ({

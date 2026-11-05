@@ -2,8 +2,10 @@
 
 @mainAdmin("application.name") {
 
-@* the tool's full name, centred above the form, with room below the top bar *@
-<h1 class="text-center mt-5 mb-4">@Messages("signin.heading")</h1>
+@* the product's name (one name, untranslated: application.name), centred above the form, with
+   room below the top bar. The whole block is one centred column: its texts (headings, "or", the
+   note, the theme switch) centred, its fields and buttons the column's full width *@
+<h1 class="text-center mt-4 mt-md-5 mb-4">@Messages("application.name")</h1>
 <div class="row">
 <fieldset class="col-md-6 offset-md-3">
 
@@ -63,7 +65,7 @@
 
     @* no sign-up: accounts come from an organizer's invitation; an empty installation is set up
        with its setup token (docs/deployment.md) *@
-    <div>
+    <div class="text-center">
         <p class="not-a-member">@Messages("not.a.member.invitation")</p>
         @if(noAccounts) {
             <p class="alert alert-info" role="status">@Messages("setup.needed")</p>
@@ -73,7 +75,7 @@
     @* the colour mode, signed out: theme-switch.js sets the theme cookie in the browser and
        the page's mode, with no request; signing in then takes the user's stored one *@
     @defining(controllers.Theme.of(req)) { current =>
-    <div class="d-flex align-items-center gap-2">
+    <div class="d-flex flex-wrap align-items-center justify-content-center gap-2">
         <span id="theme-switch-label">@Messages("theme"):</span>
         <div class="btn-group btn-group-sm" role="group" id="theme-switch" aria-labelledby="theme-switch-label">
         @for(theme <- controllers.Theme.All) {

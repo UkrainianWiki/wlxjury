@@ -119,22 +119,31 @@ Developed 2026-11-02 to 2026-11-03, PRs #232–#236.
   show the sum instead of the sum over the round's active jurors (same order), and a next
   round's "min average rate" from one now compares the sum (the form's hint says so).
 - **A warning beside the file score on the round form** (admins; developed 2026-11-05): for a
-  rated round with votes, changing the score says that it re-scores and re-orders the round's
+  rated round with a vote of stars (not for one with worst marks only, where every file scores 0
+  under every rule), it says that saving a different rule re-scores and re-orders the round's
   results on every page at once (nothing runs in the background), that a distribution already
-  queued keeps its rule, and which later rounds took their top files or minimum from this round
-  (their files don't change). In the page without JavaScript; with it, shown once the select
-  differs from the saved rule.
-- **The worst mark (✗) in rated rounds**, a round form option, off by default (admins; developed
-  2026-11-05, V92): jurors may give a file ✗ instead of stars, by a button in the large view and
-  on the gallery tiles, or Delete; clearing a vote stays apart (its own button, shown once the file
-  has a vote, or Backspace; 0 still clears). A ✗ counts as 0 in every average and total and as a
-  vote in a juror's progress and the round's "jurors who rated it"; the all-jurors by-rate
-  gallery, the file list, the CSV and the large view show "✗ n" beside the score, a juror's own
-  views their ✗. A next round can leave out files with at least N ✗, as it can a yes/no round's
+  queued keeps its rule, and which later rounds took files by this round's scores (those files
+  stay; a later "Distribute new files" there uses the new rule). In the page without JavaScript;
+  with it, shown once the select differs from the saved rule.
+- **The worst mark in rated rounds**, a round form option, off by default (admins; developed
+  2026-11-05, V92): jurors may give a file the worst mark instead of stars, by a button (a cross
+  icon) in the large view and on the gallery tiles, or Delete; clearing a vote stays apart (its
+  own button, shown once the file has a vote, or Backspace; 0 still clears). A worst mark counts
+  as 0 in every average and total and as a vote in a juror's progress and the round's "jurors
+  who rated it"; the all-jurors by-rate gallery, the file list and the large view show the same
+  cross icon and the number of worst marks beside the score (the words for screen readers), a
+  juror's own views their mark; the CSV writes "; worst marks: n" after the score, as its legend
+  says. A next round can leave out files with at least N worst marks, as it can a yes/no round's
   rejections. Not for criteria rounds or yes/no rounds (the form refuses it).
+- **One product name and the contest's words** (developed 2026-11-05): "WLX Jury", untranslated,
+  in the top bar, the page title and the sign-in heading; "Contest" for the former "Campaign";
+  "Juror" for a person's role everywhere roles are named ("No role" for none); in Russian and
+  Ukrainian "раунд" for a round throughout; messages that say whom to ask name the contest
+  admin, who invites. The sign-in page is one centred column; its button reads "Sign in".
 - **"Rejected by at least N" in two modes** (admins; developed 2026-11-05, V93): a next round
   leaves out the files rejected by at least N jurors, as before, or takes only them, to review the
-  rejected files in a round of their own; from a yes/no round's rejections or a rated round's ✗.
+  rejected files in a round of their own; from a yes/no round's rejections or a rated round's
+  worst marks.
 - **Links to share for setting a password** (admins and root; developed 2026-11-05, V94): besides
   sending an invitation or root's password reset by email, "Create a link to share" on the users
   page (an invitation) or on an account's page (a new password) shows the same single-use link

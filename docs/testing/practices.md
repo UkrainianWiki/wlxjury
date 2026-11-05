@@ -430,7 +430,7 @@ engine (165 in all), 4 of them its sign-ins:
 | `sections` | the large view's and the contest file's side sections restored as stored by DOMContentLoaded; the first-frame check (from `ui_checks.py`) is `fixme`, triage U18 ([UI](../ui/practices.md) §9) | J-33 |
 | `theme` | the login page's switch (no request), the navbar's CSRF POST; `auto` in both schemes with every frame, from the first, in the scheme's mode: the `data-bs-theme` attribute, the root's computed `color-scheme` and the page's computed background (the "Firefox theme flash" check) | J-30 |
 | `access` | a juror refused another juror's votes (gallery, large view, all jurors) and the admin pages, an organizer the round form: the 403 page with its reference | J-27, J-35, S-01 |
-| `organizer` | the organizer role's round statistics and by-rate list; the admin's rounds list, round form with its jurors' table, edit-then-cancel (nothing saved, no job), new round form; root's campaigns page | O-01, O-02, A-01, A-02, R-01 |
+| `organizer` | the organizer role's round statistics and by-rate list; the admin's rounds list, round form with its jurors' table, edit-then-cancel (nothing saved, no job), new round form; root's contests page | O-01, O-02, A-01, A-02, R-01 |
 | `pages` | a tour of 17 pages (each role's): status 200, one `h1`; in Chromium an axe-core scan per page (§10.5) | S-04 |
 
 **10.2 Every page passes** (`lib/fixtures.js`, for every context of every test): images and

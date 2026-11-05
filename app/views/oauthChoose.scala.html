@@ -23,7 +23,7 @@
             } else {
                 <ul class="mb-2">
                 @for((contest, role) <- e.contests) {
-                    <li>@contest: @Messages(role)</li>
+                    <li>@contest: @Messages("role." + role)</li>
                 }
                 </ul>
             }
