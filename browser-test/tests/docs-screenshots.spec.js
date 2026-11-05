@@ -121,10 +121,12 @@ test.describe('the guides\' screenshots', () => {
         expect(box, `${selector} is shown`).not.toBeNull();
         boxes.push(box);
       }
+      // the boxes are in the viewport; a full-page clip is in the page (a click may have scrolled)
+      const scrollY = await page.evaluate(() => window.scrollY);
       const left = Math.min(...boxes.map((b) => b.x));
-      const topEdge = Math.min(...boxes.map((b) => b.y));
+      const topEdge = Math.min(...boxes.map((b) => b.y)) + scrollY;
       const right = Math.max(...boxes.map((b) => b.x + b.width));
-      const bottom = Math.max(...boxes.map((b) => b.y + b.height));
+      const bottom = Math.max(...boxes.map((b) => b.y + b.height)) + scrollY;
       // with a margin, so that nothing at the edge is cut
       const x = Math.max(0, left - 12);
       await page.screenshot({ path: file, fullPage: true,
@@ -263,9 +265,11 @@ test.describe('the guides\' screenshots', () => {
     const from = await fieldRow('#rates').boundingBox();
     const to = await page.locator('#round-worst-mark').boundingBox();
     expect(from && to, 'the rating type and the worst mark are shown').toBeTruthy();
-    const y = Math.max(0, from.y - 12);
+    // the boxes are in the viewport, the full-page clip in the page: selecting scrolled to the select
+    const scrollY = await page.evaluate(() => window.scrollY);
+    const y = Math.max(0, from.y + scrollY - 12);
     await page.screenshot({ path: path.join(OUT_DIR, 'organizer-score-rule-warning.png'), fullPage: true,
-      clip: { x: 0, y, width: VIEWPORT.width, height: to.y + to.height + 12 - y } });
+      clip: { x: 0, y, width: VIEWPORT.width, height: to.y + scrollY + to.height + 12 - y } });
     await context.close(); // not saved
   });
 
