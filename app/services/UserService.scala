@@ -315,6 +315,12 @@ class UserService @Inject()(val sendMail: SMTPOrWikiMail,
     }
   }
 
+  /** The full URL of an invitation's or a password link's page for `token` ([[linkUrl]]), as a
+    * mail has it: a shared link's ([[ShareLinkService]]), shown once to its creator.
+    */
+  def invitationUrl(token: String)(implicit linkHost: LinkHost): String =
+    linkUrl(controllers.routes.LoginController.invitation(token).url)
+
   /** The link's full URL (user decision): on the host the request came to, so that a juror of
     * jury.wlm.org.ua gets a link there, but only if that host is one of the configured
     * `wlxjury.allowedHosts`, named exactly (no suffix pattern, no port): a forged `Host` header

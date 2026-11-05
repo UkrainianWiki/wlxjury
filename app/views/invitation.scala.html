@@ -1,13 +1,21 @@
-@(setPasswordForm: Form[(String, String, String)], hadPassword: Boolean, purpose: String)(implicit flash: Flash, messages: Messages, req: RequestHeader)
+@(setPasswordForm: Form[(String, String, String)], hadPassword: Boolean, purpose: String, wikiLogin: Option[String] = None)(implicit flash: Flash, messages: Messages, req: RequestHeader)
 @* an invitation's or a password link's page: the new password, twice; the token in a hidden
-   field (the POST carries the CSRF token too) *@
+   field (the POST carries the CSRF token too). `wikiLogin`: an account without an email (a
+   shared link's) signs in by its wiki account *@
 @mainAdmin("application.name") {
 <h1 class="visually-hidden">@Messages("application.name")</h1>
 <div class="row">
 <fieldset class="col-md-6 offset-md-3">
 
     <legend>@Messages(if (purpose == "password_reset") "invitation.reset.title" else "invitation.title")</legend>
-    <p>@Messages(if (hadPassword) "invitation.replaces.password" else "invitation.set.password")</p>
+    @wikiLogin match {
+        case Some(name) => {
+            <p>@Messages(if (hadPassword) "invitation.replaces.password" else "invitation.set.password.wiki", name)</p>
+        }
+        case None => {
+            <p>@Messages(if (hadPassword) "invitation.replaces.password" else "invitation.set.password")</p>
+        }
+    }
 
     @bs.form(routes.LoginController.acceptInvitation()) {
 

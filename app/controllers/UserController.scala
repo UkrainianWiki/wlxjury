@@ -12,7 +12,7 @@ import play.api.i18n.{I18nSupport, Lang, Messages}
 import play.api.mvc.{Action, AnyContent, ControllerComponents, EssentialAction, Result}
 import modules.BlockingExecutionContext
 import services.oauth.{OAuthProviders, OAuthSettings}
-import services.{ApiTokenService, PasswordHasher, UserService}
+import services.{ApiTokenService, PasswordHasher, ShareLinkService, UserService}
 import spray.util.pimpFuture
 
 import javax.inject.Inject
@@ -49,13 +49,24 @@ class UserController @Inject()(cc: ControllerComponents,
               contest <- ContestJuryJdbc.findById(contestId)) yield {
           val users = User.findByContest(contestId).sorted
           val withWiki = wikiAccountInfo(users)
+          val invitations = AccountTokenJdbc.latestInvitations(contestId, UserController.InvitationsShownDays)
+          val members = users.flatMap(u => u.id.map(_ -> u)).toMap
+          val accounts = members ++ invitations.map(_.userId).distinct.filterNot(members.contains)
+            .flatMap(id => User.findById(id).map(id -> _))
+          // a link to share only where this admin may create one (checked again on the POST)
+          val candidates = members.values.filter(u => !u.isRoot && !(u.emailVerified && u.hasUsablePassword)).map(_.getId) ++
+            invitations.filter(_.live).map(_.userId)
+          val shareable = candidates.toSet.filter(id => accounts.get(id).exists(account =>
+            ShareLinkService.mayCreate(user, account, AccountTokenJdbc.Invitation, Some(contestId)).isEmpty))
 
           Ok(
             views.html.users(user,
                              withWiki,
                              editUserForm.copy(data = Map("roles" -> "jury")),
                              Some(contest),
-                             pending = AccountTokenJdbc.pendingInvitations(contestId)))
+                             pending = invitations,
+                             accounts = accounts,
+                             shareable = shareable))
         }).getOrElse(Redirect(routes.LoginController.index)) // TODO message
     }
 
@@ -154,9 +165,28 @@ class UserController @Inject()(cc: ControllerComponents,
       user => implicit request =>
         editableUser(user, userId, contestId).fold(Redirect(routes.LoginController.index)) { editedUser =>
           if (user.id.contains(userId)) ownProfile(Ok, user)
-          else Ok(views.html.editUser(user, editUserForm.fill(editedUser), editedUser.contestId.orElse(user.currentContest)))
+          else {
+            val pageContest = editedUser.contestId.orElse(user.currentContest)
+            val mayShare =
+              ShareLinkService.mayCreate(user, editedUser, AccountTokenJdbc.PasswordReset, pageContest).isEmpty
+            Ok(views.html.editUser(user, editUserForm.fill(editedUser), pageContest,
+              passwordLinks = passwordLinksShown(user, userId), mayShareLink = mayShare))
+          }
         }
     }
+
+  /** The account's latest links that set the password, with their status, for its edit page:
+    * root sees them all; an admin, password links and invitations into contests they are an
+    * admin of.
+    */
+  private def passwordLinksShown(user: User, accountId: Long): Seq[db.scalikejdbc.AccountToken] = {
+    val adminOf = user.userContests.filter(_.role == User.ADMIN_ROLE).map(_.contestId).toSet
+    AccountTokenJdbc.findByUser(accountId)
+      .filter(t => AccountTokenJdbc.SetsPassword.contains(t.purpose))
+      .filter(t => user.hasRole(User.ROOT_ROLE) || t.purpose == AccountTokenJdbc.PasswordReset ||
+        t.contestId.exists(adminOf.contains))
+      .take(UserController.LinksShown)
+  }
 
   /** The own profile with `status`: the form (`userForm`, else the user's, its theme the stored
     * one, else the one this browser shows) and the API tokens card ([[ApiTokensCard]]) with
@@ -770,6 +800,59 @@ class UserController @Inject()(cc: ControllerComponents,
         case _ => NotFound(views.html.errorPage(Some(user), "error.title", "error.user.not.found"))
       }
     }
+
+  /** "Create a link to share" on a member's or a pending invitee's invitation into the contest
+    * (a POST with the CSRF token, from the users page): a new invitation link, shown once on
+    * the response to copy and pass on, never mailed, stored, logged or put in the session
+    * ([[ShareLinkService]]). Root, or an admin of the contest for an account that is theirs
+    * alone ([[ShareLinkService.refusal]]); the check runs as the user in that contest, never
+    * switching the session's.
+    */
+  def shareInvitation(id: Long, contestId: Long): EssentialAction =
+    withAuth(contestPermission(User.ADMIN_ROLES, Some(contestId))) { user => implicit request =>
+      shareLink(user, id, AccountTokenJdbc.Invitation, Some(contestId))
+    }
+
+  /** "Create a link to share" on an account's edit page: a password link as root's mailed
+    * reset, shown once ([[shareInvitation]]'s rules). An admin acts in `contestId`, else in
+    * their current contest; root in `contestId` if given, else in none.
+    */
+  def sharePasswordLink(id: Long, contestId: Option[Long] = None): EssentialAction =
+    withAuth(contestPermission(User.ADMIN_ROLES, contestId)) { user => implicit request =>
+      val inContest = if (user.hasRole(User.ROOT_ROLE)) contestId else contestId.orElse(user.contestId)
+      shareLink(user, id, AccountTokenJdbc.PasswordReset, inContest)
+    }
+
+  private def shareLink(user: User, id: Long, purpose: String, contestId: Option[Long])(implicit
+      request: play.api.mvc.Request[AnyContent]
+  ): Result =
+    ShareLinkService.create(user, id, purpose, contestId) match {
+      case Right((link, token)) =>
+        val account = User.findById(id).get // locked and checked in create
+        val back =
+          if (purpose == AccountTokenJdbc.Invitation) routes.UserController.users(contestId).url
+          else routes.UserController.editUser(id, contestId).url
+        // the link in this response only: never cached, never sent on as a referrer
+        Ok(views.html.shareLink(user, account, userService.invitationUrl(token), link, back, contestId))
+          .withHeaders(CACHE_CONTROL -> "no-store", "Referrer-Policy" -> "no-referrer")
+      case Left(refused) if refused.forbidden =>
+        onUnAuthorized(user, request,
+          Secured.Denial(contestId, Some(s"account:$id"), Set(User.ADMIN_ROLE), Some(refused.reason)))
+      case Left(ShareLinkService.NotNeeded) =>
+        BadRequest(views.html.errorPage(Some(user), "error.title", "invitation.not.possible"))
+      case Left(ShareLinkService.NoLogin) =>
+        BadRequest(views.html.errorPage(Some(user), "error.title", "share.link.no.login"))
+      case Left(_) => NotFound(views.html.errorPage(Some(user), "error.title", "error.user.not.found"))
+    }
+}
+
+object UserController {
+
+  /** The users page lists the live invitations into the contest and those of the last 30 days. */
+  val InvitationsShownDays = 30
+
+  /** An account's edit page shows its latest 5 links that set the password. */
+  val LinksShown = 5
 }
 
 case class Greeting(text: Option[String], use: Boolean)

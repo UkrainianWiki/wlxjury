@@ -6,7 +6,9 @@
         editUserForm: Form[db.scalikejdbc.User],
         contestOpt: Option[ContestJury],
         contests: List[ContestJury] = Nil,
-        pending: Seq[db.scalikejdbc.AccountToken] = Nil
+        pending: Seq[db.scalikejdbc.AccountToken] = Nil,
+        accounts: Map[Long, db.scalikejdbc.User] = Map.empty,
+        shareable: Set[Long] = Set.empty
 )(implicit flash: Flash, messages: Messages, req: RequestHeader)
     @import helper._
 
@@ -114,6 +116,15 @@
                                         </form>
                                     }
                                 }
+                                @* a link to share instead of a mail, where this admin may create one *@
+                                @for(contest <- contestOpt; contestId <- contest.id; if shareable.contains(user.getId)) {
+                                    <form action="@routes.UserController.shareInvitation(user.getId, contestId)" method="post" class="d-inline">
+                                        @helper.CSRF.formField
+                                        <button type="submit" class="btn btn-outline-secondary btn-sm share-link" title="@Messages("share.link.create")" aria-label="@Messages("share.link.create")">
+                                            <i class="bi bi-link-45deg" aria-hidden="true"></i>
+                                        </button>
+                                    </form>
+                                }
                             </td>
                             @if(contestOpt.nonEmpty) {
                                 <td>@user.contestRoles.toSeq.sorted.map(r => Messages(r)).mkString(", ") </td>
@@ -179,36 +190,52 @@
 
             </table>
 
-            @* invitations into the contest that wait to give a role: the account's owner must accept
-               one before the role applies (O2) *@
+            @* each account's latest invitation into the contest, live or of the last 30 days, with its
+               status, so that the admin sees whether the person got it. One that waits to give a role
+               (O2): the role applies once it is accepted. A live one: send it by email again, create a
+               link to share instead (where this admin may), or cancel it *@
             @for(contest <- contestOpt; contestId <- contest.id; if pending.nonEmpty) {
-                <h2 class="h5">@Messages("invitations.pending")</h2>
+                <h2 class="h5">@Messages("invitations.recent")</h2>
                 <table class="table table-sm pending-invitations">
                     <thead>
                         <tr>
                             <th>@Messages("email")</th>
                             <th>@Messages("role")</th>
-                            <th>@Messages("invitation.expires")</th>
+                            <th>@Messages("link.sent")</th>
+                            <th>@Messages("link.status")</th>
                             <th></th>
                         </tr>
                     </thead>
                     <tbody>
                     @for(invitation <- pending) {
-                        <tr>
-                            <td>@invitation.email</td>
-                            <td>@invitation.role.map(r => Messages(r))</td>
-                            <td>@invitation.expiresAt.toString.take(16).replace('T', ' ') UTC</td>
+                        @defining(accounts.get(invitation.userId)) { account =>
+                        <tr class="invitation-@invitation.status.key">
+                            <td>@if(invitation.email.nonEmpty) { @invitation.email } else { @account.flatMap(_.wikiAccount).getOrElse(account.map(_.fullname).getOrElse("")) }</td>
+                            <td>@invitation.role.map(r => Messages(r)).getOrElse(account.map(_.contestRoles.toSeq.sorted.map(r => Messages(r)).mkString(", ")).getOrElse(""))</td>
+                            <td>@Messages(if (invitation.shared) "link.sent.shared" else "link.sent.mail")</td>
+                            <td>@linkStatus(invitation)</td>
                             <td>
-                                <form action="@routes.UserController.reinvite(invitation.userId, contestId)" method="post" class="d-inline">
-                                    @helper.CSRF.formField
-                                    <button type="submit" class="btn btn-outline-secondary btn-sm reinvite">@Messages("invitation.send")</button>
-                                </form>
-                                <form action="@routes.UserController.cancelInvitation(invitation.userId, contestId)" method="post" class="d-inline">
-                                    @helper.CSRF.formField
-                                    <button type="submit" class="btn btn-outline-danger btn-sm cancel-invitation">@Messages("invitation.cancel")</button>
-                                </form>
+                                @if(invitation.live) {
+                                    @if(invitation.email.nonEmpty) {
+                                        <form action="@routes.UserController.reinvite(invitation.userId, contestId)" method="post" class="d-inline">
+                                            @helper.CSRF.formField
+                                            <button type="submit" class="btn btn-outline-secondary btn-sm reinvite">@Messages("invitation.send")</button>
+                                        </form>
+                                    }
+                                    @if(shareable.contains(invitation.userId)) {
+                                        <form action="@routes.UserController.shareInvitation(invitation.userId, contestId)" method="post" class="d-inline">
+                                            @helper.CSRF.formField
+                                            <button type="submit" class="btn btn-outline-secondary btn-sm share-link">@Messages("share.link.create")</button>
+                                        </form>
+                                    }
+                                    <form action="@routes.UserController.cancelInvitation(invitation.userId, contestId)" method="post" class="d-inline">
+                                        @helper.CSRF.formField
+                                        <button type="submit" class="btn btn-outline-danger btn-sm cancel-invitation">@Messages("invitation.cancel")</button>
+                                    </form>
+                                }
                             </td>
                         </tr>
+                        }
                     }
                     </tbody>
                 </table>
