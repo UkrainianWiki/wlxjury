@@ -149,7 +149,15 @@ test.describe('the guides\' screenshots', () => {
     await shot(contextAs, 'juror', galleryPath(fixture.roundRatingId, juror.id), 'juror-gallery-rated', { rows: 1 });
     await shot(contextAs, 'juror', galleryPath(fixture.roundBinaryId, juror.id), 'juror-gallery-top-bar', { height: 56 });
     await shot(contextAs, 'juror', largePath(fixture.roundBinaryId, juror.id, juror.pageId), 'juror-large-view-binary', { height: 520 });
-    await shot(contextAs, 'juror', largePath(fixture.roundRatingId, juror.id, juror.ratedPageId), 'juror-large-view-rated', { height: 520 });
+    await shot(contextAs, 'juror', largePath(fixture.roundRatingId, juror.id, juror.ratedPageId), 'juror-large-view-rated', {
+      height: 520,
+      // a plain star rate in a round without the worst mark, as the guide describes: if a
+      // worst-mark vote is on this file (the worst-mark shot of an earlier run on the same
+      // server), start the server afresh
+      prepare: async (page) => {
+        await expect(page.locator('.bi-x-lg'), 'no worst-mark icon on the rated shot: restart the docs-mode server').toHaveCount(0);
+      },
+    });
     await shot(contextAs, 'juror', `/users/edit/${juror.id}`, 'juror-profile', { full: true });
   });
 
