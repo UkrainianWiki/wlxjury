@@ -151,6 +151,10 @@ Developed 2026-11-02 to 2026-11-03, PRs #232–#236.
   review triage tools in `scripts/review/` (#250).
 - An English juror guide, `docs/user/juror-guide.md`, written from the tool as it is; not
   published yet.
+- **Documentation:** English organizer and admin guides and "what's new in release 2"
+  (`docs/user/`), anchored for later in-app help, with screenshots made by an opt-in browser spec
+  (`browser-test/tests/docs-screenshots.spec.js`, `DOCS_SCREENSHOTS=1`), checked against the rejection
+  filter and the shareable links as merged.
 - Debian/RPM packages and the Vagrant setup dropped; the ZIP is the release artifact. The dead
   Travis and AppVeyor configs and the Heroku files (`Procfile`, `system.properties`) removed.
 - Java 17 baseline: compiled with `-release:17`, Java 11 support dropped (CI already ran 17).
