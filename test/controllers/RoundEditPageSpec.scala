@@ -176,6 +176,47 @@ class RoundEditPageSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
+    "save a round stored with a top-N of 0 (legacy) from its own form, the number field shown only for N > 0" in {
+      import scala.jdk.CollectionConverters._
+      testDbApp { implicit app =>
+        val (contest, admin, previous) = fixture()
+        val round = roundDao.create(Round(None, 2, Some("Zero top"), contest.getId,
+          previous = Some(previous.getId.toString), topImages = Some(0), active = true))
+        def page(query: String = "") = org.jsoup.Jsoup.parse(contentAsString(route(app,
+          get(s"/admin/rounds/edit?id=${round.getId}&contestId=${contest.getId}$query", admin)).get))
+        // the fields a browser sends: inputs (a checkbox only if checked), selects' chosen options, textareas
+        def sent(doc: org.jsoup.nodes.Document): Seq[(String, String)] = {
+          val form = doc.getElementById("round-form")
+          val inputs = form.select("input[name]").asScala.toSeq
+            .filterNot(i => Set("checkbox", "radio")(i.attr("type")) && !i.hasAttr("checked"))
+            .filterNot(_.attr("type") == "submit")
+            .map(i => i.attr("name") -> i.attr("value"))
+          val selects = form.select("select[name]").asScala.toSeq.filterNot(_.hasAttr("disabled")).flatMap { s =>
+            val chosen = s.select("option[selected]").asScala.toSeq
+            (if (chosen.nonEmpty || s.hasAttr("multiple")) chosen else s.select("option").asScala.toSeq.take(1))
+              .map(o => s.attr("name") -> o.attr("value"))
+          }
+          val texts = form.select("textarea[name]").asScala.toSeq.map(t => t.attr("name") -> t.text)
+          inputs ++ selects ++ texts
+        }
+        val stored = page()
+        // the round's jurors, as its select has them selected once it has some (this one is new)
+        val jurors = User.findRoundJurors(previous.getId).map(_.getId).zipWithIndex.map { case (id, i) => s"jurors[$i]" -> id.toString }
+        val result = route(app, FakeRequest(POST, "/admin/rounds/save")
+          .withSession(Secured.UserName -> admin.email)
+          .withFormUrlEncodedBody(sent(stored).filterNot(_._1.startsWith("jurors")) ++ jurors: _*).withCSRFToken).get
+        (stored.select("[name=topImages]").size === 0) and
+          (page("&topImages=0").select("[name=topImages]").size === 0) and
+          (page("&topImages=3").select("input[name=topImages][type=number][min=1][value=3]").size === 1) and
+          // on a refusal, the form's errors say which field
+          (status(result) aka org.jsoup.Jsoup.parse(contentAsString(result))
+            .select(".invalid-feedback, .alert-danger").asScala.map(e => e.parent().text).mkString(" | ") must_== SEE_OTHER) and
+          (flash(result).get("error") must beNone) and
+          // the stored 0 stays as it was: the form only doesn't show it
+          (roundDao.findById(round.getId).flatMap(_.topImages) must beSome(0))
+      }
+    }
+
     "preserve every saved filter when the edit form omits read-only fields" in {
       testDbApp { implicit app =>
         val (contest, admin, previous) = fixture()

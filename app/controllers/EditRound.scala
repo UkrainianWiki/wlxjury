@@ -164,7 +164,7 @@ object EditRound {
         worstMark = worstMark && worstMarkShown),
         averageRuleShown = averageRule.isDefined, worstMarkShown = worstMarkShown)
     })(edit => Some((edit, edit.round.excludeCoi, Some(edit.round.categoryRule.operation.formValue),
-      edit.round.topImages.map(_ => edit.round.topOrderParam), edit.round.rejectedByFilter.map(_.toString),
+      edit.round.topImages.filter(_ > 0).map(_ => edit.round.topOrderParam), edit.round.rejectedByFilter.map(_.toString),
       edit.round.criterionIds.map(_.toString), edit.criteriaShown, edit.round.halfStar,
       Some(edit.round.averageRule.param), edit.round.worstMark, edit.worstMarkShown,
       Some(edit.round.rejectedByFilter.fold(NoRejectedFilter)(_ => edit.round.prevRejectedMode.param)))))
@@ -328,7 +328,8 @@ object EditRound {
         editRound.jurors.map(_.toString),
         editRound.newImages,
         round.monuments,
-        round.topImages,
+        // a stored 0 is no top-N: filled as such, the field (at least 1) doesn't block a save
+        round.topImages.filter(_ > 0),
         round.specialNomination,
         round.mediaType.getOrElse(MediaType.All)
       )

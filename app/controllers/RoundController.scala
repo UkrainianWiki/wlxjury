@@ -93,7 +93,9 @@ class RoundController @Inject() (
               halfStar = previous.halfStar)
           }
       }
-      val withTopImages = topImages.map(n => withCriteria.copy(topImages = Some(n))).getOrElse(withCriteria)
+      // a top-N of 0 (a legacy round's stored 0, or ?topImages=0) is none: the form's field takes
+      // at least 1, so the round's edit form would not save with it
+      val withTopImages = withCriteria.copy(topImages = topImages.orElse(withCriteria.topImages).filter(_ > 0))
 
       val jurors = withTopImages.id.fold(User.loadJurors(contestId))(User.findRoundJurors).sorted
       val filledRound = editRoundForm.fill(EditRound(withTopImages, jurors.flatMap(_.id), None))
@@ -613,11 +615,11 @@ object RoundController {
 
   private val RequirementFailed = "requirement failed: "
 
-  /** The round form's note beside the score rule of a rated round with a rated vote: a change
-    * re-scores and re-orders its results on every page at once (reads compute the score from
-    * the rule-independent votes and counts; nothing runs in the background), a distribution
-    * already queued keeps the rule it was queued with, and `laterRounds` took their top-N or
-    * minimum score from it when they were created.
+  /** The round form's note beside the score rule of a rated round with a vote of stars: saving
+    * another rule re-scores and re-orders its results on every page at once (reads compute the
+    * score from the rule-independent votes and counts; nothing runs in the background), a
+    * distribution already queued keeps the rule it was queued with, and `laterRounds` took files
+    * by its scores (a top-N or a minimum score) when they were distributed.
     *
     * @param storedRule the round's saved rule, which the page's script compares the select with
     */
@@ -630,9 +632,10 @@ object RoundController {
 
   object ScoreRuleWarning {
 
-    /** The warning for round `roundId` of the contest's `rounds`, if a rated round with a rated vote. */
+    /** The warning for round `roundId` of the contest's `rounds`, if a rated round with a vote of
+      * stars: with none (no vote, or worst marks only) every file scores 0 under every rule. */
     def of(roundId: Long, rounds: Seq[Round]): Option[ScoreRuleWarning] =
-      rounds.find(_.id.contains(roundId)).filter(_.isRated).filter(_ => VoteJdbc.hasRatedVote(roundId)).map { round =>
+      rounds.find(_.id.contains(roundId)).filter(_.isRated).filter(_ => VoteJdbc.hasStarVote(roundId)).map { round =>
         ScoreRuleWarning(round.averageRule, laterRounds(roundId, rounds))
       }
 

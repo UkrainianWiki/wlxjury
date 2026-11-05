@@ -98,10 +98,14 @@
             )
             </div>
 
+            @* hidden in 26.11 unless the URL gives ?topImages=N (N > 0; RoundController.editRound
+               maps 0 to none), or the form comes back with one: a number of at least 1, as the
+               form's mapping takes *@
             @for(topImages <- editRoundForm("topImages").value) {
-                @bs.text(
+                @bs.inputType("number",
                     editRoundForm("topImages"),
-                    Symbol("_label") -> Messages("top.images")
+                    Symbol("_label") -> Messages("top.images"),
+                    Symbol("min") -> 1
                 )
             }
         </div>
