@@ -124,8 +124,12 @@ Developed 2026-11-02 to 2026-11-03, PRs #232–#236.
   for accounts without an email, which then sign in by their wiki account. The users page lists
   each account's latest invitation and an account's page its latest links as active (until
   when), used, expired or revoked, and how they were given. Root may create one for any account;
-  a contest admin only for jurors and organizers whose every contest is one they administer. A
-  shared link doesn't verify the email (only a mailed one does).
+  a contest admin only for jurors and organizers whose every contest is one they administer (a
+  new password only for active members; a pending invitee gets the invitation's link). Using a
+  shared link marks the account's email and wiki account unverified, since nobody proved them:
+  an admin of another contest who adds it then sends an invitation by email, which the
+  address's owner accepts. Not offered for accounts without an email where Wikimedia sign-in is
+  available (they sign in with it).
 
 **Development**
 
