@@ -157,14 +157,21 @@ class ParseSummaryTest(unittest.TestCase):
             comment.read_summary_zip(blob)
 
     def test_deeply_nested_json_is_refused_not_raised(self):
+        # Deep nesting within the size cap: whether json raises RecursionError for it depends on
+        # the Python version (3.8 does at this depth, the runner's newer Python parses it), so
+        # the test asserts only our result: refused either way, never an exception
         raw = b"[" * 8000 + b"]" * 8000
         self.assertLessEqual(len(raw), comment.MAX_JSON_BYTES)
-        with self.assertRaises(RecursionError):
-            json.loads(raw.decode())
         with self.assertRaises(comment.SummaryError):
             comment.parse_summary(raw)
         with self.assertRaises(comment.SummaryError):
             comment.read_summary_zip(deflated(raw))
+
+    def test_recursion_error_from_json_is_refused_not_raised(self):
+        # The RecursionError path itself, on every Python version
+        with unittest.mock.patch.object(comment.json, "loads", side_effect=RecursionError):
+            with self.assertRaises(comment.SummaryError):
+                comment.parse_summary(b"{}")
 
 
 def deflated(raw):
