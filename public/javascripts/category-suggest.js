@@ -116,12 +116,20 @@
 
   /** A list hung from the body follows its field when the window scrolls (Tom Select does
     * that), but not when a box around the field scrolls (a .table-responsive table, sideways on
-    * a phone): there, an open list is placed under the field again on each scroll of the box,
-    * until `ts` is destroyed. */
+    * a phone): there, on each scroll of the box, an open list is placed under the field again
+    * while the field is wholly inside the box's visible part, and closed once it isn't, so that
+    * it never reaches past the box or widens the page; until `ts` is destroyed. */
   function followScrollingBox(ts, input) {
     var box = input.closest ? input.closest('.table-responsive') : null;
     if (!box) return;
-    function follow() { if (ts.isOpen) ts.positionDropdown(); }
+    function follow() {
+      if (!ts.isOpen) return;
+      var field = ts.wrapper.getBoundingClientRect();
+      var visible = box.getBoundingClientRect();
+      // a pixel's slack for rounding
+      if (field.left < visible.left - 1 || field.right > visible.right + 1) ts.close();
+      else ts.positionDropdown();
+    }
     box.addEventListener('scroll', follow, { passive: true });
     var destroy = ts.destroy;
     ts.destroy = function () {

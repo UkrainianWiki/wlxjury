@@ -357,6 +357,43 @@ describe("categorySuggest", () => {
         expect(placed).toHaveBeenCalledTimes(1);
     });
 
+    test("closes the list once the box scrolls its field partly out of view, places it while wholly in view", () => {
+        document.body.innerHTML = '<div class="table-responsive" id="box"><table><tbody><tr><td>' +
+            '<input type="text" id="images" class="form-control" data-category-suggest="mixed" ' +
+            'data-category-suggest-dropdown-parent="body"></td></tr></tbody></table></div>';
+        const box = document.getElementById("box");
+        const ts = suggest.categorySuggest(document.getElementById("images"));
+        const placed = jest.spyOn(ts, "positionDropdown");
+        const rect = (left, right) => ({ left, right, top: 0, bottom: 38, width: right - left, height: 38, x: left, y: 0 });
+        jest.spyOn(box, "getBoundingClientRect").mockReturnValue(rect(12, 378)); // a phone's box
+        const field = jest.spyOn(ts.wrapper, "getBoundingClientRect");
+        const scroll = () => box.dispatchEvent(new Event("scroll"));
+
+        field.mockReturnValue(rect(40, 280)); // wholly in view: placed under it
+        ts.open();
+        placed.mockClear();
+        scroll();
+        expect(placed).toHaveBeenCalledTimes(1);
+        expect(ts.isOpen).toBe(true);
+
+        field.mockReturnValue(rect(200, 440)); // its right part past the box's right edge: closed
+        scroll();
+        expect(ts.isOpen).toBe(false);
+        expect(placed).toHaveBeenCalledTimes(1);
+
+        ts.open();
+        field.mockReturnValue(rect(-30, 210)); // past the left edge: closed too
+        scroll();
+        expect(ts.isOpen).toBe(false);
+
+        ts.open();
+        field.mockReturnValue(rect(11.5, 378.5)); // within the pixel's slack: still placed
+        placed.mockClear();
+        scroll();
+        expect(ts.isOpen).toBe(true);
+        expect(placed).toHaveBeenCalledTimes(1);
+    });
+
     test("listens to no box for a list kept in its wrapper, or a field outside such a box", () => {
         document.body.innerHTML = '<div class="table-responsive" id="box">' +
             '<input type="text" id="a" class="form-control" data-category-suggest="mixed"></div>' +

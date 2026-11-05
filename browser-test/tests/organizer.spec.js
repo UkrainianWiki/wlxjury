@@ -134,29 +134,33 @@ test.describe('root', () => {
       await control.press('Enter');
       await expect(page.locator('#images')).toHaveValue(titles[0]);
 
-      // a phone's width: the table scrolls sideways in its box (the page doesn't), and an open
-      // list follows the field when the box scrolls (category-suggest.js; no window event then)
+      // a phone's width: the table scrolls sideways in its box (the page doesn't); when the box
+      // scrolls, an open list follows the field while the field is wholly in the box's view and
+      // closes once it isn't (category-suggest.js; no window event then), so it never widens
+      // the page, whichever way the box scrolls
       await page.setViewportSize({ width: 390, height: 800 });
       await page.goto('/contests');
-      await control.fill('Category:Wiki'); // scrolls the box to the field
-      await expect(dropdown).toBeVisible();
-      await expect(dropdown.locator('.option')).toHaveCount(titles.length);
       // the page itself doesn't scroll sideways: the box (position-relative) contains the hidden
       // label and Tom Select's hidden input, and the open list fits under the field
       const pageFits = () => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth);
-      expect(await pageFits()).toBe(true);
-      // the box scrolls the field to the left where it can (the list then stays in the window),
-      // else to the right
       const box = page.locator('.table-responsive').filter({ has: page.locator('#images') });
-      const moved = await box.evaluate((el) => {
-        const start = el.scrollLeft;
-        const max = el.scrollWidth - el.clientWidth;
-        el.scrollLeft = start + 60 <= max ? start + 60 : start - 60;
-        return el.scrollLeft - start;
-      });
-      expect(Math.abs(moved)).toBeGreaterThan(0); // the box did scroll
-      await expect.poll(async () => Math.abs((await place()).left)).toBeLessThan(3);
-      expect((await place()).below).toBeGreaterThanOrEqual(0);
-      if (moved > 0) expect(await pageFits()).toBe(true);
+      for (const by of [60, -60, 200, -200]) {
+        await control.fill('Category:Wiki'); // scrolls the box to the field, and opens the list
+        await expect(dropdown).toBeVisible();
+        await expect(dropdown.locator('.option')).toHaveCount(titles.length);
+        expect(await pageFits(), 'open, before the box scrolls').toBe(true);
+        const moved = await box.evaluate((el, delta) => {
+          const start = el.scrollLeft;
+          el.scrollLeft = start + delta;
+          return el.scrollLeft - start;
+        }, by);
+        if (moved === 0) continue; // already at that end of the box
+        // either closed, or under the field at its left edge
+        await expect.poll(async () => !(await dropdown.isVisible()) || Math.abs((await place()).left) < 3,
+          `after the box scrolled by ${moved}`).toBe(true);
+        if (await dropdown.isVisible()) expect((await place()).below).toBeGreaterThanOrEqual(0);
+        expect(await pageFits(), `after the box scrolled by ${moved}`).toBe(true);
+        await control.press('Escape');
+      }
     });
 });
