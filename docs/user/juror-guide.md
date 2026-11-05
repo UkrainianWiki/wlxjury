@@ -71,7 +71,7 @@ When you link a Wikimedia account and your jury account has no wiki account yet,
 **Set your wiki account** asks whether to use that Wikimedia user name. Press **Use it** to
 confirm.
 
-<img src="images/juror-profile.png" alt="The profile page, with its linked accounts and sessions" width="1280">
+<img src="images/juror-profile.png" alt="The profile page, with its theme, API tokens and sessions" width="1280">
 
 ### When one wiki name has several jury accounts
 
@@ -264,7 +264,7 @@ Videos play in the large view.
 
 <img src="images/juror-large-view-rated.png" alt="The large view of a rated round" width="1280">
 
-[Screenshot: the large view of a round with the worst mark (✗)]
+<img src="images/juror-large-view-worst-mark.png" alt="The large view of a round with the worst mark: the ✗ button and the eraser under the stars" width="1280">
 
 ### Voting in the large view
 

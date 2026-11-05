@@ -103,7 +103,7 @@ one round, not two, and tells you.
 The jurors are chosen when the round is created. Later you can pause and resume a juror, see
 [Pausing a juror](#o-pause-juror).
 
-<img src="images/organizer-new-round-form.png" alt="The round form, with its sections open" width="800">
+<img src="images/organizer-new-round-form.png" alt="The round form, with its sections open" width="853">
 
 <a id="o-choose-files"></a>
 ### Choosing the round's files

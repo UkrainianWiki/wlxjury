@@ -66,7 +66,7 @@ A member without a wiki account whose files could be conflicts of interest shows
 account, can't be checked for conflicts of interest**. Add their wiki account in their edit
 page.
 
-<img src="images/admin-users.png" alt="The users page, with invitations not yet accepted" width="1280">
+<img src="images/admin-users.png" alt="The top of the users page, with the members' badges" width="1280">
 
 <a id="a-add-person"></a>
 ### Adding a person
@@ -131,15 +131,21 @@ invitation is accepted. See [Accepting your invitation](juror-guide.md#accepting
 in the juror guide.
 
 <a id="a-pending"></a>
-### Invitations not accepted yet
+### The invitations list
 
-Under the users table, **Invitations not accepted yet** lists the invitations into the contest
-that wait: the **Email**, the **Role** and when it **Expires**. For each:
+Under the users table, **Invitations** lists each person's latest invitation into the contest,
+if it is still live or is from the last 30 days: the **Email**, the **Role**, how it was **Sent**
+(**By email** or **Link to share**) and its **Status** (**active**, **used**, **expired** or
+**revoked**, with the time). So you can see whether the person got it. For a live one:
 
 - **Send the invitation again** mails a new link;
+- **Create a link to share** makes a link to pass on yourself, see [Sharing a
+  link](#a-share-link), where you may;
 - **Cancel** cancels it: the link stops working.
 
 A person whose link expired asks you to send it again.
+
+<img src="images/admin-invitations.png" alt="The list of invitations, with a link to share and its status" width="1280">
 
 <a id="a-share-link"></a>
 ### Sharing a link instead of mailing it
@@ -148,7 +154,7 @@ When an email doesn't arrive, or you prefer to pass the link on yourself, you ca
 to set a password and give it to the person directly, for example in a message.
 
 **Where.** For an invitation not yet accepted, press **Create a link to share** on the users page
-(in the list **Invitations not accepted yet**, or next to the person). For a reset of a password,
+(in the list **Invitations**, or next to the person). For a reset of a password,
 open the person's edit page and press **Create a link to share**.
 
 **Who can create one.**
@@ -186,7 +192,7 @@ link until they accept a mailed link. Accepting a mailed link verifies the addre
 Treat the link like a password: anyone who has it can set the account's password until it is
 used. Pass it on to the person only, and not in a public place.
 
-[Screenshot: the shareable link, shown once with its copy button]
+<img src="images/admin-share-link.png" alt="The page that shows a link to share once, with its Copy button" width="1280">
 
 <a id="a-greeting"></a>
 ### The greeting
