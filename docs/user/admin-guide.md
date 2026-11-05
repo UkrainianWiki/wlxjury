@@ -75,10 +75,12 @@ At the bottom of the table, fill in the row: **Full name**, **Wiki account**, **
 **Role**, and press the button with the plus. A person needs an email or a wiki account.
 
 - A **new** email gets a new account and an invitation by email, see [Invitations](#a-invitations).
-- An email whose account **exists** and has signed in before joins your contest with the role at
-  once. Nothing is changed in the account itself.
-- An account that hasn't yet proved its email gets an invitation too, and the role applies when
-  they accept it.
+- An email whose account **exists** and whose owner has proved it (they accepted an invitation
+  or a mailed link) joins your contest with the role at once. Nothing is changed in the account
+  itself.
+- An account that hasn't proved its email, for example one made unverified by a shared link,
+  gets an invitation instead, and the role applies when they accept it. A wiki account that
+  belongs to such an account is not added: add the person by email.
 - A person added with a wiki account only has no email. They can't sign in with a password; they
   can sign in with Wikimedia, see [Sign-in options](#a-sign-in).
 
@@ -142,20 +144,44 @@ A person whose link expired asks you to send it again.
 <a id="a-share-link"></a>
 ### Sharing a link instead of mailing it
 
-<!-- verify against the implementation once merged -->
-
 When an email doesn't arrive, or you prefer to pass the link on yourself, you can create a link
 to set a password and give it to the person directly, for example in a message.
 
-- Who can create one: **root**, and **contest admins** for an invitation into their contest, and
-  for a password reset of a juror or an organizer whose every membership is in contests the admin
-  administers.
-- The link is **single-use**: it works once, for the account it was made for.
-- It is **shown once**, with a **copy** button. If you lose it, create another.
-- An account has **one active link** at a time. Creating a new one makes the old one stop
-  working.
-- The link's status is shown as **active**, **used**, **expired** or **revoked**.
-- Mailing the link stays available, as before.
+**Where.** For an invitation not yet accepted, press **Create a link to share** on the users page
+(in the list **Invitations not accepted yet**, or next to the person). For a reset of a password,
+open the person's edit page and press **Create a link to share**.
+
+**Who can create one.**
+
+- **Root**, for any account.
+- **A contest admin**, in their contest: for a member or a person invited into it, and for a
+  reset only for an active member. The account must not be root or the admin themselves, must
+  have only the roles **Jury** or **Organizer**, and every contest it belongs to, has worked in
+  or is invited into must be a contest the admin administers.
+- Not for a person who has no email and signs in with Wikimedia, where Wikimedia sign-in is
+  offered: the page says they sign in with their wiki account. A person with neither an email nor
+  a wiki account can't get a link either.
+
+**How it works.**
+
+- The link is **single-use**: it works once, for the account it was made for. It expires like a
+  mailed one, and the page shows **Expires**.
+- It is **shown once**, on the page **A link to set the password**, with a **Copy** button.
+  Reloading or resubmitting that page creates a new link and the one you copied stops working. If
+  you lose a link, create another.
+- Creating a link makes the account's earlier unused links of the same kind stop working, the
+  mailed ones too. So an account has one active link at a time.
+- The status of each link is shown as **active**, **used**, **expired** or **revoked**, with
+  whether it was sent **By email** or is a **Link to share**: in the invitations list, and on
+  the person's edit page.
+- Mailing the invitation or the reset stays available.
+
+**What using the link does.** The person chooses a password and is signed in. For a reset, it
+signs out every other session of the account, and the old password works until the link is used.
+A shared link doesn't prove that the person owns the email, because anyone who has it could use
+it. So using it **marks the email and the wiki account unverified**: if another contest then adds
+the person, they get an invitation by email first, and a Google sign-in by that address doesn't
+link until they accept a mailed link. Accepting a mailed link verifies the address again.
 
 Treat the link like a password: anyone who has it can set the account's password until it is
 used. Pass it on to the person only, and not in a public place.
@@ -189,14 +215,10 @@ An admin never sets someone else's password, and can't see it. A person sets the
 link that only the owner of the email address receives, or that you pass on
 ([Sharing a link](#a-share-link)). The old password keeps working until the new one is set.
 
-Today, root can send a link to set a new password from a person's edit page (**Reset
-password**). An admin invites an unverified member again instead, which does the same.
-
-<!-- verify against the implementation once merged -->
-
-With shareable links, contest admins can also reset the password of a juror or an organizer
-whose every membership is in contests they administer, by a mailed or shared link, see [Sharing
-a link](#a-share-link).
+Root can mail a link to set a new password from a person's edit page (**Reset password**). An
+admin invites an unverified member again instead, which does the same. Root and contest admins
+can also create a link to share for a reset, under the conditions in [Sharing a
+link](#a-share-link).
 
 <a id="a-wikimedia-google"></a>
 ### Wikimedia and Google

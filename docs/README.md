@@ -102,8 +102,7 @@ The rule is in workflow §8: the update is in the same PR, and the reviewer chec
 
 `docs/user/`: the English [juror guide](user/juror-guide.md), [organizer guide](user/organizer-guide.md),
 [admin guide](user/admin-guide.md) and [what's new in release 2](user/whats-new-release-2.md) exist
-(written from the tool as it is; **unpublished**). Sections marked `verify against the
-implementation once merged` describe work not merged when they were written. Screenshots are
+(written from the tool as it is; **unpublished**). Screenshots are
 `docs/user/images/`, made by an opt-in browser spec (`docs-screenshots.spec.js`, run with
 `DOCS_SCREENSHOTS=1`; [images/README.md](user/images/README.md) says which platform made them).
 

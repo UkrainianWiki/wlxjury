@@ -149,24 +149,27 @@ shows them, but they can't be changed.
 <a id="o-rejection-filter"></a>
 ### The rejection filter
 
-<!-- verify against the implementation once merged -->
-
 The rejection filter uses how many jurors rejected each file in the earlier rounds, counting
 every rejection in all of them. It works with earlier yes/no rounds, and with earlier rated
-rounds that have the [worst mark](#o-worst-mark): there a worst mark ✗ counts as a rejection.
+rounds without criteria, where a worst mark ✗ counts as a rejection. It shows once you choose
+such a previous round.
 
-The field has three modes:
+It has two fields. **Rejected files** is the mode:
 
-- **No filter**: rejections don't matter.
-- **Exclude files rejected by at least X**: a file is left out when X or more jurors rejected it.
-  This drops the files that jurors agreed were bad, for example after a screening round where
-  jurors rejected only the few worst files.
-- **Only files rejected by at least X**: a file is taken only when X or more jurors rejected it.
-  This is for a round that looks again at the files that were doubted.
+- **No filter (keep rejected files)**: rejections don't matter.
+- **Exclude files rejected by at least X jurors**: a file is left out when X or more jurors
+  rejected it. This drops the files that jurors agreed were bad, for example after a screening
+  round where jurors rejected only the few worst files.
+- **Only files rejected by at least X jurors**: a file is taken only when X or more jurors
+  rejected it. This is for a round that looks again at the files that were doubted.
 
-X is a number of jurors from 1 to 6. The filter combines with the other filters of the round.
-Before the "Only files rejected" mode, the tool had only **Exclude files rejected by at least
-X jurors**.
+The second field, **X: rejected by at least X jurors**, is the number, from 1 to 6. The filter
+combines with the other filters of the round.
+
+The form refuses these choices: a mode with no X ("Choose X, the number of jurors…"), an X with
+**No filter** ("Choose whether to exclude the rejected files or take only them, or clear X"), and
+the filter with no previous round that has rejections ("The rejected files filter needs a previous
+round with rejections: a yes/no round, or a rated round without criteria").
 
 <a id="o-add-files"></a>
 ### Adding files by name
@@ -273,8 +276,8 @@ leaving it unrated:
 - a next round can use the ✗ in the [rejection filter](#o-rejection-filter).
 
 Jurors give ✗ with a button and clear a vote with another, see the [juror
-guide](juror-guide.md#rated-rounds-stars). The form refuses the option for a yes/no round, a
-comments-only round and a round with criteria. You can turn it on or off on an existing round.
+guide](juror-guide.md#rated-rounds-stars). The form hides the option for a yes/no round, a
+comments-only round and a round with criteria (and refuses it there if it is sent anyway). You can turn it on or off on an existing round.
 
 ## Following the voting
 
