@@ -118,5 +118,23 @@ test.describe('root', () => {
       await control.press('ArrowDown');
       await control.press('Enter');
       await expect(page.locator('#images')).toHaveValue(titles[0]);
+
+      // a phone's width: the table scrolls sideways in its box (the page doesn't), and an open
+      // list follows the field when the box scrolls (category-suggest.js; no window event then)
+      await page.setViewportSize({ width: 390, height: 800 });
+      await page.goto('/contests');
+      await control.fill('Category:Wiki'); // scrolls the box to the field
+      await expect(dropdown).toBeVisible();
+      await expect(dropdown.locator('.option')).toHaveCount(titles.length);
+      const box = page.locator('.table-responsive').filter({ has: page.locator('#images') });
+      const moved = await box.evaluate((el) => {
+        const start = el.scrollLeft;
+        el.scrollLeft = start > 60 ? start - 60 : start + 60;
+        return el.scrollLeft - start;
+      });
+      expect(Math.abs(moved)).toBeGreaterThan(0); // the box did scroll
+      await expect.poll(async () => Math.abs((await place()).left)).toBeLessThan(3);
+      expect((await place()).below).toBeGreaterThanOrEqual(0);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
     });
 });
