@@ -101,8 +101,14 @@
                         <td>@Messages(contest.name)</td>
                         <td>@Messages(contest.country)</td>
                         <td>@contest.year</td>
+                        @* the source of the contest's files (a category or a list page), linking its files
+                           page, where it is imported and set; without one, a link saying so (never a
+                           link without text) *@
                         <td>
-                            <a href="@routes.ImageController.images(contest.getId)">@contest.images</a>
+                            @contest.images.map(_.trim).filter(_.nonEmpty) match {
+                                case Some(source) => { <a href="@routes.ImageController.images(contest.getId)">@source</a> }
+                                case None => { <a href="@routes.ImageController.images(contest.getId)" class="text-body-secondary">@Messages("contest.images.empty")</a> }
+                            }
                         </td>
                         @* icon links styled as buttons (a link, not a button in a link), named for the
                            contest, with the same text as their tooltip *@
@@ -122,7 +128,7 @@
                         </td>
                         <td class="id-template">@contest.monumentIdTemplate.filter(_.trim.nonEmpty).getOrElse {
                             @for(template <- services.regions.ContestKind.configMonumentIdTemplate(contest)) {
-                                @template <span class="text-muted" title="@Messages("id.template.from.campaign")">(@Messages("id.template.from.campaign"))</span>
+                                @template <span class="text-muted">(@Messages("id.template.from.campaign"))</span>
                             }
                         }</td>
                         <td>
