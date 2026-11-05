@@ -13,7 +13,8 @@
 // docs/user/images/ must all come from one platform and be regenerated together; the platform
 // that produced the current set is recorded in docs/user/images/README.md (update it with them).
 //
-// The fixture's images are placeholders from a stub, never Commons, and its accounts are
+// The fixture's images are the CC0 photos of browser-test/docs-photos.py (UI_IMAGES=docs, see
+// docs/user/images/README.md), never fetched by the run itself, and its accounts are
 // generated: no real name, address or secret appears. The users page shot first invites one
 // address at example.org (a pending invitation); a second run reuses it.
 //
@@ -64,10 +65,10 @@ test.describe('the guides\' screenshots', () => {
     }
   });
   // `height`: only the top of the viewport (the rest of such a page is empty)
-  const top = (page, file, height) =>
-    page.screenshot({ path: file, clip: { x: 0, y: 0, width: VIEWPORT.width, height } });
+  const top = (page, file, height, width = VIEWPORT.width) =>
+    page.screenshot({ path: file, clip: { x: 0, y: 0, width, height } });
 
-  async function shot(contextAs, role, target, name, { full = false, prepare, crop, height } = {}) {
+  async function shot(contextAs, role, target, name, { full = false, prepare, crop, height, width } = {}) {
     const context = await contextAs(role);
     await context.addCookies([{ name: 'theme', value: 'dark', url: baseUrl }]);
     const page = await sized(context);
@@ -84,7 +85,7 @@ test.describe('the guides\' screenshots', () => {
       const x = Math.max(0, box.x - 12);
       await page.screenshot({ path: file, fullPage: true,
         clip: { x, y: Math.max(0, box.y - 12), width: Math.min(VIEWPORT.width - x, box.width + 24), height: box.height + 24 } });
-    } else if (height) await top(page, file, height);
+    } else if (height) await top(page, file, height, width);
     else await page.screenshot({ path: file, fullPage: full });
     await context.close();
   }
@@ -92,16 +93,17 @@ test.describe('the guides\' screenshots', () => {
   test('sign-in and juror pages', async ({ contextAs, fixture }) => {
     const { juror } = fixture.accounts;
     await shot(contextAs, null, '/auth', 'juror-sign-in');
-    await shot(contextAs, 'juror', galleryPath(fixture.roundBinaryId, juror.id), 'juror-gallery-binary', { height: 520 });
-    await shot(contextAs, 'juror', galleryPath(fixture.roundRatingId, juror.id), 'juror-gallery-rated', { height: 520 });
-    await shot(contextAs, 'juror', largePath(fixture.roundBinaryId, juror.id, juror.pageId), 'juror-large-view-binary', { height: 360 });
-    await shot(contextAs, 'juror', largePath(fixture.roundRatingId, juror.id, juror.ratedPageId), 'juror-large-view-rated', { height: 360 });
+    await shot(contextAs, 'juror', galleryPath(fixture.roundBinaryId, juror.id), 'juror-gallery-binary', { height: 400 });
+    await shot(contextAs, 'juror', galleryPath(fixture.roundRatingId, juror.id), 'juror-gallery-rated', { height: 400 });
+    await shot(contextAs, 'juror', galleryPath(fixture.roundBinaryId, juror.id), 'juror-gallery-top-bar', { height: 56 });
+    await shot(contextAs, 'juror', largePath(fixture.roundBinaryId, juror.id, juror.pageId), 'juror-large-view-binary', { height: 560 });
+    await shot(contextAs, 'juror', largePath(fixture.roundRatingId, juror.id, juror.ratedPageId), 'juror-large-view-rated', { height: 560 });
     await shot(contextAs, 'juror', `/users/edit/${juror.id}`, 'juror-profile', { full: true });
   });
 
   test('organizer pages', async ({ contextAs, fixture }) => {
     await shot(contextAs, 'organizer', `/roundstat/${fixture.roundBinaryId}`, 'organizer-round-statistics');
-    await shot(contextAs, 'organizer', `/byrate/round/${fixture.roundRatingId}/user/0/page/1`, 'organizer-results-by-rate');
+    await shot(contextAs, 'organizer', `/byrate/round/${fixture.roundRatingId}/user/0/page/1`, 'organizer-results-by-rate', { height: 600 });
     await shot(contextAs, 'organizer', `/filelist/round/${fixture.roundRatingId}/user/0/page/1`, 'organizer-results-file-list');
     await shot(contextAs, 'organizer', `/admin/rounds/${fixture.roundBinaryId}/conflicts`, 'organizer-conflicts', { height: 680 });
   });
@@ -147,12 +149,50 @@ test.describe('the guides\' screenshots', () => {
       .locator('button.share-link').click();
     await expect(page.getByRole('heading', { level: 1 })).toContainText('A link to set the password');
     await page.waitForLoadState('networkidle');
+    // the page that link opens (shot below, signed out: nothing is accepted by looking at it)
+    const invitationPath = new URL(await page.locator('input[value*="/invitation/"]').inputValue()).pathname;
     // the link's host is the fixture's configured one: show a neutral host instead
     await page.locator('input[value*="/invitation/"]').evaluateAll((inputs) => inputs.forEach((input) => {
       input.value = input.value.replace(/^https?:\/\/[^/]+/, 'https://jury.example.org');
     }));
     await top(page, path.join(OUT_DIR, 'admin-share-link.png'), 440);
     await context.close();
+    await shot(contextAs, null, invitationPath, 'juror-set-password', { height: 440 });
+  });
+
+  // a juror opening an organizer's page: the 403 page, with its reference
+  test('the access-denied page', async ({ contextAs, fixture, diagnostics }) => {
+    diagnostics.expectStatus(403);
+    const context = await contextAs('juror');
+    await context.addCookies([{ name: 'theme', value: 'dark', url: baseUrl }]);
+    const page = await sized(context);
+    const response = await page.goto(`/roundstat/${fixture.roundBinaryId}`);
+    expect(response.status()).toBe(403);
+    await expect(page.getByRole('heading', { level: 1, name: 'Access denied' })).toBeVisible();
+    await page.waitForLoadState('networkidle');
+    await top(page, path.join(OUT_DIR, 'juror-access-denied.png'), 470);
+    await context.close();
+  });
+
+  // The rated round's form with another score rule picked, which shows the warning (not saved).
+  test('the score rule warning', async ({ contextAs, fixture }) => {
+    const context = await contextAs('admin');
+    await context.addCookies([{ name: 'theme', value: 'dark', url: baseUrl }]);
+    const page = await sized(context);
+    await page.goto(`/admin/rounds/edit?id=${fixture.roundRatingId}&contestId=${fixture.contestId}`);
+    const select = page.locator('#averageRule');
+    const current = await select.inputValue();
+    const other = await select.locator('option').evaluateAll((options, c) => options.map((o) => o.value).find((v) => v !== c), current);
+    await select.selectOption(other);
+    const warning = page.locator('#averageRule_warning');
+    test.skip(await page.locator('#averageRule_warning_row').count() === 0, 'the rated round has no vote: no warning');
+    await expect(warning).toBeVisible();
+    await page.waitForLoadState('networkidle');
+    const from = await select.boundingBox();
+    const to = await warning.boundingBox();
+    await page.screenshot({ path: path.join(OUT_DIR, 'organizer-score-rule-warning.png'), fullPage: true,
+      clip: { x: 0, y: from.y - 80, width: VIEWPORT.width, height: to.y + to.height - from.y + 120 } });
+    await context.close(); // not saved
   });
 
   // The rated round with the worst mark on, for the large view's ✗ controls: the option is
@@ -181,7 +221,7 @@ test.describe('the guides\' screenshots', () => {
       await view.goto(largePath(fixture.roundRatingId, juror.id, juror.ratedPageId));
       await expect(view.getByRole('button', { name: /Worst mark/ }).first()).toBeVisible();
       await view.waitForLoadState('networkidle');
-      await top(view, path.join(OUT_DIR, 'juror-large-view-worst-mark.png'), 360);
+      await top(view, path.join(OUT_DIR, 'juror-large-view-worst-mark.png'), 560);
       await context.close();
     } finally {
       if (!was) await setOption(false);

@@ -169,7 +169,10 @@ Developed 2026-11-02 to 2026-11-03, PRs #232–#236.
 - **Documentation:** English organizer and admin guides and "what's new in 26.11"
   (`docs/user/`), anchored for later in-app help, with screenshots made by an opt-in browser spec
   (`browser-test/tests/docs-screenshots.spec.js`, `DOCS_SCREENSHOTS=1`), checked against the rejection
-  filter and the shareable links as merged.
+  filter and the shareable links as merged. The screenshots show public-domain and CC0 Commons
+  photos (fetched by `browser-test/docs-photos.py`, never committed; credits in
+  `docs/user/images/README.md`) through the fixture's `-Dui.images=docs` mode, with four more shots
+  (the set-password page, the gallery top bar, the score rule warning, the access-denied page).
 - Debian/RPM packages and the Vagrant setup dropped; the ZIP is the release artifact. The dead
   Travis and AppVeyor configs and the Heroku files (`Procfile`, `system.properties`) removed.
 - Java 17 baseline: compiled with `-release:17`, Java 11 support dropped (CI already ran 17).

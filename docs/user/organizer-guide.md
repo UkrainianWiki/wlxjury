@@ -259,7 +259,7 @@ the round has votes and you pick another rule. The warning says that:
 - the later rounds that took their top files or minimum score from this round are named. Their
   files don't change, but a later **Distribute new files** there uses the new rule.
 
-[Screenshot: the file score option and its warning]
+<img src="images/organizer-score-rule-warning.png" alt="The file score option and its warning" width="1280">
 
 <a id="o-worst-mark"></a>
 ### The worst mark (✗)

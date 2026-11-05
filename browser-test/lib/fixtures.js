@@ -195,10 +195,16 @@ export async function guard(context, diagnostics) {
     const request = route.request();
     const url = new URL(request.url());
     // The user guides' screenshots (DOCS_SCREENSHOTS=1, with the server's -Dui.images=docs): the
-    // proxy's photos are not replaced by the grey placeholder, and the large view's file from the
-    // upload host fails so that it falls back to this host's proxy (large-view.js data-fallback)
-    if (process.env.DOCS_SCREENSHOTS && isStubbedImage(url, request)) {
-      return LOCAL_HOSTS.has(url.hostname) ? route.continue() : route.abort();
+    // proxy's photos are not replaced by the grey placeholder, and an image of the upload host
+    // is fetched from this host's proxy instead (a thumbnail by its own path, an original as a
+    // 1280 px thumbnail); anything else of the upload host (a video) keeps the placeholder
+    if (process.env.DOCS_SCREENSHOTS && isStubbedImage(url, request) && /\.(jpe?g|png)$/i.test(url.pathname)) {
+      if (LOCAL_HOSTS.has(url.hostname)) return route.continue();
+      const m = url.pathname.match(/^\/wikipedia\/commons\/(?:thumb\/)?(\w\/\w\w\/[^/]+?)(?:\/[^/]+)?$/);
+      const name = m ? m[1] : null;
+      const local = url.pathname.startsWith('/wikipedia/commons/thumb/') ? url.pathname
+        : name ? `/wikipedia/commons/thumb/${name}/1280px-${name.split('/')[2]}` : null;
+      if (local) return route.fetch({ url: new URL(local, fixtureFor('chromium').baseUrl).href }).then((r) => route.fulfill({ response: r }));
     }
     if (isStubbedImage(url, request)) return route.fulfill({ status: 200, contentType: 'image/png', body: PLACEHOLDER_PNG });
     if (LOCAL_HOSTS.has(url.hostname)) return route.continue();

@@ -28,7 +28,7 @@ If you already have an account in the tool, for example from an earlier contest,
 organizer may add you to the new contest directly. You then sign in as before and find the new
 contest in the contest menu at the top of the page.
 
-[Screenshot: the "Set your password" page]
+<img src="images/juror-set-password.png" alt="The Set your password page" width="1280">
 
 ### Signing in with your password
 
@@ -90,7 +90,7 @@ account**, with one box per account:
 If an account says **This account cannot be chosen here: ask your contest organizer**, ask
 your organizer which account to use.
 
-[Screenshot: the "Choose your jury account" page with two accounts]
+<!-- screenshot to add: the "Choose your jury account" page with two accounts -->
 
 ### Signing out
 
@@ -136,7 +136,7 @@ that contest.
 
 Opening a link to a page of another contest you belong to also takes you to that contest.
 
-[Screenshot: the contest menu in the top bar]
+<!-- screenshot to add: the contest menu in the top bar -->
 
 ## Kinds of rounds
 
@@ -203,7 +203,7 @@ and **Last page**.
 To jump to a page, click the numbers in the middle, type a page number in the box, and press
 **Go**.
 
-[Screenshot: the top bar of a gallery, with tabs, sort menu, region menu and pager]
+<img src="images/juror-gallery-top-bar.png" alt="The top bar of a gallery, with tabs, sort menu, region menu and pager" width="1280">
 
 ### Voting in a yes/no round's gallery
 
@@ -294,7 +294,7 @@ number. Click the stars of each criterion.
 The view stays on the file while you rate its criteria. Go to the next file yourself with the
 buttons or the Down key.
 
-[Screenshot: the large view of a round with criteria]
+<!-- screenshot to add: the large view of a round with criteria -->
 
 ### Keyboard shortcuts in the large view
 
@@ -440,7 +440,7 @@ If you think you should have access:
 If the page offers **Open a gallery available to this account**, it takes you back to your own
 files.
 
-[Screenshot: the "Access denied" page]
+<img src="images/juror-access-denied.png" alt="The Access denied page" width="1280">
 
 ### When you are signed out
 
