@@ -224,7 +224,7 @@ ships (`26.11`), with `.N` for an extra deploy in the same month (`26.11.1`, `26
 releases `build.sbt` carries the next release as a snapshot (`version := "26.11-SNAPSHOT"`;
 rename it if the release slips to a later month). Releasing:
 1. the release commit sets `version := "26.11"` (on followups, or on a release branch from the
-   tested commit, as for release 1 from `d8054737`);
+   tested commit; `26.11` from the tip of `ukwikidev/release-2-prep`);
 2. build with `-Dwlxjury.buildId=26.11` (the ID becomes `26.11-<commit>`, the ZIP
    `wlxjury-26.11.zip`; [deployment.md](../deployment.md), "Build and rehearse");
 3. after the deploy, the changelog heading becomes `## 26.11 (YYYY-MM-DD)` with the deploy date
