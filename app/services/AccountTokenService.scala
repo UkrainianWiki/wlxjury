@@ -83,6 +83,8 @@ object AccountTokenService {
   case object AddressTaken extends Refusal("email_taken")
   /** A shared link whose creator may no longer create it for the account ([[ShareLinkService]]). */
   case object CreatorNotAllowed extends Refusal("shared_link_creator_not_allowed")
+  /** A shared link of an account without an email while Wikimedia sign-in is offered. */
+  case object SignsInWithWikimedia extends Refusal("shared_link_signs_in_with_wikimedia")
 
   private def refused(refusal: Refusal, token: Option[AccountToken]): Left[Refusal, Nothing] = {
     val line = s"account_token_refused reason=${refusal.reason}" + token.fold("")(t => s" tokenId=${t.id} accountId=${t.userId}")
@@ -93,9 +95,10 @@ object AccountTokenService {
 
   /** The link and its account, if `token` is a live link of one of `purposes` whose account
     * exists (not deleted) and, for a link that sets the password, still has the address it
-    * was sent to.
+    * was sent to. `wikimediaSignIn`: Wikimedia sign-in is offered, so a shared link of an account
+    * without an email is refused ([[ShareLinkService]]: it signs in with Wikimedia).
     */
-  def check(token: String, purposes: Seq[String])(implicit
+  def check(token: String, purposes: Seq[String], wikimediaSignIn: Boolean = false)(implicit
       session: DBSession = AutoSession
   ): Either[Refusal, (AccountToken, User)] =
     if (!Format.matches(token)) {
@@ -105,10 +108,11 @@ object AccountTokenService {
       AccountTokenJdbc.findByHash(hash(token)) match {
         case None                                         => refused(Unknown, None)
         case Some(t) if !purposes.contains(t.purpose)     => refused(WrongPurpose, Some(t))
-        case Some(t)                                      => checked(t)
+        case Some(t)                                      => checked(t, wikimediaSignIn)
       }
 
-  private def checked(t: AccountToken)(implicit session: DBSession): Either[Refusal, (AccountToken, User)] =
+  private def checked(t: AccountToken, wikimediaSignIn: Boolean = false)(implicit
+      session: DBSession): Either[Refusal, (AccountToken, User)] =
     if (!t.live) refused(NotLive, Some(t))
     else
       User.findById(t.userId)(session).filter(_.deletedAt.isEmpty) match {
@@ -119,6 +123,9 @@ object AccountTokenService {
         // account, an admin, or a member of another contest since is no longer theirs to give
         case Some(user) if t.shared && !ShareLinkService.creatorMayStillShare(t, user) =>
           refused(CreatorNotAllowed, Some(t))
+        // nor, without an email, once Wikimedia sign-in is offered (configured since it was created)
+        case Some(user) if t.shared && wikimediaSignIn && user.emailLo.isEmpty =>
+          refused(SignsInWithWikimedia, Some(t))
         case Some(user) => Right(t -> user)
       }
 
@@ -126,13 +133,15 @@ object AccountTokenService {
     * the password becomes `passwordHash` (the old one stops working), and what accepting a link
     * proves follows ([[proveEmail]]; a shared link proves no email). The account, as stored now.
     */
-  def acceptPasswordLink(token: String, passwordHash: String): Either[Refusal, (AccountToken, User)] =
+  def acceptPasswordLink(token: String, passwordHash: String, wikimediaSignIn: Boolean = false)
+      : Either[Refusal, (AccountToken, User)] =
     if (!Format.matches(token)) Left(Malformed)
     else {
       // quiet: the statements bind the password hash, which must not reach the SQL log
       val result = User.quietTx { implicit session =>
         // the account's row first, then the link's (the order of every transaction that locks
-        // both: ShareLinkService.create, UserService.sendChooseLink, acceptByProvider), before
+        // both: ShareLinkService.create, UserService.sendChooseLink, acceptByProvider,
+        // confirmEmailChange; UserService.addToContest's the account's row alone), before
         // the checks read its memberships: an add into another contest (UserService.addToContest,
         // which takes the account's lock too) commits before them, and READ COMMITTED reads it,
         // or waits for this acceptance
@@ -141,7 +150,7 @@ object AccountTokenService {
           case None                                                         => refused(Unknown, None)
           case Some(t) if !AccountTokenJdbc.SetsPassword.contains(t.purpose) => refused(WrongPurpose, Some(t))
           case Some(t) =>
-            checked(t).flatMap { case (link, user) =>
+            checked(t, wikimediaSignIn).flatMap { case (link, user) =>
               proveEmail(link, user, Some(passwordHash), emailProven = !link.shared)
                 .map { case (proven, line) => (link, proven, line) }
             }
@@ -293,6 +302,9 @@ object AccountTokenService {
       try {
         var confirmed = Option.empty[String] // logged after the commit
         val result = DB.localTx { implicit session =>
+          // the account's row first, then the link's: every transaction's order (acceptPasswordLink),
+          // so that a share or an acceptance on the same account never deadlocks with this one
+          AccountTokenJdbc.findByHash(hash(token)).foreach(t => User.lockRow(t.userId))
           AccountTokenJdbc.lockByHash(hash(token)) match {
             case None                                                  => refused(Unknown, None)
             case Some(t) if t.purpose != AccountTokenJdbc.EmailChange => refused(WrongPurpose, Some(t))

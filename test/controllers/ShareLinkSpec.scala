@@ -461,5 +461,27 @@ class ShareLinkSpec extends PlaySpecification with PlayTestDb with AccountTestSu
         AccountTokenJdbc.findByUser(wiki.getId) must beEmpty
       }
     }
+
+    "refuse at use a link of an account without an email made before Wikimedia sign-in was offered" in {
+      testDbApp { implicit app =>
+        implicit val mat: Materializer = app.materializer
+        createContests(10)
+        val admin = account("admin@example.com", Some(10), "admin", verified = true)
+        val wiki = User.create(User("Wiki juror", "", None, Set("jury"), None, Some(10), wikiAccount = Some("Wiki juror")))
+        val mail = new RecordingMail
+        val Seq(token) = linksIn(shareInvitation(mail, admin, wiki.getId, 10)) // not offered yet
+        val settings = new OAuthSettings(Configuration.from(Map(
+          "oauth.wikimedia.clients" -> Seq(Map("host" -> "jury.example", "clientId" -> "wm", "clientSecret" -> "secret")))))
+        val login = new LoginController(userService(mail), app.injector.instanceOf[ControllerComponents],
+          app.injector.instanceOf[modules.SignInExecutionContext], ThemeCookies.default, settings)
+
+        status(call(login.invitation(token), FakeRequest(GET, s"/invitation/$token").withCSRFToken)) === NOT_FOUND
+        status(call(login.acceptInvitation(), FakeRequest(POST, "/invitation")
+          .withFormUrlEncodedBody("token" -> token, "password" -> "wiki-password", "repeat.password" -> "wiki-password")
+          .withCSRFToken)) === NOT_FOUND
+        reloaded(wiki).password must beNone
+        status(invitationPage(token)) === OK // still live: refused only while Wikimedia is offered
+      }
+    }
   }
 }

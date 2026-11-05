@@ -121,7 +121,7 @@ class LoginController @Inject() (
     * is live; else the same "invalid link" page for any reason (N7).
     */
   def invitation(token: String): Action[AnyContent] = Action { implicit request =>
-    AccountTokenService.check(token, AccountTokenJdbc.SetsPassword) match {
+    AccountTokenService.check(token, AccountTokenJdbc.SetsPassword, oauthSettings.wikimediaConfigured) match {
       case Right((link, user)) =>
         linkPage(Ok(views.html.invitation(setPasswordForm.fill((token, "", "")), user.password.isDefined, link.purpose,
           wikiLogin(user))))
@@ -148,7 +148,7 @@ class LoginController @Inject() (
   private[controllers] def acceptInvitationResult(deadline: Long)(implicit request: Request[AnyContent]): Result = {
     val bound = setPasswordForm.bindFromRequest()
     val token = bound("token").value.getOrElse("")
-    AccountTokenService.check(token, AccountTokenJdbc.SetsPassword) match {
+    AccountTokenService.check(token, AccountTokenJdbc.SetsPassword, oauthSettings.wikimediaConfigured) match {
       case Left(_) => linkInvalid
       case Right((link, user)) =>
         bound.fold(
@@ -158,7 +158,7 @@ class LoginController @Inject() (
           { case (_, password, _) =>
             try {
               val hash = PasswordHasher.default.hash(password, deadline)
-              AccountTokenService.acceptPasswordLink(token, hash) match {
+              AccountTokenService.acceptPasswordLink(token, hash, oauthSettings.wikimediaConfigured) match {
                 case Left(_) => linkInvalid
                 case Right((accepted, account)) =>
                   // to the start page by a redirect: a reload must not post the form again
