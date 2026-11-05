@@ -1,7 +1,7 @@
 package db.scalikejdbc
 
 import db.RoundRepo
-import org.intracer.wmua.{AverageRule, BinaryOrder, CategoryRule, HasId}
+import org.intracer.wmua.{AverageRule, BinaryOrder, CategoryRule, HasId, Vote}
 import scalikejdbc._
 import scalikejdbc.orm.{CRUDMapper, JoinTable}
 
@@ -103,9 +103,9 @@ case class Round(
     * criterion; none in a comments-only round.
     */
   def acceptsRate(rate: Int): Boolean =
-    if (isBinary) rate >= -1 && rate <= 1
+    if (isBinary) rate >= Vote.Rejected && rate <= Vote.Selected
     else if (rates.id == Round.commentsOnlyRound.id) false
-    else rate == 0 || (rate >= rates.minRate && rate <= maxRate)
+    else Vote.isUnrated(rate) || (rate >= rates.minRate && rate <= maxRate)
 
   /** The stars of a file's result: the round's, also in a criteria round, whose result is
     * drawn per criterion ([[perCriterion]]).
@@ -561,7 +561,7 @@ object Round extends RoundRepo with CRUDMapper[Round] {
     */
   def selectedImageCount(roundId: Long): Int =
     sql"""SELECT COUNT(DISTINCT s.page_id) FROM vote s
-          WHERE s.round_id = $roundId AND s.rate = 1"""
+          WHERE s.round_id = $roundId AND ${VoteSql.selected()}"""
       .map(_.int(1))
       .single()
       .getOrElse(0)
@@ -574,9 +574,9 @@ object Round extends RoundRepo with CRUDMapper[Round] {
     */
   def imageCountsByRate(roundId: Long): Map[Int, Int] =
     sql"""SELECT COALESCE(SUM(t.a > 0), 0), COALESCE(SUM(t.u > 0), 0), COALESCE(SUM(t.r > 0), 0) FROM (
-            SELECT SUM(s.rate > 0) a, SUM(s.rate = 0) u, SUM(s.rate < 0) r FROM vote s
+            SELECT SUM(${VoteSql.positive()}) a, SUM(${VoteSql.unrated()}) u, SUM(${VoteSql.rejected()}) r FROM vote s
             WHERE s.round_id = $roundId GROUP BY s.page_id) t"""
-      .map(rs => Map(1 -> rs.int(1), 0 -> rs.int(2), -1 -> rs.int(3)))
+      .map(rs => Map(Vote.Selected -> rs.int(1), Vote.Unrated -> rs.int(2), Vote.Rejected -> rs.int(3)))
       .single()
       .getOrElse(Map.empty)
 

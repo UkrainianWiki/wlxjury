@@ -1,5 +1,6 @@
 package org.intracer.wmua
 
+import db.scalikejdbc.VoteSql
 import scalikejdbc._
 
 case class CriteriaRate(id: Long, voteId: Long, criterionId: Long, rate: Int)
@@ -102,7 +103,7 @@ object CriteriaRate extends SQLSyntaxSupport[CriteriaRate] {
       sql"""SELECT v.page_id, cr.criterion_id, AVG(cr.rate) FROM vote v
             STRAIGHT_JOIN criteria_rate cr ON cr.vote_id = v.id
             STRAIGHT_JOIN round_criterion rc ON rc.round_id = v.round_id AND rc.criterion_id = cr.criterion_id
-            WHERE v.round_id = $roundId AND v.page_id IN ($chunk) AND v.rate > 0 $ofJuror AND cr.rate > 0
+            WHERE v.round_id = $roundId AND v.page_id IN ($chunk) AND ${VoteSql.positive(VoteSql.v)} $ofJuror AND cr.rate > 0
             GROUP BY v.page_id, cr.criterion_id"""
         .map(rs => (rs.long(1), rs.long(2), BigDecimal(rs.bigDecimal(3))))
         .list()

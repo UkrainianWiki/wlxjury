@@ -1,6 +1,6 @@
 package db.scalikejdbc.rewrite
 
-import db.scalikejdbc.{ImageJdbc, RoundImageJdbc}
+import db.scalikejdbc.{ImageJdbc, RoundImageJdbc, VoteSql}
 import db.scalikejdbc.rewrite.ImageDbNew.{Limit, SelectionQuery}
 import org.intracer.wmua.{AverageRule, BinaryOrder, ImageWithRating, Vote}
 import scalikejdbc._
@@ -65,8 +65,9 @@ final case class RoundImageQuery(
     */
   private def from: SQLSyntax =
     sqls"""FROM round_image ri
-           LEFT JOIN (SELECT d.page_id, COUNT(s.page_id) AS assigned, COALESCE(SUM(s.rate <> 0), 0) AS voted,
-                             COALESCE(SUM(s.rate > 0), 0) AS approvals, COALESCE(SUM(s.rate < 0), 0) AS rejections,
+           LEFT JOIN (SELECT d.page_id, COUNT(s.page_id) AS assigned, COALESCE(SUM(${VoteSql.voted()}), 0) AS voted,
+                             COALESCE(SUM(${VoteSql.positive()}), 0) AS approvals,
+                             COALESCE(SUM(${VoteSql.rejected()}), 0) AS rejections,
                              COALESCE(SUM(s.rate), 0) AS rate_sum
                       FROM round_image_dirty d
                       LEFT JOIN vote s ON s.round_id = d.round_id AND s.page_id = d.page_id

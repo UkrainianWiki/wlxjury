@@ -3,7 +3,7 @@ package controllers
 import db.scalikejdbc.{Round, RoundCounts, User}
 import db.scalikejdbc.rewrite.{ImageDbNew, RoundImageQuery}
 import db.scalikejdbc.rewrite.ImageDbNew.{Limit, SelectionQuery}
-import org.intracer.wmua.{BinaryOrder, ImageWithRating}
+import org.intracer.wmua.{BinaryOrder, ImageWithRating, Vote}
 import org.intracer.wmua.ImageWithRating.{RankKey, Ranks}
 import play.api.mvc.{Cookie, Flash, RequestHeader}
 
@@ -23,7 +23,8 @@ sealed abstract class VoteFilter(val param: String) {
   def rated: Option[Boolean] = None
 
   /** Whether a file of this rate is in the list, as the query's `rate` and `rated` have it. */
-  def matches(rate: Int): Boolean = this.rate.forall(_ == rate) && rated.forall(r => if (r) rate > 0 else rate == 0)
+  def matches(rate: Int): Boolean =
+    this.rate.forall(_ == rate) && rated.forall(r => if (r) Vote.isPositive(rate) else Vote.isUnrated(rate))
 
   /** The filter in a round: itself if a round of its kind has it ([[VoteFilter.ofRound]]),
     * else all files. A binary round's selected (`Rate(1)`) is not a rated round's "rated 1",

@@ -110,7 +110,7 @@ object VoteJdbc extends CRUDMapper[Vote] {
 
   def byRoundSelected(roundId: Long): Seq[Vote] =
     where("roundId" -> roundId)
-      .where(sqls.ne(s.rate, 0))
+      .where(VoteSql.voted(s.rate))
       .apply()
 
   def byUser(user: User, roundId: Long): Seq[Vote] =
@@ -118,11 +118,11 @@ object VoteJdbc extends CRUDMapper[Vote] {
 
   def byUserSelected(user: User, roundId: Long): Seq[Vote] =
     where("juryId" -> user.id, "roundId" -> roundId)
-      .where(sqls.ne(s.rate, 0))
+      .where(VoteSql.voted(s.rate))
       .apply()
 
   def byUserNotSelected(user: User, roundId: Long): Seq[Vote] =
-    where("juryId" -> user.id, "roundId" -> roundId, "rate" -> 0).apply()
+    where("juryId" -> user.id, "roundId" -> roundId, "rate" -> Vote.Unrated).apply()
 
   /** Every juror's vote on the file in the round, with the juror, for the organisers' large
     * view: the highest rates first (a binary round's approvals), then the rejections, then the
@@ -142,7 +142,7 @@ object VoteJdbc extends CRUDMapper[Vote] {
         .append(isNotDeleted)
     }.map(rs => (VoteJdbc(s)(rs), User(u)(rs))).list()
       .sortBy { case (vote, juror) =>
-        (if (vote.rate > 0) 0 else if (vote.rate < 0) 1 else 2, -vote.rate, juror.fullname, juror.getId)
+        (if (vote.isPositive) 0 else if (vote.isRejected) 1 else 2, -vote.rate, juror.fullname, juror.getId)
       }
 
   /** Whether the file is in the round: `in` it ([[RoundImageJdbc.isIn]]: it has vote rows

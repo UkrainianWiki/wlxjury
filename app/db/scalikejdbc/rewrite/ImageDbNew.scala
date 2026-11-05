@@ -1,7 +1,7 @@
 package db.scalikejdbc.rewrite
 
-import db.scalikejdbc.{ImageJdbc, VoteJdbc}
-import org.intracer.wmua.{Image, ImageWithRating, Vote}
+import db.scalikejdbc.{ImageJdbc, VoteJdbc, VoteSql}
+import org.intracer.wmua.{BinaryOrder, Image, ImageWithRating, Vote}
 import scalikejdbc.{DBSession, _}
 
 object ImageDbNew extends SQLSyntaxSupport[Image] {
@@ -98,8 +98,8 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
              else if (!grouped)
                sqls"""${i.result.*}, ${s.result.*} """.value
              else if (tally)
-               sqls"""sum(s.rate) as rate, count(*) as rate_count, sum(s.rate > 0) as approvals,
-                       sum(s.rate < 0) as rejections, ${i.result.*} """.value
+               sqls"""sum(s.rate) as rate, count(*) as rate_count, ${SQLSyntax.createUnsafely(tallyColumns)},
+                       ${i.result.*} """.value
              else
                sqls"""sum(s.rate) as rate, count(*) as rate_count, ${i.result.*} """.value
            })
@@ -197,7 +197,7 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
       val aggregates = Seq("rate", "rate_count") ++ (if (tally) Seq("approvals", "rejections") else Nil)
       val inner = SQLSyntax.createUnsafely(
         "select s.page_id as pid, sum(s.rate) as rate, count(*) as rate_count" +
-          (if (tally) ", sum(s.rate > 0) as approvals, sum(s.rate < 0) as rejections" else "") +
+          (if (tally) s", $tallyColumns" else "") +
           keys.map { case (expr, alias, _) => s", $expr as $alias" }.mkString +
           (if (monumentJoin) join(monuments = true) else " from vote s")
       )
@@ -368,7 +368,7 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
       */
     def regionCounts()(implicit session: DBSession = autoSession): Map[String, Int] = {
       val conditions = rate.toSeq.map(r => s"s.rate = ${r.toInt}") ++
-        rated.toSeq.map(r => if (r) "s.rate > 0" else "s.rate = 0")
+        rated.toSeq.map(ratedCondition(_).value)
       val hit = if (conditions.isEmpty) "1" else conditions.mkString("(", " AND ", ")")
       val sql = userId match {
         case Some(juror) =>
@@ -427,13 +427,21 @@ object ImageDbNew extends SQLSyntaxSupport[Image] {
       def matching(cond: SQLSyntax) = if (perFile) sqls"sum($cond) > 0" else cond
       val votes: Seq[SQLSyntax] = Seq(
         rate.map(r => matching(sqls"s.rate = $r")),
-        rated.map(r => matching(if (r) sqls"s.rate > 0" else sqls"s.rate = 0"))
+        rated.map(r => matching(ratedCondition(r)))
       ).flatten
       votes.headOption.map { _ =>
         val cond = SQLSyntax.join(votes, sqls"and")
         withPageId.fold(cond)(pageId => sqls"($cond or s.page_id = $pageId)")
       }
     }
+
+    /** The `rated` filter's condition on a vote row: rated (a yes, or stars), or unrated. */
+    private def ratedCondition(rated: Boolean): SQLSyntax =
+      if (rated) VoteSql.positive() else VoteSql.unrated()
+
+    /** A grouped row's tally: its approvals and rejections apart ([[BinaryOrder]]'s columns). */
+    private def tallyColumns: String =
+      s"${BinaryOrder.Approvals} as approvals, ${BinaryOrder.Rejections} as rejections"
 
     /** A grouped query's HAVING: with [[filesByVotes]], the files of the vote filter. */
     private def having: SQLSyntax =

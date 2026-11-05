@@ -1,5 +1,7 @@
 package org.intracer.wmua
 
+import db.scalikejdbc.VoteSql
+
 /** The order of a yes/no round's files by all of its jurors' votes together: the galleries,
   * file list and CSV of all the jurors' votes, and the top-N a next round takes from it
   * (docs/history/2026-11-01-binary-aggregate-votes.md, decision 1). Files of the same values
@@ -26,8 +28,8 @@ sealed abstract class BinaryOrder(val param: String) {
 
 object BinaryOrder {
 
-  val Approvals = "sum(s.rate > 0)"
-  val Rejections = "sum(s.rate < 0)"
+  val Approvals = s"sum(${VoteSql.positive().value})"
+  val Rejections = s"sum(${VoteSql.rejected().value})"
 
   /** The most approvals first, then the fewest rejections: the default. */
   case object ApprovalsThenRejections extends BinaryOrder("approvals") {

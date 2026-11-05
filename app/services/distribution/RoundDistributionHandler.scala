@@ -739,13 +739,19 @@ object DistributionSource {
     * previous-round rejection again in each window.
     */
   private def votesCond(prevIds: Seq[Long], votes: PrevVotes): SQLSyntax = {
-    val rated = if (votes.rated) sqls"AND s.rate > 0" else sqls""
+    val rated = if (votes.rated) sqls"AND ${VoteSql.positive()}" else sqls""
     val notRejected = votes.rejectedBy.fold(sqls"")(n =>
       sqls"""AND NOT EXISTS (SELECT 1 FROM vote r
-             WHERE r.page_id = s.page_id AND r.round_id IN ($prevIds) AND r.rate < 0
+             WHERE r.page_id = s.page_id AND r.round_id IN ($prevIds) AND ${VoteSql.rejected(VoteSql.r)}
              HAVING COUNT(*) >= $n)""")
     sqls"$rated $notRejected"
   }
+
+  /** A file's aggregates in one previous round, over its vote rows `s` read: the rate sum `rs`,
+    * the rows `c` and the rated rows `v`.
+    */
+  private def roundAggregates(votes: PrevVotes): SQLSyntax =
+    sqls"SUM(s.rate) rs, COUNT(*) c, SUM(${VoteSql.positive()}) v"
 
   /** Images of the round never come back: the anti-join that makes a resume idempotent.
     * Nor do those with votes of the round moved aside (V63): they are in the round's count
@@ -820,7 +826,7 @@ object DistributionSource {
       session: DBSession
   ): Seq[ImageWithRating] = {
     val rows = sql"""SELECT g.page_id, g.rs, g.c, g.v, ${i.result.*} FROM (
-              SELECT s.page_id, s.round_id, SUM(s.rate) rs, COUNT(*) c, SUM(s.rate > 0) v FROM vote s
+              SELECT s.page_id, s.round_id, ${roundAggregates(votes)} FROM vote s
               WHERE s.round_id IN ($prevIds) ${votesCond(prevIds, votes)} AND s.page_id > $from AND s.page_id <= $to
                 AND ${notInRound(roundId, sqls"s.page_id")}
               GROUP BY s.page_id, s.round_id) g
@@ -902,7 +908,7 @@ object DistributionSource {
       case Denominator.PerImageRated => sqls"IF(SUM(t.v) = 0, 0, SUM(GREATEST(t.rs, 0)) * 1e0 / SUM(t.v))"
     }
     sql"""SELECT t.page_id, SUM(GREATEST(t.rs, 0)) rate_sum, SUM(t.c) cnt, SUM(t.v) rated FROM (
-            SELECT s.page_id, s.round_id, SUM(s.rate) rs, COUNT(*) c, SUM(s.rate > 0) v FROM vote s
+            SELECT s.page_id, s.round_id, ${roundAggregates(votes)} FROM vote s
             WHERE s.round_id IN ($prevIds) ${votesCond(prevIds, votes)}
             GROUP BY s.page_id, s.round_id) t
           GROUP BY t.page_id
@@ -926,13 +932,13 @@ object DistributionSource {
     */
   private def binaryPage(prevIds: Seq[Long], votes: PrevVotes, order: BinaryOrder, pageSize: Int,
       offset: Int)(implicit session: DBSession): Seq[(Long, Image => ImageWithRating)] = {
-    val conditions = Option.when(votes.rated)(sqls"SUM(s.rate > 0) > 0").toSeq ++
-      votes.rejectedBy.map(n => sqls"SUM(s.rate < 0) < $n")
+    val conditions = Option.when(votes.rated)(sqls"SUM(${VoteSql.positive()}) > 0").toSeq ++
+      votes.rejectedBy.map(n => sqls"SUM(${VoteSql.rejected()}) < $n")
     val having = if (conditions.isEmpty) sqls"" else sqls"HAVING ${sqls.joinWithAnd(conditions: _*)}"
     val orderBy = SQLSyntax.createUnsafely(
       (order.columns :+ ("s.page_id" -> 1)).map { case (column, dir) => column + (if (dir < 0) " DESC" else " ASC") }
         .mkString(", "))
-    sql"""SELECT s.page_id, SUM(s.rate > 0) approvals, SUM(s.rate < 0) rejections, COUNT(s.rate) cnt
+    sql"""SELECT s.page_id, SUM(${VoteSql.positive()}) approvals, SUM(${VoteSql.rejected()}) rejections, COUNT(s.rate) cnt
           FROM vote s
           WHERE s.round_id IN ($prevIds)
           GROUP BY s.page_id $having

@@ -56,7 +56,7 @@ case class ImageWithRating(
     * distribution's "selected by at least" reads (rate > 0, `SelectedAtLeast`) the approvals.
     */
   def rateSum: Int =
-    votes.foldLeft(0)((acc, s) => acc + Math.max(s.rate, 0))
+    votes.foldLeft(0)((acc, s) => acc + s.grade)
 
   /** A binary round's approvals of the file: its selections (rate 1). A grouped row (all the
     * jurors' votes together, one vote of juror 0 with their sum) has them only from a
@@ -65,7 +65,7 @@ case class ImageWithRating(
     */
   def approvals: Int = {
     require(approvalsFromDb.isDefined || !grouped, "grouped row without tally")
-    approvalsFromDb.getOrElse(votes.count(_.rate > 0))
+    approvalsFromDb.getOrElse(votes.count(_.isPositive))
   }
 
   /** A binary round's rejections of the file (rate -1), from the query or counted as
@@ -73,7 +73,7 @@ case class ImageWithRating(
     */
   def rejections: Int = {
     require(rejectionsFromDb.isDefined || !grouped, "grouped row without tally")
-    rejectionsFromDb.getOrElse(votes.count(_.rate < 0))
+    rejectionsFromDb.getOrElse(votes.count(_.isRejected))
   }
 
   /** A row of all the jurors' votes together: a vote of juror 0 holds their sum. */
@@ -95,7 +95,7 @@ case class ImageWithRating(
   /** The file's votes rated above 0 (in a criteria round, rated in every criterion: U5); of a
     * grouped row from its query's `tally` ([[approvals]]).
     */
-  def ratedVotes: Long = if (grouped) approvals else votes.count(_.rate > 0)
+  def ratedVotes: Long = if (grouped) approvals else votes.count(_.isPositive)
 
   /** The denominator of the file's score ([[totalRate]]): a binary round's jurors; one
     * juror's own vote, 1; else as the round's [[AverageRule]] has it: the file's rated votes, its
@@ -253,11 +253,11 @@ object ImageWithRating {
 class Rating
 
 class OneJuryRating(val vote: Vote) extends Rating {
-  def isSelected: Boolean = vote.rate > 0
+  def isSelected: Boolean = vote.isPositive
 
-  def isRejected: Boolean = vote.rate < 0
+  def isRejected: Boolean = vote.isRejected
 
-  def isUnrated: Boolean = vote.rate == 0
+  def isUnrated: Boolean = vote.isUnrated
 
   def rate: Int = vote.rate
 }
@@ -265,11 +265,11 @@ class OneJuryRating(val vote: Vote) extends Rating {
 class OwnRating(vote: Vote) extends OneJuryRating(vote) {
 
   def unSelect(): Unit = {
-    vote.rate = -1
+    vote.rate = Vote.Rejected
   }
 
   def select(): Unit = {
-    vote.rate = 1
+    vote.rate = Vote.Selected
   }
 
   def rate_=(rate: Int): Unit = {

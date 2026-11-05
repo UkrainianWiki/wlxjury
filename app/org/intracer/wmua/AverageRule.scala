@@ -1,5 +1,7 @@
 package org.intracer.wmua
 
+import db.scalikejdbc.VoteSql
+
 /** How a rated round scores a file from its jurors' rates (`round.average_rule`, V90): the
   * round's one option for it, used by every view of its results (the by-rate gallery, the large
   * view for all the jurors, the file list, the CSV, criteria results) and by a next round's top-N
@@ -67,7 +69,7 @@ object AverageRule {
   /** Over a file's `vote` rows `s`, grouped by file: a file whose rates are all NULL sums to 0, as
     * its `round_image.rate_sum` does, so both sources give it key 0.
     */
-  val VoteTerms: Terms = Terms("COALESCE(SUM(s.rate), 0)", "SUM(s.rate > 0)", "COUNT(*)")
+  val VoteTerms: Terms = Terms("COALESCE(SUM(s.rate), 0)", s"SUM(${VoteSql.positive().value})", "COUNT(*)")
 
   /** The scale of a rank key ([[AverageRule.keySql]]): averages that differ, with a denominator
     * below 30,000 jurors, differ by more than 1 / KeyScale.
