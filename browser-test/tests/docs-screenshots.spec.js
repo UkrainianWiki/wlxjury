@@ -151,9 +151,9 @@ test.describe('the guides\' screenshots', () => {
     await shot(contextAs, 'juror', largePath(fixture.roundBinaryId, juror.id, juror.pageId), 'juror-large-view-binary', { height: 520 });
     await shot(contextAs, 'juror', largePath(fixture.roundRatingId, juror.id, juror.ratedPageId), 'juror-large-view-rated', {
       height: 520,
-      // a plain star rate in a round without the worst mark, as the guide describes: if a
-      // worst-mark vote is on this file (the worst-mark shot of an earlier run on the same
-      // server), start the server afresh
+      // a plain star rate in a round without the worst mark, as the guide describes. The
+      // worst-mark test undoes its vote, so this holds on a rerun too; a safety net if that
+      // undo failed: start the docs-mode server afresh
       prepare: async (page) => {
         await expect(page.locator('.bi-x-lg'), 'no worst-mark icon on the rated shot: restart the docs-mode server').toHaveCount(0);
       },
@@ -309,15 +309,24 @@ test.describe('the guides\' screenshots', () => {
       const view = await sized(context);
       await view.goto(largePath(fixture.roundRatingId, juror.id, juror.ratedPageId));
       await expect(view.getByRole('button', { name: /Worst mark/ }).first()).toBeVisible();
-      // the shot shows a file that has the worst mark, as the guide says: give it one (the
-      // docs-mode server is started afresh for each run, so the vote needs no undoing), then
-      // open the file again, as the large view moves on after a vote
+      // the shot shows a file that has the worst mark, as the guide says: give it one, then
+      // open the file again, as the large view moves on after a vote. The file's own rate is
+      // restored below, so that a rerun on the same server still shows its plain stars.
+      const rateBefore = Number(await view.locator('.large-stars').first().getAttribute('data-score')) || 0;
       await view.getByRole('button', { name: /Worst mark/ }).first().click();
       await view.waitForLoadState('networkidle');
       await view.goto(largePath(fixture.roundRatingId, juror.id, juror.ratedPageId));
       await expect(view.getByRole('button', { name: /Clear the vote/ }).first()).toBeVisible();
       await view.waitForLoadState('networkidle');
       await top(view, path.join(OUT_DIR, 'juror-large-view-worst-mark.png'), 520);
+      // undo the vote: clear it, and give the file its earlier rate back (a click on that star)
+      await view.getByRole('button', { name: /Clear the vote/ }).first().click();
+      await view.waitForLoadState('networkidle');
+      if (rateBefore > 0) {
+        await view.goto(largePath(fixture.roundRatingId, juror.id, juror.ratedPageId));
+        await view.locator('.large-stars .wlx-star').nth(rateBefore - 1).click();
+        await view.waitForLoadState('networkidle');
+      }
       await context.close();
     } finally {
       if (!was) await setOption(false);
