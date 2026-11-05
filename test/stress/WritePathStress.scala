@@ -59,9 +59,9 @@ import scala.util.control.NonFatal
   * host spent asleep, while its elapsed time is measured with `System.nanoTime`, which does. A
   * variant whose elapsed time is more than `seconds + 300`, or during which HikariCP logged a
   * clock leap or a retrograde clock change (its housekeeper's warning, caught by an appender), is
-  * marked INVALID in the summary and in results.json (`valid`, `invalidReason`): the host slept
-  * or the clock jumped, so its rates, latencies and lock waits don't describe the code
-  * (`WallTimeCheck`).
+  * marked INVALID in the summary and in results.json (`valid`, `invalidReason`): the host slept,
+  * the clock jumped or (Hikari's warning only) the pool's threads starved, so its rates, latencies
+  * and lock waits don't describe the code (`WallTimeCheck`).
   */
 object WritePathStress {
 
@@ -643,15 +643,18 @@ object WallTimeCheck {
   def isClockWarning(message: String): Boolean =
     message.contains("clock leap detected") || message.contains("Retrograde clock change detected")
 
-  /** None for a valid variant, else why it is INVALID. */
+  /** None for a valid variant, else why it is INVALID. Hikari's housekeeper warns the same way
+    * when its thread was starved, so its reason says so.
+    */
   def invalidReason(seconds: Int, elapsedSeconds: Double, clockWarnings: Seq[String]): Option[String] = {
     val reasons = Seq(
       Option.when(elapsedSeconds > seconds + SlackSeconds)(
-        f"elapsed $elapsedSeconds%.0f s for a $seconds s run (more than ${seconds + SlackSeconds} s)"),
+        f"host slept or clock jumped: elapsed $elapsedSeconds%.0f s for a $seconds s run (more than ${seconds + SlackSeconds} s)"),
       Option.when(clockWarnings.nonEmpty)(
-        s"HikariCP logged ${clockWarnings.size} clock warning(s), first: ${clockWarnings.head.take(200)}")
+        s"host slept, clock jumped or threads starved: HikariCP logged ${clockWarnings.size} clock warning(s), " +
+          s"first: ${clockWarnings.head.take(200)}")
     ).flatten
-    Option.when(reasons.nonEmpty)(s"host slept or clock jumped: ${reasons.mkString("; ")}")
+    Option.when(reasons.nonEmpty)(reasons.mkString("; "))
   }
 }
 

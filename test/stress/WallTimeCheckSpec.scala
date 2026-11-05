@@ -22,7 +22,7 @@ class WallTimeCheckSpec extends FunSuite {
 
   test("a Hikari clock warning makes a run of normal length INVALID") {
     val reason = WallTimeCheck.invalidReason(120, 125.0, Seq(leap))
-    assert(reason.exists(_.startsWith("host slept or clock jumped")), reason)
+    assert(reason.exists(_.startsWith("host slept, clock jumped or threads starved")), reason)
     assert(reason.exists(_.contains("clock leap detected")), reason)
     assert(!reason.exists(_.contains("elapsed")), reason)
   }
