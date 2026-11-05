@@ -375,7 +375,7 @@ their own tab, **Deleted on Commons**.
 <a id="o-import-files"></a>
 ### Importing the contest's files
 
-Admins bring files into the contest from the **Images** link of the contest on the contests page
+Admins bring files into the contest from the **Files source** link of the contest (**Set the source**, if it has none) on the contests page
 (or **Import and cache** on the contest files page). The page **Files source** takes a Commons category
 or a page, or a pasted list of files in **Or image list**, and **Import files** adds them.
 Imports only add: no file is removed, and all the contest's rounds choose from these files.

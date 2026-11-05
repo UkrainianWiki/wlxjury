@@ -281,7 +281,7 @@ tokens: the owner revokes them on the profile, and root on any account's tokens 
 <a id="a-contest-settings"></a>
 ### Contest settings
 
-A contest has a name, a country, a year, the Commons category or page its files come from (**Images**),
+A contest has a name, a country, a year, the Commons category or page its files come from (**Files source**),
 a **monument id template** for monuments contests, a greeting, and its rounds. Root creates and
 changes the contests on the **Contests** page. Admins of a contest set up its
 people ([People](#a-users)), its greeting, its [files](organizer-guide.md#o-import-files) and its
