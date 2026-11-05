@@ -7,7 +7,9 @@ code is 124. On Windows the command starts suspended in a Job Object with
 JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE (the sbt launcher JVM, its forked test JVM, anything they
 start): a timeout terminates the job, and so does this script's own death, a hard kill included;
 `taskkill /T /F` only if the job can't be made (the exit line says which: tree=job-object or
-tree=taskkill). Elsewhere the command gets its own process group: SIGTERM, SIGHUP or SIGINT to
+tree=taskkill). On a normal exit, closing the job kills anything the command left running (an
+`sbt --client` server, a daemon): this script is not for commands that start daemons.
+Elsewhere the command gets its own process group: SIGTERM, SIGHUP or SIGINT to
 this script is forwarded to that group, which is then killed (exit 128 + the signal). The
 deadline is checked against time.monotonic() in short polls: on Windows that is
 GetTickCount64(), which counts sleep and hibernation, so a run the host slept past is stopped
@@ -270,29 +272,36 @@ def _start(command, output, use_job):
     if not ON_WINDOWS:
         kwargs["start_new_session"] = True
         return subprocess.Popen(command, **kwargs), None, "process-group"
-    kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP | (CREATE_SUSPENDED if use_job else 0)
+    new_group = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0x200)
+    kwargs["creationflags"] = new_group | (CREATE_SUSPENDED if use_job else 0)
     process = subprocess.Popen(command, **kwargs)
     if not use_job:
         return process, None, "taskkill"
     job = None
     try:
-        try:
-            job = WindowsJob()
-            job.assign(int(process._handle))
-        except OSError as error:
-            if job is not None:
-                job.close()
-            job = None
-            print("agent-check: no job object ({}); a timeout stops the tree with taskkill /T".format(error),
-                  file=sys.stderr)
-    finally:
-        try:
-            _resume(process)
-        except BaseException:
-            kill_tree(process, job)
-            if job is not None:
-                job.close()
-            raise
+        job = WindowsJob()
+        job.assign(int(process._handle))
+    except OSError as error:
+        # no job object: run under the taskkill /T fallback
+        if job is not None:
+            job.close()
+        job = None
+        print("agent-check: no job object ({}); a timeout stops the tree with taskkill /T".format(error),
+              file=sys.stderr)
+    except BaseException:
+        # anything else: the child, still suspended, never runs
+        process.kill()
+        process.wait()
+        if job is not None:
+            job.close()
+        raise
+    try:
+        _resume(process)
+    except BaseException:
+        kill_tree(process, job)
+        if job is not None:
+            job.close()
+        raise
     return process, job, "job-object" if job is not None else "taskkill"
 
 

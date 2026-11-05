@@ -153,6 +153,20 @@ class TreeTest(unittest.TestCase):
             time.sleep(GRANDCHILD_DELAY + 2)
             self.assertFalse(marker.exists(), "the grandchild survived taskkill /T")
 
+    def test_a_failed_job_object_set_up_kills_the_suspended_child_instead_of_resuming_it(self):
+        process = mock.MagicMock(pid=999999, _handle=1234)
+        job = mock.MagicMock()
+        job.assign.side_effect = TypeError("bad handle")
+        with mock.patch.object(helper, "ON_WINDOWS", True), \
+                mock.patch.object(helper.subprocess, "Popen", return_value=process), \
+                mock.patch.object(helper, "WindowsJob", return_value=job), \
+                mock.patch.object(helper, "_resume") as resume:
+            with self.assertRaises(TypeError):
+                helper._start(["anything"], None, use_job=True)
+        resume.assert_not_called()
+        process.kill.assert_called_once_with()
+        job.close.assert_called_once_with()
+
     @unittest.skipIf(os.name == "nt", "POSIX signals")
     def test_sigterm_is_forwarded_to_the_group_and_the_lock_released(self):
         import signal
