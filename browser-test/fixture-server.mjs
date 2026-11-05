@@ -3,7 +3,8 @@
 // (a MariaDB testcontainer restored from data/cache/, built from the CSVs the first time) and the
 // app with the production filters, the production content security policy (-Dui.csp=production)
 // and CSRF checked on POSTs (-Dui.csrf=on); its image proxy fetches from a placeholder stub,
-// never from Commons (-Dui.images=stub). docs/testing/practices.md §10.
+// never from Commons (-Dui.images=stub; -Dui.images=docs for the guides' screenshots, below).
+// docs/testing/practices.md §10.
 //
 //   node fixture-server.mjs start   # compiles, starts it in the background, waits for server.json
 //   node fixture-server.mjs stop    # asks it to stop (target/ui-shots/server.stop) and waits
@@ -16,6 +17,7 @@ import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { docsScreenshotsOn } from './lib/server.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const SHOTS = path.join(ROOT, 'target', 'ui-shots');
@@ -28,13 +30,19 @@ const START_TIMEOUT_MS = 40 * 60 * 1000;
 const STOP_TIMEOUT_MS = 3 * 60 * 1000;
 const CREDENTIALS = ['COMMONS_USER', 'COMMONS_PASSWORD', 'SCALAWIKI_LOGIN', 'SCALAWIKI_PASSWORD'];
 
-// UI_IMAGES=docs (the user guides' screenshots, docs/user/images/README.md): the photos that
-// docs-photos.py cached instead of the grey stub; anything else keeps the stub
-const IMAGES = process.env.UI_IMAGES === 'docs' ? 'docs' : 'stub';
+// Docs mode (the user guides' screenshots, docs/user/images/README.md): the photos that
+// docs-photos.py cached instead of the grey stub, with DOCS_SCREENSHOTS=1 or UI_IMAGES=docs;
+// UI_IMAGES unset or stub keeps the stub, any other value is an error
+const UI_IMAGES = (process.env.UI_IMAGES ?? '').trim();
+if (!['', 'stub', 'docs'].includes(UI_IMAGES)) throw new Error(`UI_IMAGES=${UI_IMAGES}: use docs or stub`);
+const IMAGES = docsScreenshotsOn() || UI_IMAGES === 'docs' ? 'docs' : 'stub';
 // DOCS_PHOTOS: the photo lists of docs mode (wlm-ua, wlm-intl, wle-ua, wle-intl, comma separated; default wlm-ua,wlm-intl)
-const PHOTOS = (process.env.DOCS_PHOTOS || 'wlm-ua,wlm-intl').replace(/[^a-z,-]/g, '');
+const PHOTOS = (process.env.DOCS_PHOTOS || 'wlm-ua,wlm-intl').split(',').map((n) => n.trim()).filter(Boolean);
+for (const name of PHOTOS) {
+  if (!/^[a-z]+(-[a-z]+)*$/.test(name)) throw new Error(`DOCS_PHOTOS: '${name}' is not a list name (wlm-ua, wlm-intl, wle-ua, wle-intl)`);
+}
 const SBT_COMMANDS = [
-  `set Test / javaOptions ++= Seq("-Xmx1g", "-Dfile.encoding=UTF-8", "-Dui.csp=production", "-Dui.csrf=on", "-Dui.images=${IMAGES}", "-Dui.photos=${PHOTOS}")`,
+  `set Test / javaOptions ++= Seq("-Xmx1g", "-Dfile.encoding=UTF-8", "-Dui.csp=production", "-Dui.csrf=on", "-Dui.images=${IMAGES}", "-Dui.photos=${PHOTOS.join(',')}")`,
   // Play's Assets serves public/ from the classpath, which the test classpath lacks
   'set Test / unmanagedClasspath += Attributed.blank((Assets / packageBin).value)',
   'Test/runMain gatling.setup.UiShotsServer',
@@ -66,7 +74,12 @@ function readServerJson() {
 async function start() {
   const running = readServerJson();
   if (running && (await answers(running.baseUrl))) {
-    console.log(`[fixture-server] already serving ${running.baseUrl}`);
+    // a server of the other image mode would serve the wrong images: never reuse it
+    if (running.images !== IMAGES) {
+      throw new Error(`already serving ${running.baseUrl} with images '${running.images ?? 'unknown'}', ` +
+        `not '${IMAGES}': stop it first (node fixture-server.mjs stop)`);
+    }
+    console.log(`[fixture-server] already serving ${running.baseUrl} (images: ${IMAGES})`);
     return;
   }
   fs.mkdirSync(SHOTS, { recursive: true });

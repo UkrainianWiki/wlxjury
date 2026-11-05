@@ -20,7 +20,9 @@ for png in sorted(IMAGES.glob("*.png")):
     image = Image.open(png)
     if image.mode != "P":  # an image already reduced stays as it is
         image = image.convert("RGB")
-        if len(image.getcolors(1 << 20) or []) > 256:
+        # getcolors returns None when the image has more colours than its limit: quantise then
+        # (with a limit of 2^20, an image of more colours than that was left unquantised)
+        if image.getcolors(256) is None:
             # photos (large files) are dithered so that skies show no bands; flat pages are not
             # (Pillow dithers only against a given palette: the first pass makes it)
             palette = image.quantize(colors=256, method=Image.FASTOCTREE, dither=Image.NONE)

@@ -16,6 +16,15 @@ export function readServer() {
   return JSON.parse(fs.readFileSync(SERVER_JSON, 'utf8'));
 }
 
+/** Whether DOCS_SCREENSHOTS asks for the user guides' screenshots: 1, true, yes or on; unset,
+  * empty, 0, false, no or off is off; any other value is an error, not a guess. */
+export function docsScreenshotsOn(env = process.env) {
+  const value = (env.DOCS_SCREENSHOTS ?? '').trim().toLowerCase();
+  if (['1', 'true', 'yes', 'on'].includes(value)) return true;
+  if (['', '0', 'false', 'no', 'off'].includes(value)) return false;
+  throw new Error(`DOCS_SCREENSHOTS=${env.DOCS_SCREENSHOTS}: use 1 (on) or 0 (off)`);
+}
+
 const ENGINE_INDEX = { chromium: 0, firefox: 1, webkit: 2 };
 
 /** The fixture's ids and the accounts of `browserName`'s run. */

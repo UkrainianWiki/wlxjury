@@ -80,8 +80,8 @@ object UiShotsServer {
       sql"UPDATE users SET email_verified_at = NOW() WHERE id = $jurorId".update()
     // the browser tests (browser-test/): jurors with files in both rounds, each engine voting
     // as its own juror and signing in and out as another, so engines may share one server
-    val jurors = f.jurorsIn(Some(f.roundBinaryId)).filter(j => f.roundsOf(j._1).contains(f.roundRatingId))
-      .take(8).map { case (id, email, password) =>
+    val listedJurors = f.jurorsIn(Some(f.roundBinaryId)).filter(j => f.roundsOf(j._1).contains(f.roundRatingId)).take(8)
+    val jurors = listedJurors.map { case (id, email, password) =>
         s"""{"id": $id, "login": ${q(email)}, "password": ${q(password)}, """ +
           s""""pageId": ${firstPage(id, f.roundBinaryId)}, "ratedPageId": ${firstPage(id, f.roundRatingId)}}"""
       }
@@ -102,9 +102,22 @@ object UiShotsServer {
     val filled = DB.localTx { tx => CommonsFileUrl.fillMissing()(tx) }
     println(s"[ui-shots] set the Commons url of $filled images")
 
+    // docs mode: the photos learn the fixture's files and which of them the guides' shots show at
+    // the top of a page (docs-screenshots.spec.js), which never get a degraded photo
+    f.docsPhotos.foreach { photos =>
+      val titles = sql"SELECT title FROM images ORDER BY page_id".map(_.string(1)).list()
+      val shown  = shownFiles(f.roundBinaryId, f.roundRatingId, (jurorId +: listedJurors.map(_._1)).distinct)
+      photos.setFixture(DocsPhotos.Fixture(titles, shown))
+      println(s"[images] docs photos for ${titles.size} files (${photos.pool.good.size} photos, " +
+        s"${photos.pool.bad.size} degraded); ${shown.size} files shown at the top of the shots get no degraded one")
+    }
+    // the stub's mode, which docs-screenshots.spec.js checks: "docs", "stub", or "commons" (none)
+    val images = if (f.docsPhotos.isDefined) "docs" else sys.props.get("ui.images").filter(_ == "stub").getOrElse("commons")
+
     val json =
       s"""{
          |  "baseUrl": ${q(f.baseUrl)},
+         |  "images": ${q(images)},
          |  "contestId": ${f.contestId},
          |  "roundBinaryId": ${f.roundBinaryId},
          |  "roundRatingId": ${f.roundRatingId},
@@ -124,5 +137,30 @@ object UiShotsServer {
     stopFile.delete()
     readyFile.delete()
     println("[ui-shots] stopping")
+  }
+
+  /** The titles of the files the guides' shots (docs-screenshots.spec.js) show near the top of a
+    * page: the first [[DocsPhotos.ShownPerList]] of each juror's gallery of both rounds (the
+    * large views open a juror's first file, with its neighbours), and of all the jurors' by-rate
+    * gallery and file list of both, each in the order its page has without a cookie. */
+  private def shownFiles(binaryId: Long, ratedId: Long, jurorIds: Seq[Long]): Set[String] = {
+    import controllers.{GalleryView, Pager, RoundList}
+    implicit val request: play.api.mvc.RequestHeader = play.api.test.FakeRequest()
+    val rounds = Seq(binaryId, ratedId).map(id => db.scalikejdbc.Round.findById(id).getOrElse(sys.error(s"no round $id")))
+    def top(list: RoundList): Seq[String] =
+      list.files(Pager(1, Int.MaxValue, DocsPhotos.ShownPerList)).map(_.image.title)
+    val ofJurors = for {
+      jurorId <- jurorIds
+      juror    = db.scalikejdbc.User.findById(jurorId).getOrElse(sys.error(s"no juror $jurorId"))
+      round   <- rounds
+      title   <- top(RoundList.of(round, juror, jurorId, "all", GalleryView.Gallery))
+    } yield title
+    val organizer = db.scalikejdbc.User.findById(GatlingTestFixture.organizer._1).getOrElse(sys.error("no organizer"))
+    val ofAll = for {
+      round <- rounds
+      view  <- Seq(GalleryView.ByRate, GalleryView.FileList)
+      title <- top(RoundList.of(round, organizer, 0, "all", view))
+    } yield title
+    (ofJurors ++ ofAll).toSet
   }
 }

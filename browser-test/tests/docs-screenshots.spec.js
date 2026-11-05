@@ -23,18 +23,23 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { test, expect } from '../lib/fixtures.js';
 import { galleryPath, largePath } from '../lib/actions.js';
-import { ROOT } from '../lib/server.js';
+import { docsScreenshotsOn, readServer, ROOT } from '../lib/server.js';
 
 const OUT_DIR = path.join(ROOT, 'docs', 'user', 'images');
 const VIEWPORT = { width: 1280, height: 800 };
 
 test.describe('the guides\' screenshots', () => {
-  test.skip(!process.env.DOCS_SCREENSHOTS, 'opt-in: set DOCS_SCREENSHOTS=1');
+  test.skip(!docsScreenshotsOn(), 'opt-in: set DOCS_SCREENSHOTS=1');
   test.skip(({ browserName }) => browserName !== 'chromium', 'Chromium only');
   // 2x: a 1280-wide page is a 2560-pixel PNG, shown in the guides at its CSS size (width="1280")
   test.use({ viewport: VIEWPORT, locale: 'en-US', colorScheme: 'dark', deviceScaleFactor: 2 });
 
-  test.beforeAll(() => fs.mkdirSync(OUT_DIR, { recursive: true }));
+  test.beforeAll(() => {
+    // the photos, never the grey stub: a server started without docs mode fails the run
+    expect(readServer().images, 'the fixture serves the docs photos: start it with DOCS_SCREENSHOTS=1 ' +
+      '(node fixture-server.mjs stop, then start)').toBe('docs');
+    fs.mkdirSync(OUT_DIR, { recursive: true });
+  });
 
   // the app's theme cookie (controllers.Theme.CookieName), on every context before its first page
   let baseUrl;
@@ -97,7 +102,7 @@ test.describe('the guides\' screenshots', () => {
     return Math.ceil(row.bottom + window.scrollY) + 2;
   }, n);
 
-  async function shot(contextAs, role, target, name, { full = false, prepare, crop, extra = 0, height, width, rows, tableRows } = {}) {
+  async function shot(contextAs, role, target, name, { full = false, prepare, crop, height, width, rows, tableRows } = {}) {
     const context = await contextAs(role);
     await context.addCookies([{ name: 'theme', value: 'dark', url: baseUrl }]);
     const page = await sized(context);
@@ -107,13 +112,23 @@ test.describe('the guides\' screenshots', () => {
     await page.waitForLoadState('networkidle');
     await anonymize(page);
     const file = path.join(OUT_DIR, `${name}.png`);
-    // `crop` (a CSS selector): the relevant part of the page only, else the viewport or the page
+    // `crop` (CSS selectors): the relevant part of the page only, the boxes of the selectors'
+    // first elements together, else the viewport or the page
     if (crop) {
+      const boxes = [];
+      for (const selector of [crop].flat()) {
+        const box = await page.locator(selector).first().boundingBox();
+        expect(box, `${selector} is shown`).not.toBeNull();
+        boxes.push(box);
+      }
+      const left = Math.min(...boxes.map((b) => b.x));
+      const topEdge = Math.min(...boxes.map((b) => b.y));
+      const right = Math.max(...boxes.map((b) => b.x + b.width));
+      const bottom = Math.max(...boxes.map((b) => b.y + b.height));
       // with a margin, so that nothing at the edge is cut
-      const box = await page.locator(crop).first().boundingBox();
-      const x = Math.max(0, box.x - 12);
+      const x = Math.max(0, left - 12);
       await page.screenshot({ path: file, fullPage: true,
-        clip: { x, y: Math.max(0, box.y - 12), width: Math.min(VIEWPORT.width - x, box.width + 24), height: box.height + 24 + extra } });
+        clip: { x, y: Math.max(0, topEdge - 12), width: Math.min(VIEWPORT.width - x, right - x + 12), height: bottom - Math.max(0, topEdge - 12) + 12 } });
     } else if (rows) await top(page, file, await belowRows(page, rows), width);
     else if (tableRows) await top(page, file, await belowTableRow(page, tableRows), width);
     else if (height) await top(page, file, height, width);
@@ -159,14 +174,17 @@ test.describe('the guides\' screenshots', () => {
     const contest = fixture.contestId;
     await shot(contextAs, 'admin', `/admin/rounds?contestId=${contest}`, 'organizer-rounds-list', { height: 460 });
     await shot(contextAs, 'admin', `/admin/rounds/edit?contestId=${contest}`, 'organizer-new-round-form', {
-      crop: '#round-form', // the form only (about 800 CSS pixels wide)
-      extra: 135, // down to the end of the Save and Cancel buttons, which are below the form's box
-      // the form's collapsed sections, opened
+      // the form only (about 800 CSS pixels wide), down to the end of its Save and Cancel buttons
+      crop: ['#round-form', '#round-form .form-actions'],
+      // the form's collapsed sections, opened, and their opening animation done before the form
+      // is measured (Bootstrap's .collapsing becomes .collapse.show)
       prepare: async (page) => {
         for (const name of ['Media filtering', 'Add files']) {
-          await page.getByRole('button', { name }).or(page.getByRole('link', { name })).first().click();
+          const toggle = page.getByRole('button', { name }).or(page.getByRole('link', { name })).first();
+          await toggle.click();
+          await expect(page.locator(`#${await toggle.getAttribute('aria-controls')}.collapse.show`)).toHaveCount(1);
         }
-        await page.waitForTimeout(1000); // the sections' opening animation, before the form is measured
+        await expect(page.locator('#round-form .collapsing')).toHaveCount(0);
       },
     });
     await shot(contextAs, 'admin', `/contest/${contest}/images`, 'organizer-contest-images', { full: true });
@@ -235,31 +253,37 @@ test.describe('the guides\' screenshots', () => {
     const current = await select.inputValue();
     const other = await select.locator('option').evaluateAll((options, c) => options.map((o) => o.value).find((v) => v !== c), current);
     await select.selectOption(other);
-    const warning = page.locator('#averageRule_warning');
-    test.skip(await page.locator('#averageRule_warning_row').count() === 0, 'the rated round has no vote: no warning');
-    await expect(warning).toBeVisible();
+    // the fixture's rated round has rated votes, so the page has the warning: without it the
+    // shot would show no warning, a failure, not a skip
+    await expect(page.locator('#averageRule_warning_row'), 'the rated round has rated votes').toHaveCount(1);
+    await expect(page.locator('#averageRule_warning')).toBeVisible();
     await page.waitForLoadState('networkidle');
-    const from = await select.boundingBox();
-    const to = await warning.boundingBox();
+    // from the rating type's row above the option to the worst mark's below its warning
+    const fieldRow = (selector) => page.locator(selector).locator('xpath=ancestor::div[contains(concat(" ", normalize-space(@class), " "), " row ")][1]');
+    const from = await fieldRow('#rates').boundingBox();
+    const to = await page.locator('#round-worst-mark').boundingBox();
+    expect(from && to, 'the rating type and the worst mark are shown').toBeTruthy();
+    const y = Math.max(0, from.y - 12);
     await page.screenshot({ path: path.join(OUT_DIR, 'organizer-score-rule-warning.png'), fullPage: true,
-      clip: { x: 0, y: from.y - 80, width: VIEWPORT.width, height: to.y + to.height - from.y + 215 } });
+      clip: { x: 0, y, width: VIEWPORT.width, height: to.y + to.height + 12 - y } });
     await context.close(); // not saved
   });
 
-  // The rated round with the worst mark on, for the large view's ✗ controls: the option is
-  // turned on through the round form and off again at the end, so other specs see the round as
-  // the fixture made it.
+  // The rated round with the worst mark on, for the large view's worst-mark controls: the option
+  // is turned on through the round form and off again at the end, so other specs see the round
+  // as the fixture made it.
   test('the worst mark in the large view', async ({ contextAs, fixture }) => {
     const form = `/admin/rounds/edit?id=${fixture.roundRatingId}&contestId=${fixture.contestId}`;
     const admin = await contextAs('admin');
     const page = await sized(admin);
     await page.goto(form);
-    const box = page.getByLabel('Worst mark (✗)');
-    test.skip(await box.count() === 0 || !(await box.isVisible()), 'the rated round takes no worst mark (criteria?)');
+    const box = page.getByLabel('Worst mark', { exact: true });
+    // the fixture's rated round takes the option (not a criteria round): without it, a failure
+    await expect(box, 'the rated round offers the worst mark').toBeVisible();
     const was = await box.isChecked();
     const setOption = async (on) => {
       await page.goto(form);
-      await page.getByLabel('Worst mark (✗)').setChecked(on);
+      await page.getByLabel('Worst mark', { exact: true }).setChecked(on);
       await page.getByRole('button', { name: 'Save' }).click();
       await expect(page).toHaveURL(/\/admin\/rounds/);
     };

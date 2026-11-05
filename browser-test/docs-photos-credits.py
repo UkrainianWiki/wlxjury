@@ -6,6 +6,7 @@ Commons file name, author, licence, contest, year and country, grouped by list.
   python browser-test/docs-photos-credits.py
 """
 import json
+import sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -27,6 +28,8 @@ for name, title in LISTS:
     lines.append("")
 
 text = README.read_text(encoding="utf-8")
+if text.count(MARK) != 2:
+    sys.exit(f"{README} needs exactly two {MARK} markers around its credits; found {text.count(MARK)}")
 head, _, rest = text.partition(MARK)
 _, _, tail = rest.partition(MARK)
 README.write_text(f"{head}{MARK}\n\n" + "\n".join(lines) + f"\n{MARK}{tail}", encoding="utf-8")

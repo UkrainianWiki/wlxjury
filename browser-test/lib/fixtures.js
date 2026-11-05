@@ -21,13 +21,15 @@ import { test as base, expect } from '@playwright/test';
 import * as allure from 'allure-js-commons';
 import { PLACEHOLDER_PNG } from './placeholder.js';
 import { isProxyConsoleLine } from './proxy-errors.js';
-import { authFile, fixtureFor } from './server.js';
+import { authFile, docsScreenshotsOn, fixtureFor, readServer } from './server.js';
 import { catalogue, ROLES, storyIds } from './stories.js';
 
 export { expect };
 
 const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1']);
 const COMMONS_UPLOAD = 'upload.wikimedia.org';
+// the user guides' screenshots (docs-screenshots.spec.js): their photos come from the proxy
+const DOCS_SCREENSHOTS = docsScreenshotsOn();
 
 /** What the guard's route answers with the placeholder: a file from Commons' upload host (a
   * video's too: it then doesn't play), or a thumbnail from this host's image proxy. */
@@ -198,13 +200,25 @@ export async function guard(context, diagnostics) {
     // proxy's photos are not replaced by the grey placeholder, and an image of the upload host
     // is fetched from this host's proxy instead (a thumbnail by its own path, an original as a
     // 1280 px thumbnail); anything else of the upload host (a video) keeps the placeholder
-    if (process.env.DOCS_SCREENSHOTS && isStubbedImage(url, request) && /\.(jpe?g|png)$/i.test(url.pathname)) {
+    if (DOCS_SCREENSHOTS && isStubbedImage(url, request) && /\.(jpe?g|png)$/i.test(url.pathname)) {
       if (LOCAL_HOSTS.has(url.hostname)) return route.continue();
       const m = url.pathname.match(/^\/wikipedia\/commons\/(?:thumb\/)?(\w\/\w\w\/[^/]+?)(?:\/[^/]+)?$/);
       const name = m ? m[1] : null;
       const local = url.pathname.startsWith('/wikipedia/commons/thumb/') ? url.pathname
         : name ? `/wikipedia/commons/thumb/${name}/1280px-${name.split('/')[2]}` : null;
-      if (local) return route.fetch({ url: new URL(local, fixtureFor('chromium').baseUrl).href }).then((r) => route.fulfill({ response: r }));
+      if (local) {
+        // the server's own address (any engine's: they share one server)
+        return route.fetch({ url: new URL(local, readServer().baseUrl).href })
+          .then((response) => route.fulfill({ response }))
+          .catch((error) => {
+            // a page that was closed or left meanwhile cancels its loads: not a problem
+            const page = pageOf(request);
+            if (!(typeof page.isClosed === 'function' && page.isClosed())) {
+              diagnostics.add('docs photo', page, `${url.pathname} not fetched from the proxy: ${error.message}`);
+            }
+            return route.abort('failed').catch(() => {});
+          });
+      }
     }
     if (isStubbedImage(url, request)) return route.fulfill({ status: 200, contentType: 'image/png', body: PLACEHOLDER_PNG });
     if (LOCAL_HOSTS.has(url.hostname)) return route.continue();
