@@ -137,15 +137,22 @@
   /** A list hung from the body follows its field when the window scrolls (Tom Select does
     * that), but not when a box around the field scrolls (a .table-responsive table, sideways on
     * a phone). There, when the list opens, the box first scrolls the field wholly into its view,
-    * then the list is placed under it; on each scroll of the box an open list is placed again
-    * while the field is wholly inside the box's visible part, and closed once it isn't, so that
-    * it never reaches past the box or widens the page; until `ts` is destroyed. */
+    * then the list is placed under it (a field wider than the box: its left edge at the box's);
+    * on each scroll of the box an open list is placed again while the field is in view (wholly,
+    * or for a field wider than the box, its left edge), and closed once it isn't, so that it
+    * never reaches past the box or widens the page; until `ts` is destroyed. */
   function followScrollingBox(ts, input) {
     var box = input.closest ? input.closest('.table-responsive') : null;
     if (!box) return;
     // a pixel's slack for rounding
     function outside(field, visible) {
       return field.left < visible.left - 1 || field.right > visible.right + 1;
+    }
+    // what reveal() can reach: the whole field, or the left edge of one wider than the box
+    function inView(field, visible) {
+      var leftIn = field.left >= visible.left - 1 && field.left <= visible.right;
+      if (field.right - field.left > visible.right - visible.left) return leftIn;
+      return !outside(field, visible);
     }
     function reveal() {
       var field = ts.wrapper.getBoundingClientRect();
@@ -159,8 +166,8 @@
     }
     function follow() {
       if (!ts.isOpen) return;
-      if (outside(ts.wrapper.getBoundingClientRect(), box.getBoundingClientRect())) ts.close();
-      else ts.positionDropdown();
+      if (inView(ts.wrapper.getBoundingClientRect(), box.getBoundingClientRect())) ts.positionDropdown();
+      else ts.close();
     }
     ts.on('dropdown_open', reveal);
     box.addEventListener('scroll', follow, { passive: true });

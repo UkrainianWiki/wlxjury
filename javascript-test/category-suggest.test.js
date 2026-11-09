@@ -394,6 +394,40 @@ describe("categorySuggest", () => {
         expect(placed).toHaveBeenCalledTimes(1);
     });
 
+    test("keeps the list of a field wider than the box open while its left edge is in view", () => {
+        document.body.innerHTML = '<div class="table-responsive" id="box"><table><tbody><tr><td>' +
+            '<input type="text" id="images" class="form-control" data-category-suggest="mixed" ' +
+            'data-category-suggest-dropdown-parent="body"></td></tr></tbody></table></div>';
+        const box = document.getElementById("box");
+        let scrollLeft = 100;
+        Object.defineProperty(box, "scrollLeft", { configurable: true, get: () => scrollLeft, set: (v) => { scrollLeft = v; } });
+        const ts = suggest.categorySuggest(document.getElementById("images"));
+        const placed = jest.spyOn(ts, "positionDropdown");
+        const rect = (left, right) => ({ left, right, top: 0, bottom: 38, width: right - left, height: 38, x: left, y: 0 });
+        jest.spyOn(box, "getBoundingClientRect").mockReturnValue(rect(12, 262)); // a 250 px box
+        const field = jest.spyOn(ts.wrapper, "getBoundingClientRect");
+        const scroll = () => box.dispatchEvent(new Event("scroll"));
+
+        field.mockReturnValue(rect(100, 400)); // 300 px wide, its right part out of view
+        ts.open();
+        expect(scrollLeft).toBe(188); // its left edge brought to the box's, as far as it can go
+        // the box's own scroll then reaches follow(): the field still wider than the box, but its
+        // left edge in view, so the list stays open and is placed again
+        field.mockReturnValue(rect(12, 312));
+        placed.mockClear();
+        scroll();
+        expect(ts.isOpen).toBe(true);
+        expect(placed).toHaveBeenCalledTimes(1);
+
+        field.mockReturnValue(rect(60, 360)); // scrolled back a little: the left edge still in view
+        scroll();
+        expect(ts.isOpen).toBe(true);
+
+        field.mockReturnValue(rect(-20, 280)); // its left edge out of view: closed
+        scroll();
+        expect(ts.isOpen).toBe(false);
+    });
+
     test("on opening, scrolls the box to bring a field partly out of view wholly into it, then places the list", () => {
         document.body.innerHTML = '<div class="table-responsive" id="box"><table><tbody><tr><td>' +
             '<input type="text" id="images" class="form-control" data-category-suggest="mixed" ' +
