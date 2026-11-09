@@ -95,9 +95,12 @@ case class ExcludeJurorId(jurors: Set[Long]) extends ImageFilterGen {
 
 /** The `topN` best rated images of the previous `round`; a yes/no round's by `order` of their
   * approvals and rejections, ties by page id, as [[services.distribution.DistributionSource.rank]]
-  * ranks them; with no order (a round from before V72) by the legacy rule, the rate sum.
+  * ranks them; with no order (a round from before V72, or a rated round) by the score, each file
+  * scored in its own previous round of `rounds` ([[ImageWithRating.sourceRound]]: by that round's
+  * rule and jurors, so that parallel juries rank together), else in `round`.
   */
-case class SelectTopByRating(topN: Int, round: Round, order: Option[BinaryOrder] = Some(BinaryOrder.Default))
+case class SelectTopByRating(topN: Int, round: Round, order: Option[BinaryOrder] = Some(BinaryOrder.Default),
+    rounds: Seq[Round] = Nil)
     extends ImageFilterGen {
   def apply(): ImageFilter =
     (images: Seq[ImageWithRating]) =>
@@ -105,30 +108,36 @@ case class SelectTopByRating(topN: Int, round: Round, order: Option[BinaryOrder]
         case Some(o) =>
           import scala.math.Ordering.Implicits.seqOrdering
           images.sortBy(i => (o.sortKey(i.approvals, i.rejections), i.pageId)).take(topN)
-        case None => images.sortBy(-_.totalRate(round)).take(topN)
+        case None => images.sortBy(i => -i.totalRate(i.sourceRound(round, rounds))).take(topN)
       }
 }
 
-case class SelectMinAvgRating(rate: BigDecimal, round: Round) extends ImageFilterGen {
-  def apply(): ImageFilter = imageRatingFilter(i => i.totalRate(round) >= rate)
+/** The files whose score is at least `rate`, each scored in its own previous round of `rounds`
+  * ([[ImageWithRating.sourceRound]]), else in `round`.
+  */
+case class SelectMinAvgRating(rate: BigDecimal, round: Round, rounds: Seq[Round] = Nil) extends ImageFilterGen {
+  def apply(): ImageFilter = imageRatingFilter(i => i.totalRate(i.sourceRound(round, rounds)) >= rate)
 }
 
+/** "Selected by at least `by` jurors": distinct jurors over all the previous rounds
+  * ([[ImageWithRating.selectors]]), a juror of two of them once.
+  */
 case class SelectedAtLeast(by: Int) extends ImageFilterGen {
-  def apply(): ImageFilter = imageRatingFilter(i => i.rateSum >= by)
+  def apply(): ImageFilter = imageRatingFilter(i => i.selectors >= by)
 }
 
-/** "Exclude files rejected by at least `by` jurors": the files with fewer rejections, read
-  * from all the previous rounds' votes ([[ImageWithRating.rejections]]).
+/** "Exclude files rejected by at least `by` jurors": the files rejected by fewer distinct jurors
+  * over all the previous rounds' votes ([[ImageWithRating.rejecters]]).
   */
 case class RejectedByLessThan(by: Int) extends ImageFilterGen {
-  def apply(): ImageFilter = imageRatingFilter(i => i.rejections < by)
+  def apply(): ImageFilter = imageRatingFilter(i => i.rejecters < by)
 }
 
 /** "Only files rejected by at least `by` jurors" (V93, `RejectedMode.Only`): the files with that
-  * many rejections or more, to review them in a round of their own.
+  * many distinct rejecting jurors or more, to review them in a round of their own.
   */
 case class RejectedByAtLeast(by: Int) extends ImageFilterGen {
-  def apply(): ImageFilter = imageRatingFilter(i => i.rejections >= by)
+  def apply(): ImageFilter = imageRatingFilter(i => i.rejecters >= by)
 }
 
 case class MegaPixelsAtLeast(mpx: Int) extends ImageFilterGen {
@@ -197,7 +206,9 @@ object ImageWithRatingSeqFilter {
       specialNomination: Option[String] = None,
       mediaType: Option[String] = None,
       // "rejected by at least N": leave those files out (the default), or keep only them (V93)
-      rejectedMode: RejectedMode = RejectedMode.Default
+      rejectedMode: RejectedMode = RejectedMode.Default,
+      // all the previous rounds (`round` is the first): a file of one of them is scored in it
+      prevRounds: Seq[Round] = Nil
   ): Seq[ImageFilterGen] = {
 
     val setMap = Map(
@@ -214,9 +225,9 @@ object ImageWithRatingSeqFilter {
 
     val optionMap = Map(
       selectMinAvgRating
-        .map(top => SelectMinAvgRating(top, round.get)) -> selectMinAvgRating,
+        .map(top => SelectMinAvgRating(top, round.get, prevRounds)) -> selectMinAvgRating,
       selectTopByRating
-        .map(top => SelectTopByRating(top, round.get, topOrder)) -> selectTopByRating,
+        .map(top => SelectTopByRating(top, round.get, topOrder, prevRounds)) -> selectTopByRating,
       selectedAtLeast.map(n => SelectedAtLeast(n)) -> selectedAtLeast,
       rejectedBy.map(n => if (rejectedMode == RejectedMode.Only) RejectedByAtLeast(n) else RejectedByLessThan(n)) -> rejectedBy,
       mpxAtLeast.map(MegaPixelsAtLeast) -> mpxAtLeast,

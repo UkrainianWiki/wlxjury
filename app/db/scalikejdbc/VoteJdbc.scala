@@ -215,6 +215,32 @@ object VoteJdbc extends CRUDMapper[Vote] {
     where("roundId" -> roundId)
       .distinctCount("juryId")
 
+  /** Per file of the rounds `roundIds`, the distinct jurors with a vote of `cond` (a [[VoteSql]]
+    * fragment over `s`: [[VoteSql.positive]] or [[VoteSql.rejected]]), a juror of several of the
+    * rounds counted once: a distribution's "selected by at least N" and "rejected by at least N"
+    * from several previous rounds (triage R196-1). With `pageIds`, those files only, read
+    * [[DistinctJurorsChunk]] at a time. No files, or no rounds: an empty map.
+    */
+  def distinctJurorsByPage(roundIds: Seq[Long], cond: SQLSyntax, pageIds: Option[Seq[Long]] = None)(implicit
+      session: DBSession = AutoSession
+  ): Map[Long, Int] = {
+    def read(pages: SQLSyntax): Map[Long, Int] =
+      sql"""SELECT s.page_id, COUNT(DISTINCT s.jury_id) FROM vote s
+            WHERE s.round_id IN ($roundIds) AND $cond $pages
+            GROUP BY s.page_id"""
+        .map(rs => rs.long(1) -> rs.int(2)).list().toMap
+    if (roundIds.isEmpty) Map.empty
+    else pageIds match {
+      case None => read(sqls"")
+      case Some(ids) =>
+        ids.distinct.sorted.grouped(DistinctJurorsChunk).foldLeft(Map.empty[Long, Int]) { (acc, chunk) =>
+          acc ++ read(sqls"AND s.page_id IN ($chunk)")
+        }
+    }
+  }
+
+  val DistinctJurorsChunk = 2000
+
   /** Whether a juror has given a file of the round stars (a rate above 0, of a vote not
     * deleted): until then every file scores 0 under each score rule, a worst mark (-1) counting
     * as 0 in all of them. One read of the (round_id, rate) index; the round form's score rule

@@ -343,7 +343,7 @@ class RoundRedistributionFiltersSpec extends Specification with TestDb with Befo
         (pairs.map(_.map(r => pageIds(r.getId))) === Seq(Seq(all(1 to 20), odd(1 to 20)), Seq(all(1 to 20), all(1 to 20))))
     }
 
-    "sum the rejections of two yes/no previous rounds, on every path" in {
+    "count the distinct jurors rejecting in two yes/no previous rounds, on every path" in {
       implicit val contest: ContestJury = createContests(1).head
       val jurors = createUsers("jury", 1, 2)
       addImages(contest, 1 to 10)
@@ -351,11 +351,12 @@ class RoundRedistributionFiltersSpec extends Specification with TestDb with Befo
       val source = Round(None, 0, Some("Source"), contest.getId, active = true)
       val first = service.createNewRound(source, jurors.map(_.getId))
       val second = service.createNewRound(source.copy(name = Some("Second")), jurors.map(_.getId))
-      // juror 1 rejects the even files in the first round and those divisible by 3 in the
-      // second: only 6, 12 and 18 have two rejections, one in each round
-      def vote(): Unit = Seq(first -> 2, second -> 3).foreach { case (round, divisor) =>
+      // juror 1 rejects the even files in the first round and juror 2 those divisible by 3 in
+      // the second: only 6, 12 and 18 are rejected by two jurors, one in each round (a juror
+      // rejecting a file in both rounds counts once: PreviousRoundsMergeSpec)
+      def vote(): Unit = Seq((first, 2, jurors.head), (second, 3, jurors(1))).foreach { case (round, divisor, juror) =>
         VoteJdbc.byRound(round.getId).foreach { row =>
-          val rate = if (row.juryId == jurors.head.getId && row.pageId % divisor == 0) -1 else 1
+          val rate = if (row.juryId == juror.getId && row.pageId % divisor == 0) -1 else 1
           VoteJdbc.rate(row.pageId, row.juryId, round.getId, rate)
         }
       }

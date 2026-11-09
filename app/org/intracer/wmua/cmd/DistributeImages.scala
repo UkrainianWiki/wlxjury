@@ -78,7 +78,9 @@ class DistributeImages @Inject()(imageRepo: ImageRepo) extends Logging {
         mpxAtLeast = round.minMpx,
         sizeAtLeast = round.minImageSize.map(_ * 1024 * 1024),
         specialNomination = round.specialNomination,
-        mediaType = round.mediaType
+        mediaType = round.mediaType,
+        // a candidate of one previous round is scored in it (its rows are tagged with it)
+        prevRounds = prevRounds
       )
     )
   }
@@ -104,7 +106,7 @@ class DistributeImages @Inject()(imageRepo: ImageRepo) extends Logging {
     require(
       Round.sameRateType(prevRounds),
       s"Round ${round.id.orNull}: previous rounds [${prevRounds.flatMap(_.id).mkString(", ")}] " +
-        "must all be of the same rate type (all binary or all rated)"
+        "must all have the same rating (all yes/no, all comments only, or all rated on one scale)"
     )
 
     val categoryRule = round.categoryRule
@@ -121,9 +123,13 @@ class DistributeImages @Inject()(imageRepo: ImageRepo) extends Logging {
     val mpxAtLeast = round.minMpx
     val sizeAtLeast = round.minImageSize.map(_ * 1024 * 1024)
 
-    // All selected previous rounds share the same rate type and the same filtering
-    // conditions, so any one of them is a valid context for rate scaling / gating.
+    // All selected previous rounds share one rating (Round.sameRateType). A file of one of them
+    // is scored in it, by its rule and jurors (ImageWithRating.sourceRound: each round's rows are
+    // tagged with it); the first is the context of a file of several, and of yes/no gating.
     val prevRound = prevRounds.headOption
+    val prevIds = prevRounds.flatMap(_.id)
+    def ofRound(r: Round)(rows: Seq[ImageWithRating]): Seq[ImageWithRating] =
+      rows.map(i => i.copy(votes = i.votes.map(_.copy(roundId = r.getId))))
 
     // a top-N from yes/no rounds is ranked by all their votes, whatever "selected by" reads;
     // a round from before V72 (no order stored) by the legacy rule, the rate sum of the rows read
@@ -141,12 +147,18 @@ class DistributeImages @Inject()(imageRepo: ImageRepo) extends Logging {
         )
       else
         mergeByPageId(
-          prevRounds.flatMap(r =>
+          prevRounds.flatMap(r => ofRound(r)(
             imageRepo.byRoundMerged(r.getId, rated = Option.when(selectedAtLeast.isDefined)(true), tally = true,
               grades = !r.isBinary)
-          )
+          ))
         )
     logger.debug("Total images: " + imagesAll.size)
+
+    // "selected by at least N" from yes/no previous rounds: the distinct jurors who approved the
+    // file in any of them, a juror of two rounds once (a rated previous round's keeps its rows'
+    // rate sum, as before)
+    val selectors: Option[Map[Long, Int]] = selectedAtLeast.filter(_ => prevRound.exists(_.isBinary))
+      .map(_ => VoteJdbc.distinctJurorsByPage(prevIds, VoteSql.positive()))
 
     // "exclude files rejected by at least N" counts the rejections of all the votes of the
     // previous rounds, whatever "selected by" reads (its rows are the approvals only): a yes/no
@@ -158,8 +170,14 @@ class DistributeImages @Inject()(imageRepo: ImageRepo) extends Logging {
     val rejections: Map[Long, Int] = notRejected.fold(Map.empty[Long, Int])(_ =>
       mergeByPageId(prevRounds.flatMap(r => imageRepo.byRoundMerged(r.getId, tally = true, grades = !r.isBinary)))
         .map(i => i.pageId -> i.rejections).toMap)
-    val candidates = if (notRejected.isEmpty) imagesAll
-      else imagesAll.map(i => i.copy(rejectionsFromDb = Some(rejections.getOrElse(i.pageId, 0))))
+    // the filter counts distinct rejecting jurors, a juror of two rounds once
+    val rejecters: Map[Long, Int] = notRejected.fold(Map.empty[Long, Int])(_ =>
+      VoteJdbc.distinctJurorsByPage(prevIds, VoteSql.rejected()))
+    val withRejections = if (notRejected.isEmpty) imagesAll
+      else imagesAll.map(i => i.copy(rejectionsFromDb = Some(rejections.getOrElse(i.pageId, 0)),
+        rejectersFromDb = Some(rejecters.getOrElse(i.pageId, 0))))
+    val candidates = selectors.fold(withRejections)(by =>
+      withRejections.map(i => i.copy(selectorsFromDb = Some(by.getOrElse(i.pageId, 0)))))
 
     val funGens = Seq(CategoryImages(categoryRule, firstCategoryIds, secondCategoryIds)) ++
       ImageWithRatingSeqFilter.funGenerators(
@@ -183,7 +201,8 @@ class DistributeImages @Inject()(imageRepo: ImageRepo) extends Logging {
       mpxAtLeast = mpxAtLeast,
       sizeAtLeast = sizeAtLeast,
       specialNomination = round.specialNomination,
-      mediaType = round.mediaType
+      mediaType = round.mediaType,
+      prevRounds = prevRounds
     )
 
     val filterChain = ImageWithRatingSeqFilter.makeFunChain(funGens)

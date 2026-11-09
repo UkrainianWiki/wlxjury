@@ -904,8 +904,9 @@ class RoundDistributionJobSpec extends Specification with TestDb with BeforeAll 
         val round = inlineService(h).createNewRound(template, jurors.map(_.getId))
         (pageIds(round.getId), (jobOf(round.getId).params \ "settings" \ "prevAverageRule").asOpt[String])
       }
+      // a job queued before V90 has neither the rule nor the rules per round
       def stripRule(job: Job): Job = job.copy(params = job.params ++ Json.obj("settings" ->
-        ((job.params \ "settings").as[JsObject] - "prevAverageRule")))
+        ((job.params \ "settings").as[JsObject] - "prevAverageRule" - "prevAverageRules")))
 
       // queued with `rated`; the source's rule changed to `assigned` before the job prepares
       val recorded = new TestHandler(chunkRows = 3)
