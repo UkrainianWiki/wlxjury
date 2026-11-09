@@ -8,6 +8,10 @@
 #   ./scripts/run-with-prod-dump.sh            # full flow: dump → restore → run
 #   ./scripts/run-with-prod-dump.sh --skip-dump # re-use existing /tmp/wlxjury-prod.sql.gz
 #   ./scripts/run-with-prod-dump.sh --dump-only # dump and restore, do not start sbt
+#
+# The restored dump holds the users' emails and password hashes: the dump file is readable
+# by its owner only, the container publishes its port on 127.0.0.1 only, and its passwords
+# are generated for each new container (docs/security/secure-coding.md §4).
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -22,6 +26,9 @@ Usage:
   ./scripts/run-with-prod-dump.sh --skip-dump       # re-use existing /tmp/wlxjury-prod.sql.gz
   ./scripts/run-with-prod-dump.sh --dump-only       # dump and restore, do not start sbt
   ./scripts/run-with-prod-dump.sh --reuse-container # skip dump+restore, use running container
+
+Only the dump reads .env (WLXJURY_DB_HOST as host or host:port, WLXJURY_DB,
+WLXJURY_DB_USER, WLXJURY_DB_PASSWORD): --skip-dump and --reuse-container need none.
 EOF
 }
 
@@ -61,33 +68,57 @@ if [[ "$REUSE_CONTAINER" == true && "$DUMP_ONLY" == true ]]; then
   exit 1
 fi
 
-# ── Load prod credentials from .env ───────────────────────────────────────────
-if [[ ! -f "$ENV_FILE" ]]; then
-  echo "ERROR: $ENV_FILE not found. Create it with WLXJURY_DB_HOST, WLXJURY_DB, WLXJURY_DB_USER, WLXJURY_DB_PASSWORD." >&2
-  exit 1
-fi
-set -a
-# shellcheck source=/dev/null
-source "$ENV_FILE"
-set +a
-# Not in the environment of the commands below (docker, gzip, zcat): the password goes
-# only into the option file, and phase 4 passes sbt the local values explicitly.
-export -n WLXJURY_DB_PASSWORD
-
-: "${WLXJURY_DB_HOST:?WLXJURY_DB_HOST must be set in .env}"
-: "${WLXJURY_DB:?WLXJURY_DB must be set in .env}"
-: "${WLXJURY_DB_USER:?WLXJURY_DB_USER must be set in .env}"
-: "${WLXJURY_DB_PASSWORD:?WLXJURY_DB_PASSWORD must be set in .env}"
-
 # ── Local container config ─────────────────────────────────────────────────────
+# The container publishes its port on the loopback interface only: nothing but this
+# machine needs to reach the restored data. Its passwords are generated for each new
+# container (never literals in this public script); a reused container's is read back
+# from its own environment.
 CONTAINER_NAME="wlxjury-local-dev"
+LOCAL_BIND="127.0.0.1"
 LOCAL_PORT=3307
 LOCAL_DB="wlxjury"
 LOCAL_USER="wlxjury_user"
-LOCAL_PASSWORD="wlxjury_localpass"
-LOCAL_ROOT_PASSWORD="wlxjury_rootpass"
+LOCAL_PASSWORD=""
 DUMP_FILE="/tmp/wlxjury-prod.sql.gz"
 CONTAINER_STARTED=false
+PROD_HOST=""
+PROD_PORT=""
+
+# 32 hex characters from /dev/urandom: nothing to quote in an env file or option file.
+random_password() {
+  od -An -tx1 -N16 /dev/urandom | tr -d ' \n'
+}
+
+# ── Load prod credentials from .env ───────────────────────────────────────────
+# Only the dump needs them.
+load_prod_env() {
+  if [[ ! -f "$ENV_FILE" ]]; then
+    echo "ERROR: $ENV_FILE not found. Create it with WLXJURY_DB_HOST, WLXJURY_DB, WLXJURY_DB_USER, WLXJURY_DB_PASSWORD." >&2
+    exit 1
+  fi
+  set -a
+  # shellcheck source=/dev/null
+  source "$ENV_FILE"
+  set +a
+  # Not in the environment of the commands below (docker, gzip, zcat): the password goes
+  # only into the option file, and phase 4 passes sbt the local values explicitly.
+  export -n WLXJURY_DB_PASSWORD
+
+  : "${WLXJURY_DB_HOST:?WLXJURY_DB_HOST must be set in .env}"
+  : "${WLXJURY_DB:?WLXJURY_DB must be set in .env}"
+  : "${WLXJURY_DB_USER:?WLXJURY_DB_USER must be set in .env}"
+  : "${WLXJURY_DB_PASSWORD:?WLXJURY_DB_PASSWORD must be set in .env}"
+
+  # The app's host or host:port (as wlxjury-deploy.py reads it): the client gets the port
+  # apart (-P), or it would look the whole of it up as a host name.
+  if [[ "$WLXJURY_DB_HOST" =~ ^([A-Za-z0-9_.-]+)(:([0-9]+))?$ ]]; then
+    PROD_HOST="${BASH_REMATCH[1]}"
+    PROD_PORT="${BASH_REMATCH[3]:-3306}"
+  else
+    echo "ERROR: WLXJURY_DB_HOST in .env must be a host name or host:port." >&2
+    exit 1
+  fi
+}
 
 # ── Credentials files ──────────────────────────────────────────────────────────
 # No password goes on a command line (`docker -e NAME=value` shows it in the
@@ -154,7 +185,7 @@ cleanup() {
     echo "Script exited with code $exit_code."
     if [[ "$CONTAINER_STARTED" == true ]]; then
       echo ""
-      echo "Container '$CONTAINER_NAME' may still be running on port $LOCAL_PORT."
+      echo "Container '$CONTAINER_NAME' may still be running on $LOCAL_BIND:$LOCAL_PORT."
       echo "  Inspect : docker exec -it $CONTAINER_NAME mysql $LOCAL_DB"
       echo "  Remove  : docker rm -f $CONTAINER_NAME"
     fi
@@ -166,10 +197,16 @@ trap 'exit 129' HUP
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
+if [[ "$REUSE_CONTAINER" != true && "$SKIP_DUMP" != true ]]; then
+  load_prod_env
+fi
+
 echo "==> Config"
-echo "    Prod host       : $WLXJURY_DB_HOST"
-echo "    Prod DB         : $WLXJURY_DB"
-echo "    Local port      : $LOCAL_PORT"
+if [[ -n "$PROD_HOST" ]]; then
+  echo "    Prod host       : $PROD_HOST (port $PROD_PORT)"
+  echo "    Prod DB         : $WLXJURY_DB"
+fi
+echo "    Local port      : $LOCAL_BIND:$LOCAL_PORT"
 echo "    Dump file       : $DUMP_FILE"
 echo "    Skip dump       : $SKIP_DUMP"
 echo "    Dump only       : $DUMP_ONLY"
@@ -177,13 +214,29 @@ echo "    Reuse container : $REUSE_CONTAINER"
 
 if [[ "$REUSE_CONTAINER" == true ]]; then
   # ── Reuse path ──────────────────────────────────────────────────────────────
-  echo "==> Reusing existing container '$CONTAINER_NAME' on port $LOCAL_PORT (skipping dump and restore)..."
+  echo "==> Reusing existing container '$CONTAINER_NAME' on $LOCAL_BIND:$LOCAL_PORT (skipping dump and restore)..."
   if [[ "$(docker inspect --format='{{.State.Running}}' "$CONTAINER_NAME" 2>/dev/null)" != "true" ]]; then
     echo "ERROR: --reuse-container set but container '$CONTAINER_NAME' is not running." >&2
     echo "       Start one first:  ./scripts/run-with-prod-dump.sh --dump-only" >&2
     exit 1
   fi
+  # Its 3306 published exactly on $LOCAL_BIND:$LOCAL_PORT: otherwise sbt (with
+  # migration.auto) would reach whatever else answers on that port, and a container made
+  # before the loopback binding would still offer the data on every interface.
+  published="$(docker port "$CONTAINER_NAME" 3306/tcp 2>/dev/null || true)"
+  if [[ "$published" != "$LOCAL_BIND:$LOCAL_PORT" ]]; then
+    echo "ERROR: container '$CONTAINER_NAME' publishes 3306 as '${published:-nothing}', not $LOCAL_BIND:$LOCAL_PORT." >&2
+    echo "       Recreate it:  docker rm -f $CONTAINER_NAME && ./scripts/run-with-prod-dump.sh --skip-dump --dump-only" >&2
+    exit 1
+  fi
   CONTAINER_STARTED=true
+  # its own password, generated when it was created; printed by the container to this
+  # shell's variable, never on a command line
+  LOCAL_PASSWORD="$(docker exec "$CONTAINER_NAME" printenv MARIADB_PASSWORD 2>/dev/null || true)"
+  if [[ -z "$LOCAL_PASSWORD" ]]; then
+    echo "ERROR: container '$CONTAINER_NAME' has no MARIADB_PASSWORD; recreate it (see above)." >&2
+    exit 1
+  fi
   ensure_local_root_cnf
   reuse_db_size=$(docker exec \
     "$CONTAINER_NAME" \
@@ -201,20 +254,27 @@ else
     make_secrets_dir
     write_client_cnf "$SECRETS_DIR/prod.cnf" "$WLXJURY_DB_USER" "$WLXJURY_DB_PASSWORD"
     # --defaults-extra-file must be the client's first option. MSYS_NO_PATHCONV:
-    # Git Bash would rewrite the container paths as Windows ones.
-    MSYS_NO_PATHCONV=1 docker run --rm \
-      -v "$(host_path "$SECRETS_DIR/prod.cnf"):/etc/wlxjury-dump/client.cnf:ro" \
-      mariadb:10.6 \
-      mysqldump \
-        --defaults-extra-file=/etc/wlxjury-dump/client.cnf \
-        -h "$WLXJURY_DB_HOST" \
-        --single-transaction \
-        --quick \
-        --triggers \
-        --routines \
-        "$WLXJURY_DB" \
-    | gzip > "$tmp_file"
+    # Git Bash would rewrite the container paths as Windows ones. The dump is created
+    # mode 600 (umask 077 in this subshell), whatever the caller's umask.
+    (
+      umask 077
+      MSYS_NO_PATHCONV=1 docker run --rm \
+        -v "$(host_path "$SECRETS_DIR/prod.cnf"):/etc/wlxjury-dump/client.cnf:ro" \
+        mariadb:10.6 \
+        mysqldump \
+          --defaults-extra-file=/etc/wlxjury-dump/client.cnf \
+          -h "$PROD_HOST" \
+          -P "$PROD_PORT" \
+          --protocol=TCP \
+          --single-transaction \
+          --quick \
+          --triggers \
+          --routines \
+          "$WLXJURY_DB" \
+      | gzip > "$tmp_file"
+    )
     remove_secrets
+    chmod 600 "$tmp_file"
     mv "$tmp_file" "$DUMP_FILE"
     echo "    Dump written to $DUMP_FILE  $(du -sh "$DUMP_FILE" | cut -f1)  (took $(format_duration "$((SECONDS - start))"))"
   }
@@ -224,6 +284,8 @@ else
       echo "ERROR: --skip-dump set but $DUMP_FILE does not exist." >&2
       exit 1
     fi
+    # a dump made before it was created mode 600
+    chmod 600 "$DUMP_FILE"
     echo "==> Skipping dump; using existing $DUMP_FILE ($(du -sh "$DUMP_FILE" | cut -f1))"
   else
     dump_prod_db
@@ -245,16 +307,17 @@ else
   #    up front skips that code path entirely.
   #  * The remaining flags just make the multi-GB dump restore faster; this
   #    is a throwaway dev container, so durability settings are safe to relax.
+  LOCAL_PASSWORD="$(random_password)"
   make_secrets_dir
   (
     umask 077
     printf 'MARIADB_DATABASE=%s\nMARIADB_USER=%s\nMARIADB_PASSWORD=%s\nMARIADB_ROOT_PASSWORD=%s\n' \
-      "$LOCAL_DB" "$LOCAL_USER" "$LOCAL_PASSWORD" "$LOCAL_ROOT_PASSWORD" > "$SECRETS_DIR/local.env"
+      "$LOCAL_DB" "$LOCAL_USER" "$LOCAL_PASSWORD" "$(random_password)" > "$SECRETS_DIR/local.env"
   )
   docker run -d \
     --name "$CONTAINER_NAME" \
     --env-file "$SECRETS_DIR/local.env" \
-    -p "${LOCAL_PORT}:3306" \
+    -p "${LOCAL_BIND}:${LOCAL_PORT}:3306" \
     mariadb:10.6 \
     --innodb-use-native-aio=0 \
     --innodb-buffer-pool-size=1G \
@@ -301,8 +364,9 @@ else
 
   if [[ "$DUMP_ONLY" == true ]]; then
     echo "==> --dump-only set; skipping sbt run."
-    echo "    Container '$CONTAINER_NAME' left running on port $LOCAL_PORT."
-    echo "    Connect: mysql -h 127.0.0.1 -P $LOCAL_PORT -u $LOCAL_USER -p $LOCAL_DB  (the password is LOCAL_PASSWORD in this script)"
+    echo "    Container '$CONTAINER_NAME' left running on $LOCAL_BIND:$LOCAL_PORT."
+    echo "    Connect: docker exec -it $CONTAINER_NAME mysql $LOCAL_DB"
+    echo "    (its password: docker exec $CONTAINER_NAME printenv MARIADB_PASSWORD)"
     exit 0
   fi
 
@@ -310,11 +374,11 @@ fi
 
 # ── Phase 4: Run dev server ────────────────────────────────────────────────────
 echo "==> Starting sbt dev server against local prod dump..."
-echo "    DB  : jdbc:mariadb://127.0.0.1:${LOCAL_PORT}/${LOCAL_DB}"
+echo "    DB  : jdbc:mariadb://${LOCAL_BIND}:${LOCAL_PORT}/${LOCAL_DB}"
 echo "    Stop: Ctrl-C  (container '$CONTAINER_NAME' remains; remove: docker rm -f $CONTAINER_NAME)"
 echo ""
 
-WLXJURY_DB_HOST="127.0.0.1:${LOCAL_PORT}" \
+WLXJURY_DB_HOST="${LOCAL_BIND}:${LOCAL_PORT}" \
 WLXJURY_DB="$LOCAL_DB" \
 WLXJURY_DB_USER="$LOCAL_USER" \
 WLXJURY_DB_PASSWORD="$LOCAL_PASSWORD" \

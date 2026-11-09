@@ -110,7 +110,9 @@ hashes both sides of the setup token to compare them in constant time (nothing s
 `--password=` or another argument or exported variable; temporary files are removed by a trap.
 
 **Example.** `scripts/run-with-prod-dump.sh`: a `[client]` option file written mode 600,
-mounted read-only, `--defaults-extra-file` first, an `--env-file`, a trap on every exit path.
+mounted read-only, `--defaults-extra-file` first, an `--env-file`, a trap on every exit path;
+the restored data's container publishes on `127.0.0.1` only, with passwords generated per
+container (none in the script), and the dump is written mode 600 (triage R193-4).
 
 **Guards.** `scripts/deployment/test_release_script.py`. Planned: G12 also flags `MYSQL_PWD`
 and `--password=` in `scripts/`.
