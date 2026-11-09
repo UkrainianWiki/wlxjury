@@ -343,6 +343,14 @@ class ApiTokenPageSpec extends PlaySpecification with PlayTestDb {
 
         val edit = route(app, FakeRequest(GET, s"/users/edit/$omar").withSession(Secured.UserName -> rootEmail)).get
         contentAsString(edit) must contain(routes.ApiTokenAdminController.tokens(omar).url)
+        // the link is inside the form's column (#edit-user), not a column of the centred row
+        // beside it, which would shift the form
+        val html = contentAsString(edit)
+        val column = html.substring(html.indexOf("id=\"edit-user\""))
+        val link = column.indexOf(routes.ApiTokenAdminController.tokens(omar).url)
+        link must be_>(0)
+        // the first closing of the row's last div after the column's start comes after the link
+        column.substring(0, link).split("<div").length must be_>=(column.substring(0, link).split("</div>").length)
         val listed = page(app, omar, rootEmail)
         status(listed) === OK
         contentAsString(listed) must contain("omar-cli")

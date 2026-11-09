@@ -226,6 +226,14 @@
                 }
             </section>
             }
+
+            @* root, on another account: a link to its API tokens, to revoke them
+               (ApiTokenAdminController), at the end of the form's column *@
+            @if(tokensCard.isEmpty && user.hasRole(User.ROOT_ROLE)) {
+                @for(id <- editUserForm("id").value.flatMap(_.toLongOption).filter(id => id != 0 && !user.id.contains(id))) {
+                    <p class="mt-3"><a href="@routes.ApiTokenAdminController.tokens(id)">@Messages("api.tokens")</a></p>
+                }
+            }
         </div>
         @* the own profile only: the user's personal API tokens, and their linked Google and
            Wikimedia accounts (if this host offers a provider, or one is linked) *@
@@ -238,12 +246,6 @@
                     @linkedAccounts(card)
                 }
             </div>
-        }
-        @* root, on another account: a link to its API tokens, to revoke them (ApiTokenAdminController) *@
-        @if(tokensCard.isEmpty && user.hasRole(User.ROOT_ROLE)) {
-            @for(id <- editUserForm("id").value.flatMap(_.toLongOption).filter(id => id != 0 && !user.id.contains(id))) {
-                <p class="col-md-4 mt-3"><a href="@routes.ApiTokenAdminController.tokens(id)">@Messages("api.tokens")</a></p>
-            }
         }
     </div>
 }

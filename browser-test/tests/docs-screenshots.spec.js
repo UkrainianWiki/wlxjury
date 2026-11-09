@@ -78,7 +78,12 @@ test.describe('the guides\' screenshots', () => {
 
   /** The page height that ends below the `n`th row of the gallery's tiles (with a margin), so
     * that no crop cuts through a photo. */
-  const belowRows = (page, n) => page.evaluate((rows) => {
+  const belowRows = async (page, n) => {
+    const height = await measureRows(page, n);
+    expect(height, 'the page shows gallery tiles (.ug-tile or .gallerybox)').not.toBeNull();
+    return height;
+  };
+  const measureRows = (page, n) => page.evaluate((rows) => {
     // the gallery's tiles (.ug-tile) or the results' (.gallerybox), in rows: tiles in a row are
     // centred on each other, so a tile starts a new row when it begins below the row's bottom
     const boxes = [...document.querySelectorAll('.ug-tile, .gallerybox')]
@@ -92,6 +97,7 @@ test.describe('the guides\' screenshots', () => {
       if (last && box.top < last.bottom - 4) last.bottom = Math.max(last.bottom, box.bottom);
       else rowList.push({ top: box.top, bottom: box.bottom });
     }
+    if (rowList.length === 0) return null;
     const row = rowList[Math.min(rows, rowList.length) - 1];
     const next = rowList[rows]; // the margin never reaches the next row's photos
     return Math.floor(next ? Math.min(row.bottom + 12, next.top - 2) : row.bottom + 12);
@@ -99,13 +105,19 @@ test.describe('the guides\' screenshots', () => {
 
   /** The page height that ends below the `n`th body row of the page's first table, so that no
     * crop cuts through a row. */
-  const belowTableRow = (page, n) => page.evaluate((count) => {
+  const belowTableRow = async (page, n) => {
+    const height = await measureTableRow(page, n);
+    expect(height, 'the page shows a table with body rows').not.toBeNull();
+    return height;
+  };
+  const measureTableRow = (page, n) => page.evaluate((count) => {
     const rows = [...document.querySelectorAll('table tbody tr')].filter((r) => r.getBoundingClientRect().height > 0);
+    if (rows.length === 0) return null;
     const row = rows[Math.min(count, rows.length) - 1].getBoundingClientRect();
     return Math.ceil(row.bottom + window.scrollY) + 2;
   }, n);
 
-  async function shot(contextAs, role, target, name, { full = false, prepare, crop, height, width, rows, tableRows } = {}) {
+  async function shot(contextAs, role, target, name, { full = false, prepare, crop, cropTop = 12, height, width, rows, tableRows } = {}) {
     const context = await contextAs(role);
     await context.addCookies([{ name: 'theme', value: 'dark', url: baseUrl }]);
     const page = await sized(context);
@@ -136,7 +148,8 @@ test.describe('the guides\' screenshots', () => {
       const navBox = await page.locator('nav.navbar').count() ? await page.locator('nav.navbar').first().boundingBox() : null;
       const navBottom = navBox ? Math.ceil(navBox.y + navBox.height + scrollY) + 1 : 0;
       const x = Math.max(0, left - 12);
-      const y = Math.max(navBottom, topEdge - 12);
+      // (`cropTop`: a smaller margin above where the photo's edge is close, as in the comment box)
+      const y = Math.max(navBottom, topEdge - cropTop);
       await page.screenshot({ path: file, fullPage: true,
         clip: { x, y, width: Math.min(VIEWPORT.width - x, right - x + 12), height: bottom - y + 12 } });
     } else if (rows) await top(page, file, await belowRows(page, rows), width);
@@ -158,7 +171,7 @@ test.describe('the guides\' screenshots', () => {
     await shot(contextAs, 'juror', galleryPath(fixture.roundBinaryId, juror.id), 'juror-gallery-top-bar', { height: 56 });
     await shot(contextAs, 'juror', largePath(fixture.roundBinaryId, juror.id, juror.pageId), 'juror-large-view-binary', LARGE_TOP);
     // the comment box, under the photo
-    await shot(contextAs, 'juror', largePath(fixture.roundBinaryId, juror.id, juror.pageId), 'juror-large-view-comments', { crop: '.large-comments' });
+    await shot(contextAs, 'juror', largePath(fixture.roundBinaryId, juror.id, juror.pageId), 'juror-large-view-comments', { crop: '.large-comments', cropTop: 2 });
     await shot(contextAs, 'juror', largePath(fixture.roundRatingId, juror.id, juror.ratedPageId), 'juror-large-view-rated', {
       ...LARGE_TOP,
       // a plain star rate in a round without the worst mark, as the guide describes. The
@@ -185,6 +198,7 @@ test.describe('the guides\' screenshots', () => {
     await stat.waitForLoadState('networkidle');
     const lastRow = await stat.locator('table tbody tr').last().boundingBox();
     const link = await stat.locator('#round-conflicts-link').boundingBox();
+    expect(lastRow && link, 'the statistics table\'s last row and the conflicts link are shown').toBeTruthy();
     await stat.screenshot({ path: path.join(OUT_DIR, 'organizer-round-statistics-link.png'), fullPage: true,
       clip: { x: 0, y: lastRow.y - 2, width: VIEWPORT.width, height: link.y + link.height - lastRow.y + 22 } });
     await context.close();
@@ -229,6 +243,7 @@ test.describe('the guides\' screenshots', () => {
     await top(page, path.join(OUT_DIR, 'admin-users.png'), await belowTableRow(page, 4));
     const heading = await page.getByRole('heading', { name: 'Invitations', exact: true }).boundingBox();
     const table = await page.locator('table.pending-invitations').boundingBox();
+    expect(heading && table, 'the Invitations heading and its table are shown').toBeTruthy();
     await page.screenshot({ path: path.join(OUT_DIR, 'admin-invitations.png'), fullPage: true,
       clip: { x: 0, y: heading.y - 10, width: VIEWPORT.width, height: table.y + table.height - heading.y + 20 } });
 
@@ -301,7 +316,8 @@ test.describe('the guides\' screenshots', () => {
     const y = Math.max(0, from.y + scrollY - 12);
     await page.screenshot({ path: path.join(OUT_DIR, 'organizer-score-rule-warning.png'), fullPage: true,
       // the centred form's width (the rows span it), with a margin
-      clip: { x: Math.max(0, from.x - 12), y, width: from.width + 24, height: to.y + scrollY + to.height + 12 - y } });
+      clip: { x: Math.max(0, from.x - 12), y, width: Math.min(VIEWPORT.width - Math.max(0, from.x - 12), from.width + 24),
+        height: to.y + scrollY + to.height + 12 - y } });
     await context.close(); // not saved
   });
 
