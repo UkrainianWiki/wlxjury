@@ -3,14 +3,15 @@
  */
 "use strict";
 
-// The worst mark (✗) of a rated round with the option (roadmap queue item 6): giving ✗ and
-// clearing a vote stay apart. On the gallery tiles and the juror's by-rate list (tile-votes.js):
-// a ✗ button after the stars sends rate -1 and is pressed for a file with ✗, its stars empty; the
-// cancel icon is an eraser that clears, shown only once the file has a vote. In the large view:
-// Delete gives ✗ and Backspace clears (large-keys.js), each a path; the stars lose raty's cancel
-// icon where the ✗ and clear buttons stand apart (large-stars.js). On the round form
-// (round-form.js): the checkbox only for a rated rating, and "rejected by" for a rated round with
-// the worst mark.
+// The worst mark (rate -1, the icon bi-x-lg) of a rated round with the option (roadmap queue
+// item 6): giving it and clearing a vote stay apart. On the gallery tiles and the juror's by-rate
+// list (tile-votes.js): a worst-mark button after the stars sends rate -1 and is pressed for a
+// file with it, its stars empty, the list's rate text then the icon; the cancel icon is an eraser
+// that clears, shown only once the file has a vote. In the large view: Delete gives it and
+// Backspace clears (large-keys.js), each a path; the stars lose raty's cancel icon where the
+// worst-mark and clear buttons stand apart (large-stars.js), and the number's icon comes back
+// after a hover (large-rate.js). On the round form (round-form.js): the checkbox only for a rated
+// rating, and "rejected by" for a rated round with the worst mark.
 
 const $ = require("jquery");
 window.jQuery = window.$ = $;
@@ -43,7 +44,7 @@ afterEach(() => {
     window.wlxLargeView.vote.mockClear();
 });
 
-const TEXTS = 'data-csrf-token="token-1" data-vote-closed="Closed." data-vote-worst="Worst mark (✗)" ' +
+const TEXTS = 'data-csrf-token="token-1" data-vote-closed="Closed." data-vote-worst="Worst mark" ' +
     'data-vote-clear="Clear the vote"';
 
 /** A tile's stars with the worst mark, for a file stored with `rate`. */
@@ -66,7 +67,7 @@ describe("a tile's worst mark", () => {
         const button = worstButton(el);
         expect(button.getAttribute("role")).toBe("button");
         expect(button.getAttribute("tabindex")).toBe("0");
-        expect(button.getAttribute("aria-label")).toBe("Worst mark (✗)");
+        expect(button.getAttribute("aria-label")).toBe("Worst mark");
         expect(button.getAttribute("aria-pressed")).toBe("false");
         expect(clear(el).className).toBe("raty-cancel bi bi-eraser");
         expect(clear(el).title).toBe("Clear the vote");
@@ -76,7 +77,7 @@ describe("a tile's worst mark", () => {
         expect(clear(plain).className).toBe("raty-cancel bi bi-x-circle");
     });
 
-    test("shows a stored ✗: no stars, the button pressed, the clear there", () => {
+    test("shows a stored worst mark: no stars, the button pressed, the clear there", () => {
         const { el } = tileStars(-1);
         expect(drawn(el)).toBe(".....");
         expect(worstButton(el).getAttribute("aria-pressed")).toBe("true");
@@ -88,7 +89,7 @@ describe("a tile's worst mark", () => {
         expect(clear(tileStars(0).el).hidden).toBe(true);
     });
 
-    test("gives ✗ by a click, a path with the CSRF header, never clearing it on a second click", () => {
+    test("gives the worst mark by a click, a path with the CSRF header, never clearing it on a second click", () => {
         const { el, item, tile } = tileStars(4);
         worstButton(el).click();
         expect(requests[0].options).toEqual({
@@ -102,7 +103,7 @@ describe("a tile's worst mark", () => {
         expect(requests[1].options.url).toBe("/rate/round/2/pageid/101/select/-1");
     });
 
-    test("gives ✗ by Enter or Space, the key not reaching the tile", () => {
+    test("gives the worst mark by Enter or Space, the key not reaching the tile", () => {
         const { el, tile } = tileStars(0);
         const opened = jest.fn();
         tile.addEventListener("keydown", opened);
@@ -113,7 +114,7 @@ describe("a tile's worst mark", () => {
         expect(requests[0].options.url).toBe("/rate/round/2/pageid/101/select/-1");
     });
 
-    test("clears a ✗ with the eraser, which then hides", () => {
+    test("clears a worst mark with the eraser, which then hides", () => {
         const { el, item } = tileStars(-1);
         $(clear(el)).trigger("click");
         expect(requests[0].options.url).toBe("/rate/round/2/pageid/101/select/0");
@@ -123,7 +124,7 @@ describe("a tile's worst mark", () => {
         expect(clear(el).hidden).toBe(true);
     });
 
-    test("a star after a ✗ unpresses it", () => {
+    test("a star after a worst mark unpresses its button", () => {
         const { el } = tileStars(-1);
         $(el).find("i.wlx-star").eq(2).trigger("click");
         expect(requests[0].options.url).toBe("/rate/round/2/pageid/101/select/3");
@@ -131,7 +132,7 @@ describe("a tile's worst mark", () => {
         expect(drawn(el)).toBe("***..");
     });
 
-    test("shows the stored vote again if the ✗ fails, and says why", () => {
+    test("shows the stored vote again if the worst mark fails, and says why", () => {
         const { el, item } = tileStars(2);
         worstButton(el).click();
         requests[0].answer.reject({ status: 409, responseJSON: { error: "round_closed" } });
@@ -161,18 +162,21 @@ describe("the juror's by-rate list with the worst mark", () => {
         return document.querySelector("li.gallerybox");
     }
 
-    test("gives the file's stars a ✗ button, and writes a stored ✗ as its mark", () => {
+    test("gives the file's stars a worst-mark button, and writes a stored one as its icon", () => {
         const box = list(3);
         const el = box.querySelector(".wlx-tile-stars");
         worstButton(el).click();
         requests[0].answer.resolve("success");
-        expect(box.querySelector(".wlx-rate-text").textContent).toBe("✗");
+        const text = box.querySelector(".wlx-rate-text");
+        expect(text.textContent).toBe("");
+        expect(text.querySelector("i").className).toBe("bi bi-x-lg wlx-worst-mark");
+        expect(text.querySelector("i").getAttribute("aria-hidden")).toBe("true");
         expect(box.classList.contains("wlx-rate-changed")).toBe(true);
     });
 });
 
 describe("the large view's keys with the worst mark", () => {
-    test("Delete gives ✗ and Backspace clears, each by its path", () => {
+    test("Delete gives the worst mark and Backspace clears, each by its path", () => {
         document.body.innerHTML = '<div id="large-keys" data-vote-key-0="/large/round/1/pageid/7/select/0" ' +
             'data-vote-key-del="/large/round/1/pageid/7/select/-1" data-vote-key-backspace="/large/round/1/pageid/7/select/0"></div>';
         expect(keys.bind(document)).toEqual(["del", "backspace", "0"]);
@@ -199,7 +203,7 @@ describe("the large view's keys with the worst mark", () => {
 
 describe("the large view's stars with the worst mark", () => {
     const el = attrs => {
-        document.body.innerHTML = '<span id="rate-number">✗</span>' +
+        document.body.innerHTML = '<span id="rate-number"><i class="bi bi-x-lg wlx-worst-mark" aria-hidden="true"></i></span>' +
             `<div id="rate-image" class="large-stars" ${attrs}></div>`;
         return document.getElementById("rate-image");
     };
@@ -209,6 +213,18 @@ describe("the large view's stars with the worst mark", () => {
             'data-readonly="false" data-vote-prefix="/large/round/1/pageid/7/select/" data-vote-query=""';
         expect(largeStars.options(el(base + ' data-cancel="false"'), document).cancel).toBe(false);
         expect(largeStars.options(el(base), document).cancel).toBe(true);
+    });
+
+    test("show the worst mark's icon again in the number after a hover", () => {
+        el("");
+        const shown = document.getElementById("rate-number");
+        const hover = window.wlxLargeRate.number(shown, false);
+        hover.mouseover(4);
+        expect(shown.textContent).toBe("4");
+        expect(shown.querySelector("i")).toBeNull();
+        hover.mouseout();
+        expect(shown.textContent).toBe("");
+        expect(shown.querySelector("i.bi-x-lg.wlx-worst-mark")).not.toBeNull();
     });
 });
 

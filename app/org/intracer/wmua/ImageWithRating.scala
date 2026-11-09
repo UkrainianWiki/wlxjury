@@ -80,9 +80,9 @@ case class ImageWithRating(
     rejectionsFromDb.getOrElse(votes.count(_.isRejected))
   }
 
-  /** A rated round's file's ✗ (worst marks, rate -1): its votes', or a grouped row's query's
-    * tally (none without one). The aggregate views show "✗ n" beside the score; a juror's own
-    * vote, its ✗.
+  /** A rated round's file's worst marks (rate -1): its votes', or a grouped row's query's tally
+    * (none without one). The aggregate views show the mark's icon and their number beside the
+    * score (snippets.worstMarks); a juror's own vote, the icon.
     */
   def worstMarks: Int = if (grouped) rejectionsFromDb.getOrElse(0) else votes.count(_.isRejected)
 

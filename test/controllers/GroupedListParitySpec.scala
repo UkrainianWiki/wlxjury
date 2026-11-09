@@ -192,7 +192,7 @@ class GroupedListParitySpec extends Specification with TestDb with BeforeAll wit
         (pending.map(_.countsUsed).distinct must_== Seq(false)) and (pendingProblems must_== Nil)
     }
 
-    "be the model's with the worst mark (✗ as 0, and as a vote), for each rule, from the votes, the counts and dirty files" in {
+    "be the model's with the worst mark (-1 as 0, and as a vote), for each rule, from the votes, the counts and dirty files" in {
       forall(AverageRule.all) { rule =>
         SharedTestDb.truncateAll()
         // rates -1 (✗) to 3

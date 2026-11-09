@@ -13,7 +13,7 @@ object GalleryTiles {
     user != null && user.getId == asUserId && round.exists(_.active) && user.roles.contains("jury")
 
   def attributes(user: User, asUserId: Long, round: Option[Round]): Html = {
-    // with the worst mark (✗), a ✗ button beside the stars (tile-votes.js)
+    // with the worst mark, its button (a bi-x-lg icon) beside the stars (tile-votes.js)
     val stars = TileStars.round(user, asUserId, round).map { r =>
       s"""{"number":${r.rates.id / r.starUnits},"half":${r.starUnits == 2},"worst":${r.takesWorstMark}}"""
     }

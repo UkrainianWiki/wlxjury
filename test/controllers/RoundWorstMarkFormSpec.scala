@@ -69,7 +69,9 @@ class RoundWorstMarkFormSpec extends PlaySpecification with PlayTestDb {
         val box = doc.getElementById("worstMark")
         (box must not(beNull)) and (box.hasAttr("checked") must beFalse) and
           (doc.select("#round-worst-mark input[type=hidden][name=worstMarkShown]").size === 1) and
-          (doc.text must contain("Worst mark (✗)"))
+          (doc.getElementById("round-worst-mark").text must contain("Worst mark")) and
+          // words only: the ✗ glyph is in no font the page uses (the icon is bi-x-lg)
+          (doc.getElementById("round-worst-mark").text must not(contain("✗")))
       }
     }
 
@@ -93,7 +95,7 @@ class RoundWorstMarkFormSpec extends PlaySpecification with PlayTestDb {
         val round = setUp(Round.binaryRound)
         val result = save(app, "admin@example.com", form(round, worst = true))
         (status(result) === BAD_REQUEST) and
-          (contentAsString(result) must contain("The worst mark (✗) is only for a rated round without criteria.")) and
+          (contentAsString(result) must contain("The worst mark is only for a rated round without criteria.")) and
           (stored(round) must beFalse)
       }
     }

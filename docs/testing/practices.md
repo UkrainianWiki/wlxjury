@@ -430,7 +430,7 @@ engine (165 in all), 4 of them its sign-ins:
 | `sections` | the large view's and the contest file's side sections restored as stored by DOMContentLoaded; the first-frame check (from `ui_checks.py`) is `fixme`, triage U18 ([UI](../ui/practices.md) §9) | J-33 |
 | `theme` | the login page's switch (no request), the navbar's CSRF POST; `auto` in both schemes with every frame, from the first, in the scheme's mode: the `data-bs-theme` attribute, the root's computed `color-scheme` and the page's computed background (the "Firefox theme flash" check) | J-30 |
 | `access` | a juror refused another juror's votes (gallery, large view, all jurors) and the admin pages, an organizer the round form: the 403 page with its reference | J-27, J-35, S-01 |
-| `organizer` | the organizer role's round statistics and by-rate list; the admin's rounds list, round form with its jurors' table, edit-then-cancel (nothing saved, no job), new round form; root's campaigns page | O-01, O-02, A-01, A-02, R-01 |
+| `organizer` | the organizer role's round statistics and by-rate list; the admin's rounds list, round form with its jurors' table, edit-then-cancel (nothing saved, no job), new round form; root's contests page | O-01, O-02, A-01, A-02, R-01 |
 | `pages` | a tour of 17 pages (each role's): status 200, one `h1`; in Chromium an axe-core scan per page (§10.5) | S-04 |
 
 **10.2 Every page passes** (`lib/fixtures.js`, for every context of every test): images and
@@ -448,6 +448,22 @@ only. The guard's route doesn't see WebSockets (that would take `routeWebSocket`
 none, and a page's WebSocket to another host is reported by the `websocket` event. The fixture runs with the production CSP, CSRF checked on POSTs, and its image proxy
 fetching from a placeholder stub in its JVM, never from Commons (`-Dui.csp=production
 -Dui.csrf=on -Dui.images=stub`, `fixture-server.mjs`).
+
+The user guides' screenshots (`docs-screenshots.spec.js`, `DOCS_SCREENSHOTS=1`; `0` or unset is
+off, any other value an error) use a docs image mode instead: `DOCS_SCREENSHOTS=1 node
+fixture-server.mjs start` (or `UI_IMAGES=docs`) passes `-Dui.images=docs`, `server.json` says
+`"images": "docs"`, and the spec fails unless it does (a running server of the other mode is never
+reused). The stub then serves the CC0 and public-domain photos that `browser-test/docs-photos.py`
+verified under `target/docs-photos/` (each list's `manifest.json`; that script checks every
+file's licence on Commons on every run, names files by a hash of their entry and deletes the
+rest). `DocsPhotos` maps a file by its ordinal in the fixture (by page id), so consecutive files
+get different photos; one in four gets a degraded one, never a file the shots show at the top of
+a page (`UiShotsServer.shownFiles`), and the stub answers 503 until it knows them. The image
+proxy's `target/ui-shots/thumbs-docs` is emptied on every docs-mode start. `DOCS_PHOTOS` names the
+lists (`wlm-ua`, `wlm-intl`, `wle-ua`, `wle-intl`; default `wlm-ua,wlm-intl`): one contest's
+photos per screenshot. The browser guard keeps the proxy's photos in that run and fetches the
+upload host's images from the proxy. Normal runs and CI keep the grey stub; the photos are never
+committed.
 
 **10.3 Back after a vote, without routes.** Any Playwright route turns the browser's HTTP cache
 off, in all three engines, and Playwright starts Chromium with `--disable-back-forward-cache`: a

@@ -272,6 +272,26 @@ class OwnAccountSpec extends PlaySpecification with PlayTestDb with AccountTestS
     }
   }
 
+  "an unverified email's hint" should {
+    "tell the owner whom to ask, and an admin what an invitation does" in {
+      testDbApp { implicit app =>
+        createContests(10)
+        val admin = account("admin@example.com", Some(10), "admin", verified = true)
+        val juror = account("juror@example.com", Some(10), "jury", password = Some("pw-juror"))
+        def hint(as: User) = {
+          val result = route(app, FakeRequest(GET, s"/users/edit/${juror.getId}?contestId=10")
+            .withSession(Secured.UserName -> as.email, Secured.CurrentContestId -> "10").withCSRFToken).get
+          (status(result) === OK, org.jsoup.Jsoup.parse(contentAsString(result)).select("p.email-unverified").text)
+        }
+        val (ownStatus, own) = hint(juror)
+        val (otherStatus, others) = hint(admin)
+        ownStatus and otherStatus and
+          (own must contain("ask your contest admin")) and (own must not(contain("send an invitation"))) and
+          (others must contain("send an invitation")) and (others must not(contain("ask your contest admin")))
+      }
+    }
+  }
+
   "sessions and sign-in" should {
     "refuse a session of another auth version" in {
       testDbApp { implicit app =>

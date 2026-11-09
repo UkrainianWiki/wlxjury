@@ -82,7 +82,7 @@
       val ranks = Ranks.of(pageKeys.map(_._2))
       val rankOf = pageKeys.map { case (pageId, values) => pageId -> ranks(values) }.toMap
       val juror = Option.when(list.asUserId != 0)(list.asUserId)
-      // a rated round's ✗ given while its option was on, for the legend (read with the keys)
+      // a rated round's worst marks given while its option was on, for the legend (read with the keys)
       val anyWorst = list.round.isRated && !list.round.worstMark && VoteJdbc.hasRejected(list.round.getId)
       Source.single(addBom(Seq(header(jurors, criteria))).head) ++
         Source.fromIterator(() => pageKeys.map(_._1).grouped(chunk))
@@ -99,7 +99,7 @@
 
     /** A binary round's last row, after the files: what its "Overall" and juror columns hold,
       * the votes as they are stored (1, -1, 0), the column of a juror the file isn't assigned
-      * to empty; a rated round's where it has the worst mark, or any ✗ (`anyWorst`: given while
+      * to empty; a rated round's where it has the worst mark, or any worst mark (`anyWorst`: given while
       * the option was on, kept when it was turned off). In English, as the header is.
       */
     private def legend(round: Round, anyWorst: Boolean): Option[Seq[String]] =
@@ -109,12 +109,19 @@
     val BinaryLegend: Seq[String] =
       Seq("", "Overall: approvals. Jurors: 1 selected, -1 rejected, 0 not voted yet, empty not assigned")
 
-    /** A rated round with the worst mark's last row: its ✗ (rate -1) counted as 0, "✗ n" after a
-      * file's score.
+    /** A rated round with the worst mark's last row: a worst mark (rate -1) counted as 0, the
+      * file's count of them in words after its score ([[worstMarksText]]), as the pages' plain texts
+      * have it (no icon, and no glyph that a spreadsheet's font may lack).
       */
     val WorstMarkLegend: Seq[String] =
-      Seq("", "Overall: the score, a worst mark counted as 0, then ✗ n: the file's worst marks. " +
-        "Jurors: the rate, -1 the worst mark (✗), 0 not rated yet, empty not assigned")
+      Seq("", "Overall: the score, a worst mark counted as 0, then \"— worst marks: n\", the file's worst marks. " +
+        "Jurors: the rate, -1 a worst mark, 0 not rated yet, empty not assigned")
+
+    /** What follows a rated round's file's score where it has worst marks: " — worst marks: 2".
+      * No ";" or ",": a spreadsheet in a locale whose list separator is ";" (uk, ru, fr) would
+      * split an unquoted cell there.
+      */
+    def worstMarksText(count: Int): String = s" — worst marks: $count"
 
     /** The juror names, criteria names (an admin's fallback text, [[org.intracer.wmua.Criterion]])
       * and file titles here are user text: [[writeRow]] neutralises them.
@@ -128,8 +135,8 @@
     private def row(file: ImageWithRating, rank: String, jurors: Seq[User], round: Round,
         criteria: Seq[(Long, String)], averages: Map[Long, Map[Long, BigDecimal]]): Seq[String] = {
       val ofFile = averages.getOrElse(file.pageId, Map.empty)
-      // a rated round's file's ✗ (worst marks) after its score: "14.50 (29 / 2) ✗ 1"
-      val worst = if (round.isBinary || file.worstMarks == 0) "" else s" ✗ ${file.worstMarks}"
+      // a rated round's file's worst marks after its score: "14.50 (29 / 2) — worst marks: 1"
+      val worst = if (round.isBinary || file.worstMarks == 0) "" else worstMarksText(file.worstMarks)
       Seq(rank, file.image.title, file.rateString(round) + worst) ++
         criteria.map { case (id, _) => ofFile.get(id).fold("")(CriteriaResults.format) } ++
         jurors.map(file.jurorRateStr)

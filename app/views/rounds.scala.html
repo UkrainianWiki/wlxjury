@@ -17,7 +17,7 @@
     @mainAdmin("rounds", adminUser, adminUser.getId,
         rounds = rounds, selectedRound = round, contestId = contest.id) {
         <div class="row" >
-            <h1 class="h3">@Messages("campaign") @contest.fullName</h1>
+            <h1 class="h3">@Messages("contest") @contest.fullName</h1>
 
             @flash.get("error").map { err =>
                 <div class="alert alert-danger">@err
@@ -32,6 +32,9 @@
             }
 
             @if(rounds.nonEmpty) {
+                @* scrolls inside its box on a narrow screen, not the page; nothing in it opens
+                   outside its box (start/stop are buttons, a job's status is text) *@
+                <div class="table-responsive position-relative">
                 <table class="table table-striped table-sm">
 
                     <thead>
@@ -72,6 +75,7 @@
                     </tbody>
 
                 </table>
+                </div>
                 <script src="@routes.Assets.versioned("javascripts/job-status.js")"></script>
             }
         </div>

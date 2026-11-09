@@ -131,9 +131,34 @@ object GatlingTestFixture {
     * upload.wikimedia.org, and caches them under target/ui-shots/thumbs. The browser tests' Back
     * checks run without Playwright's routes (which turn the browser's cache off), so their
     * thumbnails reach this server's proxy; with the stub it never fetches from Commons. */
+  /** -Dui.images=docs (the user guides' screenshots only): the photos cached by
+    * browser-test/docs-photos.py, which the stub serves instead of the grey placeholder once
+    * UiShotsServer has told them the fixture's files (DocsPhotos.Photos.setFixture). */
+  lazy val docsPhotos: Option[DocsPhotos.Photos] =
+    if (!sys.props.get("ui.images").contains("docs")) None
+    else Some(DocsPhotos.load(new java.io.File("target/docs-photos"), DocsPhotos.lists(sys.props.get("ui.photos"))))
+
+  /** The image proxy's cache of the docs photos' thumbnails: emptied on every docs-mode start, as
+    * which photo a file gets depends on the lists, their photos and the fixture. */
+  // lazy, as cspMode: `data` (above) reads it during initialisation
+  private lazy val docsThumbs = new java.io.File("target/ui-shots/thumbs-docs")
+
+  private def emptyDocsThumbs(): Unit = {
+    import scala.jdk.CollectionConverters._
+    val dir = docsThumbs.toPath.toAbsolutePath
+    if (java.nio.file.Files.isDirectory(dir)) {
+      val walk = java.nio.file.Files.walk(dir)
+      try walk.iterator().asScala.toSeq.sortBy(-_.getNameCount).filter(_ != dir).foreach(java.nio.file.Files.delete)
+      finally walk.close()
+    }
+    println(s"[images] emptied $dir")
+  }
+
   private lazy val imagesConfig: Map[String, Any] =
-    if (!sys.props.get("ui.images").contains("stub")) Map.empty
+    if (!Set("stub", "docs").exists(sys.props.get("ui.images").contains)) Map.empty
     else {
+      val docs = docsPhotos.isDefined
+      if (docs) emptyDocsThumbs()
       val png = {
         val image = new java.awt.image.BufferedImage(640, 480, java.awt.image.BufferedImage.TYPE_INT_RGB)
         val g = image.createGraphics()
@@ -146,16 +171,23 @@ object GatlingTestFixture {
       }
       val stub = com.sun.net.httpserver.HttpServer.create(new java.net.InetSocketAddress("127.0.0.1", 0), 0)
       stub.createContext("/", exchange => {
-        exchange.getResponseHeaders.set("Content-Type", "image/png")
-        exchange.sendResponseHeaders(200, png.length.toLong)
-        try exchange.getResponseBody.write(png) finally exchange.close()
+        // docs mode: 503 until the fixture's files are known, so nothing is cached unprotected
+        val (status, contentType, body) = docsPhotos match {
+          case None => (200, "image/png", png)
+          case Some(photos) =>
+            photos.photo(exchange.getRequestURI.getPath)
+              .fold((503, "text/plain", "docs photos not ready".getBytes(java.nio.charset.StandardCharsets.UTF_8)))(b => (200, "image/jpeg", b))
+        }
+        exchange.getResponseHeaders.set("Content-Type", contentType)
+        exchange.sendResponseHeaders(status, body.length.toLong)
+        try exchange.getResponseBody.write(body) finally exchange.close()
       })
       stub.start()
       val base = s"http://127.0.0.1:${stub.getAddress.getPort}"
-      println(s"[images] thumbnails from the stub at $base")
+      println(s"[images] thumbnails from the ${if (docs) "docs photos" else "stub"} at $base")
       Map(
         "wlxjury.thumbs.wiki-base-url" -> base,
-        "wlxjury.thumbs.local-path"    -> new java.io.File("target/ui-shots/thumbs").getAbsolutePath
+        "wlxjury.thumbs.local-path"    -> (if (docs) docsThumbs else new java.io.File("target/ui-shots/thumbs")).getAbsolutePath
       )
     }
 

@@ -1,0 +1,340 @@
+{
+ "note": "Public-domain and CC0 photos from Wikimedia Commons, fetched by browser-test/docs-photos.py into target/docs-photos/ (never committed). Licences are checked again at fetch time.",
+ "width": 1280,
+ "photos": [
+  {
+   "title": "File:20150518Tripleurospermum inodorum2.jpg",
+   "license": "CC0",
+   "author": "\nAnRo0002",
+   "theme": "landscape",
+   "contest": "Wiki Loves Earth",
+   "year": 2015,
+   "country": "Germany"
+  },
+  {
+   "title": "File:20150518Valeriana officinalis.jpg",
+   "license": "CC0",
+   "author": "\nAnRo0002",
+   "theme": "landscape",
+   "contest": "Wiki Loves Earth",
+   "year": 2015,
+   "country": "Germany"
+  },
+  {
+   "title": "File:20150519Salix purpurea1.jpg",
+   "license": "CC0",
+   "author": "\nAnRo0002",
+   "theme": "landscape",
+   "contest": "Wiki Loves Earth",
+   "year": 2015,
+   "country": "Germany"
+  },
+  {
+   "title": "File:20150521Veronica chamaedrys2.jpg",
+   "license": "CC0",
+   "author": "\nAnRo0002",
+   "theme": "landscape",
+   "contest": "Wiki Loves Earth",
+   "year": 2015,
+   "country": "Germany"
+  },
+  {
+   "title": "File:20150511Feldherrenhügel1.jpg",
+   "license": "CC0",
+   "author": "\nAnRo0002",
+   "theme": "landscape",
+   "contest": "Wiki Loves Earth",
+   "year": 2015,
+   "country": "Germany"
+  },
+  {
+   "title": "File:20150522 Geschützer Baum - Baumbestand am Moselradweg Trier - IMG 4473 by sebaso.jpg",
+   "license": "CC0",
+   "author": "Sebaso",
+   "theme": "landscape",
+   "contest": "Wiki Loves Earth",
+   "year": 2015,
+   "country": "Germany"
+  },
+  {
+   "title": "File:20160517Cerastium arvense4.jpg",
+   "license": "CC0",
+   "author": "\nAnRo0002",
+   "theme": "landscape",
+   "contest": "Wiki Loves Earth",
+   "year": 2016,
+   "country": "Germany"
+  },
+  {
+   "title": "File:20180502Lychnis flos-cuculi2.jpg",
+   "license": "CC0",
+   "author": "\nAnRo0002",
+   "theme": "landscape",
+   "contest": "Wiki Loves Earth",
+   "year": 2018,
+   "country": "Germany"
+  },
+  {
+   "title": "File:20190331Ficaria verna.jpg",
+   "license": "CC0",
+   "author": "\nAnRo0002",
+   "theme": "landscape",
+   "contest": "Wiki Loves Earth",
+   "year": 2018,
+   "country": "Germany"
+  },
+  {
+   "title": "File:Beowa National Park, New South Wales 23.jpg",
+   "license": "CC0",
+   "author": "Dhx1",
+   "theme": "landscape",
+   "contest": "Wiki Loves Earth",
+   "year": 2016,
+   "country": "Australia"
+  },
+  {
+   "title": "File:Cabeza de la Yegua - WLE Spain 2015.jpg",
+   "license": "CC0",
+   "author": "Raúl Hidalgo",
+   "theme": "landscape",
+   "contest": "Wiki Loves Earth",
+   "year": 2015,
+   "country": "Spain"
+  },
+  {
+   "title": "File:Dove Lake Circuit Walking Track, Cradle Mountain - Lake St Clair National Park 01.jpg",
+   "license": "CC0",
+   "author": "Dhx1",
+   "theme": "landscape",
+   "contest": "Wiki Loves Earth",
+   "year": 2016,
+   "country": "Australia"
+  },
+  {
+   "title": "File:Dove Lake Circuit Walking Track, Cradle Mountain - Lake St Clair National Park 11.jpg",
+   "license": "CC0",
+   "author": "Dhx1",
+   "theme": "landscape",
+   "contest": "Wiki Loves Earth",
+   "year": 2016,
+   "country": "Australia"
+  },
+  {
+   "title": "File:Hausweiher Westerwaelder Seenplatte (02).jpg",
+   "license": "CC0",
+   "author": "el_tommo",
+   "theme": "landscape",
+   "contest": "Wiki Loves Earth",
+   "year": 2016,
+   "country": "Germany"
+  },
+  {
+   "title": "File:MD.C.C - Garden of the Ethnographic museum in Chișinău - may 2017 - 17.jpg",
+   "license": "CC0",
+   "author": "Gikü",
+   "theme": "landscape",
+   "contest": "Wiki Loves Earth",
+   "year": 2017,
+   "country": "Moldova"
+  },
+  {
+   "title": "File:MD.OC.Naslavcea - Aflorimentul de nisipuri tortoniene de lângă gara Naslavcea - apr 2017 - 03.jpg",
+   "license": "CC0",
+   "author": "Gikü",
+   "theme": "landscape",
+   "contest": "Wiki Loves Earth",
+   "year": 2017,
+   "country": "Moldova"
+  },
+  {
+   "title": "File:Morning views from the summit of Mount Kosciuszko, Kosciuszko National Park 21.jpg",
+   "license": "CC0",
+   "author": "Dhx1",
+   "theme": "landscape",
+   "contest": "Wiki Loves Earth",
+   "year": 2016,
+   "country": "Australia"
+  },
+  {
+   "title": "File:MD.ST.Lozova - Codru scientific reserve (apiary) - may 2017 - 53.jpg",
+   "license": "CC0",
+   "author": "Gikü",
+   "theme": "landscape",
+   "contest": "Wiki Loves Earth",
+   "year": 2017,
+   "country": "Moldova"
+  },
+  {
+   "title": "File:Mystery Bay, Eurobodalla National Park, New South Wales, Australia 21.jpg",
+   "license": "CC0",
+   "author": "Dhx1",
+   "theme": "landscape",
+   "contest": "Wiki Loves Earth",
+   "year": 2016,
+   "country": "Australia"
+  },
+  {
+   "title": "File:Sunrise views from the summit of Mount Kosciuszko, Kosciuszko National Park 62.jpg",
+   "license": "CC0",
+   "author": "Dhx1",
+   "theme": "landscape",
+   "contest": "Wiki Loves Earth",
+   "year": 2016,
+   "country": "Australia"
+  },
+  {
+   "title": "File:Wog Wog to Corang Peak, Corang Arch and Canowrie Brook, Morton National Park 157.jpg",
+   "license": "CC0",
+   "author": "Dhx1",
+   "theme": "landscape",
+   "contest": "Wiki Loves Earth",
+   "year": 2016,
+   "country": "Australia"
+  },
+  {
+   "title": "File:20180428Knautia arvensis1.jpg",
+   "license": "CC0",
+   "author": "\nAnRo0002",
+   "theme": "landscape",
+   "contest": "Wiki Loves Earth",
+   "year": 2018,
+   "country": "Germany"
+  },
+  {
+   "title": "File:20180501Lychnis flos-cuculi4.jpg",
+   "license": "CC0",
+   "author": "\nAnRo0002",
+   "theme": "landscape",
+   "contest": "Wiki Loves Earth",
+   "year": 2018,
+   "country": "Germany"
+  },
+  {
+   "title": "File:20190422Polygonatum multiflorum3.jpg",
+   "license": "CC0",
+   "author": "\nAnRo0002",
+   "theme": "landscape",
+   "contest": "Wiki Loves Earth",
+   "year": 2019,
+   "country": "Germany"
+  },
+  {
+   "title": "File:20190507Anthriscus sylvestris1.jpg",
+   "license": "CC0",
+   "author": "\nAnRo0002",
+   "theme": "landscape",
+   "contest": "Wiki Loves Earth",
+   "year": 2019,
+   "country": "Germany"
+  },
+  {
+   "title": "File:Almsee und Umgebung 8.jpg",
+   "license": "CC0",
+   "author": "Dimitry Anikin",
+   "theme": "landscape",
+   "contest": "Wiki Loves Earth",
+   "year": 2021,
+   "country": "Austria"
+  },
+  {
+   "title": "File:Landscape Hardricourt.jpg",
+   "license": "CC0",
+   "author": "ksebf",
+   "theme": "landscape",
+   "contest": "Wiki Loves Earth",
+   "year": 2019,
+   "country": "France"
+  },
+  {
+   "title": "File:Near Brentanopark 2020-03-27 02.jpg",
+   "license": "CC0",
+   "author": "Leonhard Lenz",
+   "theme": "landscape",
+   "contest": "Wiki Loves Earth",
+   "year": 2020,
+   "country": "Germany"
+  },
+  {
+   "title": "File:Seekopf to Herrenwieser See 2020-03-10 28.jpg",
+   "license": "CC0",
+   "author": "Leonhard Lenz",
+   "theme": "landscape",
+   "contest": "Wiki Loves Earth",
+   "year": 2020,
+   "country": "Germany"
+  },
+  {
+   "title": "File:View from Altkönig 2020-03-25 08.jpg",
+   "license": "CC0",
+   "author": "Leonhard Lenz",
+   "theme": "landscape",
+   "contest": "Wiki Loves Earth",
+   "year": 2020,
+   "country": "Germany"
+  },
+  {
+   "title": "File:View from Falkenfelsen 2020-03-14 02.jpg",
+   "license": "CC0",
+   "author": "Leonhard Lenz",
+   "theme": "landscape",
+   "contest": "Wiki Loves Earth",
+   "year": 2020,
+   "country": "Germany"
+  },
+  {
+   "title": "File:View from Falkenfelsen Hertahütte 2020-03-14 05.jpg",
+   "license": "CC0",
+   "author": "Leonhard Lenz",
+   "theme": "landscape",
+   "contest": "Wiki Loves Earth",
+   "year": 2020,
+   "country": "Germany"
+  },
+  {
+   "title": "File:Weiße Mauer Taunus 2020-03-25 39.jpg",
+   "license": "CC0",
+   "author": "Leonhard Lenz",
+   "theme": "landscape",
+   "contest": "Wiki Loves Earth",
+   "year": 2020,
+   "country": "Germany"
+  },
+  {
+   "title": "File:Beach at Prora 2021-09-13 37.jpg",
+   "license": "CC0",
+   "author": "Leonhard Lenz",
+   "theme": "landscape",
+   "contest": "Wiki Loves Earth",
+   "year": 2022,
+   "country": "Germany"
+  },
+  {
+   "title": "File:Blauer See Rübeland 2022-04-06 17.jpg",
+   "license": "CC0",
+   "author": "Leonhard Lenz",
+   "theme": "landscape",
+   "contest": "Wiki Loves Earth",
+   "year": 2023,
+   "country": "Germany"
+  },
+  {
+   "title": "File:Eckerloch Brocken 2022-04-05 47.jpg",
+   "license": "CC0",
+   "author": "Leonhard Lenz",
+   "theme": "landscape",
+   "contest": "Wiki Loves Earth",
+   "year": 2023,
+   "country": "Germany"
+  },
+  {
+   "title": "File:Katterjåkk river with aurora 2022-09-03 09.jpg",
+   "license": "CC0",
+   "author": "Leonhard Lenz",
+   "theme": "landscape",
+   "contest": "Wiki Loves Earth",
+   "year": 2023,
+   "country": "Sweden"
+  }
+ ],
+ "degraded": []
+}

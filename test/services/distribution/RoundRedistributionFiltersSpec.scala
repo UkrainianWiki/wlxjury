@@ -304,7 +304,7 @@ class RoundRedistributionFiltersSpec extends Specification with TestDb with Befo
         ((job.params \ "settings" \ "prevRejectedBy").asOpt[Int] must beSome(1))
     }
 
-    "apply rejected-by from a rated previous round to its ✗ (its option off), ignore it with no previous round, on every path" in {
+    "apply rejected-by from a rated previous round to its worst marks (its option off), ignore it with no previous round, on every path" in {
       implicit val contest: ContestJury = createContests(1).head
       val jurors = createUsers("jury", 1, 2)
       addImages(contest, 1 to 10)

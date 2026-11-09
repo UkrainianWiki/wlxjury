@@ -6,7 +6,7 @@ export async function signIn(page, account) {
   await page.goto('/auth');
   await page.getByLabel('Your login').fill(account.login);
   await page.getByLabel('Your password').fill(account.password);
-  await expect(page.getByRole('button', { name: 'Sign In' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Sign in' })).toBeVisible();
   // Enter in the password field, as a user signs in: WebKit on Windows, with other engines
   // running, at times never reports the button "stable" for a click
   await page.getByLabel('Your password').press('Enter');

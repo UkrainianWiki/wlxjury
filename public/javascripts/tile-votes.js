@@ -114,14 +114,15 @@
    * finds the half by. A click on them never reaches the tile, which opens the large view.
    * `voted`, if given, is called with the rate once it is stored. While a vote is pending the
    * stars show its rate and ignore clicks; a failed one shows the last stored rate again.
-   * With `options.worst` (a round with the worst mark), a ✗ button after them gives the file
-   * ✗ (rate -1, its stars empty, the button pressed), and the cancel icon is an eraser that
-   * clears the vote, shown only once the file has one: giving ✗ and clearing stay apart.
+   * With `options.worst` (a round with the worst mark), a worst-mark button (bi-x-lg) after them
+   * gives the file the worst mark (rate -1, its stars empty, the button pressed), and the cancel
+   * icon is an eraser that clears the vote, shown only once the file has one: giving the worst
+   * mark and clearing stay apart.
    */
   function addStars(tile, item, options, voted) {
     var $ = window.jQuery;
     var units = options.half ? 2 : 1;
-    // the stars of a rate: none for unrated or a ✗ (-1, the worst mark)
+    // the stars of a rate: none for unrated or the worst mark (-1)
     function starsOf(rate) { return Math.max(rate, 0) / units; }
     var currentRate = +item.rate || 0;
     var storedRate = currentRate; // the rate the server last confirmed
@@ -131,7 +132,7 @@
       .appendTo(tile)[0];
     var worst = null;
 
-    /** Draws `rate`: its stars, the ✗ button pressed for a ✗, the clear (raty's cancel icon, in a
+    /** Draws `rate`: its stars, the worst-mark button pressed for a worst mark, the clear (raty's cancel icon, in a
       * round with the worst mark an eraser) only once the file has a vote. */
     function draw(rate) {
       show(el, starsOf(rate));
@@ -172,7 +173,7 @@
       starOn: 'bi bi-star-fill wlx-star',
       starHalf: 'bi bi-star-half wlx-star',
       starOff: 'bi bi-star wlx-star',
-      // in a round with the worst mark, the cancel icon clears and looks it: ✗ is its own button
+      // in a round with the worst mark, the cancel icon clears and looks it: the worst mark is its own button
       cancelOn: options.worst ? 'bi bi-eraser-fill' : 'bi bi-x-circle-fill',
       cancelOff: options.worst ? 'bi bi-eraser' : 'bi bi-x-circle',
       cancel: true,
@@ -191,7 +192,7 @@
       }
     });
     if (options.worst) {
-      // the ✗ (the worst mark), a toggle button showing the file's ✗; a click gives it, never
+      // the worst mark's toggle button, showing whether the file has it; a click gives it, never
       // clears it (the clear is apart), Enter or Space as a click
       var label = (holder && holder.getAttribute('data-vote-worst')) || '';
       worst = document.createElement('i');
@@ -242,8 +243,16 @@
       holder.textContent = '';
       addStars(holder, item, options, function (rate) {
         var changed = rate !== atLoad;
-        // a ✗ as its mark, as galleryByRate.scala.html renders it
-        if (text) text.textContent = rate < 0 ? '✗' : String(rate);
+        // a worst mark as its icon, as galleryByRate.scala.html renders it
+        if (text) {
+          text.textContent = rate < 0 ? '' : String(rate);
+          if (rate < 0) {
+            var icon = document.createElement('i');
+            icon.className = 'bi bi-x-lg wlx-worst-mark';
+            icon.setAttribute('aria-hidden', 'true');
+            text.appendChild(icon);
+          }
+        }
         box.classList.toggle('wlx-rate-changed', changed);
         if (changed) box.setAttribute('title', title);
         else box.removeAttribute('title');

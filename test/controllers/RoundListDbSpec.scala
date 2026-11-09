@@ -415,7 +415,7 @@ class RoundListDbSpec extends Specification with TestDb with BeforeAll with Befo
         (lists.map(_.count()) must_== Seq(2, 2, 2, 2, 2, 2, 1, 1))
     }
 
-    "rank a sum round's files by their sums of grades, a ✗ (-1) as 0, across pages and past the end" in {
+    "rank a sum round's files by their sums of grades, a worst mark (-1) as 0, across pages and past the end" in {
       val (rated, _, ids) = setUpRated()
       val round = rated.copy(averageRule = org.intracer.wmua.AverageRule.Sum)
       // F2 6, F1 5, F0 and F3 3 (F3's ✗ as 0; in file order), F5 2, F4 0 (its only vote a ✗)

@@ -9,7 +9,7 @@
    in a binary round, a digit to rate in a rated one, none in a round with criteria (its votes are
    per criterion, by the stars; a digit would vote the file's own rate, which the server
    refuses); each a path, never an http:// URL. Its moves are fileKeyboardNav's. In a rated round
-   with the worst mark, Del gives ✗ and Backspace clears the vote, 0 clearing it too, as in any
+   with the worst mark, Del gives it and Backspace clears the vote, 0 clearing it too, as in any
    rated round. *@
 @defining(list.round) { round =>
 @if(user.getId == list.asUserId && round.active && user.roles.contains("jury") && !round.hasCriteria) {

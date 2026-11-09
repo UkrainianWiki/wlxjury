@@ -238,8 +238,8 @@ class SessionsSpec extends PlaySpecification with PlayTestDb with AccountTestSup
         val csrf = token(app)
         val here = withToken(signedIn(juror), csrf)
 
-        val profile = contentAsString(send(app, GET, s"/users/edit/${juror.getId}", here))
-        profile must contain("""action="/users/tokens/revoke-all"""")
+        // the profile's form is root's only for now (ApiTokenPageSpec); the action itself still
+        // ends anyone's own tokens, so a token made before that can still be ended
 
         status(send(app, POST, "/users/tokens/revoke-all", here)) === FORBIDDEN
         ApiTokenService.authenticate(first) must beSome

@@ -109,7 +109,7 @@ a guide or a test needs them.
 
 | ID | Story | Guide section | Notes |
 |---|---|---|---|
-| R-01 | Root opens the campaigns page, creates a contest or imports contests from Commons | – | *Part:* opening the page only |
+| R-01 | Root opens the contests page, creates a contest or imports contests from Commons | – | *Part:* opening the page only |
 | R-02 | First-run setup creates the root account | – | |
 | R-03 | Root lists all users across contests and makes an account root | – | *Part:* making an account root only |
 | R-04 | Root signs in with login and password | – | |

@@ -139,7 +139,7 @@ class RoundCountsVoteSpec extends PlaySpecification with PlayTestDb {
   private def rate(f: Fixture, juror: User, pageId: Long): Int =
     VoteJdbc.findBy(pageId, juror.getId, f.round.getId).get.rate
 
-  "a rated round's worst mark (✗) [J-38]" should {
+  "a rated round's worst mark (rate -1) [J-38]" should {
     "be taken from the gallery and the large view as -1, mark its file, count as voted and as a rejection" in {
       testDbApp { app =>
         val f = fixture(Round.ratesById(5), worstMark = true)

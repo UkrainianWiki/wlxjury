@@ -9,9 +9,11 @@ import play.api.test.CSRFTokenHelper._
 import play.api.test.{FakeRequest, PlaySpecification}
 
 /** The round form's warning beside the score rule ([[RoundController.ScoreRuleWarning]]): in
-  * the page, without scripts, for a rated round with a rated vote, described by the select;
-  * naming the later rounds that took a top-N or a minimum score from it; not on a new round's
-  * form, nor on a round whose votes are all unrated, nor on a yes/no round.
+  * the page, without scripts, for a rated round with a vote of stars, described by the select;
+  * naming the later rounds that took a top-N or a minimum score from it, in the singular or the
+  * plural; not on a new round's form, nor on a round whose votes are all unrated or worst marks
+  * (every file scores 0 under every rule), nor on a yes/no round. The texts are checked by short
+  * fragments and the ids, so a rewording of the messages doesn't break them.
   */
 class RoundScoreRuleWarningSpec extends PlaySpecification with PlayTestDb {
 
@@ -51,9 +53,8 @@ class RoundScoreRuleWarningSpec extends PlaySpecification with PlayTestDb {
         val doc = editPage(app, round)
         val warning = doc.getElementById("averageRule_warning")
         (warning must not(beNull)) and
-          (warning.text must contain("Changing the score rule re-scores and re-orders this round's results")) and
-          (warning.text must contain("takes effect at once: nothing is recomputed in the background")) and
-          (warning.text must contain("A distribution already queued or running keeps the rule it started with")) and
+          (warning.text must startWith("Saving a different score rule")) and
+          (warning.text must contain("background")) and
           (doc.getElementById("averageRule").attr("aria-describedby").split(" ").toSeq must
             contain("averageRule_help", "averageRule_warning")) and
           (doc.getElementById("averageRule_warning_row").attr("data-stored-rule") === "assigned") and
@@ -75,14 +76,26 @@ class RoundScoreRuleWarningSpec extends PlaySpecification with PlayTestDb {
         roundDao.create(Round(None, 4, Some("All"), contestId, rates = Round.ratesById(5), previous = prev))
         val later = editPage(app, round).getElementById("averageRule_warning_later")
         (later must not(beNull)) and
-          (later.text === "Round(s) 2 (Top), 3 used this round's scores when they were created; their files won't " +
-            "change. A later \"Distribute new files\" there uses the new rule.")
+          (later.text must startWith("Rounds 2 (Top), 3 took their files")) and
+          (later.text must contain("the new rule"))
       }
     }
 
-    "not be on a new round's form, a round whose votes are unrated, or a yes/no round" in {
+    "name a single later round in the singular" in {
+      testDbApp { app =>
+        val round = setUp(rate = 4)
+        roundDao.create(Round(None, 2, None, contestId, rates = Round.ratesById(5), previous = Some(round.getId.toString),
+          prevMinAvgRate = Some(BigDecimal(3))))
+        editPage(app, round).getElementById("averageRule_warning_later").text must startWith("Round 2 took its files")
+      }
+    }
+
+    "not be on a new round's form, a round whose votes are unrated or worst marks, or a yes/no round" in {
       testDbApp { app =>
         val unrated = setUp(rate = 0)
+        val worstOnly = roundDao.create(Round(None, 3, Some("W"), contestId, rates = Round.ratesById(5), active = true,
+          worstMark = true))
+        VoteJdbc.create(1, -1, User.findByEmail("juror@example.com").head.getId, worstOnly.getId)
         val newForm = page(app, s"/admin/rounds/edit?contestId=$contestId")
         val binary = roundDao.create(Round(None, 2, Some("B"), contestId, rates = Round.binaryRound, active = true))
         VoteJdbc.create(1, 1, User.findByEmail("juror@example.com").head.getId, binary.getId)
@@ -91,7 +104,8 @@ class RoundScoreRuleWarningSpec extends PlaySpecification with PlayTestDb {
             (doc.getElementById("averageRule_warning_row") must beNull) and
             (doc.getElementById("averageRule").attr("aria-describedby").split(" ").toSeq must
               not(contain("averageRule_warning")))
-        absent(newForm) and absent(editPage(app, unrated)) and absent(editPage(app, binary))
+        absent(newForm) and absent(editPage(app, unrated)) and absent(editPage(app, worstOnly)) and
+          absent(editPage(app, binary))
       }
     }
   }

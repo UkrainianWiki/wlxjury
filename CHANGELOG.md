@@ -39,8 +39,8 @@ Developed 2026-10-31 to 2026-11-02, PRs #211–#231.
 - **Light, dark and auto colour modes**, on a refreshed layout; the choice is kept per user (#211–#214, V71).
 - **Yes/no rounds:** the all-jurors gallery shows each file's approvals, and "selected by at
   least N" filters by them (#215, V72–V74).
-- **REST API** under `/api` with Swagger UI; root's contest endpoints; personal API tokens on
-  the profile page (#218, V75).
+- **REST API** under `/api` with Swagger UI: an API for root only, with root's tokens on the
+  profile page (#218, V75).
 - **Accounts:** accounts are created by invitation only (no open sign-up); an email change is
   confirmed from the new address (#225, V77).
 - **Sessions:** "Keep me signed in", "Sign out everywhere", and an idle and an absolute
@@ -49,7 +49,8 @@ Developed 2026-10-31 to 2026-11-02, PRs #211–#231.
   consistent (#226, V78).
 - **Stopped jurors** can no longer vote in that round. The image proxy serves only the page
   sizes (#230, V81).
-- **Faster organizer views:** ranked and grouped all-jurors pages (#222, #224).
+- **Faster organizer views:** ranked and grouped all-jurors pages (#222, #224), live at deploy;
+  the new round-image read path (`roundImage.read`) is off at deploy.
 - **Security hardening** of roles, host names and cookies, sessions, password storage,
   output escaping, logs and exports, and security headers (#219–#231). The role fix is already
   in production as the 2026-11-02 hotfix (#223, V76).
@@ -118,22 +119,31 @@ Developed 2026-11-02 to 2026-11-03, PRs #232–#236.
   show the sum instead of the sum over the round's active jurors (same order), and a next
   round's "min average rate" from one now compares the sum (the form's hint says so).
 - **A warning beside the file score on the round form** (admins; developed 2026-11-05): for a
-  rated round with votes, changing the score says that it re-scores and re-orders the round's
+  rated round with a vote of stars (not for one with worst marks only, where every file scores 0
+  under every rule), it says that saving a different rule re-scores and re-orders the round's
   results on every page at once (nothing runs in the background), that a distribution already
-  queued keeps its rule, and which later rounds took their top files or minimum from this round
-  (their files don't change). In the page without JavaScript; with it, shown once the select
-  differs from the saved rule.
-- **The worst mark (✗) in rated rounds**, a round form option, off by default (admins; developed
-  2026-11-05, V92): jurors may give a file ✗ instead of stars, by a button in the large view and
-  on the gallery tiles, or Delete; clearing a vote stays apart (its own button, shown once the file
-  has a vote, or Backspace; 0 still clears). A ✗ counts as 0 in every average and total and as a
-  vote in a juror's progress and the round's "jurors who rated it"; the all-jurors by-rate
-  gallery, the file list, the CSV and the large view show "✗ n" beside the score, a juror's own
-  views their ✗. A next round can leave out files with at least N ✗, as it can a yes/no round's
+  queued keeps its rule, and which later rounds took their files by this round's scores (those
+  files stay; distributing new files to them from now on uses the new rule). In the page without JavaScript;
+  with it, shown once the select differs from the saved rule.
+- **The worst mark in rated rounds**, a round form option, off by default (admins; developed
+  2026-11-05, V92): jurors may give a file the worst mark instead of stars, by a button (a cross
+  icon) in the large view and on the gallery tiles, or Delete; clearing a vote stays apart (its
+  own button, shown once the file has a vote, or Backspace; 0 still clears). A worst mark counts
+  as 0 in every average and total and as a vote in a juror's progress and the round's "jurors
+  who rated it"; the all-jurors by-rate gallery, the file list and the large view show the same
+  cross icon and the number of worst marks beside the score (the words for screen readers), a
+  juror's own views their mark; the CSV writes " — worst marks: n" after the score, as its legend
+  says. A next round can leave out files with at least N worst marks, as it can a yes/no round's
   rejections. Not for criteria rounds or yes/no rounds (the form refuses it).
+- **One product name and the contest's words** (developed 2026-11-05): "WLX Jury", untranslated,
+  in the top bar, the page title and the sign-in heading; "Contest" for the former "Campaign";
+  "Juror" for a person's role everywhere roles are named ("No role" for none); in Russian and
+  Ukrainian "раунд" for a round throughout; messages that say whom to ask name the contest
+  admin, who invites. The sign-in page is one centred column; its button reads "Sign in".
 - **"Rejected by at least N" in two modes** (admins; developed 2026-11-05, V93): a next round
   leaves out the files rejected by at least N jurors, as before, or takes only them, to review the
-  rejected files in a round of their own; from a yes/no round's rejections or a rated round's ✗.
+  rejected files in a round of their own; from a yes/no round's rejections or a rated round's
+  worst marks.
 - **Links to share for setting a password** (admins and root; developed 2026-11-05, V94): besides
   sending an invitation or root's password reset by email, "Create a link to share" on the users
   page (an invitation) or on an account's page (a new password) shows the same single-use link
@@ -169,7 +179,11 @@ Developed 2026-11-02 to 2026-11-03, PRs #232–#236.
 - **Documentation:** English organizer and admin guides and "what's new in 26.11"
   (`docs/user/`), anchored for later in-app help, with screenshots made by an opt-in browser spec
   (`browser-test/tests/docs-screenshots.spec.js`, `DOCS_SCREENSHOTS=1`), checked against the rejection
-  filter and the shareable links as merged.
+  filter and the shareable links as merged. The screenshots show public-domain and CC0 Commons
+  photos (Wiki Loves Monuments, Ukraine and other countries; four lists by contest and country,
+  fetched by `browser-test/docs-photos.py`, never committed; credits in
+  `docs/user/images/README.md`) through the fixture's `-Dui.images=docs` mode, with four more shots
+  (the set-password page, the gallery top bar, the score rule warning, the access-denied page).
 - Debian/RPM packages and the Vagrant setup dropped; the ZIP is the release artifact. The dead
   Travis and AppVeyor configs and the Heroku files (`Procfile`, `system.properties`) removed.
 - Java 17 baseline: compiled with `-release:17`, Java 11 support dropped (CI already ran 17).

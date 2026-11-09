@@ -44,7 +44,7 @@ class RejectedByChoiceSpec extends PlaySpecification {
   }
 
   "the rejected-by filter" should {
-    "be offered from a yes/no round and a rated round without criteria (its ✗, the option on or off), not a criteria round" in {
+    "be offered from a yes/no round and a rated round without criteria (its worst marks, the option on or off), not a criteria round" in {
       val rated = new Round(id = Some(2), number = 2, contestId = 1, rates = Round.ratesById(5))
       rejectClasses(Seq(
         new Round(id = Some(1), number = 1, contestId = 1, rates = Round.binaryRound),

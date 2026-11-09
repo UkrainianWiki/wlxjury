@@ -18,7 +18,7 @@
                         @* a POST with the CSRF token: a link could switch it from another site *@
                         <form method="post" action="@routes.UserController.switchContest(uc.contestId)" class="navbar-menu-form">
                             @csrfField()
-                            <button type="submit" class="dropdown-item@if(user.contestId.contains(uc.contestId)){ active}">@contest.fullName (@uc.roles.map(r => Messages(r)).mkString(", "))</button>
+                            <button type="submit" class="dropdown-item@if(user.contestId.contains(uc.contestId)){ active}">@contest.fullName (@uc.roles.map(r => Messages("role." + r)).mkString(", "))</button>
                         </form>
                     </li>
                 }

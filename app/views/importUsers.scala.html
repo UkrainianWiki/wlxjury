@@ -32,7 +32,7 @@
                 @* the role they join with: the board, auditors and staff get no access, only
                    their files are conflicts of interest *@
                 @bs.select(importUserForm("role"),
-                    db.scalikejdbc.User.IMPORT_ROLES.map(r => (r, Messages(r))),
+                    db.scalikejdbc.User.IMPORT_ROLES.map(r => (r, Messages("role." + r))),
                     Symbol("_label") -> Messages("role"),
                     Symbol("id") -> "import-role")
 

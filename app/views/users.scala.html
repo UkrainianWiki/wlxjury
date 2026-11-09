@@ -38,6 +38,10 @@
             }
 
 
+            @* scrolls inside its box on a narrow screen, not the page; position-relative contains the
+               add row's visually hidden labels (absolutely placed). Its role select is native: nothing
+               in the table opens outside its box *@
+            <div class="table-responsive position-relative">
             <table class="table table-striped table-sm">
 
                 <thead>
@@ -132,12 +136,12 @@
                                 }
                             </td>
                             @if(contestOpt.nonEmpty) {
-                                <td>@user.contestRoles.toSeq.sorted.map(r => Messages(r)).mkString(", ") </td>
+                                <td>@user.contestRoles.toSeq.sorted.map(r => Messages("role." + r)).mkString(", ") </td>
                             } else {
                                 <td>
-                                    @if(user.isRoot) { @Messages("root")<br/> }
+                                    @if(user.isRoot) { @Messages("role.root")<br/> }
                                     @for(uc <- user.userContests) {
-                                        @contests.find(_.id.contains(uc.contestId)).fold(uc.contestId.toString)(_.fullName): @uc.roles.map(r => Messages(r)).mkString(", ")<br/>
+                                        @contests.find(_.id.contains(uc.contestId)).fold(uc.contestId.toString)(_.fullName): @uc.roles.map(r => Messages("role." + r)).mkString(", ")<br/>
                                     }
                                 </td>
                             }
@@ -177,7 +181,7 @@
                             <td>
                             @bs.select(
                                 editUserForm("roles"),
-                                db.scalikejdbc.User.FORM_ROLES.map(x => (x, Messages(x))),
+                                db.scalikejdbc.User.FORM_ROLES.map(x => (x, Messages("role." + x))),
                                 Symbol("_hiddenLabel") -> Messages("role"))
                             </td>
                             <td>
@@ -194,6 +198,7 @@
                 </tbody>
 
             </table>
+            </div>
 
             @* each account's latest invitation into the contest, live or of the last 30 days, with its
                status, so that the admin sees whether the person got it. One that waits to give a role
@@ -201,6 +206,7 @@
                link to share instead (where this admin may), or cancel it *@
             @for(contest <- contestOpt; contestId <- contest.id; if pending.nonEmpty) {
                 <h2 class="h5">@Messages("invitations.recent")</h2>
+                <div class="table-responsive position-relative">
                 <table class="table table-sm pending-invitations">
                     <thead>
                         <tr>
@@ -216,7 +222,7 @@
                         @defining(accounts.get(invitation.userId)) { account =>
                         <tr class="invitation-@invitation.status.key">
                             <td>@if(invitation.email.nonEmpty) { @invitation.email } else { @account.flatMap(_.wikiAccount).getOrElse(account.map(_.fullname).getOrElse("")) }</td>
-                            <td>@invitation.role.map(r => Messages(r)).getOrElse(account.map(_.contestRoles.toSeq.sorted.map(r => Messages(r)).mkString(", ")).getOrElse(""))</td>
+                            <td>@invitation.role.map(r => Messages("role." + r)).getOrElse(account.map(_.contestRoles.toSeq.sorted.map(r => Messages("role." + r)).mkString(", ")).getOrElse(""))</td>
                             <td>@Messages(if (invitation.shared) "link.sent.shared" else "link.sent.mail")</td>
                             <td>@linkStatus(invitation)</td>
                             <td>
@@ -244,6 +250,7 @@
                     }
                     </tbody>
                 </table>
+                </div>
             }
         </div>
     }

@@ -24,12 +24,16 @@
   }
 
   /** raty's `mouseover` and `mouseout` for the number `number` (an element), and the stars a
-    * click at a score gives (`clicked`), the same as the number shows. */
+    * click at a score gives (`clicked`), the same as the number shows. The number as rendered
+    * is kept as nodes, so a worst mark's icon comes back when the pointer leaves. */
   function number(number, half) {
-    var stored = number.textContent;
+    var stored = Array.prototype.map.call(number.childNodes, function (node) { return node.cloneNode(true); });
     return {
       mouseover: function (score) { number.textContent = text(clicked(score, half)); },
-      mouseout: function () { number.textContent = stored; },
+      mouseout: function () {
+        number.textContent = '';
+        stored.forEach(function (node) { number.appendChild(node.cloneNode(true)); });
+      },
       clicked: function (score) { return clicked(score, half); }
     };
   }

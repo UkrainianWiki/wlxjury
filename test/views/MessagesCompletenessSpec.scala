@@ -95,8 +95,8 @@ class MessagesCompletenessSpec extends Specification {
 
   /** Keys looked up from a value rather than a literal. */
   private val dynamicKeys: Seq[String] = Seq(
-    User.FORM_ROLES,                                            // the users pages' roles
-    Seq(User.ROOT_ROLE),                                        // editUser offers root to root
+    User.FORM_ROLES.map("role." + _),                           // every role name, as Messages("role." + r)
+    Seq("role." + User.ROOT_ROLE),                              // editUser offers root to root
     MediaType.mediaTypes,
     CategoryOperation.values.map(_.labelKey),
     BinaryOrder.all.map(_.messageKey),                          // the navbar's and round form's binary orders

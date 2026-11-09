@@ -14,8 +14,8 @@
 // - the worst mark's checkbox (#round-worst-mark), hidden and disabled (so not sent) for a
 //   yes/no or comments-only rating; "rejected by at least" (#rejectFilters, classes "round<id>"
 //   of the binary rounds and the rated ones with the worst mark) shown when one is chosen;
-// - the score rule's warning (#averageRule_warning_row, rendered for a rated round with a rated
-//   vote and shown as it is without scripts): shown only while #averageRule differs from the
+// - the score rule's warning (#averageRule_warning_row, rendered for a rated round with a vote
+//   of stars and shown as it is without scripts): shown only while #averageRule differs from the
 //   saved rule (its data-stored-rule);
 // - the jurors' table, loaded when its panel is first opened (#round-stat-table's data-src),
 //   and the number of new files on request (#count-new-files' data-src): the edit page leaves

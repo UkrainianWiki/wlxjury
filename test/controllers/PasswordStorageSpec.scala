@@ -222,7 +222,7 @@ class PasswordStorageSpec extends PlaySpecification with PlayTestDb with Mockito
           val result = signIn(user.email, "strong")
           status(result) === BAD_REQUEST
           signedIn(result) must beFalse
-          contentAsString(result) must contain("ask the contest&#x27;s organizers for a link to set a new one")
+          contentAsString(result) must contain("ask your contest admin for a link to set a new one")
           stored(user.getId) === Some(legacy("strong")) // not rehashed
         }
       }
