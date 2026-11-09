@@ -956,8 +956,10 @@ class RoundDistributionJobSpec extends Specification with TestDb with BeforeAll 
         prevRejectedBy = Some(1))
       val withWorst = VoteJdbc.byRound(worst.getId).filter(_.rate < 0).map(_.pageId).toSet
       val (got, expected) = both(contest, jurors, template)
-      (withWorst must not(beEmpty)) and (got === expected) and (got.intersect(withWorst) must beEmpty) and
-        (got must not(beEmpty))
+      // a file qualifies if it does in one of its rounds (triage R196-1): a file with a ✗ in
+      // the worst-mark round qualifies by the plain round, where it has no rejection
+      (withWorst must not(beEmpty)) and (got === expected) and
+        (got === VoteJdbc.byRound(plain.getId).map(_.pageId).toSet) and (withWorst.subsetOf(got) must beTrue)
     }
 
     "apply \"rejected by at least N\" in both modes from a yes/no and a rated worst-mark source, at the boundary, on both paths" in {

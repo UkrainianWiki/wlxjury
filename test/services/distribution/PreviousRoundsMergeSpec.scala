@@ -3,20 +3,23 @@ package services.distribution
 import controllers.EditRound
 import db.scalikejdbc._
 import org.intracer.wmua.cmd.DistributeImages
-import org.intracer.wmua.{AverageRule, ContestJury, Image, RejectedMode}
+import org.intracer.wmua.{AverageRule, BinaryOrder, ContestJury, Image, RejectedMode}
 import org.specs2.mutable.Specification
 import org.specs2.specification.{BeforeAll, BeforeEach}
 import scalikejdbc._
 import services.TestRoundServices
 
 /** A round from several previous rounds (triage R196-1), on both paths: the in-memory one
-  * (DistributeImages) and the streamed job (RoundDistributionHandler, its candidate queries).
-  *  1. The previous rounds share one rating, the same scale (`Round.sameRateType`): the form and
-  *     both paths refuse a 1-5 with a 1-10 round, and a comments-only with a rated one.
-  *  2. Parallel juries (disjoint files, different juror counts and score rules): each file is
-  *     scored in its own previous round, by that round's rule, for a minimum score and a top-N.
-  *  3. "Selected by at least N" and "rejected by at least N" count distinct jurors over the
-  *     previous rounds: a juror of two of them once.
+  * (DistributeImages) and the streamed job (RoundDistributionHandler, its candidate and ranking
+  * queries).
+  *  1. The previous rounds share one rating, the same scale and as many criteria
+  *     (`Round.sameRateType`): the form and both paths refuse a 1-5 with a 1-10 round, a
+  *     comments-only with a rated one, and a criteria round with a plain one of its scale.
+  *  2. Each file is evaluated in each previous round it is in, on its own: by that round's
+  *     rule, jurors and votes, for every filter together. A file qualifies if it qualifies in one
+  *     of them (the user's rule of 2026-11-10: "if the image is qualified by one of the rounds,
+  *     it should also qualify from two"); a top-N ranks it by its best round. Parallel juries
+  *     (disjoint files, different juror counts and rules) are then each scored in their own round.
   */
 class PreviousRoundsMergeSpec extends Specification with TestDb with BeforeAll with BeforeEach {
 
@@ -39,12 +42,12 @@ class PreviousRoundsMergeSpec extends Specification with TestDb with BeforeAll w
 
   /** A stopped previous round of `jurors`, with exactly the votes `(page, juror, rate)` given. */
   private def prevRound(contest: ContestJury, name: String, rates: Rates, jurors: Seq[User],
-      rule: AverageRule = AverageRule.Rated)(votes: (Long, User, Int)*): Round = {
+      rule: AverageRule = AverageRule.Rated, criteria: Seq[Long] = Nil)(votes: (Long, User, Int)*): Round = {
     val round = roundDao.create(Round(None, 1, Some(name), contest.getId, rates = rates, active = false,
-      averageRule = rule))
+      averageRule = rule, criterionIds = criteria))
     round.addUsers(jurors.map(u => RoundUser(round.getId, u.getId, "jury", active = true)))
     votes.foreach { case (page, juror, rate) => VoteJdbc.create(page, rate, juror.getId, round.getId) }
-    round
+    roundDao.findById(round.getId).get
   }
 
   private def next(contest: ContestJury, rates: Rates, from: Round*): Round =
@@ -64,6 +67,10 @@ class PreviousRoundsMergeSpec extends Specification with TestDb with BeforeAll w
     (inMemory, pageIds(created.getId))
   }
 
+  /** The votes of file `page` by `jurors`, in order, of `rates` (0: assigned, not rated). */
+  private def votesOf(page: Long, jurors: Seq[User], rates: Int*): Seq[(Long, User, Int)] =
+    jurors.zip(rates).map { case (juror, rate) => (page, juror, rate) }
+
   "previous rounds of different ratings (item 1)" should {
 
     "be refused unless they share one rating, the scale included" in {
@@ -81,17 +88,35 @@ class PreviousRoundsMergeSpec extends Specification with TestDb with BeforeAll w
         (Round.sameRateType(Seq(binary, five)) must beFalse)
     }
 
+    "be refused unless they have as many criteria" in {
+      val (contest, jurors) = setUp(2, 2)
+      // a criteria round's vote is the sum of its criteria: up to 40 of 4 criteria of 1-10
+      val four = prevRound(contest, "4 criteria", Round.ratesById(10), jurors, criteria = Seq(1L, 2L, 3L, 4L))()
+      val fourToo = prevRound(contest, "4 criteria too", Round.ratesById(10), jurors, criteria = Seq(5L, 6L, 7L, 8L))()
+      val three = prevRound(contest, "3 criteria", Round.ratesById(10), jurors, criteria = Seq(1L, 2L, 3L))()
+      val plain = prevRound(contest, "Plain", Round.ratesById(10), jurors)()
+      val probe = roundDao.create(next(contest, Round.ratesById(10), four, plain).copy(number = 99))
+      (four.hasCriteria must beTrue) and
+        (Round.sameRateType(Seq(four, fourToo)) must beTrue) and
+        (Round.sameRateType(Seq(four, plain)) must beFalse) and
+        (Round.sameRateType(Seq(four, three)) must beFalse) and
+        (RoundDistributionHandler.previousRounds(probe) must throwA[IllegalArgumentException]) and
+        (di.imagesByRound(probe, Seq(four, plain)) must throwA[IllegalArgumentException](message = "same rating"))
+    }
+
     "be refused by the round form, with its message" in {
       val (contest, jurors) = setUp(2, 2)
       val five = prevRound(contest, "1-5", Round.ratesById(5), jurors)()
       val ten = prevRound(contest, "1-10", Round.ratesById(10), jurors)()
       val fiveToo = prevRound(contest, "1-5 too", Round.ratesById(5), jurors)()
+      val fiveCriteria = prevRound(contest, "1-5 criteria", Round.ratesById(5), jurors, criteria = Seq(1L, 2L))()
       def errors(prev: Round*) = EditRound.editRoundForm.bind(Map(
         "number" -> "0", "name" -> "Next", "contest" -> contest.getId.toString, "roles" -> "jury",
         "distribution" -> "0", "rates" -> "5", "minMpx" -> "", "minSize" -> "", "mediaType" -> "all",
         "jurors[0]" -> jurors.head.getId.toString) ++
         prev.zipWithIndex.map { case (r, i) => s"previousRound[$i]" -> r.getId.toString }).errors.map(_.message)
       (errors(five, ten) must contain("error.previous.rounds.mixed.type")) and
+        (errors(five, fiveCriteria) must contain("error.previous.rounds.mixed.type")) and
         (errors(five, fiveToo) must not(contain("error.previous.rounds.mixed.type")))
     }
 
@@ -105,7 +130,7 @@ class PreviousRoundsMergeSpec extends Specification with TestDb with BeforeAll w
     }
   }
 
-  "parallel juries (item 2): disjoint files, different juror counts and score rules" should {
+  "parallel juries: disjoint files, different juror counts and score rules" should {
 
     /** Round A: two jurors, `rated` (over the jurors who rated); files 1-3. Round B: three
       * jurors, `assigned` (over the assigned, unrated as 0); files 4-6. Each file's score in its
@@ -137,55 +162,128 @@ class PreviousRoundsMergeSpec extends Specification with TestDb with BeforeAll w
     }
   }
 
-  "selected and rejected by at least N (item 3)" should {
+  "a file in several previous rounds (item 2: qualified by one round, qualified from two)" should {
 
-    /** Two yes/no rounds of files 1-6, juror 1 in both: R1 of jurors 1 and 2, R2 of jurors 1
-      * and 3. Approved by: 1 juror 1 twice; 2 jurors 2 and 3; 3 jurors 1 and 3. Rejected by: 4
-      * juror 1 twice; 5 jurors 2 and 3. 6: no vote.
+    "qualify by a minimum score in one of its rounds, on both paths" in {
+      val (contest, jurors) = setUp(4, 5)
+      val Seq(j1, j2, j3, j4, j5) = jurors
+      // files 1-4 in both rounds: A of two jurors, `rated`; B of three, `assigned`. Scores in
+      // A | B: 1: 8 | 3; 2: 4 | 7; 3: 5 | 4; 4: 6.5 | 6
+      val a = prevRound(contest, "A", Round.ratesById(10), Seq(j1, j2), AverageRule.Rated)(
+        votesOf(1L, Seq(j1, j2), 8, 0) ++ votesOf(2L, Seq(j1, j2), 4, 4) ++ votesOf(3L, Seq(j1, j2), 5, 5) ++
+          votesOf(4L, Seq(j1, j2), 6, 7): _*)
+      val b = prevRound(contest, "B", Round.ratesById(10), Seq(j3, j4, j5), AverageRule.Assigned)(
+        votesOf(1L, Seq(j3, j4, j5), 9, 0, 0) ++ votesOf(2L, Seq(j3, j4, j5), 7, 7, 7) ++
+          votesOf(3L, Seq(j3, j4, j5), 4, 4, 4) ++ votesOf(4L, Seq(j3, j4, j5), 6, 6, 6): _*)
+      val (inMemory, streamed) = both(contest, jurors, next(contest, Round.ratesById(10), a, b)
+        .copy(prevMinAvgRate = Some(BigDecimal(6))))
+      // 1 passes in A only, 2 in B only, 4 in both; 3 in neither
+      (inMemory === Set(1L, 2L, 4L)) and (streamed === inMemory)
+    }
+
+    "rank by its best round for a top-N, against files of one round, on both paths" in {
+      val (contest, jurors) = setUp(3, 2)
+      // 1: 9 in A, 2 in B (5.5 pooled); 2: 7, in A only; 3: 8, in B only
+      val a = prevRound(contest, "A", Round.ratesById(10), jurors)(
+        votesOf(1L, jurors, 9, 9) ++ votesOf(2L, jurors, 7, 7): _*)
+      val b = prevRound(contest, "B", Round.ratesById(10), jurors)(
+        votesOf(1L, jurors, 2, 2) ++ votesOf(3L, jurors, 8, 8): _*)
+      val (inMemory, streamed) = both(contest, jurors, next(contest, Round.ratesById(10), a, b).copy(topImages = Some(2)))
+      (inMemory === Set(1L, 3L)) and (streamed === inMemory)
+    }
+
+    "not add up its sums in two `sum` rounds, on both paths" in {
+      val (contest, jurors) = setUp(2, 2)
+      // 1: a sum of 10 in A and in B (20 added up); 2: 15, in A only
+      val a = prevRound(contest, "A", Round.ratesById(10), jurors, AverageRule.Sum)(
+        votesOf(1L, jurors, 5, 5) ++ votesOf(2L, jurors, 8, 7): _*)
+      val b = prevRound(contest, "B", Round.ratesById(10), jurors, AverageRule.Sum)(votesOf(1L, jurors, 6, 4): _*)
+      val (topIn, topStreamed) = both(contest, jurors, next(contest, Round.ratesById(10), a, b)
+        .copy(name = Some("Top"), topImages = Some(1)))
+      val (minIn, minStreamed) = both(contest, jurors, next(contest, Round.ratesById(10), a, b)
+        .copy(name = Some("Min"), prevMinAvgRate = Some(BigDecimal(12))))
+      (topIn === Set(2L)) and (topStreamed === topIn) and (minIn === Set(2L)) and (minStreamed === minIn)
+    }
+
+    /** Two yes/no rounds, juror 1 in both: R1 of jurors 1 and 2, files 1-7; R2 of jurors 1 and 3,
+      * files 1-6. Approvals R1 | R2: 1: 1 | 1 (juror 1 twice); 2: 1 | 1 (jurors 2, 3); 3: 2 | 0.
+      * Rejections R1 | R2: 4: 1 | 1 (juror 1 twice); 5: 1 | 1 (jurors 2, 3); 6: 2 | 0; 7: 2, in R1
+      * only.
       */
-    def rounds() = {
-      val (contest, jurors) = setUp(6, 3)
+    def binaryRounds() = {
+      val (contest, jurors) = setUp(7, 3)
       val Seq(j1, j2, j3) = jurors
-      def votes(other: User, own: Map[Long, (Int, Int)]): Seq[(Long, User, Int)] =
-        (1L to 6L).flatMap { p => val (r1, r2) = own.getOrElse(p, (0, 0)); Seq((p, j1, r1), (p, other, r2)) }
       val r1 = prevRound(contest, "R1", Round.binaryRound, Seq(j1, j2))(
-        votes(j2, Map(1L -> (1, 0), 2L -> (0, 1), 3L -> (1, 0), 4L -> (-1, 0), 5L -> (0, -1))): _*)
+        votesOf(1L, Seq(j1, j2), 1, 0) ++ votesOf(2L, Seq(j1, j2), 0, 1) ++ votesOf(3L, Seq(j1, j2), 1, 1) ++
+          votesOf(4L, Seq(j1, j2), -1, 0) ++ votesOf(5L, Seq(j1, j2), 0, -1) ++ votesOf(6L, Seq(j1, j2), -1, -1) ++
+          votesOf(7L, Seq(j1, j2), -1, -1): _*)
       val r2 = prevRound(contest, "R2", Round.binaryRound, Seq(j1, j3))(
-        votes(j3, Map(1L -> (1, 0), 2L -> (0, 1), 3L -> (0, 1), 4L -> (-1, 0), 5L -> (0, -1))): _*)
+        votesOf(1L, Seq(j1, j3), 1, 0) ++ votesOf(2L, Seq(j1, j3), 0, 1) ++ votesOf(3L, Seq(j1, j3), 0, 0) ++
+          votesOf(4L, Seq(j1, j3), -1, 0) ++ votesOf(5L, Seq(j1, j3), 0, -1) ++ votesOf(6L, Seq(j1, j3), 0, 0): _*)
       (contest, jurors, r1, r2)
     }
 
-    "count distinct approving jurors across the previous rounds, on both paths" in {
-      val (contest, jurors, r1, r2) = rounds()
+    "count the approvals of each round on its own for \"selected by\", on both paths" in {
+      val (contest, jurors, r1, r2) = binaryRounds()
       val (inMemory, streamed) = both(contest, jurors, next(contest, Round.binaryRound, r1, r2).copy(prevSelectedBy = Some(2)))
-      // file 1: juror 1 alone, in both rounds: one juror, not two
-      (inMemory === Set(2L, 3L)) and (streamed === inMemory)
+      // 1 and 2: one approval in each round, two added up; 3: two in R1
+      (inMemory === Set(3L)) and (streamed === inMemory)
     }
 
-    "count distinct rejecting jurors across the previous rounds, both modes, on both paths" in {
-      val (contest, jurors, r1, r2) = rounds()
+    "count the rejections of each round on its own for \"rejected by\", both modes, on both paths" in {
+      val (contest, jurors, r1, r2) = binaryRounds()
       val (excludeIn, excludeStreamed) = both(contest, jurors, next(contest, Round.binaryRound, r1, r2)
         .copy(name = Some("Exclude"), prevRejectedBy = Some(2), prevRejectedMode = RejectedMode.Exclude))
       val (onlyIn, onlyStreamed) = both(contest, jurors, next(contest, Round.binaryRound, r1, r2)
         .copy(name = Some("Only"), prevRejectedBy = Some(2), prevRejectedMode = RejectedMode.Only))
-      // file 4: juror 1 alone, in both rounds: rejected by one juror
-      (excludeIn === Set(1L, 2L, 3L, 4L, 6L)) and (excludeStreamed === excludeIn) and
-        (onlyIn === Set(5L)) and (onlyStreamed === onlyIn)
+      // 4 and 5: their rejections split across the rounds, none reaching 2 in one: kept; 6 kept
+      // by R2, where it has none; 7: two rejections in its only round
+      (excludeIn === Set(1L, 2L, 3L, 4L, 5L, 6L)) and (excludeStreamed === excludeIn) and
+        (onlyIn === Set(6L, 7L)) and (onlyStreamed === onlyIn)
     }
 
-    "count a rated round's worst marks by distinct jurors too" in {
-      val (contest, jurors) = setUp(3, 3)
+    "rank by its best round's standing for an ordered yes/no top-N, on both paths" in {
+      val (contest, jurors, r1, r2) = binaryRounds()
+      val (inMemory, streamed) = both(contest, jurors, next(contest, Round.binaryRound, r1, r2)
+        .copy(topImages = Some(1), topBinaryOrder = Some(BinaryOrder.Default)))
+      // 1, 2 and 3 have two approvals added up and no rejection (1 first by page id); only 3 has
+      // two in one round
+      (inMemory === Set(3L)) and (streamed === inMemory)
+    }
+
+    "count a rated round's worst marks in each round on its own, on both paths" in {
+      val (contest, jurors) = setUp(4, 3)
       val Seq(j1, j2, j3) = jurors
-      val a = prevRound(contest, "A", Round.ratesById(5), Seq(j1, j2))((1L, j1, -1), (1L, j2, 3), (2L, j1, -1), (2L, j2, -1),
-        (3L, j1, 4), (3L, j2, 4))
-      sql"UPDATE round SET worst_mark = TRUE WHERE id = ${a.getId}".update()(AutoSession)
-      val b = prevRound(contest, "B", Round.ratesById(5), Seq(j1, j3))((1L, j1, -1), (1L, j3, 2), (2L, j1, 5), (2L, j3, 4),
-        (3L, j1, 3), (3L, j3, 3))
-      sql"UPDATE round SET worst_mark = TRUE WHERE id = ${b.getId}".update()(AutoSession)
-      // file 1: juror 1's worst mark in both rounds, one juror; file 2: jurors 1 and 2
-      val (inMemory, streamed) = both(contest, jurors, next(contest, Round.ratesById(5), roundDao.findById(a.getId).get,
-        roundDao.findById(b.getId).get).copy(prevRejectedBy = Some(2)))
-      (inMemory === Set(1L, 3L)) and (streamed === inMemory)
+      val a = prevRound(contest, "A", Round.ratesById(5), Seq(j1, j2))(
+        votesOf(1L, Seq(j1, j2), -1, 3) ++ votesOf(2L, Seq(j1, j2), -1, -1) ++ votesOf(3L, Seq(j1, j2), 4, 4) ++
+          votesOf(4L, Seq(j1, j2), -1, -1): _*)
+      val b = prevRound(contest, "B", Round.ratesById(5), Seq(j1, j3))(
+        votesOf(1L, Seq(j1, j3), -1, 2) ++ votesOf(2L, Seq(j1, j3), 5, 4) ++ votesOf(3L, Seq(j1, j3), 3, 3): _*)
+      Seq(a, b).foreach(r => sql"UPDATE round SET worst_mark = TRUE WHERE id = ${r.getId}".update()(AutoSession))
+      val prev = Seq(a, b).map(r => roundDao.findById(r.getId).get)
+      val (excludeIn, excludeStreamed) = both(contest, jurors, next(contest, Round.ratesById(5), prev: _*)
+        .copy(name = Some("Exclude"), prevRejectedBy = Some(2)))
+      val (onlyIn, onlyStreamed) = both(contest, jurors, next(contest, Round.ratesById(5), prev: _*)
+        .copy(name = Some("Only"), prevRejectedBy = Some(2), prevRejectedMode = RejectedMode.Only))
+      // 1: one ✗ in each round; 2: two in A, none in B; 4: two in its only round
+      (excludeIn === Set(1L, 2L, 3L)) and (excludeStreamed === excludeIn) and
+        (onlyIn === Set(2L, 4L)) and (onlyStreamed === onlyIn)
+    }
+
+    "score a legacy yes/no top-N (no order stored) by each round's own jurors, on both paths" in {
+      val (contest, jurors) = setUp(2, 5)
+      val Seq(j1, j2, _, _, _) = jurors
+      // max(approvals - rejections, 0) over the round's jurors: 1: 1 / 2 in R1; 2: 2 / 5 in R2
+      // (1 over R1's two jurors)
+      val r1 = prevRound(contest, "R1", Round.binaryRound, Seq(j1, j2))(votesOf(1L, Seq(j1, j2), 1, 0): _*)
+      val r2 = prevRound(contest, "R2", Round.binaryRound, jurors)(votesOf(2L, jurors, 1, 1, 0, 0, 0): _*)
+      // a new round gets an order (Round.withExplicitTopOrder): a round of before V72 has none,
+      // and its "Distribute new files" ranks by the legacy rule
+      val legacy = roundDao.create(next(contest, Round.binaryRound, r1, r2).copy(topImages = Some(1)))
+      legacy.addUsers(jurors.map(u => RoundUser(legacy.getId, u.getId, "jury", active = true)))
+      val inMemory = di.imagesByRound(legacy, RoundDistributionHandler.previousRounds(legacy)).map(_.pageId).toSet
+      TestRoundServices.roundService(TestRoundServices.handler()).distributeNewImages(legacy.getId)
+      (legacy.topBinaryOrder must beNone) and (inMemory === Set(1L)) and (pageIds(legacy.getId) === inMemory)
     }
   }
 }

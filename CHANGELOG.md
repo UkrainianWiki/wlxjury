@@ -144,6 +144,12 @@ Developed 2026-11-02 to 2026-11-03, PRs #232–#236.
   leaves out the files rejected by at least N jurors, as before, or takes only them, to review the
   rejected files in a round of their own; from a yes/no round's rejections or a rated round's
   worst marks.
+- **Several previous rounds, each on its own** (admins; developed 2026-11-10, triage R196-1): a
+  next round from several previous rounds checks each file in each of them on its own, with that
+  round's jurors, votes and file score; a file is taken if it passes in at least one (the user's
+  rule), and a top-N ranks it by its best round. Before, its votes were added up across the
+  rounds and scored by the first round's rule. The previous rounds must now share the scale and
+  the number of criteria, not only yes/no or rated (pre-deploy check: the roadmap's A10).
 - **Links to share for setting a password** (admins and root; developed 2026-11-05, V94): besides
   sending an invitation or root's password reset by email, "Create a link to share" on the users
   page (an invitation) or on an account's page (a new password) shows the same single-use link

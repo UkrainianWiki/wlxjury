@@ -14,12 +14,7 @@ case class ImageWithRating(
     rejectionsFromDb: Option[Int] = None,
     // a rated round's grouped row's rated votes (any vote, a ✗ included), where its query counts
     // them without a tally (the distribution's streamed candidates)
-    votedFromDb: Option[Int] = None,
-    // a distribution's: the distinct jurors who approved the file in all its yes/no previous
-    // rounds together ("selected by at least N"), and who rejected it (a "no" or a ✗: "rejected
-    // by at least N"), a juror of several of those rounds once
-    selectorsFromDb: Option[Int] = None,
-    rejectersFromDb: Option[Int] = None
+    votedFromDb: Option[Int] = None
 ) extends Ordered[ImageWithRating] {
 
   val ownJuryRating = new OwnRating(
@@ -94,22 +89,10 @@ case class ImageWithRating(
   /** One juror's vote of the file, a ✗ (the large view, a tile and a list of the juror's own). */
   def isWorstMark: Boolean = ownVote && votes.head.isRejected
 
-  /** "Selected by at least N" (a distribution from previous rounds): the distinct jurors who
-    * approved the file in them ([[selectorsFromDb]]), else, where they aren't read (a rated
-    * previous round's), its [[rateSum]] of the rows read, as before.
-    */
-  def selectors: Int = selectorsFromDb.getOrElse(rateSum)
-
-  /** "Rejected by at least N": the distinct jurors who rejected the file in the previous rounds
-    * ([[rejectersFromDb]]), else its [[rejections]].
-    */
-  def rejecters: Int = rejectersFromDb.getOrElse(rejections)
-
-  /** The previous round, of a distribution's `rounds`, whose score the file has: the one round
-    * its rows are of (a grouped row is tagged with its round), scored by that round's rule and
-    * jurors; `default` (the first previous round) for a file of several previous rounds, or of
-    * none known. Files of parallel juries are then each ranked within their own round's rule
-    * (triage R196-1); a file of several keeps its merged score, by the first round's rule.
+  /** The previous round, of a distribution's `rounds`, a candidate row is of: a distribution
+    * reads one row per file and previous round, tagged with its round, and evaluates each in
+    * its own round, by that round's rule and jurors (triage R196-1); `default` (the first
+    * previous round) for a row of none known.
     */
   def sourceRound(default: Round, rounds: Seq[Round]): Round =
     votes.map(_.roundId).distinct match {
