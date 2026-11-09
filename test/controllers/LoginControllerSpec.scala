@@ -93,7 +93,7 @@ class LoginControllerSpec extends PlaySpecification with Results with PlayTestDb
 
         // the denial page, saying whom to ask, not a redirect to /error
         status(result) === FORBIDDEN
-        contentAsString(result) must contain("If you need access, ask your contest organizer.")
+        contentAsString(result) must contain("If you need access, ask your contest admin.")
         session(result).get(Secured.UserName) === Some("qwerty@dot.com")
       }
     }
@@ -295,6 +295,37 @@ class LoginControllerSpec extends PlaySpecification with Results with PlayTestDb
         session(result).get(Secured.AuthVersion) === Some("3")
         Secured.sessionUser("versioned@dot.com", None, Some("3"), None) must beSome
         Secured.sessionUser("versioned@dot.com", None, None, None) must beNone
+      }
+    }
+  }
+
+  "the sign-in page" should {
+    "name the product WLX Jury, one name untranslated, in its title, heading and top bar" in {
+      testDbApp { implicit app =>
+        val messages = app.injector.instanceOf[MessagesApi]
+        val doc = org.jsoup.Jsoup.parse(contentAsString(route(app, FakeRequest(GET, "/auth").withCSRFToken).get))
+        forall(Seq("en", "fr", "uk", "ru"))(l => messages("application.name")(Lang(l)) === "WLX Jury") and
+          (doc.title === "WLX Jury") and
+          (doc.select("h1").text === "WLX Jury") and
+          (doc.select("nav .navbar-brand").text === "WLX Jury") and
+          // sentence case, as the other buttons
+          (doc.select("button#submit").text === "Sign in")
+      }
+    }
+
+    "name the product in the account mails, as plain text with the link on a line of its own" in {
+      testDbApp { implicit app =>
+        val messages = app.injector.instanceOf[MessagesApi]
+        val link = "https://jury.example.org/invitation/abc"
+        val mails = Seq("invitation.subject.tool" -> Nil, "invitation.body.tool" -> Seq(link, 7),
+          "password.link.subject" -> Nil, "password.link.body" -> Seq(link, 7),
+          "email.change.subject" -> Nil, "email.change.body" -> Seq(link, 24),
+          "email.changed.subject" -> Nil, "email.changed.body" -> Seq("new@example.org"))
+        forall(for (l <- Seq("en", "fr", "uk", "ru"); (key, args) <- mails) yield (l, key, args)) { case (l, key, args) =>
+          val text = messages(key, args: _*)(Lang(l))
+          (text must contain("WLX Jury")) and (text must not(contain("<"))) and
+            ((!args.headOption.contains(link) || text.split("\n").contains(link)) must beTrue)
+        }
       }
     }
   }

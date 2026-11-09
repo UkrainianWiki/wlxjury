@@ -210,11 +210,14 @@ class UserController @Inject()(cc: ControllerComponents,
     val withTheme =
       if (user.theme.flatMap(Theme.find).isEmpty) user.copy(theme = Some(Theme.of(request).value)) else user
     val nonce = ApiTokensCard.newNonce()
-    val card = ApiTokensCard(ApiTokenJdbc.findByUser(user.getId), tokenForm, newToken, nonce, notice)
+    // root only for now (the user, 2026-11-05): almost nothing can be done through the API yet,
+    // and only by root, so nobody else gets the card ([[createApiToken]] refuses them too)
+    val card = Option.when(user.hasRole(User.ROOT_ROLE))(
+      ApiTokensCard(ApiTokenJdbc.findByUser(user.getId), tokenForm, newToken, nonce, notice))
     val linkNonce = ApiTokensCard.newNonce()
     val linked = LinkedAccountsCard(UserIdentityJdbc.findByUser(user.getId), oauthSettings.providersFor(request.host),
       linkNonce)
-    status(views.html.editUser(user, userForm.getOrElse(editUserForm.fill(withTheme)), user.currentContest, Some(card),
+    status(views.html.editUser(user, userForm.getOrElse(editUserForm.fill(withTheme)), user.currentContest, card,
       Some(linked)))
       .addingToSession(ApiTokensCard.NonceKey -> nonce, OAuthController.LinkNonceKey -> linkNonce)
   }
@@ -225,9 +228,10 @@ class UserController @Inject()(cc: ControllerComponents,
     * so a token can't make or revoke tokens. A used or missing nonce (the response reloaded),
     * or [[ApiTokenService.MaxActive]] usable tokens already create nothing. A double click
     * (both requests with the page's nonce) leaves one usable token, the last response's
-    * ([[ApiTokenService.createOnce]]).
+    * ([[ApiTokenService.createOnce]]). Root only, for now (see [[ownProfile]]): anyone else is
+    * refused.
     */
-  def createApiToken(): EssentialAction = withAuth(_ => true) { user => implicit request =>
+  def createApiToken(): EssentialAction = withAuth(rolePermission(Set(User.ROOT_ROLE))) { user => implicit request =>
     val nonce = request.body.asFormUrlEncoded.flatMap(_.get(ApiTokensCard.NonceKey)).flatMap(_.headOption)
     if (nonce.isEmpty || nonce != request.session.get(ApiTokensCard.NonceKey))
       ownProfile(Conflict, user, notice = Some("error.api.token.already.submitted"))

@@ -1,16 +1,20 @@
-# WLX Jury Tool: a guide for jurors
+# WLX Jury: a guide for jurors
 
 Other guides: the [organizer guide](organizer-guide.md), the [admin guide](admin-guide.md) and
-[what's new in 26.11](whats-new-26.11.md).
+[what's new in 2026](whats-new-26.11.md).
 
 This guide is for jurors of a Wiki Loves Monuments, Wiki Loves Earth or similar photo contest
-who judge its files in the WLX Jury Tool. It explains how to sign in, find your rounds, vote,
+who judge its files in WLX Jury. It explains how to sign in, find your rounds, vote,
 and what to do when something goes wrong.
 
 Labels in **bold** are the ones the tool shows in English. If you use the tool in another
 language, the same buttons and menus are in the same places.
 
-## Signing in to the jury tool
+Terms: a **contest** is one competition, a **file** is one photo or video, a **yes/no round** is
+a round where you select or reject files, and a **juror** has the role **Juror**.
+
+<a id="signing-in-to-the-jury-tool"></a>
+## Signing in to WLX Jury
 
 ### Accepting your invitation
 
@@ -28,20 +32,20 @@ If you already have an account in the tool, for example from an earlier contest,
 organizer may add you to the new contest directly. You then sign in as before and find the new
 contest in the contest menu at the top of the page.
 
-[Screenshot: the "Set your password" page]
+<img src="images/juror-set-password.png" alt="The Set your password page" width="1280">
 
 ### Signing in with your password
 
 On the sign-in page, type your email address (or your wiki user name, if your organizer set
-one for you) and your password, then press **Sign In**.
+one for you) and your password, then press **Sign in**.
 
 **Keep me signed in** is ticked by default. Untick it on a shared computer: you are then
 signed out when you close the browser.
 
 If the tool says **Invalid user or password**, check both and try again. If you have forgotten
-your password, or haven't signed in for a long time, ask your organizer: a tool administrator can
-send you a link to set a new one. Old passwords expire, so this can happen even when you typed
-it right.
+your password, ask your organizer: a tool administrator can send you a link to set a new one.
+A password set before version 26.11 stops working about three months after the update, so
+this can happen even when you typed it right.
 
 The link opens a page, **Set a new password**. Your old password works until you use the link.
 
@@ -49,6 +53,10 @@ If several jury accounts have the same wiki user name, signing in with that name
 Sign in with your email address instead.
 
 <img src="images/juror-sign-in.png" alt="The sign-in page" width="1280">
+
+<a id="signing-in-with-wikimedia-or-google"></a>
+<a id="when-one-wiki-name-has-several-jury-accounts"></a>
+<!-- not offered yet (built, providers not set up): the sections "Signing in with Wikimedia or Google" and "When one wiki name has several jury accounts".
 
 ### Signing in with Wikimedia or Google
 
@@ -71,8 +79,6 @@ When you link a Wikimedia account and your jury account has no wiki account yet,
 **Set your wiki account** asks whether to use that Wikimedia user name. Press **Use it** to
 confirm.
 
-<img src="images/juror-profile.png" alt="The profile page, with its theme, API tokens and sessions" width="1280">
-
 ### When one wiki name has several jury accounts
 
 Some people have more than one jury account with the same wiki user name, for example from
@@ -90,7 +96,8 @@ account**, with one box per account:
 If an account says **This account cannot be chosen here: ask your contest organizer**, ask
 your organizer which account to use.
 
-[Screenshot: the "Choose your jury account" page with two accounts]
+(screenshot to add: the "Choose your jury account" page with two accounts)
+-->
 
 ### Signing out
 
@@ -99,6 +106,8 @@ Open the person icon at the top right and choose **Logout**.
 To sign out on every computer and browser at once, open your **Profile** and press **Sign out
 everywhere** under **Sessions**. Changing your password does this too, except in the browser
 you changed it in.
+
+<img src="images/juror-profile.png" alt="The profile page, with its theme and sessions" width="450">
 
 ## Finding your rounds
 
@@ -136,7 +145,7 @@ that contest.
 
 Opening a link to a page of another contest you belong to also takes you to that contest.
 
-[Screenshot: the contest menu in the top bar]
+<!-- screenshot to add: the contest menu in the top bar -->
 
 ## Kinds of rounds
 
@@ -148,13 +157,13 @@ Files you haven't voted on are **unrated**.
 ### Rated rounds (stars)
 
 In a rated round you give each file from one star up to the round's highest rate, for
-example 1 to 5 stars. Some rounds allow half stars.
+example 1 to 5 stars. Older rounds may allow half stars; new rounds don't.
 
-Some rated rounds also have the **worst mark**, ✗: for a file you would give fewer than one star.
-A ✗ is a vote: the file is no longer unrated, and it counts in your progress. In the results it
-counts as 0 in the file's score, and the organizers see how many ✗ a file got. Giving ✗ and
-removing your vote are two different things: a file you clear is unrated again. Rounds rated by
-criteria have no ✗.
+Some rated rounds also have the **worst mark**, shown as an X icon: for a file you would give
+fewer than one star. A worst mark is a vote: the file is no longer unrated, and it counts in your
+progress. In the results it counts as 0 in the file's score, and the organizers see how many
+worst marks a file got. Giving a worst mark and removing your vote are two different things: a
+file you clear is unrated again. Rounds rated by criteria have no worst mark.
 
 ### Rounds rated by criteria
 
@@ -203,12 +212,13 @@ and **Last page**.
 To jump to a page, click the numbers in the middle, type a page number in the box, and press
 **Go**.
 
-[Screenshot: the top bar of a gallery, with tabs, sort menu, region menu and pager]
+<img src="images/juror-gallery-top-bar.png" alt="The top bar of a gallery, with tabs, sort menu, region menu and pager" width="1280">
 
 ### Voting in a yes/no round's gallery
 
-Point at a file's tile to show its buttons: thumbs up to select it, thumbs down to reject it.
-A selected file gets a green frame, a rejected one a red frame.
+Point at a file's tile and its buttons appear: thumbs up to select it, thumbs down to reject it.
+A selected file gets a green frame, a rejected one a red frame. The picture below shows tiles at
+rest, with the frames of earlier votes.
 
 To undo a vote, press the same thumb again: the file is unrated again.
 
@@ -218,14 +228,15 @@ Click the image itself to open it in the large view.
 
 ### Rating in a rated round's gallery
 
-Under each file are its stars. Click a star to rate the file. In a half-star round, click the
-left half of a star for a half star. The circled cross before the stars removes your rating.
+Under each file are its stars. Click a star to rate the file. In an older round that allows half
+stars, click the left half of a star for a half star. The circled cross before the stars removes
+your rating.
 
-In a round with the worst mark, the button with a cross after the stars (**Worst mark (✗)**) gives
-the file ✗; it turns red, and the stars are empty. The eraser before the stars removes your vote,
-✗ or stars; it shows only once the file has a vote. The ✗ button is a toggle that shows the
-file's ✗: pressing it again doesn't clear it, the eraser does. In your list by rate, a file with ✗ shows ✗ as
-its rate.
+In a round with the worst mark, the button with an X icon after the stars (**Worst mark**) gives
+the file the worst mark, and the stars are empty. The eraser before the stars removes your vote,
+worst mark or stars; it shows only once the file has a vote. The worst-mark button is a toggle
+that shows the file's worst mark: pressing it again doesn't clear it, the eraser does. In your
+list by rate, a file with a worst mark shows the X icon as its rate.
 
 <img src="images/juror-gallery-rated.png" alt="A rated round's gallery, with stars under each file" width="1280">
 
@@ -260,11 +271,11 @@ one. Click a heading to show or hide its section; the tool remembers which are o
 
 Videos play in the large view.
 
-<img src="images/juror-large-view-binary.png" alt="The large view of a yes/no round" width="1280">
+<img src="images/juror-large-view-binary.png" alt="The large view of a yes/no round" width="820">
 
-<img src="images/juror-large-view-rated.png" alt="The large view of a rated round" width="1280">
+<img src="images/juror-large-view-rated.png" alt="The large view of a rated round" width="820">
 
-<img src="images/juror-large-view-worst-mark.png" alt="The large view of a round with the worst mark: the ✗ button and the eraser under the stars" width="1280">
+<img src="images/juror-large-view-worst-mark.png" alt="The large view of a file with the worst mark: the worst-mark button and the eraser under the stars" width="820">
 
 ### Voting in the large view
 
@@ -276,8 +287,9 @@ has none. While you point at a star, it shows the rate a click gives. The circle
 your rating.
 
 In a round with the worst mark, the stars have no circled cross. Under them are two buttons: the
-red cross (**Worst mark (✗)**) gives the file ✗, and the eraser (**Clear the vote**), shown once
-the file has a vote, removes it. The number above the stars shows ✗ for a file you gave ✗.
+button with the X icon (**Worst mark**) gives the file the worst mark, and the eraser (**Clear
+the vote**), shown once the file has a vote, removes it. Above the stars, a file you gave the
+worst mark shows the X icon instead of a number.
 
 After you vote, the large view moves on to the next file, so you can go through your files one
 after another. At the end of the list it goes to the file before instead.
@@ -294,7 +306,7 @@ number. Click the stars of each criterion.
 The view stays on the file while you rate its criteria. Go to the next file yourself with the
 buttons or the Down key.
 
-[Screenshot: the large view of a round with criteria]
+<!-- screenshot to add: the large view of a round with criteria -->
 
 ### Keyboard shortcuts in the large view
 
@@ -304,22 +316,21 @@ The large view works with the keyboard:
 |---|---|
 | Down arrow | the next file |
 | Up arrow | the previous file |
-| Page Down / Page Up | a few files on or back |
+| Page Down / Page Up | two files on or back |
 | Home / End | the first or last of the files around this one |
 | Esc | back to the gallery, at this file's page |
 | Space | select the file (yes/no round) |
-| Delete | reject the file (yes/no round); give it ✗ (rated round with the worst mark) |
+| Delete | reject the file (yes/no round); give it the worst mark (rated round with the worst mark) |
 | Backspace | remove your vote (rated round with the worst mark) |
 | 0 up to the highest rate (at most 9) | rate the file (rated round) |
 
-Page Up, Page Down, Home and End move only among the few files around the one you see. In the
-middle of your list each of them moves at most two files; near its start, a little more. They
-don't jump to the start or end of your whole list.
+These keys move only among the few files around the one you see, never to the start or end of
+your whole list.
 
 The digit keys give the rate in points, from 0 up to the round's highest rate, and at most 9.
-In a round of whole stars, 3 gives three stars. In a
-half-star round each point is half a star, so 7 gives three and a half stars. 0 removes your
-rating. A rate above 9 needs the mouse.
+In a round of whole stars, 3 gives three stars. In an older half-star round each point is half
+a star, so 7 gives three and a half stars. 0 removes your rating. A rate above 9 needs the
+mouse.
 
 On a Mac keyboard, reject with Fn and Delete together (the forward delete).
 
@@ -338,6 +349,8 @@ You can change it there.
 Under the image in the large view is **Comments**. Type in **Your comment here** and press
 **Submit comment**.
 
+<img src="images/juror-large-view-comments.png" alt="The comment box under the image, with the button Submit comment" width="664">
+
 Comments are not private. The organizers and the other jurors who open this file in the
 contest see your comment, with your name. You can comment only while the round is open.
 
@@ -348,8 +361,8 @@ contest see your comment, with your name. You can comment only while the round i
 You see only your own votes. Other jurors' votes, the files' authors and the contest's
 statistics are for the organizers.
 
-Some rounds let their jurors see the organizers' view too. In such a round you get more menus:
-a juror menu, a vote filter and other views of the results.
+Older rounds may let their jurors see the organizers' view too; new rounds don't. In such a
+round you get more menus: a juror menu, a vote filter and other views of the results.
 
 ### Conflicts of interest
 
@@ -363,10 +376,8 @@ their votes are kept aside. If a file is requalified later, it comes back with y
 Your round may disappear for a while when the organizers stop it to do this.
 
 If you upload photos to the contest yourself, make sure your profile shows your **Wiki
-account**. Without it the tool can't recognise your files. If the field is empty, link your
-Wikimedia account on your profile: the tool offers to use its user name, as described in the
-part of this guide on signing in. To change a wiki account that is already set, ask a contest
-admin.
+account**. Without it the tool can't recognise your files. If the field is empty, or to change a
+wiki account that is already set, ask a contest admin.
 
 ### Disqualified files
 
@@ -398,7 +409,7 @@ A new email address takes effect once you follow the link sent to it.
 
 ## Supported browsers
 
-The jury tool supports the current and the previous version of these desktop browsers:
+WLX Jury supports the current and the previous version of these desktop browsers:
 
 - Chrome
 - Edge
@@ -440,7 +451,7 @@ If you think you should have access:
 If the page offers **Open a gallery available to this account**, it takes you back to your own
 files.
 
-[Screenshot: the "Access denied" page]
+<img src="images/juror-access-denied.png" alt="The Access denied page" width="1280">
 
 ### When you are signed out
 

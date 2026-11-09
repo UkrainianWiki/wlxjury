@@ -69,8 +69,8 @@ class AverageRuleSpec extends Specification {
     }
   }
 
-  "a rated round's worst mark (✗, rate -1)" should {
-    // three jurors: 7, 8 and ✗, as vote rows and as a grouped row (the grades' sum 15; 2
+  "a rated round's worst mark (rate -1)" should {
+    // three jurors: 7, 8 and a worst mark, as vote rows and as a grouped row (the grades' sum 15; 2
     // approvals, 1 rejection)
     val worstRows = ImageWithRating(image, Seq(Vote(1, 11, 1, 7), Vote(1, 12, 1, 8), Vote(1, 13, 1, -1)))
     val worstGrouped =
@@ -94,7 +94,7 @@ class AverageRuleSpec extends Specification {
         (worst(_.rateString(sum)) === Seq("15")) and (worst(RankKey.of(sum).values) === Seq(Seq(15L)))
     }
 
-    "be one juror's own ✗, scored 0" in {
+    "be one juror's own worst mark, scored 0" in {
       val own = ImageWithRating(image, Seq(Vote(1, 11, 1, -1)))
       (own.isWorstMark must beTrue) and (own.totalRate(round(AverageRule.Rated)) === 0.0) and
         (own.rateText(round(AverageRule.Rated)) === "0") and (own.worstMarks === 1) and

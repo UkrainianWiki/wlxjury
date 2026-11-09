@@ -6,7 +6,7 @@
 //   pageup five files on or back, home / end the first and last shown, esc back to the list;
 // - data-vote-key-<key>: the vote the key gives (large-view.js posts it), only in the juror's
 //   own view of an open round: space selects and del rejects in a binary round, a digit rates
-//   in a rated one (0 clears it), and in a rated round with the worst mark del gives ✗ and
+//   in a rated one (0 clears it), and in a rated round with the worst mark del gives it and
 //   backspace clears the vote.
 // A key without its attribute does nothing here, so Space scrolls a read-only view.
 (function () {

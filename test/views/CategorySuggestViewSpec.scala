@@ -65,7 +65,7 @@ class CategorySuggestViewSpec extends PlaySpecification {
     }
   }
 
-  "the campaigns page" should {
+  "the contests page" should {
     "load the script and mark the import source and a new contest's images as mixed" in {
       val page = contentAsString(views.html.contests(root, Seq(contest), Seq(contest),
         Form(ignored(contest)), Form(single("source" -> nonEmptyText))))
@@ -74,6 +74,62 @@ class CategorySuggestViewSpec extends PlaySpecification {
       input(page, "source") must contain("""data-category-suggest="mixed"""")
       input(page, "images") must contain("""data-category-suggest="mixed"""")
       input(page, "name") must not contain "data-category-suggest"
+    }
+    "be titled Contests, shown as its heading, the import a section of its own" in {
+      val doc = org.jsoup.Jsoup.parse(contentAsString(views.html.contests(root, Seq(contest), Seq(contest),
+        Form(ignored(contest)), Form(single("source" -> nonEmptyText)))))
+      val h2 = doc.select("h2").eachText()
+      (doc.title === messages("contests")) and (doc.select("h1").text === messages("contests")) and
+        (doc.select("h1.visually-hidden").size === 0) and
+        (h2.get(0) === messages("import.from.list.page.images.category")) and (h2.get(1) === messages("contests.list"))
+    }
+    "link a contest's files page by its source, or say it is not set beside a link to set it, never an empty link" in {
+      import scala.jdk.CollectionConverters._
+      val noSource = contest.copy(id = Some(2), images = None)
+      val blank = contest.copy(id = Some(3), images = Some("  "))
+      val all = Seq(contest, noSource, blank)
+      val doc = org.jsoup.Jsoup.parse(contentAsString(views.html.contests(root, all, all,
+        Form(ignored(contest)), Form(single("source" -> nonEmptyText)))))
+      val links = doc.select("tbody a[href]").asScala.toSeq
+      (links.forall(a => a.text.trim.nonEmpty || a.attr("aria-label").nonEmpty) must beTrue) and
+        (links.count(_.text == messages("files.source.set")) === 2) and
+        // each set link on its own line, named for its contest as the edit links are
+        (links.filter(_.text == messages("files.source.set")).forall { a =>
+          a.hasClass("d-block") && Set(noSource, blank).exists(c =>
+            a.attr("aria-label") == messages("files.source.set.of", c.fullName) && a.attr("title") == a.attr("aria-label"))
+        } must beTrue) and
+        // the state is text on its own line, not part of the link
+        (doc.select("tbody span.d-block").asScala.count(_.text == messages("files.source.none")) === 2) and
+        (links.exists(_.text.contains(messages("files.source.none"))) must beFalse) and
+        (links.count(a => contest.images.contains(a.text)) === 1) and
+        (doc.select("thead th").eachText().contains(messages("files.source")) must beTrue)
+    }
+    "name its icon links, and its import field apart from the field's example" in {
+      val doc = org.jsoup.Jsoup.parse(contentAsString(views.html.contests(root, Seq(contest), Seq(contest),
+        Form(ignored(contest)), Form(single("source" -> nonEmptyText)))))
+      val source = doc.getElementById("source")
+      forall(Seq("contest.users.edit", "contest.rounds.edit")) { key =>
+        val link = doc.select(s"""a[aria-label="${messages(key, contest.fullName)}"]""")
+        (link.size === 1) and (link.attr("title") === messages(key, contest.fullName)) and
+          (link.select("i[aria-hidden=true]").size === 1)
+      } and
+        (doc.select("a button").size === 0) and
+        (doc.select("label[for=source]").text === messages("import.source")) and
+        (source.attr("placeholder") === messages("import.source.placeholder")) and
+        // the add row's source field: named as the column, with a placeholder short enough for it
+        (doc.getElementById("images").attr("placeholder") === messages("files.source.placeholder")) and
+        // widths from main.css's .wlx-contests-table (not inline), the table scrolling in its box
+        (doc.select(".table-responsive > table.wlx-contests-table").size === 1) and
+        // inside that box, its suggestions hang from the body (category-suggest.js); the import
+        // field, outside it, keeps them in its wrapper
+        (doc.getElementById("images").attr("data-category-suggest-dropdown-parent") === "body") and
+        (doc.getElementById("source").hasAttr("data-category-suggest-dropdown-parent") must beFalse) and
+        (doc.getElementById("images").hasClass("wlx-source-input") must beTrue) and
+        (doc.getElementById("year").hasClass("wlx-year-input") must beTrue) and
+        (doc.select("table.wlx-contests-table [style]").size === 0) and
+        (doc.select("label[for=images]").text === messages("files.source")) and
+        // the list's heading set apart from the import form above it
+        (doc.select("h2.mt-4").text === messages("contests.list"))
     }
   }
 

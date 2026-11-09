@@ -1,5 +1,5 @@
 // Commons category suggestions on the forms' category fields (inputs with data-category-suggest):
-// the round form's two categories, and the import sources on the contest files and campaigns
+// the round form's two categories, and the import sources on the contest files and contests
 // pages. A Tom Select on the text input asks the Commons API, from the browser (CORS with
 // origin=*, allowed by the CSP's connect-src), for the Category: titles that start with the
 // typed text; choosing one stores the full title, as the server reads a category (with its
@@ -8,7 +8,11 @@
 // the field works as plain text, without a message. data-category-suggest="category": a field
 // that holds a category only, suggested for any text; "mixed": one that may also hold a page
 // (an import source: a list page, a page with files), suggested only once the text starts
-// with Category:.
+// with Category:. data-category-suggest-dropdown-parent="body": the list hangs from the page's
+// body (Tom Select's dropdownParent), for a field inside a box that clips (a .table-responsive
+// table's overflow would cut the list off); Tom Select positions it under the field and keeps
+// its aria-* and keys, and this script places it again when that box scrolls (no window event
+// then). Any other value, or none, keeps the list in the field's wrapper.
 (function () {
   'use strict';
 
@@ -52,10 +56,11 @@
   function categorySuggest(input) {
     if (!input || !window.TomSelect || !window.fetch || input.readOnly || input.disabled) return null;
     var mode = input.getAttribute('data-category-suggest') === 'mixed' ? 'mixed' : 'category';
+    var dropdownParent = input.getAttribute('data-category-suggest-dropdown-parent') === 'body' ? 'body' : null;
     var latest = 0; // the newest request's number: an answer to an older one is dropped
     var pending = null; // its AbortController
 
-    return new window.TomSelect(input, {
+    var ts = new window.TomSelect(input, {
       maxItems: 1,
       create: true, // free text: what is typed is the value, unless a suggestion is chosen
       createOnBlur: true,
@@ -63,6 +68,7 @@
       addPrecedence: true, // Enter keeps the text typed, Down goes to the suggestions
       delimiter: '|', // never in a title, unlike the commas some categories have
       maxOptions: LIMIT,
+      dropdownParent: dropdownParent,
       sortField: [{ field: '$order' }, { field: '$score' }], // Commons' order, not the best match first
       refreshThrottle: DELAY_MS, // the pause in typing before the list and a request follow
       loadThrottle: null, // no second delay on top of it
@@ -104,6 +110,72 @@
         no_results: function () { return null; }
       }
     });
+    if (dropdownParent) {
+      keepInWindow(ts);
+      followScrollingBox(ts, input);
+    }
+    return ts;
+  }
+
+  /** A list hung from the body is placed by Tom Select under its field, which may reach past
+    * the window's right edge (a field partly out of view): wherever it is placed, its left edge
+    * is moved back so that its right edge stays in the window, never widening the page. */
+  function keepInWindow(ts) {
+    var position = ts.positionDropdown;
+    ts.positionDropdown = function () {
+      var result = position.apply(ts, arguments);
+      var width = document.documentElement.clientWidth;
+      var rect = ts.dropdown.getBoundingClientRect();
+      if (width > 0 && rect.right > width) {
+        var scrollX = window.pageXOffset || 0;
+        ts.dropdown.style.left = Math.max(scrollX, rect.left + scrollX - (rect.right - width)) + 'px';
+      }
+      return result;
+    };
+  }
+
+  /** A list hung from the body follows its field when the window scrolls (Tom Select does
+    * that), but not when a box around the field scrolls (a .table-responsive table, sideways on
+    * a phone). There, when the list opens, the box first scrolls the field wholly into its view,
+    * then the list is placed under it (a field wider than the box: its left edge at the box's);
+    * on each scroll of the box an open list is placed again while the field is in view (wholly,
+    * or for a field wider than the box, its left edge), and closed once it isn't, so that it
+    * never reaches past the box or widens the page; until `ts` is destroyed. */
+  function followScrollingBox(ts, input) {
+    var box = input.closest ? input.closest('.table-responsive') : null;
+    if (!box) return;
+    // a pixel's slack for rounding
+    function outside(field, visible) {
+      return field.left < visible.left - 1 || field.right > visible.right + 1;
+    }
+    // what reveal() can reach: the whole field, or the left edge of one wider than the box
+    function inView(field, visible) {
+      var leftIn = field.left >= visible.left - 1 && field.left <= visible.right;
+      if (field.right - field.left > visible.right - visible.left) return leftIn;
+      return !outside(field, visible);
+    }
+    function reveal() {
+      var field = ts.wrapper.getBoundingClientRect();
+      var visible = box.getBoundingClientRect();
+      if (!outside(field, visible)) return;
+      // its left edge in view first; then its right edge too, if it fits
+      var by = field.left < visible.left ? field.left - visible.left
+        : Math.min(field.right - visible.right, field.left - visible.left);
+      box.scrollLeft = box.scrollLeft + by;
+      ts.positionDropdown();
+    }
+    function follow() {
+      if (!ts.isOpen) return;
+      if (inView(ts.wrapper.getBoundingClientRect(), box.getBoundingClientRect())) ts.positionDropdown();
+      else ts.close();
+    }
+    ts.on('dropdown_open', reveal);
+    box.addEventListener('scroll', follow, { passive: true });
+    var destroy = ts.destroy;
+    ts.destroy = function () {
+      box.removeEventListener('scroll', follow);
+      return destroy.apply(ts, arguments);
+    };
   }
 
   function init() {

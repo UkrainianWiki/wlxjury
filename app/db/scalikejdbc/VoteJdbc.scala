@@ -215,12 +215,13 @@ object VoteJdbc extends CRUDMapper[Vote] {
     where("roundId" -> roundId)
       .distinctCount("juryId")
 
-  /** Whether a juror has rated a file of the round (any vote, a ✗ included, of a vote not
-    * deleted): until then every file scores 0 under each score rule. One read of the
-    * (round_id, rate) index; the round form's score rule warning.
+  /** Whether a juror has given a file of the round stars (a rate above 0, of a vote not
+    * deleted): until then every file scores 0 under each score rule, a worst mark (-1) counting
+    * as 0 in all of them. One read of the (round_id, rate) index; the round form's score rule
+    * warning, which a round with only worst marks therefore doesn't show.
     */
-  def hasRatedVote(roundId: Long): Boolean =
-    sql"""SELECT 1 FROM vote WHERE round_id = $roundId AND ${VoteSql.voted(VoteSql.bare)} AND deleted_at IS NULL LIMIT 1"""
+  def hasStarVote(roundId: Long): Boolean =
+    sql"""SELECT 1 FROM vote WHERE round_id = $roundId AND ${VoteSql.positive(VoteSql.bare)} AND deleted_at IS NULL LIMIT 1"""
       .map(_.int(1)).single().isDefined
 
   /** Whether the round has a vote below 0 (a yes/no round's no, a rated round's ✗): one read of

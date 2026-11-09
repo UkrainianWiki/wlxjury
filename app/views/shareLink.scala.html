@@ -15,7 +15,7 @@
 }
 
 @mainAdmin("share.link.title", user, user.getId, contestId = contestId, head = pageScripts) {
-    <div class="row">
+    <div class="row justify-content-center">
         <section class="col-md-8 col-lg-7" id="share-link" aria-labelledby="share-link-title">
             <h1 class="h3" id="share-link-title">@Messages("share.link.title")</h1>
             <p>@Messages("share.link.for", if (account.fullname.trim.nonEmpty) account.fullname else account.email)

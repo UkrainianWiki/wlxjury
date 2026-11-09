@@ -19,8 +19,8 @@
         @if(round.isBinary) {
             @binaryVote(vote.rate, unrated = true)
         } else if (vote.isRejected) {
-            @* a rated round's ✗, the worst mark *@
-            <span class="wlx-worst-mark" title="@Messages("vote.worst")"><span aria-hidden="true">✗</span><span class="visually-hidden">@Messages("vote.worst")</span></span>
+            @* a rated round's worst mark: its icon, as the vote controls have it, and the words *@
+            <span class="wlx-worst-marks" title="@Messages("vote.worst")"><i class="bi bi-x-lg wlx-worst-mark" aria-hidden="true"></i><span class="visually-hidden">@Messages("vote.worst")</span></span>
         } else {
             @defining(round.rates.id > 5 && round.halfStar) { halfStar =>
                 @for(i <- 1 to round.numberOfStars) {

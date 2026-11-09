@@ -48,7 +48,7 @@ test.describe('signing in and out', () => {
     await page.goto('/auth');
     await page.getByLabel('Your login').fill(fixture.freshJuror.login);
     await page.getByLabel('Your password').fill('not the password');
-    await page.getByRole('button', { name: 'Sign In' }).click();
+    await page.getByRole('button', { name: 'Sign in' }).click();
     await expect(page).toHaveURL(/\/auth/);
     await expect(page.getByRole('alert')).toBeVisible();
   });

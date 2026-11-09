@@ -38,9 +38,9 @@
                 }
                 @if(starsRound.nonEmpty) {
                 </span>
-                @* the juror's own ✗ as the mark (tile-votes.js writes the same after a vote); its
-                   ✗ button, pressed, says so to screen readers *@
-                <span class="wlx-rate-text">@if(file.isWorstMark) {✗} else {@file.rateText(round)}</span>
+                @* the juror's own worst mark as its icon (tile-votes.js writes the same after a
+                   vote); its worst-mark button, pressed, says so to screen readers *@
+                <span class="wlx-rate-text">@if(file.isWorstMark) {<i class="bi bi-x-lg wlx-worst-mark" aria-hidden="true"></i>} else {@file.rateText(round)}</span>
                 } else {
                 @if(round.hasCriteria) { @file.criteriaRateString(round) } else { @file.rateText(round) @snippets.worstMarks(file, round) }
                 }

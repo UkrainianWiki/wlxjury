@@ -105,6 +105,17 @@ class RoundConflictsAuthorizationSpec extends PlaySpecification with PlayTestDb 
             contain(page(round.getId)))
       }
     }
+
+    "be linked from the round's statistics for its organizer and admin, never for a juror" in {
+      testDbApp { app =>
+        val (round, _) = setUp()
+        val stat = s"/roundstat/${round.getId}"
+        val link = s"""id="round-conflicts-link"><a href="${page(round.getId)}""""
+        (contentAsString(get(app, "organizer@example.com", stat)) must contain(link)) and
+          (contentAsString(get(app, "admin@example.com", stat)) must contain(link)) and
+          (contentAsString(get(app, "juror@example.com", stat)) must not(contain(page(round.getId))))
+      }
+    }
   }
 
   "disqualifying and requalifying [A-10]" should {

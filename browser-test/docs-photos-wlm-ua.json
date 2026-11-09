@@ -1,0 +1,218 @@
+{
+ "note": "Public-domain and CC0 photos from Wikimedia Commons, fetched by browser-test/docs-photos.py into target/docs-photos/ (never committed). Licences are checked again at fetch time.",
+ "width": 1280,
+ "photos": [
+  {
+   "title": "File:Bratsky Monastery Laznya Illynska street 2019.jpg",
+   "license": "CC0",
+   "author": "Anntinomy",
+   "theme": "monument",
+   "contest": "Wiki Loves Monuments",
+   "year": 2019,
+   "country": "Ukraine"
+  },
+  {
+   "title": "File:Kelii or Korpus 10 naukma 2019.jpg",
+   "license": "CC0",
+   "author": "Anntinomy",
+   "theme": "monument",
+   "contest": "Wiki Loves Monuments",
+   "year": 2019,
+   "country": "Ukraine"
+  },
+  {
+   "title": "File:Starokoxackaya 29-1.jpg",
+   "license": "CC0",
+   "author": "Sempay01",
+   "theme": "monument",
+   "contest": "Wiki Loves Monuments",
+   "year": 2020,
+   "country": "Ukraine"
+  },
+  {
+   "title": "File:Starokozackaya 53.jpg",
+   "license": "CC0",
+   "author": "Sempay01",
+   "theme": "monument",
+   "contest": "Wiki Loves Monuments",
+   "year": 2020,
+   "country": "Ukraine"
+  },
+  {
+   "title": "File:Starokozackaya 66.jpg",
+   "license": "CC0",
+   "author": "Sempay01",
+   "theme": "monument",
+   "contest": "Wiki Loves Monuments",
+   "year": 2020,
+   "country": "Ukraine"
+  },
+  {
+   "title": "File:Troicka8.jpg",
+   "license": "CC0",
+   "author": "Sempay01",
+   "theme": "monument",
+   "contest": "Wiki Loves Monuments",
+   "year": 2020,
+   "country": "Ukraine"
+  },
+  {
+   "title": "File:Voloska 5-14 Kyiv 2019.jpg",
+   "crop_bottom": 0.18,
+   "license": "CC0",
+   "author": "Anntinomy",
+   "theme": "monument",
+   "contest": "Wiki Loves Monuments",
+   "year": 2019,
+   "country": "Ukraine"
+  },
+  {
+   "title": "File:Voloska 5-14 Kyiv roof 2019.jpg",
+   "license": "CC0",
+   "author": "Anntinomy",
+   "theme": "monument",
+   "contest": "Wiki Loves Monuments",
+   "year": 2019,
+   "country": "Ukraine"
+  },
+  {
+   "title": "File:Voloska 5-14 roof 2019.jpg",
+   "license": "CC0",
+   "author": "Anntinomy",
+   "theme": "monument",
+   "contest": "Wiki Loves Monuments",
+   "year": 2019,
+   "country": "Ukraine"
+  },
+  {
+   "title": "File:Загальний вигляд братської могили (2015).jpg",
+   "license": "CC0",
+   "author": "СанчоП",
+   "theme": "landscape",
+   "contest": "Wiki Loves Monuments",
+   "year": 2021,
+   "country": "Ukraine"
+  },
+  {
+   "title": "File:Східці на вал (з дубу).jpg",
+   "license": "CC0",
+   "author": "Nagyrniy Igor",
+   "theme": "landscape",
+   "contest": "Wiki Loves Monuments",
+   "year": 2020,
+   "country": "Ukraine"
+  },
+  {
+   "title": "File:Тригради.jpg",
+   "license": "CC0",
+   "author": "Жосан1991",
+   "theme": "monument",
+   "contest": "Wiki Loves Monuments",
+   "year": 2021,
+   "country": "Ukraine"
+  },
+  {
+   "title": "File:New Jewish cemetery in Zbarazh. 2015. P 20150503 161145.jpg",
+   "license": "CC0",
+   "author": "Arxivist",
+   "theme": "landscape",
+   "contest": "Wiki Loves Monuments",
+   "year": 2024,
+   "country": "Ukraine"
+  },
+  {
+   "title": "File:New Jewish cemetery in Zbarazh. 2015. P 20150503 161851.jpg",
+   "license": "CC0",
+   "author": "Arxivist",
+   "theme": "landscape",
+   "contest": "Wiki Loves Monuments",
+   "year": 2024,
+   "country": "Ukraine"
+  },
+  {
+   "title": "File:UA.AB.Khonkivtsi - WWII memorial - apr 2022.jpg",
+   "license": "CC0",
+   "author": "Gikü",
+   "theme": "landscape",
+   "contest": "Wiki Loves Monuments",
+   "year": 2022,
+   "country": "Ukraine"
+  },
+  {
+   "title": "File:Кар’єр Уж Радванка об’їзна.jpg",
+   "license": "CC0",
+   "author": "Kossstja",
+   "theme": "landscape",
+   "contest": "Wiki Loves Monuments",
+   "year": 2022,
+   "country": "Ukraine"
+  }
+ ],
+ "degraded": [
+  {
+   "base": "File:Bratsky Monastery Laznya Illynska street 2019.jpg",
+   "variant": "tilt",
+   "params": {
+    "degrees": 9
+   }
+  },
+  {
+   "base": "File:Kelii or Korpus 10 naukma 2019.jpg",
+   "variant": "tilt",
+   "params": {
+    "degrees": -7
+   }
+  },
+  {
+   "base": "File:Starokozackaya 53.jpg",
+   "variant": "blur",
+   "params": {
+    "radius": 7
+   }
+  },
+  {
+   "base": "File:Troicka8.jpg",
+   "variant": "blur",
+   "params": {
+    "radius": 11
+   }
+  },
+  {
+   "base": "File:Voloska 5-14 Kyiv roof 2019.jpg",
+   "variant": "overexposed",
+   "params": {
+    "brightness": 2.4
+   }
+  },
+  {
+   "base": "File:Voloska 5-14 roof 2019.jpg",
+   "variant": "overexposed",
+   "params": {
+    "brightness": 2.0
+   }
+  },
+  {
+   "base": "File:Загальний вигляд братської могили (2015).jpg",
+   "variant": "lowres",
+   "params": {
+    "width": 150,
+    "quality": 8
+   }
+  },
+  {
+   "base": "File:Тригради.jpg",
+   "variant": "lowres",
+   "params": {
+    "width": 110,
+    "quality": 6
+   }
+  },
+  {
+   "base": "File:New Jewish cemetery in Zbarazh. 2015. P 20150503 161851.jpg",
+   "variant": "dark",
+   "params": {
+    "brightness": 0.3
+   }
+  }
+ ]
+}

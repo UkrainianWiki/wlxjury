@@ -1,11 +1,13 @@
-# WLX Jury Tool: a guide for administrators
+# WLX Jury: a guide for administrators
 
-This guide is for the admins of a contest in the WLX Jury Tool, and for root, the tool's own
+This guide is for the admins of a contest in WLX Jury, and for root, the tool's own
 administrators. It explains accounts and roles, how people are invited and sign in, and the
 settings of a contest. Rounds and results are in the [organizer guide](organizer-guide.md). The
 people you add use the [juror guide](juror-guide.md).
 
-Labels in **bold** are the ones the tool shows in English. Whoever installs and runs the tool
+Labels in **bold** are the ones the tool shows in English. Terms: a **contest** is one
+competition, a **file** is one photo or video, a **yes/no round** is a round with the rating type
+**+/-**, and the roles are **Juror**, **Organizer** and **Admin**. Whoever installs and runs the tool
 (servers, mail, sign-in providers, backups) finds that in the operators' [deployment
 guide](../deployment.md); this guide doesn't repeat it.
 
@@ -30,7 +32,7 @@ A role belongs to a membership: one account, one contest.
 
 | Role | What it can do |
 |---|---|
-| **Jury** | Votes in the rounds it is a juror of. |
+| **Juror** | Votes in the rounds it is a juror of. |
 | **Organizer** | Reads the statistics, the results of all jurors, the contest's files and the conflicts page. Changes nothing. |
 | **Admin** | Everything an organizer does, and manages the contest: its people, rounds and files. |
 | **Board**, **Audit committee**, **Staff** | No access to the contest's pages. These roles record that a person belongs to the contest, so that their own photos count as [conflicts of interest](organizer-guide.md#o-conflicts). |
@@ -58,9 +60,10 @@ Open **Users** in the top bar. The page lists the members of the current contest
 two buttons that write to the person on Commons, a message on their talk page and an email.
 
 A badge **unverified** after a wiki account says that nobody has proved that the account
-belongs to this person: anyone could have typed it. A badge **unverified** or **password
-expired** after an email says that the person hasn't accepted an invitation yet, or that the old
-password expired unused. The envelope button next to it sends an invitation again.
+belongs to this person: anyone could have typed it. A badge **unverified** after an email says
+that the person hasn't accepted an invitation yet. A badge **password expired** says that the
+person's password was set before version 26.11 and has stopped working: they need a link to set a
+new one. The envelope button next to the badge sends it again.
 
 A member without a wiki account whose files could be conflicts of interest shows **no wiki
 account, can't be checked for conflicts of interest**. Add their wiki account in their edit
@@ -81,8 +84,8 @@ At the bottom of the table, fill in the row: **Full name**, **Wiki account**, **
 - An account that hasn't proved its email, for example one made unverified by a shared link,
   gets an invitation instead, and the role applies when they accept it. A wiki account that
   belongs to such an account is not added: add the person by email.
-- A person added with a wiki account only has no email. They can't sign in with a password; they
-  can sign in with Wikimedia, see [Sign-in options](#a-sign-in).
+- A person added with a wiki account only has no email. They can't sign in with a password yet:
+  add the person by email to invite them.
 
 The page tells you how many accounts were created, how many people joined and how many were
 members already, and lists any invitations that could not be sent.
@@ -108,7 +111,7 @@ The pencil opens the page **Edit user**. An admin can change, for members of the
 
 - the **Role** in this contest;
 - the **Full name** and the **Wiki account** (a valid wiki name that no other account has; it
-  is marked unverified until the person confirms it by linking their Wikimedia account);
+  is marked unverified);
 - the **Email**, only while the person is still an invitee who hasn't accepted. They are invited
   again at the new address. For a person who has a password, only the person can change their
   email, on their own profile, or root.
@@ -117,15 +120,19 @@ An account that also works in other contests can't be changed by an admin of one
 admin may change the person's role in their own contest only, unless they administer all of its
 contests. Nobody sets another person's password: see [Passwords](#a-passwords).
 
+<img src="images/admin-user-edit.png" alt="The Edit user page of a member, with the role and the set-password links" width="450">
+
 <a id="a-invitations"></a>
 ## Invitations
+
+If the email doesn't arrive, create a [link to share](#a-share-link) and pass it on yourself.
 
 <a id="a-invitation-email"></a>
 ### The invitation email
 
 A new member gets an email, **Invitation to the … jury**, with a link that is valid for a few
-days. The contest's **greeting message** can replace its standard text, see [The
-greeting](#a-greeting). The person opens the link, chooses a password on the page **Set your
+days. When the contest uses its own **greeting message**, the email is **Welcome to … jury**
+instead, with the greeting's text and the link, see [The greeting](#a-greeting). The person opens the link, chooses a password on the page **Set your
 password**, and is signed in. The email address is their login. The role applies once the
 invitation is accepted. See [Accepting your invitation](juror-guide.md#accepting-your-invitation)
 in the juror guide.
@@ -162,11 +169,11 @@ open the person's edit page and press **Create a link to share**.
 - **Root**, for any account.
 - **A contest admin**, in their contest: for a member or a person invited into it, and for a
   reset only for an active member. The account must not be root or the admin themselves, must
-  have only the roles **Jury** or **Organizer**, and every contest it belongs to, has worked in
+  have only the roles **Juror** or **Organizer**, and every contest it belongs to, has worked in
   or is invited into must be a contest the admin administers.
-- Not for a person who has no email and signs in with Wikimedia, where Wikimedia sign-in is
-  offered: the page says they sign in with their wiki account. A person with neither an email nor
-  a wiki account can't get a link either.
+- Not for a person who has no email. (Where Wikimedia sign-in is set up, such a person signs in
+  with their wiki account, and the page says so.) A person with neither an email nor a wiki
+  account can't get a link either.
 
 **How it works.**
 
@@ -186,13 +193,13 @@ open the person's edit page and press **Create a link to share**.
 signs out every other session of the account, and the old password works until the link is used.
 A shared link doesn't prove that the person owns the email, because anyone who has it could use
 it. So using it **marks the email and the wiki account unverified**: if another contest then adds
-the person, they get an invitation by email first, and a Google sign-in by that address doesn't
-link until they accept a mailed link. Accepting a mailed link verifies the address again.
+the person, they get an invitation by email first. Accepting a mailed link verifies the address
+again.
 
 Treat the link like a password: anyone who has it can set the account's password until it is
 used. Pass it on to the person only, and not in a public place.
 
-<img src="images/admin-share-link.png" alt="The page that shows a link to share once, with its Copy button" width="1280">
+<img src="images/admin-share-link.png" alt="The page that shows a link to share once, with its Copy button" width="770">
 
 <a id="a-greeting"></a>
 ### The greeting
@@ -203,6 +210,9 @@ audit committee and staff members don't get it. The page lists the variables you
 text, and shows a preview for each member. Without a greeting the tool sends its standard
 invitation.
 
+The email never contains a password. Where your text has `{{Password}}`, the email says "the one
+you choose with the link below"; the tool adds the link itself, after your text.
+
 <a id="a-sign-in"></a>
 ## Signing in
 
@@ -210,8 +220,9 @@ invitation.
 ### Password
 
 A person signs in with their email address (or, if you set one, their wiki user name) and their
-password. **Keep me signed in** is ticked by default. Passwords that haven't been used for a long
-time expire: the person then needs an invitation or a link to set a new one. Their
+password. **Keep me signed in** is ticked by default. Passwords set before version 26.11 stop
+working about three months after the update: the person then needs a link to set a new one,
+which you can send from the users page. Their
 [juror guide](juror-guide.md#signing-in-with-your-password) describes the page.
 
 <a id="a-passwords"></a>
@@ -227,6 +238,8 @@ can also create a link to share for a reset, under the conditions in [Sharing a
 link](#a-share-link).
 
 <a id="a-wikimedia-google"></a>
+<!-- not offered yet (built, providers not set up): the section "Wikimedia and Google".
+
 ### Wikimedia and Google
 
 If the tool's operators set them up, the sign-in page has **Sign in with Wikimedia** and **Sign
@@ -243,6 +256,7 @@ email or wiki account, the tool unlinks their Google and Wikimedia accounts, as 
 be changing hands.
 
 Operators set the providers up in the [OAuth reference](../oauth.md).
+-->
 
 <a id="a-sessions"></a>
 ### Sessions
@@ -256,10 +270,10 @@ account with **End sessions** on its edit page.
 <a id="a-api-tokens"></a>
 ### API tokens
 
-Each person's profile has a section for personal API tokens, for command-line tools. For now
-almost nothing can be done through the API, and only by root, so other people have no use for a
-token yet. A token acts with the person's roles, so it must be kept secret. Ending sessions
-doesn't revoke tokens: the person (or root, on the account's tokens page) revokes them.
+Only root sees the API tokens section on their profile, for command-line tools: almost nothing
+can be done through the API yet, and only by root, so nobody else can create a token for now. A
+token acts with its owner's roles, so it must be kept secret. Ending sessions doesn't revoke
+tokens: the owner revokes them on the profile, and root on any account's tokens page.
 
 <a id="a-contest"></a>
 ## The contest
@@ -267,11 +281,13 @@ doesn't revoke tokens: the person (or root, on the account's tokens page) revoke
 <a id="a-contest-settings"></a>
 ### Contest settings
 
-A contest has a name, a country, a year, the Commons category or page its files come from (**Images**),
+A contest has a name, a country, a year, the Commons category or page its files come from (**Files source**),
 a **monument id template** for monuments contests, a greeting, and its rounds. Root creates and
-changes the contests on the **Campaigns** page. Admins of a contest set up its
+changes the contests on the **Contests** page. Admins of a contest set up its
 people ([People](#a-users)), its greeting, its [files](organizer-guide.md#o-import-files) and its
 [rounds](organizer-guide.md#o-rounds-list).
+
+<img src="images/admin-contests.png" alt="The Contests page, where root creates and imports contests" width="1280">
 
 <a id="a-more-than-one-admin"></a>
 ### Several admins
@@ -282,7 +298,7 @@ this guide says for it. It can't change contests it isn't an admin of, nor root 
 <a id="a-root"></a>
 ## What only root can do
 
-- Create contests, and import them from a Commons list, on **Campaigns**, and change a contest's
+- Create contests, and import them from a Commons list, on **Contests**, and change a contest's
   settings there.
 - See **Users** across all contests, and make an account root, only if its owner has verified
   its email.

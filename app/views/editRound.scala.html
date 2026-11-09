@@ -32,7 +32,7 @@
     <script type="application/json" id="round-form-texts">{"multiSelect": @views.JsTexts.multiSelect, "distribution": @views.JsTexts(
         "all" -> Messages("each.file.to.all.jurors"),
         "some" -> Messages("each.file.to.i.juror.s", "$X"))}</script>
-    <div class="row" >
+    <div class="row justify-content-center">
         <div class="col-md-8">
 
 
@@ -128,7 +128,7 @@
                             Symbol("_help") -> Messages("round.average.rule.help"),
                             Symbol("aria-describedby") -> scoreRuleWarning.fold[Any](None)(_ => "averageRule_warning"))
                         @* (aria-describedby: a string, or None, left out; the helpers would render an
-                           Option's text.) A rated round with a rated vote: what a change of its rule does, in the page
+                           Option's text.) A rated round with a vote of stars: what saving another rule does, in the page
                            (shown without scripts); round-form.js shows it only while the select differs
                            from the saved rule (data-stored-rule) *@
                         @for(w <- scoreRuleWarning) {
@@ -137,14 +137,14 @@
                                     <div class="alert alert-warning mb-0" id="averageRule_warning">
                                         <p class="mb-0">@Messages("round.average.rule.change.warning")</p>
                                         @if(w.laterRounds.nonEmpty) {
-                                            <p class="mb-0 mt-2" id="averageRule_warning_later">@Messages("round.average.rule.change.later", w.laterRoundsText)</p>
+                                            <p class="mb-0 mt-2" id="averageRule_warning_later">@Messages("round.average.rule.change.later", w.laterRoundsText, w.laterRounds.size)</p>
                                         }
                                     </div>
                                 </div>
                             </div>
                         }
 
-                        @* a rated round's worst mark (✗, V92): off by default, editable on an existing
+                        @* a rated round's worst mark (rate -1, V92): off by default, editable on an existing
                            round; the hidden field says the form had the checkbox (an unchecked box sends
                            nothing). Hidden and not sent for a yes/no or comments-only rating of a new round
                            (round-form.js); a criteria round refuses it (EditRound, RoundController) *@

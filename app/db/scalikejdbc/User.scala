@@ -119,6 +119,13 @@ case class User(
   def canViewContestFiles(refContestId: Long): Boolean =
     hasContestRole(User.ADMIN_ROLES ++ User.ORG_COM_ROLES, Some(refContestId))
 
+  /** Whether the user may open a round's conflicts of interest page
+    * ([[controllers.RoundConflictsController.page]]): the contest's admins and organizers (only
+    * its admins disqualify or requalify). The round's statistics page links it for them.
+    */
+  def canViewRoundConflicts(refContestId: Long): Boolean =
+    hasContestRole(User.RoundConflictsRoles, Some(refContestId))
+
   /** Whether the user may import the contest's files and cache them locally
     * ([[controllers.ImageController.images]]): its admins.
     */
@@ -154,6 +161,8 @@ object User extends CRUDMapper[User] {
   val ADMIN_ROLE = "admin"
   val ROOT_ROLE = "root"
   val ADMIN_ROLES = Set(ADMIN_ROLE, ROOT_ROLE)
+  /** Who may open a round's conflicts of interest page ([[User.canViewRoundConflicts]]). */
+  val RoundConflictsRoles: Set[String] = ADMIN_ROLES ++ ORG_COM_ROLES
   val USER_ID_PREFIX = "USER_ID_"
   /** The edit form's "no role": a member of the contest without access to it. */
   val NO_ROLE = "no"

@@ -25,6 +25,12 @@
             <p class="text-muted small" id="round-average-rule">@Messages("round.average.rule.of", Messages(round.averageRule.messageKey))</p>
         }
 
+        @* the round's conflicts of interest, for its contest's admins and organizers: the
+           organizers' way there (they have no round form, the admins' other link) *@
+        @if(user.canViewRoundConflicts(round.contestId)) {
+            <p id="round-conflicts-link"><a href="@routes.RoundConflictsController.page(round.getId)">@Messages("coi.round.link")</a></p>
+        }
+
         @* the round's files deleted on Commons: out of the table above while it is open *@
         @if(stat.deletedFiles > 0) {
             <div class="row" id="deleted-files">

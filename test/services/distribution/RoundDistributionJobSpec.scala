@@ -743,7 +743,7 @@ class RoundDistributionJobSpec extends Specification with TestDb with BeforeAll 
         }.reduce(_ and _)
     }
 
-    "match the old path from a rated round with the worst mark: its ✗ as 0, as a vote, and as a rejection" in {
+    "match the old path from a rated round with the worst mark: its worst marks as 0, as a vote, and as a rejection" in {
       val (contest, _, jurors) = setUp(60, 3)
       val worst = ratedRound(contest, jurors, Round.ratesById(5), seed = 31, "Worst", worst = true)
       def from(r: Round) = newRound(contest, "Next").copy(previous = Some(r.getId.toString))
@@ -922,7 +922,7 @@ class RoundDistributionJobSpec extends Specification with TestDb with BeforeAll 
         (byLegacy === Set(2L))
     }
 
-    "keep \"rejected by at least N\" from a rated round whose worst mark was turned off after ✗, on \"Distribute new files\" too" in {
+    "keep \"rejected by at least N\" from a rated round whose worst mark was turned off after some were given, on \"Distribute new files\" too" in {
       val (contest, _, jurors) = setUp(30, 3)
       val worst = ratedRound(contest, jurors, Round.ratesById(5), seed = 33, "Worst", worst = true)
       // the option turned off after the ✗ were given: they stay
@@ -959,7 +959,7 @@ class RoundDistributionJobSpec extends Specification with TestDb with BeforeAll 
         (got must not(beEmpty))
     }
 
-    "apply \"rejected by at least N\" in both modes from a yes/no and a rated ✗ source, at the boundary, on both paths" in {
+    "apply \"rejected by at least N\" in both modes from a yes/no and a rated worst-mark source, at the boundary, on both paths" in {
       val (contest, _, jurors) = setUp(40, 3)
       val binary = ratedRound(contest, jurors, Round.binaryRound, seed = 36, "Binary")
       val worst = ratedRound(contest, jurors, Round.ratesById(5), seed = 37, "Worst", worst = true)

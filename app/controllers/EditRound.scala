@@ -100,7 +100,7 @@ object EditRound {
         .fold[ValidationResult](Valid)(key => Invalid(ValidationError(key, Criterion.MinPerRound, Criterion.MaxPerRound)))
   }
 
-  /** The worst mark (✗) only in a rated round without criteria: a yes/no round's -1 is its "no",
+  /** The worst mark (rate -1) only in a rated round without criteria: a yes/no round's -1 is its "no",
     * and a criteria round's votes are per criterion.
     */
   private val validWorstMark: Constraint[EditRound] = Constraint("constraint.worst.mark") { edit =>
@@ -164,7 +164,7 @@ object EditRound {
         worstMark = worstMark && worstMarkShown),
         averageRuleShown = averageRule.isDefined, worstMarkShown = worstMarkShown)
     })(edit => Some((edit, edit.round.excludeCoi, Some(edit.round.categoryRule.operation.formValue),
-      edit.round.topImages.map(_ => edit.round.topOrderParam), edit.round.rejectedByFilter.map(_.toString),
+      edit.round.topImages.filter(_ > 0).map(_ => edit.round.topOrderParam), edit.round.rejectedByFilter.map(_.toString),
       edit.round.criterionIds.map(_.toString), edit.criteriaShown, edit.round.halfStar,
       Some(edit.round.averageRule.param), edit.round.worstMark, edit.worstMarkShown,
       Some(edit.round.rejectedByFilter.fold(NoRejectedFilter)(_ => edit.round.prevRejectedMode.param)))))
@@ -210,7 +210,7 @@ object EditRound {
       jurorsMappingKV,
       "newImages" -> boolean,
       "monumentIds" -> optional(text),
-      "topImages" -> optional(number),
+      "topImages" -> optional(number(min = 1)),
       "specialNomination" -> optional(text),
       "mediaType" -> text
     )(applyEdit)(unapplyEdit)
@@ -328,7 +328,8 @@ object EditRound {
         editRound.jurors.map(_.toString),
         editRound.newImages,
         round.monuments,
-        round.topImages,
+        // a stored 0 is no top-N: filled as such, the field (at least 1) doesn't block a save
+        round.topImages.filter(_ > 0),
         round.specialNomination,
         round.mediaType.getOrElse(MediaType.All)
       )

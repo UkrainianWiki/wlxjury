@@ -11,13 +11,14 @@
 @import helper._
 
 @* the category fields' Commons suggestions (category-suggest.js) are Tom Select controls *@
-@mainAdmin("campaigns", user, user.getId, head = snippets.tomSelectScripts()) {
-    <h1 class="visually-hidden">@Messages("campaigns")</h1>
+@mainAdmin("contests", user, user.getId, head = snippets.tomSelectScripts()) {
+    @* the page's title, shown; then its two sections: the import, the list *@
+    <h1 class="h3">@Messages("contests")</h1>
     <div class="row" xmlns="http://www.w3.org/1999/html">
 
-        <h2 class="h3">@Messages("import.from.list.page.images.category")</h2>
+        <h2 class="h4">@Messages("import.from.list.page.images.category")</h2>
         <div class="bs-callout bs-callout-info">
-            <h3 class="h4">@Messages("examples.of.inputs")</h3>
+            <h3 class="h6">@Messages("examples.of.inputs")</h3>
             <p>
         <ul>
             <li>Category:Images from Wiki Loves Earth 2016
@@ -28,25 +29,30 @@
         @bs.form(routes.ContestController.importContests(), Symbol("id") -> "import-contests") {
             @helper.CSRF.formField
             @* a category or a list page: Commons' categories suggested once it starts with Category: *@
-            @bs.text(importForm("source"), Symbol("placeholder") -> Messages("source"), Symbol("_label") -> Messages("source"), Symbol("_help") -> "",
+            @bs.text(importForm("source"), Symbol("placeholder") -> Messages("import.source.placeholder"), Symbol("_label") -> Messages("import.source"), Symbol("_help") -> "",
                 Symbol("data-category-suggest") -> "mixed")
 
             <button type="submit" class="btn btn-primary">@Messages("import")</button>
         }
     </div>
     <div class="row" >
-        <h2 class="h3">@Messages("campaigns")</h2>
+        <h2 class="h4 mt-4">@Messages("contests.list")</h2>
 
         @contestsTable(contests)
 
-        <table class="table table-striped table-sm">
+        @* scrolls inside its box on a narrow screen; the add row's field widths: main.css
+           (.wlx-contests-table). position-relative: the box contains the absolutely placed
+           elements inside it (visually hidden labels, Tom Select's hidden input), which would
+           otherwise widen the page; the suggestions hang from the body, outside it *@
+        <div class="table-responsive position-relative">
+        <table class="table table-striped table-sm wlx-contests-table">
 
             <thead>
                 <tr>
                     <th>@Messages("name")</th>
                     <th>@Messages("country")</th>
                     <th>@Messages("year")</th>
-                    <th>@Messages("images")</th>
+                    <th>@Messages("files.source")</th>
                     <th>@Messages("users")</th>
                     <th>@Messages("current.round")</th>
                     <th>@Messages("id.template")</th>
@@ -73,11 +79,15 @@
                             @bs.text(editContestForm("country"), Symbol("placeholder") -> Messages("country"), Symbol("_hiddenLabel") -> Messages("country"), Symbol("_help") -> "")
                             </td>
                             <td>
-                            @bs.text(editContestForm("year"), Symbol("placeholder") -> Messages("year"), Symbol("_hiddenLabel") -> Messages("year"), Symbol("_help") -> "")
+                            @bs.text(editContestForm("year"), Symbol("placeholder") -> Messages("year"), Symbol("_hiddenLabel") -> Messages("year"), Symbol("_help") -> "",
+                                Symbol("class") -> "wlx-year-input")
                             </td>
                             <td>
-                            @bs.text(editContestForm("images"), Symbol("placeholder") -> Messages("images"), Symbol("_hiddenLabel") -> Messages("images"), Symbol("_help") -> "",
-                                Symbol("data-category-suggest") -> "mixed")
+                            @* its suggestions hang from the body: the .table-responsive box would clip them *@
+                            @bs.text(editContestForm("images"), Symbol("placeholder") -> Messages("files.source.placeholder"), Symbol("_hiddenLabel") -> Messages("files.source"), Symbol("_help") -> "",
+                                Symbol("class") -> "wlx-source-input",
+                                Symbol("data-category-suggest") -> "mixed",
+                                Symbol("data-category-suggest-dropdown-parent") -> "body")
                             </td>
                             <td>
                             </td>
@@ -100,26 +110,39 @@
                         <td>@Messages(contest.name)</td>
                         <td>@Messages(contest.country)</td>
                         <td>@contest.year</td>
+                        @* the source of the contest's files (a category or a list page), linking its files
+                           page, where it is imported and set; without one, the state ("Not set") and a
+                           separate link to set it (never a link without text) *@
                         <td>
-                            <a href="@routes.ImageController.images(contest.getId)">@contest.images</a>
+                            @contest.images.map(_.trim).filter(_.nonEmpty) match {
+                                case Some(source) => { <a href="@routes.ImageController.images(contest.getId)">@source</a> }
+                                case None => {
+                                    <span class="d-block text-body-secondary">@Messages("files.source.none")</span>
+                                    @defining(Messages("files.source.set.of", contest.fullName)) { label =>
+                                    <a class="d-block" href="@routes.ImageController.images(contest.getId)" title="@label" aria-label="@label">@Messages("files.source.set")</a>
+                                    }
+                                }
+                            }
                         </td>
+                        @* icon links styled as buttons (a link, not a button in a link), named for the
+                           contest, with the same text as their tooltip *@
                         <td>
-                            <a href="@routes.UserController.users(contest.id)">
-                                <button type="button" class="btn btn-outline-secondary btn-sm">
-                                    <i class="bi bi-pencil-square" aria-hidden="true"></i>
-                                </button>
+                            @defining(Messages("contest.users.edit", contest.fullName)) { label =>
+                            <a class="btn btn-outline-secondary btn-sm" href="@routes.UserController.users(contest.id)" title="@label" aria-label="@label">
+                                <i class="bi bi-pencil-square" aria-hidden="true"></i>
                             </a>
+                            }
                         </td>
                         <td>@contest.currentRound
-                        <a href="@routes.RoundController.rounds(contest.id)">
-                            <button type="button" class="btn btn-outline-secondary btn-sm">
+                            @defining(Messages("contest.rounds.edit", contest.fullName)) { label =>
+                            <a class="btn btn-outline-secondary btn-sm" href="@routes.RoundController.rounds(contest.id)" title="@label" aria-label="@label">
                                 <i class="bi bi-pencil-square" aria-hidden="true"></i>
-                            </button>
-                        </a>
+                            </a>
+                            }
                         </td>
                         <td class="id-template">@contest.monumentIdTemplate.filter(_.trim.nonEmpty).getOrElse {
                             @for(template <- services.regions.ContestKind.configMonumentIdTemplate(contest)) {
-                                @template <span class="text-muted" title="@Messages("id.template.from.campaign")">(@Messages("id.template.from.campaign"))</span>
+                                @template <span class="text-muted">(@Messages("id.template.from.campaign"))</span>
                             }
                         }</td>
                         <td>
@@ -128,6 +151,7 @@
                 }
             </tbody>
         </table>
+        </div>
     </div>
     <script src="@routes.Assets.versioned("javascripts/category-suggest.js")"></script>
 }
