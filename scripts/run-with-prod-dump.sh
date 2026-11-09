@@ -6,12 +6,18 @@
 #
 # Usage:
 #   ./scripts/run-with-prod-dump.sh            # full flow: dump → restore → run
-#   ./scripts/run-with-prod-dump.sh --skip-dump # re-use existing /tmp/wlxjury-prod.sql.gz
+#   ./scripts/run-with-prod-dump.sh --skip-dump # re-use the existing dump
 #   ./scripts/run-with-prod-dump.sh --dump-only # dump and restore, do not start sbt
 #
-# The restored dump holds the users' emails and password hashes: the dump file is readable
-# by its owner only, the container publishes its port on 127.0.0.1 only, and its passwords
-# are generated for each new container (docs/security/secure-coding.md §4).
+# The restored dump holds the users' emails and password hashes: the dump is kept in a
+# directory of its owner's only (${XDG_CACHE_HOME:-$HOME/.cache}/wlxjury, mode 700, the file
+# mode 600), the container publishes its port on 127.0.0.1 only, and its passwords are
+# generated for each new container (docs/security/secure-coding.md §4).
+#
+# The dump's connection to the production DB is not encrypted by this script (the mariadb
+# 10.6 client's defaults): WLXJURY_DB_HOST in .env must be the local end of an SSH tunnel to
+# the DB server (for example `ssh -L 3306:127.0.0.1:3306 <server>`), or a server that takes TLS
+# with a verified certificate. Never point it at the DB server across a network directly.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -23,12 +29,15 @@ usage() {
   cat <<'EOF'
 Usage:
   ./scripts/run-with-prod-dump.sh                  # full flow: dump → restore → run
-  ./scripts/run-with-prod-dump.sh --skip-dump       # re-use existing /tmp/wlxjury-prod.sql.gz
+  ./scripts/run-with-prod-dump.sh --skip-dump       # re-use the existing dump (see below)
   ./scripts/run-with-prod-dump.sh --dump-only       # dump and restore, do not start sbt
   ./scripts/run-with-prod-dump.sh --reuse-container # skip dump+restore, use running container
 
 Only the dump reads .env (WLXJURY_DB_HOST as host or host:port, WLXJURY_DB,
 WLXJURY_DB_USER, WLXJURY_DB_PASSWORD): --skip-dump and --reuse-container need none.
+WLXJURY_DB_HOST must be the local end of an SSH tunnel to the DB server, or a server
+that takes TLS: the dump's connection is not encrypted by this script.
+The dump is kept in ${XDG_CACHE_HOME:-$HOME/.cache}/wlxjury/prod.sql.gz (directory mode 700).
 EOF
 }
 
@@ -79,7 +88,12 @@ LOCAL_PORT=3307
 LOCAL_DB="wlxjury"
 LOCAL_USER="wlxjury_user"
 LOCAL_PASSWORD=""
-DUMP_FILE="/tmp/wlxjury-prod.sql.gz"
+# In a directory of this user's only, not the shared /tmp: there another local user could
+# create the file (or a symlink) first and have the dump written through it.
+DUMP_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/wlxjury"
+DUMP_FILE="$DUMP_DIR/prod.sql.gz"
+OLD_DUMP_FILE="/tmp/wlxjury-prod.sql.gz"
+DUMP_TMP=""
 CONTAINER_STARTED=false
 PROD_HOST=""
 PROD_PORT=""
@@ -143,6 +157,17 @@ make_secrets_dir() {
   fi
 }
 
+# The dump's directory: created mode 700, and refused unless it is a directory of this user
+# (not a symlink), so that only this user can create or replace files in it.
+ensure_dump_dir() {
+  ( umask 077 && mkdir -p "$DUMP_DIR" )
+  if [[ -L "$DUMP_DIR" || ! -d "$DUMP_DIR" || ! -O "$DUMP_DIR" ]]; then
+    echo "ERROR: $DUMP_DIR must be a directory of this user, not a symlink." >&2
+    exit 1
+  fi
+  chmod 700 "$DUMP_DIR"
+}
+
 # A host path as Docker takes it: C:/... under Git Bash (MSYS), else unchanged.
 host_path() {
   if command -v cygpath >/dev/null 2>&1; then cygpath -m "$1"; else printf '%s' "$1"; fi
@@ -179,7 +204,7 @@ ensure_local_root_cnf() {
 cleanup() {
   local exit_code=$?
   remove_secrets
-  rm -f "${DUMP_FILE}.tmp" 2>/dev/null || true
+  if [[ -n "$DUMP_TMP" ]]; then rm -f "$DUMP_TMP" 2>/dev/null || true; fi
   if [[ $exit_code -ne 0 ]]; then
     echo ""
     echo "Script exited with code $exit_code."
@@ -248,9 +273,12 @@ if [[ "$REUSE_CONTAINER" == true ]]; then
 else
   # ── Phase 1: Dump ────────────────────────────────────────────────────────────
   dump_prod_db() {
-    local tmp_file="${DUMP_FILE}.tmp"
     local start=$SECONDS
     echo "==> Dumping prod DB (via docker mariadb:10.6 client)..."
+    ensure_dump_dir
+    # a new file of its own (mktemp: created exclusively, mode 600), renamed over the dump
+    DUMP_TMP="$(mktemp "$DUMP_DIR/prod.sql.gz.XXXXXX")"
+    local tmp_file="$DUMP_TMP"
     make_secrets_dir
     write_client_cnf "$SECRETS_DIR/prod.cnf" "$WLXJURY_DB_USER" "$WLXJURY_DB_PASSWORD"
     # --defaults-extra-file must be the client's first option. MSYS_NO_PATHCONV:
@@ -275,16 +303,21 @@ else
     )
     remove_secrets
     chmod 600 "$tmp_file"
-    mv "$tmp_file" "$DUMP_FILE"
+    mv -f "$tmp_file" "$DUMP_FILE"
+    DUMP_TMP=""
     echo "    Dump written to $DUMP_FILE  $(du -sh "$DUMP_FILE" | cut -f1)  (took $(format_duration "$((SECONDS - start))"))"
   }
 
+  if [[ -f "$OLD_DUMP_FILE" ]]; then
+    echo "    NOTE: a dump of before is still at $OLD_DUMP_FILE, in the shared /tmp: delete it"
+    echo "          (rm -f $OLD_DUMP_FILE); dumps are now kept in $DUMP_DIR."
+  fi
   if [[ "$SKIP_DUMP" == true ]]; then
-    if [[ ! -f "$DUMP_FILE" ]]; then
-      echo "ERROR: --skip-dump set but $DUMP_FILE does not exist." >&2
+    ensure_dump_dir
+    if [[ ! -f "$DUMP_FILE" || -L "$DUMP_FILE" ]]; then
+      echo "ERROR: --skip-dump set but $DUMP_FILE does not exist (or is a symlink)." >&2
       exit 1
     fi
-    # a dump made before it was created mode 600
     chmod 600 "$DUMP_FILE"
     echo "==> Skipping dump; using existing $DUMP_FILE ($(du -sh "$DUMP_FILE" | cut -f1))"
   else
