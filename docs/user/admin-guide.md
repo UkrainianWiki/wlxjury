@@ -120,7 +120,7 @@ An account that also works in other contests can't be changed by an admin of one
 admin may change the person's role in their own contest only, unless they administer all of its
 contests. Nobody sets another person's password: see [Passwords](#a-passwords).
 
-<img src="images/admin-user-edit.png" alt="The Edit user page of a member, with the role and the set-password links" width="1280">
+<img src="images/admin-user-edit.png" alt="The Edit user page of a member, with the role and the set-password links" width="450">
 
 <a id="a-invitations"></a>
 ## Invitations
@@ -199,7 +199,7 @@ again.
 Treat the link like a password: anyone who has it can set the account's password until it is
 used. Pass it on to the person only, and not in a public place.
 
-<img src="images/admin-share-link.png" alt="The page that shows a link to share once, with its Copy button" width="1280">
+<img src="images/admin-share-link.png" alt="The page that shows a link to share once, with its Copy button" width="770">
 
 <a id="a-greeting"></a>
 ### The greeting

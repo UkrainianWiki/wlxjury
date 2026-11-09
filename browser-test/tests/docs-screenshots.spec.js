@@ -71,7 +71,7 @@ test.describe('the guides\' screenshots', () => {
   });
   // `height`: only the top of the viewport (the rest of such a page is empty)
   const top = (page, file, height, width = VIEWPORT.width) =>
-    page.screenshot({ path: file, clip: { x: 0, y: 0, width, height } });
+    page.screenshot({ path: file, fullPage: true, clip: { x: 0, y: 0, width, height } });
 
   /** The page height that ends below the `n`th row of the gallery's tiles (with a margin), so
     * that no crop cuts through a photo. */
@@ -102,7 +102,14 @@ test.describe('the guides\' screenshots', () => {
     return Math.ceil(row.bottom + window.scrollY) + 2;
   }, n);
 
-  async function shot(contextAs, role, target, name, { full = false, prepare, crop, height, width, rows, tableRows } = {}) {
+  /** The page height that ends below the large view's "Submit comment" button, so that the
+    * photo and the comment box show whole. */
+  const belowComment = (page) => page.evaluate(() => {
+    const button = document.getElementById('saySomething'); // the "Submit comment" input
+    return Math.ceil(button.getBoundingClientRect().bottom + window.scrollY) + 16;
+  });
+
+  async function shot(contextAs, role, target, name, { full = false, prepare, crop, height, width, rows, tableRows, comment } = {}) {
     const context = await contextAs(role);
     await context.addCookies([{ name: 'theme', value: 'dark', url: baseUrl }]);
     const page = await sized(context);
@@ -133,6 +140,7 @@ test.describe('the guides\' screenshots', () => {
         clip: { x, y: Math.max(0, topEdge - 12), width: Math.min(VIEWPORT.width - x, right - x + 12), height: bottom - Math.max(0, topEdge - 12) + 12 } });
     } else if (rows) await top(page, file, await belowRows(page, rows), width);
     else if (tableRows) await top(page, file, await belowTableRow(page, tableRows), width);
+    else if (comment) await top(page, file, await belowComment(page), width);
     else if (height) await top(page, file, height, width);
     else {
       // a whole page ends with a margin, so that its last button isn't cut at the edge
@@ -148,9 +156,9 @@ test.describe('the guides\' screenshots', () => {
     await shot(contextAs, 'juror', galleryPath(fixture.roundBinaryId, juror.id), 'juror-gallery-binary', { rows: 1 });
     await shot(contextAs, 'juror', galleryPath(fixture.roundRatingId, juror.id), 'juror-gallery-rated', { rows: 1 });
     await shot(contextAs, 'juror', galleryPath(fixture.roundBinaryId, juror.id), 'juror-gallery-top-bar', { height: 56 });
-    await shot(contextAs, 'juror', largePath(fixture.roundBinaryId, juror.id, juror.pageId), 'juror-large-view-binary', { height: 520 });
+    await shot(contextAs, 'juror', largePath(fixture.roundBinaryId, juror.id, juror.pageId), 'juror-large-view-binary', { comment: true });
     await shot(contextAs, 'juror', largePath(fixture.roundRatingId, juror.id, juror.ratedPageId), 'juror-large-view-rated', {
-      height: 520,
+      comment: true,
       // a plain star rate in a round without the worst mark, as the guide describes. The
       // worst-mark test undoes its vote, so this holds on a rerun too; a safety net if that
       // undo failed: start the docs-mode server afresh
@@ -158,7 +166,7 @@ test.describe('the guides\' screenshots', () => {
         await expect(page.locator('.bi-x-lg'), 'no worst-mark icon on the rated shot: restart the docs-mode server').toHaveCount(0);
       },
     });
-    await shot(contextAs, 'juror', `/users/edit/${juror.id}`, 'juror-profile', { full: true });
+    await shot(contextAs, 'juror', `/users/edit/${juror.id}`, 'juror-profile', { crop: '#edit-user' });
   });
 
   test('organizer pages', async ({ contextAs, fixture }) => {
@@ -200,7 +208,7 @@ test.describe('the guides\' screenshots', () => {
       },
     });
     await shot(contextAs, 'admin', `/contest/${contest}/images`, 'organizer-contest-images', { full: true });
-    await shot(contextAs, 'admin', `/users/edit/${fixture.accounts.juror.id}?contestId=${contest}`, 'admin-user-edit', { full: true });
+    await shot(contextAs, 'admin', `/users/edit/${fixture.accounts.juror.id}?contestId=${contest}`, 'admin-user-edit', { crop: '#edit-user' });
 
     // a pending invitation: invite one address (once; a second run finds it)
     const context = await contextAs('admin');
@@ -234,9 +242,14 @@ test.describe('the guides\' screenshots', () => {
     await page.locator('input[value*="/invitation/"]').evaluateAll((inputs) => inputs.forEach((input) => {
       input.value = input.value.replace(/^https?:\/\/[^/]+/, 'https://jury.example.org');
     }));
-    // down to the end of the warning, so that the button after it isn't cut
-    const warning = await page.locator('.alert').last().boundingBox();
-    await top(page, path.join(OUT_DIR, 'admin-share-link.png'), Math.ceil(warning.y + warning.height) + 16);
+    // the centred section only, from its heading down to the end of the warning (the button
+    // after it isn't shown, so nothing is cut)
+    const section = await page.locator('#share-link').boundingBox();
+    const warning = await page.locator('#share-link .alert').last().boundingBox();
+    expect(section && warning, 'the section and its warning are shown').toBeTruthy();
+    const shareTop = Math.max(0, section.y - 12);
+    await page.screenshot({ path: path.join(OUT_DIR, 'admin-share-link.png'),
+      clip: { x: section.x - 12, y: shareTop, width: section.width + 24, height: Math.ceil(warning.y + warning.height) + 16 - shareTop } });
     await context.close();
     await shot(contextAs, null, invitationPath, 'juror-set-password', { height: 440 });
   });
@@ -279,7 +292,8 @@ test.describe('the guides\' screenshots', () => {
     const scrollY = await page.evaluate(() => window.scrollY);
     const y = Math.max(0, from.y + scrollY - 12);
     await page.screenshot({ path: path.join(OUT_DIR, 'organizer-score-rule-warning.png'), fullPage: true,
-      clip: { x: 0, y, width: VIEWPORT.width, height: to.y + scrollY + to.height + 12 - y } });
+      // the centred form's width (the rows span it), with a margin
+      clip: { x: Math.max(0, from.x - 12), y, width: from.width + 24, height: to.y + scrollY + to.height + 12 - y } });
     await context.close(); // not saved
   });
 
@@ -322,7 +336,7 @@ test.describe('the guides\' screenshots', () => {
       await view.goto(filePath);
       await expect(view.getByRole('button', { name: /Clear the vote/ }).first()).toBeVisible();
       await view.waitForLoadState('networkidle');
-      await top(view, path.join(OUT_DIR, 'juror-large-view-worst-mark.png'), 520);
+      await top(view, path.join(OUT_DIR, 'juror-large-view-worst-mark.png'), await belowComment(view));
     } finally {
       try {
         if (voted) {

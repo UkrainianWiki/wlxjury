@@ -110,13 +110,15 @@ test.describe('root', () => {
       await expect(dropdown).toBeVisible();
       await expect(dropdown.locator('.option')).toHaveCount(titles.length);
       expect(await page.locator('.table-responsive .ts-dropdown').count()).toBe(0);
-      // under the field, at its left edge, and still there after the page scrolls
+      // under the field, at its left edge, and still there after the page scrolls (null if the
+      // list or its field has no box)
       const place = async () => {
         const [c, d] = [await control.locator('xpath=ancestor::div[contains(@class,"ts-control")][1]').boundingBox(),
           await dropdown.boundingBox()];
-        return { below: d.y - (c.y + c.height), left: d.x - c.x };
+        return c && d ? { below: d.y - (c.y + c.height), left: d.x - c.x } : null;
       };
       const before = await place();
+      expect(before, 'the open list and its field have boxes').not.toBeNull();
       expect(before.below).toBeGreaterThanOrEqual(0);
       expect(before.below).toBeLessThan(12);
       expect(Math.abs(before.left)).toBeLessThan(2);
@@ -144,6 +146,33 @@ test.describe('root', () => {
       // label and Tom Select's hidden input, and the open list fits under the field
       const pageFits = () => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth);
       const box = page.locator('.table-responsive').filter({ has: page.locator('#images') });
+      // the box, the field (Tom Select's wrapper, which category-suggest.js measures), its
+      // control and the list (null when closed), read in one turn of the page's script, so that
+      // nothing moves or closes between the reads
+      const boxState = () => box.evaluate((el) => {
+        const rect = (e) => {
+          const b = e.getBoundingClientRect();
+          return { left: b.left, right: b.right, top: b.top, bottom: b.bottom };
+        };
+        const wrapper = el.querySelector('#images-ts-control').closest('.ts-wrapper');
+        const list = document.querySelector('body > .ts-dropdown');
+        const open = !!list && getComputedStyle(list).display !== 'none' && list.getBoundingClientRect().height > 0;
+        return { visible: rect(el), field: rect(wrapper), control: rect(wrapper.querySelector('.ts-control')),
+          list: open ? rect(list) : null };
+      });
+      // category-suggest.js's rule: the whole field in the box's view (a pixel's slack), or the
+      // left edge of a field wider than the box
+      const fieldInView = ({ visible, field }) => {
+        const leftIn = field.left >= visible.left - 1 && field.left <= visible.right;
+        if (field.right - field.left > visible.right - visible.left) return leftIn;
+        return field.left >= visible.left - 1 && field.right <= visible.right + 1;
+      };
+      // what the list should do after a box scroll, and what it does
+      const followState = (s) => {
+        if (!fieldInView(s)) return s.list === null ? 'closed' : 'open, its field out of view';
+        if (s.list === null) return 'closed, its field in view';
+        return Math.abs(s.list.left - s.control.left) < 3 ? 'under the field' : 'not under the field';
+      };
       for (const by of [60, -60, 200, -200]) {
         await control.fill('Category:Wiki'); // scrolls the box to the field, and opens the list
         await expect(dropdown).toBeVisible();
@@ -155,10 +184,14 @@ test.describe('root', () => {
           return el.scrollLeft - start;
         }, by);
         if (moved === 0) continue; // already at that end of the box
-        // either closed, or under the field at its left edge
-        await expect.poll(async () => !(await dropdown.isVisible()) || Math.abs((await place()).left) < 3,
-          `after the box scrolled by ${moved}`).toBe(true);
-        if (await dropdown.isVisible()) expect((await place()).below).toBeGreaterThanOrEqual(0);
+        // under the field at its left edge while the field is in view, closed once it isn't (the
+        // box's scroll event, and so the list's move, can come a frame after the scroll: polled)
+        await expect.poll(async () => {
+          const state = followState(await boxState());
+          return state === 'closed' || state === 'under the field' ? 'as expected' : state;
+        }, `after the box scrolled by ${moved}`).toBe('as expected');
+        const after = await boxState();
+        if (after.list) expect(after.list.top - after.control.bottom).toBeGreaterThanOrEqual(0);
         expect(await pageFits(), `after the box scrolled by ${moved}`).toBe(true);
         await control.press('Escape');
       }

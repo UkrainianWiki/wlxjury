@@ -107,7 +107,7 @@ To sign out on every computer and browser at once, open your **Profile** and pre
 everywhere** under **Sessions**. Changing your password does this too, except in the browser
 you changed it in.
 
-<img src="images/juror-profile.png" alt="The profile page, with its theme and sessions" width="1280">
+<img src="images/juror-profile.png" alt="The profile page, with its theme and sessions" width="450">
 
 ## Finding your rounds
 

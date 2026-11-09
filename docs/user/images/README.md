@@ -10,11 +10,13 @@ The fixture's files carry real Commons file names and authors, so the spec repla
 numbered examples before each shot, and the link to share shows a neutral host.
 
 **Platform of the current set:** Windows 11 Pro (10.0.26200), Playwright 1.64.1 with its bundled
-Chromium (156), the app's own font stack, 2026-11-05. Text rendering depends on the operating
+Chromium (156), the app's own font stack, 2026-11-10. Text rendering depends on the operating
 system, so regenerate all the images together on one platform and update this line.
 
-**Size:** 24 images, about 3.5 MB in all; the largest is `juror-gallery-binary.png`, about 680 KB
-(photo shots may reach about 900 KB; the others stay small). Photos make 2x PNGs large, so
+**Size:** 24 images, about 7.1 MB in all. The three large views are the largest, about 1.25 MB
+each (a whole photo, shown at the width of the page, with the comment box), then the by-rate
+results (about 1.0 MB) and the two galleries (up to about 780 KB); the others stay small. The
+profile, user-edit, share-link and score-rule shots are cropped to their forms. Photos make 2x PNGs large, so
 `browser-test/docs-optimize-png.py` reduces each image to a 256-colour palette after the spec
 (dithered where there are photos, so that skies show no bands), and the shots of galleries and
 results show only the top of the page; the device scale stays 2.
@@ -45,7 +47,10 @@ bad files. The photos are never committed, only the screenshots.
 
 The fixture's image stub, in its docs mode, serves them: a file name always maps to the same photo
 for the same choice of lists (`gatling.setup.DocsPhotos`, by file order), and about one file in
-four gets a degraded one, never in the top rows of the shots. The file names shown on the shots are numbered examples ("Example photo N", "Author N"),
+four gets a degraded one, never in the top rows of the shots. The server also stores each file's
+width and height as its photo's (the fixture's are its Commons original's), since the pages size
+thumbnails from them: otherwise a landscape photo standing in for a portrait file would show
+narrow and short. The file names shown on the shots are numbered examples ("Example photo N", "Author N"),
 which the spec writes.
 
 ## Regenerating the shots

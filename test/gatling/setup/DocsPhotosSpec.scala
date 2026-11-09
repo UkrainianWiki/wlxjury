@@ -103,6 +103,25 @@ class DocsPhotosSpec extends Specification {
         photos.setFixture(DocsPhotos.Fixture((0 to 3).map(i => s"File:F$i.jpg"), Nil))
         nameOf(3) === Some("c" * 24 + ".jpg")
       }
+    "give a title the photo of its file's paths (UiShotsServer stores that photo's size)" in
+      withPhotos(Map("wlm-ua" -> manifest), allFiles) { (root, lists) =>
+        val photos = DocsPhotos.load(root, Seq("wlm-ua"), lists)
+        photos.fileForTitle("File:F 0.jpg") must beNone
+        photos.setFixture(DocsPhotos.Fixture((0 to 7).map(i => s"File:F $i.jpg"), Seq("File:F 7.jpg")))
+        for (i <- 0 to 7; path <- Seq(s"/wikipedia/commons/thumb/1/12/F_$i.jpg/640px-F_$i.jpg", s"/wikipedia/commons/1/12/F_$i.jpg"))
+          photos.fileForTitle(s"File:F $i.jpg") === photos.fileFor(path)
+        photos.fileForTitle("File:F 3.jpg").map(_.getName) === Some("c" * 24 + ".jpg")
+      }
+    "read a photo's width and height from its header" in {
+      val file = Files.createTempFile("docs-photo", ".jpg").toFile
+      try {
+        val image = new java.awt.image.BufferedImage(48, 30, java.awt.image.BufferedImage.TYPE_INT_RGB)
+        javax.imageio.ImageIO.write(image, "jpg", file) must beTrue
+        DocsPhotos.dimensions(file) === ((48, 30))
+        Files.write(file.toPath, "not an image".getBytes(UTF_8))
+        DocsPhotos.dimensions(file) must throwAn[IllegalArgumentException]
+      } finally file.delete()
+    }
     "refuse a list without a manifest (not verified by docs-photos.py)" in
       withPhotos(Map.empty, Nil) { (root, lists) =>
         new File(root, "wlm-ua/good").mkdirs()

@@ -105,11 +105,25 @@ object UiShotsServer {
     // docs mode: the photos learn the fixture's files and which of them the guides' shots show at
     // the top of a page (docs-screenshots.spec.js), which never get a degraded photo
     f.docsPhotos.foreach { photos =>
-      val titles = sql"SELECT title FROM images ORDER BY page_id".map(_.string(1)).list()
+      val files  = sql"SELECT page_id, title FROM images ORDER BY page_id".map(r => (r.long(1), r.string(2))).list()
+      val titles = files.map(_._2)
       val shown  = shownFiles(f.roundBinaryId, f.roundRatingId, (jurorId +: listedJurors.map(_._1)).distinct)
       photos.setFixture(DocsPhotos.Fixture(titles, shown))
       println(s"[images] docs photos for ${titles.size} files (${photos.pool.good.size} photos, " +
         s"${photos.pool.bad.size} degraded); ${shown.size} files shown at the top of the shots get no degraded one")
+      // each file takes its photo's width and height (the fixture's are its Commons original's):
+      // the pages size a thumbnail from the stored ones, so a landscape photo standing in for a
+      // portrait file came out narrow and short. This run's container only, after the rounds
+      // were filled, so no round's size filter sees the change
+      val sizes = (photos.pool.good ++ photos.pool.bad).distinct.map(p => p -> DocsPhotos.dimensions(p)).toMap
+      val byPhoto = files.groupBy { case (_, t) => photos.fileForTitle(t).getOrElse(sys.error(s"no docs photo for $t")) }
+      val resized: Int = DB.localTx { tx =>
+        byPhoto.toSeq.flatMap { case (photo, group) =>
+          val (w, h) = sizes(photo)
+          group.map(_._1).grouped(1000).map(ids => sql"UPDATE images SET width = $w, height = $h WHERE page_id IN ($ids)".update.apply()(tx))
+        }.sum
+      }
+      println(s"[images] $resized files take their docs photo's size")
     }
     // the stub's mode, which docs-screenshots.spec.js checks: "docs", "stub", or "commons" (none)
     val images = if (f.docsPhotos.isDefined) "docs" else sys.props.get("ui.images").filter(_ == "stub").getOrElse("commons")

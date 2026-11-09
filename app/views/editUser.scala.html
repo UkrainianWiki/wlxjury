@@ -26,8 +26,9 @@
 }
 
 @mainAdmin("edit.user", user, user.getId, contestId = contestId, head = pageScripts) {
-    <div class="row" >
-        <div class="col-md-4">
+    @* centred: alone, the form's column is a third of the page (the user guides' shots crop to it) *@
+    <div class="row justify-content-center">
+        <div class="col-md-4" id="edit-user">
 
 
             @if(!editUserForm("id").value.contains("0")) {

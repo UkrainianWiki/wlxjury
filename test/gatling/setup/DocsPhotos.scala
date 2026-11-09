@@ -128,13 +128,33 @@ object DocsPhotos {
 
     /** The photo file for `path`; `None` before [[setFixture]]. A file the fixture doesn't have
       * gets a good photo by a hash of its name. */
-    def fileFor(path: String): Option[File] = fixture.flatMap { f =>
-      val key = keyOfName(fileName(path))
+    def fileFor(path: String): Option[File] = fileForKey(keyOfName(fileName(path)))
+
+    /** The photo file of the file titled `title` (`File:…`); `None` before [[setFixture]]. */
+    def fileForTitle(title: String): Option[File] = fileForKey(keyOfTitle(title))
+
+    private def fileForKey(key: String): Option[File] = fixture.flatMap { f =>
       val (ordinal, shown) = f.ordinals.get(key).fold((stableHash(key), true))(o => (o, f.shown.contains(key)))
       choose(ordinal, shown, pool.good.size, pool.bad.size).map { case (isBad, i) => if (isBad) pool.bad(i) else pool.good(i) }
     }
 
     def photo(path: String): Option[Array[Byte]] = fileFor(path).map(file => Files.readAllBytes(file.toPath))
+  }
+
+  /** A photo's width and height in pixels, from its header. docs-photos.py saves the photos
+    * without EXIF (Pillow drops it), so no orientation tag turns them in the browser. */
+  def dimensions(file: File): (Int, Int) = {
+    val in = javax.imageio.ImageIO.createImageInputStream(file)
+    require(in != null, s"cannot read $file")
+    try {
+      val readers = javax.imageio.ImageIO.getImageReaders(in)
+      require(readers.hasNext, s"$file is not an image ImageIO reads")
+      val reader = readers.next()
+      try {
+        reader.setInput(in)
+        (reader.getWidth(0), reader.getHeight(0))
+      } finally reader.dispose()
+    } finally in.close()
   }
 
   def load(root: File, lists: Seq[String], listsDir: File = new File("browser-test")): Photos =
