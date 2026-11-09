@@ -271,11 +271,11 @@ one. Click a heading to show or hide its section; the tool remembers which are o
 
 Videos play in the large view.
 
-<img src="images/juror-large-view-binary.png" alt="The large view of a yes/no round" width="1280">
+<img src="images/juror-large-view-binary.png" alt="The large view of a yes/no round" width="820">
 
-<img src="images/juror-large-view-rated.png" alt="The large view of a rated round" width="1280">
+<img src="images/juror-large-view-rated.png" alt="The large view of a rated round" width="820">
 
-<img src="images/juror-large-view-worst-mark.png" alt="The large view of a file with the worst mark: the worst-mark button and the eraser under the stars" width="1280">
+<img src="images/juror-large-view-worst-mark.png" alt="The large view of a file with the worst mark: the worst-mark button and the eraser under the stars" width="820">
 
 ### Voting in the large view
 
@@ -348,6 +348,8 @@ You can change it there.
 
 Under the image in the large view is **Comments**. Type in **Your comment here** and press
 **Submit comment**.
+
+<img src="images/juror-large-view-comments.png" alt="The comment box under the image, with the button Submit comment" width="664">
 
 Comments are not private. The organizers and the other jurors who open this file in the
 contest see your comment, with your name. You can comment only while the round is open.
