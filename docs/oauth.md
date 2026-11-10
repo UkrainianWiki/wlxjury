@@ -74,7 +74,7 @@ oauth.wikimedia.clients = [
 
 ## Production
 
-Put the `oauth` settings in `/etc/wlxjury-runtime/production.conf` and the variables in `runtime.env` (see `conf/wlxjury/*.example` and [deployment.md](deployment.md)). Secrets must stay `${?VARIABLE}` references: deployment refuses literal secrets in config files. Then restart the service. The `user_identity` table comes with migration V87. The deployed template lives in `wlxjury-infra` (`production.conf.j2`): its `oauth` block and variables are a pre-deploy item there.
+Put the `oauth` settings in `/etc/wlxjury-runtime/production.conf` and the variables in `runtime.env` (see `conf/wlxjury/*.example` and [deployment.md](deployment.md)). Secrets must stay `${?VARIABLE}` references. No tool checks `production.conf` for literal secrets: the deployment tool's check runs only when adopting the legacy install, on its copied `conf/` ([deployment.md](deployment.md)), and the infra template writes only `${?VARIABLE}` references. Then restart the service. The `user_identity` table comes with migration V87. The deployed template lives in `wlxjury-infra` (`production.conf.j2`): its `oauth` block and variables are a pre-deploy item there.
 
 ## Local testing
 
