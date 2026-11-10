@@ -21,6 +21,8 @@
 # mysqldump runs in a container, where 127.0.0.1 is the container itself: with Docker
 # Desktop (Windows, macOS) WLXJURY_DB_HOST is host.docker.internal:<tunnel port>; on Linux the
 # client container shares this machine's network (--network host), so it is 127.0.0.1:<port>.
+# Docker Desktop on Linux, and WSL2 with Docker Desktop, count as Linux here, but their host
+# network is the Desktop VM's: they too use host.docker.internal:<port>.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -42,6 +44,7 @@ The dump's connection is not encrypted by this script: it must go through an SSH
 to the DB server, or to a server that takes TLS. mysqldump runs in a container: for a
 tunnel on this machine, WLXJURY_DB_HOST is host.docker.internal:<port> with Docker
 Desktop (Windows, macOS), 127.0.0.1:<port> on Linux (the container uses --network host).
+Docker Desktop on Linux and WSL2 with Docker Desktop use host.docker.internal:<port> too.
 The dump is kept in ${XDG_CACHE_HOME:-$HOME/.cache}/wlxjury/prod.sql.gz (directory mode 700).
 EOF
 }
