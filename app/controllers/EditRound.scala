@@ -6,6 +6,7 @@ import org.intracer.wmua.{AverageRule, BinaryOrder, CategoryOperation, CategoryR
 import play.api.data.{Form, Mapping}
 import play.api.data.Forms._
 import play.api.data.validation._
+import services.distribution.RoundDistributionHandler
 
 import scala.util.Try
 
@@ -111,6 +112,19 @@ object EditRound {
 
   val WorstMarkRatedOnly = "error.worst.mark.rated.only"
 
+  /** "Leave out files that are in round(s)" (V95): other rounds of the round's contest, found there,
+    * none of its previous rounds and none being distributed now
+    * ([[RoundDistributionHandler.excludedRoundsError]], which the service and the job check again).
+    * Its contest's rounds are read only when some are chosen. An edit doesn't change them (the
+    * select is disabled, posting nothing).
+    */
+  private val validExcludedRounds: Constraint[EditRound] = Constraint("constraint.exclude.rounds") { edit =>
+    val round = edit.round
+    RoundDistributionHandler
+      .excludedRoundsError(round, Round.findByIdsInAnyContest, RoundDistributionHandler.distributingNow)
+      .fold[ValidationResult](Valid)(refusal => Invalid(ValidationError(refusal.key, refusal.args: _*)))
+  }
+
   /** The rejected-by mode select's "no filter" (a value of its own: Play reads "" as absent, which
     * is an older client's, excluding).
     */
@@ -119,6 +133,11 @@ object EditRound {
   /** The criteria selects' values: the chosen ones, by position (-1 for a value that is no id). */
   def criterionIdsOf(values: Seq[String]): Seq[Long] =
     values.map(_.trim).filter(_.nonEmpty).map(_.toLongOption.filter(_ > 0).getOrElse(-1L))
+
+  /** The rounds-to-leave-out select's values, each once, in their order (-1 for a value that is no
+    * id, which the form refuses).
+    */
+  def excludeRoundIdsOf(values: Seq[String]): Seq[Long] = criterionIdsOf(values).distinct
 
   val editRoundForm: Form[EditRound] = Form(
     mapping(
@@ -141,9 +160,11 @@ object EditRound {
       // "rejected by at least N" (V93): "none" no filter, "exclude" those files, "only" them; a
       // client without it (an older page, a script) excludes, the meaning before V93
       "rejectedMode" -> optional(text).verifying("error.invalid",
-        _.forall(m => m == EditRound.NoRejectedFilter || RejectedMode.parse(m).isDefined))
+        _.forall(m => m == EditRound.NoRejectedFilter || RejectedMode.parse(m).isDefined)),
+      // "Leave out files that are in round(s)" (V95): round ids, checked by validExcludedRounds
+      "excludeRounds" -> seq(text)
     )((edit, excludeCoi, selected, topOrder, rejectedBy, criteria, criteriaShown, halfStar, averageRule, worstMark,
-        worstMarkShown, rejectedMode) => {
+        worstMarkShown, rejectedMode, excludeRounds) => {
       val configured = selected match {
         case None => edit.round // Older clients omitted the clause; retain their inference.
         case Some(value) =>
@@ -161,17 +182,19 @@ object EditRound {
         prevRejectedMode = rejectedMode.flatMap(RejectedMode.parse).getOrElse(RejectedMode.Default),
         criterionIds = criterionIdsOf(criteria), halfStar = halfStar,
         averageRule = averageRule.flatMap(AverageRule.parse).getOrElse(AverageRule.Default),
-        worstMark = worstMark && worstMarkShown),
+        worstMark = worstMark && worstMarkShown, excludeRounds = excludeRoundIdsOf(excludeRounds)),
         averageRuleShown = averageRule.isDefined, worstMarkShown = worstMarkShown)
     })(edit => Some((edit, edit.round.excludeCoi, Some(edit.round.categoryRule.operation.formValue),
       edit.round.topImages.filter(_ > 0).map(_ => edit.round.topOrderParam), edit.round.rejectedByFilter.map(_.toString),
       edit.round.criterionIds.map(_.toString), edit.criteriaShown, edit.round.halfStar,
       Some(edit.round.averageRule.param), edit.round.worstMark, edit.worstMarkShown,
-      Some(edit.round.rejectedByFilter.fold(NoRejectedFilter)(_ => edit.round.prevRejectedMode.param)))))
+      Some(edit.round.rejectedByFilter.fold(NoRejectedFilter)(_ => edit.round.prevRejectedMode.param)),
+      edit.round.excludeRounds.map(_.toString))))
       .verifying(validCategories)
       .verifying(validCriteria)
       .verifying(validRejectedBy)
       .verifying(validWorstMark)
+      .verifying(validExcludedRounds)
   )
 
   /** Keep older submissions meaningful on an error page, where the form has no value. */

@@ -1,5 +1,5 @@
 // The round form (editRound.scala.html), once the page is parsed:
-// - its multiple selects (previous rounds, regions, jurors) as Tom Select dropdowns
+// - its multiple selects (previous rounds, rounds to leave out, regions, jurors) as Tom Select dropdowns
 //   (multi-select.js);
 // - the previous rounds' filters: shown with a previous round chosen, a binary round's
 //   selection filters (#selectFilters, which has a class "round<id>" for each binary round)
@@ -40,7 +40,7 @@
 
   function initMultiSelects(doc, t) {
     if (!window.wlxMultiSelect) return;
-    ['previousRound', 'regions', 'jurors'].forEach(function (id) {
+    ['previousRound', 'excludeRounds', 'regions', 'jurors'].forEach(function (id) {
       window.wlxMultiSelect(doc.getElementById(id), t.multiSelect || {});
     });
   }
