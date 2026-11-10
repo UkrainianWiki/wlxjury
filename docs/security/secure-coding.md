@@ -108,9 +108,24 @@ hashes both sides of the setup token to compare them in constant time (nothing s
 
 **Rule.** Scripts pass DB passwords in option files (mode 600), never `MYSQL_PWD`,
 `--password=` or another argument or exported variable; temporary files are removed by a trap.
+Files of production data go in a directory of the user's own (mode 700), never at a fixed
+name in a shared directory such as `/tmp`, where another local user can create the name first
+(as a symlink, or a file they own) and have the data written through it. A connection to the
+production DB goes through an SSH tunnel or uses TLS.
 
 **Example.** `scripts/run-with-prod-dump.sh`: a `[client]` option file written mode 600,
-mounted read-only, `--defaults-extra-file` first, an `--env-file`, a trap on every exit path.
+mounted read-only, `--defaults-extra-file` first, an `--env-file`, a trap on every exit path;
+the restored data's container publishes on `127.0.0.1` only, with passwords generated per
+container (none in the script); the dump is kept in `${XDG_CACHE_HOME:-$HOME/.cache}/wlxjury/`
+(mode 700, checked to be the user's own and not a symlink), written to a `mktemp` file there
+(mode 600) and renamed over `prod.sql.gz` (triage R193-4). Its mysqldump doesn't force TLS (the
+mariadb 10.6 client's defaults), so the connection must go through an SSH tunnel to the DB
+server, or to a server with TLS. mysqldump runs in a container, where `127.0.0.1` is the
+container: for a tunnel on the user's machine, `.env`'s `WLXJURY_DB_HOST` is
+`host.docker.internal:<port>` with Docker Desktop (Windows, macOS), and `127.0.0.1:<port>` on
+Linux, where the script runs the client with `--network host`; Docker Desktop on Linux and WSL2
+with Docker Desktop also report Linux, but their host network is the Desktop VM's, so they use
+`host.docker.internal:<port>` too. The script's header and `--help` say so.
 
 **Guards.** `scripts/deployment/test_release_script.py`. Planned: G12 also flags `MYSQL_PWD`
 and `--password=` in `scripts/`.

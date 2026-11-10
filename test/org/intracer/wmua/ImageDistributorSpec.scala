@@ -529,7 +529,7 @@ class ImageDistributorSpec extends Specification with TestDb with Mockito
       }
     }
 
-    "count selections across previous rounds cumulatively and not duplicate the image" in {
+    "count selections in each previous round on its own and not duplicate the image" in {
       locally {
         val numImages = 4
         val numJurors = 2
@@ -559,11 +559,13 @@ class ImageDistributorSpec extends Specification with TestDb with Mockito
         di.distributeImages(dbRoundA, dbJurors, Nil)
         di.distributeImages(dbRoundB, dbJurors, Nil)
 
-        // image 0: selected by one juror in round A and by another juror in round B
+        // image 0: selected by both jurors in round A and by one in round B
         VoteJdbc.rate(images(0).pageId, juryIds(0), dbRoundA.getId, 1)
+        VoteJdbc.rate(images(0).pageId, juryIds(1), dbRoundA.getId, 1)
         VoteJdbc.rate(images(0).pageId, juryIds(1), dbRoundB.getId, 1)
-        // image 1: selected once, only in round A
+        // image 1: selected by one juror in round A and by another in round B
         VoteJdbc.rate(images(1).pageId, juryIds(0), dbRoundA.getId, 1)
+        VoteJdbc.rate(images(1).pageId, juryIds(1), dbRoundB.getId, 1)
 
         val dbRound3 = roundDao.create(
           Round(
@@ -584,10 +586,11 @@ class ImageDistributorSpec extends Specification with TestDb with Mockito
 
         val round3 = selectionDao.findAll().filter(_.roundId == dbRound3.getId)
 
-        // image 0 reaches the threshold of 2 only by combining both rounds; image 1 doesn't
-        round3.map(_.pageId).toSet === Set(images(0).pageId)
-        // distributed once per juror, not once per previous round the image came from
-        round3.count(_.pageId == images(0).pageId) === numJurors
+        // image 0 reaches the threshold of 2 in round A; image 1 in neither round (each round on
+        // its own, triage R196-1)
+        (round3.map(_.pageId).toSet === Set(images(0).pageId)) and
+          // distributed once per juror, not once per previous round the image came from
+          (round3.count(_.pageId == images(0).pageId) === numJurors)
       }
     }
 

@@ -93,39 +93,59 @@ case class ExcludeJurorId(jurors: Set[Long]) extends ImageFilterGen {
     imageRatingFilter(i => i.votes.map(_.juryId).toSet.intersect(jurors).isEmpty)
 }
 
-/** The `topN` best rated images of the previous `round`; a yes/no round's by `order` of their
-  * approvals and rejections, ties by page id, as [[services.distribution.DistributionSource.rank]]
-  * ranks them; with no order (a round from before V72) by the legacy rule, the rate sum.
+/** The `topN` best rated images of the previous rounds. The rows are one per file and previous
+  * round (a distribution's candidates), each evaluated in its own round of `rounds`
+  * ([[ImageWithRating.sourceRound]], else `round`): a file ranks by its best row (triage
+  * R196-1). A yes/no round's rows by `order` of their approvals and rejections, ties by page id;
+  * with no order (a round from before V72, or a rated round) by the score in the row's round (by
+  * its rule and jurors), ties by its rate sum, below 0 as 0, then by the rate sum, then by page
+  * id; as [[services.distribution.DistributionSource.rank]] ranks them.
   */
-case class SelectTopByRating(topN: Int, round: Round, order: Option[BinaryOrder] = Some(BinaryOrder.Default))
+case class SelectTopByRating(topN: Int, round: Round, order: Option[BinaryOrder] = Some(BinaryOrder.Default),
+    rounds: Seq[Round] = Nil)
     extends ImageFilterGen {
   def apply(): ImageFilter =
-    (images: Seq[ImageWithRating]) =>
-      order.filter(_ => round.isBinary) match {
+    (images: Seq[ImageWithRating]) => {
+      import scala.math.Ordering.Double.TotalOrdering
+      import scala.math.Ordering.Implicits.seqOrdering
+      def roundOf(i: ImageWithRating): Round = i.sourceRound(round, rounds)
+      val ranked = order.filter(_ => round.isBinary) match {
         case Some(o) =>
-          import scala.math.Ordering.Implicits.seqOrdering
-          images.sortBy(i => (o.sortKey(i.approvals, i.rejections), i.pageId)).take(topN)
-        case None => images.sortBy(-_.totalRate(round)).take(topN)
+          images.sortBy(i => (o.sortKey(i.approvals, i.rejections), i.pageId, roundOf(i).id.getOrElse(0L)))
+        case None =>
+          images.sortBy { i =>
+            val r = roundOf(i)
+            (-i.totalRate(r), -i.rateSum, -i.votes.map(_.rate).sum, i.pageId, r.id.getOrElse(0L))
+          }
       }
+      // a file's best row first: one row per file
+      ranked.distinctBy(_.pageId).take(topN)
+    }
 }
 
-case class SelectMinAvgRating(rate: BigDecimal, round: Round) extends ImageFilterGen {
-  def apply(): ImageFilter = imageRatingFilter(i => i.totalRate(round) >= rate)
+/** The rows whose score is at least `rate`, each scored in its own previous round of `rounds`
+  * ([[ImageWithRating.sourceRound]]), else in `round`.
+  */
+case class SelectMinAvgRating(rate: BigDecimal, round: Round, rounds: Seq[Round] = Nil) extends ImageFilterGen {
+  def apply(): ImageFilter = imageRatingFilter(i => i.totalRate(i.sourceRound(round, rounds)) >= rate)
 }
 
+/** "Selected by at least `by` jurors": the rows (of one previous round each) with that many
+  * approvals, read as their rate sum (only the approvals are read).
+  */
 case class SelectedAtLeast(by: Int) extends ImageFilterGen {
   def apply(): ImageFilter = imageRatingFilter(i => i.rateSum >= by)
 }
 
-/** "Exclude files rejected by at least `by` jurors": the files with fewer rejections, read
-  * from all the previous rounds' votes ([[ImageWithRating.rejections]]).
+/** "Exclude files rejected by at least `by` jurors": the rows (of one previous round each) with
+  * fewer rejections ([[ImageWithRating.rejections]]: "no" votes, or ✗).
   */
 case class RejectedByLessThan(by: Int) extends ImageFilterGen {
   def apply(): ImageFilter = imageRatingFilter(i => i.rejections < by)
 }
 
-/** "Only files rejected by at least `by` jurors" (V93, `RejectedMode.Only`): the files with that
-  * many rejections or more, to review them in a round of their own.
+/** "Only files rejected by at least `by` jurors" (V93, `RejectedMode.Only`): the rows (of one
+  * previous round each) with that many rejections or more, to review them in a round of their own.
   */
 case class RejectedByAtLeast(by: Int) extends ImageFilterGen {
   def apply(): ImageFilter = imageRatingFilter(i => i.rejections >= by)
@@ -197,7 +217,9 @@ object ImageWithRatingSeqFilter {
       specialNomination: Option[String] = None,
       mediaType: Option[String] = None,
       // "rejected by at least N": leave those files out (the default), or keep only them (V93)
-      rejectedMode: RejectedMode = RejectedMode.Default
+      rejectedMode: RejectedMode = RejectedMode.Default,
+      // all the previous rounds (`round` is the first): a file of one of them is scored in it
+      prevRounds: Seq[Round] = Nil
   ): Seq[ImageFilterGen] = {
 
     val setMap = Map(
@@ -214,9 +236,9 @@ object ImageWithRatingSeqFilter {
 
     val optionMap = Map(
       selectMinAvgRating
-        .map(top => SelectMinAvgRating(top, round.get)) -> selectMinAvgRating,
+        .map(top => SelectMinAvgRating(top, round.get, prevRounds)) -> selectMinAvgRating,
       selectTopByRating
-        .map(top => SelectTopByRating(top, round.get, topOrder)) -> selectTopByRating,
+        .map(top => SelectTopByRating(top, round.get, topOrder, prevRounds)) -> selectTopByRating,
       selectedAtLeast.map(n => SelectedAtLeast(n)) -> selectedAtLeast,
       rejectedBy.map(n => if (rejectedMode == RejectedMode.Only) RejectedByAtLeast(n) else RejectedByLessThan(n)) -> rejectedBy,
       mpxAtLeast.map(MegaPixelsAtLeast) -> mpxAtLeast,

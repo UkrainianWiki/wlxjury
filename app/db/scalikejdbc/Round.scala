@@ -454,12 +454,23 @@ object Round extends RoundRepo with CRUDMapper[Round] {
       .apply()
   }
 
-  /** A round may draw its images from several previous rounds, but they must all share
-    * one rate type (all binary or all rated) — the filtering / rate-scaling code treats
-    * them as one context. An empty or single-element seq trivially satisfies this.
+  /** A round may draw its images from several previous rounds, but they must all share one
+    * rating (`rates`: all yes/no, all comments only, or all rated on the same scale, 1-5 with
+    * 1-5) and the same number of criteria (none, or as many): one minimum score and one top-N
+    * apply to the scores of all of them. An empty or single-element seq trivially satisfies
+    * this. The round form refuses others (`error.previous.rounds.mixed.type`), the distribution
+    * too. A criteria round's number of criteria is read here (it isn't loaded with the round).
     */
-  def sameRateType(rounds: Seq[Round]): Boolean =
-    rounds.map(_.isBinary).distinct.sizeIs <= 1
+  def sameRateType(rounds: Seq[Round])(implicit session: DBSession = AutoSession): Boolean =
+    // one rating, not only one kind: a 1-5 and a 1-10 round would rank sums of both scales
+    // together, and a comments-only round has no rate to compare with a rated one's (triage
+    // R196-1); a criteria round's vote is the sum of its criteria (perCriterion), so a 1-10 round
+    // of 4 criteria scores up to 40, a plain 1-10 round up to 10
+    rounds.sizeIs < 2 || rounds.map(ratingOf).distinct.sizeIs == 1
+
+  /** What [[sameRateType]] compares: the scale, and a criteria round's number of criteria. */
+  private def ratingOf(round: Round)(implicit session: DBSession): (Long, Int) =
+    (round.rates.id, if (round.hasCriteria) RoundCriterion.countOf(round.getId) else 0)
 
   def setActive(id: Long, active: Boolean): Unit =
     updateById(id)

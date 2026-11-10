@@ -157,7 +157,7 @@ class RoundDistributionHandler @Inject() (
   }
 
   override def prepare(job: Job): Unit = {
-    val c = contexts.getOrElseUpdate(job.id, context(roundIdOf(job), Some(jobAverageRule(job)), Some(jobRejectedMode(job))))
+    val c = contexts.getOrElseUpdate(job.id, context(roundIdOf(job), Some(jobAverageRules(job)), Some(jobRejectedMode(job))))
     val st = stateOf(job)
     if (st.phase == Phase.List && st.listIndex < titleCountOf(job) && !listChunks.get(job.id).exists(_.index == st.listIndex))
       listChunks.put(job.id, listChunk(c.round, st.listIndex, titlesOf(job, st.listIndex, commons.maxIdsPerRequest)))
@@ -172,16 +172,16 @@ class RoundDistributionHandler @Inject() (
   protected def beforeInsert(round: Round, images: Seq[Image])(implicit session: DBSession): Unit = ()
   protected def afterInsert(round: Round, rows: Seq[Vote])(implicit session: DBSession): Unit = ()
 
-  /** What the steps need. Rated previous rounds score their files by `averageRule` if given (a
-    * job's, [[jobAverageRule]]), else by their own rule ("Count new files": as a job queued now);
-    * "rejected by at least N" is applied by `rejectedMode` if given (a job's, [[jobRejectedMode]]),
-    * else by the round's own mode.
+  /** What the steps need. Rated previous rounds score their files by `averageRules` if given (a
+    * job's, per previous round, [[jobAverageRules]]), else by their own rule ("Count new files":
+    * as a job queued now); "rejected by at least N" is applied by `rejectedMode` if given (a
+    * job's, [[jobRejectedMode]]), else by the round's own mode.
     */
-  private def context(roundId: Long, averageRule: Option[AverageRule],
+  private def context(roundId: Long, averageRules: Option[Long => AverageRule],
       rejectedMode: Option[RejectedMode] = None): Context = {
     val round = Round.findById(roundId).getOrElse(throw new NoSuchElementException(s"Round $roundId not found"))
     val prevRounds = RoundDistributionHandler.previousRounds(round)
-      .map(p => averageRule.filterNot(_ => p.isBinary).fold(p)(rule => p.copy(averageRule = rule)))
+      .map(p => averageRules.filterNot(_ => p.isBinary).fold(p)(rules => p.copy(averageRule = rules(p.getId))))
     val jurors = User.distributionJurors(roundId).sortBy(_.getId).toIndexedSeq
     DistributeImages.checkJury(round, jurors)
     val categoryRule = round.categoryRule
@@ -215,19 +215,23 @@ class RoundDistributionHandler @Inject() (
       topOrder = prev.filter(_.isBinary).flatMap(_ => round.topBinaryOrder),
       categoryId =
         if (prevRounds.isEmpty) ContestJuryJdbc.findById(round.contestId).flatMap(_.categoryId) else None,
-      denominator = prev match {
-        case Some(p) if p.isBinary => Denominator.Const(p.numberOfAssignedJurors)
-        case Some(p) => p.averageRule match {
-          case AverageRule.Rated    => Denominator.PerImageRated
-          case AverageRule.Assigned => Denominator.PerImage
-          // the sum itself: the score a sum round shows
-          case AverageRule.Sum      => Denominator.Const(1)
-        }
-        case None => Denominator.PerImage
-      },
+      // a file's row of each previous round is scored by that round's ([[DistributionSource.rank]])
+      denominators = prevRounds.map(p => p.getId -> denominatorOf(p)),
       windowSize = math.max(1, math.min(MaxWindow, chunkRows / math.max(1, perImage)))
     )
   }
+
+  /** The denominator of a file's score in previous round `p`, as [[ImageWithRating.totalRate]]
+    * has it: a yes/no round's jurors; a rated round's by its rule.
+    */
+  private def denominatorOf(p: Round): Denominator =
+    if (p.isBinary) Denominator.Const(p.numberOfAssignedJurors)
+    else p.averageRule match {
+      case AverageRule.Rated    => Denominator.PerImageRated
+      case AverageRule.Assigned => Denominator.PerImage
+      // the sum itself: the score a sum round shows
+      case AverageRule.Sum      => Denominator.Const(1)
+    }
 
   /** The files of `titles`, the pasted list's from the `index`th, as Commons has them (one
     * request, with their text; their authors as an import gets them,
@@ -349,7 +353,7 @@ class RoundDistributionHandler @Inject() (
   def step(job: Job, ctx: StepContext): StepResult = {
     implicit val session: DBSession = ctx.session
     val roundId = roundIdOf(job)
-    val c = contexts.getOrElseUpdate(job.id, context(roundId, Some(jobAverageRule(job)), Some(jobRejectedMode(job))))
+    val c = contexts.getOrElseUpdate(job.id, context(roundId, Some(jobAverageRules(job)), Some(jobRejectedMode(job))))
     val st = stateOf(job) match {
       case s if s.imagesBefore.isEmpty =>
         val total = imageCount(roundId)
@@ -363,7 +367,8 @@ class RoundDistributionHandler @Inject() (
 
     st.phase match {
       case Phase.Rank =>
-        val ranked = DistributionSource.rank(c.prevRounds.flatMap(_.id), c.votes, c.denominator, c.topN.get, c.filter, c.topOrder)
+        val ranked = DistributionSource.rank(c.prevRounds.flatMap(_.id), c.votes, c.denominators, c.topN.get, c.filter,
+          c.topOrder)
         val next = st.copy(phase = Phase.Distribute, ranked = ranked.sorted,
           total = Some(ranked.size.toLong + titleCountOf(job)), cursor = 0L)
         continue(next)
@@ -585,7 +590,8 @@ class RoundDistributionHandler @Inject() (
     // "Count new files": as a distribution queued now would, by the previous round's rule
     val c = context(roundId, None)
     if (c.topN.isDefined) {
-      val ranked = DistributionSource.rank(c.prevRounds.flatMap(_.id), c.votes, c.denominator, c.topN.get, c.filter, c.topOrder)
+      val ranked = DistributionSource.rank(c.prevRounds.flatMap(_.id), c.votes, c.denominators, c.topN.get, c.filter,
+        c.topOrder)
       ranked.grouped(MaxWindow).map(ids => DistributionSource.imagesIn(ids, roundId).size.toLong).sum
     } else {
       var st = DistributionState(Phase.Distribute)
@@ -619,10 +625,11 @@ object RoundDistributionHandler {
 
   val MaxMissingTitles = 100
 
-  /** Which votes of the previous rounds pick their files: with `rated` ("selected by at least"
-    * set) only approvals (a rated round's: any vote) are read; with `rejectedBy` ("exclude files
-    * rejected by at least N") no file with N or more rejections across all their votes (a yes/no
-    * round's "no", a rated round's ✗). `grades`: the previous rounds are rated, their sums of
+  /** Which votes of the previous rounds pick their files, each round's on its own (a file
+    * qualifies in any of its rounds): with `rated` ("selected by at least" set) only approvals (a
+    * rated round's: any vote) are read; with `rejectedBy` ("exclude files rejected by at least
+    * N") no file's round with N or more rejections in it (a yes/no round's "no", a rated round's
+    * ✗). `grades`: the previous rounds are rated, their sums of
     * grades (a ✗ as 0) and their rated votes any vote, as the in-memory path reads them
     * (`SelectionQuery.grades`).
     */
@@ -641,7 +648,8 @@ object RoundDistributionHandler {
       topN: Option[Int],
       topOrder: Option[BinaryOrder],
       categoryId: Option[Long],
-      denominator: Denominator,
+      // each previous round's: a file's row of a round is scored in it
+      denominators: Seq[(Long, Denominator)],
       windowSize: Int
   )
 
@@ -689,6 +697,16 @@ object RoundDistributionHandler {
     */
   def jobAverageRule(job: Job): AverageRule = averageRuleOf(job).getOrElse(AverageRule.Assigned)
 
+  /** The rule each of a job's rated previous rounds scores its files by: the one recorded for it
+    * (`params.settings.prevAverageRules`, by round id, RoundService), else [[jobAverageRule]] (a
+    * job queued before the rules were recorded per round, triage R196-1: its one rule for all).
+    */
+  def jobAverageRules(job: Job): Long => AverageRule = {
+    val perRound = (job.params \ "settings" \ "prevAverageRules").asOpt[Map[String, String]].getOrElse(Map.empty)
+    val fallback = jobAverageRule(job)
+    roundId => perRound.get(roundId.toString).flatMap(AverageRule.parse).getOrElse(fallback)
+  }
+
   /** How the job applies "rejected by at least N" (`params.settings.prevRejectedMode`, recorded by
     * RoundService when queued, V93): a job queued before V93 excludes those files, the filter's
     * meaning then.
@@ -713,7 +731,8 @@ object RoundDistributionHandler {
   def imagesAdded(job: Job): Long = stateOf(job).imagesAdded
 
   /** The round's previous rounds, in its order, from its own contest only (another
-    * contest's rounds would be frozen and their images copied), all of one rate type.
+    * contest's rounds would be frozen and their images copied), all of one rating, the same
+    * scale ([[Round.sameRateType]]).
     */
   def previousRounds(round: Round): Seq[Round] = {
     val ids = round.previousIds
@@ -721,7 +740,7 @@ object RoundDistributionHandler {
     val prevRounds = ids.flatMap(id => found.find(_.id.contains(id)))
     require(
       Round.sameRateType(prevRounds),
-      s"previous rounds [${prevRounds.flatMap(_.id).mkString(", ")}] must all be of the same rate type"
+      s"previous rounds [${prevRounds.flatMap(_.id).mkString(", ")}] must all have the same rating (one scale, as many criteria)"
     )
     require(
       ids.size == prevRounds.size,
@@ -758,17 +777,18 @@ object DistributionSource {
   private val i = ImageJdbc.syntax("i")
 
   /** With "selected by at least" set, only approvals (rated votes) are read; with "rejected by at
-    * least N", no file rejected N times or more in the previous rounds (`Exclude`), or only those
-    * (`Only`, V93). The rejection check is correlated to the row's page id: NULL-safe (unlike
-    * `NOT IN`, where one NULL page id in the subquery would drop every row) and bounded to the
-    * window's own files by the `(round_id, page_id, rate)` index, rather than counting every
-    * previous-round rejection again in each window.
+    * least N", no vote row `s` of a round where its file was rejected N times or more (`Exclude`),
+    * or only those (`Only`, V93): each round on its own (a juror has one vote of a file in a
+    * round), so a file passes if it passes in one of its rounds (triage R196-1). The rejection
+    * check is correlated to the row's round and page id: NULL-safe (unlike `NOT IN`, where one
+    * NULL page id in the subquery would drop every row) and read from the `(round_id, page_id,
+    * rate)` index alone, rather than counting every previous-round rejection again in each window.
     */
-  private def votesCond(prevIds: Seq[Long], votes: PrevVotes): SQLSyntax = {
+  private def votesCond(votes: PrevVotes): SQLSyntax = {
     val rated = if (votes.rated) sqls"AND ${ratedVote(votes)}" else sqls""
     val rejected = votes.rejectedBy.fold(sqls"") { n =>
       val atLeast = sqls"""EXISTS (SELECT 1 FROM vote r
-             WHERE r.page_id = s.page_id AND r.round_id IN ($prevIds) AND ${VoteSql.rejected(VoteSql.r)}
+             WHERE r.round_id = s.round_id AND r.page_id = s.page_id AND ${VoteSql.rejected(VoteSql.r)}
              HAVING COUNT(*) >= $n)"""
       votes.rejectedMode match {
         case RejectedMode.Exclude => sqls"AND NOT $atLeast"
@@ -832,7 +852,7 @@ object DistributionSource {
              WHERE ri.round_id IN ($prevIds) AND ri.status = ${RoundImageJdbc.Status.In}"""
      else
        sql"""SELECT COUNT(DISTINCT s.page_id) FROM vote s
-             WHERE s.round_id IN ($prevIds) ${votesCond(prevIds, votes)}""")
+             WHERE s.round_id IN ($prevIds) ${votesCond(votes)}""")
       .map(_.long(1)).single().getOrElse(0L)
 
   def previousWindow(prevIds: Seq[Long], votes: PrevVotes, cursor: Long, size: Int)(implicit
@@ -845,7 +865,7 @@ object DistributionSource {
                ORDER BY ri.page_id LIMIT $size"""
       else
         sqls"""SELECT DISTINCT s.page_id FROM vote s
-               WHERE s.round_id IN ($prevIds) ${votesCond(prevIds, votes)} AND s.page_id > $cursor
+               WHERE s.round_id IN ($prevIds) ${votesCond(votes)} AND s.page_id > $cursor
                ORDER BY s.page_id LIMIT $size"""
     sql"SELECT COUNT(*), MAX(page_id) FROM ($pages) w"
       .map(rs => Window(rs.int(1), rs.longOpt(2).getOrElse(cursor)))
@@ -853,36 +873,31 @@ object DistributionSource {
       .getOrElse(Window.empty)
   }
 
-  /** The window's images not yet in the round, each with its ratings in the previous
-    * rounds as the in-memory path builds them (`byRoundMerged` per round, then merged
-    * per image): one entry per previous round, juror 0, with the round's rate sum, and
-    * the number of rated rows.
+  /** The window's images not yet in the round, each with its ratings in each of its previous
+    * rounds as the in-memory path builds them (`byRoundMerged` per round, tagged with its round):
+    * one row per file and previous round, a vote of juror 0 of that round with the round's rate
+    * sum, its rows and its rated rows; the per-image filters evaluate each row in its round
+    * ([[org.intracer.wmua.cmd.DistributeImages.perImageFilters]]). By page id, then round id.
     */
   def previousCandidates(prevIds: Seq[Long], votes: PrevVotes, from: Long, to: Long, roundId: Long)(implicit
       session: DBSession
-  ): Seq[ImageWithRating] = {
-    val rows = sql"""SELECT g.page_id, g.rs, g.c, g.v, ${i.result.*} FROM (
+  ): Seq[ImageWithRating] =
+    sql"""SELECT g.page_id, g.round_id, g.rs, g.c, g.v, ${i.result.*} FROM (
               SELECT s.page_id, s.round_id, ${roundAggregates(votes)} FROM vote s
-              WHERE s.round_id IN ($prevIds) ${votesCond(prevIds, votes)} AND s.page_id > $from AND s.page_id <= $to
+              WHERE s.round_id IN ($prevIds) ${votesCond(votes)} AND s.page_id > $from AND s.page_id <= $to
                 AND ${notInRound(roundId, sqls"s.page_id")}
               GROUP BY s.page_id, s.round_id) g
             JOIN images i ON i.page_id = g.page_id
             WHERE i.deleted_at IS NULL
             ORDER BY g.page_id, g.round_id"""
-      .map(rs => (ImageJdbc(i)(rs), rs.int("rs"), rs.int("c"), rs.int("v")))
-      .list()
-    val merged = mutable.LinkedHashMap.empty[Long, ImageWithRating]
-    rows.foreach { case (image, sum, count, rated) =>
-      val entry = Vote(image.pageId, juryId = 0, roundId = 0, rate = sum)
-      merged.updateWith(image.pageId) {
-        case Some(acc) => Some(acc.copy(votes = acc.votes :+ entry, countFromDb = acc.countFromDb + count,
-          approvalsFromDb = Some(acc.approvalsFromDb.getOrElse(0) + rated)))
-        case None      => Some(ImageWithRating(image, Seq(entry), count, approvalsFromDb = Some(rated)))
+      .map { rs =>
+        val image = ImageJdbc(i)(rs)
+        val rated = rs.int("v")
+        // a rated round's rated rows are its votes, a ✗ included (ImageWithRating.ratedVotes)
+        ImageWithRating(image, Seq(Vote(image.pageId, juryId = 0, roundId = rs.long("round_id"), rate = rs.int("rs"))),
+          rs.int("c"), approvalsFromDb = Some(rated), votedFromDb = Option.when(votes.grades)(rated))
       }
-    }
-    // a rated round's rated rows are its votes, a ✗ included (ImageWithRating.ratedVotes)
-    merged.values.toSeq.map(f => if (votes.grades) f.copy(votedFromDb = f.approvalsFromDb) else f)
-  }
+      .list()
 
   /** The images of `ids` not yet in the round, by page id. */
   def imagesIn(ids: Seq[Long], roundId: Long)(implicit session: DBSession): Seq[Image] =
@@ -896,13 +911,13 @@ object DistributionSource {
 
   /** Top-N by rating over the previous rounds, ranked in SQL (only the chosen images are
     * held), with the semantics of the in-memory [[org.intracer.wmua.cmd.SelectTopByRating]]:
-    * the images ordered by their average rating (`totalRate`: the sum of each round's
-    * rate sum, negatives counted as 0, over the denominator), ties broken by that sum,
-    * then by the raw sum (the in-memory input order of one previous round), then by
-    * page id. Yes/no previous rounds by `binaryOrder` instead ([[binaryPage]]). The per-image
-    * filters apply before ranking: the ranked pages are filtered
-    * in order until `n` images pass. Pages grow (n, 2n, 4n, ...) while filters reject
-    * images, so a selective filter costs a few queries, not one per image.
+    * one row per file and previous round, each scored in its round (`totalRate`: the round's
+    * rate sum, below 0 as 0, over its denominator), ties broken by that sum, then by the raw sum,
+    * then by page id; a file ranks by its best row that passes the filters (triage R196-1).
+    * Yes/no previous rounds by `binaryOrder` instead ([[binaryPage]]). The per-image filters
+    * apply before ranking: the ranked rows are filtered in order until `n` files pass, each file
+    * once. Pages grow (n, 2n, 4n, ...) while filters reject rows, so a selective filter costs a
+    * few queries, not one per image.
     *
     * The images already in the round count in the ranking: the round's top-N doesn't
     * grow when "Distribute new files" runs again.
@@ -910,23 +925,27 @@ object DistributionSource {
   def rank(
       prevIds: Seq[Long],
       votes: PrevVotes,
-      denominator: Denominator,
+      // each previous round's denominator: a row is scored in its round ([[ratedPage]])
+      denominators: Seq[(Long, Denominator)],
       n: Int,
       filter: Seq[ImageWithRating] => Seq[ImageWithRating],
       binaryOrder: Option[BinaryOrder] = None
   )(implicit session: DBSession): Seq[Long] = {
-    val picked = mutable.ArrayBuffer.empty[Long]
+    val picked = mutable.LinkedHashSet.empty[Long]
     var offset = 0
     var pageSize = math.max(n, 100)
     var exhausted = n <= 0
     while (!exhausted && picked.size < n) {
-      val page = binaryOrder.fold(ratedPage(prevIds, votes, denominator, pageSize, offset))(
+      val page = binaryOrder.fold(ratedPage(prevIds, votes, denominators, pageSize, offset))(
         binaryPage(prevIds, votes, _, pageSize, offset))
+      val ids = page.map(_._1).distinct
       val images = if (page.isEmpty) Map.empty[Long, Image] else
-        sql"SELECT ${i.result.*} FROM images i WHERE i.page_id IN (${page.map(_._1)}) AND i.deleted_at IS NULL"
+        sql"SELECT ${i.result.*} FROM images i WHERE i.page_id IN ($ids) AND i.deleted_at IS NULL"
           .map(rs => ImageJdbc(i)(rs)).list().map(img => img.pageId -> img).toMap
       val candidates = page.flatMap { case (pageId, rating) => images.get(pageId).map(rating) }
-      picked ++= filter(candidates).iterator.map(_.pageId).take(n - picked.size)
+      // a file picked by a better row on an earlier page is already in
+      filter(candidates).iterator.map(_.pageId).filterNot(picked.contains).take(n - picked.size)
+        .foreach(picked += _)
       exhausted = page.size < pageSize
       offset += page.size
       pageSize *= 2
@@ -934,39 +953,45 @@ object DistributionSource {
     picked.toSeq
   }
 
-  /** A page of the previous rounds' images by average rating ([[rank]]): each page id, and
-    * its image's rating, one entry with the rate sum.
+  /** A page of the previous rounds' rows by average rating ([[rank]]): one per file and previous
+    * round, its page id and its rating in that round, an entry with the round's rate sum tagged
+    * with the round. Each row is scored in its round, by the round's denominator (`denominators`:
+    * its rule, or a yes/no round's jurors), as the in-memory path scores it
+    * ([[ImageWithRating.sourceRound]]).
     */
-  private def ratedPage(prevIds: Seq[Long], votes: PrevVotes, denominator: Denominator, pageSize: Int,
+  private def ratedPage(prevIds: Seq[Long], votes: PrevVotes, denominators: Seq[(Long, Denominator)], pageSize: Int,
       offset: Int)(implicit session: DBSession): Seq[(Long, Image => ImageWithRating)] = {
-    val total = denominator match {
-      case Denominator.Const(d)      => sqls"IF($d = 0, 0, SUM(GREATEST(t.rs, 0)) * 1e0 / $d)"
-      case Denominator.PerImage      => sqls"IF(SUM(t.c) = 0, 0, SUM(GREATEST(t.rs, 0)) * 1e0 / SUM(t.c))"
-      case Denominator.PerImageRated => sqls"IF(SUM(t.v) = 0, 0, SUM(GREATEST(t.rs, 0)) * 1e0 / SUM(t.v))"
+    // one row's score in its round (t.round_id), by that round's denominator
+    def rowScore(d: Denominator): SQLSyntax = d match {
+      case Denominator.Const(n)      => sqls"IF($n = 0, 0, GREATEST(t.rs, 0) * 1e0 / $n)"
+      case Denominator.PerImage      => sqls"IF(t.c = 0, 0, GREATEST(t.rs, 0) * 1e0 / t.c)"
+      case Denominator.PerImageRated => sqls"IF(t.v = 0, 0, GREATEST(t.rs, 0) * 1e0 / t.v)"
     }
-    sql"""SELECT t.page_id, SUM(GREATEST(t.rs, 0)) rate_sum, SUM(t.c) cnt, SUM(t.v) rated FROM (
+    require(denominators.nonEmpty, "a top-N needs previous rounds")
+    val cases = denominators.map { case (id, d) => sqls"WHEN $id THEN ${rowScore(d)}" }
+    val score = sqls"CASE t.round_id ${sqls.join(cases, sqls" ")} END"
+    sql"""SELECT t.page_id, t.round_id, GREATEST(t.rs, 0) rate_sum, t.c, t.v FROM (
             SELECT s.page_id, s.round_id, ${roundAggregates(votes)} FROM vote s
-            WHERE s.round_id IN ($prevIds) ${votesCond(prevIds, votes)}
+            WHERE s.round_id IN ($prevIds) ${votesCond(votes)}
             GROUP BY s.page_id, s.round_id) t
-          GROUP BY t.page_id
-          ORDER BY $total DESC, SUM(GREATEST(t.rs, 0)) DESC, SUM(t.rs) DESC, t.page_id ASC
+          ORDER BY $score DESC, GREATEST(t.rs, 0) DESC, t.rs DESC, t.page_id ASC, t.round_id ASC
           LIMIT $pageSize OFFSET $offset"""
       .map { rs =>
-        val (pageId, sum, count, rated) = (rs.long(1), rs.long(2), rs.long(3), rs.long(4))
+        val (pageId, round, sum, count, rated) = (rs.long(1), rs.long(2), rs.long(3), rs.long(4), rs.long(5))
         pageId -> ((img: Image) =>
-          ImageWithRating(img, Seq(Vote(pageId, juryId = 0, roundId = 0, rate = sum.toInt)), count.toInt,
+          ImageWithRating(img, Seq(Vote(pageId, juryId = 0, roundId = round, rate = sum.toInt)), count.toInt,
             approvalsFromDb = Some(rated.toInt), votedFromDb = Option.when(votes.grades)(rated.toInt)))
       }
       .list()
   }
 
-  /** A page of yes/no previous rounds' images by `order` over all their votes, approvals and
-    * rejections counted together across the rounds, ties by page id: the same rule whatever
-    * "selected by at least" is (docs/history/2026-11-01-binary-aggregate-votes.md, issue 2).
-    * `votes` keeps the files with an approval ("selected by at least" set) and those with
-    * fewer rejections than "exclude files rejected by at least N" (or, `Only`, those with N or
-    * more). Each image's rating has its approvals as its rate, so "selected by at least" compares
-    * them.
+  /** A page of yes/no previous rounds' rows by `order` over all of a round's votes of a file
+    * (one row per file and previous round, tagged with the round), ties by page id: the same
+    * rule whatever "selected by at least" is (docs/history/2026-11-01-binary-aggregate-votes.md,
+    * issue 2); a file ranks by its best row (triage R196-1). `votes` keeps the rows with an
+    * approval ("selected by at least" set) and those with fewer rejections in their round than
+    * "exclude files rejected by at least N" (or, `Only`, those with N or more). Each row's rating
+    * has its approvals as its rate, so "selected by at least" compares them.
     */
   private def binaryPage(prevIds: Seq[Long], votes: PrevVotes, order: BinaryOrder, pageSize: Int,
       offset: Int)(implicit session: DBSession): Seq[(Long, Image => ImageWithRating)] = {
@@ -977,18 +1002,20 @@ object DistributionSource {
       })
     val having = if (conditions.isEmpty) sqls"" else sqls"HAVING ${sqls.joinWithAnd(conditions: _*)}"
     val orderBy = SQLSyntax.createUnsafely(
-      (order.columns :+ ("s.page_id" -> 1)).map { case (column, dir) => column + (if (dir < 0) " DESC" else " ASC") }
+      (order.columns ++ Seq("s.page_id" -> 1, "s.round_id" -> 1))
+        .map { case (column, dir) => column + (if (dir < 0) " DESC" else " ASC") }
         .mkString(", "))
-    sql"""SELECT s.page_id, SUM(${VoteSql.positive()}) approvals, SUM(${VoteSql.rejected()}) rejections, COUNT(*) cnt
+    sql"""SELECT s.page_id, s.round_id, SUM(${VoteSql.positive()}) approvals, SUM(${VoteSql.rejected()}) rejections,
+            COUNT(*) cnt
           FROM vote s
           WHERE s.round_id IN ($prevIds)
-          GROUP BY s.page_id $having
+          GROUP BY s.page_id, s.round_id $having
           ORDER BY $orderBy
           LIMIT $pageSize OFFSET $offset"""
       .map { rs =>
-        val (pageId, approvals, rejections, count) = (rs.long(1), rs.int(2), rs.int(3), rs.int(4))
+        val (pageId, round, approvals, rejections, count) = (rs.long(1), rs.long(2), rs.int(3), rs.int(4), rs.int(5))
         pageId -> ((img: Image) =>
-          ImageWithRating(img, Seq(Vote(pageId, juryId = 0, roundId = 0, rate = approvals)), count,
+          ImageWithRating(img, Seq(Vote(pageId, juryId = 0, roundId = round, rate = approvals)), count,
             approvalsFromDb = Some(approvals), rejectionsFromDb = Some(rejections)))
       }
       .list()
