@@ -72,8 +72,8 @@ Changes made available before version 26.11, by who notices them.
 ### For jurors
 
 - **Rating from a rated round's gallery and list, and voting from the keyboard.** In a rated
-  round, each file in the gallery and in your list by rate has stars: click one to rate it. In
-  the list, the number beside them shows your rate. In a yes/no round's gallery, the thumb of
+  round, each file in the gallery now has stars, and the stars in your list by rate, shown
+  before, can now be clicked: click one to rate the file. In a yes/no round's gallery, the thumb of
   your vote now stays pressed, and the thumbs work from the keyboard too (Enter or Space). A
   star vote shows at once; if it fails, the stars go back to your earlier rate. A thumb vote
   shows when it is stored. In both cases a message says why a vote failed, and further clicks on

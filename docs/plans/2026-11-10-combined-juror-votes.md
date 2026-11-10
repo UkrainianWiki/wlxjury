@@ -100,14 +100,14 @@ per-round choice keeps contests that don't want it as they are; and per-juror vo
 | # | Decision | Options | Recommendation |
 |---|---|---|---|
 | D1 | Who may see combined votes | A, B, C, D, or both C and D, E above | C and D together |
-| D2 | When | any time / only after the round is stopped | only after it is stopped, and not while a successor round of the same jurors is active (§10) |
+| D2 | When | any time / only after the round is stopped | only after it is stopped, and not while a round built from it (directly or through others) is open with the juror in it (§4, §10) |
 | D3 | What is combined | aggregate (score, rank, counts) / plus each juror's vote | aggregate only |
 | D4 | Does a stopped round stay visible to its jurors (read-only) when the setting is on | yes / no, show the results elsewhere | yes: a read-only gallery and large view of that round, no voting |
 | D5 | The setting's place and who sets it | round form, admins only (like the score rule) | round form, admins only, off by default |
 | D6 | `juryOrgView` | leave / give it a form field / retire it | leave as it is; say in the docs that it is not set from the UI; decide retirement later |
 | D7 | Also for yes/no rounds (approvals, rejections) | yes / rated rounds only | yes; both use the same aggregate queries |
 | D8 | Show the juror's own vote beside the aggregate | yes / no | yes, only with D9's minimum |
-| D9 | The minimum number of jurors for the aggregate | none / a round minimum / a round minimum plus a per-file minimum of votes | the round needs at least 5 jurors for the option (the form refuses it, the view answers 403 below that), and a file's score and counts show only when at least 5 jurors voted on it ("too few votes to show" otherwise). *Why 5:* with two or three, the aggregate minus one's own vote names the others' votes; with five, the other four stay a mix unless they agree, and 5 is the usual small-cell threshold for published counts. A distribution that gives each file to fewer jurors (say 2 of 10) needs the per-file rule, not only the round's |
+| D9 | The minimum number of jurors for the aggregate | none / a round minimum / a round minimum plus a per-file minimum of votes | the round needs at least 5 jurors for the option (the form refuses it, the view answers 403 below that), and a file's score, rank and counts show only when at least 5 jurors voted on it (a vote as defined in §4; such a file is left out of the ranked list, §4). *Why 5:* with two or three, the aggregate minus one's own vote names the others' votes; with five, the other four stay a mix unless they agree, and 5 is the usual small-cell threshold for published counts. A distribution that gives each file to fewer jurors (say 2 of 10) needs the per-file rule, not only the round's |
 
 ## 4. Authorization rules the change must keep
 
@@ -122,11 +122,30 @@ From CLAUDE.md "Own votes" and secure coding §"juror confidentiality":
   the file list, the CSV and the conflicts page stay `canViewOrgInfo` / organizers only. The
   new permission is a separate function, `User.canViewRoundResults(round)` (root, organizer and
   admin as now; a juror of the round when the setting is on, the round is stopped, it has at least
-  D9's minimum of jurors, **and** the juror is not a juror of an active round built from it, §10),
-  used only for the combined view, so `canViewOrgInfo` does not widen.
-- Below D9's per-file minimum a file's score, rank and counts are not rendered for a juror (not
-  hidden by CSS: absent from the HTML); a unanimous file above it still shows that all agreed,
-  which no threshold avoids and the help text says.
+  D9's minimum of jurors, **and** the juror is not a juror of an open round built from it,
+  directly or through other rounds, §10), used only for the combined view, so `canViewOrgInfo`
+  does not widen.
+- **Stopped and open.** *Open* is `Round.openCond`: `active`, or `distributing` (being created),
+  or frozen while active (`freeze_count > 0 AND active_before_freeze`, a previous round of a
+  running distribution). *Stopped* is not open. So a round only frozen by a distribution is not
+  stopped, and a successor still being distributed already counts as open.
+- **What counts as a vote** for D9's per-file minimum: a `vote` row with `rate <> 0`
+  (`VoteSql.voted`), never a row's existence. Distribution creates a rate-0 row for every
+  assigned file, and clearing a vote sets it back to 0 (`VoteSql.unrated`: "Not rated yet, or
+  cleared"). Per kind of round: a yes/no round's yes is 1 and its no is -1; a rated round's
+  stars are 1 and up (in half-star units where allowed) and the worst mark is -1 (V92); a
+  criteria round's `vote.rate` is the sum of its criteria's rates only once every criterion is
+  rated, and 0 before (`CriteriaRate`, U5), so a partly rated file is not a vote. The count is of
+  distinct jurors with such a row on the file in the round.
+- **Below D9's per-file minimum a file is left out of the juror's ranked list** (the by-rate
+  page and its pages), not just shown without its score: its place in a list ordered by score
+  would give the score away. The page says how many files were left out ("N files have too few
+  votes to show"), a number that depends only on the vote counts. The ranks shown are counted
+  among the shown files only (ties as now), so no gap marks where a left-out file stood; the
+  large view's box shows "too few votes" for such a file. *Rejected alternative:* grouping those
+  files after the rest in page-id order also hides the score, but gives them a place in a list a
+  juror reads as ranked, for no benefit. A unanimous file above the minimum still shows that all
+  agreed, which no threshold avoids and the help text says.
 - A vote still needs the round open to its jurors and the juror not stopped on it: the read-only
   view of a stopped round binds no vote controls and `selectWS` refuses as today.
 - Denials go through `onUnAuthorized` with a `Secured.Denial` and are logged on `security.authz`.
@@ -144,7 +163,9 @@ From CLAUDE.md "Own votes" and secure coding §"juror confidentiality":
 
 - One new column, `round.jurors_see_results BOOLEAN NOT NULL DEFAULT 0` (V95; `INSTANT`, a
   metadata-only change, like V92). `Round` reads and writes it; `EditRound` and the form get it.
-- **No new queries or tables.** The combined view already runs for organizers on the same data:
+- **No new tables, and the same aggregate queries.** The juror variant adds a per-file count of
+  distinct jurors with `rate <> 0` (§4) as a filter in its query, and counts ranks after that
+  filter. The combined view already runs for organizers on the same data:
   `vote` aggregates (V72–V74), the round's score rule (V90) and, once `roundImage.read` is on
   (off in 26.11), `round_image` counts. A juror's request costs what an organizer's does; the
   per-juror columns are simply not selected for a juror, so the view needs a juror variant of the
@@ -162,8 +183,15 @@ the forbidden content):**
 - setting on, stopped, a round with fewer than D9's minimum of jurors: 403, and the round form
   refuses to turn the option on there; in a round above it, a file with fewer votes than the
   minimum has no score, rank or counts in the HTML;
-- setting on, stopped, the juror is also a juror of an active round whose previous rounds
-  (`Round.previousIds`) include this one: 403 (§10);
+- a file assigned to 5 jurors with only 2 real votes (the other 3 rows rate 0) stays left out,
+  as does a criteria-round file with 5 votes of which 3 are partly rated (rate 0);
+- left-out files reveal nothing by their place: two rounds that differ only in the scores of
+  their below-minimum files give the same page (the same shown files, order, ranks and "N
+  files" line), and the shown ranks have no gaps;
+- setting on, stopped, the juror is a juror of an open round built from this one directly
+  (round 2 from round 1) or through another (round 3 from round 2 from round 1, round 2
+  stopped): 403 for round 1 in both cases, also while that round is still distributing (§10);
+- setting on, a round only frozen by a running distribution (not stopped): 403;
 - setting on, stopped, `asUserId = another juror`: 403;
 - setting on, stopped, the page's HTML has no author names, no juror names or emails, no
   per-juror rates, and the file list and CSV answer 403;
@@ -204,9 +232,20 @@ choose the winners); small rounds, where the aggregate gives away the others' vo
 itself. A next round takes its files from previous rounds (`Round.previousIds`), often with the
 same jurors, who would then vote there having seen how the others rated the same files: the
 herding D2 was meant to prevent. Options: (a) a warning on the round form when the option is
-set; (b) the results hidden from a juror while that juror is a juror of an active round whose
-previous rounds include this one, shown again once that round stops; (c) the option refused on
-a round that already has a successor. **Recommended: (b),** checked in `canViewRoundResults` at
-read time, so it holds whichever round is created first and needs no admin to remember it,
-plus (a)'s warning so admins know why results may not show yet. (c) alone misses a successor
-created after the option is set.
+set; (b) the results hidden from a juror while that juror is a juror of an open round (§4) built
+from this one, shown again once no such round is open; (c) the option refused on a round that
+already has a successor. **Recommended: (b),** checked in `canViewRoundResults` at read time, so
+it holds whichever round is created first and needs no admin to remember it, plus (a)'s warning
+so admins know why results may not show yet. (c) alone misses a successor created after the
+option is set.
+
+*Transitively, not only direct successors.* `Round.previousIds` holds only a round's direct
+previous rounds, so round 3 built from round 2, built from round 1, would not count for round 1
+if only those were read, yet round 3's files and jurors can be round 1's. **Recommended:** follow
+the chain. Load the contest's rounds once (`Round.findByContest`, tens of rows), build the
+previous-to-next links from each round's `previousIds` in memory, collect every round reachable
+from this one, and check whether any is open with the juror in its `round_user` rows (active or
+not: the stricter reading). Cost: one small query per results request plus the juror check,
+negligible next to the by-rate page itself; a cycle can't loop (a visited set). The alternative,
+direct successors only as a named limit, saves a few lines and leaves the common three-round
+contest uncovered.
