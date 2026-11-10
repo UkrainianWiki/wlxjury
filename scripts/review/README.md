@@ -16,7 +16,7 @@ its matching on sample data without GitHub.
 
 | Tool | Writes to GitHub | What it does |
 |---|---|---|
-| `coderabbit_loop.py` | comments `@coderabbitai review` | requests reviews in PR order, one at a time, waiting out the limits; stops after `--batch` reviews for triage |
+| `coderabbit_loop.py` | comments `@coderabbitai review` (`full review` when that finished without a review) | requests reviews in PR order, one at a time, waiting out the limits; stops after `--batch` reviews for triage |
 | `threads.py` | no | lists a PR's CodeRabbit threads, answered or open; `--save` keeps the raw JSON for triage |
 | `first_fix.py` | no | walks the stack's tips and prints where a problem's regex stops matching: the PR a class 1 reply cites |
 | `reply_bodies.py` | no | writes reply bodies from a JSON list (`pr`, `id`, `class`, `label`, `text`) and prints the record rows |
@@ -30,7 +30,10 @@ replies) are not committed. Deleting them loses nothing:
 
 - the loop skips every PR that has a CodeRabbit review, and treats a PR whose latest
   `@coderabbitai` comment by `ukwikidev` has no answer yet (see below) as already requested: it
-  waits instead of posting again. After a limit reply it waits out the spacing from that reply;
+  waits instead of posting again. After a limit reply it waits out the spacing from that reply
+  and posts the same command again. A latest `@coderabbitai review` that finished without a
+  review gets `@coderabbitai full review`; a latest `@coderabbitai full review` that finished
+  without one is "no review available" (see below);
 - `post_replies.py` skips a thread that `ukwikidev` already answered (a reply whose
   `in_reply_to_id` is the thread's comment), and an issue comment that `ukwikidev` already posted:
   one carrying its `<!-- wlxjury-review:<pr>:<name> -->` marker (added on posting), or, among our
@@ -60,6 +63,24 @@ answers: its "Currently processing" edit means a review is running, and its text
 The wait for one request ends 3 hours after it was posted at the latest; with no reply to the
 command at all after 30 minutes, the loop stops (exit 2).
 
+### "Review finished" with no review: a full review
+
+CodeRabbit's reviews are incremental: on commits it has reviewed before, `@coderabbitai review`
+gets "Action performed — Review finished." (with the usual note) and **no review** is submitted
+(#215 and #217, 2026-11-10: 0 reviews on the PR, only the old summary comment). When the reply
+says "Review finished" and no review was submitted after the request 5 minutes after that edit,
+the loop posts `@coderabbitai full review` once for the PR and waits for it as for any request:
+the same reply matching, limits, retries (counted again from 0) and timeouts. A reply saying
+"already reviewed" or "no new commits" (beyond the standard note) is handled the same way.
+
+- A completed full review counts toward `--batch` like any review.
+- If the full review also ends without a review, the PR is recorded as `no review available`
+  (`outcome` in `requests.json`, and in the log) and the loop goes on with the next PR; it does
+  not count toward `--batch`.
+
+Without `--post` the loop prints `would post @coderabbitai full review` for such a PR, and goes
+past a PR with no review available to the next one.
+
 ## CodeRabbit's limits
 
 - **Reviews:** about one per 45–50 minutes on this plan (measured 2026-11-03 on #185–#194: a
@@ -82,8 +103,6 @@ command at all after 30 minutes, the loop stops (exit 2).
   answers count against an hourly limit; CodeRabbit then answers a command with "Rate Limit
   Exceeded … Please wait **7 minutes and 9 seconds**", handled as above. Post replies 5 s apart
   (`post_replies.py` does) and don't post a large triage while a review is being requested.
-- A command reply that says "already reviewed" or "no new commits" (beyond the standard note) is
-  asked again once as `@coderabbitai full review`.
 
 ## Running the loop
 
@@ -101,6 +120,7 @@ python -I scripts/review/coderabbit_loop.py --first 194 --last 249 --batch 1 --p
 Exit codes: 0 batch done (or all PRs done), 2 no reply to the command in 30 minutes or no review
 3 hours after the request, 3 still limited after the retries or a stated wait over 3 hours,
 4 an unexpected answer or a quota message (read the message in `requests.json` and the PR).
+"Review finished" without a review no longer stops it (see above).
 
 ## Triage after a review
 
