@@ -723,20 +723,54 @@ class LargeImageSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
-    "show a juror of a round open to its jurors (juryOrgView) the files' authors as JSON, as the page does" in {
+    "not show a juror of a round with the legacy juryOrgView flag set the authors or others' votes, as JSON or as the page" in {
       testDbApp { app =>
-        val (roundA, _, juror1, _, _, _, _, _, _, images) = setUpContests()
+        val (roundA, _, juror1, juror2, _, _, _, _, _, images) = setUpContests()
         withAuthors()
-        val open = roundDao.create(Round(None, 2, Some("Open round"), contestId = roundA.contestId,
-          rates = Round.ratesById(5), active = true, juryOrgView = true))
-        open.addUsers(Seq(RoundUser(open.getId, juror1.getId, "jury", active = true)))
-        createSelection(images, rate = 3, user = juror1, round = open)
+        LegacyJuryOrgView.set(roundA.getId)
 
-        val json = large(app, juror1.email, open.getId, juror1.getId, images.head.pageId, json = true)
+        val json = large(app, juror1.email, roundA.getId, juror1.getId, images.head.pageId, json = true)
         status(json) === OK
-        jsonImages(json).map(f => (f \ "author").asOpt[String]) === images.map(_ => Some("Photographer Name"))
-        contentAsString(large(app, juror1.email, open.getId, juror1.getId, images.head.pageId)) must
-          contain("Photographer Name")
+        val files = jsonImages(json)
+        files.flatMap(_.keys).toSet must not(contain("author"))
+        files.flatMap(_.keys).toSet must not(contain("description"))
+        contentAsString(json) must not(contain("Photographer"))
+        contentAsJson(json).as[Seq[play.api.libs.json.JsValue]]
+          .flatMap(f => (f \ "selection").as[Seq[play.api.libs.json.JsValue]].map(v => (v \ "juryId").as[Long]))
+          .toSet === Set(juror1.getId)
+
+        val page = large(app, juror1.email, roundA.getId, juror1.getId, images.head.pageId)
+        status(page) === OK
+        contentAsString(page) must not(contain("Photographer"))
+        contentAsString(page) must not(contain(juror2.fullname))
+
+        Seq(juror2.getId, 0L).foreach { asUserId =>
+          status(large(app, juror1.email, roundA.getId, asUserId, images.head.pageId)) === FORBIDDEN
+          status(large(app, juror1.email, roundA.getId, asUserId, images.head.pageId, json = true)) === FORBIDDEN
+        }
+        ok
+      }
+    }
+
+    "not show an organizer of one contest, a juror of another, the authors in the other's round, as JSON or as the page" in {
+      testDbApp { app =>
+        val (_, roundB, _, _, _, _, organizer, _, _, images) = setUpContests()
+        withAuthors()
+        UserContestJdbc.createMembership(organizer.getId, roundB.contestId, "jury")
+        roundB.addUsers(Seq(RoundUser(roundB.getId, organizer.getId, "jury", active = true)))
+        createSelection(images, rate = 4, user = organizer, round = roundB)
+
+        val json = large(app, organizer.email, roundB.getId, organizer.getId, images.head.pageId, json = true)
+        status(json) === OK
+        val files = jsonImages(json)
+        files.map(f => (f \ "pageId").as[Long]) === images.map(_.pageId)
+        files.flatMap(_.keys).toSet must not(contain("author"))
+        files.flatMap(_.keys).toSet must not(contain("description"))
+        contentAsString(json) must not(contain("Photographer"))
+
+        val page = large(app, organizer.email, roundB.getId, organizer.getId, images.head.pageId)
+        status(page) === OK
+        contentAsString(page) must not(contain("Photographer"))
       }
     }
 

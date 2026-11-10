@@ -590,7 +590,7 @@ deploy (register). `useSSL=false` for a local DB (S8).
 | G13 §12 no exception text in responses or user-visible persisted fields | `security.ErrorTextSpec` | built (S5) |
 | G14 §20 B5's keys in the deployed config template | `deployment.ProductionConfigParitySpec` | planned (S8, infra plan) |
 | §7.2 of db practices: raw structural writes listed with their lock | `security.StructuralWritesSpec` | built |
-| §22 juror confidentiality, conflicts of interest | `OwnVotesSpec`, `CoiAuthorizationSpec` | built |
+| §22 juror confidentiality, file authors, conflicts of interest | `OwnVotesSpec`, `LargeImageSpec`, `CoiAuthorizationSpec` | built |
 | §22 dumps anonymised, never committed | review | planned: none (a scan for dump-shaped files in tracked paths is possible) |
 
 Each planned guard lands with the batch named; until then the checklist line is the check.
@@ -606,17 +606,18 @@ needs; never put personal data in a log line (§13), a URL, a shared cache or a 
 from production. **Emails** are shown to the account itself and on the contest's users page,
 which is for admins and root only (`UserController.users`, `User.ADMIN_ROLES`). **Names** of a
 round's jurors (the galleries' juror menu, `User.findRoundJurorsToView` in `navbar.scala.html`;
-exports, §16) go to those who may see the round's organizer views, `User.canViewOrgInfo`: root,
-the contest's admins and organizers, and the round's jurors when the round has `juryOrgView` on.
+exports, §16) go to those who may see the round's organizer views, `User.canViewOrgInfo`: root
+and the contest's admins and organizers, never a juror.
 
-**Rule: juror confidentiality.** Unless the round shares its organizer views with its jurors
-(`juryOrgView`), a juror sees only their own votes. Other jurors' votes, the all-jurors views
-and the juror list are for `canViewOrgInfo`, and only of jurors of that round
+**Rule: juror confidentiality.** A juror sees only their own votes. Other jurors' votes, the
+all-jurors views and the juror list are for `canViewOrgInfo`, and only of jurors of that round
 (`GalleryService.viewerRounds` / `mayViewRound` / `viewAs`, otherwise 404; CLAUDE.md "Own
 votes"). File authors are shown under the same condition (`GalleryController`'s `showAuthor`,
 `large.scala.html`; the large view's JSON leaves out the author and the description, which may
-name them, `LargeViewController.showFile`). *Why:* votes and authors are the organizers' information; a round shares
-them with its jurors only when its organizers choose to (`juryOrgView`).
+name them, `LargeViewController.showFile`). The legacy `jury_org_view` column, which once let a
+round's jurors see these, is ignored (no form ever set it; dropped by the multi-role contract
+migration). Judging is still not anonymous: a file's Commons page, which the large view links
+to, names its author. *Why:* votes and authors are the organizers' information.
 
 **Rule: conflicts of interest and lobbying.** The tool shows a round's jurors and votes only
 under the rules above, never to a participant without a role in the contest, so an author can't

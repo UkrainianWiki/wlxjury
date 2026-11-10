@@ -198,8 +198,10 @@ class LargeViewController @Inject() (
           )
         )
       case Accepts.Json() =>
-        // authors (and the descriptions, which may name them) only to those the page shows
-        // authors to (large.scala.html's authorInfo, secure-coding.md §22): absent otherwise
+        // nothing in the app reads this JSON (no page script requests it); it follows the
+        // page's rules: the votes as viewAs allows, authors (and the descriptions, which may
+        // name them) only to those the page shows authors to (large.scala.html's authorInfo,
+        // secure-coding.md §22), absent otherwise
         val showAuthor = user.canViewOrgInfo(round)
         Ok(
           Json.toJson(
