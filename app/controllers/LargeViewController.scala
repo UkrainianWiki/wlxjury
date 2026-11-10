@@ -198,9 +198,17 @@ class LargeViewController @Inject() (
           )
         )
       case Accepts.Json() =>
+        // nothing in the app reads this JSON (no page script requests it); it follows the
+        // page's rules: the votes as viewAs allows, authors (and the descriptions, which may
+        // name them) only to those the page shows authors to (large.scala.html's authorInfo,
+        // secure-coding.md §22), absent otherwise
+        val showAuthor = user.canViewOrgInfo(round)
         Ok(
           Json.toJson(
-            hood.files.map(file => file.copy(votes = file.votes.map(_.copy(createdAt = None))))
+            hood.files.map { file =>
+              val image = if (showAuthor) file.image else file.image.copy(author = None, description = None)
+              file.copy(image = image, votes = file.votes.map(_.copy(createdAt = None)))
+            }
           )
         )
     }

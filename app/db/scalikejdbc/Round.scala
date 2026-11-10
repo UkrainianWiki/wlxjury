@@ -32,7 +32,9 @@ case class Round(
     createdAt: ZonedDateTime = ZonedDateTime.now,
     deletedAt: Option[ZonedDateTime] = None,
     active: Boolean = false,
-    juryOrgView: Boolean = false,
+    // no juryOrgView: the legacy `jury_org_view` column (jurors seeing the organizer views, set
+    // only by hand in SQL, never by a form) is neither read nor written; jurors always get the
+    // juror view. The column stays (nullable, DEFAULT NULL) until the multi-role contract migration
     minMpx: Option[Int] = None,
     previous: Option[String] = None,
     prevSelectedBy: Option[Int] = None,
@@ -279,7 +281,8 @@ object Round extends RoundRepo with CRUDMapper[Round] {
 
   val commentsOnlyRound = new Rates(0, "Comments only", 0, 0)
 
-  val binaryRound = new Rates(1, "+/-", -1, 1)
+  /** A yes/no round. Pages show its rating type from messages (`views.RatingType`), not this name. */
+  val binaryRound = new Rates(1, "Yes/No", -1, 1)
 
   val rateRounds: Seq[Rates] =
     (3 to 20).map(i => new Rates(i, s"1-$i rating", 1, i))
@@ -312,7 +315,6 @@ object Round extends RoundRepo with CRUDMapper[Round] {
       createdAt = rs.timestamp(c.createdAt).toZonedDateTime,
       deletedAt = rs.timestampOpt(c.deletedAt).map(_.toZonedDateTime),
       active = rs.booleanOpt(c.active).getOrElse(false),
-      juryOrgView = rs.booleanOpt(c.juryOrgView).getOrElse(false),
       minMpx = rs.intOpt(c.minMpx),
       previous = rs.stringOpt(c.previous),
       prevSelectedBy = rs.intOpt(c.prevSelectedBy),
@@ -355,7 +357,6 @@ object Round extends RoundRepo with CRUDMapper[Round] {
 //          column.recommended -> round.limits.recommended,
           column.createdAt -> round.createdAt,
           column.active -> round.active,
-          column.juryOrgView -> round.juryOrgView,
           column.minMpx -> round.minMpx,
           column.previous -> round.previous,
           column.prevSelectedBy -> round.prevSelectedBy,
