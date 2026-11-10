@@ -185,10 +185,24 @@ test.describe('the guides\' screenshots', () => {
   });
 
   test('organizer pages', async ({ contextAs, fixture }) => {
-    await shot(contextAs, 'organizer', `/roundstat/${fixture.roundBinaryId}`, 'organizer-round-statistics', { tableRows: 12 });
+    // an organizer sees each juror's voting as text (Active or Paused), not the admins' pause buttons
+    await shot(contextAs, 'organizer', `/roundstat/${fixture.roundBinaryId}`, 'organizer-round-statistics', {
+      tableRows: 12,
+      prepare: async (page) => {
+        await expect(page.getByRole('columnheader', { name: 'Voting', exact: true })).toBeVisible();
+        await expect(page.locator('td.juror-voting').first()).toBeVisible();
+      },
+    });
     await shot(contextAs, 'organizer', `/byrate/round/${fixture.roundRatingId}/user/0/page/1`, 'organizer-results-by-rate', { rows: 1 });
     await shot(contextAs, 'organizer', `/filelist/round/${fixture.roundRatingId}/user/0/page/1`, 'organizer-results-file-list', { tableRows: 6 });
     await shot(contextAs, 'organizer', `/admin/rounds/${fixture.roundBinaryId}/conflicts`, 'organizer-conflicts', { height: 680 });
+    // the contest's files as an organizer sees them: no Import and cache button (admins only)
+    await shot(contextAs, 'organizer', `/contest/${fixture.contestId}/files`, 'organizer-contest-files', {
+      rows: 1,
+      prepare: async (page) => {
+        await expect(page.locator('#import-files'), 'an organizer has no import button').toHaveCount(0);
+      },
+    });
     // the organizer's way to that page: the link under the statistics table (the last rows and it)
     const context = await contextAs('organizer');
     await context.addCookies([{ name: 'theme', value: 'dark', url: baseUrl }]);
@@ -206,8 +220,8 @@ test.describe('the guides\' screenshots', () => {
 
   test('admin pages', async ({ contextAs, fixture }) => {
     const contest = fixture.contestId;
-    await shot(contextAs, 'admin', `/admin/rounds?contestId=${contest}`, 'organizer-rounds-list', { height: 460 });
-    await shot(contextAs, 'admin', `/admin/rounds/edit?contestId=${contest}`, 'organizer-new-round-form', {
+    await shot(contextAs, 'admin', `/admin/rounds?contestId=${contest}`, 'admin-rounds-list', { height: 460 });
+    await shot(contextAs, 'admin', `/admin/rounds/edit?contestId=${contest}`, 'admin-new-round-form', {
       // the form only (about 800 CSS pixels wide), down to the end of its Save and Cancel buttons
       crop: ['#round-form', '#round-form .form-actions'],
       // the form's collapsed sections, opened, and their opening animation done before the form
@@ -223,7 +237,7 @@ test.describe('the guides\' screenshots', () => {
         await page.addStyleTag({ content: 'body { padding-bottom: 48px; }' });
       },
     });
-    await shot(contextAs, 'admin', `/contest/${contest}/images`, 'organizer-contest-images', { full: true });
+    await shot(contextAs, 'admin', `/contest/${contest}/images`, 'admin-contest-images', { full: true });
     await shot(contextAs, 'admin', `/users/edit/${fixture.accounts.juror.id}?contestId=${contest}`, 'admin-user-edit', { crop: '#edit-user' });
 
     // a pending invitation: invite one address (once; a second run finds it)
@@ -314,7 +328,7 @@ test.describe('the guides\' screenshots', () => {
     // the boxes are in the viewport, the full-page clip in the page: selecting scrolled to the select
     const scrollY = await page.evaluate(() => window.scrollY);
     const y = Math.max(0, from.y + scrollY - 12);
-    await page.screenshot({ path: path.join(OUT_DIR, 'organizer-score-rule-warning.png'), fullPage: true,
+    await page.screenshot({ path: path.join(OUT_DIR, 'admin-score-rule-warning.png'), fullPage: true,
       // the centred form's width (the rows span it), with a margin
       clip: { x: Math.max(0, from.x - 12), y, width: Math.min(VIEWPORT.width - Math.max(0, from.x - 12), from.width + 24),
         height: to.y + scrollY + to.height + 12 - y } });

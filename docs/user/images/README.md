@@ -13,8 +13,8 @@ numbered examples before each shot, and the link to share shows a neutral host.
 Chromium (156), the app's own font stack, 2026-11-10. Text rendering depends on the operating
 system, so regenerate all the images together on one platform and update this line.
 
-**Size:** 25 images, about 3.7 MB in all. The largest are the two galleries (about 680 and 770
-KB) and the by-rate results (about 560 KB); the three large views are cropped to the controls
+**Size:** 26 images, about 4.2 MB in all. The largest are the two galleries (about 680 and 770
+KB), the contest's files (about 650 KB) and the by-rate results (about 560 KB); the three large views are cropped to the controls
 column and the top of the photo (about 310 KB each), with the comment box in its own small shot;
 the others stay small. The profile, user-edit, share-link and score-rule shots are cropped to
 their forms, below the navbar. Photos make 2x PNGs large, so

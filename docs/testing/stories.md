@@ -19,9 +19,10 @@ a test shows the whole story, and makes the story "partly covered" in the matrix
 an example's or a block's name (`"a juror's own votes [J-27]" should`); see testing §9.4.
 
 **Guides:** the organizer and admin stories above (O-*, A-*, R-*) still show "–" as their guide
-section; their guides are now [organizer](../user/organizer-guide.md) and
-[admin](../user/admin-guide.md), to be linked by anchor (`#o-…`, `#a-…`) when the catalogue is
-next updated. The screenshot spec (`docs-screenshots.spec.js`) opens pages for images and tests
+section; their guides are now [organizer](../user/organizer-guide.md) (following the voting and
+the results) and [admin](../user/admin-guide.md) (people, the contest and running the judging:
+rounds, files, conflicts of interest), to be linked by anchor (`#o-…`, `#a-…`) when the catalogue
+is next updated. The screenshot spec (`docs-screenshots.spec.js`) opens pages for images and tests
 no story, so it carries no story tag.
 
 **Not in this list yet:** the API tokens pages, readiness, the monuments pages. They are added when
