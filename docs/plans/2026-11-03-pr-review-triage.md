@@ -24,7 +24,8 @@ where it moved. Entries from CodeRabbit's reviews (R185-1 onwards) give the newe
 `stack/62-docs-phase`; from R191-1 on, `stack/68-juror-guide` (`06103e89`, the followups
 mirror `63c80ff7` has the same tree); from R196-1 on, the followups tip `34788a54` (the mirror
 of `stack/71-investigations`, `6c00ed6e`); from R202-1 on, the followups tip `b85b0b60` (the
-mirror of `stack/77-dependency-updates`, `17e145b3`). R193-4 is the first Medium.
+mirror of `stack/77-dependency-updates`, `17e145b3`); from R207-1 on, the top of the stack,
+`stack/90-triage-fixes` (`f339aa13`, #273). R193-4 is the first Medium.
 
 ### R198-1: A job that crashes the JVM is retried forever
 
@@ -845,6 +846,14 @@ whether the cache's counts and registry tell the truth. File:line at the newest 
      until an import of that file runs again. Fix: after the mark commits, ask Commons once more
      for the deleted files and restore those present, as `settle` runs after it; a failed request
      leaves the marks.
+  4. **An import writes a textless file's monument id and description from an unlocked read**
+     (#208, `ImageImportHandler.scala:302`; at `f339aa13` `:304-309` and `:333`): for a file
+     fetched without its text, `writeImages` copies the stored monument id and description from
+     `findWithCategoryLink` (no `FOR UPDATE`) and `updateIn` writes them back with the changed
+     file fields. Two app instances importing the same file at once (each scheduler allows one
+     import job, so only blue and green together) can overwrite a monument id the other just set.
+     Fix: on that path update only the file-information columns, or re-read the two columns under
+     the row lock `RoundWrites.lockFiles` already takes.
 - **Placement:** append after open-followups "Still open"; take with the write-path plan's split
   of `CommonsFileCheck.write` into W12 and W13 (`2026-11-03-write-path-simplification.md`), which
   changes the same transaction.
@@ -865,7 +874,10 @@ whether the cache's counts and registry tell the truth. File:line at the newest 
      (up to 5 minutes each). "Add files" to a round with a category filter waits for those
      lookups, and fails when Commons does, though the list step uses only the round, its jurors
      and its conflicts of interest. Fix: a list-only context without the category ids (and
-     without the previous rounds' votes).
+     without the previous rounds' votes). #210 adds `categoryRule.requireValid()` to the same
+     context (`RoundDistributionHandler.scala:187-188` at `f339aa13`): a round whose stored
+     category settings are invalid fails before its list is added; the list-only context skips
+     the check too.
   2. **A list step isn't bounded by `chunkRows`:** it takes `commons.maxIdsPerRequest` titles
      (up to 500) and inserts one row per juror and file in one transaction, while the
      distribution path sizes its window by `chunkRows / perImage`. Fix: take
@@ -887,6 +899,26 @@ whether the cache's counts and registry tell the truth. File:line at the newest 
      Submit) finds the round and returns before reading `titles`; the flash says only that the
      round was already created. Fix: when the resubmit carries a list, say some listed files may
      not have been added and point to "Add files".
+
+  Items 7-9 are from #209 (26, tip `cb5f4a33`; `RoundDistributionHandler.scala:203`, `:210` and
+  `:215-218`, a review remark), all still at `f339aa13` (`RoundDistributionHandler.scala:244-266`
+  `listChunk`):
+
+  7. **An all-stored list fails while Commons is down:** `listChunk` asks Commons for every title
+     (`filesByTitles`, `:250`) before it reads the stored files; #203 skipped Commons when every
+     title was stored. During an outage "Add files" with stored files only fails in `prepare`.
+     Fix: on a failed lookup where every title is stored and the round doesn't leave out
+     conflicts of interest, use the stored rows; rethrow otherwise (a successful lookup still
+     refreshes them, which the conflict check reads).
+  8. **A file renamed twice is not found as stored:** stored files are looked up by the listed
+     and the fetched titles only (`:253`); a file stored under a third title is missed, so
+     `insertIgnore` keeps its stale row and the conflict check reads its old author. Fix: look up
+     the fetched page ids too.
+  9. **A listed title Commons now has as another file keeps the stored one:** `fresh` drops a
+     fetched file whose title is stored under another page id (`:262-264`, as the comment says),
+     so the round gets the stored file (deleted on Commons) and the new file never enters it.
+     Fix: when Commons answers the title with another page id, take Commons' file and leave the
+     stored one to the deleted-file check.
 - **Placement:** with [R203-1](#r203-1-a-pasted-file-list-over-100-kb-is-refused), in the
   Montage parity plan's import batch (gap row 24, order item 9); items 4-6 are small and can go
   with the next round form change.
@@ -918,6 +950,28 @@ whether the cache's counts and registry tell the truth. File:line at the newest 
      checks statuses only, and both jurors have the same ratings, so a view of the wrong juror's
      votes passes. Give the jurors distinct ratings and assert one only the requested juror has
      (gallery, by rate, file list, CSV), and that the all-jurors view differs.
+
+  Items 7-11 are from #208 (25, `6a3dbef2`) and #210 (27, `25e7df01`) review remarks, all still at
+  `f339aa13`:
+
+  7. The no-text reimport example (`test/services/imports/PageImportSpec.scala:122-133`) asserts
+     only the kept monument id and description; a no-text branch that kept the whole stored row
+     would pass. Give the second fetch another `width` (a `changedImages` field; `pageUrl` isn't
+     one) and assert it is written.
+  8. The Armenia country filter (`test/db/scalikejdbc/ContestFilesDbSpec.scala:112`) lists only
+     the category's files 1-4; file 13, linked to Armenia but not in the category, is left out of
+     the filter's ids, so losing the category restriction passes. Add `13L` to the filter.
+  9. `test/controllers/AssetDigestSpec.scala` writes its own `.md5` and nothing checks the
+     packaged output: removing `pipelineStages := Seq(digest)` passes every test (CI's
+     `deployment.yml` runs `sbt dist` but asserts nothing on assets). Assert one asset's
+     `<name>.md5` and `<md5>-<name>` in the staged output.
+  10. "not stored again" (`test/services/distribution/RoundFileListSpec.scala:120`) checks the
+      page id and title only, with Commons' copy equal to the stored row; an overwrite passes.
+      Give Commons' copy another `url` and assert the stored row keeps its own.
+  11. The locked category operation of an existing round is tested only in Jest on hand-written
+      markup (`javascript-test/category-filter.test.js:44-48`). Add a `RoundEditPageSpec` example
+      that renders the edit page and asserts, on the rendered HTML, that the operation can't be
+      changed and that the stored value is still submitted.
 - **Placement:** [testing practices §12](https://github.com/UkrainianWiki/wlxjury/blob/stack/68-juror-guide/docs/testing/practices.md#12-where-the-code-doesnt-follow-these-yet-for-triage)
   as a new T item, with [R196-3](#r196-3-authorization-and-query-tests-that-would-pass-a-regression);
   with the CI batch's test fixes.
@@ -1022,6 +1076,226 @@ whether the cache's counts and registry tell the truth. File:line at the newest 
      ("… running…"). Write the element's `data-denied-text`, as `job-status.js` does.
 - **Placement:** append after open-followups "Still open"; with the next change of the job or
   cache pages.
+
+### R207-1: An international import's countries: the gate, category imports, a missing file
+
+- **PR:** #207 (24, tip `b04ad4c4`). `app/services/imports/ImageImportHandler.scala:212`, `:215`,
+  `:232-237` (review remark); `test/services/imports/PageImportSpec.scala:74`. #208 (25, tip
+  `6a3dbef2`): `ImageImportHandler.scala:211`; `ContestCountries.scala:32-33` (review remark).
+- **Severity:** Low.
+- **At the newest tip:** all still there (`ImageImportHandler.scala:203` the pasted list's
+  countries, `:209-213` the listing branch's `byCountry`, `countryOf` and `kept`, `:330`
+  `addCountries`; `PageImportSpec.scala:94-99`).
+- **Items, failure scenarios and fixes:**
+  1. **The country filter is decided by the root category's own files:** `byCountry` holds when
+     `Category:Images from <contest> <year>` has files of its own (`categoryFileCount`, direct
+     members only). A root that holds only its countries' categories, or a count Commons doesn't
+     give, turns the filter off: a winners page's logos and icons are imported with the photos,
+     and no file gets its country. The spec "import all its files for a contest without country
+     categories" sets the root's count to 0 but gives file 11 an Armenia category. Fix: decide
+     from the countries found (any fetched file in a contest country category), the root's count
+     at most a hint; give that spec's files no country category.
+  2. **A category or template import of a contest of many countries gives no file its country:**
+     `byCountry` (and so `countryOf`) is only for a page source, while a pasted list asks for the
+     countries whenever `ContestCountries.ofManyCountries` holds. Those files are missing from the
+     country menu and filter. Fix: compute `countryOf` for every listing source of a contest of
+     many; keep `kept` tied to `byCountry`.
+  3. **A file Commons sends without image info fails the step:** `countries` maps every fetched
+     page with an id, but `ImageJdbc.fromPage` can leave a page out of `images`; for a file not
+     stored, `addCountries` then inserts a link to a missing `images` row, which
+     `FK_category_member_page_id` (V65) refuses, so the step fails, and fails again on retry.
+     Fix: keep only the countries of files written or already stored.
+- **Placement:** append after open-followups "Still open"; with the next import change (the
+  import-top-of-a-round plan, [R208-2](#r208-2-the-top-of-a-round-import-plan-has-gaps),
+  touches the same branch).
+
+### R207-2: Gallery paging, redirects and the region menu
+
+- **PR:** #207 (24, `b04ad4c4`): `app/controllers/LargeViewController.scala:60`,
+  `app/controllers/Pager.scala:25`, `public/javascripts/region-menu.js:55`; review remarks
+  `GalleryController.scala:194-199`, `RoundList.scala:164-166`, `:305-309`. #208 (25, `6a3dbef2`):
+  `Pager.scala:42`, `app/views/pageLinks.scala.html:23`, `public/javascripts/pager-jump.js:11`.
+- **Severity:** Nit.
+- **At the newest tip:** all still there (`LargeViewController.scala:67-69`; `Pager.scala:3-4`,
+  `:9-26`, `:42`; `GalleryController.scala:91-98`, `:186-191`, `:218-219`, `:427`;
+  `RoundList.scala:291-292`, `:470-471`; `ImageDiscussionController.scala:60-64`
+  `addCommentTo`; `region-menu.js:41-60`; `pageLinks.scala.html:19-22`; `pager-jump.js:9-16`).
+- **Items, failure scenarios and fixes:**
+  1. **A vote in a round closed meanwhile loses the list's query:** the redirect to the gallery
+     drops `filter`, `module` and `sort`. Fix: pass `request.queryString`, as `listCurrent` does.
+  2. **A page past the last one shows a pager for an empty page** ("20–20 of 20", a previous
+     link to another empty page). Fix: clamp the page to the page count (at least 1) where the
+     pager is made, with [R204-1](#r204-1-contest-file-paging-window-and-video-sources) item 1.
+  3. **Page 0 is documented as the whole list** (`Pager`'s doc) but shows `pageSize` files;
+     nothing links it. Fix: correct the doc.
+  4. **`/filelist/...?format=html` renders the wiki list:** `fileList` takes `format` and never
+     uses it; `galleryOf` passes `"wiki"`. Fix: pass it through (`wiki` or `html`, else 400), or
+     drop the parameter and the `html` branch.
+  5. **A comment returns to the commenter's own list:** `commentUrl` carries no `asUserId` and
+     `addCommentTo` builds the list for `user.getId`; an organizer commenting in a juror's list
+     lands in their own (page 1 if they have no vote for the file). Fix: carry the viewed juror
+     and check it with `GalleryService.viewAs`.
+  6. **The region menu's counts stay as first read:** it loads once per page, so after a vote in
+     the gallery a filtered list's counts are stale until reload. Fix: reset its state when a
+     vote succeeds (an event from `ug-theme-tiles.js`), or read on every opening.
+  7. **`urlTemplate` replaces every `987654321`:** an id equal to the sentinel would be replaced
+     too (theoretical). Fix: replace the last occurrence only.
+  8. **The page box:** without `novalidate` the browser refuses a number outside 1 to `pages`
+     before `pager-jump.js` can clamp it; `parseInt` reads `1e1` as 1. Fix: `novalidate`, and
+     `Number()` with an integer check.
+- **Placement:** append after open-followups "Still open"; with the next gallery change.
+
+### R207-3: Request timing and Gatling tool nits
+
+- **PR:** #207 (24, `b04ad4c4`): `app/modules/RequestTiming.scala:96`, `scripts/timing-summary.py:120`
+  and `:58-62` (review remark), `test/gatling/setup/GatlingConfig.scala:55`,
+  `test/gatling/simulations/JurorClickSimulation.scala:60`.
+- **Severity:** Nit (development tools).
+- **At the newest tip:** all still there (`GalleryController.scala:218`, `:430`, `:505`;
+  `timing-summary.py:58-62`, `:104-106`; `GatlingConfig.scala:55`,
+  `GatlingTestFixture.scala:109-117`; `JurorClickSimulation.scala:59-62`).
+- **Items:**
+  1. The file list, the contest files page and the contest large view render without
+     `RequestTiming.render`, so their `renderMs` is 0 and `timing-summary.py` counts the
+     rendering as action time. Wrap them.
+  2. `timing-summary.py` never reads `status`: a redirect or error under a case's label counts
+     in its percentiles. Keep the expected status per label and report how many were left out.
+     Its fallback label drops the query string, merging `/query?module=gallery` and `byrate`;
+     keep it or say so.
+  3. An unknown `gatling.pool` (`hiraki`) runs on the default pool under the requested name;
+     only `dbcp` is refused. Refuse anything but `hikari` and `small`.
+  4. When a vote's redirect has no `pageid` (the round closed, a one-file list), the simulation
+     keeps the previous page id and votes on that file again. Stop the visit's vote loop then.
+- **Placement:** with the next change of the Gatling or timing tools.
+
+### R208-1: A contest's file countries: the choice, stale links and the country menu
+
+- **PR:** #208 (25, tip `6a3dbef2`). `app/services/imports/ContestCountries.scala:49`, `:81`;
+  `app/db/scalikejdbc/ImageJdbc.scala:530`; review remarks `CategoryJdbc.scala:72`,
+  `GalleryController.scala:435-436`.
+- **Severity:** Low (item 1), Nit (the rest).
+- **At the newest tip:** all still there (`ContestCountries.scala:47-51` `candidates`, `:58-68`
+  `choose`, `:76-83` `fileCountries`; `ImageJdbc.scala:660-672` `categoryCountryLinks`;
+  `CategoryJdbc.scala:61-73` `addCountries`; `GalleryController.scala:480-481`
+  `countryCounts`, `:525-529`; `PageImportSpec.scala:135-146`).
+- **Items, failure scenarios and fixes:**
+  1. **The files page shows a country from shared counts, not the import's choice:** an import
+     adds the chosen country's link and never removes one (on purpose: `category_members` also
+     holds the jury tool's categories), and `fileCountries` picks a file's country by the
+     categories' file counts, then name length. After Commons moves a file to another country,
+     the old link stays and, with more files, wins: the file stays under the old country (the
+     spec "add a file's new country" leaves 11 in Armenia and Georgia, shown as Armenia). Fix:
+     store each file's chosen country per contest, written by every import, and read it in
+     `contestFilesView`; `fileCountries` only for files without one.
+  2. **One category per country name hides a parent:** `candidates` keeps one category per name
+     (the upload campaigns' prefix first) and `choose` tests parents against that one only; if
+     England's parent is the plain-prefix United Kingdom category, nothing matches and the
+     shorter `England` is stored. Fix: keep every category per name and test parents against
+     each; add that case.
+  3. **A contest whose category is a country category loses that country:** the query's
+     `cc.category_id <> m.category_id` drops the category's own link, so its files get no
+     country (missing from the menu; choosing it is a 404). Fix: drop the inequality, as the
+     prefix test already keeps only country categories.
+  4. **The deleted view's country menu counts all files:** `countryCounts` counts
+     `countryFiles` whatever `deletedOnly` (and region); the list behind each link has the
+     deleted files only. Fix: count the view's list per country.
+  5. **Every reimport clears the countries' region counts:** `addCountries` returns all the
+     pages' country categories, not only those that gained a link, so each reimport of an
+     unchanged list evicts their cached counts (a 0.1-0.15 s recount at 38k files). Fix: return
+     the categories whose insert added a row.
+- **Placement:** item 1 with the next international contest work (it needs a table or column);
+  items 2-5 with the next change of `ContestCountries` or the files page.
+
+### R208-2: The top-of-a-round import plan has gaps
+
+- **PR:** #208 (25, `6a3dbef2`). `docs/plans/2026-10-29-import-top-of-another-contests-round.md:35`,
+  `:37`, `:48`; review remarks `:35-38`, `:47-48`.
+- **Severity:** Low (item 5, an authorization gap), Nit (the rest). The plan isn't implemented.
+- **At the newest tip:** all still in the plan (lines 25-49 "The feature", 51-61
+  "Authorization").
+- **Items and fixes:**
+  1. **Deleted winners can't be reported:** step 3 leaves out and reports files deleted on
+     Commons, but `DistributionSource.rank` already drops rows with `deleted_at`, so the job never
+     sees them and fills the place with the next file. Query the deleted ranked files separately
+     and report them; don't change `rank` (distribution relies on it).
+  2. **The tie-break text** in step 2 says "rate sum, page id"; `rank` (and line 13) orders by the
+     rate sum, then the raw sum, then page id.
+  3. **Ratings nobody supplies:** step 4's details list each file's rating, but `rank` returns
+     page ids only. Have it return the scores, or add a step that reads them.
+  4. **The rating of the first file left out:** `rank` returns at most N; ask for N + 1, import
+     N, and show the Nth and the (N+1)th ratings, or drop that promise.
+  5. **The source ratings reach the target's admins:** the job's details (with ratings) are
+     shown to any admin of the target contest, while the plan checks only the submitter's right
+     to see the source round. Leave ratings out of the details, or check the viewer like the
+     submitter.
+- **Placement:** amend the plan before it is implemented.
+
+### R209-1: Conflicts of interest: the form's confirmation, legacy names, records
+
+- **PR:** #209 (26, tip `cb5f4a33`). `app/controllers/RoundController.scala:135`,
+  `app/views/editRound.scala.html:72`, `app/db/scalikejdbc/CoiMembers.scala:30`,
+  `conf/db/migration/default/V67__Users_email_nullable.sql:8`, `app/db/scalikejdbc/Round.scala:278`,
+  `app/services/imports/ImageText.scala:56`; review remark `UserService.scala:74-82`.
+- **Severity:** Nit.
+- **At the newest tip:** items 1 and 3-5 still there (`RoundController.scala:147-155`
+  `coiCounts`, `:272-290` the binding-error page; `RoundService.scala:188-210`;
+  `ImageText.scala:55-56`; `UserService.scala:101`, `:150-153`). Item 2: #225 normalizes every
+  wiki account written or looked up (`User.normalizeWikiAccount`, `User.scala:741-757`, refusing
+  `:`), so only rows stored before it are left.
+- **Items, failure scenarios and fixes:**
+  1. **Saving "Leave out conflicts of interest" can skip its confirmation:** for a contest without
+     a category `coiCounts` gives no round count, and the binding-error page passes no counts, so
+     `data-coi-round-files` is 0; the save then disqualifies the round's conflict files (their
+     votes set aside, undone on the conflicts page) without the prompt. Fix: count the round's
+     files without the category; pass `coiCounts` on the binding-error page.
+  2. **Wiki accounts stored before #225:** a row such as `user:Board member` or
+     `Користувач:Петро` isn't matched by a normalized lookup, so adding the person by wiki
+     account makes a second account, and a localized namespace prefix (which `CoiMembers.normalize`
+     doesn't strip) keeps their files out of the conflicts. Fix: a one-off report of
+     `users.wiki_account` values that `normalizeWikiAccount` changes or refuses, then a reviewed
+     merge or rewrite.
+  3. **The job's settings snapshot has no `excludeCoi`**, and the comment beside it says a
+     round's settings don't change once created, which `excludeCoi` does. Add it and correct the
+     comment.
+  4. **`storedAuthor` cuts by UTF-16 unit** (`take(MaxAuthor)`): a supplementary character at the
+     limit leaves a lone surrogate. Cut by code point.
+  5. **An existing account added with the role `no` gets the greeting:** `mayBeGreeted` checks
+     `NON_ACCESS_ROLES`, which lacks `no`. Use `INACTIVE_ROLES`.
+- **Placement:** append after open-followups "Still open"; item 2 with the account-merge work,
+  the rest with the next round form or COI change.
+
+### R209-2: The logging-config plan's rollout misses the systemd drop-in
+
+- **PR:** #209 (26, `cb5f4a33`). `docs/plans/2026-10-30-logging-config-in-releases.md:37`, `:42`.
+- **Severity:** Low (following the plan as written stops production logging to the file).
+- **At the newest tip:** both still there (plan lines 29-50, not implemented;
+  `conf/systemd/wlxjury.service.d/deployment.conf:10` sets its own `ExecStart` with
+  `-Dlogger.file=/etc/wlxjury-runtime/logback.xml`).
+- **Items and fixes:**
+  1. The drop-in resets `ExecStart`, so step 2's change to the unit template does nothing while
+     it is installed, and step 4 removes the file it still names. Change the drop-in's
+     `-Dlogger.file` in the same rollout, and remove the runtime file only once nothing names it.
+  2. Step 3 offers keeping the runtime file instead of pointing the unit back for a backout, but
+     the unit then still names the release's file. Say a backout to an older release needs the
+     unit (and drop-in) pointed back to the runtime file.
+- **Placement:** amend the plan before its rollout.
+
+### R210-1: A stored category operation the form doesn't know
+
+- **PR:** #210 (27, tip `25e7df01`). `app/controllers/EditRound.scala:60`,
+  `app/views/round/edit/imageFiltering.scala.html:73`.
+- **Severity:** Nit (only a value written by hand: V70 converts the legacy `1`, `-1`, `0`, and the
+  form refuses others).
+- **At the newest tip:** both still there (`CategoryRule.scala:55-62` throws for an unknown
+  clause; `EditRound.scala:166` reads it to fill the form; `imageFiltering.scala.html:121-127`).
+- **Items and fixes:**
+  1. Opening such a round's edit page is a server error, so the organizer can't choose another
+     operation. Fill the form without throwing (an unknown operation shown as such), keeping the
+     stored value until a valid one is saved.
+  2. Redisplaying a refused submission with an unknown operation selects the first option
+     (none), so submitting again saves the round without a category filter. Keep the submitted
+     value as an option, so the form is refused again.
+- **Placement:** with the next round form change.
 
 New entries use the format `### R<PR>-<n>: <short title>`, then PR and file:line
 at its tip, severity, whether it is still at the final tip, the failure
@@ -1231,3 +1505,40 @@ existing [R203-1](#r203-1-a-pasted-file-list-over-100-kb-is-refused).
 | #204 | TestDocker stop after a late start unbounded: new entry (R191-1); another contest's admin on the files list untested: fixed later (#209) |
 | #205 | sub-region LIKE wildcards: new entry (R205-1); concurrent region-count loads: new entry (R205-1); invalidation on any changed file: new entry (R205-1); maxSeconds doesn't bound a run in flight: new entry (R205-2); cache-off test asserts no count: new entry (R203-3); oversized selected line untested: new entry (R205-2); whole-round unrated count untested: new entry (R203-3); cached-image test reads no body: fixed later (#206) |
 | #206 | organizer, admin and root vote views check statuses only: new entry (R203-3) |
+
+### CodeRabbit, PRs 207-210
+
+CodeRabbit's 45 inline comments and 21 review-level remarks on #207-#210 (17, 13, 12 and 3 inline;
+the remarks are the review bodies' "Follow-ups", "Nitpick comments" and "Additional comments"),
+classified against the top of the stack, `stack/90-triage-fixes` (`f339aa13`, #273); one reply per
+thread, and the review-level remarks in one comment per PR. New entries:
+[R207-1](#r207-1-an-international-imports-countries-the-gate-category-imports-a-missing-file) (Low),
+[R207-2](#r207-2-gallery-paging-redirects-and-the-region-menu),
+[R207-3](#r207-3-request-timing-and-gatling-tool-nits),
+[R208-1](#r208-1-a-contests-file-countries-the-choice-stale-links-and-the-country-menu) (Low),
+[R208-2](#r208-2-the-top-of-a-round-import-plan-has-gaps) (Low),
+[R209-1](#r209-1-conflicts-of-interest-the-forms-confirmation-legacy-names-records),
+[R209-2](#r209-2-the-logging-config-plans-rollout-misses-the-systemd-drop-in) (Low),
+[R210-1](#r210-1-a-stored-category-operation-the-form-doesnt-know); none Medium or above. Items
+added to [R202-1](#r202-1-the-commons-file-check-can-apply-a-stale-answer) (item 4, an import's
+unlocked read), [R203-2](#r203-2-adding-a-pasted-list-waits-for-commons-and-misses-some-files)
+(item 1's category check, items 7-9) and
+[R203-3](#r203-3-files-region-and-sign-out-tests-that-would-pass-a-regression) (items 7-11).
+
+| PR | Inline comments: class |
+|---|---|
+| #207 | LargeViewController.scala:60 closed-round redirect drops the query: new entry (R207-2); Pager.scala:25 page past the last: new entry (R207-2); RoundList.scala:151 file list and CSV ignore sort=file: not applicable (a file list and CSV rank by rate whatever the order, `RoundList.scala:178-186`, `:297`); CategoryJdbc.scala:69 stale country links kept: not applicable (since #208 an import never removes a link, on purpose, `CategoryJdbc.scala:55-60`; the stale country shown is R208-1 item 1); RequestTiming.scala:96 fileList not timed: new entry (R207-3); Image.scala:78 SVG cache files hold JPEG under .png: not applicable (no Apache vhost serves the cache since #255; the proxy sends cached files as image/jpeg, `ImageProxyController.scala:151-155`); ContestCountries.scala:33 a subcategory as the country: fixed later (#208, `overlaps`/`candidates`); LocalImageCacheService.scala:478 protocol-relative URLs: fixed later (#230, `withScheme` first); region-menu.js:55 counts after a vote: new entry (R207-2); timing-summary.py:120 status not filtered: new entry (R207-3); GatlingConfig.scala:55 unknown pool: new entry (R207-3); RegionCountPairedBenchmark.scala:90 regionnav markers: fixed later (#216, page cases replaced by menu cases); JurorClickSimulation.scala:55 CSRF tokens in external mode: not applicable (the external target is the bench server, which lets POSTs through as the fixture does, `bench/server/bench.conf:5-6`); JurorClickSimulation.scala:60 vote redirect without pageid: new entry (R207-3); PageImportSpec.scala:74 root count 0 with a country category: new entry (R207-1); ImageImportHandler.scala:212 country gate from the root's count: new entry (R207-1); ImageImportHandler.scala:215 category imports get no countries: new entry (R207-1) |
+| #208 | Pager.scala:42 every sentinel replaced: new entry (R207-2); ImageJdbc.scala:530 a country category's own link dropped: new entry (R208-1); ContestCountries.scala:49 one category per name: new entry (R208-1); ContestCountries.scala:81 gallery country from counts: new entry (R208-1); ImageImportHandler.scala:211 category imports get no countries: new entry (R207-1); ImageImportHandler.scala:302 textless page clears monument id and description: fixed later (#209, `textless` and `ImageService.withStoredText`); ImageImportHandler.scala:302 no-text path writes an unlocked read: new entry (R202-1 item 4); pageLinks.scala.html:23 novalidate: new entry (R207-2); build.sbt:127 old digested assets after a release: not applicable (a page requests its assets as it loads; only one loaded seconds before the switch can miss one, and a reload fixes it); import-top plan:35 deleted winners: new entry (R208-2); import-top plan:37 tie-break text: new entry (R208-2); import-top plan:48 ratings not returned: new entry (R208-2); pager-jump.js:11 parseInt: new entry (R207-2) |
+| #209 | RoundController.scala:135 no confirmation without a category: new entry (R209-1); RoundController.scala:163 excludeCoi set while distributing: fixed later (#249, `RoundConflicts.gate` refuses before the flag is set, `RoundConflicts.scala:83-96`, `:118-126`); CoiMembers.scala:30 localized user prefix: new entry (R209-1 item 2, legacy rows only since #225); CoiMembers.scala:43 comma-separated roles: fixed later (#223, V76 allows one role per row); Round.scala:278 excludeCoi not in the settings snapshot: new entry (R209-1); RoundDistributionHandler.scala:203 all-stored list in an outage: new entry (R203-2 item 7); RoundDistributionHandler.scala:210 stored files by page id: new entry (R203-2 item 8); ImageText.scala:56 author cut by UTF-16 unit: new entry (R209-1); editRound.scala.html:72 counts on the binding-error page: new entry (R209-1); V67 wiki accounts canonicalized: fixed later (#225, `User.normalizeWikiAccount` on every write and lookup; rows from before it: R209-1 item 2); logging plan:37 drop-in: new entry (R209-2); logging plan:42 backout: new entry (R209-2) |
+| #210 | EditRound.scala:60 unknown stored clause: new entry (R210-1); RoundDistributionHandler.scala:164 list-only job validates categories: existing entry (R203-2 item 1); imageFiltering.scala.html:73 unknown operation on redisplay: new entry (R210-1) |
+
+| PR | Review-level remarks: class |
+|---|---|
+| #207 | fileList ignores format: new entry (R207-2); comment redirect loses the viewer: new entry (R207-2); page 0 documented as whole: new entry (R207-2); timing-summary query string merged: new entry (R207-3); countries of a page without image info: new entry (R207-1); star-vote criteria query unasserted: fixed later (#217, `LargeViewUrlsSpec.scala:137-139`); all-juror rankPosition by an individual rate (unverified): fixed later (#215, the all-jurors order and ranks use explicit aggregates, `RankKey`) |
+| #208 | job details expose source ratings: new entry (R208-2); N+1 for the boundary rating: new entry (R208-2); addCountries returns every category: new entry (R208-1); deleted view's country counts: new entry (R208-1); country gate with plain-prefix categories only: new entry (R207-1); no-text reimport metadata: new entry (R203-3); Armenia filter non-member: new entry (R203-3); packaged digest output: new entry (R203-3); "not stored again" overwrite: new entry (R203-3) |
+| #209 | greeting to the no role: new entry (R209-1); a pasted title's stored row with another page id: new entry (R203-2 item 9); moved-aside criteria rates unchecked: fixed later (#249, votes now kept aside, `CoiRoundSpec.scala:213-235`) |
+| #210 | locked category operation untested: new entry (R203-3); MINUS A A in two Commons requests (unverified): not applicable (the same category twice is no filter an organizer means, and a file that leaves it between the two requests no longer belongs in it) |
+
+The later PRs of the series: #211, #212 and #213 got no inline comments; CodeRabbit skipped #214
+(121 files, over its 100-file limit); #215's review was incremental, over commits it had reviewed,
+with nothing new.
