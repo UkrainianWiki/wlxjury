@@ -379,7 +379,7 @@ with full coordinator visibility (§2.2).
 
 ## 6. Inputs for the multi-role decision (multi-role-plan §7)
 
-| §7 | Input from Montage |
+| plan §7 | Input from Montage |
 |---|---|
 | 1 Design | Montage gets several roles per person from **scope separation** (global, campaign, round), never from a set of roles in one row. That is evidence for keeping contest roles and round assignment separate. It doesn't choose between S and A, since Montage has no counterpart to either. S remains the fit for WLX's contest-level meanings (start page, galleries, COI, invitations: §4.2). R′ (any access-role member with vote rows who is not stopped may vote; §4.1) is a Montage-like alternative. It covers prejury and any other organizer+juror or admin+juror assignment. Costs only R′ has: reversing #278's rule (its spec, the admin's mental model), widening `loadJurors` in submit and in the form's candidate lists, picker labels. Costs shared with S: the start page, the plan §3.3 predicate (R′ drops the role conjunct), the 5 vote-control sites. S needs the V96 migration; R′ needs none for prejury. Picker trade-off (§4.5): under S, Organizer+Juror prejurors are pre-ticked into every later round by default. Under R/R′ they are not, provided the pre-ticked set stays jury-role members while the candidate list widens. |
 | 2 One SET column or two | No input: Montage stores no COI groups (§1.3). |
@@ -389,4 +389,4 @@ with full coordinator visibility (§2.2).
 | 6 Invitation acceptance adds roles | Montage's grants are additive by construction: a new coordinator row or round row never removes another role. Weak evidence for union (inferred): Montage has no invitations and no consent step. |
 | 7 Timing | No input. |
 | 8-9 Migration and production checks | No input. |
-| Not in §7 | (a) Round juror picker: under S, don't pre-tick members who also hold Organizer or Admin (WLX pre-ticks every contest juror, `RoundController.scala:100-101`), and add role labels (§4.5, plan U19). (b) Scoped admins: a grant table, not membership rows, as Montage's maintainer already is at the global level (Montage #13, leilaz's comment; #222; §4.3). (c) A broad prejury needs jurors never to be shown their own files (#74; "assign around", mahmoud in #181) rather than exclusion (§4.6). |
+| Not in plan §7 | (a) Round juror picker: under S, don't pre-tick members who also hold Organizer or Admin (WLX pre-ticks every contest juror, `RoundController.scala:100-101`), and add role labels (§4.5, plan U19). (b) Scoped admins: a grant table, not membership rows, as Montage's maintainer already is at the global level (Montage #13, leilaz's comment; #222; §4.3). (c) A broad prejury needs jurors never to be shown their own files (#74; "assign around", mahmoud in #181) rather than exclusion (§4.6). |
