@@ -18,7 +18,7 @@ a round where you select or reject files, and a **juror** has the role **Juror**
 
 ### Accepting your invitation
 
-You don't sign up yourself. An organizer of your contest adds you, and you get an email,
+You don't sign up yourself. An admin of your contest adds you, and you get an email,
 **Invitation to the … jury**, with a link.
 
 Open the link within the number of days the email says. A page, **Set your password**, asks
@@ -26,24 +26,24 @@ you to choose a password. Type it in **New password** and again in **Repeat your
 press **Set password and sign in**. Your email address is your login from then on.
 
 If the page says **This link cannot be used**, the link has expired or has been used
-already. Ask your contest organizer to send you a new one.
+already. Ask your contest admin to send you a new one.
 
 If you already have an account in the tool, for example from an earlier contest, the
-organizer may add you to the new contest directly. You then sign in as before and find the new
-contest in the contest menu at the top of the page.
+contest admin may add you to the new contest directly. You then sign in as before and find the
+new contest in the contest menu at the top of the page.
 
 <img src="images/juror-set-password.png" alt="The Set your password page" width="1280">
 
 ### Signing in with your password
 
-On the sign-in page, type your email address (or your wiki user name, if your organizer set
-one for you) and your password, then press **Sign in**.
+On the sign-in page, type your email address (or your wiki user name, if your contest admin
+set one for you) and your password, then press **Sign in**.
 
 **Keep me signed in** is ticked by default. Untick it on a shared computer: you are then
 signed out when you close the browser.
 
 If the tool says **Invalid user or password**, check both and try again. If you have forgotten
-your password, ask your organizer: a tool administrator can send you a link to set a new one.
+your password, ask your contest admin for a link to set a new one.
 A password set before version 26.11 stops working about three months after the update, so
 this can happen even when you typed it right.
 
@@ -64,7 +64,7 @@ Some installations also show **Sign in with Wikimedia** and **Sign in with Googl
 password form. If you don't see these buttons, only the password works there.
 
 These buttons sign you in to the jury account you already have. They never create one. If the
-tool says **No jury account matches this account**, ask your organizer to invite you, or sign
+tool says **No jury account matches this account**, ask your contest admin to invite you, or sign
 in with your password and link the account on your profile, as the next paragraphs describe.
 
 Google sign-in finds your account by itself only for a Gmail or Google Workspace address. For
@@ -93,8 +93,8 @@ account**, with one box per account:
   - or press **Mail me a link**, which sends a link to that account's email address. Open it in
     the same browser, within the minutes the email says, and press **Confirm**.
 
-If an account says **This account cannot be chosen here: ask your contest organizer**, ask
-your organizer which account to use.
+If the page then says **This account cannot be chosen here: ask your contest admin.**, that
+account can't be used to sign in: ask your contest admin which account to use.
 
 (screenshot to add: the "Choose your jury account" page with two accounts)
 -->
@@ -120,19 +120,19 @@ The bar at the top shows the round's name. If you are in more than one open roun
 round's name is a menu instead: choose another round there.
 
 If no round is open for you, the tool says **No round configured yet. Please wait until
-contest admin configures the tool.** Come back later, or ask your organizer when the round
-opens.
+contest admin configures the tool.** Come back later, or ask your contest admin when the
+round opens.
 
 ### Rounds you don't see
 
 You see only rounds that are open and that you are a juror of. A round disappears from your
 view when:
 
-- the organizers are still preparing it: a new round stays hidden until all its files are
+- the contest admins are still preparing it: a new round stays hidden until all its files are
   assigned;
-- the organizers stop it, for example at its end, or for a while to fix something; it comes
+- the contest admins stop it, for example at its end, or for a while to fix something; it comes
   back when they start it again;
-- the organizers pause your voting in that round.
+- the contest admins pause your voting in that round.
 
 Your votes are kept in each case.
 
@@ -357,8 +357,9 @@ Under the image in the large view is **Comments**. Type in **Your comment here**
 
 <img src="images/juror-large-view-comments.png" alt="The comment box under the image, with the button Submit comment" width="664">
 
-Comments are not private. The organizers and the other jurors who open this file in the
-contest see your comment, with your name. You can comment only while the round is open.
+Comments are not private. The contest's admins and organizers, and the other jurors who open
+this file in the contest, see your comment, with your name. You can comment only while the round
+is open.
 
 ## What you can and can't see
 
@@ -375,11 +376,11 @@ round you get more menus: a juror menu, a vote filter and other views of the res
 A file is a conflict of interest when its author is a member of the contest, a juror for
 example, or a tool administrator. The tool finds these files by the members' wiki accounts.
 
-Organizers can leave such files out of a round when they create it, so they never reach you.
+Contest admins can leave such files out of a round when they create it, so they never reach you.
 They can also disqualify them in a stopped round: the files then leave every juror's list, and
 their votes are kept aside. If a file is requalified later, it comes back with your vote.
 
-Your round may disappear for a while when the organizers stop it to do this.
+Your round may disappear for a while when the contest admins stop it to do this.
 
 If you upload photos to the contest yourself, make sure your profile shows your **Wiki
 account**. Without it the tool can't recognise your files. If the field is empty, or to change a
@@ -451,7 +452,7 @@ If you think you should have access:
 1. Check that you are signed in with the right account. If not, press **Sign out and sign in
    with another account**.
 2. If you are in several contests, check the contest menu: you may be in another contest.
-3. Otherwise, send your organizer the reference and the time, the address of the page you
+3. Otherwise, send your contest admin the reference and the time, the address of the page you
    tried to open, and the email you signed in with.
 
 If the page offers **Open a gallery available to this account**, it takes you back to your own
@@ -471,10 +472,10 @@ reload the page.** and opens the sign-in page.
 ### Other errors
 
 **Something went wrong on our side.** comes with a reference. If it happens again, send that
-reference to your organizer.
+reference to your contest admin.
 
-**This file is no longer assigned to you. Reload the page.** means the organizers changed the
-round's files. Reload the page to see your current list.
+**This file is no longer assigned to you. Reload the page.** means the contest admins changed
+the round's files. Reload the page to see your current list.
 
 **Too many sign-ins at once.** means many people are signing in at the same moment. Wait a few
 seconds and try again.

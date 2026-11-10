@@ -29,28 +29,32 @@ Changes made available before version 26.11, by who notices them.
 - **Deleted and renamed files:** a file deleted on Commons is hidden, and a renamed one shows
   under its new name. See [Deleted or missing files](juror-guide.md#deleted-or-missing-files).
 
-### For organizers and admins, earlier
+### For organizers, earlier
 
-- **Rounds are prepared in the background.** Creating a round, and **Distribute new files**,
-  run as jobs with progress, **Cancel** and **Retry**. A round being created stays hidden from
-  jurors until it is ready. See [The life of a round](organizer-guide.md#o-stages) and
-  [Distributing new files](organizer-guide.md#o-distribute-new-files).
-- **Import files** and **Update monuments** also run in the background. See [Importing the
-  contest's files](organizer-guide.md#o-import-files).
-- **A double submit no longer creates two rounds.**
-- **New filters on the round form:** special nominations, Wiki Loves Earth regions, and category
-  operations (**In category A**, **Not in category A**, **In both A and B**, **In A or B (or
-  both)**, **In A but not B**). See [Choosing the round's files](organizer-guide.md#o-choose-files).
-- **Add files to a round from a pasted list.** See [Adding files by
-  name](organizer-guide.md#o-add-files).
-- **Conflicts of interest:** a round can leave out files by the contest's members, with a count
-  on the round form. See [Conflicts of interest](organizer-guide.md#o-conflicts).
 - **The contest's files as a gallery,** with regions and a large view. See [The contest's
   files](organizer-guide.md#o-contest-files).
 - **The contest's files page has a Deleted on Commons tab** for files deleted on Commons. See
   [The contest's files](organizer-guide.md#o-contest-files).
+
+### For admins, earlier
+
+- **Rounds are prepared in the background.** Creating a round, and **Distribute new files**,
+  run as jobs with progress, **Cancel** and **Retry**. A round being created stays hidden from
+  jurors until it is ready. See [The life of a round](admin-guide.md#a-stages) and
+  [Distributing new files](admin-guide.md#a-distribute-new-files).
+- **Import files** and **Update monuments** also run in the background. See [Importing the
+  contest's files](admin-guide.md#a-import-files).
+- **A double submit no longer creates two rounds.**
+- **New filters on the round form:** special nominations, Wiki Loves Earth regions, and category
+  operations (**In category A**, **Not in category A**, **In both A and B**, **In A or B (or
+  both)**, **In A but not B**). See [Choosing the round's files](admin-guide.md#a-choose-files).
+- **Add files to a round from a pasted list.** See [Adding files by
+  name](admin-guide.md#a-add-files).
+- **Conflicts of interest:** a round can leave out files by the contest's members, with a count
+  on the round form. See [Leaving conflicts of interest out of a
+  round](admin-guide.md#a-leave-out-conflicts).
 - **A local image cache,** where the operators have set it up: admins can use **Download images
-  locally**. See [Importing the contest's files](organizer-guide.md#o-import-files).
+  locally**. See [Importing the contest's files](admin-guide.md#a-import-files).
 
 ## New in version 26.11
 
@@ -59,14 +63,14 @@ Changes made available before version 26.11, by who notices them.
 
 - **Light, dark and system colour modes**, chosen with the theme icon in the top bar. See
   [Light, dark or system theme](juror-guide.md#light-dark-or-system-theme).
-- **No sign-up page.** Accounts are made only by invitation from a contest's organizers. See
+- **No sign-up page.** Accounts are made only by invitation from a contest's admins. See
   [Accepting your invitation](juror-guide.md#accepting-your-invitation).
 - **Sessions you control:** **Keep me signed in** on the sign-in page, **Sign out everywhere**
   on your profile, and sessions that end after a long time without use. See
   [Signing out](juror-guide.md#signing-out).
 - **A confirmed email change:** a new email address takes effect when you follow the link sent
   to it. See [Your profile](juror-guide.md#your-profile).
-- **More reliable voting:** votes no longer fail when organizers change rounds at the same time.
+- **More reliable voting:** votes no longer fail when admins change rounds at the same time.
 
 <a id="w-jurors"></a>
 ### For jurors
@@ -98,29 +102,32 @@ Changes made available before version 26.11, by who notices them.
 ### For organizers
 
 - **A clearer ranking.** The by-rate gallery, the file list, the CSV and the large view for all
-  jurors show each file's score and what it is divided by. See [Results](organizer-guide.md#o-results).
-- **A choice of the file score** for rated rounds: average over the jurors who rated it,
-  average over the assigned jurors, or the total of the rates, with a warning when you change it.
-  See [The file score](organizer-guide.md#o-score-rule).
+  jurors show each file's score and what it is divided by. See [The score](organizer-guide.md#o-score).
 - **Criteria rounds' results:** each criterion's average in the file list, the by-rate gallery,
   the CSV and the large view. See [The file list](organizer-guide.md#o-file-list).
-- **Yes/no rounds:** the all-jurors view shows each file's approvals, and a next round can take
-  files **Selected by at least X jurors**. See [The by-rate gallery](organizer-guide.md#o-by-rate)
-  and [Choosing the round's files](organizer-guide.md#o-choose-files).
+- **Yes/no rounds:** the all-jurors view shows each file's approvals. See [The by-rate
+  gallery](organizer-guide.md#o-by-rate).
 - **Conflicts of interest page,** with its history, for organizers and admins. See
   [The conflicts page](organizer-guide.md#o-conflicts-page).
+- **Each juror's voting state on the statistics page,** **Active** or **Paused**. Pausing a
+  juror is for admins. See [Statistics](organizer-guide.md#o-statistics).
 
 <a id="w-admins"></a>
 ### For admins
 
+- **A choice of the file score** for rated rounds: average over the jurors who rated it,
+  average over the assigned jurors, or the total of the rates, with a warning when you change it.
+  See [The file score](admin-guide.md#a-score-rule).
+- **Yes/no rounds:** a next round can take files **Selected by at least X jurors**. See
+  [Choosing the round's files](admin-guide.md#a-choose-files).
 - **The worst mark** as a round option, and a **rejection filter** for the next round
   (exclude files rejected by at least X, or take only those). See [The worst
-  mark](organizer-guide.md#o-worst-mark) and [The rejection
-  filter](organizer-guide.md#o-rejection-filter).
+  mark](admin-guide.md#a-worst-mark) and [The rejection
+  filter](admin-guide.md#a-rejection-filter).
 - **Criteria chosen from a shared catalogue** on the round form. See [Kinds of
-  rounds](organizer-guide.md#o-round-kinds).
+  rounds](admin-guide.md#a-round-kinds).
 - **Disqualifying and requalifying files** on the conflicts page, while a round is stopped; the
-  votes are kept. See [Disqualifying and requalifying](organizer-guide.md#o-disqualify).
+  votes are kept. See [Disqualifying and requalifying](admin-guide.md#a-disqualify).
 - **Invitations** are the only way to add people, with a list of invitations not yet accepted,
   to send again or cancel. See [Invitations](admin-guide.md#a-invitations).
 - **Shareable set-password links** to pass on yourself, instead of mailing. See [Sharing a link

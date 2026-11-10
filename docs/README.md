@@ -102,7 +102,9 @@ The rule is in workflow §8: the update is in the same PR, and the reviewer chec
 
 `docs/user/`: the English [juror guide](user/juror-guide.md), [organizer guide](user/organizer-guide.md),
 [admin guide](user/admin-guide.md) and [what's new in 2026 (up to version 26.11)](user/whats-new-26.11.md) exist
-(written from the tool as it is; **unpublished**). Screenshots are
+(written from the tool as it is; **unpublished**). One guide per role: the organizer guide is the
+read-only guide to following the voting and reading the results; the admin guide has accounts,
+the contest and running the judging (rounds, files, conflicts of interest). Screenshots are
 `docs/user/images/`, made by an opt-in browser spec (`docs-screenshots.spec.js`, run with
 `DOCS_SCREENSHOTS=1`; [images/README.md](user/images/README.md) says which platform made them).
 

@@ -431,7 +431,7 @@ class AccountInvitationSpec extends PlaySpecification with PlayTestDb with Accou
     }
   }
 
-  "root's reset password (P7) [A-08]" should {
+  "root's reset password (P7) [R-05]" should {
     "mail a link, keep the password until it is used, set it once, and log no email or token" in {
       testDbApp { implicit app =>
         implicit val mat: Materializer = app.materializer

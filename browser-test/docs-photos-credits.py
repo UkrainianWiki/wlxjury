@@ -24,7 +24,9 @@ for name, title in LISTS:
     photos = json.loads((HERE / f"docs-photos-{name}.json").read_text(encoding="utf-8"))["photos"]
     lines += [f"### {title} (`{name}`, {len(photos)} photos)", ""]
     for p in sorted(photos, key=lambda p: (p["country"], p["title"])):
-        lines.append(f"- {p['title'][5:]}: {p['author']}, {p['license']}, {p['year']}, {p['country']}")
+        # Commons' Artist field can carry line breaks and no-break spaces: one Markdown line each
+        author = " ".join(p["author"].split())
+        lines.append(f"- {p['title'][5:]}: {author}, {p['license']}, {p['year']}, {p['country']}")
     lines.append("")
 
 text = README.read_text(encoding="utf-8")
