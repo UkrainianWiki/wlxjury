@@ -279,7 +279,7 @@ object Round extends RoundRepo with CRUDMapper[Round] {
 
   val commentsOnlyRound = new Rates(0, "Comments only", 0, 0)
 
-  /** A yes/no round. Pages show `rating.yes.no` as its rating type, not this name. */
+  /** A yes/no round. Pages show its rating type from messages (`views.RatingType`), not this name. */
   val binaryRound = new Rates(1, "Yes/No", -1, 1)
 
   val rateRounds: Seq[Rates] =

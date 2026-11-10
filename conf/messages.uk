@@ -200,6 +200,7 @@ row.number = №
 file.distribution = Поділ файлів
 rating.type = Тип оцінювання
 rating.yes.no = Так/Ні
+rating.comments.only = Лише коментарі
 
 edit.round = Редагувати раунд
 create.round= Створити раунд

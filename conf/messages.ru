@@ -364,6 +364,7 @@ row.number = №
 file.distribution = Распределение файлов
 rating.type = Тип оценивания
 rating.yes.no = Да/Нет
+rating.comments.only = Только комментарии
 edit.round = Редактировать раунд
 create.round= Создать раунд
 select.all = Выбрать все

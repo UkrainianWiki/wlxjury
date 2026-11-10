@@ -81,17 +81,23 @@ class RoundEditPageSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
-    "name a yes/no round's rating type Yes/No, on the form and on the rounds list" in {
+    "name the rating types Comments only, Yes/No and 1-N rating, on the form and on the rounds list" in {
       testDbApp { implicit app =>
         import scala.jdk.CollectionConverters._
         val (contest, admin, round) = fixture()
         round.rates must_== Round.binaryRound
+        roundDao.create(Round(None, 2, Some("Round 2"), contest.getId, rates = Round.commentsOnlyRound))
+        roundDao.create(Round(None, 3, Some("Round 3"), contest.getId, rates = Round.ratesById(5)))
         def page(url: String) = org.jsoup.Jsoup.parse(contentAsString(route(app, get(url, admin)).get))
         val form = page(s"/admin/rounds/edit?contestId=${contest.getId}")
-        form.select("select#rates option[value=1]").asScala.map(_.text) must_== Seq("Yes/No")
+        def option(value: Int) = form.select(s"select#rates option[value=$value]").asScala.map(_.text)
+        option(0) must_== Seq("Comments only")
+        option(1) must_== Seq("Yes/No")
+        option(5) must_== Seq("1-5 rating")
         val list = page(s"/admin/rounds?contestId=${contest.getId}")
-        list.select("td").asScala.map(_.text) must contain("Yes/No")
-        forall(Seq(form, list))(_.text must not(contain("+/-")))
+        val cells = list.select("td").asScala.map(_.text)
+        forall(Seq("Yes/No", "Comments only", "1-5 rating"))(label => cells must contain(label))
+        forall(Seq(form, list))(_.text must not(contain("+/-")).and(not(contain("1-0 rating"))))
       }
     }
 
