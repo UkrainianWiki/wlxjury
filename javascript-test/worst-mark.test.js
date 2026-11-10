@@ -249,7 +249,7 @@ describe("the round form's worst mark", () => {
               </div>
               <div id="rateFilters">rate</div>
             </div>
-            <select id="rates" name="rates"><option value="1">Yes/No</option><option value="0">Comments</option>
+            <select id="rates" name="rates"><option value="1">Yes/No</option><option value="0">Comments only</option>
               <option value="5">1-5</option></select>
             <div id="round-criteria"><select name="criteria[0]"><option value=""></option><option value="7">Aesthetics</option></select></div>
             <div id="round-worst-mark"><input type="hidden" name="worstMarkShown" value="true">

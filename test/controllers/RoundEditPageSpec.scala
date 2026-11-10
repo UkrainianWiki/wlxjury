@@ -88,16 +88,23 @@ class RoundEditPageSpec extends PlaySpecification with PlayTestDb {
         round.rates must_== Round.binaryRound
         roundDao.create(Round(None, 2, Some("Round 2"), contest.getId, rates = Round.commentsOnlyRound))
         roundDao.create(Round(None, 3, Some("Round 3"), contest.getId, rates = Round.ratesById(5)))
-        def page(url: String) = org.jsoup.Jsoup.parse(contentAsString(route(app, get(url, admin)).get))
-        val form = page(s"/admin/rounds/edit?contestId=${contest.getId}")
-        def option(value: Int) = form.select(s"select#rates option[value=$value]").asScala.map(_.text)
-        option(0) must_== Seq("Comments only")
-        option(1) must_== Seq("Yes/No")
-        option(5) must_== Seq("1-5 rating")
-        val list = page(s"/admin/rounds?contestId=${contest.getId}")
-        val cells = list.select("td").asScala.map(_.text)
-        forall(Seq("Yes/No", "Comments only", "1-5 rating"))(label => cells must contain(label))
+        def page(url: String, lang: String = "en") = org.jsoup.Jsoup.parse(contentAsString(route(app,
+          FakeRequest(GET, url).withSession(Secured.UserName -> admin.email)
+            .withHeaders("Accept-Language" -> lang).withCSRFToken).get))
+        def options(form: org.jsoup.nodes.Document) = Seq(0, 1, 5).map(value =>
+          form.select(s"select#rates option[value=$value]").asScala.map(_.text).mkString)
+        def cells(list: org.jsoup.nodes.Document) = list.select("td").asScala.map(_.text)
+        val formUrl = s"/admin/rounds/edit?contestId=${contest.getId}"
+        val listUrl = s"/admin/rounds?contestId=${contest.getId}"
+        val (form, list) = (page(formUrl), page(listUrl))
+        val labels = Seq("Comments only", "Yes/No", "1-5 rating")
+        options(form) must_== labels
+        forall(labels)(label => cells(list) must contain(label))
         forall(Seq(form, list))(_.text must not(contain("+/-")).and(not(contain("1-0 rating"))))
+        // the labels are the message keys', in the page's language
+        val ukLabels = Seq("Лише коментарі", "Так/Ні", "Оцінка: 1-5")
+        options(page(formUrl, "uk")) must_== ukLabels
+        forall(ukLabels)(label => cells(page(listUrl, "uk")) must contain(label))
       }
     }
 

@@ -363,7 +363,7 @@ earlier ones.
 
 The **Rating type** of a round is one of:
 
-- **Yes/No**, a yes/no round: jurors select or reject each file.
+- **Yes/No** (a yes/no round): jurors select or reject each file.
 - **1-N rating**, a rated round: jurors give each file from one star up to N stars, with N from
   3 to 20. A rated round can also use criteria and the worst mark, described below.
 - **Comments only**: jurors take no votes, only write comments.

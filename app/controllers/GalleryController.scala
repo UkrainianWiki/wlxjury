@@ -1,6 +1,5 @@
 package controllers
 
-import db.scalikejdbc.Round.binaryRound
 import db.scalikejdbc._
 import org.apache.pekko.http.scaladsl.model.ContentTypes
 import org.apache.pekko.stream.scaladsl.Source
