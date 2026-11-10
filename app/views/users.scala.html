@@ -179,10 +179,12 @@
                                 @bs.text(editUserForm("email"), Symbol("_label") -> Messages("email"), Symbol("placeholder") -> Messages("email"))
                             </td>
                             <td>
+                            @* no room for help in the row: it is under the table *@
                             @bs.select(
                                 editUserForm("roles"),
                                 db.scalikejdbc.User.FORM_ROLES.map(x => (x, Messages("role." + x))),
-                                Symbol("_hiddenLabel") -> Messages("role"))
+                                Symbol("_hiddenLabel") -> Messages("role"),
+                                Symbol("aria-describedby") -> "add-user-role-help")
                             </td>
                             <td>
                                 @* a button outside the form in the DOM (a form can't wrap a table row): its form attribute
@@ -199,6 +201,10 @@
 
             </table>
             </div>
+            @* what the add row's roles do (its select's description) *@
+            @for(contest <- contestOpt) {
+                <p class="form-text" id="add-user-role-help">@Messages("coi.role.help")</p>
+            }
 
             @* each account's latest invitation into the contest, live or of the last 30 days, with its
                status, so that the admin sees whether the person got it. One that waits to give a role

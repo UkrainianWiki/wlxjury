@@ -289,13 +289,22 @@ juror, an inactive membership, signed out.
 
 **Rule.** A stored contest role is exactly one value of `User.ContestRoles` (= `FORM_ROLES`):
 exact match, no splitting, trimming or case folding. Root comes only from `users.is_root`, set
-by root through `User.setRoot`, never from `user_contest`. A role field in a form has an
-allowlist `verifying`. No role can grant more than its holder has (`User.mayAssignRoles`).
+by root through `User.setRootLocked`, never from `user_contest`, and only with the edit page's
+own **Root** field (`root`, root's only, never for oneself, only a toggle of the state the page
+showed, `rootWas`), never with a role value: a contest role change leaves it as it is. No new
+account is made root (the add row's `root` is refused for everyone, and
+`UserService.createAccount` strips it). It is decided again with the actor's and the target's
+rows locked by primary key (deadlocks retried): the actor must still be an active root other
+than the target, so a removal always leaves a root; a grant needs an active target and L2 (not
+for an account with a password and an unverified email). A role field in a form has an allowlist `verifying`. No role can grant more than
+its holder has (`User.mayAssignRoles`).
 Adding a role needs a migration replacing V76's `CHECK` constraint. (N1: a free-text role
 field split on commas made any contest admin root.)
 
-**Example.** `UserController.editUserForm`'s `"roles"` verifies `User.isContestRole(r) || r
-== root`; `saveUser` refuses what `mayAssignRoles` rejects before any write;
+**Example.** `UserController.editUserForm`'s `"roles"` verifies `User.isContestRole(r)` (root
+is not one); `saveUser` refuses what `mayAssignRoles` rejects, `root` for a new account (400),
+a `root` change from anyone but root (a 403 denial, `root_change`) or for oneself (400), before
+any write;
 `UserContestJdbc.createMembership`/`updateRole` and `User.create` `require` a contest role;
 `UserContest.roles` ignores any other stored value (the membership is inactive).
 

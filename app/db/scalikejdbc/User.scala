@@ -207,10 +207,11 @@ object User extends CRUDMapper[User] {
   def isContestRole(role: String): Boolean = ContestRoles.contains(role)
 
   /** Whether `editor` may submit `roles` for a user (the edit form's, the add-user row's):
-    * each one a contest role, or root from a root editor only.
+    * each one a contest role. Root is none, from anyone: it is the account's users.is_root,
+    * which only root changes, with the edit page's own Root field (`root`), never with a role.
     */
   def mayAssignRoles(editor: User, roles: Set[String]): Boolean =
-    roles.forall(r => isContestRole(r) || r == ROOT_ROLE && editor.hasRole(ROOT_ROLE))
+    roles.forall(isContestRole)
 
   /** The contest roles that let a member in: an account gets one only if
     * [[User.mayTakeAccessRole]], else through an invitation.
@@ -237,7 +238,8 @@ object User extends CRUDMapper[User] {
         Option[Long],
         Option[String],
         Option[Int],
-        Option[String]
+        Option[String],
+        Option[Boolean]
     )
   ] = {
     Some(
@@ -247,11 +249,13 @@ object User extends CRUDMapper[User] {
         user.wikiAccount,
         user.email,
         None,
-        if (user.hasRole(ROOT_ROLE)) Some(ROOT_ROLE) else user.contestRole,
+        // the contest role only: root is the account's, its own field
+        user.contestRole,
         user.contestId,
         user.lang,
         user.sort,
-        user.theme
+        user.theme,
+        Some(user.isRoot || user.hasRole(ROOT_ROLE))
       )
     )
   }
@@ -266,7 +270,8 @@ object User extends CRUDMapper[User] {
       contest: Option[Long],
       lang: Option[String],
       sort: Option[Int],
-      theme: Option[String]
+      theme: Option[String],
+      root: Option[Boolean] = None
   ): User = {
     new User(
       fullname,
@@ -278,7 +283,10 @@ object User extends CRUDMapper[User] {
       lang,
       wikiAccount = wikiAccount,
       sort = sort,
-      theme = theme
+      theme = theme,
+      // what the Root field asks for; only root's save of another account applies it
+      // (UserController.updateUser, UserService.createAccount)
+      isRoot = root.contains(true)
     )
   }
 
@@ -645,7 +653,8 @@ object User extends CRUDMapper[User] {
     )
 
   /** Inserts the user and, when [[User.contestId]] and a contest role are set, their
-    * membership in that contest. A root role sets users.is_root.
+    * membership in that contest. [[User.isRoot]] (or a root role, for tests and setup) sets
+    * users.is_root.
     */
   def create(user: User)(implicit session: DBSession = AutoSession): User = {
     // before anything is written: a contest role is an allowlisted one, nothing else
@@ -770,9 +779,38 @@ object User extends CRUDMapper[User] {
     updateById(id)
       .withAttributes("theme" -> theme.value)
 
-  def setRoot(id: Long, root: Boolean): Unit =
-    updateById(id)
-      .withAttributes("isRoot" -> root)
+  /** Root's change of another account's users.is_root (the edit page's Root field), decided and
+    * written in one transaction with the actor's and the target's rows locked by primary key, in
+    * id order, retried on a deadlock ([[WriteTx.write]]). Refused (a message key, nothing
+    * written) if the actor is no longer an active root, or is the target, or the target is gone
+    * (`root.changed.meanwhile`); a grant to a deleted account (the same), or to one with a
+    * password but no verified email (L2, `root.needs.verified.email`: an admin's password set,
+    * which unverifies it, may have landed since the form was checked). Right(false): the account
+    * already was as asked (another root's change came first), nothing written. A removal always
+    * leaves a root: the actor, an active root other than the target, re-read under its lock.
+    */
+  def setRootLocked(actorId: Long, targetId: Long, root: Boolean): Either[String, Boolean] =
+    WriteTx.write { implicit session =>
+      val rows = sql"""SELECT id, is_root, deleted_at IS NULL AS active, password IS NOT NULL AS has_password,
+                         email_verified_at IS NOT NULL AS verified
+                       FROM users WHERE id IN ($actorId, $targetId) ORDER BY id FOR UPDATE"""
+        .map(rs => rs.long("id") -> ((rs.boolean("is_root"), rs.boolean("active"), rs.boolean("has_password"),
+          rs.boolean("verified"))))
+        .list()
+        .toMap
+      val actorActiveRoot = rows.get(actorId).exists { case (isRoot, active, _, _) => isRoot && active }
+      rows.get(targetId) match {
+        case _ if actorId == targetId || !actorActiveRoot => Left("root.changed.meanwhile")
+        case None                                         => Left("root.changed.meanwhile")
+        case Some((isRoot, _, _, _)) if isRoot == root    => Right(false)
+        case Some((_, active, _, _)) if root && !active   => Left("root.changed.meanwhile")
+        case Some((_, _, hasPassword, verified)) if root && hasPassword && !verified =>
+          Left("root.needs.verified.email")
+        case Some(_) =>
+          sql"UPDATE users SET is_root = $root WHERE id = $targetId".update.apply()
+          Right(true)
+      }
+    }
 
   /** Stores a hash made by [[PasswordHasher.hash]] (to hash before writing anything else);
     * [[setPassword]] hashes and stores. A new password ends every session of the account
