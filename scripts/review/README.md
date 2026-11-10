@@ -35,7 +35,9 @@ replies) are not committed. Deleting them loses nothing:
   it waits out the spacing from that reply and posts the same command again. A latest
   `@coderabbitai review` that finished without a review (and not clean) gets
   `@coderabbitai full review`; a latest `@coderabbitai full review` that finished without one is
-  "no review available" (see below);
+  "no review available" (see below). A request older than the PR's head commit (its committer
+  date, read from the commits API: a rebase, amend or triage fix sets it) is ignored: the PR is
+  treated as never requested and gets a plain `@coderabbitai review`;
 - `post_replies.py` skips a thread that `ukwikidev` already answered (a reply whose
   `in_reply_to_id` is the thread's comment), and an issue comment that `ukwikidev` already posted:
   one carrying its `<!-- wlxjury-review:<pr>:<name> -->` marker (added on posting), or, among our

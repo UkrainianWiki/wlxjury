@@ -50,6 +50,11 @@ a summary covering its head as "reviewed" (clean), is skipped, and a PR whose la
 instead of posting again, and its answer is handled as for a new request (a limit pauses and
 counts as a retry, no reply stops with exit 2, and so on). After a limit reply it waits out the
 spacing from that reply before posting again (the same command: `review` or `full review`).
+Our latest request counts only if it is newer than the head commit's committer date (the commits
+API; a rebase, amend or new commit sets it): a PR whose head changed after its last request is
+treated as never requested and gets a plain `@coderabbitai review`, whatever the earlier request
+ended with (finished, clean, no review available). Each post's head sha is also logged in the
+state, but nothing depends on it.
 A latest `@coderabbitai review` that finished without a review gets `@coderabbitai full review`;
 a latest `@coderabbitai full review` that finished without a review is "no review available".
 
@@ -217,6 +222,11 @@ class Loop:
     def head(self, n):
         return self.hub.get(f"pulls/{n}")["head"]["sha"]
 
+    def head_date(self, sha):
+        """The head commit's committer date: a rebase, an amend or a new commit sets it, so our
+        request older than it was about an earlier head."""
+        return ts(self.hub.get(f"commits/{sha}")["commit"]["committer"]["date"])
+
     def latest_request(self, comments):
         """(asked, command, reply): our latest `@coderabbitai` request among a PR's issue comments,
         its command (REVIEW or FULL) and CodeRabbit's latest reply to it (None if no reply yet), or
@@ -284,13 +294,23 @@ class Loop:
                 self.log(f"#{n}: has a CodeRabbit review, skipping")
             return "skip"
         comments = self.hub.get_all(f"issues/{n}/comments")
-        if clean_summary(comments, self.head(n)):
+        sha = self.head(n)
+        if clean_summary(comments, sha):
             if e.get("outcome") != CLEAN:
                 e.update(outcome=CLEAN, inline=0, note="reviewed, 0 comments (clean): the summary on GitHub covers the head")
                 self.save()
             self.log(f"#{n}: reviewed at its head with 0 comments (clean), skipping")
             return "skip"
         req = self.latest_request(comments)
+        if req:
+            committed = self.head_date(sha)
+            if req[0] < committed:
+                # a request about an older head says nothing about this one: start again with `review`
+                self.log(f"#{n}: our {req[1]} at {req[0]:%Y-%m-%d %H:%M:%S} is older than the head "
+                         f"{sha[:8]} ({committed:%Y-%m-%d %H:%M:%S}), treating the PR as never requested")
+                req = None
+                if e.get("outcome") in (NO_REVIEW, CLEAN):
+                    e.update(outcome="new head"); self.save()
         retries, pause, command, ans = 0, 0, REVIEW, None
         if req:
             asked, command, reply = req
@@ -330,7 +350,8 @@ class Loop:
                 self.hub.comment(n, command)
                 # GitHub's clock may lag ours by a few seconds; the reply comes later than that
                 since = self.now() - datetime.timedelta(seconds=10)
-                e.setdefault("posts", []).append({"command": command, "at": f"{self.now():%Y-%m-%dT%H:%M:%SZ}"})
+                e.setdefault("posts", []).append({"command": command, "at": f"{self.now():%Y-%m-%dT%H:%M:%SZ}",
+                                                  "head": self.head(n)})
                 e["outcome"] = "pending"
                 self.save()
                 self.log(f"#{n}: posted {command}")
@@ -499,14 +520,26 @@ def self_test():
             self.clock, self.items, self.posted = clock, [], []
             self.script = {n: list(outs) for n, outs in script.items()}
             self.summaries = {}
+            self.heads = {}  # pr -> sha other than `head`; commit sha -> committer date
+            self.dates = {head: clock.t - datetime.timedelta(days=8)}
 
         def add(self, path, item, start, end=None):
             entry = [start, end, path, item]
             self.items.append(entry)
             return entry
 
+        def push(self, n, ago):
+            """A new head commit on PR n, committed `ago` seconds before now."""
+            sha = f"{n:04d}" + "e" * 36
+            self.heads[n] = sha
+            self.dates[sha] = self.clock.t - datetime.timedelta(seconds=ago)
+
         def get(self, path):
-            return {"head": {"sha": head}}
+            m = re.match(r"pulls/(\d+)$", path)
+            if m:
+                return {"head": {"sha": self.heads.get(int(m.group(1)), head)}}
+            sha = path.split("/")[-1]
+            return {"commit": {"committer": {"date": fmt(self.dates[sha])}}}
 
         def get_all(self, path):
             t = self.clock.t
@@ -536,7 +569,7 @@ def self_test():
             self.add(path, {"user": bot, "body": finished, "created_at": fmt(sec(7)), "updated_at": fmt(sec(600))},
                      sec(600))
             if outcome.startswith("clean"):
-                self.summary(n, head, sec(596))
+                self.summary(n, self.heads.get(n, head), sec(596))
             m = re.search(r"review(?:@(\d+))?$", outcome)
             if m:
                 rv = sec(590) if m.group(1) is None else sec(600 + int(m.group(1)))
@@ -548,15 +581,18 @@ def self_test():
             outs = self.script.get(n) or []
             self.answer(n, body, self.clock.t, outs.pop(0) if outs else "finished")
 
-    def case(script=None, earlier=(), dry=False, last=1, batch=5):
+    def case(script=None, earlier=(), dry=False, last=1, batch=5, pushes=None):
         """earlier: (pr, command, seconds ago, outcome) requests already on GitHub (the state is
-        rebuilt from them). Every PR starts with a summary comment covering an older commit."""
+        rebuilt from them); pushes: {pr: seconds ago} new head commits after them. Every PR starts
+        with a summary comment covering an older commit."""
         clock = Clock()
         hub = Rabbit(clock, script or {})
         for pr in range(1, last + 1):
             hub.summary(pr, "a79c09613e71867f369019f6dc428c5634b5c0ea", clock.t - datetime.timedelta(days=7))
         for pr, command, ago, outcome in earlier:
             hub.answer(pr, command, clock.t - datetime.timedelta(seconds=ago), outcome)
+        for pr, ago in (pushes or {}).items():
+            hub.push(pr, ago)
         lines = []
         loop = Loop(hub, None, dry, clock=clock, logger=lines.append)
         code = run(loop, 1, last, batch)
@@ -621,6 +657,22 @@ def self_test():
           (code, posted, outcomes), (0, [(1, FULL)], {"1": "reviewed"}))
     code, posted, outcomes, _ = case(earlier=[(1, FULL, 3600, "finished")])
     check("rebuild: a finished full review request is no review available, nothing posted",
+          (code, posted, outcomes), (0, [], {"1": NO_REVIEW}))
+    code, posted, outcomes, _ = case({1: ["review"]}, earlier=[(1, REVIEW, 7200, "finished")], pushes={1: 3600})
+    check("new head: after a finished review, post review (not full review)",
+          (code, posted, outcomes), (0, [(1, REVIEW)], {"1": "reviewed"}))
+    code, posted, outcomes, _ = case({1: ["review"]}, earlier=[(1, REVIEW, 9000, "finished"), (1, FULL, 7200, "finished")],
+                                     pushes={1: 3600})
+    check("new head: after a full review with no review available, post review again",
+          (code, posted, outcomes), (0, [(1, REVIEW)], {"1": "reviewed"}))
+    code, posted, outcomes, _ = case({1: ["clean"]}, earlier=[(1, REVIEW, 7200, "clean")], pushes={1: 3600})
+    check("new head: after a clean review, post review; clean again at the new head",
+          (code, posted, outcomes), (0, [(1, REVIEW)], {"1": CLEAN}))
+    code, posted, _, lines = case(earlier=[(1, FULL, 7200, "finished")], pushes={1: 3600}, dry=True)
+    check("new head: dry run says why and would post review",
+          (code, posted, "older than the head" in lines[0], lines[-1]), (0, [], True, f"#1: would post {REVIEW}"))
+    code, posted, outcomes, _ = case(earlier=[(1, FULL, 600, "finished")], pushes={1: 3600})
+    check("new head: a request after the head commit still counts",
           (code, posted, outcomes), (0, [], {"1": NO_REVIEW}))
     code, posted, _, lines = case(earlier=[(1, REVIEW, 3600, "finished")], dry=True)
     check("dry run: would post a full review",
