@@ -69,13 +69,21 @@ test.describe('the guides\' screenshots', () => {
       });
     }
   });
+  // The large views show the controls column and the top of the photo (the guide explains the
+  // column); the comment box has its own shot
+  const LARGE_TOP = { height: 330, width: 820 };
   // `height`: only the top of the viewport (the rest of such a page is empty)
   const top = (page, file, height, width = VIEWPORT.width) =>
     page.screenshot({ path: file, fullPage: true, clip: { x: 0, y: 0, width, height } });
 
   /** The page height that ends below the `n`th row of the gallery's tiles (with a margin), so
     * that no crop cuts through a photo. */
-  const belowRows = (page, n) => page.evaluate((rows) => {
+  const belowRows = async (page, n) => {
+    const height = await measureRows(page, n);
+    expect(height, 'the page shows gallery tiles (.ug-tile or .gallerybox)').not.toBeNull();
+    return height;
+  };
+  const measureRows = (page, n) => page.evaluate((rows) => {
     // the gallery's tiles (.ug-tile) or the results' (.gallerybox), in rows: tiles in a row are
     // centred on each other, so a tile starts a new row when it begins below the row's bottom
     const boxes = [...document.querySelectorAll('.ug-tile, .gallerybox')]
@@ -89,6 +97,7 @@ test.describe('the guides\' screenshots', () => {
       if (last && box.top < last.bottom - 4) last.bottom = Math.max(last.bottom, box.bottom);
       else rowList.push({ top: box.top, bottom: box.bottom });
     }
+    if (rowList.length === 0) return null;
     const row = rowList[Math.min(rows, rowList.length) - 1];
     const next = rowList[rows]; // the margin never reaches the next row's photos
     return Math.floor(next ? Math.min(row.bottom + 12, next.top - 2) : row.bottom + 12);
@@ -96,20 +105,19 @@ test.describe('the guides\' screenshots', () => {
 
   /** The page height that ends below the `n`th body row of the page's first table, so that no
     * crop cuts through a row. */
-  const belowTableRow = (page, n) => page.evaluate((count) => {
+  const belowTableRow = async (page, n) => {
+    const height = await measureTableRow(page, n);
+    expect(height, 'the page shows a table with body rows').not.toBeNull();
+    return height;
+  };
+  const measureTableRow = (page, n) => page.evaluate((count) => {
     const rows = [...document.querySelectorAll('table tbody tr')].filter((r) => r.getBoundingClientRect().height > 0);
+    if (rows.length === 0) return null;
     const row = rows[Math.min(count, rows.length) - 1].getBoundingClientRect();
     return Math.ceil(row.bottom + window.scrollY) + 2;
   }, n);
 
-  /** The page height that ends below the large view's "Submit comment" button, so that the
-    * photo and the comment box show whole. */
-  const belowComment = (page) => page.evaluate(() => {
-    const button = document.getElementById('saySomething'); // the "Submit comment" input
-    return Math.ceil(button.getBoundingClientRect().bottom + window.scrollY) + 16;
-  });
-
-  async function shot(contextAs, role, target, name, { full = false, prepare, crop, height, width, rows, tableRows, comment } = {}) {
+  async function shot(contextAs, role, target, name, { full = false, prepare, crop, cropTop = 12, height, width, rows, tableRows } = {}) {
     const context = await contextAs(role);
     await context.addCookies([{ name: 'theme', value: 'dark', url: baseUrl }]);
     const page = await sized(context);
@@ -134,13 +142,18 @@ test.describe('the guides\' screenshots', () => {
       const topEdge = Math.min(...boxes.map((b) => b.y)) + scrollY;
       const right = Math.max(...boxes.map((b) => b.x + b.width));
       const bottom = Math.max(...boxes.map((b) => b.y + b.height)) + scrollY;
-      // with a margin, so that nothing at the edge is cut
+      // with a margin, so that nothing at the edge is cut, but never up into the navbar: its
+      // bottom border would show as a grey line along the top of the crop
+      // (the large view has no navbar)
+      const navBox = await page.locator('nav.navbar').count() ? await page.locator('nav.navbar').first().boundingBox() : null;
+      const navBottom = navBox ? Math.ceil(navBox.y + navBox.height + scrollY) + 1 : 0;
       const x = Math.max(0, left - 12);
+      // (`cropTop`: a smaller margin above where the photo's edge is close, as in the comment box)
+      const y = Math.max(navBottom, topEdge - cropTop);
       await page.screenshot({ path: file, fullPage: true,
-        clip: { x, y: Math.max(0, topEdge - 12), width: Math.min(VIEWPORT.width - x, right - x + 12), height: bottom - Math.max(0, topEdge - 12) + 12 } });
+        clip: { x, y, width: Math.min(VIEWPORT.width - x, right - x + 12), height: bottom - y + 12 } });
     } else if (rows) await top(page, file, await belowRows(page, rows), width);
     else if (tableRows) await top(page, file, await belowTableRow(page, tableRows), width);
-    else if (comment) await top(page, file, await belowComment(page), width);
     else if (height) await top(page, file, height, width);
     else {
       // a whole page ends with a margin, so that its last button isn't cut at the edge
@@ -156,9 +169,11 @@ test.describe('the guides\' screenshots', () => {
     await shot(contextAs, 'juror', galleryPath(fixture.roundBinaryId, juror.id), 'juror-gallery-binary', { rows: 1 });
     await shot(contextAs, 'juror', galleryPath(fixture.roundRatingId, juror.id), 'juror-gallery-rated', { rows: 1 });
     await shot(contextAs, 'juror', galleryPath(fixture.roundBinaryId, juror.id), 'juror-gallery-top-bar', { height: 56 });
-    await shot(contextAs, 'juror', largePath(fixture.roundBinaryId, juror.id, juror.pageId), 'juror-large-view-binary', { comment: true });
+    await shot(contextAs, 'juror', largePath(fixture.roundBinaryId, juror.id, juror.pageId), 'juror-large-view-binary', LARGE_TOP);
+    // the comment box, under the photo
+    await shot(contextAs, 'juror', largePath(fixture.roundBinaryId, juror.id, juror.pageId), 'juror-large-view-comments', { crop: '.large-comments', cropTop: 2 });
     await shot(contextAs, 'juror', largePath(fixture.roundRatingId, juror.id, juror.ratedPageId), 'juror-large-view-rated', {
-      comment: true,
+      ...LARGE_TOP,
       // a plain star rate in a round without the worst mark, as the guide describes. The
       // worst-mark test undoes its vote, so this holds on a rerun too; a safety net if that
       // undo failed: start the docs-mode server afresh
@@ -171,7 +186,7 @@ test.describe('the guides\' screenshots', () => {
 
   test('organizer pages', async ({ contextAs, fixture }) => {
     await shot(contextAs, 'organizer', `/roundstat/${fixture.roundBinaryId}`, 'organizer-round-statistics', { tableRows: 12 });
-    await shot(contextAs, 'organizer', `/byrate/round/${fixture.roundRatingId}/user/0/page/1`, 'organizer-results-by-rate', { rows: 2 });
+    await shot(contextAs, 'organizer', `/byrate/round/${fixture.roundRatingId}/user/0/page/1`, 'organizer-results-by-rate', { rows: 1 });
     await shot(contextAs, 'organizer', `/filelist/round/${fixture.roundRatingId}/user/0/page/1`, 'organizer-results-file-list', { tableRows: 6 });
     await shot(contextAs, 'organizer', `/admin/rounds/${fixture.roundBinaryId}/conflicts`, 'organizer-conflicts', { height: 680 });
     // the organizer's way to that page: the link under the statistics table (the last rows and it)
@@ -183,6 +198,7 @@ test.describe('the guides\' screenshots', () => {
     await stat.waitForLoadState('networkidle');
     const lastRow = await stat.locator('table tbody tr').last().boundingBox();
     const link = await stat.locator('#round-conflicts-link').boundingBox();
+    expect(lastRow && link, 'the statistics table\'s last row and the conflicts link are shown').toBeTruthy();
     await stat.screenshot({ path: path.join(OUT_DIR, 'organizer-round-statistics-link.png'), fullPage: true,
       clip: { x: 0, y: lastRow.y - 2, width: VIEWPORT.width, height: link.y + link.height - lastRow.y + 22 } });
     await context.close();
@@ -227,6 +243,7 @@ test.describe('the guides\' screenshots', () => {
     await top(page, path.join(OUT_DIR, 'admin-users.png'), await belowTableRow(page, 4));
     const heading = await page.getByRole('heading', { name: 'Invitations', exact: true }).boundingBox();
     const table = await page.locator('table.pending-invitations').boundingBox();
+    expect(heading && table, 'the Invitations heading and its table are shown').toBeTruthy();
     await page.screenshot({ path: path.join(OUT_DIR, 'admin-invitations.png'), fullPage: true,
       clip: { x: 0, y: heading.y - 10, width: VIEWPORT.width, height: table.y + table.height - heading.y + 20 } });
 
@@ -247,9 +264,15 @@ test.describe('the guides\' screenshots', () => {
     const section = await page.locator('#share-link').boundingBox();
     const warning = await page.locator('#share-link .alert').last().boundingBox();
     expect(section && warning, 'the section and its warning are shown').toBeTruthy();
-    const shareTop = Math.max(0, section.y - 12);
-    await page.screenshot({ path: path.join(OUT_DIR, 'admin-share-link.png'),
-      clip: { x: section.x - 12, y: shareTop, width: section.width + 24, height: Math.ceil(warning.y + warning.height) + 16 - shareTop } });
+    // as the other crops: full-page coordinates, never up into the navbar, inside the viewport
+    const scrollY = await page.evaluate(() => window.scrollY);
+    const navBox = await page.locator('nav.navbar').count() ? await page.locator('nav.navbar').first().boundingBox() : null;
+    const navBottom = navBox ? Math.ceil(navBox.y + navBox.height + scrollY) + 1 : 0;
+    const shareX = Math.max(0, section.x - 12);
+    const shareY = Math.max(navBottom, section.y + scrollY - 12);
+    await page.screenshot({ path: path.join(OUT_DIR, 'admin-share-link.png'), fullPage: true,
+      clip: { x: shareX, y: shareY, width: Math.min(VIEWPORT.width - shareX, section.width + 24),
+        height: Math.ceil(warning.y + warning.height + scrollY) + 16 - shareY } });
     await context.close();
     await shot(contextAs, null, invitationPath, 'juror-set-password', { height: 440 });
   });
@@ -293,7 +316,8 @@ test.describe('the guides\' screenshots', () => {
     const y = Math.max(0, from.y + scrollY - 12);
     await page.screenshot({ path: path.join(OUT_DIR, 'organizer-score-rule-warning.png'), fullPage: true,
       // the centred form's width (the rows span it), with a margin
-      clip: { x: Math.max(0, from.x - 12), y, width: from.width + 24, height: to.y + scrollY + to.height + 12 - y } });
+      clip: { x: Math.max(0, from.x - 12), y, width: Math.min(VIEWPORT.width - Math.max(0, from.x - 12), from.width + 24),
+        height: to.y + scrollY + to.height + 12 - y } });
     await context.close(); // not saved
   });
 
@@ -336,7 +360,7 @@ test.describe('the guides\' screenshots', () => {
       await view.goto(filePath);
       await expect(view.getByRole('button', { name: /Clear the vote/ }).first()).toBeVisible();
       await view.waitForLoadState('networkidle');
-      await top(view, path.join(OUT_DIR, 'juror-large-view-worst-mark.png'), await belowComment(view));
+      await top(view, path.join(OUT_DIR, 'juror-large-view-worst-mark.png'), LARGE_TOP.height, LARGE_TOP.width);
     } finally {
       try {
         if (voted) {

@@ -111,19 +111,24 @@ object UiShotsServer {
       photos.setFixture(DocsPhotos.Fixture(titles, shown))
       println(s"[images] docs photos for ${titles.size} files (${photos.pool.good.size} photos, " +
         s"${photos.pool.bad.size} degraded); ${shown.size} files shown at the top of the shots get no degraded one")
-      // each file takes its photo's width and height (the fixture's are its Commons original's):
-      // the pages size a thumbnail from the stored ones, so a landscape photo standing in for a
-      // portrait file came out narrow and short. This run's container only, after the rounds
-      // were filled, so no round's size filter sees the change
+      // each file keeps its stored width (the fixture's, its Commons original's, so the large
+      // view's "Full resolution" stays plausible) and takes its photo's aspect ratio: the pages
+      // size a thumbnail from the stored width and height, so a landscape photo standing in for a
+      // portrait file came out narrow and short. A file without a width takes its photo's own
+      // size. This run's container only, after the rounds were filled, so no round's size filter
+      // sees the change
       val sizes = (photos.pool.good ++ photos.pool.bad).distinct.map(p => p -> DocsPhotos.dimensions(p)).toMap
       val byPhoto = files.groupBy { case (_, t) => photos.fileForTitle(t).getOrElse(sys.error(s"no docs photo for $t")) }
       val resized: Int = DB.localTx { tx =>
         byPhoto.toSeq.flatMap { case (photo, group) =>
           val (w, h) = sizes(photo)
-          group.map(_._1).grouped(1000).map(ids => sql"UPDATE images SET width = $w, height = $h WHERE page_id IN ($ids)".update.apply()(tx))
+          group.map(_._1).grouped(1000).map { ids =>
+            sql"UPDATE images SET height = ROUND(width * $h / $w) WHERE page_id IN ($ids) AND width > 0".update.apply()(tx) +
+              sql"UPDATE images SET width = $w, height = $h WHERE page_id IN ($ids) AND (width IS NULL OR width <= 0)".update.apply()(tx)
+          }
         }.sum
       }
-      println(s"[images] $resized files take their docs photo's size")
+      println(s"[images] $resized files take their docs photo's aspect ratio")
     }
     // the stub's mode, which docs-screenshots.spec.js checks: "docs", "stub", or "commons" (none)
     val images = if (f.docsPhotos.isDefined) "docs" else sys.props.get("ui.images").filter(_ == "stub").getOrElse("commons")
