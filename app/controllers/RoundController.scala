@@ -246,9 +246,10 @@ class RoundController @Inject() (
   private def roundNotFound(user: User)(implicit request: Request[AnyContent]): Result =
     NotFound(views.html.errorPage(Some(user), "error.title", "error.round.not.found"))
 
-  /** Whether `user` administers the round's contest, as an active member of it. */
-  private def adminOfRound(user: User, round: Round): Boolean =
-    contestPermission(User.ADMIN_ROLES, Some(round.contestId))(Secured.inContest(user, round.contestId))
+  /** Whether `user` administers the round's contest, as an active member of it
+    * ([[Secured.administersRound]], which the statistics page's pause button shows by too).
+    */
+  private def adminOfRound(user: User, round: Round): Boolean = Secured.administersRound(user, round)
 
   def contestSpecialNominations(contestId: Long): Seq[SpecialNomination] = {
     ContestJuryJdbc

@@ -57,12 +57,9 @@ class LargeViewController @Inject() (
       region: String = "all",
       criteria: Option[Long] = None
   ): EssentialAction =
-    withAuth(
-      roundPermission(
-        User.ADMIN_ROLES ++ User.JURY_ROLES ++ User.ORG_COM_ROLES,
-        roundId
-      )
-    ) { user => implicit request =>
+    // only a juror of the round's contest votes (Secured.VotePermission), by the buttons, the
+    // keys or a criterion's rate: an organizer, admin or root without that role is a 403 page
+    withAuth(Secured.VotePermission(roundId)) { user => implicit request =>
     // a round open to its jurors, and the juror not stopped on it (P6): else as a stopped round
     Round.findById(roundId).filter(_.openToJurors).filterNot(_ => RoundUser.isStopped(roundId, user.getId)).fold(
       Redirect(routes.GalleryController.list(user.getId, 1, region, roundId))

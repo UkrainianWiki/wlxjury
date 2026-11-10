@@ -924,6 +924,7 @@ class LargeImageSpec extends PlaySpecification with PlayTestDb {
         html must contain("data-vote-expired=\"Cette page a expiré. Rechargez-la et votez à nouveau.\"")
         html must contain("data-vote-closed=\"Ce tour n&#x27;est plus ouvert au vote.\"")
         html must contain("data-vote-not-found=\"Ce fichier ne vous est plus attribué. Rechargez la page.\"")
+        html must contain("data-vote-forbidden=\"Vous ne pouvez plus voter dans ce tour. Rechargez la page.\"")
         html must contain("data-vote-reference=\"Référence : {0}\"")
         html must contain("data-vote-login-url=\"" + routes.LoginController.login(Some(path)).url + "\"")
         html must contain("javascripts/vote-errors.js")

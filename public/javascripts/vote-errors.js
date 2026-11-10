@@ -8,7 +8,9 @@
  *     401 {error: "unauthenticated"}           signed out
  *     403 {error: "csrf", reference}           the CSRF filter (CsrfErrorHandler): the page's
  *                                              token is stale, or the session is gone
- *     403 {error: "forbidden", reference}      a denial (Secured.onUnAuthorizedJson)
+ *     403 {error: "forbidden", reference}      a denial (Secured.onUnAuthorizedJson): e.g. a
+ *                                              juror made an organizer, who votes no more
+ *                                              (Secured.VotePermission); with the reference
  *     409 {error: "round_closed"}              the round is not open for voting
  *     400 {error: "invalid_rate"}              a rate the round doesn't take (a page from
  *                                              before the round's rates changed)
@@ -24,6 +26,9 @@ function voteErrorMessage(status, body, texts) {
     if (status === 401) return texts.signedOut;
     // the filter's CSRF failure, also when the body is not JSON; a denial has a reference
     if (status === 403 && error !== "forbidden") return texts.expired;
+    if (status === 403) {
+        return reference ? texts.forbidden + " " + texts.reference.replace("{0}", reference) : texts.forbidden;
+    }
     if (status === 409) return texts.closed;
     if (status === 400 && error === "invalid_rate") return texts.invalidRate;
     if (status === 404 && error === "not_found") return texts.notFound;
@@ -41,6 +46,7 @@ function voteErrorTexts(el) {
         closed: text("closed", "This round is closed for voting."),
         invalidRate: text("invalid-rate", "This round doesn't take that rate. Reload the page and vote again."),
         notFound: text("not-found", "This file is no longer assigned to you. Reload the page."),
+        forbidden: text("forbidden", "You can no longer vote in this round. Reload the page."),
         failed: text("failed", "Your vote could not be saved. Try again."),
         reference: text("reference", "Reference: {0}"),
         loginUrl: text("login-url", "")

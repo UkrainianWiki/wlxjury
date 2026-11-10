@@ -362,6 +362,7 @@ vote.error.failed=Your vote could not be saved. Try again.
 vote.error.reference=Reference: {0}
 vote.error.invalid.rate=This round doesn''t take that rate. Reload the page and vote again.
 vote.error.not.found=This file is no longer assigned to you. Reload the page.
+vote.error.forbidden=You can no longer vote in this round. Reload the page.
 job.status.denied=No access to this job''s status.
 job.error.reference=the job stopped on an error. If it happens again, tell the administrators this reference: {0}.
 job.error.unknown=the job stopped on an error.
@@ -471,6 +472,9 @@ round.start = Start the round
 round.stop = Stop the round
 juror.start = Resume the juror''s voting
 juror.stop = Pause the juror''s voting
+juror.voting = Voting
+juror.voting.active = Active
+juror.voting.paused = Paused
 
 # the own profile's personal API tokens (apiTokens.scala.html)
 api.tokens = API tokens

@@ -8,6 +8,7 @@ const texts = {
     closed: "CLOSED",
     invalidRate: "INVALID RATE",
     notFound: "NOT FOUND",
+    forbidden: "FORBIDDEN",
     failed: "FAILED",
     reference: "Ref {0}",
     loginUrl: "/login?returnTo=%2Fgallery"
@@ -25,8 +26,10 @@ describe("voteErrorMessage", () => {
         expect(voteErrorMessage(403, null, texts)).toBe("EXPIRED");
     });
 
-    test("shows a denial's reference", () => {
-        expect(voteErrorMessage(403, { error: "forbidden", reference: "0a1b2c3d" }, texts)).toBe("FAILED Ref 0a1b2c3d");
+    test("says a denied juror can no longer vote, with the denial's reference", () => {
+        // e.g. a juror made an organizer (Secured.VotePermission)
+        expect(voteErrorMessage(403, { error: "forbidden", reference: "0a1b2c3d" }, texts)).toBe("FORBIDDEN Ref 0a1b2c3d");
+        expect(voteErrorMessage(403, { error: "forbidden" }, texts)).toBe("FORBIDDEN");
     });
 
     test("says the round is closed", () => {
@@ -65,22 +68,25 @@ describe("voteErrorTexts", () => {
             "data-vote-closed": "Fermé",
             "data-vote-invalid-rate": "Note refusée",
             "data-vote-not-found": "Plus attribué",
+            "data-vote-forbidden": "Plus de vote",
             "data-vote-failed": "Échec",
             "data-vote-reference": "Référence : {0}",
             "data-vote-login-url": "/login"
         }));
         expect(read).toEqual({
             signedOut: "Déconnecté", expired: "Expirée", closed: "Fermé", invalidRate: "Note refusée", notFound: "Plus attribué",
-            failed: "Échec",
+            forbidden: "Plus de vote", failed: "Échec",
             reference: "Référence : {0}", loginUrl: "/login"
         });
         expect(voteErrorMessage(403, { error: "forbidden", reference: "0a1b2c3d" }, read))
-            .toBe("Échec Référence : 0a1b2c3d");
+            .toBe("Plus de vote Référence : 0a1b2c3d");
+        expect(voteErrorMessage(500, { reference: "0a1b2c3d" }, read)).toBe("Échec Référence : 0a1b2c3d");
     });
 
     test("falls back to English without the attributes, and to no login page", () => {
         const read = voteErrorTexts(null);
         expect(read.expired).toBe("This page has expired. Reload it and vote again.");
+        expect(read.forbidden).toBe("You can no longer vote in this round. Reload the page.");
         expect(read.loginUrl).toBe("");
     });
 });
