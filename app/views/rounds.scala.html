@@ -61,7 +61,7 @@
                             <td> @round.name </td>
                                 <!--                            <td>              @round.roles.mkString(",") </td> -->
                             <td>@Option(round.distribution).filter(_ != 0).fold(Messages("each.file.to.all.jurors"))(i => Messages("each.file.to.i.juror.s", i))</td>
-                            <td>@if(round.rates.id == 1) { @round.rates.name } else { @Messages("1-x.rating", round.rates.id) } </td>
+                            <td>@if(round.rates.id == Round.binaryRound.id) { @Messages("rating.yes.no") } else { @Messages("1-x.rating", round.rates.id) } </td>
                                 <!--                            <td>              @round.limits.min </td>
                             <td>@round.limits.max </td>
                             <td>@round.limits.recommended.fold("")(_.toString) </td> -->

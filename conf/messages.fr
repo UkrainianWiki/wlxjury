@@ -209,6 +209,7 @@ number = Numbre
 row.number = N°
 file.distribution = Distribution d''image
 rating.type = Type de notation
+rating.yes.no = Oui/Non
 
 edit.round = Modifier le tour
 create.round= Créer un tour

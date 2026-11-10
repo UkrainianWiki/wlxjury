@@ -81,6 +81,20 @@ class RoundEditPageSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
+    "name a yes/no round's rating type Yes/No, on the form and on the rounds list" in {
+      testDbApp { implicit app =>
+        import scala.jdk.CollectionConverters._
+        val (contest, admin, round) = fixture()
+        round.rates must_== Round.binaryRound
+        def page(url: String) = org.jsoup.Jsoup.parse(contentAsString(route(app, get(url, admin)).get))
+        val form = page(s"/admin/rounds/edit?contestId=${contest.getId}")
+        form.select("select#rates option[value=1]").asScala.map(_.text) must_== Seq("Yes/No")
+        val list = page(s"/admin/rounds?contestId=${contest.getId}")
+        list.select("td").asScala.map(_.text) must contain("Yes/No")
+        forall(Seq(form, list))(_.text must not(contain("+/-")))
+      }
+    }
+
     "create one round when saved twice [A-15]" in {
       testDbApp { implicit app =>
         val (contest, admin, round) = fixture()

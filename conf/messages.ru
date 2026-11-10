@@ -363,6 +363,7 @@ number = Номер
 row.number = №
 file.distribution = Распределение файлов
 rating.type = Тип оценивания
+rating.yes.no = Да/Нет
 edit.round = Редактировать раунд
 create.round= Создать раунд
 select.all = Выбрать все
