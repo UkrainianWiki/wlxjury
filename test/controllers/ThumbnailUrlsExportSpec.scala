@@ -10,7 +10,7 @@ class ThumbnailUrlsExportSpec extends PlaySpecification with PlayTestDb {
 
   sequential
 
-  "the thumbnail urls export [O-05]" should {
+  "the thumbnail urls export [A-20]" should {
     "list absolute URLs on the app's host (wlxjury.host)" in {
       testDbApp { implicit app =>
         val contest = contestDao.create(None, "WLE", 2024, "Ukraine")

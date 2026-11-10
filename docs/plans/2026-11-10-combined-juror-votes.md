@@ -216,11 +216,11 @@ story (`browser-test`, a juror results page, a new J story in `docs/testing/stor
 ## 8. Documentation
 
 [Juror guide](../user/juror-guide.md) ("Your own votes only": say when results are shared, and
-that the older "organizers' view" is a different thing); the organizer and admin guides (the
-round form's option); a what's-new line after the release; secure coding ("Rule: juror
-confidentiality": the new exception and why the aggregate carries no names); the stories
+that the older "organizers' view" is a different thing); the admin guide (the round form's
+option, in "Running the judging") and the organizer guide (the results); a what's-new line after
+the release; secure coding ("Rule: juror confidentiality": the new exception and why the aggregate carries no names); the stories
 catalogue (a new J story). **Screenshots that would help (not regenerated):** the round form's
-section with the new option (`organizer-score-rule-warning.png` shows the neighbouring options),
+section with the new option (`admin-score-rule-warning.png` shows the neighbouring options),
 and a new shot of a juror's results page.
 
 **The option's known issues, stated plainly so the admin can decide** (the maintainer,
