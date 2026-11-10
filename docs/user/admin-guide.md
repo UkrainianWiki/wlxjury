@@ -114,11 +114,12 @@ The pencil opens the page **Edit user**. An admin can change, for members of the
   is marked unverified);
 - the **Email**, only while the person is still an invitee who hasn't accepted. They are invited
   again at the new address. For a person who has a password, only the person can change their
-  email, on their own profile, or root.
+  email, on their own profile, or root;
+- the **Password**, with **Set password**, where you may: see [Passwords](#a-passwords).
 
 An account that also works in other contests can't be changed by an admin of one of them: the
 admin may change the person's role in their own contest only, unless they administer all of its
-contests. Nobody sets another person's password: see [Passwords](#a-passwords).
+contests.
 
 <img src="images/admin-user-edit.png" alt="The Edit user page of a member, with the role and the set-password links" width="450">
 
@@ -226,16 +227,38 @@ which you can send from the users page. Their
 [juror guide](juror-guide.md#signing-in-with-your-password) describes the page.
 
 <a id="a-passwords"></a>
-### Passwords: nobody sets another person's
+### Passwords: setting another person's
 
-An admin never sets someone else's password, and can't see it. A person sets their own, with a
-link that only the owner of the email address receives, or that you pass on
-([Sharing a link](#a-share-link)). The old password keeps working until the new one is set.
+Nobody can see a password. There are three ways to give a person a new one:
 
-Root can mail a link to set a new password from a person's edit page (**Reset password**). An
-admin invites an unverified member again instead, which does the same. Root and contest admins
-can also create a link to share for a reset, under the conditions in [Sharing a
-link](#a-share-link).
+- **Set password** on the person's edit page: you type the password and give it to the person
+  yourself, in person if you can.
+- A link to share: you pass it on and the person chooses the password
+  ([Sharing a link](#a-share-link)).
+- A mailed link: root mails one from the person's edit page (**Reset password**), and an admin
+  invites an unverified member again, which does the same.
+
+**Who can set a password.** The field **Set password** is shown, and accepted, only where you
+may create a link to share for a reset, under the conditions in [Sharing a link](#a-share-link):
+root for any account; a contest admin only for an active **Juror** or **Organizer** of their
+contest whose every contest is one they administer, never root, another admin or themselves.
+Anyone else's attempt is refused. Your own password is changed on your profile, with your current
+password.
+
+**What setting it does.** It is the same as the person using a link to share:
+
+- the new password works at once, and the old one stops working;
+- the person is **signed out everywhere**, and their API tokens stop working;
+- their **email and wiki account are marked unverified**: if another contest then adds the
+  person, they get an invitation by email first, and accepting a mailed link verifies the
+  address again;
+- their linked Google and Wikimedia accounts are unlinked;
+- their unused links (invitations, password and email-change links) stop working. An invitation
+  that was waiting to give a role in a contest you administer gives it.
+
+Leave the field blank to keep the current password. A password can be at most 72 bytes. Change the
+email and set the password in separate saves. Each password set is recorded in the security log,
+with the accounts' ids. The person can then change the password on their own profile.
 
 <a id="a-wikimedia-google"></a>
 <!-- not offered yet (built, providers not set up): the section "Wikimedia and Google".

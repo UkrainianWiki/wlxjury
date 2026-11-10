@@ -12,7 +12,7 @@ import play.api.i18n.{I18nSupport, Lang, Messages}
 import play.api.mvc.{Action, AnyContent, ControllerComponents, EssentialAction, Result}
 import modules.BlockingExecutionContext
 import services.oauth.{OAuthProviders, OAuthSettings}
-import services.{ApiTokenService, PasswordHasher, ShareLinkService, UserService}
+import services.{AccountTokenService, ApiTokenService, PasswordHasher, ShareLinkService, UserService}
 import spray.util.pimpFuture
 
 import javax.inject.Inject
@@ -173,12 +173,27 @@ class UserController @Inject()(cc: ControllerComponents,
               oauthSettings.wikimediaConfigured)
             // an account without an email signs in with Wikimedia where it is offered: said instead
             val wikimedia = refusal.filter(_ == ShareLinkService.SignsInWithWikimedia).flatMap(_ => editedUser.wikiAccount)
+            // "Set password" where a link to share would be allowed: the same rule (updateUser)
             Ok(views.html.editUser(user, editUserForm.fill(editedUser), pageContest,
               passwordLinks = passwordLinksShown(user, userId), mayShareLink = refusal.isEmpty,
-              signsInWithWikimedia = wikimedia))
+              signsInWithWikimedia = wikimedia, maySetPassword = refusal.isEmpty))
           }
         }
     }
+
+  /** The contest an edit page of another account acts in: the account's as the page shows it,
+    * else the user's current one.
+    */
+  private def pageContestOf(user: User, editedUser: User): Option[Long] =
+    editedUser.contestId.orElse(user.currentContest)
+
+  /** Why `user` may not set `editedUser`'s password on its edit page, None if they may: exactly
+    * where they may create a password link to share for it ([[ShareLinkService.mayCreate]]).
+    * [[AccountTokenService.setPasswordByAdmin]] checks it again, the account's row locked.
+    */
+  private def setPasswordRefusal(user: User, editedUser: User): Option[ShareLinkService.Refusal] =
+    ShareLinkService.mayCreate(user, editedUser, AccountTokenJdbc.PasswordReset, pageContestOf(user, editedUser),
+      oauthSettings.wikimediaConfigured)
 
   /** The account's latest links that set the password, with their status, for its edit page:
     * root sees them all; an admin, password links and invitations into contests they are an
@@ -281,14 +296,13 @@ class UserController @Inject()(cc: ControllerComponents,
     def formErrors(formWithErrors: Form[User]): Result =
       if (formWithErrors("id").value.contains(user.getId.toString))
         ownProfile(BadRequest, user, userForm = Some(formWithErrors))
-      else
-        BadRequest(
-          views.html.editUser(
-            user,
-            formWithErrors,
-            contestId = Try(formWithErrors.data("contest").toLong).toOption
-          )
-        )
+      else {
+        val contestId = Try(formWithErrors.data("contest").toLong).toOption
+        // the "Set password" field again (with its error, a password too long) where it was shown
+        val maySetPassword = formWithErrors("id").value.flatMap(_.toLongOption).filter(_ != 0)
+          .flatMap(editableUser(user, _, contestId)).exists(setPasswordRefusal(user, _).isEmpty)
+        BadRequest(views.html.editUser(user, formWithErrors, contestId = contestId, maySetPassword = maySetPassword))
+      }
 
     /** A role that is not a contest role, or root from anyone but root: refused before
       * anything is written ([[User.mayAssignRoles]]).
@@ -344,7 +358,10 @@ class UserController @Inject()(cc: ControllerComponents,
     *  - one's own new password or email needs the current password (N2); a new email of one's
     *    own is not written but confirmed by a link mailed to it; one's own wiki account can't
     *    change (until the Commons OAuth login verifies it);
-    *  - another account's password is never set (root mails a link, [[resetPassword]]); its
+    *  - another account's password is set only where a password link to share for it would be
+    *    allowed ([[setPasswordRefusal]]: root for anyone, an admin for an account that is theirs
+    *    alone; otherwise 403), never with an email change in the same save, and with what using
+    *    such a link does ([[AccountTokenService.setPasswordByAdmin]]); its
     *    email changes at once only for an invitee without a password (and a new invitation
     *    goes to it), else root's change is confirmed by a link and an admin's refused; its
     *    wiki account must be valid and no other account's, and is unverified;
@@ -354,9 +371,11 @@ class UserController @Inject()(cc: ControllerComponents,
   private def updateUser(user: User, editedUser: User, formUser: User)(
       implicit request: play.api.mvc.Request[AnyContent]): Result = {
     val own = editedUser.id == user.id
+    lazy val passwordRefusal = if (own) None else setPasswordRefusal(user, editedUser)
     def badRequest(form: Form[User]) =
       if (own) ownProfile(BadRequest, user, userForm = Some(form))
-      else BadRequest(views.html.editUser(user, form, contestId = editedUser.contestId))
+      else BadRequest(views.html.editUser(user, form, contestId = editedUser.contestId,
+        maySetPassword = passwordRefusal.isEmpty))
     def refused(field: Option[String], key: String) = {
       val form = editUserForm.fill(formUser.copy(password = None))
       badRequest(field.fold(form.withGlobalError(key))(form.withError(_, key)))
@@ -367,8 +386,18 @@ class UserController @Inject()(cc: ControllerComponents,
     val wikiChanged = wikiAccount(formUser) != wikiAccount(editedUser)
     val newWiki = wikiAccount(formUser).fold[Either[String, Option[String]]](Right(None))(User.normalizeWikiAccount)
     val emailChanged = formUser.email != editedUser.emailLo
+    // another account's password has its own rule (passwordRefusal); one's own, the current password
     val accountChanged =
-      formUser.fullname.trim != editedUser.fullname.trim || emailChanged || wikiChanged || formUser.password.nonEmpty
+      formUser.fullname.trim != editedUser.fullname.trim || emailChanged || wikiChanged
+    val setsOthersPassword = !own && formUser.password.nonEmpty
+    /** Another account's password refused: a denial (403, logged on `security.authz`) for who
+      * may not, else the form with the reason.
+      */
+    def passwordRefused(refusal: ShareLinkService.Refusal): Result =
+      if (refusal.forbidden)
+        onUnAuthorized(user, request, Secured.Denial(pageContestOf(user, editedUser), Some(s"account:$userId"),
+          Set(User.ADMIN_ROLE), Some(refusal.reason)))
+      else refused(None, "password.others.not.allowed") // the page shows no field to put it on
     // an access role the account can't take directly: an invitation, if it has an email
     val newRole = formUser.roles.headOption
       .filter(r => User.isContestRole(r) && user.hasAnyRole(User.ADMIN_ROLES))
@@ -381,8 +410,11 @@ class UserController @Inject()(cc: ControllerComponents,
       badRequest(editUserForm.fill(formUser).withGlobalError("user.in.other.contests"))
     } else if (own && wikiChanged) {
       refused(Some("wikiAccount"), "wiki.account.own.readonly")
-    } else if (!own && formUser.password.nonEmpty) {
-      refused(Some("password"), "password.others.not.allowed")
+    } else if (setsOthersPassword && passwordRefusal.nonEmpty) {
+      passwordRefused(passwordRefusal.get)
+    } else if (setsOthersPassword && emailChanged) {
+      // the new password unverifies the email and revokes links; an email change mails one
+      refused(Some("password"), "password.set.email.separately")
     } else if (own && emailChanged && formUser.email.trim.isEmpty) {
       refused(Some("email"), "error.required")
     } else if (wikiChanged && newWiki.isLeft) {
@@ -413,12 +445,21 @@ class UserController @Inject()(cc: ControllerComponents,
               // a legacy hash past its grace period counts as none (P8), replaced yet or not
               PasswordHasher.default.check(User.usableHash(user), p) != PasswordHasher.Rejected))
             Left(refused(Some("currentPassword"), "password.current.wrong"))
-          else Right(formUser.password.filter(_ => own).map(PasswordHasher.default.hash(_)))
+          // one's own, or another account's where the rule passed (checked again when it is stored)
+          else Right(formUser.password.map(PasswordHasher.default.hash(_)))
         } catch {
           case _: PasswordHasher.Busy => Left(passwordBusy(user, editUserForm.fill(formUser), editedUser.contestId))
         }
-      checked.fold(identity,
-        updateAccount(user, editedUser, formUser, _, newWiki.toOption.flatten, roleNeedsInvitation))
+      def update(newHash: Option[String], passwordSet: Boolean) =
+        updateAccount(user, editedUser, formUser, newHash, newWiki.toOption.flatten, roleNeedsInvitation, passwordSet)
+      checked.fold(identity, {
+        case Some(hash) if !own =>
+          // in its own transaction, the rule checked again under the account's row lock, before the
+          // rest of the form: refused meanwhile, nothing is written
+          AccountTokenService.setPasswordByAdmin(user, userId, pageContestOf(user, editedUser), hash,
+            oauthSettings.wikimediaConfigured).fold(passwordRefused, _ => update(None, passwordSet = true))
+        case newHash => update(newHash, passwordSet = false)
+      })
     }
   }
 
@@ -438,12 +479,14 @@ class UserController @Inject()(cc: ControllerComponents,
       .withHeaders(RETRY_AFTER -> "5")
 
   private def updateAccount(user: User, editedUser: User, formUser: User, newHash: Option[String],
-                            newWiki: Option[String], roleNeedsInvitation: Boolean)(
+                            newWiki: Option[String], roleNeedsInvitation: Boolean, passwordSet: Boolean)(
       implicit request: play.api.mvc.Request[_]): Result = {
     val userId = editedUser.getId
     val own = formUser.id == user.id
     val contest = editedUser.contestId.flatMap(ContestJuryJdbc.findById)
     val notices = Seq.newBuilder[String]
+    // another account's password, set already (AccountTokenService.setPasswordByAdmin)
+    if (passwordSet) notices += Messages("password.set.by.admin.done")
     var newVersion: Option[Int] = None
 
     if (canEditAccount(user, editedUser)) {
