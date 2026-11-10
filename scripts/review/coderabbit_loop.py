@@ -50,11 +50,14 @@ a summary covering its head as "reviewed" (clean), is skipped, and a PR whose la
 instead of posting again, and its answer is handled as for a new request (a limit pauses and
 counts as a retry, no reply stops with exit 2, and so on). After a limit reply it waits out the
 spacing from that reply before posting again (the same command: `review` or `full review`).
-Our latest request counts only if it is newer than the head commit's committer date (the commits
-API; a rebase, amend or new commit sets it): a PR whose head changed after its last request is
-treated as never requested and gets a plain `@coderabbitai review`, whatever the earlier request
-ended with (finished, clean, no review available). Each post's head sha is also logged in the
-state, but nothing depends on it.
+Our latest request counts only if it was about the current head: a PR whose head changed after
+its last request is treated as never requested and gets a plain `@coderabbitai review`, whatever
+the earlier request ended with (finished, clean, no review available). Each post records the head
+sha in the state; the request is stale if that post (the same request) recorded another head
+(catches a commit made earlier and pushed after the request), else if a finished request's
+summary edit after it covers another `sourceCommitId`, else if it is older than the head commit's
+committer date (the commits API; a rebase, amend or new commit sets it). The last two need no
+state.
 A latest `@coderabbitai review` that finished without a review gets `@coderabbitai full review`;
 a latest `@coderabbitai full review` that finished without a review is "no review available".
 
@@ -227,6 +230,31 @@ class Loop:
         request older than it was about an earlier head."""
         return ts(self.hub.get(f"commits/{sha}")["commit"]["committer"]["date"])
 
+    def stale(self, e, req, comments, sha):
+        """Why our latest request `req` was about an older head than `sha`, or None. In order:
+          - the state's latest post (the same request: posted within 2 minutes of it) recorded
+            another head: catches a commit made earlier and pushed after the request;
+          - the summary comment, edited after the request, covers a `sourceCommitId` other than
+            the head (works without state);
+          - the request is older than the head commit's committer date (works without state)."""
+        asked = req[0]
+        post = (e.get("posts") or [{}])[-1]
+        if post.get("head") and post.get("at") and abs((ts(post["at"]) - asked).total_seconds()) <= 120 \
+                and post["head"] != sha:
+            return f"the state recorded head {post['head'][:8]} for it"
+        finished = req[2] is not None and classify(req[2]["body"]) == "finished"
+        for c in (reversed(rabbit(comments)) if finished else []):
+            # only once finished: a "Currently processing" edit keeps the old coverage
+            if SUMMARY_MARKER in (c.get("body") or ""):
+                src = (coverage(c["body"]) or {}).get("sourceCommitId")
+                if src and src != sha and edited(c) > asked:
+                    return f"the summary edited after it covers {src[:8]}"
+                break
+        committed = self.head_date(sha)
+        if asked < committed:
+            return f"older than the head commit's date {committed:%Y-%m-%d %H:%M:%S}"
+        return None
+
     def latest_request(self, comments):
         """(asked, command, reply): our latest `@coderabbitai` request among a PR's issue comments,
         its command (REVIEW or FULL) and CodeRabbit's latest reply to it (None if no reply yet), or
@@ -303,11 +331,11 @@ class Loop:
             return "skip"
         req = self.latest_request(comments)
         if req:
-            committed = self.head_date(sha)
-            if req[0] < committed:
+            why = self.stale(e, req, comments, sha)
+            if why:
                 # a request about an older head says nothing about this one: start again with `review`
-                self.log(f"#{n}: our {req[1]} at {req[0]:%Y-%m-%d %H:%M:%S} is older than the head "
-                         f"{sha[:8]} ({committed:%Y-%m-%d %H:%M:%S}), treating the PR as never requested")
+                self.log(f"#{n}: our {req[1]} at {req[0]:%Y-%m-%d %H:%M:%S} was about an older head than "
+                         f"{sha[:8]} ({why}), treating the PR as never requested")
                 req = None
                 if e.get("outcome") in (NO_REVIEW, CLEAN):
                     e.update(outcome="new head"); self.save()
@@ -581,7 +609,7 @@ def self_test():
             outs = self.script.get(n) or []
             self.answer(n, body, self.clock.t, outs.pop(0) if outs else "finished")
 
-    def case(script=None, earlier=(), dry=False, last=1, batch=5, pushes=None):
+    def case(script=None, earlier=(), dry=False, last=1, batch=5, pushes=None, state=None, setup=None):
         """earlier: (pr, command, seconds ago, outcome) requests already on GitHub (the state is
         rebuilt from them); pushes: {pr: seconds ago} new head commits after them. Every PR starts
         with a summary comment covering an older commit."""
@@ -593,8 +621,11 @@ def self_test():
             hub.answer(pr, command, clock.t - datetime.timedelta(seconds=ago), outcome)
         for pr, ago in (pushes or {}).items():
             hub.push(pr, ago)
+        if setup:
+            setup(hub, clock)
         lines = []
         loop = Loop(hub, None, dry, clock=clock, logger=lines.append)
+        loop.state = state(clock) if state else {}
         code = run(loop, 1, last, batch)
         return code, hub.posted, {k: v.get("outcome") for k, v in loop.state.items()}, lines
 
@@ -674,6 +705,28 @@ def self_test():
     code, posted, outcomes, _ = case(earlier=[(1, FULL, 600, "finished")], pushes={1: 3600})
     check("new head: a request after the head commit still counts",
           (code, posted, outcomes), (0, [], {"1": NO_REVIEW}))
+    # a commit made 2.5 h ago, pushed after our request 2 h ago: its committer date can't tell
+    def posted_at(head_sha):
+        return lambda clock: {"1": {"pr": 1, "outcome": "pending", "posts": [
+            {"command": REVIEW, "at": fmt(clock.t - datetime.timedelta(seconds=7195)), "head": head_sha}]}}
+    code, posted, outcomes, _ = case({1: ["review"]}, earlier=[(1, REVIEW, 7200, "finished")], pushes={1: 9000},
+                                     state=posted_at(head))
+    check("new head: the state's post recorded another head: post review",
+          (code, posted, outcomes), (0, [(1, REVIEW)], {"1": "reviewed"}))
+    code, posted, outcomes, _ = case({1: ["review"]}, earlier=[(1, REVIEW, 7200, "finished")], pushes={1: 9000},
+                                     state=posted_at("0001" + "e" * 36))
+    check("new head: the state's post recorded this head: the request counts (full review)",
+          (code, posted, outcomes), (0, [(1, FULL)], {"1": "reviewed"}))
+    code, posted, outcomes, _ = case({1: ["review"]}, earlier=[(1, REVIEW, 7200, "finished")], pushes={1: 9000})
+    check("new head: without state or summary, an older commit date can't tell (full review)",
+          (code, posted, outcomes), (0, [(1, FULL)], {"1": "reviewed"}))
+    code, posted, outcomes, _ = case({1: ["review"]}, earlier=[(1, REVIEW, 7200, "clean")], pushes={1: 9000})
+    check("new head: without state, the summary's sourceCommitId names the old head: post review",
+          (code, posted, outcomes), (0, [(1, REVIEW)], {"1": "reviewed"}))
+    code, posted, outcomes, _ = case(earlier=[(1, REVIEW, 60, "review")], setup=lambda hub, clock: hub.summary(
+        1, "a79c09613e71867f369019f6dc428c5634b5c0ea", clock.t - datetime.timedelta(seconds=30)))
+    check("new head: a processing request with an old-coverage summary edit is waited for",
+          (code, posted, outcomes), (0, [], {"1": "reviewed"}))
     code, posted, _, lines = case(earlier=[(1, REVIEW, 3600, "finished")], dry=True)
     check("dry run: would post a full review",
           (code, posted, lines[-1]), (0, [], f"#1: {REVIEW} finished without a review; would post {FULL}"))
