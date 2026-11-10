@@ -71,6 +71,16 @@ Changes made available before version 26.11, by who notices them.
 <a id="w-jurors"></a>
 ### For jurors
 
+- **Voting from the gallery, in both kinds of round.** In a rated round, each file in your list
+  has stars: click one to rate it, with the number beside them showing your rate. In a yes/no
+  round, the thumb of your vote stays pressed, and pressing it again (or Enter or Space on it)
+  undoes the vote. A vote shows at once; if it fails, the stars or thumbs go back to your
+  earlier vote and a message says why, and clicks on a file wait for its earlier vote. See
+  [Voting in a yes/no round's gallery](juror-guide.md#voting-in-a-yesno-rounds-gallery) and
+  [Rating in a rated round's gallery](juror-guide.md#rating-in-a-rated-rounds-gallery).
+- **Your rate in the large view:** the number above the stars shows your rate ("–" if none), and
+  while you point at a star it shows the rate a click gives. See [Voting in the large
+  view](juror-guide.md#voting-in-the-large-view).
 - **The worst mark** (an X icon) in rated rounds that use it: a button or the Delete key gives a
   file the worst mark, the eraser or Backspace clears your vote. See [Rated rounds
   (stars)](juror-guide.md#rated-rounds-stars).
