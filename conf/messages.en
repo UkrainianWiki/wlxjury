@@ -531,6 +531,7 @@ password.set.by.admin.done = Password set. The person is signed out everywhere, 
 password.set.email.separately = Change the email and set the password in separate saves.
 password.set.role.separately = Change the role and set the password in separate saves.
 password.set.no.login = No password can be set for this account: it has no email address, so it signs in with Wikimedia, or it has nothing to sign in with.
+password.set.others.saved = Your other changes were saved; the password was not set.
 email.change.title = New email address
 email.change.confirm = Make {0} the email address of your WLX Jury account?
 email.change.confirm.button = Confirm the new email address

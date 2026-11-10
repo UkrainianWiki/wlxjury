@@ -532,6 +532,7 @@ password.set.by.admin.done = Mot de passe défini. Toutes les sessions de la per
 password.set.email.separately = Modifiez l''adresse e-mail et définissez le mot de passe en deux enregistrements séparés.
 password.set.role.separately = Modifiez le rôle et définissez le mot de passe en deux enregistrements séparés.
 password.set.no.login = Aucun mot de passe ne peut être défini pour ce compte : il n''a pas d''adresse e-mail, donc il se connecte avec Wikimedia, ou il n''a rien pour se connecter.
+password.set.others.saved = Vos autres modifications ont été enregistrées ; le mot de passe n''a pas été défini.
 email.change.title = Nouvelle adresse courriel
 email.change.confirm = Faire de {0} l''adresse courriel de votre compte WLX Jury ?
 email.change.confirm.button = Confirmer la nouvelle adresse

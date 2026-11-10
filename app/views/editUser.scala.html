@@ -7,7 +7,8 @@
         passwordLinks: Seq[db.scalikejdbc.AccountToken] = Nil,
         mayShareLink: Boolean = false,
         signsInWithWikimedia: Option[String] = None,
-        maySetPassword: Boolean = false
+        maySetPassword: Boolean = false,
+        notice: Option[String] = None
 )(implicit flash: Flash, messages: Messages, req: RequestHeader)
 
 @import helper._
@@ -43,6 +44,10 @@
 
                 @flash.get("account-notice").map { msg =>
                     <div class="alert alert-info" role="status">@msg</div>
+                }
+                @* what this save did before it was refused (the other fields saved) *@
+                @for(text <- notice) {
+                    <div class="alert alert-info" role="status">@text</div>
                 }
 
                 @if(editUserForm.hasGlobalErrors) {

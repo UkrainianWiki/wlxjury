@@ -244,7 +244,8 @@ root for any account; a contest admin only for an active **Juror** or **Organize
 contest whose every contest is one they administer, never root, another admin or themselves.
 Anyone else's attempt is refused. Nobody, root included, can set a password for a person who has no
 email where Wikimedia sign-in is set up (they sign in with their wiki account, and the page says
-so), or who has neither an email nor a wiki account to sign in with. Your own password is changed on your
+so), or who has no email and no wiki account of their own to sign in with (none, or one that
+several accounts share). Your own password is changed on your
 profile, with your current password.
 
 **What setting it does.** It is the same as the person using a link to share:
@@ -260,7 +261,8 @@ profile, with your current password.
 
 Leave the field blank to keep the current password. A password can be at most 72 bytes. Change the
 email or the role and set the password in separate saves. The password is set after the rest of
-the form is saved. Each password set is recorded in the security log, with the accounts' ids. The
+the form is saved: if the person's account changed meanwhile so that you may no longer set it, the
+page says that your other changes were saved and the password was not. Each password set is recorded in the security log, with the accounts' ids. The
 person can then change the password on their own profile.
 
 <a id="a-wikimedia-google"></a>
