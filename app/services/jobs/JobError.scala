@@ -45,11 +45,16 @@ object JobError {
 
   implicit val format: OFormat[JobError] = Json.using[Json.WithDefaultValues].format[JobError]
 
+  /** Keys of a handler's refusals by its own checks, stored as they are and shown as the form
+    * shows them: the round distribution's rounds to leave out (V95).
+    */
+  val RefusalKeys: Set[String] = services.distribution.RoundDistributionHandler.ExcludeRoundsKeys
+
   /** A stored `job.error`; anything that isn't one of ours (an older row's exception text)
     * reads as [[UnknownKey]], so it is never shown.
     */
   def decode(stored: String): JobError =
     Try(Json.parse(stored).as[JobError]).toOption
-      .filter(_.key.startsWith("job.error."))
+      .filter(e => e.key.startsWith("job.error.") || RefusalKeys.contains(e.key))
       .getOrElse(JobError(UnknownKey))
 }

@@ -158,11 +158,34 @@ class RoundDistributionHandler @Inject() (
       "coiLeftOut" -> st.coiLeftOut, "coiTitles" -> st.coiTitles)
   }
 
-  override def prepare(job: Job): Unit = {
-    val c = contexts.getOrElseUpdate(job.id, context(roundIdOf(job), Some(jobAverageRules(job)), Some(jobRejectedMode(job))))
+  override def prepare(job: Job): Unit =
+    // refused: nothing to prepare, the step fails the job with the refusal
+    contextOf(job).foreach { c =>
+      val st = stateOf(job)
+      if (st.phase == Phase.List && st.listIndex < titleCountOf(job) && !listChunks.get(job.id).exists(_.index == st.listIndex))
+        listChunks.put(job.id, listChunk(c.round, st.listIndex, titlesOf(job, st.listIndex, commons.maxIdsPerRequest)))
+    }
+
+  /** The job's context, built once per run; or the refusal of the round's rounds to leave out
+    * ([[excludedRounds]], [[requireNoExcluderBusy]]): a refusal of our own checks, which fails the
+    * job with its message ([[refused]]) rather than as a crash.
+    */
+  private def contextOf(job: Job): Either[ExcludeRoundsRefused, Context] =
+    contexts.get(job.id) match {
+      case Some(c) => Right(c)
+      case None =>
+        try Right(contexts.getOrElseUpdate(job.id,
+            context(roundIdOf(job), Some(jobAverageRules(job)), Some(jobRejectedMode(job)))))
+        catch { case refusal: ExcludeRoundsRefused => Left(refusal) }
+    }
+
+  /** The job failed by a refusal of its round's rounds to leave out: its message key and arguments
+    * (the job page shows them in the reader's language), logged at WARN, no stack trace.
+    */
+  private def refused(job: Job, refusal: ExcludeRoundsRefused): StepResult = {
+    logger.warn(s"Job ${job.id} (${job.kind}): round ${roundIdOf(job)}'s distribution refused: ${refusal.text}")
     val st = stateOf(job)
-    if (st.phase == Phase.List && st.listIndex < titleCountOf(job) && !listChunks.get(job.id).exists(_.index == st.listIndex))
-      listChunks.put(job.id, listChunk(c.round, st.listIndex, titlesOf(job, st.listIndex, commons.maxIdsPerRequest)))
+    StepResult.Failed(JobError(refusal.refusal.key, refusal.refusal.args), Json.toJsObject(st), progress(st))
   }
 
   override def forget(jobId: Long): Unit = {
@@ -187,6 +210,9 @@ class RoundDistributionHandler @Inject() (
     // a job's run refuses a round to leave out that is being distributed itself (its files still
     // coming); "Count new files" only reads, and counts by the files it has now
     val excluded = RoundDistributionHandler.excludedRounds(round, checkBusy = !countOnly)
+    // and the reverse: a round leaving out this one's files being distributed now (its job reads
+    // them as they are) refuses this run; the service checks it before queueing, this is the backstop
+    if (!countOnly) RoundDistributionHandler.requireNoExcluderBusy(round)
     val jurors = User.distributionJurors(roundId).sortBy(_.getId).toIndexedSeq
     DistributeImages.checkJury(round, jurors)
     val categoryRule = round.categoryRule
@@ -359,7 +385,10 @@ class RoundDistributionHandler @Inject() (
   def step(job: Job, ctx: StepContext): StepResult = {
     implicit val session: DBSession = ctx.session
     val roundId = roundIdOf(job)
-    val c = contexts.getOrElseUpdate(job.id, context(roundId, Some(jobAverageRules(job)), Some(jobRejectedMode(job))))
+    val c = contextOf(job) match {
+      case Right(context) => context
+      case Left(refusal)  => return refused(job, refusal)
+    }
     val st = stateOf(job) match {
       case s if s.imagesBefore.isEmpty =>
         val total = imageCount(roundId)
@@ -774,7 +803,8 @@ object RoundDistributionHandler {
           case ExcludeRoundsPrevious =>
             s"rounds to leave out [${ids.mkString(", ")}] include one of its previous rounds [${round.previousIds.mkString(", ")}]"
           case ExcludeRoundsBusy     =>
-            s"round ${refusal.args.mkString} to leave out is being distributed: wait until its distribution has finished"
+            s"round ${refusal.args.mkString} to leave out is being distributed, or its creation failed: " +
+              "finish or retry its distribution first"
           case ExcludeRoundsMissing  =>
             s"round ${refusal.args.mkString}, left out by round ${round.id.orNull}, no longer exists: a database admin " +
               "must remove it from the round's exclude_rounds"
@@ -826,16 +856,51 @@ object RoundDistributionHandler {
   }
 
   /** The round is being distributed: being created (`distributing`), or with an active distribution
-    * job, queued or running (V60's `active_dedupe_key`).
+    * job, queued or running (V60's `active_dedupe_key`). `distributing` also holds for a round whose
+    * creation failed (no active job, until its Retry or resubmit): it is refused too, since it is
+    * only partly filled and its Retry adds the rest, files the round leaving it out could take.
     */
   def distributingNow(round: Round): Boolean =
-    round.distributing || JobJdbc.activeByDedupeKey(dedupeKey(round.getId)).isDefined
+    round.distributing || hasActiveJob(round)
+
+  private def hasActiveJob(round: Round): Boolean =
+    round.id.exists(id => JobJdbc.activeByDedupeKey(dedupeKey(id)).isDefined)
+
+  /** The reverse of [[excludedRounds]]' busy check: another round of `round`'s contest that leaves
+    * out `round`'s files ([[Round.excludeRounds]]) and has an active distribution job, queued or
+    * running. That job reads `round`'s files as they are when each of its windows runs, so files a
+    * distribution of `round` added now could end up in both rounds. Only an active job counts, not
+    * the `distributing` flag: a round leaving out `round` whose creation failed checks `round`
+    * again when it is retried ([[excludedRounds]]).
+    */
+  def excluderBusy(round: Round): Option[Round] =
+    round.id.flatMap { id =>
+      Round.findByContest(round.contestId)
+        .filter(r => !r.id.contains(id) && r.excludeRounds.contains(id))
+        .find(hasActiveJob)
+    }
+
+  /** Refuses ([[ExcludeRoundsRefused]], [[ExcludeRoundsExcluderBusy]]) a distribution of `round`
+    * while a round leaving out its files is being distributed ([[excluderBusy]]).
+    */
+  def requireNoExcluderBusy(round: Round): Unit =
+    excluderBusy(round).foreach { r =>
+      throw ExcludeRoundsRefused(
+        ExcludeRoundsRefusal(ExcludeRoundsExcluderBusy, Seq(r.description)),
+        s"round ${r.getId}, which leaves out round ${round.getId}'s files, is being distributed: " +
+          s"distribute round ${round.getId} again when it has finished")
+    }
 
   val ExcludeRoundsSelf = "error.exclude.rounds.self"
   val ExcludeRoundsOther = "error.exclude.rounds.other"
   val ExcludeRoundsPrevious = "error.exclude.rounds.previous"
   val ExcludeRoundsBusy = "error.exclude.rounds.busy"
   val ExcludeRoundsMissing = "error.exclude.rounds.missing"
+  val ExcludeRoundsExcluderBusy = "error.exclude.rounds.excluder.busy"
+
+  /** Every refusal key above: a job failed by one stores it ([[services.jobs.JobError.decode]]). */
+  val ExcludeRoundsKeys: Set[String] = Set(ExcludeRoundsSelf, ExcludeRoundsOther, ExcludeRoundsPrevious,
+    ExcludeRoundsBusy, ExcludeRoundsMissing, ExcludeRoundsExcluderBusy)
 
   /** `round.exclude_rounds` is a VARCHAR(255) (V95). */
   val ExcludeRoundsMaxLength = 255

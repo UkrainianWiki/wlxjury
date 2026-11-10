@@ -509,9 +509,12 @@ of four jurors per file, yes/no:
 The round keeps the setting: "Distribute new files" later leaves out the files that are in Q-01
 then. The files of the rounds to leave out are read while the round's distribution runs, so a file
 that reaches Q-01 after that stays in Q-00-1 too. The form therefore refuses a round to leave out
-that is still being distributed ("The round to leave out, Q-01, is still being distributed…"): save
-again when its distribution has finished, and don't start "Distribute new files" on Q-01 while
-Q-00-1 is being filled. The form also refuses the round itself, rounds of another contest ("The
+that is still being distributed, or whose creation's distribution failed ("The round to leave out,
+Q-01, is still being distributed, or its distribution failed…"): let it finish, or retry it, then
+save again. In the same way "Distribute new files" on Q-01 (or resuming its failed distribution) is
+refused while Q-00-1 is being filled ("A round that leaves out this round's files, Q-00-1, is still
+being filled…"), and a Retry of Q-01's distribution on its job page fails with that message:
+distribute again when Q-00-1's distribution has finished. The form also refuses the round itself, rounds of another contest ("The
 rounds to leave out must be other rounds of this contest") and a round that is also a previous
 round of the new round, which would leave it with no files ("A round to leave out can't also be a
 previous round of this round…").

@@ -560,7 +560,7 @@ class FlywayUpgradeSpec extends Specification with BeforeAll with AfterAll {
         val stored = rows(c, "SELECT id, exclude_rounds, CAST(created_at AS CHAR) FROM round ORDER BY id")(rs =>
           (rs.getLong(1), Option(rs.getString(2)), rs.getString(3)))
         val refused = Seq("''", "'1,'", "',1'", "'1, 2'", "'01'", "'-1'", "'1,,2'", "'a'",
-          // a trailing line break, which PCRE's $ would let through: V95 anchors with \z
+          // a trailing line break, which PCRE's $ would let through: V95 refuses any byte but digits and commas
           "'1\\n'").map(v =>
           scala.util.Try(run(c, Seq(s"UPDATE round SET exclude_rounds = $v, created_at = created_at WHERE id = 2")))
             .isFailure)
@@ -573,6 +573,21 @@ class FlywayUpgradeSpec extends Specification with BeforeAll with AfterAll {
           val reset = schema("fw_v95_back")
           Using.resource(connect("fw_v95_back"))(c => run(c, statements("V95__Round_exclude_rounds.sql")))
           schema("fw_v95_back") === reset
+        } and {
+          // rerun under NO_BACKSLASH_ESCAPES: the same check (no backslash in its patterns), still
+          // refusing a trailing line break (written without an escape) and taking ids
+          val (refusedNbe, takenNbe) = Using.resource(connect("fw_v95_back")) { c =>
+            run(c, Seq("SET SESSION sql_mode = CONCAT(@@SESSION.sql_mode, ',NO_BACKSLASH_ESCAPES')"))
+            run(c, statements("V95__Round_exclude_rounds.sql"))
+            val refused = Seq("CONCAT('1', CHAR(10))", "'1,'", "'a'").map(v =>
+              scala.util.Try(run(c, Seq(s"UPDATE round SET exclude_rounds = $v, created_at = created_at WHERE id = 2")))
+                .isFailure)
+            run(c, Seq("UPDATE round SET exclude_rounds = '1,10', created_at = created_at WHERE id = 2"))
+            val taken = rows(c, "SELECT exclude_rounds FROM round WHERE id = 2")(_.getString(1))
+            run(c, Seq("UPDATE round SET exclude_rounds = NULL"))
+            (refused, taken)
+          }
+          (schema("fw_v95_back") === once) and (refusedNbe === Seq(true, true, true)) and (takenNbe === List("1,10"))
         } and {
           Using.resource(connect("fw_v95_back"))(c => run(c, v95Rollback))
           def tablesOnly(s: String) = s.split(";\n\n").filterNot(_.matches("(?s)^\\w+: \\d+ rows.*")).mkString(";\n\n")

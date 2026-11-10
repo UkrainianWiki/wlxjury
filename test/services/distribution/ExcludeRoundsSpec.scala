@@ -5,8 +5,9 @@ import org.intracer.wmua.cmd.DistributeImages
 import org.intracer.wmua.{BinaryOrder, ContestJury, Image, RejectedMode}
 import org.specs2.mutable.Specification
 import org.specs2.specification.{BeforeAll, BeforeEach}
-import scalikejdbc.DBSession
-import services.jobs.JobStatus
+import play.api.libs.json.Json
+import scalikejdbc.{DB, DBSession}
+import services.jobs.{Job, JobError, JobJdbc, JobScheduler, JobStatus, NewJob, Progress}
 import services.{RoundService, TestRoundServices}
 
 import java.io.FileReader
@@ -244,6 +245,58 @@ class ExcludeRoundsSpec extends Specification with TestDb with BeforeAll with Be
         (H.distributingNow(roundDao.findById(s.q01.getId).get) must beFalse)
     }
 
+    "refuse a round to leave out with an active job (queued), at the service and in the job, as a reason not a crash" in {
+      val h = TestRoundServices.handler(chunkRows = 3)
+      val s = setUp(h)
+      // a queued distribution of Q-01 (another instance's, or one queued between the checks)
+      val q01Job = DB.localTx(implicit session => JobJdbc.insert(distributionJob(h, s.q01), owner = None))
+      val atService = s.service.submit(s.q001Settings, s.jurors.map(_.getId)) must
+        throwA[H.ExcludeRoundsRefused].like { case e: H.ExcludeRoundsRefused =>
+          (e.refusal.key === H.ExcludeRoundsBusy) and (e.refusal.args === Seq("Q-01")) }
+      // Q-00-1 stored (as by a run that passed the service's check before Q-01's job was queued),
+      // its job run now: the job's check refuses it, the job page says why
+      val q001 = roundDao.create(s.q001Settings.copy(number = 9))
+      q001.addUsers(s.jurors.map(u => RoundUser(q001.getId, u.getId, "jury", active = true)))
+      val job = runJob(h, q001)
+      (roundDao.findById(s.q01.getId).get.distributing must beFalse) and
+        (H.distributingNow(roundDao.findById(s.q01.getId).get) must beTrue) and atService and
+        (job.status === JobStatus.Failed) and (job.failure must beSome(JobError(H.ExcludeRoundsBusy, Seq("Q-01")))) and
+        (roundFiles(q001.getId) must beEmpty) and
+        (JobJdbc.findById(q01Job).map(_.status) must beSome(JobStatus.Queued))
+    }
+
+    "refuse distributing a round while a round leaving out its files has an active job: new files, resume, Retry" in {
+      val h = TestRoundServices.handler(chunkRows = 3)
+      val s = setUp(h)
+      // Q-01's distribution failed (its job page offers a Retry)
+      val q01Failed = DB.localTx { implicit session =>
+        val id = JobJdbc.insert(distributionJob(h, s.q01), owner = None)
+        JobJdbc.update(id, JobStatus.Failed, JobJdbc.findById(id).get.state, Progress(), Some(JobError.crashed("ab12cd34").encode))
+        id
+      }
+      val q01Files = roundFiles(s.q01.getId)
+      // Q-00-1 created with a scheduler that runs nothing here: its creation's job stays queued
+      val parked = new RoundService(Round, new JobScheduler(Seq(h), JobScheduler.Settings()), h)
+      val q001 = parked.submit(s.q001Settings, s.jurors.map(_.getId))
+      def excluderBusy(call: => Any) = call must throwA[H.ExcludeRoundsRefused].like { case e: H.ExcludeRoundsRefused =>
+        (e.refusal.key === H.ExcludeRoundsExcluderBusy) and (e.refusal.args === Seq("Q-00-1")) }
+      // "Distribute new files" on Q-01 resumes its failed job: refused, the job left failed
+      val resumed = excluderBusy(s.service.distributeNewFiles(s.q01.getId))
+      val stillFailed = JobJdbc.findById(q01Failed).map(_.status)
+      // the job page's Retry isn't the service's: the job refuses itself as it runs
+      val retried = TestRoundServices.inlineScheduler(h).retry(q01Failed)
+      val after = JobJdbc.findById(q01Failed).get
+      // and a new distribution of Q-01 (its latest job not failed): refused before anything is queued
+      DB.localTx(implicit session => JobJdbc.update(q01Failed, JobStatus.Done, after.state, Progress(), None))
+      val fresh = excluderBusy(s.service.distributeNewFiles(s.q01.getId))
+      (q001.job.map(_.status) must beSome(JobStatus.Queued)) and resumed and (stillFailed must beSome(JobStatus.Failed)) and
+        (retried must beRight) and (after.status === JobStatus.Failed) and
+        (after.failure must beSome(JobError(H.ExcludeRoundsExcluderBusy, Seq("Q-00-1")))) and fresh and
+        (JobJdbc.activeByDedupeKey(H.dedupeKey(s.q01.getId)) must beNone) and
+        (roundFiles(s.q01.getId) === q01Files) and
+        (H.excluderBusy(roundDao.findById(s.q01.getId).get).flatMap(_.id) === q001.round.id)
+    }
+
     "say that a stored round's round to leave out no longer exists (deleted by SQL), not that it is another contest's" in {
       val s = setUp()
       val other = roundDao.create(Round(None, 1, Some("Other"), createContests(2).head.getId))
@@ -308,6 +361,20 @@ class ExcludeRoundsSpec extends Specification with TestDb with BeforeAll with Be
   private def refusalKey(round: Round, lookup: Seq[Long] => Seq[Round] = Round.findByIdsInAnyContest,
       busy: Round => Boolean = _ => false, tellMissing: Boolean = true): Option[String] =
     H.excludedRoundsError(round, lookup, busy, tellMissing).map(_.key)
+
+  /** A distribution job of the round as the service queues it (its round id and initial state). */
+  private def distributionJob(h: RoundDistributionHandler, round: Round)(implicit session: DBSession): NewJob =
+    NewJob(kind = H.Kind, contestId = Some(round.contestId), subjectType = Some(H.SubjectType), subjectId = round.id,
+      dedupeKey = Some(H.dedupeKey(round.getId)), params = Json.obj("roundId" -> round.getId),
+      state = h.initialState(round), progress = Progress(unit = Some("images")))
+
+  /** Runs a distribution job of the round to its end, inline, past the service's checks. */
+  private def runJob(h: RoundDistributionHandler, round: Round): Job = {
+    val scheduler = TestRoundServices.inlineScheduler(h)
+    val id = DB.localTx(implicit session => JobJdbc.insert(distributionJob(h, round), owner = Some(scheduler.instanceId)))
+    scheduler.started(id)
+    JobJdbc.findById(id).get
+  }
 
   /** Fails the first `failures` chunks it inserts once armed (after the setup's rounds). */
   private class FailingHandler(failures: Int)

@@ -131,8 +131,33 @@ class RoundExcludeRoundsFormSpec extends PlaySpecification with PlayTestDb {
         (overlapStatus must_== BAD_REQUEST) and
           (overlap must contain("A round to leave out can't also be a previous round of this round")) and
           (busyStatus must_== BAD_REQUEST) and
-          (busy must contain("The round to leave out, Round 2, is still being distributed.")) and
+          (busy must contain("The round to leave out, Round 2, is still being distributed, or its distribution failed")) and
           (roundDao.findByContest(contest.getId).map(_.name.get) === Seq("Round 1", "Round 2"))
+      }
+    }
+
+    "refuse \"Distribute new files\" of a round while a round leaving out its files is being distributed" in {
+      testDbApp { implicit app =>
+        val (contest, admin, jurors, first, second, _) = fixture()
+        status(route(app, save(contest.getId, jurors, admin,
+          Seq("previousRound[]" -> first.getId.toString, "excludeRounds[]" -> second.getId.toString))).get)
+        val round3 = roundDao.findByContest(contest.getId).find(_.name.contains("Round 3")).get
+        // Round 3's distribution queued again (a "Distribute new files" another instance runs)
+        val key = services.distribution.RoundDistributionHandler.dedupeKey(round3.getId)
+        scalikejdbc.DB.localTx(implicit s => services.jobs.JobJdbc.insert(services.jobs.NewJob(
+          kind = services.distribution.RoundDistributionHandler.Kind, contestId = contest.id, subjectType = Some("round"),
+          subjectId = round3.id, dedupeKey = Some(key), params = play.api.libs.json.Json.obj("roundId" -> round3.getId)),
+          owner = None))
+        val before = VoteJdbc.byRound(second.getId).size
+        val result = route(app, save(contest.getId, jurors, admin,
+          Seq("id" -> second.getId.toString, "number" -> second.number.toString, "name" -> "Round 2",
+            "newImages" -> "true"))).get
+        (status(result) must_== BAD_REQUEST) and
+          (Jsoup.parse(contentAsString(result)).text must contain(
+            "A round that leaves out this round's files, Round 3, is still being filled. Distribute again when it has finished.")) and
+          (VoteJdbc.byRound(second.getId).size === before) and
+          (services.jobs.JobJdbc.activeByDedupeKey(
+            services.distribution.RoundDistributionHandler.dedupeKey(second.getId)) must beNone)
       }
     }
 
