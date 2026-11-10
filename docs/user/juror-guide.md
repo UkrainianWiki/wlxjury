@@ -221,8 +221,9 @@ A selected file gets a green frame, a rejected one a red frame. The picture belo
 rest, with the frames of earlier votes.
 
 To undo a vote, press the same thumb again: the file is unrated again. The thumbs also work from
-the keyboard: move to one and press Enter or Space. If a vote can't be stored, the file keeps
-its earlier vote and a message says why.
+the keyboard: move to one and press Enter or Space. A vote shows once it is stored, and further
+clicks on that file are ignored until then. If a vote can't be stored, the file keeps its
+earlier vote and a message says why.
 
 Click the image itself to open it in the large view.
 
@@ -232,9 +233,10 @@ Click the image itself to open it in the large view.
 
 Under each file are its stars. Click a star to rate the file. In an older round that allows half
 stars, click the left half of a star for a half star. The circled cross before the stars removes
-your rating. The number after the stars is your rate, and it changes as soon as you vote. If the
-vote can't be stored, the stars go back to your earlier rate and a message says why. While a
-file's vote is being stored, further clicks on that file wait.
+your rating. The stars show your vote at once. If the vote can't be stored, the stars go back to
+your earlier rate and a message says why. Further clicks on a file are ignored until its vote is
+stored. In your list by rate, the number after the stars is your rate; it changes once the vote
+is stored.
 
 In a round with the worst mark, the button with an X icon after the stars (**Worst mark**) gives
 the file the worst mark, and the stars are empty. The eraser before the stars removes your vote,
