@@ -99,7 +99,7 @@ per-round choice keeps contests that don't want it as they are; and per-juror vo
 | # | Decision | Options | Recommendation |
 |---|---|---|---|
 | D1 | Who may see combined votes | A, B, C, D, or both C and D, E above | C and D together |
-| D2 | When | any time / only after the round is stopped | only after it is stopped (`Round.openCond`, §4); a later round on the same files is the admin's call (§10) |
+| D2 | When | any time / only after the round is stopped | only after it is stopped (`Round.openCond`, §4); a later round on the same files is the admin's call, with the caveat documented (§8, §10) |
 | D3 | What is combined | aggregate (score, rank, counts) / plus each juror's vote | aggregate only |
 | D4 | Does a stopped round stay visible to its jurors (read-only) when the setting is on | yes / no, show the results elsewhere | yes: a read-only gallery and large view of that round, no voting |
 | D5 | The setting's place and who sets it | round form, admins only (like the score rule) | round form, admins only, off by default |
@@ -197,6 +197,16 @@ catalogue (a new J story). **Screenshots that would help (not regenerated):** th
 section with the new option (`organizer-score-rule-warning.png` shows the neighbouring options),
 and a new shot of a juror's results page.
 
+**The option's known issues, stated plainly so the admin can decide** (the maintainer,
+2026-11-10). The round form's help text for the option and the organizer and admin guides say:
+- (a) Switching it on for a round that isn't the last one: the jurors of a later round on the
+  same files will have seen the combined results, which can influence their votes.
+- (b) Where a file had only two jurors, or all its other jurors voted the same way, a juror can
+  work out those votes from the totals (never who cast them).
+
+The plan documents these caveats instead of hiding results: hiding an earlier round's results
+later doesn't undo what its jurors have already seen.
+
 ## 9. Size
 
 **M**: about two days. A column and migration (small), the form and service (small), the juror
@@ -214,4 +224,4 @@ per-juror rate (the negative tests in §7 exist to catch it); the stopped-round 
 reading the results as final when organizers still decide (the help text says the organizers
 choose the winners). Showing a round's results before a later round on the same files
 (`Round.previousIds`) can influence the jurors who vote there, so the admin decides when to
-switch the option on, and the option's help text says so.
+switch the option on, and the help text and guides say so (§8, caveat (a)).
