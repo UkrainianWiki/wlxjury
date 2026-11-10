@@ -188,9 +188,10 @@ open the person's edit page and press **Create a link to share**.
   reset only for an active member. The account must not be root or the admin themselves, must
   have only the roles **Juror** or **Organizer**, and every contest it belongs to, has worked in
   or is invited into must be a contest the admin administers.
-- Not for a person who has no email. (Where Wikimedia sign-in is set up, such a person signs in
-  with their wiki account, and the page says so.) A person with neither an email nor a wiki
-  account can't get a link either.
+- For a person who has no email, only if they have a wiki account of their own (one no other
+  account has): it is then their login. Once Wikimedia sign-in is set up for the tool, not even
+  then: such a person signs in with Wikimedia, with their wiki account, and the page says so.
+  A person with neither an email nor a wiki account of their own can't get a link.
 
 **How it works.**
 
@@ -288,16 +289,30 @@ person can then change the password on their own profile.
 
 If the tool's operators set them up, the sign-in page has **Sign in with Wikimedia** and **Sign
 in with Google**. They sign a person in to the account they already have, and never create one.
-The tool finds the account by the wiki account (for Wikimedia) or the verified email (for
-Google, for Gmail and Google Workspace addresses only). A person can also **Link** the provider on
+The tool finds the account by the email address the provider confirms: for Wikimedia, the
+person's confirmed email there; for Google, only a Gmail or Google Workspace address. The
+account's email must be verified (an accepted invitation or link), or the account has no
+password and a live invitation or password link to that address, which the sign-in then
+accepts. Wikimedia also finds an account by its wiki account, but only one with no email and no
+password that no Wikimedia account was ever linked to. A person can also **Link** the provider on
 their own profile under **Linked accounts**, and **Unlink** it, which signs out the account's
 other sessions.
 
 When the same wiki account is on several jury accounts, the person chooses their account on the
 page **Choose your jury account**, with its password or a link mailed to it. See [the juror
-guide](juror-guide.md#when-one-wiki-name-has-several-jury-accounts). If you change a person's
-email or wiki account, the tool unlinks their Google and Wikimedia accounts, as the account may
-be changing hands.
+guide](juror-guide.md#when-one-wiki-name-has-several-jury-accounts).
+
+Some changes unlink accounts, as the account may be changing hands:
+
+- changing a person's wiki account unlinks their Wikimedia account (the name may now be
+  someone else's), but not Google;
+- changing the email of an invitee who has not set a password yet unlinks both, and sends a new
+  invitation;
+- **Reset password** (root), setting a person's password, and the person accepting an
+  invitation or a password link unlink both.
+
+Changing the email of a person who has a password unlinks nothing: the new address takes effect
+when they follow the link sent to it.
 
 Operators set the providers up in the [OAuth reference](../oauth.md).
 -->
