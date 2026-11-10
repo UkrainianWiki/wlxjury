@@ -2,7 +2,7 @@ package services
 
 import controllers.Greeting
 import db.scalikejdbc.{AccountTokenJdbc, ContestJuryJdbc, User, UserContestJdbc}
-import org.intracer.wmua.ContestJury
+import org.intracer.wmua.{ContestJury, LoginText}
 import play.api.{Configuration, Logger}
 import play.api.i18n.Messages
 
@@ -154,10 +154,10 @@ class UserService @Inject()(val sendMail: SMTPOrWikiMail,
     * names (false).
     */
   private def matchAccount(formUser: User): Option[(User, Boolean)] = {
-    val email = formUser.email.trim.toLowerCase
+    val email = LoginText.email(formUser.email)
     if (email.nonEmpty) User.findByEmail(email).headOption.map(_ -> true)
     else
-      formUser.wikiAccount.map(_.trim).filter(_.nonEmpty)
+      formUser.wikiAccount.map(LoginText.clean).filter(_.nonEmpty)
         .flatMap(User.findByAccount(_).filter(_.deletedAt.isEmpty).headOption)
         .map(_ -> false)
   }
@@ -237,7 +237,7 @@ class UserService @Inject()(val sendMail: SMTPOrWikiMail,
     * has that address, nothing is sent; the caller answers the same either way (N7).
     */
   def requestEmailChange(actor: User, account: User, newEmail: String)(implicit messages: Messages, linkHost: LinkHost = LinkHost.None): Unit = {
-    val email = newEmail.trim.toLowerCase
+    val email = LoginText.email(newEmail)
     // one live link at a time, and a new one at most every EmailChangeInterval (L5)
     if (AccountTokenJdbc.createdSince(account.getId, AccountTokenJdbc.EmailChange, EmailChangeIntervalSeconds))
       accountLogger.info(s"email_change_requested accountId=${account.getId} byAccountId=${actor.getId} throttled=true")
@@ -264,12 +264,12 @@ class UserService @Inject()(val sendMail: SMTPOrWikiMail,
     * the new address masked, and whom to contact. Sent after the request's answer.
     */
   def notifyEmailChanged(account: User, oldEmail: String)(implicit messages: Messages): Unit =
-    if (oldEmail.trim.nonEmpty && oldEmail.trim.toLowerCase != account.emailLo) {
+    if (LoginText.clean(oldEmail).nonEmpty && LoginText.email(oldEmail) != account.emailLo) {
       val subject = messages("email.changed.subject")
       val body = messages("email.changed.body", UserService.maskEmail(account.emailLo))
       mailInBackground {
         // from the tool's own sender: the account's From would carry the new address
-        try sendMail.sendMail(systemSender, account.copy(email = oldEmail.trim.toLowerCase), subject, body)
+        try sendMail.sendMail(systemSender, account.copy(email = LoginText.email(oldEmail)), subject, body)
         catch {
           case NonFatal(e) =>
             accountLogger.warn(s"account_mail_failed purpose=email_changed accountId=${account.getId} error=${e.getClass.getName}")

@@ -256,7 +256,8 @@ object Secured {
   def sessionMatches(user: User, sessionVersion: Option[String], sessionAccountId: Option[String]): Boolean =
     authVersionMatches(user, sessionVersion) && sessionAccountId.forall(_.toLongOption == user.id)
 
-  /** The session keys of a new sign-in of `user`: its name as typed, account id and version, and
+  /** The session keys of a new sign-in of `user`: its login name (one that names it, as
+    * [[sessionUser]] resolves it: [[LoginController]]'s `sessionLogin`), account id and version, and
     * the sign-in's times ([[SessionLifetime.signedIn]]), with a persistent cookie if `keep`.
     */
   def signedInSession(user: User, login: String, keep: Boolean): Seq[(String, String)] =
@@ -449,7 +450,10 @@ object Secured {
   /** The roles [[Secured.withAuth]] lets in by default: any page's. */
   val ViewerRoles: Set[String] = User.ADMIN_ROLES ++ Set("jury", "organizer")
 
-  /** The session's user name as users are looked up by: the login stores it as typed. */
+  /** The session's user name as users are looked up by: trimmed (ASCII) and lowercased. Not
+    * [[org.intracer.wmua.LoginText]]: a session from before S3 is still resolved by its name,
+    * which must name the same account as before; a sign-in stores a clean name.
+    */
   def normalizeUserName(userName: String): String = userName.trim.toLowerCase
 
   /** The request's session user, in the session's current contest

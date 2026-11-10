@@ -4,6 +4,7 @@ import com.nimbusds.oauth2.sdk.http.HTTPRequest
 import com.nimbusds.oauth2.sdk.id.State
 import com.nimbusds.oauth2.sdk.pkce.CodeVerifier
 import com.nimbusds.openid.connect.sdk.Nonce
+import org.intracer.wmua.LoginText
 
 import java.net.URI
 import javax.inject.{Inject, Singleton}
@@ -22,7 +23,7 @@ case class ExternalProfile(
 
   /** The email, if the provider vouches for it and is authoritative for it ([[emailAuthoritative]]). */
   def verifiedEmail: Option[String] =
-    email.map(_.trim.toLowerCase).filter(e => emailVerified && e.nonEmpty && emailAuthoritative)
+    email.map(LoginText.email).filter(e => emailVerified && e.nonEmpty && emailAuthoritative)
 
   /** Whether the provider's `email_verified` proves the address (M4, the user's decision,
     * 2026-11-03). Google: only for a Gmail address (`@gmail.com`, `@googlemail.com`), or for a
@@ -32,7 +33,7 @@ case class ExternalProfile(
     */
   def emailAuthoritative: Boolean =
     provider != OAuthProviders.Google || hostedDomain.exists(_.trim.nonEmpty) ||
-      email.map(_.trim.toLowerCase).exists(e => e.endsWith("@gmail.com") || e.endsWith("@googlemail.com"))
+      email.map(LoginText.email).exists(e => e.endsWith("@gmail.com") || e.endsWith("@googlemail.com"))
 
   /** A verified Google email that is not proof of the address ([[emailAuthoritative]]). */
   def emailNotAuthoritative: Boolean =
