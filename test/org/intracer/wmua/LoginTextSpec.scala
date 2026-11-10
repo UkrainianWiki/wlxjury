@@ -6,14 +6,15 @@ import org.specs2.mutable.Specification
 /** Logins, emails and wiki accounts as pasted from spreadsheets and messengers. */
 class LoginTextSpec extends Specification {
 
-  private val Nbsp = " "
+  private val Nbsp = "\u00a0"
 
   "LoginText.clean" should {
     "strip ASCII whitespace, tabs and Unicode spaces at both ends" in {
       LoginText.clean(" alice@example.com") === "alice@example.com"
       LoginText.clean("alice@example.com\t") === "alice@example.com"
       LoginText.clean(s"${Nbsp}alice@example.com$Nbsp") === "alice@example.com"
-      LoginText.clean("  ﻿​\r\n alice@example.com 　 ") === "alice@example.com"
+      LoginText.clean("\u2007\u202f\ufeff\u200b\r\n alice@example.com \u3000\u2009") === "alice@example.com"
+      LoginText.clean("\u200e\u2060alice@example.com\u200f") === "alice@example.com"
     }
 
     "keep inner characters, and give blank for only spaces or null" in {
@@ -45,6 +46,12 @@ class LoginTextSpec extends Specification {
     "drop a pasted non-breaking space around the name" in {
       User.normalizeWikiAccount(s"${Nbsp}wiki_person\t$Nbsp") === Right(Some("Wiki person"))
       User.normalizeWikiAccount(s"$Nbsp") === Right(None)
+    }
+
+    "drop pasted spaces after a User: prefix or an underscore (CoiMembers.normalize)" in {
+      db.scalikejdbc.CoiMembers.normalize(s"${Nbsp}User:${Nbsp}foo bar") === "Foo bar"
+      db.scalikejdbc.CoiMembers.normalize("_ foo") === "Foo"
+      User.normalizeWikiAccount(s"User: ${Nbsp}foo_bar\t") === Right(Some("Foo bar"))
     }
   }
 }

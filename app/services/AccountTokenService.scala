@@ -175,7 +175,7 @@ object AccountTokenService {
     final class Abort(val error: Option[Any]) extends RuntimeException(null, null, false, false)
     try {
       val (proven, line) = db.scalikejdbc.WriteTx.write { implicit session =>
-        val email = verifiedEmail.trim.toLowerCase
+        val email = LoginText.email(verifiedEmail)
         // the account's row, then its links' (acceptPasswordLink's order)
         val user  = User.lockRow(userId).filter(_.deletedAt.isEmpty)
         val links = AccountTokenJdbc.lockLive(userId, AccountTokenJdbc.SetsPassword, email)

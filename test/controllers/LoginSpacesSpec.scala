@@ -18,7 +18,7 @@ class LoginSpacesSpec extends PlaySpecification with PlayTestDb with AccountTest
 
   sequential
 
-  private val Nbsp = " "
+  private val Nbsp = "\u00a0"
 
   private def signIn(login: String, password: String)(implicit app: Application): Future[Result] = {
     implicit val mat: Materializer = app.materializer
@@ -48,32 +48,42 @@ class LoginSpacesSpec extends PlaySpecification with PlayTestDb with AccountTest
         .withFormUrlEncodedBody("userstoimport" -> lines, "role" -> "jury").withCSRFToken)
   }
 
+  /** The account the sign-in's session names on the next request ([[Secured.sessionUserOf]]). */
+  private def nextRequestUser(result: Future[Result]): Option[Long] =
+    Secured.sessionUserOf(FakeRequest().withSession(session(result).data.toSeq: _*)).flatMap(_.id)
+
   private def storedEmails: List[Option[String]] =
     DB.readOnly(implicit s => sql"SELECT email FROM users ORDER BY id".map(_.stringOpt(1)).list())
 
   "sign-in" should {
-    "accept an email with a leading space, a trailing tab or non-breaking spaces, and store it clean" in {
+    "accept an email with a leading space, a trailing tab or non-breaking spaces, and the next request too" in {
       testDbApp { implicit app =>
         createContests(10)
-        account("alice@example.com", Some(10), "jury")
+        val alice = account("alice@example.com", Some(10), "jury")
 
         for (login <- Seq(" alice@example.com", "alice@example.com\t", s"${Nbsp}Alice@Example.com$Nbsp")) {
-          sessionName(signIn(login, "secret")).map(_.toLowerCase) === Some("alice@example.com")
+          val result = signIn(login, "secret")
+          sessionName(result).map(_.toLowerCase) === Some("alice@example.com")
+          nextRequestUser(result) === alice.id
         }
         sessionName(signIn(s"${Nbsp}alice@example.com\t", "secret")) === Some("alice@example.com")
         status(signIn(s"${Nbsp}alice@example.com", "wrong")) === BAD_REQUEST
+        // inside the address a non-breaking space is another login, which names no one
+        status(signIn(s"alice${Nbsp}@example.com", "secret")) === BAD_REQUEST
       }
     }
 
-    "accept a wiki account name with spaces, a tab or non-breaking spaces around it" in {
+    "accept a wiki account name with underscores, spaces, a tab or non-breaking spaces, and the next request too" in {
       testDbApp { implicit app =>
         createContests(10)
-        account("wiki@example.com", Some(10), "jury", wikiAccount = Some("Wiki juror"))
+        val wiki = account("wiki@example.com", Some(10), "jury", wikiAccount = Some("Wiki juror"))
 
-        for (login <- Seq(" Wiki juror", "Wiki_juror\t", s"${Nbsp}Wiki juror$Nbsp")) {
-          sessionName(signIn(login, "secret")).map(_.replace('_', ' ')) === Some("Wiki juror")
+        for (login <- Seq(" Wiki juror", "Wiki_juror\t", s"${Nbsp}wiki_juror$Nbsp", "Wiki_juror")) {
+          val result = signIn(login, "secret")
+          sessionName(result).map(_.toLowerCase) === Some("wiki juror")
+          nextRequestUser(result) === wiki.id
         }
-        sessionName(signIn(s"${Nbsp}Wiki juror\t", "secret")) === Some("Wiki juror")
+        status(signIn("Wiki_juror", "wrong")) === BAD_REQUEST
       }
     }
 
@@ -104,6 +114,19 @@ class LoginSpacesSpec extends PlaySpecification with PlayTestDb with AccountTest
         added.map(_.wikiAccount) === Seq(Some("Pasted name"))
         storedEmails === List(Some("admin@example.com"), Some("pasted@example.com"))
         UserContestJdbc.findByUser(added.head.getId).map(_.contestId) === Seq(10L)
+      }
+    }
+
+    "refuse an email with a non-breaking space inside it" in {
+      testDbApp { implicit app =>
+        createContests(10)
+        val admin = account("admin@example.com", Some(10), "admin", verified = true)
+
+        val result = save(new RecordingMail, admin, 10, "id" -> "0", "fullname" -> "Inner",
+          "email" -> s"inner${Nbsp}@example.com", "roles" -> "jury", "contest" -> "10")
+
+        status(result) === BAD_REQUEST
+        storedEmails === List(Some("admin@example.com"))
       }
     }
   }
@@ -147,6 +170,34 @@ class LoginSpacesSpec extends PlaySpecification with PlayTestDb with AccountTest
         DB.readOnly(implicit s =>
           sql"SELECT email FROM account_token WHERE purpose = ${AccountTokenJdbc.EmailChange}".map(_.string(1)).list()) ===
           List("new@example.com")
+      }
+    }
+
+    "leave a legacy wiki account with a pasted space as it is on a save that doesn't change it" in {
+      testDbApp { implicit app =>
+        createContests(10)
+        val admin = account("admin@example.com", Some(10), "admin", verified = true)
+        val juror = account("juror@example.com", Some(10), "jury", password = Some("pw-juror"), verified = true,
+          wikiAccount = Some("Legacy wiki"))
+        val padded = s"${Nbsp}Legacy wiki"
+        DB.autoCommit(implicit s => sql"UPDATE users SET wiki_account = $padded WHERE id = ${juror.getId}".update.apply())
+        def stored = User.findById(juror.getId).get
+        val version = stored.authVersion
+        val mail = new RecordingMail
+
+        // one's own profile sends the name back as shown: not a change of the read-only field
+        val own = save(mail, juror, 10, "id" -> juror.getId.toString, "fullname" -> "Renamed",
+          "email" -> "juror@example.com", "wikiAccount" -> padded)
+        status(own) === SEE_OTHER
+        stored.fullname === "Renamed"
+
+        // an admin's save of another field: the name is not rewritten, no sessions end
+        val other = save(mail, admin, 10, "id" -> juror.getId.toString, "fullname" -> "Renamed again",
+          "email" -> "juror@example.com", "wikiAccount" -> padded, "roles" -> "jury", "contest" -> "10")
+        status(other) === SEE_OTHER
+        stored.fullname === "Renamed again"
+        stored.wikiAccount === Some(padded)
+        stored.authVersion === version
       }
     }
   }

@@ -107,7 +107,7 @@ class LoginController @Inject() (
         try {
           User
             .login(login, password, deadline)
-            .map(signedIn(_, login, returnTo, keepSignedIn))
+            .map(user => signedIn(user, sessionLogin(user, login), returnTo, keepSignedIn))
             .getOrElse(
               noStore(BadRequest(loginPage(bound.withGlobalError("invalid.user.or.password"), returnTo)))
             )
@@ -118,6 +118,17 @@ class LoginController @Inject() (
       }
     )
   }
+
+  /** The name the session keeps for `user`, signed in with `login`: one that names this account
+    * as [[Secured.sessionUser]] resolves a session (exactly, no underscores as spaces): the login
+    * as typed, else with underscores as spaces (a wiki account `Foo_Bar` stored as `Foo Bar`),
+    * else the account's own login name ([[OAuthController.loginName]]).
+    */
+  private def sessionLogin(user: User, login: String): String =
+    Seq(login, login.replace('_', ' ')).distinct
+      .find(name => User.byUserName(Secured.normalizeUserName(name)).exists(_.id == user.id))
+      .orElse(OAuthController.loginName(user))
+      .getOrElse(login)
 
   /** An invitation's or a password link's page: the form that sets the password, if the link
     * is live; else the same "invalid link" page for any reason (N7).

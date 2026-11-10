@@ -419,13 +419,14 @@ object User extends CRUDMapper[User] {
         user
     }
 
-  /** The account a login (a session's, or the sign-in form's) names: by email, cleaned
-    * ([[LoginText.clean]]: also a pasted non-breaking space) and lowercased (P18), else by wiki account, which must name exactly one account (N4: the
+  /** The account a login (a session's, or the sign-in form's) names: by email, trimmed and
+    * lowercased (P18; a sign-in's, `underscoresAsSpaces`, cleaned of pasted spaces too,
+    * [[LoginText.clean]]; a session's as before, so it names the same account), else by wiki account, which must name exactly one account (N4: the
     * name is not unique; an ambiguous one names no one, rather than the oldest account with
     * it). Deleted accounts are never found (P14).
     */
   def byUserName(username: String, underscoresAsSpaces: Boolean = false): Option[User] = {
-    val unameTrimmed = LoginText.email(username)
+    val unameTrimmed = if (underscoresAsSpaces) LoginText.email(username) else username.trim.toLowerCase
     val users = Constraints.emailAddress()(unameTrimmed) match {
       case Valid => findByEmail(unameTrimmed)
       // sign-in only: as typed, and with underscores as spaces (how names are stored since S2).
@@ -764,14 +765,14 @@ object User extends CRUDMapper[User] {
   private val InvalidWikiAccountChars: Set[Char] = "#<>[]|{}/@:=".toSet
 
   /** A wiki account name as MediaWiki stores it (N4): without a `User:` prefix, underscores as
-    * spaces, runs of spaces as one, trimmed (first of any pasted space, [[LoginText.clean]]),
-    * the first letter upper case. Left: a message key
+    * spaces, runs of spaces as one, trimmed (also of pasted spaces, [[LoginText.clean]]), the
+    * first letter upper case. Left: a message key
     * (an invalid character, a control character, too long). Right(None): blank.
     */
   def normalizeWikiAccount(input: String): Either[String, Option[String]] = {
     // one normalisation for names stored here and the CoI filter's keys (L5): CoiMembers.normalize
     // (title case of the first letter, as MediaWiki: Georgian Mkhedruli stays, `ǆ` becomes `ǅ`)
-    val normalized = CoiMembers.normalize(LoginText.clean(input))
+    val normalized = CoiMembers.normalize(input)
     if (normalized.isEmpty) Right(None)
     else if (normalized.exists(c => InvalidWikiAccountChars.contains(c) || Character.isISOControl(c)))
       Left("wiki.account.invalid")
