@@ -25,7 +25,8 @@ where it moved. Entries from CodeRabbit's reviews (R185-1 onwards) give the newe
 mirror `63c80ff7` has the same tree); from R196-1 on, the followups tip `34788a54` (the mirror
 of `stack/71-investigations`, `6c00ed6e`); from R202-1 on, the followups tip `b85b0b60` (the
 mirror of `stack/77-dependency-updates`, `17e145b3`); from R207-1 on, the top of the stack,
-`stack/90-triage-fixes` (`f339aa13`, #273). R193-4 is the first Medium.
+`stack/90-triage-fixes` (`f339aa13`, #273); from R220-1 on, `stack/101-multi-role-plan`
+(`0f441881`, #284; the followups mirror `6b33abff` has the same tree). R193-4 is the first Medium.
 
 ### R198-1: A job that crashes the JVM is retried forever
 
@@ -1297,6 +1298,91 @@ whether the cache's counts and registry tell the truth. File:line at the newest 
      value as an option, so the form is refused again.
 - **Placement:** with the next round form change.
 
+### R220-1: The password-busy page and user import's silent failures
+
+- **PR:** #220 (37, tip `f39e2164`). `app/controllers/UserController.scala:283`, `:403`;
+  `test/controllers/PasswordStorageSpec.scala:167`.
+- **Severity:** Nit.
+- **At the newest tip:** all still there (`UserController.scala:510-513` the `Busy` catch,
+  `:554-558` `passwordBusy`, `:740-741` `importUsers`; `PasswordStorageSpec.scala:339`).
+- **Items, failure scenarios and fixes:**
+  1. **One's own password change under load gets the admin's form:** with no hashing turn,
+     `updateUser` answers through `passwordBusy`, which renders `views.html.editUser` for one's own
+     profile too: the 503 page has no API tokens card (root) or linked accounts card and takes the
+     edited account's contest, unlike every other refusal of one's own form (`badRequest` uses
+     `ownProfile`). Fix: in `passwordBusy`, for `editedUser.id == user.id`, return
+     `ownProfile(ServiceUnavailable, user, userForm = Some(form.withGlobalError("password.busy")))`
+     with `Retry-After`; a spec with every turn taken.
+  2. **A failed import line leaves no trace:** `case Failure(_)` counts the user as not added and
+     goes on, with no log line (before #220 the `Try` dropped it too, without even a count; the
+     review's "it reached `ErrorHandler`" is wrong). A database or mail failure after `User.create`
+     is then invisible. Fix: log
+     the exception's class (not its message: emails, SQL values) with the importing account's id
+     at WARN, on `security.account` or the controller's logger.
+  3. **`withEveryTurnTaken` can hang the spec:** `holding.await()` has no bound; a holder that gets
+     no turn within `maxWait` throws `Busy` and never counts down. Fix:
+     `require(holding.await(10, SECONDS), "not every turn was taken")`.
+- **Placement:** a new commit at the top of the stack (small, one controller and one spec).
+
+### R223-1: Two-step rounds and criteria plans: re-apply, the count check, the damage query
+
+- **PR:** #223 (40, tip `928d1b9f`). `docs/plans/2026-11-02-round-images-two-step.md:220`, `:228`;
+  `docs/plans/2026-11-02-criteria-rounds.md:166`.
+- **Severity:** Low (followed as written, item 1 prunes files that still pass the filters and item
+  2 refuses a valid "Distribute new files"; item 3 lets U12 miss damaged votes or "repair" partial
+  ones). P3 isn't built; C0 hasn't been run.
+- **At the newest tip:** all still in the plans (round images `:284-286` Fill's anti-join,
+  `:293-294` the distribute check, `:300-301` re-apply and Prune, `:312-313` adding a juror;
+  criteria `:168-170`, `:184-186` the damage queries, `:201-202`, `:921-922` U12).
+- **Items and fixes:**
+  1. **Re-apply can't see the rows it keeps:** Fill's anti-join skips every existing `round_image`
+     row, while re-apply "marks the rows it sees" and Prune deletes the unseen `fill` rows, so a
+     file still passing the filters is never seen and is pruned. Fix: in re-apply mode, scan the
+     existing `fill` rows against the filters (mark the passing ones) separately from the insert's
+     anti-join, then prune.
+  2. **The distribute count check assumes one juror count for all rows:** "every `in` row's
+     `assigned` = the round's jurors" fails after a juror is added and "Distribute new files" runs
+     (new files get the new count, existing ones keep theirs, as the plan intends). Fix: check the
+     rows this job assigned against its own expected count, and the others unchanged.
+  3. **The S4 damage query reads only live votes, and, run after V83, counts partial votes:** a
+     damaged vote moved aside (a deletion on Commons) is neither listed nor repaired by U12; after
+     U5 a partly rated vote (rate 0, criteria sum above 0) is listed as damage. Fix: add the
+     `selection_deleted`/`vote_aside` rows (a `UNION ALL`), and in the "after V82" block count a
+     criteria vote only when all its round's criteria are rated (or note that the block must run
+     before V83); U12's repair the same.
+  4. **Superseded sketches read as current:** round images §5 `:179-180` (inserts add
+     `assigned + n`: P2a recomputes instead), `:254-255` (`restoreVotes` by status `deleted`: P1
+     restores every aside vote but a `dq` pair's), §8 `:380` (top-N from `round_image` rows: P2b
+     kept it on the votes). Fix: a "superseded by §13/§16/§17" note on each.
+- **Placement:** amend the plans in a docs commit at the top of the stack (items 1-2 before P3 is
+  started, item 3 before C0 is run).
+
+### R223-2: A clean N1 data check doesn't rule out a reverted role
+
+- **PR:** #223 (40, `928d1b9f`). `docs/security/2026-11-02-rereview-report.md:62`.
+- **Severity:** Low (an operator could read a clean check as "never exploited").
+- **At the newest tip:** still there (`docs/history/security/2026-11-02-rereview-report.md:60-66`,
+  a record; `docs/security/register.md:33`, the N1 production row: "open: … the leftover query").
+- **Failure scenario:** an admin sets a membership role that includes root (N1), uses root, then
+  sets the role back: no `user_contest.role` anomaly and no `users.is_root` remain, and the
+  role-change POSTs leave no app log before S1 (no audit log, P19).
+- **Log check (the maintainer's decision; run read-only on 2026-11-10):**
+  - window: the jury vhosts' access logs (`other_vhosts_access.log*`, all six jury hosts) from
+    2026-10-27 00:00 (the oldest kept; daily rotation, 14 days) to the hotfix deploy, 2026-11-02
+    15:01 CET;
+  - `POST /users/save`: 21 requests (one admin's jury-setup burst on jury.wikilovesearth.org, one
+    juror's own-profile saves, 2 by a root session);
+  - root-only pages (`/admin/allUsers`, `/contests`, `/contests/save`, `/contests/import`, the API
+    token admin and image check routes; most other `/admin/...` routes are contest admins' pages):
+    answered 200 only to 2 IP addresses, which had root sessions from the first logged day; none
+    came after a `users/save`; no 403 on a root-only path;
+  - result: no sign of exploitation in the window, but not conclusive. The logs miss the earlier
+    vulnerable period and record IP addresses, not accounts, and no form bodies; the 2 addresses
+    aren't identified yet by the maintainer. The `is_root` audit stays the main evidence.
+- **Fix:** say in the register's N1 production row that a clean data check doesn't rule out a
+  reverted role, and record this log check and its limits.
+- **Placement:** a docs commit at the top of the stack (register only; the report stays a record).
+
 New entries use the format `### R<PR>-<n>: <short title>`, then PR and file:line
 at its tip, severity, whether it is still at the final tip, the failure
 scenario, the suggested fix and the placement (append after an existing plan,
@@ -1542,3 +1628,31 @@ unlocked read), [R203-2](#r203-2-adding-a-pasted-list-waits-for-commons-and-miss
 The later PRs of the series: #211, #212 and #213 got no inline comments; CodeRabbit skipped #214
 (121 files, over its 100-file limit); #215's review was incremental, over commits it had reviewed,
 with nothing new.
+
+### CodeRabbit, PRs 220-224
+
+CodeRabbit's 16 inline comments and 8 review-level remarks on #220-#224 (1 inline on #220, 15 on
+#223; the remarks are the review bodies' "Nitpick comments": 4 on #220, 1 on #222, 3 on #223; #221's
+review has only the "Docstring Coverage" pre-merge check, not answered, as on earlier PRs; #224 was
+clean), classified against the top of the stack, `stack/101-multi-role-plan` (`0f441881`, #284);
+one reply per thread, and the review-level remarks in one comment per PR (#220, #222, #223). New
+entries: [R220-1](#r220-1-the-password-busy-page-and-user-imports-silent-failures),
+[R223-1](#r223-1-two-step-rounds-and-criteria-plans-re-apply-the-count-check-the-damage-query)
+(Low), [R223-2](#r223-2-a-clean-n1-data-check-doesnt-rule-out-a-reverted-role) (Low); none Medium
+or above. Most of #223's comments are on plans that later PRs implemented (P0 #232, P1 #236, P2a
+#265, P2b #267, C2 #235, C3 #247) or on security documents #228 replaced (`secure-coding.md`,
+`register.md`).
+
+| PR | Inline comments: class |
+|---|---|
+| #220 | UserController.scala:283 own profile's 503 page without its cards: new entry (R220-1) |
+| #223 | criteria-rounds.md:114 partial votes in rate_sum: fixed later (#235, U5: `vote.rate` 0 until every criterion is rated); criteria-rounds.md:166 damage check leaves out aside votes: new entry (R223-1); criteria-rounds.md:232 half-star units: fixed later (#247, `perCriterion / starUnits`); roadmap.md:43 N6 without a batch: fixed later (#231, S7, `protectHeaders = null`, `LoginCsrfSpec`); round-images.md:69 rollback keeps the column rename: fixed later (#232, §12 rollback SQL); round-images.md:114 pairs with live and aside votes: fixed later (#236, a mixed pair stays `in` and `restoreVotes` moves back every aside vote; #244 keeps a `dq` pair's aside); round-images.md:158 inserted rated votes' counts: fixed later (#265, counts recomputed from the votes); round-images.md:220 re-apply can't see existing fill rows: new entry (R223-1); round-images.md:228 count check per distribution batch: new entry (R223-1); round-images.md:312 top-N from round_image rows: fixed later (#267, top-N stays on the votes); security-practices.md:40 bearer API calls: fixed later (#228, `secure-coding.md` §11 exception); security-practices.md:57 wrappers and delegates in G2: fixed later (#228, `RouteAuthSpec` follows helpers); rereview-previous.md:155 wiki account uniqueness: fixed later (#225, H1: only a verified wiki account joins); rereview-report.md:62 clean data queries: new entry (R223-2); rereview-report.md:75 N1 status: fixed later (#228, `register.md`) |
+
+| PR | Review-level remarks: class |
+|---|---|
+| #220 | `importUsers` failure not logged: new entry (R220-1); per-client sign-in limit: planned (P1, fail2ban, S4 with the infra plan); unbounded `holding.await()`: new entry (R220-1); "Password storage (done)" with dormant SHA-1 hashes: fixed later (#221 status rewritten; #230, S6/P8, V81 retires them) |
+| #222 | paired benchmark's warm-up not on the pool: accepted as is (per-block medians, alternating order, B10 decided) |
+| #223 | invalid-role warning on every lazy read: not applicable (V76's `CHECK`); `roleRefused` binds twice: won't fix (no cost; keeps the submitted values); V76 not atomic: not applicable (as designed; roadmap A3 pre-deploy check) |
+
+The N1 access-log check recorded in R223-2 was run on 2026-11-10 at the maintainer's request: no
+sign of exploitation from 2026-10-27 to the hotfix, not conclusive.
