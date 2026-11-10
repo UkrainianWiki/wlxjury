@@ -238,9 +238,18 @@ test.describe('the guides\' screenshots', () => {
       },
     });
     await shot(contextAs, 'admin', `/contest/${contest}/images`, 'admin-contest-images', { full: true });
-    // as root, so that the account's Root checkbox shows too (root only), with the role's help
-    await shot(contextAs, 'root', `/users/edit/${fixture.accounts.juror.id}?contestId=${contest}`, 'admin-user-edit', {
+    // as an admin sees it (the guide's text is an admin's), with the role's help
+    const editUserPath = `/users/edit/${fixture.accounts.juror.id}?contestId=${contest}`;
+    await shot(contextAs, 'admin', editUserPath, 'admin-user-edit', {
       crop: '#edit-user',
+      prepare: async (page) => {
+        await expect(page.getByLabel('Root (every contest)'), 'an admin has no Root checkbox').toHaveCount(0);
+        await expect(page.getByText('Board, Audit committee and Staff give no access')).toBeVisible();
+      },
+    });
+    // root's own field on the same page: the Root checkbox, with the role and its help under it
+    await shot(contextAs, 'root', editUserPath, 'admin-user-edit-root', {
+      crop: ['#root_field', '#roles_field'],
       prepare: async (page) => {
         await expect(page.getByLabel('Root (every contest)'), 'root sees the Root checkbox').toBeVisible();
         await expect(page.getByText('Board, Audit committee and Staff give no access')).toBeVisible();
