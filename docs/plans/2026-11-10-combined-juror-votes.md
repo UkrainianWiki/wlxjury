@@ -99,16 +99,24 @@ per-round choice keeps contests that don't want it as they are; and per-juror vo
 | # | Decision | Options | Recommendation |
 |---|---|---|---|
 | D1 | Who may see combined votes | A, B, C, D, or both C and D, E above | C and D together |
-| D2 | When | any time / only after the round is stopped | only after it is stopped (`Round.openCond`, §4); a later round on the same files is the admin's call, with the caveat documented (§8, §10) |
+| D2 | When | any time / only after the round is stopped | only after it is stopped (`Round.openCond`, §4); while a later round on the same files is open, see D9 (§8, §10) |
 | D3 | What is combined | aggregate (score, rank, counts) / plus each juror's vote | aggregate only |
 | D4 | Does a stopped round stay visible to its jurors (read-only) when the setting is on | yes / no, show the results elsewhere | yes: a read-only gallery and large view of that round, no voting |
 | D5 | The setting's place and who sets it | round form, admins only (like the score rule) | round form, admins only, off by default |
 | D6 | `juryOrgView` | leave / give it a form field / retire it | leave as it is; say in the docs that it is not set from the UI; decide retirement later |
 | D7 | Also for yes/no rounds (approvals, rejections) | yes / rated rounds only | yes; both use the same aggregate queries |
 | D8 | Show the juror's own vote beside the aggregate | yes / no | yes |
+| D9 | Results while a later round on the same files is open | (a) manual: the admin switches the round's option off, no code beyond the toggle / (b) a second per-round checkbox under the option, "hide while a later round built from this one is open" / (c) always hidden while a later round is open, no checkbox | **(b), on by default.** *Why:* the protective choice is the default, so an admin who never thinks of the later round still gets it, and it needs no one to remember to switch anything off when the next round opens and on again when it stops, as (a) does; but a contest that wants its jurors to keep the earlier results open (say, a final round meant to build on the first) can untick it, which (c) doesn't allow. The cost over (c) is one column and one form field |
 
-**Considered and dropped (the maintainer, 2026-11-10).** Two hiding rules were drafted and
-dropped:
+**Why D9 exists (the maintainer, 2026-11-10):** "one thing is to see once (and maybe even copy
+the results, regardless if tool gives this an option or not), other is to be able to coordinate
+the next vote fully." Seeing the results once can't be undone, but keeping them open while the
+same jurors vote in a later round on the same files lets them consult or coordinate throughout
+that vote. With (b) or (c), a juror of an open later round gets 403 on the earlier round's
+results until that round stops (§4).
+
+**Considered and dropped (the maintainer, 2026-11-10).** One hiding rule was drafted and
+dropped, and one became an option:
 - *A minimum number of jurors or votes* (a round minimum, files with fewer votes left out of the
   ranked list, a "too few votes" line). The maintainer's reason: a juror can work out another
   juror's vote only when exactly two jurors rated a file. Most rated rounds have three or more
@@ -117,9 +125,9 @@ dropped:
   a file's other jurors voted the same way (a yes/no file where all 3 said yes, or a 3–0 rated
   file), the totals reveal their votes; they are still not attributed to anyone, so the decision
   stands.
-- *Hiding the results while a later round built from this one is open* (following the chain of
-  previous rounds, a 403 for its jurors). Replaced by the admin's choice of when to switch the
-  option on (§8, §10).
+- *Hiding the results while a later round built from this one is open* was first dropped for the
+  admin's choice of when to switch the option on, then brought back as an option, not a fixed
+  rule: D9 (§4, §8, §10).
 
 ## 4. Authorization rules the change must keep
 
@@ -133,11 +141,23 @@ From CLAUDE.md "Own votes" and secure coding §"juror confidentiality":
 - Authors (`showAuthor`), the juror menu (`User.findRoundJurorsToView`), the statistics page,
   the file list, the CSV and the conflicts page stay `canViewOrgInfo` / organizers only. The
   new permission is a separate function, `User.canViewRoundResults(round)` (root, organizer and
-  admin as now; a juror of the round when the setting is on **and** the round is stopped), used
-  only for the combined view, so `canViewOrgInfo` does not widen.
-- **Stopped** is not open in `Round.openCond`'s sense (`active`, or `distributing`, or frozen
-  while active: `freeze_count > 0 AND active_before_freeze`, a previous round of a running
-  distribution), so a round only frozen by a distribution is not stopped.
+  admin as now; a juror of the round when the setting is on, the round is stopped, **and**, with
+  D9's checkbox on, the juror is not a juror of an open later round built from it), used only
+  for the combined view, so `canViewOrgInfo` does not widen.
+- **Open** is `Round.openCond`: `active`, or `distributing` (being created), or frozen while
+  active (`freeze_count > 0 AND active_before_freeze`, a previous round of a running
+  distribution). **Stopped** is not open, so a round only frozen by a distribution is not
+  stopped, and a later round still being distributed already counts as open.
+- **Later rounds, through the whole chain** (D9). `Round.previousIds` holds only a round's direct
+  previous rounds, and round 3 built from round 2, built from round 1, can have round 1's files
+  and jurors. So `canViewRoundResults` loads the contest's rounds once (`Round.findByContest`,
+  tens of rows; previous rounds come from the round's own contest only, as
+  `RoundDistributionHandler` reads them), builds the previous-to-next links from each round's
+  `previousIds` in memory, and collects every round reachable from this one, with a visited set
+  so a cycle can't loop. Then one query checks whether any of them is open (`Round.openCond`: the
+  `Round` case class doesn't load `active_before_freeze`, so this is SQL, not an in-memory test)
+  and has the juror in its `round_user` rows. Cost: two small queries per results request,
+  negligible next to the by-rate page.
 - A vote still needs the round open to its jurors and the juror not stopped on it: the read-only
   view of a stopped round binds no vote controls and `selectWS` refuses as today.
 - Denials go through `onUnAuthorized` with a `Secured.Denial` and are logged on `security.authz`.
@@ -153,8 +173,10 @@ From CLAUDE.md "Own votes" and secure coding §"juror confidentiality":
 
 ## 6. Data and query impact
 
-- One new column, `round.jurors_see_results BOOLEAN NOT NULL DEFAULT 0` (V95; `INSTANT`, a
-  metadata-only change, like V92). `Round` reads and writes it; `EditRound` and the form get it.
+- Two new columns, `round.jurors_see_results BOOLEAN NOT NULL DEFAULT 0` and, for D9 (b),
+  `round.results_hidden_during_later BOOLEAN NOT NULL DEFAULT 1`, in one migration (V95;
+  `INSTANT`, a metadata-only change, like V92). `Round` reads and writes them; `EditRound` and
+  the form get them, the second shown under the first.
 - **No new queries or tables.** The combined view already runs for organizers on the same data:
   `vote` aggregates (V72–V74), the round's score rule (V90) and, once `roundImage.read` is on
   (off in 26.11), `round_image` counts. A juror's request costs what an organizer's does; the
@@ -170,13 +192,17 @@ From CLAUDE.md "Own votes" and secure coding §"juror confidentiality":
 
 Positive: a juror of a stopped round with the setting on opens the combined gallery and the
 large view and sees score, rank and counts, with their own vote beside them; the round form
-saves the setting (admins only); the counts leave out rate-0 rows and partly rated criteria
-votes.
+saves the setting and D9's checkbox (admins only); the counts leave out rate-0 rows and partly
+rated criteria votes; with D9's checkbox off, the results stay open while a later round is open;
+with it on, they show again once the later round stops.
 **Negative authorization (each a request, each asserting the status and that the body has none of
 the forbidden content):**
 - a juror, setting off, `asUserId == 0`: 403 `OtherUsersVotes` (as `OwnVotesSpec` [J-27] today);
 - setting on, round still open: 403 (D2);
 - setting on, a round only frozen by a running distribution (not stopped): 403;
+- setting and D9's checkbox on, stopped, the juror is a juror of an open later round: built
+  directly from it (round 2 from round 1); at the end of a chain of three (round 3 from round 2
+  from round 1, round 2 stopped); still being distributed: 403 for round 1 in each case;
 - setting on, stopped, `asUserId = another juror`: 403;
 - setting on, stopped, the page's HTML has no author names, no juror names or emails, no
   per-juror rates, and the file list and CSV answer 403;
@@ -200,21 +226,25 @@ and a new shot of a juror's results page.
 **The option's known issues, stated plainly so the admin can decide** (the maintainer,
 2026-11-10). The round form's help text for the option and the organizer and admin guides say:
 - (a) Switching it on for a round that isn't the last one: the jurors of a later round on the
-  same files will have seen the combined results, which can influence their votes.
+  same files may have seen the combined results before it opened, which can influence their
+  votes. D9's checkbox ("hide while a later round built from this one is open", on by default)
+  closes the results to them while they vote there, but can't undo what they saw before.
 - (b) Where only two jurors voted on a file, or all its other jurors voted the same way, a juror can
   work out those votes from the totals (never who cast them).
 
-The plan documents these caveats instead of hiding results: hiding an earlier round's results
-later doesn't undo what its jurors have already seen.
+The plan documents these caveats rather than relying on hiding alone: hiding an earlier round's
+results later doesn't undo what its jurors have already seen; D9 only stops them from consulting
+the results throughout the later vote.
 
 ## 9. Size
 
-**M**: about two days. A column and migration (small), the form and service (small), the juror
-variant of the by-rate view and the large view's box (the bulk, medium), the stopped-round
-read-only access for jurors (medium: `viewerRounds`, the gallery and large view must not offer
-votes), four languages, about 16 tests (§7: 4 positive and 12 negative, counting each case of a
-bullet as one test) plus the browser story, and the docs. If D4 is "no" (results shown outside
-the gallery), the read-only access piece drops out, and the work is about one day.
+**M**: about two and a half days. Two columns and a migration (small), the form and service
+(small), D9's chain walk and check (small), the juror variant of the by-rate view and the large
+view's box (the bulk, medium), the stopped-round read-only access for jurors (medium:
+`viewerRounds`, the gallery and large view must not offer votes), four languages, about 21 tests
+(§7: 6 positive and 15 negative, counting each case of a bullet as one test) plus the browser
+story, and the docs. If D4 is "no" (results shown outside the gallery), the read-only access
+piece drops out, and the work is about one and a half days. With D9 (a), about half a day less.
 
 ## 10. Order and risks
 
@@ -224,4 +254,5 @@ per-juror rate (the negative tests in §7 exist to catch it); the stopped-round 
 reading the results as final when organizers still decide (the help text says the organizers
 choose the winners). Showing a round's results before a later round on the same files
 (`Round.previousIds`) can influence the jurors who vote there, so the admin decides when to
-switch the option on, and the help text and guides say so (§8, caveat (a)).
+switch the option on, and the help text and guides say so (§8, caveat (a)); D9's checkbox keeps
+the results closed to those jurors while the later round is open.
