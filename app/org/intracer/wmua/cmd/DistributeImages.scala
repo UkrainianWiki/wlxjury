@@ -47,7 +47,8 @@ class DistributeImages @Inject()(imageRepo: ImageRepo) extends Logging {
   /** The round's per-image filters: every filter of [[imagesByRound]] except top-N by
     * rating (a global ranking), the exclusion of the images already in the round and
     * "exclude files rejected by at least N" (the streamed queries apply it,
-    * `DistributionSource.PrevVotes`). Each
+    * `DistributionSource.PrevVotes`), and the files of the rounds the round leaves out
+    * ([[Round.excludeRounds]], the queries' `notInExcluded`). Each
     * decides per image, so applying them to any slice of the candidates (a chunk) selects
     * exactly the images the whole list would. The category id sets are the effective
     * first and second operands of [[Round.categoryRule]] ([[categoryFileIds]]);
@@ -122,6 +123,9 @@ class DistributeImages @Inject()(imageRepo: ImageRepo) extends Logging {
       .filter(iwr => iwr.votes.nonEmpty)
       .toSet
     val existingImageIds = currentImages.map(_.pageId)
+    // "Leave out files that are in round(s)" (V95): any row of theirs in round_image, whatever its
+    // status or votes, as the streamed queries leave them out
+    val excludedRoundFiles = round.excludeRounds.flatMap(id => RoundImageJdbc.byRound(id).map(_.pageId)).toSet
     val existingJurorIds = currentImages.flatMap(_.jurors)
     val mpxAtLeast = round.minMpx
     val sizeAtLeast = round.minImageSize.map(_ * 1024 * 1024)
@@ -177,7 +181,7 @@ class DistributeImages @Inject()(imageRepo: ImageRepo) extends Logging {
       excludeRegionIds = excludeRegionIds,
       includeMonumentIds = includeMonumentIds,
       includePageIds = includePageIds,
-      excludePageIds = excludePageIds ++ existingImageIds,
+      excludePageIds = excludePageIds ++ existingImageIds ++ excludedRoundFiles,
       includeTitles = includeTitles,
       excludeTitles = excludeTitles,
       includeJurorId = includeJurorId,

@@ -59,7 +59,7 @@ juror names and the statistics, to any juror of the contest. As of `stack/98-lar
 (`c845b857`) the app neither reads nor writes it: jurors always get the juror view, and the
 specs that pinned it (`OwnVotesSpec`, `CoiAuthorizationSpec`, `CriteriaResultsPageSpec`,
 `MutationAuthorizationSpec`, `LargeImageSpec`) now set it by SQL and expect the juror view; J-28
-is retired. The column stays until the multi-role contract migration (V97) drops it.
+is retired. The column stays until the multi-role contract migration (V98) drops it.
 
 **Two more facts that shape the options.**
 - A **stopped round is hidden from its jurors** (`viewerRounds` lists `Round.activeRounds(user)`).
@@ -104,7 +104,7 @@ organizer-only (`juryOrgView`, which once opened them, is ignored, D6).
 | D3 | What is combined | aggregate (score, rank, counts) / plus each juror's vote | aggregate only |
 | D4 | Does a stopped round stay visible to its jurors (read-only) when the setting is on | yes / no, show the results elsewhere | yes: a read-only gallery and large view of that round, no voting |
 | D5 | The setting's place and who sets it | round form, admins only (like the score rule) | round form, admins only, off by default |
-| D6 | `juryOrgView` | leave / give it a form field / retire it | **Decided (2026-11-10): retired.** The app ignores the flag as of `stack/98-largeview-json-authors` (`c845b857`): jurors always get the juror view. The column `jury_org_view` stays, unread and unwritten (nullable, DEFAULT NULL), until the multi-role contract migration (V97) drops it |
+| D6 | `juryOrgView` | leave / give it a form field / retire it | **Decided (2026-11-10): retired.** The app ignores the flag as of `stack/98-largeview-json-authors` (`c845b857`): jurors always get the juror view. The column `jury_org_view` stays, unread and unwritten (nullable, DEFAULT NULL), until the multi-role contract migration (V98) drops it |
 | D7 | Also for yes/no rounds (approvals, rejections) | yes / rated rounds only | yes; both use the same aggregate queries |
 | D8 | Show the juror's own vote beside the aggregate | yes / no | yes |
 | D9 | Results while a later round on the same files is open | (a) manual: the admin switches the round's option off, no code beyond the toggle / (b) a second per-round checkbox under the option, "hide while a later round built from this one is open" / (c) always hidden while a later round is open, no checkbox | **Decided by the maintainer (2026-11-10): (b), on by default.** *Why:* the protective choice is the default, so an admin who never thinks of the later round still gets it, and it needs no one to remember to switch anything off when the next round opens and on again when it stops, as (a) does; but a contest that wants its jurors to keep the earlier results open (say, a final round meant to build on the first) can untick it, which (c) doesn't allow. The cost over (c) is one column and one form field |
@@ -175,7 +175,7 @@ From CLAUDE.md "Own votes" and secure coding §"juror confidentiality":
 ## 6. Data and query impact
 
 - Two new columns, `round.jurors_see_results BOOLEAN NOT NULL DEFAULT 0` and, for D9,
-  `round.results_hidden_during_later BOOLEAN NOT NULL DEFAULT 1`, in one migration (V95;
+  `round.results_hidden_during_later BOOLEAN NOT NULL DEFAULT 1`, in one migration (V96;
   `INSTANT`, a metadata-only change, like V92). `Round` reads and writes them; `EditRound` and
   the form get them, the second shown under the first.
 - **No new queries or tables.** The combined view already runs for organizers on the same data:

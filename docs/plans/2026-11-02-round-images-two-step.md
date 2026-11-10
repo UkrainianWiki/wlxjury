@@ -1335,7 +1335,7 @@ distribution (the job records them, `added_by_job_id`). P3's D16a (`removeImage`
   have done. Invariant 4 (a `deleted` row's image is deleted) holds either way.
 - **No event: as before V88.** Rows disqualified before V88 come back `in` (the known limitation
   for those only). Production can't have such a row: nothing writes `dq` before P1b, and P1b and
-  V88 ship together in `26.11` (V71–V94). Only a test or a hand edit makes one.
+  V88 ship together in `26.11` (V71–V95). Only a test or a hand edit makes one.
 - **Residual limitations** (rare, both keep the invariants; telling them apart needs the round's
   open/closed history, which nothing records). The event keeps the status at the disqualify, not
   what happened to the file while it was disqualified:
@@ -1359,7 +1359,7 @@ distribution (the job records them, `added_by_job_id`). P3's D16a (`removeImage`
 
 ### Pre-deploy (V88)
 
-V88 ships in `26.11` with V71–V94 (roadmap, "Release plan"): before the deploy production is at
+V88 ships in `26.11` with V71–V95 (roadmap, "Release plan"): before the deploy production is at
 V70 (`f9c31ce5`), its last Flyway row **70**, and neither `round` (V82 renames `rounds`) nor
 `round_image` (V84) exists yet, so nothing here may read them. Read-only, production, as the
 admin user, before the deploy:
@@ -1644,7 +1644,7 @@ Logs: branch `target/checks/20261105-002355-12908.log` and `…-003413-29380.log
 
 ### Deploy note
 
-V89 ships in `26.11` with V71–V94: before the deploy production is at V70 (its last
+V89 ships in `26.11` with V71–V95: before the deploy production is at V70 (its last
 Flyway row **70**, tables `rounds` and `selection`; `round` and `round_image` are V82's and
 V84's). Read-only, production, as the admin user, before the deploy:
 ```sql

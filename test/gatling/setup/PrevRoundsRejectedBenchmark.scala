@@ -117,16 +117,16 @@ object PrevRoundsRejectedBenchmark {
   /** The same walk through the app's own queries (today's code). */
   private def walkApp(prev: Seq[Long], target: Long): (Long, Int, Int) = {
     val votes = PrevVotes(rejectedBy = Some(n), rejectedMode = RejectedMode.Exclude)
-    val count = DistributionSource.previousCount(prev, votes)
+    val count = DistributionSource.previousCount(prev, votes, Nil)
     var cursor = 0L
     var windows = 0
     var rows = 0
     var done = false
     while (!done) {
-      val w = DistributionSource.previousWindow(prev, votes, cursor, windowSize)
+      val w = DistributionSource.previousWindow(prev, votes, cursor, windowSize, Nil)
       if (w.size == 0) done = true
       else {
-        rows += DistributionSource.previousCandidates(prev, votes, cursor, w.last, target).size
+        rows += DistributionSource.previousCandidates(prev, votes, cursor, w.last, target, Nil).size
         windows += 1
         cursor = w.last
       }
@@ -174,7 +174,7 @@ object PrevRoundsRejectedBenchmark {
       .list().mkString(", ")}")
 
     val vs = variants(prev)
-    val firstWindow = DistributionSource.previousWindow(prev, PrevVotes(rejectedBy = Some(n)), 0L, windowSize)
+    val firstWindow = DistributionSource.previousWindow(prev, PrevVotes(rejectedBy = Some(n)), 0L, windowSize, Nil)
     vs.foreach { v =>
       explain(s"${v.name}: count", countSql(prev, v))
       explain(s"${v.name}: candidates of the first window", candidatesSql(prev, v, 0L, firstWindow.last, target))

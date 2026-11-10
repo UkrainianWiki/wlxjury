@@ -471,6 +471,9 @@ A round for all the files takes no filters at all.
   field says which applies.
 - The **rejection filter**: take or drop files by how many jurors rejected them in the earlier
   rounds. See the next section.
+- **Leave out files that are in round(s)**: choose one or more other rounds of the contest. A file
+  that is in any of them isn't taken, whatever the votes it got there. It works with or without
+  previous rounds, and with every other filter. See the [example](#a-leave-out-rounds) below.
 
 **By the file itself**
 
@@ -479,13 +482,42 @@ A round for all the files takes no filters at all.
   must be in. The operations are **No category filter**, **In category A**, **Not in category A**,
   **In both A and B**, **In A or B (or both)** and **In A but not B**. Typing in a category
   field suggests Commons categories.
-- **Regions** and **Monument ids (comma separated)**: for monuments contests where the tool
-  knows the regions (at present Ukraine's). Choose one or more regions, or list monument ids.
+- **Regions** and **Monument ids (comma separated)**: for contests where the tool knows the
+  regions (at present Ukraine's, Wiki Loves Monuments and Wiki Loves Earth alike). Choose one or more
+  regions, or list monument ids. A file's region is the first part of its monument id (`07` of
+  `07-101-0001`). The list has only the real regions, so a file of a special nomination (its own
+  monument id prefix) or a file without a monument id is left out by any choice of regions. To
+  leave out just these files, tick **Select all** at the top of the regions list.
 - **Minimum resolution (Mpx)** and **Minimum file size (MB)**: leave out small files.
 - **Special nomination**: only the files of one special nomination, for contests that have them.
 
 Most of these filters can only be set when the round is created. On an existing round the form
 shows them, but they can't be changed.
+
+<a id="a-leave-out-rounds"></a>
+**Example: the files of the previous round that didn't pass into round X.** Round Q-00 still has
+files nobody voted for, and round Q-01 took its selected files. A round Q-00-1 for the rest of
+Q-00 (its rejected and unvoted files), of 4 Mpx and up, without the special nominations, with one
+of four jurors per file, yes/no:
+
+- **Previous rounds**: Q-00. **Selected by at least X jurors**: **No filter** (all of Q-00's files).
+- **Leave out files that are in round(s)**: Q-01.
+- **Minimum resolution (Mpx)**: 4.
+- **Regions**: **Select all** (the special nominations' files have no region of the list).
+- **Jurors**: the four jurors; **File distribution**: each file to 1 juror; **Rating type**: Yes/No.
+
+The round keeps the setting: "Distribute new files" later leaves out the files that are in Q-01
+then. The files of the rounds to leave out are read while the round's distribution runs, so a file
+that reaches Q-01 after that stays in Q-00-1 too. The form therefore refuses a round to leave out
+that is still being distributed, or whose creation's distribution failed ("The round to leave out,
+Q-01, is still being distributed, or its distribution failed…"): let it finish, or retry it, then
+save again. In the same way "Distribute new files" on Q-01 (or resuming its failed distribution) is
+refused while Q-00-1 is being filled ("A round that leaves out this round's files, Q-00-1, is still
+being filled…"), and a Retry of Q-01's distribution on its job page fails with that message:
+distribute again when Q-00-1's distribution has finished. The form also refuses the round itself, rounds of another contest ("The
+rounds to leave out must be other rounds of this contest") and a round that is also a previous
+round of the new round, which would leave it with no files ("A round to leave out can't also be a
+previous round of this round…").
 
 <a id="a-rejection-filter"></a>
 ### The rejection filter
