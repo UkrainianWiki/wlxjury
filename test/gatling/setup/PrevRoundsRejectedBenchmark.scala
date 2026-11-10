@@ -26,6 +26,10 @@ import scala.collection.mutable.ListBuffer
   * end-to-end path of today's code, `countNew` of the target (context, windows, candidates,
   * filters) is timed too.
   *
+  * It writes to the fixture DB and leaves what it wrote there: the copied round and its votes,
+  * and the target round. The disposable fixture container only, never an external target
+  * (`gatling.external` is refused).
+  *
   * {{{
   * sbt 'set Test / javaOptions ++= Seq("-Xmx1024m", "-Dfile.encoding=UTF-8",
   *        "-Dscalikejdbc.global.loggingSQLAndTime.enabled=false")' \
@@ -150,6 +154,7 @@ object PrevRoundsRejectedBenchmark {
   }
 
   def main(args: Array[String]): Unit = {
+    require(!GatlingConfig.external, "the benchmark writes rounds and votes: the disposable fixture only")
     val f = GatlingTestFixture
     GlobalSettings.loggingSQLAndTime = LoggingSQLAndTimeSettings(enabled = false)
     val a = f.roundBinaryId
