@@ -676,9 +676,12 @@ stopped.
 
 - Create contests, and import them from a Commons list, on **Contests**, and change a contest's
   settings there.
-- See **Users** across all contests, and make an account root, only if its owner has verified
-  its email: tick **Root (every contest)** on its **Edit user** page. Changing the person's
-  role in a contest leaves root as it is.
+- See **Users** across all contests, and make an account root: tick **Root (every contest)** on
+  its **Edit user** page. An account that has a password but no verified email can't be made
+  root; an invitee who hasn't set a password yet can. A new account can't be made root when it
+  is added: add the person, and tick it once they have accepted the invitation. Root can't
+  change their own root, and the last root can't be taken away. Changing the person's role in
+  a contest leaves root as it is.
 - Edit an account that is in contests the admin doesn't administer; change the email of an account
   that has a password, through a link mailed to the new address.
 - Send **Reset password** links and use **End sessions** on any account, and see and revoke

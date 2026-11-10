@@ -179,7 +179,9 @@ class AccountReviewFixesSpec extends PlaySpecification with PlayTestDb with Acco
         val unverified = account("member@example.com", Some(10), "jury")
         val fields = Seq("id" -> unverified.getId.toString, "fullname" -> unverified.fullname,
           "email" -> unverified.email, "roles" -> "jury", "root" -> "true", "root" -> "false")
-        status(save(new RecordingMail, root, 10, fields: _*)) === BAD_REQUEST
+        val result = save(new RecordingMail, root, 10, fields: _*)
+        status(result) === BAD_REQUEST
+        contentAsString(result) must contain("Root only for an account whose owner has verified its email")
         User.findById(unverified.getId).map(_.isRoot) === Some(false)
       }
     }

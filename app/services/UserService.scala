@@ -54,8 +54,8 @@ class UserService @Inject()(val sendMail: SMTPOrWikiMail,
     * Throws [[UserService.RoleNotAssignable]] (an `IllegalArgumentException`), changing
     * nothing, if `formUser`'s roles are not each a contest role ([[User.ContestRoles]]; root
     * is none); [[UserService.InvalidWikiAccount]] for a wiki account MediaWiki would refuse.
-    * `formUser.isRoot` (root's Root field) makes a new account root for a root creator only
-    * ([[createAccount]]); an existing account's root is left as it is.
+    * It never changes root: a new account is never root ([[createAccount]]), an existing one's
+    * root is left as it is (the edit form's save refuses the Root field for a new user).
     */
   def addToContest(
       creator: User,
@@ -114,38 +114,31 @@ class UserService @Inject()(val sendMail: SMTPOrWikiMail,
         }
 
       case None =>
-        // root (isRoot) only from root ([[createAccount]]), who may give no contest role;
-        // anyone else's new user gets one
+        // root may give no contest role; anyone else's new user gets one
         val roles = if (creator.hasRole(User.ROOT_ROLE)) person.roles else Set(role)
         createAccount(creator, person.copy(contestId = contestId, roles = roles), contestOpt)
     }
   }
 
   /** Creates the account, without a password, with a membership in [[User.contestId]] if
-    * set; for an access role (or root) and an email, mails an invitation, whose acceptance
-    * sets the password. Fails on an email that already has an account. Only a root creator
-    * makes a root user.
+    * set; for an access role and an email, mails an invitation, whose acceptance sets the
+    * password. Fails on an email that already has an account. Never a root account, whoever
+    * creates it: root is given on Edit user once its owner has proven the email (L2).
     */
   def createAccount(
       creator: User,
       formUser: User,
       contestOpt: Option[ContestJury])(implicit messages: Messages, linkHost: LinkHost = LinkHost.None): NewAccount = {
-    val allowed =
-      if (creator.hasRole(User.ROOT_ROLE)) formUser
-      else formUser.copy(roles = formUser.roles - User.ROOT_ROLE, isRoot = false)
+    val allowed = formUser.copy(roles = formUser.roles - User.ROOT_ROLE, isRoot = false)
     // no password: nobody signs in until the invitation is accepted (a password an organizer
     // chose, or one in a mail, would let someone else than the email's owner in)
     // a random, non-zero auth version: a session from before S2 (version 0, no account id) that
     // names this address or wiki account never resolves to the new account (H2)
     val createdUser = User.create(allowed.copy(password = None, emailVerifiedAt = None,
       authVersion = User.newAuthVersion()))
-    val needsInvitation: Boolean = createdUser.emailLo.nonEmpty && !createdUser.isRoot &&
+    val needsInvitation: Boolean = createdUser.emailLo.nonEmpty &&
       createdUser.contestRole.exists(User.ACCESS_ROLES.contains)
-    val sent =
-      if (needsInvitation) Some(invite(creator, createdUser, contestOpt, None))
-      // a new root user (root's form only) gets a password link: root accounts are never invited
-      else if (createdUser.isRoot && createdUser.emailLo.nonEmpty) Some(sendPasswordLink(creator, createdUser))
-      else None
+    val sent = Option.when(needsInvitation)(invite(creator, createdUser, contestOpt, None))
     NewAccount(createdUser, sent)
   }
 

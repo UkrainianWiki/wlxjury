@@ -311,26 +311,21 @@ class UserController @Inject()(cc: ControllerComponents,
       rolesLogger.warn(s"refused a role that is not assignable accountId=${user.getId} targetId=${formUser.getId}")
       formErrors(editUserForm.bindFromRequest().withError("roles", "error.invalid"))
     }
-    /** The Root field changing root from anyone but root, or root's own: refused before
-      * anything is written.
-      */
-    def rootRefused(formUser: User): Result = {
-      rolesLogger.warn(s"refused a root change accountId=${user.getId} targetId=${formUser.getId}")
-      formErrors(editUserForm.bindFromRequest().withGlobalError("error.invalid"))
-    }
-
-    editUserForm
-      .bindFromRequest()
+    val bound = editUserForm.bindFromRequest()
+    bound
       .fold(
         formWithErrors => formErrors(formWithErrors), // binding failure
         formUser => {
           val userId = formUser.getId
-          val rootGiven = submittedRoot
+          // the Root field as bound (formUser.isRoot), if the form has it ([[rootFields]])
+          val (rootGiven, rootWas) = rootFields(bound, formUser)
           if (!User.mayAssignRoles(user, formUser.roles)) {
             roleRefused(formUser)
-          } else if (userId == 0 && rootGiven.contains(true) && !user.hasRole(User.ROOT_ROLE)) {
-            // a new root account: root's only
-            rootRefused(formUser)
+          } else if (userId == 0 && formUser.isRoot) {
+            // no new account is made root, by anyone: root is given on Edit user, once its owner
+            // has accepted the invitation (L2)
+            rolesLogger.warn(s"refused root for a new account accountId=${user.getId}")
+            formErrors(bound.withGlobalError("root.new.account"))
           } else if (userId == 0) {
             if (user.isAdmin(formUser.contestId)) {
               // an existing email joins the contest with its account, or is invited
@@ -350,29 +345,35 @@ class UserController @Inject()(cc: ControllerComponents,
           } else {
             editableUser(user, userId, formUser.contestId).fold(Redirect(routes.LoginController.index)) { editedUser =>
               val editedRoot = editedUser.isRoot || editedUser.hasRole(User.ROOT_ROLE)
-              // root changes only with the Root field, only by root, never for themselves (so
-              // there is always a root left); a contest role never changes it
-              val rootChange = rootGiven.filter(_ != editedRoot)
-              if (rootChange.nonEmpty && (!user.hasRole(User.ROOT_ROLE) || user.id.contains(userId)))
-                rootRefused(formUser)
+              // root changes only with the Root field, only by root, never for themselves; a
+              // contest role never changes it. A toggle of the state the page showed (rootWas;
+              // without it, the account's now): a page loaded before another root's change of it
+              // doesn't undo that change
+              val toggle = rootGiven.filter(_ != rootWas.getOrElse(editedRoot))
+              if (toggle.nonEmpty && !user.hasRole(User.ROOT_ROLE))
+                // only a crafted request: nobody else's page has the field
+                onUnAuthorized(user, request, Secured.Denial(pageContestOf(user, editedUser), Some(s"account:$userId"),
+                  Set(User.ROOT_ROLE), Some("root_change")))
+              else if (toggle.nonEmpty && user.id.contains(userId))
+                formErrors(bound.withError("root", "root.own.unchanged"))
               else
-                updateUser(user, editedUser, formUser.copy(isRoot = rootGiven.getOrElse(editedRoot)), rootChange)
+                updateUser(user, editedUser, formUser.copy(isRoot = rootGiven.getOrElse(editedRoot)),
+                  toggle.filter(_ != editedRoot))
             }
           }
         }
       )
   }
 
-  /** The edit page's Root field: its first value, the checkbox's `true` if ticked, else the
-    * hidden `false` after it; None if the form has no such field (not root's page, or a
-    * client that leaves it out), which changes nothing.
+  /** The edit page's Root field, from the bound form (whatever the body's encoding): the value
+    * bound to `formUser.isRoot` (the first one: the checkbox's `true` if ticked, else the hidden
+    * `false` after it), None if the form has no such field (not root's page, or a client that
+    * leaves it out), which changes nothing; and `rootWas`, the account's root as the page showed
+    * it, if sent.
     */
-  private def submittedRoot(implicit request: play.api.mvc.Request[_]): Option[Boolean] =
-    request.body match {
-      case body: AnyContent =>
-        body.asFormUrlEncoded.flatMap(_.get("root")).flatMap(_.headOption).flatMap(_.toBooleanOption)
-      case _ => None
-    }
+  private def rootFields(bound: Form[User], formUser: User): (Option[Boolean], Option[Boolean]) =
+    (bound.data.get("root").filter(_.nonEmpty).map(_ => formUser.isRoot),
+     bound.data.get("rootWas").flatMap(_.toBooleanOption))
 
   /** The current password the own profile's form sends with a new password or email (N2). */
   private def currentPassword(implicit request: play.api.mvc.Request[_]): Option[String] =
@@ -454,6 +455,9 @@ class UserController @Inject()(cc: ControllerComponents,
 
     if (accountChanged && !canEditAccount(user, editedUser)) {
       badRequest(editUserForm.fill(formUser).withGlobalError("user.in.other.contests"))
+    } else if (rootChange.nonEmpty && emailChanged) {
+      // an invitee's new email mails an invitation, never one to a root account: separate saves
+      refused(Some("root"), "root.set.email.separately")
     } else if (own && wikiChanged) {
       refused(Some("wikiAccount"), "wiki.account.own.readonly")
     } else if (setsOthersPassword && passwordRefusal.nonEmpty) {
@@ -477,6 +481,7 @@ class UserController @Inject()(cc: ControllerComponents,
       refused(Some("email"), "error.required")
     } else if (rootChange.contains(true) && editedUser.password.nonEmpty && !editedUser.emailVerified) {
       // L2: root only for an account whose holder proved its email (an invitation, a password link)
+      // L2, checked again as root is written ([[User.setRootLocked]])
       refused(Some("root"), "root.needs.verified.email")
     } else if (!own && emailChanged && editedUser.password.isEmpty && formUser.email.nonEmpty &&
       User.countByEmail(userId, formUser.email) > 0) {
@@ -499,7 +504,19 @@ class UserController @Inject()(cc: ControllerComponents,
           case _: PasswordHasher.Busy =>
             Left(passwordBusy(user, editUserForm.fill(formUser), editedUser.contestId, !own && passwordRefusal.isEmpty))
         }
-      checked.fold(identity, {
+      // root first, decided again under the rows' locks ([[User.setRootLocked]]): refused, nothing
+      // of the form is written
+      def writeRoot(): Option[Result] = rootChange.flatMap { root =>
+        User.setRootLocked(user.getId, userId, root) match {
+          case Left(key) =>
+            rolesLogger.warn(s"refused a root change accountId=${user.getId} targetId=$userId reason=$key")
+            Some(refused(Some("root"), key))
+          case Right(changed) =>
+            if (changed) rolesLogger.info(s"root_changed accountId=$userId root=$root byAccountId=${user.getId}")
+            None
+        }
+      }
+      val save: Option[String] => Result = {
         case Some(hash) if !own =>
           // another account's: last, after the rest of the form is saved (a failure there leaves
           // the password as it was), in its own transaction with the rule checked again under the
@@ -509,11 +526,11 @@ class UserController @Inject()(cc: ControllerComponents,
               oauthSettings.wikimediaConfigured).left.map(passwordRefused(_,
                 Option.when(othersSaved)(Messages("password.set.others.saved")))).map(_ => ())
           updateAccount(user, editedUser, formUser, None, newWiki.toOption.flatten, roleNeedsInvitation,
-            rootChange, Some(setPassword))
+            Some(setPassword))
         case newHash =>
-          updateAccount(user, editedUser, formUser, newHash, newWiki.toOption.flatten, roleNeedsInvitation,
-            rootChange, None)
-      })
+          updateAccount(user, editedUser, formUser, newHash, newWiki.toOption.flatten, roleNeedsInvitation, None)
+      }
+      checked.fold(identity, newHash => writeRoot().getOrElse(save(newHash)))
     }
   }
 
@@ -533,13 +550,13 @@ class UserController @Inject()(cc: ControllerComponents,
       maySetPassword = maySetPassword))
       .withHeaders(RETRY_AFTER -> "5")
 
-  /** Saves the checked form. `rootChange`: users.is_root as root set it for another account
-    * ([[saveUser]] checked who and whose). `setOthersPassword`: another account's password, set after
+  /** Saves the checked form (root is written before, [[updateUser]]). `setOthersPassword`:
+    * another account's password, set after
     * everything else is saved ([[AccountTokenService.setPasswordByAdmin]]), given whether that
     * changed anything; its refusal (the account changed meanwhile) is the response.
     */
   private def updateAccount(user: User, editedUser: User, formUser: User, newHash: Option[String],
-                            newWiki: Option[String], roleNeedsInvitation: Boolean, rootChange: Option[Boolean],
+                            newWiki: Option[String], roleNeedsInvitation: Boolean,
                             setOthersPassword: Option[Boolean => Either[Result, Unit]])(
       implicit request: play.api.mvc.Request[_]): Result = {
     val userId = editedUser.getId
@@ -585,13 +602,9 @@ class UserController @Inject()(cc: ControllerComponents,
       }
     }
 
-    // only root makes or unmakes root, with the Root field (users.is_root, never a contest
-    // role: a role change leaves it as it is). Only admins change roles, and only in
-    // editedUser's contest; an admin leaves a root user's role alone.
-    for (root <- rootChange) {
-      User.setRoot(userId, root)
-      rolesLogger.info(s"root_changed accountId=$userId root=$root byAccountId=${user.getId}")
-    }
+    // root is the Root field's, written before (updateUser), never a contest role's: a role
+    // change leaves it as it is. Only admins change roles, and only in editedUser's contest; an
+    // admin leaves a root user's role alone.
     val newRole = formUser.roles.headOption
     for {
       role <- newRole if User.isContestRole(role) && user.hasAnyRole(User.ADMIN_ROLES)
@@ -809,7 +822,8 @@ class UserController @Inject()(cc: ControllerComponents,
       // light, dark or auto; any other value is dropped (no change, or none for a new user)
       "theme" -> optional(text).transform[Option[String]](_.flatMap(Theme.find).map(_.value), identity),
       // the account's root flag (users.is_root), not a contest role: the edit page's checkbox
-      // for root, with a hidden "false" after it ([[submittedRoot]]); absent: no change
+      // for root, with a hidden "false" after it and the shown state, rootWas ([[rootFields]]);
+      // absent: no change
       "root" -> optional(boolean)
     )(User.applyEdit)(User.unapplyEdit)
       .verifying("user.email.or.wiki.account",

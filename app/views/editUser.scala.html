@@ -84,13 +84,16 @@
 
                     @* root is the account's (users.is_root), not a contest role: root's own checkbox, with
                        the account's fields. The hidden "false" after it is what an unticked box sends (the
-                       first value counts, UserController.submittedRoot); one's own is shown, not changed *@
+                       first value counts, UserController.rootFields); one's own is shown, not changed *@
                     @if(user.hasRole(User.ROOT_ROLE) && !editUserForm("id").value.contains("0")) {
                         @if(ownProfile) {
                             @bs.checkbox(editUserForm("root"), Symbol("_label") -> Messages("root.flag"), Symbol("disabled") -> true, Symbol("checked") -> true)
                         } else {
                             @bs.checkbox(editUserForm("root"), Symbol("_label") -> Messages("root.flag"))
                             <input type="hidden" name="root" value="false">
+                            @* the account's root as this page shows it: only a toggle of it is saved, so a page
+                               loaded before another root's change doesn't undo it *@
+                            <input type="hidden" name="rootWas" value="@editedAccount.exists(_.isRoot)">
                         }
                     }
 
