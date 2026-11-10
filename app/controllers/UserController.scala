@@ -510,7 +510,8 @@ class UserController @Inject()(cc: ControllerComponents,
           else Right(formUser.password.map(PasswordHasher.default.hash(_)))
         } catch {
           case _: PasswordHasher.Busy =>
-            Left(passwordBusy(user, editUserForm.fill(formUser), editedUser.contestId, !own && passwordRefusal.isEmpty))
+            Left(passwordBusy(user, editUserForm.fill(formUser), own, editedUser.contestId,
+              !own && passwordRefusal.isEmpty))
         }
       // root first, decided again under the rows' locks ([[User.setRootLocked]]): refused, nothing
       // of the form is written
@@ -551,12 +552,19 @@ class UserController @Inject()(cc: ControllerComponents,
       play.api.Logger("security.account").info(s"oauth_unlinked_by_admin accountId=$userId count=$unlinked")
   }
 
-  /** 503 with the form: no turn to hash the password came in time. */
-  private def passwordBusy(user: User, form: Form[User], contestId: Option[Long], maySetPassword: Boolean)(
-      implicit request: play.api.mvc.Request[_]): Result =
-    ServiceUnavailable(views.html.editUser(user, keepRootWas(form.withGlobalError("password.busy")),
-      contestId = contestId, maySetPassword = maySetPassword))
-      .withHeaders(RETRY_AFTER -> "5")
+  /** 503 with the form: no turn to hash the password came in time. One's own profile (`own`) is
+    * shown as its other refusals are, with its cards ([[ownProfile]]); another account's edit
+    * form in `contestId`.
+    */
+  private def passwordBusy(user: User, form: Form[User], own: Boolean, contestId: Option[Long],
+      maySetPassword: Boolean)(implicit request: play.api.mvc.Request[_]): Result = {
+    val busy = form.withGlobalError("password.busy")
+    val page =
+      if (own) ownProfile(ServiceUnavailable, user, userForm = Some(busy))
+      else ServiceUnavailable(views.html.editUser(user, keepRootWas(busy), contestId = contestId,
+        maySetPassword = maySetPassword))
+    page.withHeaders(RETRY_AFTER -> "5")
+  }
 
   /** Saves the checked form (root is written before, [[updateUser]]). `setOthersPassword`:
     * another account's password, set after
@@ -739,7 +747,11 @@ class UserController @Inject()(cc: ControllerComponents,
                     Try(userService.addToContest(user, pu.copy(roles = Set(role)), contest)) match {
                       case Success(a)                       => (done :+ a, failed, false)
                       case Failure(_: PasswordHasher.Busy) => (done, failed + 1, true)
-                      case Failure(_)                       => (done, failed + 1, false)
+                      case Failure(e) =>
+                        // the class only: the message can carry the line's email or SQL values
+                        play.api.Logger("security.account").warn(s"user_import_line_failed " +
+                          s"accountId=${user.getId} contestId=$contestId error=${e.getClass.getSimpleName}")
+                        (done, failed + 1, false)
                     }
                 }
               val message = addedMessage(added) +

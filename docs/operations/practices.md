@@ -41,7 +41,8 @@ server error show a short reference on the page or in the JSON (`{error, referen
 `ref=` is in the log line. Users never see the exception (secure-coding §12).
 
 **1.3 Named loggers by concern.** `security.authz` (denials, WARN), `security.account`
-(invitations, links, OAuth: `oauth_*`), `security.auth` (today one line:
+(invitations, links, OAuth: `oauth_*`; a user import line that failed,
+`user_import_line_failed accountId=… contestId=… error=<class>`, WARN), `security.auth` (today one line:
 `oauth_choose_proof_failed accountId=… proof=password ip=…`, a wrong password in the OAuth
 account chooser, `OAuthChooserController`; the password sign-in form, `LoginController`, logs no
 failure line: OP4), `security.roles`, `security.password`; `coi` (conflict-of-interest

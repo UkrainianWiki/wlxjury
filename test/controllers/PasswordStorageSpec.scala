@@ -336,7 +336,7 @@ class PasswordStorageSpec extends PlaySpecification with PlayTestDb with Mockito
       t.start(); t
     }
     try {
-      holding.await()
+      require(holding.await(10, java.util.concurrent.TimeUnit.SECONDS), "not every turn was taken")
       body
     } finally {
       release.countDown()
@@ -400,6 +400,54 @@ class PasswordStorageSpec extends PlaySpecification with PlayTestDb with Mockito
         contentAsString(result) must contain("The server is busy checking passwords")
         User.findById(user.getId).map(_.fullname) === Some("Root")
         stored(user.getId) === before
+      }
+    }
+
+    "one's own profile come back as the profile, with its cards, and Retry-After" in {
+      testDbApp { implicit app =>
+        val user = root()
+        db.scalikejdbc.UserIdentityJdbc.create(db.scalikejdbc.UserIdentity("google", "busy-subject", user.getId))
+        val before = stored(user.getId)
+        val result = withEveryTurnTaken {
+          val r = saveProfile(user, "new-password")
+          status(r) // completes while the turns are taken
+          r
+        }
+        status(result) === SERVICE_UNAVAILABLE
+        header(RETRY_AFTER, result) === Some("5")
+        val page = contentAsString(result)
+        page must contain("The server is busy checking passwords")
+        page must contain("""id="api-tokens"""")
+        page must contain("""id="linked-accounts"""")
+        session(result).get(ApiTokensCard.NonceKey) must beSome
+        stored(user.getId) === before
+      }
+    }
+
+    "another account's password set by root get the edit form, without the own profile's cards" in {
+      testDbApp { implicit app =>
+        createContests(10)
+        val admin = root()
+        val juror = User.create(User("Juror", "juror@example.com", roles = Set("jury"),
+          password = Some(PasswordHasher.default.hash("juror-password")), contestId = Some(10L)))
+        val before = stored(juror.getId)
+        val result = withEveryTurnTaken {
+          implicit val mat: Materializer = app.materializer
+          val r = call(userController.saveUser(),
+            as(admin, Some(10L))(FakeRequest(POST, "/users/save")).withFormUrlEncodedBody(
+              "id" -> juror.getId.toString, "fullname" -> "Juror", "email" -> juror.email, "roles" -> "jury",
+              "contest" -> "10", "password" -> "set-by-root"
+            ).withCSRFToken)
+          status(r)
+          r
+        }
+        status(result) === SERVICE_UNAVAILABLE
+        header(RETRY_AFTER, result) === Some("5")
+        val page = contentAsString(result)
+        page must contain("The server is busy checking passwords")
+        page must not(contain("""id="api-tokens""""))
+        page must not(contain("""id="linked-accounts""""))
+        stored(juror.getId) === before
       }
     }
 
