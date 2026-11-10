@@ -122,6 +122,9 @@ Changes made available before version 26.11, by who notices them.
   assigned jurors** as the round's file score.
 - A round that used the old "optional rate" setting now has the file score **Total of the
   rates**.
+- **Several previous rounds:** they must all use the same rating (the same scale and the same
+  number of criteria); each is judged on its own, and a file is taken if it passes in at least
+  one.
 - On an open round, **Leave out conflicts of interest** only affects later distributions. To
   disqualify files now, stop the round and use its conflicts page.
 - **Nobody sets another person's password.** The person chooses it on an invitation or reset

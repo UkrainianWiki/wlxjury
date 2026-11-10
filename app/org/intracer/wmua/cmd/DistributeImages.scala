@@ -52,7 +52,9 @@ class DistributeImages @Inject()(imageRepo: ImageRepo) extends Logging {
     * exactly the images the whole list would. The category id sets are the effective
     * first and second operands of [[Round.categoryRule]] ([[categoryFileIds]]);
     * `excludeAuthors` the conflict-of-interest accounts of a round that leaves them out
-    * ([[db.scalikejdbc.CoiMembers]]).
+    * ([[db.scalikejdbc.CoiMembers]]). The candidates are rows, one per file and previous round
+    * (tagged with it), each evaluated in its own round: a file passes if one of its rows does, and
+    * comes back once, its first passing row (the rows of a file in a slice together).
     */
   def perImageFilters(
       round: Round,
@@ -64,7 +66,7 @@ class DistributeImages @Inject()(imageRepo: ImageRepo) extends Logging {
     val prevRound = prevRounds.headOption
     val categoryRule = round.categoryRule
     categoryRule.requireValid()
-    ImageWithRatingSeqFilter.makeFunChain(
+    val chain = ImageWithRatingSeqFilter.makeFunChain(
       Seq(CategoryImages(categoryRule, firstCategoryIds.toSet, secondCategoryIds.toSet)) ++
       Option.when(excludeAuthors.nonEmpty)(ExcludeAuthors(excludeAuthors)).toSeq ++
       ImageWithRatingSeqFilter.funGenerators(
@@ -78,9 +80,12 @@ class DistributeImages @Inject()(imageRepo: ImageRepo) extends Logging {
         mpxAtLeast = round.minMpx,
         sizeAtLeast = round.minImageSize.map(_ * 1024 * 1024),
         specialNomination = round.specialNomination,
-        mediaType = round.mediaType
+        mediaType = round.mediaType,
+        // a candidate row is evaluated in its own previous round (it is tagged with it)
+        prevRounds = prevRounds
       )
     )
+    if (prevRounds.isEmpty) chain else rows => chain(rows).distinctBy(_.pageId)
   }
 
   private def getFilteredImages(
@@ -104,7 +109,7 @@ class DistributeImages @Inject()(imageRepo: ImageRepo) extends Logging {
     require(
       Round.sameRateType(prevRounds),
       s"Round ${round.id.orNull}: previous rounds [${prevRounds.flatMap(_.id).mkString(", ")}] " +
-        "must all be of the same rate type (all binary or all rated)"
+        "must all have the same rating (all yes/no, all comments only, or all rated on one scale, with as many criteria)"
     )
 
     val categoryRule = round.categoryRule
@@ -121,45 +126,49 @@ class DistributeImages @Inject()(imageRepo: ImageRepo) extends Logging {
     val mpxAtLeast = round.minMpx
     val sizeAtLeast = round.minImageSize.map(_ * 1024 * 1024)
 
-    // All selected previous rounds share the same rate type and the same filtering
-    // conditions, so any one of them is a valid context for rate scaling / gating.
+    // All selected previous rounds share one rating (Round.sameRateType). A file qualifies if it
+    // qualifies in at least one of the previous rounds it is in (triage R196-1, the user's rule
+    // of 2026-11-10): one row per file and previous round, tagged with it
+    // (ImageWithRating.sourceRound), each evaluated in its own round by every filter (its score
+    // by its rule and jurors, its approvals, its rejections); a top-N ranks a file by its best
+    // row. The first round is the context of yes/no gating.
     val prevRound = prevRounds.headOption
+    def ofRound(r: Round)(rows: Seq[ImageWithRating]): Seq[ImageWithRating] =
+      rows.map(i => i.copy(votes = i.votes.map(_.copy(roundId = r.getId))))
 
-    // a top-N from yes/no rounds is ranked by all their votes, whatever "selected by" reads;
-    // a round from before V72 (no order stored) by the legacy rule, the rate sum of the rows read
+    // a top-N from yes/no rounds is ranked by all of a round's votes, whatever "selected by"
+    // reads; a round from before V72 (no order stored) by the legacy rule, the rate sum of the
+    // rows read
     val binaryTop = prevRound.exists(_.isBinary) && selectTopByRating.isDefined && round.topBinaryOrder.isDefined
 
-    val imagesAll: Seq[ImageWithRating] =
+    // "exclude files rejected by at least N" counts the rejections of all the votes of the
+    // round, whatever "selected by" reads (its rows are the approvals only): a yes/no round's
+    // "no" votes, a rated round's ✗ (the worst mark); from any previous round that may reject
+    // (Round.rejects), as the job and the round form have it; "only" whatever the sources (none
+    // rejects: no file passes, rather than every file)
+    val notRejected = rejectedBy.filter(_ =>
+      prevRounds.exists(_.rejects) || (prevRounds.nonEmpty && round.prevRejectedMode == RejectedMode.Only))
+
+    def rowsOf(r: Round): Seq[ImageWithRating] = {
+      val read =
+        if (binaryTop)
+          DistributeImages.binaryCandidates(imageRepo.byRoundMerged(r.getId, tally = true), rated = selectedAtLeast.isDefined)
+        else
+          imageRepo.byRoundMerged(r.getId, rated = Option.when(selectedAtLeast.isDefined)(true), tally = true,
+            grades = !r.isBinary)
+      val rejections: Map[Long, Int] = notRejected.fold(Map.empty[Long, Int])(_ =>
+        imageRepo.byRoundMerged(r.getId, tally = true, grades = !r.isBinary).map(i => i.pageId -> i.rejections).toMap)
+      ofRound(r)(read).map(i =>
+        if (notRejected.isEmpty) i else i.copy(rejectionsFromDb = Some(rejections.getOrElse(i.pageId, 0))))
+    }
+
+    val candidates: Seq[ImageWithRating] =
       if (prevRounds.isEmpty)
         imageRepo
           .findByContestId(round.contestId)
           .map(i => new ImageWithRating(i, Seq.empty))
-      else if (binaryTop)
-        DistributeImages.binaryCandidates(
-          mergeByPageId(prevRounds.flatMap(r => imageRepo.byRoundMerged(r.getId, tally = true))),
-          rated = selectedAtLeast.isDefined
-        )
-      else
-        mergeByPageId(
-          prevRounds.flatMap(r =>
-            imageRepo.byRoundMerged(r.getId, rated = Option.when(selectedAtLeast.isDefined)(true), tally = true,
-              grades = !r.isBinary)
-          )
-        )
-    logger.debug("Total images: " + imagesAll.size)
-
-    // "exclude files rejected by at least N" counts the rejections of all the votes of the
-    // previous rounds, whatever "selected by" reads (its rows are the approvals only): a yes/no
-    // round's "no" votes, a rated round's ✗ (the worst mark); from any previous round that may
-    // reject (Round.rejects), as the job and the round form have it; "only" whatever the sources
-    // (none rejects: no file passes, rather than every file)
-    val notRejected = rejectedBy.filter(_ =>
-      prevRounds.exists(_.rejects) || (prevRounds.nonEmpty && round.prevRejectedMode == RejectedMode.Only))
-    val rejections: Map[Long, Int] = notRejected.fold(Map.empty[Long, Int])(_ =>
-      mergeByPageId(prevRounds.flatMap(r => imageRepo.byRoundMerged(r.getId, tally = true, grades = !r.isBinary)))
-        .map(i => i.pageId -> i.rejections).toMap)
-    val candidates = if (notRejected.isEmpty) imagesAll
-      else imagesAll.map(i => i.copy(rejectionsFromDb = Some(rejections.getOrElse(i.pageId, 0))))
+      else prevRounds.flatMap(rowsOf)
+    logger.debug("Total rows: " + candidates.size)
 
     val funGens = Seq(CategoryImages(categoryRule, firstCategoryIds, secondCategoryIds)) ++
       ImageWithRatingSeqFilter.funGenerators(
@@ -183,44 +192,19 @@ class DistributeImages @Inject()(imageRepo: ImageRepo) extends Logging {
       mpxAtLeast = mpxAtLeast,
       sizeAtLeast = sizeAtLeast,
       specialNomination = round.specialNomination,
-      mediaType = round.mediaType
+      mediaType = round.mediaType,
+      prevRounds = prevRounds
     )
 
     val filterChain = ImageWithRatingSeqFilter.makeFunChain(funGens)
 
-    val images = filterChain(candidates).map(_.image)
+    // a file whose row passes in any of its previous rounds, once (in the first round's order)
+    val passed = filterChain(candidates)
+    val images = (if (prevRounds.isEmpty) passed else passed.distinctBy(_.pageId)).map(_.image)
     logger.debug("Images after filtering: " + images.size)
 
     images
   }
-
-  /** Collapses the per-previous-round [[ImageWithRating]] rows for the same image into a
-    * single row, unioning their selections and juror counts. An image that advanced in
-    * several previous rounds is then one row rather than one-per-round, so the rating
-    * filters (top-N, min average, selected-at-least) see a single combined rating
-    * instead of duplicates competing for the same slots. First-seen order is kept.
-    */
-  private def mergeByPageId(images: Seq[ImageWithRating]): Seq[ImageWithRating] = {
-    val merged = scala.collection.mutable.LinkedHashMap.empty[Long, ImageWithRating]
-    images.foreach { iwr =>
-      merged.updateWith(iwr.pageId) {
-        case Some(acc) =>
-          Some(
-            acc.copy(
-              votes = acc.votes ++ iwr.votes,
-              countFromDb = acc.countFromDb + iwr.countFromDb,
-              approvalsFromDb = sum(acc.approvalsFromDb, iwr.approvalsFromDb),
-              rejectionsFromDb = sum(acc.rejectionsFromDb, iwr.rejectionsFromDb)
-            )
-          )
-        case None => Some(iwr)
-      }
-    }
-    merged.values.toSeq
-  }
-
-  private def sum(a: Option[Int], b: Option[Int]): Option[Int] =
-    if (a.isEmpty && b.isEmpty) None else Some(a.getOrElse(0) + b.getOrElse(0))
 
   def rebalanceImages(
       round: Round,

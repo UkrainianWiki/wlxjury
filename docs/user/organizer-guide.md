@@ -117,9 +117,12 @@ A round for all the files takes no filters at all.
 
 **From earlier rounds**
 
-- **Previous rounds**: take the files of one or more earlier rounds, which must all be of the
-  same rating type (all yes/no or all rated). With none chosen, the files come from the whole
-  contest, and the filters below that name earlier rounds don't apply.
+- **Previous rounds**: take the files of one or more earlier rounds, which must all be rated the
+  same way (all yes/no, all comments only, or all rated on the same scale with the same number
+  of criteria). With none chosen, the files come from the whole contest, and the filters below
+  that name earlier rounds don't apply. With several, each earlier round a file was in is
+  checked on its own, with its own jurors, votes and file score: a file is taken if it passes
+  the filters in at least one of them.
 - **Selected by at least X jurors**: for earlier yes/no rounds. A file is taken when at least X
   jurors selected it (X from 1 to 6). **No filter** takes all the files of the earlier round.
 - **Average file rating is at least**: for earlier rated rounds. A file is taken when its score
@@ -148,8 +151,8 @@ shows them, but they can't be changed.
 <a id="o-rejection-filter"></a>
 ### The rejection filter
 
-The rejection filter uses how many jurors rejected each file in the earlier rounds, counting
-every rejection in all of them. It works with earlier yes/no rounds, and with earlier rated
+The rejection filter uses how many jurors rejected each file in an earlier round, each earlier
+round on its own. It works with earlier yes/no rounds, and with earlier rated
 rounds without criteria, where a worst mark counts as a rejection. It shows once you choose
 such a previous round.
 
@@ -158,7 +161,8 @@ It has two fields. **Rejected files** is the mode:
 - **No filter (keep rejected files)**: rejections don't matter.
 - **Exclude files rejected by at least X jurors**: a file is left out when X or more jurors
   rejected it. This drops the files that jurors agreed were bad, for example after a screening
-  round where jurors rejected only the few worst files.
+  round where jurors rejected only the few worst files. With several earlier rounds, a file is
+  left out only if X or more jurors rejected it in each of the earlier rounds it was in.
 - **Only files rejected by at least X jurors**: a file is taken only when X or more jurors
   rejected it. This is for a round that looks again at the files that were doubted.
 

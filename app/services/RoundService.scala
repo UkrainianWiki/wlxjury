@@ -6,7 +6,7 @@ import db.scalikejdbc.Round.RoundStatRow
 import db.scalikejdbc.{ImageJdbc, Round, RoundImageCounts, RoundUser, VoteJdbc, User, WriteTx}
 import org.intracer.wmua.cmd.DistributeImages
 import play.api.Logging
-import play.api.libs.json.Json
+import play.api.libs.json.{JsObject, JsString, Json}
 import scalikejdbc.{DB, DBSession}
 import services.distribution.RoundDistributionHandler
 import services.jobs.{Job, JobError, JobJdbc, JobScheduler, NewJob, Progress}
@@ -167,6 +167,10 @@ class RoundService @Inject() (
     // distribution ranks and filters by this one, whatever the round's rule is changed to later
     val prevAverageRule = round.previousIds.headOption.flatMap(id => previous.find(_.id.contains(id)))
       .filterNot(_.isBinary).map(_.averageRule.param)
+    // and each rated previous round's, by its id: a file of one of them is scored by that
+    // round's rule (triage R196-1; RoundDistributionHandler.jobAverageRules)
+    val prevAverageRules = JsObject(previous.filterNot(_.isBinary).flatMap(p => p.id.map(id =>
+      id.toString -> JsString(p.averageRule.param))))
     val topOrder = round.topImages.filter(_ => binaryPrevious).map(_ => round.topOrderParam)
     // "only" whatever the sources, as the job applies it (the form refuses a filter without one)
     val rejectedBy = round.rejectedByFilter.filter(_ =>
@@ -182,7 +186,7 @@ class RoundService @Inject() (
           "roundId" -> round.getId,
           "completingCreation" -> completingCreation,
           // for the record: the job reads the round, whose settings don't change once created;
-          // but prevAverageRule and prevRejectedMode, which the job reads from here
+          // but prevAverageRule(s) and prevRejectedMode, which the job reads from here
           // (RoundDistributionHandler.context)
           "settings" -> Json.obj(
             "previous" -> round.previous,
@@ -194,6 +198,7 @@ class RoundService @Inject() (
             "topImages" -> round.topImages,
             "topBinaryOrder" -> topOrder,
             "prevAverageRule" -> prevAverageRule,
+            "prevAverageRules" -> prevAverageRules,
             "regions" -> round.regions,
             "monuments" -> round.monuments,
             "category" -> round.category,

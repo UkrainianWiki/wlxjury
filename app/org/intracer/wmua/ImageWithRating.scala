@@ -89,6 +89,17 @@ case class ImageWithRating(
   /** One juror's vote of the file, a ✗ (the large view, a tile and a list of the juror's own). */
   def isWorstMark: Boolean = ownVote && votes.head.isRejected
 
+  /** The previous round, of a distribution's `rounds`, a candidate row is of: a distribution
+    * reads one row per file and previous round, tagged with its round, and evaluates each in
+    * its own round, by that round's rule and jurors (triage R196-1); `default` (the first
+    * previous round) for a row of none known.
+    */
+  def sourceRound(default: Round, rounds: Seq[Round]): Round =
+    votes.map(_.roundId).distinct match {
+      case Seq(id) => rounds.find(_.id.contains(id)).getOrElse(default)
+      case _       => default
+    }
+
   /** A row of all the jurors' votes together: a vote of juror 0 holds their sum. */
   private def grouped: Boolean = votes.exists(_.juryId == 0)
 
