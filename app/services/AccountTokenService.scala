@@ -225,16 +225,20 @@ object AccountTokenService {
       val by = if (passwordHash.isEmpty) "provider" else if (link.shared) "shared_link" else "link"
       val line =
         s"account_link_accepted purpose=${link.purpose} tokenId=${link.id} accountId=${user.getId} by=$by " +
-          s"emailProven=$emailProven " +
-          s"apiTokensRevoked=${proof.apiTokensRevoked} identitiesUnlinked=${proof.identitiesUnlinked} " +
-          s"linksRevoked=${proof.linksRevoked} memberships=${proof.memberships.mkString(",")}"
+          s"emailProven=$emailProven ${proof.counts}"
       Right(proof.user -> line)
     }
   }
 
   /** What [[applyProof]] changed: the account as stored now, and the counts for the log line. */
   private final case class Proof(user: User, apiTokensRevoked: Int, identitiesUnlinked: Int, linksRevoked: Int,
-      memberships: Seq[String])
+      memberships: Seq[String]) {
+
+    /** The counts' part of both log lines, the same in each: counts and contest:role pairs only. */
+    def counts: String =
+      s"apiTokensRevoked=$apiTokensRevoked identitiesUnlinked=$identitiesUnlinked linksRevoked=$linksRevoked " +
+        s"memberships=${memberships.mkString(",")}"
+  }
 
   /** The writes of [[proveEmail]] once its link is used, shared with [[setPasswordByAdmin]] (which
     * uses no link: `usedLinkId` None, `createdBy` the admin or root who set the password), in the
@@ -305,9 +309,7 @@ object AccountTokenService {
       case Right(proof) =>
         logger.info(
           s"password_set_by_admin accountId=$accountId byAccountId=${actor.getId}" +
-            contestId.fold("")(c => s" contestId=$c") + " emailProven=false sessionsEnded=true " +
-            s"apiTokensRevoked=${proof.apiTokensRevoked} identitiesUnlinked=${proof.identitiesUnlinked} " +
-            s"linksRevoked=${proof.linksRevoked} memberships=${proof.memberships.mkString(",")}")
+            contestId.fold("")(c => s" contestId=$c") + s" emailProven=false sessionsEnded=true ${proof.counts}")
         Right(proof.user)
       case Left(refused) =>
         logger.info(s"password_set_by_admin_refused reason=${refused.reason} accountId=$accountId " +
