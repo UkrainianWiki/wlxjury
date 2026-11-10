@@ -207,6 +207,8 @@ number = Number
 row.number = N
 file.distribution = File distribution
 rating.type = Rating type
+rating.yes.no = Yes/No
+rating.comments.only = Comments only
 
 edit.round = Edit round
 create.round= Create round

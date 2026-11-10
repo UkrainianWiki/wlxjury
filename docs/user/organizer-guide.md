@@ -8,7 +8,7 @@ round. You change nothing else: the contest's admins set it up and run the judgi
 guide](admin-guide.md) explains. Admins see everything in this guide too.
 
 Labels in **bold** are the ones the tool shows in English. Terms: a **contest** is one competition,
-a **file** is one photo or video, a **yes/no round** is a round with the rating type **+/-**, and
+a **file** is one photo or video, a **yes/no round** is a round with the rating type **Yes/No**, and
 the roles are **Juror**, **Organizer** and **Admin**. Jurors have their own guide, the
 [juror guide](juror-guide.md); read its sections on the gallery and the large view to know what
 the jurors see.
@@ -53,7 +53,7 @@ hidden from the jurors until all its files are given.
 The **Rating type** of a round, chosen by the admins, decides what the votes and the results
 look like:
 
-- **+/-**, a yes/no round: each juror selects or rejects each file.
+- **Yes/No** (a yes/no round): jurors select or reject each file.
 - **1-N rating**, a rated round: each juror gives each file from one star up to N stars. Some
   rated rounds use **criteria** (for example Aesthetics, Technical quality, Usefulness for
   Wikipedia): stars on each criterion, and a file's rate is the sum. Some use the **worst mark**,

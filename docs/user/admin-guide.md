@@ -11,7 +11,7 @@ guide](juror-guide.md).
 
 Labels in **bold** are the ones the tool shows in English. Terms: a **contest** is one
 competition, a **file** is one photo or video, a **yes/no round** is a round with the rating type
-**+/-**, and the roles are **Juror**, **Organizer** and **Admin**. Whoever installs and runs the tool
+**Yes/No**, and the roles are **Juror**, **Organizer** and **Admin**. Whoever installs and runs the tool
 (servers, mail, sign-in providers, backups) finds that in the operators' [deployment
 guide](../deployment.md); this guide doesn't repeat it.
 
@@ -382,7 +382,7 @@ earlier ones.
 
 The **Rating type** of a round is one of:
 
-- **+/-**, a yes/no round: jurors select or reject each file.
+- **Yes/No** (a yes/no round): jurors select or reject each file.
 - **1-N rating**, a rated round: jurors give each file from one star up to N stars, with N from
   3 to 20. A rated round can also use criteria and the worst mark, described below.
 - **Comments only**: jurors take no votes, only write comments.

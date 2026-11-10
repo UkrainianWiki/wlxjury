@@ -227,7 +227,7 @@ earlier vote and a message says why.
 
 Click the image itself to open it in the large view.
 
-<img src="images/juror-gallery-binary.png" alt="A yes/no round's gallery" width="1280">
+<img src="images/juror-gallery-yes-no.png" alt="A yes/no round's gallery" width="1280">
 
 ### Rating in a rated round's gallery
 
@@ -277,7 +277,7 @@ one. Click a heading to show or hide its section; the tool remembers which are o
 
 Videos play in the large view.
 
-<img src="images/juror-large-view-binary.png" alt="The large view of a yes/no round" width="820">
+<img src="images/juror-large-view-yes-no.png" alt="The large view of a yes/no round" width="820">
 
 <img src="images/juror-large-view-rated.png" alt="The large view of a rated round" width="820">
 
