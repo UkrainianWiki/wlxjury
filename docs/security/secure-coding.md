@@ -392,7 +392,7 @@ rule refuses for a reason not about who asks (deleted; or, for root or an admin 
 allows, without an email while Wikimedia sign-in is offered, or no name to sign in with), the form
 again with a message (400). The rule is checked again in one quiet transaction (the hash stays out
 of the SQL log) under the account's row lock, with the same responses (the rest of the form is
-saved by then); it does exactly what accepting a shared link does (the shared
+saved by then, and if it changed anything they say so: `password.set.others.saved`); it does exactly what accepting a shared link does (the shared
 `AccountTokenService.applyProof`: `email_verified_at` and `wiki_account_verified_at` cleared,
 `auth_version` bumped, API tokens revoked, identities unlinked, every unused link revoked, pending
 roles only those the setter may give); never with an email or role change in the same save (a role

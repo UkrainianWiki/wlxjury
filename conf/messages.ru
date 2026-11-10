@@ -509,6 +509,7 @@ password.set.by.admin.done = Пароль установлен. Все сеан�
 password.set.email.separately = Измените email и установите пароль в разных сохранениях.
 password.set.role.separately = Измените роль и установите пароль в разных сохранениях.
 password.set.no.login = Для этой учётной записи нельзя установить пароль: у неё нет адреса email, поэтому она входит через Wikimedia, или ей нечем войти.
+password.set.others.saved = Остальные изменения сохранены; пароль не установлен.
 email.change.title = Новый адрес электронной почты
 email.change.confirm = Сделать {0} адресом вашей учётной записи в WLX Jury?
 email.change.confirm.button = Подтвердить новый адрес

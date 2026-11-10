@@ -295,6 +295,20 @@ class AdminSetPasswordSpec extends PlaySpecification with PlayTestDb with Accoun
       }
     }
 
+    "let root set the password of an account in no contest, the role list's first option posted with it" in {
+      testDbApp { implicit app =>
+        val root = account("root@example.com", None, "no", root = true, verified = true)
+        val loner = account("loner@example.com", None, "no", password = Some("old-password"), verified = true)
+        UserContestJdbc.findByUser(loner.getId) must beEmpty
+
+        val result = save(root, None, form(loner, None, User.FORM_ROLES.head, "password" -> "loner-password"): _*)
+        status(result) === SEE_OTHER
+        User.login(loner.email, "loner-password").flatMap(_.id) === loner.id
+        UserContestJdbc.findByUser(loner.getId) must beEmpty
+        reloaded(loner).isRoot must beFalse
+      }
+    }
+
     "refuse under the account's lock once the account joined a contest the admin doesn't run" in {
       testDbApp { implicit app =>
         createContests(10, 20)
