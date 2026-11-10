@@ -39,6 +39,7 @@ var JOB_COUNTS = [
     ["monumentIdsChanged", "monument ids changed"],
     ["monuments", "monuments"],
     ["missing", "not found"],
+    ["notInCountries", "left out as in no country category"],
     ["coiLeftOut", "left out as conflicts of interest"]
 ];
 
@@ -49,6 +50,8 @@ function formatJobCounts(details) {
     JOB_COUNTS.forEach(function (c) {
         if (d[c[0]] > 0) parts.push(formatCount(d[c[0]]) + " " + c[1]);
     });
+    // a page import that found no file in a country category imports all its files
+    if (d.byCountry === false) parts.push("no file in a country category: none left out");
     return parts.length > 0 ? ", " + parts.join(", ") : "";
 }
 

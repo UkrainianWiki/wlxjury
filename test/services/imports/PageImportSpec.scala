@@ -7,6 +7,7 @@ import org.specs2.mutable.Specification
 import org.specs2.specification.{BeforeAll, BeforeEach}
 import scalikejdbc._
 import services.TestImportServices
+import services.jobs.{JobJdbc, JobStatus}
 
 /** Importing the files of a WLx contest's winners page ([[ImportSource.PageFiles]]) or a
   * list: each with its country, of the contest's country category it is in
@@ -93,10 +94,142 @@ class PageImportSpec extends Specification with TestDb with BeforeAll with Befor
 
     "import all its files for a contest without country categories" in {
       val c = contest()
-      val commons = new FakeCommonsSource(files.take(4), categoryCounts = Map(root -> 0L))
-      new TestImportServices(commons).imageService.importFiles(c, winners, "")
+      // the root category has files (the fake's default count): no reason to leave any out
+      val commons = new FakeCommonsSource(files.take(3) :+ withCategories(11, "Lake.jpg", Seq("Category:Lakes")))
+      val services = new TestImportServices(commons, pageSize = Some(2))
+      val job = services.imageService.importFiles(c, winners, "")
 
       members(c) === Map(1L -> None, 2L -> None, 3L -> None, 11L -> None)
+      val done = JobJdbc.findById(job.toOption.get.id).get
+      ImageImportHandler.stateOf(done).byCountry === Some(false)
+      ImageImportHandler.stateOf(done).notInCountries === 0L
+      // shown on the job: no file in a country category, so none left out
+      (services.imageImport.details(done) \ "byCountry").as[Boolean] === false
+    }
+
+    "keep only its countries' files when the root category holds only their categories" in {
+      val c = contest()
+      // the first step has only icons: the next files are looked at for a country
+      val commons = new FakeCommonsSource(files, categoryCounts = Map(root -> 0L))
+      val job = new TestImportServices(commons, pageSize = Some(2)).imageService.importFiles(c, winners, "")
+
+      members(c) === Map(11L -> Some("Armenia"), 12L -> Some("Armenia"), 13L -> Some("Bangladesh"), 14L -> Some("Benin"))
+      val done = JobJdbc.findById(job.toOption.get.id).get
+      done.status === JobStatus.Done
+      ImageImportHandler.stateOf(done).byCountry === Some(true)
+      ImageImportHandler.stateOf(done).notInCountries === 3L
+    }
+
+    "decide again on a Retry when Commons fails while looking ahead for a country" in {
+      val c = contest()
+      val commons = new FakeCommonsSource(files, categoryCounts = Map(root -> 0L))
+      commons.failListCall = 2 // the first step's look ahead, after its own listing
+      val services = new TestImportServices(commons, pageSize = Some(2))
+      val id = services.imageService.importFiles(c, winners, "").toOption.get.id
+
+      val failed = JobJdbc.findById(id).get
+      failed.status === JobStatus.Failed
+      ImageImportHandler.stateOf(failed).byCountry must beNone
+      members(c) must beEmpty
+
+      services.scheduler.retry(id) must beRight
+      val done = JobJdbc.findById(id).get
+      done.status === JobStatus.Done
+      ImageImportHandler.stateOf(done).byCountry === Some(true)
+      members(c) === Map(11L -> Some("Armenia"), 12L -> Some("Armenia"), 13L -> Some("Bangladesh"), 14L -> Some("Benin"))
+    }
+
+    /** `icons` icons, then a file in Armenia; a file a step and a request, so the first step
+      * looks ahead one file a listing.
+      */
+    def iconsThenCountry(icons: Int) = {
+      val c = contest()
+      val page = (1 to icons).map(i => file(i.toLong, s"$i green.svg")) :+ file(icons + 1L, "Lake.jpg", "Armenia")
+      val services = new TestImportServices(new FakeCommonsSource(page, maxIdsPerRequest = 1), pageSize = Some(1))
+      val job = JobJdbc.findById(services.imageService.importFiles(c, winners, "").toOption.get.id).get
+      (members(c), ImageImportHandler.stateOf(job))
+    }
+
+    "look ahead for a country up to the listing limit" in {
+      // the first step's icon, then CountryProbeRequests listings: up to file 1 + 20
+      val (members, state) = iconsThenCountry(ImageImportHandler.CountryProbeRequests)
+      members === Map((ImageImportHandler.CountryProbeRequests + 1L) -> Some("Armenia"))
+      state.byCountry === Some(true)
+      state.notInCountries === ImageImportHandler.CountryProbeRequests.toLong
+    }
+
+    "import all the files when the first country file is beyond the listing limit" in {
+      val (members, state) = iconsThenCountry(ImageImportHandler.CountryProbeRequests + 1)
+      members.size === ImageImportHandler.CountryProbeRequests + 2
+      members(ImageImportHandler.CountryProbeRequests + 2L) === Some("Armenia") // still given its country
+      members.count(_._2.isEmpty) === ImageImportHandler.CountryProbeRequests + 1
+      state.byCountry === Some(false)
+      state.notInCountries === 0L
+    }
+
+    "keep only a national contest's files in a country category, as when its root category has files" in {
+      // a national contest is named as its kind (ContestKind), so its root category is the
+      // international one, which has files of its own on Commons: it was filtered so before
+      val c = contestDao.create(Some(2), "Wiki Loves Earth", 2026, "Ukraine", images = Some(winners))
+      ContestCountries.root(c) === root
+      ContestCountries.ofManyCountries(c) must beFalse
+      new TestImportServices(new FakeCommonsSource(files)).imageService.importFiles(c, winners, "")
+
+      members(c) === Map(11L -> Some("Armenia"), 12L -> Some("Armenia"), 13L -> Some("Bangladesh"), 14L -> Some("Benin"))
+    }
+
+    "keep leaving out the files in no country after a step without any in one" in {
+      val c = contest()
+      val iconsLast = Seq(file(1, "Lake.jpg", "Armenia"), file(2, "Savè.jpg", "Benin"), file(3, "1 green.svg"),
+        file(4, "Logo.svg"))
+      new TestImportServices(new FakeCommonsSource(iconsLast), pageSize = Some(2)).imageService.importFiles(c, winners, "")
+
+      members(c) === Map(1L -> Some("Armenia"), 2L -> Some("Benin"))
+    }
+
+    "import its other files with their countries when Commons sends one without its image info" in {
+      val c = contest()
+      val commons = new FakeCommonsSource(files.drop(3)) // 11 to 14, two a step
+      commons.noInfo = Set(12L)
+      commons.failListCall = 2 // the second step fails, after the first wrote its files
+      val services = new TestImportServices(commons, pageSize = Some(2))
+      val id = services.imageService.importFiles(c, winners, "").toOption.get.id
+
+      JobJdbc.findById(id).get.status === JobStatus.Failed
+      members(c) === Map(11L -> Some("Armenia"))
+      imageDao.findById(12L) must beNone
+
+      services.scheduler.retry(id) must beRight
+      JobJdbc.findById(id).get.status === JobStatus.Done
+      members(c) === Map(11L -> Some("Armenia"), 13L -> Some("Bangladesh"), 14L -> Some("Benin"))
+      countryCategories(12L) must beEmpty
+    }
+  }
+
+  "a category or a template" should {
+
+    def importedWithCountries(source: String) = {
+      val c = contestDao.create(Some(1), "Wiki Loves Earth", 2026, "International", images = Some(source))
+      new TestImportServices(new FakeCommonsSource(files), pageSize = Some(2)).imageService.importFiles(c, source, "")
+
+      // all their files: their source is no page with icons
+      members(c) === Map(1L -> None, 2L -> None, 3L -> None, 11L -> Some("Armenia"), 12L -> Some("Armenia"),
+        13L -> Some("Bangladesh"), 14L -> Some("Benin"))
+    }
+
+    "give a contest of many countries' files their countries, of a category" in importedWithCountries(root)
+
+    "give a contest of many countries' files their countries, of a template" in
+      importedWithCountries("Template:Wiki Loves Earth 2026")
+
+    "leave a national contest's files as they were, without asking for their categories" in {
+      val c = contestDao.create(Some(2), "Wiki Loves Earth", 2026, "Ukraine", images = Some("Category:X"))
+      val commons = new FakeCommonsSource(files)
+      new TestImportServices(commons).imageService.importFiles(c, "Category:X", "")
+
+      members(c).values.toSet === Set(None)
+      members(c).size === files.size
+      commons.categoryCalls.get === 0
     }
   }
 
@@ -139,11 +272,28 @@ class PageImportSpec extends Specification with TestDb with BeforeAll with Befor
       val moved = files.map(f => if (f.image.pageId == 11L) f.copy(categories = Seq(s"$root in Georgia")) else f)
       new TestImportServices(new FakeCommonsSource(moved)).imageService.importFiles(c, winners, "File:Lake.jpg")
 
-      val countries = DB.readOnly { implicit s =>
-        sql"""SELECT c.title FROM category_members cc JOIN category c ON c.id = cc.category_id
-              WHERE cc.page_id = 11 AND c.title LIKE ${s"$root in %"}""".map(_.string(1)).list()
-      }
-      countries.toSet === Set(s"$root in Armenia", s"$root in Georgia")
+      countryCategories(11L).toSet === Set(s"$root in Armenia", s"$root in Georgia")
     }
+
+    "give a file Commons sends without its image info its country only if it is stored" in {
+      val c = contest()
+      imageDao.batchInsert(Seq(files.find(_.image.pageId == 12L).get.image)) // another contest's
+      val commons = new FakeCommonsSource(files)
+      commons.noInfo = Set(11L, 12L)
+      val job = new TestImportServices(commons).imageService
+        .importFiles(c, winners, "File:Lake.jpg\nFile:Eagle flight.webm\nFile:Egret.jpg")
+
+      JobJdbc.findById(job.toOption.get.id).get.status === JobStatus.Done
+      members(c) === Map(13L -> Some("Bangladesh"))
+      imageDao.findById(11L) must beNone
+      countryCategories(11L) must beEmpty
+      countryCategories(12L) === Seq(s"$root in Armenia")
+    }
+  }
+
+  /** The file's contest country categories. */
+  private def countryCategories(pageId: Long): Seq[String] = DB.readOnly { implicit s =>
+    sql"""SELECT c.title FROM category_members cc JOIN category c ON c.id = cc.category_id
+          WHERE cc.page_id = $pageId AND c.title LIKE ${s"$root in %"}""".map(_.string(1)).list()
   }
 }

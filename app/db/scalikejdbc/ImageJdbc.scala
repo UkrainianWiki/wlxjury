@@ -820,12 +820,13 @@ object ImageJdbc extends CRUDMapper[Image]
       .orderBy(i.pageId)
       .apply()
 
-  def existingIds(ids: Set[Long]): List[Long] = {
-    import sqls.distinct
-    withSQL {
-      select(distinct(i.pageId)).from(ImageJdbc as i).where.in(i.pageId, ids.toSeq)
-    }.map(_.long(1)).list()
-  }
+  /** Those of `ids` that have an `images` row. */
+  def existingIds(ids: Set[Long])(implicit session: DBSession): List[Long] =
+    if (ids.isEmpty) Nil
+    else
+      withSQL {
+        select(distinct(i.pageId)).from(ImageJdbc as i).where.in(i.pageId, ids.toSeq)
+      }.map(_.long(1)).list()
 
   def rateDistribution(userId: Long, roundId: Long): Map[Int, Int] =
     sql"""SELECT s.rate, count(1)

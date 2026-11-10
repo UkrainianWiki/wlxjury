@@ -59,6 +59,14 @@ describe("formatJobStatus", () => {
         expect(formatJobStatus({ status: "done", details: { monuments: 51234 } })).toBe("Done, 51,234 monuments");
         expect(formatJobStatus({ status: "done", details: { inserted: 0, updated: 0 } })).toBe("Done");
     });
+
+    test("shows whether a page import left out files in no country category", () => {
+        expect(formatJobStatus({ status: "done", details: { inserted: 4, notInCountries: 3, byCountry: true } }))
+            .toBe("Done, 4 new, 3 left out as in no country category");
+        expect(formatJobStatus({ status: "done", details: { inserted: 4, notInCountries: 0, byCountry: false } }))
+            .toBe("Done, 4 new, no file in a country category: none left out");
+        expect(formatJobStatus({ status: "done", details: { inserted: 4, byCountry: null } })).toBe("Done, 4 new");
+    });
 });
 
 describe("formatJobProgress", () => {
