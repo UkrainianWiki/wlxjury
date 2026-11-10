@@ -30,8 +30,8 @@ class CoiAuthorizationSpec extends PlaySpecification with PlayTestDb with Mockit
   private def member(email: String, role: String, contest: Long = contestId, account: Option[String] = None): User =
     User.create(User(email, email, None, Set(role), Some(services.PasswordHasher.default.hash("secret")), Some(contest), wikiAccount = account))
 
-  /** Contest 10 with a category of 3 files (2 by its board member), a round of them shown to
-    * its jurors' organizer views too (`juryOrgView`), a juror, an organizer and an admin;
+  /** Contest 10 with a category of 3 files (2 by its board member), a round of them with the
+    * legacy `jury_org_view` flag set (ignored), a juror, an organizer and an admin;
     * contest 20 with its own admin.
     */
   private def setUp(): Round = {
@@ -45,7 +45,8 @@ class CoiAuthorizationSpec extends PlaySpecification with PlayTestDb with Mockit
     member("other-admin@example.com", "admin", contest = 20)
     User.NON_ACCESS_ROLES.foreach(r =>
       member(s"$r@example.com", r, account = Some(if (r == User.BOARD_ROLE) "Board member" else s"$r account")))
-    val round = roundDao.create(Round(None, 1, Some("R"), contestId, active = true, juryOrgView = true))
+    val round = roundDao.create(Round(None, 1, Some("R"), contestId, active = true))
+    LegacyJuryOrgView.set(round.getId)
     images.foreach(i => VoteJdbc.create(i.pageId, 0, juror.getId, round.getId))
     round
   }

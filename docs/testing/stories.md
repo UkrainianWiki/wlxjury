@@ -59,7 +59,7 @@ a guide or a test needs them.
 | J-25 | A juror comments on a file; others in the contest see it | [Comments on a file](../user/juror-guide.md#comments-on-a-file) | |
 | J-26 | A comments-only round takes comments, no votes | [Comments-only rounds](../user/juror-guide.md#comments-only-rounds) | *Part:* the refused votes only |
 | J-27 | A juror sees only their own votes; another juror's are refused | [Your own votes only](../user/juror-guide.md#your-own-votes-only) | |
-| J-28 | In a round that allows it, a juror gets the organizers' view | [Your own votes only](../user/juror-guide.md#your-own-votes-only) | |
+| J-28 | In a round that allows it, a juror gets the organizers' view | [Your own votes only](../user/juror-guide.md#your-own-votes-only) | *(retired)* 26.11: the legacy `jury_org_view` flag is ignored; jurors get only their own votes (J-27) |
 | J-29 | A disqualified file leaves the juror's list; requalified, it returns with the vote | [Disqualified files](../user/juror-guide.md#disqualified-files) | |
 | J-30 | A juror picks light, dark or system theme, shown from the first frame | [Light, dark or system theme](../user/juror-guide.md#light-dark-or-system-theme) | |
 | J-31 | A juror changes the interface language | [Interface language](../user/juror-guide.md#interface-language) | |

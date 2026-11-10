@@ -497,8 +497,10 @@ class RoundController @Inject() (
       }
     }
 
+  // the round statistics are organizer views (User.canViewOrgInfo): never a juror's, who gets
+  // the 403 page naming the roles at once
   def currentRoundStat(contestId: Option[Long] = None): EssentialAction =
-    withAuth(rolePermission(Set(User.ADMIN_ROLE, "jury", "root") ++ User.ORG_COM_ROLES)) {
+    withAuth(rolePermission(Set(User.ADMIN_ROLE, "root") ++ User.ORG_COM_ROLES)) {
       sessionUser => implicit request =>
         // the asked-for contest's rounds are checked as a member of it, if an active one
         val user = contestId.fold(sessionUser)(Secured.inContest(sessionUser, _))
@@ -536,7 +538,7 @@ class RoundController @Inject() (
     }
 
   def roundStat(roundId: Long): EssentialAction =
-    withAuthOn(blocking)(rolePermission(Set(User.ADMIN_ROLE, "jury", "root") ++ User.ORG_COM_ROLES)) {
+    withAuthOn(blocking)(rolePermission(Set(User.ADMIN_ROLE, "root") ++ User.ORG_COM_ROLES)) {
       sessionUser => implicit request =>
         Round
           .findById(roundId)

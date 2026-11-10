@@ -133,13 +133,12 @@ case class User(
     hasContestRole(User.ADMIN_ROLES, Some(refContestId))
 
   /** Whether the user may see the round's organizer views (its statistics, the jurors'
-    * votes): root, or in the round's contest an admin or organizer, or a juror when the
-    * round lets its jurors see them ([[Round.juryOrgView]]).
+    * votes and names, the files' authors): root, or in the round's contest an admin or
+    * organizer. Never a juror (the legacy `jury_org_view` flag is ignored, [[Round]]).
     */
   def canViewOrgInfo(round: Round): Boolean =
     hasRole(User.ROOT_ROLE) ||
-      contestId.contains(round.contestId) &&
-      (hasAnyRole(User.ADMIN_ROLES ++ User.ORG_COM_ROLES) || hasRole(User.JURY_ROLE) && round.juryOrgView)
+      contestId.contains(round.contestId) && hasAnyRole(User.ADMIN_ROLES ++ User.ORG_COM_ROLES)
 
   /** Whether the user may vote in the round ([[controllers.Secured.VotePermission]]): their
     * role in the round's contest is jury. Only their own vote rows, a round juror's, change.

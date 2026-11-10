@@ -200,21 +200,19 @@ class CriteriaResultsPageSpec extends PlaySpecification with PlayTestDb {
     }
   }
 
-  "a juror of a juryOrgView criteria round [J-28]" should {
+  "a juror of a criteria round with the legacy juryOrgView flag set [J-27]" should {
 
-    "see all the jurors' averages and each juror's criteria rates, as organisers do" in {
+    "be refused all the jurors' averages and the others' rates, and see their own, as in any round" in {
       testDbApp { app =>
         val f = fixture()
-        DB.autoCommit(implicit s => sql"UPDATE round SET jury_org_view = 1 WHERE id = ${f.round.getId}".update())
-        val (head, rows) = table(contentAsString(get(app, f.juror1, fileList(f, 0))))
-        head.slice(3, 5) === Seq("Scientific value", hostileName)
-        rows("File:Image0.jpg").slice(3, 5) === Seq("7.00", "7.50")
-        val doc = Jsoup.parse(contentAsString(get(app, f.juror1, large(f, 0, f.images.head.pageId))))
-        doc.getElementById("rate-number1").text() === "7"
-        doc.select(".wlx-criteria-overall-rate").text() === "7.25 (Σ 14.50: 29 / 2 of 3 jurors)"
-        doc.select(".large-line .wlx-criteria-rates").asScala.map(_.select("li").asScala.map(_.text).toSeq).toSet ===
-          Set(Seq("Scientific value: 8", s"$hostileName: 6"), Seq("Scientific value: 6", s"$hostileName: 9"),
-            Seq("Scientific value: 2", s"$hostileName: –"))
+        LegacyJuryOrgView.set(f.round.getId)
+        status(get(app, f.juror1, fileList(f, 0))) === FORBIDDEN
+        status(get(app, f.juror1, large(f, 0, f.images.head.pageId))) === FORBIDDEN
+        status(get(app, f.juror1, large(f, f.juror2.getId, f.images.head.pageId))) === FORBIDDEN
+        val doc = Jsoup.parse(contentAsString(get(app, f.juror2, large(f, f.juror2.getId, f.images.head.pageId))))
+        doc.select(".wlx-criteria-overall").size === 0
+        doc.getElementById("rate-number1").text() === "6"
+        doc.select(".large-line li").size === 0
       }
     }
   }

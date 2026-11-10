@@ -27,8 +27,7 @@ a different role in each contest. Roles are explained in the [admin guide](admin
 | Comment on a file of an open round | their own files | any file of the round | any file of the round |
 | Set up rounds and files, start and stop rounds, pause jurors, disqualify files, manage people | no | no | yes |
 
-Older rounds may let their jurors read the statistics and results too; new rounds don't. **Root**,
-the tool's own administrators, can do what an admin can, in every contest.
+**Root**, the tool's own administrators, can do what an admin can, in every contest.
 
 If a button or page is missing for you, your role in the current contest probably doesn't allow
 it. The contest menu at the top of the page shows which contest you are in.

@@ -13,7 +13,7 @@ import scala.concurrent.Future
 /** A juror sees only their own votes: a round's gallery, file list, CSV and large view
   * show another user's votes (`asUserId`), or all jurors' together (`asUserId` 0), only
   * to those who may see the round's organiser info (root, the contest's admins and
-  * organizers, its jurors in a `juryOrgView` round), and of a juror of the round only
+  * organizers, never a juror), and of a juror of the round only
   * ([[services.GalleryService.viewAs]]).
   */
 class OwnVotesSpec extends PlaySpecification with PlayTestDb {
@@ -33,7 +33,8 @@ class OwnVotesSpec extends PlaySpecification with PlayTestDb {
       images: Seq[Image]
   )
 
-  /** Contests A and B. A has a rated round and a `juryOrgView` one, each with jurors 1 and 2
+  /** Contests A and B. A has a rated round and one with the legacy `jury_org_view` flag set
+    * (ignored: its jurors get the juror view), each with jurors 1 and 2
     * who voted on two files, a member who is in neither round, an organizer and an admin;
     * B's juror is in B's round. And a root.
     */
@@ -42,7 +43,8 @@ class OwnVotesSpec extends PlaySpecification with PlayTestDb {
     val b = contestDao.create(None, "WLM", 2024, "Poland")
     val roundA = roundDao.create(Round(None, 1, Some("A round"), contestId = a.getId, rates = Round.ratesById(5), active = true))
     val orgViewRound = roundDao.create(Round(None, 2, Some("A open round"), contestId = a.getId,
-      rates = Round.ratesById(5), active = true, juryOrgView = true))
+      rates = Round.ratesById(5), active = true))
+    LegacyJuryOrgView.set(orgViewRound.getId)
     val roundB = roundDao.create(Round(None, 1, Some("B round"), contestId = b.getId, rates = Round.ratesById(5), active = true))
     def user(name: String, role: String, contest: ContestJury) =
       userDao.create(User(name, s"${name.toLowerCase.replace(" ", "")}@example.com", None, Set(role), contestId = contest.id))
@@ -122,11 +124,12 @@ class OwnVotesSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
-    "see another juror's votes, and all together, in a round open to its jurors (juryOrgView) [J-28]" in {
+    "be refused another juror's votes, and all together, in a round with the legacy juryOrgView flag set, as pages and as JSON [J-27]" in {
       testDbApp { app =>
         val f = fixture()
-        views(app, f.juror2, f.orgViewRound, f.juror1.getId, f.images.head.pageId, OK)
-        views(app, f.juror2, f.orgViewRound, 0L, f.images.head.pageId, OK)
+        views(app, f.juror2, f.orgViewRound, f.juror1.getId, f.images.head.pageId, FORBIDDEN)
+        views(app, f.juror2, f.orgViewRound, 0L, f.images.head.pageId, FORBIDDEN)
+        views(app, f.juror2, f.orgViewRound, f.juror2.getId, f.images.head.pageId, OK)
       }
     }
   }
