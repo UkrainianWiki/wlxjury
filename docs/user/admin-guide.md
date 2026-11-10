@@ -137,9 +137,10 @@ An account that also works in other contests can't be changed by an admin of one
 admin may change the person's role in their own contest only, unless they administer all of its
 contests.
 
-Root also sees **Root (every contest)** above the role, see [What only root can do](#a-root).
+<img src="images/admin-user-edit.png" alt="The Edit user page of a member, with the role and its help, and the set-password links" width="450">
 
-<img src="images/admin-user-edit.png" alt="The Edit user page of a member as root sees it, with the Root checkbox, the role and its help, and the set-password links" width="450">
+Root sees more on this page, such as the checkbox **Root (every contest)**: see [What only root
+can do](#a-root).
 
 <a id="a-invitations"></a>
 ## Invitations
@@ -706,8 +707,12 @@ stopped.
   its **Edit user** page. An account that has a password but no verified email can't be made
   root; an invitee who hasn't set a password yet can. A new account can't be made root when it
   is added: add the person, and tick it once they have accepted the invitation. Root can't
-  change their own root, and the last root can't be taken away. Changing the person's role in
-  a contest leaves root as it is.
+  change their own root, and the last root can't be taken away. Root and the email can't be
+  changed in one save: save one, then the other. Changing the person's role in a contest leaves
+  root as it is.
+
+  <img src="images/admin-user-edit-root.png" alt="The checkbox Root (every contest) on the Edit user page, above the role and its help" width="427">
+
 - Edit an account that is in contests the admin doesn't administer; change the email of an account
   that has a password, through a link mailed to the new address.
 - Send **Reset password** links and use **End sessions** on any account, and see and revoke

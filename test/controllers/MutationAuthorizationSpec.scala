@@ -1,6 +1,6 @@
 package controllers
 
-import db.scalikejdbc.{ImageJdbc, PlayTestDb, Round, RoundCriterion, RoundUser, VoteJdbc, User, UserContestJdbc}
+import db.scalikejdbc.{ImageJdbc, LegacyJuryOrgView, PlayTestDb, Round, RoundCriterion, RoundUser, VoteJdbc, User, UserContestJdbc}
 import modules.BlockingExecutionContext
 import org.apache.pekko.stream.Materializer
 import play.api.Application
@@ -930,12 +930,13 @@ class MutationAuthorizationSpec extends PlaySpecification with PlayTestDb {
   }
 
   "a round's organizer views" should {
-    // contests A and B, B's round with and without juryOrgView
+    // contests A and B, B's rounds with and without the legacy jury_org_view flag (ignored)
     def setup() = {
       val a = contestDao.create(None, "WLE", 2024, "Ukraine")
       val b = contestDao.create(None, "WLM", 2024, "Poland")
       val open = roundDao.create(
-        Round(None, 1, Some("B open round"), contestId = b.getId, active = true, juryOrgView = true))
+        Round(None, 1, Some("B open round"), contestId = b.getId, active = true))
+      LegacyJuryOrgView.set(open.getId)
       val closed = roundDao.create(Round(None, 2, Some("B closed round"), contestId = b.getId, active = true))
       (a, b, open, closed)
     }
@@ -967,14 +968,15 @@ class MutationAuthorizationSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
-    "be open to a juror of the round's contest only if the round says so, and to its organizers and root" in {
+    "be refused to a juror of the round, with the legacy flag set or not, and open to its organizers and root" in {
       testDbApp { app =>
         val (_, b, open, closed) = setup()
         val juror = userDao.create(User("Juror", "juror@example.com", None, Set("jury"), contestId = b.id))
+        Seq(open, closed).foreach(r => r.addUsers(Seq(RoundUser(r.getId, juror.getId, "jury", active = true))))
         val organizer = userDao.create(User("Org", "org@example.com", None, Set("organizer"), contestId = b.id))
         val root = User.create(User("Root", "root@example.com", roles = Set(User.ROOT_ROLE), password = Some("hash")))
 
-        status(roundStat(app, open, juror.email)) === OK
+        status(roundStat(app, open, juror.email)) === FORBIDDEN
         status(roundStat(app, closed, juror.email)) === FORBIDDEN
         Seq(organizer, root).foreach { user =>
           status(roundStat(app, open, user.email)) === OK
@@ -986,7 +988,7 @@ class MutationAuthorizationSpec extends PlaySpecification with PlayTestDb {
 
     // only those RoundController.setRoundUser lets in (Secured.administersRound): organizers
     // are read-only, and were refused on click
-    "show the jurors' pause buttons to the contest's admins and root, not to its organizers or jurors" in {
+    "show the jurors' pause buttons to the contest's admins and root, not to its organizers" in {
       testDbApp { app =>
         val (a, b, open, _) = setup()
         val juror = userDao.create(User("Juror", "juror@example.com", None, Set("jury"), contestId = b.id))
@@ -1011,7 +1013,7 @@ class MutationAuthorizationSpec extends PlaySpecification with PlayTestDb {
         pauseButtons(admin)._1 === 1
         pauseButtons(admin)._2 must contain("Start/Stop")
         pauseButtons(root)._1 === 1
-        Seq(organizer, adminOfA, juror).foreach { user =>
+        Seq(organizer, adminOfA).foreach { user =>
           pauseButtons(user)._1 === 0
           pauseButtons(user)._2 must not(contain("Start/Stop"))
         }
@@ -1053,15 +1055,17 @@ class MutationAuthorizationSpec extends PlaySpecification with PlayTestDb {
     }
   }
 
-  "a juror of A and B, with the session in A, and B's round open to its jurors" should {
-    // B's round with juryOrgView, the juror not listed in it; a juror of A only
+  "a juror of A and B, with the session in A, and B's round with the legacy jury_org_view flag" should {
+    // B's round with the flag set (ignored), the juror listed in it; a juror of A only
     def setup() = {
       val a = contestDao.create(None, "WLE", 2024, "Ukraine")
       val b = contestDao.create(None, "WLM", 2024, "Poland")
       val bRound = roundDao.create(
-        Round(None, 1, Some("B open round"), contestId = b.getId, active = true, juryOrgView = true))
+        Round(None, 1, Some("B open round"), contestId = b.getId, active = true))
+      LegacyJuryOrgView.set(bRound.getId)
       val both = userDao.create(User("Both", "both@example.com", None, Set("jury"), contestId = a.id))
       UserContestJdbc.createMembership(both.getId, b.getId, "jury")
+      bRound.addUsers(Seq(RoundUser(bRound.getId, both.getId, "jury", active = true)))
       val aOnly = userDao.create(User("A only", "aonly@example.com", None, Set("jury"), contestId = a.id))
       (a, b, bRound, both, aOnly)
     }
@@ -1071,39 +1075,51 @@ class MutationAuthorizationSpec extends PlaySpecification with PlayTestDb {
         .withSession(Secured.UserName -> email, Secured.CurrentContestId -> a.toString)
         .withCSRFToken
 
-    "reach B's round stat, by B's id and by the round's" in {
+    "be refused B's round stat, though a juror of the round" in {
       testDbApp { app =>
         implicit val materializer: Materializer = app.materializer
-        val (a, b, bRound, both, _) = setup()
+        val (a, _, bRound, both, _) = setup()
+
+        val stat = call(roundController(app).roundStat(bRound.getId),
+          inA(s"/roundstat/${bRound.getId}", both.email, a.getId))
+        status(stat) === FORBIDDEN
+      }
+    }
+
+    "still be refused to a juror of A only, B's current round stat too" in {
+      testDbApp { app =>
+        implicit val materializer: Materializer = app.materializer
+        val (a, b, bRound, _, aOnly) = setup()
+
+        // a juror has no round stat: the 403 page at once, not a redirect to one
+        val current = call(roundController(app).currentRoundStat(Some(b.getId)),
+          inA(s"/roundstat?contestId=${b.getId}", aOnly.email, a.getId))
+        status(current) === FORBIDDEN
+        redirectLocation(current) must beNone
+        contentAsString(current) must not(contain("B open round"))
+
+        status(call(roundController(app).roundStat(bRound.getId),
+          inA(s"/roundstat/${bRound.getId}", aOnly.email, a.getId))) === FORBIDDEN
+      }
+    }
+
+    "reach B's round stat as an organizer of B, a juror of A, by B's id and by the round's" in {
+      testDbApp { app =>
+        implicit val materializer: Materializer = app.materializer
+        val (a, b, bRound, _, _) = setup()
+        val orgOfB = userDao.create(User("Org of B", "orgb@example.com", None, Set("jury"), contestId = a.id))
+        UserContestJdbc.createMembership(orgOfB.getId, b.getId, "organizer")
 
         val current = call(roundController(app).currentRoundStat(Some(b.getId)),
-          inA(s"/roundstat?contestId=${b.getId}", both.email, a.getId))
+          inA(s"/roundstat?contestId=${b.getId}", orgOfB.email, a.getId))
         status(current) === SEE_OTHER
         redirectLocation(current) === Some(routes.RoundController.roundStat(bRound.getId).url)
         session(current).get(Secured.CurrentContestId) === Some(b.getId.toString)
 
         val stat = call(roundController(app).roundStat(bRound.getId),
-          inA(s"/roundstat/${bRound.getId}", both.email, a.getId))
+          inA(s"/roundstat/${bRound.getId}", orgOfB.email, a.getId))
         status(stat) === OK
         contentAsString(stat) must contain("B open round")
-      }
-    }
-
-    "still be refused to a juror of A only" in {
-      testDbApp { app =>
-        implicit val materializer: Materializer = app.materializer
-        val (a, b, bRound, _, aOnly) = setup()
-
-        val current = call(roundController(app).currentRoundStat(Some(b.getId)),
-          inA(s"/roundstat?contestId=${b.getId}", aOnly.email, a.getId))
-        // no round of theirs: a state, not an error, as on the juror's start page
-        status(current) === OK
-        redirectLocation(current) must beNone
-        contentAsString(current) must contain("No round configured yet.")
-        contentAsString(current) must not(contain("B open round"))
-
-        status(call(roundController(app).roundStat(bRound.getId),
-          inA(s"/roundstat/${bRound.getId}", aOnly.email, a.getId))) === FORBIDDEN
       }
     }
   }
