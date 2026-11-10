@@ -67,8 +67,8 @@ same commit as the fix.
 - [ ] New log lines carry ids only: no email, name, password, token or whole account; no bound
   SQL values (§13).
 - [ ] Emails only to the account and on the admins' users page; jurors' names, others' votes
-  and file authors only for `canViewOrgInfo` (root, admins, organizers; jurors only with the
-  round's `juryOrgView`); conflict-of-interest matches only to organizers and admins; no
+  and file authors only for `canViewOrgInfo` (root, admins, organizers; never jurors), in
+  pages and JSON alike; conflict-of-interest matches only to organizers and admins; no
   production dump or derived data in the diff (§22).
 
 ## Dependencies

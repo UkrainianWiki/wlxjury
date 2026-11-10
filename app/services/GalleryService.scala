@@ -25,7 +25,7 @@ class GalleryService {
     *
     * Their own votes, always. Anyone else's, or all together, only for those who may see
     * the round's organiser info ([[User.canViewOrgInfo]]: root, the contest's admins and
-    * organizers, its jurors in a `juryOrgView` round), and only of a juror of the round
+    * organizers, never a juror), and only of a juror of the round
     * ([[User.isRoundJuror]]), as the galleries' juror menu lists them.
     */
   def viewAs(user: User, round: Round, asUserId: Long): GalleryService.ViewAs =
@@ -49,9 +49,9 @@ class GalleryService {
       // a round being created is hidden from its jurors until its distribution is complete
       (!isOrganizer && maybeRound.exists(_.distributing)) ||
       (!user.hasRole("root") && userContest != roundContest) ||
+      // anyone else (a juror): only a round of `rounds`, their own active rounds (viewerRounds)
       (user.roles.intersect(Set("admin", "organizer", "root")).isEmpty
-        && !rounds.exists(_.id == maybeRound.flatMap(_.id))
-        && !maybeRound.exists(_.juryOrgView))
+        && !rounds.exists(_.id == maybeRound.flatMap(_.id)))
     notAuthorized
   }
 
