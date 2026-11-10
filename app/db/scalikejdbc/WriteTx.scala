@@ -4,10 +4,10 @@ import scalikejdbc._
 
 /** Write transactions that are run again when MariaDB rolls them back as a deadlock's victim
   * (docs/plans/2026-11-03-write-path-simplification.md, W3): the one wrapper for every
-  * transaction owner of the vote tables' writes. Only error 1213 is retried: after it the
-  * whole transaction is gone, so the body runs again from the start; a lock wait timeout (1205)
-  * rolls back only the statement and is not retried here (job steps retry both,
-  * [[services.jobs.JobScheduler]]).
+  * transaction owner of the vote tables' writes, and of the account's root flag
+  * ([[User.setRootLocked]]). Only error 1213 is retried: after it the whole transaction is
+  * gone, so the body runs again from the start; a lock wait timeout (1205) rolls back only the
+  * statement and is not retried here (job steps retry both, [[services.jobs.JobScheduler]]).
   *
   * Rules for a body: it decides from what it reads inside the transaction (never from a read
   * made before it), and it has no effect outside the database before commit (cache

@@ -61,13 +61,14 @@ class RoleValuesSpec extends Specification {
       (refused.filter(User.isContestRole) must beEmpty) and (User.FORM_ROLES.forall(User.isContestRole) must beTrue)
     }
 
-    "let only a root editor assign root" in {
+    "let nobody assign root as a role, root included (root is the account's Root field)" in {
       val admin = User("Admin", "admin@example.org", Some(1L), Set(User.ADMIN_ROLE), contestId = Some(1L))
       val root = User("Root", "root@example.org", Some(2L), Set(User.ROOT_ROLE), isRoot = true)
       (User.mayAssignRoles(admin, Set(User.ROOT_ROLE)) must beFalse) and
         (User.mayAssignRoles(admin, Set("jury,root")) must beFalse) and
         (User.mayAssignRoles(admin, Set(User.ADMIN_ROLE)) must beTrue) and
-        (User.mayAssignRoles(root, Set(User.ROOT_ROLE)) must beTrue) and
+        (User.mayAssignRoles(root, Set(User.ROOT_ROLE)) must beFalse) and
+        (User.mayAssignRoles(root, Set(User.ADMIN_ROLE)) must beTrue) and
         (User.mayAssignRoles(root, Set("USER_ID_1")) must beFalse)
     }
   }

@@ -82,12 +82,27 @@
                         <p class="form-text">@Messages("email.change.explain")</p>
                     }
 
+                    @* root is the account's (users.is_root), not a contest role: root's own checkbox, with
+                       the account's fields. The hidden "false" after it is what an unticked box sends (the
+                       first value counts, UserController.rootFields); one's own is shown, not changed *@
+                    @if(user.hasRole(User.ROOT_ROLE) && !editUserForm("id").value.contains("0")) {
+                        @if(ownProfile) {
+                            @bs.checkbox(editUserForm("root"), Symbol("_label") -> Messages("root.flag"), Symbol("disabled") -> true, Symbol("checked") -> true)
+                        } else {
+                            @bs.checkbox(editUserForm("root"), Symbol("_label") -> Messages("root.flag"))
+                            <input type="hidden" name="root" value="false">
+                            @* the account's root as this page first showed it (kept when the form is shown again
+                               after a refusal): only a toggle of it is saved, so a page loaded before another
+                               root's change doesn't undo it *@
+                            <input type="hidden" name="rootWas" value="@editUserForm("rootWas").value.flatMap(_.toBooleanOption).getOrElse(editedAccount.exists(_.isRoot))">
+                        }
+                    }
+
                     @if(user.hasAnyRole(User.ADMIN_ROLES)) {
                         @bs.select(editUserForm("roles"),
-                            (db.scalikejdbc.User.FORM_ROLES ++ (
-                                    if(user.hasRole("root")) Seq("root") else Seq.empty)
-                                    ).map(x => (x, Messages("role." + x))),
-                            Symbol("_label") -> Messages("role"))
+                            User.FORM_ROLES.map(x => (x, Messages("role." + x))),
+                            Symbol("_label") -> Messages("role"),
+                            Symbol("_help") -> Messages("coi.role.help"))
                     }
 
                     @bs.select(editUserForm("lang"), Seq("en", "fr", "ru", "uk").map(x => (x, User.LANGS(x))),

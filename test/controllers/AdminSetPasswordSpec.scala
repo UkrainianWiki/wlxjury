@@ -126,7 +126,7 @@ class AdminSetPasswordSpec extends PlaySpecification with PlayTestDb with Accoun
 
         val (results, lines) = accountLog {
           val a = save(root, Some(10), form(admin, Some(10), "admin", "password" -> "admin-password"): _*)
-          val r = save(root, None, form(otherRoot, None, "root", "password" -> "root-password"): _*)
+          val r = save(root, None, form(otherRoot, None, "no", "root" -> "true", "password" -> "root-password"): _*)
           (status(a), status(r))
         }
         results === ((SEE_OTHER, SEE_OTHER))
@@ -281,8 +281,11 @@ class AdminSetPasswordSpec extends PlaySpecification with PlayTestDb with Accoun
         val juror = account("juror@example.com", Some(10), "jury", password = Some("old-password"), verified = true)
         val version = reloaded(juror).authVersion
 
-        for ((by, role) <- Seq(admin -> "admin", admin -> "organizer", root -> "admin", root -> "root")) {
-          val refused = save(by, Some(10), form(juror, Some(10), role, "password" -> "chosen-password"): _*)
+        // root's Root field ticked is a role change too (root is no role value)
+        for ((by, role, rootField) <- Seq((admin, "admin", None), (admin, "organizer", None), (root, "admin", None),
+            (root, "jury", Some("true")))) {
+          val refused = save(by, Some(10), form(juror, Some(10), role,
+            ("password" -> "chosen-password") +: rootField.map("root" -> _).toSeq: _*): _*)
           status(refused) === BAD_REQUEST
           contentAsString(refused) must contain("Change the role and set the password in separate saves.")
         }

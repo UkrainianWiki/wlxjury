@@ -34,7 +34,8 @@
                 @bs.select(importUserForm("role"),
                     db.scalikejdbc.User.IMPORT_ROLES.map(r => (r, Messages("role." + r))),
                     Symbol("_label") -> Messages("role"),
-                    Symbol("id") -> "import-role")
+                    Symbol("id") -> "import-role",
+                    Symbol("_help") -> Messages("coi.role.help"))
 
                 <div class="form-actions">
                     @snippets.submit("import")
