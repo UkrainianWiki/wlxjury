@@ -106,13 +106,13 @@ per-round choice keeps contests that don't want it as they are; and per-juror vo
 | D6 | `juryOrgView` | leave / give it a form field / retire it | leave as it is; say in the docs that it is not set from the UI; decide retirement later |
 | D7 | Also for yes/no rounds (approvals, rejections) | yes / rated rounds only | yes; both use the same aggregate queries |
 | D8 | Show the juror's own vote beside the aggregate | yes / no | yes |
-| D9 | Results while a later round on the same files is open | (a) manual: the admin switches the round's option off, no code beyond the toggle / (b) a second per-round checkbox under the option, "hide while a later round built from this one is open" / (c) always hidden while a later round is open, no checkbox | **(b), on by default.** *Why:* the protective choice is the default, so an admin who never thinks of the later round still gets it, and it needs no one to remember to switch anything off when the next round opens and on again when it stops, as (a) does; but a contest that wants its jurors to keep the earlier results open (say, a final round meant to build on the first) can untick it, which (c) doesn't allow. The cost over (c) is one column and one form field |
+| D9 | Results while a later round on the same files is open | (a) manual: the admin switches the round's option off, no code beyond the toggle / (b) a second per-round checkbox under the option, "hide while a later round built from this one is open" / (c) always hidden while a later round is open, no checkbox | **Decided by the maintainer (2026-11-10): (b), on by default.** *Why:* the protective choice is the default, so an admin who never thinks of the later round still gets it, and it needs no one to remember to switch anything off when the next round opens and on again when it stops, as (a) does; but a contest that wants its jurors to keep the earlier results open (say, a final round meant to build on the first) can untick it, which (c) doesn't allow. The cost over (c) is one column and one form field |
 
 **Why D9 exists (the maintainer, 2026-11-10):** "one thing is to see once (and maybe even copy
 the results, regardless if tool gives this an option or not), other is to be able to coordinate
 the next vote fully." Seeing the results once can't be undone, but keeping them open while the
 same jurors vote in a later round on the same files lets them consult or coordinate throughout
-that vote. With (b) or (c), a juror of an open later round gets 403 on the earlier round's
+that vote. With the checkbox on, a juror of an open later round gets 403 on the earlier round's
 results until that round stops (§4).
 
 **Considered and dropped (the maintainer, 2026-11-10).** One hiding rule was drafted and
@@ -173,7 +173,7 @@ From CLAUDE.md "Own votes" and secure coding §"juror confidentiality":
 
 ## 6. Data and query impact
 
-- Two new columns, `round.jurors_see_results BOOLEAN NOT NULL DEFAULT 0` and, for D9 (b),
+- Two new columns, `round.jurors_see_results BOOLEAN NOT NULL DEFAULT 0` and, for D9,
   `round.results_hidden_during_later BOOLEAN NOT NULL DEFAULT 1`, in one migration (V95;
   `INSTANT`, a metadata-only change, like V92). `Round` reads and writes them; `EditRound` and
   the form get them, the second shown under the first.
@@ -244,7 +244,7 @@ view's box (the bulk, medium), the stopped-round read-only access for jurors (me
 `viewerRounds`, the gallery and large view must not offer votes), four languages, about 21 tests
 (§7: 6 positive and 15 negative, counting each case of a bullet as one test) plus the browser
 story, and the docs. If D4 is "no" (results shown outside the gallery), the read-only access
-piece drops out, and the work is about one and a half days. With D9 (a), about half a day less.
+piece drops out, and the work is about one and a half days.
 
 ## 10. Order and risks
 
