@@ -152,7 +152,9 @@ suite once at the release boundary (CLAUDE.md).
 No code. Results decide U1, U6, U11 and close open item 3.4.
 
 Before P0 (V82), as written below; after it, the second block (`round`, `vote`, `vote_aside`,
-`criteria_rate.vote_id`).
+`criteria_rate.vote_id`), and from V83 on its damage query replaced by the third block (R223-1).
+The damage queries read the votes moved aside too (`selection_deleted`, `vote_aside`: a file
+deleted on Commons keeps its votes there, and they come back with their rates).
 
 ```sql
 -- before V82
@@ -165,9 +167,13 @@ SELECT COUNT(*) FROM criteria_rate cr WHERE NOT EXISTS (SELECT 1 FROM selection 
   AND NOT EXISTS (SELECT 1 FROM selection_deleted d WHERE d.id = cr.selection);   -- orphans
 SELECT selection, criteria, COUNT(*) FROM criteria_rate GROUP BY 1, 2 HAVING COUNT(*) > 1 LIMIT 20;
 SELECT COUNT(*) FROM selection WHERE criteria_id IS NOT NULL;
--- votes whose rate differs from their criteria sum (S4 damage)
-SELECT s.round_id, COUNT(*) FROM selection s JOIN (SELECT selection, SUM(IF(rate > 0, rate, 0)) t
-  FROM criteria_rate GROUP BY selection) x ON x.selection = s.id WHERE s.rate <> x.t GROUP BY s.round_id;
+-- votes, live and aside, whose rate differs from their criteria sum (S4 damage)
+SELECT v.src, v.round_id, COUNT(*)
+  FROM (SELECT 'selection' src, id, round_id, rate FROM selection
+        UNION ALL SELECT 'selection_deleted', id, round_id, rate FROM selection_deleted) v
+  JOIN (SELECT selection, SUM(IF(rate > 0, rate, 0)) crit_sum FROM criteria_rate GROUP BY selection) x
+    ON x.selection = v.id
+ WHERE v.rate <> x.crit_sum GROUP BY v.src, v.round_id;
 ```
 
 ```sql
@@ -181,9 +187,33 @@ SELECT COUNT(*) FROM criteria_rate cr WHERE NOT EXISTS (SELECT 1 FROM vote v WHE
   AND NOT EXISTS (SELECT 1 FROM vote_aside d WHERE d.id = cr.vote_id);   -- orphans
 SELECT vote_id, criteria, COUNT(*) FROM criteria_rate GROUP BY 1, 2 HAVING COUNT(*) > 1 LIMIT 20;
 SELECT COUNT(*) FROM vote WHERE criteria_id IS NOT NULL;
--- votes whose rate differs from their criteria sum (S4 damage)
-SELECT v.round_id, COUNT(*) FROM vote v JOIN (SELECT vote_id, SUM(IF(rate > 0, rate, 0)) t
-  FROM criteria_rate GROUP BY vote_id) x ON x.vote_id = v.id WHERE v.rate <> x.t GROUP BY v.round_id;
+-- votes, live and aside, whose rate differs from their criteria sum (S4 damage); before V83 only
+SELECT v.src, v.round_id, COUNT(*)
+  FROM (SELECT 'vote' src, id, round_id, rate FROM vote
+        UNION ALL SELECT 'vote_aside', id, round_id, rate FROM vote_aside) v
+  JOIN (SELECT vote_id, SUM(IF(rate > 0, rate, 0)) crit_sum FROM criteria_rate GROUP BY vote_id) x
+    ON x.vote_id = v.id
+ WHERE v.rate <> x.crit_sum GROUP BY v.src, v.round_id;
+```
+
+From V83 on (C2's U5), a vote rated in only some of its round's criteria has `rate` 0 by design,
+and the query above would list it as damage; one rated in part before U5 keeps its partial sum.
+Damage is then a rate that is neither its criteria sum nor U5's value (the sum of its round's
+criteria once every one is rated above 0, else 0):
+
+```sql
+-- after V83: S4 damage, live and aside
+SELECT d.src, d.round_id, COUNT(*) FROM (
+  SELECT v.src, v.round_id, v.id
+    FROM (SELECT 'vote' src, id, round_id, rate FROM vote
+          UNION ALL SELECT 'vote_aside', id, round_id, rate FROM vote_aside) v
+    JOIN (SELECT vote_id, SUM(IF(rate > 0, rate, 0)) crit_sum FROM criteria_rate GROUP BY vote_id) x
+      ON x.vote_id = v.id
+    JOIN round_criterion rc ON rc.round_id = v.round_id
+    LEFT JOIN criteria_rate cr ON cr.vote_id = v.id AND cr.criterion_id = rc.criterion_id
+   GROUP BY v.src, v.round_id, v.id, v.rate, x.crit_sum
+  HAVING v.rate <> x.crit_sum AND v.rate <> IF(MIN(IFNULL(cr.rate, 0)) > 0, SUM(cr.rate), 0)
+) d GROUP BY d.src, d.round_id;
 ```
 
 ### C1: vote integrity, no schema change (before P0)
@@ -199,7 +229,9 @@ SELECT v.round_id, COUNT(*) FROM vote v JOIN (SELECT vote_id, SUM(IF(rate > 0, r
   delete, in their transactions, after locking the votes; `RoundConflicts` locks votes before
   deleting rates. One migration deletes existing orphans (count from C0 in the commit message).
 - Optional repair of S4 damage: one migration recomputing `selection.rate` from the criteria for
-  the votes C0 lists (U12).
+  the votes C0 lists (U12), live and aside (`selection_deleted`/`vote_aside`); run after V83, to
+  U5's value (the sum once every criterion of the round is rated, else 0), for the votes the
+  "after V83" query lists.
 - Remove `CriteriaRate.batchInsert` and `SelectionJdbc.byRoundWithCriteria`.
 - Files: `LargeViewController`, `keyboardNav.scala.html`, `CriteriaRate`, `SelectionJdbc`,
   `ImageJdbc`, `RoundConflicts`, `conf/messages*` (none new expected).
@@ -919,5 +951,6 @@ The options as first written:
   criterion are dropped and sums recomputed).
 - **U11** Drop `vote.criteria_id` (`selection.criteria_id` before P0) and the old `criteria.contest` column [rec, after C0].
 - **U12** Repair votes whose `rate` differs from their criteria sum (S4 damage) by migration
-  [rec if C0 finds any], or leave history as is.
+  [rec if C0 finds any], or leave history as is. Live and aside votes both; after V83 by the
+  "after V83" damage query and to U5's value (C0, R223-1).
 - **Names' language:** free text per round in the contest's language [rec]; no message keys.

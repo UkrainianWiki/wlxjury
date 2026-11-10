@@ -178,6 +178,8 @@ a bulk writer its round, and a background recompute writes the counts):
   every delta, and READ COMMITTED keeps any plain read there current.
 - Inserts (`create`, `batchInsert`, so the distribution, the in-memory path, the Gatling fixture
   and the test helpers): `round_image` upsert per (round, page), `assigned = assigned + n`.
+  *Superseded by §16 (P2a): a vote insert marks its round (`RoundImageJdbc.addVoted`), and the
+  counts are recomputed from the votes, not added.*
 - Bulk writers recompute the pages they touch (`RoundImageJdbc.recompute(roundId, pageIds)`,
   a locking-read GROUP BY, then write): `moveVotesAside`/`moveVotesBack`, `moveVotes`,
   `removeImage`, `removeUnrated`, `RoundConflicts`, disqualify/requalify;
@@ -252,7 +254,8 @@ otherwise take the round after them (review B1).
 
 - File deleted on Commons: votes aside (as today), status `deleted`.
 - File restored on Commons: `restoreVotes` moves back only the rows whose `round_image` status
-  is `deleted`, then sets `in`. A disqualified round keeps its votes aside.
+  is `deleted`, then sets `in`. *Superseded by §13/§14 (P1, P1b): `restoreVotes` moves back every
+  vote aside of the restored file but a `dq` pair's (`notDisqualified`).* A disqualified round keeps its votes aside.
 - Disqualify: votes aside unchanged (ids kept, so `criteria_rate` survives), status `dq`,
   `dq_*` set.
 - Requalify: votes back with their exact rates, status `in`, `dq_*` cleared (the reason goes to
@@ -282,7 +285,8 @@ list's job column unchanged), with `params.mode`:
 - Jobs queued or running at deploy have no `mode`: they run as `fill` then `distribute` (their
   old behaviour).
 - Fill's anti-join: NOT EXISTS any `round_image` row of the round, whatever its status, so `dq`
-  and `deleted` files never come back. It replaces `notInRound`; P1 keeps the extra `vote` /
+  and `deleted` files never come back. It decides the inserts only: in re-apply mode the rows
+  already there are checked by a scan of their own (re-applying filters, below). It replaces `notInRound`; P1 keeps the extra `vote` /
   `vote_aside` check until the repair job reports no drift.
 - Fill freezes the previous rounds only while it runs (released with `close = false`);
   distribute freezes them again and closes them at the end, as creation does now.
@@ -290,15 +294,22 @@ list's job column unchanged), with `params.mode`:
 ### Count checks
 
 - Fill: the `round_image` rows expected (`imagesBefore + added`).
-- Distribute: every `in` row has its votes (`assigned` = the round's jurors per image after P2a;
-  before, EXISTS a vote), plus invariant 1. Replaces `imageCount`/`visibleImageCount`.
+- Distribute: per job, not one juror count for the whole round. The rows this job assigned have
+  its expected count (`assigned` = the jurors per image it distributed to, after P2a; before,
+  EXISTS a vote); every other `in` row keeps the `assigned` it had before the job. After a juror
+  is added, "Distribute new files" gives the new files the new count and the older files keep
+  theirs (below), so a check against the round's juror count would refuse a valid run (R223-1).
+  Plus invariant 1. Replaces `imageCount`/`visibleImageCount`.
 
 ### Re-applying filters (status paused, no votes in the round)
 
 - `Round.updateFilters` (new: `updateRound` changes only the name today) takes the round lock
   and checks that no job is active, then queues `fill` in re-apply mode.
-- Re-apply inserts the new matches and marks the rows it sees; Prune deletes the unseen `fill`
-  rows (D16). `list`, `manual` and `dq` rows are never pruned.
+- Re-apply first scans the round's existing `fill` rows against the new filters (keyset windows
+  by page id, the same per-image filters as Fill) and marks those that still pass; then Fill
+  inserts the new matches. The insert's anti-join skips every existing row, so it can't mark the
+  rows kept: marking only what it sees would prune every file that still passes (R223-1). Prune
+  then deletes the unmarked `fill` rows (D16). `list`, `manual` and `dq` rows are never pruned.
 - Its result lists +added / −removed, and for each removed file the filter that now rejects it.
 - Top-N: D17. Previous rounds' votes changed since the fill (a fingerprint of their counts in
   the job state): the review page warns, and "Distribute anyway" needs confirming (D18).
@@ -310,7 +321,8 @@ Fill (`added_how = new_files`) then distribute, on an active round; the round st
 Jurors see only files they have votes for; the organizers' all-jurors views skip undistributed
 rows (`assigned > 0`). The checkbox (D4) applies; without it the review page lists them as "new,
 not distributed". Adding a juror: new files rotate over the active jurors; existing images are
-not reassigned (as now).
+not reassigned (as now), so they keep their smaller `assigned`: the distribute count check is per
+job (count checks, above).
 
 ### UI
 
@@ -378,6 +390,7 @@ not reassigned (as now).
   round's rows instead of ROW_NUMBER.
 - Distribution: "selected by" → `approvals` (binary) or `rate_sum` (rated); `rejectedBy` →
   `SUM(rejections) < n`; top-N pages sort `round_image` rows (one per previous round and image).
+  *Superseded by §17 (P2b): a top-N stays on the votes (an exact consumer).*
 - Stays on `vote`: a juror's own lists and counts, `withVotes` (file list and CSV juror
   columns), `juryStat`, `roundUserStat`, juror membership. (`CriteriaRate.countOf` went with C2:
   a round's criteria come from `round_criterion`.)
