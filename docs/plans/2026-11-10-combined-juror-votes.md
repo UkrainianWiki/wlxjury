@@ -111,9 +111,12 @@ per-round choice keeps contests that don't want it as they are; and per-juror vo
 dropped:
 - *A minimum number of jurors or votes* (a round minimum, files with fewer votes left out of the
   ranked list, a "too few votes" line). The maintainer's reason: a juror can work out another
-  juror's vote only when exactly two jurors rated a file. Most rated rounds have at least three
-  jurors per file, and where a file is distributed to only two, the juror still can't see who the
-  other juror is, so nothing is attributed to a person.
+  juror's vote only when exactly two jurors rated a file. Most rated rounds have three or more
+  jurors, and where a file is distributed to only two, the juror still can't see who the other
+  juror is, so nothing is attributed to a person. One known case remains on record: when all of
+  a file's other jurors voted the same way (a yes/no file where all 3 said yes, or a 3–0 rated
+  file), the totals reveal their votes; they are still not attributed to anyone, so the decision
+  stands.
 - *Hiding the results while a later round built from this one is open* (following the chain of
   previous rounds, a 403 for its jurors). Replaced by the admin's choice of when to switch the
   option on (§10).
