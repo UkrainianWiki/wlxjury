@@ -119,8 +119,12 @@ the restored data's container publishes on `127.0.0.1` only, with passwords gene
 container (none in the script); the dump is kept in `${XDG_CACHE_HOME:-$HOME/.cache}/wlxjury/`
 (mode 700, checked to be the user's own and not a symlink), written to a `mktemp` file there
 (mode 600) and renamed over `prod.sql.gz` (triage R193-4). Its mysqldump doesn't force TLS (the
-mariadb 10.6 client's defaults), so `.env`'s `WLXJURY_DB_HOST` must be the local end of an SSH
-tunnel to the DB server, or a server with TLS: the script's header and `--help` say so.
+mariadb 10.6 client's defaults), so the connection must go through an SSH tunnel to the DB
+server, or to a server with TLS. mysqldump runs in a container, where `127.0.0.1` is the
+container: for a tunnel on the user's machine, `.env`'s `WLXJURY_DB_HOST` is
+`host.docker.internal:<port>` with Docker Desktop (Windows, macOS), and `127.0.0.1:<port>` on
+Linux, where the script runs the client with `--network host`. The script's header and `--help`
+say so.
 
 **Guards.** `scripts/deployment/test_release_script.py`. Planned: G12 also flags `MYSQL_PWD`
 and `--password=` in `scripts/`.

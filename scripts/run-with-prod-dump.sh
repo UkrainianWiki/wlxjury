@@ -15,9 +15,12 @@
 # generated for each new container (docs/security/secure-coding.md §4).
 #
 # The dump's connection to the production DB is not encrypted by this script (the mariadb
-# 10.6 client's defaults): WLXJURY_DB_HOST in .env must be the local end of an SSH tunnel to
-# the DB server (for example `ssh -L 3306:127.0.0.1:3306 <server>`), or a server that takes TLS
-# with a verified certificate. Never point it at the DB server across a network directly.
+# 10.6 client's defaults): it must go through an SSH tunnel to the DB server (for example
+# `ssh -L 3306:127.0.0.1:3306 <server>` on this machine), or to a server that takes TLS with
+# a verified certificate. Never point it at the DB server across a network directly.
+# mysqldump runs in a container, where 127.0.0.1 is the container itself: with Docker
+# Desktop (Windows, macOS) WLXJURY_DB_HOST is host.docker.internal:<tunnel port>; on Linux the
+# client container shares this machine's network (--network host), so it is 127.0.0.1:<port>.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -35,8 +38,10 @@ Usage:
 
 Only the dump reads .env (WLXJURY_DB_HOST as host or host:port, WLXJURY_DB,
 WLXJURY_DB_USER, WLXJURY_DB_PASSWORD): --skip-dump and --reuse-container need none.
-WLXJURY_DB_HOST must be the local end of an SSH tunnel to the DB server, or a server
-that takes TLS: the dump's connection is not encrypted by this script.
+The dump's connection is not encrypted by this script: it must go through an SSH tunnel
+to the DB server, or to a server that takes TLS. mysqldump runs in a container: for a
+tunnel on this machine, WLXJURY_DB_HOST is host.docker.internal:<port> with Docker
+Desktop (Windows, macOS), 127.0.0.1:<port> on Linux (the container uses --network host).
 The dump is kept in ${XDG_CACHE_HOME:-$HOME/.cache}/wlxjury/prod.sql.gz (directory mode 700).
 EOF
 }
@@ -284,9 +289,13 @@ else
     # --defaults-extra-file must be the client's first option. MSYS_NO_PATHCONV:
     # Git Bash would rewrite the container paths as Windows ones. The dump is created
     # mode 600 (umask 077 in this subshell), whatever the caller's umask.
+    # On Linux the client shares this machine's network, so that a tunnel on 127.0.0.1 is
+    # reached; Docker Desktop reaches it as host.docker.internal (see the header).
+    local network=()
+    if [[ "$(uname -s)" == Linux ]]; then network=(--network host); fi
     (
       umask 077
-      MSYS_NO_PATHCONV=1 docker run --rm \
+      MSYS_NO_PATHCONV=1 docker run --rm ${network[@]+"${network[@]}"} \
         -v "$(host_path "$SECRETS_DIR/prod.cnf"):/etc/wlxjury-dump/client.cnf:ro" \
         mariadb:10.6 \
         mysqldump \
