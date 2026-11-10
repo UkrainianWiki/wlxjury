@@ -113,6 +113,9 @@ class FakeCommonsSource(
     names.flatMap(n => templates.get(n).flatMap(org.scalawiki.dto.Image.userIn).map(n -> _)).toMap
   }
 
+  /** Files sent without their image info, which Commons does now and then. */
+  @volatile var noInfo: Set[Long] = Set.empty
+
   private def page(f: FakeFile, info: Boolean, text: Boolean): Page = {
     val i = f.image
     Page(
@@ -121,7 +124,7 @@ class FakeCommonsSource(
       title = i.title,
       revisions = if (text) Page.revisionsFromText(f.text) else Nil,
       images =
-        if (!info) Nil
+        if (!info || noInfo.contains(i.pageId)) Nil
         else
           Seq(
             org.scalawiki.dto.Image(

@@ -164,6 +164,16 @@ Developed 2026-11-02 to 2026-11-03, PRs #232–#236.
   an admin of another contest who adds it then sends an invitation by email, which the
   address's owner accepts. Not offered for accounts without an email where Wikimedia sign-in is
   available (they sign in with it).
+- **An international import's countries** (admins; developed 2026-11-10, triage R207-1): a
+  winners page's files are limited to those in the contest's country categories when any of the
+  page's files is in one (before: when the countries' root category had files of its own, so a
+  root holding only the countries' categories imported the logos and icons too, and no file got
+  its country). When none is, all the page's files are imported, and the import's status says
+  so ("no file in a country category: none left out"). A national contest's page import is
+  filtered as before: its root is the international one, which has files of its own on Commons.
+  A category or template import of the international contest now gives its files their
+  countries too. A file Commons sends without its image info no longer fails the import (and
+  every retry): it is left out, and the other files get their countries.
 
 **Development**
 
