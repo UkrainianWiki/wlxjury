@@ -678,6 +678,68 @@ class LargeImageSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
+    // the files' authors and descriptions, as JSON, only to those the page shows authors to
+    // (User.canViewOrgInfo, secure-coding.md §22)
+    def withAuthors(): Unit = DB.autoCommit { implicit s =>
+      sql"update images set author = 'Photographer Name', description = 'Taken by Photographer Name'".update.apply()
+    }
+
+    def jsonImages(result: scala.concurrent.Future[play.api.mvc.Result]) =
+      contentAsJson(result).as[Seq[play.api.libs.json.JsValue]].map(f => (f \ "image").as[play.api.libs.json.JsObject])
+
+    "not show a round's juror the files' authors or descriptions, as JSON or as the page" in {
+      testDbApp { app =>
+        val (roundA, _, juror1, _, _, _, _, _, _, images) = setUpContests()
+        withAuthors()
+
+        val json = large(app, juror1.email, roundA.getId, juror1.getId, images.head.pageId, json = true)
+        status(json) === OK
+        val files = jsonImages(json)
+        files.map(f => (f \ "pageId").as[Long]) === images.map(_.pageId)
+        files.flatMap(_.keys).toSet must not(contain("author"))
+        files.flatMap(_.keys).toSet must not(contain("description"))
+        contentAsString(json) must not(contain("Photographer"))
+
+        val page = large(app, juror1.email, roundA.getId, juror1.getId, images.head.pageId)
+        status(page) === OK
+        contentAsString(page) must not(contain("Photographer"))
+      }
+    }
+
+    "show the files' authors and descriptions as JSON to the contest's organizer and admin, and root, as the page does" in {
+      testDbApp { app =>
+        val (roundA, _, juror1, _, _, _, organizer, admin, root, images) = setUpContests()
+        withAuthors()
+
+        Seq(organizer, admin, root).foreach { viewer =>
+          val json = large(app, viewer.email, roundA.getId, juror1.getId, images.head.pageId, json = true)
+          status(json) === OK
+          jsonImages(json).map(f => (f \ "author").asOpt[String]) === images.map(_ => Some("Photographer Name"))
+          jsonImages(json).map(f => (f \ "description").asOpt[String]) === images.map(_ => Some("Taken by Photographer Name"))
+          contentAsString(large(app, viewer.email, roundA.getId, juror1.getId, images.head.pageId)) must
+            contain("Photographer Name")
+        }
+        ok
+      }
+    }
+
+    "show a juror of a round open to its jurors (juryOrgView) the files' authors as JSON, as the page does" in {
+      testDbApp { app =>
+        val (roundA, _, juror1, _, _, _, _, _, _, images) = setUpContests()
+        withAuthors()
+        val open = roundDao.create(Round(None, 2, Some("Open round"), contestId = roundA.contestId,
+          rates = Round.ratesById(5), active = true, juryOrgView = true))
+        open.addUsers(Seq(RoundUser(open.getId, juror1.getId, "jury", active = true)))
+        createSelection(images, rate = 3, user = juror1, round = open)
+
+        val json = large(app, juror1.email, open.getId, juror1.getId, images.head.pageId, json = true)
+        status(json) === OK
+        jsonImages(json).map(f => (f \ "author").asOpt[String]) === images.map(_ => Some("Photographer Name"))
+        contentAsString(large(app, juror1.email, open.getId, juror1.getId, images.head.pageId)) must
+          contain("Photographer Name")
+      }
+    }
+
     "refuse another juror of the round that juror's votes, as the round's gallery does" in {
       testDbApp { app =>
         implicit val materializer: Materializer = app.materializer

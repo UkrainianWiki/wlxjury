@@ -614,7 +614,8 @@ the contest's admins and organizers, and the round's jurors when the round has `
 and the juror list are for `canViewOrgInfo`, and only of jurors of that round
 (`GalleryService.viewerRounds` / `mayViewRound` / `viewAs`, otherwise 404; CLAUDE.md "Own
 votes"). File authors are shown under the same condition (`GalleryController`'s `showAuthor`,
-`large.scala.html`). *Why:* votes and authors are the organizers' information; a round shares
+`large.scala.html`; the large view's JSON leaves out the author and the description, which may
+name them, `LargeViewController.showFile`). *Why:* votes and authors are the organizers' information; a round shares
 them with its jurors only when its organizers choose to (`juryOrgView`).
 
 **Rule: conflicts of interest and lobbying.** The tool shows a round's jurors and votes only
