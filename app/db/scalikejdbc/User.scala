@@ -1,7 +1,7 @@
 package db.scalikejdbc
 
 import javax.mail.internet.InternetAddress
-import org.intracer.wmua.HasId
+import org.intracer.wmua.{HasId, LoginText}
 import scalikejdbc.{DBSession, ResultName, WrappedResultSet, insert, select, sqls}
 
 import java.time.ZonedDateTime
@@ -52,7 +52,7 @@ case class User(
   override def toString: String =
     scala.runtime.ScalaRunTime._toString(copy(password = password.map(_ => "***")))
 
-  def emailLo: String = email.trim.toLowerCase
+  def emailLo: String = LoginText.email(email)
 
   def emailVerified: Boolean = emailVerifiedAt.isDefined
 
@@ -223,7 +223,7 @@ object User extends CRUDMapper[User] {
   /** users.email as stored: none (a user added by wiki account only) is NULL (V67), so any
     * number of such users fit the unique key.
     */
-  def storedEmail(email: String): Option[String] = Option(email).map(_.trim.toLowerCase).filter(_.nonEmpty)
+  def storedEmail(email: String): Option[String] = Option(email).map(LoginText.email).filter(_.nonEmpty)
   val LANGS = Map("en" -> "English", "fr" -> "Français", "ru" -> "Русский", "uk" -> "Українська")
 
   def unapplyEdit(user: User): Option[
@@ -274,7 +274,7 @@ object User extends CRUDMapper[User] {
   ): User = {
     new User(
       fullname,
-      email.trim.toLowerCase,
+      LoginText.email(email),
       Some(id),
       roles.fold(Set.empty[String])(Set(_)),
       password,
@@ -291,11 +291,16 @@ object User extends CRUDMapper[User] {
 
   val emailConstraint = Constraints.emailAddress
 
+  /** "Import users": an email (with a name, `Name <email>`) or else a wiki account per token,
+    * tokens split at commas, `|` and line ends. Each token, the address and the wiki account
+    * without its `User:` prefix are cleaned ([[LoginText.clean]]): a pasted non-breaking space
+    * or tab around an email must not turn it into a wiki account named with it.
+    */
   def parseList(usersText: String): Seq[User] = {
 
     def fromUserName(str: String): Option[User] = {
-      val withoutPrefix = str.replaceFirst("User:", "")
-      Some(withoutPrefix).filter(_.trim.nonEmpty).map { _ =>
+      val withoutPrefix = LoginText.clean(str.replaceFirst("User:", ""))
+      Some(withoutPrefix).filter(_.nonEmpty).map { _ =>
         User(
           id = None,
           contestId = None,
@@ -307,21 +312,22 @@ object User extends CRUDMapper[User] {
     }
 
     def fromInternetAddress(internetAddress: InternetAddress): Option[User] = {
-      Constraints.emailAddress()(internetAddress.getAddress) match {
+      val address = LoginText.clean(internetAddress.getAddress)
+      Constraints.emailAddress()(address) match {
         case Valid =>
           Some(
             User(
               id = None,
               contestId = None,
               fullname = Option(internetAddress.getPersonal).getOrElse(""),
-              email = internetAddress.getAddress
+              email = address
             )
           )
         case Invalid(_) => None
       }
     }
 
-    usersText.split("[,|\n|]|,[ ]*\n").flatMap { str =>
+    usersText.split("[,|\n|]|,[ ]*\n").map(LoginText.clean).filter(_.nonEmpty).flatMap { str =>
       Try {
         InternetAddress.parse(str, false)
       }.toOption.flatMap(_.headOption.flatMap(fromInternetAddress)).orElse(fromUserName(str))
@@ -413,13 +419,13 @@ object User extends CRUDMapper[User] {
         user
     }
 
-  /** The account a login (a session's, or the sign-in form's) names: by email, trimmed and
-    * lowercased (P18), else by wiki account, which must name exactly one account (N4: the
+  /** The account a login (a session's, or the sign-in form's) names: by email, cleaned
+    * ([[LoginText.clean]]: also a pasted non-breaking space) and lowercased (P18), else by wiki account, which must name exactly one account (N4: the
     * name is not unique; an ambiguous one names no one, rather than the oldest account with
     * it). Deleted accounts are never found (P14).
     */
   def byUserName(username: String, underscoresAsSpaces: Boolean = false): Option[User] = {
-    val unameTrimmed = username.trim.toLowerCase
+    val unameTrimmed = LoginText.email(username)
     val users = Constraints.emailAddress()(unameTrimmed) match {
       case Valid => findByEmail(unameTrimmed)
       // sign-in only: as typed, and with underscores as spaces (how names are stored since S2).
@@ -758,13 +764,14 @@ object User extends CRUDMapper[User] {
   private val InvalidWikiAccountChars: Set[Char] = "#<>[]|{}/@:=".toSet
 
   /** A wiki account name as MediaWiki stores it (N4): without a `User:` prefix, underscores as
-    * spaces, runs of spaces as one, trimmed, the first letter upper case. Left: a message key
+    * spaces, runs of spaces as one, trimmed (first of any pasted space, [[LoginText.clean]]),
+    * the first letter upper case. Left: a message key
     * (an invalid character, a control character, too long). Right(None): blank.
     */
   def normalizeWikiAccount(input: String): Either[String, Option[String]] = {
     // one normalisation for names stored here and the CoI filter's keys (L5): CoiMembers.normalize
     // (title case of the first letter, as MediaWiki: Georgian Mkhedruli stays, `ǆ` becomes `ǅ`)
-    val normalized = CoiMembers.normalize(input)
+    val normalized = CoiMembers.normalize(LoginText.clean(input))
     if (normalized.isEmpty) Right(None)
     else if (normalized.exists(c => InvalidWikiAccountChars.contains(c) || Character.isISOControl(c)))
       Left("wiki.account.invalid")

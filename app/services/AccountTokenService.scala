@@ -1,6 +1,7 @@
 package services
 
 import db.scalikejdbc.{AccountToken, AccountTokenJdbc, ApiTokenJdbc, User, UserContestJdbc, UserIdentityJdbc}
+import org.intracer.wmua.LoginText
 import play.api.Logger
 import scalikejdbc._
 
@@ -63,7 +64,7 @@ object AccountTokenService {
       shared: Boolean = false
   )(implicit session: DBSession = AutoSession): (Long, String) = {
     val token = generate()
-    val id = AccountTokenJdbc.create(userId, purpose, hash(token), email.trim.toLowerCase, contestId, role, createdBy,
+    val id = AccountTokenJdbc.create(userId, purpose, hash(token), LoginText.email(email), contestId, role, createdBy,
       validSeconds(purpose), shared)
     logger.info(
       s"account_token_created purpose=$purpose tokenId=$id accountId=$userId" +

@@ -814,8 +814,10 @@ class UserController @Inject()(cc: ControllerComponents,
     mapping(
       "id" -> longNumber,
       "fullname" -> nonEmptyText,
-      "wikiAccount" -> optional(text),
-      "email" -> text.verifying(Constraint[String]("constraint.email") { e =>
+      // as pasted from a spreadsheet or messenger: without surrounding spaces, tabs or
+      // non-breaking spaces ([[LoginText.clean]]), before the email is checked
+      "wikiAccount" -> optional(text).transform[Option[String]](_.map(LoginText.clean).filter(_.nonEmpty), identity),
+      "email" -> text.transform[String](LoginText.clean, identity).verifying(Constraint[String]("constraint.email") { e =>
         if (e.trim.isEmpty) Valid else Constraints.emailAddress()(e)
       }),
       // a new password: not blank, at most 72 bytes (bcrypt's limit)

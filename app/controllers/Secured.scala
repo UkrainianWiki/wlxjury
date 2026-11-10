@@ -449,8 +449,8 @@ object Secured {
   /** The roles [[Secured.withAuth]] lets in by default: any page's. */
   val ViewerRoles: Set[String] = User.ADMIN_ROLES ++ Set("jury", "organizer")
 
-  /** The session's user name as users are looked up by: the login stores it as typed. */
-  def normalizeUserName(userName: String): String = userName.trim.toLowerCase
+  /** The session's user name as users are looked up by ([[org.intracer.wmua.LoginText.email]]). */
+  def normalizeUserName(userName: String): String = org.intracer.wmua.LoginText.email(userName)
 
   /** The request's session user, in the session's current contest
     * ([[Secured.userFromRequest]]); none if the session is past its absolute or idle limit

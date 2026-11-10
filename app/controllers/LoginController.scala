@@ -2,9 +2,11 @@ package controllers
 
 import db.scalikejdbc.{AccountTokenJdbc, User}
 import modules.SignInExecutionContext
+import org.intracer.wmua.LoginText
 import play.api.Logger
 import play.api.data.Forms._
 import play.api.data._
+import play.api.data.validation.Constraints
 import play.api.i18n.I18nSupport
 import play.api.mvc._
 import services.oauth.OAuthSettings
@@ -293,7 +295,9 @@ class LoginController @Inject() (
   /** The password is checked once, by [[auth]] ([[User.login]]), not by the form. */
   val loginForm: Form[(String, String)] = Form(
     tuple(
-      "login" -> nonEmptyText,
+      // an email or wiki account as pasted: without surrounding spaces, tabs or non-breaking
+      // spaces ([[LoginText.clean]]), as the session then stores it. The password as typed
+      "login" -> text.transform[String](LoginText.clean, identity).verifying(Constraints.nonEmpty()),
       "password" -> nonEmptyText
     )
   )
@@ -314,7 +318,7 @@ class LoginController @Inject() (
   val setupForm: Form[(String, String, String, String)] = Form(
     tuple(
       "token" -> nonEmptyText,
-      "login" -> email.transform[String](_.trim.toLowerCase, identity),
+      "login" -> text.transform[String](LoginText.email, identity).verifying(Constraints.emailAddress()),
       "password" -> newPassword,
       "repeat.password" -> nonEmptyText
     ).verifying("passwords.differ", f => f._3 == f._4)
