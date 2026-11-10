@@ -6,7 +6,9 @@
         linkedAccountsCard: Option[controllers.LinkedAccountsCard] = None,
         passwordLinks: Seq[db.scalikejdbc.AccountToken] = Nil,
         mayShareLink: Boolean = false,
-        signsInWithWikimedia: Option[String] = None
+        signsInWithWikimedia: Option[String] = None,
+        maySetPassword: Boolean = false,
+        notice: Option[String] = None
 )(implicit flash: Flash, messages: Messages, req: RequestHeader)
 
 @import helper._
@@ -42,6 +44,10 @@
 
                 @flash.get("account-notice").map { msg =>
                     <div class="alert alert-info" role="status">@msg</div>
+                }
+                @* what this save did before it was refused (the other fields saved) *@
+                @for(text <- notice) {
+                    <div class="alert alert-info" role="status">@text</div>
                 }
 
                 @if(editUserForm.hasGlobalErrors) {
@@ -104,7 +110,8 @@
                     }
 
                     @* one's own password: a new one, and the current one for it or for a new email (N2).
-                       Another account's password is never set here: root mails a link (reset password) *@
+                       Another account's: "Set password" where a link to share would be allowed
+                       (maySetPassword, UserController.setPasswordRefusal); blank changes nothing *@
                     @if(ownProfile) {
                         <div class="mb-3">
                             <label for="password" class="form-label">@Messages("new.password")</label>
@@ -122,6 +129,16 @@
                             }
                         </div>
                     } else {
+                        @if(maySetPassword && !editUserForm("id").value.contains("0")) {
+                        <div class="mb-3" id="set-password">
+                            <label for="password" class="form-label">@Messages("password.set.by.admin")</label>
+                            @defining(editUserForm("password").errors) { passwordErrors =>
+                            <input type="password" class="form-control @if(passwordErrors.nonEmpty){is-invalid}" id="password" name="password" autocomplete="new-password" value="" aria-describedby="password_help@if(passwordErrors.nonEmpty){ password_error}" @if(passwordErrors.nonEmpty){aria-invalid="true"}>
+                            <div class="form-text" id="password_help">@Messages("password.set.by.admin.help")</div>
+                            @for(error <- passwordErrors.headOption) {<div class="invalid-feedback" id="password_error">@Messages(error.message, error.args: _*)</div>}
+                            }
+                        </div>
+                        }
                         @if(user.hasRole(User.ROOT_ROLE) && !editUserForm("id").value.contains("0")) {
                             @flash.get("password-reset").map { msg =>
                                 <div class="alert alert-success" role="status">@msg</div>

@@ -375,9 +375,34 @@ password); otherwise an add becomes an invitation. A wiki-account match never at
 access role to an unverified wiki account. Emails are trimmed and lowercased; wiki names
 normalised and unique. Links are 32 random bytes, stored as SHA-256, single use, expiring,
 bound to account and address. Every refused link gives the same page (no account
-enumeration). One's own password or email change needs the current password; nobody types
-another's password: another account's password is set only through a single-use link, mailed
-(an invitation, root's reset) or **shared**: "Create a link to share" (`ShareLinkService`, V94's
+enumeration). One's own password or email change needs the current password. Another account's
+password is set through a single-use link, mailed (an invitation, root's reset) or shared (below),
+or typed in by root or an admin on the account's edit page (**Set password**,
+`AccountTokenService.setPasswordByAdmin`): S2 removed this, and it is back since stack/94 at the
+maintainer's request (2026-11-10: "while we test and learn new ways of login and reset password,
+let's keep good old user password edited by an admin/root"; admins onboard people personally
+because mail is unreliable). Its safeguards: exactly the shared reset link's rule below
+(`ShareLinkService.mayCreate` for `password_reset`, root included for its checks not about who
+asks). Who may not gets: an organizer, a juror, or an admin posting for someone who isn't a
+member of their current contest, the edit form's usual redirect to the start page (303, no log
+line, nothing written: `editableUser` finds no account to edit); an admin refused by the rule
+(another admin, root, themselves through another id, an account with ties outside their contests,
+an inactive member), the 403 denial page with a WARN line on `security.authz`; for an account the
+rule refuses for a reason not about who asks (deleted; or, for root or an admin the rule otherwise
+allows, without an email while Wikimedia sign-in is offered, or no name to sign in with), the form
+again with a message (400). The rule is checked again in one quiet transaction (the hash stays out
+of the SQL log) under the account's row lock, with the same responses (the rest of the form is
+saved by then, and if it changed anything they say so: `password.set.others.saved`); it does exactly what accepting a shared link does (the shared
+`AccountTokenService.applyProof`: `email_verified_at` and `wiki_account_verified_at` cleared,
+`auth_version` bumped, API tokens revoked, identities unlinked, every unused link revoked, pending
+roles only those the setter may give); never with an email or role change in the same save (a role
+is decided on the account as it was before the save, verified); the password is set last, after
+the rest of the form is saved, so a failure there leaves it unchanged; a bcrypt hash of at most 72
+bytes (`PasswordHasher.newPassword`), `Busy` a 503; and a `security.account` line by id only
+after the commit (`password_set_by_admin accountId= byAccountId= contestId= emailProven=false
+sessionsEnded=true apiTokensRevoked= identitiesUnlinked= linksRevoked= memberships=`;
+`password_set_by_admin_refused reason= accountId= byAccountId=` when refused under the lock). A shared
+link: "Create a link to share" (`ShareLinkService`, V94's
 `account_token.shared`) shows the same kind of link once, in the POST's response (`no-store`,
 no referrer; never stored, logged, flashed or put in the session), for the admin to pass on
 personally. A new link of the purpose, mailed or shared, revokes the account's unused ones. Root
@@ -401,17 +426,17 @@ creator may still give. Mail that is not the person's goes from `UserService.sys
 
 **Residual risk (accepted for now, 2026-11-05, for the user to decide):** a contest admin can add
 the email of a verified account with no ties (no membership, past work or invitation anywhere),
-which joins their contest directly (`User.mayTakeAccessRole`), and then share a reset for it. The
-link's holder gains the account's name and email and the owner is locked out; the account becomes
+which joins their contest directly (`User.mayTakeAccessRole`), and then share a reset for it, or
+set its password (**Set password**, the same rule). The link's holder (or the admin) gains the account's name and email and the owner is locked out; the account becomes
 unverified, so it can't be pulled into other contests (another contest's add mails an invitation,
 a wiki-account add is refused). Root's mailed reset, or a later mailed invitation, gives the
 address's owner the account back (its acceptance sets the password and ends the holder's sessions).
 
 **Example.** `UserService.addToContest` (results `NewAccount`, `JoinedContest`, `Invited`,
 `WikiAccountUnverified`); `services.AccountTokenService.check`; acceptance in one transaction
-with the token row locked; `ShareLinkService.refusal` (who may share a link).
+with the token row locked; `ShareLinkService.refusal` (who may share a link, or set a password).
 
-**Guards.** `AccountInvitationSpec`, `ShareLinkSpec`, `OwnAccountSpec`, `AccountReviewFixesSpec`, `SetupSpec`,
+**Guards.** `AccountInvitationSpec`, `ShareLinkSpec`, `AdminSetPasswordSpec`, `OwnAccountSpec`, `AccountReviewFixesSpec`, `SetupSpec`,
 `db.AccountVerificationMigrationSpec`, `MultiContestUserSpec`, `UserControllerSpec`.
 
 A Google or Wikimedia identity's first sign-in links to an account by the same rule

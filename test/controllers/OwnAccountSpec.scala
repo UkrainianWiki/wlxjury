@@ -13,8 +13,8 @@ import scala.concurrent.Future
 
 /** Security batch S2: one's own password or email changes only with the current password (N2),
   * a new email only once a link mailed to it is followed, without telling whether another
-  * account has it (N7); one's own wiki account is read-only; nobody sets another account's
-  * password; admins change another's email only for an invitee without a password; wiki
+  * account has it (N7); one's own wiki account is read-only (another account's password:
+  * [[AdminSetPasswordSpec]]); admins change another's email only for an invitee without a password; wiki
   * accounts are valid, normalised, unique on change, and encoded in links (N4); sessions of an
   * older auth version are refused; deleted accounts and ambiguous wiki names sign in no one
   * (P14, P18, N4).
@@ -168,20 +168,7 @@ class OwnAccountSpec extends PlaySpecification with PlayTestDb with AccountTestS
   }
 
   "another account [S-09]" should {
-    "never get its password set, by an admin or root" in {
-      testDbApp { implicit app =>
-        createContests(10)
-        val admin = account("admin@example.com", Some(10), "admin", verified = true)
-        val root = account("root@example.com", None, "no", root = true, verified = true)
-        val juror = account("juror@example.com", Some(10), "jury", password = Some("pw-juror"))
-        val mail = new RecordingMail
-
-        status(save(mail, admin, Some(10), other(juror, 10, "jury", "password" -> "taken-over"): _*)) === BAD_REQUEST
-        status(save(mail, root, Some(10), other(juror, 10, "jury", "password" -> "taken-over"): _*)) === BAD_REQUEST
-        User.login(juror.email, "pw-juror") must beSome
-        User.login(juror.email, "taken-over") must beNone
-      }
-    }
+    // its password, set by an admin or root where a link to share would be allowed: AdminSetPasswordSpec
 
     "have its email changed by an admin only while it is an invitee without a password, which gets a new invitation" in {
       testDbApp { implicit app =>

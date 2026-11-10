@@ -84,9 +84,15 @@ Developed 2026-11-02 to 2026-11-03, PRs #232–#236.
 
 **Features**
 
-- **Passwords are set only by their owner or through a link** (S2, V77 and V94, see also
-  "Accounts" above): no admin sets another's password. A wiki account shared by several accounts
-  signs in by email. Legacy SHA-1 passwords keep working for three months after the deploy (V81),
+- **Passwords are set by their owner, through a link, or by root or an admin** (S2, V77 and V94,
+  see also "Accounts" above). S2 had removed admin-set passwords; **"Set password" on another
+  account's edit page is back** (stack/94, the maintainer, 2026-11-10: "while we test and learn new
+  ways of login and reset password, let's keep good old user password edited by an admin/root"),
+  for root and, only where a link to share for a reset is allowed, contest admins (their own
+  active jurors and organizers). It does what using a shared link does: the person is signed out
+  everywhere, API tokens are revoked, Google and Wikimedia identities unlinked, unused links
+  revoked, and the email and wiki account unverified; logged as `password_set_by_admin` by id. A
+  wiki account shared by several accounts signs in by email. Legacy SHA-1 passwords keep working for three months after the deploy (V81),
   then need a reset. Sessions from before the deploy are upgraded for 30 days (V80).
 - **"Leave out conflicts of interest" on an open round only sets the flag** (P1b); disqualify on
   the stopped round's conflicts page, which keeps the votes (#244).
