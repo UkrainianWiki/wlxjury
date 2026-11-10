@@ -141,6 +141,12 @@ case class User(
       contestId.contains(round.contestId) &&
       (hasAnyRole(User.ADMIN_ROLES ++ User.ORG_COM_ROLES) || hasRole(User.JURY_ROLE) && round.juryOrgView)
 
+  /** Whether the user may vote in the round ([[controllers.Secured.VotePermission]]): their
+    * role in the round's contest is jury. Only their own vote rows, a round juror's, change.
+    */
+  def mayVoteIn(round: Round): Boolean =
+    hasAnyRole(User.VoterRoles) && contestId.contains(round.contestId)
+
   def description: String =
     Seq(fullname, wikiAccount.fold("")(u => "User:" + u), email).mkString(" / ")
 
@@ -157,6 +163,8 @@ case class User(
 object User extends CRUDMapper[User] {
   val JURY_ROLE = "jury"
   val JURY_ROLES = Set(JURY_ROLE)
+  /** Who may vote in a round of their contest ([[User.mayVoteIn]]): its jurors only. */
+  val VoterRoles: Set[String] = JURY_ROLES
   val ORG_COM_ROLES = Set("organizer")
   val ADMIN_ROLE = "admin"
   val ROOT_ROLE = "root"

@@ -71,6 +71,34 @@ class RoundStatTableViewSpec extends PlaySpecification {
             s"/filelist/round/${binaryRound.getId}/user/0/page/1?filter=$filter&sort=rate")))
     }
 
+    "show the jurors' pause buttons to the contest's admin only, and to others each juror's state as text" in {
+      val organizer = User("Org", "org@example.org", id = Some(8), roles = Set("organizer"), contestId = Some(1))
+      val otherAdmin = User("Other", "other@example.org", id = Some(7), roles = Set("admin"), contestId = Some(2))
+      val paused = idle.copy(active = Some(false))
+      def table(viewer: User) = Jsoup.parse(contentAsString(views.html.roundStatTable(viewer, ratedRound,
+        RoundStat(Seq(juror, paused), ratedRound, Seq(ratedRound), Map(juror.getId -> 3), Map.empty, 3, Map.empty))))
+      /** Each row's fourth cell, the state's. */
+      def states(doc: Document) = doc.select("tbody tr").asScala.toList.map(_.select("td").get(3))
+      val asAdmin = table(admin)
+      (asAdmin.select("form[id^=set-active-form-]").size must_== 2) and
+        (asAdmin.select("thead th").get(3).text must_== "start.stop") and
+        (asAdmin.select(".juror-voting").size must_== 0) and
+        // a paused juror's button resumes their voting
+        (states(asAdmin).map(_.select("button").attr("aria-label")) must_== List("juror.stop", "juror.start")) and
+        forall(Seq(organizer, otherAdmin, juror)) { viewer =>
+          val doc = table(viewer)
+          (doc.select("form[id^=set-active-form-]").size must_== 0) and
+            (doc.select("tbody button").size must_== 0) and
+            // the same columns, the state as text
+            (doc.select("thead th").size must_== 7) and
+            (doc.select("thead th").get(3).text must_== "juror.voting") and
+            (states(doc).map(_.attr("data-state")) must_== List("active", "paused")) and
+            (states(doc).map(_.text) must_== List("juror.voting.active", "juror.voting.paused")) and
+            (doc.select("tfoot th").first.attr("colspan") must_== "4") and
+            (doc.select("tbody tr").first.select("td").get(4).text must_== "3")
+        }
+    }
+
     "have no button inside a link" in {
       forall(Seq(ratedRound, binaryRound)) { round =>
         render(round).select("a button").size must_== 0

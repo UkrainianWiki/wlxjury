@@ -363,6 +363,7 @@ vote.error.failed=Votre vote n''a pas pu être enregistré. Réessayez.
 vote.error.reference=Référence : {0}
 vote.error.invalid.rate=Ce tour n''accepte pas cette note. Rechargez la page et votez à nouveau.
 vote.error.not.found=Ce fichier ne vous est plus attribué. Rechargez la page.
+vote.error.forbidden=Vous ne pouvez plus voter dans ce tour. Rechargez la page.
 job.status.denied=Pas d’accès à l’état de cette tâche.
 job.error.reference=la tâche s’est arrêtée sur une erreur. Si cela se reproduit, donnez aux administrateurs cette référence : {0}.
 job.error.unknown=la tâche s’est arrêtée sur une erreur.
@@ -472,6 +473,9 @@ round.start = Démarrer le tour
 round.stop = Arrêter le tour
 juror.start = Reprendre les votes du juré
 juror.stop = Suspendre les votes du juré
+juror.voting = Votes
+juror.voting.active = En cours
+juror.voting.paused = Suspendus
 
 # les jetons d''API personnels du profil (apiTokens.scala.html)
 api.tokens = Jetons d''API

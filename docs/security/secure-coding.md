@@ -253,6 +253,9 @@ Editing another account checks the editor's admin or root role in that account's
 (`UserController.saveUser` through `editableUser`: an admin only for members of their
 current contest; root any account).
 A juror sees only their own votes (`GalleryService.viewerRounds`, `mayViewRound`, `viewAs`).
+Only a juror of the round's contest votes, by any path (`Secured.VotePermission`, `User.mayVoteIn`:
+organizers are read-only apart from comments; admins and root without the jury role never vote),
+and only their own vote rows, which only the round's jurors have, change.
 A vote needs the round open to its jurors and the juror not stopped on it (`RoundUser.isStopped`:
 an inactive `round_user` row, P6); otherwise the answer of a stopped round, nothing written. The
 vote's update statements check the same, so a stop racing a vote wins.
@@ -263,7 +266,7 @@ never logged, flashed, put in a URL or stored in plain text (SHA-256 only, §3).
 model drifts from the first, and a token is a password. *Source:* api-auth
 plan (`98a8a79e:docs/plans/2026-11-01-api-auth.md`), "Invariants".
 
-**Example.** `GalleryController.selectWS`: `withAuthJson(roundPermission(..., roundId))`,
+**Example.** `GalleryController.selectWS`: `withAuthJson(Secured.VotePermission(roundId))`,
 then the round open to jurors, then only the juror's own selection; `ImageDiscussionController
 .addComment` checks the round's contest via `Secured.inContest` and `mayComment`.
 
