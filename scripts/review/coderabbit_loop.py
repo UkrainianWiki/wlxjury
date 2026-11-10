@@ -7,13 +7,20 @@ For each PR in --first..--last (in number order) without a CodeRabbit review: po
 The acknowledgement ("Action performed: Review triggered", later edited to "Review finished") and
 the summary comment's "Currently processing" edit mean the review is running: keep waiting.
 
-"Review finished" with no review submitted after the request (FINISHED_GRACE after the edit):
-CodeRabbit's reviews are incremental and it has reviewed these commits before (seen on #215 and
-#217, 2026-11-10, where it submitted no review object at all). The loop then posts
-`@coderabbitai full review` once for that PR and waits for it like any request (same limits,
-retries and timeouts; the retries start again from 0). A command reply saying "already reviewed"
-or "no new commits" is handled the same way. If the full review also ends without a review, the
-PR is recorded as "no review available" and the loop goes on with the next PR.
+"Review finished" with no review submitted after the request, FINISHED_GRACE (5 min) after that
+edit, has two meanings:
+  - clean: CodeRabbit reviewed the PR and found nothing, so it submits no review object. Only the
+    summary comment shows it: edited after the request to "No actionable comments were generated
+    in the recent review", with `<!-- final_review_risk_coverage:{…"coveredCommitId":"<head
+    sha>","kind":"reviewed"} -->` naming the PR's current head (#215 and #217, 2026-11-10: the
+    summary edit came 4–5 s before the "Review finished" edit). Recorded as "clean" (reviewed,
+    0 comments, nothing to triage) and counted toward --batch. A PR whose summary already
+    covers its head this way is skipped like a reviewed one.
+  - otherwise (no such summary edit): the loop posts `@coderabbitai full review` once for that PR
+    and waits for it like any request (same limits, retries and timeouts; the retries start again
+    from 0). A command reply saying "already reviewed" or "no new commits" (outside the
+    blockquoted note) is handled the same way. If the full review also ends without a review,
+    the PR is recorded as "no review available" and the loop goes on with the next PR.
 
 Limits:
   - "Action not completed … Review rate limited." (the reply this plan sends; no time in it): wait
@@ -21,8 +28,8 @@ Limits:
     times, then stop;
   - "available in N minutes" / "Please wait **N minutes and S seconds**" (review or chat-message
     limit): wait that long plus 2 minutes and ask again (it counts as a retry too).
-Exits after --batch completed reviews (a completed full review counts; a PR with no review
-available does not), so they can be triaged before it is started again, and on
+Exits after --batch completed reviews (a completed full review or a clean one counts; a PR with
+no review available does not), so they can be triaged before it is started again, and on
 a quota/plan message, too many limit retries, a stated wait over 3 hours, no reply to the command
 in 30 minutes, no review 3 hours after the request, or anything unexpected.
 
@@ -33,23 +40,27 @@ Only CodeRabbit's replies to a command count: issue comments created after the r
 `<!-- This is an auto-generated reply by CodeRabbit -->` and either the
 `<!-- CodeRabbit review command invocation: … -->` marker or a "Rate Limit Exceeded" heading. The
 walkthrough/summary comment (`<!-- This is an auto-generated comment: summarize by coderabbit.ai -->`)
-is never matched: it is about the PR, and may mention rate limits as a finding.
+is never matched as a reply: it is about the PR, and may mention rate limits as a finding. Only
+its `final_review_risk_coverage` marker is read, for the clean case above.
 
 Progress is saved to --state (default target/review/requests.json). The file is only a log: with
-it missing, the loop rebuilds what it needs from GitHub. A PR that has any CodeRabbit review is
-skipped, and a PR whose latest `@coderabbitai` request by us has no answer yet is treated as
-already requested (it waits instead of posting again); after a limit reply it waits out the
+it missing, the loop rebuilds what it needs from GitHub. A PR that has any CodeRabbit review, or
+a summary covering its head as "reviewed" (clean), is skipped, and a PR whose latest
+`@coderabbitai` request by us has no answer yet is treated as already requested: it waits
+instead of posting again, and its answer is handled as for a new request (a limit pauses and
+counts as a retry, no reply stops with exit 2, and so on). After a limit reply it waits out the
 spacing from that reply before posting again (the same command: `review` or `full review`).
 A latest `@coderabbitai review` that finished without a review gets `@coderabbitai full review`;
 a latest `@coderabbitai full review` that finished without a review is "no review available".
 
 Without --post it only reads GitHub and prints what it would do next (--dry-run is accepted and
-means the same); it goes past PRs with no review available and stops at the first PR it would
-post on or wait for. --self-test checks the reply matching against sample comments, and the
-full-review path against a simulated CodeRabbit, and exits.
+means the same); it goes past clean PRs and PRs with no review available and stops at the first
+PR it would post on or wait for. --self-test checks the reply and summary matching against sample
+comments, and the clean and full-review paths against a simulated CodeRabbit, and exits.
 """
 import argparse
 import datetime
+import json
 import re
 import pathlib
 import sys
@@ -71,6 +82,7 @@ COMMAND_MARKER = "<!-- CodeRabbit review command invocation"
 REVIEW = "@coderabbitai review"
 FULL = "@coderabbitai full review"
 NO_REVIEW = "no review available"
+CLEAN = "clean"              # reviewed at the head with 0 comments: only the summary says so
 
 
 def now():
@@ -106,22 +118,29 @@ def command_replies(comments, since):
 
 
 def classify(body):
-    """What a reply to our command says: 'limit', 'quota', 'skip', 'full' (ask for a full review),
-    'finished', 'processing' or 'unexpected'."""
+    """What a reply to our command says: 'limit', 'quota', 'skip', 'finished', 'processing',
+    'full' (refused as already reviewed: ask for a full review) or 'unexpected'.
+
+    The boilerplate note on every command reply ("> Note: CodeRabbit is an incremental review
+    system and does not re-review already reviewed commits …") is a blockquote: 'finished',
+    'processing' and 'full' are read with every blockquote line left out, so a reworded note can't
+    turn a reply into 'full', and 'finished'/'processing' are tested before 'full'."""
     t = text(body)
-    # the boilerplate note on every command reply mentions "incremental": leave it out
     t = re.sub(r"> ?Note: CodeRabbit is an incremental review system.*?(paused\.|$)", "", t, flags=re.I).strip()
+    main = text(re.sub(r"(?m)^[ \t]*>.*$", "", body or ""))
     if re.search(r"monthly|plan quota|upgrade your plan|quota", t, re.I):
         return "quota"
     if re.search(r"rate limited|rate limit exceeded|review limit reached|available in \W*\d+ ?minute|please wait", t, re.I):
         return "limit"
     if re.search(r"review (skipped|failed)|no reviewable|too large", t, re.I):
         return "skip"
-    if re.search(r"already reviewed|incremental|no new commits", t, re.I):
-        return "full"
-    if re.search(r"review (finished|completed)", t, re.I):
+    if re.search(r"review (finished|completed)", main, re.I):
         return "finished"
-    if re.search(r"review triggered|currently processing|action performed", t, re.I):
+    if re.search(r"review triggered|currently processing", main, re.I):
+        return "processing"
+    if re.search(r"\b(already been reviewed|already reviewed|no new commits)\b", main, re.I):
+        return "full"
+    if re.search(r"action performed", main, re.I):
         return "processing"
     return "unexpected"
 
@@ -144,9 +163,34 @@ def request_command(body):
     return FULL if re.match(r"@coderabbitai\s+full\s+review\b", (body or "").strip(), re.I) else REVIEW
 
 
-def finished_since(reply):
-    """When a "Review finished" reply got that text: its last edit."""
-    return ts(reply.get("updated_at") or reply["created_at"])
+def coverage(body):
+    """The summary comment's `final_review_risk_coverage` marker as a dict, or None."""
+    m = re.search(r"final_review_risk_coverage:\s*(\{.*?\})\s*-->", body or "")
+    if not m:
+        return None
+    try:
+        return json.loads(m.group(1))
+    except ValueError:
+        return None
+
+
+def clean_summary(comments, head):
+    """CodeRabbit's summary comment if its coverage marker says it reviewed `head` (the PR's head
+    sha), else None. With no review object, that is a review with 0 comments ("No actionable
+    comments were generated in the recent review"; #215 and #217, 2026-11-10)."""
+    for c in reversed(rabbit(comments)):
+        body = c.get("body") or ""
+        if SUMMARY_MARKER not in body:
+            continue
+        cov = coverage(body) or {}
+        if head and cov.get("coveredCommitId") == head and cov.get("kind") == "reviewed":
+            return c
+    return None
+
+
+def edited(c):
+    """A comment's last edit (for a "Review finished" reply: when it got that text)."""
+    return ts(c.get("updated_at") or c["created_at"])
 
 
 def no_review(ans):
@@ -170,10 +214,13 @@ class Loop:
         return [r for r in rabbit(self.hub.get_all(f"pulls/{n}/reviews"))
                 if r.get("submitted_at") and (since is None or ts(r["submitted_at"]) > since)]
 
-    def latest_request(self, n):
-        """(asked, command, reply): our latest `@coderabbitai` request, its command (REVIEW or
-        FULL) and CodeRabbit's latest reply to it (None if no reply yet), or None if we never asked."""
-        comments = self.hub.get_all(f"issues/{n}/comments")
+    def head(self, n):
+        return self.hub.get(f"pulls/{n}")["head"]["sha"]
+
+    def latest_request(self, comments):
+        """(asked, command, reply): our latest `@coderabbitai` request among a PR's issue comments,
+        its command (REVIEW or FULL) and CodeRabbit's latest reply to it (None if no reply yet), or
+        None if we never asked."""
         ours = [c for c in comments if c["user"]["login"] == OURS and (c["body"] or "").strip().startswith("@coderabbitai")]
         if not ours:
             return None
@@ -183,9 +230,10 @@ class Loop:
 
     def wait_answer(self, n, since):
         """Wait for CodeRabbit's answer to the request posted at `since`: ('review', id, count),
-        ('reply', kind, body) for a limit/quota/skip/full/unexpected reply, ('finished',) for
-        "Review finished" with no review FINISHED_GRACE after that edit, or ('timeout', why).
-        Never past since + MAX_WAIT."""
+        ('reply', kind, body) for a limit/quota/skip/full/unexpected reply, ('timeout', why), or,
+        for "Review finished" with no review FINISHED_GRACE after that edit: ('clean',) if the
+        summary comment was edited after `since` to say it reviewed the PR's head (0 comments),
+        else ('finished',). Never past since + MAX_WAIT."""
         hard = since + datetime.timedelta(seconds=MAX_WAIT)
         while True:
             if self.now() >= hard:
@@ -195,7 +243,8 @@ class Loop:
             if reviews:
                 inline = [c for c in rabbit(self.hub.get_all(f"pulls/{n}/comments")) if ts(c["created_at"]) > since]
                 return ("review", reviews[-1]["id"], len(inline))
-            replies = command_replies(self.hub.get_all(f"issues/{n}/comments"), since)
+            comments = self.hub.get_all(f"issues/{n}/comments")
+            replies = command_replies(comments, since)
             if not replies:
                 if self.now() >= since + datetime.timedelta(seconds=NO_ANSWER):
                     return ("timeout", "no reply to the command in 30 minutes")
@@ -205,8 +254,9 @@ class Loop:
             if kind == "processing":
                 continue
             if kind == "finished":
-                if self.now() >= finished_since(replies[-1]) + datetime.timedelta(seconds=FINISHED_GRACE):
-                    return ("finished",)
+                if self.now() >= edited(replies[-1]) + datetime.timedelta(seconds=FINISHED_GRACE):
+                    s = clean_summary(comments, self.head(n))
+                    return ("clean",) if s and edited(s) > since else ("finished",)
                 continue
             return ("reply", kind, body)
 
@@ -215,10 +265,16 @@ class Loop:
         self.save()
         self.log(f"#{n}: reviewed, {ans[2]} inline comments")
 
+    def clean_now(self, n, e):
+        e.update(outcome=CLEAN, inline=0, note="reviewed, 0 comments (clean): the summary covers the head")
+        self.save()
+        self.log(f"#{n}: reviewed, 0 comments (clean): CodeRabbit found nothing, nothing to triage")
+
     def one(self, n):
-        """Returns 'done' (a new review, full or not), 'skip' (reviewed before, or skipped by
-        CodeRabbit), 'none' (no review available: the full review ended without one), or an exit
-        code to stop with (0 in a dry run: the next step would post or wait)."""
+        """Returns 'done' (a new review, full or not, or a clean one with 0 comments), 'skip'
+        (reviewed before, clean at the head before, or skipped by CodeRabbit), 'none' (no review
+        available: the full review ended without one), or an exit code to stop with (0 in a dry
+        run: the next step would post or wait)."""
         e = self.state.setdefault(str(n), {"pr": n, "posts": []})
         if self.reviews_after(n, None):
             if e.get("outcome") != "reviewed":
@@ -227,13 +283,20 @@ class Loop:
             if self.dry:
                 self.log(f"#{n}: has a CodeRabbit review, skipping")
             return "skip"
-        req = self.latest_request(n)
+        comments = self.hub.get_all(f"issues/{n}/comments")
+        if clean_summary(comments, self.head(n)):
+            if e.get("outcome") != CLEAN:
+                e.update(outcome=CLEAN, inline=0, note="reviewed, 0 comments (clean): the summary on GitHub covers the head")
+                self.save()
+            self.log(f"#{n}: reviewed at its head with 0 comments (clean), skipping")
+            return "skip"
+        req = self.latest_request(comments)
         retries, pause, command, ans = 0, 0, REVIEW, None
         if req:
             asked, command, reply = req
             kind = classify(reply["body"]) if reply else "processing"
-            if kind == "finished" and self.now() >= finished_since(reply) + datetime.timedelta(seconds=FINISHED_GRACE):
-                ans = ("finished",)
+            if kind == "finished" and self.now() >= edited(reply) + datetime.timedelta(seconds=FINISHED_GRACE):
+                ans = ("finished",)  # not clean: a clean summary at the head was skipped above
             elif kind == "full":
                 ans = ("reply", "full", reply["body"])
             elif kind in ("processing", "finished"):
@@ -242,13 +305,7 @@ class Loop:
                     self.log(f"#{n}: would wait: our {command} at {asked:%H:%M:%S} is still processing ({state})")
                     return 0
                 self.log(f"#{n}: our {command} at {asked:%H:%M:%S} is still processing, waiting for it")
-                ans = self.wait_answer(n, asked)
-                if ans[0] == "review":
-                    self.reviewed_now(n, e, ans)
-                    return "done"
-                if not no_review(ans):
-                    self.log(f"#{n}: the earlier request ended with {ans[0]}, posting {command} again")
-                    ans = None
+                ans = self.wait_answer(n, asked)  # handled below like the answer to a new post
             elif kind == "limit":
                 retries = 1
                 pause = max(0, (ts(reply["created_at"]) + datetime.timedelta(seconds=limit_wait(reply["body"])) - self.now()).total_seconds())
@@ -281,6 +338,9 @@ class Loop:
             ans, answer = None, ans
             if answer[0] == "review":
                 self.reviewed_now(n, e, answer)
+                return "done"
+            if answer[0] == "clean":
+                self.clean_now(n, e)
                 return "done"
             if answer[0] == "timeout":
                 e.update(outcome="timeout"); self.save()
@@ -332,10 +392,10 @@ def self_test():
     note = ("\n\n> Note: CodeRabbit is an incremental review system and does not re-review already reviewed "
             "commits. This command is applicable only when automatic reviews are paused.\n\n")
 
-    def reply(summary, line, invocation=True):
+    def reply(summary, line, invocation=True, note=note):
         inv = "<!-- CodeRabbit review command invocation: v2:abc -->\n" if invocation else ""
         return ("<!-- coderabbit-ai-generated:v1 -->\n\n" + REPLY_MARKER + "\n" + inv +
-                f"<details>\n<summary>{summary}</summary>\n<dl>\n<dd>\n\n{line}{note}</dd>\n</dl>\n</details>")
+                f"<details>\n<summary>{summary}</summary>\n<dl>\n<dd>\n<br>\n\n{line}{note}</dd>\n</dl>\n</details>")
 
     limited = reply("Action not completed", "Review rate limited.")
     triggered = reply("Action performed", "Review triggered.")
@@ -361,7 +421,7 @@ def self_test():
 
     check("classify: rate limited", classify(limited), "limit")
     check("classify: triggered", classify(triggered), "processing")
-    check("classify: finished", classify(finished), "finished")
+    check("classify: finished (the reply on #215 and #217)", classify(finished), "finished")
     check("classify: chat limit", classify(chat), "limit")
     check("classify: skipped", classify(reply("Action not completed", "Review skipped: too large.")), "skip")
     check("stated wait: none", stated_wait(limited), None)
@@ -384,19 +444,43 @@ def self_test():
           [classify(x["body"]) for x in command_replies([c(chat, "2026-11-03T18:47:44Z")], since)], ["limit"])
     check("command replies: nothing after the request",
           command_replies([c(summary, "2026-11-03T08:47:28Z"), c(limited, "2026-11-03T17:59:42Z")], since), [])
-    # the reply on #217 (2026-11-10): "Review finished." with the note, and no review submitted
-    check("classify: finished with the incremental note (#217)",
-          classify(reply("Action performed", "Review finished.")), "finished")
-    check("classify: already reviewed", classify(reply("Action not completed", "Already reviewed these commits.")), "full")
+    reworded = "\n\n> Note: CodeRabbit reviews incrementally and won't look at already reviewed commits again.\n\n"
+    check("classify: reworded note, triggered", classify(reply("Action performed", "Review triggered.", note=reworded)),
+          "processing")
+    check("classify: reworded note, finished", classify(reply("Action performed", "Review finished.", note=reworded)),
+          "finished")
+    check("classify: reworded note, rate limited",
+          classify(reply("Action not completed", "Review rate limited.", note=reworded)), "limit")
+    check("classify: already reviewed (explicit)",
+          classify(reply("Action not completed", "These commits have already been reviewed.")), "full")
+    head = "48fdd8faf81bfa2f588ac414a9560a11d3f3250c"
+
+    def summary_at(sha, kind="reviewed"):
+        return ("<!-- coderabbit-ai-generated:v1 -->\n\n" + SUMMARY_MARKER + "\n<!-- recent_review_status_start -->\n\n"
+                "No actionable comments were generated in the recent review.\n\n<!-- recent_review_status_end -->\n"
+                '<!-- final_review_risk_coverage:{"sourceCommitId":"%s","coveredCommitId":"%s","kind":"%s"} -->'
+                % (sha, sha, kind))
+    check("clean summary: at the head", clean_summary([c(summary_at(head), "2026-11-03T08:58:04Z")], head) is not None, True)
+    check("clean summary: an older commit", clean_summary([c(summary_at("a79c0961"), "2026-11-03T08:58:04Z")], head), None)
+    check("clean summary: not kind reviewed",
+          clean_summary([c(summary_at(head, "skipped"), "2026-11-03T08:58:04Z")], head), None)
+    check("clean summary: a reply, not the summary",
+          clean_summary([c(summary_at(head).replace(SUMMARY_MARKER, REPLY_MARKER), "2026-11-03T08:58:04Z")], head), None)
     check("request command: review", request_command("@coderabbitai review"), REVIEW)
     check("request command: full review", request_command(" @coderabbitai  full review\n"), FULL)
     check("request command: other", request_command("@coderabbitai resolve"), REVIEW)
     check("no review: finished", no_review(("finished",)), True)
     check("no review: limit reply", no_review(("reply", "limit", limited)), False)
 
-    # The full-review path against a simulated CodeRabbit: every command gets "Review triggered."
-    # 7 s later, edited to "Review finished." 10 minutes later; a review (submitted just before that
-    # edit) comes only for `full review` on the PRs in `full_reviews`.
+    # The loop against a simulated CodeRabbit. Each post gets the next outcome of its PR's script
+    # ("finished" once the script runs out): every outcome but "limit" and "silent" gets "Review
+    # triggered." 7 s later, edited to "Review finished." at 600 s.
+    #   finished   no review;
+    #   review     a review (and one inline comment) at 590 s;
+    #   review@N   a review N s after the "Review finished." edit;
+    #   clean      the summary edited at 596 s to cover the head ("No actionable comments"), no review;
+    #   clean+review@N   both;
+    #   limit      "Review rate limited." at 7 s;  silent   no reply at all.
     def fmt(t):
         return f"{t:%Y-%m-%dT%H:%M:%SZ}"
 
@@ -411,74 +495,144 @@ def self_test():
             self.t += datetime.timedelta(seconds=s)
 
     class Rabbit:
-        def __init__(self, clock, full_reviews):
-            self.clock, self.full_reviews, self.items, self.posted = clock, set(full_reviews), [], []
+        def __init__(self, clock, script):
+            self.clock, self.items, self.posted = clock, [], []
+            self.script = {n: list(outs) for n, outs in script.items()}
+            self.summaries = {}
 
         def add(self, path, item, start, end=None):
-            self.items.append((start, end, path, item))
+            entry = [start, end, path, item]
+            self.items.append(entry)
+            return entry
+
+        def get(self, path):
+            return {"head": {"sha": head}}
 
         def get_all(self, path):
             t = self.clock.t
             return [dict(i) for s, e, p, i in self.items if p == path and s <= t and (e is None or t < e)]
 
-        def answer(self, n, body, at, review):
+        def summary(self, n, sha, at):
+            """The summary comment, created 2026-11-03 and edited at `at` to cover `sha`."""
+            old = self.summaries.get(n)
+            if old:
+                old[1] = at
+            created = "2026-11-03T08:58:04Z"
+            self.summaries[n] = self.add(f"issues/{n}/comments", {"user": bot, "body": summary_at(sha),
+                                         "created_at": created, "updated_at": fmt(at)}, at)
+
+        def answer(self, n, body, at, outcome):
             def sec(s):
                 return at + datetime.timedelta(seconds=s)
             path = f"issues/{n}/comments"
             self.add(path, {"user": us, "body": body, "created_at": fmt(at), "updated_at": fmt(at)}, at)
+            if outcome == "silent":
+                return
+            if outcome == "limit":
+                self.add(path, {"user": bot, "body": limited, "created_at": fmt(sec(7)), "updated_at": fmt(sec(7))}, sec(7))
+                return
             self.add(path, {"user": bot, "body": triggered, "created_at": fmt(sec(7)), "updated_at": fmt(sec(7))},
                      sec(7), sec(600))
             self.add(path, {"user": bot, "body": finished, "created_at": fmt(sec(7)), "updated_at": fmt(sec(600))},
                      sec(600))
-            if review:
-                self.add(f"pulls/{n}/reviews", {"user": bot, "id": 900 + n, "submitted_at": fmt(sec(590))}, sec(590))
-                self.add(f"pulls/{n}/comments", {"user": bot, "created_at": fmt(sec(590))}, sec(590))
+            if outcome.startswith("clean"):
+                self.summary(n, head, sec(596))
+            m = re.search(r"review(?:@(\d+))?$", outcome)
+            if m:
+                rv = sec(590) if m.group(1) is None else sec(600 + int(m.group(1)))
+                self.add(f"pulls/{n}/reviews", {"user": bot, "id": 900 + n, "submitted_at": fmt(rv)}, rv)
+                self.add(f"pulls/{n}/comments", {"user": bot, "created_at": fmt(rv)}, rv)
 
         def comment(self, n, body):
             self.posted.append((n, body))
-            self.answer(n, body, self.clock.t, body == FULL and n in self.full_reviews)
+            outs = self.script.get(n) or []
+            self.answer(n, body, self.clock.t, outs.pop(0) if outs else "finished")
 
-    def case(full_reviews=(), earlier=(), dry=False, last=1, batch=5):
-        """earlier: (pr, command, seconds ago) requests already on GitHub (state rebuilt from them)."""
+    def case(script=None, earlier=(), dry=False, last=1, batch=5):
+        """earlier: (pr, command, seconds ago, outcome) requests already on GitHub (the state is
+        rebuilt from them). Every PR starts with a summary comment covering an older commit."""
         clock = Clock()
-        hub = Rabbit(clock, full_reviews)
-        for pr, command, ago in earlier:
-            hub.answer(pr, command, clock.t - datetime.timedelta(seconds=ago), False)
+        hub = Rabbit(clock, script or {})
+        for pr in range(1, last + 1):
+            hub.summary(pr, "a79c09613e71867f369019f6dc428c5634b5c0ea", clock.t - datetime.timedelta(days=7))
+        for pr, command, ago, outcome in earlier:
+            hub.answer(pr, command, clock.t - datetime.timedelta(seconds=ago), outcome)
         lines = []
         loop = Loop(hub, None, dry, clock=clock, logger=lines.append)
         code = run(loop, 1, last, batch)
         return code, hub.posted, {k: v.get("outcome") for k, v in loop.state.items()}, lines
 
-    code, posted, outcomes, _ = case(full_reviews=[1])
+    def logged(lines, s):
+        return any(s in x for x in lines)
+
+    code, posted, outcomes, _ = case({1: ["finished", "review"]})
     check("full review: review finished without one, full review done",
           (code, posted, outcomes), (0, [(1, REVIEW), (1, FULL)], {"1": "reviewed"}))
     code, posted, outcomes, lines = case()
     check("full review: also no review, recorded and the loop goes on",
-          (code, posted, outcomes, any(NO_REVIEW in x for x in lines), lines[-1]),
+          (code, posted, outcomes, logged(lines, NO_REVIEW), lines[-1]),
           (0, [(1, REVIEW), (1, FULL)], {"1": NO_REVIEW}, True, "all PRs done"))
-    code, posted, outcomes, _ = case(full_reviews=[1, 2, 3], last=3, batch=2)
+    code, posted, outcomes, _ = case({n: ["finished", "review"] for n in (1, 2, 3)}, last=3, batch=2)
     check("full review: completed full reviews count toward --batch",
           (code, posted[-1], len(posted)), (0, (2, FULL), 4))
-    code, posted, outcomes, _ = case(full_reviews=[2, 3], last=3, batch=1)
+    code, posted, outcomes, _ = case({2: ["finished", "review"], 3: ["review"]}, last=3, batch=1)
     check("full review: no review available does not count toward --batch",
           (code, posted, outcomes),
           (0, [(1, REVIEW), (1, FULL), (2, REVIEW), (2, FULL)], {"1": NO_REVIEW, "2": "reviewed"}))
-    code, posted, outcomes, _ = case(full_reviews=[1], earlier=[(1, REVIEW, 3600)])
+    code, posted, outcomes, lines = case({1: ["clean"]}, last=2, batch=1)
+    check("clean: summary-only \"No actionable comments\" counts as a review, no full review",
+          (code, posted, outcomes, logged(lines, "0 comments (clean)"), lines[-1]),
+          (0, [(1, REVIEW)], {"1": CLEAN}, True, "1 reviews done, handing back for triage"))
+    code, posted, outcomes, _ = case({2: ["review"]}, earlier=[(1, REVIEW, 3600, "clean")], last=2, batch=1)
+    check("clean: rebuilt from GitHub, skipped like a reviewed PR and not counted",
+          (code, posted, outcomes), (0, [(2, REVIEW)], {"1": CLEAN, "2": "reviewed"}))
+    code, posted, outcomes, _ = case({1: ["clean+review@120"]})
+    check("grace: a review 2 min after \"Review finished\" (and a clean summary) is the review",
+          (code, posted, outcomes), (0, [(1, REVIEW)], {"1": "reviewed"}))
+    code, posted, outcomes, _ = case({1: ["review@400"]})
+    check("grace: a review after the grace answers the full review",
+          (code, posted, outcomes), (0, [(1, REVIEW), (1, FULL)], {"1": "reviewed"}))
+    code, posted, outcomes, lines = case({1: ["limit"] * 4 + ["finished", "limit", "review"]})
+    check("limit: the full review gets a fresh retry budget",
+          (code, posted, outcomes, f"#1: limit, waiting 50 min (retry 1 of {LIMIT_RETRIES})" in lines[9:]),
+          (0, [(1, REVIEW)] * 5 + [(1, FULL)] * 2, {"1": "reviewed"}, True))
+    code, posted, outcomes, lines = case({1: ["review"]}, earlier=[(1, REVIEW, 7200, "finished"), (1, FULL, 600, "limit")])
+    check("restart: a limited full review waits out the rest and posts full review again",
+          (code, posted, outcomes, logged(lines, "waiting 40 min (retry 1 of")),
+          (0, [(1, FULL)], {"1": "reviewed"}, True))
+    code, posted, outcomes, lines = case({1: ["review"]}, earlier=[(1, REVIEW, 3, "limit")])
+    check("restart: an earlier request answered with a limit while waiting: pause, then post",
+          (code, posted, outcomes, logged(lines, "waiting 50 min (retry 1 of")),
+          (0, [(1, REVIEW)], {"1": "reviewed"}, True))
+    code, posted, outcomes, _ = case(earlier=[(1, REVIEW, 3, "silent")])
+    check("restart: an earlier request with no reply ends with exit 2, nothing posted",
+          (code, posted, outcomes), (2, [], {"1": "timeout"}))
+    code, posted, outcomes, _ = case(earlier=[(1, REVIEW, 7200, "finished"), (1, FULL, 3, "review")])
+    check("restart: an unanswered full review is waited for, not posted again",
+          (code, posted, outcomes), (0, [], {"1": "reviewed"}))
+    code, posted, outcomes, _ = case(earlier=[(1, REVIEW, 7200, "finished"), (1, FULL, 3, "finished")])
+    check("restart: an unanswered full review that ends without one: no review available",
+          (code, posted, outcomes), (0, [], {"1": NO_REVIEW}))
+    code, posted, outcomes, _ = case({1: ["review"]}, earlier=[(1, REVIEW, 3600, "finished")])
     check("rebuild: a finished review request gets a full review",
           (code, posted, outcomes), (0, [(1, FULL)], {"1": "reviewed"}))
-    code, posted, outcomes, _ = case(full_reviews=[1], earlier=[(1, REVIEW, 11 * 60)])
+    code, posted, outcomes, _ = case({1: ["review"]}, earlier=[(1, REVIEW, 11 * 60, "finished")])
     check("rebuild: a review request finished just now: wait out the grace, then full review",
           (code, posted, outcomes), (0, [(1, FULL)], {"1": "reviewed"}))
-    code, posted, outcomes, _ = case(earlier=[(1, FULL, 3600)])
+    code, posted, outcomes, _ = case(earlier=[(1, FULL, 3600, "finished")])
     check("rebuild: a finished full review request is no review available, nothing posted",
           (code, posted, outcomes), (0, [], {"1": NO_REVIEW}))
-    code, posted, _, lines = case(earlier=[(1, REVIEW, 3600)], dry=True)
+    code, posted, _, lines = case(earlier=[(1, REVIEW, 3600, "finished")], dry=True)
     check("dry run: would post a full review",
           (code, posted, lines[-1]), (0, [], f"#1: {REVIEW} finished without a review; would post {FULL}"))
-    code, posted, _, lines = case(earlier=[(1, FULL, 3600)], dry=True, last=2)
+    code, posted, _, lines = case(earlier=[(1, REVIEW, 3600, "clean")], dry=True, last=2)
+    check("dry run: a clean PR is skipped",
+          (code, posted, lines), (0, [], ["#1: reviewed at its head with 0 comments (clean), skipping",
+                                          f"#2: would post {REVIEW}"]))
+    code, posted, _, lines = case(earlier=[(1, FULL, 3600, "finished")], dry=True, last=2)
     check("dry run: past no review available to the next PR",
           (code, posted, lines[-1]), (0, [], f"#2: would post {REVIEW}"))
-    code, posted, _, lines = case(earlier=[(1, FULL, 60)], dry=True)
+    code, posted, _, lines = case(earlier=[(1, FULL, 60, "finished")], dry=True)
     check("dry run: a full review request still processing: would wait",
           (code, posted, lines[-1].split(" at ")[0]), (0, [], f"#1: would wait: our {FULL}"))
     bad = [x for x in checks if not x[1]]
