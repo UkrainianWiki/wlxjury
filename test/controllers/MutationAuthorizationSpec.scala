@@ -1086,21 +1086,40 @@ class MutationAuthorizationSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
-    "still be refused to a juror of A only" in {
+    "still be refused to a juror of A only, B's current round stat too" in {
       testDbApp { app =>
         implicit val materializer: Materializer = app.materializer
         val (a, b, bRound, _, aOnly) = setup()
 
+        // a juror has no round stat: the 403 page at once, not a redirect to one
         val current = call(roundController(app).currentRoundStat(Some(b.getId)),
           inA(s"/roundstat?contestId=${b.getId}", aOnly.email, a.getId))
-        // no round of theirs: a state, not an error, as on the juror's start page
-        status(current) === OK
+        status(current) === FORBIDDEN
         redirectLocation(current) must beNone
-        contentAsString(current) must contain("No round configured yet.")
         contentAsString(current) must not(contain("B open round"))
 
         status(call(roundController(app).roundStat(bRound.getId),
           inA(s"/roundstat/${bRound.getId}", aOnly.email, a.getId))) === FORBIDDEN
+      }
+    }
+
+    "reach B's round stat as an organizer of B, a juror of A, by B's id and by the round's" in {
+      testDbApp { app =>
+        implicit val materializer: Materializer = app.materializer
+        val (a, b, bRound, _, _) = setup()
+        val orgOfB = userDao.create(User("Org of B", "orgb@example.com", None, Set("jury"), contestId = a.id))
+        UserContestJdbc.createMembership(orgOfB.getId, b.getId, "organizer")
+
+        val current = call(roundController(app).currentRoundStat(Some(b.getId)),
+          inA(s"/roundstat?contestId=${b.getId}", orgOfB.email, a.getId))
+        status(current) === SEE_OTHER
+        redirectLocation(current) === Some(routes.RoundController.roundStat(bRound.getId).url)
+        session(current).get(Secured.CurrentContestId) === Some(b.getId.toString)
+
+        val stat = call(roundController(app).roundStat(bRound.getId),
+          inA(s"/roundstat/${bRound.getId}", orgOfB.email, a.getId))
+        status(stat) === OK
+        contentAsString(stat) must contain("B open round")
       }
     }
   }

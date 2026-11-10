@@ -530,7 +530,8 @@ class RoundDistributionJobSpec extends Specification with TestDb with BeforeAll 
       Round.activeRounds(contest.getId).flatMap(_.id) must not(contain(roundId))
       val juror = jurors.head
       val gallery = new GalleryService
-      gallery.isNotAuthorized(juror, Some(hidden), contest.getId, Nil) must beTrue
+      // listed among the juror's rounds: only the distributing check refuses it
+      gallery.isNotAuthorized(juror, Some(hidden), contest.getId, Seq(hidden)) must beTrue
       gallery.isNotAuthorized(admin, Some(hidden), contest.getId, Nil) must beFalse
       Round.setActiveGuarded(roundId, active = true) must beFalse
       roundDao.findById(roundId).get.active must beFalse
