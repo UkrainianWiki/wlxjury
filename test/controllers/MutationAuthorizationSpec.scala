@@ -408,6 +408,67 @@ class MutationAuthorizationSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
+    // The vote is checked by the role in the round's contest, whichever contest the session is
+    // in (Secured.permitted tries the user's other active memberships).
+    "check the role in the round's contest, not the session's: by membership, active only, root by its jury role" in {
+      testDbApp { app =>
+        implicit val materializer: Materializer = app.materializer
+        val juror = setUp()
+        val a = juror.contestId.get
+        val b = contestDao.create(None, "WLM", 2024, "Poland").getId
+        val round = roundOf(juror, Round.ratesById(5), rate = 0)
+
+        /** The gallery's and the large view's answers to a vote of `rate`, the session in `contest`. */
+        def votes(user: User, rate: Int, contest: Option[Long]) = {
+          def request(url: String) = {
+            val session = Seq(Secured.UserName -> user.email) ++ contest.map(Secured.CurrentContestId -> _.toString)
+            FakeRequest(POST, url).withSession(session: _*).withCSRFToken
+          }
+          val inGallery = status(galleryController(app).selectWS(round.getId, pageId, rate)
+            .apply(request(s"/rate/round/${round.getId}/pageid/$pageId/select/$rate")).run())
+          val inLarge = status(largeViewController.rateByPageId(round.getId, pageId, rate)
+            .apply(request(s"/large/round/${round.getId}/pageid/$pageId/select/$rate")).run())
+          (inGallery, inLarge)
+        }
+        /** A user with a vote row of the file in A's round, as its round juror. */
+        def assigned(user: User, rate: Int): User = {
+          round.addUsers(Seq(RoundUser(round.getId, user.getId, "jury", active = true)))
+          VoteJdbc.create(pageId, rate, user.getId, round.getId)
+          user
+        }
+
+        // a juror of A, an organizer of B with the session there: votes in A's round
+        UserContestJdbc.createMembership(juror.getId, b, "organizer")
+        votes(juror, 4, Some(b)) === ((OK, SEE_OTHER))
+        stored(round, juror) === Some(4)
+
+        // an organizer of A, a juror of B with the session there: refused in A's round
+        val organizer = assigned(userDao.create(
+          User("Organizer", "organizer@example.com", None, Set("organizer"), contestId = Some(a))), rate = 2)
+        UserContestJdbc.createMembership(organizer.getId, b, User.JURY_ROLE)
+        votes(organizer, 5, Some(b)) === ((FORBIDDEN, FORBIDDEN))
+        votes(organizer, 5, Some(a)) === ((FORBIDDEN, FORBIDDEN))
+        stored(round, organizer) === Some(2)
+
+        // a round juror whose membership of A is deactivated (the edit form's "no role")
+        val former = assigned(userDao.create(
+          User("Former", "former@example.com", None, Set("jury"), contestId = Some(a))), rate = 1)
+        UserContestJdbc.updateRole(former.getId, a, User.NO_ROLE)
+        votes(former, 5, Some(a)) === ((FORBIDDEN, FORBIDDEN))
+        votes(former, 5, None) === ((FORBIDDEN, FORBIDDEN))
+        stored(round, former) === Some(1)
+
+        // root as a juror of A: votes, by that role
+        val root = assigned(User.create(
+          User("Root", "root@example.com", roles = Set(User.ROOT_ROLE), password = Some("hash"))), rate = 0)
+        UserContestJdbc.createMembership(root.getId, a, User.JURY_ROLE)
+        votes(root, 3, Some(a)) === ((OK, SEE_OTHER))
+        stored(round, root) === Some(3)
+        votes(root, 2, None) === ((OK, SEE_OTHER))
+        stored(round, root) === Some(2)
+      }
+    }
+
     "change nothing in a stopped round: 409 in the gallery, back to the gallery from the large view [S-06]" in {
       testDbApp { app =>
         val juror = setUp()

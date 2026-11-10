@@ -1,8 +1,9 @@
 @import db.scalikejdbc.User
 @import db.scalikejdbc.Round
 @(user: User, round: Round, stat: RoundStat)(implicit flash: Flash, messages: Messages, req: RequestHeader)
-@* the jurors' pause and resume buttons, with their column, only for those the pause endpoint
-   lets in (RoundController.setRoundUser): the contest's admins, not its organizers or jurors *@
+@* the jurors' pause and resume buttons only for those the pause endpoint lets in
+   (RoundController.setRoundUser): the contest's admins. Its organizers (who monitor the voting)
+   and jurors see each juror's state as text instead. *@
 @mayPause = @{ controllers.Secured.administersRound(user, round) }
 
 <table class="table table-striped table-sm">
@@ -11,9 +12,7 @@
             <th>@Messages("row.number")</th>
             <th>@Messages("juror.name")</th>
             <th>@Messages("email")</th>
-            @if(mayPause) {
-                <th>@Messages("start.stop")</th>
-            }
+            <th>@if(mayPause) {@Messages("start.stop")} else {@Messages("juror.voting")}</th>
             <th>@Messages("files")</th>
 
             @if(round.isBinary) {
@@ -34,6 +33,12 @@
             <td> @juror.email </td>
             @if(mayPause) {
                 <td>@snippets.startStop(juror.active.getOrElse(true), juror.getId, round.getId, routes.RoundController.setRoundUser, withText = false, what = "juror")</td>
+            } else {
+                @if(juror.active.getOrElse(true)) {
+                    <td class="juror-voting" data-state="active">@Messages("juror.voting.active")</td>
+                } else {
+                    <td class="juror-voting" data-state="paused"><i class="bi bi-pause-fill" aria-hidden="true"></i> @Messages("juror.voting.paused")</td>
+                }
             }
             <td>
             @defining(stat.byUserCount.getOrElse(juror.getId, 0)) { count =>
@@ -68,7 +73,7 @@
     @defining(stat.total) { total =>
         <tfoot>
             <tr>
-                <th colspan="@{if (mayPause) 4 else 3}">
+                <th colspan="4">
                     @Messages("total")
                     @if(round.isBinary) {
                         <small class="d-block fw-normal text-body-secondary">@Messages("round.stat.total.note")</small>

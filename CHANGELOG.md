@@ -97,8 +97,9 @@ Developed 2026-11-02 to 2026-11-03, PRs #232–#236.
 - **Organizers are read-only, apart from comments** (stack/95, the maintainer, 2026-11-10): only
   a juror of the round's contest votes, by any path (gallery, large view, keys, criteria), so a
   juror made an organizer votes no more and keeps their earlier votes; admins never vote, nor
-  root unless a juror of that contest.
-  The statistics page shows the jurors' pause buttons to the contest's admins only.
+  root unless a juror of that contest. A refused gallery vote says so ("You can no longer vote in
+  this round"). The statistics page shows the jurors' pause buttons to the contest's admins
+  only; others see each juror's voting as "Active" or "Paused".
 - **"Leave out conflicts of interest" on an open round only sets the flag** (P1b); disqualify on
   the stopped round's conflicts page, which keeps the votes (#244).
 - **The thumbnail fix:** thumbnails load at Wikimedia's standard widths only (#258, below).
