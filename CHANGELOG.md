@@ -94,6 +94,11 @@ Developed 2026-11-02 to 2026-11-03, PRs #232–#236.
   revoked, and the email and wiki account unverified; logged as `password_set_by_admin` by id. A
   wiki account shared by several accounts signs in by email. Legacy SHA-1 passwords keep working for three months after the deploy (V81),
   then need a reset. Sessions from before the deploy are upgraded for 30 days (V80).
+- **Organizers are read-only, apart from comments** (stack/95, the maintainer, 2026-11-10): only
+  a juror of the round's contest votes, by any path (gallery, large view, keys, criteria), so a
+  juror made an organizer votes no more and keeps their earlier votes; admins never vote, nor
+  root unless a juror of that contest.
+  The statistics page shows the jurors' pause buttons to the contest's admins only.
 - **"Leave out conflicts of interest" on an open round only sets the flag** (P1b); disqualify on
   the stopped round's conflicts page, which keeps the votes (#244).
 - **The thumbnail fix:** thumbnails load at Wikimedia's standard widths only (#258, below).

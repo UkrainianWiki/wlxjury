@@ -307,13 +307,10 @@ class GalleryController @Inject() (
     // a tile's vote, sent by script: JSON answers (401, 403 with the denial's reference, 409,
     // 400 for a rate the round doesn't take or any rate in a criteria round) that the gallery
     // explains (vote-errors.js). It changes only the juror's own selection of the file in the
-    // round (VoteJdbc.rate): a file not assigned to them changes nothing and is a 404.
-    withAuthJson(
-      roundPermission(
-        User.ADMIN_ROLES ++ User.JURY_ROLES ++ User.ORG_COM_ROLES,
-        roundId
-      )
-    ) { user => implicit request =>
+    // round (VoteJdbc.rate): a file not assigned to them changes nothing and is a 404. Only a
+    // juror of the round's contest votes (Secured.VotePermission): an organizer, admin or root
+    // without that role is a 403.
+    withAuthJson(Secured.VotePermission(roundId)) { user => implicit request =>
     val round = Round.findById(roundId)
     // Votes only in a round open to its jurors: not in a stopped round, a previous round
     // frozen while a distribution reads its votes, or a round still being distributed; and only

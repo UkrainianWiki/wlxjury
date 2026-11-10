@@ -288,7 +288,7 @@ class MutationAuthorizationSpec extends PlaySpecification with PlayTestDb {
       }
     }
 
-    "change only the juror's own criteria: 404 for another's file and for an organiser not a juror, 403 for another contest's juror [S-07]" in {
+    "change only the juror's own criteria: 404 for another's file, 403 for an organiser and for another contest's juror [S-07]" in {
       testDbApp { app =>
         val juror = setUp()
         val round = criteriaRoundOf(juror)
@@ -306,9 +306,9 @@ class MutationAuthorizationSpec extends PlaySpecification with PlayTestDb {
 
         // another juror's file: the juror has no selection of it
         status(large(app, round, juror, 1, file = 1011L, criteria = Some(1L))) === NOT_FOUND
-        // the organiser has no selection of their own in the round
-        status(large(app, round, organizer, 1, criteria = Some(1L))) === NOT_FOUND
-        status(large(app, round, organizer, 1, file = 1011L, criteria = Some(1L))) === NOT_FOUND
+        // an organiser never votes (Secured.VotePermission)
+        status(large(app, round, organizer, 1, criteria = Some(1L))) === FORBIDDEN
+        status(large(app, round, organizer, 1, file = 1011L, criteria = Some(1L))) === FORBIDDEN
         status(large(app, round, outsider, 1, criteria = Some(1L))) === FORBIDDEN
         // signed out: to the login page
         implicit val materializer: Materializer = app.materializer
@@ -321,6 +321,90 @@ class MutationAuthorizationSpec extends PlaySpecification with PlayTestDb {
         criteriaOf(round, other, 1011L) === Map(1L -> 5)
         stored(round, juror) === Some(7)
         stored(round, other, 1011L) === Some(5)
+      }
+    }
+
+    // Organizers are read-only (2026-11-10): a juror made an organizer keeps their round
+    // assignment and votes, but votes no more, by any path (Secured.VotePermission).
+    "refuse every vote of a juror made an organizer, keeping their votes, and still take a round juror's" in {
+      testDbApp { app =>
+        implicit val materializer: Materializer = app.materializer
+        val juror = setUp()
+        val rated = roundOf(juror, Round.ratesById(5), rate = 3)
+        val binary = roundOf(juror, Round.binaryRound, rate = 1)
+        val criteria = criteriaRoundOf(juror)
+        // the rated round's other juror, still one
+        val other = userDao.create(User("Other", "other@example.com", None, Set("jury"), contestId = juror.contestId))
+        rated.addUsers(Seq(RoundUser(rated.getId, other.getId, "jury", active = true)))
+        VoteJdbc.create(pageId, 0, other.getId, rated.getId)
+
+        UserContestJdbc.updateRole(juror.getId, juror.contestId.get, "organizer")
+
+        // the gallery's tiles and stars: a JSON 403 with the denial's reference, logged
+        val (inGallery, lines) = withAuthzLog {
+          val result = gallery(app, rated, juror, 5)
+          (status(result), contentAsJson(result))
+        }
+        inGallery._1 === FORBIDDEN
+        (inGallery._2 \ "error").as[String] === "forbidden"
+        lines.exists(line => line.contains(s"""resource="round:${rated.getId}"""") &&
+          line.contains("""requiredRoles="jury"""") && line.contains("reason=missing_role")) must beTrue
+        status(gallery(app, binary, juror, -1)) === FORBIDDEN
+        // the large view's buttons and stars: the denial page
+        val inLarge = large(app, rated, juror, 5)
+        status(inLarge) === FORBIDDEN
+        contentAsString(inLarge) must not(contain("error.not.found"))
+        status(large(app, binary, juror, -1)) === FORBIDDEN
+        // its keys post the same form, by the region's path too (list.voteUrl)
+        status(largeViewController.rateByPageId(rated.getId, pageId, 4, region = "all")
+          .apply(sessionRequest(POST, s"/large/round/${rated.getId}/region/all/pageid/$pageId/select/4", juror.email))
+          .run()) === FORBIDDEN
+        // a criterion's rate
+        status(large(app, criteria, juror, 9, criteria = Some(1L))) === FORBIDDEN
+
+        // their earlier votes stay
+        stored(rated, juror) === Some(3)
+        stored(binary, juror) === Some(1)
+        stored(criteria, juror) === Some(7)
+        criteriaOf(criteria, juror) === Map(1L -> 3, 2L -> 4)
+
+        // the round's juror still votes, in both views
+        status(gallery(app, rated, other, 4)) === OK
+        stored(rated, other) === Some(4)
+        status(large(app, rated, other, 2)) === SEE_OTHER
+        stored(rated, other) === Some(2)
+
+        // made a juror again, they vote again
+        UserContestJdbc.updateRole(juror.getId, juror.contestId.get, User.JURY_ROLE)
+        status(gallery(app, rated, juror, 5)) === OK
+        stored(rated, juror) === Some(5)
+        status(large(app, criteria, juror, 9, criteria = Some(1L))) === SEE_OTHER
+        criteriaOf(criteria, juror) === Map(1L -> 9, 2L -> 4)
+      }
+    }
+
+    "refuse the votes of an admin and of root, even with votes of their own in the round" in {
+      testDbApp { app =>
+        val juror = setUp()
+        val round = roundOf(juror, Round.ratesById(5), rate = 3)
+        // not addable by the round form (RoundService takes the contest's jurors only): as if
+        // written before, or by hand
+        val admin = userDao.create(User("Admin", "admin@example.com", None, Set("admin"), contestId = juror.contestId))
+        val root = User.create(User("Root", "root@example.com", roles = Set(User.ROOT_ROLE), password = Some("hash")))
+        Seq(admin, root).foreach { user =>
+          round.addUsers(Seq(RoundUser(round.getId, user.getId, "jury", active = true)))
+          VoteJdbc.create(pageId, 1, user.getId, round.getId)
+        }
+
+        Seq(admin, root).foreach { user =>
+          status(gallery(app, round, user, 5)) === FORBIDDEN
+          status(large(app, round, user, 5)) === FORBIDDEN
+          stored(round, user) === Some(1)
+        }
+        // the juror's own vote, untouched by theirs
+        stored(round, juror) === Some(3)
+        status(gallery(app, round, juror, 4)) === OK
+        stored(round, juror) === Some(4)
       }
     }
 
@@ -834,6 +918,41 @@ class MutationAuthorizationSpec extends PlaySpecification with PlayTestDb {
         Seq(organizer, root).foreach { user =>
           status(roundStat(app, open, user.email)) === OK
           status(roundStat(app, closed, user.email)) === OK
+        }
+        ok
+      }
+    }
+
+    // only those RoundController.setRoundUser lets in (Secured.administersRound): organizers
+    // are read-only, and were refused on click
+    "show the jurors' pause buttons to the contest's admins and root, not to its organizers or jurors" in {
+      testDbApp { app =>
+        val (a, b, open, _) = setup()
+        val juror = userDao.create(User("Juror", "juror@example.com", None, Set("jury"), contestId = b.id))
+        open.addUsers(Seq(RoundUser(open.getId, juror.getId, "jury", active = true)))
+        // the table lists the jurors with votes in the round
+        imageDao.batchInsert(Seq(image(1020L, "PL-1020")))
+        VoteJdbc.create(1020L, 0, juror.getId, open.getId)
+        val organizer = userDao.create(User("Org", "org@example.com", None, Set("organizer"), contestId = b.id))
+        val admin = userDao.create(User("Admin", "admin@example.com", None, Set("admin"), contestId = b.id))
+        // an organizer of B who administers A
+        val adminOfA = userDao.create(User("Admin of A", "admina@example.com", None, Set("admin"), contestId = a.id))
+        UserContestJdbc.createMembership(adminOfA.getId, b.getId, "organizer")
+        val root = User.create(User("Root", "root@example.com", roles = Set(User.ROOT_ROLE), password = Some("hash")))
+
+        def pauseButtons(user: User) = {
+          val page = roundStat(app, open, user.email)
+          status(page) === OK
+          val doc = org.jsoup.Jsoup.parse(contentAsString(page))
+          (doc.select("form[id^=set-active-form-]").size, doc.select("thead th").text)
+        }
+
+        pauseButtons(admin)._1 === 1
+        pauseButtons(admin)._2 must contain("Start/Stop")
+        pauseButtons(root)._1 === 1
+        Seq(organizer, adminOfA, juror).foreach { user =>
+          pauseButtons(user)._1 === 0
+          pauseButtons(user)._2 must not(contain("Start/Stop"))
         }
         ok
       }

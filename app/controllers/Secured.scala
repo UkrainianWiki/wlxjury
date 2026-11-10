@@ -307,6 +307,26 @@ object Secured {
     def denial: Denial = Denial(round.map(_.contestId), Some(s"round:$roundId"), roles)
   }
 
+  /** A vote in the round, by any path (the gallery's tiles and stars, the large view's buttons
+    * and keys, a criterion's rate): only by a juror of the round's contest ([[User.mayVoteIn]]),
+    * the one role the vote controls are drawn for. Organizers (read-only), admins and root
+    * without that role never vote; a juror made an organizer keeps their round assignment and
+    * earlier votes, but votes no more. A vote changes only the voter's own vote rows, which only
+    * the round's jurors have ([[db.scalikejdbc.VoteJdbc.rate]]): a file not theirs is a 404.
+    */
+  final case class VotePermission(roundId: Long) extends DescribedPermission {
+    private lazy val round = Round.findById(roundId)
+    def apply(user: User): Boolean = round.exists(user.mayVoteIn)
+    def denial: Denial = Denial(round.map(_.contestId), Some(s"round:$roundId"), User.VoterRoles)
+  }
+
+  /** Whether `user` administers the round's contest, as an active member of it (root needs
+    * none): who may pause or resume a juror's voting in it ([[RoundController.setRoundUser]]),
+    * and so who the statistics page shows that button to.
+    */
+  def administersRound(user: User, round: Round): Boolean =
+    ContestPermission(User.ADMIN_ROLES, Some(round.contestId))(inContest(user, round.contestId))
+
   /** What the permission requires, if it says; else nothing (`requiredRoles=unknown`). */
   def denialOf(permission: User => Boolean): Denial = permission match {
     case described: DescribedPermission => described.denial

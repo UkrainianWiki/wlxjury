@@ -71,6 +71,26 @@ class RoundStatTableViewSpec extends PlaySpecification {
             s"/filelist/round/${binaryRound.getId}/user/0/page/1?filter=$filter&sort=rate")))
     }
 
+    "show the jurors' pause buttons, with their column, to the contest's admin only" in {
+      val organizer = User("Org", "org@example.org", id = Some(8), roles = Set("organizer"), contestId = Some(1))
+      val otherAdmin = User("Other", "other@example.org", id = Some(7), roles = Set("admin"), contestId = Some(2))
+      def table(viewer: User) = Jsoup.parse(contentAsString(views.html.roundStatTable(viewer, ratedRound,
+        RoundStat(Seq(juror, idle), ratedRound, Seq(ratedRound), Map(juror.getId -> 3), Map.empty, 3, Map.empty))))
+      val asAdmin = table(admin)
+      (asAdmin.select("form[id^=set-active-form-]").size must_== 2) and
+        (asAdmin.select("thead th").size must_== 7) and
+        (asAdmin.select("tfoot th").first.attr("colspan") must_== "4") and
+        forall(Seq(organizer, otherAdmin, juror)) { viewer =>
+          val doc = table(viewer)
+          (doc.select("form[id^=set-active-form-]").size must_== 0) and
+            (doc.select("thead th").size must_== 6) and
+            (doc.select("tbody tr").first.select("td").size must_== 6) and
+            (doc.select("tfoot th").first.attr("colspan") must_== "3") and
+            // the files cell is then the fourth
+            (doc.select("tbody tr").first.select("td").get(3).text must_== "3")
+        }
+    }
+
     "have no button inside a link" in {
       forall(Seq(ratedRound, binaryRound)) { round =>
         render(round).select("a button").size must_== 0
