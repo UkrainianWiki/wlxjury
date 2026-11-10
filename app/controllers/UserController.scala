@@ -750,7 +750,7 @@ class UserController @Inject()(cc: ControllerComponents,
                       case Failure(e) =>
                         // the class only: the message can carry the line's email or SQL values
                         play.api.Logger("security.account").warn(s"user_import_line_failed " +
-                          s"accountId=${user.getId} contestId=$contestId error=${e.getClass.getSimpleName}")
+                          s"byAccountId=${user.getId} contestId=$contestId error=${e.getClass.getName}")
                         (done, failed + 1, false)
                     }
                 }

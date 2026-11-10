@@ -420,6 +420,8 @@ class PasswordStorageSpec extends PlaySpecification with PlayTestDb with Mockito
         page must contain("""id="api-tokens"""")
         page must contain("""id="linked-accounts"""")
         session(result).get(ApiTokensCard.NonceKey) must beSome
+        session(result).get(OAuthController.LinkNonceKey) must beSome
+        page must contain("""name="csrfToken"""")
         stored(user.getId) === before
       }
     }

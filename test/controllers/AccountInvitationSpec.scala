@@ -550,7 +550,7 @@ class AccountInvitationSpec extends PlaySpecification with PlayTestDb with Accou
         User.findByEmail("last@example.com") must not(beEmpty)
         User.findByEmail("broken@example.com") must beEmpty
         log.filter(_.startsWith("user_import_line_failed")) ===
-          Seq(s"user_import_line_failed accountId=${admin.getId} contestId=10 error=SQLException")
+          Seq(s"user_import_line_failed byAccountId=${admin.getId} contestId=10 error=java.sql.SQLException")
         log.mkString("\n") must not(contain("broken@example.com"))
       }
     }

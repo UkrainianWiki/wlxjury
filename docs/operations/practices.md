@@ -42,7 +42,7 @@ server error show a short reference on the page or in the JSON (`{error, referen
 
 **1.3 Named loggers by concern.** `security.authz` (denials, WARN), `security.account`
 (invitations, links, OAuth: `oauth_*`; a user import line that failed,
-`user_import_line_failed accountId=… contestId=… error=<class>`, WARN), `security.auth` (today one line:
+`user_import_line_failed byAccountId=… contestId=… error=<class name>`, WARN), `security.auth` (today one line:
 `oauth_choose_proof_failed accountId=… proof=password ip=…`, a wrong password in the OAuth
 account chooser, `OAuthChooserController`; the password sign-in form, `LoginController`, logs no
 failure line: OP4), `security.roles`, `security.password`; `coi` (conflict-of-interest

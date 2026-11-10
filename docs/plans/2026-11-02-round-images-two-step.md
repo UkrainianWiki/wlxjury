@@ -307,9 +307,10 @@ list's job column unchanged), with `params.mode`:
   and checks that no job is active, then queues `fill` in re-apply mode.
 - Re-apply first scans the round's existing `fill` rows against the new filters (keyset windows
   by page id, the same per-image filters as Fill) and marks those that still pass; then Fill
-  inserts the new matches. The insert's anti-join skips every existing row, so it can't mark the
-  rows kept: marking only what it sees would prune every file that still passes (R223-1). Prune
-  then deletes the unmarked `fill` rows (D16). `list`, `manual` and `dq` rows are never pruned.
+  inserts the new matches, marked as it inserts them. The insert's anti-join skips every existing
+  row, so it can't mark the rows kept: marking only what it sees would prune every file that still
+  passes (R223-1). Prune then deletes the unmarked `fill` rows, only among those from before this
+  job (D16): a row this job's Fill added is never pruned. `list`, `manual` and `dq` rows are never pruned.
 - Its result lists +added / −removed, and for each removed file the filter that now rejects it.
 - Top-N: D17. Previous rounds' votes changed since the fill (a fingerprint of their counts in
   the job state): the review page warns, and "Distribute anyway" needs confirming (D18).
