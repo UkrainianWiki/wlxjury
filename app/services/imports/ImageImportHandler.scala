@@ -161,7 +161,10 @@ class ImageImportHandler @Inject() (source: CommonsSource, config: Configuration
       "monumentIdsChanged" -> st.monumentIdsChanged,
       "missing" -> st.missing,
       "missingTitles" -> st.missingTitles,
-      "notInCountries" -> st.notInCountries
+      "notInCountries" -> st.notInCountries,
+      // of a page: whether its files were limited to those in a country category (null: not
+      // decided yet, or no page)
+      "byCountry" -> st.byCountry.fold[JsValue](JsNull)(JsBoolean(_))
     )
   }
 
@@ -204,9 +207,10 @@ class ImageImportHandler @Inject() (source: CommonsSource, config: Configuration
         countries = if (ContestCountries.ofManyCountries(contest)) countries(contest, found).toSeq else Nil
       )
     } else {
-      val listed = source.listFiles(ImportSource(p.source), st.cursor, stepSize)
+      val src = ImportSource(p.source)
+      val listed = source.listFiles(src, st.cursor, stepSize)
       val pages = listed.pageIds.grouped(idsPerRequest).flatMap(source.files(_, info = !monumentIds, text = text)).toSeq
-      val ofPage = !monumentIds && ImportSource(p.source).isInstanceOf[ImportSource.PageFiles]
+      val ofPage = !monumentIds && src.isInstanceOf[ImportSource.PageFiles]
       // the files' countries: of a page, and of any source of a contest of many countries
       val countryOf =
         if (ofPage || (!monumentIds && ContestCountries.ofManyCountries(contest))) countries(contest, pages)
@@ -216,8 +220,7 @@ class ImageImportHandler @Inject() (source: CommonsSource, config: Configuration
       // their categories); decided by the first step and kept, so a later step of icons only
       // changes nothing
       val byCountry = Option.when(ofPage) {
-        st.byCountry.getOrElse(countryOf.nonEmpty || countriesAhead(contest, ImportSource(p.source), listed.next,
-          idsPerRequest))
+        st.byCountry.getOrElse(countryOf.nonEmpty || countriesAhead(contest, src, listed.next, idsPerRequest))
       }
       val kept = if (byCountry.contains(true)) pages.filter(_.id.exists(countryOf.contains)) else pages
       ImportPage(
@@ -242,11 +245,7 @@ class ImageImportHandler @Inject() (source: CommonsSource, config: Configuration
     * categories, asked for those only.
     */
   private def countries(contest: ContestJury, pages: Seq[Page]): Map[Long, String] = {
-    val ids = pages.flatMap(_.id)
-    val candidates = ids.grouped(source.maxIdsPerRequest).flatMap(source.categories)
-      .map { case (pageId, categories) => pageId -> ContestCountries.candidates(contest, categories) }
-      .filter(_._2.nonEmpty)
-      .toMap
+    val candidates = inCountry(contest, pages.flatMap(_.id), source.maxIdsPerRequest).toMap
     val several = candidates.values.filter(_.size > 1).flatMap(_.map(_._2)).toSeq.distinct
     val parents = several.grouped(source.maxIdsPerRequest).flatMap(source.categoriesByTitle).toMap
     candidates.flatMap { case (pageId, cs) => ContestCountries.choose(cs, parents).map(pageId -> _) }
@@ -263,13 +262,21 @@ class ImageImportHandler @Inject() (source: CommonsSource, config: Configuration
     def from(cursor: Option[JsObject], requests: Int): Boolean = cursor match {
       case Some(c) if requests < CountryProbeRequests =>
         val listed = source.listFiles(src, c, perRequest)
-        val found = listed.pageIds.grouped(perRequest).flatMap(source.categories)
-          .exists { case (_, categories) => ContestCountries.candidates(contest, categories).nonEmpty }
-        found || from(listed.next, requests + 1)
+        inCountry(contest, listed.pageIds, perRequest).hasNext || from(listed.next, requests + 1)
       case _ => false
     }
     from(cursor, 0)
   }
+
+  /** The files in any of the contest's country categories, with those categories
+    * ([[ContestCountries.candidates]]): their categories asked `perRequest` files at a time,
+    * as the iterator is read.
+    */
+  private def inCountry(contest: ContestJury, pageIds: Seq[Long], perRequest: Int)
+      : Iterator[(Long, Seq[(String, String)])] =
+    pageIds.grouped(perRequest).flatMap(source.categories)
+      .map { case (pageId, categories) => pageId -> ContestCountries.candidates(contest, categories) }
+      .filter(_._2.nonEmpty)
 
   private def images(contest: ContestJury, p: ImportParams, pages: Seq[Page]): Seq[Image] =
     ImageText.imagesWithAuthors(pages, contest, p.monumentIdTemplate, source)
@@ -313,7 +320,8 @@ class ImageImportHandler @Inject() (source: CommonsSource, config: Configuration
       logger.info(
         s"Job ${job.id}, contest ${p.contestId}: ${title(job)}: ${next.seen} files, ${next.inserted} inserted, " +
           s"${next.linked} linked, ${next.updated} updated, ${next.monumentIdsChanged} monument ids changed" +
-          (if (next.notInCountries > 0) s", ${next.notInCountries} left out as in no country category" else "")
+          (if (next.notInCountries > 0) s", ${next.notInCountries} left out as in no country category" else "") +
+          (if (next.byCountry.contains(false)) ", no file in a country category: none left out" else "")
       )
       StepResult.Done(Json.toJsObject(next), progress)
     }
