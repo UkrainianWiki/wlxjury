@@ -519,4 +519,40 @@ class AccountInvitationSpec extends PlaySpecification with PlayTestDb with Accou
       }
     }
   }
+
+  "an import line that fails (R220-1)" should {
+    "count it as not added, add the other lines, and log the failure's class only" in {
+      testDbApp { implicit app =>
+        implicit val mat: Materializer = app.materializer
+        createContests(10)
+        val admin = account("admin@example.com", Some(10), "admin", verified = true)
+        val failing = new services.UserService(new RecordingMail, app.configuration) {
+          override protected def mailInBackground(send: => Unit): Unit = send
+          override def addToContest(creator: User, formUser: User, contestOpt: Option[org.intracer.wmua.ContestJury])(
+              implicit messages: play.api.i18n.Messages, linkHost: services.LinkHost): services.UserService.Added =
+            if (formUser.email == "broken@example.com")
+              throw new java.sql.SQLException("Duplicate entry 'broken@example.com' for key 'email'")
+            else super.addToContest(creator, formUser, contestOpt)
+        }
+        val controller = new UserController(app.injector.instanceOf[play.api.mvc.ControllerComponents], failing,
+          app.injector.instanceOf[modules.BlockingExecutionContext])
+        val (result, log) = accountLog {
+          val r = call(controller.importUsers(Some(10L)),
+            as(admin, Some(10L))(FakeRequest(POST, "/admin/importusers?contestId=10"))
+              .withFormUrlEncodedBody("userstoimport" -> "first@example.com\nbroken@example.com\nlast@example.com",
+                "role" -> "jury").withCSRFToken)
+          status(r)
+          r
+        }
+        status(result) === SEE_OTHER
+        flash(result).get("users-added") must beSome(contain("1 could not be added. Please import them again."))
+        User.findByEmail("first@example.com") must not(beEmpty)
+        User.findByEmail("last@example.com") must not(beEmpty)
+        User.findByEmail("broken@example.com") must beEmpty
+        log.filter(_.startsWith("user_import_line_failed")) ===
+          Seq(s"user_import_line_failed byAccountId=${admin.getId} contestId=10 error=java.sql.SQLException")
+        log.mkString("\n") must not(contain("broken@example.com"))
+      }
+    }
+  }
 }
