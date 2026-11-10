@@ -507,8 +507,14 @@ of four jurors per file, yes/no:
 - **Jurors**: the four jurors; **File distribution**: each file to 1 juror; **Rating type**: Yes/No.
 
 The round keeps the setting: "Distribute new files" later leaves out the files that are in Q-01
-then. The form refuses the round itself and rounds of another contest ("The rounds to leave out
-must be other rounds of this contest").
+then. The files of the rounds to leave out are read while the round's distribution runs, so a file
+that reaches Q-01 after that stays in Q-00-1 too. The form therefore refuses a round to leave out
+that is still being distributed ("The round to leave out, Q-01, is still being distributed…"): save
+again when its distribution has finished, and don't start "Distribute new files" on Q-01 while
+Q-00-1 is being filled. The form also refuses the round itself, rounds of another contest ("The
+rounds to leave out must be other rounds of this contest") and a round that is also a previous
+round of the new round, which would leave it with no files ("A round to leave out can't also be a
+previous round of this round…").
 
 <a id="a-rejection-filter"></a>
 ### The rejection filter

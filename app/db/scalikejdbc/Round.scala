@@ -461,6 +461,10 @@ object Round extends RoundRepo with CRUDMapper[Round] {
       .orderBy(r.id)
       .apply()
 
+  /** The rounds of these ids, whatever their contest (the caller checks it), by id. */
+  def findByIdsInAnyContest(roundIds: Seq[Long]): Seq[Round] =
+    if (roundIds.isEmpty) Nil else where(sqls.in(r.id, roundIds)).orderBy(r.id).apply()
+
   def findByIds(contestId: Long, roundIds: Seq[Long]): Seq[Round] = {
     where(sqls.eq(r.contestId, contestId).and.in(r.id, roundIds))
       .orderBy(r.id)

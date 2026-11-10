@@ -305,7 +305,9 @@ Developed 2026-11-02 to 2026-11-03, PRs #232–#236.
   and `vote_aside.rate` `NOT NULL DEFAULT 0` (an online rebuild of each table; the NULL handling
   in the code removed); V92 `round.worst_mark`; V93 `round.prev_rejected_mode`; V94 `account_token.shared` (`ALGORITHM = INSTANT`;
   rollback in `FlywayUpgradeSpec`, the live shared links revoked first); V95 `round.exclude_rounds`
-  (`ALGORITHM = INSTANT`, then a `CHECK` that copies `round`; rollback in `FlywayUpgradeSpec`).
+  (`ALGORITHM = INSTANT`, then a `CHECK` that copies `round`; rollback in `FlywayUpgradeSpec`). No
+  app path deletes a round: one deleted by hand in SQL must also have its id cleared from other
+  rounds' `previous` and `exclude_rounds`, or their resubmit and "Distribute new files" are refused.
 
 ## Deployed
 

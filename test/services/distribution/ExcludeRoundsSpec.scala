@@ -2,7 +2,7 @@ package services.distribution
 
 import db.scalikejdbc._
 import org.intracer.wmua.cmd.DistributeImages
-import org.intracer.wmua.{BinaryOrder, ContestJury, Image}
+import org.intracer.wmua.{BinaryOrder, ContestJury, Image, RejectedMode}
 import org.specs2.mutable.Specification
 import org.specs2.specification.{BeforeAll, BeforeEach}
 import scalikejdbc.DBSession
@@ -183,8 +183,10 @@ class ExcludeRoundsSpec extends Specification with TestDb with BeforeAll with Be
       failing.arm()
       val first = s.service.submit(s.q001Settings, s.jurors.map(_.getId), form)
       val failed = roundDao.findById(first.round.getId).get
-      val again = s.service.submit(s.q001Settings, s.jurors.map(_.getId), form)
+      // the form submitted again with other rounds to leave out (none): the stored ones apply
+      val again = s.service.submit(s.q001Settings.copy(excludeRounds = Nil), s.jurors.map(_.getId), form)
       (first.job.map(_.status) must beSome(JobStatus.Failed)) and (failed.excludeRounds === Seq(s.q01.getId)) and
+        (roundDao.findById(first.round.getId).get.excludeRounds === Seq(s.q01.getId)) and
         (again must beAnInstanceOf[RoundService.Resubmitted]) and (again.round.id === first.round.id) and
         (pageIds(first.round.getId) === Set[Long](1, 2, 8)) and
         (roundFiles(first.round.getId) === Set[Long](1, 2, 8))
@@ -205,13 +207,107 @@ class ExcludeRoundsSpec extends Specification with TestDb with BeforeAll with Be
         (roundDao.findByContest(s.contest.getId).size === before + 1) and
         (roundDao.findById(self.getId).get.excludeRounds === Seq(self.getId)) and
         (s.service.distributeNewFiles(self.getId) must throwA[IllegalArgumentException](message = "its own files")) and
-        (RoundDistributionHandler.excludedRoundsError(s.q001Settings.copy(id = Some(7), excludeRounds = Seq(7)), Seq(7L))
-          must beSome(RoundDistributionHandler.ExcludeRoundsSelf)) and
-        (RoundDistributionHandler.excludedRoundsError(s.q001Settings, Seq(s.q01.getId)) must beNone) and
-        (RoundDistributionHandler.excludedRoundsError(s.q001Settings, Nil)
-          must beSome(RoundDistributionHandler.ExcludeRoundsOther))
+        (refusalKey(s.q001Settings.copy(id = Some(7), excludeRounds = Seq(7))) must beSome(H.ExcludeRoundsSelf)) and
+        (refusalKey(s.q001Settings) must beNone) and
+        (refusalKey(s.q001Settings, lookup = _ => Nil, tellMissing = false) must beSome(H.ExcludeRoundsOther))
+    }
+
+    "check the length and the ids before any lookup" in {
+      val round = Round(None, 0, None, 1, excludeRounds = Seq.fill(40)(1234567L))
+      var looked = false
+      val refusal = H.excludedRoundsError(round, _ => { looked = true; Nil }, _ => false)
+      (refusal.map(_.key) must beSome(H.ExcludeRoundsOther)) and (looked must beFalse) and
+        (H.excludedRoundsError(round.copy(excludeRounds = Seq(-1L)), _ => { looked = true; Nil }, _ => false)
+          .map(_.key) must beSome(H.ExcludeRoundsOther)) and (looked must beFalse)
+    }
+
+    "refuse a previous round of the round, which would leave it empty" in {
+      val s = setUp()
+      (s.service.submit(s.q001Settings.copy(excludeRounds = Seq(s.q00.getId)), s.jurors.map(_.getId)) must
+        throwA[H.ExcludeRoundsRefused].like { case e: H.ExcludeRoundsRefused =>
+          e.refusal.key === H.ExcludeRoundsPrevious }) and
+        (refusalKey(s.q001Settings.copy(excludeRounds = Seq(s.q01.getId, s.q00.getId))) must beSome(H.ExcludeRoundsPrevious))
+    }
+
+    "refuse a round being distributed (being created, or with a queued or running job), its files still coming" in {
+      val s = setUp()
+      Round.updateById(s.q01.getId).withAttributes("distributing" -> true)
+      val creating = s.service.submit(s.q001Settings, s.jurors.map(_.getId)) must
+        throwA[H.ExcludeRoundsRefused].like { case e: H.ExcludeRoundsRefused =>
+          (e.refusal.key === H.ExcludeRoundsBusy) and (e.refusal.args === Seq("Q-01")) }
+      // "Count new files" only reads: it counts by Q-01's files as they are, busy or not
+      val counted = roundDao.create(s.q001Settings.copy(number = 9))
+      counted.addUsers(s.jurors.map(u => RoundUser(counted.getId, u.getId, "jury", active = true)))
+      val count = s.service.newFilesCount(counted.getId)
+      Round.updateById(s.q01.getId).withAttributes("distributing" -> false)
+      creating and (count === 3L) and (refusalKey(s.q001Settings, busy = _.id.contains(s.q01.getId)) must beSome(H.ExcludeRoundsBusy)) and
+        (H.distributingNow(roundDao.findById(s.q01.getId).get) must beFalse)
+    }
+
+    "say that a stored round's round to leave out no longer exists (deleted by SQL), not that it is another contest's" in {
+      val s = setUp()
+      val other = roundDao.create(Round(None, 1, Some("Other"), createContests(2).head.getId))
+      def stored(excluded: Long): Long = {
+        val round = roundDao.create(s.q001Settings.copy(number = 9, excludeRounds = Nil))
+        round.addUsers(s.jurors.map(u => RoundUser(round.getId, u.getId, "jury", active = true)))
+        Round.updateById(round.getId).withAttributes("excludeRounds" -> excluded.toString)
+        round.getId
+      }
+      val gone = other.getId + 1000
+      (s.service.distributeNewFiles(stored(gone)) must throwA[H.ExcludeRoundsRefused].like {
+        case e: H.ExcludeRoundsRefused =>
+          (e.refusal.key === H.ExcludeRoundsMissing) and (e.refusal.args === Seq(gone.toString)) and
+            (e.getMessage must contain("no longer exists"))
+      }) and
+        (s.service.distributeNewFiles(stored(other.getId)) must throwA[H.ExcludeRoundsRefused].like {
+          case e: H.ExcludeRoundsRefused => e.refusal.key === H.ExcludeRoundsOther
+        }) and
+        // a new round's posted ids say nothing of other contests
+        (refusalKey(s.q001Settings.copy(excludeRounds = Seq(gone)), tellMissing = false) must beSome(H.ExcludeRoundsOther))
+    }
+
+    "read the votes of the previous round with an exclusion: rejected by at least 1, only those" in {
+      val s = setUp()
+      // a round holding two of Q-00's rejected files (1, 4, 7, 10), whatever their votes there
+      val held = roundDao.create(Round(None, 9, Some("Held"), s.contest.getId))
+      Seq(1L, 4L).foreach(p => VoteJdbc.create(p, 0, s.jurors.head.getId, held.getId))
+      val only = Round(None, 0, Some("Rejected"), s.contest.getId, distribution = 1, active = true,
+        previous = Some(s.q00.getId.toString), prevRejectedBy = Some(1), prevRejectedMode = RejectedMode.Only,
+        excludeRounds = Seq(held.getId))
+      val round = s.service.createNewRound(only, s.jurors.map(_.getId))
+      val control = s.service.createNewRound(only.copy(name = Some("control"), excludeRounds = Nil), s.jurors.map(_.getId))
+      val job = s.service.distributionJob(round.getId).get
+      (pageIds(round.getId) === Set[Long](7, 10)) and (pageIds(control.getId) === Set[Long](1, 4, 7, 10)) and
+        // the vote-based count (previousCount) leaves them out too: the job's total
+        (job.progressTotal must beSome(2L)) and (s.service.newFilesCount(round.getId) === 0L)
+    }
+
+    "rank a rated top-N among the files left after them" in {
+      val s = setUp()
+      val rated = s.service.createNewRound(Round(None, 0, Some("Rated"), s.contest.getId, active = true,
+        rates = Round.ratesById(5)), s.jurors.take(2).map(_.getId))
+      VoteJdbc.byRound(rated.getId).foreach(v => VoteJdbc.rate(v.pageId, v.juryId, rated.getId, (v.pageId % 5 + 1).toInt))
+      // 4 and 9 score 5, 3 and 8 score 4
+      val held = roundDao.create(Round(None, 9, Some("Held"), s.contest.getId))
+      Seq(4L, 9L).foreach(p => VoteJdbc.create(p, 0, s.jurors.head.getId, held.getId))
+      val top = Round(None, 0, Some("Top"), s.contest.getId, distribution = 1, active = true,
+        rates = Round.ratesById(5), previous = Some(rated.getId.toString), topImages = Some(2),
+        excludeRounds = Seq(held.getId))
+      val round = s.service.createNewRound(top, s.jurors.map(_.getId))
+      val control = s.service.createNewRound(top.copy(name = Some("control"), excludeRounds = Nil), s.jurors.map(_.getId))
+      (pageIds(round.getId) === Set[Long](3, 8)) and (pageIds(control.getId) === Set[Long](4, 9)) and
+        (s.service.newFilesCount(round.getId) === 0L)
     }
   }
+
+  private val H = RoundDistributionHandler
+
+  /** [[RoundDistributionHandler.excludedRoundsError]]'s key for `round`, by default with the
+    * rounds as stored and nothing being distributed.
+    */
+  private def refusalKey(round: Round, lookup: Seq[Long] => Seq[Round] = Round.findByIdsInAnyContest,
+      busy: Round => Boolean = _ => false, tellMissing: Boolean = true): Option[String] =
+    H.excludedRoundsError(round, lookup, busy, tellMissing).map(_.key)
 
   /** Fails the first `failures` chunks it inserts once armed (after the setup's rounds). */
   private class FailingHandler(failures: Int)

@@ -16,9 +16,11 @@ ALTER TABLE round
   ALGORITHM = INSTANT;
 
 -- 2. Its form, checked byte for byte (db practices §1): round ids (digits, no leading zero) joined by
---    single commas, or NULL; no empty string, space or sign. One statement, so a failure can't leave
+--    single commas, or NULL; no empty string, space, sign or line break. The end is anchored with \z
+--    (written '\\z' in the string: the server's default sql_mode has backslash escapes), since
+--    PCRE's $ also matches before a trailing newline. One statement, so a failure can't leave
 --    the column without its check; rerunnable. MariaDB checks the existing rows (all NULL) as it
 --    adds it, which copies `round`, one row per round: milliseconds (as V93's).
 ALTER TABLE round DROP CONSTRAINT IF EXISTS round_exclude_rounds_chk,
   ADD CONSTRAINT round_exclude_rounds_chk
-    CHECK (exclude_rounds IS NULL OR BINARY exclude_rounds REGEXP '^[1-9][0-9]{0,18}(,[1-9][0-9]{0,18})*$');
+    CHECK (exclude_rounds IS NULL OR BINARY exclude_rounds REGEXP '^[1-9][0-9]{0,18}(,[1-9][0-9]{0,18})*\\z');

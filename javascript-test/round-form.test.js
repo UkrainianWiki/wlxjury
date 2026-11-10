@@ -29,6 +29,9 @@ function page({ coiFiles = 0, texts = TEXTS } = {}) {
           <div id="selectFilters" class="round1">select</div>
           <div id="rateFilters">rate</div>
         </div>
+        <select id="excludeRounds" name="excludeRounds[]" multiple>
+          <option value="1">Round 1 (binary)</option><option value="2">Round 2 (rated)</option>
+        </select>
         <select id="regions" name="regions[]" multiple><option value="07">Volyn</option></select>
         <select id="jurors" name="jurors[]" multiple>
           <option value="11">Ann</option><option value="12">Bob</option><option value="13">Cid</option>
@@ -60,10 +63,18 @@ describe("texts", () => {
 });
 
 describe("the round form", () => {
-    test("makes its three multiple selects Tom Select dropdowns, with the texts", () => {
+    test("makes its four multiple selects Tom Select dropdowns, with the texts", () => {
         page();
-        expect(document.querySelectorAll(".wlx-multi")).toHaveLength(3);
+        expect(document.querySelectorAll(".wlx-multi")).toHaveLength(4);
         expect(document.querySelector("#jurors").tomselect).toBeDefined();
+        // the rounds to leave out (V95): a dropdown with "Select all", sending its choice as the select's
+        const exclude = document.querySelector("#excludeRounds").tomselect;
+        expect(exclude).toBeDefined();
+        expect(exclude.dropdown.querySelector(".wlx-select-all .form-check-label").textContent).toBe("Select all");
+        exclude.addItem("2");
+        expect($("#excludeRounds").val()).toEqual(["2"]);
+        // choosing rounds to leave out shows none of the previous rounds' filters
+        expect(shown("prevRoundFilters")).toBe(false);
         expect(document.querySelector(".wlx-multi-summary").textContent).toBe("None selected");
     });
 

@@ -180,11 +180,13 @@ class RoundDistributionHandler @Inject() (
     * job's, [[jobRejectedMode]]), else by the round's own mode.
     */
   private def context(roundId: Long, averageRules: Option[Long => AverageRule],
-      rejectedMode: Option[RejectedMode] = None): Context = {
+      rejectedMode: Option[RejectedMode] = None, countOnly: Boolean = false): Context = {
     val round = Round.findById(roundId).getOrElse(throw new NoSuchElementException(s"Round $roundId not found"))
     val prevRounds = RoundDistributionHandler.previousRounds(round)
       .map(p => averageRules.filterNot(_ => p.isBinary).fold(p)(rules => p.copy(averageRule = rules(p.getId))))
-    val excluded = RoundDistributionHandler.excludedRounds(round)
+    // a job's run refuses a round to leave out that is being distributed itself (its files still
+    // coming); "Count new files" only reads, and counts by the files it has now
+    val excluded = RoundDistributionHandler.excludedRounds(round, checkBusy = !countOnly)
     val jurors = User.distributionJurors(roundId).sortBy(_.getId).toIndexedSeq
     DistributeImages.checkJury(round, jurors)
     val categoryRule = round.categoryRule
@@ -593,7 +595,7 @@ class RoundDistributionHandler @Inject() (
     */
   def countNew(roundId: Long): Long = DB.readOnly { implicit session =>
     // "Count new files": as a distribution queued now would, by the previous round's rule
-    val c = context(roundId, None)
+    val c = context(roundId, None, countOnly = true)
     if (c.topN.isDefined) {
       val ranked = DistributionSource.rank(c.prevRounds.flatMap(_.id), c.votes, c.denominators, c.topN.get, c.filter,
         c.topOrder, c.excluded)
@@ -757,36 +759,83 @@ object RoundDistributionHandler {
   }
 
   /** The rounds whose files the round leaves out ([[Round.excludeRounds]], V95), checked as the round
-    * form checks them ([[excludedRoundsError]]): other rounds of its own contest, each found (a
-    * round deleted since its creation fails the distribution rather than leaving its files in).
+    * form checks them ([[excludedRoundsError]]). A round deleted since its creation fails the
+    * distribution rather than leaving its files in. `checkBusy`: also refuse one being distributed
+    * now (all but "Count new files").
     */
-  def excludedRounds(round: Round): Seq[Long] = {
+  def excludedRounds(round: Round, checkBusy: Boolean = true): Seq[Long] = {
     val ids = round.excludeRounds
-    if (ids.nonEmpty) {
-      val found = Round.findByIds(round.contestId, ids).flatMap(_.id)
-      val error = excludedRoundsError(round, found)
-      require(!error.contains(ExcludeRoundsSelf), s"round ${round.id.orNull} can't leave out its own files")
-      require(error.isEmpty,
-        s"rounds to leave out [${ids.mkString(", ")}] must be other rounds of contest ${round.contestId}: " +
-          s"found [${found.mkString(", ")}]")
-    }
+    // a stored round's ids may name a round deleted since (by SQL): said so; a new one's are as posted
+    excludedRoundsError(round, Round.findByIdsInAnyContest, if (checkBusy) distributingNow else _ => false,
+      tellMissing = round.id.isDefined)
+      .foreach { refusal =>
+        val text = refusal.key match {
+          case ExcludeRoundsSelf     => s"round ${round.id.orNull} can't leave out its own files"
+          case ExcludeRoundsPrevious =>
+            s"rounds to leave out [${ids.mkString(", ")}] include one of its previous rounds [${round.previousIds.mkString(", ")}]"
+          case ExcludeRoundsBusy     =>
+            s"round ${refusal.args.mkString} to leave out is being distributed: wait until its distribution has finished"
+          case ExcludeRoundsMissing  =>
+            s"round ${refusal.args.mkString}, left out by round ${round.id.orNull}, no longer exists: a database admin " +
+              "must remove it from the round's exclude_rounds"
+          case _ => s"rounds to leave out [${ids.mkString(", ")}] must be other rounds of contest ${round.contestId}"
+        }
+        // a refusal of our own checks: the round form shows its message (RoundController.failed)
+        throw ExcludeRoundsRefused(refusal, text)
+      }
     ids
   }
 
-  /** The round form's message key refusing `round`'s rounds to leave out, given which of them were
-    * found among its contest's rounds (`found`): the round itself, or one not of its contest (another
-    * contest's, none, an id that is no id); None when they are fine.
+  /** A refusal of a round's rounds to leave out: a message key and its arguments. */
+  final case class ExcludeRoundsRefusal(key: String, args: Seq[String] = Nil)
+
+  /** [[excludedRounds]]' refusal, a `require`'s (its text after "requirement failed: ", as
+    * [[controllers.RoundController.refusal]] reads one), with the message the form shows.
     */
-  def excludedRoundsError(round: Round, found: Seq[Long]): Option[String] = {
+  final case class ExcludeRoundsRefused(refusal: ExcludeRoundsRefusal, text: String)
+      extends IllegalArgumentException("requirement failed: " + text)
+
+  /** The refusal of `round`'s rounds to leave out, if any, in this order, each checked before the
+    * lookups the next ones need: the round itself; a value that is no round id, or more than the
+    * column holds (no lookup); with `tellMissing` (a stored round's setting: the service and the
+    * job), one that no longer exists (deleted by SQL; `lookup` finds rounds by id in any contest),
+    * with its id; one not among its contest's rounds (another contest's, or, without `tellMissing`,
+    * none: the form doesn't tell which, so a posted id says nothing of other contests); a previous
+    * round of the round (its files would all be left out: an empty round); one being distributed
+    * now (`busy`: [[distributingNow]], or nothing for "Count new files"), whose files still coming
+    * would end up in both rounds, with its description.
+    */
+  def excludedRoundsError(round: Round, lookup: Seq[Long] => Seq[Round], busy: Round => Boolean,
+      tellMissing: Boolean = false): Option[ExcludeRoundsRefusal] = {
     val ids = round.excludeRounds
-    if (round.id.exists(ids.contains)) Some(ExcludeRoundsSelf)
-    else if (!ids.forall(found.contains) || round.excludeRoundsStored.exists(_.length > ExcludeRoundsMaxLength))
-      Some(ExcludeRoundsOther)
-    else None
+    if (ids.isEmpty) None
+    else if (round.id.exists(ids.contains)) Some(ExcludeRoundsRefusal(ExcludeRoundsSelf))
+    else if (ids.exists(_ <= 0) || round.excludeRoundsStored.exists(_.length > ExcludeRoundsMaxLength))
+      Some(ExcludeRoundsRefusal(ExcludeRoundsOther))
+    else {
+      val found = lookup(ids)
+      val ofContest = found.filter(_.contestId == round.contestId)
+      val missing = ids.filterNot(id => found.exists(_.id.contains(id)))
+      if (tellMissing && missing.nonEmpty) Some(ExcludeRoundsRefusal(ExcludeRoundsMissing, Seq(missing.head.toString)))
+      else if (!ids.forall(id => ofContest.exists(_.id.contains(id)))) Some(ExcludeRoundsRefusal(ExcludeRoundsOther))
+      else if (ids.exists(round.previousIds.contains)) Some(ExcludeRoundsRefusal(ExcludeRoundsPrevious))
+      else
+        ofContest.find(busy)
+          .map(r => ExcludeRoundsRefusal(ExcludeRoundsBusy, Seq(r.description)))
+    }
   }
+
+  /** The round is being distributed: being created (`distributing`), or with an active distribution
+    * job, queued or running (V60's `active_dedupe_key`).
+    */
+  def distributingNow(round: Round): Boolean =
+    round.distributing || JobJdbc.activeByDedupeKey(dedupeKey(round.getId)).isDefined
 
   val ExcludeRoundsSelf = "error.exclude.rounds.self"
   val ExcludeRoundsOther = "error.exclude.rounds.other"
+  val ExcludeRoundsPrevious = "error.exclude.rounds.previous"
+  val ExcludeRoundsBusy = "error.exclude.rounds.busy"
+  val ExcludeRoundsMissing = "error.exclude.rounds.missing"
 
   /** `round.exclude_rounds` is a VARCHAR(255) (V95). */
   val ExcludeRoundsMaxLength = 255

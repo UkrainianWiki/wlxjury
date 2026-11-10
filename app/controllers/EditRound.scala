@@ -112,18 +112,17 @@ object EditRound {
 
   val WorstMarkRatedOnly = "error.worst.mark.rated.only"
 
-  /** "Leave out files that are in round(s)" (V95): other rounds of the round's contest, found there;
-    * not the round itself, nor another contest's round, nor a value that is no round id
-    * ([[RoundDistributionHandler.excludedRoundsError]], which the distribution checks again). Its
-    * contest's rounds are read only when some are chosen. An edit doesn't change them (the select
-    * is disabled, posting nothing).
+  /** "Leave out files that are in round(s)" (V95): other rounds of the round's contest, found there,
+    * none of its previous rounds and none being distributed now
+    * ([[RoundDistributionHandler.excludedRoundsError]], which the service and the job check again).
+    * Its contest's rounds are read only when some are chosen. An edit doesn't change them (the
+    * select is disabled, posting nothing).
     */
   private val validExcludedRounds: Constraint[EditRound] = Constraint("constraint.exclude.rounds") { edit =>
     val round = edit.round
-    val ids = round.excludeRounds.filter(_ > 0)
-    val found = if (ids.isEmpty) Nil else Round.findByIds(round.contestId, ids).flatMap(_.id)
-    RoundDistributionHandler.excludedRoundsError(round, found).fold[ValidationResult](Valid)(key =>
-      Invalid(ValidationError(key)))
+    RoundDistributionHandler
+      .excludedRoundsError(round, Round.findByIdsInAnyContest, RoundDistributionHandler.distributingNow)
+      .fold[ValidationResult](Valid)(refusal => Invalid(ValidationError(refusal.key, refusal.args: _*)))
   }
 
   /** The rejected-by mode select's "no filter" (a value of its own: Play reads "" as absent, which

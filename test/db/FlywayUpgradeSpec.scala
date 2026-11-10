@@ -559,14 +559,16 @@ class FlywayUpgradeSpec extends Specification with BeforeAll with AfterAll {
       val (stored, refused, taken) = Using.resource(connect("fw_v95_back")) { c =>
         val stored = rows(c, "SELECT id, exclude_rounds, CAST(created_at AS CHAR) FROM round ORDER BY id")(rs =>
           (rs.getLong(1), Option(rs.getString(2)), rs.getString(3)))
-        val refused = Seq("''", "'1,'", "',1'", "'1, 2'", "'01'", "'-1'", "'1,,2'", "'a'").map(v =>
+        val refused = Seq("''", "'1,'", "',1'", "'1, 2'", "'01'", "'-1'", "'1,,2'", "'a'",
+          // a trailing line break, which PCRE's $ would let through: V95 anchors with \z
+          "'1\\n'").map(v =>
           scala.util.Try(run(c, Seq(s"UPDATE round SET exclude_rounds = $v, created_at = created_at WHERE id = 2")))
             .isFailure)
         run(c, Seq("UPDATE round SET exclude_rounds = '1,10', created_at = created_at WHERE id = 2"))
         (stored, refused, rows(c, "SELECT exclude_rounds FROM round WHERE id = 2")(_.getString(1)))
       }
       (stored === List((1L, None, "2020-01-01 00:00:00"), (2L, None, "2020-01-02 00:00:00"))) and
-        (refused === Seq.fill(8)(true)) and (taken === List("1,10")) and {
+        (refused === Seq.fill(9)(true)) and (taken === List("1,10")) and {
           Using.resource(connect("fw_v95_back"))(c => run(c, Seq("UPDATE round SET exclude_rounds = NULL")))
           val reset = schema("fw_v95_back")
           Using.resource(connect("fw_v95_back"))(c => run(c, statements("V95__Round_exclude_rounds.sql")))

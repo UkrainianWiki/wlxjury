@@ -48,7 +48,7 @@ class RoundExcludeRoundsFormSpec extends PlaySpecification with PlayTestDb {
       .withFormUrlEncodedBody(
         Seq("number" -> "0", "name" -> "Round 3", "contest" -> contestId.toString, "roles" -> "jury",
           "distribution" -> "1", "rates" -> "1", "minMpx" -> "", "minSize" -> "", "mediaType" -> "all",
-          "submitToken" -> java.util.UUID.randomUUID().toString) ++ extra ++
+          "submitToken" -> java.util.UUID.randomUUID().toString).filterNot(f => extra.exists(_._1 == f._1)) ++ extra ++
           jurors.zipWithIndex.map { case (id, i) => s"jurors[$i]" -> id.toString }: _*)
       .withCSRFToken
 
@@ -99,6 +99,40 @@ class RoundExcludeRoundsFormSpec extends PlaySpecification with PlayTestDb {
           get(s"/admin/rounds/edit?contestId=${contest.getId}&id=${round.getId}", admin)).get))
         (options.map(_._1) === Seq(first.getId.toString, second.getId.toString)) and
           (selected === Seq(second.getId.toString)) and (disabled must beTrue)
+      }
+    }
+
+    "be kept by an edit of the round, which posts none (the select disabled)" in {
+      testDbApp { implicit app =>
+        val (contest, admin, jurors, first, second, _) = fixture()
+        status(route(app, save(contest.getId, jurors, admin,
+          Seq("previousRound[]" -> first.getId.toString, "excludeRounds[]" -> second.getId.toString))).get)
+        val round = roundDao.findByContest(contest.getId).find(_.name.contains("Round 3")).get
+        val edited = route(app, save(contest.getId, User.findRoundJurors(round.getId).map(_.getId), admin,
+          Seq("id" -> round.getId.toString, "number" -> round.number.toString, "name" -> "Round 3 renamed"))).get
+        (status(edited) must_== SEE_OTHER) and
+          (roundDao.findById(round.getId).map(r => (r.name, r.excludeRounds)) ===
+            Some((Some("Round 3 renamed"), Seq(second.getId))))
+      }
+    }
+
+    "refuse a previous round of the new round, and a round still being distributed, with their messages" in {
+      testDbApp { implicit app =>
+        val (contest, admin, jurors, first, second, _) = fixture()
+        def text(extra: Seq[(String, String)]) = {
+          val result = route(app, save(contest.getId, jurors, admin, extra)).get
+          (status(result), Jsoup.parse(contentAsString(result)).text)
+        }
+        val (overlapStatus, overlap) =
+          text(Seq("previousRound[]" -> first.getId.toString, "excludeRounds[]" -> first.getId.toString))
+        Round.updateById(second.getId).withAttributes("distributing" -> true)
+        val (busyStatus, busy) =
+          text(Seq("previousRound[]" -> first.getId.toString, "excludeRounds[]" -> second.getId.toString))
+        (overlapStatus must_== BAD_REQUEST) and
+          (overlap must contain("A round to leave out can't also be a previous round of this round")) and
+          (busyStatus must_== BAD_REQUEST) and
+          (busy must contain("The round to leave out, Round 2, is still being distributed.")) and
+          (roundDao.findByContest(contest.getId).map(_.name.get) === Seq("Round 1", "Round 2"))
       }
     }
 
