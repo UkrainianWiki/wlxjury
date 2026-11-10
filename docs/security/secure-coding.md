@@ -293,9 +293,10 @@ by root through `User.setRootLocked`, never from `user_contest`, and only with t
 own **Root** field (`root`, root's only, never for oneself, only a toggle of the state the page
 showed, `rootWas`), never with a role value: a contest role change leaves it as it is. No new
 account is made root (the add row's `root` is refused for everyone, and
-`UserService.createAccount` strips it). The grant is decided again under the rows' locks (L2:
-not for an account with a password and an unverified email), and a removal never leaves no
-active root. A role field in a form has an allowlist `verifying`. No role can grant more than
+`UserService.createAccount` strips it). It is decided again with the actor's and the target's
+rows locked by primary key (deadlocks retried): the actor must still be an active root other
+than the target, so a removal always leaves a root; a grant needs an active target and L2 (not
+for an account with a password and an unverified email). A role field in a form has an allowlist `verifying`. No role can grant more than
 its holder has (`User.mayAssignRoles`).
 Adding a role needs a migration replacing V76's `CHECK` constraint. (N1: a free-text role
 field split on commas made any contest admin root.)

@@ -779,38 +779,31 @@ object User extends CRUDMapper[User] {
     updateById(id)
       .withAttributes("theme" -> theme.value)
 
-  def setRoot(id: Long, root: Boolean): Unit =
-    updateById(id)
-      .withAttributes("isRoot" -> root)
-
   /** Root's change of another account's users.is_root (the edit page's Root field), decided and
-    * written in one transaction with the rows locked in id order: the actor's and the target's,
-    * and for a removal every active root's. Refused (a message key, nothing written) if the actor
-    * is no longer an active root, or is the target (`root.changed.meanwhile`); a grant to an
-    * account with a password but no verified email (L2, `root.needs.verified.email`: an admin's
-    * password set, which unverifies it, may have landed since the form was checked); a removal
-    * that would leave no other active root (`root.last`). Right(false): the account already
-    * was as asked (another root's change came first), nothing written.
+    * written in one transaction with the actor's and the target's rows locked by primary key, in
+    * id order, retried on a deadlock ([[WriteTx.write]]). Refused (a message key, nothing
+    * written) if the actor is no longer an active root, or is the target, or the target is gone
+    * (`root.changed.meanwhile`); a grant to a deleted account (the same), or to one with a
+    * password but no verified email (L2, `root.needs.verified.email`: an admin's password set,
+    * which unverifies it, may have landed since the form was checked). Right(false): the account
+    * already was as asked (another root's change came first), nothing written. A removal always
+    * leaves a root: the actor, an active root other than the target, re-read under its lock.
     */
   def setRootLocked(actorId: Long, targetId: Long, root: Boolean): Either[String, Boolean] =
-    DB.localTx { implicit session =>
-      // users.is_root has no index: a scan, which under READ COMMITTED keeps the matching rows' locks only
-      val rootsToo = if (root) sqls"" else sqls"OR (is_root AND deleted_at IS NULL)"
+    WriteTx.write { implicit session =>
       val rows = sql"""SELECT id, is_root, deleted_at IS NULL AS active, password IS NOT NULL AS has_password,
                          email_verified_at IS NOT NULL AS verified
-                       FROM users WHERE id IN ($actorId, $targetId) $rootsToo ORDER BY id FOR UPDATE"""
+                       FROM users WHERE id IN ($actorId, $targetId) ORDER BY id FOR UPDATE"""
         .map(rs => rs.long("id") -> ((rs.boolean("is_root"), rs.boolean("active"), rs.boolean("has_password"),
           rs.boolean("verified"))))
         .list()
         .toMap
-      def activeRoot(id: Long) = rows.get(id).exists { case (isRoot, active, _, _) => isRoot && active }
+      val actorActiveRoot = rows.get(actorId).exists { case (isRoot, active, _, _) => isRoot && active }
       rows.get(targetId) match {
-        case None                                      => Left("root.changed.meanwhile")
-        case Some((isRoot, _, _, _)) if isRoot == root => Right(false)
-        // first: two roots taking each other's root at once, the second finds itself the last
-        case Some(_) if !root && !rows.keys.exists(id => id != targetId && activeRoot(id)) =>
-          Left("root.last")
-        case _ if actorId == targetId || !activeRoot(actorId) => Left("root.changed.meanwhile")
+        case _ if actorId == targetId || !actorActiveRoot => Left("root.changed.meanwhile")
+        case None                                         => Left("root.changed.meanwhile")
+        case Some((isRoot, _, _, _)) if isRoot == root    => Right(false)
+        case Some((_, active, _, _)) if root && !active   => Left("root.changed.meanwhile")
         case Some((_, _, hasPassword, verified)) if root && hasPassword && !verified =>
           Left("root.needs.verified.email")
         case Some(_) =>

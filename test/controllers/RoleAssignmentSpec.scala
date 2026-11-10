@@ -79,6 +79,12 @@ class RoleAssignmentSpec extends PlaySpecification with PlayTestDb with Mockito 
       .withSession(Secured.UserName -> as.email, Secured.CurrentContestId -> "10").withCSRFToken)
   }
 
+  /** Another root's change of the account, as committed meanwhile (root is written only through
+    * User.setRootLocked in the app).
+    */
+  private def setRootRaw(id: Long, root: Boolean): Unit =
+    DB.autoCommit(implicit s => sql"UPDATE users SET is_root = $root WHERE id = $id".update.apply())
+
   private def editPage(as: User, id: Long, contestId: Long)(implicit app: Application): String =
     contentAsString(page(as, controller.editUser(id, Some(contestId)), s"/users/edit/$id?contestId=$contestId"))
 
@@ -253,7 +259,7 @@ class RoleAssignmentSpec extends PlaySpecification with PlayTestDb with Mockito 
         val result = save(boss, 10, form(boss.getId, boss.email, 10, "jury") ++ rootUnticked: _*)
         (status(result) === BAD_REQUEST) and (state() === before) and
           (Jsoup.parse(contentAsString(result)).select("#root_field .invalid-feedback").text ===
-            "You can't change root for your own account.")
+            "You can't change root for your own account. Another root can change it.")
       }
     }
 
@@ -291,8 +297,8 @@ class RoleAssignmentSpec extends PlaySpecification with PlayTestDb with Mockito 
         UserContestJdbc.createMembership(chief.getId, 10, "jury")
         val bob = member("bob@example.com", 10L -> "jury")
         // boss's page showed chief as root and bob as not; another root then changed both
-        User.setRoot(chief.getId, false)
-        User.setRoot(bob.getId, true)
+        setRootRaw(chief.getId, root = false)
+        setRootRaw(bob.getId, root = true)
         (status(save(boss, 10, form(chief.getId, chief.email, 10, "jury") ++ rootTicked :+ ("rootWas" -> "true"): _*)) ===
           SEE_OTHER) and
           (status(save(boss, 10, form(bob.getId, bob.email, 10, "jury") ++ rootUnticked :+ ("rootWas" -> "false"): _*)) ===
@@ -303,6 +309,24 @@ class RoleAssignmentSpec extends PlaySpecification with PlayTestDb with Mockito 
           (status(save(boss, 10, form(bob.getId, bob.email, 10, "jury") ++ rootUnticked :+ ("rootWas" -> "true"): _*)) ===
             SEE_OTHER) and
           (User.findById(bob.getId).map(_.isRoot) === Some(false))
+      }
+    }
+
+    "keep the submitted rootWas on a page shown again, so that a resubmit doesn't undo another root's change" in {
+      testDbApp { implicit app =>
+        createContests(10)
+        val boss = root("boss@example.com")
+        val chief = root("chief@example.com")
+        UserContestJdbc.createMembership(chief.getId, 10, "jury")
+        // boss's page showed chief as root; another root then took it away; boss's save is refused
+        setRootRaw(chief.getId, root = false)
+        val result = save(boss, 10, form(chief.getId, chief.email, 10, "jury") ++
+          Seq("wikiAccount" -> "Bad|Name", "root" -> "true", "root" -> "false", "rootWas" -> "true"): _*)
+        val page = Jsoup.parse(contentAsString(result))
+        (status(result) === BAD_REQUEST) and
+          (page.select("input[type=hidden][name=rootWas]").attr("value") === "true") and
+          (page.select("input#root[type=checkbox]").hasAttr("checked") must beTrue) and
+          (User.findById(chief.getId).map(_.isRoot) === Some(false))
       }
     }
 
@@ -368,9 +392,9 @@ class RoleAssignmentSpec extends PlaySpecification with PlayTestDb with Mockito 
       testDbApp { implicit app =>
         val boss = root("boss@example.com")
         val chief = root("chief@example.com")
-        // both forms checked; chief's write commits first, then boss's finds itself the last root
+        // both forms checked; chief's write commits first, then boss's finds boss no longer root
         (User.setRootLocked(chief.getId, boss.getId, root = false) === Right(true)) and
-          (User.setRootLocked(boss.getId, chief.getId, root = false) === Left("root.last")) and
+          (User.setRootLocked(boss.getId, chief.getId, root = false) === Left("root.changed.meanwhile")) and
           (User.findById(chief.getId).map(_.isRoot) === Some(true)) and
           (User.findById(boss.getId).map(_.isRoot) === Some(false))
       }
@@ -381,7 +405,7 @@ class RoleAssignmentSpec extends PlaySpecification with PlayTestDb with Mockito 
         val boss = root("boss@example.com")
         val chief = root("chief@example.com")
         val third = root("third@example.com")
-        User.setRoot(boss.getId, false)
+        setRootRaw(boss.getId, root = false)
         (User.setRootLocked(boss.getId, chief.getId, root = false) === Left("root.changed.meanwhile")) and
           (User.setRootLocked(chief.getId, chief.getId, root = false) === Left("root.changed.meanwhile")) and
           (User.findById(chief.getId).map(_.isRoot) === Some(true)) and
@@ -405,6 +429,16 @@ class RoleAssignmentSpec extends PlaySpecification with PlayTestDb with Mockito 
           (User.setRootLocked(boss.getId, verified.getId, root = true) === Right(false))
       }
     }
+
+    "grant no root to a deleted account" in {
+      testDbApp { implicit app =>
+        val boss = root("boss@example.com")
+        val gone = member("gone@example.com")
+        DB.autoCommit(implicit s => sql"UPDATE users SET deleted_at = NOW() WHERE id = ${gone.getId}".update.apply())
+        (User.setRootLocked(boss.getId, gone.getId, root = true) === Left("root.changed.meanwhile")) and
+          (state()._2.find(_._1 == gone.getId) === Some(gone.getId -> false))
+      }
+    }
   }
 
   "the edit and users pages" should {
@@ -425,7 +459,7 @@ class RoleAssignmentSpec extends PlaySpecification with PlayTestDb with Mockito 
           (asRoot.select("label[for=root]").text === "Root (every contest)") and
           // the unticked box's value, after it (the first value counts: before it, every save
           // would take root away)
-          (asRoot.select("input[name=root]").asScala.map(i => i.attr("type") -> i.attr("value")).toList ===
+          (asRoot.select("form:has(#root) [name=root]").asScala.map(i => i.attr("type") -> i.attr("value")).toList ===
             List("checkbox" -> "true", "hidden" -> "false")) and
           // the state the page shows, for a toggle only
           (asRoot.select("input[type=hidden][name=rootWas]").attr("value") === "true") and

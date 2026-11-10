@@ -365,6 +365,13 @@ class UserController @Inject()(cc: ControllerComponents,
       )
   }
 
+  /** The form shown again with the submitted `rootWas` (the account's root as the page first
+    * showed it), so that its Root checkbox, as submitted, is still saved only as a toggle of
+    * that state: another root's change of it meanwhile isn't undone by a resubmit.
+    */
+  private def keepRootWas(form: Form[User])(implicit request: play.api.mvc.Request[_]): Form[User] =
+    editUserForm.bindFromRequest().data.get("rootWas").fold(form)(was => form.copy(data = form.data + ("rootWas" -> was)))
+
   /** The edit page's Root field, from the bound form (whatever the body's encoding): the value
     * bound to `formUser.isRoot` (the first one: the checkbox's `true` if ticked, else the hidden
     * `false` after it), None if the form has no such field (not root's page, or a client that
@@ -410,7 +417,7 @@ class UserController @Inject()(cc: ControllerComponents,
     def badRequest(form: Form[User], maySetPassword: => Boolean = passwordRefusal.isEmpty,
         notice: Option[String] = None) =
       if (own) ownProfile(BadRequest, user, userForm = Some(form))
-      else BadRequest(views.html.editUser(user, form, contestId = editedUser.contestId,
+      else BadRequest(views.html.editUser(user, keepRootWas(form), contestId = editedUser.contestId,
         maySetPassword = maySetPassword, notice = notice))
     def refused(field: Option[String], key: String, maySetPassword: => Boolean = passwordRefusal.isEmpty,
         notice: Option[String] = None) = {
@@ -546,8 +553,8 @@ class UserController @Inject()(cc: ControllerComponents,
   /** 503 with the form: no turn to hash the password came in time. */
   private def passwordBusy(user: User, form: Form[User], contestId: Option[Long], maySetPassword: Boolean)(
       implicit request: play.api.mvc.Request[_]): Result =
-    ServiceUnavailable(views.html.editUser(user, form.withGlobalError("password.busy"), contestId = contestId,
-      maySetPassword = maySetPassword))
+    ServiceUnavailable(views.html.editUser(user, keepRootWas(form.withGlobalError("password.busy")),
+      contestId = contestId, maySetPassword = maySetPassword))
       .withHeaders(RETRY_AFTER -> "5")
 
   /** Saves the checked form (root is written before, [[updateUser]]). `setOthersPassword`:

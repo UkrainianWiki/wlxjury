@@ -91,9 +91,10 @@
                         } else {
                             @bs.checkbox(editUserForm("root"), Symbol("_label") -> Messages("root.flag"))
                             <input type="hidden" name="root" value="false">
-                            @* the account's root as this page shows it: only a toggle of it is saved, so a page
-                               loaded before another root's change doesn't undo it *@
-                            <input type="hidden" name="rootWas" value="@editedAccount.exists(_.isRoot)">
+                            @* the account's root as this page first showed it (kept when the form is shown again
+                               after a refusal): only a toggle of it is saved, so a page loaded before another
+                               root's change doesn't undo it *@
+                            <input type="hidden" name="rootWas" value="@editUserForm("rootWas").value.flatMap(_.toBooleanOption).getOrElse(editedAccount.exists(_.isRoot))">
                         }
                     }
 
