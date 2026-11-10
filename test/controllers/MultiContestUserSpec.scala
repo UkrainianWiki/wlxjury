@@ -125,27 +125,32 @@ class MultiContestUserSpec extends PlaySpecification with PlayTestDb with Mockit
       }
     }
 
-    "not let a contest admin change the password of a user shared with another contest" in {
+    "refuse with a 403 a contest admin setting the password of a user shared with another contest [S-09]" in {
       testDbApp { implicit app =>
         createContests(10, 20)
         val admin = member("admin@example.com", 10L -> "admin")
         val dave = member("dave@example.com", 10L -> "jury", 20L -> "admin")
 
-        status(save(admin, 10, form(dave, 10, "jury", Some("taken-over")): _*)) === BAD_REQUEST
+        // the shared link's rule: a tie outside the admin's contests (and an admin there)
+        status(save(admin, 10, form(dave, 10, "jury", Some("taken-over")): _*)) === FORBIDDEN
 
         User.findById(dave.getId).flatMap(_.password) === Some("hash")
+        UserContestJdbc.findByUser(dave.getId) ===
+          Seq(UserContest(dave.getId, 20, "admin"), UserContest(dave.getId, 10, "jury"))
       }
     }
 
-    "not let a contest admin set the password of a user only in their contest either (S2: root mails a link)" in {
+    "let a contest admin set the password of a user whose every contest is one they run [S-09]" in {
       testDbApp { implicit app =>
-        createContests(10)
-        val admin = member("admin@example.com", 10L -> "admin")
-        val erin = member("erin@example.com", 10L -> "jury")
+        createContests(10, 20)
+        val admin = member("admin@example.com", 10L -> "admin", 20L -> "admin")
+        val erin = member("erin@example.com", 10L -> "jury", 20L -> "organizer")
 
-        status(save(admin, 10, form(erin, 10, "jury", Some("new")): _*)) === BAD_REQUEST
+        status(save(admin, 10, form(erin, 10, "jury", Some("new-password")): _*)) === SEE_OTHER
 
-        User.findById(erin.getId).flatMap(_.password) === Some("hash")
+        User.login(erin.email, "new-password").flatMap(_.id) === erin.id
+        UserContestJdbc.findByUser(erin.getId) ===
+          Seq(UserContest(erin.getId, 20, "organizer"), UserContest(erin.getId, 10, "jury"))
       }
     }
 
@@ -353,7 +358,7 @@ class MultiContestUserSpec extends PlaySpecification with PlayTestDb with Mockit
       }
     }
 
-    "not let a contest admin change the password of an account with a past in another contest" in {
+    "refuse with a 403 a contest admin setting the password of an account with a past in another contest [S-09]" in {
       testDbApp { implicit app =>
         createContests(10, 20)
         val admin = member("admin@example.com", 10L -> "admin")
@@ -365,7 +370,8 @@ class MultiContestUserSpec extends PlaySpecification with PlayTestDb with Mockit
 
         status(save(admin, 10, "id" -> "0", "fullname" -> "Mia", "email" -> "mia@example.com",
                     "roles" -> "jury", "contest" -> "10")) === SEE_OTHER
-        status(save(admin, 10, form(mia, 10, "jury", Some("taken-over")): _*)) === BAD_REQUEST
+        // the shared link's rule: a contest worked in counts as a tie (share_link_other_contest)
+        status(save(admin, 10, form(mia, 10, "jury", Some("taken-over")): _*)) === FORBIDDEN
 
         User.findById(mia.getId).flatMap(_.password) === Some("hash")
       }
