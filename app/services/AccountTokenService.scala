@@ -196,8 +196,8 @@ object AccountTokenService {
     }
   }
 
-  /** What accepting `link` proves, shared by [[acceptPasswordLink]] and [[acceptByProvider]] so
-    * that they can't drift, in the caller's transaction with the link's row locked: the email is
+  /** What accepting `link` proves, shared by [[acceptPasswordLink]] and [[acceptByProvider]] (and
+    * its writes, [[applyProof]], by [[setPasswordByAdmin]]) so that they can't drift, in the caller's transaction with the link's row locked: the email is
     * verified, the password becomes `passwordHash` if given, `auth_version` goes up (every
     * session of the account ends), every API token of the account is revoked, its Google and
     * Wikimedia identities are unlinked (B1: the account may have changed hands; a provider's
@@ -221,43 +221,100 @@ object AccountTokenService {
     val pending = AccountTokenJdbc.pendingInvitationsOf(user.getId, link.email)
     if (!AccountTokenJdbc.markUsed(link.id)) refused(NotLive, Some(link))
     else {
-      (passwordHash, emailProven) match {
-        case (Some(h), true) =>
-          sql"""UPDATE users SET password = $h, email_verified_at = NOW(3), auth_version = ${User.BumpAuthVersion}
-                WHERE id = ${user.getId}""".update.apply()
-        case (Some(h), false) =>
-          sql"""UPDATE users SET password = $h, email_verified_at = NULL, wiki_account_verified_at = NULL,
-                  auth_version = ${User.BumpAuthVersion}
-                WHERE id = ${user.getId}""".update.apply()
-        case (None, _) =>
-          sql"""UPDATE users SET email_verified_at = NOW(3), auth_version = ${User.BumpAuthVersion}
-                WHERE id = ${user.getId}""".update.apply()
-      }
-      val revokedApiCount = ApiTokenJdbc.revokeAll(user.getId)
-      val unlinked = UserIdentityJdbc.deleteByUser(user.getId)
-      val roles = pending.flatMap { p =>
-        val grantable = p.contestId.exists(c => emailProven || mayGrant(link.createdBy, c))
-        val used = p.id == link.id || grantable && AccountTokenJdbc.markUsed(p.id)
-        for {
-          contestId <- p.contestId
-          role <- p.role
-          if used && grantable
-          if mayStillGrant(p, contestId) || { logger.warn(
-            s"invitation_role_dropped reason=inviter_no_longer_admin tokenId=${p.id} accountId=${user.getId} " +
-              s"contestId=$contestId"); false }
-        } yield {
-          UserContestJdbc.setMembership(user.getId, contestId, role)
-          s"$contestId:$role"
-        }
-      }
-      val revokedLinks = AccountTokenJdbc.revokeUnused(user.getId, AccountTokenJdbc.AllPurposes)
+      val proof = applyProof(user, Some(link.id), link.createdBy, pending, passwordHash, emailProven)
       val by = if (passwordHash.isEmpty) "provider" else if (link.shared) "shared_link" else "link"
       val line =
         s"account_link_accepted purpose=${link.purpose} tokenId=${link.id} accountId=${user.getId} by=$by " +
-          s"emailProven=$emailProven " +
-          s"apiTokensRevoked=$revokedApiCount identitiesUnlinked=$unlinked linksRevoked=$revokedLinks " +
-          s"memberships=${roles.mkString(",")}"
-      Right(User.findById(user.getId)(session).get -> line)
+          s"emailProven=$emailProven ${proof.counts}"
+      Right(proof.user -> line)
+    }
+  }
+
+  /** What [[applyProof]] changed: the account as stored now, and the counts for the log line. */
+  private final case class Proof(user: User, apiTokensRevoked: Int, identitiesUnlinked: Int, linksRevoked: Int,
+      memberships: Seq[String]) {
+
+    /** The counts' part of both log lines, the same in each: counts and contest:role pairs only. */
+    def counts: String =
+      s"apiTokensRevoked=$apiTokensRevoked identitiesUnlinked=$identitiesUnlinked linksRevoked=$linksRevoked " +
+        s"memberships=${memberships.mkString(",")}"
+  }
+
+  /** The writes of [[proveEmail]] once its link is used, shared with [[setPasswordByAdmin]] (which
+    * uses no link: `usedLinkId` None, `createdBy` the admin or root who set the password), in the
+    * caller's transaction with the account's row locked: `pending` are the account's pending
+    * invitations, read before the link was marked used.
+    */
+  private def applyProof(user: User, usedLinkId: Option[Long], createdBy: Option[Long], pending: Seq[AccountToken],
+      passwordHash: Option[String], emailProven: Boolean)(implicit session: DBSession): Proof = {
+    (passwordHash, emailProven) match {
+      case (Some(h), true) =>
+        sql"""UPDATE users SET password = $h, email_verified_at = NOW(3), auth_version = ${User.BumpAuthVersion}
+              WHERE id = ${user.getId}""".update.apply()
+      case (Some(h), false) =>
+        sql"""UPDATE users SET password = $h, email_verified_at = NULL, wiki_account_verified_at = NULL,
+                auth_version = ${User.BumpAuthVersion}
+              WHERE id = ${user.getId}""".update.apply()
+      case (None, _) =>
+        sql"""UPDATE users SET email_verified_at = NOW(3), auth_version = ${User.BumpAuthVersion}
+              WHERE id = ${user.getId}""".update.apply()
+    }
+    val revokedApiCount = ApiTokenJdbc.revokeAll(user.getId)
+    val unlinked = UserIdentityJdbc.deleteByUser(user.getId)
+    val roles = pending.flatMap { p =>
+      val grantable = p.contestId.exists(c => emailProven || mayGrant(createdBy, c))
+      val used = usedLinkId.contains(p.id) || grantable && AccountTokenJdbc.markUsed(p.id)
+      for {
+        contestId <- p.contestId
+        role <- p.role
+        if used && grantable
+        if mayStillGrant(p, contestId) || { logger.warn(
+          s"invitation_role_dropped reason=inviter_no_longer_admin tokenId=${p.id} accountId=${user.getId} " +
+            s"contestId=$contestId"); false }
+      } yield {
+        UserContestJdbc.setMembership(user.getId, contestId, role)
+        s"$contestId:$role"
+      }
+    }
+    val revokedLinks = AccountTokenJdbc.revokeUnused(user.getId, AccountTokenJdbc.AllPurposes)
+    Proof(User.findById(user.getId)(session).get, revokedApiCount, unlinked, revokedLinks, roles)
+  }
+
+  /** Sets another account's password from its edit page (the maintainer, 2026-11-10: while new
+    * ways of signing in are tried, admins and root keep setting it, as before S2): exactly where
+    * `actor` may create a shared password link for the account in `contestId`
+    * ([[ShareLinkService.mayCreate]]: root for anyone; an admin only for an active juror or
+    * organizer whose every tie is in their contests, never root, another admin or themselves),
+    * and with what using that link does ([[applyProof]], the email unproven): the password
+    * becomes `passwordHash`, the email and the wiki account become unverified, `auth_version`
+    * goes up (every session ends), API tokens are revoked, Google and Wikimedia identities
+    * unlinked, pending invitations `actor` may give give their roles, and every other unused link
+    * is revoked. In one quiet transaction (the statements bind the hash), the account's row locked
+    * and the rule checked again inside; the log line after the commit. The account as stored now.
+    */
+  def setPasswordByAdmin(actor: User, accountId: Long, contestId: Option[Long], passwordHash: String,
+      wikimediaSignIn: Boolean): Either[ShareLinkService.Refusal, User] = {
+    val result = User.quietTx { implicit session =>
+      User.lockRow(accountId).toRight(ShareLinkService.NotInContest).flatMap { account =>
+        ShareLinkService.mayCreate(actor, account, AccountTokenJdbc.PasswordReset, contestId, wikimediaSignIn)
+          .toLeft(())
+          .map { _ =>
+            // the invitations a shared link sent to the account's address would find
+            val pending = AccountTokenJdbc.pendingInvitationsOf(accountId, account.emailLo)
+            applyProof(account, None, actor.id, pending, Some(passwordHash), emailProven = false)
+          }
+      }
+    }
+    result match {
+      case Right(proof) =>
+        logger.info(
+          s"password_set_by_admin accountId=$accountId byAccountId=${actor.getId}" +
+            contestId.fold("")(c => s" contestId=$c") + s" emailProven=false sessionsEnded=true ${proof.counts}")
+        Right(proof.user)
+      case Left(refused) =>
+        logger.info(s"password_set_by_admin_refused reason=${refused.reason} accountId=$accountId " +
+          s"byAccountId=${actor.getId}")
+        Left(refused)
     }
   }
 

@@ -40,9 +40,11 @@ abstract class Secured(cc: ControllerComponents) extends AbstractController(cc) 
       )
 
   /** The denial page (403): what the page needs, what the user has, a useful destination
-    * and the reference of the denial's log line ([[Secured.logDenial]]).
+    * and the reference of the denial's log line ([[Secured.logDenial]]); `notice`, what the
+    * request did before it was refused.
     */
-  def onUnAuthorized(user: User, request: RequestHeader, denial: Secured.Denial = Secured.Denial.empty): Result = {
+  def onUnAuthorized(user: User, request: RequestHeader, denial: Secured.Denial = Secured.Denial.empty,
+      notice: Option[String] = None): Result = {
     val reference = Secured.logDenial(user, request, denial)
     val suggestion = suggestedAccess(user)(request)
     val safeReturnTo = Secured.safeLocalPath(Option.when(request.method == "GET")(request.uri))
@@ -56,7 +58,8 @@ abstract class Secured(cc: ControllerComponents) extends AbstractController(cc) 
         denial.copy(reason = Some(Secured.denialReason(user, denial))),
         currentContest,
         reference,
-        Secured.referenceTime()
+        Secured.referenceTime(),
+        notice
       )(request.flash, messages, request)
     )
   }

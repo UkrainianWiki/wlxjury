@@ -139,8 +139,10 @@ Changes made available before version 26.11, by who notices them.
   one.
 - On an open round, **Leave out conflicts of interest** only affects later distributions. To
   disqualify files now, stop the round and use its conflicts page.
-- **Nobody sets another person's password.** The person chooses it on an invitation or reset
-  link, which an admin can also copy and pass on in person. See
+- **Setting another person's password** stays possible, on their edit page (**Set password**),
+  for root and, for their own jurors and organizers only, contest admins. It now signs the person
+  out everywhere and marks their email unverified, as a link to share that they use does. An
+  admin can also copy an invitation or reset link and pass it on in person. See
   [Passwords](admin-guide.md#a-passwords).
 - **Old passwords:** an account whose password was stored in the old format keeps signing in
   with it for three months after the release; after that it needs a password reset.
