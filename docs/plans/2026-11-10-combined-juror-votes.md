@@ -182,7 +182,8 @@ the forbidden content):**
 - setting on, round still open: 403 (D2);
 - setting on, stopped, a round with fewer than D9's minimum of jurors: 403, and the round form
   refuses to turn the option on there; in a round above it, a file with fewer votes than the
-  minimum has no score, rank or counts in the HTML;
+  minimum is absent from the page (neither its title nor its page id in the HTML, on any page of
+  the list), and the "N files have too few votes to show" line gives the right N;
 - a file assigned to 5 jurors with only 2 real votes (the other 3 rows rate 0) stays left out,
   as does a criteria-round file with 5 votes of which 3 are partly rated (rate 0);
 - left-out files reveal nothing by their place: two rounds that differ only in the scores of
@@ -214,11 +215,14 @@ and a new shot of a juror's results page.
 
 ## 9. Size
 
-**M**: about two days. A column and migration (small), the form and service (small), the juror
-variant of the by-rate view and the large view's box (the bulk, medium), the stopped-round read-only
-access for jurors (medium: `viewerRounds`, the gallery and large view must not offer votes), four
-languages, about fourteen tests (with D9's minimum and the successor-round rule) and the docs. If D4 is "no" (results shown outside the gallery), the
-read-only access piece drops out, and the work is about one day.
+**M**: about two and a half days. A column and migration (small), the form and service (small),
+the juror variant of the by-rate view and the large view's box (the bulk, medium), the
+stopped-round read-only access for jurors (medium: `viewerRounds`, the gallery and large view
+must not offer votes), four languages, about 25 tests (§7: 3 positive and about 22 negative,
+counting each case of a bullet, e.g. direct, transitive and still-distributing successors, as
+one test; most of the added half day is D9's fixtures and the successor chains) plus the browser
+story, and the docs. If D4 is "no" (results shown outside the gallery), the read-only access
+piece drops out, and the work is about one and a half days.
 
 ## 10. Order and risks
 
