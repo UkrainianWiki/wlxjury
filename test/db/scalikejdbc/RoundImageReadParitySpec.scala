@@ -148,10 +148,10 @@ class RoundImageReadParitySpec extends Specification with TestDb with BeforeAll 
             val all = Old.previousPages(prev)
             val votes = PrevVotes()
             val windows = DB.readOnly { implicit s =>
-              Iterator.iterate(DistributionSource.previousWindow(prev, votes, 0L, 7))(w =>
-                DistributionSource.previousWindow(prev, votes, w.last, 7)).takeWhile(_.size > 0).toSeq
+              Iterator.iterate(DistributionSource.previousWindow(prev, votes, 0L, 7, Nil))(w =>
+                DistributionSource.previousWindow(prev, votes, w.last, 7, Nil)).takeWhile(_.size > 0).toSeq
             }
-            (DB.readOnly(implicit s => DistributionSource.previousCount(prev, votes)) === all.size.toLong) and
+            (DB.readOnly(implicit s => DistributionSource.previousCount(prev, votes, Nil)) === all.size.toLong) and
               (windows.map(_.size).sum === all.size) and
               (windows.map(_.last) === all.grouped(7).map(_.last).toSeq)
           } and

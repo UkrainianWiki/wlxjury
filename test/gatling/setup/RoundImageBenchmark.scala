@@ -131,7 +131,7 @@ object RoundImageBenchmark {
           walk((c, n) => sql"""SELECT COUNT(*), MAX(page_id) FROM (SELECT DISTINCT s.page_id FROM vote s
                                 WHERE s.round_id IN ($prev) AND s.page_id > $c ORDER BY s.page_id LIMIT $n) w"""
             .map(rs => rs.int(1) -> rs.longOpt(2).getOrElse(c)).single().get),
-          () => walk((c, n) => { val w = DistributionSource.previousWindow(prev, PrevVotes(), c, n); w.size -> w.last })),
+          () => walk((c, n) => { val w = DistributionSource.previousWindow(prev, PrevVotes(), c, n, Nil); w.size -> w.last })),
         ("open rounds of 200 files (DeletedFiles)", () => {
           val ps = Seq.fill(200)(allPages(random.nextInt(allPages.size))).distinct
           sql"SELECT DISTINCT round_id FROM vote WHERE page_id IN ($ps)".map(_.long(1)).list().toSet

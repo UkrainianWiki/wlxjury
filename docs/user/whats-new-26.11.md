@@ -124,6 +124,9 @@ Changes made available before version 26.11, by who notices them.
   (exclude files rejected by at least X, or take only those). See [The worst
   mark](admin-guide.md#a-worst-mark) and [The rejection
   filter](admin-guide.md#a-rejection-filter).
+- **Leave out files that are in round(s)** on the round form: for example the files of the
+  previous round that didn't pass into round X. See [the
+  example](admin-guide.md#a-leave-out-rounds).
 - **Criteria chosen from a shared catalogue** on the round form. See [Kinds of
   rounds](admin-guide.md#a-round-kinds).
 - **Clearer rating type names** on the round form and the rounds list: **+/-** is now

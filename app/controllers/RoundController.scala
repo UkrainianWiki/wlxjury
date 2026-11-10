@@ -319,6 +319,15 @@ class RoundController @Inject() (
             // Our own checks' refusal of the settings is shown as it is; any other failure,
             // whose text may be the database's, only as a logged reference.
             def failed(r: Round, key: String, referenceKey: String, e: Throwable, what: String): Result =
+              e match {
+                // the rounds to leave out refused (V95): their message, in the page's language
+                case refused: RoundDistributionHandler.ExcludeRoundsRefused =>
+                  logger.warn(s"$what: ${refused.text}")
+                  reRender(r, key, messagesApi.preferred(request)(refused.refusal.key, refused.refusal.args: _*))
+                case _ => failedOtherwise(r, key, referenceKey, e, what)
+              }
+
+            def failedOtherwise(r: Round, key: String, referenceKey: String, e: Throwable, what: String): Result =
               RoundController.refusal(e) match {
                 case Some(text) =>
                   logger.warn(s"$what: $text")

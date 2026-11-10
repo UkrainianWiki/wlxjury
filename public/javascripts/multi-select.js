@@ -1,4 +1,4 @@
-// The round form's multiple selects (editRound: previous rounds, regions, jurors) as Tom Select
+// The round form's multiple selects (editRound: previous rounds, rounds to leave out, regions, jurors) as Tom Select
 // dropdowns, in place of bootstrap-multiselect, with its behaviour: a checkbox per option, a
 // "select all" checkbox above them, and the control summing up the selection as it did (none
 // selected; up to three names; "4 selected"; "all selected (5)"). The original <select> stays

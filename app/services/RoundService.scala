@@ -47,7 +47,8 @@ class RoundService @Inject() (
     * (scripts, the API) every call creates a round.
     *
     * Invalid settings (no jurors, previous rounds of another contest or of mixed rate
-    * types, more jurors per image than jurors) are refused before anything is created.
+    * types, rounds to leave out that are not other rounds of its contest, more jurors per image
+    * than jurors) are refused before anything is created.
     *
     * @param titles a pasted list of files ("Add files"), added to the round after the
     *               images its filters choose
@@ -64,6 +65,7 @@ class RoundService @Inject() (
       case None =>
         val canonical = round.withFixedCategories.withCanonicalCategoryRule
         val prevRounds = RoundDistributionHandler.previousRounds(canonical)
+        RoundDistributionHandler.excludedRounds(canonical)
         val configuredRound = canonical.withExplicitTopOrder(prevRounds.exists(_.isBinary))
         val jurors = User.loadJurors(round.contestId, jurorIds).distinct
         require(jurors.nonEmpty, "no jurors selected for the round; nothing to distribute")
@@ -96,6 +98,8 @@ class RoundService @Inject() (
   private def resubmitted(existing: Round): Submitted =
     distributionJob(existing.getId) match {
       case Some(j) if j.isFailed =>
+        // not while a round leaving out its files is being distributed (refused: the form says so)
+        RoundDistributionHandler.requireNoExcluderBusy(existing)
         jobs.retry(j.id, explicit = false) match {
           case Right(job) =>
             logger.info(s"Round ${existing.getId}: its form was submitted again; its distribution resumed")
@@ -149,13 +153,21 @@ class RoundService @Inject() (
       listOnly: Boolean = false
   )(implicit session: DBSession): Job = {
     // the round first, with the rounds it freezes: "Leave out conflicts of interest now"
-    // checks for its active job under the round's lock (RoundConflicts.disqualify)
-    Round.lock(round.previousIds :+ round.getId)
+    // checks for its active job under the round's lock (RoundConflicts.disqualify). And the rounds
+    // it leaves out and those leaving it out (V95), in one id order: two such rounds queued at once
+    // take turns here, so the second sees the first's job (checked below)
+    val excluders = Round.findByContest(round.contestId)
+      .filter(r => !r.id.contains(round.getId) && r.excludeRounds.contains(round.getId)).flatMap(_.id)
+    Round.lock(round.previousIds ++ round.excludeRounds ++ excluders :+ round.getId)
     // an active distribution of the round, read plainly under the round's lock (READ
     // COMMITTED: the latest committed; jobs of the round are queued and end under this lock):
     // refused here, before an insert whose duplicate key would lock the running job's row, which
     // its step holds before the round (break 11 of the write-path plan)
     JobJdbc.activeByDedupeKey(RoundDistributionHandler.dedupeKey(round.getId)).foreach(active => throw AlreadyDistributing(active))
+    // under those locks: no round it leaves out, nor one leaving it out, being distributed now
+    // (refused, rolling back; the round form shows the message). The job checks again as it runs.
+    RoundDistributionHandler.excludedRounds(round)
+    RoundDistributionHandler.requireNoExcluderBusy(round)
     val state = distribution.initialState(round, listOnly)
     // the top-N's order and the rejected-by filter only where they apply: from a yes/no
     // previous round, and the rejected-by from a rated one without criteria too (its ✗, whether
@@ -207,7 +219,9 @@ class RoundService @Inject() (
             "minMpx" -> round.minMpx,
             "minImageSize" -> round.minImageSize,
             "mediaType" -> round.mediaType,
-            "specialNomination" -> round.specialNomination
+            "specialNomination" -> round.specialNomination,
+            // "Leave out files that are in round(s)" (V95); the job reads the round's
+            "excludeRounds" -> round.excludeRounds
           )
         ) ++ (if (titles.isEmpty) Json.obj()
               else Json.obj("titles" -> titles, "titleCount" -> titles.size, "listOnly" -> listOnly)),
@@ -247,6 +261,9 @@ class RoundService @Inject() (
     distributionJob(roundId) match {
       case Some(j) if j.isActive => AlreadyRunning(j)
       case Some(j) if j.isFailed =>
+        // not while a round leaving out its files is being distributed (refused: the form says so;
+        // the job checks again as it runs)
+        RoundDistributionHandler.requireNoExcluderBusy(round)
         jobs.retry(j.id, explicit = false) match {
           case Right(job) => Resumed(job)
           case Left(refused) if refused.messageKey == JobScheduler.AttemptsRefusedKey => GivenUp(j)
@@ -254,6 +271,8 @@ class RoundService @Inject() (
         }
       case _ =>
         RoundDistributionHandler.previousRounds(round)
+        RoundDistributionHandler.requireNoExcluderBusy(round)
+        RoundDistributionHandler.excludedRounds(round)
         DistributeImages.checkJury(round, User.distributionJurors(roundId))
         try {
           val job = WriteTx.write { implicit session =>

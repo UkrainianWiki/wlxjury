@@ -109,6 +109,20 @@
                 )
             }
         </div>
+
+        @* "Leave out files that are in round(s)" (V95): the contest's other rounds; with or without
+           previous rounds (e.g. a previous round's files that didn't pass into round X). Disabled, not
+           readonly, on an existing round, as the previous rounds' select above *@
+        @defining(editRoundForm("id").value.filter(_.nonEmpty)) { roundId =>
+            @bs.select(
+                editRoundForm("excludeRounds"),
+                rounds.filterNot(r => r.id.map(_.toString) == roundId).map(r => (r.id.map(_.toString).get, r.description)),
+                Symbol("_label") -> Messages("exclude.rounds"),
+                Symbol("_help") -> Messages("exclude.rounds.help"),
+                Symbol("multiple") -> true,
+                Symbol("disabled") -> noEdit
+            )
+        }
     }
 
     @bs.select(

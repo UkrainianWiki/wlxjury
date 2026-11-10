@@ -27,6 +27,16 @@ class RoundSpec extends Specification with BeforeAll {
       roundDao.findById(created.getId).flatMap(_.excludeCategory) === Some("Category:Excluded files")
     }
 
+    "persist and reload the rounds to leave out (V95), in their order, none as NULL" in new AutoRollbackDb {
+      val created = roundDao.create(round.copy(excludeRounds = Seq(5L, 3L)))
+      val none = roundDao.create(round.copy(number = 2))
+      val stored = scalikejdbc.SQL("SELECT id, exclude_rounds FROM round ORDER BY id")
+        .map(rs => rs.long(1) -> rs.stringOpt(2)).list()
+      (roundDao.findById(created.getId).map(_.excludeRounds) === Some(Seq(5L, 3L))) and
+        (roundDao.findById(none.getId).map(_.excludeRounds) === Some(Nil)) and
+        (stored === List(created.getId -> Some("5,3"), none.getId -> None))
+    }
+
     "available jurors" in new AutoRollbackDb {
       implicit val contest: ContestJury = createContests(10).head
       createContests(20)  // Create contest 20 for users that should be filtered out
