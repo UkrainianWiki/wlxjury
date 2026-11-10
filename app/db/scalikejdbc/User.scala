@@ -207,10 +207,11 @@ object User extends CRUDMapper[User] {
   def isContestRole(role: String): Boolean = ContestRoles.contains(role)
 
   /** Whether `editor` may submit `roles` for a user (the edit form's, the add-user row's):
-    * each one a contest role, or root from a root editor only.
+    * each one a contest role. Root is none, from anyone: it is the account's users.is_root,
+    * which only root changes, with the edit page's own Root field (`root`), never with a role.
     */
   def mayAssignRoles(editor: User, roles: Set[String]): Boolean =
-    roles.forall(r => isContestRole(r) || r == ROOT_ROLE && editor.hasRole(ROOT_ROLE))
+    roles.forall(isContestRole)
 
   /** The contest roles that let a member in: an account gets one only if
     * [[User.mayTakeAccessRole]], else through an invitation.
@@ -237,7 +238,8 @@ object User extends CRUDMapper[User] {
         Option[Long],
         Option[String],
         Option[Int],
-        Option[String]
+        Option[String],
+        Option[Boolean]
     )
   ] = {
     Some(
@@ -247,11 +249,13 @@ object User extends CRUDMapper[User] {
         user.wikiAccount,
         user.email,
         None,
-        if (user.hasRole(ROOT_ROLE)) Some(ROOT_ROLE) else user.contestRole,
+        // the contest role only: root is the account's, its own field
+        user.contestRole,
         user.contestId,
         user.lang,
         user.sort,
-        user.theme
+        user.theme,
+        Some(user.isRoot || user.hasRole(ROOT_ROLE))
       )
     )
   }
@@ -266,7 +270,8 @@ object User extends CRUDMapper[User] {
       contest: Option[Long],
       lang: Option[String],
       sort: Option[Int],
-      theme: Option[String]
+      theme: Option[String],
+      root: Option[Boolean] = None
   ): User = {
     new User(
       fullname,
@@ -278,7 +283,10 @@ object User extends CRUDMapper[User] {
       lang,
       wikiAccount = wikiAccount,
       sort = sort,
-      theme = theme
+      theme = theme,
+      // what the Root field asks for; only root's save of another account applies it
+      // (UserController.updateUser, UserService.createAccount)
+      isRoot = root.contains(true)
     )
   }
 
@@ -645,7 +653,8 @@ object User extends CRUDMapper[User] {
     )
 
   /** Inserts the user and, when [[User.contestId]] and a contest role are set, their
-    * membership in that contest. A root role sets users.is_root.
+    * membership in that contest. [[User.isRoot]] (or a root role, for tests and setup) sets
+    * users.is_root.
     */
   def create(user: User)(implicit session: DBSession = AutoSession): User = {
     // before anything is written: a contest role is an allowlisted one, nothing else

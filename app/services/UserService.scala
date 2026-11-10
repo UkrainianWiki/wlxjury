@@ -52,9 +52,10 @@ class UserService @Inject()(val sendMail: SMTPOrWikiMail,
     *    to be added by email ([[WikiAccountUnverified]]).
     *
     * Throws [[UserService.RoleNotAssignable]] (an `IllegalArgumentException`), changing
-    * nothing, if `formUser`'s roles are not each a contest role ([[User.ContestRoles]]), or
-    * root from a root creator; [[UserService.InvalidWikiAccount]] for a wiki account MediaWiki
-    * would refuse.
+    * nothing, if `formUser`'s roles are not each a contest role ([[User.ContestRoles]]; root
+    * is none); [[UserService.InvalidWikiAccount]] for a wiki account MediaWiki would refuse.
+    * `formUser.isRoot` (root's Root field) makes a new account root for a root creator only
+    * ([[createAccount]]); an existing account's root is left as it is.
     */
   def addToContest(
       creator: User,
@@ -113,7 +114,8 @@ class UserService @Inject()(val sendMail: SMTPOrWikiMail,
         }
 
       case None =>
-        // root only from root ([[createAccount]]); anyone else's new user gets a contest role
+        // root (isRoot) only from root ([[createAccount]]), who may give no contest role;
+        // anyone else's new user gets one
         val roles = if (creator.hasRole(User.ROOT_ROLE)) person.roles else Set(role)
         createAccount(creator, person.copy(contestId = contestId, roles = roles), contestOpt)
     }

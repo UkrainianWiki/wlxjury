@@ -417,6 +417,7 @@ coi.round.link = Conflits d''intérêts de ce tour
 coi.round.title = Conflits d''intérêts
 coi.round.title.of = Conflits d''intérêts du tour {0} {1}
 coi.round.help = Les fichiers du tour dont l''auteur est un membre du concours dans un rôle en conflit d''intérêts, ou un utilisateur root. Disqualifier un fichier le retire des listes des jurés et des résultats en conservant ses votes ; le requalifier les rétablit. Les deux seulement quand le tour est arrêté.
+coi.role.help = Jurés, organisateurs et administrateurs : leurs propres photos sont aussi des conflits d''intérêts. Conseil d''administration, Commission de contrôle et Personnel ne donnent aucun accès ; ils ne font que marquer les photos de la personne comme conflits d''intérêts.
 coi.round.matches = Conflits d''intérêts dans le tour
 coi.round.matches.none = Aucun fichier du tour n''est un conflit d''intérêts actuellement.
 coi.round.disqualified = Fichiers disqualifiés
@@ -616,6 +617,7 @@ link.status.expired.at = {0}
 link.status.revoked = révoqué
 link.status.revoked.at = {0}
 root.needs.verified.email = Root seulement pour un compte dont le titulaire a vérifié l''adresse (une invitation ou un lien de mot de passe accepté).
+root.flag = Root (tous les concours)
 email.changed.subject = L''adresse courriel de votre compte WLX Jury a été changée
 email.changed.body = Bonjour,\n\nL''adresse courriel de votre compte WLX Jury est désormais {0}.\n\nSi ce n''était pas vous, contactez immédiatement l''administrateur de votre concours.
 

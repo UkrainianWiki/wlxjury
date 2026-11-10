@@ -3,10 +3,11 @@ package controllers
 import db.RoleAllowlistMigration
 import db.scalikejdbc.{PlayTestDb, User, UserContestJdbc}
 import org.apache.pekko.stream.Materializer
+import org.jsoup.Jsoup
 import org.specs2.mock.Mockito
 import play.api.Application
 import play.api.i18n.{Lang, MessagesImpl}
-import play.api.mvc.{ControllerComponents, Result}
+import play.api.mvc.{ControllerComponents, EssentialAction, Result}
 import play.api.test.CSRFTokenHelper._
 import play.api.test._
 import scalikejdbc._
@@ -64,6 +65,21 @@ class RoleAssignmentSpec extends PlaySpecification with PlayTestDb with Mockito 
 
   private def form(id: Long, email: String, contestId: Long, role: String) =
     Seq("id" -> id.toString, "fullname" -> email, "email" -> email, "roles" -> role, "contest" -> contestId.toString)
+
+  /** The edit page's Root field as a browser sends it: the checkbox's value if ticked, then the
+    * hidden "false" after it.
+    */
+  private val rootTicked = Seq("root" -> "true", "root" -> "false")
+  private val rootUnticked = Seq("root" -> "false")
+
+  private def page(as: User, action: EssentialAction, path: String)(implicit app: Application): Future[Result] = {
+    implicit val mat: Materializer = app.materializer
+    call(action, FakeRequest(GET, path)
+      .withSession(Secured.UserName -> as.email, Secured.CurrentContestId -> "10").withCSRFToken)
+  }
+
+  private def editPage(as: User, id: Long, contestId: Long)(implicit app: Application): String =
+    contentAsString(page(as, controller.editUser(id, Some(contestId)), s"/users/edit/$id?contestId=$contestId"))
 
   /** Every membership and every account's root flag: what a refused save must not change. */
   private def state(): (List[(Long, Long, String)], List[(Long, Boolean)]) =
@@ -188,36 +204,144 @@ class RoleAssignmentSpec extends PlaySpecification with PlayTestDb with Mockito 
   }
 
   "root's /users/save [R-03]" should {
-    "make a member root through users.is_root, writing no contest role" in {
+    "make a member root with the Root field (ticked), writing no contest role" in {
       testDbApp { implicit app =>
         createContests(10)
         val boss = root("boss@example.com")
         val bob = member("bob@example.com", 10L -> "jury")
-        (status(save(boss, 10, form(bob.getId, bob.email, 10, User.ROOT_ROLE): _*)) === SEE_OTHER) and
+        (status(save(boss, 10, form(bob.getId, bob.email, 10, "jury") ++ rootTicked: _*)) === SEE_OTHER) and
           (User.findById(bob.getId).map(_.isRoot) === Some(true)) and
           (UserContestJdbc.findByUser(bob.getId).map(_.role) === Seq("jury"))
       }
     }
 
-    "create a root account without a membership" in {
+    "keep a root account's root when changing its contest role (ticked, or no Root field)" in {
       testDbApp { implicit app =>
         createContests(10)
         val boss = root("boss@example.com")
-        (status(save(boss, 10, form(0, "new@example.com", 10, User.ROOT_ROLE): _*)) === SEE_OTHER) and
+        val chief = root("chief@example.com")
+        UserContestJdbc.createMembership(chief.getId, 10, "jury")
+        (status(save(boss, 10, form(chief.getId, chief.email, 10, "organizer") ++ rootTicked: _*)) === SEE_OTHER) and
+          (User.findById(chief.getId).map(_.isRoot) === Some(true)) and
+          (UserContestJdbc.find(chief.getId, 10).map(_.role) === Some("organizer")) and
+          (status(save(boss, 10, form(chief.getId, chief.email, 10, "admin"): _*)) === SEE_OTHER) and
+          (User.findById(chief.getId).map(_.isRoot) === Some(true)) and
+          (UserContestJdbc.find(chief.getId, 10).map(_.role) === Some("admin"))
+      }
+    }
+
+    "take root away with the Root field unticked, leaving the contest role" in {
+      testDbApp { implicit app =>
+        createContests(10)
+        val boss = root("boss@example.com")
+        val chief = root("chief@example.com")
+        UserContestJdbc.createMembership(chief.getId, 10, "jury")
+        (status(save(boss, 10, form(chief.getId, chief.email, 10, "jury") ++ rootUnticked: _*)) === SEE_OTHER) and
+          (User.findById(chief.getId).map(_.isRoot) === Some(false)) and
+          (UserContestJdbc.find(chief.getId, 10).map(_.role) === Some("jury")) and
+          (User.findById(boss.getId).map(_.isRoot) === Some(true))
+      }
+    }
+
+    "not take their own root away (a 400 that writes nothing)" in {
+      testDbApp { implicit app =>
+        createContests(10)
+        val boss = root("boss@example.com")
+        UserContestJdbc.createMembership(boss.getId, 10, "jury")
+        val before = state()
+        (status(save(boss, 10, form(boss.getId, boss.email, 10, "jury") ++ rootUnticked: _*)) === BAD_REQUEST) and
+          (state() === before)
+      }
+    }
+
+    "create a root account with the Root field, without a membership" in {
+      testDbApp { implicit app =>
+        createContests(10)
+        val boss = root("boss@example.com")
+        val fields = Seq("id" -> "0", "fullname" -> "New", "email" -> "new@example.com", "contest" -> "10") ++ rootTicked
+        (status(save(boss, 10, fields: _*)) === SEE_OTHER) and
           (User.findByEmail("new@example.com").map(_.isRoot) === Seq(true)) and
           (User.findByEmail("new@example.com").flatMap(u => UserContestJdbc.findByUser(u.getId)) === Nil)
       }
     }
 
-    "refuse a role that is neither a contest role nor root" in {
+    "refuse every value that is not a contest role, root included (root is no role)" in {
       testDbApp { implicit app =>
         createContests(10)
         val boss = root("boss@example.com")
         val bob = member("bob@example.com", 10L -> "jury")
+        refused(boss, 10, form(bob.getId, bob.email, 10, _)) and
+          (User.findById(bob.getId).map(_.isRoot) === Some(false))
+      }
+    }
+  }
+
+  "an admin's Root field [A-08]" should {
+    "change no account's root: a 400 that writes nothing" in {
+      testDbApp { implicit app =>
+        createContests(10)
+        val admin = member("admin@example.com", 10L -> "admin")
+        val bob = member("bob@example.com", 10L -> "jury")
+        val boss = root("boss@example.com")
+        UserContestJdbc.createMembership(boss.getId, 10, "jury")
         val before = state()
-        val statuses = badRoles.filterNot(_ == User.ROOT_ROLE)
-          .map(role => role -> status(save(boss, 10, form(bob.getId, bob.email, 10, role): _*)))
-        (statuses.filterNot(_._2 == BAD_REQUEST) === Nil) and (state() === before)
+        val statuses = Seq(
+          status(save(admin, 10, form(bob.getId, bob.email, 10, "jury") ++ rootTicked: _*)),
+          status(save(admin, 10, form(bob.getId, bob.email, 10, "jury") :+ ("root" -> "true"): _*)),
+          status(save(admin, 10, form(boss.getId, boss.email, 10, "jury") ++ rootUnticked: _*)),
+          status(save(admin, 10, form(admin.getId, admin.email, 10, "admin") ++ rootTicked: _*)),
+          status(save(admin, 10, form(0, "new@example.com", 10, "jury") ++ rootTicked: _*)))
+        (statuses.filterNot(_ == BAD_REQUEST) === Nil) and (state() === before) and
+          (User.findByEmail("new@example.com") === Nil)
+      }
+    }
+  }
+
+  "the edit and users pages" should {
+    "show root's Root checkbox with the account, not as a role, and not to an admin" in {
+      testDbApp { implicit app =>
+        createContests(10)
+        val admin = member("admin@example.com", 10L -> "admin")
+        val boss = root("boss@example.com")
+        val chief = root("chief@example.com")
+        UserContestJdbc.createMembership(chief.getId, 10, "jury")
+        val bob = member("bob@example.com", 10L -> "jury")
+        val asRoot = Jsoup.parse(editPage(boss, chief.getId, 10))
+        val box = asRoot.select("input#root[type=checkbox]")
+        val ownPage = Jsoup.parse(editPage(boss, boss.getId, 10))
+        val asAdmin = Jsoup.parse(editPage(admin, bob.getId, 10))
+        (box.size === 1) and (box.attr("name") === "root") and (box.attr("value") === "true") and
+          (box.hasAttr("checked") must beTrue) and
+          (asRoot.select("label[for=root]").text === "Root (every contest)") and
+          // the unticked box's value, after it (the first value counts)
+          (asRoot.select("input[type=hidden][name=root]").attr("value") === "false") and
+          (asRoot.select("select#roles option[value=root]").size === 0) and
+          (asRoot.select("select#roles option[selected]").attr("value") === "jury") and
+          // one's own: shown, not submitted
+          (ownPage.select("input#root[type=checkbox]").hasAttr("disabled") must beTrue) and
+          (ownPage.select("input[type=hidden][name=root]").size === 0) and
+          (asAdmin.select("[name=root]").size === 0) and
+          (asAdmin.select("select#roles option[value=root]").size === 0)
+      }
+    }
+
+    "describe the role select with the conflicts of interest help" in {
+      testDbApp { implicit app =>
+        createContests(10)
+        val admin = member("admin@example.com", 10L -> "admin")
+        val bob = member("bob@example.com", 10L -> "jury")
+        val edit = Jsoup.parse(editPage(admin, bob.getId, 10))
+        val users = Jsoup.parse(contentAsString(page(admin, controller.users(Some(10L)), "/admin/users?contestId=10")))
+        val imports = Jsoup.parse(contentAsString(page(admin, controller.showImportUsers(Some(10L)),
+          "/admin/importusers?contestId=10")))
+        def described(doc: org.jsoup.nodes.Document, select: String) = {
+          val ids = doc.select(select).attr("aria-describedby").split("\\s+").filter(_.nonEmpty).toSeq
+          ids.flatMap(id => Option(doc.getElementById(id))).map(_.text)
+        }
+        val help = "Board, Audit committee and Staff give no access"
+        (described(edit, "select#roles").exists(_.contains(help)) must beTrue) and
+          (described(users, "select#roles").exists(_.contains(help)) must beTrue) and
+          (described(imports, "select#import-role").exists(_.contains(help)) must beTrue)
       }
     }
   }

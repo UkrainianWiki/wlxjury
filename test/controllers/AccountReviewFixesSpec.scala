@@ -178,7 +178,7 @@ class AccountReviewFixesSpec extends PlaySpecification with PlayTestDb with Acco
         val root = account("root@example.com", None, "no", root = true, verified = true)
         val unverified = account("member@example.com", Some(10), "jury")
         val fields = Seq("id" -> unverified.getId.toString, "fullname" -> unverified.fullname,
-          "email" -> unverified.email, "roles" -> User.ROOT_ROLE)
+          "email" -> unverified.email, "roles" -> "jury", "root" -> "true", "root" -> "false")
         status(save(new RecordingMail, root, 10, fields: _*)) === BAD_REQUEST
         User.findById(unverified.getId).map(_.isRoot) === Some(false)
       }

@@ -677,7 +677,8 @@ stopped.
 - Create contests, and import them from a Commons list, on **Contests**, and change a contest's
   settings there.
 - See **Users** across all contests, and make an account root, only if its owner has verified
-  its email.
+  its email: tick **Root (every contest)** on its **Edit user** page. Changing the person's
+  role in a contest leaves root as it is.
 - Edit an account that is in contests the admin doesn't administer; change the email of an account
   that has a password, through a link mailed to the new address.
 - Send **Reset password** links and use **End sessions** on any account, and see and revoke
