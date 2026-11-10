@@ -1,6 +1,7 @@
 package services.oauth
 
 import db.scalikejdbc.{User, UserIdentity, UserIdentityJdbc}
+import org.intracer.wmua.LoginText
 import play.api.Logger
 import scalikejdbc._
 import services.AccountTokenService
@@ -249,7 +250,7 @@ object IdentityLinker {
       provider  = profile.provider,
       subject   = profile.subject,
       userId    = userId,
-      email     = profile.email.map(_.trim.toLowerCase).filter(_.nonEmpty),
+      email     = profile.email.map(LoginText.email).filter(_.nonEmpty),
       username  = profile.username
     )
 }

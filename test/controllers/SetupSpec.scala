@@ -68,6 +68,19 @@ class SetupSpec extends PlaySpecification with PlayTestDb with AccountTestSuppor
       }
     }
 
+    "create root from an email pasted with a tab and non-breaking spaces, stored clean" in {
+      testDbApp { implicit app =>
+        SharedTestDb.truncateAll() // a per-test app's database is not truncated
+        // inside the address a non-breaking space is no email
+        status(post(form(email = "root\u00a0@example.com"): _*)) === BAD_REQUEST
+        User.count() === 0L
+
+        status(post(form(email = "\u00a0Root@Example.com\t\u00a0"): _*)) === SEE_OTHER
+        User.findByEmail("root@example.com").map(_.isRoot) === Seq(true)
+        User.login("root@example.com", "root-password").flatMap(_.id) must beSome
+      }
+    }
+
     "create one root of two concurrent setups" in {
       testDbApp { implicit app =>
         SharedTestDb.truncateAll()

@@ -426,7 +426,8 @@ class UserController @Inject()(cc: ControllerComponents,
     }
 
     val userId = editedUser.getId
-    def wikiAccount(u: User) = u.wikiAccount.map(_.trim).filter(_.nonEmpty)
+    // both sides cleaned as the form cleans: a stored name with a pasted space is not a change
+    def wikiAccount(u: User) = u.wikiAccount.map(LoginText.clean).filter(_.nonEmpty)
     val wikiChanged = wikiAccount(formUser) != wikiAccount(editedUser)
     val newWiki = wikiAccount(formUser).fold[Either[String, Option[String]]](Right(None))(User.normalizeWikiAccount)
     val emailChanged = formUser.email != editedUser.emailLo
@@ -573,14 +574,14 @@ class UserController @Inject()(cc: ControllerComponents,
     var newVersion: Option[Int] = None
     // what the save writes that differs from the account's values (the fields left with a password
     // set: a role or email change is refused with it)
-    def trimmed(wiki: Option[String]) = wiki.map(_.trim).filter(_.nonEmpty)
+    def trimmed(wiki: Option[String]) = wiki.map(LoginText.clean).filter(_.nonEmpty)
     val otherFieldsChanged = canEditAccount(user, editedUser) && (formUser.fullname != editedUser.fullname ||
       formUser.lang != editedUser.lang || formUser.sort != editedUser.sort ||
       !own && trimmed(formUser.wikiAccount) != trimmed(editedUser.wikiAccount))
 
     if (canEditAccount(user, editedUser)) {
       User.updateUser(userId, formUser.fullname, formUser.lang, formUser.sort)
-      if (!own && formUser.wikiAccount.map(_.trim).filter(_.nonEmpty) != editedUser.wikiAccount.map(_.trim).filter(_.nonEmpty)) {
+      if (!own && trimmed(formUser.wikiAccount) != trimmed(editedUser.wikiAccount)) {
         User.setWikiAccount(userId, newWiki)
         // the name may now be someone else's: a Wikimedia account linked to the old one goes
         unlinkIdentities(userId, Some(OAuthProviders.Wikimedia))
@@ -814,8 +815,10 @@ class UserController @Inject()(cc: ControllerComponents,
     mapping(
       "id" -> longNumber,
       "fullname" -> nonEmptyText,
-      "wikiAccount" -> optional(text),
-      "email" -> text.verifying(Constraint[String]("constraint.email") { e =>
+      // as pasted from a spreadsheet or messenger: without surrounding spaces, tabs or
+      // non-breaking spaces ([[LoginText.clean]]), before the email is checked
+      "wikiAccount" -> optional(text).transform[Option[String]](_.map(LoginText.clean).filter(_.nonEmpty), identity),
+      "email" -> text.transform[String](LoginText.clean, identity).verifying(Constraint[String]("constraint.email") { e =>
         if (e.trim.isEmpty) Valid else Constraints.emailAddress()(e)
       }),
       // a new password: not blank, at most 72 bytes (bcrypt's limit)

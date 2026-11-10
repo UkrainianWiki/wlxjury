@@ -2,9 +2,11 @@ package controllers
 
 import db.scalikejdbc.{AccountTokenJdbc, User}
 import modules.SignInExecutionContext
+import org.intracer.wmua.LoginText
 import play.api.Logger
 import play.api.data.Forms._
 import play.api.data._
+import play.api.data.validation.Constraints
 import play.api.i18n.I18nSupport
 import play.api.mvc._
 import services.oauth.OAuthSettings
@@ -105,7 +107,7 @@ class LoginController @Inject() (
         try {
           User
             .login(login, password, deadline)
-            .map(signedIn(_, login, returnTo, keepSignedIn))
+            .map(user => signedIn(user, sessionLogin(user, login), returnTo, keepSignedIn))
             .getOrElse(
               noStore(BadRequest(loginPage(bound.withGlobalError("invalid.user.or.password"), returnTo)))
             )
@@ -116,6 +118,17 @@ class LoginController @Inject() (
       }
     )
   }
+
+  /** The name the session keeps for `user`, signed in with `login`: one that names this account
+    * as [[Secured.sessionUser]] resolves a session (exactly, no underscores as spaces): the login
+    * as typed, else with underscores as spaces (a wiki account `Foo_Bar` stored as `Foo Bar`),
+    * else the account's own login name ([[OAuthController.loginName]]).
+    */
+  private def sessionLogin(user: User, login: String): String =
+    Seq(login, login.replace('_', ' ')).distinct
+      .find(name => User.byUserName(Secured.normalizeUserName(name)).exists(_.id == user.id))
+      .orElse(OAuthController.loginName(user))
+      .getOrElse(login)
 
   /** An invitation's or a password link's page: the form that sets the password, if the link
     * is live; else the same "invalid link" page for any reason (N7).
@@ -293,7 +306,9 @@ class LoginController @Inject() (
   /** The password is checked once, by [[auth]] ([[User.login]]), not by the form. */
   val loginForm: Form[(String, String)] = Form(
     tuple(
-      "login" -> nonEmptyText,
+      // an email or wiki account as pasted: without surrounding spaces, tabs or non-breaking
+      // spaces ([[LoginText.clean]]), as the session then stores it. The password as typed
+      "login" -> text.transform[String](LoginText.clean, identity).verifying(Constraints.nonEmpty()),
       "password" -> nonEmptyText
     )
   )
@@ -314,7 +329,7 @@ class LoginController @Inject() (
   val setupForm: Form[(String, String, String, String)] = Form(
     tuple(
       "token" -> nonEmptyText,
-      "login" -> email.transform[String](_.trim.toLowerCase, identity),
+      "login" -> text.transform[String](LoginText.email, identity).verifying(Constraints.emailAddress()),
       "password" -> newPassword,
       "repeat.password" -> nonEmptyText
     ).verifying("passwords.differ", f => f._3 == f._4)

@@ -384,8 +384,8 @@ its `org.mariadb.jdbc` line is a pre-deploy item until the infra plan's Step 4.
 **Rule.** An access role (jury, organizer, admin) reaches an existing account only if nobody
 but the email's owner can sign in to it (`User.mayTakeAccessRole`: root, verified email, or no
 password); otherwise an add becomes an invitation. A wiki-account match never attaches an
-access role to an unverified wiki account. Emails are trimmed and lowercased; wiki names
-normalised and unique. Links are 32 random bytes, stored as SHA-256, single use, expiring,
+access role to an unverified wiki account. Emails are trimmed (`LoginText.clean`: also tabs and
+non-breaking spaces, never a password's ASCII trim) and lowercased; wiki names normalised and unique. Links are 32 random bytes, stored as SHA-256, single use, expiring,
 bound to account and address. Every refused link gives the same page (no account
 enumeration). One's own password or email change needs the current password. Another account's
 password is set through a single-use link, mailed (an invitation, root's reset) or shared (below),

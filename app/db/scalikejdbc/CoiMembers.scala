@@ -1,5 +1,6 @@
 package db.scalikejdbc
 
+import org.intracer.wmua.LoginText
 import scalikejdbc._
 
 /** The people whose files are conflicts of interest in a contest: its members in
@@ -18,11 +19,13 @@ object CoiMembers {
   }
 
   /** A user name as MediaWiki normalizes it: without a `User:` prefix, `_` as a space, runs
-    * of spaces as one, the first letter in title case (`Character.toTitleCase`: Georgian
-    * Mkhedruli stays as it is, as MediaWiki keeps it; `ǆ` becomes `ǅ`).
+    * of spaces as one, no spaces at the ends (pasted ones too, [[LoginText.clean]]), the first
+    * letter in title case (`Character.toTitleCase`: Georgian Mkhedruli stays as it is, as
+    * MediaWiki keeps it; `ǆ` becomes `ǅ`).
     */
   def normalize(name: String): String = {
-    val plain = name.replace('_', ' ').trim.replaceFirst("(?iu)^user\\s*:\\s*", "").replaceAll("\\s+", " ").trim
+    val plain = LoginText.clean(
+      LoginText.clean(name.replace('_', ' ')).replaceFirst("(?iu)^user\\s*:\\s*", "").replaceAll("\\s+", " "))
     if (plain.isEmpty) plain
     else {
       val first = plain.codePointAt(0)

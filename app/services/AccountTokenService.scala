@@ -1,6 +1,7 @@
 package services
 
 import db.scalikejdbc.{AccountToken, AccountTokenJdbc, ApiTokenJdbc, User, UserContestJdbc, UserIdentityJdbc}
+import org.intracer.wmua.LoginText
 import play.api.Logger
 import scalikejdbc._
 
@@ -63,7 +64,7 @@ object AccountTokenService {
       shared: Boolean = false
   )(implicit session: DBSession = AutoSession): (Long, String) = {
     val token = generate()
-    val id = AccountTokenJdbc.create(userId, purpose, hash(token), email.trim.toLowerCase, contestId, role, createdBy,
+    val id = AccountTokenJdbc.create(userId, purpose, hash(token), LoginText.email(email), contestId, role, createdBy,
       validSeconds(purpose), shared)
     logger.info(
       s"account_token_created purpose=$purpose tokenId=$id accountId=$userId" +
@@ -174,7 +175,7 @@ object AccountTokenService {
     final class Abort(val error: Option[Any]) extends RuntimeException(null, null, false, false)
     try {
       val (proven, line) = db.scalikejdbc.WriteTx.write { implicit session =>
-        val email = verifiedEmail.trim.toLowerCase
+        val email = LoginText.email(verifiedEmail)
         // the account's row, then its links' (acceptPasswordLink's order)
         val user  = User.lockRow(userId).filter(_.deletedAt.isEmpty)
         val links = AccountTokenJdbc.lockLive(userId, AccountTokenJdbc.SetsPassword, email)
