@@ -166,10 +166,10 @@ test.describe('the guides\' screenshots', () => {
   test('sign-in and juror pages', async ({ contextAs, fixture }) => {
     const { juror } = fixture.accounts;
     await shot(contextAs, null, '/auth', 'juror-sign-in');
-    await shot(contextAs, 'juror', galleryPath(fixture.roundBinaryId, juror.id), 'juror-gallery-binary', { rows: 1 });
+    await shot(contextAs, 'juror', galleryPath(fixture.roundBinaryId, juror.id), 'juror-gallery-yes-no', { rows: 1 });
     await shot(contextAs, 'juror', galleryPath(fixture.roundRatingId, juror.id), 'juror-gallery-rated', { rows: 1 });
     await shot(contextAs, 'juror', galleryPath(fixture.roundBinaryId, juror.id), 'juror-gallery-top-bar', { height: 56 });
-    await shot(contextAs, 'juror', largePath(fixture.roundBinaryId, juror.id, juror.pageId), 'juror-large-view-binary', LARGE_TOP);
+    await shot(contextAs, 'juror', largePath(fixture.roundBinaryId, juror.id, juror.pageId), 'juror-large-view-yes-no', LARGE_TOP);
     // the comment box, under the photo
     await shot(contextAs, 'juror', largePath(fixture.roundBinaryId, juror.id, juror.pageId), 'juror-large-view-comments', { crop: '.large-comments', cropTop: 2 });
     await shot(contextAs, 'juror', largePath(fixture.roundRatingId, juror.id, juror.ratedPageId), 'juror-large-view-rated', {

@@ -115,7 +115,7 @@
 
                         @bs.select(
                             editRoundForm("rates"),
-                            Round.rates.map(x => (x.id.toString, if(x.id == 1) x.name else Messages("1-x.rating", x.id))),
+                            Round.rates.map(x => (x.id.toString, views.RatingType.label(x))),
                             Symbol("_label") -> Messages("rating.type"), Symbol("readonly") -> noEdit)
 
                         @* how a rated round scores its files (V90, AverageRule): editable on an existing

@@ -126,6 +126,9 @@ Changes made available before version 26.11, by who notices them.
   filter](admin-guide.md#a-rejection-filter).
 - **Criteria chosen from a shared catalogue** on the round form. See [Kinds of
   rounds](admin-guide.md#a-round-kinds).
+- **Clearer rating type names** on the round form and the rounds list: **+/-** is now
+  **Yes/No**, and **1-0 rating** (a comments-only round) is now **Comments only**. See [Kinds of
+  rounds](admin-guide.md#a-round-kinds).
 - **Disqualifying and requalifying files** on the conflicts page, while a round is stopped; the
   votes are kept. See [Disqualifying and requalifying](admin-guide.md#a-disqualify).
 - **Invitations** are the only way to add people, with a list of invitations not yet accepted,

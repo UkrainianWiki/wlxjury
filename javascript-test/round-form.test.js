@@ -160,7 +160,7 @@ describe("a new round's criteria", () => {
         document.body.innerHTML = `
           <form id="round-form">
             <select id="rates" name="rates"${ratesDisabled ? " disabled" : ""}>
-              <option value="0">Comments only</option><option value="1">+/-</option><option value="10">1-10</option>
+              <option value="0">Comments only</option><option value="1">Yes/No</option><option value="10">1-10</option>
             </select>
             <div id="round-criteria">
               <select name="criteria[0]"><option value=""></option><option value="6" selected>Technical quality</option></select>
