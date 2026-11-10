@@ -79,7 +79,7 @@ a guide or a test needs them.
 | O-02 | An organizer lists a round's results of all jurors (rank, average) as gallery, by rate or file list | – | |
 | O-03 | An organizer views one juror's votes from the juror menu | – | |
 | O-04 | An organizer reads a criteria round's results | – | |
-| O-05 | An organizer exports a round's results as CSV, or the thumbnail URLs | – | |
+| O-05 | An organizer exports a round's results as CSV | – | |
 | O-06 | An organizer signs in with login and password | – | |
 
 ## Admin
@@ -93,7 +93,7 @@ a guide or a test needs them.
 | A-05 | An admin distributes a contest's new files to a round | – | *Part:* the new files' count only; the distribution in service specs |
 | A-06 | An admin follows a job's progress, cancels or retries it | – | *Part:* a failed job's status and the job endpoints' access |
 | A-07 | An admin adds, mass-imports or invites users, reinvites, cancels an invitation, writes to them on Commons | – | browser: the page tour opens the users page only |
-| A-08 | An admin changes a user's role or wiki account, resets a password, ends sessions | – | |
+| A-08 | An admin changes a user's role or wiki account, or sets their password | – | mailing a reset link and ending sessions are root's (R-05) |
 | A-09 | An admin imports files from a Commons category, template or page, or a pasted list, and caches them | – | *Part:* the import job's start; the sources in `AppendImagesSpec`, a service spec |
 | A-10 | An admin reviews conflicts of interest, disqualifies and requalifies in a stopped round | – | |
 | A-11 | An admin checks a round's files for deleted or missing ones | – | |
@@ -105,6 +105,7 @@ a guide or a test needs them.
 | A-17 | An admin edits the contest's greeting, previewed per member; a new account gets it by mail | – | *Part:* saving it only |
 | A-18 | An admin signs in with login and password | – | |
 | A-19 | An admin creates a link to share for an invitation or a password reset, copies it once, and sees whether it was used, expired or revoked; only for accounts that are theirs alone | – | |
+| A-20 | An admin exports the thumbnail URLs of the contest's or a round's files | – | |
 
 ## Root
 
@@ -114,6 +115,7 @@ a guide or a test needs them.
 | R-02 | First-run setup creates the root account | – | |
 | R-03 | Root lists all users across contests and makes an account root | – | *Part:* making an account root only |
 | R-04 | Root signs in with login and password | – | |
+| R-05 | Root mails a reset-password link to an account, or ends all its sessions | – | |
 
 ## System and security
 

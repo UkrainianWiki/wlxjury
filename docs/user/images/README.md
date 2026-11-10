@@ -189,10 +189,8 @@ writes this section from the lists.
 - Mariahilfkapelle beim Oberganischger 2.JPG: Plentn, CC0, 2015, South Tyrol
 - Wohnturm beim Steifler in Glaning.jpg: Mai-Sachme, CC0, 2016, South Tyrol
 - Bow of fishing boat Frifararen at Vikarvet Museum.jpg: W.carter, CC0, 2019, Sweden
-- Gamla Uppsala August 2025 01.jpg: ArildV , CC0, 2025, Sweden
-- Gråbrödraklostret i Ystad 03.jpg: 
-
-This image was produced by me, David Castor (user:dcastor). The pictures I sub, CC0, 2021, Sweden
+- Gamla Uppsala August 2025 01.jpg: ArildV, CC0, 2025, Sweden
+- Gråbrödraklostret i Ystad 03.jpg: David Castor (user:dcastor), CC0, 2021, Sweden
 - Tugboat Harry at home in Lysekil harbor 5.jpg: W.carter, CC0, 2019, Sweden
 - Elles megaliths.jpg: Smailtn, CC0, 2025, Tunisia
 
@@ -229,31 +227,19 @@ This image was produced by me, David Castor (user:dcastor). The pictures I sub, 
 - Wog Wog to Corang Peak, Corang Arch and Canowrie Brook, Morton National Park 157.jpg: Dhx1, CC0, 2016, Australia
 - Almsee und Umgebung 8.jpg: Dimitry Anikin, CC0, 2021, Austria
 - Landscape Hardricourt.jpg: ksebf, CC0, 2019, France
-- 20150511Feldherrenhügel1.jpg: 
-AnRo0002, CC0, 2015, Germany
-- 20150518Tripleurospermum inodorum2.jpg: 
-AnRo0002, CC0, 2015, Germany
-- 20150518Valeriana officinalis.jpg: 
-AnRo0002, CC0, 2015, Germany
-- 20150519Salix purpurea1.jpg: 
-AnRo0002, CC0, 2015, Germany
-- 20150521Veronica chamaedrys2.jpg: 
-AnRo0002, CC0, 2015, Germany
+- 20150511Feldherrenhügel1.jpg: AnRo0002, CC0, 2015, Germany
+- 20150518Tripleurospermum inodorum2.jpg: AnRo0002, CC0, 2015, Germany
+- 20150518Valeriana officinalis.jpg: AnRo0002, CC0, 2015, Germany
+- 20150519Salix purpurea1.jpg: AnRo0002, CC0, 2015, Germany
+- 20150521Veronica chamaedrys2.jpg: AnRo0002, CC0, 2015, Germany
 - 20150522 Geschützer Baum - Baumbestand am Moselradweg Trier - IMG 4473 by sebaso.jpg: Sebaso, CC0, 2015, Germany
-- 20160517Cerastium arvense4.jpg: 
-AnRo0002, CC0, 2016, Germany
-- 20180428Knautia arvensis1.jpg: 
-AnRo0002, CC0, 2018, Germany
-- 20180501Lychnis flos-cuculi4.jpg: 
-AnRo0002, CC0, 2018, Germany
-- 20180502Lychnis flos-cuculi2.jpg: 
-AnRo0002, CC0, 2018, Germany
-- 20190331Ficaria verna.jpg: 
-AnRo0002, CC0, 2018, Germany
-- 20190422Polygonatum multiflorum3.jpg: 
-AnRo0002, CC0, 2019, Germany
-- 20190507Anthriscus sylvestris1.jpg: 
-AnRo0002, CC0, 2019, Germany
+- 20160517Cerastium arvense4.jpg: AnRo0002, CC0, 2016, Germany
+- 20180428Knautia arvensis1.jpg: AnRo0002, CC0, 2018, Germany
+- 20180501Lychnis flos-cuculi4.jpg: AnRo0002, CC0, 2018, Germany
+- 20180502Lychnis flos-cuculi2.jpg: AnRo0002, CC0, 2018, Germany
+- 20190331Ficaria verna.jpg: AnRo0002, CC0, 2018, Germany
+- 20190422Polygonatum multiflorum3.jpg: AnRo0002, CC0, 2019, Germany
+- 20190507Anthriscus sylvestris1.jpg: AnRo0002, CC0, 2019, Germany
 - Beach at Prora 2021-09-13 37.jpg: Leonhard Lenz, CC0, 2022, Germany
 - Blauer See Rübeland 2022-04-06 17.jpg: Leonhard Lenz, CC0, 2023, Germany
 - Eckerloch Brocken 2022-04-05 47.jpg: Leonhard Lenz, CC0, 2023, Germany

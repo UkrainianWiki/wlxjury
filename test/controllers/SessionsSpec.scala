@@ -146,7 +146,7 @@ class SessionsSpec extends PlaySpecification with PlayTestDb with AccountTestSup
     }
   }
 
-  "root's end sessions [A-08]" should {
+  "root's end sessions [R-05]" should {
 
     "end every session of the account, not root's" in {
       withCsrfApp { implicit app =>
