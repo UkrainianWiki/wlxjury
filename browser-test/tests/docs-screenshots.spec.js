@@ -238,7 +238,14 @@ test.describe('the guides\' screenshots', () => {
       },
     });
     await shot(contextAs, 'admin', `/contest/${contest}/images`, 'admin-contest-images', { full: true });
-    await shot(contextAs, 'admin', `/users/edit/${fixture.accounts.juror.id}?contestId=${contest}`, 'admin-user-edit', { crop: '#edit-user' });
+    // as root, so that the account's Root checkbox shows too (root only), with the role's help
+    await shot(contextAs, 'root', `/users/edit/${fixture.accounts.juror.id}?contestId=${contest}`, 'admin-user-edit', {
+      crop: '#edit-user',
+      prepare: async (page) => {
+        await expect(page.getByLabel('Root (every contest)'), 'root sees the Root checkbox').toBeVisible();
+        await expect(page.getByText('Board, Audit committee and Staff give no access')).toBeVisible();
+      },
+    });
 
     // a pending invitation: invite one address (once; a second run finds it)
     const context = await contextAs('admin');
@@ -253,8 +260,19 @@ test.describe('the guides\' screenshots', () => {
       await page.locator('#add-user-button').click();
       await page.waitForLoadState('networkidle');
     }
-    // the top of the table (the fixture has 30 members), and the add row with the invitations
+    // the top of the table (the fixture has 30 members)
     await top(page, path.join(OUT_DIR, 'admin-users.png'), await belowTableRow(page, 4));
+    // the add row at the bottom of the table (with the last member's row above it) and the
+    // roles' help under the table
+    const users = page.locator('table', { has: page.locator('#add-user-button') });
+    const addRow = users.locator('tr', { has: page.locator('#add-user-button') });
+    const lastMember = await users.locator('tbody tr', { hasNot: page.locator('#add-user-button') }).last().boundingBox();
+    const roleHelp = await page.locator('#add-user-role-help').boundingBox();
+    expect(lastMember && await addRow.boundingBox() && roleHelp, "the add row and the roles' help are shown").toBeTruthy();
+    const addScrollY = await page.evaluate(() => window.scrollY);
+    await page.screenshot({ path: path.join(OUT_DIR, 'admin-add-person.png'), fullPage: true,
+      clip: { x: 0, y: lastMember.y + addScrollY - 2, width: VIEWPORT.width,
+        height: roleHelp.y + roleHelp.height - lastMember.y + 14 } });
     const heading = await page.getByRole('heading', { name: 'Invitations', exact: true }).boundingBox();
     const table = await page.locator('table.pending-invitations').boundingBox();
     expect(heading && table, 'the Invitations heading and its table are shown').toBeTruthy();

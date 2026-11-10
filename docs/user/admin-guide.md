@@ -83,7 +83,11 @@ page.
 ### Adding a person
 
 At the bottom of the table, fill in the row: **Full name**, **Wiki account**, **Email**, the
-**Role**, and press the button with the plus. A person needs an email or a wiki account.
+**Role**, and press the button with the plus. A person needs an email or a wiki account. The text
+under the table recalls which roles make the person's own photos conflicts of interest, and that
+**Board**, **Audit committee** and **Staff** give no access (see [Roles](#a-roles)).
+
+<img src="images/admin-add-person.png" alt="The add row at the bottom of the users table, with the text about the roles under it" width="1280">
 
 - A **new** email gets a new account and an invitation by email, see [Invitations](#a-invitations).
 - An email whose account **exists** and whose owner has proved it (they accepted an invitation
@@ -110,14 +114,16 @@ mail1@example.org, mail2@example.org
 Name1 Surname1 <mail1@example.org>
 ```
 
-Choose the role for all of them. They are added as in [Adding a person](#a-add-person).
+Choose the role for all of them; the text under it says the same about the roles as the users
+page. They are added as in [Adding a person](#a-add-person).
 
 <a id="a-edit-person"></a>
 ### Changing a person
 
 The pencil opens the page **Edit user**. An admin can change, for members of the current contest:
 
-- the **Role** in this contest;
+- the **Role** in this contest (the text under it says which roles make the person's own photos
+  conflicts of interest);
 - the **Full name** and the **Wiki account** (a valid wiki name that no other account has; it
   is marked unverified);
 - the **Email**, only while the person is still an invitee who hasn't accepted. They are invited
@@ -129,7 +135,9 @@ An account that also works in other contests can't be changed by an admin of one
 admin may change the person's role in their own contest only, unless they administer all of its
 contests.
 
-<img src="images/admin-user-edit.png" alt="The Edit user page of a member, with the role and the set-password links" width="450">
+Root also sees **Root (every contest)** above the role, see [What only root can do](#a-root).
+
+<img src="images/admin-user-edit.png" alt="The Edit user page of a member as root sees it, with the Root checkbox, the role and its help, and the set-password links" width="450">
 
 <a id="a-invitations"></a>
 ## Invitations
