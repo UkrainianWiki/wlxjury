@@ -119,7 +119,7 @@ dropped:
   stands.
 - *Hiding the results while a later round built from this one is open* (following the chain of
   previous rounds, a 403 for its jurors). Replaced by the admin's choice of when to switch the
-  option on (§10).
+  option on (§8, §10).
 
 ## 4. Authorization rules the change must keep
 
@@ -201,7 +201,7 @@ and a new shot of a juror's results page.
 2026-11-10). The round form's help text for the option and the organizer and admin guides say:
 - (a) Switching it on for a round that isn't the last one: the jurors of a later round on the
   same files will have seen the combined results, which can influence their votes.
-- (b) Where a file had only two jurors, or all its other jurors voted the same way, a juror can
+- (b) Where only two jurors voted on a file, or all its other jurors voted the same way, a juror can
   work out those votes from the totals (never who cast them).
 
 The plan documents these caveats instead of hiding results: hiding an earlier round's results
