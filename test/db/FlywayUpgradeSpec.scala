@@ -537,6 +537,51 @@ class FlywayUpgradeSpec extends Specification with BeforeAll with AfterAll {
     }
   }
 
+  /** V95's rollback SQL after reopen (CHANGELOG, "Leave out files that are in round(s)"). */
+  private val v95Rollback = Seq(
+    "ALTER TABLE round DROP CONSTRAINT round_exclude_rounds_chk",
+    "ALTER TABLE round DROP COLUMN exclude_rounds, ALGORITHM = INSTANT",
+    "DELETE FROM flyway_schema_history WHERE version = '95'")
+
+  "V95's rounds to leave out" should {
+    "leave every existing round none, take ids only, rerun as a no-op, and roll back to the previous schema" in {
+      // the migration before V95, whichever it is once the batches below merge
+      val before = versions.takeWhile(_ != "95").last
+      emptyDb("fw_v95_prev")
+      flyway("fw_v95_prev", production.copy(target = Some(before))).migrate()
+      emptyDb("fw_v95_back")
+      flyway("fw_v95_back", production.copy(target = Some(before))).migrate().success must beTrue
+      Using.resource(connect("fw_v95_back"))(c => run(c, Seq(
+        "INSERT INTO round (id, number, contest_id, rates, previous, created_at) VALUES " +
+          "(1, 1, 1, 1, NULL, '2020-01-01 00:00:00'), (2, 2, 1, 1, '1', '2020-01-02 00:00:00')")))
+      flyway("fw_v95_back", production.copy(target = Some("95"))).migrate().success must beTrue
+      val once = schema("fw_v95_back")
+      val (stored, refused, taken) = Using.resource(connect("fw_v95_back")) { c =>
+        val stored = rows(c, "SELECT id, exclude_rounds, CAST(created_at AS CHAR) FROM round ORDER BY id")(rs =>
+          (rs.getLong(1), Option(rs.getString(2)), rs.getString(3)))
+        val refused = Seq("''", "'1,'", "',1'", "'1, 2'", "'01'", "'-1'", "'1,,2'", "'a'").map(v =>
+          scala.util.Try(run(c, Seq(s"UPDATE round SET exclude_rounds = $v, created_at = created_at WHERE id = 2")))
+            .isFailure)
+        run(c, Seq("UPDATE round SET exclude_rounds = '1,10', created_at = created_at WHERE id = 2"))
+        (stored, refused, rows(c, "SELECT exclude_rounds FROM round WHERE id = 2")(_.getString(1)))
+      }
+      (stored === List((1L, None, "2020-01-01 00:00:00"), (2L, None, "2020-01-02 00:00:00"))) and
+        (refused === Seq.fill(8)(true)) and (taken === List("1,10")) and {
+          Using.resource(connect("fw_v95_back"))(c => run(c, Seq("UPDATE round SET exclude_rounds = NULL")))
+          val reset = schema("fw_v95_back")
+          Using.resource(connect("fw_v95_back"))(c => run(c, statements("V95__Round_exclude_rounds.sql")))
+          schema("fw_v95_back") === reset
+        } and {
+          Using.resource(connect("fw_v95_back"))(c => run(c, v95Rollback))
+          def tablesOnly(s: String) = s.split(";\n\n").filterNot(_.matches("(?s)^\\w+: \\d+ rows.*")).mkString(";\n\n")
+          (history("fw_v95_back").map(_.split(" \\| ")(1)) === upTo(before)) and
+            (tablesOnly(schema("fw_v95_back")) === tablesOnly(schema("fw_v95_prev"))) and
+            (flyway("fw_v95_back", production.copy(target = Some("95"))).migrate().success must beTrue) and
+            (tablesOnly(schema("fw_v95_back")) === tablesOnly(once))
+        }
+    }
+  }
+
   "the app's start with production's settings but without auto" should {
     "refuse while a migration is pending, without changing the database" in {
       emptyDb("fw_pending")

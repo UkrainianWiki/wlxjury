@@ -47,7 +47,8 @@ class RoundService @Inject() (
     * (scripts, the API) every call creates a round.
     *
     * Invalid settings (no jurors, previous rounds of another contest or of mixed rate
-    * types, more jurors per image than jurors) are refused before anything is created.
+    * types, rounds to leave out that are not other rounds of its contest, more jurors per image
+    * than jurors) are refused before anything is created.
     *
     * @param titles a pasted list of files ("Add files"), added to the round after the
     *               images its filters choose
@@ -64,6 +65,7 @@ class RoundService @Inject() (
       case None =>
         val canonical = round.withFixedCategories.withCanonicalCategoryRule
         val prevRounds = RoundDistributionHandler.previousRounds(canonical)
+        RoundDistributionHandler.excludedRounds(canonical)
         val configuredRound = canonical.withExplicitTopOrder(prevRounds.exists(_.isBinary))
         val jurors = User.loadJurors(round.contestId, jurorIds).distinct
         require(jurors.nonEmpty, "no jurors selected for the round; nothing to distribute")
@@ -207,7 +209,9 @@ class RoundService @Inject() (
             "minMpx" -> round.minMpx,
             "minImageSize" -> round.minImageSize,
             "mediaType" -> round.mediaType,
-            "specialNomination" -> round.specialNomination
+            "specialNomination" -> round.specialNomination,
+            // "Leave out files that are in round(s)" (V95); the job reads the round's
+            "excludeRounds" -> round.excludeRounds
           )
         ) ++ (if (titles.isEmpty) Json.obj()
               else Json.obj("titles" -> titles, "titleCount" -> titles.size, "listOnly" -> listOnly)),
@@ -254,6 +258,7 @@ class RoundService @Inject() (
         }
       case _ =>
         RoundDistributionHandler.previousRounds(round)
+        RoundDistributionHandler.excludedRounds(round)
         DistributeImages.checkJury(round, User.distributionJurors(roundId))
         try {
           val job = WriteTx.write { implicit session =>

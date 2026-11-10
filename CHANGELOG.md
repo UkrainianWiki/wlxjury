@@ -25,7 +25,7 @@ with `.N` for an extra deploy in the same month (`26.11.1`), and release heading
 
 ## Unreleased (developed, not yet deployed)
 
-`26.11` is the next deploy, V71–V94 in one go; the earlier plan to ship V71–V81 on their own was
+`26.11` is the next deploy, V71–V95 in one go; the earlier plan to ship V71–V81 on their own was
 dropped (decided 2026-11-05: that branch removed admin-set passwords before
 the shareable links that replace them existed). The sections below are its parts, in the order
 they were developed. Pre-deploy steps: roadmap, "Before any production deploy".
@@ -80,7 +80,7 @@ Developed 2026-11-02 to 2026-11-03, PRs #232–#236.
 - Flyway 13.12.0, run by the app through `db.Migrations` (#234). A faster test suite (#233).
 - **Migrations:** V82 table renames; V83 criteria catalogue; V84 `round_image`.
 
-### Developed third (V85–V94 and the rest)
+### Developed third (V85–V95 and the rest)
 
 **Features**
 
@@ -162,6 +162,10 @@ Developed 2026-11-02 to 2026-11-03, PRs #232–#236.
   rule), and a top-N ranks it by its best round. Before, its votes were added up across the
   rounds and scored by the first round's rule. The previous rounds must now share the scale and
   the number of criteria, not only yes/no or rated (pre-deploy check: the roadmap's A10).
+- **"Leave out files that are in round(s)"** (admins; developed 2026-11-10, V95): a new round leaves
+  out every file that is in the chosen other rounds of the contest, whatever its votes there, with
+  every other filter, on its creation and on "Distribute new files"; e.g. the files of a previous
+  round that didn't pass into round X (the admin guide's example).
 - **Links to share for setting a password** (admins and root; developed 2026-11-05, V94): besides
   sending an invitation or root's password reset by email, "Create a link to share" on the users
   page (an invitation) or on an account's page (a new password) shows the same single-use link
@@ -300,7 +304,8 @@ Developed 2026-11-02 to 2026-11-03, PRs #232–#236.
   V88 `round_image_event`; V89 `round_image` counts; V90 `round.average_rule`; V91 `vote.rate`
   and `vote_aside.rate` `NOT NULL DEFAULT 0` (an online rebuild of each table; the NULL handling
   in the code removed); V92 `round.worst_mark`; V93 `round.prev_rejected_mode`; V94 `account_token.shared` (`ALGORITHM = INSTANT`;
-  rollback in `FlywayUpgradeSpec`, the live shared links revoked first).
+  rollback in `FlywayUpgradeSpec`, the live shared links revoked first); V95 `round.exclude_rounds`
+  (`ALGORITHM = INSTANT`, then a `CHECK` that copies `round`; rollback in `FlywayUpgradeSpec`).
 
 ## Deployed
 

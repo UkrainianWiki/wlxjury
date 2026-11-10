@@ -228,6 +228,11 @@ rejected.by.mode.only=Only files rejected by at least X jurors
 error.rejected.by.count.missing=Choose X, the number of jurors, for the rejected files filter.
 error.rejected.by.without.mode=Choose whether to exclude the rejected files or take only them, or clear X.
 error.rejected.by.no.source=The rejected files filter needs a previous round with rejections: a yes/no round, or a rated round without criteria.
+# "Leave out files that are in round(s)" (V95)
+exclude.rounds = Leave out files that are in round(s)
+exclude.rounds.help = A file in any of these rounds isn''t taken, however it was voted there. For example, with a previous round chosen above: its files that didn''t pass into round X.
+error.exclude.rounds.self = A round can''t leave out its own files.
+error.exclude.rounds.other = The rounds to leave out must be other rounds of this contest.
 average.file.rating.is.at.least=Average file rating is at least
 top.images=Number of top files from the previous rounds
 top.images.binary.order=Top files of a yes/no round by

@@ -220,6 +220,11 @@ rejected.by.mode.only=Лише файли, відхилені принаймні
 error.rejected.by.count.missing=Виберіть N, кількість членів журі, для фільтра відхилених файлів.
 error.rejected.by.without.mode=Виберіть, виключити відхилені файли чи взяти лише їх, або очистіть N.
 error.rejected.by.no.source=Фільтру відхилених файлів потрібен попередній раунд із відхиленнями: раунд «так/ні» або раунд з оцінками без критеріїв.
+# "Leave out files that are in round(s)" (V95). DRAFT translation, for native review
+exclude.rounds = Виключити файли, що є в раундах
+exclude.rounds.help = Файл, що є в будь-якому з цих раундів, не береться, хоч би як за нього голосували. Наприклад, з обраним вище попереднім раундом: його файли, що не пройшли в раунд X.
+error.exclude.rounds.self = Раунд не може виключати власні файли.
+error.exclude.rounds.other = Раунди для виключення мають бути іншими раундами цього конкурсу.
 average.file.rating.is.at.least=Середня оцінка файла принамні
 top.images=Кількість найкращих файлів із попередніх раундів
 top.images.binary.order=Найкращі файли раунду так/ні за

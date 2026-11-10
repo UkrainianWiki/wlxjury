@@ -17,7 +17,7 @@ Date: 2026-11-10. This is a read-only design. Nothing was changed.
     - the large-view JSON author fix (R1);
     - "Yes/No" for "+/-" (O12);
     - **the `juryOrgView` flag removed** (another branch). The app stops reading and writing it, and the column
-      stays until V97 drops it. Before that deploy, a DB admin lists the rounds that have it (check 6).
+      stays until V98 drops it. Before that deploy, a DB admin lists the rounds that have it (check 6).
 - **Inputs:**
   - v1 of this plan (superseded, not kept). §3 keeps v1's D, Z and U ids for the sites it lists and adds X, P and
     RT; v1's V sites are not listed (§5 cites those sites by file:line).
@@ -71,24 +71,24 @@ V76's CHECK refuses `prejury` (`UserContestRoleMigrationSpec.scala:39`). The 202
 (`docs/history/security/2026-11-02-role-allowlist-data.sql:21-23, 39-46`), and check 3 confirms. Any `round.roles`
 values are recorded (check 4) and dropped. New code refuses `roundType=prejury` and `roles=prejury`.
 
-### 1.4 Migration: V96 adds, V97 drops; each safe to rerun
+### 1.4 Migration: V97 adds, V98 drops; each safe to rerun
 
 - MariaDB DDL autocommits, so a failed file leaves partial state.
-- **V96 is purely additive.** It adds the new columns and constraints, fills them and verifies them. It keeps
-  V76/V77's CHECKs, so its UPDATEs can always read `role` again. When V96 is rerun, its UPDATEs recompute `roles`
-  from `role` for every row, and V97 never drops unfilled data.
-- **V97 only drops:** the old CHECKs first, then the columns, all `IF EXISTS`.
+- **V97 is purely additive.** It adds the new columns and constraints, fills them and verifies them. It keeps
+  V76/V77's CHECKs, so its UPDATEs can always read `role` again. When V97 is rerun, its UPDATEs recompute `roles`
+  from `role` for every row, and V98 never drops unfilled data.
+- **V98 only drops:** the old CHECKs first, then the columns, all `IF EXISTS`.
 - Both ship in one deploy. The new code reads only the new columns.
 
 ```sql
--- V96__Roles_set_and_round_type.sql (additive; every step rerunnable)
+-- V97__Roles_set_and_round_type.sql (additive; every step rerunnable)
 ALTER TABLE user_contest ADD COLUMN IF NOT EXISTS roles
   SET('jury','prescreener','organizer','admin','board','auditor','staff')
   CHARACTER SET ascii COLLATE ascii_bin NOT NULL DEFAULT '' AFTER role;
 -- strict for this statement only, keeping the session's other modes (copied from V91:25-26):
---   SET @v96_set = CONCAT('SET STATEMENT sql_mode = ''',
+--   SET @v97_set = CONCAT('SET STATEMENT sql_mode = ''',
 --     CONCAT_WS(',', NULLIF(@@SESSION.sql_mode, ''), 'STRICT_ALL_TABLES'), ''' FOR ');
---   EXECUTE IMMEDIATE CONCAT(@v96_set, '<UPDATE>')
+--   EXECUTE IMMEDIATE CONCAT(@v97_set, '<UPDATE>')
 UPDATE user_contest SET roles = IF(BINARY role = 'no', '', role);              -- through the line above
 -- verify (V83/V85's EXECUTE IMMEDIATE IF(@bad > 0, 'SIGNAL SQLSTATE ''45000'' …', 'DO 0')):
 --   @bad = rows WHERE BINARY role <> 'no' AND (roles = '' OR BINARY roles <> BINARY role)
@@ -116,7 +116,7 @@ ALTER TABLE round ADD CONSTRAINT chk_round_type CHECK (round_type IN ('jury','pr
 ```
 
 ```sql
--- V97__Drop_single_role_columns.sql
+-- V98__Drop_single_role_columns.sql
 ALTER TABLE user_contest DROP CONSTRAINT IF EXISTS chk_user_contest_role;      -- V76
 ALTER TABLE user_contest DROP COLUMN IF EXISTS role;   -- idx_user_contest_contest becomes (contest_id); fk_uc_contest keeps it
 ALTER TABLE account_token DROP CONSTRAINT IF EXISTS chk_account_token_role;    -- V77:69-70
@@ -130,7 +130,7 @@ ALTER TABLE round DROP COLUMN IF EXISTS jury_org_view;  -- unread since 26.11 (t
 - `ascii_bin` keeps V76's exactness. The app's `require(isContestRole)` stays the first guard for runtime writes, and
   check 1 covers the server's mode for those.
 - The "juror alone" CHECK can't see `users.is_root`, a cross-table condition. Root + Juror is guarded in the app
-  (§2.1) from B1, the same batch as V96 (§11), and V96 refuses to run while one exists (check 7).
+  (§2.1) from B1, the same batch as V97 (§11), and V97 refuses to run while one exists (check 7).
 - **Spec `RolesSetMigrationSpec`:**
   - Mapping, and the empty set. **N:** strict mode refuses `Jury`/`prejury`.
   - **N:** both "juror alone" CHECKs refuse `jury,organizer` and `jury,admin`; `prescreener,organizer,board` is
@@ -138,15 +138,15 @@ ALTER TABLE round DROP COLUMN IF EXISTS jury_org_view;  -- unread since 26.11 (t
   - A dead `board` token becomes NULL; a live one SIGNALs. **N:** a root juror SIGNALs, and so does a live `jury`
     token of a root account (a deleted root account too).
   - `round_type` defaults to `jury`. **N:** `prejury`/`Prescreening` are refused.
-  - **Failure and recovery through `db.Migrations`:** inject a failure into V96 (and separately V97). Assert
+  - **Failure and recovery through `db.Migrations`:** inject a failure into V97 (and separately V98). Assert
     `success = 0`, a refused start, and a rerun after the repair that ends like a clean run.
 - Role filters become `FIND_IN_SET(?, roles)` over a contest's rows (`(contest_id)` index). The cost is negligible.
 
 ### 1.5 Runbook and rollback (O1: dump restore only)
 
-**If V96 or V97 fails.** On MariaDB, Flyway records the failed migration with `success = 0` and refuses to migrate
+**If V97 or V98 fails.** On MariaDB, Flyway records the failed migration with `success = 0` and refuses to migrate
 until it is repaired. `db.Migrations` has no repair, and with `validateOnMigrate = true` (`Migrations.scala:38`)
-neither binary starts. The old binary also refuses **any** V96 or V97 history row: there are no
+neither binary starts. The old binary also refuses **any** V97 or V98 history row: there are no
 `ignoreMigrationPatterns` for future versions (`Migrations.scala:32-33, 42, 86`). A DB admin runs these steps (the
 maintainer has no DB login):
 
@@ -155,9 +155,9 @@ maintainer has no DB login):
 2. `SELECT installed_rank, version, success FROM flyway_schema_history WHERE version IN ('96','97');`
 3. `DELETE FROM flyway_schema_history WHERE version = '96' AND success = 0;` (or `'97'`). This is what
    `flyway repair` does.
-4. Restart the new binary. V96 and V97 rerun safely.
+4. Restart the new binary. V97 and V98 rerun safely.
 
-**Rolling back the release, at any point** (also after a V97 failure) means **restoring the pre-deploy dump**. There
+**Rolling back the release, at any point** (also after a V98 failure) means **restoring the pre-deploy dump**. There
 is no revert script.
 - **Votes, rounds and role changes made since the deploy are lost and must be redone.** Say so plainly in the deploy
   notes and to the contest's admins.
@@ -256,7 +256,7 @@ Line numbers in §2.1 are at `1350f0d8`.
   see them; the pre-26.11 JSON fix enforces this in the large view's JSON.
 - **The access path is unchanged.** A viewer without `canViewOrgInfo` reaches a round only through
   `Round.activeRounds(user)`: active, not distributing, with an active `round_user` row. So `Peer` exists while the
-  pre-screening round is open to the voter. A view after it closes is deferred to the V95 stopped-round share (O5),
+  pre-screening round is open to the voter. A view after it closes is deferred to the V96 stopped-round share (O5),
   which must extend `roundView` and not bypass `isNotAuthorized`.
 - **Changing roles mid-round.** Replacing Juror with Pre-screener for someone who has voted in a still-active jury
   round makes `roundView` None there, so they no longer see their own votes in it (admin guide, §8).
@@ -363,7 +363,7 @@ holds an organizer role there (§2.1). The changes are for `Peer` and `None`.
 
 - **Comments (O13)** stay shared per file and contest (`Comment.scala:90-96`, `LargeViewController.scala:185`). The
   guides say so: pre-screeners, organizers and later jurors read each other's comments.
-- **The V95 stopped-round share** applies to jury rounds only. A view after close for pre-screeners belongs there
+- **The V96 stopped-round share** applies to jury rounds only. A view after close for pre-screeners belongs there
   (O5).
 - **`docs/security/secure-coding.md:603`:** add "Juror stays alone", the Peer rule for pre-screening rounds, and "authors follow
   `canViewOrgInfo`".
@@ -474,7 +474,7 @@ Per CLAUDE.md: compile first, then the affected specs per batch, and one full su
 | Part | Days |
 |---|---|
 | S core (data, write paths, invitations, two groups, two columns, 4 languages) | 3.5 |
-| V96/V97 with CHECKs, failure and repair spec via `db.Migrations`, runbook, production checks (no revert script) | 1 |
+| V97/V98 with CHECKs, failure and repair spec via `db.Migrations`, runbook, production checks (no revert script) | 1 |
 | "Juror stays alone" at every write, root both ways (row lock on role writes, live `jury` invitations, acceptance on root), removal and re-invite rules, messages, `JurorAloneSpec` | 1 |
 | The edit form as one transaction: `setRootLockedIn`, in-transaction token create, `invite` and `requestEmailChange` split, mails and log lines after the commit, own password after it, the whole-form N specs | 0.5 |
 | Pre-screener role and votes (P1-P5), start page | 0.5 |
@@ -490,12 +490,12 @@ Each batch is a stack PR with its own review and affected specs. All of them shi
 **Nothing offers several roles or Pre-screener in the UI before B5**, and B5 brings the app-side Juror + Organizer/Admin
 checks together with that UI; until then one role per membership can't break them, and the DB CHECK is there from B1.
 **Root + Juror is different:** the DB CHECK can't see `is_root`, and today's Root box plus a role can produce it. So its
-small app check lands in B1, next to V96's check, and no batch allows it.
+small app check lands in B1, next to V97's check, and no batch allows it.
 
 | Batch | Content | Gate |
 |---|---|---|
 | B0 (26.11) | Workaround docs. Outside this plan, their own pre-26.11 PRs: the large-view JSON fix, "Yes/No" (O12), the `juryOrgView` removal (code only). | docs review |
-| B1 | V96/V97 (including the "juror alone" CHECKs), SETs, `Round.roundType`, `contestRole` removed, `round_user.role = voterRole`, the interim `roles=jury` (U20), D12a, `dq_detail` codes, X1, the runbook. **Root + Juror in the app (§2.1):** role writes lock the user row and refuse Juror on root; `setRootLocked` refuses a Juror membership or live `jury` token; acceptance drops `jury` on root; **the edit form as one transaction** (§2.1): `setRootLockedIn`, the in-transaction token create, `invite` and `UserService.requestEmailChange` split (token inside, mail and log after; today's form already creates tokens through them, `UserController.scala:596, 607, 624`, `UserService.scala:250` (at 1350f0d8)), the `unlinkIdentities` log moved after the commit, one's own new password written after the commit; its messages ×4 (`error.role.juror.root`, `error.root.juror`, `error.root.juror.invited`) | migration spec (failure and repair), DAO specs, `JurorAloneSpec`'s root and whole-form cases |
+| B1 | V97/V98 (including the "juror alone" CHECKs), SETs, `Round.roundType`, `contestRole` removed, `round_user.role = voterRole`, the interim `roles=jury` (U20), D12a, `dq_detail` codes, X1, the runbook. **Root + Juror in the app (§2.1):** role writes lock the user row and refuse Juror on root; `setRootLocked` refuses a Juror membership or live `jury` token; acceptance drops `jury` on root; **the edit form as one transaction** (§2.1): `setRootLockedIn`, the in-transaction token create, `invite` and `UserService.requestEmailChange` split (token inside, mail and log after; today's form already creates tokens through them, `UserController.scala:596, 607, 624`, `UserService.scala:250` (at 1350f0d8)), the `unlinkIdentities` log moved after the commit, one's own new password written after the commit; its messages ×4 (`error.role.juror.root`, `error.root.juror`, `error.root.juror.invited`) | migration spec (failure and repair), DAO specs, `JurorAloneSpec`'s root and whole-form cases |
 | B2 | `PRESCREENER_ROLE` (not offered, X2), `mayVoteIn`, `VoterRoles`, `ViewerRoles`, P2-P5, start page | vote and start-page specs |
 | B3 | `roundView` and `isNotAuthorized`, the Peer sites and menu | `PrescreeningViewSpec`, `OwnVotesSpec` |
 | B4 | Round types: two buttons, type-only candidates, named refusal, the yes/no rule | round specs, axe |
@@ -506,8 +506,8 @@ small app check lands in B1, next to V96's check, and no batch allows it.
 
 No open decisions remain.
 
-- **O1: dump restore only.** V96 adds and V97 drops; the runbook covers a failure going forward (§1.5). A rollback at any
-  point, including after a V97 failure, restores the pre-deploy dump. Votes made since the deploy are lost and must be
+- **O1: dump restore only.** V97 adds and V98 drops; the runbook covers a failure going forward (§1.5). A rollback at any
+  point, including after a V98 failure, restores the pre-deploy dump. Votes made since the deploy are lost and must be
   redone. No revert script.
 - **O2: run all seven checks before the deploy; block on 2, 3 and 7.** The account has no DB login, so a DB admin runs:
   1. `SELECT @@GLOBAL.sql_mode;` (for runtime writes; the migration sets its own)
@@ -518,8 +518,8 @@ No open decisions remain.
   6. **Before the 26.11 deploy** (it removes `juryOrgView` from the code):
      `SELECT id, contest_id, active FROM round WHERE jury_org_view ORDER BY id;` None expected, since nothing in the UI
      sets the flag. Any round found loses its jurors' organizer view with 26.11. Record the list for the release
-     notes; V97 then drops the column.
-  7. **Root jurors** (memberships and live tokens; deleted accounts counted too, exactly as V96's `@root_jurors`) **blocks**:
+     notes; V98 then drops the column.
+  7. **Root jurors** (memberships and live tokens; deleted accounts counted too, exactly as V97's `@root_jurors`) **blocks**:
      `SELECT u.id, u.email, uc.contest_id, 'membership' AS kind FROM users u JOIN user_contest uc ON uc.user_id = u.id WHERE u.is_root AND BINARY uc.role = 'jury' UNION ALL SELECT u.id, u.email, t.contest_id, CONCAT('token ', t.id) FROM users u JOIN account_token t ON t.user_id = u.id WHERE u.is_root AND BINARY t.role = 'jury' AND t.used_at IS NULL AND t.revoked_at IS NULL AND t.expires_at > NOW(3);`
      - Deleted accounts count because the rule is on stored rows and a DB admin may restore an account; no app code sets or
        clears `users.deleted_at`, so none are expected.
@@ -528,10 +528,10 @@ No open decisions remain.
        "No access" (votes are kept, as #278 keeps them; it also revokes the contest's pending roles) or removes root.
        **A live token:** the DB admin revokes it (`UPDATE account_token SET revoked_at = NOW(3) WHERE id = …`). A
        deleted account's rows are fixed the same way by the DB admin in SQL. This must be done before the deploy:
-       V96 refuses to run while one remains (§1.4), so the rule holds from the first start.
+       V97 refuses to run while one remains (§1.4), so the rule holds from the first start.
 - **O3 = yes now:** Pre-screener is in `COI_ROLES`. "Assign around" comes later as a round option if a contest asks.
 - **O4 = no**, and **O9 = no author hiding:** authors follow `canViewOrgInfo` ("it's there on Commons").
-- **O5 = defer** a pre-screener's view after the round closes to the V95 stopped-round share. It must extend
+- **O5 = defer** a pre-screener's view after the round closes to the V96 stopped-round share. It must extend
   `roundView`.
 - **O6 = as planned,** simplified by "juror alone": voting round first, then today's order. Only pre-screeners see a
   change (Z12).

@@ -59,6 +59,9 @@ case class Round(
     distributing: Boolean = false,
     freezeCount: Int = 0,
     excludeCoi: Boolean = false,
+    // "Leave out files that are in round(s)" (V95): other rounds of the contest; a file with a row
+    // in one of them (round_image, any status) is never distributed to this round
+    excludeRounds: Seq[Long] = Nil,
     // the order of a top-N from a yes/no previous round (V72); None (NULL, a round from before
     // V72): the legacy rule (BinaryOrder.LegacyParam). A new round from a yes/no round stores
     // one (withExplicitTopOrder); over rated previous rounds it plays no part, and is NULL.
@@ -189,6 +192,9 @@ case class Round(
       .map(_.split(",").toSeq.flatMap(s => scala.util.Try(s.trim.toLong).toOption))
       .getOrElse(Nil)
 
+  /** [[excludeRounds]] as stored (`exclude_rounds`, V95): the ids comma-separated, NULL for none. */
+  def excludeRoundsStored: Option[String] = Option.when(excludeRounds.nonEmpty)(excludeRounds.mkString(","))
+
   def monumentIds: Seq[String] =
     monuments.map(_.split(",").toSeq).getOrElse(Nil)
 
@@ -292,6 +298,10 @@ object Round extends RoundRepo with CRUDMapper[Round] {
   val ratesById: Map[Int, Rates] =
     rates.groupBy(_.id).view.mapValues(_.head).toMap
 
+  /** Round ids stored comma-separated (`previous`, `exclude_rounds`); a part that is no id is skipped. */
+  def parseIds(stored: Option[String]): Seq[Long] =
+    stored.map(_.split(",").toSeq.flatMap(s => s.trim.toLongOption)).getOrElse(Nil)
+
   lazy val usersRef = hasManyThrough[User](
     through = RoundUser,
     many = User,
@@ -336,6 +346,7 @@ object Round extends RoundRepo with CRUDMapper[Round] {
       distributing = rs.booleanOpt(c.distributing).getOrElse(false),
       freezeCount = rs.intOpt(c.freezeCount).getOrElse(0),
       excludeCoi = rs.booleanOpt(c.excludeCoi).getOrElse(false),
+      excludeRounds = Round.parseIds(rs.stringOpt(c.excludeRounds)),
       topBinaryOrder = rs.stringOpt(c.topBinaryOrder).flatMap(BinaryOrder.parse),
       averageRule = AverageRule.fromStored(rs.stringOpt(c.averageRule)),
       worstMark = rs.booleanOpt(c.worstMark).getOrElse(false)
@@ -376,6 +387,7 @@ object Round extends RoundRepo with CRUDMapper[Round] {
           column.submitToken -> round.submitToken,
           column.distributing -> round.distributing,
           column.excludeCoi -> round.excludeCoi,
+          column.excludeRounds -> round.excludeRoundsStored,
           column.topBinaryOrder -> round.topBinaryOrder.map(_.param),
           column.averageRule -> round.averageRule.param,
           column.worstMark -> round.worstMark,
