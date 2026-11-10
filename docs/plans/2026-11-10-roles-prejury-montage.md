@@ -1,8 +1,9 @@
 # Roles and the prejury workflow: WLX Jury compared with Montage
 
 Date: 2026-11-10. This is a read-only research note for the decision "several roles per person in one
-contest". It was written against v1 of the multi-role plan (superseded, not kept): "plan §N" and "multi-role-plan
-§N" below are v1's sections. The decisions taken since are in `docs/plans/2026-11-10-multi-role-plan.md`
+contest". It was written against v1 of the multi-role plan (superseded, not kept): "plan §N", "multi-role-plan
+§N" and "plan U19" below are v1's sections and site ids (v1's U19, the picker's role labels, is v2's U21). A bare §N is this
+note's own section. The decisions taken since are in `docs/plans/2026-11-10-multi-role-plan.md`
 (Design S, "Juror stays alone", pre-screening rounds).
 
 - **WLX Jury** at `c9805b31` (worktree `C:/scala/wlxjury-followups`, branch `ukwikidev/followups`,
@@ -250,7 +251,7 @@ with full coordinator visibility (§2.2).
     - The start page sends any organizer to the statistics page before checking for jury rounds
       (`W:app/controllers/LoginResults.scala:20-21`). An Organizer+Juror under S hits `ORG_COM_ROLES` first as well,
       and plan §6 item 6 lists the fix as an S follow-up.
-    - The §3.3 confidentiality predicate is new code in both designs. R′ just leaves out its
+    - The plan §3.3 confidentiality predicate is new code in both designs. R′ just leaves out its
       `user.hasRole(JURY_ROLE)` conjunct.
     - The 5 vote-control view sites test `roles.contains("jury")` (multi-role-plan §0). Plan §6 moves them to
       `user.mayVoteIn(round)` under S too, and under R′ that check changes.
@@ -264,7 +265,7 @@ with full coordinator visibility (§2.2).
 ### 4.2 Round vs contest scope (R vs S)
 
 - Montage shows that a round-level voting grant is enough to run a screening round and a jury round with different
-  people. This is the real-world case behind §3.4 of the plan.
+  people. This is the real-world case behind plan §3.4.
 - But in WLX the contest role also drives the start page, which galleries a user sees
   (`GalleryService.isNotAuthorized`, `W:app/services/GalleryService.scala:37-56`), conflict-of-interest membership
   (`COI_ROLES`) and invitations. Montage has none of these (inferred: its juror pages derive everything from
@@ -284,24 +285,24 @@ with full coordinator visibility (§2.2).
     resolves #13.
   - Creators lose access when another coordinator removes them (#222).
 - Lesson: an overseer's grant should **not** be a removable membership row in the contest. Montage's maintainer
-  shows the working pattern at the global level. That supports the plan's §5: a separate `admin_scope` table
+  shows the working pattern at the global level. That supports plan §5: a separate `admin_scope` table
   (contest type or country) merged in at check time.
 - Montage's Series would be the obvious scope, but it carries no permissions. A WLX contest type plus country can
   serve as the scope directly.
 - Also, Montage's `dq_organizers` applies the global organizer group to every campaign (`rdb.py:1622-1629`). That
   over-broad conflict-of-interest rule is what the plan avoids by making a scoped admin a conflict-of-interest
-  person only within its scope (§5, third `UNION` branch).
+  person only within its scope (plan §5, third `UNION` branch).
 
 ### 4.4 Confidentiality for organizer-jurors
 
 - Montage is the cautionary example. A coordinator who votes can read in-progress averages and every juror's votes
   for the round they are voting in (§2.2). No rule and no open issue addresses it.
-- WLX's §3.3 rule (in a round where you are a juror you see it as a juror until it closes) is stricter than
+- WLX's plan §3.3 rule (in a round where you are a juror you see it as a juror until it closes) is stricter than
   Montage. By analogy (inferred), it is in the spirit of the community's pre-jury advice to keep assessments
   independent. That advice is strictly about hiding the creators of the pictures (Meta learning pattern), not about
   hiding other jurors' votes. Montage's issue #115 discussion likewise accepts own statistics as harmless and treats
   jury-wide statistics as opt-in.
-- Recommendation (inferred from the above): adopt §3.3 as planned. Do not copy Montage's openness.
+- Recommendation (inferred from the above): adopt plan §3.3 as planned. Do not copy Montage's openness.
 
 ### 4.5 The round juror picker
 
@@ -338,7 +339,7 @@ with full coordinator visibility (§2.2).
 ### 4.7 Where Montage's choices don't fit WLX Jury
 
 - **The read-only Organizer.** Montage has no observer, so it offers nothing for "organizer + juror" visibility.
-  WLX must define it (§3.3).
+  WLX must define it (plan §3.3).
 - **COI-only roles** (board, auditor, staff) and "No": Montage stores no such groups. Conflict-of-interest
   membership is WLX's own concept.
 - **Identity.** Montage jurors are bare Wikimedia usernames created on first mention (`get_or_create_user`,
@@ -380,9 +381,9 @@ with full coordinator visibility (§2.2).
 
 | §7 | Input from Montage |
 |---|---|
-| 1 Design | Montage gets several roles per person from **scope separation** (global, campaign, round), never from a set of roles in one row. That is evidence for keeping contest roles and round assignment separate. It doesn't choose between S and A, since Montage has no counterpart to either. S remains the fit for WLX's contest-level meanings (start page, galleries, COI, invitations: §4.2). R′ (any access-role member with vote rows who is not stopped may vote; §4.1) is a Montage-like alternative. It covers prejury and any other organizer+juror or admin+juror assignment. Costs only R′ has: reversing #278's rule (its spec, the admin's mental model), widening `loadJurors` in submit and in the form's candidate lists, picker labels. Costs shared with S: the start page, the §3.3 predicate (R′ drops the role conjunct), the 5 vote-control sites. S needs the V96 migration; R′ needs none for prejury. Picker trade-off (§4.5): under S, Organizer+Juror prejurors are pre-ticked into every later round by default. Under R/R′ they are not, provided the pre-ticked set stays jury-role members while the candidate list widens. |
+| 1 Design | Montage gets several roles per person from **scope separation** (global, campaign, round), never from a set of roles in one row. That is evidence for keeping contest roles and round assignment separate. It doesn't choose between S and A, since Montage has no counterpart to either. S remains the fit for WLX's contest-level meanings (start page, galleries, COI, invitations: §4.2). R′ (any access-role member with vote rows who is not stopped may vote; §4.1) is a Montage-like alternative. It covers prejury and any other organizer+juror or admin+juror assignment. Costs only R′ has: reversing #278's rule (its spec, the admin's mental model), widening `loadJurors` in submit and in the form's candidate lists, picker labels. Costs shared with S: the start page, the plan §3.3 predicate (R′ drops the role conjunct), the 5 vote-control sites. S needs the V96 migration; R′ needs none for prejury. Picker trade-off (§4.5): under S, Organizer+Juror prejurors are pre-ticked into every later round by default. Under R/R′ they are not, provided the pre-ticked set stays jury-role members while the candidate list widens. |
 | 2 One SET column or two | No input: Montage stores no COI groups (§1.3). |
-| 3 Confidentiality and admin-juror statistics | Montage has **no** rule, and its coordinator-jurors see in-progress averages and every juror's votes (§2.2). Treat it as the counterexample and adopt §3.3. Admin-jurors keeping the statistics page (counts only) is still stricter than Montage. |
+| 3 Confidentiality and admin-juror statistics | Montage has **no** rule, and its coordinator-jurors see in-progress averages and every juror's votes (§2.2). Treat it as the counterexample and adopt plan §3.3. Admin-jurors keeping the statistics page (counts only) is still stricter than Montage. |
 | 4 Admin + Organizer together | No direct input. Montage has no observer role, so its coordinator implicitly includes monitoring. That is a weak analogy for "Admin includes Organizer". |
 | 5 Import on existing members | No counterpart: Montage has no contest membership. |
 | 6 Invitation acceptance adds roles | Montage's grants are additive by construction: a new coordinator row or round row never removes another role. Weak evidence for union (inferred): Montage has no invitations and no consent step. |

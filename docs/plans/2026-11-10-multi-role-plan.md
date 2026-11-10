@@ -10,15 +10,17 @@ Date: 2026-11-10. This is a read-only design. Nothing was changed.
 - **Code read:** `C:/scala/wlxjury-followups` at `c9805b31` ("Mirror of stack/96-organizer-docs d3aefd50", PR #279).
   File:line references are at that commit.
 - **Assumed landed first:**
-  - `stack/97-root-account-scope` (`C:/scala/wlxjury-root-scope`, `51e30c56`). Root becomes a separate checkbox,
-    contest-role writes never touch `users.is_root`, and root writes are locked (`User.setRootLocked`).
+  - `stack/97-root-account-scope` at `31ce8610` (PR #280; its followups mirror is `1350f0d8`). Root becomes a
+    separate checkbox, contest-role writes never touch `users.is_root`, and root writes are locked
+    (`User.setRootLocked`).
   - **Before 26.11, as their own stack PRs:**
     - the large-view JSON author fix (R1);
     - "Yes/No" for "+/-" (O12);
     - **the `juryOrgView` flag removed** (another branch). The app stops reading and writing it, and the column
       stays until V97 drops it. Before that deploy, a DB admin lists the rounds that have it (check 6).
 - **Inputs:**
-  - v1 of this plan (superseded, not kept). Only its site numbering (D/Z/U/V) is reused; §3 says what applies.
+  - v1 of this plan (superseded, not kept). §3 keeps v1's D, Z and U ids for the sites it lists and adds X, P and
+    RT; v1's V sites are not listed (§5 cites those sites by file:line).
   - The Montage comparison `docs/plans/2026-11-10-roles-prejury-montage.md` (written against v1).
   - An earlier COI UI plan (superseded, not kept): the message keys this plan reuses are inlined in §6.
 - "Inferred" marks a conclusion the code does not state directly.
@@ -167,6 +169,8 @@ This runbook goes into the release's deploy notes, next to the dump step.
 
 ### 2.1 The rule "Juror stays alone" (decision J)
 
+Line numbers in §2.1 are at `1350f0d8`.
+
 | Combination in one contest | Allowed? |
 |---|---|
 | Juror + Organizer, Juror + Admin | **No** |
@@ -181,8 +185,8 @@ This runbook goes into the release's deploy notes, next to the dump step.
 - **One lock for every role write.** Each role write (edit, union, acceptance) first locks the user row
   (`User.lockRow`, `User.scala:885`) and reads `is_root` there. That is the row `setRootLocked` locks
   (`SELECT … FOR UPDATE`, `User.scala:792-…`), so a root write and a role write can't race past each other. Today
-  `UserContestJdbc.updateRole` (`:81-86`) and `setMembership` (`:73-78`) take no lock; D7-D9 add it. (The lines in
-  these three bullets are at PR #280's mirror `1350f0d8`, which has the root changes.)
+  `UserContestJdbc.updateRole` (`:81-86`) and `setMembership` (`:73-78`) take no lock; D7-D9 add it. Inside the edit
+  form's transaction they use the rows its body already locked; elsewhere they lock the user row themselves.
 - **Root, both directions refused.** Refusing only one direction would let the other order create the forbidden state:
   - making someone root while they hold a Juror membership in any contest gives `error.root.juror`. A live invitation
     with `jury` refuses too (`error.root.juror.invited`): it was created before the account was root and would add
@@ -200,8 +204,9 @@ This runbook goes into the release's deploy notes, next to the dump step.
   `root.changed.meanwhile`: a deleted target, the actor no longer root, a concurrent change).
   - **So the whole account update is one `WriteTx.write`:** name, language and sort (`User.updateUser`), email
     (`User.setEmail`, `unlinkIdentities`, the re-invite on an email change, or the email-change link's token;
-    `UserController.scala:593-607`; the whole block `:581-610`), wiki account and its identities, roles, `revokePendingRoles`, root and every
-    token. Any refusal throws and rolls back all of it, so nothing of the form is written. No order rule is needed.
+    `UserController.scala:593-607`; the whole block `:581-610`), wiki account and its identities, the theme
+    (`User.updateTheme`, `:653`), roles, `revokePendingRoles`, root and every token. Any refusal throws and rolls
+    back all of it, so nothing of the form is written. No order rule is needed.
   - **Lock order:** the body first locks the actor's and the target's `users` rows once, in id order (as
     `setRootLocked` does today, `User.scala:794-797`). A variant `setRootLockedIn(actorId, targetId, root)(implicit
     session)` uses those already-locked rows and takes no lock of its own; `setRootLocked` wraps it (lock, then
@@ -212,7 +217,8 @@ This runbook goes into the release's deploy notes, next to the dump step.
     value leaves the transaction only as the body's return value, never through outside state, so a deadlock retry
     makes a fresh token and nothing stale escapes.
   - **After the commit only:** every mail (invitation, email-change link), its `account_token_created` line and the
-    other log lines (`root_changed`, `oauth_unlinked_by_admin`, the refusal), as WriteTx's rule requires
+    other log lines (`root_changed`, `oauth_unlinked_by_admin`, `email_change_requested`, `UserService.scala:243,
+    256`; `password_changed`, `UserController.scala:591`; the refusal), as WriteTx's rule requires
     (`WriteTx.scala:12-15`). The deadlock retry stays on the combined transaction (the body re-reads everything
     inside it).
   - **Outside it, as today:** another account's password is set last, in its own transaction
@@ -266,8 +272,8 @@ lists those sites. The entries below are the ones that change more than that, or
 | # | Site | Change |
 |---|---|---|
 | D1/D2 | `UserContestJdbc.scala:7-26, 36-41` | `UserContest(roles: Set[String])`; `active` unchanged (`:25`) |
-| D7-D9 | `UserContestJdbc.scala:63-85` | `createMembership(roles)`, `addRoles` (union), `setRoles`, each locking the user row (`User.lockRow`), reading `is_root` there and calling `rolesConflict` first (§2.1) |
-| D10 | `User.scala:85-86` `contestRole` | Removed. `UserService.scala:69`, U4 and U11 use `contestRoles`. `RoundService.scala:125` and `Round.scala:639` write `round.voterRole` from B1 (always `jury` until B4). |
+| D7-D9 | `UserContestJdbc.scala:63-85` | `createMembership(roles)`, `addRoles` (union), `setRoles`, each reading `is_root` from the locked user row and calling `rolesConflict` first (§2.1). Inside the edit form's transaction they use the rows its body already locked; elsewhere they lock the user row (`User.lockRow`) themselves. |
+| D10 | `User.scala:85-86` `contestRole` | Removed. `UserService.scala:69`, `UserController.scala:550` (the re-invite after an email fix) and `UserService.scala:140-141` (`needsInvitation`) use `contestRoles`; the compiler lists the rest. `RoundService.scala:125` and `Round.scala:639` write `round.voterRole` from B1 (always `jury` until B4). |
 | D11 | `User.scala:164-213` | `PRESCREENER_ROLE` in `ContestRoles`, `ACCESS_ROLES`, `VoterRoles` and `COI_ROLES` (O3) (B2). **Offered** in `FORM_ROLES`, `IMPORT_ROLES` and `ShareableRoles` only from B5. `AccessFormRoles`, `CoiFormRoles`. `rolesConflict` (§2.1). `NO_ROLE` is a legacy POST value meaning the empty set. |
 | D12a | One admin accessor, `UserContestJdbc.adminContestIds(userId)` | Used by `AccountTokenService.scala:346-349`, `ShareLinkService.scala:67-68` and `UserController.scala:151, 203`, so that a later scope grant table (comparison §4.3) merges in at one place. Root stays account-level. |
 | D13 | `User.scala:463-487` `contestMembers` | `FIND_IN_SET` OR; the exact filter (`:485-486`) stays |
@@ -275,7 +281,7 @@ lists those sites. The entries below are the ones that change more than that, or
 | D17 | `CoiMembers.scala:16-17, 37-45` | `FIND_IN_SET` OR over `COI_ROLES`; `Member.roles: Set` |
 | D17a | `CoiMembers.describe` in `round_image.dq_detail` (VARCHAR 255, `RoundConflicts.scala:139`, `RoundImageJdbc.scala:54`) and the job's `coiTitles` (`RoundDistributionHandler.scala:52-53, 156`) | Store codes (`account — jury,board`, account truncated to fit) and translate on display; old rows parse the same way |
 | D18 | `AccountTokenJdbc` | `roles: Set[String]`, NULL when empty; `role IS NOT NULL` becomes `roles IS NOT NULL` (`:161, 191, 205`) |
-| R1 | `Round.scala:28, 298-330, 342-360` | `roundType` read and written; `updateRound` (`:399-403`) keeps the type immutable |
+| RT1 | `Round.scala:28, 298-330, 342-360` | `roundType` read and written; `updateRound` (`:399-403`) keeps the type immutable |
 | X1 | Not found by the compiler | Raw SQL: `GatlingExternalTarget.scala:45` (`uc.role LIKE`), `RoleAssignmentSpec.scala:71`. Test callers: `RoundSpec.scala:38`, `UserDbSpec.scala:60`, `GatlingDbSetup.scala:58, 66`. Gatling's cache key hashes the migrations (`GatlingDbCache.scala:36-55`): bump `FixtureVersion` only if `GatlingDbSetup.load` writes differently. |
 | X2 | `prescreener` in POSTs before B5 | `isContestRole` would accept it from B2 (`UserController.scala:772`, `User.mayAssignRoles`). Until B5 these use `OfferedRoles` (= `ContestRoles` minus `prescreener`). `EditRound.scala:198` accepts only `jury` from B1 (U20). |
 
@@ -309,9 +315,9 @@ lists those sites. The entries below are the ones that change more than that, or
 
 | Write path | Site | Rule |
 |---|---|---|
-| Edit user | `UserController.scala:354-…` (`updateUser`) | **Sets the whole set, not a union:** unticking a role removes it. The new set and the Root box are checked and written in one transaction with root, before the rest of the form, as root is today (§2.1). Otherwise the form returns with `error.role.juror.alone` / `error.role.juror.root` / `error.root.juror` and nothing is written. |
+| Edit user | `UserController.scala:354-…` (`updateUser`) | **Sets the whole set, not a union:** unticking a role removes it. The whole form, the new set and Root included, is one `WriteTx.write` (§2.1); any refusal writes nothing. On a refusal the form returns with `error.role.juror.alone` / `error.role.juror.root` / `error.root.juror` and nothing is written. |
 | Edit user: removal | `updateUser`, `AccountTokenJdbc.revokePendingRoles` | **Removing a role is immediate**, also on an account that needs an invitation, and revokes the pending roles for that contest (`revokePendingRoles`, as today at `UserController.scala:575`). |
-| Edit user: pending invitation | `updateUser`, `UserService.invite` / `reinvite` | **A changed set while an invitation is pending re-invites** with the new pending set (`invite` revokes the older one, `UserService.scala:180`); `reinvite` carries the pending set. Unticking every pending role just revokes. `invite` is split: the token is created in the edit's transaction (§2.1), the mail is sent after the commit. |
+| Edit user: pending invitation | `updateUser`, `UserService.invite` / `reinvite` | **A changed set while an invitation is pending re-invites** with the new pending set (`invite` revokes the older one, `UserService.scala:180`); `reinvite` carries the pending set. Unticking every pending role just revokes. `invite` is split (in B1): the token is created in the edit's transaction (§2.1), the mail is sent after the commit. |
 | Users page add row (O7) | `UserService.addToContest` (`:59-…`) | **The same union as import:** new set = current ∪ listed, checked as below |
 | Import (decision 5) | `UserService.addToContest`, `UserController.importUsers` | Per row: current ∪ listed. The check also counts the contest's **pending** roles (live invitations): current ∪ pending ∪ listed. Otherwise Juror imported onto a pending Organizer (or the reverse) would pass, and the later acceptance would silently drop the invited role. If it breaks the rule (Juror onto an Organizer, Organizer onto a Juror, Juror onto root), **that row is refused** with a message and counted (`users.roles.refused`, with names). Otherwise `RolesAdded(member, added, accessRestored)`. |
 | Access restored (O8) | the same | Allowed. **Reported separately: "Access restored: N" with the names** (`users.access.restored`). |
@@ -359,7 +365,7 @@ holds an organizer role there (§2.1). The changes are for `Peer` and `None`.
   guides say so: pre-screeners, organizers and later jurors read each other's comments.
 - **The V95 stopped-round share** applies to jury rounds only. A view after close for pre-screeners belongs there
   (O5).
-- **`secure-coding.md:603`:** add "Juror stays alone", the Peer rule for pre-screening rounds, and "authors follow
+- **`docs/security/secure-coding.md:603`:** add "Juror stays alone", the Peer rule for pre-screening rounds, and "authors follow
   `canViewOrgInfo`".
 
 ## 6. UI and messages
@@ -389,7 +395,7 @@ Drafts; all need native review, fr and ru especially:
 | `error.root.juror.invited` | {0} has a pending invitation as a juror in {1}, so they can''t be made root. Untick the pending Juror role there first. | {0} a une invitation en attente comme juré dans {1} et ne peut donc pas devenir super-administrateur. Décochez d''abord ce rôle en attente. | У {0} есть неподтверждённое приглашение членом жюри в {1}, поэтому нельзя сделать его суперадминистратором. Сначала снимите там эту ожидающую роль. | {0} має непідтверджене запрошення членом журі в {1}, тому його не можна зробити суперадміністратором. Спершу зніміть там цю роль, що очікує. |
 | `invitation.role.not.added` | The {0} role in {1} wasn''t added: a juror can''t also be an organizer or admin. | Le rôle {0} dans {1} n''a pas été ajouté : un juré ne peut pas être aussi organisateur ou administrateur. | Роль «{0}» в {1} не добавлена: член жюри не может быть также организатором или администратором. | Роль «{0}» у {1} не додано: член журі не може бути також організатором чи адміністратором. |
 | `users.roles.refused` | Not changed (a juror can''t also be an organizer or admin): {0}. | Non modifiés (un juré ne peut pas être aussi organisateur ou administrateur) : {0}. | Не изменены (член жюри не может быть также организатором или администратором): {0}. | Не змінено (член журі не може бути також організатором чи адміністратором): {0}. |
-| `users.roles.added` | {0,choice,0#No member|1#1 member|1<{0,number,integer} members} got more roles. | {0,choice,0#Aucun membre n''a|1#1 membre a|1<{0,number,integer} membres ont} reçu des rôles en plus. | Дополнительные роли получили: {0,number,integer}. | Додаткові ролі отримали: {0,number,integer}. |
+| `users.roles.added` | {0,choice,0#No member\|1#1 member\|1<{0,number,integer} members} got more roles. | {0,choice,0#Aucun membre n''a\|1#1 membre a\|1<{0,number,integer} membres ont} reçu des rôles en plus. | Дополнительные роли получили: {0,number,integer}. | Додаткові ролі отримали: {0,number,integer}. |
 | `users.access.restored` (O8) | Access restored: {0} ({1}). | Accès rétabli : {0} ({1}). | Доступ восстановлен: {0} ({1}). | Доступ відновлено: {0} ({1}). |
 | `round.type`, `.jury`, `.prescreening` | Round type / Jury round / Pre-screening round | Type de tour / Tour du jury / Tour de présélection | Тип раунда / Раунд жюри / Раунд предварительного жюри | Тип раунду / Раунд журі / Раунд попереднього журі |
 | `round.type.prescreening.help` | Pre-screeners vote yes/no and see each other's votes. Its selected files can feed a jury round. | Les présélectionneurs votent oui/non et voient les votes des autres. Ses fichiers retenus peuvent alimenter un tour du jury. | Члены предварительного жюри голосуют «да/нет» и видят голоса друг друга. Отобранные файлы можно передать в раунд жюри. | Члени попереднього журі голосують «так/ні» й бачать голоси одне одного. Відібрані файли можна передати в раунд журі. |
@@ -399,7 +405,8 @@ Drafts; all need native review, fr and ru especially:
 | `error.round.prescreening.yesno` | A pre-screening round is a yes/no round. | Un tour de présélection est un tour oui/non. | Раунд предварительного жюри — это раунд «да/нет». | Раунд попереднього журі — це раунд «так/ні». |
 | `error.round.voter.not.candidate` (O11) | Nothing was created. {0} can''t vote in a {1}: not a {2} of this contest. | Rien n''a été créé. {0} ne peut pas voter dans un {1} : pas {2} de ce concours. | Ничего не создано. {0} не может голосовать в раунде «{1}»: не является «{2}» этого конкурса. | Нічого не створено. {0} не може голосувати в раунді «{1}»: не є «{2}» цього конкурсу. |
 
-The keys use `''` for an apostrophe, as MessageFormat requires. The first four rows come from the earlier COI UI
+The keys use `''` for an apostrophe, as MessageFormat requires. `\|` in a cell is this table's escape; the
+messages file has a plain `|`. The first four rows come from the earlier COI UI
 plan (not kept); `role.board`, `role.auditor`, `role.staff` and `root.flag` keep their keys and texts. Register
 `round.type.*` in `MessagesCompletenessSpec`.
 
@@ -438,7 +445,7 @@ re-invites. No role write touches root's flag (only the Root box does), and ever
 - The release's what's-new page and deploy notes: the runbook, and "a rollback restores the dump; votes since the deploy
   are lost".
 - `CLAUDE.md`: "User roles" (SET, Pre-screener, juror alone); "REST API" (`/api` is mounted).
-- `secure-coding.md:603`.
+- `docs/security/secure-coding.md:603`.
 - Roadmap "Migration numbers".
 
 ## 9. Tests
@@ -448,7 +455,7 @@ Negative cases are marked **N**.
 | Area | Spec | Cases |
 |---|---|---|
 | Migration | `RolesSetMigrationSpec` | §1.4, failure and repair through `db.Migrations` included |
-| Juror alone | new `JurorAloneSpec` | For each write path (edit, add row, import, invitation creation, acceptance, share link, root checkbox, role write on root): **N:** Juror + Organizer, Juror + Admin, Juror on root, root for a juror. Each refusal shows its message and changes nothing. Allowed: Juror + Pre-screener, Pre-screener + Organizer/Admin/root, Juror + Board, Admin + Organizer. Acceptance: the conflicting role is dropped and logged, the rest applied; a `jury` invitation accepted after the account became root drops `jury` (`juror_root`). **One submit (one transaction):** **N:** Root ticked + role Juror writes neither; **N:** Juror → Organizer + Root on an account with a password but no verified email (`root.needs.verified.email`) writes nothing: Juror kept, pending roles not revoked, no invitation or mail; allowed: Juror → Organizer + Root ticked ends as root + Organizer. **N:** Root while a live `jury` invitation exists (`error.root.juror.invited`). Edit: unticking a role removes it at once and revokes pending roles; a changed set with a pending invitation re-invites; Juror → Organizer on an account that needs an invitation removes `jury` now and invites `{organizer}` (not refused). Concurrency: making someone root and giving them Juror at the same time can't both succeed (row lock). |
+| Juror alone | new `JurorAloneSpec` | For each write path (edit, add row, import, invitation creation, acceptance, share link, root checkbox, role write on root): **N:** Juror + Organizer, Juror + Admin, Juror on root, root for a juror. Each refusal shows its message and changes nothing. Allowed: Juror + Pre-screener, Pre-screener + Organizer/Admin/root, Juror + Board, Admin + Organizer. Acceptance: the conflicting role is dropped and logged, the rest applied; a `jury` invitation accepted after the account became root drops `jury` (`juror_root`). **One submit (one transaction):** **N:** Root ticked + role Juror writes neither; **N:** Juror → Organizer + Root on an account with a password but no verified email (`root.needs.verified.email`) writes nothing: Juror kept, pending roles not revoked, no invitation or mail; allowed: Juror → Organizer + Root ticked ends as root + Organizer. **N:** Root while a live `jury` invitation exists (`error.root.juror.invited`). Edit: unticking a role removes it at once and revokes pending roles; a changed set with a pending invitation re-invites; Juror → Organizer on an account that needs an invitation removes `jury` now and invites `{organizer}` (not refused). **N, whole form:** a refused submit that also changes the name, email or wiki account writes none of them, sends no email-change mail and logs no `account_token_created`; it doesn't set another account's new password; it doesn't write one's own new password. Concurrency: making someone root and giving them Juror at the same time can't both succeed (row lock). |
 | Roles | `RoleValuesSpec`, `RoleAssignmentSpec`, `UserContestSpec` | Repeatable `roles`, legacy single value, `no` = empty set. **N:** `prejury`, junk, `root` in `roles`; a crafted `prescreener` before B5 (X2) |
 | Votes | `MutationAuthorizationSpec`, `VoteSpec` | A pre-screener votes in an assigned pre-screening round; Juror + Pre-screener votes in both types. **N:** a pre-screener in a jury round; a juror in a pre-screening round even with seeded vote rows; organizer, admin, root; a pre-screener made Organizer only; a paused `round_user`. #278's case holds. |
 | Vote controls | view specs (P4) | **N:** no buttons for an organizer, or for a juror in a pre-screening round |
@@ -468,13 +475,14 @@ Per CLAUDE.md: compile first, then the affected specs per batch, and one full su
 |---|---|
 | S core (data, write paths, invitations, two groups, two columns, 4 languages) | 3.5 |
 | V96/V97 with CHECKs, failure and repair spec via `db.Migrations`, runbook, production checks (no revert script) | 1 |
-| "Juror stays alone" at every write, root both ways (row lock on role writes, live `jury` invitations, acceptance on root, one check per submit), removal and re-invite rules, messages, `JurorAloneSpec` | 1.25 |
+| "Juror stays alone" at every write, root both ways (row lock on role writes, live `jury` invitations, acceptance on root), removal and re-invite rules, messages, `JurorAloneSpec` | 1 |
+| The edit form as one transaction: `setRootLockedIn`, in-transaction token create, `invite` and `requestEmailChange` split, mails and log lines after the commit, own password after it, the whole-form N specs | 0.5 |
 | Pre-screener role and votes (P1-P5), start page | 0.5 |
 | Round type, form, picker, named refusal | 1 |
 | `roundView` (Org/Peer/Own/None, once per request), Peer and its menu, negative specs (no jury-round blinding, no statistics templates) | 1 |
 | Import union and three counts with names, admin accessor, `dq_detail` codes | 0.75 |
 | Docs, screenshots, review cycles | 1.25 |
-| **Total** | **≈ 10.25 days (L).** Down from 10.5: −0.5 without a revert script, −1 without jury-round blinding and the statistics templates, +1.25 for "juror alone" (+0.25 of it for the second review's root and edit cases). Not included: "assign around" (+1.5, later, O3). |
+| **Total** | **≈ 10.5 days (L).** As v1's 10.5: −0.5 without a revert script, −1 without jury-round blinding and the statistics templates, +1 for "juror alone", +0.5 for the edit form as one transaction. Not included: "assign around" (+1.5, later, O3). |
 
 ## 11. Implementation sequence
 
@@ -487,7 +495,7 @@ small app check lands in B1, next to V96's check, and no batch allows it.
 | Batch | Content | Gate |
 |---|---|---|
 | B0 (26.11) | Workaround docs. Outside this plan, their own pre-26.11 PRs: the large-view JSON fix, "Yes/No" (O12), the `juryOrgView` removal (code only). | docs review |
-| B1 | V96/V97 (including the "juror alone" CHECKs), SETs, `Round.roundType`, `contestRole` removed, `round_user.role = voterRole`, the interim `roles=jury` (U20), D12a, `dq_detail` codes, X1, the runbook. **Root + Juror in the app (§2.1):** role writes lock the user row and refuse Juror on root; `setRootLocked` refuses a Juror membership or live `jury` token; acceptance drops `jury` on root; the edit form's roles and root in one transaction (`setRootLockedIn`); its messages ×4 (`error.role.juror.root`, `error.root.juror`, `error.root.juror.invited`) | migration spec (failure and repair), DAO specs, `JurorAloneSpec`'s root cases |
+| B1 | V96/V97 (including the "juror alone" CHECKs), SETs, `Round.roundType`, `contestRole` removed, `round_user.role = voterRole`, the interim `roles=jury` (U20), D12a, `dq_detail` codes, X1, the runbook. **Root + Juror in the app (§2.1):** role writes lock the user row and refuse Juror on root; `setRootLocked` refuses a Juror membership or live `jury` token; acceptance drops `jury` on root; **the edit form as one transaction** (§2.1): `setRootLockedIn`, the in-transaction token create, `invite` and `UserService.requestEmailChange` split (token inside, mail and log after; today's form already creates tokens through them, `UserController.scala:596, 607, 624`, `UserService.scala:250`), the `unlinkIdentities` log moved after the commit, one's own new password written after the commit; its messages ×4 (`error.role.juror.root`, `error.root.juror`, `error.root.juror.invited`) | migration spec (failure and repair), DAO specs, `JurorAloneSpec`'s root cases |
 | B2 | `PRESCREENER_ROLE` (not offered, X2), `mayVoteIn`, `VoterRoles`, `ViewerRoles`, P2-P5, start page | vote and start-page specs |
 | B3 | `roundView` and `isNotAuthorized`, the Peer sites and menu | `PrescreeningViewSpec`, `OwnVotesSpec` |
 | B4 | Round types: two buttons, type-only candidates, named refusal, the yes/no rule | round specs, axe |
