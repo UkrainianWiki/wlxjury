@@ -96,8 +96,10 @@ under the table recalls which roles make the person's own photos conflicts of in
 - An account that hasn't proved its email, for example one made unverified by a shared link,
   gets an invitation instead, and the role applies when they accept it. A wiki account that
   belongs to such an account is not added: add the person by email.
-- A person added with a wiki account only has no email. They can't sign in with a password yet:
-  add the person by email to invite them.
+- A person added with a wiki account only has no email. They can't sign in with a password
+  until you share a link or set one for them (only while Wikimedia sign-in is not set up, see
+  [Sharing a link](#a-share-link) and [Passwords](#a-passwords)), or add the person by email to
+  invite them.
 
 The page tells you how many accounts were created, how many people joined and how many were
 members already, and lists any invitations that could not be sent.
@@ -191,6 +193,7 @@ open the person's edit page and press **Create a link to share**.
 - For a person who has no email, only if they have a wiki account of their own (one no other
   account has): it is then their login. Once Wikimedia sign-in is set up for the tool, not even
   then: such a person signs in with Wikimedia, with their wiki account, and the page says so.
+  A link already shared with such a person then stops working too.
   A person with neither an email nor a wiki account of their own can't get a link.
 
 **How it works.**
