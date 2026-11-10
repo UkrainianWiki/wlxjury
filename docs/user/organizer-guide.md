@@ -161,7 +161,8 @@ It has two fields. **Rejected files** is the mode:
 - **No filter (keep rejected files)**: rejections don't matter.
 - **Exclude files rejected by at least X jurors**: a file is left out when X or more jurors
   rejected it. This drops the files that jurors agreed were bad, for example after a screening
-  round where jurors rejected only the few worst files.
+  round where jurors rejected only the few worst files. With several earlier rounds, a file is
+  left out only if X or more jurors rejected it in each of the earlier rounds it was in.
 - **Only files rejected by at least X jurors**: a file is taken only when X or more jurors
   rejected it. This is for a round that looks again at the files that were doubted.
 
