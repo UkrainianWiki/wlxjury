@@ -368,8 +368,8 @@ is open.
 You see only your own votes. Other jurors' votes, the files' authors and the contest's
 statistics are for the organizers.
 
-Older rounds may let their jurors see the organizers' view too; new rounds don't. In such a
-round you get more menus: a juror menu, a vote filter and other views of the results.
+The tool doesn't show you who made a file, but judging isn't anonymous: the file's page on
+Commons, which the large view links to, names its author.
 
 ### Conflicts of interest
 

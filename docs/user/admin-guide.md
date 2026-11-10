@@ -96,8 +96,10 @@ under the table recalls which roles make the person's own photos conflicts of in
 - An account that hasn't proved its email, for example one made unverified by a shared link,
   gets an invitation instead, and the role applies when they accept it. A wiki account that
   belongs to such an account is not added: add the person by email.
-- A person added with a wiki account only has no email. They can't sign in with a password yet:
-  add the person by email to invite them.
+- A person added with a wiki account only has no email. They can't sign in with a password
+  until you share a link or set one for them (only while Wikimedia sign-in is not set up, see
+  [Sharing a link](#a-share-link) and [Passwords](#a-passwords)), or add the person by email to
+  invite them.
 
 The page tells you how many accounts were created, how many people joined and how many were
 members already, and lists any invitations that could not be sent.
@@ -135,9 +137,10 @@ An account that also works in other contests can't be changed by an admin of one
 admin may change the person's role in their own contest only, unless they administer all of its
 contests.
 
-Root also sees **Root (every contest)** above the role, see [What only root can do](#a-root).
+<img src="images/admin-user-edit.png" alt="The Edit user page of a member, with the role and its help, and the set-password links" width="450">
 
-<img src="images/admin-user-edit.png" alt="The Edit user page of a member as root sees it, with the Root checkbox, the role and its help, and the set-password links" width="450">
+Root sees more on this page, such as the checkbox **Root (every contest)**: see [What only root
+can do](#a-root).
 
 <a id="a-invitations"></a>
 ## Invitations
@@ -188,9 +191,11 @@ open the person's edit page and press **Create a link to share**.
   reset only for an active member. The account must not be root or the admin themselves, must
   have only the roles **Juror** or **Organizer**, and every contest it belongs to, has worked in
   or is invited into must be a contest the admin administers.
-- Not for a person who has no email. (Where Wikimedia sign-in is set up, such a person signs in
-  with their wiki account, and the page says so.) A person with neither an email nor a wiki
-  account can't get a link either.
+- For a person who has no email, only if they have a wiki account of their own (one no other
+  account has): it is then their login. Once Wikimedia sign-in is set up for the tool, not even
+  then: such a person signs in with Wikimedia, with their wiki account, and the page says so.
+  A link already shared with such a person then stops working too.
+  A person with neither an email nor a wiki account of their own can't get a link.
 
 **How it works.**
 
@@ -288,16 +293,30 @@ person can then change the password on their own profile.
 
 If the tool's operators set them up, the sign-in page has **Sign in with Wikimedia** and **Sign
 in with Google**. They sign a person in to the account they already have, and never create one.
-The tool finds the account by the wiki account (for Wikimedia) or the verified email (for
-Google, for Gmail and Google Workspace addresses only). A person can also **Link** the provider on
+The tool finds the account by the email address the provider confirms: for Wikimedia, the
+person's confirmed email there; for Google, only a Gmail or Google Workspace address. The
+account's email must be verified (an accepted invitation or link), or the account has no
+password and a live invitation or password link to that address, which the sign-in then
+accepts. Wikimedia also finds an account by its wiki account, but only one with no email and no
+password that no Wikimedia account was ever linked to. A person can also **Link** the provider on
 their own profile under **Linked accounts**, and **Unlink** it, which signs out the account's
 other sessions.
 
 When the same wiki account is on several jury accounts, the person chooses their account on the
 page **Choose your jury account**, with its password or a link mailed to it. See [the juror
-guide](juror-guide.md#when-one-wiki-name-has-several-jury-accounts). If you change a person's
-email or wiki account, the tool unlinks their Google and Wikimedia accounts, as the account may
-be changing hands.
+guide](juror-guide.md#when-one-wiki-name-has-several-jury-accounts).
+
+Some changes unlink accounts, as the account may be changing hands:
+
+- changing a person's wiki account unlinks their Wikimedia account (the name may now be
+  someone else's), but not Google;
+- changing the email of an invitee who has not set a password yet unlinks both, and sends a new
+  invitation;
+- **Reset password** (root), setting a person's password, and the person accepting an
+  invitation or a password link unlink both.
+
+Changing the email of a person who has a password unlinks nothing: the new address takes effect
+when they follow the link sent to it.
 
 Operators set the providers up in the [OAuth reference](../oauth.md).
 -->
@@ -688,8 +707,12 @@ stopped.
   its **Edit user** page. An account that has a password but no verified email can't be made
   root; an invitee who hasn't set a password yet can. A new account can't be made root when it
   is added: add the person, and tick it once they have accepted the invitation. Root can't
-  change their own root, and the last root can't be taken away. Changing the person's role in
-  a contest leaves root as it is.
+  change their own root, and the last root can't be taken away. Root and the email can't be
+  changed in one save: save one, then the other. Changing the person's role in a contest leaves
+  root as it is.
+
+  <img src="images/admin-user-edit-root.png" alt="The checkbox Root (every contest) on the Edit user page, above the role and its help" width="427">
+
 - Edit an account that is in contests the admin doesn't administer; change the email of an account
   that has a password, through a link mailed to the new address.
 - Send **Reset password** links and use **End sessions** on any account, and see and revoke
