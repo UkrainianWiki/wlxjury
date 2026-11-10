@@ -15,6 +15,7 @@ class LoginTextSpec extends Specification {
       LoginText.clean(s"${Nbsp}alice@example.com$Nbsp") === "alice@example.com"
       LoginText.clean("\u2007\u202f\ufeff\u200b\r\n alice@example.com \u3000\u2009") === "alice@example.com"
       LoginText.clean("\u200e\u2060alice@example.com\u200f") === "alice@example.com"
+      LoginText.clean("\u0085alice@example.com\u0085") === "alice@example.com"
     }
 
     "keep inner characters, and give blank for only spaces or null" in {
@@ -52,6 +53,13 @@ class LoginTextSpec extends Specification {
       db.scalikejdbc.CoiMembers.normalize(s"${Nbsp}User:${Nbsp}foo bar") === "Foo bar"
       db.scalikejdbc.CoiMembers.normalize("_ foo") === "Foo"
       User.normalizeWikiAccount(s"User: ${Nbsp}foo_bar\t") === Right(Some("Foo bar"))
+    }
+
+    "strip control characters at the ends, as String.trim did" in {
+      LoginText.clean("\u0001Foo\u001f") === "Foo"
+      User.normalizeWikiAccount("Foo\u0001") === Right(Some("Foo"))
+      // inside the name a control character is still refused
+      User.normalizeWikiAccount("Fo\u0001o") === Left("wiki.account.invalid")
     }
   }
 }

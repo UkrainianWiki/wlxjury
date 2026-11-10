@@ -9,15 +9,17 @@ package org.intracer.wmua
   */
 object LoginText {
 
-  /** Invisible characters that are neither whitespace nor space separators: the zero-width
-    * no-break space U+FEFF (a byte order mark), zero-width space U+200B, the left-to-right and
-    * right-to-left marks U+200E and U+200F, and the word joiner U+2060.
+  /** Invisible characters that are neither whitespace nor space separators: the next-line
+    * control U+0085, the zero-width no-break space U+FEFF (a byte order mark), zero-width space
+    * U+200B, the left-to-right and right-to-left marks U+200E and U+200F, and the word joiner U+2060.
     */
-  private val Invisible: Set[Char] = Set('\uFEFF', '\u200B', '\u200E', '\u200F', '\u2060')
+  private val Invisible: Set[Char] = Set('\u0085', '\uFEFF', '\u200B', '\u200E', '\u200F', '\u2060')
 
-  /** Whitespace and space separators (`\s`, tab, U+00A0, U+2007, U+202F, ...), or [[Invisible]]. */
+  /** What `String.trim` strips (any char up to U+0020, control chars included), whitespace and
+    * space separators (`\s`, tab, U+00A0, U+2007, U+202F, ...), or [[Invisible]].
+    */
   def isSpace(c: Char): Boolean =
-    Character.isWhitespace(c) || Character.isSpaceChar(c) || Invisible.contains(c)
+    c <= ' ' || Character.isWhitespace(c) || Character.isSpaceChar(c) || Invisible.contains(c)
 
   /** `s` without leading and trailing [[isSpace]] characters; inner ones are kept. Null: "". */
   def clean(s: String): String =
