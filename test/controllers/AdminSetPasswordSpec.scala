@@ -51,9 +51,23 @@ class AdminSetPasswordSpec extends PlaySpecification with PlayTestDb with Accoun
 
   private def reloaded(user: User): User = User.findById(user.getId).get
 
+  /** `f`'s result and the denials ([[Secured.logDenial]]) logged on security.authz meanwhile. */
+  private def authzLog[T](f: => T): (T, Seq[String]) = {
+    val logger = org.slf4j.LoggerFactory.getLogger("security.authz").asInstanceOf[ch.qos.logback.classic.Logger]
+    val appender = new ch.qos.logback.core.read.ListAppender[ch.qos.logback.classic.spi.ILoggingEvent]
+    appender.start()
+    logger.addAppender(appender)
+    try {
+      val result = f
+      import scala.jdk.CollectionConverters._
+      (result, appender.list.asScala.toSeq.filter(_.getLevel == ch.qos.logback.classic.Level.WARN)
+        .map(_.getFormattedMessage))
+    } finally logger.detachAppender(appender)
+  }
+
   private def roles(userId: Long): Seq[UserContest] = UserContestJdbc.findByUser(userId)
 
-  "an admin or root setting another account's password" should {
+  "an admin or root setting another account's password [S-09]" should {
     "set it for an admin's juror: they sign in with it, their sessions end, the email is unverified, logged by id" in {
       testDbApp { implicit app =>
         createContests(10)
@@ -220,9 +234,10 @@ class AdminSetPasswordSpec extends PlaySpecification with PlayTestDb with Accoun
       }
     }
 
-    "still say password.others.not.allowed where the rule refuses for another reason than who asks" in {
+    "refuse root too for an account without an email where Wikimedia sign-in is offered, and say why" in {
       testDbApp { implicit app =>
         createContests(10)
+        val root = account("root@example.com", None, "no", root = true, verified = true)
         val admin = account("admin@example.com", Some(10), "admin", verified = true)
         val wiki = User.create(User("Wiki juror", "", None, Set("jury"), None, Some(10), wikiAccount = Some("Wiki juror")))
         // Wikimedia sign-in offered: an account without an email signs in with it, no password
@@ -231,10 +246,94 @@ class AdminSetPasswordSpec extends PlaySpecification with PlayTestDb with Accoun
         val controller = new UserController(app.injector.instanceOf[ControllerComponents], userService(new RecordingMail),
           app.injector.instanceOf[modules.BlockingExecutionContext], ThemeCookies.default, settings)
 
-        val refused = saveWith(controller, admin, Some(10), form(wiki, Some(10), "jury", "password" -> "wiki-password"): _*)
-        status(refused) === BAD_REQUEST
-        contentAsString(refused) must contain("You can&#x27;t set this person&#x27;s password.")
+        for (by <- Seq(root, admin)) {
+          val refused = saveWith(controller, by, Some(10), form(wiki, Some(10), "jury", "password" -> "wiki-password"): _*)
+          status(refused) === BAD_REQUEST
+          contentAsString(refused) must contain("No password can be set for this account")
+          contentAsString(refused) must not(contain("id=\"set-password\""))
+        }
         reloaded(wiki).password must beNone
+      }
+    }
+
+    "still refuse with password.others.not.allowed a deleted account, root's post included" in {
+      testDbApp { implicit app =>
+        createContests(10)
+        val root = account("root@example.com", None, "no", root = true, verified = true)
+        val juror = account("juror@example.com", Some(10), "jury", password = Some("old-password"), verified = true)
+        DB.autoCommit(implicit s => sql"UPDATE users SET deleted_at = NOW(3) WHERE id = ${juror.getId}".update.apply())
+        val before = reloaded(juror)
+
+        val refused = save(root, None, form(juror, None, "no", "password" -> "taken-over"): _*)
+        status(refused) === BAD_REQUEST
+        contentAsString(refused) must contain("This account&#x27;s password can&#x27;t be set")
+        reloaded(juror).password === before.password
+        reloaded(juror).authVersion === before.authVersion
+        reloaded(juror).emailVerified must beTrue
+      }
+    }
+
+    "refuse a role change in the same save, so that nobody becomes an admin or organizer with a password the setter chose" in {
+      testDbApp { implicit app =>
+        createContests(10)
+        val root = account("root@example.com", None, "no", root = true, verified = true)
+        val admin = account("admin@example.com", Some(10), "admin", verified = true)
+        val juror = account("juror@example.com", Some(10), "jury", password = Some("old-password"), verified = true)
+        val version = reloaded(juror).authVersion
+
+        for ((by, role) <- Seq(admin -> "admin", admin -> "organizer", root -> "admin", root -> "root")) {
+          val refused = save(by, Some(10), form(juror, Some(10), role, "password" -> "chosen-password"): _*)
+          status(refused) === BAD_REQUEST
+          contentAsString(refused) must contain("Change the role and set the password in separate saves.")
+        }
+        roles(juror.getId) === Seq(UserContest(juror.getId, 10, "jury"))
+        reloaded(juror).isRoot must beFalse
+        User.login(juror.email, "old-password").flatMap(_.id) === juror.id
+        User.login(juror.email, "chosen-password") must beNone
+        reloaded(juror).authVersion === version
+        reloaded(juror).emailVerified must beTrue
+      }
+    }
+
+    "refuse under the account's lock once the account joined a contest the admin doesn't run" in {
+      testDbApp { implicit app =>
+        createContests(10, 20)
+        val admin = account("admin@example.com", Some(10), "admin", verified = true)
+        val juror = account("juror@example.com", Some(10), "jury", password = Some("old-password"), verified = true)
+        val actor = User.findInContest(admin.getId, 10).get
+        // the controller's check passed on the page; the account joins contest 20 before the save
+        UserContestJdbc.createMembership(juror.getId, 20, "jury")
+        val (result, lines) = accountLog {
+          AccountTokenService.setPasswordByAdmin(actor, juror.getId, Some(10), hash("late-password"),
+            wikimediaSignIn = false)
+        }
+        result must beLeft(services.ShareLinkService.OtherContest: services.ShareLinkService.Refusal)
+        lines must contain(s"password_set_by_admin_refused reason=share_link_other_contest accountId=${juror.getId} " +
+          s"byAccountId=${admin.getId}")
+        User.login(juror.email, "old-password").flatMap(_.id) === juror.id
+        reloaded(juror).emailVerified must beTrue
+      }
+    }
+
+    "log the 403 on security.authz, and refuse an inactive member" in {
+      testDbApp { implicit app =>
+        createContests(10)
+        val admin = account("admin@example.com", Some(10), "admin", verified = true)
+        val coAdmin = account("coadmin@example.com", Some(10), "admin", password = Some("pw-coadmin"), verified = true)
+        val inactive = account("inactive@example.com", Some(10), "no", password = Some("pw-inactive"), verified = true)
+
+        val (statuses, lines) = authzLog {
+          Seq(status(save(admin, Some(10), form(coAdmin, Some(10), "admin", "password" -> "taken-over"): _*)),
+            status(save(admin, Some(10), form(inactive, Some(10), "no", "password" -> "taken-over"): _*)))
+        }
+        statuses === Seq(FORBIDDEN, FORBIDDEN)
+        lines must contain(beMatching(s"authorization_denied ref=\\w{8} accountId=${admin.getId} method=POST " +
+          s"path=\"/users/save\" .*targetContestId=10 resource=\"account:${coAdmin.getId}\" .*" +
+          "reason=share_link_target_role.*"))
+        lines must contain(beMatching(s"authorization_denied .*resource=\"account:${inactive.getId}\" .*" +
+          "reason=share_link_reset_not_active_member.*"))
+        User.login(coAdmin.email, "pw-coadmin").flatMap(_.id) === coAdmin.id
+        User.login(inactive.email, "pw-inactive").flatMap(_.id) === inactive.id
       }
     }
 

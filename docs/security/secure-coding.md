@@ -382,15 +382,26 @@ or typed in by root or an admin on the account's edit page (**Set password**,
 maintainer's request (2026-11-10: "while we test and learn new ways of login and reset password,
 let's keep good old user password edited by an admin/root"; admins onboard people personally
 because mail is unreliable). Its safeguards: exactly the shared reset link's rule below
-(`ShareLinkService.mayCreate` for `password_reset`; anyone else gets the 403 denial page, logged on
-`security.authz`), checked again in one quiet transaction (the hash stays out of the SQL log)
-under the account's row lock; exactly what accepting a shared link does (the shared
+(`ShareLinkService.mayCreate` for `password_reset`, root included for its checks not about who
+asks). Who may not gets: an organizer, a juror, or an admin posting for someone who isn't a
+member of their current contest, the edit form's usual redirect to the start page (303, no log
+line, nothing written: `editableUser` finds no account to edit); an admin refused by the rule
+(another admin, root, themselves through another id, an account with ties outside their contests,
+an inactive member), the 403 denial page with a WARN line on `security.authz`; for an account the
+rule refuses for a reason not about who asks (deleted; or, for root or an admin the rule otherwise
+allows, without an email while Wikimedia sign-in is offered, or no name to sign in with), the form
+again with a message (400). The rule is checked again in one quiet transaction (the hash stays out
+of the SQL log) under the account's row lock, with the same responses (the rest of the form is
+saved by then); it does exactly what accepting a shared link does (the shared
 `AccountTokenService.applyProof`: `email_verified_at` and `wiki_account_verified_at` cleared,
 `auth_version` bumped, API tokens revoked, identities unlinked, every unused link revoked, pending
-roles only those the setter may give); never with an email change in the same save; a bcrypt hash
-of at most 72 bytes (`PasswordHasher.newPassword`), `Busy` a 503; and a `security.account` line by
-id only after the commit (`password_set_by_admin accountId= byAccountId= contestId= emailProven=false
-sessionsEnded=true apiTokensRevoked= identitiesUnlinked= linksRevoked= memberships=`). A shared
+roles only those the setter may give); never with an email or role change in the same save (a role
+is decided on the account as it was before the save, verified); the password is set last, after
+the rest of the form is saved, so a failure there leaves it unchanged; a bcrypt hash of at most 72
+bytes (`PasswordHasher.newPassword`), `Busy` a 503; and a `security.account` line by id only
+after the commit (`password_set_by_admin accountId= byAccountId= contestId= emailProven=false
+sessionsEnded=true apiTokensRevoked= identitiesUnlinked= linksRevoked= memberships=`;
+`password_set_by_admin_refused reason= accountId= byAccountId=` when refused under the lock). A shared
 link: "Create a link to share" (`ShareLinkService`, V94's
 `account_token.shared`) shows the same kind of link once, in the POST's response (`no-store`,
 no referrer; never stored, logged, flashed or put in the session), for the admin to pass on
