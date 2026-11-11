@@ -79,3 +79,10 @@
     --bs-pagination-hover-border-color: var(--wlx-control-hover-border);
     --bs-pagination-disabled-border-color: var(--wlx-control-disabled-border);
 }
+
+/* light: Bootstrap draws these buttons' text in #6c757d, the grey it also uses for disabled
+   controls, so working buttons looked greyed out. Their text is the page's dark grey (11.5:1 on
+   white); the border stays #6c757d (4.7:1); hover, pressed and disabled stay Bootstrap's. */
+:root:not([data-bs-theme=dark]) .btn-outline-secondary {
+    --bs-btn-color: #343a40;
+}
