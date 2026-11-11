@@ -23,19 +23,27 @@ class ErrorTextSpec extends Specification {
   private val Message = """\.get(?:Localized)?Message\b""".r
   private val LogCall = """\b(?:logger|log|Logger)\.(?:info|warn|error|debug|trace)\(""".r
 
+  /** How many reads of a message in `text` are not inside a log call's arguments. */
+  private def outsideLogCalls(text: String): Int = {
+    val spans = LogCall.findAllMatchIn(text).map(c => c.end -> (c.end + SourceScan.callText(text, c.end).length)).toList
+    Message.findAllMatchIn(text).count(m => !spans.exists { case (from, to) => m.start >= from && m.start < to })
+  }
+
   "a throwable's message" should {
     "be read only in a log call or at a reviewed site" in {
       val counts = for {
         source <- SourceScan.files("app", ".scala", ".html")
-        lines = source.text.split("\n", -1)
-        outside = Message.findAllMatchIn(source.text).count { m =>
-          // the log call is on the same line or opened on one of the 2 lines before
-          val line = source.lineOf(m.start) - 1
-          !(math.max(0, line - 2) to line).exists(i => LogCall.findFirstIn(lines(i)).nonEmpty)
-        }
+        outside = outsideLogCalls(source.text)
         if outside > 0
       } yield source.path -> outside
       counts.filterNot { case (path, n) => Allowed.get(path).exists(_._1 >= n) } must beEmpty
+    }
+
+    "count a read as logged only inside the log call's arguments (R227-2)" in {
+      outsideLogCalls("""logger.warn(s"failed: ${e.getMessage}")""") === 0
+      outsideLogCalls("logger.warn(\n  s\"failed: \" +\n    e.getMessage)") === 0
+      outsideLogCalls("""logger.info("x"); val m = e.getMessage""") === 1
+      outsideLogCalls("logger.info(\"x\")\nval m = e.getLocalizedMessage") === 1
     }
 
     "never be stored as a job's error" in {

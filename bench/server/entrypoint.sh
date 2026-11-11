@@ -35,7 +35,6 @@ for _ in $(seq 1 600); do
   kill -0 "$DB_PID" 2>/dev/null || { log "mariadbd exited"; exit 1; }
   sleep 1
 done
-log "MariaDB up"
 
 # As Ubuntu's debian-start does on every start: a datadir from an older server (a 10.6
 # snapshot on the 10.11 image) gets its system tables upgraded; otherwise a no-op.
@@ -52,6 +51,8 @@ GRANT ALL ON wlxjury.* TO 'wlxjury'@'%';
 CREATE USER IF NOT EXISTS 'bench'@'%' IDENTIFIED BY 'bench';
 GRANT ALL PRIVILEGES ON *.* TO 'bench'@'%';
 SQL
+# bench.sh start waits for this line: only now are the upgrade and the accounts done
+log "MariaDB up"
 
 APP_PID=
 if [[ -n "${WLXJURY_DIST:-}" ]]; then

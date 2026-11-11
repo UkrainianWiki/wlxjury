@@ -1,5 +1,6 @@
 package services.jobs
 
+import db.scalikejdbc.SqlLogging
 import play.api.{Configuration, Logging}
 import scalikejdbc.DB
 
@@ -163,7 +164,7 @@ class JobScheduler(handlerList: Seq[JobHandler], val settings: JobScheduler.Sett
           val now = System.currentTimeMillis()
           if (now - lastPollWarning > 60000) {
             lastPollWarning = now
-            logger.warn(s"Job scheduler $instanceId: poll failed: ${Option(e.getMessage).getOrElse(e.getClass.getSimpleName)}")
+            logger.warn(s"Job scheduler $instanceId: poll failed: ${SqlLogging.describe(e)}")
           }
       }
 
@@ -450,7 +451,7 @@ class JobScheduler(handlerList: Seq[JobHandler], val settings: JobScheduler.Sett
       } catch {
         case NonFatal(e) if isTransient(e) && attempt < settings.transientRetries =>
           attempt += 1
-          logger.warn(s"Job $jobId (${job.kind}): transient error, retrying the step ($attempt): ${e.getMessage}")
+          logger.warn(s"Job $jobId (${job.kind}): transient error, retrying the step ($attempt): ${SqlLogging.describe(e)}")
           Thread.sleep(100L * attempt)
         case NonFatal(e) =>
           val reference = controllers.Secured.newReference()

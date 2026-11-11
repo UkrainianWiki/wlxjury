@@ -21,11 +21,15 @@ class UserService @Inject()(val sendMail: SMTPOrWikiMail,
   def setupToken: Option[String] =
     configuration.getOptional[String]("wlxjury.setup.token").map(_.trim).filter(_.length >= 32)
 
-  /** Adds the person in the edit form to its contest; see [[addToContest]]. */
+  /** Adds the person in the edit form to its contest; see [[addToContest]]. A form naming a
+    * contest that does not exist is refused ([[UserService.ContestNotFound]]), never added to the
+    * creator's current contest instead.
+    */
   def createNewUser(user: User, formUser: User)(
       implicit messages: Messages, linkHost: LinkHost = LinkHost.None): UserService.Added = {
-    val contest: Option[ContestJury] =
-      formUser.currentContest.flatMap(ContestJuryJdbc.findById)
+    val contest: Option[ContestJury] = formUser.currentContest.map { id =>
+      ContestJuryJdbc.findById(id).getOrElse(throw new ContestNotFound)
+    }
     addToContest(user, formUser, contest)
   }
 
@@ -66,7 +70,10 @@ class UserService @Inject()(val sendMail: SMTPOrWikiMail,
       User.normalizeWikiAccount(name).fold(_ => throw new InvalidWikiAccount, identity)
     }
     val person = formUser.copy(wikiAccount = wikiAccount)
-    val contestId = contestOpt.flatMap(_.id).orElse(creator.contestId)
+    // resolved once: the membership, the invitations, the greeting and a new account all name it
+    // (root's add without a contest field goes to root's current contest, R225-2)
+    val contest = contestOpt.orElse(creator.contestId.flatMap(ContestJuryJdbc.findById))
+    val contestId = contest.flatMap(_.id).orElse(creator.contestId)
     val role = person.contestRole.getOrElse(User.JURY_ROLE)
     val access = User.ACCESS_ROLES.contains(role)
 
@@ -97,14 +104,14 @@ class UserService @Inject()(val sendMail: SMTPOrWikiMail,
                     !locked.isRoot && locked.emailLo.nonEmpty
                   if (needsPassword)
                     // no password to "use as before": the invitation sets one
-                    Invited(member, invite(creator, member, contestOpt, None))
+                    Invited(member, invite(creator, member, contest, None))
                   else {
-                    for (contest <- contestOpt if added && contest.greeting.use && mayBeGreeted(role))
-                      sendMail(creator, member, contest, messages("password.existing"))
+                    for (c <- contest if added && c.greeting.use && mayBeGreeted(role))
+                      sendMail(creator, member, c, messages("password.existing"))
                     if (added) JoinedContest(member) else AlreadyMember(member)
                   }
                 case None if byEmail =>
-                  Invited(account, invite(creator, account, contestOpt, Some(role)))
+                  Invited(account, invite(creator, account, contest, Some(role)))
                 case None =>
                   accountLogger.info(
                     s"add_refused reason=wiki_account_unverified accountId=${account.getId} byAccountId=${creator.getId} contestId=$cId")
@@ -116,7 +123,7 @@ class UserService @Inject()(val sendMail: SMTPOrWikiMail,
       case None =>
         // root may give no contest role; anyone else's new user gets one
         val roles = if (creator.hasRole(User.ROOT_ROLE)) person.roles else Set(role)
-        createAccount(creator, person.copy(contestId = contestId, roles = roles), contestOpt)
+        createAccount(creator, person.copy(contestId = contestId, roles = roles), contest)
     }
   }
 
@@ -443,6 +450,9 @@ object UserService {
     * save maps it, and only it, to a 400.
     */
   class RoleNotAssignable extends IllegalArgumentException("not a contest role")
+
+  /** The form names a contest that does not exist ([[UserService.createNewUser]]). */
+  class ContestNotFound extends IllegalArgumentException("no such contest")
 
   /** A wiki account name MediaWiki would refuse ([[User.normalizeWikiAccount]]). */
   class InvalidWikiAccount extends IllegalArgumentException("not a valid wiki account")

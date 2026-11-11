@@ -516,10 +516,10 @@ object Round extends RoundRepo with CRUDMapper[Round] {
     !refused
   }
 
-  /** After votes were moved into the round ([[VoteJdbc.setRound]]) and committed: if
-    * it is open, moves aside its votes of files deleted on Commons, in a transaction of its
-    * own. One marked deleted after this
-    * reads them moves them itself ([[services.imports.DeletedFiles.settle]]).
+  /** If the round is open, moves aside its votes of files deleted on Commons, in a transaction
+    * of its own. Votes no longer move between rounds in the app; the tests' vote moves call this
+    * after committing (`TestVoteWrites`). One marked deleted after this reads them moves them
+    * itself ([[services.imports.DeletedFiles.settle]]).
     */
   def settleDeletedFiles(id: Long): Unit = {
     val archived = WriteTx.write { implicit session =>

@@ -33,6 +33,20 @@ describe("submit-once", () => {
         expect(submit(form).defaultPrevented).toBe(true);
     });
 
+    test("leaves a form unlocked when another handler cancelled its submit", () => {
+        const form = page();
+        const cancel = (e) => e.preventDefault();
+        form.addEventListener("submit", cancel);
+        expect(submit(form).defaultPrevented).toBe(true);
+        jest.runAllTimers();
+        expect(form.hasAttribute("data-submitted")).toBe(false);
+        expect(form.querySelector("button").disabled).toBe(false);
+        form.removeEventListener("submit", cancel);
+        expect(submit(form).defaultPrevented).toBe(false);
+        jest.runAllTimers();
+        expect(form.querySelector("button").disabled).toBe(true);
+    });
+
     test("leaves other forms alone", () => {
         const form = page("");
         expect(submit(form).defaultPrevented).toBe(false);

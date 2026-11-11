@@ -419,6 +419,27 @@ class SessionsSpec extends PlaySpecification with PlayTestDb with AccountTestSup
       }
     }
 
+    "sign out a pre-S3 cookie once V80 is undone by dropping its table (R229-1)" in {
+      // a fresh app reads the window afresh; the table is renamed away and back (other specs use it)
+      def rename(from: String, to: String): Unit =
+        scalikejdbc.DB.autoCommit(implicit s => scalikejdbc.SQL(s"RENAME TABLE $from TO $to").execute.apply())
+      security.ProductionFilters.withApp { implicit app =>
+        createContests(10)
+        val juror = contestMember("juror@example.com")
+        rename("session_upgrade_window", "session_upgrade_window_away")
+        try {
+          db.scalikejdbc.SessionUpgradeWindowJdbc.secondsLeft() must beNone
+          val old = Seq(Secured.UserName -> juror.email, Secured.CurrentContestId -> "10", "csrfToken" -> token(app))
+          val (refused, lines) = authLog { val r = send(app, GET, s"/users/edit/${juror.getId}", old); status(r); r }
+          status(refused) === SEE_OTHER
+          redirectLocation(refused).get must startWith("/auth")
+          session(refused).get(Secured.UserName) must beNone
+          lines must contain("session_expired reason=old_cookie_expired accountId=none")
+          lines.exists(_.contains("session_upgrade_window_unreadable")) must beFalse
+        } finally rename("session_upgrade_window_away", "session_upgrade_window")
+      }
+    }
+
     "leave a pre-S3 cookie as sent while the window can't be read, and upgrade it once it can" in {
       withCsrfApp { implicit app =>
         createContests(10)

@@ -336,6 +336,8 @@ class UserController @Inject()(cc: ControllerComponents,
               } catch {
                 // a role the service refuses ([[UserService.addToContest]]): nothing created
                 case _: UserService.RoleNotAssignable => roleRefused(formUser)
+                case _: UserService.ContestNotFound =>
+                  NotFound(views.html.errorPage(Some(user), "error.title", "error.contest.not.found"))
                 case _: UserService.InvalidWikiAccount =>
                   formErrors(editUserForm.bindFromRequest().withError("wikiAccount", "wiki.account.invalid"))
               }
