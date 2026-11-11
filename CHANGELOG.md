@@ -25,10 +25,15 @@ with `.N` for an extra deploy in the same month (`26.11.1`), and release heading
 
 ## Unreleased (developed, not yet deployed)
 
-`26.11` is the next deploy, V71–V95 in one go; the earlier plan to ship V71–V81 on their own was
+Nothing yet: the next release is `26.12` (`build.sbt` says `26.12-SNAPSHOT`).
+
+## 26.11 (2026-11-11)
+
+Deployed 2026-11-11, build `26.11-c291debdc684` (release commit `c291debd` on `release/26.11`),
+V71–V95 in one go, from `f9c31ce5` (V70); the earlier plan to ship V71–V81 on their own was
 dropped (decided 2026-11-05: that branch removed admin-set passwords before
 the shareable links that replace them existed). The sections below are its parts, in the order
-they were developed. Pre-deploy steps: roadmap, "Before any production deploy".
+they were developed. Deploy record: roadmap, "26.11 deploy record".
 
 ### Developed first (V71–V81)
 
@@ -317,7 +322,7 @@ The production build `f9c31ce5` plus the contest-role allowlist, a security fix.
 migration; the date comes from the deploy record
 ([docs/history/security/](docs/history/security/2026-11-02-role-allowlist-hotfix.md)).
 
-### 2026-10-31: category operations (`f9c31ce5`, what production runs)
+### 2026-10-31: category operations (`f9c31ce5`, what production ran until 26.11)
 
 **Features**
 
