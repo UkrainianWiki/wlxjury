@@ -26,7 +26,9 @@ mirror `63c80ff7` has the same tree); from R196-1 on, the followups tip `34788a5
 of `stack/71-investigations`, `6c00ed6e`); from R202-1 on, the followups tip `b85b0b60` (the
 mirror of `stack/77-dependency-updates`, `17e145b3`); from R207-1 on, the top of the stack,
 `stack/90-triage-fixes` (`f339aa13`, #273); from R220-1 on, `stack/101-multi-role-plan`
-(`0f441881`, #284; the followups mirror `6b33abff` has the same tree). R193-4 is the first Medium.
+(`0f441881`, #284; the followups mirror `6b33abff` has the same tree); from R225-2 on,
+`stack/107-close-2611` (`f816c8e2`, #290; the followups mirror `d3e1fd17` has the same tree).
+R193-4 is the first Medium.
 
 ### R198-1: A job that crashes the JVM is retried forever
 
@@ -200,9 +202,15 @@ mirror of `stack/77-dependency-updates`, `17e145b3`); from R207-1 on, the top of
 - **Failure scenario:** an operator follows the documented undo. Every pre-S3
   cookie, a leaked one replayed included, keeps working indefinitely, and each
   request queries the database and logs `session_upgrade_window_unreadable`.
-- **Suggested fix:** treat ER_NO_SUCH_TABLE (1146 / 42S02) as `Closed`, as S6's
-  `LegacyPasswordRetirementJdbc.secondsLeft` does; or change the undo note to
-  `DELETE FROM session_upgrade_window` (no row means `Closed`).
+- **Suggested fix:** treat ER_NO_SUCH_TABLE (1146 / 42S02) as no row (`Closed`) in
+  `SessionUpgradeWindowJdbc.secondsLeft`, as S6's `LegacyPasswordRetirementJdbc.secondsLeft` does
+  (`:32-35`), with a `SessionsSpec` case (table dropped, the window read afresh: a pre-S3 cookie
+  is signed out). `SessionUpgradeWindow.end()` caches the window per JVM (`until.compareAndSet`),
+  so either undo (`DROP TABLE` with this fix, or `DELETE FROM session_upgrade_window`) takes effect
+  only after an app restart; a running app keeps the window it read (CodeRabbit on #229: "plus an
+  app restart"). Say so where the undo is documented outside the migration. The V80 comment itself
+  can no longer change: V80 is applied on production (26.11, 2026-11-11) and Flyway validates
+  checksums on migrate (CodeRabbit suggested the `DELETE` wording instead).
 - **Placement:** a new item after S3 in
   [`2026-11-02-security-resolution.md`](2026-11-02-security-resolution.md)
   ("S3 review fixes" follow-up).
@@ -1383,6 +1391,127 @@ whether the cache's counts and registry tell the truth. File:line at the newest 
   reverted role, and record this log check and its limits.
 - **Placement:** a docs commit at the top of the stack (register only; the report stays a record).
 
+### R225-2: An add without a contest field invites without the contest
+
+- **PR:** #225 (42, tip `88b55929`). `app/services/UserService.scala:94` (the `Invited` branch).
+- **Severity:** Nit (root only, by a hand-made request: the users page always sends `contest`,
+  `users.scala.html:171`).
+- **At the newest tip:** still there. `UserService.scala:69` resolves
+  `contestId = contestOpt.flatMap(_.id).orElse(creator.contestId)`, but `invite` gets `contestOpt`
+  (`:100`, `:107`), and so does `createAccount` (`:119`, its `invite` at `:141`).
+- **Failure scenario:** root posts the add row without `contest` (`isAdmin(None)` is true for
+  root, `UserController.scala:330`); `createNewUser` passes `None`. The membership goes into
+  root's current contest, but the invitation token has `contest_id` NULL. For an unverified
+  account with a password (`Invited` with a role) the role is dropped on acceptance
+  (`acceptPasswordLink`: `contestId <- p.contestId`), and `pendingInvitations` doesn't list it,
+  while the page says "Invited (role given once they accept)". A new account's invitation mail
+  names no contest.
+- **Suggested fix:** in `addToContest`, resolve the contest once,
+  `contestOpt.orElse(creator.contestId.flatMap(ContestJuryJdbc.findById))`, and use it for
+  `contestId`, both `invite` calls, the greeting and `createAccount`. A spec: root's add without
+  `contest` of an unverified email with a password gives a token with root's contest and the role.
+- **Placement:** the next triage-fixes PR at the top of the stack (small).
+
+### R227-2: Log redaction and guard spec gaps
+
+- **PR:** #227 (44, tip `cd5856a7`). `app/db/scalikejdbc/SqlLogging.scala:55`,
+  `app/services/jobs/JobScheduler.scala:159`, `public/javascripts/submit-once.js:20`,
+  `test/security/ErrorTextSpec.scala:29-33`, `test/security/SourceScan.scala:34`.
+- **Severity:** Nit.
+- **At the newest tip:** all still there (`SqlLogging.scala:54`, `JobScheduler.scala:166`, `:453`,
+  `submit-once.js:10-21`, `ErrorTextSpec.scala:30-34`, `SourceScan.scala:33-34`).
+- **Items, failure scenarios and fixes:**
+  1. **A backslash-escaped quote ends the masked literal early:** `template`'s
+     `'(?:[^']|'')*'` stops at `\'` (MariaDB's default `sql_mode` keeps backslash escapes), so
+     the rest of a `createUnsafely` literal stays in a slow or failed statement's line. Fix:
+     `'(?:[^'\\]|\\[\s\S]|'')*'`, which also takes a backslash before a line break (in Scala,
+     `"""'(?:[^'\\]|\\[\s\S]|'')*'"""`); `SqlLoggingSpec` cases with `'a\'b@x.c'` and with a
+     backslash before a line break.
+  2. **Two scheduler warnings log `e.getMessage`:** the poll failure (`:166`) and the transient
+     retry (`:453`). A deadlock or timeout text has no values, but a driver message can
+     (`Duplicate entry '…'`). Fix: `SqlLogging.describe(e)` in both. The full exceptions with
+     values are R227-1's.
+  3. **`ErrorTextSpec` takes a read near a log call as logged:** any log call on the line or the
+     2 before counts, so `logger.info("x"); val m = e.getMessage` passes. Fix: count a read as
+     logged only inside a log call's argument span (`LogHygieneSpec.callText`, moved to
+     `SourceScan`).
+  4. **`SourceScan.stripComments` blanks code after a `//` in a string** (`"a //b"`): a limited
+     false negative of every guard spec. Accepted; say so in its scaladoc (the guards are text
+     scans that back review, not a parser).
+  5. **`submit-once.js` locks a form whose submit another handler cancelled:** no trigger today
+     (the API token form has no other handler; browser validation stops a submit before the
+     event). Fix: `if (event && event.defaultPrevented) return true;` first in `onSubmit`, and a
+     Jest case. It covers a cancelling listener that runs before submit-once's document-level
+     bubble listener (one on the form or an ancestor, or a document-level one added earlier), not
+     a document-level one added later.
+  6. **Stale scaladoc links to a removed method:** `[[db.scalikejdbc.VoteJdbc.setRound]]` at
+     `CriteriaRate.scala:93`, `:116` and `DeletedFiles.scala:36`, and `[[VoteJdbc.setRound]]` at
+     `Round.scala:519`; #239 removed the method. Fix: reword those comments (votes no longer move
+     between rounds), dropping text that applied only to moved votes.
+- **Placement:** the next triage-fixes PR at the top of the stack (small).
+
+### R228-1: The register's hotfix row and O2 after 26.11
+
+- **PR:** #228 (45, tip `1990f1fb`). `docs/security/register.md:38`, `:45`.
+- **Severity:** Low (documents: the N1 row links the superseded schema-66 runbook as the
+  deployed one; O2 doesn't state an accepted risk).
+- **At the newest tip:** both still there (`register.md:33`, `:43`;
+  `docs/history/security/2026-11-02-role-allowlist-hotfix.md` and `-data.sql` are the schema-66
+  branch's runbook with a "historical" banner; the deployed `ukwikidev/hotfix-role-allowlist-f9c31ce5`
+  branch, `12823147`, is local only).
+- **Items and fixes:**
+  1. **N1 (production) after 26.11:** production has run 26.11 (schema 95, V76's `CHECK`) since
+     2026-11-11, which replaces the hotfix; `docs/history/README.md:22` says to delete the runbook
+     and its data script then. Fix: delete both (and the README row, the `practices.md:11` link),
+     and mark the N1 (production) row fixed by 26.11 (2026-11-11), keeping the 2026-11-10 access-log
+     check record and the `is_root` audit note.
+  2. **O2's accepted risk:** V77 marks the existing used accounts' emails verified (the
+     maintainer's decision of 2026-11-02, `V77__Account_verification_and_tokens.sql:16-23`): a past
+     pre-claim on such an account is taken as genuine, and it can take access roles in other
+     contests without an invitation. Fix: one sentence in the O2 row, "Accepted: …".
+- **Placement:** the next triage-fixes PR at the top of the stack (small, documents only).
+
+### R236-1: The image check's result is not shown on a page
+
+- **PR:** #236 (53, tip `b1981da4`). `app/controllers/RoundImageCheckController.scala:54`.
+- **Severity:** Low (operations: the check is a deploy step, D3).
+- **At the newest tip:** still there (`RoundImageCheckController.scala:44-55`: the flash names the
+  job id only; the edit-round and rounds pages render distribution jobs only,
+  `editRound.scala.html:51`, `rounds.scala.html:71`).
+- **Failure scenario:** an admin or root presses "Check round images" / "Check every round's
+  images"; the page says "queued (job N)" and never shows the outcome. The result (drift, rows
+  added, fixed, removed, archived, skipped rounds) is only in `/admin/jobs/:id`'s JSON, which the
+  deploy steps tell the operator to open (`round-images-two-step.md:1017-1019`; 26.11's job 29 was
+  read that way).
+- **Suggested fix:** load the round's latest image-check job (and root's latest all-rounds job on
+  the rounds page) and render it with `snippets.jobStatus`, adding a line with the details' counts
+  when it has finished; a view spec for a finished check with drift.
+- **Placement:** the next triage-fixes PR (medium: controller, two views, messages in four
+  languages, a spec).
+
+### R237-1: MariaDB 10.11 move and bench steps
+
+- **PR:** #237 (54, tip `8b246ace`). `docs/plans/2026-10-19-mariadb-10.11.md:188`,
+  `docs/deployment.md:320`, `bench/README.md:81`, `bench/server/entrypoint.sh:42`.
+- **Severity:** Low (item 4 loses writes if followed as written; the server move is still ahead).
+- **At the newest tip:** all still there (`mariadb-10.11.md:290-298`, `deployment.md:439-445`,
+  `:470-471`, `bench/README.md:81`, `entrypoint.sh:38`).
+- **Items and fixes:**
+  1. **The bench image variables read as plain assignments:** say
+     `export BENCH_DOCKERFILE=Dockerfile.noble BENCH_IMAGE=wlxjury-bench-server:noble-10.11`.
+  2. **"MariaDB up" before the upgrade and accounts:** `bench.sh start` waits for that line
+     (`bench.sh:104`), so `restore-dump` on a fresh volume can run before the `wlxjury` database
+     and user exist. Log it after the accounts' SQL.
+  3. **`--host` for a `host:port` value:** the V85 check and re-run commands take
+     `WLXJURY_DB_HOST` as `--host`; for `host:port` the release tool passes `--port` and
+     `--protocol=TCP` (`wlxjury-release.sh:103-114`) and checks `SELECT @@port` (`:132-133`). Give
+     both forms and the port check (production's `localhost`, the socket, is right as written).
+  4. **The move doesn't stop writers:** "Moving production" dumps 10.6 with the app running, so a
+     vote after the dump is lost at the cutover. Add: stop the app (or maintenance) and check no
+     session writes before the dump; start it only against the restored 10.11 server.
+- **Placement:** the next triage-fixes PR (small, documents and the bench entrypoint), or with the
+  infra plan's server move.
+
 New entries use the format `### R<PR>-<n>: <short title>`, then PR and file:line
 at its tip, severity, whether it is still at the final tip, the failure
 scenario, the suggested fix and the placement (append after an existing plan,
@@ -1656,3 +1785,34 @@ or above. Most of #223's comments are on plans that later PRs implemented (P0 #2
 
 The N1 access-log check recorded in R223-2 was run on 2026-11-10 at the maintainer's request: no
 sign of exploitation from 2026-10-27 to the hotfix, not conclusive.
+
+### CodeRabbit, PRs 225-237
+
+CodeRabbit's 21 inline comments and 3 review-level remarks on #225, #227-#229 and #235-#237 (2, 4,
+2, 2, 2, 3 and 6 inline; the remarks: 1 outside the diff on #225, 2 "Nitpick comments" on #227;
+#235's and #237's "Docstring Coverage" pre-merge check is not answered, as on earlier PRs),
+classified against the top of the stack, `stack/107-close-2611` (`f816c8e2`, #290); one reply per
+thread, and the review-level remarks in one comment per PR (#225, #227). #226 and #230-#234 were
+not in this batch; #238's review was requested on 2026-11-11 19:26 UTC and had not arrived. New
+entries: [R225-2](#r225-2-an-add-without-a-contest-field-invites-without-the-contest),
+[R227-2](#r227-2-log-redaction-and-guard-spec-gaps),
+[R228-1](#r228-1-the-registers-hotfix-row-and-o2-after-2611) (Low),
+[R236-1](#r236-1-the-image-checks-result-is-not-shown-on-a-page) (Low),
+[R237-1](#r237-1-mariadb-1011-move-and-bench-steps) (Low); none Medium or above.
+[R229-1](#r229-1-v80-undo-does-not-sign-out-pre-s3-cookies)'s suggested fix changed (V80 is
+applied on production).
+
+| PR | Inline comments: class |
+|---|---|
+| #225 | UserService.scala:94 invitation without the resolved contest: new entry (R225-2); role-allowlist-hotfix.md:88 reset still expects 23 rows: fixed later (#245, runbook marked historical; deletion in R228-1) |
+| #227 | SqlLogging.scala:55 backslash escapes in quoted literals: new entry (R227-2); AppModule.scala:35 UserPasswordSpec control: not applicable (the control turns `loggingSQLErrors` back on for its own statement); JobScheduler.scala:159 poll warning logs getMessage: new entry (R227-2); submit-once.js:20 lock after a cancelled submit: new entry (R227-2, hardening, no trigger today) |
+| #228 | register.md:38 N1 links the superseded runbook: new entry (R228-1); register.md:45 O2 without V77's accepted risk: new entry (R228-1) |
+| #229 | V80:9 undo note: DROP TABLE leaves the window unknown: existing entry (R229-1, fix in code: V80 is applied); security-resolution.md:522 "No migration" and the undo: fixed later (#245, S3 results section removed) |
+| #235 | CriterionJdbc.scala:154 carried rate collides on a replacement: fixed later (#239, votes no longer move between rounds; rates only for the round's criteria); criteria-rounds.md:494 no vote_id <= 0 pre-deploy query: not applicable (V83 ran on production; its step 0 stops on it) |
+| #236 | RoundImageCheckController.scala:54 check result not on a page: new entry (R236-1); RoundImageCheckHandler.scala:116 job row locked after the round: fixed later (#239, plain read at READ COMMITTED, break 11); RoundImageCheckHandler.scala:132 votes locked before images: fixed later (#239, READ COMMITTED pool and round-first locking) |
+| #237 | bench/README.md:81 image variables not exported: new entry (R237-1); entrypoint.sh:42 ready before the upgrade and accounts: new entry (R237-1); V86:50 NO_ZERO_DATE: not applicable (not in MariaDB's default `sql_mode`; the plan checks `@@sql_mode`; V86 applied); deployment.md:320 --host for a host:port: new entry (R237-1); deployment.md:371 V85 script after a restore: not applicable (a restore drops V85 from the history, so the next deploy runs it); mariadb-10.11.md:188 writers not stopped through the move: new entry (R237-1) |
+
+| PR | Review-level remarks: class |
+|---|---|
+| #225 | runbook's schema-66 deploy command: fixed later (#245, historical; deletion in R228-1) |
+| #227 | `ErrorTextSpec` proximity rule: new entry (R227-2); `SourceScan` `//` in strings: accepted, documented (R227-2) |
