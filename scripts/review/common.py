@@ -7,6 +7,7 @@ every state file can be rebuilt from GitHub (README.md).
 import json
 import os
 import pathlib
+import re
 import shutil
 import subprocess
 import time
@@ -31,6 +32,22 @@ def gh_path(flag=None):
     return path
 
 
+# A dropped or refused connection, a DNS failure, a timeout or a gateway error: worth retrying a
+# read. Windows' gh says "dial tcp …: connectex: A connection attempt failed …" (2026-11-10/11).
+TRANSIENT = re.compile(
+    r"error connecting|timeout|timed out|dial tcp|connectex|connection attempt failed|"
+    r"connection reset|connection refused|no such host|temporary failure in name resolution|"
+    r"\beof\b|tls handshake|HTTP 50[234]\b", re.I)
+
+
+def is_transient(err):
+    """Whether gh's stderr `err` reports a network failure (retry a read) rather than an answer:
+    GitHub answering 4xx (401, 403, 404, 422, a rate limit) is never transient."""
+    if re.search(r"HTTP 4\d\d\b|rate limit", err, re.I):
+        return False
+    return bool(TRANSIENT.search(err))
+
+
 class GitHub:
     """Thin wrapper over `gh api`. Reads retry network errors; writes never retry blindly."""
 
@@ -43,8 +60,7 @@ class GitHub:
             if out.returncode == 0:
                 return out.stdout.decode("utf-8")
             err = out.stderr.decode("utf-8", "replace").strip()
-            transient = "error connecting" in err or "timeout" in err.lower()
-            if write or not transient:
+            if write or not is_transient(err):
                 raise RuntimeError(f"gh {' '.join(args[:3])}: {err[:300]}")
             self.log(f"network error, retrying in 30 s ({attempt + 1}/20)")
             time.sleep(30)
