@@ -398,7 +398,9 @@ Cookies from before S3 (without the sign-in times) are upgraded in place on thei
 for 30 days after the S3 deploy (V80 records the end, `session_upgrade_window`; a restart or a
 later deploy does not move it), so nobody is signed out by the release. After that window such a
 cookie is signed out (`old_cookie_expired` on `security.auth`): a copy of an old cookie that never
-took the upgraded value (a replay) ends with it.
+took the upgraded value (a replay) ends with it. To close the window early, `DELETE FROM
+session_upgrade_window` (or drop the table) and restart the app: a running app keeps the window it
+has read.
 
 **Rotating the signing key** (`PLAY_HTTP_SECRET_KEY` in `runtime.env`) ends every session at once,
 for every account: everyone signs in again. It also invalidates the flash and the CSRF tokens of
