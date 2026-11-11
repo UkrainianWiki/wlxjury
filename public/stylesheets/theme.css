@@ -38,4 +38,44 @@
     --wlx-vote-rejected: #ff4d5e;
     --wlx-vote-line: #000;
     --wlx-star: #ffc107;
+    /* the secondary buttons (btn-outline-secondary) and the pager's links. Bootstrap keeps its
+       light-mode grey (#6c757d) for them in dark mode: 2.4-3.3:1 on the dark greys, too faint to
+       read as buttons. The border is at least 3:1 on every background they sit on (page #212529
+       5.2, table rows and navbar #2b3035 4.5, image grey #303030 4.5, #343a40 3.9); the text
+       11.9 on the page, 8.8 on #343a40 */
+    --wlx-control-border: #8f979f;
+    --wlx-control-color: #dee2e6;
+    --wlx-control-bg: rgba(255, 255, 255, .05);
+    /* hover: white text (8.2) on #495057, a lighter border (5.5 or more); pressed or chosen
+       (active, a checked btn-check): filled light grey, dark text (10.3) */
+    --wlx-control-hover-bg: #495057;
+    --wlx-control-hover-border: #adb5bd;
+    --wlx-control-active-bg: #ced4da;
+    --wlx-control-active-color: #212529;
+    /* disabled: no fill, a dim border, and Bootstrap's .65 opacity on top */
+    --wlx-control-disabled-color: #adb5bd;
+    --wlx-control-disabled-border: #6c757d;
+}
+
+[data-bs-theme=dark] .btn-outline-secondary {
+    --bs-btn-color: var(--wlx-control-color);
+    --bs-btn-bg: var(--wlx-control-bg);
+    --bs-btn-border-color: var(--wlx-control-border);
+    --bs-btn-hover-color: #fff;
+    --bs-btn-hover-bg: var(--wlx-control-hover-bg);
+    --bs-btn-hover-border-color: var(--wlx-control-hover-border);
+    --bs-btn-focus-shadow-rgb: 173, 181, 189;
+    --bs-btn-active-color: var(--wlx-control-active-color);
+    --bs-btn-active-bg: var(--wlx-control-active-bg);
+    --bs-btn-active-border-color: var(--wlx-control-active-bg);
+    --bs-btn-disabled-color: var(--wlx-control-disabled-color);
+    --bs-btn-disabled-bg: transparent;
+    --bs-btn-disabled-border-color: var(--wlx-control-disabled-border);
+}
+
+/* the pager: its links keep the link colour; only their outline was Bootstrap's #495057 (1.9:1) */
+[data-bs-theme=dark] .pagination {
+    --bs-pagination-border-color: var(--wlx-control-border);
+    --bs-pagination-hover-border-color: var(--wlx-control-hover-border);
+    --bs-pagination-disabled-border-color: var(--wlx-control-border);
 }
