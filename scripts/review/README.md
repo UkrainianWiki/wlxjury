@@ -139,6 +139,13 @@ Exit codes: 0 batch done (or all PRs done), 2 no reply to the command in 30 minu
 4 an unexpected answer or a quota message (read the message in `requests.json` and the PR).
 "Review finished" without a review no longer stops it (see above).
 
+A gh **read** that fails on the network (`common.is_transient`: a dropped, reset or refused
+connection, `dial tcp` / `connectex` (Windows), a DNS failure, a timeout, EOF, a TLS handshake
+error, HTTP 502/503/504) is tried again every 30 s, 20 attempts in total; GitHub's answers
+(HTTP 4xx, including a rate limit) and HTTP 500 raise at once, and a **write** (a comment, a
+reply, an edit) never retries. `python -I -B -m unittest discover -s scripts/review` tests it
+(CI: deployment.yml, step "Review tools tests on Python 3.8").
+
 ## Triage after a review
 
 1. `python -I scripts/review/threads.py N --save` lists the threads.
