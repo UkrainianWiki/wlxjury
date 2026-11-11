@@ -77,5 +77,5 @@
 [data-bs-theme=dark] .pagination {
     --bs-pagination-border-color: var(--wlx-control-border);
     --bs-pagination-hover-border-color: var(--wlx-control-hover-border);
-    --bs-pagination-disabled-border-color: var(--wlx-control-border);
+    --bs-pagination-disabled-border-color: var(--wlx-control-disabled-border);
 }
