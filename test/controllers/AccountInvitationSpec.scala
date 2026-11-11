@@ -250,6 +250,33 @@ class AccountInvitationSpec extends PlaySpecification with PlayTestDb with Accou
       }
     }
 
+    "name root's current contest in the invitation when root's add has no contest field (R225-2)" in {
+      testDbApp { implicit app =>
+        implicit val mat: Materializer = app.materializer
+        createContests(10)
+        val root = account("root@example.com", None, "no", root = true, verified = true)
+        // root's current contest is one root is a member of (Secured.inCurrentContest)
+        UserContestJdbc.createMembership(root.getId, 10, "organizer")
+        val claimed = account("victim@example.com", None, "no", password = Some("claimer-password"))
+        val mail = new RecordingMail
+
+        // a hand-made request: the users page always sends `contest`
+        val added = call(userController(mail).saveUser(),
+          as(root, Some(10))(FakeRequest(POST, "/users/save"))
+            .withFormUrlEncodedBody("id" -> "0", "fullname" -> "Person", "email" -> "victim@example.com",
+              "roles" -> "jury").withCSRFToken)
+        status(added) === SEE_OTHER
+        flash(added).get("users-added") must beSome(contain("Invited (role given once they accept): 1."))
+        roles(claimed.getId) must beEmpty
+        AccountTokenJdbc.findByUser(claimed.getId).map(t => (t.purpose, t.contestId)) ===
+          Seq((AccountTokenJdbc.Invitation, Some(10L)))
+        tokenRows.map(r => (r._2, r._3)) === List((AccountTokenJdbc.Invitation, Some("jury")))
+
+        status(accept(mail.lastToken, "owner-password")) === SEE_OTHER
+        roles(claimed.getId) === Seq(UserContest(claimed.getId, 10, "jury"))
+      }
+    }
+
     "join a verified account, or one without a password, directly, as before" in {
       testDbApp { implicit app =>
         createContests(10)
