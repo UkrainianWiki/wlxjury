@@ -21,11 +21,15 @@ class UserService @Inject()(val sendMail: SMTPOrWikiMail,
   def setupToken: Option[String] =
     configuration.getOptional[String]("wlxjury.setup.token").map(_.trim).filter(_.length >= 32)
 
-  /** Adds the person in the edit form to its contest; see [[addToContest]]. */
+  /** Adds the person in the edit form to its contest; see [[addToContest]]. A form naming a
+    * contest that does not exist is refused ([[UserService.ContestNotFound]]), never added to the
+    * creator's current contest instead.
+    */
   def createNewUser(user: User, formUser: User)(
       implicit messages: Messages, linkHost: LinkHost = LinkHost.None): UserService.Added = {
-    val contest: Option[ContestJury] =
-      formUser.currentContest.flatMap(ContestJuryJdbc.findById)
+    val contest: Option[ContestJury] = formUser.currentContest.map { id =>
+      ContestJuryJdbc.findById(id).getOrElse(throw new ContestNotFound)
+    }
     addToContest(user, formUser, contest)
   }
 
@@ -446,6 +450,9 @@ object UserService {
     * save maps it, and only it, to a 400.
     */
   class RoleNotAssignable extends IllegalArgumentException("not a contest role")
+
+  /** The form names a contest that does not exist ([[UserService.createNewUser]]). */
+  class ContestNotFound extends IllegalArgumentException("no such contest")
 
   /** A wiki account name MediaWiki would refuse ([[User.normalizeWikiAccount]]). */
   class InvalidWikiAccount extends IllegalArgumentException("not a valid wiki account")

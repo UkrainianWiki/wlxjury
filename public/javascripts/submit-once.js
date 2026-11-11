@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  /** Handles a submit of `form`: true if it may go, false (and the event cancelled) if repeated.
+  /** Handles a submit of `form`: true unless this handler cancelled it as a repeat (then false).
     * A submit another handler already cancelled is not sent, so it leaves the form unlocked (only a
     * handler that ran before this document-level one is seen). */
   function onSubmit(form, event) {

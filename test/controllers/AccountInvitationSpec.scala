@@ -277,6 +277,30 @@ class AccountInvitationSpec extends PlaySpecification with PlayTestDb with Accou
       }
     }
 
+    "refuse root's add naming a contest that does not exist, not add to root's contest instead" in {
+      testDbApp { implicit app =>
+        implicit val mat: Materializer = app.materializer
+        createContests(10)
+        val root = account("root@example.com", None, "no", root = true, verified = true)
+        UserContestJdbc.createMembership(root.getId, 10, "organizer")
+        val claimed = account("victim@example.com", None, "no", password = Some("claimer-password"))
+        val mail = new RecordingMail
+
+        def addTo(contest: String, email: String) = call(userController(mail).saveUser(),
+          as(root, Some(10))(FakeRequest(POST, "/users/save"))
+            .withFormUrlEncodedBody("contest" -> contest, "id" -> "0", "fullname" -> "Person",
+              "email" -> email, "roles" -> "jury").withCSRFToken)
+        val refused = addTo("999", "victim@example.com")
+        status(refused) === NOT_FOUND
+        contentAsString(refused) must contain("There is no such contest.")
+        status(addTo("999", "new@example.com")) === NOT_FOUND
+        roles(claimed.getId) must beEmpty
+        User.findByEmail("new@example.com") must beEmpty
+        tokenRows must beEmpty
+        mail.recipients must beEmpty
+      }
+    }
+
     "join a verified account, or one without a password, directly, as before" in {
       testDbApp { implicit app =>
         createContests(10)
