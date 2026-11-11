@@ -56,7 +56,15 @@ class IsTransientTest(unittest.TestCase):
                 self.assertFalse(is_transient(err))
 
     def test_eof_only_as_a_word(self):
+        self.assertTrue(is_transient("unexpected EOF"))
         self.assertFalse(is_transient("could not parse whereof"))
+        self.assertFalse(is_transient("EOFX in the response"))
+
+    def test_only_gateway_errors_among_5xx(self):
+        self.assertTrue(is_transient("HTTP 502: Bad Gateway"))
+        self.assertFalse(is_transient("HTTP 5020"))
+        # deliberate: a 500 is GitHub failing on this request, not the network; it raises
+        self.assertFalse(is_transient("gh: Server Error (HTTP 500)"))
 
 
 class RunTest(unittest.TestCase):
@@ -86,7 +94,7 @@ class RunTest(unittest.TestCase):
             with self.subTest(err=err):
                 out, run, sleep = self.run_with(done(1, err.encode()))
                 self.assertIsInstance(out, RuntimeError)
-                self.assertIn(err[:40], str(out))
+                self.assertEqual(str(out), f"gh api repos/o/r/pulls/1: {err}")
                 self.assertEqual((run.call_count, sleep.call_count), (1, 0))
 
     def test_write_never_retries(self):

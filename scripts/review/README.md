@@ -141,10 +141,10 @@ Exit codes: 0 batch done (or all PRs done), 2 no reply to the command in 30 minu
 
 A gh **read** that fails on the network (`common.is_transient`: a dropped, reset or refused
 connection, `dial tcp` / `connectex` (Windows), a DNS failure, a timeout, EOF, a TLS handshake
-error, HTTP 502/503/504) is retried every 30 s, up to 20 times; GitHub's answers (HTTP 4xx,
-including a rate limit) raise at once, and a **write** (a comment, a reply, an edit) never
-retries. `python -I -B -m unittest discover -s scripts/review` tests it (CI: deployment.yml,
-"Review tools tests").
+error, HTTP 502/503/504) is tried again every 30 s, 20 attempts in total; GitHub's answers
+(HTTP 4xx, including a rate limit) and HTTP 500 raise at once, and a **write** (a comment, a
+reply, an edit) never retries. `python -I -B -m unittest discover -s scripts/review` tests it
+(CI: deployment.yml, step "Review tools tests on Python 3.8").
 
 ## Triage after a review
 
