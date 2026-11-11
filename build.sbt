@@ -121,7 +121,7 @@ organization := "org.intracer"
 
 // Calendar version YY.MM (.N for an extra deploy in the same month); the snapshot carries the
 // next release. Release steps: docs/workflow/practices.md §7.4.
-version := "26.11-SNAPSHOT"
+version := "26.12-SNAPSHOT"
 
 // The same identity is embedded in the app and placed at the ZIP root. The
 // deployment tool compares readiness with this manifest before opening traffic.
