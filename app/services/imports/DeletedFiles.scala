@@ -8,8 +8,7 @@ import scalikejdbc.{DB, DBSession}
   * seen by the next import).
   *
   * Finished rounds, and those not started yet, keep a deleted file's votes: past results
-  * don't change. A round that opens later moves them aside then ([[Round.setActiveGuarded]]),
-  * and so does one that votes are moved into ([[Round.settleDeletedFiles]]).
+  * don't change. A round that opens later moves them aside then ([[Round.setActiveGuarded]]).
   *
   * Moving votes doesn't upset a running distribution's count check, which counts the
   * round's votes moved aside too
@@ -32,9 +31,8 @@ object DeletedFiles {
 
   /** After [[markDeleted]] committed, in a transaction of its own: moves aside the votes of
     * those of `pageIds` still marked deleted in the rounds open now. [[markDeleted]] reads
-    * the rounds from its snapshot, so it misses votes another transaction moved into an open
-    * round ([[db.scalikejdbc.VoteJdbc.setRound]]) and committed meanwhile; one that
-    * commits after [[markDeleted]] moves them itself ([[Round.settleDeletedFiles]]).
+    * the rounds from its snapshot, so it misses votes another transaction committed in an open
+    * round meanwhile; this reads them afresh.
     *
     * @return the rounds that lost rows
     */

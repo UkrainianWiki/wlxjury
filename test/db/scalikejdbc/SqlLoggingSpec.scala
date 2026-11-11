@@ -81,6 +81,18 @@ class SqlLoggingSpec extends Specification with BeforeAll {
       SqlLogging.template("SELECT *\n  FROM users WHERE email = 'a@b.c' AND name = 'O''Brien' AND id = ?") ===
         "SELECT * FROM users WHERE email = '?' AND name = '?' AND id = ?"
     }
+
+    "lose a literal with a backslash-escaped quote whole (R227-2)" in {
+      // the SQL text: email = 'a\'b@x.c'
+      SqlLogging.template("SELECT * FROM users WHERE email = 'a\\'b@x.c' AND id = ?") ===
+        "SELECT * FROM users WHERE email = '?' AND id = ?"
+    }
+
+    "lose a literal with a backslash before a line break whole (R227-2)" in {
+      // the SQL text: name = 'secret\<line break>value'
+      SqlLogging.template("SELECT * FROM users WHERE name = 'secret\\\nvalue' AND id = ?") ===
+        "SELECT * FROM users WHERE name = '?' AND id = ?"
+    }
   }
 
   "the shipped config" should {

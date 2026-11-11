@@ -48,10 +48,12 @@ object SqlLogging {
     (statement, _, e, _) => logger.error(s"SQL statement failed (${describe(e)}): ${template(statement)}")
 
   /** The statement on one line, its quoted literals (if a fragment was built with
-    * `createUnsafely`) as `'?'`; bound values are `?` already.
+    * `createUnsafely`) as `'?'`; bound values are `?` already. A literal ends at a quote that is
+    * neither doubled nor after a backslash (MariaDB's default `sql_mode` keeps backslash escapes;
+    * an escaped line break included).
     */
   def template(statement: String): String =
-    statement.replaceAll("'(?:[^']|'')*'", "'?'").replaceAll("\\s+", " ").trim
+    statement.replaceAll("""'(?:[^'\\]|\\[\s\S]|'')*'""", "'?'").replaceAll("\\s+", " ").trim
 
   /** An exception without its message, which may quote a value ("Duplicate entry '…'"). */
   def describe(e: Throwable): String = e match {

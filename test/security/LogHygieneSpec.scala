@@ -19,21 +19,6 @@ class LogHygieneSpec extends Specification {
   /** A whole account (its toString has the email and name), not one of its fields. */
   private val WholeUser = """(?i)(?:\w*user|juror|owner|admin|account|member)""".r
 
-  /** The text of the call starting at `from` (after its opening parenthesis). */
-  private def callText(text: String, from: Int): String = {
-    var depth = 1
-    var i = from
-    while (i < text.length && depth > 0 && i - from < 600) {
-      text.charAt(i) match {
-        case '(' => depth += 1
-        case ')' => depth -= 1
-        case _   =>
-      }
-      i += 1
-    }
-    text.substring(from, i)
-  }
-
   /** What the call's text puts into the line: interpolated and concatenated expressions,
     * outside its string literals' plain text.
     */
@@ -50,7 +35,7 @@ class LogHygieneSpec extends Specification {
         source <- SourceScan.files("app", ".scala")
         call <- Call.findAllMatchIn(source.text).toList
         where = s"${source.path}:${source.lineOf(call.start)}"
-        expr <- expressions(callText(source.text, call.end))
+        expr <- expressions(SourceScan.callText(source.text, call.end))
         if (Sensitive.findFirstIn(expr).nonEmpty || WholeUser.matches(expr.trim)) && !Allowed.contains(where)
       } yield s"$where: $expr"
       found must beEmpty
