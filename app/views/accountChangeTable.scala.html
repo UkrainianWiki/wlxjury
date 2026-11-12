@@ -13,8 +13,9 @@
         }
     }
 }
+@* a name, else the account's id: never an account's current address, which the log doesn't record *@
 @name(u: Option[db.scalikejdbc.User], id: Long) = @{
-    u.map(a => Option(a.fullname).map(_.trim).filter(_.nonEmpty).orElse(Option(a.email).filter(_.nonEmpty)).getOrElse("#" + id)).getOrElse("#" + id)
+    u.flatMap(a => Option(a.fullname).map(_.trim).filter(_.nonEmpty)).getOrElse("#" + id)
 }
 <div class="table-responsive">
     <table class="table table-sm align-middle account-changes">
@@ -38,12 +39,13 @@
                 <td class="text-nowrap">@views.LinkTimes.utc(row.change.createdAt)</td>
                 <td>@name(row.actor, row.change.actorId)</td>
                 @if(showAccount) {
-                    <td>@name(row.account, row.change.userId)@for(a <- row.account; if Option(a.email).exists(_.nonEmpty) && Option(a.fullname).exists(_.trim.nonEmpty)) {<br><span class="text-body-secondary small">@a.email</span>}</td>
+                    <td>@name(row.account, row.change.userId)</td>
                 }
                 <td>@Messages("account.change.field." + row.change.field)</td>
                 <td>@value(row.change.field, row.change.oldValue).getOrElse("")</td>
                 <td>@value(row.change.field, row.change.newValue).getOrElse("")</td>
-                <td>@row.change.mailSent.map(s => Messages(if (s) "account.change.mail.sent" else "account.change.mail.not.sent")).getOrElse("")</td>
+                @* an email change's notice to the former address goes out after the save: queued *@
+                <td>@row.change.mailSent.map(s => Messages(if (!s) "account.change.mail.not.sent" else if (row.change.field == AccountChangeJdbc.Email) "account.change.mail.notice.queued" else "account.change.mail.sent")).getOrElse("")</td>
                 <td class="account-change-comment">@row.change.comment.getOrElse("")</td>
             </tr>
         }

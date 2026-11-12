@@ -779,3 +779,6 @@ account.change.field.invitation_cancelled = Приглашение отмене�
 account.change.field.password_link = Ссылка для пароля
 account.change.field.share_link = Создана ссылка, чтобы передать
 account.change.field.sessions_ended = Сеансы завершены
+user.email.changed.meanwhile = Этот адрес электронной почты тем временем изменил кто-то другой. Перезагрузите страницу и попробуйте ещё раз.
+users.invitations.not.possible = Учётных записей, которым нельзя отправить приглашение (их адрес установил администратор, а вы не можете дать им пароль; обратитесь к root): {0}.
+account.change.mail.notice.queued = уведомление на прежний адрес поставлено в очередь

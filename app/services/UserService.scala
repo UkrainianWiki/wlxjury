@@ -117,12 +117,18 @@ class UserService @Inject()(val sendMail: SMTPOrWikiMail,
                   if (needsPassword)
                     // no password to "use as before": the invitation sets one (none mailed unless
                     // asked: the member's row offers to send it, or a link to share)
-                    Invited(member, if (sendInvitation) Mail.of(invite(creator, member, contest, None)) else Mail.NotAsked)
+                    Invited(member,
+                      if (invitationRefused(creator, member)) Mail.NotPossible
+                      else if (sendInvitation) Mail.of(invite(creator, member, contest, None))
+                      else Mail.NotAsked)
                   else {
                     for (c <- contest if sendInvitation && added && c.greeting.use && mayBeGreeted(role))
                       sendMail(creator, member, c, messages("password.existing"))
                     if (added) JoinedContest(member) else AlreadyMember(member)
                   }
+                case None if byEmail && invitationRefused(creator, account) =>
+                  // an address an admin set, of an account this creator may not hand a password to
+                  Invited(account, Mail.NotPossible)
                 case None if byEmail =>
                   // the role waits for an invitation: kept unsent if no mail was asked for
                   val sent = invite(creator, account, contest, Some(role), mail = sendInvitation)
@@ -209,6 +215,8 @@ class UserService @Inject()(val sendMail: SMTPOrWikiMail,
   ): Boolean = {
     require(!account.isRoot, "a root account is never invited")
     require(account.emailLo.nonEmpty, "an invitation needs an email")
+    // callers check it first and say so; a missed one fails rather than hand the account over
+    require(!invitationRefused(creator, account), "an invitation this creator may not send")
     val contestId = contestOpt.flatMap(_.id)
     AccountTokenJdbc.revokeUnused(account.getId, Seq(AccountTokenJdbc.Invitation), contestId)
     val (tokenId, token) = AccountTokenService.create(account.getId, AccountTokenJdbc.Invitation, account.emailLo,
@@ -222,6 +230,19 @@ class UserService @Inject()(val sendMail: SMTPOrWikiMail,
       newValue = role, mailSent = Some(sent), comment = comment)
     sent
   }
+
+  /** Whether `creator` may not send `account` an invitation (review of 2026-11-12): accepting one
+    * sets the password, so an account with a password whose address an admin set (the account
+    * change log, [[AccountChangeJdbc.emailSetByAdmin]]) gets one only from who may hand it a
+    * set-password link anyway ([[ShareLinkService.handOverRefusal]]: root; an admin, for a juror
+    * or organizer whose every tie is in their contests). Otherwise an admin could change a
+    * co-admin's address to their own and invite it. An address its owner gave, or root set, is
+    * the owner's: the invitation reaches them.
+    */
+  def invitationRefused(creator: User, account: User): Boolean =
+    account.password.nonEmpty && !(creator.isRoot || creator.hasRole(User.ROOT_ROLE)) &&
+      AccountChangeJdbc.emailSetByAdmin(account.getId, account.emailLo) &&
+      ShareLinkService.handOverRefusal(creator, account).nonEmpty
 
   /** Sends the member (or a pending invitee) of the contest a new invitation: the role of a
     * pending one carried over. Whether the mail went out.
@@ -354,10 +375,12 @@ class UserService @Inject()(val sendMail: SMTPOrWikiMail,
     * the commit). Refused, a message key, writing nothing, if another account has the address.
     */
   def changeEmailByAdmin(actor: User, accountId: Long, newEmail: String, contestId: Option[Long],
-      comment: Option[String])(implicit session: DBSession): Either[String, EmailChanged] = {
+      comment: Option[String], expectedOld: Option[String] = None)(implicit session: DBSession): Either[String, EmailChanged] = {
     val email = LoginText.email(newEmail)
     User.lockRow(accountId) match {
       case None => Left("error.user.not.found")
+      // changed by someone else since the form was checked: not overwritten
+      case Some(account) if expectedOld.exists(_ != account.emailLo) => Left("user.email.changed.meanwhile")
       case Some(_) if email.nonEmpty && User.countByEmail(accountId, email) > 0 => Left("error.email.already.exist")
       case Some(account) =>
         val old = account.emailLo
@@ -538,6 +561,8 @@ object UserService {
     case object Sent extends Mail
     /** The mail failed: it can be sent again. */
     case object Failed extends Mail
+    /** None may be sent by this creator ([[UserService.invitationRefused]]): nothing created. */
+    case object NotPossible extends Mail
     def of(sent: Boolean): Mail = if (sent) Sent else Failed
   }
 

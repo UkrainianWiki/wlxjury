@@ -17,7 +17,9 @@ class ErrorTextSpec extends Specification {
       (1 -> "isDeadlock / lock wait timeout: tests the driver's text, for JobScheduler.isTransient and CriteriaRate"),
     "app/services/RoundService.scala" -> (1 -> "submit: tests for the submit token's unique index"),
     "app/db/scalikejdbc/CriterionJdbc.scala" ->
-      (1 -> "addIn: tests for the unique index on a criterion's name, answered by a message key")
+      (1 -> "addIn: tests for the unique index on a criterion's name, answered by a message key"),
+    "app/controllers/UserController.scala" ->
+      (1 -> "isDuplicateKey: tests for users.email's unique key (1062, key `email`), answered by a message key")
   )
 
   private val Message = """\.get(?:Localized)?Message\b""".r

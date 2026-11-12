@@ -113,6 +113,27 @@ object ShareLinkService {
     else if (loginName(account).isEmpty) Some(NoLogin)
     else None
 
+  /** Why `actor` may not hand `account` a set-password link at all, in any contest: the rule's
+    * part about whose account it is (root, a role the actor may not share, a tie outside the
+    * actor's admin contests, the actor's own); None for root. For an invitation not tied to a
+    * contest yet ([[UserService.invitationRefused]]).
+    */
+  def handOverRefusal(actor: User, account: User)(implicit session: DBSession = AutoSession): Option[Refusal] =
+    if (isRoot(actor)) None
+    else {
+      val Ties(memberships, invitations, workedIn) = tiesOf(account.getId)
+      lazy val admins = adminContests(actor)
+      if (actor.deletedAt.nonEmpty) Some(NotAdmin)
+      else if (actor.id == account.id) Some(OwnAccount)
+      else if (isRoot(account)) Some(TargetRoot)
+      else if (memberships.exists(m => m.active && !ShareableRoles.contains(m.role)) ||
+        invitations.exists(_.role.exists(r => User.ACCESS_ROLES.contains(r) && !ShareableRoles.contains(r))))
+        Some(TargetRole)
+      else if ((memberships.map(_.contestId) ++ workedIn ++ invitations.flatMap(_.contestId)).exists(c => !admins.contains(c)))
+        Some(OtherContest)
+      else None
+    }
+
   /** [[refusal]], then the checks that are not about who asks. */
   def mayCreate(actor: User, account: User, purpose: String, contestId: Option[Long], wikimediaSignIn: Boolean)(implicit
       session: DBSession = AutoSession
@@ -178,8 +199,10 @@ object ShareLinkService {
           val revoked = AccountTokenJdbc.revokeUnused(accountId, Seq(purpose), if (invitation) contestId else None)
           val (id, token) = AccountTokenService.create(accountId, purpose, account.emailLo, contestId, pendingRole,
             actor.id, shared = true)
-          // the account change log, in the same transaction: a link shown, never mailed
-          AccountChangeLog.record(actor, accountId, contestId, db.scalikejdbc.AccountChangeJdbc.ShareLink,
+          // the account change log, in the same transaction: a link shown, never mailed; in the
+          // contest only if the account is in it (root may name any)
+          val logContest = contestId.filter(c => invitation || UserContestJdbc.find(accountId, c).nonEmpty)
+          AccountChangeLog.record(actor, accountId, logContest, db.scalikejdbc.AccountChangeJdbc.ShareLink,
             newValue = Some(purpose), mailSent = Some(false))
           AccountTokenJdbc.find(id).toRight(NotInContest).map(link => (link, token, account, revoked))
         }

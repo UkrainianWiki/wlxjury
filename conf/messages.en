@@ -801,3 +801,6 @@ account.change.field.invitation_cancelled = Invitation cancelled
 account.change.field.password_link = Password link
 account.change.field.share_link = Link to share created
 account.change.field.sessions_ended = Sessions ended
+user.email.changed.meanwhile = This email address was changed by someone else meanwhile. Reload the page and try again.
+users.invitations.not.possible = Accounts no invitation can be sent to (an admin set their address and you may not give them a password; ask root): {0}.
+account.change.mail.notice.queued = notice to the former address queued

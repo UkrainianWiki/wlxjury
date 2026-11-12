@@ -87,6 +87,8 @@
                     @* another account's address changes at once, unverified, the password kept; nothing is
                        mailed to it unless asked (the maintainer's decision of 2026-11-12) *@
                     @if(othersAccount) {
+                        @* the address this page showed: another's change of it meanwhile is not reverted *@
+                        <input type="hidden" name="emailWas" value="@editUserForm("emailWas").value.getOrElse(editedAccount.map(_.emailLo).getOrElse(""))">
                         <p class="form-text email-change-admin">@Messages("email.change.admin.explain")</p>
                         @bs.checkbox(editUserForm("sendInvitation"), Symbol("_label") -> Messages("invitation.send.email"),
                             Symbol("_help") -> Messages("invitation.send.email.edit.help"))

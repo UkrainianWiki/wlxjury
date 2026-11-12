@@ -802,3 +802,6 @@ account.change.field.invitation_cancelled = Invitation annulée
 account.change.field.password_link = Lien de mot de passe
 account.change.field.share_link = Lien à transmettre créé
 account.change.field.sessions_ended = Sessions fermées
+user.email.changed.meanwhile = Cette adresse courriel a été changée par quelqu''un d''autre entre-temps. Rechargez la page et réessayez.
+users.invitations.not.possible = Comptes auxquels aucune invitation ne peut être envoyée (un administrateur a défini leur adresse et vous ne pouvez pas leur donner de mot de passe ; demandez à root) : {0}.
+account.change.mail.notice.queued = avis à l''ancienne adresse en file d''envoi

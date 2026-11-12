@@ -371,14 +371,23 @@ class UserController @Inject()(cc: ControllerComponents,
               // without it, the account's now): a page loaded before another root's change of it
               // doesn't undo that change
               val toggle = rootGiven.filter(_ != rootWas.getOrElse(editedRoot))
-              if (toggle.nonEmpty && !user.hasRole(User.ROOT_ROLE))
+              // another account's address as the page showed it (`emailWas`): changed meanwhile by
+              // someone else, an untouched field keeps the stored one (no revert), an edited one is
+              // refused (reload the page)
+              val emailWas = if (user.id.contains(userId)) None else bound.data.get("emailWas").map(LoginText.email)
+              val staleEmail = emailWas.exists(_ != editedUser.emailLo)
+              val emailEdited = !emailWas.contains(LoginText.email(formUser.email))
+              if (staleEmail && emailEdited)
+                formErrors(bound.withError("email", "user.email.changed.meanwhile"))
+              else if (toggle.nonEmpty && !user.hasRole(User.ROOT_ROLE))
                 // only a crafted request: nobody else's page has the field
                 onUnAuthorized(user, request, Secured.Denial(pageContestOf(user, editedUser), Some(s"account:$userId"),
                   Set(User.ROOT_ROLE), Some("root_change")))
               else if (toggle.nonEmpty && user.id.contains(userId))
                 formErrors(bound.withError("root", "root.own.unchanged"))
               else
-                updateUser(user, editedUser, formUser.copy(isRoot = rootGiven.getOrElse(editedRoot)),
+                updateUser(user, editedUser, formUser.copy(isRoot = rootGiven.getOrElse(editedRoot),
+                  email = if (staleEmail) Option(editedUser.email).getOrElse("") else formUser.email),
                   toggle.filter(_ != editedRoot), extras)
             }
           }
@@ -393,7 +402,8 @@ class UserController @Inject()(cc: ControllerComponents,
     */
   private def keepRootWas(form: Form[User])(implicit request: play.api.mvc.Request[_]): Form[User] = {
     val sent = editUserForm.bindFromRequest().data
-    form.copy(data = form.data ++ Seq("rootWas", "sendInvitation", "comment").flatMap(k => sent.get(k).map(k -> _)))
+    form.copy(data = form.data ++ Seq("rootWas", "emailWas", "sendInvitation", "comment").flatMap(k =>
+      sent.get(k).map(k -> _)))
   }
 
   /** The edit page's Root field, from the bound form (whatever the body's encoding): the value
@@ -547,7 +557,8 @@ class UserController @Inject()(cc: ControllerComponents,
       // of the form is written
       def writeRoot(): Option[Result] = rootChange.flatMap { root =>
         User.setRootLocked(user.getId, userId, root, onChanged = s =>
-          AccountChangeLog.record(user, userId, pageContestOf(user, editedUser), AccountChangeJdbc.Root,
+          // logged in the account's contest only (None: root's log), never the page's fallback
+          AccountChangeLog.record(user, userId, editedUser.contestId, AccountChangeJdbc.Root,
             Some((!root).toString), Some(root.toString), comment = extras.comment)(s)) match {
           case Left(key) =>
             rolesLogger.warn(s"refused a root change accountId=${user.getId} targetId=$userId reason=$key")
@@ -557,6 +568,9 @@ class UserController @Inject()(cc: ControllerComponents,
             None
         }
       }
+      // a save refused inside its transaction: the address's, or the account no longer the editor's
+      def refusedInside(key: String): Result =
+        refused(if (key == "user.in.other.contests") None else Some("email"), key)
       val save: Option[String] => Result = {
         case Some(hash) if !own =>
           // another account's: last, after the rest of the form is saved (a failure there leaves
@@ -564,13 +578,13 @@ class UserController @Inject()(cc: ControllerComponents,
           // account's row lock; refused meanwhile, the password stays and the refusal is shown
           val setPassword = (othersSaved: Boolean) =>
             AccountTokenService.setPasswordByAdmin(user, userId, pageContestOf(user, editedUser), hash,
-              oauthSettings.wikimediaConfigured, extras.comment).left.map(passwordRefused(_,
+              oauthSettings.wikimediaConfigured, extras.comment, logContest = editedUser.contestId).left.map(passwordRefused(_,
                 Option.when(othersSaved)(Messages("password.set.others.saved")))).map(_ => ())
           updateAccount(user, editedUser, formUser, None, newWiki.toOption.flatten, roleNeedsInvitation,
-            emailChanged, extras, refused(Some("email"), _), Some(setPassword))
+            emailChanged, extras, refusedInside, Some(setPassword))
         case newHash =>
           updateAccount(user, editedUser, formUser, newHash, newWiki.toOption.flatten, roleNeedsInvitation,
-            emailChanged, extras, refused(Some("email"), _), None)
+            emailChanged, extras, refusedInside, None)
       }
       checked.fold(identity, newHash => writeRoot().getOrElse(save(newHash)))
     }
@@ -616,8 +630,9 @@ class UserController @Inject()(cc: ControllerComponents,
     val userId = editedUser.getId
     val own = formUser.id == user.id
     val contest = editedUser.contestId.flatMap(ContestJuryJdbc.findById)
-    // the contest the change is made in, for the account change log
-    val inContest = pageContestOf(user, editedUser)
+    // the contest the change is logged in: the account's own, as the page shows it (None, root's
+    // edit of an account in no contest: only root reads it), never the editor's session contest
+    val inContest = editedUser.contestId
     val comment = extras.comment.filter(_ => !own)
     val notices = Seq.newBuilder[String]
     var newVersion: Option[Int] = None
@@ -641,7 +656,10 @@ class UserController @Inject()(cc: ControllerComponents,
 
     val written: Either[String, (Option[UserService.EmailChanged], Int)] =
       try scalikejdbc.DB.localTx { implicit session =>
-        User.lockRow(userId)
+        val locked = User.lockRow(userId)
+        // the account may have joined another contest since the checks: decided again under its lock
+        if (mayEdit && !locked.exists(UserController.mayEditAccountNow(user, _)))
+          throw new UserController.Refused("user.in.other.contests")
         var emailChange = Option.empty[UserService.EmailChanged]
         var wikiUnlinked = 0
         if (mayEdit) {
@@ -657,7 +675,8 @@ class UserController @Inject()(cc: ControllerComponents,
               newWiki, comment = comment)
           }
           if (!own && emailChanged)
-            userService.changeEmailByAdmin(user, userId, formUser.email, inContest, comment) match {
+            userService.changeEmailByAdmin(user, userId, formUser.email, inContest, comment,
+                expectedOld = Some(editedUser.emailLo)) match {
               case Left(key)    => throw new UserController.Refused(key)
               case Right(change) => emailChange = Some(change)
             }
@@ -716,12 +735,13 @@ class UserController @Inject()(cc: ControllerComponents,
     // page), else one to sign in with, for a member with an access role who has no password
     // to use (or an unverified address)
     def invitable(u: User) = !own && u.emailLo.nonEmpty && !u.isRoot && u.contestRole.exists(User.ACCESS_ROLES.contains) &&
-      !(u.emailVerified && u.hasUsablePassword)
+      !(u.emailVerified && u.hasUsablePassword) && !userService.invitationRefused(user, u)
     def outcome(sent: Boolean) = Messages(if (sent) "invitation.sent" else "invitation.not.sent")
     newRole.filter(_ => roleNeedsInvitation) match {
       case Some((role, _)) =>
         // O2: the role waits for the account's owner to accept an invitation
         if (updated.emailLo.isEmpty) notices += Messages("role.needs.invitation.email")
+        else if (userService.invitationRefused(user, updated)) notices += Messages("invitation.not.possible")
         else {
           val sent = userService.invite(user, updated, contest, Some(role), mail = extras.sendInvitation, comment)
           notices += (if (extras.sendInvitation) outcome(sent) else Messages("invitation.created.not.sent"))
@@ -802,6 +822,7 @@ class UserController @Inject()(cc: ControllerComponents,
     }
     val notSent = added.count(a => mailOf(a).contains(Mail.Failed))
     val notAsked = added.count(a => mailOf(a).contains(Mail.NotAsked))
+    val notPossible = added.count(a => mailOf(a).contains(Mail.NotPossible))
     (Seq(messages("users.added",
                   added.count(_.isInstanceOf[NewAccount]),
                   added.count(_.isInstanceOf[JoinedContest]),
@@ -809,7 +830,8 @@ class UserController @Inject()(cc: ControllerComponents,
       (if (invited > 0) Seq(messages("users.invited", invited)) else Nil) ++
       (if (unverifiedWiki > 0) Seq(messages("users.not.added.wiki.unverified", unverifiedWiki)) else Nil) ++
       (if (notSent > 0) Seq(messages("users.invitations.not.sent", notSent)) else Nil) ++
-      (if (notAsked > 0) Seq(messages("users.invitations.not.mailed", notAsked)) else Nil)).mkString(" ")
+      (if (notAsked > 0) Seq(messages("users.invitations.not.mailed", notAsked)) else Nil) ++
+      (if (notPossible > 0) Seq(messages("users.invitations.not.possible", notPossible)) else Nil)).mkString(" ")
   }
 
   def showImportUsers(contestIdParam: Option[Long]): EssentialAction =
@@ -1062,7 +1084,10 @@ class UserController @Inject()(cc: ControllerComponents,
         case (Some(account), Some(contest)) =>
           // a verified account without a password (none set yet) may still need its invitation
           // nor one with a usable password: a retired legacy one (P8) needs the invitation to set one
-          if (account.isRoot || account.emailVerified && account.hasUsablePassword || account.emailLo.isEmpty) {
+          // nor one that would hand an account with a password to an address an admin set, unless
+          // this admin may hand it a set-password link ([[UserService.invitationRefused]])
+          if (account.isRoot || account.emailVerified && account.hasUsablePassword || account.emailLo.isEmpty ||
+              userService.invitationRefused(user, account)) {
             BadRequest(views.html.errorPage(Some(user), "error.title", "invitation.not.possible"))
           } else {
             val sent = userService.reinvite(user, account, contest)
@@ -1136,10 +1161,27 @@ object UserController {
   /** A save refused inside its transaction (a message key): nothing of it is written. */
   final class Refused(val key: String) extends RuntimeException(key, null, false, false)
 
-  /** Whether the exception is a unique key's violation (another account took the address). */
+  /** Whether the exception is a violation of users.email's unique key (`email`, V2: another
+    * account took the address): error 1062 naming that key, not any integrity violation.
+    */
   def isDuplicateKey(e: Throwable): Boolean =
-    Iterator.iterate(e)(_.getCause).takeWhile(_ != null).take(5)
-      .exists(_.isInstanceOf[java.sql.SQLIntegrityConstraintViolationException])
+    Iterator.iterate(e)(_.getCause).takeWhile(_ != null).take(5).exists {
+      case s: java.sql.SQLException =>
+        val text = Option(s.getMessage).getOrElse("")
+        s.getErrorCode == 1062 && (text.contains("for key 'email'") || text.contains("for key 'users.email'"))
+      case _ => false
+    }
+
+  /** [[UserController.canEditAccount]] again, read with the transaction's session under the
+    * account's row lock (`account` as locked): root, oneself, or an admin of every contest the
+    * account is in or worked in, never a root account.
+    */
+  def mayEditAccountNow(actor: User, account: User)(implicit session: scalikejdbc.DBSession): Boolean =
+    actor.hasRole(User.ROOT_ROLE) || actor.id == account.id || !account.isRoot && {
+      val adminOf = UserContestJdbc.findByUser(actor.getId).filter(_.role == User.ADMIN_ROLE).map(_.contestId).toSet
+      (UserContestJdbc.findByUser(account.getId).map(_.contestId) ++ User.contestsWorkedIn(account.getId))
+        .forall(adminOf.contains)
+    }
 
   /** The users page lists the live invitations into the contest and those of the last 30 days. */
   val InvitationsShownDays = 30

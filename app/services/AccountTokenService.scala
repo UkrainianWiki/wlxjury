@@ -296,7 +296,8 @@ object AccountTokenService {
     * and the rule checked again inside; the log line after the commit. The account as stored now.
     */
   def setPasswordByAdmin(actor: User, accountId: Long, contestId: Option[Long], passwordHash: String,
-      wikimediaSignIn: Boolean, comment: Option[String] = None): Either[ShareLinkService.Refusal, User] = {
+      wikimediaSignIn: Boolean, comment: Option[String] = None,
+      logContest: Option[Long] = None): Either[ShareLinkService.Refusal, User] = {
     val result = User.quietTx { implicit session =>
       User.lockRow(accountId).toRight(ShareLinkService.NotInContest).flatMap { account =>
         ShareLinkService.mayCreate(actor, account, AccountTokenJdbc.PasswordReset, contestId, wikimediaSignIn)
@@ -305,8 +306,9 @@ object AccountTokenService {
             // the invitations a shared link sent to the account's address would find
             val pending = AccountTokenJdbc.pendingInvitationsOf(accountId, account.emailLo)
             val proof = applyProof(account, None, actor.id, pending, Some(passwordHash), emailProven = false)
-            // the account change log, in the same transaction (never the hash)
-            AccountChangeLog.record(actor, accountId, contestId, db.scalikejdbc.AccountChangeJdbc.Password,
+            // the account change log, in the same transaction (never the hash), in the account's
+            // contest (`logContest`), not the request's
+            AccountChangeLog.record(actor, accountId, logContest, db.scalikejdbc.AccountChangeJdbc.Password,
               comment = comment)
             proof
           }

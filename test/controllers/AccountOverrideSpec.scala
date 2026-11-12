@@ -323,6 +323,7 @@ class AccountOverrideSpec extends PlaySpecification with PlayTestDb with Account
         page.select("table.account-changes tbody tr").size === 1
         page.select("table.account-changes tbody tr").text must contain("j.new@example.com")
         page.select("table.account-changes tbody tr").text must contain("typo fixed")
+        page.select("table.account-changes tbody tr").text must contain("notice to the former address queued")
         status(changesPage(root, 10, None)) === OK
 
         status(changesPage(organizer, 10, Some(10))) === FORBIDDEN
@@ -338,6 +339,134 @@ class AccountOverrideSpec extends PlaySpecification with PlayTestDb with Account
         // the users page links to it
         Jsoup.parse(usersPage(admin, 10)).select("a.account-changes-link").attr("href") ===
           "/admin/account-changes?contestId=10"
+      }
+    }
+  }
+
+  "the review of 2026-11-12" should {
+    "not let an admin hand a co-admin's account to an address they set: no invitation, no re-send, no link" in {
+      testDbApp { implicit app =>
+        implicit val mat: Materializer = app.materializer
+        createContests(10, 20)
+        val adminA = account("a@example.com", Some(10), "admin", verified = true)
+        UserContestJdbc.createMembership(adminA.getId, 20, "admin")
+        val adminB = account("b@example.com", Some(10), "admin", password = Some("pw-b"), verified = true)
+        val mail = new RecordingMail
+
+        // B's contests are all A's: A may change the address (canEditAccount), but not hand it a password
+        val changed = save(mail, adminA, Some(10), form(adminB, Some(10), "admin", "email" -> "a.alias@example.com",
+          "sendInvitation" -> "true"): _*)
+        status(changed) === SEE_OTHER
+        flash(changed).get("users-added") must beSome(contain("No invitation can be sent to this account."))
+        reloaded(adminB).email === "a.alias@example.com"
+        mail.recipients === Seq("b@example.com") // the notice to B's former address only
+
+        val resent = call(userController(mail).reinvite(adminB.getId, 10),
+          as(adminA, Some(10))(FakeRequest(POST, s"/users/${adminB.getId}/invite")).withCSRFToken)
+        status(resent) === BAD_REQUEST
+        status(call(userController(mail).shareInvitation(adminB.getId, 10),
+          as(adminA, Some(10))(FakeRequest(POST, s"/users/${adminB.getId}/invitation/share")).withCSRFToken)) === FORBIDDEN
+        // nor through an add of the new address to A's other contest (O2)
+        val added = save(mail, adminA, Some(20), "id" -> "0", "fullname" -> "B", "email" -> "a.alias@example.com",
+          "roles" -> "jury", "contest" -> "20", "sendInvitation" -> "true")
+        status(added) === SEE_OTHER
+        flash(added).get("users-added") must beSome(contain("Accounts no invitation can be sent to"))
+        mail.recipients === Seq("b@example.com")
+        AccountTokenJdbc.findByUser(adminB.getId).filter(_.live) must beEmpty
+        User.login("a.alias@example.com", "pw-b") must beSome
+
+        // root may: the address is the one root wants
+        val root = account("root@example.com", None, "no", root = true, verified = true)
+        status(call(userController(mail).reinvite(adminB.getId, 10),
+          as(root, Some(10))(FakeRequest(POST, s"/users/${adminB.getId}/invite")).withCSRFToken)) === SEE_OTHER
+        mail.recipients.last === "a.alias@example.com"
+      }
+    }
+
+    "refuse an admin's change of a root account's email, and of one that worked in another contest" in {
+      testDbApp { implicit app =>
+        createContests(10, 20)
+        val admin = account("admin@example.com", Some(10), "admin", verified = true)
+        val rootAccount = account("chief@example.com", None, "no", root = true, verified = true)
+        UserContestJdbc.createMembership(rootAccount.getId, 10, "jury")
+        val past = account("past@example.com", Some(10), "jury", password = Some("pw"), verified = true)
+        DB.autoCommit { implicit s =>
+          sql"INSERT INTO round (id, number, contest_id, rates, created_at) VALUES (900, 1, 20, 1, NOW())".update.apply()
+          sql"INSERT INTO round_user (user_id, round_id, role, active) VALUES (${past.getId}, 900, 'jury', 0)".update.apply()
+        }
+        val mail = new RecordingMail
+
+        val forRoot = save(mail, admin, Some(10), form(rootAccount, Some(10), "jury", "email" -> "x@example.com"): _*)
+        status(forRoot) === BAD_REQUEST
+        val forPast = save(mail, admin, Some(10), form(past, Some(10), "jury", "email" -> "y@example.com"): _*)
+        status(forPast) === BAD_REQUEST
+        contentAsString(forPast) must contain("also in other contests")
+        reloaded(rootAccount).email === "chief@example.com"
+        reloaded(past).email === "past@example.com"
+        mail.sent must beEmpty
+        DB.readOnly(implicit s => sql"SELECT COUNT(*) FROM account_change".map(_.long(1)).single()) === Some(0L)
+      }
+    }
+
+    "decide inside the transaction: a taken address, an address changed meanwhile, the unique key" in {
+      testDbApp { implicit app =>
+        createContests(10)
+        val admin = account("admin@example.com", Some(10), "admin", verified = true)
+        val juror = account("juror@example.com", Some(10), "jury", password = Some("pw"), verified = true)
+        val other = account("other@example.com", Some(10), "jury")
+        val service = userService(new RecordingMail)
+        DB.localTx(implicit s => service.changeEmailByAdmin(admin, juror.getId, "OTHER@example.com", Some(10), None)) ===
+          Left("error.email.already.exist")
+        DB.localTx(implicit s => service.changeEmailByAdmin(admin, juror.getId, "new@example.com", Some(10), None,
+          expectedOld = Some("stale@example.com"))) === Left("user.email.changed.meanwhile")
+        reloaded(juror).email === "juror@example.com"
+        log(juror.getId) must beEmpty
+
+        // only users.email's duplicate key reads as a taken address, not any integrity violation
+        val duplicate = scala.util.Try(DB.autoCommit(implicit s =>
+          sql"UPDATE users SET email = ${other.email} WHERE id = ${juror.getId}".update.apply())).failed.get
+        UserController.isDuplicateKey(duplicate) must beTrue
+        val foreignKey = scala.util.Try(DB.autoCommit(implicit s =>
+          sql"INSERT INTO account_change (user_id, actor_id, field) VALUES (999999, 1, 'email')".update.apply())).failed.get
+        UserController.isDuplicateKey(foreignKey) must beFalse
+      }
+    }
+
+    "log root's change in the account's contest only, never root's session contest" in {
+      testDbApp { implicit app =>
+        createContests(10, 20)
+        val root = account("root@example.com", None, "no", root = true, verified = true)
+        val admin20 = account("admin20@example.com", Some(20), "admin", verified = true)
+        val loose = account("loose@example.com", None, "no", password = Some("pw"), verified = true)
+        val mail = new RecordingMail
+        status(save(mail, root, Some(20), "id" -> loose.getId.toString, "fullname" -> "Loose One",
+          "email" -> "loose.new@example.com")) === SEE_OTHER
+        reloaded(loose).email === "loose.new@example.com"
+        log(loose.getId).map(e => (e.field, e.contestId)).toSet ===
+          Set((AccountChangeJdbc.Email, None), (AccountChangeJdbc.Name, None))
+        val page = Jsoup.parse(contentAsString(changesPage(admin20, 20, Some(20))))
+        page.select("table.account-changes tbody tr").size === 0
+        page.text must not(contain("loose"))
+      }
+    }
+
+    "not revert an address changed meanwhile from a stale page, and refuse an edit of it" in {
+      testDbApp { implicit app =>
+        createContests(10)
+        val admin = account("admin@example.com", Some(10), "admin", verified = true)
+        val juror = account("juror@example.com", Some(10), "jury", password = Some("pw"), verified = true)
+        val mail = new RecordingMail
+        // the page showed juror@example.com; someone else changed it since
+        DB.autoCommit(implicit s => sql"UPDATE users SET email = 'moved@example.com' WHERE id = ${juror.getId}".update.apply())
+        status(save(mail, admin, Some(10), form(juror, Some(10), "jury", "fullname" -> "Renamed",
+          "emailWas" -> "juror@example.com"): _*)) === SEE_OTHER
+        reloaded(juror).email === "moved@example.com"
+        reloaded(juror).fullname === "Renamed"
+        val edited = save(mail, admin, Some(10), form(juror, Some(10), "jury", "email" -> "mine@example.com",
+          "emailWas" -> "juror@example.com"): _*)
+        status(edited) === BAD_REQUEST
+        contentAsString(edited) must contain("changed by someone else meanwhile")
+        reloaded(juror).email === "moved@example.com"
       }
     }
   }

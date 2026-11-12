@@ -794,3 +794,6 @@ account.change.field.invitation_cancelled = Запрошення скасова�
 account.change.field.password_link = Посилання для пароля
 account.change.field.share_link = Створено посилання, щоб передати
 account.change.field.sessions_ended = Сеанси завершено
+user.email.changed.meanwhile = Цю адресу електронної пошти тим часом змінив хтось інший. Перезавантажте сторінку і спробуйте ще раз.
+users.invitations.not.possible = Облікових записів, яким не можна надіслати запрошення (їхню адресу встановив адміністратор, а ви не можете дати їм пароль; зверніться до root): {0}.
+account.change.mail.notice.queued = повідомлення на попередню адресу поставлено в чергу
