@@ -41,7 +41,10 @@ The next release is `26.12` (`build.sbt` says `26.12-SNAPSHOT`). Developed from 
 - **Account changes:** every change an admin or root makes to another person's account (email,
   password, role, name, wiki account, accounts created, invitations, links, ended sessions), with
   whether a mail went out and an optional comment, is logged; the contest's admins and root see it
-  on **Account changes** (from the users page) and on the person's edit page (V96).
+  on **Account changes** (from the users page) and on the person's edit page (V96). A change is
+  logged in the account's own contest only (root's edit of an account in no contest: root's
+  log). An account with a password whose address an admin set is invited only by who may set its
+  password (not a fellow admin); a stale edit page doesn't revert an address changed meanwhile.
 
 **Fixes**
 
