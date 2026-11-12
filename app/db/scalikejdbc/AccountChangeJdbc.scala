@@ -12,7 +12,9 @@ import java.time.Instant
   * @param actorId   who changed it
   * @param contestId the contest it was changed in (None: by root outside a contest)
   * @param field     what changed, one of [[AccountChangeJdbc.Fields]]
-  * @param mailSent  whether the change mailed someone (None: no mail applies)
+  * @param mailSent  whether the change mailed someone (None: no mail applies; for an invitation,
+  *                  not known: its flag is set after the mail, and that write failed, or the mail
+  *                  is still going out)
   * @param comment   the editor's optional comment for the log
   */
 final case class AccountChange(

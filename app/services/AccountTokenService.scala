@@ -53,7 +53,9 @@ object AccountTokenService {
 
   /** A new link of the account, sent to `email` (or, `shared`, shown to its creator to pass on,
     * the account's address as it is now); its id and the token, to be mailed or shown once.
-    * `unsent`: an invitation kept without a mail (V96), whose token nobody is shown.
+    * `unsent`: an invitation kept without a mail (V96), whose token nobody is shown. Logged
+    * (`account_token_created`) at once, or, `logCreated` false (made inside a caller's
+    * transaction), by the caller with [[logCreated]] once that has committed.
     */
   def create(
       userId: Long,
@@ -63,17 +65,23 @@ object AccountTokenService {
       role: Option[String] = None,
       createdBy: Option[Long] = None,
       shared: Boolean = false,
-      unsent: Boolean = false
+      unsent: Boolean = false,
+      logCreated: Boolean = true
   )(implicit session: DBSession = AutoSession): (Long, String) = {
     val token = generate()
     val id = AccountTokenJdbc.create(userId, purpose, hash(token), LoginText.email(email), contestId, role, createdBy,
       validSeconds(purpose), shared, unsent)
+    if (logCreated) this.logCreated(id, userId, purpose, contestId, role, createdBy, shared, unsent)
+    (id, token)
+  }
+
+  /** The `account_token_created` line of a link [[create]] made. */
+  def logCreated(id: Long, userId: Long, purpose: String, contestId: Option[Long], role: Option[String],
+      createdBy: Option[Long], shared: Boolean = false, unsent: Boolean = false): Unit =
     logger.info(
       s"account_token_created purpose=$purpose tokenId=$id accountId=$userId" +
         createdBy.fold("")(c => s" byAccountId=$c") + contestId.fold("")(c => s" contestId=$c") +
         role.fold("")(r => s" role=$r") + (if (shared) " shared=true" else "") + (if (unsent) " unsent=true" else ""))
-    (id, token)
-  }
 
   /** Why a link is refused: logged, never shown (every refusal shows the same page, N7). */
   sealed abstract class Refusal(val reason: String)

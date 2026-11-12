@@ -120,7 +120,7 @@ class NewAccountProductionSchemaSpec extends PlaySpecification with PlayTestDb w
             (page must contain("Existing accounts added to the contest: 1.")) and
             (othersPage must not(contain("new+tag@example.com"))) and
             (again must not(contain("new+tag@example.com"))) and
-            (again must contain("3 lines were not added, and their list is no longer available.")) and
+            (again must contain("Lines not added: 3. Their list is no longer available")) and
             // the lines that could be added are, and committed; one invitation mailed, once; no mail
             // to anyone not added
             (UserContestJdbc.findByUser(existing.getId).map(_.contestId).sorted === Seq(10L, 11L)) and
@@ -173,7 +173,7 @@ class NewAccountProductionSchemaSpec extends PlaySpecification with PlayTestDb w
         }
         val controller = new UserController(app.injector.instanceOf[play.api.mvc.ControllerComponents], failingFlag,
           app.injector.instanceOf[modules.BlockingExecutionContext])
-        val (result, log) = accountLog {
+        val (result, entries) = accountLogWithThrowables {
           val r = call(controller.saveUser(), as(admin, 10)(FakeRequest(POST, "/users/save"))
             .withFormUrlEncodedBody("id" -> "0", "contest" -> "10", "fullname" -> "Flagged", "email" -> "flagged@example.com",
               "roles" -> "jury", "sendInvitation" -> "true").withCSRFToken)
@@ -181,14 +181,21 @@ class NewAccountProductionSchemaSpec extends PlaySpecification with PlayTestDb w
           r
         }
         val flagged = User.findByEmail("flagged@example.com").headOption
-        val notRecorded = log.filter(_.startsWith("account_change_mail_flag_not_recorded"))
+        // the account's edit page lists the entry with its mail "not known"
+        val editPage = contentAsString(call(controller.editUser(flagged.get.getId, Some(10L)),
+          as(admin, 10)(FakeRequest(GET, s"/users/edit/${flagged.get.getId}?contestId=10")).withCSRFToken))
+        val notRecorded = entries.filter(_._1.startsWith("account_change_mail_flag_not_recorded"))
+        val logged = entries.flatMap { case (line, trace) => line +: trace.toSeq }.mkString("\n")
         (status(result) === SEE_OTHER) and
           (flagged must beSome) and
           (mail.recipients === Seq("flagged@example.com")) and
           (invitationEntries(flagged.get.getId) === Seq(None)) and
+          ("""(?s)<td>Invitation</td>.*?<td>not known</td>""".r.findFirstIn(editPage) must beSome) and
           (notRecorded.size === 1) and
-          (notRecorded.head must contain("mailSent=true error=java.sql.SQLException causes=java.io.IOException")) and
-          (log.mkString("\n") must not(contain("flagged@example.com")))
+          (notRecorded.head._1 must contain("mailSent=true error=java.sql.SQLException causes=java.io.IOException")) and
+          // the exception and its cause, classes and stacks only (R220-1)
+          (notRecorded.head._2 must beSome(contain("Caused by: java.lang.Exception: java.io.IOException (message not logged)"))) and
+          (logged must not(contain("flagged@example.com"))) and (logged must not(contain("connection reset")))
       }
     }
   }

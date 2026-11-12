@@ -24,6 +24,17 @@ class ImportResultsSpec extends Specification {
         (ImportResults.take("no-such-key", 1L, 10L) must beNone)
     }
 
+    "keep the first lines not added up to the most it lists, and count the rest" in {
+      ImportResults.clear()
+      val many = (1 to ImportResults.MaxProblems + 3).map(i =>
+        UserController.ImportProblem(i, User("", s"p$i@example.com"), Some("abcd1234")))
+      val key = ImportResults.put(1L, 10L, result.copy(problems = many), now = 0L)
+      ImportResults.take(key, 1L, 10L, now = 1L) must beSome.like { case r =>
+        (r.problems.size === ImportResults.MaxProblems) and (r.problems.last.line === ImportResults.MaxProblems) and
+          (r.notListed === 3)
+      }
+    }
+
     "expire" in {
       ImportResults.clear()
       val key = ImportResults.put(1L, 10L, result, now = 0L)

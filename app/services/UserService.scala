@@ -221,15 +221,25 @@ class UserService @Inject()(val sendMail: SMTPOrWikiMail,
     require(!invitationRefused(creator, account), "an invitation this creator may not send")
     val contestId = contestOpt.flatMap(_.id)
     // the invitation and its log entry together (#294): the entry is never missing; mailed or
-    // not is set once the mail is out (until then NULL, "no mail applies")
+    // not is set once the mail is out (until then NULL, shown as "not known").
+    // Locks: the account's users row first, then its links, the order of a link's acceptance
+    // (ShareLinkService) and of addToContest's join: in one transaction, the links' rows first
+    // (revokeUnused) and the row after (the inserts' foreign keys) could deadlock with an
+    // acceptance. No caller holds that row in another open transaction while it calls this
+    // (addToContest's join commits first), or this would wait on it until
+    // innodb_lock_wait_timeout; keep it so.
     val (tokenId, token, changeId) = scalikejdbc.DB.localTx { implicit session =>
+      val _ = User.lockRow(account.getId)
       AccountTokenJdbc.revokeUnused(account.getId, Seq(AccountTokenJdbc.Invitation), contestId)
       val (tokenId, token) = AccountTokenService.create(account.getId, AccountTokenJdbc.Invitation, account.emailLo,
-        contestId, role, creator.id, unsent = !mail)
+        contestId, role, creator.id, unsent = !mail, logCreated = false)
       val changeId = AccountChangeLog.record(creator, account.getId, contestId, AccountChangeJdbc.Invitation,
         newValue = role, mailSent = if (mail) None else Some(false), comment = comment)
       (tokenId, token, changeId)
     }
+    // logged once it is committed: a rolled back link is never in the log
+    AccountTokenService.logCreated(tokenId, account.getId, AccountTokenJdbc.Invitation, contestId, role, creator.id,
+      unsent = !mail)
     val sent = mail && {
       val link = linkUrl(controllers.routes.LoginController.invitation(token).url)
       val (subject, body) = invitationText(creator, account, contestOpt, link)

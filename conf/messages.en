@@ -829,4 +829,6 @@ users.import.line.invalid = Line {0}: {1}: not an email address or a valid Wikim
 users.import.problems.intro = The other lines were imported. The lines not added are filled in below, to import again.
 users.import.problems.correct = Correct the entries that are not valid before importing them again.
 users.import.problems.retry = If an error happens again, tell whoever runs the jury tool its reference. Anyone the users page already lists only needs their invitation sent from there.
-users.import.problems.lost = {0} lines were not added, and their list is no longer available. Check the users page and import the people missing from it again.
+users.import.problems.lost = Lines not added: {0}. Their list is no longer available: check the users page and import the people missing from it again.
+users.import.problems.more = Lines not added and not listed here: {0}. Check the users page for who is missing.
+account.change.mail.unknown = not known

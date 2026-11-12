@@ -589,7 +589,7 @@ class AccountInvitationSpec extends PlaySpecification with PlayTestDb with Accou
         }
         val controller = new UserController(app.injector.instanceOf[play.api.mvc.ControllerComponents], failing,
           app.injector.instanceOf[modules.BlockingExecutionContext])
-        val (result, log) = accountLog {
+        val (result, entries) = accountLogWithThrowables {
           val r = call(controller.importUsers(Some(10L)),
             as(admin, Some(10L))(FakeRequest(POST, "/admin/importusers?contestId=10"))
               .withFormUrlEncodedBody("sendInvitation" -> "true", "userstoimport" -> "first@example.com\nbroken@example.com\nlast@example.com",
@@ -597,7 +597,10 @@ class AccountInvitationSpec extends PlaySpecification with PlayTestDb with Accou
           status(r)
           r
         }
+        val log = entries.map(_._1)
         val failed = log.filter(_.startsWith("user_import_line_failed"))
+        // the log file's text: the lines and the exceptions logged with them
+        val logged = entries.flatMap { case (line, trace) => line +: trace.toSeq }.mkString("\n")
         val reference = failed.flatMap("ref=([0-9a-f]{8}) ".r.findFirstMatchIn(_).map(_.group(1)))
         status(result) === SEE_OTHER
         redirectLocation(result) must beSome("/admin/importusers?contestId=10")
@@ -613,7 +616,11 @@ class AccountInvitationSpec extends PlaySpecification with PlayTestDb with Accou
         User.findByEmail("broken@example.com") must beEmpty
         failed === Seq(s"user_import_line_failed ref=${reference.head} line=2 byAccountId=${admin.getId} contestId=10 " +
           "error=java.sql.SQLException")
-        log.mkString("\n") must not(contain("broken@example.com"))
+        // the exception's class and stack are logged, never its message (R220-1)
+        logged must contain("java.lang.Exception: java.sql.SQLException (message not logged)")
+        logged must contain("UserController")
+        logged must not(contain("broken@example.com"))
+        logged must not(contain("Duplicate entry"))
       }
     }
   }

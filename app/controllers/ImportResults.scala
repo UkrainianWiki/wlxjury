@@ -13,9 +13,16 @@ import scala.jdk.CollectionConverters._
   */
 object ImportResults {
 
-  final case class Result(problems: Seq[UserController.ImportProblem], role: String, sendInvitation: Boolean)
+  /** The lines not added (at most [[MaxProblems]]), how many more there were (`notListed`), and
+    * the role and mail choice to import them again with.
+    */
+  final case class Result(problems: Seq[UserController.ImportProblem], role: String, sendInvitation: Boolean,
+                          notListed: Int = 0)
 
   private final case class Entry(accountId: Long, contestId: Long, storedAt: Long, result: Result)
+
+  /** At most this many lines not added are kept and listed per import; the rest are counted. */
+  val MaxProblems = 1000
 
   /** How long a result waits for its page. */
   val TtlMillis: Long = 10 * 60 * 1000L
@@ -32,11 +39,15 @@ object ImportResults {
     bytes.map("%02x".format(_)).mkString
   }
 
-  /** Keeps `result` for `accountId` in `contestId`; the key for the flash. */
+  /** Keeps `result` for `accountId` in `contestId`, its first [[MaxProblems]] lines (the others
+    * counted); the key for the flash.
+    */
   def put(accountId: Long, contestId: Long, result: Result, now: Long = System.currentTimeMillis()): String = {
     prune(now)
     val key = newKey()
-    entries.put(key, Entry(accountId, contestId, now, result))
+    val (kept, rest) = result.problems.splitAt(MaxProblems)
+    entries.put(key, Entry(accountId, contestId, now,
+      result.copy(problems = kept.toVector, notListed = result.notListed + rest.size)))
     key
   }
 

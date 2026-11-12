@@ -75,10 +75,12 @@ The next release is `26.12` (`build.sbt` says `26.12-SNAPSHOT`). Developed from 
   and a line with an invalid wiki account name is listed as such; the other lines are added as before (each line
   in its own transactions), and the form comes back with only the lines not added, to import again. The import
   redirects to that page (post/redirect/get: a reload imports nothing again, so no second invitation mail); the
-  list waits on the server for that page, once, for its admin only, up to 10 minutes (after a restart the page
-  says how many lines it had). No mail goes out for a failed line: an invitation's change log entry is written
-  with its token, and its mail is the last step; whether it was mailed is set after it, and a flag that can't be
-  written is logged (`account_change_mail_flag_not_recorded`) without failing the add. The "could not be added"
+  list waits on the server for that page, once, for its admin only, up to 10 minutes and 1,000 lines (the rest
+  counted; after a restart the page says how many lines it had). No mail goes out for a failed line: an
+  invitation's change log entry is written with its token (the account's row locked first, as a link's
+  acceptance does), and its mail is the last step; whether it was mailed is set after it, and a flag that can't
+  be written is logged (`account_change_mail_flag_not_recorded`) without failing the add; the change log then
+  shows the invitation's mail as "not known". The "could not be added"
   count (`users.not.added`) is gone: nothing skips lines any more.
 
 **Development**

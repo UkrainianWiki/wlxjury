@@ -45,7 +45,8 @@
                 <td>@value(row.change.field, row.change.oldValue).getOrElse("")</td>
                 <td>@value(row.change.field, row.change.newValue).getOrElse("")</td>
                 @* an email change's notice to the former address goes out after the save: queued *@
-                <td>@row.change.mailSent.map(s => Messages(if (!s) "account.change.mail.not.sent" else if (row.change.field == AccountChangeJdbc.Email) "account.change.mail.notice.queued" else "account.change.mail.sent")).getOrElse("")</td>
+                @* an invitation's flag is set after its mail: none there is not known (UserService.invite) *@
+                <td>@row.change.mailSent.map(s => Messages(if (!s) "account.change.mail.not.sent" else if (row.change.field == AccountChangeJdbc.Email) "account.change.mail.notice.queued" else "account.change.mail.sent")).getOrElse(if (row.change.field == AccountChangeJdbc.Invitation) Messages("account.change.mail.unknown") else "")</td>
                 <td class="account-change-comment">@row.change.comment.getOrElse("")</td>
             </tr>
         }

@@ -518,7 +518,9 @@ The app assumes that one instance serves a database at a time. Some state lives 
 `RoundImageCounts` caches each round's image count and is invalidated only in the process that
 wrote (another instance's counts stay stale for up to the cache's TTL, 10 minutes); the job
 scheduler's per-kind limits and turn-taking, the bcrypt sign-in limits (`bcrypt.*`), local image
-download progress and the distribution's cached chunks are per process too. Rounds are locked
+download progress and the distribution's cached chunks are per process too, and so is an Import
+users result between its redirect and the import page (`ImportResults`, kept 10 minutes: on
+another instance, or after a restart, the page says only how many lines were not added). Rounds are locked
 in the database (`SELECT … FOR UPDATE`) and jobs hold a lease in the `job` table, but running two
 instances against one database was never designed for or tested. The release tools stop the old
 service before starting the new one; keep it that way (the blue/green slots, which could run two

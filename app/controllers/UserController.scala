@@ -870,7 +870,7 @@ class UserController @Inject()(cc: ControllerComponents,
               } { r =>
                 Ok(views.html.importUsers(user,
                   importUsersForm.fill((r.problems.map(_.entryText).mkString("\n"), r.role, r.sendInvitation)),
-                  contestId, r.problems, summary))
+                  contestId, r.problems, summary, notListed = r.notListed))
               }
           }
         }

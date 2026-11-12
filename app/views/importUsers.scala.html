@@ -4,7 +4,8 @@
         contestId: Long,
         problems: Seq[controllers.UserController.ImportProblem] = Nil,
         result: Option[String] = None,
-        lost: Int = 0)(implicit flash: Flash, messages: Messages, req: RequestHeader)
+        lost: Int = 0,
+        notListed: Int = 0)(implicit flash: Flash, messages: Messages, req: RequestHeader)
 @import helper._
 
 @mainAdmin("users", adminUser, adminUser.getId, contestId = Some(contestId)) {
@@ -20,11 +21,17 @@
             <div class="alert alert-warning" role="alert" id="import-problems">
                 <h2 class="h5">@Messages("users.import.problems.title")</h2>
                 <ul class="mb-2">
-                    @for(p <- problems) {
+                    @* at most ImportResults.MaxProblems lines; the rest are counted *@
+                    @for(p <- problems.take(controllers.ImportResults.MaxProblems)) {
                         <li>@p.reference.fold(Messages("users.import.line.invalid", p.line.toString, p.entry))(ref =>
                             Messages("users.import.line.failed", p.line.toString, p.entry, ref))</li>
                     }
                 </ul>
+                @defining(notListed + (problems.size - controllers.ImportResults.MaxProblems).max(0)) { more =>
+                    @if(more > 0) {
+                        <p class="mb-1">@Messages("users.import.problems.more", more)</p>
+                    }
+                }
                 <p class="mb-1">@Messages("users.import.problems.intro")</p>
                 @if(problems.exists(_.reference.isEmpty)) {
                     <p class="mb-1">@Messages("users.import.problems.correct")</p>
