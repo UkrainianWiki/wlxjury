@@ -11,9 +11,11 @@ The rule (decided by the maintainer, 2026-11-12):
     vote row in the round (a vote only changes an existing row), or when the Referer is a page of
     the juror's own list (/gallery|large|byrate/.../user/U/... with U among the file's jurors);
     an IP + user agent session tie is optional (--session-attribution, off by default);
-  - per (round, file, juror) the latest attributed request wins, by (UTC second, log order);
+  - per (round, file, juror) the latest attributed request decides, by (UTC second, log order);
   - it is used only if the value it set equals the vote's current rate, and the rate is not 0,
-    and no unattributed vote request came later on the same file (it may have been this juror's).
+    and no unattributed vote request came later on the same file (it may have been this juror's);
+  - the row gets the time of the first of its last requests that all set that value (the app's
+    rule: a vote of the same value again keeps the time), or with --latest the latest one's.
 The guard (same rate, no time yet) makes the SQL safe to rerun and safe against votes changed
 after the extract: the app sets voted_at on every change of the rate since V97.
 
@@ -56,10 +58,11 @@ import shlex
 import subprocess
 import sys
 
-# The time of the last of a juror's requests on a file (the agreed rule), or, with RUN_START, of
-# the first of the last requests that all set the current value (the app's rule: a vote of the
-# same value again keeps the time). A pending maintainer decision: flip here.
-RUN_START_DEFAULT = False
+# The time of the first of a juror's last requests on a file that all set the current value
+# (the app's rule: a vote of the same value again keeps the time; the maintainer, 2026-11-12), or,
+# with --latest, of the last request. On the saved extract only 271 rows differ, 239 of them by
+# under 10 s, mostly a key pressed twice in the large view.
+RUN_START_DEFAULT = True
 
 # "<vhost:port> <ip> <ident> <user> [<time>] "<method> <path> <proto>" <status> <bytes> "<referer>" "<ua>""
 # with the extract's "<log basename> " in front (optional here, for plain log lines)
@@ -408,7 +411,7 @@ def session_ties(events, attributed, window):
 def make_plan(events, db, session_attribution=False, session_window=1800, run_start=RUN_START_DEFAULT):
     """Attributes the vote requests and chooses each vote row's time. `run_start` takes, of the
     juror's last requests that all set the current value, the first (the app's semantics: a vote
-    of the same value again keeps the time) instead of the latest (the agreed rule)."""
+    of the same value again keeps the time) instead of the latest."""
     plan = Plan()
     attributed = {}      # id(event) -> juror
     pending = []
@@ -597,7 +600,7 @@ def main(argv=None):
                     help='time of the first of the last same-value requests (the app\'s rule)' +
                     (' (default)' if RUN_START_DEFAULT else ''))
     ap.add_argument('--latest', dest='run_start', action='store_false',
-                    help='time of the latest request (the agreed rule)' + ('' if RUN_START_DEFAULT else ' (default)'))
+                    help='time of the latest request' + ('' if RUN_START_DEFAULT else ' (default)'))
     args = ap.parse_args(argv)
     if not (args.out or args.dry_run or args.check):
         ap.error('--out is required unless --dry-run or --check')

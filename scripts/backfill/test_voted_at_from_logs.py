@@ -171,10 +171,12 @@ class LatestWinsTest(unittest.TestCase):
         lines = [vote('05/Nov/2026:10:00:00 +0100', 1, 100, 1),
                  vote('05/Nov/2026:10:00:10 +0100', 1, 100, 2),
                  vote('05/Nov/2026:10:00:20 +0100', 1, 100, 2)]
-        plan, _ = plan_of(lines, self.rows)
-        self.assertEqual(times(plan), {7: '2026-11-05 09:00:20.000'})
+        plan, _ = plan_of(lines, self.rows)   # the default: the run's start, as the app
+        self.assertEqual(times(plan), {7: '2026-11-05 09:00:10.000'})
         self.assertEqual(plan.diag['same value voted again after the change (latest vs run start differ)'], 1)
-        plan, _ = plan_of(lines, self.rows, run_start=True)
+        plan, _ = plan_of(lines, self.rows, run_start=False)
+        self.assertEqual(times(plan), {7: '2026-11-05 09:00:20.000'})
+        plan, _ = plan_of(lines[1:2], self.rows)   # a run of one request
         self.assertEqual(times(plan), {7: '2026-11-05 09:00:10.000'})
 
 
@@ -531,10 +533,10 @@ class MainTest(unittest.TestCase):
         _, stdout = self.run_main('--dry-run', '--allow-gap', self.ex1, other)
         self.assertIn('1 other vhosts', stdout)
 
-    def test_run_start_default_is_one_constant(self):
+    def test_run_start_is_the_default(self):
+        self.assertTrue(bf.RUN_START_DEFAULT)
         _, stdout = self.run_main('--dry-run', self.ex1)
-        self.assertIn('Time of a row: ' + ('the first of the last same-value requests (--run-start)'
-                                           if bf.RUN_START_DEFAULT else 'the latest request'), stdout)
+        self.assertIn('Time of a row: the first of the last same-value requests', stdout)
         _, stdout = self.run_main('--dry-run', '--run-start', self.ex1)
         self.assertIn('Time of a row: the first of the last same-value requests', stdout)
         _, stdout = self.run_main('--dry-run', '--latest', self.ex1)
