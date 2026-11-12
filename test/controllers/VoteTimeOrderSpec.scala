@@ -314,6 +314,71 @@ class VoteTimeOrderSpec extends PlaySpecification with ThrownExpectations with P
       }
     }
 
+    "show one juror's yes/no vote with its time read-only in the large view's side bar, no controls, none in the others" in {
+      testDbApp { implicit app =>
+        val f = fixture(Round.binaryRound, binaryRates)
+        val (_, organizer) = others(f)
+        val r = f.round.getId
+        def large(viewer: User, asUser: Long, pageId: Long) = {
+          val result = getAs(s"/large/round/$r/user/$asUser/pageid/$pageId?sort=file", viewer)
+          status(result) === OK
+          Jsoup.parse(contentAsString(result))
+        }
+        /** The side bar's vote block: its mark's class and words, its time, if any. */
+        def block(doc: org.jsoup.nodes.Document) =
+          Option(doc.selectFirst(".large-side .wlx-large-viewed-vote")).map { b =>
+            val mark = b.selectFirst(".wlx-viewed-vote-mark")
+            (mark.className, mark.text, Option(b.selectFirst(".wlx-large-vote-time")).map(_.text))
+          }
+        def controls(doc: org.jsoup.nodes.Document) = doc.select(".large-side [data-vote-url]").size
+        val yes = large(organizer, f.juror.getId, 8L)
+        val no = large(organizer, f.juror.getId, 5L)
+        val untimed = large(organizer, f.juror.getId, 4L)
+        val unrated = large(organizer, f.juror.getId, 2L)
+        (block(yes) === Some(("wlx-viewed-vote-mark wlx-vote-selected", "Selected", Some(s"· Voted ${iso(3)}")))) and
+          (block(no) === Some(("wlx-viewed-vote-mark wlx-vote-rejected", "Rejected", Some(s"· Voted ${iso(5)}")))) and
+          (block(untimed) === Some(("wlx-viewed-vote-mark wlx-vote-selected", "Selected", Some("· Time not recorded")))) and
+          (block(unrated) === Some(("wlx-viewed-vote-mark text-body-secondary", "Unrated", None))) and
+          (forall(Seq(yes, no, untimed, unrated))(doc => controls(doc) === 0)) and
+          // whose vote it is: the large view has no navbar juror menu
+          (forall(Seq(yes, no, untimed, unrated))(doc => doc.select(".large-side .wlx-viewed-juror").text === "Juror")) and
+          (large(f.juror, f.juror.getId, 8L).select(".wlx-viewed-juror").size === 0) and
+          (large(organizer, 0L, 8L).select(".wlx-viewed-juror").size === 0) and
+          // the juror's own view: their vote buttons and the time after them, as before
+          (block(large(f.juror, f.juror.getId, 8L)) must beNone) and
+          (controls(large(f.juror, f.juror.getId, 8L)) must be_>(0)) and
+          (large(f.juror, f.juror.getId, 8L).select(".large-side .wlx-large-vote-time").text === s"Voted ${iso(3)}") and
+          // all the jurors' votes together: no one juror's vote or time
+          (block(large(organizer, 0L, 8L)) must beNone) and
+          (large(organizer, 0L, 8L).select(".wlx-large-vote-time").size === 0)
+      }
+    }
+
+    "show one juror's rate read-only with its time in a rated round's large view side bar, the unrated without one" in {
+      testDbApp { implicit app =>
+        val f = fixture(Round.ratesById(5), starRates)
+        val (_, organizer) = others(f)
+        def large(pageId: Long) = {
+          val result = getAs(s"/large/round/${f.round.getId}/user/${f.juror.getId}/pageid/$pageId?sort=file", organizer)
+          status(result) === OK
+          Jsoup.parse(contentAsString(result)).selectFirst(".large-side")
+        }
+        val rated = large(8L)
+        val unrated = large(2L)
+        (rated.select(".wlx-viewed-juror").text === "Juror") and
+          (rated.selectFirst("#rate-number").text === "5") and
+          (rated.selectFirst("#rate-image").attr("data-readonly") === "true") and
+          (rated.select(".wlx-large-vote-time").text === s"Voted ${iso(3)}") and
+          (rated.select("[data-vote-url], [data-vote-prefix]").size === 0) and
+          (unrated.selectFirst("#rate-number").text === "–") and
+          (unrated.select(".wlx-large-vote-time").size === 0) and {
+            // a juror without a name: no empty line for it
+            DB.autoCommit { implicit s => sql"UPDATE users SET fullname = '' WHERE id = ${f.juror.getId}".update() }
+            large(8L).select(".wlx-viewed-juror").size === 0
+          }
+      }
+    }
+
     /** #gallery's attribute `name`, and each tile's in file order. */
     def galleryAttr(html: String, name: String): Option[String] =
       Option(Jsoup.parse(html).getElementById("gallery")).map(_.attr(name)).filter(_.nonEmpty)

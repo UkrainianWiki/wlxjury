@@ -541,6 +541,23 @@ object User extends CRUDMapper[User] {
             EXISTS(SELECT 1 FROM round_user ru WHERE ru.round_id = $roundId AND ru.user_id = $userId)))"""
       .map(_.boolean(1)).single().getOrElse(false)
 
+  /** Of `roundIds`, the rounds the user is a juror of as [[isRoundJuror]] decides it (votes in
+    * it, or round_user, active or not), in one query: the galleries' round menu, which opens
+    * another round with the juror's votes only where they are its juror
+    * ([[controllers.RoundList.inRound]]).
+    */
+  def roundsJuredIn(userId: Long, roundIds: Seq[Long])(implicit session: DBSession = autoSession): Set[Long] =
+    if (roundIds.isEmpty) Set.empty
+    else {
+      val ids = roundIds.distinct
+      sql"""SELECT j.round_id FROM (
+              SELECT DISTINCT round_id FROM vote WHERE round_id IN ($ids) AND jury_id = $userId
+              UNION
+              SELECT round_id FROM round_user WHERE round_id IN ($ids) AND user_id = $userId) j
+            WHERE EXISTS(SELECT 1 FROM users u WHERE u.id = $userId)"""
+        .map(_.long(1)).list().toSet
+    }
+
   /** The round's jurors as [[isRoundJuror]] accepts them, ordered by id: with votes in it
     * or assigned to it (round_user, active or not). The galleries' juror menu, so that it
     * lists every juror an organiser may view the round as, also one without votes yet.

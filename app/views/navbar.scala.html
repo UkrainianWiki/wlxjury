@@ -35,13 +35,18 @@
     if (l.asUserId == user.getId && l.view == GalleryView.Gallery) l else RoundList.landing(l.round, user)
 }
 
-@* The rounds the viewer may see, each opening the list in it *@
+@* The rounds the viewer may see, each opening the list in it (RoundList.inRound): another juror's
+   votes only in the rounds they are a juror of, read for all the menu's rounds in one query *@
 @roundMenu(l: RoundList) = {
+    @defining(if (l.asUserId == 0 || l.asUserId == user.getId) Set.empty[Long]
+              else User.roundsJuredIn(l.asUserId, rounds.flatMap(_.id))) { jurorRounds =>
     @(new UiSelectionDto[Long](
-        (roundId: Long) => Call("GET", rounds.find(_.getId == roundId).fold("#")(r => l.withRound(r).pageUrl(1))),
+        (roundId: Long) => Call("GET", rounds.find(_.getId == roundId).fold("#")(r =>
+            l.inRound(r, user.getId, jurorRounds.contains(r.getId)).pageUrl(1))),
         l.roundId,
         rounds.map(r => (r.getId, SelectionItem(r.description, localized = false)))
     ).toDropDown())
+    }
 }
 
 @* The viewer's own files by their votes, in all regions: all, the unrated, and the selected and
