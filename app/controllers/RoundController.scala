@@ -11,7 +11,7 @@ import play.api.libs.json.Json
 import play.api.mvc.{AnyContent, ControllerComponents, EssentialAction, Request, RequestHeader, Result}
 import play.twirl.api.Html
 import services.RoundService
-import services.distribution.RoundDistributionHandler
+import services.distribution.{RoundDistributionHandler, RoundImageCheckHandler}
 import services.imports.{FileTitles, ImportSource}
 import services.jobs.JobJdbc
 
@@ -55,7 +55,9 @@ class RoundController @Inject() (
               imagesForm.fill(contest.images),
               selectRoundForm,
               rounds.find(_.id == contest.currentRound),
-              contest
+              contest,
+              // root's all-rounds check: not shown to a contest's admins
+              Option.when(user.isRoot)(JobJdbc.latestByDedupeKey(RoundImageCheckHandler.AllDedupeKey)).flatten
             )
           )
         }
@@ -137,7 +139,10 @@ class RoundController @Inject() (
       round.id.flatMap(roundsService.distributionJob),
       Some(coiCounts(contestId, round.id)),
       CriterionJdbc.all(),
-      round.id.flatMap(id => RoundController.ScoreRuleWarning.of(id, rounds))
+      round.id.flatMap(id => RoundController.ScoreRuleWarning.of(id, rounds)),
+      // the check is queued by the contest's admins (and root): this page is theirs
+      round.id.flatMap(id =>
+        JobJdbc.latestBySubjects(RoundImageCheckHandler.Kind, RoundImageCheckHandler.SubjectType, Seq(id)).get(id))
     )
   }
 

@@ -125,7 +125,12 @@ function pollJobStatus(el, options) {
 
 function initJobStatuses() {
     var els = document.querySelectorAll(".job-status[data-src]");
-    for (var i = 0; i < els.length; i++) pollJobStatus(els[i]);
+    for (var i = 0; i < els.length; i++) {
+        // a page may include this script more than once: poll each element once
+        if (els[i].getAttribute("data-polling") === "true") continue;
+        els[i].setAttribute("data-polling", "true");
+        pollJobStatus(els[i]);
+    }
 }
 
 if (typeof document !== "undefined" && typeof module === "undefined") {

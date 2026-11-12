@@ -27,6 +27,15 @@ with `.N` for an extra deploy in the same month (`26.11.1`), and release heading
 
 The next release is `26.12` (`build.sbt` says `26.12-SNAPSHOT`). Developed from 2026-11-11.
 
+**Features**
+
+- **Image check result on the page:** root's **Check every round's images** (Rounds page) and an admin's
+  **Check round images** (Edit round) show the check's progress there, polled like a distribution, and then a
+  one-line summary ("Image check (job 29, 2026-11-12): 1,823 rounds checked, no mismatches", or the
+  rows added, fixed or removed, the orphaned criteria rates archived and the rounds skipped); a failed or
+  cancelled check shows its status with a link to the job. No longer raw JSON at /admin/jobs/:id only.
+  The all-rounds summary is root's alone.
+
 **Fixes**
 
 - **Ukrainian:** a round that is not active shows «Ні» (no) in the rounds list's Active column, not «Немає» (absent).

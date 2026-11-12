@@ -11,7 +11,8 @@
         editImagesForm: Form[Option[String]],
         selectRoundForm: Form[SelectRound],
         round: Option[Round],
-        contest: ContestJury
+        contest: ContestJury,
+        imageCheckJob: Option[services.jobs.Job] = None
 )(implicit flash: Flash, messages: Messages, req: RequestHeader)
 
     @mainAdmin("rounds", adminUser, adminUser.getId,
@@ -92,6 +93,9 @@
                 }
 
             </div>
+            @for(job <- imageCheckJob if adminUser.isRoot) {
+                @snippets.imageCheckStatus(job, req.uri)
+            }
 
         </div>
     }
