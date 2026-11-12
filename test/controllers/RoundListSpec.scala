@@ -76,6 +76,28 @@ class RoundListSpec extends Specification {
     }
   }
 
+  "a list in another round from the round menu (inRound)" should {
+    val other = round.copy(id = Some(11))
+    val jurorList = RoundList(round, 3, Some("80"), VoteFilter.Rated, ListOrder.OldestVote, GalleryView.ByRate)
+
+    "keep a juror's votes, as the organisers view them, in a round they are a juror of" in {
+      jurorList.inRound(other, viewerId = 4, jurorOfRound = true) === jurorList.withRound(other)
+    }
+
+    "be all the jurors' votes, by rate, in a round they are not a juror of" in {
+      val all = jurorList.inRound(other, viewerId = 4, jurorOfRound = false)
+      (all.asUserId, all.order, all.filter, all.view, all.region) ===
+        ((0L, ListOrder.ByRate, VoteFilter.Rated, GalleryView.ByRate, Some("80")))
+      all.pageUrl(1) === "/byrate/round/11/user/0/region/80/page/1?filter=rated&sort=rate"
+    }
+
+    "leave the viewer's own list and all the jurors' votes as they were" in {
+      jurorList.inRound(other, viewerId = 3, jurorOfRound = false) === jurorList.withRound(other)
+      val all = RoundList(round, 0, order = ListOrder.Binary(BinaryOrder.Difference))
+      all.inRound(other, viewerId = 4, jurorOfRound = false) === all.withRound(other)
+    }
+  }
+
   "a large view's way back" should {
     "be its module=, a gallery or by rate, else the gallery" in {
       GalleryView.of(FakeRequest("GET", "/?module=byrate")) === GalleryView.ByRate

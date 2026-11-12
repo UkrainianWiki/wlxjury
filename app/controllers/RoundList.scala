@@ -482,6 +482,18 @@ final case class RoundList(
   /** The list in another round, its filter all files if that round's kind hasn't it. */
   def withRound(round: Round): RoundList = copy(round = round, filter = filter.in(round))
 
+  /** The list in another round as the galleries' round menu opens it, for `viewerId`. One juror's
+    * votes as the organisers view them (neither the viewer's own nor all together) stay that
+    * juror's only in a round they are a juror of (`jurorOfRound`, [[User.roundsJuredIn]]):
+    * elsewhere the juror's list is refused ([[services.GalleryService.viewAs]]), so it is all the
+    * jurors' votes there, as the juror menu's "all", in that list's default order (by rate, a
+    * yes/no round's in the binary order last chosen, [[RoundList.of]]): a juror's order by vote
+    * time isn't one of its, and a named binary order would be remembered as chosen.
+    */
+  def inRound(round: Round, viewerId: Long, jurorOfRound: Boolean): RoundList =
+    if (asUserId == 0 || asUserId == viewerId || jurorOfRound) withRound(round)
+    else withRound(round).withViewer(0).withOrder(ListOrder.ByRate)
+
   /** The list's query string: its view (`module`, for a large view's way back), filter and
     * order.
     */
