@@ -149,6 +149,7 @@ total = Разом
 21=Закарпатская
 51=Одесская
 profile=Профиль
+signed.in.as = Вы вошли как
 regions=Регионы
 
 full.resolution = Полное разрешение: <nobr>{0}</nobr>; {1} Мпкс

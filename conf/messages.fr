@@ -22,6 +22,7 @@ access.denied.contact=Si vous avez besoin d’un accès, demandez à l’adminis
 access.denied.reference=Référence : {0}, {1}
 password=Mot de passe
 profile = Profil
+signed.in.as = Connecté en tant que
 
 users = Utilisateurs
 rounds = Tours

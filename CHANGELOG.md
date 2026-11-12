@@ -46,6 +46,9 @@ The next release is `26.12` (`build.sbt` says `26.12-SNAPSHOT`). Developed from 
   log). An account that can sign in (a password, Google or Wikimedia) whose address an admin set
   is invited only by who may set its password (not a fellow admin); a stale edit page doesn't
   revert an address changed meanwhile.
+- **Who is signed in:** the user menu starts with the signed-in account (one person may have an
+  account per contest or year): its name, wiki login, sign-in email and role in the current
+  contest (root: Root), as text that the menu's arrow keys skip; long values wrap on a phone.
 
 **Fixes**
 

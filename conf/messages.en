@@ -22,6 +22,7 @@ access.denied.contact=If you need access, ask your contest admin.
 access.denied.reference=Reference: {0}, {1}
 password=Password
 profile = Profile
+signed.in.as = Signed in as
 
 users = Users
 rounds = Rounds
