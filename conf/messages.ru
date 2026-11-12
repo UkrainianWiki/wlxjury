@@ -452,7 +452,6 @@ wiki.account = Вики-учётная запись
 year = Год
 current.round = Текущий раунд
 signin.repeat.your.password = Повторите пароль
-sort = Сортировка
 theme = Тема
 theme.light = Светлая
 theme.dark = Тёмная

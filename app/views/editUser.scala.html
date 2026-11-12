@@ -182,10 +182,6 @@
                         }
                     }
 
-                    @if(user.hasRole(User.ROOT_ROLE)) {
-                        @bs.text(editUserForm("sort"), Symbol("_label") -> Messages("sort"), Symbol("placeholder") -> Messages("sort"))
-                    }
-
                     @* optional, with this save's entries in the account change log *@
                     @if(othersAccount) {
                         @bs.text(editUserForm("comment"), Symbol("_label") -> Messages("account.change.comment.field"),

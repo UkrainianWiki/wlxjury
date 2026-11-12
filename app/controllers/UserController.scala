@@ -651,7 +651,7 @@ class UserController @Inject()(cc: ControllerComponents,
     def trimmed(wiki: Option[String]) = wiki.map(LoginText.clean).filter(_.nonEmpty)
     val wikiChanged = !own && trimmed(formUser.wikiAccount) != trimmed(editedUser.wikiAccount)
     val otherFieldsChanged = mayEdit && (formUser.fullname != editedUser.fullname ||
-      formUser.lang != editedUser.lang || formUser.sort != editedUser.sort || wikiChanged)
+      formUser.lang != editedUser.lang || wikiChanged)
 
     // root is the Root field's, written before (updateUser), never a contest role's: a role
     // change leaves it as it is. Only admins change roles, and only in editedUser's contest; an
@@ -672,7 +672,7 @@ class UserController @Inject()(cc: ControllerComponents,
         var emailChange = Option.empty[UserService.EmailChanged]
         var wikiUnlinked = 0
         if (mayEdit) {
-          User.updateUser(userId, formUser.fullname, formUser.lang, formUser.sort)
+          User.updateUser(userId, formUser.fullname, formUser.lang)
           if (formUser.fullname.trim != editedUser.fullname.trim)
             AccountChangeLog.record(user, userId, inContest, AccountChangeJdbc.Name, Some(editedUser.fullname),
               Some(formUser.fullname), comment = comment)
@@ -976,7 +976,6 @@ class UserController @Inject()(cc: ControllerComponents,
       "roles" -> optional(text.verifying("error.invalid", User.isContestRole(_))),
       "contest" -> optional(longNumber),
       "lang" -> optional(text),
-      "sort" -> optional(number),
       // light, dark or auto; any other value is dropped (no change, or none for a new user)
       "theme" -> optional(text).transform[Option[String]](_.flatMap(Theme.find).map(_.value), identity),
       // the account's root flag (users.is_root), not a contest role: the edit page's checkbox

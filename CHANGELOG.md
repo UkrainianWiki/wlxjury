@@ -52,6 +52,11 @@ The next release is `26.12` (`build.sbt` says `26.12-SNAPSHOT`). Developed from 
 - **Profile:** the password change form asks for the current password first, then the new one.
 - **Account mails:** the email-change confirmation says what it is about (the WLX Jury account,
   the site, asked from the account's profile); the invitation without a contest names who invites.
+- **Users:** the edit page no longer has the **Sort** field (root only; the maintainer's decision
+  of 2026-11-12). The users list and the round form's jurors are in the order the accounts were
+  added (account id), which every account without a sort value already had (a round's
+  distribution already went by account id). `users.sort` stays in the database, no longer read
+  or written.
 
 **Development**
 

@@ -27,7 +27,6 @@ case class User(
     wikiAccount: Option[String] = None,
     hasWikiEmail: Boolean = false,
     accountValid: Boolean = true,
-    sort: Option[Int] = None,
     active: Option[Boolean] = Some(true),
     isRoot: Boolean = false,
     userContests: Seq[UserContest] = Nil,
@@ -149,14 +148,11 @@ case class User(
   def description: String =
     Seq(fullname, wikiAccount.fold("")(u => "User:" + u), email).mkString(" / ")
 
-  def sortOrBiasedId: Long = {
-    sort
-      .map(_.toLong)
-      .orElse(id.map(_ + Int.MaxValue))
-      .getOrElse(0L)
-  }
-
-  override def compare(that: User): Int = sortOrBiasedId.compareTo(that.sortOrBiasedId)
+  /** By account id, i.e. in the order the accounts were added (the Users list, the round form's
+    * jurors, a round's distribution); one not yet stored (no id) first. users.sort (V34), an
+    * order root once set per account, is no longer read or written.
+    */
+  override def compare(that: User): Int = java.lang.Long.compare(id.getOrElse(0L), that.id.getOrElse(0L))
 }
 
 object User extends CRUDMapper[User] {
@@ -236,7 +232,6 @@ object User extends CRUDMapper[User] {
         Option[String],
         Option[Long],
         Option[String],
-        Option[Int],
         Option[String],
         Option[Boolean]
     )
@@ -252,7 +247,6 @@ object User extends CRUDMapper[User] {
         user.contestRole,
         user.contestId,
         user.lang,
-        user.sort,
         user.theme,
         Some(user.isRoot || user.hasRole(ROOT_ROLE))
       )
@@ -268,7 +262,6 @@ object User extends CRUDMapper[User] {
       roles: Option[String],
       contest: Option[Long],
       lang: Option[String],
-      sort: Option[Int],
       theme: Option[String],
       root: Option[Boolean] = None
   ): User = {
@@ -281,7 +274,6 @@ object User extends CRUDMapper[User] {
       contest,
       lang,
       wikiAccount = wikiAccount,
-      sort = sort,
       theme = theme,
       // what the Root field asks for; only root's save of another account applies it
       // (UserController.updateUser, UserService.createAccount)
@@ -460,7 +452,6 @@ object User extends CRUDMapper[User] {
       lang        = rs.stringOpt(c.lang),
       theme       = rs.stringOpt(c.theme),
       wikiAccount = rs.stringOpt(c.wikiAccount),
-      sort        = rs.intOpt(c.sort),
       createdAt   = rs.timestampOpt(c.createdAt).map(_.toZonedDateTime),
       deletedAt   = rs.timestampOpt(c.deletedAt).map(_.toZonedDateTime),
       emailVerifiedAt       = rs.timestampOpt(c.emailVerifiedAt).map(_.toZonedDateTime),
@@ -681,7 +672,6 @@ object User extends CRUDMapper[User] {
           column.isRoot      -> root,
           column.lang        -> user.lang,
           column.theme       -> user.theme.flatMap(controllers.Theme.find).map(_.value),
-          column.sort        -> user.sort,
           column.createdAt   -> user.createdAt,
           column.emailVerifiedAt -> user.emailVerifiedAt,
           column.authVersion -> user.authVersion
@@ -703,21 +693,19 @@ object User extends CRUDMapper[User] {
     )
   }
 
-  /** Updates the account's name, language and order; roles are per contest, set with
+  /** Updates the account's name and language; roles are per contest, set with
     * [[UserContestJdbc.updateRole]], the email with [[setEmail]], the wiki account with
     * [[setWikiAccount]].
     */
   def updateUser(
       id: Long,
       fullname: String,
-      lang: Option[String],
-      sort: Option[Int]
+      lang: Option[String]
   )(implicit session: DBSession = autoSession): Unit =
     updateById(id)
       .withAttributes(
         "fullname" -> fullname,
-        "lang"     -> lang,
-        "sort"     -> sort
+        "lang"     -> lang
       )
 
   /** A new account's auth version: random and non-zero, so that no session from before S2

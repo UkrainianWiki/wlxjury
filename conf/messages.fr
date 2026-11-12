@@ -475,7 +475,6 @@ coi.round.started = Le tour {0} est démarré.
 
 close = Fermer
 signin.repeat.your.password = Répétez votre mot de passe
-sort = Tri
 theme = Thème
 theme.light = Clair
 theme.dark = Sombre
