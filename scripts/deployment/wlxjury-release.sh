@@ -3,11 +3,13 @@
 # maintenance, reopen after a local smoke test, and restore the pre-deployment
 # database and release when a deployment must be backed out. A release without
 # new migrations skips the backup unless --backup asks for one; backing it out
-# then only switches the release back. Every step stops at the first failure
-# and never clears maintenance on failure; the runbook in docs/deployment.md
-# says which command fits the operation's milestones.
+# then only switches the release back. A deployment refuses while a background
+# job is queued or running, unless --allow-running-jobs accepts that they stop
+# with the app and resume after the restart. Every step stops at the first
+# failure and never clears maintenance on failure; the runbook in
+# docs/deployment.md says which command fits the operation's milestones.
 #
-#   wlxjury-release [--config FILE] deploy RELEASE.zip SHA256 [--backup]
+#   wlxjury-release [--config FILE] deploy RELEASE.zip SHA256 [--backup] [--allow-running-jobs]
 #   wlxjury-release [--config FILE] reopen OPERATION
 #   wlxjury-release [--config FILE] restore OPERATION [--accept-data-loss]
 #   wlxjury-release [--config FILE] prune [--dry-run]
@@ -26,9 +28,10 @@ umask 077
 
 op=''
 staging=''
+active_jobs=''
 
 usage() {
-  echo "usage: wlxjury-release [--config FILE] deploy RELEASE.zip SHA256 [--backup]" \
+  echo "usage: wlxjury-release [--config FILE] deploy RELEASE.zip SHA256 [--backup] [--allow-running-jobs]" \
        "| reopen OPERATION | restore OPERATION [--accept-data-loss] | prune [--dry-run]" >&2
   exit 2
 }
@@ -131,6 +134,23 @@ check_endpoint() {
   local port
   port=$(admin -e 'SELECT @@port') || die "cannot reach MariaDB at $DB_HOST with db-admin.cnf"
   [ "$port" = "$DB_PORT" ] || die "db-admin.cnf reaches MariaDB on port $port, but the app uses $DB_HOST"
+}
+
+check_jobs() {  # check_jobs yes|no: queued or running background jobs refuse the deployment, or (yes) go to $active_jobs
+  local rows id kind contest status
+  # A query that fails (the table missing, no access) must not pass as "no jobs".
+  rows=$(sql "SELECT id, kind, IFNULL(contest_id, 'none'), status FROM job
+              WHERE status IN ('queued', 'running') ORDER BY id") ||
+    die "cannot read the background jobs (table job) to check that none is queued or running; nothing was changed"
+  [ -n "$rows" ] || return 0
+  while IFS=$'\t' read -r id kind contest status; do
+    active_jobs+="  job $id: $kind, contest $contest, $status"$'\n'
+  done <<< "$rows"
+  active_jobs=${active_jobs%$'\n'}
+  [ "$1" = yes ] || die "background jobs are queued or running; nothing was changed:
+$active_jobs
+Wait for them to finish (or cancel them in the app), or rerun with --allow-running-jobs:
+stopping the app interrupts them, and they resume after the restart (lease recovery)."
 }
 
 no_enabled_events() {
@@ -315,7 +335,7 @@ select_release() {
 }
 
 deploy() {
-  local zip=$1 sha=$2 backup=$3 top manifest build want have release previous unit
+  local zip=$1 sha=$2 backup=$3 allow_jobs=$4 top manifest build want have release previous unit
   local -a entries active=() config_files
   [[ $sha =~ ^[0-9a-f]{64}$ ]] || die "pass the full lowercase SHA-256"
   [ -f "$zip" ] || die "missing $zip"
@@ -355,6 +375,7 @@ deploy() {
   # Without migrations the database stays as it is, so the release alone can be switched back.
   if [ "$want" != "$have" ]; then backup=yes; fi
   no_enabled_events || die "coordinate enabled database events before deploying"
+  check_jobs "$allow_jobs"
   capacity
   previous=$(readlink -f "$ROOT/current")
 
@@ -377,6 +398,11 @@ deploy() {
   sync "$op/record" "$op"
   echo "Operation $op: $previous -> $release"
   if [ "$backup" = no ]; then echo "No new migrations (schema $have): skipping the database backup"; fi
+  if [ -n "$active_jobs" ]; then
+    echo "wlxjury-release: warning: deploying with background jobs queued or running (--allow-running-jobs);" \
+         "they stop with the app and resume after the restart:" >&2
+    echo "$active_jobs" >&2
+  fi
   mark started
 
   enable_maintenance
@@ -753,10 +779,17 @@ case ${1:-} in
     else usage
     fi ;;
   deploy)
-    if [ $# = 3 ]; then deploy "$2" "$3" no
-    elif [ $# = 4 ] && [ "$4" = --backup ]; then deploy "$2" "$3" yes
-    else usage
-    fi ;;
+    [ $# -ge 3 ] || usage
+    zip=$2 sha=$3 backup=no allow_jobs=no
+    shift 3
+    for option in "$@"; do  # Each option at most once, in any order.
+      case $option in
+        --backup) [ "$backup" = no ] || usage; backup=yes ;;
+        --allow-running-jobs) [ "$allow_jobs" = no ] || usage; allow_jobs=yes ;;
+        *) usage ;;
+      esac
+    done
+    deploy "$zip" "$sha" "$backup" "$allow_jobs" ;;
   reopen) [ $# = 2 ] || usage; reopen "$2" ;;
   restore)
     if [ $# = 2 ]; then restore "$2" no
