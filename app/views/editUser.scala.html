@@ -129,18 +129,18 @@
                        (maySetPassword, UserController.setPasswordRefusal); blank changes nothing *@
                     @if(ownProfile) {
                         <div class="mb-3">
-                            <label for="password" class="form-label">@Messages("new.password")</label>
-                            @defining(editUserForm("password").errors) { passwordErrors =>
-                            <input type="password" class="form-control @if(passwordErrors.nonEmpty){is-invalid}" id="password" name="password" autocomplete="new-password" value="" @if(passwordErrors.nonEmpty){aria-invalid="true" aria-describedby="password_error"}>
-                            @for(error <- passwordErrors.headOption) {<div class="invalid-feedback" id="password_error">@Messages(error.message, error.args: _*)</div>}
-                            }
-                        </div>
-                        <div class="mb-3">
                             <label for="currentPassword" class="form-label">@Messages("current.password")</label>
                             @defining(editUserForm("currentPassword").errors) { currentErrors =>
                             <input type="password" class="form-control @if(currentErrors.nonEmpty){is-invalid}" id="currentPassword" name="currentPassword" autocomplete="current-password" value="" aria-describedby="currentPassword_help@if(currentErrors.nonEmpty){ currentPassword_error}" @if(currentErrors.nonEmpty){aria-invalid="true"}>
                             <div class="form-text" id="currentPassword_help">@Messages("current.password.explain")</div>
                             @for(error <- currentErrors.headOption) {<div class="invalid-feedback" id="currentPassword_error">@Messages(error.message, error.args: _*)</div>}
+                            }
+                        </div>
+                        <div class="mb-3">
+                            <label for="password" class="form-label">@Messages("new.password")</label>
+                            @defining(editUserForm("password").errors) { passwordErrors =>
+                            <input type="password" class="form-control @if(passwordErrors.nonEmpty){is-invalid}" id="password" name="password" autocomplete="new-password" value="" @if(passwordErrors.nonEmpty){aria-invalid="true" aria-describedby="password_error"}>
+                            @for(error <- passwordErrors.headOption) {<div class="invalid-feedback" id="password_error">@Messages(error.message, error.args: _*)</div>}
                             }
                         </div>
                     } else {
