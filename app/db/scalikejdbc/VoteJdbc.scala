@@ -26,7 +26,7 @@ object VoteJdbc extends CRUDMapper[Vote] {
     * ([[resultAll]], [[singleSelectQuery]] for the finders), as [[votedAt]] reads it.
     */
   def votedAtEpoch(p: QuerySQLSyntaxProvider[SQLSyntaxSupport[Vote], Vote]): SQLSyntax =
-    SQLSyntax.createUnsafely(s"UNIX_TIMESTAMP(${p.votedAt.value}) AS ${p.resultName.votedAt.value}_ms")
+    sqls"UNIX_TIMESTAMP(${p.votedAt}) AS ${p.resultName.votedAt}_ms"
 
   /** A vote's columns, and its time as [[votedAtEpoch]]: what [[apply]] and [[extract]] read. */
   def resultAll(p: QuerySQLSyntaxProvider[SQLSyntaxSupport[Vote], Vote]): SQLSyntax =
