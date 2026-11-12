@@ -27,9 +27,34 @@ with `.N` for an extra deploy in the same month (`26.11.1`), and release heading
 
 The next release is `26.12` (`build.sbt` says `26.12-SNAPSHOT`). Developed from 2026-11-11.
 
+**Features**
+
+- **Admins fix jurors' emails** (the maintainer's decision of 2026-11-12): an admin who may edit
+  an account, and root, change its email at once, also when it has a password. The person keeps
+  the password and signs in with the new address (unverified, every session ended); a verified
+  former address gets a short notice naming who changed it. One's own email change still goes
+  through the link mailed to the new address.
+- **Invitation mail is a choice:** adding a person, the mass import and the edit page have
+  **Send an invitation email**, unticked by default; unticked, nothing is mailed, and the admin
+  shares a link or sets a password instead. An invitation a role waits for is then kept, shown as
+  **Not sent** in the invitations list, to send or share later.
+- **Account changes:** every change an admin or root makes to another person's account (email,
+  password, role, name, wiki account, accounts created, invitations, links, ended sessions), with
+  whether a mail went out and an optional comment, is logged; the contest's admins and root see it
+  on **Account changes** (from the users page) and on the person's edit page (V96).
+
 **Fixes**
 
 - **Profile:** the password change form asks for the current password first, then the new one.
+- **Account mails:** the email-change confirmation says what it is about (the WLX Jury account,
+  the site, asked from the account's profile); the invitation without a contest names who invites.
+
+**Development**
+
+- **Migration V96:** table `account_change` (indexes on `(contest_id, created_at)` and
+  `(user_id, created_at)`, rows deleted with their account) and `account_token.unsent`
+  (`ALGORITHM = INSTANT`). Rollback after reopen in `FlywayUpgradeSpec`: the live unsent
+  invitations revoked, the column and the table dropped.
 
 ## 26.11.1 (2026-11-12)
 
