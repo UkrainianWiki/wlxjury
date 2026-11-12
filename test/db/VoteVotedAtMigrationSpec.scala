@@ -90,7 +90,9 @@ class VoteVotedAtMigrationSpec extends Specification with BeforeAll with AfterAl
           (after === nullable) and
           (columns(c, scratch, "voted_at") === nullable) and
           (indexed(c, scratch) must beEmpty) and
-          // the rerun only notes what is there already (MariaDB's "Duplicate column name" / "key name")
+          // the rerun only notes what is there already (MariaDB's "Duplicate column name"), one note
+          // per column at least: the IF NOT EXISTS branch ran
+          (again must not(beEmpty)) and
           (again.forall(w => w.toLowerCase.contains("duplicate column")) must beTrue) and
           (untouched === List(None))
       }
