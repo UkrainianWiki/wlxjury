@@ -27,7 +27,9 @@ with `.N` for an extra deploy in the same month (`26.11.1`), and release heading
 
 The next release is `26.12` (`build.sbt` says `26.12-SNAPSHOT`). Developed from 2026-11-11.
 
-Nothing yet.
+**Fixes**
+
+- **Ukrainian:** a round that is not active shows «Ні» (no) in the rounds list's Active column, not «Немає» (absent).
 
 ## 26.11.2 (2026-11-12)
 
