@@ -197,8 +197,9 @@ object ShareLinkService {
               .find(t => t.live && t.purpose == purpose && t.contestId == contestId && t.role.isDefined)
               .flatMap(_.role)
           val revoked = AccountTokenJdbc.revokeUnused(accountId, Seq(purpose), if (invitation) contestId else None)
+          // logged once committed, below: a rolled back link is never in the log
           val (id, token) = AccountTokenService.create(accountId, purpose, account.emailLo, contestId, pendingRole,
-            actor.id, shared = true)
+            actor.id, shared = true, logCreated = false)
           // the account change log, in the same transaction: a link shown, never mailed; in the
           // contest only if the account is in it (root may name any)
           val logContest = contestId.filter(c => invitation || UserContestJdbc.find(accountId, c).nonEmpty)
@@ -210,6 +211,7 @@ object ShareLinkService {
     }
     result match {
       case Right((link, token, account, revoked)) =>
+        AccountTokenService.logCreated(link.id, accountId, purpose, contestId, link.role, actor.id, shared = true)
         logger.info(
           s"account_link_shared purpose=$purpose tokenId=${link.id} accountId=$accountId byAccountId=${actor.getId}" +
             contestId.fold("")(c => s" contestId=$c") + s" linksRevoked=$revoked")

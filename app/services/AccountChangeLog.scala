@@ -12,7 +12,7 @@ import scalikejdbc.{AutoSession, DBSession}
 object AccountChangeLog {
 
   /** Records the change `actor` made to account `accountId` in `contestId`, unless it is the
-    * actor's own account.
+    * actor's own account; the entry's id, if one was written.
     */
   def record(
       actor: User,
@@ -23,9 +23,9 @@ object AccountChangeLog {
       newValue: Option[String] = None,
       mailSent: Option[Boolean] = None,
       comment: Option[String] = None
-  )(implicit session: DBSession = AutoSession): Unit =
+  )(implicit session: DBSession = AutoSession): Option[Long] =
     for (actorId <- actor.id if actorId != accountId)
-      AccountChangeJdbc.create(accountId, actorId, contestId, field, oldValue, newValue, mailSent, comment)
+      yield AccountChangeJdbc.create(accountId, actorId, contestId, field, oldValue, newValue, mailSent, comment)
 
   /** How many entries the edit page shows. */
   val ShownOnEditPage = 50

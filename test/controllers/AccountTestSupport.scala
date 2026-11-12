@@ -66,6 +66,14 @@ trait AccountTestSupport {
 
   /** The lines a `security.account` logger wrote while `f` ran. */
   def accountLog[T](f: => T): (T, Seq[String]) = {
+    val (result, entries) = accountLogWithThrowables(f)
+    (result, entries.map(_._1))
+  }
+
+  /** The lines a `security.account` logger wrote while `f` ran, each with the exception logged
+    * with it as the log file shows it (its stack trace, causes and suppressed ones), if any.
+    */
+  def accountLogWithThrowables[T](f: => T): (T, Seq[(String, Option[String])]) = {
     val logger = org.slf4j.LoggerFactory.getLogger("security.account").asInstanceOf[ch.qos.logback.classic.Logger]
     val appender = new ch.qos.logback.core.read.ListAppender[ch.qos.logback.classic.spi.ILoggingEvent]
     val level = logger.getLevel
@@ -74,7 +82,8 @@ trait AccountTestSupport {
     logger.addAppender(appender)
     try {
       val result = f
-      (result, appender.list.asScala.toSeq.map(_.getFormattedMessage))
+      (result, appender.list.asScala.toSeq.map(e => e.getFormattedMessage ->
+        Option(e.getThrowableProxy).map(ch.qos.logback.classic.spi.ThrowableProxyUtil.asString)))
     } finally {
       logger.detachAppender(appender)
       logger.setLevel(level)

@@ -59,3 +59,17 @@ python scripts/coverage-summary.py --json target/coverage-summary.json --head-sh
 python scripts/coveralls-paths.py             # target/coveralls/cobertura.xml and lcov.info
 python -B -m unittest discover -s scripts -p test_coverage_reports.py
 ```
+
+## schema_parity.py
+
+Compares a database's columns (`information_schema.COLUMNS`) with a freshly migrated one's and
+flags a column `NOT NULL` in the target but nullable in the fresh schema the tests run on: a NULL
+the code writes would fail there only (production's `users.password` until V98). For the release
+rehearsal on the production copy; the steps are in [deployment.md](../docs/deployment.md)'s Release
+checklist. Standard library only.
+
+```bash
+python scripts/schema_parity.py --print-query > columns.sql   # run it on both databases (mariadb -N -B)
+python scripts/schema_parity.py fresh.tsv copy.tsv --ignore monument.id [--all]
+python -B -m unittest discover -s scripts -p test_schema_parity.py
+```

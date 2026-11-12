@@ -207,7 +207,9 @@ class UserService @Inject()(val sendMail: SMTPOrWikiMail,
     * older ones. Never to a root account, nor without an email. Whether the mail went out.
     * `mail` false: the invitation is kept unsent (`account_token.unsent`, V96), only for its
     * role to wait until the admin sends it or shares a link; its token is never shown. Logged in
-    * the account change log, with whether it was mailed.
+    * the account change log, in the invitation's transaction, and whether it was mailed once the
+    * mail is out: the mail is the last step that can fail the call, so an add or an import line
+    * shown as failed sent none.
     */
   def invite(creator: User, account: User, contestOpt: Option[ContestJury], role: Option[String],
       mail: Boolean = true, comment: Option[String] = None)(implicit
@@ -218,18 +220,49 @@ class UserService @Inject()(val sendMail: SMTPOrWikiMail,
     // callers check it first and say so; a missed one fails rather than hand the account over
     require(!invitationRefused(creator, account), "an invitation this creator may not send")
     val contestId = contestOpt.flatMap(_.id)
-    AccountTokenJdbc.revokeUnused(account.getId, Seq(AccountTokenJdbc.Invitation), contestId)
-    val (tokenId, token) = AccountTokenService.create(account.getId, AccountTokenJdbc.Invitation, account.emailLo,
-      contestId, role, creator.id, unsent = !mail)
+    // the invitation and its log entry together (#294): the entry is never missing; mailed or
+    // not is set once the mail is out (until then NULL, shown as "not known").
+    // Locks: the account's users row first, then its links, the order of a link's acceptance
+    // (ShareLinkService) and of addToContest's join: in one transaction, the links' rows first
+    // (revokeUnused) and the row after (the inserts' foreign keys) could deadlock with an
+    // acceptance. No caller holds that row in another open transaction while it calls this
+    // (addToContest's join commits first), or this would wait on it until
+    // innodb_lock_wait_timeout; keep it so.
+    val (tokenId, token, changeId) = scalikejdbc.DB.localTx { implicit session =>
+      val _ = User.lockRow(account.getId)
+      AccountTokenJdbc.revokeUnused(account.getId, Seq(AccountTokenJdbc.Invitation), contestId)
+      val (tokenId, token) = AccountTokenService.create(account.getId, AccountTokenJdbc.Invitation, account.emailLo,
+        contestId, role, creator.id, unsent = !mail, logCreated = false)
+      val changeId = AccountChangeLog.record(creator, account.getId, contestId, AccountChangeJdbc.Invitation,
+        newValue = role, mailSent = if (mail) None else Some(false), comment = comment)
+      (tokenId, token, changeId)
+    }
+    // logged once it is committed: a rolled back link is never in the log
+    AccountTokenService.logCreated(tokenId, account.getId, AccountTokenJdbc.Invitation, contestId, role, creator.id,
+      unsent = !mail)
     val sent = mail && {
       val link = linkUrl(controllers.routes.LoginController.invitation(token).url)
       val (subject, body) = invitationText(creator, account, contestOpt, link)
       mailLink(creator, account, subject, body, AccountTokenJdbc.Invitation, tokenId)
     }
-    AccountChangeLog.record(creator, account.getId, contestId, AccountChangeJdbc.Invitation,
-      newValue = role, mailSent = Some(sent), comment = comment)
+    // once the mail is out (a working link) the invitation stands: a flag that can't be written
+    // doesn't fail the add or an import line (shown as failed, it would be imported again: a
+    // second mail); the entry stays, without it, and the server log says so
+    if (mail) changeId.foreach { id =>
+      try recordMailSent(id, sent)
+      catch {
+        case NonFatal(e) =>
+          accountLogger.error(s"account_change_mail_flag_not_recorded changeId=$id field=${AccountChangeJdbc.Invitation} " +
+            s"accountId=${account.getId} byAccountId=${creator.getId} tokenId=$tokenId mailSent=$sent " +
+            s"error=${e.getClass.getName}" + LogSafe.causesField(e), LogSafe.withoutMessages(e))
+      }
+    }
     sent
   }
+
+  /** Sets whether the change log entry's mail went out (a separate step: tests make it fail). */
+  protected def recordMailSent(changeId: Long, sent: Boolean): Unit =
+    AccountChangeJdbc.setMailSent(changeId, sent)
 
   /** Whether `creator` may not send `account` an invitation (reviews of 2026-11-12): accepting one
     * sets the password, so an account that could sign in (a password, or a Google or Wikimedia

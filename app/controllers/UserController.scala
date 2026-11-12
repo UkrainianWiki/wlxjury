@@ -858,12 +858,26 @@ class UserController @Inject()(cc: ControllerComponents,
     withAuth(contestPermission(User.ADMIN_ROLES, contestIdParam)) {
       user => implicit request =>
         withContestId(user, contestIdParam) { contestId =>
-          Ok(views.html.importUsers(user, importUsersForm, contestId))
+          // after an import that didn't add every line (post/redirect/get): its result, once
+          request.flash.get(UserController.ImportResultKey) match {
+            case None => Ok(views.html.importUsers(user, importUsersForm, contestId))
+            case Some(key) =>
+              val summary = request.flash.get("users-added")
+              ImportResults.take(key, user.getId, contestId).fold {
+                // gone (a restart, or read already): how many lines it had, from the flash
+                val lost = request.flash.get(UserController.ImportResultCount).flatMap(_.toIntOption).getOrElse(0)
+                Ok(views.html.importUsers(user, importUsersForm, contestId, result = summary, lost = lost))
+              } { r =>
+                Ok(views.html.importUsers(user,
+                  importUsersForm.fill((r.problems.map(_.entryText).mkString("\n"), r.role, r.sendInvitation)),
+                  contestId, r.problems, summary, notListed = r.notListed))
+              }
+          }
         }
     }
 
   def importUsers(contestIdParam: Option[Long] = None): EssentialAction =
-    // a bcrypt hash per new account: off Play's default dispatcher
+    // a database round trip or more per line: off Play's default dispatcher
     withAuthOn(blocking)(contestPermission(User.ADMIN_ROLES, contestIdParam)) {
       user => implicit request => withContestId(user, contestIdParam) { contestId =>
         importUsersForm
@@ -874,35 +888,49 @@ class UserController @Inject()(cc: ControllerComponents,
                 views.html.importUsers(user, formWithErrors, contestId)),
             { case (formUsers, role, sendInvitation) =>
               val contest = ContestJuryJdbc.findById(contestId)
-              val parsed = User
-                .parseList(formUsers)
-                .map(
-                  _.copy(
-                    lang = user.lang,
-                    contestId = Some(contestId)
-                  ))
+              // each person with the line (1-based) the admin typed them on
+              val parsed = UserController.importEntries(formUsers).map { case (line, pu) =>
+                line -> pu.copy(lang = user.lang, contestId = Some(contestId))
+              }
 
-              // one at a time; after a password that got no turn to be hashed, the rest
-              // aren't tried (each would wait as long), and all those not added are counted
-              val (added, notAdded, _) =
-                parsed.foldLeft((Vector.empty[UserService.Added], 0, false)) {
-                  case ((done, failed, true), _) => (done, failed + 1, true)
-                  case ((done, failed, false), pu) =>
+              // One at a time, each in its own transactions (UserService.addToContest): a line
+              // that fails rolls back only its own step, never another line's, and the lines
+              // before and after it are added as usual. A failure after the line's account was
+              // created (in its invitation) leaves the account, which the users page then lists
+              // (a retry finds it a member: its invitation is sent from there); no mail goes out
+              // for a failed line (the invitation's mail is its last step, UserService.invite).
+              val (added, problems) =
+                parsed.foldLeft((Vector.empty[UserService.Added], Vector.empty[UserController.ImportProblem])) {
+                  case ((done, problems), (line, pu)) =>
                     Try(userService.addToContest(user, pu.copy(roles = Set(role)), contest, sendInvitation)) match {
-                      case Success(a)                       => (done :+ a, failed, false)
-                      case Failure(_: PasswordHasher.Busy) => (done, failed + 1, true)
+                      case Success(a) => (done :+ a, problems)
+                      case Failure(_: UserService.InvalidWikiAccount) =>
+                        (done, problems :+ UserController.ImportProblem(line, pu, None))
                       case Failure(e) =>
-                        // the class only: the message can carry the line's email or SQL values
-                        play.api.Logger("security.account").warn(s"user_import_line_failed " +
-                          s"byAccountId=${user.getId} contestId=$contestId error=${e.getClass.getName}")
-                        (done, failed + 1, false)
+                        // as ErrorHandler's: the reference the admin is shown, on the log line;
+                        // with the classes and stacks of the exception and its causes, not their
+                        // messages, which can carry the line's email or SQL values (R220-1)
+                        val reference = Secured.newReference()
+                        play.api.Logger("security.account").error(s"user_import_line_failed ref=$reference " +
+                          s"line=$line byAccountId=${user.getId} contestId=$contestId error=${e.getClass.getName}" +
+                          services.LogSafe.causesField(e), services.LogSafe.withoutMessages(e))
+                        (done, problems :+ UserController.ImportProblem(line, pu, Some(reference)))
                     }
                 }
-              val message = addedMessage(added) +
-                (if (notAdded > 0) " " + Messages("users.not.added", notAdded) else "")
+              val message = addedMessage(added)
 
-              Redirect(routes.UserController.users(Some(contestId)))
-                .flashing("users-added" -> message)
+              if (problems.isEmpty)
+                Redirect(routes.UserController.users(Some(contestId)))
+                  .flashing("users-added" -> message)
+              else {
+                // the import page (post/redirect/get: a reload imports nothing again), with what
+                // was added, each line not added with why (and an error's reference), and the
+                // form with only those people, to import again ([[ImportResults]])
+                val key = ImportResults.put(user.getId, contestId, ImportResults.Result(problems, role, sendInvitation))
+                Redirect(routes.UserController.showImportUsers(Some(contestId))).flashing(
+                  "users-added" -> message, UserController.ImportResultKey -> key,
+                  UserController.ImportResultCount -> problems.size.toString)
+              }
             }
           )
       }
@@ -1075,6 +1103,9 @@ class UserController @Inject()(cc: ControllerComponents,
   def cancelInvitation(id: Long, contestId: Long): EssentialAction =
     withAuth(contestPermission(User.ADMIN_ROLES, Some(contestId))) { user => implicit request =>
       val cancelled = scalikejdbc.DB.localTx { implicit session =>
+        // the account's row first, then its links: the order of a link's acceptance and of
+        // UserService.invite (the log entry's foreign key would take the row after the links)
+        val _ = User.lockRow(id)
         val n = AccountTokenJdbc.revokeInvitations(id, contestId)
         if (n > 0) AccountChangeLog.record(user, id, Some(contestId), AccountChangeJdbc.InvitationCancelled)
         n
@@ -1198,6 +1229,36 @@ object UserController {
     if (!backHere || request.method != "GET") None
     else if (request.path.startsWith("/users/edit/")) profileReturnTo(request.getQueryString("returnTo"))
     else profileReturnTo(Some(request.uri))
+
+  /** The flash keys of an import's result ([[ImportResults]]): its key, and how many lines it
+    * lists (said if the result is gone).
+    */
+  val ImportResultKey = "import-result"
+  val ImportResultCount = "import-result-count"
+
+  /** "Import users"' people, each with the line (1-based) it is on: [[User.parseList]] line by
+    * line (it splits at line ends as well as commas and `|`, so this finds the same people).
+    */
+  def importEntries(text: String): Seq[(Int, User)] =
+    text.split("\n", -1).toSeq.zipWithIndex.flatMap { case (line, i) => User.parseList(line).map(i + 1 -> _) }
+
+  /** An imported person not added: on `line`, as entered; with the reference of the server log's
+    * line for an error (None: an invalid wiki account name, the admin's to correct).
+    */
+  final case class ImportProblem(line: Int, person: User, reference: Option[String]) {
+
+    /** The email or the wiki account, as the import read it. */
+    def entry: String = Option(person.email).filter(_.nonEmpty).orElse(person.wikiAccount).getOrElse("")
+
+    /** The person as an import line again: `Name <email>` (quoted as needed), the email or the
+      * wiki account.
+      */
+    def entryText: String =
+      if (Option(person.email).exists(_.nonEmpty) && person.fullname.nonEmpty)
+        Try(new javax.mail.internet.InternetAddress(person.email, person.fullname, "UTF-8").toUnicodeString)
+          .getOrElse(person.email)
+      else entry
+  }
 
   /** The edit form's fields that are not the account's: "Send an invitation email" (unticked by
     * default) and an optional comment for the account change log.
