@@ -43,8 +43,9 @@ The next release is `26.12` (`build.sbt` says `26.12-SNAPSHOT`). Developed from 
   whether a mail went out and an optional comment, is logged; the contest's admins and root see it
   on **Account changes** (from the users page) and on the person's edit page (V96). A change is
   logged in the account's own contest only (root's edit of an account in no contest: root's
-  log). An account with a password whose address an admin set is invited only by who may set its
-  password (not a fellow admin); a stale edit page doesn't revert an address changed meanwhile.
+  log). An account that can sign in (a password, Google or Wikimedia) whose address an admin set
+  is invited only by who may set its password (not a fellow admin); a stale edit page doesn't
+  revert an address changed meanwhile.
 
 **Fixes**
 
@@ -55,9 +56,10 @@ The next release is `26.12` (`build.sbt` says `26.12-SNAPSHOT`). Developed from 
 **Development**
 
 - **Migration V96:** table `account_change` (indexes on `(contest_id, created_at)` and
-  `(user_id, created_at)`, rows deleted with their account) and `account_token.unsent`
-  (`ALGORITHM = INSTANT`). Rollback after reopen in `FlywayUpgradeSpec`: the live unsent
-  invitations revoked, the column and the table dropped.
+  `(user_id, created_at)`, rows deleted with their account; history, not a security control),
+  `account_token.unsent` and `users.email_set_by_admin_at` (both `ALGORITHM = INSTANT`). Rollback
+  after reopen in `FlywayUpgradeSpec`: the live unsent invitations revoked, the columns and the
+  table dropped.
 
 ## 26.11.1 (2026-11-12)
 

@@ -142,10 +142,11 @@ The pencil opens the page **Edit user**. An admin can change, for members of the
   email saying that you changed it (the new address partly hidden). The email can't be changed
   to another account's address, nor removed from an account that has a password;
 - **Send an invitation email**, unticked by default: ticked, the person gets an invitation at the
-  (new) address; unticked, nothing is mailed to it. An account that has a password and whose
-  address an admin set gets an invitation (also **Send the invitation again**, or an add to
-  another contest) only from someone who may set its password, as for a [link to
-  share](#a-share-link): not, for example, a fellow admin; ask root then;
+  (new) address; unticked, nothing is mailed to it. An account that can sign in (with a password,
+  or with Google or Wikimedia) and whose address an admin set gets an invitation (also **Send the
+  invitation again**, or an add to another contest) only from someone who may set its password, as
+  for a [link to share](#a-share-link): not, for example, a fellow admin; ask root then. Once the
+  person uses a link sent to the address, or root sets it, this no longer applies;
 - if someone else changed the email after you opened the page, your save keeps their address
   when you left the field as it was, and refuses an edit of it: reload the page;
 - the **Password**, with **Set password**, where you may: see [Passwords](#a-passwords). Set it
