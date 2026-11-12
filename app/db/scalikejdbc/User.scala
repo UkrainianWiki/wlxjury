@@ -602,7 +602,11 @@ object User extends CRUDMapper[User] {
     if (ids.isEmpty) Nil else findAllBy(sqls.in(u.id, ids)).sortBy(_.id)
   }
 
-  def countByEmail(id: Long, email: String): Long =
+  /** The accounts with these ids, deleted ones too (the change log names them). */
+  def findByIds(ids: Seq[Long]): Seq[User] =
+    if (ids.isEmpty) Nil else findAllBy(sqls.in(u.id, ids.distinct))
+
+  def countByEmail(id: Long, email: String)(implicit session: DBSession = autoSession): Long =
     countBy(
       sqls
         .eq(column.email, email)
@@ -708,7 +712,7 @@ object User extends CRUDMapper[User] {
       fullname: String,
       lang: Option[String],
       sort: Option[Int]
-  ): Unit =
+  )(implicit session: DBSession = autoSession): Unit =
     updateById(id)
       .withAttributes(
         "fullname" -> fullname,
@@ -741,14 +745,25 @@ object User extends CRUDMapper[User] {
     * accepted link proves an address ([[services.AccountTokenService]]); an admin's fix of an
     * invitee's address leaves it unverified.
     */
-  def setEmail(id: Long, email: String, verified: Boolean)(implicit session: DBSession = autoSession): Unit = {
+  def setEmail(id: Long, email: String, verified: Boolean, byAdmin: Boolean = false)(implicit
+      session: DBSession = autoSession): Unit = {
     val stored = storedEmail(email)
-    // a changed address ends the account's sessions (auth_version + 1): see setWikiAccount
+    // a changed address ends the account's sessions (auth_version + 1): see setWikiAccount. An
+    // address a non-root admin set is marked (V96, [[emailSetByAdmin]]); a proved one, or one
+    // root or its owner set, is not
     sql"""UPDATE users SET
             auth_version = IF(email <=> $stored, auth_version, $BumpAuthVersion),
-            email = $stored, email_verified_at = IF($verified, NOW(3), NULL)
+            email = $stored, email_verified_at = IF($verified, NOW(3), NULL),
+            email_set_by_admin_at = IF($byAdmin AND NOT $verified, NOW(3), NULL)
           WHERE id = $id""".update.apply()
   }
+
+  /** Whether a non-root admin set the account's current address and its owner hasn't proved it
+    * since (`users.email_set_by_admin_at`, V96; [[services.UserService.invitationRefused]]).
+    */
+  def emailSetByAdmin(id: Long)(implicit session: DBSession = autoSession): Boolean =
+    sql"SELECT email_set_by_admin_at IS NOT NULL FROM users WHERE id = $id".map(_.boolean(1)).single.apply()
+      .contains(true)
 
   /** The other non-deleted accounts with the wiki account (compared as the column's
     * collation does: case-insensitively).
@@ -796,7 +811,8 @@ object User extends CRUDMapper[User] {
     * already was as asked (another root's change came first), nothing written. A removal always
     * leaves a root: the actor, an active root other than the target, re-read under its lock.
     */
-  def setRootLocked(actorId: Long, targetId: Long, root: Boolean): Either[String, Boolean] =
+  def setRootLocked(actorId: Long, targetId: Long, root: Boolean,
+      onChanged: DBSession => Unit = _ => ()): Either[String, Boolean] =
     WriteTx.write { implicit session =>
       val rows = sql"""SELECT id, is_root, deleted_at IS NULL AS active, password IS NOT NULL AS has_password,
                          email_verified_at IS NOT NULL AS verified
@@ -815,6 +831,8 @@ object User extends CRUDMapper[User] {
           Left("root.needs.verified.email")
         case Some(_) =>
           sql"UPDATE users SET is_root = $root WHERE id = $targetId".update.apply()
+          // the caller's account change log entry, in this transaction
+          onChanged(session)
           Right(true)
       }
     }

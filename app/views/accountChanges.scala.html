@@ -1,0 +1,38 @@
+@(
+        user: db.scalikejdbc.User,
+        contest: org.intracer.wmua.ContestJury,
+        contestId: Long,
+        rows: Seq[services.AccountChangeLog.Row],
+        page: Int,
+        pages: Int
+)(implicit messages: Messages, req: RequestHeader)
+@* The contest's account change log (V96): what its admins and root changed in other people's
+   accounts, the newest first, a page at a time. Only for the contest's admins and root
+   (AccountChangeController) *@
+@mainAdmin("users", user, user.getId, contestId = contest.id) {
+    <div class="row">
+        <h1 class="h3">@Messages("account.changes.title")</h1>
+        <p class="text-body-secondary">@Messages("contest") @contest.fullName. @Messages("account.changes.explain")</p>
+        <p><a href="@routes.UserController.users(contest.id)">@Messages("account.changes.back")</a></p>
+
+        @if(rows.isEmpty) {
+            <p class="account-changes-empty">@Messages("account.changes.none")</p>
+        } else {
+            @accountChangeTable(rows, showAccount = true)
+        }
+
+        @if(pages > 1) {
+            <nav aria-label="@Messages("account.changes.pages")">
+                <ul class="pagination">
+                    @if(page > 1) {
+                        <li class="page-item"><a class="page-link" href="@routes.AccountChangeController.changes(contestId, page - 1)">@Messages("account.changes.newer")</a></li>
+                    }
+                    <li class="page-item disabled"><span class="page-link">@Messages("account.changes.page", page, pages)</span></li>
+                    @if(page < pages) {
+                        <li class="page-item"><a class="page-link" href="@routes.AccountChangeController.changes(contestId, page + 1)">@Messages("account.changes.older")</a></li>
+                    }
+                </ul>
+            </nav>
+        }
+    </div>
+}

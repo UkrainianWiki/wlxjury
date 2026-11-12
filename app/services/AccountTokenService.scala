@@ -53,6 +53,7 @@ object AccountTokenService {
 
   /** A new link of the account, sent to `email` (or, `shared`, shown to its creator to pass on,
     * the account's address as it is now); its id and the token, to be mailed or shown once.
+    * `unsent`: an invitation kept without a mail (V96), whose token nobody is shown.
     */
   def create(
       userId: Long,
@@ -61,15 +62,16 @@ object AccountTokenService {
       contestId: Option[Long] = None,
       role: Option[String] = None,
       createdBy: Option[Long] = None,
-      shared: Boolean = false
+      shared: Boolean = false,
+      unsent: Boolean = false
   )(implicit session: DBSession = AutoSession): (Long, String) = {
     val token = generate()
     val id = AccountTokenJdbc.create(userId, purpose, hash(token), LoginText.email(email), contestId, role, createdBy,
-      validSeconds(purpose), shared)
+      validSeconds(purpose), shared, unsent)
     logger.info(
       s"account_token_created purpose=$purpose tokenId=$id accountId=$userId" +
         createdBy.fold("")(c => s" byAccountId=$c") + contestId.fold("")(c => s" contestId=$c") +
-        role.fold("")(r => s" role=$r") + (if (shared) " shared=true" else ""))
+        role.fold("")(r => s" role=$r") + (if (shared) " shared=true" else "") + (if (unsent) " unsent=true" else ""))
     (id, token)
   }
 
@@ -249,15 +251,18 @@ object AccountTokenService {
   private def applyProof(user: User, usedLinkId: Option[Long], createdBy: Option[Long], pending: Seq[AccountToken],
       passwordHash: Option[String], emailProven: Boolean)(implicit session: DBSession): Proof = {
     (passwordHash, emailProven) match {
+      // a proved address is its owner's: no longer one an admin set (V96)
       case (Some(h), true) =>
-        sql"""UPDATE users SET password = $h, email_verified_at = NOW(3), auth_version = ${User.BumpAuthVersion}
+        sql"""UPDATE users SET password = $h, email_verified_at = NOW(3), email_set_by_admin_at = NULL,
+                auth_version = ${User.BumpAuthVersion}
               WHERE id = ${user.getId}""".update.apply()
       case (Some(h), false) =>
         sql"""UPDATE users SET password = $h, email_verified_at = NULL, wiki_account_verified_at = NULL,
                 auth_version = ${User.BumpAuthVersion}
               WHERE id = ${user.getId}""".update.apply()
       case (None, _) =>
-        sql"""UPDATE users SET email_verified_at = NOW(3), auth_version = ${User.BumpAuthVersion}
+        sql"""UPDATE users SET email_verified_at = NOW(3), email_set_by_admin_at = NULL,
+                auth_version = ${User.BumpAuthVersion}
               WHERE id = ${user.getId}""".update.apply()
     }
     val revokedApiCount = ApiTokenJdbc.revokeAll(user.getId)
@@ -294,7 +299,8 @@ object AccountTokenService {
     * and the rule checked again inside; the log line after the commit. The account as stored now.
     */
   def setPasswordByAdmin(actor: User, accountId: Long, contestId: Option[Long], passwordHash: String,
-      wikimediaSignIn: Boolean): Either[ShareLinkService.Refusal, User] = {
+      wikimediaSignIn: Boolean, comment: Option[String] = None,
+      logContest: Option[Long] = None): Either[ShareLinkService.Refusal, User] = {
     val result = User.quietTx { implicit session =>
       User.lockRow(accountId).toRight(ShareLinkService.NotInContest).flatMap { account =>
         ShareLinkService.mayCreate(actor, account, AccountTokenJdbc.PasswordReset, contestId, wikimediaSignIn)
@@ -302,7 +308,12 @@ object AccountTokenService {
           .map { _ =>
             // the invitations a shared link sent to the account's address would find
             val pending = AccountTokenJdbc.pendingInvitationsOf(accountId, account.emailLo)
-            applyProof(account, None, actor.id, pending, Some(passwordHash), emailProven = false)
+            val proof = applyProof(account, None, actor.id, pending, Some(passwordHash), emailProven = false)
+            // the account change log, in the same transaction (never the hash), in the account's
+            // contest (`logContest`), not the request's
+            AccountChangeLog.record(actor, accountId, logContest, db.scalikejdbc.AccountChangeJdbc.Password,
+              comment = comment)
+            proof
           }
       }
     }

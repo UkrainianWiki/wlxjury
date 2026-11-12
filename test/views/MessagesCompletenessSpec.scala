@@ -90,7 +90,8 @@ class MessagesCompletenessSpec extends Specification {
     "coi.status." -> (db.scalikejdbc.RoundImageJdbc.Status.All :+ "removed"),       // round/conflicts.scala.html
     // linkStatus.scala.html: AccountToken.Status.key, and its time's text
     "link.status." -> Seq("active", "used", "expired", "revoked").flatMap(s => Seq(s, s"$s.at")),
-    "link.purpose." -> db.scalikejdbc.AccountTokenJdbc.SetsPassword                 // editUser's set-password links
+    "link.purpose." -> db.scalikejdbc.AccountTokenJdbc.SetsPassword,                // editUser's set-password links
+    "account.change.field." -> db.scalikejdbc.AccountChangeJdbc.Fields              // accountChangeTable.scala.html
   )
 
   /** Keys looked up from a value rather than a literal. */

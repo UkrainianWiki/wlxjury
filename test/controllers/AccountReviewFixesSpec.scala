@@ -34,7 +34,7 @@ class AccountReviewFixesSpec extends PlaySpecification with PlayTestDb with Acco
   private def add(mail: RecordingMail, admin: User, contestId: Long, email: String, role: String = "jury")(implicit
       app: Application
   ): Future[Result] =
-    save(mail, admin, contestId, "id" -> "0", "fullname" -> "Person", "email" -> email, "roles" -> role)
+    save(mail, admin, contestId, "id" -> "0", "sendInvitation" -> "true", "fullname" -> "Person", "email" -> email, "roles" -> role)
 
   private def importUsers(mail: RecordingMail, admin: User, contestId: Long, lines: String, role: String = "jury")(
       implicit app: Application
@@ -42,7 +42,7 @@ class AccountReviewFixesSpec extends PlaySpecification with PlayTestDb with Acco
     implicit val mat: Materializer = app.materializer
     call(userController(mail).importUsers(Some(contestId)),
       as(admin, Some(contestId))(FakeRequest(POST, s"/admin/importusers?contestId=$contestId"))
-        .withFormUrlEncodedBody("userstoimport" -> lines, "role" -> role).withCSRFToken)
+        .withFormUrlEncodedBody("sendInvitation" -> "true", "userstoimport" -> lines, "role" -> role).withCSRFToken)
   }
 
   private def accept(token: String, password: String)(implicit app: Application): Future[Result] = {
@@ -321,7 +321,7 @@ class AccountReviewFixesSpec extends PlaySpecification with PlayTestDb with Acco
         def addVia(host: String, email: String) =
           status(call(userController(mail).saveUser(),
             as(admin, Some(10))(FakeRequest(POST, "/users/save").withHeaders(HOST -> host))
-              .withFormUrlEncodedBody("contest" -> "10", "id" -> "0", "fullname" -> "P", "email" -> email, "roles" -> "jury")
+              .withFormUrlEncodedBody("contest" -> "10", "id" -> "0", "sendInvitation" -> "true", "fullname" -> "P", "email" -> email, "roles" -> "jury")
               .withCSRFToken))
         addVia("jury.wlm.org.ua", "wlm@example.com") === SEE_OTHER
         RecordingMail.Link.findFirstMatchIn(mail.sent.last._4).get.matched must startWith("https://jury.wlm.org.ua/")

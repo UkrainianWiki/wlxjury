@@ -14,6 +14,9 @@ import java.time.Instant
   * @param role      a pending invitation's role, given once accepted (None: nothing pending)
   * @param live      neither used, revoked nor expired, by the database clock
   * @param shared    shown to an admin or root to copy and pass on, not mailed (V94)
+  * @param unsent    an invitation its admin added without mailing it ("Send an invitation email"
+  *                  unticked, V96): it keeps the role waiting until the admin sends it or shares
+  *                  a link; its token was never shown to anyone
   */
 final case class AccountToken(
     id: Long,
@@ -28,8 +31,12 @@ final case class AccountToken(
     usedAt: Option[Instant],
     revokedAt: Option[Instant],
     live: Boolean,
-    shared: Boolean = false
+    shared: Boolean = false,
+    unsent: Boolean = false
 ) {
+
+  /** How the link was given, a `link.sent.*` message key: mailed, shared, or not at all. */
+  def sentKey: String = if (shared) "link.sent.shared" else if (unsent) "link.sent.none" else "link.sent.mail"
 
   /** What became of the link, for its admin: used, revoked, expired, else active. */
   def status: AccountToken.Status =
@@ -63,7 +70,7 @@ object AccountTokenJdbc {
 
   private val columns =
     sqls"""id, user_id, purpose, email, contest_id, role, created_by, created_at, expires_at, used_at, revoked_at,
-           (used_at IS NULL AND revoked_at IS NULL AND expires_at > NOW(3)) AS live, shared"""
+           (used_at IS NULL AND revoked_at IS NULL AND expires_at > NOW(3)) AS live, shared, unsent"""
 
   private def extract(rs: WrappedResultSet): AccountToken =
     AccountToken(
@@ -79,11 +86,13 @@ object AccountTokenJdbc {
       usedAt = rs.timestampOpt("used_at").map(_.toInstant),
       revokedAt = rs.timestampOpt("revoked_at").map(_.toInstant),
       live = rs.boolean("live"),
-      shared = rs.boolean("shared")
+      shared = rs.boolean("shared"),
+      unsent = rs.boolean("unsent")
     )
 
   /** A new link, by its hash, expiring in `validForSeconds`; its id. A role must be a contest role.
-    * `shared`: shown to an admin to pass on, not mailed (V94).
+    * `shared`: shown to an admin to pass on, not mailed (V94); `unsent`: an invitation added
+    * without a mail (V96).
     */
   def create(
       userId: Long,
@@ -94,13 +103,14 @@ object AccountTokenJdbc {
       role: Option[String],
       createdBy: Option[Long],
       validForSeconds: Long,
-      shared: Boolean = false
+      shared: Boolean = false,
+      unsent: Boolean = false
   )(implicit session: DBSession = AutoSession): Long = {
     require(role.forall(User.isContestRole), "not a contest role")
     sql"""INSERT INTO account_token
-            (user_id, purpose, token_hash, email, contest_id, role, created_by, created_at, expires_at, shared)
+            (user_id, purpose, token_hash, email, contest_id, role, created_by, created_at, expires_at, shared, unsent)
           VALUES ($userId, $purpose, $tokenHash, $email, $contestId, $role, $createdBy, NOW(3),
-                  NOW(3) + INTERVAL $validForSeconds SECOND, $shared)"""
+                  NOW(3) + INTERVAL $validForSeconds SECOND, $shared, $unsent)"""
       .updateAndReturnGeneratedKey.apply()
   }
 

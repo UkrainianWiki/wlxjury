@@ -89,12 +89,18 @@ under the table recalls which roles make the person's own photos conflicts of in
 
 <img src="images/admin-add-person.png" alt="The add row at the bottom of the users table, with the text about the roles under it" width="1280">
 
-- A **new** email gets a new account and an invitation by email, see [Invitations](#a-invitations).
+- **Send an invitation email**, under the table, is unticked by default: nothing is mailed. The
+  person then gets in with a [link to share](#a-share-link) that you pass on, or a password you
+  [set for them](#a-passwords); the envelope button next to them sends the invitation later. Tick
+  it to mail the invitation (and, to someone who already has an account, the contest's greeting).
+- A **new** email gets a new account, and an invitation by email if you ticked the box, see
+  [Invitations](#a-invitations).
 - An email whose account **exists** and whose owner has proved it (they accepted an invitation
   or a mailed link) joins your contest with the role at once. Nothing is changed in the account
   itself.
 - An account that hasn't proved its email, for example one made unverified by a shared link,
-  gets an invitation instead, and the role applies when they accept it. A wiki account that
+  gets an invitation instead, and the role applies when they accept it. Unticked, the invitation
+  waits in the invitations list as **Not sent**, for you to send or share. A wiki account that
   belongs to such an account is not added: add the person by email.
 - A person added with a wiki account only has no email. They can't sign in with a password
   until you share a link or set one for them (only while Wikimedia sign-in is not set up, see
@@ -102,7 +108,8 @@ under the table recalls which roles make the person's own photos conflicts of in
   invite them.
 
 The page tells you how many accounts were created, how many people joined and how many were
-members already, and lists any invitations that could not be sent.
+members already, how many invitations were not emailed because the box was unticked, and any that
+could not be sent.
 
 <a id="a-mass-import"></a>
 ### Adding many people
@@ -117,7 +124,8 @@ Name1 Surname1 <mail1@example.org>
 ```
 
 Choose the role for all of them; the text under it says the same about the roles as the users
-page. They are added as in [Adding a person](#a-add-person).
+page. **Send an invitation email** works as on the users page (unticked: nothing is mailed). They
+are added as in [Adding a person](#a-add-person).
 
 <a id="a-edit-person"></a>
 ### Changing a person
@@ -128,10 +136,23 @@ The pencil opens the page **Edit user**. An admin can change, for members of the
   conflicts of interest);
 - the **Full name** and the **Wiki account** (a valid wiki name that no other account has; it
   is marked unverified);
-- the **Email**, only while the person is still an invitee who hasn't accepted. They are invited
-  again at the new address. For a person who has a password, only the person can change their
-  email, on their own profile, or root;
-- the **Password**, with **Set password**, where you may: see [Passwords](#a-passwords).
+- the **Email**, at once, also of a person who has a password: they keep the password and sign
+  in with the new address, which is unverified until they use an invitation or a password link
+  sent to it. They are signed out everywhere. If the old address was verified, it gets a short
+  email saying that you changed it (the new address partly hidden). The email can't be changed
+  to another account's address, nor removed from an account that has a password;
+- **Send an invitation email**, unticked by default: ticked, the person gets an invitation at the
+  (new) address; unticked, nothing is mailed to it. An account that can sign in (with a password,
+  or with Google or Wikimedia) and whose address an admin set gets an invitation (also **Send the
+  invitation again**, or an add to another contest) only from someone who may set its password, as
+  for a [link to share](#a-share-link): not, for example, a fellow admin; ask root then. Once the
+  person uses a link sent to the address, or root sets it, this no longer applies;
+- if someone else changed the email after you opened the page, your save keeps their address
+  when you left the field as it was, and refuses an edit of it: reload the page;
+- the **Password**, with **Set password**, where you may: see [Passwords](#a-passwords). Set it
+  and change the email in separate saves;
+- a **Comment for the log**, optional: it is shown with this save's changes under
+  [Account changes](#a-account-changes).
 
 An account that also works in other contests can't be changed by an admin of one of them: the
 admin may change the person's role in their own contest only, unless they administer all of its
@@ -141,6 +162,20 @@ contests.
 
 Root sees more on this page, such as the checkbox **Root (every contest)**: see [What only root
 can do](#a-root).
+
+A person's own email change, on their profile, still takes effect only once they follow the link
+mailed to the new address.
+
+<a id="a-account-changes"></a>
+### Account changes
+
+Every change an admin or root makes to someone else's account is logged: the email (old and new),
+a password set, a role change, the name and wiki account, accounts created, invitations and links
+to share, and whether an email went out, with who made it, when, and the optional comment. The
+button **Account changes** on the users page lists the contest's changes, the newest first; a
+person's **Edit user** page lists theirs. Only the contest's admins and root see them: they show
+email addresses. Root sees every change of an account on its edit page, also those made in other
+contests.
 
 <a id="a-invitations"></a>
 ## Invitations
@@ -745,8 +780,8 @@ stopped.
 
   <img src="images/admin-user-edit-root.png" alt="The checkbox Root (every contest) on the Edit user page, above the role and its help" width="427">
 
-- Edit an account that is in contests the admin doesn't administer; change the email of an account
-  that has a password, through a link mailed to the new address.
+- Edit an account that is in contests the admin doesn't administer, its email included (at
+  once, as an admin does, see [Changing a person](#a-edit-person)).
 - Send **Reset password** links and use **End sessions** on any account, and see and revoke
   any account's API tokens.
 - Run **Check every round's images**, on the rounds list: it checks that every round's list of

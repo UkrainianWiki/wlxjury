@@ -89,6 +89,13 @@ object UserIdentityJdbc extends JoinTable[UserIdentity] {
       sql"""UPDATE user_identity SET unlinked_at = NOW(3)
             WHERE user_id = $userId AND provider = $p AND unlinked_at IS NULL""".update.apply())
 
+  /** Whether the account has, or had, a Google or Wikimedia identity (tombstones too): it could
+    * sign in without a password ([[services.UserService.invitationRefused]]).
+    */
+  def everLinked(userId: Long)(implicit session: DBSession = AutoSession): Boolean =
+    sql"SELECT EXISTS(SELECT 1 FROM user_identity WHERE user_id = $userId)".map(_.boolean(1)).single.apply()
+      .contains(true)
+
   /** Unlinks the identity, if it is the user's, leaving a tombstone; false if it is not. */
   def delete(userId: Long, provider: String, subject: String)(implicit session: DBSession = AutoSession): Boolean =
     sql"""UPDATE user_identity SET unlinked_at = NOW(3)

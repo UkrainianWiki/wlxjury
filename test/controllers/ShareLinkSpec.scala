@@ -65,7 +65,7 @@ class ShareLinkSpec extends PlaySpecification with PlayTestDb with AccountTestSu
     implicit val mat: Materializer = app.materializer
     call(userController(mail).saveUser(),
       as(admin, Some(contestId))(FakeRequest(POST, "/users/save")).withFormUrlEncodedBody(
-        "contest" -> contestId.toString, "id" -> "0", "fullname" -> "Person", "email" -> email, "roles" -> role)
+        "contest" -> contestId.toString, "id" -> "0", "sendInvitation" -> "true", "fullname" -> "Person", "email" -> email, "roles" -> role)
         .withCSRFToken)
   }
 
@@ -352,7 +352,7 @@ class ShareLinkSpec extends PlaySpecification with PlayTestDb with AccountTestSu
     implicit val mat: Materializer = app.materializer
     call(userController(mail).importUsers(Some(contestId)),
       as(admin, Some(contestId))(FakeRequest(POST, s"/admin/importusers?contestId=$contestId"))
-        .withFormUrlEncodedBody("userstoimport" -> lines, "role" -> "jury").withCSRFToken)
+        .withFormUrlEncodedBody("sendInvitation" -> "true", "userstoimport" -> lines, "role" -> "jury").withCSRFToken)
   }
 
   "an account whose password a shared link set [A-19]" should {
