@@ -47,10 +47,11 @@
 }
 
 @* The order of the viewer's own gallery, if they have files in the round: in file order, which a
-   vote doesn't change, or by their rate *@
+   vote doesn't change, or by their rate; not on a tab where all their votes are one rate
+   (unrated, selected, rejected: RoundList.oneRate), which by rate would not change *@
 @sortMenu(l: RoundList) = {
-    @if(rates.all > 0) {
     @defining(ownList(l)) { own =>
+    @if(rates.all > 0 && !own.oneRate) {
     @(new UiSelectionDto[ListOrder](
         (order: ListOrder) => Call("GET", own.withOrder(order).pageUrl(1)),
         own.order,

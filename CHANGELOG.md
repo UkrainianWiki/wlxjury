@@ -81,6 +81,10 @@ The next release is `26.12` (`build.sbt` says `26.12-SNAPSHOT`). Developed from 
   never an older one, whose final round usually stays open. "No round configured yet" no longer
   links to the start page, which showed it again: it has **Logout** and the person's other
   contests to switch to (last year's open round among them).
+- **Gallery order:** a juror's Unrated, Selected and Rejected tabs no longer offer **By my rating**:
+  every file there has the same rating, so they are in file order. The order chosen on the other
+  tabs is kept in the tabs' links (and the remembered order is unchanged), so going back to
+  **All** shows it again.
 
 **Development**
 
