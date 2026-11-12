@@ -417,8 +417,11 @@ a:has(> .btn) { text-decoration: none; }
     width: calc(100% - var(--bs-gutter-x));
 }
 
-/* the navbar's signed-in account (logged.scala.html): long names, wiki logins and emails wrap
-   within the screen instead of widening the menu past it */
+/* the navbar's signed-in account (logged.scala.html): as wide as its longest line, so an email
+   stays on one line (the menu, positioned at the toggle, otherwise shrinks to the narrowest
+   width .text-break allows and splits it mid-word); only a value longer than 20rem, or than the
+   screen, wraps */
 .navbar-account {
+    width: max-content;
     max-width: min(20rem, calc(100vw - 2rem));
 }
