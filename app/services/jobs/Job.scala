@@ -162,6 +162,10 @@ object JobJdbc {
         .flatMap(j => j.subjectId.map(_ -> j))
         .toMap
 
+  /** The latest job with the dedupe key, active or not (e.g. the latest all-rounds image check). */
+  def latestByDedupeKey(key: String)(implicit session: DBSession = AutoSession): Option[Job] =
+    sql"SELECT $columns FROM job WHERE dedupe_key = $key ORDER BY id DESC LIMIT 1".map(extract).single()
+
   def activeOfKind(kind: String)(implicit session: DBSession = AutoSession): Seq[Job] =
     sql"SELECT $columns FROM job WHERE status IN (${JobStatus.active.toSeq}) AND kind = $kind ORDER BY id"
       .map(extract)
