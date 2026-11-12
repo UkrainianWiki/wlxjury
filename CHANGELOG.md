@@ -27,6 +27,14 @@ with `.N` for an extra deploy in the same month (`26.11.1`), and release heading
 
 The next release is `26.12` (`build.sbt` says `26.12-SNAPSHOT`). Developed from 2026-11-11.
 
+Nothing yet.
+
+## 26.11.2 (2026-11-12)
+
+Deployed 2026-11-12, build `26.11.2-5fee540412f4` (release commit `5fee5404` on `release/26.11.2`),
+schema V96 (migration V96: `account_change`, `account_token.unsent`, `users.email_set_by_admin_at`;
+111 ms on the production copy), from `26.11.1`. PRs #292-#295. Deploy record: roadmap, "26.11.2 deploy record".
+
 **Features**
 
 - **Admins fix jurors' emails** (the maintainer's decision of 2026-11-12): an admin who may edit
