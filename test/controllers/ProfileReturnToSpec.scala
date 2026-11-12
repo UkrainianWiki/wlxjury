@@ -52,6 +52,9 @@ class ProfileReturnToSpec extends PlaySpecification with PlayTestDb with Account
         (link("/users/edit/5?returnTo=%2Frounds") must beSome("/rounds")) and
         (link("/users/edit/5") must beNone) and
         (link("/logout") must beNone) and
+        (UserController.profileReturnTo(Some("/./users/edit/1")) must beNone) and
+        (UserController.profileReturnTo(Some("/./logout")) must beNone) and
+        (UserController.profileReturnTo(Some("/rounds/../users/save")) must beNone) and
         (UserController.profileLinkReturnTo(FakeRequest(POST, "/rounds"), backHere = true) must beNone) and
         (UserController.profileLinkReturnTo(FakeRequest(GET, "/rounds"), backHere = false) must beNone)
     }
@@ -87,7 +90,7 @@ class ProfileReturnToSpec extends PlaySpecification with PlayTestDb with Account
         val juror = account("juror@example.com", Some(10), "jury")
         val admin = account("admin@example.com", Some(10), "admin")
         val unsafe = Seq("//evil.example", "https://evil.example", "/\\evil.example", s"/users/edit/${juror.getId}",
-          "/users/save", "/logout", "/switch-contest/10")
+          "/users/save", "/logout", "/switch-contest/10", "/./users/edit/1", "/./logout")
         val juror_ = unsafe.map(r => r -> redirectLocation(save(juror, own(juror, "returnTo" -> r): _*)))
         val admin_ = unsafe.map(r => r -> redirectLocation(save(admin, own(admin, "returnTo" -> r): _*)))
         (juror_.filterNot(_._2.contains("/")) must beEmpty) and

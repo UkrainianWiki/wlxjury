@@ -20,7 +20,7 @@ class TrailingSlashController @Inject() (cc: ControllerComponents, errorHandler:
 
   def untrail(path: String): Action[AnyContent] = Action.async { request =>
     TrailingSlashController.target(request) match {
-      case Some(location) => scala.concurrent.Future.successful(MovedPermanently(location))
+      case Some(location) => scala.concurrent.Future.successful(Redirect(location, FOUND))
       case None           => errorHandler.onClientError(request, NOT_FOUND, "")
     }
   }

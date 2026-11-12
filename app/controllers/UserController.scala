@@ -1167,14 +1167,17 @@ object UserController {
 
   /** A page the own profile may send back to after a save: a local path
     * ([[Secured.safeLocalPath]]), not the profile's or another account action's (`/users/...`,
-    * no loop), nor signing out or switching the contest. None: the save goes where it did
+    * no loop), nor signing out or switching the contest, also written with dot segments. None: the save goes where it did
     * before (the users list for an admin, else the start page).
     */
   def profileReturnTo(value: Option[String]): Option[String] =
     Secured.safeLocalPath(value).filterNot { url =>
-      val path = url.takeWhile(c => c != '?' && c != '#')
-      path.startsWith("/users/") || path == "/logout" || path.startsWith("/logout/") ||
-        path.startsWith("/switch-contest/")
+      // as the router would take it: dot segments resolved, percent-escapes decoded
+      // (/./users/edit/1, /%75sers/...); one that doesn't parse is refused
+      Try(new java.net.URI(url).normalize().getPath).toOption.forall { path =>
+        path.startsWith("/users/") || path == "/logout" || path.startsWith("/logout/") ||
+          path.startsWith("/switch-contest/")
+      }
     }
 
   /** The request's returnTo for the profile: the query's (the profile page's GET) or the form's

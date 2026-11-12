@@ -23,12 +23,12 @@ class TrailingSlashSpec extends PlaySpecification with PlayTestDb {
 
   "a GET with a trailing slash" should {
 
-    "be redirected (301) to the path without it, the query kept" in {
+    "be redirected (302, not cached for good) to the path without it, the query kept" in {
       testDbApp { app =>
         val auth = get(app, "/auth/")
         val withQuery = get(app, "/auth/?returnTo=%2Frounds&x=1")
         val several = get(app, "/admin/rounds///")
-        (status(auth) === MOVED_PERMANENTLY) and
+        (status(auth) === FOUND) and
           (redirectLocation(auth) must beSome("/auth")) and
           (redirectLocation(withQuery) must beSome("/auth?returnTo=%2Frounds&x=1")) and
           (redirectLocation(several) must beSome("/admin/rounds"))
@@ -38,7 +38,7 @@ class TrailingSlashSpec extends PlaySpecification with PlayTestDb {
     "answer a HEAD the same way" in {
       testDbApp { app =>
         val head = send(app, HEAD, "/auth/")
-        (status(head) === MOVED_PERMANENTLY) and (redirectLocation(head) must beSome("/auth"))
+        (status(head) === FOUND) and (redirectLocation(head) must beSome("/auth"))
       }
     }
 
@@ -73,7 +73,7 @@ class TrailingSlashSpec extends PlaySpecification with PlayTestDb {
     "leave / to its own route" in {
       testDbApp { app =>
         val root = get(app, "/")
-        status(root) !== MOVED_PERMANENTLY
+        status(root) !== FOUND
       }
     }
 

@@ -58,7 +58,7 @@ The next release is `26.12` (`build.sbt` says `26.12-SNAPSHOT`). Developed from 
   distribution already went by account id). `users.sort` stays in the database, no longer read
   or written.
 - **Addresses ending in `/`:** a page address with a trailing slash that the site doesn't have,
-  e.g. `/auth/` (typed or pasted), was the "page not found" page; it now redirects (301) to the
+  e.g. `/auth/` (typed or pasted), was the "page not found" page; it now redirects (302) to the
   address without the slash, the query kept (signed out, the page then asks to sign in as usual).
   Only within the site: an address that would lead elsewhere (`//host/`, encoded slashes or
   backslashes) stays a 404, as does a form sent to such an address.

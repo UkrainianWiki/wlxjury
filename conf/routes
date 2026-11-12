@@ -180,6 +180,6 @@ GET         /thumb_urls/:contestId                                              
 #GET         /unselectRound/:round/:region/:pageId                controllers.Gallery.unselectRound2(region: String, pageId:Long, round:Int)
 
 # Last: a GET (or HEAD) to a path ending in "/" that no route above takes, e.g. /auth/, is
-# redirected (301) to it without the trailing slashes, the query kept; never off the site
+# redirected (302) to it without the trailing slashes, the query kept; never off the site
 # (TrailingSlashController). Other methods with a trailing slash stay a 404.
 GET         /*path/                                                                 @controllers.TrailingSlashController.untrail(path: String)
