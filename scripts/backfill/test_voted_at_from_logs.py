@@ -366,6 +366,26 @@ class FailedVoteTest(unittest.TestCase):
         plan, _ = plan_of(lines, self.rows)
         self.assertEqual(plan.updates, [])
 
+    def test_before_the_cutover_a_last_file_vote_to_the_gallery_is_kept(self):
+        # 6fa5b56f sent a vote on the last unrated file to the gallery without sort=
+        def plan(when, nxt_when):
+            return plan_of([vote(when, 1, 100, 1, ref=self.ref),
+                            line(nxt_when, 'GET', '/gallery/round/1/user/50/page/1', 200)], self.rows)[0]
+        self.assertEqual(len(plan('01/Nov/2026:10:00:00 +0100', '01/Nov/2026:10:00:01 +0100').updates), 1)
+        self.assertEqual(len(plan('02/Nov/2026:15:00:59 +0100', '02/Nov/2026:15:01:00 +0100').updates), 1)
+        self.assertEqual(plan('02/Nov/2026:15:01:00 +0100', '02/Nov/2026:15:01:01 +0100').updates, [])
+        self.assertEqual(bf.utc_sql(bf.NEXT_PAGE_RULE_FROM), '2026-11-02 14:01:00.000')
+
+    def test_login_page_right_after_a_sign_in_or_out_is_not_a_failed_vote(self):
+        for post in ('/logout', '/auth'):
+            plan = self.plan([line('05/Nov/2026:10:00:01 +0100', 'POST', post, 303),
+                              line('05/Nov/2026:10:00:01 +0100', 'GET', '/auth', 200)])
+            self.assertEqual(len(plan.updates), 1, post)
+        # another browser's sign-out does not count
+        plan = self.plan([line('05/Nov/2026:10:00:01 +0100', 'POST', '/logout', 303, ua=UA_B),
+                          line('05/Nov/2026:10:00:01 +0100', 'GET', '/auth', 200)])
+        self.assertEqual(plan.updates, [])
+
 
 class ExtractOrderTest(unittest.TestCase):
     def test_same_second_across_extracts_the_later_extract_last(self):
@@ -384,6 +404,17 @@ class ExtractOrderTest(unittest.TestCase):
         self.assertIn('gap from 1970-01-11 00:00:00 to 1970-01-12 00:00:00', gap[0])
         self.assertIn('oldest first', bf.coverage_problems({0: [5 * d, 20 * d], 1: [0, 10 * d]}, 2)[0])
         self.assertIn('no log lines', bf.coverage_problems({0: [0, d]}, 2)[0])
+
+    def test_gaps_between_rotation_files_of_one_extract_warn(self):
+        h = 3600
+        log = 'other_vhosts_access.log'
+        night = {(0, log + '.2.gz'): [0, 20 * h], (0, log + '.1'): [29 * h, 44 * h], (0, log): [53 * h, 60 * h]}
+        self.assertEqual(bf.file_gap_warnings(night), [])   # quiet nights of 9 h
+        missing = {(0, log + '.3.gz'): [0, 20 * h], (0, log + '.1'): [53 * h, 60 * h], (1, log): [0, h]}
+        w = bf.file_gap_warnings(missing)
+        self.assertEqual(len(w), 2)
+        self.assertIn('extract 1: no lines from rotation file(s) 2', w[0])
+        self.assertIn('33.0 h without lines between other_vhosts_access.log.3.gz and other_vhosts_access.log.1', w[1])
 
 
 class BatchTest(unittest.TestCase):
@@ -483,6 +514,22 @@ class MainTest(unittest.TestCase):
     def test_newest_first_is_refused(self):
         with self.assertRaises(SystemExit):
             self.run_main('--dry-run', self.ex2, self.ex1)
+
+    def test_existing_undo_is_kept_unless_forced(self):
+        out = os.path.join(self.d, 'v.sql')
+        self.run_main('--out', out, self.ex1)
+        with self.assertRaises(SystemExit) as e:
+            self.run_main('--out', out, self.ex1)
+        self.assertIn('--force', str(e.exception.code))
+        rc, _ = self.run_main('--out', out, '--force', self.ex1)
+        self.assertEqual(rc, 0)
+        rc, _ = self.run_main('--out', out, '--dry-run', self.ex1)   # writes nothing: no refusal
+        self.assertEqual(rc, 0)
+
+    def test_other_vhosts_are_counted_in_the_report(self):
+        other = self.path('o.log', vote('05/Nov/2026:10:00:00 +0100', 1, 100, 1).replace(HOST, 'www.example.org:443'))
+        _, stdout = self.run_main('--dry-run', '--allow-gap', self.ex1, other)
+        self.assertIn('1 other vhosts', stdout)
 
     def test_run_start_default_is_one_constant(self):
         _, stdout = self.run_main('--dry-run', self.ex1)

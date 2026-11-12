@@ -21,8 +21,10 @@ A successful status does not prove a vote: the large view answers 303 also to a 
 (to the login page) and in a closed round or to a stopped juror (to the gallery, no query), and
 before 26.11 both vote endpoints answered success when no vote row of the user matched. So a
 vote request is taken as failed when the same IP + user agent session opens the login page within
-a few seconds after it, or, for a large-view vote, when its next page is a list without the
-list's own query (the closed-round redirect; the vote's own redirect always carries `sort=`).
+a few seconds after it (not right after a sign-in or sign-out of that session), or, for a
+large-view vote from NEXT_PAGE_RULE_FROM on, when its next page is a list without the list's own
+query (the closed-round redirect; the vote's own redirect carries `sort=` since then, while the
+release before sent a vote on the last unrated file to the gallery without it).
 
 Input: one or more extract files (gzip or plain), each line "<log basename> <Apache
 other_vhosts_access line>" as made by the command in docs/deployment.md, GIVEN OLDEST FIRST.
@@ -74,10 +76,13 @@ JURY_VHOSTS = ('jury.wlm.org.ua', 'jury.wikilovesmonuments.org.ua', 'jury.wikilo
 #   POST /rate/round/R/pageid/P/select/S                   gallery tiles (Csrf-Token header): 200
 #   POST /large/round/R[/region/X]/pageid/P/select/S[?..]  large view buttons and keyboard: 303
 #        with ?criteria=C a criterion's rate (the vote's rate is then the criteria's sum)
-# What the statuses prove differs: before 26.11 (f9c31ce5) both answered success also when no
-# vote row of the user matched; since, a vote changing no row is a 404/400. A signed-out large
-# view vote, or one in a closed round or by a stopped juror, is a 303 in both (see above).
-# GET .../select/... is no route (404).
+# What the statuses prove differs: before 26.11 (6fa5b56f, then f9c31ce5) both answered success
+# also when no vote row of the user matched; since, a vote changing no row is a 404/400. A
+# signed-out large view vote, or one in a closed round or by a stopped juror, is a 303 in all of
+# them (see above). Where a successful large view vote goes on to differs: since f9c31ce5 to the
+# next file's large view or the list's first page, both with the list's `sort=`; in 6fa5b56f a
+# vote on the last unrated file went to the gallery's first page without `sort=`, as the
+# closed-round redirect does. GET .../select/... is no route (404).
 VOTE = re.compile(r'^/(rate|large)/round/(\d+)(?:/region/[^/]+)?/pageid/(\d+)/select/(-?\d+)/?$')
 VOTE_OK = {'rate': {200}, 'large': {303}}
 # a page of one juror's list: the juror whose votes it shows (and, for a juror, their own)
@@ -86,6 +91,13 @@ LIST_OR_LARGE = re.compile(r'^/(gallery|large|byrate)/')
 ROTATION = re.compile(r'\.log(?:\.(\d+))?(?:\.gz)?$')
 # a vote's redirect (or the login page) follows it within this many seconds
 FOLLOW_WINDOW = 5
+# The "next page is a list without sort=" rule applies from here on: f9c31ce5 (with the role
+# hotfix) replaced 6fa5b56f in production at 2026-11-02 14:01Z (docs/plans/2026-11-02-roadmap.md,
+# "Role-allowlist hotfix ... Deployed 2026-11-02 14:01Z"). 2026-11-02 14:01:00 UTC:
+NEXT_PAGE_RULE_FROM = 1793628060
+# inside one extract, consecutive rotation files further apart than this get a warning (the
+# jury's quiet nights leave gaps of several hours; a missing daily file leaves a day)
+FILE_GAP_WARN = 12 * 3600
 
 SQL_TIME = '%Y-%m-%d %H:%M:%S'
 
@@ -140,10 +152,11 @@ def read_lines(paths):
                 yield i, line
 
 
-def parse_events(lines, stats, salt=None, vhosts=None, spans=None):
+def parse_events(lines, stats, salt=None, vhosts=None, spans=None, file_spans=None):
     """Vote requests, list pages and sign-in/out requests from extract lines, deduplicated
     across files. The sessions (IP + user agent) are salted hashes kept in memory only.
-    `spans` (if given) gets each extract's first and last UTC time: {file index: [min, max]}."""
+    `spans` (if given) gets each extract's first and last UTC time: {file index: [min, max]};
+    `file_spans` each rotation file's in each extract: {(file index, log basename): [min, max]}."""
     salt = salt if salt is not None else os.urandom(16).hex()
     kept = collections.Counter()      # digest of the Apache line -> times kept so far
     seen_in = collections.Counter()   # (file, digest) -> times seen in that file
@@ -162,6 +175,9 @@ def parse_events(lines, stats, salt=None, vhosts=None, spans=None):
             continue
         if spans is not None:
             s = spans.setdefault(fi, [t, t])
+            s[0], s[1] = min(s[0], t), max(s[1], t)
+        if file_spans is not None:
+            s = file_spans.setdefault((fi, base or ''), [t, t])
             s[0], s[1] = min(s[0], t), max(s[1], t)
         if vhosts is not None and vhost.rsplit(':', 1)[0].lower() not in vhosts:
             stats['lines_other_vhost'] += 1
@@ -229,6 +245,24 @@ def coverage_problems(spans, count):
                     utc_sql(covered)[:19], utc_sql(first)[:19], i + 1))
         covered = last if covered is None else max(covered, last)
     return problems
+
+
+def file_gap_warnings(file_spans, threshold=FILE_GAP_WARN):
+    """Inside each extract: rotation files missing from the numbering (a file without one jury
+    line is left out too, so a warning only), and consecutive files further apart than
+    `threshold` between one's last line and the next one's first."""
+    warnings = []
+    for fi in sorted({k[0] for k in file_spans}):
+        files = sorted(((rotation_index(b), b, s) for (f, b), s in file_spans.items() if f == fi), reverse=True)
+        idx = [i for i, _, _ in files]
+        missing = sorted(set(range(min(idx), max(idx) + 1)) - set(idx)) if idx else []
+        if missing:
+            warnings.append('extract {}: no lines from rotation file(s) {}'.format(fi + 1, ', '.join(map(str, missing))))
+        for (_, b1, s1), (_, b2, s2) in zip(files, files[1:]):
+            if s2[0] - s1[1] > threshold:
+                warnings.append('extract {}: {:.1f} h without lines between {} and {} ({} to {} UTC)'.format(
+                    fi + 1, (s2[0] - s1[1]) / 3600, b1, b2, utc_sql(s1[1])[:19], utc_sql(s2[0])[:19]))
+    return warnings
 
 
 class Row(object):
@@ -310,10 +344,20 @@ def failed_votes(events):
     """Vote requests with a successful status that the session's next requests show failed:
     {id(event): reason}."""
     by_sess = collections.defaultdict(list)
+    signins = collections.defaultdict(list)
     for e in events:
         if e.kind in ('page', 'login'):
             by_sess[e.sess].append(e)
+        elif e.kind == 'signin':
+            signins[e.sess].append(e)
     keys = {s: [e.order for e in l] for s, l in by_sess.items()}
+    signin_keys = {s: [e.order for e in l] for s, l in signins.items()}
+
+    def after_signin(login):
+        # the login page a sign-in or sign-out of the session just led to, not a failed vote
+        l = signins.get(login.sess, [])
+        k = bisect.bisect_left(signin_keys.get(login.sess, []), login.order)
+        return k > 0 and login.t - l[k - 1].t <= FOLLOW_WINDOW
     out = {}
     for e in events:
         if e.kind != 'vote' or e.status not in VOTE_OK[e.ep]:
@@ -324,9 +368,10 @@ def failed_votes(events):
         while k < len(l) and l[k].t - e.t <= FOLLOW_WINDOW:
             after.append(l[k])
             k += 1
-        if any(a.kind == 'login' for a in after):
+        if any(a.kind == 'login' and not after_signin(a) for a in after):
             out[id(e)] = 'skipped: failed (login page next: signed out)'
-        elif e.ep == 'large' and after and after[0].kind == 'page' and after[0].target == 'list' and not after[0].sorted:
+        elif (e.ep == 'large' and e.t >= NEXT_PAGE_RULE_FROM and after and after[0].kind == 'page'
+              and after[0].target == 'list' and not after[0].sorted):
             out[id(e)] = 'skipped: failed (sent to the gallery: round closed or juror stopped)'
     return out
 
@@ -542,6 +587,7 @@ def main(argv=None):
     ap.add_argument('--dry-run', action='store_true', help='report only, write no SQL')
     ap.add_argument('--check', action='store_true', help='after applying: report how many rows have the time')
     ap.add_argument('--allow-gap', action='store_true', help='run although the extracts leave a gap in time')
+    ap.add_argument('--force', action='store_true', help='replace an existing undo file (NAME.revert.sql)')
     ap.add_argument('--vhosts', default=','.join(JURY_VHOSTS),
                     help='the jury vhosts, comma-separated (default: %(default)s)')
     ap.add_argument('--session-attribution', action='store_true',
@@ -555,11 +601,15 @@ def main(argv=None):
     args = ap.parse_args(argv)
     if not (args.out or args.dry_run or args.check):
         ap.error('--out is required unless --dry-run or --check')
+    if args.out and not (args.dry_run or args.check) and os.path.exists(revert_path(args.out)) and not args.force:
+        sys.exit('{} exists: the undo of an earlier run, whose applied rows a new run would leave out. Apply or '
+                 'keep it, write elsewhere (--out), or rerun with --force to replace it.'.format(revert_path(args.out)))
 
     stats = collections.Counter()
     spans = {}
+    file_spans = {}
     vhosts = {h.strip().lower() for h in args.vhosts.split(',') if h.strip()}
-    events = parse_events(read_lines(args.extracts), stats, vhosts=vhosts, spans=spans)
+    events = parse_events(read_lines(args.extracts), stats, vhosts=vhosts, spans=spans, file_spans=file_spans)
     extra = ['Extract {}: {} to {} UTC'.format(i + 1, utc_sql(spans[i][0])[:19], utc_sql(spans[i][1])[:19])
              if i in spans else 'Extract {}: no log lines'.format(i + 1) for i in range(len(args.extracts))]
     for line in extra:
@@ -567,6 +617,8 @@ def main(argv=None):
     problems = coverage_problems(spans, len(args.extracts))
     for pr in problems:
         print('Coverage: ' + pr)
+    for w in file_gap_warnings(file_spans):
+        print('Coverage warning: ' + w)
     if problems and not args.allow_gap:
         sys.exit('The extracts do not cover one span of time (above): add the missing extract, give them oldest '
                  'first, or rerun with --allow-gap to accept the gap.')
