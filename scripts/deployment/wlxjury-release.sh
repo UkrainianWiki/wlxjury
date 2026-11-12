@@ -4,8 +4,8 @@
 # database and release when a deployment must be backed out. A release without
 # new migrations skips the backup unless --backup asks for one; backing it out
 # then only switches the release back. A deployment refuses while a background
-# job is queued or running, unless --allow-running-jobs accepts that they stop
-# with the app and resume after the restart. Every step stops at the first
+# job is queued or running, unless --allow-running-jobs accepts that they go
+# back to the queue and continue after the restart. Every step stops at the first
 # failure and never clears maintenance on failure; the runbook in
 # docs/deployment.md says which command fits the operation's milestones.
 #
@@ -150,7 +150,7 @@ check_jobs() {  # check_jobs yes|no: queued or running background jobs refuse th
   [ "$1" = yes ] || die "background jobs are queued or running; nothing was changed:
 $active_jobs
 Wait for them to finish (or cancel them in the app), or rerun with --allow-running-jobs:
-stopping the app interrupts them, and they resume after the restart (lease recovery)."
+running jobs go back to the queue and continue after the restart (if the app was killed, once their lease expires)."
 }
 
 no_enabled_events() {
@@ -400,7 +400,7 @@ deploy() {
   if [ "$backup" = no ]; then echo "No new migrations (schema $have): skipping the database backup"; fi
   if [ -n "$active_jobs" ]; then
     echo "wlxjury-release: warning: deploying with background jobs queued or running (--allow-running-jobs);" \
-         "they stop with the app and resume after the restart:" >&2
+         "running ones go back to the queue and continue after the restart:" >&2
     echo "$active_jobs" >&2
   fi
   mark started
