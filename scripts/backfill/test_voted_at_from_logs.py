@@ -3,9 +3,11 @@
     python -m unittest discover -s scripts/backfill
 """
 import collections
+import contextlib
 import gzip
 import io
 import os
+import shlex
 import shutil
 import sys
 import tempfile
@@ -268,6 +270,228 @@ class SqlTest(unittest.TestCase):
         self.assertNotIn('192.0.2', text)
         self.assertNotIn('TestAgent', text)
 
+
+
+class LiveAndAsideTest(unittest.TestCase):
+    def test_live_row_wins_over_aside_row(self):
+        rows = [row(7, 1, 50, 100, 1), row(70, 1, 50, 100, -1, table='vote_aside')]
+        for order in (rows, list(reversed(rows))):
+            db = bf.DbData(order)
+            self.assertEqual(db.cand[(1, 100)][50].id, 7)
+            self.assertEqual(db.live_and_aside, 1)
+        plan, _ = plan_of([vote('05/Nov/2026:10:00:00 +0100', 1, 100, 1)], rows)
+        self.assertEqual([(r.table, r.id) for r, _ in plan.updates], [('vote', 7)])
+        self.assertEqual(plan.diag['juror with a live and an aside row of a file (the live one used)'], 1)
+        applied = [row(7, 1, 50, 100, 1, voted_at='2026-11-05 09:00:00.000'),
+                   row(70, 1, 50, 100, -1, table='vote_aside')]
+        self.assertEqual(bf.check(plan, bf.DbData(applied)), collections.Counter({'has the time from the logs': 1}))
+
+
+class MoreAttributionTest(unittest.TestCase):
+    def test_criteria_query_is_skipped(self):
+        lines = [line('05/Nov/2026:10:00:00 +0100', 'POST', '/large/round/1/pageid/100/select/3?criteria=5&sort=0', 303)]
+        plan, _ = plan_of(lines, [row(7, 1, 50, 100, 3)])
+        self.assertEqual(plan.updates, [])
+        self.assertEqual(plan.req['skipped: criteria round (a criterion, not the vote, was rated)'], 1)
+
+    def test_referer_of_another_round_is_ignored(self):
+        lines = [vote('05/Nov/2026:10:00:00 +0100', 1, 100, 1, ref='/gallery/round/2/user/51/page/1')]
+        plan, _ = plan_of(lines, [row(7, 1, 50, 100, 1)])   # the single row decides
+        self.assertEqual(times(plan), {7: '2026-11-05 09:00:00.000'})
+        self.assertEqual(plan.diag['referer of another round (ignored)'], 1)
+        plan, _ = plan_of(lines, [row(7, 1, 50, 100, 1), row(8, 1, 51, 100, 1)])
+        self.assertEqual(plan.updates, [])
+        self.assertEqual(plan.req['skipped: ambiguous juror'], 1)
+
+    def test_later_unattributed_request_skips_the_row(self):
+        rows = [row(7, 1, 50, 100, 1), row(8, 1, 51, 100, 0)]
+        lines = [vote('05/Nov/2026:10:00:00 +0100', 1, 100, 1, ref='/gallery/round/1/user/50/page/1'),
+                 vote('05/Nov/2026:10:00:30 +0100', 1, 100, 1, ip='198.51.100.7')]   # no referer
+        plan, _ = plan_of(lines, rows)
+        self.assertEqual(plan.updates, [])
+        self.assertEqual(plan.rows['skipped: a later unattributed request on the file'], 1)
+        earlier = [lines[0], lines[1].replace('10:00:30', '09:59:30')]
+        plan, _ = plan_of(earlier, rows)
+        self.assertEqual(len(plan.updates), 1)   # the unattributed one came first
+
+    def test_plain_and_ipv6_lines(self):
+        plain = vote('05/Nov/2026:10:00:00 +0100', 1, 100, 1).split(' ', 1)[1]
+        v6 = vote('05/Nov/2026:10:00:05 +0100', 1, 101, 1, ip='2001:db8::1')
+        v6plain = vote('05/Nov/2026:10:00:09 +0100', 1, 102, 1, ip='2001:db8::2').split(' ', 1)[1]
+        rows = [row(7, 1, 50, 100, 1), row(8, 1, 50, 101, 1), row(9, 1, 50, 102, 1)]
+        plan, stats = plan_of([plain, v6, v6plain], rows)
+        self.assertEqual(stats['lines_unparsed'], 0)
+        self.assertEqual(sorted(times(plan)), [7, 8, 9])
+
+    def test_other_vhosts_are_left_out(self):
+        stats = collections.Counter()
+        lines = [(0, vote('05/Nov/2026:10:00:00 +0100', 1, 100, 1)),
+                 (0, vote('05/Nov/2026:10:00:01 +0100', 1, 100, 1).replace(HOST, 'jury-test.example.org:443'))]
+        events = bf.parse_events(lines, stats, salt='t', vhosts={'jury.example.org'})
+        self.assertEqual(len(events), 1)
+        self.assertEqual(stats['lines_other_vhost'], 1)
+
+
+class FailedVoteTest(unittest.TestCase):
+    rows = [row(7, 1, 50, 100, 1)]
+    ref = '/large/round/1/user/50/pageid/100'
+
+    def plan(self, after):
+        return plan_of([vote('05/Nov/2026:10:00:00 +0100', 1, 100, 1, ref=self.ref)] + after, self.rows)[0]
+
+    def test_login_page_next_means_signed_out(self):
+        plan = self.plan([line('05/Nov/2026:10:00:01 +0100', 'GET', '/auth', 200)])
+        self.assertEqual(plan.updates, [])
+        self.assertEqual(plan.req['skipped: failed (login page next: signed out)'], 1)
+
+    def test_gallery_without_query_next_means_closed_round(self):
+        plan = self.plan([line('05/Nov/2026:10:00:00 +0100', 'GET', '/gallery/round/1/user/50/page/1', 200)])
+        self.assertEqual(plan.updates, [])
+        self.assertEqual(plan.req['skipped: failed (sent to the gallery: round closed or juror stopped)'], 1)
+
+    def test_the_votes_own_redirects_keep_it(self):
+        for nxt in ('/large/round/1/user/50/pageid/101?sort=0',
+                    '/gallery/round/1/user/50/page/1?filter=unrated&sort=0'):
+            plan = self.plan([line('05/Nov/2026:10:00:01 +0100', 'GET', nxt, 200)])
+            self.assertEqual(len(plan.updates), 1, nxt)
+
+    def test_only_the_same_session_and_within_the_window(self):
+        plan = self.plan([line('05/Nov/2026:10:00:01 +0100', 'GET', '/auth', 200, ua=UA_B),
+                          line('05/Nov/2026:10:00:30 +0100', 'GET', '/auth', 200)])
+        self.assertEqual(len(plan.updates), 1)
+
+    def test_gallery_vote_with_login_after(self):
+        lines = [vote('05/Nov/2026:10:00:00 +0100', 1, 100, 1, ep='rate', ref='/gallery/round/1/user/50/page/1'),
+                 line('05/Nov/2026:10:00:02 +0100', 'GET', '/auth?returnTo=%2Fgallery', 200)]
+        plan, _ = plan_of(lines, self.rows)
+        self.assertEqual(plan.updates, [])
+
+
+class ExtractOrderTest(unittest.TestCase):
+    def test_same_second_across_extracts_the_later_extract_last(self):
+        # the older extract's line is in the current log, the newer one's in a rotated log:
+        # rotation numbers are not comparable across extracts, the extracts' order is
+        x = vote('05/Nov/2026:10:00:00 +0100', 1, 100, 5)
+        y = vote('05/Nov/2026:10:00:00 +0100', 1, 100, 2, log='other_vhosts_access.log.1', ip='192.0.2.11')
+        plan, _ = plan_of(None, [row(7, 1, 50, 100, 2)], files=[[x], [y]])
+        self.assertEqual(len(plan.updates), 1)
+
+    def test_coverage(self):
+        d = 86400
+        self.assertEqual(bf.coverage_problems({0: [0, 10 * d], 1: [5 * d, 20 * d]}, 2), [])
+        gap = bf.coverage_problems({0: [0, 10 * d], 1: [11 * d, 20 * d]}, 2)
+        self.assertEqual(len(gap), 1)
+        self.assertIn('gap from 1970-01-11 00:00:00 to 1970-01-12 00:00:00', gap[0])
+        self.assertIn('oldest first', bf.coverage_problems({0: [5 * d, 20 * d], 1: [0, 10 * d]}, 2)[0])
+        self.assertIn('no log lines', bf.coverage_problems({0: [0, d]}, 2)[0])
+
+
+class BatchTest(unittest.TestCase):
+    def sql(self, n):
+        plan = bf.Plan()
+        plan.updates = [(row(i, 1, 50, i, 1), 1793000000) for i in range(1, n + 1)]
+        return bf.render_sql(plan), bf.render_revert_sql(plan)
+
+    def test_batch_boundary(self):
+        for n, tx in ((1000, 1), (1001, 2), (0, 0)):
+            sql, revert = self.sql(n)
+            self.assertEqual(sql.count('START TRANSACTION;'), tx, n)
+            self.assertEqual(sql.count('COMMIT;'), tx, n)
+            self.assertEqual(sql.count('UPDATE vote '), n)
+            self.assertEqual(revert.count('COMMIT;'), tx, n)
+        sql, revert = self.sql(1001)
+        lines = sql.splitlines()
+        self.assertEqual(lines.index('COMMIT;') - lines.index('START TRANSACTION;'), 1001)
+        self.assertEqual(revert.splitlines()[0], "SET time_zone = '+00:00';")
+        self.assertIn("UPDATE vote SET voted_at = NULL WHERE id = 1 AND voted_at = '2026-10-26 07:33:20.000';", revert)
+
+
+STUB = '''
+import sys
+out, code, argv_file = sys.argv[1], int(sys.argv[2]), sys.argv[3]
+open(argv_file, 'w').write('\\n'.join(sys.argv[4:]) + '\\n' + sys.stdin.read())
+if code:
+    sys.stderr.write("ERROR 1054 (42S22): Unknown column 'voted_at' in 'field list'\\n")
+    sys.exit(code)
+sys.stdout.write(open(out).read())
+'''
+
+
+class MainTest(unittest.TestCase):
+    def setUp(self):
+        self.d = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.d)
+        self.stub = self.path('stub.py', STUB)
+        self.db_out = self.path('db.tsv', 'vote\t7\t1\t50\t100\t1\t\nvote\t8\t1\t51\t100\t2\t\nround\t1\t0\n')
+        self.ex1 = self.path('a.log', vote('05/Nov/2026:10:00:00 +0100', 1, 100, 1, ref='/gallery/round/1/user/50/page/1')
+                             + vote('06/Nov/2026:10:00:00 +0100', 1, 100, 2, ref='/gallery/round/1/user/51/page/1'))
+        self.ex2 = self.path('b.log', vote('06/Nov/2026:10:00:00 +0100', 1, 100, 2, ref='/gallery/round/1/user/51/page/1',
+                                           log='other_vhosts_access.log.1')
+                             + vote('07/Nov/2026:10:00:00 +0100', 1, 100, 9, ref='/gallery/round/1/user/52/page/1'))
+        self.argv_file = os.path.join(self.d, 'argv.txt')
+
+    def path(self, name, text):
+        p = os.path.join(self.d, name)
+        with open(p, 'w', encoding='utf-8') as f:
+            f.write(text)
+        return p
+
+    def run_main(self, *args, code=0):
+        client = ' '.join(shlex.quote(a) for a in (sys.executable, self.stub, self.db_out, str(code), self.argv_file))
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            rc = bf.main(['--client', client, '--defaults-extra-file', '/etc/x.cnf', '--db', 'jurydb',
+                          '--vhosts', 'jury.example.org'] + list(args))
+        return rc, buf.getvalue()
+
+    def test_writes_sql_and_undo_and_prints_counts_only(self):
+        out = os.path.join(self.d, 'v.sql')
+        rc, stdout = self.run_main('--out', out, self.ex1, self.ex2)
+        self.assertEqual(rc, 0)
+        with open(self.argv_file) as f:
+            argv = f.read()
+        self.assertTrue(argv.startswith('--defaults-extra-file=/etc/x.cnf\n--batch\n--skip-column-names\njurydb\n'))
+        self.assertIn('round_id IN (1)', argv)
+        with open(out) as f:
+            sql = f.read()
+        self.assertIn("UPDATE vote SET voted_at = '2026-11-05 09:00:00.000' WHERE id = 7 AND rate = 1", sql)
+        self.assertIn("UPDATE vote SET voted_at = '2026-11-06 09:00:00.000' WHERE id = 8 AND rate = 2", sql)
+        with open(os.path.join(self.d, 'v.revert.sql')) as f:
+            self.assertIn("SET voted_at = NULL WHERE id = 8 AND voted_at = '2026-11-06 09:00:00.000';", f.read())
+        self.assertIn('Extract 1: 2026-11-05 09:00:00 to 2026-11-06 09:00:00 UTC', stdout)
+        self.assertIn('1 duplicates across extracts', stdout)
+        for text in (stdout, sql):
+            self.assertNotIn('192.0.2', text)
+            self.assertNotIn('TestAgent', text)
+            self.assertNotIn('jury.example.org', text)
+
+    def test_client_failure_stops_with_its_message(self):
+        with self.assertRaises(SystemExit) as e:
+            self.run_main('--dry-run', self.ex1, code=1)
+        self.assertIn('mariadb failed (1)', str(e.exception.code))
+        self.assertIn('run this after the release with V97', str(e.exception.code))
+
+    def test_gap_stops_unless_allowed(self):
+        late = self.path('c.log', vote('20/Nov/2026:10:00:00 +0100', 1, 100, 1))
+        with self.assertRaises(SystemExit) as e:
+            self.run_main('--dry-run', self.ex1, late)
+        self.assertIn('--allow-gap', str(e.exception.code))
+        rc, stdout = self.run_main('--dry-run', '--allow-gap', self.ex1, late)
+        self.assertEqual(rc, 0)
+        self.assertIn('Coverage: gap from 2026-11-06 09:00:00 to 2026-11-20 09:00:00 UTC', stdout)
+
+    def test_newest_first_is_refused(self):
+        with self.assertRaises(SystemExit):
+            self.run_main('--dry-run', self.ex2, self.ex1)
+
+    def test_run_start_default_is_one_constant(self):
+        _, stdout = self.run_main('--dry-run', self.ex1)
+        self.assertIn('Time of a row: ' + ('the first of the last same-value requests (--run-start)'
+                                           if bf.RUN_START_DEFAULT else 'the latest request'), stdout)
+        _, stdout = self.run_main('--dry-run', '--run-start', self.ex1)
+        self.assertIn('Time of a row: the first of the last same-value requests', stdout)
+        _, stdout = self.run_main('--dry-run', '--latest', self.ex1)
+        self.assertIn('Time of a row: the latest request', stdout)
 
 if __name__ == '__main__':
     unittest.main()

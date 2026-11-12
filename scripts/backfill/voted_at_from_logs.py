@@ -12,14 +12,23 @@ The rule (decided by the maintainer, 2026-11-12):
     the juror's own list (/gallery|large|byrate/.../user/U/... with U among the file's jurors);
     an IP + user agent session tie is optional (--session-attribution, off by default);
   - per (round, file, juror) the latest attributed request wins, by (UTC second, log order);
-  - it is used only if the value it set equals the vote's current rate, and the rate is not 0.
+  - it is used only if the value it set equals the vote's current rate, and the rate is not 0,
+    and no unattributed vote request came later on the same file (it may have been this juror's).
 The guard (same rate, no time yet) makes the SQL safe to rerun and safe against votes changed
 after the extract: the app sets voted_at on every change of the rate since V97.
 
+A successful status does not prove a vote: the large view answers 303 also to a signed-out user
+(to the login page) and in a closed round or to a stopped juror (to the gallery, no query), and
+before 26.11 both vote endpoints answered success when no vote row of the user matched. So a
+vote request is taken as failed when the same IP + user agent session opens the login page within
+a few seconds after it, or, for a large-view vote, when its next page is a list without the
+list's own query (the closed-round redirect; the vote's own redirect always carries `sort=`).
+
 Input: one or more extract files (gzip or plain), each line "<log basename> <Apache
-other_vhosts_access line>" as made by the command in docs/deployment.md. Extracts may overlap
-(the same log lines read twice, under another rotation name): identical Apache lines are
-counted once across files (within one file, repeated identical lines are separate requests).
+other_vhosts_access line>" as made by the command in docs/deployment.md, GIVEN OLDEST FIRST.
+Extracts may overlap (the same log lines read twice, under another rotation name): identical
+Apache lines are counted once across files (within one file, repeated identical lines are
+separate requests). Extracts that leave a gap in time stop the run unless --allow-gap.
 
 The extracts hold IP addresses and user agents: this script never writes them anywhere. Its SQL
 holds vote ids, rates and times only, and stdout only aggregate counts. Delete the extracts and
@@ -27,8 +36,9 @@ the SQL after use.
 
 Database: read with the mariadb command-line client (no Python driver), e.g. on the server
     python3 voted_at_from_logs.py --defaults-extra-file /etc/wlxjury-runtime/db-admin.cnf \\
-        --db wlxjury --out voted_at.sql jury-votelog.gz
-then review the report, apply the SQL with the same client, and run with --check.
+        --db wlxjury --out voted_at.sql older-extract.gz jury-votelog.gz
+then review the report, apply the SQL with the same client, and run with --check. The undo
+(voted_at.revert.sql, written alongside) clears exactly the times this SQL set.
 
 Stdlib only, Python 3.8+.
 """
@@ -44,6 +54,11 @@ import shlex
 import subprocess
 import sys
 
+# The time of the last of a juror's requests on a file (the agreed rule), or, with RUN_START, of
+# the first of the last requests that all set the current value (the app's rule: a vote of the
+# same value again keeps the time). A pending maintainer decision: flip here.
+RUN_START_DEFAULT = False
+
 # "<vhost:port> <ip> <ident> <user> [<time>] "<method> <path> <proto>" <status> <bytes> "<referer>" "<ua>""
 # with the extract's "<log basename> " in front (optional here, for plain log lines)
 LINE = re.compile(
@@ -51,17 +66,26 @@ LINE = re.compile(
 APACHE_TIME = re.compile(r'^(\d{2})/([A-Za-z]{3})/(\d{4}):(\d{2}):(\d{2}):(\d{2}) ([+-])(\d{2})(\d{2})$')
 MONTHS = {m: i + 1 for i, m in enumerate(
     ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'])}
+# the jury app's names (one app, one database)
+JURY_VHOSTS = ('jury.wlm.org.ua', 'jury.wikilovesmonuments.org.ua', 'jury.wikilovesearth.org.ua',
+               'jury.wikilovesearth.org', 'jury.wle.org.ua')
 
-# The vote requests (conf/routes; the same in every release since the 2026-10 cutover):
+# The vote requests (conf/routes; the same paths in 26.10 (f9c31ce5) and 26.11):
 #   POST /rate/round/R/pageid/P/select/S                   gallery tiles (Csrf-Token header): 200
 #   POST /large/round/R[/region/X]/pageid/P/select/S[?..]  large view buttons and keyboard: 303
 #        with ?criteria=C a criterion's rate (the vote's rate is then the criteria's sum)
-# GET .../select/... is no route any more (the old GET votes were removed long before; 404).
+# What the statuses prove differs: before 26.11 (f9c31ce5) both answered success also when no
+# vote row of the user matched; since, a vote changing no row is a 404/400. A signed-out large
+# view vote, or one in a closed round or by a stopped juror, is a 303 in both (see above).
+# GET .../select/... is no route (404).
 VOTE = re.compile(r'^/(rate|large)/round/(\d+)(?:/region/[^/]+)?/pageid/(\d+)/select/(-?\d+)/?$')
 VOTE_OK = {'rate': {200}, 'large': {303}}
 # a page of one juror's list: the juror whose votes it shows (and, for a juror, their own)
 USER_PAGE = re.compile(r'^/(?:gallery|large|byrate)/(?:round/(\d+)/)?user/(\d+)/')
+LIST_OR_LARGE = re.compile(r'^/(gallery|large|byrate)/')
 ROTATION = re.compile(r'\.log(?:\.(\d+))?(?:\.gz)?$')
+# a vote's redirect (or the login page) follows it within this many seconds
+FOLLOW_WINDOW = 5
 
 SQL_TIME = '%Y-%m-%d %H:%M:%S'
 
@@ -95,8 +119,10 @@ def local_path(url):
 
 
 class Event(object):
+    """kind: vote; page (a GET of a list or large view; `user` when it is one juror's); login (the
+    login page); signin (a sign-in or sign-out POST)."""
     __slots__ = ('kind', 't', 'order', 'sess', 'round', 'page', 'sel', 'ep', 'status',
-                 'criteria', 'ref_user', 'ref_round', 'user')
+                 'criteria', 'ref_user', 'ref_round', 'user', 'target', 'sorted')
 
     def __init__(self, **kw):
         for k in self.__slots__:
@@ -114,12 +140,13 @@ def read_lines(paths):
                 yield i, line
 
 
-def parse_events(lines, stats, salt=None):
+def parse_events(lines, stats, salt=None, vhosts=None, spans=None):
     """Vote requests, list pages and sign-in/out requests from extract lines, deduplicated
-    across files. The sessions (IP + user agent) are salted hashes kept in memory only."""
+    across files. The sessions (IP + user agent) are salted hashes kept in memory only.
+    `spans` (if given) gets each extract's first and last UTC time: {file index: [min, max]}."""
     salt = salt if salt is not None else os.urandom(16).hex()
-    kept = collections.Counter()      # Apache line -> times kept so far
-    seen_in = collections.Counter()   # (file, Apache line) -> times seen in that file
+    kept = collections.Counter()      # digest of the Apache line -> times kept so far
+    seen_in = collections.Counter()   # (file, digest) -> times seen in that file
     events = []
     for n, (fi, raw) in enumerate(lines):
         line = raw.rstrip('\r\n')
@@ -128,21 +155,29 @@ def parse_events(lines, stats, salt=None):
             stats['lines_unparsed'] += 1
             continue
         base, vhost, ip, when, meth, path, status, ref, ua = m.groups()
-        apache = line[len(base) + 1:] if base else line
-        seen_in[(fi, apache)] += 1
-        if seen_in[(fi, apache)] <= kept[apache]:
-            stats['lines_duplicate'] += 1   # read before from another extract
-            continue
-        kept[apache] += 1
-        stats['lines'] += 1
         try:
             t = parse_apache_time(when)
         except (ValueError, KeyError):
             stats['lines_unparsed'] += 1
             continue
+        if spans is not None:
+            s = spans.setdefault(fi, [t, t])
+            s[0], s[1] = min(s[0], t), max(s[1], t)
+        if vhosts is not None and vhost.rsplit(':', 1)[0].lower() not in vhosts:
+            stats['lines_other_vhost'] += 1
+            continue
+        apache = line[len(base) + 1:] if base else line
+        digest = hashlib.sha1(apache.encode('utf-8', 'replace')).digest()
+        seen_in[(fi, digest)] += 1
+        if seen_in[(fi, digest)] <= kept[digest]:
+            stats['lines_duplicate'] += 1   # read before from another extract
+            continue
+        kept[digest] += 1
+        stats['lines'] += 1
         stats['tz ' + when[-5:]] += 1
-        # same second: older log file first, then the file's own order (completion order)
-        order = (t, -rotation_index(base), fi, n)
+        # same second: the extracts oldest first, in one an older log file first, then the
+        # file's own order (completion order)
+        order = (t, fi, -rotation_index(base), n)
         sess = hashlib.sha1((salt + '\t' + ip + '\t' + ua).encode('utf-8', 'replace')).hexdigest()[:16]
         status = int(status)
         rpath = local_path(ref)
@@ -150,23 +185,50 @@ def parse_events(lines, stats, salt=None):
         ref_user = int(rm.group(2)) if rm else None
         ref_round = int(rm.group(1)) if rm and rm.group(1) else None
         p = path.split('?')[0]
+        query = path.split('?', 1)[1] if '?' in path else ''
         v = VOTE.match(p)
         if v and meth == 'POST':
             ep, rnd, page, sel = v.groups()
-            query = path.split('?', 1)[1] if '?' in path else ''
             events.append(Event(kind='vote', t=t, order=order, sess=sess, round=int(rnd), page=int(page),
                                 sel=int(sel), ep=ep, status=status,
                                 criteria=bool(re.search(r'(^|&)criteria=', query)),
                                 ref_user=ref_user, ref_round=ref_round))
             continue
-        u = USER_PAGE.match(p)
-        if u and meth == 'GET' and status < 400:
-            events.append(Event(kind='page', t=t, order=order, sess=sess, user=int(u.group(2))))
+        lv = LIST_OR_LARGE.match(p)
+        if lv and meth == 'GET' and status < 400:
+            u = USER_PAGE.match(p)
+            events.append(Event(kind='page', t=t, order=order, sess=sess, user=int(u.group(2)) if u else None,
+                                target='large' if lv.group(1) == 'large' else 'list',
+                                sorted=bool(re.search(r'(^|&)sort=', query))))
+            continue
+        if meth == 'GET' and p == '/auth':
+            events.append(Event(kind='login', t=t, order=order, sess=sess))
             continue
         if meth == 'POST' and p in ('/auth', '/logout', '/logout/everywhere') and 300 <= status < 400:
             events.append(Event(kind='signin', t=t, order=order, sess=sess))
     events.sort(key=lambda e: e.order)
     return events
+
+
+def coverage_problems(spans, count):
+    """The extracts' order and gaps: they must be given oldest first, each starting no later
+    than the latest time of those before it."""
+    problems = []
+    covered = None
+    for i in range(count):
+        if i not in spans:
+            problems.append('extract {} has no log lines'.format(i + 1))
+            continue
+        first, last = spans[i]
+        if covered is not None:
+            prev = max((spans[j] for j in range(i) if j in spans), key=lambda s: s[0])
+            if first < prev[0]:
+                problems.append('extract {} starts before extract {}: give them oldest first'.format(i + 1, i))
+            elif first > covered:
+                problems.append('gap from {} to {} UTC between extract {} and the ones before'.format(
+                    utc_sql(covered)[:19], utc_sql(first)[:19], i + 1))
+        covered = last if covered is None else max(covered, last)
+    return problems
 
 
 class Row(object):
@@ -179,12 +241,18 @@ class Row(object):
 
 class DbData(object):
     """The vote rows (vote and vote_aside) of the rounds voted in, by (round, file), and the
-    rounds with criteria."""
+    rounds with criteria. A juror's live row wins over one aside of the same file (a file moved
+    aside, distributed again and voted on): the live row is the vote the app shows."""
 
     def __init__(self, rows=(), criteria_rounds=(), rounds=()):
         self.cand = collections.defaultdict(dict)   # (round, page) -> {jury: Row}
+        self.live_and_aside = 0
         for r in rows:
-            self.cand[(r.round, r.page)][r.jury] = r
+            cur = self.cand[(r.round, r.page)].get(r.jury)
+            if cur is not None and cur.table != r.table:
+                self.live_and_aside += 1
+            if cur is None or (cur.table != 'vote' and r.table == 'vote'):
+                self.cand[(r.round, r.page)][r.jury] = r
         self.criteria_rounds = set(criteria_rounds)
         self.rounds = set(rounds)
 
@@ -238,13 +306,38 @@ class Plan(object):
         self.timed = []                     # (Row, epoch seconds) whose time is set already (--check)
 
 
+def failed_votes(events):
+    """Vote requests with a successful status that the session's next requests show failed:
+    {id(event): reason}."""
+    by_sess = collections.defaultdict(list)
+    for e in events:
+        if e.kind in ('page', 'login'):
+            by_sess[e.sess].append(e)
+    keys = {s: [e.order for e in l] for s, l in by_sess.items()}
+    out = {}
+    for e in events:
+        if e.kind != 'vote' or e.status not in VOTE_OK[e.ep]:
+            continue
+        l = by_sess.get(e.sess, [])
+        k = bisect.bisect_right(keys.get(e.sess, []), e.order)
+        after = []
+        while k < len(l) and l[k].t - e.t <= FOLLOW_WINDOW:
+            after.append(l[k])
+            k += 1
+        if any(a.kind == 'login' for a in after):
+            out[id(e)] = 'skipped: failed (login page next: signed out)'
+        elif e.ep == 'large' and after and after[0].kind == 'page' and after[0].target == 'list' and not after[0].sorted:
+            out[id(e)] = 'skipped: failed (sent to the gallery: round closed or juror stopped)'
+    return out
+
+
 def session_ties(events, attributed, window):
     """Per session: sorted (t, user) ties from page GETs of a juror's list and from certainly
     attributed votes, and its sign-in/out times (a tie never crosses one)."""
     ties = collections.defaultdict(list)
     bounds = collections.defaultdict(list)
     for e in events:
-        if e.kind == 'page':
+        if e.kind == 'page' and e.user is not None:
             ties[e.sess].append((e.order, e.user))
         elif e.kind == 'signin':
             bounds[e.sess].append(e.order)
@@ -267,7 +360,7 @@ def session_ties(events, attributed, window):
     return users_near
 
 
-def make_plan(events, db, session_attribution=False, session_window=1800, run_start=False):
+def make_plan(events, db, session_attribution=False, session_window=1800, run_start=RUN_START_DEFAULT):
     """Attributes the vote requests and chooses each vote row's time. `run_start` takes, of the
     juror's last requests that all set the current value, the first (the app's semantics: a vote
     of the same value again keeps the time) instead of the latest (the agreed rule)."""
@@ -275,10 +368,14 @@ def make_plan(events, db, session_attribution=False, session_window=1800, run_st
     attributed = {}      # id(event) -> juror
     pending = []
     votes = [e for e in events if e.kind == 'vote']
+    failed = failed_votes(events)
     for e in votes:
         plan.req['vote requests'] += 1
         if e.status not in VOTE_OK[e.ep]:
             plan.req['skipped: request failed (status)'] += 1
+            continue
+        if id(e) in failed:
+            plan.req[failed[id(e)]] += 1
             continue
         if e.criteria or e.round in db.criteria_rounds:
             plan.req['skipped: criteria round (a criterion, not the vote, was rated)'] += 1
@@ -320,6 +417,8 @@ def make_plan(events, db, session_attribution=False, session_window=1800, run_st
                 still.append(e)
         pending = still
     plan.req['skipped: ambiguous juror'] += len(pending)
+    if db.live_and_aside:
+        plan.diag['juror with a live and an aside row of a file (the live one used)'] += db.live_and_aside
 
     by_key = collections.defaultdict(list)
     unattributed_at = collections.defaultdict(list)   # (round, page) -> orders of unknown requests
@@ -340,14 +439,15 @@ def make_plan(events, db, session_attribution=False, session_window=1800, run_st
         if last.sel != row.rate:
             plan.rows['skipped: value mismatch (latest request set another value)'] += 1
             continue
+        if any(o > last.order for o in unattributed_at.get((rnd, page), [])):
+            plan.rows['skipped: a later unattributed request on the file'] += 1
+            continue
         k = len(evs) - 1
         while k > 0 and evs[k - 1].sel == last.sel:
             k -= 1
         chosen = evs[k] if run_start else last
         if k < len(evs) - 1:
             plan.diag['same value voted again after the change (latest vs run start differ)'] += 1
-        if any(o > last.order for o in unattributed_at.get((rnd, page), [])):
-            plan.diag['a later unattributed request on the same file'] += 1
         if row.voted_at:
             plan.rows['skipped: already timed'] += 1
             plan.timed.append((row, chosen.t))
@@ -378,6 +478,25 @@ def render_sql(plan, batch=1000, header=()):
     return '\n'.join(out) + '\n'
 
 
+def render_revert_sql(plan, batch=1000):
+    """The undo: clears a time only where it is still the one the backfill set."""
+    out = ["SET time_zone = '+00:00';",
+           '-- undo of the voted_at backfill: a time the app set since is kept']
+    for i in range(0, len(plan.updates), batch):
+        out.append('START TRANSACTION;')
+        for row, t in plan.updates[i:i + batch]:
+            out.append("UPDATE {} SET voted_at = NULL WHERE id = {} AND voted_at = '{}';".format(
+                row.table, row.id, utc_sql(t)))
+        out.append('COMMIT;')
+    out.append('-- summary: {} reverts'.format(len(plan.updates)))
+    return '\n'.join(out) + '\n'
+
+
+def revert_path(out):
+    root, ext = os.path.splitext(out)
+    return root + '.revert' + (ext or '.sql')
+
+
 def check(plan, db):
     """After applying: how many of the planned rows have the planned time now."""
     c = collections.Counter()
@@ -392,72 +511,97 @@ def check(plan, db):
     return c
 
 
-def report(plan, extra=(), out=sys.stdout):
+def report(plan, extra=(), out=None):
+    out = out or sys.stdout
+
     def p(*a):
         print(*a, file=out)
+    for line in extra:
+        p(line)
     for title, c in (('Vote requests', plan.req), ('Vote rows (round, file, juror) with an attributed request', plan.rows),
                      ('Notes', plan.diag)):
         p(title + ':')
         for k, n in sorted(c.items()):
-            p('  {:<70} {:>8}'.format(k, n))
+            p('  {:<72} {:>8}'.format(k, n))
     days = collections.Counter(utc_sql(t)[:10] for _, t in plan.updates)
     p('Times to set, per UTC day:')
     for d in sorted(days):
         p('  {}  {:>8}'.format(d, days[d]))
-    for line in extra:
-        p(line)
 
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split('\n\n')[0])
-    ap.add_argument('extracts', nargs='+', help='extract files (gzip or plain), may overlap')
+    ap.add_argument('extracts', nargs='+', help='extract files (gzip or plain), OLDEST FIRST; they may overlap')
     ap.add_argument('--db', default='wlxjury', help='database name (default wlxjury)')
     ap.add_argument('--defaults-extra-file', help='mariadb option file with the login')
     ap.add_argument('--client', default='mariadb', help="client command (default 'mariadb'), e.g. "
                     "'docker exec -i CONTAINER mariadb'")
-    ap.add_argument('--out', help='the SQL file to write (required unless --dry-run or --check)')
+    ap.add_argument('--out', help='the SQL file to write (required unless --dry-run or --check); '
+                    'its undo goes next to it as NAME.revert.sql')
     ap.add_argument('--batch', type=int, default=1000, help='UPDATEs per transaction (default 1000)')
     ap.add_argument('--dry-run', action='store_true', help='report only, write no SQL')
     ap.add_argument('--check', action='store_true', help='after applying: report how many rows have the time')
+    ap.add_argument('--allow-gap', action='store_true', help='run although the extracts leave a gap in time')
+    ap.add_argument('--vhosts', default=','.join(JURY_VHOSTS),
+                    help='the jury vhosts, comma-separated (default: %(default)s)')
     ap.add_argument('--session-attribution', action='store_true',
                     help='also attribute by IP + user agent session (off by default; a few votes)')
     ap.add_argument('--session-window', type=int, default=30, help='session tie window in minutes (default 30)')
-    ap.add_argument('--run-start', action='store_true',
-                    help='time of the first of the last same-value requests instead of the latest')
+    ap.add_argument('--run-start', dest='run_start', action='store_true', default=RUN_START_DEFAULT,
+                    help='time of the first of the last same-value requests (the app\'s rule)' +
+                    (' (default)' if RUN_START_DEFAULT else ''))
+    ap.add_argument('--latest', dest='run_start', action='store_false',
+                    help='time of the latest request (the agreed rule)' + ('' if RUN_START_DEFAULT else ' (default)'))
     args = ap.parse_args(argv)
     if not (args.out or args.dry_run or args.check):
         ap.error('--out is required unless --dry-run or --check')
 
     stats = collections.Counter()
-    events = parse_events(read_lines(args.extracts), stats)
+    spans = {}
+    vhosts = {h.strip().lower() for h in args.vhosts.split(',') if h.strip()}
+    events = parse_events(read_lines(args.extracts), stats, vhosts=vhosts, spans=spans)
+    extra = ['Extract {}: {} to {} UTC'.format(i + 1, utc_sql(spans[i][0])[:19], utc_sql(spans[i][1])[:19])
+             if i in spans else 'Extract {}: no log lines'.format(i + 1) for i in range(len(args.extracts))]
+    for line in extra:
+        print(line)
+    problems = coverage_problems(spans, len(args.extracts))
+    for pr in problems:
+        print('Coverage: ' + pr)
+    if problems and not args.allow_gap:
+        sys.exit('The extracts do not cover one span of time (above): add the missing extract, give them oldest '
+                 'first, or rerun with --allow-gap to accept the gap.')
     rounds = {e.round for e in events if e.kind == 'vote'}
     db = load_db(args, rounds)
     plan = make_plan(events, db, args.session_attribution, args.session_window * 60, args.run_start)
     vt = [e.t for e in events if e.kind == 'vote']
-    extra = ['Extract lines: {} kept, {} duplicates across extracts, {} unparsed; offsets {}'.format(
-        stats['lines'], stats['lines_duplicate'], stats['lines_unparsed'],
+    extra = ['Extract lines: {} kept, {} duplicates across extracts, {} other vhosts, {} unparsed; offsets {}'.format(
+        stats['lines'], stats['lines_duplicate'], stats['lines_other_vhost'], stats['lines_unparsed'],
         ', '.join('{} {}'.format(k[3:], n) for k, n in sorted(stats.items()) if k.startswith('tz ')))]
     if vt:
         extra.append('Vote requests from {} to {} UTC, {} rounds'.format(utc_sql(min(vt))[:19], utc_sql(max(vt))[:19], len(rounds)))
+    extra.append('Time of a row: ' + ('the first of the last same-value requests (--run-start)' if args.run_start
+                                      else 'the latest request'))
+    report(plan, extra)
     if args.check:
         c = check(plan, db)
-        report(plan, extra)
         print('Check (rows the logs give a time):')
         for k, n in sorted(c.items()):
-            print('  {:<70} {:>8}'.format(k, n))
+            print('  {:<72} {:>8}'.format(k, n))
         return 0
-    report(plan, extra)
     if args.dry_run:
         return 0
     header = ['voted_at backfill from {} extract(s): {}'.format(len(args.extracts), ', '.join(os.path.basename(x) for x in args.extracts)),
               'generated {} UTC'.format(datetime.datetime.now(datetime.timezone.utc).strftime(SQL_TIME))]
     if args.session_attribution:
         header.append('with IP+UA session attribution')
-    if args.run_start:
-        header.append('times of the first of the last same-value requests (--run-start)')
+    header.append('time of a row: ' + ('the first of the last same-value requests' if args.run_start else 'the latest request'))
+    if problems:
+        header.append('extracts with a gap, accepted (--allow-gap)')
     with open(args.out, 'w', encoding='utf-8', newline='\n') as f:
         f.write(render_sql(plan, args.batch, header))
-    print('Wrote {} UPDATEs to {}'.format(len(plan.updates), args.out))
+    with open(revert_path(args.out), 'w', encoding='utf-8', newline='\n') as f:
+        f.write(render_revert_sql(plan, args.batch))
+    print('Wrote {} UPDATEs to {}, the undo to {}'.format(len(plan.updates), args.out, revert_path(args.out)))
     return 0
 
 

@@ -565,30 +565,34 @@ Rehearse the deployment and each section of this runbook on a production copy be
 
 ### One-off: vote times from the access logs (after V97)
 
-V97 adds `vote.voted_at`, set by the app whenever a vote's rate changes. Votes cast before the release with V97 have no time; the only record of them is the Apache access log, which rotates after 14 days. `scripts/backfill/voted_at_from_logs.py` (Python 3.8+, stdlib only) recovers them: for each round, file and juror it takes the latest vote request it can attribute with certainty (the file has a single vote row in the round, or the request came from a page of that juror's own list), and only if the value that request set is the vote's current rate, not 0. Its SQL changes only a vote with that rate and no time yet (`... WHERE id = ? AND rate = ? AND voted_at IS NULL`), so it is safe to rerun and never overwrites a time the app set. `--session-attribution` also attributes by IP address + user agent (a dozen votes; off by default).
+V97 adds `vote.voted_at`, set by the app whenever a vote's rate changes. Votes cast before the release with V97 have no time; the only record of them is the Apache access log, which rotates after 14 days. `scripts/backfill/voted_at_from_logs.py` (Python 3.8+, stdlib only) recovers them: for each round, file and juror it takes the latest vote request it can attribute with certainty (the file has a single vote row in the round, or the request came from a page of that juror's own list), and only if the value that request set is the vote's current rate, not 0, and no unattributed vote request on the file came later. Its SQL changes only a vote with that rate and no time yet (`... WHERE id = ? AND rate = ? AND voted_at IS NULL`), so it is safe to rerun and never overwrites a time the app set. `--session-attribution` also attributes by IP address + user agent (a dozen votes; off by default). Whether a row gets the time of its latest request or of the first of its last same-value requests (`--run-start`, the app's own rule) is one constant, `RUN_START_DEFAULT`.
 
-A saved extract covers 2026-10-29 to 2026-11-12 08:46 UTC (kept by the maintainer, outside the repository). With a fresh extract taken by 2026-11-25 the two overlap, so together they cover every vote from 2026-10-29; overlapping lines are counted once.
+A successful status does not prove a vote (a signed-out large-view vote, one in a closed round and, before 26.11, one matching no vote row all answered 303 or 200), so a vote request followed within 5 seconds, from the same IP address and user agent, by the login page, or a large-view vote followed by the gallery without the list's query (the closed-round redirect), counts as failed.
+
+A saved extract covers 2026-10-28 23:13 to 2026-11-12 10:10 UTC (kept by the maintainer in `C:/scala/rehearsal-2611/votelog/`, outside the repository). With a fresh extract taken by 2026-11-25 the two overlap, so together they cover every vote from 2026-10-29; overlapping lines are counted once. Give the extracts **oldest first**: the script prints each one's first and last time, and stops if they are out of order or leave a gap (`--allow-gap` for a deliberate run).
 
 The extracts hold IP addresses and user agents: never copy them, or anything derived from them, into the repository, an issue or a chat. The script writes neither: its report has counts only, its SQL vote ids, rates and times.
 
-1. After the release with V97 is live (so every later vote gets its time from the app), extract the jury vhosts' requests as root:
+1. After the release with V97 is live (so every later vote gets its time from the app), extract the jury vhosts' vote requests, list and large-view pages and sign-in requests as root:
    ```bash
-   for f in /var/log/apache2/other_vhosts_access.log*; do zcat -f $f | grep '^jury' | grep -E '"(GET|POST) /(rate/|large/|gallery/|byrate/|wikipedia/commons/thumb/|switch-contest|auth|logout)' | sed "s|^|$(basename $f) |"; done | gzip > /home/ilya/jury-votelog.gz; chown ilya /home/ilya/jury-votelog.gz
+   for f in /var/log/apache2/other_vhosts_access.log*; do zcat -f "$f" | grep -E '^jury\.(wlm\.org\.ua|wikilovesmonuments\.org\.ua|wikilovesearth\.org\.ua|wikilovesearth\.org|wle\.org\.ua):' | grep -E '"(GET|POST) /(rate/|large/|gallery/|byrate/|auth|logout)' | sed "s|^|$(basename "$f") |"; done | gzip > /home/ilya/jury-votelog.gz; chown ilya: /home/ilya/jury-votelog.gz
    ```
-2. Copy the script and the saved extract to `/home/ilya/` (scp), then generate the SQL. It reads the votes of the logged rounds with the `mariadb` client and the admin login:
+   The script reads only these vhosts (`--vhosts` to change the list).
+2. Copy the script and the saved extract to `/home/ilya/` (scp), then generate the SQL and its undo. It reads the votes of the logged rounds with the `mariadb` client and the admin login; give the files back to `ilya` so they can be deleted without `sudo`:
    ```bash
    sudo python3 /home/ilya/voted_at_from_logs.py --defaults-extra-file /etc/wlxjury-runtime/db-admin.cnf --db wlxjury \
      --out /home/ilya/voted_at.sql /home/ilya/jury-votelog-2026-10-29_2026-11-12.gz /home/ilya/jury-votelog.gz
+   sudo chown ilya: /home/ilya/voted_at.sql /home/ilya/voted_at.revert.sql
    ```
-   (`--dry-run` instead of `--out` reports without writing.) Review the report: requests attributed or skipped (failed request, criteria round, vote row missing, ambiguous juror), vote rows matched or skipped (value mismatch, unrated now, already timed), and the times to set per UTC day. On the local production copy (taken on 2026-11-11) the saved extract gave 36,550 times (36,562 with `--session-attribution`) from 40,332 vote requests.
+   (`--dry-run` instead of `--out` reports without writing.) Review the report: each extract's span, requests attributed or skipped (failed status, failed by the next page, criteria round, vote row missing, ambiguous juror), vote rows matched or skipped (value mismatch, later unattributed request, unrated now, already timed), and the times to set per UTC day. On the local production copy (taken on 2026-11-11) the saved extract gave 36,548 times (36,562 with `--session-attribution`) from 40,332 vote requests.
 3. Apply it, then check how many of those rows now have their time from the logs (a row voted again in the app since shows as "another time"):
    ```bash
    sudo mariadb --defaults-extra-file=/etc/wlxjury-runtime/db-admin.cnf wlxjury < /home/ilya/voted_at.sql
    sudo python3 /home/ilya/voted_at_from_logs.py --defaults-extra-file /etc/wlxjury-runtime/db-admin.cnf --db wlxjury --check \
      /home/ilya/jury-votelog-2026-10-29_2026-11-12.gz /home/ilya/jury-votelog.gz
    ```
-   The SQL sets `time_zone = '+00:00'` first and commits every 1,000 updates (`--batch`); each update finds its vote by id.
-4. Delete the extracts and the SQL on the server (`rm /home/ilya/jury-votelog*.gz /home/ilya/voted_at.sql`), and the saved extract wherever else it is kept.
+   The SQL sets `time_zone = '+00:00'` first and commits every 1,000 updates (`--batch`); each update finds its vote by id. The undo, `voted_at.revert.sql`, clears a time only where it is still the one the backfill set (`SET voted_at = NULL WHERE id = ? AND voted_at = '<t>'`): apply it the same way if the result looks wrong. Keep it until the maintainer has checked the result in the app.
+4. Then delete the extracts, the SQL and its undo on the server (`rm /home/ilya/jury-votelog*.gz /home/ilya/voted_at.sql /home/ilya/voted_at.revert.sql`), and the local folder `C:/scala/rehearsal-2611/votelog/` with the saved extract and its exploration `scripts/`.
 
 Votes that get no time stay untimed: they count as older than every timed vote in the juror's newest/oldest orders.
 
